@@ -32,14 +32,16 @@ lake exe vectors
 | `State.lean` | What a peer knows; acting for a vault, approving for it (its root, or its threshold of owners), holding a cap; symbolic keys (`Knows`), rotation and sealing |
 | `Step.lean` | Every op and the rules that accept or refuse it, publishing into a space's schema lane, checkpoints, and writes on a branch (which build on its start) among them; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
 | `Sync.lean` | What a peer sends a device: sync by caps, item by item (each item's writes and checkpoints), and the revocations that took its caps away |
+| `Logs.lean` | Every op in one log, a vault's, a space's or an entry's, building on that log's frontier; each log's closed part (the ops whose whole past is held) and frontier; what a device names of each log when it asks (its frontier, the ops 1, 2, 4, 8, … steps back and the oldest) and its loose ops; what a peer sends beyond them (`respondSince`); forks |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Branches.lean` | Branches write by write: each write extends one line of its entry's history, the main line or a branch; a line's history and heads; the order writes come in (`Ordered`); T10f to T10h, which tie `Doc.lean`'s merge and promote to the writes |
 | `Lens.lean` | The markdown document and the todo in two schema versions and the lenses between them; items as stored, projected on read into each app's schema, and edits through each app's view; the lens laws (T9) |
-| `Theorems.lean` | T1 to T8, T11 to T14, and T16 to T18; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
+| `Theorems.lean` | T1 to T8 and T11 to T19; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane, replays, and which op made each write |
 | `KeyLemmas.lean` | The helper lemmas for the keys: what settling seals and publishes, `opens` finding every key `Knows` gives, acting for a vault through chains, the invariants behind T5 and T6, `EverReads` |
+| `SyncLemmas.lean` | The helper lemmas for sync: the replay order is a total order on ids (T11), what a peer sends a device, a log's closed part lying at or below its frontier, and every op a device names of a log being one it holds with its whole past (T19) |
 | `Examples.lean` | The plan's scenarios run on the model, including branches (a draft merged, a rewrite promoted, and a revocation cutting a branch), schema v2 (the schema lane, and a v2 app's edit of a document a v1 app wrote), one todo shared with several vaults and synced peer to peer, strong removal (back-dated ops cut, clashes settled from the top down, a senior revoker, a stolen passkey, the root handed on), and checkpoints once the curves fall |
-| `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view, or in the post-quantum view), with the state at the end, each line of each entry's history and its heads among it; and lens cases: what each app reads from stored blocks and todos, and what its edits store |
+| `Vectors.lean` | Cases for the Rust core: ops applied in order (which the model accepts) and ops at the depths they claim (which stand in the view, or in the post-quantum view), with the state at the end, each line of each entry's history and its heads among it; sync cases: ops with their parents, each log's closed part and frontier, the forks, and for each device that asks a peer what it names of each log, its loose ops, and what it is sent; and lens cases: what each app reads from stored blocks and todos, and what its edits store |
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check the files in `vectors/` on every build; write them (`lake exe vectors`) |
 | `vectors/vaults.json` | The cases with the model's answers, read by `crates/avendb/tests/vectors.rs` |
 | `vectors/lenses.json` | The lens cases with the model's views and edits, read by `the_lens_vectors` |
@@ -58,13 +60,15 @@ lake exe vectors
 | T8 | Public is read-only | Proven | `public_is_read_only`, `t4_grants_name_vaults_and_t8_public_read_only`, the vectors |
 | T9 | Lens laws: round trips, both apps see the same item, an edit shows exactly as made, an unchanged view writes nothing, and an older app's edit keeps what it can't see | Proven | `lens_round_trip_v1`, `edits_through_a_view_keep_what_it_cant_see`, `t9_put_get`, `t9_put_get_todos`, `the_lens_vectors`, `scenario_09_schema_v2` |
 | T10 | Merge is the union of histories; promote gives the branch's content and keeps both; a write on one line leaves every other line as it was | Proven | `promote_equals_branch`, `merge_is_the_union_of_both_lines`, `t10_branches`, `scenario_08_branches`, the vectors |
-| T11 | Same ops in any order, same state | P6 | `same_ops_any_order_same_result`, `t11_convergence` |
-| T12 | A peer sends a device only items it holds a cap on, and of other scopes only the revocations that took its caps away | P6 | `sync_sends_only_capped_items`, `t12_sync_shares_only_caps` |
-| T13 | Two devices that synced both ways hold the same writes for every item they share | P6 | `item_syncs_peer_to_peer_without_server` |
+| T11 | Same ops in any order, same state | Proven | `same_ops_any_order_same_result`, `t11_convergence`, `t11_vault_logs_converge`, `every_order_of_delivery_ends_the_same`, `scenario_13_offline_conflicts` |
+| T12 | A peer sends a device only items it holds a cap on, and of other scopes only the revocations that took its caps away, whatever the device names when it asks | Proven | `sync_sends_only_capped_items`, `t12_sync_shares_only_caps`, `t19_frontier_sync_loses_nothing`, the sync vectors |
+| T13 | Two devices that each asked the other once hold the same writes and checkpoints for every item each may receive by the other's view | Proven | `item_syncs_peer_to_peer_without_server`, `t13_sync_converges`, `scenario_17_peer_to_peer` |
 | T14 | Accepted writes are causally closed: a write stands only with every write it builds on | Proven | `a_drop_takes_what_builds_on_it_along`, `t14_causally_closed`, the vectors |
+| T15 | Rotation follows revocation: a device writes an entry under the current key of what it knows, which opens only for holders that what it knows entitles to the entry, and under no older epoch than any along its history, so once it has seen a removal the removed can't open what it writes | Proven from T6 | `a_device_writes_under_the_newest_key_it_knows`, `revoked_reader_cannot_open_new_edits`, `scenario_10_revoke_carol` |
 | T16 | Strong removal: an op stands only if it also stands without what each later removal that hadn't seen it takes away, and every removal chosen stands | Proven | `a_removed_owner_cannot_backdate_governance`, `handing_the_root_on_cuts_the_old_passkeys_backdated_ops`, `t16_strong_removal`, the view vectors |
 | T17 | Only a space's owners publish its schemas and lenses | Proven | `only_owners_publish_into_the_lane`, the vectors |
 | T18 | Once the curves fall: a peer that no longer trusts them counts a write only if a checkpoint by its own author covers it | Proven | `a_broken_curve_writes_nothing_that_counts`, `t18_checkpointed_writes`, the vectors |
+| T19 | Frontier sync loses nothing: a device that asks with its frontier of each log, a few ops further back and its loose ops is sent every op of the peer's answer it lacks; and two copies of a log with the same frontier hold the same closed part, so one digest per log tells whether to ask | Proven | `t19_frontier_sync_loses_nothing`, `t19_partial_delivery`, `t19_one_digest_per_log`, `a_second_sync_sends_nothing`, `an_edit_sends_only_what_is_new_both_ways`, the sync vectors |
 
 The Rust scenario tests (`crates/avendb/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
 and keys in the Lab. The vectors (`crates/avendb/tests/vectors.rs`) hold the Rust rules to the model's answers op by op, and
@@ -77,8 +81,11 @@ stated for reachable states too, and its proof carries `KeyInv` along: seals hol
 sealed to a space's key lies within the space, and every public family's current key is published. T5 follows the
 whole history instead: every seal is justified by what was readable at some point (`SealsRead`). Devices encrypt each
 edit under its entry's current key (the rules refuse an epoch that doesn't exist yet), so with T6 nothing written after
-a removal opens for whoever it removed. Outside removals entitlements only grow, so by T6 no key goes stale: the Rust
-key schedule looks for stale keys only after a removal, and `t6_forward_secrecy` checks that nothing else makes any.
+a removal opens for whoever it removed (T15). Peers don't check this of each other: a write names the frontier of
+its own entry's log, while the removal that rotated its key mostly sits in a space's or a vault's log, and a device
+that had seen the removal could pass the text on anyway. Outside removals entitlements only grow, so by T6 no key
+goes stale: the Rust key schedule looks for stale keys only after a removal, and `t6_forward_secrecy` checks that
+nothing else makes any.
 
 Concurrent changes replay in one order (causal depth, removals first, then op hash), so they settle the same way on
 every device. That alone doesn't stop a removed owner, or a thief holding a stolen passkey, from signing ops on an old
@@ -123,6 +130,23 @@ also carries the change that brings the merged document to exactly the branch's 
 write on one line changes no other line (T10f). In Rust, an older commit is undone by a three-way merge of records,
 and versions open read-only on scratch items made from their writes; Loro's own revert and checkout are not used.
 
+Every op belongs to one log: a vault's (its governance, its devices, its keys), a space's (its founding, its grants,
+its schema lane, its keys) or an entry's (its writes and checkpoints, the grants on it, its keys); a revocation joins
+the log of the grant it revokes. An op names as its parents the frontier of its own log as its device held it, so each
+log is a small history of its own, and its depth stays one clock across logs, one more than the deepest op its device
+held, so a removal still sorts after everything its device had seen. A device counts in a log's frontier only its
+closed part, the ops whose whole past it holds: an op whose parent hasn't arrived waits outside it, with whatever builds
+on it. When it asks a peer, a device names of each log its frontier, the ops 1, 2, 4, 8, … steps back from it and the
+oldest, and lists its loose ops (those outside every closed part); the peer sends what it would send whole
+(`respond`), less those loose ops and whatever lies at or below an op the device named (`respondSince`). A peer that is
+behind holds the frontier and sends exactly what the device lacks; one that lacks the device's newest ops still finds
+one it holds a few steps back, so it sends back little the device holds; and nothing the device lacks is ever withheld
+(T19). Two copies of a log with the same frontier hold the same closed part, so devices gossip one hash per log, of its
+frontier and the ops waiting outside it, and ask only where one differs. A device signs its ops in a log one after
+another, so two of its ops in one log where neither builds on the other mean its key signed twice from the same past: a
+device restored from an old backup, a clone, or a stolen key. Every peer flags such forks among the ops it holds
+(passkeys, which sign on several devices, aside); both ops stand, as any concurrent ops do.
+
 ## Assumptions
 
 None are axioms; each is part of the model:
@@ -134,7 +158,7 @@ None are axioms; each is part of the model:
 - Loro converges, and can revert a document to any version it contains: fields of the `Loro` structure.
 
 What the proofs don't cover: the Rust and Loro code itself (the tests and the shared Lean ⇄ Rust test vectors do, for
-the vault rules from P1, for the lenses from P4, and for the rest by P6), timing and traffic analysis, and a device
+the vault rules from P1, for the lenses from P4, and for sync from P6), timing and traffic analysis, and a device
 compromised while it still holds its keys.
 
 ## Phases
@@ -152,6 +176,6 @@ what is still red.
 | P4 | Schemas and lenses projected on read, edits through each app's view, the schema lane | T9, T17 |
 | P4b | Post-quantum: SHA-3 ids and hashes, SLH-DSA beside every classical signature but a write's, device keys derived from the passkey, X-Wing plus Classic McEliece in every sealed key box, checkpoints and the post-quantum-only replay | T18 |
 | P5 | History and branches: every write on a line of its entry's history, branches from any version, merge, promote, restore and undo, forks | T10 for writes (T10f to T10h) |
-| P6 | Offline devices, random delivery orders, Lean ⇄ Rust vectors for the rest | T11, T12, T13 |
+| P6 | Logs and frontiers: every op building on its own log's frontier, devices asking with what they hold of each log, one digest per log to gossip, forks flagged; offline devices, random delivery orders and partial delivery; Lean ⇄ Rust vectors for sync; a device writing under the newest key it knows | T11, T12, T13, T15, T19 |
 | P7 | The avenDB tile | |
 | P8 | Sync on its own iroh ALPN with X25519MLKEM768 on every connection and the bytes in iroh-blobs, passkeys from the browser's WebAuthn | |

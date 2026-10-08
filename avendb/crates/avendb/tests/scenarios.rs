@@ -375,7 +375,6 @@ fn scenario_12_bob_leaves() {
 }
 
 #[test]
-#[ignore = "P6: offline devices and random delivery orders"]
 fn scenario_13_offline_conflicts() {
     for seed in 0..8 {
         let mut w = world();
@@ -500,7 +499,6 @@ fn scenario_16_roles_change_on_one_todo() {
 }
 
 #[test]
-#[ignore = "P6: offline devices"]
 fn scenario_17_peer_to_peer() {
     let mut w = world();
     let t = todos_on(&mut w);

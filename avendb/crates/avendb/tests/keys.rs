@@ -1,6 +1,7 @@
-//! Keys on the Lab (P3; T5, T6, T7): what each device can open, and what the server holds; and since P4b, devices
-//! that lock and unlock with the passkey, and what is left once the curves fall (T18). They share one test binary, as
-//! the Lab's world makes Classic McEliece keys that take a while, and each binary makes its own.
+//! Keys on the Lab (P3; T5, T6, T7): what each device can open, and what the server holds; since P4b, devices
+//! that lock and unlock with the passkey, and what is left once the curves fall (T18); and since P6, that a device
+//! writes under the newest key it knows (T15). They share one test binary, as the Lab's world makes Classic McEliece
+//! keys that take a while, and each binary makes its own.
 
 mod common;
 
@@ -69,6 +70,34 @@ fn revoked_reader_cannot_open_new_edits() {
     assert_eq!(text(&w.lab, w.mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
     // what she had stays readable to her
     assert_eq!(text(&w.lab, w.mac_c, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT));
+}
+
+#[test]
+fn a_device_writes_under_the_newest_key_it_knows() {
+    // T15: Carol loses Welcome while Samuel's iPhone is offline
+    let mut w = world();
+    let h = handbook(&mut w);
+    let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(w.carol), h.coop, None);
+    let carol_read = GrantId::from(w.lab.submit(w.mac_s, &[w.mac_s], read).unwrap());
+    w.lab.sync_all(15);
+    let key = KeyScope::Entry(h.space, h.welcome);
+    let before = w.lab.state(w.phone_s).epoch(key);
+    w.lab.set_online(w.phone_s, false);
+    w.lab.submit(w.mac_s, &[w.mac_s], Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![] }).unwrap();
+    // the iPhone hasn't seen the revocation, so its edit is made alongside it, under the key it knows
+    let alongside = w.lab.edit(w.phone_s, h.coop, h.space, h.welcome, |i| i.set_text(1, "Welcome, alongside")).unwrap();
+    w.lab.set_online(w.phone_s, true);
+    w.lab.sync_all(15);
+    // once it has seen it, it writes under the new key, which Carol can't open
+    let after = w.lab.edit(w.phone_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.sync_all(15);
+    let epoch = |id| w.lab.state(w.mac_s).all_writes().iter().find(|x| x.op == id).map(|x| x.epoch);
+    assert_eq!((epoch(alongside), epoch(after)), (Some(before), Some(before + 1)));
+    assert!(!w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_b, key));
+    assert!(!contains(&w.lab.store(w.mac_c), AFTER_TEXT));
+    // both edits stand
+    assert_eq!(text(&w.lab, w.mac_b, h.space, h.welcome, 1).as_deref(), Some("Welcome, alongside"));
+    assert_eq!(text(&w.lab, w.mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
 }
 
 /// Each device opens the current key of a family exactly when, by every op the Lab holds, it may: it reads the family

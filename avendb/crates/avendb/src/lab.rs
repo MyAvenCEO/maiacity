@@ -4,7 +4,8 @@
 //!
 //! It grows with the phases: devices and their ops in P1, caps and sync by caps in P2, keys, reading and the blind
 //! server in P3, apps on a schema reading and editing items through their space's lane in P4, locked devices, blobs and
-//! checkpoints in P4b, history and branches in P5, and in P6 offline devices and random delivery orders.
+//! checkpoints in P4b, history and branches in P5, and in P6 offline devices, sync by what each device holds of each
+//! log, gossip of one digest per log in random orders, and backups, whose restored devices fork.
 //!
 //! A device shows each entry on every line of its history (`branch`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Branching, merging, promoting, restoring, undoing and
@@ -29,7 +30,7 @@
 //! peers stop trusting the curves (`set_pq_only`), each counts only the writes a checkpoint by their author covers
 //! (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use rand_core::Rng as _;
@@ -44,7 +45,7 @@ use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, 
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
 use crate::sign::{self, Classical, DeviceKey, Passkey, Signature, SignerKeys, Signed};
-use crate::sync::{respond, vault_logs};
+use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, logs_of, vault_logs, LogId};
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
@@ -115,6 +116,8 @@ struct Store {
     shown: BTreeMap<(SpaceId, EntryId), Shown>,
     /// The writes it made itself that no checkpoint of its own covers yet.
     unvouched: Vec<OpId>,
+    /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its ops now.
+    digests: Option<BTreeMap<LogId, [u8; 32]>>,
 }
 
 impl Default for Store {
@@ -127,6 +130,7 @@ impl Default for Store {
             keys: BTreeMap::new(),
             shown: BTreeMap::new(),
             unvouched: vec![],
+            digests: None,
         }
     }
 }
@@ -192,6 +196,13 @@ impl KeyIndex {
     }
 }
 
+/// A copy of what a device holds, as a backup keeps it: its signed ops and the blobs they name.
+#[derive(Clone)]
+pub struct Backup {
+    signed: Vec<Signed>,
+    blobs: Blobs,
+}
+
 pub struct Lab {
     /// The keys at hand: passkeys, owner keys, and unlocked devices.
     keys: HashMap<SignerId, Key>,
@@ -207,6 +218,8 @@ pub struct Lab {
     rng: SeededRng,
     /// No device trusts the curves anymore: each counts only checkpointed writes.
     pq_only: bool,
+    /// The devices off the network: they neither send nor receive.
+    offline: HashSet<SignerId>,
 }
 
 impl Default for Lab {
@@ -226,6 +239,7 @@ impl Lab {
             made: 0,
             rng: SeededRng::new("lab randomness", b""),
             pq_only: false,
+            offline: HashSet::new(),
         }
     }
 
@@ -374,6 +388,9 @@ impl Lab {
             store.signed.insert(id, signed);
             new = true;
         }
+        if new {
+            store.digests = None;
+        }
         new
     }
 
@@ -384,11 +401,12 @@ impl Lab {
         }
     }
 
-    /// What device `d` sends with `ops`: each with its signatures, and the blobs they name.
-    fn outgoing(&self, d: SignerId, ops: &[Op]) -> (Vec<Signed>, Blobs) {
+    /// What device `d` sends with the ops `ids`: each with its signatures, and the blobs they name.
+    fn outgoing(&self, d: SignerId, ids: &[OpId]) -> (Vec<Signed>, Blobs) {
         let store = self.held(d);
-        let signed = ops.iter().map(|op| store.signed[&op.id()].clone()).collect();
-        let blobs = ops.iter().flat_map(Op::blobs).filter_map(|b| Some((b, store.blobs.get(&b)?.clone()))).collect();
+        let signed: Vec<Signed> = ids.iter().map(|id| store.signed[id].clone()).collect();
+        let blobs =
+            signed.iter().flat_map(|s| s.op.blobs()).filter_map(|b| Some((b, store.blobs.get(&b)?.clone()))).collect();
         (signed, blobs)
     }
 
@@ -396,8 +414,8 @@ impl Lab {
     /// vault's log before it accepts a grant to that vault.
     pub fn share_contact(&mut self, from: SignerId, to: SignerId, v: VaultId) {
         let store = self.held(from);
-        let ops = vault_logs(store.log.ops(), store.view(), vec![v]);
-        let (signed, blobs) = self.outgoing(from, &ops);
+        let ids: Vec<OpId> = vault_logs(store.log.ops(), store.view(), vec![v]).iter().map(Op::id).collect();
+        let (signed, blobs) = self.outgoing(from, &ids);
         self.deliver(to, signed, &blobs);
     }
 
@@ -616,7 +634,8 @@ impl Lab {
         self.held(d).shown.get(&(space, entry)).map_or(&NONE, |s| &s.history)
     }
 
-    /// Make the write `draft` describes on device `on`, acting for `actor`, under the entry's current key.
+    /// Make the write `draft` describes on device `on`, acting for `actor`, under the entry's current key in what the
+    /// device knows (T15).
     fn make(
         &mut self,
         on: SignerId,
@@ -836,17 +855,72 @@ impl Lab {
         out
     }
 
-    /// Device `from` answers device `to` once, sending what `to` may receive by `from`'s view. It vouches for its new
-    /// writes first.
-    pub fn sync(&mut self, from: SignerId, to: SignerId) {
-        self.checkpoint(from);
-        let ops = respond(self.held(from).log.ops(), to);
-        let (signed, blobs) = self.outgoing(from, &ops);
-        self.deliver(to, signed, &blobs);
+    /// Take device `d` off the network, or bring it back: offline, it neither sends nor receives, and works on with
+    /// what it holds.
+    pub fn set_online(&mut self, d: SignerId, online: bool) {
+        if online {
+            self.offline.remove(&d);
+        } else {
+            self.offline.insert(d);
+        }
     }
 
-    /// Every pair of online devices syncs until nothing new arrives, in an order drawn from `seed`.
-    pub fn sync_all(&mut self, seed: u64) {
+    /// Device `d` is on the network.
+    pub fn online(&self, d: SignerId) -> bool {
+        !self.offline.contains(&d)
+    }
+
+    /// What device `from` makes of the ops it holds, every write counted: what it answers by.
+    fn full_view(&self, from: SignerId) -> std::borrow::Cow<'_, State> {
+        let store = self.held(from);
+        if self.pq_only { std::borrow::Cow::Owned(store.log.view()) } else { std::borrow::Cow::Borrowed(store.view()) }
+    }
+
+    /// Device `to` asks device `from` once, with what it holds of each log (`sync::asks`), and `from` answers with what
+    /// `to` may receive by `from`'s view, of each log only what lies beyond what `to` holds of it. `from` vouches for
+    /// its new writes first. How many ops `from` sent: none while either is offline.
+    pub fn sync(&mut self, from: SignerId, to: SignerId) -> usize {
+        if !self.online(from) || !self.online(to) {
+            return 0;
+        }
+        self.checkpoint(from);
+        let to_store = self.held(to);
+        let asked = asks_ids(to_store.log.ops(), to_store.log.ids());
+        let store = self.held(from);
+        let (ops, ids) = (store.log.ops(), store.log.ids());
+        let places = answer(ops, &self.full_view(from), to);
+        let sent: Vec<OpId> =
+            beyond(ops, ids, &logs_of(ops, ids), &places, &asked).into_iter().map(|i| ids[i]).collect();
+        let (signed, blobs) = self.outgoing(from, &sent);
+        self.deliver(to, signed, &blobs);
+        sent.len()
+    }
+
+    /// The digest of each log device `d` holds (`sync::digests`): what it gossips.
+    pub fn digests(&mut self, d: SignerId) -> &BTreeMap<LogId, [u8; 32]> {
+        let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        store.digests.get_or_insert_with(|| digests_ids(store.log.ops(), store.log.ids()))
+    }
+
+    /// The gossip tells device `to` to ask device `from`: `from` would answer it about a log whose digest differs from
+    /// `to`'s, or with an op of no log that `to` lacks.
+    fn gossip_says_ask(&mut self, from: SignerId, to: SignerId) -> bool {
+        self.digests(from);
+        self.digests(to);
+        let (theirs, mine) = (self.held(from), self.held(to));
+        let (ops, ids) = (theirs.log.ops(), theirs.log.ids());
+        let logs = logs_of(ops, ids);
+        let (df, dt) = (theirs.digests.as_ref().expect("worked out"), mine.digests.as_ref().expect("worked out"));
+        answer(ops, &self.full_view(from), to).into_iter().any(|i| match logs[i] {
+            Some(l) => df.get(&l) != dt.get(&l),
+            None => !mine.signed.contains_key(&ids[i]),
+        })
+    }
+
+    /// Every online device gossips the digest of each log it holds, and asks a peer whenever the peer would answer it
+    /// about a log whose digest differs from its own (`sync`), pair by pair in an order drawn from `seed`, until
+    /// nothing new arrives. How many ops were sent in all.
+    pub fn sync_all(&mut self, seed: u64) -> usize {
         let mut rng = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
         let mut next = move |n: usize| {
             rng ^= rng >> 12;
@@ -854,25 +928,46 @@ impl Lab {
             rng ^= rng >> 27;
             (rng.wrapping_mul(0x2545_f491_4f6c_dd1d) % n as u64) as usize
         };
+        let mut sent = 0;
         loop {
             let held: usize = self.stores.values().map(|s| s.signed.len()).sum();
+            let online: Vec<SignerId> = self.devices.iter().copied().filter(|&d| self.online(d)).collect();
             let mut pairs: Vec<(SignerId, SignerId)> =
-                self.devices.iter().flat_map(|&a| self.devices.iter().filter(move |&&b| b != a).map(move |&b| (a, b))).collect();
+                online.iter().flat_map(|&a| online.iter().filter(move |&&b| b != a).map(move |&b| (a, b))).collect();
             for i in (1..pairs.len()).rev() {
                 pairs.swap(i, next(i + 1));
             }
             for (from, to) in pairs {
-                self.sync(from, to);
+                if self.gossip_says_ask(from, to) {
+                    sent += self.sync(from, to);
+                }
             }
             if self.stores.values().map(|s| s.signed.len()).sum::<usize>() == held {
-                break;
+                return sent;
             }
         }
     }
 
-    pub fn set_online(&mut self, d: SignerId, online: bool) {
-        let _ = (d, online);
-        todo!("P6: the network")
+    /// Every fork device `d` sees among the ops it holds (`sync::forks`): two ops of one device in one log where
+    /// neither builds on the other, the smaller id first.
+    pub fn forks(&self, d: SignerId) -> Vec<(OpId, OpId)> {
+        let store = self.held(d);
+        forks_in(store.log.ops(), store.log.ids(), store.view())
+    }
+
+    /// A backup of device `d`: its signed ops and their blobs, as they are now.
+    pub fn backup(&self, d: SignerId) -> Backup {
+        let store = self.held(d);
+        let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
+        Backup { signed, blobs: store.blobs.clone() }
+    }
+
+    /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
+    /// makes next in a log builds on the past the backup kept, so it forks from what it made there since (`forks`).
+    pub fn restore_backup(&mut self, d: SignerId, backup: &Backup) {
+        self.stores.insert(d, Store::default());
+        self.keep(d, backup.signed.clone(), &backup.blobs);
+        self.refresh(d, &[]);
     }
 
     /// Deliver a tampering attempt to device `to`: `Err` with why it rejects it, or the op's id if it keeps it.

@@ -49,13 +49,16 @@ def Action.keep? : Action → Option (List OpId)
 
 structure Op where
   id        : OpId
-  /-- Causal depth: one more than the deepest op it builds on. Only used to order ops. -/
+  /-- Causal depth: one more than the deepest op its device held when it made it, in any log. Only used to order
+      ops: whatever a device had seen sorts before what it makes next. -/
   depth     : Nat
   /-- The signer that made the op; for a write, the device. -/
   author    : SignerId
   /-- Further signatures, for governance. -/
   cosigners : List SignerId
   action    : Action
+  /-- The ops of its own log it builds on: that log's frontier as its device held it (`Logs.lean`). -/
+  parents   : List OpId := []
   deriving DecidableEq, Repr
 
 def Op.sigs (op : Op) : List SignerId := op.author :: op.cosigners
@@ -271,7 +274,14 @@ def Op.before (a b : Op) : Bool :=
   decide (a.depth < b.depth) ||
     (a.depth == b.depth && (decide (a.rank < b.rank) || (a.rank == b.rank && decide (a.id ≤ b.id))))
 
-def order (ops : List Op) : List Op := ops.mergeSort Op.before
+/-- No op among `ops` that `op` builds on is as deep as it: else `op` claims to come no later than its own past, and
+    is malformed. -/
+def wellFormed (ops : List Op) (op : Op) : Bool :=
+  op.parents.all fun p => ops.all fun q => q.id != p || decide (q.depth < op.depth)
+
+/-- The ops in the one order every peer replays them in, the malformed ones left out, so that no op sorts ahead of
+    an op it builds on. -/
+def order (ops : List Op) : List Op := (ops.filter (wellFormed ops)).mergeSort Op.before
 
 /-! ## Strong removal
 

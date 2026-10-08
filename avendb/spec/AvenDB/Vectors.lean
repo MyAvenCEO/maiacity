@@ -1,4 +1,5 @@
 import AvenDB.Step
+import AvenDB.Logs
 import AvenDB.Lens
 import AvenDB.Branches
 
@@ -453,6 +454,120 @@ def views : List ViewCase := [
     (9, 9, [], .removeOwner 200 (.vault 101) []),
     (10, 10, [], .removeOwner 100 (.signer 9) [6, 7, 8])] }]
 
+/-! ## Sync cases
+
+A sync case is a list of ops a peer holds, each building on the frontier of its own log among the ops before it, as a
+device holding them all would build, unless it names other parents or claims another depth. The model's answers:
+which ops stand; each log's closed part and frontier; the forks; and for each device that asks, holding some of the
+ops, a peer holding all of them or some: the device's frontier of each log it holds, what it sends of it when it asks
+and its loose ops (`asks`), what the peer would send it whole (`respond`), and what it sends given what the device
+sent (`respondSince`). A parent no op of the case has (999) stands for an op nobody holds. -/
+
+/-- An op of a sync case. -/
+structure SyncOp where
+  author    : SignerId
+  cosigners : List SignerId := []
+  action    : Action
+  /-- The ops of its log it builds on, by place; `none` for the frontier of its log among the ops before it. -/
+  parents   : Option (List Nat) := none
+  /-- The depth it claims; `none` for its place. -/
+  depth     : Option Nat := none
+
+structure SyncCase where
+  name : String
+  ops  : List SyncOp
+  /-- Who asks: a device, the places of the ops it holds, and those of the ops the peer holds (`none`: all). -/
+  asks : List (SignerId × List Nat × Option (List Nat))
+
+def SyncCase.toOps (c : SyncCase) : List Op :=
+  c.ops.zipIdx.foldl (fun acc (o, i) =>
+    let op : Op :=
+      { id := i, depth := o.depth.getD i, author := o.author, cosigners := o.cosigners, action := o.action }
+    let parents := o.parents.getD (match op.log? acc with
+      | some l => frontiers acc l
+      | none => [])
+    acc ++ [{ op with parents }]) []
+
+def plain (ops : List (SignerId × List SignerId × Action)) : List SyncOp :=
+  ops.map fun (author, cosigners, action) => { author, cosigners, action }
+
+/-- The ops of a case at the places `held`. -/
+def heldOps (ops : List Op) (held : List Nat) : List Op := ops.filter (held.contains ·.id)
+
+/-- The ops the peer holds: those at the places `peer`, or all of them. -/
+def peerOps (ops : List Op) : Option (List Nat) → List Op
+  | some ps => heldOps ops ps
+  | none => ops
+
+def syncs : List SyncCase := [
+  { name := "an item by caps, by frontiers", ops := plain (humans ++ [
+      (6, [7], .addDevice 102 7),
+      (1, [3], .addDevice 100 3),
+      (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+      -- the coop's Handbook: Welcome and the Charter, Carol reads Welcome, Bob edits it
+      (2, [], .foundSpace 10 200),
+      (2, [], .write 10 1 200 0),
+      (2, [], .write 10 2 200 0),
+      (2, [], g 30 (.entry 10 1) .read (toVault 102) 200),
+      (5, [], .write 10 1 200 0 [10]),
+      (2, [], .checkpoint 10 1 [10]),
+      (2, [], .write 10 2 200 0 [11]),
+      (2, [], .publish 10 200 1),
+      -- Samuel's own Notes
+      (2, [], .foundSpace 11 100),
+      (2, [], .write 11 1 100 0)]),
+    asks := [
+      -- Carol's Mac holding nothing yet, then after a sync before Bob's edit, then holding Bob's edit without its past
+      (7, [], none),
+      (7, [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12], none),
+      (7, [4, 6, 13], none),
+      -- Bob's Mac before most of the Handbook, a stranger, and Samuel's iPhone holding everything
+      (5, [0, 1, 2, 3, 4, 5, 8, 9, 10], none),
+      (555, [], none),
+      (3, List.range 19, none)] },
+  { name := "forks", ops := plain (humans ++ [
+      (1, [3], .addDevice 100 3),
+      (2, [], .foundSpace 11 100),
+      (2, [], .write 11 1 100 0),
+      (2, [], .write 11 1 100 0 [8])]) ++ [
+      -- Samuel's Mac again from the same past, as a copy restored from an old backup would: a fork
+      { author := 2, action := .write 11 1 100 0 [8], parents := some [8] },
+      -- his iPhone at the same moment: another device, no fork
+      { author := 3, action := .write 11 1 100 0 [8], parents := some [8] },
+      -- his passkey on two devices at once: a passkey isn't checked
+      { author := 1, cosigners := [77], action := .addDevice 100 77 },
+      { author := 1, action := .setThreshold 100 1, parents := some [6] },
+      -- the Mac building on an op nobody holds: outside the closed part, so neither in the frontier nor a fork
+      { author := 2, action := .write 11 1 100 0 [8], parents := some [999] },
+      -- the iPhone claiming to be no deeper than the op it builds on: malformed, so it never stands
+      { author := 3, action := .write 11 1 100 0 [11], parents := some [11], depth := some 11 }],
+    asks := [(3, [0, 1, 2, 3, 4, 5, 6, 7, 8, 11], none), (2, [], none)] },
+  { name := "a revocation joins its grant's log", ops := plain (humans ++ [
+      (6, [7], .addDevice 102 7),
+      (2, [], .foundSpace 12 100),
+      (2, [], .write 12 21 100 0),
+      (2, [], g 30 (.entry 12 21) .read (toVault 102) 100),
+      (2, [], .write 12 22 100 0),
+      -- Samuel revokes Carol's read: she hears of it, and of nothing else about the todo
+      (2, [], .revoke 30 100 [8, 9]),
+      (2, [], .write 12 21 100 0 [8])]),
+    asks := [(7, [0, 1, 4, 6, 7, 8, 9], none), (7, [], none), (5, [2, 3], none),
+      -- Carol holding the revocation but not the grant it revokes: it is loose, and isn't sent again
+      (7, [0, 1, 4, 6, 7, 8, 11], none)] },
+  { name := "a device ahead of its peer", ops := plain (humans ++ [
+      (1, [3], .addDevice 100 3),
+      (2, [], .foundSpace 11 100)] ++
+      -- Samuel's Mac edits his note seventeen times
+      List.replicate 17 (2, [], .write 11 1 100 0)) ++ [
+      -- his iPhone edits it once, having seen the first twelve
+      { author := 3, action := .write 11 1 100 0, parents := some [19] }],
+    asks := [
+      -- the Mac asks the iPhone: each lacks some of the other's edits; then an iPhone holding none of its own
+      (2, List.range 25, some (List.range 20 ++ [25])),
+      (2, List.range 25, some (List.range 20)),
+      -- the iPhone, behind, asks a peer holding all of them
+      (3, List.range 13, none)] }]
+
 /-! ## JSON -/
 
 def str (s : String) : String := "\"" ++ s ++ "\""
@@ -575,9 +690,34 @@ def viewCase (c : ViewCase) : String :=
   "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "pq" ++ ": " ++ bool c.pq ++ ",\n " ++ str "ops" ++ ": [\n  " ++
     ",\n  ".intercalate ops ++ "],\n " ++ str "standing" ++ ": " ++ arr (stood.map bool) ++ ",\n " ++ state st ++ "}"
 
+def logId : LogId → String
+  | .vault v    => obj [("vault", nat v)]
+  | .space sp   => obj [("space", nat sp)]
+  | .entry sp e => obj [("space", nat sp), ("entry", nat e)]
+
+def syncCase (c : SyncCase) : String :=
+  let ops := c.toOps
+  let stood := standing ops
+  let opJson := ops.map fun o => obj [("depth", nat o.depth), ("author", nat o.author),
+    ("cosigners", arr (o.cosigners.map nat)), ("action", action o.action), ("parents", ids o.parents)]
+  let logs := (logsOf ops).map fun l => obj [("log", logId l),
+    ("closed", ids ((closedPart (Op.log? ops) ops l).map (·.id))), ("frontier", ids (frontiers ops l))]
+  let asks := c.asks.map fun (d, held, peer) =>
+    let (h, p) := (heldOps ops held, peerOps ops peer)
+    let sent := (logsOf h).map fun l => obj [("log", logId l), ("frontier", ids (frontiers h l)),
+      ("haves", ids ((asks h).haves l))]
+    obj [("device", nat d), ("held", ids held), ("peer", opt ids peer), ("logs", arr sent), ("loose", ids (loose h)),
+         ("respond", ids ((respond p d).map (·.id))), ("since", ids ((respondSince p d (asks h)).map (·.id)))]
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "ops" ++ ": [\n  " ++ ",\n  ".intercalate opJson ++
+    "],\n " ++ str "standing" ++ ": " ++ arr (ops.map fun o => bool (stood.any (·.id == o.id))) ++ ",\n " ++
+    str "logs" ++ ": [\n  " ++ ",\n  ".intercalate logs ++ "],\n " ++ str "forks" ++ ": " ++
+    arr ((allForks ops).map fun (a, b) => ids [a, b]) ++ ",\n " ++ str "asks" ++ ": [\n  " ++
+    ",\n  ".intercalate asks ++ "]}"
+
 def render : String :=
   "{\"cases\": [\n" ++ ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++
-    ",\n".intercalate (views.map viewCase) ++ "\n]}\n"
+    ",\n".intercalate (views.map viewCase) ++ "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++
+    "\n]}\n"
 
 /-- What an op creates, by the model's number: a vault, a space or a grant. -/
 def created : Action → Option (Nat × Nat)
@@ -597,6 +737,36 @@ def created : Action → Option (Nat × Nat)
 #guard cases.all fun c => nodup (c.ops.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
 -- a post-quantum case drops some writes that would stand in the full view, so the Rust core must drop them too
 #guard views.all fun c => !c.pq || (runView c).1 != (runView { c with pq := false }).1
+-- in a sync case, every vault, space and grant number is created once, an op builds only on ops before it or on one
+-- nobody holds, and no two ops in the replay order share a depth and a rank
+#guard syncs.all fun c => nodup (c.ops.filterMap fun o => created o.action)
+#guard syncs.all fun c => c.toOps.all fun o => o.parents.all fun p => p < o.id || p ≥ c.ops.length
+#guard syncs.all fun c => nodup ((order c.toOps).map fun o => (o.depth, o.rank))
+-- what a device is sent when it asks is part of what it would be sent whole, and with what it held covers all of it
+-- (T12, T19)
+#guard syncs.all fun c => let ops := c.toOps; c.asks.all fun (d, held, peer) =>
+  let (h, p) := (heldOps ops held, peerOps ops peer)
+  let s := respondSince p d (asks h)
+  s.all (respond p d).contains && (respond p d).all fun o => h.contains o || s.contains o
+-- asking leaves something out, the ops further back leave out more than the frontiers alone and the loose ops more
+-- than without them, some device is sent nothing new, some op is outside its log's closed part, some op is malformed,
+-- and there is a fork
+#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
+  let p := peerOps ops peer
+  (respondSince p d (asks (heldOps ops held))).length < (respond p d).length
+#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
+  let (h, p) := (heldOps ops held, peerOps ops peer)
+  (respondSince p d (asks h)).length < (respondSince p d ⟨frontiers h, loose h⟩).length
+#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
+  let (h, p) := (heldOps ops held, peerOps ops peer)
+  (respondSince p d (asks h)).length < (respondSince p d ⟨(asks h).haves, []⟩).length
+#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
+  let p := peerOps ops peer
+  (respondSince p d (asks (heldOps ops held))).isEmpty && !(respond p d).isEmpty
+#guard syncs.any fun c => let ops := c.toOps; (logsOf ops).any fun l =>
+  (closedPart (Op.log? ops) ops l).length < (inLog (Op.log? ops) ops l).length
+#guard syncs.any fun c => (order c.toOps).length < c.ops.length
+#guard syncs.any fun c => !(allForks c.toOps).isEmpty
 
 /-! ## The lens cases
 

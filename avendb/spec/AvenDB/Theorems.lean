@@ -4,17 +4,19 @@ import AvenDB.Branches
 import AvenDB.Lens
 import AvenDB.Lemmas
 import AvenDB.KeyLemmas
+import AvenDB.SyncLemmas
 
 /-!
 # The theorems
 
-What must always hold, stated over the executable model. T9 (lenses) and T10 (branches) are proven in their own
-files. A `sorry` below marks a theorem whose proof belongs to a later phase (see `README.md`); a phase is merged only
-once its theorems are proven. The proofs' helper lemmas are in `Lemmas.lean`, and for the keys in `KeyLemmas.lean`.
+What must always hold, stated over the executable model, all of it proven. T9 (lenses) and T10 (branches) are proven
+in their own files. The proofs' helper lemmas are in `Lemmas.lean`, for the keys in `KeyLemmas.lean`, and for sync in
+`SyncLemmas.lean`.
 
 The assumptions are part of the model rather than axioms: an op's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed or encrypted data reveals nothing without its key);
-ids don't collide (a `Nodup` hypothesis where needed); and Loro's laws are fields of `Loro`.
+ids don't collide (a hypothesis where needed: `Nodup`, or that an id two peers both hold names one op); and Loro's
+laws are fields of `Loro`.
 -/
 
 namespace AvenDB
@@ -473,12 +475,47 @@ theorem T7_blind_server (ops : List Op) (srv : SignerId)
     ∃ st ∈ trace {} ops, publicKey st k = true :=
   everReads_blind (T5_confidentiality ops (.signer srv) k e h) hblind hk
 
+/-! ## Rotation follows revocation
+
+A device writes an entry under the current key of that entry in what it knows, as the Lab does, so once a removal
+stands in what it knows, the removed can't open what it writes. Peers don't check this of each other: a write builds
+on its own entry's log, while the removal that rotated its key mostly sits in a space's or a vault's log, which the
+write doesn't name; and a device that had seen the removal could pass the text on anyway. -/
+
+/-- The epoch of an entry's key that a device holding `ops` writes under: the current one in what it knows. -/
+def writeEpoch (ops : List Op) (sp : SpaceId) (e : EntryId) : Nat := (view ops).epochOf (.entry sp e)
+
+/-- T15 (rotation follows revocation): a holder opens the key a device writes an entry under (`writeEpoch`) only if
+    what the device knows entitles it to the entry, or the entry is public: not a device or a vault that a removal
+    the device has seen took the entry from, nor anyone who joins a vault that lost its read. -/
+theorem T15_rotation_follows_revocation (ops : List Op) (h : Holder) (sp : SpaceId) (e : EntryId)
+    (hk : Knows (view ops) (h.start (view ops)) (.scoped (.entry sp e) (writeEpoch ops sp e))) :
+    h.entitled (view ops) (.entry sp e) = true ∨ publicKey (view ops) (.entry sp e) = true :=
+  T6_forward_secrecy (view_reachable ops) h _ hk
+
+/-- T15, the epochs: a device writes under an epoch no older than any along the history of what it knows, so no
+    older than the one each removal that stands in it started. -/
+theorem T15_no_older_epoch (ops : List Op) (sp : SpaceId) (e : EntryId) :
+    ∀ st ∈ trace {} (standing ops), st.epochOf (.entry sp e) ≤ writeEpoch ops sp e := by
+  intro st hst
+  unfold writeEpoch
+  rw [view_eq_replay]
+  exact epochOf_le_replay _ {} _ st hst
+
 /-! ## Convergence and sync -/
 
-/-- T11 (convergence): peers holding the same ops, received in any order, end in the same state. -/
+/-- T11 (convergence): peers holding the same ops, received in any order, end in the same state. Assumes ids don't
+    collide: two ops a peer holds have two ids. -/
 theorem T11_convergence {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (hids : (ops₁.map Op.id).Nodup) :
     view ops₁ = view ops₂ := by
-  sorry -- P6
+  unfold view
+  rw [order_perm hperm hids]
+
+/-- T11, the ops that stand: the same ops in any order, the same ops stand. -/
+theorem T11_same_standing {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (hids : (ops₁.map Op.id).Nodup) :
+    standing ops₁ = standing ops₂ := by
+  unfold standing
+  rw [order_perm hperm hids]
 
 /-- T12 (sync shares only what caps allow): every write or checkpoint a peer sends a device is on an entry that
     device may receive by the peer's view, and every auth op it sends is about a scope that device reaches, or is a
@@ -486,15 +523,74 @@ theorem T11_convergence {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (
 theorem T12_sync_shares_only_caps (ops : List Op) (d : SignerId) {op : Op} (h : op ∈ respond ops d) :
     (∀ sp e, op.item? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
     (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true ∨ op.takesFrom (view ops) ops d = true) := by
-  sorry -- P6
+  obtain ⟨_, hw | ha | ⟨v, hv⟩⟩ := mem_respond h
+  · obtain ⟨sp, e, hi, hr⟩ := hw
+    refine ⟨fun sp' e' hi' => ?_, fun sc hsc => ?_⟩
+    · rw [hi] at hi'
+      cases hi'
+      exact hr
+    · rw [(item_not_auth hi ops).1] at hsc
+      cases hsc
+  · refine ⟨fun sp e hi => ?_, fun sc hsc => ?_⟩
+    · rcases ha with ⟨sc, hsc, _⟩ | ht
+      · rw [(item_not_auth hi ops).1] at hsc
+        cases hsc
+      · rw [takesFrom_not_item ht] at hi
+        cases hi
+    · rcases ha with ⟨sc', hsc', hr⟩ | ht
+      · rw [hsc] at hsc'
+        cases hsc'
+        exact .inl hr
+      · exact .inr ht
+  · refine ⟨fun sp e hi => ?_, fun sc hsc => ?_⟩
+    · rw [(vault_not_auth hv ops).2] at hi
+      cases hi
+    · rw [(vault_not_auth hv ops).1] at hsc
+      cases hsc
+
+/-- T12, by frontiers: a device that asks with what it holds of each log is sent part of what `respond` sends, so no
+    more than its caps allow, whatever it says it holds. -/
+theorem T12_since (ops : List Op) (d : SignerId) (fr : Ask) {op : Op}
+    (h : op ∈ respondSince ops d fr) :
+    (∀ sp e, op.item? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
+    (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true ∨ op.takesFrom (view ops) ops d = true) :=
+  T12_sync_shares_only_caps ops d (respondSince_sub h)
+
+/-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few ops
+    further back, and the ops it holds outside them (`asks`), is sent every op of the peer's answer that it lacks. The
+    ops it names of a log are of the part whose whole past it holds, so whatever the peer finds at or below them, the
+    device holds. Assumes ids don't collide: an id the device and the peer both hold names one op. -/
+theorem T19_frontier_sync (A R : List Op) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ op ∈ respond R d, op ∈ A ∨ op ∈ respondSince R d (asks A) :=
+  fun _ h => respondSince_complete hid (asks_truthful A) h
+
+/-- T19 by frontiers alone: sending only the frontiers loses nothing either, though a peer that lacks the latest ops
+    then sends back what lies below them too. -/
+theorem T19_frontiers_alone (A R : List Op) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ op ∈ respond R d, op ∈ A ∨ op ∈ respondSince R d ⟨frontiers A, []⟩ :=
+  fun _ h => respondSince_complete hid (frontiers_truthful A) h
+
+/-- T19, one hash per log: two peers whose frontiers of a log are equal hold the same closed part of it, so comparing
+    one hash of each frontier tells whether there is anything to send. The two may place ops in logs differently
+    (`lgA`, `lgR`). Assumes ids don't collide. -/
+theorem T19_same_frontier (lgA lgR : Op → Option LogId) (A R : List Op) (l : LogId)
+    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) (huA : ∀ a ∈ A, ∀ b ∈ A, a.id = b.id → a = b)
+    (huR : ∀ a ∈ R, ∀ b ∈ R, a.id = b.id → a = b) (hf : frontier lgA A l = frontier lgR R l) (x : Op) :
+    x ∈ closedPart lgA A l ↔ x ∈ closedPart lgR R l :=
+  ⟨same_frontier_held lgR lgA (fun a ha b hb h => (hid b hb a ha h.symm).symm) huA hf.symm,
+   same_frontier_held lgA lgR hid huR hf⟩
 
 /-- T13 (sync converges per item): if each of two devices may receive an item by the other peer's view, then after
-    each peer answered the other once, both hold the same writes for that item. -/
+    each asked the other once (`asks`), both hold the same writes and checkpoints for that item: those
+    either held before. What each then shows of the item also rests on the vault and auth logs its view counts, and
+    the property tests check that two devices that synced both ways show the same item. Assumes ids don't collide. -/
 theorem T13_sync_converges (opsP opsQ : List Op) (dp dq : SignerId) (sp : SpaceId) (e : EntryId)
-    (hids : ((opsP ++ opsQ).map Op.id).Nodup)
-    (hp : mayReceive (view opsQ) dp sp e = true) (hq : mayReceive (view opsP) dq sp e = true) :
-    (itemWrites (view (receive opsP (respond opsQ dp))) sp e).Perm
-      (itemWrites (view (receive opsQ (respond opsP dq))) sp e) := by
-  sorry -- P6
+    (hid : ∀ a ∈ opsP, ∀ b ∈ opsQ, a.id = b.id → a = b)
+    (hp : mayReceive (view opsQ) dp sp e = true) (hq : mayReceive (view opsP) dq sp e = true)
+    (op : Op) (hop : op.item? = some (sp, e)) :
+    op ∈ receive opsP (respondSince opsQ dp (asks opsP)) ↔
+      op ∈ receive opsQ (respondSince opsP dq (asks opsQ)) := by
+  rw [item_after_sync hid hp hop, item_after_sync (fun a ha b hb h => (hid b hb a ha h.symm).symm) hq hop]
+  exact Or.comm
 
 end AvenDB

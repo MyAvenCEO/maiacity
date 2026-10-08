@@ -2,11 +2,13 @@ import AvenDB.Basic
 import AvenDB.State
 import AvenDB.Step
 import AvenDB.Sync
+import AvenDB.Logs
 import AvenDB.Doc
 import AvenDB.Branches
 import AvenDB.Lens
 import AvenDB.Lemmas
 import AvenDB.KeyLemmas
+import AvenDB.SyncLemmas
 import AvenDB.Theorems
 import AvenDB.Examples
 import AvenDB.Vectors
