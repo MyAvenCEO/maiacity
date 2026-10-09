@@ -209,6 +209,10 @@ export function applyAnswers(world, a, answers, source) {
 	if (world.outbox)
 		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes, answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
 	a.brain.ready = true;
+	// every decision of every aven, newest last, for the page's Decisions feed
+	const all = (world.decisions ??= []);
+	all.push({ n: (all.at(-1)?.n ?? 0) + 1, day: world.day, t: world.t, id: a.id, name: a.name, colour: a.colour, source, changes });
+	if (all.length > 300) all.splice(0, all.length - 300);
 	// an aven re-decides every few seconds: only a decision that changed something goes in its ledger
 	if (changes.length || a.ledger.at(-1)?.kind !== 'price') a.ledger.push({ day: world.day, t: world.t, kind: 'price', source, changes });
 }
