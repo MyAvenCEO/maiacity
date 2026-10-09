@@ -448,6 +448,11 @@ const NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,39}$/;
 
 /** every aven's brain for a config: { aven name: { ...brain, pending: [edits not taken in yet], updated } } */
 export async function getBrains(configId) {
+  if (configId === "latest") {
+    // each aven's newest brain in any world: what a new world starts it with, a copy (Samuel, 2026-10-09)
+    const { rows } = await db.query("SELECT DISTINCT ON (aven) aven, brain, updated FROM econ_brains WHERE brain <> '{}'::jsonb ORDER BY aven, updated DESC");
+    return Object.fromEntries(rows.map((r) => [r.aven, { ...r.brain, updated: r.updated }]));
+  }
   const { rows } = await db.query("SELECT aven, brain, pending, updated FROM econ_brains WHERE config_id = $1 ORDER BY aven", [text(configId, 41)]);
   return Object.fromEntries(rows.map((r) => [r.aven, { ...r.brain, pending: r.pending, updated: r.updated }]));
 }
