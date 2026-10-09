@@ -60,7 +60,8 @@ fn revoked_reader_cannot_open_new_edits() {
     w.lab.sync_all(2);
     let key = KeyScope::Entry(h.space, h.welcome);
     let before = w.lab.log(w.mac_s).view().epoch(key);
-    w.lab.submit(w.mac_s, &[w.mac_s], Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] }).unwrap();
+    let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    w.lab.submit(w.mac_s, &[w.mac_s], revoke).unwrap();
     w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(2);
     // the key moved on; Carol can't open it and never sees the new text, Bob does (T6)
@@ -83,7 +84,8 @@ fn a_device_writes_under_the_newest_key_it_knows() {
     let key = KeyScope::Entry(h.space, h.welcome);
     let before = w.lab.state(w.phone_s).epoch(key);
     w.lab.set_online(w.phone_s, false);
-    w.lab.submit(w.mac_s, &[w.mac_s], Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] }).unwrap();
+    let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    w.lab.submit(w.mac_s, &[w.mac_s], revoke).unwrap();
     // the iPhone hasn't seen the revocation, so its edit is made alongside it, under the key it knows
     let alongside = w.lab.edit(w.phone_s, h.coop, h.space, h.welcome, |i| i.set_text(1, "Welcome, alongside")).unwrap();
     w.lab.set_online(w.phone_s, true);
@@ -135,7 +137,8 @@ fn every_device_opens_exactly_what_it_may() {
     w.lab.sync_all(3);
     keys_follow_caps(&w, "public charter, Carol reads Welcome");
     // Carol's read revoked, then Welcome edited
-    w.lab.submit(w.mac_s, &[w.mac_s], Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] }).unwrap();
+    let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    w.lab.submit(w.mac_s, &[w.mac_s], revoke).unwrap();
     w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(4);
     keys_follow_caps(&w, "Carol revoked");

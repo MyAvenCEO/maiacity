@@ -83,11 +83,25 @@ export async function signUp(name: string): Promise<Founder> {
 		method: 'POST',
 		body: JSON.stringify({ name })
 	});
-	const attestation = await startRegistration({ optionsJSON: options });
+	const attestation = await startRegistration({ optionsJSON: forAvenDB(options) });
 	return call<Founder>('/api/passkey/register/finish', {
 		method: 'POST',
 		body: JSON.stringify(attestation)
 	});
+}
+
+/** The API's options for a new passkey, asking for what lets the same passkey be the root of its person's avenDB
+ *  vault (src/lib/avendb), for the same relying party: its PRF, from which avenDB derives their keys (a security key
+ *  turns it on only for a passkey made with it), and a P-256 key (COSE -7) first among the API's algorithms, as
+ *  avenDB's ceremonies take P-256 signatures alone. A browser or an authenticator without PRF makes the passkey all
+ *  the same: maiaCITY never needs it. */
+function forAvenDB(options: any) {
+	const params: { alg: number }[] = options.pubKeyCredParams ?? [];
+	return {
+		...options,
+		pubKeyCredParams: [...params.filter((p) => p.alg === -7), ...params.filter((p) => p.alg !== -7)],
+		extensions: { ...options.extensions, prf: {} }
+	};
 }
 
 /** Sign in: no username field anywhere — the passkey already knows who it is. */

@@ -1,6 +1,7 @@
 //! The Lab: in-process devices on a network the test controls. Each device has its own keys, its own ops and its own
-//! store, exactly what a real device would hold; there is also a relay server, whose vault holds relay caps and never
-//! read, and any number of strangers. The scenario tests run on it, and so will the avenDB tile's Lab screen.
+//! store, exactly what a real device would hold; there is also a relay server, a device of the aven vault avenCEO,
+//! which holds relay caps and never read, and any number of strangers. The scenario tests run on it, and so does the
+//! avenDB tile's Lab screen.
 //!
 //! It grows with the phases: devices and their ops in P1, caps and sync by caps in P2, keys, reading and the blind
 //! server in P3, apps on a schema reading and editing items through their space's lane in P4, locked devices, blobs and
@@ -11,7 +12,9 @@
 //! device links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`). In P8e a passkey in
 //! the platform's authenticator signs in ceremonies (`sign::Ceremony`): an op is drafted (`draft`), each such passkey
 //! signs its id in a ceremony, and then it is kept (`complete`); a browser's device derives its keys from the PRF
-//! output its passkey evaluated on its salt (`web_device`).
+//! output its passkey evaluated on its salt (`web_device`). A server no vault has claimed yet becomes a device of a new
+//! aven vault, avenCEO, owned by the human vault of the device that claims it with the server's setup code (`claim`,
+//! `accept_claim`).
 //!
 //! A device shows each entry on every line of its history (`branch`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Branching, merging, promoting, restoring, undoing and
@@ -26,9 +29,9 @@
 //! its oldest to the current one if nobody has yet, announces each current vault or space key it holds (keys are sealed
 //! to those), boxes it for every target the schedule names that has no box yet, publishes it if the family is public,
 //! and wraps each older key it holds under the next epoch's key if nobody has yet. A box is wrapped where the device
-//! holds the key it goes to, and sealed to that key's public half otherwise. An owner key (a passkey, the server's owner
-//! key) authoring an op on a device lends it, for that ceremony only, the key that is sealed to the owner: that is how a
-//! new device reads again after every other device is lost.
+//! holds the key it goes to, and sealed to that key's public half otherwise. An owner key (a passkey) authoring an op
+//! on a device lends it, for that ceremony only, the key that is sealed to the owner: that is how a new device reads
+//! again after every other device is lost.
 //!
 //! A Classic McEliece public key travels as a blob beside the ops that name it (`policy::Op::blobs`): a device keeps the
 //! blobs of the ops it keeps, each only if it hashes to its id, and seals to a key once it holds that key's blob. Before
@@ -56,7 +59,7 @@ use crate::sign::{
     self, Ceremony, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed,
 };
 use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId, Place};
-use crate::wire::{Join, Request, Wire as _};
+use crate::wire::{Claim, Join, Request, Wire as _};
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
@@ -83,7 +86,7 @@ pub enum Tamper {
 
 /// A signer's private keys.
 enum Key {
-    /// A device, or the server's owner key.
+    /// A device.
     Device(DeviceKey),
     Passkey(Passkey),
     /// A passkey in the platform's authenticator (P8e): no secret, only its keys and the public key sealed to it, as a
@@ -334,9 +337,6 @@ pub struct Lab {
     /// Devices in the order they were made.
     devices: Vec<SignerId>,
     stores: HashMap<SignerId, Store>,
-    server: Option<(SignerId, VaultId)>,
-    /// The server's device and its owner key, once made (`server_device`).
-    server_signers: Option<(SignerId, SignerId)>,
     /// Keys made so far; each key's seed counts on from here.
     made: u64,
     /// The randomness of new keys, seals and nonces, which keeps nothing that draws again what it drew
@@ -377,8 +377,6 @@ impl Lab {
             salts: HashMap::new(),
             devices: vec![],
             stores: HashMap::new(),
-            server: None,
-            server_signers: None,
             made: 0,
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
             on_machine: entropy.is_some(),
@@ -514,42 +512,125 @@ impl Lab {
         id
     }
 
-    /// The relay server: a device and its vault, which holds relay caps on what it stores and never read. Its vault
-    /// is owned by a key of the server's own, kept off the device.
-    pub fn server(&mut self) -> (SignerId, VaultId) {
-        if let Some(s) = self.server {
-            return s;
+    /// The key to seal to of device `d`, a server no vault has claimed yet, as it hands it to a device of a human vault
+    /// that brings the server's setup code (P8f): the claim's op names it (`claim`). `setup` is the server's own code,
+    /// as its operator set it, `None` if it has none, and a code is checked in constant time. `BadCode` if the codes
+    /// differ or the server has none, `AlreadyMember` if a vault has claimed `d` already, `Locked` if `d` is.
+    pub fn claim_key(&self, d: SignerId, code: &[u8], setup: Option<&[u8]>) -> Result<PublicKey, Refusal> {
+        if !setup.is_some_and(|s| same_code(code, s)) {
+            return Err(Refusal::BadCode);
         }
-        let (device, owner_id) = self.server_signers();
-        let vault = self.found_vault(device, owner_id).expect("the server's vault");
-        self.server = Some((device, vault));
-        (device, vault)
-    }
-
-    /// A vault owned by the key `owner` alone, founded on `device`, which it admits: the server's.
-    fn found_vault(&mut self, device: SignerId, owner: SignerId) -> Result<VaultId, Refusal> {
-        let (owners, seal_to) = (vec![Principal::Signer(owner)], vec![]);
-        let genesis = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: None, nonce: 0, seal_to };
-        let vault = VaultId::from(self.submit(device, &[owner], genesis)?);
-        self.submit(device, &[owner, device], Action::AddDevice { vault, device, seal_to: None })?;
-        Ok(vault)
-    }
-
-    /// Found the vault of a server running on a machine of its own, on its device `d` (`device_with`): owned by a key
-    /// made from `owner`, fresh randomness, which signs the vault's genesis, admits `d`, and is then forgotten. So
-    /// nobody changes the server's vault after, not even whoever takes the server's disk; a new server gets a new
-    /// vault, and the spaces it relays grant it relay again. `AlreadyMember` if `d` belongs to a vault already.
-    pub fn found_server(&mut self, d: SignerId, owner: [u8; 32]) -> Result<VaultId, Refusal> {
         if self.vault_of(d).is_some() {
             return Err(Refusal::AlreadyMember);
         }
-        let owner = DeviceKey::from_secret(owner);
-        let owner_id = owner.id();
-        self.keys.insert(owner_id, Key::Device(owner));
-        self.names.insert(owner_id, "the server's owner key".into());
-        let founded = self.found_vault(d, owner_id);
-        self.keys.remove(&owner_id);
-        founded
+        Ok(self.seal_public(d).ok_or(Refusal::Locked)?.0)
+    }
+
+    /// Device `on`'s claim of a server no vault has claimed yet (P8f), by the server's setup code `code`: `draft`
+    /// (`draft`) adds the server's device to an aven vault `on`'s view holds, the new avenCEO, owned by `on`'s human
+    /// vault, its key to seal to the one the server handed (`claim_key`). Every signer but the server signs it here,
+    /// each by its ceremony among `ceremonies` or by its key at hand, and the claim brings the logs the server checks
+    /// it by, and no others: avenCEO's and its owners', up the chains (`sync::vault_logs`). The server signs last, and
+    /// keeps it all (`accept_claim`). `NotClaiming` if `draft` adds no device to an aven vault, `Locked` if a signer's
+    /// key isn't at hand, `BadSignature` if a ceremony isn't its signer's over the op's id.
+    pub fn claim(
+        &mut self,
+        on: SignerId,
+        draft: Unsigned,
+        ceremonies: &[(SignerId, &Ceremony)],
+        code: &[u8],
+    ) -> Result<Claim, Refusal> {
+        let Unsigned { op, .. } = draft;
+        let Action::AddDevice { vault, device: server, .. } = op.action else { return Err(Refusal::NotClaiming) };
+        if !self.held(on).view().vault(vault).is_some_and(|v| v.kind == Kind::Aven) {
+            return Err(Refusal::NotClaiming);
+        }
+        let (id, pq) = (op.id(), sign::needs_pq(&op));
+        let signers: Vec<SignerId> = op.sigs().filter(|&s| s != server).collect();
+        let sigs = signers.into_iter().map(|s| self.sign_by(s, id, pq, ceremonies)).collect::<Result<_, _>>()?;
+        let store = self.held(on);
+        let logs: Vec<OpId> = vault_logs(store.log.ops(), store.view(), vec![vault]).iter().map(Op::id).collect();
+        let (card, _) = self.outgoing(on, &logs);
+        Ok(Claim { code: code.to_vec(), card, add: op, sigs })
+    }
+
+    /// The aven vault device `server` belongs to by device `d`'s view: avenCEO, once `d`'s person claimed the server
+    /// (`claim`), or once `d` holds the server's card (`card`).
+    pub fn aven_of(&self, d: SignerId, server: SignerId) -> Option<VaultId> {
+        let st = self.held(d).view();
+        let aven = st.vaults().iter().find(|v| v.kind == Kind::Aven && v.devices.contains(&server))?;
+        Some(aven.id)
+    }
+
+    /// An aven vault device `d`'s own vault alone owns that has no device yet, by `d`'s view: the avenCEO a claim
+    /// founded that the server didn't take, which a claim tried again adds the server to rather than found another.
+    pub fn unclaimed_aven(&self, d: SignerId) -> Option<VaultId> {
+        let mine = Principal::Vault(self.vault_of(d)?);
+        let st = self.held(d).view();
+        let aven = st.vaults().iter().find(|v| v.kind == Kind::Aven && v.devices.is_empty() && v.owners == [mine])?;
+        Some(aven.id)
+    }
+
+    /// Device `d`, a server no vault has claimed yet, takes a device's claim of it (`claim`, P8f), if it brings
+    /// `setup`, the server's own setup code (`claim_key`): `d` signs the claim's op too, in its place among the op's
+    /// signers, and keeps it, with the vault logs the claim brings, only if every signature checks out and, with them,
+    /// its view makes `d` a device of an aven vault. So the first human vault to claim the server owns avenCEO, and the
+    /// server acts for avenCEO but never governs it. The server's join, for the claiming device to keep too: the op,
+    /// signed, and the McEliece key it names, the server's own. `BadCode` and `AlreadyMember` as `claim_key` says;
+    /// `NotClaiming` if the op adds another device, seals to another key than the one `d` handed, or adds `d` to
+    /// anything but an aven vault; `BadSignature` if a signature doesn't verify, or one is missing or left over;
+    /// otherwise why `d`'s view, with the logs the claim brings, refuses the op.
+    pub fn accept_claim(&mut self, d: SignerId, claim: Claim, setup: Option<&[u8]>) -> Result<Join, Refusal> {
+        let key = self.claim_key(d, &claim.code, setup)?;
+        let Claim { card, add, sigs, .. } = claim;
+        let Action::AddDevice { vault, device, seal_to: Some(sealed) } = &add.action else {
+            return Err(Refusal::NotClaiming);
+        };
+        if *device != d || *sealed != key {
+            return Err(Refusal::NotClaiming);
+        }
+        let vault = *vault;
+        // the claim brings vault logs, and nothing else, each op signed
+        let card: Vec<Signed> = card.into_iter().filter(|s| s.op.vault_of().is_some()).collect();
+        for signed in &card {
+            signed.verify()?;
+        }
+        // its own signature in its place among the op's signers, the others' in theirs
+        let (id, pq) = (add.id(), sign::needs_pq(&add));
+        let mine = self.sign_by(d, id, pq, &[])?;
+        let mut theirs = sigs.into_iter();
+        let all: Option<Vec<Signature>> =
+            add.sigs().map(|s| if s == d { Some(mine.clone()) } else { theirs.next() }).collect();
+        let all = all.filter(|_| theirs.next().is_none()).ok_or(Refusal::BadSignature)?;
+        let signed = Signed { op: add, sigs: all };
+        signed.verify()?;
+        // with the logs it brings, its view accepts the op, and makes `d` a device of an aven vault
+        let mut log = self.held(d).log.clone();
+        log.receive(card.iter().map(|s| s.op.clone()));
+        log.view().step(&signed.op)?;
+        log.receive([signed.op.clone()]);
+        if !log.view().vault(vault).is_some_and(|v| v.kind == Kind::Aven && v.devices.contains(&d)) {
+            return Err(Refusal::NotClaiming);
+        }
+        let blobs: Blobs = self.seal_public(d).map(|(_, blob)| (key.mceliece, blob)).into_iter().collect();
+        let join = Join { op: signed.clone(), blobs: blobs.values().map(|b| b.to_vec()).collect() };
+        self.deliver(d, card.into_iter().chain([signed]).collect(), &blobs);
+        Ok(join)
+    }
+
+    /// Signer `s`'s signature on op `id`: by its ceremony among `ceremonies`, or by its key at hand; both halves if
+    /// `pq`. `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its own over `id`.
+    fn sign_by(
+        &mut self,
+        s: SignerId,
+        id: OpId,
+        pq: bool,
+        ceremonies: &[(SignerId, &Ceremony)],
+    ) -> Result<Signature, Refusal> {
+        match ceremonies.iter().find(|(c, _)| *c == s) {
+            Some((_, c)) => c.sign(self.keys_of(s).ok_or(Refusal::Locked)?, id, pq).ok_or(Refusal::BadSignature),
+            None => self.keys.get_mut(&s).and_then(|k| k.sign(id, pq)).ok_or(Refusal::Locked),
+        }
     }
 
     /// The vault device `d` belongs to, by its view.
@@ -565,22 +646,6 @@ impl Lab {
         let st = store.view();
         let vs = st.vaults().iter().map(|v| v.id).filter(|&v| st.acts_for(d, v)).collect();
         vault_logs(store.log.ops(), st, vs).iter().map(|op| store.signed[&op.id()].clone()).collect()
-    }
-
-    /// The server's device and its owner key, made if they aren't yet, ahead of its vault (`server`): a page making
-    /// McEliece pairs in its workers makes theirs before the vault seals to them.
-    pub fn server_signers(&mut self) -> (SignerId, SignerId) {
-        if let Some(s) = self.server_signers {
-            return s;
-        }
-        let device = self.device("the server");
-        let owner = DeviceKey::from_secret(self.secret("server owner", "the server"));
-        owner.seal_secret().prepare();
-        let owner_id = owner.id();
-        self.keys.insert(owner_id, Key::Device(owner));
-        self.names.insert(owner_id, "the server's owner key".into());
-        self.server_signers = Some((device, owner_id));
-        (device, owner_id)
     }
 
     /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped. So does the
@@ -763,14 +828,8 @@ impl Lab {
         }
         let (id, pq) = (op.id(), sign::needs_pq(&op));
         let ceremony = |s: SignerId| ceremonies.iter().find(|(c, _)| *c == s).map(|(_, c)| *c);
-        let mut sigs = vec![];
-        for s in op.sigs() {
-            let sig = match ceremony(s) {
-                Some(c) => c.sign(self.keys_of(s).ok_or(Refusal::Locked)?, id, pq).ok_or(Refusal::BadSignature)?,
-                None => self.keys.get_mut(&s).and_then(|k| k.sign(id, pq)).ok_or(Refusal::Locked)?,
-            };
-            sigs.push(sig);
-        }
+        let signers: Vec<SignerId> = op.sigs().collect();
+        let sigs = signers.into_iter().map(|s| self.sign_by(s, id, pq, ceremonies)).collect::<Result<_, _>>()?;
         let signed = Signed { op, sigs };
         debug_assert!(signed.verify().is_ok());
         // an owner key authoring on this device lends it, for this ceremony, what is sealed to it
@@ -851,7 +910,8 @@ impl Lab {
         let mut id = [0u8; 32];
         self.rng.fill_bytes(&mut id);
         let entry = EntryId(id);
-        let draft = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch: Branch::Main, via: vec![], body: vec![] };
+        let (deps, branch, via, body) = (vec![], Branch::Main, vec![], vec![]);
+        let draft = Action::Write { space, entry, actor, epoch: 0, deps, branch, via, body };
         let op = self.held(on).log.check(on, &[], draft)?;
         self.write(on, op, &item.export(&Version::default()))?;
         Ok(entry)
@@ -1340,8 +1400,6 @@ impl Lab {
             salts,
             devices: vec![d],
             stores: HashMap::from([(d, store)]),
-            server: self.server,
-            server_signers: self.server_signers,
             made: 0,
             rng,
             on_machine: true,
@@ -1708,6 +1766,13 @@ impl Lab {
         self.deliver(to, vec![signed], &Blobs::new());
         Ok(op.id())
     }
+}
+
+/// Whether `code`, as a claim brings it, is a server's setup code `setup` (`Lab::claim_key`), compared in constant
+/// time: as hashes, so that neither the codes' lengths nor where they first differ shows in how long it takes.
+pub fn same_code(code: &[u8], setup: &[u8]) -> bool {
+    let (a, b) = (crate::hash::hash("setup code", code), crate::hash::hash("setup code", setup));
+    std::hint::black_box(a.iter().zip(&b).fold(0u8, |d, (x, y)| d | (x ^ y))) == 0
 }
 
 /// Open every box the device can: for one of `mine` (its own key, and what owners lend it), or for a key it already

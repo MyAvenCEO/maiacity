@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 
 use avendb::branch::{Commit, History, MAIN};
 use avendb::doc::Item;
-use avendb::id::{EntryId, GrantId, OpId, SignerId, SpaceId};
+use avendb::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
 use avendb::lens::{Schema, Status, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
@@ -86,11 +86,14 @@ impl Tile {
             .devices()
             .iter()
             .map(|&d| {
-                let person = person_of(lab.state(d), d).map(|v| self.vault_name(v));
+                let st = lab.state(d);
+                let human = person_of(st, d).map(|v| self.vault_name(v));
+                let vault = st.vaults().iter().find(|v| v.devices.contains(&d)).map(|v| self.vault_name(v.id));
                 json!({
                     "id": hex(&d.0),
                     "name": self.signer_name(d),
-                    "person": person,
+                    "vault": vault,
+                    "human": human,
                     "online": lab.online(d),
                     "locked": lab.locked(d),
                     "ops": lab.log(d).ops().len(),
@@ -333,9 +336,14 @@ impl Tile {
         Ok(json!({"record": record, "value": value, "commits": h.version(version).len()}))
     }
 
+    /// Vault `v` by its id, its name and its kind (`kind_name`).
+    fn vault_of_kind(&self, v: &Vault) -> Value {
+        json!({"id": hex(&v.id.0), "name": self.vault_name(v.id), "kind": kind_name(v)})
+    }
+
     /// Who may read, write or own a space or one of its entries by device `d`'s view, and why: the founder, or each
     /// grant with the chain it rests on; every grant there, whether the scope is public, and the scope's key: its
-    /// epochs, which devices hold each, and what the current one is sealed to.
+    /// epochs, which vaults' devices hold each, and what the current one is sealed to.
     fn access(&self, d: SignerId, sp: SpaceId, e: Option<EntryId>) -> Result<Value, String> {
         let lab = self.lab();
         let st = lab.state(d);
@@ -367,8 +375,19 @@ impl Tile {
         let epoch = st.epoch(k);
         let keys: Vec<Value> = (0..=epoch)
             .map(|ep| {
-                let held: Vec<Value> =
-                    lab.devices().iter().filter(|&&x| lab.holds_key(x, k, ep)).map(|&x| self.signer(x)).collect();
+                // by vault: each vault whose devices hold it, and which of them do; a device of none on its own
+                let mut held: Vec<(Option<VaultId>, Vec<Value>)> = vec![];
+                for &x in lab.devices().iter().filter(|&&x| lab.holds_key(x, k, ep)) {
+                    let v = st.vaults().iter().find(|v| v.devices.contains(&x)).map(|v| v.id);
+                    match held.iter_mut().find(|(w, _)| *w == v) {
+                        Some((_, devices)) => devices.push(self.signer(x)),
+                        None => held.push((v, vec![self.signer(x)])),
+                    }
+                }
+                let held: Vec<Value> = held
+                    .into_iter()
+                    .map(|(v, devices)| json!({"vault": v.map(|v| self.vault(v)), "devices": devices}))
+                    .collect();
                 json!({"epoch": ep, "holders": held})
             })
             .collect();
@@ -383,7 +402,7 @@ impl Tile {
             "keys": keys,
             "sealedTo": sealed_to,
             "grantsAs": granting(st, d, sc).map(|(v, _)| self.vault(v)),
-            "vaults": st.vaults().iter().map(|v| self.vault(v.id)).collect::<Vec<_>>(),
+            "vaults": st.vaults().iter().map(|v| self.vault_of_kind(v)).collect::<Vec<_>>(),
         }))
     }
 
@@ -603,13 +622,13 @@ fn status_name(s: Status) -> &'static str {
     }
 }
 
-/// What a vault is: a person's, with a passkey at its root; the server's, a person's vault with no passkey, whose keys
-/// are its own; or a coop.
+/// What a vault is: a human vault, a person's, owned by their passkeys; a coop vault, owned by human and coop vaults;
+/// or an aven vault, an agent's such as avenCEO, owned like a coop, whose devices are its servers.
 fn kind_name(v: &Vault) -> &'static str {
     match v.kind {
+        Kind::Human => "human",
         Kind::Coop => "coop",
-        Kind::Human if v.root.is_some() => "person",
-        Kind::Human => "server",
+        Kind::Aven => "aven",
     }
 }
 

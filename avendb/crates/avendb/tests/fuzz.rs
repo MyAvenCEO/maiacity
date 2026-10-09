@@ -15,7 +15,7 @@ use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1
 use avendb::policy::{Action, Branch, Op};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
 use avendb::sync::{Ask, LogId};
-use avendb::wire::{Announce, Join, Reply, Request, Wire};
+use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
 
 /// Where and how to mutate: xorshift64*, seeded per test.
 struct Gen(u64);
@@ -292,6 +292,17 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     // against the ids its op names
     let join = Join { op: add.clone(), blobs: vec![vec![1; 40], vec![2; 3]] };
     wire_mutations(&mut g, &join, 1500, |j: &Join| assert!(j.op == add || j.op.verify().is_err(), "{j:?}"));
+    // a claim read from changed bytes carries another code, or ops and signatures that don't verify
+    let (code, card) = (b"a setup code".to_vec(), vec![add.clone()]);
+    let claim = Claim { code, card, add: add.op.clone(), sigs: add.sigs.clone() };
+    wire_mutations(&mut g, &claim, 1500, |c: &Claim| {
+        assert!(c.card.iter().all(|s| *s == add || s.verify().is_err()), "{c:?}");
+        let signed = Signed { op: c.add.clone(), sigs: c.sigs.clone() };
+        assert!(signed == add || signed.verify().is_err(), "{c:?}");
+    });
+    // the key a server hands for a claim reads back only from its own bytes
+    let key = avendb::keys::Secret::from_bytes([5; 32]).public();
+    wire_mutations(&mut g, &key, 1000, |_| {});
     // what a sync carries: asks, requests, replies and announcements
     let log = |n: u64| LogId::Entry(SpaceId::from_u64(10), EntryId::from_u64(n));
     let mut ask = Ask::default();

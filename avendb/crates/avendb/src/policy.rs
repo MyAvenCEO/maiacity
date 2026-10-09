@@ -19,8 +19,9 @@ use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyName, KeyScope, PublicKey, Seal};
 
 /// A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
-/// devices act for it. A coop vault is owned by human and coop vaults. An aven vault, an agent such as the relay server,
-/// is owned by human and coop vaults too, and its devices (the servers it runs on) act for it but never govern it.
+/// devices act for it. A coop vault is owned by human and coop vaults. An aven vault, an agent such as the relay
+/// server, is owned by human and coop vaults too, and its devices (the servers it runs on) act for it but never govern
+/// it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     Human,
@@ -455,6 +456,12 @@ pub enum Refusal {
     /// Not a rule of the ops but of a device: what a device on a connection sent to join a vault (`Lab::accept_join`)
     /// adds no device, or another device than itself.
     NotJoining,
+    /// Not a rule of the ops but of a server: a claim of it brings another code than its setup code, or the server has
+    /// none (`Lab::claim_key`).
+    BadCode,
+    /// Not a rule of the ops but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
+    /// device of an aven vault.
+    NotClaiming,
 }
 
 /// What a removal takes away.
@@ -812,8 +819,8 @@ impl State {
     }
 
     /// The key pairs the current key of `k` is sealed to: a vault's devices and owner signers (a human vault's
-    /// passkeys, through keys derived from them) and its owner vaults, the vaults that can read a whole space, and for an
-    /// entry its space plus the vaults that may read just that entry. Relay caps get no key.
+    /// passkeys, through keys derived from them) and its owner vaults, the vaults that can read a whole space, and for
+    /// an entry its space plus the vaults that may read just that entry. Relay caps get no key.
     pub fn targets(&self, k: KeyScope) -> Vec<KeyName> {
         self.targets_by(k, &self.read_grantees())
     }
@@ -1326,7 +1333,8 @@ impl State {
                 if epoch > self.epoch(KeyScope::Entry(space, entry)) {
                     return Err(Refusal::FutureEpoch);
                 }
-                let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps: deps.clone(), branch, via: via.clone() };
+                let (deps, via) = (deps.clone(), via.clone());
+                let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps, branch, via };
                 // what it builds on was accepted, so the accepted writes stay causally closed (T14); a write on a
                 // branch builds on the branch's start, so whatever cuts the start cuts the whole branch
                 builds_on(&self.writes, &w)?;

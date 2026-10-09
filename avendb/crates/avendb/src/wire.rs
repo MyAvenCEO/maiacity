@@ -2,7 +2,9 @@
 //! signed op adds its signatures, and the messages of a sync wrap what `sync` asks and answers: a device's hello on a
 //! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`). A new device
 //! links (P8c) with its passkey's hello (`PasskeyHello`), then joins its person's vault (`Join`); a device with no UDP
-//! of its own reaches the server's relay first by its passkey's pass (`RelayPass`, P8d).
+//! of its own reaches the server's relay first by its passkey's pass (`RelayPass`, P8d). The first human vault to
+//! bring a server's setup code claims it (`Claim`): the server becomes a device of the aven vault avenCEO, which that
+//! human vault owns.
 //!
 //! Every value has exactly one encoding, and a decoder takes only bytes that encode back to themselves: integers are
 //! big-endian and fixed-size, sequences carry their length, every enum starts with a tag, sets go smallest first with
@@ -69,7 +71,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join, RelayPass);
+wire!(Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join, RelayPass, Claim, PublicKey);
 
 /// An op on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the op.
 impl Wire for Op {
@@ -138,6 +140,31 @@ impl std::fmt::Debug for Join {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let blobs: Vec<String> = self.blobs.iter().map(|b| format!("{} bytes", b.len())).collect();
         f.debug_struct("Join").field("op", &self.op).field("blobs", &blobs).finish()
+    }
+}
+
+/// What a device of a human vault sends a server no vault has claimed yet to claim it (P8f, `Lab::claim`): the
+/// server's setup code, the logs of the vaults the device acts for (its contact card, among them the new aven vault
+/// avenCEO, which its human vault owns), the op adding the server as a device of avenCEO, sealing to the key the
+/// server handed for it (`Lab::claim_key`), and the signatures of every signer of that op but the server, in the order
+/// the op names them. The server signs last, in its place, and keeps it all (`Lab::accept_claim`).
+#[derive(Clone, PartialEq, Eq)]
+pub struct Claim {
+    pub code: Vec<u8>,
+    pub card: Vec<Signed>,
+    pub add: Op,
+    pub sigs: Vec<Signature>,
+}
+
+/// The setup code shows only its size.
+impl std::fmt::Debug for Claim {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Claim")
+            .field("code", &format_args!("{} bytes", self.code.len()))
+            .field("card", &self.card)
+            .field("add", &self.add)
+            .field("sigs", &self.sigs)
+            .finish()
     }
 }
 
@@ -644,6 +671,23 @@ impl Decode for Join {
     }
 }
 
+/// The code, the card, the op as its id hashes it, then the signatures.
+impl Encode for Claim {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.code.encode(out);
+        self.card.encode(out);
+        out.push(VERSION);
+        self.add.encode(out);
+        self.sigs.encode(out);
+    }
+}
+
+impl Decode for Claim {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Claim { code: r.bytes()?, card: r.seq(76)?, add: versioned(r)?, sigs: r.seq(79)? })
+    }
+}
+
 impl Encode for Request {
     fn encode(&self, out: &mut Vec<u8>) {
         self.ask.encode(out);
@@ -719,6 +763,19 @@ mod tests {
         let announce = Announce { digests };
         assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce));
         let _ = h;
+    }
+
+    #[test]
+    fn a_claim_reads_back_the_same_and_never_shows_its_code() {
+        let w = world();
+        let card = w.lab.card(w.server);
+        let joined = |s: &&Signed| matches!(s.op.action, Action::AddDevice { device, .. } if device == w.server);
+        let add = card.iter().find(joined).expect("the op that added the server").clone();
+        let code = b"a secret setup code".to_vec();
+        let claim = Claim { code, card: card.clone(), add: add.op.clone(), sigs: add.sigs[..1].to_vec() };
+        assert_eq!(Claim::from_wire(&claim.to_wire()), Ok(claim.clone()));
+        let shown = format!("{claim:?}");
+        assert!(!shown.contains("secret") && shown.contains("19 bytes"), "{shown}");
     }
 
     #[test]

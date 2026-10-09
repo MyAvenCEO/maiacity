@@ -1,8 +1,9 @@
 <!--
 	Who may read, write or own an entry, or its whole space, by the device's own view, and why: the vault that founded the
 	space, or a grant, with the grants it rests on up to the founder's. Every grant there, each revocable by whoever may;
-	a new grant to any vault the device knows, or read for everyone; and the key: its epochs (a revocation rotates it),
-	which devices hold each, and what the current one is sealed to.
+	a new grant to any vault the device knows, or read for everyone: a grant always goes to a vault, never to a signer;
+	and the key: its epochs (a revocation rotates it), which vaults' devices hold each, and what the current one is
+	sealed to.
 -->
 <script>
 	import { short, when } from './ui.js';
@@ -78,7 +79,7 @@
 				<tr>
 					<td>
 						<b>{h.vault.name}</b>
-						<span class="soft small">{h.kind === 'coop' ? 'a coop' : h.kind === 'server' ? "the server's vault" : "a person's vault"}</span>
+						<span class="soft small">{h.kind} vault</span>
 						{#if h.mine}<span class="chip accent">this device acts for it</span>{/if}
 					</td>
 					<td><span class="chip" class:ok={h.role === 'owner'} class:accent={h.role === 'write'}>{h.role}</span></td>
@@ -127,7 +128,7 @@
 		<span class="soft">Give</span>
 		<select class="field" bind:value={to}>
 			<option value="">a vault…</option>
-			{#each data.vaults as v (v.id)}<option value={v.id}>{v.name}</option>{/each}
+			{#each data.vaults as v (v.id)}<option value={v.id}>{v.name} ({v.kind} vault)</option>{/each}
 			<option value="everyone">everyone (read only)</option>
 		</select>
 		<select class="field" bind:value={role} disabled={to === 'everyone'}>
@@ -149,14 +150,18 @@
 		{data.sealedTo.join(', ') || 'nobody'}.
 	</p>
 	<table>
-		<thead><tr><th>Epoch</th><th>Held by</th></tr></thead>
+		<thead><tr><th>Epoch</th><th>Held by the devices of</th></tr></thead>
 		<tbody>
 			{#each [...data.keys].reverse() as k (k.epoch)}
 				<tr>
 					<td>{k.epoch}{k.epoch === data.epoch ? ' (now)' : ''}</td>
 					<td>
 						<div class="row">
-							{#each k.holders as d (d.id)}<span class="chip">{d.name}</span>{:else}<span class="soft">no device</span>{/each}
+							{#each k.holders as h (h.vault?.id ?? '')}
+								<span class="chip">{h.vault?.name ?? 'no vault'}: {h.devices.map((/** @type {any} */ d) => d.name).join(', ')}</span>
+							{:else}
+								<span class="soft">no vault</span>
+							{/each}
 						</div>
 					</td>
 				</tr>

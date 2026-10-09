@@ -22,10 +22,15 @@
 //!   of reach, up to a minute, or at once when the peer connects to it.
 //! - **Store** (P8b): with `Options::store`, a node keeps what its device holds in a folder (`Disk`), saved as it
 //!   changes, and starts again from it.
-//! - **The server** (P8b, `server`): a node whose device keeps a secret of its own beside its store, whose vault it
-//!   founds at its first start with an owner key it then forgets, and which hands its contact card, its vault's log,
-//!   to whoever asks (`Node::contact`), so that a device can grant it relay on a space. Devices reach each other and
-//!   the server through its relay, which lets in only the devices the server knows (`Admission`).
+//! - **The server** (P8b, `server`): a node whose device keeps a secret of its own beside its store, and which hands
+//!   its contact card, avenCEO's log, to whoever asks (`Node::contact`), so that a device can grant avenCEO relay on a
+//!   space. Devices reach each other and the server through its relay, which lets in only the devices the server
+//!   knows (`Admission`).
+//! - **avenCEO** (P8f): a new server belongs to no vault. The first device that brings the server's setup code, as its
+//!   operator set it (`Options::setup`), claims it for its person's human vault (`Node::claim`): the server hands its
+//!   key to seal to for the code, the person's passkey founds avenCEO, an aven vault their human vault owns, and adds
+//!   the server as its device, and the server signs that op too and keeps it (`Lab::accept_claim`). From then on the
+//!   server acts for avenCEO and never governs it, and nobody claims it again.
 //! - **Linking** (P8c): a device shows its offer as a QR code (`Node::offer`, `Offer::to_text`): its endpoint, its
 //!   device and where it is reached. A new device of the same person scans it and links through it (`Node::link`):
 //!   once the hellos proved both devices, the person's passkey, used on the new device, says its own hello on the
@@ -43,7 +48,8 @@
 //! - **The browser's passkey** (P8e): a passkey in the platform's authenticator signs in ceremonies, each of which asks
 //!   its person (`sign::Ceremony`), so a browser links through an `Authenticator` (`Node::link_with`): one ceremony for
 //!   the passkey's hello, one for the op that adds the device. A server open to sign-up (`Admission::open`) lets a
-//!   person's first device onto its relay by a pass of any passkey, to found their vault and make it known.
+//!   person's first device onto its relay by a pass of any passkey, to found their vault and make it known; so does a
+//!   server with a setup code that nobody has claimed yet, for its first device to claim it.
 
 mod blobs;
 mod disk;
@@ -61,11 +67,12 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{BlobId, SignerId, VaultId};
+use avendb::keys::PublicKey;
 use avendb::lab::Lab;
-use avendb::policy::Action;
+use avendb::policy::{Action, Kind, Principal};
 use avendb::sign::{Ceremony, RelayPass, hello_challenge};
 use avendb::sync::{place, LogId};
-use avendb::wire::{Announce, Reply, Request, Wire};
+use avendb::wire::{Announce, Join, Reply, Request, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use iroh::address_lookup::MemoryLookup;
 #[cfg(not(target_arch = "wasm32"))]
@@ -79,6 +86,7 @@ use rustls::crypto::CryptoProvider;
 use n0_future::task::{self, JoinHandle};
 use n0_future::time::{self, Instant};
 use tokio::sync::{Notify, watch};
+use zeroize::Zeroizing;
 
 pub use disk::Disk;
 pub use session::exporter;
@@ -155,7 +163,41 @@ pub struct Options {
     /// The most bytes of ops it answers a request with, but at least one op: a peer asks on for the rest
     /// (`Lab::reply`).
     pub page: usize,
+    /// The server's setup code (P8f), as its operator set it: the first device that brings it claims the server for
+    /// its person's human vault (`Node::claim`). None, and nobody claims it.
+    pub setup: Option<SetupCode>,
 }
+
+/// A server's setup code (P8f), as its operator set it: whoever brings it first claims the server (`Node::claim`). It
+/// shows only its size, and is wiped as it is dropped.
+#[derive(Clone)]
+pub struct SetupCode(Zeroizing<Vec<u8>>);
+
+impl SetupCode {
+    pub fn new(code: impl Into<Vec<u8>>) -> SetupCode {
+        SetupCode(Zeroizing::new(code.into()))
+    }
+
+    /// The code's bytes.
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SetupCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SetupCode({} bytes)", self.0.len())
+    }
+}
+
+/// Compared in constant time (`lab::same_code`).
+impl PartialEq for SetupCode {
+    fn eq(&self, other: &SetupCode) -> bool {
+        avendb::lab::same_code(&self.0, &other.0)
+    }
+}
+
+impl Eq for SetupCode {}
 
 /// How many bytes of ops a node answers a request with, at most, unless told otherwise: a few hundred ops, each with
 /// its signatures, so a big reply never waits whole in either end's memory, nor holds up the connection.
@@ -173,14 +215,16 @@ impl Options {
             admission: None,
             relay_pass: None,
             page: PAGE,
+            setup: None,
         }
     }
 }
 
 /// Who may use the server's relay: the endpoints of the devices the server knows, those of every vault in its view
 /// whose keys it saw sign, and its own; and, for ten minutes, a new device whose pass a passkey signed that roots a
-/// vault in its view (P8d, `sign::RelayPass`). The server's node keeps it up to date as its view changes, from before
-/// its endpoint binds; the relay asks it about each client that connects, and lets go of a client it stops admitting.
+/// vault in its view (P8d, `sign::RelayPass`), or any passkey while nobody has claimed the server that has a setup
+/// code (P8f). The server's node keeps it up to date as its view changes, from before its endpoint binds; the relay
+/// asks it about each client that connects, and lets go of a client it stops admitting.
 #[derive(Clone, Debug, Default)]
 pub struct Admission {
     admitted: Arc<watch::Sender<Admitted>>,
@@ -195,6 +239,9 @@ pub struct Admitted {
     pub endpoints: HashSet<EndpointId>,
     /// The passkeys whose passes it honours: those that root a vault it knows (`Lab::roots`).
     pub passkeys: HashSet<SignerId>,
+    /// The server has a setup code and nobody has claimed it yet: it honours a pass of any passkey, for the device that
+    /// claims it (`Node::claim`).
+    pub claimable: bool,
 }
 
 impl Admission {
@@ -213,7 +260,8 @@ impl Admission {
 
     /// The relay lets in the endpoint a pass of `passkey` names.
     pub fn honours(&self, passkey: &SignerId) -> bool {
-        self.open || self.admitted.borrow().passkeys.contains(passkey)
+        let admitted = self.admitted.borrow();
+        self.open || admitted.claimable || admitted.passkeys.contains(passkey)
     }
 
     /// Marks each change of whom it admits.
@@ -245,6 +293,11 @@ pub enum Step {
     Pass,
     /// The genesis of its person's vault, which their first device founds (avendb-browser's `Device::found`).
     Found,
+    /// The genesis of avenCEO, the aven vault its person's human vault founds as their device claims a server
+    /// (`Node::claim_with`).
+    Aven,
+    /// The op that adds the server it claims to avenCEO.
+    Claim,
 }
 
 /// The software passkey `1` in a node's Lab, which makes its ceremonies itself.
@@ -290,7 +343,8 @@ impl Node {
         if let Some(admission) = &opts.admission {
             let own = SecretKey::from_bytes(&secret).public();
             let endpoints = endpoints(&lab.peers(me)).chain([own]).collect();
-            admission.set(Admitted { endpoints, passkeys: lab.roots(me).into_iter().collect() });
+            let claimable = opts.setup.is_some() && lab.vault_of(me).is_none();
+            admission.set(Admitted { endpoints, passkeys: lab.roots(me).into_iter().collect(), claimable });
         }
         let size = lab.size(me);
         let lookup = MemoryLookup::new();
@@ -437,6 +491,84 @@ impl Node {
         self.shared.changed.notify_one();
         self.shared.ask(endpoint).await?;
         Ok(vault)
+    }
+
+    /// Claim the server `offer` names for this device's person (P8f), with the server's setup code `code`: the server,
+    /// if its code is `code` and nobody has claimed it yet, hands its key to seal to (`Lab::claim_key`); the passkey
+    /// `passkey`, used on this device, founds avenCEO, an aven vault this device's human vault owns, and adds the
+    /// server as its device (`Lab::claim`); the server signs that op too and keeps it (`Lab::accept_claim`), and this
+    /// device keeps the server's join. Then they sync, and this device boxes avenCEO's key for the server. avenCEO.
+    /// Tried again after a claim the server didn't take, it adds the server to the avenCEO that claim founded; after
+    /// one whose answer was lost, it finds the server avenCEO's device already. Fails if the device answering isn't the
+    /// one offered, this device belongs to no vault, the passkey isn't at hand, or the server refuses the code or the
+    /// claim.
+    pub async fn claim(&self, offer: &Offer, passkey: SignerId, code: &[u8]) -> Result<VaultId> {
+        self.claim_with(offer, passkey, code, &InLab(self.shared.clone(), passkey)).await
+    }
+
+    /// `claim`, with `passkey` in the platform's authenticator (P8e): `authenticator` signs its ceremonies, avenCEO's
+    /// genesis, then the op that adds the server to it.
+    pub async fn claim_with(
+        &self,
+        offer: &Offer,
+        passkey: SignerId,
+        code: &[u8],
+        authenticator: &impl Authenticator,
+    ) -> Result<VaultId> {
+        self.know(offer.addr.clone());
+        let (endpoint, server) = (offer.addr.id, offer.device);
+        let peer = self.shared.connection(endpoint).await?;
+        if peer.device != server {
+            bail!("the device at {endpoint} isn't the one offered");
+        }
+        let human = self.shared.lab(|lab, me| lab.vault_of(me)).await.context("this device belongs to no vault")?;
+        let key = match session::exchange(&peer.conn, session::CLAIM_KEY, code, session::KEY_LIMIT).await {
+            Ok(key) => PublicKey::from_wire(&key)?,
+            Err(e) => {
+                // a claim whose answer was lost: the server tells this device that it is avenCEO's already
+                self.shared.ask(endpoint).await.ok();
+                let claimed = self.shared.lab(move |lab, me| lab.aven_of(me, server)).await;
+                return claimed.ok_or_else(|| e.context("the server refuses the code, or a vault has claimed it"));
+            }
+        };
+        let avenceo = match self.shared.lab(|lab, me| lab.unclaimed_aven(me)).await {
+            Some(avenceo) => avenceo,
+            None => {
+                let owners = vec![Principal::Vault(human)];
+                let genesis =
+                    Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+                let draft = self.shared.lab(move |lab, me| lab.draft(me, &[passkey], genesis)).await;
+                let draft = draft.map_err(|why| anyhow!("avenCEO's genesis is refused: {why:?}"))?;
+                let ceremony = authenticator.ceremony(draft.challenge(), Step::Aven).await?;
+                let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &ceremony)]);
+                let id = self.shared.lab(complete).await;
+                VaultId::from(id.map_err(|why| anyhow!("the passkey didn't sign avenCEO's genesis: {why:?}"))?)
+            }
+        };
+        self.shared.changed.notify_one();
+        let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key) };
+        let draft = self.shared.lab(move |lab, me| lab.draft(me, &[passkey, server], add)).await;
+        let draft = draft.map_err(|why| anyhow!("the claim is refused: {why:?}"))?;
+        let (id, ceremony) = (draft.op().id(), authenticator.ceremony(draft.challenge(), Step::Claim).await?);
+        let code = Zeroizing::new(code.to_vec());
+        let claim = self.shared.lab(move |lab, me| lab.claim(me, draft, &[(passkey, &ceremony)], &code)).await;
+        let claim = claim.map_err(|why| anyhow!("the passkey didn't sign the claim: {why:?}"))?;
+        let join = session::exchange(&peer.conn, session::CLAIM, &claim.to_wire(), session::REPLY_LIMIT).await;
+        let Join { op, blobs } = Join::from_wire(&join.context("the server refuses the claim")?)?;
+        if op.op.id() != id {
+            bail!("the server answered the claim with another op");
+        }
+        let blobs = blobs.into_iter().map(Arc::from).collect();
+        let kept = self.shared.lab(move |lab, me| {
+            lab.receive(me, vec![op], blobs);
+            lab.aven_of(me, server)
+        });
+        if kept.await != Some(avenceo) {
+            bail!("the server's join doesn't make it avenCEO's device");
+        }
+        self.shared.changed.notify_one();
+        self.shared.ask(endpoint).await?;
+        Ok(avenceo)
     }
 
     /// Tell it where a peer is.
@@ -705,6 +837,8 @@ struct News {
     peers: Vec<(SignerId, EndpointId, BTreeMap<LogId, [u8; 32]>)>,
     /// The passkeys that root the vaults in the device's view, whose passes a server's relay honours.
     roots: Vec<SignerId>,
+    /// The node has a setup code, and its device belongs to no vault yet: a server nobody has claimed.
+    claimable: bool,
 }
 
 impl Shared {
@@ -882,7 +1016,7 @@ impl Shared {
     /// Tells the peers what changed whenever the node's logs may have, and every `retry` tries again the peers whose
     /// wait is over: those it couldn't tell, and those it failed to ask.
     async fn announcer(self: Arc<Self>) {
-        let mut news = News { size: (usize::MAX, 0), peers: Vec::new(), roots: Vec::new() };
+        let mut news = News { size: (usize::MAX, 0), peers: Vec::new(), roots: Vec::new(), claimable: false };
         loop {
             if let Some(fresh) = self.news(news.size).await {
                 news = fresh;
@@ -897,6 +1031,7 @@ impl Shared {
     /// What to tell each peer, worked out again if the device's ops changed since `size`; then whom the relay lets
     /// in, if the node keeps that. `None` if nothing changed.
     async fn news(self: &Arc<Self>, size: (usize, usize)) -> Option<News> {
+        let setup = self.opts.setup.is_some();
         let news = self
             .lab(move |lab, me| {
                 let now = lab.size(me);
@@ -908,12 +1043,13 @@ impl Shared {
                     let Ok(endpoint) = EndpointId::from_bytes(&key) else { continue };
                     peers.push((device, endpoint, lab.announce(me, device).into_iter().collect()));
                 }
-                Some(News { size: now, peers, roots: lab.roots(me) })
+                Some(News { size: now, peers, roots: lab.roots(me), claimable: setup && lab.vault_of(me).is_none() })
             })
             .await?;
         if let Some(admission) = &self.opts.admission {
             let endpoints = news.peers.iter().map(|(_, endpoint, _)| *endpoint).chain([self.endpoint.id()]).collect();
-            admission.set(Admitted { endpoints, passkeys: news.roots.iter().copied().collect() });
+            let passkeys = news.roots.iter().copied().collect();
+            admission.set(Admitted { endpoints, passkeys, claimable: news.claimable });
         }
         Some(news)
     }

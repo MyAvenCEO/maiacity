@@ -1,8 +1,9 @@
-//! The people, devices, vaults and spaces of the plan's scenarios, on the Lab: Samuel with a passkey, a Mac and
-//! an iPhone; Bob, Carol and Dave with a passkey and a Mac each; the relay server and a stranger. The scenarios
-//! (`scenarios`) and the tests start from them, and so does the avenDB tile, which makes the world a step at a time
-//! (`Making`) so that a page makes the McEliece pairs of each step in its workers before the next step needs them.
-//! `avendb/spec/AvenDB/Examples.lean` has the same cast on the Lean model.
+//! The people, devices, vaults and spaces of the plan's scenarios, on the Lab: Samuel with a passkey, a Mac and an
+//! iPhone; Bob, Carol and Dave with a passkey and a Mac each; the relay server and a stranger. Samuel's vault is the
+//! first to claim the server, with its setup code: the server is a device of avenCEO, an aven vault Samuel's vault
+//! owns. The scenarios (`scenarios`) and the tests start from them, and so does the avenDB tile, which makes the world
+//! a step at a time (`Making`) so that a page makes the McEliece pairs of each step in its workers before the next step
+//! needs them. `avendb/spec/AvenDB/Examples.lean` has the same cast on the Lean model.
 
 use crate::doc::Item;
 use crate::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
@@ -20,10 +21,14 @@ pub fn grant(scope: Scope, role: Role, grantee: Grantee, issuer: VaultId, parent
 
 /// A write that builds on its entry's heads: the log fills in `deps` when it drafts the op.
 pub fn write(space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64) -> Action {
-    Action::Write { space, entry, actor, epoch, deps: vec![], branch: Branch::Main, via: vec![], body: vec![0xc1, 0x9e, 0x47] }
+    let body = vec![0xc1, 0x9e, 0x47];
+    Action::Write { space, entry, actor, epoch, deps: vec![], branch: Branch::Main, via: vec![], body }
 }
 
-/// The Lab after scenarios 1 and 2, plus the server and a stranger.
+/// The setup code of the cast's server, as its operator set it (`Lab::claim_key`).
+pub const SETUP_CODE: &[u8] = b"the cast's setup code, long and random";
+
+/// The Lab after scenarios 1 and 2, plus the server, avenCEO and a stranger.
 pub struct World {
     pub lab: Lab,
     pub passkey_s: SignerId,
@@ -36,7 +41,8 @@ pub struct World {
     pub passkey_d: SignerId,
     pub mac_d: SignerId,
     pub server: SignerId,
-    pub server_vault: VaultId,
+    /// The aven vault the server is a device of, which Samuel's vault owns.
+    pub avenceo: VaultId,
     pub stranger: SignerId,
     pub samuel: VaultId,
     pub bob: VaultId,
@@ -63,6 +69,24 @@ pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> Vault
     v
 }
 
+/// The server claimed by human vault `human` with the server's setup code (`Lab::claim`, P8f), its passkey `passkey`
+/// signing on its device `on`: the server hands its key to seal to for the code, the passkey founds avenCEO, an aven
+/// vault `human` owns, and adds the server as its device; the server signs last and keeps it all, `on` keeps the
+/// server's join, and syncs the server the key it boxed for it. avenCEO.
+pub fn claim_on(lab: &mut Lab, on: SignerId, passkey: SignerId, human: VaultId, server: SignerId) -> VaultId {
+    let key = lab.claim_key(server, SETUP_CODE, Some(SETUP_CODE)).expect("the server hands its key for its code");
+    let owners = vec![Principal::Vault(human)];
+    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+    let avenceo = VaultId::from(lab.submit(on, &[passkey], genesis).expect("the passkey founds avenCEO"));
+    let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key) };
+    let draft = lab.draft(on, &[passkey, server], add).expect("avenCEO adds the server");
+    let claim = lab.claim(on, draft, &[], SETUP_CODE).expect("the passkey signs the claim");
+    let join = lab.accept_claim(server, claim, Some(SETUP_CODE)).expect("the server takes the claim");
+    lab.receive(on, vec![join.op], join.blobs.into_iter().map(Into::into).collect());
+    lab.sync(on, server);
+    avenceo
+}
+
 /// Each person's devices derive their keys from their passkey; the server and the stranger have keys of their own.
 pub fn world() -> World {
     let mut making = Making::new();
@@ -71,12 +95,13 @@ pub fn world() -> World {
 }
 
 /// The world made a step at a time: every signer first, whose McEliece pairs a page then makes in its workers, then
-/// the server's vault, the people's vaults, and the contact cards they exchange.
+/// Samuel's vault, avenCEO as Samuel's vault claims the server, the other people's vaults, and the contact cards they
+/// exchange.
 pub struct Making {
     lab: Lab,
     /// Each person's passkey and devices, then the server and the stranger.
     signers: Vec<SignerId>,
-    /// The server's vault, then Samuel's, Bob's, Carol's and Dave's.
+    /// Samuel's vault, avenCEO, then Bob's, Carol's and Dave's.
     vaults: Vec<VaultId>,
     done: usize,
 }
@@ -118,18 +143,20 @@ impl Making {
                         self.signers.push(lab.device_of(passkey, d));
                     }
                 }
-                self.signers.push(lab.server_signers().0);
+                self.signers.push(lab.device("the server"));
                 self.signers.push(lab.device("a stranger"));
                 "every passkey and device, and their keys"
             }
             1 => {
-                self.vaults.push(lab.server().1);
-                "the server's vault"
-            }
-            2 => {
                 let s = &self.signers;
                 self.vaults.push(human_on(lab, s[0], &[s[1], s[2]]));
                 "Samuel's vault, with the Mac and the iPhone"
+            }
+            2 => {
+                let (s, v) = (&self.signers, &self.vaults);
+                let avenceo = claim_on(lab, s[1], s[0], v[0], s[9]);
+                self.vaults.push(avenceo);
+                "avenCEO, as Samuel's vault claims the server with its setup code"
             }
             3 => {
                 let s = &self.signers;
@@ -139,10 +166,10 @@ impl Making {
                 "Bob's, Carol's and Dave's vaults"
             }
             4 => {
-                // they all know each other's vaults and the server's, as after exchanging contact cards; Samuel's
-                // iPhone holds the same contacts as Samuel's Mac
+                // they all know each other's vaults and avenCEO, as after exchanging contact cards; Samuel's iPhone
+                // holds the same contacts as Samuel's Mac
                 let (s, v) = (&self.signers, &self.vaults);
-                let macs = [(s[1], v[1]), (s[2], v[1]), (s[4], v[2]), (s[6], v[3]), (s[8], v[4]), (s[9], v[0])];
+                let macs = [(s[1], v[0]), (s[2], v[0]), (s[4], v[2]), (s[6], v[3]), (s[8], v[4]), (s[9], v[1])];
                 for &(from, v) in &macs {
                     for &(to, _) in &macs {
                         if from != to {
@@ -174,9 +201,9 @@ impl Making {
             passkey_d: s[7],
             mac_d: s[8],
             server: s[9],
-            server_vault: v[0],
+            avenceo: v[1],
             stranger: s[10],
-            samuel: v[1],
+            samuel: v[0],
             bob: v[2],
             carol: v[3],
             dave: v[4],
@@ -191,11 +218,11 @@ pub fn coop_on(w: &mut World) -> VaultId {
     VaultId::from(w.lab.submit(w.mac_s, &[w.passkey_s, w.passkey_b], genesis).expect("Samuel and Bob found the coop"))
 }
 
-/// Found a space on Samuel's Mac for `actor`, and give the server relay on it.
+/// Found a space on Samuel's Mac for `actor`, and give avenCEO relay on it, for the server to relay it.
 pub fn space_on(w: &mut World, actor: VaultId) -> SpaceId {
     let found = w.lab.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor, nonce: 0, via: vec![] });
     let sp = SpaceId::from(found.expect("Samuel's Mac founds a space"));
-    let relay = grant(Scope::Space(sp), Role::Relay, vault(w.server_vault), actor, None);
+    let relay = grant(Scope::Space(sp), Role::Relay, vault(w.avenceo), actor, None);
     w.lab.submit(w.mac_s, &[w.mac_s], relay).expect("the founder gives the server relay");
     sp
 }

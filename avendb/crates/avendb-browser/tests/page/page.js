@@ -65,7 +65,8 @@ async function run() {
 			trace('unlocking');
 			const unlock = await passkey.unlock(nonce);
 			trace('founding');
-			device = await avendb.Device.found(name, relay, q.get('server'), made.spki, unlock, passkey.sign);
+			const [server, setup] = [q.get('server'), q.get('setup')];
+			device = await avendb.Device.found(name, relay, server, setup, made.spki, unlock, passkey.sign);
 			const [notes] = await device.notes();
 			const entry = await device.write(notes.founder, notes.space, 'Seeds', q.get('write'));
 			note = { actor: notes.founder, space: notes.space, entry };

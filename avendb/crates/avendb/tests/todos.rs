@@ -41,7 +41,8 @@ fn roles_changed() -> SocialTodo {
     let (carol, dave, samuel) = (t.c.carol, t.c.dave, t.c.samuel);
     t.c.log.append(MAC_B, &[], grant(door, Role::Read, vault(dave), t.coop, Some(t.coop_owner))).unwrap();
     t.c.log.append(MAC_S, &[], grant(door, Role::Write, vault(carol), samuel, None)).unwrap();
-    t.c.log.append(MAC_S, &[], Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![], via: vec![] }).unwrap();
+    let revoke = Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![], via: vec![] };
+    t.c.log.append(MAC_S, &[], revoke).unwrap();
     t
 }
 
@@ -94,7 +95,8 @@ fn sync_sends_only_capped_items() {
     let to_carol = writes_on(&respond(ops, MAC_C));
     assert!(!to_carol.is_empty() && to_carol.iter().all(|&w| w == (t.todos, DOOR)));
     // and the grants on the door todo come with it, so Carol's Mac can check them
-    assert!(respond(ops, MAC_C).iter().any(|o| matches!(&o.action, Action::Grant(g, _) if g.scope == Scope::Entry(t.todos, DOOR))));
+    let on_door = |o: &Op| matches!(&o.action, Action::Grant(g, _) if g.scope == Scope::Entry(t.todos, DOOR));
+    assert!(respond(ops, MAC_C).iter().any(on_door));
     // a device without a cap gets no item at all
     assert!(writes_on(&respond(ops, STRANGER)).is_empty());
     // after the coop lost the todo, Dave's Mac gets nothing of it either

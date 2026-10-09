@@ -91,7 +91,7 @@ impl Tile {
                 let d = self.device(a, "on")?;
                 let st = self.lab().state(d);
                 if !person_of(st, d).and_then(|v| st.vault(v)).is_some_and(|v| v.root.is_some()) {
-                    let only = "Only a person's device locks: its keys derive from their passkey as it unlocks.";
+                    let only = "Only a human vault's device locks: its keys derive from its passkey as it unlocks.";
                     return Err(only.into());
                 }
                 if what == "lock" {
@@ -170,18 +170,18 @@ impl Tile {
                 if g.role == Role::Owner {
                     signers.extend(self.signers_for(a, st, &[Principal::Vault(actor)])?);
                 }
-                self.lab_mut().submit(d, &signers, Action::Revoke { grant, actor, keep: vec![] })?;
+                self.lab_mut().submit(d, &signers, Action::Revoke { grant, actor, keep: vec![], via: vec![] })?;
                 Ok(json!({"signed": self.names(&signers)}))
             }
             "found_space" => {
                 let d = self.device(a, "on")?;
                 let (actor, name) = (VaultId(id_at(a, "actor")?), text_at(a, "name")?);
                 self.counter += 1;
-                let (nonce, server) = (self.counter, self.world.as_ref().expect("a world made").server_vault);
+                let (nonce, avenceo) = (self.counter, self.world.as_ref().expect("a world made").avenceo);
                 let lab = self.lab_mut();
-                let sp = SpaceId::from(lab.submit(d, &[d], Action::FoundSpace { actor, nonce })?);
-                // the founder gives the server relay, so the space syncs through it
-                let relay = cast::grant(Scope::Space(sp), Role::Relay, cast::vault(server), actor, None);
+                let sp = SpaceId::from(lab.submit(d, &[d], Action::FoundSpace { actor, nonce, via: vec![] })?);
+                // the founder gives avenCEO relay, so the space syncs through the server, avenCEO's device
+                let relay = cast::grant(Scope::Space(sp), Role::Relay, cast::vault(avenceo), actor, None);
                 lab.submit(d, &[d], relay)?;
                 self.space_names.insert(sp, name.into());
                 Ok(json!({"space": hex(&sp.0)}))
@@ -191,14 +191,15 @@ impl Tile {
                 let wanted = a["blob"].as_str().unwrap_or_default();
                 let (_, _, blob) = built_in().into_iter().find(|b| b.0 == wanted).ok_or("No app knows that schema.")?;
                 let actor = acting(self.lab().state(d), d, Scope::Space(sp), Role::Owner);
-                self.lab_mut().submit(d, &[d], Action::Publish { space: sp, actor, blob: blob.to_vec() })?;
+                let publish = Action::Publish { space: sp, actor, via: vec![], blob: blob.to_vec() };
+                self.lab_mut().submit(d, &[d], publish)?;
                 Ok(Value::Null)
             }
             "add_device" => {
                 let d = self.device(a, "on")?;
                 let name = text_at(a, "name")?;
                 let st = self.lab().state(d);
-                let vault = person_of(st, d).ok_or("This device is no person's device.")?;
+                let vault = person_of(st, d).ok_or("This device is no human vault's device.")?;
                 let root = st.vault(vault).and_then(|v| v.root).filter(|r| self.passkeys.contains(r));
                 let passkey = root.ok_or("Its vault's passkey isn't at hand.")?;
                 // the new device derives its keys from the passkey, and countersigns
@@ -211,7 +212,7 @@ impl Tile {
             "add_passkey" => {
                 let d = self.device(a, "on")?;
                 let st = self.lab().state(d);
-                let vault = person_of(st, d).ok_or("This device is no person's device.")?;
+                let vault = person_of(st, d).ok_or("This device is no human vault's device.")?;
                 let signers = self.signers_for(a, st, &[Principal::Vault(vault)])?;
                 let name = format!("{}'s backup passkey", self.vault_name(vault));
                 let lab = self.lab_mut();
@@ -227,7 +228,9 @@ impl Tile {
                 let d = self.device(a, "on")?;
                 let device = SignerId(id_at(a, "device")?);
                 let st = self.lab().state(d);
-                let vault = person_of(st, device).ok_or("No person's vault lists that device.")?;
+                // a human vault's device, or an aven vault's server
+                let vault = st.vaults().iter().find(|v| v.devices.contains(&device)).map(|v| v.id);
+                let vault = vault.ok_or("No vault lists that device.")?;
                 let signers = self.signers_for(a, st, &[Principal::Vault(vault)])?;
                 self.lab_mut().submit(d, &signers, Action::RemoveDevice { vault, device, keep: vec![] })?;
                 Ok(json!({"signed": self.names(&signers)}))
@@ -441,12 +444,13 @@ pub(crate) fn why(r: Refusal) -> &'static str {
         Refusal::NoConsent => "Whoever joins has to sign too.",
         Refusal::BelowThreshold => "Too few owners approved: the vault's passkey or its threshold of owners must sign.",
         Refusal::BadThreshold => "The threshold must be at least 1 and at most the number of owners.",
-        Refusal::WrongOwnerKind => "A person's vault is owned by passkeys, a coop by vaults.",
+        Refusal::WrongOwnerKind => "A human vault is owned by passkeys; a coop or aven vault by human or coop vaults.",
         Refusal::LastOwner => "A vault keeps at least one owner.",
         Refusal::Cycle => "A vault can't own itself, not even through other vaults.",
-        Refusal::NotHuman => "Devices and passkeys belong to a person's vault.",
+        Refusal::NotHuman => "Only a human vault has a root passkey.",
+        Refusal::NoDevices => "A coop vault has no devices: it acts through the vaults that own it.",
         Refusal::NotRoot => "Only the vault's root passkey hands the root on.",
-        Refusal::NotActing => "This device doesn't act for the vault it would act for.",
+        Refusal::NotActing => "This device doesn't act for that vault through the vaults it names.",
         Refusal::NoCap => "No vault this device acts for holds the right for that.",
         Refusal::GrantToSigner => "Rights go to vaults, never to a device or a passkey.",
         Refusal::PublicBeyondRead => "Everyone can only ever read.",
@@ -464,5 +468,7 @@ pub(crate) fn why(r: Refusal) -> &'static str {
         Refusal::ReadOnly => "This app opens it read-only: no lens it holds reaches every version it was written in.",
         Refusal::NotAView => "That edit doesn't fit the app's schema.",
         Refusal::NotJoining => "A device joins a vault only by adding itself.",
+        Refusal::BadCode => "That isn't the server's setup code.",
+        Refusal::NotClaiming => "A claim adds the server itself as a device of an aven vault.",
     }
 }

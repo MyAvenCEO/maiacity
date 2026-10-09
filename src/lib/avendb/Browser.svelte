@@ -1,10 +1,12 @@
 <!--
 	This browser (P8e): the browser itself as a device of its person, apart from the Lab's world. The person's passkey
 	stays in the browser's authenticator and each ceremony asks them; the device's keys derive from it at every unlock,
-	and what it holds is kept in IndexedDB, so it opens again in one ceremony. A new person makes their passkey and founds
-	their vault here; a person with a device already links this one through the code that device shows, scanned as a QR
-	code or opened as a link (?link=). What its other devices change shows here the moment it arrives. avenDB's server and
-	relay aren't deployed yet: until they are, give a test run's.
+	and what it holds is kept in IndexedDB, so it opens again in one ceremony. A new person founds their human vault here
+	with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or one they make here; the
+	person who runs the server brings its setup code and claims it for their vault, as avenCEO's owner (P8f). A person
+	with a device already links this one through the code that device shows, scanned as a QR code or opened as a link
+	(?link=). What its other devices change shows here the moment it arrives. avenDB's server and relay aren't deployed
+	yet: until they are, give a test run's.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -28,6 +30,8 @@
 	let relay = $state('');
 	let server = $state('');
 	let code = $state('');
+	/** the server's setup code, never kept: only the person who runs the server has it, to claim it once */
+	let setup = $state('');
 	let name = $state('This browser');
 	/** @type {any[]} */
 	let notes = $state([]);
@@ -99,15 +103,25 @@
 		return { passkey, ...passkey.ceremonies(avendb, id) };
 	}
 
-	const found = () =>
-		run('Making your passkey and founding your vault: your browser asks you four times', async () => {
+	const times = ['', 'once', 'twice', 'three times', 'four times', 'five times', 'six times', 'seven times'];
+
+	/** Founds the person's human vault with the passkey they signed up to maiaCITY with, or with one made here if
+	 *  `fresh`: the unlock, the pass to the relay, the vault and the device, one ceremony more to make the passkey,
+	 *  and two more to claim the server with its setup code. @param {boolean} fresh */
+	const found = (fresh) => {
+		const claim = setup.trim();
+		const asks = times[4 + (fresh ? 1 : 0) + (claim ? 2 : 0)];
+		const what = `${fresh ? 'Making your passkey and founding' : 'Founding'} your vault${claim ? ' and claiming the server' : ''}`;
+		return run(`${what}: your browser asks you ${asks}`, async () => {
 			const { passkey, unlock, sign, held } = await ceremonies(undefined);
-			const made = await passkey.create(name);
-			held.id = made.id;
+			const made = fresh ? await passkey.create(name) : null;
+			if (made) held.id = made.id;
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const d = await avendb.Device.found(name, relay, server, made.spki, await unlock(nonce), sign);
-			await started(d, nonce, made.id);
+			const d = await avendb.Device.found(name, relay, server, claim || undefined, made?.spki, await unlock(nonce), sign);
+			setup = '';
+			await started(d, nonce, held.id);
 		});
+	};
 
 	const linkHere = () =>
 		run('Linking this browser: your browser asks you four times', async () => {
@@ -248,14 +262,17 @@
 				</article>
 				<article class="card">
 					<h3>New to avenDB?</h3>
-					<p>Make your passkey here and found your vault: the passkey is your vault’s root, and its only recovery.</p>
-					<button class="btn" disabled={!!doing || !server.trim() || !relay.trim()} onclick={found}>Make my passkey</button>
+					<p>Found your human vault with the passkey you signed up to maiaCITY with: it is your vault’s root, and its only recovery. No such passkey here? Make one.</p>
+					<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim()} onclick={() => found(false)}>Use my maiaCITY passkey</button>
+					<button class="btn quiet" disabled={!!doing || !server.trim() || !relay.trim()} onclick={() => found(true)}>Make a new passkey</button>
 				</article>
 				<article class="card">
 					<h3>avenDB’s server</h3>
 					<p class="muted">It isn’t deployed yet. Until it is, give a test server’s relay and code.</p>
 					<input placeholder="Its relay: https://…" bind:value={relay} />
 					<input placeholder="The server’s code: AVENDB1…" bind:value={server} />
+					<p class="muted">Do you run it, and nobody has claimed it yet? Its setup code makes your human vault the owner of avenCEO, the aven vault the server is a device of.</p>
+					<input type="password" autocomplete="off" placeholder="Its setup code, only if you run it" bind:value={setup} />
 				</article>
 				<label class="name">This browser’s name <input bind:value={name} /></label>
 			{/if}

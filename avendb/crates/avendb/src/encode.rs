@@ -409,7 +409,8 @@ mod tests {
         let write = |branch| {
             let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
             let actor = VaultId::from_u64(1);
-            let action = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch, via: vec![], body: vec![] };
+            let (deps, via, body) = (vec![], vec![], vec![]);
+            let action = Action::Write { space, entry, actor, epoch: 0, deps, branch, via, body };
             op_id(&Op { action, ..genesis(0) })
         };
         let (a, b) = (crate::id::OpId::from_u64(1), crate::id::OpId::from_u64(2));
@@ -422,7 +423,8 @@ mod tests {
         let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
         let actor = VaultId::from_u64(1);
         let write = |via: Vec<VaultId>| {
-            let action = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch: Branch::Main, via, body: vec![] };
+            let (deps, branch, body) = (vec![], Branch::Main, vec![]);
+            let action = Action::Write { space, entry, actor, epoch: 0, deps, branch, via, body };
             op_id(&Op { action, ..genesis(0) })
         };
         let (b, g) = (VaultId::from_u64(2), VaultId::from_u64(3));

@@ -207,9 +207,10 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     let mut w = world();
     let (coop, _, _) = handbook_spaces(&mut w);
     // the coop founds a space on Samuel's Mac, whose new key is sealed to through the McEliece keys
-    let found = w.lab.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor: coop, nonce: 7 }).expect("a space");
+    let found = Action::FoundSpace { actor: coop, nonce: 7, via: vec![] };
+    let found = w.lab.submit(w.mac_s, &[w.mac_s], found).expect("a space");
     let garden = SpaceId::from(found);
-    let relay = grant(Scope::Space(garden), Role::Relay, vault(w.server_vault), coop, None);
+    let relay = grant(Scope::Space(garden), Role::Relay, vault(w.avenceo), coop, None);
     w.lab.submit(w.mac_s, &[w.mac_s], relay).expect("the server relays it");
     let server_holds = w.lab.blob_ids(w.server);
     let new: Vec<BlobId> = w.lab.blob_ids(w.mac_s).into_iter().filter(|b| !server_holds.contains(b)).collect();
@@ -227,7 +228,9 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     until("and Bob's Mac", || holds(&bob, new.clone())).await;
     until("which opens the new space's key", || bob.read(move |lab, me| lab.opens(me, KeyScope::Space(garden)))).await;
     assert!(!holds(&carol, new.clone()).await, "Carol's Mac, outside the coop, holds none of them");
-    // by hand: over iroh-blobs, Samuel's Mac hands each key to Bob's Mac and to no other
+    // by hand: over iroh-blobs, Samuel's Mac hands each key to Bob's Mac and to no other; each asks Samuel's Mac
+    // first, so its hello proves it there, even if all it holds came through the server
+    bob.sync_with(mac.id()).await.expect("Bob's Mac asks Samuel's Mac, and its hello proves it");
     carol.sync_with(mac.id()).await.expect("Carol's Mac asks Samuel's Mac, and its hello proves it");
     for (b, key) in &keys {
         let hash = Hash::new(key);
