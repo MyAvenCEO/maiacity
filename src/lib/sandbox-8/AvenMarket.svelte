@@ -166,7 +166,7 @@
 	let panelOpen = $state(true);
 	let page = $state('valley'); // the main view: 'valley' or 'stats'
 	let snap = $state.raw(snapshot());
-	const blankCalls = () => ({ asked: 0, answered: 0, by: /** @type {Record<string, number>} */ ({ d1: 0, qwen: 0, liquid: 0 }), failed: 0, limited: 0, lastError: '', errors: /** @type {Record<string, string>} */ ({ d1: '', qwen: '', liquid: '' }) });
+	const blankCalls = () => ({ asked: 0, answered: 0, pending: 0, by: /** @type {Record<string, number>} */ ({ d1: 0, qwen: 0, liquid: 0 }), failed: 0, limited: 0, lastError: '', errors: /** @type {Record<string, string>} */ ({ d1: '', qwen: '', liquid: '' }) });
 	let calls = $state(blankCalls());
 
 	/** @type {HTMLCanvasElement} */
@@ -237,11 +237,11 @@
 
 	// every aven thinks all day long, not once a morning (Samuel): once its last decision is in and THINK_H in-game hours
 	// have passed, it asks its brain again with what it sees now. There is no rule-based stand-in: an aven acts only on a
-	// brain's answers, and the clock waits while any living aven's decision is older than STALE_H. The asks go out one at
-	// a time, the stalest aven first. The brains (Samuel, 2026-10-09) run on his GPU machine, over Tailscale: d1 itself by
-	// default, and Qwen, fast, whenever d1 can't (an error, or while d1 rests after one), one request a second at most
-	// (BOX_EVERY, from the start of one to the start of the next). Liquid's hosted d1:free is still
-	// a choice: it refuses once a burst of 2 or 3 asks (~20,000 tokens each) has gone through and sustains about one ask
+	// brain's answers, and the clock waits while any living aven's decision is older than STALE_H. The stalest aven asks
+	// first. The brains (Samuel, 2026-10-09) run on his GPU machine, over Tailscale: d1 itself by default, and Qwen, fast,
+	// whenever d1 can't (an error, or while d1 rests after one): one request every second (BOX_EVERY, Samuel), sent whether
+	// or not the ones before have answered, up to BOX_IN_FLIGHT at once. Liquid's hosted d1:free, one ask at a time, is
+	// still a choice: it refuses once a burst of 2 or 3 asks (~20,000 tokens each) has gone through and sustains about one ask
 	// every 4 s, so its gap adapts: 10% shorter after an answer (down to GAP_MIN), 50% longer after a refusal (up to
 	// GAP_MAX). Only every third ask of an aven is a full one (haggling, stock); the rest ask its prices. A failure no
 	// brain covers pauses the valley (a refusal from Liquid only waits).
@@ -249,7 +249,8 @@
 	const STALE_H = 24;
 	const GAP_MIN = 2500;
 	const GAP_MAX = 30000;
-	const BOX_EVERY = 1000; // Samuel's own machine: one decision request a second, at most (Samuel)
+	const BOX_EVERY = 1000; // Samuel's own machine: one decision request a second (Samuel)
+	const BOX_IN_FLIGHT = 6; // ...with at most this many waiting for their answers
 	const REST = 60000; // a brain that failed is passed over this long
 	let down = $state(/** @type {string} */ (''));
 	let busy = $state(/** @type {string} */ (''));
@@ -355,7 +356,8 @@
 
 	/** @param {number} now real time, ms */
 	function think(now) {
-		if (gate.inFlight || now < gate.nextAt) return;
+		const local = brain.mode !== 'liquid';
+		if (gate.inFlight >= (local ? BOX_IN_FLIGHT : 1) || now < gate.nextAt) return;
 		// the stalest aven that is due: one with no decision yet first, then the oldest decision
 		let a = null;
 		for (const o of world.avens) {
@@ -371,12 +373,16 @@
 		me.brain.t0 = world.t;
 		gate.inFlight++;
 		calls.asked++;
-		const askedAt = performance.now();
+		calls.pending++;
+		// the GPU machine: the next request a second from now, whether or not this one has answered by then
+		if (local) gate.nextAt = now + BOX_EVERY;
 		const myWorld = world;
 		decide(me, full)
 			.then(({ answers, source }) => {
-				if (source === 'liquid') gate.gap = Math.max(GAP_MIN, gate.gap * 0.9);
-				gate.nextAt = source === 'liquid' ? performance.now() + gate.gap : Math.max(performance.now(), askedAt + BOX_EVERY);
+				if (source === 'liquid') {
+					gate.gap = Math.max(GAP_MIN, gate.gap * 0.9);
+					gate.nextAt = performance.now() + gate.gap;
+				}
 				busy = '';
 				if (myWorld !== world || !me.alive) return;
 				calls.answered++;
@@ -395,7 +401,7 @@
 					if (myWorld === world) calls.limited++;
 					return;
 				}
-				gate.nextAt = performance.now() + gate.gap;
+				if (!local) gate.nextAt = performance.now() + gate.gap;
 				if (myWorld !== world) return;
 				calls.failed++;
 				calls.lastError = msg;
@@ -406,6 +412,7 @@
 			})
 			.finally(() => {
 				gate.inFlight--;
+				if (myWorld === world) calls.pending--;
 				me.brain.pending = false;
 			});
 	}
@@ -793,7 +800,7 @@
 					<br />
 				{/if}
 				Brains: <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Brains">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select>
-				· {calls.answered} of {calls.asked} answered{#if Object.values(calls.by).filter(Boolean).length > 1}&nbsp;({Object.entries(calls.by).filter(([, n]) => n).map(([k, n]) => `${NAME[k]} ${n}`).join(', ')}){/if}{#if calls.limited}&nbsp;· {calls.limited} met Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
+				· {calls.answered} of {calls.asked} answered{#if calls.pending > 1}&nbsp;({calls.pending} waiting){/if}{#if Object.values(calls.by).filter(Boolean).length > 1}&nbsp;({Object.entries(calls.by).filter(([, n]) => n).map(([k, n]) => `${NAME[k]} ${n}`).join(', ')}){/if}{#if calls.limited}&nbsp;· {calls.limited} met Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
 				{#if brain.mode !== 'liquid'}<br />GPU machine <input class="brain-url" bind:value={brain.url} onchange={() => (saveBrain(), findBox().catch((e) => (calls.errors.d1 = errorOf(e))))} spellcheck="false" aria-label="The GPU machine's address" /> · d1: {box.d1 || 'not served'} · Qwen: {box.qwen || 'not served'}{#each ['d1', 'qwen'] as k (k)}{#if calls.errors[k]}{' · '}<span class="warn">{NAME[k]} not answering: {calls.errors[k]}</span>{/if}{/each}{/if}
 			</p>
 		</section>

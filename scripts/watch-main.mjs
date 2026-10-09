@@ -17,31 +17,40 @@ const LOGS = join(ROOT, '.cargo');
 const LABEL = 'city.maia.watch-main';
 const PLIST = join(homedir(), 'Library/LaunchAgents', `${LABEL}.plist`);
 const EVERY = 60_000;
+// every command gets a time limit: one hung `git fetch` (2026-10-09) blocked the loop for good, and launchd never
+// restarts a process that is still alive. A command over its limit is killed and the next minute tries again.
+const QUICK = 30_000;
+const NETWORK = 120_000;
+const INSTALL = 600_000;
+const ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' }; // git fails instead of waiting for a password nobody types
 
 const log = (msg) => {
 	const line = `${new Date().toISOString()} ${msg}\n`;
 	process.stdout.write(line);
 	appendFileSync(join(LOGS, 'watch-main.log'), line);
 };
-const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const git = (...args) => execFileSync('git', args, { cwd: ROOT, env: ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: args[0] === 'fetch' ? NETWORK : QUICK }).trim();
 
 function appRunning() {
 	try {
-		return execFileSync('pgrep', ['-f', 'tauri dev'], { encoding: 'utf8' })
+		return execFileSync('pgrep', ['-f', 'tauri dev'], { encoding: 'utf8', timeout: QUICK })
 			.split('\n')
 			.filter(Boolean)
 			.some((pid) => {
-				const cwd = execFileSync('lsof', ['-a', '-p', pid, '-d', 'cwd', '-Fn'], { encoding: 'utf8' });
+				const cwd = execFileSync('lsof', ['-a', '-p', pid, '-d', 'cwd', '-Fn'], { encoding: 'utf8', timeout: QUICK });
 				return cwd.includes(`n${join(ROOT, 'vault/app')}`);
 			});
-	} catch {
+	} catch (e) {
+		if (e.code === 'ETIMEDOUT') throw e; // unknown is not "not running": don't start a second app
 		return false;
 	}
 }
 
 function startApp() {
 	const out = openSync(join(LOGS, 'studio-dev.log'), 'a');
-	spawn('bunx', ['tauri', 'dev'], { cwd: join(ROOT, 'vault/app'), detached: true, stdio: ['ignore', out, out] }).unref();
+	spawn('bunx', ['tauri', 'dev'], { cwd: join(ROOT, 'vault/app'), detached: true, stdio: ['ignore', out, out] })
+		.on('error', (e) => log(`the app did not start: ${e.message}`))
+		.unref();
 	log('started the app (bunx tauri dev)');
 }
 
@@ -62,8 +71,13 @@ function check() {
 		git('merge', '--ff-only', '--quiet', latest);
 		log(`fast-forwarded to ${git('log', '-1', '--format=%h %s')}`);
 		if (changed.includes('bun.lock') || changed.includes('package.json')) {
-			execFileSync('bun', ['install'], { cwd: ROOT, stdio: 'ignore' });
+			execFileSync('bun', ['install'], { cwd: ROOT, stdio: 'ignore', timeout: INSTALL });
 			log('bun install (bun.lock changed)');
+		}
+		if (changed.includes('scripts/watch-main.mjs') && !process.argv[2]) {
+			if (!appRunning()) startApp();
+			log('this watcher changed: restarting into the new one');
+			process.exit(0); // launchd's KeepAlive starts it again; the app runs on by itself
 		}
 	}
 	if (!appRunning()) startApp();
@@ -73,7 +87,7 @@ function safeCheck() {
 	try {
 		check();
 	} catch (e) {
-		log(`check failed: ${(e.stderr || e.message || e).toString().trim()}`);
+		log(`check failed: ${e.code === 'ETIMEDOUT' ? `${[e.path, e.spawnargs?.[0]].join(' ')} ran out of time` : (e.stderr || e.message || e).toString().trim()}`);
 	}
 }
 
