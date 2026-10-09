@@ -42,7 +42,7 @@ fn lens_round_trip_v1() {
 #[test]
 fn edits_through_a_view_keep_what_it_cant_see() {
     // Welcome as a v1 app wrote it; a v2 app checks the list item, names the code's language and tags it
-    let mut item = Item::written_v1(&welcome_v1(), MAC_S);
+    let mut item = Item::written_v1(&welcome_v1(), MAC_A);
     assert!(item.edit_document(|d| {
         d.blocks[3].checked = Some(true);
         d.blocks[4].lang = Some("sh".into());
@@ -76,18 +76,18 @@ fn edits_through_a_view_keep_what_it_cant_see() {
 
 #[test]
 fn promote_equals_branch() {
-    let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_S), MAC_S);
+    let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
     let rewrite = Some(repo.branch(MAC_B, &repo.heads(MAIN), "rewrite").unwrap());
     repo.edit(MAC_B, rewrite, |i| i.set_text(2, "Welcome to the coop, rewritten"));
     // main moves on meanwhile, on the block the branch rewrites and on another
-    repo.edit(MAC_S, MAIN, |i| {
+    repo.edit(MAC_A, MAIN, |i| {
         i.set_text(2, "Welcome to Maia Coop: the greenhouse opens at nine.");
         i.push_block(paragraph(3, "an edit on main"));
     });
     let (main, branch) = (repo.log(MAIN), repo.log(rewrite));
-    repo.promote(MAC_S, rewrite, MAIN);
+    repo.promote(MAC_A, rewrite, MAIN);
     // main shows exactly the branch's content (T10h, from T10d) and keeps both histories (T10e)
-    let shown = |line| repo.item(line, MAC_S).map(|i| i.record());
+    let shown = |line| repo.item(line, MAC_A).map(|i| i.record());
     assert_eq!(shown(MAIN), shown(rewrite));
     assert_eq!(repo.item(MAIN, MAC_C).unwrap().as_document().unwrap().blocks.len(), 2);
     let log = repo.log(MAIN);
@@ -96,97 +96,97 @@ fn promote_equals_branch() {
 
 #[test]
 fn merge_is_the_union_of_both_lines() {
-    let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_S), MAC_S);
+    let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
     let draft = Some(repo.branch(MAC_B, &repo.heads(MAIN), "draft").unwrap());
     repo.edit(MAC_B, draft, |i| i.set_text(1, "Hello"));
     // until the merge, main doesn't show the draft (T10f)
-    let before = repo.item(MAIN, MAC_S).unwrap().record();
-    repo.edit(MAC_S, MAIN, |i| i.push_block(paragraph(3, "on main")));
-    assert_eq!(repo.item(MAIN, MAC_S).unwrap().as_document().unwrap().blocks[0].text, "Welcome");
+    let before = repo.item(MAIN, MAC_A).unwrap().record();
+    repo.edit(MAC_A, MAIN, |i| i.push_block(paragraph(3, "on main")));
+    assert_eq!(repo.item(MAIN, MAC_A).unwrap().as_document().unwrap().blocks[0].text, "Welcome");
     let (main, branch) = (repo.log(MAIN), repo.log(draft));
     // merging either way shows both edits, the same (T10g); merging again changes nothing
     let mut other = repo.clone();
-    let merge = repo.merge(MAC_S, draft, MAIN);
+    let merge = repo.merge(MAC_A, draft, MAIN);
     other.merge(MAC_B, MAIN, draft);
-    let merged = repo.item(MAIN, MAC_S).unwrap().record();
+    let merged = repo.item(MAIN, MAC_A).unwrap().record();
     assert_eq!(Some(&merged), other.item(draft, MAC_B).map(|i| i.record()).as_ref());
-    let doc = repo.item(MAIN, MAC_S).unwrap().as_document().unwrap();
+    let doc = repo.item(MAIN, MAC_A).unwrap().as_document().unwrap();
     assert_eq!((doc.blocks[0].text.as_str(), doc.blocks.len()), ("Hello", 3));
-    repo.merge(MAC_S, draft, MAIN);
-    assert_eq!(repo.item(MAIN, MAC_S).unwrap().record(), merged);
+    repo.merge(MAC_A, draft, MAIN);
+    assert_eq!(repo.item(MAIN, MAC_A).unwrap().record(), merged);
     let log = repo.log(MAIN);
     assert!(main.iter().chain(&branch).chain([&merge]).all(|op| log.contains(op)) && merged != before);
 }
 
 #[test]
 fn the_latest_commit_reverts_and_an_older_one_is_undone() {
-    let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_S), MAC_S);
-    let good = repo.item(MAIN, MAC_S).unwrap().record();
+    let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
+    let good = repo.item(MAIN, MAC_A).unwrap().record();
     let bad = repo.edit(MAC_B, MAIN, |i| i.set_text(2, "oops"));
     // the latest commit goes back exactly, by restoring the version it built on
     let built_on = repo.history().get(bad).unwrap().write.deps.clone();
-    repo.restore(MAC_S, MAIN, &built_on);
-    assert_eq!(repo.item(MAIN, MAC_S).unwrap().record(), good);
+    repo.restore(MAC_A, MAIN, &built_on);
+    assert_eq!(repo.item(MAIN, MAC_A).unwrap().record(), good);
     // an older bad commit is undone and what came after stays
     let older = repo.edit(MAC_B, MAIN, |i| i.set_text(1, "Welcome!!!"));
-    repo.edit(MAC_S, MAIN, |i| i.push_block(paragraph(3, "a later, good edit")));
-    repo.undo(MAC_S, MAIN, older).unwrap();
-    let doc = repo.item(MAIN, MAC_S).unwrap().as_document().unwrap();
+    repo.edit(MAC_A, MAIN, |i| i.push_block(paragraph(3, "a later, good edit")));
+    repo.undo(MAC_A, MAIN, older).unwrap();
+    let doc = repo.item(MAIN, MAC_A).unwrap().as_document().unwrap();
     let texts: Vec<&str> = doc.blocks.iter().map(|b| b.text.as_str()).collect();
     assert_eq!(texts, ["Welcome", WELCOME_TEXT, "a later, good edit"]);
     // and every version is still there
     assert_eq!(repo.log(MAIN).len(), repo.history().commits().len());
-    let oops = repo.history().item_at(&[bad], MAC_S, MAIN).as_document().unwrap();
+    let oops = repo.history().item_at(&[bad], MAC_A, MAIN).as_document().unwrap();
     assert_eq!(oops.blocks[1].text, "oops");
 }
 
 #[test]
 fn a_fork_copies_the_record_and_the_schemas_that_wrote_it() {
-    let mut welcome = document_v1("Welcome", WELCOME_TEXT, MAC_S);
+    let mut welcome = document_v1("Welcome", WELCOME_TEXT, MAC_A);
     welcome.edit_document(|d| d.tags.push("greenhouse".into()));
     let copy = welcome.copy(MAC_B);
     assert_eq!((copy.record(), copy.authored()), (welcome.record(), welcome.authored()));
     assert_eq!(copy.authored().len(), 2);
     // with no history: one change, by the device that copied it
     let mut reader = avendb::doc::Item::new(MAC_C);
-    assert!(reader.import(&copy.export(&Default::default()), MAC_S).is_err());
+    assert!(reader.import(&copy.export(&Default::default()), MAC_A).is_err());
     reader.import(&copy.export(&Default::default()), MAC_B).unwrap();
     assert_eq!(reader.as_document(), welcome.as_document());
 }
 
 #[test]
 fn same_ops_any_order_same_result() {
-    // Samuel and Bob edit the same block at the same moment on their own copies
-    let base = document("Welcome", WELCOME_TEXT, MAC_S);
+    // Alice and Bob edit the same block at the same moment on their own copies
+    let base = document("Welcome", WELCOME_TEXT, MAC_A);
     let start = base.version();
-    let (mut samuels, mut bobs) = (base.fork_as(MAC_S), base.fork_as(MAC_B));
-    samuels.set_text(2, "Samuel's version");
+    let (mut alices, mut bobs) = (base.fork_as(MAC_A), base.fork_as(MAC_B));
+    alices.set_text(2, "Alice's version");
     bobs.set_text(2, "Bob's version");
     bobs.push_block(paragraph(3, "Bob adds a line"));
-    let (from_samuel, from_bob) = (samuels.export(&start), bobs.export(&start));
+    let (from_alice, from_bob) = (alices.export(&start), bobs.export(&start));
     // two more devices receive both edits in opposite orders
     let (mut carols, mut daves) = (base.fork_as(MAC_C), base.fork_as(MAC_D));
-    carols.import(&from_samuel, MAC_S).unwrap();
+    carols.import(&from_alice, MAC_A).unwrap();
     carols.import(&from_bob, MAC_B).unwrap();
     daves.import(&from_bob, MAC_B).unwrap();
-    daves.import(&from_samuel, MAC_S).unwrap();
-    samuels.import(&from_bob, MAC_B).unwrap();
-    bobs.import(&from_samuel, MAC_S).unwrap();
+    daves.import(&from_alice, MAC_A).unwrap();
+    alices.import(&from_bob, MAC_B).unwrap();
+    bobs.import(&from_alice, MAC_A).unwrap();
     // every device shows the same document (T11)
-    let shown = [&samuels, &bobs, &carols, &daves].map(|i| i.as_document());
+    let shown = [&alices, &bobs, &carols, &daves].map(|i| i.as_document());
     assert!(shown.iter().all(|d| d.is_some() && *d == shown[0]));
 }
 
 #[test]
 fn an_update_from_the_wrong_peer_is_refused() {
     // Bob's edits carry his Loro peer; the same bytes claimed as Carol's are refused before import
-    let base = document("Welcome", WELCOME_TEXT, MAC_S);
+    let base = document("Welcome", WELCOME_TEXT, MAC_A);
     let start = base.version();
     let mut bobs = base.fork_as(MAC_B);
     bobs.set_text(2, "Bob's version");
     let update = bobs.export(&start);
-    let mut samuels = base.fork_as(MAC_S);
-    assert_eq!(samuels.import(&update, MAC_C), Err(avendb::doc::DocError::WrongPeer));
-    assert_eq!(samuels.import(b"not a loro update", MAC_B), Err(avendb::doc::DocError::Malformed));
-    assert!(samuels.import(&update, MAC_B).is_ok());
+    let mut alices = base.fork_as(MAC_A);
+    assert_eq!(alices.import(&update, MAC_C), Err(avendb::doc::DocError::WrongPeer));
+    assert_eq!(alices.import(b"not a loro update", MAC_B), Err(avendb::doc::DocError::Malformed));
+    assert!(alices.import(&update, MAC_B).is_ok());
 }

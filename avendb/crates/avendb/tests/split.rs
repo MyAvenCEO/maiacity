@@ -39,11 +39,11 @@ fn announced(from: (&mut Lab, SignerId), to: SignerId) -> Vec<(LogId, [u8; 32])>
     Announce::from_wire(&Announce { digests }.to_wire()).expect("an announcement").digests
 }
 
-/// Samuel's Mac, the server and Bob's Mac split off after scenario 4, each with its own randomness.
+/// Alice's Mac, the server and Bob's Mac split off after scenario 4, each with its own randomness.
 fn split() -> (World, (SpaceId, SpaceId, avendb::id::VaultId), Lab, Lab, Lab) {
     let mut w = world();
     let (coop, space, notes) = handbook_spaces(&mut w);
-    let mac = w.lab.split(w.mac_s, &[w.passkey_s], [1; 32]);
+    let mac = w.lab.split(w.mac_a, &[w.passkey_a], [1; 32]);
     let server = w.lab.split(w.server, &[], [2; 32]);
     let bob = w.lab.split(w.mac_b, &[w.passkey_b], [3; 32]);
     (w, (space, notes, coop), mac, server, bob)
@@ -52,10 +52,10 @@ fn split() -> (World, (SpaceId, SpaceId, avendb::id::VaultId), Lab, Lab, Lab) {
 #[test]
 fn scenario_5_between_devices_split_off() {
     let (w, (space, _, coop), mut mac, mut server, mut bob) = split();
-    let welcome = document_v1("Welcome", WELCOME_TEXT, w.mac_s);
-    let welcome = mac.create(w.mac_s, coop, space, welcome).expect("Samuel's Mac writes Welcome on its own");
-    // the server asks Samuel's Mac, then Bob's Mac asks the server
-    assert!(ask((&mut server, w.server), (&mut mac, w.mac_s)) > 0);
+    let welcome = document_v1("Welcome", WELCOME_TEXT, w.mac_a);
+    let welcome = mac.create(w.mac_a, coop, space, welcome).expect("Alice's Mac writes Welcome on its own");
+    // the server asks Alice's Mac, then Bob's Mac asks the server
+    assert!(ask((&mut server, w.server), (&mut mac, w.mac_a)) > 0);
     assert!(ask((&mut bob, w.mac_b), (&mut server, w.server)) > 0);
     assert_eq!(text(&bob, w.mac_b, space, welcome, 2).as_deref(), Some(WELCOME_TEXT), "Bob's Mac reads Welcome");
     assert!(server.fetched(w.server, space, welcome) > 0, "the server holds Welcome's edits");
@@ -65,55 +65,55 @@ fn scenario_5_between_devices_split_off() {
     assert!(!contains(&server.store(w.server), WELCOME_TEXT), "Welcome's text appears nowhere in the server's store");
     // asked again, nobody has anything more to send
     assert_eq!(ask((&mut bob, w.mac_b), (&mut server, w.server)), 0);
-    assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_s)), 0);
+    assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_a)), 0);
 }
 
 #[test]
 fn a_device_names_only_the_logs_its_peer_may_hold() {
     let (w, (space, notes, _), mac, _, _) = split();
-    let to_stranger = mac.request(w.mac_s, w.stranger);
-    assert_eq!(to_stranger, Request::default(), "a stranger is told nothing of what Samuel's Mac holds");
-    let to_bob = mac.request(w.mac_s, w.mac_b);
+    let to_stranger = mac.request(w.mac_a, w.stranger);
+    assert_eq!(to_stranger, Request::default(), "a stranger is told nothing of what Alice's Mac holds");
+    let to_bob = mac.request(w.mac_a, w.mac_b);
     assert!(to_bob.ask.haves.contains_key(&LogId::Space(space)), "the Handbook, which Bob reaches, is named");
-    assert!(!to_bob.ask.haves.contains_key(&LogId::Space(notes)), "Samuel's Notes are not");
-    let to_phone = mac.request(w.mac_s, w.phone_s);
-    assert!(to_phone.ask.haves.contains_key(&LogId::Space(notes)), "to Samuel's iPhone they are");
+    assert!(!to_bob.ask.haves.contains_key(&LogId::Space(notes)), "Alice's Notes are not");
+    let to_phone = mac.request(w.mac_a, w.phone_a);
+    assert!(to_phone.ask.haves.contains_key(&LogId::Space(notes)), "to Alice's iPhone they are");
 }
 
 #[test]
 fn announcements_tell_each_peer_of_its_own_logs_alone() {
     let (w, (space, notes, coop), mut mac, mut server, _) = split();
-    let welcome = mac.create(w.mac_s, coop, space, document("Welcome", WELCOME_TEXT, w.mac_s)).expect("Welcome");
-    let to_server = announced((&mut mac, w.mac_s), w.server);
+    let welcome = mac.create(w.mac_a, coop, space, document("Welcome", WELCOME_TEXT, w.mac_a)).expect("Welcome");
+    let to_server = announced((&mut mac, w.mac_a), w.server);
     assert!(to_server.iter().any(|(l, _)| *l == LogId::Entry(space, welcome)), "the server hears of Welcome");
     assert!(server.differs(w.server, &to_server), "and asks, as its digests differ");
-    let to_carol = announced((&mut mac, w.mac_s), w.mac_c);
+    let to_carol = announced((&mut mac, w.mac_a), w.mac_c);
     let handbook = |l: &LogId| matches!(l, LogId::Space(sp) | LogId::Entry(sp, _) if *sp == space || *sp == notes);
     assert!(!to_carol.iter().any(|(l, _)| handbook(l)), "Carol, who reaches neither space, hears of neither");
-    assert!(announced((&mut mac, w.mac_s), w.stranger).is_empty(), "a stranger hears of nothing");
-    ask((&mut server, w.server), (&mut mac, w.mac_s));
-    let again = announced((&mut mac, w.mac_s), w.server);
+    assert!(announced((&mut mac, w.mac_a), w.stranger).is_empty(), "a stranger hears of nothing");
+    ask((&mut server, w.server), (&mut mac, w.mac_a));
+    let again = announced((&mut mac, w.mac_a), w.server);
     assert!(!server.differs(w.server, &again), "once it has asked, the digests agree");
 }
 
 #[test]
 fn mceliece_keys_go_only_within_reach() {
     let (w, (_, _, coop), mut mac, mut server, mut bob) = split();
-    // the coop founds a space on Samuel's Mac, whose new key is sealed to through its McEliece key
+    // the coop founds a space on Alice's Mac, whose new key is sealed to through its McEliece key
     let found = Action::FoundSpace { actor: coop, nonce: 7, via: vec![] };
-    let found = mac.submit(w.mac_s, &[w.mac_s], found).expect("a space");
+    let found = mac.submit(w.mac_a, &[w.mac_a], found).expect("a space");
     let garden = SpaceId::from(found);
     let relay = grant(Scope::Space(garden), Role::Relay, vault(w.avenceo), coop, None);
-    mac.submit(w.mac_s, &[w.mac_s], relay).expect("the server relays it");
-    let new: Vec<_> = mac.blob_ids(w.mac_s).into_iter().filter(|b| server.blob(w.server, *b).is_none()).collect();
+    mac.submit(w.mac_a, &[w.mac_a], relay).expect("the server relays it");
+    let new: Vec<_> = mac.blob_ids(w.mac_a).into_iter().filter(|b| server.blob(w.server, *b).is_none()).collect();
     assert!(!new.is_empty(), "the space's key brings a McEliece key");
     for &b in &new {
-        assert!(mac.may_fetch(w.mac_s, w.server, b), "the server, relaying the space, may fetch it");
-        assert!(mac.may_fetch(w.mac_s, w.mac_b, b), "so may Bob's Mac, acting for the coop");
-        let outside = !mac.may_fetch(w.mac_s, w.mac_c, b) && !mac.may_fetch(w.mac_s, w.stranger, b);
+        assert!(mac.may_fetch(w.mac_a, w.server, b), "the server, relaying the space, may fetch it");
+        assert!(mac.may_fetch(w.mac_a, w.mac_b, b), "so may Bob's Mac, acting for the coop");
+        let outside = !mac.may_fetch(w.mac_a, w.mac_c, b) && !mac.may_fetch(w.mac_a, w.stranger, b);
         assert!(outside, "not Carol, nor a stranger");
     }
-    ask((&mut server, w.server), (&mut mac, w.mac_s));
+    ask((&mut server, w.server), (&mut mac, w.mac_a));
     assert!(new.iter().all(|b| server.blob(w.server, *b).is_some()), "the server fetched each with the space's log");
     ask((&mut bob, w.mac_b), (&mut server, w.server));
     assert!(new.iter().all(|b| bob.blob(w.mac_b, *b).is_some()), "and hands it on to Bob's Mac");
@@ -123,12 +123,12 @@ fn mceliece_keys_go_only_within_reach() {
 #[test]
 fn devices_split_off_make_keys_of_their_own() {
     let (w, (space, _, coop), mut mac, _, mut bob) = split();
-    let a = mac.create(w.mac_s, coop, space, document("A", "a", w.mac_s)).expect("an entry on Samuel's Mac");
+    let a = mac.create(w.mac_a, coop, space, document("A", "a", w.mac_a)).expect("an entry on Alice's Mac");
     let b = bob.create(w.mac_b, coop, space, document("B", "b", w.mac_b)).expect("an entry on Bob's Mac");
     assert_ne!(a, b, "two devices split off draw different randomness");
     // the same seed replays the same: a failing test replays exactly
     let (w2, (space2, _, coop2), mut mac2, _, _) = split();
-    let a2 = mac2.create(w2.mac_s, coop2, space2, document("A", "a", w2.mac_s)).expect("again");
+    let a2 = mac2.create(w2.mac_a, coop2, space2, document("A", "a", w2.mac_a)).expect("again");
     assert_eq!(a, a2);
 }
 
@@ -136,12 +136,12 @@ fn devices_split_off_make_keys_of_their_own() {
 fn a_reply_comes_a_page_at_a_time_in_causal_order_and_loses_nothing() {
     let (w, (space, _, coop), mut mac, mut server, _) = split();
     for i in 0..12 {
-        let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_s);
-        mac.create(w.mac_s, coop, space, note).expect("Samuel's Mac writes a note");
+        let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_a);
+        mac.create(w.mac_a, coop, space, note).expect("Alice's Mac writes a note");
     }
     // the whole reply: each op once, by its place, so none comes ahead of an op it builds on
-    let request = server.request(w.server, w.mac_s);
-    let (whole, _, more) = mac.reply(w.mac_s, w.server, &request, usize::MAX);
+    let request = server.request(w.server, w.mac_a);
+    let (whole, _, more) = mac.reply(w.mac_a, w.server, &request, usize::MAX);
     assert!(!more && whole.len() > 12, "{} ops in one reply", whole.len());
     let places: Vec<Place> = whole.iter().map(|s| place(&s.op)).collect();
     assert!(places.windows(2).all(|p| p[0] < p[1]), "by place, each op once");
@@ -152,9 +152,9 @@ fn a_reply_comes_a_page_at_a_time_in_causal_order_and_loses_nothing() {
     // a page of one byte holds one op, and the server takes each page whole, at once: no op waits for its past
     let (mut after, mut got) = (None, vec![]);
     loop {
-        let (page, new) = ask_page((&mut server, w.server), (&mut mac, w.mac_s), after, 1);
+        let (page, new) = ask_page((&mut server, w.server), (&mut mac, w.mac_a), after, 1);
         assert_eq!((page.ops.len(), new), (1, 1), "one op a page, new each time");
-        assert!(server.request(w.server, w.mac_s).ask.loose.is_empty(), "no op of page {} waits", got.len());
+        assert!(server.request(w.server, w.mac_a).ask.loose.is_empty(), "no op of page {} waits", got.len());
         got.extend(page.ops.iter().map(|s| s.op.id()));
         if !page.more {
             break;
@@ -162,19 +162,19 @@ fn a_reply_comes_a_page_at_a_time_in_causal_order_and_loses_nothing() {
         after = page.ops.iter().map(|s| place(&s.op)).max();
     }
     assert_eq!(got, places.iter().map(|p| p.1).collect::<Vec<_>>(), "the pages together are the reply");
-    assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_s)), 0, "asked again, nothing is left");
+    assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_a)), 0, "asked again, nothing is left");
 }
 
 #[test]
 fn a_page_holds_what_fits_and_at_least_one_op() {
     let (w, (space, _, coop), mut mac, mut server, _) = split();
     for i in 0..12 {
-        let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_s);
-        mac.create(w.mac_s, coop, space, note).expect("Samuel's Mac writes a note");
+        let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_a);
+        mac.create(w.mac_a, coop, space, note).expect("Alice's Mac writes a note");
     }
     let (mut after, mut pages) = (None, 0);
     loop {
-        let (page, _) = ask_page((&mut server, w.server), (&mut mac, w.mac_s), after, 8 << 10);
+        let (page, _) = ask_page((&mut server, w.server), (&mut mac, w.mac_a), after, 8 << 10);
         let size: usize = page.ops.iter().map(|s| s.to_wire().len()).sum();
         assert!(size <= 8 << 10 || page.ops.len() == 1, "{size} bytes in {} ops", page.ops.len());
         pages += 1;
@@ -184,5 +184,5 @@ fn a_page_holds_what_fits_and_at_least_one_op() {
         after = page.ops.iter().map(|s| place(&s.op)).max();
     }
     assert!(pages > 1, "more than one page");
-    assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_s)), 0, "the pages together are the reply");
+    assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_a)), 0, "the pages together are the reply");
 }

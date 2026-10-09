@@ -119,7 +119,7 @@ impl Run {
 
 /// Every scenario, in the plan's order.
 pub static SCENARIOS: [Scenario; 21] = [
-    Scenario { number: "1", title: "Samuel's vault", phase: "P1", play: samuels_vault },
+    Scenario { number: "1", title: "Alice's vault", phase: "P1", play: alices_vault },
     Scenario { number: "1b", title: "A new device reaches every device", phase: "P2", play: a_new_device_reaches_all },
     Scenario { number: "2", title: "Bob, Carol and Dave", phase: "P1", play: bob_carol_and_dave },
     Scenario { number: "3", title: "A coop of two", phase: "P1", play: a_coop_of_two },
@@ -157,19 +157,19 @@ fn named(lab: &Lab, s: SignerId) -> String {
     lab.name(s).unwrap_or("a device").to_string()
 }
 
-fn samuels_vault(run: &mut Run) -> Done {
+fn alices_vault(run: &mut Run) -> Done {
     let mut lab = Lab::new();
-    let passkey = lab.passkey("Samuel");
-    let (mac, phone) = (lab.device_of(passkey, "Samuel's Mac"), lab.device_of(passkey, "Samuel's iPhone"));
-    let samuel = human_on(&mut lab, passkey, &[mac, phone]);
+    let passkey = lab.passkey("Alice");
+    let (mac, phone) = (lab.device_of(passkey, "Alice's Mac"), lab.device_of(passkey, "Alice's iPhone"));
+    let alice = human_on(&mut lab, passkey, &[mac, phone]);
     let genesis = lab.log(mac).ops()[0].clone();
     let first = matches!(genesis.action, Action::Genesis { .. });
-    run.check("Samuel's Mac holds the genesis of Samuel's vault first", first);
-    run.same("the vault's id is the hash of its genesis", VaultId::from(genesis.id()), samuel);
-    let devices = lab.log(mac).view().vault(samuel).map(|v| v.devices.clone());
+    run.check("Alice's Mac holds the genesis of Alice's vault first", first);
+    run.same("the vault's id is the hash of its genesis", VaultId::from(genesis.id()), alice);
+    let devices = lab.log(mac).view().vault(alice).map(|v| v.devices.clone());
     run.same("the vault lists the Mac and the iPhone", devices, Some(vec![mac, phone]));
     let other = lab.device_of(passkey, "another Mac");
-    let add = Action::AddDevice { vault: samuel, device: other, seal_to: None };
+    let add = Action::AddDevice { vault: alice, device: other, seal_to: None };
     let alone = lab.submit(mac, &[mac, other], add).err();
     run.same("the Mac can't add a device on its own, even one that countersigns", alone, Some(Refusal::BelowThreshold));
     Ok(())
@@ -180,19 +180,19 @@ fn a_new_device_reaches_all(run: &mut Run) -> Done {
     let coop = coop_on(&mut w);
     w.lab.sync_all(1);
     // the iPad's keys derive from the same passkey, and it countersigns
-    let ipad = w.lab.device_of(w.passkey_s, "Samuel's iPad");
-    let add = Action::AddDevice { vault: w.samuel, device: ipad, seal_to: None };
-    run.ok("Samuel's passkey adds an iPad, on Samuel's Mac", w.lab.submit(w.mac_s, &[w.passkey_s, ipad], add))?;
+    let ipad = w.lab.device_of(w.passkey_a, "Alice's iPad");
+    let add = Action::AddDevice { vault: w.alice, device: ipad, seal_to: None };
+    run.ok("Alice's passkey adds an iPad, on Alice's Mac", w.lab.submit(w.mac_a, &[w.passkey_a, ipad], add))?;
     w.lab.sync_all(2);
-    for d in [w.phone_s, ipad, w.mac_b] {
+    for d in [w.phone_a, ipad, w.mac_b] {
         let v = w.lab.log(d).view();
         let who = named(&w.lab, d);
-        run.check(format!("{who} learns of the iPad"), v.vault(w.samuel).is_some_and(|x| x.devices.contains(&ipad)));
+        run.check(format!("{who} learns of the iPad"), v.vault(w.alice).is_some_and(|x| x.devices.contains(&ipad)));
         run.check(format!("{who} sees it act for the coop"), v.acts_for(ipad, coop));
     }
-    let carol_knows = w.lab.log(w.mac_c).view().vault(w.samuel).map(|x| x.devices.clone());
-    let what = "Carol, who shares nothing with Samuel yet, keeps the contact card from before";
-    run.same(what, carol_knows, Some(vec![w.mac_s, w.phone_s]));
+    let carol_knows = w.lab.log(w.mac_c).view().vault(w.alice).map(|x| x.devices.clone());
+    let what = "Carol, who shares nothing with Alice yet, keeps the contact card from before";
+    run.same(what, carol_knows, Some(vec![w.mac_a, w.phone_a]));
     Ok(())
 }
 
@@ -208,7 +208,7 @@ fn bob_carol_and_dave(run: &mut Run) -> Done {
             Some((Kind::Human, 1, 1)),
         );
     }
-    let mut ids = [w.samuel, w.bob, w.carol, w.dave];
+    let mut ids = [w.alice, w.bob, w.carol, w.dave];
     ids.sort();
     run.check("every vault has an id of its own", ids.windows(2).all(|p| p[0] != p[1]));
     Ok(())
@@ -216,16 +216,16 @@ fn bob_carol_and_dave(run: &mut Run) -> Done {
 
 fn a_coop_of_two(run: &mut Run) -> Done {
     let mut w = world();
-    let owners = vec![Principal::Vault(w.samuel), Principal::Vault(w.bob)];
+    let owners = vec![Principal::Vault(w.alice), Principal::Vault(w.bob)];
     let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0, seal_to: vec![] };
-    let alone = w.lab.submit(w.mac_s, &[w.passkey_s], genesis).err();
+    let alone = w.lab.submit(w.mac_a, &[w.passkey_a], genesis).err();
     run.same("Bob has to consent to becoming an owner", alone, Some(Refusal::NoConsent));
     let coop = coop_on(&mut w);
     w.lab.sync_all(3);
     let v = w.lab.log(w.mac_b).view();
     run.same("Bob's Mac learns the coop, with threshold 2", v.vault(coop).map(|c| c.threshold), Some(2));
-    let acting = v.acts_for(w.mac_b, coop) && v.acts_for(w.mac_s, coop) && v.acts_for(w.phone_s, coop);
-    run.check("Bob's Mac acts for the coop through Bob's vault, Samuel's devices through Samuel's", acting);
+    let acting = v.acts_for(w.mac_b, coop) && v.acts_for(w.mac_a, coop) && v.acts_for(w.phone_a, coop);
+    run.check("Bob's Mac acts for the coop through Bob's vault, Alice's devices through Alice's", acting);
     run.check("Carol's Mac and passkey don't", !v.acts_for(w.mac_c, coop) && !v.acts_for(w.passkey_c, coop));
     run.check("Carol's Mac never even receives the coop's log", w.lab.log(w.mac_c).view().vault(coop).is_none());
     Ok(())
@@ -235,7 +235,7 @@ fn the_coop_key(run: &mut Run) -> Done {
     let mut w = world();
     let coop = coop_on(&mut w);
     w.lab.sync_all(3);
-    for d in [w.mac_b, w.mac_s, w.phone_s] {
+    for d in [w.mac_b, w.mac_a, w.phone_a] {
         run.check(format!("{} opens the coop's key", named(&w.lab, d)), w.lab.opens(d, KeyScope::Vault(coop)));
     }
     for d in [w.mac_c, w.mac_d, w.stranger, w.server] {
@@ -248,15 +248,15 @@ fn spaces(run: &mut Run) -> Done {
     let mut w = world();
     let coop = coop_on(&mut w);
     let handbook = space_on(&mut w, coop);
-    let samuel = w.samuel;
-    let notes = space_on(&mut w, samuel);
+    let alice = w.alice;
+    let notes = space_on(&mut w, alice);
     w.lab.sync_all(4);
     let v = w.lab.log(w.mac_b).view();
     run.same("Bob's Mac knows the Handbook, founded by the coop", v.space(handbook).map(|s| s.founder), Some(coop));
-    let chain = v.acts_for(w.mac_s, w.samuel) && v.acts_for(w.mac_s, coop);
-    let what = "Bob's Mac checked its founding: Samuel's Mac acts for Samuel, Samuel for Maia Coop, which owns it";
+    let chain = v.acts_for(w.mac_a, w.alice) && v.acts_for(w.mac_a, coop);
+    let what = "Bob's Mac checked its founding: Alice's Mac acts for Alice, Alice for Maia Coop, which owns it";
     run.check(what, chain && v.holds(coop, Scope::Space(handbook), Role::Owner));
-    run.check("Samuel's Notes are Samuel's alone: Bob's Mac doesn't even learn they exist", v.space(notes).is_none());
+    run.check("Alice's Notes are Alice's alone: Bob's Mac doesn't even learn they exist", v.space(notes).is_none());
     Ok(())
 }
 
@@ -278,14 +278,14 @@ fn one_document_via_caps(run: &mut Run) -> Done {
     let h = handbook(&mut w);
     let carol = w.carol;
     let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), h.coop, None);
-    run.ok("the coop gives Carol read on Welcome only", w.lab.submit(w.mac_s, &[w.mac_s], read))?;
+    run.ok("the coop gives Carol read on Welcome only", w.lab.submit(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(6);
     let shown = text(&w.lab, w.mac_c, h.space, h.welcome, 2);
     run.same("Carol's Mac fetches and reads Welcome", shown.as_deref(), Some(WELCOME_TEXT));
     run.same("and never fetches Onboarding", w.lab.fetched(w.mac_c, h.space, h.onboarding), 0);
     let edit = w.lab.edit(w.mac_c, carol, h.space, h.welcome, |i| i.set_text(2, "Carol was here"));
     run.same("Carol's own Mac refuses the edit of Welcome", edit.err(), Some(Refusal::NoCap));
-    for d in [w.mac_s, w.mac_b, w.server] {
+    for d in [w.mac_a, w.mac_b, w.server] {
         let forced = Tamper::Unchecked { signers: vec![w.mac_c], action: write(h.space, h.welcome, carol, 0) };
         let what = format!("{} refuses it when a patched app sends it anyway", named(&w.lab, d));
         run.same(what, w.lab.tamper(d, forced), Err(Refusal::NoCap));
@@ -296,10 +296,10 @@ fn one_document_via_caps(run: &mut Run) -> Done {
 fn public(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
-    let charter = document("Charter", CHARTER_TEXT, w.mac_s);
-    let charter = run.ok("the coop writes its Charter", w.lab.create(w.mac_s, h.coop, h.space, charter))?;
+    let charter = document("Charter", CHARTER_TEXT, w.mac_a);
+    let charter = run.ok("the coop writes its Charter", w.lab.create(w.mac_a, h.coop, h.space, charter))?;
     let public = grant(Scope::Entry(h.space, charter), Role::Read, Grantee::Public, h.coop, None);
-    run.ok("and makes it public", w.lab.submit(w.mac_s, &[w.mac_s], public))?;
+    run.ok("and makes it public", w.lab.submit(w.mac_a, &[w.mac_a], public))?;
     w.lab.sync_all(7);
     w.lab.sync(w.server, w.stranger);
     for d in [w.stranger, w.server] {
@@ -321,23 +321,23 @@ fn branches(run: &mut Run) -> Done {
     let h = handbook(&mut w);
     let (coop, item) = (h.coop, (h.space, h.welcome));
     let main_text = |lab: &Lab, d| text(lab, d, h.space, h.welcome, 2);
-    let heads = |lab: &Lab, line| lab.state(w.mac_s).heads(h.space, h.welcome, line);
+    let heads = |lab: &Lab, line| lab.state(w.mac_a).heads(h.space, h.welcome, line);
     let first = heads(&w.lab, MAIN);
     let draft = w.lab.branch(w.mac_b, coop, item, &first, "Bob's greenhouse draft");
     let draft = run.ok("Bob starts a draft of Welcome", draft)?;
     let edit = w.lab.edit_on(w.mac_b, coop, h.space, h.welcome, Some(draft), |i| i.set_text(2, "Hello, Bob here"));
     run.ok("and edits it there", edit)?;
     w.lab.sync_all(8);
-    for d in [w.mac_s, w.phone_s, w.mac_b] {
+    for d in [w.mac_a, w.phone_a, w.mac_b] {
         let who = named(&w.lab, d);
         run.same(format!("main is unchanged on {who}"), main_text(&w.lab, d).as_deref(), Some(WELCOME_TEXT));
         let on_draft = w.lab.item_on(d, h.space, h.welcome, Some(draft)).and_then(|i| i.as_document());
         let shown = on_draft.and_then(|d| d.blocks.get(1).map(|b| b.text.clone()));
         run.same(format!("{who} shows Bob's edit on the draft"), shown.as_deref(), Some("Hello, Bob here"));
     }
-    let name = w.lab.history(w.mac_s, h.space, h.welcome).and_then(|h| h.name(draft));
+    let name = w.lab.history(w.mac_a, h.space, h.welcome).and_then(|h| h.name(draft));
     run.same(
-        "the draft's name travels encrypted, and Samuel's Mac reads it",
+        "the draft's name travels encrypted, and Alice's Mac reads it",
         name.as_deref(),
         Some("Bob's greenhouse draft"),
     );
@@ -345,7 +345,7 @@ fn branches(run: &mut Run) -> Done {
     let blind = !contains(&server, "Bob's greenhouse draft") && !contains(&server, "Hello, Bob here");
     run.check("the server stores the draft and reads neither its name nor its edit", blind);
     let before_merge = heads(&w.lab, MAIN);
-    run.ok("Samuel merges the draft into main", w.lab.merge(w.mac_s, coop, item, Some(draft), MAIN))?;
+    run.ok("Alice merges the draft into main", w.lab.merge(w.mac_a, coop, item, Some(draft), MAIN))?;
     w.lab.sync_all(8);
     run.same(
         "Bob's Mac shows the draft's edit on main",
@@ -353,30 +353,30 @@ fn branches(run: &mut Run) -> Done {
         Some("Hello, Bob here"),
     );
     // a second branch is promoted: main ends with exactly its content, though main moved on meanwhile
-    let rewrite = w.lab.branch(w.mac_s, coop, item, &heads(&w.lab, MAIN), "rewrite");
-    let rewrite = Some(run.ok("Samuel starts a second branch, rewrite", rewrite)?);
-    let edit = w.lab.edit_on(w.mac_s, coop, h.space, h.welcome, rewrite, |i| i.set_text(2, "Welcome to the coop"));
+    let rewrite = w.lab.branch(w.mac_a, coop, item, &heads(&w.lab, MAIN), "rewrite");
+    let rewrite = Some(run.ok("Alice starts a second branch, rewrite", rewrite)?);
+    let edit = w.lab.edit_on(w.mac_a, coop, h.space, h.welcome, rewrite, |i| i.set_text(2, "Welcome to the coop"));
     run.ok("and rewrites Welcome there", edit)?;
     let meanwhile =
         w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.push_block(paragraph(3, "an edit on main meanwhile")));
     run.ok("meanwhile Bob edits main", meanwhile)?;
     w.lab.sync_all(8);
-    run.ok("Samuel promotes the rewrite into main", w.lab.promote(w.mac_s, coop, item, rewrite, MAIN))?;
+    run.ok("Alice promotes the rewrite into main", w.lab.promote(w.mac_a, coop, item, rewrite, MAIN))?;
     w.lab.sync_all(8);
-    for d in [w.phone_s, w.mac_b] {
+    for d in [w.phone_a, w.mac_b] {
         let shown = |line| w.lab.item_on(d, h.space, h.welcome, line).map(|i| i.record());
         run.same(format!("{} shows main exactly as the rewrite", named(&w.lab, d)), shown(MAIN), shown(rewrite));
     }
     let record = run.some("Bob's Mac shows Welcome", w.lab.item(w.mac_b, h.space, h.welcome))?.record().to_string();
     run.check("main no longer holds Bob's edit made meanwhile", !record.contains("meanwhile"));
     // the latest commit is reverted: main goes back to the version it built on
-    let good = run.some("Samuel's Mac shows Welcome", w.lab.item(w.mac_s, h.space, h.welcome))?.as_document();
+    let good = run.some("Alice's Mac shows Welcome", w.lab.item(w.mac_a, h.space, h.welcome))?.as_document();
     let bad = run.ok("Bob makes a bad edit", w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.set_text(2, "oops")))?;
     w.lab.sync_all(8);
-    let latest = w.lab.state(w.mac_s).history(h.space, h.welcome, MAIN).last().map(|w| w.deps.clone());
+    let latest = w.lab.state(w.mac_a).history(h.space, h.welcome, MAIN).last().map(|w| w.deps.clone());
     let built_on = run.some("main has a latest commit", latest)?;
-    run.ok("Samuel reverts it", w.lab.restore(w.mac_s, coop, item, MAIN, &built_on))?;
-    let now = w.lab.item(w.mac_s, h.space, h.welcome).and_then(|i| i.as_document());
+    run.ok("Alice reverts it", w.lab.restore(w.mac_a, coop, item, MAIN, &built_on))?;
+    let now = w.lab.item(w.mac_a, h.space, h.welcome).and_then(|i| i.as_document());
     run.same("main is back to the version that edit built on", now, good);
     // an older bad commit is undone by a diff-based restore, which keeps what came after
     let older = w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.set_text(1, "Welcome!!!"));
@@ -384,7 +384,7 @@ fn branches(run: &mut Run) -> Done {
     let later = w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.push_block(paragraph(4, "a later, good edit")));
     run.ok("then a good one", later)?;
     w.lab.sync_all(8);
-    run.ok("Samuel undoes the older bad edit", w.lab.undo(w.mac_s, coop, item, MAIN, older))?;
+    run.ok("Alice undoes the older bad edit", w.lab.undo(w.mac_a, coop, item, MAIN, older))?;
     w.lab.sync_all(8);
     let doc = w.lab.item(w.mac_b, h.space, h.welcome).and_then(|i| i.as_document());
     let doc = run.some("Bob's Mac shows Welcome as a document", doc)?;
@@ -403,7 +403,7 @@ fn branches(run: &mut Run) -> Done {
     run.same("the version before the merge opens read-only, as it was", old.as_deref(), Some(WELCOME_TEXT));
     let carol = w.carol;
     let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), coop, None);
-    run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_s, &[w.mac_s], read))?;
+    run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(8);
     let mine = w.lab.branch(w.mac_c, carol, item, &first, "mine").err();
     run.same("Carol, who may only read Welcome, can't start a branch of it", mine, Some(Refusal::NoCap));
@@ -421,8 +421,8 @@ fn schema_v2(run: &mut Run) -> Done {
     let h = handbook(&mut w);
     let (coop, sp, welcome) = (h.coop, h.space, h.welcome);
     let publish = |blob: &[u8]| Action::Publish { space: sp, actor: coop, via: vec![], blob: blob.to_vec() };
-    let v1 = w.lab.submit(w.mac_s, &[w.mac_s], publish(DOCUMENT_V1.bytes()));
-    run.ok("Samuel publishes v1, the schema Welcome was written under, into the Handbook's lane", v1)?;
+    let v1 = w.lab.submit(w.mac_a, &[w.mac_a], publish(DOCUMENT_V1.bytes()));
+    run.ok("Alice publishes v1, the schema Welcome was written under, into the Handbook's lane", v1)?;
     w.lab.sync_all(9);
     let (seen, read_only) =
         run.some("a v2 app on Bob's Mac opens Welcome", w.lab.open(w.mac_b, sp, welcome, &DOCUMENT_V2))?;
@@ -434,8 +434,8 @@ fn schema_v2(run: &mut Run) -> Done {
         w.lab.edit_as(w.mac_b, coop, sp, welcome, &DOCUMENT_V2, tag),
         Err(Refusal::ReadOnly),
     );
-    run.ok("Samuel publishes v2", w.lab.submit(w.mac_s, &[w.mac_s], publish(DOCUMENT_V2.bytes())))?;
-    run.ok("and the lens from v1 to v2", w.lab.submit(w.mac_s, &[w.mac_s], publish(DOCUMENT_LENS.bytes())))?;
+    run.ok("Alice publishes v2", w.lab.submit(w.mac_a, &[w.mac_a], publish(DOCUMENT_V2.bytes())))?;
+    run.ok("and the lens from v1 to v2", w.lab.submit(w.mac_a, &[w.mac_a], publish(DOCUMENT_LENS.bytes())))?;
     w.lab.sync_all(9);
     let (seen, read_only) =
         run.some("Bob's v2 app opens Welcome again", w.lab.open(w.mac_b, sp, welcome, &DOCUMENT_V2))?;
@@ -452,7 +452,7 @@ fn schema_v2(run: &mut Run) -> Done {
     run.check("it adds a tag and a checklist item", matches!(edit, Ok(Some(_))));
     w.lab.sync_all(9);
     let (seen, read_only) =
-        run.some("a v1 app on Samuel's Mac opens Welcome", w.lab.open(w.mac_s, sp, welcome, &DOCUMENT_V1))?;
+        run.some("a v1 app on Alice's Mac opens Welcome", w.lab.open(w.mac_a, sp, welcome, &DOCUMENT_V1))?;
     run.check("and may edit it", !read_only);
     let v1 = |text: &str| {
         json!({"kind": "document", "title": "Welcome", "blocks": [
@@ -461,12 +461,12 @@ fn schema_v2(run: &mut Run) -> Done {
             {"id": 3, "kind": "li", "text": "Water the seedlings"}]})
     };
     run.same("it reads its own content as it wrote it, and Bob's item as a list item", seen, v1(WELCOME_TEXT));
-    let unchanged = w.lab.edit_as(w.mac_s, coop, sp, welcome, &DOCUMENT_V1, |_| {});
+    let unchanged = w.lab.edit_as(w.mac_a, coop, sp, welcome, &DOCUMENT_V1, |_| {});
     run.same("its view put back unchanged writes nothing", unchanged, Ok(None));
-    let edit = w.lab.edit_as(w.mac_s, coop, sp, welcome, &DOCUMENT_V1, |d| d["blocks"][1]["text"] = json!(AFTER_TEXT));
+    let edit = w.lab.edit_as(w.mac_a, coop, sp, welcome, &DOCUMENT_V1, |d| d["blocks"][1]["text"] = json!(AFTER_TEXT));
     run.check("the v1 app edits what it sees", matches!(edit, Ok(Some(_))));
     w.lab.sync_all(9);
-    let reread = w.lab.open(w.mac_s, sp, welcome, &DOCUMENT_V1).map(|(v, _)| v);
+    let reread = w.lab.open(w.mac_a, sp, welcome, &DOCUMENT_V1).map(|(v, _)| v);
     run.same("and reads its edit back", reread, Some(v1(AFTER_TEXT)));
     let (seen, _) = run.some("Bob's v2 app opens Welcome", w.lab.open(w.mac_b, sp, welcome, &DOCUMENT_V2))?;
     let kept = (&seen["tags"], &seen["blocks"][2]["checked"]);
@@ -495,17 +495,17 @@ fn revoke_carol(run: &mut Run) -> Done {
     let carol = w.carol;
     let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), h.coop, None);
     let carol_read =
-        GrantId::from(run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_s, &[w.mac_s], read))?);
+        GrantId::from(run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_a, &[w.mac_a], read))?);
     w.lab.sync_all(10);
     let key = KeyScope::Entry(h.space, h.welcome);
-    let before = w.lab.log(w.mac_s).view().epoch(key);
+    let before = w.lab.log(w.mac_a).view().epoch(key);
     let had = w.lab.fetched(w.mac_c, h.space, h.welcome);
     let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
-    run.ok("the coop revokes it", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
-    let edit = w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
-    run.ok("Samuel edits Welcome afterwards", edit)?;
+    run.ok("the coop revokes it", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
+    let edit = w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
+    run.ok("Alice edits Welcome afterwards", edit)?;
     w.lab.sync_all(10);
-    run.same("Welcome's key rotated", w.lab.log(w.mac_s).view().epoch(key), before + 1);
+    run.same("Welcome's key rotated", w.lab.log(w.mac_a).view().epoch(key), before + 1);
     run.check("Carol can't open the new key, Bob can", !w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_b, key));
     let kept = text(&w.lab, w.mac_c, h.space, h.welcome, 2);
     run.same("Carol keeps what was there before", kept.as_deref(), Some(WELCOME_TEXT));
@@ -518,24 +518,24 @@ fn lost_iphone(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
     let keys = [
-        (KeyScope::Vault(w.samuel), "Samuel's vault key"),
+        (KeyScope::Vault(w.alice), "Alice's vault key"),
         (KeyScope::Vault(h.coop), "the coop's key"),
         (KeyScope::Space(h.space), "the Handbook's key"),
-        (KeyScope::Space(h.notes), "the key of Samuel's Notes"),
+        (KeyScope::Space(h.notes), "the key of Alice's Notes"),
     ];
-    let before = keys.map(|(k, _)| w.lab.log(w.mac_s).view().epoch(k));
-    let (samuel, phone) = (w.samuel, w.phone_s);
-    let remove = Action::RemoveDevice { vault: samuel, device: phone, keep: vec![] };
-    run.ok("Samuel's passkey removes the iPhone", w.lab.submit(w.mac_s, &[w.passkey_s], remove))?;
-    let edit = w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
-    run.ok("Samuel edits Welcome afterwards", edit)?;
+    let before = keys.map(|(k, _)| w.lab.log(w.mac_a).view().epoch(k));
+    let (alice, phone) = (w.alice, w.phone_a);
+    let remove = Action::RemoveDevice { vault: alice, device: phone, keep: vec![] };
+    run.ok("Alice's passkey removes the iPhone", w.lab.submit(w.mac_a, &[w.passkey_a], remove))?;
+    let edit = w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
+    run.ok("Alice edits Welcome afterwards", edit)?;
     w.lab.sync_all(11);
-    let v = w.lab.log(w.mac_s).view();
+    let v = w.lab.log(w.mac_a).view();
     for ((k, name), b) in keys.into_iter().zip(before) {
         run.same(format!("{name} rotated"), v.epoch(k), b + 1);
     }
     let welcome = KeyScope::Entry(h.space, h.welcome);
-    let opens = !w.lab.opens(phone, welcome) && w.lab.opens(w.mac_s, welcome) && w.lab.opens(w.mac_b, welcome);
+    let opens = !w.lab.opens(phone, welcome) && w.lab.opens(w.mac_a, welcome) && w.lab.opens(w.mac_b, welcome);
     run.check("the iPhone can't open Welcome's new key; the Mac and Bob's Mac can", opens);
     run.check("the iPhone holds nothing written afterwards", !contains(&w.lab.store(phone), AFTER_TEXT));
     let forced = Tamper::Unchecked { signers: vec![phone], action: write(h.space, h.welcome, h.coop, 1) };
@@ -550,23 +550,23 @@ fn bob_leaves(run: &mut Run) -> Done {
     let bobs = run.ok("Bob edits Welcome", bobs)?;
     w.lab.sync_all(12);
     let keys = [KeyScope::Vault(h.coop), KeyScope::Space(h.space)];
-    let before = keys.map(|k| w.lab.log(w.mac_s).view().epoch(k));
+    let before = keys.map(|k| w.lab.log(w.mac_a).view().epoch(k));
     let bob = w.bob;
     // the removal had seen Bob's edit
     let leave = Action::RemoveOwner { vault: h.coop, owner: Principal::Vault(bob), keep: vec![bobs] };
     run.ok("Bob leaves the coop, signing with only Bob's passkey", w.lab.submit(w.mac_b, &[w.passkey_b], leave))?;
-    // what Samuel's Mac wrote before hearing of it would still be under the keys Bob holds
-    w.lab.sync(w.mac_b, w.mac_s);
-    let edit = w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
-    run.ok("Samuel's Mac hears of it, then edits Welcome", edit)?;
+    // what Alice's Mac wrote before hearing of it would still be under the keys Bob holds
+    w.lab.sync(w.mac_b, w.mac_a);
+    let edit = w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
+    run.ok("Alice's Mac hears of it, then edits Welcome", edit)?;
     w.lab.sync_all(12);
-    let v = w.lab.log(w.mac_s).view();
+    let v = w.lab.log(w.mac_a).view();
     run.same("the coop's threshold drops to 1", v.vault(h.coop).map(|c| c.threshold), Some(1));
     run.same("the keys of the coop and of the Handbook rotate", keys.map(|k| v.epoch(k)), before.map(|e| e + 1));
     run.check("Bob can't open Welcome's new key", !w.lab.opens(w.mac_b, KeyScope::Entry(h.space, h.welcome)));
     run.check("Bob's Mac holds nothing written afterwards", !contains(&w.lab.store(w.mac_b), AFTER_TEXT));
     run.check("Bob's earlier edit stays", v.writes(h.space, h.welcome).contains(&bobs));
-    let author = w.lab.log(w.mac_s).ops().iter().find(|o| o.id() == bobs).map(|o| o.author);
+    let author = w.lab.log(w.mac_a).ops().iter().find(|o| o.id() == bobs).map(|o| o.author);
     run.same("attributed to Bob's Mac", author, Some(w.mac_b));
     Ok(())
 }
@@ -578,29 +578,29 @@ fn offline_conflicts(run: &mut Run) -> Done {
         let carol = w.carol;
         let write_cap = grant(Scope::Entry(h.space, h.welcome), Role::Write, vault(carol), h.coop, None);
         let carol_write =
-            GrantId::from(run.must("the coop gives Carol write", w.lab.submit(w.mac_s, &[w.mac_s], write_cap))?);
+            GrantId::from(run.must("the coop gives Carol write", w.lab.submit(w.mac_a, &[w.mac_a], write_cap))?);
         w.lab.sync_all(seed);
         // Carol edits offline while the coop revokes Carol
         w.lab.set_online(w.mac_c, false);
         let carols = w.lab.edit(w.mac_c, carol, h.space, h.welcome, |i| i.set_text(2, "Carol, offline"));
         let carols = run.must("Carol edits Welcome offline", carols)?;
         let revoke = Action::Revoke { grant: carol_write, actor: h.coop, keep: vec![], via: vec![] };
-        run.must("the coop revokes Carol", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
-        // Samuel and Bob edit the same block at the same moment
+        run.must("the coop revokes Carol", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
+        // Alice and Bob edit the same block at the same moment
         w.lab.set_online(w.mac_b, false);
-        let samuels = w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, "Samuel's version"));
-        run.must("Samuel edits the block", samuels)?;
+        let alices = w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, "Alice's version"));
+        run.must("Alice edits the block", alices)?;
         let bobs = w.lab.edit(w.mac_b, h.coop, h.space, h.welcome, |i| i.set_text(2, "Bob's version"));
         run.must("Bob edits the same block", bobs)?;
         // everyone comes back and receives everything, in an order drawn from the seed
         w.lab.set_online(w.mac_c, true);
         w.lab.set_online(w.mac_b, true);
         w.lab.sync_all(seed);
-        let devices = [w.mac_s, w.phone_s, w.mac_b, w.mac_c];
+        let devices = [w.mac_a, w.phone_a, w.mac_b, w.mac_c];
         let dropped = devices.iter().all(|&d| !w.lab.log(d).view().writes(h.space, h.welcome).contains(&carols));
         run.check(format!("delivery order {}: every device drops Carol's unseen edit", seed + 1), dropped);
         let shown =
-            [w.mac_s, w.phone_s, w.mac_b].map(|d| w.lab.item(d, h.space, h.welcome).and_then(|i| i.as_document()));
+            [w.mac_a, w.phone_a, w.mac_b].map(|d| w.lab.item(d, h.space, h.welcome).and_then(|i| i.as_document()));
         let same = shown.iter().all(|s| s.is_some() && *s == shown[0]);
         run.check(format!("delivery order {}: every device shows the same Welcome", seed + 1), same);
     }
@@ -610,9 +610,9 @@ fn offline_conflicts(run: &mut Run) -> Done {
 fn tampering(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
-    let add = Action::AddDevice { vault: w.samuel, device: w.stranger, seal_to: None };
-    let forged = Tamper::ForgedSignature { claimed: w.passkey_s, action: add };
-    let what = "a forged signature, Samuel's passkey adding the stranger's device, is rejected";
+    let add = Action::AddDevice { vault: w.alice, device: w.stranger, seal_to: None };
+    let forged = Tamper::ForgedSignature { claimed: w.passkey_a, action: add };
+    let what = "a forged signature, Alice's passkey adding the stranger's device, is rejected";
     run.same(what, w.lab.tamper(w.mac_b, forged), Err(Refusal::BadSignature));
     let chain = Tamper::Unchecked { signers: vec![w.stranger], action: write(h.space, h.welcome, h.coop, 0) };
     run.same(
@@ -620,7 +620,7 @@ fn tampering(run: &mut Run) -> Done {
         w.lab.tamper(w.mac_b, chain),
         Err(Refusal::NotActing),
     );
-    let writes = w.lab.log(w.mac_s).view().writes(h.space, h.welcome);
+    let writes = w.lab.log(w.mac_a).view().writes(h.space, h.welcome);
     let last = run.some("Welcome has a latest write", writes.last().copied())?;
     let changed = w.lab.tamper(w.mac_b, Tamper::ChangedCiphertext(last));
     run.same(
@@ -632,12 +632,12 @@ fn tampering(run: &mut Run) -> Done {
     let carol = w.carol;
     let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), h.coop, None);
     let carol_read =
-        GrantId::from(run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_s, &[w.mac_s], read))?);
+        GrantId::from(run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_a, &[w.mac_a], read))?);
     w.lab.sync_all(14);
     let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
-    run.ok("and revokes it", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
-    let edit = w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
-    run.ok("Samuel edits Welcome afterwards", edit)?;
+    run.ok("and revokes it", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
+    let edit = w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
+    run.ok("Alice edits Welcome afterwards", edit)?;
     w.lab.sync_all(14);
     let old = KeyName::Scoped(KeyScope::Entry(h.space, h.welcome), 0);
     let _ = w.lab.tamper(w.mac_c, Tamper::ReplayedSeal { key: old, to: w.mac_c });
@@ -656,16 +656,16 @@ fn social_todo(run: &mut Run) -> Done {
     let done = w.lab.edit(w.mac_b, bob, t.space, t.door, |i| i.set_status(Status::Done));
     run.ok("Bob checks the door todo off on Bob's Mac", done)?;
     w.lab.sync_all(15);
-    for d in [w.mac_s, w.mac_c] {
+    for d in [w.mac_a, w.mac_c] {
         run.same(format!("{} sees it done", named(&w.lab, d)), status(&w.lab, d, t.space, t.door), Some(Status::Done));
     }
     let carol = w.carol;
     let edit = w.lab.edit(w.mac_c, carol, t.space, t.door, |i| i.set_status(Status::Open));
     run.same("Carol can only read it", edit.err(), Some(Refusal::NoCap));
-    let (dave, phone) = (w.dave, w.phone_s);
+    let (dave, phone) = (w.dave, w.phone_a);
     let share = grant(Scope::Entry(t.space, t.door), Role::Read, vault(dave), t.coop, Some(t.coop_owner));
     run.ok(
-        "acting for the coop, any coop owner's device shares it further: Samuel's iPhone with Dave",
+        "acting for the coop, any coop owner's device shares it further: Alice's iPhone with Dave",
         w.lab.submit(phone, &[phone], share),
     )?;
     w.lab.sync_all(15);
@@ -682,16 +682,16 @@ fn roles_change(run: &mut Run) -> Done {
     let t = todos_on(&mut w);
     let door = Scope::Entry(t.space, t.door);
     let key = KeyScope::Entry(t.space, t.door);
-    let (carol, dave, samuel) = (w.carol, w.dave, w.samuel);
+    let (carol, dave, alice) = (w.carol, w.dave, w.alice);
     w.lab.sync_all(16);
     let read = grant(door, Role::Read, vault(dave), t.coop, Some(t.coop_owner));
     run.ok("acting for the coop, Bob gives Dave read", w.lab.submit(w.mac_b, &[w.mac_b], read))?;
-    let write_cap = grant(door, Role::Write, vault(carol), samuel, None);
-    run.ok("Samuel raises Carol to write", w.lab.submit(w.mac_s, &[w.mac_s], write_cap))?;
-    let revoke = Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![], via: vec![] };
-    run.ok("and takes Bob's own write away", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
+    let write_cap = grant(door, Role::Write, vault(carol), alice, None);
+    run.ok("Alice raises Carol to write", w.lab.submit(w.mac_a, &[w.mac_a], write_cap))?;
+    let revoke = Action::Revoke { grant: t.bob_write, actor: alice, keep: vec![], via: vec![] };
+    run.ok("and takes Bob's own write away", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
     w.lab.sync_all(16);
-    let before = w.lab.log(w.mac_s).view().epoch(key);
+    let before = w.lab.log(w.mac_a).view().epoch(key);
     run.same("Bob still reaches the todo through the coop, so its key didn't rotate", before, 0);
     run.check("Bob and Dave open it", w.lab.opens(w.mac_b, key) && w.lab.opens(w.mac_d, key));
     let doing = w.lab.edit(w.mac_b, t.coop, t.space, t.door, |i| i.set_status(Status::Doing));
@@ -699,20 +699,20 @@ fn roles_change(run: &mut Run) -> Done {
     run.ok("Carol edits it", w.lab.edit(w.mac_c, carol, t.space, t.door, |i| i.set_status(Status::Done)))?;
     w.lab.sync_all(16);
     let had = (w.lab.fetched(w.mac_b, t.space, t.door), w.lab.fetched(w.mac_d, t.space, t.door));
-    let revoke = Action::Revoke { grant: t.coop_owner, actor: samuel, keep: vec![], via: vec![] };
-    let what = "Samuel's passkey takes the coop's owner cap away, which also ends the read Bob gave Dave";
-    run.ok(what, w.lab.submit(w.mac_s, &[w.passkey_s], revoke))?;
-    run.ok("Samuel edits the todo", w.lab.edit(w.mac_s, samuel, t.space, t.door, |i| i.set_status(Status::Open)))?;
+    let revoke = Action::Revoke { grant: t.coop_owner, actor: alice, keep: vec![], via: vec![] };
+    let what = "Alice's passkey takes the coop's owner cap away, which also ends the read Bob gave Dave";
+    run.ok(what, w.lab.submit(w.mac_a, &[w.passkey_a], revoke))?;
+    run.ok("Alice edits the todo", w.lab.edit(w.mac_a, alice, t.space, t.door, |i| i.set_status(Status::Open)))?;
     w.lab.sync_all(16);
-    run.same("only now does its key rotate", w.lab.log(w.mac_s).view().epoch(key), before + 1);
+    run.same("only now does its key rotate", w.lab.log(w.mac_a).view().epoch(key), before + 1);
     run.check("Bob and Dave can't open it anymore", !w.lab.opens(w.mac_b, key) && !w.lab.opens(w.mac_d, key));
-    run.check("Carol and Samuel still do", w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_s, key));
+    run.check("Carol and Alice still do", w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_a, key));
     let now = (w.lab.fetched(w.mac_b, t.space, t.door), w.lab.fetched(w.mac_d, t.space, t.door));
     run.same("Bob's and Dave's devices stopped syncing it", now, had);
     let edit = w.lab.edit(w.mac_b, t.coop, t.space, t.door, |i| i.set_status(Status::Done));
     run.same("Bob's later edit is refused on Bob's Mac", edit.err(), Some(Refusal::NoCap));
     let forced = Tamper::Unchecked { signers: vec![w.mac_b], action: write(t.space, t.door, t.coop, before + 1) };
-    run.same("and rejected when a patched app sends it anyway", w.lab.tamper(w.mac_s, forced), Err(Refusal::NoCap));
+    run.same("and rejected when a patched app sends it anyway", w.lab.tamper(w.mac_a, forced), Err(Refusal::NoCap));
     Ok(())
 }
 
@@ -720,14 +720,14 @@ fn peer_to_peer(run: &mut Run) -> Done {
     let mut w = world();
     let t = todos_on(&mut w);
     w.lab.set_online(w.server, false);
-    w.lab.sync(w.mac_s, w.mac_c);
+    w.lab.sync(w.mac_a, w.mac_c);
     let fetched = status(&w.lab, w.mac_c, t.space, t.door).is_some();
-    run.check("with the server offline, Carol's Mac syncs the door todo straight from Samuel's Mac", fetched);
+    run.check("with the server offline, Carol's Mac syncs the door todo straight from Alice's Mac", fetched);
     let none = [t.seeds, t.solar].iter().all(|&e| w.lab.fetched(w.mac_c, t.space, e) == 0);
     run.check("and nothing of the other two todos", none);
-    w.lab.sync(w.mac_s, w.stranger);
+    w.lab.sync(w.mac_a, w.stranger);
     run.same("a device without a cap that asks for it gets nothing", w.lab.fetched(w.stranger, t.space, t.door), 0);
-    w.lab.sync(w.mac_s, w.mac_b);
+    w.lab.sync(w.mac_a, w.mac_b);
     let bob = w.bob;
     let doing = w.lab.edit(w.mac_b, bob, t.space, t.door, |i| i.set_status(Status::Doing));
     run.ok("Bob starts on it on Bob's Mac", doing)?;
@@ -741,19 +741,19 @@ fn peer_to_peer(run: &mut Run) -> Done {
     Ok(())
 }
 
-/// What the new Mac must reach after a recovery: Samuel's vault and the coop, their keys and the Handbook's, and
+/// What the new Mac must reach after a recovery: Alice's vault and the coop, their keys and the Handbook's, and
 /// Welcome with its history.
 fn recovered(run: &mut Run, w: &World, h: &Handbook, new_mac: SignerId) {
-    let (coop, samuel) = (h.coop, w.samuel);
+    let (coop, alice) = (h.coop, w.alice);
     let v = w.lab.log(w.mac_b).view();
     run.check(
-        "Bob's Mac sees the new Mac act for Samuel and for the coop",
-        v.acts_for(new_mac, samuel) && v.acts_for(new_mac, coop),
+        "Bob's Mac sees the new Mac act for Alice and for the coop",
+        v.acts_for(new_mac, alice) && v.acts_for(new_mac, coop),
     );
-    run.check("and the lost devices act for neither", !v.acts_for(w.mac_s, coop) && !v.acts_for(w.phone_s, coop));
+    run.check("and the lost devices act for neither", !v.acts_for(w.mac_a, coop) && !v.acts_for(w.phone_a, coop));
     run.check("the new Mac knows the coop", w.lab.log(new_mac).view().vault(coop).is_some());
     let keys = [
-        (KeyScope::Vault(samuel), "Samuel's vault key"),
+        (KeyScope::Vault(alice), "Alice's vault key"),
         (KeyScope::Vault(coop), "the coop's key"),
         (KeyScope::Space(h.space), "the Handbook's key"),
     ];
@@ -767,27 +767,27 @@ fn recovered(run: &mut Run, w: &World, h: &Handbook, new_mac: SignerId) {
 fn recovery(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
-    let samuel = w.samuel;
+    let alice = w.alice;
     w.lab.sync_all(18);
-    // Samuel's passkey, the vault's root, lives on in an iCloud Keychain
-    for s in [w.mac_s, w.phone_s] {
+    // Alice's passkey, the vault's root, lives on in an iCloud Keychain
+    for s in [w.mac_a, w.phone_a] {
         w.lab.lose(s);
     }
-    // a new Mac derives its keys from the passkey; Bob's Mac, which acts for the coop, hands over the log of Samuel's
+    // a new Mac derives its keys from the passkey; Bob's Mac, which acts for the coop, hands over the log of Alice's
     // vault
-    let new_mac = w.lab.device_of(w.passkey_s, "Samuel's new Mac");
-    w.lab.share_contact(w.mac_b, new_mac, samuel);
-    let add = Action::AddDevice { vault: samuel, device: new_mac, seal_to: None };
-    let what = "Samuel loses the Mac and the iPhone; the passkey adds a new Mac";
-    run.ok(what, w.lab.submit(new_mac, &[w.passkey_s, new_mac], add))?;
-    // the new Mac shows Bob the log of Samuel's vault again, as a contact card, and syncs before the passkey removes
+    let new_mac = w.lab.device_of(w.passkey_a, "Alice's new Mac");
+    w.lab.share_contact(w.mac_b, new_mac, alice);
+    let add = Action::AddDevice { vault: alice, device: new_mac, seal_to: None };
+    let what = "Alice loses the Mac and the iPhone; the passkey adds a new Mac";
+    run.ok(what, w.lab.submit(new_mac, &[w.passkey_a, new_mac], add))?;
+    // the new Mac shows Bob the log of Alice's vault again, as a contact card, and syncs before the passkey removes
     // the lost devices: a removal cuts, for everyone, whatever of theirs its device hadn't seen
-    w.lab.share_contact(new_mac, w.mac_b, samuel);
+    w.lab.share_contact(new_mac, w.mac_b, alice);
     w.lab.sync_all(19);
-    for lost in [w.mac_s, w.phone_s] {
-        let remove = Action::RemoveDevice { vault: samuel, device: lost, keep: vec![] };
+    for lost in [w.mac_a, w.phone_a] {
+        let remove = Action::RemoveDevice { vault: alice, device: lost, keep: vec![] };
         let what = format!("the passkey removes the lost {}", named(&w.lab, lost));
-        run.ok(what, w.lab.submit(new_mac, &[w.passkey_s], remove))?;
+        run.ok(what, w.lab.submit(new_mac, &[w.passkey_a], remove))?;
     }
     w.lab.sync_all(20);
     recovered(run, &w, &h, new_mac);
@@ -797,41 +797,41 @@ fn recovery(run: &mut Run) -> Done {
 fn backup_passkey(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
-    let samuel = w.samuel;
+    let alice = w.alice;
     // on a security key kept in a drawer
-    let backup = w.lab.passkey("Samuel's backup passkey");
-    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(backup), seal_to: None };
-    let what = "Samuel registers a backup passkey: a second owner of Samuel's vault, never its root";
-    run.ok(what, w.lab.submit(w.mac_s, &[w.passkey_s, backup], add))?;
+    let backup = w.lab.passkey("Alice's backup passkey");
+    let add = Action::AddOwner { vault: alice, owner: Principal::Signer(backup), seal_to: None };
+    let what = "Alice registers a backup passkey: a second owner of Alice's vault, never its root";
+    run.ok(what, w.lab.submit(w.mac_a, &[w.passkey_a, backup], add))?;
     w.lab.sync_all(18);
-    for s in [w.passkey_s, w.mac_s, w.phone_s] {
+    for s in [w.passkey_a, w.mac_a, w.phone_a] {
         w.lab.lose(s);
     }
-    // Samuel makes a new passkey, a new Mac derives its keys from it, and Bob's Mac hands over the vault's log
-    let new_passkey = w.lab.passkey("Samuel's new passkey");
-    let new_mac = w.lab.device_of(new_passkey, "Samuel's new Mac");
-    w.lab.share_contact(w.mac_b, new_mac, samuel);
-    let add = Action::AddOwner { vault: samuel, owner: Principal::Signer(new_passkey), seal_to: None };
-    let what = "Samuel loses the passkey too, with every device; the backup adds a new passkey";
+    // Alice makes a new passkey, a new Mac derives its keys from it, and Bob's Mac hands over the vault's log
+    let new_passkey = w.lab.passkey("Alice's new passkey");
+    let new_mac = w.lab.device_of(new_passkey, "Alice's new Mac");
+    w.lab.share_contact(w.mac_b, new_mac, alice);
+    let add = Action::AddOwner { vault: alice, owner: Principal::Signer(new_passkey), seal_to: None };
+    let what = "Alice loses the passkey too, with every device; the backup adds a new passkey";
     run.ok(what, w.lab.submit(new_mac, &[backup, new_passkey], add))?;
-    let add = Action::AddDevice { vault: samuel, device: new_mac, seal_to: None };
+    let add = Action::AddDevice { vault: alice, device: new_mac, seal_to: None };
     run.ok("and a new Mac", w.lab.submit(new_mac, &[backup, new_mac], add))?;
-    w.lab.share_contact(new_mac, w.mac_b, samuel);
+    w.lab.share_contact(new_mac, w.mac_b, alice);
     w.lab.sync_all(19);
-    for lost in [w.mac_s, w.phone_s] {
-        let remove = Action::RemoveDevice { vault: samuel, device: lost, keep: vec![] };
+    for lost in [w.mac_a, w.phone_a] {
+        let remove = Action::RemoveDevice { vault: alice, device: lost, keep: vec![] };
         let what = format!("the new passkey removes the lost {}", named(&w.lab, lost));
         run.ok(what, w.lab.submit(new_mac, &[new_passkey], remove))?;
     }
-    let hand_on = Action::SetRoot { vault: samuel, root: Some(new_passkey), keep: vec![] };
+    let hand_on = Action::SetRoot { vault: alice, root: Some(new_passkey), keep: vec![] };
     let refused = w.lab.submit(new_mac, &[backup, new_passkey], hand_on).err();
     run.same("only the root hands the root on, so the lost passkey stays the root", refused, Some(Refusal::NotRoot));
     w.lab.sync_all(20);
     let v = w.lab.log(w.mac_b).view();
     let approve =
-        v.approves(&[backup], Principal::Vault(samuel)) && v.approves(&[new_passkey], Principal::Vault(samuel));
-    run.check("the backup and the new passkey each approve for Samuel's vault", approve);
-    run.same("and the lost passkey is still its root", v.vault(samuel).and_then(|x| x.root), Some(w.passkey_s));
+        v.approves(&[backup], Principal::Vault(alice)) && v.approves(&[new_passkey], Principal::Vault(alice));
+    run.check("the backup and the new passkey each approve for Alice's vault", approve);
+    run.same("and the lost passkey is still its root", v.vault(alice).and_then(|x| x.root), Some(w.passkey_a));
     recovered(run, &w, &h, new_mac);
     Ok(())
 }

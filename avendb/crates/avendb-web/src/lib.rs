@@ -110,7 +110,7 @@ mod tests {
         assert!(play("99")["error"].is_string());
         let list: Value = serde_json::from_str(&scenarios()).unwrap();
         assert_eq!(list.as_array().map(Vec::len), Some(SCENARIOS.len()));
-        assert_eq!(list[0], json!({"number": "1", "title": "Samuel's vault", "phase": "P1"}));
+        assert_eq!(list[0], json!({"number": "1", "title": "Alice's vault", "phase": "P1"}));
     }
 
     #[test]

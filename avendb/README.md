@@ -58,7 +58,7 @@ to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit the
 A new device joins its person's vault by their passkey alone (P8c): through any device that holds the vault's log, or
 through the server once every other device is lost.
 
-1. A device that holds the vault, Samuel's Mac say, shows its offer as a QR code (`Node::offer`, text `AVENDB1…` in the
+1. A device that holds the vault, Alice's Mac say, shows its offer as a QR code (`Node::offer`, text `AVENDB1…` in the
    code's alphanumeric mode): its device, its endpoint and where to reach it. The app knows the server's offer, which
    the server logs as it starts.
 2. The new device scans it, connects, and both devices say their hellos. Then the new device says its passkey's hello:
@@ -177,8 +177,8 @@ and one headless Chromium driven over its DevTools protocol, whose virtual authe
 Each of her browsers is a frame of one tab, with a store of its own in IndexedDB: the first makes her passkey, founds
 her vault, claims the server and writes a note (8.0 s, three ceremonies, the server's claim and avenCEO's keys among
 the work); the second links through the first one's code and edits the note (3.8 s, four ceremonies); the first closes
-and opens again from its store (0.8 s, one ceremony), reads the edit and edits it once more. `tests/device.rs` runs the same natively, with a software passkey in the authenticator's place, and Samuel's
-browsers linking through his Mac.
+and opens again from its store (0.8 s, one ceremony), reads the edit and edits it once more. `tests/device.rs` runs the same natively, with a software passkey in the authenticator's place, and Alice's
+browsers linking through her Mac.
 
 ## The device's secure boundary
 

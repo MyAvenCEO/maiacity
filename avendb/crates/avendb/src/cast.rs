@@ -1,6 +1,6 @@
-//! The people, devices, vaults and spaces of the plan's scenarios, on the Lab: Samuel with a passkey, a Mac and an
-//! iPhone; Bob, Carol and Dave with a passkey and a Mac each; the relay server and a stranger. Samuel's vault is the
-//! first to claim the server: the server is a device of avenCEO, an aven vault Samuel's vault owns. The scenarios
+//! The people, devices, vaults and spaces of the plan's scenarios, on the Lab: Alice with a passkey, a Mac and an
+//! iPhone; Bob, Carol and Dave with a passkey and a Mac each; the relay server and a stranger. Alice's vault is the
+//! first to claim the server: the server is a device of avenCEO, an aven vault Alice's vault owns. The scenarios
 //! (`scenarios`) and the tests start from them, and so does the avenDB tile, which makes the world a step at a time
 //! (`Making`) so that a page makes the McEliece pairs of each step in its workers before the next step needs them.
 //! `avendb/spec/AvenDB/Examples.lean` has the same cast on the Lean model.
@@ -28,9 +28,9 @@ pub fn write(space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64) -> Acti
 /// The Lab after scenarios 1 and 2, plus the server, avenCEO and a stranger.
 pub struct World {
     pub lab: Lab,
-    pub passkey_s: SignerId,
-    pub mac_s: SignerId,
-    pub phone_s: SignerId,
+    pub passkey_a: SignerId,
+    pub mac_a: SignerId,
+    pub phone_a: SignerId,
     pub passkey_b: SignerId,
     pub mac_b: SignerId,
     pub passkey_c: SignerId,
@@ -38,10 +38,10 @@ pub struct World {
     pub passkey_d: SignerId,
     pub mac_d: SignerId,
     pub server: SignerId,
-    /// The aven vault the server is a device of, which Samuel's vault owns.
+    /// The aven vault the server is a device of, which Alice's vault owns.
     pub avenceo: VaultId,
     pub stranger: SignerId,
-    pub samuel: VaultId,
+    pub alice: VaultId,
     pub bob: VaultId,
     pub carol: VaultId,
     pub dave: VaultId,
@@ -92,13 +92,13 @@ pub fn world() -> World {
 }
 
 /// The world made a step at a time: every signer first, whose McEliece pairs a page then makes in its workers, then
-/// Samuel's vault, avenCEO as Samuel's vault claims the server, the other people's vaults, and the contact cards they
+/// Alice's vault, avenCEO as Alice's vault claims the server, the other people's vaults, and the contact cards they
 /// exchange.
 pub struct Making {
     lab: Lab,
     /// Each person's passkey and devices, then the server and the stranger.
     signers: Vec<SignerId>,
-    /// Samuel's vault, avenCEO, then Bob's, Carol's and Dave's.
+    /// Alice's vault, avenCEO, then Bob's, Carol's and Dave's.
     vaults: Vec<VaultId>,
     done: usize,
 }
@@ -128,7 +128,7 @@ impl Making {
         let made = match self.done {
             0 => {
                 let people: [(&str, &[&str]); 4] = [
-                    ("Samuel", &["Samuel's Mac", "Samuel's iPhone"]),
+                    ("Alice", &["Alice's Mac", "Alice's iPhone"]),
                     ("Bob", &["Bob's Mac"]),
                     ("Carol", &["Carol's Mac"]),
                     ("Dave", &["Dave's Mac"]),
@@ -147,13 +147,13 @@ impl Making {
             1 => {
                 let s = &self.signers;
                 self.vaults.push(human_on(lab, s[0], &[s[1], s[2]]));
-                "Samuel's vault, with the Mac and the iPhone"
+                "Alice's vault, with the Mac and the iPhone"
             }
             2 => {
                 let (s, v) = (&self.signers, &self.vaults);
                 let avenceo = claim_on(lab, s[1], s[0], v[0], s[9]);
                 self.vaults.push(avenceo);
-                "avenCEO, as Samuel's vault claims the server"
+                "avenCEO, as Alice's vault claims the server"
             }
             3 => {
                 let s = &self.signers;
@@ -163,8 +163,8 @@ impl Making {
                 "Bob's, Carol's and Dave's vaults"
             }
             4 => {
-                // they all know each other's vaults and avenCEO, as after exchanging contact cards; Samuel's iPhone
-                // holds the same contacts as Samuel's Mac
+                // they all know each other's vaults and avenCEO, as after exchanging contact cards; Alice's iPhone
+                // holds the same contacts as Alice's Mac
                 let (s, v) = (&self.signers, &self.vaults);
                 let macs = [(s[1], v[0]), (s[2], v[0]), (s[4], v[2]), (s[6], v[3]), (s[8], v[4]), (s[9], v[1])];
                 for &(from, v) in &macs {
@@ -188,9 +188,9 @@ impl Making {
         let (s, v) = (self.signers, self.vaults);
         World {
             lab: self.lab,
-            passkey_s: s[0],
-            mac_s: s[1],
-            phone_s: s[2],
+            passkey_a: s[0],
+            mac_a: s[1],
+            phone_a: s[2],
             passkey_b: s[3],
             mac_b: s[4],
             passkey_c: s[5],
@@ -200,7 +200,7 @@ impl Making {
             server: s[9],
             avenceo: v[1],
             stranger: s[10],
-            samuel: v[0],
+            alice: v[0],
             bob: v[2],
             carol: v[3],
             dave: v[4],
@@ -208,19 +208,19 @@ impl Making {
     }
 }
 
-/// Scenario 3 on the Lab: Maia Coop, owned by Samuel and Bob with threshold 2; Bob's passkey consents.
+/// Scenario 3 on the Lab: Maia Coop, owned by Alice and Bob with threshold 2; Bob's passkey consents.
 pub fn coop_on(w: &mut World) -> VaultId {
-    let owners = vec![Principal::Vault(w.samuel), Principal::Vault(w.bob)];
+    let owners = vec![Principal::Vault(w.alice), Principal::Vault(w.bob)];
     let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0, seal_to: vec![] };
-    VaultId::from(w.lab.submit(w.mac_s, &[w.passkey_s, w.passkey_b], genesis).expect("Samuel and Bob found the coop"))
+    VaultId::from(w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("Alice and Bob found the coop"))
 }
 
-/// Found a space on Samuel's Mac for `actor`, and give avenCEO relay on it, for the server to relay it.
+/// Found a space on Alice's Mac for `actor`, and give avenCEO relay on it, for the server to relay it.
 pub fn space_on(w: &mut World, actor: VaultId) -> SpaceId {
-    let found = w.lab.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor, nonce: 0, via: vec![] });
-    let sp = SpaceId::from(found.expect("Samuel's Mac founds a space"));
+    let found = w.lab.submit(w.mac_a, &[w.mac_a], Action::FoundSpace { actor, nonce: 0, via: vec![] });
+    let sp = SpaceId::from(found.expect("Alice's Mac founds a space"));
     let relay = grant(Scope::Space(sp), Role::Relay, vault(w.avenceo), actor, None);
-    w.lab.submit(w.mac_s, &[w.mac_s], relay).expect("the founder gives the server relay");
+    w.lab.submit(w.mac_a, &[w.mac_a], relay).expect("the founder gives the server relay");
     sp
 }
 
@@ -267,18 +267,18 @@ pub const ONBOARDING_TEXT: &str = "Onboarding: your first week, step by step.";
 pub const CHARTER_TEXT: &str = "Our charter: one vault per person, and the data stays theirs.";
 pub const AFTER_TEXT: &str = "Edited after the change: the greenhouse opens at nine.";
 
-/// Scenarios 3 and 4 on the Lab: the coop, its Handbook and Samuel's Notes, every device synced, and nothing written
-/// yet: where devices split off to run on their own (`Lab::split`) before Samuel writes over the network (P8).
+/// Scenarios 3 and 4 on the Lab: the coop, its Handbook and Alice's Notes, every device synced, and nothing written
+/// yet: where devices split off to run on their own (`Lab::split`) before Alice writes over the network (P8).
 pub fn handbook_spaces(w: &mut World) -> (VaultId, SpaceId, SpaceId) {
     let coop = coop_on(w);
     let space = space_on(w, coop);
-    let samuel = w.samuel;
-    let notes = space_on(w, samuel);
+    let alice = w.alice;
+    let notes = space_on(w, alice);
     w.lab.sync_all(0);
     (coop, space, notes)
 }
 
-/// Scenarios 3 to 5 on the Lab: the coop, its Handbook and Samuel's Notes, Welcome and Onboarding written by Samuel
+/// Scenarios 3 to 5 on the Lab: the coop, its Handbook and Alice's Notes, Welcome and Onboarding written by Alice
 /// for the coop, and every device synced. Welcome is older: an app still on v1 wrote it (scenario 9).
 pub struct Handbook {
     pub coop: VaultId,
@@ -291,17 +291,17 @@ pub struct Handbook {
 pub fn handbook(w: &mut World) -> Handbook {
     let coop = coop_on(w);
     let space = space_on(w, coop);
-    let samuel = w.samuel;
-    let notes = space_on(w, samuel);
-    let welcome = w.lab.create(w.mac_s, coop, space, document_v1("Welcome", WELCOME_TEXT, w.mac_s)).expect("Welcome");
-    let onboarding = document("Onboarding", ONBOARDING_TEXT, w.mac_s);
-    let onboarding = w.lab.create(w.mac_s, coop, space, onboarding).expect("Onboarding");
+    let alice = w.alice;
+    let notes = space_on(w, alice);
+    let welcome = w.lab.create(w.mac_a, coop, space, document_v1("Welcome", WELCOME_TEXT, w.mac_a)).expect("Welcome");
+    let onboarding = document("Onboarding", ONBOARDING_TEXT, w.mac_a);
+    let onboarding = w.lab.create(w.mac_a, coop, space, onboarding).expect("Onboarding");
     w.lab.sync_all(0);
     Handbook { coop, space, notes, welcome, onboarding }
 }
 
-/// Scenario 15 on the Lab: Samuel's Todos with three todos; the door todo shared with Bob (write), Carol (read) and
-/// the coop (owner, signed with Samuel's passkey). Nothing synced yet.
+/// Scenario 15 on the Lab: Alice's Todos with three todos; the door todo shared with Bob (write), Carol (read) and
+/// the coop (owner, signed with Alice's passkey). Nothing synced yet.
 pub struct Todos {
     pub coop: VaultId,
     pub space: SpaceId,
@@ -318,19 +318,19 @@ pub fn todos_on(w: &mut World) -> Todos {
     todos_in(w, coop)
 }
 
-/// Samuel's Todos as `todos_on` makes them, for a coop that is there already.
+/// Alice's Todos as `todos_on` makes them, for a coop that is there already.
 pub fn todos_in(w: &mut World, coop: VaultId) -> Todos {
-    let samuel = w.samuel;
-    let space = space_on(w, samuel);
-    let mut new = |title: &str| w.lab.create(w.mac_s, samuel, space, Item::todo(title, w.mac_s)).expect("a todo");
+    let alice = w.alice;
+    let space = space_on(w, alice);
+    let mut new = |title: &str| w.lab.create(w.mac_a, alice, space, Item::todo(title, w.mac_a)).expect("a todo");
     let door = new("Fix the greenhouse door");
     let seeds = new("Order seeds");
     let solar = new("Clean the solar panels");
     let d = Scope::Entry(space, door);
-    let (bob, carol, mac, passkey) = (w.bob, w.carol, w.mac_s, w.passkey_s);
+    let (bob, carol, mac, passkey) = (w.bob, w.carol, w.mac_a, w.passkey_a);
     let mut give = |signer, role, to| {
-        let shared = w.lab.submit(mac, &[signer], grant(d, role, vault(to), samuel, None));
-        GrantId::from(shared.expect("Samuel shares the door"))
+        let shared = w.lab.submit(mac, &[signer], grant(d, role, vault(to), alice, None));
+        GrantId::from(shared.expect("Alice shares the door"))
     };
     let bob_write = give(mac, Role::Write, bob);
     let carol_read = give(mac, Role::Read, carol);

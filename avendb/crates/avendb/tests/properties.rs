@@ -49,7 +49,7 @@ impl Rng {
 }
 
 const SIGNERS: [SignerId; 11] =
-    [PASSKEY_S, MAC_S, PHONE_S, PASSKEY_B, MAC_B, PASSKEY_C, MAC_C, PASSKEY_D, MAC_D, NEW_DEVICE, STRANGER];
+    [PASSKEY_A, MAC_A, PHONE_A, PASSKEY_B, MAC_B, PASSKEY_C, MAC_C, PASSKEY_D, MAC_D, NEW_DEVICE, STRANGER];
 const ENTRIES: [EntryId; 3] = [WELCOME, CHARTER, ONBOARDING];
 const ROLES: [Role; 4] = [Role::Relay, Role::Read, Role::Write, Role::Owner];
 const SEEDS: std::ops::Range<u64> = 1..41;
@@ -65,7 +65,7 @@ fn history(seed: u64, n: usize) -> History {
     let mut c = cast();
     let coop = with_coop(&mut c);
     let sp = spaces(&mut c, coop);
-    let vaults = vec![c.samuel, c.bob, c.carol, c.dave, coop];
+    let vaults = vec![c.alice, c.bob, c.carol, c.dave, coop];
     let mut h = History { log: c.log, vaults, spaces: vec![sp.handbook, sp.notes, sp.todos] };
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
     attempts(&mut rng, &mut h, n, false);
@@ -203,7 +203,7 @@ fn forked_caps_history(seed: u64, n: usize) -> History {
 /// other checks decide; otherwise up to four random signers.
 fn signers(rng: &mut Rng) -> (SignerId, Vec<SignerId>) {
     if rng.below(2) == 0 {
-        (PASSKEY_S, vec![PASSKEY_B, PASSKEY_C, PASSKEY_D, rng.pick(&SIGNERS)])
+        (PASSKEY_A, vec![PASSKEY_B, PASSKEY_C, PASSKEY_D, rng.pick(&SIGNERS)])
     } else {
         (rng.pick(&SIGNERS), (0..rng.below(4)).map(|_| rng.pick(&SIGNERS)).collect())
     }
@@ -275,7 +275,7 @@ fn vault_attempts(rng: &mut Rng, log: &mut Log, vaults: &mut Vec<VaultId>, n: us
 fn vault_history(seed: u64, n: usize) -> History {
     let mut c = cast();
     let coop = with_coop(&mut c);
-    let mut vaults = vec![c.samuel, c.bob, c.carol, c.dave, coop];
+    let mut vaults = vec![c.alice, c.bob, c.carol, c.dave, coop];
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
     vault_attempts(&mut rng, &mut c.log, &mut vaults, n, false);
     History { log: c.log, vaults, spaces: vec![] }
@@ -642,7 +642,7 @@ fn t19_partial_delivery() {
     for seed in SEEDS {
         let ops = forked_caps_history(seed, 60).log.ops().to_vec();
         let mut rng = Rng(seed);
-        let d = rng.pick(&[MAC_S, PHONE_S, MAC_B, MAC_C, MAC_D]);
+        let d = rng.pick(&[MAC_A, PHONE_A, MAC_B, MAC_C, MAC_D]);
         let mut held: Vec<Op> = vec![];
         for round in 0.. {
             let sent = respond_since(&ops, d, &asks(&held));
@@ -670,7 +670,7 @@ fn t13_sync_converges() {
         for _ in 0..3 {
             let (p, q) = (part_after_cast(&mut rng, &ops), part_after_cast(&mut rng, &ops));
             let (vp, vq) = (view(&p), view(&q));
-            let devices = [MAC_S, PHONE_S, MAC_B, MAC_C];
+            let devices = [MAC_A, PHONE_A, MAC_B, MAC_C];
             let pairs = devices.iter().flat_map(|&a| devices.iter().filter(move |&&b| b != a).map(move |&b| (a, b)));
             for (dp, dq) in pairs {
                 let p2 = ids(&receive(&p, &respond_since(&q, dp, &asks(&p))));
@@ -1082,11 +1082,11 @@ fn t10_branches() {
     let mut done = [0; 5];
     for seed in SEEDS {
         let mut rng = Rng(seed);
-        let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_S), MAC_S);
+        let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
         for _ in 0..12 {
             let before = lines(&repo);
             let ls: Vec<Line> = before.iter().map(|x| x.0).collect();
-            let author = rng.pick(&[MAC_S, MAC_B, MAC_C]);
+            let author = rng.pick(&[MAC_A, MAC_B, MAC_C]);
             let (from, into) = (rng.pick(&ls), rng.pick(&ls));
             let what = if from == into { rng.below(3) } else { rng.below(5) };
             done[what] += 1;

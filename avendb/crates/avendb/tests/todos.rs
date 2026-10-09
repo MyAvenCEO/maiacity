@@ -21,28 +21,28 @@ fn todo_shared_per_item_roles() {
     for e in [SEEDS, SOLAR] {
         assert!(!v.may_receive(MAC_B, todos, e) && !v.may_receive(MAC_C, todos, e));
     }
-    // every coop owner's device can share it further, acting for the coop: Bob's Mac, Samuel's iPhone
-    for d in [MAC_B, PHONE_S] {
+    // every coop owner's device can share it further, acting for the coop: Bob's Mac, Alice's iPhone
+    for d in [MAC_B, PHONE_A] {
         assert!(c.log.check(d, &[], grant(door, Role::Read, vault(c.dave), t.coop, Some(t.coop_owner))).is_ok());
     }
     // Bob's own write cap doesn't let him share: only owners grant
     let reshare = c.log.check(MAC_B, &[], grant(door, Role::Read, vault(c.dave), c.bob, Some(t.bob_write)));
     assert!(matches!(reshare.err(), Some(Refusal::NoCap | Refusal::BadParent)));
     // and a device alone can't make anyone owner of a todo
-    let owner = grant(Scope::Entry(todos, SEEDS), Role::Owner, vault(t.coop), c.samuel, None);
-    assert_eq!(c.log.check(MAC_S, &[], owner).err(), Some(Refusal::BelowThreshold));
+    let owner = grant(Scope::Entry(todos, SEEDS), Role::Owner, vault(t.coop), c.alice, None);
+    assert_eq!(c.log.check(MAC_A, &[], owner).err(), Some(Refusal::BelowThreshold));
 }
 
-/// Scenario 16 up to its last step: Bob gives Dave read for the coop; Samuel raises Carol to write and revokes Bob's
+/// Scenario 16 up to its last step: Bob gives Dave read for the coop; Alice raises Carol to write and revokes Bob's
 /// own write.
 fn roles_changed() -> SocialTodo {
     let mut t = social_todo();
     let door = Scope::Entry(t.todos, DOOR);
-    let (carol, dave, samuel) = (t.c.carol, t.c.dave, t.c.samuel);
+    let (carol, dave, alice) = (t.c.carol, t.c.dave, t.c.alice);
     t.c.log.append(MAC_B, &[], grant(door, Role::Read, vault(dave), t.coop, Some(t.coop_owner))).unwrap();
-    t.c.log.append(MAC_S, &[], grant(door, Role::Write, vault(carol), samuel, None)).unwrap();
-    let revoke = Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![], via: vec![] };
-    t.c.log.append(MAC_S, &[], revoke).unwrap();
+    t.c.log.append(MAC_A, &[], grant(door, Role::Write, vault(carol), alice, None)).unwrap();
+    let revoke = Action::Revoke { grant: t.bob_write, actor: alice, keep: vec![], via: vec![] };
+    t.c.log.append(MAC_A, &[], revoke).unwrap();
     t
 }
 
@@ -64,17 +64,17 @@ fn access_through_coop_survives_direct_revoke() {
 #[test]
 fn cascade_ends_regrants() {
     let mut t = roles_changed();
-    let (todos, door, samuel) = (t.todos, Scope::Entry(t.todos, DOOR), t.c.samuel);
-    // taking the coop's owner cap away is governance: Samuel's Mac alone can't
-    let revoke = Action::Revoke { grant: t.coop_owner, actor: samuel, keep: vec![], via: vec![] };
-    assert_eq!(t.c.log.check(MAC_S, &[], revoke.clone()).err(), Some(Refusal::BelowThreshold));
-    t.c.log.append(PASSKEY_S, &[], revoke).unwrap();
+    let (todos, door, alice) = (t.todos, Scope::Entry(t.todos, DOOR), t.c.alice);
+    // taking the coop's owner cap away is governance: Alice's Mac alone can't
+    let revoke = Action::Revoke { grant: t.coop_owner, actor: alice, keep: vec![], via: vec![] };
+    assert_eq!(t.c.log.check(MAC_A, &[], revoke.clone()).err(), Some(Refusal::BelowThreshold));
+    t.c.log.append(PASSKEY_A, &[], revoke).unwrap();
     let v = t.c.log.view();
     // the coop loses the todo, and so does Dave, whose read rested on the coop's owner cap
     assert!(!v.holds(t.coop, door, Role::Relay) && !v.holds(t.c.dave, door, Role::Relay));
     assert!(!v.may_receive(MAC_B, todos, DOOR) && !v.may_receive(MAC_D, todos, DOOR));
     assert_eq!(t.c.log.check(MAC_B, &[], write(todos, DOOR, t.coop, 0)).err(), Some(Refusal::NoCap));
-    // Carol's write came from Samuel, not the coop, so it stays
+    // Carol's write came from Alice, not the coop, so it stays
     assert!(v.holds(t.c.carol, door, Role::Write) && v.may_receive(MAC_C, todos, DOOR));
 }
 
@@ -91,7 +91,7 @@ fn writes_on(ops: &[Op]) -> Vec<(SpaceId, EntryId)> {
 fn sync_sends_only_capped_items() {
     let t = social_todo();
     let ops = t.c.log.ops();
-    // Samuel's Mac answers Carol's Mac with the door todo's writes and nothing of the other two
+    // Alice's Mac answers Carol's Mac with the door todo's writes and nothing of the other two
     let to_carol = writes_on(&respond(ops, MAC_C));
     assert!(!to_carol.is_empty() && to_carol.iter().all(|&w| w == (t.todos, DOOR)));
     // and the grants on the door todo come with it, so Carol's Mac can check them
@@ -101,8 +101,8 @@ fn sync_sends_only_capped_items() {
     assert!(writes_on(&respond(ops, STRANGER)).is_empty());
     // after the coop lost the todo, Dave's Mac gets nothing of it either
     let mut gone = roles_changed();
-    let revoke = Action::Revoke { grant: gone.coop_owner, actor: gone.c.samuel, keep: vec![], via: vec![] };
-    gone.c.log.append(PASSKEY_S, &[], revoke).unwrap();
+    let revoke = Action::Revoke { grant: gone.coop_owner, actor: gone.c.alice, keep: vec![], via: vec![] };
+    gone.c.log.append(PASSKEY_A, &[], revoke).unwrap();
     assert!(writes_on(&respond(gone.c.log.ops(), MAC_D)).is_empty());
 }
 
@@ -110,7 +110,7 @@ fn sync_sends_only_capped_items() {
 fn item_syncs_peer_to_peer_without_server() {
     let t = social_todo();
     let ops = t.c.log.ops();
-    // each Mac starts with its own vault's ops and what Samuel's Mac sent it
+    // each Mac starts with its own vault's ops and what Alice's Mac sent it
     let own = |v: VaultId| -> Vec<Op> {
         let vault_of = |o: &Op| match &o.action {
             Action::AddDevice { vault, .. } => Some(*vault),
@@ -122,12 +122,12 @@ fn item_syncs_peer_to_peer_without_server() {
     let mut bob_mac = Log::from_ops(receive(&own(t.c.bob), &respond(ops, MAC_B)));
     let carol_mac = Log::from_ops(receive(&own(t.c.carol), &respond(ops, MAC_C)));
     assert_eq!(item_writes(carol_mac.ops(), t.todos, DOOR).len(), 1);
-    // Samuel and the server go offline; Bob edits the door todo on his Mac
+    // Alice and the server go offline; Bob edits the door todo on his Mac
     bob_mac.append(MAC_B, &[], write(t.todos, DOOR, t.c.bob, 0)).unwrap();
     // Bob's Mac and Carol's Mac answer each other once, directly
     let bob_after = receive(bob_mac.ops(), &respond(carol_mac.ops(), MAC_B));
     let carol_after = receive(carol_mac.ops(), &respond(bob_mac.ops(), MAC_C));
-    // both hold Samuel's and Bob's edits of the door todo, and Carol's Mac accepts Bob's
+    // both hold Alice's and Bob's edits of the door todo, and Carol's Mac accepts Bob's
     assert_eq!(item_writes(&carol_after, t.todos, DOOR).len(), 2);
     assert_eq!(item_writes(&carol_after, t.todos, DOOR), item_writes(&bob_after, t.todos, DOOR));
     // and neither learned anything about the other todos

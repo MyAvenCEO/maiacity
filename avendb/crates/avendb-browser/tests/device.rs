@@ -2,8 +2,8 @@
 //! passkey here, which makes each ceremony the device asks for. Eve's first browser founds her vault through the relay,
 //! open to sign-up, with the passkey she signed up to maiaCITY with, and the server learns it; her second browser
 //! links through the first one's code, browser to browser; the first opens again from what its store kept; with both
-//! lost, her passkey alone gets her vault back on a new browser, through the server. Samuel's browser links through the
-//! code his Mac shows and edits Welcome. The first person to found their vault through a new server claims it from
+//! lost, her passkey alone gets her vault back on a new browser, through the server. Alice's browser links through the
+//! code her Mac shows and edits Welcome. The first person to found their vault through a new server claims it from
 //! their first browser, in the same ceremony (P8f).
 //! `tests/page.rs` runs the same in Chromium, the passkey in its virtual authenticator.
 
@@ -109,7 +109,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     assert_eq!(first.p256(), p256, "it learned her passkey's key from the unlock and the pass");
     assert!(first.node().endpoint().bound_sockets().is_empty(), "with no UDP of its own");
     let vault = first.vault().await.expect("the browser belongs to her vault");
-    assert!(!first.owns_aven().await, "avenCEO is Samuel's vault's, which claimed the server before her");
+    assert!(!first.owns_aven().await, "avenCEO is Alice's vault's, which claimed the server before her");
     until("the server learns her browser from what it relays", || async { admission.admits(&first.node().id()) }).await;
     let notes = first.notes().await;
     let [space] = notes.as_slice() else { panic!("her first space, and no other: {}", notes.len()) };
@@ -188,44 +188,44 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn samuels_browsers_link_through_his_mac_and_each_other_through_the_relay_alone() {
+async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_alone() {
     let admission = Admission::default();
     let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
     let url: RelayUrl = relay.url();
     let mut w = world();
     let h = handbook(&mut w);
-    let secret = w.lab.passkey_secret(w.passkey_s).expect("Samuel's passkey, a software passkey");
-    let (mac_s, server_d, samuel) = (w.mac_s, w.server, w.samuel);
+    let secret = w.lab.passkey_secret(w.passkey_a).expect("Alice's passkey, a software passkey");
+    let (mac_a, server_d, alice) = (w.mac_a, w.server, w.alice);
     let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
     let server = node(&mut w, server_d, &[], 2, opts).await;
-    let mac = node(&mut w, mac_s, &[], 1, Options { relay: Some(url.clone()), ..Options::local() }).await;
+    let mac = node(&mut w, mac_a, &[], 1, Options { relay: Some(url.clone()), ..Options::local() }).await;
     mac.know(server.addr());
-    until("the relay serves Samuel's Mac", || async { relay.serves(&mac.id()) }).await;
-    // Samuel's browser: his passkey, a name, the relay; its keys are its own
-    let samuels = Browser::new(Passkey::from_seed(*secret));
+    until("the relay serves Alice's Mac", || async { relay.serves(&mac.id()) }).await;
+    // Alice's browser: her passkey, a name, the relay; its keys are its own
+    let alices = Browser::new(Passkey::from_seed(*secret));
     let code = mac.offer();
-    let browser = Device::link(start("Samuel's browser", &url, 7), &code, samuels.unlock([1; 32]), &samuels);
+    let browser = Device::link(start("Alice's browser", &url, 7), &code, alices.unlock([1; 32]), &alices);
     let browser = browser.await.expect("it links through the Mac's code");
-    assert_eq!(samuels.steps(), [Step::Pass, Step::Hello, Step::Join]);
-    assert_eq!(browser.vault().await, Some(samuel));
+    assert_eq!(alices.steps(), [Step::Pass, Step::Hello, Step::Join]);
+    assert_eq!(browser.vault().await, Some(alice));
     let (coop, space, welcome) = (h.coop, h.space, h.welcome);
     until("it reads Welcome", || shows(&browser, space, welcome, WELCOME_TEXT)).await;
     browser.set_text(coop, space, welcome, 2, AFTER_TEXT.into()).await.expect("it edits Welcome");
     let reads = move |lab: &Lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(AFTER_TEXT);
     until("the Mac reads its edit", || mac.read(reads)).await;
     until("once it joined, the server knows it", || async { admission.admits(&browser.node().id()) }).await;
-    // his other browser links through the first one's code: browser to browser
-    let other = start("Samuel's other browser", &url, 8);
+    // her other browser links through the first one's code: browser to browser
+    let other = start("Alice's other browser", &url, 8);
     let code = browser.node().offer();
-    let other = Device::link(other, &code, samuels.unlock([2; 32]), &samuels);
+    let other = Device::link(other, &code, alices.unlock([2; 32]), &alices);
     let other = other.await.expect("it links through the browser's code");
-    assert_eq!(other.vault().await, Some(samuel));
+    assert_eq!(other.vault().await, Some(alice));
     until("it reads the edit", || shows(&other, space, welcome, AFTER_TEXT)).await;
     assert_eq!(browser.node().proven(other.node().id()), Some(other.node().device()), "through the first browser");
-    let both = move |lab: &Lab, me| lab.state(me).vault(samuel).map(|v| v.devices.len()) == Some(4);
-    until("the Mac counts both browsers among Samuel's devices", || mac.read(both)).await;
-    // an edit its view refuses fails: Samuel's own vault holds no right on the coop's Handbook
-    assert!(browser.set_text(samuel, space, welcome, 2, "Samuel's own words".into()).await.is_err());
+    let both = move |lab: &Lab, me| lab.state(me).vault(alice).map(|v| v.devices.len()) == Some(4);
+    until("the Mac counts both browsers among Alice's devices", || mac.read(both)).await;
+    // an edit its view refuses fails: Alice's own vault holds no right on the coop's Handbook
+    assert!(browser.set_text(alice, space, welcome, 2, "Alice's own words".into()).await.is_err());
     for n in [browser.node(), other.node(), &mac, &server] {
         n.shutdown().await.expect("the node shuts down");
     }

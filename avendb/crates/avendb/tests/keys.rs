@@ -16,7 +16,7 @@ fn entry_reader_cannot_open_other_entries() {
     let mut w = world();
     let h = handbook(&mut w);
     let carol = w.carol;
-    w.lab.submit(w.mac_s, &[w.mac_s], grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), h.coop, None)).unwrap();
+    w.lab.submit(w.mac_a, &[w.mac_a], grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), h.coop, None)).unwrap();
     w.lab.sync_all(1);
     // Carol opens Welcome's key and reads it…
     assert!(w.lab.opens(w.mac_c, KeyScope::Entry(h.space, h.welcome)));
@@ -56,16 +56,16 @@ fn revoked_reader_cannot_open_new_edits() {
     let carol = w.carol;
     let welcome = Scope::Entry(h.space, h.welcome);
     let read = grant(welcome, Role::Read, vault(carol), h.coop, None);
-    let carol_read = GrantId::from(w.lab.submit(w.mac_s, &[w.mac_s], read).unwrap());
+    let carol_read = GrantId::from(w.lab.submit(w.mac_a, &[w.mac_a], read).unwrap());
     w.lab.sync_all(2);
     let key = KeyScope::Entry(h.space, h.welcome);
-    let before = w.lab.log(w.mac_s).view().epoch(key);
+    let before = w.lab.log(w.mac_a).view().epoch(key);
     let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
-    w.lab.submit(w.mac_s, &[w.mac_s], revoke).unwrap();
-    w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.submit(w.mac_a, &[w.mac_a], revoke).unwrap();
+    w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(2);
     // the key moved on; Carol can't open it and never sees the new text, Bob does (T6)
-    assert_eq!(w.lab.log(w.mac_s).view().epoch(key), before + 1);
+    assert_eq!(w.lab.log(w.mac_a).view().epoch(key), before + 1);
     assert!(!w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_b, key));
     assert!(!contains(&w.lab.store(w.mac_c), AFTER_TEXT));
     assert_eq!(text(&w.lab, w.mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
@@ -75,25 +75,25 @@ fn revoked_reader_cannot_open_new_edits() {
 
 #[test]
 fn a_device_writes_under_the_newest_key_it_knows() {
-    // T15: Carol loses Welcome while Samuel's iPhone is offline
+    // T15: Carol loses Welcome while Alice's iPhone is offline
     let mut w = world();
     let h = handbook(&mut w);
     let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(w.carol), h.coop, None);
-    let carol_read = GrantId::from(w.lab.submit(w.mac_s, &[w.mac_s], read).unwrap());
+    let carol_read = GrantId::from(w.lab.submit(w.mac_a, &[w.mac_a], read).unwrap());
     w.lab.sync_all(15);
     let key = KeyScope::Entry(h.space, h.welcome);
-    let before = w.lab.state(w.phone_s).epoch(key);
-    w.lab.set_online(w.phone_s, false);
+    let before = w.lab.state(w.phone_a).epoch(key);
+    w.lab.set_online(w.phone_a, false);
     let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
-    w.lab.submit(w.mac_s, &[w.mac_s], revoke).unwrap();
+    w.lab.submit(w.mac_a, &[w.mac_a], revoke).unwrap();
     // the iPhone hasn't seen the revocation, so its edit is made alongside it, under the key it knows
-    let alongside = w.lab.edit(w.phone_s, h.coop, h.space, h.welcome, |i| i.set_text(1, "Welcome, alongside")).unwrap();
-    w.lab.set_online(w.phone_s, true);
+    let alongside = w.lab.edit(w.phone_a, h.coop, h.space, h.welcome, |i| i.set_text(1, "Welcome, alongside")).unwrap();
+    w.lab.set_online(w.phone_a, true);
     w.lab.sync_all(15);
     // once it has seen it, it writes under the new key, which Carol can't open
-    let after = w.lab.edit(w.phone_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    let after = w.lab.edit(w.phone_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(15);
-    let epoch = |id| w.lab.state(w.mac_s).all_writes().iter().find(|x| x.op == id).map(|x| x.epoch);
+    let epoch = |id| w.lab.state(w.mac_a).all_writes().iter().find(|x| x.op == id).map(|x| x.epoch);
     assert_eq!((epoch(alongside), epoch(after)), (Some(before), Some(before + 1)));
     assert!(!w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_b, key));
     assert!(!contains(&w.lab.store(w.mac_c), AFTER_TEXT));
@@ -105,7 +105,7 @@ fn a_device_writes_under_the_newest_key_it_knows() {
 /// Each device opens the current key of a family exactly when, by every op the Lab holds, it may: it reads the family
 /// or the family is public (T6, and every device that may read gets the key).
 fn keys_follow_caps(w: &World, step: &str) {
-    let devices = [w.mac_s, w.phone_s, w.mac_b, w.mac_c, w.mac_d, w.server, w.stranger];
+    let devices = [w.mac_a, w.phone_a, w.mac_b, w.mac_c, w.mac_d, w.server, w.stranger];
     let mut all: Vec<Op> = vec![];
     for d in devices {
         for op in w.lab.log(d).ops() {
@@ -129,26 +129,26 @@ fn every_device_opens_exactly_what_it_may() {
     let h = handbook(&mut w);
     keys_follow_caps(&w, "the Handbook");
     // a public charter, and Carol reading Welcome
-    let charter = w.lab.create(w.mac_s, h.coop, h.space, document("Charter", CHARTER_TEXT, w.mac_s)).unwrap();
-    w.lab.submit(w.mac_s, &[w.mac_s], grant(Scope::Entry(h.space, charter), Role::Read, Grantee::Public, h.coop, None)).unwrap();
+    let charter = w.lab.create(w.mac_a, h.coop, h.space, document("Charter", CHARTER_TEXT, w.mac_a)).unwrap();
+    w.lab.submit(w.mac_a, &[w.mac_a], grant(Scope::Entry(h.space, charter), Role::Read, Grantee::Public, h.coop, None)).unwrap();
     let carol = w.carol;
     let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), h.coop, None);
-    let carol_read = GrantId::from(w.lab.submit(w.mac_s, &[w.mac_s], read).unwrap());
+    let carol_read = GrantId::from(w.lab.submit(w.mac_a, &[w.mac_a], read).unwrap());
     w.lab.sync_all(3);
     keys_follow_caps(&w, "public charter, Carol reads Welcome");
     // Carol's read revoked, then Welcome edited
     let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
-    w.lab.submit(w.mac_s, &[w.mac_s], revoke).unwrap();
-    w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.submit(w.mac_a, &[w.mac_a], revoke).unwrap();
+    w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(4);
     keys_follow_caps(&w, "Carol revoked");
-    // Bob leaves the coop, and Samuel loses his iPhone
+    // Bob leaves the coop, and Alice loses her iPhone
     let bob = w.bob;
     w.lab.submit(w.mac_b, &[w.passkey_b], Action::RemoveOwner { vault: h.coop, owner: Principal::Vault(bob), keep: vec![] }).unwrap();
     w.lab.sync_all(5);
     keys_follow_caps(&w, "Bob left");
-    let (samuel, phone) = (w.samuel, w.phone_s);
-    w.lab.submit(w.mac_s, &[w.passkey_s], Action::RemoveDevice { vault: samuel, device: phone, keep: vec![] }).unwrap();
+    let (alice, phone) = (w.alice, w.phone_a);
+    w.lab.submit(w.mac_a, &[w.passkey_a], Action::RemoveDevice { vault: alice, device: phone, keep: vec![] }).unwrap();
     w.lab.sync_all(6);
     keys_follow_caps(&w, "the iPhone removed");
 }
@@ -161,28 +161,28 @@ fn a_locked_device_holds_no_key() {
     let mut w = world();
     let h = handbook(&mut w);
     let welcome = KeyScope::Entry(h.space, h.welcome);
-    assert!(w.lab.opens(w.phone_s, welcome));
-    w.lab.lock(w.phone_s);
-    assert!(w.lab.locked(w.phone_s));
-    assert!(!w.lab.opens(w.phone_s, welcome) && w.lab.item(w.phone_s, h.space, h.welcome).is_none());
-    assert!(!contains(&w.lab.store(w.phone_s), WELCOME_TEXT));
+    assert!(w.lab.opens(w.phone_a, welcome));
+    w.lab.lock(w.phone_a);
+    assert!(w.lab.locked(w.phone_a));
+    assert!(!w.lab.opens(w.phone_a, welcome) && w.lab.item(w.phone_a, h.space, h.welcome).is_none());
+    assert!(!contains(&w.lab.store(w.phone_a), WELCOME_TEXT));
     // it signs nothing, and still receives the Mac's edit, as ciphertext
-    let edit = w.lab.edit(w.phone_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
+    let edit = w.lab.edit(w.phone_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     assert_eq!(edit, Err(Refusal::Locked));
-    let before = w.lab.fetched(w.phone_s, h.space, h.welcome);
-    w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    let before = w.lab.fetched(w.phone_a, h.space, h.welcome);
+    w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(1);
-    assert_eq!(w.lab.fetched(w.phone_s, h.space, h.welcome), before + 1);
-    assert!(!contains(&w.lab.store(w.phone_s), AFTER_TEXT));
+    assert_eq!(w.lab.fetched(w.phone_a, h.space, h.welcome), before + 1);
+    assert!(!contains(&w.lab.store(w.phone_a), AFTER_TEXT));
     // unlocked, it derives the same key from the passkey, and reads the edit
-    assert!(w.lab.unlock(w.phone_s));
-    assert_eq!(text(&w.lab, w.phone_s, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
-    // the server and a stranger derive their keys from no passkey; and with Samuel's passkey lost, the iPhone stays
+    assert!(w.lab.unlock(w.phone_a));
+    assert_eq!(text(&w.lab, w.phone_a, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
+    // the server and a stranger derive their keys from no passkey; and with Alice's passkey lost, the iPhone stays
     // locked once it locks
     assert!(!w.lab.unlock(w.server) && !w.lab.unlock(w.stranger));
-    w.lab.lock(w.phone_s);
-    w.lab.lose(w.passkey_s);
-    assert!(!w.lab.unlock(w.phone_s) && w.lab.locked(w.phone_s));
+    w.lab.lock(w.phone_a);
+    w.lab.lose(w.passkey_a);
+    assert!(!w.lab.unlock(w.phone_a) && w.lab.locked(w.phone_a));
 }
 
 /// Once the curves fall (P4b; T18): whoever broke a device's ed25519 key signs writes as it, as writes carry only
@@ -193,27 +193,27 @@ fn a_locked_device_holds_no_key() {
 fn a_broken_curve_writes_nothing_that_counts() {
     let mut w = world();
     let h = handbook(&mut w);
-    let (mac_s, mac_b, dave) = (w.mac_s, w.mac_b, w.dave);
-    let broken = |action| Tamper::BrokenClassicalKey { signer: mac_s, action };
-    // no grant to Dave, and no new device for Samuel, with the classical half alone
+    let (mac_a, mac_b, dave) = (w.mac_a, w.mac_b, w.dave);
+    let broken = |action| Tamper::BrokenClassicalKey { signer: mac_a, action };
+    // no grant to Dave, and no new device for Alice, with the classical half alone
     let to_dave = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(dave), h.coop, None);
     assert_eq!(w.lab.tamper(mac_b, broken(to_dave)), Err(Refusal::BadSignature));
-    let add = Action::AddDevice { vault: w.samuel, device: w.stranger, seal_to: None };
+    let add = Action::AddDevice { vault: w.alice, device: w.stranger, seal_to: None };
     assert_eq!(w.lab.tamper(mac_b, broken(add)), Err(Refusal::BadSignature));
-    // a write as Samuel's Mac passes while Bob's Mac trusts the curves
+    // a write as Alice's Mac passes while Bob's Mac trusts the curves
     let forged = w.lab.tamper(mac_b, broken(write(h.space, h.welcome, h.coop, 0))).unwrap();
     let counts = |w: &World, d| w.lab.state(d).all_writes().iter().any(|x| x.op == forged);
     assert!(counts(&w, mac_b));
     // the forger can't vouch for it
     let vouch = Action::Checkpoint { space: h.space, entry: h.welcome, covers: vec![forged] };
     assert_eq!(w.lab.tamper(mac_b, broken(vouch)), Err(Refusal::BadSignature));
-    // once no device trusts the curves, the forged write doesn't count, and Samuel's own edits, vouched for when his
+    // once no device trusts the curves, the forged write doesn't count, and Alice's own edits, vouched for when her
     // Mac synced, still do
     w.lab.set_pq_only(true);
     assert!(!counts(&w, mac_b) && w.lab.log(mac_b).view().all_writes().iter().any(|x| x.op == forged));
     assert_eq!(text(&w.lab, mac_b, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT));
     // an edit made now is vouched for at once, and reaches Bob's Mac
-    w.lab.edit(mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.edit(mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(7);
     assert_eq!(text(&w.lab, mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
     assert_eq!(text(&w.lab, w.mac_c, h.space, h.welcome, 2), None);

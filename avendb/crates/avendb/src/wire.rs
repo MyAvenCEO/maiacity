@@ -737,7 +737,7 @@ mod tests {
         let mut w = world();
         let h = handbook(&mut w);
         let mut kinds = std::collections::HashSet::new();
-        for d in [w.mac_s, w.mac_b, w.server] {
+        for d in [w.mac_a, w.mac_b, w.server] {
             for op in w.lab.log(d).ops() {
                 let signed = w.lab.signed_op(d, op.id()).expect("held").clone();
                 let bytes = signed.to_wire();
@@ -770,7 +770,7 @@ mod tests {
     #[test]
     fn a_signature_of_ops_signed_together_reads_back_only_in_their_order() {
         let w = world();
-        let ops: Vec<Op> = w.lab.log(w.mac_s).ops()[..2].to_vec();
+        let ops: Vec<Op> = w.lab.log(w.mac_a).ops()[..2].to_vec();
         let mut batch: Vec<OpId> = ops.iter().map(Op::id).collect();
         batch.sort();
         let mut passkey = crate::sign::Passkey::from_seed([1; 32]);
