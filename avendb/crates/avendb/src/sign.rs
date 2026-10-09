@@ -818,7 +818,7 @@ impl Passkey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id::{SpaceId, EntryId, VaultId};
+    use crate::id::{EntryId, VaultId};
     use crate::policy::{Kind, Principal};
 
     fn edit(author: SignerId, cosigners: Vec<SignerId>) -> Edit {
@@ -829,13 +829,15 @@ mod tests {
 
     fn write(author: SignerId) -> Edit {
         let action = Action::Write {
-            space: SpaceId::from_u64(1),
+            vault: VaultId::from_u64(1),
             entry: EntryId::from_u64(1),
             actor: VaultId::from_u64(1),
-            epoch: 0,
+            stay: None,
+            generation: 0,
             deps: vec![],
             proposal: crate::policy::Proposal::Main,
             via: vec![],
+            create: None,
             body: vec![1, 2, 3],
         };
         Edit { parents: vec![], depth: 0, author, cosigners: vec![], action }

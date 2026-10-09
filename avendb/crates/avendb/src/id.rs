@@ -1,6 +1,7 @@
 //! Ids, all 32 bytes. A signer is its public key. Everything an edit creates is named by that edit's id, the hash of
-//! the signed edit: a vault by its genesis, a space by its founding, a grant by the grant itself. An entry's id is
-//! chosen at random by whoever creates it.
+//! the signed edit: a vault by its genesis, a cap by the edit that issued it. An entry's id is drawn at random by
+//! whoever creates it. A cell, the entries of a vault that the same caps select, is named by the hash of its vault and
+//! its caps (`CellId::of`).
 
 macro_rules! ids {
     ($($(#[$doc:meta])* $name:ident),* $(,)?) => {$(
@@ -45,14 +46,14 @@ macro_rules! ids {
 ids! {
     /// A key that signs: a passkey (P-256) or a device key (ed25519, the device's iroh endpoint key).
     SignerId,
-    /// A human or coop vault: the id of its genesis edit.
+    /// A human, coop or aven vault: the id of its genesis edit.
     VaultId,
-    /// A space: the id of the edit that founded it.
-    SpaceId,
-    /// One item in a space, a markdown document or a todo.
+    /// One entry of a vault, a note or a todo: 32 random bytes its creator draws.
     EntryId,
-    /// A grant: the id of the edit that made it.
-    GrantId,
+    /// A cap: the id of the edit that issued it.
+    CapId,
+    /// A cell of a vault: the hash of the vault and the ids of the caps that select its entries (`CellId::of`).
+    CellId,
     /// A signed edit: the hash of its encoding with its signatures.
     EditId,
     /// Bytes named by their hash: a schema or a lens in a space's schema lane, or a Classic McEliece public key.
@@ -95,15 +96,23 @@ impl From<EditId> for VaultId {
     }
 }
 
-impl From<EditId> for SpaceId {
+impl From<EditId> for CapId {
     fn from(id: EditId) -> Self {
         Self(id.0)
     }
 }
 
-impl From<EditId> for GrantId {
-    fn from(id: EditId) -> Self {
-        Self(id.0)
+impl CellId {
+    /// The id of the cell of vault `v` that the caps `caps` select, given in canonical order (`policy::mk_cell`): the
+    /// hash of the vault and the caps, so two peers name one cell alike and no relay learns more than which caps.
+    pub fn of(v: VaultId, caps: &[CapId]) -> CellId {
+        let mut h = crate::hash::Hasher::new("cell id");
+        h.update(&v.0);
+        h.update(&(caps.len() as u64).to_be_bytes());
+        for c in caps {
+            h.update(&c.0);
+        }
+        CellId(h.finalize())
     }
 }
 
@@ -117,6 +126,15 @@ mod tests {
         assert_eq!(VaultId::from_u64(258).0[30..], [1, 2]);
         assert_eq!(format!("{:?}", EditId::from_u64(7)), "EditId(7)");
         assert_eq!(format!("{:?}", EditId([0xab; 32])), "EditId(abababab…)");
+    }
+
+    #[test]
+    fn a_cell_id_names_its_vault_and_caps() {
+        let (v, w) = (VaultId::from_u64(1), VaultId::from_u64(2));
+        let (a, b) = (CapId::from_u64(1), CapId::from_u64(2));
+        let ids = [CellId::of(v, &[]), CellId::of(v, &[a]), CellId::of(v, &[a, b]), CellId::of(w, &[a, b])];
+        assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
+        assert_eq!(CellId::of(v, &[a, b]), CellId::of(v, &[a, b]));
     }
 
     #[test]

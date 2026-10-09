@@ -27,7 +27,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use serde_json::{Map, Value};
 
 use crate::doc::Item;
-use crate::id::{BlobId, EditId, EntryId, SignerId, SpaceId, VaultId};
+use crate::id::{BlobId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::policy::{self, Line, Proposal, Refusal, Write};
 
 /// The main line.
@@ -384,9 +384,10 @@ impl Repo {
     /// Accept `d` as the next write, by `author`.
     pub fn make(&mut self, author: SignerId, d: Draft) -> Result<EditId, Refusal> {
         let edit = EditId::from_u64(self.history.changes.len() as u64 + 1);
-        let (space, entry, actor) = (SpaceId::from_u64(0), EntryId::from_u64(0), VaultId::from_u64(0));
-        let write =
-            Write { edit, author, actor, space, entry, epoch: 0, deps: d.deps, proposal: d.proposal, via: vec![] };
+        let (entry, actor) = (EntryId::from_u64(0), VaultId::from_u64(0));
+        let (stay, generation, cell, first) = (None, 0, CellId::of(actor, &[]), self.history.changes.is_empty());
+        let (deps, proposal, via) = (d.deps, d.proposal, vec![]);
+        let write = Write { edit, author, actor, entry, stay, generation, deps, proposal, via, first, cell };
         self.history.push(Change { write, body: Some(d.body) })?;
         Ok(edit)
     }

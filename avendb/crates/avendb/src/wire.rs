@@ -15,9 +15,9 @@
 use std::collections::BTreeMap;
 
 use crate::encode::{Encode, VERSION};
-use crate::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
-use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
-use crate::policy::{Action, Edit, Grant, Grantee, Kind, Principal, Proposal, Role, Scope};
+use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
+use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
 use crate::sign::{Assertion, Classical, Hello, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
 use crate::sync::{Ask, LogId, Place};
 
@@ -260,7 +260,17 @@ macro_rules! ids {
     )*};
 }
 
-ids!(SignerId, VaultId, SpaceId, EntryId, GrantId, EditId, BlobId, KeyId);
+ids!(SignerId, VaultId, EntryId, CapId, CellId, EditId, BlobId, KeyId);
+
+impl Decode for bool {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        match r.u8()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(WireError::Unknown),
+        }
+    }
+}
 
 impl Decode for PublicKey {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
@@ -268,12 +278,23 @@ impl Decode for PublicKey {
     }
 }
 
-impl Decode for KeyScope {
+impl Decode for KeyFam {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(KeyScope::Vault(VaultId::decode(r)?)),
-            1 => Ok(KeyScope::Space(SpaceId::decode(r)?)),
-            2 => Ok(KeyScope::Entry(SpaceId::decode(r)?, EntryId::decode(r)?)),
+            0 => Ok(KeyFam::Seed(VaultId::decode(r)?)),
+            1 => Ok(KeyFam::Cap(VaultId::decode(r)?, CapId::decode(r)?)),
+            2 => Ok(KeyFam::Cell(VaultId::decode(r)?, CellId::decode(r)?)),
+            _ => Err(WireError::Unknown),
+        }
+    }
+}
+
+impl Decode for KeyName {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        match r.u8()? {
+            0 => Ok(KeyName::Signer(SignerId::decode(r)?)),
+            1 => Ok(KeyName::Scoped(KeyFam::decode(r)?, u64::decode(r)?)),
+            2 => Ok(KeyName::Entry(EntryId::decode(r)?, r.option()?, u64::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
     }
@@ -283,7 +304,7 @@ impl Decode for Recipient {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
             0 => Ok(Recipient::Signer(SignerId::decode(r)?)),
-            1 => Ok(Recipient::Key { key: KeyScope::decode(r)?, epoch: u64::decode(r)?, id: KeyId::decode(r)? }),
+            1 => Ok(Recipient::Key { name: KeyName::decode(r)?, id: KeyId::decode(r)? }),
             _ => Err(WireError::Unknown),
         }
     }
@@ -328,16 +349,6 @@ impl Decode for Role {
     }
 }
 
-impl Decode for Scope {
-    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        match r.u8()? {
-            0 => Ok(Scope::Space(SpaceId::decode(r)?)),
-            1 => Ok(Scope::Entry(SpaceId::decode(r)?, EntryId::decode(r)?)),
-            _ => Err(WireError::Unknown),
-        }
-    }
-}
-
 impl Decode for Grantee {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
@@ -348,14 +359,17 @@ impl Decode for Grantee {
     }
 }
 
-impl Decode for Grant {
+impl Decode for Cap {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Grant {
-            scope: Scope::decode(r)?,
-            role: Role::decode(r)?,
+        Ok(Cap {
+            over: VaultId::decode(r)?,
             grantee: Grantee::decode(r)?,
-            issuer: VaultId::decode(r)?,
+            role: Role::decode(r)?,
+            wide: bool::decode(r)?,
+            select: r.bytes()?,
             parent: r.option()?,
+            issuer: VaultId::decode(r)?,
+            nonce: u64::decode(r)?,
         })
     }
 }
@@ -387,40 +401,51 @@ impl Decode for Action {
             3 => Action::SetThreshold { vault: VaultId::decode(r)?, threshold: u32::decode(r)? },
             4 => Action::AddDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, seal_to: r.option()? },
             5 => Action::RemoveDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, keep: r.seq(32)? },
-            6 => Action::FoundSpace { actor: VaultId::decode(r)?, nonce: u64::decode(r)?, via: r.seq(32)? },
-            7 => Action::Grant(Grant::decode(r)?, r.seq(32)?),
+            6 => Action::SetRoot { vault: VaultId::decode(r)?, root: r.option()?, keep: r.seq(32)? },
+            7 => Action::Cap(Cap::decode(r)?, r.seq(32)?),
             8 => Action::Revoke {
-                grant: GrantId::decode(r)?,
+                cap: CapId::decode(r)?,
                 actor: VaultId::decode(r)?,
                 keep: r.seq(32)?,
                 via: r.seq(32)?,
             },
             9 => Action::Write {
-                space: SpaceId::decode(r)?,
+                vault: VaultId::decode(r)?,
                 entry: EntryId::decode(r)?,
                 actor: VaultId::decode(r)?,
-                epoch: u64::decode(r)?,
+                stay: r.option()?,
+                generation: u64::decode(r)?,
                 deps: r.seq(32)?,
                 proposal: Proposal::decode(r)?,
                 via: r.seq(32)?,
+                create: match r.u8()? {
+                    0 => None,
+                    1 => Some(r.seq(32)?),
+                    _ => return Err(WireError::Unknown),
+                },
                 body: r.bytes()?,
             },
-            10 => Action::SetRoot { vault: VaultId::decode(r)?, root: r.option()?, keep: r.seq(32)? },
+            10 => Action::Move {
+                vault: VaultId::decode(r)?,
+                entry: EntryId::decode(r)?,
+                to: r.seq(32)?,
+                keep: r.seq(32)?,
+                via: r.seq(32)?,
+            },
             11 => Action::Keys {
-                key: KeyScope::decode(r)?,
-                epoch: u64::decode(r)?,
+                name: KeyName::decode(r)?,
                 id: KeyId::decode(r)?,
                 public: r.option()?,
                 boxes: r.seq(37)?,
                 clear: r.option()?,
             },
             12 => Action::Publish {
-                space: SpaceId::decode(r)?,
+                vault: VaultId::decode(r)?,
                 actor: VaultId::decode(r)?,
                 via: r.seq(32)?,
                 blob: r.bytes()?,
             },
-            13 => Action::Checkpoint { space: SpaceId::decode(r)?, entry: EntryId::decode(r)?, covers: r.seq(32)? },
+            13 => Action::Checkpoint { entry: EntryId::decode(r)?, covers: r.seq(32)? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -554,13 +579,17 @@ impl Encode for LogId {
                 out.push(0);
                 v.encode(out);
             }
-            LogId::Space(sp) => {
+            LogId::Cap(c) => {
                 out.push(1);
-                sp.encode(out);
+                c.encode(out);
             }
-            LogId::Entry(sp, e) => {
+            LogId::Cell(v, x) => {
                 out.push(2);
-                sp.encode(out);
+                v.encode(out);
+                x.encode(out);
+            }
+            LogId::Entry(e) => {
+                out.push(3);
                 e.encode(out);
             }
         }
@@ -571,8 +600,9 @@ impl Decode for LogId {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
             0 => Ok(LogId::Vault(VaultId::decode(r)?)),
-            1 => Ok(LogId::Space(SpaceId::decode(r)?)),
-            2 => Ok(LogId::Entry(SpaceId::decode(r)?, EntryId::decode(r)?)),
+            1 => Ok(LogId::Cap(CapId::decode(r)?)),
+            2 => Ok(LogId::Cell(VaultId::decode(r)?, CellId::decode(r)?)),
+            3 => Ok(LogId::Entry(EntryId::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
     }

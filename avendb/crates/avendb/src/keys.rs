@@ -1,10 +1,13 @@
-//! Keys. Every vault, space and entry has a key per epoch, and the schedule in `policy` (the Lean model's `targets`)
-//! says what each is sealed to: a human vault's key to its devices and owner signers (a passkey through a key derived
-//! from its PRF output), a coop's key to its owner vaults' keys, a space key to the vaults holding read on the space,
-//! an entry key to its space key and to the vaults holding read on just that entry. Every edit is encrypted under its
-//! entry's current key, bound to the edit that carries it. When anyone loses access, every key they could open moves to
-//! a new epoch and the old key is sealed to the new one, so those who remain still read the history (T5, T6). Relay
-//! caps get no key at all (T7).
+//! Keys. Every vault has a seed per generation, every cap with read or more a key per epoch, every cell (the entries
+//! of a vault that the same caps select) a key per generation, and every entry a key per stay and generation, derived
+//! from its cell's. The schedule in `policy` (the Lean model's `targets` and `linkAll`) says what each is sealed to,
+//! wrapped under or derived from: a seed to its vault's devices and owner signers (a passkey through a key derived from
+//! its PRF output) and to its owner vaults' seeds, a cap key to its grantee's seed (published for Public), a cell key
+//! to the key of each cap with read or more that reaches the cell. Every write is encrypted under its entry's key in
+//! the stay and generation it names, bound to the edit that carries it. When anyone loses access, every key they could
+//! open moves to a new epoch and the old key is sealed to the new one, so those who remain still read the history
+//! (T5, T6); a move wraps the entry's old keys under its new one, so its readers read its whole history and nobody gets
+//! a key of the cell it left (T24). Relay caps get no key at all (T7, T25).
 //!
 //! A key is 32 secret bytes. From them come its id, which names it in boxes and edits, the key that encrypts data under
 //! it, and its two key pairs that others seal to without holding it: X-Wing (ML-KEM-768 with X25519) and Classic
@@ -29,8 +32,7 @@ use x_wing::{Decapsulate as _, Decapsulator as _, Encapsulate as _, KeyExport as
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::hash::{self, Hasher, Reader};
-use crate::id::{BlobId, EntryId, SignerId, SpaceId, VaultId};
-use crate::policy::Scope;
+use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 
 /// The suite of every box and edit: X-Wing and Classic McEliece 6688128f, XChaCha20-Poly1305, SHA-3. Its first byte.
 pub const SUITE: u8 = 1;
@@ -48,33 +50,35 @@ const XWING_CIPHERTEXT: usize = x_wing::CIPHERTEXT_SIZE;
 pub const MCELIECE_PUBLIC_BYTES: usize = mceliece::CRYPTO_PUBLICKEYBYTES;
 const MCELIECE_CIPHERTEXT: usize = mceliece::CRYPTO_CIPHERTEXTBYTES;
 
-/// A family of keys, one per vault, space and entry; its epoch moves on at every rotation.
+/// A family of keys that rotates through epochs (a seed's and a cell's are called generations): a vault's seed, whose
+/// key pair is the vault's key and from which its master key is derived; the key of a cap with read or more; a cell's
+/// key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum KeyScope {
-    Vault(VaultId),
-    Space(SpaceId),
-    Entry(SpaceId, EntryId),
+pub enum KeyFam {
+    Seed(VaultId),
+    Cap(VaultId, CapId),
+    Cell(VaultId, CellId),
 }
 
-impl KeyScope {
-    /// The scope a space or entry key belongs to; a vault key has none.
-    pub fn scope(self) -> Option<Scope> {
+impl KeyFam {
+    /// The vault the family belongs to.
+    pub fn vault(self) -> VaultId {
         match self {
-            KeyScope::Vault(_) => None,
-            KeyScope::Space(sp) => Some(Scope::Space(sp)),
-            KeyScope::Entry(sp, e) => Some(Scope::Entry(sp, e)),
+            KeyFam::Seed(v) | KeyFam::Cap(v, _) | KeyFam::Cell(v, _) => v,
         }
     }
 }
 
-/// A signer's own key, or one epoch of a key family: what the schedule seals keys to.
+/// A signer's own key, one epoch of a key family, or the key of an entry in one of its stays (`None` for the stay its
+/// creation began, else the move that began it) at a generation of that stay's cell: what the schedule seals keys to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyName {
     Signer(SignerId),
-    Scoped(KeyScope, u64),
+    Scoped(KeyFam, u64),
+    Entry(EntryId, Option<EditId>, u64),
 }
 
-/// `secret` sealed to the key pair `to`: whoever can open `to` can open `secret`.
+/// `secret` sealed or wrapped to the key `to`, or derived from it: whoever can open `to` can open `secret`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Seal {
     pub secret: KeyName,
@@ -199,7 +203,7 @@ impl Secret {
     }
 
     /// Start making the key's McEliece pair in the background, so that the first `public` or `open` that needs it
-    /// waits less: a device does so for its own key as it unlocks, and for a vault or space key as it makes one. A web
+    /// waits less: a device does so for its own key as it unlocks, and for a seed or a cap key as it makes one. A web
     /// page has no threads, so there the pair is only wanted (`want`), for the page to make in its workers.
     pub fn prepare(&self) {
         #[cfg(not(target_arch = "wasm32"))]
@@ -387,20 +391,20 @@ impl rand_core_06::RngCore for Rng06 {
 
 impl rand_core_06::CryptoRng for Rng06 {}
 
-/// Whom a box is for: a signer's own key, or one key of a family (by its id, as a family can have more than one key
-/// at an epoch when devices rotate it at the same time).
+/// Whom a box is for: a signer's own key, or a key of the schedule (by its id too, as a family can have more than one
+/// key at an epoch when devices rotate it at the same time).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Recipient {
     Signer(SignerId),
-    Key { key: KeyScope, epoch: u64, id: KeyId },
+    Key { name: KeyName, id: KeyId },
 }
 
 impl Recipient {
-    /// The key pair of the schedule the box goes to.
+    /// The key of the schedule the box goes to.
     pub fn name(&self) -> KeyName {
         match *self {
             Recipient::Signer(s) => KeyName::Signer(s),
-            Recipient::Key { key, epoch, .. } => KeyName::Scoped(key, epoch),
+            Recipient::Key { name, .. } => name,
         }
     }
 }

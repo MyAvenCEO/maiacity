@@ -2,9 +2,11 @@
 //! checked by every `lake build`). A step case's edits, applied one after the other from the empty state, must be
 //! accepted or refused exactly as the model says. A view case's edits, each at the depth it claims, must stand or be
 //! cut exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case
-//! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, spaces, grants,
-//! writes, key schedule (each family's epoch, every seal, every published key) and schema lanes. The lens vectors hold
-//! each app's view of many stored blocks and todos, and what each edit through a view stores.
+//! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, caps, entries
+//! (their stays, and as their readers see them their attributes, whether their creation was let in, their semantic
+//! cell and where a steward would move them), writes, key schedule (each family's epoch, every seal, every published
+//! key) and schema lanes. The lens vectors hold each app's view of many stored blocks and todos, and what each edit
+//! through a view stores.
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -12,22 +14,29 @@
 //! (`respond`) and given what it named (`respond_since`); and each passkey that proves itself to link a new device
 //! must be handed the same vault logs (`link_card`).
 //!
-//! The model names what an edit creates (a vault, a space, a grant) by a number, and an edit by its place in the case;
-//! the core names them all by hashes, so each number maps to what its edit created, and each place to that edit's id. A
-//! keys edit of the model names only where its boxes go; the core's carries the boxes too, which no rule opens, so here
-//! they are empty. A publish names its blob by a number: here the blob is the bytes `blob <number>`.
+//! The model names what an edit creates (a vault, a cap) by a number, and an edit by its place in the case; the core
+//! names them by hashes, so each number maps to what its edit created, and each place to that edit's id. A cell is a set
+//! of caps: the core keeps its caps sorted by id and names it by the hash of its vault and those caps. What no rule
+//! reads travels encrypted or sealed in the core: a cap's selector, a write's header and tags. Here a cap carries its
+//! selector's JSON where its sealed selector goes, and a write its header's and tags' JSON where its ciphertext goes, and
+//! the readings (`Readings`) hold what a reader opens of them. A keys edit of the model names only where its boxes go;
+//! the core's carries the boxes too, which no rule opens, so here they are empty. A publish names its blob by a number:
+//! here the blob is the bytes `blob <number>`. A type or a tag is a number in the model, and its digits here.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::Debug;
+use std::hash::Hash;
 
-use serde_json::{json, Map, Value};
-use avendb::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
-use avendb::keys::{KeyBox, KeyId, KeyName, KeyScope, Recipient, Seal};
+use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
-    checkpointed, replay, Action, Edit, Grant, Grantee, Kind, Line, Principal, Proposal, Role, Scope, Space, State,
-    Vault, Write,
+    checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Kind, Line, Principal, Proposal, Readings, Role, State,
+    Vault,
 };
+use avendb::slice::{Atom, Attrs, Header, Selector, Sym, TagDelta};
 use avendb::sync::{asks, closed_part, forks, frontiers, link_card, respond, respond_since, LogId};
+use serde_json::{json, Map, Value};
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
 const LENSES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/lenses.json");
@@ -53,6 +62,15 @@ fn entry(v: &Value) -> EntryId {
     EntryId::from_u64(num(v))
 }
 
+/// A type or a tag.
+fn sym(v: &Value) -> Sym {
+    Sym(num(v).to_string())
+}
+
+fn syms(v: &Value) -> Vec<Sym> {
+    list(v).iter().map(sym).collect()
+}
+
 fn kind(v: &Value) -> Kind {
     match v.as_str() {
         Some("human") => Kind::Human,
@@ -72,14 +90,36 @@ fn role(v: &Value) -> Role {
     }
 }
 
-/// The model's numbers and places, as the core names them.
+/// The one key of an object: an action's or a variant's name, and what it holds.
+fn variant(v: &Value) -> (&str, &Value) {
+    let (name, x) = v.as_object().and_then(|o| o.iter().next()).unwrap_or_else(|| panic!("a variant, not {v}"));
+    (name.as_str(), x)
+}
+
+fn tag_delta(v: &Value) -> TagDelta {
+    TagDelta { add: syms(&v["add"]), remove: syms(&v["remove"]) }
+}
+
+fn header(v: &Value) -> Header {
+    Header { ty: sym(&v["type"]), created: num(&v["created"]) }
+}
+
+/// Two collections hold the same items, whatever their order: what differs is shown.
+fn same_set<T: Clone + Debug + Eq + Hash>(ours: impl IntoIterator<Item = T>, want: impl IntoIterator<Item = T>, what: &str) {
+    let (ours, want): (HashSet<T>, HashSet<T>) = (ours.into_iter().collect(), want.into_iter().collect());
+    let extra: Vec<&T> = ours.difference(&want).collect();
+    let missing: Vec<&T> = want.difference(&ours).collect();
+    assert!(extra.is_empty() && missing.is_empty(), "{what}: the core has {extra:?} more and lacks {missing:?}");
+}
+
+/// The model's numbers and places, as the core names them, and what readers open.
 #[derive(Default)]
 struct Names {
     vaults: HashMap<u64, VaultId>,
-    spaces: HashMap<u64, SpaceId>,
-    grants: HashMap<u64, GrantId>,
+    caps: HashMap<u64, CapId>,
     /// Each edit's id, by its place in the case.
     edits: Vec<EditId>,
+    readings: Readings,
 }
 
 impl Names {
@@ -88,14 +128,9 @@ impl Names {
         self.vaults.get(&n).copied().unwrap_or(VaultId::from_u64(n))
     }
 
-    fn space(&self, v: &Value) -> SpaceId {
+    fn cap(&self, v: &Value) -> CapId {
         let n = num(v);
-        self.spaces.get(&n).copied().unwrap_or(SpaceId::from_u64(n))
-    }
-
-    fn grant(&self, v: &Value) -> GrantId {
-        let n = num(v);
-        self.grants.get(&n).copied().unwrap_or(GrantId::from_u64(n))
+        self.caps.get(&n).copied().unwrap_or(CapId::from_u64(n))
     }
 
     fn edit(&self, v: &Value) -> EditId {
@@ -107,50 +142,6 @@ impl Names {
         list(v).iter().map(|x| self.edit(x)).collect()
     }
 
-    /// The owners an act goes through.
-    fn via(&self, v: &Value) -> Vec<VaultId> {
-        list(v).iter().map(|x| self.vault(x)).collect()
-    }
-
-    fn principal(&self, v: &Value) -> Principal {
-        match (v.get("signer"), v.get("vault")) {
-            (Some(s), None) => Principal::Signer(signer(s)),
-            (None, Some(x)) => Principal::Vault(self.vault(x)),
-            _ => panic!("a principal, not {v}"),
-        }
-    }
-
-    fn scope(&self, v: &Value) -> Scope {
-        match v.get("entry") {
-            None => Scope::Space(self.space(&v["space"])),
-            Some(e) => Scope::Entry(self.space(&v["space"]), entry(e)),
-        }
-    }
-
-    fn key_scope(&self, v: &Value) -> KeyScope {
-        match (v.get("vault"), v.get("entry")) {
-            (Some(x), None) => KeyScope::Vault(self.vault(x)),
-            (None, None) => KeyScope::Space(self.space(&v["space"])),
-            (None, Some(e)) => KeyScope::Entry(self.space(&v["space"]), entry(e)),
-            _ => panic!("a key family, not {v}"),
-        }
-    }
-
-    fn key_name(&self, v: &Value) -> KeyName {
-        match v.get("signer") {
-            Some(s) => KeyName::Signer(signer(s)),
-            None => KeyName::Scoped(self.key_scope(&v["key"]), num(&v["epoch"])),
-        }
-    }
-
-    fn log(&self, v: &Value) -> LogId {
-        match self.key_scope(v) {
-            KeyScope::Vault(x) => LogId::Vault(x),
-            KeyScope::Space(sp) => LogId::Space(sp),
-            KeyScope::Entry(sp, e) => LogId::Entry(sp, e),
-        }
-    }
-
     /// Edits by place, smallest id first: the model sorts by place, the core by id.
     fn edit_set(&self, v: &Value) -> Vec<EditId> {
         let mut ids = self.edits(v);
@@ -158,11 +149,30 @@ impl Names {
         ids
     }
 
-    /// Whom a box goes to; which of a family's keys doesn't matter to the rules.
-    fn recipient(&self, v: &Value) -> Recipient {
-        match self.key_name(v) {
-            KeyName::Signer(s) => Recipient::Signer(s),
-            KeyName::Scoped(key, epoch) => Recipient::Key { key, epoch, id: KeyId([0; 32]) },
+    fn opt_edit(&self, v: &Value) -> Option<EditId> {
+        (!v.is_null()).then(|| self.edit(v))
+    }
+
+    /// The owners an act goes through.
+    fn via(&self, v: &Value) -> Vec<VaultId> {
+        list(v).iter().map(|x| self.vault(x)).collect()
+    }
+
+    /// A cell's caps, in the core's canonical order.
+    fn cell(&self, v: &Value) -> Vec<CapId> {
+        mk_cell(&list(v).iter().map(|c| self.cap(c)).collect::<Vec<_>>())
+    }
+
+    /// A cell's caps as a set.
+    fn cell_set(&self, v: &Value) -> BTreeSet<CapId> {
+        list(v).iter().map(|c| self.cap(c)).collect()
+    }
+
+    fn principal(&self, v: &Value) -> Principal {
+        match (v.get("signer"), v.get("vault")) {
+            (Some(s), None) => Principal::Signer(signer(s)),
+            (None, Some(x)) => Principal::Vault(self.vault(x)),
+            _ => panic!("a principal, not {v}"),
         }
     }
 
@@ -182,21 +192,92 @@ impl Names {
         }
     }
 
-    fn grant_of(&self, v: &Value) -> Grant {
-        Grant {
-            scope: self.scope(&v["scope"]),
-            role: role(&v["role"]),
+    fn atom(&self, v: &Value) -> Atom {
+        match variant(v) {
+            ("typeIn", ts) => Atom::TypeIn(syms(ts)),
+            ("authorIn", vs) => Atom::AuthorIn(list(vs).iter().map(|x| self.vault(x)).collect()),
+            ("entryIn", es) => Atom::EntryIn(list(es).iter().map(entry).collect()),
+            ("createdIn", r) => Atom::CreatedIn(num(&r["from"]), num(&r["to"])),
+            ("tagHas", t) => Atom::TagHas(sym(t)),
+            ("tagNone", ts) => Atom::TagNone(syms(ts)),
+            ("tagsWithin", ts) => Atom::TagsWithin(syms(ts)),
+            (other, _) => panic!("no atom {other}"),
+        }
+    }
+
+    fn selector(&self, v: &Value) -> Selector {
+        match v.as_str() {
+            Some("all") => Selector::All,
+            _ => Selector::AnyOf(
+                list(&v["anyOf"]).iter().map(|d| list(d).iter().map(|t| self.atom(t)).collect()).collect(),
+            ),
+        }
+    }
+
+    /// A cap as the core issues it: its selector and the tags it relabels where its sealed selector goes, its number
+    /// as its nonce.
+    fn cap_of(&self, v: &Value) -> Cap {
+        let select = serde_json::to_vec(&json!({"select": v["select"], "relabel": v["relabel"]})).unwrap();
+        Cap {
+            over: self.vault(&v["over"]),
             grantee: self.grantee(&v["grantee"]),
+            role: role(&v["role"]),
+            wide: v["wide"].as_bool().unwrap(),
+            select,
+            parent: (!v["parent"].is_null()).then(|| self.cap(&v["parent"])),
             issuer: self.vault(&v["issuer"]),
-            parent: (!v["parent"].is_null()).then(|| self.grant(&v["parent"])),
+            nonce: num(&v["id"]),
+        }
+    }
+
+    fn key_fam(&self, v: &Value) -> KeyFam {
+        match variant(v) {
+            ("seed", x) => KeyFam::Seed(self.vault(x)),
+            ("cap", x) => KeyFam::Cap(self.vault(&x["vault"]), self.cap(&x["cap"])),
+            ("cell", x) => {
+                let vault = self.vault(&x["vault"]);
+                KeyFam::Cell(vault, CellId::of(vault, &self.cell(&x["caps"])))
+            }
+            (other, _) => panic!("no key family {other}"),
+        }
+    }
+
+    fn key_name(&self, v: &Value) -> KeyName {
+        if let Some(s) = v.get("signer") {
+            KeyName::Signer(signer(s))
+        } else if let Some(e) = v.get("entry") {
+            KeyName::Entry(entry(e), self.opt_edit(&v["stay"]), num(&v["gen"]))
+        } else {
+            KeyName::Scoped(self.key_fam(&v["key"]), num(&v["epoch"]))
+        }
+    }
+
+    fn log(&self, v: &Value) -> LogId {
+        match variant(v) {
+            ("vault", x) => LogId::Vault(self.vault(x)),
+            ("cap", x) => LogId::Cap(self.cap(x)),
+            ("cell", x) => {
+                let vault = self.vault(&x["vault"]);
+                LogId::Cell(vault, CellId::of(vault, &self.cell(&x["caps"])))
+            }
+            ("entry", x) => LogId::Entry(entry(x)),
+            (other, _) => panic!("no log {other}"),
+        }
+    }
+
+    /// Whom a box goes to; which key of an epoch doesn't matter to the rules.
+    fn recipient(&self, v: &Value) -> Recipient {
+        match self.key_name(v) {
+            KeyName::Signer(s) => Recipient::Signer(s),
+            name => Recipient::Key { name, id: KeyId([0; 32]) },
         }
     }
 
     fn action(&self, v: &Value) -> Action {
-        let (name, x) = v.as_object().and_then(|o| o.iter().next()).unwrap_or_else(|| panic!("an action, not {v}"));
+        let (name, x) = variant(v);
         let vault = || self.vault(&x["vault"]);
         let keep = || self.edits(&x["keep"]);
-        match name.as_str() {
+        match name {
             "genesis" => Action::Genesis {
                 kind: kind(&x["kind"]),
                 owners: list(&x["owners"]).iter().map(|p| self.principal(p)).collect(),
@@ -211,48 +292,51 @@ impl Names {
             "setThreshold" => Action::SetThreshold { vault: vault(), threshold: num(&x["threshold"]) as u32 },
             "addDevice" => Action::AddDevice { vault: vault(), device: signer(&x["device"]), seal_to: None },
             "removeDevice" => Action::RemoveDevice { vault: vault(), device: signer(&x["device"]), keep: keep() },
-            "setRoot" => {
-                Action::SetRoot { vault: vault(), root: (!x["root"].is_null()).then(|| signer(&x["root"])), keep: keep() }
-            }
-            "foundSpace" => {
-                Action::FoundSpace { actor: self.vault(&x["actor"]), nonce: num(&x["space"]), via: self.via(&x["via"]) }
-            }
-            "grant" => Action::Grant(self.grant_of(&x["grant"]), self.via(&x["via"])),
+            "setRoot" => Action::SetRoot {
+                vault: vault(),
+                root: (!x["root"].is_null()).then(|| signer(&x["root"])),
+                keep: keep(),
+            },
+            "cap" => Action::Cap(self.cap_of(&x["cap"]), self.via(&x["via"])),
             "revoke" => Action::Revoke {
-                grant: self.grant(&x["grant"]),
+                cap: self.cap(&x["cap"]),
                 actor: self.vault(&x["actor"]),
                 keep: keep(),
                 via: self.via(&x["via"]),
             },
             "write" => Action::Write {
-                space: self.space(&x["space"]),
+                vault: vault(),
                 entry: entry(&x["entry"]),
                 actor: self.vault(&x["actor"]),
-                epoch: num(&x["epoch"]),
+                stay: self.opt_edit(&x["stay"]),
+                generation: num(&x["gen"]),
                 deps: self.edits(&x["deps"]),
                 proposal: self.proposal(&x["proposal"]),
                 via: self.via(&x["via"]),
-                body: vec![],
+                create: (!x["create"].is_null()).then(|| self.cell(&x["create"]["cell"])),
+                body: serde_json::to_vec(&json!({"create": x["create"], "tags": x["tags"]})).unwrap(),
+            },
+            "move" => Action::Move {
+                vault: vault(),
+                entry: entry(&x["entry"]),
+                to: self.cell(&x["to"]),
+                keep: keep(),
+                via: self.via(&x["via"]),
             },
             "keys" => Action::Keys {
-                key: self.key_scope(&x["key"]),
-                epoch: num(&x["epoch"]),
+                name: self.key_name(&x["secret"]),
                 id: KeyId([0; 32]),
                 public: None,
                 boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
                 clear: x["public"].as_bool().unwrap().then_some([0; 32]),
             },
             "publish" => Action::Publish {
-                space: self.space(&x["space"]),
+                vault: vault(),
                 actor: self.vault(&x["actor"]),
                 via: self.via(&x["via"]),
                 blob: blob(&x["blob"]),
             },
-            "checkpoint" => Action::Checkpoint {
-                space: self.space(&x["space"]),
-                entry: entry(&x["entry"]),
-                covers: self.edits(&x["covers"]),
-            },
+            "checkpoint" => Action::Checkpoint { entry: entry(&x["entry"]), covers: self.edits(&x["covers"]) },
             other => panic!("no action {other}"),
         }
     }
@@ -263,23 +347,29 @@ impl Names {
         Edit { parents: vec![], depth, author: signer(&v["author"]), cosigners, action: self.action(&v["action"]) }
     }
 
-    /// Name what `edit`, at the next place, creates. A vault's number names the vault only once its genesis is
-    /// accepted, as the step cases try one number more than once; spaces and grants have a number each.
+    /// Name what `edit`, at the next place, creates, and note what its readers open. A vault's number names the vault
+    /// only once its genesis is accepted, as the step cases try one number more than once; a cap has a number of its
+    /// own.
     fn created(&mut self, v: &Value, edit: &Edit, accepted: bool) {
-        let (name, x) = v["action"].as_object().and_then(|o| o.iter().next()).expect("an action");
-        match name.as_str() {
-            "genesis" if accepted => {
-                self.vaults.insert(num(&x["vault"]), VaultId::from(edit.id()));
+        let id = edit.id();
+        match variant(&v["action"]) {
+            ("genesis", x) if accepted => {
+                self.vaults.insert(num(&x["vault"]), VaultId::from(id));
             }
-            "foundSpace" => {
-                self.spaces.insert(num(&x["space"]), SpaceId::from(edit.id()));
+            ("cap", x) => {
+                let selector = self.selector(&x["cap"]["select"]);
+                self.caps.insert(num(&x["cap"]["id"]), CapId::from(id));
+                self.readings.selectors.insert(CapId::from(id), selector);
             }
-            "grant" => {
-                self.grants.insert(num(&x["grant"]["id"]), GrantId::from(edit.id()));
+            ("write", x) => {
+                if !x["create"].is_null() {
+                    self.readings.headers.insert(id, header(&x["create"]["header"]));
+                }
+                self.readings.tags.insert(id, tag_delta(&x["tags"]));
             }
             _ => {}
         }
-        self.edits.push(edit.id());
+        self.edits.push(id);
     }
 
     fn vault_of(&self, v: &Value) -> Vault {
@@ -293,21 +383,13 @@ impl Names {
         }
     }
 
-    fn space_of(&self, v: &Value) -> Space {
-        Space { id: self.space(&v["id"]), founder: self.vault(&v["founder"]), entries: list(&v["entries"]).iter().map(entry).collect() }
-    }
-
-    fn write_of(&self, v: &Value) -> Write {
-        Write {
-            edit: self.edit(&v["edit"]),
-            author: signer(&v["author"]),
-            actor: self.vault(&v["actor"]),
-            space: self.space(&v["space"]),
+    fn attrs(&self, v: &Value) -> Attrs {
+        Attrs {
+            ty: sym(&v["type"]),
+            author: self.vault(&v["author"]),
             entry: entry(&v["entry"]),
-            epoch: num(&v["epoch"]),
-            deps: self.edits(&v["deps"]),
-            proposal: self.proposal(&v["proposal"]),
-            via: self.via(&v["via"]),
+            created: num(&v["created"]),
+            tags: syms(&v["tags"]),
         }
     }
 
@@ -315,45 +397,101 @@ impl Names {
     fn check_state(&self, name: &str, case: &Value, st: &State) {
         let vaults: Vec<Vault> = list(&case["vaults"]).iter().map(|v| self.vault_of(v)).collect();
         assert_eq!(st.vaults(), &vaults[..], "{name}: vaults");
-        let spaces: Vec<Space> = list(&case["spaces"]).iter().map(|v| self.space_of(v)).collect();
-        assert_eq!(st.spaces(), &spaces[..], "{name}: spaces");
-        let grants: Vec<(GrantId, Grant)> = list(&case["grants"]).iter().map(|v| (self.grant(&v["id"]), self.grant_of(v))).collect();
-        assert_eq!(st.grants(), grants, "{name}: grants");
-        let writes: Vec<Write> = list(&case["writes"]).iter().map(|v| self.write_of(v)).collect();
-        assert_eq!(st.all_writes(), &writes[..], "{name}: writes");
-        let epochs: Vec<(KeyScope, u64)> =
-            list(&case["epochs"]).iter().map(|v| (self.key_scope(&v["key"]), num(&v["epoch"]))).collect();
-        let ours: Vec<(KeyScope, u64)> =
-            st.key_scopes().into_iter().filter(|&k| st.epoch(k) > 0).map(|k| (k, st.epoch(k))).collect();
-        assert_eq!(ours, epochs, "{name}: epochs");
-        let seals: Vec<Seal> = list(&case["seals"])
-            .iter()
-            .map(|v| Seal { secret: self.key_name(&v["secret"]), to: self.key_name(&v["to"]) })
-            .collect();
-        assert_eq!(st.seals(), &seals[..], "{name}: seals");
-        let published: Vec<KeyName> = list(&case["published"]).iter().map(|v| self.key_name(v)).collect();
-        assert_eq!(st.published(), &published[..], "{name}: published");
-        let lane: Vec<(SpaceId, BlobId)> =
-            list(&case["lane"]).iter().map(|v| (self.space(&v["space"]), BlobId::of(&blob(&v["blob"])))).collect();
-        let ours: Vec<(SpaceId, BlobId)> = st.lane().iter().map(|p| (p.space, p.blob)).collect();
-        assert_eq!(ours, lane, "{name}: lane");
-        // each line of each entry, the main line first: its history and its heads
-        type Lines = Vec<(SpaceId, EntryId, Line, Vec<EditId>, Vec<EditId>)>;
-        let lines: Lines = list(&case["lines"])
+        // every cap issued, live or revoked, in the order issued
+        type CapRow = (CapId, VaultId, Grantee, Role, bool, Option<CapId>, VaultId);
+        let caps: Vec<CapRow> = list(&case["caps"])
             .iter()
             .map(|v| {
-                let line = (!v["line"].is_null()).then(|| self.edit(&v["line"]));
-                (self.space(&v["space"]), entry(&v["entry"]), line, self.edits(&v["history"]), self.edits(&v["heads"]))
+                let c = self.cap_of(v);
+                (self.cap(&v["id"]), c.over, c.grantee, c.role, c.wide, c.parent, c.issuer)
             })
             .collect();
-        let ours: Lines = st
-            .spaces()
+        let ours: Vec<CapRow> = st
+            .caps()
             .iter()
-            .flat_map(|x| x.entries.iter().map(move |&e| (x.id, e)))
-            .flat_map(|(sp, e)| {
-                st.lines(sp, e).into_iter().map(move |l| {
-                    let history = st.history(sp, e, l).iter().map(|w| w.edit).collect();
-                    (sp, e, l, history, st.heads(sp, e, l))
+            .map(|cp| (cp.id, cp.cap.over, cp.cap.grantee, cp.cap.role, cp.cap.wide, cp.cap.parent, cp.cap.issuer))
+            .collect();
+        assert_eq!(ours, caps, "{name}: caps");
+        let revoked: Vec<CapId> = list(&case["revoked"]).iter().map(|c| self.cap(c)).collect();
+        assert_eq!(st.revoked(), &revoked[..], "{name}: revoked");
+        // each entry: its stays, the current one first, and what its readers see
+        let want: Vec<&Value> = list(&case["entries"]).iter().collect();
+        assert_eq!(st.entries().len(), want.len(), "{name}: entries");
+        for (en, v) in st.entries().iter().zip(want) {
+            let what = format!("{name}: entry {}", v["id"]);
+            assert_eq!((en.id, en.vault), (entry(&v["id"]), self.vault(&v["vault"])), "{what}");
+            let stays: Vec<(Option<EditId>, BTreeSet<CapId>)> =
+                list(&v["stays"]).iter().map(|s| (self.opt_edit(&s["stay"]), self.cell_set(&s["cell"]))).collect();
+            let ours: Vec<(Option<EditId>, BTreeSet<CapId>)> = en
+                .stays
+                .iter()
+                .rev()
+                .map(|(s, x)| (*s, st.cell_caps(*x).expect("a cell's caps").iter().copied().collect()))
+                .collect();
+            assert_eq!(ours, stays, "{what}: stays");
+            let m = st.meaning(en.id, &self.readings).expect("an entry's meaning");
+            assert_eq!(m.attrs, self.attrs(&v["attrs"]), "{what}: attributes");
+            assert_eq!(m.admitted, v["admitted"].as_bool().unwrap(), "{what}: let in");
+            let cell: BTreeSet<CapId> = m.cell.iter().copied().collect();
+            assert_eq!(cell, self.cell_set(&v["semCell"]), "{what}: semantic cell");
+            let desired = m.desired.map(|x| x.into_iter().collect::<BTreeSet<CapId>>());
+            let want = (!v["desired"].is_null()).then(|| self.cell_set(&v["desired"]));
+            assert_eq!(desired, want, "{what}: where a steward moves it");
+        }
+        same_set(st.all_born().iter().copied(), list(&case["born"]).iter().map(entry), &format!("{name}: born"));
+        // the writes, each with the cell its entry was in when it was accepted
+        type WriteRow = (EditId, SignerId, VaultId, EntryId, Option<EditId>, u64, Vec<EditId>, Proposal);
+        type WriteRest = (Vec<VaultId>, bool, BTreeSet<CapId>);
+        let writes: Vec<(WriteRow, WriteRest)> = list(&case["writes"])
+            .iter()
+            .map(|v| {
+                let row = (
+                    self.edit(&v["edit"]),
+                    signer(&v["author"]),
+                    self.vault(&v["actor"]),
+                    entry(&v["entry"]),
+                    self.opt_edit(&v["stay"]),
+                    num(&v["gen"]),
+                    self.edits(&v["deps"]),
+                    self.proposal(&v["proposal"]),
+                );
+                (row, (self.via(&v["via"]), v["first"].as_bool().unwrap(), self.cell_set(&v["cell"])))
+            })
+            .collect();
+        let ours: Vec<(WriteRow, WriteRest)> = st
+            .all_writes()
+            .iter()
+            .map(|w| {
+                let cell = st.cell_caps(w.cell).expect("a write's cell").iter().copied().collect();
+                let row = (w.edit, w.author, w.actor, w.entry, w.stay, w.generation, w.deps.clone(), w.proposal);
+                (row, (w.via.clone(), w.first, cell))
+            })
+            .collect();
+        assert_eq!(ours, writes, "{name}: writes");
+        let epochs = list(&case["epochs"]).iter().map(|v| (self.key_fam(&v["key"]), num(&v["epoch"])));
+        same_set(st.epochs(), epochs, &format!("{name}: epochs"));
+        let seals =
+            list(&case["seals"]).iter().map(|v| Seal { secret: self.key_name(&v["secret"]), to: self.key_name(&v["to"]) });
+        same_set(st.seals().iter().copied(), seals, &format!("{name}: seals"));
+        let published = list(&case["published"]).iter().map(|v| self.key_name(v));
+        same_set(st.published().iter().copied(), published, &format!("{name}: published"));
+        let lane: Vec<(VaultId, BlobId)> =
+            list(&case["lane"]).iter().map(|v| (self.vault(&v["vault"]), BlobId::of(&blob(&v["blob"])))).collect();
+        let ours: Vec<(VaultId, BlobId)> = st.lane().iter().map(|p| (p.vault, p.blob)).collect();
+        assert_eq!(ours, lane, "{name}: lane");
+        // each line of each entry, the main line first: its history and its heads
+        type Lines = Vec<(EntryId, Line, Vec<EditId>, Vec<EditId>)>;
+        let lines: Lines = list(&case["lines"])
+            .iter()
+            .map(|v| (entry(&v["entry"]), self.opt_edit(&v["line"]), self.edits(&v["history"]), self.edits(&v["heads"])))
+            .collect();
+        let ours: Lines = st
+            .entries()
+            .iter()
+            .flat_map(|en| {
+                st.lines(en.id).into_iter().map(move |l| {
+                    let history = st.history(en.id, l).iter().map(|w| w.edit).collect();
+                    (en.id, l, history, st.heads(en.id, l))
                 })
             })
             .collect();
@@ -366,11 +504,18 @@ fn vectors() -> Value {
     serde_json::from_str(&file).unwrap()
 }
 
+/// The depth a step case gives the edit at place `i`: a genesis 0, so that one tried twice is the same edit, as the
+/// model's vault number names one vault; any other edit its place, so that no two are the same edit, as in the model,
+/// where an edit is its place. A step reads no depth.
+fn step_depth(v: &Value, i: usize) -> u64 {
+    if variant(&v["action"]).0 == "genesis" { 0 } else { i as u64 }
+}
+
 #[test]
 fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
     let vectors = vectors();
     let cases = list(&vectors["cases"]);
-    assert!(cases.len() >= 8);
+    assert!(cases.len() >= 12);
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (edits, accepted) = (list(&case["edits"]), list(&case["accepted"]));
@@ -378,7 +523,7 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
         let mut names = Names::default();
         let mut st = State::default();
         for (i, (v, want)) in edits.iter().zip(accepted).enumerate() {
-            let edit = names.edit_of(v, 0);
+            let edit = names.edit_of(v, step_depth(v, i));
             let got = st.step(&edit);
             assert_eq!(
                 got.is_ok(),
@@ -396,10 +541,36 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
 }
 
 #[test]
+fn each_edit_settles_the_keys_as_the_whole_model_does() {
+    // the core settles an edit that removes nothing by what it touched (T6); the model settles every key every time
+    let vectors = vectors();
+    for case in list(&vectors["cases"]) {
+        let name = case["name"].as_str().unwrap();
+        let mut names = Names::default();
+        let (mut light, mut full) = (State::default(), State::default());
+        for (i, v) in list(&case["edits"]).iter().enumerate() {
+            let edit = names.edit_of(v, step_depth(v, i));
+            let id = edit.id();
+            let (a, b) = (light.step_mut(&edit, id), full.step_full(&edit, id));
+            assert_eq!(a, b, "{name}, edit {i}");
+            let what = format!("{name}, edit {i}: {v}");
+            assert_eq!(light.entries(), full.entries(), "{what}: entries");
+            assert_eq!(light.all_writes(), full.all_writes(), "{what}: writes");
+            same_set(light.epochs(), full.epochs(), &format!("{what}: epochs"));
+            let moved = |st: &State| st.epochs().map(|(k, e)| (k, e, st.moved_by(k, e))).collect::<Vec<_>>();
+            same_set(moved(&light), moved(&full), &format!("{what}: what moved each family on"));
+            same_set(light.seals().iter().copied(), full.seals().iter().copied(), &format!("{what}: seals"));
+            same_set(light.published().iter().copied(), full.published().iter().copied(), &format!("{what}: published"));
+            names.created(v, &edit, a.is_ok());
+        }
+    }
+}
+
+#[test]
 fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
     let vectors = vectors();
     let cases = list(&vectors["views"]);
-    assert!(cases.len() >= 8);
+    assert!(cases.len() >= 12);
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (edits, standing) = (list(&case["edits"]), list(&case["standing"]));
@@ -424,7 +595,7 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
 fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
     let vectors = vectors();
     let cases = list(&vectors["syncs"]);
-    assert!(cases.len() >= 4);
+    assert!(cases.len() >= 6);
     let mut linked = 0;
     for case in cases {
         let name = case["name"].as_str().unwrap();
