@@ -187,7 +187,7 @@
 				ctx.textBaseline = 'alphabetic';
 				ctx.fillStyle = ink;
 				ctx.font = '600 11px system-ui, sans-serif';
-				ctx.fillText(`${GOOD_LABEL[g]} /day`, fx, fy + 30);
+				ctx.fillText(GOOD_LABEL[g], fx, fy + 30);
 			});
 			// its store: a half-size dot per good, how many units it holds written in each
 			GOODS.forEach((g, i) => {
