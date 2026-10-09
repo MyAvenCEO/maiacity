@@ -518,7 +518,7 @@ pub struct EconomyMip {
     /// world: { name, values ({ key: number } tried on top), model ("d1" or "qwen"), seed, after (the id of the world
     /// it follows, from economy_runs; default its world_id) }; the answer lists every setting that differs from
     /// that world), name and about (a new config's name and description; on edit, a rename), from (create: the config
-    /// it starts from), cards: [whole config cards as they will be once accepted (for a world: on top of its config): { id, kind
+    /// it starts from), cards: [whole config cards as they will be once accepted (for a world: on top of the world it follows, its cards and values as played; send only what changes): { id, kind
     /// (policy, world, resource or recipe), name, description, values: { key: number } (keys from economy_configs'
     /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }],
     /// remove: [ids of cards to take out] }

@@ -28,6 +28,8 @@
 	const open = $derived(mips.filter((m) => m.status === 'open' && mine(m)));
 	const decided = $derived(mips.filter((m) => m.status !== 'open' && mine(m)).sort((a, b) => String(b.decided ?? '').localeCompare(String(a.decided ?? ''))));
 	let unfolded = $state(/** @type {Record<number, boolean>} */ ({}));
+	// the world MIP that made this world: its own cards sit on top of the config it runs on
+	const madeBy = $derived(here ? mips.find((m) => m.action === 'world' && m.status === 'accepted' && m.result?.world === here) : null);
 	const hereName = $derived(worlds.find((w) => w.id === here)?.name ?? 'this world');
 
 	async function refresh() {
@@ -113,7 +115,7 @@
 
 		<section>
 			<h3>Configs</h3>
-			<p class="sub">{#if playing}This world runs on <b>{playing.name}</b> (version {playing.version}).{' '}{/if}A world keeps the config version it started on; an accepted MIP shapes the worlds made after it.</p>
+			<p class="sub">{#if playing}This world runs on <b>{playing.name}</b> (version {playing.version}){#if madeBy && (madeBy.cards.length || madeBy.remove.length)}, with its own cards (MIP-{madeBy.number} changed: {[...madeBy.cards.map((/** @type {any} */ c) => c.name || c.id), ...madeBy.remove.map((/** @type {string} */ id) => `${id} taken out`)].join(', ')}){/if}.{' '}{/if}A world keeps the cards it started with. A new world starts from the world it follows: every card and value it played with, and its avens' brains; its MIP changes only the cards it carries.</p>
 			<table>
 				<tbody>
 					{#each configs as c (c.id)}
