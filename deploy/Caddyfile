@@ -8,6 +8,16 @@
 #   /relay, /generate_204  the iroh relay inside vault-server (paired devices only)
 #   /vault/*               the media vault's gateway (files by BLAKE3 hash, with Range)
 #   everything else        the API
+#
+# A browser can't set headers on a WebSocket, so avenDB's relay pass (avendb::sign::RelayPass, ~23 KB) rides in the
+# URL of avendb.maia.city/relay (?token=), and a device off the browser sends it as a header as long. Since 2.11, Caddy
+# turns requests that long away (431) unless told to read more.
+{
+	servers {
+		max_header_size 64KB
+	}
+}
+
 {$SITE_ADDRESS:maia.city} {
 	root * /srv/site/current
 	encode zstd gzip
