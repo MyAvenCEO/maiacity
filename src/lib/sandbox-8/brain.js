@@ -58,6 +58,8 @@ export function stateFor(world, a) {
 		my_harvest_last_night: a.harvest,
 		harvests_vary: 'about ±25% a night; one night in 20 a bad harvest (30–60%), one in 20 a rich one',
 		share_that_rots_each_night: ROT,
+		water: world.weather.dry ? `dry spell for ${world.weather.dry} more nights: wells give only 25–50%, no rain` : 'normal; one night in 25 a dry spell of 4–10 days starts and wells give only 25–50%',
+		rain_barrel: 'one night in 3 it rains and my barrel catches 1–2 WATER (never in a dry spell); water never rots',
 		stock: a.stock,
 		need_per_day: NEED,
 		days_of_reserve_wanted: a.reserveDays,

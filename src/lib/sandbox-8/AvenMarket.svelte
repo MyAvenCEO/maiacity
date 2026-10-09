@@ -18,7 +18,8 @@
 
 	let world = createWorld();
 	let speed = $state(8640);
-	let paused = $state(false);
+	let paused = $state(true); // Samuel: nothing runs until you press Start
+	let started = $state(false);
 	let tab = $state('market');
 	let selected = $state(0);
 	let panelOpen = $state(true);
@@ -55,6 +56,7 @@
 			// the chart's lines, only while the Prices tab is open: at most ~300 points a good
 			series: tab === 'prices' ? Object.fromEntries(GOODS.map((g) => { const all = world.market[g].series; const every = Math.max(1, Math.ceil(all.length / 300)); return [g, all.filter((/** @type {any} */ _p, /** @type {number} */ i) => i % every === 0 || i === all.length - 1).map((/** @type {any} */ p) => ({ ...p }))]; })) : {},
 			month: Math.floor((world.day - 1) / 30) + 1,
+			weather: { ...world.weather },
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
 				GOODS.map((g) => {
@@ -112,8 +114,18 @@
 	function reset() {
 		world = createWorld();
 		calls = { asked: 0, answered: 0, failed: 0, lastError: '' };
-		morning();
+		paused = true;
+		started = false;
 		snap = snapshot();
+	}
+
+	/** Start (the first morning's decisions go out now) or pause */
+	function toggle() {
+		if (paused && !started) {
+			started = true;
+			morning();
+		}
+		paused = !paused;
 	}
 
 	function select(/** @type {number} */ id) {
@@ -307,9 +319,21 @@
 			ctx.font = '700 12px system-ui, sans-serif';
 			ctx.textAlign = 'center';
 			ctx.fillText(a.alive ? `${a.name} · ${fmt(a.hearts)} ♥` : `${a.name} †`, a.x, a.y - r - 12);
+			// what it bought on the way: a small dot per good, until it is home
+			const carried = a.alive ? GOODS.filter((g) => a.carry[g] > 0) : [];
+			carried.forEach((g, i) => {
+				ctx.fillStyle = GOOD_COLOUR[g];
+				ctx.strokeStyle = '#fff';
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.arc(a.x + (i - (carried.length - 1) / 2) * 10, a.y + r + 13, 4, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.stroke();
+			});
 			if (a.brain.pending) {
+				ctx.fillStyle = light > 0.5 ? '#1f2a23' : '#f4f1e8';
 				ctx.font = '11px system-ui, sans-serif';
-				ctx.fillText('thinking…', a.x, a.y + r + 18);
+				ctx.fillText('thinking…', a.x, a.y + r + (carried.length ? 30 : 18));
 			}
 		}
 	}
@@ -333,7 +357,6 @@
 		fit();
 		const ro = new ResizeObserver(fit);
 		ro.observe(stageEl);
-		morning();
 		let last = performance.now();
 		let lastSnap = 0;
 		let raf = 0;
@@ -374,7 +397,8 @@
 		if (e.kind === 'price') return `${e.source === 'liquid' ? 'Liquid' : 'local rule'}: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
 		if (e.kind === 'death') return 'died';
 		if (e.kind === 'rot') return `rotted: ${Object.entries(e.rotted).map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')}`;
-		if (e.kind === 'grow') return `${e.note === 'bad' ? 'bad' : 'rich'} harvest: ${e.qty} ${GOOD_LABEL[e.good]} (usually ${e.cap})`;
+		if (e.kind === 'rain') return `rain: the barrel caught ${e.qty} WATER`;
+		if (e.kind === 'grow') return `${e.note === 'dry' ? 'dry spell, the well gave' : e.note === 'bad' ? 'bad harvest:' : 'rich harvest:'} ${e.qty} ${GOOD_LABEL[e.good]} (usually ${e.cap})`;
 		return e.kind;
 	};
 </script>
@@ -386,7 +410,7 @@
 			<span>Day {snap.day} · {snap.time} · month {snap.month}</span>
 		</div>
 		<div class="controls">
-			<button onclick={() => (paused = !paused)}>{paused ? '▶ Play' : '❚❚ Pause'}</button>
+			<button onclick={toggle}>{paused ? (started ? '▶ Play' : '▶ Start') : '❚❚ Pause'}</button>
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
 			</select>
@@ -420,6 +444,7 @@
 					</li>
 				{/each}
 			</ol>
+			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give a quarter to a half, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
 			<p class="brain">HEARTS: every aven mints {MINT_PER_DAY} a day; every HEART decays {Math.round(DECAY_PER_YEAR * 100)}% a year.</p>
 			<p class="brain">
 				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered, decided by the stand-in rule ({calls.lastError}){/if}
@@ -661,6 +686,11 @@
 		margin: 0.5rem 0 0;
 		font-size: 0.75rem;
 		opacity: 0.8;
+	}
+	.brain.dry {
+		color: #b5541c;
+		opacity: 1;
+		font-weight: 600;
 	}
 	.prices {
 		display: flex;
