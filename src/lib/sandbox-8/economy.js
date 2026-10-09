@@ -70,6 +70,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			ask, // what it sells for, per unit
 			bid, // the most it pays, per unit
 			reserveDays: 3, // how many days of each need it wants in stock
+			plan: [], // today's route, as its brain chose it: aven ids to walk to in order, or 'home'
 			health: 100,
 			alive: true,
 			diedOn: null,
@@ -136,6 +137,13 @@ export function trade(world, a, b) {
 
 /** where an aven walks next: to the cheapest grower of the good it lacks most, else round its own territory */
 function pickTarget(world, a) {
+	// first the route its brain planned this morning; a stop that's dead or just met is skipped
+	while (a.plan.length) {
+		const next = a.plan.shift();
+		if (next === 'home') return { x: a.home.x, y: a.home.y, wander: true };
+		const s = world.avens[next];
+		if (s && s !== a && s.alive && !(a.metAt[s.id] != null && world.t - a.metAt[s.id] < 3 * 3600)) return { aven: s };
+	}
 	let best = null;
 	for (const g of GOODS) {
 		const w = want(a, g);
