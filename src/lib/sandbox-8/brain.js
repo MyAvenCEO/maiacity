@@ -229,7 +229,9 @@ const base = (/** @type {string} */ url) => url.trim().replace(/\/+$/, '');
 /** one call to it: natively from the studio (the page may not call plain http itself), else straight from a dev page */
 async function boxCall(url, body, signal) {
 	const fail = (status, out) => {
-		const why = out?.error?.message ?? (typeof out?.error === 'string' ? out.error : out?.detail ? JSON.stringify(out.detail) : '');
+		// FastAPI (d1's server, sglang) says what was wrong as detail: [{ loc, msg }], after an echo of the whole request
+		const detail = Array.isArray(out?.detail) ? out.detail.map((d) => `${(d?.loc ?? []).slice(1).join('.')}: ${d?.msg ?? ''}`).join('; ') : out?.detail;
+		const why = out?.error?.message ?? (typeof out?.error === 'string' ? out.error : detail ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : '');
 		return new Error(`the GPU machine ${status}${why ? `: ${String(why).slice(0, 200)}` : ''}`);
 	};
 	if (native()) {
@@ -284,6 +286,7 @@ export async function boxModel(url, want, signal) {
 }
 
 const chatOnly = new Set(); // bases whose server has no decision API
+const missing = new Set(); // decision routes a server does not have
 
 /**
  * ask the GPU machine the same typed questions. d1 takes them as they are, on the decision API (llama-server's
@@ -295,14 +298,25 @@ const chatOnly = new Set(); // bases whose server has no decision API
 export async function askBox(state, questions, { signal, url = BOX_URL, want = 'd1' } = {}) {
 	const { base: b, id: model } = await boxModel(url, want, signal);
 	if (/d1/i.test(model) && !chatOnly.has(b)) {
-		try {
-			const out = await boxCall(`${b}/systemone`, { model, state, questions }, signal);
-			if (!out?.answers) throw new Error('local d1 sent no answers');
-			return out.answers;
-		} catch (e) {
-			if (!/ 40[45]\b/.test(e?.message)) throw e;
-			chatOnly.add(b); // no decision API here: the chat it is, from now on
+		// Samuel's d1 server (FastAPI, :8001) answers POST /decide { state as text, questions } with { answer: { answers } };
+		// llama-server answers /v1/systemone with Liquid's own body. Whichever this one has, else the chat.
+		const routes = [
+			[`${b.replace(/\/v1$/, '')}/decide`, { state: JSON.stringify(state), questions }],
+			[`${b}/systemone`, { model, state, questions }]
+		];
+		for (const [at, body] of routes) {
+			if (missing.has(at)) continue;
+			try {
+				const out = await boxCall(at, body, signal);
+				const answers = out?.answer?.answers ?? out?.answers;
+				if (!answers) throw new Error('local d1 sent no answers');
+				return answers;
+			} catch (e) {
+				if (!/ 40[45]\b/.test(e?.message)) throw e;
+				missing.add(at); // not served here: don't ask it again
+			}
 		}
+		chatOnly.add(b); // no decision API here: the chat it is, from now on
 	}
 	const keys = Object.keys(questions);
 	const options = (q) => (q.type === 'score' ? Object.fromEntries(q.criteria.map((c, i) => [i, c])) : q.criteria);
@@ -326,8 +340,8 @@ export async function askBox(state, questions, { signal, url = BOX_URL, want = '
 	try {
 		out = await boxCall(`${b}/chat/completions`, { ...body, response_format: { type: 'json_schema', json_schema: { name: 'answers', schema, strict: true } } }, signal);
 	} catch (e) {
-		// a server without structured output says 400: ask again, the JSON asked for in words
-		if (!/ 400\b/.test(e?.message)) throw e;
+		// a server without structured output says 400 (or 422): ask again, the JSON asked for in words
+		if (!/ 4(00|22)\b/.test(e?.message)) throw e;
 		out = await boxCall(`${b}/chat/completions`, body, signal);
 	}
 	const text = String(out?.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '');

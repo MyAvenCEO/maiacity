@@ -234,8 +234,8 @@ pub async fn brain(auth: State<'_, Auth>, url: String, body: Option<Value>) -> R
     // 100.64.0.0/10 is Tailscale's range
     let near = host == "localhost"
         || host.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback() || (ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64));
-    if !matches!(url.scheme(), "http" | "https") || !near || !url.path().starts_with("/v1/") {
-        return Err("Only a brain on this Mac or the tailnet (…/v1/…).".into());
+    if !matches!(url.scheme(), "http" | "https") || !near || !(url.path().starts_with("/v1/") || url.path() == "/decide") {
+        return Err("Only a brain on this Mac or the tailnet (…/v1/… or …/decide).".into());
     }
     let req = match body {
         Some(body) => auth.http.post(url).json(&body),
