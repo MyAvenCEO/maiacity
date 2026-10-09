@@ -8,7 +8,8 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S } from './economy.js';
+	import { createWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, hookSample } from './economy.js';
+	import { loadCode } from './sandbox.js';
 	import { RULES, CONFIG, setRules, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
@@ -74,6 +75,35 @@
 		useConfig(cfg, changedRules());
 		saveRules();
 		if (!started) reset();
+		else if (codeKey() !== loadedKey) useCode();
+	}
+
+	// ---- the config cards' code, each card in its own QuickJS sandbox (sandbox.js), fresh for every run ----
+	let codeWait = false; // the clock waits while it loads
+	let codeNote = $state('');
+	let loadedKey = '';
+	let codeGen = 0;
+	const codeKey = () => JSON.stringify(CONFIG.cards.filter((c) => c.code?.trim()).map((c) => [c.id, c.code]));
+	function useCode() {
+		const gen = ++codeGen;
+		CODE.run?.dispose();
+		CODE.run = null;
+		codeNote = '';
+		loadedKey = codeKey();
+		if (loadedKey === '[]') return (codeWait = false);
+		codeWait = true;
+		loadCode(CONFIG.cards)
+			.then((run) => {
+				if (gen !== codeGen) return run?.dispose();
+				CODE.run = run;
+			})
+			.catch((e) => {
+				if (gen === codeGen) codeNote = `The cards' code could not run here (${e?.message || e}); the valley runs on the values alone.`;
+			})
+			.finally(() => {
+				if (gen === codeGen) codeWait = false;
+				snap = snapshot();
+			});
 	}
 
 	/** play another config: your changes go, the valley starts again */
@@ -98,6 +128,7 @@
 			total: Math.round(world.avens.reduce((/** @type {number} */ n, /** @type {any} */ a) => n + a.hearts, 0)),
 			leader: ranking(world)[0]?.name ?? null,
 			config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version },
+			code: CODE.run?.info() ?? null,
 			avens: world.avens.map((/** @type {any} */ a) => ({ id: a.id, name: a.name, colour: a.colour, grows: [...a.grows], hearts: Math.round(a.hearts), health: Math.round(a.health), alive: a.alive, diedOn: a.diedOn ?? null }))
 		};
 	}
@@ -170,6 +201,7 @@
 			stale: world.avens.filter((/** @type {any} */ x) => x.alive && x.brain.ready && world.t - (x.brain.last?.t ?? 0) >= STALE_H * 3600).length,
 			month: Math.floor((world.day - 1) / 30) + 1,
 			config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, local: Object.keys(changedRules()).length },
+			code: CODE.run?.info() ?? null,
 			// the daily rows, only while the Stats view is open (each row is never changed once written)
 			stats: page === 'stats' ? world.stats.slice() : [],
 			weather: { ...world.weather },
@@ -291,6 +323,7 @@
 		busy = '';
 		paused = true;
 		started = false;
+		useCode();
 		snap = snapshot();
 	}
 
@@ -531,7 +564,7 @@
 			last = now;
 			if (!paused) {
 				think(now);
-				if (decided()) {
+				if (decided() && !codeWait) {
 					let game = (dtReal / 1000) * speed;
 					while (game > 0) {
 						const d = Math.min(120, game);
@@ -626,7 +659,7 @@
 	{/if}
 	{#if page === 'mips'}
 		<div class="statspage">
-			<ProposalsView {acct} {configs} playing={snap.config} {draft} onplay={play} onreload={() => reloadConfigs().catch(() => {})} />
+			<ProposalsView {acct} {configs} playing={snap.config} {draft} sample={() => hookSample(world)} onplay={play} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 
@@ -647,11 +680,16 @@
 				{/each}
 			</ol>
 			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give 40 to 70%, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
-			<p class="brain">HEARTS: every aven mints {snap.policy.mint} a day; every HEART decays {snap.policy.decay}% a year. <button class="link" onclick={() => setView('policy')}>Policies</button></p>
+			<p class="brain">HEARTS: every aven mints {snap.policy.mint} a day; every HEART decays {snap.policy.decay}% a year{#if snap.code?.hooks.some((/** @type {any} */ h) => h.hooks.includes('mint') || h.hooks.includes('decay'))}, as a card's code changes them{/if}. <button class="link" onclick={() => setView('policy')}>Policies</button></p>
 			<p class="brain">
 				Config: {snap.config.name}{snap.config.id ? ` v${snap.config.version}` : ''}{snap.config.local ? ` + ${snap.config.local} change${snap.config.local === 1 ? '' : 's'} of yours` : ''} · {#if !acct.play}not saved{:else if !started}saved once you press Start{:else if saving.error}<span class="warn">not saved: {saving.error}</span>{:else}saved, {saving.days} day{saving.days === 1 ? '' : 's'} so far{/if} <button class="link" onclick={() => setView('mips')}>Proposals</button>
 			</p>
 			<p class="brain">
+				{#if snap.code?.hooks.length || snap.code?.errors.length || codeNote}
+					Card code (QuickJS):
+					{#each snap.code?.hooks ?? [] as h, i (h.card)}{i ? '; ' : ''}{h.name} runs {h.hooks.join(', ')}{h.calls ? ` (${h.ms} ms a call)` : ''}{/each}{#each snap.code?.errors ?? [] as e (e.card)}{' · '}<span class="warn">{e.name} stopped: {e.error}; the valley uses the values instead.</span>{/each}{#if codeNote}{' · '}<span class="warn">{codeNote}</span>{/if}
+					<br />
+				{/if}
 				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.limited}&nbsp;· {calls.limited} waited out Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
 			</p>
 		</section>

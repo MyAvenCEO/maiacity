@@ -31,11 +31,13 @@
 	"dependencies": {
 		"@fontsource-variable/dm-sans": "^5.3.0",
 		"@fontsource-variable/fraunces": "^5.3.0",
+		"@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
 		"@simplewebauthn/browser": "^14.0.0",
 		"@tauri-apps/api": "^2",
 		"@tauri-apps/plugin-dialog": "^2",
 		"@types/three": "^0.186.0",
 		"marked": "^18.0.12",
+		"quickjs-emscripten-core": "^0.32.0",
 		"three": "^0.186.0",
 		"yaml": "^2.9.0"
 	}
