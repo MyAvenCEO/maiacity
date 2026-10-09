@@ -94,7 +94,7 @@ export function questionsFor(world, a) {
 		};
 	}
 	q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: GIVE };
-	q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 20%, chicken 30%, legumes 3% a night; water keeps.', criteria: RESERVE };
+	q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 15%, chicken 30%, legumes 5% a night; water keeps.', criteria: RESERVE };
 	const stops = visitOptions(world, a);
 	q.visit_1 = { type: 'choice', instructions: 'Who should you walk to first today, to buy what you lack or sell what you grow?', criteria: stops };
 	q.visit_2 = { type: 'choice', instructions: 'And who next, after that first visit?', criteria: stops };
