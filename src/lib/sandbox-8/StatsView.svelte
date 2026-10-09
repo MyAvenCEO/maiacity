@@ -11,6 +11,7 @@
 
 	const CHARTS = [
 		{ k: 'prices', label: 'Prices' },
+		{ k: 'daily', label: 'Day by day' },
 		{ k: 'trades', label: 'Trades' },
 		{ k: 'hearts', label: 'HEARTS per aven' },
 		{ k: 'money', label: 'HEARTS in the valley' },
@@ -124,6 +125,28 @@
 	<div class="grid">
 		{#if chartsOn.prices}
 			<div class="wide"><LineChart title="Market price" unit="HEARTS a unit" note={showAvg ? 'Solid: the market price, hour by hour. Dashed: the average price actually traded that day.' : 'The market price, hour by hour.'} lines={priceLines} {from} {to} {shade} /></div>
+		{/if}
+		{#if chartsOn.daily}
+			<div class="wide daily">
+				<div class="head"><b>What the valley holds, day by day</b><span>units in store at the end of each day · HEARTS</span></div>
+				<p class="note">Each good: in store across all living avens, with that night's <span class="up">+harvest</span> and <span class="down">−eaten</span>. Newest first.</p>
+				<div class="scroll"><table>
+					<thead><tr><th>Day</th>{#each goods as g (g)}<th><i style:--c={GOOD_COLOUR[g]}></i>{GOOD_LABEL[g]}</th>{/each}<th>HEARTS</th><th>Alive</th></tr></thead>
+					<tbody>
+						{#each [...nights].reverse().slice(0, 60) as r (r.day)}
+							<tr class:dryrow={r.dry}>
+								<td>{r.day}{r.dry ? ' · dry' : ''}</td>
+								{#each goods as g (g)}
+									{@const eaten = Object.values(r.ate ?? {}).reduce((n, e) => n + (/** @type {any} */ (e)[g] ?? 0), 0)}
+									<td class="num"><b>{r.stock[g]}</b> <small><span class="up">+{r.harvest[g]}</span> <span class="down">−{eaten}</span></small></td>
+								{/each}
+								<td class="num"><b>{fmt(r.total)}</b></td>
+								<td class="num">{r.alive}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table></div>
+			</div>
 		{/if}
 		{#if chartsOn.meals}
 			<div class="wide meals" bind:clientWidth={gridW}>
@@ -303,6 +326,65 @@
 	}
 	.wide {
 		grid-column: 1 / -1;
+	}
+	.daily {
+		background: #fff;
+		border-radius: 12px;
+		padding: 0.6rem 0.8rem 0.4rem;
+		box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+		max-height: 360px;
+		display: flex;
+		flex-direction: column;
+	}
+	.daily .head {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		font-size: 0.85rem;
+	}
+	.daily .head span,
+	.daily .note {
+		font-size: 0.7rem;
+		color: #6b6a66;
+	}
+	.daily .note {
+		margin: 0.15rem 0 0.3rem;
+	}
+	.daily .scroll {
+		overflow: auto;
+		min-height: 0;
+	}
+	.daily table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.daily th {
+		position: sticky;
+		top: 0;
+		background: #fff;
+		text-align: right;
+		font-weight: 600;
+		color: #52514e;
+		padding: 0.2rem 0.4rem;
+		white-space: nowrap;
+	}
+	.daily th:first-child,
+	.daily td:first-child {
+		text-align: left;
+	}
+	.daily td {
+		text-align: right;
+		padding: 0.15rem 0.4rem;
+		border-top: 1px solid #1f2a2312;
+		white-space: nowrap;
+	}
+	.daily small {
+		font-size: 0.65rem;
+	}
+	.dryrow {
+		background: #f0a03c18;
 	}
 	.meals {
 		position: relative;
