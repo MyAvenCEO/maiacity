@@ -3,10 +3,10 @@ import AvenDB.Step
 /-!
 # Sync by caps, item by item
 
-A device asks a peer for what it may receive. The peer answers from its own view and sends the ops of the vaults that
+A device asks a peer for what it may receive. The peer answers from its own view and sends the edits of the vaults that
 device acts for, and for each item it may receive, the encrypted edits and the checkpoints vouching for them, the auth
-ops of the scopes covering it (among them the schemas and lenses published into its space's lane), and the ops of
-every vault those ops act for or name, up their chains of owners. A revocation that took one of the device's caps away
+edits of the scopes covering it (among them the schemas and lenses published into its space's lane), and the edits of
+every vault those edits act for or name, up their chains of owners. A revocation that took one of the device's caps away
 reaches it too, so it knows what it may no longer do. Nothing else about other items leaves the peer. The connection
 proves which device is asking (iroh's endpoint key is the device key), so the request names the device.
 -/
@@ -28,49 +28,49 @@ def reaches (st : State) (d : SignerId) : Scope → Bool
     | some s => s.entries.any (mayReceive st d sp ·)
     | none   => false
 
-/-- The entry an op writes to. -/
-def Op.writeTarget? (op : Op) : Option (SpaceId × EntryId) :=
-  match op.action with
+/-- The entry an edit writes to. -/
+def Edit.writeTarget? (edit : Edit) : Option (SpaceId × EntryId) :=
+  match edit.action with
   | .write sp e .. => some (sp, e)
   | _ => none
 
-/-- The entry an op writes to or a checkpoint vouches for: what travels with the item. -/
-def Op.item? (op : Op) : Option (SpaceId × EntryId) :=
-  match op.action with
+/-- The entry an edit writes to or a checkpoint vouches for: what travels with the item. -/
+def Edit.item? (edit : Edit) : Option (SpaceId × EntryId) :=
+  match edit.action with
   | .write sp e .. | .checkpoint sp e _ => some (sp, e)
   | _ => none
 
-/-- The scope an auth op is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
-    revokes, looked up among `ops`, the scope of a space or entry key, or the space a schema or lens is published
+/-- The scope an auth edit is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
+    revokes, looked up among `edits`, the scope of a space or entry key, or the space a schema or lens is published
     into. -/
-def Op.authScope? (ops : List Op) (op : Op) : Option Scope :=
-  match op.action with
+def Edit.authScope? (edits : List Edit) (edit : Edit) : Option Scope :=
+  match edit.action with
   | .foundSpace sp _ _ => some (.space sp)
   | .grant g _ => some g.scope
-  | .revoke gid _ _ _ => ops.findSome? fun o => match o.action with
+  | .revoke gid _ _ _ => edits.findSome? fun o => match o.action with
     | .grant g _ => if g.id == gid then some g.scope else none
     | _ => none
   | .keys k .. => k.scope?
   | .publish sp .. => some (.space sp)
   | _ => none
 
-/-- The vault a vault op changes, or whose key it carries. -/
-def Op.vaultOf? (op : Op) : Option VaultId :=
-  match op.action with
+/-- The vault a vault edit changes, or whose key it carries. -/
+def Edit.vaultOf? (edit : Edit) : Option VaultId :=
+  match edit.action with
   | .genesis v .. | .addOwner v .. | .removeOwner v .. | .setThreshold v .. | .addDevice v .. | .removeDevice v ..
   | .setRoot v .. | .keys (.vault v) .. => some v
   | _ => none
 
-/-- The vault an op acts for. -/
-def Op.actor? (op : Op) : Option VaultId :=
-  match op.action with
+/-- The vault an edit acts for. -/
+def Edit.actor? (edit : Edit) : Option VaultId :=
+  match edit.action with
   | .foundSpace _ a _ | .revoke _ a _ _ | .write _ _ a .. | .publish _ a _ _ => some a
   | .grant g _ => some g.issuer
   | _ => none
 
 /-- The vault a grant names. A peer checks that it exists before accepting the grant. -/
-def Op.grantee? (op : Op) : Option VaultId :=
-  match op.action with
+def Edit.grantee? (edit : Edit) : Option VaultId :=
+  match edit.action with
   | .grant g _ => match g.grantee with
     | .principal (.vault v) => some v
     | _ => none
@@ -85,48 +85,48 @@ def closeVaults (st : State) : Nat → List VaultId → List VaultId
       | .signer _ => none
     | none => [])
 
-/-- Revocation `op` takes a cap from device `d`: among the grants it takes away is one naming a vault `d` acts for.
+/-- Revocation `edit` takes a cap from device `d`: among the grants it takes away is one naming a vault `d` acts for.
     `d` hears of it, and learns nothing more about the scope. -/
-def Op.takesFrom (st : State) (ops : List Op) (d : SignerId) (op : Op) : Bool :=
-  match op.action with
-  | .revoke .. => (grantsIn ops).any fun x => (removes ops op).contains (.grant x.id) && match x.grantee with
+def Edit.takesFrom (st : State) (edits : List Edit) (d : SignerId) (edit : Edit) : Bool :=
+  match edit.action with
+  | .revoke .. => (grantsIn edits).any fun x => (removes edits edit).contains (.grant x.id) && match x.grantee with
     | .principal (.vault v) => actsFor st d v
     | _ => false
   | _ => false
 
-/-- What a peer holding `ops` sends device `d`. -/
-def respond (ops : List Op) (d : SignerId) : List Op :=
-  let st := view ops
-  let writes := ops.filter fun op => match op.item? with
+/-- What a peer holding `edits` sends device `d`. -/
+def respond (edits : List Edit) (d : SignerId) : List Edit :=
+  let st := view edits
+  let writes := edits.filter fun edit => match edit.item? with
     | some (sp, e) => mayReceive st d sp e
     | none => false
-  let auth := ops.filter fun op => (match op.authScope? ops with
+  let auth := edits.filter fun edit => (match edit.authScope? edits with
     | some sc => reaches st d sc
-    | none => false) || op.takesFrom st ops d
+    | none => false) || edit.takesFrom st edits d
   let mine := st.vaults.filterMap fun x => if actsFor st d x.id then some x.id else none
-  let vaults := closeVaults st st.depth (mine ++ (writes ++ auth).filterMap Op.actor? ++ auth.filterMap Op.grantee?)
-  let vaultOps := ops.filter fun op => match op.vaultOf? with
+  let vaults := closeVaults st st.depth (mine ++ (writes ++ auth).filterMap Edit.actor? ++ auth.filterMap Edit.grantee?)
+  let vaultEdits := edits.filter fun edit => match edit.vaultOf? with
     | some v => vaults.contains v
     | none => false
-  writes ++ auth ++ vaultOps
+  writes ++ auth ++ vaultEdits
 
 /-- The vaults passkey `p` owns in `st`: those it is an owner or the root of. -/
 def ownedBy (st : State) (p : SignerId) : List VaultId :=
   st.vaults.filterMap fun x => if x.owners.contains (.signer p) || x.root == some p then some x.id else none
 
-/-- What a peer holding `ops` hands a device whose passkey `p` proved itself on their connection (P8c): the logs of
+/-- What a peer holding `edits` hands a device whose passkey `p` proved itself on their connection (P8c): the logs of
     the vaults `p` owns, and of every vault that owns one of them, up the chains, as a new device of `p`'s person needs
     them to add itself to its vault. Nothing about any space or entry: the device asks for the rest once it acts for
     the vault. -/
-def linkCard (ops : List Op) (p : SignerId) : List Op :=
-  let st := view ops
+def linkCard (edits : List Edit) (p : SignerId) : List Edit :=
+  let st := view edits
   let vaults := closeVaults st st.depth (ownedBy st p)
-  ops.filter fun op => match op.vaultOf? with
+  edits.filter fun edit => match edit.vaultOf? with
     | some v => vaults.contains v
     | none => false
 
-/-- A peer that held `ops` after receiving `incoming`. -/
-def receive (ops incoming : List Op) : List Op := ops ++ incoming.filter (fun o => !ops.contains o)
+/-- A peer that held `edits` after receiving `incoming`. -/
+def receive (edits incoming : List Edit) : List Edit := edits ++ incoming.filter (fun o => !edits.contains o)
 
 /-- The writes a state holds for one item. -/
 def itemWrites (st : State) (sp : SpaceId) (e : EntryId) : List Write :=

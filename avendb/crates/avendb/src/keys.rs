@@ -2,7 +2,7 @@
 //! says what each is sealed to: a human vault's key to its devices and owner signers (a passkey through a key derived
 //! from its PRF output), a coop's key to its owner vaults' keys, a space key to the vaults holding read on the space,
 //! an entry key to its space key and to the vaults holding read on just that entry. Every edit is encrypted under its
-//! entry's current key, bound to the op that carries it. When anyone loses access, every key they could open moves to
+//! entry's current key, bound to the edit that carries it. When anyone loses access, every key they could open moves to
 //! a new epoch and the old key is sealed to the new one, so those who remain still read the history (T5, T6). Relay
 //! caps get no key at all (T7).
 //!
@@ -10,7 +10,7 @@
 //! it, and its two key pairs that others seal to without holding it: X-Wing (ML-KEM-768 with X25519) and Classic
 //! McEliece 6688128f. A sealed box carries a share for each, and the key that encrypts the box hashes both shared
 //! secrets, so it stays closed while either scheme holds: lattices and curves may weaken, codes have resisted since
-//! 1978. A McEliece public key is a megabyte, so it travels as a blob named by its hash, beside the ops. Where the
+//! 1978. A McEliece public key is a megabyte, so it travels as a blob named by its hash, beside the edits. Where the
 //! sealer holds the key a box goes to, it wraps instead (symmetric, no public key at all). A signer's own key is one
 //! more such secret: a device derives it with its other keys, a passkey from its PRF output.
 //!
@@ -96,7 +96,7 @@ impl std::fmt::Debug for KeyId {
 }
 
 /// What keys are sealed to: an X-Wing public key, and the id of a Classic McEliece public key, the blob that travels
-/// beside the ops.
+/// beside the edits.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PublicKey {
     pub xwing: Vec<u8>,
@@ -692,14 +692,14 @@ mod tests {
     fn an_edit_round_trips_and_fails_with_any_change() {
         let mut rng = rng();
         let (key, other) = (Secret::generate(&mut rng), Secret::generate(&mut rng));
-        let sealed = encrypt(&key, b"# Welcome", b"op context", &mut rng);
-        assert_eq!(decrypt(&key, &sealed, b"op context").as_deref(), Some(&b"# Welcome"[..]));
-        assert!(decrypt(&other, &sealed, b"op context").is_none());
-        assert!(decrypt(&key, &sealed, b"another op").is_none());
+        let sealed = encrypt(&key, b"# Welcome", b"edit context", &mut rng);
+        assert_eq!(decrypt(&key, &sealed, b"edit context").as_deref(), Some(&b"# Welcome"[..]));
+        assert!(decrypt(&other, &sealed, b"edit context").is_none());
+        assert!(decrypt(&key, &sealed, b"another edit").is_none());
         for i in [0, 30, sealed.len() - 1] {
             let mut changed = sealed.clone();
             changed[i] ^= 1;
-            assert!(decrypt(&key, &changed, b"op context").is_none(), "byte {i}");
+            assert!(decrypt(&key, &changed, b"edit context").is_none(), "byte {i}");
         }
         assert!(!sealed.windows(9).any(|w| w == b"# Welcome"));
     }

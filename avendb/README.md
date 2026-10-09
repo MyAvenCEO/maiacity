@@ -10,13 +10,13 @@ ciphertext.
 avenDB is its own package in the maiacity repo, apart from the media vault in `vault/`: it has its own Cargo workspace
 and lockfile, so the two never build together, and nothing here changes what the media vault, its server or the Studio
 app run. Everything avenDB needs lives here: its encryption and passkeys, schemas and lenses, Loro documents and their
-history and branches, and, from P8, its own iroh networking (its own ALPN, its own iroh versions and TLS crypto).
+history and proposals, and, from P8, its own iroh networking (its own ALPN, its own iroh versions and TLS crypto).
 
 ## Layout
 
 | Path | What it holds |
 |---|---|
-| `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and branches (`branch`), sync by caps and by each log's frontier (`sync`), every message between devices as bytes (`wire`), and the Lab the scenario tests run on (`lab`) |
+| `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and proposals (`history`), sync by caps and by each log's frontier (`sync`), every message between devices as bytes (`wire`), and the Lab the scenario tests run on (`lab`) |
 | `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by caps, the McEliece keys in iroh-blobs behind a gate, announcements of changed digests to each peer that may hold the log, linking a new device by its passkey (see [Linking a device](#linking-a-device)), each node's store on disk, and the server's node (`server`) |
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node in a folder of its own, and its relay, which lets in only the devices the server knows (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay (see [A device in the browser](#a-device-in-the-browser)) |
@@ -59,7 +59,7 @@ to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit the
 
 Every node, the server's and every browser's, trusts no elliptic curve alone (`Lab::set_pq_only`, set as a node starts
 in `avendb_net`): it counts a write only once a checkpoint by its author covers it, signed with SLH-DSA, and every other
-op carries an SLH-DSA signature beside its classical one, both checked. A node checkpoints each write of its own as it
+edit carries an SLH-DSA signature beside its classical one, both checked. A node checkpoints each write of its own as it
 makes it, and what it held before as it starts. Keys are sealed with X-Wing and Classic McEliece both, every connection
 agrees its keys with X25519MLKEM768 alone, and every hash is SHA-3.
 
@@ -78,13 +78,13 @@ through the server once every other device is lost.
 3. The peer checks it against the passkey its vaults name and hands back the link card: the logs of the vaults the
    passkey owns and of those that own them, up the chains, and nothing about any space or entry (T20).
 4. The new device adds itself to the vault the passkey is the root of, signed by the passkey and by itself (`join`),
-   and sends that op with its McEliece key. The peer takes it only for the device on the connection, and only if the
+   and sends that edit with its McEliece key. The peer takes it only for the device on the connection, and only if the
    rules take it (`accept_join`); it boxes the vault key for the new device, and the two sync by caps.
 
 A device the server doesn't know yet reaches it straight, over UDP, as its relay lets in only the devices it knows,
 or, with no UDP of its own, as in a browser, through the relay by its passkey's pass (see
 [A device in the browser](#a-device-in-the-browser)). Once the device has joined, the relay lets it in. A forged code
-gains an attacker nothing: the passkey's hello names the new device and the connection, and every op of a card is
+gains an attacker nothing: the passkey's hello names the new device and the connection, and every edit of a card is
 signed.
 
 ## A device in the browser
@@ -103,7 +103,7 @@ device of its own, as a Mac or a phone is.
   and edits documents, and shows its own code, through which the next device links.
 - Its TLS is rustls with ring, as aws-lc-rs doesn't build for a browser, and X25519MLKEM768 is written in pure Rust
   (`avendb_net::kx`, checked against aws-lc-rs's). Its tasks and timers run on the page's event loop.
-- A big answer comes a page at a time, a few MiB (`Options::page`), each op after the ops it builds on, so a device
+- A big answer comes a page at a time, a few MiB (`Options::page`), each edit after the edits it builds on, so a device
   takes each page as it comes and never holds a whole vault's answer at once.
 
 ### The browser's passkey (P8e)
@@ -111,18 +111,19 @@ device of its own, as a Mac or a phone is.
 The person's passkey stays in the browser's own authenticator: WebAuthn with its PRF extension
 (`crates/avendb-browser/js/passkey.js`). The device never holds the passkey, only what one ceremony at a time brings
 back (`sign::Ceremony`): an assertion over a challenge, and the PRF output on the app's salt, from which the passkey's
-SLH-DSA key and the key sealed to it derive. The device drafts each op the passkey signs (`Lab::draft`), the passkey
-signs the op's id as the ceremony's challenge, and the device keeps the op (`Lab::complete`). The ceremony that unlocks
-the device also brings the PRF output on the device's own salt, which ends in 32 random bytes kept on the device; its
-keys derive from it at every unlock. The Lab holds no secret of the passkey: it lends the seal secret from the ceremony
-for that op alone, and forgets the McEliece pair it made from it once the device locks. Ops drafted together
-(`Lab::drafting`) are signed in one ceremony, over their batch: its challenge is the hash of their ids, smallest first
-(`sign::batch_challenge`), and each op's signature carries those ids, so it counts for those ops alone; the SLH-DSA
-half still signs each op's own id. So a person is asked once where a device would otherwise ask once for each op.
+SLH-DSA key and the key sealed to it derive. The device drafts each edit the passkey signs (`Lab::draft`), the passkey
+signs the edit's id as the ceremony's challenge, and the device keeps the edit (`Lab::complete`). The ceremony that
+unlocks the device also brings the PRF output on the device's own salt, which ends in 32 random bytes kept on the
+device; its keys derive from it at every unlock. The Lab holds no secret of the passkey: it lends the seal secret from
+the ceremony for that edit alone, and forgets the McEliece pair it made from it once the device locks. Edits drafted
+together (`Lab::drafting`) are signed in one ceremony, over their batch: its challenge is the hash of their ids,
+smallest first (`sign::batch_challenge`), and each edit's signature carries those ids, so it counts for those edits
+alone; the SLH-DSA half still signs each edit's own id. So a person is asked once where a device would otherwise ask
+once for each edit.
 
 - **Found** (`Device::found`, `Node::found_with`): a new person's first browser founds their human vault with the
   passkey they signed up to maiaCITY with, or one it makes, then its first space, and grants avenCEO relay on it, in
-  three ceremonies: the unlock, the pass to the relay, and one for the vault's genesis and the op that adds the device
+  three ceremonies: the unlock, the pass to the relay, and one for the vault's genesis and the edit that adds the device
   together (four with a new passkey). Its P-256 key comes from the new passkey's public key info, or, for maiaCITY's,
   as the one key both the unlock's and the pass's assertions recover to. The server's relay lets any passkey's pass in
   while it is open to sign-up (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on
@@ -132,7 +133,7 @@ half still signs each op's own id. So a person is asked once where a device woul
   that device shows, in four ceremonies: the unlock, the pass, the passkey's hello, and the join. It never saw the
   passkey made, so it learns its P-256 key as the one key both the unlock's and the pass's assertions recover to
   (`sign::passkey_key`).
-- **Open** (`Device::open`): what the device holds is kept in IndexedDB (`js/store.js`), its ops in the order it took
+- **Open** (`Device::open`): what the device holds is kept in IndexedDB (`js/store.js`), its edits in the order it took
   them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
   one ceremony, the unlock; the relay knows it, so it needs no pass.
 
@@ -227,7 +228,7 @@ in the code:
   and the software passkey of the tests does the same. Each key derives under a label of its own, so the signing key
   and the key sealed to never meet.
 - **Bound to the passkey.** A ceremony counts only if its assertion verifies under the passkey's P-256 key and the
-  SLH-DSA key derived from its PRF output is the one the vault knows (`sign::Ceremony`): every op a passkey signs
+  SLH-DSA key derived from its PRF output is the one the vault knows (`sign::Ceremony`): every edit a passkey signs
   carries both, so maiaCITY's API, which sees its own sign-ins' assertions and never a PRF output, can't sign for a
   vault, nor can anyone who learns a PRF output without the authenticator.
 - **Held as briefly as it can be.** The device copies each output into memory that wipes itself, and wipes the page's
@@ -253,7 +254,7 @@ browsers linking through her Mac.
 
 A device's secrets stay in its memory, and only while it needs them (P8c):
 
-- Nothing on disk, in a view, a log line or a debug print holds one: a node's store holds signed ops and McEliece
+- Nothing on disk, in a view, a log line or a debug print holds one: a node's store holds signed edits and McEliece
   public keys, a key prints as its id, and the tile's views show none (`no_view_shows_a_secret`). The server's device
   secret is the one exception, in its folder, readable by its owner alone.
 - Every key wipes itself as it is dropped: a key's 32 bytes, a device's and a passkey's keys, and the hash states,
@@ -281,7 +282,7 @@ ciphertext and opens nothing but what is public.
   public address and its relay. The app keeps it, so that devices reach the server, and a new device links through it
   with its person's passkey alone.
 - A device takes the server's contact card, avenCEO's log, and can then grant avenCEO relay on a space. The server keeps
-  that space's ops and McEliece keys and serves them to the devices that may hold them, also while the device that
+  that space's edits and McEliece keys and serves them to the devices that may hold them, also while the device that
   wrote them is away.
 - Its relay lets in only the devices the server knows: those of the vaults acting in the spaces it relays and of
   avenCEO's owners, and itself; until a human vault claims the server, also any passkey's pass. A device the server
@@ -313,22 +314,22 @@ in the same ceremony (`Node::found_with`).
 
 1. The device takes the server's card (`Lab::card`). If it names no avenCEO, nobody has claimed the server, and the
    device asks it for its key to seal to (`Lab::claim_key`), which the server hands to whoever asks until then.
-2. The person's passkey signs, in one ceremony, their human vault's genesis, the op that adds the device, avenCEO's
-   genesis, owned by that human vault, and the op that adds the server as avenCEO's device, sealed to that key
+2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, avenCEO's
+   genesis, owned by that human vault, and the edit that adds the server as avenCEO's device, sealed to that key
    (`Lab::drafting`, `Lab::claim`). The device keeps the first three and sends the last with avenCEO's log.
-3. The server checks that the op adds itself and seals to its own key, every signature, and that the op makes it a
+3. The server checks that the edit adds itself and seals to its own key, every signature, and that the edit makes it a
    device of an aven vault by the rules, then signs it too, in its place, and keeps it (`Lab::accept_claim`). Its
-   answer, the op and its McEliece key, lets the device box avenCEO's key for it; then they sync.
+   answer, the edit and its McEliece key, lets the device box avenCEO's key for it; then they sync.
 
 So nobody claims it after: whoever founds a vault later finds avenCEO on the server's card and grants it relay, and so
 does one who lost a race for it, their vault founded all the same. A new server is therefore claimed by whoever founds
 a vault through it first, which should be the person who runs it. A device of a vault founded before claims a server
-the same way (`Node::claim`), avenCEO's genesis and the op that adds the server in one ceremony; a claim whose answer
+the same way (`Node::claim`), avenCEO's genesis and the edit that adds the server in one ceremony; a claim whose answer
 was lost finds the server avenCEO's device already, and one the server didn't take is tried again on the same
 avenCEO. In the tile, **Your account** says so once its vault owns avenCEO.
 
 A space relayed by avenCEO is relayed to avenCEO's devices and, as for any grant to a vault, to the devices that act for
-it: its owners'. They receive what the server's disk holds, the space's ops as ciphertext, never a key.
+it: its owners'. They receive what the server's disk holds, the space's edits as ciphertext, never a key.
 
 ### Deploying the server
 
@@ -368,17 +369,17 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 |---|---|---|
 | P0 to P4 | The spec and the API, vaults and signatures, caps and sync by caps, keys and encrypted edits, schemas and lenses | Merged |
 | P4b | Post-quantum hardening: SHA-3 ids and hashes, a hash-based signature beside every classical one but a write's, checkpoints that vouch for the writes (T18), a McEliece share beside X-Wing in every key box; the passkey as the only way back in, device keys derived from it at every unlock | Merged |
-| P5 | History and branches: every write a commit on a line of its entry's history, branches from any version, merge, promote, revert and restore, undo of an older commit, forks into another space (T10) | Merged |
-| P6 | Sync log by log: every op builds on the frontier of its own log (a vault's, a space's or an entry's), a device asks with its frontier of each log and a few ops further back and is sent only what it lacks (T19), devices gossip one digest per log, a device restored from an old backup is flagged when it signs again (a fork); offline devices, random delivery orders, partial delivery, Lean ⇄ Rust vectors for sync (T11, T12, T13); a device that has seen a revocation writes under the new key (T15) | Merged |
-| P7 | The avenDB tile: the Lab's whole world in one page, as WebAssembly in the page's workers, every device side by side; pick one and act as it: vaults and the passkeys that sign their changes, spaces, entries read and edited as each app version sees them, history, branches, access and why, todos, schemas and lenses, sync, locked and offline devices, and the plan's scenarios played green | Merged |
+| P5 | History and proposals: every write an edit on a line of its entry's history, proposals from any version, merge, promote, revert and restore, undo of an older edit, variants in another space (T10) | Merged |
+| P6 | Sync log by log: every edit builds on the frontier of its own log (a vault's, a space's or an entry's), a device asks with its frontier of each log and a few edits further back and is sent only what it lacks (T19), devices gossip one digest per log, a device restored from an old backup is flagged when it signs again (a fork); offline devices, random delivery orders, partial delivery, Lean ⇄ Rust vectors for sync (T11, T12, T13); a device that has seen a revocation writes under the new key (T15) | Merged |
+| P7 | The avenDB tile: the Lab's whole world in one page, as WebAssembly in the page's workers, every device side by side; pick one and act as it: vaults and the passkeys that sign their changes, spaces, entries read and edited as each app version sees them, history, proposals, access and why, todos, schemas and lenses, sync, locked and offline devices, and the plan's scenarios played green | Merged |
 | P8a | Devices on avenDB's own iroh: one encoding for every message between devices, fuzzed; each device a node on an iroh endpoint of its own ed25519 key with X25519MLKEM768 as the only key exchange, and a hello on every connection that proves the device by its SLH-DSA signature over the TLS exporter; sync by caps over avenDB's own ALPN, the McEliece keys in iroh-blobs, handed out only within reach; a node announces each changed digest straight to each peer that may hold the log, not over iroh-gossip, whose topics would tell every member of a log; scenarios 5 and 17 between nodes on one machine | Merged |
-| P8b | The server: a node in a folder of its own that keeps its device's secret and its store, founds its vault at its first start with an owner key it then forgets, and hands out its contact card so that a device can grant it relay on a space; its relay, which lets in only the devices of the vaults acting in the spaces it relays and lets go of a device taken out of its vault; each node's store on disk (append-only, a torn record cut back, a forged op dropped); peers out of reach tried less and less often; scenario 5 through the relay alone; the server's image, not deployed | Merged |
+| P8b | The server: a node in a folder of its own that keeps its device's secret and its store, founds its vault at its first start with an owner key it then forgets, and hands out its contact card so that a device can grant it relay on a space; its relay, which lets in only the devices of the vaults acting in the spaces it relays and lets go of a device taken out of its vault; each node's store on disk (append-only, a torn record cut back, a forged edit dropped); peers out of reach tried less and less often; scenario 5 through the relay alone; the server's image, not deployed | Merged |
 | P8c | Linking a new device by its passkey alone, through a device's QR code or the server's offer: the passkey's hello on the connection, the link card of its vaults' logs (T20), the join the peer takes only for the device on the connection; recovery through the server; keys in the device's secure boundary (wiped as they are dropped, none left once a device locks, randomness no copy rewinds or foresees, no secret in any view); Verifpal models of the hello, the link and the sealed box with the curves broken (Verifpal rather than ProVerif, which has no package here) | Merged |
-| P8d | A device in the browser: the network crate as WebAssembly, with X25519MLKEM768 in pure Rust; a new device with no UDP let onto the server's relay by its passkey's pass; big answers a page at a time, each op after its past; two pages in Chromium that link through the relay alone, the second through the first one's code, and sync | Merged |
-| P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) sign in ceremonies over each op, and the Lab holds no secret of them; a new person's first browser founds their vault through the relay open to sign-up; a browser links in four ceremonies and learns the passkey's key from two; its store in IndexedDB, open again in one ceremony; the tile's This browser screen with QR codes; Chromium's virtual authenticator in the test | Merged |
+| P8d | A device in the browser: the network crate as WebAssembly, with X25519MLKEM768 in pure Rust; a new device with no UDP let onto the server's relay by its passkey's pass; big answers a page at a time, each edit after its past; two pages in Chromium that link through the relay alone, the second through the first one's code, and sync | Merged |
+| P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) sign in ceremonies over each edit, and the Lab holds no secret of them; a new person's first browser founds their vault through the relay open to sign-up; a browser links in four ceremonies and learns the passkey's key from two; its store in IndexedDB, open again in one ceremony; the tile's This browser screen with QR codes; Chromium's virtual authenticator in the test | Merged |
 | P8f, vaults | Three kinds of vault, human, coop and aven, each owned only as its kind may be (T21); every act for a coop or an aven vault names the chain of owners it goes through; the server a device of avenCEO, claimed by the first human vault founded through it; the passkey of maiaCITY's sign-up, with PRF, as the vault's root; the example world reset around avenCEO | Merged |
 | P8f, deploy | The server at `avendb.maia.city`, beside the media vault: its own image and workflow (`avendb.yml`), its Caddy site, UDP port and settings from `api.yml`; This browser filled in with its relay and offer | Merged |
-| P8f, one prompt | No setup code: the first human vault founded through the server owns avenCEO; ops drafted together signed in one ceremony over their batch, so a first browser founds its vault, adds itself and claims the server in one prompt after the unlock and the pass (three in all, four with a new passkey), and This browser says when its vault owns avenCEO | Merged |
+| P8f, one prompt | No setup code: the first human vault founded through the server owns avenCEO; edits drafted together signed in one ceremony over their batch, so a first browser founds its vault, adds itself and claims the server in one prompt after the unlock and the pass (three in all, four with a new passkey), and This browser says when its vault owns avenCEO | Merged |
 | P8f, account | The tile opens on the person's account, the Lab apart and made only when opened: their human vault, its root passkey and its devices, each by the name on its card, an end-to-end encrypted document the device writes itself; a new browser signs in with the passkey alone, through the server; the Lab's simulated person is Alice | Merged |
 | P8f, real vaults | Real vaults the person controls instead of the simulated Lab: the vaults this browser knows as a chat app's servers, each by the name on its profile; new aven and coop vaults their vault owns in one ceremony; acting as any of them, its caps deciding what the page shows and does; each vault's owners, devices, access and syncing devices; every node post-quantum only | Merged |
 | P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |

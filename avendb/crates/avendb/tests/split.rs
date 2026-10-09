@@ -7,7 +7,7 @@ mod common;
 use std::collections::HashMap;
 
 use common::*;
-use avendb::id::{OpId, SignerId, SpaceId};
+use avendb::id::{EditId, SignerId, SpaceId};
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Role, Scope};
@@ -15,21 +15,21 @@ use avendb::sync::{place, LogId, Place};
 use avendb::wire::{Announce, Reply, Request, Wire};
 
 /// `to` asks `from` once, by the bytes alone: its request, the reply, and each McEliece key the reply names that
-/// `from` hands out to it. How many ops were new to `to`.
+/// `from` hands out to it. How many edits were new to `to`.
 fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     ask_page(to, from, None, usize::MAX).1
 }
 
-/// `ask`, for a page of the reply: the ops after place `after` that fit in `page` bytes, or the first of them. The
-/// reply, and how many of its ops were new to `to`.
+/// `ask`, for a page of the reply: the edits after place `after` that fit in `page` bytes, or the first of them. The
+/// reply, and how many of its edits were new to `to`.
 fn ask_page(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId), after: Option<Place>, page: usize) -> (Reply, usize) {
     let ((to, t), (from, f)) = (to, from);
     let request = Request::from_wire(&Request { after, ..to.request(t, f) }.to_wire()).expect("a request");
-    let (ops, ids, more) = from.reply(f, t, &request, page);
+    let (edits, ids, more) = from.reply(f, t, &request, page);
     let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
-    let reply = Reply::from_wire(&Reply { ops, blobs, more }.to_wire()).expect("a reply");
+    let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
     let keys = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
-    let new = to.receive(t, reply.ops.clone(), keys.collect());
+    let new = to.receive(t, reply.edits.clone(), keys.collect());
     (reply, new)
 }
 
@@ -139,34 +139,34 @@ fn a_reply_comes_a_page_at_a_time_in_causal_order_and_loses_nothing() {
         let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_a);
         mac.create(w.mac_a, coop, space, note).expect("Alice's Mac writes a note");
     }
-    // the whole reply: each op once, by its place, so none comes ahead of an op it builds on
+    // the whole reply: each edit once, by its place, so none comes ahead of an edit it builds on
     let request = server.request(w.server, w.mac_a);
     let (whole, _, more) = mac.reply(w.mac_a, w.server, &request, usize::MAX);
-    assert!(!more && whole.len() > 12, "{} ops in one reply", whole.len());
-    let places: Vec<Place> = whole.iter().map(|s| place(&s.op)).collect();
-    assert!(places.windows(2).all(|p| p[0] < p[1]), "by place, each op once");
-    let at: HashMap<OpId, usize> = places.iter().enumerate().map(|(i, p)| (p.1, i)).collect();
+    assert!(!more && whole.len() > 12, "{} edits in one reply", whole.len());
+    let places: Vec<Place> = whole.iter().map(|s| place(&s.edit)).collect();
+    assert!(places.windows(2).all(|p| p[0] < p[1]), "by place, each edit once");
+    let at: HashMap<EditId, usize> = places.iter().enumerate().map(|(i, p)| (p.1, i)).collect();
     for (i, s) in whole.iter().enumerate() {
-        assert!(s.op.parents.iter().filter_map(|p| at.get(p)).all(|&j| j < i), "an op comes after its parents");
+        assert!(s.edit.parents.iter().filter_map(|p| at.get(p)).all(|&j| j < i), "an edit comes after its parents");
     }
-    // a page of one byte holds one op, and the server takes each page whole, at once: no op waits for its past
+    // a page of one byte holds one edit, and the server takes each page whole, at once: no edit waits for its past
     let (mut after, mut got) = (None, vec![]);
     loop {
         let (page, new) = ask_page((&mut server, w.server), (&mut mac, w.mac_a), after, 1);
-        assert_eq!((page.ops.len(), new), (1, 1), "one op a page, new each time");
-        assert!(server.request(w.server, w.mac_a).ask.loose.is_empty(), "no op of page {} waits", got.len());
-        got.extend(page.ops.iter().map(|s| s.op.id()));
+        assert_eq!((page.edits.len(), new), (1, 1), "one edit a page, new each time");
+        assert!(server.request(w.server, w.mac_a).ask.loose.is_empty(), "no edit of page {} waits", got.len());
+        got.extend(page.edits.iter().map(|s| s.edit.id()));
         if !page.more {
             break;
         }
-        after = page.ops.iter().map(|s| place(&s.op)).max();
+        after = page.edits.iter().map(|s| place(&s.edit)).max();
     }
     assert_eq!(got, places.iter().map(|p| p.1).collect::<Vec<_>>(), "the pages together are the reply");
     assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_a)), 0, "asked again, nothing is left");
 }
 
 #[test]
-fn a_page_holds_what_fits_and_at_least_one_op() {
+fn a_page_holds_what_fits_and_at_least_one_edit() {
     let (w, (space, _, coop), mut mac, mut server, _) = split();
     for i in 0..12 {
         let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_a);
@@ -175,13 +175,13 @@ fn a_page_holds_what_fits_and_at_least_one_op() {
     let (mut after, mut pages) = (None, 0);
     loop {
         let (page, _) = ask_page((&mut server, w.server), (&mut mac, w.mac_a), after, 8 << 10);
-        let size: usize = page.ops.iter().map(|s| s.to_wire().len()).sum();
-        assert!(size <= 8 << 10 || page.ops.len() == 1, "{size} bytes in {} ops", page.ops.len());
+        let size: usize = page.edits.iter().map(|s| s.to_wire().len()).sum();
+        assert!(size <= 8 << 10 || page.edits.len() == 1, "{size} bytes in {} edits", page.edits.len());
         pages += 1;
         if !page.more {
             break;
         }
-        after = page.ops.iter().map(|s| place(&s.op)).max();
+        after = page.edits.iter().map(|s| place(&s.edit)).max();
     }
     assert!(pages > 1, "more than one page");
     assert_eq!(ask((&mut server, w.server), (&mut mac, w.mac_a)), 0, "the pages together are the reply");

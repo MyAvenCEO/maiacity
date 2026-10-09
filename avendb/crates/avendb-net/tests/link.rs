@@ -117,12 +117,12 @@ async fn a_browser_links_with_the_passkey_in_its_authenticator_in_two_ceremonies
     let linked = browser.link_with(&offer, alices, &authenticator).await.expect("the browser links");
     assert_eq!(linked, alice, "to Alice's vault");
     let steps = authenticator.0.lock().expect("the authenticator").1.clone();
-    assert_eq!(steps, [Step::Hello, Step::Join], "in two ceremonies: the passkey's hello, then the op adding it");
+    assert_eq!(steps, [Step::Hello, Step::Join], "in two ceremonies: the passkey's hello, then the edit adding it");
     let (space, welcome) = (h.space, h.welcome);
     until("the browser reads Welcome", || reads(&browser, space, welcome, WELCOME_TEXT)).await;
     assert!(changes.has_changed().expect("the node runs"), "what the browser holds changed");
-    let (ops, _) = *changes.borrow_and_update();
-    assert_eq!(ops, browser.read(|lab, me| lab.size(me).0).await, "it says how many ops it holds");
+    let (edits, _) = *changes.borrow_and_update();
+    assert_eq!(edits, browser.read(|lab, me| lab.size(me).0).await, "it says how many edits it holds");
     quiet(&[&mac, &browser]).await;
     for n in [mac, browser] {
         n.shutdown().await.expect("the node shuts down");
@@ -225,13 +225,13 @@ async fn a_node_hands_its_card_for_a_passkeys_hello_on_that_very_connection_alon
     assert!(say(&conn, link, &device).await.is_none(), "a device's hello is no passkey's");
     let hello = lab.passkey_hello(new, passkey_a, &exporter, true).expect("the passkey's hello").to_wire();
     let card = Reply::from_wire(&say(&conn, link, &hello).await.expect("its card")).expect("a reply");
-    assert!(!card.ops.is_empty(), "the passkey's own hello on this connection gets its card");
-    assert!(card.ops.iter().all(|s| s.op.vault_of() == Some(alice)), "the log of Alice's vault alone");
+    assert!(!card.edits.is_empty(), "the passkey's own hello on this connection gets its card");
+    assert!(card.edits.iter().all(|s| s.edit.vault_of() == Some(alice)), "the log of Alice's vault alone");
     // the iPad's join, sent on the new iPhone's connection: refused; the new iPhone's own: accepted
-    lab.receive(other, card.ops.clone(), vec![]);
+    lab.receive(other, card.edits.clone(), vec![]);
     let theirs = lab.join(other, passkey_a).expect("the iPad's join").to_wire();
     assert!(say(&conn, join, &theirs).await.is_none(), "a join of another device than the one on the connection");
-    lab.receive(new, card.ops, vec![]);
+    lab.receive(new, card.edits, vec![]);
     let own = lab.join(new, passkey_a).expect("its join").to_wire();
     assert_eq!(say(&conn, join, &own).await, Some(vec![]), "its own join is accepted");
     let knows = move |lab: &Lab, me| lab.state(me).vault(alice).is_some_and(|v| v.devices.contains(&new));

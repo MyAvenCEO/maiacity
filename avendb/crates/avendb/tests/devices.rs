@@ -37,7 +37,7 @@ fn unclaimed(seed: u8) -> (Lab, SignerId, SignerId, SignerId, VaultId) {
 /// A claim of `server` by hand, as a device that skips `Lab::claim`'s checks would send it: `action`, drafted on
 /// `on`, signed by each of its signers but the server in a ceremony of the Lab's software passkey.
 fn claim_by_hand(lab: &mut Lab, on: SignerId, signers: &[SignerId], action: Action, server: SignerId) -> Claim {
-    let add = lab.draft(on, signers, action).expect("the view takes the op").op().clone();
+    let add = lab.draft(on, signers, action).expect("the view takes the edit").edit().clone();
     let (id, pq) = (add.id(), avendb::sign::needs_pq(&add));
     let sigs = add
         .sigs()
@@ -121,7 +121,7 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     let passkey = lab.passkey("Eve");
     let mac = lab.device_of(passkey, "Eve's Mac");
     let key = lab.claim_key(server).expect("a server nobody has claimed hands its key");
-    // four ops drafted one on top of the other: Eve's vault, her Mac in it, avenCEO, and the server in avenCEO
+    // four edits drafted one on top of the other: Eve's vault, her Mac in it, avenCEO, and the server in avenCEO
     let mut drafting = lab.drafting(mac);
     let owners = vec![Principal::Signer(passkey)];
     let root = Some(passkey);
@@ -137,7 +137,7 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     let mut drafts = drafting.done();
     let challenge = drafts[0].challenge();
     assert!(drafts.iter().all(|d| d.challenge() == challenge), "one challenge for all four");
-    assert!(drafts.iter().all(|d| d.challenge() != d.op().id().0), "and none of their ids");
+    assert!(drafts.iter().all(|d| d.challenge() != d.edit().id().0), "and none of their ids");
     // Eve's passkey signs them all in one ceremony; her Mac keeps the first three, and the server signs the last
     let ceremony = lab.ceremony(passkey, challenge).expect("a software passkey");
     let claim = drafts.pop().expect("the server's");
@@ -146,16 +146,16 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     }
     let claim = lab.claim(mac, claim, &[(passkey, &ceremony)]).expect("the claim");
     let join = lab.accept_claim(server, claim).expect("the server takes the claim");
-    lab.receive(mac, vec![join.op], join.blobs.into_iter().map(Into::into).collect());
+    lab.receive(mac, vec![join.edit], join.blobs.into_iter().map(Into::into).collect());
     assert_eq!((lab.vault_of(mac), lab.vault_of(server)), (Some(eve), Some(avenceo)));
     let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
     assert_eq!((vault.kind, &vault.owners[..]), (Kind::Aven, &[Principal::Vault(eve)][..]), "Eve's vault owns it");
-    let batched = |id| match &lab.signed_op(mac, id).expect("held").sigs[0].classical {
-        Classical::Batch { ops, .. } => ops.len(),
+    let batched = |id| match &lab.signed_edit(mac, id).expect("held").sigs[0].classical {
+        Classical::Batch { edits, .. } => edits.len(),
         _ => 0,
     };
-    let genesis = avendb::id::OpId(eve.0);
-    assert_eq!(batched(genesis), 4, "her passkey's signature on her vault's genesis names all four ops");
+    let genesis = avendb::id::EditId(eve.0);
+    assert_eq!(batched(genesis), 4, "her passkey's signature on her vault's genesis names all four edits");
     lab.sync(mac, server);
     assert!(lab.opens(server, KeyScope::Vault(avenceo)), "and the server opens avenCEO's key");
 }
@@ -165,8 +165,8 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
     let (mut lab, server, passkey, mac, alice) = unclaimed(5);
     let avenceo = claim_on(&mut lab, mac, passkey, alice, server);
     let card = lab.card(server);
-    assert!(card.iter().any(|s| s.op.vault_of() == Some(avenceo)), "the card holds avenCEO's log");
-    let ours = |s: &avendb::sign::Signed| matches!(s.op.vault_of(), Some(v) if v == avenceo || v == alice);
+    assert!(card.iter().any(|s| s.edit.vault_of() == Some(avenceo)), "the card holds avenCEO's log");
+    let ours = |s: &avendb::sign::Signed| matches!(s.edit.vault_of(), Some(v) if v == avenceo || v == alice);
     assert!(card.iter().all(ours), "and its owner's, and nothing else");
     // someone else, who knows nothing of this avenCEO, grants it relay once they hold the card
     let mut w = world();
@@ -177,7 +177,7 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
     let granted = w.lab.submit(w.mac_b, &[w.mac_b], relay.clone());
     assert!(granted.is_err(), "a vault Bob's Mac doesn't know gets no grant");
     let n = card.len();
-    assert_eq!(w.lab.receive(w.mac_b, card, vec![]), n, "Bob's Mac takes every op of the card");
+    assert_eq!(w.lab.receive(w.mac_b, card, vec![]), n, "Bob's Mac takes every edit of the card");
     w.lab.submit(w.mac_b, &[w.mac_b], relay).expect("with the card, the server relays the space");
     assert!(w.lab.peers(w.mac_b).iter().any(|(d, _)| *d == server), "and Bob's Mac knows the server as a peer");
 }
@@ -191,8 +191,8 @@ fn a_device_reopened_from_what_it_saved_vouches_for_its_writes_as_before() {
     // the device starts again from what it saved, as a node does from its store on disk
     w.lab.restore_backup(w.mac_a, &saved);
     w.lab.checkpoint(w.mac_a);
-    let vouched = w.lab.log(w.mac_a).ops().iter().any(|op| {
-        op.author == w.mac_a && matches!(&op.action, Action::Checkpoint { covers, .. } if covers.contains(&after))
+    let vouched = w.lab.log(w.mac_a).edits().iter().any(|edit| {
+        edit.author == w.mac_a && matches!(&edit.action, Action::Checkpoint { covers, .. } if covers.contains(&after))
     });
     assert!(vouched, "a checkpoint of its own covers the edit it made before it started again");
     assert_eq!(text(&w.lab, w.mac_a, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "and it shows the edit");

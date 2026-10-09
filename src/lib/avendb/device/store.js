@@ -1,11 +1,13 @@
 // @ts-nocheck: written by avendb/scripts/build-web.sh from avenDB
 // avenDB's device store in the browser (P8e): what a page's device holds, kept in IndexedDB as a node keeps it on
-// disk. `ops` holds its signed ops, each as its bytes on the wire, under its place in the order the device took them;
+// disk. `ops` holds its signed edits, each as its bytes on the wire, under its place in the order the device took them;
 // `keys` its McEliece keys, each under its id; `meta` what opens the device again: its name, its salt's own bytes, its
 // passkey's credential and P-256 key, and the relay. No secret is kept: the device's keys derive from its passkey at
-// every unlock, and it opens the rest again from its ops.
+// every unlock, and it opens the rest again from its edits.
 
-const STORES = ['meta', 'ops', 'keys'];
+// the store of edits keeps the name it had when an edit was called an op, so every browser's store opens as it is
+const EDITS = 'ops';
+const STORES = ['meta', EDITS, 'keys'];
 
 function request(r) {
 	return new Promise((resolve, reject) => {
@@ -46,39 +48,39 @@ export class Store {
 		await done(tx);
 	}
 
-	/** What the store kept: `{ops, keys}`, each a list of bytes, the ops in order. */
+	/** What the store kept: `{edits, keys}`, each a list of bytes, the edits in order. */
 	async load() {
-		const tx = this.db.transaction(['ops', 'keys']);
-		const [ops, ids, keys] = await Promise.all([
-			request(tx.objectStore('ops').getAll()),
+		const tx = this.db.transaction([EDITS, 'keys']);
+		const [edits, ids, keys] = await Promise.all([
+			request(tx.objectStore(EDITS).getAll()),
 			request(tx.objectStore('keys').getAllKeys()),
 			request(tx.objectStore('keys').getAll())
 		]);
-		this.written = ops.length;
+		this.written = edits.length;
 		this.keys = new Set(ids);
-		return { ops, keys };
+		return { edits, keys };
 	}
 
 	/**
-	 * Saves what `device` took since the last save, its new ops and McEliece keys, in one transaction; if it holds
-	 * fewer ops than the store, as some failed their checks as it opened, the store's ops are written anew. True if
-	 * there was anything new.
+	 * Saves what `device` took since the last save, its new edits and McEliece keys, in one transaction; if it holds
+	 * fewer edits than the store, as some failed their checks as it opened, the store's edits are written anew. True
+	 * if there was anything new.
 	 */
 	async save(device) {
-		let ops = await device.ops(this.written);
-		const rewrite = ops === undefined;
-		if (rewrite) ops = await device.ops(0);
+		let edits = await device.edits(this.written);
+		const rewrite = edits === undefined;
+		if (rewrite) edits = await device.edits(0);
 		const ids = (await device.keyIds()).filter((id) => !this.keys.has(id));
 		const keys = await Promise.all(ids.map((id) => device.key(id)));
-		if (!rewrite && !ops.length && !ids.length) return false;
+		if (!rewrite && !edits.length && !ids.length) return false;
 		const from = rewrite ? 0 : this.written;
-		const tx = this.db.transaction(['ops', 'keys'], 'readwrite');
-		const store = tx.objectStore('ops');
+		const tx = this.db.transaction([EDITS, 'keys'], 'readwrite');
+		const store = tx.objectStore(EDITS);
 		if (rewrite) store.clear();
-		ops.forEach((op, i) => store.put(op, from + i));
+		edits.forEach((edit, i) => store.put(edit, from + i));
 		ids.forEach((id, i) => keys[i] && tx.objectStore('keys').put(keys[i], id));
 		await done(tx);
-		this.written = from + ops.length;
+		this.written = from + edits.length;
 		ids.forEach((id, i) => keys[i] && this.keys.add(id));
 		return true;
 	}

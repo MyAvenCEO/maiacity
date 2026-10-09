@@ -27,7 +27,7 @@ pub(crate) const JOIN: u8 = 4;
 /// A request for the server's key to seal to (P8f), answered by it while nobody has claimed the server
 /// (`Lab::claim_key`).
 pub(crate) const CLAIM_KEY: u8 = 5;
-/// A claim of the server (P8f), answered by its join once it takes it (`Lab::accept_claim`): the op that adds it to
+/// A claim of the server (P8f), answered by its join once it takes it (`Lab::accept_claim`): the edit that adds it to
 /// avenCEO, signed by it too, and its McEliece key.
 pub(crate) const CLAIM: u8 = 6;
 
@@ -40,8 +40,8 @@ const HELLO_LIMIT: usize = 64 << 10;
 pub(crate) const KEY_LIMIT: usize = 64 << 10;
 /// The most a request or an announcement may take.
 const MESSAGE_LIMIT: usize = 16 << 20;
-/// The most a reply may take: a page of ops (`Options::page`), or one op bigger than that, or a card of a few
-/// thousand ops, each with its SLH-DSA signatures.
+/// The most a reply may take: a page of edits (`Options::page`), or one edit bigger than that, or a card of a few
+/// thousand edits, each with its SLH-DSA signatures.
 pub(crate) const REPLY_LIMIT: usize = 256 << 20;
 
 /// The label both ends draw the TLS exporter with.
@@ -130,9 +130,9 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     match kind {
         REQUEST => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
-            let (ops, ids, more) = shared.lab(move |lab, me| lab.reply(me, device, &request, page)).await;
+            let (edits, ids, more) = shared.lab(move |lab, me| lab.reply(me, device, &request, page)).await;
             let blobs = shared.offer(ids).await?;
-            Ok(Reply { ops, blobs, more }.to_wire())
+            Ok(Reply { edits, blobs, more }.to_wire())
         }
         ANNOUNCE => {
             let Announce { digests } = Announce::from_wire(body)?;
@@ -142,16 +142,16 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             Ok(Vec::new())
         }
         CARD if shared.opts.card => {
-            let ops = shared.lab(|lab, me| lab.card(me)).await;
-            Ok(Reply { ops, ..Reply::default() }.to_wire())
+            let edits = shared.lab(|lab, me| lab.card(me)).await;
+            Ok(Reply { edits, ..Reply::default() }.to_wire())
         }
         LINK => {
             let hello = PasskeyHello::from_wire(body)?;
             // the peer said it for its own end of this connection: the dialer's if this node listened
             let proven = hello.verify(&exporter(&peer.conn)?, !peer.dialed, device);
             let passkey = proven.context("the passkey's hello proves no passkey for this device on this connection")?;
-            let ops = shared.lab(move |lab, me| lab.link_card(me, passkey)).await;
-            Ok(Reply { ops, ..Reply::default() }.to_wire())
+            let edits = shared.lab(move |lab, me| lab.link_card(me, passkey)).await;
+            Ok(Reply { edits, ..Reply::default() }.to_wire())
         }
         JOIN => {
             let join = Join::from_wire(body)?;

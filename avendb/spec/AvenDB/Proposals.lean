@@ -2,18 +2,18 @@ import AvenDB.Step
 import AvenDB.Doc
 
 /-!
-# Branches, write by write
+# Proposals, write by write
 
-Every write extends one line of its entry's history (`Write.line`): the main line, or a branch, which a write starts
-(`Branch.new`) from the version its `deps` name. A line's history is its own writes and every write they build on
+Every write extends one line of its entry's history (`Write.line`): the main line, or a proposal, which a write starts
+(`Proposal.new`) from the version its `deps` name. A line's history is its own writes and every write they build on
 (`history`), and what a device shows on a line is Loro's content of the updates in that history (`content`). A merge
 is a write on a line that also builds on another line's heads; a promote is such a write whose update brings the line
 to exactly the other line's content, as `Doc.lean`'s `promote` does.
 
 T10f to T10h tie `Doc.lean`'s merge and promote to the writes. A write on one line leaves every other line as it was,
-so main stays unchanged until a write on it merges a branch (T10f). A merge's history is the union of both lines'
+so main stays unchanged until a write on it merges a proposal (T10f). A merge's history is the union of both lines'
 (T10g), so by Loro's convergence it shows `Doc.lean`'s merge of the two, for which T10a to T10c hold. A promote shows
-exactly the branch's content and keeps both histories (T10h, from T10d and T10e).
+exactly the proposal's content and keeps both histories (T10h, from T10d and T10e).
 -/
 
 namespace AvenDB
@@ -23,40 +23,40 @@ namespace AvenDB
     them. -/
 def reach (ws : List Write) (sp : SpaceId) (e : EntryId) (s : Write → Bool) : List Write :=
   ws.foldr (fun w acc =>
-    if w.space == sp && w.entry == e && (s w || acc.any (·.deps.contains w.op)) then w :: acc else acc) []
+    if w.space == sp && w.entry == e && (s w || acc.any (·.deps.contains w.edit)) then w :: acc else acc) []
 
 /-- The history of line `l` of entry `(sp, e)`: the line's own writes and everything they build on. -/
-def history (ws : List Write) (sp : SpaceId) (e : EntryId) (l : Option OpId) : List Write :=
+def history (ws : List Write) (sp : SpaceId) (e : EntryId) (l : Option EditId) : List Write :=
   reach ws sp e (·.line == l)
 
 /-- The writes of `h` that no write of `h` builds on. -/
-def tips (h : List Write) : List OpId :=
-  (h.filter fun w => !h.any (·.deps.contains w.op)).map (·.op)
+def tips (h : List Write) : List EditId :=
+  (h.filter fun w => !h.any (·.deps.contains w.edit)).map (·.edit)
 
 /-- The heads of line `l`: what the next write on it builds on. -/
-def heads (ws : List Write) (sp : SpaceId) (e : EntryId) (l : Option OpId) : List OpId :=
+def heads (ws : List Write) (sp : SpaceId) (e : EntryId) (l : Option EditId) : List EditId :=
   tips (history ws sp e l)
 
 /-- What a device holding the writes `ws` shows on line `l`: Loro's content of the updates in the line's history,
     each named by its write's id. -/
-def content (L : Loro) (ws : List Write) (sp : SpaceId) (e : EntryId) (l : Option OpId) : L.Doc :=
-  L.materialize ((history ws sp e l).map (·.op))
+def content (L : Loro) (ws : List Write) (sp : SpaceId) (e : EntryId) (l : Option EditId) : L.Doc :=
+  L.materialize ((history ws sp e l).map (·.edit))
 
 /-- The writes come in an order their dependencies respect: no two share an id, and none builds on itself or on one
     after it. Every peer's writes do (`writes_ordered`). -/
 def Ordered (ws : List Write) : Prop :=
-  (ws.map (·.op)).Nodup ∧ ws.Pairwise (fun a b => b.op ∉ a.deps) ∧ ∀ w ∈ ws, w.op ∉ w.deps
+  (ws.map (·.edit)).Nodup ∧ ws.Pairwise (fun a b => b.edit ∉ a.deps) ∧ ∀ w ∈ ws, w.edit ∉ w.deps
 
 /-! ## Reaching back along the dependencies -/
 
 theorem reach_cons (w : Write) (ws : List Write) (sp : SpaceId) (e : EntryId) (s : Write → Bool) :
     reach (w :: ws) sp e s =
-      if w.space == sp && w.entry == e && (s w || (reach ws sp e s).any (·.deps.contains w.op))
+      if w.space == sp && w.entry == e && (s w || (reach ws sp e s).any (·.deps.contains w.edit))
       then w :: reach ws sp e s else reach ws sp e s := rfl
 
 theorem mem_reach_cons {w x : Write} {ws : List Write} {sp : SpaceId} {e : EntryId} {s : Write → Bool} :
     x ∈ reach (w :: ws) sp e s ↔
-      (x = w ∧ w.space = sp ∧ w.entry = e ∧ (s w = true ∨ ∃ y ∈ reach ws sp e s, w.op ∈ y.deps)) ∨
+      (x = w ∧ w.space = sp ∧ w.entry = e ∧ (s w = true ∨ ∃ y ∈ reach ws sp e s, w.edit ∈ y.deps)) ∨
         x ∈ reach ws sp e s := by
   rw [reach_cons]
   split
@@ -92,7 +92,7 @@ theorem mem_reach {x : Write} {ws : List Write} {sp : SpaceId} {e : EntryId} {s 
 /-- A write added last is collected only as a seed, and then everything it builds on is too. -/
 theorem reach_snoc (ws : List Write) (m : Write) (sp : SpaceId) (e : EntryId) (s : Write → Bool) :
     reach (ws ++ [m]) sp e s =
-      if m.space == sp && m.entry == e && s m then reach ws sp e (fun w => s w || m.deps.contains w.op) ++ [m]
+      if m.space == sp && m.entry == e && s m then reach ws sp e (fun w => s w || m.deps.contains w.edit) ++ [m]
       else reach ws sp e s := by
   induction ws with
   | nil => simp [reach]
@@ -100,7 +100,7 @@ theorem reach_snoc (ws : List Write) (m : Write) (sp : SpaceId) (e : EntryId) (s
     rw [List.cons_append, reach_cons, ih]
     split
     · rw [reach_cons]
-      simp only [List.any_append, List.any_cons, List.any_nil, Bool.or_assoc, Bool.or_comm (m.deps.contains w.op),
+      simp only [List.any_append, List.any_cons, List.any_nil, Bool.or_assoc, Bool.or_comm (m.deps.contains w.edit),
         Bool.false_or]
       split
       · rw [List.cons_append]
@@ -143,7 +143,7 @@ theorem reach_or {ws : List Write} {sp : SpaceId} {e : EntryId} {s t : Write →
 
 /-- Seeds that `s` already collects collect nothing more. -/
 theorem reach_within {ws : List Write} {sp : SpaceId} {e : EntryId} {s t : Write → Bool}
-    (hnd : (ws.map (·.op)).Nodup)
+    (hnd : (ws.map (·.edit)).Nodup)
     (h : ∀ w ∈ ws, w.space = sp → w.entry = e → t w = true → w ∈ reach ws sp e s) :
     ∀ x ∈ reach ws sp e t, x ∈ reach ws sp e s := by
   induction ws with
@@ -163,8 +163,8 @@ theorem reach_within {ws : List Write} {sp : SpaceId} {e : EntryId} {s t : Write
     · exact mem_reach_cons.2 (.inr (ih x hx))
 
 /-- Two writes with one id are one, where ids come once. -/
-theorem eq_of_op_eq {ws : List Write} (hnd : (ws.map (·.op)).Nodup) {a b : Write} (ha : a ∈ ws) (hb : b ∈ ws)
-    (h : a.op = b.op) : a = b := by
+theorem eq_of_edit_eq {ws : List Write} (hnd : (ws.map (·.edit)).Nodup) {a b : Write} (ha : a ∈ ws) (hb : b ∈ ws)
+    (h : a.edit = b.edit) : a = b := by
   induction ws with
   | nil => simp at ha
   | cons w ws ih =>
@@ -176,20 +176,20 @@ theorem eq_of_op_eq {ws : List Write} (hnd : (ws.map (·.op)).Nodup) {a b : Writ
     · exact absurd (by rw [← hb, ← h]; exact List.mem_map_of_mem ha) hnd.1
     · exact ih hnd.2 ha hb
 
-theorem mem_tips {h : List Write} {d : OpId} :
-    d ∈ tips h ↔ ∃ w ∈ h, (∀ y ∈ h, w.op ∉ y.deps) ∧ w.op = d := by
+theorem mem_tips {h : List Write} {d : EditId} :
+    d ∈ tips h ↔ ∃ w ∈ h, (∀ y ∈ h, w.edit ∉ y.deps) ∧ w.edit = d := by
   simp [tips, and_assoc]
 
 /-- The tips of what `s` collects collect it all again: everything there is built on by a tip. -/
 theorem reach_tips {ws : List Write} (hord : Ordered ws) {sp : SpaceId} {e : EntryId} {s : Write → Bool}
     (x : Write) :
-    x ∈ reach ws sp e (fun w => (tips (reach ws sp e s)).contains w.op) ↔ x ∈ reach ws sp e s := by
+    x ∈ reach ws sp e (fun w => (tips (reach ws sp e s)).contains w.edit) ↔ x ∈ reach ws sp e s := by
   obtain ⟨hnd, hpw, hself⟩ := hord
   constructor
   · -- each tip is a write `s` collects, the only one with its id
     refine reach_within hnd (fun w hw _ _ ht => ?_) x
     obtain ⟨y, hy, -, hyw⟩ := mem_tips.1 (List.contains_iff_mem.1 ht)
-    rwa [eq_of_op_eq hnd (mem_reach hy).1 hw hyw] at hy
+    rwa [eq_of_edit_eq hnd (mem_reach hy).1 hw hyw] at hy
   · revert x
     induction ws with
     | nil => simp [reach]
@@ -198,8 +198,8 @@ theorem reach_tips {ws : List Write} (hord : Ordered ws) {sp : SpaceId} {e : Ent
       rw [List.pairwise_cons] at hpw
       have ih := ih hnd.2 hpw.2 fun x hx => hself x (List.mem_cons_of_mem _ hx)
       -- a tip of what the later writes collect is a tip of it all: `w` builds on nothing after it
-      have hmono : ∀ x ∈ reach ws sp e (fun z => (tips (reach ws sp e s)).contains z.op),
-          x ∈ reach ws sp e (fun z => (tips (reach (w :: ws) sp e s)).contains z.op) := by
+      have hmono : ∀ x ∈ reach ws sp e (fun z => (tips (reach ws sp e s)).contains z.edit),
+          x ∈ reach ws sp e (fun z => (tips (reach (w :: ws) sp e s)).contains z.edit) := by
         refine reach_mono fun z _ hz => ?_
         obtain ⟨y, hy, hnot, hyz⟩ := mem_tips.1 (List.contains_iff_mem.1 hz)
         refine List.contains_iff_mem.2 (mem_tips.2 ⟨y, mem_reach_cons.2 (.inr hy), fun u hu => ?_, hyz⟩)
@@ -209,7 +209,7 @@ theorem reach_tips {ws : List Write} (hord : Ordered ws) {sp : SpaceId} {e : Ent
       intro x hx
       rcases mem_reach_cons.1 hx with ⟨rfl, hs, he, -⟩ | hx
       · refine mem_reach_cons.2 (.inl ⟨rfl, hs, he, ?_⟩)
-        by_cases hb : ∃ y ∈ reach ws sp e s, x.op ∈ y.deps
+        by_cases hb : ∃ y ∈ reach ws sp e s, x.edit ∈ y.deps
         · obtain ⟨y, hy, hd⟩ := hb
           exact .inr ⟨y, hmono y (ih y hy), hd⟩
         · -- nothing after `w` builds on it, nor does `w` itself: `w` is a tip
@@ -221,8 +221,9 @@ theorem reach_tips {ws : List Write} (hord : Ordered ws) {sp : SpaceId} {e : Ent
 
 /-! ## T10 for the writes -/
 
-/-- T10f: a write leaves every line it isn't on as it was: main stays unchanged until a write on it merges a branch. -/
-theorem T10_other_lines (ws : List Write) (w : Write) (sp : SpaceId) (e : EntryId) (l : Option OpId)
+/-- T10f: a write leaves every line it isn't on as it was: main stays unchanged until a write on it merges a proposal.
+    -/
+theorem T10_other_lines (ws : List Write) (w : Write) (sp : SpaceId) (e : EntryId) (l : Option EditId)
     (h : ¬(w.space = sp ∧ w.entry = e ∧ w.line = l)) : history (ws ++ [w]) sp e l = history ws sp e l := by
   unfold history
   rw [reach_snoc]
@@ -235,17 +236,17 @@ theorem T10_other_lines (ws : List Write) (w : Write) (sp : SpaceId) (e : EntryI
 /-- T10g: a merge, a write on line `l` that builds on the heads of `l` and of `l'`, makes `l`'s history the union of
     both lines' histories and itself: no write of either is lost, and nothing else comes in. -/
 theorem T10_merge_union {ws : List Write} (hord : Ordered ws) {m : Write} {sp : SpaceId} {e : EntryId}
-    {l l' : Option OpId} (hm : m.space = sp ∧ m.entry = e ∧ m.line = l)
+    {l l' : Option EditId} (hm : m.space = sp ∧ m.entry = e ∧ m.line = l)
     (hdeps : ∀ d, d ∈ m.deps ↔ d ∈ heads ws sp e l ∨ d ∈ heads ws sp e l') (x : Write) :
     x ∈ history (ws ++ [m]) sp e l ↔ x ∈ history ws sp e l ∨ x ∈ history ws sp e l' ∨ x = m := by
   have hc : (m.space == sp && m.entry == e && m.line == l) = true := by simp [hm.1, hm.2.1, hm.2.2]
   unfold history
   rw [reach_snoc]
   simp only [hc, ↓reduceIte, List.mem_append, List.mem_singleton]
-  have hdep : ∀ w ∈ ws, m.deps.contains w.op = true →
-      ((tips (reach ws sp e (·.line == l))).contains w.op || (tips (reach ws sp e (·.line == l'))).contains w.op)
+  have hdep : ∀ w ∈ ws, m.deps.contains w.edit = true →
+      ((tips (reach ws sp e (·.line == l))).contains w.edit || (tips (reach ws sp e (·.line == l'))).contains w.edit)
         = true := fun w _ hw => by
-    simpa [heads, history, List.contains_iff_mem] using (hdeps w.op).1 (List.contains_iff_mem.1 hw)
+    simpa [heads, history, List.contains_iff_mem] using (hdeps w.edit).1 (List.contains_iff_mem.1 hw)
   constructor
   · rintro (hx | rfl)
     · rcases reach_or x hx with hx | hx
@@ -257,17 +258,17 @@ theorem T10_merge_union {ws : List Write} (hord : Ordered ws) {m : Write} {sp : 
   · rintro (hx | hx | rfl)
     · exact .inl (reach_mono (fun _ _ h => by simp [h]) x hx)
     · refine .inl (reach_mono (fun w _ h => ?_) x ((reach_tips hord x).2 hx))
-      have : w.op ∈ heads ws sp e l' := by simpa [heads, history, List.contains_iff_mem] using h
-      simp [(hdeps w.op).2 (.inr this)]
+      have : w.edit ∈ heads ws sp e l' := by simpa [heads, history, List.contains_iff_mem] using h
+      simp [(hdeps w.edit).2 (.inr this)]
     · exact .inr rfl
 
 /-- T10g, as a device shows it: after the merge, line `l` shows `Doc.lean`'s merge of both lines' histories and the
     merge's own update, so the merge laws T10a to T10c hold for what every device shows. -/
 theorem T10_merge_content (L : Loro) {ws : List Write} (hord : Ordered ws) {m : Write} {sp : SpaceId}
-    {e : EntryId} {l l' : Option OpId} (hm : m.space = sp ∧ m.entry = e ∧ m.line = l)
+    {e : EntryId} {l l' : Option EditId} (hm : m.space = sp ∧ m.entry = e ∧ m.line = l)
     (hdeps : ∀ d, d ∈ m.deps ↔ d ∈ heads ws sp e l ∨ d ∈ heads ws sp e l') :
     content L (ws ++ [m]) sp e l =
-      L.materialize (merge ((history ws sp e l).map (·.op)) ((history ws sp e l').map (·.op)) ++ [m.op]) := by
+      L.materialize (merge ((history ws sp e l).map (·.edit)) ((history ws sp e l').map (·.edit)) ++ [m.edit]) := by
   unfold content
   refine L.converges _ _ fun u => ?_
   simp only [List.mem_map, List.mem_append, mem_merge, List.mem_singleton]
@@ -285,10 +286,10 @@ theorem T10_merge_content (L : Loro) {ws : List Write} (hord : Ordered ws) {m : 
 /-- T10h: a promote of line `l'` into line `l`, a merge whose update is Loro's revert of the merged history to `l'`'s,
     makes `l` show exactly what `l'` shows (T10d), and keeps the history of both (T10e, from T10g). -/
 theorem T10_promote_shows (L : Loro) {ws : List Write} (hord : Ordered ws) {m : Write} {sp : SpaceId}
-    {e : EntryId} {l l' : Option OpId} (hm : m.space = sp ∧ m.entry = e ∧ m.line = l)
+    {e : EntryId} {l l' : Option EditId} (hm : m.space = sp ∧ m.entry = e ∧ m.line = l)
     (hdeps : ∀ d, d ∈ m.deps ↔ d ∈ heads ws sp e l ∨ d ∈ heads ws sp e l')
-    (hrev : m.op = L.revertTo (merge ((history ws sp e l).map (·.op)) ((history ws sp e l').map (·.op)))
-      ((history ws sp e l').map (·.op))) :
+    (hrev : m.edit = L.revertTo (merge ((history ws sp e l).map (·.edit)) ((history ws sp e l').map (·.edit)))
+      ((history ws sp e l').map (·.edit))) :
     content L (ws ++ [m]) sp e l = content L ws sp e l' := by
   rw [T10_merge_content L hord hm hdeps, hrev]
   exact T10_promote_content L _ _

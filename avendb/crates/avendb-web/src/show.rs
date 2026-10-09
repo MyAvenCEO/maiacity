@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
-use avendb::branch::{Commit, History, MAIN};
 use avendb::doc::Item;
-use avendb::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use avendb::history::{Change, History, MAIN};
+use avendb::id::{EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
 use avendb::lens::{Schema, Status, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
-use avendb::policy::{Action, Branch, Grant, Grantee, Kind, Line, Op, Principal, Role, Scope, State, Vault, Write};
+use avendb::policy::{Action, Edit, Grant, Grantee, Kind, Line, Principal, Proposal, Role, Scope, State, Vault, Write};
 
 use crate::tile::{approvers, fingerprint, granting, hex, person_of, role_name, role_on, unhex, Tile};
 
@@ -38,7 +38,7 @@ impl Tile {
             }
             "version" => {
                 let (d, sp, e) = self.entry_at(q)?;
-                self.version(d, sp, e, &ops_at(q, "version")?, line_at(q, "line")?, app_at(q))
+                self.version(d, sp, e, &edits_at(q, "version")?, line_at(q, "line")?, app_at(q))
             }
             "access" => {
                 let d = self.device(q, "on")?;
@@ -96,7 +96,7 @@ impl Tile {
                     "human": human,
                     "online": lab.online(d),
                     "locked": lab.locked(d),
-                    "ops": lab.log(d).ops().len(),
+                    "edits": lab.log(d).edits().len(),
                     "forks": lab.forks(d).len(),
                     "backup": self.backups.contains_key(&d),
                 })
@@ -211,7 +211,7 @@ impl Tile {
 
     /// An entry on line `line` as device `d` shows it to an app on `app` ("v1" or "v2" of its kind): the app's view
     /// and whether it opens it read-only, the raw record, the schemas it was written under, its lines, and every
-    /// commit, with what each did and the schemas it was written under.
+    /// edit, with what each did and the schemas it was written under.
     fn entry(&self, d: SignerId, sp: SpaceId, e: EntryId, line: Line, app: &str) -> Result<Value, String> {
         let lab = self.lab();
         let st = lab.state(d);
@@ -222,13 +222,13 @@ impl Tile {
             (Some(i), Some(s)) => read_as(lab, d, sp, i, s),
             _ => (None, true),
         };
-        let ops = writes_of(lab, d, sp, e);
-        let (lines, commits) = match lab.history(d, sp, e) {
-            Some(h) => (self.lines(h), self.commits(d, h, &ops)),
+        let edits = writes_of(lab, d, sp, e);
+        let (lines, changes) = match lab.history(d, sp, e) {
+            Some(h) => (self.lines(h), self.changes(d, h, &edits)),
             None => {
                 let sealed = st.all_writes().iter().filter(|w| (w.space, w.entry) == (sp, e));
-                let commits = sealed.map(|w| self.commit(w, &ops, "sealed", false, vec![], None)).collect();
-                (json!([{"id": null, "name": "main", "heads": []}]), commits)
+                let changes = sealed.map(|w| self.change(w, &edits, "sealed", false, vec![], None)).collect();
+                (json!([{"id": null, "name": "main", "heads": []}]), changes)
             }
         };
         let authored: Vec<String> = item.map(|i| i.authored().iter().map(|b| b.to_hex()).collect()).unwrap_or_default();
@@ -247,7 +247,7 @@ impl Tile {
             "record": record,
             "authored": authored,
             "lines": lines,
-            "commits": commits,
+            "edits": changes,
             "role": role.map(|r| role_name(r.0)),
             "through": role.map(|r| self.vault(r.1)),
             "held": lab.fetched(d, sp, e),
@@ -255,7 +255,8 @@ impl Tile {
         }))
     }
 
-    /// The main line, then each branch: its name where the device reads it, its heads, and the version it started from.
+    /// The main line, then each proposal: its name where the device reads it, its heads, and the version it started
+    /// from.
     fn lines(&self, h: &History) -> Value {
         let lines: Vec<Value> = h
             .lines()
@@ -273,41 +274,41 @@ impl Tile {
         json!(lines)
     }
 
-    fn commits(&self, d: SignerId, h: &History, ops: &HashMap<OpId, &Op>) -> Value {
-        let commits: Vec<Value> = h
-            .commits()
+    fn changes(&self, d: SignerId, h: &History, edits: &HashMap<EditId, &Edit>) -> Value {
+        let changes: Vec<Value> = h
+            .changes()
             .iter()
             .map(|c| {
-                let schemas: Vec<String> = h.written_under(c.write.op, d).iter().map(|b| b.to_hex()).collect();
+                let schemas: Vec<String> = h.written_under(c.write.edit, d).iter().map(|b| b.to_hex()).collect();
                 let kind = kind_of(h, c, &schemas);
-                let name = if c.write.branch == Branch::New { h.name(c.write.op) } else { None };
-                self.commit(&c.write, ops, kind, c.body.is_some(), schemas, name)
+                let name = if c.write.proposal == Proposal::New { h.name(c.write.edit) } else { None };
+                self.change(&c.write, edits, kind, c.body.is_some(), schemas, name)
             })
             .collect();
-        json!(commits)
+        json!(changes)
     }
 
-    fn commit(
+    fn change(
         &self,
         w: &Write,
-        ops: &HashMap<OpId, &Op>,
+        edits: &HashMap<EditId, &Edit>,
         kind: &str,
         opened: bool,
         schemas: Vec<String>,
         name: Option<String>,
     ) -> Value {
-        let op = ops.get(&w.op);
+        let edit = edits.get(&w.edit);
         json!({
-            "op": hex(&w.op.0),
-            "clock": op.map(|o| o.depth),
-            "when": self.made_at.get(&w.op),
+            "edit": hex(&w.edit.0),
+            "clock": edit.map(|o| o.depth),
+            "when": self.made_at.get(&w.edit),
             "author": self.signer(w.author),
             "actor": self.vault(w.actor),
             "epoch": w.epoch,
             "line": w.line().map(|l| hex(&l.0)),
             "kind": kind,
             "opened": opened,
-            "bytes": op.map(|o| body_len(o)),
+            "bytes": edit.map(|o| body_len(o)),
             "deps": hexes(&w.deps),
             "schemas": schemas,
             "name": name,
@@ -321,7 +322,7 @@ impl Tile {
         d: SignerId,
         sp: SpaceId,
         e: EntryId,
-        version: &[OpId],
+        version: &[EditId],
         line: Line,
         app: &str,
     ) -> Result<Value, String> {
@@ -333,7 +334,7 @@ impl Tile {
         let item = h.item_at(version, d, line);
         let record = item.record();
         let value = app_schema(&record, app).and_then(|s| read_as(lab, d, sp, &item, s).0);
-        Ok(json!({"record": record, "value": value, "commits": h.version(version).len()}))
+        Ok(json!({"record": record, "value": value, "edits": h.version(version).len()}))
     }
 
     /// Vault `v` by its id, its name and its kind (`kind_name`).
@@ -426,7 +427,7 @@ impl Tile {
             "to": to,
             "issuer": self.vault(g.issuer),
             "chain": chain,
-            "when": self.made_at.get(&OpId(id.0)),
+            "when": self.made_at.get(&EditId(id.0)),
         })
     }
 
@@ -455,7 +456,7 @@ impl Tile {
     }
 
     /// A space's schema lane as device `d` holds it: each schema and lens with its JSON, the apps' own schemas, and
-    /// for each entry it opens, the schemas each commit was written under.
+    /// for each entry it opens, the schemas each edit was written under.
     fn schemas(&self, d: SignerId, sp: SpaceId) -> Result<Value, String> {
         let lab = self.lab();
         let st = lab.state(d);
@@ -479,18 +480,18 @@ impl Tile {
             .filter_map(|&e| {
                 let h = lab.history(d, sp, e)?;
                 let title = lab.item(d, sp, e).map(|i| i.record()["title"].clone());
-                let commits: Vec<Value> = h
-                    .commits()
+                let changes: Vec<Value> = h
+                    .changes()
                     .iter()
                     .map(|c| {
                         let schemas: Vec<String> =
-                            h.written_under(c.write.op, d).iter().map(|b| b.to_hex()).collect();
+                            h.written_under(c.write.edit, d).iter().map(|b| b.to_hex()).collect();
                         let kind = kind_of(h, c, &schemas);
                         let author = self.signer(c.write.author);
-                        json!({"op": hex(&c.write.op.0), "kind": kind, "author": author, "schemas": schemas})
+                        json!({"edit": hex(&c.write.edit.0), "kind": kind, "author": author, "schemas": schemas})
                     })
                     .collect();
-                Some(json!({"entry": hex(&e.0), "title": title, "commits": commits}))
+                Some(json!({"entry": hex(&e.0), "title": title, "edits": changes}))
             })
             .collect();
         let apps: Vec<Value> = built_in()
@@ -531,7 +532,7 @@ impl Tile {
                     "device": self.signer(d),
                     "online": lab.online(d),
                     "locked": lab.locked(d),
-                    "ops": lab.log(d).ops().len(),
+                    "edits": lab.log(d).edits().len(),
                     "forks": lab.forks(d).len(),
                     "knows": st.space(sp).is_some(),
                     "writes": lab.fetched(d, sp, e),
@@ -550,15 +551,15 @@ impl Tile {
     }
 }
 
-/// What a commit did, as far as the device can tell: start the entry or a branch, edit, merge another line in, promote
+/// What an edit did, as far as the device can tell: start the entry or a proposal, edit, merge another line in, promote
 /// one (a merge that brings this line to it), or put back an earlier version (a restore or an undo, which name no
 /// schema); sealed where it can't open it.
-fn kind_of(h: &History, c: &Commit, schemas: &[String]) -> &'static str {
+fn kind_of(h: &History, c: &Change, schemas: &[String]) -> &'static str {
     let w = &c.write;
     let line = w.line();
     let merges = w.deps.iter().any(|&dep| h.get(dep).is_some_and(|x| x.write.line() != line));
     match &c.body {
-        _ if w.branch == Branch::New => "branch",
+        _ if w.proposal == Proposal::New => "propose",
         None => "sealed",
         Some(b) if merges && b.is_empty() => "merge",
         Some(_) if merges => "promote",
@@ -597,18 +598,23 @@ pub(crate) fn built_in() -> Vec<(String, String, &'static [u8])> {
 }
 
 /// The writes device `d` holds of one entry, by id.
-fn writes_of(lab: &Lab, d: SignerId, sp: SpaceId, e: EntryId) -> HashMap<OpId, &Op> {
+fn writes_of(lab: &Lab, d: SignerId, sp: SpaceId, e: EntryId) -> HashMap<EditId, &Edit> {
     let log = lab.log(d);
-    log.ids().iter().zip(log.ops()).filter(|(_, o)| o.write_target() == Some((sp, e))).map(|(&id, o)| (id, o)).collect()
+    log.ids()
+        .iter()
+        .zip(log.edits())
+        .filter(|(_, o)| o.write_target() == Some((sp, e)))
+        .map(|(&id, o)| (id, o))
+        .collect()
 }
 
 /// The bytes of ciphertext device `d` holds of one entry.
 fn sealed_bytes(lab: &Lab, d: SignerId, sp: SpaceId, e: EntryId) -> usize {
-    lab.log(d).ops().iter().filter(|o| o.write_target() == Some((sp, e))).map(body_len).sum()
+    lab.log(d).edits().iter().filter(|o| o.write_target() == Some((sp, e))).map(body_len).sum()
 }
 
-fn body_len(op: &Op) -> usize {
-    match &op.action {
+fn body_len(edit: &Edit) -> usize {
+    match &edit.action {
         Action::Write { body, .. } => body.len(),
         _ => 0,
     }
@@ -632,8 +638,8 @@ fn kind_name(v: &Vault) -> &'static str {
     }
 }
 
-fn hexes(ops: &[OpId]) -> Vec<String> {
-    ops.iter().map(|o| hex(&o.0)).collect()
+fn hexes(edits: &[EditId]) -> Vec<String> {
+    edits.iter().map(|o| hex(&o.0)).collect()
 }
 
 /// The id at `key`: 64 hex digits.
@@ -648,13 +654,13 @@ pub(crate) fn ids_at(q: &Value, key: &str) -> Result<Vec<[u8; 32]>, String> {
     list.iter().map(|v| v.as_str().and_then(unhex).ok_or_else(bad)).collect()
 }
 
-pub(crate) fn ops_at(q: &Value, key: &str) -> Result<Vec<OpId>, String> {
-    Ok(ids_at(q, key)?.into_iter().map(OpId).collect())
+pub(crate) fn edits_at(q: &Value, key: &str) -> Result<Vec<EditId>, String> {
+    Ok(ids_at(q, key)?.into_iter().map(EditId).collect())
 }
 
-/// The line at `key`: `null` for the main line, else the id of the write that started the branch.
+/// The line at `key`: `null` for the main line, else the id of the write that started the proposal.
 pub(crate) fn line_at(q: &Value, key: &str) -> Result<Line, String> {
-    if q[key].is_null() { Ok(MAIN) } else { Ok(Some(OpId(id_at(q, key)?))) }
+    if q[key].is_null() { Ok(MAIN) } else { Ok(Some(EditId(id_at(q, key)?))) }
 }
 
 fn app_at(q: &Value) -> &str {

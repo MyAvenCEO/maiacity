@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
 use avendb::cast::{self, Making, World};
-use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyName, KeyScope};
 use avendb::lab::{Backup, Lab};
 use avendb::lens::{DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2, TODO_LENS, TODO_V1, TODO_V2};
@@ -28,10 +28,10 @@ pub struct Tile {
     /// Every signer the tile made, in order, and the passkeys among them.
     pub(crate) signers: Vec<SignerId>,
     pub(crate) passkeys: HashSet<SignerId>,
-    /// When each op was made, by the page's clock: milliseconds since 1970.
-    pub(crate) made_at: HashMap<OpId, f64>,
+    /// When each edit was made, by the page's clock: milliseconds since 1970.
+    pub(crate) made_at: HashMap<EditId, f64>,
     pub(crate) backups: HashMap<SignerId, Backup>,
-    /// Counts what the tile founds and syncs, so each founding is an op of its own and each sync takes another order.
+    /// Counts what the tile founds and syncs, so each founding is an edit of its own and each sync takes another order.
     pub(crate) counter: u64,
 }
 
@@ -161,7 +161,7 @@ impl Tile {
         self.world = Some(w);
     }
 
-    /// Note the page's clock for every op no device held before.
+    /// Note the page's clock for every edit no device held before.
     pub(crate) fn stamp(&mut self, now: f64) {
         let Some(lab) = self.making.as_ref().map(Making::lab).or(self.world.as_ref().map(|w| &w.lab)) else { return };
         let mut new = vec![];

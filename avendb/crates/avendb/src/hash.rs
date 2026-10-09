@@ -1,4 +1,4 @@
-//! Every hash avenDB computes itself: op, blob, key and signer ids, key derivation, key commitment, and the Lab's
+//! Every hash avenDB computes itself: edit, blob, key and signer ids, key derivation, key commitment, and the Lab's
 //! randomness. All of it is cSHAKE256 (SHA-3's customizable XOF, NIST SP 800-185), with a customization string that
 //! names the purpose, so no two purposes ever share a hash of the same bytes. SHA-3 has 24 rounds where the best
 //! published attacks reach 6, and no algebraic structure for a quantum computer or better mathematics to use; at 256
@@ -10,7 +10,8 @@
 use cshake::digest::{ExtendableOutput, Update, XofReader};
 use cshake::{CShake256, CShake256Reader};
 
-/// Every customization string starts with this, then names its purpose: "avenDB 2026-10-08 op id".
+/// Every customization string starts with this, then names its purpose: "avenDB 2026-10-08 op id", an edit's id. A
+/// purpose keeps the words it was given (an edit was once called an op), so every id already made stays what it was.
 pub const PREFIX: &str = "avenDB 2026-10-08 ";
 
 /// A hash being computed, for one purpose.

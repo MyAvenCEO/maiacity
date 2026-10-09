@@ -9,7 +9,7 @@ fixed data model in code.
 
 The deliverable: a **Database** tile on the app's dashboard (the Mac app, where the vault lives), a generic viewer and
 editor for any collection whose objects are Loro documents, each enforced by its own JSON Schema — with history,
-checkout, revert, branches, merging, promotion and schema migration. Two examples prove it: **todos** (records) and a
+checkout, revert, proposals, merging, promotion and schema migration. Two examples prove it: **todos** (records) and a
 **collaborative text document** (rich text, presence, history, drafts).
 
 Nothing here touches today's data (timelines, the catalog's file records) — they move onto the same module later, once
@@ -40,7 +40,7 @@ it is proven.
 | **Object** | one Loro document, its id fixed-width (32 hex, random) | row |
 | **Schema version** | a JSON Schema (2020-12) document; its id is its BLAKE3 hash | `schema.ts` version hash |
 | **Lens** | a two-way, declarative transform from one schema version to another | migration lens |
-| **Branch** | a named parallel view over a collection; an object has a fork on it only once edited there; reading falls back to the base | branch view `{branch, base}` |
+| **Proposal** | a named parallel view over a collection; an object has a fork on it only once edited there; reading falls back to the base | branch view `{branch, base}` |
 | **Version** | a Loro frontier (a point in the object's history) | row version |
 
 ### JSON Schema → Loro containers
@@ -67,14 +67,14 @@ version therefore shows the schema that version was written under.
 All keys fixed-width or terminated (`/`), built by one function, never a prefix of another by accident.
 
 ```
-kind/<kind 16>/                                   → collection record: name, current schema hash, branches
+kind/<kind 16>/                                   → collection record: name, current schema hash, proposals
 schema/<kind 16>/<schema hash 64>/                → the JSON Schema blob (content-addressed: hash = id)
-lens/<kind 16>/<from 64>/<to 64>/                 → a lens spec blob (two-way ops)
-branch/<kind 16>/<branch id 32>/                  → branch record: name, base branch, created, by, state (open/merged/promoted/closed)
-obj/<kind 16>/<id 32>/main/ops/<author 64>/<seq 020>/            → one commit's Loro update (main)
+lens/<kind 16>/<from 64>/<to 64>/                 → a lens spec blob (two-way steps)
+proposal/<kind 16>/<proposal id 32>/              → proposal record: name, base proposal, created, by, state (open/merged/promoted/closed)
+obj/<kind 16>/<id 32>/main/edits/<author 64>/<seq 020>/          → one commit's Loro update (main)
 obj/<kind 16>/<id 32>/main/snap/<author 64>/<seq 020>/           → a Loro snapshot (compaction)
-obj/<kind 16>/<id 32>/br/<branch id 32>/fork/                    → where this object forked: base frontiers
-obj/<kind 16>/<id 32>/br/<branch id 32>/ops/<author 64>/<seq 020>/  → its commits on that branch
+obj/<kind 16>/<id 32>/prop/<proposal id 32>/fork/                → where this object forked: base frontiers
+obj/<kind 16>/<id 32>/prop/<proposal id 32>/edits/<author 64>/<seq 020>/  → its commits on that proposal
 view/<kind 16>/<id 32>/                           → the current JSON view on main (plain readers, the web mirror)
 ```
 
@@ -82,7 +82,7 @@ view/<kind 16>/<id 32>/                           → the current JSON view on m
 - **Deletion the Willow way**: one empty write at `obj/<kind>/<id>/` prunes the object (each author its own entries);
   a delete goes through the person's approval modal (asks.rs), as file deletes do.
 - **GC**: entry contents are already protected by the keep pass (`record_hashes`), so every update and snapshot stays.
-- **Download policy**: every device syncs `kind/`, `schema/`, `lens/`, `branch/` and the objects of the collections it
+- **Download policy**: every device syncs `kind/`, `schema/`, `lens/`, `proposal/` and the objects of the collections it
   keeps (later: per-collection rules, like stories' rules today).
 
 ---
@@ -95,11 +95,11 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 
 - Add `loro` (1.16.x, pinned) to vault-core.
 - The key builder (prefix-safe, with a test that no two key shapes cut each other).
-- `open(kind, id, branch) -> LoroDoc`: read the object's snapshot (newest) + every later op entry, import them.
-- `commit(kind, id, branch, change, message) -> Version`: apply the change, export the update since the last local
-  version (`ExportMode::Updates { from }`), store it as a blob, write the op entry; `set_next_commit_message` carries the
-  message; refuses if validation fails (P1).
-- `subscribe(kind, id)`: iroh-docs live events → re-import new op entries → notify (Tauri event / MCP).
+- `open(kind, id, proposal) -> LoroDoc`: read the object's snapshot (newest) + every later edit entry, import them.
+- `commit(kind, id, proposal, change, message) -> Version`: apply the change, export the update since the last local
+  version (`ExportMode::Updates { from }`), store it as a blob, write the edit entry; `set_next_commit_message` carries
+  the message; refuses if validation fails (P1).
+- `subscribe(kind, id)`: iroh-docs live events → re-import new edit entries → notify (Tauri event / MCP).
 - Compaction: after N commits (e.g. 200), a snapshot entry; opening starts from it.
 - **Accept**: two in-process nodes (the test harness already runs real iroh endpoints for the server) edit the same
   object offline, sync, converge; history survives a restart; a deleted object is pruned on both.
@@ -116,8 +116,8 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 
 ### P2 · Lenses and migration (Jazz 2's model)
 
-- A lens spec: a list of two-way ops — `add(path, default)`, `drop(path, backwardsDefault)`, `rename(from, to)`,
-  `convert(path, mapping both ways)` (e.g. `done: bool ↔ status: enum`), `wrap`/`head`, `in(path, ops)`, `map(ops)`.
+- A lens spec: a list of two-way steps — `add(path, default)`, `drop(path, backwardsDefault)`, `rename(from, to)`,
+  `convert(path, mapping both ways)` (e.g. `done: bool ↔ status: enum`), `wrap`/`head`, `in(path, steps)`, `map(steps)`.
   Ink & Switch's Cambria is the reference design; Jazz 2's add/drop defaults and draft rule apply.
 - `lens_put(kind, from, to, spec)`; a diff between two schema versions proposes a lens; a removed + added field pair is
   a **draft** until a person confirms rename or not (the approval modal).
@@ -125,38 +125,41 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
   version, old or new, readable under the current schema (and the other way, for an older app).
 - Writing: an app on a newer schema writing an older object first writes **one migration commit** (the lens applied as
   Loro operations, `$schema` moved) — it sits in the history like any edit; "migrate all" does it for a collection,
-  ideally on a branch first (P4) and merged when it looks right. An app older than an object's schema opens it read-only.
-- **Accept**: todos written under v1 read correctly under v2 and back; migrating on a branch, then merging, moves main.
+  ideally on a proposal first (P4) and merged when it looks right. An app older than an object's schema opens it
+  read-only.
+- **Accept**: todos written under v1 read correctly under v2 and back; migrating on a proposal, then merging, moves
+  main.
 
 ### P3 · History
 
-- `history(kind, id, branch) -> [Version {frontiers, author, time, message, schema}]` (Loro's change graph; authors are
-  the iroh authors behind each op entry).
+- `history(kind, id, proposal) -> [Version {frontiers, author, time, message, schema}]` (Loro's change graph; authors
+  are the iroh authors behind each edit entry).
 - `checkout(kind, id, version)`: a read-only view of that version (Loro `checkout`, then `checkout_to_latest`).
 - `diff(kind, id, a, b)`: field-level changes (Loro `diff`), text as inserted/deleted runs.
 - `revert(kind, id, version)`: Loro `revert_to` — a new commit restoring that version; nothing is lost.
 - Undo/redo in the editor: Loro's `UndoManager` (per local session, grouped by gesture), separate from history.
 - **Accept**: step back and forth through 50 versions; revert, then revert the revert; undo stays local.
 
-### P4 · Branches, merging, promotion
+### P4 · Proposals, merging, promotion
 
-- `branch_create(kind, name, base)`; editing an object on a branch forks it there the first time (Loro `fork_at` of the
-  base's current frontier, the fork point recorded under `fork/`).
-- Reading `{branch, base}`: the object's branch fork if it has one, else the base — a branch is cheap: only what changed
-  on it is stored.
-- `merge(kind, branch → base)`: for each forked object, import its branch ops into the base document — Loro merges
+- `proposal_create(kind, name, base)`; editing an object on a proposal forks it there the first time (Loro `fork_at` of
+  the base's current frontier, the fork point recorded under `fork/`).
+- Reading `{proposal, base}`: the object's proposal fork if it has one, else the base — a proposal is cheap: only what
+  changed on it is stored.
+- `merge(kind, proposal → base)`: for each forked object, import its proposal edits into the base document — Loro merges
   them (concurrent edits on both sides combine per the CRDT's rules); a preview shows the diff first.
-- `promote(kind, branch)` (**swap**: the branch becomes the truth): for each forked object, revert the base to the fork
-  point, then import the branch's ops — the base now equals the branch, and the replaced work stays in its history.
-- `branch_close` / `branch_delete` (prune its entries; approval modal).
-- Branch records carry state (open, merged, promoted, closed) so the UI and agents see what happened.
-- **Accept**: a "planning" branch over todos, edits on both sides, merge combines them; a second branch promoted
-  replaces main; a schema migration done on a branch and merged.
+- `promote(kind, proposal)` (**swap**: the proposal becomes the truth): for each forked object, revert the base to the
+  fork point, then import the proposal's edits — the base now equals the proposal, and the replaced work stays in its
+  history.
+- `proposal_close` / `proposal_delete` (prune its entries; approval modal).
+- Proposal records carry state (open, merged, promoted, closed) so the UI and agents see what happened.
+- **Accept**: a "planning" proposal over todos, edits on both sides, merge combines them; a second proposal promoted
+  replaces main; a schema migration done on a proposal and merged.
 
 ### P5 · Surfaces: Tauri commands and MCP
 
 - Tauri: `db_kinds`, `db_schema_*`, `db_list`, `db_get`, `db_commit`, `db_history`, `db_checkout`, `db_diff`,
-  `db_revert`, `db_branch_*`, `db_merge`, `db_promote`, `db_lens_*`, `db_migrate`, and events `db-changed`.
+  `db_revert`, `db_proposal_*`, `db_merge`, `db_promote`, `db_lens_*`, `db_migrate`, and events `db-changed`.
 - MCP: the same as tools, so agents read and edit any collection through the same validation and history. A delete, a
   schema change that drops data, a promote: asked of the person first (asks.rs modal).
 
@@ -164,18 +167,18 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 
 - A tile in `src/lib/app/places.ts` (`ADMIN`, cap `media:admin`, shown only in the Mac app), route `/app/database/`.
 - Layout, on the studio's dark marine tokens:
-  - **Left**: collections, each with its current schema version and branch count; "New collection".
-  - **Top bar**: the branch switcher (main · planning · …, "New branch", "Merge into main", "Promote"), a search.
+  - **Left**: collections, each with its current schema version and proposal count; "New collection".
+  - **Top bar**: the proposal switcher (main · planning · …, "New proposal", "Merge into main", "Promote"), a search.
   - **Middle**: the objects as a table — columns from the schema (titles from `title`, types from `type`), sortable and
     filterable; schema-version badge per row when it differs from the current one ("v1 → shown as v2").
   - **Right**: the inspector — a form generated from the JSON Schema (string, enum, boolean, number, date, nested
     object, list, rich text), validation errors inline as you type (the schema's messages), "Save" = one commit with a
     message.
   - **Bottom drawer**: history of the selected object — versions as a list (author, time, message, schema), a slider to
-    scrub, the diff of the selected version, "Restore this version", "Branch from here".
+    scrub, the diff of the selected version, "Restore this version", "Proposal from here".
   - **Checkout banner** while looking at the past: "Viewing <time> — Restore · Back to latest".
-  - **Schema panel**: the JSON Schema of each version (read and edit), the lens to the next version as a list of ops
-    (add / drop / rename / convert), a migration preview over the collection's objects, "Migrate on a branch".
+  - **Schema panel**: the JSON Schema of each version (read and edit), the lens to the next version as a list of steps
+    (add / drop / rename / convert), a migration preview over the collection's objects, "Migrate on a proposal".
 - Live: other devices' and agents' commits appear at once (iroh live events → `db-changed`).
 
 ### P7 · Example 1 — Todos
@@ -187,9 +190,9 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 - The walk-through (each step a test and a demo):
   1. Create todos; edit them on two devices offline; they converge.
   2. History of one todo: scrub, diff, restore an old title.
-  3. Branch "planning": reorder tags, mark some done; main changes meanwhile; merge — both kept.
-  4. Branch "rewrite": rename everything; promote — main becomes it, the old main in history.
-  5. Schema v2 published: v1 todos show as v2 through the lens; "Migrate on a branch" → merge → all on v2.
+  3. Proposal "planning": reorder tags, mark some done; main changes meanwhile; merge — both kept.
+  4. Proposal "rewrite": rename everything; promote — main becomes it, the old main in history.
+  5. Schema v2 published: v1 todos show as v2 through the lens; "Migrate on a proposal" → merge → all on v2.
 
 ### P8 · Example 2 — A collaborative text document
 
@@ -205,7 +208,7 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 - **History UI**: a timeline rail beside the text — versions grouped by session and author, a scrubber that shows the
   text as it was (read-only checkout), changes highlighted (inserted / deleted runs), "Restore this version",
   **"Recover"**: select text in an old version and bring it back into the current one (a new commit, nothing reverted).
-- **Branches as drafts**: "New draft from here" (a branch), edit freely, "Compare with main" (side by side, changes
+- **Proposals as drafts**: "New draft from here" (a proposal), edit freely, "Compare with main" (side by side, changes
   marked), "Merge draft" (Loro merges the text character by character), "Promote draft" (it becomes the text), switch
   between drafts and main from the top bar.
 - The walk-through: two devices type at once; one goes offline, writes a paragraph, comes back — merged; a sentence
@@ -225,7 +228,7 @@ Each phase ends merged to main, with tests; the UI comes after the engine is pro
 ## 5. What comes after (not in this plan)
 
 Timelines, world shots, stories and file descriptions moved onto the same engine — each becomes a collection with its
-schema; the studio's editing, grading and looks get history, branches and merge from it, and Postgres' `timelines` /
+schema; the studio's editing, grading and looks get history, proposals and merge from it, and Postgres' `timelines` /
 `shots` tables retire.
 
 ## 6. Risks and open questions
@@ -248,7 +251,7 @@ schema; the studio's editing, grading and looks get history, branches and merge 
 | P1 schemas | P0 | M |
 | P2 lenses + migration | P1 | L |
 | P3 history | P0 | S |
-| P4 branches | P3 | M |
+| P4 proposals | P3 | M |
 | P5 surfaces (Tauri, MCP) | P0–P4 | M |
 | P6 Database app | P5 | L |
 | P7 todos example | P6 | S |

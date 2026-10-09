@@ -1,6 +1,6 @@
-//! Ids, all 32 bytes. A signer is its public key. Everything an op creates is named by that op's id, the hash of the
-//! signed op: a vault by its genesis, a space by its founding, a grant by the grant itself. An entry's id is chosen at
-//! random by whoever creates it.
+//! Ids, all 32 bytes. A signer is its public key. Everything an edit creates is named by that edit's id, the hash of
+//! the signed edit: a vault by its genesis, a space by its founding, a grant by the grant itself. An entry's id is
+//! chosen at random by whoever creates it.
 
 macro_rules! ids {
     ($($(#[$doc:meta])* $name:ident),* $(,)?) => {$(
@@ -45,16 +45,16 @@ macro_rules! ids {
 ids! {
     /// A key that signs: a passkey (P-256) or a device key (ed25519, the device's iroh endpoint key).
     SignerId,
-    /// A human or coop vault: the id of its genesis op.
+    /// A human or coop vault: the id of its genesis edit.
     VaultId,
-    /// A space: the id of the op that founded it.
+    /// A space: the id of the edit that founded it.
     SpaceId,
     /// One item in a space, a markdown document or a todo.
     EntryId,
-    /// A grant: the id of the op that made it.
+    /// A grant: the id of the edit that made it.
     GrantId,
-    /// A signed op: the hash of its encoding with its signatures.
-    OpId,
+    /// A signed edit: the hash of its encoding with its signatures.
+    EditId,
     /// Bytes named by their hash: a schema or a lens in a space's schema lane, or a Classic McEliece public key.
     BlobId,
 }
@@ -89,20 +89,20 @@ impl BlobId {
     }
 }
 
-impl From<OpId> for VaultId {
-    fn from(id: OpId) -> Self {
+impl From<EditId> for VaultId {
+    fn from(id: EditId) -> Self {
         Self(id.0)
     }
 }
 
-impl From<OpId> for SpaceId {
-    fn from(id: OpId) -> Self {
+impl From<EditId> for SpaceId {
+    fn from(id: EditId) -> Self {
         Self(id.0)
     }
 }
 
-impl From<OpId> for GrantId {
-    fn from(id: OpId) -> Self {
+impl From<EditId> for GrantId {
+    fn from(id: EditId) -> Self {
         Self(id.0)
     }
 }
@@ -115,8 +115,8 @@ mod tests {
     fn small_numbers_are_distinct_ids() {
         assert_ne!(VaultId::from_u64(1), VaultId::from_u64(2));
         assert_eq!(VaultId::from_u64(258).0[30..], [1, 2]);
-        assert_eq!(format!("{:?}", OpId::from_u64(7)), "OpId(7)");
-        assert_eq!(format!("{:?}", OpId([0xab; 32])), "OpId(abababab…)");
+        assert_eq!(format!("{:?}", EditId::from_u64(7)), "EditId(7)");
+        assert_eq!(format!("{:?}", EditId([0xab; 32])), "EditId(abababab…)");
     }
 
     #[test]

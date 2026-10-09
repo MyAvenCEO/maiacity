@@ -2,7 +2,7 @@
 # Basic notions
 
 Every id stands for a hash or a public key: a signer's id is its public key, a vault's id is the hash of its
-genesis, an op's id is the hash of its bytes, a blob's (a schema's or a lens's) the hash of its bytes. The model uses
+genesis, an edit's id is the hash of its bytes, a blob's (a schema's or a lens's) the hash of its bytes. The model uses
 `Nat` for all of them. That they never collide is the "hashes don't collide" assumption; the theorems that need it say
 so in a hypothesis.
 -/
@@ -14,7 +14,7 @@ abbrev VaultId  := Nat
 abbrev SpaceId  := Nat
 abbrev EntryId  := Nat
 abbrev GrantId  := Nat
-abbrev OpId     := Nat
+abbrev EditId     := Nat
 abbrev BlobId   := Nat
 
 /-- A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
@@ -82,12 +82,12 @@ inductive KeyScope where
   | entry (sp : SpaceId) (e : EntryId)
   deriving DecidableEq, Repr
 
-/-- The line of an entry's history a write extends: the main line, a new branch that the write starts (the write's id
-    names the branch, and its body holds the branch's name, encrypted), or the branch another write started. -/
-inductive Branch where
+/-- The line of an entry's history a write extends: the main line, a new proposal that the write starts (the write's id
+    names the proposal, and its body holds the proposal's name, encrypted), or the proposal another write started. -/
+inductive Proposal where
   | main
   | new
-  | on (b : OpId)
+  | on (b : EditId)
   deriving DecidableEq, Repr
 
 /-- A signer's own encryption key (a device's, or one derived from a passkey), or one epoch of a key family. -/

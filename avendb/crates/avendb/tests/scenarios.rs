@@ -58,7 +58,7 @@ fn scenario_07_public() {
 }
 
 #[test]
-fn scenario_08_branches() {
+fn scenario_08_proposals() {
     play("8");
 }
 

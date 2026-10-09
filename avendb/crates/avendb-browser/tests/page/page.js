@@ -54,7 +54,7 @@ async function run() {
 		passkey = counted(ceremonies(avendb, meta.credential));
 		const unlock = await passkey.unlock(unhex(meta.nonce));
 		const kept = await store.load();
-		device = await avendb.Device.open(meta.name, meta.relay, meta.passkey, unlock, kept.ops, kept.keys);
+		device = await avendb.Device.open(meta.name, meta.relay, meta.passkey, unlock, kept.edits, kept.keys);
 		note = meta.note;
 	} else {
 		const [name, relay] = [q.get('name'), q.get('relay')];
@@ -84,8 +84,8 @@ async function run() {
 	const saving = store.follow(device);
 	const ms = Math.round(performance.now() - start);
 	const [vault, ceremonies_] = [await device.vault(), passkey.count()];
-	const [ops, keys] = await device.size();
-	const found = { ms, vault, ops, keys, ceremonies: ceremonies_, offer: device.offer(), endpoint: device.endpoint() };
+	const [edits, keys] = await device.size();
+	const found = { ms, vault, edits, keys, ceremonies: ceremonies_, offer: device.offer(), endpoint: device.endpoint() };
 	await report(meta ? 'opened' : 'started', { ...found, ...note });
 	if (q.get('reads')) {
 		trace('reading');
@@ -105,7 +105,7 @@ async function run() {
 		await store.save(device);
 		await device.close();
 		await saving;
-		await report('closed', { ops: store.written, keys: store.keys.size, ceremonies: passkey.count() });
+		await report('closed', { edits: store.written, keys: store.keys.size, ceremonies: passkey.count() });
 		return;
 	}
 	await report('done', { ceremonies: passkey.count() });

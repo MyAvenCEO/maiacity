@@ -1,5 +1,5 @@
-//! The wire (P8): what devices send each other, as bytes, and back. An op keeps the bytes its id hashes (`encode`); a
-//! signed op adds its signatures, and the messages of a sync wrap what `sync` asks and answers: a device's hello on a
+//! The wire (P8): what devices send each other, as bytes, and back. An edit keeps the bytes its id hashes (`encode`); a
+//! signed edit adds its signatures, and the messages of a sync wrap what `sync` asks and answers: a device's hello on a
 //! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`). A new device
 //! links (P8c) with its passkey's hello (`PasskeyHello`), then joins its person's vault (`Join`); a device with no UDP
 //! of its own reaches the server's relay first by its passkey's pass (`RelayPass`, P8d). The first human vault to
@@ -15,9 +15,9 @@
 use std::collections::BTreeMap;
 
 use crate::encode::{Encode, VERSION};
-use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use crate::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
-use crate::policy::{Action, Branch, Grant, Grantee, Kind, Op, Principal, Role, Scope};
+use crate::policy::{Action, Edit, Grant, Grantee, Kind, Principal, Proposal, Role, Scope};
 use crate::sign::{Assertion, Classical, Hello, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
 use crate::sync::{Ask, LogId, Place};
 
@@ -73,46 +73,46 @@ macro_rules! wire {
 
 wire!(Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join, RelayPass, Claim, PublicKey);
 
-/// An op on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the op.
-impl Wire for Op {
+/// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
+impl Wire for Edit {
     fn to_wire(&self) -> Vec<u8> {
         crate::encode::bytes(self)
     }
 
     fn from_wire(bytes: &[u8]) -> Result<Self, WireError> {
         let mut r = Reader { bytes, at: 0 };
-        let op = versioned(&mut r)?;
-        if r.at == bytes.len() { Ok(op) } else { Err(WireError::Trailing) }
+        let edit = versioned(&mut r)?;
+        if r.at == bytes.len() { Ok(edit) } else { Err(WireError::Trailing) }
     }
 }
 
-/// An op behind the format's version.
-fn versioned(r: &mut Reader<'_>) -> Result<Op, WireError> {
+/// An edit behind the format's version.
+fn versioned(r: &mut Reader<'_>) -> Result<Edit, WireError> {
     if r.u8()? != VERSION {
         return Err(WireError::Unknown);
     }
-    Op::decode(r)
+    Edit::decode(r)
 }
 
 /// What a device sends a peer to sync with it: what it holds of each log the peer may hold, by its own view (`Ask`),
-/// and the McEliece keys it lacks that ops of those logs name. Asking on for the next page of a reply, the place of
-/// the last op it got.
+/// and the McEliece keys it lacks that edits of those logs name. Asking on for the next page of a reply, the place of
+/// the last edit it got.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Request {
     pub ask: Ask,
     /// Smallest first, no repeats.
     pub wants: Vec<BlobId>,
-    /// The peer sends only ops after this place (`sync::place`).
+    /// The peer sends only edits after this place (`sync::place`).
     pub after: Option<Place>,
 }
 
-/// What the peer sends back: a page of the ops the device may receive beyond what it asked with
-/// (`sync::respond_since`), by their place, and of each McEliece key those ops or the request name that the peer holds
-/// and the device may fetch, its id and the hash it is fetched by (iroh-blobs' BLAKE3). The device checks each key
-/// against its id once it has it. If more ops are left, the device asks on after the last place it got.
+/// What the peer sends back: a page of the edits the device may receive beyond what it asked with
+/// (`sync::respond_since`), by their place, and of each McEliece key those edits or the request name that the peer
+/// holds and the device may fetch, its id and the hash it is fetched by (iroh-blobs' BLAKE3). The device checks each
+/// key against its id once it has it. If more edits are left, the device asks on after the last place it got.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reply {
-    pub ops: Vec<Signed>,
+    pub edits: Vec<Signed>,
     /// Smallest id first, no repeats.
     pub blobs: Vec<(BlobId, [u8; 32])>,
     pub more: bool,
@@ -126,12 +126,12 @@ pub struct Announce {
     pub digests: Vec<(LogId, [u8; 32])>,
 }
 
-/// What a new device sends the peer its passkey proved itself to (P8c), once it holds the passkey's link card: the op
-/// adding it to its person's vault, signed by the passkey and by itself (`Lab::join`), and the McEliece key that op
-/// names, its own. The peer accepts that op alone (`Lab::accept_join`).
+/// What a new device sends the peer its passkey proved itself to (P8c), once it holds the passkey's link card: the edit
+/// adding it to its person's vault, signed by the passkey and by itself (`Lab::join`), and the McEliece key that edit
+/// names, its own. The peer accepts that edit alone (`Lab::accept_join`).
 #[derive(Clone, PartialEq, Eq)]
 pub struct Join {
-    pub op: Signed,
+    pub edit: Signed,
     pub blobs: Vec<Vec<u8>>,
 }
 
@@ -139,19 +139,19 @@ pub struct Join {
 impl std::fmt::Debug for Join {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let blobs: Vec<String> = self.blobs.iter().map(|b| format!("{} bytes", b.len())).collect();
-        f.debug_struct("Join").field("op", &self.op).field("blobs", &blobs).finish()
+        f.debug_struct("Join").field("edit", &self.edit).field("blobs", &blobs).finish()
     }
 }
 
 /// What a device of a human vault sends a server no vault has claimed yet to claim it (P8f, `Lab::claim`): the logs
 /// of the vaults the device acts for (its contact card, among them the new aven vault avenCEO, which its human vault
-/// owns), the op adding the server as a device of avenCEO, sealing to the key the server handed for it
-/// (`Lab::claim_key`), and the signatures of every signer of that op but the server, in the order the op names them.
-/// The server signs last, in its place, and keeps it all (`Lab::accept_claim`).
+/// owns), the edit adding the server as a device of avenCEO, sealing to the key the server handed for it
+/// (`Lab::claim_key`), and the signatures of every signer of that edit but the server, in the order the edit names
+/// them. The server signs last, in its place, and keeps it all (`Lab::accept_claim`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Claim {
     pub card: Vec<Signed>,
-    pub add: Op,
+    pub add: Edit,
     pub sigs: Vec<Signature>,
 }
 
@@ -260,7 +260,7 @@ macro_rules! ids {
     )*};
 }
 
-ids!(SignerId, VaultId, SpaceId, EntryId, GrantId, OpId, BlobId, KeyId);
+ids!(SignerId, VaultId, SpaceId, EntryId, GrantId, EditId, BlobId, KeyId);
 
 impl Decode for PublicKey {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
@@ -360,12 +360,12 @@ impl Decode for Grant {
     }
 }
 
-impl Decode for Branch {
+impl Decode for Proposal {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(Branch::Main),
-            1 => Ok(Branch::New),
-            2 => Ok(Branch::On(OpId::decode(r)?)),
+            0 => Ok(Proposal::Main),
+            1 => Ok(Proposal::New),
+            2 => Ok(Proposal::On(EditId::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
     }
@@ -401,7 +401,7 @@ impl Decode for Action {
                 actor: VaultId::decode(r)?,
                 epoch: u64::decode(r)?,
                 deps: r.seq(32)?,
-                branch: Branch::decode(r)?,
+                proposal: Proposal::decode(r)?,
                 via: r.seq(32)?,
                 body: r.bytes()?,
             },
@@ -426,9 +426,9 @@ impl Decode for Action {
     }
 }
 
-impl Decode for Op {
+impl Decode for Edit {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Op {
+        Ok(Edit {
             parents: r.seq(32)?,
             depth: u64::decode(r)?,
             author: SignerId::decode(r)?,
@@ -476,10 +476,10 @@ impl Encode for Classical {
                 out.push(1);
                 a.encode(out);
             }
-            Classical::Batch { assertion, ops } => {
+            Classical::Batch { assertion, edits } => {
                 out.push(2);
                 assertion.encode(out);
-                ops.encode(out);
+                edits.encode(out);
             }
         }
     }
@@ -490,7 +490,7 @@ impl Decode for Classical {
         match r.u8()? {
             0 => Ok(Classical::Ed25519(r.array()?)),
             1 => Ok(Classical::Passkey(Assertion::decode(r)?)),
-            2 => Ok(Classical::Batch { assertion: Assertion::decode(r)?, ops: r.set(32)? }),
+            2 => Ok(Classical::Batch { assertion: Assertion::decode(r)?, edits: r.set(32)? }),
             _ => Err(WireError::Unknown),
         }
     }
@@ -532,18 +532,18 @@ impl Decode for Signature {
     }
 }
 
-/// The op as its id hashes it, then its signatures.
+/// The edit as its id hashes it, then its signatures.
 impl Encode for Signed {
     fn encode(&self, out: &mut Vec<u8>) {
         out.push(VERSION);
-        self.op.encode(out);
+        self.edit.encode(out);
         self.sigs.encode(out);
     }
 }
 
 impl Decode for Signed {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Signed { op: versioned(r)?, sigs: r.seq(79)? })
+        Ok(Signed { edit: versioned(r)?, sigs: r.seq(79)? })
     }
 }
 
@@ -578,7 +578,7 @@ impl Decode for LogId {
     }
 }
 
-/// Of each log, smallest first, the ops named of it, smallest first; then the loose ops, smallest first.
+/// Of each log, smallest first, the edits named of it, smallest first; then the loose edits, smallest first.
 impl Encode for Ask {
     fn encode(&self, out: &mut Vec<u8>) {
         (self.haves.len() as u32).encode(out);
@@ -653,18 +653,18 @@ impl Decode for RelayPass {
 
 impl Encode for Join {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.op.encode(out);
+        self.edit.encode(out);
         self.blobs.encode(out);
     }
 }
 
 impl Decode for Join {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Join { op: Signed::decode(r)?, blobs: r.seq(4)? })
+        Ok(Join { edit: Signed::decode(r)?, blobs: r.seq(4)? })
     }
 }
 
-/// The code, the card, the op as its id hashes it, then the signatures.
+/// The code, the card, the edit as its id hashes it, then the signatures.
 impl Encode for Claim {
     fn encode(&self, out: &mut Vec<u8>) {
         self.card.encode(out);
@@ -696,7 +696,7 @@ impl Decode for Request {
 
 impl Encode for Reply {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.ops.encode(out);
+        self.edits.encode(out);
         self.blobs.encode(out);
         out.push(u8::from(self.more));
     }
@@ -704,13 +704,13 @@ impl Encode for Reply {
 
 impl Decode for Reply {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        let (ops, blobs) = (r.seq(76)?, r.set(64)?);
+        let (edits, blobs) = (r.seq(76)?, r.set(64)?);
         let more = match r.u8()? {
             0 => false,
             1 => true,
             _ => return Err(WireError::Unknown),
         };
-        Ok(Reply { ops, blobs, more })
+        Ok(Reply { edits, blobs, more })
     }
 }
 
@@ -733,22 +733,26 @@ mod tests {
     use crate::sign::DeviceKey;
 
     #[test]
-    fn every_op_and_signature_of_a_world_reads_back_the_same() {
+    fn every_edit_and_signature_of_a_world_reads_back_the_same() {
         let mut w = world();
         let h = handbook(&mut w);
         let mut kinds = std::collections::HashSet::new();
         for d in [w.mac_a, w.mac_b, w.server] {
-            for op in w.lab.log(d).ops() {
-                let signed = w.lab.signed_op(d, op.id()).expect("held").clone();
+            for edit in w.lab.log(d).edits() {
+                let signed = w.lab.signed_edit(d, edit.id()).expect("held").clone();
                 let bytes = signed.to_wire();
                 assert_eq!(Signed::from_wire(&bytes), Ok(signed.clone()));
-                assert_eq!(Op::from_wire(&op.to_wire()).as_ref(), Ok(op));
-                assert_eq!(op.to_wire(), crate::encode::bytes(op), "an op on the wire is the bytes its id hashes");
-                kinds.insert(std::mem::discriminant(&op.action));
+                assert_eq!(Edit::from_wire(&edit.to_wire()).as_ref(), Ok(edit));
+                assert_eq!(
+                    edit.to_wire(),
+                    crate::encode::bytes(edit),
+                    "an edit on the wire is the bytes its id hashes"
+                );
+                kinds.insert(std::mem::discriminant(&edit.action));
             }
         }
         assert!(kinds.len() >= 6, "genesis, devices, keys, spaces, grants and writes all crossed: {}", kinds.len());
-        let ask = crate::sync::asks(w.lab.log(w.mac_b).ops());
+        let ask = crate::sync::asks(w.lab.log(w.mac_b).edits());
         assert!(!ask.haves.is_empty());
         assert_eq!(Ask::from_wire(&ask.to_wire()), Ok(ask.clone()));
         let digests: Vec<(LogId, [u8; 32])> = w.lab.digests(w.mac_b).iter().map(|(l, d)| (*l, *d)).collect();
@@ -761,23 +765,23 @@ mod tests {
     fn a_claim_reads_back_the_same() {
         let w = world();
         let card = w.lab.card(w.server);
-        let joined = |s: &&Signed| matches!(s.op.action, Action::AddDevice { device, .. } if device == w.server);
-        let add = card.iter().find(joined).expect("the op that added the server").clone();
-        let claim = Claim { card: card.clone(), add: add.op.clone(), sigs: add.sigs[..1].to_vec() };
+        let joined = |s: &&Signed| matches!(s.edit.action, Action::AddDevice { device, .. } if device == w.server);
+        let add = card.iter().find(joined).expect("the edit that added the server").clone();
+        let claim = Claim { card: card.clone(), add: add.edit.clone(), sigs: add.sigs[..1].to_vec() };
         assert_eq!(Claim::from_wire(&claim.to_wire()), Ok(claim));
     }
 
     #[test]
-    fn a_signature_of_ops_signed_together_reads_back_only_in_their_order() {
+    fn a_signature_of_edits_signed_together_reads_back_only_in_their_order() {
         let w = world();
-        let ops: Vec<Op> = w.lab.log(w.mac_a).ops()[..2].to_vec();
-        let mut batch: Vec<OpId> = ops.iter().map(Op::id).collect();
+        let edits: Vec<Edit> = w.lab.log(w.mac_a).edits()[..2].to_vec();
+        let mut batch: Vec<EditId> = edits.iter().map(Edit::id).collect();
         batch.sort();
         let mut passkey = crate::sign::Passkey::from_seed([1; 32]);
         let ceremony = passkey.ceremony(crate::sign::batch_challenge(&batch));
-        let sig = ceremony.sign_in(passkey.keys(), ops[0].id(), &batch, true).expect("its signature");
-        assert!(matches!(&sig.classical, Classical::Batch { ops, .. } if *ops == batch), "it names both ops");
-        let signed = Signed { op: ops[0].clone(), sigs: vec![sig] };
+        let sig = ceremony.sign_in(passkey.keys(), edits[0].id(), &batch, true).expect("its signature");
+        assert!(matches!(&sig.classical, Classical::Batch { edits, .. } if *edits == batch), "it names both edits");
+        let signed = Signed { edit: edits[0].clone(), sigs: vec![sig] };
         let bytes = signed.to_wire();
         assert_eq!(Signed::from_wire(&bytes), Ok(signed));
         // the same ids the other way round encode another value, which no decoder takes
@@ -800,7 +804,7 @@ mod tests {
         assert_eq!(Hello::from_wire(&[&[7], &bytes[1..]].concat()), Err(WireError::Unknown));
         // sets out of order, or repeated
         let (a, b) = (BlobId([1; 32]), BlobId([2; 32]));
-        let ok = Request { ask: Ask::default(), wants: vec![a, b], after: Some((7, OpId([4; 32]))) };
+        let ok = Request { ask: Ask::default(), wants: vec![a, b], after: Some((7, EditId([4; 32]))) };
         assert_eq!(Request::from_wire(&ok.to_wire()), Ok(ok));
         for wants in [vec![b, a], vec![a, a]] {
             let bytes = Request { ask: Ask::default(), wants, after: None }.to_wire();
@@ -809,20 +813,20 @@ mod tests {
         let (x, y) = (LogId::Vault(VaultId([1; 32])), LogId::Space(SpaceId([0; 32])));
         let mut ask = Ask::default();
         ask.haves.insert(y, vec![]);
-        ask.haves.insert(x, vec![OpId([1; 32])]);
+        ask.haves.insert(x, vec![EditId([1; 32])]);
         let mut bytes = ask.to_wire();
         assert_eq!(Ask::from_wire(&bytes), Ok(ask));
-        // swap the two logs: the vault's log (37 bytes, then its one op) after the space's
+        // swap the two logs: the vault's log (37 bytes, then its one edit) after the space's
         let (first, rest) = bytes[4..].split_at(33 + 4 + 32);
         let swapped = [&rest[..33 + 4], first].concat();
         bytes.splice(4..4 + swapped.len(), swapped);
         assert_eq!(Ask::from_wire(&bytes), Err(WireError::Unordered));
-        // an op of another format version
+        // an edit of another format version
         let action = Action::SetThreshold { vault: VaultId([2; 32]), threshold: 1 };
-        let op = Op { parents: vec![], depth: 0, author: SignerId([1; 32]), cosigners: vec![], action };
-        let mut bytes = op.to_wire();
+        let edit = Edit { parents: vec![], depth: 0, author: SignerId([1; 32]), cosigners: vec![], action };
+        let mut bytes = edit.to_wire();
         bytes[0] = VERSION + 1;
-        assert_eq!(Op::from_wire(&bytes), Err(WireError::Unknown));
+        assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
     }
 
     #[test]
@@ -833,7 +837,7 @@ mod tests {
         *bytes.last_mut().expect("the flag") = 2;
         assert_eq!(Reply::from_wire(&bytes), Err(WireError::Unknown));
         // asking on after a place: its flag, its depth, its id
-        let ask_on = Request { after: Some((3, OpId([9; 32]))), ..Request::default() };
+        let ask_on = Request { after: Some((3, EditId([9; 32]))), ..Request::default() };
         let mut bytes = ask_on.to_wire();
         assert_eq!(Request::from_wire(&bytes), Ok(ask_on));
         let flag = bytes.len() - 41;
@@ -843,7 +847,7 @@ mod tests {
 
     #[test]
     fn a_made_up_count_allocates_nothing() {
-        // four billion ops claimed in eight bytes: refused before anything is made of them
+        // four billion edits claimed in eight bytes: refused before anything is made of them
         let bytes = [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
         assert_eq!(Reply::from_wire(&bytes), Err(WireError::Short));
         assert_eq!(Announce::from_wire(&bytes[..4]), Err(WireError::Short));

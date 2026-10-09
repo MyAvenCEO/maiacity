@@ -1,6 +1,6 @@
 import AvenDB.Sync
 import AvenDB.Doc
-import AvenDB.Branches
+import AvenDB.Proposals
 import AvenDB.Lens
 import AvenDB.Lemmas
 import AvenDB.KeyLemmas
@@ -9,26 +9,26 @@ import AvenDB.SyncLemmas
 /-!
 # The theorems
 
-What must always hold, stated over the executable model, all of it proven. T9 (lenses) and T10 (branches) are proven
+What must always hold, stated over the executable model, all of it proven. T9 (lenses) and T10 (proposals) are proven
 in their own files. The proofs' helper lemmas are in `Lemmas.lean`, for the keys in `KeyLemmas.lean`, and for sync in
 `SyncLemmas.lean`.
 
-The assumptions are part of the model rather than axioms: an op's signers are the keys that signed it (signatures
+The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed or encrypted data reveals nothing without its key);
-ids don't collide (a hypothesis where needed: `Nodup`, or that an id two peers both hold names one op); and Loro's
+ids don't collide (a hypothesis where needed: `Nodup`, or that an id two peers both hold names one edit); and Loro's
 laws are fields of `Loro`.
 -/
 
 namespace AvenDB
 
-/-- A state some peer can be in: the replay of some ops from the empty state. -/
-def Reachable (st : State) : Prop := ∃ ops, st = replay {} ops
+/-- A state some peer can be in: the replay of some edits from the empty state. -/
+def Reachable (st : State) : Prop := ∃ edits, st = replay {} edits
 
 /-! ## Writes -/
 
 /-- T1 (authorized writes only): a step adds a write only if, just before it, the write's author acted for its
     vault through the owners the write names, and that vault held write on the entry. -/
-theorem T1_authorized_writes {st st' : State} {op : Op} (h : step st op = some st') {w : Write}
+theorem T1_authorized_writes {st st' : State} {edit : Edit} (h : step st edit = some st') {w : Write}
     (hw : w ∈ st'.writes) (hnew : w ∉ st.writes) : authorized st w = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -46,9 +46,9 @@ theorem T1_authorized_writes {st st' : State} {op : Op} (h : step st op = some s
 
 /-- T1, second half (revocation wins): an older write that a step takes the authorization from survives only if
     the step is a removal that had seen it. -/
-theorem T1_revocation_wins {st st' : State} {op : Op} (h : step st op = some st') {w : Write}
+theorem T1_revocation_wins {st st' : State} {edit : Edit} (h : step st edit = some st') {w : Write}
     (hw : w ∈ st'.writes) (_hold : w ∈ st.writes) (hwas : authorized st w = true)
-    (hnow : authorized st' w = false) : ∃ keep, op.action.keep? = some keep ∧ w.op ∈ keep := by
+    (hnow : authorized st' w = false) : ∃ keep, edit.action.keep? = some keep ∧ w.edit ∈ keep := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   -- if `post` keeps what `authorized` reads in a state where the write was authorized, it still is after the step
@@ -68,15 +68,15 @@ theorem T1_revocation_wins {st st' : State} {op : Op} (h : step st op = some st'
 
 /-! ## Vaults -/
 
-/-- T2 (governance threshold): when a step changes a vault's owners, threshold or devices, the op carries the
+/-- T2 (governance threshold): when a step changes a vault's owners, threshold or devices, the edit carries the
     vault's approval (its threshold of owners, recursively down to signers), or an owner or a device removes
     itself. -/
-theorem T2_governance {st st' : State} {op : Op} (h : step st op = some st') {v : VaultId} {vt vt' : Vault}
+theorem T2_governance {st st' : State} {edit : Edit} (h : step st edit = some st') {v : VaultId} {vt vt' : Vault}
     (h₁ : st.vault? v = some vt) (h₂ : st'.vault? v = some vt')
     (hchg : vt.owners ≠ vt'.owners ∨ vt.threshold ≠ vt'.threshold ∨ vt.devices ≠ vt'.devices) :
-    approves st op.sigs (.vault v) = true ∨
-    (∃ p, vt'.owners = vt.owners.erase p ∧ approves st op.sigs p = true) ∨
-    (∃ d, vt'.devices = vt.devices.erase d ∧ d ∈ op.sigs) := by
+    approves st edit.sigs (.vault v) = true ∨
+    (∃ p, vt'.owners = vt.owners.erase p ∧ approves st edit.sigs p = true) ∨
+    (∃ d, vt'.devices = vt.devices.erase d ∧ d ∈ edit.sigs) := by
   rcases step_vault?_old h h₁ h₂ with rfl | hch
   · simp at hchg
   · cases hch with
@@ -94,10 +94,10 @@ theorem T2_governance {st st' : State} {op : Op} (h : step st op = some st') {v 
     | setRoot _ _ _ => simp at hchg
 
 /-- T2, consent: an owner or a device is added only with its own signature. -/
-theorem T2_consent {st st' : State} {op : Op} (h : step st op = some st') {v : VaultId} {vt vt' : Vault}
+theorem T2_consent {st st' : State} {edit : Edit} (h : step st edit = some st') {v : VaultId} {vt vt' : Vault}
     (h₁ : st.vault? v = some vt) (h₂ : st'.vault? v = some vt') :
-    (∀ p ∈ vt'.owners, p ∉ vt.owners → approves st op.sigs p = true) ∧
-    (∀ d ∈ vt'.devices, d ∉ vt.devices → d ∈ op.sigs) := by
+    (∀ p ∈ vt'.owners, p ∉ vt.owners → approves st edit.sigs p = true) ∧
+    (∀ d ∈ vt'.devices, d ∉ vt.devices → d ∈ edit.sigs) := by
   rcases step_vault?_old h h₁ h₂ with rfl | hch
   · exact ⟨fun p hp hn => absurd hp hn, fun d hd hn => absurd hd hn⟩
   · cases hch with
@@ -185,7 +185,7 @@ theorem VaultChange.kind {st : State} {sigs : List SignerId} {v : VaultId} {vt v
   cases h <;> rfl
 
 /-- After a step every vault that existed still does, of the same kind. -/
-theorem step_kinds {st st' : State} {op : Op} (h : step st op = some st') {o : VaultId} {ot : Vault}
+theorem step_kinds {st st' : State} {edit : Edit} (h : step st edit = some st') {o : VaultId} {ot : Vault}
     (ho : st.vault? o = some ot) : ∃ ot', st'.vault? o = some ot' ∧ ot'.kind = ot.kind := by
   rcases step_vault? h with hsame | ⟨v, _, _, _, _, hnone, -, -, hlook⟩ | ⟨v, vt, vt', hvt, hch, hlook⟩
   · exact ⟨ot, by rw [hsame]; exact ho, rfl⟩
@@ -199,7 +199,7 @@ theorem step_kinds {st st' : State} {op : Op} (h : step st op = some st') {o : V
     · exact ⟨ot, by rw [hlook, ite_eq_right hov]; exact ho, rfl⟩
 
 /-- An owner that fits before a step still fits after it: vaults stay, and keep their kinds. -/
-theorem ownerFits_step {st st' : State} {op : Op} (h : step st op = some st') {k : Kind} {p : Principal}
+theorem ownerFits_step {st st' : State} {edit : Edit} (h : step st edit = some st') {k : Kind} {p : Principal}
     (hp : ownerFits st k p = true) : ownerFits st' k p = true := by
   have hown : ∀ o, ownsVaults st o = true → ownsVaults st' o = true := fun o ho => by
     unfold ownsVaults at ho ⊢
@@ -215,7 +215,8 @@ theorem ownerFits_step {st st' : State} {op : Op} (h : step st op = some st') {k
   cases k <;> cases p <;> simp only [ownerFits] at hp ⊢ <;> first | exact hp | exact hown _ hp
 
 /-- One step keeps every vault the shape of its kind. -/
-theorem KindsFit.step {st st' : State} {op : Op} (hk : KindsFit st) (h : step st op = some st') : KindsFit st' := by
+theorem KindsFit.step {st st' : State} {edit : Edit} (hk : KindsFit st) (h : step st edit = some st') :
+    KindsFit st' := by
   intro x u hx
   rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, -, hfit, hroot, hlook⟩ |
     ⟨v, vt, vt', hvt, hch, hlook⟩
@@ -260,12 +261,12 @@ theorem KindsFit.step {st st' : State} {op : Op} (hk : KindsFit st) (h : step st
       exact ⟨fun p hp => ownerFits_step h (ho p hp), hd, hr⟩
 
 /-- T21 (vaults by kind): in every reachable state, signers own human vaults only; coop and aven vaults are owned by
-    human and coop vaults; a coop has no devices; and only a human vault has a root. So an op for a coop always goes
-    through a human vault its device or passkey belongs to (`ActsChain.of_actsVia`), and so does an op for an aven
+    human and coop vaults; a coop has no devices; and only a human vault has a root. So an edit for a coop always goes
+    through a human vault its device or passkey belongs to (`ActsChain.of_actsVia`), and so does an edit for an aven
     vault that none of its own servers signs. -/
 theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st := by
-  obtain ⟨ops, rfl⟩ := hr
-  refine replay_inv KindsFit (fun _ _ _ hk hs => hk.step hs) ops {} ?_
+  obtain ⟨edits, rfl⟩ := hr
+  refine replay_inv KindsFit (fun _ _ _ hk hs => hk.step hs) edits {} ?_
   intro v vt hv
   simp [State.vault?] at hv
 
@@ -276,7 +277,7 @@ inductive OwnsPlus (st : State) : VaultId → VaultId → Prop where
 
 def Acyclic (st : State) : Prop := ∀ v, ¬ OwnsPlus st v v
 
-/-- Every vault some vault lists as an owner exists. Genesis and addOwner only ever name existing vaults, and no op
+/-- Every vault some vault lists as an owner exists. Genesis and addOwner only ever name existing vaults, and no edit
     removes a vault, so this holds in every reachable state. -/
 def OwnersExist (st : State) : Prop :=
   ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st.vault? o).isSome
@@ -298,24 +299,24 @@ theorem ownsPlus_iff {st : State} {a x : VaultId} : OwnsPlus st a x ↔ Relation
       exact .trans ih (.direct hx hb)
 
 /-- One step keeps the vault graph acyclic and every named owner existing. -/
-theorem T3_step {st st' : State} {op : Op} (hacyc : Acyclic st) (hex : OwnersExist st) (h : step st op = some st') :
-    Acyclic st' ∧ OwnersExist st' := by
+theorem T3_step {st st' : State} {edit : Edit} (hacyc : Acyclic st) (hex : OwnersExist st)
+    (h : step st edit = some st') : Acyclic st' ∧ OwnersExist st' := by
   obtain ⟨hacyc', hex'⟩ := step_owners (fun y hy => hacyc y (ownsPlus_iff.2 hy)) hex h
   exact ⟨fun y hy => hacyc' y (ownsPlus_iff.1 hy), hex'⟩
 
 /-- T3 (no ownership cycles): in every reachable state the vault graph is acyclic, so every chain ends in signers. -/
-theorem T3_no_cycles (ops : List Op) : Acyclic (replay {} ops) := by
-  suffices h : ∀ st, Acyclic st → OwnersExist st → Acyclic (replay st ops) ∧ OwnersExist (replay st ops) by
+theorem T3_no_cycles (edits : List Edit) : Acyclic (replay {} edits) := by
+  suffices h : ∀ st, Acyclic st → OwnersExist st → Acyclic (replay st edits) ∧ OwnersExist (replay st edits) by
     refine (h {} (fun v hv => ?_) (fun x vt hx => ?_)).1
     · obtain ⟨_, _, hx, _⟩ := transGen_head (ownsPlus_iff.1 hv)
       simp [State.vault?] at hx
     · simp [State.vault?] at hx
-  induction ops with
+  induction edits with
   | nil => exact fun _ h₁ h₂ => ⟨h₁, h₂⟩
-  | cons op ops ih =>
+  | cons edit edits ih =>
     intro st h₁ h₂
-    show Acyclic (replay ((step st op).getD st) ops) ∧ OwnersExist (replay ((step st op).getD st) ops)
-    cases hs : step st op with
+    show Acyclic (replay ((step st edit).getD st) edits) ∧ OwnersExist (replay ((step st edit).getD st) edits)
+    cases hs : step st edit with
     | none => exact ih st h₁ h₂
     | some st' =>
       obtain ⟨h₁', h₂'⟩ := T3_step h₁ h₂ hs
@@ -326,8 +327,8 @@ theorem T3_no_cycles (ops : List Op) : Acyclic (replay {} ops) := by
 def GrantsNameVaults (st : State) : Prop := ∀ g ∈ st.grants, ∀ s, g.grantee ≠ .principal (.signer s)
 
 /-- T4 (grants name vaults): no step adds a grant that names a signer. -/
-theorem T4_grants_name_vaults {st st' : State} {op : Op} (hinv : GrantsNameVaults st) (h : step st op = some st') :
-    GrantsNameVaults st' := by
+theorem T4_grants_name_vaults {st st' : State} {edit : Edit} (hinv : GrantsNameVaults st)
+    (h : step st edit = some st') : GrantsNameVaults st' := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   intro g hg
@@ -345,7 +346,7 @@ def PublicReadOnly (st : State) : Prop := ∀ g ∈ st.grants, g.grantee = .«pu
 
 /-- T8 (Public is read-only): Public only ever gets read. It can't write or grant either, since writes and grants
     act for a vault. -/
-theorem T8_public_read_only {st st' : State} {op : Op} (hinv : PublicReadOnly st) (h : step st op = some st') :
+theorem T8_public_read_only {st st' : State} {edit : Edit} (hinv : PublicReadOnly st) (h : step st edit = some st') :
     PublicReadOnly st' := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -365,9 +366,9 @@ theorem T8_public_read_only {st st' : State} {op : Op} (hinv : PublicReadOnly st
 /-- T17: only a space's owners publish its schemas and lenses. A step adds an entry to the lane only if it publishes
     that blob into that space, and just before it, its author acted for a vault holding owner on the space, through
     the owners it names. -/
-theorem T17_lane_by_owners {st st' : State} {op : Op} (h : step st op = some st') {x : SpaceId × BlobId}
+theorem T17_lane_by_owners {st st' : State} {edit : Edit} (h : step st edit = some st') {x : SpaceId × BlobId}
     (hx : x ∈ st'.lane) (hnew : x ∉ st.lane) :
-    ∃ actor via, op.action = .publish x.1 actor x.2 via ∧ actsVia st op.author via actor = true ∧
+    ∃ actor via, edit.action = .publish x.1 actor x.2 via ∧ actsVia st edit.author via actor = true ∧
       holds st actor (.space x.1) .owner = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -385,11 +386,11 @@ theorem T17_lane_by_owners {st st' : State} {op : Op} (h : step st op = some st'
 
 /-- Every accepted write's dependencies are accepted writes of its own entry. -/
 def CausallyClosed (st : State) : Prop :=
-  ∀ w ∈ st.writes, ∀ d ∈ w.deps, ∃ x ∈ st.writes, x.op = d ∧ x.space = w.space ∧ x.entry = w.entry
+  ∀ w ∈ st.writes, ∀ d ∈ w.deps, ∃ x ∈ st.writes, x.edit = d ∧ x.space = w.space ∧ x.entry = w.entry
 
 /-- T14 (accepted writes are causally closed): no step accepts a write before what it builds on, and a removal that
     drops a write drops every write that builds on it. -/
-theorem T14_causally_closed {st st' : State} {op : Op} (hinv : CausallyClosed st) (h : step st op = some st') :
+theorem T14_causally_closed {st st' : State} {edit : Edit} (hinv : CausallyClosed st) (h : step st edit = some st') :
     CausallyClosed st' := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -415,32 +416,33 @@ theorem T14_causally_closed {st st' : State} {op : Op} (hinv : CausallyClosed st
 
 /-! ## What a peer knows
 
-A peer's view replays the ops that stand, so everything that holds in every state the ops can reach holds in it. -/
+A peer's view replays the edits that stand, so everything that holds in every state the edits can reach holds in it. -/
 
-/-- The view is the replay of the ops that stand in it. -/
-theorem view_eq_replay (ops : List Op) : view ops = replay {} (standing ops) := runFrom_fst _ _ _ _
+/-- The view is the replay of the edits that stand in it. -/
+theorem view_eq_replay (edits : List Edit) : view edits = replay {} (standing edits) := runFrom_fst _ _ _ _
 
-theorem view_reachable (ops : List Op) : Reachable (view ops) := ⟨_, view_eq_replay ops⟩
+theorem view_reachable (edits : List Edit) : Reachable (view edits) := ⟨_, view_eq_replay edits⟩
 
 /-- T3, T4, T8 and T14 in every peer's view. -/
-theorem view_invariants (ops : List Op) :
-    Acyclic (view ops) ∧ GrantsNameVaults (view ops) ∧ PublicReadOnly (view ops) ∧ CausallyClosed (view ops) := by
+theorem view_invariants (edits : List Edit) :
+    Acyclic (view edits) ∧ GrantsNameVaults (view edits) ∧ PublicReadOnly (view edits) ∧
+      CausallyClosed (view edits) := by
   rw [view_eq_replay]
   -- each holds in the empty state, and every accepted step keeps it
   have h := replay_inv (fun st => GrantsNameVaults st ∧ PublicReadOnly st ∧ CausallyClosed st)
     (fun _ _ _ ⟨h₁, h₂, h₃⟩ h => ⟨T4_grants_name_vaults h₁ h, T8_public_read_only h₂ h, T14_causally_closed h₃ h⟩)
-    (standing ops) {} (by simp [GrantsNameVaults, PublicReadOnly, CausallyClosed])
+    (standing edits) {} (by simp [GrantsNameVaults, PublicReadOnly, CausallyClosed])
   exact ⟨T3_no_cycles _, h⟩
 
-/-! ## Branches
+/-! ## Proposals
 
-Every peer's writes come in an order their dependencies respect, so `Branches.lean`'s T10f to T10h hold of what every
+Every peer's writes come in an order their dependencies respect, so `Proposals.lean`'s T10f to T10h hold of what every
 peer shows on every line. -/
 
 /-- No step breaks the order of the writes: a new write builds only on accepted writes and brings a new id, and a
     removal keeps some of the writes, in order. -/
-theorem writes_ordered_step {st st' : State} {op : Op} (hc : CausallyClosed st) (ho : Ordered st.writes)
-    (h : step st op = some st') : Ordered st'.writes := by
+theorem writes_ordered_step {st st' : State} {edit : Edit} (hc : CausallyClosed st) (ho : Ordered st.writes)
+    (h : step st edit = some st') : Ordered st'.writes := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [settle_writes]
@@ -450,7 +452,7 @@ theorem writes_ordered_step {st st' : State} {op : Op} (hc : CausallyClosed st) 
     exact ⟨hnd, hpw, hself⟩
   · rw [hws]
     -- what the accepted writes build on is accepted already, so none builds on `w`, whose id is new
-    have hnot : ∀ x ∈ st.writes, w.op ∉ x.deps := fun x hx hd => by
+    have hnot : ∀ x ∈ st.writes, w.edit ∉ x.deps := fun x hx hd => by
       obtain ⟨y, hy, hyd, -⟩ := hc x hx _ hd
       exact hfresh y hy hyd
     refine ⟨?_, ?_, ?_⟩
@@ -479,28 +481,28 @@ theorem writes_ordered_step {st st' : State} {op : Op} (hc : CausallyClosed st) 
     exact ⟨(hsub.map _).nodup hnd, hpw.sublist hsub, fun x hx => hself x (hsub.subset hx)⟩
 
 /-- Every peer's writes come in an order their dependencies respect, so T10f to T10h hold of what it shows. -/
-theorem writes_ordered (ops : List Op) : Ordered (view ops).writes := by
+theorem writes_ordered (edits : List Edit) : Ordered (view edits).writes := by
   rw [view_eq_replay]
   have h := replay_inv (fun st => CausallyClosed st ∧ Ordered st.writes)
     (fun _ _ _ ⟨h₁, h₂⟩ h => ⟨T14_causally_closed h₁ h, writes_ordered_step h₁ h₂ h⟩)
-    (standing ops) {} (by simp [CausallyClosed, Ordered])
+    (standing edits) {} (by simp [CausallyClosed, Ordered])
   exact h.2
 
 /-! ## Strong removal -/
 
-/-- T16 (strong removal), replaying `ops` with the removals `rem`: an op stands only if `apply` accepts it on the
-    state just before it (the replay of the ops that stood before it) with the facts hidden from it taken away; and
+/-- T16 (strong removal), replaying `edits` with the removals `rem`: an edit stands only if `apply` accepts it on the
+    state just before it (the replay of the edits that stood before it) with the facts hidden from it taken away; and
     those facts include everything each removal of `rem` after it takes away, unless that removal had seen it. -/
-theorem T16_strong_removal (ops rem : List Op) (pre post : List (Op × Nat)) (x : Op) (i : Nat)
-    (_hsplit : ops.zipIdx = pre ++ (x, i) :: post)
-    (hstood : (runFrom rem (cuts ops rem) (runFrom rem (cuts ops rem) {} pre).1 [(x, i)]).2 = [x]) :
-    (apply (hide (replay {} (runFrom rem (cuts ops rem) {} pre).2) (hiddenAt (cuts ops rem) i x)) x).isSome ∧
-    ∀ r j, ops[j]? = some r → rem.any (·.id == r.id) → i < j → x.id ∉ r.action.keep?.getD [] →
-      ∀ f ∈ removes ops r, f ∈ hiddenAt (cuts ops rem) i x := by
+theorem T16_strong_removal (edits rem : List Edit) (pre post : List (Edit × Nat)) (x : Edit) (i : Nat)
+    (_hsplit : edits.zipIdx = pre ++ (x, i) :: post)
+    (hstood : (runFrom rem (cuts edits rem) (runFrom rem (cuts edits rem) {} pre).1 [(x, i)]).2 = [x]) :
+    (apply (hide (replay {} (runFrom rem (cuts edits rem) {} pre).2) (hiddenAt (cuts edits rem) i x)) x).isSome ∧
+    ∀ r j, edits[j]? = some r → rem.any (·.id == r.id) → i < j → x.id ∉ r.action.keep?.getD [] →
+      ∀ f ∈ removes edits r, f ∈ hiddenAt (cuts edits rem) i x := by
   refine ⟨?_, fun r j hr hrem hij hkeep f hf => ?_⟩
-  · -- the op stood after the ops before it, so `apply` accepted it with its hidden facts taken away
+  · -- the edit stood after the edits before it, so `apply` accepted it with its hidden facts taken away
     rw [← runFrom_fst]
-    generalize (runFrom rem (cuts ops rem) {} pre).1 = st at hstood ⊢
+    generalize (runFrom rem (cuts edits rem) {} pre).1 = st at hstood ⊢
     unfold runFrom at hstood
     split at hstood
     · simp [runFrom] at hstood
@@ -509,23 +511,23 @@ theorem T16_strong_removal (ops rem : List Op) (pre post : List (Op × Nat)) (x 
         rw [hap]
         rfl
       · simp [runFrom] at hstood
-  · -- the removal is among the cuts, after the op, and hadn't seen it
+  · -- the removal is among the cuts, after the edit, and hadn't seen it
     unfold hiddenAt cuts
-    refine List.mem_flatMap.2 ⟨(j, r.action.keep?.getD [], removes ops r), List.mem_filter.2 ⟨List.mem_filterMap.2
+    refine List.mem_flatMap.2 ⟨(j, r.action.keep?.getD [], removes edits r), List.mem_filter.2 ⟨List.mem_filterMap.2
       ⟨(r, j), List.mem_zipIdx_iff_getElem?.2 hr, by simp [hrem]⟩, by simp [hij, hkeep]⟩, hf⟩
 
 /-- T16, the removals that stand: every removal `resolve` picks stands in the view. -/
-theorem T16_resolved_removals_stand (ops : List Op) :
-    ∀ r ∈ resolve (order ops), (standing ops).any (·.id == r.id) :=
-  resolve_stands (order ops)
+theorem T16_resolved_removals_stand (edits : List Edit) :
+    ∀ r ∈ resolve (order edits), (standing edits).any (·.id == r.id) :=
+  resolve_stands (order edits)
 
 /-! ## Once the curves fall -/
 
 /-- T18 (post-quantum writes): a peer that no longer trusts the curves (`checkpointed`) counts a write only if its
     author vouched for it in a checkpoint, which carries the hash-based half of the author's signature: whoever broke
     the curves, and with them a device's classical key, writes nothing such a peer counts. -/
-theorem T18_checkpointed_writes (ops : List Op) {w : Write} (hw : w ∈ (view (checkpointed ops)).writes) :
-    ∃ c ∈ ops, c.author = w.author ∧ ∃ sp e covers, c.action = .checkpoint sp e covers ∧ w.op ∈ covers := by
+theorem T18_checkpointed_writes (edits : List Edit) {w : Write} (hw : w ∈ (view (checkpointed edits)).writes) :
+    ∃ c ∈ edits, c.author = w.author ∧ ∃ sp e covers, c.action = .checkpoint sp e covers ∧ w.edit ∈ covers := by
   rw [view_eq_replay] at hw
   rcases replay_writes_from _ {} w hw with h | ⟨o, ho, hid, hauth, hact⟩
   · simp at h
@@ -545,10 +547,10 @@ theorem T18_checkpointed_writes (ops : List Op) {w : Write} (hw : w ∈ (view (c
 
 /-- T5 (confidentiality): after any history, a holder (a signer, whoever holds a vault's key, or everyone) opens a
     key of some family, of any epoch, only if over that history it could read the family. -/
-theorem T5_confidentiality (ops : List Op) (h : Holder) (k : KeyScope) (e : Nat)
-    (hk : Knows (replay {} ops) (h.start (replay {} ops)) (.scoped k e)) : EverReads (trace {} ops) h k :=
+theorem T5_confidentiality (edits : List Edit) (h : Holder) (k : KeyScope) (e : Nat)
+    (hk : Knows (replay {} edits) (h.start (replay {} edits)) (.scoped k e)) : EverReads (trace {} edits) h k :=
   -- every seal along the history is justified, from the empty state on, and opening keys follows seals
-  (knows_everReads (replay_mem_trace {} ops) (sealsRead_replay ops {} (fun _ hx => hx) (sealsRead_empty _)) hk).2
+  (knows_everReads (replay_mem_trace {} edits) (sealsRead_replay edits {} (fun _ hx => hx) (sealsRead_empty _)) hk).2
     k e rfl
 
 /-- T6 (forward secrecy): in every reachable state a holder opens the current key of a family only while it is
@@ -556,8 +558,8 @@ theorem T5_confidentiality (ops : List Op) (h : Holder) (k : KeyScope) (e : Nat)
     the removed device, nor anyone who joins a vault that lost its read. -/
 theorem T6_forward_secrecy {st : State} (hr : Reachable st) (h : Holder) (k : KeyScope)
     (hk : Knows st (h.start st) (st.curKey k)) : h.entitled st k = true ∨ publicKey st k = true := by
-  obtain ⟨ops, rfl⟩ := hr
-  exact (keyInv_replay ops).fwd h k hk
+  obtain ⟨edits, rfl⟩ := hr
+  exact (keyInv_replay edits).fwd h k hk
 
 /-- A holder that never reads anything through its vaults, whatever vault it held at whatever point, reads a space
     or entry only while it is public. -/
@@ -600,12 +602,12 @@ theorem everReads_blind {sts : List State} {h : Holder} {k : KeyScope} (hr : Eve
 /-- T7 (blind server): a device that never held, directly or through vaults it held at any point, the key of a
     vault that ever holds read anywhere, such as the server with its relay caps, opens no space or entry key unless
     that key was public at some point. -/
-theorem T7_blind_server (ops : List Op) (srv : SignerId)
-    (hblind : ∀ v, EverReads (trace {} ops) (.signer srv) (.vault v) →
-      ∀ st ∈ trace {} ops, ∀ sc, holds st v sc .read = false)
-    {k : KeyScope} (hk : k.scope?.isSome) {e : Nat} (h : Knows (replay {} ops) [.signer srv] (.scoped k e)) :
-    ∃ st ∈ trace {} ops, publicKey st k = true :=
-  everReads_blind (T5_confidentiality ops (.signer srv) k e h) hblind hk
+theorem T7_blind_server (edits : List Edit) (srv : SignerId)
+    (hblind : ∀ v, EverReads (trace {} edits) (.signer srv) (.vault v) →
+      ∀ st ∈ trace {} edits, ∀ sc, holds st v sc .read = false)
+    {k : KeyScope} (hk : k.scope?.isSome) {e : Nat} (h : Knows (replay {} edits) [.signer srv] (.scoped k e)) :
+    ∃ st ∈ trace {} edits, publicKey st k = true :=
+  everReads_blind (T5_confidentiality edits (.signer srv) k e h) hblind hk
 
 /-! ## Rotation follows revocation
 
@@ -614,21 +616,21 @@ stands in what it knows, the removed can't open what it writes. Peers don't chec
 on its own entry's log, while the removal that rotated its key mostly sits in a space's or a vault's log, which the
 write doesn't name; and a device that had seen the removal could pass the text on anyway. -/
 
-/-- The epoch of an entry's key that a device holding `ops` writes under: the current one in what it knows. -/
-def writeEpoch (ops : List Op) (sp : SpaceId) (e : EntryId) : Nat := (view ops).epochOf (.entry sp e)
+/-- The epoch of an entry's key that a device holding `edits` writes under: the current one in what it knows. -/
+def writeEpoch (edits : List Edit) (sp : SpaceId) (e : EntryId) : Nat := (view edits).epochOf (.entry sp e)
 
 /-- T15 (rotation follows revocation): a holder opens the key a device writes an entry under (`writeEpoch`) only if
     what the device knows entitles it to the entry, or the entry is public: not a device or a vault that a removal
     the device has seen took the entry from, nor anyone who joins a vault that lost its read. -/
-theorem T15_rotation_follows_revocation (ops : List Op) (h : Holder) (sp : SpaceId) (e : EntryId)
-    (hk : Knows (view ops) (h.start (view ops)) (.scoped (.entry sp e) (writeEpoch ops sp e))) :
-    h.entitled (view ops) (.entry sp e) = true ∨ publicKey (view ops) (.entry sp e) = true :=
-  T6_forward_secrecy (view_reachable ops) h _ hk
+theorem T15_rotation_follows_revocation (edits : List Edit) (h : Holder) (sp : SpaceId) (e : EntryId)
+    (hk : Knows (view edits) (h.start (view edits)) (.scoped (.entry sp e) (writeEpoch edits sp e))) :
+    h.entitled (view edits) (.entry sp e) = true ∨ publicKey (view edits) (.entry sp e) = true :=
+  T6_forward_secrecy (view_reachable edits) h _ hk
 
 /-- T15, the epochs: a device writes under an epoch no older than any along the history of what it knows, so no
     older than the one each removal that stands in it started. -/
-theorem T15_no_older_epoch (ops : List Op) (sp : SpaceId) (e : EntryId) :
-    ∀ st ∈ trace {} (standing ops), st.epochOf (.entry sp e) ≤ writeEpoch ops sp e := by
+theorem T15_no_older_epoch (edits : List Edit) (sp : SpaceId) (e : EntryId) :
+    ∀ st ∈ trace {} (standing edits), st.epochOf (.entry sp e) ≤ writeEpoch edits sp e := by
   intro st hst
   unfold writeEpoch
   rw [view_eq_replay]
@@ -636,36 +638,37 @@ theorem T15_no_older_epoch (ops : List Op) (sp : SpaceId) (e : EntryId) :
 
 /-! ## Convergence and sync -/
 
-/-- T11 (convergence): peers holding the same ops, received in any order, end in the same state. Assumes ids don't
-    collide: two ops a peer holds have two ids. -/
-theorem T11_convergence {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (hids : (ops₁.map Op.id).Nodup) :
-    view ops₁ = view ops₂ := by
+/-- T11 (convergence): peers holding the same edits, received in any order, end in the same state. Assumes ids don't
+    collide: two edits a peer holds have two ids. -/
+theorem T11_convergence {edits₁ edits₂ : List Edit} (hperm : edits₁.Perm edits₂) (hids : (edits₁.map Edit.id).Nodup) :
+    view edits₁ = view edits₂ := by
   unfold view
   rw [order_perm hperm hids]
 
-/-- T11, the ops that stand: the same ops in any order, the same ops stand. -/
-theorem T11_same_standing {ops₁ ops₂ : List Op} (hperm : ops₁.Perm ops₂) (hids : (ops₁.map Op.id).Nodup) :
-    standing ops₁ = standing ops₂ := by
+/-- T11, the edits that stand: the same edits in any order, the same edits stand. -/
+theorem T11_same_standing {edits₁ edits₂ : List Edit} (hperm : edits₁.Perm edits₂) (hids : (edits₁.map Edit.id).Nodup) :
+    standing edits₁ = standing edits₂ := by
   unfold standing
   rw [order_perm hperm hids]
 
 /-- T12 (sync shares only what caps allow): every write or checkpoint a peer sends a device is on an entry that
-    device may receive by the peer's view, and every auth op it sends is about a scope that device reaches, or is a
+    device may receive by the peer's view, and every auth edit it sends is about a scope that device reaches, or is a
     revocation that took one of its caps away. -/
-theorem T12_sync_shares_only_caps (ops : List Op) (d : SignerId) {op : Op} (h : op ∈ respond ops d) :
-    (∀ sp e, op.item? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
-    (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true ∨ op.takesFrom (view ops) ops d = true) := by
+theorem T12_sync_shares_only_caps (edits : List Edit) (d : SignerId) {edit : Edit} (h : edit ∈ respond edits d) :
+    (∀ sp e, edit.item? = some (sp, e) → mayReceive (view edits) d sp e = true) ∧
+    (∀ sc, edit.authScope? edits = some sc →
+      reaches (view edits) d sc = true ∨ edit.takesFrom (view edits) edits d = true) := by
   obtain ⟨_, hw | ha | ⟨v, hv⟩⟩ := mem_respond h
   · obtain ⟨sp, e, hi, hr⟩ := hw
     refine ⟨fun sp' e' hi' => ?_, fun sc hsc => ?_⟩
     · rw [hi] at hi'
       cases hi'
       exact hr
-    · rw [(item_not_auth hi ops).1] at hsc
+    · rw [(item_not_auth hi edits).1] at hsc
       cases hsc
   · refine ⟨fun sp e hi => ?_, fun sc hsc => ?_⟩
     · rcases ha with ⟨sc, hsc, _⟩ | ht
-      · rw [(item_not_auth hi ops).1] at hsc
+      · rw [(item_not_auth hi edits).1] at hsc
         cases hsc
       · rw [takesFrom_not_item ht] at hi
         cases hi
@@ -675,39 +678,40 @@ theorem T12_sync_shares_only_caps (ops : List Op) (d : SignerId) {op : Op} (h : 
         exact .inl hr
       · exact .inr ht
   · refine ⟨fun sp e hi => ?_, fun sc hsc => ?_⟩
-    · rw [(vault_not_auth hv ops).2] at hi
+    · rw [(vault_not_auth hv edits).2] at hi
       cases hi
-    · rw [(vault_not_auth hv ops).1] at hsc
+    · rw [(vault_not_auth hv edits).1] at hsc
       cases hsc
 
 /-- T12, by frontiers: a device that asks with what it holds of each log is sent part of what `respond` sends, so no
     more than its caps allow, whatever it says it holds. -/
-theorem T12_since (ops : List Op) (d : SignerId) (fr : Ask) {op : Op}
-    (h : op ∈ respondSince ops d fr) :
-    (∀ sp e, op.item? = some (sp, e) → mayReceive (view ops) d sp e = true) ∧
-    (∀ sc, op.authScope? ops = some sc → reaches (view ops) d sc = true ∨ op.takesFrom (view ops) ops d = true) :=
-  T12_sync_shares_only_caps ops d (respondSince_sub h)
+theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {edit : Edit}
+    (h : edit ∈ respondSince edits d fr) :
+    (∀ sp e, edit.item? = some (sp, e) → mayReceive (view edits) d sp e = true) ∧
+    (∀ sc, edit.authScope? edits = some sc →
+      reaches (view edits) d sc = true ∨ edit.takesFrom (view edits) edits d = true) :=
+  T12_sync_shares_only_caps edits d (respondSince_sub h)
 
-/-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few ops
-    further back, and the ops it holds outside them (`asks`), is sent every op of the peer's answer that it lacks. The
-    ops it names of a log are of the part whose whole past it holds, so whatever the peer finds at or below them, the
-    device holds. Assumes ids don't collide: an id the device and the peer both hold names one op. -/
-theorem T19_frontier_sync (A R : List Op) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
-    ∀ op ∈ respond R d, op ∈ A ∨ op ∈ respondSince R d (asks A) :=
+/-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few edits
+    further back, and the edits it holds outside them (`asks`), is sent every edit of the peer's answer that it lacks.
+    The edits it names of a log are of the part whose whole past it holds, so whatever the peer finds at or below them,
+    the device holds. Assumes ids don't collide: an id the device and the peer both hold names one edit. -/
+theorem T19_frontier_sync (A R : List Edit) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ edit ∈ respond R d, edit ∈ A ∨ edit ∈ respondSince R d (asks A) :=
   fun _ h => respondSince_complete hid (asks_truthful A) h
 
-/-- T19 by frontiers alone: sending only the frontiers loses nothing either, though a peer that lacks the latest ops
+/-- T19 by frontiers alone: sending only the frontiers loses nothing either, though a peer that lacks the latest edits
     then sends back what lies below them too. -/
-theorem T19_frontiers_alone (A R : List Op) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
-    ∀ op ∈ respond R d, op ∈ A ∨ op ∈ respondSince R d ⟨frontiers A, []⟩ :=
+theorem T19_frontiers_alone (A R : List Edit) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ edit ∈ respond R d, edit ∈ A ∨ edit ∈ respondSince R d ⟨frontiers A, []⟩ :=
   fun _ h => respondSince_complete hid (frontiers_truthful A) h
 
 /-- T19, one hash per log: two peers whose frontiers of a log are equal hold the same closed part of it, so comparing
-    one hash of each frontier tells whether there is anything to send. The two may place ops in logs differently
+    one hash of each frontier tells whether there is anything to send. The two may place edits in logs differently
     (`lgA`, `lgR`). Assumes ids don't collide. -/
-theorem T19_same_frontier (lgA lgR : Op → Option LogId) (A R : List Op) (l : LogId)
+theorem T19_same_frontier (lgA lgR : Edit → Option LogId) (A R : List Edit) (l : LogId)
     (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) (huA : ∀ a ∈ A, ∀ b ∈ A, a.id = b.id → a = b)
-    (huR : ∀ a ∈ R, ∀ b ∈ R, a.id = b.id → a = b) (hf : frontier lgA A l = frontier lgR R l) (x : Op) :
+    (huR : ∀ a ∈ R, ∀ b ∈ R, a.id = b.id → a = b) (hf : frontier lgA A l = frontier lgR R l) (x : Edit) :
     x ∈ closedPart lgA A l ↔ x ∈ closedPart lgR R l :=
   ⟨same_frontier_held lgR lgA (fun a ha b hb h => (hid b hb a ha h.symm).symm) huA hf.symm,
    same_frontier_held lgA lgR hid huR hf⟩
@@ -716,12 +720,12 @@ theorem T19_same_frontier (lgA lgR : Op → Option LogId) (A R : List Op) (l : L
     each asked the other once (`asks`), both hold the same writes and checkpoints for that item: those
     either held before. What each then shows of the item also rests on the vault and auth logs its view counts, and
     the property tests check that two devices that synced both ways show the same item. Assumes ids don't collide. -/
-theorem T13_sync_converges (opsP opsQ : List Op) (dp dq : SignerId) (sp : SpaceId) (e : EntryId)
-    (hid : ∀ a ∈ opsP, ∀ b ∈ opsQ, a.id = b.id → a = b)
-    (hp : mayReceive (view opsQ) dp sp e = true) (hq : mayReceive (view opsP) dq sp e = true)
-    (op : Op) (hop : op.item? = some (sp, e)) :
-    op ∈ receive opsP (respondSince opsQ dp (asks opsP)) ↔
-      op ∈ receive opsQ (respondSince opsP dq (asks opsQ)) := by
+theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (sp : SpaceId) (e : EntryId)
+    (hid : ∀ a ∈ editsP, ∀ b ∈ editsQ, a.id = b.id → a = b)
+    (hp : mayReceive (view editsQ) dp sp e = true) (hq : mayReceive (view editsP) dq sp e = true)
+    (edit : Edit) (hop : edit.item? = some (sp, e)) :
+    edit ∈ receive editsP (respondSince editsQ dp (asks editsP)) ↔
+      edit ∈ receive editsQ (respondSince editsP dq (asks editsQ)) := by
   rw [item_after_sync hid hp hop, item_after_sync (fun a ha b hb h => (hid b hb a ha h.symm).symm) hq hop]
   exact Or.comm
 
@@ -730,25 +734,26 @@ theorem closeVaults_nil (st : State) : ∀ n, closeVaults st n [] = []
   | 0 => rfl
   | n + 1 => by simp [closeVaults, closeVaults_nil st n]
 
-/-- T20 (linking hands out vault logs alone): every op a peer hands a device whose passkey proved itself on their
-    connection (`linkCard`) is an op the peer holds of the log of a vault the passkey owns, or of one that owns such a
-    vault, up the chains: never a write or a checkpoint, never an op about a space or an entry. -/
-theorem T20_link_shares_only_vault_logs (ops : List Op) (p : SignerId) {op : Op} (h : op ∈ linkCard ops p) :
-    op ∈ ops ∧ (∃ v, op.vaultOf? = some v ∧ v ∈ closeVaults (view ops) (view ops).depth (ownedBy (view ops) p)) ∧
-      op.item? = none ∧ op.authScope? ops = none := by
+/-- T20 (linking hands out vault logs alone): every edit a peer hands a device whose passkey proved itself on their
+    connection (`linkCard`) is an edit the peer holds of the log of a vault the passkey owns, or of one that owns such a
+    vault, up the chains: never a write or a checkpoint, never an edit about a space or an entry. -/
+theorem T20_link_shares_only_vault_logs (edits : List Edit) (p : SignerId) {edit : Edit} (h : edit ∈ linkCard edits p) :
+    edit ∈ edits ∧
+      (∃ v, edit.vaultOf? = some v ∧ v ∈ closeVaults (view edits) (view edits).depth (ownedBy (view edits) p)) ∧
+      edit.item? = none ∧ edit.authScope? edits = none := by
   simp only [linkCard, List.mem_filter] at h
   obtain ⟨hm, hv⟩ := h
   split at hv
   · rename_i v hv'
-    exact ⟨hm, ⟨v, hv', List.contains_iff_mem.1 hv⟩, (vault_not_auth hv' ops).2, (vault_not_auth hv' ops).1⟩
+    exact ⟨hm, ⟨v, hv', List.contains_iff_mem.1 hv⟩, (vault_not_auth hv' edits).2, (vault_not_auth hv' edits).1⟩
   · cases hv
 
 /-- T20, for a stranger: a passkey that owns no vault in the peer's view is handed nothing. -/
-theorem T20_stranger_gets_nothing (ops : List Op) (p : SignerId) (h : ownedBy (view ops) p = []) :
-    linkCard ops p = [] := by
+theorem T20_stranger_gets_nothing (edits : List Edit) (p : SignerId) (h : ownedBy (view edits) p = []) :
+    linkCard edits p = [] := by
   simp only [linkCard, h, closeVaults_nil]
   rw [List.filter_eq_nil_iff]
-  intro op _
+  intro edit _
   split <;> simp
 
 end AvenDB

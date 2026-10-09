@@ -1,18 +1,18 @@
-//! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted edits, signed ops, schemas, lenses,
+//! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted edits, signed edits, schemas, lenses,
 //! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced, and from P8 every message on the wire
-//! (signed ops, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins). Nothing
-//! panics; a changed box, edit or signed op is refused, a changed message reads as nothing or as another message whose
-//! own bytes these are, and a changed Loro update that is refused leaves the item as it was. Every mutation is drawn
-//! from a fixed seed, so a failure replays exactly.
+//! (signed edits, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins). Nothing
+//! panics; a changed box, edit or signed edit is refused, a changed message reads as nothing or as another message
+//! whose own bytes these are, and a changed Loro update that is refused leaves the item as it was. Every mutation is
+//! drawn from a fixed seed, so a failure replays exactly.
 
 use std::fmt::Debug;
 
 use serde_json::{json, Map, Value};
 use avendb::doc::{Item, Version};
-use avendb::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
-use avendb::policy::{Action, Branch, Op};
+use avendb::policy::{Action, Edit, Proposal};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
 use avendb::sync::{Ask, LogId};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
@@ -113,7 +113,7 @@ fn a_changed_box_opens_to_nothing() {
 fn a_changed_edit_decrypts_to_nothing() {
     let mut rng = SeededRng::new("fuzz", b"edits");
     let key = Secret::generate(&mut rng);
-    let context = b"the write op, with an empty body";
+    let context = b"the write edit, with an empty body";
     let body = keys::seal_edit(&key, b"Welcome to Maia Coop: the greenhouse opens at eight.", context, &mut rng);
     assert!(keys::open_edit(&key, &body, context).is_some());
     let mut g = Gen::new(2);
@@ -151,14 +151,14 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
                 };
                 *part = mutate(g, part);
             }
-            Classical::Batch { assertion, ops } => match g.below(4) {
+            Classical::Batch { assertion, edits } => match g.below(4) {
                 0 => assertion.signature = mutate(g, &assertion.signature),
                 1 => assertion.client_data_json = mutate(g, &assertion.client_data_json),
-                2 if !ops.is_empty() => {
-                    let i = g.below(ops.len());
-                    ops.remove(i);
+                2 if !edits.is_empty() => {
+                    let i = g.below(edits.len());
+                    edits.remove(i);
                 }
-                _ => ops.push(OpId::from_u64(g.next())),
+                _ => edits.push(EditId::from_u64(g.next())),
             },
         },
         _ => {
@@ -171,18 +171,18 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     s
 }
 
-/// `op` with one field changed.
-fn mutate_op(g: &mut Gen, op: &Op) -> Op {
-    let mut o = op.clone();
+/// `edit` with one field changed.
+fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
+    let mut o = edit.clone();
     match g.below(5) {
         0 => o.depth ^= 1 << g.below(64),
-        1 => o.parents.push(OpId::from_u64(g.next())),
+        1 => o.parents.push(EditId::from_u64(g.next())),
         2 => o.author = SignerId::from_u64(g.next()),
         3 => o.cosigners.push(SignerId::from_u64(g.next())),
         _ => match &mut o.action {
             Action::AddDevice { device, .. } => *device = SignerId::from_u64(g.next()),
-            Action::Write { body, branch, .. } => match g.below(3) {
-                0 => *branch = [Branch::Main, Branch::New, Branch::On(OpId::from_u64(g.next()))][g.below(3)],
+            Action::Write { body, proposal, .. } => match g.below(3) {
+                0 => *proposal = [Proposal::Main, Proposal::New, Proposal::On(EditId::from_u64(g.next()))][g.below(3)],
                 _ => *body = mutate(g, body),
             },
             other => unreachable!("{other:?}"),
@@ -191,59 +191,59 @@ fn mutate_op(g: &mut Gen, op: &Op) -> Op {
     o
 }
 
-/// Two signed ops: governance, which both halves sign, by a passkey with the new device consenting; and a write on a
-/// branch, which only the classical half signs.
-/// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another op drafted with it.
+/// Two signed edits: governance, which both halves sign, by a passkey with the new device consenting; and a write on a
+/// proposal, which only the classical half signs.
+/// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another edit drafted with it.
 fn batched(add: &Signed) -> Signed {
     let mut passkey = Passkey::from_seed([9; 32]);
     let device = DeviceKey::from_secret([7; 32]);
-    let mut batch = vec![add.op.id(), OpId::from_u64(3)];
+    let mut batch = vec![add.edit.id(), EditId::from_u64(3)];
     batch.sort();
     let ceremony = passkey.ceremony(avendb::sign::batch_challenge(&batch));
-    let sig = ceremony.sign_in(passkey.keys(), add.op.id(), &batch, true).expect("an op of the batch");
-    Signed { op: add.op.clone(), sigs: vec![sig, device.sign(add.op.id(), true)] }
+    let sig = ceremony.sign_in(passkey.keys(), add.edit.id(), &batch, true).expect("an edit of the batch");
+    Signed { edit: add.edit.clone(), sigs: vec![sig, device.sign(add.edit.id(), true)] }
 }
 
-fn signed_ops() -> (Signed, Signed) {
+fn signed_edits() -> (Signed, Signed) {
     let device = DeviceKey::from_secret([7; 32]);
     let mut passkey = Passkey::from_seed([9; 32]);
     let alice = VaultId::from_u64(100);
     // governance, which both halves sign, by the passkey with the new device consenting
-    let add = Op {
-        parents: vec![OpId::from_u64(1)],
+    let add = Edit {
+        parents: vec![EditId::from_u64(1)],
         depth: 1,
         author: passkey.id(),
         cosigners: vec![device.id()],
         action: Action::AddDevice { vault: alice, device: device.id(), seal_to: None },
     };
     let sigs = vec![passkey.sign(add.id(), true), device.sign(add.id(), true)];
-    let add = Signed { op: add, sigs };
-    // and a write on a branch, which only the classical half signs
+    let add = Signed { edit: add, sigs };
+    // and a write on a proposal, which only the classical half signs
     let action = Action::Write {
         space: SpaceId::from_u64(10),
         entry: EntryId::from_u64(1),
         actor: alice,
         epoch: 0,
-        deps: vec![OpId::from_u64(5)],
-        branch: Branch::On(OpId::from_u64(5)),
+        deps: vec![EditId::from_u64(5)],
+        proposal: Proposal::On(EditId::from_u64(5)),
         via: vec![VaultId::from_u64(3), VaultId::from_u64(4)],
         body: vec![1, 2, 3],
     };
-    let write = Op { parents: vec![OpId::from_u64(2)], depth: 2, author: device.id(), cosigners: vec![], action };
-    let write = Signed { sigs: vec![device.sign(write.id(), false)], op: write };
+    let write = Edit { parents: vec![EditId::from_u64(2)], depth: 2, author: device.id(), cosigners: vec![], action };
+    let write = Signed { sigs: vec![device.sign(write.id(), false)], edit: write };
     (add, write)
 }
 
 #[test]
-fn a_changed_signed_op_is_refused() {
-    let (add, write) = signed_ops();
+fn a_changed_signed_edit_is_refused() {
+    let (add, write) = signed_edits();
     let mut g = Gen::new(3);
     for signed in [&add, &write, &batched(&add)] {
         assert!(signed.verify().is_ok());
         for _ in 0..300 {
             let mut bad = signed.clone();
             match g.below(4) {
-                0 => bad.op = mutate_op(&mut g, &bad.op),
+                0 => bad.edit = mutate_edit(&mut g, &bad.edit),
                 1 => bad.sigs.reverse(),
                 2 => {
                     let i = g.below(bad.sigs.len());
@@ -281,16 +281,16 @@ fn wire_mutations<T: Wire + PartialEq + Debug>(g: &mut Gen, value: &T, n: usize,
 
 #[test]
 fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
-    let (add, write) = signed_ops();
+    let (add, write) = signed_edits();
     let mut g = Gen::new(11);
-    // a signed op read from changed bytes is refused, whatever it changed into, its passkey's half by itself or in a
+    // a signed edit read from changed bytes is refused, whatever it changed into, its passkey's half by itself or in a
     // batch
     let batched = batched(&add);
     assert!(batched.verify().is_ok());
     for signed in [&add, &write, &batched] {
         let read = wire_mutations(&mut g, signed, 1500, |s: &Signed| assert!(s.verify().is_err(), "{s:?}"));
-        assert!(read > 0, "some changes still read as a signed op, to be refused");
-        wire_mutations(&mut g, &signed.op, 1000, |o: &Op| assert_ne!(o, &signed.op));
+        assert!(read > 0, "some changes still read as a signed edit, to be refused");
+        wire_mutations(&mut g, &signed.edit, 1000, |o: &Edit| assert_ne!(o, &signed.edit));
     }
     // a hello read from changed bytes proves no device on the connection
     let device = DeviceKey::from_secret([7; 32]);
@@ -311,15 +311,15 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     assert_eq!(pass.verify(&endpoint, pass.made), Some(passkey.id()));
     let now = pass.made;
     wire_mutations(&mut g, &pass, 1500, |p: &RelayPass| assert_eq!(p.verify(&p.endpoint, now.max(p.made)), None));
-    // a join read from changed bytes carries a refused op, or the same op beside other bytes, which the device checks
-    // against the ids its op names
-    let join = Join { op: add.clone(), blobs: vec![vec![1; 40], vec![2; 3]] };
-    wire_mutations(&mut g, &join, 1500, |j: &Join| assert!(j.op == add || j.op.verify().is_err(), "{j:?}"));
-    // a claim read from changed bytes carries ops and signatures that don't verify
-    let claim = Claim { card: vec![add.clone()], add: add.op.clone(), sigs: add.sigs.clone() };
+    // a join read from changed bytes carries a refused edit, or the same edit beside other bytes, which the device
+    // checks against the ids its edit names
+    let join = Join { edit: add.clone(), blobs: vec![vec![1; 40], vec![2; 3]] };
+    wire_mutations(&mut g, &join, 1500, |j: &Join| assert!(j.edit == add || j.edit.verify().is_err(), "{j:?}"));
+    // a claim read from changed bytes carries edits and signatures that don't verify
+    let claim = Claim { card: vec![add.clone()], add: add.edit.clone(), sigs: add.sigs.clone() };
     wire_mutations(&mut g, &claim, 1500, |c: &Claim| {
         assert!(c.card.iter().all(|s| *s == add || s.verify().is_err()), "{c:?}");
-        let signed = Signed { op: c.add.clone(), sigs: c.sigs.clone() };
+        let signed = Signed { edit: c.add.clone(), sigs: c.sigs.clone() };
         assert!(signed == add || signed.verify().is_err(), "{c:?}");
     });
     // the key a server hands for a claim reads back only from its own bytes
@@ -328,20 +328,20 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     // what a sync carries: asks, requests, replies and announcements
     let log = |n: u64| LogId::Entry(SpaceId::from_u64(10), EntryId::from_u64(n));
     let mut ask = Ask::default();
-    ask.haves.insert(LogId::Vault(VaultId::from_u64(100)), vec![OpId::from_u64(1), OpId::from_u64(2)]);
+    ask.haves.insert(LogId::Vault(VaultId::from_u64(100)), vec![EditId::from_u64(1), EditId::from_u64(2)]);
     ask.haves.insert(LogId::Space(SpaceId::from_u64(10)), vec![]);
-    ask.haves.insert(log(1), vec![OpId::from_u64(5)]);
-    ask.loose = vec![OpId::from_u64(7), OpId::from_u64(9)];
+    ask.haves.insert(log(1), vec![EditId::from_u64(5)]);
+    ask.loose = vec![EditId::from_u64(7), EditId::from_u64(9)];
     wire_mutations(&mut g, &ask, 3000, |_| {});
-    let (wants, after) = (vec![BlobId::from_u64(3), BlobId::from_u64(4)], Some((9, OpId::from_u64(8))));
+    let (wants, after) = (vec![BlobId::from_u64(3), BlobId::from_u64(4)], Some((9, EditId::from_u64(8))));
     let request = Request { ask, wants, after };
     wire_mutations(&mut g, &request, 3000, |_| {});
     let blobs = vec![(BlobId::from_u64(3), [1; 32]), (BlobId::from_u64(4), [2; 32])];
-    let reply = Reply { ops: vec![add.clone(), write.clone()], blobs, more: true };
+    let reply = Reply { edits: vec![add.clone(), write.clone()], blobs, more: true };
     let sent = [add.clone(), write.clone()];
     wire_mutations(&mut g, &reply, 1500, |r: &Reply| {
-        for op in r.ops.iter().filter(|o| !sent.contains(o)) {
-            assert!(op.verify().is_err(), "{op:?}");
+        for edit in r.edits.iter().filter(|o| !sent.contains(o)) {
+            assert!(edit.verify().is_err(), "{edit:?}");
         }
     });
     let announce = Announce { digests: vec![(LogId::Vault(VaultId::from_u64(100)), [3; 32]), (log(1), [4; 32])] };

@@ -3,7 +3,7 @@
 	for it), Owners and devices (who owns it, what it owns, the devices that act for it, and for the person's own vault
 	this browser's name, linking the next device and forgetting this one), Access (which vault holds which role on each
 	of its spaces, the grants in force, revoking them, and sharing a space as the acting vault), and Sync (the devices
-	that receive each space's ops, and whether each opens them or only relays their ciphertext). All of it is the
+	that receive each space's edits, and whether each opens them or only relays their ciphertext). All of it is the
 	device's world (avendb-browser's `World`); sharing and revoking go out acting for the acting vault, and the rules
 	check them against its caps.
 -->
@@ -129,7 +129,7 @@
 			{#if world.pqOnly}<p><span class="chip ok">Post-quantum only</span></p>{/if}
 			<p class="soft">
 				No device trusts the elliptic curves alone: a write counts only once its author's SLH-DSA checkpoint covers it,
-				every other op carries an SLH-DSA signature, keys are sealed with X-Wing and Classic McEliece, every connection
+				every other edit carries an SLH-DSA signature, keys are sealed with X-Wing and Classic McEliece, every connection
 				agrees its keys with X25519MLKEM768, and every hash is SHA-3.
 			</p>
 		</article>
@@ -299,7 +299,7 @@
 	{/each}
 {:else if tab === 'sync'}
 	<p class="lead-in soft">
-		A device receives a space's ops only if it acts for a vault holding a cap on it. A device whose vault only relays it
+		A device receives a space's edits only if it acts for a vault holding a cap on it. A device whose vault only relays it
 		keeps and forwards the ciphertext, and opens none of it.
 	</p>
 	{#each spaces as s, n (s.id)}

@@ -4,7 +4,7 @@ import AvenDB.Step
 import AvenDB.Sync
 import AvenDB.Logs
 import AvenDB.Doc
-import AvenDB.Branches
+import AvenDB.Proposals
 import AvenDB.Lens
 import AvenDB.Lemmas
 import AvenDB.KeyLemmas

@@ -37,7 +37,7 @@ fn an_edit_sends_only_what_is_new_both_ways() {
     w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     // the server, behind, is sent the edit and the checkpoint the Mac makes before it answers
     assert_eq!(w.lab.sync(w.mac_a, w.server), 2);
-    // the Mac, ahead, names ops further back than its newest, so the server finds what they share and sends nothing
+    // the Mac, ahead, names edits further back than its newest, so the server finds what they share and sends nothing
     assert_eq!(w.lab.sync(w.server, w.mac_a), 0);
     assert_eq!(w.lab.sync(w.server, w.mac_b), 2);
     assert_eq!(text(&w.lab, w.mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
@@ -49,9 +49,9 @@ fn devices_that_synced_gossip_the_same_digests() {
     let h = handbook(&mut w);
     let digests = |lab: &mut Lab, d| lab.digests(d).clone();
     let mac = digests(&mut w.lab, w.mac_a);
-    // Alice's two devices hold the same ops
+    // Alice's two devices hold the same edits
     assert_eq!(mac, digests(&mut w.lab, w.phone_a));
-    // and of every log two devices both hold, they hold the same ops
+    // and of every log two devices both hold, they hold the same edits
     for (a, b) in pairs(&devices(&w)) {
         let (da, db) = (digests(&mut w.lab, a), digests(&mut w.lab, b));
         for (l, x) in &da {
@@ -119,7 +119,7 @@ fn a_device_restored_from_an_old_backup_forks_and_every_peer_sees_it() {
 fn every_order_of_delivery_ends_the_same() {
     // three devices edit Welcome at the same moment, two of them offline; whatever order the devices then meet in,
     // every device that reads Welcome shows the same document, the same one each time, and of every log two devices
-    // both hold, they hold the same ops
+    // both hold, they hold the same edits
     let mut first = None;
     for seed in 0..6 {
         let mut w = world();

@@ -147,15 +147,15 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let titles: Vec<_> = other.notes().await.into_iter().flat_map(|s| s.docs).map(|(_, title, _)| title).collect();
     assert_eq!(titles, ["Seeds"]);
     // the first browser closes, and opens again from what its store kept, in the unlock alone
-    let ops = first.ops(0).await.expect("its ops");
+    let edits = first.edits(0).await.expect("its edits");
     let mut keys = vec![];
     for id in first.key_ids().await {
         keys.push(first.key(id).await.expect("a key it holds"));
     }
-    assert_eq!(first.ops(ops.len() + 1).await, None, "it holds no more ops than these");
-    assert_eq!(first.ops(ops.len()).await, Some(vec![]));
+    assert_eq!(first.edits(edits.len() + 1).await, None, "it holds no more edits than these");
+    assert_eq!(first.edits(edits.len()).await, Some(vec![]));
     first.node().shutdown().await.expect("the node shuts down");
-    let kept = backup(&ops, keys.clone());
+    let kept = backup(&edits, keys.clone());
     let again = start("Eve's browser", &url, 9);
     let again = Device::open(again, p256, eve.unlock([1; 32]), &kept).await.expect("it opens again");
     assert!(eve.steps().is_empty(), "with no ceremony but the unlock");
@@ -166,7 +166,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let may = || shows(&again, space, note, "Tomatoes in May.");
     until("the relay lets it in again, as the server knows it", may).await;
     // a store cut short reads back up to where it was cut; an unlock of another passkey opens nothing
-    let mut cut = ops.clone();
+    let mut cut = edits.clone();
     cut[3].truncate(10);
     assert_eq!(backup(&cut, keys.clone()).signed().len(), 3);
     let mallory = Browser::new(Passkey::from_seed([6; 32]));
@@ -459,8 +459,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let heads = || async { first.note(home, note).await.expect("its history")["lines"][0]["heads"].clone() };
     let from: Vec<String> = serde_json::from_value(heads().await).expect("the heads");
     assert_eq!(from, std::slice::from_ref(&edit));
-    let ops = |ids: &[String]| ids.iter().map(|h| avendb::id::OpId(hex32(h))).collect::<Vec<_>>();
-    let draft = first.propose(v, at, ops(&from), "draft".into()).await.expect("a proposal");
+    let edits = |ids: &[String]| ids.iter().map(|h| avendb::id::EditId(hex32(h))).collect::<Vec<_>>();
+    let draft = first.propose(v, at, edits(&from), "draft".into()).await.expect("a proposal");
     first.set_text_on(v, at, Some(draft), 2, "Plant beans, peas and corn.".into()).await.expect("an edit on it");
     let shown = first.note(home, note).await.expect("its history");
     let b = hex_of(&draft.0);
@@ -494,11 +494,11 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         "what the merge brought to the main line"
     );
     // the proposal's edit undone on the main line, every other change kept; then the first version restored
-    first.undo(v, at, None, avendb::id::OpId(hex32(&corn))).await.expect("undone");
+    first.undo(v, at, None, avendb::id::EditId(hex32(&corn))).await.expect("undone");
     assert_eq!(on_line(&first.note(home, note).await.expect("its history"), None), "Plant beans and peas.");
     let made = first.note(home, note).await.expect("its history")["edits"][0]["id"].as_str().map(str::to_string);
     let made = made.expect("the first edit");
-    first.restore(v, at, None, ops(&[made])).await.expect("restored");
+    first.restore(v, at, None, edits(&[made])).await.expect("restored");
     assert_eq!(on_line(&first.note(home, note).await.expect("its history"), None), "Plant beans.");
     // the proposal goes on, and a promote brings the main line to exactly what the proposal shows
     first.set_text_on(v, at, Some(draft), 2, "Corn first.".into()).await.expect("another edit on the proposal");
@@ -563,11 +563,11 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
     // browser added to it, her home, avenCEO's relay on it, and each write, every one counted, as a checkpoint covers it
     let log = first.history().await;
-    let ops = log["edits"].as_array().expect("its edits");
-    assert_eq!(ops.len(), first.ops(0).await.expect("its ops").len(), "every edit it holds");
-    let places: Vec<u64> = ops.iter().filter_map(|o| o["n"].as_u64()).collect();
-    assert_eq!(places, (1..=ops.len() as u64).collect::<Vec<_>>(), "in the order it took them");
-    let of = |kind: &str| ops.iter().filter(|o| o["kind"].as_str() == Some(kind)).collect::<Vec<_>>();
+    let edits = log["edits"].as_array().expect("its edits");
+    assert_eq!(edits.len(), first.edits(0).await.expect("its edits").len(), "every edit it holds");
+    let places: Vec<u64> = edits.iter().filter_map(|o| o["n"].as_u64()).collect();
+    assert_eq!(places, (1..=edits.len() as u64).collect::<Vec<_>>(), "in the order it took them");
+    let of = |kind: &str| edits.iter().filter(|o| o["kind"].as_str() == Some(kind)).collect::<Vec<_>>();
     let genesis = of("genesis").into_iter().find(|o| o["id"].as_str() == Some(hex_of(&v.0).as_str())).expect("hers");
     assert_eq!(genesis["fields"]["vaultKind"].as_str(), Some("human"));
     assert_eq!(genesis["fields"]["root"].as_str(), Some(hex_of(&first.passkey().0).as_str()), "her passkey roots it");
@@ -585,7 +585,9 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert!(mine.clone().any(|o| o["fields"]["starts"] == true && o["fields"]["line"] == o["id"]), "the proposal's start");
     assert!(writes.iter().all(|o| o["vaults"].as_array().is_some_and(|vs| vs.contains(&hex_of(&v.0).into()))));
     assert!(!of("checkpoint").is_empty() && !of("keys").is_empty());
-    assert!(ops.iter().all(|o| o["bytes"].as_u64().is_some_and(|n| n > 0) && !o["sigs"].as_array().unwrap().is_empty()));
+    assert!(edits
+        .iter()
+        .all(|o| o["bytes"].as_u64().is_some_and(|n| n > 0) && !o["sigs"].as_array().unwrap().is_empty()));
     let text = log.to_string();
     assert!(!text.contains("Corn first") && !text.contains("Plant beans"), "no note's text in its history: sealed");
     // the server relays her home and opens none of it: its rows are sealed

@@ -6,9 +6,9 @@ import AvenDB.Sync
 Helpers for the proofs in `Theorems.lean`. Settling keys changes only the keys, so a step changes the vaults only
 through `apply`: it adds a vault or changes one (`VaultChange`). Without cycles, `owns` finds every chain of owners,
 so the check in `addOwner` refuses every owner that would close a cycle. Authorization reads only the vaults, the
-spaces' founders and the grants, so an op that only adds to them keeps every write authorized (`Keeps`), and only a
+spaces' founders and the grants, so an edit that only adds to them keeps every write authorized (`Keeps`), and only a
 removal drops writes. Only a publish by an owner of the space adds to its schema lane. `closeDeps` keeps writes
-causally closed, and a run with removals ends in the replay of the ops that stood.
+causally closed, and a run with removals ends in the replay of the edits that stood.
 -/
 
 namespace AvenDB
@@ -139,7 +139,7 @@ theorem ownerFits_vault {st : State} {k : Kind} {o : VaultId} (h : ownerFits st 
 
 /-! ## What one step does to the vaults -/
 
-/-- How an accepted op changes an existing vault `vt` of id `v` into `vt'`, with what the op had to carry. -/
+/-- How an accepted edit changes an existing vault `vt` of id `v` into `vt'`, with what the edit had to carry. -/
 inductive VaultChange (st : State) (sigs : List SignerId) (v : VaultId) (vt : Vault) : Vault → Prop where
   | addOwner (p : Principal) : p ∉ vt.owners → ownerFits st vt.kind p = true →
       (∀ x, p = .vault x → x ≠ v ∧ owns st v x = false) →
@@ -162,12 +162,12 @@ theorem VaultChange.id {st : State} {sigs : List SignerId} {v : VaultId} {vt vt'
     (h : VaultChange st sigs v vt vt') : vt'.id = vt.id := by
   cases h <;> rfl
 
-/-- An accepted op leaves the vaults as they were, appends a new one, or changes one existing vault. -/
-theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
+/-- An accepted edit leaves the vaults as they were, appends a new one, or changes one existing vault. -/
+theorem apply_vaults {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.vaults = st.vaults ∨
     (∃ v kind owners threshold root, st.vault? v = none ∧ (∀ p ∈ owners, ownerFits st kind p = true) ∧
-      rootFits kind op.sigs root = true ∧ post.vaults = st.vaults ++ [⟨v, kind, owners, threshold, [], root⟩]) ∨
-    (∃ v vt vt', st.vault? v = some vt ∧ VaultChange st op.sigs v vt vt' ∧
+      rootFits kind edit.sigs root = true ∧ post.vaults = st.vaults ++ [⟨v, kind, owners, threshold, [], root⟩]) ∨
+    (∃ v vt vt', st.vault? v = some vt ∧ VaultChange st edit.sigs v vt vt' ∧
       post.vaults = (setVault st vt').vaults) := by
   unfold apply at h
   split at h
@@ -192,7 +192,7 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
       simp at h
       obtain ⟨-, happ, rfl⟩ := h
       refine .inr (.inr ⟨v, vt, _, hv, .removeOwner p ?_, rfl⟩)
-      cases h1 : approves st op.sigs (.vault v)
+      cases h1 : approves st edit.sigs (.vault v)
       · exact .inr (happ h1)
       · exact .inl rfl
   · -- setThreshold
@@ -216,7 +216,7 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
       simp at h
       obtain ⟨-, happ, rfl⟩ := h
       refine .inr (.inr ⟨v, vt, _, hv, .removeDevice d ?_, rfl⟩)
-      cases h1 : approves st op.sigs (.vault v)
+      cases h1 : approves st edit.sigs (.vault v)
       · exact .inr (happ h1)
       · exact .inl rfl
   · -- setRoot
@@ -262,12 +262,12 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
 
 /-- What a step does to the vaults, told by lookups: nothing, a new vault with a free id and existing owners, or
     one existing vault changed as `VaultChange` says. -/
-theorem step_vault? {st st' : State} {op : Op} (h : step st op = some st') :
+theorem step_vault? {st st' : State} {edit : Edit} (h : step st edit = some st') :
     (∀ x, st'.vault? x = st.vault? x) ∨
     (∃ v kind owners threshold root, st.vault? v = none ∧ (∀ p ∈ owners, ownerFits st kind p = true) ∧
-      rootFits kind op.sigs root = true ∧
+      rootFits kind edit.sigs root = true ∧
       ∀ x, st'.vault? x = if x = v then some ⟨v, kind, owners, threshold, [], root⟩ else st.vault? x) ∨
-    (∃ v vt vt', st.vault? v = some vt ∧ VaultChange st op.sigs v vt vt' ∧
+    (∃ v vt vt', st.vault? v = some vt ∧ VaultChange st edit.sigs v vt vt' ∧
       ∀ x, st'.vault? x = if x = v then some vt' else st.vault? x) := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -288,8 +288,8 @@ theorem step_vault? {st st' : State} {op : Op} (h : step st op = some st') :
     · exact setVault_vault?_ne (by rw [hid]; assumption)
 
 /-- After a step, a vault that existed is as it was, or changed as `VaultChange` says. -/
-theorem step_vault?_old {st st' : State} {op : Op} (h : step st op = some st') {v : VaultId} {vt vt' : Vault}
-    (h₁ : st.vault? v = some vt) (h₂ : st'.vault? v = some vt') : vt' = vt ∨ VaultChange st op.sigs v vt vt' := by
+theorem step_vault?_old {st st' : State} {edit : Edit} (h : step st edit = some st') {v : VaultId} {vt vt' : Vault}
+    (h₁ : st.vault? v = some vt) (h₂ : st'.vault? v = some vt') : vt' = vt ∨ VaultChange st edit.sigs v vt vt' := by
   rcases step_vault? h with hsame | ⟨w, _, _, _, _, hw, -, -, hlook⟩ | ⟨w, vtw, vtw', hw, hch, hlook⟩
   · rw [hsame, h₁] at h₂
     exact .inl (Option.some.inj h₂).symm
@@ -458,10 +458,10 @@ theorem transGen_fresh {α : Sort _} {r r' : α → α → Prop} {v : α} (hr : 
     exact .tail (ih hm) (hr _ _ hmc hb)
 
 /-- One step keeps the owner graph free of cycles, and every vault named as an owner existing. -/
-theorem step_owners {st st' : State} {op : Op}
+theorem step_owners {st st' : State} {edit : Edit}
     (hacyc : ∀ y, ¬ Relation.TransGen (OwnerOf st) y y)
     (hex : ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st.vault? o).isSome)
-    (h : step st op = some st') :
+    (h : step st edit = some st') :
     (∀ y, ¬ Relation.TransGen (OwnerOf st') y y) ∧
     (∀ x vt, st'.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st'.vault? o).isSome) := by
   rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, hnone, hfit, -, hlook⟩ |
@@ -629,7 +629,7 @@ theorem Keeps.settle (pre post : State) : Keeps post (settle pre post) :=
     (fun _ hg => by rw [settle_grants]; exact hg)
 
 /-- Dropping writes keeps everything. -/
-theorem Keeps.dropUnseen (pre post : State) (keep : List OpId) : Keeps post (dropUnseen pre post keep) :=
+theorem Keeps.dropUnseen (pre post : State) (keep : List EditId) : Keeps post (dropUnseen pre post keep) :=
   .of_vaults rfl (fun _ _ h => h) (fun _ h => h)
 
 /-- A new vault keeps the others. -/
@@ -731,7 +731,7 @@ theorem ownerOf_keeps {st st' : State} (hk : Keeps st st') {o v : VaultId}
     simp only [List.contains_iff_mem] at h ⊢
     exact ho _ h
 
-/-- A state that keeps the vaults keeps every chain an op names. -/
+/-- A state that keeps the vaults keeps every chain an edit names. -/
 theorem actsVia_keeps {st st' : State} (hk : Keeps st st') {s : SignerId} :
     ∀ {via : List VaultId} {v : VaultId}, actsVia st s via v = true → actsVia st' s via v = true
   | [], _, h => member_keeps hk h
@@ -757,7 +757,7 @@ theorem authorized_keeps {st st' : State} (hk : Keeps st st') {w : Write} (h : a
 /-! ## Causally closed writes -/
 
 theorem depsIn_iff {ws : List Write} {w : Write} :
-    depsIn ws w = true ↔ ∀ d ∈ w.deps, ∃ x ∈ ws, x.op = d ∧ x.space = w.space ∧ x.entry = w.entry := by
+    depsIn ws w = true ↔ ∀ d ∈ w.deps, ∃ x ∈ ws, x.edit = d ∧ x.space = w.space ∧ x.entry = w.entry := by
   simp [depsIn, List.all_eq_true, List.any_eq_true, and_assoc]
 
 /-- More writes hold every dependency fewer writes held. -/
@@ -804,16 +804,16 @@ theorem closeDeps_closed (ws : List Write) : ∀ w ∈ closeDeps ws, depsIn (clo
 
 /-! ## What one step does to the writes and the grants -/
 
-/-- An accepted op leaves the writes alone, or is a write op adding its own write, which was authorized, whose
+/-- An accepted edit leaves the writes alone, or is a write edit adding its own write, which was authorized, whose
     dependencies were accepted, whose id is new and which extends its line, and either way keeps what `authorized`
     reads; or it is a removal that drops writes (`dropUnseen`). -/
-theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
+theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some post) :
     (post.writes = st.writes ∧ Keeps st post) ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ authorized st w = true ∧ depsIn st.writes w = true ∧
-      Keeps st post ∧ w.op = op.id ∧ w.author = op.author ∧
-      op.action = .write w.space w.entry w.actor w.epoch w.deps w.branch w.via ∧
-      (∀ x ∈ st.writes, x.op ≠ w.op) ∧ onBranch st.writes w = true) ∨
-    (∃ keep mid, op.action.keep? = some keep ∧ post = dropUnseen st mid keep ∧ mid.writes = st.writes) := by
+      Keeps st post ∧ w.edit = edit.id ∧ w.author = edit.author ∧
+      edit.action = .write w.space w.entry w.actor w.epoch w.deps w.proposal w.via ∧
+      (∀ x ∈ st.writes, x.edit ≠ w.edit) ∧ onProposal st.writes w = true) ∨
+    (∃ keep mid, edit.action.keep? = some keep ∧ post = dropUnseen st mid keep ∧ mid.writes = st.writes) := by
   unfold apply at h
   split at h
   · -- genesis
@@ -901,8 +901,8 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
     obtain ⟨-, rfl⟩ := h
     exact .inl ⟨rfl, .of_vaults rfl (fun _ _ h => h) (fun _ h => h)⟩
 
-/-- An accepted op only takes grants away, or adds one grant that names a vault or Public, Public only with read. -/
-theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
+/-- An accepted edit only takes grants away, or adds one grant that names a vault or Public, Public only with read. -/
+theorem apply_grants {st post : State} {edit : Edit} (h : apply st edit = some post) :
     (∀ g ∈ post.grants, g ∈ st.grants) ∨
     (∃ g, post.grants = st.grants ++ [g] ∧ (∀ s, g.grantee ≠ .principal (.signer s)) ∧
       (g.grantee = .«public» → g.role = .read)) := by
@@ -991,11 +991,11 @@ theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
 
 /-! ## What one step does to the schema lane -/
 
-/-- An accepted op leaves the lane alone, or publishes one blob into a space's lane: its author acts for a vault
+/-- An accepted edit leaves the lane alone, or publishes one blob into a space's lane: its author acts for a vault
     holding owner on the space. -/
-theorem apply_lane {st post : State} {op : Op} (h : apply st op = some post) :
+theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.lane = st.lane ∨
-    ∃ sp actor blob via, op.action = .publish sp actor blob via ∧ actsVia st op.author via actor = true ∧
+    ∃ sp actor blob via, edit.action = .publish sp actor blob via ∧ actsVia st edit.author via actor = true ∧
       holds st actor (.space sp) .owner = true ∧ post.lane = st.lane ++ [(sp, blob)] := by
   unfold apply at h
   dsimp only at h
@@ -1008,35 +1008,35 @@ theorem apply_lane {st post : State} {op : Op} (h : apply st op = some post) :
 /-! ## Replay, runs and resolve -/
 
 /-- What holds at the start and is kept by every accepted step holds after any replay. -/
-theorem replay_inv (P : State → Prop) (hstep : ∀ st st' op, P st → step st op = some st' → P st') :
-    ∀ (ops : List Op) (st : State), P st → P (replay st ops)
+theorem replay_inv (P : State → Prop) (hstep : ∀ st st' edit, P st → step st edit = some st' → P st') :
+    ∀ (edits : List Edit) (st : State), P st → P (replay st edits)
   | [], _, h => h
-  | op :: ops, st, h => by
-    show P (replay ((step st op).getD st) ops)
-    cases hs : step st op with
-    | none => exact replay_inv P hstep ops st h
-    | some st' => exact replay_inv P hstep ops st' (hstep st st' op h hs)
+  | edit :: edits, st, h => by
+    show P (replay ((step st edit).getD st) edits)
+    cases hs : step st edit with
+    | none => exact replay_inv P hstep edits st h
+    | some st' => exact replay_inv P hstep edits st' (hstep st st' edit h hs)
 
-/-- A run ends in the replay of the ops that stood in it. -/
-theorem runFrom_fst (rem : List Op) (cs : List (Nat × List OpId × List Fact)) :
-    ∀ (st : State) (l : List (Op × Nat)), (runFrom rem cs st l).1 = replay st (runFrom rem cs st l).2
+/-- A run ends in the replay of the edits that stood in it. -/
+theorem runFrom_fst (rem : List Edit) (cs : List (Nat × List EditId × List Fact)) :
+    ∀ (st : State) (l : List (Edit × Nat)), (runFrom rem cs st l).1 = replay st (runFrom rem cs st l).2
   | _, [] => rfl
-  | st, (op, i) :: rest => by
+  | st, (edit, i) :: rest => by
     unfold runFrom
     split
     · exact runFrom_fst rem cs st rest
     · split
       · rename_i st' _ hs
-        show _ = replay ((step st op).getD st) _
+        show _ = replay ((step st edit).getD st) _
         rw [hs]
         exact runFrom_fst rem cs st' rest
       · exact runFrom_fst rem cs st rest
 
-/-- The ops that stand in a run are among the ops it ran. -/
-theorem runFrom_snd_mem (rem : List Op) (cs : List (Nat × List OpId × List Fact)) :
-    ∀ (st : State) (l : List (Op × Nat)), ∀ o ∈ (runFrom rem cs st l).2, o ∈ l.map Prod.fst
+/-- The edits that stand in a run are among the edits it ran. -/
+theorem runFrom_snd_mem (rem : List Edit) (cs : List (Nat × List EditId × List Fact)) :
+    ∀ (st : State) (l : List (Edit × Nat)), ∀ o ∈ (runFrom rem cs st l).2, o ∈ l.map Prod.fst
   | _, [] => by simp [runFrom]
-  | st, (op, i) :: rest => by
+  | st, (edit, i) :: rest => by
     unfold runFrom
     split
     · exact fun o ho => List.mem_cons_of_mem _ (runFrom_snd_mem rem cs st rest o ho)
@@ -1048,23 +1048,23 @@ theorem runFrom_snd_mem (rem : List Op) (cs : List (Nat × List OpId × List Fac
         · exact List.mem_cons_of_mem _ (runFrom_snd_mem rem cs st' rest o ho)
       · exact fun o ho => List.mem_cons_of_mem _ (runFrom_snd_mem rem cs st rest o ho)
 
-/-- The ops that stand in what a peer knows are among the ops it holds. -/
-theorem standing_mem (ops : List Op) : ∀ o ∈ standing ops, o ∈ ops := fun o ho => by
+/-- The edits that stand in what a peer knows are among the edits it holds. -/
+theorem standing_mem (edits : List Edit) : ∀ o ∈ standing edits, o ∈ edits := fun o ho => by
   have h := runFrom_snd_mem _ _ _ _ o ho
   rw [List.zipIdx_map_fst] at h
   exact (List.mem_filter.1 (List.mem_mergeSort.1 h)).1
 
-/-- Every write a replay holds was there at the start, or a write op it replayed made it, with the op's id and
+/-- Every write a replay holds was there at the start, or a write edit it replayed made it, with the edit's id and
     author. -/
 theorem replay_writes_from :
-    ∀ (l : List Op) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
-      ∃ o ∈ l, o.id = w.op ∧ o.author = w.author ∧
-        o.action = .write w.space w.entry w.actor w.epoch w.deps w.branch w.via
+    ∀ (l : List Edit) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
+      ∃ o ∈ l, o.id = w.edit ∧ o.author = w.author ∧
+        o.action = .write w.space w.entry w.actor w.epoch w.deps w.proposal w.via
   | [], _, _, h => .inl h
-  | op :: ops, st, w, h => by
-    change w ∈ (replay ((step st op).getD st) ops).writes at h
-    rcases replay_writes_from ops _ w h with h | ⟨o, ho, hrest⟩
-    · cases hs : step st op with
+  | edit :: edits, st, w, h => by
+    change w ∈ (replay ((step st edit).getD st) edits).writes at h
+    rcases replay_writes_from edits _ w h with h | ⟨o, ho, hrest⟩
+    · cases hs : step st edit with
       | none => rw [hs] at h; exact .inl h
       | some st' =>
         rw [hs] at h
@@ -1079,16 +1079,16 @@ theorem replay_writes_from :
           · exact .inl h
           · rw [List.mem_singleton] at h
             subst h
-            exact .inr ⟨op, List.mem_cons_self, hid.symm, hauth.symm, hact⟩
+            exact .inr ⟨edit, List.mem_cons_self, hid.symm, hauth.symm, hact⟩
         · exact .inl (hmid ▸ (List.mem_filter.1 ((closeDeps_sublist _).subset h)).1)
     · exact .inr ⟨o, List.mem_cons_of_mem _ ho, hrest⟩
 
 /-- Every removal `resolve` picks stands in the run with the removals it picks: the fold only ever keeps a list
     whose run accepts all of it. -/
-theorem resolve_stands (ops : List Op) :
-    ∀ r ∈ resolve ops, (runWith ops (resolve ops)).2.any (·.id == r.id) = true := by
+theorem resolve_stands (edits : List Edit) :
+    ∀ r ∈ resolve edits, (runWith edits (resolve edits)).2.any (·.id == r.id) = true := by
   unfold resolve
-  refine foldl_inv (fun rem => ∀ r ∈ rem, (runWith ops rem).2.any (·.id == r.id) = true) _ (fun rem r h => ?_) _ []
+  refine foldl_inv (fun rem => ∀ r ∈ rem, (runWith edits rem).2.any (·.id == r.id) = true) _ (fun rem r h => ?_) _ []
     (by simp)
   dsimp only
   split

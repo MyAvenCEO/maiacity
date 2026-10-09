@@ -29,12 +29,12 @@
 		{#each list as st, i (i)}
 			<li>
 				{#if 'add' in st}
-					<span class="op add">add</span> <code>{st.add}</code> <span class="soft">a field only the newer version has</span>
+					<span class="step add">add</span> <code>{st.add}</code> <span class="soft">a field only the newer version has</span>
 				{:else if 'in' in st}
-					<span class="op in">in each of</span> <code>{st.in}</code>
+					<span class="step in">in each of</span> <code>{st.in}</code>
 					{@render stepList(st.steps)}
 				{:else}
-					<span class="op convert">convert</span> <code>{st.from.join(', ')}</code> → <code>{st.to.join(', ')}</code>
+					<span class="step convert">convert</span> <code>{st.from.join(', ')}</code> → <code>{st.to.join(', ')}</code>
 					{@render rules(st.forward, 'the older', 'the newer')}
 					<details>
 						<summary>And back: {count(st.backward.length, 'rule')}</summary>
@@ -126,7 +126,7 @@
 		margin-top: 0.3rem;
 	}
 
-	.op {
+	.step {
 		display: inline-block;
 		padding: 0 0.4rem;
 		border-radius: 5px;
@@ -135,17 +135,17 @@
 		font-weight: 600;
 	}
 
-	.op.add {
+	.step.add {
 		background: #dcebd9;
 		color: #2b5a37;
 	}
 
-	.op.in {
+	.step.in {
 		background: #e6e1f1;
 		color: #4b3a75;
 	}
 
-	.op.convert {
+	.step.convert {
 		background: #efe3c8;
 		color: #6a4b12;
 	}

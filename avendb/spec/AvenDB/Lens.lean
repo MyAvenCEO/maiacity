@@ -7,7 +7,7 @@ The two examples, each in two schema versions, and the two-way lens between them
   `level`, items can be `checked`, code can name its `lang`, and the document gains `tags`.
 - Todos: v1 has `done`; v2 has `status` (open, doing, done).
 
-Nothing is migrated by a commit: two devices migrating at once could each drop the other's new containers, and a
+Nothing is migrated by an edit: two devices migrating at once could each drop the other's new containers, and a
 default that a migration writes races a real edit. An item is stored as it was written instead, each field in the
 representation of the schema it was written under: v1's, v2's, or after concurrent edits both, where v2's wins (it is
 the newer one). Each app projects the item on read, through the lens, into its own schema (`v1`, `v2`), so defaults

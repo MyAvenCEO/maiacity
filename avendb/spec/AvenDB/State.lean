@@ -3,7 +3,7 @@ import AvenDB.Basic
 /-!
 # State
 
-What a peer knows after replaying the ops it holds: vaults, spaces, grants, accepted writes, the key schedule
+What a peer knows after replaying the edits it holds: vaults, spaces, grants, accepted writes, the key schedule
 (current epochs, seals, published keys), and each space's schema lane. Everything here is executable, so the same
 definitions that the theorems talk about also produce the test vectors the Rust core must match.
 -/
@@ -39,27 +39,27 @@ structure Space where
   entries : List EntryId
   deriving DecidableEq, Repr
 
-/-- An accepted edit: one encrypted Loro update to one entry, on one line of its history (`branch`). `deps` are the
+/-- An accepted edit: one encrypted Loro update to one entry, on one line of its history (`history`). `deps` are the
     writes of the same entry it builds on (its Loro frontier when it was made): accepted writes stay causally closed
     (T14), so a write whose dependency is cut is cut too. Its author, a device, acts for `actor` through the owners
     `via` (`actsVia`). -/
 structure Write where
-  op     : OpId
-  author : SignerId
-  actor  : VaultId
-  space  : SpaceId
-  entry  : EntryId
-  epoch  : Nat
-  deps   : List OpId
-  branch : Branch
-  via    : List VaultId
+  edit     : EditId
+  author   : SignerId
+  actor    : VaultId
+  space    : SpaceId
+  entry    : EntryId
+  epoch    : Nat
+  deps     : List EditId
+  proposal : Proposal
+  via      : List VaultId
   deriving DecidableEq, Repr
 
-/-- The line a write is on: `none` for the main line, else the write that started its branch. -/
-def Write.line (w : Write) : Option OpId :=
-  match w.branch with
+/-- The line a write is on: `none` for the main line, else the write that started its proposal. -/
+def Write.line (w : Write) : Option EditId :=
+  match w.proposal with
   | .main => none
-  | .new  => some w.op
+  | .new  => some w.edit
   | .on b => some b
 
 /-- `secret` sealed to the key pair `to`: whoever can open `to` can open `secret`. -/
@@ -127,7 +127,7 @@ def ownerOf (st : State) (o v : VaultId) : Bool :=
   | none => false
   | some vt => vt.owners.contains (.vault o)
 
-/-- Signer `s` acts for vault `actor` through the owners `via`, as an op names them: `via` runs from an owner of
+/-- Signer `s` acts for vault `actor` through the owners `via`, as an edit names them: `via` runs from an owner of
     `actor` down, each vault an owner of the one before, to the vault `s` is a member of; with no `via`, `s` is a
     member of `actor` itself. A device of Bob's human vault acts for Bob's coop through `[bob]`. -/
 def actsVia (st : State) (s : SignerId) : List VaultId → VaultId → Bool

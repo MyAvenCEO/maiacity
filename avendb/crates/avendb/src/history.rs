@@ -1,23 +1,23 @@
-//! History and branches of one entry (T10; `avendb/spec/AvenDB/Branches.lean` and `Doc.lean`). Every write is a
-//! commit, named by its op id: it extends one line of the entry's history, the main line or a branch
-//! (`policy::Branch`), and a line's history is its own writes and every write they build on (`policy::history`). What
+//! History and proposals of one entry (T10; `avendb/spec/AvenDB/Proposals.lean` and `Doc.lean`). Every write is an
+//! edit, named by its edit id: it extends one line of the entry's history, the main line or a proposal
+//! (`policy::Proposal`), and a line's history is its own writes and every write they build on (`policy::history`). What
 //! a device shows on a line is the Loro content of the updates in that history. A version is any set of the entry's
 //! writes, and holds what they build on: a device opens one read-only on a scratch item made from those updates, never
 //! by checking out the item it edits, which would stop it taking imports.
 //!
 //! On each line a device edits as a Loro peer of that line (`doc`), so its edits on one line never wait for its edits
-//! on another. A branch starts from any version with a write that holds the branch's name. A merge is a write on the
-//! target that builds on the heads of both lines and carries no change: its history is the union of both (T10g), which
-//! Loro merges, so the order of merges doesn't matter and merging again changes nothing. A promote is the same write
-//! carrying the change that brings the merged item to exactly the branch's record: the target then shows the branch
-//! and keeps both histories (T10h). The merged item imports first and changes after; Loro's own revert is not used,
-//! as it isn't atomic in Loro 1.16.
+//! on another. A proposal starts from any version with a write that holds the proposal's name. A merge is a write on
+//! the target that builds on the heads of both lines and carries no change: its history is the union of both (T10g),
+//! which Loro merges, so the order of merges doesn't matter and merging again changes nothing. A promote is the same
+//! write carrying the change that brings the merged item to exactly the proposal's record: the target then shows the
+//! proposal and keeps both histories (T10h). The merged item imports first and changes after; Loro's own revert is not
+//! used, as it isn't atomic in Loro 1.16.
 //!
-//! Only a line's latest commit is reverted as it is: its line goes back to the record of the version it built on
-//! (`restore`, which puts back any version's record). An older commit is undone by a three-way merge of records
-//! (`undo`), which keeps every change made since. A fork copies an item's record into a new entry, with no history
+//! Only a line's latest edit is reverted as it is: its line goes back to the record of the version it built on
+//! (`restore`, which puts back any version's record). An older edit is undone by a three-way merge of records
+//! (`undo`), which keeps every change made since. A variant copies an item's record into a new entry, with no history
 //! (`doc::Item::copy`). A device stores full Loro snapshots (`doc::Item::bytes`), never shallow ones: a shallow
-//! snapshot refuses the updates of a branch that starts before it.
+//! snapshot refuses the updates of a proposal that starts before it.
 //!
 //! `History` is what a device holds of one entry, every accepted write with what it could open; the Lab builds one
 //! for each entry it shows. `Repo` keeps one locally, with no keys and no caps, for the tests and the property checks.
@@ -27,21 +27,21 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use serde_json::{Map, Value};
 
 use crate::doc::Item;
-use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
-use crate::policy::{self, Branch, Line, Refusal, Write};
+use crate::id::{BlobId, EditId, EntryId, SignerId, SpaceId, VaultId};
+use crate::policy::{self, Line, Proposal, Refusal, Write};
 
 /// The main line.
 pub const MAIN: Line = None;
 
 /// One accepted write of an entry as a device holds it: the write, and what it carries if the device could open it:
-/// a Loro update, nothing for a merge, or for a write that starts a branch, the branch's name.
+/// a Loro update, nothing for a merge, or for a write that starts a proposal, the proposal's name.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Commit {
+pub struct Change {
     pub write: Write,
     pub body: Option<Vec<u8>>,
 }
 
-impl AsRef<Write> for Commit {
+impl AsRef<Write> for Change {
     fn as_ref(&self) -> &Write {
         &self.write
     }
@@ -50,67 +50,67 @@ impl AsRef<Write> for Commit {
 /// A write a device is about to make on an entry: the line it extends, what it builds on, and what it carries.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Draft {
-    pub branch: Branch,
-    pub deps: Vec<OpId>,
+    pub proposal: Proposal,
+    pub deps: Vec<EditId>,
     pub body: Vec<u8>,
 }
 
-/// The branch a write extending `line` names.
-fn on(line: Line) -> Branch {
-    line.map_or(Branch::Main, Branch::On)
+/// The proposal a write extending `line` names.
+fn on(line: Line) -> Proposal {
+    line.map_or(Proposal::Main, Proposal::On)
 }
 
 /// One entry's history as one device holds it: every accepted write, in replay order.
 #[derive(Clone, Debug, Default)]
 pub struct History {
-    commits: Vec<Commit>,
+    changes: Vec<Change>,
 }
 
 impl History {
     /// Add the next accepted write. Refused, as the rules refuse it, if it builds on a write the history doesn't
-    /// hold or, on a branch, on neither the branch's start nor another write on it.
-    pub fn push(&mut self, c: Commit) -> Result<(), Refusal> {
-        policy::builds_on(&self.commits, &c.write)?;
-        self.commits.push(c);
+    /// hold or, on a proposal, on neither the proposal's start nor another write on it.
+    pub fn push(&mut self, c: Change) -> Result<(), Refusal> {
+        policy::builds_on(&self.changes, &c.write)?;
+        self.changes.push(c);
         Ok(())
     }
 
-    pub fn commits(&self) -> &[Commit] {
-        &self.commits
+    pub fn changes(&self) -> &[Change] {
+        &self.changes
     }
 
-    pub fn get(&self, op: OpId) -> Option<&Commit> {
-        self.commits.iter().find(|c| c.write.op == op)
+    pub fn get(&self, edit: EditId) -> Option<&Change> {
+        self.changes.iter().find(|c| c.write.edit == edit)
     }
 
-    /// The lines: the main line, then each branch in the order it started.
+    /// The lines: the main line, then each proposal in the order it started.
     pub fn lines(&self) -> Vec<Line> {
-        let starts = self.commits.iter().filter(|c| c.write.branch == Branch::New).map(|c| Some(c.write.op));
+        let starts = self.changes.iter().filter(|c| c.write.proposal == Proposal::New).map(|c| Some(c.write.edit));
         std::iter::once(MAIN).chain(starts).collect()
     }
 
-    /// The name of the branch `b` started, if the device could open it.
-    pub fn name(&self, b: OpId) -> Option<String> {
-        let c = self.get(b).filter(|c| c.write.branch == Branch::New)?;
+    /// The name of the proposal `b` started, if the device could open it.
+    pub fn name(&self, b: EditId) -> Option<String> {
+        let c = self.get(b).filter(|c| c.write.proposal == Proposal::New)?;
         String::from_utf8(c.body.clone()?).ok()
     }
 
     /// The history of `line`: its own writes and everything they build on, oldest first.
-    pub fn history(&self, line: Line) -> Vec<&Commit> {
-        policy::history(self.commits.iter(), line)
+    pub fn history(&self, line: Line) -> Vec<&Change> {
+        policy::history(self.changes.iter(), line)
     }
 
     /// What the next write on `line` builds on.
-    pub fn heads(&self, line: Line) -> Vec<OpId> {
+    pub fn heads(&self, line: Line) -> Vec<EditId> {
         policy::tips(&self.history(line))
     }
 
     /// The writes of `version` and everything they build on, oldest first: what that version holds.
-    pub fn version(&self, version: &[OpId]) -> Vec<&Commit> {
-        let mut needed: HashSet<OpId> = version.iter().copied().collect();
+    pub fn version(&self, version: &[EditId]) -> Vec<&Change> {
+        let mut needed: HashSet<EditId> = version.iter().copied().collect();
         let mut out = vec![];
-        for c in self.commits.iter().rev() {
-            if needed.contains(&c.write.op) {
+        for c in self.changes.iter().rev() {
+            if needed.contains(&c.write.edit) {
                 needed.extend(c.write.deps.iter().copied());
                 out.push(c);
             }
@@ -127,16 +127,16 @@ impl History {
 
     /// The item at `version`, made from scratch from the updates it holds, as `signer` would edit it on `line`: how a
     /// device opens any version read-only, and makes the change a promote carries.
-    pub fn item_at(&self, version: &[OpId], signer: SignerId, line: Line) -> Item {
+    pub fn item_at(&self, version: &[EditId], signer: SignerId, line: Line) -> Item {
         build(&self.version(version), signer, line).unwrap_or_else(|| Item::new_on(signer, line))
     }
 
-    /// The schemas the update of write `op` was written under, imported on the version it builds on: none for a write
-    /// the device can't open, a branch's start, a merge, or a promote, a restore or an undo, which name none.
-    pub fn written_under(&self, op: OpId, signer: SignerId) -> BTreeSet<BlobId> {
-        let Some(c) = self.get(op) else { return BTreeSet::new() };
+    /// The schemas the update of write `edit` was written under, imported on the version it builds on: none for a write
+    /// the device can't open, a proposal's start, a merge, or a promote, a restore or an undo, which name none.
+    pub fn written_under(&self, edit: EditId, signer: SignerId) -> BTreeSet<BlobId> {
+        let Some(c) = self.get(edit) else { return BTreeSet::new() };
         let w = &c.write;
-        let Some(update) = c.body.as_ref().filter(|u| w.branch != Branch::New && !u.is_empty()) else {
+        let Some(update) = c.body.as_ref().filter(|u| w.proposal != Proposal::New && !u.is_empty()) else {
             return BTreeSet::new();
         };
         let mut item = self.item_at(&w.deps, signer, w.line());
@@ -157,18 +157,18 @@ impl History {
         let mut item = self.item(line, signer).unwrap_or_else(|| Item::new_on(signer, line));
         let since = item.version();
         change(&mut item);
-        Draft { branch: on(line), deps: self.heads(line), body: item.export(&since) }
+        Draft { proposal: on(line), deps: self.heads(line), body: item.export(&since) }
     }
 
-    /// A new branch named `name`, starting from `version`.
-    pub fn branch(&self, version: &[OpId], name: &str) -> Draft {
-        Draft { branch: Branch::New, deps: version.to_vec(), body: name.as_bytes().to_vec() }
+    /// A new proposal named `name`, starting from `version`.
+    pub fn propose(&self, version: &[EditId], name: &str) -> Draft {
+        Draft { proposal: Proposal::New, deps: version.to_vec(), body: name.as_bytes().to_vec() }
     }
 
     /// A merge of `from` into `into`: a write on `into` that builds on the heads of both and carries no change, so the
     /// history of `into` is then the union of both (T10g).
     pub fn merge(&self, from: Line, into: Line) -> Draft {
-        Draft { branch: on(into), deps: self.both(from, into), body: vec![] }
+        Draft { proposal: on(into), deps: self.both(from, into), body: vec![] }
     }
 
     /// A promote of `from` into `into`: the merge's write, carrying the change that brings the merged item to exactly
@@ -178,21 +178,21 @@ impl History {
         let mut item = self.item_at(&deps, signer, into);
         let since = item.version();
         item.put_record(&self.record(from, signer));
-        Draft { branch: on(into), deps, body: item.export(&since) }
+        Draft { proposal: on(into), deps, body: item.export(&since) }
     }
 
     /// Put the record of `version` back on `line`: a restore, or, to the version it built on, the revert of the
-    /// line's latest commit.
-    pub fn restore(&self, line: Line, version: &[OpId], signer: SignerId) -> Draft {
+    /// line's latest edit.
+    pub fn restore(&self, line: Line, version: &[EditId], signer: SignerId) -> Draft {
         let record = self.item_at(version, signer, line).record();
         self.put(line, signer, &record)
     }
 
-    /// Undo the commit `op` on `line`, keeping every change made since (`undo`). `None` if the history doesn't hold
+    /// Undo the edit `edit` on `line`, keeping every change made since (`undo`). `None` if the history doesn't hold
     /// it. A merge carries no change, so undoing it changes nothing: restoring the version before it does.
-    pub fn undo(&self, line: Line, op: OpId, signer: SignerId) -> Option<Draft> {
-        let c = self.get(op)?;
-        let after = self.item_at(&[op], signer, line).record();
+    pub fn undo(&self, line: Line, edit: EditId, signer: SignerId) -> Option<Draft> {
+        let c = self.get(edit)?;
+        let after = self.item_at(&[edit], signer, line).record();
         let before = self.item_at(&c.write.deps, signer, line).record();
         Some(self.put(line, signer, &undo(&self.record(line, signer), &after, &before)))
     }
@@ -202,11 +202,11 @@ impl History {
         let mut item = self.item(line, signer).unwrap_or_else(|| Item::new_on(signer, line));
         let since = item.version();
         item.put_record(record);
-        Draft { branch: on(line), deps: self.heads(line), body: item.export(&since) }
+        Draft { proposal: on(line), deps: self.heads(line), body: item.export(&since) }
     }
 
     /// The heads of `into`, then those of `from` it doesn't share.
-    fn both(&self, from: Line, into: Line) -> Vec<OpId> {
+    fn both(&self, from: Line, into: Line) -> Vec<EditId> {
         let mut deps = self.heads(into);
         for h in self.heads(from) {
             if !deps.contains(&h) {
@@ -217,16 +217,16 @@ impl History {
     }
 }
 
-/// An item, as `signer` edits it on `line`, holding the updates of `commits` it can open, each checked against the
+/// An item, as `signer` edits it on `line`, holding the updates of `changes` it can open, each checked against the
 /// Loro peer of its author on its own line. `None` if none imports.
-fn build(commits: &[&Commit], signer: SignerId, line: Line) -> Option<Item> {
+fn build(changes: &[&Change], signer: SignerId, line: Line) -> Option<Item> {
     let mut item = Item::new_on(signer, line);
     let mut shown = false;
-    for c in commits {
+    for c in changes {
         let w = &c.write;
         match &c.body {
-            // a branch's name, and a merge, change nothing
-            Some(update) if w.branch != Branch::New && !update.is_empty() => {
+            // a proposal's name, and a merge, change nothing
+            Some(update) if w.proposal != Proposal::New && !update.is_empty() => {
                 shown |= item.import_on(update, w.author, w.line()).is_ok();
             }
             _ => {}
@@ -315,7 +315,7 @@ fn undo_list(now: &[Value], after: &[Value], before: &[Value]) -> Vec<Value> {
     out.into_iter().map(|(_, v)| v).collect()
 }
 
-/// One entry's history kept locally, with no keys, caps or signatures: what branches do to an item, for the tests and
+/// One entry's history kept locally, with no keys, caps or signatures: what proposals do to an item, for the tests and
 /// the property checks of T10. Writes are numbered from 1; the first holds the item the repo starts from.
 #[derive(Clone)]
 pub struct Repo {
@@ -327,7 +327,7 @@ impl Repo {
     pub fn new(item: &Item, author: SignerId) -> Repo {
         let mut repo = Repo { history: History::default() };
         let body = item.export(&Default::default());
-        repo.make(author, Draft { branch: Branch::Main, deps: vec![], body }).expect("the first write");
+        repo.make(author, Draft { proposal: Proposal::Main, deps: vec![], body }).expect("the first write");
         repo
     }
 
@@ -341,53 +341,54 @@ impl Repo {
     }
 
     /// The writes on `line` and what they build on, oldest first.
-    pub fn log(&self, line: Line) -> Vec<OpId> {
-        self.history.history(line).iter().map(|c| c.write.op).collect()
+    pub fn log(&self, line: Line) -> Vec<EditId> {
+        self.history.history(line).iter().map(|c| c.write.edit).collect()
     }
 
-    pub fn heads(&self, line: Line) -> Vec<OpId> {
+    pub fn heads(&self, line: Line) -> Vec<EditId> {
         self.history.heads(line)
     }
 
     /// `author` edits the item on `line`.
-    pub fn edit(&mut self, author: SignerId, line: Line, change: impl FnOnce(&mut Item)) -> OpId {
+    pub fn edit(&mut self, author: SignerId, line: Line, change: impl FnOnce(&mut Item)) -> EditId {
         let d = self.history.edit(line, author, change);
         self.make(author, d).expect("an edit on a line the repo holds")
     }
 
-    /// `author` starts a branch named `name` from `version`; its id names it.
-    pub fn branch(&mut self, author: SignerId, version: &[OpId], name: &str) -> Result<OpId, Refusal> {
-        let d = self.history.branch(version, name);
+    /// `author` starts a proposal named `name` from `version`; its id names it.
+    pub fn propose(&mut self, author: SignerId, version: &[EditId], name: &str) -> Result<EditId, Refusal> {
+        let d = self.history.propose(version, name);
         self.make(author, d)
     }
 
-    pub fn merge(&mut self, author: SignerId, from: Line, into: Line) -> OpId {
+    pub fn merge(&mut self, author: SignerId, from: Line, into: Line) -> EditId {
         let d = self.history.merge(from, into);
         self.make(author, d).expect("a merge of lines the repo holds")
     }
 
-    pub fn promote(&mut self, author: SignerId, from: Line, into: Line) -> OpId {
+    pub fn promote(&mut self, author: SignerId, from: Line, into: Line) -> EditId {
         let d = self.history.promote(from, into, author);
         self.make(author, d).expect("a promote of lines the repo holds")
     }
 
-    pub fn restore(&mut self, author: SignerId, line: Line, version: &[OpId]) -> OpId {
+    pub fn restore(&mut self, author: SignerId, line: Line, version: &[EditId]) -> EditId {
         let d = self.history.restore(line, version, author);
         self.make(author, d).expect("a restore on a line the repo holds")
     }
 
-    pub fn undo(&mut self, author: SignerId, line: Line, op: OpId) -> Option<OpId> {
-        let d = self.history.undo(line, op, author)?;
+    pub fn undo(&mut self, author: SignerId, line: Line, edit: EditId) -> Option<EditId> {
+        let d = self.history.undo(line, edit, author)?;
         Some(self.make(author, d).expect("an undo on a line the repo holds"))
     }
 
     /// Accept `d` as the next write, by `author`.
-    pub fn make(&mut self, author: SignerId, d: Draft) -> Result<OpId, Refusal> {
-        let op = OpId::from_u64(self.history.commits.len() as u64 + 1);
+    pub fn make(&mut self, author: SignerId, d: Draft) -> Result<EditId, Refusal> {
+        let edit = EditId::from_u64(self.history.changes.len() as u64 + 1);
         let (space, entry, actor) = (SpaceId::from_u64(0), EntryId::from_u64(0), VaultId::from_u64(0));
-        let write = Write { op, author, actor, space, entry, epoch: 0, deps: d.deps, branch: d.branch, via: vec![] };
-        self.history.push(Commit { write, body: Some(d.body) })?;
-        Ok(op)
+        let write =
+            Write { edit, author, actor, space, entry, epoch: 0, deps: d.deps, proposal: d.proposal, via: vec![] };
+        self.history.push(Change { write, body: Some(d.body) })?;
+        Ok(edit)
     }
 }
 
@@ -429,17 +430,17 @@ mod tests {
     }
 
     #[test]
-    fn a_write_on_a_branch_builds_on_it() {
+    fn a_write_on_a_proposal_builds_on_it() {
         let item = Item::document("Welcome", SignerId::from_u64(2));
         let mut repo = Repo::new(&item, SignerId::from_u64(2));
         let first = repo.heads(MAIN);
-        assert_eq!(first, [OpId::from_u64(1)]);
-        let draft = repo.branch(SignerId::from_u64(2), &first, "draft").unwrap();
-        // not on main's head alone, not on a write that started no branch, not on one it doesn't hold
-        let bad = |deps: Vec<OpId>, b: OpId| Draft { branch: Branch::On(b), deps, body: vec![] };
-        assert_eq!(repo.make(SignerId::from_u64(2), bad(first.clone(), draft)), Err(Refusal::NotOnBranch));
-        assert_eq!(repo.make(SignerId::from_u64(2), bad(first.clone(), first[0])), Err(Refusal::NotOnBranch));
-        assert_eq!(repo.make(SignerId::from_u64(2), bad(vec![OpId::from_u64(9)], draft)), Err(Refusal::UnknownDep));
+        assert_eq!(first, [EditId::from_u64(1)]);
+        let draft = repo.propose(SignerId::from_u64(2), &first, "draft").unwrap();
+        // not on main's head alone, not on a write that started no proposal, not on one it doesn't hold
+        let bad = |deps: Vec<EditId>, b: EditId| Draft { proposal: Proposal::On(b), deps, body: vec![] };
+        assert_eq!(repo.make(SignerId::from_u64(2), bad(first.clone(), draft)), Err(Refusal::NotOnProposal));
+        assert_eq!(repo.make(SignerId::from_u64(2), bad(first.clone(), first[0])), Err(Refusal::NotOnProposal));
+        assert_eq!(repo.make(SignerId::from_u64(2), bad(vec![EditId::from_u64(9)], draft)), Err(Refusal::UnknownDep));
         assert!(repo.make(SignerId::from_u64(2), bad(vec![draft], draft)).is_ok());
         assert_eq!(repo.history().name(draft).as_deref(), Some("draft"));
         assert_eq!(repo.history().lines(), [MAIN, Some(draft)]);

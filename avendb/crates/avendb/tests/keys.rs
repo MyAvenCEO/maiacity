@@ -9,7 +9,7 @@ use common::*;
 use avendb::id::GrantId;
 use avendb::keys::KeyScope;
 use avendb::lab::Tamper;
-use avendb::policy::{view, Action, Grantee, Op, Principal, Refusal, Role, Scope};
+use avendb::policy::{view, Action, Edit, Grantee, Principal, Refusal, Role, Scope};
 
 #[test]
 fn entry_reader_cannot_open_other_entries() {
@@ -93,7 +93,7 @@ fn a_device_writes_under_the_newest_key_it_knows() {
     // once it has seen it, it writes under the new key, which Carol can't open
     let after = w.lab.edit(w.phone_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(15);
-    let epoch = |id| w.lab.state(w.mac_a).all_writes().iter().find(|x| x.op == id).map(|x| x.epoch);
+    let epoch = |id| w.lab.state(w.mac_a).all_writes().iter().find(|x| x.edit == id).map(|x| x.epoch);
     assert_eq!((epoch(alongside), epoch(after)), (Some(before), Some(before + 1)));
     assert!(!w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_b, key));
     assert!(!contains(&w.lab.store(w.mac_c), AFTER_TEXT));
@@ -102,15 +102,15 @@ fn a_device_writes_under_the_newest_key_it_knows() {
     assert_eq!(text(&w.lab, w.mac_b, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
 }
 
-/// Each device opens the current key of a family exactly when, by every op the Lab holds, it may: it reads the family
+/// Each device opens the current key of a family exactly when, by every edit the Lab holds, it may: it reads the family
 /// or the family is public (T6, and every device that may read gets the key).
 fn keys_follow_caps(w: &World, step: &str) {
     let devices = [w.mac_a, w.phone_a, w.mac_b, w.mac_c, w.mac_d, w.server, w.stranger];
-    let mut all: Vec<Op> = vec![];
+    let mut all: Vec<Edit> = vec![];
     for d in devices {
-        for op in w.lab.log(d).ops() {
-            if !all.contains(op) {
-                all.push(op.clone());
+        for edit in w.lab.log(d).edits() {
+            if !all.contains(edit) {
+                all.push(edit.clone());
             }
         }
     }
@@ -202,7 +202,7 @@ fn a_broken_curve_writes_nothing_that_counts() {
     assert_eq!(w.lab.tamper(mac_b, broken(add)), Err(Refusal::BadSignature));
     // a write as Alice's Mac passes while Bob's Mac trusts the curves
     let forged = w.lab.tamper(mac_b, broken(write(h.space, h.welcome, h.coop, 0))).unwrap();
-    let counts = |w: &World, d| w.lab.state(d).all_writes().iter().any(|x| x.op == forged);
+    let counts = |w: &World, d| w.lab.state(d).all_writes().iter().any(|x| x.edit == forged);
     assert!(counts(&w, mac_b));
     // the forger can't vouch for it
     let vouch = Action::Checkpoint { space: h.space, entry: h.welcome, covers: vec![forged] };
@@ -210,7 +210,7 @@ fn a_broken_curve_writes_nothing_that_counts() {
     // once no device trusts the curves, the forged write doesn't count, and Alice's own edits, vouched for when her
     // Mac synced, still do
     w.lab.set_pq_only(true);
-    assert!(!counts(&w, mac_b) && w.lab.log(mac_b).view().all_writes().iter().any(|x| x.op == forged));
+    assert!(!counts(&w, mac_b) && w.lab.log(mac_b).view().all_writes().iter().any(|x| x.edit == forged));
     assert_eq!(text(&w.lab, mac_b, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT));
     // an edit made now is vouched for at once, and reaches Bob's Mac
     w.lab.edit(mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();

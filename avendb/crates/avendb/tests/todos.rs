@@ -5,7 +5,7 @@ mod common;
 
 use common::*;
 use avendb::id::{EntryId, SpaceId, VaultId};
-use avendb::policy::{Action, Log, Op, Refusal, Role, Scope};
+use avendb::policy::{Action, Edit, Log, Refusal, Role, Scope};
 use avendb::sync::{item_writes, receive, respond};
 
 #[test]
@@ -78,8 +78,8 @@ fn cascade_ends_regrants() {
     assert!(v.holds(t.c.carol, door, Role::Write) && v.may_receive(MAC_C, todos, DOOR));
 }
 
-fn writes_on(ops: &[Op]) -> Vec<(SpaceId, EntryId)> {
-    ops.iter()
+fn writes_on(edits: &[Edit]) -> Vec<(SpaceId, EntryId)> {
+    edits.iter()
         .filter_map(|o| match o.action {
             Action::Write { space, entry, .. } => Some((space, entry)),
             _ => None,
@@ -90,43 +90,43 @@ fn writes_on(ops: &[Op]) -> Vec<(SpaceId, EntryId)> {
 #[test]
 fn sync_sends_only_capped_items() {
     let t = social_todo();
-    let ops = t.c.log.ops();
+    let edits = t.c.log.edits();
     // Alice's Mac answers Carol's Mac with the door todo's writes and nothing of the other two
-    let to_carol = writes_on(&respond(ops, MAC_C));
+    let to_carol = writes_on(&respond(edits, MAC_C));
     assert!(!to_carol.is_empty() && to_carol.iter().all(|&w| w == (t.todos, DOOR)));
     // and the grants on the door todo come with it, so Carol's Mac can check them
-    let on_door = |o: &Op| matches!(&o.action, Action::Grant(g, _) if g.scope == Scope::Entry(t.todos, DOOR));
-    assert!(respond(ops, MAC_C).iter().any(on_door));
+    let on_door = |o: &Edit| matches!(&o.action, Action::Grant(g, _) if g.scope == Scope::Entry(t.todos, DOOR));
+    assert!(respond(edits, MAC_C).iter().any(on_door));
     // a device without a cap gets no item at all
-    assert!(writes_on(&respond(ops, STRANGER)).is_empty());
+    assert!(writes_on(&respond(edits, STRANGER)).is_empty());
     // after the coop lost the todo, Dave's Mac gets nothing of it either
     let mut gone = roles_changed();
     let revoke = Action::Revoke { grant: gone.coop_owner, actor: gone.c.alice, keep: vec![], via: vec![] };
     gone.c.log.append(PASSKEY_A, &[], revoke).unwrap();
-    assert!(writes_on(&respond(gone.c.log.ops(), MAC_D)).is_empty());
+    assert!(writes_on(&respond(gone.c.log.edits(), MAC_D)).is_empty());
 }
 
 #[test]
 fn item_syncs_peer_to_peer_without_server() {
     let t = social_todo();
-    let ops = t.c.log.ops();
-    // each Mac starts with its own vault's ops and what Alice's Mac sent it
-    let own = |v: VaultId| -> Vec<Op> {
-        let vault_of = |o: &Op| match &o.action {
+    let edits = t.c.log.edits();
+    // each Mac starts with its own vault's edits and what Alice's Mac sent it
+    let own = |v: VaultId| -> Vec<Edit> {
+        let vault_of = |o: &Edit| match &o.action {
             Action::AddDevice { vault, .. } => Some(*vault),
             Action::Genesis { .. } => Some(VaultId::from(o.id())),
             _ => None,
         };
-        ops.iter().filter(|o| vault_of(o) == Some(v)).cloned().collect()
+        edits.iter().filter(|o| vault_of(o) == Some(v)).cloned().collect()
     };
-    let mut bob_mac = Log::from_ops(receive(&own(t.c.bob), &respond(ops, MAC_B)));
-    let carol_mac = Log::from_ops(receive(&own(t.c.carol), &respond(ops, MAC_C)));
-    assert_eq!(item_writes(carol_mac.ops(), t.todos, DOOR).len(), 1);
+    let mut bob_mac = Log::from_edits(receive(&own(t.c.bob), &respond(edits, MAC_B)));
+    let carol_mac = Log::from_edits(receive(&own(t.c.carol), &respond(edits, MAC_C)));
+    assert_eq!(item_writes(carol_mac.edits(), t.todos, DOOR).len(), 1);
     // Alice and the server go offline; Bob edits the door todo on his Mac
     bob_mac.append(MAC_B, &[], write(t.todos, DOOR, t.c.bob, 0)).unwrap();
     // Bob's Mac and Carol's Mac answer each other once, directly
-    let bob_after = receive(bob_mac.ops(), &respond(carol_mac.ops(), MAC_B));
-    let carol_after = receive(carol_mac.ops(), &respond(bob_mac.ops(), MAC_C));
+    let bob_after = receive(bob_mac.edits(), &respond(carol_mac.edits(), MAC_B));
+    let carol_after = receive(carol_mac.edits(), &respond(bob_mac.edits(), MAC_C));
     // both hold Alice's and Bob's edits of the door todo, and Carol's Mac accepts Bob's
     assert_eq!(item_writes(&carol_after, t.todos, DOOR).len(), 2);
     assert_eq!(item_writes(&carol_after, t.todos, DOOR), item_writes(&bob_after, t.todos, DOOR));

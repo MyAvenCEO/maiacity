@@ -1,36 +1,37 @@
-//! The canonical encoding of an op: the bytes its id hashes and its signatures sign (through the id). Every value has
-//! exactly one encoding and none is a prefix of another of the same type, so two different ops never share bytes:
+//! The canonical encoding of an edit: the bytes its id hashes and its signatures sign (through the id). Every value has
+//! exactly one encoding and none is a prefix of another of the same type, so two different edits never share bytes:
 //! integers are big-endian and fixed-size, sequences carry their length, and every enum starts with a tag. The first
 //! byte is the format's version, so a later format can live beside this one.
 
 use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
-use crate::policy::{Action, Branch, Grant, Grantee, Kind, Op, Principal, Role, Scope};
+use crate::policy::{Action, Edit, Grant, Grantee, Kind, Principal, Proposal, Role, Scope};
 
-/// The version byte every op starts with: 4 since the three kinds of vault, whose acts for a vault name the owners they
-/// go through (3 since P5, whose writes name the line of history they extend, 2 since P4b, whose ids are SHA-3 hashes
-/// and whose signers sign twice).
+/// The version byte every edit starts with: 4 since the three kinds of vault, whose acts for a vault name the owners
+/// they go through (3 since P5, whose writes name the line of history they extend, 2 since P4b, whose ids are SHA-3
+/// hashes and whose signers sign twice).
 pub const VERSION: u8 = 4;
 
-pub(crate) fn op_id(op: &Op) -> [u8; 32] {
-    crate::hash::hash("op id", &bytes(op))
+/// An edit's id: the hash of its encoding, for a purpose that keeps an edit's old name, op (`hash::PREFIX`).
+pub(crate) fn edit_id(edit: &Edit) -> [u8; 32] {
+    crate::hash::hash("op id", &bytes(edit))
 }
 
-/// An op's bytes: the version, then its encoding.
-pub fn bytes(op: &Op) -> Vec<u8> {
+/// An edit's bytes: the version, then its encoding.
+pub fn bytes(edit: &Edit) -> Vec<u8> {
     let mut out = Vec::with_capacity(128);
     out.push(VERSION);
-    op.encode(&mut out);
+    edit.encode(&mut out);
     out
 }
 
-/// What a write's ciphertext is bound to: the op's bytes with an empty body, so the edit can't be moved to another
-/// op, entry or epoch.
-pub fn write_context(op: &Op) -> Vec<u8> {
-    let mut op = op.clone();
-    if let Action::Write { body, .. } = &mut op.action {
+/// What a write's ciphertext is bound to: the edit's bytes with an empty body, so the edit can't be moved to another
+/// edit, entry or epoch.
+pub fn write_context(edit: &Edit) -> Vec<u8> {
+    let mut edit = edit.clone();
+    if let Action::Write { body, .. } = &mut edit.action {
         body.clear();
     }
-    bytes(&op)
+    bytes(&edit)
 }
 
 /// What a box is bound to: which key it holds, and for whom. A box can't be passed off as another key's, nor moved to
@@ -111,7 +112,16 @@ macro_rules! ids {
     )*};
 }
 
-ids!(crate::id::SignerId, crate::id::VaultId, crate::id::SpaceId, crate::id::EntryId, crate::id::GrantId, crate::id::OpId, crate::id::BlobId, KeyId);
+ids!(
+    crate::id::SignerId,
+    crate::id::VaultId,
+    crate::id::SpaceId,
+    crate::id::EntryId,
+    crate::id::GrantId,
+    crate::id::EditId,
+    crate::id::BlobId,
+    KeyId
+);
 
 impl Encode for PublicKey {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -238,12 +248,12 @@ impl Encode for Grant {
     }
 }
 
-impl Encode for Branch {
+impl Encode for Proposal {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            Branch::Main => out.push(0),
-            Branch::New => out.push(1),
-            Branch::On(b) => {
+            Proposal::Main => out.push(0),
+            Proposal::New => out.push(1),
+            Proposal::On(b) => {
                 out.push(2);
                 b.encode(out);
             }
@@ -310,14 +320,14 @@ impl Encode for Action {
                 keep.encode(out);
                 via.encode(out);
             }
-            Action::Write { space, entry, actor, epoch, deps, branch, via, body } => {
+            Action::Write { space, entry, actor, epoch, deps, proposal, via, body } => {
                 out.push(9);
                 space.encode(out);
                 entry.encode(out);
                 actor.encode(out);
                 epoch.encode(out);
                 deps.encode(out);
-                branch.encode(out);
+                proposal.encode(out);
                 via.encode(out);
                 body.encode(out);
             }
@@ -353,7 +363,7 @@ impl Encode for Action {
     }
 }
 
-impl Encode for Op {
+impl Encode for Edit {
     fn encode(&self, out: &mut Vec<u8>) {
         self.parents.encode(out);
         self.depth.encode(out);
@@ -368,10 +378,10 @@ mod tests {
     use super::*;
     use crate::id::{SignerId, VaultId};
 
-    fn genesis(nonce: u64) -> Op {
+    fn genesis(nonce: u64) -> Edit {
         let owners = vec![Principal::Signer(SignerId::from_u64(1))];
         let action = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
-        Op { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
+        Edit { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
     }
 
     #[test]
@@ -385,7 +395,7 @@ mod tests {
         o.cosigners = vec![SignerId::from_u64(3)];
         others.push(o);
         let mut o = base.clone();
-        o.parents = vec![crate::id::OpId::from_u64(9)];
+        o.parents = vec![crate::id::EditId::from_u64(9)];
         others.push(o);
         let mut o = base.clone();
         o.depth = 1;
@@ -399,22 +409,22 @@ mod tests {
         }
         others.push(o);
         for o in &others {
-            assert_ne!(op_id(o), op_id(&base), "{o:?}");
+            assert_ne!(edit_id(o), edit_id(&base), "{o:?}");
         }
-        assert_eq!(op_id(&base), op_id(&genesis(0)));
+        assert_eq!(edit_id(&base), edit_id(&genesis(0)));
     }
 
     #[test]
     fn a_writes_line_changes_its_id() {
-        let write = |branch| {
+        let write = |proposal| {
             let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
             let actor = VaultId::from_u64(1);
             let (deps, via, body) = (vec![], vec![], vec![]);
-            let action = Action::Write { space, entry, actor, epoch: 0, deps, branch, via, body };
-            op_id(&Op { action, ..genesis(0) })
+            let action = Action::Write { space, entry, actor, epoch: 0, deps, proposal, via, body };
+            edit_id(&Edit { action, ..genesis(0) })
         };
-        let (a, b) = (crate::id::OpId::from_u64(1), crate::id::OpId::from_u64(2));
-        let ids = [write(Branch::Main), write(Branch::New), write(Branch::On(a)), write(Branch::On(b))];
+        let (a, b) = (crate::id::EditId::from_u64(1), crate::id::EditId::from_u64(2));
+        let ids = [write(Proposal::Main), write(Proposal::New), write(Proposal::On(a)), write(Proposal::On(b))];
         assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
     }
 
@@ -423,9 +433,9 @@ mod tests {
         let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
         let actor = VaultId::from_u64(1);
         let write = |via: Vec<VaultId>| {
-            let (deps, branch, body) = (vec![], Branch::Main, vec![]);
-            let action = Action::Write { space, entry, actor, epoch: 0, deps, branch, via, body };
-            op_id(&Op { action, ..genesis(0) })
+            let (deps, proposal, body) = (vec![], Proposal::Main, vec![]);
+            let action = Action::Write { space, entry, actor, epoch: 0, deps, proposal, via, body };
+            edit_id(&Edit { action, ..genesis(0) })
         };
         let (b, g) = (VaultId::from_u64(2), VaultId::from_u64(3));
         let ids = [write(vec![]), write(vec![b]), write(vec![g]), write(vec![g, b]), write(vec![b, g])];
@@ -435,8 +445,8 @@ mod tests {
     #[test]
     fn lengths_keep_neighbouring_fields_apart() {
         // the same bytes split differently between the cosigners and the action must not collide
-        let a = Op { cosigners: vec![SignerId::from_u64(5)], ..genesis(0) };
-        let b = Op { cosigners: vec![], ..genesis(0) };
+        let a = Edit { cosigners: vec![SignerId::from_u64(5)], ..genesis(0) };
+        let b = Edit { cosigners: vec![], ..genesis(0) };
         let (mut ea, mut eb) = (vec![], vec![]);
         a.encode(&mut ea);
         b.encode(&mut eb);
