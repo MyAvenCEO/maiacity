@@ -1,8 +1,10 @@
 // @ts-nocheck — plain JS game state, kept loose on purpose
 // Sandbox 7 — avens trading. The rules of the world, without any drawing: ten avens, each with 1,000 HEARTS,
 // a territory that grows 1 to 3 of the 5 goods and a ledger of its own prices. Every day each aven needs 3 WATER and
-// 2 of each food (FRUITS, VEGETABLES, LEGUMES, CHICKEN). Trades happen where two avens meet, at the seller's price.
-// No euros, no outside market: HEARTS only move between avens.
+// 2 of each food (FRUITS, VEGETABLES, LEGUMES, CHICKEN). There is no market place: every few hours (clearHours) each
+// good's asks and bids are matched, the best price against the best limit, and a deal is struck at the seller's price
+// or a haggled one. Then the buyer walks to the seller to fetch what it bought and carries it home (Samuel: the walking
+// comes from an actual trade). No euros, no outside market: HEARTS only move between avens.
 
 /** @type {Record<string, string>} */
 // a validated categorical palette (distinct for colour-blind eyes too), in a fixed order
@@ -14,9 +16,8 @@ export { NEED, ROT, GOODS, GOOD_LABEL };
 
 export const DAY_S = 86400; // in-game seconds in a day
 export const WORLD = { w: 1200, h: 820 };
-export const MEET_R = 26; // two avens this close can trade
-/** the market square in the middle of the valley: everyone standing in it can trade with everyone else there */
-export const MARKET = { x: WORLD.w / 2, y: WORLD.h / 2, r: 72 };
+/** where an aven stands at home: the middle of its land */
+const homeSpot = (a) => ({ x: a.territory.x, y: a.territory.y - 6 });
 
 const NAMES = ['Ama', 'Bo', 'Cyra', 'Dov', 'Eli', 'Fen', 'Gia', 'Hal', 'Ivo', 'Juno'];
 const COLOURS = ['#e05a6d', '#f0a03c', '#4fb37a', '#4f8fd9', '#9b6bd6', '#2bb3b1', '#b8763a', '#d65db1', '#7f8c3a', '#5a6bd6'];
@@ -98,9 +99,9 @@ export function createWorld(seed = Date.now() % 1e9) {
 			territory: { x: home.x, y: home.y, r: 100 },
 			grows,
 			produce,
-			x: home.x + (rand() - 0.5) * 60,
-			y: home.y + (rand() - 0.5) * 60,
-			target: null, // { x, y } or { aven }
+			x: home.x,
+			y: home.y - 6,
+			fetch: [], // the sellers it still has to walk to for what it bought: { from: aven id, goods: { good: qty } }
 			hearts: RULES.startHearts,
 			minted: 0, // HEARTS minted so far
 			decayed: 0, // HEARTS lost to decay so far
@@ -111,20 +112,18 @@ export function createWorld(seed = Date.now() % 1e9) {
 			flex: 0.1, // how far it gives in when haggling, as a share of its own price
 			reserveDays: RULES.reserveDays, // how many days of each need it wants in stock
 			harvest: { ...produce }, // what its land actually gave last night
-			carry: {}, // what it bought and carries until it is back on its own land
-			plan: [], // today's route, as its brain chose it: aven ids to walk to in order, or 'home'
+			carry: {}, // what it fetched and carries until it is back on its own land
 			health: 100,
 			body: { water: 100, food: 100 },
 			alive: true,
 			diedOn: null,
 			today: blankDay(),
 			ledger: [], // newest last: { day, kind: 'buy'|'sell'|'eat'|'price'|'grow'|'death', ... }
-			brain: { ready: false, pending: false, last: null, error: null, t0: -Infinity, realAt: -Infinity }, // ready once Liquid first decided
-			metAt: {} // aven id -> in-game time of the last meeting, so they don't haggle on every frame
+			brain: { ready: false, pending: false, last: null, error: null, t0: -Infinity, realAt: -Infinity } // ready once Liquid first decided
 		};
 	});
 	const market = Object.fromEntries(GOODS.map((g) => [g, { price: null, supply: 0, demand: 0, open: null, history: [], series: [], sells: [], wants: [] }]));
-	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally() };
+	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
 	updateMarket(world);
 	record(world, 0, {});
 	return world;
@@ -209,89 +208,76 @@ export function haggle(seller, buyer, g) {
 	return { price: cents((Math.max(floor, bid) + Math.min(ceiling, ask)) / 2), ask, bid, haggled: true };
 }
 
-/** two avens meet: each sells what the other wants, at the seller's price or a haggled one */
-export function trade(world, a, b) {
-	let any = false;
-	for (const [seller, buyer] of [
-		[a, b],
-		[b, a]
-	]) {
-		for (const g of seller.grows) {
-			if (buyer.bid[g] == null || seller.ask[g] == null || spare(seller, g) <= 0 || want(buyer, g) <= 0) continue;
-			const deal = haggle(seller, buyer, g);
-			if (deal.price == null) {
-				log(world, seller, { kind: 'nodeal', good: g, with: buyer.name, ask: deal.ask, bid: deal.bid });
-				log(world, buyer, { kind: 'nodeal', good: g, with: seller.name, ask: deal.ask, bid: deal.bid });
+/** one deal between a seller and a buyer for a good, at the seller's price or a haggled one; returns the units sold */
+function deal(world, seller, buyer, g) {
+	const d = haggle(seller, buyer, g);
+	if (d.price == null) return 0;
+	const price = d.price;
+	const qty = Math.min(spare(seller, g), want(buyer, g), Math.floor(buyer.hearts / price));
+	if (qty <= 0) return 0;
+	const total = Math.round(qty * price * 100) / 100;
+	// it is the buyer's from now on; the buyer walks over to fetch it (see step)
+	seller.stock[g] -= qty;
+	buyer.stock[g] += qty;
+	const trip = buyer.fetch.find((f) => f.from === seller.id);
+	if (trip) trip.goods[g] = (trip.goods[g] ?? 0) + qty;
+	else buyer.fetch.push({ from: seller.id, goods: { [g]: qty } });
+	seller.hearts += total;
+	buyer.hearts -= total;
+	seller.today.sold[g] += qty;
+	buyer.today.bought[g] += qty;
+	world.lastPrice[g] = price;
+	const m = world.market[g];
+	m.dayQty = (m.dayQty ?? 0) + qty;
+	m.dayValue = (m.dayValue ?? 0) + total;
+	const talk = d.haggled ? { haggled: { ask: d.ask, bid: d.bid } } : {};
+	log(world, seller, { kind: 'sell', good: g, qty, price, with: buyer.name, hearts: total, ...talk });
+	log(world, buyer, { kind: 'buy', good: g, qty, price, with: seller.name, hearts: -total, ...talk });
+	world.tally.units[g] += qty;
+	world.tally.deals += 1;
+	world.trades.push({ day: world.day, t: world.t, seller: seller.id, buyer: buyer.id, good: g, qty, price, haggled: d.haggled });
+	if (world.outbox) world.outbox.push({ kind: 'trade', day: world.day, t: world.t, seller: seller.name, buyer: buyer.name, good: g, qty, price, haggled: d.haggled });
+	if (world.trades.length > 600) world.trades.splice(0, world.trades.length - 600);
+	world.events.push({ kind: 'trade', x: seller.territory.x, y: seller.territory.y, good: g, t: world.t });
+	return qty;
+}
+
+/**
+ * The market clears: for each good, the cheapest seller meets the buyer who pays most, again and again, while a deal
+ * can be struck (at the seller's price, or haggled when the two don't quite meet). A pair that can't agree even after
+ * haggling ends the round for that good: nobody further down either book would agree either.
+ */
+export function clearMarket(world) {
+	const live = world.avens.filter((a) => a.alive && a.brain.ready);
+	for (const g of GOODS) {
+		const sellers = live.filter((a) => a.ask[g] != null && spare(a, g) > 0).sort((x, y) => x.ask[g] - y.ask[g]);
+		const buyers = live.filter((a) => a.bid[g] != null && want(a, g) > 0 && a.hearts >= 0.01).sort((x, y) => y.bid[g] - x.bid[g]);
+		let i = 0,
+			j = 0;
+		while (i < sellers.length && j < buyers.length) {
+			const seller = sellers[i],
+				buyer = buyers[j];
+			if (seller === buyer) {
+				j++;
 				continue;
 			}
-			const price = deal.price;
-			const qty = Math.min(spare(seller, g), want(buyer, g), Math.floor(buyer.hearts / price));
-			if (qty <= 0) continue;
-			const total = Math.round(qty * price * 100) / 100;
-			seller.stock[g] -= qty;
-			buyer.stock[g] += qty;
-			buyer.carry[g] = (buyer.carry[g] ?? 0) + qty; // it carries this home
-			seller.hearts += total;
-			buyer.hearts -= total;
-			seller.today.sold[g] += qty;
-			buyer.today.bought[g] += qty;
-			world.lastPrice[g] = price;
-			// the day's trades are summed up; at night their average price pulls the market price (see endOfDay)
-			const m = world.market[g];
-			m.dayQty = (m.dayQty ?? 0) + qty;
-			m.dayValue = (m.dayValue ?? 0) + total;
-			const talk = deal.haggled ? { haggled: { ask: deal.ask, bid: deal.bid } } : {};
-			log(world, seller, { kind: 'sell', good: g, qty, price, with: buyer.name, hearts: total, ...talk });
-			log(world, buyer, { kind: 'buy', good: g, qty, price, with: seller.name, hearts: -total, ...talk });
-			world.tally.units[g] += qty;
-			world.tally.deals += 1;
-			world.trades.push({ day: world.day, t: world.t, seller: seller.id, buyer: buyer.id, good: g, qty, price, haggled: deal.haggled });
-			if (world.trades.length > 600) world.trades.splice(0, world.trades.length - 600);
-			world.events.push({ kind: 'trade', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, good: g, t: world.t });
-			any = true;
+			const sold = deal(world, seller, buyer, g);
+			if (!sold) {
+				// no deal at the top of the books: the best price and the best limit are too far apart
+				const d = haggle(seller, buyer, g);
+				if (d.price == null) {
+					log(world, seller, { kind: 'nodeal', good: g, with: buyer.name, ask: d.ask, bid: d.bid });
+					log(world, buyer, { kind: 'nodeal', good: g, with: seller.name, ask: d.ask, bid: d.bid });
+					break;
+				}
+				// it can't pay for even one: the next buyer
+				j++;
+				continue;
+			}
+			if (spare(seller, g) <= 0) i++;
+			if (want(buyer, g) <= 0 || buyer.hearts < 0.01) j++;
 		}
 	}
-	return any;
-}
-
-/** where an aven walks next: to the cheapest grower of the good it lacks most, else round its own territory */
-/** a spot inside the market square, to stand at until `until` */
-function marketSpot(world, until) {
-	const r = MARKET.r * 0.8 * Math.sqrt(world.rand()),
-		ang = world.rand() * Math.PI * 2;
-	return { x: MARKET.x + Math.cos(ang) * r, y: MARKET.y + Math.sin(ang) * r, market: true, until };
-}
-
-export const atMarket = (a) => Math.hypot(a.x - MARKET.x, a.y - MARKET.y) <= MARKET.r;
-
-function pickTarget(world, a) {
-	// first the route its brain planned this morning; a stop that's dead or just met is skipped
-	while (a.plan.length) {
-		const next = a.plan.shift();
-		if (next === 'home') return { x: a.home.x, y: a.home.y, wander: true };
-		if (next === 'market') return marketSpot(world, world.t + RULES.marketHours * 3600);
-		const s = world.avens[next];
-		if (s && s !== a && s.alive && !(a.metAt[s.id] != null && world.t - a.metAt[s.id] < 3 * 3600)) return { aven: s };
-	}
-	let best = null;
-	for (const g of GOODS) {
-		const w = want(a, g);
-		if (w <= 0) continue;
-		const urgency = w / NEED[g];
-		for (const s of world.avens) {
-			if (s === a || !s.alive || !s.grows.includes(g) || spare(s, g) <= 0 || s.ask[g] == null || a.bid[g] == null) continue;
-			if (s.ask[g] * (1 - s.flex) > a.bid[g] * (1 + a.flex)) continue; // too dear even after haggling
-			const recent = a.metAt[s.id] != null && world.t - a.metAt[s.id] < 3 * 3600;
-			if (recent) continue;
-			const d = Math.hypot(s.x - a.x, s.y - a.y);
-			const score = urgency * 1000 - d - (s.ask[g] - a.bid[g]) * 2;
-			if (!best || score > best.score) best = { score, aven: s };
-		}
-	}
-	if (best) return { aven: best.aven };
-	const r = a.territory.r * Math.sqrt(world.rand());
-	const ang = world.rand() * Math.PI * 2;
-	return { x: a.territory.x + Math.cos(ang) * r, y: a.territory.y + Math.sin(ang) * r, wander: true };
 }
 
 /** move the world on by dt in-game seconds (call with small steps); returns true when a new day began */
@@ -300,39 +286,26 @@ export function step(world, dt) {
 	const hourBefore = Math.floor(world.t / 3600);
 	world.t += dt;
 	if (Math.floor(world.t / 3600) > hourBefore) updateMarket(world);
+	if (Math.floor(world.t / (RULES.clearHours * 3600)) > Math.floor((world.t - dt) / (RULES.clearHours * 3600))) clearMarket(world);
+	// the walks: a buyer goes to each seller it bought from, then home with what it fetched
 	for (const a of world.avens) {
-		// an aven acts only once its brain has decided something: until then it stands and thinks
-		if (!a.alive || !a.brain.ready) continue;
-		if (!a.target || (a.target.aven && !a.target.aven.alive)) a.target = pickTarget(world, a);
-		const tx = a.target.aven ? a.target.aven.x : a.target.x;
-		const ty = a.target.aven ? a.target.aven.y : a.target.y;
-		const d = Math.hypot(tx - a.x, ty - a.y);
-		const speed = (RULES.walk / 3600) * (a.target.wander || (a.target.market && atMarket(a)) ? 0.35 : 1) * (0.5 + a.health / 200);
-		const move = speed * dt;
-		// back on its own land, it puts what it carries into its store
-		if (Math.hypot(a.x - a.territory.x, a.y - a.territory.y) < a.territory.r) a.carry = {};
-		if (d <= Math.max(move, a.target.aven ? MEET_R * 0.8 : 4)) {
-			// at the market it strolls between the stalls until its time there is up
-			if (a.target.market && world.t < a.target.until) a.target = marketSpot(world, a.target.until);
-			else if (!a.target.aven) a.target = null;
+		if (!a.alive) continue;
+		const to = a.fetch.length ? world.avens[a.fetch[0].from] : null;
+		const spot = to ? { x: to.territory.x + 18, y: to.territory.y - 6 } : homeSpot(a);
+		const d = Math.hypot(spot.x - a.x, spot.y - a.y);
+		const move = (RULES.walk / 3600) * (0.5 + a.health / 200) * dt;
+		if (d <= Math.max(move, 2)) {
+			a.x = spot.x;
+			a.y = spot.y;
+			if (to) {
+				// picked up: it carries the goods home
+				for (const [g, q] of Object.entries(a.fetch.shift().goods)) a.carry[g] = (a.carry[g] ?? 0) + q;
+			} else a.carry = {};
 		} else {
-			a.x += ((tx - a.x) / d) * move;
-			a.y += ((ty - a.y) / d) * move;
+			a.x += ((spot.x - a.x) / d) * move;
+			a.y += ((spot.y - a.y) / d) * move;
 		}
 	}
-	// meetings: any two avens close enough, or both in the market square, haggle at most once every in-game hour
-	const live = world.avens.filter((a) => a.alive && a.brain.ready);
-	for (let i = 0; i < live.length; i++)
-		for (let j = i + 1; j < live.length; j++) {
-			const a = live[i],
-				b = live[j];
-			if (Math.hypot(a.x - b.x, a.y - b.y) > MEET_R && !(atMarket(a) && atMarket(b))) continue;
-			if (a.metAt[b.id] != null && world.t - a.metAt[b.id] < RULES.meetHours * 3600) continue;
-			a.metAt[b.id] = b.metAt[a.id] = world.t;
-			trade(world, a, b);
-			if (a.target?.aven === b) a.target = null;
-			if (b.target?.aven === a) b.target = null;
-		}
 	world.events = world.events.filter((e) => world.t - e.t < 1800);
 	const after = Math.floor(world.t / DAY_S);
 	if (after > before) {
