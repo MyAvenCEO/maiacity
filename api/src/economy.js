@@ -15,7 +15,7 @@
  * stood (its state), so the page can open it again and play on.
  */
 import { db } from "./pg";
-import { PARAMS, SECTIONS, CARD_KINDS, HOOKS, applyCards, checkCard, defaultCards, paramsOf } from "../../game/economy/params.js";
+import { PARAMS, SECTIONS, CARD_KINDS, HOOKS, applyCards, checkCard, defaultCards, fullCards, paramsOf } from "../../game/economy/params.js";
 
 export class EconomyError extends Error {
   constructor(message, status = 400) {
@@ -174,7 +174,8 @@ async function worldSpec(w, cards, q) {
     const now = { ...paramsOf(cards), ...values };
     const was = { ...(s.config?.cards ? paramsOf(s.config.cards) : { ...paramsOf([]), ...(s.config?.params ?? {}) }), ...(s.local ?? {}) };
     for (const p of PARAMS) if (was[p.key] !== now[p.key]) diff.push(`${p.label}: ${was[p.key]} → ${now[p.key]}${p.unit && !/=|at least|yes/.test(p.unit) ? ` ${p.unit}` : ""}`);
-    const byId = (l) => Object.fromEntries((l ?? []).map((c) => [c.id, c]));
+    // each side's whole rulebook: a section card without code of its own runs its rules' default
+    const byId = (l) => Object.fromEntries(fullCards(l).map((c) => [c.id, c]));
     const a = byId(s.config?.cards);
     const b = byId(cards);
     for (const id of Object.keys(b)) {
@@ -351,6 +352,7 @@ async function createWorld(player, body, q = db) {
       cards.push(c.card);
     }
   }
+  cards = fullCards(cards); // the world keeps its whole rulebook, every rule's code written out
   const local = worldValues(body?.values);
   const params = paramsOf(cards);
   const model = ["d1", "qwen"].includes(body?.model) ? body.model : "d1";

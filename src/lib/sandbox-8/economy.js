@@ -16,21 +16,44 @@ export { NEED, ROT, GOODS, GOOD_LABEL };
 
 export const DAY_S = 86400; // in-game seconds in a day
 
-/** the config's card code (sandbox.js, loaded by the page): its hooks change the night's numbers; null runs none */
-export const CODE = { run: /** @type {any} */ (null) };
+/** the config's card code (sandbox.js, loaded by the page): every rule of the valley is one of its hooks (the section
+ * cards' own code, else their default, game/economy/rules-code.js). The rules below are the same, kept natively only as
+ * the fallback: for a hook whose card failed, and while (or where) QuickJS isn't loaded. `seen`: the code it last
+ * showed the valley to; a hook runs only once it has seen it */
+export const CODE = { run: /** @type {any} */ (null), seen: /** @type {any} */ (null) };
 
 /** what card code sees of an aven (a copy: nothing it does reaches the valley) */
-const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, stock: a.stock, body: a.body, minted: a.minted, decayed: a.decayed });
+const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, reserveDays: a.reserveDays, flex: a.flex, minted: a.minted, decayed: a.decayed });
 /** ...and of the valley, once a night */
 function valleyView(world) {
 	const live = world.avens.filter((a) => a.alive);
 	return { day: world.day, values: RULES, avens: world.avens.map(avenView), alive: live.length, hearts: Math.round(live.reduce((n, a) => n + a.hearts, 0) * 100) / 100, prices: Object.fromEntries(GOODS.map((g) => [g, world.market[g].price])), weather: world.weather };
 }
-/** a hook's answer (every card that exports it, in turn), kept within lo..hi; the valley's own value when none runs it */
+/** show the valley to the card code (each night, and when the code is loaded): what every hook reads as `valley` */
+export function seeValley(world) {
+	if (!CODE.run) return;
+	CODE.run.see(valleyView(world));
+	CODE.seen = CODE.run;
+	memo.clear();
+}
+/** a hook's answer (the rule's card, then every other card that exports it), checked by `check` (the valley's own
+ * value when the answer won't do); the valley's own value when no code runs it */
+function ruled(name, args, value, check) {
+	if (!CODE.run || CODE.seen !== CODE.run || !CODE.run.has(name)) return value;
+	const v = CODE.run.run(name, args.aven ? { ...args, aven: avenView(args.aven) } : args, value);
+	return v === value ? value : check(v, value);
+}
+/** a number answer, kept within lo..hi (whole if asked) */
+const num = (lo, hi, whole = false) => (v, own) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, whole ? Math.round(v) : v)) : own);
 function hooked(name, args, value, lo, hi, whole = false) {
-	if (!CODE.run?.has(name)) return value;
-	const v = CODE.run.run(name, { ...args, aven: avenView(args.aven) }, value);
-	return Math.min(hi, Math.max(lo, whole ? Math.round(v) : v));
+	return ruled(name, args, value, num(lo, hi, whole));
+}
+// want and spare are asked often (the market, the books, the page): their answers are kept until the aven's stock or
+// wants change, or the night
+const memo = new Map();
+function remembered(key, f) {
+	if (!memo.has(key)) memo.set(key, f());
+	return memo.get(key);
 }
 
 /** what each hook would be given right now, for "Test the code": the first living aven, the first good it grows */
@@ -39,13 +62,21 @@ export function hookSample(world) {
 	const g = a.grows[0];
 	const aven = avenView(a);
 	const rot = GOODS.find((x) => ROT[x] && a.stock[x]) ?? 'fruits';
+	const buys = GOODS.find((x) => !a.grows.includes(x)) ?? 'water';
 	return {
 		valley: valleyView(world),
 		sample: {
 			mint: { aven, value: RULES.mint },
 			decay: { aven, value: Math.round(a.hearts * (RULES.decay / 100 / 365) * 1e4) / 1e4 },
-			rot: { aven, good: rot, value: Math.round(a.stock[rot] * ROT[rot]) },
-			harvest: { aven, good: g, value: a.produce[g] }
+			rot: { aven, good: rot, dice: [0.5], value: Math.round(a.stock[rot] * ROT[rot]) },
+			harvest: { aven, good: g, capacity: a.produce[g], dice: [0.5, 0.5, 0.5], value: { qty: a.produce[g], kind: 'normal' } },
+			want: { aven, good: buys, value: wantOwn(a, buys) },
+			spare: { aven, good: g, value: spareOwn(a, g) },
+			haggle: { good: g, ask: 12, bid: 10, sellerFlex: 0.1, buyerFlex: 0.1, value: 11 },
+			rebirth: { aven, dead: RULES.rebirthDays, value: RULES.startHearts },
+			need: { aven, good: 'water', value: NEED.water },
+			body: { aven, need: { ...NEED }, short: { water: 1 }, value: { ...a.body } },
+			weather: { weather: { ...world.weather }, day: world.day, dice: [0.5, 0.5, 0.5, 0.5], value: { ...world.weather } }
 		}
 	};
 }
@@ -229,17 +260,17 @@ export function updateMarket(world) {
 
 /** one night's harvest of a good, as its grow recipe says: about its capacity ± the swing, now and then a bad (30–60%)
  * or a rich (130–160%) night, and WATER low in a dry spell */
-function harvest(world, cap, g) {
-	const r = world.rand();
+function harvest(world, cap, g, dice) {
 	// in a dry spell the wells give far less: every WATER field on 40–70%
-	if (g === 'water' && world.weather.dry) return { qty: Math.max(0, Math.round(cap * Math.max(0, RULES.dryWells / 100 - 0.15 + world.rand() * 0.3))), kind: 'dry' };
+	if (g === 'water' && world.weather.dry) return { qty: Math.max(0, Math.round(cap * Math.max(0, RULES.dryWells / 100 - 0.15 + dice[1] * 0.3))), kind: 'dry' };
 	let f, kind;
 	const swing = RULES.swing / 100;
-	if (r < RULES.badChance / 100) (f = 0.3 + world.rand() * 0.3), (kind = 'bad');
-	else if (r > 1 - RULES.richChance / 100) (f = 1.3 + world.rand() * 0.3), (kind = 'rich');
-	else (f = 1 - swing + (world.rand() + world.rand()) * swing), (kind = 'normal');
+	if (dice[0] < RULES.badChance / 100) (f = 0.3 + dice[1] * 0.3), (kind = 'bad');
+	else if (dice[0] > 1 - RULES.richChance / 100) (f = 1.3 + dice[1] * 0.3), (kind = 'rich');
+	else (f = 1 - swing + (dice[1] + dice[2]) * swing), (kind = 'normal');
 	return { qty: Math.max(0, Math.round(cap * f)), kind };
 }
+const dice = (world, n) => Array.from({ length: n }, () => world.rand());
 
 function blankDay() {
 	return { sold: Object.fromEntries(GOODS.map((g) => [g, 0])), bought: Object.fromEntries(GOODS.map((g) => [g, 0])), short: {} };
@@ -247,15 +278,23 @@ function blankDay() {
 
 /** what this aven still wants of a good it doesn't grow, to reach its reserve: its mind's wants (days of water, days of
  * food, mind.js), else the policy's stock target */
-export function want(a, g) {
+function wantOwn(a, g) {
 	if (a.grows.includes(g)) return 0;
 	return Math.max(0, NEED[g] * (a.keep?.[g === 'water' ? 'water' : 'food'] ?? a.reserveDays) - a.stock[g]);
 }
+export function want(a, g) {
+	const own = wantOwn(a, g);
+	return remembered(`w${a.id}${g}${a.stock[g]}|${a.keep?.water}|${a.keep?.food}|${a.alive}|${Math.floor(a.hearts)}`, () => hooked('want', { aven: a, good: g }, own, 0, 1e6, true));
+}
 
 /** what this aven can spare of a good it grows: everything above a few days of its own need */
-export function spare(a, g) {
+function spareOwn(a, g) {
 	if (!a.grows.includes(g)) return 0;
 	return Math.max(0, a.stock[g] - NEED[g] * 2);
+}
+export function spare(a, g) {
+	const own = spareOwn(a, g);
+	return remembered(`s${a.id}${g}${a.stock[g]}|${a.alive}|${Math.floor(a.hearts)}`, () => hooked('spare', { aven: a, good: g }, own, 0, a.stock[g], true));
 }
 
 function log(world, a, entry) {
@@ -270,11 +309,12 @@ function log(world, a, entry) {
 export function haggle(seller, buyer, g) {
 	const ask = seller.ask[g],
 		bid = buyer.bid[g];
-	if (ask <= bid) return { price: ask, haggled: false };
 	const floor = ask * (1 - seller.flex),
 		ceiling = bid * (1 + buyer.flex);
-	if (floor > ceiling) return { price: null, ask, bid, haggled: true };
-	return { price: cents((Math.max(floor, bid) + Math.min(ceiling, ask)) / 2), ask, bid, haggled: true };
+	const own = ask <= bid ? ask : floor > ceiling ? null : cents((Math.max(floor, bid) + Math.min(ceiling, ask)) / 2);
+	// the card's price: null is no deal, a number is the price (to the cent)
+	const price = ruled('haggle', { good: g, ask, bid, sellerFlex: seller.flex, buyerFlex: buyer.flex }, own, (v, o) => (v === null ? null : typeof v === 'number' && Number.isFinite(v) && v > 0 ? cents(v) : o));
+	return ask <= bid && price === ask ? { price, haggled: false } : { price, ask, bid, haggled: true };
 }
 
 /** one deal between a seller and a buyer for a good, at the seller's price or a haggled one; returns the units sold */
@@ -399,16 +439,24 @@ function endOfDay(world) {
 	const recipes = RECIPES();
 	const meals = recipes.filter((r) => r.by === 'aven' && r.id !== 'mint');
 	const mint = recipes.find((r) => r.id === 'mint');
-	CODE.run?.see(valleyView(world));
+	seeValley(world);
+	memo.clear();
 	for (const a of world.avens) {
 		if (a.alive) {
+			// what it eats and drinks tonight (the need rule), then what that does to its body (the body rule)
+			a.need = Object.fromEntries(GOODS.map((g) => [g, hooked('need', { aven: a, good: g }, NEED[g], 0, 1000, true)]));
+			const before = { ...a.body };
 			const ate = {},
 				short = {};
 			for (const r of meals) {
-				const { took, missing } = craft(r, a);
+				const { took, missing } = craft({ ...r, in: Object.fromEntries(Object.keys(r.in).map((g) => [g, a.need[g]])) }, a);
 				Object.assign(ate, took);
 				Object.assign(short, missing);
 			}
+			const body = ruled('body', { aven: { ...a, body: before }, need: a.need, short }, { ...a.body }, (v, own) =>
+				v && typeof v === 'object' && Number.isFinite(v.water) && Number.isFinite(v.food) ? { water: Math.min(100, Math.max(0, v.water)), food: Math.min(100, Math.max(0, v.food)) } : own
+			);
+			a.body = body;
 			a.health = Math.round(Math.min(a.body.water, a.body.food));
 			log(world, a, { kind: 'eat', short, health: a.health });
 			a.today.short = short;
@@ -416,7 +464,7 @@ function endOfDay(world) {
 		}
 		// each resource's own decay: what's left in store rots, every balance of HEARTS melts a little (card code may say
 		// otherwise: a decay hook for HEARTS, a rot hook for each good, never more than is there)
-		const lost = decayAll(a, world.rand, CODE.run && ((r, held, v) => (r.id === 'HEARTS' ? hooked('decay', { aven: a }, v, 0, held) : r.held === 'store' ? hooked('rot', { aven: a, good: r.id }, v, 0, held, true) : v)));
+		const lost = decayAll(a, world.rand, (r, held, v, roll) => (r.id === 'HEARTS' ? hooked('decay', { aven: a }, v, 0, held) : r.held === 'store' ? hooked('rot', { aven: a, good: r.id, dice: [roll] }, v, 0, held, true) : v));
 		const rotted = {};
 		for (const g of GOODS)
 			if (lost[g]) {
@@ -450,24 +498,33 @@ function endOfDay(world) {
 		a.hearts = Math.round(a.hearts * 100) / 100;
 	}
 	world.day += 1;
-	// the dead come back after a while (Samuel: 7 days), on their own land, fresh: the starting HEARTS, nothing in store
-	for (const a of world.avens)
-		if (!a.alive && a.diedOn != null && world.day - a.diedOn >= RULES.rebirthDays) {
-			Object.assign(a, { alive: true, diedOn: null, hearts: RULES.startHearts, health: 100, body: { water: 100, food: 100 }, reborn: (a.reborn ?? 0) + 1, startHearts: RULES.startHearts });
-			for (const g of GOODS) a.stock[g] = 0;
-			a.x = a.territory.x;
-			a.y = a.territory.y - 6;
-			log(world, a, { kind: 'reborn', hearts: RULES.startHearts });
-		}
+	// the dead come back after a while (Samuel: 7 days; the rebirth rule), on their own land, fresh: the starting
+	// HEARTS, nothing in store
+	for (const a of world.avens) {
+		if (a.alive || a.diedOn == null) continue;
+		const dead = world.day - a.diedOn;
+		const hearts = hooked('rebirth', { aven: a, dead }, dead >= RULES.rebirthDays ? RULES.startHearts : -1, -1, 1e9);
+		if (hearts < 0) continue;
+		Object.assign(a, { alive: true, diedOn: null, hearts, health: 100, body: { water: 100, food: 100 }, reborn: (a.reborn ?? 0) + 1, startHearts: hearts });
+		for (const g of GOODS) a.stock[g] = 0;
+		a.x = a.territory.x;
+		a.y = a.territory.y - 6;
+		log(world, a, { kind: 'reborn', hearts });
+	}
 	weather(world);
-	CODE.run?.see(valleyView(world));
+	seeValley(world);
 	for (const a of world.avens) {
 		a.yesterday = a.today;
 		a.today = blankDay();
 		if (!a.alive) continue;
 		for (const g of a.grows) {
-			const grown = harvest(world, a.produce[g], g);
-			const qty = hooked('harvest', { aven: a, good: g }, grown.qty, 0, Math.max(100, a.produce[g] * 10), true);
+			const roll = dice(world, 3);
+			const own = harvest(world, a.produce[g], g, roll);
+			const top = Math.max(100, a.produce[g] * 10);
+			const grown = ruled('harvest', { aven: a, good: g, capacity: a.produce[g], dice: roll }, own, (v, o) =>
+				typeof v === 'number' && Number.isFinite(v) ? { qty: Math.min(top, Math.max(0, Math.round(v))), kind: o.kind } : v && Number.isFinite(v.qty) ? { qty: Math.min(top, Math.max(0, Math.round(v.qty))), kind: ['normal', 'bad', 'rich', 'dry'].includes(v.kind) ? v.kind : 'normal' } : o
+			);
+			const qty = grown.qty;
 			const kind = grown.kind;
 			a.harvest[g] = qty;
 			a.stock[g] += qty;
@@ -520,14 +577,19 @@ function record(world, day, rotted) {
 /** the night's weather, valley-wide: now and then a dry spell begins (wells run low, no rain); otherwise, some nights
  * it rains and every land's barrel catches a little WATER (see RULES) */
 function weather(world) {
-	const w = world.weather;
+	const roll = dice(world, 4);
+	const w = { ...world.weather };
 	if (w.dry) w.dry -= 1;
-	else if (world.rand() < RULES.dryChance / 100) {
+	else if (roll[0] < RULES.dryChance / 100) {
 		const lo = Math.min(RULES.dryMin, RULES.dryMax);
-		w.dry = lo + Math.floor(world.rand() * (Math.max(RULES.dryMin, RULES.dryMax) - lo + 1));
+		w.dry = lo + Math.floor(roll[1] * (Math.max(RULES.dryMin, RULES.dryMax) - lo + 1));
 		w.dryFrom = world.day;
 	}
-	w.rain = !w.dry && RULES.rainMax > 0 && world.rand() < RULES.rainChance / 100 ? 1 + Math.floor(world.rand() * RULES.rainMax) : 0;
+	w.rain = !w.dry && RULES.rainMax > 0 && roll[2] < RULES.rainChance / 100 ? 1 + Math.floor(roll[3] * RULES.rainMax) : 0;
+	const whole = (x, hi) => Math.min(hi, Math.max(0, Math.round(Number(x) || 0)));
+	world.weather = ruled('weather', { weather: { ...world.weather }, day: world.day, dice: roll }, w, (v, own) =>
+		v && typeof v === 'object' ? { dry: whole(v.dry, 365), dryFrom: Number.isFinite(v.dryFrom) ? v.dryFrom : own.dryFrom, rain: whole(v.rain, 100) } : own
+	);
 }
 
 /** the board: the living by HEARTS, then the dead by how long they lasted @returns {any[]} */

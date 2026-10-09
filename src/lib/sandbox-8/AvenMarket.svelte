@@ -10,8 +10,9 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, hookSample } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, hookSample, seeValley } from './economy.js';
 	import { loadCode } from './sandbox.js';
+	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
@@ -24,12 +25,6 @@
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
-
-	// every setting belongs to a world (Samuel, 2026-10-09): changing one changes this world's, kept with it when it saves
-	function saveRules() {
-		dirty = true;
-		snap = snapshot();
-	}
 
 	// ---- the database: who is playing, the config the valley runs on, and this run, saved day by day ----
 	const PICKED = 'sandbox-8-config';
@@ -175,27 +170,25 @@
 		reset();
 	}
 
-	// ---- the config cards' code, each card in its own QuickJS sandbox (sandbox.js), fresh for every run ----
+	// ---- the world's rulebook: every card's code, each card in its own QuickJS sandbox (sandbox.js), fresh for every
+	// world; the section cards run their own code, else their rules' default (game/economy/rules-code.js) ----
 	let codeWait = false; // the clock waits while it loads
 	let codeNote = $state('');
-	let loadedKey = '';
 	let codeGen = 0;
-	const codeKey = () => JSON.stringify(CONFIG.cards.filter((c) => c.code?.trim()).map((c) => [c.id, c.code]));
 	function useCode() {
 		const gen = ++codeGen;
 		CODE.run?.dispose();
 		CODE.run = null;
 		codeNote = '';
-		loadedKey = codeKey();
-		if (loadedKey === '[]') return (codeWait = false);
 		codeWait = true;
 		loadCode(CONFIG.cards)
 			.then((run) => {
 				if (gen !== codeGen) return run?.dispose();
 				CODE.run = run;
+				seeValley(world);
 			})
 			.catch((e) => {
-				if (gen === codeGen) codeNote = `The cards' code could not run here (${e?.message || e}); the valley runs on the values alone.`;
+				if (gen === codeGen) codeNote = `The cards' code could not run here (${e?.message || e}); the valley runs on the engine's own copy of the default rules.`;
 			})
 			.finally(() => {
 				if (gen === codeGen) codeWait = false;
@@ -208,7 +201,6 @@
 	let worlds = $state(/** @type {any[]} */ ([]));
 	let here = $state({ id: /** @type {string | null} */ (null), name: '' }); // the world on the page
 	let worldNote = $state('');
-	let dirty = false; // its settings changed since it was last saved
 	async function loadWorlds() {
 		if (!acct.play) return;
 		try {
@@ -219,7 +211,7 @@
 		}
 	}
 	/** what this world runs on: its config (cards and values), the changes tried on top, and the model its avens ask */
-	const settingsOf = () => ({ config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, cards: CONFIG.cards, params: { ...DEFAULTS } }, local: changedRules(), model: brain.mode });
+	const settingsOf = () => ({ config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, cards: fullCards(CONFIG.cards), params: { ...DEFAULTS } }, local: changedRules(), model: brain.mode });
 	let keeping = false;
 	/** keep the world as it stands with its run: its last days, then the whole valley and its settings */
 	async function keepWorld() {
@@ -230,7 +222,6 @@
 			await r.flush(summary(), world.avens.every((/** @type {any} */ a) => !a.alive));
 			if (!r.id) return;
 			await saveWorldState(r.id, { world: saveWorld(world), settings: settingsOf() });
-			dirty = false;
 		} catch (e) {
 			saving = { ...saving, error: `This world could not be saved (${/** @type {any} */ (e)?.message || e}).` };
 		} finally {
@@ -276,7 +267,6 @@
 		down = busy = '';
 		paused = true;
 		started = !fresh;
-		dirty = false;
 		worldNote = '';
 		useCode();
 		setView('valley');
@@ -901,7 +891,7 @@
 				save(world.avens.every((/** @type {any} */ a) => !a.alive));
 			}
 			// the whole world is kept every 20 s while it plays (and when paused, left or closed)
-			if (rec && (!paused || dirty) && now - lastKeep > 20000) {
+			if (rec && !paused && now - lastKeep > 20000) {
 				lastKeep = now;
 				keepWorld();
 			}
@@ -1022,7 +1012,7 @@
 	{/if}
 	{#if page === 'policy' || page === 'world'}
 		<div class="statspage">
-			{#key page}<RulesView view={page} onchange={saveRules} onrestart={() => proposeWorld()} onpropose={() => { draft = true; setView('mips'); }} />{/key}
+			{#key page}<RulesView view={page} onpropose={() => proposeWorld()} />{/key}
 		</div>
 	{/if}
 	{#if page === 'mips'}

@@ -11,7 +11,7 @@
 	import { loadMips, propose, decide, withdraw } from './store.js';
 	import ConfigCard from './ConfigCard.svelte';
 	import { testCard } from './sandbox.js';
-	import { HOOKS } from '../../../game/economy/params.js';
+	import { HOOKS, fullCards } from '../../../game/economy/params.js';
 
 	/** @type {{ acct: any, configs: any[], playing: { id: string | null, name: string, version: number, local: number }, draft?: boolean | string, draftConfig?: string, here: { id: string | null, name: string, model: string }, sample: () => any, onworld: (made: any) => void, onreload: () => void }} */
 	let { acct, configs, playing, draft = false, draftConfig = '', here, sample, onworld, onreload } = $props();
@@ -77,6 +77,11 @@
 		} catch (e) {
 			jsonError = `The cards aren't JSON yet: ${/** @type {any} */ (e).message}`;
 		}
+	}
+	/** a card to change, whole, with the code it runs now (its own, or its rules' default) to edit */
+	function pick(/** @type {string} */ id) {
+		const c = baseCards && fullCards(baseCards).find((/** @type {any} */ x) => x.id === id);
+		if (c) cards = [...cards, JSON.parse(JSON.stringify(c))];
 	}
 	function startOver() {
 		cards = changedCards();
@@ -255,7 +260,15 @@
 				{#if action !== 'delete'}
 					<div class="cards-head">
 						<span>Config cards: each one whole, as it goes in once accepted{cards.length ? ', filled in from your changes' : ''}</span>
-						<button onclick={editJson}>{asJson ? 'Back to the cards' : 'Edit as JSON'}</button>
+						<span>
+							{#if !asJson && baseCards}
+								<select aria-label="Change a card" value="" onchange={(e) => { pick(e.currentTarget.value); e.currentTarget.value = ''; }}>
+									<option value="">Change a card…</option>
+									{#each fullCards(baseCards).filter((/** @type {any} */ c) => !cards.some((x) => x.id === c.id)) as c (c.id)}<option value={c.id}>{c.name || c.id}</option>{/each}
+								</select>
+							{/if}
+							<button onclick={editJson}>{asJson ? 'Back to the cards' : 'Edit as JSON'}</button>
+						</span>
 					</div>
 					{#if asJson}
 						<textarea class="code" value={jsonText} oninput={(e) => fromJson(e.currentTarget.value)} rows="16" spellcheck="false"></textarea>
@@ -279,7 +292,7 @@
 					{/if}
 					<details class="hooks">
 						<summary>What card code can change</summary>
-						<p>Each card's code runs in its own QuickJS sandbox: no page, no network, no keys, 8 MB and 25 ms a call. It exports any of these hooks; each is given one argument, <code>{'{'} aven, valley, value {'}'}</code>, where <code>value</code> is what the valley would use, and returns a number, which the valley keeps within bounds. A hook that throws, runs too long or returns no number stops for the run, and the valley uses its values.</p>
+						<p>Every rule of the valley is a hook in a card's code, and each card's code runs in its own QuickJS sandbox: no page, no network, no keys, 8 MB and 25 ms a call. The card that owns a rule runs first (its own code, else the default, shown under Policies and World); any other card exporting the same hook is given what it made of it as <code>value</code>. A hook returns plain JSON, which the valley checks and keeps within bounds. A hook that throws, runs too long or answers nothing stops for the world, and the valley uses its own copy of the default rule.</p>
 						<table><tbody>{#each HOOKS as h (h.name)}<tr><td><code>{h.name}</code></td><td>{h.when}; given <code>{h.given}</code></td><td>returns {h.returns}</td></tr>{/each}</tbody></table>
 						<p><code>aven</code>: id, name, alive, hearts, health, grows, produce, stock, body {'{'} water, food {'}'}, minted, decayed. <code>valley</code>: day, values (every value by key, e.g. <code>valley.values.mint</code>), avens, alive, hearts, prices, weather.</p>
 					</details>
