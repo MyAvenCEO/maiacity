@@ -6,7 +6,7 @@ name: avenDB server
 #   image  – build the server's image (avendb/Dockerfile.server), push to GHCR tagged with the commit
 #   deploy – over SSH: AVENDB_IMAGE into the server's .env, then pull and restart this one container
 #
-# Its settings (host name, setup code, data folder), its Caddy site and its firewall port come from the API workflow
+# Its settings (host name, data folder), its Caddy site and its firewall port come from the API workflow
 # (api.yml), which also makes the server: that has to have run once before this can roll out.
 on:
   push:
@@ -106,7 +106,7 @@ jobs:
           EOS
       - name: What the server says
         run: |
-          # its device, its endpoint and its offer, all public (what the apps link through); its setup code is never logged
+          # its device, its endpoint, whether a vault has claimed it, and its offer, all public (what the apps link through)
           for i in $(seq 1 24); do
             SAID=$(ssh prod "docker logs maia-city-avendb 2>&1" | grep 'avenDB server:' || true)
             if printf '%s\n' "$SAID" | grep -q 'avenDB server: offer '; then printf '%s\n' "$SAID" | tail -4; break; fi

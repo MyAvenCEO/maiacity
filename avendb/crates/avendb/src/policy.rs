@@ -456,9 +456,6 @@ pub enum Refusal {
     /// Not a rule of the ops but of a device: what a device on a connection sent to join a vault (`Lab::accept_join`)
     /// adds no device, or another device than itself.
     NotJoining,
-    /// Not a rule of the ops but of a server: a claim of it brings another code than its setup code, or the server has
-    /// none (`Lab::claim_key`).
-    BadCode,
     /// Not a rule of the ops but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
     /// device of an aven vault.
     NotClaiming,

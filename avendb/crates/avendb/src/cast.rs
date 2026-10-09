@@ -1,9 +1,9 @@
 //! The people, devices, vaults and spaces of the plan's scenarios, on the Lab: Samuel with a passkey, a Mac and an
 //! iPhone; Bob, Carol and Dave with a passkey and a Mac each; the relay server and a stranger. Samuel's vault is the
-//! first to claim the server, with its setup code: the server is a device of avenCEO, an aven vault Samuel's vault
-//! owns. The scenarios (`scenarios`) and the tests start from them, and so does the avenDB tile, which makes the world
-//! a step at a time (`Making`) so that a page makes the McEliece pairs of each step in its workers before the next step
-//! needs them. `avendb/spec/AvenDB/Examples.lean` has the same cast on the Lean model.
+//! first to claim the server: the server is a device of avenCEO, an aven vault Samuel's vault owns. The scenarios
+//! (`scenarios`) and the tests start from them, and so does the avenDB tile, which makes the world a step at a time
+//! (`Making`) so that a page makes the McEliece pairs of each step in its workers before the next step needs them.
+//! `avendb/spec/AvenDB/Examples.lean` has the same cast on the Lean model.
 
 use crate::doc::Item;
 use crate::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
@@ -24,9 +24,6 @@ pub fn write(space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64) -> Acti
     let body = vec![0xc1, 0x9e, 0x47];
     Action::Write { space, entry, actor, epoch, deps: vec![], branch: Branch::Main, via: vec![], body }
 }
-
-/// The setup code of the cast's server, as its operator set it (`Lab::claim_key`).
-pub const SETUP_CODE: &[u8] = b"the cast's setup code, long and random";
 
 /// The Lab after scenarios 1 and 2, plus the server, avenCEO and a stranger.
 pub struct World {
@@ -69,19 +66,19 @@ pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> Vault
     v
 }
 
-/// The server claimed by human vault `human` with the server's setup code (`Lab::claim`, P8f), its passkey `passkey`
-/// signing on its device `on`: the server hands its key to seal to for the code, the passkey founds avenCEO, an aven
-/// vault `human` owns, and adds the server as its device; the server signs last and keeps it all, `on` keeps the
-/// server's join, and syncs the server the key it boxed for it. avenCEO.
+/// The server claimed by human vault `human`, the first to (`Lab::claim`, P8f), its passkey `passkey` signing on its
+/// device `on`: the server hands its key to seal to, the passkey founds avenCEO, an aven vault `human` owns, and adds
+/// the server as its device; the server signs last and keeps it all, `on` keeps the server's join, and syncs the
+/// server the key it boxed for it. avenCEO.
 pub fn claim_on(lab: &mut Lab, on: SignerId, passkey: SignerId, human: VaultId, server: SignerId) -> VaultId {
-    let key = lab.claim_key(server, SETUP_CODE, Some(SETUP_CODE)).expect("the server hands its key for its code");
+    let key = lab.claim_key(server).expect("a server nobody has claimed hands its key");
     let owners = vec![Principal::Vault(human)];
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let avenceo = VaultId::from(lab.submit(on, &[passkey], genesis).expect("the passkey founds avenCEO"));
     let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key) };
     let draft = lab.draft(on, &[passkey, server], add).expect("avenCEO adds the server");
-    let claim = lab.claim(on, draft, &[], SETUP_CODE).expect("the passkey signs the claim");
-    let join = lab.accept_claim(server, claim, Some(SETUP_CODE)).expect("the server takes the claim");
+    let claim = lab.claim(on, draft, &[]).expect("the passkey signs the claim");
+    let join = lab.accept_claim(server, claim).expect("the server takes the claim");
     lab.receive(on, vec![join.op], join.blobs.into_iter().map(Into::into).collect());
     lab.sync(on, server);
     avenceo
@@ -156,7 +153,7 @@ impl Making {
                 let (s, v) = (&self.signers, &self.vaults);
                 let avenceo = claim_on(lab, s[1], s[0], v[0], s[9]);
                 self.vaults.push(avenceo);
-                "avenCEO, as Samuel's vault claims the server with its setup code"
+                "avenCEO, as Samuel's vault claims the server"
             }
             3 => {
                 let s = &self.signers;

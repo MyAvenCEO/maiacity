@@ -8,7 +8,6 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::SignerId;
 use avendb::sign::{Hello, PasskeyHello};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
-use zeroize::Zeroizing;
 use iroh::endpoint::{Connection, RecvStream, VarInt};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 
@@ -25,7 +24,7 @@ pub(crate) const CARD: u8 = 2;
 pub(crate) const LINK: u8 = 3;
 /// A new device's join (P8c), answered by nothing once the node accepts it (`Lab::accept_join`).
 pub(crate) const JOIN: u8 = 4;
-/// A server's setup code (P8f), answered by its key to seal to if the code is its own and nobody has claimed it yet
+/// A request for the server's key to seal to (P8f), answered by it while nobody has claimed the server
 /// (`Lab::claim_key`).
 pub(crate) const CLAIM_KEY: u8 = 5;
 /// A claim of the server (P8f), answered by its join once it takes it (`Lab::accept_claim`): the op that adds it to
@@ -122,8 +121,8 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
 /// The answer to the message on the stream `recv`: a request gets a reply, and an announcement nothing, but the
 /// node asks the peer if its digests differ; a request for its card gets its vault logs, if it hands its card out. A
 /// passkey's hello that proves the passkey for the peer's device on this connection gets the passkey's link card, and
-/// a join the node accepts gets nothing, and the node tells the new device what it holds. A server's setup code gets
-/// its key to seal to, and a claim it takes its join (P8f).
+/// a join the node accepts gets nothing, and the node tells the new device what it holds. A server nobody has claimed
+/// yet hands its key to seal to whoever asks, and answers the first claim it takes with its join (P8f).
 async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Result<Vec<u8>> {
     let message = recv.read_to_end(MESSAGE_LIMIT).await?;
     let (&kind, body) = message.split_first().context("an empty message")?;
@@ -161,15 +160,14 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             shared.changed.notify_one();
             Ok(Vec::new())
         }
-        CLAIM_KEY => {
-            let (code, setup) = (Zeroizing::new(body.to_vec()), shared.opts.setup.clone());
-            let key = shared.lab(move |lab, me| lab.claim_key(me, &code, setup.as_ref().map(|s| s.bytes()))).await;
+        CLAIM_KEY if shared.opts.card => {
+            let key = shared.lab(|lab, me| lab.claim_key(me)).await;
             Ok(key.map_err(|why| anyhow!("no claim: {why:?}"))?.to_wire())
         }
-        CLAIM => {
-            let (claim, setup) = (Claim::from_wire(body)?, shared.opts.setup.clone());
+        CLAIM if shared.opts.card => {
+            let claim = Claim::from_wire(body)?;
             let accept = move |lab: &mut avendb::lab::Lab, me| -> Result<_, avendb::policy::Refusal> {
-                let join = lab.accept_claim(me, claim, setup.as_ref().map(|s| s.bytes()))?;
+                let join = lab.accept_claim(me, claim)?;
                 Ok((join, lab.vault_of(me)))
             };
             let (join, avenceo) = shared.lab(accept).await.map_err(|why| anyhow!("the claim is refused: {why:?}"))?;

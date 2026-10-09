@@ -9,12 +9,12 @@
 //! of three ways:
 //!
 //! - `Device::found`: a new person's first device founds their human vault, its first space and grants avenCEO, the
-//!   aven vault the server is a device of, relay on it, in four ceremonies (the unlock, the pass to the relay, the
-//!   vault's genesis and the op that adds the device). The passkey may be one the page just made, its P-256 key in its
-//!   public key info, or one made before for the same relying party, maiaCITY's from its sign-up: then its P-256 key
-//!   is the one key both the unlock's and the pass's assertions recover to (`sign::passkey_key`). The person who runs
-//!   the server, bringing its setup code, first claims it for their vault (P8f), in two ceremonies more: avenCEO's
-//!   genesis and the op that adds the server.
+//!   aven vault the server is a device of, relay on it, in three ceremonies: the unlock, the pass to the relay, and one
+//!   that signs the vault's genesis and the op that adds the device together (`avendb_net::Node::found_with`). The
+//!   passkey may be one the page just made, its P-256 key in its public key info, or one made before for the same
+//!   relying party, maiaCITY's from its sign-up: then its P-256 key is the one key both the unlock's and the pass's
+//!   assertions recover to (`sign::passkey_key`). The first person to found their vault through a server nobody has
+//!   claimed yet claims it in that same ceremony (P8f): their vault owns avenCEO.
 //! - `Device::link`: a device of a person who has one already links through the code it shows
 //!   (`avendb_net::Node::link_with`), in four ceremonies (the unlock, the pass, the passkey's hello, the join). The
 //!   passkey's P-256 key is the one key both the unlock's and the pass's assertions recover to (`sign::passkey_key`).
@@ -34,7 +34,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use avendb::lab::{Backup, Lab};
-use avendb::policy::{Action, Kind, Principal, Role, Scope};
+use avendb::policy::{Action, Kind, Principal, Role, Scope, Vault};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge, passkey_key};
 use avendb::wire::Wire as _;
 use avendb_net::{Authenticator, Node, Offer, Options, Step};
@@ -76,29 +76,21 @@ pub struct Device {
 impl Device {
     /// The first device of a new person, whose passkey's P-256 key is `p256` (from its public key info,
     /// `sign::spki_p256`, as the browser made it), or, if the page doesn't know it, the one key the unlock's and the
-    /// pass's assertions recover to (`passed`), as for the passkey the person made at maiaCITY's sign-up: it founds
-    /// their human vault in its passkey's ceremonies, then their first space, and grants avenCEO, the aven vault the
-    /// server whose code reads `server` is a device of, relay on the space, so the server keeps the space's log and
-    /// knows the device from then on. It learns avenCEO from the server's card; or, with the server's setup code
-    /// `setup`, as the person who runs the server, it first claims the server for their vault
-    /// (`avendb_net::Node::claim_with`), in two ceremonies more. The relay lets it in by the passkey's pass meanwhile,
-    /// as it does any passkey's while it is open to sign-up (`avendb_net::Admission::open`) or while nobody has
-    /// claimed the server.
+    /// pass's assertions recover to (`passed`), as for the passkey the person made at maiaCITY's sign-up. Through the
+    /// relay, which lets it in by the passkey's pass, it takes the card of the server whose code reads `server`, then
+    /// founds the person's human vault with itself in it, in one ceremony of the passkey
+    /// (`avendb_net::Node::found_with`); if nobody has claimed the server yet, the same ceremony claims it, and their
+    /// vault owns avenCEO, the aven vault the server is a device of. Then it founds their first space and grants
+    /// avenCEO relay on it, so the server keeps the space's log and knows the device from then on. The relay honours
+    /// the pass while it is open to sign-up (`avendb_net::Admission::open`) or while nobody has claimed the server.
     pub async fn found(
         start: Start,
         server: &Offer,
-        setup: Option<&[u8]>,
         p256: Option<[u8; 33]>,
         unlock: Unlock,
         authenticator: &impl Authenticator,
     ) -> Result<Device> {
-        let (mut lab, passkey, me, p256, pass) = passed(&start, p256, &unlock, authenticator).await?;
-        let owners = vec![Principal::Signer(passkey)];
-        let genesis =
-            Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: Some(passkey), nonce: 0, seal_to: vec![] };
-        let vault = ceremony(&mut lab, me, &[passkey], genesis, (passkey, authenticator, Step::Found)).await?.into();
-        let add = Action::AddDevice { vault, device: me, seal_to: None };
-        ceremony(&mut lab, me, &[passkey, me], add, (passkey, authenticator, Step::Join)).await?;
+        let (lab, passkey, me, p256, pass) = passed(&start, p256, &unlock, authenticator).await?;
         let device = Device::spawn(lab, me, (passkey, p256), &start, Some(pass)).await?;
         device.node.know(server.addr.clone());
         let mut tries = 0;
@@ -109,14 +101,7 @@ impl Device {
             }
             sleep(Duration::from_millis(500)).await;
         }
-        let avenceo = match setup {
-            Some(code) => device.node.claim_with(server, passkey, code, authenticator).await.context("the claim")?,
-            None => {
-                let server = server.device;
-                let avenceo = device.node.read(move |lab, me| lab.aven_of(me, server)).await;
-                avenceo.context("the server's card names no avenCEO: nobody has claimed the server yet")?
-            }
-        };
+        let (vault, avenceo) = device.node.found_with(server, passkey, authenticator).await?;
         let found = move |lab: &mut Lab, me| {
             let space = lab.submit(me, &[me], Action::FoundSpace { actor: vault, nonce: 1, via: vec![] });
             let space = SpaceId::from(space.map_err(|why| anyhow!("the space is refused: {why:?}"))?);
@@ -186,6 +171,18 @@ impl Device {
     /// The vault it belongs to, by its view.
     pub async fn vault(&self) -> Option<VaultId> {
         self.node.read(|lab, me| lab.vault_of(me)).await
+    }
+
+    /// Whether its vault owns avenCEO, by its view: an aven vault with a device, the server, as once its person's vault
+    /// claimed the server (`avendb_net::Node::found_with`).
+    pub async fn owns_aven(&self) -> bool {
+        self.node
+            .read(|lab, me| {
+                let Some(mine) = lab.vault_of(me).map(Principal::Vault) else { return false };
+                let avenceo = |v: &Vault| v.kind == Kind::Aven && v.owners.contains(&mine) && !v.devices.is_empty();
+                lab.state(me).vaults().iter().any(avenceo)
+            })
+            .await
     }
 
     /// The text of block `block` of entry `entry` in space `space`, as the device reads it: `None` while it can't.
@@ -316,20 +313,6 @@ async fn passed(
     Ok((lab, passkey, me, p256, pass))
 }
 
-/// `action` drafted on device `on`, signed by `signers`, the passkey among them in a ceremony of `authenticator` for
-/// `step`, and kept: its op.
-async fn ceremony(
-    lab: &mut Lab,
-    on: SignerId,
-    signers: &[SignerId],
-    action: Action,
-    (passkey, authenticator, step): (SignerId, &impl Authenticator, Step),
-) -> Result<OpId> {
-    let draft = lab.draft(on, signers, action).map_err(|why| anyhow!("the device's view refuses it: {why:?}"))?;
-    let ceremony = authenticator.ceremony(draft.challenge(), step).await?;
-    lab.complete(on, draft, &[(passkey, &ceremony)]).map_err(|why| anyhow!("the passkey didn't sign it: {why:?}"))
-}
-
 /// Report a panic on the page's console: the device can't go on after one, and the page starts over.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
@@ -345,7 +328,7 @@ pub fn start() {
 /// The device as the page holds it (`Device`): every call that waits on the network or on its person is a promise.
 ///
 /// A ceremony is the page's: `ceremony(challenge, step)`, a function the device calls with the 32 bytes the passkey
-/// signs and what for (`"pass"`, `"found"`, `"hello"`, `"join"`, `"aven"`, `"claim"`), which resolves to the ceremony's
+/// signs and what for (`"pass"`, `"found"`, `"hello"`, `"join"`, `"claim"`), which resolves to the ceremony's
 /// `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`. The unlock
 /// is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, and `nonce`.
 #[wasm_bindgen(js_name = Device)]
@@ -356,12 +339,11 @@ impl PageDevice {
     /// The first device named `name` of a new person, reaching its peers through the relay at `relay` alone, whose
     /// passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`, or `undefined` for a passkey made
     /// before, as at maiaCITY's sign-up: it founds their human vault and makes it known to the server whose code reads
-    /// `server`, claiming the server first if the page brings its setup code `setup` (`Device::found`).
+    /// `server`, which it claims if nobody has yet (`Device::found`).
     pub async fn found(
         name: String,
         relay: String,
         server: String,
-        setup: Option<String>,
         spki: Option<Vec<u8>>,
         unlock: JsValue,
         ceremony: Function,
@@ -369,9 +351,8 @@ impl PageDevice {
         let not_p256 = || JsError::new("not a P-256 passkey's public key info");
         let p256 = spki.map(|spki| sign::spki_p256(&spki).ok_or_else(not_p256)).transpose()?;
         let server = Offer::from_text(&server).map_err(js_error)?;
-        let (setup, ceremonies) = (setup.filter(|s| !s.trim().is_empty()).map(Zeroizing::new), Js(ceremony));
-        let code = setup.as_ref().map(|s| s.trim().as_bytes());
-        let device = Device::found(starting(name, &relay)?, &server, code, p256, unlocked(&unlock)?, &ceremonies);
+        let ceremonies = Js(ceremony);
+        let device = Device::found(starting(name, &relay)?, &server, p256, unlocked(&unlock)?, &ceremonies);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 
@@ -433,6 +414,13 @@ impl PageDevice {
     pub fn vault(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.vault().await.map(|v| hex(&v.0)).into()) })
+    }
+
+    /// Whether its vault owns avenCEO, the aven vault the server is a device of (`Device::owns_aven`): a promise.
+    #[wasm_bindgen(js_name = ownsAven)]
+    pub fn owns_aven(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.owns_aven().await.into()) })
     }
 
     /// The text of block `block` of entry `entry` in space `space` (both in hex), as the device reads it: a promise, of
@@ -573,7 +561,6 @@ impl Authenticator for Js {
             Step::Found => "found",
             Step::Hello => "hello",
             Step::Join => "join",
-            Step::Aven => "aven",
             Step::Claim => "claim",
         };
         let promise = self.0.call2(&JsValue::NULL, &Uint8Array::from(&challenge[..]), &step.into());

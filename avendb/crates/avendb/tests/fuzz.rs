@@ -151,6 +151,15 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
                 };
                 *part = mutate(g, part);
             }
+            Classical::Batch { assertion, ops } => match g.below(4) {
+                0 => assertion.signature = mutate(g, &assertion.signature),
+                1 => assertion.client_data_json = mutate(g, &assertion.client_data_json),
+                2 if !ops.is_empty() => {
+                    let i = g.below(ops.len());
+                    ops.remove(i);
+                }
+                _ => ops.push(OpId::from_u64(g.next())),
+            },
         },
         _ => {
             s.pq = match &s.pq {
@@ -184,6 +193,17 @@ fn mutate_op(g: &mut Gen, op: &Op) -> Op {
 
 /// Two signed ops: governance, which both halves sign, by a passkey with the new device consenting; and a write on a
 /// branch, which only the classical half signs.
+/// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another op drafted with it.
+fn batched(add: &Signed) -> Signed {
+    let mut passkey = Passkey::from_seed([9; 32]);
+    let device = DeviceKey::from_secret([7; 32]);
+    let mut batch = vec![add.op.id(), OpId::from_u64(3)];
+    batch.sort();
+    let ceremony = passkey.ceremony(avendb::sign::batch_challenge(&batch));
+    let sig = ceremony.sign_in(passkey.keys(), add.op.id(), &batch, true).expect("an op of the batch");
+    Signed { op: add.op.clone(), sigs: vec![sig, device.sign(add.op.id(), true)] }
+}
+
 fn signed_ops() -> (Signed, Signed) {
     let device = DeviceKey::from_secret([7; 32]);
     let mut passkey = Passkey::from_seed([9; 32]);
@@ -218,7 +238,7 @@ fn signed_ops() -> (Signed, Signed) {
 fn a_changed_signed_op_is_refused() {
     let (add, write) = signed_ops();
     let mut g = Gen::new(3);
-    for signed in [&add, &write] {
+    for signed in [&add, &write, &batched(&add)] {
         assert!(signed.verify().is_ok());
         for _ in 0..300 {
             let mut bad = signed.clone();
@@ -263,8 +283,11 @@ fn wire_mutations<T: Wire + PartialEq + Debug>(g: &mut Gen, value: &T, n: usize,
 fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     let (add, write) = signed_ops();
     let mut g = Gen::new(11);
-    // a signed op read from changed bytes is refused, whatever it changed into
-    for signed in [&add, &write] {
+    // a signed op read from changed bytes is refused, whatever it changed into, its passkey's half by itself or in a
+    // batch
+    let batched = batched(&add);
+    assert!(batched.verify().is_ok());
+    for signed in [&add, &write, &batched] {
         let read = wire_mutations(&mut g, signed, 1500, |s: &Signed| assert!(s.verify().is_err(), "{s:?}"));
         assert!(read > 0, "some changes still read as a signed op, to be refused");
         wire_mutations(&mut g, &signed.op, 1000, |o: &Op| assert_ne!(o, &signed.op));
@@ -292,9 +315,8 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     // against the ids its op names
     let join = Join { op: add.clone(), blobs: vec![vec![1; 40], vec![2; 3]] };
     wire_mutations(&mut g, &join, 1500, |j: &Join| assert!(j.op == add || j.op.verify().is_err(), "{j:?}"));
-    // a claim read from changed bytes carries another code, or ops and signatures that don't verify
-    let (code, card) = (b"a setup code".to_vec(), vec![add.clone()]);
-    let claim = Claim { code, card, add: add.op.clone(), sigs: add.sigs.clone() };
+    // a claim read from changed bytes carries ops and signatures that don't verify
+    let claim = Claim { card: vec![add.clone()], add: add.op.clone(), sigs: add.sigs.clone() };
     wire_mutations(&mut g, &claim, 1500, |c: &Claim| {
         assert!(c.card.iter().all(|s| *s == add || s.verify().is_err()), "{c:?}");
         let signed = Signed { op: c.add.clone(), sigs: c.sigs.clone() };

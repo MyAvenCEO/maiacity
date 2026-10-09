@@ -1,12 +1,13 @@
 <!--
 	This browser (P8e): the browser itself as a device of its person, apart from the Lab's world. The person's passkey
 	stays in the browser's authenticator and each ceremony asks them; the device's keys derive from it at every unlock,
-	and what it holds is kept in IndexedDB, so it opens again in one ceremony. A new person founds their human vault here
-	with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or one they make here; the
-	person who runs the server brings its setup code and claims it for their vault, as avenCEO's owner (P8f). A person
-	with a device already links this one through the code that device shows, scanned as a QR code or opened as a link
-	(?link=). What its other devices change shows here the moment it arrives. avenDB's server runs at avendb.maia.city:
-	its relay and its code are filled in, and a test server's can take their place.
+	and what it holds is kept in IndexedDB, so it opens again in one ceremony. A new person founds their human vault
+	here with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or one they make here;
+	the first person to found a vault through a server nobody has claimed yet claims it in the same ceremony, so their
+	vault owns avenCEO, the aven vault the server is a device of (P8f). A person with a device already links this one
+	through the code that device shows, scanned as a QR code or opened as a link (?link=). What its other devices change
+	shows here the moment it arrives. avenDB's server runs at avendb.maia.city: its relay and its code are filled in,
+	and a test server's can take their place.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -35,12 +36,12 @@
 	let relay = $state('');
 	let server = $state('');
 	let code = $state('');
-	/** the server's setup code, never kept: only the person who runs the server has it, to claim it once */
-	let setup = $state('');
 	let name = $state('This browser');
 	/** @type {any[]} */
 	let notes = $state([]);
 	let qr = $state('');
+	/** whether this browser's vault owns avenCEO, as the first to found a vault through the server */
+	let owns = $state(false);
 	let link = $state('');
 	/** @type {Record<string, string>} */
 	let edits = $state({});
@@ -108,22 +109,17 @@
 		return { passkey, ...passkey.ceremonies(avendb, id) };
 	}
 
-	const times = ['', 'once', 'twice', 'three times', 'four times', 'five times', 'six times', 'seven times'];
-
 	/** Founds the person's human vault with the passkey they signed up to maiaCITY with, or with one made here if
-	 *  `fresh`: the unlock, the pass to the relay, the vault and the device, one ceremony more to make the passkey,
-	 *  and two more to claim the server with its setup code. @param {boolean} fresh */
+	 *  `fresh`: the unlock, the pass to the relay, and one ceremony for the vault and this device in it, which also
+	 *  claims the server if nobody has yet; one ceremony more to make the passkey. @param {boolean} fresh */
 	const found = (fresh) => {
-		const claim = setup.trim();
-		const asks = times[4 + (fresh ? 1 : 0) + (claim ? 2 : 0)];
-		const what = `${fresh ? 'Making your passkey and founding' : 'Founding'} your vault${claim ? ' and claiming the server' : ''}`;
-		return run(`${what}: your browser asks you ${asks}`, async () => {
+		const what = fresh ? 'Making your passkey and founding your vault' : 'Founding your vault';
+		return run(`${what}: your browser asks you ${fresh ? 'four' : 'three'} times`, async () => {
 			const { passkey, unlock, sign, held } = await ceremonies(undefined);
 			const made = fresh ? await passkey.create(name) : null;
 			if (made) held.id = made.id;
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const d = await avendb.Device.found(name, relay, server, claim || undefined, made?.spki, await unlock(nonce), sign);
-			setup = '';
+			const d = await avendb.Device.found(name, relay, server, made?.spki, await unlock(nonce), sign);
 			await started(d, nonce, held.id);
 		});
 	};
@@ -175,6 +171,7 @@
 
 	async function refresh() {
 		if (!device) return;
+		owns = await device.ownsAven();
 		notes = await device.notes();
 		for (const s of notes) {
 			drafts[s.space] ??= { title: '', body: '' };
@@ -208,7 +205,7 @@
 			await device?.close();
 			store.close();
 			await stores.remove(STORE);
-			[device, meta, notes, phase] = [null, null, [], 'new'];
+			[device, meta, notes, phase, owns] = [null, null, [], 'new', false];
 			store = await stores.open(STORE);
 		});
 </script>
@@ -221,6 +218,7 @@
 			<article class="card">
 				<h3>{meta?.name}</h3>
 				<p class="muted">Its passkey stays in your browser; what it holds stays in this browser’s storage, end-to-end encrypted on the way to your other devices.</p>
+				{#if owns}<p>Your vault owns avenCEO, the aven vault avenDB’s server is a device of: you were the first to found a vault through it.</p>{/if}
 				<p>Link your next device: scan this with its camera, or open the link there.</p>
 				<!-- the SVG is the device's own, made by qrSvg from the link -->
 				<div class="qr">{@html qr}</div>
@@ -276,8 +274,7 @@
 					<p class="muted">maiaCITY’s server, at avendb.maia.city. Change these only for a test server.</p>
 					<input placeholder="Its relay: https://…" bind:value={relay} />
 					<input placeholder="The server’s code: AVENDB1…" bind:value={server} />
-					<p class="muted">Do you run it, and nobody has claimed it yet? Its setup code makes your human vault the owner of avenCEO, the aven vault the server is a device of.</p>
-					<input type="password" autocomplete="off" placeholder="Its setup code, only if you run it" bind:value={setup} />
+					<p class="muted">The first person to found their human vault through a server owns avenCEO, the aven vault the server is a device of.</p>
 				</article>
 				<label class="name">This browser’s name <input bind:value={name} /></label>
 			{/if}

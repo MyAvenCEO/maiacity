@@ -1,7 +1,7 @@
 //! The server peer (P8b) in a folder of its own: it keeps its device across restarts, belongs to no vault until the
-//! first human vault that brings its setup code claims it as a device of avenCEO (P8f), and keeps that too; it hands
-//! avenCEO's card to whoever asks, relays a space once a device grants avenCEO relay there, holding only ciphertext,
-//! and from then on knows the devices of the vaults acting in that space, whom its relay lets in.
+//! first human vault to claim it makes it a device of avenCEO (P8f), and keeps that too; it hands avenCEO's card to
+//! whoever asks, relays a space once a device grants avenCEO relay there, holding only ciphertext, and from then on
+//! knows the devices of the vaults acting in that space, whom its relay lets in.
 
 mod common;
 
@@ -13,7 +13,7 @@ use avendb::id::{SignerId, SpaceId, VaultId};
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Principal, Role, Scope};
-use avendb_net::{Admission, Node, Options, SetupCode, server};
+use avendb_net::{Admission, Node, Options, server};
 use common::Folder;
 use iroh::{EndpointId, SecretKey};
 
@@ -36,16 +36,16 @@ async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> 
     }
 }
 
-/// A server's options: its setup code, the cast's, and its relay's admission.
-fn claimable(admission: &Admission) -> Options {
-    Options { setup: Some(SetupCode::new(SETUP_CODE)), admission: Some(admission.clone()), ..Options::local() }
+/// A server's options: its relay's admission.
+fn admitting(admission: &Admission) -> Options {
+    Options { admission: Some(admission.clone()), ..Options::local() }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_first_human_vault_with_the_setup_code_claims_the_server_once_and_for_good() {
+async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     let dir = Folder::new("claim");
     let admission = Admission::default();
-    let server = server::open(dir.path(), claimable(&admission)).await.expect("a new server");
+    let server = server::open(dir.path(), admitting(&admission)).await.expect("a new server");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -57,14 +57,17 @@ async fn the_first_human_vault_with_the_setup_code_claims_the_server_once_and_fo
     assert!(admission.honours(&anyone), "until it is claimed, its relay lets in a pass of any passkey");
     let mut w = world();
     let (mac_b, passkey_b, mac_s, passkey_s, bob) = (w.mac_b, w.passkey_b, w.mac_s, w.passkey_s, w.bob);
+    let stranger_d = w.stranger;
     let bobs = node(&mut w, mac_b, &[passkey_b], 2).await;
     let samuels = node(&mut w, mac_s, &[passkey_s], 1).await;
+    let stranger = node(&mut w, stranger_d, &[], 5).await;
     let offer = server.offer();
-    // a wrong code claims nothing
-    assert!(bobs.claim(&offer, passkey_b, b"a guess").await.is_err(), "another code");
+    // a device of no vault claims nothing, and a person's own device takes no claim
+    assert!(stranger.claim(&offer, passkey_b).await.is_err(), "a device of no vault");
+    assert!(bobs.claim(&samuels.offer(), passkey_b).await.is_err(), "Samuel's Mac");
     assert_eq!(server::vault(&server).await, None, "and the server is still nobody's");
-    // Bob's vault brings the code first: the server is a device of a new avenCEO, which Bob's vault owns
-    let avenceo = bobs.claim(&offer, passkey_b, SETUP_CODE).await.expect("Bob's vault claims the server");
+    // Bob's vault claims it first: the server is a device of a new avenCEO, which Bob's vault owns
+    let avenceo = bobs.claim(&offer, passkey_b).await.expect("Bob's vault claims the server");
     assert_eq!(server::vault(&server).await, Some(avenceo), "the server is avenCEO's device");
     let shape = move |lab: &Lab, me| {
         lab.state(me).vault(avenceo).map(|v| (v.kind, v.owners.clone(), v.root, v.devices.clone()))
@@ -77,18 +80,18 @@ async fn the_first_human_vault_with_the_setup_code_claims_the_server_once_and_fo
     assert!(!server.read(move |lab, me| lab.opens(me, KeyScope::Vault(bob))).await, "and not Bob's vault's key");
     assert!(!admission.honours(&anyone), "once claimed, its relay honours only the passes of people it knows");
     assert!(admission.honours(&passkey_b) && admission.admits(&bobs.id()), "Bob's among them");
-    // nobody claims it again, not even with the code
-    assert!(samuels.claim(&offer, passkey_s, SETUP_CODE).await.is_err(), "Samuel's vault comes second");
+    // nobody claims it again
+    assert!(samuels.claim(&offer, passkey_s).await.is_err(), "Samuel's vault comes second");
     // Bob tries again, as if the answer had been lost: the server is avenCEO's device already
-    assert_eq!(bobs.claim(&offer, passkey_b, SETUP_CODE).await.expect("the same claim"), avenceo);
+    assert_eq!(bobs.claim(&offer, passkey_b).await.expect("the same claim"), avenceo);
     let held = server.read(|lab, me| lab.size(me)).await;
-    for n in [bobs, samuels] {
+    for n in [bobs, samuels, stranger] {
         n.shutdown().await.expect("the node shuts down");
     }
     server.shutdown().await.expect("it stops");
     let id = server.id();
     drop(server);
-    let again = server::open(dir.path(), claimable(&admission)).await.expect("the server again");
+    let again = server::open(dir.path(), admitting(&admission)).await.expect("the server again");
     assert_eq!(again.id(), id, "the same device, from its secret");
     assert_eq!(server::vault(&again).await, Some(avenceo), "still avenCEO's, from its store");
     assert_eq!(again.read(|lab, me| lab.size(me)).await, held, "and nothing claimed anew");
@@ -99,7 +102,7 @@ async fn the_first_human_vault_with_the_setup_code_claims_the_server_once_and_fo
 async fn a_device_takes_the_servers_card_and_the_server_relays_its_space() {
     let dir = Folder::new("card");
     let admission = Admission::default();
-    let server = server::open(dir.path(), claimable(&admission)).await.expect("a new server");
+    let server = server::open(dir.path(), admitting(&admission)).await.expect("a new server");
     let mut w = world();
     let (coop, _, _) = handbook_spaces(&mut w);
     let (mac_s, passkey_s, mac_d, passkey_d, stranger_d) = (w.mac_s, w.passkey_s, w.mac_d, w.passkey_d, w.stranger);
@@ -112,7 +115,7 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_space() {
     }
     stranger.know(mac.addr());
     // Dave's vault claims the server, which then knows Dave's devices and no one else
-    let v: VaultId = daves.claim(&server.offer(), passkey_d, SETUP_CODE).await.expect("Dave's vault claims it");
+    let v: VaultId = daves.claim(&server.offer(), passkey_d).await.expect("Dave's vault claims it");
     assert!(stranger.contact(mac.id()).await.is_err(), "a person's device hands out no card");
     assert!(mac.contact(server.id()).await.expect("the server hands out its card") > 0, "Samuel's Mac takes it");
     let server_d = server.device();

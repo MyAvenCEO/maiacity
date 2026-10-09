@@ -3,8 +3,8 @@
 //! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`). A new device
 //! links (P8c) with its passkey's hello (`PasskeyHello`), then joins its person's vault (`Join`); a device with no UDP
 //! of its own reaches the server's relay first by its passkey's pass (`RelayPass`, P8d). The first human vault to
-//! bring a server's setup code claims it (`Claim`): the server becomes a device of the aven vault avenCEO, which that
-//! human vault owns.
+//! claim a server nobody has claimed yet (`Claim`) owns it: the server becomes a device of the aven vault avenCEO,
+//! which that human vault owns.
 //!
 //! Every value has exactly one encoding, and a decoder takes only bytes that encode back to themselves: integers are
 //! big-endian and fixed-size, sequences carry their length, every enum starts with a tag, sets go smallest first with
@@ -143,29 +143,16 @@ impl std::fmt::Debug for Join {
     }
 }
 
-/// What a device of a human vault sends a server no vault has claimed yet to claim it (P8f, `Lab::claim`): the
-/// server's setup code, the logs of the vaults the device acts for (its contact card, among them the new aven vault
-/// avenCEO, which its human vault owns), the op adding the server as a device of avenCEO, sealing to the key the
-/// server handed for it (`Lab::claim_key`), and the signatures of every signer of that op but the server, in the order
-/// the op names them. The server signs last, in its place, and keeps it all (`Lab::accept_claim`).
-#[derive(Clone, PartialEq, Eq)]
+/// What a device of a human vault sends a server no vault has claimed yet to claim it (P8f, `Lab::claim`): the logs
+/// of the vaults the device acts for (its contact card, among them the new aven vault avenCEO, which its human vault
+/// owns), the op adding the server as a device of avenCEO, sealing to the key the server handed for it
+/// (`Lab::claim_key`), and the signatures of every signer of that op but the server, in the order the op names them.
+/// The server signs last, in its place, and keeps it all (`Lab::accept_claim`).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Claim {
-    pub code: Vec<u8>,
     pub card: Vec<Signed>,
     pub add: Op,
     pub sigs: Vec<Signature>,
-}
-
-/// The setup code shows only its size.
-impl std::fmt::Debug for Claim {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Claim")
-            .field("code", &format_args!("{} bytes", self.code.len()))
-            .field("card", &self.card)
-            .field("add", &self.add)
-            .field("sigs", &self.sigs)
-            .finish()
-    }
 }
 
 /// A cursor over bytes a peer sent.
@@ -489,6 +476,11 @@ impl Encode for Classical {
                 out.push(1);
                 a.encode(out);
             }
+            Classical::Batch { assertion, ops } => {
+                out.push(2);
+                assertion.encode(out);
+                ops.encode(out);
+            }
         }
     }
 }
@@ -498,6 +490,7 @@ impl Decode for Classical {
         match r.u8()? {
             0 => Ok(Classical::Ed25519(r.array()?)),
             1 => Ok(Classical::Passkey(Assertion::decode(r)?)),
+            2 => Ok(Classical::Batch { assertion: Assertion::decode(r)?, ops: r.set(32)? }),
             _ => Err(WireError::Unknown),
         }
     }
@@ -674,7 +667,6 @@ impl Decode for Join {
 /// The code, the card, the op as its id hashes it, then the signatures.
 impl Encode for Claim {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.code.encode(out);
         self.card.encode(out);
         out.push(VERSION);
         self.add.encode(out);
@@ -684,7 +676,7 @@ impl Encode for Claim {
 
 impl Decode for Claim {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Claim { code: r.bytes()?, card: r.seq(76)?, add: versioned(r)?, sigs: r.seq(79)? })
+        Ok(Claim { card: r.seq(76)?, add: versioned(r)?, sigs: r.seq(79)? })
     }
 }
 
@@ -766,16 +758,34 @@ mod tests {
     }
 
     #[test]
-    fn a_claim_reads_back_the_same_and_never_shows_its_code() {
+    fn a_claim_reads_back_the_same() {
         let w = world();
         let card = w.lab.card(w.server);
         let joined = |s: &&Signed| matches!(s.op.action, Action::AddDevice { device, .. } if device == w.server);
         let add = card.iter().find(joined).expect("the op that added the server").clone();
-        let code = b"a secret setup code".to_vec();
-        let claim = Claim { code, card: card.clone(), add: add.op.clone(), sigs: add.sigs[..1].to_vec() };
-        assert_eq!(Claim::from_wire(&claim.to_wire()), Ok(claim.clone()));
-        let shown = format!("{claim:?}");
-        assert!(!shown.contains("secret") && shown.contains("19 bytes"), "{shown}");
+        let claim = Claim { card: card.clone(), add: add.op.clone(), sigs: add.sigs[..1].to_vec() };
+        assert_eq!(Claim::from_wire(&claim.to_wire()), Ok(claim));
+    }
+
+    #[test]
+    fn a_signature_of_ops_signed_together_reads_back_only_in_their_order() {
+        let w = world();
+        let ops: Vec<Op> = w.lab.log(w.mac_s).ops()[..2].to_vec();
+        let mut batch: Vec<OpId> = ops.iter().map(Op::id).collect();
+        batch.sort();
+        let mut passkey = crate::sign::Passkey::from_seed([1; 32]);
+        let ceremony = passkey.ceremony(crate::sign::batch_challenge(&batch));
+        let sig = ceremony.sign_in(passkey.keys(), ops[0].id(), &batch, true).expect("its signature");
+        assert!(matches!(&sig.classical, Classical::Batch { ops, .. } if *ops == batch), "it names both ops");
+        let signed = Signed { op: ops[0].clone(), sigs: vec![sig] };
+        let bytes = signed.to_wire();
+        assert_eq!(Signed::from_wire(&bytes), Ok(signed));
+        // the same ids the other way round encode another value, which no decoder takes
+        let (a, b) = (&batch[0].0, &batch[1].0);
+        let at = bytes.windows(64).position(|w| w == [&a[..], &b[..]].concat()).expect("the batch's ids");
+        let mut swapped = bytes.clone();
+        swapped[at..at + 64].copy_from_slice(&[&b[..], &a[..]].concat());
+        assert_eq!(Signed::from_wire(&swapped), Err(WireError::Unordered));
     }
 
     #[test]

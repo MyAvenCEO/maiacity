@@ -90,8 +90,8 @@ services:
       - "7400:7400/udp"
 
   # avenDB's server (avendb/crates/avendb-server): a device of avenCEO, holding only ciphertext, and its relay. Its own
-  # image, port and host name; nothing of the media vault. The first human vault that brings AVENDB_SETUP_CODE claims
-  # it (avendb/README.md, "Deploying the server").
+  # image, port and host name; nothing of the media vault. The first human vault founded through it claims it
+  # (avendb/README.md, "Deploying the server").
   avendb:
     build:
       context: avendb
@@ -104,7 +104,6 @@ services:
     environment:
       AVENDB_RELAY_URL: ${AVENDB_RELAY_URL:-http://localhost:3350}
       AVENDB_PUBLIC_ADDR: ${AVENDB_PUBLIC_ADDR:-}
-      AVENDB_SETUP_CODE: ${AVENDB_SETUP_CODE:-}
       RUST_LOG: ${AVENDB_LOG:-info}
       # plain log lines: the deploy reads its offer from them
       NO_COLOR: "1"

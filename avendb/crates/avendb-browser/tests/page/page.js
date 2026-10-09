@@ -1,7 +1,8 @@
 /*
  * AVENDB'S DEVICE IN A PAGE, as tests/page.rs drives it in Chromium (P8e): each device a frame of one tab, so all of
  * them share the tab's virtual authenticator, which holds the person's passkey. The query says who the device is and
- * what it does. With `server`, it makes the passkey and founds its person's vault, then writes a note; with `offer`, it
+ * what it does. With `server`, it makes the passkey and founds its person's vault, claiming the server if nobody has
+ * yet, then writes a note; with `offer`, it
  * links through that code; if its store (`store`, in IndexedDB) holds a device already, it opens that one again. Then
  * it waits to read `reads` in block 2 of the note, writes `write` there, and waits to read `then`; once done, with
  * `close`, it saves and closes. Each step is reported to the test, with the passkey's ceremonies so far.
@@ -65,8 +66,7 @@ async function run() {
 			trace('unlocking');
 			const unlock = await passkey.unlock(nonce);
 			trace('founding');
-			const [server, setup] = [q.get('server'), q.get('setup')];
-			device = await avendb.Device.found(name, relay, server, setup, made.spki, unlock, passkey.sign);
+			device = await avendb.Device.found(name, relay, q.get('server'), made.spki, unlock, passkey.sign);
 			const [notes] = await device.notes();
 			const entry = await device.write(notes.founder, notes.space, 'Seeds', q.get('write'));
 			note = { actor: notes.founder, space: notes.space, entry };

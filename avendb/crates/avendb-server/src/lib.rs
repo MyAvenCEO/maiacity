@@ -8,10 +8,10 @@
 //! unless by then the node knows it. While sign-up is open (P8e, `Config::signup`), it honours a pass of any passkey,
 //! so that a person's first device, a browser, founds their vault and makes it known to the server in those minutes.
 //!
-//! A new server belongs to no vault (P8f). The first device that brings its setup code (`Config::setup`) claims it for
-//! its person's human vault (`avendb_net::Node::claim`): the server becomes a device of avenCEO, an aven vault that
-//! human vault owns, and acts for it without ever governing it. Until then its relay honours a pass of any passkey, so
-//! that the claiming device may be a browser; once claimed, nobody claims it again, and the code is spent.
+//! A new server belongs to no vault (P8f). The first human vault to claim it owns it (`avendb_net::Node::claim`), as a
+//! person's first device founds their vault through it (`avendb_net::Node::found_with`): the server becomes a device of
+//! avenCEO, an aven vault that human vault owns, and acts for it without ever governing it. Until then its relay
+//! honours a pass of any passkey, so that the claiming device may be a browser; once claimed, nobody claims it again.
 //!
 //! The relay serves plain HTTP. TLS ends in front of it, at a proxy that must offer X25519MLKEM768, as every device's
 //! TLS offers nothing else (`avendb_net::pq_provider`); and as iroh's relay path is `/relay`, the relay wants a host
@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result, anyhow};
-use avendb_net::{Admission, Node, Offer, Options, SetupCode, server, token_pass};
+use avendb_net::{Admission, Node, Offer, Options, server, token_pass};
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use iroh_relay::server::{
     Access, AccessControl, ClientRequest, ConnectionId, RelayConfig, RelayService, Server, ServerConfig,
@@ -52,14 +52,7 @@ pub struct Config {
     /// whose pass any passkey signed (`avendb_net::Admission::open`), not only one whose passkey roots a vault the
     /// server knows. A device on UDP reaches the server without the relay anyway.
     pub signup: bool,
-    /// Its setup code (`AVENDB_SETUP_CODE`, at least `SETUP_CODE_MIN` bytes, as random as can be): the first device
-    /// that brings it claims the server for its person's human vault, as avenCEO's device (P8f). Unsaid, nobody claims
-    /// a new server.
-    pub setup: Option<SetupCode>,
 }
-
-/// The fewest bytes a setup code has: 20, some 120 bits of base64 at random.
-pub const SETUP_CODE_MIN: usize = 20;
 
 impl Config {
     /// As the process's environment says.
@@ -85,12 +78,6 @@ impl Config {
                 None | Some("open") => true,
                 Some("closed") => false,
                 Some(v) => return Err(anyhow!("AVENDB_SIGNUP: {v} is neither open nor closed")),
-            },
-            setup: match var("AVENDB_SETUP_CODE") {
-                Some(code) if code.len() < SETUP_CODE_MIN => {
-                    return Err(anyhow!("AVENDB_SETUP_CODE: at least {SETUP_CODE_MIN} characters, made at random"));
-                }
-                code => code.map(SetupCode::new),
             },
         })
     }
@@ -129,7 +116,6 @@ pub async fn start(config: &Config) -> Result<Running> {
         admission: Some(admission),
         relay_pass: None,
         page: avendb_net::PAGE,
-        setup: config.setup.clone(),
     };
     let node = server::open(&config.data, opts).await?;
     let mut offer = node.offer();

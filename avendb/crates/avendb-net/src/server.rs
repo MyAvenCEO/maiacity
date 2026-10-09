@@ -1,10 +1,10 @@
 //! The server peer (P8b): a node in a folder of its own, its device's secret beside its store. At its first start it
-//! makes that secret, and belongs to no vault until the first device that brings its setup code claims it for its
-//! person's human vault (P8f, `Node::claim`): from then on it is a device of avenCEO, an aven vault that human vault
-//! owns, which it acts for and never governs, and it starts again from what the folder holds. It hands its contact
-//! card, avenCEO's log, to whoever asks, so that a device can grant avenCEO relay on a space; it holds only
-//! ciphertext, and opens nothing but what is public and avenCEO's own. Its relay (the `avendb-server` binary) lets in
-//! only the devices it knows (`Admission`).
+//! makes that secret, and belongs to no vault until the first human vault to claim it does (P8f, `Node::claim`,
+//! `Node::found_with`): from then on it is a device of avenCEO, an aven vault that human vault owns, which it acts for
+//! and never governs, and it starts again from what the folder holds. It hands its contact card, avenCEO's log, to
+//! whoever asks, so that a device can grant avenCEO relay on a space; it holds only ciphertext, and opens nothing but
+//! what is public and avenCEO's own. Its relay (the `avendb-server` binary) lets in only the devices it knows
+//! (`Admission`).
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
@@ -22,7 +22,7 @@ pub const SECRET: &str = "device.key";
 
 /// The server's node in folder `dir`, made if there is none, with `opts` for its network: its device's secret read
 /// from the folder, or made at its first start and written there, readable by its owner alone; and its store beside
-/// it. It hands its contact card to whoever asks, and the first device that brings `opts.setup` claims it.
+/// it. It hands its contact card to whoever asks, and the first human vault to claim it owns it.
 pub async fn open(dir: &Path, opts: Options) -> Result<Node> {
     fs::create_dir_all(dir).with_context(|| format!("the server's folder, {}", dir.display()))?;
     let secret = secret(&dir.join(SECRET))?;

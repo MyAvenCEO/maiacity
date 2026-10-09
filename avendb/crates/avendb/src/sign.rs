@@ -10,8 +10,10 @@
 //!   and holds them in memory only: a locked or stolen device holds no key. The server, which has no passkey, keeps
 //!   keys of its own.
 //! - A passkey signs through WebAuthn, so its classical half is an assertion: the authenticator signs its data
-//!   followed by the SHA-256 of the client data, whose challenge is the op's id. Passkeys only sign P-256, so their
-//!   hash-based key derives from their PRF output too: the authenticator computes it, and it is a hash.
+//!   followed by the SHA-256 of the client data, whose challenge is the op's id, or the hash of the ids of several ops
+//!   it signs at once (`batch_challenge`), as a person's first device founds their vault in one ceremony. Passkeys only
+//!   sign P-256, so their hash-based key derives from their PRF output too: the authenticator computes it, and it is a
+//!   hash; it signs each op's id on its own.
 //!
 //! Writes are the one exception: a device writes often, and a write carries only its classical half. The device vouches
 //! for its writes in its next checkpoint, signed both ways (`policy::Action::Checkpoint`), and a peer that no longer
@@ -139,6 +141,9 @@ pub enum Classical {
     Ed25519([u8; 64]),
     /// A passkey's WebAuthn assertion whose challenge is the op's id.
     Passkey(Assertion),
+    /// A passkey's WebAuthn assertion over several ops it signed in one ceremony: its challenge is their batch's
+    /// (`batch_challenge`), and `ops` holds their ids, smallest first, the op's among them.
+    Batch { assertion: Assertion, ops: Vec<OpId> },
 }
 
 /// What `navigator.credentials.get` returns; the passkey's key is among the signer's keys.
@@ -328,6 +333,17 @@ pub fn pass_challenge(endpoint: &[u8; 32], made: u64) -> [u8; 32] {
     h.finalize()
 }
 
+/// What a passkey's assertion signs for several ops at once, in one ceremony (`Classical::Batch`): a hash of their ids,
+/// smallest first. Its own hash, so it is never an op's id, nor a hello's or a pass's challenge, and it names exactly
+/// these ops: the assertion counts for each of them, and for no other.
+pub fn batch_challenge(ops: &[OpId]) -> [u8; 32] {
+    let mut h = Hasher::new("op batch");
+    for op in ops {
+        h.update(&op.0);
+    }
+    h.finalize()
+}
+
 /// Every op but a write carries the hash-based half of each of its signatures.
 pub fn needs_pq(op: &Op) -> bool {
     !matches!(op.action, Action::Write { .. })
@@ -345,6 +361,10 @@ pub fn verify(signer: SignerId, op: OpId, sig: &Signature, pq: bool) -> bool {
             key.verify_strict(&message(op), &ed25519_dalek::Signature::from_bytes(bytes)).is_ok()
         }
         (SignerKeys::Passkey { p256, .. }, Classical::Passkey(a)) => a.verify(p256, op),
+        (SignerKeys::Passkey { p256, .. }, Classical::Batch { assertion, ops }) => {
+            let set = ops.windows(2).all(|w| w[0] < w[1]);
+            set && ops.contains(&op) && assertion.verify(p256, OpId(batch_challenge(ops)))
+        }
         _ => false,
     };
     classical
@@ -484,6 +504,22 @@ impl Ceremony {
     pub fn sign(&self, keys: SignerKeys, op: OpId, pq: bool) -> Option<Signature> {
         let slh = self.of(&keys, op.0)?;
         let classical = Classical::Passkey(self.assertion.clone());
+        Some(Signature { keys, classical, pq: pq.then(|| sign_pq(&slh, op)) })
+    }
+
+    /// The same, for op `op` among the ops `batch` this ceremony signs together, their ids smallest first: the
+    /// assertion over their `batch_challenge` as its classical half (`Classical::Batch`), and with `pq` the hash-based
+    /// half over the op's own id. An empty `batch` is the op alone (`sign`). `None` unless the op is among them and
+    /// this is that passkey's ceremony over their batch.
+    pub fn sign_in(&self, keys: SignerKeys, op: OpId, batch: &[OpId], pq: bool) -> Option<Signature> {
+        if batch.is_empty() {
+            return self.sign(keys, op, pq);
+        }
+        if !batch.contains(&op) || !batch.windows(2).all(|w| w[0] < w[1]) {
+            return None;
+        }
+        let slh = self.of(&keys, batch_challenge(batch))?;
+        let classical = Classical::Batch { assertion: self.assertion.clone(), ops: batch.to_vec() };
         Some(Signature { keys, classical, pq: pq.then(|| sign_pq(&slh, op)) })
     }
 
@@ -871,6 +907,43 @@ mod tests {
         assert!(signed.verify().is_ok());
         // the Mac app's webview is an origin too
         assert!(verify(passkey.id(), op.id(), &passkey.sign_at(op.id(), "tauri://localhost", true), true));
+    }
+
+    #[test]
+    fn one_ceremony_signs_several_ops_and_counts_for_those_alone() {
+        let mut passkey = Passkey::from_seed([1; 32]);
+        let device = DeviceKey::from_secret([2; 32]);
+        let (a, b) = (op(passkey.id(), vec![]), op(passkey.id(), vec![device.id()]));
+        let mut batch = vec![a.id(), b.id()];
+        batch.sort();
+        let ceremony = passkey.ceremony(batch_challenge(&batch));
+        for o in [&a, &b] {
+            let sig = ceremony.sign_in(passkey.keys(), o.id(), &batch, true).expect("an op of the batch");
+            assert!(verify(passkey.id(), o.id(), &sig, true), "it counts for each op of the batch");
+        }
+        // not for an op outside it, over its ids in another order, or for one of its ops alone
+        let other = OpId::from_u64(7);
+        assert!(ceremony.sign_in(passkey.keys(), other, &batch, true).is_none());
+        let reversed: Vec<OpId> = batch.iter().rev().copied().collect();
+        assert!(ceremony.sign_in(passkey.keys(), a.id(), &reversed, true).is_none());
+        assert!(ceremony.sign(passkey.keys(), a.id(), true).is_none());
+        // a ceremony over one op's id signs no batch
+        let alone = passkey.ceremony(a.id().0);
+        assert!(alone.sign_in(passkey.keys(), a.id(), &batch, true).is_none());
+        // moved onto another op, or naming another batch, it verifies nowhere
+        let sig = ceremony.sign_in(passkey.keys(), a.id(), &batch, true).expect("its signature");
+        assert!(!verify(passkey.id(), other, &sig, true));
+        let Classical::Batch { assertion, ops } = sig.classical.clone() else { unreachable!("a batch's signature") };
+        let mut grown = [&ops[..], &[other]].concat();
+        grown.sort();
+        for ops in [grown, vec![a.id()], reversed] {
+            let named = Signature { classical: Classical::Batch { assertion: assertion.clone(), ops }, ..sig.clone() };
+            assert!(!verify(passkey.id(), a.id(), &named, true), "only the batch the ceremony signed");
+        }
+        // its hash-based half is the op's own
+        let lone = ceremony.sign_in(passkey.keys(), b.id(), &batch, true).expect("its signature");
+        let swapped = Signature { pq: lone.pq, ..sig };
+        assert!(!verify(passkey.id(), a.id(), &swapped, true));
     }
 
     #[test]
