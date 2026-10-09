@@ -4,40 +4,22 @@
 // 2 of each food (FRUITS, VEGETABLES, LEGUMES, CHICKEN). Trades happen where two avens meet, at the seller's price.
 // No euros, no outside market: HEARTS only move between avens.
 
-export const GOODS = ['water', 'fruits', 'vegetables', 'legumes', 'chicken'];
-/** @type {Record<string, string>} */
-export const GOOD_LABEL = { water: 'WATER', fruits: 'FRUITS', vegetables: 'VEGETABLES', legumes: 'LEGUMES', chicken: 'CHICKEN' };
 /** @type {Record<string, string>} */
 // a validated categorical palette (distinct for colour-blind eyes too), in a fixed order
 export const GOOD_COLOUR = { water: '#2a78d6', fruits: '#eb6834', vegetables: '#1baf7a', legumes: '#eda100', chicken: '#e87ba4' };
-/** what one aven needs to eat and drink each day @type {Record<string, number>} */
-export const NEED = { water: 3, fruits: 2, vegetables: 2, legumes: 2, chicken: 2 };
-/** the share of a stock that rots each night: water keeps, fresh food goes fast, legumes (dry, with nuts and seeds) keep long
- * @type {Record<string, number>} */
-export const ROT = { water: 0, fruits: 0.25, vegetables: 0.15, legumes: 0.05, chicken: 0.3 };
+// every number the valley runs on (needs, rot, the HEARTS policy, prices, land, weather) lives in rules.js
+import { RULES, NEED, ROT, GOODS, GOOD_LABEL } from './rules.js';
+import { RECIPES, craft, decayAll } from './recipes.js';
+export { NEED, ROT, GOODS, GOOD_LABEL };
 
-export const START_HEARTS = 1000;
-/** the HEARTS policy: every living aven mints 24 HEARTS a day, and every HEART decays 7% a year (charged each night,
- * 7%/365 of the balance). Everyone starts with 1,000, so new HEARTS keep coming into the valley */
-export const MINT_PER_DAY = 24;
-export const DECAY_PER_YEAR = 0.07;
-export const START_PRICE = 10; // HEARTS a unit, where every price begins (a day's food is ~100 of the 1,000 HEARTS)
 export const DAY_S = 86400; // in-game seconds in a day
 export const WORLD = { w: 1200, h: 820 };
 export const MEET_R = 26; // two avens this close can trade
 /** the market square in the middle of the valley: everyone standing in it can trade with everyone else there */
 export const MARKET = { x: WORLD.w / 2, y: WORLD.h / 2, r: 72 };
-const MARKET_STAY = 3 * 3600; // how long an aven stays at the market once there
-const WALK = 260 / 3600; // world units per in-game second (260 an hour)
 
 const NAMES = ['Ama', 'Bo', 'Cyra', 'Dov', 'Eli', 'Fen', 'Gia', 'Hal', 'Ivo', 'Juno'];
 const COLOURS = ['#e05a6d', '#f0a03c', '#4fb37a', '#4f8fd9', '#9b6bd6', '#2bb3b1', '#b8763a', '#d65db1', '#7f8c3a', '#5a6bd6'];
-/** the body keeps two reserves, 100 = full. Each missing WATER costs 12 of the water reserve, so an aven with no
- * water at all lives through 2 days and dies on the 3rd; each missing unit of food costs 0.57 of the food reserve,
- * so with no food at all it lives 21 days. A full night refills water by 34 and food by 5. Health = the lower one. */
-const HURT = { water: 12, food: 0.57 };
-const MEND = { water: 34, food: 5 };
-
 /** a small seeded random, so a reset with the same seed gives the same valley */
 export function rng(seed) {
 	let s = seed >>> 0 || 1;
@@ -64,14 +46,17 @@ const LANDS = [
 ];
 
 /** who grows what: each aven 1 to 3 goods (about 3 in 10 grow one, 3 in 10 three), every good with at least 2 growers */
-function dealLand(rand) {
+function dealLand(rand, count) {
+	const one = RULES.oneGood / 100,
+		three = RULES.threeGoods / 100;
+	const growers = Math.min(count, RULES.growers);
 	for (let tries = 0; ; tries++) {
-		const lands = NAMES.map(() => {
+		const lands = NAMES.slice(0, count).map(() => {
 			const r = rand();
-			const k = r < 0.3 ? 1 : r < 0.7 ? 2 : 3;
+			const k = r < one ? 1 : r < one + three ? 3 : 2;
 			return [...GOODS].sort(() => rand() - 0.5).slice(0, k);
 		});
-		if (tries > 200 || GOODS.every((g) => lands.filter((l) => l.includes(g)).length >= 2)) return lands;
+		if (tries > 500 || GOODS.every((g) => lands.filter((l) => l.includes(g)).length >= growers)) return lands;
 	}
 }
 
@@ -79,12 +64,12 @@ function dealLand(rand) {
  * 5–25% over, more for food that rots; WATER counts the rain barrels), split very unevenly between its growers */
 function dealCapacity(rand, lands) {
 	const produce = lands.map(() => ({}));
-	const rain = NAMES.length * 0.33 * 1.5;
+	const rain = lands.length * (RULES.rainChance / 100) * (1 + RULES.rainMax) / 2;
 	for (const g of GOODS) {
 		const growers = lands.map((l, i) => (l.includes(g) ? i : -1)).filter((i) => i >= 0);
-		const over = g === 'water' ? 1.05 + rand() * 0.1 : 1.1 + rand() * 0.15 + ROT[g] * 0.3;
-		const total = NEED[g] * NAMES.length * over - (g === 'water' ? rain : 0);
-		const weight = growers.map(() => 0.25 + rand() * rand() * 2);
+		const over = g === 'water' ? 1 + (RULES.overWater - 5 + rand() * 10) / 100 : 1 + (RULES.overFood - 7 + rand() * 14) / 100 + ROT[g] * 0.3;
+		const total = Math.max(0, NEED[g] * lands.length * over - (g === 'water' ? rain : 0));
+		const weight = growers.map(() => 0.25 + rand() * rand() * RULES.uneven);
 		const sum = weight.reduce((n, w) => n + w, 0);
 		growers.forEach((i, k) => (produce[i][g] = Math.max(1, Math.round((total * weight[k]) / sum))));
 	}
@@ -95,9 +80,9 @@ function dealCapacity(rand, lands) {
 /** @returns {any} */
 export function createWorld(seed = Date.now() % 1e9) {
 	const rand = rng(seed);
-	const lands = dealLand(rand);
+	const lands = dealLand(rand, RULES.avens);
 	const capacity = dealCapacity(rand, lands);
-	const avens = NAMES.map((name, i) => {
+	const avens = NAMES.slice(0, RULES.avens).map((name, i) => {
 		const home = LANDS[i];
 		const grows = GOODS.filter((g) => lands[i].includes(g));
 		const produce = capacity[i];
@@ -106,7 +91,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			ask = {},
 			bid = {};
 		for (const g of GOODS) markup[g] = grows.includes(g) ? 1 + rand() * 0.15 : 0.85 + rand() * 0.15;
-		for (const g of GOODS) (grows.includes(g) ? ask : bid)[g] = Math.round(START_PRICE * markup[g]);
+		for (const g of GOODS) (grows.includes(g) ? ask : bid)[g] = cents(RULES.startPrice * markup[g]);
 		return {
 			id: i,
 			name,
@@ -118,16 +103,16 @@ export function createWorld(seed = Date.now() % 1e9) {
 			x: home.x + (rand() - 0.5) * 60,
 			y: home.y + (rand() - 0.5) * 60,
 			target: null, // { x, y } or { aven }
-			hearts: START_HEARTS,
+			hearts: RULES.startHearts,
 			minted: 0, // HEARTS minted so far
 			decayed: 0, // HEARTS lost to decay so far
 			// two days' rations to start, so nobody starves before the first trade, plus the first day's harvest
-			stock: Object.fromEntries(GOODS.map((g) => [g, NEED[g] * 2 + (produce[g] ?? 0)])),
+			stock: Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays + (produce[g] ?? 0)])),
 			markup, // per good: its price as a share of the market price, set by its brain each morning
 			ask, // what it sells for, per unit: the market price times its markup, moving with the market every hour
 			bid, // the most it pays, per unit, the same way
 			flex: 0.1, // how far it gives in when haggling, as a share of its own price
-			reserveDays: 3, // how many days of each need it wants in stock
+			reserveDays: RULES.reserveDays, // how many days of each need it wants in stock
 			harvest: { ...produce }, // what its land actually gave last night
 			carry: {}, // what it bought and carries until it is back on its own land
 			plan: [], // today's route, as its brain chose it: aven ids to walk to in order, or 'home'
@@ -141,8 +126,8 @@ export function createWorld(seed = Date.now() % 1e9) {
 			metAt: {} // aven id -> in-game time of the last meeting, so they don't haggle on every frame
 		};
 	});
-	const market = Object.fromEntries(GOODS.map((g) => [g, { price: START_PRICE, ref: START_PRICE, supply: 0, demand: 0, open: START_PRICE, history: [START_PRICE], series: [], sells: [], wants: [] }]));
-	const world = { seed, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally() };
+	const market = Object.fromEntries(GOODS.map((g) => [g, { price: RULES.startPrice, ref: RULES.startPrice, supply: 0, demand: 0, open: RULES.startPrice, history: [RULES.startPrice], series: [], sells: [], wants: [] }]));
+	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally() };
 	updateMarket(world);
 	record(world, 0, {});
 	return world;
@@ -172,7 +157,7 @@ export function updateMarket(world) {
 		// offered raises it about 41% a day. What's offered counts at most each seller's daily surplus, so old stock piling
 		// up doesn't sink the price for ever
 		const flow = m.sells.reduce((n, o) => n + Math.min(o.qty, Math.max(1, world.avens[o.id].produce[g] - NEED[g])), 0);
-		m.ref = Math.max(0.01, m.ref * ((m.demand + 1) / (flow + 1)) ** (1 / 48));
+		m.ref = Math.max(0.01, m.ref * ((m.demand + 1) / (flow + 1)) ** (1 / (24 * RULES.priceDays)));
 		m.price = cents(m.ref);
 		// the price over time, for the chart: one point an hour, the last 120 days
 		if (m.series.at(-1)?.t === world.t) m.series.at(-1).price = m.price;
@@ -183,16 +168,17 @@ export function updateMarket(world) {
 		for (const g of GOODS) (a.grows.includes(g) ? a.ask : a.bid)[g] = cents(world.market[g].price * a.markup[g]);
 }
 
-/** one night's harvest of a good: about its capacity, give or take a quarter; one night in 20 a bad harvest (30–60%),
- * one in 20 a rich one (130–160%) */
+/** one night's harvest of a good, as its grow recipe says: about its capacity ± the swing, now and then a bad (30–60%)
+ * or a rich (130–160%) night, and WATER low in a dry spell */
 function harvest(world, cap, g) {
 	const r = world.rand();
 	// in a dry spell the wells give far less: every WATER field on 40–70%
-	if (g === 'water' && world.weather.dry) return { qty: Math.max(0, Math.round(cap * (0.4 + world.rand() * 0.3))), kind: 'dry' };
+	if (g === 'water' && world.weather.dry) return { qty: Math.max(0, Math.round(cap * Math.max(0, RULES.dryWells / 100 - 0.15 + world.rand() * 0.3))), kind: 'dry' };
 	let f, kind;
-	if (r < 0.05) (f = 0.3 + world.rand() * 0.3), (kind = 'bad');
-	else if (r > 0.95) (f = 1.3 + world.rand() * 0.3), (kind = 'rich');
-	else (f = 0.75 + (world.rand() + world.rand()) * 0.25), (kind = 'normal');
+	const swing = RULES.swing / 100;
+	if (r < RULES.badChance / 100) (f = 0.3 + world.rand() * 0.3), (kind = 'bad');
+	else if (r > 1 - RULES.richChance / 100) (f = 1.3 + world.rand() * 0.3), (kind = 'rich');
+	else (f = 1 - swing + (world.rand() + world.rand()) * swing), (kind = 'normal');
 	return { qty: Math.max(0, Math.round(cap * f)), kind };
 }
 
@@ -291,7 +277,7 @@ function pickTarget(world, a) {
 	while (a.plan.length) {
 		const next = a.plan.shift();
 		if (next === 'home') return { x: a.home.x, y: a.home.y, wander: true };
-		if (next === 'market') return marketSpot(world, world.t + MARKET_STAY);
+		if (next === 'market') return marketSpot(world, world.t + RULES.marketHours * 3600);
 		const s = world.avens[next];
 		if (s && s !== a && s.alive && !(a.metAt[s.id] != null && world.t - a.metAt[s.id] < 3 * 3600)) return { aven: s };
 	}
@@ -328,7 +314,7 @@ export function step(world, dt) {
 		const tx = a.target.aven ? a.target.aven.x : a.target.x;
 		const ty = a.target.aven ? a.target.aven.y : a.target.y;
 		const d = Math.hypot(tx - a.x, ty - a.y);
-		const speed = WALK * (a.target.wander || (a.target.market && atMarket(a)) ? 0.35 : 1) * (0.5 + a.health / 200);
+		const speed = (RULES.walk / 3600) * (a.target.wander || (a.target.market && atMarket(a)) ? 0.35 : 1) * (0.5 + a.health / 200);
 		const move = speed * dt;
 		// back on its own land, it puts what it carries into its store
 		if (Math.hypot(a.x - a.territory.x, a.y - a.territory.y) < a.territory.r) a.carry = {};
@@ -348,7 +334,7 @@ export function step(world, dt) {
 			const a = live[i],
 				b = live[j];
 			if (Math.hypot(a.x - b.x, a.y - b.y) > MEET_R && !(atMarket(a) && atMarket(b))) continue;
-			if (a.metAt[b.id] != null && world.t - a.metAt[b.id] < 3600) continue;
+			if (a.metAt[b.id] != null && world.t - a.metAt[b.id] < RULES.meetHours * 3600) continue;
 			a.metAt[b.id] = b.metAt[a.id] = world.t;
 			trade(world, a, b);
 			if (a.target?.aven === b) a.target = null;
@@ -363,68 +349,61 @@ export function step(world, dt) {
 	return false;
 }
 
-/** night: everyone eats and drinks, the hungry lose health, then the territories grow tomorrow's goods */
+/** night: the market closes its day, then every aven runs the night's recipes (drink, eat, mint, see recipes.js),
+ * every resource decays by its own rule (food rots, HEARTS melt), the starved die, and the lands grow tomorrow's goods */
 function endOfDay(world) {
 	const nightRot = Object.fromEntries(GOODS.map((g) => [g, 0]));
-	for (const a of world.avens) {
-		if (!a.alive) continue;
-		const short = {},
-			ate = {};
-		const hurt = { water: 0, food: 0 };
-		for (const g of GOODS) {
-			const eat = Math.min(NEED[g], a.stock[g]);
-			a.stock[g] -= eat;
-			ate[g] = eat;
-			if (eat < NEED[g]) {
-				short[g] = NEED[g] - eat;
-				const k = g === 'water' ? 'water' : 'food';
-				hurt[k] += short[g] * HURT[k];
-			}
-		}
-		for (const k of ['water', 'food']) a.body[k] = hurt[k] ? Math.max(0, a.body[k] - hurt[k]) : Math.min(100, a.body[k] + MEND[k]);
-		a.health = Math.round(Math.min(a.body.water, a.body.food));
-		log(world, a, { kind: 'eat', short, health: a.health });
-		a.today.short = short;
-		a.today.ate = ate;
-		// then what's left starts to rot
-		const rotted = {};
-		for (const g of GOODS) {
-			const x = a.stock[g] * ROT[g];
-			const lost = Math.min(a.stock[g], Math.floor(x) + (world.rand() < x % 1 ? 1 : 0));
-			if (!lost) continue;
-			a.stock[g] -= lost;
-			rotted[g] = lost;
-			world.rotted[g] += lost;
-			nightRot[g] += lost;
-		}
-		if (Object.keys(rotted).length) log(world, a, { kind: 'rot', rotted });
-		a.today.rotted = rotted;
-		if (a.health <= 0) {
-			a.alive = false;
-			a.diedOn = world.day;
-			log(world, a, { kind: 'death' });
-		}
-	}
 	for (const g of GOODS) {
 		const m = world.market[g];
-		// the day's average trade price pulls the market price 30% of the way towards it
+		// the day's average trade price pulls the market price part of the way towards it
 		world.tally.avg[g] = m.dayQty ? Math.round((m.dayValue / m.dayQty) * 10) / 10 : null;
-		if (m.dayQty) m.ref = Math.max(1, m.ref * 0.7 + (m.dayValue / m.dayQty) * 0.3);
+		if (m.dayQty) m.ref = Math.max(0.01, m.ref + (m.dayValue / m.dayQty - m.ref) * (RULES.tradePull / 100));
 		m.dayQty = m.dayValue = 0;
 		m.history.push(m.price);
 		if (m.history.length > 120) m.history.shift();
 		m.open = m.price;
 	}
-	// the HEARTS policy, each night: decay on every balance, then the day's mint for every living aven
+	const recipes = RECIPES();
+	const meals = recipes.filter((r) => r.by === 'aven' && r.id !== 'mint');
+	const mint = recipes.find((r) => r.id === 'mint');
 	for (const a of world.avens) {
-		const decay = (a.hearts * DECAY_PER_YEAR) / 365;
-		a.hearts -= decay;
-		a.decayed += decay;
-		world.tally.decayed += decay;
 		if (a.alive) {
-			a.hearts += MINT_PER_DAY;
-			a.minted += MINT_PER_DAY;
-			world.tally.minted += MINT_PER_DAY;
+			const ate = {},
+				short = {};
+			for (const r of meals) {
+				const { took, missing } = craft(r, a);
+				Object.assign(ate, took);
+				Object.assign(short, missing);
+			}
+			a.health = Math.round(Math.min(a.body.water, a.body.food));
+			log(world, a, { kind: 'eat', short, health: a.health });
+			a.today.short = short;
+			a.today.ate = ate;
+		}
+		// each resource's own decay: what's left in store rots, every balance of HEARTS melts a little
+		const lost = decayAll(a, world.rand);
+		const rotted = {};
+		for (const g of GOODS)
+			if (lost[g]) {
+				rotted[g] = lost[g];
+				world.rotted[g] += lost[g];
+				if (a.alive) nightRot[g] += lost[g];
+			}
+		if (a.alive && Object.keys(rotted).length) log(world, a, { kind: 'rot', rotted });
+		a.today.rotted = rotted;
+		if (lost.HEARTS) {
+			a.decayed += lost.HEARTS;
+			world.tally.decayed += lost.HEARTS;
+		}
+		if (a.alive && a.health <= 0) {
+			a.alive = false;
+			a.diedOn = world.day;
+			log(world, a, { kind: 'death' });
+		}
+		if (a.alive) {
+			craft(mint, a);
+			a.minted += mint.out.HEARTS;
+			world.tally.minted += mint.out.HEARTS;
 		}
 		a.hearts = Math.round(a.hearts * 100) / 100;
 	}
@@ -484,16 +463,17 @@ function record(world, day, rotted) {
 	world.tally = blankTally();
 }
 
-/** the night's weather, valley-wide: one night in 40 a dry spell of 3–7 days begins (wells run low, no rain);
- * otherwise one night in 3 it rains and every rain barrel catches 1–2 WATER */
+/** the night's weather, valley-wide: now and then a dry spell begins (wells run low, no rain); otherwise, some nights
+ * it rains and every land's barrel catches a little WATER (see RULES) */
 function weather(world) {
 	const w = world.weather;
 	if (w.dry) w.dry -= 1;
-	else if (world.rand() < 0.025) {
-		w.dry = 3 + Math.floor(world.rand() * 5);
+	else if (world.rand() < RULES.dryChance / 100) {
+		const lo = Math.min(RULES.dryMin, RULES.dryMax);
+		w.dry = lo + Math.floor(world.rand() * (Math.max(RULES.dryMin, RULES.dryMax) - lo + 1));
 		w.dryFrom = world.day;
 	}
-	w.rain = !w.dry && world.rand() < 0.33 ? 1 + Math.floor(world.rand() * 2) : 0;
+	w.rain = !w.dry && RULES.rainMax > 0 && world.rand() < RULES.rainChance / 100 ? 1 + Math.floor(world.rand() * RULES.rainMax) : 0;
 }
 
 /** the board: the living by HEARTS, then the dead by how long they lasted @returns {any[]} */

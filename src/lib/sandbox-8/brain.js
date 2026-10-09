@@ -6,29 +6,35 @@
 // state goes out, never anything about a person. When Liquid can't be reached, a small local rule decides instead.
 
 import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents } from './economy.js';
+import { RULES } from './rules.js';
 
 export const LIQUID_URL = 'https://api.liquid.ai/decisions/v1/systemone';
 export const LIQUID_MODEL = 'd1:free';
 
 /** each aven's tools: just enough to run its own business, each one a typed question its brain answers every morning */
 export const TOOLS = [
-	{ id: 'ask', label: 'Price against the market', note: 'per good it grows: anything from a quarter of the market price to four times it, no cap in between; its price then follows the market every hour' },
-	{ id: 'bid', label: 'Pay against the market', note: 'per good it buys: the most it pays, from a quarter of the market price to four times it' },
-	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet: not at all, 10%, 25%, half way, or all the way' },
+	{ id: 'ask', label: 'Price against the market', note: 'per good it grows: anywhere between the lowest and highest own price the Policies allow; its price then follows the market every hour' },
+	{ id: 'bid', label: 'Pay against the market', note: 'per good it buys: the most it pays, in the same range' },
+	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet, up to the haggling the Policies allow' },
 	{ id: 'reserve', label: 'Keep a stock', note: '1 to 7 days of food and water' },
 	{ id: 'visit', label: 'Plan my walk', note: 'where to go first and second today: the market square, another aven, or home to sell' }
 ];
 
 /** where a price can sit against the market price, from well under to well over */
-const MOVES = ['A quarter of the market price', 'Half the market price', 'Three quarters of it', 'At the market price', 'One and a half times it', 'Double the market price', 'Four times the market price'];
-const FACTOR = [0.25, 0.5, 0.75, 1, 1.5, 2, 4];
+/** seven price levels from the lowest to the highest the Policies allow, evenly spaced on a log scale, the market in the middle */
+function factors() {
+	const lo = RULES.askMin,
+		hi = RULES.askMax;
+	return [lo, lo ** (2 / 3), lo ** (1 / 3), 1, hi ** (1 / 3), hi ** (2 / 3), hi].map((f) => Math.round(f * 100) / 100);
+}
+const moves = () => factors().map((f) => (f === 1 ? 'At the market price' : `${f}× the market price`));
 /** how far to give in when haggling */
-const GIVE = ['Never give in', 'A little (10%)', 'Some (25%)', 'Half way (50%)', 'All the way: take any price to strike the deal'];
-const FLEX = [0, 0.1, 0.25, 0.5, 1];
+const flexes = () => [0, 0.1, 0.25, 0.5, 1].map((f) => Math.round(f * RULES.haggleMax) / 100);
+const gives = () => flexes().map((f, i) => (i ? `Give in up to ${Math.round(f * 100)}%` : 'Never give in'));
 const RESERVE = { '1': 'One day: spend as little as possible now', '2': 'Two days', '3': 'Three days', '5': 'Five days', '7': 'A week: never risk going hungry' };
 
 /** a score of 0–4 (may fall between levels) to a price factor */
-function factorOf(score, levels = FACTOR) {
+function factorOf(score, levels = factors()) {
 	const n = levels.length - 1;
 	const s = Math.max(0, Math.min(n, score));
 	const i = Math.min(n - 1, Math.floor(s));
@@ -49,7 +55,7 @@ export function boardFor(world) {
 export function stateFor(world, a) {
 	const y = a.yesterday;
 	return {
-		game: 'Ten avens trade food and water for HEARTS. Each needs 3 WATER and 2 each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through 2 days and dies on the 3rd; with no food at all it lives 21 days. Supply is only just above need, so shortages are common. Every aven mints 24 HEARTS a day and every HEART decays 7% a year (0.019% a night), so hoarded HEARTS shrink. Goal: survive and end with the most HEARTS.',
+		game: `${world.avens.length} avens trade food and water for HEARTS. Each needs ${NEED.water} WATER and ${NEED.fruits} each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through ${RULES.waterDays} days; with no food at all it lives ${RULES.foodDays} days. Supply is only just above need, so shortages are common. Every aven mints ${RULES.mint} HEARTS a day and every HEART decays ${RULES.decay}% a year, so hoarded HEARTS shrink. Prices are free between ${RULES.askMin}× and ${RULES.askMax}× the market. Goal: survive and end with the most HEARTS.`,
 		day: world.day,
 		me: a.name,
 		hearts: a.hearts,
@@ -84,7 +90,7 @@ export function questionsFor(world, a) {
 		q[`ask_${g}`] = {
 			type: 'score',
 			instructions: `You grow ${GOOD_LABEL[g]}. Its market price is ${m.price} HEARTS; ${m.supply} are offered and ${m.demand} wanted across the valley. Yesterday you sold ${sold}; you can spare ${spare(a, g)} today${ROT[g] ? `, and ${Math.round(ROT[g] * 100)}% of what you keep rots each night` : ''}. To end with the most HEARTS, where should your selling price for ${GOOD_LABEL[g]} sit against the market price?`,
-			criteria: MOVES
+			criteria: moves()
 		};
 	}
 	for (const g of GOODS) {
@@ -93,10 +99,10 @@ export function questionsFor(world, a) {
 		q[`bid_${g}`] = {
 			type: 'score',
 			instructions: `You must buy ${GOOD_LABEL[g]} (you need ${NEED[g]} a day, you have ${a.stock[g]}, you want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}). Its market price is ${m.price} HEARTS; ${m.supply} are offered and ${m.demand} wanted. To survive and keep the most HEARTS, where should the most you pay for ${GOOD_LABEL[g]} sit against the market price?`,
-			criteria: MOVES
+			criteria: moves()
 		};
 	}
-	q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: GIVE };
+	q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: gives() };
 	q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 15%, chicken 30%, legumes 5% a night; water keeps.', criteria: RESERVE };
 	const stops = visitOptions(world, a);
 	q.visit_1 = { type: 'choice', instructions: 'Who should you walk to first today, to buy what you lack or sell what you grow?', criteria: stops };
@@ -174,7 +180,7 @@ export function applyAnswers(world, a, answers, source) {
 		}
 		if (key === 'flex') {
 			if (typeof ans.score !== 'number') continue;
-			const f = Math.round(factorOf(ans.score, FLEX) * 100) / 100;
+			const f = Math.round(factorOf(ans.score, flexes()) * 100) / 100;
 			if (f !== a.flex) changes.push(`haggles up to ${Math.round(f * 100)}%`);
 			a.flex = f;
 			continue;
