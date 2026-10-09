@@ -7,6 +7,7 @@
 	import { onMount } from 'svelte';
 	import { createWorld, step, ranking, MARKET, ROT, MINT_PER_DAY, DECAY_PER_YEAR, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
 	import PriceChart from './PriceChart.svelte';
+	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
 
 	const SPEEDS = [
@@ -23,7 +24,8 @@
 	let tab = $state('market');
 	let selected = $state(0);
 	let panelOpen = $state(true);
-	let snap = $state(snapshot());
+	let page = $state('valley'); // the main view: 'valley' or 'stats'
+	let snap = $state.raw(snapshot());
 	let calls = $state({ asked: 0, answered: 0, failed: 0, lastError: /** @type {string} */ ('') });
 
 	/** @type {HTMLCanvasElement} */
@@ -54,8 +56,10 @@
 			time: clock(world.t),
 			t: world.t,
 			// the chart's lines, only while the Prices tab is open: at most ~300 points a good
-			series: tab === 'prices' ? Object.fromEntries(GOODS.map((g) => { const all = world.market[g].series; const every = Math.max(1, Math.ceil(all.length / 300)); return [g, all.filter((/** @type {any} */ _p, /** @type {number} */ i) => i % every === 0 || i === all.length - 1).map((/** @type {any} */ p) => ({ ...p }))]; })) : {},
+			series: tab === 'prices' || page === 'stats' ? Object.fromEntries(GOODS.map((g) => { const all = world.market[g].series; const every = Math.max(1, Math.ceil(all.length / 300)); return [g, all.filter((/** @type {any} */ _p, /** @type {number} */ i) => i % every === 0 || i === all.length - 1).map((/** @type {any} */ p) => ({ ...p }))]; })) : {},
 			month: Math.floor((world.day - 1) / 30) + 1,
+			// the daily rows, only while the Stats view is open (each row is never changed once written)
+			stats: page === 'stats' ? world.stats.slice() : [],
 			weather: { ...world.weather },
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
@@ -71,6 +75,7 @@
 			aven: {
 				...a,
 				stock: { ...a.stock },
+				body: { ...a.body },
 				harvest: { ...a.harvest },
 				ask: { ...a.ask },
 				markup: { ...a.markup },
@@ -119,6 +124,12 @@
 		snap = snapshot();
 	}
 
+	/** @param {string} v */
+	function setView(v) {
+		page = v;
+		snap = snapshot();
+	}
+
 	/** Start (the first morning's decisions go out now) or pause */
 	function toggle() {
 		if (paused && !started) {
@@ -139,6 +150,7 @@
 
 	function fit() {
 		const r = stageEl.getBoundingClientRect();
+		if (!r.width || !r.height) return; // hidden behind the Stats view
 		const dpr = Math.min(2, window.devicePixelRatio || 1);
 		canvas.width = Math.round(r.width * dpr);
 		canvas.height = Math.round(r.height * dpr);
@@ -403,19 +415,23 @@
 	};
 </script>
 
-<div class="market" class:open={panelOpen}>
+<div class="market" class:open={panelOpen} class:statsview={page === 'stats'}>
 	<header>
 		<div class="title">
 			<b>Sandbox 7 · Avens trading</b>
 			<span>Day {snap.day} · {snap.time} · month {snap.month}</span>
 		</div>
+		<nav class="views" aria-label="View">
+			<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
+			<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
+		</nav>
 		<div class="controls">
 			<button onclick={toggle}>{paused ? (started ? '▶ Play' : '▶ Start') : '❚❚ Pause'}</button>
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
 			</select>
 			<button onclick={reset}>Reset</button>
-			<button class="panel-btn" onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
+			<button class="panel-btn" hidden={page === 'stats'} onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
 		</div>
 	</header>
 
@@ -427,6 +443,12 @@
 			{/each}
 		</div>
 	</div>
+
+	{#if page === 'stats'}
+		<div class="statspage">
+			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} />
+		</div>
+	{/if}
 
 	<aside>
 		<section>
@@ -444,7 +466,7 @@
 					</li>
 				{/each}
 			</ol>
-			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give a quarter to a half, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
+			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give 40 to 70%, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
 			<p class="brain">HEARTS: every aven mints {MINT_PER_DAY} a day; every HEART decays {Math.round(DECAY_PER_YEAR * 100)}% a year.</p>
 			<p class="brain">
 				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered, decided by the stand-in rule ({calls.lastError}){/if}
@@ -506,7 +528,7 @@
 		<section class="ledger">
 			<h3><i style:background={snap.aven.colour}></i>{snap.aven.name}'s ledger</h3>
 			<p class="sub">
-				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · health ${snap.aven.health}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.reserveDays} days in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
+				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.reserveDays} days in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
 			</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, against the market">Sells</th><th title="pays up to, against the market">Pays</th></tr></thead>
@@ -559,6 +581,35 @@
 	}
 	.market:not(.open) aside {
 		display: none;
+	}
+	/* the Stats view takes the whole page under the header; the valley keeps running behind it */
+	.market.statsview {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto 1fr;
+	}
+	.market.statsview .stage,
+	.market.statsview aside {
+		display: none;
+	}
+	.statspage {
+		min-height: 0;
+		overflow: hidden;
+	}
+	.views {
+		display: flex;
+		background: #1f2a2314;
+		border-radius: 10px;
+		padding: 2px;
+	}
+	.views button {
+		border: 0;
+		background: transparent;
+		border-radius: 8px;
+		padding: 0.25rem 0.8rem;
+	}
+	.views button.on {
+		background: #24452f;
+		color: #f4f1e8;
 	}
 	header {
 		grid-column: 1 / -1;
