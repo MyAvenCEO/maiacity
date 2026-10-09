@@ -5,7 +5,8 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, step, ranking, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
+	import { createWorld, step, ranking, MARKET, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
+	import PriceChart from './PriceChart.svelte';
 	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
 
 	const SPEEDS = [
@@ -18,7 +19,7 @@
 	let world = createWorld();
 	let speed = $state(8640);
 	let paused = $state(false);
-	let useLiquid = $state(true);
+	let tab = $state('market');
 	let selected = $state(0);
 	let panelOpen = $state(true);
 	let snap = $state(snapshot());
@@ -33,6 +34,11 @@
 	function fmt(n) {
 		return Math.round(n).toLocaleString('en-US');
 	}
+	/** @param {number} f a markup factor, as ±% against the market */
+	function pctOf(f) {
+		const p = Math.round((f - 1) * 100);
+		return p ? `${p > 0 ? '+' : ''}${p}%` : 'at market';
+	}
 	/** @param {number} t */
 	function clock(t) {
 		const s = t % DAY_S;
@@ -45,13 +51,26 @@
 		return {
 			day: world.day,
 			time: clock(world.t),
+			t: world.t,
+			// the chart's lines, only while the Prices tab is open: at most ~300 points a good
+			series: tab === 'prices' ? Object.fromEntries(GOODS.map((g) => { const all = world.market[g].series; const every = Math.max(1, Math.ceil(all.length / 300)); return [g, all.filter((/** @type {any} */ _p, /** @type {number} */ i) => i % every === 0 || i === all.length - 1).map((/** @type {any} */ p) => ({ ...p }))]; })) : {},
 			month: Math.floor((world.day - 1) / 30) + 1,
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
-			lastPrice: { ...world.lastPrice },
+			market: Object.fromEntries(
+				GOODS.map((g) => {
+					const m = world.market[g];
+					// the real-time average: every trade of this good in the last 24 in-game hours, weighted by units
+					const recent = world.trades.filter((/** @type {any} */ t) => t.good === g && world.t - t.t < DAY_S);
+					const units = recent.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.qty, 0);
+					const avg = units ? Math.round(recent.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.qty * t.price, 0) / units) : null;
+					return [g, { avg, units, price: m.price, open: m.open, supply: m.supply, demand: m.demand, history: m.history.slice(-30).concat(m.price), sells: m.sells.map((/** @type {any} */ o) => ({ ...o })), wants: m.wants.map((/** @type {any} */ o) => ({ ...o })) }];
+				})
+			),
 			aven: {
 				...a,
 				stock: { ...a.stock },
 				ask: { ...a.ask },
+				markup: { ...a.markup },
 				bid: { ...a.bid },
 				ledger: a.ledger.slice(-80).reverse(),
 				brain: { ...a.brain }
@@ -63,10 +82,6 @@
 	function morning() {
 		for (const a of world.avens) {
 			if (!a.alive || a.brain.pending) continue;
-			if (!useLiquid) {
-				applyAnswers(world, a, localAnswers(world, a), 'local');
-				continue;
-			}
 			a.brain.pending = true;
 			calls.asked++;
 			const ctrl = new AbortController();
@@ -120,8 +135,9 @@
 		const phone = window.matchMedia('(max-width: 760px)').matches;
 		const pad = phone ? 8 : 20,
 			foot = phone ? 8 : 76;
-		const s = Math.min((r.width - pad * 2) / WORLD.w, (r.height - pad - foot) / WORLD.h);
-		view = { s: s * dpr, ox: ((r.width - WORLD.w * s) / 2) * dpr, oy: (pad + (r.height - pad - foot - WORLD.h * s) / 2) * dpr };
+		const top = phone ? 52 : 40; // under the price ticker
+		const s = Math.min((r.width - pad * 2) / WORLD.w, (r.height - top - foot) / WORLD.h);
+		view = { s: s * dpr, ox: ((r.width - WORLD.w * s) / 2) * dpr, oy: (top + (r.height - top - foot - WORLD.h * s) / 2) * dpr };
 	}
 
 	function draw(/** @type {number} */ now) {
@@ -171,6 +187,28 @@
 			ctx.textAlign = 'center';
 			ctx.fillText(`${a.name}'s land`, t.x, t.y + t.r + 18);
 		}
+
+		// the market square in the middle: a paved round with stalls in the five goods' colours
+		ctx.fillStyle = light > 0.5 ? '#efe6d2' : '#5b5546';
+		ctx.strokeStyle = '#a8916088';
+		ctx.lineWidth = 3;
+		ctx.beginPath();
+		ctx.arc(MARKET.x, MARKET.y, MARKET.r, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.stroke();
+		GOODS.forEach((g, i) => {
+			const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+			const sx = MARKET.x + Math.cos(ang) * MARKET.r * 0.78,
+				sy = MARKET.y + Math.sin(ang) * MARKET.r * 0.78;
+			ctx.fillStyle = GOOD_COLOUR[g];
+			ctx.beginPath();
+			ctx.roundRect(sx - 9, sy - 6, 18, 12, 3);
+			ctx.fill();
+		});
+		ctx.fillStyle = light > 0.5 ? '#6b5a3a' : '#e8dcc0';
+		ctx.font = '700 13px system-ui, sans-serif';
+		ctx.textAlign = 'center';
+		ctx.fillText('MARKET', MARKET.x, MARKET.y + 4);
 
 		// trades just made: a ring and a coloured spark where they met
 		for (const e of world.events) {
@@ -295,8 +333,10 @@
 	});
 
 	const lineOf = (/** @type {any} */ e) => {
-		if (e.kind === 'buy') return `bought ${e.qty} ${GOOD_LABEL[e.good]} from ${e.with} at ${e.price}`;
-		if (e.kind === 'sell') return `sold ${e.qty} ${GOOD_LABEL[e.good]} to ${e.with} at ${e.price}`;
+		const talk = e.haggled ? ` (haggled: asked ${e.haggled.ask}, offered ${e.haggled.bid})` : '';
+		if (e.kind === 'buy') return `bought ${e.qty} ${GOOD_LABEL[e.good]} from ${e.with} at ${e.price}${talk}`;
+		if (e.kind === 'sell') return `sold ${e.qty} ${GOOD_LABEL[e.good]} to ${e.with} at ${e.price}${talk}`;
+		if (e.kind === 'nodeal') return `no deal on ${GOOD_LABEL[e.good]} with ${e.with}: asked ${e.ask}, offered ${e.bid}`;
 		if (e.kind === 'eat') {
 			const s = Object.entries(e.short ?? {});
 			return s.length ? `went short of ${s.map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')} · health ${e.health}` : `ate and drank in full · health ${e.health}`;
@@ -318,9 +358,6 @@
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
 			</select>
-			<label class="toggle" title="Each aven's morning prices come from Liquid's {LIQUID_MODEL} decision model, or a simple local rule">
-				<input type="checkbox" bind:checked={useLiquid} /> Liquid brains
-			</label>
 			<button onclick={reset}>Reset</button>
 			<button class="panel-btn" onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
 		</div>
@@ -328,6 +365,11 @@
 
 	<div class="stage" bind:this={stageEl}>
 		<canvas bind:this={canvas} onpointerdown={onPointer}></canvas>
+		<div class="ticker" aria-label="Prices">
+			{#each GOODS as g (g)}
+				<span><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} <b>{snap.market[g].price}</b> <small>avg {snap.market[g].avg ?? '—'}</small></span>
+			{/each}
+		</div>
 	</div>
 
 	<aside>
@@ -347,25 +389,69 @@
 				{/each}
 			</ol>
 			<p class="brain">
-				{#if useLiquid}
-					Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}, {calls.failed} fell back to the local rule ({calls.lastError}){/if}
-				{:else}
-					Brains: local rule
-				{/if}
-			</p>
-			<p class="prices">
-				Last price:
-				{#each GOODS as g (g)}<span><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} {snap.lastPrice[g] ?? '—'}</span>{/each}
+				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered, decided by the stand-in rule ({calls.lastError}){/if}
 			</p>
 		</section>
 
+		<nav class="tabs">
+			<button class:on={tab === 'market'} onclick={() => (tab = 'market')}>Market</button>
+			<button class:on={tab === 'prices'} onclick={() => (tab = 'prices')}>Prices</button>
+			<button class:on={tab === 'ledger'} onclick={() => (tab = 'ledger')}>{snap.aven.name}'s ledger</button>
+		</nav>
+
+		{#if tab === 'prices'}
+		<section>
+			<PriceChart series={snap.series} now={snap.t} />
+			<table class="avgs">
+				<thead><tr><th>Good</th><th>Market</th><th>Avg traded, 24 h</th><th>Units, 24 h</th></tr></thead>
+				<tbody>
+					{#each GOODS as g (g)}<tr><td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td><td class="num">{snap.market[g].price}</td><td class="num">{snap.market[g].avg ?? '—'}</td><td class="num">{snap.market[g].units}</td></tr>{/each}
+				</tbody>
+			</table>
+		</section>
+		{:else if tab === 'market'}
+		<section class="market-board">
+			<p class="sub">Live: who sells and who wants what, right now. The market price leans up when more is wanted than offered, down when more is offered, and follows each day's trades.</p>
+			{#each GOODS as g (g)}
+				{@const m = snap.market[g]}
+				{@const change = m.open ? Math.round(((m.price - m.open) / m.open) * 100) : 0}
+				{@const lo = Math.min(...m.history)}
+				{@const hi = Math.max(...m.history)}
+				<div class="good">
+					<div class="good-head">
+						<span><em style:background={GOOD_COLOUR[g]}></em><b>{GOOD_LABEL[g]}</b></span>
+						<svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+							<polyline fill="none" stroke={GOOD_COLOUR[g]} stroke-width="2" points={m.history.map((/** @type {number} */ p, /** @type {number} */ i) => `${(i / Math.max(1, m.history.length - 1)) * 100},${22 - ((p - lo) / Math.max(1, hi - lo)) * 20}`).join(' ')} />
+						</svg>
+						<span class="num" title="market price"><b>{m.price}</b> ♥ <small class:up={change > 0} class:down={change < 0}>{change > 0 ? '+' : ''}{change}%</small></span>
+					</div>
+					<div class="avg">Average traded, last 24 h: <b>{m.avg ?? '—'}</b>{m.avg != null ? ` ♥ over ${m.units} units` : ' (no trades)'}</div>
+					<div class="sd">
+						<span>offered {m.supply}</span>
+						<i><b style:width="{(m.supply / Math.max(1, m.supply + m.demand)) * 100}%"></b></i>
+						<span>wanted {m.demand}</span>
+					</div>
+					<div class="orders">
+						<ul>
+							<li class="cap">Sells</li>
+							{#each m.sells as o (o.id)}<li>{o.name} <span class="num">{o.qty} at {o.price}</span></li>{:else}<li class="none">nobody</li>{/each}
+						</ul>
+						<ul>
+							<li class="cap">Wants</li>
+							{#each m.wants as o (o.id)}<li>{o.name} <span class="num">{o.qty} up to {o.price}</span></li>{:else}<li class="none">nobody</li>{/each}
+						</ul>
+					</div>
+				</div>
+			{/each}
+		</section>
+		{:else}
 		<section class="ledger">
 			<h3><i style:background={snap.aven.colour}></i>{snap.aven.name}'s ledger</h3>
 			<p class="sub">
 				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · health ${snap.aven.health}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.reserveDays} days in stock
 			</p>
 			<table>
-				<thead><tr><th>Good</th><th>Need/day</th><th>Grows/day</th><th>Stock</th><th>Sells at</th><th>Pays up to</th></tr></thead>
+				<thead><tr><th>Good</th><th>Need/day</th><th>Grows/day</th><th>Stock</th><th>Market</th><th>Sells at</th><th>Pays up to</th></tr></thead>
 				<tbody>
 					{#each GOODS as g (g)}
 						<tr>
@@ -373,8 +459,9 @@
 							<td class="num">{NEED[g]}</td>
 							<td class="num">{snap.aven.produce[g] ?? ''}</td>
 							<td class="num">{snap.aven.stock[g]}</td>
-							<td class="num">{snap.aven.ask[g] ?? ''}</td>
-							<td class="num">{snap.aven.bid[g] ?? ''}</td>
+							<td class="num">{snap.market[g].price}</td>
+							<td class="num">{snap.aven.ask[g] != null ? `${snap.aven.ask[g]} (${pctOf(snap.aven.markup[g])})` : ''}</td>
+							<td class="num">{snap.aven.bid[g] != null ? `${snap.aven.bid[g]} (${pctOf(snap.aven.markup[g])})` : ''}</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -393,6 +480,7 @@
 				{/each}
 			</ul>
 		</section>
+		{/if}
 	</aside>
 </div>
 
@@ -546,9 +634,7 @@
 		gap: 0.2rem 0.7rem;
 	}
 	.ledger {
-		margin-top: 0.9rem;
-		border-top: 1px solid #1f2a231a;
-		padding-top: 0.4rem;
+		padding-top: 0.2rem;
 	}
 	table {
 		width: 100%;
@@ -569,6 +655,120 @@
 		white-space: nowrap;
 		padding: 0.15rem 0.2rem;
 		border-top: 1px solid #1f2a2312;
+	}
+	.ticker {
+		position: absolute;
+		top: 0.5rem;
+		left: 0.5rem;
+		right: 0.5rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.8rem;
+		justify-content: center;
+		pointer-events: none;
+		font-size: 0.72rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.ticker span {
+		background: rgb(250 248 242 / 0.85);
+		border-radius: 999px;
+		padding: 0.12rem 0.5rem;
+	}
+	.ticker small {
+		opacity: 0.65;
+	}
+	.avg {
+		font-size: 0.72rem;
+		margin-top: 0.2rem;
+	}
+	.tabs {
+		display: flex;
+		gap: 0.3rem;
+		margin: 0.9rem 0 0.4rem;
+		border-top: 1px solid #1f2a231a;
+		padding-top: 0.6rem;
+	}
+	.tabs button {
+		flex: 1;
+	}
+	.tabs button.on {
+		background: #24452f;
+		color: #f4f1e8;
+	}
+	.good {
+		background: #fff;
+		border-radius: 10px;
+		padding: 0.45rem 0.6rem;
+		margin-top: 0.45rem;
+		box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+	}
+	.good-head {
+		display: grid;
+		grid-template-columns: 7.2rem 1fr 6.5rem;
+		gap: 0.5rem;
+		align-items: center;
+	}
+	.spark {
+		width: 100%;
+		height: 22px;
+	}
+	.good-head small {
+		font-size: 0.7rem;
+		opacity: 0.8;
+	}
+	.good-head small.up {
+		color: #2f7d4f;
+	}
+	.good-head small.down {
+		color: #b8483b;
+	}
+	.sd {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		gap: 0.4rem;
+		align-items: center;
+		font-size: 0.7rem;
+		opacity: 0.85;
+		margin-top: 0.25rem;
+	}
+	.sd i {
+		height: 6px;
+		border-radius: 3px;
+		background: #e05a6d55;
+		overflow: hidden;
+	}
+	.sd i b {
+		display: block;
+		height: 100%;
+		background: #4fb37a;
+	}
+	.orders {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.6rem;
+		margin-top: 0.3rem;
+	}
+	.orders ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		font-size: 0.72rem;
+	}
+	.orders li {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.3rem;
+	}
+	.orders .cap {
+		font-weight: 600;
+		opacity: 0.6;
+	}
+	.orders .none {
+		opacity: 0.45;
+	}
+	.entries .nodeal .what {
+		opacity: 0.6;
+		font-style: italic;
 	}
 	h4 {
 		margin: 0.8rem 0 0.2rem;
