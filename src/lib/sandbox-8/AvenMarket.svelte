@@ -22,7 +22,7 @@
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
-	import { stateFor, questionsFor, askLiquid, askBox, boxModels, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
+	import { stateFor, questionsFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
 
 	// the rules this viewer changed last time, kept in this browser only
 	const SAVED = 'sandbox-8-rules';
@@ -288,8 +288,11 @@
 	}
 	/** what the GPU machine serves; reaching it is how the page knows this device is in the tailnet */
 	async function findBox() {
-		const list = await Promise.race([boxModels(brain.url), new Promise((_, no) => setTimeout(() => no(new Error('no answer in 8 s')), 8000))]);
-		box = { d1: list.find((/** @type {string} */ m) => /d1/i.test(m)) ?? '', qwen: list.find((/** @type {string} */ m) => /qwen/i.test(m)) ?? '' };
+		await Promise.race([boxModels(brain.url), new Promise((_, no) => setTimeout(() => no(new Error('no answer in 8 s')), 8000))]);
+		// each model where it is served: d1 may listen on the machine's other port
+		const where = (/** @type {'d1' | 'qwen'} */ k) => boxModel(brain.url, k).then((m) => `${m.id}${m.base === brain.url.trim().replace(/\/+$/, '') ? '' : ` (${m.base.replace(/^https?:\/\/[^:/]+/, '')})`}`, () => '');
+		const [d1, qwen] = await Promise.all([where('d1'), where('qwen')]);
+		box = { d1, qwen };
 	}
 
 	// ---- the lock (Samuel, 2026-10-09): the sandbox plays only on a device in his tailnet, one that reaches his GPU
