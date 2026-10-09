@@ -260,8 +260,9 @@ theorem KindsFit.step {st st' : State} {op : Op} (hk : KindsFit st) (h : step st
       exact ⟨fun p hp => ownerFits_step h (ho p hp), hd, hr⟩
 
 /-- T21 (vaults by kind): in every reachable state, signers own human vaults only; coop and aven vaults are owned by
-    human and coop vaults; a coop has no devices; and only a human vault has a root. So an op for a coop or an aven
-    vault always goes through a human vault its device or passkey belongs to (`ActsChain.of_actsVia`). -/
+    human and coop vaults; a coop has no devices; and only a human vault has a root. So an op for a coop always goes
+    through a human vault its device or passkey belongs to (`ActsChain.of_actsVia`), and so does an op for an aven
+    vault that none of its own servers signs. -/
 theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st := by
   obtain ⟨ops, rfl⟩ := hr
   refine replay_inv KindsFit (fun _ _ _ hk hs => hk.step hs) ops {} ?_
