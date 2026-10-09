@@ -1,5 +1,5 @@
 <!--
-	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Five blobs in a 2D valley, each with 125,000 HEARTS and a territory
+	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Five blobs in a 2D valley, each with 1,000 HEARTS and a territory
 	that grows 2 of the 5 goods. They walk to each other and trade at their own prices; every morning each one's prices are
 	decided by Liquid's decision model d1:free (or a local rule when Liquid is out of reach). Survive, and end with the most HEARTS.
 -->
