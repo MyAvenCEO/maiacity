@@ -240,10 +240,11 @@
 	// every aven thinks all day long, not once a morning (Samuel): once its last decision is in and THINK_H in-game hours
 	// have passed, it asks its brain again with what it sees now. There is no rule-based stand-in: an aven acts only on a
 	// brain's answers, and the clock waits while any living aven's decision is older than STALE_H. The stalest aven asks
-	// first. The brains (Samuel, 2026-10-09) run on his GPU machine, over Tailscale: d1 itself by default, and Qwen, fast,
-	// whenever d1 can't (an error, or while d1 rests after one): one request every second (BOX_EVERY, Samuel), sent whether
-	// or not the ones before have answered, up to BOX_IN_FLIGHT at once. Liquid's hosted d1:free, one ask at a time, is
-	// still a choice: it refuses once a burst of 2 or 3 asks (~20,000 tokens each) has gone through and sustains about one ask
+	// first. The brains (Samuel, 2026-10-09) run on his GPU machine, over Tailscale, picked on the page: d1 (its own
+	// server, on the machine's CPU) one request every second (BOX_EVERY), sent whether or not the ones before have
+	// answered, up to BOX_IN_FLIGHT at once; when d1 fails, Qwen answers and the picker turns to Qwen. Qwen is fast: every
+	// aven that is due asks at once. Liquid's hosted d1:free (off the picker for now), one ask at a time:
+	// it refuses once a burst of 2 or 3 asks (~20,000 tokens each) has gone through and sustains about one ask
 	// every 4 s, so its gap adapts: 10% shorter after an answer (down to GAP_MIN), 50% longer after a refusal (up to
 	// GAP_MAX). Only every third ask of an aven is a full one (haggling, stock); the rest ask its prices. A failure no
 	// brain covers pauses the valley (a refusal from Liquid only waits).
@@ -251,7 +252,7 @@
 	const STALE_H = 24;
 	const GAP_MIN = 2500;
 	const GAP_MAX = 30000;
-	const BOX_EVERY = 1000; // Samuel's own machine: one decision request a second (Samuel)
+	const BOX_EVERY = 1000; // d1 on Samuel's machine: one decision request a second (Samuel); Qwen: all at once
 	const BOX_IN_FLIGHT = 6; // ...with at most this many waiting for their answers
 	const REST = 60000; // a brain that failed is passed over this long
 	let down = $state(/** @type {string} */ (''));
@@ -264,14 +265,15 @@
 	/** @type {Record<string, string>} */
 	const NAME = { d1: 'Local d1', qwen: 'Qwen', liquid: 'Liquid' };
 	/** @type {Record<string, string>} */
-	const BRAINS = { local: "Local d1, Qwen when d1 can't", d1: 'Local d1 only', qwen: 'Qwen only', liquid: `Liquid's hosted ${LIQUID_MODEL}` };
+	const BRAINS = { d1: 'd1', qwen: 'Qwen' };
+	// d1 answers; when it can't, Qwen answers that ask and the picker turns to Qwen until it is set back to d1 (Samuel)
 	/** @type {Record<string, [string, string | null]>} */
-	const PLAN = { local: ['d1', 'qwen'], d1: ['d1', null], qwen: ['qwen', null], liquid: ['liquid', null] };
+	const PLAN = { d1: ['d1', 'qwen'], qwen: ['qwen', null] };
 	const BRAIN = 'sandbox-8-brain';
-	let brain = $state({ mode: 'local', url: BOX_URL });
+	let brain = $state({ mode: 'd1', url: BOX_URL });
 	try {
 		const b = JSON.parse(localStorage.getItem(BRAIN) ?? 'null');
-		if (b) brain = { mode: b.mode in BRAINS ? b.mode : 'local', url: b.url || BOX_URL };
+		if (b?.mode === 'qwen') brain.mode = 'qwen';
 	} catch {
 		/* no storage here */
 	}
@@ -325,7 +327,7 @@
 		/** @param {string} who */
 		const ask = async (who) => {
 			try {
-				const answers = await (who === 'liquid' ? within(25000, (signal) => askLiquid(state, questions, { signal, ...LIQUID })) : within(20000, (signal) => askBox(state, questions, { signal, url: brain.url, want: /** @type {any} */ (who) })));
+				const answers = await (who === 'liquid' ? within(25000, (signal) => askLiquid(state, questions, { signal, ...LIQUID })) : within(who === 'd1' ? 60000 : 20000, (signal) => askBox(state, questions, { signal, url: brain.url, want: /** @type {any} */ (who) })));
 				calls.errors[who] = '';
 				gate.rest[who] = 0;
 				return { answers, source: who };
@@ -335,23 +337,16 @@
 				throw e;
 			}
 		};
-		const [first, then] = PLAN[brain.mode];
-		const now = performance.now();
-		// while the first rests after a failure, the second answers (unless it rests too: then the first it is)
-		if (then && now < gate.rest[first] && now >= gate.rest[then])
-			try {
-				return await ask(then);
-			} catch {
-				/* the first, then */
-			}
+		if (brain.mode === 'qwen') return ask('qwen');
 		try {
-			return await ask(first);
+			return await ask('d1');
 		} catch (e) {
-			if (!then || performance.now() < gate.rest[then]) throw e;
+			// d1 can't: Qwen answers, and the picker stays on Qwen until someone sets it back to d1
+			if (brain.mode === 'd1') (brain.mode = 'qwen'), saveBrain();
 			try {
-				return await ask(then);
+				return await ask('qwen');
 			} catch {
-				throw e; // neither answers: the first one's failure decides
+				throw e; // neither answers: d1's failure decides
 			}
 		}
 	}
@@ -362,7 +357,9 @@
 	/** @param {number} now real time, ms */
 	function think(now) {
 		const local = brain.mode !== 'liquid';
-		if (gate.inFlight >= (local ? BOX_IN_FLIGHT : 1) || now < gate.nextAt) return;
+		// Qwen is fast (Samuel): every aven that is due asks at once; d1 (on the machine's CPU) one a second
+		const fast = brain.mode === 'qwen';
+		if (gate.inFlight >= (fast ? world.avens.length : local ? BOX_IN_FLIGHT : 1) || now < gate.nextAt) return;
 		// the stalest aven that is due: one with no decision yet first, then the oldest decision
 		let a = null;
 		for (const o of world.avens) {
@@ -380,7 +377,7 @@
 		calls.asked++;
 		calls.pending++;
 		// the GPU machine: the next request a second from now, whether or not this one has answered by then
-		if (local) gate.nextAt = now + BOX_EVERY;
+		if (local && !fast) gate.nextAt = now + BOX_EVERY;
 		const myWorld = world;
 		decide(me, full)
 			.then(({ answers, source }) => {
@@ -792,21 +789,7 @@
 					</li>
 				{/each}
 			</ol>
-			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give 40 to 70%, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
-			<p class="brain">HEARTS: every aven mints {snap.policy.mint} a day; every HEART decays {snap.policy.decay}% a year{#if snap.code?.hooks.some((/** @type {any} */ h) => h.hooks.includes('mint') || h.hooks.includes('decay'))}, as a card's code changes them{/if}. <button class="link" onclick={() => setView('policy')}>Policies</button></p>
-			<p class="brain">
-				Config: {snap.config.name}{snap.config.id ? ` v${snap.config.version}` : ''}{snap.config.local ? ` + ${snap.config.local} change${snap.config.local === 1 ? '' : 's'} of yours` : ''} · {#if !acct.play}not saved{:else if !started}saved once you press Start{:else if saving.error}<span class="warn">not saved: {saving.error}</span>{:else}saved, {saving.days} day{saving.days === 1 ? '' : 's'} so far{/if} <button class="link" onclick={() => setView('mips')}>Proposals</button>
-			</p>
-			<p class="brain">
-				{#if snap.code?.hooks.length || snap.code?.errors.length || codeNote}
-					Card code (QuickJS):
-					{#each snap.code?.hooks ?? [] as h, i (h.card)}{i ? '; ' : ''}{h.name} runs {h.hooks.join(', ')}{h.calls ? ` (${h.ms} ms a call)` : ''}{/each}{#each snap.code?.errors ?? [] as e (e.card)}{' · '}<span class="warn">{e.name} stopped: {e.error}; the valley uses the values instead.</span>{/each}{#if codeNote}{' · '}<span class="warn">{codeNote}</span>{/if}
-					<br />
-				{/if}
-				Brains: <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Brains">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select>
-				· {calls.answered} of {calls.asked} answered{#if calls.pending > 1}&nbsp;({calls.pending} waiting){/if}{#if Object.values(calls.by).filter(Boolean).length > 1}&nbsp;({Object.entries(calls.by).filter(([, n]) => n).map(([k, n]) => `${NAME[k]} ${n}`).join(', ')}){/if}{#if calls.limited}&nbsp;· {calls.limited} met Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
-				{#if brain.mode !== 'liquid'}<br />GPU machine <input class="brain-url" bind:value={brain.url} onchange={() => (saveBrain(), findBox().catch((e) => (calls.errors.d1 = errorOf(e))))} spellcheck="false" aria-label="The GPU machine's address" /> · d1: {box.d1 || 'not served'} · Qwen: {box.qwen || 'not served'}{#each ['d1', 'qwen'] as k (k)}{#if calls.errors[k]}{' · '}<span class="warn">{NAME[k]} not answering: {calls.errors[k]}</span>{/if}{/each}{/if}
-			</p>
+			<p class="brain">Brain <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Brain">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select></p>
 		</section>
 
 		<nav class="tabs">

@@ -808,4 +808,22 @@ export const MIGRATIONS: Migration[] = [
           FROM econ_configs WHERE id = 'valley';
     `,
   },
+  {
+    // 0033's JSON was bound as a string to a jsonb parameter, which Bun's Postgres driver stores as a JSON string: every
+    // MIP's cards and every saved run read back as text (the Proposals page could not show MIP #1). Unwrap them.
+    id: "0034-economy-json",
+    sql: `
+      UPDATE econ_configs SET cards = (cards #>> '{}')::jsonb WHERE jsonb_typeof(cards) = 'string';
+      UPDATE econ_config_versions SET body = (body #>> '{}')::jsonb WHERE jsonb_typeof(body) = 'string';
+      UPDATE mips SET cards = (cards #>> '{}')::jsonb WHERE jsonb_typeof(cards) = 'string';
+      UPDATE mips SET remove = (remove #>> '{}')::jsonb WHERE jsonb_typeof(remove) = 'string';
+      UPDATE mips SET base = (base #>> '{}')::jsonb WHERE jsonb_typeof(base) = 'string';
+      UPDATE mips SET result = (result #>> '{}')::jsonb WHERE jsonb_typeof(result) = 'string';
+      UPDATE econ_runs SET config = (config #>> '{}')::jsonb WHERE jsonb_typeof(config) = 'string';
+      UPDATE econ_runs SET summary = (summary #>> '{}')::jsonb WHERE jsonb_typeof(summary) = 'string';
+      UPDATE econ_run_days SET stats = (stats #>> '{}')::jsonb WHERE jsonb_typeof(stats) = 'string';
+      UPDATE econ_run_days SET trades = (trades #>> '{}')::jsonb WHERE jsonb_typeof(trades) = 'string';
+      UPDATE econ_run_days SET decisions = (decisions #>> '{}')::jsonb WHERE jsonb_typeof(decisions) = 'string';
+    `,
+  },
 ];

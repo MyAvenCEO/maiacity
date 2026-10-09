@@ -30,6 +30,8 @@ const MAX_MIP = 1_000_000; // one MIP's cards, in characters
 const MAX_JSON = 2_000_000; // one request's days, in characters
 
 const text = (v, max) => String(v ?? "").trim().slice(0, max);
+// JSON goes in as text, cast in the query (`($n::text)::jsonb`): Bun's Postgres driver sends a string bound straight to
+// a jsonb parameter as a JSON string, so the column would hold "[...]" and read back as text (0034 repairs those rows)
 const json = (v) => JSON.stringify(v ?? null);
 
 // ─────────────────────────────── configs ───────────────────────────────
@@ -182,7 +184,7 @@ export async function createMip(author, body) {
   const via = body?.via === "mcp" ? "mcp" : "page";
   const { rows } = await db.query(
     `INSERT INTO mips (title, description, config_id, action, name, about, from_id, cards, remove, base, base_version, author, via)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12, $13) RETURNING number`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, ($9::text)::jsonb, ($10::text)::jsonb, $11, $12, $13) RETURNING number`,
     [title, text(body?.description, 20000), m.config, m.action, m.name, m.about, m.from, json(m.cards), json(m.remove), json(m.base), m.base_version, author, via],
   );
   return getMip(Number(rows[0].number));
@@ -224,17 +226,17 @@ export async function decideMip(number, by, { accept, note } = {}) {
       if (m.action === "create") {
         const base = m.from ? (await tx.query("SELECT cards FROM econ_configs WHERE id = $1", [m.from])).rows[0].cards : defaultCards();
         cfg = { name: m.name, description: m.about ?? "", version: 1, cards: applyCards(base, m.cards, m.remove) };
-        await tx.query("INSERT INTO econ_configs (id, name, description, version, cards) VALUES ($1, $2, $3, 1, $4::jsonb)", [m.config, cfg.name, cfg.description, json(cfg.cards)]);
+        await tx.query("INSERT INTO econ_configs (id, name, description, version, cards) VALUES ($1, $2, $3, 1, ($4::text)::jsonb)", [m.config, cfg.name, cfg.description, json(cfg.cards)]);
       } else {
         const { rows: c } = await tx.query("SELECT * FROM econ_configs WHERE id = $1 FOR UPDATE", [m.config]);
         cfg = { name: m.name ?? c[0].name, description: m.about ?? c[0].description, version: Number(c[0].version) + 1, cards: applyCards(c[0].cards, m.cards, m.remove) };
-        await tx.query("UPDATE econ_configs SET name = $2, description = $3, version = $4, cards = $5::jsonb, updated = now() WHERE id = $1", [m.config, cfg.name, cfg.description, cfg.version, json(cfg.cards)]);
+        await tx.query("UPDATE econ_configs SET name = $2, description = $3, version = $4, cards = ($5::text)::jsonb, updated = now() WHERE id = $1", [m.config, cfg.name, cfg.description, cfg.version, json(cfg.cards)]);
       }
-      await tx.query("INSERT INTO econ_config_versions (config_id, version, body, mip) VALUES ($1, $2, $3::jsonb, $4)", [m.config, cfg.version, json({ name: cfg.name, description: cfg.description, cards: cfg.cards }), number]);
+      await tx.query("INSERT INTO econ_config_versions (config_id, version, body, mip) VALUES ($1, $2, ($3::text)::jsonb, $4)", [m.config, cfg.version, json({ name: cfg.name, description: cfg.description, cards: cfg.cards }), number]);
       result = { config: m.config, version: cfg.version };
     }
     await tx.query(
-      "UPDATE mips SET status = 'accepted', decided = now(), decided_by = $2, note = $3, result = $4::jsonb WHERE number = $1",
+      "UPDATE mips SET status = 'accepted', decided = now(), decided_by = $2, note = $3, result = ($4::text)::jsonb WHERE number = $1",
       [number, by, text(note, 2000), json(result)],
     );
     return { number, status: "accepted", ...result };
@@ -275,7 +277,7 @@ export async function startRun(player, body) {
   if (configId && !(await db.query("SELECT 1 FROM econ_configs WHERE id = $1", [configId])).rows.length) configId = null;
   const { rows } = await db.query(
     `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary)
-     VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb) RETURNING *`,
+     VALUES ($1, $2, $3, ($4::text)::jsonb, $5, $6, $7, ($8::text)::jsonb) RETURNING *`,
     [crypto.randomUUID(), configId, body?.config_version == null ? null : Number(body.config_version), json(config), Number.isFinite(Number(body?.seed)) ? Math.trunc(Number(body.seed)) : null, text(body?.brain, 80), player, json(body?.summary ?? {})],
   );
   return runRow(rows[0]);
@@ -292,7 +294,7 @@ export async function addDays(id, body) {
     const day = Number(d?.day);
     if (!Number.isInteger(day) || day < 0) throw new EconomyError("Every day needs its number.");
     await db.query(
-      `INSERT INTO econ_run_days (run_id, day, stats, trades, decisions) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb)
+      `INSERT INTO econ_run_days (run_id, day, stats, trades, decisions) VALUES ($1, $2, ($3::text)::jsonb, ($4::text)::jsonb, ($5::text)::jsonb)
        ON CONFLICT (run_id, day) DO UPDATE SET stats = EXCLUDED.stats, trades = EXCLUDED.trades, decisions = EXCLUDED.decisions`,
       [id, day, json(d.stats ?? {}), json(d.trades ?? []), json(d.decisions ?? [])],
     );
@@ -300,7 +302,7 @@ export async function addDays(id, body) {
   const last = days.reduce((n, d) => Math.max(n, Number(d.day) || 0), 0);
   await db.query(
     `UPDATE econ_runs SET updated = now(), days = GREATEST(days, $2), alive = COALESCE($3, alive),
-       summary = CASE WHEN $4::jsonb IS NULL THEN summary ELSE $4::jsonb END, ended = CASE WHEN $5 THEN now() ELSE ended END
+       summary = CASE WHEN ($4::text)::jsonb IS NULL THEN summary ELSE ($4::text)::jsonb END, ended = CASE WHEN $5 THEN now() ELSE ended END
      WHERE id = $1`,
     [id, last, body?.alive == null ? null : Number(body.alive), body?.summary == null ? null : json(body.summary), !!body?.ended],
   );
