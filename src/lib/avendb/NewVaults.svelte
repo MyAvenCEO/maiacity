@@ -1,36 +1,20 @@
 <!--
 	New vaults the person's vault founds and owns: aven vaults, an agent's or a server's own, and coop vaults, each with
 	its name. One ceremony of their passkey signs all their geneses (avendb-browser's `Device::found_vaults`); then this
-	browser, acting for each through their vault, founds its home, lets avenCEO relay it and writes its name there. The
-	first time, it offers the cast to enact: avenALICE, avenBOB and avenCHARLY, and Maia City COOP.
+	browser, acting for each through their vault, founds its home, lets avenCEO relay it and writes its name there. It
+	opens on one empty row: the person names every vault they found, as many as they like.
 -->
 <script>
-	import { untrack } from 'svelte';
 	import { count, nameOf } from './vaults.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, api: any, busy: boolean, onclose: () => void }} */
 	let { world, api, busy, onclose } = $props();
 
 	const mine = $derived(world.vaults.find((v) => v.id === world.mine));
-	/** the vaults the person's vault owned as the dialog opened, but avenCEO, whose server makes it the network's */
-	const owned = untrack(() =>
-		world.vaults.filter(
-			(v) => v.owners.some((o) => 'vault' in o && o.vault === world.mine) && !(v.kind === 'aven' && v.devices.length)
-		)
-	);
 
 	/** @typedef {{ name: string, kind: 'aven' | 'coop' }} Row */
 	/** @type {Row[]} */
-	let rows = $state(
-		owned.length
-			? [{ name: '', kind: 'aven' }]
-			: [
-					{ name: 'avenALICE', kind: 'aven' },
-					{ name: 'avenBOB', kind: 'aven' },
-					{ name: 'avenCHARLY', kind: 'aven' },
-					{ name: 'Maia City COOP', kind: 'coop' }
-				]
-	);
+	let rows = $state([{ name: '', kind: 'aven' }]);
 	const ready = $derived(rows.filter((r) => r.name.trim()));
 
 	async function create() {
