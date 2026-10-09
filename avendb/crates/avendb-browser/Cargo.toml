@@ -19,6 +19,8 @@ getrandom = "0.4"
 # the relay's URL; its TLS and features are avendb-net's, for a machine and for a browser
 iroh = { version = "=1.3.0", default-features = false }
 n0-future = "0.3.2"
+# the device's code as a QR code, for the next device's camera
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 # a closed device's page stops waiting for its changes
 tokio = { version = "1.44", default-features = false, features = ["sync"] }
 zeroize = "1.8"

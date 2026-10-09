@@ -536,6 +536,15 @@ pub fn device_salt(nonce: Vec<u8>) -> Result<Vec<u8>, JsError> {
     Ok(sign::device_salt(&nonce))
 }
 
+/// `text` as a QR code, an SVG image at least `size` pixels wide: a device's code, or the link that carries it, for the
+/// next device's camera. The code's base32 goes in the QR code's compact alphanumeric mode.
+#[wasm_bindgen(js_name = qrSvg)]
+pub fn qr_svg(text: &str, size: u32) -> Result<String, JsError> {
+    let code = qrcode::QrCode::with_error_correction_level(text, qrcode::EcLevel::L);
+    let code = code.map_err(|e| JsError::new(&format!("no QR code holds it: {e}")))?;
+    Ok(code.render::<qrcode::render::svg::Color>().min_dimensions(size, size).build())
+}
+
 /// The page's ceremonies (`PageDevice`'s `ceremony`).
 struct Js(Function);
 

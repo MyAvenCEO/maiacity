@@ -9,6 +9,7 @@
 	import { wayBack } from '$lib/app/back.svelte.js';
 	import { openWorld, TileError } from '$lib/avendb/tile.js';
 	import Approve from '$lib/avendb/Approve.svelte';
+	import Browser from '$lib/avendb/Browser.svelte';
 	import Entry from '$lib/avendb/Entry.svelte';
 	import Lab from '$lib/avendb/Lab.svelte';
 	import Schemas from '$lib/avendb/Schemas.svelte';
@@ -17,7 +18,7 @@
 	import Vaults from '$lib/avendb/Vaults.svelte';
 
 	/** @typedef {import('$lib/avendb/tile.js').World} World */
-	/** @typedef {'vaults' | 'spaces' | 'entry' | 'todos' | 'schemas' | 'lab'} Screen */
+	/** @typedef {'vaults' | 'spaces' | 'entry' | 'todos' | 'schemas' | 'lab' | 'browser'} Screen */
 
 	/** @type {World | null} */
 	let world = $state(null);
@@ -50,7 +51,8 @@
 		['spaces', 'Spaces', 'Where entries live, grouped by the vault that founded them'],
 		['todos', 'Todos', 'Every todo this device opens, and those shared with it'],
 		['schemas', 'Schemas', "Each space's schemas and lenses, by hash"],
-		['lab', 'Lab', 'Every device side by side, the network, and the scenarios']
+		['lab', 'Lab', 'Every device side by side, the network, and the scenarios'],
+		['browser', 'This browser', 'This browser as a device of yours: your passkey, your vault, your notes, linked to your other devices']
 	]);
 
 	const devices = $derived(/** @type {any[]} */ (overview?.devices ?? []));
@@ -67,7 +69,11 @@
 		return [...people, ['', by.get('') ?? []]].filter(([, list]) => list.length);
 	});
 
-	onMount(start);
+	onMount(() => {
+		// a link another device shows opens this browser's screen, to link it
+		if (new URLSearchParams(location.search).has('link')) screen = 'browser';
+		start();
+	});
 	onDestroy(() => world?.close());
 
 	$effect(() => {
@@ -267,6 +273,8 @@
 					<Schemas {world} {device} {rev} {act} start={overview.start} />
 				{:else if screen === 'lab'}
 					<Lab {world} {rev} {act} {open} {devices} start={overview.start} />
+				{:else if screen === 'browser'}
+					<Browser />
 				{/if}
 			{/if}
 		{/if}

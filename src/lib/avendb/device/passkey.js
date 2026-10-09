@@ -1,3 +1,4 @@
+// @ts-nocheck: written by avendb/scripts/build-web.sh from avenDB
 // avenDB's passkey in the browser's own authenticator (P8e): WebAuthn with the PRF extension. The passkey never
 // leaves the authenticator; each ceremony brings back an assertion over a challenge and the PRF output on the app's
 // salt, and the one that unlocks a device also the output on the device's own salt, from which the device's keys

@@ -3,7 +3,8 @@
  * here), waits for the world to be made in the page's workers, then walks every screen as its people would. Samuel's
  * Mac reads Welcome, edits it and branches it, and shows who may do what; a locked Mac is refused with the rule's
  * reason; a stranger sees only the public Charter; Bob's Mac finds the door todo shared with it; Samuel's passkey signs a
- * backup passkey in; the Lab shows every device and plays a scenario. Each screen is screenshot.
+ * backup passkey in; the Lab shows every device and plays a scenario; This browser loads its own device. Each screen is
+ * screenshot.
  *
  *   node scripts/avendb-smoke.mjs [--out dir]                    starts its own dev server
  *   BASE=http://localhost:5173 node scripts/avendb-smoke.mjs     uses a running one
@@ -205,6 +206,12 @@ try {
 	const green = await page.$eval('.scenarios > li', (li) => li.classList.contains('ok'));
 	check('every check of it green', green);
 	await shot('14-scenario');
+
+	// This browser: its own device, apart from the Lab, which links to a person's devices or founds their vault
+	await click('This browser', '.rail .screen');
+	check('This browser offers to link it or to make a passkey', (await waitText('Link through your other device', 60000)) && (await waitText('Make my passkey')));
+	check('its device loads', !(await text()).includes("can't be a device"), (await text()).match(/can't be a device[^.]*/)?.[0]);
+	await shot('15-browser');
 } catch (e) {
 	check(`the walk through finishes: ${e instanceof Error ? e.message : e}`, false);
 } finally {

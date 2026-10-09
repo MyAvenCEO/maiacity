@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The avenDB tile's WebAssembly: builds avendb-web for the browser (with SIMD, see .cargo/config.toml) and writes the
-# page's package into src/lib/avendb/pkg/. The package is committed, so the site builds without Rust: run this after
-# changing avendb or avendb-web, and commit what it writes.
+# page's package into src/lib/avendb/pkg/, then avendb-browser, the tile's own device ("This browser"), with its JS
+# modules into src/lib/avendb/device/. The packages are committed, so the site builds without Rust: run this after
+# changing avendb, avendb-net, avendb-web or avendb-browser, and commit what it writes.
 #
 #   avendb/scripts/build-web.sh
 #
@@ -27,3 +28,14 @@ js="$out/avendb_web.js"
 { printf '// @ts-nocheck: written by wasm-bindgen (avendb/scripts/build-web.sh)\n'; cat "$js"; } > "$js.new"
 mv "$js.new" "$js"
 ls -l "$out"
+
+# the tile's own device ("This browser", P8e): avendb-browser and its JS modules, for passkeys of maia.city
+cargo build -p avendb-browser --target wasm32-unknown-unknown --release
+device=../src/lib/avendb/device
+rm -rf "$device"
+wasm-bindgen --target web --no-typescript --out-dir "$device" target/wasm32-unknown-unknown/release/avendb_browser.wasm
+for js in "$device/avendb_browser.js" crates/avendb-browser/js/passkey.js crates/avendb-browser/js/store.js; do
+	{ printf '// @ts-nocheck: written by avendb/scripts/build-web.sh from avenDB\n'; cat "$js"; } > "$js.new"
+	mv "$js.new" "$device/$(basename "$js")"
+done
+ls -l "$device"
