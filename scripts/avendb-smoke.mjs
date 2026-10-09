@@ -1,12 +1,9 @@
 /*
- * The avenDB tile's smoke test: opens /app/avendb/ in a headless Chrome as an admin (the API's /api/me is answered
- * here). It opens on the person's account, which loads its own device and offers the maiaCITY passkey, and leaves the
- * Lab unmade; then the Lab is opened, its world made in the page's workers, and every screen walked as its people
- * would. Alice's Mac reads Welcome, edits it and branches it, and shows who may do what; a locked Mac is refused with the
- * rule's reason; a stranger sees only the public Charter; Bob's Mac finds the door todo shared with it; Alice's passkey
- * signs a backup passkey in; Vaults shows the human, coop and aven vaults, avenCEO among them; Every device shows them
- * side by side, Bob's Mac with Alice's edit synced at once, and plays a scenario; the account is still there after the
- * Lab. Each screen is screenshot. scripts/avendb-account.mjs walks the account itself, its passkey and its devices.
+ * avenDB's page's smoke test, with no avenDB server: opens /app/avendb/ in a headless Chrome as an admin (the API's
+ * /api/me is answered here). It opens on the person's account, named after them, which loads its own device and offers
+ * to found their vault with the maiaCITY passkey, to make a new one, or to sign in, with avendb.maia.city filled in as
+ * its server; there is no simulated Lab; and on a phone nothing is wider than the screen. Each screen is screenshot.
+ * scripts/avendb-account.mjs walks the account itself against a server: founding, the vaults it owns, acting as each.
  *
  *   node scripts/avendb-smoke.mjs [--out dir]                    starts its own dev server
  *   BASE=http://localhost:5173 node scripts/avendb-smoke.mjs     uses a running one
@@ -47,10 +44,10 @@ const check = (what, ok, found = '') => {
 
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
-await page.setViewport({ width: 1440, height: 1000 });
+await page.setViewport({ width: 1300, height: 1000 });
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 // /api/me answers as an admin. Only that request is held: Puppeteer's own interception holds every request, and the
-// workers' module and WebAssembly fetches never come back from it.
+// device's module and WebAssembly fetches never come back from it.
 const cdp = await page.createCDPSession();
 await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/me' }] });
 cdp.on('Fetch.requestPaused', (r) => {
@@ -74,162 +71,32 @@ async function waitText(t, ms = 30000) {
 	}
 	return false;
 }
-/** Click the first `selector` whose words include `t`. */
-async function click(t, selector = 'button') {
-	const ok = await page.evaluate(
-		(t, selector) => {
-			const el = [...document.querySelectorAll(selector)].find((e) => e.textContent?.replace(/\s+/g, ' ').includes(t));
-			if (el instanceof HTMLElement) el.click();
-			return !!el;
-		},
-		t,
-		selector
-	);
-	if (!ok) check(`there is a “${t}” to click`, false);
-	await sleep(250);
-	return ok;
-}
 async function shot(name) {
 	await sleep(400);
 	await page.screenshot({ path: `${out}/${name}.png` });
 }
-/** Type into the first `selector` whose value includes `had` (or the first one at all), replacing it. */
-async function type(selector, value, had = '') {
-	const handles = await page.$$(selector);
-	for (const h of handles) {
-		const v = await h.evaluate((e) => /** @type {HTMLInputElement} */ (e).value);
-		if (v.includes(had)) {
-			await h.click({ clickCount: 3 });
-			await h.evaluate((e) => (/** @type {HTMLInputElement} */ (e).value = ''));
-			await h.type(value);
-			return true;
-		}
-	}
-	check(`there is a ${selector} to type in`, false);
-	return false;
-}
 
 try {
-	const t = Date.now();
 	await page.goto(`${base}/app/avendb/`, { waitUntil: 'domcontentloaded' });
-	// the account first: its own device, apart from the Lab, which links to a person's devices or founds their vault
 	const offers = (await waitText('Use my maiaCITY passkey', 60000)) && (await waitText('Sign in with my passkey'));
 	check('it opens on the account, offering to found a vault with the maiaCITY passkey, or to sign in', offers && (await waitText('Make a new passkey')));
+	const lead = await page.$eval('.account .lead h1', (e) => e.textContent?.trim()).catch(() => '');
+	check('named after the person', lead === 'Samuel', lead);
 	check('its device loads', !(await text()).includes("can't be a device"), (await text()).match(/can't be a device[^.]*/)?.[0]);
-	check('and the Lab is not made yet', !(await page.$('.rail .device')));
-	await shot('0-account');
-	await click('Open the Lab', '.rail button');
-	await shot('0-making');
-	const made = await page.waitForSelector('.rail .device', { timeout: 180000 }).then(() => true, () => false);
-	check(`the world is made in the page (${((Date.now() - t) / 1000).toFixed(1)} s)`, made);
-	if (!made) throw new Error('no world');
-	const devices = await page.$$eval('.rail .device span', (s) => s.map((x) => x.textContent));
-	check('every device is listed', ["Alice's Mac", "Alice's iPhone", "Bob's Mac", "Carol's Mac", 'a stranger'].every((d) => devices.includes(d)), devices.join(', '));
-	check('and nobody of the Lab is Samuel, the person', !devices.some((d) => d?.includes('Samuel')), devices.join(', '));
+	const name = await page.$eval('.account .name input', (e) => /** @type {HTMLInputElement} */ (e).value).catch(() => '');
+	check('this browser has a name of its own', /on Linux|on Mac|Chrome/.test(name), name);
+	const relay = await page
+		.$eval('.account input[placeholder^="Its relay"]', (e) => /** @type {HTMLInputElement} */ (e).value)
+		.catch(() => '');
+	check('avenDB’s server filled in', relay === 'https://avendb.maia.city', relay);
+	check('no simulated Lab', !(await page.$('.rail')) && !(await text()).includes('Open the Lab'));
+	await shot('1-account');
 
-	// Alice's Mac: the spaces, and Welcome in the Handbook
-	check('Spaces lists the Handbook, the Notes and the Todos', (await waitText('Handbook')) && (await waitText("Alice's Notes")) && (await waitText("Alice's Todos")));
-	await shot('1-spaces');
-	await click('Welcome', '.space li button');
-	check('Welcome reads on Alice’s Mac', await waitText('the greenhouse opens at eight'));
-	await shot('2-read');
-	await click('Edit');
-	await type('.editor textarea', 'Welcome to Maia Coop: the greenhouse opens at seven.', 'opens at eight');
-	await click('Save');
-	check('the edit is saved, encrypted, as Alice’s Mac', (await waitText("Done on Alice's Mac")) && (await waitText('opens at seven')));
-	check('and synced at once to the devices online', await waitText('Synced at once'));
-	await click('JSON', '.tabs button');
-	check('JSON shows the raw value and the schemas', await waitText('Written under'));
-	await shot('3-json');
-	await click('History', '.tabs button');
-	check('History lists the edit', await waitText('Revert the latest commit'));
-	await shot('4-history');
-	await click('Branches', '.tabs button');
-	await type('input[placeholder="The branch\'s name"]', 'spring plan');
-	await click('Start it');
-	check('a branch starts and opens', await waitText('On the branch spring plan'));
-	await click('Branches', '.tabs button');
-	await shot('5-branches');
-	await click('Access', '.tabs button');
-	check('Access says who may do what and why', (await waitText('Who may do what')) && (await waitText('founded the space')));
-	await shot('6-access');
-
-	// a locked Mac is refused with the rule's reason
-	await click('Every device', '.rail .screen');
-	await waitText("Every device's copy of");
-	await page.evaluate(() => {
-		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Alice's Mac");
-		const lock = [...(col?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Lock');
-		if (lock instanceof HTMLElement) lock.click();
-	});
-	await sleep(500);
-	await click('Spaces', '.rail .screen');
-	await type('input[placeholder="A new entry\'s title"]', 'Written while locked');
-	await click('Write', '.space footer button');
-	check('a locked device is refused, with the reason', await waitText('Refused on Alice\'s Mac: The device is locked'));
-	await shot('7-refused');
-	await click('Every device', '.rail .screen');
-	await waitText("Every device's copy of");
-	await page.evaluate(() => {
-		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Alice's Mac");
-		const unlock = [...(col?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Unlock');
-		if (unlock instanceof HTMLElement) unlock.click();
-	});
-	await sleep(500);
-
-	// a stranger: only what is public
-	await click('a stranger', '.rail .device');
-	await click('Spaces', '.rail .screen');
-	check('a stranger sees the public Charter', await waitText('Charter'));
-	check('and nothing of Alice’s Notes', !(await text()).includes("Alice's Notes"));
-	await shot('8-stranger');
-
-	// Bob's Mac: the door todo, shared with it
-	await click("Bob's Mac", '.rail .device');
-	await click('Todos', '.rail .screen');
-	check('Bob’s Mac finds the door todo shared with it', (await waitText('Shared with me')) && (await waitText('Fix the greenhouse door')));
-	await shot('9-todos');
-
-	// Alice's Mac: the vaults, and a backup passkey signed in with the passkey
-	await click("Alice's Mac", '.rail .device');
-	await click('Vaults', '.rail .screen');
-	check('Vaults shows Alice’s vault and the coop’s', (await waitText('Maia Coop')) && (await waitText('Alice')));
-	const kinds = ['Human vaults', 'Coop vaults', 'Aven vaults', 'avenCEO'];
-	check('by kind, avenCEO an aven vault', (await Promise.all(kinds.map((k) => waitText(k)))).every(Boolean));
-	await shot('10-vaults');
-	await click('Add a backup passkey');
-	check('the change waits for the passkey to sign', await waitText('yet to sign'));
-	await shot('11-approve');
-	await click('Sign with this passkey');
-	await click('Send', '.sheet button');
-	check('the backup passkey joins Alice’s vault', await waitText("Alice's backup passkey"));
-
-	await click('Schemas', '.rail .screen');
-	check('Schemas shows the lane and its lenses', (await waitText('Versions in the lane')) && (await waitText('Markdown document, v1 to v2')));
-	await shot('12-schemas');
-
-	await click('Every device', '.rail .screen');
-	check('Every device shows them side by side', await waitText("Every device's copy of"));
-	// nobody synced by hand: Alice's edit reached Bob's Mac the moment it was saved
-	const bobs = await page.waitForFunction(() => {
-		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Bob's Mac");
-		return col?.textContent?.includes('opens at seven');
-	}, { timeout: 30000 }).then(() => true, () => false);
-	check('Bob’s Mac has Alice’s edit, synced at once', bobs);
-	await shot('13-lab');
-	await page.evaluate(() => {
-		const first = document.querySelector('.scenarios > li .btn');
-		if (first instanceof HTMLElement) first.click();
-	});
-	check('the first scenario plays green', await waitText('Run again', 120000));
-	const green = await page.$eval('.scenarios > li', (li) => li.classList.contains('ok'));
-	check('every check of it green', green);
-	await shot('14-scenario');
-
-	// back to the account: still there, apart from the Lab
-	await click('Your account', '.rail button');
-	check('the account is still there after the Lab', await waitText('Use my maiaCITY passkey', 5000));
-	await shot('15-account');
+	await page.setViewport({ width: 390, height: 844 });
+	await sleep(300);
+	const fits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+	check('on a phone, nothing wider than the screen', fits);
+	await shot('2-phone');
 } catch (e) {
 	check(`the walk through finishes: ${e instanceof Error ? e.message : e}`, false);
 } finally {

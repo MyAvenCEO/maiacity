@@ -1,21 +1,26 @@
 <!--
-	Your account (P8e, P8f): the person's own avenDB, apart from the Lab's simulated world. Their account is their human
-	vault: its root is their passkey, which stays in the browser's authenticator and is the vault's only recovery, and
-	this browser is one of its devices, its keys derived from the passkey at every unlock, what it holds kept in
-	IndexedDB so that it opens again in one ceremony. Every device of the vault shows by the name on its card, which the
-	device writes itself into the vault's first space, end-to-end encrypted like the notes there (avendb-browser's
-	`Device::card`). A new person founds their vault here with the passkey they signed up to maiaCITY with (the same
-	relying party, maia.city), or one they make here; the first to found a vault through a server nobody has claimed yet
-	claims it in the same ceremony, so their vault owns avenCEO, the aven vault the server is a device of. A person with an
-	account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log as
-	ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or it
-	links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=). avenDB's
-	server runs at avendb.maia.city: its relay and its code are filled in, and a test server's can take their place
-	(?relay=, ?server=).
+	Your account (P8e, P8f): the person's own avenDB. Their account is their human vault: its root is their passkey,
+	which stays in the browser's authenticator and is the vault's only recovery, and this browser is one of its devices,
+	its keys derived from the passkey at every unlock, what it holds kept in IndexedDB so that it opens again in one
+	ceremony. Every device of the vault shows by the name on its card, which the device writes itself into the vault's
+	first space, end-to-end encrypted like the notes there (avendb-browser's `Device::card`), and every vault by the name
+	on its profile, which this browser writes into the vault's home (`Device::profile`): the person's own by their
+	maiaCITY name, avenCEO's as avenCEO. A new person founds their vault here with the passkey they signed up to maiaCITY
+	with (the same relying party, maia.city), or one they make here; the first to found a vault through a server nobody
+	has claimed yet claims it in the same ceremony, so their vault owns avenCEO, the aven vault the server is a device
+	of. A person with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their
+	vault's log as ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every
+	device. Or it links through the code another of their devices shows, scanned as a QR code or opened as a link
+	(?link=). Once unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and
+	the aven and coop vaults their vault founds and owns, each of which they act as. avenDB's server runs at
+	avendb.maia.city: its relay and its code are filled in, and a test server's can take their place (?relay=,
+	?server=).
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import { me } from '$lib/auth/client';
+	import Shell from './Shell.svelte';
+	import { count, plain } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
@@ -23,8 +28,6 @@
 	const RELAY = 'https://avendb.maia.city';
 	const SERVER =
 		'AVENDB1B6LJH6OGZJSR7VZ5VTUMZCXWT2W6UM7R5ACTO73WJ5SKYT3TIFMGNISFZ4E5FJUDQQRIOA3W6V5HCRAUVZAOVRI3C7JPSOKNK3T4VXQBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
-
-	/** @typedef {{ vault: string, root?: string, devices: { id: string, name?: string, me: boolean }[], ownsAven: boolean }} Account */
 
 	/** @type {any} the device's WebAssembly */
 	let avendb = null;
@@ -49,24 +52,13 @@
 	let name = $state('');
 	/** the person's name at maiaCITY, which their account goes by */
 	let person = $state('');
-	let account = $state(/** @type {Account | null} */ (null));
-	/** @type {any[]} */
-	let notes = $state([]);
+	/** what the device shows of its world (avendb-browser's `World::to_json`): kept whole, as it comes */
+	let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 	let qr = $state('');
 	let link = $state('');
-	/** this browser's new name, while the person renames it */
-	let renaming = $state(/** @type {string | null} */ (null));
-	/** whether the device is writing its card: one write at a time */
+	/** whether the device is writing its card, or vaults' profiles: one such write at a time */
 	let carding = false;
-	/** @type {Record<string, string>} */
-	let edits = $state({});
-	/** @type {Record<string, string>} each note's text as last shown, to tell the person's edits from what arrives */
-	let shown = {};
-	/** @type {Record<string, { title: string, body: string }>} */
-	let drafts = $state({});
-
-	const mine = $derived(account?.devices.find((d) => d.me));
-	const others = $derived(account?.devices.filter((d) => !d.me) ?? []);
+	let profiling = false;
 
 	/** @param {string} key */
 	function remembered(key) {
@@ -126,7 +118,10 @@
 		arrived = !!code;
 		name = deviceName();
 		me().then(
-			(f) => (person = f.name),
+			(f) => {
+				person = f.name;
+				refresh();
+			},
 			() => {}
 		);
 		try {
@@ -145,13 +140,18 @@
 
 	onDestroy(() => device?.close());
 
-	/** Runs `work`, showing what it does and what went wrong. @param {string} what @param {() => Promise<void>} work */
+	/**
+	 * Runs `work`, showing what it does and what went wrong: whether it went through.
+	 * @param {string} what @param {() => Promise<unknown>} work
+	 */
 	async function run(what, work) {
 		[doing, error] = [what, ''];
 		try {
 			await work();
+			return true;
 		} catch (e) {
-			error = /** @type {Error} */ (e).message ?? String(e);
+			error = plain(/** @type {Error} */ (e).message ?? String(e));
+			return false;
 		} finally {
 			doing = '';
 		}
@@ -232,57 +232,95 @@
 	async function refresh() {
 		const d = device;
 		if (!d) return;
-		account = (await d.account()) ?? null;
-		notes = await d.notes();
-		for (const s of notes) {
-			drafts[s.space] ??= { title: '', body: '' };
-			for (const doc of s.docs) {
-				// a note the person isn't editing follows what arrives
-				if (edits[doc.entry] === undefined || edits[doc.entry] === shown[doc.entry]) edits[doc.entry] = doc.text;
-				shown[doc.entry] = doc.text;
-			}
-		}
+		/** @type {import('./vaults.js').WorldView | null} */
+		const w = (await d.world()) ?? null;
+		if (d !== device) return;
+		world = w;
+		if (!w) return;
+		const mine = w.vaults.find((v) => v.id === w.mine);
 		// its card, so the person's other devices show it by name: once it holds its vault's first space, as a device
 		// just linked does soon after; what it writes comes back as a change, and shows
-		const card = account?.devices.find((x) => x.me);
+		const card = mine?.devices.find((x) => x.me);
 		if (card && card.name !== meta.name && !carding) {
 			carding = true;
 			d.card(meta.name)
 				.catch((/** @type {Error} */ e) => (error = `Naming this browser failed: ${e.message}`))
 				.finally(() => (carding = false));
 		}
+		// the profiles of the person's vault, by their maiaCITY name, and of avenCEO, if their vault owns it: written
+		// once, by whichever of their devices comes first
+		const ceo = w.vaults.find(
+			(v) => v.kind === 'aven' && v.devices.length && v.owners.some((o) => 'vault' in o && o.vault === w.mine)
+		);
+		/** @type {[string, string][]} */
+		const unnamed = [];
+		if (mine && !mine.name && person) unnamed.push([mine.id, person]);
+		if (ceo && !ceo.name) unnamed.push([ceo.id, 'avenCEO']);
+		if (unnamed.length && !profiling) {
+			profiling = true;
+			(async () => {
+				for (const [v, name] of unnamed) await d.profile(v, name);
+			})()
+				.catch((/** @type {Error} */ e) => (error = `Naming your vaults failed: ${plain(e.message)}`))
+				.finally(() => (profiling = false));
+		}
 	}
 
-	const rename = () =>
-		run('Renaming this browser', async () => {
-			const next = renaming?.trim();
-			if (!next || next === meta.name) return void (renaming = null);
-			meta = { ...meta, name: next };
-			await store.setMeta(meta);
-			renaming = null;
-			await device.card(next);
-		});
+	/** The passkey's ceremony for what its vault approves: new vaults, an owner's grant or its revocation. */
+	const approver = async () => (await ceremonies(meta.credential)).sign;
 
-	/** @param {any} space @param {any} doc */
-	const save = (space, doc) =>
-		run('Saving', async () => {
-			await device.setText(space.founder, space.space, doc.entry, 2, edits[doc.entry]);
-			await refresh();
-		});
+	/**
+	 * Runs `work` as `what`, then shows what changed: whether it went through.
+	 * @param {string} what @param {() => Promise<unknown>} work
+	 */
+	const act = async (what, work) => {
+		const ok = await run(what, work);
+		if (ok) await refresh();
+		return ok;
+	};
 
-	/** @param {any} space */
-	const write = (space) =>
-		run('Writing', async () => {
-			const d = drafts[space.space];
-			if (!d.title.trim()) return;
-			await device.write(space.founder, space.space, d.title.trim(), d.body);
-			drafts[space.space] = { title: '', body: '' };
-			await refresh();
-		});
+	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through. */
+	const api = {
+		/** @param {string} actor @param {string} space @param {string} title @param {string} body */
+		write: (actor, space, title, body) => act('Writing the note', () => device.write(actor, space, title, body)),
+		/** @param {string} actor @param {string} space @param {string} entry @param {string} text */
+		setText: (actor, space, entry, text) => act('Saving', () => device.setText(actor, space, entry, 2, text)),
+		/** @param {string} actor @param {string} space @param {string} title */
+		todo: (actor, space, title) => act('Adding the todo', () => device.todo(actor, space, title)),
+		/** @param {string} actor @param {string} space @param {string} entry @param {string} status */
+		setStatus: (actor, space, entry, status) => act('Saving', () => device.setStatus(actor, space, entry, status)),
+		/** @param {string} issuer @param {string} space @param {string | null} entry @param {string} role @param {string} grantee */
+		grant: (issuer, space, entry, role, grantee) =>
+			act(role === 'owner' ? 'Sharing: your browser asks for your passkey once' : 'Sharing', async () =>
+				device.grant(issuer, space, entry ?? undefined, role, grantee, await approver())
+			),
+		/** @param {string} actor @param {string} grant @param {string} role */
+		revoke: (actor, grant, role) =>
+			act(role === 'owner' ? 'Revoking: your browser asks for your passkey once' : 'Revoking', async () =>
+				device.revoke(actor, grant, await approver())
+			),
+		/** @param {{ name: string, kind: string }[]} vaults */
+		foundVaults: (vaults) =>
+			act(`Creating ${count(vaults.length, 'vault')}: your browser asks for your passkey once`, async () =>
+				device.foundVaults(vaults, await approver())
+			),
+		/** @param {string} vault @param {string} name */
+		profile: (vault, name) => act('Renaming', () => device.profile(vault, name)),
+		/** @param {string} name */
+		rename: (name) =>
+			act('Renaming this browser', async () => {
+				if (!name || name === meta.name) return;
+				meta = { ...meta, name };
+				await store.setMeta(meta);
+				await device.card(name);
+			}),
+		forget: () => forget()
+	};
 
 	const forget = () => {
+		const mine = world?.vaults.find((v) => v.id === world?.mine);
 		const ask =
-			account && account.devices.length > 1
+			mine && mine.devices.length > 1
 				? 'Forget your account on this browser? Your vault and your other devices keep everything, and you can sign in here again.'
 				: 'Forget your account on this browser? Your vault stays yours: sign in with your passkey on any browser, and avenDB’s server hands it back.';
 		if (!confirm(ask)) return;
@@ -290,205 +328,136 @@
 			await device?.close();
 			store.close();
 			await stores.remove(STORE);
-			[device, meta, account, notes, phase, renaming] = [null, null, null, [], 'new', null];
+			[device, meta, world, phase] = [null, null, null, 'new'];
 			store = await stores.open(STORE);
 		});
 	};
-
-	/** The first characters of an id, enough to tell two apart. @param {string} id */
-	const short = (id) => `${id.slice(0, 4)} ${id.slice(4, 8)}`;
 </script>
 
-<div class="account">
-	<header class="lead">
-		<small>Your account</small>
-		<h1>{person || 'You'}</h1>
-		{#if phase === 'open' && account}
-			<div class="row">
-				<span class="chip accent">Human vault</span>
-				<span class="chip">{account.devices.length} device{account.devices.length === 1 ? '' : 's'}</span>
-				{#if account.ownsAven}<span class="chip ok">Owns avenCEO</span>{/if}
+{#if phase === 'open' && world}
+	<Shell {world} {api} {doing} {error} thisName={meta?.name ?? ''} {link} {qr} />
+{:else}
+	<div class="account">
+		<header class="lead">
+			<small>Your account</small>
+			<h1>{person || 'You'}</h1>
+			<p>Your own database, end-to-end encrypted and quantum-proof: a vault only you hold, on every device you link to it.</p>
+		</header>
+
+		{#if phase === 'loading'}
+			<p class="soft">Loading your account…</p>
+		{:else if phase === 'open'}
+			<p class="soft">Opening your vaults…</p>
+		{:else if phase === 'closed'}
+			<div class="cards">
+				<article class="card">
+					<h3>Unlock your account</h3>
+					<p>Your account is on this browser, as {meta?.name}. Unlock it with your passkey.</p>
+					<div class="row">
+						<button class="btn primary" disabled={!!doing} onclick={unlockHere}>Unlock</button>
+						<button class="btn quiet" disabled={!!doing} onclick={forget}>Forget it here</button>
+					</div>
+				</article>
 			</div>
 		{:else}
-			<p>Your own database, end-to-end encrypted: a vault only you hold, on every device you link to it.</p>
-		{/if}
-	</header>
-
-	{#if phase === 'loading'}
-		<p class="soft">Loading your account…</p>
-	{:else if phase === 'open'}
-		<div class="cards">
-			<article class="card">
-				<h3>Your passkey</h3>
-				<p>
-					Your maiaCITY passkey is your vault's root: it approves every change to your vault, and it is its only
-					recovery. It never leaves your browser's authenticator.
-				</p>
-				{#if account?.root}<p class="soft">Root <span class="mono">{short(account.root)}</span></p>{/if}
-			</article>
-
-			<article class="card devices">
-				<h3>Your devices</h3>
-				<ul>
-					{#if mine}
-						<li>
-							<i class="dot"></i>
-							{#if renaming !== null}
-								<input class="field" bind:value={renaming} aria-label="This browser's name" />
-								<button class="btn primary" disabled={!!doing || !renaming.trim()} onclick={rename}>Save</button>
-								<button class="btn quiet" onclick={() => (renaming = null)}>Cancel</button>
-							{:else}
-								<b>{mine.name ?? meta?.name}</b>
-								<span class="chip accent">this browser</span>
-								<button class="btn quiet" disabled={!!doing} onclick={() => (renaming = meta?.name ?? '')}>Rename</button>
-							{/if}
-						</li>
-					{/if}
-					{#each others as d (d.id)}
-						<li>
-							<b>{d.name ?? 'A device, not named yet'}</b>
-							<span class="soft mono">{short(d.id)}</span>
-						</li>
-					{/each}
-				</ul>
-				{#if !others.length}
-					<p class="soft">Only this browser so far. Add your phone or another computer: link it below, or sign in there with your passkey.</p>
+			<div class="cards">
+				{#if arrived}
+					<article class="card">
+						<h3>Link this browser</h3>
+						<p>Your other device sent you here: confirm with your passkey, and this browser joins your vault.</p>
+						<div class="row">
+							<button class="btn primary" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>
+								Link this browser
+							</button>
+							<button class="btn quiet" disabled={!!doing} onclick={() => ([arrived, code] = [false, ''])}>Not now</button>
+						</div>
+					</article>
+				{:else}
+					<article class="card">
+						<h3>New to avenDB?</h3>
+						<p>
+							Set up your account: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its root and
+							its only recovery, and this browser its first device.
+						</p>
+						<div class="row">
+							<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(false)}>
+								Use my maiaCITY passkey
+							</button>
+							<button class="btn quiet" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(true)}>
+								Make a new passkey
+							</button>
+						</div>
+					</article>
+					<article class="card">
+						<h3>Have an account already?</h3>
+						<p>
+							Sign in with your passkey, even with every other device of yours lost: avenDB's server hands this browser your
+							vault, which only your passkey opens, and it joins as one more of your devices.
+						</p>
+						<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(server, 'Signing in')}>
+							Sign in with my passkey
+						</button>
+						<details>
+							<summary class="soft">Or link through your other device</summary>
+							<p class="soft">Open the link your other device shows, or scan its QR code. Or paste its code here.</p>
+							<input class="field" placeholder="Its code: AVENDB1…" bind:value={code} />
+							<button class="btn" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>Link this browser</button>
+						</details>
+					</article>
 				{/if}
-			</article>
-
-			<article class="card">
-				<h3>Link another device</h3>
-				<p>
-						Open this link on your other device, or scan it with its camera. It joins your vault once you confirm with your
-						passkey there.
-					</p>
-				<!-- the SVG is the device's own, made by qrSvg from the link -->
-				<div class="qr">{@html qr}</div>
-				<input class="field code" readonly value={link} onfocus={(e) => e.currentTarget.select()} />
-			</article>
-
-			{#if account?.ownsAven}
 				<article class="card">
-					<h3>avenCEO</h3>
-					<p>
-						Your vault owns avenCEO, the aven vault of avenDB's server at avendb.maia.city: you were the first to found a
-						vault through it.
-					</p>
-				</article>
-			{/if}
-		</div>
-
-		<h2 class="part">Your notes</h2>
-		<div class="cards">
-			{#each notes as space (space.space)}
-				<article class="card">
-					{#each space.docs as doc (doc.entry)}
-						<label class="doc">
-							<b>{doc.title}</b>
-							<textarea class="field" rows="3" bind:value={edits[doc.entry]}></textarea>
-						</label>
-						{#if edits[doc.entry] !== doc.text}
-							<button class="btn" disabled={!!doing} onclick={() => save(space, doc)}>Save</button>
-						{/if}
-					{:else}
-						<p class="soft">No notes yet.</p>
-					{/each}
-					{#if drafts[space.space]}
-						<input class="field" placeholder="A new note’s title" bind:value={drafts[space.space].title} />
-						<textarea class="field" rows="2" placeholder="What it says" bind:value={drafts[space.space].body}></textarea>
-						<button class="btn primary" disabled={!!doing || !drafts[space.space].title.trim()} onclick={() => write(space)}>Write it</button>
-					{/if}
-				</article>
-			{:else}
-				<p class="soft">Your notes arrive from your other devices.</p>
-			{/each}
-		</div>
-
-		<p class="forget"><button class="btn quiet danger" disabled={!!doing} onclick={forget}>Forget my account on this browser</button></p>
-	{:else if phase === 'closed'}
-		<div class="cards">
-			<article class="card">
-				<h3>Unlock your account</h3>
-				<p>Your account is on this browser, as {meta?.name}. Unlock it with your passkey.</p>
-				<div class="row">
-					<button class="btn primary" disabled={!!doing} onclick={unlockHere}>Unlock</button>
-					<button class="btn quiet" disabled={!!doing} onclick={forget}>Forget it here</button>
-				</div>
-			</article>
-		</div>
-	{:else}
-		<div class="cards">
-			{#if arrived}
-				<article class="card">
-					<h3>Link this browser</h3>
-					<p>Your other device sent you here: confirm with your passkey, and this browser joins your vault.</p>
-					<div class="row">
-						<button class="btn primary" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>
-							Link this browser
-						</button>
-						<button class="btn quiet" disabled={!!doing} onclick={() => ([arrived, code] = [false, ''])}>Not now</button>
-					</div>
-				</article>
-			{:else}
-				<article class="card">
-					<h3>New to avenDB?</h3>
-					<p>
-						Set up your account: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its root and
-						its only recovery, and this browser its first device.
-					</p>
-					<div class="row">
-						<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(false)}>
-							Use my maiaCITY passkey
-						</button>
-						<button class="btn quiet" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(true)}>
-							Make a new passkey
-						</button>
-					</div>
-				</article>
-				<article class="card">
-					<h3>Have an account already?</h3>
-					<p>
-						Sign in with your passkey, even with every other device of yours lost: avenDB's server hands this browser your
-						vault, which only your passkey opens, and it joins as one more of your devices.
-					</p>
-					<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(server, 'Signing in')}>
-						Sign in with my passkey
-					</button>
+					<h3>This browser</h3>
+					<label class="name">
+						<span class="soft">Its name, which your other devices show it by</span>
+						<input class="field" bind:value={name} />
+					</label>
 					<details>
-						<summary class="soft">Or link through your other device</summary>
-						<p class="soft">Open the link your other device shows, or scan its QR code. Or paste its code here.</p>
-						<input class="field" placeholder="Its code: AVENDB1…" bind:value={code} />
-						<button class="btn" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>Link this browser</button>
+						<summary class="soft">avenDB's server</summary>
+						<p class="soft">maiaCITY's server, at avendb.maia.city. Change these only for a test server.</p>
+						<input class="field" placeholder="Its relay: https://…" bind:value={relay} />
+						<input class="field" placeholder="The server’s code: AVENDB1…" bind:value={server} />
+						<p class="soft">The first person to found their vault through a server owns avenCEO, the aven vault the server is a device of.</p>
 					</details>
 				</article>
-			{/if}
-			<article class="card">
-				<h3>This browser</h3>
-				<label class="name">
-					<span class="soft">Its name, which your other devices show it by</span>
-					<input class="field" bind:value={name} />
-				</label>
-				<details>
-					<summary class="soft">avenDB's server</summary>
-					<p class="soft">maiaCITY's server, at avendb.maia.city. Change these only for a test server.</p>
-					<input class="field" placeholder="Its relay: https://…" bind:value={relay} />
-					<input class="field" placeholder="The server’s code: AVENDB1…" bind:value={server} />
-					<p class="soft">The first person to found their vault through a server owns avenCEO, the aven vault the server is a device of.</p>
-				</details>
-			</article>
-		</div>
-	{/if}
-	{#if doing}<p class="soft" role="status">{doing}…</p>{/if}
-	{#if error}<p class="error" role="alert">{error}</p>{/if}
-</div>
+			</div>
+		{/if}
+		{#if doing}<p class="soft" role="status">{doing}…</p>{/if}
+		{#if error}<p class="error" role="alert">{error}</p>{/if}
+	</div>
+{/if}
 
 <style>
-	.account input.field,
-	.account textarea.field {
+	.account {
+		max-width: 64rem;
+		margin: 0 auto;
+		padding: 2rem clamp(1rem, 4vw, 2.6rem) 8rem;
+	}
+
+	.account input.field {
 		display: block;
 		width: 100%;
 		box-sizing: border-box;
 		margin: 0.25rem 0 0.5rem;
+	}
+
+	.lead small {
+		color: var(--accent);
+		font-size: 0.78rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.lead h1 {
+		margin: 0.3rem 0 0.5rem;
+		font-size: clamp(1.6rem, 3vw, 2.2rem);
+		line-height: 1.15;
+	}
+
+	.lead p {
+		max-width: 72ch;
+		margin: 0 0 1.2rem;
+		line-height: 1.55;
+		color: var(--soft);
 	}
 
 	.card h3 {
@@ -497,63 +466,6 @@
 
 	.card p {
 		line-height: 1.5;
-	}
-
-	.lead .row {
-		margin-bottom: 1.2rem;
-	}
-
-	.devices ul {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.devices li {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.45rem 0;
-		border-bottom: 1px solid var(--edge);
-	}
-
-	.devices li:last-child {
-		border-bottom: 0;
-	}
-
-	.devices li input.field {
-		flex: 1 1 10rem;
-		width: auto;
-		margin: 0;
-	}
-
-	.devices li .btn.quiet {
-		margin-left: auto;
-	}
-
-	.dot {
-		flex: none;
-		width: 0.5rem;
-		height: 0.5rem;
-		border-radius: 50%;
-		background: var(--ok);
-	}
-
-	.qr :global(svg) {
-		width: 240px;
-		max-width: 100%;
-		height: auto;
-		background: #fff;
-	}
-
-	.code {
-		font-family: ui-monospace, monospace;
-		font-size: 0.75rem;
-	}
-
-	.doc {
-		display: block;
 	}
 
 	.name {
@@ -566,9 +478,5 @@
 
 	summary {
 		cursor: pointer;
-	}
-
-	.forget {
-		margin-top: 2rem;
 	}
 </style>
