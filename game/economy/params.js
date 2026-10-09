@@ -92,6 +92,7 @@ export const CARD_KINDS = ['policy', 'world', 'resource', 'recipe'];
 export const SECTIONS = [
 	{ id: 'hearts', kind: 'policy', name: 'HEARTS' },
 	{ id: 'trading', kind: 'policy', name: 'Trading' },
+	{ id: 'brains', kind: 'policy', name: 'Brains' },
 	{ id: 'avens', kind: 'world', name: 'Avens' },
 	{ id: 'bodies', kind: 'world', name: 'Needs and bodies' },
 	{ id: 'rot', kind: 'world', name: 'Rot' },
@@ -178,6 +179,10 @@ export const HOOKS = [
 	{ name: 'body', card: 'bodies', when: 'each night, for each living aven, after it ate', given: '{ aven, need, short, valley, value }', returns: '{ water, food }: its two reserves, 0-100 (at 0 it dies)' },
 	{ name: 'rot', card: 'rot', when: 'each night, for each aven and good', given: '{ aven, good, dice, valley, value }', returns: 'the units of the good that rot tonight, whole, at most its stock' },
 	{ name: 'harvest', card: 'harvests', when: 'each morning, for each good an aven grows', given: '{ aven, good, capacity, dice, valley, value }', returns: '{ qty, kind } (kind: normal, bad, rich or dry), or a number of units' },
-	{ name: 'weather', card: 'weather', when: 'each night, once for the valley', given: '{ weather, day, dice, valley, value }', returns: '{ dry (days of dry spell left), dryFrom, rain (units each barrel catches) }' }
+	{ name: 'weather', card: 'weather', when: 'each night, once for the valley', given: '{ weather, day, dice, valley, value }', returns: '{ dry (days of dry spell left), dryFrom, rain (units each barrel catches) }' },
+	{ name: 'see', card: 'brains', when: 'each time an aven decides, before its brain is asked', given: '{ aven, day, weather, market, history (last 7 days), others, brain (its character, wants, trials, lessons, deaths), valley, value }', returns: 'the state its brain decides on: one JSON object' },
+	{ name: 'ask', card: 'brains', when: 'each time an aven decides', given: '{ aven, day, full, anchors (per good: side, mine, market, afford), market, wants, spares, character, valley, value }', returns: '{ ask_<good> (goods it grows), bid_<good> (goods it buys), flex? }: each { type: score, instructions, criteria (2-10), levels (the price, or the share it gives in, each option stands for) }' },
+	{ name: 'prompt', card: 'brains', when: 'each time a chat model (Qwen) is asked for an aven', given: '{ aven, valley, value }', returns: 'what the model is told first, a text' },
+	{ name: 'score', card: 'brains', when: "each night, for each living aven's trial", given: '{ aven, gained (HEARTS since last night), short (units it went without), valley, value }', returns: 'the day\'s score: its trials keep a change only if the score goes up' }
 ];
 export const HOOK_NAMES = HOOKS.map((h) => h.name);

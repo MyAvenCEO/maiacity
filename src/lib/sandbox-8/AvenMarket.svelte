@@ -24,7 +24,8 @@
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
-	import { stateFor, questionsFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
+	import { brainSample } from './asks.js';
+	import { stateFor, questionsFor, promptFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
 
 	// ---- the database: who is playing, the config the valley runs on, and this run, saved day by day ----
 	const PICKED = 'sandbox-8-config';
@@ -492,7 +493,7 @@
 		/** @param {string} who */
 		const ask = async (who) => {
 			try {
-				const answers = await (who === 'liquid' ? within(25000, (signal) => askLiquid(state, questions, { signal, ...LIQUID })) : within(who === 'd1' ? 60000 : 20000, (signal) => askBox(state, questions, { signal, url: brain.url, want: /** @type {any} */ (who) })));
+				const answers = await (who === 'liquid' ? within(25000, (signal) => askLiquid(state, questions, { signal, ...LIQUID })) : within(who === 'd1' ? 60000 : 20000, (signal) => askBox(state, questions, { signal, url: brain.url, want: /** @type {any} */ (who), system: promptFor(me) })));
 				calls.errors[who] = '';
 				gate.rest[who] = 0;
 				return { answers, source: who };
@@ -1017,7 +1018,7 @@
 	{/if}
 	{#if page === 'mips'}
 		<div class="statspage">
-			<ProposalsView {acct} {configs} playing={snap.config} {draft} draftConfig={draftCfg} here={{ id: here.id, name: here.name, model: brain.mode }} sample={() => hookSample(world)} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
+			<ProposalsView {acct} {configs} playing={snap.config} {draft} draftConfig={draftCfg} here={{ id: here.id, name: here.name, model: brain.mode }} sample={() => { const s = hookSample(world); return { ...s, sample: { ...s.sample, ...brainSample(world) } }; }} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 

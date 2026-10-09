@@ -23,7 +23,7 @@ export const DAY_S = 86400; // in-game seconds in a day
 export const CODE = { run: /** @type {any} */ (null), seen: /** @type {any} */ (null) };
 
 /** what card code sees of an aven (a copy: nothing it does reaches the valley) */
-const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, reserveDays: a.reserveDays, flex: a.flex, minted: a.minted, decayed: a.decayed });
+export const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, harvest: a.harvest ?? null, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, reserveDays: a.reserveDays, ask: a.ask, bid: a.bid, flex: a.flex, yesterday: a.yesterday ?? null, minted: a.minted, decayed: a.decayed });
 /** ...and of the valley, once a night */
 function valleyView(world) {
 	const live = world.avens.filter((a) => a.alive);
@@ -43,6 +43,8 @@ function ruled(name, args, value, check) {
 	const v = CODE.run.run(name, args.aven ? { ...args, aven: avenView(args.aven) } : args, value);
 	return v === value ? value : check(v, value);
 }
+/** the Brains card's hooks (asks.js, mind.js): what a brain sees and is asked, and how its days are scored */
+export const brainRule = (name, args, value, check) => ruled(name, args, value, check);
 /** a number answer, kept within lo..hi (whole if asked) */
 const num = (lo, hi, whole = false) => (v, own) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, whole ? Math.round(v) : v)) : own);
 function hooked(name, args, value, lo, hi, whole = false) {

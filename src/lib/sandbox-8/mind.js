@@ -23,6 +23,8 @@
 // The mind lives in the database (api/src/economy.js, econ_brains) per world (its run's id) and aven name: read when it opens,
 // written every night, and editable by the admin's agents over the studio's MCP (their edits land on the next night).
 
+import { brainRule } from './economy.js';
+
 /** the character: what each dial means, at its low and its high end */
 export const DIALS = {
 	greed: {
@@ -150,6 +152,12 @@ function note(m, line) {
 	if (m.log.length > KEEP.log) m.log.splice(0, m.log.length - KEEP.log);
 }
 
+/** one day's score for a trial: HEARTS gained, less what going short cost (the Brains card's `score` hook) */
+function dayScore(a, gained, short) {
+	const own = gained - Object.entries(short).reduce((n, [g, q]) => n + q * SHORT[kindOf(g)], 0);
+	return brainRule('score', { aven: a, gained, short }, own, (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-1e9, Math.min(1e9, v)) : own));
+}
+
 /**
  * night: each aven's mind takes in its day. The day's score goes on the stretch; when a stretch is full it is judged:
  * a trial is kept or undone by the number, a plain stretch becomes the measure for the next trial. A death closes it
@@ -205,8 +213,7 @@ export function night(world) {
 			sum: 0,
 			hearts: a.hearts
 		});
-		const lost = Object.entries(short).reduce((n, [g, q]) => n + q * SHORT[kindOf(g)], 0);
-		w.sum += a.hearts - w.hearts - lost;
+		w.sum += dayScore(a, a.hearts - w.hearts, short);
 		w.hearts = a.hearts;
 		w.n += 1;
 		if (w.n < TRIAL_DAYS) continue;
