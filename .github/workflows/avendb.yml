@@ -119,5 +119,16 @@ jobs:
           done
           ssh prod "docker exec maia-city-caddy wget -qO- http://avendb:3350/healthz" && echo " ← its relay answers inside" \
             || echo "::warning::avenDB's relay does not answer inside"
-          curl -fsS "https://$AVENDB_HOST/healthz" && echo " ← https://$AVENDB_HOST answers" \
-            || echo "::warning::https://$AVENDB_HOST does not answer yet — check its A record (-> $HOST) and let Caddy finish its certificate."
+          if ! curl -fsS "https://$AVENDB_HOST/healthz"; then
+            echo "::warning::https://$AVENDB_HOST does not answer yet — check its A record (-> $HOST) and let Caddy finish its certificate."; exit 0
+          fi
+          echo " ← https://$AVENDB_HOST answers"
+          # a browser's pass rides in the relay's URL (?token=, ~23 KB): the relay must still take its WebSocket
+          PASS=$(head -c 24000 /dev/zero | tr '\0' A)
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 5 "https://$AVENDB_HOST/relay?token=$PASS" \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Protocol: iroh-relay-v1' || true)
+          if [ "$CODE" != 101 ]; then
+            echo "::error::https://$AVENDB_HOST/relay answers $CODE to a browser's pass, not 101: no browser can join (Caddy's max_header_size?)"; exit 1
+          fi
+          echo "101 ← its relay takes a browser's pass"
