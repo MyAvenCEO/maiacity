@@ -6,7 +6,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { createWorld, step, ranking, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
-	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL } from './brain.js';
+	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
 
 	const SPEEDS = [
 		{ k: 1, label: 'Real time' },
@@ -379,6 +379,10 @@
 					{/each}
 				</tbody>
 			</table>
+			<h4>Its tools</h4>
+			<ul class="tools">
+				{#each TOOLS as tool (tool.id)}<li><b>{tool.label}</b> · {tool.note}</li>{/each}
+			</ul>
 			<ul class="entries">
 				{#each snap.aven.ledger as e, i (i)}
 					<li class={e.kind}>
@@ -566,6 +570,15 @@
 		padding: 0.15rem 0.2rem;
 		border-top: 1px solid #1f2a2312;
 	}
+	h4 {
+		margin: 0.8rem 0 0.2rem;
+		font-size: 0.8rem;
+	}
+	.tools {
+		margin: 0;
+		padding-left: 1rem;
+		font-size: 0.75rem;
+	}
 	.entries {
 		list-style: none;
 		padding: 0;
@@ -595,6 +608,9 @@
 	}
 	.entries .num {
 		color: #b8483b;
+	}
+	.entries .num.up {
+		color: #2f7d4f;
 	}
 
 	/* phones upright: the valley on top, the books in a sheet of at most half the screen */

@@ -10,6 +10,14 @@ import { GOODS, GOOD_LABEL, NEED, want, spare } from './economy.js';
 export const LIQUID_URL = 'https://api.liquid.ai/decisions/v1/systemone';
 export const LIQUID_MODEL = 'd1:free';
 
+/** each aven's tools: just enough to run its own business, each one a typed question its brain answers every morning */
+export const TOOLS = [
+	{ id: 'ask', label: 'Set my selling price', note: 'per good it grows: cut, keep or raise' },
+	{ id: 'bid', label: 'Set the most I pay', note: 'per good it buys: cut, keep or raise' },
+	{ id: 'reserve', label: 'Keep a stock', note: '1 to 7 days of food and water' },
+	{ id: 'visit', label: 'Plan my walk', note: 'whom to visit first and second today, or stay home and sell' }
+];
+
 /** the five ways a price can move, from a sharp cut to a sharp rise */
 const MOVES = ['Cut it by a quarter', 'Cut it a little', 'Keep it', 'Raise it a little', 'Raise it by a quarter'];
 const FACTOR = [0.75, 0.9, 1, 1.1, 1.3];
@@ -68,7 +76,20 @@ export function questionsFor(world, a) {
 		};
 	}
 	q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on?', criteria: RESERVE };
+	const stops = visitOptions(world, a);
+	q.visit_1 = { type: 'choice', instructions: 'Who should you walk to first today, to buy what you lack or sell what you grow?', criteria: stops };
+	q.visit_2 = { type: 'choice', instructions: 'And who next, after that first visit?', criteria: stops };
 	return q;
+}
+
+/** where an aven can walk today: any living aven (what it grows and asks), or home to wait for buyers */
+function visitOptions(world, a) {
+	const out = { home: 'Stay on my own land and wait for buyers to come' };
+	for (const o of world.avens) {
+		if (o === a || !o.alive) continue;
+		out[o.name] = `Grows ${o.grows.map((g) => `${GOOD_LABEL[g]} at ${o.ask[g]}`).join(' and ')}; wants ${GOODS.filter((g) => want(o, g) > 0 && a.grows.includes(g)).map((g) => GOOD_LABEL[g]).join(', ') || 'nothing I grow'}`;
+	}
+	return out;
 }
 
 /** ask Liquid; resolves to the answers object or throws */
@@ -101,13 +122,25 @@ export function localAnswers(world, a) {
 		out[`bid_${g}`] = { type: 'score', score: short ? 4 : want(a, g) > NEED[g] ? 3 : want(a, g) === 0 ? 1 : 2 };
 	}
 	out.reserve = { type: 'choice', choice: a.health < 60 ? '5' : '3' };
+	// the local route: the cheapest grower of the good it lacks most, then of the next
+	const lacks = GOODS.filter((g) => want(a, g) > 0).sort((x, y) => want(a, y) / NEED[y] - want(a, x) / NEED[x]);
+	const stops = lacks.map((g) => world.avens.filter((o) => o !== a && o.alive && o.grows.includes(g)).sort((x, y) => x.ask[g] - y.ask[g])[0]?.name).filter(Boolean);
+	out.visit_1 = { type: 'choice', choice: stops[0] ?? 'home' };
+	out.visit_2 = { type: 'choice', choice: stops.find((n) => n !== stops[0]) ?? 'home' };
 	return out;
 }
 
 /** apply one morning's answers to an aven's ledger of prices */
 export function applyAnswers(world, a, answers, source) {
 	const changes = [];
+	const route = [answers.visit_1?.choice, answers.visit_2?.choice].filter(Boolean);
+	if (route.length) {
+		a.plan = route.map((n) => (n === 'home' ? 'home' : world.avens.find((o) => o.name === n)?.id)).filter((x) => x != null);
+		a.target = null;
+		changes.push(`walks to ${route.join(', then ')}`);
+	}
 	for (const [key, ans] of Object.entries(answers)) {
+		if (key.startsWith('visit_')) continue;
 		if (key === 'reserve') {
 			const d = Number(ans.choice);
 			if (d > 0 && d !== a.reserveDays) {
