@@ -1,19 +1,20 @@
 <!--
 	The Proposals view: MIPs, MaiaCity improvement proposals. A config is everything the valley runs on, as config cards
 	(values, data, QuickJS code); a MIP is a title, a description in prose and the cards as they would be. Once the admin
-	accepts it, its cards go into the config as they are and the config gets a new version. MIPs come from this page
-	(your local changes, as cards) or from an agent over the studio's MCP. Also here: the configs, to play another.
+	accepts it, its cards go into the config as they are and the config gets a new version. A new world is a MIP too
+	(Samuel, 2026-10-09): every setting it starts with, and what differs from the world it follows; accepting it makes the
+	world. MIPs come from this page (your local changes) or from an agent over the studio's MCP.
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { CONFIG, changedCards } from './rules.js';
+	import { CONFIG, changedCards, changedRules } from './rules.js';
 	import { loadMips, propose, decide, withdraw } from './store.js';
 	import ConfigCard from './ConfigCard.svelte';
 	import { testCard } from './sandbox.js';
 	import { HOOKS } from '../../../game/economy/params.js';
 
-	/** @type {{ acct: any, configs: any[], playing: { id: string | null, name: string, version: number, local: number }, draft?: boolean, sample: () => any, onplay: (cfg: any) => void, onreload: () => void }} */
-	let { acct, configs, playing, draft = false, sample, onplay, onreload } = $props();
+	/** @type {{ acct: any, configs: any[], playing: { id: string | null, name: string, version: number, local: number }, draft?: boolean | string, draftConfig?: string, here: { id: string | null, name: string, model: string }, sample: () => any, onworld: (made: any) => void, onreload: () => void }} */
+	let { acct, configs, playing, draft = false, draftConfig = '', here, sample, onworld, onreload } = $props();
 
 	let mips = $state(/** @type {any[]} */ ([]));
 	let show = $state('open');
@@ -23,22 +24,42 @@
 
 	// the new MIP: starts from your local changes, as whole cards, each with its code for the QuickJS sandbox
 	// svelte-ignore state_referenced_locally
-	let open = $state(draft); // only how it opens
-	let title = $state('');
+	let open = $state(!!draft); // only how it opens
+	// svelte-ignore state_referenced_locally
+	let title = $state(draft === 'world' ? 'A new world' : '');
 	let description = $state('');
-	let action = $state('edit');
+	// svelte-ignore state_referenced_locally
+	let action = $state(draft === 'world' ? 'world' : 'edit');
+	// a new world: its name, the config it starts on, the model, a seed, and the values tried on top (yours, to start)
+	let worldName = $state('');
+	// svelte-ignore state_referenced_locally
+	let worldCfg = $state(draftConfig || CONFIG.id || 'valley');
+	// svelte-ignore state_referenced_locally
+	let worldModel = $state(here?.model === 'qwen' ? 'qwen' : 'd1');
+	let worldSeed = $state('');
+	let valuesText = $state(JSON.stringify(changedRules(), null, 1));
 	let newId = $state('');
 	let newName = $state('');
 	let from = $state(CONFIG.id ?? '');
-	let cards = $state(changedCards());
+	// svelte-ignore state_referenced_locally
+	let cards = $state(draft === 'world' ? [] : changedCards());
 	let asJson = $state(false);
 	let jsonText = $state('');
 	let jsonError = $state('');
 	let removeText = $state('');
 	let formError = $state('');
 
-	const target = $derived(action === 'create' ? newId.trim() : CONFIG.id);
-	const baseCards = $derived(action === 'create' ? configs.find((c) => c.id === from)?.cards ?? null : CONFIG.cards);
+	const target = $derived(action === 'create' ? newId.trim() : action === 'world' ? worldCfg : CONFIG.id);
+	const baseCards = $derived(action === 'create' ? configs.find((c) => c.id === from)?.cards ?? null : action === 'world' ? configs.find((c) => c.id === worldCfg)?.cards ?? null : CONFIG.cards);
+	/** a world on a config: a fresh draft of it, with your changed values on top */
+	function newWorld(/** @type {string} */ cfg) {
+		action = 'world';
+		worldCfg = cfg;
+		title = title || 'A new world';
+		cards = [];
+		valuesText = JSON.stringify(changedRules(), null, 1);
+		open = true;
+	}
 
 	function editJson() {
 		jsonText = JSON.stringify(cards, null, 2);
@@ -97,6 +118,14 @@
 		formError = '';
 		if (!title.trim()) return (formError = 'Give it a title.');
 		if (action !== 'delete' && asJson && jsonError) return (formError = jsonError);
+		/** @type {any} */
+		let values = {};
+		if (action === 'world')
+			try {
+				values = JSON.parse(valuesText.trim() || '{}');
+			} catch (e) {
+				return (formError = `The values aren't JSON yet: ${/** @type {any} */ (e).message}`);
+			}
 		busy = true;
 		try {
 			await propose({
@@ -105,6 +134,7 @@
 				config: target,
 				action,
 				...(action === 'create' ? { name: newName || newId, from: from || null } : {}),
+				...(action === 'world' ? { world: { name: worldName, values, model: worldModel, seed: worldSeed === '' ? null : Number(worldSeed), after: here?.id ?? null } } : {}),
 				cards: action === 'delete' ? [] : $state.snapshot(cards),
 				remove: action === 'delete' ? [] : removing
 			});
@@ -125,9 +155,10 @@
 	async function judge(m, accept) {
 		busy = true;
 		try {
-			await decide(m.number, accept, notes[m.number] ?? '');
+			const r = await decide(m.number, accept, notes[m.number] ?? '');
 			await refresh();
-			if (accept) onreload();
+			if (accept && r?.world) onworld(r);
+			else if (accept) onreload();
 		} catch (e) {
 			error = /** @type {any} */ (e)?.message || 'It could not be decided.';
 		} finally {
@@ -152,6 +183,7 @@
 	function what(m) {
 		if (m.action === 'create') return `Creates the config ${m.config} ("${m.name}") from ${m.from ?? "the catalogue's defaults"}`;
 		if (m.action === 'delete') return `Deletes the config ${m.config}`;
+		if (m.action === 'world') return `Starts a new world${m.world?.name ? ` "${m.world.name}"` : ''} on ${configs.find((c) => c.id === m.config)?.name ?? m.config}${m.cards.length || m.remove.length ? ' with the cards below' : ''}, its avens asking ${m.world?.model === 'qwen' ? 'Qwen' : 'd1'}`;
 		return `Changes the config ${m.config}${m.base_version ? ` (proposed on version ${m.base_version})` : ''}${m.name ? `, renamed "${m.name}"` : ''}`;
 	}
 </script>
@@ -162,7 +194,7 @@
 			<h2>Proposals</h2>
 			<p>MIPs, MaiaCity improvement proposals. A config is everything the valley runs on, as config cards: values, data and the QuickJS code that goes with them. A MIP is a title, a description and the cards as they would be. Once the admin accepts it, its cards go into the config as they are, as a new version. Agents propose too, over the studio's MCP.</p>
 		</div>
-		{#if acct?.play}<div class="actions">{#if open}<button onclick={() => (open = false)}>Close</button>{:else}<button class="go" onclick={startOver}>New MIP</button>{/if}</div>{/if}
+		{#if acct?.play}<div class="actions">{#if open}<button onclick={() => (open = false)}>Close</button>{:else}<button onclick={() => newWorld(CONFIG.id ?? 'valley')}>New world</button><button class="go" onclick={startOver}>New MIP</button>{/if}</div>{/if}
 	</header>
 
 	{#if !acct?.play}
@@ -172,7 +204,7 @@
 
 		<section>
 			<h3>Configs</h3>
-			<p class="sub">The valley runs on <b>{playing.name}</b> (version {playing.version}){playing.local ? `, with ${playing.local} change${playing.local === 1 ? '' : 's'} of your own on top` : ''}. Pick another to play it; the valley starts again.</p>
+			<p class="sub">The valley runs on <b>{playing.name}</b> (version {playing.version}){playing.local ? `, with ${playing.local} change${playing.local === 1 ? '' : 's'} of your own on top` : ''}. A new world, on any of them, is a MIP: it carries every setting the world starts with.</p>
 			<table>
 				<tbody>
 					{#each configs as c (c.id)}
@@ -180,7 +212,7 @@
 							<td><b>{c.name}</b> <code>{c.id}</code><br /><small>{c.description}</small></td>
 							<td class="num">v{c.version}</td>
 							<td class="num">{c.cards.length} cards</td>
-							<td class="num">{#if c.id === playing.id}<span class="chip">playing</span>{:else}<button onclick={() => onplay(c)}>Play this</button>{/if}</td>
+							<td class="num">{#if c.id === playing.id}<span class="chip">playing</span>{:else}<button onclick={() => newWorld(c.id)}>Start a world on this</button>{/if}</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -197,7 +229,14 @@
 						<option value="edit">changes {CONFIG.name}</option>
 						<option value="create">creates a new config</option>
 						<option value="delete">deletes {CONFIG.name}</option>
+						<option value="world">starts a new world</option>
 					</select></label>
+					{#if action === 'world'}
+						<label>Name <input bind:value={worldName} maxlength="80" placeholder="World N" /></label>
+						<label>on <select bind:value={worldCfg}>{#each configs as c (c.id)}<option value={c.id}>{c.name} (v{c.version})</option>{/each}</select></label>
+						<label>Model <select bind:value={worldModel}><option value="d1">d1</option><option value="qwen">Qwen</option></select></label>
+						<label>Seed <input bind:value={worldSeed} inputmode="numeric" placeholder="any" /></label>
+					{/if}
 					{#if action === 'create'}
 						<label>id <input bind:value={newId} placeholder="dry-valley" /></label>
 						<label>Name <input bind:value={newName} placeholder="Dry valley" /></label>
@@ -207,6 +246,12 @@
 						</select></label>
 					{/if}
 				</div>
+				{#if action === 'world'}
+					<label>Values on top of the config, by key (yours to start: what you changed under Policies and World)
+						<textarea class="code" bind:value={valuesText} rows="5" spellcheck="false" placeholder={'{ "mint": 30, "waterDays": 4 }'}></textarea>
+					</label>
+					<p class="sub">It follows {here?.name || 'the world kept last'}: proposed, it lists every setting that differs from there. Its avens start with copies of their latest brains, told what changed.</p>
+				{/if}
 				{#if action !== 'delete'}
 					<div class="cards-head">
 						<span>Config cards: each one whole, as it goes in once accepted{cards.length ? ', filled in from your changes' : ''}</span>
@@ -264,6 +309,15 @@
 					<div class="what">{what(m)}</div>
 					{#if m.status === 'open' || unfolded[m.number]}
 						{#if m.description}<p class="prose">{m.description}</p>{/if}
+						{#if m.world}
+							<div class="world-diff">
+								{#if Object.keys(m.world.values ?? {}).length}<p><b>Values on top:</b> {Object.entries(m.world.values).map(([k, v]) => `${k} ${v}`).join(', ')}</p>{/if}
+								{#if m.world.after_name}
+									<p><b>Against {m.world.after_name}:</b> {m.world.diff?.length ? '' : 'the same settings.'}</p>
+									{#if m.world.diff?.length}<ul>{#each m.world.diff as d (d)}<li>{d}</li>{/each}</ul>{/if}
+								{:else}<p>The first world: nothing to compare it with.</p>{/if}
+							</div>
+						{/if}
 						{#each m.cards as card (card.id)}<ConfigCard {card} base={m.base?.[card.id] ?? null} />{/each}
 						{#each m.remove as id (id)}{#if m.base?.[id]}<ConfigCard card={m.base[id]} removed />{/if}{/each}
 					{/if}
@@ -278,7 +332,7 @@
 							{#if !acct.admin}<small>Only the admin accepts MIPs for now.</small>{/if}
 						</div>
 					{:else}
-						<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : ''}{m.note ? ` · "${m.note}"` : ''} <button class="link" onclick={() => (unfolded[m.number] = !unfolded[m.number])}>{unfolded[m.number] ? 'Fold' : 'What it changed'}</button></div>
+						<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : m.result?.world ? `: ${m.result.name} is made` : ''}{m.note ? ` · "${m.note}"` : ''} <button class="link" onclick={() => (unfolded[m.number] = !unfolded[m.number])}>{unfolded[m.number] ? 'Fold' : 'What it changed'}</button>{#if m.result?.world}<button class="link" onclick={() => onworld(m.result)}>Open it</button>{/if}</div>
 					{/if}
 				</article>
 			{:else}
@@ -289,6 +343,19 @@
 </div>
 
 <style>
+	.world-diff {
+		background: #f4f1e8;
+		border-radius: 8px;
+		padding: 0.4rem 0.7rem;
+		margin: 0.4rem 0;
+	}
+	.world-diff p {
+		margin: 0.2rem 0;
+	}
+	.world-diff ul {
+		margin: 0.2rem 0 0.2rem 1.1rem;
+		padding: 0;
+	}
 	.mips {
 		height: 100%;
 		overflow-y: auto;

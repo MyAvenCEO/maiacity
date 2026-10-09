@@ -26,7 +26,7 @@ import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queue
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
-import { EconomyError, addDays, catalogue, saveState, createWorld, updateWorld, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
+import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -296,32 +296,6 @@ const server = Bun.serve({
         try {
           await deleteRun(req.params.id);
           return new Response(null, { status: 204, headers: cors(req) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // POST { name, config, cards, values, model, seed }: a new world, fresh, waiting in the list until it is opened
-    "/api/economy/worlds": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await createWorld(me.id, await readJson(req)), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // PATCH { name, values, model, cards }: a world's settings, for the next time it is opened
-    "/api/economy/worlds/:id": {
-      OPTIONS: preflight,
-      PATCH: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await updateWorld(req.params.id, await readJson(req)));
         } catch (e) {
           return fail(req, e);
         }

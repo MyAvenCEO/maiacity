@@ -203,25 +203,6 @@
 			});
 	}
 
-	/** a new world on a config (Samuel: worlds are never reset; you open a new one, and every old one stays) */
-	async function play(/** @type {any} */ cfg, local = {}) {
-		if (started) {
-			// the world on the page is kept first, with its own settings, before the new world's come into force
-			await keepWorld();
-			syncMinds(true);
-			started = false;
-			rec = null;
-		}
-		useConfig(cfg, local);
-		try {
-			localStorage.setItem(PICKED, cfg.id);
-		} catch {
-			/* no storage here */
-		}
-		reset();
-		setView('valley');
-	}
-
 	// ---- worlds (Samuel, 2026-10-09): every world is kept with its settings, and can be opened again and played on;
 	// a new one starts fresh. Each is a capsule: its avens' money and brains are its own ----
 	let worlds = $state(/** @type {any[]} */ ([]));
@@ -640,7 +621,24 @@
 		snap = snapshot();
 	}
 
-	let draft = $state(false); // the Proposals view opens on a new MIP (from Policies or World: "Propose as a MIP")
+	let draft = $state(/** @type {boolean | string} */ (false)); // the Proposals view opens on a new MIP (true), or a new world ('world')
+	let draftCfg = $state(''); // the config a proposed world starts on
+	/** a new world is a MIP (Samuel): open its draft, with every setting it starts with. Signed out, nothing is kept,
+	 * so the valley just starts again here */
+	function proposeWorld(cfg = CONFIG.id ?? 'valley') {
+		if (!acct.play) {
+			reset();
+			return setView('valley');
+		}
+		draftCfg = cfg;
+		draft = 'world';
+		setView('mips');
+	}
+	/** a world MIP accepted: the world is made; open it, ready to start */
+	async function madeWorld(/** @type {any} */ r) {
+		await loadWorlds();
+		await openWorld({ id: r.world, name: r.name });
+	}
 	/** @param {string} v */
 	function setView(v) {
 		if (v !== 'mips') draft = false;
@@ -967,7 +965,7 @@
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
 			</select>
-			<button onclick={() => (reset(), setView('valley'))}>New world</button>
+			<button onclick={() => proposeWorld()}>New world</button>
 			<button class="panel-btn" hidden={page === 'stats'} onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
 		</div>
 	</header>
@@ -992,7 +990,7 @@
 			<h2>Worlds</h2>
 			<p class="sub">Every world is kept as it stands, with its own settings, and can be opened again to play on. Each world is a capsule: a new one starts fresh, and every aven's HEARTS and brain in it are its own.</p>
 			<div class="new">
-				<button class="go" onclick={() => { const c = configs.find((x) => x.id === newCfg) ?? configs[0]; if (c) play(c); else (reset(), setView('valley')); }}>New world</button>
+				<button class="go" onclick={() => proposeWorld(newCfg)}>{acct.play ? 'Propose a new world' : 'New world'}</button>
 				{#if configs.length > 1}<label>on <select bind:value={newCfg}>{#each configs as c (c.id)}<option value={c.id}>{c.name} (v{c.version})</option>{/each}</select></label>{:else if configs[0]}<span class="sub">on {configs[0].name} (v{configs[0].version})</span>{/if}
 			</div>
 			{#if !acct.play}<p class="sub">{acct.note || 'Sign in to keep worlds.'} A world played here now is not kept.</p>{/if}
@@ -1024,12 +1022,12 @@
 	{/if}
 	{#if page === 'policy' || page === 'world'}
 		<div class="statspage">
-			{#key page}<RulesView view={page} onchange={saveRules} onrestart={() => { reset(); setView('valley'); }} onpropose={() => { draft = true; setView('mips'); }} />{/key}
+			{#key page}<RulesView view={page} onchange={saveRules} onrestart={() => proposeWorld()} onpropose={() => { draft = true; setView('mips'); }} />{/key}
 		</div>
 	{/if}
 	{#if page === 'mips'}
 		<div class="statspage">
-			<ProposalsView {acct} {configs} playing={snap.config} {draft} sample={() => hookSample(world)} onplay={play} onreload={() => reloadConfigs().catch(() => {})} />
+			<ProposalsView {acct} {configs} playing={snap.config} {draft} draftConfig={draftCfg} here={{ id: here.id, name: here.name, model: brain.mode }} sample={() => hookSample(world)} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 
