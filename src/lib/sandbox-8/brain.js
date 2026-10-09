@@ -10,6 +10,7 @@
 
 import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents } from './economy.js';
 import { RULES } from './rules.js';
+import { mindFor, inCharacter, mindQuestions, applyMind } from './mind.js';
 import { native, command } from '$lib/native';
 
 export const LIQUID_URL = 'https://api.liquid.ai/decisions/v1/systemone';
@@ -20,7 +21,9 @@ export const TOOLS = [
 	{ id: 'ask', label: 'Set my price', note: 'per good it grows, in HEARTS: no starting price, it names its first one and then moves it as it likes, from its own stock, its needs, the market\'s history and what others ask' },
 	{ id: 'bid', label: 'Set what I pay', note: 'per good it buys: the most it pays, in the same range, from how close it is to going short' },
 	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet, up to the haggling the Policies allow' },
-	{ id: 'reserve', label: 'Keep a stock', note: '1 to 7 days of food and water' }
+	{ id: 'reserve', label: 'Keep a stock', note: 'days of water and of food: its wants, in its mind, changed only by its own trials (or the admin)' },
+	{ id: 'trial', label: 'Try something', note: `after each stretch of a few days, one change to its character or wants, kept only if its score beats the last stretch's` },
+	{ id: 'lesson', label: 'Learn', note: 'on Qwen, one short lesson of its own after each stretch, weighed by how the next stretch goes' }
 ];
 
 /** no starting prices (Samuel: they discover them). An aven's first price for a good is any of these, in HEARTS a
@@ -58,7 +61,6 @@ const deadline = (a, g) =>
 /** how far to give in when haggling */
 const flexes = () => [0, 0.1, 0.25, 0.5, 1].map((f) => Math.round(f * RULES.haggleMax) / 100);
 const gives = () => flexes().map((f, i) => (i ? `Give in up to ${Math.round(f * 100)}%` : 'Never give in'));
-const RESERVE = { '1': 'One day: spend as little as possible now', '2': 'Two days', '3': 'Three days', '5': 'Five days', '7': 'A week: never risk going hungry' };
 
 /** a score of 0 to levels-1 (may fall between levels) to a value between them; prices in between are geometric */
 function factorOf(score, levels, geometric = false) {
@@ -115,7 +117,7 @@ export function stateFor(world, a) {
 		rain_barrel: `${RULES.rainChance}% of nights it rains and my barrel catches 1–${RULES.rainMax} WATER (never in a dry spell)`,
 		stock: a.stock,
 		need_per_day: NEED,
-		days_of_reserve_wanted: a.reserveDays,
+		days_of_stock_wanted: a.keep ? { water: a.keep.water, food: a.keep.food } : a.reserveDays,
 		my_asking_prices: a.ask,
 		my_buying_limits: a.bid,
 		how_far_i_give_in_haggling: a.flex,
@@ -123,7 +125,9 @@ export function stateFor(world, a) {
 		market: boardFor(world),
 		others: world.avens
 			.filter((o) => o !== a)
-			.map((o) => ({ name: o.name, alive: o.alive, hearts: o.hearts, grows: o.grows, asking: o.alive ? o.ask : null }))
+			.map((o) => ({ name: o.name, alive: o.alive, hearts: o.hearts, grows: o.grows, asking: o.alive ? o.ask : null })),
+		// who it is and what it learned, across runs (mind.js): its character, wants, trials, lessons, deaths
+		my_mind: mindFor(a)
 	};
 }
 
@@ -144,7 +148,7 @@ function survivalFor(world, a) {
 }
 
 /** the typed questions for one aven this morning */
-export function questionsFor(world, a, { full = true } = {}) {
+export function questionsFor(world, a, { full = true, writes = false } = {}) {
 	const q = {};
 	a.brain.levels = {}; // the price levels asked, so the answer is read against the same ones
 	for (const g of a.grows) {
@@ -154,7 +158,7 @@ export function questionsFor(world, a, { full = true } = {}) {
 		a.brain.levels[`ask_${g}`] = lv.levels;
 		q[`ask_${g}`] = {
 			type: 'score',
-			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${NEED[g]} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford. What should your selling price for ${GOOD_LABEL[g]} be?`,
+			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${NEED[g]} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford.${inCharacter(a, 'greed')} What should your selling price for ${GOOD_LABEL[g]} be?`,
 			criteria: lv.criteria
 		};
 	}
@@ -165,20 +169,24 @@ export function questionsFor(world, a, { full = true } = {}) {
 		a.brain.levels[`bid_${g}`] = lv.levels;
 		q[`bid_${g}`] = {
 			type: 'score',
-			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${NEED[g]} a day, hold ${a.stock[g]} (${a.stock[g] < NEED[g] ? `short by ${NEED[g] - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / NEED[g])} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked. What is the most you should pay for ${GOOD_LABEL[g]}?`,
+			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${NEED[g]} a day, hold ${a.stock[g]} (${a.stock[g] < NEED[g] ? `short by ${NEED[g] - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / NEED[g])} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.${inCharacter(a, 'thrift')} What is the most you should pay for ${GOOD_LABEL[g]}?`,
 			criteria: lv.criteria
 		};
 	}
 	// the slower decisions (haggling, stock) only on a full ask: every ask carries the whole state once per question, so
 	// fewer questions is fewer tokens. Where to walk is no decision: a buyer walks to fetch what it bought (Samuel).
-	if (full) q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: gives() };
-	if (full) q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 15%, chicken 30%, legumes 5% a night; water keeps.', criteria: RESERVE };
+	if (full) q.flex = { type: 'score', instructions: `When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?${inCharacter(a, 'haggle')}`, criteria: gives() };
+	// how much stock it keeps is no longer asked every morning: it is the aven's wants, in its mind, changed by its
+	// trials (scored by the game) and by the admin's edits. After a stretch is measured, a full ask also picks the next
+	// trial, and a brain that writes adds a lesson (mind.js).
+	if (full) Object.assign(q, mindQuestions(a, { writes }));
 	return q;
 }
 
 /** ask Liquid, through our API's relay when `relay` is given (browsers can't reach Liquid directly); resolves to the
  * answers object or throws */
-export async function askLiquid(state, questions, { signal, relay } = {}) {
+export async function askLiquid(state, all, { signal, relay } = {}) {
+	const questions = typedOnly(all);
 	const res = await fetch(relay ?? LIQUID_URL, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -195,10 +203,15 @@ export async function askLiquid(state, questions, { signal, relay } = {}) {
 	return body.answers;
 }
 
+/** the questions a decision model answers: it picks among options, it writes no text */
+const typedOnly = (questions) => Object.fromEntries(Object.entries(questions).filter(([, q]) => q.type !== 'text'));
+
 /** apply one morning's answers to an aven's ledger of prices */
 export function applyAnswers(world, a, answers, source) {
 	const changes = [];
+	changes.push(...applyMind(world, a, answers));
 	for (const [key, ans] of Object.entries(answers)) {
+		if (key === 'next_trial' || key === 'lesson') continue;
 		if (key === 'reserve') {
 			const d = Number(ans.choice);
 			if (d > 0 && d !== a.reserveDays) {
@@ -225,7 +238,7 @@ export function applyAnswers(world, a, answers, source) {
 	a.brain.last = { day: world.day, t: world.t, source, answers };
 	// for the run's record in the database (when the page keeps one): what it decided, compactly
 	if (world.outbox)
-		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes, answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
+		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes, answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? v?.text ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
 	a.brain.ready = true;
 	// every decision of every aven, newest last, for the page's Decisions feed
 	const all = (world.decisions ??= []);
@@ -319,8 +332,8 @@ export async function askBox(state, questions, { signal, url = BOX_URL, want = '
 		// Samuel's d1 server (FastAPI, :8001) answers POST /decide { state as text, questions } with { answer: { answers } };
 		// llama-server answers /v1/systemone with Liquid's own body. Whichever this one has, else the chat.
 		const routes = [
-			[`${b.replace(/\/v1$/, '')}/decide`, { state: JSON.stringify(state), questions }],
-			[`${b}/systemone`, { model, state, questions }]
+			[`${b.replace(/\/v1$/, '')}/decide`, { state: JSON.stringify(state), questions: typedOnly(questions) }],
+			[`${b}/systemone`, { model, state, questions: typedOnly(questions) }]
 		];
 		for (const [at, body] of routes) {
 			if (missing.has(at)) continue;
@@ -337,17 +350,17 @@ export async function askBox(state, questions, { signal, url = BOX_URL, want = '
 		chatOnly.add(b); // no decision API here: the chat it is, from now on
 	}
 	const keys = Object.keys(questions);
-	const options = (q) => (q.type === 'score' ? Object.fromEntries(q.criteria.map((c, i) => [i, c])) : q.criteria);
+	const options = (q) => (q.type === 'score' ? Object.fromEntries(q.criteria.map((c, i) => [i, c])) : q.type === 'text' ? 'write it' : q.criteria);
 	const schema = {
 		type: 'object',
-		properties: Object.fromEntries(keys.map((k) => [k, questions[k].type === 'score' ? { type: 'integer', enum: questions[k].criteria.map((_, i) => i) } : { type: 'string', enum: Object.keys(questions[k].criteria) }])),
+		properties: Object.fromEntries(keys.map((k) => [k, questions[k].type === 'score' ? { type: 'integer', enum: questions[k].criteria.map((_, i) => i) } : questions[k].type === 'text' ? { type: 'string', maxLength: 120 } : { type: 'string', enum: Object.keys(questions[k].criteria) }])),
 		required: keys,
 		additionalProperties: false
 	};
 	const body = {
 		model,
 		messages: [
-			{ role: 'system', content: `You decide for ${state.me}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Reply with one JSON object only: for each question key, the number or key of the option you pick. /no_think` },
+			{ role: 'system', content: `You decide for ${state.me}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_mind, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (or, where asked to write, a short text). /no_think` },
 			{ role: 'user', content: JSON.stringify({ state, questions: Object.fromEntries(keys.map((k) => [k, { question: questions[k].instructions, options: options(questions[k]) }])) }) }
 		],
 		temperature: 0.3,
@@ -376,6 +389,7 @@ export async function askBox(state, questions, { signal, url = BOX_URL, want = '
 		const v = picks?.[k];
 		if (q.type === 'score' && Number.isFinite(Number(v))) answers[k] = { score: Math.max(0, Math.min(q.criteria.length - 1, Number(v))) };
 		else if (q.type === 'choice' && v != null && String(v) in q.criteria) answers[k] = { choice: String(v) };
+		else if (q.type === 'text' && typeof v === 'string') answers[k] = { text: v.slice(0, 120) };
 	}
 	if (!Object.keys(answers).length) throw new Error(`${want === 'd1' ? 'd1' : 'Qwen'} picked no option`);
 	return answers;

@@ -334,3 +334,79 @@ export async function deleteRun(id) {
   const r = await db.query("DELETE FROM econ_runs WHERE id = $1", [id]);
   if (!r.affectedRows) throw new EconomyError("No such run.", 404);
 }
+
+// ─────────────────────────────── minds ───────────────────────────────
+// Each aven's mind (src/lib/sandbox-8/mind.js) outlives its runs: its character, wants, trials, lessons and deaths. The
+// page writes them every night; an edit from outside (an agent over the studio's MCP, or the admin) waits in `pending`
+// until the page takes it in on its next night (or its next run), and the page's write then clears what it took.
+
+const MAX_MIND = 20_000; // one aven's mind, in characters: it is kept small on purpose (a few hundred tokens)
+const NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,39}$/;
+
+/** every aven's mind for a config: { aven name: { ...mind, pending: [edits not taken in yet], updated } } */
+export async function getMinds(configId) {
+  const { rows } = await db.query("SELECT aven, mind, pending, updated FROM econ_minds WHERE config_id = $1 ORDER BY aven", [text(configId, 41)]);
+  return Object.fromEntries(rows.map((r) => [r.aven, { ...r.mind, pending: r.pending, updated: r.updated }]));
+}
+
+/** the page writes some avens' minds (each night): { minds: { aven name: mind } }; each mind's `applied` (the newest
+ * edit it took in) clears those edits from pending */
+export async function putMinds(configId, body) {
+  const minds = body?.minds;
+  if (!minds || typeof minds !== "object" || Array.isArray(minds)) throw new EconomyError("Send { minds: { <aven>: <mind> } }.");
+  const id = text(configId, 41);
+  if (!id) throw new EconomyError("Which config?");
+  const names = Object.keys(minds).filter((n) => NAME.test(n));
+  if (names.length > 100) throw new EconomyError("Too many avens at once.", 413);
+  for (const aven of names) {
+    const m = minds[aven];
+    if (!m || typeof m !== "object" || Array.isArray(m)) continue;
+    const { pending, updated, ...keep } = m;
+    const body = json(keep);
+    if (body.length > MAX_MIND) throw new EconomyError(`${aven}'s mind is too large.`, 413);
+    await db.query(
+      `INSERT INTO econ_minds (config_id, aven, mind) VALUES ($1, $2, ($3::text)::jsonb)
+       ON CONFLICT (config_id, aven) DO UPDATE SET mind = EXCLUDED.mind, updated = now(),
+         pending = COALESCE((SELECT jsonb_agg(e) FROM jsonb_array_elements(econ_minds.pending) e WHERE (e->>'id')::bigint > $4), '[]'::jsonb)`,
+      [id, aven, body, Number(keep.applied) || 0],
+    );
+  }
+  return { config: id, saved: names.length };
+}
+
+/**
+ * An edit to one aven's mind from outside: { dials: { greed|thrift|haggle: 0-10 }, wants: { water|food: days 1-10 },
+ * lesson: text to add, forget_lesson: its id, note }. It waits until the page takes it in (next night of a run, or the
+ * next run); the page clamps every value.
+ */
+export async function editMind(configId, aven, by, body) {
+  const id = text(configId, 41);
+  const name = text(aven, 40);
+  if (!id || !NAME.test(name)) throw new EconomyError("Which config, and which aven (its name)?");
+  const nums = (o, keys) =>
+    Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => keys.includes(k) && Number.isFinite(Number(v))).map(([k, v]) => [k, Number(v)]));
+  const edit = {
+    id: Date.now(),
+    at: new Date().toISOString(),
+    by: text(by, 60) || "the admin",
+    dials: nums(body?.dials, ["greed", "thrift", "haggle"]),
+    wants: nums(body?.wants, ["water", "food"]),
+    ...(body?.lesson ? { lesson: text(body.lesson, 110) } : {}),
+    ...(body?.forget_lesson != null && Number.isFinite(Number(body.forget_lesson)) ? { forget_lesson: Number(body.forget_lesson) } : {}),
+    note: text(body?.note, 200),
+  };
+  if (!Object.keys(edit.dials).length && !Object.keys(edit.wants).length && !edit.lesson && edit.forget_lesson == null)
+    throw new EconomyError("Nothing to change: send dials, wants, lesson or forget_lesson.");
+  await db.query(
+    `INSERT INTO econ_minds (config_id, aven, pending) VALUES ($1, $2, ($3::text)::jsonb)
+     ON CONFLICT (config_id, aven) DO UPDATE SET pending = econ_minds.pending || EXCLUDED.pending, updated = now()`,
+    [id, name, json([edit])],
+  );
+  return { config: id, aven: name, edit, note: "It takes effect on the aven's next night in a running game, or when the next run starts." };
+}
+
+/** forget every aven's mind for a config (the admin): the next run starts with fresh characters */
+export async function forgetMinds(configId) {
+  const r = await db.query("DELETE FROM econ_minds WHERE config_id = $1", [text(configId, 41)]);
+  return { forgotten: Number(r.affectedRows ?? 0) };
+}

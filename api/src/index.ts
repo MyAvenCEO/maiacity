@@ -26,7 +26,7 @@ import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queue
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
-import { EconomyError, addDays, catalogue, createMip, decideMip, deleteRun, getConfig, getMip, getRun, listConfigs, listMips, listRuns, startRun, withdrawMip } from "./economy.js";
+import { EconomyError, addDays, catalogue, createMip, decideMip, deleteRun, editMind, forgetMinds, getConfig, getMinds, getMip, getRun, listConfigs, listMips, listRuns, putMinds, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -308,6 +308,51 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         try {
           return json(req, await addDays(req.params.id, await readJson(req)));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // Each aven's mind, kept across runs (src/lib/sandbox-8/mind.js): GET { minds: { aven: mind } }, PUT { minds } (the
+    // page, each night), DELETE (the admin) forgets them all
+    "/api/economy/minds/:config": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, { minds: await getMinds(req.params.config) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      PUT: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await putMinds(req.params.config, await readJson(req)));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      DELETE: async (req) => {
+        const me = await allowed(req, "economy:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await forgetMinds(req.params.config));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // POST { dials, wants, lesson, forget_lesson, note }: an edit to one aven's mind, taken in on its next night
+    "/api/economy/minds/:config/:aven": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "economy:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await editMind(req.params.config, decodeURIComponent(req.params.aven), me.id, await readJson(req)));
         } catch (e) {
           return fail(req, e);
         }

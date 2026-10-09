@@ -15,7 +15,8 @@
 	import { RULES, CONFIG, setRules, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
-	import { loadConfigs, recorder } from './store.js';
+	import { loadConfigs, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
+	import { wholeMind, beginRun, wear, night, editMind, keepMind, DIALS, WANTS, TRIAL_DAYS } from './mind.js';
 	import { me, may } from '$lib/auth/client';
 	import { native } from '$lib/native';
 	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
@@ -53,13 +54,89 @@
 			const f = await me();
 			acct = { id: f.id, play: may(f, 'economy:play'), admin: may(f, 'economy:admin'), note: '' };
 			if (!acct.play) {
+				loadAllMinds();
 				acct.note = native() ? "This studio's key can't play the economy yet: sign it out once (You, at the bottom, then Sign out) and in again with your passkey. Until then the valley runs on the catalogue's defaults and nothing is saved." : 'Your role cannot play the economy sandbox yet, so the valley runs on the defaults and nothing is saved.';
 				return;
 			}
 			await reloadConfigs(true);
 		} catch (e) {
 			acct.note = `Not connected (${/** @type {any} */ (e)?.message || 'the API cannot be reached'}): sign in on maia.city to save runs and see the proposals. The valley runs on the catalogue's defaults.`;
+			loadAllMinds();
 		}
+	}
+
+	// ---- each aven's mind, kept across runs (mind.js): who it is, what it wants, what it tried, learned, died of ----
+	/** @type {Record<string, any>} */
+	let minds = {}; // by aven name, for the config being played
+	let mindsOf = ''; // which config they are
+	let mindNote = $state('');
+	const mindsRemote = () => acct.play;
+	const mindsKey = () => CONFIG.id ?? 'defaults'; // the catalogue's defaults (no config loaded) keep their own
+	/** take in the edits made from outside (the studio's MCP): the newest last; each says so in the decisions feed */
+	function takeEdits(/** @type {any} */ m, /** @type {any[]} */ pending) {
+		for (const e of (pending ?? []).filter((x) => x.id > (m.applied ?? 0)).sort((x, y) => x.id - y.id)) {
+			const said = editMind(m, e);
+			m.applied = e.id;
+			const a = world.avens.find((/** @type {any} */ x) => x.name === m.name);
+			if (a && said.length) {
+				const all = (world.decisions ??= []);
+				all.push({ n: (all.at(-1)?.n ?? 0) + 1, day: world.day, t: world.t, id: a.id, name: a.name, colour: a.colour, source: 'edit', changes: [`set by ${e.by ?? 'the admin'}: ${said.join(', ')}`] });
+			}
+		}
+	}
+	/** read every aven's mind for this config (a new one for an aven never played), and dress this valley's avens in them */
+	async function loadAllMinds() {
+		const cfg = mindsKey();
+		/** @type {Record<string, any>} */
+		let raw = {};
+		try {
+			raw = await loadMinds(cfg, mindsRemote());
+			mindNote = '';
+		} catch (e) {
+			mindNote = `The avens' minds could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh and are not kept.`;
+		}
+		if (cfg !== mindsKey()) return;
+		mindsOf = cfg;
+		minds = {};
+		for (const a of world.avens) {
+			const m = wholeMind(raw[a.name], a.name, RULES.reserveDays);
+			takeEdits(m, raw[a.name]?.pending);
+			minds[a.name] = m;
+		}
+		if (!started) for (const a of world.avens) wear(a, minds[a.name]);
+		snap = snapshot();
+	}
+	let syncing = false;
+	/** each night: take in edits from outside, then write every mind */
+	async function syncMinds(final = false) {
+		if (syncing || mindsOf !== mindsKey() || !Object.keys(minds).length) return;
+		syncing = true;
+		const cfg = mindsOf;
+		try {
+			if (mindsRemote() && !final) {
+				const raw = await loadMinds(cfg, true);
+				for (const m of Object.values(minds)) takeEdits(m, raw[m.name]?.pending);
+			}
+			await saveMinds(cfg, Object.fromEntries(Object.values(minds).map((m) => [m.name, keepMind(m)])), mindsRemote());
+			mindNote = '';
+		} catch (e) {
+			mindNote = `The avens' minds could not be saved (${/** @type {any} */ (e)?.message || e}).`;
+		} finally {
+			syncing = false;
+		}
+	}
+	/** the admin: every aven of this config forgets everything and starts fresh */
+	async function forgetAll() {
+		if (!confirm(`Forget every aven's mind for ${CONFIG.name}? Their characters, trials, lessons and deaths go, and the next run starts fresh.`)) return;
+		try {
+			await forgetMinds(mindsKey(), mindsRemote());
+		} catch (e) {
+			mindNote = `Could not forget (${/** @type {any} */ (e)?.message || e}).`;
+			return;
+		}
+		minds = {};
+		mindsOf = '';
+		reset();
 	}
 
 	/** load the configs; run on the one picked last (or the first), keeping your changes on top */
@@ -235,7 +312,8 @@
 				ask: { ...a.ask },
 				bid: { ...a.bid },
 				ledger: a.ledger.slice(-80).reverse(),
-				brain: { ...a.brain }
+				brain: { ...a.brain },
+				mind: a.mind && tab === 'ledger' ? JSON.parse(JSON.stringify(keepMind(a.mind))) : null
 			}
 		};
 	}
@@ -266,7 +344,7 @@
 
 	// ---- the brains: what answers, and what steps in when it can't ----
 	/** @type {Record<string, string>} */
-	const NAME = { d1: 'd1', qwen: 'Qwen', liquid: 'Liquid' };
+	const NAME = { d1: 'd1', qwen: 'Qwen', liquid: 'Liquid', edit: 'edit' };
 	/** @type {Record<string, string>} */
 	const BRAINS = { d1: 'd1', qwen: 'Qwen' };
 	// d1 answers; when it can't, Qwen answers that ask and the picker turns to Qwen until it is set back to d1 (Samuel)
@@ -320,7 +398,7 @@
 	/** one aven's decision, from the brain whose turn it is: resolves to { answers, source } or throws */
 	async function decide(/** @type {any} */ me, /** @type {boolean} */ full) {
 		const state = stateFor(world, me);
-		const questions = questionsFor(world, me, { full });
+		const questions = questionsFor(world, me, { full, writes: brain.mode === 'qwen' });
 		/** @param {number} ms @param {(signal: AbortSignal) => Promise<any>} ask */
 		const within = (ms, ask) => {
 			const ctrl = new AbortController();
@@ -431,9 +509,12 @@
 
 	function reset() {
 		save(true);
+		if (started) syncMinds(true);
 		rec = null;
 		saving = { days: 0, error: '' };
 		world = createWorld();
+		if (mindsOf === mindsKey()) for (const a of world.avens) wear(a, (minds[a.name] ??= wholeMind(null, a.name, RULES.reserveDays)));
+		else loadAllMinds();
 		calls = blankCalls();
 		down = '';
 		busy = '';
@@ -454,7 +535,12 @@
 	/** Start (the first decisions go out now) or pause */
 	function toggle() {
 		if (!access.ok) return;
-		if (!started) startRecording();
+		if (!started) {
+			// a run begins: each mind counts it, and an unfinished trial from the last run is undone
+			for (const a of world.avens) if (a.mind) beginRun(a.mind);
+			startRecording();
+			syncMinds(true);
+		}
 		started = true;
 		if (paused) down = '';
 		paused = !paused;
@@ -685,7 +771,11 @@
 					while (game > 0) {
 						const d = Math.min(120, game);
 						game -= d;
-						step(world, d);
+						// a night passed: each mind takes in its day (mind.js), then they are written
+						if (step(world, d)) {
+							night(world);
+							syncMinds();
+						}
 					}
 				}
 			}
@@ -701,10 +791,15 @@
 			raf = requestAnimationFrame(frame);
 		};
 		raf = requestAnimationFrame(frame);
+		// what the minds learned since the last night is written when the page goes, too (best effort)
+		const leave = () => started && syncMinds(true);
+		window.addEventListener('pagehide', leave);
 		return () => {
 			cancelAnimationFrame(raf);
 			ro.disconnect();
+			window.removeEventListener('pagehide', leave);
 			save();
+			leave();
 		};
 	});
 
@@ -872,7 +967,7 @@
 		<section class="ledger">
 			<h3><i style:background={snap.aven.colour}></i>{snap.aven.name}'s ledger</h3>
 			<p class="sub">
-				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.reserveDays} days in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
+				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.mind ? `${snap.aven.mind.wants.water} days of water, ${snap.aven.mind.wants.food} of food` : `${snap.aven.reserveDays} days`} in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
 			</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, and against the market price">Sells</th><th title="pays up to, and against the market price">Pays</th></tr></thead>
@@ -891,6 +986,20 @@
 					{/each}
 				</tbody>
 			</table></div>
+			{#if snap.aven.mind}
+				{@const m = snap.aven.mind}
+				<h4>Its mind <small>run {m.runs} · {m.days} days lived · died {m.deaths}× · {m.tally.trials} trials, {m.tally.kept} kept</small></h4>
+				<ul class="dials">
+					{#each Object.entries(DIALS) as [k, d] (k)}<li title={`0 ${d.low} · 10 ${d.high}`}><span>{d.label}</span><b style:width={`${m.dials[k] * 10}%`}></b><em>{m.dials[k]}</em></li>{/each}
+					{#each Object.entries(WANTS) as [k, w] (k)}<li title={`days of ${k} it keeps, and buys up to`}><span>{w.label}</span><b class="want" style:width={`${m.wants[k] * 10}%`}></b><em>{m.wants[k]} d</em></li>{/each}
+				</ul>
+				<p class="sub">{m.trial ? `Trying ${m.trial.kind === 'wants' ? `${m.trial.key} stock` : m.trial.key} ${m.trial.from}→${m.trial.to} since day ${m.trial.day}: kept if it beats ${m.base}/day over ${TRIAL_DAYS} days.` : m.base == null ? `Measuring its setting (${TRIAL_DAYS} days) before its next trial.` : `Last stretch ${m.base}/day: it picks its next trial.`}</p>
+				{#if m.log.length}<ul class="entries mind">{#each m.log.slice().reverse() as line, i (i)}<li><span class="what">{line}</span></li>{/each}</ul>{/if}
+				{#if m.lessons.length}<h4>Lessons</h4><ul class="entries mind">{#each m.lessons as l (l.id)}<li><span class="what">#{l.id} {l.text}</span><span class="num">+{l.up} −{l.down}</span></li>{/each}</ul>{/if}
+				{#if m.deathLog.length}<h4>Deaths</h4><ul class="entries mind">{#each m.deathLog.slice().reverse() as line, i (i)}<li class="death"><span class="what">{line}</span></li>{/each}</ul>{/if}
+				{#if mindNote}<p class="sub miss">{mindNote}</p>{/if}
+				{#if acct.admin}<button class="link forget" onclick={forgetAll}>Forget every aven's mind</button>{/if}
+			{/if}
 			<h4>Its tools</h4>
 			<ul class="tools">
 				{#each TOOLS as tool (tool.id)}<li><b>{tool.label}</b> · {tool.note}</li>{/each}
@@ -1117,6 +1226,48 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.2rem 0.7rem;
+	}
+	.dials {
+		list-style: none;
+		margin: 0.2rem 0 0.4rem;
+		padding: 0;
+		display: grid;
+		gap: 0.2rem;
+	}
+	.dials li {
+		display: grid;
+		grid-template-columns: 7.5rem 1fr 2.8rem;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.78rem;
+	}
+	.dials li b {
+		height: 0.45rem;
+		border-radius: 0.25rem;
+		background: #b07ad8;
+	}
+	.dials li b.want {
+		background: #2a78d6;
+	}
+	.dials li em {
+		font-style: normal;
+		white-space: nowrap;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.entries.mind li {
+		font-size: 0.76rem;
+	}
+	.link.forget {
+		margin: 0.3rem 0 0.6rem;
+		background: none;
+		border: 0;
+		padding: 0;
+		color: #b3261e;
+		text-decoration: underline;
+		cursor: pointer;
+		font: inherit;
+		font-size: 0.78rem;
 	}
 	.ledger {
 		padding-top: 0.2rem;
