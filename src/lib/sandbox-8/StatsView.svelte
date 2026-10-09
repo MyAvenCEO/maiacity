@@ -124,7 +124,7 @@
 
 	<div class="grid">
 		{#if chartsOn.prices}
-			<div class="wide"><LineChart title="Market price" unit="HEARTS a unit" note={showAvg ? 'Solid: the market price (the average traded over the last 24 hours), hour by hour. Dashed: the average price actually traded that day.' : 'The market price (the average traded over the last 24 hours), hour by hour.'} lines={priceLines} {from} {to} {shade} /></div>
+			<div class="wide"><LineChart log title="Market price" unit="HEARTS a unit, log scale" note={showAvg ? 'Solid: the market price (the average traded over the last 24 hours), hour by hour. Dashed: the average price actually traded that day.' : 'The market price (the average traded over the last 24 hours), hour by hour.'} lines={priceLines} {from} {to} {shade} /></div>
 		{/if}
 		{#if chartsOn.daily}
 			<div class="wide daily">

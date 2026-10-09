@@ -6,6 +6,7 @@
 -->
 <script>
 	import { DAY_S } from './economy.js';
+	import { short, times } from './format.js';
 
 	/** @type {{ entries: any[], names?: Record<string, string>, onselect?: (id: number) => void, who?: boolean, empty?: string }} */
 	let { entries, names = {}, onselect, who = true, empty = 'Nothing yet: press Start.' } = $props();
@@ -30,7 +31,9 @@
 		return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`;
 	};
 	/** @param {any} v */
-	const num = (v) => (typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v);
+	const num = (v) => (typeof v === 'number' ? short(v) : v);
+	/** how far a price moved, as a factor (prices are free: a move of ×10 is as plain as one of ×1.1) */
+	const moved = (/** @type {any} */ c) => (c.unit === 'HEARTS' && c.from > 0 && c.to > 0 ? times(c.to, c.from) : '');
 	/** the kind as the feed says it: a decision says who decided it */
 	const kindOf = (/** @type {any} */ e) => {
 		const k = e.kind ?? 'decision';
@@ -54,7 +57,7 @@
 					{/if}
 					<small class="kind">{kindOf(e)}</small>
 					{#each e.changes ?? [] as c, i (i)}
-						{#if typeof c === 'string'}<span class="say">{c}</span>{:else}<span class="set"><em>{c.label}</em> <b>{num(c.to)}</b>{#if c.unit}<u>{c.unit}</u>{/if}{#if c.from != null && c.from !== c.to}<s title="what it was">{num(c.from)}</s>{/if}</span>{/if}
+						{#if typeof c === 'string'}<span class="say">{c}</span>{:else}<span class="set"><em>{c.label}</em> <b>{num(c.to)}</b>{#if c.unit}<u>{c.unit}</u>{/if}{#if c.from != null && c.from !== c.to}<s title="what it was">{num(c.from)}</s>{#if moved(c)}<small class="moved">{moved(c)}</small>{/if}{/if}</span>{/if}
 					{/each}
 					{#if (e.kind ?? 'decision') === 'decision' && !e.changes?.length}<span class="say quiet">kept every value</span>{/if}
 					{#if e.kept?.length}<small class="kept" title={e.kept.map((/** @type {any} */ c) => `${c.label} ${num(c.to)}${c.unit ? ` ${c.unit}` : ''}`).join('\n')}>{e.changes?.length ? 'kept ' : ''}{e.kept.map((/** @type {any} */ c) => `${c.label} ${num(c.to)}`).join(' · ')}</small>{/if}
@@ -153,6 +156,11 @@
 	.set s {
 		opacity: 0.45;
 		margin-left: 0.3rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.moved {
+		opacity: 0.55;
+		margin-left: 0.25rem;
 		font-variant-numeric: tabular-nums;
 	}
 	.quiet,

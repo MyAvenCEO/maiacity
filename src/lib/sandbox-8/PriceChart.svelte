@@ -1,9 +1,11 @@
 <!--
 	The price of each good over time: one line per good (its market price, hour by hour), one axis in HEARTS, the days
-	along the bottom. Hover or touch to read every good's price at that moment.
+	along the bottom. Prices are free (from fractions of a HEART to tens of thousands), so the axis is logarithmic: ×2 is
+	the same height at 1 and at 10,000. Hover or touch to read every good's price at that moment.
 -->
 <script>
 	import { GOODS, GOOD_LABEL, GOOD_COLOUR, DAY_S } from './economy.js';
+	import { short, logScale, logAt } from './format.js';
 
 	/** @type {{ series: Record<string, { t: number, price: number }[]>, now: number }} */
 	let { series, now } = $props();
@@ -26,18 +28,12 @@
 
 	const from = $derived(Math.max(0, now - range * DAY_S));
 	const shown = $derived(Object.fromEntries(GOODS.map((g) => [g, (series[g] ?? []).filter((p) => p.t >= from)])));
-	const top = $derived(niceTop(Math.max(10, ...GOODS.flatMap((g) => shown[g].map((p) => p.price)))));
+	const scale = $derived(logScale(GOODS.flatMap((g) => shown[g].map((p) => p.price))));
 	const x = (/** @type {number} */ t) => L + ((t - from) / Math.max(1, now - from)) * (width - L - R);
-	const y = (/** @type {number} */ v) => T + (1 - v / top) * (H - T - B);
-	const yTicks = $derived([0, top / 4, top / 2, (3 * top) / 4, top]);
+	const y = (/** @type {number} */ v) => T + (1 - logAt(v, scale.lo, scale.hi)) * (H - T - B);
+	const yTicks = $derived(scale.ticks);
 	const dayTicks = $derived(dayMarks(from, now));
 
-	/** @param {number} v */
-	function niceTop(v) {
-		const step = 10 ** Math.floor(Math.log10(v));
-		for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * step >= v * 1.08) return m * step;
-		return 10 * step;
-	}
 	/** @param {number} a @param {number} b */
 	function dayMarks(a, b) {
 		const span = (b - a) / DAY_S;
@@ -81,10 +77,10 @@
 		<span class="ranges">{#each RANGES as r (r.label)}<button class:on={range === r.days} onclick={() => (range = r.days)}>{r.label}</button>{/each}</span>
 	</div>
 	<div class="legend">{#each GOODS as g (g)}<span><i style:background={GOOD_COLOUR[g]}></i>{GOOD_LABEL[g]}</span>{/each}</div>
-	<svg width={width} height={H} role="img" aria-label="Market price of each good over time, in HEARTS" onpointermove={onMove} onpointerleave={() => (hoverT = null)}>
+	<svg width={width} height={H} role="img" aria-label="Market price of each good over time, in HEARTS, on a log scale" onpointermove={onMove} onpointerleave={() => (hoverT = null)}>
 		{#each yTicks as v (v)}
 			<line class="grid" x1={L} x2={width - R} y1={y(v)} y2={y(v)} />
-			<text class="tick" x={L - 6} y={y(v) + 4} text-anchor="end">{Math.round(v)}</text>
+			<text class="tick" x={L - 6} y={y(v) + 4} text-anchor="end">{short(v)}</text>
 		{/each}
 		{#each dayTicks as d (d)}
 			<text class="tick" x={x(d * DAY_S)} y={H - 6} text-anchor="middle">day {d + 1}</text>
@@ -93,7 +89,7 @@
 			{#if shown[g].length > 1}<path d={path(shown[g])} fill="none" stroke={GOOD_COLOUR[g]} stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />{/if}
 		{/each}
 		{#each ends as e (e.g)}
-			<text class="end" x={width - R + 6} y={e.yy + 4}>{e.v} {GOOD_LABEL[e.g].slice(0, 5)}</text>
+			<text class="end" x={width - R + 6} y={e.yy + 4}>{short(e.v)} {GOOD_LABEL[e.g].slice(0, 5)}</text>
 		{/each}
 		{#if hoverT != null}
 			<line class="cross" x1={x(hoverT)} x2={x(hoverT)} y1={T} y2={H - B} />
@@ -105,7 +101,7 @@
 	{#if hoverT != null}
 		<div class="tip" style:left="{Math.min(width - 150, Math.max(0, x(hoverT) - 75))}px">
 			<b>{clock(at(GOODS[0], hoverT)?.t ?? hoverT)}</b>
-			{#each GOODS as g (g)}{#if shown[g].length}<span><i style:background={GOOD_COLOUR[g]}></i>{GOOD_LABEL[g]} <b>{at(g, hoverT).price}</b></span>{/if}{/each}
+			{#each GOODS as g (g)}{#if shown[g].length}<span><i style:background={GOOD_COLOUR[g]}></i>{GOOD_LABEL[g]} <b>{short(at(g, hoverT).price)}</b></span>{/if}{/each}
 		</div>
 	{/if}
 </div>

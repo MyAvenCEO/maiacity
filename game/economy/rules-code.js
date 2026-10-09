@@ -93,6 +93,8 @@ export function see({ aven: a, day, weather, market, history, others, brain, val
       days_my_hearts_last_at_that_cost: cost ? Math.floor(a.hearts / cost) : null
     },
     share_that_rots_each_night: Object.fromEntries(GOODS.map((g) => [g, rotOf(g, v)])),
+    // what rots in its store tonight unless it sells (or eats) it, and what that is worth at the clearing price
+    rots_tonight_unless_sold: Object.fromEntries(GOODS.filter((g) => rotOf(g, v) && a.stock[g] > needOf(a, g, v)).map((g) => [g, rotsTonight(a, g, v, market[g].price)])),
     water: weather.dry ? \`dry spell for \${weather.dry} more nights: wells give only about \${v.dryWells}%, no rain\` : \`normal; \${v.dryChance}% of nights a dry spell of \${v.dryMin}–\${v.dryMax} days starts and wells give only about \${v.dryWells}%\`,
     rain_barrel: \`\${v.rainChance}% of nights it rains and my barrel catches 1–\${v.rainMax} WATER (never in a dry spell)\`,
     stock: a.stock,
@@ -122,37 +124,42 @@ export function see({ aven: a, day, weather, market, history, others, brain, val
   };
 }
 
-// no starting prices: an aven's first price is any of FIRST; after that it moves its price from half to twice what it
-// was as the day began (MOVES). A buyer never offers more than its HEARTS can pay for a day's need.
-const FIRST = [0.5, 1, 2, 4, 8, 15, 30, 60, 120, 250];
-const MOVES = [0.5, 0.6, 0.75, 0.9, 1, 1.1, 1.3, 1.6, 2];
-function priceLevels({ mine, market, afford: top }) {
-  const base = mine ?? market;
-  const cap = (p) => cents(top == null ? p : Math.min(p, top));
-  if (base == null) {
-    const levels = FIRST.map(cap);
-    return { levels, criteria: levels.map((p, i) => \`\${p} HEARTS a unit\${top != null && FIRST[i] > top ? ' (all my HEARTS can pay)' : ''}\`) };
-  }
-  const levels = MOVES.map((f) => cap(base * f));
-  const what = mine != null ? 'my price this morning' : 'the market price';
-  return { levels, criteria: MOVES.map((f, i) => \`\${levels[i]} HEARTS a unit (\${levels[i] === top && base * f > top ? 'all my HEARTS can pay' : f === 1 ? \`keep \${what}\` : \`\${f}× \${what}\`})\`) };
+// free prices: an aven names any price it likes, every time it is asked; no anchor on its own last price, no daily cap,
+// no ceiling. A brain that writes numbers (Qwen) answers the price itself; a decision model (d1) picks on a scale, a
+// tenth to ten times the clearing price, else (never traded) 0.1 to 100,000 HEARTS a unit, and a score between two
+// options stands for a price between them
+const WIDE = [0.1, 0.5, 2, 10, 50, 250, 1000, 5000, 25000, 100000];
+const SPREAD = [0.1, 0.2, 0.35, 0.5, 0.7, 1, 1.4, 2, 4, 10];
+function priceLevels(market) {
+  if (market == null) return { levels: WIDE.map(cents), criteria: WIDE.map((p) => \`\${p} HEARTS a unit\`) };
+  const levels = SPREAD.map((f) => cents(market * f));
+  return { levels, criteria: SPREAD.map((f, i) => \`\${levels[i]} HEARTS a unit (\${f === 1 ? 'the clearing price' : \`\${f}× the clearing price\`})\`) };
 }
+// what rots in a store tonight unless it is sold: what it holds beyond tonight's own need, times the share that rots,
+// and what that is worth at the clearing price
+function rotsTonight(a, g, v, price) {
+  const units = Math.floor(Math.max(0, a.stock[g] - needOf(a, g, v)) * rotOf(g, v));
+  return { units, hearts: price == null ? null : Math.round(units * price * 100) / 100 };
+}
+const FREE = 'Name any price you like, in HEARTS a unit: there is no floor and no ceiling, and you may change it every time you are asked.';
 
-// the typed questions each morning: a selling price per good it grows, a buying limit per good it buys, and (on a full
-// ask) how far it gives in when haggling. \`levels\`: what each option stands for, so the answer is read against them
-export function ask({ aven: a, full, anchors, market, wants, spares, character, valley }) {
+// the typed questions each morning: a selling price per good it grows, a buying limit per good it buys (each a number:
+// \`levels\` is the scale a decision model picks it on), and (on a full ask) how far it gives in when haggling
+export function ask({ aven: a, full, market, wants, spares, character, valley }) {
   const v = valley.values;
   const q = {};
   for (const g of a.grows) {
     const m = market[g];
     const sold = a.yesterday ? a.yesterday.sold[g] : 0;
     const rot = rotOf(g, v);
-    const lv = priceLevels(anchors[g]);
+    const r = rotsTonight(a, g, v, m.price);
+    const lv = priceLevels(m.price);
     q['ask_' + g] = {
-      type: 'score',
-      instructions: \`You grow \${LABEL[g]} and hold \${a.stock[g]} (you need \${needOf(a, g, v)} a day yourself and can spare \${spares[g]}). \${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : \`Its market price (the average traded over the last day) is \${m.price} HEARTS\`}; right now \${m.supply} are offered and \${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold \${sold}\${rot ? \`; \${Math.round(rot * 100)}% of what you keep rots each night, so unsold stock is lost\` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford.\${character.greed} What should your selling price for \${LABEL[g]} be?\`,
+      type: 'number',
+      instructions: \`You grow \${LABEL[g]} and hold \${a.stock[g]} (you need \${needOf(a, g, v)} a day yourself and can spare \${spares[g]}). \${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : \`Its clearing price (the average traded over the last day) is \${m.price} HEARTS\`}; right now \${m.supply} are offered and \${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold \${sold}\${rot ? \`; \${Math.round(rot * 100)}% of what you keep rots each night: unless you sell them, \${r.units} of your \${a.stock[g]} rot tonight\${r.hearts != null ? \` (\${r.hearts} HEARTS at the clearing price, lost)\` : ''}\` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell what would otherwise rot.\${character.greed} \${FREE} What is the lowest price you sell \${LABEL[g]} at?\`,
       // what the answer sets, as the activity feed says it
       label: v.haggleMax > 0 ? \`sells \${LABEL[g]} at\` : \`lowest it accepts for \${LABEL[g]}\`,
+      unit: 'HEARTS',
       criteria: lv.criteria,
       levels: lv.levels
     };
@@ -162,15 +169,16 @@ export function ask({ aven: a, full, anchors, market, wants, spares, character, 
     const m = market[g];
     const n = needOf(a, g, v);
     const rot = rotOf(g, v);
-    const lv = priceLevels(anchors[g]);
+    const lv = priceLevels(m.price);
     // how soon it dies without the good: water first, food far later
     const deadline = g === 'water'
       ? \`Without water you die: your water reserve is \${Math.round(a.body.water)} of 100 and with none at all you last \${v.waterDays} days, so water is your most urgent need.\`
       : \`Your food reserve is \${Math.round(a.body.food)} of 100; with no food at all you still last \${v.foodDays} days, so food is far less urgent than water.\`;
     q['bid_' + g] = {
-      type: 'score',
-      instructions: \`You don't grow \${LABEL[g]} and must buy it: you need \${n} a day, hold \${a.stock[g]} (\${a.stock[g] < n ? \`short by \${n - a.stock[g]} tonight unless you buy\` : \`enough for \${Math.floor(a.stock[g] / n)} days\`}) and want \${wants[g]} more\${rot ? \`; \${Math.round(rot * 100)}% of a stock rots each night\` : ''}. \${deadline} You hold \${Math.round(a.hearts)} HEARTS. \${m.price == null ? 'Nobody has traded it yet, so there is no market price' : \`Its market price (the average traded over the last day) is \${m.price}\`}; \${m.supply} are offered and \${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.\${character.thrift} What is the most you should pay for \${LABEL[g]}?\`,
+      type: 'number',
+      instructions: \`You don't grow \${LABEL[g]} and must buy it: you need \${n} a day, hold \${a.stock[g]} (\${a.stock[g] < n ? \`short by \${n - a.stock[g]} tonight unless you buy\` : \`enough for \${Math.floor(a.stock[g] / n)} days\`}) and want \${wants[g]} more\${rot ? \`; \${Math.round(rot * 100)}% of a stock rots each night, so what you hold beyond your needs is lost\` : ''}. \${deadline} You hold \${Math.round(a.hearts)} HEARTS. \${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : \`Its clearing price (the average traded over the last day) is \${m.price}\`}; \${m.supply} are offered and \${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.\${character.thrift} \${FREE} What is the most you pay for \${LABEL[g]}?\`,
       label: v.haggleMax > 0 ? \`pays \${LABEL[g]} up to\` : \`most it pays for \${LABEL[g]}\`,
+      unit: 'HEARTS',
       criteria: lv.criteria,
       levels: lv.levels
     };
@@ -190,7 +198,7 @@ export function ask({ aven: a, full, anchors, market, wants, spares, character, 
 
 // what a chat model (Qwen) is told before the state and the questions
 export function prompt({ aven }) {
-  return \`You decide for \${aven.name}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_brain, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (or, where asked to write, a short text). /no_think\`;
+  return \`You decide for \${aven.name}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_brain, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (where a question asks for a number, the number itself; where asked to write, a short text). /no_think\`;
 }
 
 // what the aven's brain is, so the page shows any brain the same way: the dials of its character (each with its range
