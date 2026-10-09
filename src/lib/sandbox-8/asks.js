@@ -10,30 +10,37 @@ import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, activity, 
 import { RULES } from './rules.js';
 import { mindFor, inCharacter, mindQuestions, applyMind, traits, DIALS } from './mind.js';
 
-/** free prices (Samuel, 2026-10-09: "completely free", no anchor, no daily cap, no ceiling): an aven names any price
- * it likes, every time it is asked. A brain that writes numbers (Qwen) answers the price itself. A decision model (d1)
- * picks on a scale: from a tenth to ten times the clearing price (the average traded over the last day), else, for a
- * good never traded, from 0.1 to 100,000 HEARTS a unit. A score falls between levels, so any price in between is
- * possible; asked again, the scale moves with the market, so a price can go anywhere over a few asks. The scale is never
- * the aven's own last price (a reborn aven's old limits held it far below the market in World 14) and never capped by
- * its HEARTS. Liquid takes at most 10 levels a score question (more is a 422). */
-const WIDE = [0.1, 0.5, 2, 10, 50, 250, 1000, 5000, 25000, 100000];
-const SPREAD = [0.1, 0.2, 0.35, 0.5, 0.7, 1, 1.4, 2, 4, 10];
+/** prices (Samuel, 2026-10-09: free, with no ceiling): an aven names its price every time it decides. The scale it is
+ * picked on (d1) or held within (a number from Qwen) hangs on its own price as the day began: from a quarter to four
+ * times that, with "keep it" exactly in the middle, so an undecided answer keeps the price where it is. Hanging it on
+ * the morning, not on the last answer or the clearing price, keeps an aven asking many times a day from compounding its
+ * moves (World 15 ran away when the scale followed the clearing price); over days a price still goes anywhere, ×4 a day.
+ * When the market trades beyond that, its price is one more option, so an aven can always reach it at once (in World 14
+ * Ama, reborn, could not). An aven with no price yet (never priced, or just reborn) starts from the market price, else
+ * from FIRST. No cap from its HEARTS. Liquid takes at most 10 levels a score question (more is a 422). */
+const FIRST = [0.5, 1, 2, 4, 8, 15, 30, 60, 120, 250];
+const MOVES = [0.25, 0.35, 0.5, 0.7, 1, 1.4, 2, 2.8, 4];
 const needOf = (a, g) => a.need?.[g] ?? NEED[g];
-/** what a price was as the day began, and the market's: what card code of an older world reads as its anchor */
+/** what a price is anchored on today: the aven's own price as the day began (the engine remembers it through the day),
+ * the clearing price, and what its HEARTS can pay for a day's need (what older worlds' card code caps a bid at) */
 function anchorOf(world, a, g, side) {
 	const book = side === 'ask' ? a.ask : a.bid;
 	const day = (a.dayStart ??= { day: -1, ask: {}, bid: {} });
 	if (day.day !== world.day) Object.assign(day, { day: world.day, ask: { ...a.ask }, bid: { ...a.bid } });
-	const mine = (day[side][g] ??= book[g]) ?? null;
+	const mine = (day[side][g] ??= book[g]) ?? null; // a first price named today is the day's anchor from then on
 	const afford = side === 'bid' ? cents(Math.max(0.01, a.hearts) / Math.max(1, needOf(a, g))) : null;
 	return { side, mine, market: world.market[g].price, afford };
 }
-/** the scale a decision model picks a price on: around the clearing price, else wide open */
-function priceLevels(market) {
-	if (market == null) return { levels: WIDE.map(cents), criteria: WIDE.map((p) => `${p} HEARTS a unit`) };
-	const levels = SPREAD.map((f) => cents(market * f));
-	return { levels, criteria: SPREAD.map((f, i) => `${levels[i]} HEARTS a unit (${f === 1 ? 'the clearing price' : `${f}× the clearing price`})`) };
+/** the scale of one price: around its price this morning, else the market's, else from scratch; the market's price
+ * added where it lies beyond */
+function priceLevels({ mine, market }) {
+	const base = mine ?? market;
+	if (base == null) return { levels: FIRST.map(cents), criteria: FIRST.map((p) => `${p} HEARTS a unit`) };
+	const what = mine != null ? 'my price this morning' : 'the market price';
+	const opts = MOVES.map((f) => ({ p: cents(base * f), say: f === 1 ? `keep ${what}` : `${f}× ${what}` }));
+	if (market != null && (market < opts[0].p || market > opts.at(-1).p)) opts.push({ p: cents(market), say: 'what it traded at over the last day' });
+	opts.sort((x, y) => x.p - y.p);
+	return { levels: opts.map((o) => o.p), criteria: opts.map((o) => `${o.p} HEARTS a unit (${o.say})`) };
 }
 /** what rots tonight in a seller's store unless it sells it: what it holds beyond tonight's own need, times the share
  * that rots, and what that is worth at the clearing price */
@@ -254,14 +261,15 @@ function labelOf(k) {
 }
 function questionsOwn(world, a, anchors, full) {
 	const q = {};
-	const free = 'Name any price you like, in HEARTS a unit: there is no floor and no ceiling, and you may change it every time you are asked.';
+	// what it is told about its price: where it stood this morning, and how far it may move it today
+	const range = (an, lv) => `${an.mine != null ? `Your price this morning was ${an.mine} HEARTS. ` : ''}Name your price in HEARTS a unit, anywhere from ${lv.levels[0]} to ${lv.levels.at(-1)} today.`;
 	for (const g of a.grows) {
 		const m = world.market[g];
 		const sold = a.yesterday ? a.yesterday.sold[g] : 0;
-		const lv = priceLevels(m.price);
+		const lv = priceLevels(anchors[g]);
 		q[`ask_${g}`] = {
 			type: 'number',
-			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${needOf(a, g)} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : `Its clearing price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${rotLine(a, g, m.price)}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell what would otherwise rot.${inCharacter(a, 'greed')} ${free} What is the lowest price you sell ${GOOD_LABEL[g]} at?`,
+			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${needOf(a, g)} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : `Its clearing price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${rotLine(a, g, m.price)}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell what would otherwise rot.${inCharacter(a, 'greed')} ${range(anchors[g], lv)} What is the lowest price you sell ${GOOD_LABEL[g]} at?`,
 			unit: 'HEARTS',
 			criteria: lv.criteria,
 			levels: lv.levels
@@ -270,10 +278,10 @@ function questionsOwn(world, a, anchors, full) {
 	for (const g of GOODS) {
 		if (a.grows.includes(g)) continue;
 		const m = world.market[g];
-		const lv = priceLevels(m.price);
+		const lv = priceLevels(anchors[g]);
 		q[`bid_${g}`] = {
 			type: 'number',
-			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${needOf(a, g)} a day, hold ${a.stock[g]} (${a.stock[g] < needOf(a, g) ? `short by ${needOf(a, g) - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / needOf(a, g))} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night, so what you hold beyond your needs is lost` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : `Its clearing price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.${inCharacter(a, 'thrift')} ${free} What is the most you pay for ${GOOD_LABEL[g]}?`,
+			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${needOf(a, g)} a day, hold ${a.stock[g]} (${a.stock[g] < needOf(a, g) ? `short by ${needOf(a, g) - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / needOf(a, g))} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night, so what you hold beyond your needs is lost` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : `Its clearing price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.${inCharacter(a, 'thrift')} ${range(anchors[g], lv)} What is the most you pay for ${GOOD_LABEL[g]}?`,
 			unit: 'HEARTS',
 			criteria: lv.criteria,
 			levels: lv.levels
@@ -333,9 +341,12 @@ export function applyAnswers(world, a, answers, source) {
 		const [side, g] = key.split('_');
 		const levels = a.brain.levels?.[key];
 		if ((side === 'ask') !== a.grows.includes(g) || !GOODS.includes(g)) continue;
-		// the price it named (any above nothing, up to a sanity bound), else the price its score stands for
+		// the price it named, held within the scale its question carried (the card sets how far a price may move), else
+		// the price its score stands for
 		const n = numberOf(ans);
-		const price = n != null && n > 0 ? cents(Math.min(1e9, n)) : levels && typeof ans.score === 'number' ? cents(factorOf(ans.score, levels, true)) : null;
+		const lo = levels ? Math.min(...levels) : 0.01;
+		const hi = levels ? Math.max(...levels) : 1e9;
+		const price = n != null && n > 0 ? cents(Math.min(hi, Math.max(lo, n))) : levels && typeof ans.score === 'number' ? cents(factorOf(ans.score, levels, true)) : null;
 		if (price == null) continue;
 		const book = side === 'ask' ? a.ask : a.bid;
 		set(key, book[g], price);
