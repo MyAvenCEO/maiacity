@@ -34,3 +34,8 @@ rand_core = { version = "0.10.1", default-features = false }
 zeroize = "1.8"
 # each item is one Loro document, its updates what gets encrypted and synced; pinned exactly, upgraded on purpose
 loro = "=1.16.2"
+
+[features]
+# passkeys of the relying party localhost also count, made by a test page's virtual authenticator
+# (scripts/test-browser.sh): never in a build that ships
+localhost-passkeys = []

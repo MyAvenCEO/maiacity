@@ -9,12 +9,15 @@ mod common;
 use std::future::Future;
 use std::time::{Duration, Instant};
 
+use std::sync::Mutex;
+
 use avendb::cast::*;
 use avendb::id::SignerId;
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
+use avendb::sign::{Ceremony, Passkey, device_salt};
 use avendb::wire::{Reply, Wire};
-use avendb_net::{ALPN, Node, Offer, Options, exporter, pq_provider};
+use avendb_net::{ALPN, Authenticator, Node, Offer, Options, Step, exporter, pq_provider};
 use iroh::endpoint::{Connection, presets};
 use iroh::{Endpoint, SecretKey};
 
@@ -75,6 +78,53 @@ async fn a_new_iphone_links_by_scanning_the_code_samuels_mac_shows() {
     until("the Mac reads its edit", || reads(&mac, space, welcome, AFTER_TEXT)).await;
     quiet(&[&mac, &phone]).await;
     for n in [mac, phone] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// A browser's authenticator, as a test makes it (P8e): Samuel's passkey, synced by his platform, outside the device's
+/// Lab, making each ceremony it is asked for, and noting what for.
+struct Browser(Mutex<(Passkey, Vec<Step>)>);
+
+impl Authenticator for Browser {
+    async fn ceremony(&self, challenge: [u8; 32], step: Step) -> anyhow::Result<Ceremony> {
+        let mut browser = self.0.lock().expect("the authenticator");
+        browser.1.push(step);
+        Ok(browser.0.ceremony(challenge))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_browser_links_with_the_passkey_in_its_authenticator_in_two_ceremonies() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let secret = w.lab.passkey_secret(w.passkey_s).expect("Samuel's software passkey");
+    let mut passkey = Passkey::from_seed(*secret);
+    // the browser's Lab holds the passkey's keys, from the ceremony that unlocked the browser, and no secret of it
+    let (mut lab, nonce) = (Lab::with_entropy([7; 32]), [5; 32]);
+    let unlock = passkey.ceremony([1; 32]);
+    let samuels = lab.web_passkey("Samuel", passkey.public(), &unlock).expect("Samuel's passkey");
+    let new = lab.web_device(samuels, "Samuel's browser", nonce, *passkey.prf(&device_salt(&nonce)));
+    let (mac_s, samuel) = (w.mac_s, w.samuel);
+    let mac = node(&mut w, mac_s, &[], 1).await;
+    let browser = Node::spawn(lab, new, Options::local()).await.expect("the browser's node");
+    let mut changes = browser.changes();
+    let offer = Offer::from_text(&mac.offer().to_text()).expect("the Mac's code");
+    // Eve's passkey in the authenticator: its hello isn't Samuel's passkey's, and the link fails
+    let eves = Browser(Mutex::new((Passkey::from_seed([9; 32]), vec![])));
+    assert!(browser.link_with(&offer, samuels, &eves).await.is_err(), "another passkey's ceremony");
+    let authenticator = Browser(Mutex::new((passkey, vec![])));
+    let linked = browser.link_with(&offer, samuels, &authenticator).await.expect("the browser links");
+    assert_eq!(linked, samuel, "to Samuel's vault");
+    let steps = authenticator.0.lock().expect("the authenticator").1.clone();
+    assert_eq!(steps, [Step::Hello, Step::Join], "in two ceremonies: the passkey's hello, then the op adding it");
+    let (space, welcome) = (h.space, h.welcome);
+    until("the browser reads Welcome", || reads(&browser, space, welcome, WELCOME_TEXT)).await;
+    assert!(changes.has_changed().expect("the node runs"), "what the browser holds changed");
+    let (ops, _) = *changes.borrow_and_update();
+    assert_eq!(ops, browser.read(|lab, me| lab.size(me).0).await, "it says how many ops it holds");
+    quiet(&[&mac, &browser]).await;
+    for n in [mac, browser] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

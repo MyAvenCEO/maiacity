@@ -8,7 +8,10 @@
 //! gossip of one digest per log in random orders, and backups, whose restored devices fork, and in P7 what the tile
 //! shows and needs: each signer's name, and spare keys made ahead, so that a page making McEliece pairs in its
 //! workers never waits for one. In P8 a device splits off to run on a machine of its own (`split`), and in P8c a new
-//! device links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`).
+//! device links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`). In P8e a passkey in
+//! the platform's authenticator signs in ceremonies (`sign::Ceremony`): an op is drafted (`draft`), each such passkey
+//! signs its id in a ceremony, and then it is kept (`complete`); a browser's device derives its keys from the PRF
+//! output its passkey evaluated on its salt (`web_device`).
 //!
 //! A device shows each entry on every line of its history (`branch`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Branching, merging, promoting, restoring, undoing and
@@ -49,7 +52,9 @@ use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
-use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
+use crate::sign::{
+    self, Ceremony, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed,
+};
 use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId, Place};
 use crate::wire::{Join, Request, Wire as _};
 
@@ -81,22 +86,77 @@ enum Key {
     /// A device, or the server's owner key.
     Device(DeviceKey),
     Passkey(Passkey),
+    /// A passkey in the platform's authenticator (P8e): no secret, only its keys and the public key sealed to it, as a
+    /// ceremony showed them, and the id of that key, whose McEliece pair the process forgets as a device locks. It
+    /// signs in a ceremony alone (`Lab::complete`).
+    Web { keys: SignerKeys, seal: (PublicKey, Arc<[u8]>), pair: KeyId },
 }
 
 impl Key {
-    fn sign(&mut self, op: OpId, pq: bool) -> Signature {
+    /// Its signature on op `op`: `None` for a passkey in the platform's authenticator, which signs in a ceremony.
+    fn sign(&mut self, op: OpId, pq: bool) -> Option<Signature> {
         match self {
-            Key::Device(k) => k.sign(op, pq),
-            Key::Passkey(p) => p.sign(op, pq),
+            Key::Device(k) => Some(k.sign(op, pq)),
+            Key::Passkey(p) => Some(p.sign(op, pq)),
+            Key::Web { .. } => None,
         }
     }
 
-    /// The key that keys are sealed to for this signer.
-    fn seal_secret(&self) -> Secret {
+    /// The key that keys are sealed to for this signer: `None` for a passkey in the platform's authenticator, which
+    /// lends it in a ceremony alone.
+    fn seal_secret(&self) -> Option<Secret> {
         match self {
-            Key::Device(k) => k.seal_secret(),
-            Key::Passkey(p) => p.seal_secret(),
+            Key::Device(k) => Some(k.seal_secret()),
+            Key::Passkey(p) => Some(p.seal_secret()),
+            Key::Web { .. } => None,
         }
+    }
+
+    /// The public key keys are sealed to for this signer, and the McEliece blob it names.
+    fn seal_public(&self) -> (PublicKey, Arc<[u8]>) {
+        match (self, self.seal_secret()) {
+            (Key::Web { seal, .. }, _) => seal.clone(),
+            (_, secret) => {
+                let secret = secret.expect("a key at hand");
+                (secret.public(), secret.mceliece_public())
+            }
+        }
+    }
+
+    fn keys(&self) -> SignerKeys {
+        match self {
+            Key::Device(k) => k.keys(),
+            Key::Passkey(p) => p.keys(),
+            Key::Web { keys, .. } => *keys,
+        }
+    }
+}
+
+/// An op drafted on a device and checked by its view, unsigned yet, for the passkeys among its signers to sign in their
+/// ceremonies (`Lab::draft`, P8e): its id is the challenge each ceremony signs, and `Lab::complete` keeps it.
+pub struct Unsigned {
+    op: Op,
+    blobs: Blobs,
+    /// How many ops the device held as it drafted it.
+    held: usize,
+}
+
+/// The McEliece keys it brings show only their number.
+impl std::fmt::Debug for Unsigned {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Unsigned").field("op", &self.op).field("blobs", &self.blobs.len()).finish_non_exhaustive()
+    }
+}
+
+impl Unsigned {
+    /// The op drafted.
+    pub fn op(&self) -> &Op {
+        &self.op
+    }
+
+    /// What each passkey's ceremony signs: the op's id.
+    pub fn challenge(&self) -> [u8; 32] {
+        self.op.id().0
     }
 }
 
@@ -388,7 +448,7 @@ impl Lab {
     pub fn passkey_secret(&self, passkey: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&passkey)? {
             Key::Passkey(p) => Some(p.secret()),
-            Key::Device(_) => None,
+            Key::Device(_) | Key::Web { .. } => None,
         }
     }
 
@@ -411,6 +471,37 @@ impl Lab {
     /// A device whose keys come from `secret`, 32 bytes the device keeps itself, as the server does on its disk.
     pub fn device_with(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
         self.add_device(DeviceKey::from_secret(secret), name)
+    }
+
+    /// A passkey in the platform's authenticator (P8e), whose P-256 key is `p256`, as a ceremony of it over any
+    /// challenge showed it (`sign::Ceremony`): the Lab holds its keys and the public key sealed to it, which the
+    /// ceremony's PRF output derives, and no secret. It signs in ceremonies alone (`complete`). `None` unless the
+    /// ceremony's assertion is that key's.
+    pub fn web_passkey(&mut self, name: &str, p256: [u8; 33], ceremony: &Ceremony) -> Option<SignerId> {
+        if !ceremony.challenge().is_some_and(|c| ceremony.assertion.verify(&p256, OpId(c))) {
+            return None;
+        }
+        let secret = ceremony.seal_secret();
+        let (seal, pair) = ((secret.public(), secret.mceliece_public()), secret.id());
+        let keys = ceremony.keys(p256);
+        let id = keys.id();
+        self.keys.insert(id, Key::Web { keys, seal, pair });
+        self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
+        Some(id)
+    }
+
+    /// A person's device in a browser (P8e): its keys derive from `prf`, the PRF output its passkey `passkey`
+    /// evaluated on the device's salt (`sign::device_salt(nonce)`) in a ceremony, as at every unlock (`unlock_with`).
+    /// It starts unlocked.
+    pub fn web_device(&mut self, passkey: SignerId, name: &str, nonce: [u8; 32], prf: [u8; 32]) -> SignerId {
+        let id = self.add_device(DeviceKey::from_secret(prf), name);
+        self.salts.insert(id, (passkey, nonce));
+        id
+    }
+
+    /// The public keys of signer `s`, if its key is at hand: a passkey's, or a device's while it is unlocked.
+    pub fn keys_of(&self, s: SignerId) -> Option<SignerKeys> {
+        self.keys.get(&s).map(Key::keys)
     }
 
     fn add_device(&mut self, key: DeviceKey, name: &str) -> SignerId {
@@ -497,13 +588,16 @@ impl Lab {
     /// signer's own key, a key another device opened, or a spare. Its ops and their ciphertext stay, and it still
     /// receives and passes on ops.
     pub fn lock(&mut self, d: SignerId) {
-        let mut gone: BTreeSet<KeyId> = self.keys.remove(&d).map(|k| k.seal_secret().id()).into_iter().collect();
+        let own = self.keys.remove(&d).and_then(|k| k.seal_secret()).map(|s| s.id());
+        let mut gone: BTreeSet<KeyId> = own.into_iter().collect();
         let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         gone.extend(store.keys.keys());
         store.keys.clear();
         store.shown.clear();
-        for key in self.keys.values() {
-            gone.remove(&key.seal_secret().id());
+        // what passkeys in the platform's authenticator lent in their ceremonies, nothing here holds
+        gone.extend(self.keys.values().filter_map(|k| if let Key::Web { pair, .. } = k { Some(*pair) } else { None }));
+        for secret in self.keys.values().filter_map(Key::seal_secret) {
+            gone.remove(&secret.id());
         }
         for id in self.stores.values().flat_map(|store| store.keys.keys()) {
             gone.remove(id);
@@ -521,12 +615,28 @@ impl Lab {
         let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { return false };
         let key = p.device(nonce);
         assert_eq!(key.id(), d, "the same passkey and salt derive the same device");
+        self.take_key(d, key);
+        true
+    }
+
+    /// Unlock device `d` with `prf`, the PRF output its passkey evaluated on the device's salt in a ceremony, as a
+    /// browser's device unlocks (P8e, `web_device`): its keys derive again. False if they derive another device.
+    pub fn unlock_with(&mut self, d: SignerId, prf: [u8; 32]) -> bool {
+        let key = DeviceKey::from_secret(prf);
+        if key.id() != d || !self.stores.contains_key(&d) {
+            return false;
+        }
+        self.take_key(d, key);
+        true
+    }
+
+    /// Device `d` holds its keys again, and opens again what its ops hold for it.
+    fn take_key(&mut self, d: SignerId, key: DeviceKey) {
         // its own key, which only the passkey derives again, reseeds the randomness: a copy of the Lab's memory taken
         // while the device was locked doesn't foresee what it draws now
         self.rng.reseed(key.seal_secret().as_bytes());
         self.keys.insert(d, Key::Device(key));
         self.refresh(d, &[]);
-        true
     }
 
     /// Device `d` holds no key: it is locked.
@@ -552,8 +662,7 @@ impl Lab {
 
     /// The public key keys are sealed to for signer `s`, and the McEliece blob it names, if the Lab holds its key.
     fn seal_public(&self, s: SignerId) -> Option<(PublicKey, Arc<[u8]>)> {
-        let secret = self.keys.get(&s)?.seal_secret();
-        Some((secret.public(), secret.mceliece_public()))
+        Some(self.keys.get(&s)?.seal_public())
     }
 
     /// Sign `op` with the key of each of its signers: both halves, or on a write the classical half alone. `Locked` if
@@ -562,7 +671,7 @@ impl Lab {
         let (id, pq) = (op.id(), sign::needs_pq(&op));
         let mut sigs = vec![];
         for s in op.sigs() {
-            sigs.push(self.keys.get_mut(&s).ok_or(Refusal::Locked)?.sign(id, pq));
+            sigs.push(self.keys.get_mut(&s).and_then(|k| k.sign(id, pq)).ok_or(Refusal::Locked)?);
         }
         Ok(Signed { op, sigs })
     }
@@ -622,16 +731,55 @@ impl Lab {
     /// Sign `action` by `signers` and keep it on device `on`, if `on`'s view accepts it. The author, the first signer,
     /// signs on `on`; cosigners sign on their own devices. A signer's key to seal to that the action brings is filled
     /// in when the Lab holds that signer.
-    pub fn submit(&mut self, on: SignerId, signers: &[SignerId], mut action: Action) -> Result<OpId, Refusal> {
+    pub fn submit(&mut self, on: SignerId, signers: &[SignerId], action: Action) -> Result<OpId, Refusal> {
+        let draft = self.draft(on, signers, action)?;
+        self.complete(on, draft, &[])
+    }
+
+    /// Draft `action` signed by `signers` on device `on`, as `submit` does, for the passkeys among them in the
+    /// platform's authenticator to sign in their ceremonies (P8e): checked by `on`'s view, with the keys to seal to
+    /// it brings filled in. Its op's id is the challenge each ceremony signs; `complete` keeps it.
+    pub fn draft(&mut self, on: SignerId, signers: &[SignerId], mut action: Action) -> Result<Unsigned, Refusal> {
         let (&author, cosigners) = signers.split_first().expect("an op has an author");
         let blobs = self.fill_seal_to(&mut action);
-        let op = self.held(on).log.check(author, cosigners, action)?;
-        let id = op.id();
-        let signed = self.sign(op)?;
+        let log = &self.held(on).log;
+        let op = log.check(author, cosigners, action)?;
+        Ok(Unsigned { op, blobs, held: log.ids().len() })
+    }
+
+    /// Sign `draft` (`draft`) and keep it on device `on`: each signer by its ceremony among `ceremonies`, or by its key
+    /// at hand. `on`'s view checks the op again if ops arrived since the draft. An owner key authoring it lends `on`,
+    /// for this ceremony, what is sealed to it: from its ceremony, a passkey in the platform's authenticator. `Locked`
+    /// if a signer's key isn't at hand, `BadSignature` if a ceremony isn't its signer's over the op's id.
+    pub fn complete(
+        &mut self,
+        on: SignerId,
+        draft: Unsigned,
+        ceremonies: &[(SignerId, &Ceremony)],
+    ) -> Result<OpId, Refusal> {
+        let Unsigned { op, blobs, held } = draft;
+        if self.held(on).log.ids().len() != held {
+            self.held(on).view().step(&op)?;
+        }
+        let (id, pq) = (op.id(), sign::needs_pq(&op));
+        let ceremony = |s: SignerId| ceremonies.iter().find(|(c, _)| *c == s).map(|(_, c)| *c);
+        let mut sigs = vec![];
+        for s in op.sigs() {
+            let sig = match ceremony(s) {
+                Some(c) => c.sign(self.keys_of(s).ok_or(Refusal::Locked)?, id, pq).ok_or(Refusal::BadSignature)?,
+                None => self.keys.get_mut(&s).and_then(|k| k.sign(id, pq)).ok_or(Refusal::Locked)?,
+            };
+            sigs.push(sig);
+        }
+        let signed = Signed { op, sigs };
         debug_assert!(signed.verify().is_ok());
         // an owner key authoring on this device lends it, for this ceremony, what is sealed to it
-        let lent: Vec<(SignerId, Secret)> = match self.keys.get(&author) {
-            Some(key) if !self.devices.contains(&author) => vec![(author, key.seal_secret())],
+        let author = signed.op.author;
+        let lent: Vec<(SignerId, Secret)> = match (ceremony(author), self.keys.get(&author)) {
+            (Some(c), _) => vec![(author, c.seal_secret())],
+            (None, Some(key)) if !self.devices.contains(&author) => {
+                key.seal_secret().map(|s| (author, s)).into_iter().collect()
+            }
             _ => vec![],
         };
         self.keep(on, vec![signed], &blobs);
@@ -669,7 +817,7 @@ impl Lab {
     /// right now. Each round replays its ops, opens what it can, and makes the `Keys` ops still missing. A locked
     /// device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
-        let own = self.keys.get(&d).map(Key::seal_secret);
+        let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
         for round in 0.. {
@@ -1032,7 +1180,7 @@ impl Lab {
     pub fn secrets(&self, s: SignerId) -> Vec<Secret> {
         let Some(key) = self.keys.get(&s) else { return vec![] };
         let opened = self.stores.get(&s).into_iter().flat_map(|store| store.keys.values().map(|o| o.secret.clone()));
-        std::iter::once(key.seal_secret()).chain(opened).collect()
+        key.seal_secret().into_iter().chain(opened).collect()
     }
 
     /// Every byte device `d` stores, to search for plaintext that shouldn't be there: its signed ops, the keys it
@@ -1207,7 +1355,7 @@ impl Lab {
     pub fn endpoint_secret(&self, d: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.endpoint_secret()),
-            Key::Passkey(_) => None,
+            Key::Passkey(_) | Key::Web { .. } => None,
         }
     }
 
@@ -1216,7 +1364,7 @@ impl Lab {
     pub fn hello(&self, d: SignerId, exporter: &[u8; 32], dialer: bool) -> Option<Hello> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.hello(exporter, dialer)),
-            Key::Passkey(_) => None,
+            Key::Passkey(_) | Key::Web { .. } => None,
         }
     }
 
@@ -1232,7 +1380,7 @@ impl Lab {
     ) -> Option<PasskeyHello> {
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.hello(exporter, dialer, d)),
-            Key::Device(_) => None,
+            Key::Device(_) | Key::Web { .. } => None,
         }
     }
 
@@ -1244,7 +1392,16 @@ impl Lab {
         let SignerKeys::Device { ed25519, .. } = device.keys() else { unreachable!("a device's keys") };
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.pass(ed25519, made)),
-            Key::Device(_) => None,
+            Key::Device(_) | Key::Web { .. } => None,
+        }
+    }
+
+    /// A ceremony of passkey `passkey` over `challenge` (`sign::Ceremony`), as a software passkey the Lab holds makes
+    /// it: `None` unless the Lab holds one. A passkey in the platform's authenticator makes its own, in the browser.
+    pub fn ceremony(&mut self, passkey: SignerId, challenge: [u8; 32]) -> Option<Ceremony> {
+        match self.keys.get_mut(&passkey)? {
+            Key::Passkey(p) => Some(p.ceremony(challenge)),
+            Key::Device(_) | Key::Web { .. } => None,
         }
     }
 
@@ -1272,6 +1429,17 @@ impl Lab {
     /// vault already, as when a link is tried again, the op that added it. `UnknownVault` if no vault in `d`'s view
     /// has the passkey as its root, `Locked` if the passkey isn't at hand.
     pub fn join(&mut self, d: SignerId, passkey: SignerId) -> Result<Join, Refusal> {
+        let id = match self.joining(d, passkey)? {
+            (_, Some(id)) => id,
+            (vault, None) => self.submit(d, &[passkey, d], Action::AddDevice { vault, device: d, seal_to: None })?,
+        };
+        Ok(self.joined(d, id))
+    }
+
+    /// The vault whose root is passkey `passkey` by device `d`'s view, and the op that added `d` to it, if one did:
+    /// what `join` signs, or sends again. A browser's passkey signs `Action::AddDevice` in a ceremony (`draft`,
+    /// `complete`, P8e), and the device sends `joined`. `UnknownVault` if no vault in `d`'s view has it as its root.
+    pub fn joining(&self, d: SignerId, passkey: SignerId) -> Result<(VaultId, Option<OpId>), Refusal> {
         let store = self.held(d);
         let st = store.view();
         let vault = st.vaults().iter().find(|v| v.root == Some(passkey)).ok_or(Refusal::UnknownVault)?;
@@ -1279,12 +1447,14 @@ impl Lab {
             |op: &Op| matches!(op.action, Action::AddDevice { vault: v, device, .. } if v == vault.id && device == d);
         let ops = store.log.ops().iter().zip(store.log.ids());
         let added = vault.devices.contains(&d).then(|| ops.rev().find(|(op, _)| adds(op)).map(|(_, id)| *id)).flatten();
-        let id = match (added, vault.id) {
-            (Some(id), _) => id,
-            (None, vault) => self.submit(d, &[passkey, d], Action::AddDevice { vault, device: d, seal_to: None })?,
-        };
+        Ok((vault.id, added))
+    }
+
+    /// The join device `d` sends by op `id`, which it holds and which adds it to its vault (`joining`): the op and the
+    /// McEliece key it names.
+    pub fn joined(&self, d: SignerId, id: OpId) -> Join {
         let (mut signed, blobs) = self.outgoing(d, &[id]);
-        Ok(Join { op: signed.remove(0), blobs: blobs.into_values().map(|b| b.to_vec()).collect() })
+        Join { op: signed.remove(0), blobs: blobs.into_values().map(|b| b.to_vec()).collect() }
     }
 
     /// Device `d` accepts the join a device on the other end of a connection, `from`, sent it (`join`): an op adding
@@ -1530,7 +1700,7 @@ impl Lab {
             Tamper::BrokenClassicalKey { signer, action } => {
                 let op = self.held(to).log.draft(signer, &[], action);
                 let key = self.keys.get_mut(&signer).expect("a signer of the Lab");
-                Signed { sigs: vec![key.sign(op.id(), false)], op }
+                Signed { sigs: vec![key.sign(op.id(), false).ok_or(Refusal::Locked)?], op }
             }
         };
         let op = signed.verify()?.clone();

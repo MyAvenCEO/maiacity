@@ -121,7 +121,8 @@ async fn scenario_5_through_the_relay_alone() {
 async fn a_new_server_lets_in_the_devices_of_the_spaces_it_relays() {
     let dir = Folder::new("relay");
     let data = dir.path().to_path_buf();
-    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url: None, public_addr: None };
+    let (relay_url, public_addr) = (None, None);
+    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let (url, v) = (relay.url(), server::vault(server).await.expect("its vault"));
@@ -228,6 +229,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         relay_bind: LOOPBACK,
         relay_url: Some(relay_url.clone()),
         public_addr: Some(public),
+        signup: true,
     };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");
@@ -246,12 +248,14 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(defaults.relay_bind, "0.0.0.0:3350".parse::<SocketAddr>().expect("a socket"), "the relay's HTTP");
     assert_eq!(defaults.relay_url, None, "the relay's own socket, unless it is said where devices reach it");
     assert_eq!(defaults.public_addr, None, "its own interfaces' addresses, unless it is said where it is reached");
+    assert!(defaults.signup, "sign-up is open, unless it is said closed");
     let vars = HashMap::from([
         ("AVENDB_DATA", "/srv/avendb"),
         ("AVENDB_BIND", "[::]:7402"),
         ("AVENDB_RELAY_BIND", "127.0.0.1:3351"),
         ("AVENDB_RELAY_URL", "https://avendb.maia.city"),
         ("AVENDB_PUBLIC_ADDR", "203.0.113.7:7401"),
+        ("AVENDB_SIGNUP", "closed"),
     ]);
     let set = Config::from_vars(|k| vars.get(k).map(|v| v.to_string())).expect("what the environment says");
     assert_eq!(set.data, PathBuf::from("/srv/avendb"));
@@ -259,6 +263,8 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(set.relay_bind, "127.0.0.1:3351".parse::<SocketAddr>().expect("a socket"));
     assert_eq!(set.relay_url, Some("https://avendb.maia.city".parse().expect("a URL")));
     assert_eq!(set.public_addr, Some("203.0.113.7:7401".parse().expect("a socket")));
+    assert!(!set.signup);
+    assert!(Config::from_vars(|k| (k == "AVENDB_SIGNUP").then(|| "maybe".to_string())).is_err());
     let wrong = Config::from_vars(|k| (k == "AVENDB_BIND").then(|| "the server's port".to_string()));
     assert!(wrong.is_err(), "a socket that isn't one is said so, not taken for the default");
 }
@@ -331,6 +337,41 @@ async fn the_relay_lets_a_device_go_once_its_pass_runs_out_unless_it_joined() {
     assert_eq!(relay.passed(&browser.id()), None);
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(!relay.serves(&browser.id()), "nor let back in");
+    for n in [server, browser] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_persons_first_browser_founds_their_vault_through_a_relay_open_to_sign_up() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url = relay.url();
+    let mut w = world();
+    // Eve is new: her passkey roots no vault anywhere yet, and her first device is a browser
+    let eve_key = w.lab.passkey("Eve");
+    let eves = w.lab.device_of(eve_key, "Eve's browser");
+    let (server_d, server_vault) = (w.server, w.server_vault);
+    let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), card: true, ..Options::local() };
+    let server = node(&mut w, server_d, &[], 2, opts).await;
+    let pass = w.lab.relay_pass(eves, eve_key, unix_now()).expect("a pass");
+    let browser = node(&mut w, eves, &[eve_key], 8, with_pass(&url, pass)).await;
+    browser.know(server.addr());
+    until("the relay, open to sign-up, lets Eve's browser in by her pass", || async { relay.serves(&browser.id()) })
+        .await;
+    // in its ten minutes, the browser founds her vault and a space, takes the server's card and grants it relay
+    let eve = browser.act(move |lab, me| human_on(lab, eve_key, &[me])).await;
+    assert!(browser.contact(server.id()).await.expect("the server's card") > 0);
+    let found = move |lab: &mut Lab, me| {
+        let space = SpaceId::from(lab.submit(me, &[me], Action::FoundSpace { actor: eve, nonce: 1 })?);
+        lab.submit(me, &[me], grant(Scope::Space(space), Role::Relay, vault(server_vault), eve, None))?;
+        Ok::<_, Refusal>(space)
+    };
+    let space = browser.act(found).await.expect("Eve's space, relayed by the server");
+    until("the server learns Eve's browser from what it relays", || async { admission.admits(&browser.id()) }).await;
+    let holds = || server.read(move |lab, me| lab.state(me).space(space).is_some());
+    until("and keeps her space's log", holds).await;
+    quiet(&[&server, &browser]).await;
     for n in [server, browser] {
         n.shutdown().await.expect("the node shuts down");
     }
