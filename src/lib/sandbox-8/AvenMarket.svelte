@@ -118,15 +118,20 @@
 
 	// every aven thinks all day long, not once a morning (Samuel): once its last decision is in and THINK_H in-game hours
 	// have passed, it asks Liquid again with what it sees now. There is no stand-in: an aven acts only on Liquid's
-	// answers, and the clock waits while any living aven's decision is older than STALE_H. Liquid's free model has a
-	// rate limit, so the asks go out one at a time, GAP_MS apart, the stalest aven first; a "too many requests" backs
-	// off (5 s, doubling to a minute) and asks again. Any other failure pauses the valley.
+	// answers, and the clock waits while any living aven's decision is older than STALE_H. Liquid's free model refuses
+	// before it thinks once a burst of 2 or 3 asks (~20,000 tokens each) has gone through, and sustains about one ask
+	// every 4 s (read off its console, 2026-10-09). So the asks go out one at a time, the stalest aven first, and the
+	// gap between them adapts: 10% shorter after an answer (down to GAP_MIN), 50% longer after a refusal (up to
+	// GAP_MAX). Only every third ask of an aven is a full one (haggling, stock, its walk); the rest ask its prices, and
+	// its walk when the last one is done.
+	// Any failure but a refusal pauses the valley.
 	const THINK_H = 2;
 	const STALE_H = 24;
-	const GAP_MS = 1500;
+	const GAP_MIN = 2500;
+	const GAP_MAX = 30000;
 	let down = $state(/** @type {string} */ (''));
 	let busy = $state(/** @type {string} */ (''));
-	const gate = { inFlight: 0, nextAt: 0, backoff: 0 };
+	const gate = { inFlight: 0, nextAt: 0, gap: 4000 };
 	const isRateLimit = (/** @type {string} */ m) => / 429\b|rate.limit|too many/i.test(m);
 
 	/** @param {any} a */
@@ -144,6 +149,9 @@
 		}
 		if (!a) return;
 		const me = a;
+		const full = !me.brain.ready || (me.brain.asks ?? 0) % 3 === 0;
+		const walk = full || !me.plan?.length;
+		me.brain.asks = (me.brain.asks ?? 0) + 1;
 		me.brain.pending = true;
 		me.brain.t0 = world.t;
 		gate.inFlight++;
@@ -151,10 +159,10 @@
 		const ctrl = new AbortController();
 		const timer = setTimeout(() => ctrl.abort(), 25000);
 		const myWorld = world;
-		askLiquid(stateFor(world, me), questionsFor(world, me), { signal: ctrl.signal, ...LIQUID })
+		askLiquid(stateFor(world, me), questionsFor(world, me, { full, walk }), { signal: ctrl.signal, ...LIQUID })
 			.then((answers) => {
-				gate.backoff = 0;
-				gate.nextAt = performance.now() + GAP_MS;
+				gate.gap = Math.max(GAP_MIN, gate.gap * 0.9);
+				gate.nextAt = performance.now() + gate.gap;
 				busy = '';
 				if (myWorld !== world || !me.alive) return;
 				calls.answered++;
@@ -166,13 +174,13 @@
 				me.brain.t0 = -Infinity; // it asks again first
 				if (isRateLimit(msg)) {
 					// Liquid is busy, not down: wait and ask again, the clock holds meanwhile
-					gate.backoff = Math.min(60000, gate.backoff ? gate.backoff * 2 : 5000);
-					gate.nextAt = performance.now() + gate.backoff;
-					busy = `Liquid's free model is busy (rate limit): asking again in ${Math.round(gate.backoff / 1000)} s.`;
+					gate.gap = Math.min(GAP_MAX, gate.gap * 1.5);
+					gate.nextAt = performance.now() + gate.gap;
+					busy = `Liquid's free model is busy (rate limit): asking again in ${Math.round(gate.gap / 1000)} s.`;
 					if (myWorld === world) calls.limited++;
 					return;
 				}
-				gate.nextAt = performance.now() + GAP_MS;
+				gate.nextAt = performance.now() + gate.gap;
 				if (myWorld !== world) return;
 				calls.failed++;
 				calls.lastError = msg;
