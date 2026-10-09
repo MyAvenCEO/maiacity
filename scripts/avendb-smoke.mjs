@@ -113,8 +113,8 @@ try {
 	const t = Date.now();
 	await page.goto(`${base}/app/avendb/`, { waitUntil: 'domcontentloaded' });
 	// the account first: its own device, apart from the Lab, which links to a person's devices or founds their vault
-	const offers = (await waitText('Use my maiaCITY passkey', 60000)) && (await waitText('Already on another device?'));
-	check('it opens on the account, offering to found a vault with the maiaCITY passkey, or to link', offers && (await waitText('Make a new passkey')));
+	const offers = (await waitText('Use my maiaCITY passkey', 60000)) && (await waitText('Sign in with my passkey'));
+	check('it opens on the account, offering to found a vault with the maiaCITY passkey, or to sign in', offers && (await waitText('Make a new passkey')));
 	check('its device loads', !(await text()).includes("can't be a device"), (await text()).match(/can't be a device[^.]*/)?.[0]);
 	check('and the Lab is not made yet', !(await page.$('.rail .device')));
 	await shot('0-account');

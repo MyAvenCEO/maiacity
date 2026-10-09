@@ -94,8 +94,8 @@ impl Device {
     /// (`avendb_net::Node::found_with`); if nobody has claimed the server yet, the same ceremony claims it, and their
     /// vault owns avenCEO, the aven vault the server is a device of. Then it founds their first space, grants avenCEO
     /// relay on it, so the server keeps the space's log and knows the device from then on, and writes its card there
-    /// (`Device::card`). The relay honours
-    /// the pass while it is open to sign-up (`avendb_net::Admission::open`) or while nobody has claimed the server.
+    /// (`Device::card`). The relay honours the pass while it is open to sign-up (`avendb_net::Admission::open`) or
+    /// while nobody has claimed the server.
     pub async fn found(
         start: Start,
         server: &Offer,

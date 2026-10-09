@@ -146,7 +146,9 @@ try {
 
 	await click('Open the Lab', '.rail button');
 	const made = await page.waitForSelector('.rail .device', { timeout: 240000 }).then(() => true, () => false);
-	check('the Lab opens apart, with Alice and no Samuel', made && !(await shown('.rail .device span')).some((d) => d?.includes('Samuel')));
+	const cast = made ? await shown('.rail .device span') : [];
+	const alice = cast.some((d) => d?.includes('Alice')) && !cast.some((d) => d?.includes('Samuel'));
+	check('the Lab opens apart, with Alice and no Samuel', alice, cast.join(', '));
 	await click('Your account', '.rail button');
 	check('back on the account, still open', await waitText('Link another device', 5000));
 

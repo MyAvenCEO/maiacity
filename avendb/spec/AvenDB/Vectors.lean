@@ -282,7 +282,7 @@ def cases : List Case := [
     (2, [], .keys (.entry 10 1) 1 []),
     (2, [], .keys (.entry 10 9) 0 []),
     (2, [], .keys (.entry 10 1) 0 [] true),
-    -- Carol may read Welcome: it is boxed to her vault's key, by Alice's Mac or by her own passkey
+    -- Carol may read Welcome: it is boxed to her vault's key, by Alice's Mac or by Carol's own passkey
     (2, [], g 1 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
     (2, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
@@ -444,7 +444,7 @@ def views : List ViewCase := [
     (7, 2, [], .foundSpace 10 200 [100]),
     (8, 2, [], .write 10 1 200 0 (via := [100])),
     (9, 2, [], g 1 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
-    -- Carol's passkey boxes Welcome's key twice; Alice revokes her read having seen only the first
+    -- Carol's passkey boxes Welcome's key twice; Alice revokes Carol's read having seen only the first
     (10, 6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (11, 6, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
     (12, 2, [], .revoke 1 200 [10] [100])] },
@@ -597,7 +597,7 @@ def syncs : List SyncCase := [
       (2, [], .write 12 21 100 0),
       (2, [], g 30 (.entry 12 21) .read (toVault 102) 100),
       (2, [], .write 12 22 100 0),
-      -- Alice revokes Carol's read: she hears of it, and of nothing else about the todo
+      -- Alice revokes Carol's read: Carol hears of it, and of nothing else about the todo
       (2, [], .revoke 30 100 [8, 9]),
       (2, [], .write 12 21 100 0 [8])]),
     asks := [(7, [0, 1, 4, 6, 7, 8, 9], none), (7, [], none), (5, [2, 3], none),

@@ -1,7 +1,7 @@
 // @ts-nocheck: written by wasm-bindgen (avendb/scripts/build-web.sh)
 /**
  * The avenDB tile's world: the scenarios' people, devices and vaults (`avendb::cast`), and in it Maia Coop with its
- * Handbook, Samuel's Notes and Samuel's Todos, made a step at a time; then read through views and changed through
+ * Handbook, Alice's Notes and Alice's Todos, made a step at a time; then read through views and changed through
  * actions, each on the device the page picks.
  */
 export class Tile {

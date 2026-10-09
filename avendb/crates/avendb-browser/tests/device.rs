@@ -109,7 +109,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     assert_eq!(first.p256(), p256, "it learned her passkey's key from the unlock and the pass");
     assert!(first.node().endpoint().bound_sockets().is_empty(), "with no UDP of its own");
     let vault = first.vault().await.expect("the browser belongs to her vault");
-    assert!(!first.owns_aven().await, "avenCEO is Alice's vault's, which claimed the server before her");
+    assert!(!first.owns_aven().await, "avenCEO is Alice's vault's, which claimed the server before Eve");
     until("the server learns her browser from what it relays", || async { admission.admits(&first.node().id()) }).await;
     let notes = first.notes().await;
     let [space] = notes.as_slice() else { panic!("her first space, and no other: {}", notes.len()) };
