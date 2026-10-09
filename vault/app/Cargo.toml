@@ -48,6 +48,8 @@ objc2-core-video = "0.3"
 objc2-core-graphics = "0.3"
 objc2-core-foundation = "0.3"
 objc2-core-media = "0.3"
+# avenDB's passkey in a sign-in sheet on maia.city (passkey.rs)
+objc2-authentication-services = { version = "0.3", default-features = false, features = ["std", "block2", "ASWebAuthenticationSession", "ASFoundation"] }
 # native-tls = the macOS Security framework, like the Keychain
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "http2", "charset"] }
 security-framework = "3.7"

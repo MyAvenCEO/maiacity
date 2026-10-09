@@ -19,6 +19,7 @@
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import { me } from '$lib/auth/client';
+	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import { count, plain } from './vaults.js';
 
@@ -81,8 +82,12 @@
 	const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 	const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
 
-	/** A name for this browser that tells it from the person's other devices: its browser, on its system. */
+	/** Who asks for the passkey: the browser, or in the Mac app its sign-in sheet on maia.city ($lib/avendb/device/passkey.js). */
+	const asks = native() ? 'a sign-in sheet asks for your passkey' : 'your browser asks for your passkey';
+
+	/** A name for this browser that tells it from the person's other devices: its browser, on its system; or the app. */
 	function deviceName() {
+		if (native()) return 'maiaCITY Studio on Mac';
 		const ua = navigator.userAgent;
 		const touchMac = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
 		const system = /iPhone/.test(ua)
@@ -166,7 +171,7 @@
 	 *  `fresh`: the unlock, the pass to the relay, and one ceremony for the vault and this device in it, which also
 	 *  claims the server if nobody has yet; one ceremony more to make the passkey. @param {boolean} fresh */
 	const found = (fresh) =>
-		run(`Setting up your account: your browser asks for your passkey ${fresh ? 'four' : 'three'} times`, async () => {
+		run(`Setting up your account: ${asks} ${fresh ? 'four' : 'three'} times`, async () => {
 			const { passkey, unlock, sign, held } = await ceremonies(undefined);
 			const made = fresh ? await passkey.create(person || name) : null;
 			if (made) held.id = made.id;
@@ -179,7 +184,7 @@
 	 *  avenDB's server's, which hands over their vault for their passkey alone. The unlock, the pass to the relay, the
 	 *  passkey's hello, and the op that adds this browser to their vault. @param {string} through @param {string} what */
 	const linkHere = (through, what = 'Linking this browser') =>
-		run(`${what}: your browser asks for your passkey four times`, async () => {
+		run(`${what}: ${asks} four times`, async () => {
 			const { unlock, sign, held } = await ceremonies(undefined);
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
 			const d = await avendb.Device.link(name.trim(), relay, through.trim(), await unlock(nonce), sign).catch(
@@ -191,7 +196,7 @@
 		});
 
 	const unlockHere = () =>
-		run('Unlocking: your browser asks for your passkey once', async () => {
+		run(`Unlocking: ${asks} once`, async () => {
 			const { unlock } = await ceremonies(meta.credential);
 			const kept = await store.load();
 			const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.ops, kept.keys);
@@ -291,17 +296,17 @@
 		setStatus: (actor, space, entry, status) => act('Saving', () => device.setStatus(actor, space, entry, status)),
 		/** @param {string} issuer @param {string} space @param {string | null} entry @param {string} role @param {string} grantee */
 		grant: (issuer, space, entry, role, grantee) =>
-			act(role === 'owner' ? 'Sharing: your browser asks for your passkey once' : 'Sharing', async () =>
+			act(role === 'owner' ? `Sharing: ${asks} once` : 'Sharing', async () =>
 				device.grant(issuer, space, entry ?? undefined, role, grantee, await approver())
 			),
 		/** @param {string} actor @param {string} grant @param {string} role */
 		revoke: (actor, grant, role) =>
-			act(role === 'owner' ? 'Revoking: your browser asks for your passkey once' : 'Revoking', async () =>
+			act(role === 'owner' ? `Revoking: ${asks} once` : 'Revoking', async () =>
 				device.revoke(actor, grant, await approver())
 			),
 		/** @param {{ name: string, kind: string }[]} vaults */
 		foundVaults: (vaults) =>
-			act(`Creating ${count(vaults.length, 'vault')}: your browser asks for your passkey once`, async () =>
+			act(`Creating ${count(vaults.length, 'vault')}: ${asks} once`, async () =>
 				device.foundVaults(vaults, await approver())
 			),
 		/** @param {string} vault @param {string} name */

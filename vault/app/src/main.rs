@@ -13,6 +13,7 @@ mod jobs;
 mod local;
 mod mcp;
 mod models;
+mod passkey;
 mod player;
 mod proxies;
 mod keep;
@@ -481,6 +482,7 @@ fn main() {
             auth::auth_open,
             auth::api,
             auth::brain,
+            passkey::passkey_sheet,
             sync::vault_connect,
             sync::vault_copies,
             mcp::mcp_info,
