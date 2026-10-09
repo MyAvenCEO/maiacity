@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS game state, kept loose on purpose
-// Sandbox 7 — avens trading. The rules of the world, without any drawing: five avens, each with 125,000 HEARTS,
+// Sandbox 7 — avens trading. The rules of the world, without any drawing: five avens, each with 1,000 HEARTS,
 // a territory that grows 2 of the 5 goods and a ledger of its own prices. Every day each aven needs 3 WATER and
 // 2 of each food (FRUITS, VEGETABLES, LEGUMES, CHICKEN). Trades happen where two avens meet, at the seller's price.
 // No euros, no outside market: HEARTS only move between avens.
@@ -16,13 +16,12 @@ export const NEED = { water: 3, fruits: 2, vegetables: 2, legumes: 2, chicken: 2
  * @type {Record<string, number>} */
 export const ROT = { water: 0, fruits: 0.25, vegetables: 0.15, legumes: 0.05, chicken: 0.3 };
 
-export const START_HEARTS = 125000;
+export const START_HEARTS = 1000;
 /** the HEARTS policy: every living aven mints 24 HEARTS a day, and every HEART decays 7% a year (charged each night,
- * 7%/365 of the balance). Minting and decay balance at 24 × 365 / 0.07 ≈ 125,143 HEARTS: an aven that only holds
- * drifts towards that, richer ones shrink, poorer ones grow back */
+ * 7%/365 of the balance). Everyone starts with 1,000, so new HEARTS keep coming into the valley */
 export const MINT_PER_DAY = 24;
 export const DECAY_PER_YEAR = 0.07;
-export const START_PRICE = 100; // HEARTS a unit, where every price begins
+export const START_PRICE = 10; // HEARTS a unit, where every price begins (a day's food is ~100 of the 1,000 HEARTS)
 export const DAY_S = 86400; // in-game seconds in a day
 export const WORLD = { w: 1000, h: 700 };
 export const MEET_R = 26; // two avens this close can trade

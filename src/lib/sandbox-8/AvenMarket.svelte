@@ -1,5 +1,5 @@
 <!--
-	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Five blobs in a 2D valley, each with 125,000 HEARTS and a territory
+	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Five blobs in a 2D valley, each with 1,000 HEARTS and a territory
 	that grows 2 of the 5 goods. They walk to each other and trade at their own prices; every morning each one's prices are
 	decided by Liquid's decision model d1:free (or a local rule when Liquid is out of reach). Survive, and end with the most HEARTS.
 -->
@@ -187,7 +187,7 @@
 				ctx.textBaseline = 'alphabetic';
 				ctx.fillStyle = ink;
 				ctx.font = '600 11px system-ui, sans-serif';
-				ctx.fillText(`${GOOD_LABEL[g]} /day`, fx, fy + 30);
+				ctx.fillText(GOOD_LABEL[g], fx, fy + 30);
 			});
 			// its store: a half-size dot per good, how many units it holds written in each
 			GOODS.forEach((g, i) => {
