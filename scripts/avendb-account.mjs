@@ -2,12 +2,13 @@
  * The avenDB account's walk through, end to end: /app/avendb/ in a headless Chrome whose virtual authenticator holds a
  * passkey with PRF, against an avenDB server on this machine. The person signed up to maiaCITY with that passkey; the
  * account founds their vault with it in three ceremonies, claims the server, and names their vault and avenCEO with
- * none. Their vault then founds avenALICE, avenBOB, avenCHARLY and Maia City COOP in one ceremony, and the person acts
- * as each in turn from the switcher at the foot: avenALICE writes a note and a todo and shares the note with avenBOB,
- * who reads it and nothing else, while avenCHARLY sees nothing of hers; the Sync list shows avenCEO's server relaying
- * her home's ciphertext and opening none of it; making the coop an owner of her home takes one ceremony, revoking
- * avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here, it comes back through
- * the server for the passkey alone, in four ceremonies, with every vault and the note. Each step is screenshot.
+ * none. Their vault then founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, each named by hand, in one ceremony,
+ * and the person acts as each in turn from the switcher at the foot: avenALICE writes a note and a todo and shares the
+ * note with avenBOB, who reads it and nothing else, while avenCHARLY sees nothing of hers; the Sync list shows
+ * avenCEO's server relaying her home's ciphertext and opening none of it; making the coop an owner of her home takes
+ * one ceremony, revoking avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here,
+ * it comes back through the server for the passkey alone, in four ceremonies, with every vault and the note. Each step
+ * is screenshot.
  *
  * Passkeys of localhost count only in a device built with avendb's `localhost-passkeys`, never in one that ships, so
  * this runs on a dev server whose src/lib/avendb/device/ holds such a build, and a server built likewise:
@@ -224,12 +225,17 @@ try {
 	check('a new name, on its card', renamed, (await devices()).join(', '));
 	await shot('3-devices');
 
-	// the cast to enact: four vaults Samuel's vault owns, in one ceremony
+	// the cast to enact, named by hand: four vaults Samuel's vault owns, in one ceremony
 	const founding = await ceremonies();
 	await page.click('.bar .add');
 	await page.waitForSelector('.dialog');
 	const rows = await page.$$eval('.dialog input', (els) => els.map((e) => /** @type {HTMLInputElement} */ (e).value));
-	check('it offers avenALICE, avenBOB, avenCHARLY and Maia City COOP', rows.join() === SIX.slice(2).join(), rows.join(', '));
+	check('it opens on one empty row, naming no vault itself', rows.length === 1 && !rows[0], rows.join(', '));
+	for (const [i, n] of SIX.slice(2).entries()) {
+		if (i) await click('Add another', '.dialog button');
+		await type(`.dialog input[aria-label="Vault ${i + 1}'s name"]`, n);
+	}
+	await choose(`.dialog select[aria-label="Vault 4's kind"]`, 'Coop');
 	await shot('4-new-vaults');
 	await click('Create 4 vaults', '.dialog button');
 	check('six vaults in the bar', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));

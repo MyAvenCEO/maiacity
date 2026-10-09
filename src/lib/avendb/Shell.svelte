@@ -7,6 +7,7 @@
 	what it may do, as on a device of that vault alone. Marks of the vaults the acting vault holds nothing in are faded.
 -->
 <script>
+	import { enter } from '$lib/app/immersive.svelte';
 	import Board from './Board.svelte';
 	import Mark from './Mark.svelte';
 	import NewVaults from './NewVaults.svelte';
@@ -45,6 +46,10 @@
 	const actors = $derived(world.vaults.filter((v) => v.via !== null));
 	const here = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(context) ?? mine));
 	const as = $derived(byId.get(actor) ?? mine);
+
+	// the page is the screen, as a chat app's is: it doesn't scroll, each of its columns does (the app keeps no room at
+	// its foot for its nav pill, which floats over the columns' own)
+	$effect(() => enter());
 
 	/** Act as vault `id`, and look at its own. @param {string} id */
 	function enact(id) {
@@ -148,23 +153,30 @@
 </div>
 
 <style>
+	/* the screen, never scrolled: each column scrolls on its own */
 	.shell {
 		display: grid;
 		grid-template-columns: 76px 15.5rem minmax(0, 1fr);
-		min-height: 100vh;
+		height: 100vh;
+		height: 100dvh;
+		overflow: hidden;
+	}
+
+	.bar,
+	.aside,
+	.main {
+		min-height: 0;
+		box-sizing: border-box;
+		overflow-y: auto;
+		overscroll-behavior: contain;
 	}
 
 	.bar {
-		position: sticky;
-		top: 0;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 0.55rem;
-		height: 100vh;
-		box-sizing: border-box;
-		overflow-y: auto;
-		padding: 0.9rem 0 7rem;
+		padding: calc(0.9rem + env(safe-area-inset-top, 0px)) 0 7rem;
 		background: #e6e0d4;
 	}
 
@@ -240,12 +252,7 @@
 	}
 
 	.aside {
-		position: sticky;
-		top: 0;
-		height: 100vh;
-		box-sizing: border-box;
-		overflow-y: auto;
-		padding: 1.3rem 0.8rem 7rem;
+		padding: calc(1.3rem + env(safe-area-inset-top, 0px)) 0.8rem 7rem;
 		border-right: 1px solid var(--edge);
 		background: #efebe3;
 	}
@@ -314,7 +321,7 @@
 
 	.main {
 		min-width: 0;
-		padding: 1.4rem clamp(1rem, 3vw, 2.4rem) 10rem;
+		padding: calc(1.4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2.4rem) 10rem;
 	}
 
 	.main-head h2 {
@@ -441,10 +448,9 @@
 		.bar {
 			z-index: 30;
 			flex-direction: row;
-			height: auto;
 			overflow-x: auto;
 			overflow-y: hidden;
-			padding: 0.6rem 0.8rem;
+			padding: calc(0.6rem + env(safe-area-inset-top, 0px)) 0.8rem 0.6rem;
 		}
 
 		.bar hr {
@@ -464,11 +470,14 @@
 		}
 
 		.aside {
-			position: static;
-			height: auto;
+			max-height: 40dvh;
 			padding: 1rem 0.8rem 0.6rem;
 			border-right: 0;
 			border-bottom: 1px solid var(--edge);
+		}
+
+		.main {
+			padding-top: 1.2rem;
 		}
 
 		.tabs-list {
