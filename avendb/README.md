@@ -20,6 +20,7 @@ history and proposals, and, from P8, its own iroh networking (its own ALPN, its 
 | `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by caps, the McEliece keys in iroh-blobs behind a gate, announcements of changed digests to each peer that may hold the log, linking a new device by its passkey (see [Linking a device](#linking-a-device)), each node's store on disk, and the server's node (`server`) |
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node in a folder of its own, and its relay, which lets in only the devices the server knows (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay (see [A device in the browser](#a-device-in-the-browser)) |
+| `crates/avendb-device` | The same device run natively beside the Mac app, as its sidecar: its node on UDP sockets of its own, its store in a folder on disk, the app's page talking to it in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, and a compose file that runs it on this machine; neither is deployed |
 | `crates/avendb-web` | The core as WebAssembly over the Lab's simulated world, read through JSON views and changed through JSON actions; once the tile's Lab, no longer on the page, its tests still run with the workspace's |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
@@ -206,6 +207,28 @@ what it brings, the PRF output on avenDB's salt among it. The person's passkey p
 page says to confirm only what they just asked for in maiaCITY Studio. An app signed with Apple's associated-domains
 entitlement (`webcredentials:maia.city`, listed in maia.city's `apple-app-site-association`) could use the passkey in
 its own web view instead, and the sheet could go.
+
+#### Natively, beside the Mac app
+
+In the Mac app the device runs natively, not in the page (`crates/avendb-device`): the app builds it with itself
+(`vault/app/build.rs`, in this workspace and lockfile, in its `app` profile, optimised) and runs it beside it as its
+sidecar (`vault/app/src/avendb.rs`), and the page (`src/lib/avendb/native.js`) calls it as it calls its own device,
+each call a line of JSON on the device's stdin, each answer one on its stdout.
+
+- **Direct.** Its node binds UDP sockets of its own on every interface, IPv4 and IPv6, and maps a port on the router
+  where one lets it (UPnP, NAT-PMP, PCP: `Options::direct`), so it reaches the person's other devices directly wherever
+  it can, and through the relay only where it must. Its TLS is aws-lc-rs, X25519MLKEM768 only, like the server's.
+- **On disk.** It keeps what it holds in a folder (`~/Library/Application Support/city.maia.studio/avendb/`), as the
+  server does (`Disk`): its store, and `meta.json`, what opens it again (its name, its relay, its salt's own bytes and
+  its passkey's credential and P-256 key), as the page keeps them. No secret: its keys derive from the passkey at every
+  unlock. It runs on while the app does, whichever page is open, and opens again in the unlock alone.
+- **Its ceremonies** run in the same sign-in sheet, which the app shows for it: the device makes the one-time X-Wing
+  key itself, names it in the sheet's URL, and opens what the sheet page sealed to it; the page sees none of it.
+- **Moving in.** A device a page in the app made before moves into the folder as it unlocks (`adopt`): the edits and
+  keys the page kept become the folder's store, the same device; then the page lets go of its copy, so the device never
+  runs twice. A store no device opens any more is put aside in the folder (`aside/`), never deleted.
+- If the device didn't build with the app, the app's debug build gets a stand-in that says so, and the page runs the
+  device itself, as before.
 
 #### PRF, done right
 

@@ -306,6 +306,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "avendb-device"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "avendb",
+ "avendb-browser",
+ "avendb-net",
+ "avendb-server",
+ "data-encoding",
+ "getrandom 0.4.3",
+ "iroh",
+ "qrcode",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zeroize",
+]
+
+[[package]]
 name = "avendb-net"
 version = "0.1.0"
 dependencies = [

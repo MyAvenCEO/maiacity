@@ -7,7 +7,7 @@
 //   node scripts/watch-main.mjs --uninstall stop and remove it
 // The log is .cargo/watch-main.log, the app's own log .cargo/studio-dev.log (.cargo is this Mac's, not in git).
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, openSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, openSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +70,13 @@ function check() {
 		const changed = git('diff', '--name-only', head, latest).split('\n');
 		git('merge', '--ff-only', '--quiet', latest);
 		log(`fast-forwarded to ${git('log', '-1', '--format=%h %s')}`);
+		if (changed.some((f) => f.startsWith('avendb/'))) {
+			// `tauri dev` watches the app's own crates, not avendb/: a touched build.rs has it build the app again, and
+			// the build script avenDB's native device, the app's sidecar, from the new sources
+			const now = new Date();
+			utimesSync(join(ROOT, 'vault/app/build.rs'), now, now);
+			log('avenDB changed: building the app and its native device again');
+		}
 		if (changed.includes('bun.lock') || changed.includes('package.json')) {
 			execFileSync('bun', ['install'], { cwd: ROOT, stdio: 'ignore', timeout: INSTALL });
 			log('bun install (bun.lock changed)');

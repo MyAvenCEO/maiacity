@@ -48,10 +48,15 @@
 //! every signed edit the device holds (the core's edits), each with what it does, who signed it and how, and the vaults
 //! it concerns (`Device::history`).
 //!
+//! The same device runs natively in the Mac app (`avendb-device`, beside maiaCITY Studio): there its node binds UDP
+//! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it
+//! holds in a folder on disk (`Start::direct`, `Start::store`).
+//!
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -98,13 +103,17 @@ pub struct Unlock {
     pub device: Zeroizing<[u8; 32]>,
 }
 
-/// Where a device in a page starts: its name, the relay it reaches its peers through, 32 bytes of the browser's
-/// randomness and the time, seconds since 1970.
+/// Where a device starts: its name, the relay it reaches its peers through, 32 bytes of the browser's randomness and
+/// the time, seconds since 1970. In a page that is all: it binds no socket, and the page keeps its store. A device on a
+/// machine, the Mac app's, binds sockets of its own (`direct`, `avendb_net::Options::direct`), so it reaches its peers
+/// directly and through the relay only where it must, and keeps its store in a folder (`store`, `avendb_net::Disk`).
 pub struct Start {
     pub name: String,
     pub relay: RelayUrl,
     pub entropy: [u8; 32],
     pub now: u64,
+    pub direct: bool,
+    pub store: Option<PathBuf>,
 }
 
 /// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, and whether it
@@ -176,18 +185,26 @@ impl Device {
     }
 
     /// The device the page made before, opened again from what its store kept (`backup`), unlocked by the ceremony of
-    /// the passkey whose P-256 key is `p256`: the relay knows it, so it needs no pass.
+    /// the passkey whose P-256 key is `p256`: the relay knows it, so it needs no pass. A device with a folder of its
+    /// own (`Start::store`) opens from what the folder holds, or, while it holds nothing, from `backup`, which it then
+    /// keeps there: so the Mac app's device moves from its page's store to disk.
     pub async fn open(start: Start, p256: [u8; 33], unlock: Unlock, backup: &Backup) -> Result<Device> {
         let (mut lab, passkey, me) = lab(&start, p256, &unlock)?;
         lab.restore_backup(me, backup);
-        if lab.vault_of(me).is_none() {
+        if start.store.is_none() && lab.vault_of(me).is_none() {
             bail!("the store holds no vault this device belongs to");
         }
-        Device::spawn(lab, me, (passkey, p256), &start, None).await
+        let device = Device::spawn(lab, me, (passkey, p256), &start, None).await?;
+        if device.vault().await.is_none() {
+            device.close().await.ok();
+            bail!("the store holds no vault this device belongs to");
+        }
+        Ok(device)
     }
 
     /// A node for device `me` of `lab`, of the person whose passkey is `passkey`, which reaches its peers through the
-    /// relay alone, let in by `pass` if the relay doesn't know it yet.
+    /// relay, let in by `pass` if the relay doesn't know it yet, and directly too if it binds a socket; with its store
+    /// in a folder, if it has one.
     async fn spawn(
         lab: Lab,
         me: SignerId,
@@ -195,7 +212,8 @@ impl Device {
         start: &Start,
         pass: Option<RelayPass>,
     ) -> Result<Device> {
-        let opts = Options { bind: None, relay: Some(start.relay.clone()), relay_pass: pass, ..Options::local() };
+        let (direct, relay, store) = (start.direct, Some(start.relay.clone()), start.store.clone());
+        let opts = Options { bind: None, direct, relay, relay_pass: pass, store, ..Options::local() };
         Ok(Device { node: Node::spawn(lab, me, opts).await?, passkey, p256, closed: watch::Sender::new(false) })
     }
 
@@ -1718,7 +1736,7 @@ fn starting(name: String, relay: &str) -> Result<Start, JsError> {
     let relay: RelayUrl = relay.parse().map_err(|_| JsError::new("the relay's URL isn't one"))?;
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
-    Ok(Start { name, relay, entropy: *entropy, now: now() })
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None })
 }
 
 /// The time by the browser's clock, or the machine's: seconds since 1970.

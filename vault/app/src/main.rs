@@ -7,6 +7,7 @@ mod analyse;
 mod analysis;
 mod asks;
 mod auth;
+mod avendb;
 mod blob;
 mod drives;
 mod jobs;
@@ -405,6 +406,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(auth::Auth::default())
+        .manage(avendb::Avendb::default())
         .setup(|app| {
             let vault = Arc::new(tauri::async_runtime::block_on(Vault::open(vault_dir()))?);
             app.manage(App { vault: vault.clone(), busy: AtomicBool::new(false) });
@@ -483,6 +485,7 @@ fn main() {
             auth::api,
             auth::brain,
             passkey::passkey_sheet,
+            avendb::avendb,
             sync::vault_connect,
             sync::vault_copies,
             mcp::mcp_info,
@@ -540,6 +543,8 @@ fn main() {
                     vault.endpoint.close().await;
                     vault.store.shutdown().await.ok();
                 });
+                // and avenDB's device, which closes its own
+                tauri::async_runtime::block_on(avendb::stop(&handle.state::<avendb::Avendb>()));
             }
         });
 }

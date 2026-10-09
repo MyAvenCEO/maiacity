@@ -47,6 +47,12 @@ struct Showing {
 /// sheet ended without one.
 #[tauri::command]
 pub async fn passkey_sheet(window: tauri::WebviewWindow, url: String) -> Result<String, String> {
+    sheet(&window, url).await
+}
+
+/// The sheet for `url` over `window`, for the page (`passkey_sheet`) or for avenDB's native device (avendb.rs), which
+/// asks for its ceremonies itself and opens what comes back with a key of its own.
+pub async fn sheet(window: &tauri::WebviewWindow, url: String) -> Result<String, String> {
     if !url.starts_with(SHEET) || url.len() > 16 * 1024 {
         return Err("the sign-in sheet shows maia.city's passkey page alone".into());
     }

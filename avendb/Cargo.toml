@@ -3,7 +3,14 @@
 # change what the media vault runs. See README.md.
 [workspace]
 resolver = "3"
-members = ["crates/avendb", "crates/avendb-browser", "crates/avendb-net", "crates/avendb-server", "crates/avendb-web"]
+members = [
+    "crates/avendb",
+    "crates/avendb-browser",
+    "crates/avendb-device",
+    "crates/avendb-net",
+    "crates/avendb-server",
+    "crates/avendb-web",
+]
 
 [workspace.package]
 edition = "2024"
@@ -32,3 +39,11 @@ opt-level = 3
 [profile.release]
 codegen-units = 1
 lto = true
+
+# The Mac app's native device (avendb-device, built by vault/app/build.rs as the app's sidecar): optimised as a
+# release, but in parallel codegen units, without LTO and incrementally, so the app's build doesn't wait long on it
+[profile.app]
+inherits = "release"
+codegen-units = 16
+lto = false
+incremental = true

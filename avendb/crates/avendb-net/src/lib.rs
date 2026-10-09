@@ -153,6 +153,11 @@ fn provider() -> Arc<CryptoProvider> {
 pub struct Options {
     /// The UDP socket it binds, or none: then it reaches its peers through its relay alone.
     pub bind: Option<SocketAddr>,
+    /// It reaches its peers as directly as it can, as a device on its person's own machine does, the Mac app's: in
+    /// place of `bind` it binds every interface, IPv4 and IPv6, on ports of the system's choosing, and maps a port on
+    /// the network's router where one lets it (UPnP, NAT-PMP, PCP), so its peers reach it directly wherever they can,
+    /// and through the relay only where they can't.
+    pub direct: bool,
     /// The relay it is reached through, the server's; it looks for its peers there too.
     pub relay: Option<RelayUrl>,
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
@@ -182,6 +187,7 @@ impl Options {
     pub fn local() -> Options {
         Options {
             bind: Some(SocketAddr::from(([127, 0, 0, 1], 0))),
+            direct: false,
             relay: None,
             retry: Duration::from_secs(1),
             store: None,
@@ -338,8 +344,10 @@ impl Node {
             .secret_key(SecretKey::from_bytes(&secret))
             .crypto_provider(provider())
             .address_lookup(lookup.clone());
+        // iroh's own sockets, on every interface, and its port mapping, for a node that reaches out directly; else
+        // the one socket it binds, if any
         #[cfg(not(target_arch = "wasm32"))]
-        {
+        if !opts.direct {
             builder = builder.portmapper_config(PortmapperConfig::Disabled).clear_ip_transports();
             if let Some(bind) = opts.bind {
                 builder = builder.bind_addr(bind)?;
@@ -347,7 +355,7 @@ impl Node {
         }
         // a page has no UDP: it reaches its peers through its relay alone
         #[cfg(target_arch = "wasm32")]
-        if opts.bind.is_some() || opts.relay.is_none() {
+        if opts.bind.is_some() || opts.direct || opts.relay.is_none() {
             bail!("a node in a browser binds no socket and needs a relay");
         }
         if let Some(relay) = &opts.relay {
