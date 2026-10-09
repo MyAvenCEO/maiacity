@@ -23,7 +23,7 @@ export const DAY_S = 86400; // in-game seconds in a day
 export const CODE = { run: /** @type {any} */ (null), seen: /** @type {any} */ (null) };
 
 /** what card code sees of an aven (a copy: nothing it does reaches the valley) */
-export const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, harvest: a.harvest ?? null, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, reserveDays: a.reserveDays, ask: a.ask, bid: a.bid, flex: a.flex, yesterday: a.yesterday ?? null, minted: a.minted, decayed: a.decayed });
+export const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, harvest: a.harvest ?? null, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, memo: a.memo ?? {}, reserveDays: a.reserveDays, ask: a.ask, bid: a.bid, flex: a.flex, yesterday: a.yesterday ?? null, minted: a.minted, decayed: a.decayed });
 /** ...and of the valley, once a night */
 function valleyView(world) {
 	const live = world.avens.filter((a) => a.alive);
@@ -160,7 +160,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			reserveDays: RULES.reserveDays, // how many days of each need it wants in stock
 			harvest: { ...produce }, // what its land actually gave last night
 			carry: {}, // what it fetched and carries until it is back on its own land
-			health: 100,
+			health: RULES.healthMax,
 			body: { water: 100, food: 100 },
 			alive: true,
 			diedOn: null,
@@ -382,7 +382,7 @@ export function step(world, dt) {
 		const to = a.fetch.length ? world.avens[a.fetch[0].from] : null;
 		const spot = to ? { x: to.territory.x + 18, y: to.territory.y - 6 } : homeSpot(a);
 		const d = Math.hypot(spot.x - a.x, spot.y - a.y);
-		const move = (RULES.walk / 3600) * (0.5 + a.health / 200) * dt;
+		const move = (RULES.walk / 3600) * (0.5 + a.health / RULES.healthMax / 2) * dt;
 		if (d <= Math.max(move, 2)) {
 			a.x = spot.x;
 			a.y = spot.y;
@@ -433,11 +433,22 @@ function endOfDay(world) {
 				Object.assign(ate, took);
 				Object.assign(short, missing);
 			}
+			// the body rule's answer: the two reserves, and, if the card keeps its own, health and a memo it gets back
+			// tomorrow night (a streak, say); without its own health, health is the lower reserve on the health scale
 			const body = ruled('body', { aven: { ...a, body: before }, need: a.need, short }, { ...a.body }, (v, own) =>
-				v && typeof v === 'object' && Number.isFinite(v.water) && Number.isFinite(v.food) ? { water: Math.min(100, Math.max(0, v.water)), food: Math.min(100, Math.max(0, v.food)) } : own
+				v && typeof v === 'object' && Number.isFinite(v.water) && Number.isFinite(v.food)
+					? {
+							water: Math.min(100, Math.max(0, v.water)),
+							food: Math.min(100, Math.max(0, v.food)),
+							...(Number.isFinite(v.health) ? { health: Math.min(RULES.healthMax, Math.max(0, v.health)) } : {}),
+							...(v.memo && typeof v.memo === 'object' && JSON.stringify(v.memo).length <= 2000 ? { memo: v.memo } : {})
+						}
+					: own
 			);
-			a.body = body;
-			a.health = Math.round(Math.min(a.body.water, a.body.food));
+			const { health, memo, ...reserves } = body;
+			a.body = reserves;
+			if (memo) a.memo = memo;
+			a.health = health ?? Math.round((Math.min(a.body.water, a.body.food) * RULES.healthMax) / 100);
 			log(world, a, { kind: 'eat', short, health: a.health });
 			a.today.short = short;
 			a.today.ate = ate;
@@ -458,11 +469,11 @@ function endOfDay(world) {
 			a.decayed += lost.HEARTS;
 			world.tally.decayed += lost.HEARTS;
 		}
-		if (a.alive && a.health <= 0) {
+		if (a.alive && (a.health <= 0 || a.body.water <= 0 || a.body.food <= 0)) {
 			// it dies and loses everything it held (Samuel): its HEARTS and its store go with it
 			a.alive = false;
 			a.diedOn = world.day;
-			a.lost = { hearts: Math.round(a.hearts * 100) / 100, stock: { ...a.stock }, cause: a.body.water <= 0 ? 'thirst' : 'hunger' };
+			a.lost = { hearts: Math.round(a.hearts * 100) / 100, stock: { ...a.stock }, cause: a.body.water <= 0 ? 'thirst' : a.body.food <= 0 ? 'hunger' : 'ill health' };
 			a.hearts = 0;
 			for (const g of GOODS) a.stock[g] = 0;
 			a.fetch = [];
@@ -485,7 +496,7 @@ function endOfDay(world) {
 		const dead = world.day - a.diedOn;
 		const hearts = hooked('rebirth', { aven: a, dead }, dead >= RULES.rebirthDays ? RULES.startHearts : -1, -1, 1e9);
 		if (hearts < 0) continue;
-		Object.assign(a, { alive: true, diedOn: null, hearts, health: 100, body: { water: 100, food: 100 }, reborn: (a.reborn ?? 0) + 1, startHearts: hearts });
+		Object.assign(a, { alive: true, diedOn: null, hearts, health: RULES.healthMax, body: { water: 100, food: 100 }, memo: {}, reborn: (a.reborn ?? 0) + 1, startHearts: hearts });
 		for (const g of GOODS) a.stock[g] = 0;
 		a.x = a.territory.x;
 		a.y = a.territory.y - 6;
