@@ -478,7 +478,8 @@
 			</div>
 		{/if}
 	{/if}
-	<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} {stage} taps=".panel button, .fab, .lbl" />
+	<!-- the joystick steps aside while a sheet is open over it -->
+	{#if !(narrow && (sheetOpen || picked))}<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} {stage} taps=".panel button, .fab, .lbl" />{/if}
 </div>
 
 <style>
@@ -792,13 +793,14 @@
 		border-radius: 999px;
 		background: rgb(250 248 242 / 0.9);
 	}
+	/* the menu button: in the bottom right corner, level with the nav pill, over the sheet when it is open */
 	.fab {
 		position: absolute;
 		z-index: 4;
-		left: calc(1rem + env(safe-area-inset-left, 0px));
-		bottom: calc(1rem + env(safe-area-inset-bottom, 0px) + var(--nav-room, 3.5rem));
-		width: 3rem;
-		height: 3rem;
+		right: calc(1rem + env(safe-area-inset-right, 0px));
+		bottom: var(--nav-foot, 14px);
+		width: var(--nav-height, 52px);
+		height: var(--nav-height, 52px);
 		border: 0;
 		border-radius: 999px;
 		background: #24452f;
@@ -806,19 +808,26 @@
 		font-size: 1.2rem;
 		box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
 	}
-	/* upright: the panels in a sheet up from the foot, at most half the screen */
+	/* upright: the panels in a sheet on the screen's bottom edge, at most half the screen; the nav pill and the menu
+	   button float over its foot, so what it holds scrolls clear above them */
 	.sheet {
 		position: absolute;
 		z-index: 3;
 		left: 0;
 		right: 0;
-		bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px) + var(--nav-room, 3.5rem));
+		bottom: 0;
 		max-height: 50vh;
+		max-height: 50dvh;
 		overflow: auto;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		padding: 0 0.6rem;
+		padding: 0.6rem 0.6rem calc(var(--nav-room, 5rem) + 0.4rem);
+		border-radius: 18px 18px 0 0;
+		background: rgb(236 240 230 / 0.82);
+		-webkit-backdrop-filter: blur(14px);
+		backdrop-filter: blur(14px);
+		box-shadow: 0 -4px 18px rgb(0 0 0 / 0.15);
 	}
 	/* on its side: a slide-in aside on the right, the button on the lower left */
 	@media (max-height: 500px) {
@@ -828,10 +837,15 @@
 			bottom: 0;
 			width: min(24rem, 55vw);
 			max-height: none;
-			padding: 0 calc(0.6rem + env(safe-area-inset-right, 0px)) 0.6rem 0.6rem;
+			padding: 0.6rem calc(0.6rem + env(safe-area-inset-right, 0px)) 0.6rem 0.6rem;
+			border-radius: 18px 0 0 0;
 		}
 		.fab {
+			right: auto;
+			left: calc(1rem + env(safe-area-inset-left, 0px));
 			bottom: calc(0.8rem + env(safe-area-inset-bottom, 0px));
+			width: 3rem;
+			height: 3rem;
 		}
 	}
 </style>
