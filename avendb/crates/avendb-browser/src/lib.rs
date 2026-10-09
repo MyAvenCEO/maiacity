@@ -39,11 +39,14 @@
 //! grants in force, the devices that sync it and whether each opens it or only relays its ciphertext, and the notes and
 //! todos there with each vault's role on each.
 //!
-//! Each note opens on its history (`Device::note`): its lines, the main line and each branch, and every write of it,
-//! each with what it changed, to edit on any line, start a branch, merge, promote, restore, undo or fork, acting for a
-//! vault as any write does (`Device::set_text_on`, `branch`, `merge`, `restore`, `undo`, `fork`). And each vault's
-//! database shows as the device holds it, every entry with its record, its schema and its writes, and the schemas and
-//! lenses the app ships and its spaces publish (`Device::database`, `data`).
+//! Each note opens on its page (`Device::note`): its main line and each proposal (a branch of its history), and every
+//! edit of it, each with what it changed, to edit on any line, retitle, propose, merge, promote, restore, undo or make
+//! a variant (a new note with what a line shows, tagged `VARIANT` with the note it came from), acting for a vault as
+//! any edit does (`Device::set_text_on`, `set_title_on`, `propose`, `merge`, `restore`, `undo`, `variant`). And each
+//! vault's database shows as the device holds it, every entry with its record, its schema and its edits, and the
+//! schemas and lenses the app ships and its spaces publish (`Device::database`, `data`); and the database's history,
+//! every signed edit the device holds (the core's ops), each with what it does, who signed it and how, and the vaults
+//! it concerns (`Device::history`).
 //!
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
@@ -58,7 +61,7 @@ use avendb::doc::Item;
 use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, KeyScope};
 use avendb::lab::{Backup, Lab};
-use avendb::lens::{DocV2, Status};
+use avendb::lens::{DocV2, Status, TypeV2};
 use avendb::policy::{Action, Grant, Grantee, Kind, Line, Principal, Refusal, Role, Scope, State, Vault};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge, passkey_key};
 use avendb::wire::Wire as _;
@@ -82,6 +85,10 @@ pub const CARD: &str = "avendb:device";
 /// The tag of a vault's profile: a document in its home, the first space it founded, titled with the vault's name,
 /// written acting for the vault (`Device::profile`).
 pub const PROFILE: &str = "avendb:vault";
+
+/// The start of the tag of a variant: a note made from what one line of another shows (`Device::variant`), tagged
+/// with that note's entry in hex.
+pub const VARIANT: &str = "avendb:variant:";
 
 /// What the ceremony that unlocks a device brings back: the ceremony itself, over a challenge of the page's own, and
 /// the PRF output on the device's salt (`sign::device_salt`), which ends in `nonce`, its 32 bytes kept on the device.
@@ -405,15 +412,21 @@ impl Device {
         self.node.act(write).await.map_err(|why| anyhow!("the document is refused: {why:?}"))
     }
 
-    /// Vault `vault`'s database as the device holds it, for the page's DB & Schema tab (`data::database`).
+    /// Vault `vault`'s database as the device holds it, for the page's database studio (`data::database`).
     pub async fn database(&self, vault: VaultId) -> Value {
         self.node.read(move |lab, me| data::database(lab, me, vault)).await
     }
 
-    /// Note `entry` of space `space` as the device holds it, for the page's note viewer: its lines and every write of it
-    /// the device counts (`data::note`). `None` if it counts none.
+    /// Note `entry` of space `space` as the device holds it, for the page's note page: its main line, its proposals and
+    /// every edit of it the device counts (`data::note`). `None` if it counts none.
     pub async fn note(&self, space: SpaceId, entry: EntryId) -> Option<Value> {
         self.node.read(move |lab, me| data::note(lab, me, space, entry)).await
+    }
+
+    /// The database's history: every signed edit it holds, in the order it took them, for the studio's History view
+    /// (`data::history`).
+    pub async fn history(&self) -> Value {
+        self.node.read(data::history).await
     }
 
     /// Sets the text of block `block` of entry `entry` in space `space` on line `line` of its history, acting for vault
@@ -431,17 +444,45 @@ impl Device {
         self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
     }
 
-    /// Starts a branch named `name` of entry `entry` in space `space` from the version `from`, acting for vault
-    /// `actor` (`Lab::branch`): the new line, named by its first write.
-    pub async fn branch(
+    /// Retitles document `entry` of space `space` on line `line` of its history, and its opening heading with it,
+    /// acting for vault `actor`; its peers are told. Refused if it isn't a document.
+    pub async fn set_title_on(
+        &self,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        title: String,
+    ) -> Result<()> {
+        let edit = move |lab: &mut Lab, me| {
+            if lab.item_on(me, space, entry, line).and_then(Item::as_document).is_none() {
+                return Ok(None);
+            }
+            // the heading a note opens with (`cast::document`'s block 1) is its title too
+            let retitle = |item: &mut Item| {
+                _ = item.edit_document(|d| {
+                    if let Some(h) = d.blocks.iter_mut().find(|b| b.id == 1 && b.r#type == TypeV2::Heading) {
+                        h.text.clone_from(&title);
+                    }
+                    d.title = title;
+                });
+            };
+            lab.edit_on(me, actor, space, entry, line, retitle).map(Some)
+        };
+        let made = self.node.act(edit).await.map_err(|why| anyhow!("the edit is refused: {why:?}"))?;
+        made.map(|_| ()).context("only a document has a title")
+    }
+
+    /// Proposes a change to entry `entry` in space `space`: a proposal named `name`, a line of its own that starts
+    /// from version `from`, acting for vault `actor` (`Lab::branch`): the new line, named by its first edit.
+    pub async fn propose(
         &self,
         actor: VaultId,
         (space, entry): (SpaceId, EntryId),
         from: Vec<OpId>,
         name: String,
     ) -> Result<OpId> {
-        let branch = move |lab: &mut Lab, me| lab.branch(me, actor, (space, entry), &from, &name);
-        self.node.act(branch).await.map_err(|why| anyhow!("the branch is refused: {why:?}"))
+        let propose = move |lab: &mut Lab, me| lab.branch(me, actor, (space, entry), &from, &name);
+        self.node.act(propose).await.map_err(|why| anyhow!("the proposal is refused: {why:?}"))
     }
 
     /// Merges line `from` of entry `entry` in space `space` into line `into`, acting for vault `actor`; with `promote`,
@@ -480,17 +521,25 @@ impl Device {
         self.node.act(undo).await.map_err(|why| anyhow!("the undo is refused: {why:?}"))
     }
 
-    /// Forks what line `line` of entry `entry` in space `space` shows into a new entry of space `into`, with none of
-    /// its history, acting for vault `actor` (`Lab::fork`): the new entry.
-    pub async fn fork(
+    /// Makes a variant of entry `entry` in space `space`: a new entry of space `into` with what its line `line` shows
+    /// and none of its history, a document tagged `VARIANT` with the entry it came from in place of any such tag it
+    /// had, acting for vault `actor`: the new entry.
+    pub async fn variant(
         &self,
         actor: VaultId,
         (space, entry): (SpaceId, EntryId),
         line: Line,
         into: SpaceId,
     ) -> Result<EntryId> {
-        let fork = move |lab: &mut Lab, me| lab.fork(me, actor, (space, entry), line, into);
-        self.node.act(fork).await.map_err(|why| anyhow!("the fork is refused: {why:?}"))
+        let variant = move |lab: &mut Lab, me| {
+            let mut copy = lab.item_on(me, space, entry, line).ok_or(Refusal::ReadOnly)?.copy(me);
+            copy.edit_document(|d| {
+                d.tags.retain(|t| !t.starts_with(VARIANT));
+                d.tags.push(format!("{VARIANT}{}", hex(&entry.0)));
+            });
+            lab.create(me, actor, into, copy)
+        };
+        self.node.act(variant).await.map_err(|why| anyhow!("the variant is refused: {why:?}"))
     }
 
     /// The spaces it knows, each with the vault that founded it and the documents it reads there, but for the devices'
@@ -657,8 +706,10 @@ pub struct ItemView {
 
 /// What an entry holds, as a device reads it.
 pub enum What {
-    /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them.
-    Note { title: String, text: String },
+    /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
+    /// it is a variant of, if it is one (`Device::variant`); how many edits of it the device counts, and how many
+    /// proposals it has.
+    Note { title: String, text: String, variant_of: Option<EntryId>, edits: usize, proposals: usize },
     Todo { title: String, status: Status },
     /// What the device holds but can't open.
     Sealed,
@@ -715,9 +766,13 @@ impl World {
         };
         let item = |i: &ItemView| {
             let (kind, title, text, status) = match &i.what {
-                What::Note { title, text } => ("note", Some(title), Some(text), None),
+                What::Note { title, text, .. } => ("note", Some(title), Some(text), None),
                 What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
                 What::Sealed => ("sealed", None, None, None),
+            };
+            let (variant_of, edits, proposals) = match &i.what {
+                What::Note { variant_of, edits, proposals, .. } => (variant_of.map(|e| hex(&e.0)), *edits, *proposals),
+                _ => (None, 0, 0),
             };
             json!({
                 "entry": hex(&i.entry.0),
@@ -728,6 +783,9 @@ impl World {
                 "title": title,
                 "text": text,
                 "status": status,
+                "variantOf": variant_of,
+                "edits": edits,
+                "proposals": proposals,
             })
         };
         let space = |s: &SpaceView| {
@@ -830,7 +888,11 @@ fn item(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId, first: &Firsts)
             (Some(doc), _) if is_card(&doc) || is_profile(&doc) => return None,
             (Some(doc), _) => {
                 let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
-                What::Note { title: doc.title, text }
+                let of = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT)).and_then(BlobId::from_hex);
+                let history = lab.history(me, space, entry);
+                let edits = history.map_or(0, |h| h.commits().len());
+                let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
+                What::Note { title: doc.title, text, variant_of: of.map(|b| EntryId(b.0)), edits, proposals }
             }
             (None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (None, None) => What::Sealed,
@@ -1133,7 +1195,7 @@ impl PageDevice {
         })
     }
 
-    /// Vault `vault`'s (in hex) database as the device holds it, for the DB & Schema tab (`data::database`): a promise
+    /// Vault `vault`'s (in hex) database as the device holds it, for the database studio (`data::database`): a promise
     /// of an object.
     pub fn database(&self, vault: String) -> Promise {
         let device = self.0.clone();
@@ -1143,8 +1205,8 @@ impl PageDevice {
         })
     }
 
-    /// Note `entry` of space `space` (both in hex) as the device holds it, for the note viewer (`data::note`): a
-    /// promise of an object, of `undefined` while it counts no write of it.
+    /// Note `entry` of space `space` (both in hex) as the device holds it, for the note page (`data::note`): a
+    /// promise of an object, of `undefined` while it counts no edit of it.
     pub fn note(&self, space: String, entry: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
@@ -1154,8 +1216,15 @@ impl PageDevice {
         })
     }
 
+    /// The database's history, every signed edit it holds, in the order it took them, for the studio's History view
+    /// (`data::history`): a promise of an object.
+    pub fn history(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { js_sys::JSON::parse(&device.history().await.to_string()) })
+    }
+
     /// Sets the text of block `block` of entry `entry` in space `space` on line `line` of its history, acting for vault
-    /// `actor` (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its branch's.
+    /// `actor` (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its proposal's.
     #[wasm_bindgen(js_name = setTextOn)]
     pub fn set_text_on(
         &self,
@@ -1174,18 +1243,31 @@ impl PageDevice {
         })
     }
 
-    /// Starts a branch named `name` of entry `entry` in space `space` from the version `from`, an array of its writes,
-    /// acting for vault `actor` (`Device::branch`): a promise of the new line, its first write's id. Ids in hex.
-    pub fn branch(&self, actor: String, space: String, entry: String, from: Array, name: String) -> Promise {
+    /// Retitles document `entry` of space `space` on line `line`, acting for vault `actor` (`Device::set_title_on`): a
+    /// promise. Ids in hex; a line is `null` for the main line, else its proposal's.
+    #[wasm_bindgen(js_name = setTitleOn)]
+    pub fn set_title_on(&self, actor: String, space: String, entry: String, line: Option<String>, title: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, at, line) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?);
+            device.set_title_on(actor, at, line, title).await.map_err(js_value)?;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
+    /// Proposes a change to entry `entry` in space `space`: a proposal named `name` from the version `from`, an array
+    /// of its edits, acting for vault `actor` (`Device::propose`): a promise of the new line, its first edit's id. Ids
+    /// in hex.
+    pub fn propose(&self, actor: String, space: String, entry: String, from: Array, name: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
             let (actor, at, from) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, op_ids(&from)?);
-            Ok(hex(&device.branch(actor, at, from, name).await.map_err(js_value)?.0).into())
+            Ok(hex(&device.propose(actor, at, from, name).await.map_err(js_value)?.0).into())
         })
     }
 
     /// Merges line `from` of entry `entry` in space `space` into line `into`, acting for vault `actor`; with
-    /// `promote`, `into` then shows exactly what `from` does (`Device::merge`): a promise of the merge's write. Ids in
+    /// `promote`, `into` then shows exactly what `from` does (`Device::merge`): a promise of the merge's edit. Ids in
     /// hex; a line is `null` for the main line.
     pub fn merge(
         &self,
@@ -1204,8 +1286,8 @@ impl PageDevice {
         })
     }
 
-    /// Puts the record of version `version`, an array of writes, of entry `entry` in space `space` back on line
-    /// `line`, acting for vault `actor` (`Device::restore`): a promise of the write that does. Ids in hex.
+    /// Puts the record of version `version`, an array of edits, of entry `entry` in space `space` back on line
+    /// `line`, acting for vault `actor` (`Device::restore`): a promise of the edit that does. Ids in hex.
     pub fn restore(
         &self,
         actor: String,
@@ -1222,25 +1304,25 @@ impl PageDevice {
         })
     }
 
-    /// Undoes write `op` of entry `entry` in space `space` on line `line`, keeping every change since, acting for vault
-    /// `actor` (`Device::undo`): a promise of the write that does. Ids in hex.
-    pub fn undo(&self, actor: String, space: String, entry: String, line: Option<String>, op: String) -> Promise {
+    /// Undoes edit `edit` of entry `entry` in space `space` on line `line`, keeping every change since, acting for
+    /// vault `actor` (`Device::undo`): a promise of the edit that does. Ids in hex.
+    pub fn undo(&self, actor: String, space: String, entry: String, line: Option<String>, edit: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, line, op) =
-                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, OpId(id(&op)?));
-            Ok(hex(&device.undo(actor, at, line, op).await.map_err(js_value)?.0).into())
+            let (actor, at, line, edit) =
+                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, OpId(id(&edit)?));
+            Ok(hex(&device.undo(actor, at, line, edit).await.map_err(js_value)?.0).into())
         })
     }
 
-    /// Forks what line `line` of entry `entry` in space `space` shows into a new entry of space `into`, acting for
-    /// vault `actor` (`Device::fork`): a promise of the new entry. Ids in hex.
-    pub fn fork(&self, actor: String, space: String, entry: String, line: Option<String>, into: String) -> Promise {
+    /// Makes a variant of entry `entry` in space `space`: a new note of space `into` with what line `line` shows,
+    /// acting for vault `actor` (`Device::variant`): a promise of the new entry. Ids in hex.
+    pub fn variant(&self, actor: String, space: String, entry: String, line: Option<String>, into: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
             let (actor, at, line, into) =
                 (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, SpaceId(id(&into)?));
-            Ok(hex(&device.fork(actor, at, line, into).await.map_err(js_value)?.0).into())
+            Ok(hex(&device.variant(actor, at, line, into).await.map_err(js_value)?.0).into())
         })
     }
 

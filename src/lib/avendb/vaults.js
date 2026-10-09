@@ -19,7 +19,7 @@
 /**
  * @typedef {{ entry: string, by: string | null, public: boolean, roles: Record<string, Role>,
  *   kind: 'note' | 'todo' | 'sealed', title: string | null, text: string | null,
- *   status: 'open' | 'doing' | 'done' | null }} ItemView
+ *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, edits: number, proposals: number }} ItemView
  */
 /**
  * @typedef {{ id: string, founder: string, public: boolean, roles: Record<string, Role>, grants: GrantView[],
