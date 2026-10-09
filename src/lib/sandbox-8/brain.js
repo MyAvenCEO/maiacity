@@ -47,20 +47,23 @@ function factorOf(score, levels, geometric = false) {
 	return geometric ? levels[i] * (levels[i + 1] / levels[i]) ** (s - i) : levels[i] + (levels[i + 1] - levels[i]) * (s - i);
 }
 
+/** how many days of market history an aven sees: a week keeps each ask small (Liquid's free model limits tokens) */
+const HISTORY_DAYS = 7;
+
 /** the live market board as an aven sees it: per good, the price, how much is offered and wanted, and by whom */
 export function boardFor(world) {
 	return Object.fromEntries(
 		GOODS.map((g) => {
 			const m = world.market[g];
-			// the last two weeks: the market price each evening and the average actually traded each day
-			const days = world.stats.slice(-14);
+			// the last week: the market price each evening and the average actually traded each day
+			const days = world.stats.slice(-HISTORY_DAYS);
 			return [
 				g,
 				{
 					market_price: m.price,
-					market_price_last_14_days: days.map((r) => r.price[g]),
-					average_traded_last_14_days: days.map((r) => r.avg[g]),
-					units_traded_last_14_days: days.map((r) => r.units[g]),
+					market_price_last_7_days: days.map((r) => r.price[g]),
+					average_traded_last_7_days: days.map((r) => r.avg[g]),
+					units_traded_last_7_days: days.map((r) => r.units[g]),
 					offered_now: m.supply,
 					wanted_now: m.demand,
 					sellers_asking: m.sells.map((o) => `${o.name}: ${o.qty} at ${o.price}`),
@@ -120,7 +123,7 @@ function survivalFor(world, a) {
 }
 
 /** the typed questions for one aven this morning */
-export function questionsFor(world, a) {
+export function questionsFor(world, a, { full = true, walk = full } = {}) {
 	const q = {};
 	a.brain.levels = {}; // the price levels asked, so the answer is read against the same ones
 	for (const g of a.grows) {
@@ -130,7 +133,7 @@ export function questionsFor(world, a) {
 		a.brain.levels[`ask_${g}`] = lv.levels;
 		q[`ask_${g}`] = {
 			type: 'score',
-			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${NEED[g]} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 14-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford. What should your selling price for ${GOOD_LABEL[g]} be?`,
+			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${NEED[g]} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford. What should your selling price for ${GOOD_LABEL[g]} be?`,
 			criteria: lv.criteria
 		};
 	}
@@ -141,12 +144,15 @@ export function questionsFor(world, a) {
 		a.brain.levels[`bid_${g}`] = lv.levels;
 		q[`bid_${g}`] = {
 			type: 'score',
-			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${NEED[g]} a day, hold ${a.stock[g]} (${a.stock[g] < NEED[g] ? `short by ${NEED[g] - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / NEED[g])} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${g === 'water' ? `Your water reserve is ${Math.round(a.body.water)} of 100.` : `Your food reserve is ${Math.round(a.body.food)} of 100.`} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 14-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked. What is the most you should pay for ${GOOD_LABEL[g]}?`,
+			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${NEED[g]} a day, hold ${a.stock[g]} (${a.stock[g] < NEED[g] ? `short by ${NEED[g] - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / NEED[g])} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${g === 'water' ? `Your water reserve is ${Math.round(a.body.water)} of 100.` : `Your food reserve is ${Math.round(a.body.food)} of 100.`} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked. What is the most you should pay for ${GOOD_LABEL[g]}?`,
 			criteria: lv.criteria
 		};
 	}
-	q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: gives() };
-	q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 15%, chicken 30%, legumes 5% a night; water keeps.', criteria: RESERVE };
+	// the slower decisions (haggling, stock) only on a full ask, and where to walk on that or once its last walk is done:
+	// every ask carries the whole state once per question, so fewer questions is fewer tokens
+	if (full) q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: gives() };
+	if (full) q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 15%, chicken 30%, legumes 5% a night; water keeps.', criteria: RESERVE };
+	if (!full && !walk) return q;
 	const stops = visitOptions(world, a);
 	q.visit_1 = { type: 'choice', instructions: 'Who should you walk to now, to buy what you lack or sell what you grow?', criteria: stops };
 	q.visit_2 = { type: 'choice', instructions: 'And who next, after that visit?', criteria: stops };
