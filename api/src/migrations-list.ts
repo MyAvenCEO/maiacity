@@ -862,4 +862,14 @@ export const MIGRATIONS: Migration[] = [
       UPDATE econ_runs r SET name = 'World ' || x.n FROM (SELECT id, row_number() OVER (ORDER BY started, id) AS n FROM econ_runs) x WHERE r.id = x.id;
     `,
   },
+  {
+    // A new world is a MIP like any other (Samuel, 2026-10-09): action 'world', with its settings and the world it
+    // follows in `world` ({ name, values, model, seed, after, after_name, diff }); accepting it makes the world.
+    id: "0038-economy-world-mips",
+    sql: `
+      ALTER TABLE mips ADD COLUMN world JSONB;
+      ALTER TABLE mips DROP CONSTRAINT IF EXISTS mips_action_check;
+      ALTER TABLE mips ADD CONSTRAINT mips_action_check CHECK (action IN ('edit', 'create', 'delete', 'world'));
+    `,
+  },
 ];

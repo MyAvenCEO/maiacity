@@ -513,29 +513,15 @@ pub struct EconomyMips {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct EconomyMip {
     /// the MIP: { title, description (prose: what and why), config (the config's id), action ("edit" the default,
-    /// "create" a new config, "delete" it), name and about (a new config's name and description; on edit, a rename),
-    /// from (create: the config it starts from), cards: [whole config cards as they will be once accepted: { id, kind
+    /// "create" a new config, "delete" it, or "world": a new world, made fresh on the config once accepted, with
+    /// world: { name, values ({ key: number } tried on top), model ("d1" or "qwen"), seed, after (the id of the world
+    /// it follows, from economy_runs; default the one kept last) }; the answer lists every setting that differs from
+    /// that world), name and about (a new config's name and description; on edit, a rename), from (create: the config
+    /// it starts from), cards: [whole config cards as they will be once accepted (for a world: on top of its config): { id, kind
     /// (policy, world, resource or recipe), name, description, values: { key: number } (keys from economy_configs'
     /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }],
     /// remove: [ids of cards to take out] }
     pub mip: Value,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyWorld {
-    /// the new world: { name (default "World N"), config (a config's id from economy_configs, default valley),
-    /// cards (instead: whole config cards to run on, as economy_mip_create takes them, resources, recipes and QuickJS
-    /// code too), values ({ key: number } tried on top, keys from economy_configs' catalogue), model ("d1" or "qwen"),
-    /// seed }
-    pub world: Value,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyWorldUpdate {
-    /// the world's id, from economy_runs
-    pub id: String,
-    /// what changes: { name, values ({ key: number }, merged; null takes a value out), model, cards (whole) }
-    pub change: Value,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1584,7 +1570,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Propose a MIP: a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one. It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
+        description = "Propose a MIP: a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one, or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
     )]
     async fn economy_mip_create(&self, Parameters(a): Parameters<EconomyMip>) -> String {
         let mut mip = a.mip;
@@ -1592,20 +1578,6 @@ impl Studio {
             o.insert("via".to_string(), json!("mcp"));
         }
         text(self.api("POST", "/api/economy/mips", Some(mip)).await)
-    }
-
-    #[tool(
-        description = "Make a new world of the economy sandbox: fresh land and avens on a config (or cards given whole) with values tried on top, and the model its avens ask. It waits in the page's list of worlds until it is opened there and started (the valley runs on the page). Each world is a capsule: its own settings, and every aven's own HEARTS and brain in it (set its brains before it starts with economy_brain_edit and its id)."
-    )]
-    async fn economy_world_create(&self, Parameters(a): Parameters<EconomyWorld>) -> String {
-        text(self.api("POST", "/api/economy/worlds", Some(a.world)).await)
-    }
-
-    #[tool(
-        description = "Change a world's settings (its name, values tried on top, the model, or its cards whole). They are what it runs on the next time it is opened on the page; change a world that isn't playing right now."
-    )]
-    async fn economy_world_update(&self, Parameters(a): Parameters<EconomyWorldUpdate>) -> String {
-        text(self.api("PATCH", &format!("/api/economy/worlds/{}", a.id), Some(a.change)).await)
     }
 
     #[tool(

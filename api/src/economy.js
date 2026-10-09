@@ -25,7 +25,7 @@ export class EconomyError extends Error {
 }
 
 const SLUG = /^[a-z][a-z0-9-]{1,40}$/;
-const ACTIONS = ["edit", "create", "delete"];
+const ACTIONS = ["edit", "create", "delete", "world"];
 const MAX_CARDS = 100;
 const MAX_MIP = 1_000_000; // one MIP's cards, in characters
 const MAX_JSON = 2_000_000; // one request's days, in characters
@@ -97,7 +97,7 @@ export function catalogue() {
  *   { config, action: edit | create | delete, name?, about?, from?, cards: [card], remove: [card id] }
  */
 async function checkMip(body, q = db) {
-  const config = text(body?.config, 41);
+  const config = text(body?.config, 41) || (body?.action === "world" ? "valley" : "");
   const action = body?.action ?? "edit";
   if (!ACTIONS.includes(action)) throw new EconomyError(`A MIP's action is one of ${ACTIONS.join(", ")}.`);
   const { rows } = await q.query("SELECT * FROM econ_configs WHERE id = $1", [config]);
@@ -148,7 +148,43 @@ async function checkMip(body, q = db) {
   }
   if (action === "edit" && !cards.length && !remove.length && name == null && about == null) throw new EconomyError("A MIP needs at least one card, or a card to take out, or a new name.");
   const base = Object.fromEntries([...cards.map((c) => c.id), ...remove].map((id) => [id, baseCards.find((c) => c.id === id) ?? null]));
-  return { config, action, name: action === "create" ? name || config : name, about, from, cards, remove, base, base_version: live ? Number(live.version) : null };
+  const world = action === "world" ? await worldSpec(body?.world, applyCards(baseCards, cards, remove), q) : null;
+  return { config, action, name: action === "create" ? name || config : action === "world" ? null : name, about: action === "world" ? null : about, from, cards, remove, base, base_version: live ? Number(live.version) : null, world };
+}
+
+/**
+ * A world MIP (Samuel, 2026-10-09: a new world is a proposal like any other, with all its settings): it starts on the
+ * config's cards with the MIP's cards changed or taken out, and `world` { name, values tried on top, model, seed,
+ * after }. `after` is the world it follows (default: the one kept last); `diff` lists every setting that differs from
+ * that world, so the change between the two is plain.
+ */
+async function worldSpec(w, cards, q) {
+  const values = worldValues(w?.values);
+  const model = ["d1", "qwen"].includes(w?.model) ? w.model : "d1";
+  const seed = w?.seed == null || w.seed === "" || !Number.isFinite(Number(w.seed)) ? null : Math.trunc(Number(w.seed));
+  const afterId = w?.after ? text(w.after, 41) : null;
+  const { rows } = afterId
+    ? await q.query("SELECT id, name, state FROM econ_runs WHERE id = $1", [afterId])
+    : await q.query("SELECT id, name, state FROM econ_runs WHERE state IS NOT NULL ORDER BY saved DESC NULLS LAST LIMIT 1");
+  if (afterId && !rows[0]) throw new EconomyError(`No world ${afterId} to follow.`);
+  const prev = rows[0] ?? null;
+  const s = prev?.state?.settings;
+  const diff = [];
+  if (s) {
+    const now = { ...paramsOf(cards), ...values };
+    const was = { ...(s.config?.cards ? paramsOf(s.config.cards) : { ...paramsOf([]), ...(s.config?.params ?? {}) }), ...(s.local ?? {}) };
+    for (const p of PARAMS) if (was[p.key] !== now[p.key]) diff.push(`${p.label}: ${was[p.key]} → ${now[p.key]}${p.unit && !/=|at least|yes/.test(p.unit) ? ` ${p.unit}` : ""}`);
+    const byId = (l) => Object.fromEntries((l ?? []).map((c) => [c.id, c]));
+    const a = byId(s.config?.cards);
+    const b = byId(cards);
+    for (const id of Object.keys(b)) {
+      if (!a[id]) diff.push(`new card ${b[id].name || id}`);
+      else if (json(a[id].code ?? "") !== json(b[id].code ?? "") || json(a[id].data ?? null) !== json(b[id].data ?? null)) diff.push(`card ${b[id].name || id}: its code or data changed`);
+    }
+    for (const id of Object.keys(a)) if (!b[id]) diff.push(`card ${a[id].name || id} taken out`);
+    if (s.model && s.model !== model) diff.push(`model: ${s.model} → ${model}`);
+  }
+  return { name: text(w?.name, 80), values, model, seed, after: prev?.id ?? null, after_name: prev?.name ?? null, diff };
 }
 
 const mipRow = (r) => ({
@@ -164,6 +200,7 @@ const mipRow = (r) => ({
   remove: r.remove,
   base: r.base,
   base_version: r.base_version == null ? null : Number(r.base_version),
+  world: r.world ?? null,
   status: r.status,
   author: r.author,
   author_name: r.author_name ?? null,
@@ -184,9 +221,9 @@ export async function createMip(author, body) {
   const m = await checkMip(body);
   const via = body?.via === "mcp" ? "mcp" : "page";
   const { rows } = await db.query(
-    `INSERT INTO mips (title, description, config_id, action, name, about, from_id, cards, remove, base, base_version, author, via)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, ($9::text)::jsonb, ($10::text)::jsonb, $11, $12, $13) RETURNING number`,
-    [title, text(body?.description, 20000), m.config, m.action, m.name, m.about, m.from, json(m.cards), json(m.remove), json(m.base), m.base_version, author, via],
+    `INSERT INTO mips (title, description, config_id, action, name, about, from_id, cards, remove, base, base_version, author, via, world)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, ($9::text)::jsonb, ($10::text)::jsonb, $11, $12, $13, ($14::text)::jsonb) RETURNING number`,
+    [title, text(body?.description, 20000), m.config, m.action, m.name, m.about, m.from, json(m.cards), json(m.remove), json(m.base), m.base_version, author, via, json(m.world)],
   );
   return getMip(Number(rows[0].number));
 }
@@ -215,9 +252,14 @@ export async function decideMip(number, by, { accept, note } = {}) {
       return { number, status: "rejected" };
     }
     // the config may have moved on since it was proposed: check again, against now
-    const m = await checkMip({ config: row.config_id, action: row.action, name: row.name, about: row.about, from: row.from_id, cards: row.cards, remove: row.remove }, tx);
+    const m = await checkMip({ config: row.config_id, action: row.action, name: row.name, about: row.about, from: row.from_id, cards: row.cards, remove: row.remove, world: row.world }, tx);
     let result;
-    if (m.action === "delete") {
+    if (m.action === "world") {
+      // the world is made, fresh, with every setting the MIP proposed; it waits in the list until it is opened
+      const { rows: c } = await tx.query("SELECT cards FROM econ_configs WHERE id = $1", [m.config]);
+      const w = await createWorld(by, { name: m.world.name, config: m.config, cards: applyCards(c[0].cards, m.cards, m.remove), values: m.world.values, model: m.world.model, seed: m.world.seed, mip: number }, tx);
+      result = { world: w.id, name: w.name, diff: m.world.diff, after_name: m.world.after_name };
+    } else if (m.action === "delete") {
       const { rows: n } = await tx.query("SELECT count(*)::int AS n FROM econ_configs WHERE deleted IS NULL");
       if (Number(n[0].n) <= 1) throw new EconomyError("That is the last config: the valley needs one to run on.", 409);
       await tx.query("UPDATE econ_configs SET deleted = now(), updated = now() WHERE id = $1", [m.config]);
@@ -288,19 +330,17 @@ export async function startRun(player, body) {
 }
 
 /**
- * A new world, made here rather than on the page (an agent over the studio's MCP may make one): its name, the config it
- * starts from (its current cards, or `cards` given whole, resources, recipes and code too), values tried on top
- * (`values`: { key: number }), the model its avens ask (d1 or qwen) and a seed. It waits in the list of worlds, fresh,
- * until someone opens it on the page and presses Start.
+ * A new world, made when its MIP is accepted (decideMip): its name, the config it starts from (its current cards, or
+ * `cards` given whole, resources, recipes and code too), values tried on top (`values`: { key: number }), the model its
+ * avens ask (d1 or qwen), a seed and the MIP that made it. It waits in the list of worlds, fresh, until someone opens it
+ * on the page and presses Start.
  */
-export async function createWorld(player, body) {
+async function createWorld(player, body, q = db) {
   const configId = text(body?.config ?? body?.config_id ?? "valley", 41) || "valley";
-  let cfg = null;
-  try {
-    cfg = await getConfig(configId);
-  } catch {
-    if (!Array.isArray(body?.cards)) throw new EconomyError(`No config ${configId}: name one from economy_configs, or send the cards whole.`, 404);
-  }
+  // read on `q`: inside the MIP's transaction, never on a second connection
+  const cfg = (await q.query("SELECT name, version, cards FROM econ_configs WHERE id = $1 AND deleted IS NULL", [configId])).rows[0] ?? null;
+  if (cfg) cfg.version = Number(cfg.version);
+  if (!cfg && !Array.isArray(body?.cards)) throw new EconomyError(`No config ${configId}: name one from economy_configs, or send the cards whole.`, 404);
   let cards = cfg?.cards ?? [];
   if (Array.isArray(body?.cards)) {
     if (body.cards.length > MAX_CARDS) throw new EconomyError(`At most ${MAX_CARDS} cards.`);
@@ -314,9 +354,9 @@ export async function createWorld(player, body) {
   const local = worldValues(body?.values);
   const params = paramsOf(cards);
   const model = ["d1", "qwen"].includes(body?.model) ? body.model : "d1";
-  const settings = { config: { id: cfg ? configId : null, name: cfg?.name ?? (text(body?.config_name, 80) || "Cards given"), version: cfg?.version ?? 0, cards, params }, local, model };
-  const seed = Number.isFinite(Number(body?.seed)) ? Math.trunc(Number(body.seed)) : Math.floor(Math.random() * 1e9);
-  const { rows } = await db.query(
+  const settings = { config: { id: cfg ? configId : null, name: cfg?.name ?? (text(body?.config_name, 80) || "Cards given"), version: cfg?.version ?? 0, cards, params }, local, model, mip: body?.mip ?? null };
+  const seed = body?.seed != null && Number.isFinite(Number(body.seed)) ? Math.trunc(Number(body.seed)) : Math.floor(Math.random() * 1e9);
+  const { rows } = await q.query(
     `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary, name, state, saved)
      VALUES ($1, $2, $3, ($4::text)::jsonb, $5, $6, $7, '{}'::jsonb,
        COALESCE(NULLIF($8, ''), 'World ' || ((SELECT count(*) FROM econ_runs) + 1)), ($9::text)::jsonb, now()) RETURNING *`,
@@ -333,36 +373,6 @@ function worldValues(values) {
     if (p && Number.isFinite(Number(v))) out[k] = Math.min(p.max, Math.max(p.min, Number(v)));
   }
   return out;
-}
-
-/**
- * A world's settings changed from outside (the MCP): its name, values tried on top (`values`, merged; null removes
- * one), the model, or its cards whole. They are what the world runs on the next time it is opened on the page; a
- * world open on a page right now keeps its own until then (and saves them over these), so change one that isn't playing.
- */
-export async function updateWorld(id, body) {
-  const { rows } = await db.query("SELECT state FROM econ_runs WHERE id = $1", [id]);
-  if (!rows[0]) throw new EconomyError("No such world.", 404);
-  const state = rows[0].state ?? {};
-  const s = state.settings ?? null;
-  if (!s) throw new EconomyError("That world is from before worlds kept their settings: make a new one.", 409);
-  if (Array.isArray(body?.cards)) {
-    const cards = [];
-    for (const raw of body.cards) {
-      const c = checkCard(raw);
-      if (c.error) throw new EconomyError(c.error);
-      cards.push(c.card);
-    }
-    s.config = { ...s.config, cards, params: paramsOf(cards) };
-  }
-  if (body?.values && typeof body.values === "object") {
-    const next = { ...(s.local ?? {}), ...worldValues(body.values) };
-    for (const [k, v] of Object.entries(body.values)) if (v === null) delete next[k];
-    s.local = next;
-  }
-  if (["d1", "qwen"].includes(body?.model)) s.model = body.model;
-  await db.query(`UPDATE econ_runs SET state = ($2::text)::jsonb, name = COALESCE(NULLIF($3, ''), name), updated = now() WHERE id = $1`, [id, json({ ...state, settings: s }), text(body?.name, 80)]);
-  return { id, settings: s };
 }
 
 /** The whole valley as it stands now (the page's own snapshot: avens, market, weather, the clock and its dice), so it
