@@ -5,15 +5,34 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, step, ranking, want, MARKET, ROT, MINT_PER_DAY, DECAY_PER_YEAR, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
+	import { createWorld, step, ranking, want, MARKET, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S } from './economy.js';
+	import { RULES, setRules, changedRules } from './rules.js';
+	import RulesView from './RulesView.svelte';
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
+
+	// the rules this viewer changed last time, kept in this browser only
+	const SAVED = 'sandbox-8-rules';
+	try {
+		setRules(JSON.parse(localStorage.getItem(SAVED) ?? '{}'));
+	} catch {
+		/* no storage here: the defaults */
+	}
+	function saveRules() {
+		try {
+			localStorage.setItem(SAVED, JSON.stringify(changedRules()));
+		} catch {
+			/* no storage here */
+		}
+		snap = snapshot();
+	}
 
 	const SPEEDS = [
 		{ k: 1, label: 'Real time' },
 		{ k: 24, label: '1 day = 1 h' },
 		{ k: 1440, label: '1 day = 1 min' },
+		{ k: 4320, label: '1 month = 10 min' },
 		{ k: 8640, label: '1 month = 5 min' }
 	];
 
@@ -61,6 +80,7 @@
 			// the daily rows, only while the Stats view is open (each row is never changed once written)
 			stats: page === 'stats' ? world.stats.slice() : [],
 			weather: { ...world.weather },
+			policy: { mint: RULES.mint, decay: RULES.decay, start: world.startHearts },
 			// every aven's wants right now: per good, what it holds against tonight's need and what it still wants to buy
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
@@ -418,7 +438,7 @@
 	};
 </script>
 
-<div class="market" class:open={panelOpen} class:statsview={page === 'stats'}>
+<div class="market" class:open={panelOpen} class:statsview={page !== 'valley'}>
 	<header>
 		<div class="title">
 			<b>Sandbox 7 · Avens trading</b>
@@ -427,6 +447,8 @@
 		<nav class="views" aria-label="View">
 			<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
 			<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
+			<button class:on={page === 'policy'} onclick={() => setView('policy')}>Policies</button>
+			<button class:on={page === 'world'} onclick={() => setView('world')}>World</button>
 		</nav>
 		<div class="controls">
 			<button onclick={toggle}>{paused ? (started ? '▶ Play' : '▶ Start') : '❚❚ Pause'}</button>
@@ -452,6 +474,11 @@
 			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} />
 		</div>
 	{/if}
+	{#if page === 'policy' || page === 'world'}
+		<div class="statspage">
+			{#key page}<RulesView view={page} onchange={saveRules} onrestart={() => { reset(); setView('valley'); }} />{/key}
+		</div>
+	{/if}
 
 	<aside>
 		<section>
@@ -464,13 +491,13 @@
 							<b>{row.name}</b>
 							<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>
 							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn}`}</span>
-							<span class="delta" class:up={row.hearts >= START_HEARTS}>{row.alive ? `${row.hearts >= START_HEARTS ? '+' : ''}${fmt(row.hearts - START_HEARTS)}` : ''}</span>
+							<span class="delta" class:up={row.hearts >= snap.policy.start}>{row.alive ? `${row.hearts >= snap.policy.start ? '+' : ''}${fmt(row.hearts - snap.policy.start)}` : ''}</span>
 						</button>
 					</li>
 				{/each}
 			</ol>
 			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give 40 to 70%, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
-			<p class="brain">HEARTS: every aven mints {MINT_PER_DAY} a day; every HEART decays {Math.round(DECAY_PER_YEAR * 100)}% a year.</p>
+			<p class="brain">HEARTS: every aven mints {snap.policy.mint} a day; every HEART decays {snap.policy.decay}% a year. <button class="link" onclick={() => setView('policy')}>Policies</button></p>
 			<p class="brain">
 				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered, decided by the stand-in rule ({calls.lastError}){/if}
 			</p>
@@ -638,6 +665,14 @@
 		background: transparent;
 		border-radius: 8px;
 		padding: 0.25rem 0.8rem;
+	}
+	.link {
+		border: 0;
+		background: none;
+		padding: 0;
+		text-decoration: underline;
+		font-size: inherit;
+		color: inherit;
 	}
 	.views button.on {
 		background: #24452f;
