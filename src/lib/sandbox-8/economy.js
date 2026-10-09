@@ -55,15 +55,18 @@ const homeSpot = (a) => ({ x: a.territory.x, y: a.territory.y - 6 });
 
 const NAMES = ['Ama', 'Bo', 'Cyra', 'Dov', 'Eli', 'Fen', 'Gia', 'Hal', 'Ivo', 'Juno'];
 const COLOURS = ['#e05a6d', '#f0a03c', '#4fb37a', '#4f8fd9', '#9b6bd6', '#2bb3b1', '#b8763a', '#d65db1', '#7f8c3a', '#5a6bd6'];
-/** a small seeded random, so a reset with the same seed gives the same valley */
-export function rng(seed) {
-	let s = seed >>> 0 || 1;
-	return () => {
+/** a small seeded random, so a reset with the same seed gives the same valley; `at` picks it up where a saved world
+ * left it (its `.at()`) */
+export function rng(seed, at = null) {
+	let s = at ?? (seed >>> 0 || 1);
+	const next = () => {
 		s ^= s << 13;
 		s ^= s >>> 17;
 		s ^= s << 5;
 		return (s >>> 0) / 4294967296;
 	};
+	next.at = () => s;
+	return next;
 }
 
 /** where the ten lands lie: four along the top, one on the right, four along the bottom, one on the left, the market square in the middle */
@@ -136,7 +139,8 @@ export function createWorld(seed = Date.now() % 1e9) {
 			x: home.x,
 			y: home.y - 6,
 			fetch: [], // the sellers it still has to walk to for what it bought: { from: aven id, goods: { good: qty } }
-			hearts: RULES.startHearts,
+			hearts: RULES.startHearts, // every world is a capsule (Samuel): an aven's money is its own in each
+			startHearts: RULES.startHearts, // what it began this life with (a rebirth begins it again)
 			minted: 0, // HEARTS minted so far
 			decayed: 0, // HEARTS lost to decay so far
 			// two days' rations to start, so nobody starves before the first trade, plus the first day's harvest
@@ -160,6 +164,36 @@ export function createWorld(seed = Date.now() % 1e9) {
 	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
 	updateMarket(world);
 	record(world, 0, {});
+	return world;
+}
+
+/**
+ * The whole world as it stands, to save and open again later (Samuel: every world is kept, and can be played on):
+ * every aven (its ledger's newest part), the market (its chart's last weeks), the weather, the clock and where its dice
+ * are. The daily stats rows are kept with the run day by day, so they are not in here; nor is anything a brain is in
+ * the middle of. Plain JSON.
+ */
+export function saveWorld(world) {
+	const { rand, outbox, events, stats, avens, market, trades, decisions, ...rest } = world;
+	return {
+		v: 1,
+		...JSON.parse(JSON.stringify(rest)),
+		rng: rand.at(),
+		trades: trades.slice(-100),
+		decisions: (decisions ?? []).slice(-100),
+		market: Object.fromEntries(GOODS.map((g) => [g, { ...market[g], series: market[g].series.slice(-24 * 21) }])),
+		avens: avens.map((a) => {
+			const { mind, keep, brain, ledger, ...own } = a;
+			return { ...JSON.parse(JSON.stringify(own)), ledger: ledger.slice(-150), brain: { ready: brain.ready, last: brain.last ?? null, asks: brain.asks ?? 0 } };
+		})
+	};
+}
+
+/** a saved world, alive again: its stats rows come from the run's days */
+export function loadWorld(saved, stats = []) {
+	const { v, rng: at, ...rest } = saved;
+	const world = { ...rest, rand: rng(saved.seed, at), events: [], outbox: null, stats };
+	for (const a of world.avens) a.brain = { ready: !!a.brain?.ready, pending: false, last: a.brain?.last ?? null, error: null, t0: -Infinity, realAt: -Infinity, asks: a.brain?.asks ?? 0 };
 	return world;
 }
 
@@ -397,9 +431,15 @@ function endOfDay(world) {
 			world.tally.decayed += lost.HEARTS;
 		}
 		if (a.alive && a.health <= 0) {
+			// it dies and loses everything it held (Samuel): its HEARTS and its store go with it
 			a.alive = false;
 			a.diedOn = world.day;
-			log(world, a, { kind: 'death' });
+			a.lost = { hearts: Math.round(a.hearts * 100) / 100, stock: { ...a.stock }, cause: a.body.water <= 0 ? 'thirst' : 'hunger' };
+			a.hearts = 0;
+			for (const g of GOODS) a.stock[g] = 0;
+			a.fetch = [];
+			a.carry = {};
+			log(world, a, { kind: 'death', cause: a.lost.cause, lost: a.lost.hearts });
 		}
 		if (a.alive) {
 			const out = hooked('mint', { aven: a }, mint.out.HEARTS, 0, 1e6);
@@ -410,6 +450,15 @@ function endOfDay(world) {
 		a.hearts = Math.round(a.hearts * 100) / 100;
 	}
 	world.day += 1;
+	// the dead come back after a while (Samuel: 7 days), on their own land, fresh: the starting HEARTS, nothing in store
+	for (const a of world.avens)
+		if (!a.alive && a.diedOn != null && world.day - a.diedOn >= RULES.rebirthDays) {
+			Object.assign(a, { alive: true, diedOn: null, hearts: RULES.startHearts, health: 100, body: { water: 100, food: 100 }, reborn: (a.reborn ?? 0) + 1, startHearts: RULES.startHearts });
+			for (const g of GOODS) a.stock[g] = 0;
+			a.x = a.territory.x;
+			a.y = a.territory.y - 6;
+			log(world, a, { kind: 'reborn', hearts: RULES.startHearts });
+		}
 	weather(world);
 	CODE.run?.see(valleyView(world));
 	for (const a of world.avens) {

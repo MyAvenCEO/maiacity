@@ -28,6 +28,7 @@ export const PARAMS = [
 	// ---- world: the avens ----
 	{ key: 'avens', view: 'world', section: 'Avens', label: 'Avens', unit: 'avens', min: 2, max: 10, step: 1, value: 10, reset: true, say: (v) => `${v} avens live in the valley, each on its own land.` },
 	{ key: 'startDays', view: 'world', section: 'Avens', label: 'Starting rations', unit: 'days', min: 0, max: 30, step: 1, value: 2, reset: true, say: (v) => `Each aven starts with ${v} days of every need in store, plus its first harvest.` },
+	{ key: 'rebirthDays', view: 'world', section: 'Avens', label: 'Rebirth after', unit: 'days', min: 1, max: 120, step: 1, value: 7, say: (v) => `An aven that dies loses everything it held and is reborn ${v} day${v === 1 ? '' : 's'} later on its own land, with the starting HEARTS and nothing in store; its brain remembers.` },
 	{ key: 'walk', view: 'world', section: 'Avens', label: 'Walking speed', unit: 'units an hour', min: 20, max: 20000, step: 10, value: 600, say: (v) => `After a deal the buyer walks over to fetch what it bought, at ${n(v)} units an hour (the valley is 1,200 wide), slower when weak. Only a picture: the goods are its as soon as the deal is struck.` },
 	// ---- world: needs and bodies ----
 	{ key: 'needWater', view: 'world', section: 'Needs and bodies', label: 'Water a day', unit: 'units', min: 0, max: 20, step: 1, value: 3, say: (v) => `Every aven drinks ${v} WATER a night.` },

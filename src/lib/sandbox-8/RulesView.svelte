@@ -69,7 +69,7 @@
 		<div class="actions">
 			<button onclick={defaults} disabled={!Object.keys(changedRules()).length && !changed.length}>Back to the config</button>
 			<button onclick={onpropose} disabled={!Object.keys(changedRules()).length && !changed.length}>Propose as a MIP</button>
-			<button class="go" onclick={onrestart}>Reset the valley with these{waiting.length ? ` (${waiting.length} waiting)` : ''}</button>
+			<button class="go" onclick={onrestart}>Open a new world with these{waiting.length ? ` (${waiting.length} waiting)` : ''}</button>
 		</div>
 	</header>
 
