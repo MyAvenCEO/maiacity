@@ -109,6 +109,7 @@ pub async fn start(config: &Config) -> Result<Running> {
     let url = config.relay_url.clone().unwrap_or_else(|| relay.url());
     let opts = Options {
         bind: Some(config.bind),
+        direct: false,
         relay: Some(url),
         retry: Duration::from_secs(1),
         store: None,

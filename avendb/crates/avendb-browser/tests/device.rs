@@ -60,7 +60,7 @@ impl Browser {
 
 /// Where a browser's device named `name` starts, through the relay at `url`, its randomness drawn from `seed`.
 fn start(name: &str, url: &RelayUrl, seed: u8) -> Start {
-    Start { name: name.into(), relay: url.clone(), entropy: [seed; 32], now: now() }
+    Start { name: name.into(), relay: url.clone(), entropy: [seed; 32], now: now(), direct: false, store: None }
 }
 
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.

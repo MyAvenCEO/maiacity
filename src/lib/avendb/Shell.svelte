@@ -23,9 +23,9 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
-	 *   link: string, qr: string }}
+	 *   link: string, qr: string, sockets?: string[] | null }}
 	 */
-	let { world, api, doing, error, thisName, link, qr } = $props();
+	let { world, api, doing, error, thisName, link, qr, sockets = null } = $props();
 
 	/** the vault the person picked to act as, and the one to look at: their own until they pick another */
 	let enacted = $state('');
@@ -194,7 +194,7 @@
 		{:else if tab === 'todos'}
 			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onact={enact} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'access' || tab === 'sync'}
-			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} />
+			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} />
 		{:else}
 			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onact={enact} onview={go} />
 		{/if}

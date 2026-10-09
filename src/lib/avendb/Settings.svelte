@@ -9,14 +9,19 @@
 -->
 <script>
 	import { untrack } from 'svelte';
+	import { native } from '$lib/native';
 	import Mark from './Mark.svelte';
 	import { allows, count, KIND_HINTS, KINDS, list, nameOf, ROLE_HINTS, ROLES, short } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   tab: 'about' | 'members' | 'access' | 'sync', thisName: string, link: string, qr: string }}
+	 *   tab: 'about' | 'members' | 'access' | 'sync', thisName: string, link: string, qr: string,
+	 *   sockets?: string[] | null }}
 	 */
-	let { world, vault, actor, api, busy, tab, thisName, link, qr } = $props();
+	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null } = $props();
+
+	/** This device, as the person sees it: in the Mac app, the Mac. */
+	const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const v = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(vault)));
@@ -120,7 +125,7 @@
 				<dd>
 					{v.root ? 'its root, or ' : ''}{v.threshold} of its {count(v.owners.length, 'owner')} to approve.
 				</dd>
-				<dt>This browser</dt>
+				<dt>{Here}</dt>
 				<dd>{acting}</dd>
 			</dl>
 		</article>
@@ -173,14 +178,14 @@
 				<p class="soft">A coop has no devices: it acts only through its owners' devices.</p>
 			{:else if !v.devices.length}
 				<p class="soft">
-					No device of its own yet: {v.via ? 'this browser acts for it through its owners' : 'its owners act for it'}.
+					No device of its own yet: {v.via ? `${here} acts for it through its owners` : 'its owners act for it'}.
 				</p>
 			{/if}
 			<ul class="list">
 				{#each v.devices as d (d.id)}
 					<li>
 						{#if d.me && renaming !== null}
-							<input class="field" bind:value={renaming} aria-label="This browser's name" />
+							<input class="field" bind:value={renaming} aria-label={`${Here}'s name`} />
 							<button
 								class="btn primary"
 								disabled={busy || !renaming.trim()}
@@ -192,7 +197,7 @@
 						{:else}
 							<b>{d.me ? (d.name ?? thisName) : deviceName(d.id)}</b>
 							{#if d.me}
-								<span class="chip accent">this browser</span>
+								<span class="chip accent">{here}</span>
 								<button class="btn quiet" disabled={busy} onclick={() => (renaming = d.name ?? thisName)}>Rename</button>
 							{:else}
 								<span class="soft mono">{short(d.id)}</span>
@@ -215,12 +220,22 @@
 				<input class="field code" readonly value={link} onfocus={(e) => e.currentTarget.select()} />
 			</article>
 			<article class="card">
-				<h3>This browser</h3>
+				<h3>{Here}</h3>
+				{#if sockets}
+					<p>
+						<span class="chip ok">Native</span>
+						avenDB runs beside the app, not in this page: it reaches your other devices directly, over {count(
+							sockets.length,
+							'UDP socket'
+						)} of its own, through avenDB's relay only where your network leaves no other way, and keeps your vault in a
+						folder on this Mac.
+					</p>
+				{/if}
 				<p class="soft">
 					Forgetting your account here leaves your vault and everything in it with your other devices and avenDB's server:
 					sign in again with your passkey.
 				</p>
-				<button class="btn danger" disabled={busy} onclick={api.forget}>Forget my account on this browser</button>
+				<button class="btn danger" disabled={busy} onclick={api.forget}>Forget my account on {here}</button>
 			</article>
 		{/if}
 	</div>

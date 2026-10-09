@@ -1,0 +1,2 @@
+# avenDB's native device, which build.rs puts here at each build: no reason to build the app again
+binaries/

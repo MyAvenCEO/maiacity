@@ -5,7 +5,9 @@
 	ceremony. Every device of the vault shows by the name on its card, which the device writes itself into the vault's
 	first space, end-to-end encrypted like the notes there (avendb-browser's `Device::card`), and every vault by the name
 	on its profile, which this browser writes into the vault's home (`Device::profile`): the person's own by their
-	maiaCITY name, avenCEO's as avenCEO. A new person founds their vault here with the passkey they signed up to maiaCITY
+	maiaCITY name, avenCEO's as avenCEO. In the Mac app the device runs natively beside the app ($lib/avendb/native.js):
+	its node on UDP sockets of its own, its store in a folder on the Mac, and the device a page there made before moves
+	into that folder as it unlocks. A new person founds their vault here with the passkey they signed up to maiaCITY
 	with (the same relying party, maia.city), or one they make here; the first to found a vault through a server nobody
 	has claimed yet claims it in the same ceremony, so their vault owns avenCEO, the aven vault the server is a device
 	of. A person with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their
@@ -32,6 +34,11 @@
 
 	/** @type {any} the device's WebAssembly */
 	let avendb = null;
+	/** @type {any} in the Mac app, its device beside it ($lib/avendb/native.js): null where the page runs the device */
+	let mac = null;
+	/** in the Mac app: whether the device a page there made before, in IndexedDB, moves into the app's folder as it
+	 *  unlocks */
+	let moving = $state(false);
 	/** @type {any} */
 	let stores = null;
 	/** @type {any} */
@@ -57,6 +64,8 @@
 	let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 	let qr = $state('');
 	let link = $state('');
+	/** in the Mac app, the UDP sockets its device's node bound, on which it reaches its peers directly */
+	let sockets = $state(/** @type {string[] | null} */ (null));
 	/** whether the device is writing its card, or vaults' profiles: one such write at a time */
 	let carding = false;
 	let profiling = false;
@@ -84,6 +93,8 @@
 
 	/** Who asks for the passkey: the browser, or in the Mac app its sign-in sheet on maia.city ($lib/avendb/device/passkey.js). */
 	const asks = native() ? 'a sign-in sheet asks for your passkey' : 'your browser asks for your passkey';
+	/** This device, as the person sees it. */
+	const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
 
 	/** A name for this browser that tells it from the person's other devices: its browser, on its system; or the app. */
 	function deviceName() {
@@ -129,6 +140,7 @@
 			},
 			() => {}
 		);
+		if (native() && (await openMac())) return;
 		try {
 			const pkg = await import('./device/avendb_browser.js');
 			await pkg.default();
@@ -144,6 +156,43 @@
 	});
 
 	onDestroy(() => device?.close());
+
+	/** In the Mac app: its device beside it, open already or to unlock, or the page's to move there. Whether the app
+	 *  runs avenDB natively: if it can't, the page runs the device, as before. */
+	async function openMac() {
+		const bridge = await import('./native.js');
+		const held = await bridge.status();
+		if (!held) return false;
+		mac = bridge;
+		if (held.meta) {
+			meta = held.meta;
+			if (held.device) running(new mac.NativeDevice(held.device));
+			else phase = 'closed';
+			return true;
+		}
+		// the device a page here made before: it moves into the app's folder as it unlocks
+		try {
+			stores = await import('./device/store.js');
+			store = await stores.open(STORE);
+			meta = (await store.meta()) ?? null;
+		} catch {
+			meta = null;
+		}
+		moving = !!meta;
+		phase = meta ? 'closed' : 'new';
+		return true;
+	}
+
+	/** In the Mac app: its device runs from here on, its folder keeping what opens it again. @param {any} info */
+	async function macOpened(info) {
+		meta = (await mac.call('status')).meta;
+		running(new mac.NativeDevice(info));
+	}
+
+	/** @param {Error} e */
+	const noAccount = (e) => {
+		throw /no vault of this passkey/.test(e.message) ? new Error('This passkey has no account yet: set one up first.') : e;
+	};
 
 	/**
 	 * Runs `work`, showing what it does and what went wrong: whether it went through.
@@ -172,6 +221,12 @@
 	 *  claims the server if nobody has yet; one ceremony more to make the passkey. @param {boolean} fresh */
 	const found = (fresh) =>
 		run(`Setting up your account: ${asks} ${fresh ? 'four' : 'three'} times`, async () => {
+			if (mac) {
+				await macOpened(await mac.call('found', name.trim(), relay, server));
+				remember('relay', relay);
+				remember('server', server);
+				return;
+			}
 			const { passkey, unlock, sign, held } = await ceremonies(undefined);
 			const made = fresh ? await passkey.create(person || name) : null;
 			if (made) held.id = made.id;
@@ -183,20 +238,33 @@
 	/** Links this browser to the person's vault through `through`: the code another of their devices shows, or
 	 *  avenDB's server's, which hands over their vault for their passkey alone. The unlock, the pass to the relay, the
 	 *  passkey's hello, and the edit that adds this browser to their vault. @param {string} through @param {string} what */
-	const linkHere = (through, what = 'Linking this browser') =>
+	const linkHere = (through, what = `Linking ${here}`) =>
 		run(`${what}: ${asks} four times`, async () => {
+			if (mac) {
+				await macOpened(await mac.call('link', name.trim(), relay, through.trim()).catch(noAccount));
+				remember('relay', relay);
+				remember('server', server);
+				return;
+			}
 			const { unlock, sign, held } = await ceremonies(undefined);
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const d = await avendb.Device.link(name.trim(), relay, through.trim(), await unlock(nonce), sign).catch(
-				(/** @type {Error} */ e) => {
-					throw /no vault of this passkey/.test(e.message) ? new Error('This passkey has no account yet: set one up first.') : e;
-				}
-			);
+			const d = await avendb.Device.link(name.trim(), relay, through.trim(), await unlock(nonce), sign).catch(noAccount);
 			await started(d, nonce, held.id);
 		});
 
 	const unlockHere = () =>
 		run(`Unlocking: ${asks} once`, async () => {
+			if (mac && moving) {
+				// the page's device moves into the app's folder, the same device; then the page lets go of its copy, so
+				// that it never runs twice
+				const kept = await store.load();
+				const info = await mac.call('adopt', meta, kept.edits.map(mac.base64), kept.keys.map(mac.base64));
+				store.close();
+				await stores.remove(STORE);
+				[store, moving] = [null, false];
+				return macOpened(info);
+			}
+			if (mac) return macOpened(await mac.call('open'));
 			const { unlock } = await ceremonies(meta.credential);
 			const kept = await store.load();
 			const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.edits, kept.keys);
@@ -218,9 +286,14 @@
 	function running(d) {
 		device = d;
 		phase = 'open';
-		store.follow(d).catch((/** @type {Error} */ e) => (error = `Saving failed: ${e.message}`));
-		link = `${location.origin}${location.pathname}?${new URLSearchParams({ link: d.offer(), relay: meta.relay })}`;
-		qr = avendb.qrSvg(link, 240);
+		sockets = mac ? d.sockets() : null;
+		// the app's device keeps its own store
+		if (!mac) store.follow(d).catch((/** @type {Error} */ e) => (error = `Saving failed: ${e.message}`));
+		// a link the person's other devices open: the site's, as the app's own pages are the app's alone
+		const site = native() ? 'https://maia.city' : location.origin;
+		link = `${site}${location.pathname}?${new URLSearchParams({ link: d.offer(), relay: meta.relay })}`;
+		if (mac) mac.call('qrSvg', link, 240).then((/** @type {string} */ svg) => (qr = svg));
+		else qr = avendb.qrSvg(link, 240);
 		watch(d).catch((/** @type {Error} */ e) => (error = `Showing what arrives failed: ${e.message}`));
 	}
 
@@ -249,7 +322,7 @@
 		if (card && card.name !== meta.name && !carding) {
 			carding = true;
 			d.card(meta.name)
-				.catch((/** @type {Error} */ e) => (error = `Naming this browser failed: ${e.message}`))
+				.catch((/** @type {Error} */ e) => (error = `Naming ${here} failed: ${e.message}`))
 				.finally(() => (carding = false));
 		}
 		// the profiles of the person's vault, by their maiaCITY name, and of avenCEO, if their vault owns it: written
@@ -272,7 +345,7 @@
 	}
 
 	/** The passkey's ceremony for what its vault approves: new vaults, an owner's grant or its revocation. */
-	const approver = async () => (await ceremonies(meta.credential)).sign;
+	const approver = async () => (mac ? undefined : (await ceremonies(meta.credential)).sign);
 
 	/**
 	 * Runs `work` as `what`, then shows what changed: whether it went through.
@@ -373,8 +446,13 @@
 		profile: (vault, name) => act('Renaming', () => device.profile(vault, name)),
 		/** @param {string} name */
 		rename: (name) =>
-			act('Renaming this browser', async () => {
+			act(`Renaming ${here}`, async () => {
 				if (!name || name === meta.name) return;
+				if (mac) {
+					await mac.call('rename', name);
+					meta = { ...meta, name };
+					return;
+				}
 				meta = { ...meta, name };
 				await store.setMeta(meta);
 				await device.card(name);
@@ -386,21 +464,27 @@
 		const mine = world?.vaults.find((v) => v.id === world?.mine);
 		const ask =
 			mine && mine.devices.length > 1
-				? 'Forget your account on this browser? Your vault and your other devices keep everything, and you can sign in here again.'
-				: 'Forget your account on this browser? Your vault stays yours: sign in with your passkey on any browser, and avenDB’s server hands it back.';
+				? `Forget your account on ${here}? Your vault and your other devices keep everything, and you can sign in here again.`
+				: `Forget your account on ${here}? Your vault stays yours: sign in with your passkey on any device, and avenDB’s server hands it back.`;
 		if (!confirm(ask)) return;
-		return run('Forgetting this browser', async () => {
+		return run(`Forgetting ${here}`, async () => {
 			await device?.close();
+			if (mac && !moving) {
+				// the app puts its folder's store aside, never deleting it
+				await mac.call('forget');
+				[device, meta, world, phase] = [null, null, null, 'new'];
+				return;
+			}
 			store.close();
 			await stores.remove(STORE);
-			[device, meta, world, phase] = [null, null, null, 'new'];
-			store = await stores.open(STORE);
+			[device, meta, world, phase, moving] = [null, null, null, 'new', false];
+			store = mac ? null : await stores.open(STORE);
 		});
 	};
 </script>
 
 {#if phase === 'open' && world}
-	<Shell {world} {api} {doing} {error} thisName={meta?.name ?? ''} {link} {qr} />
+	<Shell {world} {api} {doing} {error} thisName={meta?.name ?? ''} {link} {qr} {sockets} />
 {:else}
 	<div class="account">
 		<header class="lead">
@@ -417,7 +501,13 @@
 			<div class="cards">
 				<article class="card">
 					<h3>Unlock your account</h3>
-					<p>Your account is on this browser, as {meta?.name}. Unlock it with your passkey.</p>
+					<p>Your account is on {here}, as {meta?.name}. Unlock it with your passkey.</p>
+					{#if moving}
+						<p class="soft">
+							As it unlocks, it moves into the app: avenDB then runs natively beside it, on its own UDP sockets, and keeps
+							your vault in a folder on this Mac.
+						</p>
+					{/if}
 					<div class="row">
 						<button class="btn primary" disabled={!!doing} onclick={unlockHere}>Unlock</button>
 						<button class="btn quiet" disabled={!!doing} onclick={forget}>Forget it here</button>
@@ -428,11 +518,11 @@
 			<div class="cards">
 				{#if arrived}
 					<article class="card">
-						<h3>Link this browser</h3>
-						<p>Your other device sent you here: confirm with your passkey, and this browser joins your vault.</p>
+						<h3>Link {here}</h3>
+						<p>Your other device sent you here: confirm with your passkey, and {here} joins your vault.</p>
 						<div class="row">
 							<button class="btn primary" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>
-								Link this browser
+								Link {here}
 							</button>
 							<button class="btn quiet" disabled={!!doing} onclick={() => ([arrived, code] = [false, ''])}>Not now</button>
 						</div>
@@ -442,22 +532,24 @@
 						<h3>New to avenDB?</h3>
 						<p>
 							Set up your account: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its root and
-							its only recovery, and this browser its first device.
+							its only recovery, and {here} its first device.
 						</p>
 						<div class="row">
 							<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(false)}>
 								Use my maiaCITY passkey
 							</button>
-							<button class="btn quiet" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(true)}>
-								Make a new passkey
-							</button>
+							{#if !native()}
+								<button class="btn quiet" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(true)}>
+									Make a new passkey
+								</button>
+							{/if}
 						</div>
 					</article>
 					<article class="card">
 						<h3>Have an account already?</h3>
 						<p>
-							Sign in with your passkey, even with every other device of yours lost: avenDB's server hands this browser your
-							vault, which only your passkey opens, and it joins as one more of your devices.
+							Sign in with your passkey, even with every other device of yours lost: avenDB's server hands {here} your vault,
+							which only your passkey opens, and it joins as one more of your devices.
 						</p>
 						<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(server, 'Signing in')}>
 							Sign in with my passkey
@@ -466,12 +558,12 @@
 							<summary class="soft">Or link through your other device</summary>
 							<p class="soft">Open the link your other device shows, or scan its QR code. Or paste its code here.</p>
 							<input class="field" placeholder="Its code: AVENDB1…" bind:value={code} />
-							<button class="btn" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>Link this browser</button>
+							<button class="btn" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>Link {here}</button>
 						</details>
 					</article>
 				{/if}
 				<article class="card">
-					<h3>This browser</h3>
+					<h3>{Here}</h3>
 					<label class="name">
 						<span class="soft">Its name, which your other devices show it by</span>
 						<input class="field" bind:value={name} />
