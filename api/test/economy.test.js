@@ -140,3 +140,19 @@ test("a run keeps its config copy and its days: stats, trades, decisions", async
   await expect(addDays("nope", { days: [] })).rejects.toThrow(/No such run/);
   expect((await startRun("admin", { config_id: "gone", config: { params: {} } })).config_id).toBeNull();
 });
+
+test("a new world starts from the world it follows: its cards and values as played, the MIP's cards on top", async () => {
+  const first = await createMip("admin", { title: "Auction world", world_id: W, action: "world", world: { name: "Auction", model: "qwen", values: { mint: 30 } }, cards: [{ id: "trading", kind: "policy", values: { haggleMax: 0 }, code: "export function haggle() { return null; }" }] });
+  const a = await decideMip(first.number, "admin", { accept: true });
+  const health = await createMip("admin", { title: "Health world", world_id: a.world, action: "world", world: { name: "Health", model: "qwen" }, cards: [{ id: "bodies", kind: "world", values: { healthMax: 10 } }] });
+  expect(health.world.after_name).toBe("Auction");
+  expect(health.world.diff).toEqual(["Health: 100 → 10 points"]);
+  const h = await decideMip(health.number, "admin", { accept: true });
+  const { rows } = await pg.query("SELECT state FROM econ_runs WHERE id = $1", [h.world]);
+  const s = rows[0].state.settings;
+  expect(s.after).toBe(a.world);
+  expect(s.local.mint).toBe(30);
+  expect(card(s.config, "trading").values.haggleMax).toBe(0);
+  expect(card(s.config, "trading").code).toContain("return null");
+  expect(card(s.config, "bodies").values.healthMax).toBe(10);
+});

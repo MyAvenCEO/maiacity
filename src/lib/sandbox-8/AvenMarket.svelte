@@ -71,7 +71,8 @@
 		}
 	}
 	/** read every aven's mind in this world, and dress its avens in them. A new world starts each with a copy of its
-	 * latest brain (Samuel): the one it played with last on this page, else its newest kept in any world */
+	 * brain in the world it follows (Samuel: a new world takes over all the last one learned), else its latest: the one
+	 * it played with last on this page, else its newest kept in any world */
 	async function loadAllMinds() {
 		const cfg = mindsKey();
 		/** @type {Record<string, any>} */
@@ -88,8 +89,11 @@
 		try {
 			if (cfg) raw = await loadMinds(cfg, mindsRemote());
 			// a world not played yet (new, or made on the MCP): an aven without a brain of its own here gets a copy
-			if (world.day === 1 && world.t === 0 && world.avens.some((/** @type {any} */ a) => !raw[a.name]?.dials))
-				copies = held.length ? JSON.parse(JSON.stringify(Object.fromEntries(held.map((m) => [m.name, keepMind(m)])))) : mindsRemote() ? await loadMinds('latest', true) : {};
+			if (world.day === 1 && world.t === 0 && world.avens.some((/** @type {any} */ a) => !raw[a.name]?.dials)) {
+				copies = (here.after && mindsRemote() ? await loadMinds(here.after, true) : null) ?? {};
+				if (!Object.keys(copies).length)
+					copies = held.length ? JSON.parse(JSON.stringify(Object.fromEntries(held.map((m) => [m.name, keepMind(m)])))) : mindsRemote() ? await loadMinds('latest', true) : {};
+			}
 			mindNote = '';
 		} catch (e) {
 			mindNote = `The avens' brains could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh${cfg ? ' and are not kept' : ''}.`;
@@ -199,7 +203,7 @@
 	// ---- worlds (Samuel, 2026-10-09): every world is kept with its settings, and can be opened again and played on;
 	// a new one starts fresh. Each is a capsule: its avens' money and brains are its own ----
 	let worlds = $state(/** @type {any[]} */ ([]));
-	let here = $state({ id: /** @type {string | null} */ (null), name: '' }); // the world on the page
+	let here = $state({ id: /** @type {string | null} */ (null), name: '', after: /** @type {string | null} */ (null) }); // the world on the page, and the world it follows
 	let worldNote = $state('');
 	async function loadWorlds() {
 		if (!acct.play) return;
@@ -254,7 +258,7 @@
 		world = fresh ? createWorld(run.seed ?? undefined) : loadWorld(run.state.world, run.day_rows.map((/** @type {any} */ d) => d.stats));
 		rec = recorder(world, null, { id: run.id, name: run.name, sent: fresh ? 0 : world.stats.length });
 		saving = { days: rec.sent, error: '' };
-		here = { id: run.id, name: run.name };
+		here = { id: run.id, name: run.name, after: s.after ?? null };
 		trial = false;
 		// its own brains, as it left them (or as the MCP set them for a world not played yet)
 		await loadAllMinds();
@@ -295,7 +299,7 @@
 		const r = (rec = recorder(world, { config_id: CONFIG.id, config_version: CONFIG.version, config: { cards: CONFIG.cards, params: { ...RULES }, local: changedRules() }, seed: world.seed, brain: PLAN[brain.mode].filter(Boolean).map((/** @type {any} */ k) => (k === 'liquid' ? LIQUID_MODEL : box[k] || k)).join(', falling back to '), summary: summary() }));
 		r.ready.then(() => {
 			if (rec !== r || !r.id) return;
-			here = { id: r.id, name: r.name };
+			here = { id: r.id, name: r.name, after: null };
 			for (const a of world.avens) if (a.mind) a.mind.world = r.name;
 			if (!mindsOf) mindsOf = r.id; // its new brains are kept with it from now on
 			keepWorld();
@@ -599,7 +603,7 @@
 			syncMinds(true);
 		}
 		rec = null;
-		here = { id: null, name: '' };
+		here = { id: null, name: '', after: null };
 		saving = { days: 0, error: '' };
 		world = createWorld();
 		paused = true;

@@ -127,6 +127,11 @@ async function checkMip(body, q = db) {
     if (!live) throw new EconomyError(`No config ${config}.`);
     baseCards = live.cards;
   }
+  // a new world starts from the world it follows (Samuel, 2026-10-09): its whole rulebook as it played, its own values
+  // on top, and its avens' brains; the MIP's cards change that, not the config
+  const prev = action === "world" ? await followed(body?.world, q) : null;
+  const prevSettings = prev?.state?.settings ?? null;
+  if (prevSettings?.config?.cards?.length) baseCards = prevSettings.config.cards;
 
   const raw = body?.cards ?? [];
   if (!Array.isArray(raw)) throw new EconomyError("A MIP's cards are a list.");
@@ -148,8 +153,9 @@ async function checkMip(body, q = db) {
   }
   if (action === "edit" && !cards.length && !remove.length && name == null && about == null) throw new EconomyError("A MIP needs at least one card, or a card to take out, or a new name.");
   const base = Object.fromEntries([...cards.map((c) => c.id), ...remove].map((id) => [id, baseCards.find((c) => c.id === id) ?? null]));
-  const world = action === "world" ? await worldSpec(body?.world, applyCards(baseCards, cards, remove), q) : null;
-  return { config, action, name: action === "create" ? name || config : action === "world" ? null : name, about: action === "world" ? null : about, from, cards, remove, base, base_version: live ? Number(live.version) : null, world };
+  const world = action === "world" ? worldSpec(body?.world, applyCards(baseCards, cards, remove), prev) : null;
+  const start = action === "world" ? { cards: applyCards(baseCards, cards, remove), values: { ...worldValues(prevSettings?.local), ...world.values } } : null;
+  return { start, config, action, name: action === "create" ? name || config : action === "world" ? null : name, about: action === "world" ? null : about, from, cards, remove, base, base_version: live ? Number(live.version) : null, world };
 }
 
 /**
@@ -158,20 +164,24 @@ async function checkMip(body, q = db) {
  * after }. `after` is the world it follows (default: the one kept last); `diff` lists every setting that differs from
  * that world, so the change between the two is plain.
  */
-async function worldSpec(w, cards, q) {
-  const values = worldValues(w?.values);
-  const model = ["d1", "qwen"].includes(w?.model) ? w.model : "d1";
-  const seed = w?.seed == null || w.seed === "" || !Number.isFinite(Number(w.seed)) ? null : Math.trunc(Number(w.seed));
+async function followed(w, q) {
   const afterId = w?.after ? text(w.after, 41) : null;
   const { rows } = afterId
     ? await q.query("SELECT id, name, state FROM econ_runs WHERE id = $1", [afterId])
     : await q.query("SELECT id, name, state FROM econ_runs WHERE state IS NOT NULL ORDER BY saved DESC NULLS LAST LIMIT 1");
   if (afterId && !rows[0]) throw new EconomyError(`No world ${afterId} to follow.`);
-  const prev = rows[0] ?? null;
+  return rows[0] ?? null;
+}
+
+function worldSpec(w, cards, prev) {
+  const values = worldValues(w?.values);
+  const model = ["d1", "qwen"].includes(w?.model) ? w.model : "d1";
+  const seed = w?.seed == null || w.seed === "" || !Number.isFinite(Number(w.seed)) ? null : Math.trunc(Number(w.seed));
   const s = prev?.state?.settings;
   const diff = [];
   if (s) {
-    const now = { ...paramsOf(cards), ...values };
+    // its own values carry over too: only what the MIP sets differs
+    const now = { ...paramsOf(cards), ...worldValues(s.local), ...values };
     const was = { ...(s.config?.cards ? paramsOf(s.config.cards) : { ...paramsOf([]), ...(s.config?.params ?? {}) }), ...(s.local ?? {}) };
     for (const p of PARAMS) if (was[p.key] !== now[p.key]) diff.push(`${p.label}: ${was[p.key]} → ${now[p.key]}${p.unit && !/=|at least|yes/.test(p.unit) ? ` ${p.unit}` : ""}`);
     // each side's whole rulebook: a section card without code of its own runs its rules' default
@@ -270,8 +280,7 @@ export async function decideMip(number, by, { accept, note } = {}) {
     let result;
     if (m.action === "world") {
       // the world is made, fresh, with every setting the MIP proposed; it waits in the list until it is opened
-      const { rows: c } = await tx.query("SELECT cards FROM econ_configs WHERE id = $1", [m.config]);
-      const w = await createWorld(by, { name: m.world.name, config: m.config, cards: applyCards(c[0].cards, m.cards, m.remove), values: m.world.values, model: m.world.model, seed: m.world.seed, mip: number }, tx);
+      const w = await createWorld(by, { name: m.world.name, config: m.config, cards: m.start.cards, values: m.start.values, model: m.world.model, seed: m.world.seed, mip: number, after: m.world.after }, tx);
       result = { world: w.id, name: w.name, diff: m.world.diff, after_name: m.world.after_name };
     } else if (m.action === "delete") {
       const { rows: n } = await tx.query("SELECT count(*)::int AS n FROM econ_configs WHERE deleted IS NULL");
@@ -369,7 +378,7 @@ async function createWorld(player, body, q = db) {
   const local = worldValues(body?.values);
   const params = paramsOf(cards);
   const model = ["d1", "qwen"].includes(body?.model) ? body.model : "d1";
-  const settings = { config: { id: cfg ? configId : null, name: cfg?.name ?? (text(body?.config_name, 80) || "Cards given"), version: cfg?.version ?? 0, cards, params }, local, model, mip: body?.mip ?? null };
+  const settings = { config: { id: cfg ? configId : null, name: cfg?.name ?? (text(body?.config_name, 80) || "Cards given"), version: cfg?.version ?? 0, cards, params }, local, model, mip: body?.mip ?? null, after: text(body?.after, 41) || null };
   const seed = body?.seed != null && Number.isFinite(Number(body.seed)) ? Math.trunc(Number(body.seed)) : Math.floor(Math.random() * 1e9);
   const { rows } = await q.query(
     `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary, name, state, saved)
