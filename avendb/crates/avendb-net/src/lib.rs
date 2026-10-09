@@ -33,10 +33,15 @@
 //!   and by itself (`Lab::join`), and the peer accepts that op alone, for that device alone (`Lab::accept_join`). Then
 //!   they sync as devices of one vault. With every other device lost, a new device links the same way through the
 //!   server, whose offer the app knows: the passkey alone brings the person's vault back. A device the server doesn't
-//!   know yet makes that first contact straight, over UDP, as its relay lets it in only once it joined.
+//!   know yet makes that first contact straight, over UDP, or, with no UDP of its own, through the relay by a pass its
+//!   person's passkey signs it (`Options::relay_pass`).
+//! - **In a browser** (P8d): a page has no UDP, so its node reaches every peer through its relay, which lets the new
+//!   device in by its passkey's pass (`sign::RelayPass`) until it joined; its TLS is ring, with X25519MLKEM768 in pure
+//!   Rust (`kx`), and its tasks and timers run on the page's event loop.
 
 mod blobs;
 mod disk;
+pub mod kx;
 pub mod server;
 mod session;
 
@@ -46,24 +51,28 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::Action;
+use avendb::sign::RelayPass;
 use avendb::sync::LogId;
 use avendb::wire::{Announce, Reply, Wire};
-use data_encoding::BASE32_NOPAD;
+use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use iroh::address_lookup::MemoryLookup;
-use iroh::endpoint::{Connection, PortmapperConfig, presets};
+#[cfg(not(target_arch = "wasm32"))]
+use iroh::endpoint::PortmapperConfig;
+use iroh::endpoint::{Connection, presets};
 use iroh::protocol::Router;
-use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey};
+use iroh::{Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey};
 use iroh_blobs::BlobsProtocol;
 use iroh_blobs::store::mem::MemStore;
 use rustls::crypto::CryptoProvider;
+use n0_future::task::{self, JoinHandle};
+use n0_future::time::{self, Instant};
 use tokio::sync::{Notify, watch};
-use tokio::task::JoinHandle;
 
 pub use disk::Disk;
 pub use session::exporter;
@@ -77,9 +86,10 @@ const WAIT: Duration = Duration::from_secs(10);
 /// The longest a node waits before it tries a peer out of reach again.
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
 
-/// The TLS of every node: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768 agrees the keys
-/// of every connection along with X25519, and a peer that offers only classical groups finds none in common. Ciphers
-/// with 256-bit keys first; AES-128 last, as QUIC protects its first packets with it.
+/// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
+/// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
+/// common. Ciphers with 256-bit keys first; AES-128 last, as QUIC protects its first packets with it.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn pq_provider() -> Arc<CryptoProvider> {
     use rustls::crypto::aws_lc_rs::{cipher_suite, default_provider, kx_group};
     Arc::new(CryptoProvider {
@@ -91,6 +101,30 @@ pub fn pq_provider() -> Arc<CryptoProvider> {
         ],
         ..default_provider()
     })
+}
+
+/// The TLS of a node in a browser (P8d), where aws-lc-rs doesn't build: ring, with X25519MLKEM768 in pure Rust as its
+/// only key exchange (`kx`), the same group as `pq_provider`'s; the same ciphers, in the same order.
+#[cfg(target_arch = "wasm32")]
+pub fn web_provider() -> Arc<CryptoProvider> {
+    use rustls::crypto::ring::{cipher_suite, default_provider};
+    Arc::new(CryptoProvider {
+        kx_groups: vec![kx::X25519MLKEM768],
+        cipher_suites: vec![
+            cipher_suite::TLS13_AES_256_GCM_SHA384,
+            cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+            cipher_suite::TLS13_AES_128_GCM_SHA256,
+        ],
+        ..default_provider()
+    })
+}
+
+/// The TLS of this node: `pq_provider` on a machine, `web_provider` in a browser.
+fn provider() -> Arc<CryptoProvider> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return pq_provider();
+    #[cfg(target_arch = "wasm32")]
+    web_provider()
 }
 
 /// How a node runs.
@@ -109,6 +143,9 @@ pub struct Options {
     pub card: bool,
     /// Where it writes the endpoints of the devices it knows, for a relay to let them in: the server's.
     pub admission: Option<Admission>,
+    /// The pass it shows its relay, signed by its person's passkey (`Lab::relay_pass`): a new device with no UDP of its
+    /// own, as a browser's, which the server doesn't know until it joined, is let in by it for ten minutes.
+    pub relay_pass: Option<RelayPass>,
 }
 
 impl Options {
@@ -121,36 +158,57 @@ impl Options {
             store: None,
             card: false,
             admission: None,
+            relay_pass: None,
         }
     }
 }
 
 /// Who may use the server's relay: the endpoints of the devices the server knows, those of every vault in its view
-/// whose keys it saw sign, and its own. The server's node keeps it up to date as its view changes, from before its
-/// endpoint binds; the relay asks it about each client that connects, and lets go of a client it stops admitting.
-#[derive(Clone, Debug)]
-pub struct Admission(Arc<watch::Sender<HashSet<EndpointId>>>);
+/// whose keys it saw sign, and its own; and, for ten minutes, a new device whose pass a passkey signed that roots a
+/// vault in its view (P8d, `sign::RelayPass`). The server's node keeps it up to date as its view changes, from before
+/// its endpoint binds; the relay asks it about each client that connects, and lets go of a client it stops admitting.
+#[derive(Clone, Debug, Default)]
+pub struct Admission(Arc<watch::Sender<Admitted>>);
 
-impl Default for Admission {
-    fn default() -> Self {
-        Admission(Arc::new(watch::Sender::new(HashSet::new())))
-    }
+/// Whom the server's relay lets in, by the server's view.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Admitted {
+    /// The endpoints of the devices it knows, and its own.
+    pub endpoints: HashSet<EndpointId>,
+    /// The passkeys whose passes it honours: those that root a vault it knows (`Lab::roots`).
+    pub passkeys: HashSet<SignerId>,
 }
 
 impl Admission {
     /// The relay lets `endpoint` in.
     pub fn admits(&self, endpoint: &EndpointId) -> bool {
-        self.0.borrow().contains(endpoint)
+        self.0.borrow().endpoints.contains(endpoint)
+    }
+
+    /// The relay lets in the endpoint a pass of `passkey` names.
+    pub fn honours(&self, passkey: &SignerId) -> bool {
+        self.0.borrow().passkeys.contains(passkey)
     }
 
     /// Marks each change of whom it admits.
-    pub fn watch(&self) -> watch::Receiver<HashSet<EndpointId>> {
+    pub fn watch(&self) -> watch::Receiver<Admitted> {
         self.0.subscribe()
     }
 
-    fn set(&self, endpoints: HashSet<EndpointId>) {
-        self.0.send_if_modified(|now| *now != endpoints && { *now = endpoints; true });
+    fn set(&self, admitted: Admitted) {
+        self.0.send_if_modified(|now| *now != admitted && { *now = admitted; true });
     }
+}
+
+/// A relay pass as the token a node shows its relay as it connects: base64url without padding, which a browser's
+/// node carries in the query of the relay's URL, as a page can't set the headers of a WebSocket.
+pub fn pass_token(pass: &RelayPass) -> String {
+    BASE64URL_NOPAD.encode(&pass.to_wire())
+}
+
+/// The relay pass a token carries (`pass_token`), if it is one.
+pub fn token_pass(token: &str) -> Option<RelayPass> {
+    RelayPass::from_wire(&BASE64URL_NOPAD.decode(token.as_bytes()).ok()?).ok()
 }
 
 /// A device on the network: its Lab, split off for it (`Lab::split`), behind an iroh endpoint of its own key.
@@ -167,23 +225,39 @@ impl Node {
     pub async fn spawn(lab: Lab, me: SignerId, opts: Options) -> Result<Node> {
         let secret = lab.endpoint_secret(me).context("a device of this Lab, unlocked")?;
         let store = opts.store.clone();
+        #[cfg(not(target_arch = "wasm32"))]
         let (lab, disk) = tokio::task::spawn_blocking(move || reopen(lab, me, store)).await??;
+        // a page has no folders, nor threads to spare
+        #[cfg(target_arch = "wasm32")]
+        let (lab, disk) = reopen(lab, me, store)?;
         if let Some(admission) = &opts.admission {
             let own = SecretKey::from_bytes(&secret).public();
-            admission.set(endpoints(&lab.peers(me)).chain([own]).collect());
+            let endpoints = endpoints(&lab.peers(me)).chain([own]).collect();
+            admission.set(Admitted { endpoints, passkeys: lab.roots(me).into_iter().collect() });
         }
         let lookup = MemoryLookup::new();
         let mut builder = Endpoint::builder(presets::Empty)
             .secret_key(SecretKey::from_bytes(&secret))
-            .crypto_provider(pq_provider())
-            .address_lookup(lookup.clone())
-            .portmapper_config(PortmapperConfig::Disabled)
-            .clear_ip_transports();
-        if let Some(bind) = opts.bind {
-            builder = builder.bind_addr(bind)?;
+            .crypto_provider(provider())
+            .address_lookup(lookup.clone());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            builder = builder.portmapper_config(PortmapperConfig::Disabled).clear_ip_transports();
+            if let Some(bind) = opts.bind {
+                builder = builder.bind_addr(bind)?;
+            }
+        }
+        // a page has no UDP: it reaches its peers through its relay alone
+        #[cfg(target_arch = "wasm32")]
+        if opts.bind.is_some() || opts.relay.is_none() {
+            bail!("a node in a browser binds no socket and needs a relay");
         }
         if let Some(relay) = &opts.relay {
-            builder = builder.relay_mode(RelayMode::custom([relay.clone()]));
+            let mut config = RelayConfig::from(relay.clone());
+            if let Some(pass) = &opts.relay_pass {
+                config = config.with_auth_token(pass_token(pass));
+            }
+            builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(config)));
         }
         let endpoint = builder.bind().await?;
         let store = MemStore::new();
@@ -213,7 +287,7 @@ impl Node {
             .accept(ALPN, session::Protocol(shared.clone()))
             .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, Some(events)))
             .spawn();
-        let tasks = vec![tokio::spawn(blobs::gate(shared.clone(), gate)), tokio::spawn(shared.clone().announcer())];
+        let tasks = vec![task::spawn(blobs::gate(shared.clone(), gate)), task::spawn(shared.clone().announcer())];
         Ok(Node { shared, router, tasks })
     }
 
@@ -537,6 +611,8 @@ impl<K: Hash + Eq + Copy> Backoff<K> {
 struct News {
     size: (usize, usize),
     peers: Vec<(SignerId, EndpointId, BTreeMap<LogId, [u8; 32]>)>,
+    /// The passkeys that root the vaults in the device's view, whose passes a server's relay honours.
+    roots: Vec<SignerId>,
 }
 
 impl Shared {
@@ -544,13 +620,17 @@ impl Shared {
     /// the device took is saved, if the node keeps a store.
     async fn lab<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let shared = self.clone();
-        let task = tokio::task::spawn_blocking(move || {
+        let work = move || {
             let mut lab = shared.lab.lock().expect("the Lab");
             let out = f(&mut lab, shared.me);
             shared.save(&lab);
             out
-        });
-        task.await.expect("the Lab's task")
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        return tokio::task::spawn_blocking(work).await.expect("the Lab's task");
+        // a page's node runs in a worker of its own, which the Lab may hold up
+        #[cfg(target_arch = "wasm32")]
+        work()
     }
 
     /// Saves what the device took since the last save, if the node keeps a store. A store that can't be written is
@@ -576,11 +656,11 @@ impl Shared {
         }
         self.sent.dials.fetch_add(1, Ordering::Relaxed);
         let dial = self.endpoint.connect(self.addr_of(endpoint), ALPN);
-        let conn = tokio::time::timeout(WAIT, dial).await.context("no answer")??;
-        match tokio::time::timeout(WAIT, session::dial_hello(self, &conn)).await {
+        let conn = time::timeout(WAIT, dial).await.context("no answer")??;
+        match time::timeout(WAIT, session::dial_hello(self, &conn)).await {
             Ok(Ok(device)) => {
                 let peer = self.connected(conn, device, true);
-                tokio::spawn(session::serve(self.clone(), peer.clone()));
+                task::spawn(session::serve(self.clone(), peer.clone()));
                 Ok(peer)
             }
             Ok(Err(e)) => {
@@ -656,7 +736,7 @@ impl Shared {
             return;
         }
         let shared = self.clone();
-        tokio::spawn(async move {
+        task::spawn(async move {
             loop {
                 let asked = shared.ask(endpoint).await.is_ok();
                 let mut owed = shared.owed.lock().expect("owed");
@@ -699,7 +779,7 @@ impl Shared {
     /// Tells the peers what changed whenever the node's logs may have, and every `retry` tries again the peers whose
     /// wait is over: those it couldn't tell, and those it failed to ask.
     async fn announcer(self: Arc<Self>) {
-        let mut news = News { size: (usize::MAX, 0), peers: Vec::new() };
+        let mut news = News { size: (usize::MAX, 0), peers: Vec::new(), roots: Vec::new() };
         loop {
             if let Some(fresh) = self.news(news.size).await {
                 news = fresh;
@@ -707,10 +787,7 @@ impl Shared {
             self.announce(&news);
             let owed = self.owed.lock().expect("owed").ready();
             owed.into_iter().for_each(|endpoint| self.ask_soon(endpoint));
-            tokio::select! {
-                _ = self.changed.notified() => {}
-                _ = tokio::time::sleep(self.opts.retry) => {}
-            }
+            time::timeout(self.opts.retry, self.changed.notified()).await.ok();
         }
     }
 
@@ -728,12 +805,12 @@ impl Shared {
                     let Ok(endpoint) = EndpointId::from_bytes(&key) else { continue };
                     peers.push((device, endpoint, lab.announce(me, device).into_iter().collect()));
                 }
-                Some(News { size: now, peers })
+                Some(News { size: now, peers, roots: lab.roots(me) })
             })
             .await?;
         if let Some(admission) = &self.opts.admission {
-            let known = news.peers.iter().map(|(_, endpoint, _)| *endpoint);
-            admission.set(known.chain([self.endpoint.id()]).collect());
+            let endpoints = news.peers.iter().map(|(_, endpoint, _)| *endpoint).chain([self.endpoint.id()]).collect();
+            admission.set(Admitted { endpoints, passkeys: news.roots.iter().copied().collect() });
         }
         Some(news)
     }
@@ -751,7 +828,7 @@ impl Shared {
                 continue;
             }
             let (shared, device, endpoint, digests) = (self.clone(), *device, *endpoint, digests.clone());
-            tokio::spawn(async move {
+            task::spawn(async move {
                 let told = shared.tell(device, endpoint, digests).await.is_ok();
                 let mut unreached = shared.unreached.lock().expect("unreached");
                 if told { unreached.reached(&device) } else { unreached.failed(device, shared.opts.retry) };

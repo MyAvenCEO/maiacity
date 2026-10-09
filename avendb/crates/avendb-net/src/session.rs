@@ -94,7 +94,7 @@ pub(crate) async fn exchange(conn: &Connection, kind: u8, body: &[u8], limit: us
 pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
     while let Ok((mut send, recv)) = peer.conn.accept_bi().await {
         let (shared, peer) = (shared.clone(), peer.clone());
-        tokio::spawn(async move {
+        n0_future::task::spawn(async move {
             match answer(&shared, &peer, recv).await {
                 Ok(answer) => {
                     if send.write_all(&answer).await.is_ok() {
@@ -168,7 +168,7 @@ impl std::fmt::Debug for Protocol {
 impl ProtocolHandler for Protocol {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         let shared = self.0.clone();
-        match tokio::time::timeout(WAIT, listen_hello(&shared, &conn)).await {
+        match n0_future::time::timeout(WAIT, listen_hello(&shared, &conn)).await {
             Ok(Ok(device)) => {
                 let peer = shared.connected(conn, device, false);
                 serve(shared, peer).await;

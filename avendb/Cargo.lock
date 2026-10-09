@@ -290,12 +290,15 @@ dependencies = [
  "anyhow",
  "avendb",
  "data-encoding",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "iroh",
  "iroh-blobs",
+ "ml-kem",
+ "n0-future",
  "rustls",
  "tokio",
  "tracing",
+ "x25519-dalek",
  "zeroize",
 ]
 
@@ -2713,6 +2716,7 @@ dependencies = [
  "hybrid-array",
  "kem",
  "module-lattice",
+ "pkcs8",
  "rand_core 0.10.1",
  "sha3 0.11.0",
  "zeroize",
@@ -5688,6 +5692,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7e8131a03190127fb2263afc72b322ecadae46b6ff8c6f399ff5d02f5559af6"
 dependencies = [
  "curve25519-dalek",
+ "getrandom 0.4.3",
  "rand_core 0.10.1",
  "zeroize",
 ]

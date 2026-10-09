@@ -1,7 +1,8 @@
 //! The server's relay (P8b): devices with no UDP of their own sync through it alone, as a device behind a strict
 //! firewall would; it lets in only the devices the server knows, those of the vaults acting in the spaces it relays,
 //! and lets go of a device taken out of its vault; and a new server, started as its binary starts it, learns its
-//! devices from what it relays. From P8c, a new device that linked through the server is let in too.
+//! devices from what it relays. From P8c, a new device that linked through the server is let in too; from P8d, a new
+//! device with no UDP of its own, as a browser's, by its passkey's pass, until the pass runs out.
 
 #[path = "../../avendb-net/tests/common/mod.rs"]
 mod common;
@@ -10,13 +11,14 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
 use avendb::id::{SignerId, SpaceId};
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Refusal, Role, Scope};
+use avendb::sign::PASS_LIFE;
 use avendb_net::{Admission, Node, Offer, Options, server};
 use avendb_server::{Config, Relay};
 use common::Folder;
@@ -38,6 +40,16 @@ async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, opts: Opt
 /// The endpoint of device `d` of `w`'s Lab.
 fn endpoint(w: &World, d: SignerId) -> EndpointId {
     SecretKey::from_bytes(&w.lab.endpoint_secret(d).expect("a device's key")).public()
+}
+
+/// The time by this machine's clock: seconds since 1970.
+fn unix_now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs()
+}
+
+/// How a new device with no UDP of its own runs, as a browser's: through `relay` alone, showing it `pass`.
+fn with_pass(relay: &RelayUrl, pass: avendb::sign::RelayPass) -> Options {
+    Options { relay_pass: Some(pass), ..relay_only(relay) }
 }
 
 /// Waits until `check` holds, 30 seconds at most.
@@ -249,4 +261,77 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(set.public_addr, Some("203.0.113.7:7401".parse().expect("a socket")));
     let wrong = Config::from_vars(|k| (k == "AVENDB_BIND").then(|| "the server's port".to_string()));
     assert!(wrong.is_err(), "a socket that isn't one is said so, not taken for the default");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_new_device_with_no_udp_gets_onto_the_relay_by_its_passkeys_pass_and_links() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url = relay.url();
+    let mut w = world();
+    let h = handbook(&mut w);
+    let eve_key = w.lab.passkey("Eve");
+    let eves = w.lab.device_of(eve_key, "Eve's browser");
+    let old = w.lab.device_of(w.passkey_s, "Samuel's old browser");
+    let other = w.lab.device_of(w.passkey_s, "Samuel's other browser");
+    let new = w.lab.device_of(w.passkey_s, "Samuel's browser");
+    let (mac_s, passkey_s, server_d, samuel) = (w.mac_s, w.passkey_s, w.server, w.samuel);
+    let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
+    let server = node(&mut w, server_d, &[], 2, opts).await;
+    let mac = node(&mut w, mac_s, &[], 1, relay_only(&url)).await;
+    mac.know(server.addr());
+    until("the relay serves Samuel's Mac", || async { relay.serves(&mac.id()) }).await;
+    let now = unix_now();
+    let mut pass = |d, passkey, made| w.lab.relay_pass(d, passkey, made).expect("a pass");
+    let (eve_pass, stale) = (pass(eves, eve_key, now), pass(old, passkey_s, now - PASS_LIFE));
+    let fresh = pass(new, passkey_s, now);
+    // Samuel's browser shows its own pass, for its own endpoint, by Samuel's passkey: let in, for ten minutes
+    let browser = node(&mut w, new, &[passkey_s], 7, with_pass(&url, fresh.clone())).await;
+    until("the relay lets Samuel's browser in by its pass", || async { relay.serves(&browser.id()) }).await;
+    assert!(relay.passed(&browser.id()).is_some_and(|until| until == now + PASS_LIFE), "for ten minutes");
+    assert!(!admission.admits(&browser.id()), "though the server doesn't know it yet");
+    // a pass by a passkey that roots no vault the server knows, one that ran out, and one for another endpoint
+    let eve = node(&mut w, eves, &[eve_key], 8, with_pass(&url, eve_pass)).await;
+    let old = node(&mut w, old, &[passkey_s], 9, with_pass(&url, stale)).await;
+    let other = node(&mut w, other, &[passkey_s], 10, with_pass(&url, fresh)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(!relay.serves(&eve.id()), "Eve's passkey roots no vault the server knows: turned away");
+    assert!(!relay.serves(&old.id()), "a pass that ran out: turned away");
+    assert!(!relay.serves(&other.id()), "another device's pass: turned away");
+    // through the relay alone, the browser links through Samuel's Mac, whose code it scanned, and the server learns it
+    let offer = Offer::from_text(&mac.offer().to_text()).expect("the Mac's code");
+    assert!(offer.addr.ip_addrs().next().is_none(), "the Mac too is reached through the relay alone");
+    assert_eq!(browser.link(&offer, passkey_s).await.expect("the browser links"), samuel);
+    until("once it joined, the server knows it", || async { admission.admits(&browser.id()) }).await;
+    let (space, welcome) = (h.space, h.welcome);
+    let reads = || browser.read(move |lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(WELCOME_TEXT));
+    until("the browser reads Welcome", reads).await;
+    quiet(&[&mac, &server, &browser]).await;
+    for n in [mac, server, browser, eve, old, other] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_relay_lets_a_device_go_once_its_pass_runs_out_unless_it_joined() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url = relay.url();
+    let mut w = world();
+    handbook_spaces(&mut w);
+    let new = w.lab.device_of(w.passkey_s, "Samuel's browser");
+    let (passkey_s, server_d) = (w.passkey_s, w.server);
+    let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
+    let server = node(&mut w, server_d, &[], 2, opts).await;
+    // a pass with five seconds left: the browser never links
+    let pass = w.lab.relay_pass(new, passkey_s, unix_now() + 5 - PASS_LIFE).expect("a pass");
+    let browser = node(&mut w, new, &[passkey_s], 7, with_pass(&url, pass)).await;
+    until("let in by its pass", || async { relay.serves(&browser.id()) }).await;
+    until("and let go once it runs out", || async { !relay.serves(&browser.id()) }).await;
+    assert_eq!(relay.passed(&browser.id()), None);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(!relay.serves(&browser.id()), "nor let back in");
+    for n in [server, browser] {
+        n.shutdown().await.expect("the node shuts down");
+    }
 }

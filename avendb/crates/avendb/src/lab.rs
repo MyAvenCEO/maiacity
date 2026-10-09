@@ -49,7 +49,7 @@ use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
-use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, Signature, SignerKeys, Signed};
+use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
 use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId};
 use crate::wire::{Join, Request};
 
@@ -368,12 +368,28 @@ impl Lab {
 
     /// A passkey: an owner signer that governs a human vault. It signs on whichever device it is used on.
     pub fn passkey(&mut self, name: &str) -> SignerId {
-        let key = Passkey::from_seed(self.secret("passkey", name));
+        let secret = self.secret("passkey", name);
+        self.passkey_from(name, secret)
+    }
+
+    /// The passkey a software passkey's secret makes again (`passkey_secret`), as a platform syncs a passkey to another
+    /// of its person's devices: a page holding its person's passkey (P8d) brings it into its Lab this way.
+    pub fn passkey_from(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
+        let key = Passkey::from_seed(secret);
         key.seal_secret().prepare();
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
         self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
         id
+    }
+
+    /// The secret of passkey `passkey`, a software passkey's private key, for another Lab to take it in
+    /// (`passkey_from`): `None` if the Lab doesn't hold that passkey. A real passkey never leaves its authenticator.
+    pub fn passkey_secret(&self, passkey: SignerId) -> Option<Zeroizing<[u8; 32]>> {
+        match self.keys.get(&passkey)? {
+            Key::Passkey(p) => Some(p.secret()),
+            Key::Device(_) => None,
+        }
     }
 
     /// A device with keys of its own, as the server and strangers have, its own ops and its own store.
@@ -1218,6 +1234,25 @@ impl Lab {
             Key::Passkey(p) => Some(p.hello(exporter, dialer, d)),
             Key::Device(_) => None,
         }
+    }
+
+    /// The pass passkey `passkey`, used on device `d`, makes `d` to the server's relay at `made`, seconds since 1970
+    /// (`sign::RelayPass`): for `d`'s endpoint alone, which the relay lets in for ten minutes if the passkey roots a
+    /// vault the server knows (`roots`). `None` unless the passkey is at hand and `d` is a device of the Lab.
+    pub fn relay_pass(&mut self, d: SignerId, passkey: SignerId, made: u64) -> Option<RelayPass> {
+        let Key::Device(device) = self.keys.get(&d)? else { return None };
+        let SignerKeys::Device { ed25519, .. } = device.keys() else { unreachable!("a device's keys") };
+        match self.keys.get_mut(&passkey)? {
+            Key::Passkey(p) => Some(p.pass(ed25519, made)),
+            Key::Device(_) => None,
+        }
+    }
+
+    /// The passkeys that root the vaults in device `d`'s view: the people the server knows, whose passes its relay
+    /// honours (`relay_pass`).
+    pub fn roots(&self, d: SignerId) -> Vec<SignerId> {
+        let roots: BTreeSet<SignerId> = self.held(d).view().vaults().iter().filter_map(|v| v.root).collect();
+        roots.into_iter().collect()
     }
 
     /// What device `d` hands a device whose passkey `passkey` proved itself on their connection (`sync::link_card`):

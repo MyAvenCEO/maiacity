@@ -1,7 +1,8 @@
 //! The wire (P8): what devices send each other, as bytes, and back. An op keeps the bytes its id hashes (`encode`); a
 //! signed op adds its signatures, and the messages of a sync wrap what `sync` asks and answers: a device's hello on a
 //! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`). A new device
-//! links (P8c) with its passkey's hello (`PasskeyHello`), then joins its person's vault (`Join`).
+//! links (P8c) with its passkey's hello (`PasskeyHello`), then joins its person's vault (`Join`); a device with no UDP
+//! of its own reaches the server's relay first by its passkey's pass (`RelayPass`, P8d).
 //!
 //! Every value has exactly one encoding, and a decoder takes only bytes that encode back to themselves: integers are
 //! big-endian and fixed-size, sequences carry their length, every enum starts with a tag, sets go smallest first with
@@ -15,7 +16,7 @@ use crate::encode::{Encode, VERSION};
 use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
 use crate::policy::{Action, Branch, Grant, Grantee, Kind, Op, Principal, Role, Scope};
-use crate::sign::{Assertion, Classical, Hello, PasskeyHello, Signature, SignerKeys, Signed};
+use crate::sign::{Assertion, Classical, Hello, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
 use crate::sync::{Ask, LogId};
 
 /// Why bytes from a peer are no message.
@@ -68,7 +69,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join);
+wire!(Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join, RelayPass);
 
 /// An op on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the op.
 impl Wire for Op {
@@ -593,6 +594,23 @@ impl Encode for PasskeyHello {
 impl Decode for PasskeyHello {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(PasskeyHello { keys: SignerKeys::decode(r)?, assertion: Assertion::decode(r)?, sig: r.bytes()? })
+    }
+}
+
+impl Encode for RelayPass {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.keys.encode(out);
+        self.assertion.encode(out);
+        self.sig.encode(out);
+        self.endpoint.encode(out);
+        self.made.encode(out);
+    }
+}
+
+impl Decode for RelayPass {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let (keys, assertion, sig) = (SignerKeys::decode(r)?, Assertion::decode(r)?, r.bytes()?);
+        Ok(RelayPass { keys, assertion, sig, endpoint: r.array()?, made: u64::decode(r)? })
     }
 }
 

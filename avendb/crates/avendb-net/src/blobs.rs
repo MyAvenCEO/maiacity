@@ -72,11 +72,11 @@ impl Shared {
             return Vec::new();
         }
         let dial = self.endpoint.connect(self.addr_of(endpoint), iroh_blobs::ALPN);
-        let Ok(Ok(conn)) = tokio::time::timeout(WAIT, dial).await else { return Vec::new() };
+        let Ok(Ok(conn)) = n0_future::time::timeout(WAIT, dial).await else { return Vec::new() };
         let mut keys = Vec::new();
         for (id, hash) in wanted {
             let hash = Hash::from_bytes(hash);
-            let fetched = tokio::time::timeout(FETCH, self.store.remote().fetch(conn.clone(), hash).into_future());
+            let fetched = n0_future::time::timeout(FETCH, self.store.remote().fetch(conn.clone(), hash).into_future());
             if !matches!(fetched.await, Ok(Ok(_))) {
                 continue;
             }
