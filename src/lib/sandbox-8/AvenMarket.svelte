@@ -10,12 +10,12 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, hookSample } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, hookSample } from './economy.js';
 	import { loadCode } from './sandbox.js';
-	import { RULES, CONFIG, setRules, changedRules, useConfig } from './rules.js';
+	import { RULES, CONFIG, DEFAULTS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
-	import { loadConfigs, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
+	import { loadConfigs, loadRuns, loadWorldRun, saveWorldState, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
 	import { wholeMind, beginRun, wear, night, editMind, keepMind, DIALS, WANTS, TRIAL_DAYS } from './mind.js';
 	import { me, may } from '$lib/auth/client';
 	import { native } from '$lib/native';
@@ -25,19 +25,9 @@
 	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
 
-	// the rules this viewer changed last time, kept in this browser only
-	const SAVED = 'sandbox-8-rules';
-	try {
-		setRules(JSON.parse(localStorage.getItem(SAVED) ?? '{}'));
-	} catch {
-		/* no storage here: the defaults */
-	}
+	// every setting belongs to a world (Samuel, 2026-10-09): changing one changes this world's, kept with it when it saves
 	function saveRules() {
-		try {
-			localStorage.setItem(SAVED, JSON.stringify(changedRules()));
-		} catch {
-			/* no storage here */
-		}
+		dirty = true;
 		snap = snapshot();
 	}
 
@@ -45,6 +35,7 @@
 	const PICKED = 'sandbox-8-config';
 	let acct = $state({ id: /** @type {string | null} */ (null), play: false, admin: false, note: '' });
 	let configs = $state(/** @type {any[]} */ ([]));
+	let newCfg = $state('valley'); // the config a new world starts on
 	/** @type {any} */
 	let rec = null;
 	let saving = $state({ days: 0, error: '' });
@@ -71,7 +62,7 @@
 	let mindsOf = ''; // which config they are
 	let mindNote = $state('');
 	const mindsRemote = () => acct.play;
-	const mindsKey = () => CONFIG.id ?? 'defaults'; // the catalogue's defaults (no config loaded) keep their own
+	const mindsKey = () => 'global'; // an aven's brain is global (Samuel): one across every world and config
 	/** take in the edits made from outside (the studio's MCP): the newest last; each says so in the decisions feed */
 	function takeEdits(/** @type {any} */ m, /** @type {any[]} */ pending) {
 		for (const e of (pending ?? []).filter((x) => x.id > (m.applied ?? 0)).sort((x, y) => x.id - y.id)) {
@@ -102,6 +93,11 @@
 			const m = wholeMind(raw[a.name], a.name, RULES.reserveDays);
 			takeEdits(m, raw[a.name]?.pending);
 			minds[a.name] = m;
+		}
+		if (!started && world.day === 1 && world.t === 0 && Object.keys(carried()).length) {
+			// the brains came after the world was dealt: deal it again with the HEARTS they bring
+			world = createWorld(world.seed, { hearts: carried() });
+			if (rec) rec = recorder(world, null, { id: rec.id, name: rec.name, sent: 0 });
 		}
 		if (!started) for (const a of world.avens) wear(a, minds[a.name]);
 		snap = snapshot();
@@ -150,11 +146,9 @@
 				want = 'valley';
 			}
 		const cfg = configs.find((c) => c.id === want) ?? configs[0];
-		if (!cfg) return;
-		useConfig(cfg, changedRules());
-		saveRules();
-		if (!started) reset();
-		else if (codeKey() !== loadedKey) useCode();
+		if (!cfg || started) return; // a world keeps the settings it began with: an accepted MIP shapes new worlds
+		useConfig(cfg, first ? {} : changedRules());
+		reset();
 	}
 
 	// ---- the config cards' code, each card in its own QuickJS sandbox (sandbox.js), fresh for every run ----
@@ -185,16 +179,90 @@
 			});
 	}
 
-	/** play another config: your changes go, the valley starts again */
-	function play(/** @type {any} */ cfg) {
-		useConfig(cfg, {});
+	/** a new world on a config (Samuel: worlds are never reset; you open a new one, and every old one stays) */
+	function play(/** @type {any} */ cfg, local = {}) {
+		useConfig(cfg, local);
 		try {
 			localStorage.setItem(PICKED, cfg.id);
 		} catch {
 			/* no storage here */
 		}
-		saveRules();
 		reset();
+		setView('valley');
+	}
+
+	// ---- worlds (Samuel, 2026-10-09): every world is kept with its settings, and can be opened again and played on;
+	// a new one starts fresh. Only the avens' brains go from world to world (they are global) ----
+	let worlds = $state(/** @type {any[]} */ ([]));
+	let here = $state({ id: /** @type {string | null} */ (null), name: '' }); // the world on the page
+	let worldNote = $state('');
+	let dirty = false; // its settings changed since it was last saved
+	async function loadWorlds() {
+		if (!acct.play) return;
+		try {
+			worlds = (await loadRuns(100)).runs;
+			worldNote = '';
+		} catch (e) {
+			worldNote = `The worlds could not be read (${/** @type {any} */ (e)?.message || e}).`;
+		}
+	}
+	/** what this world runs on: its config (cards and values), the changes tried on top, and the model its avens ask */
+	const settingsOf = () => ({ config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, cards: CONFIG.cards, params: { ...DEFAULTS } }, local: changedRules(), model: brain.mode });
+	let keeping = false;
+	/** keep the world as it stands with its run: its last days, then the whole valley and its settings */
+	async function keepWorld() {
+		const r = rec;
+		if (!r || keeping) return;
+		keeping = true;
+		try {
+			await r.flush(summary(), world.avens.every((/** @type {any} */ a) => !a.alive));
+			if (!r.id) return;
+			await saveWorldState(r.id, { world: saveWorld(world), settings: settingsOf() });
+			dirty = false;
+		} catch (e) {
+			saving = { ...saving, error: `This world could not be saved (${/** @type {any} */ (e)?.message || e}).` };
+		} finally {
+			keeping = false;
+		}
+	}
+	/** open a kept world again, as it was, with its settings: paused, ready to play on */
+	async function openWorld(/** @type {any} */ w) {
+		worldNote = 'Opening…';
+		let run;
+		try {
+			run = await loadWorldRun(w.id);
+		} catch (e) {
+			worldNote = `${w.name} could not be opened (${/** @type {any} */ (e)?.message || e}).`;
+			return;
+		}
+		if (!run.state?.world && !run.state?.settings) {
+			worldNote = `${w.name} is from before worlds were kept whole: its days are in Stats on the MCP, but it can't be played on.`;
+			return;
+		}
+		if (started) {
+			await keepWorld();
+			syncMinds(true);
+		}
+		const s = run.state.settings ?? { config: { id: run.config_id, name: run.config_id ?? 'Defaults', version: run.config_version ?? 0, cards: run.config?.cards, params: run.config?.params ?? {} }, local: {} };
+		useConfig({ id: s.config.id, name: s.config.name, version: s.config.version, cards: s.config.cards, params: s.config.params }, s.local ?? {});
+		if (s.model && s.model in BRAINS) brain.mode = s.model;
+		const fresh = !run.state.world; // made on the MCP and never played: dealt now, on its settings and seed
+		world = fresh ? createWorld(run.seed ?? undefined, { hearts: carried() }) : loadWorld(run.state.world, run.day_rows.map((/** @type {any} */ d) => d.stats));
+		rec = recorder(world, null, { id: run.id, name: run.name, sent: fresh ? 0 : world.stats.length });
+		saving = { days: rec.sent, error: '' };
+		here = { id: run.id, name: run.name };
+		for (const a of world.avens) {
+			const m = (minds[a.name] ??= wholeMind(null, a.name, RULES.reserveDays));
+			wear(a, m);
+			if (!fresh) beginRun(m, run.name, { resume: true });
+		}
+		calls = blankCalls();
+		down = busy = '';
+		paused = true;
+		started = !fresh;
+		dirty = false;
+		worldNote = '';
+		useCode();
 		setView('valley');
 	}
 
@@ -212,11 +280,19 @@
 		};
 	}
 
-	/** the run begins in the database: the config as played (cards, every value, your changes on top), seed and brain */
+	/** the world begins in the database: the config as played (cards, every value, your changes on top), seed and brain;
+	 * once it has its name, each brain knows which world it is in */
 	function startRecording() {
 		if (!acct.play) return;
 		saving = { days: 0, error: '' };
-		rec = recorder(world, { config_id: CONFIG.id, config_version: CONFIG.version, config: { cards: CONFIG.cards, params: { ...RULES }, local: changedRules() }, seed: world.seed, brain: PLAN[brain.mode].filter(Boolean).map((/** @type {any} */ k) => (k === 'liquid' ? LIQUID_MODEL : box[k] || k)).join(', falling back to '), summary: summary() });
+		const r = (rec = recorder(world, { config_id: CONFIG.id, config_version: CONFIG.version, config: { cards: CONFIG.cards, params: { ...RULES }, local: changedRules() }, seed: world.seed, brain: PLAN[brain.mode].filter(Boolean).map((/** @type {any} */ k) => (k === 'liquid' ? LIQUID_MODEL : box[k] || k)).join(', falling back to '), summary: summary() }));
+		r.ready.then(() => {
+			if (rec !== r || !r.id) return;
+			here = { id: r.id, name: r.name };
+			for (const a of world.avens) if (a.mind) a.mind.world = r.name;
+			keepWorld();
+			loadWorlds();
+		});
 	}
 
 	/** send the finished days (every few seconds); `end` closes the run */
@@ -241,7 +317,7 @@
 	let tab = $state('decisions');
 	let selected = $state(0);
 	let panelOpen = $state(true);
-	let page = $state('valley'); // the main view: 'valley' or 'stats'
+	let page = $state('home'); // the main view: 'home' (the worlds), 'valley', 'stats', 'policy', 'world', 'mips'
 	let snap = $state.raw(snapshot());
 	const blankCalls = () => ({ asked: 0, answered: 0, pending: 0, by: /** @type {Record<string, number>} */ ({ d1: 0, qwen: 0, liquid: 0 }), failed: 0, limited: 0, lastError: '', errors: /** @type {Record<string, string>} */ ({ d1: '', qwen: '', liquid: '' }) });
 	let calls = $state(blankCalls());
@@ -293,7 +369,7 @@
 			// every aven's brain decisions, newest first, only while the Decisions tab is open
 			decisions: tab === 'decisions' ? (world.decisions ?? []).slice(-150).reverse().map((/** @type {any} */ d) => ({ ...d, changes: [...d.changes] })) : [],
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
-			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
+			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, start: o.startHearts ?? RULES.startHearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
 				GOODS.map((g) => {
 					const m = world.market[g];
@@ -507,12 +583,18 @@
 	// decision; after that each acts on its latest one while the next is on its way
 	const decided = () => world.avens.every((/** @type {any} */ a) => !a.alive || a.brain.ready);
 
+	/** the HEARTS each aven takes into a new world (Samuel: its money always goes with it), from its brain's wallet */
+	const carried = () => (RULES.carryHearts && mindsOf === mindsKey() ? Object.fromEntries(Object.values(minds).filter((m) => m.hearts > 0).map((m) => [m.name, m.hearts])) : {});
+	/** a new world, fresh, on the settings now in force; the one before is kept as it stands */
 	function reset() {
-		save(true);
-		if (started) syncMinds(true);
+		if (started) {
+			keepWorld();
+			syncMinds(true);
+		}
 		rec = null;
+		here = { id: null, name: '' };
 		saving = { days: 0, error: '' };
-		world = createWorld();
+		world = createWorld(undefined, { hearts: carried() });
 		if (mindsOf === mindsKey()) for (const a of world.avens) wear(a, (minds[a.name] ??= wholeMind(null, a.name, RULES.reserveDays)));
 		else loadAllMinds();
 		calls = blankCalls();
@@ -536,14 +618,15 @@
 	function toggle() {
 		if (!access.ok) return;
 		if (!started) {
-			// a run begins: each mind counts it, and an unfinished trial from the last run is undone
-			for (const a of world.avens) if (a.mind) beginRun(a.mind);
-			startRecording();
+			// a world begins: each brain counts it, and a trial left unfinished in another world is undone
+			for (const a of world.avens) if (a.mind) beginRun(a.mind, here.name || 'a new world');
+			if (!rec) startRecording(); // a world made on the MCP has its run already
 			syncMinds(true);
 		}
 		started = true;
 		if (paused) down = '';
 		paused = !paused;
+		if (paused) keepWorld();
 	}
 
 	function select(/** @type {number} */ id) {
@@ -760,6 +843,7 @@
 		let last = performance.now();
 		let lastSnap = 0;
 		let lastSave = 0;
+		let lastKeep = 0;
 		let raf = 0;
 		const frame = (/** @type {number} */ now) => {
 			const dtReal = Math.min(250, now - last);
@@ -784,6 +868,11 @@
 				lastSave = now;
 				save(world.avens.every((/** @type {any} */ a) => !a.alive));
 			}
+			// the whole world is kept every 20 s while it plays (and when paused, left or closed)
+			if (rec && (!paused || dirty) && now - lastKeep > 20000) {
+				lastKeep = now;
+				keepWorld();
+			}
 			if (now - lastSnap > 250) {
 				lastSnap = now;
 				snap = snapshot();
@@ -792,13 +881,16 @@
 		};
 		raf = requestAnimationFrame(frame);
 		// what the minds learned since the last night is written when the page goes, too (best effort)
-		const leave = () => started && syncMinds(true);
+		const leave = () => {
+			if (!started) return;
+			keepWorld();
+			syncMinds(true);
+		};
 		window.addEventListener('pagehide', leave);
 		return () => {
 			cancelAnimationFrame(raf);
 			ro.disconnect();
 			window.removeEventListener('pagehide', leave);
-			save();
 			leave();
 		};
 	});
@@ -813,7 +905,8 @@
 			return s.length ? `went short of ${s.map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')} · health ${e.health}` : `ate and drank in full · health ${e.health}`;
 		}
 		if (e.kind === 'price') return `${NAME[e.source] ?? 'Liquid'}: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
-		if (e.kind === 'death') return 'died';
+		if (e.kind === 'death') return `died of ${e.cause ?? 'want'}${e.lost != null ? `, lost ${fmt(e.lost)} HEARTS and all it held` : ''}`;
+		if (e.kind === 'reborn') return `reborn with ${fmt(e.hearts)} HEARTS and nothing in store`;
 		if (e.kind === 'rot') return `rotted: ${Object.entries(e.rotted).map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')}`;
 		if (e.kind === 'rain') return `rain: the barrel caught ${e.qty} WATER`;
 		if (e.kind === 'grow') return `${e.note === 'dry' ? 'dry spell, the well gave' : e.note === 'bad' ? 'bad harvest:' : 'rich harvest:'} ${e.qty} ${GOOD_LABEL[e.good]} (usually ${e.cap})`;
@@ -824,10 +917,11 @@
 <div class="market" class:open={panelOpen} class:statsview={page !== 'valley'}>
 	<header>
 		<div class="title">
-			<b>Sandbox 7 · Avens trading</b>
+			<b>Sandbox 7 · {here.name || (started ? 'This world (not kept)' : 'A new world')}</b>
 			<span>Day {snap.day} · {snap.time} · month {snap.month}</span>
 		</div>
 		<nav class="views" aria-label="View">
+			<button class:on={page === 'home'} onclick={() => (loadWorlds(), setView('home'))}>Worlds</button>
 			<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
 			<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
 			<button class:on={page === 'policy'} onclick={() => setView('policy')}>Policies</button>
@@ -839,7 +933,7 @@
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
 			</select>
-			<button onclick={reset}>Reset</button>
+			<button onclick={() => (reset(), setView('valley'))}>New world</button>
 			<button class="panel-btn" hidden={page === 'stats'} onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
 		</div>
 	</header>
@@ -859,6 +953,36 @@
 		</div>
 	</div>
 
+	{#if page === 'home'}
+		<div class="statspage worlds">
+			<h2>Worlds</h2>
+			<p class="sub">Every world is kept as it stands, with its own settings, and can be opened again to play on. A new world starts fresh; only the avens' brains go with them from world to world, and learn there.</p>
+			<div class="new">
+				<button class="go" onclick={() => { const c = configs.find((x) => x.id === newCfg) ?? configs[0]; if (c) play(c); else (reset(), setView('valley')); }}>New world</button>
+				{#if configs.length > 1}<label>on <select bind:value={newCfg}>{#each configs as c (c.id)}<option value={c.id}>{c.name} (v{c.version})</option>{/each}</select></label>{:else if configs[0]}<span class="sub">on {configs[0].name} (v{configs[0].version})</span>{/if}
+			</div>
+			{#if !acct.play}<p class="sub">{acct.note || 'Sign in to keep worlds.'} A world played here now is not kept.</p>{/if}
+			{#if worldNote}<p class="sub miss">{worldNote}</p>{/if}
+			<table class="worldlist">
+				<thead><tr><th>World</th><th>Config</th><th>Days</th><th>Alive</th><th>Leader</th><th>Kept</th><th></th></tr></thead>
+				<tbody>
+					{#each worlds as w (w.id)}
+						<tr class:sel={w.id === here.id}>
+							<td><b>{w.name || 'A world'}</b></td>
+							<td>{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</td>
+							<td class="num">{w.days}</td>
+							<td class="num">{w.alive ?? '—'}</td>
+							<td>{w.summary?.leader ?? '—'}</td>
+							<td>{w.saved ? new Date(w.saved).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'history only'}</td>
+							<td>{#if w.id === here.id}<button onclick={() => setView('valley')}>Playing</button>{:else if w.saved}<button onclick={() => openWorld(w)}>Open</button>{/if}</td>
+						</tr>
+					{:else}
+						<tr><td colspan="7" class="none">{acct.play ? 'No worlds yet: start a new one.' : ''}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
 	{#if page === 'stats'}
 		<div class="statspage">
 			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} />
@@ -885,8 +1009,8 @@
 							<i style:background={row.colour}></i>
 							<b>{row.name}</b>
 							<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>
-							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn}`}</span>
-							<span class="delta" class:up={row.hearts >= snap.policy.start}>{row.alive ? `${row.hearts >= snap.policy.start ? '+' : ''}${fmt(row.hearts - snap.policy.start)}` : ''}</span>
+							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
+							<span class="delta" class:up={row.hearts >= row.start} title="since it came into this world">{row.alive ? `${row.hearts >= row.start ? '+' : ''}${fmt(row.hearts - row.start)}` : ''}</span>
 						</button>
 					</li>
 				{/each}
@@ -967,7 +1091,7 @@
 		<section class="ledger">
 			<h3><i style:background={snap.aven.colour}></i>{snap.aven.name}'s ledger</h3>
 			<p class="sub">
-				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.mind ? `${snap.aven.mind.wants.water} days of water, ${snap.aven.mind.wants.food} of food` : `${snap.aven.reserveDays} days`} in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
+				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}, reborn on day ${snap.aven.diedOn + RULES.rebirthDays}`} · keeps {snap.aven.mind ? `${snap.aven.mind.wants.water} days of water, ${snap.aven.mind.wants.food} of food` : `${snap.aven.reserveDays} days`} in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
 			</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, and against the market price">Sells</th><th title="pays up to, and against the market price">Pays</th></tr></thead>
@@ -1062,6 +1186,70 @@
 	.statspage {
 		min-height: 0;
 		overflow: hidden;
+	}
+	.worlds {
+		height: 100%;
+		box-sizing: border-box;
+		overflow: auto;
+		background: #f4f1e8;
+		color: #1f2a23;
+		padding: 18px 20px 96px;
+	}
+	.worlds > * {
+		max-width: 980px;
+	}
+	.worlds h2 {
+		margin: 0 0 4px;
+		font-size: 20px;
+	}
+	.worlds .new {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 10px;
+		margin: 14px 0;
+	}
+	.worlds .go {
+		background: #2f6b46;
+		color: #fff;
+		border: 0;
+		border-radius: 10px;
+		padding: 8px 16px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.worldlist {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 13px;
+	}
+	.worldlist th,
+	.worldlist td {
+		text-align: left;
+		padding: 7px 8px;
+		border-bottom: 1px solid #1f2a2318;
+		white-space: nowrap;
+	}
+	.worldlist th {
+		font-weight: 600;
+		opacity: 0.7;
+	}
+	.worldlist tr.sel td {
+		background: #2f6b4614;
+	}
+	.worldlist .none {
+		opacity: 0.6;
+	}
+	@media (max-width: 760px) {
+		.worlds {
+			padding: 12px 12px 96px;
+		}
+		.worldlist th:nth-child(2),
+		.worldlist td:nth-child(2),
+		.worldlist th:nth-child(5),
+		.worldlist td:nth-child(5) {
+			display: none;
+		}
 	}
 	.views {
 		display: flex;

@@ -522,15 +522,24 @@ pub struct EconomyMip {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyBrains {
-    /// the config's id (default: valley)
-    pub config: Option<String>,
+pub struct EconomyWorld {
+    /// the new world: { name (default "World N"), config (a config's id from economy_configs, default valley),
+    /// cards (instead: whole config cards to run on, as economy_mip_create takes them, resources, recipes and QuickJS
+    /// code too), values ({ key: number } tried on top, keys from economy_configs' catalogue), model ("d1" or "qwen"),
+    /// seed }
+    pub world: Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyWorldUpdate {
+    /// the world's id, from economy_runs
+    pub id: String,
+    /// what changes: { name, values ({ key: number }, merged; null takes a value out), model, cards (whole) }
+    pub change: Value,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct EconomyBrainEdit {
-    /// the config's id (default: valley)
-    pub config: Option<String>,
     /// the aven's name, e.g. Ama (names from economy_brains)
     pub aven: String,
     /// the edit: { dials: { greed, thrift, haggle: 0-10 }, wants: { water, food: days of stock 1-10 }, lesson: a short
@@ -1537,7 +1546,7 @@ impl Studio {
         text(self.api("GET", "/api/economy/configs", None).await)
     }
 
-    #[tool(description = "The economy sandbox's game runs, newest first: id, the config and version it ran on, seed, brain, days played, avens alive, and its summary (each aven's name, goods grown, HEARTS and health; the leader; total HEARTS)")]
+    #[tool(description = "The economy sandbox's worlds (game runs), newest first: id, name, when it was last kept whole (saved; a world without it is history only), the config and version it ran on, seed, brain, days played, avens alive, and its summary (each aven's name, goods grown, HEARTS and health; the leader; total HEARTS)")]
     async fn economy_runs(&self) -> String {
         text(self.api("GET", "/api/economy/runs?limit=100", None).await)
     }
@@ -1578,19 +1587,31 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every aven's brain in an economy config, kept across runs: its character (dials greed, thrift, haggle, 0-10), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
+        description = "Make a new world of the economy sandbox: fresh land and avens on a config (or cards given whole) with values tried on top, and the model its avens ask. It waits in the page's list of worlds until it is opened there and started (the valley runs on the page). Each world keeps its own settings; the avens' brains, and their HEARTS, go with them from world to world."
     )]
-    async fn economy_brains(&self, Parameters(a): Parameters<EconomyBrains>) -> String {
-        let config = a.config.unwrap_or_else(|| "valley".into());
-        text(self.api("GET", &format!("/api/economy/brains/{config}"), None).await)
+    async fn economy_world_create(&self, Parameters(a): Parameters<EconomyWorld>) -> String {
+        text(self.api("POST", "/api/economy/worlds", Some(a.world)).await)
     }
 
     #[tool(
-        description = "Change one aven's brain: set its character dials (greed, thrift, haggle, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night in a running game, or when the next run starts, and shows in its trial log and the page's decisions."
+        description = "Change a world's settings (its name, values tried on top, the model, or its cards whole). They are what it runs on the next time it is opened on the page; change a world that isn't playing right now."
+    )]
+    async fn economy_world_update(&self, Parameters(a): Parameters<EconomyWorldUpdate>) -> String {
+        text(self.api("PATCH", &format!("/api/economy/worlds/{}", a.id), Some(a.change)).await)
+    }
+
+    #[tool(
+        description = "Every aven's brain, global: one per aven, kept across every world it plays in (each line names its world): its character (dials greed, thrift, haggle, 0-10), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
+    )]
+    async fn economy_brains(&self) -> String {
+        text(self.api("GET", "/api/economy/brains/global", None).await)
+    }
+
+    #[tool(
+        description = "Change one aven's brain: set its character dials (greed, thrift, haggle, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night in a running world, or when it next enters a world, and shows in its trial log and the page's decisions."
     )]
     async fn economy_brain_edit(&self, Parameters(a): Parameters<EconomyBrainEdit>) -> String {
-        let config = a.config.unwrap_or_else(|| "valley".into());
-        text(self.api("POST", &format!("/api/economy/brains/{config}/{}", a.aven), Some(a.edit)).await)
+        text(self.api("POST", &format!("/api/economy/brains/global/{}", a.aven), Some(a.edit)).await)
     }
 
     // ── anything else the admin may do ──

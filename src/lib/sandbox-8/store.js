@@ -15,16 +15,23 @@ export const propose = (mip) => post('/api/economy/mips', mip);
 export const decide = (number, accept, note = '') => post(`/api/economy/mips/${number}/decide`, { accept, note });
 export const withdraw = (number) => post(`/api/economy/mips/${number}/withdraw`, {});
 export const loadRuns = (limit = 50) => apiCall(`/api/economy/runs?limit=${limit}`);
+/** one world (run) with every day's stats row and the valley as it last stood */
+export const loadWorldRun = (id) => apiCall(`/api/economy/runs/${encodeURIComponent(id)}?state=1`);
+/** the valley as it stands now, and its settings, kept with its run */
+export const saveWorldState = (id, state) => apiCall(`/api/economy/runs/${encodeURIComponent(id)}/state`, { method: 'PUT', body: JSON.stringify({ state }) });
 
 /**
- * A run being recorded: starts it in the database, then sends each finished day (its stats row, and the trades and
- * Liquid decisions of that day, from world.outbox) every few seconds, and its standing at the end.
+ * A run (a world) being recorded: starts it in the database, or picks up one opened again (`again`: its id, name and
+ * the days it has), then sends each finished day (its stats row, and the trades and decisions of that day, from
+ * world.outbox) every few seconds, and its standing at the end.
+ * @param {any} world @param {any} start @param {any} [again]
+ * @returns {any}
  */
-export function recorder(world, start) {
-	const rec = { id: null, sent: 0, error: '', busy: false, ended: false, pending: {} };
+export function recorder(world, start, again = null) {
+	/** @type {any} */
+	const rec = { id: again?.id ?? null, name: again?.name ?? '', sent: again?.sent ?? 0, error: '', busy: false, ended: false, pending: {} };
 	world.outbox = [];
-	const ready = post('/api/economy/runs', start)
-		.then((r) => (rec.id = r.id))
+	rec.ready = (again ? Promise.resolve() : post('/api/economy/runs', start).then((r) => ((rec.id = r.id), (rec.name = r.name))))
 		.catch((e) => {
 			rec.error = e?.message || 'the run could not be saved';
 			world.outbox = null;
@@ -42,7 +49,7 @@ export function recorder(world, start) {
 
 	/** send every finished day not sent yet; `ended` closes the run */
 	rec.flush = async (summary, ended = false) => {
-		await ready;
+		await rec.ready;
 		if (!rec.id || rec.busy || rec.ended) return;
 		drain();
 		const rows = world.stats.slice(rec.sent);

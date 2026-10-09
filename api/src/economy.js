@@ -10,8 +10,9 @@
  * the studio's MCP); only the admin accepts or rejects, and accepting puts the cards in as they are and writes a new
  * version. Card code is only ever kept here as text: it runs in the page's QuickJS sandbox, never on the server.
  *
- * A run is one game played: the config it ran on (a full copy, with any local changes the player tried on top), its
- * seed and brain, and then every day's stats row, trades and Liquid decisions, as the page sends them.
+ * A run is one valley played: the config it runs on (a full copy, with any local changes the player tried on top), its
+ * seed and brain, every day's stats row, trades and decisions, as the page sends them, and the whole valley as it last
+ * stood (its state), so the page can open it again and play on.
  */
 import { db } from "./pg";
 import { PARAMS, SECTIONS, CARD_KINDS, HOOKS, applyCards, checkCard, defaultCards, paramsOf } from "../../game/economy/params.js";
@@ -254,6 +255,8 @@ export async function withdrawMip(number, who) {
 
 const runRow = (r) => ({
   id: r.id,
+  name: r.name,
+  saved: r.saved ?? null,
   config_id: r.config_id,
   config_version: r.config_version == null ? null : Number(r.config_version),
   seed: r.seed == null ? null : Number(r.seed),
@@ -276,11 +279,107 @@ export async function startRun(player, body) {
   let configId = body?.config_id == null ? null : text(body.config_id, 41);
   if (configId && !(await db.query("SELECT 1 FROM econ_configs WHERE id = $1", [configId])).rows.length) configId = null;
   const { rows } = await db.query(
-    `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary)
-     VALUES ($1, $2, $3, ($4::text)::jsonb, $5, $6, $7, ($8::text)::jsonb) RETURNING *`,
-    [crypto.randomUUID(), configId, body?.config_version == null ? null : Number(body.config_version), json(config), Number.isFinite(Number(body?.seed)) ? Math.trunc(Number(body.seed)) : null, text(body?.brain, 80), player, json(body?.summary ?? {})],
+    `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary, name)
+     VALUES ($1, $2, $3, ($4::text)::jsonb, $5, $6, $7, ($8::text)::jsonb,
+       COALESCE(NULLIF($9, ''), 'World ' || ((SELECT count(*) FROM econ_runs) + 1))) RETURNING *`,
+    [crypto.randomUUID(), configId, body?.config_version == null ? null : Number(body.config_version), json(config), Number.isFinite(Number(body?.seed)) ? Math.trunc(Number(body.seed)) : null, text(body?.brain, 80), player, json(body?.summary ?? {}), text(body?.name, 80)],
   );
   return runRow(rows[0]);
+}
+
+/**
+ * A new world, made here rather than on the page (an agent over the studio's MCP may make one): its name, the config it
+ * starts from (its current cards, or `cards` given whole, resources, recipes and code too), values tried on top
+ * (`values`: { key: number }), the model its avens ask (d1 or qwen) and a seed. It waits in the list of worlds, fresh,
+ * until someone opens it on the page and presses Start.
+ */
+export async function createWorld(player, body) {
+  const configId = text(body?.config ?? body?.config_id ?? "valley", 41) || "valley";
+  let cfg = null;
+  try {
+    cfg = await getConfig(configId);
+  } catch {
+    if (!Array.isArray(body?.cards)) throw new EconomyError(`No config ${configId}: name one from economy_configs, or send the cards whole.`, 404);
+  }
+  let cards = cfg?.cards ?? [];
+  if (Array.isArray(body?.cards)) {
+    if (body.cards.length > MAX_CARDS) throw new EconomyError(`At most ${MAX_CARDS} cards.`);
+    cards = [];
+    for (const raw of body.cards) {
+      const c = checkCard(raw);
+      if (c.error) throw new EconomyError(c.error);
+      cards.push(c.card);
+    }
+  }
+  const local = worldValues(body?.values);
+  const params = paramsOf(cards);
+  const model = ["d1", "qwen"].includes(body?.model) ? body.model : "d1";
+  const settings = { config: { id: cfg ? configId : null, name: cfg?.name ?? (text(body?.config_name, 80) || "Cards given"), version: cfg?.version ?? 0, cards, params }, local, model };
+  const seed = Number.isFinite(Number(body?.seed)) ? Math.trunc(Number(body.seed)) : Math.floor(Math.random() * 1e9);
+  const { rows } = await db.query(
+    `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary, name, state, saved)
+     VALUES ($1, $2, $3, ($4::text)::jsonb, $5, $6, $7, '{}'::jsonb,
+       COALESCE(NULLIF($8, ''), 'World ' || ((SELECT count(*) FROM econ_runs) + 1)), ($9::text)::jsonb, now()) RETURNING *`,
+    [crypto.randomUUID(), cfg ? configId : null, cfg?.version ?? null, json({ cards, params: { ...params, ...local }, local }), seed, model, player, text(body?.name, 80), json({ settings })],
+  );
+  return { ...runRow(rows[0]), settings };
+}
+
+/** values tried on top of a config: only keys the catalogue has, each clamped to its range */
+function worldValues(values) {
+  const out = {};
+  for (const [k, v] of Object.entries(values && typeof values === "object" ? values : {})) {
+    const p = PARAMS.find((x) => x.key === k);
+    if (p && Number.isFinite(Number(v))) out[k] = Math.min(p.max, Math.max(p.min, Number(v)));
+  }
+  return out;
+}
+
+/**
+ * A world's settings changed from outside (the MCP): its name, values tried on top (`values`, merged; null removes
+ * one), the model, or its cards whole. They are what the world runs on the next time it is opened on the page; a
+ * world open on a page right now keeps its own until then (and saves them over these), so change one that isn't playing.
+ */
+export async function updateWorld(id, body) {
+  const { rows } = await db.query("SELECT state FROM econ_runs WHERE id = $1", [id]);
+  if (!rows[0]) throw new EconomyError("No such world.", 404);
+  const state = rows[0].state ?? {};
+  const s = state.settings ?? null;
+  if (!s) throw new EconomyError("That world is from before worlds kept their settings: make a new one.", 409);
+  if (Array.isArray(body?.cards)) {
+    const cards = [];
+    for (const raw of body.cards) {
+      const c = checkCard(raw);
+      if (c.error) throw new EconomyError(c.error);
+      cards.push(c.card);
+    }
+    s.config = { ...s.config, cards, params: paramsOf(cards) };
+  }
+  if (body?.values && typeof body.values === "object") {
+    const next = { ...(s.local ?? {}), ...worldValues(body.values) };
+    for (const [k, v] of Object.entries(body.values)) if (v === null) delete next[k];
+    s.local = next;
+  }
+  if (["d1", "qwen"].includes(body?.model)) s.model = body.model;
+  await db.query(`UPDATE econ_runs SET state = ($2::text)::jsonb, name = COALESCE(NULLIF($3, ''), name), updated = now() WHERE id = $1`, [id, json({ ...state, settings: s }), text(body?.name, 80)]);
+  return { id, settings: s };
+}
+
+/** The whole valley as it stands now (the page's own snapshot: avens, market, weather, the clock and its dice), so it
+ * can be opened again and played on; and a new name, when given. */
+export async function saveState(id, body) {
+  const state = body?.state;
+  if (state != null && (typeof state !== "object" || Array.isArray(state))) throw new EconomyError("Send { state: { ... } }.");
+  const s = state == null ? null : json(state);
+  if (s && s.length > MAX_JSON) throw new EconomyError("That valley is too large to save.", 413);
+  const r = await db.query(
+    `UPDATE econ_runs SET state = CASE WHEN $2::text IS NULL THEN state ELSE ($2::text)::jsonb END,
+       saved = CASE WHEN $2::text IS NULL THEN saved ELSE now() END, name = COALESCE(NULLIF($3, ''), name), updated = now()
+     WHERE id = $1`,
+    [id, s, text(body?.name, 80)],
+  );
+  if (!r.affectedRows) throw new EconomyError("No such run.", 404);
+  return { id, saved: !!s };
 }
 
 /** More days of a run: each its stats row, trades and decisions; and where the run stands now. */
@@ -310,15 +409,16 @@ export async function addDays(id, body) {
 }
 
 export async function listRuns(limit = 100) {
-  const { rows } = await db.query("SELECT id, config_id, config_version, seed, brain, started, updated, ended, days, alive, summary, player FROM econ_runs ORDER BY started DESC LIMIT $1", [Math.min(500, Math.max(1, Number(limit) || 100))]);
+  const { rows } = await db.query("SELECT id, name, config_id, config_version, seed, brain, started, updated, saved, ended, days, alive, summary, player FROM econ_runs ORDER BY started DESC LIMIT $1", [Math.min(500, Math.max(1, Number(limit) || 100))]);
   return rows.map(runRow);
 }
 
 /**
- * One run: its config and its days (all, or `from`..`to`), each with stats, and trades and decisions when asked.
- * @param {string} id @param {{ from?: number | string, to?: number | string, detail?: boolean }} [opts]
+ * One run: its config and its days (all, or `from`..`to`), each with stats, and trades and decisions when asked; with
+ * `state`, the valley as it last stood too.
+ * @param {string} id @param {{ from?: number | string, to?: number | string, detail?: boolean, state?: boolean }} [opts]
  */
-export async function getRun(id, { from, to, detail = false } = {}) {
+export async function getRun(id, { from, to, detail = false, state = false } = {}) {
   const { rows } = await db.query("SELECT * FROM econ_runs WHERE id = $1", [id]);
   if (!rows[0]) throw new EconomyError("No such run.", 404);
   const lo = Number.isFinite(Number(from)) ? Number(from) : 0;
@@ -327,7 +427,7 @@ export async function getRun(id, { from, to, detail = false } = {}) {
     `SELECT day, stats${detail ? ", trades, decisions" : ""} FROM econ_run_days WHERE run_id = $1 AND day BETWEEN $2 AND $3 ORDER BY day`,
     [id, lo, hi],
   );
-  return { ...runRow(rows[0]), config: rows[0].config, day_rows: days.map((d) => ({ ...d, day: Number(d.day) })) };
+  return { ...runRow(rows[0]), config: rows[0].config, ...(state ? { state: rows[0].state ?? null } : {}), day_rows: days.map((d) => ({ ...d, day: Number(d.day) })) };
 }
 
 export async function deleteRun(id) {
