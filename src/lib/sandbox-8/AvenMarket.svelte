@@ -201,7 +201,10 @@
 			// the chart's lines, only while the Prices tab is open: at most ~300 points a good
 			series: tab === 'prices' || page === 'stats' ? Object.fromEntries(GOODS.map((g) => { const all = world.market[g].series; const every = Math.max(1, Math.ceil(all.length / 300)); return [g, all.filter((/** @type {any} */ _p, /** @type {number} */ i) => i % every === 0 || i === all.length - 1).map((/** @type {any} */ p) => ({ ...p }))]; })) : {},
 			waiting: world.avens.filter((/** @type {any} */ x) => x.alive && !x.brain.ready).length,
-			stale: world.avens.filter((/** @type {any} */ x) => x.alive && x.brain.ready && world.t - (x.brain.last?.t ?? 0) >= STALE_H * 3600).length,
+			stale: 0,
+			// the brains' queue right now, for the Decisions tab: who is thinking (and how long, real seconds), who waits
+			// for a turn, and how old each one's latest decision is (in-game hours)
+			queue: tab === 'decisions' ? world.avens.filter((/** @type {any} */ x) => x.alive).map((/** @type {any} */ x) => ({ id: x.id, name: x.name, colour: x.colour, thinking: x.brain.pending, by: x.brain.asking ?? '', waited: x.brain.pending ? (performance.now() - (x.brain.sentAt ?? performance.now())) / 1000 : 0, age: x.brain.ready ? (world.t - (x.brain.last?.t ?? world.t)) / 3600 : null, asks: x.brain.asks ?? 0 })).sort((/** @type {any} */ p, /** @type {any} */ q) => Number(q.thinking) - Number(p.thinking) || q.waited - p.waited) : [],
 			month: Math.floor((world.day - 1) / 30) + 1,
 			config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, local: Object.keys(changedRules()).length },
 			code: CODE.run?.info() ?? null,
@@ -239,7 +242,8 @@
 
 	// every aven thinks all day long, not once a morning (Samuel): once its last decision is in and THINK_H in-game hours
 	// have passed, it asks its brain again with what it sees now. There is no rule-based stand-in: an aven acts only on a
-	// brain's answers, and the clock waits while any living aven's decision is older than STALE_H. The stalest aven asks
+	// brain's answers, and the clock waits only until each living aven has its first one: after that, decisions run beside the
+	// clock and each aven acts on its latest while the next is on its way (Samuel). The stalest aven asks
 	// first. The brains (Samuel, 2026-10-09) run on his GPU machine, over Tailscale, picked on the page: d1 (its own
 	// server, on the machine's CPU) one request every second (BOX_EVERY), sent whether or not the ones before have
 	// answered, up to BOX_IN_FLIGHT at once; when d1 fails, Qwen answers and the picker turns to Qwen. Qwen is fast: every
@@ -249,7 +253,6 @@
 	// GAP_MAX). Only every third ask of an aven is a full one (haggling, stock); the rest ask its prices. A failure no
 	// brain covers pauses the valley (a refusal from Liquid only waits).
 	const THINK_H = 2;
-	const STALE_H = 24;
 	const GAP_MIN = 2500;
 	const GAP_MAX = 30000;
 	const BOX_EVERY = 1000; // d1 on Samuel's machine: one decision request a second (Samuel); Qwen: all at once
@@ -364,7 +367,8 @@
 		let a = null;
 		for (const o of world.avens) {
 			if (!o.alive || o.brain.pending) continue;
-			if (o.brain.ready && world.t - o.brain.t0 < THINK_H * 3600) continue;
+			// Qwen: a new ask as soon as the last one has answered and the clock has moved on; d1: every THINK_H hours
+			if (o.brain.ready && (fast ? world.t <= o.brain.t0 : world.t - o.brain.t0 < THINK_H * 3600)) continue;
 			if (!a || lastAt(o) < lastAt(a)) a = o;
 		}
 		if (!a) return;
@@ -373,6 +377,8 @@
 		me.brain.asks = (me.brain.asks ?? 0) + 1;
 		me.brain.pending = true;
 		me.brain.t0 = world.t;
+		me.brain.sentAt = performance.now();
+		me.brain.asking = brain.mode;
 		gate.inFlight++;
 		calls.asked++;
 		calls.pending++;
@@ -419,8 +425,9 @@
 			});
 	}
 
-	/** the clock runs only while every living aven has a decision from Liquid no older than STALE_H */
-	const decided = () => world.avens.every((/** @type {any} */ a) => !a.alive || (a.brain.ready && world.t - lastAt(a) < STALE_H * 3600));
+	// decisions run beside the clock, never in its way (Samuel): it waits only until every living aven has its first
+	// decision; after that each acts on its latest one while the next is on its way
+	const decided = () => world.avens.every((/** @type {any} */ a) => !a.alive || a.brain.ready);
 
 	function reset() {
 		save(true);
@@ -839,7 +846,17 @@
 		</section>
 		{:else if tab === 'decisions'}
 		<section>
-			<p class="sub">Live: every decision a brain made for an aven, newest first: which brain answered and what it changed (its prices, how far it haggles, how many days it keeps in stock). Prices and trades over time are in Stats.</p>
+			<h4>Now <small>{calls.pending} thinking · {calls.answered} answered{calls.failed ? ` · ${calls.failed} failed` : ''}</small></h4>
+			<ul class="entries decisions queue">
+				{#each snap.queue as q (q.id)}
+					<li>
+						<span class="when">{q.thinking ? `${q.waited.toFixed(1)} s` : ''}</span>
+						<span class="what"><button class="who" onclick={() => select(q.id)}><i style:background={q.colour}></i>{q.name}</button> {#if q.thinking}<small>{NAME[q.by] ?? q.by}</small> thinking{:else}queued{/if}</span>
+						<span class="num" title="age of its latest decision, in-game">{q.age == null ? 'no decision yet' : `${q.age < 1 ? '<1' : Math.round(q.age)} h old`}</span>
+					</li>
+				{/each}
+			</ul>
+			<h4>Decisions</h4>
 			<ul class="entries decisions">
 				{#each snap.decisions as d (d.n)}
 					<li>
