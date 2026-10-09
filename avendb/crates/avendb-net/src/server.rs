@@ -1,8 +1,10 @@
 //! The server peer (P8b): a node in a folder of its own, its device's secret beside its store. At its first start it
-//! makes that secret, and founds its vault with an owner key it then forgets (`Lab::found_server`), so nobody changes
-//! the vault after; from then on it starts again from what the folder holds. It hands its contact card, its vault's
-//! log, to whoever asks, so that a device can grant it relay on a space; it holds only ciphertext, and opens nothing
-//! but what is public. Its relay (the `avendb-server` binary) lets in only the devices it knows (`Admission`).
+//! makes that secret, and belongs to no vault until the first device that brings its setup code claims it for its
+//! person's human vault (P8f, `Node::claim`): from then on it is a device of avenCEO, an aven vault that human vault
+//! owns, which it acts for and never governs, and it starts again from what the folder holds. It hands its contact
+//! card, avenCEO's log, to whoever asks, so that a device can grant avenCEO relay on a space; it holds only
+//! ciphertext, and opens nothing but what is public and avenCEO's own. Its relay (the `avendb-server` binary) lets in
+//! only the devices it knows (`Admission`).
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
@@ -19,21 +21,17 @@ use crate::{Node, Options};
 pub const SECRET: &str = "device.key";
 
 /// The server's node in folder `dir`, made if there is none, with `opts` for its network: its device's secret read
-/// from the folder, or made at its first start and written there, readable by its owner alone; its store beside it;
-/// and its vault, founded at its first start. It hands its contact card to whoever asks.
+/// from the folder, or made at its first start and written there, readable by its owner alone; and its store beside
+/// it. It hands its contact card to whoever asks, and the first device that brings `opts.setup` claims it.
 pub async fn open(dir: &Path, opts: Options) -> Result<Node> {
     fs::create_dir_all(dir).with_context(|| format!("the server's folder, {}", dir.display()))?;
     let secret = secret(&dir.join(SECRET))?;
     let mut lab = Lab::with_entropy(*random()?);
     let me = lab.device_with("the server", *secret);
-    let node = Node::spawn(lab, me, Options { store: Some(dir.to_path_buf()), card: true, ..opts }).await?;
-    let owner = random()?;
-    let founded = node.act(move |lab, me| lab.vault_of(me).map_or_else(|| lab.found_server(me, *owner), Ok)).await;
-    founded.map_err(|why| anyhow!("the server's vault: {why:?}"))?;
-    Ok(node)
+    Node::spawn(lab, me, Options { store: Some(dir.to_path_buf()), card: true, ..opts }).await
 }
 
-/// The vault the node's device belongs to, as its view has it.
+/// The vault the node's device belongs to, as its view has it: avenCEO, once a device claimed the server.
 pub async fn vault(node: &Node) -> Option<VaultId> {
     node.read(|lab, me| lab.vault_of(me)).await
 }

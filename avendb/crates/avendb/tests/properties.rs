@@ -73,8 +73,9 @@ fn history(seed: u64, n: usize) -> History {
 }
 
 /// `n` random attempts appended to `h`'s log, each kept only if the rules accept it: writes, grants, revocations,
-/// devices, coops and owners. New vaults join `h.vaults`. With `clash`, half of them write with, revoke or remove
-/// what the log holds.
+/// devices, coops, aven vaults and owners. New vaults join `h.vaults`. An act for a vault names the owners its author
+/// goes through as an honest device's log names them, or, a time in four, a random chain. With `clash`, half of them
+/// write with, revoke or remove what the log holds.
 fn attempts(rng: &mut Rng, h: &mut History, n: usize, clash: bool) {
     for _ in 0..n {
         if clash && rng.below(2) == 0 {
@@ -103,15 +104,20 @@ fn attempts(rng: &mut Rng, h: &mut History, n: usize, clash: bool) {
                 let parent = if grants.is_empty() || rng.below(2) == 0 { None } else { Some(rng.pick(&grants)) };
                 grant(scope, rng.pick(&ROLES), grantee, rng.pick(&h.vaults), parent)
             }
-            5 if !grants.is_empty() => Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&h.vaults), keep: vec![] },
+            5 if !grants.is_empty() => {
+                Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&h.vaults), keep: vec![], via: vec![] }
+            }
             6 => Action::AddDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), seal_to: None },
             7 => Action::RemoveDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), keep: vec![] },
             8 => {
-                let owners = vec![Principal::Vault(rng.pick(&h.vaults))];
-                Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: rng.next(), seal_to: vec![] }
+                let (owners, nonce) = (vec![Principal::Vault(rng.pick(&h.vaults))], rng.next());
+                // a third of them aven vaults
+                let kind = if nonce % 3 == 0 { Kind::Aven } else { Kind::Coop };
+                Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] }
             }
             _ => Action::AddOwner { vault: rng.pick(&h.vaults), owner: Principal::Vault(rng.pick(&h.vaults)), seal_to: None },
         };
+        let action = random_via(&*rng, &h.vaults, action);
         let genesis = matches!(action, Action::Genesis { .. });
         if let Ok(id) = h.log.append(author, &cosigners, action)
             && genesis
@@ -119,6 +125,25 @@ fn attempts(rng: &mut Rng, h: &mut History, n: usize, clash: bool) {
             h.vaults.push(VaultId::from(id));
         }
     }
+}
+
+/// An act for a vault through a random chain of one or two of `vaults`, a time in four; otherwise as it is. Its
+/// randomness comes from `rng`'s state without moving it on, so the other attempts stay as they were.
+fn random_via(rng: &Rng, vaults: &[VaultId], mut action: Action) -> Action {
+    let mut rng = Rng(rng.0 ^ 0x5851_f42d_4c95_7f2d | 1);
+    let chain: Vec<VaultId> = (0..1 + rng.below(2)).map(|_| rng.pick(vaults)).collect();
+    let via = match &mut action {
+        Action::FoundSpace { via, .. }
+        | Action::Grant(_, via)
+        | Action::Revoke { via, .. }
+        | Action::Write { via, .. }
+        | Action::Publish { via, .. } => via,
+        _ => return action,
+    };
+    if rng.below(4) == 0 {
+        *via = chain;
+    }
+    action
 }
 
 /// A random write by a vault `author` acts for and that holds write, a revocation of a grant in force, or a device
@@ -143,7 +168,7 @@ fn clash_action(rng: &mut Rng, h: &History, author: SignerId) -> Option<Action> 
         1 => {
             let grants = st.grants();
             let (id, g) = (!grants.is_empty()).then(|| grants[rng.below(grants.len())].clone())?;
-            Some(Action::Revoke { grant: id, actor: g.issuer, keep: vec![] })
+            Some(Action::Revoke { grant: id, actor: g.issuer, keep: vec![], via: vec![] })
         }
         _ => {
             let devices: Vec<(VaultId, SignerId)> =
@@ -196,7 +221,13 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
         3 => Action::RemoveOwner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] },
         4 => Action::SetThreshold { vault: rng.pick(vaults), threshold: rng.below(4) as u32 },
         _ => {
-            let kind = if rng.below(3) == 0 { Kind::Human } else { Kind::Coop };
+            // a third human vaults, a twelfth aven vaults
+            let x = rng.next();
+            let kind = match x % 12 {
+                0 | 3 | 6 | 9 => Kind::Human,
+                11 => Kind::Aven,
+                _ => Kind::Coop,
+            };
             let owners: Vec<Principal> = (0..1 + rng.below(3))
                 .map(|_| if kind == Kind::Human { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) })
                 .collect();
@@ -278,19 +309,24 @@ fn steps(ops: &[Op]) -> Vec<(Op, State, State)> {
 
 #[test]
 fn t1_authorized_writes() {
+    let mut through = 0;
     for seed in SEEDS {
         for h in [history(seed, 60), forked_caps_history(seed, 60)] {
             for (op, before, after) in steps(h.log.ops()) {
-                if let Action::Write { space, entry, actor, .. } = op.action {
+                if let Action::Write { space, entry, actor, ref via, .. } = op.action {
                     let new = after.writes(space, entry).contains(&op.id()) && !before.writes(space, entry).contains(&op.id());
                     if new {
-                        assert!(before.acts_for(op.author, actor), "seed {seed}");
+                        let acts = before.acts_via(op.author, via, actor) && before.acts_for(op.author, actor);
+                        assert!(acts, "seed {seed}");
+                        through += usize::from(!via.is_empty());
                         assert!(before.holds(actor, Scope::Entry(space, entry), Role::Write), "seed {seed}");
                     }
                 }
             }
         }
     }
+    // and some writes go through the owners they name
+    assert!(through > 0);
 }
 
 #[test]
@@ -319,6 +355,56 @@ fn t2_consent() {
                 }
                 for p in b.owners.iter().filter(|p| !a.owners.contains(p)) {
                     assert!(before.approves(&sigs, *p), "seed {seed}: owner added without its consent");
+                }
+            }
+        }
+    }
+}
+
+/// T21: in every state the rules reach, each vault keeps to its kind: a human vault's owners are signers, a coop's and
+/// an aven vault's are human or coop vaults; only human and aven vaults have devices, and only human vaults a root.
+#[test]
+fn t21_vault_kinds() {
+    let mut avens = 0;
+    for seed in SEEDS {
+        for h in [vault_history(seed, 60), forked_history(seed, 60), history(seed, 60)] {
+            for st in trace(h.log.ops()) {
+                for v in st.vaults() {
+                    for p in &v.owners {
+                        let fits = match (v.kind, *p) {
+                            (Kind::Human, Principal::Signer(_)) => true,
+                            (Kind::Coop | Kind::Aven, Principal::Vault(o)) => {
+                                st.vault(o).is_some_and(|o| o.kind != Kind::Aven)
+                            }
+                            _ => false,
+                        };
+                        assert!(fits, "seed {seed}: {v:?}");
+                    }
+                    assert!(v.devices.is_empty() || v.kind.has_devices(), "seed {seed}: {v:?}");
+                    assert!(v.root.is_none() || v.kind == Kind::Human, "seed {seed}: {v:?}");
+                }
+            }
+            avens += h.log.view().vaults().iter().filter(|v| v.kind == Kind::Aven).count();
+        }
+    }
+    // the histories do found aven vaults
+    assert!(avens > 0);
+}
+
+/// Devices never govern: a signer that owns no vault and is no vault's root approves for no vault, whatever it acts
+/// for (`devices_cannot_govern`).
+#[test]
+fn devices_cannot_govern() {
+    for seed in SEEDS {
+        for h in [forked_history(seed, 60), forked_caps_history(seed, 60)] {
+            for st in trace(h.log.ops()) {
+                let governs = |s: SignerId| {
+                    st.vaults().iter().any(|v| v.owners.contains(&Principal::Signer(s)) || v.root == Some(s))
+                };
+                for s in SIGNERS.into_iter().filter(|&s| !governs(s)) {
+                    for v in st.vaults() {
+                        assert!(!st.approves(&[s], Principal::Vault(v.id)), "seed {seed}: {s:?} approves for {v:?}");
+                    }
                 }
             }
         }

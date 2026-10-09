@@ -61,9 +61,9 @@ pub(crate) fn answer(ops: &[Op], st: &State, d: SignerId) -> Vec<usize> {
 fn auth_scope(ops: &[Op], op: &Op) -> Option<Scope> {
     match &op.action {
         Action::FoundSpace { .. } => Some(Scope::Space(SpaceId::from(op.id()))),
-        Action::Grant(g) => Some(g.scope),
+        Action::Grant(g, _) => Some(g.scope),
         Action::Revoke { grant, .. } => ops.iter().find_map(|o| match &o.action {
-            Action::Grant(g) if GrantId::from(o.id()) == *grant => Some(g.scope),
+            Action::Grant(g, _) if GrantId::from(o.id()) == *grant => Some(g.scope),
             _ => None,
         }),
         Action::Keys { key, .. } => key.scope(),
@@ -80,7 +80,7 @@ pub fn takes_from(st: &State, ops: &[Op], d: SignerId, op: &Op) -> bool {
     }
     let taken = removes(ops, op);
     ops.iter().any(|o| match o.action {
-        Action::Grant(Grant { grantee: Grantee::Principal(Principal::Vault(v)), .. }) => {
+        Action::Grant(Grant { grantee: Grantee::Principal(Principal::Vault(v)), .. }, _) => {
             taken.contains(&Fact::Grant(GrantId::from(o.id()))) && st.acts_for(d, v)
         }
         _ => false,
@@ -168,7 +168,7 @@ impl From<Scope> for LogId {
 /// The scope of each grant among `ops`, by its id: where a revocation of it belongs.
 fn grant_scopes<'a>(ops: impl Iterator<Item = (&'a Op, OpId)>) -> HashMap<GrantId, Scope> {
     ops.filter_map(|(o, id)| match &o.action {
-        Action::Grant(g) => Some((GrantId::from(id), g.scope)),
+        Action::Grant(g, _) => Some((GrantId::from(id), g.scope)),
         _ => None,
     })
     .collect()
@@ -182,7 +182,7 @@ fn log_in(grants: &HashMap<GrantId, Scope>, op: &Op, id: OpId) -> Option<LogId> 
     let sc = match &op.action {
         Action::Genesis { .. } => return Some(LogId::Vault(VaultId::from(id))),
         Action::FoundSpace { .. } => Scope::Space(SpaceId::from(id)),
-        Action::Grant(g) => g.scope,
+        Action::Grant(g, _) => g.scope,
         Action::Revoke { grant, .. } => *grants.get(grant)?,
         Action::Publish { space, .. } => Scope::Space(*space),
         Action::Keys { key, .. } => match key.scope() {

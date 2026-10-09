@@ -1,7 +1,10 @@
 // avenDB's passkey in the browser's own authenticator (P8e): WebAuthn with the PRF extension. The passkey never
 // leaves the authenticator; each ceremony brings back an assertion over a challenge and the PRF output on the app's
 // salt, and the one that unlocks a device also the output on the device's own salt, from which the device's keys
-// derive. The device (avendb-browser's `Device`) asks for each ceremony it needs.
+// derive. The device (avendb-browser's `Device`) asks for each ceremony it needs. Every ceremony requires user
+// verification: an authenticator's PRF (CTAP2's hmac-secret) answers with another secret without it, so the outputs
+// stay the same only if each ceremony verifies the person. The passkey may be the one the person signed up to
+// maiaCITY with, for the same relying party, if it has PRF: maiaCITY's sign-up asks for it (src/lib/auth/client.ts).
 
 /**
  * The relying party: maia.city, for the site and the Mac app's webview, or localhost for a page served over http on
@@ -39,6 +42,12 @@ export async function create(person) {
 			extensions: { prf: {} }
 		}
 	});
+	// a passkey made without PRF never gets it: tell the authenticator nobody knows it, and say so
+	if (credential.getClientExtensionResults().prf?.enabled === false) {
+		const credentialId = base64url(credential.rawId);
+		await PublicKeyCredential.signalUnknownCredential?.({ rpId: rpId(), credentialId }).catch(() => {});
+		throw new Error('this authenticator makes passkeys without PRF, from which avenDB derives your keys: use another');
+	}
 	const spki = credential.response.getPublicKey();
 	if (!spki) throw new Error('the browser shows no public key of the passkey');
 	return { id: base64url(credential.rawId), spki: new Uint8Array(spki) };
@@ -62,9 +71,10 @@ export async function ceremony(id, challenge, salt, deviceSalt) {
 	});
 	const prf = credential.getClientExtensionResults().prf?.results;
 	if (!prf?.first || (deviceSalt && !prf.second)) {
-		throw new Error('this passkey has no PRF: avenDB needs a passkey that has one');
+		throw new Error('this passkey has no PRF, from which avenDB derives your keys: make a new passkey here instead');
 	}
 	const response = credential.response;
+	// the PRF outputs as views of the browser's own buffers, which the device wipes once it holds them
 	return {
 		id: base64url(credential.rawId),
 		authenticatorData: new Uint8Array(response.authenticatorData),

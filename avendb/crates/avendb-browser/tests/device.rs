@@ -1,8 +1,10 @@
 //! A browser's device, run natively (P8d, P8e): its person's passkey stays in the browser's authenticator, a software
 //! passkey here, which makes each ceremony the device asks for. Eve's first browser founds her vault through the relay,
-//! open to sign-up, and the server learns it; her second browser links through the first one's code, browser to
-//! browser; the first opens again from what its store kept. Samuel's browser links through the code his Mac shows and
-//! edits Welcome. `tests/page.rs` runs the same in Chromium, the passkey in its virtual authenticator.
+//! open to sign-up, with the passkey she signed up to maiaCITY with, and the server learns it; her second browser
+//! links through the first one's code, browser to browser; the first opens again from what its store kept. Samuel's
+//! browser links through the code his Mac shows and edits Welcome. A new server's operator claims it from her first
+//! browser with its setup code (P8f).
+//! `tests/page.rs` runs the same in Chromium, the passkey in its virtual authenticator.
 
 use std::future::Future;
 use std::net::SocketAddr;
@@ -12,9 +14,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use avendb::cast::*;
 use avendb::id::{EntryId, SignerId, SpaceId};
 use avendb::lab::Lab;
+use avendb::policy::{Kind, Principal};
 use avendb::sign::{Ceremony, Passkey, device_salt};
 use avendb_browser::{Device, Start, Unlock, backup};
-use avendb_net::{Admission, Authenticator, Node, Options, Step};
+use avendb_net::{Admission, Authenticator, Node, Options, SetupCode, Step};
 use avendb_server::Relay;
 use iroh::RelayUrl;
 
@@ -88,17 +91,19 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let server_d = w.server;
     let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), card: true, ..Options::local() };
     let server = node(&mut w, server_d, &[], 2, opts).await;
-    // Eve is new: her browser makes her passkey, and its public key info shows its P-256 key
+    // Eve is new to avenDB, but signed up to maiaCITY with her passkey: her first browser founds her vault with it
     let eve = Browser::new(Passkey::from_seed([5; 32]));
     let p256 = eve.0.lock().expect("the authenticator").0.public();
     let first = start("Eve's browser", &url, 7);
-    let first = Device::found(first, &server.offer(), p256, eve.unlock([1; 32]), &eve).await.expect("her vault");
+    let first = Device::found(first, &server.offer(), None, None, eve.unlock([1; 32]), &eve).await;
+    let first = first.expect("her vault");
     assert_eq!(eve.steps(), [Step::Pass, Step::Found, Step::Join], "a ceremony for each the passkey signs");
+    assert_eq!(first.p256(), p256, "it learned her passkey's key from the unlock and the pass");
     assert!(first.node().endpoint().bound_sockets().is_empty(), "with no UDP of its own");
     let vault = first.vault().await.expect("the browser belongs to her vault");
     until("the server learns her browser from what it relays", || async { admission.admits(&first.node().id()) }).await;
     let notes = first.notes().await;
-    let [space] = notes.as_slice() else { panic!("her first space, and the server's: {}", notes.len()) };
+    let [space] = notes.as_slice() else { panic!("her first space, and no other: {}", notes.len()) };
     assert_eq!((space.founder, space.docs.len()), (vault, 0));
     let space = space.space;
     let note = first.write(vault, space, "Seeds".into(), "Tomatoes in March.".into()).await.expect("a note");
@@ -183,6 +188,49 @@ async fn samuels_browsers_link_through_his_mac_and_each_other_through_the_relay_
     // an edit its view refuses fails: Samuel's own vault holds no right on the coop's Handbook
     assert!(browser.set_text(samuel, space, welcome, 2, "Samuel's own words".into()).await.is_err());
     for n in [browser.node(), other.node(), &mac, &server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_new_servers_operator_claims_it_from_her_first_browser_with_its_setup_code() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    // a new server, nobody's yet, its sign-up closed: it honours any passkey's pass until it is claimed
+    let mut lab = Lab::with_entropy([3; 32]);
+    let me = lab.device_with("the server", [7; 32]);
+    let setup = Some(SetupCode::new(SETUP_CODE));
+    let (relay, admits) = (Some(url.clone()), Some(admission.clone()));
+    let opts = Options { relay, admission: admits, card: true, setup, ..Options::local() };
+    let server = Node::spawn(lab, me, opts).await.expect("the server's node");
+    // Eve runs it: her first browser makes her passkey, its public key info shows its P-256 key, and founds her vault
+    // and claims the server, in two ceremonies more
+    let eve = Browser::new(Passkey::from_seed([5; 32]));
+    let p256 = eve.0.lock().expect("the authenticator").0.public();
+    let (first, offer) = (start("Eve's browser", &url, 7), server.offer());
+    let wrong = Device::found(first, &offer, Some(b"a guess"), Some(p256), eve.unlock([1; 32]), &eve).await;
+    assert!(wrong.is_err(), "another code claims nothing");
+    eve.steps();
+    let first = start("Eve's browser", &url, 8);
+    let first = Device::found(first, &offer, Some(SETUP_CODE), Some(p256), eve.unlock([2; 32]), &eve).await;
+    let first = first.expect("her vault claims the server");
+    assert_eq!(eve.steps(), [Step::Pass, Step::Found, Step::Join, Step::Aven, Step::Claim]);
+    let vault = first.vault().await.expect("her vault");
+    let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
+    let shape = move |lab: &Lab, _| lab.state(me).vault(avenceo).map(|v| (v.kind, v.owners.clone()));
+    assert_eq!(server.read(shape).await, Some((Kind::Aven, vec![Principal::Vault(vault)])), "owned by her vault");
+    // her first space is relayed by avenCEO: the server keeps its log and knows her browser for good
+    let notes = first.notes().await;
+    let [space] = notes.as_slice() else { panic!("her first space: {}", notes.len()) };
+    let space = space.space;
+    let note = first.write(vault, space, "Seeds".into(), "Tomatoes in March.".into()).await.expect("a note");
+    let holds = move |lab: &Lab, me| lab.state(me).space(space).is_some_and(|s| s.entries.contains(&note));
+    until("the server keeps her space's log", || server.read(holds)).await;
+    until("and knows her browser", || async { admission.admits(&first.node().id()) }).await;
+    let stranger = Passkey::from_seed([9; 32]).id();
+    assert!(!admission.honours(&stranger), "claimed, its relay honours no stranger's pass");
+    for n in [first.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

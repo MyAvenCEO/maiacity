@@ -12,30 +12,35 @@ that claim to come before the removal.
 
 namespace AvenDB
 
+/-- Every change. An op that acts for a vault (founds a space, grants, revokes, writes, publishes) names the owners
+    `via` its author acts through (`actsVia`): none when its author is a member of the vault, else from an owner of the
+    vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop through
+    `[bob]`. -/
 inductive Action where
   /-- A new vault. A human vault may name a root, its passkey, which signs too. -/
   | genesis      (v : VaultId) (kind : Kind) (owners : List Principal) (threshold : Nat) (root : Option SignerId := none)
   | addOwner     (v : VaultId) (p : Principal)
   | removeOwner  (v : VaultId) (p : Principal) (keep : List OpId)
   | setThreshold (v : VaultId) (n : Nat)
+  /-- A device of a human vault (a phone, a browser) or of an aven vault (a server). -/
   | addDevice    (v : VaultId) (d : SignerId)
   | removeDevice (v : VaultId) (d : SignerId) (keep : List OpId)
   /-- The root hands itself on to a new passkey, which signs too, or steps down. -/
   | setRoot      (v : VaultId) (r : Option SignerId) (keep : List OpId)
-  | foundSpace   (sp : SpaceId) (actor : VaultId)
-  | grant        (g : Grant)
-  | revoke       (g : GrantId) (actor : VaultId) (keep : List OpId)
+  | foundSpace   (sp : SpaceId) (actor : VaultId) (via : List VaultId := [])
+  | grant        (g : Grant) (via : List VaultId := [])
+  | revoke       (g : GrantId) (actor : VaultId) (keep : List OpId) (via : List VaultId := [])
   /-- An encrypted edit of one entry, on the line `branch` of its history. `deps` are the entry's writes it builds
       on: a write that starts a branch builds on the version the branch starts from, and a merge also on the heads of
       the line it brings in. -/
   | write        (sp : SpaceId) (e : EntryId) (actor : VaultId) (epoch : Nat) (deps : List OpId := [])
-                 (branch : Branch := .main)
+                 (branch : Branch := .main) (via : List VaultId := [])
   /-- The real boxes of one key: the key of family `k` at `epoch`, sealed to the key pairs `to`, or published (`pub`).
       The schedule already says who may open what, so this op changes nothing here: a peer accepts it only from a
       signer that may open the key, and only if every box is one the schedule seals. -/
   | keys         (k : KeyScope) (epoch : Nat) (to : List KeyName) (pub : Bool := false)
   /-- A schema or a lens, published into the space's schema lane: blobs that hold no data, named by their hash. -/
-  | publish      (sp : SpaceId) (actor : VaultId) (blob : BlobId)
+  | publish      (sp : SpaceId) (actor : VaultId) (blob : BlobId) (via : List VaultId := [])
   /-- A device vouches for its own accepted writes of one entry, `covers`, with both halves of its signature, where
       the writes carry only the classical half. It changes nothing; a peer that no longer trusts the curves counts
       only the writes a checkpoint covers (`checkpointed`). -/
@@ -44,7 +49,7 @@ inductive Action where
 
 /-- The ops a removal had seen and keeps; every removal names them. -/
 def Action.keep? : Action → Option (List OpId)
-  | .removeOwner _ _ k | .removeDevice _ _ k | .setRoot _ _ k | .revoke _ _ k => some k
+  | .removeOwner _ _ k | .removeDevice _ _ k | .setRoot _ _ k | .revoke _ _ k _ => some k
   | _ => none
 
 structure Op where
@@ -70,16 +75,29 @@ def nodup [BEq α] : List α → Bool
 def setVault (st : State) (vt : Vault) : State :=
   { st with vaults := st.vaults.map fun x => if x.id == vt.id then vt else x }
 
-/-- Human vaults are owned by signers, coops by existing vaults. -/
+/-- A vault that may own coop and aven vaults: a human or a coop vault, never an aven vault (yet). -/
+def ownsVaults (st : State) (o : VaultId) : Bool :=
+  match st.vault? o with
+  | some vt => vt.kind != .aven
+  | none    => false
+
+/-- Human vaults are owned by signers, their person's passkeys; coop and aven vaults by existing human and coop vaults,
+    never by a signer directly. -/
 def ownerFits (st : State) : Kind → Principal → Bool
   | .human, .signer _ => true
-  | .coop,  .vault o  => (st.vault? o).isSome
+  | .coop,  .vault o  => ownsVaults st o
+  | .aven,  .vault o  => ownsVaults st o
   | _, _ => false
 
 /-- Only a human vault has a root, and the root signs its genesis. -/
 def rootFits (kind : Kind) (sigs : List SignerId) : Option SignerId → Bool
   | none   => true
   | some r => kind == .human && sigs.contains r
+
+/-- Human and aven vaults have devices, coops don't: a coop acts only through its owners. -/
+def Kind.hasDevices : Kind → Bool
+  | .coop => false
+  | _     => true
 
 /-- Write `w` builds only on writes of its own entry among `ws`. -/
 def depsIn (ws : List Write) (w : Write) : Bool :=
@@ -177,7 +195,7 @@ def apply (st : State) (op : Op) : Option State :=
     match st.vault? v with
     | none => none
     | some vt =>
-      if vt.kind != Kind.human || vt.devices.contains d then none
+      if !vt.kind.hasDevices || vt.devices.contains d then none
       -- the vault's threshold, plus the device's own signature
       else if !(approves st sigs (.vault v) && sigs.contains d) then none
       else some (setVault st { vt with devices := vt.devices ++ [d] })
@@ -195,35 +213,35 @@ def apply (st : State) (op : Op) : Option State :=
       -- only the root hands the root on, and the new root signs
       if !vt.root.any sigs.contains || !r.all sigs.contains then none
       else some (setVault st { vt with root := r })
-  | .foundSpace sp actor =>
-    if (st.space? sp).isSome || !actsFor st op.author actor then none
+  | .foundSpace sp actor via =>
+    if (st.space? sp).isSome || !actsVia st op.author via actor then none
     else some { st with spaces := st.spaces ++ [⟨sp, actor, []⟩] }
-  | .grant g =>
+  | .grant g via =>
     if (st.grant? g.id).isSome || (st.space? g.scope.spaceOf).isNone then none
     -- grants name vaults or Public, never signers; Public only reads
     else if (match g.grantee with
              | .principal (.signer _) => true
              | .principal (.vault x)  => (st.vault? x).isNone
              | .«public»                => g.role != Role.read) then none
-    else if !actsFor st op.author g.issuer || !holds st g.issuer g.scope .owner || !parentOk st g then none
+    else if !actsVia st op.author via g.issuer || !holds st g.issuer g.scope .owner || !parentOk st g then none
     -- making someone owner is governance
     else if g.role == Role.owner && !approves st sigs (.vault g.issuer) then none
     else some { st with grants := st.grants ++ [g] }
-  | .revoke gid actor keep =>
+  | .revoke gid actor keep via =>
     match st.grant? gid with
     | none => none
     | some g =>
-      if !actsFor st op.author actor || !mayRevoke st actor g then none
+      if !actsVia st op.author via actor || !mayRevoke st actor g then none
       else if g.role == Role.owner && !approves st sigs (.vault actor) then none
       -- the grant and every grant resting on it end
       else some (dropUnseen st { st with grants := st.grants.filter fun x => !restsOn st gid x.id } keep)
-  | .write sp e actor epoch deps branch =>
+  | .write sp e actor epoch deps branch via =>
     match st.space? sp with
     | none => none
     | some s =>
-      let w : Write := ⟨op.id, op.author, actor, sp, e, epoch, deps, branch⟩
+      let w : Write := ⟨op.id, op.author, actor, sp, e, epoch, deps, branch, via⟩
       if st.writes.any (·.op == op.id) then none
-      else if !actsFor st op.author actor || !holds st actor (.entry sp e) .write then none
+      else if !actsVia st op.author via actor || !holds st actor (.entry sp e) .write then none
       else if epoch > st.epochOf (.entry sp e) then none
       -- what it builds on was accepted, so the accepted writes stay causally closed (T14)
       else if !depsIn st.writes w then none
@@ -239,10 +257,10 @@ def apply (st : State) (op : Op) : Option State :=
     else if !to.all (fun t => st.seals.contains ⟨.scoped k epoch, t⟩) then none
     else if pub && !st.published.contains (.scoped k epoch) then none
     else some st
-  | .publish sp actor blob =>
+  | .publish sp actor blob via =>
     if (st.space? sp).isNone || st.lane.contains (sp, blob) then none
     -- only an owner of the space publishes into its lane
-    else if !actsFor st op.author actor || !holds st actor (.space sp) .owner then none
+    else if !actsVia st op.author via actor || !holds st actor (.space sp) .owner then none
     else some { st with lane := st.lane ++ [(sp, blob)] }
   | .checkpoint sp e covers =>
     -- a device vouches for its own accepted writes of the entry, and changes nothing
@@ -316,7 +334,7 @@ def Op.isRemoval (op : Op) : Bool := op.action.keep?.isSome
 /-- The grants the ops `ops` make. -/
 def grantsIn (ops : List Op) : List Grant :=
   ops.filterMap fun o => match o.action with
-    | .grant g => some g
+    | .grant g _ => some g
     | _ => none
 
 /-- Among the grants `gs`, grant `x` is `g` or rests on it through its parents. -/
@@ -334,7 +352,7 @@ def removes (ops : List Op) (r : Op) : List Fact :=
   | .removeOwner v p _  => [.owner v p]
   | .removeDevice v d _ => [.device v d]
   | .setRoot v _ _      => [.root v]
-  | .revoke g _ _ =>
+  | .revoke g _ _ _ =>
     let gs := grantsIn ops
     (gs.filter fun x => restsOnIn gs g (gs.length + 1) x.id).map fun x => .grant x.id
   | _ => []
@@ -362,7 +380,8 @@ def runFrom (rem : List Op) (cs : List (Nat × List OpId × List Fact)) : State 
 /-- Replay `ops`, in this order, with the removals of `rem` and no others. -/
 def runWith (ops rem : List Op) : State × List Op := runFrom rem (cuts ops rem) {} ops.zipIdx
 
-/-- How far below the people vault `v` sits: a human vault at 0, a coop one below its lowest owner. -/
+/-- How far below the human vaults vault `v` sits: a human vault at 0, a coop or an aven vault one below its lowest
+    owner. -/
 def tierN (st : State) : Nat → VaultId → Nat
   | 0, _ => 0
   | n + 1, v =>
@@ -407,7 +426,7 @@ def priority (base : State) (op : Op) : List Nat :=
       else match vt.owners.zipIdx.find? fun (p, _) => approves base op.sigs p with
         | some (_, i) => [0, t, 1, i]
         | none => [0, t, 2, 0]
-  | .revoke g a _ => [1, (base.grant? g).elim 0 (seniority base a), 0, 0]
+  | .revoke g a _ _ => [1, (base.grant? g).elim 0 (seniority base a), 0, 0]
   | _ => [2, 0, 0, 0]
 
 /-- Priorities compare place by place. -/

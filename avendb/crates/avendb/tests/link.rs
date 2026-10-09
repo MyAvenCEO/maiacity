@@ -167,7 +167,7 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     let no_consent = unchecked(&mut w.lab, new, &[w.passkey_s], add(w.samuel, new));
     let eve_adds = unchecked(&mut w.lab, eves, &[eve, eves], add(w.samuel, eves));
     let eve_joins = unchecked(&mut w.lab, eves, &[eve, eves], add(eves_vault, eves));
-    let no_device = unchecked(&mut w.lab, new, &[new], Action::FoundSpace { actor: w.samuel, nonce: 9 });
+    let no_device = unchecked(&mut w.lab, new, &[new], Action::FoundSpace { actor: w.samuel, nonce: 9, via: vec![] });
     let mut mac = w.lab.split(w.mac_s, &[], [1; 32]);
     let accept = |mac: &mut Lab, from, join: &Join| mac.accept_join(w.mac_s, from, join.clone()).map(|_| ());
     assert_eq!(accept(&mut mac, eves, &join), Err(Refusal::NotJoining), "sent by another device than it adds");

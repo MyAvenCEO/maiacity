@@ -71,7 +71,8 @@ pub struct Spaces {
 
 /// Scenario 4: the coop founds Handbook, Samuel founds Notes and Todos, all from Samuel's Mac.
 pub fn spaces(c: &mut Cast, coop: VaultId) -> Spaces {
-    let mut found = |actor| SpaceId::from(c.log.append(MAC_S, &[], Action::FoundSpace { actor, nonce: 0 }).unwrap());
+    let mut found =
+        |actor| SpaceId::from(c.log.append(MAC_S, &[], Action::FoundSpace { actor, nonce: 0, via: vec![] }).unwrap());
     let handbook = found(coop);
     let notes = found(c.samuel);
     let todos = found(c.samuel);

@@ -1,9 +1,12 @@
 <!--
-	Vaults: every vault the device knows, as its own view has it. A person's vault: its root passkey, its owners and its
-	devices, each with a fingerprint to compare on two screens. A coop: the vaults that own it and how many must approve.
-	For each, its key's epoch and whether this device holds it, and the passkeys that sign a change to it. Where the
-	device acts for a vault, it can change it: add or remove a device, add a backup passkey, invite or remove an owner,
-	change the threshold, leave; and it can create a coop.
+	Vaults: every vault the device knows, as its own view has it, by its kind. A vault is an identity, like a smart
+	account: a human vault is a person's, owned by their passkeys (its root and any backup), the only vault a signer
+	ever owns, with its devices; a coop vault is owned by human and coop vaults and acts through their devices; an aven
+	vault, an agent's such as avenCEO, is owned the same way, and its devices, its servers, act for it but never
+	govern it. Each signer with a fingerprint to compare on two screens; each vault with its key's epoch and whether
+	this device holds it, and the passkeys that sign a change to it. Where the device acts for a vault, it can change
+	it: add or remove a device, add a backup passkey, invite or remove an owner vault, change the threshold, leave; and
+	it can create a coop vault.
 -->
 <script>
 	import { count } from './ui.js';
@@ -42,16 +45,22 @@
 	});
 
 	const vaults = $derived(/** @type {any[]} */ (data?.vaults ?? []));
-	// the device's own person first, the server last
-	const people = $derived(
-		vaults.filter((v) => v.kind !== 'coop').sort((a, b) => Number(b.mine) - Number(a.mine) || Number(a.kind === 'server') - Number(b.kind === 'server'))
-	);
+	// the device's own human vault first
+	const humans = $derived(vaults.filter((v) => v.kind === 'human').sort((a, b) => Number(b.mine) - Number(a.mine)));
 	const coops = $derived(vaults.filter((v) => v.kind === 'coop'));
+	const avens = $derived(vaults.filter((v) => v.kind === 'aven'));
+	// what may own a coop or an aven vault: human and coop vaults, never an aven vault
+	const owning = $derived(vaults.filter((v) => v.kind !== 'aven'));
 	const mine = $derived(vaults.find((v) => v.id === data?.me));
 	/** @param {string} id */
 	const print = (id) => signers.find((s) => s.id === id)?.fingerprint ?? '';
 	/** @param {string} id */
 	const named = (id) => vaults.find((v) => v.id === id)?.name ?? 'a vault';
+	/** @param {string} id */
+	const kindOf = (id) => {
+		const kind = vaults.find((v) => v.id === id)?.kind;
+		return kind ? `${kind} vault` : 'a vault';
+	};
 
 	$effect(() => {
 		// a coop starts with the device's own person among its owners
@@ -72,7 +81,7 @@
 		const name = coopName.trim();
 		if (!name || !coopOwners.length) return;
 		const threshold = Math.min(coopThreshold, coopOwners.length);
-		ask(`Create the coop “${name}”`, coopOwners, { do: 'create_coop', name, owners: coopOwners, threshold }, `Each first owner consents: ${coopOwners.map(named).join(', ')}.`);
+		ask(`Create the coop vault “${name}”`, coopOwners, { do: 'create_coop', name, owners: coopOwners, threshold }, `Each first owner vault consents: ${coopOwners.map(named).join(', ')}.`);
 		coopName = '';
 	}
 
@@ -83,13 +92,13 @@
 {#if error}<p class="error">{error}</p>{/if}
 
 {#if data}
-	<h2 class="part">People</h2>
+	<h2 class="part">Human vaults</h2>
 	<div class="cards">
-		{#each people as v (v.id)}
+		{#each humans as v (v.id)}
 			<article class="card vault" class:me={v.mine}>
 				<header class="row">
 					<h3>{v.name}</h3>
-					<span class="chip">{v.kind === 'server' ? "the server's vault" : "a person's vault"}</span>
+					<span class="chip">human vault</span>
 					{#if v.mine}<span class="chip accent">this device acts for it</span>{/if}
 				</header>
 				<dl>
@@ -140,73 +149,21 @@
 		{/each}
 	</div>
 
-	<h2 class="part">Coops</h2>
+	<h2 class="part">Coop vaults</h2>
 	<div class="cards">
 		{#each coops as v (v.id)}
-			<article class="card vault" class:me={v.mine}>
-				<header class="row">
-					<h3>{v.name}</h3>
-					<span class="chip">a coop</span>
-					{#if v.mine}<span class="chip accent">this device acts for it</span>{/if}
-				</header>
-				<dl>
-					<dt>Owners</dt>
-					<dd>
-						{#each v.owners as o (o.id)}
-							<div class="line">
-								<span>{o.name}</span>
-								{#if v.mine && v.owners.length > 1}
-									<button class="btn quiet danger" onclick={() => ask(`Remove ${o.name} from ${v.name}`, [v.id], { do: 'remove_owner', vault: v.id, owner: o.id }, 'The coop rotates its keys, so the old owner reads nothing written afterwards.')}>Remove</button>
-								{/if}
-							</div>
-						{/each}
-					</dd>
-					<dt>Approve</dt>
-					<dd>
-						{v.threshold} of {count(v.owners.length, 'owner')}
-						{#if v.mine && v.owners.length > 1}
-							<span class="row inline">
-								<select class="field" value={thresholds[v.id] ?? v.threshold} onchange={(e) => (thresholds[v.id] = Number(e.currentTarget.value))}>
-									{#each v.owners as _, i (i)}<option value={i + 1}>{i + 1}</option>{/each}
-								</select>
-								<button class="btn" disabled={(thresholds[v.id] ?? v.threshold) === v.threshold} onclick={() => ask(`Make ${v.name} need ${thresholds[v.id]} of ${v.owners.length}`, [v.id], { do: 'set_threshold', vault: v.id, threshold: thresholds[v.id] })}>Change</button>
-							</span>
-						{/if}
-					</dd>
-					<dt>Key</dt>
-					<dd>
-						epoch {v.epoch}
-						{#if v.holdsKey}<span class="chip ok">held here</span>{:else}<span class="chip">not held here</span>{/if}
-					</dd>
-					<dt>Signs changes</dt>
-					<dd>{v.approvers.map((/** @type {any} */ s) => s.name).join(', ') || 'nobody this device knows'}</dd>
-				</dl>
-				{#if v.mine}
-					<footer class="row">
-						<select class="field" bind:value={inviting[v.id]}>
-							<option value={undefined}>Invite an owner…</option>
-							{#each vaults.filter((x) => x.id !== v.id && !v.owners.some((/** @type {any} */ o) => o.id === x.id)) as x (x.id)}
-								<option value={x.id}>{x.name}</option>
-							{/each}
-						</select>
-						<button class="btn" disabled={!inviting[v.id]} onclick={() => ask(`Invite ${named(inviting[v.id])} to own ${v.name}`, [v.id, inviting[v.id]], { do: 'add_owner', vault: v.id, owner: inviting[v.id] }, 'The coop approves, and whoever joins consents.')}>Invite</button>
-						{#if myOwner(v)}
-							<button class="btn danger" onclick={() => ask(`${myOwner(v).name} leaves ${v.name}`, [myOwner(v).id], { do: 'leave', vault: v.id }, 'An owner leaves on its own: its own passkey approves.')}>Leave</button>
-						{/if}
-					</footer>
-				{/if}
-			</article>
+			{@render governed(v)}
 		{:else}
-			<p class="empty">This device knows no coop.</p>
+			<p class="empty">This device knows no coop vault.</p>
 		{/each}
 
 		<article class="card new">
-			<h3>Create a coop</h3>
-			<p class="soft">A coop is owned by vaults, people's or other coops', and acts through their devices.</p>
+			<h3>Create a coop vault</h3>
+			<p class="soft">A coop vault is owned by vaults, human or coop, never by a passkey, and acts through their devices.</p>
 			<input class="field" placeholder="The coop's name" bind:value={coopName} />
 			<div class="owners">
-				{#each vaults as x (x.id)}
-					<label><input type="checkbox" checked={coopOwners.includes(x.id)} onchange={() => toggleOwner(x.id)} /> {x.name}</label>
+				{#each owning as x (x.id)}
+					<label><input type="checkbox" checked={coopOwners.includes(x.id)} onchange={() => toggleOwner(x.id)} /> {x.name} <span class="soft">{x.kind} vault</span></label>
 				{/each}
 			</div>
 			<div class="row">
@@ -219,7 +176,89 @@
 			</div>
 		</article>
 	</div>
+
+	<h2 class="part">Aven vaults</h2>
+	<div class="cards">
+		{#each avens as v (v.id)}
+			{@render governed(v)}
+		{:else}
+			<p class="empty">This device knows no aven vault: nobody has claimed the server yet.</p>
+		{/each}
+	</div>
 {/if}
+
+<!-- a coop or an aven vault: the vaults that own it and how many must approve, and an aven vault's servers -->
+{#snippet governed(/** @type {any} */ v)}
+	<article class="card vault" class:me={v.mine}>
+		<header class="row">
+			<h3>{v.name}</h3>
+			<span class="chip">{v.kind} vault</span>
+			{#if v.mine}<span class="chip accent">this device acts for it</span>{/if}
+		</header>
+		<dl>
+			<dt>Owners</dt>
+			<dd>
+				{#each v.owners as o (o.id)}
+					<div class="line">
+						<span>{o.name} <span class="soft">{kindOf(o.id)}</span></span>
+						{#if v.mine && v.owners.length > 1}
+							<button class="btn quiet danger" onclick={() => ask(`Remove ${o.name} from ${v.name}`, [v.id], { do: 'remove_owner', vault: v.id, owner: o.id }, `${v.name} rotates its keys, so the old owner reads nothing written afterwards.`)}>Remove</button>
+						{/if}
+					</div>
+				{/each}
+			</dd>
+			<dt>Approve</dt>
+			<dd>
+				{v.threshold} of {count(v.owners.length, 'owner')}
+				{#if v.mine && v.owners.length > 1}
+					<span class="row inline">
+						<select class="field" value={thresholds[v.id] ?? v.threshold} onchange={(e) => (thresholds[v.id] = Number(e.currentTarget.value))}>
+							{#each v.owners as _, i (i)}<option value={i + 1}>{i + 1}</option>{/each}
+						</select>
+						<button class="btn" disabled={(thresholds[v.id] ?? v.threshold) === v.threshold} onclick={() => ask(`Make ${v.name} need ${thresholds[v.id]} of ${v.owners.length}`, [v.id], { do: 'set_threshold', vault: v.id, threshold: thresholds[v.id] })}>Change</button>
+					</span>
+				{/if}
+			</dd>
+			{#if v.kind === 'aven'}
+				<dt>Servers</dt>
+				<dd>
+					{#each v.devices as d (d.id)}
+						<div class="line">
+							<span>{d.name}<small class="mono soft print">{print(d.id)}</small></span>
+							{#if v.mine}
+								<button class="btn quiet danger" onclick={() => ask(`Remove ${d.name} from ${v.name}`, [v.id], { do: 'remove_device', device: d.id }, 'Its keys rotate, so it reads nothing written afterwards.')}>Remove</button>
+							{/if}
+						</div>
+					{:else}
+						<span class="soft">none</span>
+					{/each}
+					<small class="soft">They act for it, and never govern it.</small>
+				</dd>
+			{/if}
+			<dt>Key</dt>
+			<dd>
+				epoch {v.epoch}
+				{#if v.holdsKey}<span class="chip ok">held here</span>{:else}<span class="chip">not held here</span>{/if}
+			</dd>
+			<dt>Signs changes</dt>
+			<dd>{v.approvers.map((/** @type {any} */ s) => s.name).join(', ') || 'nobody this device knows'}</dd>
+		</dl>
+		{#if v.mine}
+			<footer class="row">
+				<select class="field" bind:value={inviting[v.id]}>
+					<option value={undefined}>Invite an owner vault…</option>
+					{#each owning.filter((x) => x.id !== v.id && !v.owners.some((/** @type {any} */ o) => o.id === x.id)) as x (x.id)}
+						<option value={x.id}>{x.name} ({x.kind} vault)</option>
+					{/each}
+				</select>
+				<button class="btn" disabled={!inviting[v.id]} onclick={() => ask(`Invite ${named(inviting[v.id])} to own ${v.name}`, [v.id, inviting[v.id]], { do: 'add_owner', vault: v.id, owner: inviting[v.id] }, `${v.name} approves, and the vault that joins consents.`)}>Invite</button>
+				{#if myOwner(v)}
+					<button class="btn danger" onclick={() => ask(`${myOwner(v).name} leaves ${v.name}`, [myOwner(v).id], { do: 'leave', vault: v.id }, 'An owner vault leaves on its own: its own passkeys approve.')}>Leave</button>
+				{/if}
+			</footer>
+		{/if}
+	</article>
+{/snippet}
 
 <style>
 	h3 {

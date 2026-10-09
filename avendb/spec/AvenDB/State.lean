@@ -15,7 +15,8 @@ structure Vault where
   kind      : Kind
   owners    : List Principal
   threshold : Nat
-  /-- Device signers act for a human vault but don't govern it. -/
+  /-- Device signers act for a human or an aven vault but don't govern it: a person's phones and browsers, the
+      servers an aven vault runs on. -/
   devices   : List SignerId
   /-- A human vault's root: its passkey, named at genesis. It approves anything for its vault on its own, wins every
       clash with the other owners, and only it hands the root on. -/
@@ -40,7 +41,8 @@ structure Space where
 
 /-- An accepted edit: one encrypted Loro update to one entry, on one line of its history (`branch`). `deps` are the
     writes of the same entry it builds on (its Loro frontier when it was made): accepted writes stay causally closed
-    (T14), so a write whose dependency is cut is cut too. -/
+    (T14), so a write whose dependency is cut is cut too. Its author, a device, acts for `actor` through the owners
+    `via` (`actsVia`). -/
 structure Write where
   op     : OpId
   author : SignerId
@@ -50,6 +52,7 @@ structure Write where
   epoch  : Nat
   deps   : List OpId
   branch : Branch
+  via    : List VaultId
   deriving DecidableEq, Repr
 
 /-- The line a write is on: `none` for the main line, else the write that started its branch. -/
@@ -98,21 +101,38 @@ end State
 
 /-! ## Who acts, who approves, who owns -/
 
-/-- Signer `s` acts for vault `v`: a device or owner signer of a human vault, or a signer that acts for an owner of
-    a coop. `n` bounds the chain. -/
+/-- Signer `s` is a member of vault `v`: one of its devices, or one of its owner signers (a human vault's passkeys). -/
+def member (st : State) (s : SignerId) (v : VaultId) : Bool :=
+  match st.vault? v with
+  | none => false
+  | some vt => vt.devices.contains s || vt.owners.contains (.signer s)
+
+/-- Signer `s` acts for vault `v`: it is a member of `v`, or acts for an owner of `v`, up the chain. Whatever the
+    kind: a human vault has no vault owners and a coop no members, by the rules (`ownerFits`). `n` bounds the
+    chain. -/
 def actsForN (st : State) (s : SignerId) : Nat → VaultId → Bool
   | 0, _ => false
   | n + 1, v =>
     match st.vault? v with
     | none => false
-    | some vt =>
-      match vt.kind with
-      | .human => vt.devices.contains s || vt.owners.contains (.signer s)
-      | .coop  => vt.owners.any fun
-        | .vault o  => actsForN st s n o
-        | .signer _ => false
+    | some vt => vt.devices.contains s || vt.owners.contains (.signer s) || vt.owners.any fun
+      | .vault o  => actsForN st s n o
+      | .signer _ => false
 
 def actsFor (st : State) (s : SignerId) (v : VaultId) : Bool := actsForN st s st.depth v
+
+/-- Vault `o` is listed as an owner of vault `v`. -/
+def ownerOf (st : State) (o v : VaultId) : Bool :=
+  match st.vault? v with
+  | none => false
+  | some vt => vt.owners.contains (.vault o)
+
+/-- Signer `s` acts for vault `actor` through the owners `via`, as an op names them: `via` runs from an owner of
+    `actor` down, each vault an owner of the one before, to the vault `s` is a member of; with no `via`, `s` is a
+    member of `actor` itself. A device of Bob's human vault acts for Bob's coop through `[bob]`. -/
+def actsVia (st : State) (s : SignerId) : List VaultId → VaultId → Bool
+  | [], actor => member st s actor
+  | o :: via, actor => ownerOf st o actor && actsVia st s via o
 
 /-- The signatures `sigs` approve for `p`: a signer approves by having signed; a vault approves when its root
     signed, or at least its threshold of owners approve. Devices are not owners, so they never approve. -/
@@ -150,9 +170,10 @@ def holds (st : State) (v : VaultId) (sc : Scope) (r : Role) : Bool :=
 def isPublic (st : State) (sc : Scope) : Bool :=
   st.grants.any fun g => g.grantee == .«public» && g.scope.covers sc
 
-/-- A write is authorized in `st`: its author acts for its vault and that vault holds write on its entry. -/
+/-- A write is authorized in `st`: its author acts for its vault through the owners it names, and that vault holds
+    write on its entry. -/
 def authorized (st : State) (w : Write) : Bool :=
-  actsFor st w.author w.actor && holds st w.actor (.entry w.space w.entry) .write
+  actsVia st w.author w.via w.actor && holds st w.actor (.entry w.space w.entry) .write
 
 /-! ## Keys -/
 
@@ -219,7 +240,7 @@ def signers (st : State) : List SignerId :=
     | .vault _  => none
 
 /-- Whoever starts out holding keys: a signer with its own key, whoever holds a vault's current key (its members, and
-    in a coop the members of its owners), and everyone, who holds nothing but what is published. -/
+    the members of its owners), and everyone, who holds nothing but what is published. -/
 inductive Holder where
   | signer (s : SignerId)
   | vault (v : VaultId)
@@ -242,19 +263,16 @@ def Holder.entitled (st : State) : Holder → KeyScope → Bool
 def holders (st : State) : List Holder :=
   (signers st).map .signer ++ st.vaults.map (fun v => .vault v.id) ++ [.everyone]
 
-/-- The key pairs the current key of `k` is sealed to: a human vault's devices and owner signers (its passkeys,
-    through keys derived from them), a coop's owner vaults, the vaults that can read a whole space, and for an entry
-    its space plus the vaults that may read just that entry. Relay caps get no key. -/
+/-- The key pairs the current key of `k` is sealed to: a vault's devices and owner signers (a human vault's passkeys,
+    through keys derived from them) and its owner vaults, the vaults that can read a whole space, and for an entry its
+    space plus the vaults that may read just that entry. Relay caps get no key. -/
 def targets (st : State) : KeyScope → List KeyName
   | .vault v =>
     match st.vault? v with
     | none => []
-    | some vt =>
-      match vt.kind with
-      | .human => (vt.devices ++ vt.owners.filterMap fun
-          | .signer s => some s
-          | .vault _  => none).map .signer
-      | .coop  => vt.owners.filterMap fun
+    | some vt => (vt.devices ++ vt.owners.filterMap fun
+        | .signer s => some s
+        | .vault _  => none).map .signer ++ vt.owners.filterMap fun
         | .vault o  => some (st.curKey (.vault o))
         | .signer _ => none
   | .space sp =>

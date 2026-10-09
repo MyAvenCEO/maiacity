@@ -115,7 +115,7 @@ impl Tile {
                 ];
                 for (space, actor, blobs) in lanes {
                     for blob in blobs {
-                        let publish = Action::Publish { space, actor, blob: blob.to_vec() };
+                        let publish = Action::Publish { space, actor, via: vec![], blob: blob.to_vec() };
                         w.lab.submit(mac, &[mac], publish).expect("an owner publishes its schemas");
                     }
                 }
@@ -148,17 +148,16 @@ impl Tile {
 }
 
 impl Tile {
-    /// Name the people's vaults and the server's, and note every signer.
-    fn name_world(&mut self, mut w: World) {
-        let (_, server_owner) = w.lab.server_signers();
+    /// Name the people's human vaults and avenCEO, and note every signer.
+    fn name_world(&mut self, w: World) {
         let people = [(w.samuel, "Samuel"), (w.bob, "Bob"), (w.carol, "Carol"), (w.dave, "Dave")];
-        for (v, name) in people.into_iter().chain([(w.server_vault, "the server")]) {
+        for (v, name) in people.into_iter().chain([(w.avenceo, "avenCEO")]) {
             self.vault_names.insert(v, name.into());
         }
         let passkeys = [w.passkey_s, w.passkey_b, w.passkey_c, w.passkey_d];
         self.passkeys.extend(passkeys);
         self.signers = vec![w.passkey_s, w.mac_s, w.phone_s, w.passkey_b, w.mac_b, w.passkey_c, w.mac_c];
-        self.signers.extend([w.passkey_d, w.mac_d, w.server, server_owner, w.stranger]);
+        self.signers.extend([w.passkey_d, w.mac_d, w.server, w.stranger]);
         self.world = Some(w);
     }
 

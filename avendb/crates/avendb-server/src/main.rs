@@ -15,8 +15,18 @@ async fn main() -> Result<()> {
     let running = start(&config).await?;
     let node = &running.node;
     let (device, vault) = (node.device(), avendb_net::server::vault(node).await);
-    let vault = vault.map_or_else(|| "none".to_string(), |v| format!("{v:?}"));
-    tracing::info!("avenDB server: device {device:?}, vault {vault}, endpoint {}", node.id());
+    match vault {
+        Some(v) => tracing::info!("avenDB server: device {device:?} of avenCEO {v:?}, endpoint {}", node.id()),
+        None if config.setup.is_some() => tracing::info!(
+            "avenDB server: device {device:?}, endpoint {}, not claimed yet: the first human vault that brings \
+             AVENDB_SETUP_CODE claims it",
+            node.id()
+        ),
+        None => tracing::warn!(
+            "avenDB server: device {device:?}, endpoint {}, not claimed, and no AVENDB_SETUP_CODE: nobody can claim it",
+            node.id()
+        ),
+    }
     tracing::info!("avenDB server: offer {}", running.offer.to_text());
     let (data, bind, relay) = (config.data.display(), config.bind, config.relay_bind);
     tracing::info!("avenDB server: data in {data}, iroh on {bind}, relay on {relay}");

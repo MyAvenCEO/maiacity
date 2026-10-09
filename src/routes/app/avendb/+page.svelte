@@ -48,7 +48,7 @@
 	let asking = $state(null);
 
 	const SCREENS = /** @type {const} */ ([
-		['vaults', 'Vaults', 'Who owns what: people, their passkeys and devices, and the coops'],
+		['vaults', 'Vaults', 'Who owns what: human vaults with their passkeys and devices, coop vaults, and aven vaults with their servers'],
 		['spaces', 'Spaces', 'Where entries live, grouped by the vault that founded them'],
 		['todos', 'Todos', 'Every todo this device opens, and those shared with it'],
 		['schemas', 'Schemas', "Each space's schemas and lenses, by hash"],
@@ -58,16 +58,16 @@
 
 	const devices = $derived(/** @type {any[]} */ (overview?.devices ?? []));
 	const me = $derived(devices.find((d) => d.id === device));
-	/** the devices by person: each person's own, then the server and the stranger */
+	/** the devices by the vault they are devices of: each human vault's, avenCEO's server, then the stranger's, of none */
 	const groups = $derived.by(() => {
 		/** @type {Map<string, any[]>} */
 		const by = new Map();
 		for (const d of devices) {
-			const key = d.person ?? '';
+			const key = d.vault ?? '';
 			by.set(key, [...(by.get(key) ?? []), d]);
 		}
-		const people = [...by.entries()].filter(([p]) => p);
-		return [...people, ['', by.get('') ?? []]].filter(([, list]) => list.length);
+		const vaults = [...by.entries()].filter(([v]) => v);
+		return [...vaults, ['', by.get('') ?? []]].filter(([, list]) => list.length);
 	});
 
 	onMount(() => {
@@ -199,9 +199,9 @@
 
 		{#if phase === 'ready'}
 			<h2>Acting on</h2>
-			{#each groups as [person, list] (person)}
-				<div class="person">
-					{#if person}<small>{person}</small>{:else}<small>Others</small>{/if}
+			{#each groups as [vault, list] (vault)}
+				<div class="vault">
+					{#if vault}<small>{vault}</small>{:else}<small>No vault</small>{/if}
 					{#each list as d (d.id)}
 						<button class="device" class:on={d.id === device} onclick={() => pick(d.id)} title={d.locked ? 'Locked' : d.online ? 'Online' : 'Offline'}>
 							<i class="dot" class:off={!d.online}></i>
@@ -347,7 +347,7 @@
 		color: var(--accent);
 	}
 
-	.person small {
+	.vault small {
 		display: block;
 		margin: 0.4rem 0.6rem 0.1rem;
 		font-size: 0.72rem;

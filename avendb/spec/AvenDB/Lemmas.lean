@@ -122,10 +122,20 @@ theorem append_vault?_new {st : State} {vt : Vault} (h : st.vault? vt.id = none)
   rw [List.find?_append, h]
   simp
 
+/-- A vault that may own vaults exists. -/
+theorem ownsVaults_isSome {st : State} {o : VaultId} (h : ownsVaults st o = true) : (st.vault? o).isSome = true := by
+  unfold ownsVaults at h
+  cases ho : st.vault? o with
+  | none => rw [ho] at h; cases h
+  | some _ => rfl
+
 /-- A vault fits as an owner only if it exists. -/
 theorem ownerFits_vault {st : State} {k : Kind} {o : VaultId} (h : ownerFits st k (.vault o) = true) :
     (st.vault? o).isSome = true := by
-  cases k <;> simp_all [ownerFits]
+  cases k with
+  | human => simp [ownerFits] at h
+  | coop => exact ownsVaults_isSome h
+  | aven => exact ownsVaults_isSome h
 
 /-! ## What one step does to the vaults -/
 
@@ -140,7 +150,7 @@ inductive VaultChange (st : State) (sigs : List SignerId) (v : VaultId) (vt : Va
         { vt with owners := vt.owners.erase p, threshold := min vt.threshold (vt.owners.erase p).length }
   | setThreshold (n : Nat) : approves st sigs (.vault v) = true →
       VaultChange st sigs v vt { vt with threshold := n }
-  | addDevice (d : SignerId) : approves st sigs (.vault v) = true → d ∈ sigs →
+  | addDevice (d : SignerId) : vt.kind.hasDevices = true → approves st sigs (.vault v) = true → d ∈ sigs →
       VaultChange st sigs v vt { vt with devices := vt.devices ++ [d] }
   | removeDevice (d : SignerId) : (approves st sigs (.vault v) = true ∨ d ∈ sigs) →
       VaultChange st sigs v vt { vt with devices := vt.devices.erase d }
@@ -197,8 +207,8 @@ theorem apply_vaults {st post : State} {op : Op} (h : apply st op = some post) :
     · simp at h
     · rename_i v d _ _ vt hv
       simp at h
-      obtain ⟨-, ⟨happ, hd⟩, rfl⟩ := h
-      exact .inr (.inr ⟨v, vt, _, hv, .addDevice d happ hd, rfl⟩)
+      obtain ⟨⟨hk, -⟩, ⟨happ, hd⟩, rfl⟩ := h
+      exact .inr (.inr ⟨v, vt, _, hv, .addDevice d hk happ hd, rfl⟩)
   · -- removeDevice
     split at h
     · simp at h
@@ -515,7 +525,7 @@ theorem step_owners {st st' : State} {op : Op}
         · rw [List.mem_singleton] at ho; subst ho; exact ownerFits_vault hfit
       | removeOwner p _ => exact hex _ _ hvt _ (List.mem_of_mem_erase ho)
       | setThreshold _ _ => exact hex _ _ hvt _ ho
-      | addDevice _ _ _ => exact hex _ _ hvt _ ho
+      | addDevice _ _ _ _ => exact hex _ _ hvt _ ho
       | removeDevice _ _ => exact hex _ _ hvt _ ho
       | setRoot _ _ _ => exact hex _ _ hvt _ ho
     -- the only new edges point into `v`, from vaults `vt'` lists and `vt` didn't
@@ -570,7 +580,7 @@ theorem step_owners {st st' : State} {op : Op}
           exact Bool.noConfusion hnown
       | removeOwner p _ => exact hmono fun a ha => List.mem_of_mem_erase ha
       | setThreshold _ _ => exact hmono fun a ha => ha
-      | addDevice _ _ _ => exact hmono fun a ha => ha
+      | addDevice _ _ _ _ => exact hmono fun a ha => ha
       | removeDevice _ _ => exact hmono fun a ha => ha
       | setRoot _ _ _ => exact hmono fun a ha => ha
     · by_cases hxv : x = v
@@ -677,20 +687,16 @@ theorem actsForN_keeps {st st' : State} (hk : Keeps st st') {s : SignerId} : ∀
     cases hv : st.vault? v with
     | none => rw [hv] at h; cases h
     | some vt =>
-      obtain ⟨vt', hv', hkind, ho, hd⟩ := hk.vaults v vt hv
+      obtain ⟨vt', hv', -, ho, hd⟩ := hk.vaults v vt hv
       rw [hv] at h
       rw [hv']
       dsimp only at h ⊢
-      rw [hkind]
-      cases hk' : vt.kind with
-      | human =>
-        rw [hk'] at h
-        simp only [Bool.or_eq_true, List.contains_iff_mem] at h ⊢
-        exact h.imp (hd s) (ho _)
-      | coop =>
-        rw [hk'] at h
-        obtain ⟨p, hp, hpo⟩ := List.any_eq_true.1 h
-        refine List.any_eq_true.2 ⟨p, ho p hp, ?_⟩
+      simp only [Bool.or_eq_true, List.contains_iff_mem] at h ⊢
+      rcases h with (h | h) | h
+      · exact .inl (.inl (hd s h))
+      · exact .inl (.inr (ho _ h))
+      · obtain ⟨p, hp, hpo⟩ := List.any_eq_true.1 h
+        refine .inr (List.any_eq_true.2 ⟨p, ho p hp, ?_⟩)
         cases p with
         | vault o => exact actsForN_keeps hk (by omega) hpo
         | signer _ => exact hpo
@@ -698,6 +704,40 @@ theorem actsForN_keeps {st st' : State} (hk : Keeps st st') {s : SignerId} : ∀
 theorem actsFor_keeps {st st' : State} (hk : Keeps st st') {s : SignerId} {v : VaultId}
     (h : actsFor st s v = true) : actsFor st' s v = true :=
   actsForN_keeps hk hk.depth h
+
+/-- A state that keeps the vaults keeps every member. -/
+theorem member_keeps {st st' : State} (hk : Keeps st st') {s : SignerId} {v : VaultId}
+    (h : member st s v = true) : member st' s v = true := by
+  unfold member at h ⊢
+  cases hv : st.vault? v with
+  | none => rw [hv] at h; cases h
+  | some vt =>
+    obtain ⟨vt', hv', -, ho, hd⟩ := hk.vaults v vt hv
+    rw [hv] at h
+    rw [hv']
+    simp only [Bool.or_eq_true, List.contains_iff_mem] at h ⊢
+    exact h.imp (hd s) (ho _)
+
+/-- A state that keeps the vaults keeps every owner. -/
+theorem ownerOf_keeps {st st' : State} (hk : Keeps st st') {o v : VaultId}
+    (h : ownerOf st o v = true) : ownerOf st' o v = true := by
+  unfold ownerOf at h ⊢
+  cases hv : st.vault? v with
+  | none => rw [hv] at h; cases h
+  | some vt =>
+    obtain ⟨vt', hv', -, ho, -⟩ := hk.vaults v vt hv
+    rw [hv] at h
+    rw [hv']
+    simp only [List.contains_iff_mem] at h ⊢
+    exact ho _ h
+
+/-- A state that keeps the vaults keeps every chain an op names. -/
+theorem actsVia_keeps {st st' : State} (hk : Keeps st st') {s : SignerId} :
+    ∀ {via : List VaultId} {v : VaultId}, actsVia st s via v = true → actsVia st' s via v = true
+  | [], _, h => member_keeps hk h
+  | o :: via, v, h => by
+    simp only [actsVia, Bool.and_eq_true] at h ⊢
+    exact ⟨ownerOf_keeps hk h.1, actsVia_keeps hk h.2⟩
 
 theorem holds_keeps {st st' : State} (hk : Keeps st st') {v : VaultId} {sc : Scope} {r : Role}
     (h : holds st v sc r = true) : holds st' v sc r = true := by
@@ -712,7 +752,7 @@ theorem authorized_keeps {st st' : State} (hk : Keeps st st') {w : Write} (h : a
     authorized st' w = true := by
   unfold authorized at h ⊢
   rw [Bool.and_eq_true] at h ⊢
-  exact ⟨actsFor_keeps hk h.1, holds_keeps hk h.2⟩
+  exact ⟨actsVia_keeps hk h.1, holds_keeps hk h.2⟩
 
 /-! ## Causally closed writes -/
 
@@ -771,7 +811,7 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
     (post.writes = st.writes ∧ Keeps st post) ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ authorized st w = true ∧ depsIn st.writes w = true ∧
       Keeps st post ∧ w.op = op.id ∧ w.author = op.author ∧
-      op.action = .write w.space w.entry w.actor w.epoch w.deps w.branch ∧
+      op.action = .write w.space w.entry w.actor w.epoch w.deps w.branch w.via ∧
       (∀ x ∈ st.writes, x.op ≠ w.op) ∧ onBranch st.writes w = true) ∨
     (∃ keep mid, op.action.keep? = some keep ∧ post = dropUnseen st mid keep ∧ mid.writes = st.writes) := by
   unfold apply at h
@@ -833,7 +873,7 @@ theorem apply_writes {st post : State} {op : Op} (h : apply st op = some post) :
   · -- revoke
     split at h
     · simp at h
-    · rename_i keep heq _ _ _
+    · rename_i keep _ heq _ _ _
       simp at h
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl⟩)
@@ -913,7 +953,7 @@ theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
     obtain ⟨-, rfl⟩ := h
     exact .inl fun _ h => h
   · -- grant
-    rename_i g _
+    rename_i g _ _
     simp at h
     obtain ⟨-, hname, -, -, rfl⟩ := h
     refine .inr ⟨g, rfl, fun s hs => ?_, fun hp => ?_⟩
@@ -955,15 +995,15 @@ theorem apply_grants {st post : State} {op : Op} (h : apply st op = some post) :
     holding owner on the space. -/
 theorem apply_lane {st post : State} {op : Op} (h : apply st op = some post) :
     post.lane = st.lane ∨
-    ∃ sp actor blob, op.action = .publish sp actor blob ∧ actsFor st op.author actor = true ∧
+    ∃ sp actor blob via, op.action = .publish sp actor blob via ∧ actsVia st op.author via actor = true ∧
       holds st actor (.space sp) .owner = true ∧ post.lane = st.lane ++ [(sp, blob)] := by
   unfold apply at h
   dsimp only at h
   split at h <;> (repeat' split at h) <;> (try cases h) <;> (try exact .inl rfl)
   -- only an accepted publish is left
-  rename_i sp actor blob heq _ hok
+  rename_i sp actor blob via heq _ hok
   simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hok
-  exact .inr ⟨sp, actor, blob, heq, hok.1, hok.2, rfl⟩
+  exact .inr ⟨sp, actor, blob, via, heq, hok.1, hok.2, rfl⟩
 
 /-! ## Replay, runs and resolve -/
 
@@ -1018,7 +1058,8 @@ theorem standing_mem (ops : List Op) : ∀ o ∈ standing ops, o ∈ ops := fun 
     author. -/
 theorem replay_writes_from :
     ∀ (l : List Op) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
-      ∃ o ∈ l, o.id = w.op ∧ o.author = w.author ∧ o.action = .write w.space w.entry w.actor w.epoch w.deps w.branch
+      ∃ o ∈ l, o.id = w.op ∧ o.author = w.author ∧
+        o.action = .write w.space w.entry w.actor w.epoch w.deps w.branch w.via
   | [], _, _, h => .inl h
   | op :: ops, st, w, h => by
     change w ∈ (replay ((step st op).getD st) ops).writes at h

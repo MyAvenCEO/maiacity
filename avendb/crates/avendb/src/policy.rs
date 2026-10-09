@@ -18,14 +18,25 @@ use std::sync::Arc;
 use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyName, KeyScope, PublicKey, Seal};
 
-/// A human vault is what one person owns, governed by their signers. A coop vault is owned by other vaults.
+/// A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
+/// devices act for it. A coop vault is owned by human and coop vaults. An aven vault, an agent such as the relay
+/// server, is owned by human and coop vaults too, and its devices (the servers it runs on) act for it but never govern
+/// it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     Human,
     Coop,
+    Aven,
 }
 
-/// An owner of a vault: a signer (of a human vault) or a vault (of a coop).
+impl Kind {
+    /// Human and aven vaults have devices, coops don't: a coop acts only through its owners.
+    pub fn has_devices(self) -> bool {
+        self != Kind::Coop
+    }
+}
+
+/// An owner of a vault: a signer (of a human vault) or a vault (of a coop or an aven vault).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Principal {
     Signer(SignerId),
@@ -108,7 +119,10 @@ pub type Line = Option<OpId>;
 /// Every change is one of these, signed. Governance (owners, threshold, devices, the root, owner grants) needs the
 /// vault's approval: its root, or its threshold of owners; everything else needs one device acting for the vault.
 /// Every removal names the ops it had seen and keeps (`keep`); what it hadn't seen and relied on what it takes away is
-/// cut (`view`).
+/// cut (`view`). An op that acts for a vault (founds a space, grants, revokes, writes, publishes) names the owners
+/// `via` its author acts through (`State::acts_via`): none when its author is a member of the vault, else from an owner
+/// of the vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop
+/// through `[bob]`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
     /// A new vault; its id is this op's id. Every first owner signs, and so does the root, the passkey of a human
@@ -127,18 +141,19 @@ pub enum Action {
     /// By the vault's approval, or an owner leaving on its own.
     RemoveOwner { vault: VaultId, owner: Principal, keep: Vec<OpId> },
     SetThreshold { vault: VaultId, threshold: u32 },
-    /// Human vaults only; the device signs too, and brings the key it has keys sealed to.
+    /// A device of a human vault (a phone, a browser) or of an aven vault (a server); the device signs too, and
+    /// brings the key it has keys sealed to.
     AddDevice { vault: VaultId, device: SignerId, seal_to: Option<PublicKey> },
     /// By the vault's approval, or the device leaving on its own.
     RemoveDevice { vault: VaultId, device: SignerId, keep: Vec<OpId> },
     /// The root hands itself on to a new passkey, which signs too, or steps down (`None`).
     SetRoot { vault: VaultId, root: Option<SignerId>, keep: Vec<OpId> },
     /// A new space founded by `actor`, which holds owner on it; its id is this op's id.
-    FoundSpace { actor: VaultId, nonce: u64 },
-    /// Its id is this op's id.
-    Grant(Grant),
+    FoundSpace { actor: VaultId, nonce: u64, via: Vec<VaultId> },
+    /// Its id is this op's id; the issuer acts through the owners `via`.
+    Grant(Grant, Vec<VaultId>),
     /// Ends `grant` and every grant resting on it.
-    Revoke { grant: GrantId, actor: VaultId, keep: Vec<OpId> },
+    Revoke { grant: GrantId, actor: VaultId, keep: Vec<OpId>, via: Vec<VaultId> },
     /// An encrypted edit of one entry under the entry key's `epoch`, on the line `branch` of its history, building on
     /// the entry's writes `deps` (its Loro frontier). The first write creates the entry. A write that starts a branch
     /// builds on the version the branch starts from and holds the branch's name; a merge builds on the heads of both
@@ -150,6 +165,7 @@ pub enum Action {
         epoch: u64,
         deps: Vec<OpId>,
         branch: Branch,
+        via: Vec<VaultId>,
         body: Vec<u8>,
     },
     /// The real boxes of one key of family `key` at `epoch`: its `id`, its `public` half for those who seal to it
@@ -159,7 +175,7 @@ pub enum Action {
     Keys { key: KeyScope, epoch: u64, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
     /// A schema or a lens, published into the space's schema lane by an owner of the space (T17): a blob that holds no
     /// data, named by its hash (`BlobId::of`), and readable by whoever holds the space's ops.
-    Publish { space: SpaceId, actor: VaultId, blob: Vec<u8> },
+    Publish { space: SpaceId, actor: VaultId, via: Vec<VaultId>, blob: Vec<u8> },
     /// A device vouches for its own accepted writes of one entry, named in `covers`, with both halves of its signature,
     /// where the writes carry only the classical half (`sign`). It changes nothing; a peer that no longer trusts the
     /// curves counts only the writes a checkpoint covers (`checkpointed`).
@@ -184,6 +200,29 @@ impl Action {
             | Action::RemoveDevice { keep, .. }
             | Action::SetRoot { keep, .. }
             | Action::Revoke { keep, .. } => Some(keep),
+            _ => None,
+        }
+    }
+
+    /// The owners an act for a vault goes through, for the ops that act for one.
+    pub fn via(&self) -> Option<&[VaultId]> {
+        match self {
+            Action::FoundSpace { via, .. }
+            | Action::Grant(_, via)
+            | Action::Revoke { via, .. }
+            | Action::Write { via, .. }
+            | Action::Publish { via, .. } => Some(via),
+            _ => None,
+        }
+    }
+
+    fn via_mut(&mut self) -> Option<&mut Vec<VaultId>> {
+        match self {
+            Action::FoundSpace { via, .. }
+            | Action::Grant(_, via)
+            | Action::Revoke { via, .. }
+            | Action::Write { via, .. }
+            | Action::Publish { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -266,7 +305,7 @@ impl Op {
             | Action::Revoke { actor, .. }
             | Action::Write { actor, .. }
             | Action::Publish { actor, .. } => Some(*actor),
-            Action::Grant(g) => Some(g.issuer),
+            Action::Grant(g, _) => Some(g.issuer),
             _ => None,
         }
     }
@@ -274,7 +313,7 @@ impl Op {
     /// The vault a grant names.
     pub fn grantee(&self) -> Option<VaultId> {
         match &self.action {
-            Action::Grant(Grant { grantee: Grantee::Principal(Principal::Vault(v)), .. }) => Some(*v),
+            Action::Grant(Grant { grantee: Grantee::Principal(Principal::Vault(v)), .. }, _) => Some(*v),
             _ => None,
         }
     }
@@ -295,6 +334,8 @@ pub struct Vault {
     pub kind: Kind,
     pub owners: Vec<Principal>,
     pub threshold: u32,
+    /// Device signers act for a human or an aven vault but don't govern it: a person's phones and browsers, the
+    /// servers an aven vault runs on.
     pub devices: Vec<SignerId>,
     /// A human vault's root: its passkey, named at genesis. It approves anything for its vault on its own, wins every
     /// clash with the other owners, and only it hands the root on.
@@ -308,7 +349,8 @@ pub struct Space {
     pub entries: Vec<EntryId>,
 }
 
-/// An accepted write: one encrypted edit of one entry, on one line of its history.
+/// An accepted write: one encrypted edit of one entry, on one line of its history. Its author, a device, acts for
+/// `actor` through the owners `via` (`State::acts_via`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Write {
     pub op: OpId,
@@ -320,6 +362,7 @@ pub struct Write {
     /// The writes of the same entry it builds on.
     pub deps: Vec<OpId>,
     pub branch: Branch,
+    pub via: Vec<VaultId>,
 }
 
 impl AsRef<Write> for Write {
@@ -361,17 +404,19 @@ pub enum Refusal {
     BelowThreshold,
     /// The threshold would be 0 or more than the number of owners.
     BadThreshold,
-    /// A human vault's owners are signers, a coop's owners are vaults.
+    /// A human vault's owners are signers; a coop's and an aven vault's owners are human or coop vaults.
     WrongOwnerKind,
     /// A vault keeps at least one owner.
     LastOwner,
     /// The vault would own itself, directly or through other vaults (T3).
     Cycle,
-    /// Devices and roots belong to human vaults.
+    /// Only a human vault has a root.
     NotHuman,
+    /// A coop has no devices: it acts only through its owners.
+    NoDevices,
     /// Only a vault's root hands the root on.
     NotRoot,
-    /// No signer of the op acts for the vault it claims to act for.
+    /// The op's author doesn't act for the vault it claims to act for through the owners it names.
     NotActing,
     /// The vault doesn't hold the role this needs on the scope.
     NoCap,
@@ -411,6 +456,12 @@ pub enum Refusal {
     /// Not a rule of the ops but of a device: what a device on a connection sent to join a vault (`Lab::accept_join`)
     /// adds no device, or another device than itself.
     NotJoining,
+    /// Not a rule of the ops but of a server: a claim of it brings another code than its setup code, or the server has
+    /// none (`Lab::claim_key`).
+    BadCode,
+    /// Not a rule of the ops but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
+    /// device of an aven vault.
+    NotClaiming,
 }
 
 /// What a removal takes away.
@@ -424,7 +475,7 @@ pub enum Fact {
 }
 
 /// Whoever starts out holding keys: a signer with its own key, whoever holds a vault's current key (its members, and
-/// in a coop the members of its owners), and everyone, who holds what is published.
+/// the members of its owners), and everyone, who holds what is published.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Holder {
     Signer(SignerId),
@@ -576,18 +627,68 @@ impl State {
         tips(&self.history(sp, e, line))
     }
 
-    /// Signer `s` acts for vault `v`: a device or owner signer of a human vault, or anyone acting for an owner of a
-    /// coop, up the chain.
+    /// Signer `s` is a member of vault `v`: one of its devices, or one of its owner signers (a human vault's passkeys).
+    pub fn member(&self, s: SignerId, v: VaultId) -> bool {
+        self.vault(v).is_some_and(|vt| vt.devices.contains(&s) || vt.owners.contains(&Principal::Signer(s)))
+    }
+
+    /// Signer `s` acts for vault `v`: it is a member of `v`, or acts for an owner of `v`, up the chain. Whatever the
+    /// kind: a human vault has no vault owners and a coop no members, by the rules (`owner_fits`).
     pub fn acts_for(&self, s: SignerId, v: VaultId) -> bool {
         self.acts_for_n(s, self.depth(), v)
     }
 
     fn acts_for_n(&self, s: SignerId, n: usize, v: VaultId) -> bool {
         let Some(vt) = self.vault(v).filter(|_| n > 0) else { return false };
-        match vt.kind {
-            Kind::Human => vt.devices.contains(&s) || vt.owners.contains(&Principal::Signer(s)),
-            Kind::Coop => vt.owners.iter().any(|p| matches!(*p, Principal::Vault(o) if self.acts_for_n(s, n - 1, o))),
+        vt.devices.contains(&s)
+            || vt.owners.contains(&Principal::Signer(s))
+            || vt.owners.iter().any(|p| matches!(*p, Principal::Vault(o) if self.acts_for_n(s, n - 1, o)))
+    }
+
+    /// Vault `o` is listed as an owner of vault `v`.
+    pub fn owner_of(&self, o: VaultId, v: VaultId) -> bool {
+        self.vault(v).is_some_and(|vt| vt.owners.contains(&Principal::Vault(o)))
+    }
+
+    /// Signer `s` acts for vault `actor` through the owners `via`, as an op names them: `via` runs from an owner of
+    /// `actor` down, each vault an owner of the one before, to the vault `s` is a member of; with no `via`, `s` is a
+    /// member of `actor` itself. A device of Bob's human vault acts for Bob's coop through `[bob]`.
+    pub fn acts_via(&self, s: SignerId, via: &[VaultId], actor: VaultId) -> bool {
+        let mut v = actor;
+        for &o in via {
+            if !self.owner_of(o, v) {
+                return false;
+            }
+            v = o;
         }
+        self.member(s, v)
+    }
+
+    /// The owners signer `s` acts for vault `v` through, as an op names them (`acts_via`): none when `s` is a member of
+    /// `v`, else the shortest chain, the first owner in each vault's order winning a tie, or `None` if `s` doesn't act
+    /// for `v`.
+    pub fn via(&self, s: SignerId, v: VaultId) -> Option<Vec<VaultId>> {
+        // breadth first from `v` up its owners: the first vault `s` is a member of ends the shortest chain
+        let mut paths: Vec<Vec<VaultId>> = vec![vec![]];
+        let mut seen: HashSet<VaultId> = HashSet::from([v]);
+        for _ in 0..self.depth() {
+            let mut next = vec![];
+            for path in paths {
+                let at = path.last().copied().unwrap_or(v);
+                if self.member(s, at) {
+                    return Some(path);
+                }
+                for p in self.vault(at).map(|vt| &vt.owners[..]).unwrap_or_default() {
+                    if let Principal::Vault(o) = *p
+                        && seen.insert(o)
+                    {
+                        next.push(path.iter().copied().chain([o]).collect());
+                    }
+                }
+            }
+            paths = next;
+        }
+        None
     }
 
     /// The signers `sigs` approve for `p`: a signer by signing, a vault when its root signed or its threshold of
@@ -619,12 +720,17 @@ impl State {
         vt.owners.iter().any(|p| matches!(*p, Principal::Vault(o) if o == a || self.owns_n(a, n - 1, o)))
     }
 
-    /// Human vaults are owned by signers, coops by existing vaults.
+    /// Human vaults are owned by signers, their person's passkeys; coop and aven vaults by existing human and coop
+    /// vaults, never by a signer directly.
     fn owner_fits(&self, kind: Kind, p: Principal) -> Result<(), Refusal> {
         match (kind, p) {
             (Kind::Human, Principal::Signer(_)) => Ok(()),
-            (Kind::Coop, Principal::Vault(o)) if self.vault(o).is_some() => Ok(()),
-            (Kind::Coop, Principal::Vault(_)) => Err(Refusal::UnknownVault),
+            (Kind::Coop | Kind::Aven, Principal::Vault(o)) => match self.vault(o) {
+                None => Err(Refusal::UnknownVault),
+                // an aven vault owns nothing (yet)
+                Some(ot) if ot.kind == Kind::Aven => Err(Refusal::WrongOwnerKind),
+                Some(_) => Ok(()),
+            },
             _ => Err(Refusal::WrongOwnerKind),
         }
     }
@@ -642,9 +748,10 @@ impl State {
         self.grants.iter().any(|(_, g)| g.grantee == Grantee::Public && g.scope.covers(sc))
     }
 
-    /// A write is authorized: its author acts for its vault, and that vault holds write on its entry.
+    /// A write is authorized: its author acts for its vault through the owners it names, and that vault holds write
+    /// on its entry.
     pub fn authorized(&self, w: &Write) -> bool {
-        self.acts_for(w.author, w.actor) && self.holds(w.actor, Scope::Entry(w.space, w.entry), Role::Write)
+        self.acts_via(w.author, &w.via, w.actor) && self.holds(w.actor, Scope::Entry(w.space, w.entry), Role::Write)
     }
 
     /// The current epoch of a key family; it starts at 0 and grows by one at every rotation.
@@ -711,9 +818,9 @@ impl State {
         vaults.chain(spaces).collect()
     }
 
-    /// The key pairs the current key of `k` is sealed to: a human vault's devices and owner signers, a coop's owner
-    /// vaults, the vaults that can read a whole space, and for an entry its space plus the vaults that may read just
-    /// that entry. Relay caps get no key.
+    /// The key pairs the current key of `k` is sealed to: a vault's devices and owner signers (a human vault's
+    /// passkeys, through keys derived from them) and its owner vaults, the vaults that can read a whole space, and for
+    /// an entry its space plus the vaults that may read just that entry. Relay caps get no key.
     pub fn targets(&self, k: KeyScope) -> Vec<KeyName> {
         self.targets_by(k, &self.read_grantees())
     }
@@ -738,23 +845,17 @@ impl State {
         match k {
             KeyScope::Vault(v) => match self.vault(v) {
                 None => vec![],
-                Some(vt) => match vt.kind {
-                    Kind::Human => {
-                        let owners = vt.owners.iter().filter_map(|p| match *p {
-                            Principal::Signer(s) => Some(s),
-                            Principal::Vault(_) => None,
-                        });
-                        vt.devices.iter().copied().chain(owners).map(KeyName::Signer).collect()
-                    }
-                    Kind::Coop => vt
-                        .owners
-                        .iter()
-                        .filter_map(|p| match *p {
-                            Principal::Vault(o) => Some(vault_key(o)),
-                            Principal::Signer(_) => None,
-                        })
-                        .collect(),
-                },
+                Some(vt) => {
+                    let signers = vt.owners.iter().filter_map(|p| match *p {
+                        Principal::Signer(s) => Some(s),
+                        Principal::Vault(_) => None,
+                    });
+                    let vaults = vt.owners.iter().filter_map(|p| match *p {
+                        Principal::Vault(o) => Some(vault_key(o)),
+                        Principal::Signer(_) => None,
+                    });
+                    vt.devices.iter().copied().chain(signers).map(KeyName::Signer).chain(vaults).collect()
+                }
             },
             // a grant covers a whole space only when it is on the space itself
             KeyScope::Space(sp) => {
@@ -917,7 +1018,8 @@ impl State {
         false
     }
 
-    /// How far below the people vault `v` sits: a human vault at 0, a coop one below its lowest owner (`tier`).
+    /// How far below the human vaults vault `v` sits: a human vault at 0, a coop or an aven vault one below its lowest
+    /// owner.
     fn tier(&self, v: VaultId) -> usize {
         self.tier_n(v, self.depth())
     }
@@ -1114,8 +1216,8 @@ impl State {
             Action::AddDevice { vault, device, seal_to } => {
                 let (vault, device) = (*vault, *device);
                 let vt = self.vault(vault).ok_or(Refusal::UnknownVault)?;
-                if vt.kind != Kind::Human {
-                    return Err(Refusal::NotHuman);
+                if !vt.kind.has_devices() {
+                    return Err(Refusal::NoDevices);
                 }
                 if vt.devices.contains(&device) {
                     return Err(Refusal::AlreadyMember);
@@ -1159,17 +1261,17 @@ impl State {
                 }
                 self.vault_mut(vault).root = root;
             }
-            &Action::FoundSpace { actor, .. } => {
-                let sp = SpaceId::from(id);
+            Action::FoundSpace { actor, via, .. } => {
+                let (sp, actor) = (SpaceId::from(id), *actor);
                 if self.space(sp).is_some() {
                     return Err(Refusal::Duplicate);
                 }
-                if !self.acts_for(op.author, actor) {
+                if !self.acts_via(op.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 self.spaces.push(Space { id: sp, founder: actor, entries: vec![] });
             }
-            Action::Grant(g) => {
+            Action::Grant(g, via) => {
                 let id = GrantId::from(id);
                 if self.grant(id).is_some() {
                     return Err(Refusal::Duplicate);
@@ -1184,7 +1286,7 @@ impl State {
                     Grantee::Public if g.role != Role::Read => return Err(Refusal::PublicBeyondRead),
                     _ => {}
                 }
-                if !self.acts_for(op.author, g.issuer) {
+                if !self.acts_via(op.author, via, g.issuer) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.holds(g.issuer, g.scope, Role::Owner) {
@@ -1199,10 +1301,10 @@ impl State {
                 }
                 self.grants.push((id, g.clone()));
             }
-            Action::Revoke { grant, actor, keep } => {
+            Action::Revoke { grant, actor, keep, via } => {
                 let (grant, actor) = (*grant, *actor);
                 let g = self.grant(grant).ok_or(Refusal::UnknownGrant)?;
-                if !self.acts_for(op.author, actor) {
+                if !self.acts_via(op.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.may_revoke(actor, g) {
@@ -1216,13 +1318,13 @@ impl State {
                 self.grants.retain(|(x, _)| !pre.rests_on(grant, *x));
                 self.drop_unseen(&pre, keep);
             }
-            Action::Write { space, entry, actor, epoch, deps, branch, .. } => {
+            Action::Write { space, entry, actor, epoch, deps, branch, via, .. } => {
                 let (space, entry, actor, epoch, branch) = (*space, *entry, *actor, *epoch, *branch);
                 let s = self.space(space).ok_or(Refusal::UnknownSpace)?;
                 if self.writes.iter().any(|w| w.op == id) {
                     return Err(Refusal::Duplicate);
                 }
-                if !self.acts_for(op.author, actor) {
+                if !self.acts_via(op.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.holds(actor, Scope::Entry(space, entry), Role::Write) {
@@ -1231,7 +1333,8 @@ impl State {
                 if epoch > self.epoch(KeyScope::Entry(space, entry)) {
                     return Err(Refusal::FutureEpoch);
                 }
-                let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps: deps.clone(), branch };
+                let (deps, via) = (deps.clone(), via.clone());
+                let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps, branch, via };
                 // what it builds on was accepted, so the accepted writes stay causally closed (T14); a write on a
                 // branch builds on the branch's start, so whatever cuts the start cuts the whole branch
                 builds_on(&self.writes, &w)?;
@@ -1260,7 +1363,7 @@ impl State {
                     return Err(Refusal::NotPublic);
                 }
             }
-            Action::Publish { space, actor, blob } => {
+            Action::Publish { space, actor, via, blob } => {
                 let (space, actor, id) = (*space, *actor, BlobId::of(blob));
                 if self.space(space).is_none() {
                     return Err(Refusal::UnknownSpace);
@@ -1269,7 +1372,7 @@ impl State {
                     return Err(Refusal::AlreadyPublished);
                 }
                 // only an owner of the space publishes into its lane
-                if !self.acts_for(op.author, actor) {
+                if !self.acts_via(op.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.holds(actor, Scope::Space(space), Role::Owner) {
@@ -1402,13 +1505,13 @@ fn order_ids(ops: &[Op], ids: &[OpId]) -> (Vec<Op>, Vec<OpId>) {
 /// What removal `r` takes away: the owner, the device, the root, or, among the grants the ops `ops` make, the grant
 /// and every grant resting on it.
 pub fn removes(ops: &[Op], r: &Op) -> Vec<Fact> {
-    removes_among(r, || grants_of(ops.iter().filter(|o| matches!(o.action, Action::Grant(_))).map(|o| (o, o.id()))))
+    removes_among(r, || grants_of(ops.iter().filter(|o| matches!(o.action, Action::Grant(..))).map(|o| (o, o.id()))))
 }
 
 /// Each grant op's grant id and parent, among ops paired with their ids.
 fn grants_of<'a>(ops: impl Iterator<Item = (&'a Op, OpId)>) -> Vec<(GrantId, Option<GrantId>)> {
     ops.filter_map(|(o, id)| match &o.action {
-        Action::Grant(g) => Some((GrantId::from(id), g.parent)),
+        Action::Grant(g, _) => Some((GrantId::from(id), g.parent)),
         _ => None,
     })
     .collect()
@@ -1627,9 +1730,9 @@ impl Log {
     /// The op `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
     /// builds on the frontier of its own log (one that starts a log, a genesis or a space's founding, on nothing) and
     /// is one deeper than the deepest op the log holds, so it sorts after everything this peer had seen. A write with
-    /// no `deps` on the main line or a branch builds on that line's heads. A removal keeps, beside what its `keep`
-    /// names, every op of the log that stands now and that it would cut otherwise: an honest device keeps all it had
-    /// seen.
+    /// no `deps` on the main line or a branch builds on that line's heads. An act for a vault that names no `via`
+    /// goes through the owners its author acts through (`State::via`). A removal keeps, beside what its `keep` names,
+    /// every op of the log that stands now and that it would cut otherwise: an honest device keeps all it had seen.
     pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Op {
         let depth = self.ops.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
         let mut op = Op { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
@@ -1638,12 +1741,21 @@ impl Log {
         {
             op.parents = crate::sync::frontier_of(&self.ops, &self.ids, l);
         }
+        let view = std::cell::OnceCell::new();
+        let view = || view.get_or_init(|| self.view());
         if let Action::Write { space, entry, deps, branch, .. } = &mut op.action
             && deps.is_empty()
             && *branch != Branch::New
         {
             let line = if let Branch::On(b) = *branch { Some(b) } else { None };
-            *deps = self.view().heads(*space, *entry, line);
+            *deps = view().heads(*space, *entry, line);
+        }
+        // an act for a vault its author isn't a member of names the owners it goes through
+        if let Some(actor) = op.actor()
+            && op.action.via().is_some_and(<[VaultId]>::is_empty)
+            && let Some(chain) = view().via(author, actor)
+        {
+            *op.action.via_mut().expect("an act for a vault") = chain;
         }
         if op.is_removal() {
             // replayed with the removals that stand now and this one, everything that stands now must still stand
@@ -1764,6 +1876,7 @@ mod tests {
             epoch: 0,
             deps: deps.iter().map(|&d| OpId::from_u64(d)).collect(),
             branch: Branch::Main,
+            via: vec![],
         };
         // 2 builds on 1, 3 on 2, 4 on 1: without 2, 3 goes too
         let kept = close_deps(vec![w(1, &[]), w(3, &[2]), w(4, &[1])]);

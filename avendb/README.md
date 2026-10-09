@@ -1,8 +1,11 @@
 # avenDB
 
-The user-owned, end-to-end encrypted database of maia.city. Passkeys and devices own vaults, vaults hold caps on
-spaces and single entries, every item is a Loro document whose edits are encrypted under the item's own key, and each
-device syncs exactly the items its vaults hold caps on, so servers and relays only ever see ciphertext.
+The user-owned, end-to-end encrypted database of maia.city. Every identity is a vault, like a smart account: a human
+vault is a person's, owned by their passkeys, with their devices; a coop vault is owned by human and coop vaults; an
+aven vault, an agent's such as avenCEO, the server's, is owned the same way, and its servers act for it but never govern
+it. Vaults hold caps on spaces and single entries, every item is a Loro document whose edits are encrypted under the
+item's own key, and each device syncs exactly the items its vaults hold caps on, so servers and relays only ever see
+ciphertext.
 
 avenDB is its own package in the maiacity repo, apart from the media vault in `vault/`: it has its own Cargo workspace
 and lockfile, so the two never build together, and nothing here changes what the media vault, its server or the Studio
@@ -21,7 +24,7 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 | `crates/avendb-web` | The core in a web page, as WebAssembly: the tile's world made a step at a time, read through JSON views and changed through JSON actions, on whichever device the page picks |
 | `scripts/build-web.sh` | Builds `avendb-web` into the tile's package, `src/lib/avendb/pkg/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
-| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T20) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
+| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T21) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
 | `docs/` | The research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
 
 ## Build and test
@@ -101,10 +104,14 @@ the device also brings the PRF output on the device's own salt, which ends in 32
 keys derive from it at every unlock. The Lab holds no secret of the passkey: it lends the seal secret from the ceremony
 for that op alone, and forgets the McEliece pair it made from it once the device locks.
 
-- **Found** (`Device::found`): a new person's first browser makes their passkey, founds their vault, its first space,
-  and grants the server relay on it, in four ceremonies: the unlock, the pass to the relay, the vault's genesis, and the
-  op that adds the device. The server's relay lets any passkey's pass in while it is open to sign-up
+- **Found** (`Device::found`): a new person's first browser founds their human vault with the passkey they signed up
+  to maiaCITY with, or one it makes, then its first space, and grants avenCEO relay on it, in four ceremonies: the
+  unlock, the pass to the relay, the vault's genesis, and the op that adds the device (five with a new passkey). Its
+  P-256 key comes from the new passkey's public key info, or, for maiaCITY's, as the one key both the unlock's and the
+  pass's assertions recover to. The server's relay lets any passkey's pass in while it is open to sign-up
   (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on the server knows the device.
+  The person who runs the server claims it first, with its setup code, in two ceremonies more (see
+  [avenCEO](#avenceo)).
 - **Link** (`Device::link`, `Node::link_with`): a browser of a person who has a device already links through the code
   that device shows, in four ceremonies: the unlock, the pass, the passkey's hello, and the join. It never saw the
   passkey made, so it learns its P-256 key as the one key both the unlock's and the pass's assertions recover to
@@ -113,10 +120,43 @@ for that op alone, and forgets the McEliece pair it made from it once the device
   them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
   one ceremony, the unlock; the relay knows it, so it needs no pass.
 
-In the tile, the screen **This browser** is this device: it founds a vault or links through a code (a QR code that a
-phone's camera opens as a link, `?link=`), shows its own code as a QR code for the next device, and lists, edits and
-writes notes, showing what its other devices change the moment it arrives (`Device::changed`). avenDB's server isn't
-deployed yet (P8f), so for now the screen takes a test server's relay and code.
+In the tile, the screen **This browser** is this device: it founds a vault, with the maiaCITY passkey or a new one,
+and claims the server if given its setup code, or links through a code (a QR code that a phone's camera opens as a
+link, `?link=`), shows its own code as a QR code for the next device, and lists, edits and writes notes, showing what
+its other devices change the moment it arrives (`Device::changed`). avenDB's server isn't deployed yet (P8f), so for now
+the screen takes a test server's relay and code.
+
+#### PRF, done right
+
+A passkey's PRF output is the root of everything a person holds, so every use of it keeps to these rules, each checked
+in the code:
+
+- **One passkey for maiaCITY and avenDB.** Both use the relying party `maia.city`, so the passkey a person signed up to
+  maiaCITY with can be their vault's root. maiaCITY's sign-up (`src/lib/auth/client.ts`) asks for the PRF extension
+  and for P-256 first: a security key turns its PRF (CTAP2's `hmac-secret`) on only for a passkey made with it, and
+  avenDB's ceremonies take P-256 signatures alone. A browser or an authenticator without PRF makes the passkey all the
+  same, as maiaCITY never needs it; avenDB then says so and offers to make one of its own. A passkey avenDB makes
+  without PRF (`prf.enabled` false) is refused at once, and the authenticator told nobody knows it.
+- **User verification in every ceremony.** An authenticator's PRF answers with another secret without it, so each of
+  avenDB's ceremonies requires it (`userVerification: 'required'`) and each assertion must show it (`sign::Assertion`
+  checks the UP and UV flags); the outputs then stay the same at every ceremony. maiaCITY's own sign-in may skip it,
+  and never asks for PRF.
+- **Salts of its own.** The passkey's keys come from the output on avenDB's salt (`sign::PRF_SALT`), each device's from
+  the output on its own salt, which ends in 32 random bytes the device keeps (`sign::device_salt`). The browser hashes
+  each salt with `WebAuthn PRF` before the authenticator sees it, so no other use of the credential gets these outputs,
+  and the software passkey of the tests does the same. Each key derives under a label of its own, so the signing key
+  and the key sealed to never meet.
+- **Bound to the passkey.** A ceremony counts only if its assertion verifies under the passkey's P-256 key and the
+  SLH-DSA key derived from its PRF output is the one the vault knows (`sign::Ceremony`): every op a passkey signs
+  carries both, so maiaCITY's API, which sees its own sign-ins' assertions and never a PRF output, can't sign for a
+  vault, nor can anyone who learns a PRF output without the authenticator.
+- **Held as briefly as it can be.** The device copies each output into memory that wipes itself, and wipes the page's
+  buffer it came in (`js/passkey.js` hands it over as a view of the browser's own buffer); none is ever sent, logged
+  or shown.
+
+Every page on `maia.city` and its subdomains can ask the person's authenticator for a ceremony of that relying party,
+so the site's own scripts are part of what guards the root, as they are for any passkey; each ceremony shows the person
+a prompt.
 
 `scripts/test-browser.sh` builds it with passkeys of `localhost` (the feature `localhost-passkeys`, never in a build
 that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium, Playwright's or
@@ -155,16 +195,17 @@ memory kept out of swap and core dumps turned off belong to the app that runs a 
 `crates/avendb-server` is avenDB's server: a node in a folder of its own and, beside it, its relay. It holds only
 ciphertext and opens nothing but what is public.
 
-- At its first start it makes its device's secret (`device.key`, readable by its owner alone) and founds its vault with
-  an owner key it then forgets, so nobody changes that vault after, not even whoever takes its disk. It logs its
-  offer (`AVENDB1…`): its device, its endpoint, its public address and its relay. The app keeps it, so that devices
-  reach the server, and a new device links through it with its person's passkey alone.
-- A device takes the server's contact card, its vault's log, and can then grant it relay on a space. The server keeps
+- At its first start it makes its device's secret (`device.key`, readable by its owner alone), and belongs to no vault
+  until a human vault claims it (see [avenCEO](#avenceo)). It logs its offer (`AVENDB1…`): its device, its endpoint, its
+  public address and its relay. The app keeps it, so that devices reach the server, and a new device links through it
+  with its person's passkey alone.
+- A device takes the server's contact card, avenCEO's log, and can then grant avenCEO relay on a space. The server keeps
   that space's ops and McEliece keys and serves them to the devices that may hold them, also while the device that
   wrote them is away.
-- Its relay lets in only the devices the server knows: those of the vaults acting in the spaces it relays, and itself.
-  A device the server doesn't know yet makes its first contact straight, over UDP, or through the relay by a pass its
-  person's passkey signed, for ten minutes. A device taken out of its vault is let go, and turned away when it tries
+- Its relay lets in only the devices the server knows: those of the vaults acting in the spaces it relays and of
+  avenCEO's owners, and itself; until a human vault claims the server, also any passkey's pass. A device the server
+  doesn't know yet makes its first contact straight, over UDP, or through the relay by a pass its person's passkey
+  signed, for ten minutes. A device taken out of its vault is let go, and turned away when it tries
   again.
 - A device with no UDP of its own, behind a strict firewall say, reaches the server and every other device through the
   relay alone.
@@ -180,7 +221,30 @@ plain HTTP on port 3350. Its environment:
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
 | `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
 | `AVENDB_SIGNUP` | `open` | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `closed`: only passkeys of vaults it knows |
+| `AVENDB_SETUP_CODE` | none | The code the first human vault brings to claim the server, 20 bytes at least: a long random secret, kept like a password and never logged. Until the server is claimed, its relay lets in any passkey's pass; once claimed, the code claims nothing more |
 | `RUST_LOG` | `info` | How much it logs |
+
+### avenCEO
+
+The server is a device of avenCEO, an aven vault: it acts for avenCEO, relaying and keeping what avenCEO is granted,
+and never governs it. avenCEO's owners are human or coop vaults, whose passkeys approve each change to it. The first
+human vault to bring the server's setup code owns it (P8f):
+
+1. The device asks the server for its key to seal to, with the code (`Lab::claim_key`): the server answers only if the
+   code is its own (compared in constant time) and nobody has claimed it yet.
+2. The device's passkey founds avenCEO, owned by its human vault, and signs the op that adds the server as avenCEO's
+   device, sealed to that key (`Lab::claim`); it sends that op with avenCEO's log and the code.
+3. The server checks the code again, that the op adds itself and seals to its own key, every signature, and that the
+   op makes it a device of an aven vault by the rules, then signs it too, in its place, and keeps it
+   (`Lab::accept_claim`). Its answer, the op and its McEliece key, lets the device box avenCEO's key for it; then they
+   sync.
+
+So nobody else claims it after, not even with the code; a claim whose answer was lost finds the server avenCEO's
+device already, and one the server didn't take is tried again on the same avenCEO. In the tile, **This browser** takes
+the code beside the server's relay and code, and claims it as it founds the vault.
+
+A space relayed by avenCEO is relayed to avenCEO's devices and, as for any grant to a vault, to the devices that act for
+it: its owners'. They receive what the server's disk holds, the space's ops as ciphertext, never a key.
 
 ### Deploying the server
 
@@ -194,13 +258,16 @@ media vault's server and changes nothing of it.
    (`caddy:2-alpine`) offers X25519MLKEM768, the only key exchange a device offers.
 3. **Firewall** (`infra/index.ts`): UDP 7401 open, as UDP 7400 is for the media vault.
 4. **Compose and image**: a service `avendb` from this image in the root compose files, with
-   `AVENDB_RELAY_URL=https://avendb.maia.city`, `AVENDB_PUBLIC_ADDR` set to the server's IP and port 7401, a volume for
-   `/data` and `7401:7401/udp`; a workflow job that builds the image from `avendb/` and pushes it beside the media
-   vault's; and `deploy/backup.sh` backing up its volume.
+   `AVENDB_RELAY_URL=https://avendb.maia.city`, `AVENDB_PUBLIC_ADDR` set to the server's IP and port 7401,
+   `AVENDB_SETUP_CODE` from the deploy's secrets, a volume for `/data` and `7401:7401/udp`; a workflow job that builds
+   the image from `avendb/` and pushes it beside the media vault's; and `deploy/backup.sh` backing up its volume.
 5. **Devices**: the offer it logs as it starts goes into the app's configuration.
+6. **The claim**: the person who runs it opens **This browser** with the setup code and founds their vault, which
+   claims the server as avenCEO's device.
 
-Its volume holds the server's device secret. Losing it makes a new server with a new vault, which every space it
-relayed must grant relay again.
+Its volume holds the server's device secret. Losing it makes a new server, a device of nobody: avenCEO's owners remove
+the lost device from avenCEO, then claim the new server with the setup code, which adds it to the same avenCEO, so
+every space avenCEO relays keeps its grant.
 
 ## Plan
 
@@ -221,4 +288,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8c | Linking a new device by its passkey alone, through a device's QR code or the server's offer: the passkey's hello on the connection, the link card of its vaults' logs (T20), the join the peer takes only for the device on the connection; recovery through the server; keys in the device's secure boundary (wiped as they are dropped, none left once a device locks, randomness no copy rewinds or foresees, no secret in any view); Verifpal models of the hello, the link and the sealed box with the curves broken (Verifpal rather than ProVerif, which has no package here) | Merged |
 | P8d | A device in the browser: the network crate as WebAssembly, with X25519MLKEM768 in pure Rust; a new device with no UDP let onto the server's relay by its passkey's pass; big answers a page at a time, each op after its past; two pages in Chromium that link through the relay alone, the second through the first one's code, and sync | Merged |
 | P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) sign in ceremonies over each op, and the Lab holds no secret of them; a new person's first browser founds their vault through the relay open to sign-up; a browser links in four ceremonies and learns the passkey's key from two; its store in IndexedDB, open again in one ceremony; the tile's This browser screen with QR codes; Chromium's virtual authenticator in the test | Merged |
+| P8f, vaults | Three kinds of vault, human, coop and aven, each owned only as its kind may be (T21); every act for a coop or an aven vault names the chain of owners it goes through; the server a device of avenCEO, claimed by the first human vault that brings its setup code; the passkey of maiaCITY's sign-up, with PRF, as the vault's root; the example world reset around avenCEO | Merged |
 | P8f | The server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |

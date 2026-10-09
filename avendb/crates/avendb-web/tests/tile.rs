@@ -88,9 +88,10 @@ fn the_world_is_made_a_step_at_a_time_and_every_device_and_signer_is_named() {
     let all = ["Samuel's Mac", "Samuel's iPhone", "Bob's Mac", "Carol's Mac", "Dave's Mac", "the server", "a stranger"];
     assert_eq!(each(&o["devices"], "/name"), all);
     let passkeys = each(&o["signers"], "/kind").iter().filter(|k| *k == "passkey").count();
-    assert_eq!((o["signers"].as_array().map(Vec::len), passkeys), (Some(12), 4));
+    // four passkeys, seven devices: the server's own key is a device's, and no vault has a key nobody holds
+    assert_eq!((o["signers"].as_array().map(Vec::len), passkeys), (Some(11), 4));
     assert_eq!(o["signers"][0]["fingerprint"].as_str().map(str::len), Some(19));
-    assert_eq!(o["devices"][1]["person"], json!("Samuel"));
+    assert_eq!(o["devices"][1]["human"], json!("Samuel"));
     assert_eq!(start(&tile, "device"), device(&tile, "Samuel's Mac"));
     assert!(tile.show(&json!({"view": "nothing"})).is_err());
     assert!(tile.show(&json!({"view": "vaults", "on": "beef"})).is_err());
@@ -188,7 +189,7 @@ fn the_rules_refuse_with_their_reason_on_the_device_that_tries() {
     assert_eq!(show(&tile, json!({"view": "todos", "on": carol}))["todos"].as_array().map(Vec::len), Some(1));
     let server = device(&tile, "the server");
     let locked = tile.act_json(&json!({"do": "lock", "on": server}), 3.0);
-    assert!(locked["error"].is_string(), "only a person's device locks: {locked}");
+    assert!(locked["error"].is_string(), "only a human vault's device locks: {locked}");
     assert!(tile.act_json(&json!({"do": "fly"}), 3.0)["error"].is_string());
     assert!(tile.act(r#"{"do": "#, 3.0).contains("error"));
 }
@@ -242,14 +243,17 @@ fn access_names_each_right_and_the_grant_behind_it_and_who_holds_each_key() {
     for (vault, role) in [("Samuel", "owner"), ("Bob", "write"), ("Carol", "read"), ("Maia Coop", "owner")] {
         assert!(roles.contains(&(vault.into(), role.into())), "{vault} {role} in {roles:?}");
     }
-    assert!(roles.contains(&("the server".into(), "relay".into())));
+    assert!(roles.contains(&("avenCEO".into(), "relay".into())), "the server's aven vault relays it");
     let samuel = a["holders"].as_array().unwrap().iter().find(|h| h["vault"]["name"] == "Samuel").cloned().unwrap();
     assert_eq!(samuel["why"], json!([{"founded": true}]));
     let to = |name: &str| a["grants"].as_array().unwrap().iter().find(|g| g["to"]["name"] == name).cloned().unwrap();
     let (read, coop_owner) = (to("Carol"), to("Maia Coop"));
     assert_eq!((&read["role"], &read["scope"]), (&json!("read"), &json!("entry")));
-    let held = each(&a["keys"][0]["holders"], "/name");
-    assert!(held.contains(&"Carol's Mac".into()) && !held.contains(&"the server".into()), "{held:?}");
+    // the key's holders by vault, each with its devices that hold it
+    let held = each(&a["keys"][0]["holders"], "/vault/name");
+    assert!(held.contains(&"Carol".into()) && !held.contains(&"avenCEO".into()), "{held:?}");
+    let carols = a["keys"][0]["holders"].as_array().unwrap().iter().find(|h| h["vault"]["name"] == "Carol").unwrap();
+    assert_eq!(each(&carols["devices"], "/name"), ["Carol's Mac"]);
     // the coop's owner cap is governance: revoking it takes Samuel's passkey
     let signed = act(&mut tile, json!({"do": "revoke", "on": mac, "grant": coop_owner["id"]}));
     assert_eq!(signed["signed"], json!(["Samuel's Mac", "Samuel's passkey"]));
@@ -259,8 +263,8 @@ fn access_names_each_right_and_the_grant_behind_it_and_who_holds_each_key() {
     act(&mut tile, json!({"do": "put", "on": mac, "space": todos, "entry": door, "value": value}));
     let a = access(&tile, &mac);
     assert_eq!(a["epoch"], json!(2), "the door's key rotated after each revocation");
-    let held = each(&a["keys"][2]["holders"], "/name");
-    assert!(!held.contains(&"Carol's Mac".into()) && held.contains(&"Bob's Mac".into()), "{held:?}");
+    let held = each(&a["keys"][2]["holders"], "/vault/name");
+    assert!(!held.contains(&"Carol".into()) && held.contains(&"Bob".into()), "{held:?}");
     let public = json!({"do": "grant", "on": mac, "space": todos, "entry": door, "role": "read", "to": "everyone"});
     act(&mut tile, public);
     assert_eq!(access(&tile, &mac)["public"], json!(true));

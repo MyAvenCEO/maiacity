@@ -3,8 +3,9 @@
  * here), waits for the world to be made in the page's workers, then walks every screen as its people would. Samuel's
  * Mac reads Welcome, edits it and branches it, and shows who may do what; a locked Mac is refused with the rule's
  * reason; a stranger sees only the public Charter; Bob's Mac finds the door todo shared with it; Samuel's passkey signs a
- * backup passkey in; the Lab shows every device, Bob's Mac with Samuel's edit synced at once, and plays a scenario; This
- * browser loads its own device. Each screen is screenshot.
+ * backup passkey in; Vaults shows the human, coop and aven vaults, avenCEO among them; the Lab shows every device, Bob's
+ * Mac with Samuel's edit synced at once, and plays a scenario; This browser loads its own device and offers the
+ * maiaCITY passkey. Each screen is screenshot.
  *
  *   node scripts/avendb-smoke.mjs [--out dir]                    starts its own dev server
  *   BASE=http://localhost:5173 node scripts/avendb-smoke.mjs     uses a running one
@@ -183,7 +184,9 @@ try {
 	// Samuel's Mac: the vaults, and a backup passkey signed in with the passkey
 	await click("Samuel's Mac", '.rail .device');
 	await click('Vaults', '.rail .screen');
-	check('Vaults shows the people and the coop', (await waitText('Maia Coop')) && (await waitText('Samuel')));
+	check('Vaults shows Samuel’s vault and the coop’s', (await waitText('Maia Coop')) && (await waitText('Samuel')));
+	const kinds = ['Human vaults', 'Coop vaults', 'Aven vaults', 'avenCEO'];
+	check('by kind, avenCEO an aven vault', (await Promise.all(kinds.map((k) => waitText(k)))).every(Boolean));
 	await shot('10-vaults');
 	await click('Add a backup passkey');
 	check('the change waits for the passkey to sign', await waitText('yet to sign'));
@@ -216,7 +219,8 @@ try {
 
 	// This browser: its own device, apart from the Lab, which links to a person's devices or founds their vault
 	await click('This browser', '.rail .screen');
-	check('This browser offers to link it or to make a passkey', (await waitText('Link through your other device', 60000)) && (await waitText('Make my passkey')));
+	const offers = (await waitText('Link through your other device', 60000)) && (await waitText('Use my maiaCITY passkey'));
+	check('This browser offers to link it, or to found a vault with the maiaCITY passkey', offers && (await waitText('Make a new passkey')));
 	check('its device loads', !(await text()).includes("can't be a device"), (await text()).match(/can't be a device[^.]*/)?.[0]);
 	await shot('15-browser');
 } catch (e) {

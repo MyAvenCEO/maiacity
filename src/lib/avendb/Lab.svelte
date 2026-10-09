@@ -105,7 +105,7 @@
 			</div>
 			<footer class="row">
 				<button class="btn" onclick={() => act({ do: 'online', on: c.device.id, online: !c.online })}>{c.online ? 'Take offline' : 'Bring online'}</button>
-				{#if d?.person}
+				{#if d?.human}
 					<button class="btn" onclick={() => act({ do: c.locked ? 'unlock' : 'lock', on: c.device.id })}>{c.locked ? 'Unlock' : 'Lock'}</button>
 				{/if}
 				<button class="btn quiet" onclick={() => act({ do: 'backup', on: c.device.id })}>Back up</button>
