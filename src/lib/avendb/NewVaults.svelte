@@ -49,7 +49,7 @@
 			</button>
 			<button class="btn quiet" onclick={onclose}>Cancel</button>
 		</div>
-		<p class="soft">Your browser asks for your passkey once, for all of them.</p>
+		<p class="soft">Your passkey confirms them all at once.</p>
 	</div>
 </div>
 

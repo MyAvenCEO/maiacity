@@ -35,9 +35,11 @@ use crate::policy::Scope;
 /// The suite of every box and edit: X-Wing and Classic McEliece 6688128f, XChaCha20-Poly1305, SHA-3. Its first byte.
 pub const SUITE: u8 = 1;
 
-/// A box sealed to a key pair, or wrapped under a key the sealer holds: its second byte.
+/// A box sealed to a key pair, or wrapped under a key the sealer holds, or sealed once to an X-Wing key alone
+/// (`seal_once`): its second byte.
 const SEALED: u8 = 0;
 const WRAPPED: u8 = 1;
+const ONCE: u8 = 2;
 
 /// An X-Wing public key's size, and a ciphertext's.
 pub const XWING_PUBLIC_BYTES: usize = x_wing::ENCAPSULATION_KEY_SIZE;
@@ -184,6 +186,11 @@ impl Secret {
     /// McEliece pair, which takes most of a second.
     pub fn public(&self) -> PublicKey {
         PublicKey { xwing: self.xwing().encapsulation_key().to_bytes().to_vec(), mceliece: self.mceliece().id }
+    }
+
+    /// The public half of its X-Wing pair alone, which `seal_once` seals to: no McEliece pair is made for it.
+    pub fn xwing_public(&self) -> Vec<u8> {
+        self.xwing().encapsulation_key().to_bytes().to_vec()
     }
 
     /// The Classic McEliece public key that `public` names: the blob that travels beside it.
@@ -465,6 +472,40 @@ fn open_sealed(
     decrypt(&box_key(&ss1, ss2.as_array(), ct1, ct2, to, info), rest, info)
 }
 
+/// Seal `plaintext` once to the X-Wing public key `to` alone, bound to `info`: what crosses once from one page to the
+/// one that asked for it, held by a key that page made for the crossing and drops after it, as a passkey's ceremony
+/// comes back from the Mac app's sign-in sheet (avendb-browser's `Sheet`). No key the schedule keeps is sealed so:
+/// those boxes carry a McEliece share as well (`seal`). X-Wing is ML-KEM-768 with X25519, so the box stays closed while
+/// either holds. `None` if `to` is no X-Wing key.
+pub fn seal_once(to: &[u8], plaintext: &[u8], info: &[u8], rng: &mut impl CryptoRng) -> Option<Vec<u8>> {
+    let xwing = x_wing::EncapsulationKey::try_from(to).ok()?;
+    let (ct, ss) = xwing.encapsulate_with_rng(rng);
+    let under = once_key(&ss, &ct, to, info);
+    Some([&[SUITE, ONCE][..], &ct, &encrypt(&under, plaintext, info, rng)].concat())
+}
+
+/// What `seal_once` sealed to `with`'s X-Wing key, bound to `info`: `None` for another key, other `info`, or a changed
+/// byte.
+pub fn open_once(bytes: &[u8], with: &Secret, info: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+    let (&[suite, how], rest) = bytes.split_first_chunk::<2>()?;
+    if (suite, how) != (SUITE, ONCE) {
+        return None;
+    }
+    let (ct, rest) = rest.split_at_checked(XWING_CIPHERTEXT)?;
+    let xwing = with.xwing();
+    let ss = xwing.decapsulate(&x_wing::Ciphertext::try_from(ct).ok()?);
+    let to = xwing.encapsulation_key().to_bytes();
+    decrypt(&once_key(&ss, ct, &to, info), rest, info).map(Zeroizing::new)
+}
+
+/// The key a box sealed once is encrypted under: the shared secret, the ciphertext, the public key and what the box is
+/// bound to, which comes last.
+fn once_key(ss: &[u8], ct: &[u8], to: &[u8], info: &[u8]) -> Secret {
+    let mut h = Hasher::new("once key");
+    h.update(ss).update(ct).update(to).update(info);
+    Secret(h.finalize())
+}
+
 /// Encrypt `plaintext` under `key`, bound to `context`: XChaCha20-Poly1305 with a random 24-byte nonce, under a key
 /// derived from the key and the nonce, behind a commitment to both, so a ciphertext opens under one key only.
 pub fn encrypt(key: &Secret, plaintext: &[u8], context: &[u8], rng: &mut impl CryptoRng) -> Vec<u8> {
@@ -608,6 +649,33 @@ mod tests {
         // and a box sealed with a McEliece key other than the one its public key names opens for nobody
         let mixed = seal(&key, &alice.public(), &mallory.mceliece_public(), b"info", &mut rng).unwrap();
         assert!(open(&mixed, &alice, b"info").is_none() && open(&mixed, &mallory, b"info").is_none());
+    }
+
+    #[test]
+    fn a_box_sealed_once_opens_only_for_its_key() {
+        let mut rng = rng();
+        let (page, mallory) = (Secret::generate(&mut rng), Secret::generate(&mut rng));
+        let to = page.xwing_public();
+        assert_eq!(to.len(), XWING_PUBLIC_BYTES);
+        let sealed = seal_once(&to, b"a ceremony", b"sheet 1", &mut rng).unwrap();
+        assert_eq!(open_once(&sealed, &page, b"sheet 1").as_deref().map(Vec::as_slice), Some(&b"a ceremony"[..]));
+        assert!(open_once(&sealed, &mallory, b"sheet 1").is_none());
+        // bound to what it answers
+        assert!(open_once(&sealed, &page, b"sheet 2").is_none());
+        for i in [0, 1, 2, 1100, 1130, sealed.len() - 1] {
+            let mut changed = sealed.clone();
+            changed[i] ^= 1;
+            assert!(open_once(&changed, &page, b"sheet 1").is_none(), "byte {i}");
+        }
+        // no other kind of box opens as one, nor one as another kind
+        assert!(open(&sealed, &page, b"sheet 1").is_none());
+        let wrapped = wrap(&mallory, &page, b"sheet 1", &mut rng);
+        assert!(open_once(&wrapped, &page, b"sheet 1").is_none());
+        // the suite and the kind, the X-Wing ciphertext (1,120 bytes), then the nonce, the commitment, the plaintext
+        // and its tag
+        assert_eq!(sealed.len(), 2 + 1120 + 24 + 32 + 10 + 16);
+        assert!(!sealed.windows(10).any(|w| w == b"a ceremony"));
+        assert!(seal_once(&to[1..], b"x", b"", &mut rng).is_none());
     }
 
     #[test]

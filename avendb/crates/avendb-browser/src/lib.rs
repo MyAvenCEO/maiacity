@@ -50,7 +50,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::doc::Item;
 use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
-use avendb::keys::KeyScope;
+use avendb::keys::{self, KeyScope};
 use avendb::lab::{Backup, Lab};
 use avendb::lens::{DocV2, Status};
 use avendb::policy::{Action, Grant, Grantee, Kind, Principal, Refusal, Role, Scope, State, Vault};
@@ -1246,6 +1246,99 @@ pub fn qr_svg(text: &str, size: u32) -> Result<String, JsError> {
     let code = qrcode::QrCode::with_error_correction_level(text, qrcode::EcLevel::L);
     let code = code.map_err(|e| JsError::new(&format!("no QR code holds it: {e}")))?;
     Ok(code.render::<qrcode::render::svg::Color>().min_dimensions(size, size).build())
+}
+
+/// The key the Mac app's avenDB page holds while its sign-in sheet runs one ceremony (`js/passkey.js`): an X-Wing key
+/// pair of the browser's randomness, which never leaves the page's WebAssembly and wipes itself as it is freed. The
+/// app's web view may not use maia.city's passkeys, so the sheet, maia.city's own page in a sign-in sheet over the app
+/// (vault/app/src/passkey.rs, macOS's ASWebAuthenticationSession), runs the ceremony and seals what it brings back to
+/// this key (`sealCeremony`): what crosses from the sheet to the app holds nothing open, the PRF outputs least of all.
+#[wasm_bindgen]
+pub struct Sheet(keys::Secret);
+
+#[wasm_bindgen]
+impl Sheet {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Result<Sheet, JsError> {
+        let mut bytes = Zeroizing::new([0; 32]);
+        getrandom::fill(&mut *bytes).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
+        Ok(Sheet(keys::Secret::from_bytes(*bytes)))
+    }
+
+    /// Its public key, which the sheet seals the ceremony to.
+    pub fn key(&self) -> Vec<u8> {
+        self.0.xwing_public()
+    }
+
+    /// The ceremony the sheet sealed to it over `challenge`, as `js/passkey.js` brings one back from the browser's own
+    /// authenticator: the credential's id, the assertion and the PRF outputs, each in an array of its own.
+    pub fn open(&self, sealed: &[u8], challenge: &[u8]) -> Result<JsValue, JsError> {
+        let plain = keys::open_once(sealed, &self.0, &sheet_info(challenge));
+        let plain = plain.ok_or_else(|| JsError::new("the sign-in sheet's answer doesn't open here: it answers another ask"))?;
+        ceremony_value(&plain).map_err(js_error)
+    }
+}
+
+/// Ceremony `ceremony`, as `js/passkey.js` brought it back, sealed to the Mac app's `Sheet` key `key` and bound to the
+/// challenge it is over: what the app's sign-in sheet sends back. Its PRF outputs are wiped from the page as they are
+/// sealed.
+#[wasm_bindgen(js_name = sealCeremony)]
+pub fn seal_ceremony(key: &[u8], challenge: &[u8], ceremony: &JsValue) -> Result<Vec<u8>, JsError> {
+    let plain = ceremony_bytes(ceremony).map_err(js_error)?;
+    let mut entropy = Zeroizing::new([0; 32]);
+    getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
+    let mut rng = keys::SeededRng::new("sign-in sheet", &*entropy);
+    let sealed = keys::seal_once(key, &plain, &sheet_info(challenge), &mut rng);
+    sealed.ok_or_else(|| JsError::new("the app's key is no X-Wing key"))
+}
+
+/// What a sheet's ceremony is bound to: the challenge it is over.
+fn sheet_info(challenge: &[u8]) -> Vec<u8> {
+    [&b"avenDB sign-in sheet "[..], challenge].concat()
+}
+
+/// A ceremony as the sheet seals it: the credential's id, the assertion's authenticator data, client data and
+/// signature, the PRF output on the app's salt and the one on the device's, empty but for an unlock; each behind its
+/// length. Made at its full size at once, so no copy of the PRF outputs is left behind in a grown buffer.
+fn ceremony_bytes(value: &JsValue) -> Result<Zeroizing<Vec<u8>>> {
+    let id = Reflect::get(value, &"id".into()).ok().and_then(|id| id.as_string());
+    let id = id.context("the ceremony brought no credential")?;
+    let (data, client, signature) = (field(value, "authenticatorData")?, field(value, "clientDataJSON")?, field(value, "signature")?);
+    let prf_out = prf(value, "prf")?;
+    let device = Reflect::get(value, &"devicePrf".into()).map_err(js_anyhow)?;
+    let device = if device.is_undefined() || device.is_null() { None } else { Some(prf(value, "devicePrf")?) };
+    let parts: [&[u8]; 6] =
+        [id.as_bytes(), &data, &client, &signature, &prf_out[..], device.as_ref().map_or(&[][..], |d| &d[..])];
+    let mut out = Zeroizing::new(Vec::with_capacity(parts.iter().map(|p| 4 + p.len()).sum()));
+    for part in parts {
+        out.extend_from_slice(&u32::try_from(part.len())?.to_le_bytes());
+        out.extend_from_slice(part);
+    }
+    Ok(out)
+}
+
+/// A ceremony as `ceremony_bytes` wrote it, as `js/passkey.js` brings one back.
+fn ceremony_value(mut bytes: &[u8]) -> Result<JsValue> {
+    let mut parts = Vec::with_capacity(6);
+    while let Some((len, rest)) = bytes.split_first_chunk::<4>() {
+        let (part, rest) = rest.split_at_checked(u32::from_le_bytes(*len) as usize).context("a ceremony cut short")?;
+        parts.push(part);
+        bytes = rest;
+    }
+    let ([id, data, client, signature, prf, device], []) = (&parts[..], bytes) else { bail!("not a ceremony") };
+    let id = std::str::from_utf8(id).context("a credential's id is text")?;
+    let array = |bytes: &[u8]| JsValue::from(Uint8Array::from(bytes));
+    let mut fields = vec![
+        ("id", JsValue::from_str(id)),
+        ("authenticatorData", array(data)),
+        ("clientDataJSON", array(client)),
+        ("signature", array(signature)),
+        ("prf", array(prf)),
+    ];
+    if !device.is_empty() {
+        fields.push(("devicePrf", array(device)));
+    }
+    Ok(object(&fields))
 }
 
 /// The page's ceremonies (`PageDevice`'s `ceremony`).

@@ -155,7 +155,7 @@ the moment anything arrives (`Device::changed`):
   (`Device::card`). Both are end-to-end encrypted like the notes beside them.
 - **Vaults it owns.** The person's vault founds aven and coop vaults it owns, any number in one ceremony of its passkey
   (`Device::found_vaults`, over `Node::approve_with`); the device then founds each one's home, lets avenCEO relay it and
-  writes its name there. The page offers avenALICE, avenBOB, avenCHARLY and Maia City COOP the first time.
+  writes its name there. Its "+" opens on one empty row: the person names each vault they found.
 - **Acting as.** The person acts as any vault their vault owns, through it, from the switcher at the foot. The page then
   shows what that vault's caps allow and nothing else, and every write, grant and revocation goes out acting for that
   vault, which the rules check as any peer checks them. Sharing with a role up to write, and revoking it, needs no
@@ -164,6 +164,28 @@ the moment anything arrives (`Device::changed`):
 - **Settings.** Each vault's kind, owners, root and devices; who holds which role on each of its spaces, the grants in
   force and who may revoke them; and which devices receive each space, through which vault, and whether each opens it
   or only relays its ciphertext, as avenCEO's server does.
+
+#### In the Mac app
+
+The Mac app (maiaCITY Studio) shows the same page, but its web view may not use maia.city's passkeys: macOS lets an
+app's web view use a relying party's passkeys only with an Apple-signed entitlement tying the app to its domain. So
+there each ceremony runs in a sign-in sheet (`js/passkey.js`, `inSheet`). The page makes a one-time X-Wing key for it
+(`Sheet`, which never leaves its WebAssembly), and the app (`vault/app/src/passkey.rs`, macOS's
+ASWebAuthenticationSession, ephemeral) shows maia.city's own sheet page (`/app/avendb/sheet/`) over its window, with the
+challenge, the salts and that key in the fragment. The sheet page runs the ceremony in the passkey prompt as the site
+does, seals what it brings back to that key at once, bound to the challenge (`sealCeremony`, `keys::seal_once`: X-Wing
+alone, as the key lives for one crossing), wiping the PRF outputs as it seals them, and sends the box to
+`city.maia.studio://avendb`, which the sheet hands to the app instead of loading. The page opens it (`Sheet::open`) and
+goes on as with the browser's own ceremony; the assertion's origin is maia.city's, which `sign` takes. Nothing crosses
+open, and nothing stays on the Mac: each start of the app asks for the passkey again. The passkey itself is made on
+maia.city in a browser; the app signs in with it.
+
+What the sheet sends back goes to whichever app opened it: macOS doesn't tell the page which app that is, so any app on
+the Mac (or a phone) could open the sheet page with a key of its own and, if the person confirms their passkey, open
+what it brings, the PRF output on avenDB's salt among it. The person's passkey prompt is the only gate, and the sheet
+page says to confirm only what they just asked for in maiaCITY Studio. An app signed with Apple's associated-domains
+entitlement (`webcredentials:maia.city`, listed in maia.city's `apple-app-site-association`) could use the passkey in
+its own web view instead, and the sheet could go.
 
 #### PRF, done right
 
@@ -190,8 +212,9 @@ in the code:
   carries both, so maiaCITY's API, which sees its own sign-ins' assertions and never a PRF output, can't sign for a
   vault, nor can anyone who learns a PRF output without the authenticator.
 - **Held as briefly as it can be.** The device copies each output into memory that wipes itself, and wipes the page's
-  buffer it came in (`js/passkey.js` hands it over as a view of the browser's own buffer); none is ever sent, logged
-  or shown.
+  buffer it came in (`js/passkey.js` hands it over as a view of the browser's own buffer); none is ever sent open,
+  logged or shown. In the Mac app the sheet page seals them to the app page's one-time key as it wipes them, and only
+  that page opens them ([In the Mac app](#in-the-mac-app)).
 
 Every page on `maia.city` and its subdomains can ask the person's authenticator for a ceremony of that relying party,
 so the site's own scripts are part of what guards the root, as they are for any passkey; each ceremony shows the person
