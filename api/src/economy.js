@@ -517,7 +517,7 @@ export async function putBrains(configId, body) {
 }
 
 /**
- * An edit to one aven's brain from outside: { dials: { greed|thrift|haggle: 0-10 }, wants: { water|food: days 1-10 },
+ * An edit to one aven's brain from outside: { dials: { <a dial its world's Brains card declares>: a number }, wants: { water|food|...: days },
  * lesson: text to add, forget_lesson: its id, note }. It waits until the page takes it in (next night of a run, or the
  * next run); the page clamps every value.
  */
@@ -525,14 +525,16 @@ export async function editBrain(configId, aven, by, body) {
   const id = text(configId, 41);
   const name = text(aven, 40);
   if (!id || !NAME.test(name)) throw new EconomyError("Which config, and which aven (its name)?");
-  const nums = (o, keys) =>
-    Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => keys.includes(k) && Number.isFinite(Number(v))).map(([k, v]) => [k, Number(v)]));
+  // which dials and wants a brain has is its world's (the Brains card's traits): any key here, the page keeps the ones
+  // its world declares and clamps them to their range
+  const nums = (o, n) =>
+    Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => /^[a-z][a-z0-9_]{0,20}$/.test(k) && Number.isFinite(Number(v))).slice(0, n).map(([k, v]) => [k, Number(v)]));
   const edit = {
     id: Date.now(),
     at: new Date().toISOString(),
     by: text(by, 60) || "the admin",
-    dials: nums(body?.dials, ["greed", "thrift", "haggle"]),
-    wants: nums(body?.wants, ["water", "food"]),
+    dials: nums(body?.dials, 8),
+    wants: nums(body?.wants, 6),
     ...(body?.lesson ? { lesson: text(body.lesson, 110) } : {}),
     ...(body?.forget_lesson != null && Number.isFinite(Number(body.forget_lesson)) ? { forget_lesson: Number(body.forget_lesson) } : {}),
     note: text(body?.note, 200),

@@ -3,7 +3,7 @@
 // trades, and compares every day's stats and every brain's trials; each day it also checks that the Brains card shows
 // and asks every aven exactly what the engine would. Run: node scripts/sandbox-8-rules.mjs
 import { createWorld, step, CODE, seeValley, GOODS } from '../src/lib/sandbox-8/economy.js';
-import { newMind, wear, night } from '../src/lib/sandbox-8/mind.js';
+import { newMind, wear, night, traits } from '../src/lib/sandbox-8/mind.js';
 import { stateFor, questionsFor, promptFor } from '../src/lib/sandbox-8/asks.js';
 import { loadCode } from '../src/lib/sandbox-8/sandbox.js';
 import { defaultCards } from '../game/economy/params.js';
@@ -12,7 +12,7 @@ let asked = 0;
 /** what every living aven's brain would see and be asked now: by the card code, then by the engine alone */
 function brainCheck(w) {
 	const run = CODE.run;
-	const all = () => JSON.stringify(w.avens.filter((a) => a.alive).map((a) => [stateFor(w, a), questionsFor(w, a, { full: true, writes: true }), a.brain.levels, promptFor(a)]));
+	const all = () => JSON.stringify([traits()]) + JSON.stringify(w.avens.filter((a) => a.alive).map((a) => [stateFor(w, a), questionsFor(w, a, { full: true, writes: true }), a.brain.levels, promptFor(a)]));
 	const coded = all();
 	CODE.run = null;
 	const own = all();

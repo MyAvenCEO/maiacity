@@ -23,9 +23,11 @@
 // The mind lives in the database (api/src/economy.js, econ_brains) per world (its run's id) and aven name: read when it opens,
 // written every night, and editable by the admin's agents over the studio's MCP (their edits land on the next night).
 
-import { brainRule } from './economy.js';
+import { brainRule, CODE, activity } from './economy.js';
+import { RULES } from './rules.js';
 
-/** the character: what each dial means, at its low and its high end */
+/** the valley's own character: what each dial means, at its low and its high end (a world's Brains card may declare
+ * its own, see traits()) */
 export const DIALS = {
 	greed: {
 		label: 'Greed',
@@ -48,11 +50,6 @@ export const WANTS = {
 	water: { label: 'Water in stock', unit: 'days', min: 1, max: 10 },
 	food: { label: 'Food in stock', unit: 'days', min: 1, max: 10 }
 };
-/** what a trial may change: a dial or a want, one step up or down */
-const KNOBS = [
-	...Object.keys(DIALS).map((k) => ['dials', k, 0, 10]),
-	...Object.entries(WANTS).map(([k, w]) => ['wants', k, w.min, w.max])
-];
 
 export const TRIAL_DAYS = 3; // one trial's budget, in game days: a day alone is mostly luck
 const MARGIN = 2; // a trial must beat the old setting by this much a day to be kept, so luck alone rarely keeps one
@@ -65,12 +62,65 @@ const hash = (s) => [...s].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777
 const kindOf = (g) => (g === 'water' ? 'water' : 'food');
 const r1 = (v) => Math.round(v * 10) / 10;
 
+// ---- what a brain is: its traits, declared by the world (Samuel, 2026-10-09: one standard way to show any brain) ----
+// The Brains card's `traits` hook says which dials make up an aven's character (each with its range and what its two
+// ends mean), which wants it keeps, and what its trials optimise (the score, in a sentence). The page draws a brain
+// from this alone, its trials change only these, and its asks read only these, so a world without haggling has no
+// haggling dial. A dial the world doesn't declare is kept in the brain as it was (a later world may declare it again).
+
+/** the valley's own traits: greed and thrift, haggling only where avens may give in, and its two stock wants */
+function ownTraits() {
+	return {
+		dials: ['greed', 'thrift', ...(RULES.haggleMax > 0 ? ['haggle'] : [])].map((key) => ({ key, ...DIALS[key], min: 0, max: 10 })),
+		wants: Object.entries(WANTS).map(([key, w]) => ({ key, ...w })),
+		score: `HEARTS gained a day, less ${SHORT.water} for each unit of water and ${SHORT.food} for each unit of food gone short`
+	};
+}
+const KEY = /^[a-z][a-z0-9_]{0,20}$/;
+const words = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : '');
+/** one declared trait, checked: { key, label, low, high, unit, min, max } or null */
+function trait(t, fallback) {
+	if (!t || typeof t !== 'object' || !KEY.test(t.key ?? '')) return null;
+	const base = fallback[t.key] ?? {};
+	const min = Number.isFinite(t.min) ? Math.round(t.min) : base.min ?? 0;
+	const max = Number.isFinite(t.max) ? Math.round(t.max) : base.max ?? 10;
+	if (min < 0 || max > 100 || max <= min) return null;
+	return { key: t.key, label: words(t.label, 40) || base.label || t.key, low: words(t.low, 120) || base.low || '', high: words(t.high, 120) || base.high || '', unit: words(t.unit, 20) || base.unit || '', min, max };
+}
+/** a `traits` answer, checked; the valley's own where a part won't do */
+function checkTraits(v, own) {
+	if (!v || typeof v !== 'object') return own;
+	const list = (xs, fallback, n) => {
+		if (!Array.isArray(xs)) return null;
+		const out = xs.slice(0, n).map((t) => trait(t, fallback)).filter(Boolean);
+		return out.length && new Set(out.map((t) => t.key)).size === out.length ? out : null;
+	};
+	return { dials: list(v.dials, DIALS, 8) ?? own.dials, wants: list(v.wants, WANTS, 6) ?? own.wants, score: words(v.score, 300) || own.score };
+}
+let known = { code: /** @type {any} */ (undefined), values: '', traits: /** @type {any} */ (null) };
+/** the brain's traits in the world playing now: the Brains card's `traits` hook, else the valley's own */
+export function traits() {
+	const values = JSON.stringify(RULES);
+	const code = CODE.run && CODE.seen === CODE.run ? CODE.run : null; // the code the hooks run on now, if any
+	if (known.traits && known.code === code && known.values === values) return known.traits;
+	const raw = ownTraits();
+	const own = checkTraits(raw, raw);
+	known = { code, values, traits: brainRule('traits', {}, own, checkTraits) };
+	return known.traits;
+}
+/** what a trial may change: a declared dial or want, one step up or down */
+const knobs = () => {
+	const t = traits();
+	return [...t.dials.map((d) => ['dials', d.key, d.min, d.max]), ...t.wants.map((w) => ['wants', w.key, w.min, w.max])];
+};
+const dialOf = (key) => traits().dials.find((d) => d.key === key);
+
 /** a new mind: every aven its own character from the start (from its name), its wants around the config's stock
  * target */
 export function newMind(name, reserveDays = 3) {
 	let h = hash(name);
 	const roll = (lo, hi) => ((h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0), lo + (h % (hi - lo + 1)));
-	return {
+	const m = {
 		v: 1,
 		name,
 		runs: 0,
@@ -95,6 +145,12 @@ export function newMind(name, reserveDays = 3) {
 		due: false, // a stretch just ended: the next full ask also picks the next trial (and, on Qwen, a lesson)
 		applied: 0 // the newest MCP edit already taken in
 	};
+	// a dial or want its world declares beyond the valley's own starts somewhere in the middle of its range
+	const t = traits();
+	const mid = (x) => roll(x.min + Math.round((x.max - x.min) / 5), x.max - Math.round((x.max - x.min) / 5));
+	for (const d of t.dials) if (!(d.key in m.dials)) m.dials[d.key] = mid(d);
+	for (const w of t.wants) if (!(w.key in m.wants)) m.wants[w.key] = mid(w);
+	return m;
 }
 const birth = (m) => (m.born ??= { dials: { ...m.dials }, wants: { ...m.wants } });
 
@@ -103,12 +159,20 @@ export function wholeMind(m, name, reserveDays) {
 	const fresh = newMind(name, reserveDays);
 	if (!m || typeof m !== 'object') return fresh;
 	const out = { ...fresh, ...m, name };
-	out.dials = Object.fromEntries(
-		Object.keys(DIALS).map((k) => [k, clamp(Number(m.dials?.[k] ?? fresh.dials[k]), 0, 10)])
-	);
-	out.wants = Object.fromEntries(
-		Object.entries(WANTS).map(([k, w]) => [k, clamp(Number(m.wants?.[k] ?? fresh.wants[k]), w.min, w.max)])
-	);
+	// every dial and want it has (a world that doesn't declare one leaves it be), within the range declared now
+	const t = traits();
+	const whole = (kind, list, base) =>
+		Object.fromEntries(
+			[...new Set([...Object.keys(fresh[kind]), ...Object.keys(m[kind] && typeof m[kind] === 'object' ? m[kind] : {})])]
+				.filter((k) => KEY.test(k))
+				.map((k) => {
+					const r = list.find((x) => x.key === k) ?? base[k] ?? { min: 0, max: 10 };
+					const v = Number(m[kind]?.[k] ?? fresh[kind][k]);
+					return [k, clamp(Number.isFinite(v) ? v : fresh[kind][k] ?? r.min, r.min, r.max)];
+				})
+		);
+	out.dials = whole('dials', t.dials, Object.fromEntries(Object.keys(DIALS).map((k) => [k, { min: 0, max: 10 }])));
+	out.wants = whole('wants', t.wants, WANTS);
 	for (const k of ['log', 'lessons', 'deathLog', 'tabu']) out[k] = Array.isArray(m[k]) ? m[k].slice(-50) : [];
 	out.tally = {
 		trials: Number(m.tally?.trials) || 0,
@@ -199,9 +263,10 @@ export function night(world) {
 				m.trial = null;
 			}
 			// the instinct: thirst teaches it to keep more water
-			if (cause === 'thirst' && m.wants.water < WANTS.water.max) {
+			const thirst = traits().wants.find((x) => x.key === 'water');
+			if (cause === 'thirst' && thirst && m.wants.water < thirst.max) {
 				const was = m.wants.water;
-				m.wants.water = Math.min(WANTS.water.max, was + 2);
+				m.wants.water = Math.min(thirst.max, was + 2);
 				note(m, `d${a.diedOn} after dying of thirst: water stock ${was}→${m.wants.water}`);
 			}
 			continue;
@@ -242,6 +307,7 @@ export function night(world) {
 				m,
 				`d${t.day}-${world.day - 1} ${label(t)}: ${score}/day vs ${m.base ?? '?'}, ${kept ? 'kept' : 'undone'}`
 			);
+			activity(world, { kind: 'trial', changes: [`${kept ? 'kept' : 'undid'} ${label(t)}: it scored ${score}/day against ${m.base ?? '?'}`] }, a);
 			if (kept)
 				m.base = score; // the new setting's own stretch is the measure now
 			else m.base = null; // the old setting gets a fresh stretch before the next trial
@@ -262,7 +328,7 @@ export function trialOptions(m) {
 	const opts = {
 		none: 'Change nothing for now: just measure my current setting again'
 	};
-	for (const [kind, key, lo, hi] of KNOBS) {
+	for (const [kind, key, lo, hi] of knobs()) {
 		const v = m[kind][key];
 		for (const d of [1, -1]) {
 			const to = v + d;
@@ -270,7 +336,7 @@ export function trialOptions(m) {
 			const what =
 				kind === 'wants'
 					? `keep ${to} days of ${key} in stock (now ${v})`
-					: `${DIALS[key].label.toLowerCase()} ${to}/10 (now ${v}; high: ${DIALS[key].high})`;
+					: `${dialOf(key).label.toLowerCase()} ${to} of ${hi} (now ${v}${dialOf(key).high ? `; high: ${dialOf(key).high}` : ''})`;
 			opts[`${kind}.${key}${d > 0 ? '+' : '-'}`] = `${d > 0 ? 'Raise' : 'Lower'}: ${what}`;
 		}
 	}
@@ -284,9 +350,9 @@ export function startTrial(m, pick, world) {
 	const [kind, rest] = pick.split('.');
 	const key = rest.slice(0, -1);
 	const up = rest.endsWith('+');
-	const knob = KNOBS.find((k) => k[0] === kind && k[1] === key);
+	const knob = knobs().find((k) => k[0] === kind && k[1] === key);
 	if (!knob) return null;
-	const from = m[kind][key];
+	const from = m[kind][key] ?? knob[2];
 	const to = clamp(from + (up ? 1 : -1), knob[2], knob[3]);
 	if (to === from) return null;
 	m[kind][key] = to;
@@ -347,17 +413,18 @@ export function enterWorld(m, stamp, params) {
 export function mindFor(a) {
 	const m = a.mind;
 	if (!m) return undefined;
+	const t = traits();
 	return {
-		character: Object.fromEntries(Object.entries(m.dials).map(([k, v]) => [k, `${v}/10`])),
-		character_means: Object.fromEntries(Object.entries(DIALS).map(([k, d]) => [k, `0 ${d.low}, 10 ${d.high}`])),
-		wants: `I keep ${m.wants.water} days of water and ${m.wants.food} days of food in stock and buy up to that`,
+		character: Object.fromEntries(t.dials.map((d) => [d.key, `${m.dials[d.key]} of ${d.max}`])),
+		character_means: Object.fromEntries(t.dials.map((d) => [d.key, `${d.min} ${d.low}, ${d.max} ${d.high}`])),
+		wants: `I keep ${t.wants.map((w) => `${m.wants[w.key]} ${w.unit} of ${w.key}`).join(' and ')} in stock and buy up to that`,
 		life: `now in ${m.world}, my world number ${m.runs}; ${m.days} days lived over all my worlds; died ${m.deaths} time${m.deaths === 1 ? '' : 's'}; ${m.tally.trials} trials, ${m.tally.kept} kept`,
 		since_birth: m.born ? drift(m) : 'as born',
 		...(m.changed ? { this_world_vs_my_last: m.changed } : {}),
 		trying_now: m.trial
 			? `${label(m.trial)} since day ${m.trial.day}: kept only if my score beats ${m.base}/day`
 			: 'nothing: measuring my current setting',
-		score_means: `HEARTS gained a day, less ${SHORT.water} for each unit of water and ${SHORT.food} for each unit of food I go short`,
+		score_means: t.score,
 		trials: m.log.slice(-6),
 		lessons: m.lessons.map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down}${l.world ? `, learned in ${l.world}` : ''})`),
 		deaths: m.deathLog.slice()
@@ -367,17 +434,18 @@ export function mindFor(a) {
 /** how far its character and wants have moved since it was new */
 function drift(m) {
 	const moved = [
-		...Object.keys(DIALS).map((k) => [k, m.born.dials[k], m.dials[k]]),
-		...Object.keys(WANTS).map((k) => [`${k} stock`, m.born.wants[k], m.wants[k]])
-	].filter(([, a, b]) => a !== b);
+		...traits().dials.map((d) => [d.key, m.born.dials[d.key], m.dials[d.key]]),
+		...traits().wants.map((w) => [`${w.key} stock`, m.born.wants[w.key], m.wants[w.key]])
+	].filter(([, a, b]) => a != null && a !== b);
 	return moved.length ? moved.map(([k, a, b]) => `${k} ${a}→${b}`).join(', ') : 'as born';
 }
 
 /** a question's line on the character it should act in */
 export function inCharacter(a, ...keys) {
 	const m = a.mind;
-	if (!m) return '';
-	return ` Act in character: ${keys.map((k) => `${DIALS[k].label.toLowerCase()} ${m.dials[k]}/10`).join(', ')} (see my_brain).`;
+	const on = keys.map(dialOf).filter(Boolean); // a dial its world doesn't declare plays no part
+	if (!m || !on.length) return '';
+	return ` Act in character: ${on.map((d) => `${d.label.toLowerCase()} ${m.dials[d.key]} of ${d.max}`).join(', ')} (see my_brain).`;
 }
 
 /** the night's extra questions, on the first full ask after a stretch ended: the next trial, and on a brain that
@@ -422,14 +490,17 @@ export function applyMind(world, a, answers) {
 /** an edit from outside (the admin's agents over MCP, through the API): dials, wants, a lesson to add or drop */
 export function editMind(m, e) {
 	const said = [];
+	const t = traits();
 	for (const [k, v] of Object.entries(e?.dials ?? {}))
-		if (k in DIALS && Number.isFinite(Number(v))) {
-			const to = clamp(Number(v), 0, 10);
+		if (t.dials.some((d) => d.key === k) && Number.isFinite(Number(v))) {
+			const d = dialOf(k);
+			const to = clamp(Number(v), d.min, d.max);
 			if (to !== m.dials[k]) (said.push(`${k} ${m.dials[k]}→${to}`), (m.dials[k] = to));
 		}
 	for (const [k, v] of Object.entries(e?.wants ?? {}))
-		if (k in WANTS && Number.isFinite(Number(v))) {
-			const to = clamp(Number(v), WANTS[k].min, WANTS[k].max);
+		if (t.wants.some((w) => w.key === k) && Number.isFinite(Number(v))) {
+			const w = t.wants.find((x) => x.key === k);
+			const to = clamp(Number(v), w.min, w.max);
 			if (to !== m.wants[k]) (said.push(`${k} stock ${m.wants[k]}→${to}`), (m.wants[k] = to));
 		}
 	if (e?.lesson && addLesson(m, e.lesson)) said.push(`lesson: ${m.lessons.at(-1).text}`);
