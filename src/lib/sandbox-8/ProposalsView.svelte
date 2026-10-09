@@ -96,6 +96,8 @@
 		tests[i] = { busy: true };
 		tests[i] = await testCard($state.snapshot(cards[i]), valley, s).catch((e) => ({ hooks: [], error: e?.message || String(e) }));
 	}
+	/** a long answer (a brain's whole state) cut to a glance */
+	const clip = (/** @type {string} */ s) => (s?.length > 140 ? `${s.slice(0, 140)}… (${s.length} characters)` : s);
 	const removing = $derived(removeText.split(/[\s,]+/).filter(Boolean));
 	// Open: what waits for the admin. History (Samuel): every decided MIP, the latest decision first, folded to one line
 	const shown = $derived(show === 'open' ? mips.filter((m) => m.status === 'open') : mips.filter((m) => m.status !== 'open').sort((a, b) => String(b.decided ?? '').localeCompare(String(a.decided ?? ''))));
@@ -283,7 +285,7 @@
 								<div class="test">
 									<button disabled={tests[i]?.busy} onclick={() => test(i)}>Test the code</button>
 									{#if tests[i]?.error}<span class="bad">{tests[i].error}</span>
-									{:else if tests[i]?.hooks}{#each tests[i].hooks as h (h.name)}<span class:bad={h.error}>{h.name}{h.good ? ` (${h.good})` : ''}: {h.error ?? `${h.value} → ${h.answer}`}</span>{/each}{/if}
+									{:else if tests[i]?.hooks}{#each tests[i].hooks as h (h.name)}<span class:bad={h.error}>{h.name}{h.good ? ` (${h.good})` : ''}: {h.error ?? `${clip(h.value)} → ${h.answer === h.value ? 'the same' : clip(h.answer)}`}</span>{/each}{/if}
 								</div>
 							{/if}
 						{:else}
@@ -294,7 +296,7 @@
 						<summary>What card code can change</summary>
 						<p>Every rule of the valley is a hook in a card's code, and each card's code runs in its own QuickJS sandbox: no page, no network, no keys, 8 MB and 25 ms a call. The card that owns a rule runs first (its own code, else the default, shown under Policies and World); any other card exporting the same hook is given what it made of it as <code>value</code>. A hook returns plain JSON, which the valley checks and keeps within bounds. A hook that throws, runs too long or answers nothing stops for the world, and the valley uses its own copy of the default rule.</p>
 						<table><tbody>{#each HOOKS as h (h.name)}<tr><td><code>{h.name}</code></td><td>{h.when}; given <code>{h.given}</code></td><td>returns {h.returns}</td></tr>{/each}</tbody></table>
-						<p><code>aven</code>: id, name, alive, hearts, health, grows, produce, stock, body {'{'} water, food {'}'}, minted, decayed. <code>valley</code>: day, values (every value by key, e.g. <code>valley.values.mint</code>), avens, alive, hearts, prices, weather.</p>
+						<p><code>aven</code>: id, name, alive, hearts, health, grows, produce, harvest, stock, body {'{'} water, food {'}'}, need, keep, reserveDays, ask, bid, flex, yesterday, minted, decayed. <code>valley</code>: day, values (every value by key, e.g. <code>valley.values.mint</code>), avens, alive, hearts, prices, weather.</p>
 					</details>
 					<label>Cards to take out <input bind:value={removeText} placeholder="card ids, e.g. harvests" /></label>
 					{#each removing as id (id)}{@const c = baseCards?.find((/** @type {any} */ x) => x.id === id)}{#if c}<ConfigCard card={c} removed />{/if}{/each}

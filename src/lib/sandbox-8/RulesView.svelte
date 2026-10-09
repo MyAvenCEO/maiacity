@@ -2,7 +2,7 @@
 	The Policies and World views: a world's settings, read only (Samuel, 2026-10-09: nothing is set by hand; every change
 	is a proposal). Each config card as the world runs it: its values in plain words, and the code of its rules in a
 	drawer, the card's own or its rules' default (game/economy/rules-code.js), run in the QuickJS sandbox. Policies are
-	what people choose (HEARTS, trading); World is how the valley works (avens, bodies, rot, land, harvests, weather),
+	what people choose (HEARTS, trading, brains); World is how the valley works (avens, bodies, rot, land, harvests, weather),
 	plus every resource and recipe the night runs, as sentences and as the JSON itself.
 -->
 <script>
@@ -26,6 +26,8 @@
 	});
 	const paramsOf = (/** @type {any} */ card) => PARAMS.filter((p) => SECTIONS.find((s) => s.id === card.id)?.name === p.section);
 	const hooksOf = (/** @type {string} */ code) => HOOKS.filter((h) => new RegExp(`export\\s+(async\\s+)?function\\s+${h.name}\\b`).test(code)).map((h) => h.name);
+	/** a card that holds no values says what its code is for */
+	const ABOUT = /** @type {Record<string, string>} */ ({ brains: "What each aven's brain sees (see), the questions it is asked and the price each answer stands for (ask), what a chat model is told first (prompt), and how a day counts in its trials (score). It holds no values: all of it is its code." });
 	const resources = RESOURCES();
 	const recipes = RECIPES();
 
@@ -53,7 +55,7 @@
 	<header class="top">
 		<div>
 			<h2>{view === 'policy' ? 'Policies' : 'World rules'}</h2>
-			<p>{view === 'policy' ? 'What the valley chooses: how HEARTS are made and melt, and how trading works.' : 'How the valley works: avens, bodies, rot, land, harvests and weather. Below: every resource and recipe the night runs.'} This world runs on <b>{CONFIG.name}</b>{CONFIG.id ? ` (version ${CONFIG.version})` : ''}{Object.keys(local).length ? `, with ${Object.keys(local).length} value${Object.keys(local).length === 1 ? '' : 's'} its proposal set on top` : ''}. Nothing here is set by hand: every value and every rule is a card, and its code runs in its own QuickJS sandbox. To change any of it, propose a new world.</p>
+			<p>{view === 'policy' ? 'What the valley chooses: how HEARTS are made and melt, how trading works, and what each brain sees and is asked.' : 'How the valley works: avens, bodies, rot, land, harvests and weather. Below: every resource and recipe the night runs.'} This world runs on <b>{CONFIG.name}</b>{CONFIG.id ? ` (version ${CONFIG.version})` : ''}{Object.keys(local).length ? `, with ${Object.keys(local).length} value${Object.keys(local).length === 1 ? '' : 's'} its proposal set on top` : ''}. Nothing here is set by hand: every value and every rule is a card, and its code runs in its own QuickJS sandbox. To change any of it, propose a new world.</p>
 		</div>
 		<div class="actions">
 			<button class="go" onclick={onpropose}>Propose a change</button>
@@ -65,7 +67,7 @@
 		{@const code = codeOf(card)}
 		<section>
 			<h3>{card.name || card.id} <code class="id">{card.id}</code></h3>
-			{#if card.description}<p class="sub">{card.description}</p>{/if}
+			{#if card.description}<p class="sub">{card.description}</p>{:else if ABOUT[card.id]}<p class="sub">{ABOUT[card.id]}</p>{/if}
 			{#each paramsOf(card) as p (p.key)}
 				<div class="param" class:changed={p.key in local}>
 					<div class="text">
