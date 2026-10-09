@@ -8,3 +8,5 @@ import AvenDB.Proposals
 import AvenDB.Lens
 import AvenDB.Props
 import AvenDB.Theorems
+import AvenDB.Examples
+import AvenDB.Vectors

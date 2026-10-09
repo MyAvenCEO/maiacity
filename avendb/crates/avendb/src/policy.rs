@@ -1133,6 +1133,14 @@ impl State {
         KeyName::Scoped(k, self.epoch(k))
     }
 
+    /// A new entry in cell `x` of vault `v` brings the cell back into use: no entry is in it, and its current key was
+    /// sealed before. Settling then moves the cell to a new generation, which the creation may name: whoever a removal
+    /// took out while the cell was empty may still hold its current key.
+    pub fn reenters(&self, v: VaultId, x: CellId) -> bool {
+        let k = KeyFam::Cell(v, x);
+        !self.has_fam(k) && self.seals.secrets.contains(&self.current(k))
+    }
+
     /// Every family whose epoch isn't 0, with its epoch.
     pub fn epochs(&self) -> impl Iterator<Item = (KeyFam, u64)> + '_ {
         self.epochs.iter().map(|(k, e)| (*k, *e))
@@ -1627,8 +1635,9 @@ impl State {
                         if actor != v && intake.is_empty() {
                             return Err(Refusal::NoCap);
                         }
+                        // or the generation it moves to as the new entry brings it back into use
                         let cell = CellId::of(v, x);
-                        if generation > self.epoch(KeyFam::Cell(v, cell)) {
+                        if generation > self.epoch(KeyFam::Cell(v, cell)) + self.reenters(v, cell) as u64 {
                             return Err(Refusal::FutureEpoch);
                         }
                         let en = Entry {

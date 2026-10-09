@@ -172,6 +172,12 @@ def mayBox (st : State) (d : SignerId) : KeyName → Bool
       | none   => false
     | none => false
 
+/-- A new entry in cell `x` of vault `v` brings the cell back into use: no entry is in it, and its current key was
+    sealed before. Its settle moves the cell to a new generation (`staleKeys`), so the creation may name that one:
+    whoever a removal took out while the cell was empty may still hold its current key. -/
+def reenters (st : State) (v : VaultId) (x : Cell) : Bool :=
+  !(keyFams st).contains (.cell v x) && st.seals.any (·.secret == st.curKey (.cell v x))
+
 /-- Check one edit against the state just before it; `none` when it is refused. -/
 def apply (st : State) (edit : Edit) : Option State :=
   let sigs := edit.sigs
@@ -257,10 +263,11 @@ def apply (st : State) (edit : Edit) : Option State :=
     else match create with
     | some (x, hdr) =>
       -- a new entry, with an id never used before, in a cell its actor may create in, under a generation that cell
-      -- has reached
+      -- has reached, or the one it moves to as the entry brings it back into use
       if (st.entry? e).isSome || st.born.contains e || (st.vault? v).isNone || stay.isSome || !deps.isEmpty ||
           proposal != .main then none
-      else if !cellOk st v x || !mayCreate st actor v x || gen > st.epochOf (.cell v x) then none
+      else if !cellOk st v x || !mayCreate st actor v x ||
+          gen > st.epochOf (.cell v x) + (reenters st v x).toNat then none
       else
         let attrs : Attrs := ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩
         let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs⟩

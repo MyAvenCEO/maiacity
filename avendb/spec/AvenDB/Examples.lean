@@ -800,6 +800,18 @@ def comeback (n : Nat := 8) : List Edit := lib ++ chain 600 ([
 #guard (view (comeback)).epochOf (.cell alice [34]) == 1
 #guard reads (comeback) passkeyB seeds && !reads (comeback) macB seeds
 
+-- an entry created in the empty cell brings it back into use too: its first write may name the generation the cell
+-- moves to, which the lost Mac doesn't open, and no later one
+def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g (create := some ([34], ⟨todo, 0⟩))
+  (tags := { add := [urgent] }))
+#guard reenters (view (comeback 6)) alice [34]
+#guard accepted (comeback 6) (lampTodo 1) && !accepted (comeback 6) (lampTodo 2)
+#guard ((step (view (comeback 6)) (lampTodo 1)).map fun st =>
+  st.epochOf (.cell alice [34]) == 1 && !knows st [.signer macB] (.entry lamp none 1) &&
+    knows st [.signer passkeyB] (.entry lamp none 1)) == some true
+-- a cell in use, or one whose key was never sealed, has no generation ahead to name
+#guard !reenters (view (comeback 3)) alice [34] && !reenters (view (comeback 6)) alice [34, 99]
+
 /-! ## Scenario 17: each todo syncs on its own -/
 
 -- Carol's Mac may receive the door todo and no other, and Alice's Mac answers it with that todo only

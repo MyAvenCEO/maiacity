@@ -103,8 +103,8 @@ def newCap (id over : Nat) (to : Grantee) (r : Role) (issuer : VaultId) (select 
 
 /-- A write that creates entry `e` of vault `v` in cell `x`. -/
 def newEntry (v e : Nat) (actor : VaultId) (x : Cell) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
-    (via : List VaultId := []) : Action :=
-  .write v e actor none 0 (via := via) (create := some (x, ⟨type, created⟩)) (tags := { add := tags })
+    (via : List VaultId := []) (gen : Nat := 0) : Action :=
+  .write v e actor none gen (via := via) (create := some (x, ⟨type, created⟩)) (tags := { add := tags })
 
 /-- A write of entry `e`, in its stay `stay` at generation `gen` of that stay's cell. -/
 def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (gen : Nat := 0)
@@ -450,6 +450,23 @@ def cases : List Case := [
     (2, [], wr 100 21 100 [10] (stay := some 11) (add := [work])),
     (2, [], .move 100 21 [30] [13]),
     (2, [], .keys (cellKey 100 [30] 1) [seedKey 100 0, capKey 100 30 1]),
+    (6, [], .keys (cellKey 100 [30] 1) []),
+    (6, [], .keys (cellKey 100 [30] 0) [])] },
+  { name := "a new entry brings an empty cell back into use at the generation it moves to", edits := humans ++ [
+    (4, [6], .genesis 200 .coop [.vault 101, .vault 102] 1),
+    (2, [], newEntry 100 21 100 [] todo (tags := [work])),
+    (2, [], newCap 30 100 (toVault 200) .read 100 workTodos),
+    (2, [], .move 100 21 [30] []),
+    (2, [], wr 100 21 100 [7] (stay := some 9) (remove := [work])),
+    (2, [], .move 100 21 [] [10]),
+    (6, [], .removeOwner 200 (.vault 102) []),
+    -- a new work todo, created straight into the empty cell, may name the generation the cell moves to as it comes
+    -- back into use, which Carol can't open, and no later one; so may the next, the cell in use by then
+    (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (gen := 2)),
+    (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (gen := 1)),
+    (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (gen := 2)),
+    (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (gen := 1)),
+    (5, [], .keys (cellKey 100 [30] 1) [capKey 100 30 1]),
     (6, [], .keys (cellKey 100 [30] 1) []),
     (6, [], .keys (cellKey 100 [30] 0) [])] },
   { name := "the schema lane", edits := humans ++ [

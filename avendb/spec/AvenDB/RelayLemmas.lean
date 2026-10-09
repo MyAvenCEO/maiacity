@@ -303,6 +303,10 @@ theorem holderEntitled_ops (st : State) : Holder.entitled st.ops = Holder.entitl
 theorem keyFams_ops (st : State) : keyFams st.ops = keyFams st := by
   simp only [keyFams, ops_vaults, ops_caps, ops_entries, List.filter_map, List.map_map, live_ops]; rfl
 
+/-- A relay sees whether a new entry brings its cell back into use. -/
+theorem reenters_ops (st : State) (v : VaultId) (x : Cell) : reenters st.ops v x = reenters st v x := by
+  simp only [reenters, keyFams_ops, ops_seals, curKey_ops]
+
 /-- Whom a key is sealed to reads no selector. -/
 theorem targets_ops (st : State) : targets st.ops = targets st := by
   funext k
@@ -595,7 +599,7 @@ theorem apply_ops (st : State) (edit : Edit) :
       obtain ⟨x, hdr⟩ := p
       simp only [Option.map_some]
       simp only [apply, ops_writes, actsVia_ops, entry?_ops, Option.isSome_map, ops_born, vault?_ops, cellOk_ops,
-        mayCreate_ops, epochOf_ops]
+        mayCreate_ops, epochOf_ops, reenters_ops]
       simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
         eblind_comp_eblind, List.map_cons, List.map_nil]
       rfl
