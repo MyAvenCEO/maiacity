@@ -78,7 +78,7 @@ const marketOf = (world) =>
 	Object.fromEntries(
 		GOODS.map((g) => {
 			const m = world.market[g];
-			return [g, { price: m.price, supply: m.supply, demand: m.demand, sells: m.sells.map((o) => ({ name: o.name, qty: o.qty, price: o.price })), wants: m.wants.map((o) => ({ name: o.name, qty: o.qty, price: o.price })) }];
+			return [g, { price: m.price, posted: m.posted ?? null, round: m.round ?? null, supply: m.supply, demand: m.demand, sells: m.sells.map((o) => ({ name: o.name, qty: o.qty, price: o.price })), wants: m.wants.map((o) => ({ name: o.name, qty: o.qty, price: o.price })) }];
 		})
 	);
 

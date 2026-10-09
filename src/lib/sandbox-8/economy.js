@@ -219,10 +219,15 @@ export function cents(v) {
  */
 export function updateMarket(world) {
 	const live = world.avens.filter((a) => a.alive);
+	const isPosted = postedMarket();
 	for (const g of GOODS) {
 		const m = world.market[g];
-		m.sells = live.filter((a) => a.ask[g] != null && spare(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: spare(a, g), price: a.ask[g] })).sort((x, y) => x.price - y.price);
-		m.wants = live.filter((a) => a.bid[g] != null && want(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: want(a, g), price: a.bid[g] })).sort((x, y) => y.price - x.price);
+		// a posted-price market: everyone's offer and want stand at the good's one posted price
+		m.posted = isPosted ? (world.posted?.[g] ?? null) : null;
+		const at = (a, side) => (isPosted ? m.posted : a[side][g]);
+		const priced = (a, side) => (isPosted ? a.brain.ready : a[side][g] != null);
+		m.sells = live.filter((a) => priced(a, 'ask') && spare(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: spare(a, g), price: at(a, 'ask') })).sort((x, y) => x.price - y.price);
+		m.wants = live.filter((a) => priced(a, 'bid') && want(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: want(a, g), price: at(a, 'bid') })).sort((x, y) => y.price - x.price);
 		m.supply = m.sells.reduce((n, o) => n + o.qty, 0);
 		// only what buyers can pay for counts as wanted: an aven with no HEARTS left can't lift the price
 		m.demand = m.wants.reduce((n, o) => n + Math.min(o.qty, Math.floor(world.avens[o.id].hearts / Math.max(0.01, o.price))), 0);
@@ -336,9 +341,13 @@ export function haggle(seller, buyer, g) {
 function deal(world, seller, buyer, g) {
 	const d = haggle(seller, buyer, g);
 	if (d.price == null) return 0;
-	const price = d.price;
-	const qty = Math.min(spare(seller, g), want(buyer, g), Math.floor(buyer.hearts / price));
+	const qty = Math.min(spare(seller, g), want(buyer, g), Math.floor(buyer.hearts / d.price));
 	if (qty <= 0) return 0;
+	return transfer(world, seller, buyer, g, qty, d.price, d.haggled ? { ask: d.ask, bid: d.bid } : null);
+}
+/** the goods and HEARTS of one deal change hands (the buyer walks over to fetch what it bought, see step); returns the
+ * units sold */
+function transfer(world, seller, buyer, g, qty, price, haggled) {
 	const total = Math.round(qty * price * 100) / 100;
 	// it is the buyer's from now on; the buyer walks over to fetch it (see step)
 	seller.stock[g] -= qty;
@@ -354,13 +363,13 @@ function deal(world, seller, buyer, g) {
 	const m = world.market[g];
 	m.dayQty = (m.dayQty ?? 0) + qty;
 	m.dayValue = (m.dayValue ?? 0) + total;
-	const talk = d.haggled ? { haggled: { ask: d.ask, bid: d.bid } } : {};
+	const talk = haggled ? { haggled } : {};
 	log(world, seller, { kind: 'sell', good: g, qty, price, with: buyer.name, hearts: total, ...talk });
 	log(world, buyer, { kind: 'buy', good: g, qty, price, with: seller.name, hearts: -total, ...talk });
 	world.tally.units[g] += qty;
 	world.tally.deals += 1;
-	world.trades.push({ day: world.day, t: world.t, seller: seller.id, buyer: buyer.id, good: g, qty, price, haggled: d.haggled });
-	if (world.outbox) world.outbox.push({ kind: 'trade', day: world.day, t: world.t, seller: seller.name, buyer: buyer.name, good: g, qty, price, haggled: d.haggled });
+	world.trades.push({ day: world.day, t: world.t, seller: seller.id, buyer: buyer.id, good: g, qty, price, haggled: !!haggled });
+	if (world.outbox) world.outbox.push({ kind: 'trade', day: world.day, t: world.t, seller: seller.name, buyer: buyer.name, good: g, qty, price, haggled: !!haggled });
 	if (world.trades.length > 600) world.trades.splice(0, world.trades.length - 600);
 	world.events.push({ kind: 'trade', x: seller.territory.x, y: seller.territory.y, good: g, t: world.t });
 	return qty;
@@ -373,6 +382,7 @@ function deal(world, seller, buyer, g) {
  * that good: nobody further down either book would agree either. A buyer who can't pay for even one unit is passed over.
  */
 export function clearMarket(world) {
+	if (postedMarket()) return clearPosted(world);
 	const live = world.avens.filter((a) => a.alive && a.brain.ready);
 	for (const g of GOODS) {
 		const passed = new Set(); // buyers who can't pay for even one unit, this round
@@ -394,6 +404,63 @@ export function clearMarket(world) {
 		}
 	}
 }
+/** a posted-price market: where the Trading card exports a `price` hook (Samuel, 2026-10-10). Nobody names a price:
+ * each good has one posted price, everyone trades at it, and the card moves it between rounds by what was wanted and
+ * offered at it (tâtonnement; LLM brains that name prices anchor on each other and freeze the market, World 15) */
+export const postedMarket = () => !!(CODE.run && CODE.seen === CODE.run && CODE.run.has('price'));
+/** a positive price, kept to 4 significant digits (no floor and no ceiling beyond that) */
+const posted = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Number(Math.min(1e9, Math.max(1e-4, v)).toPrecision(4)) : null);
+/** shares of `total` in proportion to `asks` (whole units, the largest remainders first, ties to the earlier one) */
+function shares(asks, total) {
+	const sum = asks.reduce((n, q) => n + q, 0);
+	if (sum <= total) return asks.slice();
+	const exact = asks.map((q) => (q * total) / sum);
+	const out = exact.map(Math.floor);
+	let left = total - out.reduce((n, q) => n + q, 0);
+	for (const i of exact.map((x, i) => [x - Math.floor(x), i]).sort((x, y) => y[0] - x[0]).map(([, i]) => i)) {
+		if (left <= 0) break;
+		if (out[i] < asks[i]) (out[i] += 1), (left -= 1);
+	}
+	return out;
+}
+/**
+ * The posted-price market clears, good by good: at the good's posted price every seller offers what it can spare and
+ * every buyer asks for what it wants and can pay for (both by the Trading card's want and spare, which may read the
+ * brain's own answers in aven.choices). The short side gets all it asked for, the long side its share pro rata, and the
+ * goods change hands at that one price. Then the `price` hook sets the next round's price from what was wanted and
+ * offered (a good never priced yet asks it with price null for a first one).
+ */
+function clearPosted(world) {
+	const live = world.avens.filter((a) => a.alive && a.brain.ready);
+	world.posted ??= {};
+	for (const g of GOODS) {
+		const ask = (price, demand, supply, traded) => posted(ruled('price', { good: g, price, demand, supply, traded }, price, (v, o) => posted(v) ?? o));
+		let p = posted(world.posted[g]) ?? ask(null, 0, 0, 0);
+		if (p == null) continue;
+		const sellers = live.filter((a) => spare(a, g) > 0);
+		const buyers = live.filter((a) => want(a, g) > 0 && a.hearts >= p);
+		const offer = sellers.map((a) => spare(a, g));
+		const asked = buyers.map((a) => Math.min(want(a, g), Math.floor(a.hearts / p)));
+		const supply = offer.reduce((n, q) => n + q, 0);
+		const demand = asked.reduce((n, q) => n + q, 0);
+		const traded = Math.min(supply, demand);
+		const sell = shares(offer, traded);
+		const buy = shares(asked, traded);
+		// pair them off in order: each buyer fetches its units from the sellers in turn
+		for (let i = 0, j = 0; i < sellers.length && j < buyers.length; ) {
+			const q = Math.min(sell[i], buy[j]);
+			if (q > 0 && sellers[i] !== buyers[j]) transfer(world, sellers[i], buyers[j], g, q, p, null);
+			sell[i] -= q;
+			buy[j] -= q;
+			if (!sell[i]) i++;
+			if (!buy[j]) j++;
+		}
+		const m = world.market[g];
+		m.round = { price: p, demand, supply, traded };
+		world.posted[g] = ask(p, demand, supply, traded) ?? p;
+	}
+}
+
 /** the next seller and buyer to meet for a good (the `match` hook), or null: the round ends */
 function matchOf(g, sellers, buyers) {
 	const s = [...sellers].sort((x, y) => x.ask[g] - y.ask[g])[0];
