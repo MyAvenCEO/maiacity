@@ -211,10 +211,11 @@ function blankDay() {
 	return { sold: Object.fromEntries(GOODS.map((g) => [g, 0])), bought: Object.fromEntries(GOODS.map((g) => [g, 0])), short: {} };
 }
 
-/** what this aven still wants of a good it doesn't grow, to reach its reserve */
+/** what this aven still wants of a good it doesn't grow, to reach its reserve: its mind's wants (days of water, days of
+ * food, mind.js), else the policy's stock target */
 export function want(a, g) {
 	if (a.grows.includes(g)) return 0;
-	return Math.max(0, NEED[g] * a.reserveDays - a.stock[g]);
+	return Math.max(0, NEED[g] * (a.keep?.[g === 'water' ? 'water' : 'food'] ?? a.reserveDays) - a.stock[g]);
 }
 
 /** what this aven can spare of a good it grows: everything above a few days of its own need */

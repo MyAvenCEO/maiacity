@@ -66,3 +66,33 @@ export function recorder(world, start) {
 	};
 	return rec;
 }
+
+// ---- each aven's mind, kept across runs (mind.js): read when a run starts, written each night. Without the database
+// (not signed in, or the API down) they live in this browser instead. ----
+const LOCAL = (config) => `sandbox-8-minds-${config}`;
+const local = {
+	get(config) {
+		try {
+			return JSON.parse(localStorage.getItem(LOCAL(config)) ?? '{}');
+		} catch {
+			return {};
+		}
+	},
+	set(config, minds) {
+		try {
+			localStorage.setItem(LOCAL(config), JSON.stringify(minds));
+		} catch {
+			/* no storage here */
+		}
+	}
+};
+/** { aven name: mind (with pending edits) }; `remote` false keeps them in this browser */
+export async function loadMinds(config, remote) {
+	if (!remote) return local.get(config);
+	return (await apiCall(`/api/economy/minds/${encodeURIComponent(config)}`)).minds ?? {};
+}
+export async function saveMinds(config, minds, remote) {
+	if (!remote) return local.set(config, { ...local.get(config), ...minds });
+	return apiCall(`/api/economy/minds/${encodeURIComponent(config)}`, { method: 'PUT', body: JSON.stringify({ minds }) });
+}
+export const forgetMinds = (config, remote) => (remote ? apiCall(`/api/economy/minds/${encodeURIComponent(config)}`, { method: 'DELETE' }) : Promise.resolve(local.set(config, {})));

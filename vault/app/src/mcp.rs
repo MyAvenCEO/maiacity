@@ -522,6 +522,23 @@ pub struct EconomyMip {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyMinds {
+    /// the config's id (default: valley)
+    pub config: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyMindEdit {
+    /// the config's id (default: valley)
+    pub config: Option<String>,
+    /// the aven's name, e.g. Ama (names from economy_minds)
+    pub aven: String,
+    /// the edit: { dials: { greed, thrift, haggle: 0-10 }, wants: { water, food: days of stock 1-10 }, lesson: a short
+    /// rule to add (at most 110 characters), forget_lesson: a lesson's id, note: why }
+    pub edit: Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct Item {
     /// the content item, as the API takes it: title, day, platform, status (idea, hook, draft, derivatives,
     /// scheduled, published), body, deliveries …
@@ -1558,6 +1575,22 @@ impl Studio {
             o.insert("via".to_string(), json!("mcp"));
         }
         text(self.api("POST", "/api/economy/mips", Some(mip)).await)
+    }
+
+    #[tool(
+        description = "Every aven's mind in an economy config, kept across runs: its character (dials greed, thrift, haggle, 0-10), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
+    )]
+    async fn economy_minds(&self, Parameters(a): Parameters<EconomyMinds>) -> String {
+        let config = a.config.unwrap_or_else(|| "valley".into());
+        text(self.api("GET", &format!("/api/economy/minds/{config}"), None).await)
+    }
+
+    #[tool(
+        description = "Change one aven's mind: set its character dials (greed, thrift, haggle, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night in a running game, or when the next run starts, and shows in its trial log and the page's decisions."
+    )]
+    async fn economy_mind_edit(&self, Parameters(a): Parameters<EconomyMindEdit>) -> String {
+        let config = a.config.unwrap_or_else(|| "valley".into());
+        text(self.api("POST", &format!("/api/economy/minds/{config}/{}", a.aven), Some(a.edit)).await)
     }
 
     // ── anything else the admin may do ──

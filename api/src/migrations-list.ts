@@ -826,4 +826,20 @@ export const MIGRATIONS: Migration[] = [
       UPDATE econ_run_days SET decisions = (decisions #>> '{}')::jsonb WHERE jsonb_typeof(decisions) = 'string';
     `,
   },
+  {
+    // Each aven's mind outlives its runs (Samuel, 2026-10-09): its character, the trials it ran and how each went, the
+    // lessons it keeps and how it died, one row per aven of a config (src/lib/sandbox-8/mind.js), read when a run
+    // starts and written each night. Edits from outside (the studio's MCP) wait in pending until the page takes them in.
+    id: "0035-economy-minds",
+    sql: `
+      CREATE TABLE econ_minds (
+        config_id TEXT NOT NULL,
+        aven      TEXT NOT NULL,
+        mind      JSONB NOT NULL DEFAULT '{}'::jsonb,
+        pending   JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (config_id, aven)
+      );
+    `,
+  },
 ];
