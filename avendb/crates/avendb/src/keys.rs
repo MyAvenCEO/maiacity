@@ -13,6 +13,10 @@
 //! 1978. A McEliece public key is a megabyte, so it travels as a blob named by its hash, beside the ops. Where the
 //! sealer holds the key a box goes to, it wraps instead (symmetric, no public key at all). A signer's own key is one
 //! more such secret: a device derives it with its other keys, a passkey from its PRF output.
+//!
+//! Every secret here wipes itself as it is dropped (P8c, the device's secure boundary): a key's 32 bytes, each hash
+//! state and cipher that held one, what a box opens to, and each McEliece pair's secret half, which a device that
+//! locks has the process forget (`forget_pairs`), so that what it held stays sealed by both schemes.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -22,6 +26,7 @@ use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use classic_mceliece_rust as mceliece;
 use rand_core::{CryptoRng, Infallible, TryCryptoRng, TryRng};
 use x_wing::{Decapsulate as _, Decapsulator as _, Encapsulate as _, KeyExport as _};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::hash::{self, Hasher, Reader};
 use crate::id::{BlobId, EntryId, SignerId, SpaceId, VaultId};
@@ -102,9 +107,24 @@ impl std::fmt::Debug for PublicKey {
     }
 }
 
-/// A key's 32 secret bytes. Never leaves a device unsealed, except a public family's key, which is published.
+/// A key's 32 secret bytes. Never leaves a device unsealed, except a public family's key, which is published; wiped as
+/// it is dropped, each copy of it too.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret([u8; 32]);
+
+impl Zeroize for Secret {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for Secret {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for Secret {}
 
 impl std::fmt::Debug for Secret {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -138,16 +158,22 @@ impl Secret {
         self.0
     }
 
+    /// The bytes, borrowed: no copy left behind.
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
     pub fn id(&self) -> KeyId {
         KeyId(hash::keyed(&self.0, "key id", b""))
     }
 
-    fn data_key(&self) -> [u8; 32] {
-        hash::keyed(&self.0, "data key", b"")
+    fn data_key(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(hash::keyed(&self.0, "data key", b""))
     }
 
     fn xwing(&self) -> x_wing::DecapsulationKey {
-        x_wing::DecapsulationKey::from(hash::keyed(&self.0, "x-wing key", b""))
+        let seed = Zeroizing::new(hash::keyed(&self.0, "x-wing key", b""));
+        x_wing::DecapsulationKey::from(*seed)
     }
 
     fn mceliece(&self) -> Arc<McEliece> {
@@ -200,6 +226,20 @@ impl Secret {
     }
 }
 
+/// Whether this process holds the McEliece pair of key `id`, made: its secret half among them.
+pub fn pair_made(id: KeyId) -> bool {
+    pairs().lock().expect("the pairs").get(&id).is_some_and(|slot| slot.get().is_some())
+}
+
+/// Forget the McEliece pairs of keys `ids`, made or wanted: a device that locks has the process forget the pairs of the
+/// keys it held that nothing else in it holds (`Lab::lock`), as a pair's secret half opens half of every box sealed to
+/// its key. Each is wiped once whoever uses it now is done with it; a key used again makes its pair again.
+pub fn forget_pairs(ids: impl IntoIterator<Item = KeyId>) {
+    let ids: std::collections::HashSet<KeyId> = ids.into_iter().collect();
+    pairs().lock().expect("the pairs").retain(|id, _| !ids.contains(id));
+    WANTED.lock().expect("the wanted pairs").retain(|w| !ids.contains(&w.1));
+}
+
 /// A key's Classic McEliece pair. It is made from the key alone, so every holder makes the same one, and it is kept for
 /// the life of the process, as making one takes most of a second.
 struct McEliece {
@@ -224,8 +264,8 @@ impl McEliece {
         let slot = pairs().lock().expect("the pairs").entry(key.id()).or_default().clone();
         slot.get_or_init(|| {
             // made here after all: nobody needs to make it elsewhere anymore
-            let seed = key.pair_seed();
-            WANTED.lock().expect("the wanted pairs").retain(|w| w.0 != seed);
+            let seed = Zeroizing::new(key.pair_seed());
+            WANTED.lock().expect("the wanted pairs").retain(|w| w.0 != *seed);
             Arc::new(McEliece::made(&seed))
         })
         .clone()
@@ -252,7 +292,8 @@ impl rand_core_06::RngCore for PairSeed {
     }
 
     fn fill_bytes(&mut self, dst: &mut [u8]) {
-        dst.copy_from_slice(&self.0.take().expect("Classic McEliece draws one seed for a pair"));
+        let seed = Zeroizing::new(self.0.take().expect("Classic McEliece draws one seed for a pair"));
+        dst.copy_from_slice(&*seed);
     }
 
     fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), rand_core_06::Error> {
@@ -310,10 +351,10 @@ struct Rng06(Reader);
 impl Rng06 {
     /// Randomness for one encapsulation, seeded from the caller's.
     fn from(rng: &mut impl CryptoRng) -> Rng06 {
-        let mut seed = [0u8; 32];
-        rng.fill_bytes(&mut seed);
+        let mut seed = Zeroizing::new([0u8; 32]);
+        rng.fill_bytes(&mut *seed);
         let mut h = Hasher::new("mceliece randomness");
-        h.update(&seed);
+        h.update(&*seed);
         Rng06(h.reader())
     }
 }
@@ -398,14 +439,14 @@ pub fn open(bytes: &[u8], with: &Secret, info: &[u8]) -> Option<Secret> {
     if suite != SUITE {
         return None;
     }
-    let key = match how {
+    let key = Zeroizing::new(match how {
         SEALED => {
             let mc = with.mceliece();
             open_sealed(rest, &with.xwing(), &mc.secret, &with.public(), info)?
         }
         WRAPPED => decrypt(with, rest, info)?,
         _ => return None,
-    };
+    });
     Secret::from_slice(&key)
 }
 
@@ -448,7 +489,8 @@ pub fn decrypt(key: &Secret, ciphertext: &[u8], context: &[u8]) -> Option<Vec<u8
 
 fn per_nonce(key: &Secret, nonce: &[u8; 24]) -> (XChaCha20Poly1305, [u8; 32]) {
     let data = key.data_key();
-    let cipher = XChaCha20Poly1305::new(&hash::keyed(&data, "encryption key", nonce).into());
+    let under = Zeroizing::new(hash::keyed(&data, "encryption key", nonce));
+    let cipher = XChaCha20Poly1305::new(&(*under).into());
     (cipher, hash::keyed(&data, "key commitment", nonce))
 }
 
@@ -470,15 +512,25 @@ pub fn open_edit(key: &Secret, body: &[u8], context: &[u8]) -> Option<Vec<u8>> {
     decrypt(key, &body[33..], context)
 }
 
-/// Randomness from a seed: SHA-3's output stream. The Lab's keys and nonces come from it, so a failing test replays
-/// exactly; the app uses the operating system's randomness.
-pub struct SeededRng(Reader);
+/// Randomness from a seed, the Lab's: its keys and nonces come from it, so a failing test replays exactly, and a device
+/// on a machine of its own seeds it with the machine's randomness. It keeps one key, and every draw hashes that key
+/// into the bytes drawn and the next key, which overwrites it (fast key erasure): whoever reads its memory learns what
+/// it will draw, never what it drew. A device that unlocks reseeds it with its own key (`reseed`), which only the
+/// passkey derives again, so a copy of its memory taken while it was locked doesn't foresee that either.
+pub struct SeededRng(Zeroizing<[u8; 32]>);
 
 impl SeededRng {
     pub fn new(purpose: &str, seed: &[u8]) -> SeededRng {
         let mut h = Hasher::new(purpose);
         h.update(seed);
-        SeededRng(h.reader())
+        SeededRng(Zeroizing::new(h.finalize()))
+    }
+
+    /// Mix secret `material` into the key: what it draws from now on depends on it.
+    pub fn reseed(&mut self, material: &[u8]) {
+        let mut h = Hasher::new("randomness reseeded");
+        h.update(&*self.0).update(material);
+        h.reader().fill(&mut *self.0);
     }
 }
 
@@ -486,15 +538,23 @@ impl TryRng for SeededRng {
     type Error = Infallible;
 
     fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        Ok(u32::from_le_bytes(self.0.array()))
+        let mut b = [0u8; 4];
+        self.try_fill_bytes(&mut b)?;
+        Ok(u32::from_le_bytes(b))
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Infallible> {
-        Ok(u64::from_le_bytes(self.0.array()))
+        let mut b = [0u8; 8];
+        self.try_fill_bytes(&mut b)?;
+        Ok(u64::from_le_bytes(b))
     }
 
     fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
-        self.0.fill(dst);
+        let mut h = Hasher::new("randomness drawn");
+        h.update(&*self.0);
+        let mut out = h.reader();
+        out.fill(&mut *self.0);
+        out.fill(dst);
         Ok(())
     }
 }
@@ -504,6 +564,7 @@ impl TryCryptoRng for SeededRng {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand_core::Rng as _;
 
     fn rng() -> SeededRng {
         SeededRng::new("keys tests", b"")
@@ -615,6 +676,58 @@ mod tests {
         assert_eq!(key.mceliece_public()[..], public[..]);
         key.want();
         assert!(!wanted_pairs().contains(&seed));
+    }
+
+    fn draw<const N: usize>(rng: &mut SeededRng) -> [u8; N] {
+        let mut out = [0u8; N];
+        rng.fill_bytes(&mut out);
+        out
+    }
+
+    #[test]
+    fn the_randomness_keeps_nothing_that_draws_again_what_it_drew() {
+        // fast key erasure: the generator is one key, which every draw replaces with a hash of it
+        let mut rng = SeededRng::new("keys tests", b"erasure");
+        let before = *rng.0;
+        let first: [u8; 32] = draw(&mut rng);
+        let after = *rng.0;
+        assert_ne!(after, before, "a draw replaces the key");
+        assert_ne!(first, after, "and hands out other bytes than the next key");
+        // whoever reads its memory now holds that key alone: what it draws next, never what it drew
+        let mut copy = SeededRng(Zeroizing::new(after));
+        assert_eq!(draw::<64>(&mut copy), draw::<64>(&mut rng));
+        // the same seed draws the same bytes, so a failing test replays
+        let mut again = SeededRng::new("keys tests", b"erasure");
+        assert_eq!(draw::<32>(&mut again), first);
+    }
+
+    #[test]
+    fn a_reseeded_generator_draws_what_no_copy_from_before_foresees() {
+        let (mut a, mut copy, mut b) = (rng(), rng(), rng());
+        a.reseed(b"the device's key, derived again as it unlocks");
+        b.reseed(b"the device's key, derived again as it unlocks");
+        let (x, y, z) = (draw::<32>(&mut a), draw::<32>(&mut copy), draw::<32>(&mut b));
+        assert_ne!(x, y, "a copy taken before the reseed draws other bytes");
+        assert_eq!(x, z, "the same reseed draws the same: a failing test replays");
+    }
+
+    #[test]
+    fn a_forgotten_pair_is_made_again_when_the_key_is_used_again() {
+        let key = Secret::derive("keys tests", &[6; 32]);
+        let public = key.public();
+        assert!(pair_made(key.id()));
+        forget_pairs([key.id()]);
+        assert!(!pair_made(key.id()), "forgotten: its secret half is gone from the process");
+        // a key that wants its pair, and is forgotten before it is handed in, wants it no more
+        let other = Secret::derive("keys tests", &[7; 32]);
+        other.want();
+        let wanted = || WANTED.lock().expect("the wanted pairs").iter().any(|w| w.0 == other.pair_seed());
+        assert!(wanted());
+        forget_pairs([other.id()]);
+        assert!(!wanted());
+        // used again, the key makes the same pair again
+        assert_eq!(key.public(), public);
+        assert!(pair_made(key.id()));
     }
 
     #[test]

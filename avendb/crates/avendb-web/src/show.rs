@@ -641,3 +641,62 @@ pub(crate) fn line_at(q: &Value, key: &str) -> Result<Line, String> {
 fn app_at(q: &Value) -> &str {
     q["app"].as_str().unwrap_or("v2")
 }
+
+#[cfg(test)]
+mod tests {
+    use avendb::id::SignerId;
+    use serde_json::{json, Value};
+
+    use crate::tile::{hex, unhex, Tile};
+
+    /// Every view the page reads: the overview, and for each device its vaults, spaces and todos, and of each space it
+    /// lists, the schemas, the access, and each entry with its access and its Lab columns.
+    fn every_view(tile: &Tile) -> Vec<Value> {
+        let mut views = vec![json!({"view": "overview"})];
+        for &d in tile.lab().devices() {
+            let on = hex(&d.0);
+            for view in ["vaults", "spaces", "todos"] {
+                views.push(json!({"view": view, "on": on}));
+            }
+            let spaces = tile.show(&json!({"view": "spaces", "on": on})).expect("its spaces");
+            for s in spaces["spaces"].as_array().into_iter().flatten() {
+                let space = &s["id"];
+                views.push(json!({"view": "schemas", "on": on, "space": space}));
+                views.push(json!({"view": "access", "on": on, "space": space}));
+                for e in s["entries"].as_array().into_iter().flatten() {
+                    let entry = &e["id"];
+                    views.push(json!({"view": "entry", "on": on, "space": space, "entry": entry}));
+                    views.push(json!({"view": "access", "on": on, "space": space, "entry": entry}));
+                    views.push(json!({"view": "lab", "space": space, "entry": entry}));
+                }
+            }
+        }
+        views
+    }
+
+    #[test]
+    fn no_view_shows_a_secret() {
+        let mut tile = Tile::new();
+        while tile.build_step(1.0).is_some() {}
+        let lab = tile.lab();
+        let overview = tile.show(&json!({"view": "overview"})).expect("the overview");
+        let signers = overview["signers"].as_array().into_iter().flatten();
+        let signers: Vec<SignerId> = signers.filter_map(|s| s["id"].as_str().and_then(unhex)).map(SignerId).collect();
+        // every secret of every signer: its own key, a device's endpoint key, and every key a device opened
+        let mut secrets: Vec<[u8; 32]> = vec![];
+        for &s in &signers {
+            secrets.extend(lab.secrets(s).iter().map(|k| k.bytes()));
+            secrets.extend(lab.endpoint_secret(s).map(|k| *k));
+        }
+        assert!(secrets.len() > 2 * signers.len(), "{} secrets of {} signers", secrets.len(), signers.len());
+        let views = every_view(&tile);
+        assert!(views.len() > 100, "{} views", views.len());
+        let show = |q: &Value| tile.show(q).unwrap_or_else(|e| panic!("{q}: {e}")).to_string();
+        let shown: String = views.iter().map(show).collect();
+        for s in &secrets {
+            // in hex, as views show ids, or as a list of numbers, as JSON shows bytes
+            let numbers = s[..8].iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+            assert!(!shown.contains(&hex(s)) && !shown.contains(&numbers), "a view shows a secret");
+        }
+    }
+}

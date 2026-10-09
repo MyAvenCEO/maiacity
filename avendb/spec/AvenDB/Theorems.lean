@@ -593,4 +593,30 @@ theorem T13_sync_converges (opsP opsQ : List Op) (dp dq : SignerId) (sp : SpaceI
   rw [item_after_sync hid hp hop, item_after_sync (fun a ha b hb h => (hid b hb a ha h.symm).symm) hq hop]
   exact Or.comm
 
+/-- `closeVaults` of no vault is no vault. -/
+theorem closeVaults_nil (st : State) : ∀ n, closeVaults st n [] = []
+  | 0 => rfl
+  | n + 1 => by simp [closeVaults, closeVaults_nil st n]
+
+/-- T20 (linking hands out vault logs alone): every op a peer hands a device whose passkey proved itself on their
+    connection (`linkCard`) is an op the peer holds of the log of a vault the passkey owns, or of one that owns such a
+    vault, up the chains: never a write or a checkpoint, never an op about a space or an entry. -/
+theorem T20_link_shares_only_vault_logs (ops : List Op) (p : SignerId) {op : Op} (h : op ∈ linkCard ops p) :
+    op ∈ ops ∧ (∃ v, op.vaultOf? = some v ∧ v ∈ closeVaults (view ops) (view ops).depth (ownedBy (view ops) p)) ∧
+      op.item? = none ∧ op.authScope? ops = none := by
+  simp only [linkCard, List.mem_filter] at h
+  obtain ⟨hm, hv⟩ := h
+  split at hv
+  · rename_i v hv'
+    exact ⟨hm, ⟨v, hv', List.contains_iff_mem.1 hv⟩, (vault_not_auth hv' ops).2, (vault_not_auth hv' ops).1⟩
+  · cases hv
+
+/-- T20, for a stranger: a passkey that owns no vault in the peer's view is handed nothing. -/
+theorem T20_stranger_gets_nothing (ops : List Op) (p : SignerId) (h : ownedBy (view ops) p = []) :
+    linkCard ops p = [] := by
+  simp only [linkCard, h, closeVaults_nil]
+  rw [List.filter_eq_nil_iff]
+  intro op _
+  split <;> simp
+
 end AvenDB

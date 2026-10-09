@@ -110,6 +110,21 @@ def respond (ops : List Op) (d : SignerId) : List Op :=
     | none => false
   writes ++ auth ++ vaultOps
 
+/-- The vaults passkey `p` owns in `st`: those it is an owner or the root of. -/
+def ownedBy (st : State) (p : SignerId) : List VaultId :=
+  st.vaults.filterMap fun x => if x.owners.contains (.signer p) || x.root == some p then some x.id else none
+
+/-- What a peer holding `ops` hands a device whose passkey `p` proved itself on their connection (P8c): the logs of
+    the vaults `p` owns, and of every vault that owns one of them, up the chains, as a new device of `p`'s person needs
+    them to add itself to its vault. Nothing about any space or entry: the device asks for the rest once it acts for
+    the vault. -/
+def linkCard (ops : List Op) (p : SignerId) : List Op :=
+  let st := view ops
+  let vaults := closeVaults st st.depth (ownedBy st p)
+  ops.filter fun op => match op.vaultOf? with
+    | some v => vaults.contains v
+    | none => false
+
 /-- A peer that held `ops` after receiving `incoming`. -/
 def receive (ops incoming : List Op) : List Op := ops ++ incoming.filter (fun o => !ops.contains o)
 

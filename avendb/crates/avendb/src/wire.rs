@@ -1,6 +1,7 @@
 //! The wire (P8): what devices send each other, as bytes, and back. An op keeps the bytes its id hashes (`encode`); a
 //! signed op adds its signatures, and the messages of a sync wrap what `sync` asks and answers: a device's hello on a
-//! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`).
+//! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`). A new device
+//! links (P8c) with its passkey's hello (`PasskeyHello`), then joins its person's vault (`Join`).
 //!
 //! Every value has exactly one encoding, and a decoder takes only bytes that encode back to themselves: integers are
 //! big-endian and fixed-size, sequences carry their length, every enum starts with a tag, sets go smallest first with
@@ -14,7 +15,7 @@ use crate::encode::{Encode, VERSION};
 use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
 use crate::policy::{Action, Branch, Grant, Grantee, Kind, Op, Principal, Role, Scope};
-use crate::sign::{Assertion, Classical, Hello, Signature, SignerKeys, Signed};
+use crate::sign::{Assertion, Classical, Hello, PasskeyHello, Signature, SignerKeys, Signed};
 use crate::sync::{Ask, LogId};
 
 /// Why bytes from a peer are no message.
@@ -67,7 +68,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Ask, Hello, Request, Reply, Announce);
+wire!(Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join);
 
 /// An op on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the op.
 impl Wire for Op {
@@ -115,6 +116,23 @@ pub struct Reply {
 pub struct Announce {
     /// Smallest log first, no repeats.
     pub digests: Vec<(LogId, [u8; 32])>,
+}
+
+/// What a new device sends the peer its passkey proved itself to (P8c), once it holds the passkey's link card: the op
+/// adding it to its person's vault, signed by the passkey and by itself (`Lab::join`), and the McEliece key that op
+/// names, its own. The peer accepts that op alone (`Lab::accept_join`).
+#[derive(Clone, PartialEq, Eq)]
+pub struct Join {
+    pub op: Signed,
+    pub blobs: Vec<Vec<u8>>,
+}
+
+/// The McEliece keys show only their sizes.
+impl std::fmt::Debug for Join {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let blobs: Vec<String> = self.blobs.iter().map(|b| format!("{} bytes", b.len())).collect();
+        f.debug_struct("Join").field("op", &self.op).field("blobs", &blobs).finish()
+    }
 }
 
 /// A cursor over bytes a peer sent.
@@ -196,6 +214,13 @@ impl Decode for u64 {
 impl<const N: usize> Decode for [u8; N] {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         r.array()
+    }
+}
+
+/// Bytes behind their length.
+impl Decode for Vec<u8> {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        r.bytes()
     }
 }
 
@@ -417,9 +442,7 @@ impl Encode for Classical {
             }
             Classical::Passkey(a) => {
                 out.push(1);
-                a.authenticator_data.encode(out);
-                a.client_data_json.encode(out);
-                a.signature.encode(out);
+                a.encode(out);
             }
         }
     }
@@ -429,13 +452,23 @@ impl Decode for Classical {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
             0 => Ok(Classical::Ed25519(r.array()?)),
-            1 => Ok(Classical::Passkey(Assertion {
-                authenticator_data: r.bytes()?,
-                client_data_json: r.bytes()?,
-                signature: r.bytes()?,
-            })),
+            1 => Ok(Classical::Passkey(Assertion::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
+    }
+}
+
+impl Encode for Assertion {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.authenticator_data.encode(out);
+        self.client_data_json.encode(out);
+        self.signature.encode(out);
+    }
+}
+
+impl Decode for Assertion {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Assertion { authenticator_data: r.bytes()?, client_data_json: r.bytes()?, signature: r.bytes()? })
     }
 }
 
@@ -546,6 +579,33 @@ impl Encode for Hello {
 impl Decode for Hello {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(Hello { keys: SignerKeys::decode(r)?, sig: r.bytes()? })
+    }
+}
+
+impl Encode for PasskeyHello {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.keys.encode(out);
+        self.assertion.encode(out);
+        self.sig.encode(out);
+    }
+}
+
+impl Decode for PasskeyHello {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(PasskeyHello { keys: SignerKeys::decode(r)?, assertion: Assertion::decode(r)?, sig: r.bytes()? })
+    }
+}
+
+impl Encode for Join {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.op.encode(out);
+        self.blobs.encode(out);
+    }
+}
+
+impl Decode for Join {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Join { op: Signed::decode(r)?, blobs: r.seq(4)? })
     }
 }
 

@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
-use avendb_net::{Admission, Node, Options, server};
-use iroh::{EndpointId, RelayUrl};
+use avendb_net::{Admission, Node, Offer, Options, server};
+use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use iroh_relay::server::{
     Access, AccessControl, ClientRequest, ConnectionId, RelayConfig, RelayService, Server, ServerConfig,
 };
@@ -34,6 +34,10 @@ pub struct Config {
     /// Where devices reach its relay (`AVENDB_RELAY_URL`, such as `https://avendb.maia.city`); if unsaid, the relay's
     /// own socket, for devices on the server's machine.
     pub relay_url: Option<RelayUrl>,
+    /// Where devices on UDP reach its node from the internet (`AVENDB_PUBLIC_ADDR`, the server's IP and port 7401),
+    /// as its offer says; if unsaid, the addresses of its own network interfaces, which in a container are the
+    /// container's.
+    pub public_addr: Option<SocketAddr>,
 }
 
 impl Config {
@@ -55,14 +59,19 @@ impl Config {
             bind: socket("AVENDB_BIND", "0.0.0.0:7401")?,
             relay_bind: socket("AVENDB_RELAY_BIND", "0.0.0.0:3350")?,
             relay_url: var("AVENDB_RELAY_URL").map(url).transpose()?,
+            public_addr: var("AVENDB_PUBLIC_ADDR").map(|v| v.parse()).transpose().context("AVENDB_PUBLIC_ADDR")?,
         })
     }
 }
 
-/// The server running: its node and its relay.
+/// The server running: its node, its relay, and its offer.
 pub struct Running {
     pub node: Node,
     pub relay: Relay,
+    /// What the apps know of the server (P8c), so that a new device links through it with its person's passkey alone:
+    /// its device, its endpoint, where devices on UDP reach it (`Config::public_addr`) and its relay. A device it
+    /// doesn't know yet reaches it straight, over UDP, as its relay lets the device in only once it joined.
+    pub offer: Offer,
 }
 
 impl Running {
@@ -88,7 +97,13 @@ pub async fn start(config: &Config) -> Result<Running> {
         admission: Some(admission),
     };
     let node = server::open(&config.data, opts).await?;
-    Ok(Running { node, relay })
+    let mut offer = node.offer();
+    if let Some(public) = config.public_addr {
+        let relays: Vec<RelayUrl> = offer.addr.relay_urls().cloned().collect();
+        let addr = EndpointAddr::new(node.id()).with_ip_addr(public);
+        offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
+    }
+    Ok(Running { node, relay, offer })
 }
 
 /// The server's relay: iroh's, serving plain HTTP on its socket, letting in only the clients its admission admits,

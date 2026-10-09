@@ -280,6 +280,7 @@ dependencies = [
  "sha2",
  "slh-dsa",
  "x-wing",
+ "zeroize",
 ]
 
 [[package]]
@@ -288,12 +289,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "avendb",
+ "data-encoding",
  "getrandom 0.3.4",
  "iroh",
  "iroh-blobs",
  "rustls",
  "tokio",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -458,6 +461,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+ "zeroize",
 ]
 
 [[package]]
@@ -530,6 +534,7 @@ dependencies = [
  "cipher 0.5.2",
  "cpufeatures 0.3.1",
  "rand_core 0.10.1",
+ "zeroize",
 ]
 
 [[package]]
@@ -542,6 +547,7 @@ dependencies = [
  "chacha20",
  "cipher 0.5.2",
  "poly1305",
+ "zeroize",
 ]
 
 [[package]]
@@ -1021,6 +1027,7 @@ dependencies = [
  "const-oid",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]
@@ -4532,6 +4539,9 @@ name = "sponge-cursor"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a0219bd7d979d58245a4f41f695e1ac9f8befdffadd7f61f1bae9e39abc6620"
+dependencies = [
+ "zeroize",
+]
 
 [[package]]
 name = "stable_deref_trait"

@@ -31,12 +31,12 @@ lake exe vectors
 | `Basic.lean` | Ids, principals (signers and vaults), roles relay < read < write < owner, scopes (a space or one entry), grantees, key names |
 | `State.lean` | What a peer knows; acting for a vault, approving for it (its root, or its threshold of owners), holding a cap; symbolic keys (`Knows`), rotation and sealing |
 | `Step.lean` | Every op and the rules that accept or refuse it, publishing into a space's schema lane, checkpoints, and writes on a branch (which build on its start) among them; the one order every peer replays in; strong removal: what a removal cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
-| `Sync.lean` | What a peer sends a device: sync by caps, item by item (each item's writes and checkpoints), and the revocations that took its caps away |
+| `Sync.lean` | What a peer sends a device: sync by caps, item by item (each item's writes and checkpoints), and the revocations that took its caps away; and what it hands a new device whose passkey proved itself on their connection, the logs of the vaults the passkey owns (`linkCard`) |
 | `Logs.lean` | Every op in one log, a vault's, a space's or an entry's, building on that log's frontier; each log's closed part (the ops whose whole past is held) and frontier; what a device names of each log when it asks (its frontier, the ops 1, 2, 4, 8, … steps back and the oldest) and its loose ops; what a peer sends beyond them (`respondSince`); forks |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Branches.lean` | Branches write by write: each write extends one line of its entry's history, the main line or a branch; a line's history and heads; the order writes come in (`Ordered`); T10f to T10h, which tie `Doc.lean`'s merge and promote to the writes |
 | `Lens.lean` | The markdown document and the todo in two schema versions and the lenses between them; items as stored, projected on read into each app's schema, and edits through each app's view; the lens laws (T9) |
-| `Theorems.lean` | T1 to T8 and T11 to T19; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
+| `Theorems.lean` | T1 to T8 and T11 to T20; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas the proofs use: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane, replays, and which op made each write |
 | `KeyLemmas.lean` | The helper lemmas for the keys: what settling seals and publishes, `opens` finding every key `Knows` gives, acting for a vault through chains, the invariants behind T5 and T6, `EverReads` |
 | `SyncLemmas.lean` | The helper lemmas for sync: the replay order is a total order on ids (T11), what a peer sends a device, a log's closed part lying at or below its frontier, and every op a device names of a log being one it holds with its whole past (T19) |
@@ -45,6 +45,8 @@ lake exe vectors
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check the files in `vectors/` on every build; write them (`lake exe vectors`) |
 | `vectors/vaults.json` | The cases with the model's answers, read by `crates/avendb/tests/vectors.rs` |
 | `vectors/lenses.json` | The lens cases with the model's views and edits, read by `the_lens_vectors` |
+| `protocol/*.vp` | Verifpal models of what devices say to each other: the hello on every connection, linking a new device by its passkey, and the sealed box (see [Protocol models](#protocol-models)) |
+| `protocol/check.sh` | Checks each model against the result its header expects |
 
 ## Theorems
 
@@ -69,6 +71,7 @@ lake exe vectors
 | T17 | Only a space's owners publish its schemas and lenses | Proven | `only_owners_publish_into_the_lane`, the vectors |
 | T18 | Once the curves fall: a peer that no longer trusts them counts a write only if a checkpoint by its own author covers it | Proven | `a_broken_curve_writes_nothing_that_counts`, `t18_checkpointed_writes`, the vectors |
 | T19 | Frontier sync loses nothing: a device that asks with its frontier of each log, a few ops further back and its loose ops is sent every op of the peer's answer it lacks; and two copies of a log with the same frontier hold the same closed part, so one digest per log tells whether to ask | Proven | `t19_frontier_sync_loses_nothing`, `t19_partial_delivery`, `t19_one_digest_per_log`, `a_second_sync_sends_nothing`, `an_edit_sends_only_what_is_new_both_ways`, the sync vectors |
+| T20 | Linking hands out vault logs alone: what a peer hands a device whose passkey proved itself on their connection is the log of each vault the passkey owns, or that owns such a vault up the chains, and nothing about any space or entry; a passkey that owns no vault there gets nothing | Proven | `a_link_card_holds_the_logs_of_the_passkeys_vaults_and_nothing_else`, `a_node_hands_its_card_for_a_passkeys_hello_on_that_very_connection_alone`, the link vectors |
 
 The Rust scenario tests (`crates/avendb/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
 and keys in the Lab. The vectors (`crates/avendb/tests/vectors.rs`) hold the Rust rules to the model's answers op by op, and
@@ -147,6 +150,27 @@ another, so two of its ops in one log where neither builds on the other mean its
 device restored from an old backup, a clone, or a stolen key. Every peer flags such forks among the ops it holds
 (passkeys, which sign on several devices, aside); both ops stand, as any concurrent ops do.
 
+## Protocol models
+
+The theorems take signatures and encryption as given. What devices say to each other on the network is modeled apart,
+in [Verifpal](https://verifpal.com) (`protocol/`), against an active attacker who also breaks the curves from the
+start: X25519, ed25519 and the passkey's P-256 give up their private keys (`PUBKEY[weak]`, or are left out where a
+curve only signs, as its signatures then prove nothing), and only ML-KEM-768, Classic McEliece and SLH-DSA hold, the
+schemes chosen because they would. Each model states the result it expects in its header, one letter and digit per
+query, 0 where the query holds and 1 where Verifpal finds an attack; each also holds a value that a weaker design
+would give away, so that it shows the attack it rules out. `protocol/check.sh` runs them all and fails on any other
+result.
+
+| Model | What it shows | Result |
+|---|---|---|
+| `seal.vp` | A key sealed to X-Wing and Classic McEliece at once stays secret when either scheme falls, and leaks only when both do (`keys::seal`) | c0c0c1 |
+| `hello.vp` | With the curves broken an attacker can stand in the middle of iroh's TLS: what a node served on TLS alone would leak, while what it serves once the other device's hello checks stays secret, and each hello a device takes is the other's own, said on this connection for its own end (`sign::Hello`, avendb-net's sessions) | c0c1a0a0 |
+| `link.vp` | Linking a new device: the link card goes only to the passkey's own hello on the connection, where a card handed to any device that said its hello would leak; the passkey's hello and the join a peer takes are the new device's own, for the device on the connection (`sign::PasskeyHello`, `Node::link`, `Lab::accept_join`) | c0c1a0a0 |
+
+Verifpal's analysis is bounded, two sessions of each principal, so a query that holds means no attack within that
+bound. The models are Verifpal's rather than ProVerif's: ProVerif has no package for this machine, and Verifpal 1.6.5
+builds from crates.io (`cargo install verifpal --version 1.6.5`, with Rust 1.98 or later).
+
 ## Assumptions
 
 None are axioms; each is part of the model:
@@ -178,4 +202,4 @@ what is still red.
 | P5 | History and branches: every write on a line of its entry's history, branches from any version, merge, promote, restore and undo, forks | T10 for writes (T10f to T10h) |
 | P6 | Logs and frontiers: every op building on its own log's frontier, devices asking with what they hold of each log, one digest per log to gossip, forks flagged; offline devices, random delivery orders and partial delivery; Lean ⇄ Rust vectors for sync; a device writing under the newest key it knows | T11, T12, T13, T15, T19 |
 | P7 | The avenDB tile | |
-| P8 | Sync on its own iroh ALPN with X25519MLKEM768 on every connection and the bytes in iroh-blobs, passkeys from the browser's WebAuthn | |
+| P8 | Sync on its own iroh ALPN with X25519MLKEM768 on every connection and the bytes in iroh-blobs; linking a new device by its passkey, through a device's QR code or the server (P8c); the protocol models | T20 |

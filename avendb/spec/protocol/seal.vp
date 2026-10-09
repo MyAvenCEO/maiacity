@@ -1,0 +1,93 @@
+// avenDB's sealed box (P4b; crates/avendb/src/keys.rs, `seal` and `box_key`). A key is sealed to a recipient's two
+// key pairs at once: X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f. Each encapsulates a shared
+// secret; the box key hashes both secrets, both ciphertexts and both public keys with what the box is bound to, and
+// the key travels under it, so the box stays shut while either scheme holds.
+//
+// Expected: c0c0c1
+//
+// Three recipients, and for each a scheme that falls from the start: `PUBKEY[weak]` says the private key comes back
+// from the public one, as a broken scheme gives it up. Ann's X-Wing falls, lattices and curves both; Bea's McEliece
+// falls; both of Cy's fall. The keys sealed to Ann and to Bea stay secret. The one sealed to Cy leaks, which shows
+// that the model finds the attack it rules out for the others.
+//
+// The public keys reach the sealer inside signed ops (a `Keys` op, or a device's `AddDevice`), so the attacker reads
+// them and changes none: the guarded transfers below. The McEliece key travels as a blob named by its hash, and the
+// box key takes that hash, as `box_key` does. In the code one hash takes all seven values; here the ciphertexts and
+// the public keys go in hashed in pairs, as Verifpal's hash takes five values at most.
+
+attacker[active]
+
+principal Ann[
+	knows private ann_xw, ann_mc
+	ann_xw_pk = PUBKEY[weak](ann_xw)
+	ann_mc_pk = PUBKEY(ann_mc)
+]
+
+principal Bea[
+	knows private bea_xw, bea_mc
+	bea_xw_pk = PUBKEY(bea_xw)
+	bea_mc_pk = PUBKEY[weak](bea_mc)
+]
+
+principal Cy[
+	knows private cy_xw, cy_mc
+	cy_xw_pk = PUBKEY[weak](cy_xw)
+	cy_mc_pk = PUBKEY[weak](cy_mc)
+]
+
+Ann -> Sealer: [ann_xw_pk], [ann_mc_pk]
+Bea -> Sealer: [bea_xw_pk], [bea_mc_pk]
+Cy -> Sealer: [cy_xw_pk], [cy_mc_pk]
+
+principal Sealer[
+	knows public info_a, info_b, info_c
+	generates key_a, key_b, key_c
+	generates r1a, r2a, r1b, r2b, r1c, r2c
+	generates na, nb, nc
+	ss1a, ct1a = KEM_ENCAP(ann_xw_pk, r1a)
+	ss2a, ct2a = KEM_ENCAP(ann_mc_pk, r2a)
+	under_a = HASH(ss1a, ss2a, HASH(ct1a, ct2a), HASH(ann_xw_pk, HASH(ann_mc_pk)), info_a)
+	box_a = AEAD_ENC(under_a, na, key_a, info_a)
+	ss1b, ct1b = KEM_ENCAP(bea_xw_pk, r1b)
+	ss2b, ct2b = KEM_ENCAP(bea_mc_pk, r2b)
+	under_b = HASH(ss1b, ss2b, HASH(ct1b, ct2b), HASH(bea_xw_pk, HASH(bea_mc_pk)), info_b)
+	box_b = AEAD_ENC(under_b, nb, key_b, info_b)
+	ss1c, ct1c = KEM_ENCAP(cy_xw_pk, r1c)
+	ss2c, ct2c = KEM_ENCAP(cy_mc_pk, r2c)
+	under_c = HASH(ss1c, ss2c, HASH(ct1c, ct2c), HASH(cy_xw_pk, HASH(cy_mc_pk)), info_c)
+	box_c = AEAD_ENC(under_c, nc, key_c, info_c)
+]
+
+Sealer -> Ann: ct1a, ct2a, na, box_a
+Sealer -> Bea: ct1b, ct2b, nb, box_b
+Sealer -> Cy: ct1c, ct2c, nc, box_c
+
+principal Ann[
+	knows public info_a
+	a_ss1 = KEM_DECAP(ann_xw, ct1a)
+	a_ss2 = KEM_DECAP(ann_mc, ct2a)
+	a_under = HASH(a_ss1, a_ss2, HASH(ct1a, ct2a), HASH(ann_xw_pk, HASH(ann_mc_pk)), info_a)
+	a_key = AEAD_DEC(a_under, na, box_a, info_a)?
+]
+
+principal Bea[
+	knows public info_b
+	b_ss1 = KEM_DECAP(bea_xw, ct1b)
+	b_ss2 = KEM_DECAP(bea_mc, ct2b)
+	b_under = HASH(b_ss1, b_ss2, HASH(ct1b, ct2b), HASH(bea_xw_pk, HASH(bea_mc_pk)), info_b)
+	b_key = AEAD_DEC(b_under, nb, box_b, info_b)?
+]
+
+principal Cy[
+	knows public info_c
+	c_ss1 = KEM_DECAP(cy_xw, ct1c)
+	c_ss2 = KEM_DECAP(cy_mc, ct2c)
+	c_under = HASH(c_ss1, c_ss2, HASH(ct1c, ct2c), HASH(cy_xw_pk, HASH(cy_mc_pk)), info_c)
+	c_key = AEAD_DEC(c_under, nc, box_c, info_c)?
+]
+
+queries[
+	confidentiality? key_a
+	confidentiality? key_b
+	confidentiality? key_c
+]

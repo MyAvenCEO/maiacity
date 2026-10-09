@@ -11,6 +11,7 @@ use std::path::Path;
 use anyhow::{Context as _, Result, anyhow};
 use avendb::id::VaultId;
 use avendb::lab::Lab;
+use zeroize::Zeroizing;
 
 use crate::{Node, Options};
 
@@ -23,11 +24,11 @@ pub const SECRET: &str = "device.key";
 pub async fn open(dir: &Path, opts: Options) -> Result<Node> {
     fs::create_dir_all(dir).with_context(|| format!("the server's folder, {}", dir.display()))?;
     let secret = secret(&dir.join(SECRET))?;
-    let mut lab = Lab::with_entropy(random()?);
-    let me = lab.device_with("the server", secret);
+    let mut lab = Lab::with_entropy(*random()?);
+    let me = lab.device_with("the server", *secret);
     let node = Node::spawn(lab, me, Options { store: Some(dir.to_path_buf()), card: true, ..opts }).await?;
     let owner = random()?;
-    let founded = node.act(move |lab, me| lab.vault_of(me).map_or_else(|| lab.found_server(me, owner), Ok)).await;
+    let founded = node.act(move |lab, me| lab.vault_of(me).map_or_else(|| lab.found_server(me, *owner), Ok)).await;
     founded.map_err(|why| anyhow!("the server's vault: {why:?}"))?;
     Ok(node)
 }
@@ -38,9 +39,12 @@ pub async fn vault(node: &Node) -> Option<VaultId> {
 }
 
 /// The device's secret in `path`, or a new one written there, readable by its owner alone.
-fn secret(path: &Path) -> Result<[u8; 32]> {
-    match fs::read(path) {
-        Ok(bytes) => bytes.try_into().map_err(|_| anyhow!("{} holds no 32-byte secret", path.display())),
+fn secret(path: &Path) -> Result<Zeroizing<[u8; 32]>> {
+    match fs::read(path).map(Zeroizing::new) {
+        Ok(bytes) => match <[u8; 32]>::try_from(&bytes[..]) {
+            Ok(secret) => Ok(Zeroizing::new(secret)),
+            Err(_) => Err(anyhow!("{} holds no 32-byte secret", path.display())),
+        },
         Err(e) if e.kind() == ErrorKind::NotFound => {
             let secret = random()?;
             let mut options = OpenOptions::new();
@@ -48,7 +52,7 @@ fn secret(path: &Path) -> Result<[u8; 32]> {
             #[cfg(unix)]
             std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
             let mut file = options.open(path).with_context(|| format!("the server's secret, {}", path.display()))?;
-            file.write_all(&secret)?;
+            file.write_all(&*secret)?;
             file.sync_all()?;
             Ok(secret)
         }
@@ -56,9 +60,9 @@ fn secret(path: &Path) -> Result<[u8; 32]> {
     }
 }
 
-/// 32 bytes of the machine's own randomness.
-pub(crate) fn random() -> Result<[u8; 32]> {
-    let mut bytes = [0; 32];
-    getrandom::fill(&mut bytes).map_err(|e| anyhow!("no randomness from the machine: {e}"))?;
+/// 32 bytes of the machine's own randomness, wiped as they are dropped.
+pub(crate) fn random() -> Result<Zeroizing<[u8; 32]>> {
+    let mut bytes = Zeroizing::new([0; 32]);
+    getrandom::fill(&mut *bytes).map_err(|e| anyhow!("no randomness from the machine: {e}"))?;
     Ok(bytes)
 }

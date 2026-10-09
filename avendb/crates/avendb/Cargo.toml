@@ -12,7 +12,7 @@ publish.workspace = true
 # the phase that uses it.
 [dependencies]
 # every hash of our own (ids, key derivation, commitments): cSHAKE256, SHA-3's customizable XOF (NIST SP 800-185)
-cshake = "0.2.1"
+cshake = { version = "0.2.1", features = ["zeroize"] }
 # device keys: ed25519, the device's iroh endpoint key; the version iroh uses
 ed25519-dalek = "3"
 # passkeys: WebAuthn assertions are ECDSA P-256 over SHA-256
@@ -28,7 +28,9 @@ x-wing = { version = "0.1.1", features = ["zeroize"] }
 classic-mceliece-rust = { version = "3.1.0", default-features = false, features = ["alloc", "zeroize", "mceliece6688128f"] }
 # McEliece takes its randomness through rand 0.8's traits
 rand_core_06 = { package = "rand_core", version = "0.6", default-features = false }
-chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
 rand_core = { version = "0.10.1", default-features = false }
+# the device's secure boundary (P8c): every secret wiped as it is dropped, the hash states that held one among them
+zeroize = "1.8"
 # each item is one Loro document, its updates what gets encrypted and synced; pinned exactly, upgraded on purpose
 loro = "=1.16.2"

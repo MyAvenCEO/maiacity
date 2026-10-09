@@ -7,7 +7,8 @@
 //! checkpoints in P4b, history and branches in P5, in P6 offline devices, sync by what each device holds of each log,
 //! gossip of one digest per log in random orders, and backups, whose restored devices fork, and in P7 what the tile
 //! shows and needs: each signer's name, and spare keys made ahead, so that a page making McEliece pairs in its
-//! workers never waits for one.
+//! workers never waits for one. In P8 a device splits off to run on a machine of its own (`split`), and in P8c a new
+//! device links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`).
 //!
 //! A device shows each entry on every line of its history (`branch`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Branching, merging, promoting, restoring, undoing and
@@ -38,6 +39,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand_core::Rng as _;
 use serde_json::Value;
+use zeroize::Zeroizing;
 
 use crate::branch::{Commit, Draft, History, MAIN};
 use crate::doc::{Item, Version};
@@ -47,9 +49,9 @@ use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
-use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, Signature, SignerKeys, Signed};
-use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, logs_of, vault_logs, LogId};
-use crate::wire::Request;
+use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, Signature, SignerKeys, Signed};
+use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId};
+use crate::wire::{Join, Request};
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
@@ -277,10 +279,12 @@ pub struct Lab {
     server_signers: Option<(SignerId, SignerId)>,
     /// Keys made so far; each key's seed counts on from here.
     made: u64,
-    /// The randomness of new keys, seals and nonces.
+    /// The randomness of new keys, seals and nonces, which keeps nothing that draws again what it drew
+    /// (`keys::SeededRng`).
     rng: SeededRng,
-    /// For a device split off to run on its own (`split`), bytes of its own that every key it makes derives from too.
-    entropy: Option<[u8; 32]>,
+    /// A Lab on a machine of its own (`with_entropy`, `split`): every key it makes draws from its randomness too, so
+    /// that no two machines make the same keys under the same name.
+    on_machine: bool,
     spares: Spares,
     /// No device trusts the curves anymore: each counts only checkpointed writes.
     pq_only: bool,
@@ -301,12 +305,12 @@ impl Lab {
 
     /// A Lab on a machine of its own, for the one device it runs (P8b): its randomness, and every key it makes,
     /// drawn from `seed` too, 32 bytes of the machine's own randomness, so that no two machines make the same keys or
-    /// nonces.
+    /// nonces. It keeps the seed no longer than it takes to seed its randomness.
     pub fn with_entropy(seed: [u8; 32]) -> Lab {
-        Lab::seeded(Some(seed))
+        Lab::seeded(Some(Zeroizing::new(seed)))
     }
 
-    fn seeded(entropy: Option<[u8; 32]>) -> Lab {
+    fn seeded(entropy: Option<Zeroizing<[u8; 32]>>) -> Lab {
         let mut lab = Lab {
             keys: HashMap::new(),
             names: HashMap::new(),
@@ -317,7 +321,7 @@ impl Lab {
             server_signers: None,
             made: 0,
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
-            entropy,
+            on_machine: entropy.is_some(),
             spares: Spares::default(),
             pq_only: false,
             offline: HashSet::new(),
@@ -344,13 +348,16 @@ impl Lab {
         &self.devices
     }
 
-    /// The seed of the next key the Lab makes: the Lab is deterministic, so a failing test replays exactly.
+    /// The seed of the next key the Lab makes: the Lab is deterministic, so a failing test replays exactly. On a
+    /// machine of its own, drawn from its randomness too.
     fn seed(&mut self, what: &str, name: &str) -> Reader {
         self.made += 1;
         let mut h = Hasher::new("lab key");
         h.update(&self.made.to_be_bytes()).update(&(what.len() as u32).to_be_bytes()).update(what.as_bytes()).update(name.as_bytes());
-        if let Some(e) = &self.entropy {
-            h.update(e);
+        if self.on_machine {
+            let mut drawn = Zeroizing::new([0u8; 32]);
+            self.rng.fill_bytes(&mut *drawn);
+            h.update(&*drawn);
         }
         h.reader()
     }
@@ -469,13 +476,26 @@ impl Lab {
         (device, owner_id)
     }
 
-    /// Lock device `d`: its keys, and every key and item they opened, leave its memory. Its ops and their ciphertext
-    /// stay, and it still receives and passes on ops.
+    /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped. So does the
+    /// secret half of each of their McEliece pairs that nothing else here holds (`keys::forget_pairs`): another
+    /// signer's own key, a key another device opened, or a spare. Its ops and their ciphertext stay, and it still
+    /// receives and passes on ops.
     pub fn lock(&mut self, d: SignerId) {
-        self.keys.remove(&d);
+        let mut gone: BTreeSet<KeyId> = self.keys.remove(&d).map(|k| k.seal_secret().id()).into_iter().collect();
         let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        gone.extend(store.keys.keys());
         store.keys.clear();
         store.shown.clear();
+        for key in self.keys.values() {
+            gone.remove(&key.seal_secret().id());
+        }
+        for id in self.stores.values().flat_map(|store| store.keys.keys()) {
+            gone.remove(id);
+        }
+        for spare in &self.spares.keys {
+            gone.remove(&spare.id());
+        }
+        keys::forget_pairs(gone);
     }
 
     /// Unlock device `d` with the passkey its keys derive from: they derive again, and it opens again what its ops hold
@@ -485,6 +505,9 @@ impl Lab {
         let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { return false };
         let key = p.device(nonce);
         assert_eq!(key.id(), d, "the same passkey and salt derive the same device");
+        // its own key, which only the passkey derives again, reseeds the randomness: a copy of the Lab's memory taken
+        // while the device was locked doesn't foresee what it draws now
+        self.rng.reseed(key.seal_secret().as_bytes());
         self.keys.insert(d, Key::Device(key));
         self.refresh(d, &[]);
         true
@@ -988,6 +1011,14 @@ impl Lab {
         self.held(d).signed.get(&op)
     }
 
+    /// Every secret signer `s` holds here, to search views, logs and stores for secrets that shouldn't be there: its
+    /// own key, the one keys are sealed to for it, then, for a device, each key it opened. None while it is locked.
+    pub fn secrets(&self, s: SignerId) -> Vec<Secret> {
+        let Some(key) = self.keys.get(&s) else { return vec![] };
+        let opened = self.stores.get(&s).into_iter().flat_map(|store| store.keys.values().map(|o| o.secret.clone()));
+        std::iter::once(key.seal_secret()).chain(opened).collect()
+    }
+
     /// Every byte device `d` stores, to search for plaintext that shouldn't be there: its signed ops, the keys it
     /// opened, and the items it shows, as their content reads. The McEliece public keys it holds are left out: public,
     /// and a megabyte each.
@@ -1135,7 +1166,8 @@ impl Lab {
         self.devices.retain(|&x| x != d);
         let keys = [d].iter().chain(with).filter_map(|s| Some((*s, self.keys.remove(s)?))).collect();
         let salts = self.salts.remove(&d).map(|salt| (d, salt)).into_iter().collect();
-        let mut rng = SeededRng::new("lab randomness", &seed);
+        let seed = Zeroizing::new(seed);
+        let mut rng = SeededRng::new("lab randomness", &*seed);
         let mut spares = Spares { keys: VecDeque::new(), keep: self.spares.keep };
         spares.fill(&mut rng);
         Lab {
@@ -1148,7 +1180,7 @@ impl Lab {
             server_signers: self.server_signers,
             made: 0,
             rng,
-            entropy: Some(seed),
+            on_machine: true,
             spares,
             pq_only: self.pq_only,
             offline: HashSet::new(),
@@ -1156,7 +1188,7 @@ impl Lab {
     }
 
     /// The secret of device `d`'s iroh endpoint, its ed25519 key: `None` while it is locked.
-    pub fn endpoint_secret(&self, d: SignerId) -> Option<[u8; 32]> {
+    pub fn endpoint_secret(&self, d: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.endpoint_secret()),
             Key::Passkey(_) => None,
@@ -1170,6 +1202,73 @@ impl Lab {
             Key::Device(k) => Some(k.hello(exporter, dialer)),
             Key::Passkey(_) => None,
         }
+    }
+
+    /// What passkey `passkey`, used on device `d`, says on `d`'s connection whose TLS exporter is `exporter`, for the
+    /// end that dialed if `dialer`, after `d`'s own hello (`sign::PasskeyHello`): `None` unless the passkey is at hand,
+    /// as it is on a device only while its person uses it there.
+    pub fn passkey_hello(
+        &mut self,
+        d: SignerId,
+        passkey: SignerId,
+        exporter: &[u8; 32],
+        dialer: bool,
+    ) -> Option<PasskeyHello> {
+        match self.keys.get_mut(&passkey)? {
+            Key::Passkey(p) => Some(p.hello(exporter, dialer, d)),
+            Key::Device(_) => None,
+        }
+    }
+
+    /// What device `d` hands a device whose passkey `passkey` proved itself on their connection (`sync::link_card`):
+    /// the signed ops of the logs of the vaults the passkey owns, and of every vault that owns one of them, up the
+    /// chains, so that the device can add itself to its person's vault (`join`). Nothing about any space or entry
+    /// (T20); a passkey that owns no vault gets nothing.
+    pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
+        let store = self.held(d);
+        let places = link_places(store.log.ops(), &self.full_view(d), passkey);
+        places.into_iter().map(|i| store.signed[&store.log.ids()[i]].clone()).collect()
+    }
+
+    /// Device `d` adds itself to the vault whose root is its person's passkey `passkey`, by its view, as a new device
+    /// does once it holds the passkey's link card (`link_card`): the op, signed by the passkey and by `d`, sealing to
+    /// `d`'s own key, and the McEliece key it names, for the peer to accept (`accept_join`). As the passkey signs on
+    /// `d`, it lends `d` what is sealed to it: `d` opens the vault's key and boxes it for itself. If `d` is in that
+    /// vault already, as when a link is tried again, the op that added it. `UnknownVault` if no vault in `d`'s view
+    /// has the passkey as its root, `Locked` if the passkey isn't at hand.
+    pub fn join(&mut self, d: SignerId, passkey: SignerId) -> Result<Join, Refusal> {
+        let store = self.held(d);
+        let st = store.view();
+        let vault = st.vaults().iter().find(|v| v.root == Some(passkey)).ok_or(Refusal::UnknownVault)?;
+        let adds =
+            |op: &Op| matches!(op.action, Action::AddDevice { vault: v, device, .. } if v == vault.id && device == d);
+        let ops = store.log.ops().iter().zip(store.log.ids());
+        let added = vault.devices.contains(&d).then(|| ops.rev().find(|(op, _)| adds(op)).map(|(_, id)| *id)).flatten();
+        let id = match (added, vault.id) {
+            (Some(id), _) => id,
+            (None, vault) => self.submit(d, &[passkey, d], Action::AddDevice { vault, device: d, seal_to: None })?,
+        };
+        let (mut signed, blobs) = self.outgoing(d, &[id]);
+        Ok(Join { op: signed.remove(0), blobs: blobs.into_values().map(|b| b.to_vec()).collect() })
+    }
+
+    /// Device `d` accepts the join a device on the other end of a connection, `from`, sent it (`join`): an op adding
+    /// `from` itself to a vault of `d`'s view, every signature checking out, and which `d`'s view accepts: the vault
+    /// approves (its root signed, or its threshold of owners) and `from` cosigned. `d` keeps it, with the McEliece key
+    /// it names, and from then on answers `from` as a device of that vault. `NotJoining` if the op adds no device or
+    /// another one than `from`, `BadSignature` if a signature doesn't verify, and otherwise why `d`'s view refuses it.
+    /// The same join sent again is accepted again.
+    pub fn accept_join(&mut self, d: SignerId, from: SignerId, join: Join) -> Result<OpId, Refusal> {
+        if !matches!(join.op.op.action, Action::AddDevice { device, .. } if device == from) {
+            return Err(Refusal::NotJoining);
+        }
+        let id = join.op.verify()?.id();
+        if self.held(d).signed.contains_key(&id) {
+            return Ok(id);
+        }
+        self.held(d).view().step(&join.op.op)?;
+        self.receive(d, vec![join.op], join.blobs.into_iter().map(Arc::from).collect());
+        Ok(id)
     }
 
     /// The devices device `d` knows, other than itself, each with its ed25519 key, its iroh endpoint's: the devices
@@ -1328,15 +1427,21 @@ impl Lab {
         self.refresh(d, &[]);
     }
 
+    /// `action` signed by `signers`, drafted on device `on` and building on what it holds, unchecked and kept nowhere:
+    /// what a device that ignores the rules sends. `Locked` if a signer's key isn't at hand.
+    pub fn sign_unchecked(&mut self, on: SignerId, signers: &[SignerId], action: Action) -> Result<Signed, Refusal> {
+        let (&author, cosigners) = signers.split_first().expect("an op has an author");
+        let op = self.held(on).log.draft(author, cosigners, action);
+        self.sign(op)
+    }
+
     /// Deliver a tampering attempt to device `to`: `Err` with why it rejects it, or the op's id if it keeps it.
     pub fn tamper(&mut self, to: SignerId, how: Tamper) -> Result<OpId, Refusal> {
         let signed = match how {
             Tamper::Unchecked { signers, action } => {
-                let (&author, cosigners) = signers.split_first().expect("an op has an author");
                 // drafted on the author's own device when it is one, building on what that device holds
-                let on = if self.stores.contains_key(&author) { author } else { to };
-                let op = self.held(on).log.draft(author, cosigners, action);
-                self.sign(op)?
+                let on = if self.stores.contains_key(&signers[0]) { signers[0] } else { to };
+                self.sign_unchecked(on, &signers, action)?
             }
             Tamper::ForgedSignature { claimed, action } => {
                 let op = self.held(to).log.draft(claimed, &[], action);

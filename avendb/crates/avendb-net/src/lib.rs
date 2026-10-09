@@ -24,8 +24,16 @@
 //!   founds at its first start with an owner key it then forgets, and which hands its contact card, its vault's log,
 //!   to whoever asks (`Node::contact`), so that a device can grant it relay on a space. Devices reach each other and
 //!   the server through its relay, which lets in only the devices the server knows (`Admission`).
-//!
-//! Linking a device by QR code and keys in the device's secure boundary come in P8c.
+//! - **Linking** (P8c): a device shows its offer as a QR code (`Node::offer`, `Offer::to_text`): its endpoint, its
+//!   device and where it is reached. A new device of the same person scans it and links through it (`Node::link`):
+//!   once the hellos proved both devices, the person's passkey, used on the new device, says its own hello on the
+//!   connection (`sign::PasskeyHello`), an assertion and an SLH-DSA signature over the connection's TLS exporter, the
+//!   end it speaks for and the new device; the peer hands back the logs of the vaults the passkey owns, and nothing
+//!   else (`Lab::link_card`); the new device adds itself to the vault whose root is the passkey, signed by the passkey
+//!   and by itself (`Lab::join`), and the peer accepts that op alone, for that device alone (`Lab::accept_join`). Then
+//!   they sync as devices of one vault. With every other device lost, a new device links the same way through the
+//!   server, whose offer the app knows: the passkey alone brings the person's vault back. A device the server doesn't
+//!   know yet makes that first contact straight, over UDP, as its relay lets it in only once it joined.
 
 mod blobs;
 mod disk;
@@ -34,17 +42,19 @@ mod session;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context as _, Result, bail};
-use avendb::id::{BlobId, SignerId};
+use anyhow::{Context as _, Result, anyhow, bail};
+use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::lab::Lab;
+use avendb::policy::Action;
 use avendb::sync::LogId;
 use avendb::wire::{Announce, Reply, Wire};
+use data_encoding::BASE32_NOPAD;
 use iroh::address_lookup::MemoryLookup;
 use iroh::endpoint::{Connection, PortmapperConfig, presets};
 use iroh::protocol::Router;
@@ -222,11 +232,53 @@ impl Node {
         self.shared.endpoint.id()
     }
 
-    /// Where its peers reach it: its endpoint id, the sockets it bound, and its relay.
+    /// Where its peers reach it: its endpoint id, the address of each network interface its socket is bound on, and
+    /// its relay.
     pub fn addr(&self) -> EndpointAddr {
-        let sockets = self.shared.endpoint.bound_sockets();
-        let addr = sockets.into_iter().fold(EndpointAddr::new(self.id()), EndpointAddr::with_ip_addr);
+        let addr = self.shared.endpoint.addr();
         self.shared.opts.relay.iter().cloned().fold(addr, EndpointAddr::with_relay_url)
+    }
+
+    /// What it shows as a QR code for a new device of its person to link through it (`Node::link`): its device, and
+    /// where it is reached.
+    pub fn offer(&self) -> Offer {
+        Offer { device: self.shared.me, addr: self.addr() }
+    }
+
+    /// Link this device to its person's vault through the device `offer` names: another device of its person, whose
+    /// code it scanned, or, with every other device lost, the server, whose offer the app knows (P8c). The passkey
+    /// `passkey`, used on this device, says its hello on their connection (`sign::PasskeyHello`), for this device on
+    /// this connection alone; the peer hands back the logs of the vaults the passkey owns (`Lab::link_card`); this
+    /// device adds itself to the one whose root is the passkey (`Lab::join`) and sends the peer that op, which the
+    /// peer accepts only if it adds this very device with the vault's approval (`Lab::accept_join`). Then they sync as
+    /// devices of one vault. The vault it joined. Fails if the device answering isn't the one offered, the passkey
+    /// isn't at hand, it roots no vault the peer knows, or the peer refuses the join; tried again, it sends the same
+    /// join.
+    pub async fn link(&self, offer: &Offer, passkey: SignerId) -> Result<VaultId> {
+        self.know(offer.addr.clone());
+        let endpoint = offer.addr.id;
+        let peer = self.shared.connection(endpoint).await?;
+        if peer.device != offer.device {
+            bail!("the device at {endpoint} isn't the one offered");
+        }
+        let (exporter, dialed) = (session::exporter(&peer.conn)?, peer.dialed);
+        let hello = self.shared.lab(move |lab, me| lab.passkey_hello(me, passkey, &exporter, dialed)).await;
+        let hello = hello.context("the passkey isn't at hand")?.to_wire();
+        let card = session::exchange(&peer.conn, session::LINK, &hello, session::REPLY_LIMIT).await?;
+        let Reply { mut ops, .. } = Reply::from_wire(&card)?;
+        // a card carries vault logs, and nothing else
+        ops.retain(|s| s.op.vault_of().is_some());
+        let join = self.shared.lab(move |lab, me| {
+            lab.receive(me, ops, Vec::new());
+            lab.join(me, passkey)
+        });
+        let join = join.await.map_err(|why| anyhow!("no vault of this passkey to join: {why:?}"))?;
+        let Action::AddDevice { vault, .. } = join.op.op.action else { bail!("a join that adds no device") };
+        let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
+        sent.context("the peer refuses the join")?;
+        self.shared.changed.notify_one();
+        self.shared.ask(endpoint).await?;
+        Ok(vault)
     }
 
     /// Tell it where a peer is.
@@ -305,12 +357,100 @@ fn endpoints(known: &[(SignerId, [u8; 32])]) -> impl Iterator<Item = EndpointId>
     known.iter().filter_map(|(_, key)| EndpointId::from_bytes(key).ok())
 }
 
+/// What a device offers a new device of its person to link through it (P8c), as a QR code shows it
+/// (`Offer::to_text`), or what an app knows of the server: the device, whose hello the new device checks, and where
+/// its endpoint is reached.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Offer {
+    pub device: SignerId,
+    pub addr: EndpointAddr,
+}
+
+/// What an offer's text starts with: avenDB's offer, version 1.
+const OFFER: &str = "AVENDB1";
+
+impl Offer {
+    /// The offer as a QR code's text: `AVENDB1`, then in base32 without padding, which a QR code holds in its compact
+    /// alphanumeric mode, the endpoint id, the device, each IP address (4 or 16 bytes, then the port) and each relay's
+    /// URL, smallest first.
+    pub fn to_text(&self) -> String {
+        format!("{OFFER}{}", BASE32_NOPAD.encode(&self.to_bytes()))
+    }
+
+    /// An offer read back from its text, which must be exactly what `to_text` makes of it.
+    pub fn from_text(text: &str) -> Result<Offer> {
+        let bytes = text.strip_prefix(OFFER).and_then(|t| BASE32_NOPAD.decode(t.as_bytes()).ok());
+        let offer = bytes.as_deref().and_then(Offer::from_bytes).context("no avenDB offer")?;
+        if Some(offer.to_bytes()) != bytes {
+            bail!("an avenDB offer written another way");
+        }
+        Ok(offer)
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut out = [&self.addr.id.as_bytes()[..], &self.device.0].concat();
+        let ips: Vec<&SocketAddr> = self.addr.ip_addrs().take(255).collect();
+        out.push(ips.len() as u8);
+        for ip in ips {
+            match ip.ip() {
+                IpAddr::V4(v4) => out.extend([&[4][..], &v4.octets()].concat()),
+                IpAddr::V6(v6) => out.extend([&[6][..], &v6.octets()].concat()),
+            }
+            out.extend(ip.port().to_be_bytes());
+        }
+        let relays: Vec<String> = self.addr.relay_urls().map(|u| u.to_string()).filter(|u| u.len() < 256).collect();
+        out.push(relays.len().min(255) as u8);
+        for url in relays.iter().take(255) {
+            out.push(url.len() as u8);
+            out.extend(url.as_bytes());
+        }
+        out
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Option<Offer> {
+        let mut r = Cursor(bytes);
+        let id = EndpointId::from_bytes(&r.array()?).ok()?;
+        let device = SignerId(r.array()?);
+        let mut addr = EndpointAddr::new(id);
+        for _ in 0..r.array::<1>()?[0] {
+            let ip = match r.array::<1>()?[0] {
+                4 => IpAddr::from(r.array::<4>()?),
+                6 => IpAddr::from(r.array::<16>()?),
+                _ => return None,
+            };
+            addr = addr.with_ip_addr(SocketAddr::new(ip, u16::from_be_bytes(r.array()?)));
+        }
+        for _ in 0..r.array::<1>()?[0] {
+            let n = r.array::<1>()?[0] as usize;
+            addr = addr.with_relay_url(std::str::from_utf8(r.take(n)?).ok()?.parse().ok()?);
+        }
+        r.0.is_empty().then_some(Offer { device, addr })
+    }
+}
+
+/// A cursor over the bytes of an offer.
+struct Cursor<'a>(&'a [u8]);
+
+impl<'a> Cursor<'a> {
+    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+        let (head, rest) = self.0.split_at_checked(n)?;
+        self.0 = rest;
+        Some(head)
+    }
+
+    fn array<const N: usize>(&mut self) -> Option<[u8; N]> {
+        self.take(N)?.try_into().ok()
+    }
+}
+
 /// A connection to a peer, dialed or accepted, with the device its hello proved.
 #[derive(Clone)]
 struct Peer {
     conn: Connection,
     device: SignerId,
     endpoint: EndpointId,
+    /// This node dialed it.
+    dialed: bool,
 }
 
 /// What a node's tasks share.
@@ -439,7 +579,7 @@ impl Shared {
         let conn = tokio::time::timeout(WAIT, dial).await.context("no answer")??;
         match tokio::time::timeout(WAIT, session::dial_hello(self, &conn)).await {
             Ok(Ok(device)) => {
-                let peer = self.connected(conn, device);
+                let peer = self.connected(conn, device, true);
                 tokio::spawn(session::serve(self.clone(), peer.clone()));
                 Ok(peer)
             }
@@ -460,11 +600,11 @@ impl Shared {
         peers.get(&endpoint).filter(|p| p.conn.close_reason().is_none()).cloned()
     }
 
-    /// A connection whose hellos proved `device`: the one to its endpoint from now on. A new connection starts their
-    /// talk over: the node tells the peer every digest again, at once.
-    fn connected(&self, conn: Connection, device: SignerId) -> Peer {
+    /// A connection whose hellos proved `device`, which this node dialed if `dialed`: the one to its endpoint from now
+    /// on. A new connection starts their talk over: the node tells the peer every digest again, at once.
+    fn connected(&self, conn: Connection, device: SignerId, dialed: bool) -> Peer {
         let endpoint = conn.remote_id();
-        let peer = Peer { conn, device, endpoint };
+        let peer = Peer { conn, device, endpoint, dialed };
         self.peers.lock().expect("peers").insert(endpoint, peer.clone());
         self.proven.lock().expect("proven").insert(endpoint, device);
         self.told.lock().expect("told").remove(&device);
@@ -637,5 +777,40 @@ impl Shared {
         self.sent.announcements.fetch_add(1, Ordering::Relaxed);
         self.told.lock().expect("told").insert(device, digests);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An offer with an address of each family and a relay.
+    fn offer() -> Offer {
+        let addr = EndpointAddr::new(SecretKey::from_bytes(&[3; 32]).public())
+            .with_ip_addr("192.0.2.7:7401".parse().expect("an address"))
+            .with_ip_addr("[2001:db8::7]:7401".parse().expect("an address"))
+            .with_relay_url("https://avendb.maia.city".parse().expect("a URL"));
+        Offer { device: SignerId([5; 32]), addr }
+    }
+
+    #[test]
+    fn an_offer_reads_back_only_from_its_own_text() {
+        let offer = offer();
+        let text = offer.to_text();
+        assert_eq!(Offer::from_text(&text).expect("its own text"), offer);
+        assert!(text.len() < 200, "{} characters: a small QR code", text.len());
+        // another version, a character base32 doesn't have, lowercase, cut short or grown
+        let (cut, grown) = (text[..text.len() - 2].to_string(), format!("{text}AA"));
+        for bad in [text.replacen(OFFER, "AVENDB2", 1), format!("{text}8"), text.to_lowercase(), cut, grown] {
+            assert!(Offer::from_text(&bad).is_err(), "{bad}");
+        }
+        // the same offer written another way: its addresses the other way round, after the id, the device and their
+        // count, an IPv4 address in 7 bytes and an IPv6 one in 19
+        let mut bytes = offer.to_bytes();
+        let (v4, v6) = (bytes[65..72].to_vec(), bytes[72..91].to_vec());
+        bytes.splice(65..91, [v6, v4].concat());
+        assert_eq!(Offer::from_bytes(&bytes), Some(offer), "which reads as the same offer");
+        let swapped = format!("{OFFER}{}", BASE32_NOPAD.encode(&bytes));
+        assert!(Offer::from_text(&swapped).is_err(), "but not from a text other than its own");
     }
 }

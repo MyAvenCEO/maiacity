@@ -463,5 +463,6 @@ pub(crate) fn why(r: Refusal) -> &'static str {
         Refusal::Locked => "The device is locked, or a signer's key isn't at hand.",
         Refusal::ReadOnly => "This app opens it read-only: no lens it holds reaches every version it was written in.",
         Refusal::NotAView => "That edit doesn't fit the app's schema.",
+        Refusal::NotJoining => "A device joins a vault only by adding itself.",
     }
 }
