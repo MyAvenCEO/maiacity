@@ -58,30 +58,6 @@ function remembered(key, f) {
 	return memo.get(key);
 }
 
-/** what each hook would be given right now, for "Test the code": the first living aven, the first good it grows */
-export function hookSample(world) {
-	const a = world.avens.find((x) => x.alive) ?? world.avens[0];
-	const g = a.grows[0];
-	const aven = avenView(a);
-	const rot = GOODS.find((x) => ROT[x] && a.stock[x]) ?? 'fruits';
-	const buys = GOODS.find((x) => !a.grows.includes(x)) ?? 'water';
-	return {
-		valley: valleyView(world),
-		sample: {
-			mint: { aven, value: RULES.mint },
-			decay: { aven, value: Math.round(a.hearts * (RULES.decay / 100 / 365) * 1e4) / 1e4 },
-			rot: { aven, good: rot, dice: [0.5], value: Math.round(a.stock[rot] * ROT[rot]) },
-			harvest: { aven, good: g, capacity: a.produce[g], dice: [0.5, 0.5, 0.5], value: { qty: a.produce[g], kind: 'normal' } },
-			want: { aven, good: buys, value: wantOwn(a, buys) },
-			spare: { aven, good: g, value: spareOwn(a, g) },
-			haggle: { good: g, ask: 12, bid: 10, sellerFlex: 0.1, buyerFlex: 0.1, value: 11 },
-			rebirth: { aven, dead: RULES.rebirthDays, value: RULES.startHearts },
-			need: { aven, good: 'water', value: NEED.water },
-			body: { aven, need: { ...NEED }, short: { water: 1 }, value: { ...a.body } },
-			weather: { weather: { ...world.weather }, day: world.day, dice: [0.5, 0.5, 0.5, 0.5], value: { ...world.weather } }
-		}
-	};
-}
 export const WORLD = { w: 1200, h: 820 };
 /** where an aven stands at home: the middle of its land */
 const homeSpot = (a) => ({ x: a.territory.x, y: a.territory.y - 6 });
@@ -354,41 +330,43 @@ function deal(world, seller, buyer, g) {
 }
 
 /**
- * The market clears: for each good, the cheapest seller meets the buyer who pays most, again and again, while a deal
- * can be struck (at the seller's price, or haggled when the two don't quite meet). A pair that can't agree even after
- * haggling ends the round for that good: nobody further down either book would agree either.
+ * The market clears: for each good, again and again, the `match` hook (the Trading card's code) picks the next seller
+ * and buyer to meet, from both books as they stand; the default is the cheapest seller and the buyer who pays most. They
+ * strike a deal at the seller's price or a haggled one. A pair that can't agree even after haggling ends the round for
+ * that good: nobody further down either book would agree either. A buyer who can't pay for even one unit is passed over.
  */
 export function clearMarket(world) {
 	const live = world.avens.filter((a) => a.alive && a.brain.ready);
 	for (const g of GOODS) {
-		const sellers = live.filter((a) => a.ask[g] != null && spare(a, g) > 0).sort((x, y) => x.ask[g] - y.ask[g]);
-		const buyers = live.filter((a) => a.bid[g] != null && want(a, g) > 0 && a.hearts >= 0.01).sort((x, y) => y.bid[g] - x.bid[g]);
-		let i = 0,
-			j = 0;
-		while (i < sellers.length && j < buyers.length) {
-			const seller = sellers[i],
-				buyer = buyers[j];
-			if (seller === buyer) {
-				j++;
-				continue;
+		const passed = new Set(); // buyers who can't pay for even one unit, this round
+		for (let turn = 0; turn < 1000; turn++) {
+			const sellers = live.filter((a) => a.ask[g] != null && spare(a, g) > 0);
+			const buyers = live.filter((a) => a.bid[g] != null && want(a, g) > 0 && a.hearts >= 0.01 && !passed.has(a.id));
+			const pair = matchOf(g, sellers, buyers);
+			if (!pair) break;
+			const [seller, buyer] = pair;
+			if (deal(world, seller, buyer, g)) continue;
+			const d = haggle(seller, buyer, g);
+			if (d.price == null) {
+				// no deal: the price and the limit are too far apart
+				log(world, seller, { kind: 'nodeal', good: g, with: buyer.name, ask: d.ask, bid: d.bid });
+				log(world, buyer, { kind: 'nodeal', good: g, with: seller.name, ask: d.ask, bid: d.bid });
+				break;
 			}
-			const sold = deal(world, seller, buyer, g);
-			if (!sold) {
-				// no deal at the top of the books: the best price and the best limit are too far apart
-				const d = haggle(seller, buyer, g);
-				if (d.price == null) {
-					log(world, seller, { kind: 'nodeal', good: g, with: buyer.name, ask: d.ask, bid: d.bid });
-					log(world, buyer, { kind: 'nodeal', good: g, with: seller.name, ask: d.ask, bid: d.bid });
-					break;
-				}
-				// it can't pay for even one: the next buyer
-				j++;
-				continue;
-			}
-			if (spare(seller, g) <= 0) i++;
-			if (want(buyer, g) <= 0 || buyer.hearts < 0.01) j++;
+			passed.add(buyer.id); // it can't pay for even one: the next buyer
 		}
 	}
+}
+/** the next seller and buyer to meet for a good (the `match` hook), or null: the round ends */
+function matchOf(g, sellers, buyers) {
+	const s = [...sellers].sort((x, y) => x.ask[g] - y.ask[g])[0];
+	const b = [...buyers].sort((x, y) => y.bid[g] - x.bid[g]).find((x) => x !== s);
+	const own = s && b ? { seller: s.id, buyer: b.id } : null;
+	const book = (list, side, qty) => list.map((a) => ({ id: a.id, name: a.name, price: a[side][g], qty: qty(a, g), flex: a.flex, hearts: a.hearts }));
+	const pick = ruled('match', { good: g, sellers: book(sellers, 'ask', spare), buyers: book(buyers, 'bid', want) }, own, (v, o) =>
+		v === null ? null : v && sellers.some((a) => a.id === v.seller) && buyers.some((a) => a.id === v.buyer) && v.seller !== v.buyer ? { seller: v.seller, buyer: v.buyer } : o
+	);
+	return pick ? [sellers.find((a) => a.id === pick.seller), buyers.find((a) => a.id === pick.buyer)] : null;
 }
 
 /** move the world on by dt in-game seconds (call with small steps); returns true when a new day began */

@@ -4,7 +4,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { addDays, catalogue, createMip, decideMip, getConfig, getMip, getRun, listConfigs, listMips, listRuns, startRun, withdrawMip } from "../src/economy.js";
-import { DEFAULT_PARAMS } from "../../game/economy/params.js";
+import { DEFAULT_PARAMS, HOOK_NAMES } from "../../game/economy/params.js";
 
 const pg = new PGlite();
 beforeAll(async () => {
@@ -17,7 +17,9 @@ beforeAll(async () => {
   });
   useDb({ ...wrap(pg), exec: async (t) => void (await pg.exec(t)), transaction: (fn) => pg.transaction((tx) => fn(wrap(tx))) });
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('admin', 'Admin', 'admin'), ('alice', 'Alice', 'citizen')");
+  W = (await startRun("admin", { config_id: "valley", config: { params: {} } })).id;
 });
+let W = ""; // the world every MIP here is proposed in
 
 const card = (cfg, id) => cfg.cards.find((c) => c.id === id);
 
@@ -25,16 +27,16 @@ test("the valley is there from the start: the catalogue's defaults as cards, at 
   const [valley] = await listConfigs();
   expect(valley.id).toBe("valley");
   expect(valley.version).toBe(1);
-  expect(valley.cards.map((c) => c.id)).toEqual(["hearts", "trading", "avens", "bodies", "rot", "land", "harvests", "weather"]);
+  expect(valley.cards.map((c) => c.id)).toEqual(["hearts", "trading", "brains", "avens", "bodies", "rot", "land", "harvests", "weather"]);
   expect(valley.params).toEqual(DEFAULT_PARAMS);
   expect((await getConfig("valley")).versions).toEqual([expect.objectContaining({ version: 1, mip: null })]);
   // what card code may export, for agents writing it over the MCP
-  expect(catalogue().hooks.map((h) => h.name)).toEqual(["mint", "decay", "rot", "harvest"]);
+  expect(catalogue().hooks.map((h) => h.name)).toEqual(HOOK_NAMES);
 });
 
 test("a MIP is a title, a description and whole cards; accepted, they go in as they are and the config gets a new version", async () => {
   const hearts = card(await getConfig("valley"), "hearts");
-  const mip = await createMip("alice", {
+  const mip = await createMip("alice", { world_id: W,
     title: "Mint more, melt faster",
     description: "Avens hoard. More minting and faster decay should keep HEARTS moving.",
     config: "valley",
@@ -43,6 +45,10 @@ test("a MIP is a title, a description and whole cards; accepted, they go in as t
   expect(mip.status).toBe("open");
   expect(mip.action).toBe("edit");
   expect(mip.author_name).toBe("Alice");
+  expect(mip.world_id).toBe(W); // every MIP belongs to the world it was proposed in, in one global list
+  expect(mip.world_name).toMatch(/^World /);
+  await expect(createMip("alice", { title: "Nowhere", config: "valley", cards: [hearts] })).rejects.toThrow(/belongs to a world/);
+  await expect(createMip("alice", { world_id: "nope", title: "Nowhere", config: "valley", cards: [hearts] })).rejects.toThrow(/No world nope/);
   expect(mip.base.hearts.values.mint).toBe(24); // what it was, so the proposal reads "from → to"
   expect(mip.base_version).toBe(1);
   const done = await decideMip(mip.number, "admin", { accept: true, note: "yes" });
@@ -57,7 +63,7 @@ test("a MIP is a title, a description and whole cards; accepted, they go in as t
 });
 
 test("cards are checked: unknown values refused, out of range clamped, ids and kinds checked", async () => {
-  const bad = (cards, more = {}) => createMip("alice", { title: "x", config: "valley", cards, ...more });
+  const bad = (cards, more = {}) => createMip("alice", { world_id: W, title: "x", config: "valley", cards, ...more });
   await expect(bad([{ id: "hearts", kind: "policy", values: { nope: 1 } }])).rejects.toThrow(/not a value/);
   await expect(bad([{ id: "hearts", kind: "policy", values: { mint: "lots" } }])).rejects.toThrow(/not a value/);
   await expect(bad([{ id: "Hearts!", kind: "policy" }])).rejects.toThrow(/card's id/);
@@ -65,14 +71,14 @@ test("cards are checked: unknown values refused, out of range clamped, ids and k
   await expect(bad([], { config: "nowhere" })).rejects.toThrow(/No config/);
   await expect(bad([])).rejects.toThrow(/at least one card/);
   await expect(bad([], { remove: ["nope"] })).rejects.toThrow(/no card nope/);
-  await expect(createMip("alice", { title: "", config: "valley", cards: [{ id: "hearts", kind: "policy" }] })).rejects.toThrow(/title/);
+  await expect(createMip("alice", { world_id: W, title: "", config: "valley", cards: [{ id: "hearts", kind: "policy" }] })).rejects.toThrow(/title/);
   const m = await bad([{ id: "hearts", kind: "policy", values: { mint: 1e12 } }]);
   expect(m.cards[0].values.mint).toBe(10000);
   await withdrawMip(m.number, "alice");
 });
 
 test("a MIP creates a config from another with new cards, edits and deletes; rejected and withdrawn ones change nothing", async () => {
-  const create = await createMip("alice", {
+  const create = await createMip("alice", { world_id: W,
     title: "A dry valley",
     description: "The same valley with half the rain, to see how prices of WATER move.",
     via: "mcp",
@@ -94,25 +100,25 @@ test("a MIP creates a config from another with new cards, edits and deletes; rej
   expect(dry.params.mint).toBe(30); // copied from the valley as it is now
   expect(dry.params.rainChance).toBe(5);
   expect(dry.params.swing).toBe(DEFAULT_PARAMS.swing); // its card taken out: the catalogue's default
-  expect(dry.cards.map((c) => c.id)).toEqual(["hearts", "trading", "avens", "bodies", "rot", "land", "weather", "wells"]);
-  await expect(createMip("alice", { title: "again", config: "dry-valley", action: "create" })).rejects.toThrow(/already a config/);
+  expect(dry.cards.map((c) => c.id)).toEqual(["hearts", "trading", "brains", "avens", "bodies", "rot", "land", "weather", "wells"]);
+  await expect(createMip("alice", { world_id: W, title: "again", config: "dry-valley", action: "create" })).rejects.toThrow(/already a config/);
 
-  const no = await createMip("alice", { title: "Rename", config: "dry-valley", name: "Desert" });
+  const no = await createMip("alice", { world_id: W, title: "Rename", config: "dry-valley", name: "Desert" });
   expect((await decideMip(no.number, "admin", { accept: false, note: "keep it" })).status).toBe("rejected");
   expect((await getConfig("dry-valley")).name).toBe("Dry valley");
 
-  const back = await createMip("alice", { title: "Never mind", config: "dry-valley", action: "delete" });
+  const back = await createMip("alice", { world_id: W, title: "Never mind", config: "dry-valley", action: "delete" });
   expect((await withdrawMip(back.number, "alice")).status).toBe("withdrawn");
   await expect(withdrawMip(back.number, "alice")).rejects.toThrow(/open MIP/);
 
-  const del = await createMip("alice", { title: "Delete it", config: "dry-valley", action: "delete" });
+  const del = await createMip("alice", { world_id: W, title: "Delete it", config: "dry-valley", action: "delete" });
   await decideMip(del.number, "admin", { accept: true });
   expect((await listConfigs()).map((c) => c.id)).toEqual(["valley"]);
   expect((await listMips("open")).map((m) => m.number)).not.toContain(del.number);
   expect((await getMip(del.number)).result).toEqual({ config: "dry-valley", deleted: true });
-  await expect(createMip("alice", { title: "Back", config: "dry-valley", action: "create" })).rejects.toThrow(/pick another id/);
+  await expect(createMip("alice", { world_id: W, title: "Back", config: "dry-valley", action: "create" })).rejects.toThrow(/pick another id/);
 
-  const last = await createMip("alice", { title: "No valley", config: "valley", action: "delete" });
+  const last = await createMip("alice", { world_id: W, title: "No valley", config: "valley", action: "delete" });
   await expect(decideMip(last.number, "admin", { accept: true })).rejects.toThrow(/last config/);
 });
 

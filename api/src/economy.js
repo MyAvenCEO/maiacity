@@ -202,6 +202,8 @@ const mipRow = (r) => ({
   base: r.base,
   base_version: r.base_version == null ? null : Number(r.base_version),
   world: r.world ?? null,
+  world_id: r.world_id ?? null,
+  world_name: r.world_name ?? null,
   status: r.status,
   author: r.author,
   author_name: r.author_name ?? null,
@@ -213,18 +215,29 @@ const mipRow = (r) => ({
   result: r.result,
 });
 
-const MIP_SELECT = "SELECT m.*, f.name AS author_name FROM mips m LEFT JOIN founders f ON f.id = m.author";
+const MIP_SELECT = "SELECT m.*, f.name AS author_name, w.name AS world_name FROM mips m LEFT JOIN founders f ON f.id = m.author LEFT JOIN econ_runs w ON w.id = m.world_id";
 
 /** Propose: a title, a description in prose, and the cards. `via` says where it came from: the page or an agent over MCP. */
 export async function createMip(author, body) {
   const title = text(body?.title, 160);
   if (!title) throw new EconomyError("A MIP needs a title.");
+  // every MIP belongs to a world (Samuel, 2026-10-09): the one it is proposed in; a new world follows it
+  const worldId = text(body?.world_id ?? (body?.action === "world" ? body?.world?.after : null), 41) || null;
+  if (worldId) {
+    const { rows: w } = await db.query("SELECT id FROM econ_runs WHERE id = $1", [worldId]);
+    if (!w[0]) throw new EconomyError(`No world ${worldId}.`);
+    if (body?.action === "world") body = { ...body, world: { ...(body.world ?? {}), after: body.world?.after || worldId } };
+  } else {
+    // only the very first world, proposed while there is none, belongs to no world
+    const { rows: any } = await db.query("SELECT 1 FROM econ_runs LIMIT 1");
+    if (body?.action !== "world" || any[0]) throw new EconomyError("A MIP belongs to a world: give world_id, the id of the world it is proposed in (from economy_runs).");
+  }
   const m = await checkMip(body);
   const via = body?.via === "mcp" ? "mcp" : "page";
   const { rows } = await db.query(
-    `INSERT INTO mips (title, description, config_id, action, name, about, from_id, cards, remove, base, base_version, author, via, world)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, ($9::text)::jsonb, ($10::text)::jsonb, $11, $12, $13, ($14::text)::jsonb) RETURNING number`,
-    [title, text(body?.description, 20000), m.config, m.action, m.name, m.about, m.from, json(m.cards), json(m.remove), json(m.base), m.base_version, author, via, json(m.world)],
+    `INSERT INTO mips (title, description, config_id, action, name, about, from_id, cards, remove, base, base_version, author, via, world, world_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, ($9::text)::jsonb, ($10::text)::jsonb, $11, $12, $13, ($14::text)::jsonb, $15) RETURNING number`,
+    [title, text(body?.description, 20000), m.config, m.action, m.name, m.about, m.from, json(m.cards), json(m.remove), json(m.base), m.base_version, author, via, json(m.world), worldId],
   );
   return getMip(Number(rows[0].number));
 }

@@ -512,16 +512,25 @@ pub struct EconomyMips {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct EconomyMip {
-    /// the MIP: { title, description (prose: what and why), config (the config's id), action ("edit" the default,
+    /// the MIP: { title, description (prose: what and why), world_id (required: the id of the world it is proposed in,
+    /// from economy_runs; MIPs are one global list, each belonging to a world), config (the config's id), action ("edit" the default,
     /// "create" a new config, "delete" it, or "world": a new world, made fresh on the config once accepted, with
     /// world: { name, values ({ key: number } tried on top), model ("d1" or "qwen"), seed, after (the id of the world
-    /// it follows, from economy_runs; default the one kept last) }; the answer lists every setting that differs from
+    /// it follows, from economy_runs; default its world_id) }; the answer lists every setting that differs from
     /// that world), name and about (a new config's name and description; on edit, a rename), from (create: the config
     /// it starts from), cards: [whole config cards as they will be once accepted (for a world: on top of its config): { id, kind
     /// (policy, world, resource or recipe), name, description, values: { key: number } (keys from economy_configs'
     /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }],
     /// remove: [ids of cards to take out] }
     pub mip: Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyWorldDelete {
+    /// the worlds' ids, from economy_runs
+    pub ids: Vec<String>,
+    /// why they should go, shown to the person who confirms
+    pub why: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1570,7 +1579,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Propose a MIP: a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one, or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
+        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one, or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
     )]
     async fn economy_mip_create(&self, Parameters(a): Parameters<EconomyMip>) -> String {
         let mut mip = a.mip;
@@ -1578,6 +1587,39 @@ impl Studio {
             o.insert("via".to_string(), json!("mcp"));
         }
         text(self.api("POST", "/api/economy/mips", Some(mip)).await)
+    }
+
+    #[tool(
+        description = "Delete economy worlds (runs) for good: each one's days, trades, decisions and its avens' brains. Nothing goes until the person confirms the list in the studio's window; a world MIP's link to a deleted world stays, nameless."
+    )]
+    async fn economy_world_delete(&self, Parameters(a): Parameters<EconomyWorldDelete>) -> String {
+        let r = async {
+            if a.ids.is_empty() {
+                return Err("name at least one world".to_string());
+            }
+            let all = self.api("GET", "/api/economy/runs?limit=500", None).await?;
+            let runs = all["runs"].as_array().cloned().unwrap_or_default();
+            let mut worlds = Vec::new();
+            for id in &a.ids {
+                let w = runs.iter().find(|r| r["id"].as_str() == Some(id.as_str())).ok_or_else(|| format!("no world {id}"))?;
+                worlds.push(json!({ "id": id, "name": w["name"], "config": w["config_id"], "version": w["config_version"],
+                    "days": w["days"], "alive": w["alive"], "saved": w["saved"] }));
+            }
+            let question = json!({ "kind": "worlds", "why": a.why, "worlds": worlds });
+            match crate::asks::ask(&self.handle, question).await {
+                Some(true) => {
+                    let mut done = Vec::new();
+                    for id in &a.ids {
+                        self.api("DELETE", &format!("/api/economy/runs/{id}"), None).await.map_err(|e| format!("{id}: {e} (deleted before it: {done:?})"))?;
+                        done.push(id.clone());
+                    }
+                    Ok::<_, String>(json!({ "approved": true, "deleted": done }))
+                }
+                Some(false) => Ok(json!({ "approved": false, "deleted": [], "note": "the person said no: nothing was deleted" })),
+                None => Ok(json!({ "approved": false, "deleted": [], "note": "nobody answered in 15 minutes: nothing was deleted" })),
+            }
+        };
+        text(r.await)
     }
 
     #[tool(

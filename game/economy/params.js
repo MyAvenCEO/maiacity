@@ -174,6 +174,7 @@ export const HOOKS = [
 	{ name: 'want', card: 'trading', when: 'whenever the market looks, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units it wants to buy, whole' },
 	{ name: 'spare', card: 'trading', when: 'whenever the market looks, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units it can sell, whole, at most its stock' },
 	{ name: 'haggle', card: 'trading', when: "when a seller's price and a buyer's limit meet in the book", given: '{ good, ask, bid, sellerFlex, buyerFlex, valley, value }', returns: 'the price of the deal in HEARTS, or null: no deal' },
+	{ name: 'match', card: 'trading', when: 'each time the market clears, for each good, again and again until it answers null', given: '{ good, sellers, buyers (each { id, name, price, qty, flex, hearts }, in no order), valley, value }', returns: '{ seller, buyer } (ids): the next two to strike a deal, or null: the round ends for this good' },
 	{ name: 'rebirth', card: 'avens', when: 'each morning, for each dead aven', given: '{ aven, dead (days since it died), valley, value }', returns: 'the HEARTS it is reborn with now, or -1: not yet' },
 	{ name: 'need', card: 'bodies', when: 'each night, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units it eats or drinks tonight, whole' },
 	{ name: 'body', card: 'bodies', when: 'each night, for each living aven, after it ate', given: '{ aven, need, short, valley, value }', returns: '{ water, food }: its two reserves, 0-100 (at 0 it dies)' },

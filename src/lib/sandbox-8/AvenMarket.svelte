@@ -10,7 +10,7 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, hookSample, seeValley } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley } from './economy.js';
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
@@ -24,14 +24,12 @@
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
-	import { brainSample } from './asks.js';
 	import { stateFor, questionsFor, promptFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
 
 	// ---- the database: who is playing, the config the valley runs on, and this run, saved day by day ----
 	const PICKED = 'sandbox-8-config';
 	let acct = $state({ id: /** @type {string | null} */ (null), play: false, admin: false, note: '' });
 	let configs = $state(/** @type {any[]} */ ([]));
-	let newCfg = $state('valley'); // the config a new world starts on
 	/** @type {any} */
 	let rec = null;
 	let saving = $state({ days: 0, error: '' });
@@ -46,6 +44,7 @@
 				return;
 			}
 			await reloadConfigs(true);
+			await loadWorlds();
 		} catch (e) {
 			acct.note = `Not connected (${/** @type {any} */ (e)?.message || 'the API cannot be reached'}): sign in on maia.city to save runs and see the proposals. The valley runs on the catalogue's defaults.`;
 			loadAllMinds();
@@ -166,7 +165,7 @@
 				want = 'valley';
 			}
 		const cfg = configs.find((c) => c.id === want) ?? configs[0];
-		if (!cfg || started) return; // a world keeps the settings it began with: an accepted MIP shapes new worlds
+		if (!cfg || started || here.id) return; // a world keeps the settings it began with: an accepted MIP shapes new worlds
 		useConfig(cfg, first ? {} : changedRules());
 		reset();
 	}
@@ -256,6 +255,7 @@
 		rec = recorder(world, null, { id: run.id, name: run.name, sent: fresh ? 0 : world.stats.length });
 		saving = { days: rec.sent, error: '' };
 		here = { id: run.id, name: run.name };
+		trial = false;
 		// its own brains, as it left them (or as the MCP set them for a world not played yet)
 		await loadAllMinds();
 		for (const a of world.avens) {
@@ -612,18 +612,21 @@
 		snap = snapshot();
 	}
 
-	let draft = $state(/** @type {boolean | string} */ (false)); // the Proposals view opens on a new MIP (true), or a new world ('world')
-	let draftCfg = $state(''); // the config a proposed world starts on
-	/** a new world is a MIP (Samuel): open its draft, with every setting it starts with. Signed out, nothing is kept,
-	 * so the valley just starts again here */
-	function proposeWorld(cfg = CONFIG.id ?? 'valley') {
-		if (!acct.play) {
-			reset();
-			return setView('valley');
-		}
-		draftCfg = cfg;
-		draft = 'world';
-		setView('mips');
+	// the page opens on its worlds (Samuel, 2026-10-09): pick one and the valley, its views and its clock load. New worlds
+	// are proposed over the studio's MCP, never here; once accepted under Proposals they appear in the list
+	let trial = $state(false); // signed out, nothing is kept: a valley to try here
+	const inWorld = $derived(!!here.id || trial);
+	/** back to the worlds: the one open pauses (and is kept as it stands) */
+	function home() {
+		if (!paused) toggle();
+		loadWorlds();
+		setView('home');
+	}
+	/** signed out: a valley to try, on the defaults, not kept */
+	function tryValley() {
+		trial = true;
+		reset();
+		setView('valley');
 	}
 	/** a world MIP accepted: the world is made; open it, ready to start */
 	async function madeWorld(/** @type {any} */ r) {
@@ -632,7 +635,6 @@
 	}
 	/** @param {string} v */
 	function setView(v) {
-		if (v !== 'mips') draft = false;
 		page = v;
 		snap = snapshot();
 	}
@@ -940,23 +942,29 @@
 <div class="market" class:open={panelOpen} class:statsview={page !== 'valley'}>
 	<header>
 		<div class="title">
-			<b>Sandbox 7 · {here.name || (started ? 'This world (not kept)' : 'A new world')}</b>
-			<span>Day {snap.day} · {snap.time} · month {snap.month}</span>
+			{#if inWorld}
+				<b>Sandbox 7 · {here.name || 'A valley to try (not kept)'}</b>
+				<span>Day {snap.day} · {snap.time} · month {snap.month}</span>
+			{:else}
+				<b>Sandbox 7</b>
+				<span>Pick a world</span>
+			{/if}
 		</div>
 		<nav class="views" aria-label="View">
-			<button class:on={page === 'home'} onclick={() => (loadWorlds(), setView('home'))}>Worlds</button>
-			<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
-			<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
-			<button class:on={page === 'policy'} onclick={() => setView('policy')}>Policies</button>
-			<button class:on={page === 'world'} onclick={() => setView('world')}>World</button>
+			<button class:on={page === 'home'} onclick={home}>Worlds</button>
+			{#if inWorld}
+				<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
+				<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
+				<button class:on={page === 'policy'} onclick={() => setView('policy')}>Policies</button>
+				<button class:on={page === 'world'} onclick={() => setView('world')}>World</button>
+			{/if}
 			<button class:on={page === 'mips'} onclick={() => setView('mips')}>Proposals</button>
 		</nav>
-		<div class="controls">
+		<div class="controls" hidden={!inWorld || page === 'home'}>
 			<button onclick={toggle}>{paused ? (started ? '▶ Play' : '▶ Start') : '❚❚ Pause'}</button>
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
 			</select>
-			<button onclick={() => proposeWorld()}>New world</button>
 			<button class="panel-btn" hidden={page === 'stats'} onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
 		</div>
 	</header>
@@ -979,31 +987,47 @@
 	{#if page === 'home'}
 		<div class="statspage worlds">
 			<h2>Worlds</h2>
-			<p class="sub">Every world is kept as it stands, with its own settings, and can be opened again to play on. Each world is a capsule: a new one starts fresh, and every aven's HEARTS and brain in it are its own.</p>
-			<div class="new">
-				<button class="go" onclick={() => proposeWorld(newCfg)}>{acct.play ? 'Propose a new world' : 'New world'}</button>
-				{#if configs.length > 1}<label>on <select bind:value={newCfg}>{#each configs as c (c.id)}<option value={c.id}>{c.name} (v{c.version})</option>{/each}</select></label>{:else if configs[0]}<span class="sub">on {configs[0].name} (v{configs[0].version})</span>{/if}
-			</div>
-			{#if !acct.play}<p class="sub">{acct.note || 'Sign in to keep worlds.'} A world played here now is not kept.</p>{/if}
+			<p class="sub">Pick a world to open it; its valley, its views and its clock load with it. Each world is a capsule: its settings, and every aven's HEARTS and brain in it, are its own. New worlds are proposed over the studio's MCP and appear here once accepted under Proposals.</p>
+			{#if !acct.play}
+				<p class="sub">{acct.note || 'Sign in to see the worlds.'}</p>
+				<div class="new"><button class="go" onclick={tryValley}>Try a valley here (not kept)</button></div>
+			{/if}
 			{#if worldNote}<p class="sub miss">{worldNote}</p>{/if}
-			<table class="worldlist">
-				<thead><tr><th>World</th><th>Config</th><th>Days</th><th>Alive</th><th>Leader</th><th>Kept</th><th></th></tr></thead>
-				<tbody>
-					{#each worlds as w (w.id)}
-						<tr class:sel={w.id === here.id}>
-							<td><b>{w.name || 'A world'}</b></td>
-							<td>{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</td>
-							<td class="num">{w.days}</td>
-							<td class="num">{w.alive ?? '—'}</td>
-							<td>{w.summary?.leader ?? '—'}</td>
-							<td>{w.saved ? new Date(w.saved).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'history only'}</td>
-							<td>{#if w.id === here.id}<button onclick={() => setView('valley')}>Playing</button>{:else if w.saved}<button onclick={() => openWorld(w)}>Open</button>{/if}</td>
-						</tr>
-					{:else}
-						<tr><td colspan="7" class="none">{acct.play ? 'No worlds yet: start a new one.' : ''}</td></tr>
-					{/each}
-				</tbody>
-			</table>
+			{#if acct.play}
+				{@const kept = worlds.filter((w) => w.saved)}
+				{@const old = worlds.filter((w) => !w.saved)}
+				<table class="worldlist">
+					<thead><tr><th>World</th><th>Config</th><th>Days</th><th>Alive</th><th>Leader</th><th>Kept</th><th></th></tr></thead>
+					<tbody>
+						{#each kept as w (w.id)}
+							<tr class="pick" class:sel={w.id === here.id} onclick={() => (w.id === here.id ? setView('valley') : openWorld(w))}>
+								<td><b>{w.name || 'A world'}</b></td>
+								<td>{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</td>
+								<td class="num">{w.days}</td>
+								<td class="num">{w.alive ?? '—'}</td>
+								<td>{w.summary?.leader ?? '—'}</td>
+								<td>{new Date(w.saved).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+								<td><button>{w.id === here.id ? 'Playing' : 'Open'}</button></td>
+							</tr>
+						{:else}
+							<tr><td colspan="7" class="none">No world yet: propose one over the studio's MCP, then accept it under Proposals.</td></tr>
+						{/each}
+					</tbody>
+				</table>
+				{#if old.length}
+					<details class="old">
+						<summary>{old.length} earlier {old.length === 1 ? 'world' : 'worlds'}, history only</summary>
+						<p class="sub">They ran before worlds were kept whole, so they can't be opened: only their days are kept (economy_run on the MCP).</p>
+						<table class="worldlist">
+							<tbody>
+								{#each old as w (w.id)}
+									<tr><td><b>{w.name || 'A world'}</b></td><td>{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</td><td class="num">{w.days} days</td><td class="num">{w.alive ?? '—'} alive</td><td>{w.summary?.leader ?? '—'}</td></tr>
+								{/each}
+							</tbody>
+						</table>
+					</details>
+				{/if}
+			{/if}
 		</div>
 	{/if}
 	{#if page === 'stats'}
@@ -1013,12 +1037,12 @@
 	{/if}
 	{#if page === 'policy' || page === 'world'}
 		<div class="statspage">
-			{#key page}<RulesView view={page} onpropose={() => proposeWorld()} />{/key}
+			{#key page}<RulesView view={page} />{/key}
 		</div>
 	{/if}
 	{#if page === 'mips'}
 		<div class="statspage">
-			<ProposalsView {acct} {configs} playing={snap.config} {draft} draftConfig={draftCfg} here={{ id: here.id, name: here.name, model: brain.mode }} sample={() => { const s = hookSample(world); return { ...s, sample: { ...s.sample, ...brainSample(world) } }; }} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
+			<ProposalsView {acct} {configs} {worlds} here={inWorld ? here.id : null} playing={inWorld ? snap.config : null} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 
@@ -1263,6 +1287,20 @@
 	.worldlist .none {
 		opacity: 0.6;
 	}
+	.worldlist tr.pick {
+		cursor: pointer;
+	}
+	.worldlist tr.pick:hover td {
+		background: #2f6b460d;
+	}
+	.worlds .old {
+		margin-top: 18px;
+		opacity: 0.75;
+	}
+	.worlds .old summary {
+		cursor: pointer;
+		font-size: 13px;
+	}
 	@media (max-width: 760px) {
 		.worlds {
 			padding: 12px 12px 96px;
@@ -1320,6 +1358,9 @@
 	.title span {
 		opacity: 0.7;
 		font-variant-numeric: tabular-nums;
+	}
+	.controls[hidden] {
+		display: none;
 	}
 	.controls {
 		display: flex;
