@@ -299,10 +299,11 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     ask.haves.insert(log(1), vec![OpId::from_u64(5)]);
     ask.loose = vec![OpId::from_u64(7), OpId::from_u64(9)];
     wire_mutations(&mut g, &ask, 3000, |_| {});
-    let request = Request { ask, wants: vec![BlobId::from_u64(3), BlobId::from_u64(4)] };
+    let (wants, after) = (vec![BlobId::from_u64(3), BlobId::from_u64(4)], Some((9, OpId::from_u64(8))));
+    let request = Request { ask, wants, after };
     wire_mutations(&mut g, &request, 3000, |_| {});
     let blobs = vec![(BlobId::from_u64(3), [1; 32]), (BlobId::from_u64(4), [2; 32])];
-    let reply = Reply { ops: vec![add.clone(), write.clone()], blobs };
+    let reply = Reply { ops: vec![add.clone(), write.clone()], blobs, more: true };
     let sent = [add.clone(), write.clone()];
     wire_mutations(&mut g, &reply, 1500, |r: &Reply| {
         for op in r.ops.iter().filter(|o| !sent.contains(o)) {

@@ -284,6 +284,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "avendb-browser"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "avendb",
+ "avendb-net",
+ "avendb-server",
+ "getrandom 0.2.17",
+ "getrandom 0.4.3",
+ "iroh",
+ "js-sys",
+ "n0-future",
+ "serde_json",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "zeroize",
+]
+
+[[package]]
 name = "avendb-net"
 version = "0.1.0"
 dependencies = [

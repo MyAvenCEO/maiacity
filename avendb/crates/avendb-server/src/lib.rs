@@ -100,6 +100,7 @@ pub async fn start(config: &Config) -> Result<Running> {
         card: false,
         admission: Some(admission),
         relay_pass: None,
+        page: avendb_net::PAGE,
     };
     let node = server::open(&config.data, opts).await?;
     let mut offer = node.offer();

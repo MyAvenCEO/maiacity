@@ -17,7 +17,7 @@ use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
 use crate::policy::{Action, Branch, Grant, Grantee, Kind, Op, Principal, Role, Scope};
 use crate::sign::{Assertion, Classical, Hello, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
-use crate::sync::{Ask, LogId};
+use crate::sync::{Ask, LogId, Place};
 
 /// Why bytes from a peer are no message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,22 +93,27 @@ fn versioned(r: &mut Reader<'_>) -> Result<Op, WireError> {
 }
 
 /// What a device sends a peer to sync with it: what it holds of each log the peer may hold, by its own view (`Ask`),
-/// and the McEliece keys it lacks that ops of those logs name.
+/// and the McEliece keys it lacks that ops of those logs name. Asking on for the next page of a reply, the place of
+/// the last op it got.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Request {
     pub ask: Ask,
     /// Smallest first, no repeats.
     pub wants: Vec<BlobId>,
+    /// The peer sends only ops after this place (`sync::place`).
+    pub after: Option<Place>,
 }
 
-/// What the peer sends back: the ops the device may receive beyond what it asked with (`sync::respond_since`), and of
-/// each McEliece key those ops or the request name that the peer holds and the device may fetch, its id and the hash
-/// it is fetched by (iroh-blobs' BLAKE3). The device checks each key against its id once it has it.
+/// What the peer sends back: a page of the ops the device may receive beyond what it asked with
+/// (`sync::respond_since`), by their place, and of each McEliece key those ops or the request name that the peer holds
+/// and the device may fetch, its id and the hash it is fetched by (iroh-blobs' BLAKE3). The device checks each key
+/// against its id once it has it. If more ops are left, the device asks on after the last place it got.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reply {
     pub ops: Vec<Signed>,
     /// Smallest id first, no repeats.
     pub blobs: Vec<(BlobId, [u8; 32])>,
+    pub more: bool,
 }
 
 /// The digest of each log a device holds that the peer may hold too (`sync::digests`), as it tells the peer each time
@@ -631,12 +636,13 @@ impl Encode for Request {
     fn encode(&self, out: &mut Vec<u8>) {
         self.ask.encode(out);
         self.wants.encode(out);
+        self.after.encode(out);
     }
 }
 
 impl Decode for Request {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Request { ask: Ask::decode(r)?, wants: r.set(32)? })
+        Ok(Request { ask: Ask::decode(r)?, wants: r.set(32)?, after: r.option()? })
     }
 }
 
@@ -644,12 +650,19 @@ impl Encode for Reply {
     fn encode(&self, out: &mut Vec<u8>) {
         self.ops.encode(out);
         self.blobs.encode(out);
+        out.push(u8::from(self.more));
     }
 }
 
 impl Decode for Reply {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Reply { ops: r.seq(76)?, blobs: r.set(64)? })
+        let (ops, blobs) = (r.seq(76)?, r.set(64)?);
+        let more = match r.u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(WireError::Unknown),
+        };
+        Ok(Reply { ops, blobs, more })
     }
 }
 
@@ -708,10 +721,10 @@ mod tests {
         assert_eq!(Hello::from_wire(&[&[7], &bytes[1..]].concat()), Err(WireError::Unknown));
         // sets out of order, or repeated
         let (a, b) = (BlobId([1; 32]), BlobId([2; 32]));
-        let ok = Request { ask: Ask::default(), wants: vec![a, b] };
+        let ok = Request { ask: Ask::default(), wants: vec![a, b], after: Some((7, OpId([4; 32]))) };
         assert_eq!(Request::from_wire(&ok.to_wire()), Ok(ok));
         for wants in [vec![b, a], vec![a, a]] {
-            let bytes = Request { ask: Ask::default(), wants }.to_wire();
+            let bytes = Request { ask: Ask::default(), wants, after: None }.to_wire();
             assert_eq!(Request::from_wire(&bytes), Err(WireError::Unordered));
         }
         let (x, y) = (LogId::Vault(VaultId([1; 32])), LogId::Space(SpaceId([0; 32])));
@@ -731,6 +744,22 @@ mod tests {
         let mut bytes = op.to_wire();
         bytes[0] = VERSION + 1;
         assert_eq!(Op::from_wire(&bytes), Err(WireError::Unknown));
+    }
+
+    #[test]
+    fn a_page_says_in_one_byte_whether_more_is_left() {
+        let page = Reply { more: true, ..Reply::default() };
+        let mut bytes = page.to_wire();
+        assert_eq!(Reply::from_wire(&bytes), Ok(page));
+        *bytes.last_mut().expect("the flag") = 2;
+        assert_eq!(Reply::from_wire(&bytes), Err(WireError::Unknown));
+        // asking on after a place: its flag, its depth, its id
+        let ask_on = Request { after: Some((3, OpId([9; 32]))), ..Request::default() };
+        let mut bytes = ask_on.to_wire();
+        assert_eq!(Request::from_wire(&bytes), Ok(ask_on));
+        let flag = bytes.len() - 41;
+        bytes[flag] = 2;
+        assert_eq!(Request::from_wire(&bytes), Err(WireError::Unknown));
     }
 
     #[test]

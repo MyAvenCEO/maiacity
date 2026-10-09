@@ -26,7 +26,8 @@ fn link(new: (&mut Lab, SignerId), passkey: SignerId, peer: (&mut Lab, SignerId)
     let hello = PasskeyHello::from_wire(&hello.to_wire()).expect("a passkey's hello");
     let proven = hello.verify(&EXPORTER, true, n).expect("the hello proves the passkey");
     assert_eq!(proven, passkey);
-    let card = Reply::from_wire(&Reply { ops: peer.link_card(p, proven), blobs: vec![] }.to_wire()).expect("a card");
+    let card = Reply { ops: peer.link_card(p, proven), ..Reply::default() };
+    let card = Reply::from_wire(&card.to_wire()).expect("a card");
     new.receive(n, card.ops, vec![]);
     let join = Join::from_wire(&new.join(n, passkey)?.to_wire()).expect("a join");
     peer.accept_join(p, n, join).map(|_| ())
@@ -36,9 +37,9 @@ fn link(new: (&mut Lab, SignerId), passkey: SignerId, peer: (&mut Lab, SignerId)
 fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     let ((to, t), (from, f)) = (to, from);
     let request = Request::from_wire(&to.request(t, f).to_wire()).expect("a request");
-    let (ops, ids) = from.reply(f, t, &request);
-    let reply = Reply::from_wire(&Reply { ops, blobs: ids.iter().map(|&b| (b, [0; 32])).collect() }.to_wire());
-    let reply = reply.expect("a reply");
+    let (ops, ids, more) = from.reply(f, t, &request, usize::MAX);
+    let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
+    let reply = Reply::from_wire(&Reply { ops, blobs, more }.to_wire()).expect("a reply");
     let blobs = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
     to.receive(t, reply.ops, blobs.collect())
 }

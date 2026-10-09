@@ -50,8 +50,8 @@ use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, 
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
 use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
-use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId};
-use crate::wire::{Join, Request};
+use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId, Place};
+use crate::wire::{Join, Request, Wire as _};
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
@@ -1339,25 +1339,45 @@ impl Lab {
         ask.loose.retain(|id| theirs.contains(id));
         let wants: BTreeSet<BlobId> =
             places.iter().flat_map(|&i| ops[i].blobs()).filter(|b| !store.blobs.contains_key(b)).collect();
-        Request { ask, wants: wants.into_iter().collect() }
+        Request { ask, wants: wants.into_iter().collect(), after: None }
     }
 
-    /// What device `d` answers `asker`'s request: the ops `asker` may receive by `d`'s view beyond those it named, as
-    /// `sync` sends them, and the McEliece keys `d` holds that those ops name or that the request wants and `asker` may
-    /// fetch (`may_fetch`), smallest first. `d` vouches for its new writes first.
-    pub fn reply(&mut self, d: SignerId, asker: SignerId, request: &Request) -> (Vec<Signed>, Vec<BlobId>) {
+    /// What device `d` answers `asker`'s request: a page of the ops `asker` may receive by `d`'s view beyond those it
+    /// named, as `sync` sends them, and the McEliece keys `d` holds that those ops name or that the request wants and
+    /// `asker` may fetch (`may_fetch`), smallest first. The ops come each once, by their place (`sync::place`), after
+    /// the request's `after`: as many as fit in `page` bytes on the wire, and at least one. True if more are left, for
+    /// `asker` to ask on after the last. `d` vouches for its new writes first.
+    pub fn reply(
+        &mut self,
+        d: SignerId,
+        asker: SignerId,
+        request: &Request,
+        page: usize,
+    ) -> (Vec<Signed>, Vec<BlobId>, bool) {
         self.checkpoint(d);
         let store = self.held(d);
         let (ops, ids) = (store.log.ops(), store.log.ids());
         let places = answer(ops, &self.full_view(d), asker);
-        let sent: Vec<OpId> =
-            beyond(ops, ids, &logs_of(ops, ids), &places, &request.ask).into_iter().map(|i| ids[i]).collect();
+        let sent: BTreeSet<Place> = beyond(ops, ids, &logs_of(ops, ids), &places, &request.ask)
+            .into_iter()
+            .map(|i| (ops[i].depth, ids[i]))
+            .filter(|p| request.after.is_none_or(|after| *p > after))
+            .collect();
+        let (mut signed, mut size, mut more) = (vec![], 0usize, false);
+        for (_, id) in sent {
+            let s = &store.signed[&id];
+            size = size.saturating_add(s.to_wire().len());
+            if size > page && !signed.is_empty() {
+                more = true;
+                break;
+            }
+            signed.push(s.clone());
+        }
         let reach: HashSet<BlobId> = places.iter().flat_map(|&i| ops[i].blobs()).collect();
-        let (signed, _) = self.outgoing(d, &sent);
         let wanted = request.wants.iter().copied().filter(|b| reach.contains(b));
         let blobs: BTreeSet<BlobId> =
             signed.iter().flat_map(|s| s.op.blobs()).chain(wanted).filter(|b| store.blobs.contains_key(b)).collect();
-        (signed, blobs.into_iter().collect())
+        (signed, blobs.into_iter().collect(), more)
     }
 
     /// Device `d` may hand `asker` the McEliece key `blob`: it holds it, and an op `asker` may receive by `d`'s view

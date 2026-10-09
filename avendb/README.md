@@ -16,9 +16,11 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 | `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and branches (`branch`), sync by caps and by each log's frontier (`sync`), every message between devices as bytes (`wire`), and the Lab the scenario tests run on (`lab`) |
 | `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by caps, the McEliece keys in iroh-blobs behind a gate, announcements of changed digests to each peer that may hold the log, linking a new device by its passkey (see [Linking a device](#linking-a-device)), each node's store on disk, and the server's node (`server`) |
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node in a folder of its own, and its relay, which lets in only the devices the server knows (see [The server](#the-server)) |
+| `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay (see [A device in the browser](#a-device-in-the-browser)) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, and a compose file that runs it on this machine; neither is deployed |
 | `crates/avendb-web` | The core in a web page, as WebAssembly: the tile's world made a step at a time, read through JSON views and changed through JSON actions, on whichever device the page picks |
 | `scripts/build-web.sh` | Builds `avendb-web` into the tile's package, `src/lib/avendb/pkg/` in the app (committed, so the app builds without Rust) |
+| `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T20) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
 | `docs/` | The research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
 
@@ -27,7 +29,8 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 ```sh
 cd avendb
 cargo test                      # every Rust test, the nodes on iroh among them (over loopback, no network needed)
-cargo test -- --ignored         # the tests later phases still owe
+cargo test -- --ignored         # the tests later phases still owe, and the Chromium test below
+./scripts/test-browser.sh       # two browsers' devices in headless Chromium, linking and syncing through the relay
 cd spec && lake build           # the Lean model: proofs, scenario checks, test vectors
 cd protocol && ./check.sh       # the protocol models, against Verifpal 1.6.5 (minutes)
 ```
@@ -61,9 +64,39 @@ through the server once every other device is lost.
    and sends that op with its McEliece key. The peer takes it only for the device on the connection, and only if the
    rules take it (`accept_join`); it boxes the vault key for the new device, and the two sync by caps.
 
-A device the server doesn't know yet reaches it straight, over UDP, as its relay lets in only the devices it knows;
-once the device has joined, the relay lets it in. A forged code gains an attacker nothing: the passkey's hello names
-the new device and the connection, and every op of a card is signed.
+A device the server doesn't know yet reaches it straight, over UDP, as its relay lets in only the devices it knows,
+or, with no UDP of its own, as in a browser, through the relay by its passkey's pass (see
+[A device in the browser](#a-device-in-the-browser)). Once the device has joined, the relay lets it in. A forged code
+gains an attacker nothing: the passkey's hello names the new device and the connection, and every op of a card is
+signed.
+
+## A device in the browser
+
+`crates/avendb-browser` is a device of its person in a web page (P8d): the network crate as WebAssembly, so a page is a
+device of its own, as a Mac or a phone is.
+
+- A page has no UDP, so its node reaches every peer through the server's relay. The relay lets in only the devices the
+  server knows, so a new device shows it a pass its person's passkey signed (`sign::RelayPass`): a WebAuthn assertion
+  and an SLH-DSA signature over the device's endpoint and the time. The relay honours it for ten minutes, and only for
+  a passkey that is the root of a vault the server knows. Replayed, it lets in that same endpoint and no other. The pass
+  rides in iroh's relay handshake, as its auth token, so the relay needs no route of its own. Once the device joined its
+  vault, the server knows it, and it needs no pass.
+- It links as any new device does: it takes the code another device of its person shows, a Mac's or another
+  browser's, its passkey says its hello on their connection, it joins the vault, and they sync. Then the page reads
+  and edits documents, and shows its own code, through which the next device links.
+- Its TLS is rustls with ring, as aws-lc-rs doesn't build for a browser, and X25519MLKEM768 is written in pure Rust
+  (`avendb_net::kx`, checked against aws-lc-rs's). Its tasks and timers run on the page's event loop.
+- A big answer comes a page at a time, a few MiB (`Options::page`), each op after the ops it builds on, so a device
+  takes each page as it comes and never holds a whole vault's answer at once.
+
+Not yet (P8e): the passkey is a software passkey, brought into the page by its secret, as a platform syncs a passkey
+between its person's devices; the browser's own WebAuthn, with its PRF extension, takes its place in the tile. The
+device's store is in memory, so a page links again each time it opens, until IndexedDB keeps it.
+
+`scripts/test-browser.sh` builds it (it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium,
+Playwright's or `$AVENDB_CHROMIUM`) and runs `tests/page.rs`: a relay, the server and Samuel's Mac on this machine, and
+two pages in headless Chromium. The first links through the Mac's code, reads Welcome and edits it, and reads the Mac's
+answer; the second links through the first page's code, browser to browser, through the relay alone.
 
 ## The device's secure boundary
 
@@ -100,8 +133,9 @@ ciphertext and opens nothing but what is public.
   that space's ops and McEliece keys and serves them to the devices that may hold them, also while the device that
   wrote them is away.
 - Its relay lets in only the devices the server knows: those of the vaults acting in the spaces it relays, and itself.
-  A device the server doesn't know yet makes its first contact straight, over UDP. A device taken out of its vault is
-  let go, and turned away when it tries again.
+  A device the server doesn't know yet makes its first contact straight, over UDP, or through the relay by a pass its
+  person's passkey signed, for ten minutes. A device taken out of its vault is let go, and turned away when it tries
+  again.
 - A device with no UDP of its own, behind a strict firewall say, reaches the server and every other device through the
   relay alone.
 
@@ -154,4 +188,6 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8a | Devices on avenDB's own iroh: one encoding for every message between devices, fuzzed; each device a node on an iroh endpoint of its own ed25519 key with X25519MLKEM768 as the only key exchange, and a hello on every connection that proves the device by its SLH-DSA signature over the TLS exporter; sync by caps over avenDB's own ALPN, the McEliece keys in iroh-blobs, handed out only within reach; a node announces each changed digest straight to each peer that may hold the log, not over iroh-gossip, whose topics would tell every member of a log; scenarios 5 and 17 between nodes on one machine | Merged |
 | P8b | The server: a node in a folder of its own that keeps its device's secret and its store, founds its vault at its first start with an owner key it then forgets, and hands out its contact card so that a device can grant it relay on a space; its relay, which lets in only the devices of the vaults acting in the spaces it relays and lets go of a device taken out of its vault; each node's store on disk (append-only, a torn record cut back, a forged op dropped); peers out of reach tried less and less often; scenario 5 through the relay alone; the server's image, not deployed | Merged |
 | P8c | Linking a new device by its passkey alone, through a device's QR code or the server's offer: the passkey's hello on the connection, the link card of its vaults' logs (T20), the join the peer takes only for the device on the connection; recovery through the server; keys in the device's secure boundary (wiped as they are dropped, none left once a device locks, randomness no copy rewinds or foresees, no secret in any view); Verifpal models of the hello, the link and the sealed box with the curves broken (Verifpal rather than ProVerif, which has no package here) | Merged |
-| P8d | The server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a second device and the server | Next |
+| P8d | A device in the browser: the network crate as WebAssembly, with X25519MLKEM768 in pure Rust; a new device with no UDP let onto the server's relay by its passkey's pass; big answers a page at a time, each op after its past; two pages in Chromium that link through the relay alone, the second through the first one's code, and sync | Merged |
+| P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) in place of the software passkey, its store in IndexedDB, linking by QR code in the tile | Next |
+| P8f | The server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a second device and the server | |

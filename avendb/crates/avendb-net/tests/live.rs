@@ -1,7 +1,7 @@
 //! avenDB's devices on iroh (P8): scenarios 5 and 17 between nodes on this machine, each a device split off the Lab
-//! (`Lab::split`) on an endpoint of its own key, syncing by announcements and requests alone; and what a node refuses:
-//! a peer that offers classical key exchange only, a connection without a hello that proves its device, and a McEliece
-//! key to a device out of its reach.
+//! (`Lab::split`) on an endpoint of its own key, syncing by announcements and requests alone, a big answer a page at a
+//! time; and what a node refuses: a peer that offers classical key exchange only, a connection without a hello that
+//! proves its device, and a McEliece key to a device out of its reach.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -245,6 +245,37 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
         assert!(fetch(carol.endpoint()).await.is_none(), "Carol's Mac, its hello proven, may not fetch it");
         let unproven = client([9; 32], pq_provider()).await;
         assert!(fetch(&unproven).await.is_none(), "nor may an endpoint no hello proved");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_big_answer_comes_a_page_at_a_time() {
+    let mut w = world();
+    let (coop, space, _) = handbook_spaces(&mut w);
+    let notes: Vec<EntryId> = (0..16)
+        .map(|i| {
+            let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_s);
+            w.lab.create(w.mac_s, coop, space, note).expect("Samuel's Mac writes a note")
+        })
+        .collect();
+    let request = w.lab.request(w.server, w.mac_s);
+    let (whole, _, _) = w.lab.reply(w.mac_s, w.server, &request, usize::MAX);
+    // pages of one op each
+    let (mac_s, passkey_s, server_d) = (w.mac_s, w.passkey_s, w.server);
+    let paged = Options { page: 1, ..Options::local() };
+    let mac = Node::spawn(w.lab.split(mac_s, &[passkey_s], [1; 32]), mac_s, paged.clone()).await.expect("a node");
+    let server = Node::spawn(w.lab.split(server_d, &[], [2; 32]), server_d, paged).await.expect("a node");
+    meet(&[&mac, &server]);
+    let holds = || {
+        let notes = notes.clone();
+        server.read(move |lab, me| notes.iter().all(|&e| lab.fetched(me, space, e) > 0))
+    };
+    until("the server holds every note", holds).await;
+    quiet(&[&mac, &server]).await;
+    let (requests, _) = server.sent();
+    assert!(requests >= whole.len(), "{} ops in {requests} requests: a page each", whole.len());
+    for n in [mac, server] {
+        n.shutdown().await.expect("the node shuts down");
     }
 }
 

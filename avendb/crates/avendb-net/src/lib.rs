@@ -11,7 +11,9 @@
 //! - **Sync**: either end asks the other on the connection (`wire::Request`) and is answered with the ops it may
 //!   receive by the other's view and the McEliece keys they name (`wire::Reply`), each key by its id and BLAKE3 hash
 //!   alone. The asker fetches the keys it lacks over iroh-blobs, where a node hands a key out only to a device a hello
-//!   proved that may fetch it (`Lab::may_fetch`), and checks each key against its id.
+//!   proved that may fetch it (`Lab::may_fetch`), and checks each key against its id. A big answer comes a page at a
+//!   time (P8d, `Options::page`), each op after the ops it builds on: the asker takes each page as it comes and asks
+//!   on after the last op it got.
 //! - **Announcements**: whenever a log changes, the node tells each peer that may hold it by the node's view
 //!   (`Lab::announce`), straight over their connection, the digests that changed since it last told it; a peer whose
 //!   digests differ asks. Not iroh-gossip: a topic can't tell a device of a log it doesn't know yet without telling
@@ -58,8 +60,8 @@ use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::Action;
 use avendb::sign::RelayPass;
-use avendb::sync::LogId;
-use avendb::wire::{Announce, Reply, Wire};
+use avendb::sync::{place, LogId};
+use avendb::wire::{Announce, Reply, Request, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use iroh::address_lookup::MemoryLookup;
 #[cfg(not(target_arch = "wasm32"))]
@@ -146,7 +148,14 @@ pub struct Options {
     /// The pass it shows its relay, signed by its person's passkey (`Lab::relay_pass`): a new device with no UDP of its
     /// own, as a browser's, which the server doesn't know until it joined, is let in by it for ten minutes.
     pub relay_pass: Option<RelayPass>,
+    /// The most bytes of ops it answers a request with, but at least one op: a peer asks on for the rest
+    /// (`Lab::reply`).
+    pub page: usize,
 }
+
+/// How many bytes of ops a node answers a request with, at most, unless told otherwise: a few hundred ops, each with
+/// its signatures, so a big reply never waits whole in either end's memory, nor holds up the connection.
+pub const PAGE: usize = 4 << 20;
 
 impl Options {
     /// Nodes on one machine, as in the tests: loopback, no relay, and no lookup but the addresses a node is told.
@@ -159,6 +168,7 @@ impl Options {
             card: false,
             admission: None,
             relay_pass: None,
+            page: PAGE,
         }
     }
 }
@@ -693,26 +703,36 @@ impl Shared {
         peer
     }
 
-    /// Asks `endpoint` once: the ops the device there may send this one, and the McEliece keys they name that this
-    /// one lacks. How many ops were new.
+    /// Asks `endpoint` for the ops the device there may send this one, and the McEliece keys they name that this one
+    /// lacks: a page at a time, each taken as it comes, asking on after the last op a page brought until the peer has
+    /// no more. How many ops were new.
     async fn ask(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
         let peer = self.connection(endpoint).await?;
         let device = peer.device;
-        let request = self.lab(move |lab, me| lab.request(me, device)).await.to_wire();
-        let reply = session::exchange(&peer.conn, session::REQUEST, &request, session::REPLY_LIMIT).await?;
-        self.sent.requests.fetch_add(1, Ordering::Relaxed);
-        let Reply { ops, blobs } = Reply::from_wire(&reply)?;
-        let lacking = move |lab: &mut Lab, me| -> Vec<(BlobId, [u8; 32])> {
-            blobs.into_iter().filter(|(b, _)| lab.blob(me, *b).is_none()).collect()
-        };
-        let lacking = self.lab(lacking).await;
-        let keys = self.fetch(endpoint, lacking).await;
-        let fetched = !keys.is_empty();
-        let new = self.lab(move |lab, me| lab.receive(me, ops, keys)).await;
-        if new > 0 || fetched {
-            self.changed.notify_one();
+        let (mut after, mut new) = (None, 0);
+        loop {
+            let request = self.lab(move |lab, me| Request { after, ..lab.request(me, device) }).await.to_wire();
+            let reply = session::exchange(&peer.conn, session::REQUEST, &request, session::REPLY_LIMIT).await?;
+            self.sent.requests.fetch_add(1, Ordering::Relaxed);
+            let Reply { ops, blobs, more } = Reply::from_wire(&reply)?;
+            // where the next page starts: a page that brings nothing past the last ends the asking
+            let last = ops.iter().map(|s| place(&s.op)).max().filter(|&l| after.is_none_or(|a| l > a));
+            let lacking = move |lab: &mut Lab, me| -> Vec<(BlobId, [u8; 32])> {
+                blobs.into_iter().filter(|(b, _)| lab.blob(me, *b).is_none()).collect()
+            };
+            let lacking = self.lab(lacking).await;
+            let keys = self.fetch(endpoint, lacking).await;
+            let fetched = !keys.is_empty();
+            let got = self.lab(move |lab, me| lab.receive(me, ops, keys)).await;
+            if got > 0 || fetched {
+                self.changed.notify_one();
+            }
+            new += got;
+            match last {
+                Some(last) if more => after = Some(last),
+                _ => return Ok(new),
+            }
         }
-        Ok(new)
     }
 
     /// Asks `endpoint` for its contact card, and takes its vault logs. How many ops were new.
