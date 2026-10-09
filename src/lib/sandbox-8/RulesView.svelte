@@ -27,7 +27,7 @@
 	const paramsOf = (/** @type {any} */ card) => PARAMS.filter((p) => SECTIONS.find((s) => s.id === card.id)?.name === p.section);
 	const hooksOf = (/** @type {string} */ code) => HOOKS.filter((h) => new RegExp(`export\\s+(async\\s+)?function\\s+${h.name}\\b`).test(code)).map((h) => h.name);
 	/** a card that holds no values says what its code is for */
-	const ABOUT = /** @type {Record<string, string>} */ ({ brains: "What each aven's brain sees (see), the questions it is asked and the price each answer stands for (ask), what a chat model is told first (prompt), and how a day counts in its trials (score). It holds no values: all of it is its code." });
+	const ABOUT = /** @type {Record<string, string>} */ ({ brains: "What each aven's brain sees (see), the questions it is asked and the price each answer stands for (ask), what a chat model is told first (prompt), how a day counts in its trials (score), and what a brain is (traits: the dials of its character, the wants it keeps, what its trials optimise), which is how the Avens view shows any brain. It holds no values: all of it is its code." });
 	const resources = RESOURCES();
 	const recipes = RECIPES();
 

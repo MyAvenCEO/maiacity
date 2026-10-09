@@ -10,21 +10,23 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
 	import { loadConfigs, loadRuns, loadWorldRun, saveWorldState, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
-	import { wholeMind, beginRun, wear, night, editMind, keepMind, worldStamp, enterWorld, DIALS, WANTS, TRIAL_DAYS } from './mind.js';
+	import { wholeMind, beginRun, wear, night, editMind, keepMind, worldStamp, enterWorld, traits, TRIAL_DAYS } from './mind.js';
+	import AvensView from './AvensView.svelte';
+	import ActivityFeed from './ActivityFeed.svelte';
 	import { me, may } from '$lib/auth/client';
 	import { native } from '$lib/native';
 	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
-	import { stateFor, questionsFor, promptFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, TOOLS, BOX_URL, BOX_HERE } from './brain.js';
+	import { stateFor, questionsFor, promptFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, BOX_URL, BOX_HERE } from './brain.js';
 
 	// ---- the database: who is playing, the config the valley runs on, and this run, saved day by day ----
 	const PICKED = 'sandbox-8-config';
@@ -65,8 +67,7 @@
 			m.applied = e.id;
 			const a = world.avens.find((/** @type {any} */ x) => x.name === m.name);
 			if (a && said.length) {
-				const all = (world.decisions ??= []);
-				all.push({ n: (all.at(-1)?.n ?? 0) + 1, day: world.day, t: world.t, id: a.id, name: a.name, colour: a.colour, source: 'edit', changes: [`set by ${e.by ?? 'the admin'}: ${said.join(', ')}`] });
+				activity(world, { kind: 'edit', source: 'edit', changes: [`set by ${e.by ?? 'the admin'}: ${said.join(', ')}`] }, a);
 			}
 		}
 	}
@@ -268,6 +269,12 @@
 			if (!fresh) beginRun(m, run.name, { resume: true });
 			if (!a.alive) m.gone = true; // dead when it was left: its death is already in its brain
 		}
+		// a new world's first line in the feed: where it comes from, and what is set differently from the world it follows
+		if (fresh) {
+			const after = s.after ? (worlds.find((w) => w.id === s.after)?.name ?? 'the world before') : null;
+			const changed = world.avens.map((/** @type {any} */ a) => a.mind?.changed).find((/** @type {any} */ c) => c?.length) ?? [];
+			activity(world, { kind: 'world', source: s.mip ? `MIP-${s.mip}` : 'world', changes: [`${run.name} begins${s.mip ? ` (MIP-${s.mip})` : ''}${after ? `, following ${after}` : ''}`, ...changed] });
+		}
 		calls = blankCalls();
 		down = busy = '';
 		paused = true;
@@ -379,10 +386,10 @@
 			weather: { ...world.weather },
 			policy: { mint: RULES.mint, decay: RULES.decay, start: world.startHearts },
 			// every aven's wants right now: per good, what it holds against tonight's need and what it still wants to buy
-			// every aven's brain decisions, newest first, only while the Decisions tab is open
-			decisions: tab === 'decisions' ? (world.decisions ?? []).slice(-150).reverse().map((/** @type {any} */ d) => ({ ...d, changes: [...d.changes] })) : [],
+			// the valley's activity (economy.js, activity), newest first, only while the Activity tab is open
+			decisions: tab === 'decisions' && page === 'valley' ? (world.decisions ?? []).slice(-200).reverse().map((/** @type {any} */ d) => ({ ...d })) : [],
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
-			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, start: o.startHearts ?? RULES.startHearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
+			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
 				GOODS.map((g) => {
 					const m = world.market[g];
@@ -400,10 +407,21 @@
 				harvest: { ...a.harvest },
 				ask: { ...a.ask },
 				bid: { ...a.bid },
-				ledger: a.ledger.slice(-80).reverse(),
-				brain: { ...a.brain },
-				mind: a.mind && tab === 'ledger' ? JSON.parse(JSON.stringify(keepMind(a.mind))) : null
-			}
+				choices: { ...(a.choices ?? {}) },
+				ledger: page === 'avens' ? a.ledger.slice(-200).reverse() : [],
+				brain: { ...a.brain, labels: { ...(a.brain.labels ?? {}) }, units: { ...(a.brain.units ?? {}) } },
+				mind: a.mind && page === 'avens' ? JSON.parse(JSON.stringify(keepMind(a.mind))) : null
+			},
+			// the Avens view: every aven to pick from, what a brain is in this world, the picked one's days and activity
+			avens:
+				page === 'avens'
+					? {
+							list: ranking(world).map((o, i) => ({ rank: i + 1, id: o.id, name: o.name, colour: o.colour, alive: o.alive, hearts: o.hearts, health: o.health })).sort((p, q) => p.id - q.id),
+							traits: traits(),
+							stats: world.stats.map((/** @type {any} */ r) => ({ day: r.day, dry: r.dry, hearts: r.hearts?.[a.id], health: r.health?.[a.id], water: r.body?.[a.id]?.water, food: r.body?.[a.id]?.food })),
+							feed: (world.decisions ?? []).filter((/** @type {any} */ d) => d.id === a.id).slice(-200).reverse()
+						}
+					: null
 		};
 	}
 
@@ -934,7 +952,7 @@
 			const s = Object.entries(e.short ?? {});
 			return s.length ? `went short of ${s.map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')} · health ${e.health} of ${RULES.healthMax}` : `ate and drank in full · health ${e.health} of ${RULES.healthMax}`;
 		}
-		if (e.kind === 'price') return `${NAME[e.source] ?? 'Liquid'}: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
+		if (e.kind === 'price') return `${NAME[e.source] ?? 'Liquid'}: ${e.changes.length ? e.changes.map(changeText).join('; ') : 'kept every limit'}`;
 		if (e.kind === 'death') return `died of ${e.cause ?? 'want'}${e.lost != null ? `, lost ${fmt(e.lost)} HEARTS and all it held` : ''}`;
 		if (e.kind === 'reborn') return `reborn with ${fmt(e.hearts)} HEARTS and nothing in store`;
 		if (e.kind === 'rot') return `rotted: ${Object.entries(e.rotted).map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')}`;
@@ -959,6 +977,7 @@
 			<button class:on={page === 'home'} onclick={home}>Worlds</button>
 			{#if inWorld}
 				<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
+				<button class:on={page === 'avens'} onclick={() => setView('avens')}>Avens</button>
 				<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
 				<button class:on={page === 'policy'} onclick={() => setView('policy')}>Policies</button>
 				<button class:on={page === 'world'} onclick={() => setView('world')}>World</button>
@@ -970,7 +989,7 @@
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
 			</select>
-			<button class="panel-btn" hidden={page === 'stats'} onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
+			<button class="panel-btn" hidden={page !== 'valley'} onclick={() => (panelOpen = !panelOpen)}>{panelOpen ? 'Hide books' : 'Books'}</button>
 		</div>
 	</header>
 
@@ -1035,6 +1054,11 @@
 			{/if}
 		</div>
 	{/if}
+	{#if page === 'avens' && snap.avens}
+		<div class="statspage">
+			<AvensView data={snap.avens} aven={snap.aven} market={snap.market} names={NAME} trialDays={TRIAL_DAYS} onselect={select} {lineOf} admin={acct.admin} {mindNote} onforget={forgetAll} />
+		</div>
+	{/if}
 	{#if page === 'stats'}
 		<div class="statspage">
 			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} />
@@ -1062,7 +1086,6 @@
 							<b>{row.name}</b>
 							<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>
 							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
-							<span class="delta" class:up={row.hearts >= row.start} title="since it came into this world">{row.alive ? `${row.hearts >= row.start ? '+' : ''}${fmt(row.hearts - row.start)}` : ''}</span>
 						</button>
 					</li>
 				{/each}
@@ -1071,10 +1094,10 @@
 		</section>
 
 		<nav class="tabs">
-			<button class:on={tab === 'decisions'} onclick={() => (tab = 'decisions')}>Decisions</button>
+			<button class:on={tab === 'decisions'} onclick={() => (tab = 'decisions')}>Activity</button>
 			<button class:on={tab === 'wants'} onclick={() => (tab = 'wants')}>Wants</button>
 			<button class:on={tab === 'prices'} onclick={() => (tab = 'prices')}>Prices</button>
-			<button class:on={tab === 'ledger'} onclick={() => (tab = 'ledger')}>{snap.aven.name}'s ledger</button>
+			<button onclick={() => setView('avens')} title="Everything about {snap.aven.name}: its brain, stock, days and ledger">{snap.aven.name} ›</button>
 		</nav>
 
 		{#if tab === 'wants'}
@@ -1127,68 +1150,8 @@
 					</li>
 				{/each}
 			</ul>
-			<h4>Decisions</h4>
-			<ul class="entries decisions">
-				{#each snap.decisions as d (d.n)}
-					<li>
-						<span class="when">d{d.day} {clock(d.t)}</span>
-						<span class="what"><button class="who" onclick={() => select(d.id)}><i style:background={d.colour}></i>{d.name}</button> <small>{NAME[d.source] ?? d.source}</small> {d.changes.length ? d.changes.join(', ') : 'kept its prices'}</span>
-					</li>
-				{:else}
-					<li class="none">No decisions yet: press Start.</li>
-				{/each}
-			</ul>
-		</section>
-		{:else}
-		<section class="ledger">
-			<h3><i style:background={snap.aven.colour}></i>{snap.aven.name}'s ledger</h3>
-			<p class="sub">
-				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · health ${Math.round(snap.aven.health)} of ${RULES.healthMax} · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}, reborn on day ${snap.aven.diedOn + RULES.rebirthDays}`} · keeps {snap.aven.mind ? `${snap.aven.mind.wants.water} days of water, ${snap.aven.mind.wants.food} of food` : `${snap.aven.reserveDays} days`} in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
-			</p>
-			<div class="scroll"><table>
-				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, and against the market price">Sells</th><th title="pays up to, and against the market price">Pays</th></tr></thead>
-				<tbody>
-					{#each GOODS as g (g)}
-						<tr>
-							<td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td>
-							<td class="num">{NEED[g]}</td>
-							<td class="num">{#if snap.aven.produce[g] != null}{snap.aven.produce[g]}<small>last {snap.aven.harvest[g]}</small>{/if}</td>
-							<td class="num">{ROT[g] ? `${Math.round(ROT[g] * 100)}%` : '—'}</td>
-							<td class="num">{snap.aven.stock[g]}</td>
-							<td class="num">{snap.market[g].price ?? '—'}</td>
-							<td class="num">{#if snap.aven.ask[g] != null}{snap.aven.ask[g]}<small>{pctOf(snap.aven.ask[g], snap.market[g].price)}</small>{/if}</td>
-							<td class="num">{#if snap.aven.bid[g] != null}{snap.aven.bid[g]}<small>{pctOf(snap.aven.bid[g], snap.market[g].price)}</small>{/if}</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table></div>
-			{#if snap.aven.mind}
-				{@const m = snap.aven.mind}
-				<h4>Its brain <small>run {m.runs} · {m.days} days lived · died {m.deaths}× · {m.tally.trials} trials, {m.tally.kept} kept</small></h4>
-				<ul class="dials">
-					{#each Object.entries(DIALS) as [k, d] (k)}<li title={`0 ${d.low} · 10 ${d.high}`}><span>{d.label}</span><b style:width={`${m.dials[k] * 10}%`}></b><em>{m.dials[k]}</em></li>{/each}
-					{#each Object.entries(WANTS) as [k, w] (k)}<li title={`days of ${k} it keeps, and buys up to`}><span>{w.label}</span><b class="want" style:width={`${m.wants[k] * 10}%`}></b><em>{m.wants[k]} d</em></li>{/each}
-				</ul>
-				<p class="sub">{m.trial ? `Trying ${m.trial.kind === 'wants' ? `${m.trial.key} stock` : m.trial.key} ${m.trial.from}→${m.trial.to} since day ${m.trial.day}: kept if it beats ${m.base}/day over ${TRIAL_DAYS} days.` : m.base == null ? `Measuring its setting (${TRIAL_DAYS} days) before its next trial.` : `Last stretch ${m.base}/day: it picks its next trial.`}</p>
-				{#if m.log.length}<ul class="entries mind">{#each m.log.slice().reverse() as line, i (i)}<li><span class="what">{line}</span></li>{/each}</ul>{/if}
-				{#if m.lessons.length}<h4>Lessons</h4><ul class="entries mind">{#each m.lessons as l (l.id)}<li><span class="what">#{l.id} {l.text}</span><span class="num">+{l.up} −{l.down}</span></li>{/each}</ul>{/if}
-				{#if m.deathLog.length}<h4>Deaths</h4><ul class="entries mind">{#each m.deathLog.slice().reverse() as line, i (i)}<li class="death"><span class="what">{line}</span></li>{/each}</ul>{/if}
-				{#if mindNote}<p class="sub miss">{mindNote}</p>{/if}
-				{#if acct.admin}<button class="link forget" onclick={forgetAll}>Forget every brain in this world</button>{/if}
-			{/if}
-			<h4>Its tools</h4>
-			<ul class="tools">
-				{#each TOOLS as tool (tool.id)}<li><b>{tool.label}</b> · {tool.note}</li>{/each}
-			</ul>
-			<ul class="entries">
-				{#each snap.aven.ledger as e, i (i)}
-					<li class={e.kind}>
-						<span class="when">d{e.day} {clock(e.t)}</span>
-						<span class="what">{lineOf(e)}</span>
-						{#if e.hearts}<span class="num" class:up={e.hearts > 0}>{e.hearts > 0 ? '+' : ''}{fmt(e.hearts)}</span>{/if}
-					</li>
-				{/each}
-			</ul>
+			<h4>Activity</h4>
+			<ActivityFeed entries={snap.decisions} names={NAME} onselect={select} />
 		</section>
 		{/if}
 	</aside>
@@ -1228,7 +1191,7 @@
 	}
 	/* the Stats view takes the whole page under the header; the valley keeps running behind it */
 	.market.statsview {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto 1fr;
 	}
 	.market.statsview .stage,
@@ -1319,11 +1282,15 @@
 	}
 	.views {
 		display: flex;
+		max-width: 100%;
+		overflow-x: auto;
+		scrollbar-width: none;
 		background: #1f2a2314;
 		border-radius: 10px;
 		padding: 2px;
 	}
 	.views button {
+		flex: none;
 		border: 0;
 		background: transparent;
 		border-radius: 8px;
@@ -1457,16 +1424,6 @@
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 	}
-	.delta {
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-		color: #b8483b;
-		font-size: 0.75rem;
-	}
-	.delta.up,
-	.entries .up {
-		color: #2f7d4f;
-	}
 	.brain,
 	.prices,
 	.sub {
@@ -1483,51 +1440,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.2rem 0.7rem;
-	}
-	.dials {
-		list-style: none;
-		margin: 0.2rem 0 0.4rem;
-		padding: 0;
-		display: grid;
-		gap: 0.2rem;
-	}
-	.dials li {
-		display: grid;
-		grid-template-columns: 7.5rem 1fr 2.8rem;
-		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.78rem;
-	}
-	.dials li b {
-		height: 0.45rem;
-		border-radius: 0.25rem;
-		background: #b07ad8;
-	}
-	.dials li b.want {
-		background: #2a78d6;
-	}
-	.dials li em {
-		font-style: normal;
-		white-space: nowrap;
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-	}
-	.entries.mind li {
-		font-size: 0.76rem;
-	}
-	.link.forget {
-		margin: 0.3rem 0 0.6rem;
-		background: none;
-		border: 0;
-		padding: 0;
-		color: #b3261e;
-		text-decoration: underline;
-		cursor: pointer;
-		font: inherit;
-		font-size: 0.78rem;
-	}
-	.ledger {
-		padding-top: 0.2rem;
 	}
 	table {
 		width: 100%;
@@ -1700,11 +1612,6 @@
 		margin: 0.8rem 0 0.2rem;
 		font-size: 0.8rem;
 	}
-	.tools {
-		margin: 0;
-		padding-left: 1rem;
-		font-size: 0.75rem;
-	}
 	.entries {
 		list-style: none;
 		padding: 0;
@@ -1721,42 +1628,19 @@
 	.decisions small {
 		opacity: 0.55;
 	}
-	.decisions .none {
-		opacity: 0.5;
-		display: block;
-	}
 	.entries .when {
 		opacity: 0.55;
 		font-variant-numeric: tabular-nums;
 	}
-	.entries .price .what {
-		color: #4a5ea8;
-	}
-	.entries .rot .what {
-		color: #8a6d3b;
-	}
-	.entries .grow .what {
-		color: #4a5ea8;
-	}
-	.entries .eat .what {
-		opacity: 0.7;
-	}
-	.entries .death .what {
-		color: #b8483b;
-		font-weight: 700;
-	}
 	.entries .num {
 		color: #b8483b;
-	}
-	.entries .num.up {
-		color: #2f7d4f;
 	}
 
 	/* phones upright: the valley on top, the books in a sheet of at most half the screen */
 	@media (max-width: 760px) {
 		.market,
 		.market:not(.open) {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 			grid-template-rows: auto 1fr auto;
 		}
 		aside {

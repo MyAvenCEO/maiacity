@@ -151,6 +151,8 @@ export function ask({ aven: a, full, anchors, market, wants, spares, character, 
     q['ask_' + g] = {
       type: 'score',
       instructions: \`You grow \${LABEL[g]} and hold \${a.stock[g]} (you need \${needOf(a, g, v)} a day yourself and can spare \${spares[g]}). \${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : \`Its market price (the average traded over the last day) is \${m.price} HEARTS\`}; right now \${m.supply} are offered and \${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold \${sold}\${rot ? \`; \${Math.round(rot * 100)}% of what you keep rots each night, so unsold stock is lost\` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford.\${character.greed} What should your selling price for \${LABEL[g]} be?\`,
+      // what the answer sets, as the activity feed says it
+      label: v.haggleMax > 0 ? \`sells \${LABEL[g]} at\` : \`lowest it accepts for \${LABEL[g]}\`,
       criteria: lv.criteria,
       levels: lv.levels
     };
@@ -168,15 +170,17 @@ export function ask({ aven: a, full, anchors, market, wants, spares, character, 
     q['bid_' + g] = {
       type: 'score',
       instructions: \`You don't grow \${LABEL[g]} and must buy it: you need \${n} a day, hold \${a.stock[g]} (\${a.stock[g] < n ? \`short by \${n - a.stock[g]} tonight unless you buy\` : \`enough for \${Math.floor(a.stock[g] / n)} days\`}) and want \${wants[g]} more\${rot ? \`; \${Math.round(rot * 100)}% of a stock rots each night\` : ''}. \${deadline} You hold \${Math.round(a.hearts)} HEARTS. \${m.price == null ? 'Nobody has traded it yet, so there is no market price' : \`Its market price (the average traded over the last day) is \${m.price}\`}; \${m.supply} are offered and \${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.\${character.thrift} What is the most you should pay for \${LABEL[g]}?\`,
+      label: v.haggleMax > 0 ? \`pays \${LABEL[g]} up to\` : \`most it pays for \${LABEL[g]}\`,
       criteria: lv.criteria,
       levels: lv.levels
     };
   }
-  if (full) {
+  if (full && v.haggleMax > 0) {
     const flexes = [0, 0.1, 0.25, 0.5, 1].map((f) => Math.round(f * v.haggleMax) / 100);
     q.flex = {
       type: 'score',
       instructions: \`When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?\${character.haggle}\`,
+      label: 'gives in up to',
       criteria: flexes.map((f, i) => (i ? \`Give in up to \${Math.round(f * 100)}%\` : 'Never give in')),
       levels: flexes
     };
@@ -187,6 +191,25 @@ export function ask({ aven: a, full, anchors, market, wants, spares, character, 
 // what a chat model (Qwen) is told before the state and the questions
 export function prompt({ aven }) {
   return \`You decide for \${aven.name}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_brain, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (or, where asked to write, a short text). /no_think\`;
+}
+
+// what the aven's brain is, so the page shows any brain the same way: the dials of its character (each with its range
+// and what its two ends mean), the wants it keeps in stock, and what its trials optimise (the score below, in words).
+// Its trials change only these, and only these reach its asks (as \`character\`)
+export function traits({ valley }) {
+  const dials = [
+    { key: 'greed', label: 'Greed', low: 'prices low to sell all it grows', high: 'asks high and waits for a buyer who pays', min: 0, max: 10 },
+    { key: 'thrift', label: 'Thrift', low: 'pays what it takes to get its needs', high: 'pays as little as it can', min: 0, max: 10 }
+  ];
+  if (valley.values.haggleMax > 0) dials.push({ key: 'haggle', label: 'Haggling', low: 'gives in quickly to strike a deal', high: 'hardly gives in', min: 0, max: 10 });
+  return {
+    dials,
+    wants: [
+      { key: 'water', label: 'Water in stock', unit: 'days', min: 1, max: 10 },
+      { key: 'food', label: 'Food in stock', unit: 'days', min: 1, max: 10 }
+    ],
+    score: \`HEARTS gained a day, less \${SHORT.water} for each unit of water and \${SHORT.food} for each unit of food gone short\`
+  };
 }
 
 // a day's score in its trials: HEARTS gained, less what going short cost; a trial is kept only if it raises the score

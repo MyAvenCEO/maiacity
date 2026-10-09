@@ -6,9 +6,9 @@
 // logic natively below, only as the fallback for a hook that fails or a page where QuickJS can't load;
 // scripts/sandbox-8-rules.mjs checks the two agree. Transport (Liquid, the GPU box) stays in brain.js.
 
-import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule } from './economy.js';
+import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, activity, changeText } from './economy.js';
 import { RULES } from './rules.js';
-import { mindFor, inCharacter, mindQuestions, applyMind } from './mind.js';
+import { mindFor, inCharacter, mindQuestions, applyMind, traits, DIALS } from './mind.js';
 
 /** no starting prices (Samuel: they discover them). An aven's first price for a good is any of these, in HEARTS a
  * unit; after that it moves its own price, from half to twice what it was when the day began, as often as it likes. The
@@ -166,13 +166,25 @@ function survivalFor(world, a) {
 	};
 }
 
-/** a question the `ask` hook may answer with: a score over 2 to 10 options, each with the value it stands for */
+/** a decision of the world's own (any other key the `ask` hook asks: Samuel, 2026-10-09, a proposal may add one, e.g.
+ * how much to plant): its answer is kept as aven.choices[key], which every hook reads, and the feed shows it */
+const OWN_KEY = /^[a-z][a-z0-9_]{1,40}$/;
+const isOwn = (k) => OWN_KEY.test(k) && !/^(ask|bid)_/.test(k) && !['flex', 'reserve', 'next_trial', 'lesson'].includes(k);
+/** a question the `ask` hook may answer with: a score over 2 to 10 options, each with the value it stands for, and
+ * optionally what its answer sets (label) and in what (unit), as the activity feed says it */
 function askable(a, v) {
-	if (!plain(v)) return false;
+	if (!plain(v) || Object.keys(v).filter(isOwn).length > 8) return false;
 	for (const [k, q] of Object.entries(v)) {
 		const [side, g] = k.split('_');
-		const ok = k === 'flex' || (side === 'ask' && a.grows.includes(g)) || (side === 'bid' && GOODS.includes(g) && !a.grows.includes(g));
+		const ok = k === 'flex' || (side === 'ask' && a.grows.includes(g)) || (side === 'bid' && GOODS.includes(g) && !a.grows.includes(g)) || isOwn(k);
 		if (!ok || !plain(q) || q.type !== 'score' || typeof q.instructions !== 'string' || q.instructions.length > 4000) return false;
+		if (q.label != null && (typeof q.label !== 'string' || q.label.length > 80)) return false;
+		if (q.unit != null && (typeof q.unit !== 'string' || q.unit.length > 20)) return false;
+		if (isOwn(k)) {
+			if (!Array.isArray(q.criteria) || q.criteria.length < 2 || q.criteria.length > 10 || q.criteria.some((x) => typeof x !== 'string' || x.length > 300)) return false;
+			if (!Array.isArray(q.levels) || q.levels.length !== q.criteria.length || q.levels.some((x) => typeof x !== 'number' || !Number.isFinite(x) || Math.abs(x) > 1e6)) return false;
+			continue;
+		}
 		const { criteria: c, levels: l } = q;
 		if (!Array.isArray(c) || c.length < 2 || c.length > 10 || c.some((x) => typeof x !== 'string' || x.length > 300)) return false;
 		if (!Array.isArray(l) || l.length !== c.length || l.some((x) => typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > 1e6)) return false;
@@ -189,9 +201,13 @@ export function questionsFor(world, a, { full = true, writes = false } = {}) {
 	const q = brainRule('ask', args, own, (v) => (askable(a, v) ? v : own));
 	// the levels each score is read against stay with the aven; the brain gets the question without them
 	a.brain.levels = {};
+	a.brain.labels = {};
+	a.brain.units = {};
 	const out = {};
-	for (const [k, { levels, ...rest }] of Object.entries(q)) {
+	for (const [k, { levels, label, unit, ...rest }] of Object.entries(q)) {
 		a.brain.levels[k] = levels;
+		a.brain.labels[k] = label || labelOf(k); // what its answer sets, as the activity feed says it
+		if (unit) a.brain.units[k] = unit;
 		out[k] = rest;
 	}
 	// how much stock it keeps is no longer asked every morning: it is the aven's wants, in its brain, changed by its
@@ -214,8 +230,19 @@ function askArgs(world, a, full) {
 		market: marketOf(world),
 		wants: Object.fromEntries(GOODS.filter((g) => !a.grows.includes(g)).map((g) => [g, want(a, g)])),
 		spares: Object.fromEntries(a.grows.map((g) => [g, spare(a, g)])),
-		character: { greed: inCharacter(a, 'greed'), thrift: inCharacter(a, 'thrift'), haggle: inCharacter(a, 'haggle') }
+		// its character's line per dial its world declares (a dial it doesn't is an empty line)
+		character: Object.fromEntries([...new Set([...Object.keys(DIALS), ...traits().dials.map((d) => d.key)])].map((k) => [k, inCharacter(a, k)]))
 	};
+}
+/** what an answer sets, in the activity feed's words, where the ask hook gives no label: where nobody haggles, a
+ * seller's ask is the lowest it accepts and a buyer's the most it pays */
+function labelOf(k) {
+	if (k === 'flex') return 'gives in up to';
+	if (isOwn(k)) return k.replace(/_/g, ' ');
+	const [side, g] = k.split('_');
+	const L = GOOD_LABEL[g] ?? g;
+	if (RULES.haggleMax > 0) return side === 'ask' ? `sells ${L} at` : `pays ${L} up to`;
+	return side === 'ask' ? `lowest it accepts for ${L}` : `most it pays for ${L}`;
 }
 function questionsOwn(world, a, anchors, full) {
 	const q = {};
@@ -243,7 +270,7 @@ function questionsOwn(world, a, anchors, full) {
 	}
 	// the slower decision (haggling) only on a full ask: every ask carries the whole state once per question, so fewer
 	// questions is fewer tokens. Where to walk is no decision: a buyer walks to fetch what it bought (Samuel).
-	if (full) q.flex = { type: 'score', instructions: `When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?${inCharacter(a, 'haggle')}`, criteria: gives(), levels: flexes() };
+	if (full && RULES.haggleMax > 0) q.flex = { type: 'score', instructions: `When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?${inCharacter(a, 'haggle')}`, criteria: gives(), levels: flexes() };
 	return q;
 }
 
@@ -257,14 +284,16 @@ const promptOwn = (a) =>
 
 /** apply one morning's answers to an aven's ledger of prices: each score read against the levels it was asked with */
 export function applyAnswers(world, a, answers, source) {
-	const changes = [];
+	const changes = []; // what it set anew: { label, from, to } (the feed's standard change), or a sentence
+	const kept = []; // what it answered as it was
 	changes.push(...applyMind(world, a, answers));
+	const set = (key, from, to, unit = a.brain.units?.[key]) => (from === to ? kept : changes).push({ label: a.brain.labels?.[key] ?? labelOf(key), from, to, ...(unit ? { unit } : {}) });
 	for (const [key, ans] of Object.entries(answers)) {
 		if (key === 'next_trial' || key === 'lesson') continue;
 		if (key === 'reserve') {
 			const d = Number(ans.choice);
-			if (d > 0 && d !== a.reserveDays) {
-				changes.push(`keeps ${d} days in stock`);
+			if (d > 0) {
+				set(key, a.reserveDays, d, 'days');
 				a.reserveDays = d;
 			}
 			continue;
@@ -272,8 +301,17 @@ export function applyAnswers(world, a, answers, source) {
 		if (key === 'flex') {
 			if (typeof ans.score !== 'number') continue;
 			const f = Math.round(factorOf(ans.score, a.brain.levels?.flex ?? flexes()) * 100) / 100;
-			if (f !== a.flex) changes.push(`haggles up to ${Math.round(f * 100)}%`);
+			set(key, Math.round((a.flex ?? 0) * 100), Math.round(f * 100), '%');
 			a.flex = f;
+			continue;
+		}
+		if (isOwn(key)) {
+			// a decision of the world's own: the value its answer stands for, kept for every hook to read
+			const levels = a.brain.levels?.[key];
+			if (!levels || typeof ans.score !== 'number') continue;
+			const v = Math.round(factorOf(ans.score, levels) * 100) / 100;
+			set(key, a.choices?.[key] ?? null, v);
+			(a.choices ??= {})[key] = v;
 			continue;
 		}
 		const [side, g] = key.split('_');
@@ -281,18 +319,16 @@ export function applyAnswers(world, a, answers, source) {
 		if (!levels || typeof ans.score !== 'number' || (side === 'ask') !== a.grows.includes(g)) continue;
 		const book = side === 'ask' ? a.ask : a.bid;
 		const price = cents(factorOf(ans.score, levels, true));
-		if (price !== book[g]) changes.push(`${side === 'ask' ? 'sells' : 'pays up to'} ${GOOD_LABEL[g]} at ${price}`);
+		set(key, book[g], price);
 		book[g] = price;
 	}
 	a.brain.last = { day: world.day, t: world.t, source, answers };
 	// for the run's record in the database (when the page keeps one): what it decided, compactly
 	if (world.outbox)
-		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes, answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? v?.text ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
+		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes: changes.map(changeText), answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? v?.text ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
 	a.brain.ready = true;
 	// every decision of every aven, newest last, for the page's Decisions feed
-	const all = (world.decisions ??= []);
-	all.push({ n: (all.at(-1)?.n ?? 0) + 1, day: world.day, t: world.t, id: a.id, name: a.name, colour: a.colour, source, changes });
-	if (all.length > 300) all.splice(0, all.length - 300);
+	activity(world, { kind: 'decision', source, changes, kept }, a);
 	// an aven re-decides every few seconds: only a decision that changed something goes in its ledger
 	if (changes.length || a.ledger.at(-1)?.kind !== 'price') a.ledger.push({ day: world.day, t: world.t, kind: 'price', source, changes });
 }

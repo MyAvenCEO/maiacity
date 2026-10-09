@@ -545,7 +545,7 @@ pub struct EconomyBrainEdit {
     pub world: String,
     /// the aven's name, e.g. Ama (names from economy_brains)
     pub aven: String,
-    /// the edit: { dials: { greed, thrift, haggle: 0-10 }, wants: { water, food: days of stock 1-10 }, lesson: a short
+    /// the edit: { dials: { the dials its world declares, e.g. greed, thrift: 0-10 }, wants: { water, food: days of stock 1-10 }, lesson: a short
     /// rule to add (at most 110 characters), forget_lesson: a lesson's id, note: why }
     pub edit: Value,
 }
@@ -1623,14 +1623,14 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every aven's brain in one world (each world is a capsule with its own brains): its character (dials greed, thrift, haggle, 0-10), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
+        description = "Every aven's brain in one world (each world is a capsule with its own brains): its character (the dials its world's Brains card declares in its traits: by default greed and thrift, and haggle where haggling is on, 0-10; a dial the world doesn't declare stays stored but plays no part), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
     )]
     async fn economy_brains(&self, Parameters(a): Parameters<EconomyBrains>) -> String {
         text(self.api("GET", &format!("/api/economy/brains/{}", a.world), None).await)
     }
 
     #[tool(
-        description = "Change one aven's brain: set its character dials (greed, thrift, haggle, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night while the world plays, or when the world is next opened, and shows in its trial log and the page's decisions."
+        description = "Change one aven's brain: set its character dials (those its world declares: by default greed, thrift, and haggle where haggling is on, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night while the world plays, or when the world is next opened, and shows in its trial log and the page's decisions."
     )]
     async fn economy_brain_edit(&self, Parameters(a): Parameters<EconomyBrainEdit>) -> String {
         text(self.api("POST", &format!("/api/economy/brains/{}/{}", a.world, a.aven), Some(a.edit)).await)

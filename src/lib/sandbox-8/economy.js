@@ -23,7 +23,7 @@ export const DAY_S = 86400; // in-game seconds in a day
 export const CODE = { run: /** @type {any} */ (null), seen: /** @type {any} */ (null) };
 
 /** what card code sees of an aven (a copy: nothing it does reaches the valley) */
-export const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, harvest: a.harvest ?? null, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, memo: a.memo ?? {}, reserveDays: a.reserveDays, ask: a.ask, bid: a.bid, flex: a.flex, yesterday: a.yesterday ?? null, minted: a.minted, decayed: a.decayed });
+export const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, harvest: a.harvest ?? null, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, memo: a.memo ?? {}, reserveDays: a.reserveDays, ask: a.ask, bid: a.bid, flex: a.flex, choices: a.choices ?? {}, yesterday: a.yesterday ?? null, minted: a.minted, decayed: a.decayed });
 /** ...and of the valley, once a night */
 function valleyView(world) {
 	const live = world.avens.filter((a) => a.alive);
@@ -156,6 +156,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			stock: Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays + (produce[g] ?? 0)])),
 			ask, // what it sells for, per unit, in HEARTS: set by its brain, null until it first decides
 			bid, // the most it pays, per unit, the same way
+			choices: {}, // its answers to decisions its world adds (the ask hook's own keys), read by every hook
 			flex: 0.1, // how far it gives in when haggling, as a share of its own price
 			reserveDays: RULES.reserveDays, // how many days of each need it wants in stock
 			harvest: { ...produce }, // what its land actually gave last night
@@ -279,6 +280,42 @@ function log(world, a, entry) {
 	a.ledger.push({ day: world.day, t: world.t, ...entry });
 	if (a.ledger.length > 400) a.ledger.splice(0, a.ledger.length - 400);
 }
+
+/**
+ * The valley's activity feed (Samuel, 2026-10-09: one standard shape for everything that happens, so the page shows a
+ * decision, a trial, a death, a dry spell or a world's settings the same way). One entry: { kind, id, name, colour (the
+ * aven, none for the valley), source (who decided: d1, qwen, an edit), changes }. `kind` is decision, edit, trial,
+ * life, weather or world. Each change is a sentence, or { label, to, from?, unit? }: a value it set, and what it was.
+ * Kept in world.decisions (the name it was saved under), newest last.
+ */
+export function activity(world, entry, a = null) {
+	const all = (world.decisions ??= []);
+	all.push({ n: (all.at(-1)?.n ?? 0) + 1, day: world.day, t: world.t, ...(a ? { id: a.id, name: a.name, colour: a.colour } : {}), ...entry });
+	if (all.length > 400) all.splice(0, all.length - 400);
+}
+/** a change as card code may write it: a sentence, or { label, to, from?, unit? } (null when it won't do) */
+function changeOf(c) {
+	if (typeof c === 'string') return c.trim() ? c.trim().slice(0, 200) : null;
+	if (!c || typeof c !== 'object' || typeof c.label !== 'string' || !c.label.trim()) return null;
+	const val = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : typeof v === 'string' ? v.slice(0, 40) : null);
+	if (val(c.to) == null) return null;
+	return { label: c.label.trim().slice(0, 80), to: val(c.to), ...(val(c.from) != null ? { from: val(c.from) } : {}), ...(typeof c.unit === 'string' && c.unit ? { unit: c.unit.slice(0, 60) } : {}) };
+}
+/** the night's news from card code (its `events` hook: a proposal may post events of its own, Samuel 2026-10-09):
+ * each { kind, aven? (its name or id), changes (or text), meta? }, at most 20 a night, into the feed */
+function news(world) {
+	const list = ruled('events', {}, [], (v) => (Array.isArray(v) ? v : []));
+	for (const e of list.slice(0, 20)) {
+		if (!e || typeof e !== 'object') continue;
+		const changes = (Array.isArray(e.changes) ? e.changes : [e.text]).slice(0, 8).map(changeOf).filter(Boolean);
+		if (!changes.length) continue;
+		const a = world.avens.find((x) => x.name === e.aven || x.id === e.aven) ?? null;
+		const meta = e.meta && typeof e.meta === 'object' && JSON.stringify(e.meta).length <= 500 ? e.meta : undefined;
+		activity(world, { kind: /^[a-z][a-z0-9_-]{1,30}$/.test(e.kind ?? '') ? e.kind : 'event', source: 'rules', changes, ...(meta ? { meta } : {}) }, a);
+	}
+}
+/** a change of the feed as a line of text (for the database's record, the ledger, the MCP) */
+export const changeText = (c) => (typeof c === 'string' ? c : `${c.label} ${c.from != null && c.from !== c.to ? `${c.from}→` : ''}${c.to}${c.unit ? ` ${c.unit}` : ''}`);
 
 /**
  * Haggling: the buyer's limit and the seller's price. If they don't meet, each gives in up to its own flexibility;
@@ -479,6 +516,7 @@ function endOfDay(world) {
 			a.fetch = [];
 			a.carry = {};
 			log(world, a, { kind: 'death', cause: a.lost.cause, lost: a.lost.hearts });
+			activity(world, { kind: 'life', changes: [`died of ${a.lost.cause}`, { label: 'lost', to: Math.round(a.lost.hearts), unit: 'HEARTS and all it held' }] }, a);
 		}
 		if (a.alive) {
 			const out = hooked('mint', { aven: a }, mint.out.HEARTS, 0, 1e6);
@@ -501,8 +539,13 @@ function endOfDay(world) {
 		a.x = a.territory.x;
 		a.y = a.territory.y - 6;
 		log(world, a, { kind: 'reborn', hearts });
+		activity(world, { kind: 'life', changes: [{ label: 'reborn with', to: Math.round(hearts), unit: 'HEARTS' }] }, a);
 	}
+	const wasDry = world.weather.dry > 0;
 	weather(world);
+	if (!wasDry && world.weather.dry > 0) activity(world, { kind: 'weather', changes: [{ label: 'dry spell for', to: world.weather.dry, unit: `days: wells give about ${RULES.dryWells}%, no rain` }] });
+	else if (wasDry && !world.weather.dry) activity(world, { kind: 'weather', changes: ['the dry spell is over'] });
+	news(world);
 	seeValley(world);
 	for (const a of world.avens) {
 		a.yesterday = a.today;
