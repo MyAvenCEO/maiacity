@@ -66,7 +66,7 @@ export const ADMIN: Place[] = [
 	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all' },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix' },
 	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki" },
-	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', cap: 'media:admin', note: 'The user-owned database: every device in one page' },
+	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', cap: 'media:admin', note: 'Your own vaults, end-to-end encrypted and quantum-proof' },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];
 

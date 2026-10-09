@@ -8,6 +8,10 @@
 //!   dialer's hello before it sends its own and closes a connection without one; the dialer checks the listener's.
 //! - **Key exchange**: X25519MLKEM768 is the only group either end offers (`pq_provider`): ML-KEM-768 agrees the keys
 //!   of every connection along with X25519, and a peer that offers only classical groups doesn't connect.
+//! - **No curve trusted**: every node's Lab no longer trusts the curves (`Lab::set_pq_only`), so neither ed25519 nor
+//!   P-256 alone makes an op count: it counts only the writes that a checkpoint by their author covers, which carries
+//!   an SLH-DSA signature, and vouches for each write of its own as it makes it, and at its start for those of its
+//!   own that no checkpoint covers yet. Every other op carries the SLH-DSA half of its signatures anyway.
 //! - **Sync**: either end asks the other on the connection (`wire::Request`) and is answered with the ops it may
 //!   receive by the other's view and the McEliece keys they name (`wire::Reply`), each key by its id and BLAKE3 hash
 //!   alone. The asker fetches the keys it lacks over iroh-blobs, where a node hands a key out only to a device a hello
@@ -50,7 +54,8 @@
 //!   its person (`sign::Ceremony`), so a browser links through an `Authenticator` (`Node::link_with`): one ceremony for
 //!   the passkey's hello, one for the op that adds the device. Ops drafted together are signed in one ceremony
 //!   (`Lab::drafting`): a person's first device founds their vault, adds itself and claims a server nobody has claimed
-//!   yet in one (`Node::found_with`). A server open to sign-up (`Admission::open`) lets a person's first device onto
+//!   yet in one (`Node::found_with`), and later the vaults their vault founds and owns in one more
+//!   (`Node::approve_with`). A server open to sign-up (`Admission::open`) lets a person's first device onto
 //!   its relay by a pass of any passkey, to found their vault and make it known; so does a server nobody has claimed
 //!   yet, for its first device to claim it.
 
@@ -71,7 +76,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::keys::PublicKey;
-use avendb::lab::{Lab, Unsigned};
+use avendb::lab::{Drafting, Lab, Unsigned};
 use avendb::policy::{Action, Kind, Principal, Refusal};
 use avendb::sign::{Ceremony, RelayPass, hello_challenge};
 use avendb::sync::{place, LogId};
@@ -242,15 +247,17 @@ impl Admission {
     }
 }
 
-/// Signs in its person's passkey's ceremonies as a device founds its person's vault, links or claims a server (P8e,
-/// `Node::found_with`, `Node::link_with`, `Node::claim_with`): a browser's WebAuthn, which asks its person each time,
-/// or a software passkey its Lab holds (`Node::link`, `Node::claim`).
+/// Signs in its person's passkey's ceremonies as a device founds its person's vault, links, claims a server or has
+/// their vault approve a change (P8e, `Node::found_with`, `Node::link_with`, `Node::claim_with`,
+/// `Node::approve_with`): a browser's WebAuthn, which asks its person each time, or a software passkey its Lab holds
+/// (`Node::link`, `Node::claim`).
 pub trait Authenticator {
     /// The passkey's ceremony over `challenge` (`sign::Ceremony`), for `step`.
     fn ceremony(&self, challenge: [u8; 32], step: Step) -> impl Future<Output = Result<Ceremony>>;
 }
 
-/// What a passkey's ceremony signs as its device founds its person's vault, links or claims a server.
+/// What a passkey's ceremony signs as its device founds its person's vault, links, claims a server or has their vault
+/// approve a change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
     /// Its hello on the connection to the device whose code the new device took, before that device hands it the
@@ -267,6 +274,9 @@ pub enum Step {
     /// The genesis of avenCEO, the aven vault its person's human vault founds as their device claims a server, and the
     /// op that adds the server to it, drafted together (`Node::claim_with`).
     Claim,
+    /// Changes its person's vault approves, as the root of the vaults it owns: new vaults it owns, an owner's grant,
+    /// the revocation of one, drafted together (`Node::approve_with`).
+    Approve,
 }
 
 /// The genesis of avenCEO, an aven vault human vault `owner` owns alone, as its person claims a server.
@@ -305,8 +315,9 @@ pub struct Node {
 
 impl Node {
     /// Device `me` of `lab` on the network: it answers its peers, tells them when its logs change, and asks them when
-    /// theirs differ. With a store, it first takes back what the store holds, if anything, and saves what it holds
-    /// from then on. Fails while the device is locked, as its endpoint key is its own ed25519 key.
+    /// theirs differ. It trusts no curve (`Lab::set_pq_only`), and vouches at once for the writes of its own that no
+    /// checkpoint covers yet. With a store, it first takes back what the store holds, if anything, and saves what it
+    /// holds from then on. Fails while the device is locked, as its endpoint key is its own ed25519 key.
     pub async fn spawn(lab: Lab, me: SignerId, opts: Options) -> Result<Node> {
         let secret = lab.endpoint_secret(me).context("a device of this Lab, unlocked")?;
         let store = opts.store.clone();
@@ -570,6 +581,27 @@ impl Node {
         self.send_claim(offer, claim.context("a claim")?).await
     }
 
+    /// Ops that need the approval of a vault its person's passkey `passkey` roots, or of one their vault owns, as the
+    /// genesis of a vault their vault owns or a grant of owner: `draft` drafts them on this device one on top of the
+    /// other (`Lab::drafting`), and `authenticator` signs them all in one ceremony; then this device keeps them in that
+    /// order and tells its peers. What `draft` returned. Fails if this device's view refuses one, or the passkey
+    /// didn't sign them.
+    pub async fn approve_with<T: Send + 'static>(
+        &self,
+        passkey: SignerId,
+        draft: impl FnOnce(&mut Drafting<'_>, SignerId) -> Result<T, Refusal> + Send + 'static,
+        authenticator: &impl Authenticator,
+    ) -> Result<T> {
+        let drafted = move |lab: &mut Lab, me| {
+            let mut drafting = lab.drafting(me);
+            let out = draft(&mut drafting, me)?;
+            Ok::<_, Refusal>((out, drafting.done()))
+        };
+        let (out, drafts) = self.shared.lab(drafted).await.map_err(|why| anyhow!("refused: {why:?}"))?;
+        self.sign(passkey, drafts, false, Step::Approve, authenticator).await?;
+        Ok(out)
+    }
+
     /// The connection to the device `offer` names, once its hello proved it the device offered.
     async fn offered(&self, offer: &Offer) -> Result<Peer> {
         self.know(offer.addr.clone());
@@ -710,16 +742,26 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab` with its store in folder `store`, if it keeps one: what the store holds taken back, if it
-/// holds anything, and whatever else the device holds saved.
+/// Device `me` of `lab` with its store in folder `store`, if it keeps one: trusting no curve (`Lab::set_pq_only`),
+/// what the store holds taken back, if it holds anything, a checkpoint for the writes of its own that none covers yet,
+/// and whatever else the device holds saved.
 fn reopen(mut lab: Lab, me: SignerId, store: Option<PathBuf>) -> Result<(Lab, Option<Disk>)> {
-    let Some(dir) = store else { return Ok((lab, None)) };
-    let (mut disk, saved) = Disk::open(&dir)?;
-    if !disk.is_empty() {
-        lab.restore_backup(me, &saved);
+    lab.set_pq_only(true);
+    let mut disk = match store {
+        Some(dir) => {
+            let (disk, saved) = Disk::open(&dir)?;
+            if !disk.is_empty() {
+                lab.restore_backup(me, &saved);
+            }
+            Some(disk)
+        }
+        None => None,
+    };
+    lab.checkpoint(me);
+    if let Some(disk) = &mut disk {
+        disk.adopt(&lab, me)?;
     }
-    disk.adopt(&lab, me)?;
-    Ok((lab, Some(disk)))
+    Ok((lab, disk))
 }
 
 /// The endpoints of the devices `known` (`Lab::peers`): each one's ed25519 key.

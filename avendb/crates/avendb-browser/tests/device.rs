@@ -4,7 +4,9 @@
 //! links through the first one's code, browser to browser; the first opens again from what its store kept; with both
 //! lost, her passkey alone gets her vault back on a new browser, through the server. Alice's browser links through the
 //! code her Mac shows and edits Welcome. The first person to found their vault through a new server claims it from
-//! their first browser, in the same ceremony (P8f).
+//! their first browser, in the same ceremony (P8f), and her vault founds four more vaults it owns in one more ceremony:
+//! her browser acts as each of them, and each one's caps decide what it may do. Every device, the server too, trusts
+//! no curve: only the writes a checkpoint covers count.
 //! `tests/page.rs` runs the same in Chromium, the passkey in its virtual authenticator.
 
 use std::future::Future;
@@ -13,12 +15,13 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
-use avendb::id::{EntryId, SignerId, SpaceId};
+use avendb::id::{EntryId, SignerId, SpaceId, VaultId};
 use avendb::keys::KeyScope;
 use avendb::lab::Lab;
-use avendb::policy::{Kind, Principal};
+use avendb::lens::Status;
+use avendb::policy::{Kind, Principal, Role, Scope};
 use avendb::sign::{Ceremony, Passkey, device_salt};
-use avendb_browser::{Device, Start, Unlock, backup};
+use avendb_browser::{Device, ItemView, Start, Unlock, What, World as Seen, backup};
 use avendb_net::{Admission, Authenticator, Node, Options, Step};
 use avendb_server::Relay;
 use iroh::RelayUrl;
@@ -266,6 +269,147 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let stranger = Passkey::from_seed([9; 32]).id();
     assert!(!admission.honours(&stranger), "claimed, its relay honours no stranger's pass");
     for n in [first.node(), &server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// The role vault `v` holds in `roles`, if any.
+fn role(roles: &[(VaultId, Role)], v: VaultId) -> Option<Role> {
+    roles.iter().find(|(x, _)| *x == v).map(|(_, r)| *r)
+}
+
+/// Entry `e` of space `sp` in the world `w` a device shows.
+fn item(w: &Seen, sp: SpaceId, e: EntryId) -> &ItemView {
+    let space = w.spaces.iter().find(|s| s.space == sp).expect("the space");
+    space.items.iter().find(|i| i.entry == e).expect("the entry")
+}
+
+/// Vault `v`'s name and home in the world `w` a device shows.
+fn named(w: &Seen, v: VaultId) -> (Option<String>, Option<SpaceId>) {
+    let vault = w.vaults.iter().find(|x| x.vault.id == v).expect("the vault");
+    (vault.name.clone(), vault.home)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    let mut lab = Lab::with_entropy([3; 32]);
+    let me = lab.device_with("the server", [7; 32]);
+    let (relay, admits) = (Some(url.clone()), Some(admission.clone()));
+    let opts = Options { relay, admission: admits, card: true, ..Options::local() };
+    let server = Node::spawn(lab, me, opts).await.expect("the server's node");
+    let eve = Browser::new(Passkey::from_seed([5; 32]));
+    let first = start("Eve's browser", &url, 7);
+    let first = Device::found(first, &server.offer(), None, eve.unlock([1; 32]), &eve).await.expect("her vault");
+    eve.steps();
+    let eve_v = first.vault().await.expect("her vault");
+    let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
+    // every device trusts no curve, the server too
+    assert!(first.node().read(|lab, _| lab.pq_only()).await && server.read(|lab, _| lab.pq_only()).await);
+    let w = first.world().await.expect("her world");
+    assert!(w.pq_only && w.mine == eve_v);
+    let ids: Vec<VaultId> = w.vaults.iter().map(|v| v.vault.id).collect();
+    assert_eq!(ids, [eve_v, avenceo], "her vault and avenCEO");
+    assert_eq!(w.vaults[1].via, Some(vec![eve_v]), "her browser acts for avenCEO through her vault");
+    // her vault's and avenCEO's profiles, written by her browser with no ceremony; avenCEO's home is its own, which
+    // its server opens, while her home it only relays
+    assert!(first.profile(eve_v, "Eve".into()).await.expect("her profile"));
+    assert!(first.profile(avenceo, "avenCEO".into()).await.expect("avenCEO's profile"));
+    assert!(!first.profile(eve_v, "Eve".into()).await.expect("unchanged"), "it reads Eve already");
+    assert_eq!(eve.steps(), [], "no ceremony");
+    let w = first.world().await.expect("her world");
+    let (eve_home, ceo_home) = (named(&w, eve_v), named(&w, avenceo));
+    assert_eq!((eve_home.0.as_deref(), ceo_home.0.as_deref()), (Some("Eve"), Some("avenCEO")));
+    let (eve_home, ceo_home) = (eve_home.1.expect("her home"), ceo_home.1.expect("avenCEO's home"));
+    let opens = |w: &Seen, sp: SpaceId, d: SignerId| {
+        let space = w.spaces.iter().find(|s| s.space == sp).expect("the space");
+        space.syncs.iter().find(|x| x.device == d).map(|x| (x.through, x.opens))
+    };
+    let (mine, srv) = (first.node().device(), server.device());
+    assert_eq!(opens(&w, eve_home, srv), Some((avenceo, false)), "the server relays her home's ciphertext");
+    assert_eq!(opens(&w, eve_home, mine), Some((eve_v, true)));
+    assert_eq!(opens(&w, ceo_home, srv), Some((avenceo, true)), "avenCEO's own home its server opens");
+    // four vaults her vault owns, in one ceremony
+    let avens = ["avenALICE", "avenBOB", "avenCHARLY"].map(|n| (Kind::Aven, n.to_string()));
+    let new = avens.into_iter().chain([(Kind::Coop, "Maia City COOP".to_string())]).collect();
+    let vaults = first.found_vaults(new, &eve).await.expect("four vaults");
+    assert_eq!(eve.steps(), [Step::Approve], "one ceremony for all four");
+    let [alice, bob, charly, coop] = vaults[..] else { panic!("four vaults: {vaults:?}") };
+    let w = first.world().await.expect("her world");
+    assert_eq!(w.vaults.len(), 6);
+    let made = [(alice, Kind::Aven, "avenALICE"), (bob, Kind::Aven, "avenBOB"), (coop, Kind::Coop, "Maia City COOP")];
+    for (v, kind, name) in made {
+        let x = w.vaults.iter().find(|x| x.vault.id == v).expect("the vault");
+        assert_eq!((x.vault.kind, x.name.as_deref()), (kind, Some(name)));
+        assert_eq!((&x.vault.owners[..], x.vault.root), (&[Principal::Vault(eve_v)][..], None), "her vault owns it");
+        assert_eq!(x.via, Some(vec![eve_v]), "her browser acts for it through her vault");
+        let home = x.home.expect("its home");
+        assert_eq!(opens(&w, home, srv), Some((avenceo, false)), "the server relays its home");
+        assert_eq!(opens(&w, home, mine), Some((v, true)), "her browser opens it, acting for it");
+    }
+    let alice_home = named(&w, alice).1.expect("avenALICE's home");
+    // avenALICE writes a note in her home; avenBOB may not write there, nor read it
+    let note = first.write(alice, alice_home, "Plan".into(), "Plant beans.".into()).await.expect("a note");
+    let w = first.world().await.expect("her world");
+    let it = item(&w, alice_home, note);
+    assert!(matches!(&it.what, What::Note { title, text } if title == "Plan" && text == "Plant beans."));
+    assert_eq!((it.by, role(&it.roles, alice), role(&it.roles, bob)), (Some(alice), Some(Role::Owner), None));
+    assert_eq!(role(&it.roles, avenceo), Some(Role::Relay));
+    let refused = first.write(bob, alice_home, "Mine".into(), "Not here.".into()).await;
+    assert!(refused.unwrap_err().to_string().contains("NoCap"), "avenBOB holds no cap on avenALICE's home");
+    // she shares the note with avenBOB to read, without a ceremony: he reads it and can't edit it
+    let read = first.grant(alice, Scope::Entry(alice_home, note), Role::Read, vault(bob), &eve).await.expect("shared");
+    assert_eq!(eve.steps(), [], "a read grant needs no ceremony");
+    let w = first.world().await.expect("her world");
+    let it = item(&w, alice_home, note);
+    assert_eq!((role(&it.roles, bob), role(&it.roles, charly)), (Some(Role::Read), None));
+    let edit = first.set_text(bob, alice_home, note, 2, "Plant peas.".into()).await;
+    assert!(edit.unwrap_err().to_string().contains("NoCap"), "avenBOB only reads it");
+    let refused = first.grant(charly, Scope::Space(alice_home), Role::Read, vault(charly), &eve).await;
+    assert!(refused.unwrap_err().to_string().contains("NoCap"), "avenCHARLY gives itself nothing");
+    // write on the whole home: avenBOB adds a todo there and closes it
+    let write = first.grant(alice, Scope::Space(alice_home), Role::Write, vault(bob), &eve).await.expect("write");
+    let todo = first.todo(bob, alice_home, "Water the beans".into()).await.expect("avenBOB's todo");
+    first.set_status(bob, alice_home, todo, Status::Done).await.expect("avenBOB closes it");
+    let w = first.world().await.expect("her world");
+    let it = item(&w, alice_home, todo);
+    assert!(matches!(&it.what, What::Todo { title, status: Status::Done } if title == "Water the beans"));
+    assert_eq!(it.by, Some(bob), "avenBOB wrote it");
+    // owner for the coop is governance: her passkey approves it in a ceremony
+    first.grant(alice, Scope::Space(alice_home), Role::Owner, vault(coop), &eve).await.expect("the coop owns it");
+    assert_eq!(eve.steps(), [Step::Approve]);
+    let w = first.world().await.expect("her world");
+    let roles = w.spaces.iter().find(|s| s.space == alice_home).map(|s| s.roles.clone()).unwrap_or_default();
+    assert_eq!((role(&roles, coop), role(&roles, bob)), (Some(Role::Owner), Some(Role::Write)));
+    // avenALICE takes avenBOB's write back: he writes no more there, and still reads the note
+    first.revoke(alice, write, &eve).await.expect("revoked");
+    assert_eq!(eve.steps(), [], "a write grant ends without a ceremony");
+    let refused = first.todo(bob, alice_home, "Again".into()).await;
+    assert!(refused.unwrap_err().to_string().contains("NoCap"));
+    let w = first.world().await.expect("her world");
+    assert_eq!(role(&item(&w, alice_home, note).roles, bob), Some(Role::Read), "{read:?} stands");
+    let json = w.to_json(mine);
+    assert_eq!((json["pqOnly"].as_bool(), json["vaults"][2]["name"].as_str()), (Some(true), Some("avenALICE")));
+    // the server keeps it all, counts the writes, each covered by a checkpoint, and opens none of avenALICE's keys
+    let counts = move |lab: &Lab, me| lab.state(me).writes(alice_home, note).len() == 1;
+    until("the server counts avenALICE's note", || server.read(counts)).await;
+    let opens_none =
+        move |lab: &Lab, me| !lab.opens(me, KeyScope::Space(alice_home)) && !lab.opens(me, KeyScope::Vault(alice));
+    assert!(server.read(opens_none).await, "it relays avenALICE's home and opens nothing of it");
+    // her second browser signs in through the server with her passkey alone: the same world, every name, the note
+    let other = start("Eve's other browser", &url, 8);
+    let other = Device::link(other, &server.offer(), eve.unlock([2; 32]), &eve).await.expect("it signs in");
+    let reads = || async {
+        let Some(w) = other.world().await else { return false };
+        let names: Vec<_> = w.vaults.iter().filter_map(|v| v.name.clone()).collect();
+        let beans = |i: &ItemView| matches!(&i.what, What::Note { text, .. } if text == "Plant beans.");
+        names == ["Eve", "avenCEO", "avenALICE", "avenBOB", "avenCHARLY", "Maia City COOP"]
+            && w.spaces.iter().any(|s| s.items.iter().any(beans))
+    };
+    until("her other browser shows every vault and avenALICE's note", reads).await;
+    for n in [first.node(), other.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

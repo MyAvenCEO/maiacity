@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# The avenDB tile's WebAssembly: builds avendb-web for the browser (with SIMD, see .cargo/config.toml) and writes the
-# page's package into src/lib/avendb/pkg/, then avendb-browser, the tile's own device (Your account), with its JS
-# modules into src/lib/avendb/device/. The packages are committed, so the site builds without Rust: run this after
-# changing avendb, avendb-net, avendb-web or avendb-browser, and commit what it writes.
+# avenDB's page's WebAssembly: avendb-browser, the page's own device (Your account), with its JS modules, into
+# src/lib/avendb/device/. The package is committed, so the site builds without Rust: run this after changing avendb,
+# avendb-net or avendb-browser, and commit what it writes. (avendb-web, the simulated Lab's tile, is no longer on the
+# page; its tests still run with the workspace's.)
 #
 #   avendb/scripts/build-web.sh
 #
 # Needs the wasm32 target (rustup target add wasm32-unknown-unknown) and the wasm-bindgen CLI of the version
-# avendb-web pins (cargo install wasm-bindgen-cli --version 0.2.129).
+# avendb-browser pins (cargo install wasm-bindgen-cli --version 0.2.129).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,18 +18,7 @@ if [ "$have" != "$want" ]; then
 	exit 1
 fi
 
-cargo build -p avendb-web --target wasm32-unknown-unknown --release
-out=../src/lib/avendb/pkg
-rm -rf "$out"
-wasm-bindgen --target web --no-typescript --out-dir "$out" target/wasm32-unknown-unknown/release/avendb_web.wasm
-
-# the site type-checks its JavaScript; this file is written by wasm-bindgen
-js="$out/avendb_web.js"
-{ printf '// @ts-nocheck: written by wasm-bindgen (avendb/scripts/build-web.sh)\n'; cat "$js"; } > "$js.new"
-mv "$js.new" "$js"
-ls -l "$out"
-
-# the tile's own device (Your account, P8e): avendb-browser and its JS modules, for passkeys of maia.city
+# the page's own device (Your account, P8e): avendb-browser and its JS modules, for passkeys of maia.city
 cargo build -p avendb-browser --target wasm32-unknown-unknown --release
 device=../src/lib/avendb/device
 rm -rf "$device"

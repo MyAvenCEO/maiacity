@@ -1001,7 +1001,7 @@ impl State {
     }
 
     /// Vault `a` may revoke grant `g`: it issued it, founded the space, or may revoke the grant `g` rests on.
-    fn may_revoke(&self, a: VaultId, g: &Grant) -> bool {
+    pub fn may_revoke(&self, a: VaultId, g: &Grant) -> bool {
         let mut g = g;
         for _ in 0..=self.grants.len() {
             if g.issuer == a || self.founder(g.scope.space()) == Some(a) {

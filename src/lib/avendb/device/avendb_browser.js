@@ -3,9 +3,9 @@
  * The device as the page holds it (`Device`): every call that waits on the network or on its person is a promise.
  *
  * A ceremony is the page's: `ceremony(challenge, step)`, a function the device calls with the 32 bytes the passkey
- * signs and what for (`"pass"`, `"found"`, `"hello"`, `"join"`, `"claim"`), which resolves to the ceremony's
- * `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`. The unlock
- * is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, and `nonce`.
+ * signs and what for (`"pass"`, `"found"`, `"hello"`, `"join"`, `"claim"`, `"approve"`), which resolves to the
+ * ceremony's `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`.
+ * The unlock is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, and `nonce`.
  */
 export class Device {
     static __wrap(ptr) {
@@ -81,6 +81,17 @@ export class Device {
         }
     }
     /**
+     * New vaults its person's vault owns (`Device::found_vaults`), `vaults` an array of `{kind, name}`, each `kind`
+     * `"aven"` or `"coop"`: a promise of their ids, in hex, in the order named, after one ceremony.
+     * @param {Array<any>} vaults
+     * @param {Function} ceremony
+     * @returns {Promise<any>}
+     */
+    foundVaults(vaults, ceremony) {
+        const ret = wasm.device_foundVaults(this.__wbg_ptr, vaults, ceremony);
+        return ret;
+    }
+    /**
      * The first device named `name` of a new person, reaching its peers through the relay at `relay` alone, whose
      * passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`, or `undefined` for a passkey made
      * before, as at maiaCITY's sign-up: it founds their human vault and makes it known to the server whose code reads
@@ -103,6 +114,32 @@ export class Device {
         var ptr3 = isLikeNone(spki) ? 0 : passArray8ToWasm0(spki, wasm.__wbindgen_malloc);
         var len3 = WASM_VECTOR_LEN;
         const ret = wasm.device_found(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, unlock, ceremony);
+        return ret;
+    }
+    /**
+     * Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
+     * space `space`, or on its entry `entry` if given, acting for vault `issuer` (`Device::grant`): a promise of the
+     * grant's id, after one ceremony for an owner's. Ids in hex.
+     * @param {string} issuer
+     * @param {string} space
+     * @param {string | null | undefined} entry
+     * @param {string} role
+     * @param {string} grantee
+     * @param {Function} ceremony
+     * @returns {Promise<any>}
+     */
+    grant(issuer, space, entry, role, grantee, ceremony) {
+        const ptr0 = passStringToWasm0(issuer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        var ptr2 = isLikeNone(entry) ? 0 : passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(role, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(grantee, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ret = wasm.device_grant(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ceremony);
         return ret;
     }
     /**
@@ -241,6 +278,58 @@ export class Device {
         }
     }
     /**
+     * Vault `vault`'s (in hex) profile reads `name` (`Device::profile`): a promise of whether it wrote, rejected if
+     * its view refuses it.
+     * @param {string} vault
+     * @param {string} name
+     * @returns {Promise<any>}
+     */
+    profile(vault, name) {
+        const ptr0 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.device_profile(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        return ret;
+    }
+    /**
+     * Ends grant `grant`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for
+     * an owner's grant.
+     * @param {string} actor
+     * @param {string} grant
+     * @param {Function} ceremony
+     * @returns {Promise<any>}
+     */
+    revoke(actor, grant, ceremony) {
+        const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(grant, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.device_revoke(this.__wbg_ptr, ptr0, len0, ptr1, len1, ceremony);
+        return ret;
+    }
+    /**
+     * Sets the status (`"open"`, `"doing"` or `"done"`) of todo `entry` in space `space`, acting for vault `actor`
+     * (each in hex): a promise, rejected if the device's view refuses the change.
+     * @param {string} actor
+     * @param {string} space
+     * @param {string} entry
+     * @param {string} status
+     * @returns {Promise<any>}
+     */
+    setStatus(actor, space, entry, status) {
+        const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(status, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_setStatus(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        return ret;
+    }
+    /**
      * Sets the text of block `block` of entry `entry` in space `space`, acting for vault `actor` (each in hex): a
      * promise, rejected if the device's view refuses the edit.
      * @param {string} actor
@@ -287,11 +376,38 @@ export class Device {
         return ret;
     }
     /**
+     * Writes a new todo titled `title` in space `space`, acting for vault `actor` (both in hex): a promise of its
+     * entry, in hex.
+     * @param {string} actor
+     * @param {string} space
+     * @param {string} title
+     * @returns {Promise<any>}
+     */
+    todo(actor, space, title) {
+        const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(title, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.device_todo(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2);
+        return ret;
+    }
+    /**
      * The vault it belongs to, in hex: a promise, of `undefined` if none.
      * @returns {Promise<any>}
      */
     vault() {
         const ret = wasm.device_vault(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Its world (`Device::world`, as `World::to_json` writes it): a promise of an object, of `undefined` while it
+     * belongs to no vault.
+     * @returns {Promise<any>}
+     */
+    world() {
+        const ret = wasm.device_world(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -850,6 +966,10 @@ function __wbg_get_imports() {
             const ret = Array.of(arg0, arg1);
             return ret;
         },
+        __wbg_parse_0fc53dead14b3b42: function() { return handleError(function (arg0, arg1) {
+            const ret = JSON.parse(getStringFromWasm0(arg0, arg1));
+            return ret;
+        }, arguments); },
         __wbg_performance_3fcf6e32a7e1ed0a: function(arg0) {
             const ret = arg0.performance;
             return ret;
@@ -1047,42 +1167,42 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3007, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3046, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5320, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5358, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue__core_7d5f0a2ba6a62c33___result__Result_____wasm_bindgen_61c7e10f51da098e___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 1746, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 1785, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___web_sys_e8fb2a5efce40016___features__gen_CloseEvent__CloseEvent______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 3397, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 3436, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___web_sys_e8fb2a5efce40016___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 2970, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3009, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000006: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3048, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3087, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__1_);
             return ret;
         },
         __wbindgen_generic_0000000000000007: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3050, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3089, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
             const ret = makeClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__2_);
             return ret;
         },
         __wbindgen_generic_0000000000000008: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 4502, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 4541, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__3_);
             return ret;
         },

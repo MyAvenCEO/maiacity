@@ -21,8 +21,8 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node in a folder of its own, and its relay, which lets in only the devices the server knows (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay (see [A device in the browser](#a-device-in-the-browser)) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, and a compose file that runs it on this machine; neither is deployed |
-| `crates/avendb-web` | The core in a web page, as WebAssembly: the tile's world made a step at a time, read through JSON views and changed through JSON actions, on whichever device the page picks |
-| `scripts/build-web.sh` | Builds `avendb-web` into the tile's package, `src/lib/avendb/pkg/` in the app (committed, so the app builds without Rust) |
+| `crates/avendb-web` | The core as WebAssembly over the Lab's simulated world, read through JSON views and changed through JSON actions; once the tile's Lab, no longer on the page, its tests still run with the workspace's |
+| `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T21) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
 | `docs/` | The research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
@@ -38,20 +38,30 @@ cd spec && lake build           # the Lean model: proofs, scenario checks, test 
 cd protocol && ./check.sh       # the protocol models, against Verifpal 1.6.5 (minutes)
 ```
 
-The avenDB tile (`/app/avendb/` in the app, for admins) runs the core in the page. As on the network, every device online
-syncs the moment anything changes, with no button to press; an offline device syncs with nobody until it's back. After a
-change to the core, build its package again and walk the tile's screens in a headless Chrome:
+avenDB's page (`/app/avendb/` in the app, for admins) is a device of its person, `avendb-browser` built into the app
+(see [A device in the browser](#a-device-in-the-browser)): it syncs the moment anything changes, with no button to
+press. After a change to the core, the network crate or the browser crate, build it again and check the page in a
+headless Chrome:
 
 ```sh
 cd avendb && ./scripts/build-web.sh     # needs the wasm32-unknown-unknown target and wasm-bindgen-cli 0.2.129
-cd .. && node scripts/avendb-smoke.mjs  # starts a dev server, checks every screen, screenshots in build/avendb-smoke
+cd .. && node scripts/avendb-smoke.mjs  # starts a dev server, opens the page, screenshots in build/avendb-smoke
 ```
 
-`scripts/avendb-account.mjs` walks the account itself, from founding to signing in again, against an avenDB server on the
-same machine; its header says how to build and start both.
+`scripts/avendb-account.mjs` walks the account itself against an avenDB server on the same machine: founding the
+person's vault, the four vaults it owns, acting as each, sharing and revoking, signing in again; its header says how to
+build and start both.
 
 The Lean build needs [elan](https://github.com/leanprover/elan) (`spec/lean-toolchain` pins the version). After a change
 to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit them with the change.
+
+## Post-quantum only
+
+Every node, the server's and every browser's, trusts no elliptic curve alone (`Lab::set_pq_only`, set as a node starts
+in `avendb_net`): it counts a write only once a checkpoint by its author covers it, signed with SLH-DSA, and every other
+op carries an SLH-DSA signature beside its classical one, both checked. A node checkpoints each write of its own as it
+makes it, and what it held before as it starts. Keys are sealed with X-Wing and Classic McEliece both, every connection
+agrees its keys with X25519MLKEM768 alone, and every hash is SHA-3.
 
 ## Linking a device
 
@@ -126,17 +136,34 @@ half still signs each op's own id. So a person is asked once where a device woul
   them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
   one ceremony, the unlock; the relay knows it, so it needs no pass.
 
-The tile opens on **Your account**, this browser as a device of its person: their human vault, named after them, its
-root passkey, and its devices, each by the name on its card (`Device::account`). A card is a document tagged
-`avendb:device` that each device writes itself into the vault's first space, end-to-end encrypted like the notes there,
-and writes again to rename itself (`Device::card`). A new person founds their vault there, with the maiaCITY passkey or a
-new one, and claims the server if nobody has yet, saying so once their vault owns avenCEO. A person with an account
-signs in on a new browser with their passkey alone, linking through the server's offer, as after losing every device,
-or links it through the code another of their devices shows (a QR code that a phone's camera opens as a link,
-`?link=`). The account shows its own code as a QR code for the next device, and lists, edits and writes notes, showing
-what the other devices change the moment it arrives (`Device::changed`). It comes with avenDB's server's relay and code
-filled in (`avendb.maia.city`, "Deploying the server", below); a test server's can take their place. The Lab's
-simulated world stays apart, made only when it is opened.
+The page opens on **Your account**, this browser as a device of its person. A new person founds their vault there, with
+the maiaCITY passkey or a new one, and claims the server if nobody has yet, so their vault owns avenCEO. A person with
+an account signs in on a new browser with their passkey alone, linking through the server's offer, as after losing every
+device, or links it through the code another of their devices shows (a QR code that a phone's camera opens as a link,
+`?link=`). It comes with avenDB's server's relay and code filled in (`avendb.maia.city`, "Deploying the server",
+below); a test server's can take their place.
+
+Unlocked, the page lays out the vaults this browser knows as a chat app lays out its servers: a bar of vault marks, the
+person's own first; beside it the picked vault's name and its list, its notes and todos, then its settings; and at the
+foot, in the middle, the vault the person acts as. It all comes from the device's world (`Device::world`), shown again
+the moment anything arrives (`Device::changed`):
+
+- **Names.** Every vault goes by the name on its profile, a document tagged `avendb:vault` in its home, the first space
+  it founded, whose first write acted for the vault (`Device::profile`): the person's own by their maiaCITY name,
+  avenCEO's as avenCEO, written by whichever of their devices comes first. Every device goes by the name on its card, a
+  document tagged `avendb:device` that it writes itself into its vault's first space and writes again to rename itself
+  (`Device::card`). Both are end-to-end encrypted like the notes beside them.
+- **Vaults it owns.** The person's vault founds aven and coop vaults it owns, any number in one ceremony of its passkey
+  (`Device::found_vaults`, over `Node::approve_with`); the device then founds each one's home, lets avenCEO relay it and
+  writes its name there. The page offers avenALICE, avenBOB, avenCHARLY and Maia City COOP the first time.
+- **Acting as.** The person acts as any vault their vault owns, through it, from the switcher at the foot. The page then
+  shows what that vault's caps allow and nothing else, and every write, grant and revocation goes out acting for that
+  vault, which the rules check as any peer checks them. Sharing with a role up to write, and revoking it, needs no
+  ceremony; making a vault an owner of a space, or revoking that, takes one, the owners' approval
+  (`Device::grant`, `Device::revoke`). Marks of the vaults the acting vault holds nothing in are faded.
+- **Settings.** Each vault's kind, owners, root and devices; who holds which role on each of its spaces, the grants in
+  force and who may revoke them; and which devices receive each space, through which vault, and whether each opens it
+  or only relays its ciphertext, as avenCEO's server does.
 
 #### PRF, done right
 
@@ -311,4 +338,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8f, deploy | The server at `avendb.maia.city`, beside the media vault: its own image and workflow (`avendb.yml`), its Caddy site, UDP port and settings from `api.yml`; This browser filled in with its relay and offer | Merged |
 | P8f, one prompt | No setup code: the first human vault founded through the server owns avenCEO; ops drafted together signed in one ceremony over their batch, so a first browser founds its vault, adds itself and claims the server in one prompt after the unlock and the pass (three in all, four with a new passkey), and This browser says when its vault owns avenCEO | Merged |
 | P8f, account | The tile opens on the person's account, the Lab apart and made only when opened: their human vault, its root passkey and its devices, each by the name on its card, an end-to-end encrypted document the device writes itself; a new browser signs in with the passkey alone, through the server; the Lab's simulated person is Alice | Merged |
+| P8f, real vaults | Real vaults the person controls instead of the simulated Lab: the vaults this browser knows as a chat app's servers, each by the name on its profile; new aven and coop vaults their vault owns in one ceremony; acting as any of them, its caps deciding what the page shows and does; each vault's owners, devices, access and syncing devices; every node post-quantum only | Merged |
 | P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |
