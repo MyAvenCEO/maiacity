@@ -161,7 +161,7 @@
 	let speed = $state(8640);
 	let paused = $state(true); // Samuel: nothing runs until you press Start
 	let started = $state(false);
-	let tab = $state('market');
+	let tab = $state('decisions');
 	let selected = $state(0);
 	let panelOpen = $state(true);
 	let page = $state('valley'); // the main view: 'valley' or 'stats'
@@ -210,6 +210,8 @@
 			weather: { ...world.weather },
 			policy: { mint: RULES.mint, decay: RULES.decay, start: world.startHearts },
 			// every aven's wants right now: per good, what it holds against tonight's need and what it still wants to buy
+			// every aven's brain decisions, newest first, only while the Decisions tab is open
+			decisions: tab === 'decisions' ? (world.decisions ?? []).slice(-150).reverse().map((/** @type {any} */ d) => ({ ...d, changes: [...d.changes] })) : [],
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
@@ -485,9 +487,8 @@
 		if (!ctx) return;
 		const { s, ox, oy } = view;
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
-		// sky over the valley follows the hour: dark at night, light by day
-		const hour = (world.t % DAY_S) / 3600;
-		const light = Math.max(0, Math.min(1, Math.sin(((hour - 6) / 12) * Math.PI) * 1.4 + 0.25));
+		// the valley stays in daylight, night or day (Samuel)
+		const light = 1;
 		ctx.fillStyle = `rgb(${Math.round(28 + 200 * light)} ${Math.round(40 + 196 * light)} ${Math.round(36 + 178 * light)})`;
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 		ctx.setTransform(s, 0, 0, s, ox, oy);
@@ -809,7 +810,7 @@
 		</section>
 
 		<nav class="tabs">
-			<button class:on={tab === 'market'} onclick={() => (tab = 'market')}>Market</button>
+			<button class:on={tab === 'decisions'} onclick={() => (tab = 'decisions')}>Decisions</button>
 			<button class:on={tab === 'wants'} onclick={() => (tab = 'wants')}>Wants</button>
 			<button class:on={tab === 'prices'} onclick={() => (tab = 'prices')}>Prices</button>
 			<button class:on={tab === 'ledger'} onclick={() => (tab = 'ledger')}>{snap.aven.name}'s ledger</button>
@@ -853,40 +854,19 @@
 				</tbody>
 			</table>
 		</section>
-		{:else if tab === 'market'}
-		<section class="market-board">
-			<p class="sub">Live: who sells and who wants what, right now. No price is set: each aven names its own, and the market price is the average actually traded over the last day (none before the first trade).</p>
-			{#each GOODS as g (g)}
-				{@const m = snap.market[g]}
-				{@const change = m.open && m.price != null ? Math.round(((m.price - m.open) / m.open) * 100) : 0}
-				{@const lo = Math.min(...m.history)}
-				{@const hi = Math.max(...m.history)}
-				<div class="good">
-					<div class="good-head">
-						<span><em style:background={GOOD_COLOUR[g]}></em><b>{GOOD_LABEL[g]}</b></span>
-						<svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
-							<polyline fill="none" stroke={GOOD_COLOUR[g]} stroke-width="2" points={m.history.map((/** @type {number} */ p, /** @type {number} */ i) => `${(i / Math.max(1, m.history.length - 1)) * 100},${22 - ((p - lo) / Math.max(1, hi - lo)) * 20}`).join(' ')} />
-						</svg>
-						<span class="num" title="market price"><b>{m.price ?? '—'}</b> ♥ <small class:up={change > 0} class:down={change < 0}>{change > 0 ? '+' : ''}{change}%</small></span>
-					</div>
-					<div class="avg">Average traded, last 24 h: <b>{m.avg ?? '—'}</b>{m.avg != null ? ` ♥ over ${m.units} units` : ' (no trades)'}{ROT[g] ? ` · rots ${Math.round(ROT[g] * 100)}% a night, ${m.rotted} rotted so far` : ' · keeps'}</div>
-					<div class="sd">
-						<span>offered {m.supply}</span>
-						<i><b style:width="{(m.supply / Math.max(1, m.supply + m.demand)) * 100}%"></b></i>
-						<span>wanted {m.demand}</span>
-					</div>
-					<div class="orders">
-						<ul>
-							<li class="cap">Sells</li>
-							{#each m.sells as o (o.id)}<li>{o.name} <span class="num">{o.qty} at {o.price}</span></li>{:else}<li class="none">nobody</li>{/each}
-						</ul>
-						<ul>
-							<li class="cap">Wants</li>
-							{#each m.wants as o (o.id)}<li>{o.name} <span class="num">{o.qty} up to {o.price}</span></li>{:else}<li class="none">nobody</li>{/each}
-						</ul>
-					</div>
-				</div>
-			{/each}
+		{:else if tab === 'decisions'}
+		<section>
+			<p class="sub">Live: every decision a brain made for an aven, newest first: which brain answered and what it changed (its prices, how far it haggles, how many days it keeps in stock). Prices and trades over time are in Stats.</p>
+			<ul class="entries decisions">
+				{#each snap.decisions as d (d.n)}
+					<li>
+						<span class="when">d{d.day} {clock(d.t)}</span>
+						<span class="what"><button class="who" onclick={() => select(d.id)}><i style:background={d.colour}></i>{d.name}</button> <small>{NAME[d.source] ?? d.source}</small> {d.changes.length ? d.changes.join(', ') : 'kept its prices'}</span>
+					</li>
+				{:else}
+					<li class="none">No decisions yet: press Start.</li>
+				{/each}
+			</ul>
 		</section>
 		{:else}
 		<section class="ledger">
@@ -1173,7 +1153,8 @@
 	.wants tr.dead {
 		opacity: 0.5;
 	}
-	.wants .who {
+	.wants .who,
+	.decisions .who {
 		border: 0;
 		background: none;
 		padding: 0;
@@ -1182,7 +1163,8 @@
 		align-items: center;
 		gap: 0.3rem;
 	}
-	.wants .who i {
+	.wants .who i,
+	.decisions .who i {
 		width: 10px;
 		height: 10px;
 		border-radius: 50%;
@@ -1219,10 +1201,6 @@
 	.ticker small {
 		opacity: 0.65;
 	}
-	.avg {
-		font-size: 0.72rem;
-		margin-top: 0.2rem;
-	}
 	.tabs {
 		display: flex;
 		gap: 0.3rem;
@@ -1236,30 +1214,6 @@
 	.tabs button.on {
 		background: #24452f;
 		color: #f4f1e8;
-	}
-	.good {
-		background: #fff;
-		border-radius: 10px;
-		padding: 0.45rem 0.6rem;
-		margin-top: 0.45rem;
-		box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
-	}
-	.good-head {
-		display: grid;
-		grid-template-columns: 7.2rem 1fr 6.5rem;
-		gap: 0.5rem;
-		align-items: center;
-	}
-	.spark {
-		width: 100%;
-		height: 22px;
-	}
-	.good-head small {
-		font-size: 0.7rem;
-		opacity: 0.8;
-	}
-	.good-head small.up {
-		color: #2f7d4f;
 	}
 	.brain-mode,
 	.brain-url {
@@ -1330,53 +1284,6 @@
 	.liquid-note.down {
 		background: rgba(150, 30, 30, 0.9);
 	}
-	.good-head small.down {
-		color: #b8483b;
-	}
-	.sd {
-		display: grid;
-		grid-template-columns: auto 1fr auto;
-		gap: 0.4rem;
-		align-items: center;
-		font-size: 0.7rem;
-		opacity: 0.85;
-		margin-top: 0.25rem;
-	}
-	.sd i {
-		height: 6px;
-		border-radius: 3px;
-		background: #e05a6d55;
-		overflow: hidden;
-	}
-	.sd i b {
-		display: block;
-		height: 100%;
-		background: #4fb37a;
-	}
-	.orders {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.6rem;
-		margin-top: 0.3rem;
-	}
-	.orders ul {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		font-size: 0.72rem;
-	}
-	.orders li {
-		display: flex;
-		justify-content: space-between;
-		gap: 0.3rem;
-	}
-	.orders .cap {
-		font-weight: 600;
-		opacity: 0.6;
-	}
-	.orders .none {
-		opacity: 0.45;
-	}
 	.entries .nodeal .what {
 		opacity: 0.6;
 		font-style: italic;
@@ -1402,6 +1309,13 @@
 		gap: 0.4rem;
 		padding: 0.18rem 0;
 		border-top: 1px solid #1f2a230d;
+	}
+	.decisions small {
+		opacity: 0.55;
+	}
+	.decisions .none {
+		opacity: 0.5;
+		display: block;
 	}
 	.entries .when {
 		opacity: 0.55;
