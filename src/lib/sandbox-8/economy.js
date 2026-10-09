@@ -12,6 +12,9 @@ export const GOOD_LABEL = { water: 'WATER', fruits: 'FRUITS', vegetables: 'VEGET
 export const GOOD_COLOUR = { water: '#2a78d6', fruits: '#eb6834', vegetables: '#1baf7a', legumes: '#eda100', chicken: '#e87ba4' };
 /** what one aven needs to eat and drink each day @type {Record<string, number>} */
 export const NEED = { water: 3, fruits: 2, vegetables: 2, legumes: 2, chicken: 2 };
+/** the share of a stock that rots each night: water keeps, fresh food goes fast, legumes (dry, with nuts and seeds) keep long
+ * @type {Record<string, number>} */
+export const ROT = { water: 0, fruits: 0.25, vegetables: 0.2, legumes: 0.03, chicken: 0.3 };
 
 export const START_HEARTS = 125000;
 export const START_PRICE = 100; // HEARTS a unit, where every price begins
@@ -49,8 +52,8 @@ export function createWorld(seed = Date.now() % 1e9) {
 		const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
 		const home = { x: cx + Math.cos(a) * 250, y: cy + Math.sin(a) * 230 };
 		const grows = [GOODS[i], GOODS[(i + 1) % 5]];
-		/** units a day: water growers 9–11 (two cover the 15 all five drink), food growers 6–8 (two cover the 10 all eat) */
-		const produce = Object.fromEntries(grows.map((g) => [g, g === 'water' ? 9 + Math.floor(rand() * 3) : 6 + Math.floor(rand() * 3)]));
+		/** capacity, units a day on average: water 8–13 (two growers cover the 15 all five drink), food 5–10 (two cover the 10 all eat, mostly) */
+		const produce = Object.fromEntries(grows.map((g) => [g, g === 'water' ? 8 + Math.floor(rand() * 6) : 5 + Math.floor(rand() * 6)]));
 		// its stance against the market: asks a markup over the market price for what it grows, a share of it for what it buys
 		const markup = {},
 			ask = {},
@@ -76,6 +79,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			bid, // the most it pays, per unit, the same way
 			flex: 0.1, // how far it gives in when haggling, as a share of its own price
 			reserveDays: 3, // how many days of each need it wants in stock
+			harvest: { ...produce }, // what its land actually gave last night
 			plan: [], // today's route, as its brain chose it: aven ids to walk to in order, or 'home'
 			health: 100,
 			alive: true,
@@ -87,7 +91,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 		};
 	});
 	const market = Object.fromEntries(GOODS.map((g) => [g, { price: START_PRICE, ref: START_PRICE, supply: 0, demand: 0, open: START_PRICE, history: [START_PRICE], series: [], sells: [], wants: [] }]));
-	const world = { seed, t: 0, day: 1, avens, trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [] };
+	const world = { seed, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [] };
 	updateMarket(world);
 	return world;
 }
@@ -118,6 +122,17 @@ export function updateMarket(world) {
 	}
 	for (const a of live)
 		for (const g of GOODS) (a.grows.includes(g) ? a.ask : a.bid)[g] = Math.max(1, Math.round(world.market[g].price * a.markup[g]));
+}
+
+/** one night's harvest of a good: about its capacity, give or take a quarter; one night in 20 a bad harvest (30–60%),
+ * one in 20 a rich one (130–160%) */
+function harvest(world, cap) {
+	const r = world.rand();
+	let f, kind;
+	if (r < 0.05) (f = 0.3 + world.rand() * 0.3), (kind = 'bad');
+	else if (r > 0.95) (f = 1.3 + world.rand() * 0.3), (kind = 'rich');
+	else (f = 0.75 + (world.rand() + world.rand()) * 0.25), (kind = 'normal');
+	return { qty: Math.max(0, Math.round(cap * f)), kind };
 }
 
 function blankDay() {
@@ -299,6 +314,18 @@ function endOfDay(world) {
 		a.health = hurt ? Math.max(0, a.health - hurt) : Math.min(100, a.health + 10);
 		log(world, a, { kind: 'eat', short, health: a.health });
 		a.today.short = short;
+		// then what's left starts to rot
+		const rotted = {};
+		for (const g of GOODS) {
+			const x = a.stock[g] * ROT[g];
+			const lost = Math.min(a.stock[g], Math.floor(x) + (world.rand() < x % 1 ? 1 : 0));
+			if (!lost) continue;
+			a.stock[g] -= lost;
+			rotted[g] = lost;
+			world.rotted[g] += lost;
+		}
+		if (Object.keys(rotted).length) log(world, a, { kind: 'rot', rotted });
+		a.today.rotted = rotted;
 		if (a.health <= 0) {
 			a.alive = false;
 			a.diedOn = world.day;
@@ -319,7 +346,12 @@ function endOfDay(world) {
 		a.yesterday = a.today;
 		a.today = blankDay();
 		if (!a.alive) continue;
-		for (const g of a.grows) a.stock[g] += a.produce[g];
+		for (const g of a.grows) {
+			const { qty, kind } = harvest(world, a.produce[g]);
+			a.harvest[g] = qty;
+			a.stock[g] += qty;
+			if (kind !== 'normal') log(world, a, { kind: 'grow', good: g, qty, cap: a.produce[g], note: kind });
+		}
 	}
 	updateMarket(world);
 }

@@ -5,7 +5,7 @@
 // calibrated probabilities. d1:free needs no API key, but Liquid keeps its requests for training, so only the game
 // state goes out, never anything about a person. When Liquid can't be reached, a small local rule decides instead.
 
-import { GOODS, GOOD_LABEL, NEED, want, spare } from './economy.js';
+import { GOODS, GOOD_LABEL, NEED, ROT, want, spare } from './economy.js';
 
 export const LIQUID_URL = 'https://api.liquid.ai/decisions/v1/systemone';
 export const LIQUID_MODEL = 'd1:free';
@@ -54,14 +54,17 @@ export function stateFor(world, a) {
 		me: a.name,
 		hearts: a.hearts,
 		health: a.health,
-		i_grow_per_day: a.produce,
+		i_grow_per_day_on_average: a.produce,
+		my_harvest_last_night: a.harvest,
+		harvests_vary: 'about ±25% a night; one night in 20 a bad harvest (30–60%), one in 20 a rich one',
+		share_that_rots_each_night: ROT,
 		stock: a.stock,
 		need_per_day: NEED,
 		days_of_reserve_wanted: a.reserveDays,
 		my_asking_prices: a.ask,
 		my_buying_limits: a.bid,
 		how_far_i_give_in_haggling: a.flex,
-		yesterday: y ? { sold: y.sold, bought: y.bought, went_short_of: y.short } : null,
+		yesterday: y ? { sold: y.sold, bought: y.bought, went_short_of: y.short, rotted: y.rotted ?? {} } : null,
 		market: boardFor(world),
 		others: world.avens
 			.filter((o) => o !== a)
@@ -77,7 +80,7 @@ export function questionsFor(world, a) {
 		const sold = a.yesterday ? a.yesterday.sold[g] : 0;
 		q[`ask_${g}`] = {
 			type: 'score',
-			instructions: `You grow ${GOOD_LABEL[g]}. Its market price is ${m.price} HEARTS; ${m.supply} are offered and ${m.demand} wanted across the valley. Yesterday you sold ${sold}; you can spare ${spare(a, g)} today. To end with the most HEARTS, where should your selling price for ${GOOD_LABEL[g]} sit against the market price?`,
+			instructions: `You grow ${GOOD_LABEL[g]}. Its market price is ${m.price} HEARTS; ${m.supply} are offered and ${m.demand} wanted across the valley. Yesterday you sold ${sold}; you can spare ${spare(a, g)} today${ROT[g] ? `, and ${Math.round(ROT[g] * 100)}% of what you keep rots each night` : ''}. To end with the most HEARTS, where should your selling price for ${GOOD_LABEL[g]} sit against the market price?`,
 			criteria: MOVES
 		};
 	}
@@ -86,12 +89,12 @@ export function questionsFor(world, a) {
 		const m = world.market[g];
 		q[`bid_${g}`] = {
 			type: 'score',
-			instructions: `You must buy ${GOOD_LABEL[g]} (you need ${NEED[g]} a day, you have ${a.stock[g]}, you want ${want(a, g)} more). Its market price is ${m.price} HEARTS; ${m.supply} are offered and ${m.demand} wanted. To survive and keep the most HEARTS, where should the most you pay for ${GOOD_LABEL[g]} sit against the market price?`,
+			instructions: `You must buy ${GOOD_LABEL[g]} (you need ${NEED[g]} a day, you have ${a.stock[g]}, you want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}). Its market price is ${m.price} HEARTS; ${m.supply} are offered and ${m.demand} wanted. To survive and keep the most HEARTS, where should the most you pay for ${GOOD_LABEL[g]} sit against the market price?`,
 			criteria: MOVES
 		};
 	}
 	q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: GIVE };
-	q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on?', criteria: RESERVE };
+	q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 20%, chicken 30%, legumes 3% a night; water keeps.', criteria: RESERVE };
 	const stops = visitOptions(world, a);
 	q.visit_1 = { type: 'choice', instructions: 'Who should you walk to first today, to buy what you lack or sell what you grow?', criteria: stops };
 	q.visit_2 = { type: 'choice', instructions: 'And who next, after that first visit?', criteria: stops };
