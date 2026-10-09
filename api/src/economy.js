@@ -433,13 +433,15 @@ export async function getRun(id, { from, to, detail = false, state = false } = {
 export async function deleteRun(id) {
   const r = await db.query("DELETE FROM econ_runs WHERE id = $1", [id]);
   if (!r.affectedRows) throw new EconomyError("No such run.", 404);
+  await db.query("DELETE FROM econ_brains WHERE config_id = $1", [id]); // the world's avens' brains go with it
 }
 
 // ─────────────────────────────── brains ───────────────────────────────
-// Each aven's brain (src/lib/sandbox-8/mind.js, where the code calls it its mind) outlives its runs: its character,
-// wants, trials, lessons and deaths. The page writes them every night; an edit from outside (an agent over the
-// studio's MCP, or the admin) waits in `pending` until the page takes it in on its next night (or its next run), and
-// the page's write then clears what it took.
+// Each aven's brain (src/lib/sandbox-8/mind.js, where the code calls it its mind) in a world: its character, wants,
+// trials, lessons and deaths. Every world is a capsule (Samuel, 2026-10-09), so brains are kept under the world's run
+// id (the config_id column, from when they were kept per config). The page writes them every night; an edit from
+// outside (an agent over the studio's MCP, or the admin) waits in `pending` until the page takes it in on its next
+// night (or when the world is next opened), and the page's write then clears what it took.
 
 const MAX_BRAIN = 20_000; // one aven's brain, in characters: it is kept small on purpose (a few hundred tokens)
 const NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,39}$/;

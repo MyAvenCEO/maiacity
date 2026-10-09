@@ -74,7 +74,7 @@ export function recorder(world, start, again = null) {
 	return rec;
 }
 
-// ---- each aven's brain, kept across runs (mind.js): read when a run starts, written each night. Without the database
+// ---- each aven's brain, kept with its world (mind.js), under the world's id: read when it opens, written each night. Without the database
 // (not signed in, or the API down) they live in this browser instead. ----
 const LOCAL = (config) => `sandbox-8-brains-${config}`;
 const local = {

@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS game state, kept loose on purpose
-// Each aven's brain (Samuel's word; the code calls it its mind, since brain.js is the model it asks, d1 or Qwen), kept
-// across every world it lives in: brains are global (Samuel, 2026-10-09) and learn to adapt through different worlds,
-// so every line it keeps names the world it came from. Who it is, what it wants, what it tried and how that went, what
+// Each aven's brain (Samuel's word; the code calls it its mind, since brain.js is the model it asks, d1 or Qwen), its
+// own in each world: every world is a standalone capsule (Samuel, 2026-10-09), so a new world brings new brains and an
+// old one opened again brings back the brains it had. Who it is, what it wants, what it tried and how that went, what
 // it learned and how it died. It is the aven's own, never a MIP's: the config sets only where a new brain starts.
 //
 // The pattern, kept as small as it goes (a few hundred tokens in every ask):
@@ -20,7 +20,7 @@
 //   lost twice more than it won goes. Only a brain that writes text (Qwen) adds lessons.
 // - Deaths: when and why it died, and what stood around it, one line each. Dying of thirst also makes it keep more
 //   water from then on, without asking: the one instinct the valley gives it.
-// The mind lives in the database (api/src/economy.js, econ_brains) per config and aven name: read when a run starts,
+// The mind lives in the database (api/src/economy.js, econ_brains) per world (its run's id) and aven name: read when it opens,
 // written every night, and editable by the admin's agents over the studio's MCP (their edits land on the next night).
 
 /** the character: what each dial means, at its low and its high end */
@@ -120,7 +120,7 @@ export function wholeMind(m, name, reserveDays) {
 export function beginRun(m, world = 'a world', { resume = false } = {}) {
 	if (m.trial) {
 		m[m.trial.kind][m.trial.key] = m.trial.from;
-		note(m, `${m.trial.world ?? `r${m.trial.run}`} ${label(m.trial)}: left before it was measured, undone`);
+		note(m, `d${m.trial.day} ${label(m.trial)}: left before it was measured, undone`);
 	}
 	if (!resume) m.runs += 1; // worlds played
 	m.world = world;
@@ -164,10 +164,9 @@ export function night(world) {
 			// reborn: a fresh life in the same world, its brain as it was
 			m.gone = false;
 			Object.assign(m, { win: null, base: null });
-			note(m, `${m.world} d${world.day} reborn with ${Math.round(a.hearts)} HEARTS`);
+			note(m, `d${world.day} reborn with ${Math.round(a.hearts)} HEARTS`);
 		}
 		const short = a.yesterday?.short ?? {};
-		m.hearts = Math.round(a.hearts * 100) / 100; // its HEARTS go with it into the next world (Samuel)
 		if (!a.alive) {
 			m.gone = true;
 			m.deaths += 1;
@@ -183,11 +182,11 @@ export function night(world) {
 				`lost ${Math.round(a.lost?.hearts ?? a.hearts)} HEARTS`,
 				`kept ${m.wants.water}d water, ${m.wants.food}d food`
 			].filter(Boolean);
-			m.deathLog.push(`${m.world} d${a.diedOn} died of ${cause}: ${bits.join(', ')}`);
+			m.deathLog.push(`d${a.diedOn} died of ${cause}: ${bits.join(', ')}`);
 			if (m.deathLog.length > KEEP.deaths) m.deathLog.splice(0, m.deathLog.length - KEEP.deaths);
 			if (m.trial) {
 				m[m.trial.kind][m.trial.key] = m.trial.from;
-				note(m, `${m.world} ${label(m.trial)}: died during it, undone`);
+				note(m, `d${a.diedOn} ${label(m.trial)}: died during it, undone`);
 				m.tabu.push(`${m.trial.kind}.${m.trial.key}${m.trial.to > m.trial.from ? '+' : '-'}`);
 				m.trial = null;
 			}
@@ -195,7 +194,7 @@ export function night(world) {
 			if (cause === 'thirst' && m.wants.water < WANTS.water.max) {
 				const was = m.wants.water;
 				m.wants.water = Math.min(WANTS.water.max, was + 2);
-				note(m, `${m.world} after dying of thirst: water stock ${was}→${m.wants.water}`);
+				note(m, `d${a.diedOn} after dying of thirst: water stock ${was}→${m.wants.water}`);
 			}
 			continue;
 		}
@@ -234,7 +233,7 @@ export function night(world) {
 			}
 			note(
 				m,
-				`${t.world ?? `r${t.run}`} d${t.day}-${world.day - 1} ${label(t)}: ${score}/day vs ${m.base ?? '?'}, ${kept ? 'kept' : 'undone'}`
+				`d${t.day}-${world.day - 1} ${label(t)}: ${score}/day vs ${m.base ?? '?'}, ${kept ? 'kept' : 'undone'}`
 			);
 			if (kept)
 				m.base = score; // the new setting's own stretch is the measure now
@@ -318,14 +317,14 @@ export function mindFor(a) {
 		character: Object.fromEntries(Object.entries(m.dials).map(([k, v]) => [k, `${v}/10`])),
 		character_means: Object.fromEntries(Object.entries(DIALS).map(([k, d]) => [k, `0 ${d.low}, 10 ${d.high}`])),
 		wants: `I keep ${m.wants.water} days of water and ${m.wants.food} days of food in stock and buy up to that`,
-		life: `now in ${m.world}, my world number ${m.runs}; ${m.days} days lived over all worlds; died ${m.deaths} time${m.deaths === 1 ? '' : 's'}; ${m.tally.trials} trials, ${m.tally.kept} kept`,
+		life: `${m.days} days lived in this world; died ${m.deaths} time${m.deaths === 1 ? '' : 's'}; ${m.tally.trials} trials, ${m.tally.kept} kept`,
 		since_birth: m.born ? drift(m) : 'as born',
 		trying_now: m.trial
 			? `${label(m.trial)} since day ${m.trial.day}: kept only if my score beats ${m.base}/day`
 			: 'nothing: measuring my current setting',
 		score_means: `HEARTS gained a day, less ${SHORT.water} for each unit of water and ${SHORT.food} for each unit of food I go short`,
 		trials: m.log.slice(-6),
-		lessons: m.lessons.map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down}${l.world ? `, learned in ${l.world}` : ''})`),
+		lessons: m.lessons.map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down})`),
 		deaths: m.deathLog.slice()
 	};
 }
@@ -410,7 +409,7 @@ export function editMind(m, e) {
 		Object.assign(m, { trial: null, base: null, win: null });
 		note(
 			m,
-			`${m.world ?? 'between worlds'} set by ${e.by ?? 'the admin'}: ${said.join(', ')}${e.note ? ` (${String(e.note).slice(0, 80)})` : ''}`
+			`set by ${e.by ?? 'the admin'}: ${said.join(', ')}${e.note ? ` (${String(e.note).slice(0, 80)})` : ''}`
 		);
 	}
 	return said;

@@ -17,7 +17,6 @@ export const GOOD_LABEL = { water: 'WATER', fruits: 'FRUITS', vegetables: 'VEGET
 export const PARAMS = [
 	// ---- policies: HEARTS ----
 	{ key: 'startHearts', view: 'policy', section: 'HEARTS', label: 'Starting HEARTS', unit: 'HEARTS', min: 0, max: 1000000, step: 100, value: 1000, reset: true, say: (v) => `Every aven starts with ${n(v)} HEARTS.` },
-	{ key: 'carryHearts', view: 'policy', section: 'HEARTS', label: 'HEARTS go with an aven', unit: 'yes 1 / no 0', min: 0, max: 1, step: 1, value: 1, reset: true, say: (v) => (v ? 'Each aven brings the HEARTS it holds into a new world (the starting HEARTS when it has none).' : 'Each aven starts every world with the starting HEARTS.') },
 	{ key: 'mint', view: 'policy', section: 'HEARTS', label: 'Minting', unit: 'HEARTS a day', min: 0, max: 10000, step: 1, value: 24, say: (v) => `Every living aven is given ${n(v)} new HEARTS each night.` },
 	{ key: 'decay', view: 'policy', section: 'HEARTS', label: 'Decay', unit: '% a year', min: 0, max: 100, step: 0.5, value: 7, say: (v) => `Every balance shrinks by ${v}% a year, charged nightly (${(v / 365).toFixed(3)}% a night), so hoarded HEARTS melt.` },
 	// ---- policies: prices ----

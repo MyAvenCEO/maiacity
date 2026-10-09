@@ -353,7 +353,7 @@ const server = Bun.serve({
         }
       },
     },
-    // Each aven's brain, kept across runs (src/lib/sandbox-8/mind.js): GET { brains: { aven: brain } }, PUT { brains }
+    // Each aven's brain, kept per world, under its run id (src/lib/sandbox-8/mind.js): GET { brains: { aven: brain } }, PUT { brains }
     // (the page, each night), DELETE (the admin) forgets them all
     "/api/economy/brains/:config": {
       OPTIONS: preflight,

@@ -539,7 +539,15 @@ pub struct EconomyWorldUpdate {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyBrains {
+    /// the world's id, from economy_runs
+    pub world: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct EconomyBrainEdit {
+    /// the world's id, from economy_runs
+    pub world: String,
     /// the aven's name, e.g. Ama (names from economy_brains)
     pub aven: String,
     /// the edit: { dials: { greed, thrift, haggle: 0-10 }, wants: { water, food: days of stock 1-10 }, lesson: a short
@@ -1587,7 +1595,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Make a new world of the economy sandbox: fresh land and avens on a config (or cards given whole) with values tried on top, and the model its avens ask. It waits in the page's list of worlds until it is opened there and started (the valley runs on the page). Each world keeps its own settings; the avens' brains, and their HEARTS, go with them from world to world."
+        description = "Make a new world of the economy sandbox: fresh land and avens on a config (or cards given whole) with values tried on top, and the model its avens ask. It waits in the page's list of worlds until it is opened there and started (the valley runs on the page). Each world is a capsule: its own settings, and every aven's own HEARTS and brain in it (set its brains before it starts with economy_brain_edit and its id)."
     )]
     async fn economy_world_create(&self, Parameters(a): Parameters<EconomyWorld>) -> String {
         text(self.api("POST", "/api/economy/worlds", Some(a.world)).await)
@@ -1601,17 +1609,17 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every aven's brain, global: one per aven, kept across every world it plays in (each line names its world): its character (dials greed, thrift, haggle, 0-10), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
+        description = "Every aven's brain in one world (each world is a capsule with its own brains): its character (dials greed, thrift, haggle, 0-10), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
     )]
-    async fn economy_brains(&self) -> String {
-        text(self.api("GET", "/api/economy/brains/global", None).await)
+    async fn economy_brains(&self, Parameters(a): Parameters<EconomyBrains>) -> String {
+        text(self.api("GET", &format!("/api/economy/brains/{}", a.world), None).await)
     }
 
     #[tool(
-        description = "Change one aven's brain: set its character dials (greed, thrift, haggle, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night in a running world, or when it next enters a world, and shows in its trial log and the page's decisions."
+        description = "Change one aven's brain: set its character dials (greed, thrift, haggle, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night while the world plays, or when the world is next opened, and shows in its trial log and the page's decisions."
     )]
     async fn economy_brain_edit(&self, Parameters(a): Parameters<EconomyBrainEdit>) -> String {
-        text(self.api("POST", &format!("/api/economy/brains/global/{}", a.aven), Some(a.edit)).await)
+        text(self.api("POST", &format!("/api/economy/brains/{}/{}", a.world, a.aven), Some(a.edit)).await)
     }
 
     // ── anything else the admin may do ──

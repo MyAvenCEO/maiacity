@@ -116,7 +116,7 @@ function dealCapacity(rand, lands) {
 
 /** a fresh valley: ten avens, ten territories on a ring round the market square */
 /** @returns {any} */
-export function createWorld(seed = Date.now() % 1e9, { hearts = {} } = {}) {
+export function createWorld(seed = Date.now() % 1e9) {
 	const rand = rng(seed);
 	const lands = dealLand(rand, RULES.avens);
 	const capacity = dealCapacity(rand, lands);
@@ -139,8 +139,8 @@ export function createWorld(seed = Date.now() % 1e9, { hearts = {} } = {}) {
 			x: home.x,
 			y: home.y - 6,
 			fetch: [], // the sellers it still has to walk to for what it bought: { from: aven id, goods: { good: qty } }
-			hearts: hearts[name] ?? RULES.startHearts, // what it brings from its last world (Samuel), else the starting HEARTS
-			startHearts: hearts[name] ?? RULES.startHearts,
+			hearts: RULES.startHearts, // every world is a capsule (Samuel): an aven's money is its own in each
+			startHearts: RULES.startHearts, // what it began this life with (a rebirth begins it again)
 			minted: 0, // HEARTS minted so far
 			decayed: 0, // HEARTS lost to decay so far
 			// two days' rations to start, so nobody starves before the first trade, plus the first day's harvest

@@ -860,9 +860,6 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE econ_runs ADD COLUMN state JSONB;
       ALTER TABLE econ_runs ADD COLUMN saved TIMESTAMPTZ;
       UPDATE econ_runs r SET name = 'World ' || x.n FROM (SELECT id, row_number() OVER (ORDER BY started, id) AS n FROM econ_runs) x WHERE r.id = x.id;
-      -- an aven's brain is global (Samuel): one per aven, across every world and config
-      UPDATE econ_brains SET config_id = 'global' WHERE config_id = 'valley';
-      DELETE FROM econ_brains WHERE config_id <> 'global';
     `,
   },
 ];

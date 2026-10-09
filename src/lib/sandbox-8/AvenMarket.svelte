@@ -56,13 +56,13 @@
 		}
 	}
 
-	// ---- each aven's brain, kept across runs (mind.js; "brain" to Samuel, mind in the code, where brain.js is the model): who it is, what it wants, what it tried, learned, died of ----
+	// ---- each aven's brain, its own in each world (mind.js; "brain" to Samuel, mind in the code, where brain.js is the model): who it is, what it wants, what it tried, learned, died of ----
 	/** @type {Record<string, any>} */
 	let minds = {}; // by aven name, for the config being played
 	let mindsOf = ''; // which config they are
 	let mindNote = $state('');
 	const mindsRemote = () => acct.play;
-	const mindsKey = () => 'global'; // an aven's brain is global (Samuel): one across every world and config
+	const mindsKey = () => here.id ?? ''; // every world is a capsule (Samuel): its avens' brains are kept under its id
 	/** take in the edits made from outside (the studio's MCP): the newest last; each says so in the decisions feed */
 	function takeEdits(/** @type {any} */ m, /** @type {any[]} */ pending) {
 		for (const e of (pending ?? []).filter((x) => x.id > (m.applied ?? 0)).sort((x, y) => x.id - y.id)) {
@@ -75,17 +75,18 @@
 			}
 		}
 	}
-	/** read every aven's mind for this config (a new one for an aven never played), and dress this valley's avens in them */
+	/** read every aven's mind in this world (new ones in a new world, or for an aven it never had), and dress its avens in them */
 	async function loadAllMinds() {
 		const cfg = mindsKey();
 		/** @type {Record<string, any>} */
 		let raw = {};
-		try {
-			raw = await loadMinds(cfg, mindsRemote());
-			mindNote = '';
-		} catch (e) {
-			mindNote = `The avens' brains could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh and are not kept.`;
-		}
+		if (cfg)
+			try {
+				raw = await loadMinds(cfg, mindsRemote());
+				mindNote = '';
+			} catch (e) {
+				mindNote = `The avens' brains could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh and are not kept.`;
+			}
 		if (cfg !== mindsKey()) return;
 		mindsOf = cfg;
 		minds = {};
@@ -94,18 +95,13 @@
 			takeEdits(m, raw[a.name]?.pending);
 			minds[a.name] = m;
 		}
-		if (!started && world.day === 1 && world.t === 0 && Object.keys(carried()).length) {
-			// the brains came after the world was dealt: deal it again with the HEARTS they bring
-			world = createWorld(world.seed, { hearts: carried() });
-			if (rec) rec = recorder(world, null, { id: rec.id, name: rec.name, sent: 0 });
-		}
 		if (!started) for (const a of world.avens) wear(a, minds[a.name]);
 		snap = snapshot();
 	}
 	let syncing = false;
 	/** each night: take in edits from outside, then write every mind */
 	async function syncMinds(final = false) {
-		if (syncing || mindsOf !== mindsKey() || !Object.keys(minds).length) return;
+		if (syncing || !mindsOf || mindsOf !== mindsKey() || !Object.keys(minds).length) return; // a world not kept keeps no brains
 		syncing = true;
 		const cfg = mindsOf;
 		try {
@@ -121,18 +117,23 @@
 			syncing = false;
 		}
 	}
-	/** the admin: every aven of this config forgets everything and starts fresh */
+	/** the admin: every aven in this world forgets everything and plays on with a new brain */
 	async function forgetAll() {
-		if (!confirm(`Forget every aven's brain for ${CONFIG.name}? Their characters, trials, lessons and deaths go, and the next run starts fresh.`)) return;
+		if (!confirm(`Forget every aven's brain in ${here.name || 'this world'}? Their characters, trials, lessons and deaths go, and they play on with new ones.`)) return;
 		try {
-			await forgetMinds(mindsKey(), mindsRemote());
+			if (mindsOf) await forgetMinds(mindsOf, mindsRemote());
 		} catch (e) {
 			mindNote = `Could not forget (${/** @type {any} */ (e)?.message || e}).`;
 			return;
 		}
-		minds = {};
-		mindsOf = '';
-		reset();
+		for (const a of world.avens) {
+			const m = (minds[a.name] = wholeMind(null, a.name, RULES.reserveDays));
+			wear(a, m);
+			if (started) beginRun(m, here.name || 'this world');
+			if (!a.alive) m.gone = true;
+		}
+		snap = snapshot();
+		syncMinds(true);
 	}
 
 	/** load the configs; run on the one picked last (or the first), keeping your changes on top */
@@ -192,7 +193,7 @@
 	}
 
 	// ---- worlds (Samuel, 2026-10-09): every world is kept with its settings, and can be opened again and played on;
-	// a new one starts fresh. Only the avens' brains go from world to world (they are global) ----
+	// a new one starts fresh. Each is a capsule: its avens' money and brains are its own ----
 	let worlds = $state(/** @type {any[]} */ ([]));
 	let here = $state({ id: /** @type {string | null} */ (null), name: '' }); // the world on the page
 	let worldNote = $state('');
@@ -247,14 +248,18 @@
 		useConfig({ id: s.config.id, name: s.config.name, version: s.config.version, cards: s.config.cards, params: s.config.params }, s.local ?? {});
 		if (s.model && s.model in BRAINS) brain.mode = s.model;
 		const fresh = !run.state.world; // made on the MCP and never played: dealt now, on its settings and seed
-		world = fresh ? createWorld(run.seed ?? undefined, { hearts: carried() }) : loadWorld(run.state.world, run.day_rows.map((/** @type {any} */ d) => d.stats));
+		paused = true;
+		world = fresh ? createWorld(run.seed ?? undefined) : loadWorld(run.state.world, run.day_rows.map((/** @type {any} */ d) => d.stats));
 		rec = recorder(world, null, { id: run.id, name: run.name, sent: fresh ? 0 : world.stats.length });
 		saving = { days: rec.sent, error: '' };
 		here = { id: run.id, name: run.name };
+		// its own brains, as it left them (or as the MCP set them for a world not played yet)
+		await loadAllMinds();
 		for (const a of world.avens) {
 			const m = (minds[a.name] ??= wholeMind(null, a.name, RULES.reserveDays));
 			wear(a, m);
 			if (!fresh) beginRun(m, run.name, { resume: true });
+			if (!a.alive) m.gone = true; // dead when it was left: its death is already in its brain
 		}
 		calls = blankCalls();
 		down = busy = '';
@@ -290,7 +295,9 @@
 			if (rec !== r || !r.id) return;
 			here = { id: r.id, name: r.name };
 			for (const a of world.avens) if (a.mind) a.mind.world = r.name;
+			if (!mindsOf) mindsOf = r.id; // its new brains are kept with it from now on
 			keepWorld();
+			syncMinds();
 			loadWorlds();
 		});
 	}
@@ -583,8 +590,6 @@
 	// decision; after that each acts on its latest one while the next is on its way
 	const decided = () => world.avens.every((/** @type {any} */ a) => !a.alive || a.brain.ready);
 
-	/** the HEARTS each aven takes into a new world (Samuel: its money always goes with it), from its brain's wallet */
-	const carried = () => (RULES.carryHearts && mindsOf === mindsKey() ? Object.fromEntries(Object.values(minds).filter((m) => m.hearts > 0).map((m) => [m.name, m.hearts])) : {});
 	/** a new world, fresh, on the settings now in force; the one before is kept as it stands */
 	function reset() {
 		if (started) {
@@ -594,14 +599,13 @@
 		rec = null;
 		here = { id: null, name: '' };
 		saving = { days: 0, error: '' };
-		world = createWorld(undefined, { hearts: carried() });
-		if (mindsOf === mindsKey()) for (const a of world.avens) wear(a, (minds[a.name] ??= wholeMind(null, a.name, RULES.reserveDays)));
-		else loadAllMinds();
+		world = createWorld();
+		paused = true;
+		started = false;
+		loadAllMinds(); // new brains: a world not kept yet has none to read
 		calls = blankCalls();
 		down = '';
 		busy = '';
-		paused = true;
-		started = false;
 		useCode();
 		snap = snapshot();
 	}
@@ -956,7 +960,7 @@
 	{#if page === 'home'}
 		<div class="statspage worlds">
 			<h2>Worlds</h2>
-			<p class="sub">Every world is kept as it stands, with its own settings, and can be opened again to play on. A new world starts fresh; only the avens' brains go with them from world to world, and learn there.</p>
+			<p class="sub">Every world is kept as it stands, with its own settings, and can be opened again to play on. Each world is a capsule: a new one starts fresh, and every aven's HEARTS and brain in it are its own.</p>
 			<div class="new">
 				<button class="go" onclick={() => { const c = configs.find((x) => x.id === newCfg) ?? configs[0]; if (c) play(c); else (reset(), setView('valley')); }}>New world</button>
 				{#if configs.length > 1}<label>on <select bind:value={newCfg}>{#each configs as c (c.id)}<option value={c.id}>{c.name} (v{c.version})</option>{/each}</select></label>{:else if configs[0]}<span class="sub">on {configs[0].name} (v{configs[0].version})</span>{/if}
@@ -1122,7 +1126,7 @@
 				{#if m.lessons.length}<h4>Lessons</h4><ul class="entries mind">{#each m.lessons as l (l.id)}<li><span class="what">#{l.id} {l.text}</span><span class="num">+{l.up} −{l.down}</span></li>{/each}</ul>{/if}
 				{#if m.deathLog.length}<h4>Deaths</h4><ul class="entries mind">{#each m.deathLog.slice().reverse() as line, i (i)}<li class="death"><span class="what">{line}</span></li>{/each}</ul>{/if}
 				{#if mindNote}<p class="sub miss">{mindNote}</p>{/if}
-				{#if acct.admin}<button class="link forget" onclick={forgetAll}>Forget every aven's brain</button>{/if}
+				{#if acct.admin}<button class="link forget" onclick={forgetAll}>Forget every brain in this world</button>{/if}
 			{/if}
 			<h4>Its tools</h4>
 			<ul class="tools">

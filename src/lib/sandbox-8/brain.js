@@ -126,7 +126,7 @@ export function stateFor(world, a) {
 		others: world.avens
 			.filter((o) => o !== a)
 			.map((o) => ({ name: o.name, alive: o.alive, hearts: o.hearts, grows: o.grows, asking: o.alive ? o.ask : null })),
-		// who it is and what it learned, across runs: its brain (mind.js): character, wants, trials, lessons, deaths
+		// who it is and what it learned, in this world: its brain (mind.js): character, wants, trials, lessons, deaths
 		my_brain: mindFor(a)
 	};
 }
