@@ -240,6 +240,79 @@ fn passkey_challenge(exporter: &[u8; 32], dialer: bool, device: SignerId) -> [u8
     h.finalize()
 }
 
+/// A passkey's pass to the server's relay (P8d): its keys, its WebAuthn assertion and its SLH-DSA signature, both over
+/// a hash of an iroh endpoint and the time the pass was made. The relay lets in only the devices the server knows, and
+/// a new device with no UDP of its own, as a browser's, reaches nobody but through the relay: before it links, its
+/// person's passkey signs it a pass for its own endpoint, and the relay lets that endpoint in for `PASS_LIFE` seconds
+/// if the passkey roots a vault the server knows. A pass lets in its endpoint alone, which the relay's handshake
+/// proves, so whoever replays it lets in, for what is left of those minutes, only the device it was made for.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RelayPass {
+    pub keys: SignerKeys,
+    pub assertion: Assertion,
+    /// SLH-DSA-SHA2-128f, `PQ_SIGNATURE_BYTES` long.
+    pub sig: Vec<u8>,
+    /// The endpoint it lets in: a device's ed25519 key.
+    pub endpoint: [u8; 32],
+    /// When it was made, by the device's clock: seconds since 1970.
+    pub made: u64,
+}
+
+/// The hash-based half shows only its size.
+impl fmt::Debug for RelayPass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RelayPass")
+            .field("keys", &self.keys)
+            .field("assertion", &self.assertion)
+            .field("sig", &format!("{} bytes", self.sig.len()))
+            .field("endpoint", &self.endpoint)
+            .field("made", &self.made)
+            .finish()
+    }
+}
+
+/// What a relay pass signs with SLH-DSA (`RelayPass`), as its context string: never an op's id, nor a hello.
+pub const RELAY_PASS_CONTEXT: &[u8] = b"avenDB 2026-10-09 relay pass";
+
+/// How long a pass lets its endpoint onto the relay: seconds from when it was made.
+pub const PASS_LIFE: u64 = 10 * 60;
+
+/// How far ahead of the relay's clock a pass may say it was made, as the device's clock may run fast: seconds.
+pub const PASS_SKEW: u64 = 5 * 60;
+
+impl RelayPass {
+    /// The passkey that lets `endpoint` onto the relay by this pass at `now`, seconds since 1970 by the relay's clock:
+    /// `None` unless the pass is for that endpoint, was made in the `PASS_LIFE` seconds before `now` (or at most
+    /// `PASS_SKEW` after), its keys are a passkey's and both halves check out.
+    pub fn verify(&self, endpoint: &[u8; 32], now: u64) -> Option<SignerId> {
+        if self.endpoint != *endpoint || self.made > now.saturating_add(PASS_SKEW) || now >= self.expires() {
+            return None;
+        }
+        let SignerKeys::Passkey { p256, slh } = &self.keys else { return None };
+        let challenge = pass_challenge(&self.endpoint, self.made);
+        if !self.assertion.verify(p256, OpId(challenge)) {
+            return None;
+        }
+        let key = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&slh[..]).ok()?;
+        let sig = slh_dsa::Signature::<Sha2_128f>::try_from(&self.sig[..]).ok()?;
+        key.try_verify_with_context(&challenge, RELAY_PASS_CONTEXT, &sig).ok()?;
+        Some(self.keys.id())
+    }
+
+    /// When it stops letting its endpoint in: seconds since 1970.
+    pub fn expires(&self) -> u64 {
+        self.made.saturating_add(PASS_LIFE)
+    }
+}
+
+/// What both halves of a relay pass sign: a hash of the endpoint and when the pass was made. Its own hash, so no op's
+/// id is ever one.
+fn pass_challenge(endpoint: &[u8; 32], made: u64) -> [u8; 32] {
+    let mut h = Hasher::new("relay pass");
+    h.update(endpoint).update(&made.to_be_bytes());
+    h.finalize()
+}
+
 /// Every op but a write carries the hash-based half of each of its signatures.
 pub fn needs_pq(op: &Op) -> bool {
     !matches!(op.action, Action::Write { .. })
@@ -480,6 +553,24 @@ impl Passkey {
         PasskeyHello { keys: self.keys(), assertion, sig: sig.to_vec() }
     }
 
+    /// The passkey's pass to the server's relay for `endpoint`, made at `made`, seconds since 1970 (`RelayPass`): an
+    /// assertion and the hash-based half, in one ceremony.
+    pub fn pass(&mut self, endpoint: [u8; 32], made: u64) -> RelayPass {
+        let challenge = pass_challenge(&endpoint, made);
+        let Classical::Passkey(assertion) = self.sign(OpId(challenge), false).classical else {
+            unreachable!("a passkey signs by assertion")
+        };
+        let sig = self.slh.try_sign_with_context(&challenge, RELAY_PASS_CONTEXT, None).expect("a short context");
+        RelayPass { keys: self.keys(), assertion, sig: sig.to_vec(), endpoint, made }
+    }
+
+    /// Its private key: the seed `from_seed` makes the same passkey again from, as a platform syncs a passkey between
+    /// its person's devices. The Lab hands a software passkey to a page this way (`Lab::passkey_secret`); a real one
+    /// never leaves its authenticator or the platform's keychain.
+    pub fn secret(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.key.to_bytes().into())
+    }
+
     /// WebAuthn's PRF extension: 32 bytes the authenticator alone computes from `salt`, in the same ceremony as an
     /// assertion. The browser hashes the salt with the label "WebAuthn PRF" and the authenticator answers with its
     /// `hmac-secret` over that hash; this one uses a keyed SHA-3 hash with a secret of its own instead of HMAC.
@@ -687,6 +778,54 @@ mod tests {
         // and a device's keys say no passkey's hello
         let key = DeviceKey::from_secret([7; 32]);
         assert_eq!(PasskeyHello { keys: key.keys(), ..hello.clone() }.verify(&exporter, true, device), None);
+    }
+
+    #[test]
+    fn a_relay_pass_lets_in_one_endpoint_for_ten_minutes() {
+        let mut passkey = Passkey::from_seed([1; 32]);
+        let endpoint = *passkey.device([5; 32]).endpoint_secret();
+        let endpoint = ed25519_dalek::SigningKey::from_bytes(&endpoint).verifying_key().to_bytes();
+        let made = 1_791_500_000;
+        let pass = passkey.pass(endpoint, made);
+        assert_eq!(pass.sig.len(), PQ_SIGNATURE_BYTES);
+        // from when it was made, or a little before by a device whose clock runs fast, for ten minutes
+        for now in [made, made + PASS_LIFE - 1, made - PASS_SKEW] {
+            assert_eq!(pass.verify(&endpoint, now), Some(passkey.id()), "at {now}");
+        }
+        for now in [made + PASS_LIFE, made - PASS_SKEW - 1, 0, u64::MAX] {
+            assert_eq!(pass.verify(&endpoint, now), None, "at {now}");
+        }
+        // another endpoint, or another time than the one it signed: refused
+        assert_eq!(pass.verify(&[9; 32], made), None);
+        assert_eq!(RelayPass { made: made + 1, ..pass.clone() }.verify(&endpoint, made), None);
+        assert_eq!(RelayPass { endpoint: [9; 32], ..pass.clone() }.verify(&[9; 32], made), None);
+        // whoever broke the passkey's P-256 key and signs with an SLH-DSA key of their own makes a pass of another
+        let mut thief = Passkey::from_seed([2; 32]);
+        let theirs = thief.pass(endpoint, made);
+        let keys = SignerKeys::Passkey { p256: passkey.public(), slh: *thief.keys().slh() };
+        let stolen = RelayPass { keys, sig: theirs.sig, ..pass.clone() };
+        assert!(stolen.verify(&endpoint, made).is_some_and(|p| p != passkey.id()));
+        // a passkey's hello, or its signature on an op, over the same challenge is no pass
+        let challenge = pass_challenge(&endpoint, made);
+        let op = passkey.sign(OpId(challenge), true);
+        let Classical::Passkey(assertion) = op.classical.clone() else { unreachable!() };
+        let replayed = RelayPass { assertion, sig: op.pq.clone().expect("both halves"), ..pass.clone() };
+        assert_eq!(replayed.verify(&endpoint, made), None);
+        let hello = passkey.slh.try_sign_with_context(&challenge, PASSKEY_HELLO_CONTEXT, None).expect("a hello's half");
+        assert_eq!(RelayPass { sig: hello.to_vec(), ..pass.clone() }.verify(&endpoint, made), None);
+        // and a device's keys make no pass
+        let key = DeviceKey::from_secret([7; 32]);
+        assert_eq!(RelayPass { keys: key.keys(), ..pass.clone() }.verify(&endpoint, made), None);
+    }
+
+    #[test]
+    fn a_passkey_is_made_again_from_its_secret() {
+        let passkey = Passkey::from_seed([3; 32]);
+        let again = Passkey::from_seed(*passkey.secret());
+        assert_eq!(again.id(), passkey.id());
+        assert_eq!(again.seal_secret(), passkey.seal_secret());
+        assert_eq!(again.device([5; 32]).id(), passkey.device([5; 32]).id());
+        assert_eq!(*passkey.secret(), [3; 32], "a seed in the curve's range is the key itself");
     }
 
     #[test]

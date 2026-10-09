@@ -49,9 +49,9 @@ use crate::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
 use crate::policy::{checkpointed, replay, Action, Branch, Kind, Line, Log, Op, Principal, Refusal, Replay, State};
-use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, Signature, SignerKeys, Signed};
-use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId};
-use crate::wire::{Join, Request};
+use crate::sign::{self, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
+use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId, Place};
+use crate::wire::{Join, Request, Wire as _};
 
 /// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
 /// the keys it just made, one to find nothing left. More means an op the rules refuse, made again and again.
@@ -368,12 +368,28 @@ impl Lab {
 
     /// A passkey: an owner signer that governs a human vault. It signs on whichever device it is used on.
     pub fn passkey(&mut self, name: &str) -> SignerId {
-        let key = Passkey::from_seed(self.secret("passkey", name));
+        let secret = self.secret("passkey", name);
+        self.passkey_from(name, secret)
+    }
+
+    /// The passkey a software passkey's secret makes again (`passkey_secret`), as a platform syncs a passkey to another
+    /// of its person's devices: a page holding its person's passkey (P8d) brings it into its Lab this way.
+    pub fn passkey_from(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
+        let key = Passkey::from_seed(secret);
         key.seal_secret().prepare();
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
         self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
         id
+    }
+
+    /// The secret of passkey `passkey`, a software passkey's private key, for another Lab to take it in
+    /// (`passkey_from`): `None` if the Lab doesn't hold that passkey. A real passkey never leaves its authenticator.
+    pub fn passkey_secret(&self, passkey: SignerId) -> Option<Zeroizing<[u8; 32]>> {
+        match self.keys.get(&passkey)? {
+            Key::Passkey(p) => Some(p.secret()),
+            Key::Device(_) => None,
+        }
     }
 
     /// A device with keys of its own, as the server and strangers have, its own ops and its own store.
@@ -1220,6 +1236,25 @@ impl Lab {
         }
     }
 
+    /// The pass passkey `passkey`, used on device `d`, makes `d` to the server's relay at `made`, seconds since 1970
+    /// (`sign::RelayPass`): for `d`'s endpoint alone, which the relay lets in for ten minutes if the passkey roots a
+    /// vault the server knows (`roots`). `None` unless the passkey is at hand and `d` is a device of the Lab.
+    pub fn relay_pass(&mut self, d: SignerId, passkey: SignerId, made: u64) -> Option<RelayPass> {
+        let Key::Device(device) = self.keys.get(&d)? else { return None };
+        let SignerKeys::Device { ed25519, .. } = device.keys() else { unreachable!("a device's keys") };
+        match self.keys.get_mut(&passkey)? {
+            Key::Passkey(p) => Some(p.pass(ed25519, made)),
+            Key::Device(_) => None,
+        }
+    }
+
+    /// The passkeys that root the vaults in device `d`'s view: the people the server knows, whose passes its relay
+    /// honours (`relay_pass`).
+    pub fn roots(&self, d: SignerId) -> Vec<SignerId> {
+        let roots: BTreeSet<SignerId> = self.held(d).view().vaults().iter().filter_map(|v| v.root).collect();
+        roots.into_iter().collect()
+    }
+
     /// What device `d` hands a device whose passkey `passkey` proved itself on their connection (`sync::link_card`):
     /// the signed ops of the logs of the vaults the passkey owns, and of every vault that owns one of them, up the
     /// chains, so that the device can add itself to its person's vault (`join`). Nothing about any space or entry
@@ -1304,25 +1339,45 @@ impl Lab {
         ask.loose.retain(|id| theirs.contains(id));
         let wants: BTreeSet<BlobId> =
             places.iter().flat_map(|&i| ops[i].blobs()).filter(|b| !store.blobs.contains_key(b)).collect();
-        Request { ask, wants: wants.into_iter().collect() }
+        Request { ask, wants: wants.into_iter().collect(), after: None }
     }
 
-    /// What device `d` answers `asker`'s request: the ops `asker` may receive by `d`'s view beyond those it named, as
-    /// `sync` sends them, and the McEliece keys `d` holds that those ops name or that the request wants and `asker` may
-    /// fetch (`may_fetch`), smallest first. `d` vouches for its new writes first.
-    pub fn reply(&mut self, d: SignerId, asker: SignerId, request: &Request) -> (Vec<Signed>, Vec<BlobId>) {
+    /// What device `d` answers `asker`'s request: a page of the ops `asker` may receive by `d`'s view beyond those it
+    /// named, as `sync` sends them, and the McEliece keys `d` holds that those ops name or that the request wants and
+    /// `asker` may fetch (`may_fetch`), smallest first. The ops come each once, by their place (`sync::place`), after
+    /// the request's `after`: as many as fit in `page` bytes on the wire, and at least one. True if more are left, for
+    /// `asker` to ask on after the last. `d` vouches for its new writes first.
+    pub fn reply(
+        &mut self,
+        d: SignerId,
+        asker: SignerId,
+        request: &Request,
+        page: usize,
+    ) -> (Vec<Signed>, Vec<BlobId>, bool) {
         self.checkpoint(d);
         let store = self.held(d);
         let (ops, ids) = (store.log.ops(), store.log.ids());
         let places = answer(ops, &self.full_view(d), asker);
-        let sent: Vec<OpId> =
-            beyond(ops, ids, &logs_of(ops, ids), &places, &request.ask).into_iter().map(|i| ids[i]).collect();
+        let sent: BTreeSet<Place> = beyond(ops, ids, &logs_of(ops, ids), &places, &request.ask)
+            .into_iter()
+            .map(|i| (ops[i].depth, ids[i]))
+            .filter(|p| request.after.is_none_or(|after| *p > after))
+            .collect();
+        let (mut signed, mut size, mut more) = (vec![], 0usize, false);
+        for (_, id) in sent {
+            let s = &store.signed[&id];
+            size = size.saturating_add(s.to_wire().len());
+            if size > page && !signed.is_empty() {
+                more = true;
+                break;
+            }
+            signed.push(s.clone());
+        }
         let reach: HashSet<BlobId> = places.iter().flat_map(|&i| ops[i].blobs()).collect();
-        let (signed, _) = self.outgoing(d, &sent);
         let wanted = request.wants.iter().copied().filter(|b| reach.contains(b));
         let blobs: BTreeSet<BlobId> =
             signed.iter().flat_map(|s| s.op.blobs()).chain(wanted).filter(|b| store.blobs.contains_key(b)).collect();
-        (signed, blobs.into_iter().collect())
+        (signed, blobs.into_iter().collect(), more)
     }
 
     /// Device `d` may hand `asker` the McEliece key `blob`: it holds it, and an op `asker` may receive by `d`'s view

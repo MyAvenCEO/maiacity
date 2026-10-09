@@ -20,6 +20,9 @@
 //! mean its key signed twice from the same past (`forks`): a cloned device, one restored from an old backup, or a
 //! stolen key.
 //!
+//! A big reply comes a page at a time (P8d), each op after the ops it builds on (`place`): the device takes each page
+//! as it comes and asks on after the last op it got, until the peer has nothing more.
+//!
 //! Vault logs in P1, items by caps in P2, frontiers, forks and the proofs (T11, T12, T13, T19) in P6; on the wire (P8)
 //! it runs on its own iroh ALPN, with the bytes in iroh-blobs and the digests on iroh-gossip.
 
@@ -445,6 +448,16 @@ pub(crate) fn beyond(ops: &[Op], ids: &[OpId], logs: &[Option<LogId>], answer: &
             !below.entry(l).or_insert_with(|| all[&l].ancestors(named)).contains(&ids[i])
         })
         .collect()
+}
+
+/// Where an op comes in a reply (`Lab::reply`), which a peer sends a page at a time: by its depth, then its id.
+pub type Place = (u64, OpId);
+
+/// The place of `op` in a reply. An op is one deeper than the deepest op its device held when it made it, so none
+/// comes ahead of an op it builds on: a device that takes a reply a page at a time holds an op's past in the reply by
+/// the time the op arrives, and asks on after the last place it got.
+pub fn place(op: &Op) -> Place {
+    (op.depth, op.id())
 }
 
 /// Every fork among `ops`: two ops of one device in one log where neither builds on the other, the smaller id first.

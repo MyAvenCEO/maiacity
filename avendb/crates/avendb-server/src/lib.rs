@@ -2,7 +2,10 @@
 //! ciphertext, and beside it its relay, through which devices with no UDP of their own reach the server and each
 //! other. The relay lets in only the devices the node knows (`Admission`): the devices of the vaults acting in the
 //! spaces it relays, and the node itself; and it lets go of a device the node stops knowing, as when the device is
-//! taken out of its vault.
+//! taken out of its vault. A new device with no UDP of its own, as a browser's, which the node can't know before it
+//! joined, shows a pass its person's passkey signed (P8d, `avendb::sign::RelayPass`): the relay lets it in for ten
+//! minutes if the passkey roots a vault the node knows, long enough to link, and lets it go once its pass runs out,
+//! unless by then the node knows it.
 //!
 //! The relay serves plain HTTP. TLS ends in front of it, at a proxy that must offer X25519MLKEM768, as every device's
 //! TLS offers nothing else (`avendb_net::pq_provider`); and as iroh's relay path is `/relay`, the relay wants a host
@@ -12,14 +15,15 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result, anyhow};
-use avendb_net::{Admission, Node, Offer, Options, server};
+use avendb_net::{Admission, Node, Offer, Options, server, token_pass};
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use iroh_relay::server::{
     Access, AccessControl, ClientRequest, ConnectionId, RelayConfig, RelayService, Server, ServerConfig,
 };
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
 /// How the server runs, as its environment says.
@@ -95,6 +99,8 @@ pub async fn start(config: &Config) -> Result<Running> {
         store: None,
         card: false,
         admission: Some(admission),
+        relay_pass: None,
+        page: avendb_net::PAGE,
     };
     let node = server::open(&config.data, opts).await?;
     let mut offer = node.offer();
@@ -106,8 +112,8 @@ pub async fn start(config: &Config) -> Result<Running> {
     Ok(Running { node, relay, offer })
 }
 
-/// The server's relay: iroh's, serving plain HTTP on its socket, letting in only the clients its admission admits,
-/// and letting go of those it stops admitting.
+/// The server's relay: iroh's, serving plain HTTP on its socket, letting in only the clients its admission admits or
+/// whose passes it honours, and letting go of those it stops admitting and those whose passes ran out.
 pub struct Relay {
     server: Server,
     gate: Arc<Gate>,
@@ -117,7 +123,8 @@ pub struct Relay {
 impl Relay {
     /// The relay on socket `bind`, letting in whom `admission` admits.
     pub async fn spawn(bind: SocketAddr, admission: Admission) -> Result<Relay> {
-        let gate = Arc::new(Gate { admission, served: Mutex::default() });
+        let (served, passes, passed) = (Mutex::default(), Mutex::default(), Notify::new());
+        let gate = Arc::new(Gate { admission, served, passes, passed });
         let mut relay = RelayConfig::new(bind);
         relay.access = gate.clone();
         let mut config = ServerConfig::default();
@@ -144,26 +151,62 @@ impl Relay {
         self.gate.served.lock().expect("served").contains_key(endpoint)
     }
 
+    /// It lets `endpoint` in by a pass now (`avendb::sign::RelayPass`): until when, in seconds since 1970.
+    pub fn passed(&self, endpoint: &EndpointId) -> Option<u64> {
+        self.gate.passes.lock().expect("passes").get(endpoint).copied().filter(|&until| until > now())
+    }
+
     /// Lets go of every client, and stops.
     pub async fn shutdown(self) -> Result<()> {
         self.server.shutdown().await.map_err(|e| anyhow!("the relay: {e}"))
     }
 }
 
-/// The relay's gate: whom it lets in, and whom it serves, each client with its connections.
+/// The relay's gate: whom it lets in, whom it serves, each client with its connections, and the clients it let in by a
+/// pass, each with when its pass runs out.
 #[derive(Debug)]
 struct Gate {
     admission: Admission,
     served: Mutex<HashMap<EndpointId, HashSet<ConnectionId>>>,
+    passes: Mutex<HashMap<EndpointId, u64>>,
+    /// Woken when it lets a client in by a pass, whose end may come before any other's.
+    passed: Notify,
+}
+
+impl Gate {
+    /// When the pass the client of `request` shows runs out, if it is one the relay honours at `now`: for the client's
+    /// own endpoint, by a passkey that roots a vault the server knows, made within its ten minutes, and signed both
+    /// ways. The passkey is checked first, the signatures, which take a while, last.
+    fn pass(&self, request: &ClientRequest, now: u64) -> Option<u64> {
+        let pass = token_pass(&request.auth_token()?)?;
+        if !self.admission.honours(&pass.keys.id()) {
+            return None;
+        }
+        pass.verify(request.endpoint_id().as_bytes(), now)?;
+        Some(pass.expires())
+    }
+
+    /// The relay still lets `endpoint` in at `now`: the server knows it, or its pass hasn't run out.
+    fn admits(&self, endpoint: &EndpointId, passes: &HashMap<EndpointId, u64>, now: u64) -> bool {
+        self.admission.admits(endpoint) || passes.get(endpoint).is_some_and(|&until| until > now)
+    }
 }
 
 impl AccessControl for Gate {
     async fn on_connect(&self, request: &ClientRequest) -> Access {
+        let (endpoint, now) = (request.endpoint_id(), now());
+        // the pass checked before the lock is taken, as its signatures take a while
+        let pass = if self.admission.admits(&endpoint) { None } else { self.pass(request, now) };
         // under the lock, so that a client let in while the admission changes is let go with the others
         let mut served = self.served.lock().expect("served");
-        let endpoint = request.endpoint_id();
-        if !self.admission.admits(&endpoint) {
-            return Access::Deny { reason: Some("not a device this server knows".into()) };
+        let mut passes = self.passes.lock().expect("passes");
+        if let Some(until) = pass {
+            let until = passes.get(&endpoint).map_or(until, |&had| had.max(until));
+            passes.insert(endpoint, until);
+            self.passed.notify_one();
+        }
+        if !self.admits(&endpoint, &passes, now) {
+            return Access::Deny { reason: Some("not a device this server knows, nor one with a pass".into()) };
         }
         served.entry(endpoint).or_default().insert(request.connection_id());
         Access::Allow
@@ -180,17 +223,34 @@ impl AccessControl for Gate {
     }
 }
 
-/// Whenever whom the relay admits changes, lets go of each client it serves that it no longer admits: a device taken
-/// out of its vault, say. The client, trying again, is turned away.
+/// Whenever whom the relay admits changes, or a pass runs out, lets go of each client it serves that it no longer
+/// admits: a device taken out of its vault, say, or one whose pass ran out before it joined. The client, trying again,
+/// is turned away.
 async fn let_go(gate: Arc<Gate>, service: RelayService) {
     let mut changes = gate.admission.watch();
-    while changes.changed().await.is_ok() {
+    loop {
+        // until the first pass runs out, a minute at most
+        let next = gate.passes.lock().expect("passes").values().min().copied();
+        let wait = next.map_or(60, |until| until.saturating_sub(now())).clamp(1, 60);
+        tokio::select! {
+            changed = changes.changed() => if changed.is_err() { return },
+            () = gate.passed.notified() => {}
+            () = tokio::time::sleep(Duration::from_secs(wait)) => {}
+        }
+        let now = now();
         let served = gate.served.lock().expect("served");
-        for endpoint in served.keys().filter(|e| !gate.admission.admits(e)) {
-            tracing::info!("avendb relay: letting {endpoint} go, a device the server no longer knows");
+        let mut passes = gate.passes.lock().expect("passes");
+        for endpoint in served.keys().filter(|e| !gate.admits(e, &passes, now)) {
+            tracing::info!("avendb relay: letting {endpoint} go, a device the server doesn't know, with no pass");
             service.clients().disconnect(*endpoint, None);
         }
+        passes.retain(|_, &mut until| until > now);
     }
+}
+
+/// The time by this machine's clock: seconds since 1970.
+fn now() -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// A task, aborted when dropped.

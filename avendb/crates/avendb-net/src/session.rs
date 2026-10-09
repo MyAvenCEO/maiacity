@@ -32,7 +32,8 @@ pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
 const HELLO_LIMIT: usize = 64 << 10;
 /// The most a request or an announcement may take.
 const MESSAGE_LIMIT: usize = 16 << 20;
-/// The most a reply may take: a few thousand ops, each with its SLH-DSA signatures.
+/// The most a reply may take: a page of ops (`Options::page`), or one op bigger than that, or a card of a few
+/// thousand ops, each with its SLH-DSA signatures.
 pub(crate) const REPLY_LIMIT: usize = 256 << 20;
 
 /// The label both ends draw the TLS exporter with.
@@ -94,7 +95,7 @@ pub(crate) async fn exchange(conn: &Connection, kind: u8, body: &[u8], limit: us
 pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
     while let Ok((mut send, recv)) = peer.conn.accept_bi().await {
         let (shared, peer) = (shared.clone(), peer.clone());
-        tokio::spawn(async move {
+        n0_future::task::spawn(async move {
             match answer(&shared, &peer, recv).await {
                 Ok(answer) => {
                     if send.write_all(&answer).await.is_ok() {
@@ -119,10 +120,10 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     let device = peer.device;
     match kind {
         REQUEST => {
-            let request = Request::from_wire(body)?;
-            let (ops, ids) = shared.lab(move |lab, me| lab.reply(me, device, &request)).await;
+            let (request, page) = (Request::from_wire(body)?, shared.opts.page);
+            let (ops, ids, more) = shared.lab(move |lab, me| lab.reply(me, device, &request, page)).await;
             let blobs = shared.offer(ids).await?;
-            Ok(Reply { ops, blobs }.to_wire())
+            Ok(Reply { ops, blobs, more }.to_wire())
         }
         ANNOUNCE => {
             let Announce { digests } = Announce::from_wire(body)?;
@@ -133,7 +134,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
         }
         CARD if shared.opts.card => {
             let ops = shared.lab(|lab, me| lab.card(me)).await;
-            Ok(Reply { ops, blobs: Vec::new() }.to_wire())
+            Ok(Reply { ops, ..Reply::default() }.to_wire())
         }
         LINK => {
             let hello = PasskeyHello::from_wire(body)?;
@@ -141,7 +142,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             let proven = hello.verify(&exporter(&peer.conn)?, !peer.dialed, device);
             let passkey = proven.context("the passkey's hello proves no passkey for this device on this connection")?;
             let ops = shared.lab(move |lab, me| lab.link_card(me, passkey)).await;
-            Ok(Reply { ops, blobs: Vec::new() }.to_wire())
+            Ok(Reply { ops, ..Reply::default() }.to_wire())
         }
         JOIN => {
             let join = Join::from_wire(body)?;
@@ -168,7 +169,7 @@ impl std::fmt::Debug for Protocol {
 impl ProtocolHandler for Protocol {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         let shared = self.0.clone();
-        match tokio::time::timeout(WAIT, listen_hello(&shared, &conn)).await {
+        match n0_future::time::timeout(WAIT, listen_hello(&shared, &conn)).await {
             Ok(Ok(device)) => {
                 let peer = shared.connected(conn, device, false);
                 serve(shared, peer).await;

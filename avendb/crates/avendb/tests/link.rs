@@ -12,7 +12,7 @@ use avendb::id::{OpId, SignerId};
 use avendb::keys::{KeyScope, Recipient};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Op, Refusal};
-use avendb::sign::PasskeyHello;
+use avendb::sign::{PasskeyHello, RelayPass};
 use avendb::wire::{Join, Reply, Request, Wire};
 
 /// The TLS exporter of the connection between the new device, which dials, and its peer.
@@ -26,7 +26,8 @@ fn link(new: (&mut Lab, SignerId), passkey: SignerId, peer: (&mut Lab, SignerId)
     let hello = PasskeyHello::from_wire(&hello.to_wire()).expect("a passkey's hello");
     let proven = hello.verify(&EXPORTER, true, n).expect("the hello proves the passkey");
     assert_eq!(proven, passkey);
-    let card = Reply::from_wire(&Reply { ops: peer.link_card(p, proven), blobs: vec![] }.to_wire()).expect("a card");
+    let card = Reply { ops: peer.link_card(p, proven), ..Reply::default() };
+    let card = Reply::from_wire(&card.to_wire()).expect("a card");
     new.receive(n, card.ops, vec![]);
     let join = Join::from_wire(&new.join(n, passkey)?.to_wire()).expect("a join");
     peer.accept_join(p, n, join).map(|_| ())
@@ -36,9 +37,9 @@ fn link(new: (&mut Lab, SignerId), passkey: SignerId, peer: (&mut Lab, SignerId)
 fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     let ((to, t), (from, f)) = (to, from);
     let request = Request::from_wire(&to.request(t, f).to_wire()).expect("a request");
-    let (ops, ids) = from.reply(f, t, &request);
-    let reply = Reply::from_wire(&Reply { ops, blobs: ids.iter().map(|&b| (b, [0; 32])).collect() }.to_wire());
-    let reply = reply.expect("a reply");
+    let (ops, ids, more) = from.reply(f, t, &request, usize::MAX);
+    let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
+    let reply = Reply::from_wire(&Reply { ops, blobs, more }.to_wire()).expect("a reply");
     let blobs = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
     to.receive(t, reply.ops, blobs.collect())
 }
@@ -194,4 +195,38 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     assert!(mac.signed_op(w.mac_s, id).is_some());
     assert!(mac.blob(w.mac_s, join.op.op.blobs()[0]).is_some(), "with the McEliece key it names");
     assert_eq!(mac.accept_join(w.mac_s, new, join), Ok(id), "sent again, the same");
+}
+
+#[test]
+fn a_browser_takes_samuels_passkey_in_and_links_by_a_pass_to_the_relay() {
+    // P8d: a page holds Samuel's passkey as a software passkey, brought in by its secret as his platform syncs it
+    let mut w = world();
+    let h = handbook(&mut w);
+    let secret = w.lab.passkey_secret(w.passkey_s).expect("a software passkey's secret");
+    assert!(w.lab.passkey_secret(w.mac_s).is_none(), "a device holds no passkey's secret");
+    let mut page = Lab::with_entropy([5; 32]);
+    let passkey = page.passkey_from("Samuel", *secret);
+    assert_eq!(passkey, w.passkey_s, "the same passkey");
+    let browser = page.device_of(passkey, "Samuel's browser");
+    // its pass to the server's relay: for its own endpoint, by the passkey that roots a vault the server knows
+    let made = 1_791_500_000;
+    let pass = page.relay_pass(browser, passkey, made).expect("a pass");
+    let endpoint = page.endpoint_secret(browser).expect("unlocked");
+    let endpoint = ed25519_dalek::SigningKey::from_bytes(&endpoint).verifying_key().to_bytes();
+    assert_eq!(pass.endpoint, endpoint, "for the browser's endpoint");
+    let pass = RelayPass::from_wire(&pass.to_wire()).expect("a pass, as the relay reads it");
+    assert_eq!(pass.verify(&endpoint, made + 60), Some(passkey), "by Samuel's passkey");
+    let roots = w.lab.roots(w.server);
+    for p in [w.passkey_s, w.passkey_b, w.passkey_c, w.passkey_d] {
+        assert!(roots.contains(&p), "the server knows the people whose vaults it knows");
+    }
+    assert!(page.roots(browser).is_empty(), "the browser knows nobody before it links");
+    assert!(page.relay_pass(passkey, passkey, made).is_none(), "a passkey is no device to make a pass for");
+    assert!(page.relay_pass(browser, w.passkey_b, made).is_none(), "and Bob's passkey isn't at hand");
+    // then it links through Samuel's Mac as any new device does, and reads Welcome
+    let mut mac = w.lab.split(w.mac_s, &[], [1; 32]);
+    link((&mut page, browser), passkey, (&mut mac, w.mac_s)).expect("the browser links");
+    settle((&mut page, browser), (&mut mac, w.mac_s));
+    assert_eq!(text(&page, browser, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
+    assert!(page.roots(browser).contains(&passkey), "it knows Samuel's vault now, and Bob's, a coop owner");
 }

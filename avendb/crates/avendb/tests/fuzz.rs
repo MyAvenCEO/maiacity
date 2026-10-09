@@ -13,7 +13,7 @@ use avendb::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{Action, Branch, Op};
-use avendb::sign::{Classical, DeviceKey, Hello, Passkey, PasskeyHello, Signature, SignerKeys, Signed};
+use avendb::sign::{Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
 use avendb::sync::{Ask, LogId};
 use avendb::wire::{Announce, Join, Reply, Request, Wire};
 
@@ -281,6 +281,12 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     let hello = passkey.hello(&exporter, true, new);
     assert_eq!(hello.verify(&exporter, true, new), Some(passkey.id()));
     wire_mutations(&mut g, &hello, 1500, |h: &PasskeyHello| assert_eq!(h.verify(&exporter, true, new), None));
+    // a relay pass read from changed bytes lets its endpoint in by no passkey
+    let endpoint = [3; 32];
+    let pass = passkey.pass(endpoint, 1_791_500_000);
+    assert_eq!(pass.verify(&endpoint, pass.made), Some(passkey.id()));
+    let now = pass.made;
+    wire_mutations(&mut g, &pass, 1500, |p: &RelayPass| assert_eq!(p.verify(&p.endpoint, now.max(p.made)), None));
     // a join read from changed bytes carries a refused op, or the same op beside other bytes, which the device checks
     // against the ids its op names
     let join = Join { op: add.clone(), blobs: vec![vec![1; 40], vec![2; 3]] };
@@ -293,10 +299,11 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     ask.haves.insert(log(1), vec![OpId::from_u64(5)]);
     ask.loose = vec![OpId::from_u64(7), OpId::from_u64(9)];
     wire_mutations(&mut g, &ask, 3000, |_| {});
-    let request = Request { ask, wants: vec![BlobId::from_u64(3), BlobId::from_u64(4)] };
+    let (wants, after) = (vec![BlobId::from_u64(3), BlobId::from_u64(4)], Some((9, OpId::from_u64(8))));
+    let request = Request { ask, wants, after };
     wire_mutations(&mut g, &request, 3000, |_| {});
     let blobs = vec![(BlobId::from_u64(3), [1; 32]), (BlobId::from_u64(4), [2; 32])];
-    let reply = Reply { ops: vec![add.clone(), write.clone()], blobs };
+    let reply = Reply { ops: vec![add.clone(), write.clone()], blobs, more: true };
     let sent = [add.clone(), write.clone()];
     wire_mutations(&mut g, &reply, 1500, |r: &Reply| {
         for op in r.ops.iter().filter(|o| !sent.contains(o)) {

@@ -10,20 +10,35 @@ publish.workspace = true
 # The media vault's iroh (vault/) is another workspace and stays as it is: these are avenDB's own versions and features.
 [dependencies]
 avendb = { path = "../avendb" }
-# TLS through aws-lc-rs, the provider that has X25519MLKEM768; ring, iroh's default, is left out
-iroh = { version = "=1.3.0", default-features = false, features = ["tls-aws-lc-rs", "portmapper", "fast-apple-datapath"] }
 # 0.103.0 was yanked
 iroh-blobs = { version = "=0.103.1", default-features = false }
-rustls = { version = "0.23.33", default-features = false, features = ["aws_lc_rs", "std"] }
-tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+tokio = { version = "1.44", default-features = false, features = ["sync"] }
+# tasks and timers on tokio, and in a browser on its event loop (P8d)
+n0-future = "0.3.2"
 anyhow = "1"
 tracing = "0.1"
 # the server's own secrets, and the randomness every node's Lab draws on
-getrandom = "0.3"
+getrandom = "0.4"
 # an offer's text, for a QR code (iroh's own version)
 data-encoding = "2.11"
 # the server's secrets and a node's endpoint key, wiped as they are dropped (P8c)
 zeroize = "1.8"
+# X25519MLKEM768 in pure Rust, for a node in a browser (P8d, `kx`)
+ml-kem = { version = "0.3.2", features = ["getrandom", "zeroize"] }
+x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
+
+# On a machine: TLS through aws-lc-rs, the provider that has X25519MLKEM768; ring, iroh's default, is left out
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+iroh = { version = "=1.3.0", default-features = false, features = ["tls-aws-lc-rs", "portmapper", "fast-apple-datapath"] }
+rustls = { version = "0.23.33", default-features = false, features = ["aws_lc_rs", "std"] }
+tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "io-util"] }
+
+# In a browser (P8d), where aws-lc-rs doesn't build: ring for TLS, and X25519MLKEM768 in pure Rust (`kx`); randomness
+# from the browser
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+iroh = { version = "=1.3.0", default-features = false, features = ["tls-ring"] }
+rustls = { version = "0.23.33", default-features = false, features = ["ring", "std"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
