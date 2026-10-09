@@ -72,7 +72,7 @@ fn only_owners_publish_into_the_lane() {
     for role in [Role::Write, Role::Owner] {
         c.log.append(PASSKEY_S, &[PASSKEY_B], grant(welcome, role, vault(carol), coop, None)).unwrap();
     }
-    let publish = |actor, blob: &[u8]| Action::Publish { space: handbook, actor, blob: blob.to_vec() };
+    let publish = |actor, blob: &[u8]| Action::Publish { space: handbook, actor, via: vec![], blob: blob.to_vec() };
     assert_eq!(c.log.check(MAC_C, &[], publish(carol, DOCUMENT_V2.bytes())).err(), Some(Refusal::NoCap));
     // nor can she claim to act for the coop
     assert_eq!(c.log.check(MAC_C, &[], publish(coop, DOCUMENT_V2.bytes())).err(), Some(Refusal::NotActing));
@@ -84,7 +84,7 @@ fn only_owners_publish_into_the_lane() {
     let v = c.log.view();
     assert_eq!(v.lane_of(handbook).collect::<Vec<_>>(), [DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes()]);
     // a space that doesn't exist has no lane
-    let nowhere = Action::Publish { space: avendb::id::SpaceId::from_u64(404), actor: coop, blob: vec![1] };
+    let nowhere = Action::Publish { space: avendb::id::SpaceId::from_u64(404), actor: coop, via: vec![], blob: vec![1] };
     assert_eq!(c.log.check(MAC_S, &[], nowhere).err(), Some(Refusal::UnknownSpace));
 }
 
@@ -92,7 +92,7 @@ fn only_owners_publish_into_the_lane() {
 fn a_revoked_owner_cannot_block_his_revocation() {
     let mut c = cast();
     let (samuel, dave, carol) = (c.samuel, c.dave, c.carol);
-    let notes = SpaceId::from(c.log.append(MAC_S, &[], Action::FoundSpace { actor: samuel, nonce: 0 }).unwrap());
+    let notes = SpaceId::from(c.log.append(MAC_S, &[], Action::FoundSpace { actor: samuel, nonce: 0, via: vec![] }).unwrap());
     let space = Scope::Space(notes);
     // Samuel gives Dave owner on his Notes, and Dave gives Carol read beneath it
     let dave_owner = GrantId::from(c.log.append(PASSKEY_S, &[], grant(space, Role::Owner, vault(dave), samuel, None)).unwrap());
@@ -101,11 +101,11 @@ fn a_revoked_owner_cannot_block_his_revocation() {
     // Dave revokes Carol's read on a copy that never sees Samuel go on writing and then revoke Dave's grant, so Dave's
     // revocation sorts first
     let mut daves = c.log.clone();
-    daves.append(MAC_D, &[], Action::Revoke { grant: carol_read, actor: dave, keep: vec![] }).unwrap();
+    daves.append(MAC_D, &[], Action::Revoke { grant: carol_read, actor: dave, keep: vec![], via: vec![] }).unwrap();
     for e in [WELCOME, CHARTER] {
         c.log.append(MAC_S, &[], write(notes, e, samuel, 0)).unwrap();
     }
-    c.log.append(PASSKEY_S, &[], Action::Revoke { grant: dave_owner, actor: samuel, keep: vec![] }).unwrap();
+    c.log.append(PASSKEY_S, &[], Action::Revoke { grant: dave_owner, actor: samuel, keep: vec![], via: vec![] }).unwrap();
     // the founder ranks first, wherever the revocations sort: both grants are gone, in either order of arrival
     for (a, b) in [(&c.log, &daves), (&daves, &c.log)] {
         let mut all = a.ops().to_vec();

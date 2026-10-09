@@ -100,7 +100,7 @@ fn announcements_tell_each_peer_of_its_own_logs_alone() {
 fn mceliece_keys_go_only_within_reach() {
     let (w, (_, _, coop), mut mac, mut server, mut bob) = split();
     // the coop founds a space on Samuel's Mac, whose new key is sealed to through its McEliece key
-    let found = mac.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor: coop, nonce: 7 }).expect("a space");
+    let found = mac.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor: coop, nonce: 7, via: vec![] }).expect("a space");
     let garden = SpaceId::from(found);
     let relay = grant(Scope::Space(garden), Role::Relay, vault(w.server_vault), coop, None);
     mac.submit(w.mac_s, &[w.mac_s], relay).expect("the server relays it");

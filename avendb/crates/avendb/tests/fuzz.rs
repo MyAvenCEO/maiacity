@@ -206,6 +206,7 @@ fn signed_ops() -> (Signed, Signed) {
         epoch: 0,
         deps: vec![OpId::from_u64(5)],
         branch: Branch::On(OpId::from_u64(5)),
+        via: vec![VaultId::from_u64(3), VaultId::from_u64(4)],
         body: vec![1, 2, 3],
     };
     let write = Op { parents: vec![OpId::from_u64(2)], depth: 2, author: device.id(), cosigners: vec![], action };

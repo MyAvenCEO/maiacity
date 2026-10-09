@@ -385,7 +385,7 @@ impl Repo {
     pub fn make(&mut self, author: SignerId, d: Draft) -> Result<OpId, Refusal> {
         let op = OpId::from_u64(self.history.commits.len() as u64 + 1);
         let (space, entry, actor) = (SpaceId::from_u64(0), EntryId::from_u64(0), VaultId::from_u64(0));
-        let write = Write { op, author, actor, space, entry, epoch: 0, deps: d.deps, branch: d.branch };
+        let write = Write { op, author, actor, space, entry, epoch: 0, deps: d.deps, branch: d.branch, via: vec![] };
         self.history.push(Commit { write, body: Some(d.body) })?;
         Ok(op)
     }

@@ -103,7 +103,7 @@ fn attempts(rng: &mut Rng, h: &mut History, n: usize, clash: bool) {
                 let parent = if grants.is_empty() || rng.below(2) == 0 { None } else { Some(rng.pick(&grants)) };
                 grant(scope, rng.pick(&ROLES), grantee, rng.pick(&h.vaults), parent)
             }
-            5 if !grants.is_empty() => Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&h.vaults), keep: vec![] },
+            5 if !grants.is_empty() => Action::Revoke { grant: rng.pick(&grants), actor: rng.pick(&h.vaults), keep: vec![], via: vec![] },
             6 => Action::AddDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), seal_to: None },
             7 => Action::RemoveDevice { vault: rng.pick(&h.vaults), device: rng.pick(&SIGNERS), keep: vec![] },
             8 => {
@@ -143,7 +143,7 @@ fn clash_action(rng: &mut Rng, h: &History, author: SignerId) -> Option<Action> 
         1 => {
             let grants = st.grants();
             let (id, g) = (!grants.is_empty()).then(|| grants[rng.below(grants.len())].clone())?;
-            Some(Action::Revoke { grant: id, actor: g.issuer, keep: vec![] })
+            Some(Action::Revoke { grant: id, actor: g.issuer, keep: vec![], via: vec![] })
         }
         _ => {
             let devices: Vec<(VaultId, SignerId)> =

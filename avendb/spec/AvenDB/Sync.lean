@@ -45,10 +45,10 @@ def Op.item? (op : Op) : Option (SpaceId × EntryId) :=
     into. -/
 def Op.authScope? (ops : List Op) (op : Op) : Option Scope :=
   match op.action with
-  | .foundSpace sp _ => some (.space sp)
-  | .grant g => some g.scope
-  | .revoke gid _ _ => ops.findSome? fun o => match o.action with
-    | .grant g => if g.id == gid then some g.scope else none
+  | .foundSpace sp _ _ => some (.space sp)
+  | .grant g _ => some g.scope
+  | .revoke gid _ _ _ => ops.findSome? fun o => match o.action with
+    | .grant g _ => if g.id == gid then some g.scope else none
     | _ => none
   | .keys k .. => k.scope?
   | .publish sp .. => some (.space sp)
@@ -64,14 +64,14 @@ def Op.vaultOf? (op : Op) : Option VaultId :=
 /-- The vault an op acts for. -/
 def Op.actor? (op : Op) : Option VaultId :=
   match op.action with
-  | .foundSpace _ a | .revoke _ a _ | .write _ _ a .. | .publish _ a _ => some a
-  | .grant g => some g.issuer
+  | .foundSpace _ a _ | .revoke _ a _ _ | .write _ _ a .. | .publish _ a _ _ => some a
+  | .grant g _ => some g.issuer
   | _ => none
 
 /-- The vault a grant names. A peer checks that it exists before accepting the grant. -/
 def Op.grantee? (op : Op) : Option VaultId :=
   match op.action with
-  | .grant g => match g.grantee with
+  | .grant g _ => match g.grantee with
     | .principal (.vault v) => some v
     | _ => none
   | _ => none

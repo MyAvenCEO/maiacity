@@ -130,10 +130,71 @@ def s3 : List Op := s2 ++ chain 20 [
 #guard (respond s3 macB).any (·.vaultOf? == some coop)
 #guard (respond s3 macC).all (·.vaultOf? != some coop) && (respond s3 stranger).isEmpty
 
+/-! ## Three kinds of vault
+
+The vault is the identity. A human vault is owned by its person's passkeys, and its devices act for it. A coop vault
+is owned by human and coop vaults. avenCEO, the relay server's vault, is an aven vault: owned by human and coop vaults
+like a coop, with devices of its own, its servers, which act for it but never govern it. No signer owns a coop or an
+aven vault directly. -/
+
+def avenCEO := 300
+def server := 600
+
+def sAven : List Op := s3 ++ chain 400 [
+  (passkeyS, [], .genesis avenCEO .aven [.vault samuel] 1),
+  (passkeyS, [server], .addDevice avenCEO server)]
+#guard refused sAven == []
+
+-- the server acts for avenCEO, and so do Samuel's devices, through Samuel's vault; Bob's don't
+#guard actsFor (view sAven) server avenCEO && actsFor (view sAven) macS avenCEO && !actsFor (view sAven) macB avenCEO
+-- avenCEO's key opens on the server and on Samuel's devices; Samuel's vault's key doesn't open on the server
+#guard opens' sAven server (.vault avenCEO) && opens' sAven phoneS (.vault avenCEO)
+#guard !opens' sAven server (.vault samuel) && !opens' sAven macB (.vault avenCEO)
+-- the server doesn't govern avenCEO: it adds no device and no owner; Samuel's passkey does, through Samuel's vault
+#guard !accepted sAven (attempt server [77] (.addDevice avenCEO 77))
+#guard !accepted sAven (attempt server [passkeyB] (.addOwner avenCEO (.vault bob)))
+#guard accepted sAven (attempt passkeyS [77] (.addDevice avenCEO 77))
+#guard accepted sAven (attempt passkeyS [passkeyB] (.addOwner avenCEO (.vault bob)))
+-- signers own human vaults only, and a human vault no vault
+#guard !accepted s2 (attempt passkeyS [] (.genesis avenCEO .aven [.signer passkeyS] 1))
+#guard !accepted s2 (attempt passkeyS [passkeyB] (.genesis coop .coop [.signer passkeyS, .vault bob] 1))
+#guard !accepted sAven (attempt passkeyS [77] (.addOwner avenCEO (.signer 77)))
+#guard !accepted s3 (attempt passkeyS [passkeyB] (.addOwner samuel (.vault bob)))
+-- an aven vault owns no vault yet, and has no root; a coop has no devices
+#guard !accepted sAven (attempt passkeyS [passkeyB] (.addOwner coop (.vault avenCEO)))
+#guard !accepted sAven (attempt passkeyS [] (.genesis 301 .coop [.vault avenCEO] 1))
+#guard !accepted s2 (attempt passkeyS [] (.genesis avenCEO .aven [.vault samuel] 1 (some passkeyS)))
+#guard !accepted s3 (attempt passkeyS [passkeyB, 77] (.addDevice coop 77))
+
+/-! ## Acts name their chain
+
+An op that acts for a vault names the owners it goes through, down to the vault its device belongs to: Samuel's Mac
+writes for the coop through Samuel's vault. A chain that skips a link, or runs through a vault the device doesn't
+belong to, is refused. -/
+
+-- Samuel's Mac founds the coop's Handbook through Samuel's vault; with no chain, or through Bob's vault, it can't
+#guard accepted s3 (attempt macS [] (.foundSpace handbook coop [samuel]))
+#guard !accepted s3 (attempt macS [] (.foundSpace handbook coop))
+#guard !accepted s3 (attempt macS [] (.foundSpace handbook coop [bob]))
+-- nor through Carol's vault, which doesn't own the coop
+#guard !accepted s3 (attempt macC [] (.foundSpace handbook coop [carol]))
+-- the server founds a space for avenCEO directly, Samuel's Mac through Samuel's vault
+#guard accepted sAven (attempt server [] (.foundSpace notes avenCEO))
+#guard accepted sAven (attempt macS [] (.foundSpace notes avenCEO [samuel]))
+#guard !accepted sAven (attempt macS [] (.foundSpace notes avenCEO))
+
+-- a coop of the coop: Bob's Mac acts for it through the coop and Bob's vault, and may skip neither
+def guild := 203
+def sGuild : List Op := s3 ++ chain 410 [(passkeyS, [passkeyB], .genesis guild .coop [.vault coop] 1)]
+#guard refused sGuild == []
+#guard accepted sGuild (attempt macB [] (.foundSpace handbook guild [coop, bob]))
+#guard !accepted sGuild (attempt macB [] (.foundSpace handbook guild [bob]))
+#guard !accepted sGuild (attempt macB [] (.foundSpace handbook guild [coop]))
+
 /-! ## Scenarios 4 to 7: spaces, writes, one document via caps, public -/
 
 def s4 : List Op := s3 ++ chain 30 [
-  (macS, [], .foundSpace handbook coop),
+  (macS, [], .foundSpace handbook coop [samuel]),
   (macS, [], .foundSpace notes samuel),
   (macS, [], .foundSpace todos samuel)]
 #guard refused s4 == []
@@ -143,8 +204,8 @@ def s4 : List Op := s3 ++ chain 30 [
 #guard !(respond s4 macB).any (·.authScope? s4 == some (.space notes))
 
 def s5 : List Op := s4 ++ chain 40 [
-  (macS, [], .write handbook welcome coop 0),
-  (macS, [], .write handbook onboarding coop 0)]
+  (macS, [], .write handbook welcome coop 0 (via := [samuel])),
+  (macS, [], .write handbook onboarding coop 0 (via := [samuel]))]
 #guard refused s5 == []
 
 -- Bob's Mac opens Welcome through the coop; Carol, a stranger and the server can't
@@ -153,7 +214,7 @@ def s5 : List Op := s4 ++ chain 40 [
 
 def s6 : List Op := s5 ++ chain 50 [
   (macS, [], .grant { id := 1, scope := .entry handbook welcome, role := .read, grantee := .principal (.vault carol),
-                       issuer := coop, parent := none })]
+                       issuer := coop, parent := none } [samuel])]
 #guard refused s6 == []
 
 -- Carol reads Welcome only, and can't edit it
@@ -162,18 +223,19 @@ def s6 : List Op := s5 ++ chain 50 [
 #guard !accepted s6 (attempt macC [] (.write handbook welcome carol 0))
 -- a grant naming a device is refused (T4)
 #guard !accepted s6 (attempt macS [] (.grant { id := 2, scope := .entry handbook welcome, role := .read,
-                                               grantee := .principal (.signer macC), issuer := coop, parent := none }))
+                                               grantee := .principal (.signer macC), issuer := coop, parent := none }
+                                     [samuel]))
 
 def s7 : List Op := s6 ++ chain 60 [
-  (macS, [], .write handbook charter coop 0),
+  (macS, [], .write handbook charter coop 0 (via := [samuel])),
   (macS, [], .grant { id := 3, scope := .entry handbook charter, role := .read, grantee := .«public»,
-                       issuer := coop, parent := none })]
+                       issuer := coop, parent := none } [samuel])]
 #guard refused s7 == []
 
 -- anyone opens Charter; Public can't be given write (T8)
 #guard opens' s7 stranger (.entry handbook charter) && !opens' s7 stranger (.entry handbook welcome)
 #guard !accepted s7 (attempt macS [] (.grant { id := 4, scope := .entry handbook charter, role := .write,
-                                               grantee := .«public», issuer := coop, parent := none }))
+                                               grantee := .«public», issuer := coop, parent := none } [samuel]))
 
 /-! ## Scenario 8: branches
 
@@ -182,13 +244,13 @@ was until Samuel merges draft with a write on main that builds on both lines' he
 promoted the same way while main moved on: what the promote's update holds is Loro's (`Branches.lean`, T10h). -/
 
 def ops8 : List (SignerId × List SignerId × Action) := [
-  (macB, [], .write handbook welcome coop 0 [40] .new),         -- 300: Bob starts draft from Welcome's first write
-  (macB, [], .write handbook welcome coop 0 [300] (.on 300)),   -- 301: Bob's edit on draft
-  (macS, [], .write handbook welcome coop 0 [40, 301]),         -- 302: Samuel merges draft into main
-  (macS, [], .write handbook welcome coop 0 [302] .new),        -- 303: Samuel starts rewrite from main
-  (macS, [], .write handbook welcome coop 0 [303] (.on 303)),   -- 304: an edit on rewrite
-  (macB, [], .write handbook welcome coop 0 [302]),             -- 305: main moves on meanwhile
-  (macS, [], .write handbook welcome coop 0 [305, 304])]        -- 306: Samuel promotes rewrite into main
+  (macB, [], .write handbook welcome coop 0 [40] .new [bob]),            -- 300: Bob starts draft from Welcome's first write
+  (macB, [], .write handbook welcome coop 0 [300] (.on 300) [bob]),      -- 301: Bob's edit on draft
+  (macS, [], .write handbook welcome coop 0 [40, 301] .main [samuel]),   -- 302: Samuel merges draft into main
+  (macS, [], .write handbook welcome coop 0 [302] .new [samuel]),        -- 303: Samuel starts rewrite from main
+  (macS, [], .write handbook welcome coop 0 [303] (.on 303) [samuel]),   -- 304: an edit on rewrite
+  (macB, [], .write handbook welcome coop 0 [302] .main [bob]),          -- 305: main moves on meanwhile
+  (macS, [], .write handbook welcome coop 0 [305, 304] .main [samuel])]  -- 306: Samuel promotes rewrite into main
 def s8 (n : Nat := ops8.length) : List Op := s7 ++ chain 300 (ops8.take n)
 #guard refused (s8) == []
 
@@ -211,11 +273,11 @@ def headsOf (ops : List Op) (l : Option OpId) : List OpId := heads (view ops).wr
 #guard (respond (s8) macC).any (·.id == 301)
 #guard !accepted (s8) (attempt macC [] (.write handbook welcome carol 0 [40] .new))
 -- a write on a branch builds on its start or on a write on it, of its own entry; merging main into draft is fine
-#guard accepted (s8) (attempt macB [] (.write handbook welcome coop 0 [301, 306] (.on 300)))
-#guard !accepted (s8) (attempt macB [] (.write handbook welcome coop 0 [306] (.on 300)))
-#guard !accepted (s8) (attempt macS [] (.write handbook welcome coop 0 [306] (.on 302)))
-#guard !accepted (s8) (attempt macS [] (.write handbook onboarding coop 0 [41] (.on 300)))
-#guard !accepted (s8) (attempt macS [] (.write handbook welcome coop 0 [] (.on 999)))
+#guard accepted (s8) (attempt macB [] (.write handbook welcome coop 0 [301, 306] (.on 300) [bob]))
+#guard !accepted (s8) (attempt macB [] (.write handbook welcome coop 0 [306] (.on 300) [bob]))
+#guard !accepted (s8) (attempt macS [] (.write handbook welcome coop 0 [306] (.on 302) [samuel]))
+#guard !accepted (s8) (attempt macS [] (.write handbook onboarding coop 0 [41] (.on 300) [samuel]))
+#guard !accepted (s8) (attempt macS [] (.write handbook welcome coop 0 [] (.on 999) [samuel]))
 
 /-! ## Scenario 9: schema v2
 
@@ -227,25 +289,26 @@ def lensV1V2 : BlobId := 2
 
 def s9 : List Op := s7 ++ chain 65 [
   (macS, [], .grant { id := 5, scope := .space handbook, role := .write, grantee := .principal (.vault carol),
-                       issuer := coop, parent := none }),
-  (macS, [], .publish handbook coop schemaV2),
-  (macS, [], .publish handbook coop lensV1V2),
+                       issuer := coop, parent := none } [samuel]),
+  (macS, [], .publish handbook coop schemaV2 [samuel]),
+  (macS, [], .publish handbook coop lensV1V2 [samuel]),
   -- Samuel's Notes move to v2 too: the same blob, in another space's lane
   (macS, [], .publish notes samuel schemaV2)]
 #guard refused s9 == []
 
 #guard (view s9).lane == [(handbook, schemaV2), (handbook, lensV1V2), (notes, schemaV2)]
--- the same blob again is refused; Bob's Mac acts for the coop too, and may publish another
-#guard !accepted s9 (attempt macS [] (.publish handbook coop schemaV2))
-#guard accepted s9 (attempt macB [] (.publish handbook coop 3))
--- Carol writes in the Handbook, but publishes into its lane neither for herself nor for the coop; nor does a stranger
+-- the same blob again is refused; Bob's Mac acts for the coop too, through Bob's vault, and may publish another
+#guard !accepted s9 (attempt macS [] (.publish handbook coop schemaV2 [samuel]))
+#guard accepted s9 (attempt macB [] (.publish handbook coop 3 [bob]))
+-- Carol writes in the Handbook, but publishes into its lane neither for herself nor for the coop, whose owner her
+-- vault isn't; nor does a stranger
 #guard accepted s9 (attempt macC [] (.write handbook onboarding carol 0))
 #guard !accepted s9 (attempt macC [] (.publish handbook carol 3))
-#guard !accepted s9 (attempt macC [] (.publish handbook coop 3))
+#guard !accepted s9 (attempt macC [] (.publish handbook coop 3 [carol]))
 #guard !accepted s9 (attempt stranger [] (.publish handbook coop 3))
 -- whoever may receive an item of a space receives its schemas and lenses: Carol's Mac those of the Handbook, and so
 -- does anyone, through the public Charter; Bob's Mac doesn't receive those of Samuel's Notes
-#guard [macC, stranger].all fun d => (respond s9 d).any (·.action == .publish handbook coop schemaV2)
+#guard [macC, stranger].all fun d => (respond s9 d).any (·.action == .publish handbook coop schemaV2 [samuel])
 #guard (respond s9 phoneS).any (·.action == .publish notes samuel schemaV2)
 #guard !(respond s9 macB).any (·.action == .publish notes samuel schemaV2)
 
@@ -278,7 +341,7 @@ def welcomeV2 : Lens.StoredDoc :=
 
 /-! ## Scenario 10: revoking Carol rotates Welcome's key -/
 
-def s10 : List Op := s7 ++ chain 70 [(macS, [], .revoke 1 coop [])]
+def s10 : List Op := s7 ++ chain 70 [(macS, [], .revoke 1 coop [] [samuel])]
 #guard refused s10 == []
 
 #guard (view s10).epochOf (.entry handbook welcome) == (view s7).epochOf (.entry handbook welcome) + 1
@@ -292,7 +355,7 @@ def s11 : List Op := s7 ++ chain 80 [(passkeyS, [], .removeDevice samuel phoneS 
 #guard !opens' s11 phoneS (.vault samuel) && !opens' s11 phoneS (.vault coop)
 #guard !opens' s11 phoneS (.entry handbook welcome) && opens' s11 macS (.entry handbook welcome)
 #guard opens' s11 macB (.entry handbook welcome)
-#guard !accepted s11 (attempt phoneS [] (.write handbook welcome coop 1))
+#guard !accepted s11 (attempt phoneS [] (.write handbook welcome coop 1 (via := [samuel])))
 
 /-! ## Scenario 12: Bob leaves the coop on his own -/
 
@@ -303,6 +366,10 @@ def s12 : List Op := s7 ++ chain 90 [(passkeyB, [], .removeOwner coop (.vault bo
 #guard !opens' s12 macB (.vault coop) && !opens' s12 macB (.entry handbook welcome)
 -- Bob's earlier edits stay: none were his, and Samuel's are untouched
 #guard (view s12).writes.length == (view s7).writes.length
+-- what Bob's Mac wrote for the coop through Bob's vault on a copy that hadn't seen him leave is cut
+def bobLeft : List Op := s12 ++ offline 95 61 [(macB, [], .write handbook welcome coop 0 [40] (via := [bob]))]
+#guard refused bobLeft == [95]
+#guard !accepted s12 (attempt macB [] (.write handbook welcome coop 0 [40] (via := [bob])))
 
 /-! ## Scenarios 15 and 16: one todo, many vaults, changing roles -/
 
@@ -328,9 +395,9 @@ def s15 : List Op := s4 ++ chain 100 [
 #guard !opens' s15 macB (.entry todos solar)
 
 def s16a : List Op := s15 ++ chain 110 [
-  -- acting for the coop, Bob gives Dave read
+  -- acting for the coop, through Bob's vault, Bob gives Dave read
   (macB, [], .grant { id := 14, scope := .entry todos door, role := .read, grantee := .principal (.vault dave),
-                       issuer := coop, parent := some 12 }),
+                       issuer := coop, parent := some 12 } [bob]),
   -- Samuel raises Carol to write and takes Bob's own write away
   (macS, [], .grant { id := 15, scope := .entry todos door, role := .write, grantee := .principal (.vault carol),
                        issuer := samuel, parent := none }),
@@ -351,7 +418,7 @@ def s16 : List Op := s16a ++ chain 120 [
 #guard (view s16).epochOf (.entry todos door) == (view s16a).epochOf (.entry todos door) + 1
 #guard !opens' s16 macB (.entry todos door) && !opens' s16 macD (.entry todos door)
 #guard opens' s16 macC (.entry todos door) && opens' s16 macS (.entry todos door)
-#guard !accepted s16 (attempt macB [] (.write todos door coop 1))
+#guard !accepted s16 (attempt macB [] (.write todos door coop 1 (via := [bob])))
 
 /-! ## Keys ops carry only the boxes the schedule seals -/
 
@@ -465,9 +532,9 @@ def revokedWriter : List Op := s16a ++ offline 180 113 [
 -- for the coop, which may still write
 def revokedBranch : List Op := s16a ++ offline 190 113 [
   (macB, [], .write todos door bob 0 [100] .new),
-  (macB, [], .write todos door coop 0 [190] (.on 190))]
+  (macB, [], .write todos door coop 0 [190] (.on 190) [bob])]
 #guard refused revokedBranch == [190, 191]
-#guard accepted s16a (attempt macB [] (.write todos door coop 0 [100] .new))
+#guard accepted s16a (attempt macB [] (.write todos door coop 0 [100] .new [bob]))
 -- revoking Bob's write after his edit arrived keeps it: the revocation names it
 def keptWriter : List Op := s15 ++ chain 113 [(macB, [], .write todos door bob 0 [100])] ++ chain 114 [
   (macS, [], .revoke 10 samuel [113]),

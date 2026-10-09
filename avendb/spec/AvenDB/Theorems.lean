@@ -27,7 +27,7 @@ def Reachable (st : State) : Prop := ∃ ops, st = replay {} ops
 /-! ## Writes -/
 
 /-- T1 (authorized writes only): a step adds a write only if, just before it, the write's author acted for its
-    vault and that vault held write on the entry. -/
+    vault through the owners the write names, and that vault held write on the entry. -/
 theorem T1_authorized_writes {st st' : State} {op : Op} (h : step st op = some st') {w : Write}
     (hw : w ∈ st'.writes) (hnew : w ∉ st.writes) : authorized st w = true := by
   unfold step at h
@@ -86,7 +86,7 @@ theorem T2_governance {st st' : State} {op : Op} (h : step st op = some st') {v 
       · exact .inl happ
       · exact .inr (.inl ⟨p, rfl, happ⟩)
     | setThreshold _ happ => exact .inl happ
-    | addDevice _ happ _ => exact .inl happ
+    | addDevice _ _ happ _ => exact .inl happ
     | removeDevice d happ =>
       rcases happ with happ | hd
       · exact .inl happ
@@ -109,7 +109,7 @@ theorem T2_consent {st st' : State} {op : Op} (h : step st op = some st') {v : V
         exact hq ▸ happ
     | removeOwner _ _ => exact ⟨fun q hq hn => absurd (List.mem_of_mem_erase hq) hn, fun d hd hn => absurd hd hn⟩
     | setThreshold _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
-    | addDevice d _ hd =>
+    | addDevice d _ _ hd =>
       refine ⟨fun q hq hn => absurd hq hn, fun d' hd' hn => ?_⟩
       rcases List.mem_append.1 hd' with hd' | hd'
       · exact absurd hd' hn
@@ -137,6 +137,136 @@ theorem device_cannot_govern {st : State} {v : VaultId} {vt : Vault} (h : st.vau
     | some r => simpa using hroot r hvr
   simp only [approves, State.depth, approvesN, h, hnil, hr, List.length_nil, Bool.false_or, decide_eq_false_iff_not]
   omega
+
+/-- Devices don't govern any vault: signatures by signers that own no vault and are no vault's root approve for no
+    vault, as every vault's approval comes down to its root or its owner signers. So a server, a device of avenCEO,
+    governs neither avenCEO nor anything else. -/
+theorem devices_cannot_govern {st : State} {sigs : List SignerId}
+    (hnone : ∀ s ∈ sigs, ∀ v vt, st.vault? v = some vt → Principal.signer s ∉ vt.owners ∧ vt.root ≠ some s)
+    (hth : ∀ v vt, st.vault? v = some vt → 0 < vt.threshold) : ∀ n v, approvesN st sigs n (.vault v) = false
+  | 0, _ => rfl
+  | n + 1, v => by
+    simp only [approvesN]
+    cases hv : st.vault? v with
+    | none => rfl
+    | some vt =>
+      -- the root didn't sign
+      have hr : vt.root.any sigs.contains = false := by
+        cases hvr : vt.root with
+        | none => rfl
+        | some r =>
+          simp only [Option.any_some]
+          cases hs : sigs.contains r with
+          | false => rfl
+          | true => exact absurd hvr (hnone r (List.contains_iff_mem.1 hs) v vt hv).2
+      -- and no owner approves: no owner signer signed, and no owner vault approves
+      have hnil : vt.owners.filter (approvesN st sigs n) = [] := by
+        refine List.filter_eq_nil_iff.2 fun p hp => ?_
+        cases p with
+        | signer s =>
+          simp only [approvesN, List.contains_iff_mem]
+          exact fun hs => (hnone s hs v vt hv).1 hp
+        | vault o => simp [devices_cannot_govern hnone hth n o]
+      simp only [hr, hnil, List.length_nil, Bool.false_or, decide_eq_false_iff_not]
+      have := hth v vt hv
+      omega
+
+/-! ## Vault kinds -/
+
+/-- Every vault has the shape of its kind: a human vault is owned by signers, its person's passkeys; a coop or an aven
+    vault by human and coop vaults, never a signer; a coop has no devices; and only a human vault has a root. -/
+def KindsFit (st : State) : Prop :=
+  ∀ v vt, st.vault? v = some vt → (∀ p ∈ vt.owners, ownerFits st vt.kind p = true) ∧
+    (vt.devices ≠ [] → vt.kind.hasDevices = true) ∧ (vt.root ≠ none → vt.kind = .human)
+
+/-- A change to a vault keeps its kind. -/
+theorem VaultChange.kind {st : State} {sigs : List SignerId} {v : VaultId} {vt vt' : Vault}
+    (h : VaultChange st sigs v vt vt') : vt'.kind = vt.kind := by
+  cases h <;> rfl
+
+/-- After a step every vault that existed still does, of the same kind. -/
+theorem step_kinds {st st' : State} {op : Op} (h : step st op = some st') {o : VaultId} {ot : Vault}
+    (ho : st.vault? o = some ot) : ∃ ot', st'.vault? o = some ot' ∧ ot'.kind = ot.kind := by
+  rcases step_vault? h with hsame | ⟨v, _, _, _, _, hnone, -, -, hlook⟩ | ⟨v, vt, vt', hvt, hch, hlook⟩
+  · exact ⟨ot, by rw [hsame]; exact ho, rfl⟩
+  · have hov : o ≠ v := fun e => by rw [e, hnone] at ho; cases ho
+    exact ⟨ot, by rw [hlook, ite_eq_right hov]; exact ho, rfl⟩
+  · by_cases hov : o = v
+    · subst hov
+      rw [ho] at hvt
+      cases hvt
+      exact ⟨vt', by rw [hlook, ite_eq_left rfl], hch.kind⟩
+    · exact ⟨ot, by rw [hlook, ite_eq_right hov]; exact ho, rfl⟩
+
+/-- An owner that fits before a step still fits after it: vaults stay, and keep their kinds. -/
+theorem ownerFits_step {st st' : State} {op : Op} (h : step st op = some st') {k : Kind} {p : Principal}
+    (hp : ownerFits st k p = true) : ownerFits st' k p = true := by
+  have hown : ∀ o, ownsVaults st o = true → ownsVaults st' o = true := fun o ho => by
+    unfold ownsVaults at ho ⊢
+    cases hv : st.vault? o with
+    | none => rw [hv] at ho; cases ho
+    | some ot =>
+      rw [hv] at ho
+      obtain ⟨ot', hv', hk⟩ := step_kinds h hv
+      rw [hv']
+      dsimp only at ho ⊢
+      rw [hk]
+      exact ho
+  cases k <;> cases p <;> simp only [ownerFits] at hp ⊢ <;> first | exact hp | exact hown _ hp
+
+/-- One step keeps every vault the shape of its kind. -/
+theorem KindsFit.step {st st' : State} {op : Op} (hk : KindsFit st) (h : step st op = some st') : KindsFit st' := by
+  intro x u hx
+  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, -, hfit, hroot, hlook⟩ |
+    ⟨v, vt, vt', hvt, hch, hlook⟩
+  · rw [hsame] at hx
+    obtain ⟨ho, hd, hr⟩ := hk x u hx
+    exact ⟨fun p hp => ownerFits_step h (ho p hp), hd, hr⟩
+  · rw [hlook] at hx
+    split at hx
+    · -- the new vault: its owners fit, it has no devices yet, and only a human vault names a root
+      cases hx
+      refine ⟨fun p hp => ownerFits_step h (hfit p hp), fun hd => absurd rfl hd, fun hr => ?_⟩
+      cases hroot' : root with
+      | none => exact absurd hroot' hr
+      | some r =>
+        rw [hroot'] at hroot
+        simp only [rootFits, Bool.and_eq_true, beq_iff_eq] at hroot
+        exact hroot.1
+    · obtain ⟨ho, hd, hr⟩ := hk x u hx
+      exact ⟨fun p hp => ownerFits_step h (ho p hp), hd, hr⟩
+  · rw [hlook] at hx
+    split at hx
+    · cases hx
+      obtain ⟨ho, hd, hr⟩ := hk v vt hvt
+      cases hch with
+      | addOwner p _ hfit _ _ _ =>
+        refine ⟨fun q hq => ?_, hd, hr⟩
+        rcases List.mem_append.1 hq with hq | hq
+        · exact ownerFits_step h (ho q hq)
+        · rw [List.mem_singleton] at hq
+          subst hq
+          exact ownerFits_step h hfit
+      | removeOwner p _ => exact ⟨fun q hq => ownerFits_step h (ho q (List.mem_of_mem_erase hq)), hd, hr⟩
+      | setThreshold _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), hd, hr⟩
+      | addDevice _ hkd _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), fun _ => hkd, hr⟩
+      | removeDevice d _ =>
+        refine ⟨fun q hq => ownerFits_step h (ho q hq), fun hne => hd fun hnil => hne ?_, hr⟩
+        simp [hnil]
+      | setRoot r hold _ =>
+        refine ⟨fun q hq => ownerFits_step h (ho q hq), hd, fun _ => hr fun hnone => ?_⟩
+        simp [hnone] at hold
+    · obtain ⟨ho, hd, hr⟩ := hk x u hx
+      exact ⟨fun p hp => ownerFits_step h (ho p hp), hd, hr⟩
+
+/-- T21 (vaults by kind): in every reachable state, signers own human vaults only; coop and aven vaults are owned by
+    human and coop vaults; a coop has no devices; and only a human vault has a root. So an op for a coop or an aven
+    vault always goes through a human vault its device or passkey belongs to (`ActsChain.of_actsVia`). -/
+theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st := by
+  obtain ⟨ops, rfl⟩ := hr
+  refine replay_inv KindsFit (fun _ _ _ hk hs => hk.step hs) ops {} ?_
+  intro v vt hv
+  simp [State.vault?] at hv
 
 /-- `OwnsPlus st a x`: vault `a` owns vault `x`, directly or through a chain. -/
 inductive OwnsPlus (st : State) : VaultId → VaultId → Prop where
@@ -232,22 +362,23 @@ theorem T8_public_read_only {st st' : State} {op : Op} (hinv : PublicReadOnly st
 /-! ## The schema lane -/
 
 /-- T17: only a space's owners publish its schemas and lenses. A step adds an entry to the lane only if it publishes
-    that blob into that space, and just before it, its author acted for a vault holding owner on the space. -/
+    that blob into that space, and just before it, its author acted for a vault holding owner on the space, through
+    the owners it names. -/
 theorem T17_lane_by_owners {st st' : State} {op : Op} (h : step st op = some st') {x : SpaceId × BlobId}
     (hx : x ∈ st'.lane) (hnew : x ∉ st.lane) :
-    ∃ actor, op.action = .publish x.1 actor x.2 ∧ actsFor st op.author actor = true ∧
+    ∃ actor via, op.action = .publish x.1 actor x.2 via ∧ actsVia st op.author via actor = true ∧
       holds st actor (.space x.1) .owner = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [settle_lane] at hx
-  rcases apply_lane hpost with hl | ⟨sp, actor, blob, hact, hacts, hholds, hl⟩
+  rcases apply_lane hpost with hl | ⟨sp, actor, blob, via, hact, hacts, hholds, hl⟩
   · exact absurd (hl ▸ hx) hnew
   · rw [hl] at hx
     rcases List.mem_append.1 hx with hx | hx
     · exact absurd hx hnew
     · rw [List.mem_singleton] at hx
       subst hx
-      exact ⟨actor, hact, hacts, hholds⟩
+      exact ⟨actor, via, hact, hacts, hholds⟩
 
 /-! ## Causal closure -/
 

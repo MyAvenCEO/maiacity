@@ -41,7 +41,7 @@ fn roles_changed() -> SocialTodo {
     let (carol, dave, samuel) = (t.c.carol, t.c.dave, t.c.samuel);
     t.c.log.append(MAC_B, &[], grant(door, Role::Read, vault(dave), t.coop, Some(t.coop_owner))).unwrap();
     t.c.log.append(MAC_S, &[], grant(door, Role::Write, vault(carol), samuel, None)).unwrap();
-    t.c.log.append(MAC_S, &[], Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![] }).unwrap();
+    t.c.log.append(MAC_S, &[], Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![], via: vec![] }).unwrap();
     t
 }
 
@@ -65,7 +65,7 @@ fn cascade_ends_regrants() {
     let mut t = roles_changed();
     let (todos, door, samuel) = (t.todos, Scope::Entry(t.todos, DOOR), t.c.samuel);
     // taking the coop's owner cap away is governance: Samuel's Mac alone can't
-    let revoke = Action::Revoke { grant: t.coop_owner, actor: samuel, keep: vec![] };
+    let revoke = Action::Revoke { grant: t.coop_owner, actor: samuel, keep: vec![], via: vec![] };
     assert_eq!(t.c.log.check(MAC_S, &[], revoke.clone()).err(), Some(Refusal::BelowThreshold));
     t.c.log.append(PASSKEY_S, &[], revoke).unwrap();
     let v = t.c.log.view();
@@ -94,12 +94,12 @@ fn sync_sends_only_capped_items() {
     let to_carol = writes_on(&respond(ops, MAC_C));
     assert!(!to_carol.is_empty() && to_carol.iter().all(|&w| w == (t.todos, DOOR)));
     // and the grants on the door todo come with it, so Carol's Mac can check them
-    assert!(respond(ops, MAC_C).iter().any(|o| matches!(&o.action, Action::Grant(g) if g.scope == Scope::Entry(t.todos, DOOR))));
+    assert!(respond(ops, MAC_C).iter().any(|o| matches!(&o.action, Action::Grant(g, _) if g.scope == Scope::Entry(t.todos, DOOR))));
     // a device without a cap gets no item at all
     assert!(writes_on(&respond(ops, STRANGER)).is_empty());
     // after the coop lost the todo, Dave's Mac gets nothing of it either
     let mut gone = roles_changed();
-    let revoke = Action::Revoke { grant: gone.coop_owner, actor: gone.c.samuel, keep: vec![] };
+    let revoke = Action::Revoke { grant: gone.coop_owner, actor: gone.c.samuel, keep: vec![], via: vec![] };
     gone.c.log.append(PASSKEY_S, &[], revoke).unwrap();
     assert!(writes_on(&respond(gone.c.log.ops(), MAC_D)).is_empty());
 }

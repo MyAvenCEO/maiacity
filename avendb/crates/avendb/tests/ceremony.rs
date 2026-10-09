@@ -67,7 +67,7 @@ fn a_browser_founds_samuels_vault_in_ceremonies() {
     assert_eq!(lab.vault_of(device), Some(vault), "the browser belongs to the vault its passkey founded");
     assert!(lab.opens(device, KeyScope::Vault(vault)), "and opens its key");
     // the device writes on its own, with no ceremony
-    let found = Action::FoundSpace { actor: vault, nonce: 1 };
+    let found = Action::FoundSpace { actor: vault, nonce: 1, via: vec![] };
     let space = lab.submit(device, &[device], found).expect("the browser founds a space").into();
     let note = lab.create(device, vault, space, document("Seeds", "Tomatoes in March.", device));
     let note = note.expect("and writes in it");

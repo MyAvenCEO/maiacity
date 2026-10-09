@@ -15,12 +15,12 @@ pub fn vault(v: VaultId) -> Grantee {
 }
 
 pub fn grant(scope: Scope, role: Role, grantee: Grantee, issuer: VaultId, parent: Option<GrantId>) -> Action {
-    Action::Grant(Grant { scope, role, grantee, issuer, parent })
+    Action::Grant(Grant { scope, role, grantee, issuer, parent }, vec![])
 }
 
 /// A write that builds on its entry's heads: the log fills in `deps` when it drafts the op.
 pub fn write(space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64) -> Action {
-    Action::Write { space, entry, actor, epoch, deps: vec![], branch: Branch::Main, body: vec![0xc1, 0x9e, 0x47] }
+    Action::Write { space, entry, actor, epoch, deps: vec![], branch: Branch::Main, via: vec![], body: vec![0xc1, 0x9e, 0x47] }
 }
 
 /// The Lab after scenarios 1 and 2, plus the server and a stranger.
@@ -193,7 +193,7 @@ pub fn coop_on(w: &mut World) -> VaultId {
 
 /// Found a space on Samuel's Mac for `actor`, and give the server relay on it.
 pub fn space_on(w: &mut World, actor: VaultId) -> SpaceId {
-    let found = w.lab.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor, nonce: 0 });
+    let found = w.lab.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor, nonce: 0, via: vec![] });
     let sp = SpaceId::from(found.expect("Samuel's Mac founds a space"));
     let relay = grant(Scope::Space(sp), Role::Relay, vault(w.server_vault), actor, None);
     w.lab.submit(w.mac_s, &[w.mac_s], relay).expect("the founder gives the server relay");

@@ -17,13 +17,17 @@ abbrev GrantId  := Nat
 abbrev OpId     := Nat
 abbrev BlobId   := Nat
 
-/-- A human vault is owned by signers, a coop vault by other vaults. -/
+/-- A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
+    devices act for it. A coop vault is owned by human and coop vaults. An aven vault, an agent such as the relay
+    server, is owned by human and coop vaults too, and its devices (the servers it runs on) act for it but never
+    govern it. -/
 inductive Kind where
   | human
   | coop
+  | aven
   deriving DecidableEq, Repr
 
-/-- Who can own a vault. -/
+/-- Who can own a vault: signers own human vaults, vaults own coop and aven vaults. -/
 inductive Principal where
   | signer (s : SignerId)
   | vault  (v : VaultId)

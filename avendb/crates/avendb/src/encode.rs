@@ -6,9 +6,10 @@
 use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
 use crate::policy::{Action, Branch, Grant, Grantee, Kind, Op, Principal, Role, Scope};
 
-/// The version byte every op starts with: 3 since P5, whose writes name the line of history they extend (2 since P4b,
-/// whose ids are SHA-3 hashes and whose signers sign twice).
-pub const VERSION: u8 = 3;
+/// The version byte every op starts with: 4 since the three kinds of vault, whose acts for a vault name the owners they
+/// go through (3 since P5, whose writes name the line of history they extend, 2 since P4b, whose ids are SHA-3 hashes
+/// and whose signers sign twice).
+pub const VERSION: u8 = 4;
 
 pub(crate) fn op_id(op: &Op) -> [u8; 32] {
     crate::hash::hash("op id", &bytes(op))
@@ -168,6 +169,7 @@ impl Encode for Kind {
         out.push(match self {
             Kind::Human => 0,
             Kind::Coop => 1,
+            Kind::Aven => 2,
         });
     }
 }
@@ -290,22 +292,25 @@ impl Encode for Action {
                 device.encode(out);
                 keep.encode(out);
             }
-            Action::FoundSpace { actor, nonce } => {
+            Action::FoundSpace { actor, nonce, via } => {
                 out.push(6);
                 actor.encode(out);
                 nonce.encode(out);
+                via.encode(out);
             }
-            Action::Grant(g) => {
+            Action::Grant(g, via) => {
                 out.push(7);
                 g.encode(out);
+                via.encode(out);
             }
-            Action::Revoke { grant, actor, keep } => {
+            Action::Revoke { grant, actor, keep, via } => {
                 out.push(8);
                 grant.encode(out);
                 actor.encode(out);
                 keep.encode(out);
+                via.encode(out);
             }
-            Action::Write { space, entry, actor, epoch, deps, branch, body } => {
+            Action::Write { space, entry, actor, epoch, deps, branch, via, body } => {
                 out.push(9);
                 space.encode(out);
                 entry.encode(out);
@@ -313,6 +318,7 @@ impl Encode for Action {
                 epoch.encode(out);
                 deps.encode(out);
                 branch.encode(out);
+                via.encode(out);
                 body.encode(out);
             }
             Action::SetRoot { vault, root, keep } => {
@@ -330,10 +336,11 @@ impl Encode for Action {
                 boxes.encode(out);
                 clear.encode(out);
             }
-            Action::Publish { space, actor, blob } => {
+            Action::Publish { space, actor, via, blob } => {
                 out.push(12);
                 space.encode(out);
                 actor.encode(out);
+                via.encode(out);
                 blob.encode(out);
             }
             Action::Checkpoint { space, entry, covers } => {
@@ -402,11 +409,24 @@ mod tests {
         let write = |branch| {
             let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
             let actor = VaultId::from_u64(1);
-            let action = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch, body: vec![] };
+            let action = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch, via: vec![], body: vec![] };
             op_id(&Op { action, ..genesis(0) })
         };
         let (a, b) = (crate::id::OpId::from_u64(1), crate::id::OpId::from_u64(2));
         let ids = [write(Branch::Main), write(Branch::New), write(Branch::On(a)), write(Branch::On(b))];
+        assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
+    }
+
+    #[test]
+    fn the_owners_an_act_goes_through_change_its_id() {
+        let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
+        let actor = VaultId::from_u64(1);
+        let write = |via: Vec<VaultId>| {
+            let action = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch: Branch::Main, via, body: vec![] };
+            op_id(&Op { action, ..genesis(0) })
+        };
+        let (b, g) = (VaultId::from_u64(2), VaultId::from_u64(3));
+        let ids = [write(vec![]), write(vec![b]), write(vec![g]), write(vec![g, b]), write(vec![b, g])];
         assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
     }
 

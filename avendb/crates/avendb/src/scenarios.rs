@@ -407,7 +407,7 @@ fn branches(run: &mut Run) -> Done {
     w.lab.sync_all(8);
     let mine = w.lab.branch(w.mac_c, carol, item, &first, "mine").err();
     run.same("Carol, who may only read Welcome, can't start a branch of it", mine, Some(Refusal::NoCap));
-    let found = w.lab.submit(w.mac_c, &[w.mac_c], Action::FoundSpace { actor: carol, nonce: 8 });
+    let found = w.lab.submit(w.mac_c, &[w.mac_c], Action::FoundSpace { actor: carol, nonce: 8, via: vec![] });
     let mine = SpaceId::from(run.ok("Carol founds a space of their own", found)?);
     let copy = run.ok("and forks Welcome into it", w.lab.fork(w.mac_c, carol, item, MAIN, mine))?;
     let record = |sp, e| w.lab.item(w.mac_c, sp, e).map(|i| i.record());
@@ -420,7 +420,7 @@ fn schema_v2(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
     let (coop, sp, welcome) = (h.coop, h.space, h.welcome);
-    let publish = |blob: &[u8]| Action::Publish { space: sp, actor: coop, blob: blob.to_vec() };
+    let publish = |blob: &[u8]| Action::Publish { space: sp, actor: coop, via: vec![], blob: blob.to_vec() };
     let v1 = w.lab.submit(w.mac_s, &[w.mac_s], publish(DOCUMENT_V1.bytes()));
     run.ok("Samuel publishes v1, the schema Welcome was written under, into the Handbook's lane", v1)?;
     w.lab.sync_all(9);
@@ -500,7 +500,7 @@ fn revoke_carol(run: &mut Run) -> Done {
     let key = KeyScope::Entry(h.space, h.welcome);
     let before = w.lab.log(w.mac_s).view().epoch(key);
     let had = w.lab.fetched(w.mac_c, h.space, h.welcome);
-    let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![] };
+    let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
     run.ok("the coop revokes it", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
     let edit = w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     run.ok("Samuel edits Welcome afterwards", edit)?;
@@ -584,7 +584,7 @@ fn offline_conflicts(run: &mut Run) -> Done {
         w.lab.set_online(w.mac_c, false);
         let carols = w.lab.edit(w.mac_c, carol, h.space, h.welcome, |i| i.set_text(2, "Carol, offline"));
         let carols = run.must("Carol edits Welcome offline", carols)?;
-        let revoke = Action::Revoke { grant: carol_write, actor: h.coop, keep: vec![] };
+        let revoke = Action::Revoke { grant: carol_write, actor: h.coop, keep: vec![], via: vec![] };
         run.must("the coop revokes Carol", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
         // Samuel and Bob edit the same block at the same moment
         w.lab.set_online(w.mac_b, false);
@@ -634,7 +634,7 @@ fn tampering(run: &mut Run) -> Done {
     let carol_read =
         GrantId::from(run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_s, &[w.mac_s], read))?);
     w.lab.sync_all(14);
-    let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![] };
+    let revoke = Action::Revoke { grant: carol_read, actor: h.coop, keep: vec![], via: vec![] };
     run.ok("and revokes it", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
     let edit = w.lab.edit(w.mac_s, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     run.ok("Samuel edits Welcome afterwards", edit)?;
@@ -688,7 +688,7 @@ fn roles_change(run: &mut Run) -> Done {
     run.ok("acting for the coop, Bob gives Dave read", w.lab.submit(w.mac_b, &[w.mac_b], read))?;
     let write_cap = grant(door, Role::Write, vault(carol), samuel, None);
     run.ok("Samuel raises Carol to write", w.lab.submit(w.mac_s, &[w.mac_s], write_cap))?;
-    let revoke = Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![] };
+    let revoke = Action::Revoke { grant: t.bob_write, actor: samuel, keep: vec![], via: vec![] };
     run.ok("and takes Bob's own write away", w.lab.submit(w.mac_s, &[w.mac_s], revoke))?;
     w.lab.sync_all(16);
     let before = w.lab.log(w.mac_s).view().epoch(key);
@@ -699,7 +699,7 @@ fn roles_change(run: &mut Run) -> Done {
     run.ok("Carol edits it", w.lab.edit(w.mac_c, carol, t.space, t.door, |i| i.set_status(Status::Done)))?;
     w.lab.sync_all(16);
     let had = (w.lab.fetched(w.mac_b, t.space, t.door), w.lab.fetched(w.mac_d, t.space, t.door));
-    let revoke = Action::Revoke { grant: t.coop_owner, actor: samuel, keep: vec![] };
+    let revoke = Action::Revoke { grant: t.coop_owner, actor: samuel, keep: vec![], via: vec![] };
     let what = "Samuel's passkey takes the coop's owner cap away, which also ends the read Bob gave Dave";
     run.ok(what, w.lab.submit(w.mac_s, &[w.passkey_s], revoke))?;
     run.ok("Samuel edits the todo", w.lab.edit(w.mac_s, samuel, t.space, t.door, |i| i.set_status(Status::Open)))?;

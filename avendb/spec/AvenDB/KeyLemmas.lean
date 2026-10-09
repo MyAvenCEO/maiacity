@@ -558,15 +558,15 @@ theorem opens_complete {st : State} {start : List KeyName} {x : KeyName} (h : Kn
 
 /-! ## Acting for a vault, through chains
 
-Without cycles, a chain of coops never visits a vault twice, so `actsFor` finds every chain, and acting for a vault
-carries over to every coop it owns. -/
+Without cycles, a chain of owners never visits a vault twice, so `actsFor` finds every chain, and acting for a vault
+carries over to every vault it owns. -/
 
 /-- A chain by which signer `s` acts for vault `v`, listing the vaults it passes through, `v` first: up through the
-    owners of coops, to a human vault `s` is a device or an owner of. -/
+    owners, to a vault `s` is a member of (one of its devices or owner signers). -/
 inductive ActsChain (st : State) (s : SignerId) : VaultId → List VaultId → Prop where
-  | human {v : VaultId} {vt : Vault} : st.vault? v = some vt → vt.kind = .human →
+  | member {v : VaultId} {vt : Vault} : st.vault? v = some vt →
       (vt.devices.contains s || vt.owners.contains (.signer s)) = true → ActsChain st s v [v]
-  | coop {v o : VaultId} {vt : Vault} {ys : List VaultId} : st.vault? v = some vt → vt.kind = .coop →
+  | owner {v o : VaultId} {vt : Vault} {ys : List VaultId} : st.vault? v = some vt →
       Principal.vault o ∈ vt.owners → ActsChain st s o ys → ActsChain st s v (v :: ys)
 
 /-- Whatever `actsForN` finds is a chain. -/
@@ -580,42 +580,41 @@ theorem ActsChain.of_actsForN {st : State} {s : SignerId} :
     | some vt =>
       rw [hv] at h
       dsimp only at h
-      cases hk : vt.kind with
-      | human => rw [hk] at h; exact ⟨_, .human hv hk h⟩
-      | coop =>
-        rw [hk] at h
+      cases hm : (vt.devices.contains s || vt.owners.contains (.signer s)) with
+      | true => exact ⟨_, .member hv hm⟩
+      | false =>
+        rw [hm, Bool.false_or] at h
         obtain ⟨p, hp, hpo⟩ := List.any_eq_true.1 h
         cases p with
         | vault o =>
           obtain ⟨ys, hys⟩ := ActsChain.of_actsForN hpo
-          exact ⟨_, .coop hv hk hp hys⟩
+          exact ⟨_, .owner hv hp hys⟩
         | signer _ => cases hpo
 
 /-- A chain no longer than `n` is found by `actsForN` with fuel `n`. -/
 theorem ActsChain.actsForN {st : State} {s : SignerId} {v : VaultId} {ys : List VaultId}
     (h : ActsChain st s v ys) : ∀ {n : Nat}, ys.length ≤ n → actsForN st s n v = true := by
   induction h with
-  | human hv hk hs =>
+  | member hv hs =>
     intro n hn
     match n, hn with
     | n + 1, _ =>
-      simp only [AvenDB.actsForN, hv, hk]
-      exact hs
-  | coop hv hk ho _ ih =>
+      simp only [AvenDB.actsForN, hv, hs, Bool.true_or]
+  | owner hv ho _ ih =>
     intro n hn
     match n, hn with
     | n + 1, hn =>
-      simp only [AvenDB.actsForN, hv, hk]
-      exact List.any_eq_true.2 ⟨_, ho, ih (by simp at hn; omega)⟩
+      simp only [AvenDB.actsForN, hv]
+      rw [List.any_eq_true.2 ⟨_, ho, ih (by simp at hn; omega)⟩, Bool.or_true]
 
 /-- Every vault on a chain for `v` is `v` or owns `v`. -/
 theorem ActsChain.owns_mem {st : State} {s : SignerId} {v : VaultId} {ys : List VaultId}
     (h : ActsChain st s v ys) {y : VaultId} (hy : y ∈ ys) : y = v ∨ Relation.TransGen (OwnerOf st) y v := by
   induction h with
-  | human _ _ _ =>
+  | member _ _ =>
     simp at hy
     exact .inl hy
-  | @coop v o vt ys hv _ ho _ ih =>
+  | @owner v o vt ys hv ho _ ih =>
     rcases List.mem_cons.1 hy with rfl | hy
     · exact .inl rfl
     · have hov : OwnerOf st o v := ⟨vt, hv, ho⟩
@@ -627,8 +626,8 @@ theorem ActsChain.owns_mem {st : State} {s : SignerId} {v : VaultId} {ys : List 
 theorem ActsChain.nodup {st : State} (hacyc : ∀ y, ¬ Relation.TransGen (OwnerOf st) y y) {s : SignerId}
     {v : VaultId} {ys : List VaultId} (h : ActsChain st s v ys) : ys.Nodup := by
   induction h with
-  | human _ _ _ => simp
-  | @coop v o vt ys hv _ ho hys ih =>
+  | member _ _ => simp
+  | @owner v o vt ys hv ho hys ih =>
     refine List.nodup_cons.2 ⟨fun hmem => ?_, ih⟩
     have hov : OwnerOf st o v := ⟨vt, hv, ho⟩
     rcases hys.owns_mem hmem with rfl | hvo
@@ -639,11 +638,11 @@ theorem ActsChain.nodup {st : State} (hacyc : ∀ y, ¬ Relation.TransGen (Owner
 theorem ActsChain.mem_ids {st : State} {s : SignerId} {v : VaultId} {ys : List VaultId}
     (h : ActsChain st s v ys) {y : VaultId} (hy : y ∈ ys) : y ∈ st.vaults.map (·.id) := by
   induction h with
-  | human hv _ _ =>
+  | member hv _ =>
     simp at hy
     subst hy
     exact List.mem_map.2 ⟨_, List.mem_of_find?_eq_some hv, vault?_id hv⟩
-  | coop hv _ _ _ ih =>
+  | owner hv _ _ ih =>
     rcases List.mem_cons.1 hy with rfl | hy
     · exact List.mem_map.2 ⟨_, List.mem_of_find?_eq_some hv, vault?_id hv⟩
     · exact ih hy
@@ -652,14 +651,46 @@ theorem ActsChain.mem_ids {st : State} {s : SignerId} {v : VaultId} {ys : List V
 theorem ActsChain.listed {st : State} {s : SignerId} {v : VaultId} {ys : List VaultId}
     (h : ActsChain st s v ys) : s ∈ signers st := by
   induction h with
-  | @human v vt hv _ hs =>
+  | @member v vt hv hs =>
     unfold signers
     refine List.mem_flatMap.2 ⟨vt, List.mem_of_find?_eq_some hv, ?_⟩
     simp only [Bool.or_eq_true, List.contains_iff_mem] at hs
     rcases hs with hs | hs
     · exact List.mem_append_left _ hs
     · exact List.mem_append_right _ (List.mem_filterMap.2 ⟨_, hs, rfl⟩)
-  | coop _ _ _ _ ih => exact ih
+  | owner _ _ _ ih => exact ih
+
+/-- The chain an op names is a chain: a member of the last vault it names, up through owners to the vault it acts
+    for. -/
+theorem ActsChain.of_actsVia {st : State} {s : SignerId} :
+    ∀ {via : List VaultId} {v : VaultId}, actsVia st s via v = true → ActsChain st s v (v :: via)
+  | [], v, h => by
+    simp only [actsVia, AvenDB.member] at h
+    cases hv : st.vault? v with
+    | none => rw [hv] at h; cases h
+    | some vt => rw [hv] at h; exact .member hv h
+  | o :: via, v, h => by
+    simp only [actsVia, Bool.and_eq_true, ownerOf] at h
+    obtain ⟨ho, hvia⟩ := h
+    cases hv : st.vault? v with
+    | none => rw [hv] at ho; cases ho
+    | some vt =>
+      rw [hv] at ho
+      exact .owner hv (List.contains_iff_mem.1 ho) (ActsChain.of_actsVia hvia)
+
+/-- Every chain is one an op can name. -/
+theorem ActsChain.actsVia {st : State} {s : SignerId} {v : VaultId} {ys : List VaultId}
+    (h : ActsChain st s v ys) : actsVia st s ys.tail v = true := by
+  induction h with
+  | member hv hs => simp only [List.tail_cons, AvenDB.actsVia, AvenDB.member, hv, hs]
+  | @owner v o vt ys hv ho hys ih =>
+    cases hys with
+    | member _ _ =>
+      simp only [List.tail_cons, AvenDB.actsVia, ownerOf, hv, List.contains_iff_mem.2 ho, Bool.true_and]
+      exact ih
+    | owner _ _ _ =>
+      simp only [List.tail_cons, AvenDB.actsVia, ownerOf, hv, List.contains_iff_mem.2 ho, Bool.true_and]
+      exact ih
 
 /-- Completeness of `actsFor`: without cycles, it finds every chain, whatever its length. -/
 theorem actsFor_of_actsForN {st : State} (hacyc : ∀ y, ¬ Relation.TransGen (OwnerOf st) y y) {s : SignerId}
@@ -700,12 +731,10 @@ theorem transGen_of_ownsN {st : State} {a : VaultId} : ∀ {n : Nat} {x : VaultI
         · exact .tail (transGen_of_ownsN hpo) ⟨vt, hx, hp⟩
       | signer _ => cases hpo
 
-/-- The facts about vaults the key proofs rely on: no cycles, every named owner exists, and only coops have vault
-    owners. -/
+/-- The facts about vaults the key proofs rely on: no cycles, and every named owner exists. -/
 structure VaultFacts (st : State) : Prop where
   acyclic : ∀ y, ¬ Relation.TransGen (OwnerOf st) y y
   ownersExist : ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st.vault? o).isSome
-  coops : ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → vt.kind = .coop
 
 /-- Without cycles, owning chains. -/
 theorem VaultFacts.owns_trans {st : State} (hf : VaultFacts st) {a b c : VaultId} (h₁ : owns st a b = true)
@@ -723,13 +752,13 @@ theorem VaultFacts.self_or_owns_trans {st : State} (hf : VaultFacts st) {a b c :
     · exact .inr h₁
     · exact .inr (hf.owns_trans h₁ h₂)
 
-/-- Acting for an owner of a coop is acting for the coop. -/
-theorem actsFor_coop {st : State} (hacyc : ∀ y, ¬ Relation.TransGen (OwnerOf st) y y) {s : SignerId}
-    {v o : VaultId} {vt : Vault} (hv : st.vault? v = some vt) (hk : vt.kind = .coop)
-    (ho : Principal.vault o ∈ vt.owners) (h : actsFor st s o = true) : actsFor st s v = true := by
+/-- Acting for an owner of a vault is acting for the vault. -/
+theorem actsFor_owner {st : State} (hacyc : ∀ y, ¬ Relation.TransGen (OwnerOf st) y y) {s : SignerId}
+    {v o : VaultId} {vt : Vault} (hv : st.vault? v = some vt) (ho : Principal.vault o ∈ vt.owners)
+    (h : actsFor st s o = true) : actsFor st s v = true := by
   refine actsFor_of_actsForN hacyc (n := st.depth + 1) ?_
-  simp only [actsForN, hv, hk]
-  exact List.any_eq_true.2 ⟨_, ho, h⟩
+  simp only [actsForN, hv]
+  rw [List.any_eq_true.2 ⟨_, ho, h⟩, Bool.or_true]
 
 /-- Acting for a vault is acting for every vault it owns. -/
 theorem VaultFacts.actsFor_owns {st : State} (hf : VaultFacts st) {s : SignerId} {a x : VaultId}
@@ -738,10 +767,10 @@ theorem VaultFacts.actsFor_owns {st : State} (hf : VaultFacts st) {s : SignerId}
   induction hchain with
   | single hab =>
     obtain ⟨vt, hv, ho⟩ := hab
-    exact actsFor_coop hf.acyclic hv (hf.coops _ _ hv _ ho) ho h
+    exact actsFor_owner hf.acyclic hv ho h
   | tail _ hbc ih =>
     obtain ⟨vt, hv, ho⟩ := hbc
-    exact actsFor_coop hf.acyclic hv (hf.coops _ _ hv _ ho) ho (ih (owns_of_transGen hf.acyclic ‹_›))
+    exact actsFor_owner hf.acyclic hv ho (ih (owns_of_transGen hf.acyclic ‹_›))
 
 /-- Acting for a vault is acting for itself and every vault it owns. -/
 theorem VaultFacts.actsFor_self_or_owns {st : State} (hf : VaultFacts st) {s : SignerId} {a x : VaultId}
@@ -849,7 +878,7 @@ theorem mayOpen_within {st : State} {h : Holder} {f k : KeyScope} (hfk : Within 
     · exact hf.imp (Holder.entitled_entry e) (isPublic_entry e)
 
 /-- Whom the current key of `k` is sealed to: a signer acting for the vault `k`, the current key of a vault entitled
-    to `k` (an owner of the coop `k`, or a vault that reads `k`), or for an entry the current key of its space. -/
+    to `k` (an owner of the vault `k`, or a vault that reads `k`), or for an entry the current key of its space. -/
 theorem mem_targets {st : State} {k : KeyScope} {t : KeyName} (ht : t ∈ targets st k) :
     (∃ d v, t = .signer d ∧ k = .vault v ∧ actsFor st d v = true) ∨
     (∃ x, t = st.curKey (.vault x) ∧ entitledV st x k = true ∧
@@ -863,22 +892,18 @@ theorem mem_targets {st : State} {k : KeyScope} {t : KeyName} (ht : t ∈ target
     | some vt =>
       rw [hv] at ht
       dsimp only at ht
-      cases hk : vt.kind with
-      | human =>
-        rw [hk] at ht
-        obtain ⟨d, hd, rfl⟩ := List.mem_map.1 ht
+      rcases List.mem_append.1 ht with ht | ht
+      · obtain ⟨d, hd, rfl⟩ := List.mem_map.1 ht
         refine .inl ⟨d, v, rfl, rfl, ?_⟩
         unfold actsFor State.depth
-        simp only [actsForN, hv, hk, Bool.or_eq_true, List.contains_iff_mem]
+        simp only [actsForN, hv, Bool.or_eq_true, List.contains_iff_mem]
         rcases List.mem_append.1 hd with hd | hd
-        · exact .inl hd
+        · exact .inl (.inl hd)
         · obtain ⟨p, hp, hpd⟩ := List.mem_filterMap.1 hd
           cases p with
-          | signer s => cases hpd; exact .inr hp
+          | signer s => cases hpd; exact .inl (.inr hp)
           | vault _ => cases hpd
-      | coop =>
-        rw [hk] at ht
-        obtain ⟨p, hp, hpt⟩ := List.mem_filterMap.1 ht
+      · obtain ⟨p, hp, hpt⟩ := List.mem_filterMap.1 ht
         cases p with
         | vault o =>
           cases hpt
@@ -967,43 +992,7 @@ theorem entitled_of_not_stale {pre post : State} {k : KeyScope} (hk : k ∈ keyS
 theorem VaultFacts.step {st st' : State} {op : Op} (hf : VaultFacts st) (h : step st op = some st') :
     VaultFacts st' := by
   obtain ⟨hacyc, hex⟩ := step_owners hf.acyclic hf.ownersExist h
-  refine ⟨hacyc, hex, ?_⟩
-  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, -, hfit, -, hlook⟩ |
-    ⟨v, vt, vt', hvt, hch, hlook⟩
-  · intro x u hx o ho
-    rw [hsame] at hx
-    exact hf.coops x u hx o ho
-  · intro x u hx o ho
-    rw [hlook] at hx
-    split at hx
-    · cases hx
-      have hfo := hfit _ ho
-      cases kind
-      · simp [ownerFits] at hfo
-      · rfl
-    · exact hf.coops x u hx o ho
-  · intro x u hx o ho
-    rw [hlook] at hx
-    split at hx
-    · cases hx
-      cases hch with
-      | addOwner p _ hfit _ _ _ =>
-        dsimp only at ho ⊢
-        rcases List.mem_append.1 ho with ho | ho
-        · exact hf.coops v vt hvt o ho
-        · rw [List.mem_singleton] at ho
-          subst ho
-          cases hk : vt.kind
-          · simp [ownerFits, hk] at hfit
-          · rfl
-      | removeOwner p _ =>
-        dsimp only at ho ⊢
-        exact hf.coops v vt hvt o (List.mem_of_mem_erase ho)
-      | setThreshold _ _ => exact hf.coops v vt hvt o ho
-      | addDevice _ _ _ => exact hf.coops v vt hvt o ho
-      | removeDevice _ _ => exact hf.coops v vt hvt o ho
-      | setRoot _ _ _ => exact hf.coops v vt hvt o ho
-    · exact hf.coops x u hx o ho
+  exact ⟨hacyc, hex⟩
 
 /-- A key name a seal or a publication may hold in `st`: a signer's key, or a key of an existing family at an epoch
     it has reached. -/
@@ -1365,11 +1354,10 @@ theorem keyInv_empty : KeyInv {} := by
     | own hx => exact hx
     | published hx => cases hx
     | «unseal» hs _ => cases hs
-  refine ⟨⟨fun y hy => ?_, fun x vt hx => ?_, fun x vt hx => ?_⟩, fun h k hk => ?_, fun s hs => ?_,
+  refine ⟨⟨fun y hy => ?_, fun x vt hx => ?_⟩, fun h k hk => ?_, fun s hs => ?_,
     fun x hx => ?_, fun s hs => ?_, fun k hk => ?_⟩
   · obtain ⟨_, _, hx, _⟩ := transGen_head hy
     simp [State.vault?] at hx
-  · simp [State.vault?] at hx
   · simp [State.vault?] at hx
   · have hx := hstart h _ hk
     cases h with

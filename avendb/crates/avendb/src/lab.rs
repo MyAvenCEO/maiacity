@@ -851,7 +851,7 @@ impl Lab {
         let mut id = [0u8; 32];
         self.rng.fill_bytes(&mut id);
         let entry = EntryId(id);
-        let draft = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch: Branch::Main, body: vec![] };
+        let draft = Action::Write { space, entry, actor, epoch: 0, deps: vec![], branch: Branch::Main, via: vec![], body: vec![] };
         let op = self.held(on).log.check(on, &[], draft)?;
         self.write(on, op, &item.export(&Version::default()))?;
         Ok(entry)
@@ -994,7 +994,7 @@ impl Lab {
         let store = self.held(on);
         let epoch = store.view().epoch(KeyScope::Entry(space, entry));
         let Draft { branch, deps, body } = draft;
-        let action = Action::Write { space, entry, actor, epoch, deps, branch, body: vec![] };
+        let action = Action::Write { space, entry, actor, epoch, deps, branch, via: vec![], body: vec![] };
         let op = store.log.check(on, &[], action)?;
         self.write(on, op, &body)
     }

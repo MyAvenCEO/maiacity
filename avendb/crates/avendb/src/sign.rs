@@ -793,6 +793,7 @@ mod tests {
             epoch: 0,
             deps: vec![],
             branch: crate::policy::Branch::Main,
+            via: vec![],
             body: vec![1, 2, 3],
         };
         Op { parents: vec![], depth: 0, author, cosigners: vec![], action }

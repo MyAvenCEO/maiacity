@@ -57,6 +57,7 @@ fn kind(v: &Value) -> Kind {
     match v.as_str() {
         Some("human") => Kind::Human,
         Some("coop") => Kind::Coop,
+        Some("aven") => Kind::Aven,
         _ => panic!("a kind, not {v}"),
     }
 }
@@ -104,6 +105,11 @@ impl Names {
 
     fn ops(&self, v: &Value) -> Vec<OpId> {
         list(v).iter().map(|x| self.op(x)).collect()
+    }
+
+    /// The owners an act goes through.
+    fn via(&self, v: &Value) -> Vec<VaultId> {
+        list(v).iter().map(|x| self.vault(x)).collect()
     }
 
     fn principal(&self, v: &Value) -> Principal {
@@ -208,9 +214,16 @@ impl Names {
             "setRoot" => {
                 Action::SetRoot { vault: vault(), root: (!x["root"].is_null()).then(|| signer(&x["root"])), keep: keep() }
             }
-            "foundSpace" => Action::FoundSpace { actor: self.vault(&x["actor"]), nonce: num(&x["space"]) },
-            "grant" => Action::Grant(self.grant_of(x)),
-            "revoke" => Action::Revoke { grant: self.grant(&x["grant"]), actor: self.vault(&x["actor"]), keep: keep() },
+            "foundSpace" => {
+                Action::FoundSpace { actor: self.vault(&x["actor"]), nonce: num(&x["space"]), via: self.via(&x["via"]) }
+            }
+            "grant" => Action::Grant(self.grant_of(&x["grant"]), self.via(&x["via"])),
+            "revoke" => Action::Revoke {
+                grant: self.grant(&x["grant"]),
+                actor: self.vault(&x["actor"]),
+                keep: keep(),
+                via: self.via(&x["via"]),
+            },
             "write" => Action::Write {
                 space: self.space(&x["space"]),
                 entry: entry(&x["entry"]),
@@ -218,6 +231,7 @@ impl Names {
                 epoch: num(&x["epoch"]),
                 deps: self.ops(&x["deps"]),
                 branch: self.branch(&x["branch"]),
+                via: self.via(&x["via"]),
                 body: vec![],
             },
             "keys" => Action::Keys {
@@ -228,9 +242,12 @@ impl Names {
                 boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
                 clear: x["public"].as_bool().unwrap().then_some([0; 32]),
             },
-            "publish" => {
-                Action::Publish { space: self.space(&x["space"]), actor: self.vault(&x["actor"]), blob: blob(&x["blob"]) }
-            }
+            "publish" => Action::Publish {
+                space: self.space(&x["space"]),
+                actor: self.vault(&x["actor"]),
+                via: self.via(&x["via"]),
+                blob: blob(&x["blob"]),
+            },
             "checkpoint" => {
                 Action::Checkpoint { space: self.space(&x["space"]), entry: entry(&x["entry"]), covers: self.ops(&x["covers"]) }
             }
@@ -256,7 +273,7 @@ impl Names {
                 self.spaces.insert(num(&x["space"]), SpaceId::from(op.id()));
             }
             "grant" => {
-                self.grants.insert(num(&x["id"]), GrantId::from(op.id()));
+                self.grants.insert(num(&x["grant"]["id"]), GrantId::from(op.id()));
             }
             _ => {}
         }
@@ -288,6 +305,7 @@ impl Names {
             epoch: num(&v["epoch"]),
             deps: self.ops(&v["deps"]),
             branch: self.branch(&v["branch"]),
+            via: self.via(&v["via"]),
         }
     }
 

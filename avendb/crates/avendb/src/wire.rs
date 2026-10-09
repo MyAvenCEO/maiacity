@@ -286,6 +286,7 @@ impl Decode for Kind {
         match r.u8()? {
             0 => Ok(Kind::Human),
             1 => Ok(Kind::Coop),
+            2 => Ok(Kind::Aven),
             _ => Err(WireError::Unknown),
         }
     }
@@ -372,9 +373,14 @@ impl Decode for Action {
             3 => Action::SetThreshold { vault: VaultId::decode(r)?, threshold: u32::decode(r)? },
             4 => Action::AddDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, seal_to: r.option()? },
             5 => Action::RemoveDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, keep: r.seq(32)? },
-            6 => Action::FoundSpace { actor: VaultId::decode(r)?, nonce: u64::decode(r)? },
-            7 => Action::Grant(Grant::decode(r)?),
-            8 => Action::Revoke { grant: GrantId::decode(r)?, actor: VaultId::decode(r)?, keep: r.seq(32)? },
+            6 => Action::FoundSpace { actor: VaultId::decode(r)?, nonce: u64::decode(r)?, via: r.seq(32)? },
+            7 => Action::Grant(Grant::decode(r)?, r.seq(32)?),
+            8 => Action::Revoke {
+                grant: GrantId::decode(r)?,
+                actor: VaultId::decode(r)?,
+                keep: r.seq(32)?,
+                via: r.seq(32)?,
+            },
             9 => Action::Write {
                 space: SpaceId::decode(r)?,
                 entry: EntryId::decode(r)?,
@@ -382,6 +388,7 @@ impl Decode for Action {
                 epoch: u64::decode(r)?,
                 deps: r.seq(32)?,
                 branch: Branch::decode(r)?,
+                via: r.seq(32)?,
                 body: r.bytes()?,
             },
             10 => Action::SetRoot { vault: VaultId::decode(r)?, root: r.option()?, keep: r.seq(32)? },
@@ -393,7 +400,12 @@ impl Decode for Action {
                 boxes: r.seq(37)?,
                 clear: r.option()?,
             },
-            12 => Action::Publish { space: SpaceId::decode(r)?, actor: VaultId::decode(r)?, blob: r.bytes()? },
+            12 => Action::Publish {
+                space: SpaceId::decode(r)?,
+                actor: VaultId::decode(r)?,
+                via: r.seq(32)?,
+                blob: r.bytes()?,
+            },
             13 => Action::Checkpoint { space: SpaceId::decode(r)?, entry: EntryId::decode(r)?, covers: r.seq(32)? },
             _ => return Err(WireError::Unknown),
         })

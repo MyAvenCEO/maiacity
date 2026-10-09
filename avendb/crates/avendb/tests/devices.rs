@@ -47,7 +47,7 @@ fn the_server_hands_out_its_vaults_log_as_its_contact_card() {
     assert!(card.iter().all(|s| s.op.vault_of() == Some(v)), "and nothing but its vault's log");
     let mut w = world();
     let samuel = w.samuel;
-    let found = w.lab.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor: samuel, nonce: 9 });
+    let found = w.lab.submit(w.mac_s, &[w.mac_s], Action::FoundSpace { actor: samuel, nonce: 9, via: vec![] });
     let garden = SpaceId::from(found.expect("Samuel founds a space"));
     let relay = grant(Scope::Space(garden), Role::Relay, vault(v), samuel, None);
     let granted = w.lab.submit(w.mac_s, &[w.mac_s], relay.clone());

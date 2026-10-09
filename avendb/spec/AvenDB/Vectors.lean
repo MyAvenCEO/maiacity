@@ -63,9 +63,11 @@ def runView (c : ViewCase) : List Bool × State :=
 /-! ## The cases
 
 Signers: Samuel's passkey 1, his Mac 2, his iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
-passkey 8, a second passkey 9 (Samuel's backup) and a third 10, a new device 77, a stranger 555. Vaults: Samuel 100, Bob
-101, Carol 102, Dave 103, coops from 200. Spaces: Handbook 10, Notes 11, Todos 12. Entries: Welcome 1, Charter 2,
-the door todo 21. Blobs (schemas and lenses): from 1. -/
+passkey 8, a second passkey 9 (Samuel's backup) and a third 10, a new device 77, a stranger 555, the relay server 600.
+Vaults: Samuel 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200, aven vaults from 300 (avenCEO 300).
+Spaces: Handbook 10, Notes 11, Todos 12. Entries: Welcome 1, Charter 2, the door todo 21. Blobs (schemas and lenses):
+from 1. An act for the coop names the human vault it goes through: Samuel's Mac (2) and passkey (1) through `[100]`,
+Bob's Mac (5) through `[101]`. -/
 
 def humans : List (SignerId × List SignerId × Action) := [
   (1, [], .genesis 100 .human [.signer 1] 1),
@@ -75,8 +77,8 @@ def humans : List (SignerId × List SignerId × Action) := [
   (6, [], .genesis 102 .human [.signer 6] 1),
   (8, [], .genesis 103 .human [.signer 8] 1)]
 
-def g (id : GrantId) (sc : Scope) (r : Role) (to : Grantee) (issuer : VaultId) (parent : Option GrantId := none) :
-    Action := .grant { id, scope := sc, role := r, grantee := to, issuer, parent }
+def g (id : GrantId) (sc : Scope) (r : Role) (to : Grantee) (issuer : VaultId) (parent : Option GrantId := none)
+    (via : List VaultId := []) : Action := .grant { id, scope := sc, role := r, grantee := to, issuer, parent } via
 
 def toVault (v : VaultId) : Grantee := .principal (.vault v)
 
@@ -179,27 +181,62 @@ def cases : List Case := [
     (9, [], .setRoot 100 none []),
     (9, [77], .addDevice 100 77),
     (9, [], .setRoot 100 (some 9) [])] },
+  { name := "three kinds of vault, and acts that name their chain", ops := humans ++ [
+    -- avenCEO, the relay server's aven vault, owned by Samuel's human vault; the server joins as its device
+    (1, [], .genesis 300 .aven [.vault 100] 1),
+    (1, [600], .addDevice 300 600),
+    -- the server acts for avenCEO but doesn't govern it; Samuel's Mac acts for it through Samuel's vault, Bob's Mac not
+    (600, [77], .addDevice 300 77),
+    (600, [], .foundSpace 13 300),
+    (2, [], .foundSpace 14 300 [100]),
+    (5, [], .foundSpace 15 300 [101]),
+    -- signers own human vaults only, and a human vault no vault
+    (1, [], .genesis 301 .aven [.signer 1] 1),
+    (1, [4], .genesis 201 .coop [.signer 1, .vault 101] 1),
+    (1, [4], .addOwner 100 (.vault 101)),
+    -- an aven vault owns no vault, and has no root
+    (1, [], .genesis 202 .coop [.vault 300] 1),
+    (1, [], .genesis 302 .aven [.vault 300] 1),
+    (1, [], .genesis 303 .aven [.vault 100] 1 (some 1)),
+    -- the coop: an aven vault can't join its owners, nor a signer, and it has no devices
+    (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+    (1, [4], .addOwner 200 (.vault 300)),
+    (1, [9], .addOwner 200 (.signer 9)),
+    (1, [77], .addDevice 200 77),
+    -- avenCEO gains Bob's vault as an owner, and an aven vault may be owned by a coop
+    (1, [9], .addOwner 300 (.signer 9)),
+    (1, [4], .addOwner 300 (.vault 101)),
+    (1, [], .genesis 304 .aven [.vault 100, .vault 200] 1),
+    -- acts for the coop name the human vault they go through: none, or another person's, is refused
+    (2, [], .foundSpace 16 200 [100]),
+    (2, [], .foundSpace 17 200),
+    (2, [], .foundSpace 18 200 [101]),
+    -- a coop of the coop: Bob's Mac acts for it through the coop and Bob's vault, and may skip neither
+    (1, [], .genesis 205 .coop [.vault 200] 1),
+    (5, [], .foundSpace 19 205 [200, 101]),
+    (5, [], .foundSpace 20 205 [101]),
+    (5, [], .foundSpace 21 205 [200])] },
   { name := "spaces, grants and Public", ops := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     -- Samuel's Mac founds the Handbook for the coop; Carol's passkey can't found a space for Samuel
-    (2, [], .foundSpace 10 200),
+    (2, [], .foundSpace 10 200 [100]),
     (6, [], .foundSpace 11 100),
-    (2, [], .write 10 1 200 0),
+    (2, [], .write 10 1 200 0 (via := [100])),
     (2, [], .write 11 1 100 0),
     -- read for Carol's vault, never for a signer; Public only reads
-    (2, [], g 1 (.entry 10 1) .read (toVault 102) 200),
-    (2, [], g 2 (.entry 10 1) .read (.principal (.signer 6)) 200),
-    (2, [], g 3 (.entry 10 2) .write .«public» 200),
-    (2, [], g 4 (.entry 10 2) .read .«public» 200),
+    (2, [], g 1 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
+    (2, [], g 2 (.entry 10 1) .read (.principal (.signer 6)) 200 (via := [100])),
+    (2, [], g 3 (.entry 10 2) .write .«public» 200 (via := [100])),
+    (2, [], g 4 (.entry 10 2) .read .«public» 200 (via := [100])),
     -- making Dave owner of the Handbook is governance: both passkeys of the threshold-2 coop
-    (2, [], g 5 (.space 10) .owner (toVault 103) 200),
-    (1, [4], g 6 (.space 10) .owner (toVault 103) 200),
+    (2, [], g 5 (.space 10) .owner (toVault 103) 200 (via := [100])),
+    (1, [4], g 6 (.space 10) .owner (toVault 103) 200 (via := [100])),
     -- Dave shares on through his owner grant; without naming it, he isn't the founder
     (8, [], g 7 (.entry 10 1) .write (toVault 102) 103 (some 6)),
     (8, [], g 8 (.entry 10 1) .read (toVault 101) 103),
     -- Bob writes for the coop, not for himself; each edit builds on what was there
     (5, [], .write 10 1 101 0),
-    (5, [], .write 10 1 200 0 [9]),
+    (5, [], .write 10 1 200 0 [9] (via := [101])),
     (6, [], .write 10 1 102 0 [20]),
     (6, [], .write 10 1 102 0 [99]),
     (6, [], .write 10 1 102 1 [21]),
@@ -211,24 +248,24 @@ def cases : List Case := [
     (2, [], g 10 (.entry 12 21) .write (toVault 101) 100),
     (1, [], g 12 (.entry 12 21) .owner (toVault 200) 100),
     -- acting for the coop, Bob's Mac gives Dave read
-    (5, [], g 14 (.entry 12 21) .read (toVault 103) 200 (some 12)),
+    (5, [], g 14 (.entry 12 21) .read (toVault 103) 200 (some 12) [101]),
     (5, [], .write 12 21 101 0 [8]),
     -- Samuel takes Bob's own write away, keeping the edit he had seen
     (2, [], .revoke 10 100 [12]),
     (5, [], .write 12 21 101 0 [12]),
-    (5, [], .write 12 21 200 0 [12]),
+    (5, [], .write 12 21 200 0 [12] (via := [101])),
     (2, [], .write 12 21 100 0 [15]),
     -- taking the coop's owner grant away is governance; it ends Dave's read and the coop's edit, which it hadn't
     -- seen, and Samuel's edit that builds on it
     (2, [], .revoke 12 100 []),
     (1, [], .revoke 12 100 []),
-    (5, [], .write 12 21 200 0 [8]),
+    (5, [], .write 12 21 200 0 [8] (via := [101])),
     (2, [], .revoke 99 100 []),
     (2, [], .revoke 14 100 [])] },
   { name := "keys go only where the schedule seals them", ops := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
-    (2, [], .foundSpace 10 200),
-    (2, [], .write 10 1 200 0),
+    (2, [], .foundSpace 10 200 [100]),
+    (2, [], .write 10 1 200 0 (via := [100])),
     -- Samuel's Mac boxes each key to what the schedule seals it to: Welcome's to the Handbook's, the Handbook's to
     -- the coop's, the coop's to its owners', and his vault's to his passkey and his Mac
     (2, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
@@ -246,40 +283,40 @@ def cases : List Case := [
     (2, [], .keys (.entry 10 9) 0 []),
     (2, [], .keys (.entry 10 1) 0 [] true),
     -- Carol may read Welcome: it is boxed to her vault's key, by Samuel's Mac or by her own passkey
-    (2, [], g 1 (.entry 10 1) .read (toVault 102) 200),
+    (2, [], g 1 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
     (2, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     -- Welcome goes public: its key is published
-    (2, [], g 2 (.entry 10 1) .read .«public» 200),
+    (2, [], g 2 (.entry 10 1) .read .«public» 200 (via := [100])),
     (2, [], .keys (.entry 10 1) 0 [] true),
     -- revoking Carol rotates nothing while Welcome is public; making it private again does
-    (2, [], .revoke 1 200 []),
-    (2, [], .revoke 2 200 []),
+    (2, [], .revoke 1 200 [] [100]),
+    (2, [], .revoke 2 200 [] [100]),
     (2, [], .keys (.entry 10 1) 1 [.scoped (.space 10) 0]),
     (2, [], .keys (.entry 10 1) 0 [.scoped (.entry 10 1) 1]),
     (6, [], .keys (.entry 10 1) 1 []),
     (2, [], .keys (.entry 10 1) 1 [.scoped (.vault 102) 0])] },
   { name := "the schema lane", ops := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
-    (2, [], .foundSpace 10 200),
+    (2, [], .foundSpace 10 200 [100]),
     (2, [], .foundSpace 11 100),
-    (2, [], g 1 (.space 10) .write (toVault 102) 200),
+    (2, [], g 1 (.space 10) .write (toVault 102) 200 (via := [100])),
     -- Samuel's Mac, acting for the coop that founded the Handbook, publishes a schema and a lens into its lane
-    (2, [], .publish 10 200 1),
-    (2, [], .publish 10 200 2),
+    (2, [], .publish 10 200 1 [100]),
+    (2, [], .publish 10 200 2 [100]),
     -- the same blob again is refused; in another space's lane it is that space's own
-    (5, [], .publish 10 200 1),
+    (5, [], .publish 10 200 1 [101]),
     (2, [], .publish 11 100 1),
-    -- Carol may write in the Handbook but not publish into its lane, for herself or for the coop; nor may a stranger,
-    -- and nothing goes into the lane of a space that doesn't exist
+    -- Carol may write in the Handbook but not publish into its lane, for herself or for the coop, whose owner her vault
+    -- isn't; nor may a stranger, and nothing goes into the lane of a space that doesn't exist
     (6, [], .publish 10 102 3),
-    (6, [], .publish 10 200 3),
+    (6, [], .publish 10 200 3 [102]),
     (555, [], .publish 10 200 3),
-    (2, [], .publish 12 200 3),
+    (2, [], .publish 12 200 3 [100]),
     -- Dave, made owner of the Handbook by both passkeys of the coop, publishes; so does Bob's Mac, for the coop
-    (1, [4], g 2 (.space 10) .owner (toVault 103) 200),
+    (1, [4], g 2 (.space 10) .owner (toVault 103) 200 (via := [100])),
     (8, [], .publish 10 103 3),
-    (5, [], .publish 10 200 4)] },
+    (5, [], .publish 10 200 4 [101])] },
   { name := "a device vouches only for its own writes", ops := humans ++ [
     (2, [], .foundSpace 11 100),
     (1, [3], .addDevice 100 3),
@@ -404,23 +441,33 @@ def views : List ViewCase := [
     (4, 9, [], .removeOwner 100 (.signer 1) [1])] },
   { name := "a revoked reader's back-dated keys are cut", ops := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    (7, 2, [], .foundSpace 10 200),
-    (8, 2, [], .write 10 1 200 0),
-    (9, 2, [], g 1 (.entry 10 1) .read (toVault 102) 200),
+    (7, 2, [], .foundSpace 10 200 [100]),
+    (8, 2, [], .write 10 1 200 0 (via := [100])),
+    (9, 2, [], g 1 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
     -- Carol's passkey boxes Welcome's key twice; Samuel revokes her read having seen only the first
     (10, 6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (11, 6, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
-    (12, 2, [], .revoke 1 200 [10])] },
+    (12, 2, [], .revoke 1 200 [10] [100])] },
   { name := "a removed owner's back-dated publish is cut", ops := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    (7, 2, [], .foundSpace 10 200),
+    (7, 2, [], .foundSpace 10 200 [100]),
     -- Bob's Mac publishes a schema for the coop, which Samuel sees, and a lens on an old copy, which he doesn't
-    (8, 5, [], .publish 10 200 1),
-    (9, 5, [], .publish 10 200 2),
+    (8, 5, [], .publish 10 200 1 [101]),
+    (9, 5, [], .publish 10 200 2 [101]),
     (10, 1, [], .removeOwner 200 (.vault 101) [8]),
     -- Samuel's Mac publishes the lens itself; Bob's Mac no longer can
-    (11, 2, [], .publish 10 200 2),
-    (12, 5, [], .publish 10 200 3)] },
+    (11, 2, [], .publish 10 200 2 [100]),
+    (12, 5, [], .publish 10 200 3 [101])] },
+  { name := "a removed owner's back-dated writes for the coop are cut", ops := humansV ++ [
+    (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+    (7, 2, [], .foundSpace 10 200 [100]),
+    -- Bob's Mac writes for the coop through Bob's vault: an edit Samuel sees, and one on an old copy, which he doesn't
+    (8, 5, [], .write 10 1 200 0 (via := [101])),
+    (9, 5, [], .write 10 2 200 0 (via := [101])),
+    (10, 1, [], .removeOwner 200 (.vault 101) [8]),
+    -- Samuel's Mac writes on; Bob's Mac no longer can
+    (11, 2, [], .write 10 1 200 0 [8] (via := [100])),
+    (12, 5, [], .write 10 1 200 0 [11] (via := [101]))] },
   { name := "once the curves fall, only vouched writes count", pq := true, ops := humansV ++ [
     (6, 2, [], .foundSpace 11 100),
     (7, 1, [3], .addDevice 100 3),
@@ -507,14 +554,14 @@ def syncs : List SyncCase := [
       (1, [3], .addDevice 100 3),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
       -- the coop's Handbook: Welcome and the Charter, Carol reads Welcome, Bob edits it
-      (2, [], .foundSpace 10 200),
-      (2, [], .write 10 1 200 0),
-      (2, [], .write 10 2 200 0),
-      (2, [], g 30 (.entry 10 1) .read (toVault 102) 200),
-      (5, [], .write 10 1 200 0 [10]),
+      (2, [], .foundSpace 10 200 [100]),
+      (2, [], .write 10 1 200 0 (via := [100])),
+      (2, [], .write 10 2 200 0 (via := [100])),
+      (2, [], g 30 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
+      (5, [], .write 10 1 200 0 [10] (via := [101])),
       (2, [], .checkpoint 10 1 [10]),
-      (2, [], .write 10 2 200 0 [11]),
-      (2, [], .publish 10 200 1),
+      (2, [], .write 10 2 200 0 [11] (via := [100])),
+      (2, [], .publish 10 200 1 [100]),
       -- Samuel's own Notes
       (2, [], .foundSpace 11 100),
       (2, [], .write 11 1 100 0)]),
@@ -574,9 +621,9 @@ def syncs : List SyncCase := [
       -- Samuel's backup passkey, a second owner of his vault
       (1, [9], .addOwner 100 (.signer 9)),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-      (2, [], .foundSpace 10 200),
-      (2, [], .write 10 1 200 0),
-      (2, [], g 30 (.space 10) .read (toVault 102) 200)]),
+      (2, [], .foundSpace 10 200 [100]),
+      (2, [], .write 10 1 200 0 (via := [100])),
+      (2, [], g 30 (.space 10) .read (toVault 102) 200 (via := [100]))]),
     asks := [(3, [], none)],
     -- Samuel's passkey, his backup passkey, Bob's and Carol's, Samuel's Mac (a device, no passkey), and a stranger's
     links := [1, 9, 4, 6, 2, 555] }]
@@ -600,6 +647,7 @@ def principal : Principal → String
 def kind : Kind → String
   | .human => str "human"
   | .coop  => str "coop"
+  | .aven  => str "aven"
 
 def role : Role → String
   | .relay => str "relay"
@@ -644,14 +692,16 @@ def action : Action → String
   | .addDevice v d => obj [("addDevice", obj [("vault", nat v), ("device", nat d)])]
   | .removeDevice v d keep => obj [("removeDevice", obj [("vault", nat v), ("device", nat d), ("keep", ids keep)])]
   | .setRoot v r keep => obj [("setRoot", obj [("vault", nat v), ("root", opt nat r), ("keep", ids keep)])]
-  | .foundSpace sp a => obj [("foundSpace", obj [("space", nat sp), ("actor", nat a)])]
-  | .grant x => obj [("grant", grant x)]
-  | .revoke x a keep => obj [("revoke", obj [("grant", nat x), ("actor", nat a), ("keep", ids keep)])]
-  | .write sp e a epoch deps b => obj [("write", obj [("space", nat sp), ("entry", nat e), ("actor", nat a),
-      ("epoch", nat epoch), ("deps", ids deps), ("branch", branch b)])]
+  | .foundSpace sp a via => obj [("foundSpace", obj [("space", nat sp), ("actor", nat a), ("via", ids via)])]
+  | .grant x via => obj [("grant", obj [("grant", grant x), ("via", ids via)])]
+  | .revoke x a keep via => obj [("revoke", obj [("grant", nat x), ("actor", nat a), ("keep", ids keep),
+      ("via", ids via)])]
+  | .write sp e a epoch deps b via => obj [("write", obj [("space", nat sp), ("entry", nat e), ("actor", nat a),
+      ("epoch", nat epoch), ("deps", ids deps), ("branch", branch b), ("via", ids via)])]
   | .keys k epoch to pub => obj [("keys", obj [("key", keyScope k), ("epoch", nat epoch),
       ("to", arr (to.map keyName)), ("public", bool pub)])]
-  | .publish sp a b => obj [("publish", obj [("space", nat sp), ("actor", nat a), ("blob", nat b)])]
+  | .publish sp a b via => obj [("publish", obj [("space", nat sp), ("actor", nat a), ("blob", nat b),
+      ("via", ids via)])]
   | .checkpoint sp e covers => obj [("checkpoint", obj [("space", nat sp), ("entry", nat e), ("covers", ids covers)])]
 
 def vault (vt : Vault) : String :=
@@ -663,7 +713,8 @@ def space (x : Space) : String :=
 
 def write (w : Write) : String :=
   obj [("op", nat w.op), ("author", nat w.author), ("actor", nat w.actor), ("space", nat w.space),
-       ("entry", nat w.entry), ("epoch", nat w.epoch), ("deps", ids w.deps), ("branch", branch w.branch)]
+       ("entry", nat w.entry), ("epoch", nat w.epoch), ("deps", ids w.deps), ("branch", branch w.branch),
+       ("via", ids w.via)]
 
 /-- Each family's epoch, where it isn't 0, in the order the families came to be. -/
 def epochs (st : State) : String :=
@@ -736,8 +787,8 @@ def render : String :=
 /-- What an op creates, by the model's number: a vault, a space or a grant. -/
 def created : Action → Option (Nat × Nat)
   | .genesis v .. => some (0, v)
-  | .foundSpace sp _ => some (1, sp)
-  | .grant x => some (2, x.id)
+  | .foundSpace sp _ _ => some (1, sp)
+  | .grant x _ => some (2, x.id)
   | _ => none
 
 -- every case refuses some ops and accepts others, so neither side can pass by always saying the same thing
