@@ -65,7 +65,7 @@
 		}
 	}
 
-	// ---- each aven's mind, kept across runs (mind.js): who it is, what it wants, what it tried, learned, died of ----
+	// ---- each aven's brain, kept across runs (mind.js; "brain" to Samuel, mind in the code, where brain.js is the model): who it is, what it wants, what it tried, learned, died of ----
 	/** @type {Record<string, any>} */
 	let minds = {}; // by aven name, for the config being played
 	let mindsOf = ''; // which config they are
@@ -93,7 +93,7 @@
 			raw = await loadMinds(cfg, mindsRemote());
 			mindNote = '';
 		} catch (e) {
-			mindNote = `The avens' minds could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh and are not kept.`;
+			mindNote = `The avens' brains could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh and are not kept.`;
 		}
 		if (cfg !== mindsKey()) return;
 		mindsOf = cfg;
@@ -120,14 +120,14 @@
 			await saveMinds(cfg, Object.fromEntries(Object.values(minds).map((m) => [m.name, keepMind(m)])), mindsRemote());
 			mindNote = '';
 		} catch (e) {
-			mindNote = `The avens' minds could not be saved (${/** @type {any} */ (e)?.message || e}).`;
+			mindNote = `The avens' brains could not be saved (${/** @type {any} */ (e)?.message || e}).`;
 		} finally {
 			syncing = false;
 		}
 	}
 	/** the admin: every aven of this config forgets everything and starts fresh */
 	async function forgetAll() {
-		if (!confirm(`Forget every aven's mind for ${CONFIG.name}? Their characters, trials, lessons and deaths go, and the next run starts fresh.`)) return;
+		if (!confirm(`Forget every aven's brain for ${CONFIG.name}? Their characters, trials, lessons and deaths go, and the next run starts fresh.`)) return;
 		try {
 			await forgetMinds(mindsKey(), mindsRemote());
 		} catch (e) {
@@ -891,7 +891,7 @@
 					</li>
 				{/each}
 			</ol>
-			<p class="brain">Brain <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Brain">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select></p>
+			<p class="brain">Model <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Model">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select></p>
 		</section>
 
 		<nav class="tabs">
@@ -988,7 +988,7 @@
 			</table></div>
 			{#if snap.aven.mind}
 				{@const m = snap.aven.mind}
-				<h4>Its mind <small>run {m.runs} · {m.days} days lived · died {m.deaths}× · {m.tally.trials} trials, {m.tally.kept} kept</small></h4>
+				<h4>Its brain <small>run {m.runs} · {m.days} days lived · died {m.deaths}× · {m.tally.trials} trials, {m.tally.kept} kept</small></h4>
 				<ul class="dials">
 					{#each Object.entries(DIALS) as [k, d] (k)}<li title={`0 ${d.low} · 10 ${d.high}`}><span>{d.label}</span><b style:width={`${m.dials[k] * 10}%`}></b><em>{m.dials[k]}</em></li>{/each}
 					{#each Object.entries(WANTS) as [k, w] (k)}<li title={`days of ${k} it keeps, and buys up to`}><span>{w.label}</span><b class="want" style:width={`${m.wants[k] * 10}%`}></b><em>{m.wants[k]} d</em></li>{/each}
@@ -998,7 +998,7 @@
 				{#if m.lessons.length}<h4>Lessons</h4><ul class="entries mind">{#each m.lessons as l (l.id)}<li><span class="what">#{l.id} {l.text}</span><span class="num">+{l.up} −{l.down}</span></li>{/each}</ul>{/if}
 				{#if m.deathLog.length}<h4>Deaths</h4><ul class="entries mind">{#each m.deathLog.slice().reverse() as line, i (i)}<li class="death"><span class="what">{line}</span></li>{/each}</ul>{/if}
 				{#if mindNote}<p class="sub miss">{mindNote}</p>{/if}
-				{#if acct.admin}<button class="link forget" onclick={forgetAll}>Forget every aven's mind</button>{/if}
+				{#if acct.admin}<button class="link forget" onclick={forgetAll}>Forget every aven's brain</button>{/if}
 			{/if}
 			<h4>Its tools</h4>
 			<ul class="tools">

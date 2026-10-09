@@ -842,4 +842,12 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // Samuel calls an aven's mind its brain: the table and its column say so too.
+    id: "0036-economy-brains",
+    sql: `
+      ALTER TABLE econ_minds RENAME TO econ_brains;
+      ALTER TABLE econ_brains RENAME COLUMN mind TO brain;
+    `,
+  },
 ];

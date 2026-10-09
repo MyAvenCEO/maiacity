@@ -67,9 +67,9 @@ export function recorder(world, start) {
 	return rec;
 }
 
-// ---- each aven's mind, kept across runs (mind.js): read when a run starts, written each night. Without the database
+// ---- each aven's brain, kept across runs (mind.js): read when a run starts, written each night. Without the database
 // (not signed in, or the API down) they live in this browser instead. ----
-const LOCAL = (config) => `sandbox-8-minds-${config}`;
+const LOCAL = (config) => `sandbox-8-brains-${config}`;
 const local = {
 	get(config) {
 		try {
@@ -89,10 +89,11 @@ const local = {
 /** { aven name: mind (with pending edits) }; `remote` false keeps them in this browser */
 export async function loadMinds(config, remote) {
 	if (!remote) return local.get(config);
-	return (await apiCall(`/api/economy/minds/${encodeURIComponent(config)}`)).minds ?? {};
+	const r = await apiCall(`/api/economy/brains/${encodeURIComponent(config)}`);
+	return r.brains ?? {};
 }
 export async function saveMinds(config, minds, remote) {
 	if (!remote) return local.set(config, { ...local.get(config), ...minds });
-	return apiCall(`/api/economy/minds/${encodeURIComponent(config)}`, { method: 'PUT', body: JSON.stringify({ minds }) });
+	return apiCall(`/api/economy/brains/${encodeURIComponent(config)}`, { method: 'PUT', body: JSON.stringify({ brains: minds }) });
 }
-export const forgetMinds = (config, remote) => (remote ? apiCall(`/api/economy/minds/${encodeURIComponent(config)}`, { method: 'DELETE' }) : Promise.resolve(local.set(config, {})));
+export const forgetMinds = (config, remote) => (remote ? apiCall(`/api/economy/brains/${encodeURIComponent(config)}`, { method: 'DELETE' }) : Promise.resolve(local.set(config, {})));

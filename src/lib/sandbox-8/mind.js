@@ -1,5 +1,6 @@
 // @ts-nocheck — plain JS game state, kept loose on purpose
-// Each aven's mind, kept across runs (Samuel, 2026-10-09): who it is, what it wants, what it tried and how that went,
+// Each aven's brain, kept across runs (Samuel, 2026-10-09; he calls it its brain, the code calls it its mind, since
+// brain.js is the model it asks, d1 or Qwen): who it is, what it wants, what it tried and how that went,
 // what it learned and how it died. It is the aven's own, never a MIP's: the config sets only where a new mind starts.
 //
 // The pattern, kept as small as it goes (a few hundred tokens in every ask):
@@ -18,7 +19,7 @@
 //   lost twice more than it won goes. Only a brain that writes text (Qwen) adds lessons.
 // - Deaths: when and why it died, and what stood around it, one line each. Dying of thirst also makes it keep more
 //   water from then on, without asking: the one instinct the valley gives it.
-// The mind lives in the database (api/src/economy.js, econ_minds) per config and aven name: read when a run starts,
+// The mind lives in the database (api/src/economy.js, econ_brains) per config and aven name: read when a run starts,
 // written every night, and editable by the admin's agents over the studio's MCP (their edits land on the next night).
 
 /** the character: what each dial means, at its low and its high end */
@@ -384,7 +385,7 @@ function drift(m) {
 export function inCharacter(a, ...keys) {
   const m = a.mind;
   if (!m) return "";
-  return ` Act in character: ${keys.map((k) => `${DIALS[k].label.toLowerCase()} ${m.dials[k]}/10`).join(", ")} (see my_mind).`;
+  return ` Act in character: ${keys.map((k) => `${DIALS[k].label.toLowerCase()} ${m.dials[k]}/10`).join(", ")} (see my_brain).`;
 }
 
 /** the night's extra questions, on the first full ask after a stretch ended: the next trial, and on a brain that
@@ -396,7 +397,7 @@ export function mindQuestions(a, { writes = false } = {}) {
   if (m.base != null)
     q.next_trial = {
       type: "choice",
-      instructions: `Your last ${TRIAL_DAYS} days scored ${m.lastScore}/day (see my_mind: trials, lessons, deaths). Pick ONE change to try for the next ${TRIAL_DAYS} days. It is kept only if your score then beats ${m.base + MARGIN}/day, else it is undone. Try what your trials, lessons and deaths suggest; don't repeat what just failed.`,
+      instructions: `Your last ${TRIAL_DAYS} days scored ${m.lastScore}/day (see my_brain: trials, lessons, deaths). Pick ONE change to try for the next ${TRIAL_DAYS} days. It is kept only if your score then beats ${m.base + MARGIN}/day, else it is undone. Try what your trials, lessons and deaths suggest; don't repeat what just failed.`,
       criteria: trialOptions(m),
     };
   if (writes) {

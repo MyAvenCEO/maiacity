@@ -21,7 +21,7 @@ export const TOOLS = [
 	{ id: 'ask', label: 'Set my price', note: 'per good it grows, in HEARTS: no starting price, it names its first one and then moves it as it likes, from its own stock, its needs, the market\'s history and what others ask' },
 	{ id: 'bid', label: 'Set what I pay', note: 'per good it buys: the most it pays, in the same range, from how close it is to going short' },
 	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet, up to the haggling the Policies allow' },
-	{ id: 'reserve', label: 'Keep a stock', note: 'days of water and of food: its wants, in its mind, changed only by its own trials (or the admin)' },
+	{ id: 'reserve', label: 'Keep a stock', note: 'days of water and of food: its wants, in its brain, changed only by its own trials (or the admin)' },
 	{ id: 'trial', label: 'Try something', note: `after each stretch of a few days, one change to its character or wants, kept only if its score beats the last stretch's` },
 	{ id: 'lesson', label: 'Learn', note: 'on Qwen, one short lesson of its own after each stretch, weighed by how the next stretch goes' }
 ];
@@ -126,8 +126,8 @@ export function stateFor(world, a) {
 		others: world.avens
 			.filter((o) => o !== a)
 			.map((o) => ({ name: o.name, alive: o.alive, hearts: o.hearts, grows: o.grows, asking: o.alive ? o.ask : null })),
-		// who it is and what it learned, across runs (mind.js): its character, wants, trials, lessons, deaths
-		my_mind: mindFor(a)
+		// who it is and what it learned, across runs: its brain (mind.js): character, wants, trials, lessons, deaths
+		my_brain: mindFor(a)
 	};
 }
 
@@ -176,7 +176,7 @@ export function questionsFor(world, a, { full = true, writes = false } = {}) {
 	// the slower decisions (haggling, stock) only on a full ask: every ask carries the whole state once per question, so
 	// fewer questions is fewer tokens. Where to walk is no decision: a buyer walks to fetch what it bought (Samuel).
 	if (full) q.flex = { type: 'score', instructions: `When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?${inCharacter(a, 'haggle')}`, criteria: gives() };
-	// how much stock it keeps is no longer asked every morning: it is the aven's wants, in its mind, changed by its
+	// how much stock it keeps is no longer asked every morning: it is the aven's wants, in its brain, changed by its
 	// trials (scored by the game) and by the admin's edits. After a stretch is measured, a full ask also picks the next
 	// trial, and a brain that writes adds a lesson (mind.js).
 	if (full) Object.assign(q, mindQuestions(a, { writes }));
@@ -360,7 +360,7 @@ export async function askBox(state, questions, { signal, url = BOX_URL, want = '
 	const body = {
 		model,
 		messages: [
-			{ role: 'system', content: `You decide for ${state.me}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_mind, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (or, where asked to write, a short text). /no_think` },
+			{ role: 'system', content: `You decide for ${state.me}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_brain, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (or, where asked to write, a short text). /no_think` },
 			{ role: 'user', content: JSON.stringify({ state, questions: Object.fromEntries(keys.map((k) => [k, { question: questions[k].instructions, options: options(questions[k]) }])) }) }
 		],
 		temperature: 0.3,
