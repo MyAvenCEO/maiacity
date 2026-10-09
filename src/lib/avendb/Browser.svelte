@@ -140,13 +140,17 @@
 			running(d);
 		});
 
-	/** @param {any} d @param {Uint8Array} nonce @param {string} credential */
+	/** The device runs from here on, its store following it, even should keeping what opens it again fail: it can
+	 *  still show its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
+	 *  @param {string} credential */
 	async function started(d, nonce, credential) {
-		meta = { name, relay, nonce: hex(nonce), credential, passkey: d.passkey() };
-		await store.setMeta(meta);
+		// IndexedDB clones what it keeps, and can't clone the proxy a $state object reads as: it keeps the plain object
+		const kept = { name, relay, nonce: hex(nonce), credential, passkey: d.passkey() };
+		meta = kept;
+		running(d);
 		remember('relay', relay);
 		remember('server', server);
-		running(d);
+		await store.setMeta(kept);
 	}
 
 	/** @param {any} d */
