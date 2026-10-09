@@ -12,11 +12,11 @@
 	import { onMount } from 'svelte';
 	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, hookSample } from './economy.js';
 	import { loadCode } from './sandbox.js';
-	import { RULES, CONFIG, DEFAULTS, changedRules, useConfig } from './rules.js';
+	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
 	import { loadConfigs, loadRuns, loadWorldRun, saveWorldState, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
-	import { wholeMind, beginRun, wear, night, editMind, keepMind, DIALS, WANTS, TRIAL_DAYS } from './mind.js';
+	import { wholeMind, beginRun, wear, night, editMind, keepMind, worldStamp, enterWorld, DIALS, WANTS, TRIAL_DAYS } from './mind.js';
 	import { me, may } from '$lib/auth/client';
 	import { native } from '$lib/native';
 	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
@@ -59,7 +59,7 @@
 	// ---- each aven's brain, its own in each world (mind.js; "brain" to Samuel, mind in the code, where brain.js is the model): who it is, what it wants, what it tried, learned, died of ----
 	/** @type {Record<string, any>} */
 	let minds = {}; // by aven name, for the config being played
-	let mindsOf = ''; // which config they are
+	let mindsOf = ''; // the world (run id) they are kept under; '' while a new world is not kept yet
 	let mindNote = $state('');
 	const mindsRemote = () => acct.play;
 	const mindsKey = () => here.id ?? ''; // every world is a capsule (Samuel): its avens' brains are kept under its id
@@ -75,24 +75,41 @@
 			}
 		}
 	}
-	/** read every aven's mind in this world (new ones in a new world, or for an aven it never had), and dress its avens in them */
+	/** read every aven's mind in this world, and dress its avens in them. A new world starts each with a copy of its
+	 * latest brain (Samuel): the one it played with last on this page, else its newest kept in any world */
 	async function loadAllMinds() {
 		const cfg = mindsKey();
 		/** @type {Record<string, any>} */
 		let raw = {};
-		if (cfg)
-			try {
-				raw = await loadMinds(cfg, mindsRemote());
-				mindNote = '';
-			} catch (e) {
-				mindNote = `The avens' brains could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh and are not kept.`;
-			}
+		/** @type {Record<string, any>} */
+		let copies = {};
+		const held = Object.values(minds);
+		if (!cfg && !mindsOf && held.length && world.avens.every((/** @type {any} */ a) => minds[a.name])) {
+			// the brains on the page are already copies for a world not kept yet (a new world dealt again): they go on
+			// to this one as they are, copied nothing twice
+			if (!started) for (const a of world.avens) wear(a, minds[a.name]);
+			return;
+		}
+		try {
+			if (cfg) raw = await loadMinds(cfg, mindsRemote());
+			// a world not played yet (new, or made on the MCP): an aven without a brain of its own here gets a copy
+			if (world.day === 1 && world.t === 0 && world.avens.some((/** @type {any} */ a) => !raw[a.name]?.dials))
+				copies = held.length ? JSON.parse(JSON.stringify(Object.fromEntries(held.map((m) => [m.name, keepMind(m)])))) : mindsRemote() ? await loadMinds('latest', true) : {};
+			mindNote = '';
+		} catch (e) {
+			mindNote = `The avens' brains could not be read (${/** @type {any} */ (e)?.message || e}): they start fresh${cfg ? ' and are not kept' : ''}.`;
+		}
 		if (cfg !== mindsKey()) return;
 		mindsOf = cfg;
 		minds = {};
+		const stamp = worldStamp(RULES, CONFIG.cards);
 		for (const a of world.avens) {
-			const m = wholeMind(raw[a.name], a.name, RULES.reserveDays);
-			takeEdits(m, raw[a.name]?.pending);
+			const own = raw[a.name]?.dials ? raw[a.name] : null;
+			const { pending, updated, ...was } = own ?? copies[a.name] ?? {};
+			const m = wholeMind(own || copies[a.name] ? was : null, a.name, RULES.reserveDays);
+			if (!own && copies[a.name]) enterWorld(m, stamp, PARAMS); // a copy learns what is set differently here
+			else m.stamp = stamp;
+			takeEdits(m, raw[a.name]?.pending); // edits made for this world (a copy's old ones stay behind)
 			minds[a.name] = m;
 		}
 		if (!started) for (const a of world.avens) wear(a, minds[a.name]);
@@ -108,6 +125,12 @@
 			if (mindsRemote() && !final) {
 				const raw = await loadMinds(cfg, true);
 				for (const m of Object.values(minds)) takeEdits(m, raw[m.name]?.pending);
+			}
+			if (!final) {
+				// the settings it plays under now, to tell a copy what differs in the world it goes to next (not on the way
+				// out of a world: a new world's settings may be in force by then)
+				const stamp = worldStamp(RULES, CONFIG.cards);
+				for (const m of Object.values(minds)) m.stamp = stamp;
 			}
 			await saveMinds(cfg, Object.fromEntries(Object.values(minds).map((m) => [m.name, keepMind(m)])), mindsRemote());
 			mindNote = '';
@@ -181,7 +204,14 @@
 	}
 
 	/** a new world on a config (Samuel: worlds are never reset; you open a new one, and every old one stays) */
-	function play(/** @type {any} */ cfg, local = {}) {
+	async function play(/** @type {any} */ cfg, local = {}) {
+		if (started) {
+			// the world on the page is kept first, with its own settings, before the new world's come into force
+			await keepWorld();
+			syncMinds(true);
+			started = false;
+			rec = null;
+		}
 		useConfig(cfg, local);
 		try {
 			localStorage.setItem(PICKED, cfg.id);

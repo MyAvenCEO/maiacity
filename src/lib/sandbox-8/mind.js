@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS game state, kept loose on purpose
 // Each aven's brain (Samuel's word; the code calls it its mind, since brain.js is the model it asks, d1 or Qwen), its
-// own in each world: every world is a standalone capsule (Samuel, 2026-10-09), so a new world brings new brains and an
-// old one opened again brings back the brains it had. Who it is, what it wants, what it tried and how that went, what
+// own in each world: every world is a standalone capsule (Samuel, 2026-10-09). A new world starts each aven with a copy
+// of its latest brain, which then changes only there; an old world opened again brings back the brains it had. Who it is, what it wants, what it tried and how that went, what
 // it learned and how it died. It is the aven's own, never a MIP's: the config sets only where a new brain starts.
 //
 // The pattern, kept as small as it goes (a few hundred tokens in every ask):
@@ -309,6 +309,33 @@ export function addLesson(m, text) {
 	}
 	return true;
 }
+/** what a world is set to, as a brain remembers it: every value of the catalogue, and its cards by name */
+export function worldStamp(rules, cards) {
+	return {
+		values: Object.fromEntries(Object.entries(rules).filter(([, v]) => typeof v === 'number')),
+		cards: (cards ?? []).map((c) => c.name || c.id)
+	};
+}
+
+/** a brain copied into a new world (Samuel): it is told what is set differently from the world it came from, since a
+ * lesson from there may not hold here. `params` is the catalogue (labels and units) */
+export function enterWorld(m, stamp, params) {
+	const was = m.stamp;
+	m.stamp = stamp;
+	if (!was?.values) return (m.changed = null);
+	const out = [];
+	for (const p of params) {
+		const a = was.values[p.key],
+			b = stamp.values[p.key];
+		if (a !== undefined && b !== undefined && a !== b) out.push(`${p.label} ${a}→${b}${p.unit && !/=|at least|yes/.test(p.unit) ? ` ${p.unit}` : ''}`);
+	}
+	for (const c of stamp.cards) if (!was.cards?.includes(c)) out.push(`new card ${c}`);
+	for (const c of was.cards ?? []) if (!stamp.cards.includes(c)) out.push(`card ${c} gone`);
+	m.changed = out.length ? out.slice(0, 12) : ['nothing: the same settings as my last world'];
+	note(m, `${m.world} → a new world: ${out.length ? out.slice(0, 5).join(', ') : 'same settings'}`);
+	return m.changed;
+}
+
 /** the mind as its brain reads it in every ask: compact, a few hundred tokens */
 export function mindFor(a) {
 	const m = a.mind;
@@ -317,14 +344,15 @@ export function mindFor(a) {
 		character: Object.fromEntries(Object.entries(m.dials).map(([k, v]) => [k, `${v}/10`])),
 		character_means: Object.fromEntries(Object.entries(DIALS).map(([k, d]) => [k, `0 ${d.low}, 10 ${d.high}`])),
 		wants: `I keep ${m.wants.water} days of water and ${m.wants.food} days of food in stock and buy up to that`,
-		life: `${m.days} days lived in this world; died ${m.deaths} time${m.deaths === 1 ? '' : 's'}; ${m.tally.trials} trials, ${m.tally.kept} kept`,
+		life: `now in ${m.world}, my world number ${m.runs}; ${m.days} days lived over all my worlds; died ${m.deaths} time${m.deaths === 1 ? '' : 's'}; ${m.tally.trials} trials, ${m.tally.kept} kept`,
 		since_birth: m.born ? drift(m) : 'as born',
+		...(m.changed ? { this_world_vs_my_last: m.changed } : {}),
 		trying_now: m.trial
 			? `${label(m.trial)} since day ${m.trial.day}: kept only if my score beats ${m.base}/day`
 			: 'nothing: measuring my current setting',
 		score_means: `HEARTS gained a day, less ${SHORT.water} for each unit of water and ${SHORT.food} for each unit of food I go short`,
 		trials: m.log.slice(-6),
-		lessons: m.lessons.map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down})`),
+		lessons: m.lessons.map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down}${l.world ? `, learned in ${l.world}` : ''})`),
 		deaths: m.deathLog.slice()
 	};
 }
