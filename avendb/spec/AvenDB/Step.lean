@@ -130,7 +130,8 @@ def closeDeps (ws : List Write) : List Write :=
 /-- After a removal from `pre` to `post`: drop every write the removal took the authorization from, unless the
     remover had seen it, and every write that builds on a dropped one; an entry whose creation is dropped goes with all
     its writes. Writes that were already unauthorized (kept by an earlier removal) stay. Revocation wins over what it
-    had not seen. -/
+    had not seen. Each write is judged in the cell it was written in (`authorized`), so a move drops nothing here: a
+    write a move hadn't seen falls by strong removal, checked against the cell the move took its entry to (`hide`). -/
 def dropUnseen (pre post : State) (keep : List EditId) : State :=
   let ws := closeDeps (post.writes.filter fun w => keep.contains w.edit || !authorized pre w || authorized post w)
   let es := post.entries.filter fun en => ws.any fun w => w.entry == en.id && w.first
@@ -264,12 +265,12 @@ def apply (st : State) (edit : Edit) : Option State :=
         let attrs : Attrs := ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩
         let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs⟩
         some { st with entries := st.entries ++ [en], born := st.born ++ [e],
-                       writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, gen, [], .main, via, true⟩] }
+                       writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, gen, [], .main, via, true, x⟩] }
     | none =>
       match st.entry? e with
       | none => none
       | some en =>
-        let w : Write := ⟨edit.id, edit.author, actor, e, stay, gen, deps, proposal, via, false⟩
+        let w : Write := ⟨edit.id, edit.author, actor, e, stay, gen, deps, proposal, via, false, en.cell⟩
         if en.vault != v || !mayWrite st actor en then none
         else match en.stayCell stay with
           | none => none

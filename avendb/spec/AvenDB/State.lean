@@ -91,6 +91,8 @@ structure Write where
   via      : List VaultId
   /-- It created its entry. -/
   first    : Bool
+  /-- The cell its entry was in when it was accepted, where a removal judges it (`authorized`). -/
+  cell     : Cell
   deriving DecidableEq, Repr
 
 /-- The line a write is on: `none` for the main line, else the write that started its proposal. -/
@@ -261,10 +263,12 @@ def mayCreate (st : State) (a v : VaultId) (x : Cell) : Bool :=
   a == v || st.caps.any fun cp => cp.over == v && holdsCap st a cp .write && intake st cp == x
 
 /-- A write is authorized in `st`: its author acts for its actor through the owners it names, and that vault may write
-    its entry. -/
+    its entry as the write found it, in the cell it was in then (`Write.cell`). Strong removal judges an edit at its own
+    place in the replay too, so a removal takes from a write only what it took from it there: a move between them
+    doesn't hand the removal writes that never rested on what it takes away. -/
 def authorized (st : State) (w : Write) : Bool :=
   actsVia st w.author w.via w.actor && match st.entry? w.entry with
-    | some en => mayWrite st w.actor en
+    | some en => mayWrite st w.actor { en with stays := [(w.stay, w.cell)] }
     | none    => false
 
 /-- Vault `a` publishes into vault `v`'s schema lane: it is `v`, or holds a wide owner cap over it. -/
