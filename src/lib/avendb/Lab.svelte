@@ -32,7 +32,7 @@
 
 	$effect(() => {
 		void rev;
-		// what Samuel's Mac knows of: every space the tile writes
+		// what Alice's Mac knows of: every space the tile writes
 		world.view({ view: 'spaces', on: start.device }).then((v) => {
 			entries = v.spaces.flatMap((/** @type {any} */ s) =>
 				s.entries.map((/** @type {any} */ e) => ({ space: s.id, entry: e.id, label: `${s.name} · ${e.title ?? `entry ${short(e.id)}`}` }))

@@ -47,6 +47,9 @@ cd avendb && ./scripts/build-web.sh     # needs the wasm32-unknown-unknown targe
 cd .. && node scripts/avendb-smoke.mjs  # starts a dev server, checks every screen, screenshots in build/avendb-smoke
 ```
 
+`scripts/avendb-account.mjs` walks the account itself, from founding to signing in again, against an avenDB server on the
+same machine; its header says how to build and start both.
+
 The Lean build needs [elan](https://github.com/leanprover/elan) (`spec/lean-toolchain` pins the version). After a change
 to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit them with the change.
 
@@ -123,11 +126,17 @@ half still signs each op's own id. So a person is asked once where a device woul
   them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
   one ceremony, the unlock; the relay knows it, so it needs no pass.
 
-In the tile, the screen **This browser** is this device: it founds a vault, with the maiaCITY passkey or a new one,
-and claims the server if nobody has yet, saying so once its vault owns avenCEO, or links through a code (a QR code that a phone's camera opens as a
-link, `?link=`), shows its own code as a QR code for the next device, and lists, edits and writes notes, showing what
-its other devices change the moment it arrives (`Device::changed`). The screen comes with avenDB's server's relay and
-code filled in (`avendb.maia.city`, "Deploying the server", below); a test server's can take their place.
+The tile opens on **Your account**, this browser as a device of its person: their human vault, named after them, its
+root passkey, and its devices, each by the name on its card (`Device::account`). A card is a document tagged
+`avendb:device` that each device writes itself into the vault's first space, end-to-end encrypted like the notes there,
+and writes again to rename itself (`Device::card`). A new person founds their vault there, with the maiaCITY passkey or a
+new one, and claims the server if nobody has yet, saying so once their vault owns avenCEO. A person with an account
+signs in on a new browser with their passkey alone, linking through the server's offer, as after losing every device,
+or links it through the code another of their devices shows (a QR code that a phone's camera opens as a link,
+`?link=`). The account shows its own code as a QR code for the next device, and lists, edits and writes notes, showing
+what the other devices change the moment it arrives (`Device::changed`). It comes with avenDB's server's relay and code
+filled in (`avendb.maia.city`, "Deploying the server", below); a test server's can take their place. The Lab's
+simulated world stays apart, made only when it is opened.
 
 #### PRF, done right
 
@@ -247,7 +256,7 @@ does one who lost a race for it, their vault founded all the same. A new server 
 a vault through it first, which should be the person who runs it. A device of a vault founded before claims a server
 the same way (`Node::claim`), avenCEO's genesis and the op that adds the server in one ceremony; a claim whose answer
 was lost finds the server avenCEO's device already, and one the server didn't take is tried again on the same
-avenCEO. In the tile, **This browser** says so once its vault owns avenCEO.
+avenCEO. In the tile, **Your account** says so once its vault owns avenCEO.
 
 A space relayed by avenCEO is relayed to avenCEO's devices and, as for any grant to a vault, to the devices that act for
 it: its owners'. They receive what the server's disk holds, the space's ops as ciphertext, never a key.
@@ -269,9 +278,9 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    without one it is set by hand in the Hetzner DNS console. The relay needs a host name of its own: iroh's relay path
    is `/relay`, and `api.maia.city/relay` is the media vault's relay.
 4. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) is filled
-   in on **This browser** (`SERVER` in `src/lib/avendb/Browser.svelte`), beside its relay. It stays the same as long
+   in on **Your account** (`SERVER` in `src/lib/avendb/Account.svelte`), beside its relay. It stays the same as long
    as its folder on the Hetzner volume keeps the server's device secret.
-5. **The claim**: the first person to found their vault on **This browser** claims the server as avenCEO's device,
+5. **The claim**: the first person to found their vault on **Your account** claims the server as avenCEO's device,
    so whoever runs a new server founds their vault there first. Both workflows log whether it is claimed yet.
 
 Its store and its device's secret live on the Hetzner volume, so a rebuilt server is still the same device; the
@@ -301,4 +310,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8f, vaults | Three kinds of vault, human, coop and aven, each owned only as its kind may be (T21); every act for a coop or an aven vault names the chain of owners it goes through; the server a device of avenCEO, claimed by the first human vault founded through it; the passkey of maiaCITY's sign-up, with PRF, as the vault's root; the example world reset around avenCEO | Merged |
 | P8f, deploy | The server at `avendb.maia.city`, beside the media vault: its own image and workflow (`avendb.yml`), its Caddy site, UDP port and settings from `api.yml`; This browser filled in with its relay and offer | Merged |
 | P8f, one prompt | No setup code: the first human vault founded through the server owns avenCEO; ops drafted together signed in one ceremony over their batch, so a first browser founds its vault, adds itself and claims the server in one prompt after the unlock and the pass (three in all, four with a new passkey), and This browser says when its vault owns avenCEO | Merged |
+| P8f, account | The tile opens on the person's account, the Lab apart and made only when opened: their human vault, its root passkey and its devices, each by the name on its card, an end-to-end encrypted document the device writes itself; a new browser signs in with the passkey alone, through the server; the Lab's simulated person is Alice | Merged |
 | P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |
