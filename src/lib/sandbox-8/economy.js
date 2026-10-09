@@ -14,7 +14,7 @@ export const GOOD_COLOUR = { water: '#2a78d6', fruits: '#eb6834', vegetables: '#
 export const NEED = { water: 3, fruits: 2, vegetables: 2, legumes: 2, chicken: 2 };
 /** the share of a stock that rots each night: water keeps, fresh food goes fast, legumes (dry, with nuts and seeds) keep long
  * @type {Record<string, number>} */
-export const ROT = { water: 0, fruits: 0.25, vegetables: 0.2, legumes: 0.03, chicken: 0.3 };
+export const ROT = { water: 0, fruits: 0.25, vegetables: 0.15, legumes: 0.05, chicken: 0.3 };
 
 export const START_HEARTS = 125000;
 export const START_PRICE = 100; // HEARTS a unit, where every price begins
