@@ -241,6 +241,10 @@ pub enum Step {
     Hello,
     /// The op that adds the new device to its person's vault.
     Join,
+    /// A device's pass to the relay (`sign::RelayPass`), before it reaches any peer.
+    Pass,
+    /// The genesis of its person's vault, which their first device founds (avendb-browser's `Device::found`).
+    Found,
 }
 
 /// The software passkey `1` in a node's Lab, which makes its ceremonies itself.

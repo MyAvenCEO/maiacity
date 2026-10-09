@@ -19,6 +19,8 @@ getrandom = "0.4"
 # the relay's URL; its TLS and features are avendb-net's, for a machine and for a browser
 iroh = { version = "=1.3.0", default-features = false }
 n0-future = "0.3.2"
+# a closed device's page stops waiting for its changes
+tokio = { version = "1.44", default-features = false, features = ["sync"] }
 zeroize = "1.8"
 # pinned to the wasm-bindgen CLI that writes the page's package, as avendb-web's
 wasm-bindgen = "=0.2.129"
@@ -30,7 +32,13 @@ js-sys = "=0.3.106"
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom = { version = "0.4", features = ["wasm_js"] }
 
+[features]
+# passkeys of the relying party localhost count (avendb's `localhost-passkeys`): the test page's, made by Chromium's
+# virtual authenticator (scripts/test-browser.sh), never in a build that ships
+localhost-passkeys = ["avendb/localhost-passkeys"]
+
 [dev-dependencies]
 avendb-server = { path = "../avendb-server" }
+libc = "0.2"
 serde_json.workspace = true
 tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process"] }

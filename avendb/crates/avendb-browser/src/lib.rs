@@ -1,59 +1,181 @@
-//! avenDB's device in a web page (P8d): a device of its person on avenDB's network, as WebAssembly. A page has no UDP,
-//! so its node (`avendb_net::Node`) reaches every peer through the server's relay, which lets a new device in by a pass
-//! its person's passkey signs (`avendb::sign::RelayPass`) until it joined. It links as any new device does
-//! (`avendb_net::Node::link`): it takes the code another device of its person shows (`avendb_net::Offer`), the passkey
-//! says its hello on their connection, the device joins its person's vault, and they sync. Then the page reads its
-//! documents and edits them, and shows the device's own code, through which the next device links.
+//! avenDB's device in a web page (P8d, P8e): a device of its person on avenDB's network, as WebAssembly. A page has
+//! no UDP, so its node (`avendb_net::Node`) reaches every peer through the server's relay, which lets a new device in
+//! by a pass its person's passkey signs (`avendb::sign::RelayPass`) until it joined.
 //!
-//! In P8d the device holds the passkey as a software passkey, brought in by its secret (`Lab::passkey_from`), as a
-//! platform syncs a passkey between its person's devices; the browser's own WebAuthn takes its place next (P8e). Its
-//! store is in memory, so a page links again each time it opens.
+//! The person's passkey stays in the browser's own authenticator (P8e): WebAuthn with the PRF extension
+//! (`js/passkey.js`). The device never holds it, only what one ceremony at a time brings back, an assertion over a
+//! challenge and the PRF output on the app's salt (`avendb::sign::Ceremony`). The ceremony that unlocks the device also
+//! brings the PRF output on the device's own salt, from which its keys derive (`Unlock`). Then a device starts in one
+//! of three ways:
 //!
-//! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`).
+//! - `Device::found`: a new person's first device founds their vault, its first space and grants the server relay
+//!   on it, in four ceremonies (the unlock, the pass to the relay, the vault's genesis and the op that adds the
+//!   device).
+//! - `Device::link`: a device of a person who has one already links through the code it shows
+//!   (`avendb_net::Node::link_with`), in four ceremonies (the unlock, the pass, the passkey's hello, the join). The
+//!   passkey's P-256 key is the one key both the unlock's and the pass's assertions recover to (`sign::passkey_key`).
+//! - `Device::open`: a device the page made before opens again from its store, in the unlock's ceremony alone; the
+//!   server's relay knows it.
+//!
+//! The page keeps what the device holds in IndexedDB (`js/store.js`): its ops in the order it took them and its
+//! McEliece keys, as a node keeps them on disk (`avendb_net::Disk`), saved after each change (`Node::changes`).
+//!
+//! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
+//! where a virtual authenticator holds the passkey.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
-use avendb::id::{BlobId, EntryId, SignerId, SpaceId, VaultId};
-use avendb::lab::Lab;
-use avendb_net::{Node, Offer, Options};
+use avendb::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
+use avendb::lab::{Backup, Lab};
+use avendb::policy::{Action, Kind, Principal, Role, Scope};
+use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge, passkey_key};
+use avendb::wire::Wire as _;
+use avendb_net::{Authenticator, Node, Offer, Options, Step};
 use iroh::RelayUrl;
-use js_sys::Promise;
-use n0_future::time::SystemTime;
+use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
+use n0_future::future::or;
+use n0_future::time::{Duration, SystemTime, sleep};
+use tokio::sync::watch;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::future_to_promise;
+use wasm_bindgen_futures::{JsFuture, future_to_promise};
 use zeroize::Zeroizing;
 
-/// A device of its person in a browser: its node, and the passkey it links with.
+/// What the ceremony that unlocks a device brings back: the ceremony itself, over a challenge of the page's own, and
+/// the PRF output on the device's salt (`sign::device_salt`), which ends in `nonce`, its 32 bytes kept on the device.
+pub struct Unlock {
+    pub ceremony: Ceremony,
+    pub nonce: [u8; 32],
+    pub device: Zeroizing<[u8; 32]>,
+}
+
+/// Where a device in a page starts: its name, the relay it reaches its peers through, 32 bytes of the browser's
+/// randomness and the time, seconds since 1970.
+pub struct Start {
+    pub name: String,
+    pub relay: RelayUrl,
+    pub entropy: [u8; 32],
+    pub now: u64,
+}
+
+/// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, and whether it
+/// closed.
 pub struct Device {
     node: Node,
     passkey: SignerId,
+    p256: [u8; 33],
+    closed: watch::Sender<bool>,
 }
 
 impl Device {
-    /// A new device named `name` of the person whose passkey's secret is `passkey`: its keys derive from the passkey
-    /// on a salt of its own, drawn from `entropy`, 32 bytes of the browser's randomness. It reaches its peers through
-    /// `relay` alone, which lets it in by the passkey's pass, made at `now`, seconds since 1970, for ten minutes: it
-    /// links within them (`link`), and from then on the server knows it.
-    pub async fn new(name: &str, relay: RelayUrl, passkey: &[u8; 32], entropy: [u8; 32], now: u64) -> Result<Device> {
-        let mut lab = Lab::with_entropy(entropy);
-        let passkey = lab.passkey_from("the person", *passkey);
-        let me = lab.device_of(passkey, name);
-        let pass = lab.relay_pass(me, passkey, now).context("the passkey's pass to the relay")?;
-        let opts = Options { bind: None, relay: Some(relay), relay_pass: Some(pass), ..Options::local() };
-        Ok(Device { node: Node::spawn(lab, me, opts).await?, passkey })
+    /// The first device of a new person, whose passkey's P-256 key is `p256` (from its public key info,
+    /// `sign::spki_p256`, as the browser made it): it founds their vault in its passkey's ceremonies, then their first
+    /// space, takes the card of the server whose code reads `server` and grants it relay on the space, so the server
+    /// keeps the space's log and knows the device from then on. The relay lets it in by the passkey's pass meanwhile,
+    /// as it does any passkey's while it is open to sign-up (`avendb_net::Admission::open`).
+    pub async fn found(
+        start: Start,
+        server: &Offer,
+        p256: [u8; 33],
+        unlock: Unlock,
+        authenticator: &impl Authenticator,
+    ) -> Result<Device> {
+        let (mut lab, passkey, me) = lab(&start, p256, &unlock)?;
+        let pass = pass(&lab, passkey, &unlock, authenticator, start.now).await?;
+        let owners = vec![Principal::Signer(passkey)];
+        let genesis =
+            Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: Some(passkey), nonce: 0, seal_to: vec![] };
+        let vault = ceremony(&mut lab, me, &[passkey], genesis, (passkey, authenticator, Step::Found)).await?.into();
+        let add = Action::AddDevice { vault, device: me, seal_to: None };
+        ceremony(&mut lab, me, &[passkey, me], add, (passkey, authenticator, Step::Join)).await?;
+        let device = Device::spawn(lab, me, (passkey, p256), &start, Some(pass)).await?;
+        device.node.know(server.addr.clone());
+        let mut tries = 0;
+        while let Err(e) = device.node.contact(server.addr.id).await {
+            tries += 1;
+            if tries == 20 {
+                return Err(e.context("the server's card"));
+            }
+            sleep(Duration::from_millis(500)).await;
+        }
+        let server = server.device;
+        let found = move |lab: &mut Lab, me| {
+            let vaults = lab.state(me).vaults().iter();
+            let server = vaults.filter(|v| v.devices.contains(&server)).map(|v| v.id).next();
+            let server = server.context("the server's card names its vault")?;
+            let space = lab.submit(me, &[me], Action::FoundSpace { actor: vault, nonce: 1 });
+            let space = SpaceId::from(space.map_err(|why| anyhow!("the space is refused: {why:?}"))?);
+            let relay = cast::grant(Scope::Space(space), Role::Relay, cast::vault(server), vault, None);
+            lab.submit(me, &[me], relay).map_err(|why| anyhow!("the server's relay is refused: {why:?}"))?;
+            Ok::<_, anyhow::Error>(())
+        };
+        device.node.act(found).await?;
+        Ok(device)
     }
 
-    /// Links it to its person's vault through the device whose code reads `offer` (`Offer::to_text`): the vault it
-    /// joined.
-    pub async fn link(&self, offer: &str) -> Result<VaultId> {
-        self.node.link(&Offer::from_text(offer)?, self.passkey).await
+    /// A new device of a person who has one already: it links through the device whose code reads `offer`
+    /// (`Node::link_with`), its passkey's hello and the op that adds it signed in their ceremonies, and joins its
+    /// person's vault. It learns the passkey's P-256 key from the unlock and its pass to the relay
+    /// (`sign::passkey_key`), so it needs no ceremony more than these four.
+    pub async fn link(
+        start: Start,
+        offer: &Offer,
+        unlock: Unlock,
+        authenticator: &impl Authenticator,
+    ) -> Result<Device> {
+        let SignerKeys::Device { ed25519: endpoint, .. } = DeviceKey::from_secret(*unlock.device).keys() else {
+            bail!("a device's keys")
+        };
+        let ceremony = authenticator.ceremony(pass_challenge(&endpoint, start.now), Step::Pass).await?;
+        let p256 = passkey_key(&unlock.ceremony.assertion, &ceremony.assertion);
+        let p256 = p256.context("no one key of a passkey signed both the unlock and the pass")?;
+        let (lab, passkey, me) = lab(&start, p256, &unlock)?;
+        let keys = lab.keys_of(passkey).context("the passkey's keys")?;
+        let pass = ceremony.pass(keys, endpoint, start.now).context("the passkey's pass to the relay")?;
+        let device = Device::spawn(lab, me, (passkey, p256), &start, Some(pass)).await?;
+        device.node.link_with(offer, passkey, authenticator).await?;
+        Ok(device)
+    }
+
+    /// The device the page made before, opened again from what its store kept (`backup`), unlocked by the ceremony of
+    /// the passkey whose P-256 key is `p256`: the relay knows it, so it needs no pass.
+    pub async fn open(start: Start, p256: [u8; 33], unlock: Unlock, backup: &Backup) -> Result<Device> {
+        let (mut lab, passkey, me) = lab(&start, p256, &unlock)?;
+        lab.restore_backup(me, backup);
+        if lab.vault_of(me).is_none() {
+            bail!("the store holds no vault this device belongs to");
+        }
+        Device::spawn(lab, me, (passkey, p256), &start, None).await
+    }
+
+    /// A node for device `me` of `lab`, of the person whose passkey is `passkey`, which reaches its peers through the
+    /// relay alone, let in by `pass` if the relay doesn't know it yet.
+    async fn spawn(
+        lab: Lab,
+        me: SignerId,
+        (passkey, p256): (SignerId, [u8; 33]),
+        start: &Start,
+        pass: Option<RelayPass>,
+    ) -> Result<Device> {
+        let opts = Options { bind: None, relay: Some(start.relay.clone()), relay_pass: pass, ..Options::local() };
+        Ok(Device { node: Node::spawn(lab, me, opts).await?, passkey, p256, closed: watch::Sender::new(false) })
     }
 
     /// Its node.
     pub fn node(&self) -> &Node {
         &self.node
+    }
+
+    /// Its person's passkey's P-256 key, compressed: what the page keeps to open the device again.
+    pub fn p256(&self) -> [u8; 33] {
+        self.p256
+    }
+
+    /// Its person's passkey.
+    pub fn passkey(&self) -> SignerId {
+        self.passkey
     }
 
     /// The vault it belongs to, by its view.
@@ -78,6 +200,120 @@ impl Device {
         let edit = move |lab: &mut Lab, me| lab.edit(me, actor, space, entry, |item| item.set_text(block, &text));
         self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
     }
+
+    /// Writes a new document titled `title` that reads `body` in space `space`, acting for vault `actor`: its entry.
+    pub async fn write(&self, actor: VaultId, space: SpaceId, title: String, body: String) -> Result<EntryId> {
+        let write = move |lab: &mut Lab, me| lab.create(me, actor, space, cast::document(&title, &body, me));
+        self.node.act(write).await.map_err(|why| anyhow!("the document is refused: {why:?}"))
+    }
+
+    /// The spaces it knows, each with the vault that founded it and the documents it reads there: their entry, title
+    /// and the text of their first paragraph (block 2), as `cast::document` writes them.
+    pub async fn notes(&self) -> Vec<Notes> {
+        self.node
+            .read(|lab, me| {
+                let state = lab.state(me);
+                let read = |s: &avendb::policy::Space| {
+                    let doc = |&e: &EntryId| Some((e, lab.item(me, s.id, e)?.as_document()?));
+                    let docs = s.entries.iter().filter_map(doc);
+                    let text = |e| cast::text(lab, me, s.id, e, 2).unwrap_or_default();
+                    let docs = docs.map(|(e, d)| (e, d.title.clone(), text(e)));
+                    Notes { space: s.id, founder: s.founder, docs: docs.collect() }
+                };
+                state.spaces().iter().map(read).collect()
+            })
+            .await
+    }
+
+    /// The signed ops it holds from the `from`th on, in the order it took them, each as its bytes on the wire; `None`
+    /// if it holds fewer than `from`, as some of what the store kept failed their checks: then the store is written
+    /// anew from the first.
+    pub async fn ops(&self, from: usize) -> Option<Vec<Vec<u8>>> {
+        self.node
+            .read(move |lab, me| {
+                let ids = lab.log(me).ids();
+                let wire = |id: &OpId| lab.signed_op(me, *id).expect("an op it holds").to_wire();
+                ids.get(from..).map(|ids| ids.iter().map(wire).collect())
+            })
+            .await
+    }
+
+    /// Waits until it holds other than `held`, how many ops and McEliece keys its page's store holds
+    /// (`Node::changes`): true, or false once it closed.
+    pub async fn changed(&self, held: (usize, usize)) -> bool {
+        let (mut changes, mut closed) = (self.node.changes(), self.closed.subscribe());
+        let changed = async move { changes.wait_for(|&size| size != held).await.is_ok() };
+        or(changed, async move { closed.wait_for(|&closed| closed).await.is_err() }).await
+    }
+
+    /// Closes its connections and its endpoint.
+    pub async fn close(&self) -> Result<()> {
+        self.closed.send_replace(true);
+        self.node.shutdown().await
+    }
+
+    /// The McEliece keys it holds, each by its id.
+    pub async fn key_ids(&self) -> Vec<BlobId> {
+        self.node.read(|lab, me| lab.blob_ids(me)).await
+    }
+
+    /// McEliece key `id`, if it holds it.
+    pub async fn key(&self, id: BlobId) -> Option<Arc<[u8]>> {
+        self.node.read(move |lab, me| lab.blob(me, id)).await
+    }
+}
+
+/// The documents of one space, as a device reads them (`Device::notes`): each one's entry, title and text.
+pub struct Notes {
+    pub space: SpaceId,
+    pub founder: VaultId,
+    pub docs: Vec<(EntryId, String, String)>,
+}
+
+/// What a store kept, read back (`js/store.js`): the signed ops, each as its bytes on the wire, in the order the device
+/// took them, and its McEliece keys. Reading stops at the first op that doesn't decode, as a store on disk does.
+pub fn backup(ops: &[Vec<u8>], keys: Vec<Arc<[u8]>>) -> Backup {
+    Backup::new(ops.iter().map_while(|op| Signed::from_wire(op).ok()).collect(), keys)
+}
+
+/// A browser's device's Lab: its person's passkey, by its P-256 key and the ceremony that unlocked the device, and the
+/// device, its keys from the PRF output on its salt.
+fn lab(start: &Start, p256: [u8; 33], unlock: &Unlock) -> Result<(Lab, SignerId, SignerId)> {
+    let mut lab = Lab::with_entropy(start.entropy);
+    let passkey = lab.web_passkey("the person", p256, &unlock.ceremony);
+    let passkey = passkey.context("the unlock's ceremony isn't of the passkey with this P-256 key")?;
+    let me = lab.web_device(passkey, &start.name, unlock.nonce, *unlock.device);
+    Ok((lab, passkey, me))
+}
+
+/// The pass of `passkey` for the device whose keys derive in the unlock, made at `now`, in a ceremony.
+async fn pass(
+    lab: &Lab,
+    passkey: SignerId,
+    unlock: &Unlock,
+    authenticator: &impl Authenticator,
+    now: u64,
+) -> Result<RelayPass> {
+    let SignerKeys::Device { ed25519: endpoint, .. } = DeviceKey::from_secret(*unlock.device).keys() else {
+        bail!("a device's keys")
+    };
+    let ceremony = authenticator.ceremony(pass_challenge(&endpoint, now), Step::Pass).await?;
+    let keys = lab.keys_of(passkey).context("the passkey's keys")?;
+    ceremony.pass(keys, endpoint, now).context("the passkey's pass to the relay")
+}
+
+/// `action` drafted on device `on`, signed by `signers`, the passkey among them in a ceremony of `authenticator` for
+/// `step`, and kept: its op.
+async fn ceremony(
+    lab: &mut Lab,
+    on: SignerId,
+    signers: &[SignerId],
+    action: Action,
+    (passkey, authenticator, step): (SignerId, &impl Authenticator, Step),
+) -> Result<OpId> {
+    let draft = lab.draft(on, signers, action).map_err(|why| anyhow!("the device's view refuses it: {why:?}"))?;
+    let ceremony = authenticator.ceremony(draft.challenge(), step).await?;
+    lab.complete(on, draft, &[(passkey, &ceremony)]).map_err(|why| anyhow!("the passkey didn't sign it: {why:?}"))
 }
 
 /// Report a panic on the page's console: the device can't go on after one, and the page starts over.
@@ -92,24 +328,67 @@ pub fn start() {
     std::panic::set_hook(Box::new(|info| error(&format!("avenDB: {info}"))));
 }
 
-/// The device as the page holds it (`Device`): every call that waits on the network is a promise.
+/// The device as the page holds it (`Device`): every call that waits on the network or on its person is a promise.
+///
+/// A ceremony is the page's: `ceremony(challenge, step)`, a function the device calls with the 32 bytes the passkey
+/// signs and what for (`"pass"`, `"found"`, `"hello"`, `"join"`), which resolves to the ceremony's
+/// `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`. The unlock
+/// is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, and `nonce`.
 #[wasm_bindgen(js_name = Device)]
 pub struct PageDevice(Rc<Device>);
 
 #[wasm_bindgen(js_class = Device)]
 impl PageDevice {
-    /// A new device named `name` of the person whose passkey's secret is `passkey` (32 bytes), linked through the
-    /// device whose code reads `offer`, reaching its peers through the relay at `relay` alone (`Device::new`,
-    /// `Device::link`): the device, once it joined its person's vault.
-    pub async fn link(name: String, relay: String, offer: String, passkey: Vec<u8>) -> Result<PageDevice, JsError> {
-        let passkey = Zeroizing::new(passkey);
-        let passkey: &[u8; 32] = passkey[..].try_into().map_err(|_| JsError::new("a passkey's secret is 32 bytes"))?;
-        let relay: RelayUrl = relay.parse().map_err(|_| JsError::new("the relay's URL isn't one"))?;
-        let mut entropy = Zeroizing::new([0; 32]);
-        getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
-        let device = Device::new(&name, relay, passkey, *entropy, now()).await.map_err(js_error)?;
-        device.link(&offer).await.map_err(js_error)?;
-        Ok(PageDevice(Rc::new(device)))
+    /// The first device named `name` of a new person, reaching its peers through the relay at `relay` alone, whose
+    /// passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`: it founds their vault and makes it
+    /// known to the server whose code reads `server` (`Device::found`).
+    pub async fn found(
+        name: String,
+        relay: String,
+        server: String,
+        spki: Vec<u8>,
+        unlock: JsValue,
+        ceremony: Function,
+    ) -> Result<PageDevice, JsError> {
+        let p256 = sign::spki_p256(&spki).ok_or_else(|| JsError::new("not a P-256 passkey's public key info"))?;
+        let server = Offer::from_text(&server).map_err(js_error)?;
+        let ceremonies = Js(ceremony);
+        let device = Device::found(starting(name, &relay)?, &server, p256, unlocked(&unlock)?, &ceremonies);
+        Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
+    }
+
+    /// A new device named `name` of a person who has one already, linked through the device whose code reads `offer`
+    /// (`Device::link`).
+    pub async fn link(
+        name: String,
+        relay: String,
+        offer: String,
+        unlock: JsValue,
+        ceremony: Function,
+    ) -> Result<PageDevice, JsError> {
+        let offer = Offer::from_text(&offer).map_err(js_error)?;
+        let ceremonies = Js(ceremony);
+        let device = Device::link(starting(name, &relay)?, &offer, unlocked(&unlock)?, &ceremonies);
+        Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
+    }
+
+    /// The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
+    /// `passkey()`), and what its store kept, its `ops` in order and its McEliece `keys`, each bytes (`Device::open`).
+    pub async fn open(
+        name: String,
+        relay: String,
+        p256: String,
+        unlock: JsValue,
+        ops: Array,
+        keys: Array,
+    ) -> Result<PageDevice, JsError> {
+        let p256 = hex_bytes(&p256).and_then(|b| <[u8; 33]>::try_from(b).ok());
+        let p256 = p256.ok_or_else(|| JsError::new("a passkey's P-256 key is 33 bytes in hex"))?;
+        let ops: Vec<Vec<u8>> = ops.iter().map(|op| Uint8Array::new(&op).to_vec()).collect();
+        let keys = keys.iter().map(|key| Arc::from(Uint8Array::new(&key).to_vec())).collect();
+        let backup = backup(&ops, keys);
+        let device = Device::open(starting(name, &relay)?, p256, unlocked(&unlock)?, &backup);
+        Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 
     /// Its device's id, in hex.
@@ -120,6 +399,11 @@ impl PageDevice {
     /// Its endpoint's id, its device's ed25519 key, in hex.
     pub fn endpoint(&self) -> String {
         hex(self.0.node.id().as_bytes())
+    }
+
+    /// Its person's passkey's P-256 key, compressed, in hex: what the page keeps to open the device again.
+    pub fn passkey(&self) -> String {
+        self.0.p256.iter().map(|b| format!("{b:02x}")).collect()
     }
 
     /// Its code, for the next device of its person to link through (`Offer::to_text`).
@@ -155,23 +439,166 @@ impl PageDevice {
         })
     }
 
-    /// How many ops and blobs it holds: a pair.
+    /// Writes a new document titled `title` that reads `body` in space `space`, acting for vault `actor` (both in
+    /// hex): a promise of its entry, in hex.
+    pub fn write(&self, actor: String, space: String, title: String, body: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, space) = (VaultId(id(&actor)?), SpaceId(id(&space)?));
+            Ok(hex(&device.write(actor, space, title, body).await.map_err(js_value)?.0).into())
+        })
+    }
+
+    /// The spaces it knows and the documents it reads in each (`Device::notes`): a promise of
+    /// `[{space, founder, docs: [{entry, title, text}]}]`, ids in hex.
+    pub fn notes(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let spaces = Array::new();
+            for notes in device.notes().await {
+                let docs = Array::new();
+                for (entry, title, text) in notes.docs {
+                    let entry = hex(&entry.0).into();
+                    docs.push(&object(&[("entry", entry), ("title", title.into()), ("text", text.into())]));
+                }
+                let (space, founder) = (hex(&notes.space.0).into(), hex(&notes.founder.0).into());
+                spaces.push(&object(&[("space", space), ("founder", founder), ("docs", docs.into())]));
+            }
+            Ok(spaces.into())
+        })
+    }
+
+    /// How many ops and McEliece keys it holds: a pair.
     pub fn size(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (ops, blobs) = device.node.read(|lab, me| lab.size(me)).await;
-            Ok(js_sys::Array::of2(&(ops as u32).into(), &(blobs as u32).into()).into())
+            let (ops, keys) = device.node.read(|lab, me| lab.size(me)).await;
+            Ok(Array::of2(&(ops as u32).into(), &(keys as u32).into()).into())
         })
+    }
+
+    /// Its signed ops from the `from`th on, in the order it took them, each bytes: a promise, of `undefined` if it
+    /// holds fewer than `from` (`Device::ops`).
+    pub fn ops(&self, from: u32) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let ops = device.ops(from as usize).await;
+            let bytes = |ops: Vec<Vec<u8>>| ops.iter().map(|op| Uint8Array::from(&op[..])).collect::<Array>().into();
+            Ok(ops.map_or(JsValue::UNDEFINED, bytes))
+        })
+    }
+
+    /// The ids of the McEliece keys it holds, in hex: a promise.
+    #[wasm_bindgen(js_name = keyIds)]
+    pub fn key_ids(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            Ok(device.key_ids().await.iter().map(|b| JsValue::from(b.to_hex())).collect::<Array>().into())
+        })
+    }
+
+    /// McEliece key `id` (in hex), as bytes: a promise, of `undefined` if it doesn't hold it.
+    pub fn key(&self, id: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let key = device.key(BlobId::from_hex(&id).ok_or_else(|| JsError::new("no key's id"))?).await;
+            Ok(key.map_or(JsValue::UNDEFINED, |k| Uint8Array::from(&k[..]).into()))
+        })
+    }
+
+    /// Waits until it holds other than `ops` ops and `keys` McEliece keys, what the page's store holds: a promise of
+    /// true, or of false once the device closed.
+    pub fn changed(&self, ops: u32, keys: u32) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.changed((ops as usize, keys as usize)).await.into()) })
     }
 
     /// Closes its connections and its endpoint.
     pub fn close(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            device.node.shutdown().await.map_err(js_value)?;
+            device.close().await.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }
+}
+
+/// The salt of the PRF output a ceremony brings for the passkey's own keys (`sign::PRF_SALT`).
+#[wasm_bindgen(js_name = prfSalt)]
+pub fn prf_salt() -> Vec<u8> {
+    sign::PRF_SALT.to_vec()
+}
+
+/// The salt of the device whose own 32 bytes are `nonce` (`sign::device_salt`).
+#[wasm_bindgen(js_name = deviceSalt)]
+pub fn device_salt(nonce: Vec<u8>) -> Result<Vec<u8>, JsError> {
+    let nonce: [u8; 32] = nonce.try_into().map_err(|_| JsError::new("a device's nonce is 32 bytes"))?;
+    Ok(sign::device_salt(&nonce))
+}
+
+/// The page's ceremonies (`PageDevice`'s `ceremony`).
+struct Js(Function);
+
+impl Authenticator for Js {
+    async fn ceremony(&self, challenge: [u8; 32], step: Step) -> Result<Ceremony> {
+        let step = match step {
+            Step::Pass => "pass",
+            Step::Found => "found",
+            Step::Hello => "hello",
+            Step::Join => "join",
+        };
+        let promise = self.0.call2(&JsValue::NULL, &Uint8Array::from(&challenge[..]), &step.into());
+        let result = JsFuture::from(Promise::from(promise.map_err(js_anyhow)?)).await;
+        ceremony_of(&result.map_err(js_anyhow)?)
+    }
+}
+
+/// A ceremony as the page brings it back.
+fn ceremony_of(value: &JsValue) -> Result<Ceremony> {
+    let (authenticator_data, client_data_json) = (field(value, "authenticatorData")?, field(value, "clientDataJSON")?);
+    let assertion = Assertion { authenticator_data, client_data_json, signature: field(value, "signature")? };
+    Ok(Ceremony::new(assertion, *prf(value, "prf")?))
+}
+
+/// The unlock as the page brings it back.
+fn unlocked(value: &JsValue) -> Result<Unlock, JsError> {
+    let unlock = || {
+        let nonce = field(value, "nonce")?.try_into().map_err(|_| anyhow!("a device's nonce is 32 bytes"))?;
+        Ok(Unlock { ceremony: ceremony_of(value)?, nonce, device: prf(value, "devicePrf")? })
+    };
+    unlock().map_err(js_error)
+}
+
+/// The bytes in field `name` of `value`.
+fn field(value: &JsValue, name: &str) -> Result<Vec<u8>> {
+    let bytes = Reflect::get(value, &name.into()).map_err(js_anyhow)?;
+    if bytes.is_undefined() || bytes.is_null() {
+        bail!("the ceremony brought no {name}");
+    }
+    Ok(Uint8Array::new(&bytes).to_vec())
+}
+
+/// The PRF output in field `name` of `value`.
+fn prf(value: &JsValue, name: &str) -> Result<Zeroizing<[u8; 32]>> {
+    let bytes = Zeroizing::new(field(value, name)?);
+    Ok(Zeroizing::new(bytes[..].try_into().map_err(|_| anyhow!("a PRF output is 32 bytes"))?))
+}
+
+/// An object of the page's, of `fields`.
+fn object(fields: &[(&str, JsValue)]) -> JsValue {
+    let object = js_sys::Object::new();
+    for (name, value) in fields {
+        Reflect::set(&object, &(*name).into(), value).expect("a plain object takes a field");
+    }
+    object.into()
+}
+
+/// Where a device starts: named `name`, through the relay at `relay`, with the browser's randomness, now.
+fn starting(name: String, relay: &str) -> Result<Start, JsError> {
+    let relay: RelayUrl = relay.parse().map_err(|_| JsError::new("the relay's URL isn't one"))?;
+    let mut entropy = Zeroizing::new([0; 32]);
+    getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
+    Ok(Start { name, relay, entropy: *entropy, now: now() })
 }
 
 /// The time by the browser's clock, or the machine's: seconds since 1970.
@@ -182,6 +609,13 @@ fn now() -> u64 {
 /// 32 bytes as 64 lowercase hex digits, as the page sees every id.
 fn hex(b: &[u8; 32]) -> String {
     BlobId(*b).to_hex()
+}
+
+/// Bytes from their lowercase hex digits.
+fn hex_bytes(s: &str) -> Option<Vec<u8>> {
+    let digit = |c: u8| (c as char).to_digit(16).filter(|_| !c.is_ascii_uppercase()).map(|d| d as u8);
+    let pair = |p: &[u8]| Some(digit(p[0])? << 4 | digit(p[1])?);
+    s.len().is_multiple_of(2).then(|| s.as_bytes().chunks(2).map(pair).collect()).flatten()
 }
 
 /// An id from its 64 lowercase hex digits.
@@ -197,4 +631,9 @@ fn js_error(e: anyhow::Error) -> JsError {
 /// The same, as a promise rejects with it.
 fn js_value(e: anyhow::Error) -> JsValue {
     js_error(e).into()
+}
+
+/// What the page threw, as an error.
+fn js_anyhow(e: JsValue) -> anyhow::Error {
+    anyhow!("{}", e.as_string().or_else(|| js_sys::Error::from(e).message().as_string()).unwrap_or_default())
 }

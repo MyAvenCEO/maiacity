@@ -295,6 +295,7 @@ dependencies = [
  "getrandom 0.4.3",
  "iroh",
  "js-sys",
+ "libc",
  "n0-future",
  "serde_json",
  "tokio",

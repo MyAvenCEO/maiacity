@@ -1,24 +1,27 @@
-//! avenDB's device in Chromium (P8d): `tests/device.rs` again, each browser a page. The test serves the page
-//! (`tests/page/`) and the device's WebAssembly, which `scripts/test-browser.sh` builds; it starts a relay, the server
-//! and Samuel's Mac on this machine and opens Chromium twice. Samuel's browser links through the code his Mac shows,
-//! reads Welcome, edits it, and reads the Mac's answer; his other browser links through the first one's code and reads
-//! that answer too. Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs it.
+//! avenDB's device in Chromium (P8d, P8e): `tests/device.rs` again, each browser a page. The test serves the page
+//! (`tests/page/`) and the device's WebAssembly, which `scripts/test-browser.sh` builds for passkeys of localhost; it
+//! starts a relay open to sign-up and the server on this machine, and drives one headless Chromium over its DevTools
+//! protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and each of her browsers is a frame of the
+//! tab, with a store of its own in IndexedDB. Her first browser makes the passkey and founds her vault, and writes a
+//! note; her second links through the first one's code and edits it; the first closes, and opens again from its store
+//! in one ceremony, and edits the note once more. Each page reports its steps to the test over HTTP. `cargo test` skips
+//! it; the script runs it.
 
 use std::collections::VecDeque;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::os::fd::{AsRawFd as _, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use avendb::cast::*;
-use avendb::id::{BlobId, SignerId};
+use avendb::id::{BlobId, EntryId, SpaceId};
 use avendb::lab::Lab;
 use avendb_net::{Admission, Node, Options};
 use avendb_server::Relay;
 use iroh::EndpointId;
-use serde_json::Value;
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
@@ -26,16 +29,13 @@ use tokio::sync::mpsc;
 /// A socket of the system's choosing on this machine.
 const LOOPBACK: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
 
-/// What Samuel's Mac answers the browser's edit with.
-const MAC_TEXT: &str = "Samuel's Mac answers: the greenhouse opens at ten.";
-
 /// How long a page may take over a step: the first one compiles the WebAssembly and makes a McEliece key pair.
 const STEP: Duration = Duration::from_secs(120);
 
-/// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
-async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, opts: Options) -> Node {
-    Node::spawn(w.lab.split(d, with, [seed; 32]), d, opts).await.expect("a node")
-}
+/// What Eve's note reads as each browser writes it.
+const MARCH: &str = "Tomatoes in March.";
+const APRIL: &str = "Tomatoes in April.";
+const MAY: &str = "Tomatoes in May.";
 
 /// Waits until `check` holds, within `STEP`.
 async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
@@ -44,11 +44,6 @@ async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> 
         assert!(Instant::now() < end, "{what}, within {STEP:?}");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-}
-
-/// `b` in hex, as the page takes ids and keys.
-fn hex(b: &[u8; 32]) -> String {
-    BlobId(*b).to_hex()
 }
 
 /// A query string: each value percent-encoded but for the characters URLs leave alone.
@@ -60,39 +55,152 @@ fn query(params: &[(&str, &str)]) -> String {
     params.iter().map(|(k, v)| format!("{k}={}", encode(v))).collect::<Vec<_>>().join("&")
 }
 
+/// An id a page reported, in hex.
+fn id(found: &Value, key: &str) -> [u8; 32] {
+    found[key].as_str().and_then(BlobId::from_hex).unwrap_or_else(|| panic!("{key} in {found}")).0
+}
+
 /// What a page reported: which page, which step, and what it found.
 type Report = (String, String, Value);
 
-/// The pages' reports, as they come, and the Chromiums showing them.
-struct Pages {
-    reports: mpsc::UnboundedReceiver<Report>,
-    early: VecDeque<Report>,
-    chromium: PathBuf,
-    open: Vec<(Child, PathBuf)>,
+/// Chromium, headless, driven over its DevTools protocol on a pipe (`--remote-debugging-pipe`): it reads commands on
+/// its fd 3 and writes answers and events on its fd 4, each a JSON message ending in a NUL. Its log, where each page's
+/// console goes too, is in a folder of its own.
+struct Chromium {
+    _child: Child,
+    to: tokio::fs::File,
+    from: BufReader<tokio::fs::File>,
+    next: u64,
+    dir: PathBuf,
 }
 
-impl Pages {
-    /// Opens `url` in a Chromium of its own, headless, its log in a folder of its own.
-    fn open(&mut self, name: &str, url: &str) {
-        let dir = std::env::temp_dir().join(format!("avendb-chromium-{name}-{}", std::process::id()));
+impl Chromium {
+    fn launch(path: &Path) -> Chromium {
+        let dir = std::env::temp_dir().join(format!("avendb-chromium-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("a folder for Chromium");
         let log = std::fs::File::create(dir.join("log")).expect("Chromium's log");
-        let child = Command::new(&self.chromium)
+        let (reads, to) = std::io::pipe().expect("a pipe to Chromium");
+        let (from, writes) = std::io::pipe().expect("a pipe from Chromium");
+        let (r, w) = (reads.as_raw_fd(), writes.as_raw_fd());
+        assert!(r > 4 && w > 4, "the pipes clear of the fds Chromium takes them on");
+        let mut command = Command::new(path);
+        command
             .args(["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--no-first-run"])
             .args(["--no-default-browser-check", "--no-proxy-server", "--enable-logging=stderr", "--v=0"])
+            .arg("--remote-debugging-pipe")
             .arg(format!("--user-data-dir={}", dir.join("profile").display()))
-            .arg(url)
+            .arg("about:blank")
             .stdout(Stdio::null())
             .stderr(log)
-            .kill_on_drop(true)
-            .spawn()
-            .expect("Chromium starts");
-        self.open.push((child, dir));
+            .kill_on_drop(true);
+        // SAFETY: between fork and exec, dup2 alone, which is async-signal-safe
+        unsafe {
+            command.pre_exec(move || {
+                if libc::dup2(r, 3) < 0 || libc::dup2(w, 4) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let _child = command.spawn().expect("Chromium starts");
+        drop((reads, writes));
+        let file = |fd: OwnedFd| tokio::fs::File::from_std(std::fs::File::from(fd));
+        let (to, from) = (file(to.into()), BufReader::new(file(from.into())));
+        Chromium { _child, to, from, next: 0, dir }
+    }
+
+    /// Calls `method` with `params`, on the page of `session` if any: its result. Events on the way are dropped.
+    async fn call(&mut self, session: Option<&str>, method: &str, params: Value) -> Value {
+        self.next += 1;
+        let mut message = json!({ "id": self.next, "method": method, "params": params });
+        if let Some(session) = session {
+            message["sessionId"] = session.into();
+        }
+        let mut bytes = serde_json::to_vec(&message).expect("JSON");
+        bytes.push(0);
+        self.to.write_all(&bytes).await.expect("a command to Chromium");
+        self.to.flush().await.expect("a command to Chromium");
+        loop {
+            let mut answer = vec![];
+            let read = tokio::time::timeout(STEP, self.from.read_until(0, &mut answer)).await;
+            let read = read.unwrap_or_else(|_| self.fail(&format!("Chromium doesn't answer {method}")));
+            assert!(read.expect("Chromium's answer") > 0, "Chromium closed its pipe");
+            answer.pop();
+            let answer: Value = serde_json::from_slice(&answer).expect("JSON from Chromium");
+            if answer["id"] == self.next {
+                if let Some(error) = answer.get("error") {
+                    self.fail(&format!("{method}: {error}"));
+                }
+                return answer["result"].clone();
+            }
+        }
+    }
+
+    fn fail(&self, why: &str) -> ! {
+        let log = std::fs::read_to_string(self.dir.join("log")).unwrap_or_default();
+        let console: Vec<&str> = log.lines().filter(|l| l.contains("CONSOLE") || l.contains("avenDB")).collect();
+        eprintln!("--- {}:\n{}", self.dir.display(), console.join("\n"));
+        panic!("{why}");
+    }
+}
+
+/// The tab the devices are frames of, its virtual authenticator, and the pages' reports as they come.
+struct Tab {
+    chromium: Chromium,
+    session: String,
+    authenticator: String,
+    site: String,
+    reports: mpsc::UnboundedReceiver<Report>,
+    early: VecDeque<Report>,
+}
+
+impl Tab {
+    /// Opens `site` in a tab of `chromium` whose virtual authenticator holds passkeys with PRF, as a phone's or a
+    /// laptop's platform authenticator does, and verifies its person each time.
+    async fn open(mut chromium: Chromium, site: String, reports: mpsc::UnboundedReceiver<Report>) -> Tab {
+        let target = chromium.call(None, "Target.createTarget", json!({ "url": format!("{site}/") })).await;
+        let attach = json!({ "targetId": target["targetId"], "flatten": true });
+        let session = chromium.call(None, "Target.attachToTarget", attach).await["sessionId"].clone();
+        let session = session.as_str().expect("a session").to_owned();
+        chromium.call(Some(&session), "WebAuthn.enable", json!({ "enableUI": false })).await;
+        let options = json!({
+            "protocol": "ctap2", "ctap2Version": "ctap2_1", "transport": "internal", "hasResidentKey": true,
+            "hasUserVerification": true, "isUserVerified": true, "automaticPresenceSimulation": true, "hasPrf": true,
+        });
+        let added = chromium.call(Some(&session), "WebAuthn.addVirtualAuthenticator", json!({ "options": options }));
+        let authenticator = added.await["authenticatorId"].as_str().expect("an authenticator").to_owned();
+        let mut tab = Tab { chromium, session, authenticator, site, reports, early: VecDeque::new() };
+        let end = Instant::now() + STEP;
+        while tab.eval("document.readyState").await != "complete" {
+            assert!(Instant::now() < end, "the tab loads");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        tab
+    }
+
+    /// The value of `expression` in the tab.
+    async fn eval(&mut self, expression: &str) -> Value {
+        let params = json!({ "expression": expression, "returnByValue": true });
+        self.chromium.call(Some(&self.session.clone()), "Runtime.evaluate", params).await["result"]["value"].clone()
+    }
+
+    /// A device's page in a frame of the tab, as `params` say.
+    async fn frame(&mut self, params: &[(&str, &str)]) {
+        let url = format!("{}/device?{}", self.site, query(params));
+        let add = format!("document.body.append(Object.assign(document.createElement('iframe'), {{ src: {url:?} }}))");
+        self.eval(&add).await;
+    }
+
+    /// The passkeys the tab's authenticator holds.
+    async fn passkeys(&mut self) -> Vec<Value> {
+        let params = json!({ "authenticatorId": self.authenticator });
+        let held = self.chromium.call(Some(&self.session.clone()), "WebAuthn.getCredentials", params).await;
+        held["credentials"].as_array().cloned().unwrap_or_default()
     }
 
     /// Waits for page `page` to report step `what`: what it found. Fails on a page's error, or after `STEP`, showing
-    /// what each page wrote to its console.
+    /// what the pages wrote to their console.
     async fn expect(&mut self, page: &str, what: &str) -> Value {
         let end = Instant::now() + STEP;
         loop {
@@ -100,12 +208,12 @@ impl Pages {
                 Some(at) => self.early.remove(at),
                 None => match tokio::time::timeout_at(end.into(), self.reports.recv()).await {
                     Ok(Some(report)) => Some(report),
-                    _ => self.fail(&format!("page {page} doesn't report {what:?} within {STEP:?}")),
+                    _ => self.chromium.fail(&format!("page {page} doesn't report {what:?} within {STEP:?}")),
                 },
             };
             let Some((p, w, found)) = report else { continue };
             if w == "error" {
-                self.fail(&format!("page {p} fails: {}", found["error"].as_str().unwrap_or_default()));
+                self.chromium.fail(&format!("page {p} fails: {}", found["error"].as_str().unwrap_or_default()));
             }
             if p == page && w == what {
                 return found;
@@ -113,19 +221,10 @@ impl Pages {
             self.early.push_back((p, w, found));
         }
     }
-
-    fn fail(&self, why: &str) -> ! {
-        for (_, dir) in &self.open {
-            let log = std::fs::read_to_string(dir.join("log")).unwrap_or_default();
-            let console: Vec<&str> = log.lines().filter(|l| l.contains("CONSOLE") || l.contains("avenDB")).collect();
-            eprintln!("--- {}:\n{}", dir.display(), console.join("\n"));
-        }
-        panic!("{why}");
-    }
 }
 
-/// Serves the page's files from `page` and the device's package from `pkg`, and hands each report a page posts to
-/// `reports`.
+/// Serves the page's files from `page`, the device's package from `pkg` and its JS modules (`js/`), and hands each
+/// report a page posts to `reports`.
 async fn serve(listener: TcpListener, page: PathBuf, pkg: PathBuf, reports: mpsc::UnboundedSender<Report>) {
     while let Ok((stream, _)) = listener.accept().await {
         let (page, pkg, reports) = (page.clone(), pkg.clone(), reports.clone());
@@ -165,8 +264,12 @@ async fn answer(mut stream: TcpStream, page: &Path, pkg: &Path, reports: &mpsc::
             reports.send((page.into(), what, serde_json::from_slice(&body).unwrap_or(Value::Null))).ok()?;
             ("200 OK", "text/plain", Some(vec![]))
         }
-        ("GET", "/") => ("200 OK", "text/html", file(page.join("index.html"))),
+        ("GET", "/") => ("200 OK", "text/html", file(page.join("host.html"))),
+        ("GET", "/device") => ("200 OK", "text/html", file(page.join("index.html"))),
         ("GET", "/page.js") => ("200 OK", "text/javascript", file(page.join("page.js"))),
+        ("GET", p) if p.starts_with("/js/") && !p.contains("..") => {
+            ("200 OK", "text/javascript", file(page.join("../../js").join(&p["/js/".len()..])))
+        }
         ("GET", p) if p.starts_with("/pkg/") && !p.contains("..") => {
             let kind = if p.ends_with(".wasm") { "application/wasm" } else { "text/javascript" };
             ("200 OK", kind, file(pkg.join(&p["/pkg/".len()..])))
@@ -184,88 +287,69 @@ async fn answer(mut stream: TcpStream, page: &Path, pkg: &Path, reports: &mpsc::
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs the device's WebAssembly and Chromium: scripts/test-browser.sh runs it"]
-async fn samuels_browsers_link_in_chromium() {
+async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() {
     let pkg = PathBuf::from(std::env::var("AVENDB_PKG").expect("AVENDB_PKG: the device's package"));
     assert!(pkg.join("avendb_browser_bg.wasm").exists(), "the device's WebAssembly in {}", pkg.display());
     let chromium = std::env::var("AVENDB_CHROMIUM").unwrap_or_else(|_| "/opt/pw-browsers/chromium".into());
     let page = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/page");
     let listener = TcpListener::bind(LOOPBACK).await.expect("a socket for the page");
-    let site = format!("http://{}", listener.local_addr().expect("its address"));
+    // localhost, the relying party of the test's passkeys
+    let site = format!("http://localhost:{}", listener.local_addr().expect("its address").port());
     let (tx, reports) = mpsc::unbounded_channel();
     tokio::spawn(serve(listener, page, pkg, tx));
-    let mut pages = Pages { reports, early: VecDeque::new(), chromium: chromium.into(), open: vec![] };
+    let mut tab = Tab::open(Chromium::launch(Path::new(&chromium)), site, reports).await;
 
-    let admission = Admission::default();
+    let admission = Admission::open();
     let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
-    let url = relay.url();
-    let mut w = world();
-    let h = handbook(&mut w);
-    let secret = hex(&w.lab.passkey_secret(w.passkey_s).expect("Samuel's passkey, a software passkey"));
-    let (mac_s, server_d, samuel) = (w.mac_s, w.server, w.samuel);
-    let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
-    let server = node(&mut w, server_d, &[], 2, opts).await;
-    let mac = node(&mut w, mac_s, &[], 1, Options { relay: Some(url.clone()), ..Options::local() }).await;
-    mac.know(server.addr());
-    until("the relay serves Samuel's Mac", || async { relay.serves(&mac.id()) }).await;
-    let (coop, space, welcome) = (h.coop, h.space, h.welcome);
-    let (relay_url, space_hex, entry) = (url.to_string(), hex(&space.0), hex(&welcome.0));
+    let url = relay.url().to_string();
+    let mut w = avendb::cast::world();
+    let server_d = w.server;
+    let opts = Options { relay: Some(relay.url()), admission: Some(admission.clone()), card: true, ..Options::local() };
+    let server = Node::spawn(w.lab.split(server_d, &[], [2; 32]), server_d, opts).await.expect("the server");
 
-    // Samuel's browser links through the code his Mac shows, reads Welcome, edits it, and reads the Mac's answer
-    let code = mac.offer().to_text();
-    let first = query(&[
-        ("page", "first"),
-        ("name", "Samuel's browser"),
-        ("relay", &relay_url),
-        ("offer", &code),
-        ("passkey", &secret),
-        ("space", &space_hex),
-        ("entry", &entry),
-        ("reads", WELCOME_TEXT),
-        ("actor", &hex(&coop.0)),
-        ("write", AFTER_TEXT),
-        ("then", MAC_TEXT),
-    ]);
-    pages.open("first", &format!("{site}/?{first}"));
-    let linked = pages.expect("first", "linked").await;
-    assert_eq!(linked["vault"].as_str(), Some(hex(&samuel.0).as_str()), "it joined Samuel's vault: {linked}");
-    eprintln!("Samuel's browser linked in {} ms", linked["ms"]);
-    pages.expect("first", "read").await;
-    pages.expect("first", "wrote").await;
-    let reads = move |lab: &Lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(AFTER_TEXT);
-    until("the Mac reads the browser's edit", || mac.read(reads)).await;
-    let answer = move |lab: &mut Lab, me| lab.edit(me, coop, space, welcome, |i| i.set_text(2, MAC_TEXT));
-    mac.act(answer).await.expect("the Mac answers");
-    pages.expect("first", "read again").await;
-    let done = pages.expect("first", "done").await;
-    eprintln!("Samuel's browser holds {} ops and {} blobs", done["ops"], done["blobs"]);
+    // Eve's first browser makes her passkey, founds her vault and writes a note, in four ceremonies
+    let code = server.offer().to_text();
+    let params = [("store", "first"), ("name", "Eve's browser"), ("relay", &url), ("server", &code)];
+    tab.frame(&[&params[..], &[("page", "first"), ("write", MARCH), ("reads", APRIL), ("close", "1")]].concat()).await;
+    let first = tab.expect("first", "started").await;
+    eprintln!("Eve's first browser founded her vault in {} ms, in {} ceremonies", first["ms"], first["ceremonies"]);
+    assert_eq!(first["ceremonies"], 4, "the unlock, the pass, the vault's genesis and the device's join: {first}");
+    let endpoint = EndpointId::from_bytes(&id(&first, "endpoint")).expect("an endpoint");
+    until("the server learns her browser from what it relays", || async { admission.admits(&endpoint) }).await;
+    let (space, entry) = (SpaceId(id(&first, "space")), EntryId(id(&first, "entry")));
+    let holds = move |lab: &Lab, me| lab.state(me).space(space).is_some_and(|s| s.entries.contains(&entry));
+    until("the server keeps her space's log", || server.read(holds)).await;
 
-    // his other browser links through the first one's code, browser to browser, and reads the Mac's answer
-    let code = linked["offer"].as_str().expect("the first browser's code");
-    let second = query(&[
-        ("page", "second"),
-        ("name", "Samuel's other browser"),
-        ("relay", &relay_url),
-        ("offer", code),
-        ("passkey", &secret),
-        ("space", &space_hex),
-        ("entry", &entry),
-        ("reads", MAC_TEXT),
-    ]);
-    pages.open("second", &format!("{site}/?{second}"));
-    let other = pages.expect("second", "linked").await;
-    assert_eq!(other["vault"], linked["vault"], "it joined Samuel's vault too");
-    pages.expect("second", "read").await;
-    pages.expect("second", "done").await;
+    // her second browser links through the first one's code, in four ceremonies, and edits the note
+    let field = |key| first[key].as_str().unwrap_or_else(|| panic!("{key} in {first}"));
+    let note = [("actor", field("actor")), ("space", field("space")), ("entry", field("entry"))];
+    let offer = first["offer"].as_str().expect("the first browser's code");
+    let second = [("page", "second"), ("store", "second"), ("name", "Eve's other browser"), ("relay", &url)];
+    let steps = [("offer", offer), ("reads", MARCH), ("write", APRIL), ("then", MAY)];
+    tab.frame(&[&second[..], &steps, &note[..]].concat()).await;
+    let second = tab.expect("second", "started").await;
+    eprintln!("Eve's second browser linked in {} ms", second["ms"]);
+    assert_eq!(second["ceremonies"], 4, "the unlock, the pass, the passkey's hello and the join: {second}");
+    assert_eq!(second["vault"], first["vault"], "it joined her vault");
+    tab.expect("second", "read").await;
+    tab.expect("second", "wrote").await;
+    tab.expect("first", "read").await;
+    let closed = tab.expect("first", "closed").await;
+    eprintln!("Eve's first browser kept {} ops and {} McEliece keys in IndexedDB", closed["ops"], closed["keys"]);
 
-    // the server learned both from the Mac, and lets them in as devices it knows
-    for found in [&linked, &other] {
-        let endpoint = found["endpoint"].as_str().and_then(BlobId::from_hex).expect("an endpoint");
-        let endpoint = EndpointId::from_bytes(&endpoint.0).expect("an endpoint's key");
-        until("the server knows the browser", || async { admission.admits(&endpoint) }).await;
-    }
-    let four = move |lab: &Lab, me| lab.state(me).vault(samuel).map(|v| v.devices.len()) == Some(4);
-    until("the Mac counts both browsers among Samuel's devices", || mac.read(four)).await;
-    for n in [mac, server] {
-        n.shutdown().await.expect("the node shuts down");
-    }
+    // the first browser opens again from its store, in the unlock alone, and edits the note once more
+    tab.frame(&[("page", "again"), ("store", "first"), ("reads", APRIL), ("write", MAY)]).await;
+    let again = tab.expect("again", "opened").await;
+    eprintln!("Eve's first browser opened again in {} ms", again["ms"]);
+    assert_eq!(again["ceremonies"], 1, "the unlock alone: {again}");
+    assert_eq!((&again["endpoint"], &again["vault"]), (&first["endpoint"], &first["vault"]), "the same device");
+    assert_eq!((&again["ops"], &again["keys"]), (&closed["ops"], &closed["keys"]), "holding what its store kept");
+    tab.expect("again", "read").await;
+    tab.expect("again", "wrote").await;
+    tab.expect("second", "read again").await;
+    let passkeys = tab.passkeys().await;
+    assert_eq!(passkeys.len(), 1, "one passkey, Eve's: {passkeys:?}");
+    assert_eq!(passkeys[0]["rpId"], "localhost");
+    eprintln!("Eve's passkey signed {} times", passkeys[0]["signCount"]);
+    server.shutdown().await.expect("the node shuts down");
 }
