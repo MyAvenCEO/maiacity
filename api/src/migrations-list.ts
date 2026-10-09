@@ -1,6 +1,7 @@
 // The schema's history, as data. Kept apart from the runner so the tests can
 // build the same database in PGlite without a live Postgres.
 import { CID_MAP } from "./cid-map";
+import { defaultCards } from "../../game/economy/params.js";
 
 export type Migration = { id: string; sql: string };
 
@@ -725,6 +726,86 @@ export const MIGRATIONS: Migration[] = [
       UPDATE content_items SET title = regexp_replace(title, '^\\s*day\\s*[0-9]+\\s*[·:—–-]\\s*', '', 'i')
         WHERE title ~* '^\\s*day\\s*[0-9]+\\s*[·:—–-]\\s*\\S';
       DROP TABLE day_names;
+    `,
+  },
+  {
+    // The economy sandbox (Sandbox 7, the avens trading) keeps everything here (api/src/economy.js): its configs —
+    // every policy and world value, resource and recipe, as config cards (game/economy/params.js), versioned — changed
+    // only by MIPs (MaiaCity improvement proposals: a title, a description, the cards as they would be) the admin
+    // accepts; and every game run, day by day: its stats row, its trades and its avens' Liquid decisions. The first
+    // config, "valley", holds the catalogue's defaults.
+    id: "0033-economy",
+    sql: `
+      CREATE TABLE econ_configs (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        version     INT NOT NULL DEFAULT 1,
+        cards       JSONB NOT NULL DEFAULT '[]'::jsonb,
+        deleted     TIMESTAMPTZ,
+        created     TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated     TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE mips (
+        number       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        title        TEXT NOT NULL,
+        description  TEXT NOT NULL DEFAULT '',
+        config_id    TEXT NOT NULL,
+        action       TEXT NOT NULL DEFAULT 'edit' CHECK (action IN ('edit', 'create', 'delete')),
+        name         TEXT,
+        about        TEXT,
+        from_id      TEXT,
+        cards        JSONB NOT NULL DEFAULT '[]'::jsonb,
+        remove       JSONB NOT NULL DEFAULT '[]'::jsonb,
+        base         JSONB NOT NULL DEFAULT '{}'::jsonb,
+        base_version INT,
+        status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'accepted', 'rejected', 'withdrawn')),
+        author       TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        via          TEXT NOT NULL DEFAULT 'page' CHECK (via IN ('page', 'mcp')),
+        created      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        decided      TIMESTAMPTZ,
+        decided_by   TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        note         TEXT NOT NULL DEFAULT '',
+        result       JSONB
+      );
+      CREATE INDEX ix_mips_status ON mips (status, number DESC);
+      CREATE TABLE econ_config_versions (
+        config_id TEXT NOT NULL REFERENCES econ_configs(id) ON DELETE CASCADE,
+        version   INT NOT NULL,
+        body      JSONB NOT NULL,
+        mip       INT REFERENCES mips(number) ON DELETE SET NULL,
+        at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (config_id, version)
+      );
+      CREATE TABLE econ_runs (
+        id             TEXT PRIMARY KEY,
+        config_id      TEXT REFERENCES econ_configs(id) ON DELETE SET NULL,
+        config_version INT,
+        config         JSONB NOT NULL,
+        seed           BIGINT,
+        brain          TEXT NOT NULL DEFAULT '',
+        player         TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        started        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        ended          TIMESTAMPTZ,
+        days           INT NOT NULL DEFAULT 0,
+        alive          INT,
+        summary        JSONB NOT NULL DEFAULT '{}'::jsonb
+      );
+      CREATE INDEX ix_econ_runs_started ON econ_runs (started DESC);
+      CREATE TABLE econ_run_days (
+        run_id    TEXT NOT NULL REFERENCES econ_runs(id) ON DELETE CASCADE,
+        day       INT NOT NULL,
+        stats     JSONB NOT NULL,
+        trades    JSONB NOT NULL DEFAULT '[]'::jsonb,
+        decisions JSONB NOT NULL DEFAULT '[]'::jsonb,
+        PRIMARY KEY (run_id, day)
+      );
+      INSERT INTO econ_configs (id, name, description, cards)
+        VALUES ('valley', 'The valley', 'Ten avens, five goods, HEARTS: the sandbox as first played.', '${JSON.stringify(defaultCards()).replace(/'/g, "''")}'::jsonb);
+      INSERT INTO econ_config_versions (config_id, version, body)
+        SELECT id, 1, jsonb_build_object('name', name, 'description', description, 'cards', cards)
+          FROM econ_configs WHERE id = 'valley';
     `,
   },
 ];
