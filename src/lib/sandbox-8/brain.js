@@ -247,16 +247,36 @@ export async function boxModels(url, signal) {
 	if (!lists.has(b)) lists.set(b, ((await boxCall(`${b}/models`, null, signal))?.data ?? []).map((m) => String(m.id)));
 	return lists.get(b);
 }
-/** the model it serves that is wanted ('d1' or 'qwen'), or throws
- * @param {string} url @param {'d1' | 'qwen'} want @param {AbortSignal} [signal] */
+/** where a model may be: the address given, and the same machine's other brain port (Samuel runs Qwen on :8000 and
+ * d1's llama-server on :8001)
+ * @param {string} url @returns {string[]} */
+export function boxBases(url) {
+	const b = base(url);
+	const m = b.match(/^(https?:\/\/[^/]+?):(\d+)(\/.*)?$/);
+	if (!m) return [b];
+	return [...new Set([b, ...['8000', '8001'].map((p) => `${m[1]}:${p}${m[3] ?? ''}`)])];
+}
+const away = new Map(); // base url -> until when not to try it again (it did not answer)
+/** the model wanted ('d1' or 'qwen') and the address that serves it, or throws
+ * @param {string} url @param {'d1' | 'qwen'} want @param {AbortSignal} [signal] @returns {Promise<{ base: string, id: string }>} */
 export async function boxModel(url, want, signal) {
-	const list = await boxModels(url, signal);
-	const id = list.find((m) => new RegExp(want, 'i').test(m));
-	if (!id) {
-		lists.delete(base(url)); // it may serve it soon: ask again next time
-		throw new Error(`no ${want === 'd1' ? 'd1' : 'Qwen'} at ${base(url)} (it serves ${list.join(', ') || 'nothing'})`);
+	const seen = [];
+	for (const b of boxBases(url)) {
+		if ((away.get(b) ?? 0) > Date.now()) continue;
+		let list;
+		try {
+			list = await boxModels(b, signal);
+		} catch (e) {
+			if (b === base(url)) throw e;
+			away.set(b, Date.now() + 60000);
+			continue;
+		}
+		const id = list.find((m) => new RegExp(want, 'i').test(m));
+		if (id) return { base: b, id };
+		lists.delete(b); // it may serve it soon: ask again next time
+		seen.push(...list);
 	}
-	return id;
+	throw new Error(`no ${want === 'd1' ? 'd1' : 'Qwen'} at ${boxBases(url).join(' or ')} (they serve ${seen.join(', ') || 'nothing'})`);
 }
 
 const chatOnly = new Set(); // bases whose server has no decision API
@@ -269,8 +289,7 @@ const chatOnly = new Set(); // bases whose server has no decision API
  * @param {any} state @param {any} questions @param {{ signal?: AbortSignal, url?: string, want?: 'd1' | 'qwen' }} [opts]
  */
 export async function askBox(state, questions, { signal, url = BOX_URL, want = 'd1' } = {}) {
-	const b = base(url);
-	const model = await boxModel(b, want, signal);
+	const { base: b, id: model } = await boxModel(url, want, signal);
 	if (/d1/i.test(model) && !chatOnly.has(b)) {
 		try {
 			const out = await boxCall(`${b}/systemone`, { model, state, questions }, signal);
