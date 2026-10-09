@@ -14,12 +14,12 @@ history and branches, and, from P8, its own iroh networking (its own ALPN, its o
 | Path | What it holds |
 |---|---|
 | `crates/avendb` | The core: the rules every peer applies (`policy`), keys and encryption (`keys`), signatures and passkeys (`sign`), Loro items (`doc`), schemas and lenses (`lens`), history and branches (`branch`), sync by caps and by each log's frontier (`sync`), every message between devices as bytes (`wire`), and the Lab the scenario tests run on (`lab`) |
-| `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by caps, the McEliece keys in iroh-blobs behind a gate, announcements of changed digests to each peer that may hold the log, each node's store on disk, and the server's node (`server`) |
+| `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by caps, the McEliece keys in iroh-blobs behind a gate, announcements of changed digests to each peer that may hold the log, linking a new device by its passkey (see [Linking a device](#linking-a-device)), each node's store on disk, and the server's node (`server`) |
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node in a folder of its own, and its relay, which lets in only the devices the server knows (see [The server](#the-server)) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, and a compose file that runs it on this machine; neither is deployed |
 | `crates/avendb-web` | The core in a web page, as WebAssembly: the tile's world made a step at a time, read through JSON views and changed through JSON actions, on whichever device the page picks |
 | `scripts/build-web.sh` | Builds `avendb-web` into the tile's package, `src/lib/avendb/pkg/` in the app (committed, so the app builds without Rust) |
-| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T19) and the test vectors both sides replay (see `spec/README.md`) |
+| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T20) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
 | `docs/` | The research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
 
 ## Build and test
@@ -29,6 +29,7 @@ cd avendb
 cargo test                      # every Rust test, the nodes on iroh among them (over loopback, no network needed)
 cargo test -- --ignored         # the tests later phases still owe
 cd spec && lake build           # the Lean model: proofs, scenario checks, test vectors
+cd protocol && ./check.sh       # the protocol models, against Verifpal 1.6.5 (minutes)
 ```
 
 The avenDB tile (`/app/avendb/` in the app, for admins) runs the core in the page. After a change to the core, build its
@@ -42,6 +43,50 @@ cd .. && node scripts/avendb-smoke.mjs  # starts a dev server, checks every scre
 The Lean build needs [elan](https://github.com/leanprover/elan) (`spec/lean-toolchain` pins the version). After a change
 to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit them with the change.
 
+## Linking a device
+
+A new device joins its person's vault by their passkey alone (P8c): through any device that holds the vault's log, or
+through the server once every other device is lost.
+
+1. A device that holds the vault, Samuel's Mac say, shows its offer as a QR code (`Node::offer`, text `AVENDB1…` in the
+   code's alphanumeric mode): its device, its endpoint and where to reach it. The app knows the server's offer, which
+   the server logs as it starts.
+2. The new device scans it, connects, and both devices say their hellos. Then the new device says its passkey's hello:
+   a WebAuthn assertion and an SLH-DSA signature, both over a hash of which end it speaks for, the connection's TLS
+   exporter and the new device (`PasskeyHello`). Said on another connection, for the other end or for another device,
+   it proves nothing.
+3. The peer checks it against the passkey its vaults name and hands back the link card: the logs of the vaults the
+   passkey owns and of those that own them, up the chains, and nothing about any space or entry (T20).
+4. The new device adds itself to the vault the passkey is the root of, signed by the passkey and by itself (`join`),
+   and sends that op with its McEliece key. The peer takes it only for the device on the connection, and only if the
+   rules take it (`accept_join`); it boxes the vault key for the new device, and the two sync by caps.
+
+A device the server doesn't know yet reaches it straight, over UDP, as its relay lets in only the devices it knows;
+once the device has joined, the relay lets it in. A forged code gains an attacker nothing: the passkey's hello names
+the new device and the connection, and every op of a card is signed.
+
+## The device's secure boundary
+
+A device's secrets stay in its memory, and only while it needs them (P8c):
+
+- Nothing on disk, in a view, a log line or a debug print holds one: a node's store holds signed ops and McEliece
+  public keys, a key prints as its id, and the tile's views show none (`no_view_shows_a_secret`). The server's device
+  secret is the one exception, in its folder, readable by its owner alone.
+- Every key wipes itself as it is dropped: a key's 32 bytes, a device's and a passkey's keys, and the hash states,
+  ciphers and temporaries that held one.
+- A locked device holds no key, nothing a key opened, and no McEliece secret half of a key nothing else in its process
+  holds, so what it held stays sealed by both schemes. Unlocking derives its keys again from the passkey and makes
+  again the pairs it needs, most of a second each.
+- Its randomness keeps one key, which every draw replaces with a hash of it, so a copy of the device's memory draws on
+  from there and never again what it drew. Unlocking reseeds it with the device's own key, which only the passkey
+  derives, so a copy taken while the device was locked doesn't foresee what it draws after. A Lab on a machine keeps no
+  entropy.
+
+Wiping goes as far as Rust lets it: a value that moves leaves its old bytes behind until they are overwritten, and the
+items a key opened are dropped at lock, not wiped (their memory is Loro's). The passkey lives in the platform's
+authenticator, and a device sees its PRF output only during a ceremony. Keys held in the device's own secure chip,
+memory kept out of swap and core dumps turned off belong to the app that runs a node on the device.
+
 ## The server
 
 `crates/avendb-server` is avenDB's server: a node in a folder of its own and, beside it, its relay. It holds only
@@ -49,7 +94,8 @@ ciphertext and opens nothing but what is public.
 
 - At its first start it makes its device's secret (`device.key`, readable by its owner alone) and founds its vault with
   an owner key it then forgets, so nobody changes that vault after, not even whoever takes its disk. It logs its
-  endpoint id: devices need that id, and the relay's URL, to reach it.
+  offer (`AVENDB1…`): its device, its endpoint, its public address and its relay. The app keeps it, so that devices
+  reach the server, and a new device links through it with its person's passkey alone.
 - A device takes the server's contact card, its vault's log, and can then grant it relay on a space. The server keeps
   that space's ops and McEliece keys and serves them to the devices that may hold them, also while the device that
   wrote them is away.
@@ -68,6 +114,7 @@ plain HTTP on port 3350. Its environment:
 | `AVENDB_BIND` | `0.0.0.0:7401` | The UDP socket of its iroh endpoint, where devices on UDP reach it straight |
 | `AVENDB_RELAY_BIND` | `0.0.0.0:3350` | The socket its relay serves plain HTTP on, behind the proxy that ends TLS |
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
+| `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
 | `RUST_LOG` | `info` | How much it logs |
 
 ### Deploying the server
@@ -82,9 +129,10 @@ media vault's server and changes nothing of it.
    (`caddy:2-alpine`) offers X25519MLKEM768, the only key exchange a device offers.
 3. **Firewall** (`infra/index.ts`): UDP 7401 open, as UDP 7400 is for the media vault.
 4. **Compose and image**: a service `avendb` from this image in the root compose files, with
-   `AVENDB_RELAY_URL=https://avendb.maia.city`, a volume for `/data` and `7401:7401/udp`; a workflow job that builds
-   the image from `avendb/` and pushes it beside the media vault's; and `deploy/backup.sh` backing up its volume.
-5. **Devices**: the endpoint id it logs at its first start goes into the devices' configuration.
+   `AVENDB_RELAY_URL=https://avendb.maia.city`, `AVENDB_PUBLIC_ADDR` set to the server's IP and port 7401, a volume for
+   `/data` and `7401:7401/udp`; a workflow job that builds the image from `avendb/` and pushes it beside the media
+   vault's; and `deploy/backup.sh` backing up its volume.
+5. **Devices**: the offer it logs as it starts goes into the app's configuration.
 
 Its volume holds the server's device secret. Losing it makes a new server with a new vault, which every space it
 relayed must grant relay again.
@@ -105,4 +153,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P7 | The avenDB tile: the Lab's whole world in one page, as WebAssembly in the page's workers, every device side by side; pick one and act as it: vaults and the passkeys that sign their changes, spaces, entries read and edited as each app version sees them, history, branches, access and why, todos, schemas and lenses, sync, locked and offline devices, and the plan's scenarios played green | Merged |
 | P8a | Devices on avenDB's own iroh: one encoding for every message between devices, fuzzed; each device a node on an iroh endpoint of its own ed25519 key with X25519MLKEM768 as the only key exchange, and a hello on every connection that proves the device by its SLH-DSA signature over the TLS exporter; sync by caps over avenDB's own ALPN, the McEliece keys in iroh-blobs, handed out only within reach; a node announces each changed digest straight to each peer that may hold the log, not over iroh-gossip, whose topics would tell every member of a log; scenarios 5 and 17 between nodes on one machine | Merged |
 | P8b | The server: a node in a folder of its own that keeps its device's secret and its store, founds its vault at its first start with an owner key it then forgets, and hands out its contact card so that a device can grant it relay on a space; its relay, which lets in only the devices of the vaults acting in the spaces it relays and lets go of a device taken out of its vault; each node's store on disk (append-only, a torn record cut back, a forged op dropped); peers out of reach tried less and less often; scenario 5 through the relay alone; the server's image, not deployed | Merged |
-| P8c | Linking a device by QR code; keys in the device's secure boundary; a ProVerif model of the hello and the seals; the server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a second device and the server | Next |
+| P8c | Linking a new device by its passkey alone, through a device's QR code or the server's offer: the passkey's hello on the connection, the link card of its vaults' logs (T20), the join the peer takes only for the device on the connection; recovery through the server; keys in the device's secure boundary (wiped as they are dropped, none left once a device locks, randomness no copy rewinds or foresees, no secret in any view); Verifpal models of the hello, the link and the sealed box with the curves broken (Verifpal rather than ProVerif, which has no package here) | Merged |
+| P8d | The server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a second device and the server | Next |

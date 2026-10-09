@@ -1,0 +1,137 @@
+// Linking a new device by its passkey (P8c; crates/avendb-net/src/lib.rs `Node::link`, session.rs `LINK` and `JOIN`,
+// crates/avendb/src/sign.rs `PasskeyHello`, crates/avendb/src/lab.rs `link_card`, `join` and `accept_join`). Samuel's
+// new iPhone scans the code his Mac shows (`Offer`): the Mac's endpoint and device. On a connection to the Mac, after
+// both devices' hellos, the iPhone says his passkey's hello: a WebAuthn assertion and an SLH-DSA signature, both over a
+// hash of which end it speaks for, the connection's TLS exporter and the iPhone's device. The Mac checks it against
+// the passkey its vault's log names and hands back the link card, the logs of the vaults the passkey owns; the iPhone
+// then sends its join, the op adding itself to Samuel's vault, signed by the passkey and by itself, which the Mac takes
+// only for the device on the connection.
+//
+// Expected: c0c1a0a0
+//
+// The curves fall from the start (`PUBKEY[weak]`): X25519, ed25519, and the passkey's P-256, so its assertions can be
+// forged. ML-KEM-768 and SLH-DSA hold. Nothing ties the new iPhone's keys to Samuel before it joins: the attacker can
+// be any device it likes. The card the Mac hands over on a passkey's hello stays secret (`card`), where a card handed
+// to whichever device said its hello would not (`unchecked`); the passkey's hello the Mac takes is the iPhone's, and so
+// is the join it accepts.
+//
+// Modeling notes. The code is read off the Mac's screen, and the Mac knows the passkey from its vault's log, whose ops
+// are signed: guarded transfers. With ed25519 broken, TLS's own endpoint signatures stop no one, so the handshake here
+// is its key exchange alone, X25519 and ML-KEM, from which come the keys and the exporter (see hello.vp for the whole
+// handshake). A device's id is the hash of its two public keys, as `SignerKeys::id` makes it; the hellos and the join
+// travel in the clear, as the authentication queries ask about values on the wire.
+
+attacker[active]
+
+principal Phone[
+	knows public tls, dialer, listener, add_device
+	knows private ph_ed, ph_slh
+	ph_ed_pk = PUBKEY[weak](ph_ed)
+	ph_slh_pk = PUBKEY(ph_slh)
+	// Samuel's passkey, synced to the new iPhone by his platform
+	knows private pk_p256, pk_slh
+	pk_p256_pub = PUBKEY[weak](pk_p256)
+	pk_slh_pub = PUBKEY(pk_slh)
+]
+
+principal Macbook[
+	knows public tls, dialer, listener, add_device
+	knows private mac_ed, mac_slh
+	mac_ed_pk = PUBKEY[weak](mac_ed)
+	mac_slh_pk = PUBKEY(mac_slh)
+	generates card, unchecked
+]
+
+// the code the Mac shows; and the passkey as the vault's log names it
+Macbook -> Phone: [mac_ed_pk], [mac_slh_pk]
+Phone -> Macbook: [pk_p256_pub], [pk_slh_pub]
+
+principal Phone[
+	generates ph_x, ph_kem
+	ph_x_pk = PUBKEY[weak](ph_x)
+	ph_kem_pk = PUBKEY(ph_kem)
+]
+
+Phone -> Macbook: ph_x_pk, ph_kem_pk
+
+principal Macbook[
+	generates mac_x, kem_r
+	mac_x_pk = PUBKEY[weak](mac_x)
+	m_ss, m_ct = KEM_ENCAP(ph_kem_pk, kem_r)
+	m_down, m_exporter = HKDF(HASH(DH_KEX(ph_x_pk, mac_x), m_ss), HASH(ph_x_pk, ph_kem_pk, mac_x_pk, m_ct), tls)
+]
+
+Macbook -> Phone: mac_x_pk, m_ct
+
+principal Phone[
+	p_ss = KEM_DECAP(ph_kem, m_ct)
+	p_down, p_exporter = HKDF(HASH(DH_KEX(mac_x_pk, ph_x), p_ss), HASH(ph_x_pk, ph_kem_pk, mac_x_pk, m_ct), tls)
+	// the device's hello, for the end that dialed
+	p_hello = SIGN(ph_slh, CONCAT(p_exporter, dialer))
+]
+
+// a new device's hello carries its public keys
+Phone -> Macbook: ph_ed_pk, ph_slh_pk, p_hello
+
+principal Macbook[
+	_ = SIGNVERIF(ph_slh_pk, CONCAT(m_exporter, dialer), p_hello)?
+	// whichever device said that hello, on this connection
+	m_device = HASH(ph_ed_pk, ph_slh_pk)
+	m_hello = SIGN(mac_slh, CONCAT(m_exporter, listener))
+	// what a node would hand over on the device's hello alone
+	generates n_unchecked
+	m_unchecked = AEAD_ENC(m_down, n_unchecked, unchecked, nil)
+]
+
+Macbook -> Phone: m_hello, n_unchecked, m_unchecked
+
+principal Phone[
+	// the device the code names answers
+	_ = SIGNVERIF(mac_slh_pk, CONCAT(p_exporter, listener), m_hello)?
+	p_device = HASH(ph_ed_pk, ph_slh_pk)
+	// the passkey's hello: one challenge, an assertion and the hash-based half
+	p_challenge = HASH(dialer, p_exporter, p_device)
+	p_assertion = SIGN(pk_p256, p_challenge)
+	p_passkey = SIGN(pk_slh, p_challenge)
+]
+
+Phone -> Macbook: p_assertion, p_passkey
+
+principal Macbook[
+	m_challenge = HASH(dialer, m_exporter, m_device)
+	_ = SIGNVERIF(pk_p256_pub, m_challenge, p_assertion)?
+	_ = SIGNVERIF(pk_slh_pub, m_challenge, p_passkey)?
+	// the link card, for the passkey's own hello on this connection
+	generates n_card
+	m_card = AEAD_ENC(m_down, n_card, card, nil)
+]
+
+Macbook -> Phone: n_card, m_card
+
+principal Phone[
+	p_card = AEAD_DEC(p_down, n_card, m_card, nil)?
+	// the join: the op adding this device to the vault the card names, signed by the passkey and by the device
+	p_op = HASH(add_device, p_card, p_device)
+	p_join_assertion = SIGN(pk_p256, p_op)
+	p_join_passkey = SIGN(pk_slh, p_op)
+	p_join_ed = SIGN(ph_ed, p_op)
+	p_join_device = SIGN(ph_slh, p_op)
+]
+
+Phone -> Macbook: p_join_assertion, p_join_passkey, p_join_ed, p_join_device
+
+principal Macbook[
+	// taken only for the device on the connection: the op it checks names that device
+	m_op = HASH(add_device, card, m_device)
+	_ = SIGNVERIF(pk_p256_pub, m_op, p_join_assertion)?
+	_ = SIGNVERIF(pk_slh_pub, m_op, p_join_passkey)?
+	_ = SIGNVERIF(ph_ed_pk, m_op, p_join_ed)?
+	_ = SIGNVERIF(ph_slh_pk, m_op, p_join_device)?
+]
+
+queries[
+	confidentiality? card
+	confidentiality? unchecked
+	authentication? Phone -> Macbook: p_passkey
+	authentication? Phone -> Macbook: p_join_passkey
+]
