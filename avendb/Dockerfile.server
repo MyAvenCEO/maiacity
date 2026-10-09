@@ -1,6 +1,7 @@
 # avendb-server: avenDB's server and its relay (crates/avendb-server), built from avendb/ alone, its own workspace:
 # nothing of the media vault (vault/) is compiled here. Build it from avendb/: docker build -f Dockerfile.server .
-# No workflow builds or deploys it yet: that waits on the go README.md asks for, under "Deploying the server".
+# .github/workflows/avendb.yml builds it, pushes it to GHCR and restarts the server with it (README.md, "Deploying the
+# server").
 # cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crates.
 FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
 WORKDIR /src

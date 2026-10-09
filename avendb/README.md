@@ -123,8 +123,8 @@ for that op alone, and forgets the McEliece pair it made from it once the device
 In the tile, the screen **This browser** is this device: it founds a vault, with the maiaCITY passkey or a new one,
 and claims the server if given its setup code, or links through a code (a QR code that a phone's camera opens as a
 link, `?link=`), shows its own code as a QR code for the next device, and lists, edits and writes notes, showing what
-its other devices change the moment it arrives (`Device::changed`). avenDB's server isn't deployed yet (P8f), so for now
-the screen takes a test server's relay and code.
+its other devices change the moment it arrives (`Device::changed`). The screen takes a server's relay and code: avenDB's
+server at `avendb.maia.city` ("Deploying the server", below), or a test server's.
 
 #### PRF, done right
 
@@ -248,26 +248,34 @@ it: its owners'. They receive what the server's disk holds, the space's ops as c
 
 ### Deploying the server
 
-The server isn't deployed: each of these steps changes production, so each waits on an explicit go. It runs beside the
-media vault's server and changes nothing of it.
+The server runs at `avendb.maia.city`, beside the media vault's server on the same machine, and changes nothing of it.
 
-1. **DNS** (Hetzner DNS): an A record `avendb.maia.city` for the server, as `api.yml`'s `dns` job keeps
-   `api.maia.city`'s, or set by hand in the Hetzner DNS console. The relay needs a host name of its own: iroh's relay
-   path is `/relay`, and `api.maia.city/relay` is the media vault's relay.
-2. **Caddy** (`deploy/Caddyfile`): a site `avendb.maia.city` with `reverse_proxy avendb:3350`. Caddy 2.10 and later
-   (`caddy:2-alpine`) offers X25519MLKEM768, the only key exchange a device offers.
-3. **Firewall** (`infra/index.ts`): UDP 7401 open, as UDP 7400 is for the media vault.
-4. **Compose and image**: a service `avendb` from this image in the root compose files, with
-   `AVENDB_RELAY_URL=https://avendb.maia.city`, `AVENDB_PUBLIC_ADDR` set to the server's IP and port 7401,
-   `AVENDB_SETUP_CODE` from the deploy's secrets, a volume for `/data` and `7401:7401/udp`; a workflow job that builds
-   the image from `avendb/` and pushes it beside the media vault's; and `deploy/backup.sh` backing up its volume.
-5. **Devices**: the offer it logs as it starts goes into the app's configuration.
+1. **Its image**: `.github/workflows/avendb.yml` builds this image (`Dockerfile.server`) whenever the server's code
+   changes, pushes it to GHCR as `maiacity-avendb`, and restarts that one container on the server: the API and the
+   media vault never restart for it, and a failed build holds up nothing of theirs.
+2. **Everything else** comes from `.github/workflows/api.yml`: the Caddy site `avendb.maia.city`
+   (`deploy/Caddyfile`, `reverse_proxy avendb:3350`; Caddy 2.10 and later offers X25519MLKEM768, the only key exchange
+   a device offers), UDP 7401 in the firewall (`infra/index.ts`), the service `avendb` in the root compose files, and
+   its settings in the server's `.env`: `AVENDB_RELAY_URL=https://avendb.maia.city`, `AVENDB_PUBLIC_ADDR` (the
+   server's IP and port 7401), its data folder on the Hetzner volume, and `AVENDB_SETUP_CODE`.
+3. **DNS**: an A record `avendb.maia.city` for the server. `api.yml`'s `dns` job sets it with a `HETZNER_DNS_TOKEN`;
+   without one it is set by hand in the Hetzner DNS console. The relay needs a host name of its own: iroh's relay path
+   is `/relay`, and `api.maia.city/relay` is the media vault's relay.
+4. **The setup code**: made on the server by `api.yml` once, 32 random letters and digits kept beside the database
+   password on the Hetzner volume, so it stays the same until someone claims the server. It reaches whoever claims
+   it sealed with age to the key `AVENDB_CODE_TO` names in `api.yml` (the step "avenDB's setup code, sealed"),
+   never in the clear in a log. The GitHub secret `AVENDB_SETUP_CODE`, if set, is used instead: 20 or more
+   characters made at random, only letters, digits and `. _ ~ + / = -`, as it passes through the deploy's shell and
+   compose's `.env` (any other is left out, with a warning).
+5. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) goes into
+   the app's configuration.
 6. **The claim**: the person who runs it opens **This browser** with the setup code and founds their vault, which
-   claims the server as avenCEO's device.
+   claims the server as avenCEO's device. Once it is claimed the code claims nothing more, and the secret can go.
 
-Its volume holds the server's device secret. Losing it makes a new server, a device of nobody: avenCEO's owners remove
-the lost device from avenCEO, then claim the new server with the setup code, which adds it to the same avenCEO, so
-every space avenCEO relays keeps its grant.
+Its store and its device's secret live on the Hetzner volume, so a rebuilt server is still the same device; the
+database backups don't hold them. Losing them makes a new server, a device of nobody: avenCEO's owners remove the lost
+device from avenCEO, then claim the new server with the setup code, which adds it to the same avenCEO, so every space
+avenCEO relays keeps its grant.
 
 ## Plan
 

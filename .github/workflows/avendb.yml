@@ -1,0 +1,123 @@
+name: avenDB server
+
+# avenDB's server at avendb.maia.city (avendb/crates/avendb-server): built from avendb/ alone and rolled out on its own,
+# so a change to avenDB never restarts the API or the media vault, and a failed avenDB build never holds up theirs.
+#
+#   image  – build the server's image (avendb/Dockerfile.server), push to GHCR tagged with the commit
+#   deploy – over SSH: AVENDB_IMAGE into the server's .env, then pull and restart this one container
+#
+# Its settings (host name, setup code, data folder), its Caddy site and its firewall port come from the API workflow
+# (api.yml), which also makes the server: that has to have run once before this can roll out.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'avendb/**'
+      # what the server's image never holds (avendb/.dockerignore), and the crates that run in a browser
+      - '!avendb/spec/**'
+      - '!avendb/docs/**'
+      - '!avendb/scripts/**'
+      - '!avendb/**/*.md'
+      - '!avendb/crates/avendb-web/**'
+      - '!avendb/crates/avendb-browser/**'
+      - '.github/workflows/avendb.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: avendb
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  APP_DIR: /opt/maia-city
+  API_HOST: api.maia.city
+  AVENDB_HOST: avendb.maia.city
+
+jobs:
+  image:
+    name: Build and push the avenDB server image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-avendb" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: avendb
+          file: avendb/Dockerfile.server
+          push: true
+          # Rust builds are slow: keep the layers between runs
+          cache-from: type=gha,scope=avendb
+          cache-to: type=gha,scope=avendb,mode=max
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+
+  deploy:
+    name: Restart avenDB's server over SSH
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare SSH
+        run: |
+          HOST=$(getent ahostsv4 "$API_HOST" | awk '{print $1; exit}')
+          [ -n "$HOST" ] || { echo "::error::$API_HOST does not resolve"; exit 1; }
+          echo "HOST=$HOST" >> "$GITHUB_ENV"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n  ServerAliveInterval 20\n' "$HOST" > ~/.ssh/config
+      - name: Roll out the new image
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The token goes to the server over stdin, never as a process argument.
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
+          ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          # api.yml rewrites this .env too: one writer at a time
+          exec 9>.env.lock; flock 9
+          grep -q '^AVENDB_DATA_PATH=' .env 2>/dev/null \
+            || { echo "::error::$APP_DIR/.env has no avenDB settings yet: run the API workflow (api.yml) first."; exit 1; }
+          sed -i '/^AVENDB_IMAGE=/d' .env && echo "AVENDB_IMAGE=$IMAGE" >> .env
+          P=\$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2- || true)
+          case ",\$P," in
+            *,avendb,*) ;;
+            *) sed -i '/^COMPOSE_PROFILES=/d' .env && echo "COMPOSE_PROFILES=\${P:+\$P,}avendb" >> .env ;;
+          esac
+          flock -u 9
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q avendb
+          # this one container: the API, the media vault and Caddy stay as they are
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps avendb
+          docker logout ghcr.io >/dev/null
+          docker image prune -f >/dev/null
+          EOS
+      - name: What the server says
+        run: |
+          # its device, its endpoint and its offer, all public (what the apps link through); its setup code is never logged
+          for i in $(seq 1 24); do
+            SAID=$(ssh prod "docker logs maia-city-avendb 2>&1" | grep 'avenDB server:' || true)
+            if printf '%s\n' "$SAID" | grep -q 'avenDB server: offer '; then printf '%s\n' "$SAID" | tail -4; break; fi
+            if [ "$i" = 24 ]; then
+              echo "::error::avenDB's server has not said its offer:"
+              ssh prod "docker ps -a --filter name=^maia-city-avendb$; docker logs --tail 50 maia-city-avendb 2>&1"
+              exit 1
+            fi
+            sleep 5
+          done
+          ssh prod "docker exec maia-city-caddy wget -qO- http://avendb:3350/healthz" && echo " ← its relay answers inside" \
+            || echo "::warning::avenDB's relay does not answer inside"
+          curl -fsS "https://$AVENDB_HOST/healthz" && echo " ← https://$AVENDB_HOST answers" \
+            || echo "::warning::https://$AVENDB_HOST does not answer yet — check its A record (-> $HOST) and let Caddy finish its certificate."

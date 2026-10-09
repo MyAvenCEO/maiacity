@@ -6,8 +6,12 @@ name: API
 #   image  – build the api container, push to GHCR tagged with the commit
 #   infra  – Pulumi: Hetzner server, volume, firewall (state in the `pulumi-state`
 #            branch, so no Pulumi Cloud account is needed)
-#   dns    – point api.maia.city at the server (Hetzner DNS; skipped without a token)
+#   dns    – point api.maia.city and avendb.maia.city at the server (Hetzner DNS; skipped without a token)
 #   deploy – over SSH: compose files + .env, then pull and up
+#
+# avenDB's server (avendb.maia.city) gets its settings, Caddy site and firewall port from here, and its image from
+# avendb.yml, which builds and restarts it alone whenever its code changes: an avenDB change never restarts the API or
+# the media vault, and a failed avenDB build never holds up their deploy.
 on:
   push:
     branches: [main]
@@ -32,6 +36,10 @@ permissions:
 env:
   APP_DIR: /opt/maia-city
   API_HOST: api.maia.city
+  AVENDB_HOST: avendb.maia.city
+  # Whose age key receives avenDB's setup code, sealed, to claim the server with (step "avenDB's setup code, sealed"):
+  # a key that lives only as long as the Claude session doing the first claim. Gone once the server is claimed.
+  AVENDB_CODE_TO: age18s0vsynds4gtm7rcx0902cqc0rn88nw62h5znsfcfue4gljtkpdqu7ecqx
   # Hetzner Object Storage: LIBRARY/ holds the media vault, BACKUPS/ the database dumps
   S3_BUCKET: maiacity
   S3_ENDPOINT: https://hel1.your-objectstorage.com
@@ -159,36 +167,38 @@ jobs:
           fi
 
   dns:
-    name: Point api.maia.city at the server
+    name: Point api.maia.city and avendb.maia.city at the server
     needs: infra
     runs-on: ubuntu-latest
     steps:
       # Hetzner DNS has its own API and its own token — the cloud token does not
-      # open it. Without HETZNER_DNS_TOKEN the record has to be set by hand once,
+      # open it. Without HETZNER_DNS_TOKEN the records have to be set by hand once,
       # and the rest of the pipeline carries on regardless.
-      - name: Upsert the A record
+      - name: Upsert the A records
         env:
           TOKEN: ${{ secrets.HETZNER_DNS_TOKEN }}
           IP: ${{ needs.infra.outputs.ipv4 }}
         run: |
           if [ -z "$TOKEN" ]; then
-            echo "::notice::No HETZNER_DNS_TOKEN — add an A record for $API_HOST pointing at $IP by hand (Hetzner DNS console)."
+            echo "::notice::No HETZNER_DNS_TOKEN — add A records for $API_HOST and $AVENDB_HOST pointing at $IP by hand (Hetzner DNS console)."
             exit 0
           fi
           ZONE=$(curl -fsS -H "Auth-API-Token: $TOKEN" 'https://dns.hetzner.com/api/v1/zones?name=maia.city' | jq -r '.zones[0].id')
           [ -n "$ZONE" ] && [ "$ZONE" != null ] || { echo "::error::Zone maia.city not found under this DNS token."; exit 1; }
-          REC=$(curl -fsS -H "Auth-API-Token: $TOKEN" "https://dns.hetzner.com/api/v1/records?zone_id=$ZONE" \
-                | jq -r '.records[] | select(.type=="A" and .name=="api") | .id' | head -1)
-          BODY=$(jq -nc --arg z "$ZONE" --arg v "$IP" '{zone_id:$z,type:"A",name:"api",value:$v,ttl:300}')
-          if [ -n "$REC" ]; then
-            curl -fsS -X PUT -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
-              -d "$BODY" "https://dns.hetzner.com/api/v1/records/$REC" >/dev/null
-            echo "A record updated: $API_HOST -> $IP"
-          else
-            curl -fsS -X POST -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
-              -d "$BODY" 'https://dns.hetzner.com/api/v1/records' >/dev/null
-            echo "A record created: $API_HOST -> $IP"
-          fi
+          for NAME in api avendb; do
+            REC=$(curl -fsS -H "Auth-API-Token: $TOKEN" "https://dns.hetzner.com/api/v1/records?zone_id=$ZONE" \
+                  | jq -r --arg n "$NAME" '.records[] | select(.type=="A" and .name==$n) | .id' | head -1)
+            BODY=$(jq -nc --arg z "$ZONE" --arg v "$IP" --arg n "$NAME" '{zone_id:$z,type:"A",name:$n,value:$v,ttl:300}')
+            if [ -n "$REC" ]; then
+              curl -fsS -X PUT -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
+                -d "$BODY" "https://dns.hetzner.com/api/v1/records/$REC" >/dev/null
+              echo "A record updated: $NAME.maia.city -> $IP"
+            else
+              curl -fsS -X POST -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
+                -d "$BODY" 'https://dns.hetzner.com/api/v1/records' >/dev/null
+              echo "A record created: $NAME.maia.city -> $IP"
+            fi
+          done
 
   deploy:
     name: Roll out over SSH
@@ -237,10 +247,21 @@ jobs:
           S3_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
           # speech to text (Prem, Deepgram Nova 3): only the API container gets it — never a Mac
           PREMAI_API_KEY: ${{ secrets.PREMAI_API_KEY }}
+          # avenDB's server: the one-time code the first human vault brings to claim it (avendb/README.md). Unset, the
+          # server's own code is used, made on it once below.
+          AVENDB_SETUP_CODE: ${{ secrets.AVENDB_SETUP_CODE }}
         run: |
           [ -n "$PREMAI_API_KEY" ] || echo "::notice::No PREMAI_API_KEY — recordings get no transcripts until it is set."
+          # the secret goes through the script below and compose's .env, so plain characters only; never echoed
+          RE='^[A-Za-z0-9._~+/=-]{20,}$'
+          if [ -n "$AVENDB_SETUP_CODE" ] && ! [[ $AVENDB_SETUP_CODE =~ $RE ]]; then
+            echo "::warning::AVENDB_SETUP_CODE is left out (it takes 20 or more letters and digits, and . _ ~ + / = -): the server's own code is used."
+            AVENDB_SETUP_CODE=
+          fi
           ssh prod "cd $APP_DIR && bash -s" <<EOS
           set -e
+          # avendb.yml writes AVENDB_IMAGE here too: one writer at a time
+          exec 9>.env.lock; flock 9
           # Postgres keeps this password inside its own data directory, so it is
           # created once next to that data and never rotated automatically.
           PWFILE="$DATA_MOUNT/.postgres_password"
@@ -253,6 +274,19 @@ jobs:
             sudo chown deploy "\$PWFILE"; sudo chmod 600 "\$PWFILE"
           fi
           PW=\$(cat "\$PWFILE")
+          # avenDB's setup code: the secret if set, else the server's own, made once like the password above and kept
+          # beside the data, so it stays the same until a human vault claims the server with it
+          CODEFILE="$DATA_MOUNT/.avendb_setup_code"
+          if [ ! -f "\$CODEFILE" ]; then
+            openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32 | sudo tee "\$CODEFILE" >/dev/null
+            sudo chown deploy "\$CODEFILE"; sudo chmod 600 "\$CODEFILE"
+          fi
+          CODE="$AVENDB_SETUP_CODE"
+          [ -n "\$CODE" ] || CODE=\$(cat "\$CODEFILE")
+          # avenDB's image is avendb.yml's to set: kept as it is, and its server runs once there is one
+          AVI=\$(grep '^AVENDB_IMAGE=' .env 2>/dev/null | cut -d= -f2- || true)
+          PROFILES="${S3_ACCESS_KEY:+vault}"
+          if [ -n "\$AVI" ]; then PROFILES="\${PROFILES:+\$PROFILES,}avendb"; fi
           cat > .env <<EOF2
           POSTGRES_DB=maiacity
           POSTGRES_USER=maiacity
@@ -273,11 +307,25 @@ jobs:
           S3_ACCESS_KEY=$S3_ACCESS_KEY
           S3_SECRET_KEY=$S3_SECRET_KEY
           PREMAI_API_KEY=$PREMAI_API_KEY
-          COMPOSE_PROFILES=${S3_ACCESS_KEY:+vault}
+          AVENDB_IMAGE=\$AVI
+          AVENDB_ADDRESS=$AVENDB_HOST
+          AVENDB_RELAY_URL=https://$AVENDB_HOST
+          AVENDB_PUBLIC_ADDR=$HOST:7401
+          AVENDB_DATA_PATH=$DATA_MOUNT/avendb
+          AVENDB_SETUP_CODE=\$CODE
+          COMPOSE_PROFILES=\$PROFILES
           EOF2
           chmod 600 .env
-          sudo mkdir -p "$DATA_MOUNT/postgres"
+          sudo mkdir -p "$DATA_MOUNT/postgres" "$DATA_MOUNT/avendb"
           EOS
+      # The setup code in use, sealed with age to AVENDB_CODE_TO's key: never in the clear in this log, and only that
+      # key opens it, to claim the server with. Never holds up the deploy.
+      - name: avenDB's setup code, sealed
+        if: env.AVENDB_CODE_TO != ''
+        continue-on-error: true
+        run: |
+          command -v age >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq age >/dev/null; }
+          ssh prod "grep -m1 '^AVENDB_SETUP_CODE=' $APP_DIR/.env | cut -d= -f2-" | tr -d '\n' | age -r "$AVENDB_CODE_TO" -a
       - name: Rotate SSH keys (if set, exactly this list is authorised)
         env:
           AUTHORIZED_KEYS: ${{ secrets.DEPLOY_SSH_AUTHORIZED_KEYS }}
@@ -337,6 +385,18 @@ jobs:
           sleep 5
           ssh prod "cd $APP_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml ps vault && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail 20 vault" || true
           curl -fsS "https://$API_HOST/vault/health" && echo " ← the vault gateway answers" || echo "::warning::the vault gateway does not answer yet"
+      # avenDB's server comes up with its first image from avendb.yml; from then on every deploy here keeps it running
+      - name: avenDB's server (when it runs)
+        run: |
+          if ! ssh prod "docker ps -q --filter name=^maia-city-avendb$ --filter status=running" | grep -q .; then
+            echo "::notice::avenDB's server is not running yet: the avenDB workflow (avendb.yml) builds and starts it."; exit 0
+          fi
+          # its device, endpoint and offer, all public; its setup code is never logged
+          ssh prod "docker logs maia-city-avendb 2>&1" | grep 'avenDB server:' | tail -4 || true
+          ssh prod "docker exec maia-city-caddy wget -qO- http://avendb:3350/healthz" && echo " ← its relay answers inside" \
+            || echo "::warning::avenDB's relay does not answer inside"
+          curl -fsS "https://$AVENDB_HOST/healthz" && echo " ← https://$AVENDB_HOST answers" \
+            || echo "::warning::https://$AVENDB_HOST does not answer yet — check its A record (-> $HOST) and let Caddy finish its certificate."
       # Health is judged on the server, not through DNS: a missing A record must
       # not make a good deploy look broken.
       - name: Health check (on the server)

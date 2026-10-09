@@ -2,7 +2,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #   - api arrives as a finished image from the GitHub Container Registry
 #   - Postgres data lives on the Hetzner volume (PGDATA_PATH), not in a Docker volume
-#   - caddy serves the site (maia.city, from site/current) and terminates HTTPS for it and API_ADDRESS
+#   - caddy serves the site (maia.city, from site/current) and terminates HTTPS for it, API_ADDRESS and AVENDB_ADDRESS
 #     automatically; passkeys need a secure context, so there is no http variant of this
 #   - the api and db ports are closed to the outside; only Caddy talks to the api
 services:
@@ -26,6 +26,16 @@ services:
       - "3340"
       - "3341"
 
+  # avenDB's server: its image from GHCR; UDP 7401 open to devices, its relay only through Caddy (avendb.maia.city).
+  # Its device's secret and its store live on the Hetzner volume, so a rebuilt server is still the same device.
+  avendb:
+    image: ${AVENDB_IMAGE:-ghcr.io/myavenceo/maiacity-avendb:latest}
+    build: !reset null
+    volumes:
+      - ${AVENDB_DATA_PATH:?set AVENDB_DATA_PATH in .env}:/data
+    expose:
+      - "3350"
+
   caddy:
     image: caddy:2-alpine
     container_name: maia-city-caddy
@@ -37,6 +47,7 @@ services:
       - "443:443"
     environment:
       API_ADDRESS: ${API_ADDRESS:?set API_ADDRESS in .env, e.g. api.maia.city}
+      AVENDB_ADDRESS: ${AVENDB_ADDRESS:-avendb.maia.city}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       # the site: every build in site/releases/<commit>, site/current the live one (the site workflow switches it)
