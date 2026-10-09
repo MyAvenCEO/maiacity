@@ -426,38 +426,45 @@ function shares(asks, total) {
 /**
  * The posted-price market clears, good by good: at the good's posted price every seller offers what it can spare and
  * every buyer asks for what it wants and can pay for (both by the Trading card's want and spare, which may read the
- * brain's own answers in aven.choices). The short side gets all it asked for, the long side its share pro rata, and the
- * goods change hands at that one price. Then the `price` hook sets the next round's price from what was wanted and
+ * brain's own answers in aven.choices). The short side gets all it asked for; on the long side what buyers need to live
+ * through tomorrow is filled first, then the stock they keep beyond it, each pro rata; the goods change hands at that
+ * one price. Then the `price` hook sets the next round's price from what was wanted and
  * offered (a good never priced yet asks it with price null for a first one).
  */
 function clearPosted(world) {
 	const live = world.avens.filter((a) => a.alive && a.brain.ready);
 	world.posted ??= {};
 	for (const g of GOODS) {
-		const ask = (price, demand, supply, traded) => posted(ruled('price', { good: g, price, demand, supply, traded }, price, (v, o) => posted(v) ?? o));
-		let p = posted(world.posted[g]) ?? ask(null, 0, 0, 0);
+		const ask = (price, round) => posted(ruled('price', { good: g, price, ...round }, price, (v, o) => posted(v) ?? o));
+		let p = posted(world.posted[g]) ?? ask(null, { demand: 0, need: 0, supply: 0, traded: 0 });
 		if (p == null) continue;
 		const sellers = live.filter((a) => spare(a, g) > 0);
 		const buyers = live.filter((a) => want(a, g) > 0 && a.hearts >= p);
 		const offer = sellers.map((a) => spare(a, g));
 		const asked = buyers.map((a) => Math.min(want(a, g), Math.floor(a.hearts / p)));
+		// of what each asks, the part it needs to live through tomorrow: that part is filled first, the rest (stock it
+		// keeps beyond tomorrow) from what is left, each pro rata
+		const needed = buyers.map((a, k) => Math.min(asked[k], Math.max(0, (a.need?.[g] ?? NEED[g]) - a.stock[g])));
 		const supply = offer.reduce((n, q) => n + q, 0);
 		const demand = asked.reduce((n, q) => n + q, 0);
+		const need = needed.reduce((n, q) => n + q, 0);
 		const traded = Math.min(supply, demand);
 		const sell = shares(offer, traded);
-		const buy = shares(asked, traded);
+		const first = shares(needed, Math.min(need, traded));
+		const rest = shares(asked.map((q, k) => q - first[k]), traded - first.reduce((n, q) => n + q, 0));
+		const buy = first.map((q, k) => q + rest[k]);
 		// pair them off in order: each buyer fetches its units from the sellers in turn
 		for (let i = 0, j = 0; i < sellers.length && j < buyers.length; ) {
 			const q = Math.min(sell[i], buy[j]);
-			if (q > 0 && sellers[i] !== buyers[j]) transfer(world, sellers[i], buyers[j], g, q, p, null);
+			if (q > 0) transfer(world, sellers[i], buyers[j], g, q, p, null);
 			sell[i] -= q;
 			buy[j] -= q;
 			if (!sell[i]) i++;
 			if (!buy[j]) j++;
 		}
-		const m = world.market[g];
-		m.round = { price: p, demand, supply, traded };
-		world.posted[g] = ask(p, demand, supply, traded) ?? p;
+		const round = { demand, need, supply, traded };
+		world.market[g].round = { price: p, ...round };
+		world.posted[g] = ask(p, round) ?? p;
 	}
 }
 

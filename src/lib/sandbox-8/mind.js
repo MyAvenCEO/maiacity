@@ -233,10 +233,10 @@ export function night(world) {
 		if (!m) continue;
 		if (m.gone) {
 			if (!a.alive) continue;
-			// reborn: a fresh life in the same world, its brain as it was
+			// a new life in the same world, its brain as it was. Nothing in its memory says so, nor with how much (Samuel,
+			// 2026-10-10: a brain must not count on coming back): to its brain, death is the end of everything it holds
 			m.gone = false;
 			Object.assign(m, { win: null, base: null });
-			note(m, `d${world.day} reborn with ${Math.round(a.hearts)} HEARTS`);
 		}
 		const short = a.yesterday?.short ?? {};
 		if (!a.alive) {
@@ -248,9 +248,13 @@ export function night(world) {
 			const cheapest = w.sells[0]?.price;
 			const bits = [
 				world.weather.dry || (world.weather.dryFrom && world.weather.dryFrom > world.day - 4) ? 'dry spell' : '',
-				!a.grows.includes('water') && a.bid.water != null
-					? `my water bid ${a.bid.water}${cheapest != null ? ` vs cheapest ask ${cheapest}` : ''}`
-					: '',
+				// what water cost it, in the words of its world's market: the posted price and how much of its need its
+				// HEARTS paid for, else its bid against the cheapest ask
+				!a.grows.includes('water') && w.posted != null
+					? `WATER at ${w.posted} HEARTS a unit: my ${Math.round(a.lost?.hearts ?? a.hearts)} HEARTS paid for ${Math.floor((a.lost?.hearts ?? a.hearts) / w.posted)} of my ${a.need?.water ?? '?'} a day`
+					: !a.grows.includes('water') && a.bid.water != null
+						? `my water bid ${a.bid.water}${cheapest != null ? ` vs cheapest ask ${cheapest}` : ''}`
+						: '',
 				`lost ${Math.round(a.lost?.hearts ?? a.hearts)} HEARTS`,
 				`kept ${m.wants.water}d water, ${m.wants.food}d food`
 			].filter(Boolean);
@@ -382,6 +386,10 @@ export function addLesson(m, text) {
 	}
 	return true;
 }
+/** what a brain is never told: that the dead come back, and with how much */
+const HIDDEN = ['rebirthDays', 'startHearts'];
+const hidden = (text) => /\breborn\b|\brebirth\b|\bcome back\b|\bnext life\b/i.test(text);
+
 /** what a world is set to, as a brain remembers it: every value of the catalogue, and its cards by name */
 export function worldStamp(rules, cards) {
 	return {
@@ -398,6 +406,7 @@ export function enterWorld(m, stamp, params) {
 	if (!was?.values) return (m.changed = null);
 	const out = [];
 	for (const p of params) {
+		if (HIDDEN.includes(p.key)) continue;
 		const a = was.values[p.key],
 			b = stamp.values[p.key];
 		if (a !== undefined && b !== undefined && a !== b) out.push(`${p.label} ${a}→${b}${p.unit && !/=|at least|yes/.test(p.unit) ? ` ${p.unit}` : ''}`);
@@ -418,16 +427,17 @@ export function mindFor(a) {
 		character: Object.fromEntries(t.dials.map((d) => [d.key, `${m.dials[d.key]} of ${d.max}`])),
 		character_means: Object.fromEntries(t.dials.map((d) => [d.key, `${d.min} ${d.low}, ${d.max} ${d.high}`])),
 		wants: `I keep ${t.wants.map((w) => `${m.wants[w.key]} ${w.unit} of ${w.key}`).join(' and ')} in stock and buy up to that`,
-		life: `now in ${m.world}, my world number ${m.runs}; ${m.days} days lived over all my worlds; died ${m.deaths} time${m.deaths === 1 ? '' : 's'}; ${m.tally.trials} trials, ${m.tally.kept} kept`,
+		// its memory is its line's: the lives before this one, which ended in death; nothing says it comes back
+		life: `now in ${m.world}, my line's world number ${m.runs}; ${m.days} days lived by my line; ${m.deaths} earlier li${m.deaths === 1 ? 'fe' : 'ves'} of my line ended in death; ${m.tally.trials} trials, ${m.tally.kept} kept`,
 		since_birth: m.born ? drift(m) : 'as born',
 		...(m.changed ? { this_world_vs_my_last: m.changed } : {}),
 		trying_now: m.trial
 			? `${label(m.trial)} since day ${m.trial.day}: kept only if my score beats ${m.base}/day`
 			: 'nothing: measuring my current setting',
 		score_means: t.score,
-		trials: m.log.slice(-6),
-		lessons: m.lessons.map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down}${l.world ? `, learned in ${l.world}` : ''})`),
-		deaths: m.deathLog.slice()
+		trials: m.log.slice(-6).filter((l) => !hidden(l)),
+		lessons: m.lessons.filter((l) => !hidden(l.text)).map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down}${l.world ? `, learned in ${l.world}` : ''})`),
+		deaths_in_my_line: m.deathLog.slice()
 	};
 }
 
