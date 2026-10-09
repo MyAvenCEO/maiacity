@@ -19,6 +19,11 @@
 //!
 //! Each signer also has a key that keys are sealed to (`keys`): a device derives it with its other keys, a passkey
 //! from its PRF output, so whoever can sign as the signer can also open what is sealed to it, and nothing else can.
+//!
+//! A passkey in the browser's authenticator signs in ceremonies (P8e, `Ceremony`): `navigator.credentials.get` over a
+//! challenge, with the PRF evaluated on `PRF_SALT` in the same ceremony. The assertion is the classical half, and the
+//! hash-based key and the key sealed to the passkey derive from the PRF output, which a device holds for that ceremony
+//! only. The software passkey of the tests and the Lab makes the same ceremonies (`Passkey::ceremony`).
 
 use std::fmt;
 
@@ -59,6 +64,10 @@ pub const RP_ID: &str = "maia.city";
 /// Where a passkey assertion may come from: the website and the Mac app's webview.
 pub const ORIGINS: [&str; 3] = ["https://maia.city", "tauri://localhost", "http://tauri.localhost"];
 
+/// The relying party a test page's passkeys belong to, in a build with the feature `localhost-passkeys`: a page on
+/// localhost, whose virtual authenticator makes them (`scripts/test-browser.sh`). A build that ships never takes one.
+pub const TEST_RP_ID: &str = "localhost";
+
 /// The salt the app asks every passkey's PRF for its own keys: the same on every device, so each device that uses the
 /// passkey derives the same keys from it.
 pub const PRF_SALT: &[u8] = b"avenDB 2026-10-08 passkey prf salt";
@@ -66,6 +75,12 @@ pub const PRF_SALT: &[u8] = b"avenDB 2026-10-08 passkey prf salt";
 /// What a device's salt starts with; 32 random bytes of the device's own follow, kept on the device. They are no
 /// secret: without the passkey they derive nothing.
 pub const DEVICE_SALT: &[u8] = b"avenDB 2026-10-08 device prf salt ";
+
+/// The salt of the device whose own 32 bytes are `nonce`: `DEVICE_SALT` followed by them. A browser asks its passkey's
+/// PRF for it beside `PRF_SALT`, in the ceremony that unlocks the device.
+pub fn device_salt(nonce: &[u8; 32]) -> Vec<u8> {
+    [DEVICE_SALT, &nonce[..]].concat()
+}
 
 /// Authenticator data flags: the user was present, and verified (PIN or biometrics).
 const UP: u8 = 0x01;
@@ -221,7 +236,7 @@ impl PasskeyHello {
     /// halves check out.
     pub fn verify(&self, exporter: &[u8; 32], dialer: bool, device: SignerId) -> Option<SignerId> {
         let SignerKeys::Passkey { p256, slh } = &self.keys else { return None };
-        let challenge = passkey_challenge(exporter, dialer, device);
+        let challenge = hello_challenge(exporter, dialer, device);
         if !self.assertion.verify(p256, OpId(challenge)) {
             return None;
         }
@@ -233,8 +248,8 @@ impl PasskeyHello {
 }
 
 /// What both halves of a passkey's hello sign: a hash of the end it speaks for, the exporter and the device. Its own
-/// hash, so no op's id is ever one.
-fn passkey_challenge(exporter: &[u8; 32], dialer: bool, device: SignerId) -> [u8; 32] {
+/// hash, so no op's id is ever one. A browser's ceremony signs it (`Ceremony::hello`).
+pub fn hello_challenge(exporter: &[u8; 32], dialer: bool, device: SignerId) -> [u8; 32] {
     let mut h = Hasher::new("passkey hello");
     h.update(&[u8::from(dialer)]).update(exporter).update(&device.0);
     h.finalize()
@@ -306,8 +321,8 @@ impl RelayPass {
 }
 
 /// What both halves of a relay pass sign: a hash of the endpoint and when the pass was made. Its own hash, so no op's
-/// id is ever one.
-fn pass_challenge(endpoint: &[u8; 32], made: u64) -> [u8; 32] {
+/// id is ever one. A browser's ceremony signs it (`Ceremony::pass`).
+pub fn pass_challenge(endpoint: &[u8; 32], made: u64) -> [u8; 32] {
     let mut h = Hasher::new("relay pass");
     h.update(endpoint).update(&made.to_be_bytes());
     h.finalize()
@@ -355,19 +370,20 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 
 impl Assertion {
     /// A real assertion by the passkey `key` over `op`: the client data is a `webauthn.get` for this op from one of
-    /// our origins, the authenticator data is for our relying party with the user present and verified, and the
-    /// signature checks out.
+    /// our origins, not in a frame of another, the authenticator data is for our relying party with the user present
+    /// and verified (`relying_party`), and the signature checks out.
     pub fn verify(&self, key: &[u8; 33], op: OpId) -> bool {
         let Ok(serde_json::Value::Object(client)) = serde_json::from_slice(&self.client_data_json) else { return false };
         let text = |k: &str| client.get(k).and_then(|v| v.as_str());
         if text("type") != Some("webauthn.get") || text("challenge") != Some(&base64url(&op.0)) {
             return false;
         }
-        if !text("origin").is_some_and(|o| ORIGINS.contains(&o)) || client.get("crossOrigin").and_then(|v| v.as_bool()) == Some(true) {
+        if client.get("crossOrigin").and_then(|v| v.as_bool()) == Some(true) {
             return false;
         }
         let data = &self.authenticator_data;
-        if data.len() < 37 || data[..32] != sha256(RP_ID.as_bytes()) || data[32] & (UP | UV) != UP | UV {
+        let ours = text("origin").is_some_and(|o| data.len() >= 37 && relying_party(o, &data[..32]));
+        if !ours || data[32] & (UP | UV) != UP | UV {
             return false;
         }
         let Ok(key) = p256::ecdsa::VerifyingKey::from_sec1_bytes(key) else { return false };
@@ -375,6 +391,142 @@ impl Assertion {
         let signed = [&data[..], &sha256(&self.client_data_json)].concat();
         key.verify(&signed, &sig).is_ok()
     }
+
+    /// The P-256 keys whose signature it could be: an ECDSA signature recovers to two keys, rarely up to four, and
+    /// the passkey's is among them. A device that didn't see the passkey made learns its key from two assertions over
+    /// different challenges, as the one key both recover to (`passkey_key`).
+    pub fn recover(&self) -> Vec<[u8; 33]> {
+        let Ok(sig) = p256::ecdsa::Signature::from_der(&self.signature) else { return vec![] };
+        let prehash = sha256(&[&self.authenticator_data[..], &sha256(&self.client_data_json)].concat());
+        let mut keys: Vec<[u8; 33]> = vec![];
+        for id in (0..=p256::ecdsa::RecoveryId::MAX).filter_map(|b| p256::ecdsa::RecoveryId::try_from(b).ok()) {
+            let Ok(key) = p256::ecdsa::VerifyingKey::recover_from_prehash(&prehash, &sig, id) else { continue };
+            let key: [u8; 33] = key.to_sec1_point(true).as_bytes().try_into().expect("33 bytes");
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        keys
+    }
+}
+
+/// The P-256 key of the passkey that made assertions `a` and `b` over different challenges: the one key both recover
+/// to (`Assertion::recover`), `None` if not exactly one.
+pub fn passkey_key(a: &Assertion, b: &Assertion) -> Option<[u8; 33]> {
+    let theirs = b.recover();
+    let mut both = a.recover().into_iter().filter(|k| theirs.contains(k));
+    let key = both.next()?;
+    both.next().is_none().then_some(key)
+}
+
+/// A passkey's P-256 key, SEC1 compressed, from its SubjectPublicKeyInfo in DER, as `navigator.credentials.create`
+/// hands it out (`AuthenticatorAttestationResponse.getPublicKey`): `None` unless it is a P-256 key.
+pub fn spki_p256(spki: &[u8]) -> Option<[u8; 33]> {
+    // SEQUENCE { SEQUENCE { id-ecPublicKey, prime256v1 }, BIT STRING { 0 unused bits, then the point, uncompressed } }
+    const PREFIX: [u8; 26] = [
+        0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, //
+        0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+    ];
+    let point = spki.strip_prefix(&PREFIX[..]).filter(|p| p.len() == 65 && p[0] == 4)?;
+    let key = p256::ecdsa::VerifyingKey::from_sec1_bytes(point).ok()?;
+    key.to_sec1_point(true).as_bytes().try_into().ok()
+}
+
+/// What a passkey's WebAuthn ceremony brings back (P8e): `navigator.credentials.get`'s assertion over a challenge,
+/// and the passkey's PRF output on `PRF_SALT` from the same ceremony. The passkey's hash-based key and the key sealed
+/// to it derive from that output, so a device holds them only while it holds the ceremony, and they are wiped with it.
+/// A browser's authenticator makes one; a software passkey makes one the same way (`Passkey::ceremony`).
+pub struct Ceremony {
+    pub assertion: Assertion,
+    prf: Zeroizing<[u8; 32]>,
+}
+
+impl ZeroizeOnDrop for Ceremony {}
+
+/// The PRF output shows nowhere.
+impl fmt::Debug for Ceremony {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Ceremony").field("assertion", &self.assertion).finish_non_exhaustive()
+    }
+}
+
+impl Ceremony {
+    /// A ceremony's assertion, and the PRF output on `PRF_SALT` it brought.
+    pub fn new(assertion: Assertion, prf: [u8; 32]) -> Ceremony {
+        Ceremony { assertion, prf: Zeroizing::new(prf) }
+    }
+
+    /// The challenge its assertion signed, as its client data says: `None` unless that is 32 bytes.
+    pub fn challenge(&self) -> Option<[u8; 32]> {
+        let client: serde_json::Value = serde_json::from_slice(&self.assertion.client_data_json).ok()?;
+        unbase64url(client.get("challenge")?.as_str()?)?.try_into().ok()
+    }
+
+    /// The keys of its passkey, whose P-256 key is `p256`: the hash-based key derives from the PRF output.
+    pub fn keys(&self, p256: [u8; 33]) -> SignerKeys {
+        SignerKeys::Passkey { p256, slh: slh_public(&self.slh()) }
+    }
+
+    fn slh(&self) -> slh_dsa::SigningKey<Sha2_128f> {
+        slh_key("passkey slh-dsa key", &self.prf)
+    }
+
+    /// Its passkey's hash-based key, if it is a ceremony over `challenge` of the passkey whose keys are `keys`: its
+    /// PRF output derives their hash-based key, and its assertion verifies under their P-256 key.
+    fn of(&self, keys: &SignerKeys, challenge: [u8; 32]) -> Option<slh_dsa::SigningKey<Sha2_128f>> {
+        let SignerKeys::Passkey { p256, slh } = keys else { return None };
+        let key = self.slh();
+        (slh_public(&key) == *slh && self.assertion.verify(p256, OpId(challenge))).then_some(key)
+    }
+
+    /// The signature on op `op` of the passkey whose keys are `keys`: the assertion as its classical half, and with
+    /// `pq` the hash-based half. `None` unless this is that passkey's ceremony over the op's id.
+    pub fn sign(&self, keys: SignerKeys, op: OpId, pq: bool) -> Option<Signature> {
+        let slh = self.of(&keys, op.0)?;
+        let classical = Classical::Passkey(self.assertion.clone());
+        Some(Signature { keys, classical, pq: pq.then(|| sign_pq(&slh, op)) })
+    }
+
+    /// The hello (`PasskeyHello`) of the passkey whose keys are `keys` on the connection whose TLS exporter is
+    /// `exporter`, for the end that dialed if `dialer`, whose hello proved `device`: `None` unless this is that
+    /// passkey's ceremony over their `hello_challenge`.
+    pub fn hello(&self, keys: SignerKeys, exporter: &[u8; 32], dialer: bool, device: SignerId) -> Option<PasskeyHello> {
+        let challenge = hello_challenge(exporter, dialer, device);
+        let slh = self.of(&keys, challenge)?;
+        let sig = slh.try_sign_with_context(&challenge, PASSKEY_HELLO_CONTEXT, None).expect("a short context");
+        Some(PasskeyHello { keys, assertion: self.assertion.clone(), sig: sig.to_vec() })
+    }
+
+    /// The pass (`RelayPass`) of the passkey whose keys are `keys` for `endpoint`, made at `made`: `None` unless this
+    /// is that passkey's ceremony over their `pass_challenge`.
+    pub fn pass(&self, keys: SignerKeys, endpoint: [u8; 32], made: u64) -> Option<RelayPass> {
+        let challenge = pass_challenge(&endpoint, made);
+        let slh = self.of(&keys, challenge)?;
+        let sig = slh.try_sign_with_context(&challenge, RELAY_PASS_CONTEXT, None).expect("a short context");
+        Some(RelayPass { keys, assertion: self.assertion.clone(), sig: sig.to_vec(), endpoint, made })
+    }
+
+    /// The key keys are sealed to for its passkey, from the PRF output: what the passkey lends a device for the
+    /// ceremony.
+    pub fn seal_secret(&self) -> Secret {
+        Secret::derive("passkey seal key", &self.prf)
+    }
+}
+
+/// An assertion made at `origin` for the relying party whose id hashes to `rp` is ours: maia.city's, from one of
+/// `ORIGINS`; or, in a build for the tests with the feature `localhost-passkeys`, localhost's, from a page on it.
+fn relying_party(origin: &str, rp: &[u8]) -> bool {
+    if ORIGINS.contains(&origin) {
+        return rp == sha256(RP_ID.as_bytes());
+    }
+    #[cfg(feature = "localhost-passkeys")]
+    {
+        let port = |p: &str| !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit());
+        if origin == "http://localhost" || origin.strip_prefix("http://localhost:").is_some_and(port) {
+            return rp == sha256(TEST_RP_ID.as_bytes());
+        }
+    }
+    false
 }
 
 /// base64url without padding, as WebAuthn encodes the challenge.
@@ -388,6 +540,32 @@ pub fn base64url(bytes: &[u8]) -> String {
         }
     }
     s
+}
+
+/// The bytes `text` encodes in base64url without padding (`base64url`): `None` if it is no such text.
+pub fn unbase64url(text: &str) -> Option<Vec<u8>> {
+    let digit = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'-' => Some(62),
+        b'_' => Some(63),
+        _ => None,
+    };
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    for chunk in text.as_bytes().chunks(4) {
+        if chunk.len() == 1 {
+            return None;
+        }
+        let n = chunk.iter().enumerate().try_fold(0u32, |n, (i, &c)| Some(n | u32::from(digit(c)?) << (18 - 6 * i)))?;
+        let bytes = n.to_be_bytes();
+        out.extend_from_slice(&bytes[1..chunk.len()]);
+        // the bits a shorter last chunk leaves over are zero, as `base64url` writes it
+        if chunk.len() < 4 && (n << (8 * (chunk.len() - 1))) & 0x00ff_ffff != 0 {
+            return None;
+        }
+    }
+    Some(out)
 }
 
 /// An SLH-DSA key from 32 secret bytes: its three 16-byte seeds read from a hash of them.
@@ -542,26 +720,27 @@ impl Passkey {
         self.sign_at(op, ORIGINS[0], pq)
     }
 
-    /// The passkey's hello on the connection whose TLS exporter is `exporter`, for the end that dialed if `dialer`,
-    /// whose hello proved `device` (`PasskeyHello`): an assertion and the hash-based half, in one ceremony.
-    pub fn hello(&mut self, exporter: &[u8; 32], dialer: bool, device: SignerId) -> PasskeyHello {
-        let challenge = passkey_challenge(exporter, dialer, device);
+    /// The passkey's ceremony over `challenge`, on the website (`Ceremony`): an assertion, and the PRF output on
+    /// `PRF_SALT`, as a browser's authenticator answers `navigator.credentials.get` with the PRF extension.
+    pub fn ceremony(&mut self, challenge: [u8; 32]) -> Ceremony {
         let Classical::Passkey(assertion) = self.sign(OpId(challenge), false).classical else {
             unreachable!("a passkey signs by assertion")
         };
-        let sig = self.slh.try_sign_with_context(&challenge, PASSKEY_HELLO_CONTEXT, None).expect("a short context");
-        PasskeyHello { keys: self.keys(), assertion, sig: sig.to_vec() }
+        Ceremony { assertion, prf: self.prf(PRF_SALT) }
+    }
+
+    /// The passkey's hello on the connection whose TLS exporter is `exporter`, for the end that dialed if `dialer`,
+    /// whose hello proved `device` (`PasskeyHello`): an assertion and the hash-based half, in one ceremony.
+    pub fn hello(&mut self, exporter: &[u8; 32], dialer: bool, device: SignerId) -> PasskeyHello {
+        let ceremony = self.ceremony(hello_challenge(exporter, dialer, device));
+        ceremony.hello(self.keys(), exporter, dialer, device).expect("its own ceremony")
     }
 
     /// The passkey's pass to the server's relay for `endpoint`, made at `made`, seconds since 1970 (`RelayPass`): an
     /// assertion and the hash-based half, in one ceremony.
     pub fn pass(&mut self, endpoint: [u8; 32], made: u64) -> RelayPass {
-        let challenge = pass_challenge(&endpoint, made);
-        let Classical::Passkey(assertion) = self.sign(OpId(challenge), false).classical else {
-            unreachable!("a passkey signs by assertion")
-        };
-        let sig = self.slh.try_sign_with_context(&challenge, RELAY_PASS_CONTEXT, None).expect("a short context");
-        RelayPass { keys: self.keys(), assertion, sig: sig.to_vec(), endpoint, made }
+        let ceremony = self.ceremony(pass_challenge(&endpoint, made));
+        ceremony.pass(self.keys(), endpoint, made).expect("its own ceremony")
     }
 
     /// Its private key: the seed `from_seed` makes the same passkey again from, as a platform syncs a passkey between
@@ -590,7 +769,7 @@ impl Passkey {
     /// The keys of the device whose salt ends in `nonce`, derived from the passkey's PRF output on that salt, as the
     /// device derives them at every unlock.
     pub fn device(&self, nonce: [u8; 32]) -> DeviceKey {
-        DeviceKey::from_secret(*self.prf(&[DEVICE_SALT, &nonce[..]].concat()))
+        DeviceKey::from_secret(*self.prf(&device_salt(&nonce)))
     }
 }
 
@@ -770,7 +949,7 @@ mod tests {
         let stolen = PasskeyHello { keys, assertion: hello.assertion.clone(), sig: theirs.sig };
         assert!(stolen.verify(&exporter, true, device).is_some_and(|p| p != passkey.id()));
         // an op's signature over the same challenge is no hello: its hash-based half signs under the op's context
-        let challenge = OpId(passkey_challenge(&exporter, true, device));
+        let challenge = OpId(hello_challenge(&exporter, true, device));
         let op = passkey.sign(challenge, true);
         let Classical::Passkey(assertion) = op.classical.clone() else { unreachable!() };
         let replayed = PasskeyHello { keys: passkey.keys(), assertion, sig: op.pq.clone().expect("both halves") };
@@ -838,5 +1017,97 @@ mod tests {
         assert_ne!(passkey.device([5; 32]).id(), other.device([5; 32]).id());
         // and none of them is the passkey's own key to seal to
         assert_ne!(passkey.device([5; 32]).seal_secret(), passkey.seal_secret());
+    }
+
+    #[test]
+    fn base64url_reads_back_what_it_writes() {
+        for bytes in [&b""[..], b"f", b"fo", b"foo", b"foob", b"fooba", b"foobar", &[0xfb, 0xff], &[7; 32]] {
+            assert_eq!(unbase64url(&base64url(bytes)).as_deref(), Some(bytes));
+        }
+        // padding, another alphabet's digits, a lone last digit, or bits left over: none is base64url as we write it
+        for text in ["Zg==", "+/8", "Z", "Zh", "Zm9", "Zm8=", "Zm 9"] {
+            assert_eq!(unbase64url(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_ceremony_signs_as_its_passkey_does() {
+        let mut passkey = Passkey::from_seed([1; 32]);
+        let device = passkey.device([5; 32]);
+        let op = op(passkey.id(), vec![device.id()]);
+        let ceremony = passkey.ceremony(op.id().0);
+        assert_eq!(ceremony.challenge(), Some(op.id().0));
+        assert_eq!(ceremony.keys(passkey.public()), passkey.keys(), "its PRF output derives the hash-based key");
+        assert_eq!(ceremony.seal_secret(), passkey.seal_secret(), "and the key sealed to the passkey");
+        // an op signed by the ceremony and the device is signed by both
+        let sig = ceremony.sign(passkey.keys(), op.id(), true).expect("the passkey's signature");
+        assert!(Signed { op: op.clone(), sigs: vec![sig, device.sign(op.id(), true)] }.verify().is_ok());
+        // a hello and a pass made in ceremonies prove the passkey, as those it makes itself do
+        let (exporter, endpoint, made) = ([1; 32], [2; 32], 1_791_500_000);
+        let hello = passkey.ceremony(hello_challenge(&exporter, true, device.id()));
+        let hello = hello.hello(passkey.keys(), &exporter, true, device.id()).expect("a hello");
+        assert_eq!(hello.verify(&exporter, true, device.id()), Some(passkey.id()));
+        let pass = passkey.ceremony(pass_challenge(&endpoint, made)).pass(passkey.keys(), endpoint, made);
+        assert_eq!(pass.expect("a pass").verify(&endpoint, made), Some(passkey.id()));
+    }
+
+    #[test]
+    fn a_ceremony_signs_only_its_challenge_as_its_own_passkey() {
+        let (mut passkey, mut other) = (Passkey::from_seed([1; 32]), Passkey::from_seed([2; 32]));
+        let device = passkey.device([5; 32]).id();
+        let (a, b) = (op(passkey.id(), vec![]), op(passkey.id(), vec![device]));
+        let ceremony = passkey.ceremony(a.id().0);
+        assert!(ceremony.sign(passkey.keys(), a.id(), true).is_some());
+        // another op, a hello or a pass: its assertion signed none of them
+        assert!(ceremony.sign(passkey.keys(), b.id(), true).is_none());
+        assert!(ceremony.hello(passkey.keys(), &[1; 32], true, device).is_none());
+        assert!(ceremony.pass(passkey.keys(), [2; 32], 0).is_none());
+        // another passkey's ceremony, or keys with another passkey's half: its PRF output or assertion isn't theirs
+        assert!(other.ceremony(a.id().0).sign(passkey.keys(), a.id(), true).is_none());
+        let (SignerKeys::Passkey { slh: theirs, .. }, SignerKeys::Passkey { slh, .. }) = (other.keys(), passkey.keys())
+        else {
+            unreachable!()
+        };
+        assert!(ceremony.sign(SignerKeys::Passkey { p256: passkey.public(), slh: theirs }, a.id(), true).is_none());
+        assert!(ceremony.sign(SignerKeys::Passkey { p256: other.public(), slh }, a.id(), true).is_none());
+        // and a device signs no ceremony
+        assert!(ceremony.sign(DeviceKey::from_secret([7; 32]).keys(), a.id(), true).is_none());
+    }
+
+    #[test]
+    fn a_passkeys_key_comes_from_its_public_key_info_or_two_assertions() {
+        let mut passkey = Passkey::from_seed([1; 32]);
+        let point = passkey.key.verifying_key().to_sec1_point(false);
+        let mut spki = vec![48, 89, 48, 19, 6, 7, 42, 134, 72, 206, 61, 2, 1];
+        spki.extend([6, 8, 42, 134, 72, 206, 61, 3, 1, 7, 3, 66, 0]);
+        spki.extend_from_slice(point.as_bytes());
+        assert_eq!(spki_p256(&spki), Some(passkey.public()), "as navigator.credentials.create hands it out");
+        assert_eq!(spki_p256(&spki[..90]), None);
+        let mut other = spki.clone();
+        other[22] ^= 1;
+        assert_eq!(spki_p256(&other), None, "another curve");
+        // a passkey that made no key here: each assertion recovers to a few keys, two of them to the passkey's alone
+        let (a, b) = (passkey.ceremony([1; 32]).assertion, passkey.ceremony([2; 32]).assertion);
+        assert!(a.recover().contains(&passkey.public()) && a.recover().len() >= 2, "{:?}", a.recover().len());
+        assert_eq!(passkey_key(&a, &b), Some(passkey.public()));
+        assert_eq!(passkey_key(&a, &a), None, "one assertion twice leaves it open");
+        let theirs = Passkey::from_seed([2; 32]).ceremony([2; 32]).assertion;
+        assert_eq!(passkey_key(&a, &theirs), None, "two passkeys' assertions share no key");
+        assert!(Assertion { signature: vec![1, 2, 3], ..a }.recover().is_empty());
+    }
+
+    #[test]
+    fn localhost_passkeys_count_only_in_a_build_for_the_tests() {
+        let (ours, test) = (sha256(RP_ID.as_bytes()), sha256(TEST_RP_ID.as_bytes()));
+        assert!(relying_party("https://maia.city", &ours) && !relying_party("https://maia.city", &test));
+        let on = cfg!(feature = "localhost-passkeys");
+        for origin in ["http://localhost:5173", "http://localhost"] {
+            assert_eq!(relying_party(origin, &test), on, "{origin}");
+            assert!(!relying_party(origin, &ours), "{origin} for maia.city");
+        }
+        let others = ["http://localhost:", "http://localhost:5173/", "http://localhost.example", "https://localhost:8"];
+        for origin in others {
+            assert!(!relying_party(origin, &test), "{origin}");
+        }
     }
 }

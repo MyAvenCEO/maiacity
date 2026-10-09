@@ -1,0 +1,283 @@
+<!--
+	This browser (P8e): the browser itself as a device of its person, apart from the Lab's world. The person's passkey
+	stays in the browser's authenticator and each ceremony asks them; the device's keys derive from it at every unlock,
+	and what it holds is kept in IndexedDB, so it opens again in one ceremony. A new person makes their passkey and founds
+	their vault here; a person with a device already links this one through the code that device shows, scanned as a QR
+	code or opened as a link (?link=). avenDB's server and relay aren't deployed yet: until they are, give a test run's.
+-->
+<script>
+	import { onDestroy, onMount } from 'svelte';
+
+	const STORE = 'avendb-browser';
+
+	/** @type {any} the device's WebAssembly */
+	let avendb = null;
+	/** @type {any} */
+	let stores = null;
+	/** @type {any} */
+	let store = null;
+	/** @type {any} */
+	let device = $state(null);
+	/** @type {any} what opens this browser's device again */
+	let meta = $state(null);
+	/** @type {'loading' | 'new' | 'closed' | 'open'} */
+	let phase = $state('loading');
+	let doing = $state('');
+	let error = $state('');
+	let relay = $state('');
+	let server = $state('');
+	let code = $state('');
+	let name = $state('This browser');
+	/** @type {any[]} */
+	let notes = $state([]);
+	let qr = $state('');
+	let link = $state('');
+	/** @type {Record<string, string>} */
+	let edits = $state({});
+	/** @type {Record<string, { title: string, body: string }>} */
+	let drafts = $state({});
+	/** @type {ReturnType<typeof setInterval> | undefined} */
+	let timer;
+
+	/** @param {string} key */
+	function remembered(key) {
+		try {
+			return localStorage.getItem(`avendb.${key}`) ?? '';
+		} catch {
+			return '';
+		}
+	}
+
+	/** @param {string} key @param {string} value */
+	function remember(key, value) {
+		try {
+			localStorage.setItem(`avendb.${key}`, value);
+		} catch {
+			// a private window keeps nothing: the fields stay empty next time
+		}
+	}
+
+	const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+	const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
+
+	onMount(async () => {
+		const q = new URLSearchParams(location.search);
+		relay = q.get('relay') ?? remembered('relay');
+		server = q.get('server') ?? remembered('server');
+		code = q.get('link') ?? '';
+		try {
+			const pkg = await import('./device/avendb_browser.js');
+			await pkg.default();
+			avendb = pkg;
+			stores = await import('./device/store.js');
+			store = await stores.open(STORE);
+			meta = await store.meta();
+			phase = meta ? 'closed' : 'new';
+		} catch (e) {
+			error = `This browser can't be a device: ${/** @type {Error} */ (e).message}`;
+			phase = 'new';
+		}
+	});
+
+	onDestroy(() => {
+		clearInterval(timer);
+		device?.close();
+	});
+
+	/** Runs `work`, showing what it does and what went wrong. @param {string} what @param {() => Promise<void>} work */
+	async function run(what, work) {
+		[doing, error] = [what, ''];
+		try {
+			await work();
+		} catch (e) {
+			error = /** @type {Error} */ (e).message ?? String(e);
+		} finally {
+			doing = '';
+		}
+	}
+
+	async function ceremonies(/** @type {string | undefined} */ id) {
+		const passkey = await import('./device/passkey.js');
+		return { passkey, ...passkey.ceremonies(avendb, id) };
+	}
+
+	const found = () =>
+		run('Making your passkey and founding your vault: your browser asks you four times', async () => {
+			const { passkey, unlock, sign, held } = await ceremonies(undefined);
+			const made = await passkey.create(name);
+			held.id = made.id;
+			const nonce = crypto.getRandomValues(new Uint8Array(32));
+			const d = await avendb.Device.found(name, relay, server, made.spki, await unlock(nonce), sign);
+			await started(d, nonce, made.id);
+		});
+
+	const linkHere = () =>
+		run('Linking this browser: your browser asks you four times', async () => {
+			const { unlock, sign, held } = await ceremonies(undefined);
+			const nonce = crypto.getRandomValues(new Uint8Array(32));
+			const d = await avendb.Device.link(name, relay, code.trim(), await unlock(nonce), sign);
+			await started(d, nonce, held.id);
+		});
+
+	const openAgain = () =>
+		run('Opening this browser’s device: your browser asks you once', async () => {
+			const { unlock } = await ceremonies(meta.credential);
+			const kept = await store.load();
+			const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.ops, kept.keys);
+			await running(d);
+		});
+
+	/** @param {any} d @param {Uint8Array} nonce @param {string} credential */
+	async function started(d, nonce, credential) {
+		meta = { name, relay, nonce: hex(nonce), credential, passkey: d.passkey() };
+		await store.setMeta(meta);
+		remember('relay', relay);
+		remember('server', server);
+		await running(d);
+	}
+
+	/** @param {any} d */
+	async function running(d) {
+		device = d;
+		phase = 'open';
+		store.follow(d).catch((/** @type {Error} */ e) => (error = `Saving failed: ${e.message}`));
+		link = `${location.origin}${location.pathname}?${new URLSearchParams({ link: d.offer(), relay: meta.relay })}`;
+		qr = avendb.qrSvg(link, 240);
+		await refresh();
+		timer = setInterval(refresh, 2000);
+	}
+
+	async function refresh() {
+		if (!device) return;
+		notes = await device.notes();
+		for (const s of notes) {
+			drafts[s.space] ??= { title: '', body: '' };
+			for (const doc of s.docs) edits[doc.entry] ??= doc.text;
+		}
+	}
+
+	/** @param {any} space @param {any} doc */
+	const save = (space, doc) =>
+		run('Saving', async () => {
+			await device.setText(space.founder, space.space, doc.entry, 2, edits[doc.entry]);
+			await refresh();
+		});
+
+	/** @param {any} space */
+	const write = (space) =>
+		run('Writing', async () => {
+			const d = drafts[space.space];
+			if (!d.title.trim()) return;
+			const entry = await device.write(space.founder, space.space, d.title.trim(), d.body);
+			drafts[space.space] = { title: '', body: '' };
+			edits[entry] = d.body;
+			await refresh();
+		});
+
+	const forget = () =>
+		run('Forgetting this browser’s device', async () => {
+			clearInterval(timer);
+			await device?.close();
+			store.close();
+			await stores.remove(STORE);
+			[device, meta, notes, phase] = [null, null, [], 'new'];
+			store = await stores.open(STORE);
+		});
+</script>
+
+<div class="browser">
+	{#if phase === 'loading'}
+		<p class="muted">Loading this browser’s device…</p>
+	{:else if phase === 'open'}
+		<div class="cards">
+			<article class="card">
+				<h3>{meta?.name}</h3>
+				<p class="muted">Its passkey stays in your browser; what it holds stays in this browser’s storage, end-to-end encrypted on the way to your other devices.</p>
+				<p>Link your next device: scan this with its camera, or open the link there.</p>
+				<!-- the SVG is the device's own, made by qrSvg from the link -->
+				<div class="qr">{@html qr}</div>
+				<input class="code" readonly value={link} onfocus={(e) => e.currentTarget.select()} />
+				<button class="btn quiet" disabled={!!doing} onclick={forget}>Forget this browser’s device</button>
+			</article>
+			{#each notes as space (space.space)}
+				<article class="card">
+					<h3>Notes</h3>
+					{#each space.docs as doc (doc.entry)}
+						<label class="doc">
+							<b>{doc.title}</b>
+							<textarea rows="3" bind:value={edits[doc.entry]}></textarea>
+						</label>
+						{#if edits[doc.entry] !== doc.text}
+							<button class="btn" disabled={!!doing} onclick={() => save(space, doc)}>Save</button>
+						{/if}
+					{:else}
+						<p class="muted">No notes yet.</p>
+					{/each}
+					{#if drafts[space.space]}
+						<input placeholder="A new note’s title" bind:value={drafts[space.space].title} />
+						<textarea rows="2" placeholder="What it says" bind:value={drafts[space.space].body}></textarea>
+						<button class="btn primary" disabled={!!doing || !drafts[space.space].title.trim()} onclick={() => write(space)}>Write it</button>
+					{/if}
+				</article>
+			{/each}
+		</div>
+	{:else}
+		<div class="cards">
+			{#if phase === 'closed'}
+				<article class="card">
+					<h3>{meta?.name}</h3>
+					<p>This browser is a device of yours already. Open it with your passkey.</p>
+					<button class="btn primary" disabled={!!doing} onclick={openAgain}>Open</button>
+					<button class="btn quiet" disabled={!!doing} onclick={forget}>Forget it</button>
+				</article>
+			{:else}
+				<article class="card">
+					<h3>Link through your other device</h3>
+					<p>Scan the QR code your other device shows, or paste its code.</p>
+					<input placeholder="Its code: AVENDB1…" bind:value={code} />
+					<button class="btn primary" disabled={!!doing || !code.trim() || !relay.trim()} onclick={linkHere}>Link this browser</button>
+				</article>
+				<article class="card">
+					<h3>New to avenDB?</h3>
+					<p>Make your passkey here and found your vault: the passkey is your vault’s root, and its only recovery.</p>
+					<button class="btn" disabled={!!doing || !server.trim() || !relay.trim()} onclick={found}>Make my passkey</button>
+				</article>
+				<article class="card">
+					<h3>avenDB’s server</h3>
+					<p class="muted">It isn’t deployed yet. Until it is, give a test server’s relay and code.</p>
+					<input placeholder="Its relay: https://…" bind:value={relay} />
+					<input placeholder="The server’s code: AVENDB1…" bind:value={server} />
+				</article>
+				<label class="name">This browser’s name <input bind:value={name} /></label>
+			{/if}
+		</div>
+	{/if}
+	{#if doing}<p class="muted" role="status">{doing}…</p>{/if}
+	{#if error}<p class="bad" role="alert">{error}</p>{/if}
+</div>
+
+<style>
+	.browser input,
+	.browser textarea {
+		width: 100%;
+		box-sizing: border-box;
+		margin: 0.25rem 0 0.5rem;
+		font: inherit;
+	}
+	.qr :global(svg) {
+		width: 240px;
+		max-width: 100%;
+		height: auto;
+		background: #fff;
+	}
+	.code {
+		font-family: ui-monospace, monospace;
+		font-size: 0.75rem;
+	}
+	.doc {
+		display: block;
+	}
+	.bad {
+		color: #b42318;
+	}
+</style>

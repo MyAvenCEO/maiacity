@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# avenDB's device in Chromium (P8d): builds avendb-browser for the browser (with SIMD, see .cargo/config.toml) into
-# target/avendb-browser-pkg/, then runs its page test (crates/avendb-browser/tests/page.rs), which serves the page,
-# starts a relay, the server and Samuel's Mac on this machine, and has two headless Chromiums link through them.
+# avenDB's device in Chromium (P8d, P8e): builds avendb-browser for the browser (with SIMD, see .cargo/config.toml) into
+# target/avendb-browser-pkg/, with passkeys of localhost, then runs its page test (crates/avendb-browser/tests/page.rs),
+# which serves the page, starts a relay and the server on this machine, and drives a headless Chromium whose virtual
+# authenticator holds Eve's passkey: her browsers found her vault, link and open again from IndexedDB.
 #
 #   avendb/scripts/test-browser.sh
 #
@@ -18,9 +19,10 @@ if [ "$have" != "$want" ]; then
 	exit 1
 fi
 
-cargo build -p avendb-browser --target wasm32-unknown-unknown --release
+cargo build -p avendb-browser --target wasm32-unknown-unknown --release --features localhost-passkeys
 out=target/avendb-browser-pkg
 rm -rf "$out"
 wasm-bindgen --target web --no-typescript --out-dir "$out" target/wasm32-unknown-unknown/release/avendb_browser.wasm
 ls -l "$out"
-AVENDB_PKG="$PWD/$out" cargo test -p avendb-browser --test page -- --ignored --nocapture
+# the test's relay and server take the same passkeys of localhost as the page
+AVENDB_PKG="$PWD/$out" cargo test -p avendb-browser --features localhost-passkeys --test page -- --ignored --nocapture

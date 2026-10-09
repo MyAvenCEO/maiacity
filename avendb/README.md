@@ -89,14 +89,42 @@ device of its own, as a Mac or a phone is.
 - A big answer comes a page at a time, a few MiB (`Options::page`), each op after the ops it builds on, so a device
   takes each page as it comes and never holds a whole vault's answer at once.
 
-Not yet (P8e): the passkey is a software passkey, brought into the page by its secret, as a platform syncs a passkey
-between its person's devices; the browser's own WebAuthn, with its PRF extension, takes its place in the tile. The
-device's store is in memory, so a page links again each time it opens, until IndexedDB keeps it.
+### The browser's passkey (P8e)
 
-`scripts/test-browser.sh` builds it (it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium,
-Playwright's or `$AVENDB_CHROMIUM`) and runs `tests/page.rs`: a relay, the server and Samuel's Mac on this machine, and
-two pages in headless Chromium. The first links through the Mac's code, reads Welcome and edits it, and reads the Mac's
-answer; the second links through the first page's code, browser to browser, through the relay alone.
+The person's passkey stays in the browser's own authenticator: WebAuthn with its PRF extension
+(`crates/avendb-browser/js/passkey.js`). The device never holds the passkey, only what one ceremony at a time brings
+back (`sign::Ceremony`): an assertion over a challenge, and the PRF output on the app's salt, from which the passkey's
+SLH-DSA key and the key sealed to it derive. The device drafts each op the passkey signs (`Lab::draft`), the passkey
+signs the op's id as the ceremony's challenge, and the device keeps the op (`Lab::complete`). The ceremony that unlocks
+the device also brings the PRF output on the device's own salt, which ends in 32 random bytes kept on the device; its
+keys derive from it at every unlock. The Lab holds no secret of the passkey: it lends the seal secret from the ceremony
+for that op alone, and forgets the McEliece pair it made from it once the device locks.
+
+- **Found** (`Device::found`): a new person's first browser makes their passkey, founds their vault, its first space,
+  and grants the server relay on it, in four ceremonies: the unlock, the pass to the relay, the vault's genesis, and the
+  op that adds the device. The server's relay lets any passkey's pass in while it is open to sign-up
+  (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on the server knows the device.
+- **Link** (`Device::link`, `Node::link_with`): a browser of a person who has a device already links through the code
+  that device shows, in four ceremonies: the unlock, the pass, the passkey's hello, and the join. It never saw the
+  passkey made, so it learns its P-256 key as the one key both the unlock's and the pass's assertions recover to
+  (`sign::passkey_key`).
+- **Open** (`Device::open`): what the device holds is kept in IndexedDB (`js/store.js`), its ops in the order it took
+  them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
+  one ceremony, the unlock; the relay knows it, so it needs no pass.
+
+In the tile, the screen **This browser** is this device: it founds a vault or links through a code (a QR code that a
+phone's camera opens as a link, `?link=`), shows its own code as a QR code for the next device, and lists, edits and
+writes notes. avenDB's server isn't deployed yet (P8f), so for now the screen takes a test server's relay and code.
+
+`scripts/test-browser.sh` builds it with passkeys of `localhost` (the feature `localhost-passkeys`, never in a build
+that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium, Playwright's or
+`$AVENDB_CHROMIUM`) and runs `tests/page.rs`: a relay open to sign-up and the server on this machine, and one headless
+Chromium driven over its DevTools protocol, whose virtual authenticator, with PRF, holds Eve's passkey. Each of her
+browsers is a frame of one tab, with a store of its own in IndexedDB: the first makes her passkey, founds her vault and
+writes a note (3.5 s, four ceremonies); the second links through the first one's code and edits the note (3.3 s, four
+ceremonies); the first closes and opens again from its store (0.8 s, one ceremony), reads the edit and edits it once
+more. `tests/device.rs` runs the same natively, with a software passkey in the authenticator's place, and Samuel's
+browsers linking through his Mac.
 
 ## The device's secure boundary
 
@@ -149,6 +177,7 @@ plain HTTP on port 3350. Its environment:
 | `AVENDB_RELAY_BIND` | `0.0.0.0:3350` | The socket its relay serves plain HTTP on, behind the proxy that ends TLS |
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
 | `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
+| `AVENDB_SIGNUP` | `open` | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `closed`: only passkeys of vaults it knows |
 | `RUST_LOG` | `info` | How much it logs |
 
 ### Deploying the server
@@ -189,5 +218,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8b | The server: a node in a folder of its own that keeps its device's secret and its store, founds its vault at its first start with an owner key it then forgets, and hands out its contact card so that a device can grant it relay on a space; its relay, which lets in only the devices of the vaults acting in the spaces it relays and lets go of a device taken out of its vault; each node's store on disk (append-only, a torn record cut back, a forged op dropped); peers out of reach tried less and less often; scenario 5 through the relay alone; the server's image, not deployed | Merged |
 | P8c | Linking a new device by its passkey alone, through a device's QR code or the server's offer: the passkey's hello on the connection, the link card of its vaults' logs (T20), the join the peer takes only for the device on the connection; recovery through the server; keys in the device's secure boundary (wiped as they are dropped, none left once a device locks, randomness no copy rewinds or foresees, no secret in any view); Verifpal models of the hello, the link and the sealed box with the curves broken (Verifpal rather than ProVerif, which has no package here) | Merged |
 | P8d | A device in the browser: the network crate as WebAssembly, with X25519MLKEM768 in pure Rust; a new device with no UDP let onto the server's relay by its passkey's pass; big answers a page at a time, each op after its past; two pages in Chromium that link through the relay alone, the second through the first one's code, and sync | Merged |
-| P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) in place of the software passkey, its store in IndexedDB, linking by QR code in the tile | Next |
-| P8f | The server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a second device and the server | |
+| P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) sign in ceremonies over each op, and the Lab holds no secret of them; a new person's first browser founds their vault through the relay open to sign-up; a browser links in four ceremonies and learns the passkey's key from two; its store in IndexedDB, open again in one ceremony; the tile's This browser screen with QR codes; Chromium's virtual authenticator in the test | Merged |
+| P8f | The server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |

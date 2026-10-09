@@ -40,6 +40,10 @@
 //! - **In a browser** (P8d): a page has no UDP, so its node reaches every peer through its relay, which lets the new
 //!   device in by its passkey's pass (`sign::RelayPass`) until it joined; its TLS is ring, with X25519MLKEM768 in pure
 //!   Rust (`kx`), and its tasks and timers run on the page's event loop.
+//! - **The browser's passkey** (P8e): a passkey in the platform's authenticator signs in ceremonies, each of which asks
+//!   its person (`sign::Ceremony`), so a browser links through an `Authenticator` (`Node::link_with`): one ceremony for
+//!   the passkey's hello, one for the op that adds the device. A server open to sign-up (`Admission::open`) lets a
+//!   person's first device onto its relay by a pass of any passkey, to found their vault and make it known.
 
 mod blobs;
 mod disk;
@@ -59,7 +63,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::Action;
-use avendb::sign::RelayPass;
+use avendb::sign::{Ceremony, RelayPass, hello_challenge};
 use avendb::sync::{place, LogId};
 use avendb::wire::{Announce, Reply, Request, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
@@ -178,7 +182,11 @@ impl Options {
 /// vault in its view (P8d, `sign::RelayPass`). The server's node keeps it up to date as its view changes, from before
 /// its endpoint binds; the relay asks it about each client that connects, and lets go of a client it stops admitting.
 #[derive(Clone, Debug, Default)]
-pub struct Admission(Arc<watch::Sender<Admitted>>);
+pub struct Admission {
+    admitted: Arc<watch::Sender<Admitted>>,
+    /// It honours a pass of any passkey (P8e, `Admission::open`).
+    open: bool,
+}
 
 /// Whom the server's relay lets in, by the server's view.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -190,23 +198,62 @@ pub struct Admitted {
 }
 
 impl Admission {
+    /// An admission open to sign-up (P8e): its relay honours a pass of any passkey, for its ten minutes, so that a
+    /// person's first device with no UDP of its own, a browser, founds their vault and makes it known to the server
+    /// (it grants the server relay on a space): from then on the server knows the device. A device on UDP reaches the
+    /// server so anyway; the relay's minutes are what it opens.
+    pub fn open() -> Admission {
+        Admission { open: true, ..Admission::default() }
+    }
+
     /// The relay lets `endpoint` in.
     pub fn admits(&self, endpoint: &EndpointId) -> bool {
-        self.0.borrow().endpoints.contains(endpoint)
+        self.admitted.borrow().endpoints.contains(endpoint)
     }
 
     /// The relay lets in the endpoint a pass of `passkey` names.
     pub fn honours(&self, passkey: &SignerId) -> bool {
-        self.0.borrow().passkeys.contains(passkey)
+        self.open || self.admitted.borrow().passkeys.contains(passkey)
     }
 
     /// Marks each change of whom it admits.
     pub fn watch(&self) -> watch::Receiver<Admitted> {
-        self.0.subscribe()
+        self.admitted.subscribe()
     }
 
     fn set(&self, admitted: Admitted) {
-        self.0.send_if_modified(|now| *now != admitted && { *now = admitted; true });
+        self.admitted.send_if_modified(|now| *now != admitted && { *now = admitted; true });
+    }
+}
+
+/// Signs in its person's passkey's ceremonies as a device links (P8e, `Node::link_with`): a browser's WebAuthn, which
+/// asks its person each time, or a software passkey its Lab holds (`Node::link`).
+pub trait Authenticator {
+    /// The passkey's ceremony over `challenge` (`sign::Ceremony`), for `step`.
+    fn ceremony(&self, challenge: [u8; 32], step: Step) -> impl Future<Output = Result<Ceremony>>;
+}
+
+/// What a passkey's ceremony signs as its device links (`Node::link_with`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Step {
+    /// Its hello on the connection to the device whose code the new device took, before that device hands it the
+    /// link card.
+    Hello,
+    /// The op that adds the new device to its person's vault.
+    Join,
+    /// A device's pass to the relay (`sign::RelayPass`), before it reaches any peer.
+    Pass,
+    /// The genesis of its person's vault, which their first device founds (avendb-browser's `Device::found`).
+    Found,
+}
+
+/// The software passkey `1` in a node's Lab, which makes its ceremonies itself.
+struct InLab(Arc<Shared>, SignerId);
+
+impl Authenticator for InLab {
+    async fn ceremony(&self, challenge: [u8; 32], _: Step) -> Result<Ceremony> {
+        let passkey = self.1;
+        self.0.lab(move |lab, _| lab.ceremony(passkey, challenge)).await.context("the passkey isn't at hand")
     }
 }
 
@@ -245,6 +292,7 @@ impl Node {
             let endpoints = endpoints(&lab.peers(me)).chain([own]).collect();
             admission.set(Admitted { endpoints, passkeys: lab.roots(me).into_iter().collect() });
         }
+        let size = lab.size(me);
         let lookup = MemoryLookup::new();
         let mut builder = Endpoint::builder(presets::Empty)
             .secret_key(SecretKey::from_bytes(&secret))
@@ -291,6 +339,7 @@ impl Node {
             offered: Mutex::default(),
             blob_peers: Mutex::default(),
             changed: Notify::new(),
+            size: watch::Sender::new(size),
             sent: Sent::default(),
         });
         let router = Router::builder(endpoint)
@@ -339,24 +388,49 @@ impl Node {
     /// isn't at hand, it roots no vault the peer knows, or the peer refuses the join; tried again, it sends the same
     /// join.
     pub async fn link(&self, offer: &Offer, passkey: SignerId) -> Result<VaultId> {
+        self.link_with(offer, passkey, &InLab(self.shared.clone(), passkey)).await
+    }
+
+    /// `link`, with `passkey` in the platform's authenticator (P8e): `authenticator` signs its ceremonies, the
+    /// passkey's hello on the connection, then the op that adds this device to its person's vault. The passkey's keys
+    /// must be at hand in the Lab (`Lab::web_passkey`).
+    pub async fn link_with(
+        &self,
+        offer: &Offer,
+        passkey: SignerId,
+        authenticator: &impl Authenticator,
+    ) -> Result<VaultId> {
         self.know(offer.addr.clone());
         let endpoint = offer.addr.id;
         let peer = self.shared.connection(endpoint).await?;
         if peer.device != offer.device {
             bail!("the device at {endpoint} isn't the one offered");
         }
-        let (exporter, dialed) = (session::exporter(&peer.conn)?, peer.dialed);
-        let hello = self.shared.lab(move |lab, me| lab.passkey_hello(me, passkey, &exporter, dialed)).await;
-        let hello = hello.context("the passkey isn't at hand")?.to_wire();
-        let card = session::exchange(&peer.conn, session::LINK, &hello, session::REPLY_LIMIT).await?;
+        let (exporter, dialed, me) = (session::exporter(&peer.conn)?, peer.dialed, self.device());
+        let keys = self.shared.lab(move |lab, _| lab.keys_of(passkey)).await.context("the passkey isn't at hand")?;
+        let hello = authenticator.ceremony(hello_challenge(&exporter, dialed, me), Step::Hello).await?;
+        let hello = hello.hello(keys, &exporter, dialed, me).context("the ceremony isn't the passkey's hello")?;
+        let card = session::exchange(&peer.conn, session::LINK, &hello.to_wire(), session::REPLY_LIMIT).await?;
         let Reply { mut ops, .. } = Reply::from_wire(&card)?;
         // a card carries vault logs, and nothing else
         ops.retain(|s| s.op.vault_of().is_some());
-        let join = self.shared.lab(move |lab, me| {
+        let joining = self.shared.lab(move |lab, me| {
             lab.receive(me, ops, Vec::new());
-            lab.join(me, passkey)
+            lab.joining(me, passkey)
         });
-        let join = join.await.map_err(|why| anyhow!("no vault of this passkey to join: {why:?}"))?;
+        let id = match joining.await.map_err(|why| anyhow!("no vault of this passkey to join: {why:?}"))? {
+            (_, Some(id)) => id,
+            (vault, None) => {
+                let add = move |lab: &mut Lab, me| {
+                    lab.draft(me, &[passkey, me], Action::AddDevice { vault, device: me, seal_to: None })
+                };
+                let draft = self.shared.lab(add).await.map_err(|why| anyhow!("the join is refused: {why:?}"))?;
+                let ceremony = authenticator.ceremony(draft.challenge(), Step::Join).await?;
+                let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &ceremony)]);
+                self.shared.lab(complete).await.map_err(|why| anyhow!("the passkey didn't sign the join: {why:?}"))?
+            }
+        };
+        let join = self.shared.lab(move |lab, me| lab.joined(me, id)).await;
         let Action::AddDevice { vault, .. } = join.op.op.action else { bail!("a join that adds no device") };
         let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
         sent.context("the peer refuses the join")?;
@@ -393,6 +467,12 @@ impl Node {
     /// vault's log before it grants the server relay on a space. How many ops were new.
     pub async fn contact(&self, peer: EndpointId) -> Result<usize> {
         self.shared.contact(peer).await
+    }
+
+    /// Marks each change of what its device holds: how many ops and McEliece keys (`Lab::size`), after every act of
+    /// its own and every op it takes from a peer. A browser saves what changed to its store (P8e).
+    pub fn changes(&self) -> watch::Receiver<(usize, usize)> {
+        self.shared.size.subscribe()
     }
 
     /// The device at endpoint `peer` as its hello proved it, once they are connected.
@@ -569,6 +649,8 @@ struct Shared {
     blob_peers: Mutex<HashMap<u64, SignerId>>,
     /// Woken whenever the node's logs may have changed.
     changed: Notify,
+    /// How many ops and McEliece keys its device holds (`Node::changes`).
+    size: watch::Sender<(usize, usize)>,
     /// How many messages it has sent.
     sent: Sent,
 }
@@ -634,6 +716,7 @@ impl Shared {
             let mut lab = shared.lab.lock().expect("the Lab");
             let out = f(&mut lab, shared.me);
             shared.save(&lab);
+            shared.size.send_if_modified(|size| *size != lab.size(shared.me) && { *size = lab.size(shared.me); true });
             out
         };
         #[cfg(not(target_arch = "wasm32"))]

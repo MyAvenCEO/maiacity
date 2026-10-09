@@ -5,7 +5,8 @@
 //! taken out of its vault. A new device with no UDP of its own, as a browser's, which the node can't know before it
 //! joined, shows a pass its person's passkey signed (P8d, `avendb::sign::RelayPass`): the relay lets it in for ten
 //! minutes if the passkey roots a vault the node knows, long enough to link, and lets it go once its pass runs out,
-//! unless by then the node knows it.
+//! unless by then the node knows it. While sign-up is open (P8e, `Config::signup`), it honours a pass of any passkey,
+//! so that a person's first device, a browser, founds their vault and makes it known to the server in those minutes.
 //!
 //! The relay serves plain HTTP. TLS ends in front of it, at a proxy that must offer X25519MLKEM768, as every device's
 //! TLS offers nothing else (`avendb_net::pq_provider`); and as iroh's relay path is `/relay`, the relay wants a host
@@ -42,6 +43,10 @@ pub struct Config {
     /// as its offer says; if unsaid, the addresses of its own network interfaces, which in a container are the
     /// container's.
     pub public_addr: Option<SocketAddr>,
+    /// Sign-up is open (`AVENDB_SIGNUP`, `open` by default, or `closed`): its relay lets in, for ten minutes, a device
+    /// whose pass any passkey signed (`avendb_net::Admission::open`), not only one whose passkey roots a vault the
+    /// server knows. A device on UDP reaches the server without the relay anyway.
+    pub signup: bool,
 }
 
 impl Config {
@@ -64,6 +69,11 @@ impl Config {
             relay_bind: socket("AVENDB_RELAY_BIND", "0.0.0.0:3350")?,
             relay_url: var("AVENDB_RELAY_URL").map(url).transpose()?,
             public_addr: var("AVENDB_PUBLIC_ADDR").map(|v| v.parse()).transpose().context("AVENDB_PUBLIC_ADDR")?,
+            signup: match var("AVENDB_SIGNUP").as_deref() {
+                None | Some("open") => true,
+                Some("closed") => false,
+                Some(v) => return Err(anyhow!("AVENDB_SIGNUP: {v} is neither open nor closed")),
+            },
         })
     }
 }
@@ -89,7 +99,7 @@ impl Running {
 /// Starts the server as `config` says: its relay, then its node in its folder, made at its first start, which is
 /// reached through that relay and tells it whom to let in.
 pub async fn start(config: &Config) -> Result<Running> {
-    let admission = Admission::default();
+    let admission = if config.signup { Admission::open() } else { Admission::default() };
     let relay = Relay::spawn(config.relay_bind, admission.clone()).await?;
     let url = config.relay_url.clone().unwrap_or_else(|| relay.url());
     let opts = Options {
@@ -175,8 +185,8 @@ struct Gate {
 
 impl Gate {
     /// When the pass the client of `request` shows runs out, if it is one the relay honours at `now`: for the client's
-    /// own endpoint, by a passkey that roots a vault the server knows, made within its ten minutes, and signed both
-    /// ways. The passkey is checked first, the signatures, which take a while, last.
+    /// own endpoint, by a passkey that roots a vault the server knows or by any while sign-up is open, made within its
+    /// ten minutes, and signed both ways. The passkey is checked first, the signatures, which take a while, last.
     fn pass(&self, request: &ClientRequest, now: u64) -> Option<u64> {
         let pass = token_pass(&request.auth_token()?)?;
         if !self.admission.honours(&pass.keys.id()) {
