@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS game state, kept loose on purpose
-// Sandbox 7 — avens trading. The rules of the world, without any drawing: five avens, each with 1,000 HEARTS,
-// a territory that grows 2 of the 5 goods and a ledger of its own prices. Every day each aven needs 3 WATER and
+// Sandbox 7 — avens trading. The rules of the world, without any drawing: ten avens, each with 1,000 HEARTS,
+// a territory that grows 1 to 3 of the 5 goods and a ledger of its own prices. Every day each aven needs 3 WATER and
 // 2 of each food (FRUITS, VEGETABLES, LEGUMES, CHICKEN). Trades happen where two avens meet, at the seller's price.
 // No euros, no outside market: HEARTS only move between avens.
 
@@ -23,15 +23,15 @@ export const MINT_PER_DAY = 24;
 export const DECAY_PER_YEAR = 0.07;
 export const START_PRICE = 10; // HEARTS a unit, where every price begins (a day's food is ~100 of the 1,000 HEARTS)
 export const DAY_S = 86400; // in-game seconds in a day
-export const WORLD = { w: 1000, h: 700 };
+export const WORLD = { w: 1200, h: 820 };
 export const MEET_R = 26; // two avens this close can trade
 /** the market square in the middle of the valley: everyone standing in it can trade with everyone else there */
 export const MARKET = { x: WORLD.w / 2, y: WORLD.h / 2, r: 72 };
 const MARKET_STAY = 3 * 3600; // how long an aven stays at the market once there
 const WALK = 260 / 3600; // world units per in-game second (260 an hour)
 
-const NAMES = ['Ama', 'Bo', 'Cyra', 'Dov', 'Eli'];
-const COLOURS = ['#e05a6d', '#f0a03c', '#4fb37a', '#4f8fd9', '#9b6bd6'];
+const NAMES = ['Ama', 'Bo', 'Cyra', 'Dov', 'Eli', 'Fen', 'Gia', 'Hal', 'Ivo', 'Juno'];
+const COLOURS = ['#e05a6d', '#f0a03c', '#4fb37a', '#4f8fd9', '#9b6bd6', '#2bb3b1', '#b8763a', '#d65db1', '#7f8c3a', '#5a6bd6'];
 /** the body keeps two reserves, 100 = full. Each missing WATER costs 12 of the water reserve, so an aven with no
  * water at all lives through 2 days and dies on the 3rd; each missing unit of food costs 0.57 of the food reserve,
  * so with no food at all it lives 21 days. A full night refills water by 34 and food by 5. Health = the lower one. */
@@ -49,20 +49,58 @@ export function rng(seed) {
 	};
 }
 
-/** a fresh valley: five avens, five territories on a ring, each growing goods i and i+1 so every good has two growers */
+/** where the ten lands lie: four along the top, one on the right, four along the bottom, one on the left, the market square in the middle */
+const LANDS = [
+	{ x: 150, y: 125 },
+	{ x: 450, y: 125 },
+	{ x: 750, y: 125 },
+	{ x: 1050, y: 125 },
+	{ x: 1050, y: 410 },
+	{ x: 1050, y: 695 },
+	{ x: 750, y: 695 },
+	{ x: 450, y: 695 },
+	{ x: 150, y: 695 },
+	{ x: 150, y: 410 }
+];
+
+/** who grows what: each aven 1 to 3 goods (about 3 in 10 grow one, 3 in 10 three), every good with at least 2 growers */
+function dealLand(rand) {
+	for (let tries = 0; ; tries++) {
+		const lands = NAMES.map(() => {
+			const r = rand();
+			const k = r < 0.3 ? 1 : r < 0.7 ? 2 : 3;
+			return [...GOODS].sort(() => rand() - 0.5).slice(0, k);
+		});
+		if (tries > 200 || GOODS.every((g) => lands.filter((l) => l.includes(g)).length >= 2)) return lands;
+	}
+}
+
+/** how much each grower makes: the valley's supply of a good is only just over its need (Samuel: no abundance yet,
+ * 5–25% over, more for food that rots; WATER counts the rain barrels), split very unevenly between its growers */
+function dealCapacity(rand, lands) {
+	const produce = lands.map(() => ({}));
+	const rain = NAMES.length * 0.33 * 1.5;
+	for (const g of GOODS) {
+		const growers = lands.map((l, i) => (l.includes(g) ? i : -1)).filter((i) => i >= 0);
+		const over = g === 'water' ? 1.05 + rand() * 0.1 : 1.1 + rand() * 0.15 + ROT[g] * 0.3;
+		const total = NEED[g] * NAMES.length * over - (g === 'water' ? rain : 0);
+		const weight = growers.map(() => 0.25 + rand() * rand() * 2);
+		const sum = weight.reduce((n, w) => n + w, 0);
+		growers.forEach((i, k) => (produce[i][g] = Math.max(1, Math.round((total * weight[k]) / sum))));
+	}
+	return produce;
+}
+
+/** a fresh valley: ten avens, ten territories on a ring round the market square */
 /** @returns {any} */
 export function createWorld(seed = Date.now() % 1e9) {
 	const rand = rng(seed);
-	const cx = WORLD.w / 2,
-		cy = WORLD.h / 2;
+	const lands = dealLand(rand);
+	const capacity = dealCapacity(rand, lands);
 	const avens = NAMES.map((name, i) => {
-		const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-		const home = { x: cx + Math.cos(a) * 250, y: cy + Math.sin(a) * 230 };
-		const grows = [GOODS[i], GOODS[(i + 1) % 5]];
-		/** capacity, units a day on average: just over what the valley needs, so shortages are common (Samuel: no abundance
-		 * yet). Water 6–9 a well (two wells ~15 plus rain ~2.5, for the 15 all five drink), food 5–7 (two growers ~12 for the
-		 * 10 all eat, before rot) */
-		const produce = Object.fromEntries(grows.map((g) => [g, g === 'water' ? 6 + Math.floor(rand() * 4) : 5 + Math.floor(rand() * 3)]));
+		const home = LANDS[i];
+		const grows = GOODS.filter((g) => lands[i].includes(g));
+		const produce = capacity[i];
 		// its stance against the market: asks a markup over the market price for what it grows, a share of it for what it buys
 		const markup = {},
 			ask = {},
@@ -74,7 +112,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			name,
 			colour: COLOURS[i],
 			home,
-			territory: { x: home.x, y: home.y, r: 120 },
+			territory: { x: home.x, y: home.y, r: 100 },
 			grows,
 			produce,
 			x: home.x + (rand() - 0.5) * 60,
@@ -115,6 +153,11 @@ export function createWorld(seed = Date.now() % 1e9) {
  * and a market price that follows the trades and leans with supply against demand. Every hour each aven's own prices
  * follow it, at the markup its brain chose.
  */
+/** a price in HEARTS, to the cent, never below 1 cent */
+export function cents(v) {
+	return Math.max(0.01, Math.round(v * 100) / 100);
+}
+
 export function updateMarket(world) {
 	const live = world.avens.filter((a) => a.alive);
 	for (const g of GOODS) {
@@ -122,20 +165,22 @@ export function updateMarket(world) {
 		m.sells = live.filter((a) => spare(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: spare(a, g), price: a.ask[g] })).sort((x, y) => x.price - y.price);
 		m.wants = live.filter((a) => want(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: want(a, g), price: a.bid[g] })).sort((x, y) => y.price - x.price);
 		m.supply = m.sells.reduce((n, o) => n + o.qty, 0);
-		m.demand = m.wants.reduce((n, o) => n + o.qty, 0);
-		// more wanted than offered pushes the price up, more offered than wanted pulls it down (at most ±0.25% an hour, ±6% a day);
-		// what's offered counts at most each seller's daily surplus, so old stock piling up doesn't sink the price for ever
-		const flow = m.sells.reduce((n, o) => n + Math.min(o.qty, world.avens[o.id].produce[g] - NEED[g]), 0);
-		const tilt = (m.demand - flow) / (m.demand + flow + 1);
-		m.ref = Math.max(1, m.ref * (1 + 0.0025 * tilt));
-		m.price = Math.max(1, Math.round(m.ref * (1 + 0.1 * tilt)));
+		// only what buyers can pay for counts as wanted: an aven with no HEARTS left can't lift the price
+		m.demand = m.wants.reduce((n, o) => n + Math.min(o.qty, Math.floor(world.avens[o.id].hearts / Math.max(1, o.price))), 0);
+		// more wanted than offered pushes the price up, more offered than wanted pulls it down, with no cap (Samuel: prices
+		// are 100% free): each hour the price moves by the 48th root of wanted ÷ offered, so twice as much wanted as
+		// offered raises it about 41% a day. What's offered counts at most each seller's daily surplus, so old stock piling
+		// up doesn't sink the price for ever
+		const flow = m.sells.reduce((n, o) => n + Math.min(o.qty, Math.max(1, world.avens[o.id].produce[g] - NEED[g])), 0);
+		m.ref = Math.max(0.01, m.ref * ((m.demand + 1) / (flow + 1)) ** (1 / 48));
+		m.price = cents(m.ref);
 		// the price over time, for the chart: one point an hour, the last 120 days
 		if (m.series.at(-1)?.t === world.t) m.series.at(-1).price = m.price;
 		else m.series.push({ t: world.t, price: m.price });
 		if (m.series.length > 24 * 120) m.series.shift();
 	}
 	for (const a of live)
-		for (const g of GOODS) (a.grows.includes(g) ? a.ask : a.bid)[g] = Math.max(1, Math.round(world.market[g].price * a.markup[g]));
+		for (const g of GOODS) (a.grows.includes(g) ? a.ask : a.bid)[g] = cents(world.market[g].price * a.markup[g]);
 }
 
 /** one night's harvest of a good: about its capacity, give or take a quarter; one night in 20 a bad harvest (30–60%),
@@ -183,7 +228,7 @@ export function haggle(seller, buyer, g) {
 	const floor = ask * (1 - seller.flex),
 		ceiling = bid * (1 + buyer.flex);
 	if (floor > ceiling) return { price: null, ask, bid, haggled: true };
-	return { price: Math.max(1, Math.round((Math.max(floor, bid) + Math.min(ceiling, ask)) / 2)), ask, bid, haggled: true };
+	return { price: cents((Math.max(floor, bid) + Math.min(ceiling, ask)) / 2), ask, bid, haggled: true };
 }
 
 /** two avens meet: each sells what the other wants, at the seller's price or a haggled one */
@@ -204,7 +249,7 @@ export function trade(world, a, b) {
 			const price = deal.price;
 			const qty = Math.min(spare(seller, g), want(buyer, g), Math.floor(buyer.hearts / price));
 			if (qty <= 0) continue;
-			const total = qty * price;
+			const total = Math.round(qty * price * 100) / 100;
 			seller.stock[g] -= qty;
 			buyer.stock[g] += qty;
 			buyer.carry[g] = (buyer.carry[g] ?? 0) + qty; // it carries this home

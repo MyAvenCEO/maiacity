@@ -1,11 +1,11 @@
 <!--
-	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Five blobs in a 2D valley, each with 1,000 HEARTS and a territory
+	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Ten blobs in a 2D valley, each with 1,000 HEARTS and a territory
 	that grows 2 of the 5 goods. They walk to each other and trade at their own prices; every morning each one's prices are
 	decided by Liquid's decision model d1:free (or a local rule when Liquid is out of reach). Survive, and end with the most HEARTS.
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, step, ranking, MARKET, ROT, MINT_PER_DAY, DECAY_PER_YEAR, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
+	import { createWorld, step, ranking, want, MARKET, ROT, MINT_PER_DAY, DECAY_PER_YEAR, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
@@ -61,6 +61,8 @@
 			// the daily rows, only while the Stats view is open (each row is never changed once written)
 			stats: page === 'stats' ? world.stats.slice() : [],
 			weather: { ...world.weather },
+			// every aven's wants right now: per good, what it holds against tonight's need and what it still wants to buy
+			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
 				GOODS.map((g) => {
@@ -194,11 +196,12 @@
 			ctx.stroke();
 			ctx.setLineDash([]);
 			const ink = light > 0.5 ? '#1f2a23' : '#f4f1e8';
-			// the two crops as fields, last night's harvest written in each
+			// its crops (1 to 3) as fields along the top of its land, last night's harvest written in each
+			const spread = a.grows.length === 1 ? [0] : a.grows.length === 2 ? [-0.8, 0.8] : [-1.25, 0, 1.25];
 			a.grows.forEach((/** @type {string} */ g, /** @type {number} */ i) => {
-				const ang = -Math.PI / 2 + (i ? 0.9 : -0.9);
-				const fx = t.x + Math.cos(ang) * t.r * 0.62,
-					fy = t.y + Math.sin(ang) * t.r * 0.62;
+				const ang = -Math.PI / 2 + spread[i];
+				const fx = t.x + Math.cos(ang) * t.r * 0.55,
+					fy = t.y + Math.sin(ang) * t.r * 0.55 + (a.grows.length === 3 && i !== 1 ? 6 : 0);
 				ctx.fillStyle = a.alive ? GOOD_COLOUR[g] : '#8a8a86';
 				ctx.beginPath();
 				ctx.arc(fx, fy, 16, 0, Math.PI * 2);
@@ -210,8 +213,8 @@
 				ctx.fillText(String(a.harvest[g] ?? a.produce[g]), fx, fy + 0.5);
 				ctx.textBaseline = 'alphabetic';
 				ctx.fillStyle = ink;
-				ctx.font = '600 11px system-ui, sans-serif';
-				ctx.fillText(GOOD_LABEL[g], fx, fy + 30);
+				ctx.font = '600 9px system-ui, sans-serif';
+				ctx.fillText(GOOD_LABEL[g], fx, fy + 26);
 			});
 			// its store: a half-size dot per good, how many units it holds written in each
 			GOODS.forEach((g, i) => {
@@ -475,11 +478,40 @@
 
 		<nav class="tabs">
 			<button class:on={tab === 'market'} onclick={() => (tab = 'market')}>Market</button>
+			<button class:on={tab === 'wants'} onclick={() => (tab = 'wants')}>Wants</button>
 			<button class:on={tab === 'prices'} onclick={() => (tab = 'prices')}>Prices</button>
 			<button class:on={tab === 'ledger'} onclick={() => (tab = 'ledger')}>{snap.aven.name}'s ledger</button>
 		</nav>
 
-		{#if tab === 'prices'}
+		{#if tab === 'wants'}
+		<section>
+			<p class="sub">Tonight each aven needs 3 WATER and 2 of each food. <span class="ok">✓</span> it holds enough; <span class="miss">−n</span> it is n short unless it buys before night. "own": it grows that good. "buys n": it still wants n to reach its stock target. Last column: whether last night's needs were met.</p>
+			<div class="scroll"><table class="wants">
+				<thead><tr><th>Aven</th>{#each GOODS as g (g)}<th><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g].slice(0, 3)}</th>{/each}<th>Tonight</th><th>Last night</th></tr></thead>
+				<tbody>
+					{#each snap.wants as w (w.id)}
+						{@const missing = GOODS.filter((g) => w.goods[g].has < w.goods[g].need)}
+						<tr class:dead={!w.alive}>
+							<td><button class="who" onclick={() => select(w.id)}><i style:background={w.colour}></i>{w.name}</button></td>
+							{#if w.alive}
+								{#each GOODS as g (g)}
+									{@const c = w.goods[g]}
+									<td class="num" class:grown={w.grows.includes(g)} title={w.grows.includes(g) ? `grows ${GOOD_LABEL[g]}` : ''}>
+										{#if c.has >= c.need}<span class="ok">✓</span>{:else}<span class="miss">−{c.need - c.has}</span>{/if}
+										<small>{w.grows.includes(g) ? 'own' : c.buy ? `buys ${c.buy}` : ''}</small>
+									</td>
+								{/each}
+								<td class="num">{#if missing.length}<span class="miss">{missing.length} short</span>{:else}<span class="ok">all met</span>{/if}</td>
+								<td class="num">{#if Object.keys(w.last).length}<span class="miss">{Object.entries(w.last).map(([g, n]) => `${GOOD_LABEL[g].slice(0, 3)} −${n}`).join(' ')}</span>{:else}<span class="ok">met</span>{/if}</td>
+							{:else}
+								<td colspan={GOODS.length + 2} class="none">died</td>
+							{/if}
+						</tr>
+					{/each}
+				</tbody>
+			</table></div>
+		</section>
+		{:else if tab === 'prices'}
 		<section>
 			<PriceChart series={snap.series} now={snap.t} />
 			<table class="avgs">
@@ -768,6 +800,35 @@
 	}
 	.scroll {
 		overflow-x: auto;
+	}
+	.ok {
+		color: #2f7d4f;
+		font-weight: 700;
+	}
+	.miss {
+		color: #c2410c;
+		font-weight: 700;
+	}
+	.wants td.grown {
+		background: #24452f0d;
+	}
+	.wants tr.dead {
+		opacity: 0.5;
+	}
+	.wants .who {
+		border: 0;
+		background: none;
+		padding: 0;
+		font-weight: 700;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.wants .who i {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		display: inline-block;
 	}
 	td small {
 		display: block;

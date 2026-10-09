@@ -5,26 +5,26 @@
 // calibrated probabilities. d1:free needs no API key, but Liquid keeps its requests for training, so only the game
 // state goes out, never anything about a person. When Liquid can't be reached, a small local rule decides instead.
 
-import { GOODS, GOOD_LABEL, NEED, ROT, want, spare } from './economy.js';
+import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents } from './economy.js';
 
 export const LIQUID_URL = 'https://api.liquid.ai/decisions/v1/systemone';
 export const LIQUID_MODEL = 'd1:free';
 
 /** each aven's tools: just enough to run its own business, each one a typed question its brain answers every morning */
 export const TOOLS = [
-	{ id: 'ask', label: 'Price against the market', note: 'per good it grows: from 20% under the market price to 25% over; its price then follows the market every hour' },
-	{ id: 'bid', label: 'Pay against the market', note: 'per good it buys: the most it pays, from 20% under the market price to 25% over' },
-	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet: not at all, 10%, 20% or 35%' },
+	{ id: 'ask', label: 'Price against the market', note: 'per good it grows: anything from a quarter of the market price to four times it, no cap in between; its price then follows the market every hour' },
+	{ id: 'bid', label: 'Pay against the market', note: 'per good it buys: the most it pays, from a quarter of the market price to four times it' },
+	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet: not at all, 10%, 25%, half way, or all the way' },
 	{ id: 'reserve', label: 'Keep a stock', note: '1 to 7 days of food and water' },
 	{ id: 'visit', label: 'Plan my walk', note: 'where to go first and second today: the market square, another aven, or home to sell' }
 ];
 
 /** where a price can sit against the market price, from well under to well over */
-const MOVES = ['Well under the market (20% less)', 'A little under (10% less)', 'At the market price', 'A little over (10% more)', 'Well over (25% more)'];
-const FACTOR = [0.8, 0.9, 1, 1.1, 1.25];
+const MOVES = ['A quarter of the market price', 'Half the market price', 'Three quarters of it', 'At the market price', 'One and a half times it', 'Double the market price', 'Four times the market price'];
+const FACTOR = [0.25, 0.5, 0.75, 1, 1.5, 2, 4];
 /** how far to give in when haggling */
-const GIVE = ['Never give in', 'A little (10%)', 'Some (20%)', 'A lot (35%)'];
-const FLEX = [0, 0.1, 0.2, 0.35];
+const GIVE = ['Never give in', 'A little (10%)', 'Some (25%)', 'Half way (50%)', 'All the way: take any price to strike the deal'];
+const FLEX = [0, 0.1, 0.25, 0.5, 1];
 const RESERVE = { '1': 'One day: spend as little as possible now', '2': 'Two days', '3': 'Three days', '5': 'Five days', '7': 'A week: never risk going hungry' };
 
 /** a score of 0–4 (may fall between levels) to a price factor */
@@ -49,7 +49,7 @@ export function boardFor(world) {
 export function stateFor(world, a) {
 	const y = a.yesterday;
 	return {
-		game: 'Five avens trade food and water for HEARTS. Each needs 3 WATER and 2 each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through 2 days and dies on the 3rd; with no food at all it lives 21 days. Supply is only just above need, so shortages are common. Every aven mints 24 HEARTS a day and every HEART decays 7% a year (0.019% a night), so hoarded HEARTS shrink. Goal: survive and end with the most HEARTS.',
+		game: 'Ten avens trade food and water for HEARTS. Each needs 3 WATER and 2 each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through 2 days and dies on the 3rd; with no food at all it lives 21 days. Supply is only just above need, so shortages are common. Every aven mints 24 HEARTS a day and every HEART decays 7% a year (0.019% a night), so hoarded HEARTS shrink. Goal: survive and end with the most HEARTS.',
 		day: world.day,
 		me: a.name,
 		hearts: a.hearts,
@@ -136,12 +136,12 @@ export function localAnswers(world, a) {
 		const sold = y ? y.sold[g] : 0;
 		const left = spare(a, g);
 		// sold out → a little dearer; nothing sold with plenty left → cheaper
-		out[`ask_${g}`] = { type: 'score', score: sold > 0 && left < a.produce[g] ? 3 : sold === 0 && left > 0 ? 1 : 2 };
+		out[`ask_${g}`] = { type: 'score', score: sold > 0 && left < a.produce[g] ? 3.4 : sold === 0 && left > 0 ? 2.6 : 3 };
 	}
 	for (const g of GOODS) {
 		if (a.grows.includes(g)) continue;
 		const short = y?.short?.[g] ?? 0;
-		out[`bid_${g}`] = { type: 'score', score: short ? 4 : want(a, g) > NEED[g] ? 3 : want(a, g) === 0 ? 1 : 2 };
+		out[`bid_${g}`] = { type: 'score', score: short ? 4 : want(a, g) > NEED[g] ? 3.4 : want(a, g) === 0 ? 2.6 : 3 };
 	}
 	out.reserve = { type: 'choice', choice: a.health < 60 ? '5' : '3' };
 	out.flex = { type: 'score', score: a.health < 80 ? 3 : 1.5 };
@@ -186,7 +186,7 @@ export function applyAnswers(world, a, answers, source) {
 		if (f !== a.markup[g]) changes.push(`${side === 'ask' ? 'sells' : 'pays up to'} ${GOOD_LABEL[g]} at market ${pct >= 0 ? '+' : ''}${pct}%`);
 		a.markup[g] = f;
 		const book = side === 'ask' ? a.ask : a.bid;
-		book[g] = Math.max(1, Math.round(world.market[g].price * f));
+		book[g] = cents(world.market[g].price * f);
 	}
 	a.brain.last = { day: world.day, source, answers };
 	a.ledger.push({ day: world.day, t: world.t, kind: 'price', source, changes });
