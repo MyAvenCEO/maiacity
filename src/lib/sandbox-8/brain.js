@@ -49,16 +49,17 @@ export function boardFor(world) {
 export function stateFor(world, a) {
 	const y = a.yesterday;
 	return {
-		game: 'Five avens trade food and water for HEARTS. Each needs 3 WATER and 2 each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day or loses health; at 0 health it dies. Every aven mints 24 HEARTS a day and every HEART decays 7% a year (0.019% a night), so hoarded HEARTS shrink. Goal: survive and end with the most HEARTS.',
+		game: 'Five avens trade food and water for HEARTS. Each needs 3 WATER and 2 each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through 2 days and dies on the 3rd; with no food at all it lives 21 days. Supply is only just above need, so shortages are common. Every aven mints 24 HEARTS a day and every HEART decays 7% a year (0.019% a night), so hoarded HEARTS shrink. Goal: survive and end with the most HEARTS.',
 		day: world.day,
 		me: a.name,
 		hearts: a.hearts,
 		health: a.health,
+		body_reserves: { water: Math.round(a.body.water), food: Math.round(a.body.food) },
 		i_grow_per_day_on_average: a.produce,
 		my_harvest_last_night: a.harvest,
 		harvests_vary: 'about ±25% a night; one night in 20 a bad harvest (30–60%), one in 20 a rich one',
 		share_that_rots_each_night: ROT,
-		water: world.weather.dry ? `dry spell for ${world.weather.dry} more nights: wells give only 25–50%, no rain` : 'normal; one night in 25 a dry spell of 4–10 days starts and wells give only 25–50%',
+		water: world.weather.dry ? `dry spell for ${world.weather.dry} more nights: wells give only 40–70%, no rain` : 'normal; one night in 40 a dry spell of 3–7 days starts and wells give only 40–70%',
 		rain_barrel: 'one night in 3 it rains and my barrel catches 1–2 WATER (never in a dry spell); water never rots',
 		stock: a.stock,
 		need_per_day: NEED,
