@@ -1,4 +1,4 @@
-# Two names, one server. Caddy fetches and renews the certificates itself — passkeys only work in a secure context,
+# Three names, one server. Caddy fetches and renews the certificates itself — passkeys only work in a secure context,
 # so HTTPS is not optional here.
 #
 # The site (maia.city): the built SvelteKit site, static, from /srv/site (the deploy puts each build beside the last
@@ -26,6 +26,13 @@
 
 www.{$SITE_ADDRESS:maia.city} {
 	redir https://{$SITE_ADDRESS:maia.city}{uri} permanent
+}
+
+# avenDB's relay (avendb.maia.city): the iroh relay inside avendb-server, on a host name of its own, as iroh's relay path
+# is /relay and api.maia.city/relay is the media vault's. It holds only ciphertext and lets in only the devices the
+# server knows, or a passkey's pass. Caddy offers X25519MLKEM768, the only key exchange avenDB's devices offer.
+{$AVENDB_ADDRESS:avendb.maia.city} {
+	reverse_proxy avendb:3350
 }
 
 {$API_ADDRESS} {

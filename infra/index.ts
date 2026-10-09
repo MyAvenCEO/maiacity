@@ -1,7 +1,7 @@
 // The machine behind api.maia.city — deliberately one of everything:
 //   a server (smallest current x86 shared type with at least 2 vCPU / 4 GB),
 //   a volume that holds the Postgres data and survives a rebuild,
-//   a firewall open on SSH, HTTP and HTTPS.
+//   a firewall open on SSH, HTTP and HTTPS, and on UDP for the media vault's and avenDB's iroh endpoints.
 //
 // Docker arrives through cloud-init; the containers arrive over SSH from the
 // deploy job in .github/workflows/api.yml. No secrets are written here — the
@@ -64,6 +64,9 @@ const firewall = new hcloud.Firewall(`${NAME}-fw`, {
     // the media vault's iroh endpoint (vault-server): direct QUIC from the paired Macs — the endpoint itself admits
     // only paired devices, so the port can be open
     { direction: "in", protocol: "udp", port: "7400", sourceIps: ["0.0.0.0/0", "::/0"] },
+    // avenDB's server (avendb/): devices on UDP reach its iroh endpoint straight; each connection proves its device
+    // in a hello, and the server hands out only what the device's caps allow
+    { direction: "in", protocol: "udp", port: "7401", sourceIps: ["0.0.0.0/0", "::/0"] },
   ],
 });
 
