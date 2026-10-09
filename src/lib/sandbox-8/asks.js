@@ -124,7 +124,7 @@ function stateOwn(world, a) {
 		day: world.day,
 		me: a.name,
 		hearts: a.hearts,
-		health: a.health,
+		health: `${a.health} of ${RULES.healthMax}; at 0 I die`,
 		body_reserves: { water: Math.round(a.body.water), food: Math.round(a.body.food) },
 		i_grow_per_day_on_average: a.produce,
 		my_harvest_last_night: a.harvest,

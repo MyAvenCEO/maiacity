@@ -805,10 +805,11 @@
 			}
 			ctx.restore();
 			if (a.alive) {
-				ctx.strokeStyle = a.health > 60 ? '#4fb37a' : a.health > 30 ? '#f0a03c' : '#e05a6d';
+				const share = a.health / RULES.healthMax;
+				ctx.strokeStyle = share > 0.6 ? '#4fb37a' : share > 0.3 ? '#f0a03c' : '#e05a6d';
 				ctx.lineWidth = 3;
 				ctx.beginPath();
-				ctx.arc(a.x, a.y, r + 6, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * a.health) / 100);
+				ctx.arc(a.x, a.y, r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * share);
 				ctx.stroke();
 			}
 			if (a.id === selected) {
@@ -927,7 +928,7 @@
 		if (e.kind === 'nodeal') return `no deal on ${GOOD_LABEL[e.good]} with ${e.with}: asked ${e.ask}, offered ${e.bid}`;
 		if (e.kind === 'eat') {
 			const s = Object.entries(e.short ?? {});
-			return s.length ? `went short of ${s.map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')} · health ${e.health}` : `ate and drank in full · health ${e.health}`;
+			return s.length ? `went short of ${s.map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')} · health ${e.health} of ${RULES.healthMax}` : `ate and drank in full · health ${e.health} of ${RULES.healthMax}`;
 		}
 		if (e.kind === 'price') return `${NAME[e.source] ?? 'Liquid'}: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
 		if (e.kind === 'death') return `died of ${e.cause ?? 'want'}${e.lost != null ? `, lost ${fmt(e.lost)} HEARTS and all it held` : ''}`;
@@ -1138,7 +1139,7 @@
 		<section class="ledger">
 			<h3><i style:background={snap.aven.colour}></i>{snap.aven.name}'s ledger</h3>
 			<p class="sub">
-				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}, reborn on day ${snap.aven.diedOn + RULES.rebirthDays}`} · keeps {snap.aven.mind ? `${snap.aven.mind.wants.water} days of water, ${snap.aven.mind.wants.food} of food` : `${snap.aven.reserveDays} days`} in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
+				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · health ${Math.round(snap.aven.health)} of ${RULES.healthMax} · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}, reborn on day ${snap.aven.diedOn + RULES.rebirthDays}`} · keeps {snap.aven.mind ? `${snap.aven.mind.wants.water} days of water, ${snap.aven.mind.wants.food} of food` : `${snap.aven.reserveDays} days`} in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
 			</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, and against the market price">Sells</th><th title="pays up to, and against the market price">Pays</th></tr></thead>

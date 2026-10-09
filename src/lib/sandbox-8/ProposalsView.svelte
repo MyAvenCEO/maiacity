@@ -130,7 +130,7 @@
 				<summary>What a MIP's card code can change</summary>
 				<p>Every rule of the valley is a hook in a card's code, and each card's code runs in its own QuickJS sandbox: no page, no network, no keys, 8 MB and 25 ms a call. The card that owns a rule runs first (its own code, else the default, shown under Policies and World); any other card exporting the same hook is given what it made of it as <code>value</code>. A hook returns plain JSON, which the valley checks and keeps within bounds. A hook that throws, runs too long or answers nothing stops for the world, and the valley uses its own copy of the default rule.</p>
 				<table><tbody>{#each HOOKS as h (h.name)}<tr><td><code>{h.name}</code></td><td>{h.when}; given <code>{h.given}</code></td><td>returns {h.returns}</td></tr>{/each}</tbody></table>
-				<p><code>aven</code>: id, name, alive, hearts, health, grows, produce, harvest, stock, body {'{'} water, food {'}'}, need, keep, reserveDays, ask, bid, flex, yesterday, minted, decayed. <code>valley</code>: day, values (every value by key, e.g. <code>valley.values.mint</code>), avens, alive, hearts, prices, weather.</p>
+				<p><code>aven</code>: id, name, alive, hearts, health, grows, produce, harvest, stock, body {'{'} water, food {'}'}, memo (what its body rule kept from last night), need, keep, reserveDays, ask, bid, flex, yesterday, minted, decayed. <code>valley</code>: day, values (every value by key, e.g. <code>valley.values.mint</code>), avens, alive, hearts, prices, weather.</p>
 			</details>
 		</section>
 	{/if}
