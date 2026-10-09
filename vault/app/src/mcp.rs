@@ -1514,7 +1514,7 @@ impl Studio {
     // ── the economy sandbox (Sandbox 7, the avens trading): its configs, its runs' stats, and MIPs ──
 
     #[tool(
-        description = "The economy sandbox's configs (Sandbox 7: ten avens trade WATER and four foods for HEARTS, each deciding its own prices with Liquid's d1): each one's id, name, version, its config cards (policy and world cards hold values; any card may hold data and QuickJS code) and params (every value the valley runs on), and the catalogue — every value a card may hold, with its card, label, unit, range and default. A config changes only through a MIP the admin accepts."
+        description = "The economy sandbox's configs (Sandbox 7: ten avens trade WATER and four foods for HEARTS, each deciding its own prices with Liquid's d1): each one's id, name, version, its config cards (policy and world cards hold values; any card may hold data and QuickJS code) and params (every value the valley runs on), and the catalogue — every value a card may hold, with its card, label, unit, range and default, and the hooks card code may export (when each runs, what it is given, what it returns). A config changes only through a MIP the admin accepts."
     )]
     async fn economy_configs(&self) -> String {
         text(self.api("GET", "/api/economy/configs", None).await)

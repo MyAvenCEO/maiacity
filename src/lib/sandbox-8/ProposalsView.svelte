@@ -9,9 +9,11 @@
 	import { CONFIG, changedCards } from './rules.js';
 	import { loadMips, propose, decide, withdraw } from './store.js';
 	import ConfigCard from './ConfigCard.svelte';
+	import { testCard } from './sandbox.js';
+	import { HOOKS } from '../../../game/economy/params.js';
 
-	/** @type {{ acct: any, configs: any[], playing: { id: string | null, name: string, version: number, local: number }, draft?: boolean, onplay: (cfg: any) => void, onreload: () => void }} */
-	let { acct, configs, playing, draft = false, onplay, onreload } = $props();
+	/** @type {{ acct: any, configs: any[], playing: { id: string | null, name: string, version: number, local: number }, draft?: boolean, sample: () => any, onplay: (cfg: any) => void, onreload: () => void }} */
+	let { acct, configs, playing, draft = false, sample, onplay, onreload } = $props();
 
 	let mips = $state(/** @type {any[]} */ ([]));
 	let show = $state('open');
@@ -59,6 +61,14 @@
 		cards = changedCards();
 		jsonText = JSON.stringify(cards, null, 2);
 		open = true;
+	}
+	// "Test the code": the card's hooks, each called once in the sandbox with where the valley stands now
+	let tests = $state(/** @type {Record<number, any>} */ ({}));
+	/** @param {number} i */
+	async function test(i) {
+		const { valley, sample: s } = sample();
+		tests[i] = { busy: true };
+		tests[i] = await testCard($state.snapshot(cards[i]), valley, s).catch((e) => ({ hooks: [], error: e?.message || String(e) }));
 	}
 	const removing = $derived(removeText.split(/[\s,]+/).filter(Boolean));
 	const shown = $derived(show === 'open' ? mips.filter((m) => m.status === 'open') : mips);
@@ -200,12 +210,25 @@
 						{#each cards as card, i (i)}
 							<ConfigCard editing card={$state.snapshot(card)} base={baseCards ? baseCards.find((/** @type {any} */ c) => c.id === card?.id) ?? null : undefined} />
 							<label class="codebox">Code for the QuickJS sandbox ({card.id}), optional
-								<textarea class="code" bind:value={card.code} rows="4" spellcheck="false" placeholder="export function mint(aven, valley) {'{'} return valley.values.mint; {'}'}"></textarea>
+								<textarea class="code" bind:value={card.code} oninput={() => delete tests[i]} rows="4" spellcheck="false" placeholder={'export function mint({ aven, valley, value }) {\n  return aven.hearts < 200 ? value * 1.5 : value;\n}'}></textarea>
 							</label>
+							{#if card.code?.trim()}
+								<div class="test">
+									<button disabled={tests[i]?.busy} onclick={() => test(i)}>Test the code</button>
+									{#if tests[i]?.error}<span class="bad">{tests[i].error}</span>
+									{:else if tests[i]?.hooks}{#each tests[i].hooks as h (h.name)}<span class:bad={h.error}>{h.name}{h.good ? ` (${h.good})` : ''}: {h.error ?? `${h.value} → ${h.answer}`}</span>{/each}{/if}
+								</div>
+							{/if}
 						{:else}
 							<p class="sub">No cards yet: change values under Policies or World and come back, or add cards with Edit as JSON (values, data, code).</p>
 						{/each}
 					{/if}
+					<details class="hooks">
+						<summary>What card code can change</summary>
+						<p>Each card's code runs in its own QuickJS sandbox: no page, no network, no keys, 8 MB and 25 ms a call. It exports any of these hooks; each is given one argument, <code>{'{'} aven, valley, value {'}'}</code>, where <code>value</code> is what the valley would use, and returns a number, which the valley keeps within bounds. A hook that throws, runs too long or returns no number stops for the run, and the valley uses its values.</p>
+						<table><tbody>{#each HOOKS as h (h.name)}<tr><td><code>{h.name}</code></td><td>{h.when}; given <code>{h.given}</code></td><td>returns {h.returns}</td></tr>{/each}</tbody></table>
+						<p><code>aven</code>: id, name, alive, hearts, health, grows, produce, stock, body {'{'} water, food {'}'}, minted, decayed. <code>valley</code>: day, values (every value by key, e.g. <code>valley.values.mint</code>), avens, alive, hearts, prices, weather.</p>
+					</details>
 					<label>Cards to take out <input bind:value={removeText} placeholder="card ids, e.g. harvests" /></label>
 					{#each removing as id (id)}{@const c = baseCards?.find((/** @type {any} */ x) => x.id === id)}{#if c}<ConfigCard card={c} removed />{/if}{/each}
 				{/if}
@@ -383,6 +406,43 @@
 		border-radius: 6px;
 		padding: 0.3rem 0.4rem;
 		background: #fff;
+	}
+	.test {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.7rem;
+		align-items: center;
+		margin: 0.3rem 0 0.2rem;
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.test span {
+		background: #1baf7a14;
+		color: #136b4b;
+		border-radius: 6px;
+		padding: 0.1rem 0.4rem;
+	}
+	.test span.bad {
+		background: #c0392b14;
+		color: #a03224;
+	}
+	details.hooks {
+		margin: 0.6rem 0 0.2rem;
+		font-size: 0.78rem;
+		color: #52514e;
+	}
+	details.hooks summary {
+		cursor: pointer;
+		color: #1f2a23;
+	}
+	details.hooks table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+	details.hooks td {
+		padding: 0.2rem 0.3rem;
+		border-top: 1px solid #1f2a2312;
+		vertical-align: top;
 	}
 	textarea.code {
 		font-family: ui-monospace, Menlo, monospace;

@@ -15,6 +15,40 @@ import { RECIPES, craft, decayAll } from './recipes.js';
 export { NEED, ROT, GOODS, GOOD_LABEL };
 
 export const DAY_S = 86400; // in-game seconds in a day
+
+/** the config's card code (sandbox.js, loaded by the page): its hooks change the night's numbers; null runs none */
+export const CODE = { run: /** @type {any} */ (null) };
+
+/** what card code sees of an aven (a copy: nothing it does reaches the valley) */
+const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, stock: a.stock, body: a.body, minted: a.minted, decayed: a.decayed });
+/** ...and of the valley, once a night */
+function valleyView(world) {
+	const live = world.avens.filter((a) => a.alive);
+	return { day: world.day, values: RULES, avens: world.avens.map(avenView), alive: live.length, hearts: Math.round(live.reduce((n, a) => n + a.hearts, 0) * 100) / 100, prices: Object.fromEntries(GOODS.map((g) => [g, world.market[g].price])), weather: world.weather };
+}
+/** a hook's answer (every card that exports it, in turn), kept within lo..hi; the valley's own value when none runs it */
+function hooked(name, args, value, lo, hi, whole = false) {
+	if (!CODE.run?.has(name)) return value;
+	const v = CODE.run.run(name, { ...args, aven: avenView(args.aven) }, value);
+	return Math.min(hi, Math.max(lo, whole ? Math.round(v) : v));
+}
+
+/** what each hook would be given right now, for "Test the code": the first living aven, the first good it grows */
+export function hookSample(world) {
+	const a = world.avens.find((x) => x.alive) ?? world.avens[0];
+	const g = a.grows[0];
+	const aven = avenView(a);
+	const rot = GOODS.find((x) => ROT[x] && a.stock[x]) ?? 'fruits';
+	return {
+		valley: valleyView(world),
+		sample: {
+			mint: { aven, value: RULES.mint },
+			decay: { aven, value: Math.round(a.hearts * (RULES.decay / 100 / 365) * 1e4) / 1e4 },
+			rot: { aven, good: rot, value: Math.round(a.stock[rot] * ROT[rot]) },
+			harvest: { aven, good: g, value: a.produce[g] }
+		}
+	};
+}
 export const WORLD = { w: 1200, h: 820 };
 /** where an aven stands at home: the middle of its land */
 const homeSpot = (a) => ({ x: a.territory.x, y: a.territory.y - 6 });
@@ -330,6 +364,7 @@ function endOfDay(world) {
 	const recipes = RECIPES();
 	const meals = recipes.filter((r) => r.by === 'aven' && r.id !== 'mint');
 	const mint = recipes.find((r) => r.id === 'mint');
+	CODE.run?.see(valleyView(world));
 	for (const a of world.avens) {
 		if (a.alive) {
 			const ate = {},
@@ -344,8 +379,9 @@ function endOfDay(world) {
 			a.today.short = short;
 			a.today.ate = ate;
 		}
-		// each resource's own decay: what's left in store rots, every balance of HEARTS melts a little
-		const lost = decayAll(a, world.rand);
+		// each resource's own decay: what's left in store rots, every balance of HEARTS melts a little (card code may say
+		// otherwise: a decay hook for HEARTS, a rot hook for each good, never more than is there)
+		const lost = decayAll(a, world.rand, CODE.run && ((r, held, v) => (r.id === 'HEARTS' ? hooked('decay', { aven: a }, v, 0, held) : r.held === 'store' ? hooked('rot', { aven: a, good: r.id }, v, 0, held, true) : v)));
 		const rotted = {};
 		for (const g of GOODS)
 			if (lost[g]) {
@@ -365,20 +401,24 @@ function endOfDay(world) {
 			log(world, a, { kind: 'death' });
 		}
 		if (a.alive) {
-			craft(mint, a);
-			a.minted += mint.out.HEARTS;
-			world.tally.minted += mint.out.HEARTS;
+			const out = hooked('mint', { aven: a }, mint.out.HEARTS, 0, 1e6);
+			craft(out === mint.out.HEARTS ? mint : { ...mint, out: { HEARTS: out } }, a);
+			a.minted += out;
+			world.tally.minted += out;
 		}
 		a.hearts = Math.round(a.hearts * 100) / 100;
 	}
 	world.day += 1;
 	weather(world);
+	CODE.run?.see(valleyView(world));
 	for (const a of world.avens) {
 		a.yesterday = a.today;
 		a.today = blankDay();
 		if (!a.alive) continue;
 		for (const g of a.grows) {
-			const { qty, kind } = harvest(world, a.produce[g], g);
+			const grown = harvest(world, a.produce[g], g);
+			const qty = hooked('harvest', { aven: a, good: g }, grown.qty, 0, Math.max(100, a.produce[g] * 10), true);
+			const kind = grown.kind;
 			a.harvest[g] = qty;
 			a.stock[g] += qty;
 			if (kind !== 'normal') log(world, a, { kind: 'grow', good: g, qty, cap: a.produce[g], note: kind });

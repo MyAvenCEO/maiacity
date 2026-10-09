@@ -144,3 +144,18 @@ export function applyCards(cards, put = [], remove = []) {
 	for (const p of put) if (!out.some((c) => c.id === p.id)) out.push(p);
 	return out;
 }
+
+// ─────────────────────────────── card code ───────────────────────────────
+// A card's code is JavaScript run in the page's QuickJS sandbox (src/lib/sandbox-8/sandbox.js): no page, no network,
+// no keys, 8 MB and a few milliseconds a call. It exports hooks, named below; the valley calls each one at its moment
+// with one argument, { aven, valley, value } (and `good` where it says), where value is what the valley would use
+// without it (or what an earlier card's hook made of it). A hook returns a number; the valley keeps it within bounds.
+
+/** the hooks a card's code may export: when each runs, what it is given, and what it returns */
+export const HOOKS = [
+	{ name: 'mint', when: 'each night, for each living aven', given: '{ aven, valley, value }', returns: 'the HEARTS this aven is given tonight (value: the Minting value)' },
+	{ name: 'decay', when: 'each night, for each aven', given: '{ aven, valley, value }', returns: 'the HEARTS this aven loses tonight, at most what it holds (value: its balance x Decay / 365)' },
+	{ name: 'rot', when: 'each night, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units of the good that rot tonight, whole, at most its stock (value: by the Rot values)' },
+	{ name: 'harvest', when: 'each morning, for each good an aven grows', given: '{ aven, good, valley, value }', returns: "the units its land gives today, whole (value: the land's capacity, swung by the harvest values and the weather)" }
+];
+export const HOOK_NAMES = HOOKS.map((h) => h.name);

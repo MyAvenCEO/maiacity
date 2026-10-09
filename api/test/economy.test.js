@@ -3,7 +3,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
-import { addDays, createMip, decideMip, getConfig, getMip, getRun, listConfigs, listMips, listRuns, startRun, withdrawMip } from "../src/economy.js";
+import { addDays, catalogue, createMip, decideMip, getConfig, getMip, getRun, listConfigs, listMips, listRuns, startRun, withdrawMip } from "../src/economy.js";
 import { DEFAULT_PARAMS } from "../../game/economy/params.js";
 
 const pg = new PGlite();
@@ -28,6 +28,8 @@ test("the valley is there from the start: the catalogue's defaults as cards, at 
   expect(valley.cards.map((c) => c.id)).toEqual(["hearts", "trading", "avens", "bodies", "rot", "land", "harvests", "weather"]);
   expect(valley.params).toEqual(DEFAULT_PARAMS);
   expect((await getConfig("valley")).versions).toEqual([expect.objectContaining({ version: 1, mip: null })]);
+  // what card code may export, for agents writing it over the MCP
+  expect(catalogue().hooks.map((h) => h.name)).toEqual(["mint", "decay", "rot", "harvest"]);
 });
 
 test("a MIP is a title, a description and whole cards; accepted, they go in as they are and the config gets a new version", async () => {
@@ -36,7 +38,7 @@ test("a MIP is a title, a description and whole cards; accepted, they go in as t
     title: "Mint more, melt faster",
     description: "Avens hoard. More minting and faster decay should keep HEARTS moving.",
     config: "valley",
-    cards: [{ ...hearts, values: { ...hearts.values, mint: 30, decay: 12 }, code: "export function mint(aven) { return 30; }" }],
+    cards: [{ ...hearts, values: { ...hearts.values, mint: 30, decay: 12 }, code: "export function mint({ value }) { return value + 6; }" }],
   });
   expect(mip.status).toBe("open");
   expect(mip.action).toBe("edit");
@@ -48,7 +50,7 @@ test("a MIP is a title, a description and whole cards; accepted, they go in as t
   const valley = await getConfig("valley");
   expect(valley.params.mint).toBe(30);
   expect(valley.params.decay).toBe(12);
-  expect(card(valley, "hearts").code).toContain("return 30");
+  expect(card(valley, "hearts").code).toContain("return value + 6");
   expect(valley.versions[0]).toEqual(expect.objectContaining({ version: 2, mip: mip.number }));
   expect((await getConfig("valley", { version: 1 })).params.mint).toBe(24);
   await expect(decideMip(mip.number, "admin", { accept: true })).rejects.toThrow(/already accepted/);

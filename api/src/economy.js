@@ -14,7 +14,7 @@
  * seed and brain, and then every day's stats row, trades and Liquid decisions, as the page sends them.
  */
 import { db } from "./pg";
-import { PARAMS, SECTIONS, CARD_KINDS, applyCards, checkCard, defaultCards, paramsOf } from "../../game/economy/params.js";
+import { PARAMS, SECTIONS, CARD_KINDS, HOOKS, applyCards, checkCard, defaultCards, paramsOf } from "../../game/economy/params.js";
 
 export class EconomyError extends Error {
   constructor(message, status = 400) {
@@ -72,7 +72,8 @@ export async function getConfig(id, { version } = {}) {
   return { ...cfg, deleted: rows[0].deleted, versions: versions.map((v) => ({ version: Number(v.version), mip: v.mip == null ? null : Number(v.mip), at: v.at })) };
 }
 
-/** what a card may hold: every value (key, its card, label, unit, range, default), the cards they sit on, the kinds */
+/** what a card may hold: every value (key, its card, label, unit, range, default), the cards they sit on, the kinds,
+ * and the hooks its code may export (run in the page's QuickJS sandbox) */
 export function catalogue() {
   return {
     params: PARAMS.map(({ key, view, section, label, unit, min, max, step, value, reset }) => ({
@@ -80,6 +81,8 @@ export function catalogue() {
     })),
     cards: SECTIONS,
     kinds: CARD_KINDS,
+    hooks: HOOKS,
+    code: "A card's code is JavaScript run in the page's QuickJS sandbox, one engine per card: export function <hook>({ aven, good, valley, value }) { return number }, where value is what the valley would use (or what an earlier card made of it); several cards exporting a hook run in the config's order. No network, page, keys or binary buffers; 8 MB and 25 ms a call. A hook that throws, runs too long or returns no number stops for the run and the valley uses its values. aven: { id, name, alive, hearts, health, grows, produce, stock, body: { water, food }, minted, decayed }. valley: { day, values (every param by key), avens, alive, hearts, prices, weather }.",
   };
 }
 

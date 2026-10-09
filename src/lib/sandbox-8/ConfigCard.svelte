@@ -13,6 +13,8 @@
 	const order = (/** @type {string} */ k) => (PARAMS.findIndex((p) => p.key === k) + PARAMS.length + 1) % (PARAMS.length + 1);
 	const keys = $derived([...new Set([...Object.keys(card.values ?? {}), ...Object.keys(base?.values ?? {})])].sort((a, b) => order(a) - order(b)));
 	const codeChanged = $derived(base !== undefined && (base?.code ?? '') !== (card.code ?? ''));
+	// the hooks its code exports, as far as a quick look tells (the sandbox knows for sure)
+	const hooks = $derived([...new Set([...(card.code ?? '').matchAll(/export\s+(?:async\s+)?(?:function\s*\*?\s*|const\s+|let\s+|var\s+)(mint|decay|rot|harvest)\b/g)].map((m) => m[1]))]);
 	const dataChanged = $derived(base !== undefined && JSON.stringify(base?.data ?? null) !== JSON.stringify(card.data ?? null));
 </script>
 
@@ -48,7 +50,7 @@
 		<pre>{JSON.stringify(card.data, null, 2)}</pre>
 	{/if}
 	{#if editing}<!-- its code is edited right under it -->{:else if !removed && card.code}
-		<div class="label">Code, run in the QuickJS sandbox {#if codeChanged}<span class="tag">changed</span>{/if}</div>
+		<div class="label">Code, run in the QuickJS sandbox{#if hooks.length}: changes {hooks.join(', ')}{/if} {#if codeChanged}<span class="tag">changed</span>{/if}</div>
 		<pre>{card.code}</pre>
 	{:else if !removed && codeChanged}
 		<div class="label">Code <span class="tag">taken out</span></div>
