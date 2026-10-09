@@ -120,15 +120,16 @@ function visitOptions(world, a) {
 	return out;
 }
 
-/** ask Liquid; resolves to the answers object or throws */
-export async function askLiquid(state, questions, { signal } = {}) {
-	const res = await fetch(LIQUID_URL, {
+/** ask Liquid, through our API's relay when `relay` is given (browsers can't reach Liquid directly); resolves to the
+ * answers object or throws */
+export async function askLiquid(state, questions, { signal, relay } = {}) {
+	const res = await fetch(relay ?? LIQUID_URL, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ model: LIQUID_MODEL, state, questions }),
+		body: JSON.stringify(relay ? { state, questions } : { model: LIQUID_MODEL, state, questions }),
 		signal
 	});
-	if (!res.ok) throw new Error(`Liquid ${res.status}`);
+	if (!res.ok) throw new Error(`${relay ? 'relay' : 'Liquid'} ${res.status}${res.status >= 500 ? ` ${(await res.json().catch(() => null))?.error ?? ''}`.trimEnd() : ''}`);
 	const body = await res.json();
 	if (!body?.answers) throw new Error('Liquid sent no answers');
 	return body.answers;

@@ -8,6 +8,8 @@
 	import { createWorld, step, ranking, want, MARKET, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S } from './economy.js';
 	import { RULES, setRules, changedRules } from './rules.js';
 	import RulesView from './RulesView.svelte';
+	import { API } from '$lib/auth/client';
+	const RELAY = `${API}/api/liquid/decide`;
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
@@ -117,7 +119,7 @@
 			const ctrl = new AbortController();
 			const timer = setTimeout(() => ctrl.abort(), 20000);
 			const myWorld = world;
-			askLiquid(stateFor(world, a), questionsFor(world, a), { signal: ctrl.signal })
+			askLiquid(stateFor(world, a), questionsFor(world, a), { signal: ctrl.signal, relay: RELAY })
 				.then((answers) => {
 					if (myWorld !== world || !a.alive) return;
 					calls.answered++;

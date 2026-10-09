@@ -25,6 +25,7 @@ import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } fro
 import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queueStillsOf, RenderError, rendersOf, reportRender } from "./renders";
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
+import { relayDecision } from "./liquid.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -144,6 +145,18 @@ const server = Bun.serve({
   routes: {
     // Health, for the container and for the deploy job.
     "/api/health": (req) => json(req, { ok: true }),
+
+    // Sandbox 7's avens ask Liquid's free decision model through here: browsers can't reach it themselves.
+    // Only pages on our own origins may use it, so it is no open proxy.
+    "/api/liquid/decide": {
+      OPTIONS: preflight,
+      POST: async (req, srv) => {
+        if (!Object.keys(cors(req)).length) return json(req, { error: "unknown origin" }, { status: 403 });
+        const who = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || srv.requestIP(req)?.address || "?";
+        const { status, body } = await relayDecision(req, who);
+        return json(req, body, { status });
+      },
+    },
 
     // How far the ladder has climbed. Public on purpose — the landing page
     // shows it, and a number nobody can see persuades nobody.
