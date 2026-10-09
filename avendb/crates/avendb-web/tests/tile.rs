@@ -142,9 +142,11 @@ fn an_app_edits_through_its_schema_and_every_device_shows_the_edit() {
     let mut value = e["value"].clone();
     value["blocks"][1]["text"] = json!(AFTER_TEXT);
     let put = json!({"do": "put", "on": bob, "space": space, "entry": welcome, "value": value});
-    assert!(act(&mut tile, put.clone())["op"].is_string());
-    assert_eq!(act(&mut tile, put), Value::Null, "the same view again changes nothing");
-    act(&mut tile, json!({"do": "sync_all"}));
+    let done = tile.act_json(&put, 2.0);
+    assert!(done["made"]["op"].is_string() && done["synced"].as_u64().is_some_and(|n| n > 0), "{done}");
+    let again = tile.act_json(&put, 2.0);
+    assert_eq!((&again["made"], &again["synced"]), (&Value::Null, &json!(0)), "the same view again changes nothing");
+    // as on the network, every device online has the edit at once: nobody syncs by hand
     assert_eq!(texts(&tile, &phone, &space, &welcome), ["Welcome", AFTER_TEXT]);
     let e = show(&tile, json!({"view": "entry", "on": phone, "space": space, "entry": welcome}));
     assert_eq!(each(&e["commits"], "/kind"), ["create", "edit"]);
@@ -205,7 +207,6 @@ fn branches_merge_promote_and_revert_from_the_page() {
     let mut value = at(&tile, &bob, &draft)["value"].clone();
     value["blocks"][1]["text"] = json!("Hello, Bob here");
     act(&mut tile, json!({"do": "put", "on": bob, "space": space, "entry": welcome, "line": draft, "value": value}));
-    act(&mut tile, json!({"do": "sync_all"}));
     let shown = at(&tile, &mac, &main);
     assert_eq!(shown["value"]["blocks"][1]["text"], json!(WELCOME_TEXT));
     assert_eq!(each(&shown["lines"], "/name"), ["main", "draft"]);
@@ -256,7 +257,6 @@ fn access_names_each_right_and_the_grant_behind_it_and_who_holds_each_key() {
     let mut value = show(&tile, json!({"view": "entry", "on": mac, "space": todos, "entry": door}))["value"].clone();
     value["status"] = json!("doing");
     act(&mut tile, json!({"do": "put", "on": mac, "space": todos, "entry": door, "value": value}));
-    act(&mut tile, json!({"do": "sync_all"}));
     let a = access(&tile, &mac);
     assert_eq!(a["epoch"], json!(2), "the door's key rotated after each revocation");
     let held = each(&a["keys"][2]["holders"], "/name");
@@ -277,7 +277,6 @@ fn governance_signs_with_the_passkeys_it_needs() {
     let (samuel, carol, coop) = (id(&vaults(&tile), "Samuel"), id(&vaults(&tile), "Carol"), start(&tile, "coop"));
     let added = act(&mut tile, json!({"do": "add_device", "on": mac, "name": "Samuel's iPad"}));
     assert_eq!(added["signed"], json!(["Samuel's passkey", "Samuel's iPad"]));
-    act(&mut tile, json!({"do": "sync_all"}));
     let ipad = device(&tile, "Samuel's iPad");
     let theirs = show(&tile, json!({"view": "spaces", "on": ipad}));
     assert_eq!(theirs["spaces"].as_array().map(Vec::len), Some(3), "the iPad reaches what Samuel reaches");
@@ -289,10 +288,8 @@ fn governance_signs_with_the_passkeys_it_needs() {
     assert_eq!(act(&mut tile, one)["signed"], json!(["Samuel's passkey", "Bob's passkey"]));
     let alone = json!({"do": "set_threshold", "on": mac, "vault": coop, "threshold": 2, "signers": [mac]});
     assert_eq!(refused(&mut tile, alone), "BelowThreshold");
-    act(&mut tile, json!({"do": "sync_all"}));
     let left = act(&mut tile, json!({"do": "leave", "on": bob, "vault": coop}));
     assert_eq!(left["signed"], json!(["Bob's passkey"]));
-    act(&mut tile, json!({"do": "sync_all"}));
     assert_eq!(find(&vaults(&tile), "name", "Maia Coop")["owners"].as_array().map(Vec::len), Some(1));
     let backup = act(&mut tile, json!({"do": "add_passkey", "on": mac}));
     assert_eq!(backup["signed"], json!(["Samuel's passkey", "Samuel's backup passkey"]));
@@ -316,18 +313,37 @@ fn the_lab_shows_what_each_device_holds_and_opens() {
     assert_eq!((&stranger["knows"], &stranger["writes"]), (&json!(true), &json!(0)));
     assert_eq!(column(&tile, "Carol's Mac")["writes"], json!(0));
     assert_eq!(column(&tile, "Bob's Mac")["value"]["blocks"][1]["text"], json!(WELCOME_TEXT));
-    // Bob goes offline, Samuel edits, and Bob hears of it only once back
+    // Bob's Mac goes offline and Samuel's Mac edits: the iPhone has the edit at once, Bob's Mac once it's back online
     let (mac, bob) = (device(&tile, "Samuel's Mac"), device(&tile, "Bob's Mac"));
+    let phone = device(&tile, "Samuel's iPhone");
     act(&mut tile, json!({"do": "online", "on": bob, "online": false}));
     let mut value = show(&tile, json!({"view": "entry", "on": mac, "space": space, "entry": welcome}))["value"].clone();
     value["blocks"][1]["text"] = json!(AFTER_TEXT);
     act(&mut tile, json!({"do": "put", "on": mac, "space": space, "entry": welcome, "value": value}));
-    act(&mut tile, json!({"do": "sync_all"}));
+    assert_eq!(texts(&tile, &phone, &space, &welcome), ["Welcome", AFTER_TEXT]);
     let bobs = column(&tile, "Bob's Mac");
     assert_eq!((&bobs["online"], &bobs["value"]["blocks"][1]["text"]), (&json!(false), &json!(WELCOME_TEXT)));
-    act(&mut tile, json!({"do": "online", "on": bob, "online": true}));
-    act(&mut tile, json!({"do": "sync_all"}));
+    let back = tile.act_json(&json!({"do": "online", "on": bob, "online": true}), 2.0);
+    assert!(back["synced"].as_u64().is_some_and(|n| n > 0), "{back}");
     assert_eq!(texts(&tile, &bob, &space, &welcome), ["Welcome", AFTER_TEXT]);
+    // offline, Bob's Mac goes back to an older backup and edits from that past: once it's back, its two edits fork
+    let edit = |tile: &mut Tile, text: &str| {
+        let shown = show(tile, json!({"view": "entry", "on": bob, "space": space, "entry": welcome}));
+        let mut value = shown["value"].clone();
+        value["blocks"][1]["text"] = json!(text);
+        act(tile, json!({"do": "put", "on": bob, "space": space, "entry": welcome, "value": value}));
+    };
+    act(&mut tile, json!({"do": "backup", "on": bob}));
+    edit(&mut tile, "Bob was here.");
+    act(&mut tile, json!({"do": "online", "on": bob, "online": false}));
+    act(&mut tile, json!({"do": "restore_backup", "on": bob}));
+    edit(&mut tile, "Bob was here, from the backup.");
+    let forks = |tile: &Tile, name: &str| column(tile, name)["forks"].as_u64().unwrap_or_default();
+    assert_eq!(forks(&tile, "Samuel's Mac"), 0, "Bob's Mac is offline");
+    act(&mut tile, json!({"do": "online", "on": bob, "online": true}));
+    for name in ["Samuel's Mac", "Samuel's iPhone", "Bob's Mac"] {
+        assert!(forks(&tile, name) > 0, "{name} holds both edits");
+    }
     // the Charter is public: the stranger reads it
     let (charter, stranger) = (entry(&tile, &mac, "Handbook", "Charter"), device(&tile, "a stranger"));
     assert_eq!(texts(&tile, &stranger, &space, &charter), ["Charter", CHARTER_TEXT]);

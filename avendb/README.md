@@ -35,8 +35,9 @@ cd spec && lake build           # the Lean model: proofs, scenario checks, test 
 cd protocol && ./check.sh       # the protocol models, against Verifpal 1.6.5 (minutes)
 ```
 
-The avenDB tile (`/app/avendb/` in the app, for admins) runs the core in the page. After a change to the core, build its
-package again and walk the tile's screens in a headless Chrome:
+The avenDB tile (`/app/avendb/` in the app, for admins) runs the core in the page. As on the network, every device online
+syncs the moment anything changes, with no button to press; an offline device syncs with nobody until it's back. After a
+change to the core, build its package again and walk the tile's screens in a headless Chrome:
 
 ```sh
 cd avendb && ./scripts/build-web.sh     # needs the wasm32-unknown-unknown target and wasm-bindgen-cli 0.2.129
@@ -114,7 +115,8 @@ for that op alone, and forgets the McEliece pair it made from it once the device
 
 In the tile, the screen **This browser** is this device: it founds a vault or links through a code (a QR code that a
 phone's camera opens as a link, `?link=`), shows its own code as a QR code for the next device, and lists, edits and
-writes notes. avenDB's server isn't deployed yet (P8f), so for now the screen takes a test server's relay and code.
+writes notes, showing what its other devices change the moment it arrives (`Device::changed`). avenDB's server isn't
+deployed yet (P8f), so for now the screen takes a test server's relay and code.
 
 `scripts/test-browser.sh` builds it with passkeys of `localhost` (the feature `localhost-passkeys`, never in a build
 that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium, Playwright's or

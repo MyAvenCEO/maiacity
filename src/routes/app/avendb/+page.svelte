@@ -16,6 +16,7 @@
 	import Spaces from '$lib/avendb/Spaces.svelte';
 	import Todos from '$lib/avendb/Todos.svelte';
 	import Vaults from '$lib/avendb/Vaults.svelte';
+	import { count } from '$lib/avendb/ui.js';
 
 	/** @typedef {import('$lib/avendb/tile.js').World} World */
 	/** @typedef {'vaults' | 'spaces' | 'entry' | 'todos' | 'schemas' | 'lab' | 'browser'} Screen */
@@ -147,7 +148,9 @@
 			const on = me?.name ?? 'this device';
 			if (done.ok) {
 				const signed = done.made?.signed;
-				note = { ok: true, text: `Done on ${on}${signed?.length ? `, signed by ${list(signed)}` : ''}.` };
+				// as on the network, the devices online sync at once
+				const synced = done.synced ? ` Synced at once: ${count(done.synced, 'op')} to the devices online.` : '';
+				note = { ok: true, text: `Done on ${on}${signed?.length ? `, signed by ${list(signed)}` : ''}.${synced}` };
 			} else note = { ok: false, text: done.refused ? `Refused on ${on}: ${done.why}` : done.error };
 			overview = await world.view({ view: 'overview' });
 			rev++;
@@ -219,7 +222,6 @@
 			{/each}
 
 			<div class="global">
-				<button class="btn" disabled={busy} onclick={() => act({ do: 'sync_all' })}>Sync every device</button>
 				<label class="toggle" title="The devices no longer trust the elliptic curves: only the post-quantum halves of every signature and key count">
 					<input type="checkbox" checked={!!overview?.pqOnly} disabled={busy} onchange={(e) => act({ do: 'pq_only', value: e.currentTarget.checked })} />
 					Post-quantum only

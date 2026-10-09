@@ -1,8 +1,9 @@
 <!--
 	The Lab: every device side by side for one entry, over the simulated network. Each column says what the device holds
 	of it (its writes and their ciphertext) and what it can open: the entry as its app shows it, or a lock. Take a device
-	offline or bring it back, lock it, back it up and restore it, checkpoint its log; sync every device, or one with
-	another. Below, the plan's scenarios, each run on a Lab of its own.
+	offline or bring it back, lock it, back it up and restore it, checkpoint its log. As on the real network, every device
+	online syncs the moment anything changes, and an offline one catches up once it's back. Below, the plan's scenarios,
+	each run on a Lab of its own.
 -->
 <script>
 	import Doc from './Doc.svelte';
@@ -28,8 +29,6 @@
 	/** @type {any[]} */
 	let columns = $state([]);
 	let error = $state('');
-	let from = $state('');
-	let to = $state('');
 
 	$effect(() => {
 		void rev;
@@ -52,11 +51,6 @@
 		);
 	});
 
-	$effect(() => {
-		from ||= devices[0]?.id ?? '';
-		to ||= devices[1]?.id ?? '';
-	});
-
 	/** @param {{ space: string, entry: string }} e */
 	const key = (e) => `${e.space}/${e.entry}`;
 	/** @param {string} id */
@@ -71,19 +65,10 @@
 	<button class="btn quiet" onclick={() => open(...(/** @type {[string, string]} */ (picked.split('/'))))}>Open it</button>
 </div>
 
-<div class="row net">
-	<button class="btn primary" onclick={() => act({ do: 'sync_all' })}>Sync every device</button>
-	<span class="soft">or sync</span>
-	<select class="field" bind:value={from}>
-		{#each devices as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
-	</select>
-	<span class="soft">into</span>
-	<select class="field" bind:value={to}>
-		{#each devices as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
-	</select>
-	<button class="btn" disabled={from === to} onclick={() => act({ do: 'sync', from, to })}>Sync</button>
-	<span class="soft small">Offline devices sync with nobody. Each sync sends only what the other side lacks.</span>
-</div>
+<p class="soft small net">
+	Every device online syncs the moment anything changes, each sending only what the other lacks. An offline device syncs
+	with nobody: what it does waits until it's back online, and so does what it misses.
+</p>
 
 {#if error}<p class="error">{error}</p>{/if}
 

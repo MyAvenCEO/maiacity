@@ -3,8 +3,8 @@
  * here), waits for the world to be made in the page's workers, then walks every screen as its people would. Samuel's
  * Mac reads Welcome, edits it and branches it, and shows who may do what; a locked Mac is refused with the rule's
  * reason; a stranger sees only the public Charter; Bob's Mac finds the door todo shared with it; Samuel's passkey signs a
- * backup passkey in; the Lab shows every device and plays a scenario; This browser loads its own device. Each screen is
- * screenshot.
+ * backup passkey in; the Lab shows every device, Bob's Mac with Samuel's edit synced at once, and plays a scenario; This
+ * browser loads its own device. Each screen is screenshot.
  *
  *   node scripts/avendb-smoke.mjs [--out dir]                    starts its own dev server
  *   BASE=http://localhost:5173 node scripts/avendb-smoke.mjs     uses a running one
@@ -127,6 +127,7 @@ try {
 	await type('.editor textarea', 'Welcome to Maia Coop: the greenhouse opens at seven.', 'opens at eight');
 	await click('Save');
 	check('the edit is saved, encrypted, as Samuel’s Mac', (await waitText("Done on Samuel's Mac")) && (await waitText('opens at seven')));
+	check('and synced at once to the devices online', await waitText('Synced at once'));
 	await click('JSON', '.tabs button');
 	check('JSON shows the raw value and the schemas', await waitText('Written under'));
 	await shot('3-json');
@@ -197,6 +198,12 @@ try {
 
 	await click('Lab', '.rail .screen');
 	check('the Lab shows every device', await waitText("Every device's copy of"));
+	// nobody synced by hand: Samuel's edit reached Bob's Mac the moment it was saved
+	const bobs = await page.waitForFunction(() => {
+		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Bob's Mac");
+		return col?.textContent?.includes('opens at seven');
+	}, { timeout: 30000 }).then(() => true, () => false);
+	check('Bob’s Mac has Samuel’s edit, synced at once', bobs);
 	await shot('13-lab');
 	await page.evaluate(() => {
 		const first = document.querySelector('.scenarios > li .btn');
