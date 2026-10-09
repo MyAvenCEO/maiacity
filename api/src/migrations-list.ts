@@ -872,4 +872,13 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE mips ADD CONSTRAINT mips_action_check CHECK (action IN ('edit', 'create', 'delete', 'world'));
     `,
   },
+  {
+    // MIPs stay one global list, but each belongs to a world (Samuel, 2026-10-09): the one it was proposed in, which a
+    // world MIP follows. MIPs from before have none, except world MIPs, which name the world they follow.
+    id: "0039-economy-mip-worlds",
+    sql: `
+      ALTER TABLE mips ADD COLUMN world_id TEXT;
+      UPDATE mips SET world_id = world->>'after' WHERE action = 'world' AND world_id IS NULL;
+    `,
+  },
 ];

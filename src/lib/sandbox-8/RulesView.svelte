@@ -11,8 +11,8 @@
 	import { GOOD_LABEL } from './rules.js';
 	import { SECTIONS, HOOKS, codeOf } from '../../../game/economy/params.js';
 
-	/** @type {{ view: 'policy' | 'world', onpropose: () => void }} */
-	let { view, onpropose } = $props();
+	/** @type {{ view: 'policy' | 'world' }} */
+	let { view } = $props();
 
 	let showJson = $state(false);
 	const local = changedRules(); // values the world's proposal set on top of its config
@@ -55,10 +55,7 @@
 	<header class="top">
 		<div>
 			<h2>{view === 'policy' ? 'Policies' : 'World rules'}</h2>
-			<p>{view === 'policy' ? 'What the valley chooses: how HEARTS are made and melt, how trading works, and what each brain sees and is asked.' : 'How the valley works: avens, bodies, rot, land, harvests and weather. Below: every resource and recipe the night runs.'} This world runs on <b>{CONFIG.name}</b>{CONFIG.id ? ` (version ${CONFIG.version})` : ''}{Object.keys(local).length ? `, with ${Object.keys(local).length} value${Object.keys(local).length === 1 ? '' : 's'} its proposal set on top` : ''}. Nothing here is set by hand: every value and every rule is a card, and its code runs in its own QuickJS sandbox. To change any of it, propose a new world.</p>
-		</div>
-		<div class="actions">
-			<button class="go" onclick={onpropose}>Propose a change</button>
+			<p>{view === 'policy' ? 'What the valley chooses: how HEARTS are made and melt, how trading works, and what each brain sees and is asked.' : 'How the valley works: avens, bodies, rot, land, harvests and weather. Below: every resource and recipe the night runs.'} This world runs on <b>{CONFIG.name}</b>{CONFIG.id ? ` (version ${CONFIG.version})` : ''}{Object.keys(local).length ? `, with ${Object.keys(local).length} value${Object.keys(local).length === 1 ? '' : 's'} its proposal set on top` : ''}. Nothing here is set by hand: every value and every rule is a card, and its code runs in its own QuickJS sandbox. To change any of it, propose a new world over the studio's MCP.</p>
 		</div>
 	</header>
 
@@ -152,11 +149,6 @@
 		max-width: 60rem;
 		color: #52514e;
 	}
-	.actions {
-		display: flex;
-		gap: 0.4rem;
-		flex-wrap: wrap;
-	}
 	button {
 		font: inherit;
 		border: 1px solid #1f2a2333;
@@ -168,11 +160,6 @@
 	button:disabled {
 		opacity: 0.4;
 		cursor: default;
-	}
-	button.go {
-		background: #24452f;
-		color: #f4f1e8;
-		border-color: #24452f;
 	}
 	section {
 		background: #fff;

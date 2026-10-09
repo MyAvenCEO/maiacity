@@ -3,7 +3,7 @@
 	every file that would go — the ones asked for and the files made of them — with the agent's why; "Delete everywhere"
 	removes them from this Mac, every device and the server's storage for good; "Keep them" leaves everything as it is.
 	A change of where a story is kept shows each class of its files before and after — a store added fetches them there,
-	one left out lets them go there.
+	one left out lets them go there. Deleting economy worlds (Sandbox 7) lists each world with its days and avens.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -22,8 +22,10 @@
 		part: 'asked' | 'with';
 	};
 	type Rules = Record<'default' | 'original' | 'proxy' | 'delivery', string[]>;
+	type AskWorld = { id: string; name: string; config?: string | null; version?: number | null; days: number; alive?: number | null; saved?: string | null };
 	type Ask =
 		| { id: string; kind: 'delete'; why: string; files: AskFile[]; bytes: number }
+		| { id: string; kind: 'worlds'; why: string; worlds: AskWorld[] }
 		| { id: string; kind: 'rules'; why: string; story: string; before: Rules; after: Rules };
 	const CLASSES = ['original', 'proxy', 'default', 'delivery'] as const;
 
@@ -92,6 +94,25 @@
 					<button class="keep" disabled={busy} onclick={() => answer(false)}>Keep as it is</button>
 					<button class="go" disabled={busy} onclick={() => answer(true)}>Change</button>
 				</div>
+			{:else if ask.kind === 'worlds'}
+				<h2 id="ask-title">Delete {ask.worlds.length} {ask.worlds.length === 1 ? 'world' : 'worlds'} of Sandbox 7?</h2>
+				{#if ask.why}<p class="why">“{ask.why}”</p>{/if}
+				<ul>
+					{#each ask.worlds as w (w.id)}
+						<li class="world">
+							<span class="name">
+								{w.name || 'A world'}
+								<small>{w.config ?? 'no config'}{w.version ? ` v${w.version}` : ''} · {w.days} {w.days === 1 ? 'day' : 'days'}{w.alive != null ? ` · ${w.alive} alive` : ''}{w.saved ? '' : ' · history only'}</small>
+							</span>
+						</li>
+					{/each}
+				</ul>
+				<p class="fine">Their days, trades, decisions and the avens' brains in them go too. This cannot be undone.</p>
+				{#if error}<p class="bad">{error}</p>{/if}
+				<div class="actions">
+					<button class="keep" disabled={busy} onclick={() => answer(false)}>Keep them</button>
+					<button class="go" disabled={busy} onclick={() => answer(true)}>Delete</button>
+				</div>
 			{:else}
 			<h2 id="ask-title">Delete {ask.files.length} {ask.files.length === 1 ? 'file' : 'files'} everywhere?</h2>
 			<p class="why">“{ask.why}”</p>
@@ -122,6 +143,10 @@
 {/if}
 
 <style>
+	li.world {
+		grid-template-columns: 1fr;
+	}
+
 	li.rule {
 		grid-template-columns: 7rem 1fr;
 	}

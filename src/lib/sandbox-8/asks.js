@@ -6,7 +6,7 @@
 // logic natively below, only as the fallback for a hook that fails or a page where QuickJS can't load;
 // scripts/sandbox-8-rules.mjs checks the two agree. Transport (Liquid, the GPU box) stays in brain.js.
 
-import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, avenView } from './economy.js';
+import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule } from './economy.js';
 import { RULES } from './rules.js';
 import { mindFor, inCharacter, mindQuestions, applyMind } from './mind.js';
 
@@ -295,17 +295,4 @@ export function applyAnswers(world, a, answers, source) {
 	if (all.length > 300) all.splice(0, all.length - 300);
 	// an aven re-decides every few seconds: only a decision that changed something goes in its ledger
 	if (changes.length || a.ledger.at(-1)?.kind !== 'price') a.ledger.push({ day: world.day, t: world.t, kind: 'price', source, changes });
-}
-
-/** what "Test the code" gives the brain hooks: the first living aven, as it stands */
-export function brainSample(world) {
-	const a = world.avens.find((x) => x.alive) ?? world.avens[0];
-	const view = (args) => ({ ...args, aven: avenView(args.aven) });
-	const ask = askArgs(world, a, true);
-	return {
-		see: { ...view(seeArgs(world, a)), value: stateOwn(world, a) },
-		ask: { ...view(ask), value: questionsOwn(world, a, ask.anchors, true) },
-		prompt: { aven: avenView(a), value: promptOwn(a) },
-		score: { aven: avenView(a), gained: 20, short: { water: 1 }, value: 20 - 30 }
-	};
 }
