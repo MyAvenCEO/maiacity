@@ -10,6 +10,7 @@
 	import { GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, ROT, DAY_S } from './economy.js';
 	import { RULES } from './rules.js';
 	import { DIALS } from './mind.js';
+	import { short, times, logScale, logAt } from './format.js';
 
 	/** @type {{ data: any, aven: any, market: any, names: Record<string, string>, trialDays: number, onselect: (id: number) => void, lineOf: (e: any) => string, admin?: boolean, mindNote?: string, onforget?: () => void }} */
 	let { data, aven: a, market, names, trialDays, onselect, lineOf, admin = false, mindNote = '', onforget } = $props();
@@ -21,12 +22,6 @@
 		return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`;
 	};
 	const share = (/** @type {number} */ v, /** @type {number} */ lo, /** @type {number} */ hi) => `${Math.max(0, Math.min(100, ((v - lo) / Math.max(1e-9, hi - lo)) * 100))}%`;
-	const pct = (/** @type {number | null} */ v, /** @type {number | null} */ m) => {
-		if (v == null || m == null) return '';
-		const p = Math.round((v / m - 1) * 100);
-		return p ? `${p > 0 ? '+' : ''}${p}%` : '±0';
-	};
-
 	const t = $derived(data.traits);
 	const m = $derived(a.mind);
 	/** dials it has that this world doesn't declare: kept in its brain, playing no part here */
@@ -35,6 +30,19 @@
 	const rank = $derived(data.list.find((/** @type {any} */ o) => o.id === a.id)?.rank ?? 0);
 	const limits = RULES.haggleMax > 0 ? { ask: 'sells at', bid: 'pays up to' } : { ask: 'lowest it accepts', bid: 'most it pays' };
 
+	/** its limit per good against the market (Samuel: prices are free): the last week's clearing prices as a band, the
+	 * clearing price now as a tick, every other limit in the book as a faint mark, and its own as a dot; log scale */
+	const bars = $derived(
+		GOODS.map((g) => {
+			const own = a.grows.includes(g);
+			const mk = market[g];
+			const week = (mk.history ?? []).slice(-8).filter((/** @type {any} */ v) => v != null && v > 0);
+			const others = [...mk.sells, ...mk.wants].filter((/** @type {any} */ o) => o.name !== a.name).map((/** @type {any} */ o) => o.price);
+			return { g, own, v: own ? a.ask[g] : a.bid[g], price: mk.price, week, others };
+		})
+	);
+	const barScale = $derived(logScale(bars.flatMap((b) => [b.v, b.price, ...b.week, ...b.others])));
+	const at = (/** @type {number} */ v) => `${(logAt(v, barScale.lo, barScale.hi) * 100).toFixed(1)}%`;
 	const days = $derived(data.stats);
 	const from = $derived(days.length ? days[0].day : 0);
 	const to = $derived(days.length ? Math.max(days.at(-1).day, from + 1) : 1);
@@ -136,15 +144,30 @@
 								<td class="num">{#if a.produce[g] != null}{a.produce[g]}<small>last {a.harvest[g]}</small>{/if}</td>
 								<td class="num">{ROT[g] ? `${Math.round(ROT[g] * 100)}%` : '—'}</td>
 								<td class="num">{a.stock[g]}</td>
-								<td class="num">{market[g].price ?? '—'}</td>
-								<td class="num">{#if v != null}<small>{own ? limits.ask : limits.bid}</small> {v}<small>{pct(v, market[g].price)}</small>{/if}</td>
+								<td class="num">{short(market[g].price)}</td>
+								<td class="num">{#if v != null}<small>{own ? limits.ask : limits.bid}</small> {short(v)}<small>{times(v, market[g].price)}</small>{:else}<small>none yet</small>{/if}</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table></div>
+				<h4>Its limits against the market <small>log scale, {short(barScale.lo)} to {short(barScale.hi)} HEARTS</small></h4>
+				<ul class="bars">
+					{#each bars as b (b.g)}
+						<li>
+							<span class="good"><em style:background={GOOD_COLOUR[b.g]}></em>{GOOD_LABEL[b.g]}</span>
+							<span class="track" title="band: the last week's clearing prices; tick: the clearing price now; grey: the others' limits; dot: its own">
+								{#if b.week.length}<span class="week" style:left={at(Math.min(...b.week))} style:right="calc(100% - {at(Math.max(...b.week))})"></span>{/if}
+								{#each b.others as p, i (i)}<span class="other" style:left={at(p)}></span>{/each}
+								{#if b.price != null}<span class="clear" style:left={at(b.price)}></span>{/if}
+								{#if b.v != null}<span class="me" class:sell={b.own} style:left={at(b.v)}></span>{/if}
+							</span>
+							<span class="num">{#if b.v != null}{short(b.v)} <small>{b.price ? `${times(b.v, b.price)} clearing` : b.own ? 'sells' : 'buys'}</small>{:else}<small>none yet</small>{/if}</span>
+						</li>
+					{/each}
+				</ul>
 				{#if Object.keys(a.choices ?? {}).length}
 					<h4>Its other decisions</h4>
-					<ul class="lines">{#each Object.entries(a.choices) as [k, v] (k)}<li>{a.brain.labels?.[k] ?? k.replace(/_/g, ' ')} <b>{v}</b> {a.brain.units?.[k] ?? ''}</li>{/each}</ul>
+					<ul class="lines">{#each Object.entries(a.choices) as [k, v] (k)}<li>{a.brain.labels?.[k] ?? k.replace(/_/g, ' ')} <b>{short(v)}</b> {a.brain.units?.[k] ?? ''}</li>{/each}</ul>
 				{/if}
 			</section>
 
@@ -554,5 +577,66 @@
 		.brain {
 			grid-row: auto;
 		}
+	}
+	.bars {
+		list-style: none;
+		padding: 0;
+		margin: 0.2rem 0 0.4rem;
+		font-size: 0.75rem;
+	}
+	.bars li {
+		display: grid;
+		grid-template-columns: 6.5rem minmax(0, 1fr) 6.5rem;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.18rem 0;
+	}
+	.bars .good em {
+		display: inline-block;
+		width: 9px;
+		height: 9px;
+		border-radius: 2px;
+		margin-right: 0.3rem;
+	}
+	.track {
+		position: relative;
+		height: 14px;
+		border-radius: 7px;
+		background: #1f2a230d;
+	}
+	.track > span {
+		position: absolute;
+		top: 50%;
+		transform: translate(-50%, -50%);
+	}
+	.track .week {
+		transform: translateY(-50%);
+		height: 8px;
+		min-width: 3px;
+		border-radius: 4px;
+		background: #24452f2e;
+	}
+	.track .other {
+		width: 2px;
+		height: 8px;
+		background: #1f2a2340;
+	}
+	.track .clear {
+		width: 2px;
+		height: 14px;
+		background: #1f2a23;
+	}
+	.track .me {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: #2f7a4a;
+		box-shadow: 0 0 0 2px #fff;
+	}
+	.track .me.sell {
+		background: #b8483b;
+	}
+	.bars .num small {
+		opacity: 0.6;
 	}
 </style>

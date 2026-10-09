@@ -25,6 +25,8 @@
 	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
+	import DepthChart from './DepthChart.svelte';
+	import { short } from './format.js';
 	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, promptFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, BOX_URL, BOX_HERE } from './brain.js';
 
@@ -396,7 +398,7 @@
 					// the real-time average: every trade of this good in the last 24 in-game hours, weighted by units
 					const recent = world.trades.filter((/** @type {any} */ t) => t.good === g && world.t - t.t < DAY_S);
 					const units = recent.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.qty, 0);
-					const avg = units ? Math.round(recent.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.qty * t.price, 0) / units) : null;
+					const avg = units ? Math.round((recent.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.qty * t.price, 0) / units) * 100) / 100 : null;
 					return [g, { avg, units, rotted: world.rotted[g], price: m.price, open: m.open, supply: m.supply, demand: m.demand, history: m.history.slice(-30).concat(m.price == null ? [] : [m.price]), sells: m.sells.map((/** @type {any} */ o) => ({ ...o })), wants: m.wants.map((/** @type {any} */ o) => ({ ...o })) }];
 				})
 			),
@@ -548,17 +550,19 @@
 		// Qwen is fast (Samuel): every aven that is due asks at once; d1 (on the machine's CPU) one a second
 		const fast = brain.mode === 'qwen';
 		if (gate.inFlight >= (fast ? world.avens.length : local ? BOX_IN_FLIGHT : 1) || now < gate.nextAt) return;
-		// the stalest aven that is due: one with no decision yet first, then the oldest decision
+		// the stalest aven that is due: one just reborn or whose health fell first (it decides at once, Samuel), then one
+		// with no decision yet, then the oldest decision
 		let a = null;
 		for (const o of world.avens) {
 			if (!o.alive || o.brain.pending) continue;
 			// Qwen: a new ask as soon as the last one has answered and the clock has moved on; d1: every THINK_H hours
-			if (o.brain.ready && (fast ? world.t <= o.brain.t0 : world.t - o.brain.t0 < THINK_H * 3600)) continue;
-			if (!a || lastAt(o) < lastAt(a)) a = o;
+			if (!o.urgent && o.brain.ready && (fast ? world.t <= o.brain.t0 : world.t - o.brain.t0 < THINK_H * 3600)) continue;
+			if (!a || (o.urgent && !a.urgent) || (!o.urgent === !a.urgent && lastAt(o) < lastAt(a))) a = o;
 		}
 		if (!a) return;
 		const me = a;
-		const full = !me.brain.ready || (me.brain.asks ?? 0) % 3 === 0;
+		const full = !me.brain.ready || me.urgent || (me.brain.asks ?? 0) % 3 === 0;
+		me.urgent = false;
 		me.brain.asks = (me.brain.asks ?? 0) + 1;
 		me.brain.pending = true;
 		me.brain.t0 = world.t;
@@ -1003,7 +1007,7 @@
 		{/if}
 		<div class="ticker" aria-label="Prices">
 			{#each GOODS as g (g)}
-				<span><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} <b>{snap.market[g].price ?? '—'}</b> <small>avg {snap.market[g].avg ?? '—'}</small></span>
+				<span><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} <b>{short(snap.market[g].price)}</b> <small>avg {short(snap.market[g].avg)}</small></span>
 			{/each}
 		</div>
 	</div>
@@ -1131,10 +1135,11 @@
 		{:else if tab === 'prices'}
 		<section>
 			<PriceChart series={snap.series} now={snap.t} />
+			<DepthChart market={snap.market} />
 			<table class="avgs">
 				<thead><tr><th>Good</th><th>Market</th><th>Avg traded, 24 h</th><th>Units, 24 h</th></tr></thead>
 				<tbody>
-					{#each GOODS as g (g)}<tr><td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td><td class="num">{snap.market[g].price ?? '—'}</td><td class="num">{snap.market[g].avg ?? '—'}</td><td class="num">{snap.market[g].units}</td></tr>{/each}
+					{#each GOODS as g (g)}<tr><td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td><td class="num">{short(snap.market[g].price)}</td><td class="num">{short(snap.market[g].avg)}</td><td class="num">{snap.market[g].units}</td></tr>{/each}
 				</tbody>
 			</table>
 		</section>

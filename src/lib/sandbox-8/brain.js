@@ -17,8 +17,8 @@ export const LIQUID_MODEL = 'd1:free';
 
 /** each aven's tools: just enough to run its own business, each one a typed question its brain answers every morning */
 export const TOOLS = [
-	{ id: 'ask', label: 'Set my price', note: 'per good it grows, in HEARTS: no starting price, it names its first one and then moves it as it likes, from its own stock, its needs, the market\'s history and what others ask' },
-	{ id: 'bid', label: 'Set what I pay', note: 'per good it buys: the most it pays, in the same range, from how close it is to going short' },
+	{ id: 'ask', label: 'Set my price', note: 'per good it grows, in HEARTS: any price, no floor and no ceiling, named again every time it decides, from its own stock, what rots tonight, the market\'s history and what others ask' },
+	{ id: 'bid', label: 'Set what I pay', note: 'per good it buys: the most it pays, just as free, from how close it is to going short' },
 	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet, up to the haggling the Policies allow' },
 	{ id: 'reserve', label: 'Keep a stock', note: 'days of water and of food: its wants, in its brain, changed only by its own trials (or the admin)' },
 	{ id: 'trial', label: 'Try something', note: `after each stretch of a few days, one change to its character or wants, kept only if its score beats the last stretch's` },
@@ -45,8 +45,15 @@ export async function askLiquid(state, all, { signal, relay } = {}) {
 	return body.answers;
 }
 
-/** the questions a decision model answers: it picks among options, it writes no text */
-const typedOnly = (questions) => Object.fromEntries(Object.entries(questions).filter(([, q]) => q.type !== 'text'));
+/** the questions a decision model answers: it picks among options, it writes no text and names no number of its own,
+ * so a number question reaches it as a score on its scale (the options the question carries; asks.js reads the score
+ * against the values they stand for) */
+const typedOnly = (questions) =>
+	Object.fromEntries(
+		Object.entries(questions)
+			.filter(([, q]) => q.type !== 'text')
+			.map(([k, q]) => [k, q.type === 'number' ? { type: 'score', instructions: q.instructions, criteria: q.criteria } : q])
+	);
 
 // ---- Samuel's GPU machine: d1 and Qwen (his tailnet only) ----
 
@@ -151,17 +158,18 @@ export async function askBox(state, questions, { signal, url = BOX_URL, want = '
 		chatOnly.add(b); // no decision API here: the chat it is, from now on
 	}
 	const keys = Object.keys(questions);
-	const options = (q) => (q.type === 'score' ? Object.fromEntries(q.criteria.map((c, i) => [i, c])) : q.type === 'text' ? 'write it' : q.criteria);
+	const options = (q) => (q.type === 'score' ? Object.fromEntries(q.criteria.map((c, i) => [i, c])) : q.type === 'text' ? 'write it' : q.type === 'number' ? 'any number you choose' : q.criteria);
+	const typeOf = (q) => (q.type === 'score' ? { type: 'integer', enum: q.criteria.map((_, i) => i) } : q.type === 'text' ? { type: 'string', maxLength: 120 } : q.type === 'number' ? { type: 'number' } : { type: 'string', enum: Object.keys(q.criteria) });
 	const schema = {
 		type: 'object',
-		properties: Object.fromEntries(keys.map((k) => [k, questions[k].type === 'score' ? { type: 'integer', enum: questions[k].criteria.map((_, i) => i) } : questions[k].type === 'text' ? { type: 'string', maxLength: 120 } : { type: 'string', enum: Object.keys(questions[k].criteria) }])),
+		properties: Object.fromEntries(keys.map((k) => [k, typeOf(questions[k])])),
 		required: keys,
 		additionalProperties: false
 	};
 	const body = {
 		model,
 		messages: [
-			{ role: 'system', content: system ?? `You decide for ${state.me}, one of the avens in a trading game. Answer every question by picking an option. Reply with one JSON object only. /no_think` },
+			{ role: 'system', content: system ?? `You decide for ${state.me}, one of the avens in a trading game. Answer every question by picking an option, or with a number where it asks for one. Reply with one JSON object only. /no_think` },
 			{ role: 'user', content: JSON.stringify({ state, questions: Object.fromEntries(keys.map((k) => [k, { question: questions[k].instructions, options: options(questions[k]) }])) }) }
 		],
 		temperature: 0.3,
@@ -191,6 +199,7 @@ export async function askBox(state, questions, { signal, url = BOX_URL, want = '
 		if (q.type === 'score' && Number.isFinite(Number(v))) answers[k] = { score: Math.max(0, Math.min(q.criteria.length - 1, Number(v))) };
 		else if (q.type === 'choice' && v != null && String(v) in q.criteria) answers[k] = { choice: String(v) };
 		else if (q.type === 'text' && typeof v === 'string') answers[k] = { text: v.slice(0, 120) };
+		else if (q.type === 'number' && v != null && v !== '' && Number.isFinite(Number(v))) answers[k] = { number: Number(v) };
 	}
 	if (!Object.keys(answers).length) throw new Error(`${want === 'd1' ? 'd1' : 'Qwen'} picked no option`);
 	return answers;

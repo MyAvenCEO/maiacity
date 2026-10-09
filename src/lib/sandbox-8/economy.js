@@ -485,7 +485,10 @@ function endOfDay(world) {
 			const { health, memo, ...reserves } = body;
 			a.body = reserves;
 			if (memo) a.memo = memo;
+			const was = a.health;
 			a.health = health ?? Math.round((Math.min(a.body.water, a.body.food) * RULES.healthMax) / 100);
+			// its health fell: its brain decides again first thing, not when its turn comes (Samuel, 2026-10-09)
+			if (a.health < was) a.urgent = true;
 			log(world, a, { kind: 'eat', short, health: a.health });
 			a.today.short = short;
 			a.today.ate = ate;
@@ -535,7 +538,12 @@ function endOfDay(world) {
 		const hearts = hooked('rebirth', { aven: a, dead }, dead >= RULES.rebirthDays ? RULES.startHearts : -1, -1, 1e9);
 		if (hearts < 0) continue;
 		Object.assign(a, { alive: true, diedOn: null, hearts, health: RULES.healthMax, body: { water: 100, food: 100 }, memo: {}, reborn: (a.reborn ?? 0) + 1, startHearts: hearts });
+		// a clean start (Samuel, 2026-10-09): no prices from its last life (in World 14 a reborn aven's old limits held it
+		// far below the market for days), and its brain decides them first thing
+		for (const g of GOODS) (a.grows.includes(g) ? a.ask : a.bid)[g] = null;
 		for (const g of GOODS) a.stock[g] = 0;
+		a.dayStart = null;
+		a.urgent = true;
 		a.x = a.territory.x;
 		a.y = a.territory.y - 6;
 		log(world, a, { kind: 'reborn', hearts });

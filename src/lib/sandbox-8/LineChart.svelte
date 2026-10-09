@@ -1,11 +1,13 @@
 <!--
 	One chart of the Stats view: lines over in-game days, one axis in one unit, dry spells shaded behind.
-	Hover or touch to read every line at that day; each line's latest value is written at its end.
+	Hover or touch to read every line at that day; each line's latest value is written at its end. `log`: a logarithmic
+	axis, for prices (free, from fractions of a HEART to tens of thousands: ×2 is the same height anywhere).
 -->
 <script>
+	import { short, logScale, logAt } from './format.js';
 	/** @typedef {{ key: string, label: string, colour: string, dash?: boolean, pts: { x: number, y: number | null }[] }} ChartLine */
-	/** @type {{ title: string, unit: string, lines: ChartLine[], from: number, to: number, shade?: [number, number][], note?: string, max?: number }} */
-	let { title, unit, lines, from, to, shade = [], note = '', max = 0 } = $props();
+	/** @type {{ title: string, unit: string, lines: ChartLine[], from: number, to: number, shade?: [number, number][], note?: string, max?: number, log?: boolean }} */
+	let { title, unit, lines, from, to, shade = [], note = '', max = 0, log = false } = $props();
 
 	let width = $state(480);
 	/** @type {number | null} */
@@ -19,9 +21,10 @@
 
 	const shown = $derived(lines.map((l) => ({ ...l, pts: l.pts.filter((p) => p.x >= from && p.x <= to) })));
 	const top = $derived(max || niceTop(Math.max(1, ...shown.flatMap((l) => l.pts.map((p) => p.y ?? 0)))));
+	const scale = $derived(log ? logScale(shown.flatMap((l) => l.pts.map((p) => p.y))) : null);
 	const x = (/** @type {number} */ v) => L + ((v - from) / Math.max(1e-6, to - from)) * (width - L - R);
-	const y = (/** @type {number} */ v) => T + (1 - v / top) * (H - T - B);
-	const yTicks = $derived([0, top / 4, top / 2, (3 * top) / 4, top]);
+	const y = (/** @type {number} */ v) => T + (1 - (scale ? logAt(v, scale.lo, scale.hi) : v / top)) * (H - T - B);
+	const yTicks = $derived(scale ? scale.ticks : [0, top / 4, top / 2, (3 * top) / 4, top]);
 	const dayTicks = $derived.by(() => {
 		const span = to - from;
 		const every = span <= 8 ? 1 : span <= 20 ? 2 : span <= 40 ? 5 : span <= 90 ? 10 : span <= 200 ? 20 : 50;
@@ -36,14 +39,7 @@
 		for (const m of [1, 2, 4, 6, 8, 10]) if (m * step >= v * 1.08) return m * step;
 		return 10 * step;
 	}
-	/** @param {number} v */
-	function fmt(v) {
-		const a = Math.abs(v);
-		if (a >= 10000) return `${Math.round(v / 1000)}k`;
-		if (a >= 1000) return `${(v / 1000).toFixed(1)}k`;
-		if (a >= 100 || Number.isInteger(v)) return String(Math.round(v));
-		return v.toFixed(1);
-	}
+	const fmt = short;
 	/** a line's path, broken where a value is missing */
 	const path = (/** @type {ChartLine['pts']} */ pts) => {
 		let d = '',

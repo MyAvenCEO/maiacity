@@ -27,15 +27,20 @@ function brainCheck(w) {
 
 function play(days) {
 	const w = createWorld(12345);
+	// the fixed prices, named again when a reborn aven starts with none (as its brain would at once)
+	const price = (a) => {
+		for (const g of GOODS) if ((a.grows.includes(g) ? a.ask : a.bid)[g] == null) a.grows.includes(g) ? (a.ask[g] = 8 + a.id) : (a.bid[g] = 10 + (a.id % 4));
+	};
 	for (const a of w.avens) {
 		wear(a, newMind(a.name, a.reserveDays));
 		a.brain.ready = true;
-		for (const g of GOODS) a.grows.includes(g) ? (a.ask[g] = 8 + a.id) : (a.bid[g] = 10 + (a.id % 4));
+		price(a);
 	}
 	if (CODE.run) seeValley(w);
 	for (let k = 0; k < days * 96; k++)
 		if (step(w, 900)) {
 			night(w);
+			for (const a of w.avens) if (a.urgent) (price(a), (a.urgent = false));
 			if (CODE.run) brainCheck(w);
 		}
 	return w;

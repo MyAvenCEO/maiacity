@@ -10,38 +10,42 @@ import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, activity, 
 import { RULES } from './rules.js';
 import { mindFor, inCharacter, mindQuestions, applyMind, traits, DIALS } from './mind.js';
 
-/** no starting prices (Samuel: they discover them). An aven's first price for a good is any of these, in HEARTS a
- * unit; after that it moves its own price, from half to twice what it was when the day began, as often as it likes. The
- * levels hang on the day's first price, not the last answer: an aven asking many times a day (Qwen answers in seconds)
- * would otherwise compound its moves and run a price up a hundredfold in a morning. A score falls between levels, so any
- * price in between is possible. Liquid takes at most 10 levels a score question (more is a 422). */
-const FIRST = [0.5, 1, 2, 4, 8, 15, 30, 60, 120, 250];
-const MOVES = [0.5, 0.6, 0.75, 0.9, 1, 1.1, 1.3, 1.6, 2];
+/** free prices (Samuel, 2026-10-09: "completely free", no anchor, no daily cap, no ceiling): an aven names any price
+ * it likes, every time it is asked. A brain that writes numbers (Qwen) answers the price itself. A decision model (d1)
+ * picks on a scale: from a tenth to ten times the clearing price (the average traded over the last day), else, for a
+ * good never traded, from 0.1 to 100,000 HEARTS a unit. A score falls between levels, so any price in between is
+ * possible; asked again, the scale moves with the market, so a price can go anywhere over a few asks. The scale is never
+ * the aven's own last price (a reborn aven's old limits held it far below the market in World 14) and never capped by
+ * its HEARTS. Liquid takes at most 10 levels a score question (more is a 422). */
+const WIDE = [0.1, 0.5, 2, 10, 50, 250, 1000, 5000, 25000, 100000];
+const SPREAD = [0.1, 0.2, 0.35, 0.5, 0.7, 1, 1.4, 2, 4, 10];
 const needOf = (a, g) => a.need?.[g] ?? NEED[g];
-/** the most an aven can pay a unit and still buy one day's need: no bid above what its HEARTS cover */
-const afford = (a, g) => cents(Math.max(0.01, a.hearts) / Math.max(1, needOf(a, g)));
-/** what a price is anchored on today: the aven's own price as the day began (else the market's), and for a buyer the
- * most it can pay. The anchor is the engine's (it remembers it through the day); the levels around it are the card's */
+/** what a price was as the day began, and the market's: what card code of an older world reads as its anchor */
 function anchorOf(world, a, g, side) {
 	const book = side === 'ask' ? a.ask : a.bid;
 	const day = (a.dayStart ??= { day: -1, ask: {}, bid: {} });
 	if (day.day !== world.day) Object.assign(day, { day: world.day, ask: { ...a.ask }, bid: { ...a.bid } });
-	const mine = (day[side][g] ??= book[g]) ?? null; // a first price named today is the day's anchor from then on
-	return { side, mine, market: world.market[g].price, afford: side === 'bid' ? afford(a, g) : null };
+	const mine = (day[side][g] ??= book[g]) ?? null;
+	const afford = side === 'bid' ? cents(Math.max(0.01, a.hearts) / Math.max(1, needOf(a, g))) : null;
+	return { side, mine, market: world.market[g].price, afford };
 }
-/** the price levels for one good, in HEARTS: around the aven's price as the day began, else the market's, else from
- * scratch; a buyer's never above what it can afford */
-function priceLevels({ mine, market, afford: top }) {
-	const base = mine ?? market;
-	const cap = (p) => cents(top == null ? p : Math.min(p, top));
-	if (base == null) {
-		const levels = FIRST.map(cap);
-		return { levels, criteria: levels.map((p, i) => `${p} HEARTS a unit${top != null && FIRST[i] > top ? ' (all my HEARTS can pay)' : ''}`) };
-	}
-	const levels = MOVES.map((f) => cap(base * f));
-	const what = mine != null ? 'my price this morning' : 'the market price';
-	return { levels, criteria: MOVES.map((f, i) => `${levels[i]} HEARTS a unit (${levels[i] === top && base * f > top ? 'all my HEARTS can pay' : f === 1 ? `keep ${what}` : `${f}× ${what}`})`) };
+/** the scale a decision model picks a price on: around the clearing price, else wide open */
+function priceLevels(market) {
+	if (market == null) return { levels: WIDE.map(cents), criteria: WIDE.map((p) => `${p} HEARTS a unit`) };
+	const levels = SPREAD.map((f) => cents(market * f));
+	return { levels, criteria: SPREAD.map((f, i) => `${levels[i]} HEARTS a unit (${f === 1 ? 'the clearing price' : `${f}× the clearing price`})`) };
 }
+/** what rots tonight in a seller's store unless it sells it: what it holds beyond tonight's own need, times the share
+ * that rots, and what that is worth at the clearing price */
+function rotsTonight(a, g, price) {
+	const units = Math.floor(Math.max(0, a.stock[g] - needOf(a, g)) * (ROT[g] ?? 0));
+	return { units, hearts: price == null ? null : Math.round(units * price * 100) / 100 };
+}
+const rotLine = (a, g, price) => {
+	const r = rotsTonight(a, g, price);
+	if (!ROT[g]) return '; it keeps';
+	return `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night: unless you sell them, ${r.units} of your ${a.stock[g]} rot tonight${r.hearts != null ? ` (${r.hearts} HEARTS at the clearing price, lost)` : ''}`;
+};
 /** how soon an aven dies without a good: water first, food far later */
 const deadline = (a, g) =>
 	g === 'water'
@@ -132,6 +136,8 @@ function stateOwn(world, a) {
 		// what it takes to stay alive: how long it lasts on its own stock, and what a day's missing needs cost at the market
 		survival: survivalFor(world, a),
 		share_that_rots_each_night: ROT,
+		// what rots in its store tonight unless it sells (or eats) it, and what that is worth at the clearing price
+		rots_tonight_unless_sold: Object.fromEntries(GOODS.filter((g) => ROT[g] && a.stock[g] > needOf(a, g)).map((g) => [g, rotsTonight(a, g, world.market[g].price)])),
 		water: world.weather.dry ? `dry spell for ${world.weather.dry} more nights: wells give only about ${RULES.dryWells}%, no rain` : `normal; ${RULES.dryChance}% of nights a dry spell of ${RULES.dryMin}–${RULES.dryMax} days starts and wells give only about ${RULES.dryWells}%`,
 		rain_barrel: `${RULES.rainChance}% of nights it rains and my barrel catches 1–${RULES.rainMax} WATER (never in a dry spell)`,
 		stock: a.stock,
@@ -170,14 +176,16 @@ function survivalFor(world, a) {
  * how much to plant): its answer is kept as aven.choices[key], which every hook reads, and the feed shows it */
 const OWN_KEY = /^[a-z][a-z0-9_]{1,40}$/;
 const isOwn = (k) => OWN_KEY.test(k) && !/^(ask|bid)_/.test(k) && !['flex', 'reserve', 'next_trial', 'lesson'].includes(k);
-/** a question the `ask` hook may answer with: a score over 2 to 10 options, each with the value it stands for, and
- * optionally what its answer sets (label) and in what (unit), as the activity feed says it */
+/** a question the `ask` hook may answer with: a score over 2 to 10 options, each with the value it stands for, or a
+ * number (Samuel, 2026-10-09: free prices), which a brain that writes numbers (Qwen) answers as it likes and a decision
+ * model (d1) picks on the same kind of scale; optionally what its answer sets (label) and in what (unit), as the
+ * activity feed says it */
 function askable(a, v) {
 	if (!plain(v) || Object.keys(v).filter(isOwn).length > 8) return false;
 	for (const [k, q] of Object.entries(v)) {
 		const [side, g] = k.split('_');
 		const ok = k === 'flex' || (side === 'ask' && a.grows.includes(g)) || (side === 'bid' && GOODS.includes(g) && !a.grows.includes(g)) || isOwn(k);
-		if (!ok || !plain(q) || q.type !== 'score' || typeof q.instructions !== 'string' || q.instructions.length > 4000) return false;
+		if (!ok || !plain(q) || (q.type !== 'score' && q.type !== 'number') || (q.type === 'number' && k === 'flex') || typeof q.instructions !== 'string' || q.instructions.length > 4000) return false;
 		if (q.label != null && (typeof q.label !== 'string' || q.label.length > 80)) return false;
 		if (q.unit != null && (typeof q.unit !== 'string' || q.unit.length > 20)) return false;
 		if (isOwn(k)) {
@@ -246,13 +254,15 @@ function labelOf(k) {
 }
 function questionsOwn(world, a, anchors, full) {
 	const q = {};
+	const free = 'Name any price you like, in HEARTS a unit: there is no floor and no ceiling, and you may change it every time you are asked.';
 	for (const g of a.grows) {
 		const m = world.market[g];
 		const sold = a.yesterday ? a.yesterday.sold[g] : 0;
-		const lv = priceLevels(anchors[g]);
+		const lv = priceLevels(m.price);
 		q[`ask_${g}`] = {
-			type: 'score',
-			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${needOf(a, g)} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford.${inCharacter(a, 'greed')} What should your selling price for ${GOOD_LABEL[g]} be?`,
+			type: 'number',
+			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${needOf(a, g)} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : `Its clearing price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${rotLine(a, g, m.price)}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell what would otherwise rot.${inCharacter(a, 'greed')} ${free} What is the lowest price you sell ${GOOD_LABEL[g]} at?`,
+			unit: 'HEARTS',
 			criteria: lv.criteria,
 			levels: lv.levels
 		};
@@ -260,10 +270,11 @@ function questionsOwn(world, a, anchors, full) {
 	for (const g of GOODS) {
 		if (a.grows.includes(g)) continue;
 		const m = world.market[g];
-		const lv = priceLevels(anchors[g]);
+		const lv = priceLevels(m.price);
 		q[`bid_${g}`] = {
-			type: 'score',
-			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${needOf(a, g)} a day, hold ${a.stock[g]} (${a.stock[g] < needOf(a, g) ? `short by ${needOf(a, g) - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / needOf(a, g))} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.${inCharacter(a, 'thrift')} What is the most you should pay for ${GOOD_LABEL[g]}?`,
+			type: 'number',
+			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${needOf(a, g)} a day, hold ${a.stock[g]} (${a.stock[g] < needOf(a, g) ? `short by ${needOf(a, g) - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / needOf(a, g))} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night, so what you hold beyond your needs is lost` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no clearing price' : `Its clearing price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.${inCharacter(a, 'thrift')} ${free} What is the most you pay for ${GOOD_LABEL[g]}?`,
+			unit: 'HEARTS',
 			criteria: lv.criteria,
 			levels: lv.levels
 		};
@@ -280,9 +291,13 @@ export function promptFor(a) {
 	return brainRule('prompt', { aven: a }, own, (v) => (typeof v === 'string' && v.trim() && v.length <= 4000 ? v : own));
 }
 const promptOwn = (a) =>
-	`You decide for ${a.name}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_brain, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (or, where asked to write, a short text). /no_think`;
+	`You decide for ${a.name}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Act as the character in my_brain, and learn from its trials, lessons and deaths. Reply with one JSON object only: for each question key, the number or key of the option you pick (where a question asks for a number, the number itself; where asked to write, a short text). /no_think`;
 
-/** apply one morning's answers to an aven's ledger of prices: each score read against the levels it was asked with */
+/** a number answer, when it is one */
+const numberOf = (ans) => (typeof ans?.number === 'number' && Number.isFinite(ans.number) ? ans.number : null);
+
+/** apply one morning's answers to an aven's ledger of prices: a number as it is, a score read against the levels it was
+ * asked with */
 export function applyAnswers(world, a, answers, source) {
 	const changes = []; // what it set anew: { label, from, to } (the feed's standard change), or a sentence
 	const kept = []; // what it answered as it was
@@ -306,26 +321,30 @@ export function applyAnswers(world, a, answers, source) {
 			continue;
 		}
 		if (isOwn(key)) {
-			// a decision of the world's own: the value its answer stands for, kept for every hook to read
+			// a decision of the world's own: the number it answered, else the value its score stands for, kept for every
+			// hook to read
 			const levels = a.brain.levels?.[key];
-			if (!levels || typeof ans.score !== 'number') continue;
-			const v = Math.round(factorOf(ans.score, levels) * 100) / 100;
+			const v = numberOf(ans) != null ? Math.round(Math.max(-1e6, Math.min(1e6, numberOf(ans))) * 100) / 100 : levels && typeof ans.score === 'number' ? Math.round(factorOf(ans.score, levels) * 100) / 100 : null;
+			if (v == null) continue;
 			set(key, a.choices?.[key] ?? null, v);
 			(a.choices ??= {})[key] = v;
 			continue;
 		}
 		const [side, g] = key.split('_');
 		const levels = a.brain.levels?.[key];
-		if (!levels || typeof ans.score !== 'number' || (side === 'ask') !== a.grows.includes(g)) continue;
+		if ((side === 'ask') !== a.grows.includes(g) || !GOODS.includes(g)) continue;
+		// the price it named (any above nothing, up to a sanity bound), else the price its score stands for
+		const n = numberOf(ans);
+		const price = n != null && n > 0 ? cents(Math.min(1e9, n)) : levels && typeof ans.score === 'number' ? cents(factorOf(ans.score, levels, true)) : null;
+		if (price == null) continue;
 		const book = side === 'ask' ? a.ask : a.bid;
-		const price = cents(factorOf(ans.score, levels, true));
 		set(key, book[g], price);
 		book[g] = price;
 	}
 	a.brain.last = { day: world.day, t: world.t, source, answers };
 	// for the run's record in the database (when the page keeps one): what it decided, compactly
 	if (world.outbox)
-		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes: changes.map(changeText), answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? v?.text ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
+		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes: changes.map(changeText), answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? v?.text ?? numberOf(v) ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
 	a.brain.ready = true;
 	// every decision of every aven, newest last, for the page's Decisions feed
 	activity(world, { kind: 'decision', source, changes, kept }, a);
