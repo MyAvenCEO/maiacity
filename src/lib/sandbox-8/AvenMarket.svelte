@@ -2,7 +2,8 @@
 	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Ten blobs in a 2D valley, each with 1,000 HEARTS and a territory
 	that grows 1 to 3 of the 5 goods. Every hour the market matches their asks and bids (no market place: after a deal the
 	buyer walks over to fetch its goods); all day long each one keeps re-deciding its prices with Liquid's decision model
-	d1:free, through our API's relay. No Liquid, no game: the valley pauses until it answers.
+	d1:free, through our API's relay; in Samuel's own studio, Qwen on his GPU machine answers when Liquid can't. No brain,
+	no game: the valley pauses until one answers.
 	Survive, and end with the most HEARTS. Signed in (the Mac app's key, or the site's session) the valley runs on a config
 	from the database, changed only by MIPs (the Proposals view), and every run is saved there day by day (store.js).
 -->
@@ -20,7 +21,7 @@
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
-	import { stateFor, questionsFor, askLiquid, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
+	import { stateFor, questionsFor, askLiquid, askQwen, applyAnswers, LIQUID_MODEL, TOOLS, QWEN_URL, QWEN_HERE } from './brain.js';
 
 	// the rules this viewer changed last time, kept in this browser only
 	const SAVED = 'sandbox-8-rules';
@@ -137,7 +138,7 @@
 	function startRecording() {
 		if (!acct.play) return;
 		saving = { days: 0, error: '' };
-		rec = recorder(world, { config_id: CONFIG.id, config_version: CONFIG.version, config: { cards: CONFIG.cards, params: { ...RULES }, local: changedRules() }, seed: world.seed, brain: LIQUID_MODEL, summary: summary() });
+		rec = recorder(world, { config_id: CONFIG.id, config_version: CONFIG.version, config: { cards: CONFIG.cards, params: { ...RULES }, local: changedRules() }, seed: world.seed, brain: brain.mode === 'liquid' ? LIQUID_MODEL : brain.mode === 'qwen' ? 'qwen' : `${LIQUID_MODEL}, qwen fallback`, summary: summary() });
 	}
 
 	/** send the finished days (every few seconds); `end` closes the run */
@@ -164,7 +165,7 @@
 	let panelOpen = $state(true);
 	let page = $state('valley'); // the main view: 'valley' or 'stats'
 	let snap = $state.raw(snapshot());
-	let calls = $state({ asked: 0, answered: 0, failed: 0, limited: 0, lastError: /** @type {string} */ ('') });
+	let calls = $state({ asked: 0, answered: 0, qwen: 0, failed: 0, limited: 0, lastError: /** @type {string} */ (''), qwenError: '' });
 
 	/** @type {HTMLCanvasElement} */
 	let canvas;
@@ -239,15 +240,94 @@
 	// every 4 s (read off its console, 2026-10-09). So the asks go out one at a time, the stalest aven first, and the
 	// gap between them adapts: 10% shorter after an answer (down to GAP_MIN), 50% longer after a refusal (up to
 	// GAP_MAX). Only every third ask of an aven is a full one (haggling, stock); the rest ask its prices.
-	// Any failure but a refusal pauses the valley.
+	// Any failure but a refusal pauses the valley. On Samuel's own studio a second brain can step in (BRAINS): Qwen on his
+	// GPU machine answers whenever Liquid can't (a refusal, an error, or while Liquid rests after one), or answers alone.
 	const THINK_H = 2;
 	const STALE_H = 24;
 	const GAP_MIN = 2500;
 	const GAP_MAX = 30000;
 	let down = $state(/** @type {string} */ (''));
 	let busy = $state(/** @type {string} */ (''));
-	const gate = { inFlight: 0, nextAt: 0, gap: 4000 };
+	const gate = { inFlight: 0, nextAt: 0, gap: 4000, liquidAt: 0, qwenAt: 0 };
 	const isRateLimit = (/** @type {string} */ m) => / 429\b|rate.limit|too many/i.test(m);
+	const errorOf = (/** @type {any} */ e) => (e?.name === 'AbortError' ? 'timed out' : e?.message || String(e || 'unreachable'));
+
+	// ---- the brains (Samuel, 2026-10-09): Liquid, and only on his local studio build Qwen on his GPU machine ----
+	const BRAINS = { fallback: "Liquid, Qwen when Liquid can't", liquid: 'Liquid only', qwen: 'Qwen only' };
+	const QWEN_GAP = 300; // Qwen is his own: no rate limit to pace for
+	const REST = 60000; // a brain that failed is passed over this long
+	const BRAIN = 'sandbox-8-brain';
+	let brain = $state({ mode: QWEN_HERE ? 'fallback' : 'liquid', url: QWEN_URL });
+	if (QWEN_HERE)
+		try {
+			const b = JSON.parse(localStorage.getItem(BRAIN) ?? 'null');
+			if (b) brain = { mode: b.mode in BRAINS ? b.mode : 'fallback', url: b.url || QWEN_URL };
+		} catch {
+			/* no storage here */
+		}
+	function saveBrain() {
+		gate.liquidAt = gate.qwenAt = gate.nextAt = 0;
+		calls.qwenError = '';
+		down = busy = '';
+		try {
+			localStorage.setItem(BRAIN, JSON.stringify(brain));
+		} catch {
+			/* no storage here */
+		}
+	}
+
+	/** one aven's decision, from the brain whose turn it is: resolves to { answers, source } or throws */
+	async function decide(/** @type {any} */ me, /** @type {boolean} */ full) {
+		const state = stateFor(world, me);
+		const questions = questionsFor(world, me, { full });
+		/** @param {number} ms @param {(signal: AbortSignal) => Promise<any>} ask */
+		const within = (ms, ask) => {
+			const ctrl = new AbortController();
+			const timer = setTimeout(() => ctrl.abort(), ms);
+			return ask(ctrl.signal).finally(() => clearTimeout(timer));
+		};
+		const qwen = async () => {
+			try {
+				const answers = await within(60000, (signal) => askQwen(state, questions, { signal, url: brain.url }));
+				calls.qwenError = '';
+				return { answers, source: 'qwen' };
+			} catch (e) {
+				calls.qwenError = errorOf(e);
+				gate.qwenAt = performance.now() + REST;
+				throw e;
+			}
+		};
+		if (brain.mode === 'qwen') return qwen();
+		const fallback = brain.mode === 'fallback';
+		// while Liquid rests after a failure, Qwen answers (unless it failed too: then Liquid it is)
+		if (fallback && performance.now() < gate.liquidAt && performance.now() >= gate.qwenAt)
+			try {
+				return await qwen();
+			} catch {
+				/* Liquid, then */
+			}
+		try {
+			const answers = await within(25000, (signal) => askLiquid(state, questions, { signal, ...LIQUID }));
+			gate.liquidAt = 0;
+			return { answers, source: 'liquid' };
+		} catch (e) {
+			if (!fallback || performance.now() < gate.qwenAt) throw e;
+			// Liquid can't: it rests (after a refusal, its back-off; else a minute) and Qwen answers in its place
+			const limited = isRateLimit(errorOf(e));
+			let answered;
+			try {
+				answered = await qwen();
+			} catch {
+				throw e; // Qwen can't either: Liquid's failure decides, as before
+			}
+			if (limited) {
+				gate.gap = Math.min(GAP_MAX, gate.gap * 1.5);
+				calls.limited++;
+			}
+			gate.liquidAt = performance.now() + (limited ? gate.gap : REST);
+			return answered;
+		}
+	}
 
 	/** @param {any} a */
 	const lastAt = (a) => (a.brain.ready ? a.brain.last?.t ?? -Infinity : -Infinity);
@@ -270,23 +350,22 @@
 		me.brain.t0 = world.t;
 		gate.inFlight++;
 		calls.asked++;
-		const ctrl = new AbortController();
-		const timer = setTimeout(() => ctrl.abort(), 25000);
 		const myWorld = world;
-		askLiquid(stateFor(world, me), questionsFor(world, me, { full }), { signal: ctrl.signal, ...LIQUID })
-			.then((answers) => {
-				gate.gap = Math.max(GAP_MIN, gate.gap * 0.9);
-				gate.nextAt = performance.now() + gate.gap;
+		decide(me, full)
+			.then(({ answers, source }) => {
+				if (source === 'liquid') gate.gap = Math.max(GAP_MIN, gate.gap * 0.9);
+				gate.nextAt = performance.now() + (source === 'qwen' ? QWEN_GAP : gate.gap);
 				busy = '';
 				if (myWorld !== world || !me.alive) return;
 				calls.answered++;
+				if (source === 'qwen') calls.qwen++;
 				me.brain.error = null;
-				applyAnswers(world, me, answers, 'liquid');
+				applyAnswers(world, me, answers, source);
 			})
 			.catch((/** @type {any} */ e) => {
-				const msg = e?.name === 'AbortError' ? 'timed out' : e?.message || 'unreachable';
+				const msg = errorOf(e);
 				me.brain.t0 = -Infinity; // it asks again first
-				if (isRateLimit(msg)) {
+				if (brain.mode !== 'qwen' && isRateLimit(msg)) {
 					// Liquid is busy, not down: wait and ask again, the clock holds meanwhile
 					gate.gap = Math.min(GAP_MAX, gate.gap * 1.5);
 					gate.nextAt = performance.now() + gate.gap;
@@ -299,12 +378,11 @@
 				calls.failed++;
 				calls.lastError = msg;
 				me.brain.error = msg;
-				// no decision, no game: pause until Liquid answers again
+				// no decision, no game: pause until a brain answers again
 				down = msg;
 				paused = true;
 			})
 			.finally(() => {
-				clearTimeout(timer);
 				gate.inFlight--;
 				me.brain.pending = false;
 			});
@@ -318,7 +396,7 @@
 		rec = null;
 		saving = { days: 0, error: '' };
 		world = createWorld();
-		calls = { asked: 0, answered: 0, failed: 0, limited: 0, lastError: '' };
+		calls = { asked: 0, answered: 0, qwen: 0, failed: 0, limited: 0, lastError: '', qwenError: '' };
 		down = '';
 		busy = '';
 		paused = true;
@@ -601,7 +679,7 @@
 			const s = Object.entries(e.short ?? {});
 			return s.length ? `went short of ${s.map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')} · health ${e.health}` : `ate and drank in full · health ${e.health}`;
 		}
-		if (e.kind === 'price') return `Liquid: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
+		if (e.kind === 'price') return `${e.source === 'qwen' ? 'Qwen' : 'Liquid'}: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
 		if (e.kind === 'death') return 'died';
 		if (e.kind === 'rot') return `rotted: ${Object.entries(e.rotted).map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')}`;
 		if (e.kind === 'rain') return `rain: the barrel caught ${e.qty} WATER`;
@@ -636,7 +714,7 @@
 	<div class="stage" bind:this={stageEl}>
 		<canvas bind:this={canvas} onpointerdown={onPointer}></canvas>
 		{#if down}
-			<p class="liquid-note down">Paused: Liquid isn't answering ({down}). The avens never play without it. Press Play to ask again.</p>
+			<p class="liquid-note down">Paused: {brain.mode === 'liquid' ? "Liquid isn't" : brain.mode === 'qwen' ? "Qwen isn't" : "neither Liquid nor Qwen is"} answering ({down}{calls.qwenError && brain.mode === 'fallback' ? `; Qwen: ${calls.qwenError}` : ''}). The avens never play without a brain. Press Play to ask again.</p>
 		{:else if !paused && (snap.waiting || snap.stale || busy)}
 			<p class="liquid-note">{busy ? `${busy} ` : ''}{snap.waiting ? `Waiting for Liquid: ${snap.waiting} aven${snap.waiting === 1 ? '' : 's'} still deciding ${snap.waiting === 1 ? 'its' : 'their'} first prices.` : snap.stale ? `The clock waits for Liquid: ${snap.stale} aven${snap.stale === 1 ? '' : 's'} need a fresh decision.` : ''}</p>
 		{/if}
@@ -690,7 +768,9 @@
 					{#each snap.code?.hooks ?? [] as h, i (h.card)}{i ? '; ' : ''}{h.name} runs {h.hooks.join(', ')}{h.calls ? ` (${h.ms} ms a call)` : ''}{/each}{#each snap.code?.errors ?? [] as e (e.card)}{' · '}<span class="warn">{e.name} stopped: {e.error}; the valley uses the values instead.</span>{/each}{#if codeNote}{' · '}<span class="warn">{codeNote}</span>{/if}
 					<br />
 				{/if}
-				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.limited}&nbsp;· {calls.limited} waited out Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
+				Brains: {#if QWEN_HERE}<select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Brains">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select>{/if}
+				{brain.mode === 'qwen' ? 'Qwen' : `Liquid ${LIQUID_MODEL}`} · {calls.answered} of {calls.asked} answered{#if calls.qwen && brain.mode === 'fallback'}&nbsp;({calls.qwen} by Qwen){/if}{#if calls.limited}&nbsp;· {calls.limited} met Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
+				{#if QWEN_HERE && brain.mode !== 'liquid'}<br />Qwen at <input class="brain-url" bind:value={brain.url} onchange={saveBrain} spellcheck="false" aria-label="Qwen's address" />{#if calls.qwenError}<span class="warn"> not answering: {calls.qwenError}</span>{/if}{/if}
 			</p>
 		</section>
 
@@ -1131,6 +1211,20 @@
 	}
 	.good-head small.up {
 		color: #2f7d4f;
+	}
+	.brain-mode,
+	.brain-url {
+		font: inherit;
+		font-size: 0.72rem;
+		border: 1px solid #1f2a2333;
+		border-radius: 6px;
+		padding: 0.05rem 0.25rem;
+		background: #fff;
+		color: inherit;
+	}
+	.brain-url {
+		width: 14rem;
+		max-width: 60%;
 	}
 	.liquid-note {
 		position: absolute;
