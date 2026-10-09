@@ -2,9 +2,12 @@
  * The avenDB account's walk through, end to end: /app/avendb/ in a headless Chrome whose virtual authenticator holds a
  * passkey with PRF, against an avenDB server on this machine. The person signed up to maiaCITY with that passkey; the
  * account founds their vault with it in three ceremonies, claims the server, and names their vault and avenCEO with
- * none. Their vault then founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, each named by hand, in one ceremony,
+ * none. A note of theirs is edited, branched, merged, undone, restored, made to match its branch and forked from its
+ * history, with no ceremony, and their vault's DB & Schema tab shows its rows, schemas and lenses. Their vault then
+ * founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, each named by hand, in one ceremony,
  * and the person acts as each in turn from the switcher at the foot: avenALICE writes a note and a todo and shares the
- * note with avenBOB, who reads it and nothing else, while avenCHARLY sees nothing of hers; the Sync list shows
+ * note with avenBOB, who reads it and its history and nothing else, and finds her todo sealed for him in her
+ * database, while avenCHARLY sees nothing of hers; the Sync list shows
  * avenCEO's server relaying her home's ciphertext and opening none of it; making the coop an owner of her home takes
  * one ceremony, revoking avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here,
  * it comes back through the server for the passkey alone, in four ceremonies, with every vault and the note. Each step
@@ -174,6 +177,63 @@ const note = (title) =>
 		return { words, editable: !!el.querySelector('textarea'), chips };
 	}, title);
 
+/** The note viewer's text on the line it shows: its editor's, or its words. */
+const docText = () =>
+	page.evaluate(() => {
+		const doc = document.querySelector('.viewer .doc');
+		const field = doc?.querySelector('textarea');
+		return field ? field.value : (doc?.querySelector('.text')?.textContent ?? null);
+	});
+/** The note's history on the line shown, newest first: what each write did, and the words it put in and took out. */
+const writes = () =>
+	page.$$eval('.viewer .history li', (lis) =>
+		lis.map((li) => ({
+			what: li.querySelector('.what b')?.textContent?.trim() ?? '',
+			ins: [...li.querySelectorAll('.diff ins')].map((e) => e.textContent),
+			del: [...li.querySelectorAll('.diff del')].map((e) => e.textContent)
+		}))
+	);
+/** The line the viewer shows. */
+const onLine = () => text('.viewer .lines .line.on b');
+/** Set the viewer's text, and save it on the line it shows. @param {string} t */
+async function saveText(t) {
+	await page.$eval(
+		'.viewer .doc textarea',
+		(e, t) => {
+			/** @type {HTMLTextAreaElement} */ (e).value = t;
+			e.dispatchEvent(new Event('input', { bubbles: true }));
+		},
+		t
+	);
+	await click('Save on', '.viewer .doc button');
+	return until(async () => (await docText()) === t && !(await page.$('.viewer .doc button.primary')), 30000);
+}
+/** Click `label` on the newest write of the history whose words are `what`. */
+async function onWrite(what, label) {
+	const ok = await page.evaluate(
+		(what, label) => {
+			const li = [...document.querySelectorAll('.viewer .history li')].find(
+				(l) => l.querySelector('.what b')?.textContent?.trim() === what
+			);
+			const button = [...(li?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === label);
+			button?.click();
+			return !!button;
+		},
+		what,
+		label
+	);
+	if (!ok) check(`“${what}” has a ${label}`, false);
+	await sleep(250);
+}
+/** The DB & Schema tab's rows: what each is, its title and its lines. */
+const rowsShown = () =>
+	page.$$eval('.main .db tbody tr.entry', (rows) =>
+		rows.map((r) => {
+			const cells = [...r.querySelectorAll('td')].map((c) => c.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+			return { what: cells[1], title: cells[2], lines: cells[5] };
+		})
+	);
+
 const NOTE = 'Hello from Alice';
 const BODY = 'Only Bob may read this.';
 const TODO = 'Plant the north beds';
@@ -224,6 +284,79 @@ try {
 	const renamed = await until(async () => (await devices()).includes('Samuel’s test browser'));
 	check('a new name, on its card', renamed, (await devices()).join(', '));
 	await shot('3-devices');
+
+	// a note's history and branches: edited, branched, merged, undone, restored, made to match and forked, all of it
+	// without a ceremony
+	const noting = await ceremonies();
+	await click('Notes & todos', '.aside .tabs-list .item');
+	await type('.compose input.field', 'Plan');
+	await type('.compose textarea', 'Plant beans.');
+	await click('Write the note', '.compose button');
+	check('a note to work on', await until(async () => (await note('Plan'))?.words === 'Plant beans.'), JSON.stringify(await note('Plan')));
+	await click('History & branches', '.main .note .who button');
+	check('it opens on its history', await until(async () => (await text('.viewer h2')) === 'Plan', 10000), await text('.viewer h2'));
+	const lines = () => shown('.viewer .lines .line b');
+	check('one line, main, with one write', (await lines()).join() === 'main' && (await writes()).length === 1, (await lines()).join());
+	check('saved on main', await saveText('Plant beans and peas.'), await docText());
+	const edit = (await writes())[0];
+	check('the edit, word by word', edit?.what === 'Edited' && edit.ins.join('|') === ' and peas' && !edit.del.length, JSON.stringify(edit));
+	await click('New branch', '.viewer .lines button');
+	await type('#branch-name', 'draft');
+	await click('Start the branch', '.viewer .naming button');
+	check('a branch, draft, picked', await until(async () => (await onLine()) === 'draft'), (await lines()).join());
+	const start = (await writes())[0]?.what;
+	check('it starts from main', start === 'Started the branch “draft” from “main”', start);
+	check('saved on the branch', await saveText('Plant beans, peas and corn.'), await docText());
+	const against = await shown('.viewer .against .diff ins');
+	check('what it changes against main', against.join('|') === ', peas|corn', against.join('|'));
+	await shot('3b-branch');
+	await click('Merge into main', '.viewer .against button');
+	const merged = until(async () => (await onLine()) === 'main' && (await docText()) === 'Plant beans, peas and corn.');
+	check('merged: main reads the branch', await merged, await docText());
+	const merge = (await writes())[0];
+	check('the merge, and what it brought', merge?.what === 'Merged “draft” into “main”' && merge.ins.join('|') === ', peas |corn', JSON.stringify(merge));
+	await onWrite('Edited on “draft”', 'Undo');
+	check('the branch’s edit undone on main', await until(async () => (await docText()) === 'Plant beans and peas.'), await docText());
+	await onWrite('Wrote the note', 'View');
+	check('the first version, read-only', await until(async () => (await text('.viewer .old .text')) === 'Plant beans.', 5000));
+	await click('Restore it on “main”', '.viewer .old button');
+	check('restored on main', await until(async () => (await docText()) === 'Plant beans.'), await docText());
+	await click('draft', '.viewer .lines .line');
+	check('the branch as it was', await until(async () => (await docText()) === 'Plant beans, peas and corn.', 5000), await docText());
+	check('saved on the branch again', await saveText('Corn first.'), await docText());
+	await click('Make main match it', '.viewer .against button');
+	const matched = until(async () => (await onLine()) === 'main' && (await docText()) === 'Corn first.');
+	check('main made to match the branch', await matched, await docText());
+	check('as a write of its own', (await writes())[0]?.what === 'Made “main” match “draft”', (await writes())[0]?.what);
+	await shot('3c-history');
+	await click('Fork into a new note', '.viewer .fork button');
+	check('forked', await waitText('Forked', 30000, '.viewer .fork'), await problem());
+	await click('Open the fork', '.viewer .fork button');
+	const fork = until(async () => (await docText()) === 'Corn first.' && (await writes()).length === 1, 10000);
+	check('the fork: the same text, with one write of its own', await fork, `${await docText()} ${(await writes()).length}`);
+	check('none of it asked the passkey', (await ceremonies()) === noting, `${(await ceremonies()) - noting}`);
+	check('and no error', !(await problem()), await problem());
+	await shot('3d-fork');
+
+	// the vault's database, as this browser holds it, with its schemas and lenses
+	await click('DB & Schema', '.aside .tabs-list .item');
+	const rowsThere = async () => {
+		const what = (await rowsShown()).map((r) => r.what);
+		return what.includes('Device card') && what.includes('Vault profile') && what.filter((w) => w === 'Note').length === 2;
+	};
+	check('its rows: this browser’s card, the vault’s profile, the note and its fork', await until(rowsThere, 20000), JSON.stringify(await rowsShown()));
+	const plan = (await rowsShown()).findIndex((r) => r.lines === 'main + 1 branch');
+	check('the note with its branch', plan >= 0 && (await rowsShown())[plan].title === 'Plan', JSON.stringify(await rowsShown()));
+	await page.evaluate((i) => /** @type {HTMLElement} */ (document.querySelectorAll('.main .db tbody tr.entry')[i])?.click(), plan);
+	await sleep(250);
+	const details = await text('.main .db tr.details');
+	check('its details: its branch and its record', details.includes('draft') && details.includes('Corn first.'), details.slice(0, 300));
+	const schemaNames = await shown('.main .schemas .schema header b');
+	check('the schemas the app ships', ['Markdown document, v2', 'Todo, v2'].every((n) => schemaNames.includes(n)), schemaNames.join(', '));
+	const fieldNames = await shown('.main .schemas .fields td:first-child code');
+	check('field by field', ['blocks', 'tags', 'status', 'due'].every((n) => fieldNames.includes(n)), fieldNames.join(', '));
+	check('and the lens between v1 and v2', (await shown('.main .lenses .schema header b')).includes('Markdown document, v1 to v2'));
+	await shot('3e-database');
 
 	// the cast to enact, named by hand: four vaults Samuel's vault owns, in one ceremony
 	const founding = await ceremonies();
@@ -278,6 +411,17 @@ try {
 	check('her todo stays hidden', !(await text('.main')).includes(TODO));
 	check('he writes nothing new there', !(await page.$('.main .compose')));
 	await shot('7-bob');
+	await click('History & branches', '.main .note .who button');
+	check('he reads its history', await until(async () => (await text('.viewer h2')) === NOTE, 10000), await text('.viewer h2'));
+	const readOnly = !(await page.$('.viewer .doc textarea')) && !(await page.$('.viewer .lines button.btn'));
+	check('and changes none of it', readOnly && (await text('.viewer .head')).includes('only reads it'), await text('.viewer .head'));
+	await click('DB & Schema', '.aside .tabs-list .item');
+	const hers = async () => {
+		const rows = await rowsShown();
+		return rows.some((r) => r.what === 'Note' && r.title === NOTE) && rows.some((r) => r.what === 'Sealed');
+	};
+	check('in her database, her note opens for him, her todo is sealed', await until(hers, 20000), JSON.stringify(await rowsShown()));
+	await shot('7b-bob-database');
 
 	// avenCHARLY: nothing of hers
 	check('acting as avenCHARLY', await actAs('avenCHARLY'));
@@ -335,6 +479,11 @@ try {
 	const fits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 	check('on a phone, nothing wider than the screen', fits);
 	await shot('12-phone');
+	await look('avenALICE', 'DB & Schema');
+	await waitText('Schemas', 10000, '.main');
+	check('as Samuel, her database offers to act as her', await waitText('Act as avenALICE', 5000, '.main .db .act'));
+	check('nor her database, whose tables scroll on their own', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+	await shot('12b-phone-database');
 	await page.setViewport(wide);
 
 	// the store kept it: after a reload it unlocks with one ceremony, every vault there

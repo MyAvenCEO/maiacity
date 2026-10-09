@@ -294,6 +294,52 @@
 		todo: (actor, space, title) => act('Adding the todo', () => device.todo(actor, space, title)),
 		/** @param {string} actor @param {string} space @param {string} entry @param {string} status */
 		setStatus: (actor, space, entry, status) => act('Saving', () => device.setStatus(actor, space, entry, status)),
+		/** Vault `vault`'s database as this browser holds it, for the DB & Schema tab. @param {string} vault */
+		database: (vault) => device.database(vault),
+		/** A note's lines and every write of it, for its history. @param {string} space @param {string} entry */
+		note: (space, entry) => device.note(space, entry),
+		/**
+		 * The note's text on line `line` (`null` for the main line).
+		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} text
+		 */
+		setTextOn: (actor, space, entry, line, text) =>
+			act('Saving', () => device.setTextOn(actor, space, entry, line, 2, text)),
+		/**
+		 * A branch named `name` from version `from`: the new line, or `null` if it didn't go through.
+		 * @param {string} actor @param {string} space @param {string} entry @param {string[]} from @param {string} name
+		 */
+		branch: async (actor, space, entry, from, name) => {
+			let made = null;
+			const ok = await act('Starting the branch', async () => (made = await device.branch(actor, space, entry, from, name)));
+			return ok ? made : null;
+		},
+		/**
+		 * Line `from` merged into line `into`; with `promote`, `into` brought to exactly what `from` shows.
+		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} from
+		 * @param {string | null} into @param {boolean} promote
+		 */
+		merge: (actor, space, entry, from, into, promote) =>
+			act(promote ? 'Making it match' : 'Merging', () => device.merge(actor, space, entry, from, into, promote)),
+		/**
+		 * Version `version` put back on line `line`.
+		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string[]} version
+		 */
+		restore: (actor, space, entry, line, version) =>
+			act('Restoring', () => device.restore(actor, space, entry, line, version)),
+		/**
+		 * Write `op` undone on line `line`, every change since kept.
+		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} op
+		 */
+		undo: (actor, space, entry, line, op) => act('Undoing', () => device.undo(actor, space, entry, line, op)),
+		/**
+		 * What line `line` shows, as a new note of space `into`: the new entry, or `null` if it didn't go through.
+		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} into
+		 */
+		fork: async (actor, space, entry, line, into) => {
+			let made = null;
+			const ok = await act('Forking', async () => (made = await device.fork(actor, space, entry, line, into)));
+			return ok ? made : null;
+		},
 		/** @param {string} issuer @param {string} space @param {string | null} entry @param {string} role @param {string} grantee */
 		grant: (issuer, space, entry, role, grantee) =>
 			act(role === 'owner' ? `Sharing: ${asks} once` : 'Sharing', async () =>

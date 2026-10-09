@@ -1,16 +1,19 @@
 <!--
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its list (its notes and todos, then its settings: About, Owners and devices, Access, Sync); and its
-	notes and todos or the settings picked, in the middle. At the foot, in the middle above the app's own buttons, the
+	vault's name and its list (its notes and todos, its database and schemas, then its settings: About, Owners and
+	devices, Access, Sync); and its notes and todos, one note's history and branches, its database or the settings
+	picked, in the middle. At the foot, in the middle above the app's own buttons, the
 	vault the person acts as: their own, or any vault their vault owns, whose caps then decide what the page shows and
 	what it may do, as on a device of that vault alone. Marks of the vaults the acting vault holds nothing in are faded.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
 	import Board from './Board.svelte';
+	import Database from './Database.svelte';
 	import Mark from './Mark.svelte';
 	import NewVaults from './NewVaults.svelte';
+	import NoteView from './NoteView.svelte';
 	import Settings from './Settings.svelte';
 	import { KINDS, list, nameOf, reaches } from './vaults.js';
 
@@ -23,13 +26,16 @@
 	/** the vault the person picked to act as, and the one to look at: their own until they pick another */
 	let enacted = $state('');
 	let picked = $state('');
-	/** @type {'board' | 'about' | 'members' | 'access' | 'sync'} */
+	/** @type {'board' | 'data' | 'about' | 'members' | 'access' | 'sync'} */
 	let tab = $state('board');
+	/** the note whose history and branches show, over the notes and todos */
+	let opened = $state(/** @type {{ space: string, entry: string } | null} */ (null));
 	let switching = $state(false);
 	let adding = $state(false);
 
 	const TABS = /** @type {const} */ ([
 		['board', 'Notes & todos'],
+		['data', 'DB & Schema'],
 		['about', 'About'],
 		['members', 'Owners & devices'],
 		['access', 'Access'],
@@ -53,7 +59,12 @@
 
 	/** Act as vault `id`, and look at its own. @param {string} id */
 	function enact(id) {
-		[enacted, picked, tab, switching] = [id, id, 'board', false];
+		[enacted, picked, tab, switching, opened] = [id, id, 'board', false, null];
+	}
+
+	/** Show note `entry` of space `space`: its history and branches. @param {string} space @param {string} entry */
+	function open(space, entry) {
+		[tab, opened] = ['board', { space, entry }];
 	}
 
 	/** Who owns vault `v`, as a line. @param {import('./vaults.js').VaultView} v */
@@ -82,7 +93,7 @@
 					title="{nameOf(v)} · {KINDS[v.kind]}{out ? ` · ${nameOf(as)} holds nothing in it` : ''}"
 					aria-label={nameOf(v)}
 					aria-current={v.id === context ? 'true' : undefined}
-					onclick={() => (picked = v.id)}
+					onclick={() => ([picked, opened] = [v.id, null])}
 				>
 					<Mark vault={v} dim={out} />
 					{#if v.id === actor}<i class="acting" title="You act as it"></i>{/if}
@@ -102,7 +113,7 @@
 		</header>
 		<nav class="tabs-list" aria-label="{nameOf(here)}'s lists">
 			{#each TABS as [id, label] (id)}
-				<button class="item" class:on={tab === id} onclick={() => (tab = id)}>{label}</button>
+				<button class="item" class:on={tab === id} onclick={() => ([tab, opened] = [id, null])}>{label}</button>
 			{/each}
 		</nav>
 		{#if world.pqOnly}
@@ -113,18 +124,35 @@
 	</aside>
 
 	<section class="main">
-		<header class="main-head">
-			<h2>{TABS.find(([id]) => id === tab)?.[1]}</h2>
-			<p class="soft">
-				As <b>{nameOf(as)}</b>{#if actor === context}.{:else if tab === 'board'}, looking at {nameOf(here)}'s vault: you
-					see what {nameOf(as)}'s caps allow.{:else}. {nameOf(here)}'s settings show every cap and device, as its owners
-					see them.{/if}
-			</p>
-		</header>
-		{#if tab === 'board'}
-			<Board {world} vault={context} {actor} {api} {busy} onaccess={() => (tab = 'access')} onact={enact} />
+		{#if tab === 'board' && opened}
+			{#key `${opened.space} ${opened.entry}`}
+				<NoteView
+					{world}
+					{actor}
+					{api}
+					{busy}
+					space={opened.space}
+					entry={opened.entry}
+					onclose={() => (opened = null)}
+					onopen={open}
+				/>
+			{/key}
 		{:else}
-			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} />
+			<header class="main-head">
+				<h2>{TABS.find(([id]) => id === tab)?.[1]}</h2>
+				<p class="soft">
+					As <b>{nameOf(as)}</b>{#if actor === context}.{:else if tab === 'board' || tab === 'data'}, looking at
+						{nameOf(here)}'s vault: you see what {nameOf(as)}'s caps allow.{:else}. {nameOf(here)}'s settings show
+						every cap and device, as its owners see them.{/if}
+				</p>
+			</header>
+			{#if tab === 'board'}
+				<Board {world} vault={context} {actor} {api} {busy} onaccess={() => (tab = 'access')} onact={enact} onopen={open} />
+			{:else if tab === 'data'}
+				<Database {world} vault={context} {actor} {api} onopen={open} onact={enact} />
+			{:else}
+				<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} />
+			{/if}
 		{/if}
 	</section>
 
