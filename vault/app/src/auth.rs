@@ -12,8 +12,9 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
 const SERVICE: &str = "city.maia.studio";
-/// What the studio needs: the media library, and the content calendar it publishes to.
-const SCOPE: &str = "media:admin,content:admin";
+/// What the studio needs: the media library, the content calendar it publishes to, and the economy sandbox (its runs,
+/// configs and MIPs — the MCP proposes; only the admin accepts, on the page).
+const SCOPE: &str = "media:admin,content:admin,economy:play,economy:admin";
 /// A key must be able to do this to open the studio — the admin gate.
 const GATE: &str = "/api/vault/join";
 

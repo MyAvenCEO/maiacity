@@ -26,6 +26,7 @@ import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queue
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
+import { EconomyError, addDays, catalogue, createMip, decideMip, deleteRun, getConfig, getMip, getRun, listConfigs, listMips, listRuns, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -118,7 +119,7 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof EconomyError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -165,6 +166,151 @@ const server = Bun.serve({
         const who = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || srv.requestIP(req)?.address || "?";
         const { status, body } = await relayDecision(req, who);
         return Response.json(body, { status, headers });
+      },
+    },
+
+    // The economy sandbox (Sandbox 7): its configs, its game runs day by day, and MIPs (api/src/economy.js). Playing
+    // (saving runs, reading, proposing) needs economy:play; accepting or rejecting a MIP, or deleting a run, economy:admin.
+    "/api/economy/configs": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, { configs: await listConfigs({ deleted: new URL(req.url).searchParams.has("deleted") }), catalogue: catalogue() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/economy/configs/:id": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await getConfig(req.params.id, { version: new URL(req.url).searchParams.get("version") ?? undefined }));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // POST { title, description, config, action: edit | create | delete, name, about, from, cards: [card], remove: [id] }
+    "/api/economy/mips": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, { mips: await listMips(new URL(req.url).searchParams.get("status") ?? undefined) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await createMip(me.id, await readJson(req)), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/economy/mips/:number": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await getMip(Number(req.params.number)));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // POST { accept: true | false, note } — the admin's decision; accepting puts the MIP's cards in and versions the config
+    "/api/economy/mips/:number/decide": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "economy:admin");
+        if (me instanceof Response) return me;
+        try {
+          const body = ((await readJson(req)) ?? {}) as { accept?: boolean; note?: string };
+          return json(req, await decideMip(Number(req.params.number), me.id, { accept: body.accept === true, note: body.note }));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/economy/mips/:number/withdraw": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await withdrawMip(Number(req.params.number), me.id));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/economy/runs": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, { runs: await listRuns(Number(new URL(req.url).searchParams.get("limit") ?? 100)) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      POST: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await startRun(me.id, await readJson(req)), { status: 201 });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // GET ?from=&to=&detail=1 — its days (stats; with detail, trades and decisions too)
+    "/api/economy/runs/:id": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          const u = new URL(req.url).searchParams;
+          return json(req, await getRun(req.params.id, { from: u.get("from") ?? undefined, to: u.get("to") ?? undefined, detail: u.get("detail") === "1" }));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      DELETE: async (req) => {
+        const me = await allowed(req, "economy:admin");
+        if (me instanceof Response) return me;
+        try {
+          await deleteRun(req.params.id);
+          return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // POST { days: [{ day, stats, trades, decisions }], alive, summary, ended }
+    "/api/economy/runs/:id/days": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, await addDays(req.params.id, await readJson(req)));
+        } catch (e) {
+          return fail(req, e);
+        }
       },
     },
 

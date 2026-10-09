@@ -3,13 +3,18 @@
 	that grows 1 to 3 of the 5 goods. Every hour the market matches their asks and bids (no market place: after a deal the
 	buyer walks over to fetch its goods); all day long each one keeps re-deciding its prices with Liquid's decision model
 	d1:free, through our API's relay. No Liquid, no game: the valley pauses until it answers.
-	Survive, and end with the most HEARTS.
+	Survive, and end with the most HEARTS. Signed in (the Mac app's key, or the site's session) the valley runs on a config
+	from the database, changed only by MIPs (the Proposals view), and every run is saved there day by day (store.js).
 -->
 <script>
 	import { onMount } from 'svelte';
 	import { createWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S } from './economy.js';
-	import { RULES, setRules, changedRules } from './rules.js';
+	import { RULES, CONFIG, setRules, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
+	import ProposalsView from './ProposalsView.svelte';
+	import { loadConfigs, recorder } from './store.js';
+	import { me, may } from '$lib/auth/client';
+	import { native } from '$lib/native';
 	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
@@ -30,6 +35,85 @@
 			/* no storage here */
 		}
 		snap = snapshot();
+	}
+
+	// ---- the database: who is playing, the config the valley runs on, and this run, saved day by day ----
+	const PICKED = 'sandbox-8-config';
+	let acct = $state({ id: /** @type {string | null} */ (null), play: false, admin: false, note: '' });
+	let configs = $state(/** @type {any[]} */ ([]));
+	/** @type {any} */
+	let rec = null;
+	let saving = $state({ days: 0, error: '' });
+
+	async function connect() {
+		try {
+			const f = await me();
+			acct = { id: f.id, play: may(f, 'economy:play'), admin: may(f, 'economy:admin'), note: '' };
+			if (!acct.play) {
+				acct.note = native() ? "This studio's key can't play the economy yet: sign it out once (You, at the bottom, then Sign out) and in again with your passkey. Until then the valley runs on the catalogue's defaults and nothing is saved." : 'Your role cannot play the economy sandbox yet, so the valley runs on the defaults and nothing is saved.';
+				return;
+			}
+			await reloadConfigs(true);
+		} catch (e) {
+			acct.note = `Not connected (${/** @type {any} */ (e)?.message || 'the API cannot be reached'}): sign in on maia.city to save runs and see the proposals. The valley runs on the catalogue's defaults.`;
+		}
+	}
+
+	/** load the configs; run on the one picked last (or the first), keeping your changes on top */
+	async function reloadConfigs(first = false) {
+		configs = (await loadConfigs()).configs;
+		let want = CONFIG.id;
+		if (first)
+			try {
+				want = localStorage.getItem(PICKED) ?? 'valley';
+			} catch {
+				want = 'valley';
+			}
+		const cfg = configs.find((c) => c.id === want) ?? configs[0];
+		if (!cfg) return;
+		useConfig(cfg, changedRules());
+		saveRules();
+		if (!started) reset();
+	}
+
+	/** play another config: your changes go, the valley starts again */
+	function play(/** @type {any} */ cfg) {
+		useConfig(cfg, {});
+		try {
+			localStorage.setItem(PICKED, cfg.id);
+		} catch {
+			/* no storage here */
+		}
+		saveRules();
+		reset();
+		setView('valley');
+	}
+
+	/** where the run stands, for the database: who its avens are and how they do */
+	function summary() {
+		const live = world.avens.filter((/** @type {any} */ a) => a.alive);
+		return {
+			day: world.day,
+			alive: live.length,
+			total: Math.round(world.avens.reduce((/** @type {number} */ n, /** @type {any} */ a) => n + a.hearts, 0)),
+			leader: ranking(world)[0]?.name ?? null,
+			config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version },
+			avens: world.avens.map((/** @type {any} */ a) => ({ id: a.id, name: a.name, colour: a.colour, grows: [...a.grows], hearts: Math.round(a.hearts), health: Math.round(a.health), alive: a.alive, diedOn: a.diedOn ?? null }))
+		};
+	}
+
+	/** the run begins in the database: the config as played (cards, every value, your changes on top), seed and brain */
+	function startRecording() {
+		if (!acct.play) return;
+		saving = { days: 0, error: '' };
+		rec = recorder(world, { config_id: CONFIG.id, config_version: CONFIG.version, config: { cards: CONFIG.cards, params: { ...RULES }, local: changedRules() }, seed: world.seed, brain: LIQUID_MODEL, summary: summary() });
+	}
+
+	/** send the finished days (every few seconds); `end` closes the run */
+	function save(end = false) {
+		if (!rec || rec.ended) return;
+		const r = rec;
+		r.flush(summary(), end).then(() => (saving = { days: r.sent, error: r.error }));
 	}
 
 	const SPEEDS = [
@@ -85,6 +169,7 @@
 			waiting: world.avens.filter((/** @type {any} */ x) => x.alive && !x.brain.ready).length,
 			stale: world.avens.filter((/** @type {any} */ x) => x.alive && x.brain.ready && world.t - (x.brain.last?.t ?? 0) >= STALE_H * 3600).length,
 			month: Math.floor((world.day - 1) / 30) + 1,
+			config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, local: Object.keys(changedRules()).length },
 			// the daily rows, only while the Stats view is open (each row is never changed once written)
 			stats: page === 'stats' ? world.stats.slice() : [],
 			weather: { ...world.weather },
@@ -197,6 +282,9 @@
 	const decided = () => world.avens.every((/** @type {any} */ a) => !a.alive || (a.brain.ready && world.t - lastAt(a) < STALE_H * 3600));
 
 	function reset() {
+		save(true);
+		rec = null;
+		saving = { days: 0, error: '' };
 		world = createWorld();
 		calls = { asked: 0, answered: 0, failed: 0, limited: 0, lastError: '' };
 		down = '';
@@ -206,14 +294,17 @@
 		snap = snapshot();
 	}
 
+	let draft = $state(false); // the Proposals view opens on a new MIP (from Policies or World: "Propose as a MIP")
 	/** @param {string} v */
 	function setView(v) {
+		if (v !== 'mips') draft = false;
 		page = v;
 		snap = snapshot();
 	}
 
 	/** Start (the first decisions go out now) or pause */
 	function toggle() {
+		if (!started) startRecording();
 		started = true;
 		if (paused) down = '';
 		paused = !paused;
@@ -430,8 +521,10 @@
 		fit();
 		const ro = new ResizeObserver(fit);
 		ro.observe(stageEl);
+		connect();
 		let last = performance.now();
 		let lastSnap = 0;
+		let lastSave = 0;
 		let raf = 0;
 		const frame = (/** @type {number} */ now) => {
 			const dtReal = Math.min(250, now - last);
@@ -448,6 +541,10 @@
 				}
 			}
 			draw(now);
+			if (rec && now - lastSave > 3000) {
+				lastSave = now;
+				save(world.avens.every((/** @type {any} */ a) => !a.alive));
+			}
 			if (now - lastSnap > 250) {
 				lastSnap = now;
 				snap = snapshot();
@@ -458,6 +555,7 @@
 		return () => {
 			cancelAnimationFrame(raf);
 			ro.disconnect();
+			save();
 		};
 	});
 
@@ -490,6 +588,7 @@
 			<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
 			<button class:on={page === 'policy'} onclick={() => setView('policy')}>Policies</button>
 			<button class:on={page === 'world'} onclick={() => setView('world')}>World</button>
+			<button class:on={page === 'mips'} onclick={() => setView('mips')}>Proposals</button>
 		</nav>
 		<div class="controls">
 			<button onclick={toggle}>{paused ? (started ? '▶ Play' : '▶ Start') : '❚❚ Pause'}</button>
@@ -522,7 +621,12 @@
 	{/if}
 	{#if page === 'policy' || page === 'world'}
 		<div class="statspage">
-			{#key page}<RulesView view={page} onchange={saveRules} onrestart={() => { reset(); setView('valley'); }} />{/key}
+			{#key page}<RulesView view={page} onchange={saveRules} onrestart={() => { reset(); setView('valley'); }} onpropose={() => { draft = true; setView('mips'); }} />{/key}
+		</div>
+	{/if}
+	{#if page === 'mips'}
+		<div class="statspage">
+			<ProposalsView {acct} {configs} playing={snap.config} {draft} onplay={play} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 
@@ -544,6 +648,9 @@
 			</ol>
 			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give 40 to 70%, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
 			<p class="brain">HEARTS: every aven mints {snap.policy.mint} a day; every HEART decays {snap.policy.decay}% a year. <button class="link" onclick={() => setView('policy')}>Policies</button></p>
+			<p class="brain">
+				Config: {snap.config.name}{snap.config.id ? ` v${snap.config.version}` : ''}{snap.config.local ? ` + ${snap.config.local} change${snap.config.local === 1 ? '' : 's'} of yours` : ''} · {#if !acct.play}not saved{:else if !started}saved once you press Start{:else if saving.error}<span class="warn">not saved: {saving.error}</span>{:else}saved, {saving.days} day{saving.days === 1 ? '' : 's'} so far{/if} <button class="link" onclick={() => setView('mips')}>Proposals</button>
+			</p>
 			<p class="brain">
 				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.limited}&nbsp;· {calls.limited} waited out Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
 			</p>
@@ -719,6 +826,9 @@
 		text-decoration: underline;
 		font-size: inherit;
 		color: inherit;
+	}
+	.warn {
+		color: #a03224;
 	}
 	.views button.on {
 		background: #24452f;

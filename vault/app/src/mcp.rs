@@ -494,6 +494,34 @@ pub struct Range {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyRun {
+    /// the run's id, from economy_runs
+    pub id: String,
+    /// the first and last day to read (default: every day)
+    pub from: Option<u32>,
+    pub to: Option<u32>,
+    /// true: each day's trades and the avens' Liquid decisions too, not only its stats row
+    pub detail: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyMips {
+    /// open, accepted, rejected or withdrawn (default: every MIP)
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyMip {
+    /// the MIP: { title, description (prose: what and why), config (the config's id), action ("edit" the default,
+    /// "create" a new config, "delete" it), name and about (a new config's name and description; on edit, a rename),
+    /// from (create: the config it starts from), cards: [whole config cards as they will be once accepted: { id, kind
+    /// (policy, world, resource or recipe), name, description, values: { key: number } (keys from economy_configs'
+    /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }],
+    /// remove: [ids of cards to take out] }
+    pub mip: Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct Item {
     /// the content item, as the API takes it: title, day, platform, status (idea, hook, draft, derivatives,
     /// scheduled, published), body, deliveries …
@@ -1483,12 +1511,65 @@ impl Studio {
         text(self.api("PUT", &format!("/api/content/{}", a.id), Some(a.patch)).await)
     }
 
+    // ── the economy sandbox (Sandbox 7, the avens trading): its configs, its runs' stats, and MIPs ──
+
+    #[tool(
+        description = "The economy sandbox's configs (Sandbox 7: ten avens trade WATER and four foods for HEARTS, each deciding its own prices with Liquid's d1): each one's id, name, version, its config cards (policy and world cards hold values; any card may hold data and QuickJS code) and params (every value the valley runs on), and the catalogue — every value a card may hold, with its card, label, unit, range and default. A config changes only through a MIP the admin accepts."
+    )]
+    async fn economy_configs(&self) -> String {
+        text(self.api("GET", "/api/economy/configs", None).await)
+    }
+
+    #[tool(description = "The economy sandbox's game runs, newest first: id, the config and version it ran on, seed, brain, days played, avens alive, and its summary (each aven's name, goods grown, HEARTS and health; the leader; total HEARTS)")]
+    async fn economy_runs(&self) -> String {
+        text(self.api("GET", "/api/economy/runs?limit=100", None).await)
+    }
+
+    #[tool(
+        description = "One run of the economy sandbox: the config as played (cards, every value, the player's own changes on top) and its days — each day's stats row (market price and average traded price per good, units traded, deals, every aven's HEARTS, health, body reserves, what it ate and went short of, harvests, rot, stock, minted and decayed HEARTS, weather) and with detail its trades (seller, buyer, good, qty, price, haggling) and the avens' Liquid decisions."
+    )]
+    async fn economy_run(&self, Parameters(a): Parameters<EconomyRun>) -> String {
+        let mut q = vec![];
+        if let Some(f) = a.from {
+            q.push(format!("from={f}"));
+        }
+        if let Some(t) = a.to {
+            q.push(format!("to={t}"));
+        }
+        if a.detail == Some(true) {
+            q.push("detail=1".to_string());
+        }
+        let q = if q.is_empty() { String::new() } else { format!("?{}", q.join("&")) };
+        text(self.api("GET", &format!("/api/economy/runs/{}{q}", a.id), None).await)
+    }
+
+    #[tool(description = "MIPs, MaiaCity improvement proposals for the economy sandbox, newest first: title, description, the config it changes, creates or deletes, its cards (and each card as it was: base), status (open, accepted, rejected, withdrawn), author, and the admin's note")]
+    async fn economy_mips(&self, Parameters(a): Parameters<EconomyMips>) -> String {
+        let q = a.status.map(|s| format!("?status={s}")).unwrap_or_default();
+        text(self.api("GET", &format!("/api/economy/mips{q}"), None).await)
+    }
+
+    #[tool(
+        description = "Propose a MIP: a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one. It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
+    )]
+    async fn economy_mip_create(&self, Parameters(a): Parameters<EconomyMip>) -> String {
+        let mut mip = a.mip;
+        if let Some(o) = mip.as_object_mut() {
+            o.insert("via".to_string(), json!("mcp"));
+        }
+        text(self.api("POST", "/api/economy/mips", Some(mip)).await)
+    }
+
     // ── anything else the admin may do ──
 
     #[tool(description = "Any maiaCITY API call under /api/ with the app's key (shots, grades, jobs, LUTs, media …) — the same rights the admin gave this Mac")]
     async fn api_call(&self, Parameters(a): Parameters<ApiArgs>) -> String {
         if !a.path.starts_with("/api/") {
             return "error: only paths under /api/".into();
+        }
+        // a MIP is accepted or rejected by the admin, on the page — never by an agent
+        if a.path.starts_with("/api/economy/mips/") && a.path.trim_end_matches('/').ends_with("/decide") {
+            return "error: only the admin accepts or rejects a MIP, on the page".into();
         }
         text(self.api(&a.method.to_uppercase(), &a.path, a.body).await)
     }
@@ -1682,7 +1763,8 @@ impl ServerHandler for Studio {
              a phrase to cut by words), every picture's shot analysis (tags, takes, cues, highlights — find_shots pulls \
              the best parts of shots), timelines (edit, audio), grades, renders and hero frames (rendered \
              natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
-             hash only.",
+             hash only. Also the economy sandbox (Sandbox 7, the avens trading): its configs, every run's stats day by \
+             day, and MIPs (proposals that change a config, which only the admin accepts).",
         )
     }
 }

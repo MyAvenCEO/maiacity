@@ -4,12 +4,12 @@
 	weather), plus every resource and every recipe the night runs, as sentences and as the JSON itself.
 -->
 <script>
-	import { PARAMS, RULES, DEFAULTS, setRule, resetRules, changedRules } from './rules.js';
+	import { PARAMS, RULES, DEFAULTS, CONFIG, setRule, resetRules, changedRules } from './rules.js';
 	import { RESOURCES, RECIPES } from './recipes.js';
 	import { GOOD_LABEL } from './rules.js';
 
-	/** @type {{ view: 'policy' | 'world', onrestart: () => void, onchange: () => void }} */
-	let { view, onrestart, onchange } = $props();
+	/** @type {{ view: 'policy' | 'world', onrestart: () => void, onchange: () => void, onpropose: () => void }} */
+	let { view, onrestart, onchange, onpropose } = $props();
 
 	let vals = $state({ ...RULES });
 	let showJson = $state(false);
@@ -64,10 +64,11 @@
 	<header class="top">
 		<div>
 			<h2>{view === 'policy' ? 'Policies' : 'World rules'}</h2>
-			<p>{view === 'policy' ? 'What the valley chooses: how HEARTS are made and melt, how free prices are, how trading works.' : 'How the valley works: what bodies need, what rots, how land is shared out, harvests and weather. Below: every resource and every recipe the night runs.'} Changes apply at once; the ones marked <span class="tag">on Reset</span> shape the valley itself and wait for a new one.</p>
+			<p>{view === 'policy' ? 'What the valley chooses: how HEARTS are made and melt, how free prices are, how trading works.' : 'How the valley works: what bodies need, what rots, how land is shared out, harvests and weather. Below: every resource and every recipe the night runs.'} The values are the config's, <b>{CONFIG.name}</b>{CONFIG.id ? ` (version ${CONFIG.version})` : ''}; your changes stay in this browser and apply at once, and the ones marked <span class="tag">on Reset</span> shape the valley itself and wait for a new one. To change the config itself, propose your changes as a MIP.</p>
 		</div>
 		<div class="actions">
-			<button onclick={defaults} disabled={!Object.keys(changedRules()).length && !changed.length}>All to defaults</button>
+			<button onclick={defaults} disabled={!Object.keys(changedRules()).length && !changed.length}>Back to the config</button>
+			<button onclick={onpropose} disabled={!Object.keys(changedRules()).length && !changed.length}>Propose as a MIP</button>
 			<button class="go" onclick={onrestart}>Reset the valley with these{waiting.length ? ` (${waiting.length} waiting)` : ''}</button>
 		</div>
 	</header>

@@ -5,7 +5,7 @@
 // plain words; a change applies at once, or on the next Reset where it shapes the valley itself. The page holds one
 // valley, so the live values sit in one shared object, RULES.
 
-import { GOODS, GOOD_LABEL, PARAMS } from '../../../game/economy/params.js';
+import { GOODS, GOOD_LABEL, PARAMS, SECTIONS, CARD_OF, defaultCards } from '../../../game/economy/params.js';
 
 export { GOODS, GOOD_LABEL, PARAMS };
 
@@ -13,8 +13,8 @@ export { GOODS, GOOD_LABEL, PARAMS };
 export const RULES = Object.fromEntries(PARAMS.map((p) => [p.key, p.value]));
 /** the values of the config the valley runs on (the catalogue's defaults until one is loaded); changes are local on top */
 export const DEFAULTS = { ...RULES };
-/** which config that is: its id, name and version (id null: the catalogue's defaults, not connected) */
-export const CONFIG = { id: /** @type {string | null} */ (null), name: 'Defaults', version: 0 };
+/** which config that is: its id, name, version and cards (id null: the catalogue's defaults, not connected) */
+export const CONFIG = { id: /** @type {string | null} */ (null), name: 'Defaults', version: 0, cards: /** @type {any[]} */ (defaultCards()) };
 
 /** what one aven needs to eat and drink each day; kept in step with RULES @type {Record<string, number>} */
 export const NEED = { water: 3, fruits: 2, vegetables: 2, legumes: 2, chicken: 2 };
@@ -33,6 +33,7 @@ export function useConfig(cfg, local = {}) {
 	CONFIG.id = cfg?.id ?? null;
 	CONFIG.name = cfg?.name ?? 'Defaults';
 	CONFIG.version = cfg?.version ?? 0;
+	CONFIG.cards = cfg?.cards ?? defaultCards();
 	setRules(DEFAULTS);
 	setRules(local);
 }
@@ -61,3 +62,18 @@ export function changedRules() {
 }
 
 sync();
+
+/**
+ * the config cards your changes would make, for a MIP: every card holding a value you changed, whole, with your values
+ * in it (a value no card holds goes on its part of the catalogue's card)
+ */
+export function changedCards() {
+	const out = new Map(); // card id -> the card as it would be
+	for (const [k, v] of Object.entries(changedRules())) {
+		const sec = SECTIONS.find((x) => x.id === CARD_OF[k]);
+		const base = CONFIG.cards.find((x) => k in (x.values ?? {})) ?? CONFIG.cards.find((x) => x.id === sec?.id) ?? { ...sec, description: '', values: {}, code: '' };
+		if (!out.has(base.id)) out.set(base.id, { ...base, values: { ...base.values } });
+		out.get(base.id).values[k] = v;
+	}
+	return [...out.values()];
+}

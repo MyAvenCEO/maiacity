@@ -1,8 +1,8 @@
 // @ts-nocheck — plain JS data, kept loose on purpose
 // The economy sandbox's (Sandbox 7's) catalogue of parameters: every number the valley runs on, as the policies people
 // choose (HEARTS, prices, trading) and the world's own rules (needs, bodies, rot, land, harvests, weather), each with its
-// range and a plain sentence. Shared by the page (src/lib/sandbox-8) and the API, which checks every value a MIP (a
-// MaiaCity improvement proposal) sets against it.
+// range and a plain sentence; and the config cards a config is made of. Shared by the page (src/lib/sandbox-8) and the
+// API, which checks every card a MIP (a MaiaCity improvement proposal) puts in against it.
 
 export const GOODS = ['water', 'fruits', 'vegetables', 'legumes', 'chicken'];
 /** @type {Record<string, string>} */
@@ -136,4 +136,11 @@ export function checkCard(raw) {
 	const code = String(raw?.code ?? '');
 	if (code.length > MAX_CODE) return { error: `Card ${id}: its code is at most ${MAX_CODE} characters.` };
 	return { card: { id, kind, name, description, values, ...(data !== undefined ? { data } : {}), code } };
+}
+
+/** a config's cards after a MIP: each card put in replaces the one with its id (or joins at the end), removed ones go */
+export function applyCards(cards, put = [], remove = []) {
+	const out = (cards ?? []).filter((c) => !remove.includes(c.id)).map((c) => put.find((p) => p.id === c.id) ?? c);
+	for (const p of put) if (!out.some((c) => c.id === p.id)) out.push(p);
+	return out;
 }
