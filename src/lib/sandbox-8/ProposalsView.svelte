@@ -82,7 +82,14 @@
 			error = /** @type {any} */ (e)?.message || 'The MIPs could not be loaded.';
 		}
 	}
-	onMount(refresh);
+	// a MIP an agent proposes over the MCP shows up while the page is open: the list reloads every 15 s, and when the
+	// window comes back
+	onMount(() => {
+		refresh();
+		const every = setInterval(refresh, 15000);
+		window.addEventListener('focus', refresh);
+		return () => (clearInterval(every), window.removeEventListener('focus', refresh));
+	});
 
 	async function submit() {
 		formError = '';
