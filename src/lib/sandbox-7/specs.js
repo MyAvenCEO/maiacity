@@ -293,10 +293,10 @@ export const KINDS = {
 		label: 'Dome120 · Food',
 		D: 120,
 		role: 'food',
-		note: 'A tropical food forest at 24 °C, no one lives here',
+		note: 'A food forest under glass at 24 °C, tropical trees, no one lives here',
 		people: 0,
 		zones: [
-			{ use: 'tropical', label: 'Tropical food forest (banana, papaya, jackfruit, citrus, cacao, coffee below)', m2: capOf(120).floor - POND_120 - 900 - 300 },
+			{ use: 'indoorFood', label: 'Food forest under glass, tropical (banana, papaya, jackfruit, citrus, cacao, coffee below)', m2: capOf(120).floor - POND_120 - 900 - 300 },
 			{ use: 'pond', label: 'Fish pond, the heat store', m2: POND_120 },
 			{ use: 'commons', label: 'Paths and the visitors’ walk', m2: 900 },
 			{ use: 'utilities', label: 'Packing, cold store and nursery (under the north shell)', m2: 300 }
@@ -492,8 +492,7 @@ export const DIET_T = 0.508;
  * @type {Record<string, { t: number, label: string, src: string }>}
  */
 export const YIELD = {
-	indoorFood: { t: 40, label: 'Food garden under glass at 24 °C: vegetables, greens, herbs and dwarf fruit all year (soil-grown greenhouse vegetables give 50–150 t/ha, tomatoes 120–300); a garden with trees in it, so about 40', src: 'yields' },
-	tropical: { t: 25, label: 'Tropical food forest under glass: mixed tropical food forests give 10–40 t/ha, bananas under cover 35–72, papaya 30–80', src: 'yields' },
+	indoorFood: { t: 35, label: 'Food forest under glass at 24 °C, tropical and temperate, trees with vegetables, greens and herbs between them all year: mixed tropical food forests give 10–40 t/ha, soil-grown greenhouse vegetables 50–150; about 35', src: 'yields' },
 	foodForest: { t: 8, label: 'Temperate food forest outdoors, grown: 1–15 t/ha (young Dutch food forests ~1 t/ha; the settlers game’s year 15 is 7.3)', src: 'yields' }
 };
 /** raw materials the tower hex grows, a hectare a year */
