@@ -17,7 +17,8 @@ export class Tile {
     }
     /**
      * An action, asked for in JSON (`{"do": name, "on": device, …}`) at `now` by the page's clock: `ok` with what it
-     * made, or why not: `refused` with the rule's reason, or an `error`.
+     * made and how many ops the devices online sent each other after it (`synced`), or why not: `refused` with the
+     * rule's reason, or an `error`.
      * @param {string} action
      * @param {number} now
      * @returns {string}

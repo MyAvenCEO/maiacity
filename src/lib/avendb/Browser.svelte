@@ -3,7 +3,8 @@
 	stays in the browser's authenticator and each ceremony asks them; the device's keys derive from it at every unlock,
 	and what it holds is kept in IndexedDB, so it opens again in one ceremony. A new person makes their passkey and founds
 	their vault here; a person with a device already links this one through the code that device shows, scanned as a QR
-	code or opened as a link (?link=). avenDB's server and relay aren't deployed yet: until they are, give a test run's.
+	code or opened as a link (?link=). What its other devices change shows here the moment it arrives. avenDB's server and
+	relay aren't deployed yet: until they are, give a test run's.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -34,10 +35,10 @@
 	let link = $state('');
 	/** @type {Record<string, string>} */
 	let edits = $state({});
+	/** @type {Record<string, string>} each note's text as last shown, to tell the person's edits from what arrives */
+	let shown = {};
 	/** @type {Record<string, { title: string, body: string }>} */
 	let drafts = $state({});
-	/** @type {ReturnType<typeof setInterval> | undefined} */
-	let timer;
 
 	/** @param {string} key */
 	function remembered(key) {
@@ -79,10 +80,7 @@
 		}
 	});
 
-	onDestroy(() => {
-		clearInterval(timer);
-		device?.close();
-	});
+	onDestroy(() => device?.close());
 
 	/** Runs `work`, showing what it does and what went wrong. @param {string} what @param {() => Promise<void>} work */
 	async function run(what, work) {
@@ -124,7 +122,7 @@
 			const { unlock } = await ceremonies(meta.credential);
 			const kept = await store.load();
 			const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.ops, kept.keys);
-			await running(d);
+			running(d);
 		});
 
 	/** @param {any} d @param {Uint8Array} nonce @param {string} credential */
@@ -133,18 +131,27 @@
 		await store.setMeta(meta);
 		remember('relay', relay);
 		remember('server', server);
-		await running(d);
+		running(d);
 	}
 
 	/** @param {any} d */
-	async function running(d) {
+	function running(d) {
 		device = d;
 		phase = 'open';
 		store.follow(d).catch((/** @type {Error} */ e) => (error = `Saving failed: ${e.message}`));
 		link = `${location.origin}${location.pathname}?${new URLSearchParams({ link: d.offer(), relay: meta.relay })}`;
 		qr = avendb.qrSvg(link, 240);
+		watch(d).catch((/** @type {Error} */ e) => (error = `Showing what arrives failed: ${e.message}`));
+	}
+
+	/** Shows what `d` holds, then again each time it changes as its other devices sync with it, until it closes. @param {any} d */
+	async function watch(d) {
+		let [ops, keys] = await d.size();
 		await refresh();
-		timer = setInterval(refresh, 2000);
+		while (device === d && (await d.changed(ops, keys))) {
+			[ops, keys] = await d.size();
+			await refresh();
+		}
 	}
 
 	async function refresh() {
@@ -152,7 +159,11 @@
 		notes = await device.notes();
 		for (const s of notes) {
 			drafts[s.space] ??= { title: '', body: '' };
-			for (const doc of s.docs) edits[doc.entry] ??= doc.text;
+			for (const doc of s.docs) {
+				// a note the person isn't editing follows what arrives
+				if (edits[doc.entry] === undefined || edits[doc.entry] === shown[doc.entry]) edits[doc.entry] = doc.text;
+				shown[doc.entry] = doc.text;
+			}
 		}
 	}
 
@@ -168,15 +179,13 @@
 		run('Writing', async () => {
 			const d = drafts[space.space];
 			if (!d.title.trim()) return;
-			const entry = await device.write(space.founder, space.space, d.title.trim(), d.body);
+			await device.write(space.founder, space.space, d.title.trim(), d.body);
 			drafts[space.space] = { title: '', body: '' };
-			edits[entry] = d.body;
 			await refresh();
 		});
 
 	const forget = () =>
 		run('Forgetting this browser’s device', async () => {
-			clearInterval(timer);
 			await device?.close();
 			store.close();
 			await stores.remove(STORE);

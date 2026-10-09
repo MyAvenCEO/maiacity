@@ -40,7 +40,8 @@ impl From<&str> for Fail {
 #[wasm_bindgen]
 impl Tile {
     /// An action, asked for in JSON (`{"do": name, "on": device, …}`) at `now` by the page's clock: `ok` with what it
-    /// made, or why not: `refused` with the rule's reason, or an `error`.
+    /// made and how many ops the devices online sent each other after it (`synced`), or why not: `refused` with the
+    /// rule's reason, or an `error`.
     pub fn act(&mut self, action: &str, now: f64) -> String {
         match serde_json::from_str::<Value>(action) {
             Ok(a) => self.act_json(&a, now).to_string(),
@@ -55,9 +56,12 @@ impl Tile {
             Ok(_) => self.apply(a),
             Err(e) => Err(Fail::Bad(e)),
         };
+        // as on the network, every device online hears of a change at once and asks for what it lacks; an offline
+        // device waits until it is back online
+        let synced = if done.is_ok() { self.sync() } else { 0 };
         self.stamp(now);
         match done {
-            Ok(made) => json!({"ok": true, "made": made}),
+            Ok(made) => json!({"ok": true, "made": made, "synced": synced}),
             Err(Fail::Refused(r)) => json!({"ok": false, "refused": format!("{r:?}"), "why": why(r)}),
             Err(Fail::Bad(e)) => json!({"ok": false, "error": e}),
         }
@@ -65,6 +69,14 @@ impl Tile {
 
     fn lab_mut(&mut self) -> &mut Lab {
         &mut self.world.as_mut().expect("a world made").lab
+    }
+
+    /// Every device online syncs with the others until nothing new arrives (`Lab::sync_all`), in another order each
+    /// time: how many ops they sent.
+    fn sync(&mut self) -> usize {
+        self.counter += 1;
+        let seed = self.counter;
+        self.lab_mut().sync_all(seed)
     }
 
     fn apply(&mut self, a: &Value) -> Result<Value, Fail> {
@@ -88,18 +100,6 @@ impl Tile {
                     return Err("Its passkey isn't at hand.".into());
                 }
                 Ok(Value::Null)
-            }
-            "sync_all" => {
-                self.counter += 1;
-                let seed = self.counter;
-                Ok(json!(self.lab_mut().sync_all(seed)))
-            }
-            "sync" => {
-                let (from, to) = (self.device(a, "from")?, self.device(a, "to")?);
-                if from == to {
-                    return Err("A device syncs with another one.".into());
-                }
-                Ok(json!(self.lab_mut().sync(from, to)))
             }
             "checkpoint" => {
                 let d = self.device(a, "on")?;
