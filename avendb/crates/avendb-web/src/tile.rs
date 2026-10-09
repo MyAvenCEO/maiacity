@@ -14,7 +14,7 @@ use avendb::lens::{DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2, TODO_LENS, TODO_V1, 
 use avendb::policy::{Action, Grant, Grantee, Kind, Principal, Role, Scope, State};
 
 /// The avenDB tile's world: the scenarios' people, devices and vaults (`avendb::cast`), and in it Maia Coop with its
-/// Handbook, Samuel's Notes and Samuel's Todos, made a step at a time; then read through views and changed through
+/// Handbook, Alice's Notes and Alice's Todos, made a step at a time; then read through views and changed through
 /// actions, each on the device the page picks.
 #[wasm_bindgen]
 pub struct Tile {
@@ -47,8 +47,8 @@ pub(crate) struct Demo {
 
 /// The tile's own steps, once the world is made.
 const STEPS: [&str; 3] = [
-    "Maia Coop, its Handbook and Samuel's Notes, with Welcome and Onboarding",
-    "Samuel's Todos, the door shared with Bob, Carol and the coop",
+    "Maia Coop, its Handbook and Alice's Notes, with Welcome and Onboarding",
+    "Alice's Todos, the door shared with Bob, Carol and the coop",
     "each space's schemas, a public Charter and a note",
 ];
 
@@ -94,7 +94,7 @@ impl Tile {
                 let h = cast::handbook(w);
                 self.vault_names.insert(h.coop, "Maia Coop".into());
                 self.space_names.insert(h.space, "Handbook".into());
-                self.space_names.insert(h.notes, "Samuel's Notes".into());
+                self.space_names.insert(h.notes, "Alice's Notes".into());
                 let (handbook, notes, welcome) = (h.space, h.notes, h.welcome);
                 let (todos, door) = (SpaceId([0; 32]), EntryId([0; 32]));
                 self.demo = Some(Demo { coop: h.coop, handbook, notes, todos, welcome, door });
@@ -103,15 +103,15 @@ impl Tile {
                 let demo = self.demo.as_mut().expect("the Handbook");
                 let t = cast::todos_in(w, demo.coop);
                 (demo.todos, demo.door) = (t.space, t.door);
-                self.space_names.insert(t.space, "Samuel's Todos".into());
+                self.space_names.insert(t.space, "Alice's Todos".into());
             }
             2 => {
                 let demo = self.demo.as_ref().expect("the Todos");
-                let (mac, coop, samuel) = (w.mac_s, demo.coop, w.samuel);
+                let (mac, coop, alice) = (w.mac_a, demo.coop, w.alice);
                 let lanes: [(SpaceId, VaultId, &[&[u8]]); 3] = [
                     (demo.handbook, coop, &[DOCUMENT_V1.bytes(), DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes()]),
-                    (demo.todos, samuel, &[TODO_V1.bytes(), TODO_V2.bytes(), TODO_LENS.bytes()]),
-                    (demo.notes, samuel, &[DOCUMENT_V2.bytes()]),
+                    (demo.todos, alice, &[TODO_V1.bytes(), TODO_V2.bytes(), TODO_LENS.bytes()]),
+                    (demo.notes, alice, &[DOCUMENT_V2.bytes()]),
                 ];
                 for (space, actor, blobs) in lanes {
                     for blob in blobs {
@@ -125,7 +125,7 @@ impl Tile {
                 w.lab.submit(mac, &[mac], public).expect("and makes it public");
                 let idea = "Plant the beans by the south wall, where the sun comes first.";
                 let note = cast::document("Ideas", idea, mac);
-                w.lab.create(mac, samuel, demo.notes, note).expect("Samuel writes a note");
+                w.lab.create(mac, alice, demo.notes, note).expect("Alice writes a note");
                 w.lab.sync_all(0);
                 w.lab.sync(w.server, w.stranger);
             }
@@ -150,13 +150,13 @@ impl Tile {
 impl Tile {
     /// Name the people's human vaults and avenCEO, and note every signer.
     fn name_world(&mut self, w: World) {
-        let people = [(w.samuel, "Samuel"), (w.bob, "Bob"), (w.carol, "Carol"), (w.dave, "Dave")];
+        let people = [(w.alice, "Alice"), (w.bob, "Bob"), (w.carol, "Carol"), (w.dave, "Dave")];
         for (v, name) in people.into_iter().chain([(w.avenceo, "avenCEO")]) {
             self.vault_names.insert(v, name.into());
         }
-        let passkeys = [w.passkey_s, w.passkey_b, w.passkey_c, w.passkey_d];
+        let passkeys = [w.passkey_a, w.passkey_b, w.passkey_c, w.passkey_d];
         self.passkeys.extend(passkeys);
-        self.signers = vec![w.passkey_s, w.mac_s, w.phone_s, w.passkey_b, w.mac_b, w.passkey_c, w.mac_c];
+        self.signers = vec![w.passkey_a, w.mac_a, w.phone_a, w.passkey_b, w.mac_b, w.passkey_c, w.mac_c];
         self.signers.extend([w.passkey_d, w.mac_d, w.server, w.stranger]);
         self.world = Some(w);
     }

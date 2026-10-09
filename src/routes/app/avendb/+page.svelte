@@ -1,15 +1,17 @@
 <!--
-	avenDB: the user-owned, end-to-end encrypted database (avendb/), with every device of the plan's people in one page
-	over a simulated network: the Lab, run as WebAssembly in the browser's workers ($lib/avendb). Pick the device to act
-	on: its Vaults, Spaces, Todos and Schemas are what it holds and opens, and an action its own view refuses comes back
-	with the rule's reason. The Lab puts every device side by side, with the plan's scenarios to run. An admin's.
+	avenDB: the user-owned, end-to-end encrypted database (avendb/). It opens on the person's own account: their human
+	vault, its passkey and its devices, this browser among them ($lib/avendb/Account.svelte). Apart from it, the Lab: every
+	device of the plan's simulated people in one page over a simulated network, run as WebAssembly in the browser's
+	workers ($lib/avendb), made only once it is opened. Pick the device to act on: its Vaults, Spaces, Todos and Schemas
+	are what it holds and opens, and an action its own view refuses comes back with the rule's reason. The Lab's own
+	screen puts every device side by side, with the plan's scenarios to run. An admin's.
 -->
 <script>
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { wayBack } from '$lib/app/back.svelte.js';
 	import { openWorld, TileError } from '$lib/avendb/tile.js';
+	import Account from '$lib/avendb/Account.svelte';
 	import Approve from '$lib/avendb/Approve.svelte';
-	import Browser from '$lib/avendb/Browser.svelte';
 	import Entry from '$lib/avendb/Entry.svelte';
 	import Lab from '$lib/avendb/Lab.svelte';
 	import Schemas from '$lib/avendb/Schemas.svelte';
@@ -19,12 +21,13 @@
 	import { count } from '$lib/avendb/ui.js';
 
 	/** @typedef {import('$lib/avendb/tile.js').World} World */
-	/** @typedef {'vaults' | 'spaces' | 'entry' | 'todos' | 'schemas' | 'lab' | 'browser'} Screen */
+	/** @typedef {'account' | 'vaults' | 'spaces' | 'entry' | 'todos' | 'schemas' | 'lab'} Screen */
 
 	/** @type {World | null} */
 	let world = $state(null);
-	/** @type {'starting' | 'making' | 'ready' | 'dead'} */
-	let phase = $state('starting');
+	/** the Lab's world: not made until the Lab is opened */
+	/** @type {'idle' | 'starting' | 'making' | 'ready' | 'dead'} */
+	let phase = $state('idle');
 	let steps = $state(8);
 	let step = $state(0);
 	let made = $state('');
@@ -36,7 +39,10 @@
 	let overview = $state(null);
 	let device = $state('');
 	/** @type {Screen} */
-	let screen = $state('spaces');
+	let screen = $state('account');
+	/** the Lab's screen last shown, to come back to */
+	/** @type {Screen} */
+	let labScreen = $state('spaces');
 	/** @type {{ space: string, entry: string } | null} */
 	let opened = $state(null);
 	/** counts every change to the world: each screen reads its view again */
@@ -52,9 +58,9 @@
 		['spaces', 'Spaces', 'Where entries live, grouped by the vault that founded them'],
 		['todos', 'Todos', 'Every todo this device opens, and those shared with it'],
 		['schemas', 'Schemas', "Each space's schemas and lenses, by hash"],
-		['lab', 'Lab', 'Every device side by side, the network, and the scenarios'],
-		['browser', 'This browser', 'This browser as a device of yours: your passkey, your vault, your notes, linked to your other devices']
+		['lab', 'Every device', 'Every device side by side, the network, and the scenarios']
 	]);
+	const inLab = $derived(screen !== 'account');
 
 	const devices = $derived(/** @type {any[]} */ (overview?.devices ?? []));
 	const me = $derived(devices.find((d) => d.id === device));
@@ -70,12 +76,17 @@
 		return [...vaults, ['', by.get('') ?? []]].filter(([, list]) => list.length);
 	});
 
-	onMount(() => {
-		// a link another device shows opens this browser's screen, to link it
-		if (new URLSearchParams(location.search).has('link')) screen = 'browser';
-		start();
-	});
 	onDestroy(() => world?.close());
+
+	/** Shows the Lab, making its world the first time. */
+	function openLab() {
+		screen = labScreen;
+		if (phase === 'idle') start();
+	}
+
+	$effect(() => {
+		if (screen !== 'account') labScreen = screen;
+	});
 
 	$effect(() => {
 		if (screen !== 'entry' || !opened) return;
@@ -193,12 +204,21 @@
 	<nav class="rail" aria-label="avenDB">
 		<div class="brand">
 			<b>avenDB</b>
-			<span>the user-owned database · the Lab</span>
-			{#if phase === 'ready' && tookMs}<span>its world made in {(tookMs / 1000).toFixed(1)} s</span>{/if}
+			<span>your own database, end-to-end encrypted</span>
 		</div>
 
-		{#if phase === 'ready'}
-			<h2>Acting on</h2>
+		<button class="screen" class:on={!inLab} onclick={() => (screen = 'account')}>Your account</button>
+
+		<h2>The Lab</h2>
+		<p class="hint">
+			A simulated world: Alice, Bob, Carol and Dave with their devices, a server, a stranger and a coop. Nothing in it is
+			yours.
+		</p>
+		{#if !inLab || phase !== 'ready'}
+			<button class="screen" class:on={inLab} onclick={openLab}>Open the Lab</button>
+		{:else}
+			{#if tookMs}<p class="hint">Its world made in {(tookMs / 1000).toFixed(1)} s.</p>{/if}
+			<h3>Acting on</h3>
 			{#each groups as [vault, list] (vault)}
 				<div class="vault">
 					{#if vault}<small>{vault}</small>{:else}<small>No vault</small>{/if}
@@ -213,7 +233,7 @@
 				</div>
 			{/each}
 
-			<h2>Screens</h2>
+			<h3>Screens</h3>
 			{#each SCREENS as [id, label] (id)}
 				<button class="screen" class:on={screen === id || (id === 'spaces' && screen === 'entry')} onclick={() => (screen = id)}>{label}</button>
 				{#if id === 'spaces' && opened}
@@ -232,11 +252,14 @@
 	</nav>
 
 	<section class="page">
-		{#if phase === 'starting' || phase === 'making'}
+		<!-- the account stays while the Lab shows, so its device stays unlocked -->
+		<div hidden={inLab}><Account /></div>
+		{#if inLab && (phase === 'idle' || phase === 'starting' || phase === 'making')}
 			<header class="lead">
+				<small>The Lab · a simulation</small>
 				<h1>Making the world</h1>
 				<p>
-					Samuel, Bob, Carol and Dave with their passkeys and devices, the server, a stranger, and Maia Coop with its spaces: every
+					Alice, Bob, Carol and Dave with their passkeys and devices, the server, a stranger, and Maia Coop with its spaces: every
 					device runs here, each with its own keys and its own copy of what it holds. Each key's Classic McEliece pair takes most
 					of a second, so {workers || 'a few'} workers make them side by side.
 				</p>
@@ -245,18 +268,19 @@
 				<div style="width: {(100 * step) / steps}%"></div>
 			</div>
 			<p class="muted">
-				{#if phase === 'starting'}Starting the WebAssembly…{:else}Step {step} of {steps}{made ? `: ${made}` : ''}{/if}
+				{#if phase !== 'making'}Starting the WebAssembly…{:else}Step {step} of {steps}{made ? `: ${made}` : ''}{/if}
 				{#if pairs.wanted}<br />Key pairs: {pairs.made} of {pairs.wanted} made{/if}
 			</p>
-		{:else if phase === 'dead'}
+		{:else if inLab && phase === 'dead'}
 			<header class="lead">
-				<h1>The tile stopped</h1>
+				<small>The Lab · a simulation</small>
+				<h1>The Lab stopped</h1>
 				<p>The database hit a bug and can't go on: <code>{stopped}</code></p>
 			</header>
 			<button class="btn primary" onclick={start}>Start over</button>
-		{:else}
+		{:else if inLab}
 			<header class="lead">
-				<small>as {me?.name ?? 'no device'}{me && !me.online ? ' · offline' : ''}{me?.locked ? ' · locked' : ''}</small>
+				<small>The Lab · as {me?.name ?? 'no device'}{me && !me.online ? ' · offline' : ''}{me?.locked ? ' · locked' : ''}</small>
 				<h1>{screen === 'entry' ? 'Entry' : SCREENS.find(([id]) => id === screen)?.[1]}</h1>
 				{#if screen !== 'entry'}<p>{SCREENS.find(([id]) => id === screen)?.[2]}.</p>{/if}
 			</header>
@@ -275,8 +299,6 @@
 					<Schemas {world} {device} {rev} {act} start={overview.start} />
 				{:else if screen === 'lab'}
 					<Lab {world} {rev} {act} {open} {devices} start={overview.start} />
-				{:else if screen === 'browser'}
-					<Browser />
 				{/if}
 			{/if}
 		{/if}
@@ -345,6 +367,23 @@
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
 		color: var(--accent);
+	}
+
+	.rail h3 {
+		margin: 0.8rem 0.6rem 0.2rem;
+		font-family: var(--font-body);
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--soft);
+	}
+
+	.hint {
+		margin: 0 0.6rem 0.4rem;
+		font-size: 0.75rem;
+		line-height: 1.45;
+		color: var(--soft);
 	}
 
 	.vault small {

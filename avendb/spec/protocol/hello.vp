@@ -8,7 +8,7 @@
 //
 // The curves fall from the start (`PUBKEY[weak]`): X25519, and ed25519, so the attacker can sign as either endpoint
 // and stand in the middle of the TLS handshake, two connections where the devices think there is one. ML-KEM-768 and
-// SLH-DSA hold. Samuel's Mac answers his iPhone's connection twice: first with what a node would serve on TLS alone
+// SLH-DSA hold. Alice's Mac answers her iPhone's connection twice: first with what a node would serve on TLS alone
 // (`unchecked`), then, once the iPhone's hello checks, with what avenDB serves (`served`). The attacker reads the
 // first and not the second: the hello is what keeps the connection the devices' own. And each hello the other end
 // takes is the device's own, said on this connection for its own end.

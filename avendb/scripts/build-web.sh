@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The avenDB tile's WebAssembly: builds avendb-web for the browser (with SIMD, see .cargo/config.toml) and writes the
-# page's package into src/lib/avendb/pkg/, then avendb-browser, the tile's own device ("This browser"), with its JS
+# page's package into src/lib/avendb/pkg/, then avendb-browser, the tile's own device (Your account), with its JS
 # modules into src/lib/avendb/device/. The packages are committed, so the site builds without Rust: run this after
 # changing avendb, avendb-net, avendb-web or avendb-browser, and commit what it writes.
 #
@@ -29,7 +29,7 @@ js="$out/avendb_web.js"
 mv "$js.new" "$js"
 ls -l "$out"
 
-# the tile's own device ("This browser", P8e): avendb-browser and its JS modules, for passkeys of maia.city
+# the tile's own device (Your account, P8e): avendb-browser and its JS modules, for passkeys of maia.city
 cargo build -p avendb-browser --target wasm32-unknown-unknown --release
 device=../src/lib/avendb/device
 rm -rf "$device"

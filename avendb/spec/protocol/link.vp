@@ -1,16 +1,16 @@
 // Linking a new device by its passkey (P8c; crates/avendb-net/src/lib.rs `Node::link`, session.rs `LINK` and `JOIN`,
-// crates/avendb/src/sign.rs `PasskeyHello`, crates/avendb/src/lab.rs `link_card`, `join` and `accept_join`). Samuel's
-// new iPhone scans the code his Mac shows (`Offer`): the Mac's endpoint and device. On a connection to the Mac, after
-// both devices' hellos, the iPhone says his passkey's hello: a WebAuthn assertion and an SLH-DSA signature, both over a
+// crates/avendb/src/sign.rs `PasskeyHello`, crates/avendb/src/lab.rs `link_card`, `join` and `accept_join`). Alice's
+// new iPhone scans the code her Mac shows (`Offer`): the Mac's endpoint and device. On a connection to the Mac, after
+// both devices' hellos, the iPhone says her passkey's hello: a WebAuthn assertion and an SLH-DSA signature, both over a
 // hash of which end it speaks for, the connection's TLS exporter and the iPhone's device. The Mac checks it against
 // the passkey its vault's log names and hands back the link card, the logs of the vaults the passkey owns; the iPhone
-// then sends its join, the op adding itself to Samuel's vault, signed by the passkey and by itself, which the Mac takes
+// then sends its join, the op adding itself to Alice's vault, signed by the passkey and by itself, which the Mac takes
 // only for the device on the connection.
 //
 // Expected: c0c1a0a0
 //
 // The curves fall from the start (`PUBKEY[weak]`): X25519, ed25519 and the passkey's P-256. ML-KEM-768 and SLH-DSA
-// hold. Nothing ties the new iPhone's keys to Samuel before it joins: the attacker can be any device it likes. The card
+// hold. Nothing ties the new iPhone's keys to Alice before it joins: the attacker can be any device it likes. The card
 // the Mac hands over on a passkey's hello stays secret (`card`), where a card handed to whichever device said its
 // hello would not (`unchecked`); the passkey's hello the Mac takes is the iPhone's, and so is the join it accepts.
 //
@@ -30,7 +30,7 @@ principal Phone[
 	knows private ph_ed, ph_slh
 	ph_ed_pk = PUBKEY[weak](ph_ed)
 	ph_slh_pk = PUBKEY(ph_slh)
-	// Samuel's passkey, synced to the new iPhone by his platform: its hash-based half
+	// Alice's passkey, synced to the new iPhone by her platform: its hash-based half
 	knows private pk_slh
 	pk_slh_pub = PUBKEY(pk_slh)
 ]

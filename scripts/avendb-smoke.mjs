@@ -1,11 +1,12 @@
 /*
  * The avenDB tile's smoke test: opens /app/avendb/ in a headless Chrome as an admin (the API's /api/me is answered
- * here), waits for the world to be made in the page's workers, then walks every screen as its people would. Samuel's
- * Mac reads Welcome, edits it and branches it, and shows who may do what; a locked Mac is refused with the rule's
- * reason; a stranger sees only the public Charter; Bob's Mac finds the door todo shared with it; Samuel's passkey signs a
- * backup passkey in; Vaults shows the human, coop and aven vaults, avenCEO among them; the Lab shows every device, Bob's
- * Mac with Samuel's edit synced at once, and plays a scenario; This browser loads its own device and offers the
- * maiaCITY passkey. Each screen is screenshot.
+ * here). It opens on the person's account, which loads its own device and offers the maiaCITY passkey, and leaves the
+ * Lab unmade; then the Lab is opened, its world made in the page's workers, and every screen walked as its people
+ * would. Alice's Mac reads Welcome, edits it and branches it, and shows who may do what; a locked Mac is refused with the
+ * rule's reason; a stranger sees only the public Charter; Bob's Mac finds the door todo shared with it; Alice's passkey
+ * signs a backup passkey in; Vaults shows the human, coop and aven vaults, avenCEO among them; Every device shows them
+ * side by side, Bob's Mac with Alice's edit synced at once, and plays a scenario; the account is still there after the
+ * Lab. Each screen is screenshot. scripts/avendb-account.mjs walks the account itself, its passkey and its devices.
  *
  *   node scripts/avendb-smoke.mjs [--out dir]                    starts its own dev server
  *   BASE=http://localhost:5173 node scripts/avendb-smoke.mjs     uses a running one
@@ -111,23 +112,31 @@ async function type(selector, value, had = '') {
 try {
 	const t = Date.now();
 	await page.goto(`${base}/app/avendb/`, { waitUntil: 'domcontentloaded' });
+	// the account first: its own device, apart from the Lab, which links to a person's devices or founds their vault
+	const offers = (await waitText('Use my maiaCITY passkey', 60000)) && (await waitText('Sign in with my passkey'));
+	check('it opens on the account, offering to found a vault with the maiaCITY passkey, or to sign in', offers && (await waitText('Make a new passkey')));
+	check('its device loads', !(await text()).includes("can't be a device"), (await text()).match(/can't be a device[^.]*/)?.[0]);
+	check('and the Lab is not made yet', !(await page.$('.rail .device')));
+	await shot('0-account');
+	await click('Open the Lab', '.rail button');
 	await shot('0-making');
 	const made = await page.waitForSelector('.rail .device', { timeout: 180000 }).then(() => true, () => false);
 	check(`the world is made in the page (${((Date.now() - t) / 1000).toFixed(1)} s)`, made);
 	if (!made) throw new Error('no world');
 	const devices = await page.$$eval('.rail .device span', (s) => s.map((x) => x.textContent));
-	check('every device is listed', ["Samuel's Mac", "Samuel's iPhone", "Bob's Mac", "Carol's Mac", 'a stranger'].every((d) => devices.includes(d)), devices.join(', '));
+	check('every device is listed', ["Alice's Mac", "Alice's iPhone", "Bob's Mac", "Carol's Mac", 'a stranger'].every((d) => devices.includes(d)), devices.join(', '));
+	check('and nobody of the Lab is Samuel, the person', !devices.some((d) => d?.includes('Samuel')), devices.join(', '));
 
-	// Samuel's Mac: the spaces, and Welcome in the Handbook
-	check('Spaces lists the Handbook, the Notes and the Todos', (await waitText('Handbook')) && (await waitText("Samuel's Notes")) && (await waitText("Samuel's Todos")));
+	// Alice's Mac: the spaces, and Welcome in the Handbook
+	check('Spaces lists the Handbook, the Notes and the Todos', (await waitText('Handbook')) && (await waitText("Alice's Notes")) && (await waitText("Alice's Todos")));
 	await shot('1-spaces');
 	await click('Welcome', '.space li button');
-	check('Welcome reads on Samuel’s Mac', await waitText('the greenhouse opens at eight'));
+	check('Welcome reads on Alice’s Mac', await waitText('the greenhouse opens at eight'));
 	await shot('2-read');
 	await click('Edit');
 	await type('.editor textarea', 'Welcome to Maia Coop: the greenhouse opens at seven.', 'opens at eight');
 	await click('Save');
-	check('the edit is saved, encrypted, as Samuel’s Mac', (await waitText("Done on Samuel's Mac")) && (await waitText('opens at seven')));
+	check('the edit is saved, encrypted, as Alice’s Mac', (await waitText("Done on Alice's Mac")) && (await waitText('opens at seven')));
 	check('and synced at once to the devices online', await waitText('Synced at once'));
 	await click('JSON', '.tabs button');
 	check('JSON shows the raw value and the schemas', await waitText('Written under'));
@@ -146,10 +155,10 @@ try {
 	await shot('6-access');
 
 	// a locked Mac is refused with the rule's reason
-	await click('Lab', '.rail .screen');
+	await click('Every device', '.rail .screen');
 	await waitText("Every device's copy of");
 	await page.evaluate(() => {
-		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Samuel's Mac");
+		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Alice's Mac");
 		const lock = [...(col?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Lock');
 		if (lock instanceof HTMLElement) lock.click();
 	});
@@ -157,12 +166,12 @@ try {
 	await click('Spaces', '.rail .screen');
 	await type('input[placeholder="A new entry\'s title"]', 'Written while locked');
 	await click('Write', '.space footer button');
-	check('a locked device is refused, with the reason', await waitText('Refused on Samuel\'s Mac: The device is locked'));
+	check('a locked device is refused, with the reason', await waitText('Refused on Alice\'s Mac: The device is locked'));
 	await shot('7-refused');
-	await click('Lab', '.rail .screen');
+	await click('Every device', '.rail .screen');
 	await waitText("Every device's copy of");
 	await page.evaluate(() => {
-		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Samuel's Mac");
+		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Alice's Mac");
 		const unlock = [...(col?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Unlock');
 		if (unlock instanceof HTMLElement) unlock.click();
 	});
@@ -172,7 +181,7 @@ try {
 	await click('a stranger', '.rail .device');
 	await click('Spaces', '.rail .screen');
 	check('a stranger sees the public Charter', await waitText('Charter'));
-	check('and nothing of Samuel’s Notes', !(await text()).includes("Samuel's Notes"));
+	check('and nothing of Alice’s Notes', !(await text()).includes("Alice's Notes"));
 	await shot('8-stranger');
 
 	// Bob's Mac: the door todo, shared with it
@@ -181,10 +190,10 @@ try {
 	check('Bob’s Mac finds the door todo shared with it', (await waitText('Shared with me')) && (await waitText('Fix the greenhouse door')));
 	await shot('9-todos');
 
-	// Samuel's Mac: the vaults, and a backup passkey signed in with the passkey
-	await click("Samuel's Mac", '.rail .device');
+	// Alice's Mac: the vaults, and a backup passkey signed in with the passkey
+	await click("Alice's Mac", '.rail .device');
 	await click('Vaults', '.rail .screen');
-	check('Vaults shows Samuel’s vault and the coop’s', (await waitText('Maia Coop')) && (await waitText('Samuel')));
+	check('Vaults shows Alice’s vault and the coop’s', (await waitText('Maia Coop')) && (await waitText('Alice')));
 	const kinds = ['Human vaults', 'Coop vaults', 'Aven vaults', 'avenCEO'];
 	check('by kind, avenCEO an aven vault', (await Promise.all(kinds.map((k) => waitText(k)))).every(Boolean));
 	await shot('10-vaults');
@@ -193,20 +202,20 @@ try {
 	await shot('11-approve');
 	await click('Sign with this passkey');
 	await click('Send', '.sheet button');
-	check('the backup passkey joins Samuel’s vault', await waitText("Samuel's backup passkey"));
+	check('the backup passkey joins Alice’s vault', await waitText("Alice's backup passkey"));
 
 	await click('Schemas', '.rail .screen');
 	check('Schemas shows the lane and its lenses', (await waitText('Versions in the lane')) && (await waitText('Markdown document, v1 to v2')));
 	await shot('12-schemas');
 
-	await click('Lab', '.rail .screen');
-	check('the Lab shows every device', await waitText("Every device's copy of"));
-	// nobody synced by hand: Samuel's edit reached Bob's Mac the moment it was saved
+	await click('Every device', '.rail .screen');
+	check('Every device shows them side by side', await waitText("Every device's copy of"));
+	// nobody synced by hand: Alice's edit reached Bob's Mac the moment it was saved
 	const bobs = await page.waitForFunction(() => {
 		const col = [...document.querySelectorAll('.column')].find((c) => c.querySelector('header b')?.textContent === "Bob's Mac");
 		return col?.textContent?.includes('opens at seven');
 	}, { timeout: 30000 }).then(() => true, () => false);
-	check('Bob’s Mac has Samuel’s edit, synced at once', bobs);
+	check('Bob’s Mac has Alice’s edit, synced at once', bobs);
 	await shot('13-lab');
 	await page.evaluate(() => {
 		const first = document.querySelector('.scenarios > li .btn');
@@ -217,12 +226,10 @@ try {
 	check('every check of it green', green);
 	await shot('14-scenario');
 
-	// This browser: its own device, apart from the Lab, which links to a person's devices or founds their vault
-	await click('This browser', '.rail .screen');
-	const offers = (await waitText('Link through your other device', 60000)) && (await waitText('Use my maiaCITY passkey'));
-	check('This browser offers to link it, or to found a vault with the maiaCITY passkey', offers && (await waitText('Make a new passkey')));
-	check('its device loads', !(await text()).includes("can't be a device"), (await text()).match(/can't be a device[^.]*/)?.[0]);
-	await shot('15-browser');
+	// back to the account: still there, apart from the Lab
+	await click('Your account', '.rail button');
+	check('the account is still there after the Lab', await waitText('Use my maiaCITY passkey', 5000));
+	await shot('15-account');
 } catch (e) {
 	check(`the walk through finishes: ${e instanceof Error ? e.message : e}`, false);
 } finally {

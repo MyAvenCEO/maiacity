@@ -25,8 +25,8 @@ const NOW: u64 = 1_791_500_000;
 fn browser(authenticator: &mut Passkey, nonce: [u8; 32]) -> (Lab, SignerId, SignerId) {
     let mut lab = Lab::with_entropy([7; 32]);
     let unlock = authenticator.ceremony([1; 32]);
-    let passkey = lab.web_passkey("Samuel", authenticator.public(), &unlock).expect("the passkey's own ceremony");
-    let device = lab.web_device(passkey, "Samuel's browser", nonce, *authenticator.prf(&device_salt(&nonce)));
+    let passkey = lab.web_passkey("Alice", authenticator.public(), &unlock).expect("the passkey's own ceremony");
+    let device = lab.web_device(passkey, "Alice's browser", nonce, *authenticator.prf(&device_salt(&nonce)));
     (lab, passkey, device)
 }
 
@@ -55,7 +55,7 @@ fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
 }
 
 #[test]
-fn a_browser_founds_samuels_vault_in_ceremonies() {
+fn a_browser_founds_alices_vault_in_ceremonies() {
     let mut authenticator = Passkey::from_seed([1; 32]);
     let (mut lab, passkey, device) = browser(&mut authenticator, [5; 32]);
     assert_eq!(passkey, authenticator.id(), "the ceremony shows the passkey's keys");
@@ -126,12 +126,12 @@ fn the_lab_holds_no_secret_of_a_browsers_passkey() {
 }
 
 #[test]
-fn a_browser_links_through_samuels_mac_in_ceremonies() {
+fn a_browser_links_through_alices_mac_in_ceremonies() {
     let mut w = world();
     let h = handbook(&mut w);
-    let mut mac = w.lab.split(w.mac_s, &[], [1; 32]);
-    let secret = w.lab.passkey_secret(w.passkey_s).expect("Samuel's software passkey");
-    // the browser's authenticator holds Samuel's passkey, as his platform syncs it; the browser never saw it made
+    let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
+    let secret = w.lab.passkey_secret(w.passkey_a).expect("Alice's software passkey");
+    // the browser's authenticator holds Alice's passkey, as her platform syncs it; the browser never saw it made
     let mut authenticator = Passkey::from_seed(*secret);
     let nonce = [5; 32];
     let unlock = authenticator.ceremony([1; 32]);
@@ -142,30 +142,30 @@ fn a_browser_links_through_samuels_mac_in_ceremonies() {
     let p256 = passkey_key(&unlock.assertion, &pass.assertion).expect("one key recovers from both");
     assert_eq!(p256, authenticator.public());
     let mut browser = Lab::with_entropy([7; 32]);
-    let passkey = browser.web_passkey("Samuel", p256, &unlock).expect("Samuel's passkey");
-    assert_eq!(passkey, w.passkey_s);
-    let device = browser.web_device(passkey, "Samuel's browser", nonce, *authenticator.prf(&device_salt(&nonce)));
+    let passkey = browser.web_passkey("Alice", p256, &unlock).expect("Alice's passkey");
+    assert_eq!(passkey, w.passkey_a);
+    let device = browser.web_device(passkey, "Alice's browser", nonce, *authenticator.prf(&device_salt(&nonce)));
     let pass = pass.pass(browser.keys_of(passkey).expect("its keys"), endpoint, NOW).expect("a pass");
     let pass = RelayPass::from_wire(&pass.to_wire()).expect("a pass");
-    assert_eq!(pass.verify(&endpoint, NOW), Some(w.passkey_s), "the relay would let it in");
+    assert_eq!(pass.verify(&endpoint, NOW), Some(w.passkey_a), "the relay would let it in");
     // its hello on the connection to the Mac: a third ceremony, which the Mac checks before it hands its link card
     let keys = browser.keys_of(passkey).expect("its keys");
     let hello = authenticator.ceremony(hello_challenge(&EXPORTER, true, device));
     let hello = hello.hello(keys, &EXPORTER, true, device).expect("the passkey's hello");
     let hello = PasskeyHello::from_wire(&hello.to_wire()).expect("a hello");
     let proven = hello.verify(&EXPORTER, true, device).expect("the Mac checks it");
-    browser.receive(device, mac.link_card(w.mac_s, proven), vec![]);
-    // it joins Samuel's vault: the fourth ceremony signs the op that adds it, and the Mac takes it
-    let (vault, added) = browser.joining(device, passkey).expect("Samuel's vault, by the card");
-    assert_eq!((vault, added), (w.samuel, None));
+    browser.receive(device, mac.link_card(w.mac_a, proven), vec![]);
+    // it joins Alice's vault: the fourth ceremony signs the op that adds it, and the Mac takes it
+    let (vault, added) = browser.joining(device, passkey).expect("Alice's vault, by the card");
+    assert_eq!((vault, added), (w.alice, None));
     let add = Action::AddDevice { vault, device, seal_to: None };
     let id = ceremony(&mut browser, device, &[passkey, device], add, &mut authenticator);
     let join = Join::from_wire(&browser.joined(device, id).to_wire()).expect("a join");
-    mac.accept_join(w.mac_s, device, join).expect("the Mac takes the join");
+    mac.accept_join(w.mac_a, device, join).expect("the Mac takes the join");
     assert_eq!(browser.joining(device, passkey), Ok((vault, Some(id))), "joined, it would send the same op again");
     for _ in 0..4 {
-        ask((&mut mac, w.mac_s), (&mut browser, device));
-        ask((&mut browser, device), (&mut mac, w.mac_s));
+        ask((&mut mac, w.mac_a), (&mut browser, device));
+        ask((&mut browser, device), (&mut mac, w.mac_a));
     }
     assert!(browser.opens(device, KeyScope::Space(h.space)), "the browser opens the Handbook's key");
     assert_eq!(text(&browser, device, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");

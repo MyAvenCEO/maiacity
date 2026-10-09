@@ -56,15 +56,15 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     let anyone = Lab::new().passkey("anyone");
     assert!(admission.honours(&anyone), "until it is claimed, its relay lets in a pass of any passkey");
     let mut w = world();
-    let (mac_b, passkey_b, mac_s, passkey_s, bob) = (w.mac_b, w.passkey_b, w.mac_s, w.passkey_s, w.bob);
+    let (mac_b, passkey_b, mac_a, passkey_a, bob) = (w.mac_b, w.passkey_b, w.mac_a, w.passkey_a, w.bob);
     let stranger_d = w.stranger;
     let bobs = node(&mut w, mac_b, &[passkey_b], 2).await;
-    let samuels = node(&mut w, mac_s, &[passkey_s], 1).await;
+    let alices = node(&mut w, mac_a, &[passkey_a], 1).await;
     let stranger = node(&mut w, stranger_d, &[], 5).await;
     let offer = server.offer();
     // a device of no vault claims nothing, and a person's own device takes no claim
     assert!(stranger.claim(&offer, passkey_b).await.is_err(), "a device of no vault");
-    assert!(bobs.claim(&samuels.offer(), passkey_b).await.is_err(), "Samuel's Mac");
+    assert!(bobs.claim(&alices.offer(), passkey_b).await.is_err(), "Alice's Mac");
     assert_eq!(server::vault(&server).await, None, "and the server is still nobody's");
     // Bob's vault claims it first: the server is a device of a new avenCEO, which Bob's vault owns
     let avenceo = bobs.claim(&offer, passkey_b).await.expect("Bob's vault claims the server");
@@ -81,11 +81,11 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     assert!(!admission.honours(&anyone), "once claimed, its relay honours only the passes of people it knows");
     assert!(admission.honours(&passkey_b) && admission.admits(&bobs.id()), "Bob's among them");
     // nobody claims it again
-    assert!(samuels.claim(&offer, passkey_s).await.is_err(), "Samuel's vault comes second");
+    assert!(alices.claim(&offer, passkey_a).await.is_err(), "Alice's vault comes second");
     // Bob tries again, as if the answer had been lost: the server is avenCEO's device already
     assert_eq!(bobs.claim(&offer, passkey_b).await.expect("the same claim"), avenceo);
     let held = server.read(|lab, me| lab.size(me)).await;
-    for n in [bobs, samuels, stranger] {
+    for n in [bobs, alices, stranger] {
         n.shutdown().await.expect("the node shuts down");
     }
     server.shutdown().await.expect("it stops");
@@ -105,10 +105,10 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_space() {
     let server = server::open(dir.path(), admitting(&admission)).await.expect("a new server");
     let mut w = world();
     let (coop, _, _) = handbook_spaces(&mut w);
-    let (mac_s, passkey_s, mac_d, passkey_d, stranger_d) = (w.mac_s, w.passkey_s, w.mac_d, w.passkey_d, w.stranger);
+    let (mac_a, passkey_a, mac_d, passkey_d, stranger_d) = (w.mac_a, w.passkey_a, w.mac_d, w.passkey_d, w.stranger);
     let (bob_mac, carol_mac) = (endpoint(&w, w.mac_b), endpoint(&w, w.mac_c));
     let daves = node(&mut w, mac_d, &[passkey_d], 4).await;
-    let mac = node(&mut w, mac_s, &[passkey_s], 1).await;
+    let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
     let stranger = node(&mut w, stranger_d, &[], 5).await;
     for n in [&mac, &stranger] {
         n.know(server.addr());
@@ -117,11 +117,11 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_space() {
     // Dave's vault claims the server, which then knows Dave's devices and no one else
     let v: VaultId = daves.claim(&server.offer(), passkey_d).await.expect("Dave's vault claims it");
     assert!(stranger.contact(mac.id()).await.is_err(), "a person's device hands out no card");
-    assert!(mac.contact(server.id()).await.expect("the server hands out its card") > 0, "Samuel's Mac takes it");
+    assert!(mac.contact(server.id()).await.expect("the server hands out its card") > 0, "Alice's Mac takes it");
     let server_d = server.device();
     assert_eq!(mac.read(move |lab, me| lab.aven_of(me, server_d)).await, Some(v), "it names avenCEO");
-    assert!(!admission.admits(&mac.id()), "the server knows no device of Samuel's yet");
-    // the coop founds the Garden on Samuel's Mac, gives avenCEO relay on it, and Samuel writes Welcome there
+    assert!(!admission.admits(&mac.id()), "the server knows no device of Alice's yet");
+    // the coop founds the Garden on Alice's Mac, gives avenCEO relay on it, and Alice writes Welcome there
     let garden = move |lab: &mut Lab, me| {
         let garden = lab.submit(me, &[me], Action::FoundSpace { actor: coop, nonce: 11, via: vec![] })?;
         let garden = SpaceId::from(garden);
@@ -141,7 +141,7 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_space() {
     let on_disk: Vec<u8> = std::fs::read(dir.path().join("ops")).expect("its store on disk");
     assert!(!contains(&on_disk, WELCOME_TEXT), "nor on its disk");
     // from the Garden's logs it knows the coop's owners' devices: its relay lets them in, and no one else
-    until("the server knows Samuel's Mac", || async { admission.admits(&mac.id()) }).await;
+    until("the server knows Alice's Mac", || async { admission.admits(&mac.id()) }).await;
     assert!(admission.admits(&bob_mac) && admission.admits(&server.id()), "and Bob's Mac, and itself");
     assert!(admission.admits(&daves.id()), "and Dave's Mac, of avenCEO's owner");
     assert!(!admission.admits(&carol_mac) && !admission.admits(&stranger.id()), "not Carol's Mac, nor a stranger");

@@ -84,7 +84,7 @@ fn mutate(g: &mut Gen, bytes: &[u8]) -> Vec<u8> {
 fn a_changed_box_opens_to_nothing() {
     let mut rng = SeededRng::new("fuzz", b"boxes");
     let (key, to, other) = (Secret::generate(&mut rng), Secret::generate(&mut rng), Secret::generate(&mut rng));
-    let info = b"the Handbook's key at epoch 0, for Samuel's vault key";
+    let info = b"the Handbook's key at epoch 0, for Alice's vault key";
     let sealed = keys::seal(&key, &to.public(), &to.mceliece_public(), info, &mut rng).expect("a key to seal to");
     let wrapped = keys::wrap(&key, &to, info, &mut rng);
     let opened = |bytes: &[u8], with: &Secret, info: &[u8]| keys::open(bytes, with, info).map(|k| k.id());
@@ -207,14 +207,14 @@ fn batched(add: &Signed) -> Signed {
 fn signed_ops() -> (Signed, Signed) {
     let device = DeviceKey::from_secret([7; 32]);
     let mut passkey = Passkey::from_seed([9; 32]);
-    let samuel = VaultId::from_u64(100);
+    let alice = VaultId::from_u64(100);
     // governance, which both halves sign, by the passkey with the new device consenting
     let add = Op {
         parents: vec![OpId::from_u64(1)],
         depth: 1,
         author: passkey.id(),
         cosigners: vec![device.id()],
-        action: Action::AddDevice { vault: samuel, device: device.id(), seal_to: None },
+        action: Action::AddDevice { vault: alice, device: device.id(), seal_to: None },
     };
     let sigs = vec![passkey.sign(add.id(), true), device.sign(add.id(), true)];
     let add = Signed { op: add, sigs };
@@ -222,7 +222,7 @@ fn signed_ops() -> (Signed, Signed) {
     let action = Action::Write {
         space: SpaceId::from_u64(10),
         entry: EntryId::from_u64(1),
-        actor: samuel,
+        actor: alice,
         epoch: 0,
         deps: vec![OpId::from_u64(5)],
         branch: Branch::On(OpId::from_u64(5)),
@@ -453,8 +453,8 @@ fn a_changed_schema_or_lens_never_panics() {
 
 #[test]
 fn a_changed_loro_update_never_panics_and_changes_nothing() {
-    let samuel = SignerId::from_u64(2);
-    let first = Item::document("Welcome", samuel);
+    let alice = SignerId::from_u64(2);
+    let first = Item::document("Welcome", alice);
     let update = first.export(&Version::default());
     let mut next = first.clone();
     let text = "the greenhouse opens at eight".into();
@@ -467,16 +467,16 @@ fn a_changed_loro_update_never_panics_and_changes_nothing() {
         // into an empty item, and into one holding the first update
         let bad = mutate(&mut g, &update);
         let mut empty = Item::new(SignerId::from_u64(7));
-        if empty.import(&bad, samuel).is_ok() {
+        if empty.import(&bad, alice).is_ok() {
             taken += 1;
         } else {
             assert_eq!(empty.record(), json!({}));
         }
         let bad = mutate(&mut g, &more);
         let mut held = Item::new(SignerId::from_u64(7));
-        held.import(&update, samuel).expect("the first update");
+        held.import(&update, alice).expect("the first update");
         let before = held.record();
-        if held.import(&bad, samuel).is_err() {
+        if held.import(&bad, alice).is_err() {
             assert_eq!(held.record(), before);
         }
     }

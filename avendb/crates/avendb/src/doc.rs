@@ -603,7 +603,7 @@ mod tests {
     use super::*;
     use crate::lens::{BlockV1, KindV1, TypeV2, DOCUMENT_V1, DOCUMENT_V2};
 
-    const SAMUEL: SignerId = SignerId::from_u64(2);
+    const ALICE: SignerId = SignerId::from_u64(2);
     const BOB: SignerId = SignerId::from_u64(5);
     const CAROL: SignerId = SignerId::from_u64(7);
     const WELCOME: &str = "Welcome to Maia Coop: the greenhouse opens at eight.";
@@ -634,7 +634,7 @@ mod tests {
 
     #[test]
     fn a_documents_blocks_round_trip() {
-        let mut doc = welcome(SAMUEL);
+        let mut doc = welcome(ALICE);
         let code = BlockV2 { lang: Some("sh".into()), ..block(3, TypeV2::Code, "open greenhouse --at 8") };
         let item = BlockV2 { checked: Some(true), ..block(u64::MAX, TypeV2::Item, "Water the seedlings") };
         doc.push_block(code.clone());
@@ -651,7 +651,7 @@ mod tests {
     #[test]
     fn a_todos_status_round_trips() {
         let title = "Fix the greenhouse door";
-        let mut todo = Item::todo(title, SAMUEL);
+        let mut todo = Item::todo(title, ALICE);
         let open = TodoV2 { title: title.into(), status: Status::Open, notes: String::new(), due: None };
         assert_eq!(todo.as_todo(), Some(open));
         assert!(todo.as_document().is_none());
@@ -661,15 +661,15 @@ mod tests {
         }
         // and as another device shows it
         let mut bobs = Item::new(BOB);
-        bobs.import(&todo.export(&Version::default()), SAMUEL).unwrap();
+        bobs.import(&todo.export(&Version::default()), ALICE).unwrap();
         assert_eq!(bobs.as_todo().unwrap().status, Status::Done);
     }
 
     #[test]
     fn reading_writes_nothing_not_even_a_default() {
         // an app that puts back the view it read changes nothing, through the lens too: no op at all (T9g)
-        let mut doc = welcome(SAMUEL);
-        let mut todo = Item::todo("Order seeds", SAMUEL);
+        let mut doc = welcome(ALICE);
+        let mut todo = Item::todo("Order seeds", ALICE);
         let before = (doc.version(), todo.version());
         for view in [View::document_v1(), View::document_v2()] {
             let seen = doc.read(view).unwrap();
@@ -687,7 +687,7 @@ mod tests {
 
     #[test]
     fn a_value_that_isnt_a_view_writes_nothing() {
-        let mut doc = welcome(SAMUEL);
+        let mut doc = welcome(ALICE);
         let before = doc.version();
         let chapter = json!({"kind": "document", "blocks": [{"id": 1, "type": "chapter"}]});
         let twice = json!({"kind": "document", "blocks": [{"id": 1, "type": "paragraph"}, {"id": 1, "type": "code"}]});
@@ -703,7 +703,7 @@ mod tests {
     fn each_change_names_the_schema_it_was_written_under() {
         let heading = BlockV1 { id: 1, kind: KindV1::H1, text: "Welcome".into() };
         let v1 = DocV1 { title: "Welcome".into(), blocks: vec![heading] };
-        let mut doc = Item::written_v1(&v1, SAMUEL);
+        let mut doc = Item::written_v1(&v1, ALICE);
         assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id()]));
         // a v2 app reads it through the lens, and an edit that changes nothing tags nothing
         let heading = BlockV2 { level: Some(1), ..block(1, TypeV2::Heading, "Welcome") };
@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]));
         // another device reads the same tags off the updates it imports
         let mut bobs = Item::new(BOB);
-        bobs.import(&doc.export(&Version::default()), SAMUEL).unwrap();
+        bobs.import(&doc.export(&Version::default()), ALICE).unwrap();
         assert_eq!(bobs.authored(), doc.authored());
         assert!(Item::new(CAROL).authored().is_empty());
     }
@@ -722,7 +722,7 @@ mod tests {
     #[test]
     fn a_record_put_back_names_no_schema_and_a_copy_names_them_all() {
         let heading = BlockV1 { id: 1, kind: KindV1::H1, text: "Welcome".into() };
-        let mut doc = Item::written_v1(&DocV1 { title: "Welcome".into(), blocks: vec![heading] }, SAMUEL);
+        let mut doc = Item::written_v1(&DocV1 { title: "Welcome".into(), blocks: vec![heading] }, ALICE);
         let first = doc.record();
         assert!(doc.edit_document(|d| d.tags.push("coop".into())));
         let both = BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]);
@@ -740,43 +740,43 @@ mod tests {
     fn a_field_two_devices_add_at_once_merges() {
         // nobody had tagged the document, and block 3 had no text yet: each device makes the container, and the two
         // are one, so neither edit hides the other
-        let mut base = welcome(SAMUEL);
+        let mut base = welcome(ALICE);
         base.push_block(block(3, TypeV2::Paragraph, ""));
         assert!(base.record()["blocks"][2].get("text").is_none());
         let start = base.version();
-        let (mut samuels, mut bobs) = (base.fork_as(SAMUEL), base.fork_as(BOB));
-        samuels.edit_document(|d| d.tags.push("coop".into()));
-        samuels.set_text(3, "Seeds");
+        let (mut alices, mut bobs) = (base.fork_as(ALICE), base.fork_as(BOB));
+        alices.edit_document(|d| d.tags.push("coop".into()));
+        alices.set_text(3, "Seeds");
         bobs.edit_document(|d| d.tags.push("greenhouse".into()));
         bobs.set_text(3, "Water");
-        merge(&mut samuels, SAMUEL, &mut bobs, BOB, &start);
-        assert_eq!(samuels.as_document(), bobs.as_document());
-        let mut tags = samuels.as_document().unwrap().tags;
+        merge(&mut alices, ALICE, &mut bobs, BOB, &start);
+        assert_eq!(alices.as_document(), bobs.as_document());
+        let mut tags = alices.as_document().unwrap().tags;
         tags.sort();
         assert_eq!(tags, ["coop", "greenhouse"]);
-        let both = text(&samuels, 3).unwrap();
+        let both = text(&alices, 3).unwrap();
         assert!(both == "SeedsWater" || both == "WaterSeeds", "{both}");
     }
 
     #[test]
     fn a_text_edit_lands_in_its_block_after_a_concurrent_move() {
-        let base = welcome(SAMUEL);
+        let base = welcome(ALICE);
         let start = base.version();
-        let (mut samuels, mut bobs) = (base.fork_as(SAMUEL), base.fork_as(BOB));
-        assert!(samuels.edit_document(|d| d.blocks.reverse()));
+        let (mut alices, mut bobs) = (base.fork_as(ALICE), base.fork_as(BOB));
+        assert!(alices.edit_document(|d| d.blocks.reverse()));
         bobs.set_text(2, NINE);
-        merge(&mut samuels, SAMUEL, &mut bobs, BOB, &start);
-        let doc = samuels.as_document().unwrap();
+        merge(&mut alices, ALICE, &mut bobs, BOB, &start);
+        let doc = alices.as_document().unwrap();
         assert_eq!(doc.blocks.iter().map(|b| b.id).collect::<Vec<_>>(), [2, 1]);
         assert_eq!(doc.blocks[0].text, NINE);
-        assert_eq!(samuels.as_document(), bobs.as_document());
+        assert_eq!(alices.as_document(), bobs.as_document());
     }
 
     #[test]
     fn an_item_stores_exactly_the_record_it_is_given() {
         // records no single app writes: both versions' fields in one block, a field no schema knows, records moved,
         // added and dropped, a text where a plain value was and back
-        let mut item = welcome(SAMUEL);
+        let mut item = welcome(ALICE);
         let records = [
             json!({"kind": "document", "title": "Welcome", "x": 3, "tags": ["a", "b"], "blocks": [
                 {"id": 2, "kind": "p", "type": "paragraph", "text": "Two"},
@@ -800,8 +800,8 @@ mod tests {
         let mut reader = Item::new(BOB);
         assert!(reader.as_document().is_none() && reader.as_todo().is_none());
         assert_eq!(reader.version(), Version::default());
-        let doc = welcome(SAMUEL);
-        reader.import(&doc.export(&Version::default()), SAMUEL).unwrap();
+        let doc = welcome(ALICE);
+        reader.import(&doc.export(&Version::default()), ALICE).unwrap();
         assert_eq!(reader.as_document(), doc.as_document());
         assert_eq!(reader.version(), doc.version());
     }
@@ -810,7 +810,7 @@ mod tests {
     fn exports_are_deterministic() {
         // no clock and no random peer in the updates: the same edits export the same bytes, run after run
         let edits = || {
-            let mut doc = welcome(SAMUEL);
+            let mut doc = welcome(ALICE);
             doc.set_text(2, NINE);
             let mut todo = Item::todo("Order seeds", BOB);
             todo.set_status(Status::Doing);
@@ -825,14 +825,14 @@ mod tests {
 
     #[test]
     fn each_signer_edits_as_its_own_peer() {
-        assert_eq!(peer(SAMUEL, None), peer(SAMUEL, None));
-        assert_ne!(peer(SAMUEL, None), peer(BOB, None));
+        assert_eq!(peer(ALICE, None), peer(ALICE, None));
+        assert_ne!(peer(ALICE, None), peer(BOB, None));
         let b = Some(crate::id::OpId::from_u64(1));
-        assert!(peer(SAMUEL, b) != peer(SAMUEL, None) && peer(SAMUEL, b) != peer(BOB, b));
-        assert_ne!(peer(SAMUEL, b), peer(SAMUEL, Some(crate::id::OpId::from_u64(2))));
-        let doc = welcome(SAMUEL);
+        assert!(peer(ALICE, b) != peer(ALICE, None) && peer(ALICE, b) != peer(BOB, b));
+        assert_ne!(peer(ALICE, b), peer(ALICE, Some(crate::id::OpId::from_u64(2))));
+        let doc = welcome(ALICE);
         let meta = LoroDoc::decode_import_blob_meta(&doc.export(&Version::default()), true).unwrap();
-        assert_eq!(meta.partial_end_vv.keys().collect::<Vec<_>>(), [&peer(SAMUEL, None)]);
+        assert_eq!(meta.partial_end_vv.keys().collect::<Vec<_>>(), [&peer(ALICE, None)]);
         assert_eq!(doc.fork_as(BOB).doc.peer_id(), peer(BOB, None));
         // the ids Loro keeps for itself are never ours
         assert!([PeerID::MAX, PeerID::MAX - 2].iter().all(|&p| usable(p) <= PeerID::MAX - RESERVED));
@@ -841,65 +841,65 @@ mod tests {
 
     #[test]
     fn concurrent_edits_of_one_text_merge() {
-        let base = welcome(SAMUEL);
+        let base = welcome(ALICE);
         let start = base.version();
-        let (mut samuels, mut bobs) = (base.fork_as(SAMUEL), base.fork_as(BOB));
-        samuels.set_text(2, NINE);
+        let (mut alices, mut bobs) = (base.fork_as(ALICE), base.fork_as(BOB));
+        alices.set_text(2, NINE);
         bobs.set_text(2, "Hello from Maia Coop: the greenhouse opens at eight.");
-        merge(&mut samuels, SAMUEL, &mut bobs, BOB, &start);
+        merge(&mut alices, ALICE, &mut bobs, BOB, &start);
         let merged = Some("Hello from Maia Coop: the greenhouse opens at nine.".to_string());
-        assert_eq!((text(&samuels, 2), text(&bobs, 2)), (merged.clone(), merged));
+        assert_eq!((text(&alices, 2), text(&bobs, 2)), (merged.clone(), merged));
     }
 
     #[test]
     fn a_malformed_update_is_refused() {
-        let base = welcome(SAMUEL);
+        let base = welcome(ALICE);
         let start = base.version();
         let mut bobs = base.fork_as(BOB);
         bobs.set_text(2, NINE);
         let update = bobs.export(&start);
         let mut flipped = update.clone();
         *flipped.last_mut().unwrap() ^= 1;
-        let mut samuels = base.fork_as(SAMUEL);
+        let mut alices = base.fork_as(ALICE);
         // garbage, cut short, a byte changed, and a snapshot (its state would be taken as is)
         for bad in [&b"not a loro update"[..], &update[..update.len() - 1], &flipped[..], &bobs.bytes()[..]] {
-            assert_eq!(samuels.import(bad, BOB), Err(DocError::Malformed));
+            assert_eq!(alices.import(bad, BOB), Err(DocError::Malformed));
         }
-        assert_eq!(samuels.version(), start);
+        assert_eq!(alices.version(), start);
     }
 
     #[test]
     fn an_update_carrying_another_peers_ops_is_refused() {
         // Carol passes Bob's edit on inside her own write: his ops carry his peer, so it isn't hers
-        let base = welcome(SAMUEL);
+        let base = welcome(ALICE);
         let start = base.version();
         let mut bobs = base.fork_as(BOB);
         bobs.set_text(2, NINE);
         let mut carols = base.fork_as(CAROL);
         carols.import(&bobs.export(&start), BOB).unwrap();
         carols.set_text(1, "Welcome, everyone");
-        let mut samuels = base.fork_as(SAMUEL);
-        assert_eq!(samuels.import(&carols.export(&start), CAROL), Err(DocError::WrongPeer));
-        assert_eq!(samuels.version(), start);
+        let mut alices = base.fork_as(ALICE);
+        assert_eq!(alices.import(&carols.export(&start), CAROL), Err(DocError::WrongPeer));
+        assert_eq!(alices.version(), start);
     }
 
     #[test]
     fn an_update_that_arrives_early_waits_for_what_it_builds_on() {
-        let base = welcome(SAMUEL);
+        let base = welcome(ALICE);
         let start = base.version();
-        let mut samuels = base.fork_as(SAMUEL);
-        samuels.set_text(2, NINE);
-        let from_samuel = samuels.export(&start);
+        let mut alices = base.fork_as(ALICE);
+        alices.set_text(2, NINE);
+        let from_alice = alices.export(&start);
         let mut bobs = base.fork_as(BOB);
-        bobs.import(&from_samuel, SAMUEL).unwrap();
+        bobs.import(&from_alice, ALICE).unwrap();
         let seen = bobs.version();
         bobs.set_text(1, "Welcome, everyone");
         let from_bob = bobs.export(&seen);
-        // Carol gets Bob's edit first: it waits, then lands with Samuel's, which it builds on
+        // Carol gets Bob's edit first: it waits, then lands with Alice's, which it builds on
         let mut carols = base.fork_as(CAROL);
         carols.import(&from_bob, BOB).unwrap();
         assert_eq!(carols.as_document(), base.as_document());
-        carols.import(&from_samuel, SAMUEL).unwrap();
+        carols.import(&from_alice, ALICE).unwrap();
         assert_eq!(carols.as_document(), bobs.as_document());
         assert!(carols.parked.is_empty());
     }
@@ -912,21 +912,21 @@ mod tests {
         assert!(smuggled(&vv(&[(5, 2)]), &vv(&[(5, 2), (7, 1)]), 5, &parked));
         assert!(smuggled(&vv(&[]), &vv(&[(9, 5)]), 5, &parked));
         // and when something else lands anyway, the item goes back to what it held before
-        let base = welcome(SAMUEL);
+        let base = welcome(ALICE);
         let (start, frontiers) = (base.version(), base.doc.oplog_frontiers());
         let mut bobs = base.fork_as(BOB);
         bobs.set_text(2, NINE);
-        let mut samuels = base.fork_as(SAMUEL);
-        samuels.import(&bobs.export(&start), BOB).unwrap();
-        samuels.put_back(&frontiers);
-        assert_eq!((samuels.version(), samuels.as_document()), (start, base.as_document()));
-        assert_eq!(samuels.doc.peer_id(), peer(SAMUEL, None));
+        let mut alices = base.fork_as(ALICE);
+        alices.import(&bobs.export(&start), BOB).unwrap();
+        alices.put_back(&frontiers);
+        assert_eq!((alices.version(), alices.as_document()), (start, base.as_document()));
+        assert_eq!(alices.doc.peer_id(), peer(ALICE, None));
     }
 
     #[test]
     fn a_shallow_snapshot_refuses_a_branch_from_before_it() {
         // main moves on from Welcome's first version, and a branch starts from that version
-        let base = welcome(SAMUEL);
+        let base = welcome(ALICE);
         let start = base.version();
         let mut main = base.clone();
         main.set_text(2, NINE);
@@ -939,7 +939,7 @@ mod tests {
         compacted.import(&shallow).unwrap();
         assert!(compacted.import(&update).is_err());
         // the full snapshot every device stores takes it
-        let mut restored = Item::on(LoroDoc::new(), peer(SAMUEL, None));
+        let mut restored = Item::on(LoroDoc::new(), peer(ALICE, None));
         restored.doc.import(&main.bytes()).unwrap();
         restored.import_on(&update, BOB, Some(crate::id::OpId::from_u64(1))).unwrap();
         let shown = (text(&restored, 1), text(&restored, 2));

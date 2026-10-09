@@ -13,7 +13,7 @@ fn play(number: &str) {
 }
 
 #[test]
-fn scenario_01_samuels_vault() {
+fn scenario_01_alices_vault() {
     play("1");
 }
 

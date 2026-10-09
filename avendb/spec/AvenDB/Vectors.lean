@@ -62,11 +62,11 @@ def runView (c : ViewCase) : List Bool × State :=
 
 /-! ## The cases
 
-Signers: Samuel's passkey 1, his Mac 2, his iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
-passkey 8, a second passkey 9 (Samuel's backup) and a third 10, a new device 77, a stranger 555, the relay server 600.
-Vaults: Samuel 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200, aven vaults from 300 (avenCEO 300).
+Signers: Alice's passkey 1, her Mac 2, her iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
+passkey 8, a second passkey 9 (Alice's backup) and a third 10, a new device 77, a stranger 555, the relay server 600.
+Vaults: Alice 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200, aven vaults from 300 (avenCEO 300).
 Spaces: Handbook 10, Notes 11, Todos 12. Entries: Welcome 1, Charter 2, the door todo 21. Blobs (schemas and lenses):
-from 1. An act for the coop names the human vault it goes through: Samuel's Mac (2) and passkey (1) through `[100]`,
+from 1. An act for the coop names the human vault it goes through: Alice's Mac (2) and passkey (1) through `[100]`,
 Bob's Mac (5) through `[101]`. -/
 
 def humans : List (SignerId × List SignerId × Action) := [
@@ -122,7 +122,7 @@ def cases : List Case := [
     (1, [], .genesis 200 .coop [.vault 100, .vault 101] 2),
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 3),
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
-    -- Samuel's vault alone is below the threshold; Dave has to consent; devices don't count
+    -- Alice's vault alone is below the threshold; Dave has to consent; devices don't count
     (1, [8], .addOwner 200 (.vault 103)),
     (1, [4], .addOwner 200 (.vault 103)),
     (2, [5, 8], .addOwner 200 (.vault 103)),
@@ -182,10 +182,10 @@ def cases : List Case := [
     (9, [77], .addDevice 100 77),
     (9, [], .setRoot 100 (some 9) [])] },
   { name := "three kinds of vault, and acts that name their chain", ops := humans ++ [
-    -- avenCEO, the relay server's aven vault, owned by Samuel's human vault; the server joins as its device
+    -- avenCEO, the relay server's aven vault, owned by Alice's human vault; the server joins as its device
     (1, [], .genesis 300 .aven [.vault 100] 1),
     (1, [600], .addDevice 300 600),
-    -- the server acts for avenCEO but doesn't govern it; Samuel's Mac acts for it through Samuel's vault, Bob's Mac not
+    -- the server acts for avenCEO but doesn't govern it; Alice's Mac acts for it through Alice's vault, Bob's Mac not
     (600, [77], .addDevice 300 77),
     (600, [], .foundSpace 13 300),
     (2, [], .foundSpace 14 300 [100]),
@@ -218,7 +218,7 @@ def cases : List Case := [
     (5, [], .foundSpace 21 205 [200])] },
   { name := "spaces, grants and Public", ops := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
-    -- Samuel's Mac founds the Handbook for the coop; Carol's passkey can't found a space for Samuel
+    -- Alice's Mac founds the Handbook for the coop; Carol's passkey can't found a space for Alice
     (2, [], .foundSpace 10 200 [100]),
     (6, [], .foundSpace 11 100),
     (2, [], .write 10 1 200 0 (via := [100])),
@@ -250,13 +250,13 @@ def cases : List Case := [
     -- acting for the coop, Bob's Mac gives Dave read
     (5, [], g 14 (.entry 12 21) .read (toVault 103) 200 (some 12) [101]),
     (5, [], .write 12 21 101 0 [8]),
-    -- Samuel takes Bob's own write away, keeping the edit he had seen
+    -- Alice takes Bob's own write away, keeping the edit she had seen
     (2, [], .revoke 10 100 [12]),
     (5, [], .write 12 21 101 0 [12]),
     (5, [], .write 12 21 200 0 [12] (via := [101])),
     (2, [], .write 12 21 100 0 [15]),
     -- taking the coop's owner grant away is governance; it ends Dave's read and the coop's edit, which it hadn't
-    -- seen, and Samuel's edit that builds on it
+    -- seen, and Alice's edit that builds on it
     (2, [], .revoke 12 100 []),
     (1, [], .revoke 12 100 []),
     (5, [], .write 12 21 200 0 [8] (via := [101])),
@@ -266,8 +266,8 @@ def cases : List Case := [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     (2, [], .foundSpace 10 200 [100]),
     (2, [], .write 10 1 200 0 (via := [100])),
-    -- Samuel's Mac boxes each key to what the schedule seals it to: Welcome's to the Handbook's, the Handbook's to
-    -- the coop's, the coop's to its owners', and his vault's to his passkey and his Mac
+    -- Alice's Mac boxes each key to what the schedule seals it to: Welcome's to the Handbook's, the Handbook's to
+    -- the coop's, the coop's to its owners', and her vault's to her passkey and her Mac
     (2, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
     (2, [], .keys (.space 10) 0 [.scoped (.vault 200) 0]),
     (2, [], .keys (.vault 200) 0 [.scoped (.vault 100) 0, .scoped (.vault 101) 0]),
@@ -282,7 +282,7 @@ def cases : List Case := [
     (2, [], .keys (.entry 10 1) 1 []),
     (2, [], .keys (.entry 10 9) 0 []),
     (2, [], .keys (.entry 10 1) 0 [] true),
-    -- Carol may read Welcome: it is boxed to her vault's key, by Samuel's Mac or by her own passkey
+    -- Carol may read Welcome: it is boxed to her vault's key, by Alice's Mac or by Carol's own passkey
     (2, [], g 1 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
     (2, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
@@ -301,7 +301,7 @@ def cases : List Case := [
     (2, [], .foundSpace 10 200 [100]),
     (2, [], .foundSpace 11 100),
     (2, [], g 1 (.space 10) .write (toVault 102) 200 (via := [100])),
-    -- Samuel's Mac, acting for the coop that founded the Handbook, publishes a schema and a lens into its lane
+    -- Alice's Mac, acting for the coop that founded the Handbook, publishes a schema and a lens into its lane
     (2, [], .publish 10 200 1 [100]),
     (2, [], .publish 10 200 2 [100]),
     -- the same blob again is refused; in another space's lane it is that space's own
@@ -323,7 +323,7 @@ def cases : List Case := [
     (2, [], .write 11 1 100 0),
     (2, [], .write 11 2 100 0),
     (3, [], .write 11 1 100 0 [8]),
-    -- Samuel's Mac vouches for its edit of Welcome, his iPhone for its own
+    -- Alice's Mac vouches for its edit of Welcome, her iPhone for its own
     (2, [], .checkpoint 11 1 [8]),
     (3, [], .checkpoint 11 1 [10]),
     -- not for the other device's edit, nor for an edit of another entry, nor for none at all
@@ -333,7 +333,7 @@ def cases : List Case := [
     (2, [], .checkpoint 11 2 [9, 99]),
     (2, [], .checkpoint 11 2 []),
     (2, [], .checkpoint 10 2 [9]),
-    -- Bob's Mac, a stranger to Notes, can't vouch for Samuel's edits
+    -- Bob's Mac, a stranger to Notes, can't vouch for Alice's edits
     (5, [], .checkpoint 11 2 [9]),
     (2, [], .checkpoint 11 2 [9])] },
   { name := "branches of an entry", ops := humans ++ [
@@ -354,16 +354,16 @@ def cases : List Case := [
     (2, [], .write 10 1 100 0 [7] (.on 99)),
     (2, [], .write 10 2 100 0),
     (2, [], .write 10 2 100 0 [17] (.on 10)),
-    -- Samuel merges the draft: a write on main that builds on both heads
+    -- Alice merges the draft: a write on main that builds on both heads
     (2, [], .write 10 1 100 0 [7, 11]),
     -- Bob carries on with the draft and brings main into it
     (5, [], .write 10 1 101 0 [11] (.on 10)),
     (5, [], .write 10 1 101 0 [19, 20] (.on 10)),
-    -- Samuel's Mac starts a branch of its own from the merge, and Bob writes on it
+    -- Alice's Mac starts a branch of its own from the merge, and Bob writes on it
     (2, [], .write 10 1 100 0 [19] .new),
     (5, [], .write 10 1 101 0 [22] (.on 22))] }]
 
-/-- Samuel's, Bob's, Carol's and Dave's vaults, one op per depth. -/
+/-- Alice's, Bob's, Carol's and Dave's vaults, one op per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
 
 def views : List ViewCase := [
@@ -372,7 +372,7 @@ def views : List ViewCase := [
     -- Bob, offline since the coop began, adds Dave
     (7, 4, [8], .addOwner 200 (.vault 103)),
     (8, 1, [], .setThreshold 200 1),
-    -- Samuel removes Bob, not having seen the add
+    -- Alice removes Bob, not having seen the add
     (9, 1, [], .removeOwner 200 (.vault 101) [])] },
   { name := "a removal keeps what it had seen", ops := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
@@ -383,7 +383,7 @@ def views : List ViewCase := [
     (10, 4, [], .setThreshold 200 1)] },
   { name := "the senior owner wins a clash", ops := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    -- Bob's removal of Samuel sorts first, Samuel's of Bob stands
+    -- Bob's removal of Alice sorts first, Alice's of Bob stands
     (7, 4, [], .removeOwner 200 (.vault 100) []),
     (8, 1, [], .removeOwner 200 (.vault 101) [])] },
   { name := "removals that don't clash both stand", ops := humansV ++ [
@@ -405,7 +405,7 @@ def views : List ViewCase := [
     (7, 2, [], .write 12 21 100 0),
     (8, 2, [], g 10 (.entry 12 21) .write (toVault 101) 100),
     (9, 2, [], g 11 (.entry 12 21) .write (toVault 102) 100),
-    -- Bob's edit Samuel saw, and one he didn't, which Carol builds on
+    -- Bob's edit Alice saw, and one she didn't, which Carol builds on
     (10, 5, [], .write 12 21 101 0 [7]),
     (11, 5, [], .write 12 21 101 0 [10]),
     (12, 6, [], .write 12 21 102 0 [11]),
@@ -416,13 +416,13 @@ def views : List ViewCase := [
     (7, 2, [], .write 12 21 100 0),
     (8, 2, [], g 10 (.entry 12 21) .write (toVault 101) 100),
     (9, 2, [], g 11 (.entry 12 21) .write (toVault 102) 100),
-    -- Bob's Mac starts a draft Samuel sees, and another on an old copy, which he doesn't; Carol writes on the second
+    -- Bob's Mac starts a draft Alice sees, and another on an old copy, which she doesn't; Carol writes on the second
     (10, 5, [], .write 12 21 101 0 [7] .new),
     (11, 5, [], .write 12 21 101 0 [10] (.on 10)),
     (12, 5, [], .write 12 21 101 0 [7] .new),
     (13, 6, [], .write 12 21 102 0 [12] (.on 12)),
     (14, 2, [], .revoke 10 100 [10, 11]),
-    -- Samuel merges the draft he saw; Carol's merge of the other goes with it
+    -- Alice merges the draft she saw; Carol's merge of the other goes with it
     (15, 2, [], .write 12 21 100 0 [7, 11]),
     (16, 6, [], .write 12 21 102 0 [15, 13])] },
   { name := "a lost device's back-dated edits are cut", ops := humansV ++ [
@@ -444,34 +444,34 @@ def views : List ViewCase := [
     (7, 2, [], .foundSpace 10 200 [100]),
     (8, 2, [], .write 10 1 200 0 (via := [100])),
     (9, 2, [], g 1 (.entry 10 1) .read (toVault 102) 200 (via := [100])),
-    -- Carol's passkey boxes Welcome's key twice; Samuel revokes her read having seen only the first
+    -- Carol's passkey boxes Welcome's key twice; Alice revokes Carol's read having seen only the first
     (10, 6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (11, 6, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
     (12, 2, [], .revoke 1 200 [10] [100])] },
   { name := "a removed owner's back-dated publish is cut", ops := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], .foundSpace 10 200 [100]),
-    -- Bob's Mac publishes a schema for the coop, which Samuel sees, and a lens on an old copy, which he doesn't
+    -- Bob's Mac publishes a schema for the coop, which Alice sees, and a lens on an old copy, which she doesn't
     (8, 5, [], .publish 10 200 1 [101]),
     (9, 5, [], .publish 10 200 2 [101]),
     (10, 1, [], .removeOwner 200 (.vault 101) [8]),
-    -- Samuel's Mac publishes the lens itself; Bob's Mac no longer can
+    -- Alice's Mac publishes the lens itself; Bob's Mac no longer can
     (11, 2, [], .publish 10 200 2 [100]),
     (12, 5, [], .publish 10 200 3 [101])] },
   { name := "a removed owner's back-dated writes for the coop are cut", ops := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], .foundSpace 10 200 [100]),
-    -- Bob's Mac writes for the coop through Bob's vault: an edit Samuel sees, and one on an old copy, which he doesn't
+    -- Bob's Mac writes for the coop through Bob's vault: an edit Alice sees, and one on an old copy, which she doesn't
     (8, 5, [], .write 10 1 200 0 (via := [101])),
     (9, 5, [], .write 10 2 200 0 (via := [101])),
     (10, 1, [], .removeOwner 200 (.vault 101) [8]),
-    -- Samuel's Mac writes on; Bob's Mac no longer can
+    -- Alice's Mac writes on; Bob's Mac no longer can
     (11, 2, [], .write 10 1 200 0 [8] (via := [100])),
     (12, 5, [], .write 10 1 200 0 [11] (via := [101]))] },
   { name := "once the curves fall, only vouched writes count", pq := true, ops := humansV ++ [
     (6, 2, [], .foundSpace 11 100),
     (7, 1, [3], .addDevice 100 3),
-    -- Samuel's Mac edits Welcome and vouches for it; it vouches for its second edit of the Charter but not the
+    -- Alice's Mac edits Welcome and vouches for it; it vouches for its second edit of the Charter but not the
     -- first, which the second builds on, so neither counts
     (8, 2, [], .write 11 1 100 0),
     (9, 2, [], .write 11 2 100 0),
@@ -489,7 +489,7 @@ def views : List ViewCase := [
     (7, 1, [], g 30 (.space 11) .owner (toVault 103) 100),
     (8, 8, [], g 31 (.space 11) .read (toVault 102) 103 (some 30)),
     (9, 2, [], .write 11 1 100 0),
-    -- Samuel revokes Dave's owner grant; Dave revokes the read he gave Carol on a copy that hadn't seen it, so his
+    -- Alice revokes Dave's owner grant; Dave revokes the read he gave Carol on a copy that hadn't seen it, so his
     -- revocation sorts first, and falls with the grant it rested on
     (11, 1, [], .revoke 30 100 [6, 7, 8, 9]),
     (10, 8, [], .revoke 31 103 [])] },
@@ -497,7 +497,7 @@ def views : List ViewCase := [
     (6, 1, [9], .addOwner 100 (.signer 9)),
     (7, 1, [10], .addOwner 100 (.signer 10)),
     (8, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    -- the second passkey removes Bob from the coop on a copy that hadn't seen the third remove it from Samuel's vault
+    -- the second passkey removes Bob from the coop on a copy that hadn't seen the third remove it from Alice's vault
     (9, 9, [], .removeOwner 200 (.vault 101) []),
     (10, 10, [], .removeOwner 100 (.signer 9) [6, 7, 8])] }]
 
@@ -562,7 +562,7 @@ def syncs : List SyncCase := [
       (2, [], .checkpoint 10 1 [10]),
       (2, [], .write 10 2 200 0 [11] (via := [100])),
       (2, [], .publish 10 200 1 [100]),
-      -- Samuel's own Notes
+      -- Alice's own Notes
       (2, [], .foundSpace 11 100),
       (2, [], .write 11 1 100 0)]),
     asks := [
@@ -570,7 +570,7 @@ def syncs : List SyncCase := [
       (7, [], none),
       (7, [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12], none),
       (7, [4, 6, 13], none),
-      -- Bob's Mac before most of the Handbook, a stranger, and Samuel's iPhone holding everything
+      -- Bob's Mac before most of the Handbook, a stranger, and Alice's iPhone holding everything
       (5, [0, 1, 2, 3, 4, 5, 8, 9, 10], none),
       (555, [], none),
       (3, List.range 19, none)] },
@@ -579,11 +579,11 @@ def syncs : List SyncCase := [
       (2, [], .foundSpace 11 100),
       (2, [], .write 11 1 100 0),
       (2, [], .write 11 1 100 0 [8])]) ++ [
-      -- Samuel's Mac again from the same past, as a copy restored from an old backup would: a fork
+      -- Alice's Mac again from the same past, as a copy restored from an old backup would: a fork
       { author := 2, action := .write 11 1 100 0 [8], parents := some [8] },
-      -- his iPhone at the same moment: another device, no fork
+      -- her iPhone at the same moment: another device, no fork
       { author := 3, action := .write 11 1 100 0 [8], parents := some [8] },
-      -- his passkey on two devices at once: a passkey isn't checked
+      -- her passkey on two devices at once: a passkey isn't checked
       { author := 1, cosigners := [77], action := .addDevice 100 77 },
       { author := 1, action := .setThreshold 100 1, parents := some [6] },
       -- the Mac building on an op nobody holds: outside the closed part, so neither in the frontier nor a fork
@@ -597,7 +597,7 @@ def syncs : List SyncCase := [
       (2, [], .write 12 21 100 0),
       (2, [], g 30 (.entry 12 21) .read (toVault 102) 100),
       (2, [], .write 12 22 100 0),
-      -- Samuel revokes Carol's read: she hears of it, and of nothing else about the todo
+      -- Alice revokes Carol's read: Carol hears of it, and of nothing else about the todo
       (2, [], .revoke 30 100 [8, 9]),
       (2, [], .write 12 21 100 0 [8])]),
     asks := [(7, [0, 1, 4, 6, 7, 8, 9], none), (7, [], none), (5, [2, 3], none),
@@ -606,9 +606,9 @@ def syncs : List SyncCase := [
   { name := "a device ahead of its peer", ops := plain (humans ++ [
       (1, [3], .addDevice 100 3),
       (2, [], .foundSpace 11 100)] ++
-      -- Samuel's Mac edits his note seventeen times
+      -- Alice's Mac edits her note seventeen times
       List.replicate 17 (2, [], .write 11 1 100 0)) ++ [
-      -- his iPhone edits it once, having seen the first twelve
+      -- her iPhone edits it once, having seen the first twelve
       { author := 3, action := .write 11 1 100 0, parents := some [19] }],
     asks := [
       -- the Mac asks the iPhone: each lacks some of the other's edits; then an iPhone holding none of its own
@@ -618,14 +618,14 @@ def syncs : List SyncCase := [
       (3, List.range 13, none)] },
   { name := "linking a device by its passkey", ops := plain (humans ++ [
       (1, [3], .addDevice 100 3),
-      -- Samuel's backup passkey, a second owner of his vault
+      -- Alice's backup passkey, a second owner of her vault
       (1, [9], .addOwner 100 (.signer 9)),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
       (2, [], .foundSpace 10 200 [100]),
       (2, [], .write 10 1 200 0 (via := [100])),
       (2, [], g 30 (.space 10) .read (toVault 102) 200 (via := [100]))]),
     asks := [(3, [], none)],
-    -- Samuel's passkey, his backup passkey, Bob's and Carol's, Samuel's Mac (a device, no passkey), and a stranger's
+    -- Alice's passkey, her backup passkey, Bob's and Carol's, Alice's Mac (a device, no passkey), and a stranger's
     links := [1, 9, 4, 6, 2, 555] }]
 
 /-! ## JSON -/

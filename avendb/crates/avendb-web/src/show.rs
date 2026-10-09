@@ -120,7 +120,7 @@ impl Tile {
             "signers": signers,
             "pqOnly": lab.pq_only(),
             "start": {
-                "device": hex(&w.mac_s.0),
+                "device": hex(&w.mac_a.0),
                 "coop": hex(&demo.coop.0),
                 "space": hex(&demo.handbook.0),
                 "entry": hex(&demo.welcome.0),

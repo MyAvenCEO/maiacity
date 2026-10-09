@@ -24,17 +24,25 @@
 //! The page keeps what the device holds in IndexedDB (`js/store.js`): its ops in the order it took them and its
 //! McEliece keys, as a node keeps them on disk (`avendb_net::Disk`), saved after each change (`Node::changes`).
 //!
+//! The page shows its person's account (`Device::account`): their human vault, its root passkey and its devices, each
+//! by the name on its card. A card is a document tagged `CARD` that the device writes into the first space its vault
+//! founded, titled with its name (`Device::card`), so it travels end-to-end encrypted like any note and every device of
+//! the vault shows the others by name. Notes leave cards out.
+//!
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
+use avendb::doc::Item;
 use avendb::id::{BlobId, EntryId, OpId, SignerId, SpaceId, VaultId};
 use avendb::lab::{Backup, Lab};
-use avendb::policy::{Action, Kind, Principal, Role, Scope, Vault};
+use avendb::lens::DocV2;
+use avendb::policy::{Action, Kind, Principal, Refusal, Role, Scope, Vault};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge, passkey_key};
 use avendb::wire::Wire as _;
 use avendb_net::{Authenticator, Node, Offer, Options, Step};
@@ -46,6 +54,10 @@ use tokio::sync::watch;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, future_to_promise};
 use zeroize::Zeroizing;
+
+/// The tag of a device's card: a document in the first space its person's vault founded, titled with the device's
+/// name, that the device wrote itself (`Device::card`).
+pub const CARD: &str = "avendb:device";
 
 /// What the ceremony that unlocks a device brings back: the ceremony itself, over a challenge of the page's own, and
 /// the PRF output on the device's salt (`sign::device_salt`), which ends in `nonce`, its 32 bytes kept on the device.
@@ -80,9 +92,10 @@ impl Device {
     /// relay, which lets it in by the passkey's pass, it takes the card of the server whose code reads `server`, then
     /// founds the person's human vault with itself in it, in one ceremony of the passkey
     /// (`avendb_net::Node::found_with`); if nobody has claimed the server yet, the same ceremony claims it, and their
-    /// vault owns avenCEO, the aven vault the server is a device of. Then it founds their first space and grants
-    /// avenCEO relay on it, so the server keeps the space's log and knows the device from then on. The relay honours
-    /// the pass while it is open to sign-up (`avendb_net::Admission::open`) or while nobody has claimed the server.
+    /// vault owns avenCEO, the aven vault the server is a device of. Then it founds their first space, grants avenCEO
+    /// relay on it, so the server keeps the space's log and knows the device from then on, and writes its card there
+    /// (`Device::card`). The relay honours the pass while it is open to sign-up (`avendb_net::Admission::open`) or
+    /// while nobody has claimed the server.
     pub async fn found(
         start: Start,
         server: &Offer,
@@ -102,11 +115,13 @@ impl Device {
             sleep(Duration::from_millis(500)).await;
         }
         let (vault, avenceo) = device.node.found_with(server, passkey, authenticator).await?;
+        let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
             let space = lab.submit(me, &[me], Action::FoundSpace { actor: vault, nonce: 1, via: vec![] });
             let space = SpaceId::from(space.map_err(|why| anyhow!("the space is refused: {why:?}"))?);
             let relay = cast::grant(Scope::Space(space), Role::Relay, cast::vault(avenceo), vault, None);
             lab.submit(me, &[me], relay).map_err(|why| anyhow!("avenCEO's relay is refused: {why:?}"))?;
+            lab.create(me, vault, space, card(&name, me)).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
             Ok::<_, anyhow::Error>(())
         };
         device.node.act(found).await?;
@@ -176,13 +191,41 @@ impl Device {
     /// Whether its vault owns avenCEO, by its view: an aven vault with a device, the server, as once its person's vault
     /// claimed the server (`avendb_net::Node::found_with`).
     pub async fn owns_aven(&self) -> bool {
+        self.node.read(owns_aven).await
+    }
+
+    /// Its person's account by its view (`Account`): `None` while it belongs to no vault.
+    pub async fn account(&self) -> Option<Account> {
         self.node
             .read(|lab, me| {
-                let Some(mine) = lab.vault_of(me).map(Principal::Vault) else { return false };
-                let avenceo = |v: &Vault| v.kind == Kind::Aven && v.owners.contains(&mine) && !v.devices.is_empty();
-                lab.state(me).vaults().iter().any(avenceo)
+                let vault = lab.state(me).vault(lab.vault_of(me)?)?;
+                let mut names = cards(lab, me, vault.id);
+                let name = |d: &SignerId| (*d, names.remove(d).map(|(_, _, name)| name));
+                let devices = vault.devices.iter().map(name).collect();
+                Some(Account { vault: vault.id, root: vault.root, devices, owns_aven: owns_aven(lab, me) })
             })
             .await
+    }
+
+    /// Its card reads `name`: written into the first space its vault founded if it has none yet, its title set if it
+    /// reads otherwise; its peers are told. Whether it wrote: not while it knows no space of its vault, as a device
+    /// just linked until the space arrives, nor if its card reads `name` already.
+    pub async fn card(&self, name: String) -> Result<bool> {
+        let card = move |lab: &mut Lab, me| {
+            let Some(vault) = lab.vault_of(me) else { return Ok(false) };
+            if let Some((space, entry, title)) = cards(lab, me, vault).remove(&me) {
+                if title == name {
+                    return Ok(false);
+                }
+                lab.edit(me, vault, space, entry, move |item| _ = item.edit_document(|d| d.title = name))?;
+                return Ok(true);
+            }
+            let Some(space) = lab.state(me).spaces().iter().find(|s| s.founder == vault).map(|s| s.id) else {
+                return Ok(false);
+            };
+            lab.create(me, vault, space, card(&name, me)).map(|_| true)
+        };
+        self.node.act(card).await.map_err(|why: Refusal| anyhow!("the card is refused: {why:?}"))
     }
 
     /// The text of block `block` of entry `entry` in space `space`, as the device reads it: `None` while it can't.
@@ -209,15 +252,15 @@ impl Device {
         self.node.act(write).await.map_err(|why| anyhow!("the document is refused: {why:?}"))
     }
 
-    /// The spaces it knows, each with the vault that founded it and the documents it reads there: their entry, title
-    /// and the text of their first paragraph (block 2), as `cast::document` writes them.
+    /// The spaces it knows, each with the vault that founded it and the documents it reads there, but for the devices'
+    /// cards: their entry, title and the text of their first paragraph (block 2), as `cast::document` writes them.
     pub async fn notes(&self) -> Vec<Notes> {
         self.node
             .read(|lab, me| {
                 let state = lab.state(me);
                 let read = |s: &avendb::policy::Space| {
                     let doc = |&e: &EntryId| Some((e, lab.item(me, s.id, e)?.as_document()?));
-                    let docs = s.entries.iter().filter_map(doc);
+                    let docs = s.entries.iter().filter_map(doc).filter(|(_, d)| !is_card(d));
                     let text = |e| cast::text(lab, me, s.id, e, 2).unwrap_or_default();
                     let docs = docs.map(|(e, d)| (e, d.title.clone(), text(e)));
                     Notes { space: s.id, founder: s.founder, docs: docs.collect() }
@@ -270,6 +313,54 @@ pub struct Notes {
     pub space: SpaceId,
     pub founder: VaultId,
     pub docs: Vec<(EntryId, String, String)>,
+}
+
+/// Its person's account as a device shows it (`Device::account`): their human vault, its root passkey, its devices,
+/// each with the name on its card if it wrote one, and whether the vault owns avenCEO.
+pub struct Account {
+    pub vault: VaultId,
+    pub root: Option<SignerId>,
+    pub devices: Vec<(SignerId, Option<String>)>,
+    pub owns_aven: bool,
+}
+
+/// Whether device `me`'s vault owns avenCEO, by its view: an aven vault with a device, the server, as once its person's
+/// vault claimed the server (`avendb_net::Node::found_with`).
+fn owns_aven(lab: &Lab, me: SignerId) -> bool {
+    let Some(mine) = lab.vault_of(me).map(Principal::Vault) else { return false };
+    let avenceo = |v: &Vault| v.kind == Kind::Aven && v.owners.contains(&mine) && !v.devices.is_empty();
+    lab.state(me).vaults().iter().any(avenceo)
+}
+
+/// Device `device`'s card, titled `name` (`CARD`).
+fn card(name: &str, device: SignerId) -> Item {
+    let mut item = Item::document(name, device);
+    item.edit_document(|d| d.tags.push(CARD.into()));
+    item
+}
+
+fn is_card(doc: &DocV2) -> bool {
+    doc.tags.iter().any(|t| t == CARD)
+}
+
+/// The cards in the spaces vault `vault` founded, as device `me` reads them, by the device that wrote each, the author
+/// of its entry's first write: where it is and the name it reads. A device's first card counts, should it hold two.
+fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (SpaceId, EntryId, String)> {
+    let state = lab.state(me);
+    let mut first = BTreeMap::new();
+    for w in state.all_writes() {
+        first.entry((w.space, w.entry)).or_insert(w.author);
+    }
+    let mut cards = BTreeMap::new();
+    for s in state.spaces().iter().filter(|s| s.founder == vault) {
+        for &e in &s.entries {
+            let doc = lab.item(me, s.id, e).and_then(Item::as_document).filter(is_card);
+            if let (Some(doc), Some(&author)) = (doc, first.get(&(s.id, e))) {
+                cards.entry(author).or_insert((s.id, e, doc.title));
+            }
+        }
+    }
+    cards
 }
 
 /// What a store kept, read back (`js/store.js`): the signed ops, each as its bytes on the wire, in the order the device
@@ -421,6 +512,31 @@ impl PageDevice {
     pub fn owns_aven(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.owns_aven().await.into()) })
+    }
+
+    /// Its person's account (`Device::account`): a promise of `{vault, root, devices: [{id, name, me}], ownsAven}`, ids
+    /// in hex, `root` the vault's root passkey, each device's `name` the one on its card, or `undefined` while it wrote
+    /// none, and `me` whether it is this one; of `undefined` while it belongs to no vault.
+    pub fn account(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let Some(account) = device.account().await else { return Ok(JsValue::UNDEFINED) };
+            let devices = Array::new();
+            for (d, name) in account.devices {
+                let (id, me) = (hex(&d.0).into(), (d == device.node.device()).into());
+                let name = name.map_or(JsValue::UNDEFINED, JsValue::from);
+                devices.push(&object(&[("id", id), ("name", name), ("me", me)]));
+            }
+            let (vault, owns) = (hex(&account.vault.0).into(), account.owns_aven.into());
+            let root = account.root.map_or(JsValue::UNDEFINED, |r| hex(&r.0).into());
+            Ok(object(&[("vault", vault), ("root", root), ("devices", devices.into()), ("ownsAven", owns)]))
+        })
+    }
+
+    /// Its card reads `name` (`Device::card`): a promise of whether it wrote, rejected if its view refuses the write.
+    pub fn card(&self, name: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.card(name).await.map_err(js_value)?.into()) })
     }
 
     /// The text of block `block` of entry `entry` in space `space` (both in hex), as the device reads it: a promise, of

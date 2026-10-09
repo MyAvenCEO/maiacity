@@ -83,11 +83,11 @@ async fn scenario_5_through_the_relay_alone() {
     let url = relay.url();
     let mut w = world();
     let (coop, space, _) = handbook_spaces(&mut w);
-    let (mac_s, passkey_s, server_d, mac_b, passkey_b) = (w.mac_s, w.passkey_s, w.server, w.mac_b, w.passkey_b);
+    let (mac_a, passkey_a, server_d, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.server, w.mac_b, w.passkey_b);
     let stranger_d = w.stranger;
     let opts = Options { relay: Some(url.clone()), admission: Some(admission), ..Options::local() };
     let server = node(&mut w, server_d, &[], 2, opts).await;
-    let mac = node(&mut w, mac_s, &[passkey_s], 1, relay_only(&url)).await;
+    let mac = node(&mut w, mac_a, &[passkey_a], 1, relay_only(&url)).await;
     let bob = node(&mut w, mac_b, &[passkey_b], 3, relay_only(&url)).await;
     let stranger = node(&mut w, stranger_d, &[], 5, relay_only(&url)).await;
     for n in [&mac, &bob, &stranger] {
@@ -95,10 +95,10 @@ async fn scenario_5_through_the_relay_alone() {
         n.know(server.addr());
     }
     let write = move |lab: &mut Lab, me| lab.create(me, coop, space, document_v1("Welcome", WELCOME_TEXT, me));
-    let welcome = mac.act(write).await.expect("Samuel's Mac writes Welcome");
+    let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
     let reads = || bob.read(move |lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(WELCOME_TEXT));
     until("Bob's Mac reads Welcome, through the relay alone", reads).await;
-    let met = || async { bob.proven(mac.id()) == Some(mac_s) };
+    let met = || async { bob.proven(mac.id()) == Some(mac_a) };
     until("through the relay, the Macs reach each other by their ids alone", met).await;
     let holds = || server.read(move |lab, me| lab.fetched(me, space, welcome) > 0);
     until("and the server holds Welcome's edits", holds).await;
@@ -130,19 +130,19 @@ async fn a_new_server_lets_in_the_devices_of_the_spaces_it_relays() {
     assert_eq!(server::vault(server).await, None, "a new server is nobody's");
     let mut w = world();
     let (coop, _, _) = handbook_spaces(&mut w);
-    let (mac_s, passkey_s, mac_b, passkey_b) = (w.mac_s, w.passkey_s, w.mac_b, w.passkey_b);
+    let (mac_a, passkey_a, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.mac_b, w.passkey_b);
     let bob_mac = endpoint(&w, mac_b);
-    // Samuel's Mac, on UDP, makes its first contact with the server straight: the relay doesn't know it yet
+    // Alice's Mac, on UDP, makes its first contact with the server straight: the relay doesn't know it yet
     let opts = Options { relay: Some(url.clone()), ..Options::local() };
-    let mac = node(&mut w, mac_s, &[passkey_s], 1, opts).await;
+    let mac = node(&mut w, mac_a, &[passkey_a], 1, opts).await;
     mac.know(server.addr());
-    assert!(!relay.admission().admits(&mac.id()), "the new server knows no device of Samuel's");
-    // Samuel's vault claims it first: the server is a device of a new avenCEO, which his vault owns
-    let v = mac.claim(&started.offer, passkey_s).await.expect("Samuel's vault claims the server");
+    assert!(!relay.admission().admits(&mac.id()), "the new server knows no device of Alice's");
+    // Alice's vault claims it first: the server is a device of a new avenCEO, which her vault owns
+    let v = mac.claim(&started.offer, passkey_a).await.expect("Alice's vault claims the server");
     assert_eq!(server::vault(server).await, Some(v), "the server is avenCEO's device");
-    until("the server knows Samuel's Mac", || async { relay.admission().admits(&mac.id()) }).await;
+    until("the server knows Alice's Mac", || async { relay.admission().admits(&mac.id()) }).await;
     assert!(!relay.admission().admits(&bob_mac), "and not yet Bob's");
-    // the coop founds the Garden, gives avenCEO relay on it, and Samuel writes Welcome there
+    // the coop founds the Garden, gives avenCEO relay on it, and Alice writes Welcome there
     let garden = move |lab: &mut Lab, me| {
         let garden = lab.submit(me, &[me], Action::FoundSpace { actor: coop, nonce: 11, via: vec![] })?;
         let garden = SpaceId::from(garden);
@@ -154,14 +154,14 @@ async fn a_new_server_lets_in_the_devices_of_the_spaces_it_relays() {
     let holds = || server.read(move |lab, me| lab.fetched(me, garden, welcome) > 0);
     until("the new server holds Welcome's edits", holds).await;
     until("from the Garden's logs it lets Bob's Mac in", || async { relay.admission().admits(&bob_mac) }).await;
-    mac.shutdown().await.expect("Samuel's Mac stops");
+    mac.shutdown().await.expect("Alice's Mac stops");
     // Bob's Mac has no UDP: it takes the server's card through the relay, then the Garden
     let bob = node(&mut w, mac_b, &[passkey_b], 3, relay_only(&url)).await;
     bob.know(server.addr());
     assert!(bob.contact(server.id()).await.expect("the server's card, through the relay") > 0);
     let reads = || bob.read(move |lab, me| text(lab, me, garden, welcome, 2).as_deref() == Some(WELCOME_TEXT));
     until("Bob's Mac reads Welcome, written while it was away", reads).await;
-    assert_eq!(bob.proven(mac.id()), None, "from the server: Bob's Mac never met Samuel's");
+    assert_eq!(bob.proven(mac.id()), None, "from the server: Bob's Mac never met Alice's");
     assert!(relay.serves(&bob.id()), "through the relay");
     bob.shutdown().await.expect("Bob's Mac stops");
     started.shutdown().await.expect("the server stops");
@@ -174,22 +174,22 @@ async fn a_device_taken_out_of_its_vault_is_let_go_by_the_relay() {
     let url = relay.url();
     let mut w = world();
     handbook_spaces(&mut w);
-    let (mac_s, passkey_s, phone_s, server_d, samuel) = (w.mac_s, w.passkey_s, w.phone_s, w.server, w.samuel);
+    let (mac_a, passkey_a, phone_a, server_d, alice) = (w.mac_a, w.passkey_a, w.phone_a, w.server, w.alice);
     let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
     let server = node(&mut w, server_d, &[], 2, opts).await;
-    let mac = node(&mut w, mac_s, &[passkey_s], 1, relay_only(&url)).await;
-    let phone = node(&mut w, phone_s, &[], 6, relay_only(&url)).await;
+    let mac = node(&mut w, mac_a, &[passkey_a], 1, relay_only(&url)).await;
+    let phone = node(&mut w, phone_a, &[], 6, relay_only(&url)).await;
     for n in [&mac, &phone] {
         n.know(server.addr());
     }
-    until("the relay serves Samuel's phone", || async { relay.serves(&phone.id()) }).await;
-    let take_out = Action::RemoveDevice { vault: samuel, device: phone_s, keep: vec![] };
-    mac.act(move |lab, me| lab.submit(me, &[passkey_s], take_out)).await.expect("Samuel takes his phone out");
+    until("the relay serves Alice's phone", || async { relay.serves(&phone.id()) }).await;
+    let take_out = Action::RemoveDevice { vault: alice, device: phone_a, keep: vec![] };
+    mac.act(move |lab, me| lab.submit(me, &[passkey_a], take_out)).await.expect("Alice takes her phone out");
     until("the server learns it, and stops admitting the phone", || async { !admission.admits(&phone.id()) }).await;
     until("the relay lets the phone go", || async { !relay.serves(&phone.id()) }).await;
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(!relay.serves(&phone.id()), "and doesn't let it back in");
-    assert!(relay.serves(&mac.id()) && relay.serves(&server.id()), "while it serves Samuel's Mac and the server");
+    assert!(relay.serves(&mac.id()) && relay.serves(&server.id()), "while it serves Alice's Mac and the server");
     for n in [mac, server, phone] {
         n.shutdown().await.expect("the node shuts down");
     }
@@ -202,18 +202,18 @@ async fn a_new_device_linked_through_the_server_is_let_in_by_its_relay() {
     let url = relay.url();
     let mut w = world();
     let h = handbook(&mut w);
-    // Samuel loses his Mac and his iPhone; his passkey is on his new Mac
-    w.lab.lose(w.mac_s);
-    w.lab.lose(w.phone_s);
-    let new = w.lab.device_of(w.passkey_s, "Samuel's new Mac");
-    let (passkey_s, server_d) = (w.passkey_s, w.server);
+    // Alice loses her Mac and her iPhone; her passkey is on her new Mac
+    w.lab.lose(w.mac_a);
+    w.lab.lose(w.phone_a);
+    let new = w.lab.device_of(w.passkey_a, "Alice's new Mac");
+    let (passkey_a, server_d) = (w.passkey_a, w.server);
     let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
     let server = node(&mut w, server_d, &[], 2, opts).await;
-    let mac = node(&mut w, new, &[passkey_s], 7, Options { relay: Some(url.clone()), ..Options::local() }).await;
+    let mac = node(&mut w, new, &[passkey_a], 7, Options { relay: Some(url.clone()), ..Options::local() }).await;
     assert!(!admission.admits(&mac.id()), "the server doesn't know the new Mac");
     // the new Mac, on UDP, makes its first contact straight, by the server's offer
     let offer = Offer::from_text(&server.offer().to_text()).expect("the server's offer");
-    mac.link(&offer, passkey_s).await.expect("the new Mac links through the server");
+    mac.link(&offer, passkey_a).await.expect("the new Mac links through the server");
     until("once it joined, the server lets it in", || async { admission.admits(&mac.id()) }).await;
     let (space, welcome) = (h.space, h.welcome);
     let reads = || mac.read(move |lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(WELCOME_TEXT));
@@ -285,36 +285,36 @@ async fn a_new_device_with_no_udp_gets_onto_the_relay_by_its_passkeys_pass_and_l
     let h = handbook(&mut w);
     let eve_key = w.lab.passkey("Eve");
     let eves = w.lab.device_of(eve_key, "Eve's browser");
-    let old = w.lab.device_of(w.passkey_s, "Samuel's old browser");
-    let other = w.lab.device_of(w.passkey_s, "Samuel's other browser");
-    let new = w.lab.device_of(w.passkey_s, "Samuel's browser");
-    let (mac_s, passkey_s, server_d, samuel) = (w.mac_s, w.passkey_s, w.server, w.samuel);
+    let old = w.lab.device_of(w.passkey_a, "Alice's old browser");
+    let other = w.lab.device_of(w.passkey_a, "Alice's other browser");
+    let new = w.lab.device_of(w.passkey_a, "Alice's browser");
+    let (mac_a, passkey_a, server_d, alice) = (w.mac_a, w.passkey_a, w.server, w.alice);
     let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
     let server = node(&mut w, server_d, &[], 2, opts).await;
-    let mac = node(&mut w, mac_s, &[], 1, relay_only(&url)).await;
+    let mac = node(&mut w, mac_a, &[], 1, relay_only(&url)).await;
     mac.know(server.addr());
-    until("the relay serves Samuel's Mac", || async { relay.serves(&mac.id()) }).await;
+    until("the relay serves Alice's Mac", || async { relay.serves(&mac.id()) }).await;
     let now = unix_now();
     let mut pass = |d, passkey, made| w.lab.relay_pass(d, passkey, made).expect("a pass");
-    let (eve_pass, stale) = (pass(eves, eve_key, now), pass(old, passkey_s, now - PASS_LIFE));
-    let fresh = pass(new, passkey_s, now);
-    // Samuel's browser shows its own pass, for its own endpoint, by Samuel's passkey: let in, for ten minutes
-    let browser = node(&mut w, new, &[passkey_s], 7, with_pass(&url, fresh.clone())).await;
-    until("the relay lets Samuel's browser in by its pass", || async { relay.serves(&browser.id()) }).await;
+    let (eve_pass, stale) = (pass(eves, eve_key, now), pass(old, passkey_a, now - PASS_LIFE));
+    let fresh = pass(new, passkey_a, now);
+    // Alice's browser shows its own pass, for its own endpoint, by Alice's passkey: let in, for ten minutes
+    let browser = node(&mut w, new, &[passkey_a], 7, with_pass(&url, fresh.clone())).await;
+    until("the relay lets Alice's browser in by its pass", || async { relay.serves(&browser.id()) }).await;
     assert!(relay.passed(&browser.id()).is_some_and(|until| until == now + PASS_LIFE), "for ten minutes");
     assert!(!admission.admits(&browser.id()), "though the server doesn't know it yet");
     // a pass by a passkey that roots no vault the server knows, one that ran out, and one for another endpoint
     let eve = node(&mut w, eves, &[eve_key], 8, with_pass(&url, eve_pass)).await;
-    let old = node(&mut w, old, &[passkey_s], 9, with_pass(&url, stale)).await;
-    let other = node(&mut w, other, &[passkey_s], 10, with_pass(&url, fresh)).await;
+    let old = node(&mut w, old, &[passkey_a], 9, with_pass(&url, stale)).await;
+    let other = node(&mut w, other, &[passkey_a], 10, with_pass(&url, fresh)).await;
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(!relay.serves(&eve.id()), "Eve's passkey roots no vault the server knows: turned away");
     assert!(!relay.serves(&old.id()), "a pass that ran out: turned away");
     assert!(!relay.serves(&other.id()), "another device's pass: turned away");
-    // through the relay alone, the browser links through Samuel's Mac, whose code it scanned, and the server learns it
+    // through the relay alone, the browser links through Alice's Mac, whose code it scanned, and the server learns it
     let offer = Offer::from_text(&mac.offer().to_text()).expect("the Mac's code");
     assert!(offer.addr.ip_addrs().next().is_none(), "the Mac too is reached through the relay alone");
-    assert_eq!(browser.link(&offer, passkey_s).await.expect("the browser links"), samuel);
+    assert_eq!(browser.link(&offer, passkey_a).await.expect("the browser links"), alice);
     until("once it joined, the server knows it", || async { admission.admits(&browser.id()) }).await;
     let (space, welcome) = (h.space, h.welcome);
     let reads = || browser.read(move |lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(WELCOME_TEXT));
@@ -332,13 +332,13 @@ async fn the_relay_lets_a_device_go_once_its_pass_runs_out_unless_it_joined() {
     let url = relay.url();
     let mut w = world();
     handbook_spaces(&mut w);
-    let new = w.lab.device_of(w.passkey_s, "Samuel's browser");
-    let (passkey_s, server_d) = (w.passkey_s, w.server);
+    let new = w.lab.device_of(w.passkey_a, "Alice's browser");
+    let (passkey_a, server_d) = (w.passkey_a, w.server);
     let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
     let server = node(&mut w, server_d, &[], 2, opts).await;
     // a pass with five seconds left: the browser never links
-    let pass = w.lab.relay_pass(new, passkey_s, unix_now() + 5 - PASS_LIFE).expect("a pass");
-    let browser = node(&mut w, new, &[passkey_s], 7, with_pass(&url, pass)).await;
+    let pass = w.lab.relay_pass(new, passkey_a, unix_now() + 5 - PASS_LIFE).expect("a pass");
+    let browser = node(&mut w, new, &[passkey_a], 7, with_pass(&url, pass)).await;
     until("let in by its pass", || async { relay.serves(&browser.id()) }).await;
     until("and let go once it runs out", || async { !relay.serves(&browser.id()) }).await;
     assert_eq!(relay.passed(&browser.id()), None);

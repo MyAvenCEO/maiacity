@@ -27,12 +27,12 @@ fn held(lab: &Lab, d: SignerId) -> Vec<KeyId> {
     lab.secrets(d).iter().map(Secret::id).collect()
 }
 
-/// The entry Samuel's iPhone, split off with seed `seed` from a world of its own, creates first, after it locked and
+/// The entry Alice's iPhone, split off with seed `seed` from a world of its own, creates first, after it locked and
 /// unlocked again if `relock`: its id is the first thing it draws from its randomness.
 fn first_entry(seed: [u8; 32], relock: bool) -> EntryId {
     let mut w = world();
     let h = handbook(&mut w);
-    let (phone, passkey) = (w.phone_s, w.passkey_s);
+    let (phone, passkey) = (w.phone_a, w.passkey_a);
     let mut alone = w.lab.split(phone, &[passkey], seed);
     if relock {
         alone.lock(phone);
@@ -57,11 +57,11 @@ fn a_device_keeps_its_secrets_inside_and_only_while_it_needs_them() {
     assert!(printed.contains(&format!("{:?}", secret.id())), "{printed}");
     assert!(!printed.contains(&hex(&secret.bytes())[..8]), "{printed}");
 
-    // locked, Samuel's iPhone forgets the secret half of its own key, which nothing else here holds, and keeps the
-    // pairs of the keys Samuel's Mac holds too
+    // locked, Alice's iPhone forgets the secret half of its own key, which nothing else here holds, and keeps the
+    // pairs of the keys Alice's Mac holds too
     let mut w = world();
     let h = handbook(&mut w);
-    let (phone, mac, samuel) = (w.phone_s, w.mac_s, w.samuel);
+    let (phone, mac, alice) = (w.phone_a, w.mac_a, w.alice);
     let own = held(&w.lab, phone)[0];
     assert!(keys::pair_made(own), "the iPhone made its own key's pair to open what is sealed to it");
     let phones = held(&w.lab, phone);
@@ -75,12 +75,12 @@ fn a_device_keeps_its_secrets_inside_and_only_while_it_needs_them() {
     assert!(!keys::pair_made(own), "nor the secret half of its own");
     assert!(shared.iter().all(|s| keys::pair_made(s.id())), "the Mac's keys keep their pairs");
     assert!(w.lab.unlock(phone));
-    let opens = [KeyScope::Vault(samuel), KeyScope::Vault(h.coop), KeyScope::Space(h.space), KeyScope::Space(h.notes)];
+    let opens = [KeyScope::Vault(alice), KeyScope::Vault(h.coop), KeyScope::Space(h.space), KeyScope::Space(h.notes)];
     assert!(opens.iter().all(|&k| w.lab.opens(phone, k)), "unlocked, it opens them all again");
     assert!(keys::pair_made(own), "making its pair again to open the vault key the Mac sealed to it");
 
     // on a machine of its own, once the iPhone locks, its process holds the secret half of no key the iPhone held
-    let mut alone = w.lab.split(phone, &[w.passkey_s], [3; 32]);
+    let mut alone = w.lab.split(phone, &[w.passkey_a], [3; 32]);
     let keys: Vec<Secret> = alone.secrets(phone);
     assert!(keys.len() >= 5, "its own and the keys it opened: {keys:?}");
     for s in &keys {
