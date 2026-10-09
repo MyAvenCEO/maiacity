@@ -1,15 +1,16 @@
 //! A device on a machine of its own (P8b): randomness drawn from the machine, a device that keeps a secret of its own
-//! (the server), claimed once by the first human vault that brings its setup code, as a device of avenCEO (P8f), the
-//! contact card the server hands out, and a store reopened from what the device saved, which goes on vouching for the
-//! device's writes.
+//! (the server), claimed once by the first human vault to claim it, as a device of avenCEO (P8f), in the same ceremony
+//! that founds that vault, the contact card the server hands out, and a store reopened from what the device saved,
+//! which goes on vouching for the device's writes.
 
 mod common;
 
 use common::*;
 use avendb::id::{SignerId, SpaceId, VaultId};
 use avendb::keys::KeyScope;
-use avendb::lab::{same_code, Lab};
+use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Principal, Refusal, Role, Scope};
+use avendb::sign::Classical;
 use avendb::wire::Claim;
 
 #[test]
@@ -46,19 +47,15 @@ fn claim_by_hand(lab: &mut Lab, on: SignerId, signers: &[SignerId], action: Acti
             ceremony.sign(lab.keys_of(s).expect("its keys"), id, pq).expect("its signature")
         })
         .collect();
-    Claim { code: SETUP_CODE.to_vec(), card: lab.card(on), add, sigs }
+    Claim { card: lab.card(on), add, sigs }
 }
 
 #[test]
-fn the_first_human_vault_to_bring_the_servers_setup_code_claims_it_once() {
+fn the_first_human_vault_to_claim_the_server_owns_it_for_good() {
     let (mut lab, server, passkey, mac, samuel) = unclaimed(1);
     assert_eq!(server, Lab::with_entropy([2; 32]).device_with("the server", [7; 32]), "its keys are its secret's");
     assert_eq!(lab.vault_of(server), None, "a new server belongs to no vault");
-    // no code, another code, or a server with none: nothing to claim
-    for (code, setup) in [(&b""[..], Some(SETUP_CODE)), (b"a guess", Some(SETUP_CODE)), (SETUP_CODE, None)] {
-        assert!(matches!(lab.claim_key(server, code, setup), Err(Refusal::BadCode)), "only the server's own code");
-    }
-    assert!(same_code(SETUP_CODE, SETUP_CODE) && !same_code(SETUP_CODE, &SETUP_CODE[1..]));
+    assert!(lab.claim_key(server).is_ok(), "and hands its key to the first device that asks");
     let avenceo = claim_on(&mut lab, mac, passkey, samuel, server);
     assert_eq!(lab.vault_of(server), Some(avenceo), "the server is a device of avenCEO");
     let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
@@ -74,49 +71,93 @@ fn the_first_human_vault_to_bring_the_servers_setup_code_claims_it_once() {
     let found = lab.submit(server, &[server], Action::FoundSpace { actor: avenceo, nonce: 1, via: vec![] });
     assert!(found.is_ok(), "the server founds a space for avenCEO");
     lab.submit(mac, &[passkey, other], add).expect("Samuel's passkey adds a second server, through his vault");
-    // nobody claims it again, not even with the code
-    assert!(matches!(lab.claim_key(server, SETUP_CODE, Some(SETUP_CODE)), Err(Refusal::AlreadyMember)));
+    // nobody claims it again
+    assert!(matches!(lab.claim_key(server), Err(Refusal::AlreadyMember)));
 }
 
 #[test]
 fn a_server_takes_only_a_claim_that_makes_it_a_device_of_an_aven_vault() {
     let (mut lab, server, passkey, mac, samuel) = unclaimed(3);
-    let key = lab.claim_key(server, SETUP_CODE, Some(SETUP_CODE)).expect("its key");
+    let key = lab.claim_key(server).expect("its key");
     let owners = vec![Principal::Vault(samuel)];
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let avenceo = VaultId::from(lab.submit(mac, &[passkey], genesis).expect("avenCEO"));
     let adds = |vault, device, key| Action::AddDevice { vault, device, seal_to: Some(key) };
     // the claiming device claims an aven vault alone
     let draft = lab.draft(mac, &[passkey, server], adds(samuel, server, key.clone())).expect("a draft");
-    assert!(matches!(lab.claim(mac, draft, &[], SETUP_CODE), Err(Refusal::NotClaiming)));
+    assert!(matches!(lab.claim(mac, draft, &[]), Err(Refusal::NotClaiming)));
     // and the server checks for itself: never a device of a human vault, which would open that person's keys
     let into_samuels = claim_by_hand(&mut lab, mac, &[passkey, server], adds(samuel, server, key.clone()), server);
-    assert!(matches!(lab.accept_claim(server, into_samuels, Some(SETUP_CODE)), Err(Refusal::NotClaiming)));
+    assert!(matches!(lab.accept_claim(server, into_samuels), Err(Refusal::NotClaiming)));
     // another device than itself, or sealing to another key than the one it handed
     let other = lab.device("another server");
-    let other_key = lab.claim_key(other, SETUP_CODE, Some(SETUP_CODE)).expect("its key");
+    let other_key = lab.claim_key(other).expect("its key");
     let draft = lab.draft(mac, &[passkey, other], adds(avenceo, other, other_key.clone())).expect("a draft");
-    let for_other = lab.claim(mac, draft, &[], SETUP_CODE).expect("a claim of the other server");
-    assert!(matches!(lab.accept_claim(server, for_other, Some(SETUP_CODE)), Err(Refusal::NotClaiming)));
+    let for_other = lab.claim(mac, draft, &[]).expect("a claim of the other server");
+    assert!(matches!(lab.accept_claim(server, for_other), Err(Refusal::NotClaiming)));
     let draft = lab.draft(mac, &[passkey, server], adds(avenceo, server, other_key)).expect("a draft");
-    let wrong_key = lab.claim(mac, draft, &[], SETUP_CODE).expect("a claim sealing to the other key");
-    assert!(matches!(lab.accept_claim(server, wrong_key, Some(SETUP_CODE)), Err(Refusal::NotClaiming)));
-    // the right claim, but another code, a signature missing or one too many, or no card to check it by
+    let wrong_key = lab.claim(mac, draft, &[]).expect("a claim sealing to the other key");
+    assert!(matches!(lab.accept_claim(server, wrong_key), Err(Refusal::NotClaiming)));
+    // the right claim, but a signature missing or one too many, or no card to check it by
     let draft = lab.draft(mac, &[passkey, server], adds(avenceo, server, key)).expect("a draft");
-    let claim = lab.claim(mac, draft, &[], SETUP_CODE).expect("the claim");
-    let other_code = Claim { code: b"a guess".to_vec(), ..claim.clone() };
-    assert!(matches!(lab.accept_claim(server, other_code, Some(SETUP_CODE)), Err(Refusal::BadCode)));
+    let claim = lab.claim(mac, draft, &[]).expect("the claim");
     let unsigned = Claim { sigs: vec![], ..claim.clone() };
-    assert!(matches!(lab.accept_claim(server, unsigned, Some(SETUP_CODE)), Err(Refusal::BadSignature)));
+    assert!(matches!(lab.accept_claim(server, unsigned), Err(Refusal::BadSignature)));
     let twice = Claim { sigs: [&claim.sigs[..], &claim.sigs[..]].concat(), ..claim.clone() };
-    assert!(matches!(lab.accept_claim(server, twice, Some(SETUP_CODE)), Err(Refusal::BadSignature)));
+    assert!(matches!(lab.accept_claim(server, twice), Err(Refusal::BadSignature)));
     let no_card = Claim { card: vec![], ..claim.clone() };
-    assert!(matches!(lab.accept_claim(server, no_card, Some(SETUP_CODE)), Err(Refusal::UnknownVault)));
+    assert!(matches!(lab.accept_claim(server, no_card), Err(Refusal::UnknownVault)));
     assert_eq!(lab.vault_of(server), None, "none of them claimed it");
-    let join = lab.accept_claim(server, claim.clone(), Some(SETUP_CODE)).expect("the claim");
+    let join = lab.accept_claim(server, claim.clone()).expect("the claim");
     assert_eq!(join.blobs.len(), 1, "the server's join brings its McEliece key");
     assert_eq!(lab.vault_of(server), Some(avenceo));
-    assert!(matches!(lab.accept_claim(server, claim, Some(SETUP_CODE)), Err(Refusal::AlreadyMember)), "once");
+    assert!(matches!(lab.accept_claim(server, claim), Err(Refusal::AlreadyMember)), "once");
+}
+
+#[test]
+fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
+    let mut lab = Lab::with_entropy([9; 32]);
+    let server = lab.device_with("the server", [7; 32]);
+    let passkey = lab.passkey("Eve");
+    let mac = lab.device_of(passkey, "Eve's Mac");
+    let key = lab.claim_key(server).expect("a server nobody has claimed hands its key");
+    // four ops drafted one on top of the other: Eve's vault, her Mac in it, avenCEO, and the server in avenCEO
+    let mut drafting = lab.drafting(mac);
+    let owners = vec![Principal::Signer(passkey)];
+    let root = Some(passkey);
+    let genesis = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root, nonce: 0, seal_to: vec![] };
+    let eve = VaultId::from(drafting.draft(&[passkey], genesis).expect("her vault"));
+    let add = Action::AddDevice { vault: eve, device: mac, seal_to: None };
+    drafting.draft(&[passkey, mac], add).expect("her Mac in it");
+    let owners = vec![Principal::Vault(eve)];
+    let aven = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+    let avenceo = VaultId::from(drafting.draft(&[passkey], aven).expect("avenCEO"));
+    let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key) };
+    drafting.draft(&[passkey, server], add).expect("the server in it");
+    let mut drafts = drafting.done();
+    let challenge = drafts[0].challenge();
+    assert!(drafts.iter().all(|d| d.challenge() == challenge), "one challenge for all four");
+    assert!(drafts.iter().all(|d| d.challenge() != d.op().id().0), "and none of their ids");
+    // Eve's passkey signs them all in one ceremony; her Mac keeps the first three, and the server signs the last
+    let ceremony = lab.ceremony(passkey, challenge).expect("a software passkey");
+    let claim = drafts.pop().expect("the server's");
+    for draft in drafts {
+        lab.complete(mac, draft, &[(passkey, &ceremony)]).expect("signed by that one ceremony");
+    }
+    let claim = lab.claim(mac, claim, &[(passkey, &ceremony)]).expect("the claim");
+    let join = lab.accept_claim(server, claim).expect("the server takes the claim");
+    lab.receive(mac, vec![join.op], join.blobs.into_iter().map(Into::into).collect());
+    assert_eq!((lab.vault_of(mac), lab.vault_of(server)), (Some(eve), Some(avenceo)));
+    let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
+    assert_eq!((vault.kind, &vault.owners[..]), (Kind::Aven, &[Principal::Vault(eve)][..]), "Eve's vault owns it");
+    let batched = |id| match &lab.signed_op(mac, id).expect("held").sigs[0].classical {
+        Classical::Batch { ops, .. } => ops.len(),
+        _ => 0,
+    };
+    let genesis = avendb::id::OpId(eve.0);
+    assert_eq!(batched(genesis), 4, "her passkey's signature on her vault's genesis names all four ops");
+    lab.sync(mac, server);
+    assert!(lab.opens(server, KeyScope::Vault(avenceo)), "and the server opens avenCEO's key");
 }
 
 #[test]

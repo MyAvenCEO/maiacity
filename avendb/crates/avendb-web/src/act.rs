@@ -468,7 +468,6 @@ pub(crate) fn why(r: Refusal) -> &'static str {
         Refusal::ReadOnly => "This app opens it read-only: no lens it holds reaches every version it was written in.",
         Refusal::NotAView => "That edit doesn't fit the app's schema.",
         Refusal::NotJoining => "A device joins a vault only by adding itself.",
-        Refusal::BadCode => "That isn't the server's setup code.",
         Refusal::NotClaiming => "A claim adds the server itself as a device of an aven vault.",
     }
 }

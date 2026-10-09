@@ -3,8 +3,7 @@
 //! and lets go of a device taken out of its vault; and a new server, started as its binary starts it, learns its
 //! devices from what it relays. From P8c, a new device that linked through the server is let in too; from P8d, a new
 //! device with no UDP of its own, as a browser's, by its passkey's pass, until the pass runs out. From P8f, a new
-//! server lets in a pass of any passkey until the first human vault that brings its setup code claims it, and then no
-//! stranger's.
+//! server lets in a pass of any passkey until the first human vault claims it, and then no stranger's.
 
 #[path = "../../avendb-net/tests/common/mod.rs"]
 mod common;
@@ -21,7 +20,7 @@ use avendb::keys::KeyScope;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Refusal, Role, Scope};
 use avendb::sign::PASS_LIFE;
-use avendb_net::{Admission, Node, Offer, Options, SetupCode, server};
+use avendb_net::{Admission, Node, Offer, Options, server};
 use avendb_server::{Config, Relay};
 use common::Folder;
 use iroh::{EndpointId, RelayUrl, SecretKey};
@@ -123,8 +122,8 @@ async fn scenario_5_through_the_relay_alone() {
 async fn a_new_server_lets_in_the_devices_of_the_spaces_it_relays() {
     let dir = Folder::new("relay");
     let data = dir.path().to_path_buf();
-    let (relay_url, public_addr, setup) = (None, None, Some(SetupCode::new(SETUP_CODE)));
-    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false, setup };
+    let (relay_url, public_addr) = (None, None);
+    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
@@ -138,8 +137,8 @@ async fn a_new_server_lets_in_the_devices_of_the_spaces_it_relays() {
     let mac = node(&mut w, mac_s, &[passkey_s], 1, opts).await;
     mac.know(server.addr());
     assert!(!relay.admission().admits(&mac.id()), "the new server knows no device of Samuel's");
-    // Samuel's vault brings the setup code first: the server is a device of a new avenCEO, which his vault owns
-    let v = mac.claim(&started.offer, passkey_s, SETUP_CODE).await.expect("Samuel's vault claims the server");
+    // Samuel's vault claims it first: the server is a device of a new avenCEO, which his vault owns
+    let v = mac.claim(&started.offer, passkey_s).await.expect("Samuel's vault claims the server");
     assert_eq!(server::vault(server).await, Some(v), "the server is avenCEO's device");
     until("the server knows Samuel's Mac", || async { relay.admission().admits(&mac.id()) }).await;
     assert!(!relay.admission().admits(&bob_mac), "and not yet Bob's");
@@ -238,7 +237,6 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         relay_url: Some(relay_url.clone()),
         public_addr: Some(public),
         signup: true,
-        setup: None,
     };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");
@@ -258,10 +256,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(defaults.relay_url, None, "the relay's own socket, unless it is said where devices reach it");
     assert_eq!(defaults.public_addr, None, "its own interfaces' addresses, unless it is said where it is reached");
     assert!(defaults.signup, "sign-up is open, unless it is said closed");
-    assert_eq!(defaults.setup, None, "and nobody claims the server, unless it is given a setup code");
-    let code = "a setup code of thirty-two chars";
     let vars = HashMap::from([
-        ("AVENDB_SETUP_CODE", code),
         ("AVENDB_DATA", "/srv/avendb"),
         ("AVENDB_BIND", "[::]:7402"),
         ("AVENDB_RELAY_BIND", "127.0.0.1:3351"),
@@ -276,11 +271,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(set.relay_url, Some("https://avendb.maia.city".parse().expect("a URL")));
     assert_eq!(set.public_addr, Some("203.0.113.7:7401".parse().expect("a socket")));
     assert!(!set.signup);
-    assert_eq!(set.setup, Some(SetupCode::new(code)));
-    assert!(!format!("{set:?}").contains(code), "a setup code never shows: {set:?}");
     assert!(Config::from_vars(|k| (k == "AVENDB_SIGNUP").then(|| "maybe".to_string())).is_err());
-    let short = Config::from_vars(|k| (k == "AVENDB_SETUP_CODE").then(|| "1234".to_string()));
-    assert!(short.is_err(), "a setup code too short to stand a guess is refused");
     let wrong = Config::from_vars(|k| (k == "AVENDB_BIND").then(|| "the server's port".to_string()));
     assert!(wrong.is_err(), "a socket that isn't one is said so, not taken for the default");
 }
@@ -396,22 +387,21 @@ async fn a_persons_first_browser_founds_their_vault_through_a_relay_open_to_sign
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_strangers() {
     let dir = Folder::new("claim");
-    let (data, setup) = (dir.path().to_path_buf(), Some(SetupCode::new(SETUP_CODE)));
-    let config =
-        Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url: None, public_addr: None, signup: false, setup };
+    let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
+    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
     let mut w = world();
-    // Eve runs the server: her passkey roots no vault anywhere yet, and her first device is a browser, with no UDP
+    // Eve comes first: her passkey roots no vault anywhere yet, and her first device is a browser, with no UDP
     let eve_key = w.lab.passkey("Eve");
     let eves = w.lab.device_of(eve_key, "Eve's browser");
     let stranger_key = w.lab.passkey("a stranger");
     assert!(relay.admission().honours(&stranger_key), "unclaimed, with sign-up closed, it honours any passkey's pass");
     let pass = w.lab.relay_pass(eves, eve_key, unix_now()).expect("a pass");
     let browser = node(&mut w, eves, &[eve_key], 8, with_pass(&url, pass)).await;
-    let eve = browser.act(move |lab, me| human_on(lab, eve_key, &[me])).await;
-    let avenceo = browser.claim(&started.offer, eve_key, SETUP_CODE).await.expect("Eve's vault claims the server");
+    // her browser founds her vault through the server, and in the same ceremony claims it
+    let (eve, avenceo) = browser.found(&started.offer, eve_key).await.expect("Eve's vault, which claims the server");
     assert_eq!(server::vault(server).await, Some(avenceo), "the server is avenCEO's device");
     assert!(relay.serves(&browser.id()), "through the relay");
     let owner = browser.read(move |lab, me| lab.state(me).vault(avenceo).map(|v| v.owners.clone())).await;
