@@ -169,20 +169,49 @@
 			ctx.fill();
 			ctx.stroke();
 			ctx.setLineDash([]);
-			// the two crops as fields
+			const ink = light > 0.5 ? '#1f2a23' : '#f4f1e8';
+			// the two crops as fields, last night's harvest written in each
 			a.grows.forEach((/** @type {string} */ g, /** @type {number} */ i) => {
 				const ang = -Math.PI / 2 + (i ? 0.9 : -0.9);
 				const fx = t.x + Math.cos(ang) * t.r * 0.62,
 					fy = t.y + Math.sin(ang) * t.r * 0.62;
-				ctx.fillStyle = `${GOOD_COLOUR[g]}aa`;
+				ctx.fillStyle = a.alive ? GOOD_COLOUR[g] : '#8a8a86';
 				ctx.beginPath();
 				ctx.arc(fx, fy, 16, 0, Math.PI * 2);
 				ctx.fill();
-				ctx.fillStyle = '#1f2a23';
-				ctx.font = '600 11px system-ui, sans-serif';
+				ctx.fillStyle = '#fff';
+				ctx.font = '700 13px system-ui, sans-serif';
 				ctx.textAlign = 'center';
-				ctx.fillText(GOOD_LABEL[g], fx, fy + 30);
+				ctx.textBaseline = 'middle';
+				ctx.fillText(String(a.harvest[g] ?? a.produce[g]), fx, fy + 0.5);
+				ctx.textBaseline = 'alphabetic';
+				ctx.fillStyle = ink;
+				ctx.font = '600 11px system-ui, sans-serif';
+				ctx.fillText(`${GOOD_LABEL[g]} /day`, fx, fy + 30);
 			});
+			// its store: a half-size dot per good, how many units it holds written in each
+			GOODS.forEach((g, i) => {
+				const sx = t.x + (i - 2) * 22,
+					sy = t.y + 34;
+				const n = a.stock[g];
+				ctx.globalAlpha = n > 0 ? 1 : 0.35;
+				ctx.fillStyle = a.alive ? GOOD_COLOUR[g] : '#8a8a86';
+				ctx.beginPath();
+				ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.globalAlpha = 1;
+				ctx.fillStyle = '#fff';
+				ctx.font = '700 10px system-ui, sans-serif';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(String(n), sx, sy + 0.5);
+				ctx.textBaseline = 'alphabetic';
+			});
+			ctx.fillStyle = ink;
+			ctx.globalAlpha = 0.7;
+			ctx.font = '600 9px system-ui, sans-serif';
+			ctx.fillText('STORE', t.x, t.y + 56);
+			ctx.globalAlpha = 1;
 			ctx.fillStyle = light > 0.5 ? '#1f2a23aa' : '#f4f1e8aa';
 			ctx.font = '600 13px system-ui, sans-serif';
 			ctx.textAlign = 'center';
