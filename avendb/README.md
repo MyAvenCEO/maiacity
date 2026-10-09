@@ -123,8 +123,8 @@ for that op alone, and forgets the McEliece pair it made from it once the device
 In the tile, the screen **This browser** is this device: it founds a vault, with the maiaCITY passkey or a new one,
 and claims the server if given its setup code, or links through a code (a QR code that a phone's camera opens as a
 link, `?link=`), shows its own code as a QR code for the next device, and lists, edits and writes notes, showing what
-its other devices change the moment it arrives (`Device::changed`). The screen takes a server's relay and code: avenDB's
-server at `avendb.maia.city` ("Deploying the server", below), or a test server's.
+its other devices change the moment it arrives (`Device::changed`). The screen comes with avenDB's server's relay and
+code filled in (`avendb.maia.city`, "Deploying the server", below); a test server's can take their place.
 
 #### PRF, done right
 
@@ -267,8 +267,9 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    never in the clear in a log. The GitHub secret `AVENDB_SETUP_CODE`, if set, is used instead: 20 or more
    characters made at random, only letters, digits and `. _ ~ + / = -`, as it passes through the deploy's shell and
    compose's `.env` (any other is left out, with a warning).
-5. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) goes into
-   the app's configuration.
+5. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) is filled
+   in on **This browser** (`SERVER` in `src/lib/avendb/Browser.svelte`), beside its relay. It stays the same as long
+   as its folder on the Hetzner volume keeps the server's device secret.
 6. **The claim**: the person who runs it opens **This browser** with the setup code and founds their vault, which
    claims the server as avenCEO's device. Once it is claimed the code claims nothing more, and the secret can go.
 
@@ -297,4 +298,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8d | A device in the browser: the network crate as WebAssembly, with X25519MLKEM768 in pure Rust; a new device with no UDP let onto the server's relay by its passkey's pass; big answers a page at a time, each op after its past; two pages in Chromium that link through the relay alone, the second through the first one's code, and sync | Merged |
 | P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) sign in ceremonies over each op, and the Lab holds no secret of them; a new person's first browser founds their vault through the relay open to sign-up; a browser links in four ceremonies and learns the passkey's key from two; its store in IndexedDB, open again in one ceremony; the tile's This browser screen with QR codes; Chromium's virtual authenticator in the test | Merged |
 | P8f, vaults | Three kinds of vault, human, coop and aven, each owned only as its kind may be (T21); every act for a coop or an aven vault names the chain of owners it goes through; the server a device of avenCEO, claimed by the first human vault that brings its setup code; the passkey of maiaCITY's sign-up, with PRF, as the vault's root; the example world reset around avenCEO | Merged |
-| P8f | The server deployed, once that has its go, and scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |
+| P8f, deploy | The server at `avendb.maia.city`, beside the media vault: its own image and workflow (`avendb.yml`), its Caddy site, UDP port and settings from `api.yml`, its setup code made on the server and handed on sealed; This browser filled in with its relay and offer | Merged |
+| P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |

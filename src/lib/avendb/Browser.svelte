@@ -5,13 +5,17 @@
 	with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or one they make here; the
 	person who runs the server brings its setup code and claims it for their vault, as avenCEO's owner (P8f). A person
 	with a device already links this one through the code that device shows, scanned as a QR code or opened as a link
-	(?link=). What its other devices change shows here the moment it arrives. avenDB's server and relay aren't deployed
-	yet: until they are, give a test run's.
+	(?link=). What its other devices change shows here the moment it arrives. avenDB's server runs at avendb.maia.city:
+	its relay and its code are filled in, and a test server's can take their place.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 
 	const STORE = 'avendb-browser';
+	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
+	 *  logs it at every start; the same as long as its folder on the Hetzner volume keeps its device's secret */
+	const RELAY = 'https://avendb.maia.city';
+	const SERVER = '';
 
 	/** @type {any} the device's WebAssembly */
 	let avendb = null;
@@ -67,8 +71,8 @@
 
 	onMount(async () => {
 		const q = new URLSearchParams(location.search);
-		relay = q.get('relay') ?? remembered('relay');
-		server = q.get('server') ?? remembered('server');
+		relay = q.get('relay') ?? (remembered('relay') || RELAY);
+		server = q.get('server') ?? (remembered('server') || SERVER);
 		code = q.get('link') ?? '';
 		try {
 			const pkg = await import('./device/avendb_browser.js');
@@ -268,7 +272,7 @@
 				</article>
 				<article class="card">
 					<h3>avenDB’s server</h3>
-					<p class="muted">It isn’t deployed yet. Until it is, give a test server’s relay and code.</p>
+					<p class="muted">maiaCITY’s server, at avendb.maia.city. Change these only for a test server.</p>
 					<input placeholder="Its relay: https://…" bind:value={relay} />
 					<input placeholder="The server’s code: AVENDB1…" bind:value={server} />
 					<p class="muted">Do you run it, and nobody has claimed it yet? Its setup code makes your human vault the owner of avenCEO, the aven vault the server is a device of.</p>
