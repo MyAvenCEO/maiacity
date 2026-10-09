@@ -17,6 +17,11 @@ export const NEED = { water: 3, fruits: 2, vegetables: 2, legumes: 2, chicken: 2
 export const ROT = { water: 0, fruits: 0.25, vegetables: 0.15, legumes: 0.05, chicken: 0.3 };
 
 export const START_HEARTS = 125000;
+/** the HEARTS policy: every living aven mints 24 HEARTS a day, and every HEART decays 7% a year (charged each night,
+ * 7%/365 of the balance). Minting and decay balance at 24 × 365 / 0.07 ≈ 125,143 HEARTS: an aven that only holds
+ * drifts towards that, richer ones shrink, poorer ones grow back */
+export const MINT_PER_DAY = 24;
+export const DECAY_PER_YEAR = 0.07;
 export const START_PRICE = 100; // HEARTS a unit, where every price begins
 export const DAY_S = 86400; // in-game seconds in a day
 export const WORLD = { w: 1000, h: 700 };
@@ -72,6 +77,8 @@ export function createWorld(seed = Date.now() % 1e9) {
 			y: home.y + (rand() - 0.5) * 60,
 			target: null, // { x, y } or { aven }
 			hearts: START_HEARTS,
+			minted: 0, // HEARTS minted so far
+			decayed: 0, // HEARTS lost to decay so far
 			// two days' rations to start, so nobody starves before the first trade, plus the first day's harvest
 			stock: Object.fromEntries(GOODS.map((g) => [g, NEED[g] * 2 + (produce[g] ?? 0)])),
 			markup, // per good: its price as a share of the market price, set by its brain each morning
@@ -340,6 +347,17 @@ function endOfDay(world) {
 		m.history.push(m.price);
 		if (m.history.length > 120) m.history.shift();
 		m.open = m.price;
+	}
+	// the HEARTS policy, each night: decay on every balance, then the day's mint for every living aven
+	for (const a of world.avens) {
+		const decay = (a.hearts * DECAY_PER_YEAR) / 365;
+		a.hearts -= decay;
+		a.decayed += decay;
+		if (a.alive) {
+			a.hearts += MINT_PER_DAY;
+			a.minted += MINT_PER_DAY;
+		}
+		a.hearts = Math.round(a.hearts * 100) / 100;
 	}
 	world.day += 1;
 	for (const a of world.avens) {
