@@ -122,7 +122,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			diedOn: null,
 			today: blankDay(),
 			ledger: [], // newest last: { day, kind: 'buy'|'sell'|'eat'|'price'|'grow'|'death', ... }
-			brain: { source: 'local', pending: false, last: null, error: null },
+			brain: { ready: false, pending: false, last: null, error: null, t0: -Infinity, realAt: -Infinity }, // ready once Liquid first decided
 			metAt: {} // aven id -> in-game time of the last meeting, so they don't haggle on every frame
 		};
 	});
@@ -309,7 +309,8 @@ export function step(world, dt) {
 	world.t += dt;
 	if (Math.floor(world.t / 3600) > hourBefore) updateMarket(world);
 	for (const a of world.avens) {
-		if (!a.alive) continue;
+		// an aven acts only once its brain has decided something: until then it stands and thinks
+		if (!a.alive || !a.brain.ready) continue;
 		if (!a.target || (a.target.aven && !a.target.aven.alive)) a.target = pickTarget(world, a);
 		const tx = a.target.aven ? a.target.aven.x : a.target.x;
 		const ty = a.target.aven ? a.target.aven.y : a.target.y;
@@ -328,7 +329,7 @@ export function step(world, dt) {
 		}
 	}
 	// meetings: any two avens close enough, or both in the market square, haggle at most once every in-game hour
-	const live = world.avens.filter((a) => a.alive);
+	const live = world.avens.filter((a) => a.alive && a.brain.ready);
 	for (let i = 0; i < live.length; i++)
 		for (let j = i + 1; j < live.length; j++) {
 			const a = live[i],

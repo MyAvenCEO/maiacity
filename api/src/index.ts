@@ -48,6 +48,15 @@ function cors(req: Request): Record<string, string> {
   };
 }
 
+// The avens' Liquid relay also answers a local dev build (vite on :5173, which the Mac app loads): it carries no
+// cookie and no account, only game state, and is rate limited per address.
+const LIQUID_ORIGINS = [...ORIGINS, "http://localhost:5173", "http://127.0.0.1:5173"];
+function liquidCors(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  if (!LIQUID_ORIGINS.includes(origin)) return {};
+  return { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "content-type", "Access-Control-Allow-Methods": "POST,OPTIONS", Vary: "Origin" };
+}
+
 const json = (req: Request, body: unknown, init: ResponseInit = {}) =>
   Response.json(body, { ...init, headers: { ...cors(req), ...(init.headers ?? {}) } });
 
@@ -147,14 +156,15 @@ const server = Bun.serve({
     "/api/health": (req) => json(req, { ok: true }),
 
     // Sandbox 7's avens ask Liquid's free decision model through here: browsers can't reach it themselves.
-    // Only pages on our own origins may use it, so it is no open proxy.
+    // Only pages on our own origins (and a local dev build) may use it, so it is no open proxy.
     "/api/liquid/decide": {
-      OPTIONS: preflight,
+      OPTIONS: (req) => new Response(null, { status: 204, headers: liquidCors(req) }),
       POST: async (req, srv) => {
-        if (!Object.keys(cors(req)).length) return json(req, { error: "unknown origin" }, { status: 403 });
+        const headers = liquidCors(req);
+        if (!Object.keys(headers).length) return Response.json({ error: "unknown origin" }, { status: 403 });
         const who = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || srv.requestIP(req)?.address || "?";
         const { status, body } = await relayDecision(req, who);
-        return json(req, body, { status });
+        return Response.json(body, { status, headers });
       },
     },
 

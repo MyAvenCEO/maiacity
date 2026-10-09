@@ -244,6 +244,8 @@ jobs:
           S3_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
           # speech to text (Prem, Deepgram Nova 3): only the API container gets it — never a Mac
           PREMAI_API_KEY: ${{ secrets.PREMAI_API_KEY }}
+          # Liquid's decision model for Sandbox 7's avens (the /api/liquid/decide relay)
+          LIQUID_API_KEY: ${{ secrets.LIQUID_API_KEY }}
         run: |
           [ -n "$PREMAI_API_KEY" ] || echo "::notice::No PREMAI_API_KEY — recordings get no transcripts until it is set."
           ssh prod "cd $APP_DIR && bash -s" <<EOS
@@ -288,6 +290,7 @@ jobs:
           S3_ACCESS_KEY=$S3_ACCESS_KEY
           S3_SECRET_KEY=$S3_SECRET_KEY
           PREMAI_API_KEY=$PREMAI_API_KEY
+          LIQUID_API_KEY=$LIQUID_API_KEY
           AVENDB_IMAGE=\$AVI
           AVENDB_ADDRESS=$AVENDB_HOST
           AVENDB_RELAY_URL=https://$AVENDB_HOST

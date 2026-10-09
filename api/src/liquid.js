@@ -1,12 +1,13 @@
 // A relay to Liquid's decision model for Sandbox 7 (the avens' brains). Browsers can't call api.liquid.ai themselves
 // (it sends no CORS headers), so the page posts its typed questions here and this forwards them, unchanged, to the free
-// model d1:free. No key is needed or sent. Liquid keeps d1:free requests for training, so this only ever forwards
+// model d1:free. With LIQUID_API_KEY set (a GitHub secret, into this container's env by the deploy; never in a page or
+// on a Mac) it goes along as the bearer token. Liquid keeps d1:free requests for training, so this only ever forwards
 // game state: it checks the shape and size and passes nothing else on.
 
 const LIQUID_URL = 'https://api.liquid.ai/decisions/v1/systemone';
 const MODEL = 'd1:free';
 const MAX_BYTES = 64 * 1024;
-const PER_MINUTE = 120; // per client address: ten avens' mornings at the fastest speed fit well inside this
+const PER_MINUTE = 240; // per client address: ten avens re-deciding every few seconds fit inside this
 
 /** @type {Map<string, { n: number, since: number }>} */
 const seen = new Map();
@@ -48,7 +49,7 @@ export async function relayDecision(req, who) {
 	try {
 		const res = await fetch(LIQUID_URL, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', ...(process.env.LIQUID_API_KEY ? { Authorization: `Bearer ${process.env.LIQUID_API_KEY}` } : {}) },
 			body: JSON.stringify({ model: MODEL, state, questions }),
 			signal: AbortSignal.timeout(25_000)
 		});
