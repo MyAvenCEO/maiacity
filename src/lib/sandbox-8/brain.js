@@ -3,10 +3,13 @@
 // asking price (what it grows) and its limit (what it buys), and how many days of food to keep in stock.
 // The decisions come from Liquid's decision model d1:free (TypeSafe System One API): typed questions, answered with
 // calibrated probabilities. d1:free needs no API key, but Liquid keeps its requests for training, so only the game
-// state goes out, never anything about a person. There is no stand-in (Samuel): without Liquid's answers the valley waits.
+// state goes out, never anything about a person. There is no rule-based stand-in (Samuel): without a brain's answers the
+// valley waits. The one other brain is Samuel's own (2026-10-09): Qwen on his GPU machine, reached over Tailscale with an
+// OpenAI-style API, only from his local studio build. It answers the same typed questions when Liquid can't.
 
 import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents } from './economy.js';
 import { RULES } from './rules.js';
+import { native, command } from '$lib/native';
 
 export const LIQUID_URL = 'https://api.liquid.ai/decisions/v1/systemone';
 export const LIQUID_MODEL = 'd1:free';
@@ -203,8 +206,94 @@ export function applyAnswers(world, a, answers, source) {
 	a.brain.last = { day: world.day, t: world.t, source, answers };
 	// for the run's record in the database (when the page keeps one): what it decided, compactly
 	if (world.outbox)
-		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, changes, answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
+		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, source, changes, answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
 	a.brain.ready = true;
 	// an aven re-decides every few seconds: only a decision that changed something goes in its ledger
 	if (changes.length || a.ledger.at(-1)?.kind !== 'price') a.ledger.push({ day: world.day, t: world.t, kind: 'price', source, changes });
+}
+
+// ---- Qwen, on Samuel's GPU machine: the fallback brain (his local studio build only) ----
+
+/** where it listens (Tailscale, plain http, OpenAI-style); changeable on the page */
+export const QWEN_URL = 'http://100.96.61.57:8000/v1';
+/** only a studio on Samuel's own Mac (or a local dev page) can reach it: never the public site */
+export const QWEN_HERE = native() || import.meta.env.DEV;
+
+/** one call to it: natively from the studio (the page may not call plain http itself), else straight from a dev page */
+async function qwenCall(url, body, signal) {
+	if (native()) {
+		const res = await command('brain', { url, body: body ?? null });
+		if (res.status >= 400) throw new Error(`Qwen ${res.status}${res.body?.error?.message ? `: ${String(res.body.error.message).slice(0, 200)}` : ''}`);
+		return res.body;
+	}
+	const res = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal } : { signal });
+	const out = await res.json().catch(() => null);
+	if (!res.ok) throw new Error(`Qwen ${res.status}${out?.error?.message ? `: ${String(out.error.message).slice(0, 200)}` : ''}`);
+	return out;
+}
+
+const models = new Map(); // url -> the model it serves
+/** the model it serves: the first one named Qwen, else the first */
+export async function qwenModel(base, signal) {
+	if (!models.has(base)) {
+		const list = (await qwenCall(`${base}/models`, null, signal))?.data ?? [];
+		const id = (list.find((m) => /qwen/i.test(m.id)) ?? list[0])?.id;
+		if (!id) throw new Error('Qwen serves no model');
+		models.set(base, id);
+	}
+	return models.get(base);
+}
+
+/**
+ * ask Qwen the same typed questions: each score question becomes a pick among its numbered levels, each choice question
+ * a pick among its keys, all in one JSON object it must fill (structured output where the server has it). Resolves to
+ * answers shaped like Liquid's, { key: { score } | { choice } }, or throws.
+ * @param {any} state @param {any} questions @param {{ signal?: AbortSignal, url?: string }} [opts]
+ */
+export async function askQwen(state, questions, { signal, url = QWEN_URL } = {}) {
+	const base = url.replace(/\/+$/, '');
+	const model = await qwenModel(base, signal);
+	const keys = Object.keys(questions);
+	const options = (q) => (q.type === 'score' ? Object.fromEntries(q.criteria.map((c, i) => [i, c])) : q.criteria);
+	const schema = {
+		type: 'object',
+		properties: Object.fromEntries(keys.map((k) => [k, questions[k].type === 'score' ? { type: 'integer', enum: questions[k].criteria.map((_, i) => i) } : { type: 'string', enum: Object.keys(questions[k].criteria) }])),
+		required: keys,
+		additionalProperties: false
+	};
+	const body = {
+		model,
+		messages: [
+			{ role: 'system', content: `You decide for ${state.me}, one of the avens in a trading game. Read its state, then answer every question by picking the option that serves it best: survive first, then end with the most HEARTS. Reply with one JSON object only: for each question key, the number or key of the option you pick. /no_think` },
+			{ role: 'user', content: JSON.stringify({ state, questions: Object.fromEntries(keys.map((k) => [k, { question: questions[k].instructions, options: options(questions[k]) }])) }) }
+		],
+		temperature: 0.3,
+		max_tokens: 400,
+		chat_template_kwargs: { enable_thinking: false }
+	};
+	let out;
+	try {
+		out = await qwenCall(`${base}/chat/completions`, { ...body, response_format: { type: 'json_schema', json_schema: { name: 'answers', schema, strict: true } } }, signal);
+	} catch (e) {
+		// a server without structured output says 400: ask again, the JSON asked for in words
+		if (!/Qwen 400/.test(e?.message)) throw e;
+		out = await qwenCall(`${base}/chat/completions`, body, signal);
+	}
+	const text = String(out?.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '');
+	const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+	let picks;
+	try {
+		picks = JSON.parse(json);
+	} catch {
+		throw new Error(`Qwen sent no JSON: ${text.slice(0, 80)}`);
+	}
+	const answers = {};
+	for (const k of keys) {
+		const q = questions[k];
+		const v = picks?.[k];
+		if (q.type === 'score' && Number.isFinite(Number(v))) answers[k] = { score: Math.max(0, Math.min(q.criteria.length - 1, Number(v))) };
+		else if (q.type === 'choice' && v != null && String(v) in q.criteria) answers[k] = { choice: String(v) };
+	}
+	if (!Object.keys(answers).length) throw new Error('Qwen picked no option');
+	return answers;
 }

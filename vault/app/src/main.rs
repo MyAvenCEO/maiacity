@@ -480,6 +480,7 @@ fn main() {
             auth::auth_sign_out,
             auth::auth_open,
             auth::api,
+            auth::brain,
             sync::vault_connect,
             sync::vault_copies,
             mcp::mcp_info,
