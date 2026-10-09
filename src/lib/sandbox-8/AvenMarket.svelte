@@ -1,16 +1,21 @@
 <!--
 	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Ten blobs in a 2D valley, each with 1,000 HEARTS and a territory
-	that grows 2 of the 5 goods. They walk to each other and trade at their own prices; every morning each one's prices are
-	decided by Liquid's decision model d1:free (or a local rule when Liquid is out of reach). Survive, and end with the most HEARTS.
+	that grows 2 of the 5 goods. They walk to each other and trade at their own prices; all day long each one keeps re-deciding
+	them with Liquid's decision model d1:free, through our API's relay. No Liquid, no game: the valley pauses until it answers.
+	Survive, and end with the most HEARTS.
 -->
 <script>
 	import { onMount } from 'svelte';
 	import { createWorld, step, ranking, want, MARKET, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S } from './economy.js';
 	import { RULES, setRules, changedRules } from './rules.js';
 	import RulesView from './RulesView.svelte';
+	// how the browser reaches Liquid, which sends no CORS headers: in development (the Mac build) through Vite's own
+	// proxy at /liquid, on the site through our API's relay
+	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
+	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
 	import StatsView from './StatsView.svelte';
-	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
+	import { stateFor, questionsFor, askLiquid, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
 
 	// the rules this viewer changed last time, kept in this browser only
 	const SAVED = 'sandbox-8-rules';
@@ -76,6 +81,7 @@
 			t: world.t,
 			// the chart's lines, only while the Prices tab is open: at most ~300 points a good
 			series: tab === 'prices' || page === 'stats' ? Object.fromEntries(GOODS.map((g) => { const all = world.market[g].series; const every = Math.max(1, Math.ceil(all.length / 300)); return [g, all.filter((/** @type {any} */ _p, /** @type {number} */ i) => i % every === 0 || i === all.length - 1).map((/** @type {any} */ p) => ({ ...p }))]; })) : {},
+			waiting: world.avens.filter((/** @type {any} */ x) => x.alive && !x.brain.ready).length,
 			month: Math.floor((world.day - 1) / 30) + 1,
 			// the daily rows, only while the Stats view is open (each row is never changed once written)
 			stats: page === 'stats' ? world.stats.slice() : [],
@@ -108,16 +114,26 @@
 		};
 	}
 
-	/** the morning: every living aven decides its prices for the day */
-	function morning() {
+	// every aven thinks all day long, not once a morning (Samuel): as soon as its last decision is in, and at least
+	// THINK_H in-game hours and THINK_MS real time have passed, it asks Liquid again with what it sees now. There is
+	// no stand-in: an aven acts only on Liquid's answers, and when Liquid can't answer the valley pauses.
+	const THINK_H = 2;
+	const THINK_MS = 4000;
+	let down = $state(/** @type {string} */ (''));
+
+	/** @param {number} now real time, ms */
+	function think(now) {
 		for (const a of world.avens) {
 			if (!a.alive || a.brain.pending) continue;
+			if (a.brain.ready && (world.t - a.brain.t0 < THINK_H * 3600 || now - a.brain.realAt < THINK_MS)) continue;
 			a.brain.pending = true;
+			a.brain.t0 = world.t;
+			a.brain.realAt = now;
 			calls.asked++;
 			const ctrl = new AbortController();
-			const timer = setTimeout(() => ctrl.abort(), 20000);
+			const timer = setTimeout(() => ctrl.abort(), 25000);
 			const myWorld = world;
-			askLiquid(stateFor(world, a), questionsFor(world, a), { signal: ctrl.signal })
+			askLiquid(stateFor(world, a), questionsFor(world, a), { signal: ctrl.signal, ...LIQUID })
 				.then((answers) => {
 					if (myWorld !== world || !a.alive) return;
 					calls.answered++;
@@ -129,7 +145,10 @@
 					calls.failed++;
 					calls.lastError = e?.name === 'AbortError' ? 'timed out' : e?.message || 'unreachable';
 					a.brain.error = calls.lastError;
-					if (a.alive) applyAnswers(world, a, localAnswers(world, a), 'local');
+					a.brain.t0 = -Infinity; // ask again as soon as the valley runs
+					// no decision, no game: pause until Liquid answers again
+					down = calls.lastError;
+					paused = true;
 				})
 				.finally(() => {
 					clearTimeout(timer);
@@ -141,6 +160,7 @@
 	function reset() {
 		world = createWorld();
 		calls = { asked: 0, answered: 0, failed: 0, lastError: '' };
+		down = '';
 		paused = true;
 		started = false;
 		snap = snapshot();
@@ -152,12 +172,10 @@
 		snap = snapshot();
 	}
 
-	/** Start (the first morning's decisions go out now) or pause */
+	/** Start (the first decisions go out now) or pause */
 	function toggle() {
-		if (paused && !started) {
-			started = true;
-			morning();
-		}
+		started = true;
+		if (paused) down = '';
 		paused = !paused;
 	}
 
@@ -399,11 +417,15 @@
 			const dtReal = Math.min(250, now - last);
 			last = now;
 			if (!paused) {
-				let game = (dtReal / 1000) * speed;
-				while (game > 0) {
-					const d = Math.min(120, game);
-					game -= d;
-					if (step(world, d)) morning();
+				think(now);
+				// the clock runs only once every living aven has its first decision from Liquid
+				if (world.avens.every((/** @type {any} */ a) => !a.alive || a.brain.ready)) {
+					let game = (dtReal / 1000) * speed;
+					while (game > 0) {
+						const d = Math.min(120, game);
+						game -= d;
+						step(world, d);
+					}
 				}
 			}
 			draw(now);
@@ -429,7 +451,7 @@
 			const s = Object.entries(e.short ?? {});
 			return s.length ? `went short of ${s.map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')} · health ${e.health}` : `ate and drank in full · health ${e.health}`;
 		}
-		if (e.kind === 'price') return `${e.source === 'liquid' ? 'Liquid' : 'local rule'}: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
+		if (e.kind === 'price') return `Liquid: ${e.changes.length ? e.changes.join('; ') : 'kept every price'}`;
 		if (e.kind === 'death') return 'died';
 		if (e.kind === 'rot') return `rotted: ${Object.entries(e.rotted).map(([g, n]) => `${n} ${GOOD_LABEL[g]}`).join(', ')}`;
 		if (e.kind === 'rain') return `rain: the barrel caught ${e.qty} WATER`;
@@ -462,6 +484,11 @@
 
 	<div class="stage" bind:this={stageEl}>
 		<canvas bind:this={canvas} onpointerdown={onPointer}></canvas>
+		{#if down}
+			<p class="liquid-note down">Paused: Liquid isn't answering ({down}). The avens never play without it. Press Play to ask again.</p>
+		{:else if !paused && snap.waiting}
+			<p class="liquid-note">Waiting for Liquid: {snap.waiting} aven{snap.waiting === 1 ? '' : 's'} still deciding {snap.waiting === 1 ? 'its' : 'their'} first prices.</p>
+		{/if}
 		<div class="ticker" aria-label="Prices">
 			{#each GOODS as g (g)}
 				<span><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} <b>{snap.market[g].price}</b> <small>avg {snap.market[g].avg ?? '—'}</small></span>
@@ -499,7 +526,7 @@
 			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give 40 to 70%, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
 			<p class="brain">HEARTS: every aven mints {snap.policy.mint} a day; every HEART decays {snap.policy.decay}% a year. <button class="link" onclick={() => setView('policy')}>Policies</button></p>
 			<p class="brain">
-				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered, decided by the stand-in rule ({calls.lastError}){/if}
+				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
 			</p>
 		</section>
 
@@ -937,6 +964,24 @@
 	}
 	.good-head small.up {
 		color: #2f7d4f;
+	}
+	.liquid-note {
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		top: 52px;
+		z-index: 2;
+		max-width: calc(100% - 32px);
+		margin: 0;
+		padding: 8px 12px;
+		border-radius: 8px;
+		background: rgba(20, 24, 32, 0.85);
+		color: #fff;
+		font-size: 13px;
+		text-align: center;
+	}
+	.liquid-note.down {
+		background: rgba(150, 30, 30, 0.9);
 	}
 	.good-head small.down {
 		color: #b8483b;

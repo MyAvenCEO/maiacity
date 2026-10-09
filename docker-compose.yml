@@ -52,6 +52,8 @@ services:
       # paused (1 → 30 min) and asked nothing meanwhile. PREMAI_PAUSED=1: the kill switch — nothing calls Prem.
       PREMAI_API_KEY: ${PREMAI_API_KEY:-}
       PREMAI_PAUSED: ${PREMAI_PAUSED:-}
+      # Sandbox 7's avens think with Liquid's decision model through /api/liquid/decide: its key, from the GitHub secret
+      LIQUID_API_KEY: ${LIQUID_API_KEY:-}
     ports:
       - "${API_PORT:-3100}:3000"
     healthcheck:
