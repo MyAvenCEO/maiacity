@@ -485,16 +485,75 @@ export const FLOOR_MATERIALS = { timber: 0.25, longSpan: 0.4, screed: 0.06 };
 
 // ── food, energy and people ─────────────────────────────────────────────────────────────────────────────────────
 
-/** what a person eats in a year, t (the settlers game's European diet: 9.87 kg a week) */
-export const DIET_T = 0.508;
 /**
- * Food yields, t of fresh food a hectare a year: a value inside the ranges the sources give, on the careful side.
- * @type {Record<string, { t: number, label: string, src: string }>}
+ * What a person eats (Samuel, 2026-10-09): only legumes, nuts and seeds, vegetables (roots and tubers among them),
+ * fruit, chicken and eggs, in healthy amounts. Modelled on the EAT-Lancet planetary health diet (75 g dry legumes,
+ * 50 g nuts, 300 g vegetables, 200 g fruit, 29 g poultry and 13 g eggs a day, 2,500 kcal for a reference adult), with
+ * its grains and dairy swapped for chestnuts, roots and more legumes, fruit and nuts; about 2,250 kcal and 73 g of
+ * protein a day, a mixed population's average; chicken ~210 g a week (the DGE's limit for meat is 300 g).
+ * g: fresh grams a day (legumes dry, nuts as kernels); kcal and protein (g) a kg.
+ * @type {Record<string, { label: string, g: number, kcal: number, protein: number }>}
  */
-export const YIELD = {
-	indoorFood: { t: 35, label: 'Food forest under glass at 24 °C, tropical and temperate, trees with vegetables, greens and herbs between them all year: mixed tropical food forests give 10–40 t/ha, soil-grown greenhouse vegetables 50–150; about 35', src: 'yields' },
-	foodForest: { t: 8, label: 'Temperate food forest outdoors, grown: 1–15 t/ha (young Dutch food forests ~1 t/ha; the settlers game’s year 15 is 7.3)', src: 'yields' }
+export const DIET = {
+	legumes: { label: 'Legumes (beans, peas, lentils, lupins), dry', g: 110, kcal: 3400, protein: 220 },
+	nuts: { label: 'Nuts and seeds (hazel, walnut, sunflower, pumpkin, hemp), kernels', g: 75, kcal: 6000, protein: 180 },
+	chestnuts: { label: 'Sweet chestnuts', g: 220, kcal: 1900, protein: 24 },
+	roots: { label: 'Roots and tubers (potato, sweet potato, Jerusalem artichoke)', g: 550, kcal: 800, protein: 20 },
+	vegetables: { label: 'Vegetables and greens', g: 400, kcal: 300, protein: 15 },
+	fruit: { label: 'Fruit and berries', g: 550, kcal: 650, protein: 7 },
+	eggs: { label: 'Eggs (about 3 a week)', g: 25, kcal: 1430, protein: 125 },
+	chicken: { label: 'Chicken (about 210 g a week)', g: 30, kcal: 1500, protein: 200 }
 };
+/** a person's day, kcal and g of protein */
+export const DAY = Object.values(DIET).reduce((a, d) => ({ kcal: a.kcal + (d.g / 1000) * d.kcal, protein: a.protein + (d.g / 1000) * d.protein }), { kcal: 0, protein: 0 });
+/**
+ * The hens, free under the trees: dual-purpose birds lay ~250 eggs a year on ~2.3 kg of feed a kg of eggs; their
+ * cockerels, grown slowly, eat ~5 kg a kg of meat on the plate; three tenths of it they find themselves (grass,
+ * insects, windfalls, scraps), the rest is grown for them: beans, seeds and cooked roots.
+ */
+export const HENS = { eggsFeed: 2.3, meatFeed: 5, forage: 0.3, mix: { legumes: 0.35, nuts: 0.15, roots: 0.5 } };
+/** what is grown for a person in a year, kg: what they eat of the plants, and what the hens eat for their eggs and meat */
+export const GROWN = (() => {
+	const year = (/** @type {string} */ k) => (DIET[k].g * 365) / 1000;
+	const feed = (year('eggs') * HENS.eggsFeed + year('chicken') * HENS.meatFeed) * (1 - HENS.forage);
+	/** @type {Record<string, number>} */
+	const g = {};
+	for (const k of ['legumes', 'nuts', 'chestnuts', 'roots', 'vegetables', 'fruit']) g[k] = year(k) + feed * (/** @type {Record<string, number>} */ (HENS.mix)[k] ?? 0);
+	return { kg: g, feed };
+})();
+
+/**
+ * The 7-layer food forests, grown and planted for this diet (canopy, low trees, shrubs, herbs, ground cover, roots and
+ * climbers): what each crop gives a hectare a year where it grows, organic, t (legumes dry, nuts as kernels, the rest
+ * fresh), and how much more the layers give together on the same ground (`stack`). Outdoors, Munich: chestnuts 1–3 t/ha
+ * in European orchards; hazel and walnut 2–4 t in shell (~45% kernel); dry beans 1.5–3 (organic ~2); organic potatoes
+ * ~25 (conventional 40+); vegetables 20–40; apples 26–35 commercially, less under a canopy. Under the glass at 24 °C all
+ * year, with half the light (glass and solar panels): bananas 30–72 t/ha, papaya 30–80, sweet potato and cassava 15–30
+ * a crop, pigeon pea 1–2.5 t dry, greens three crops or more a year; no chestnuts (their calories come from roots).
+ */
+export const FOREST = {
+	outdoor: { label: 'Food forest outdoors', stack: 1.3, t: { legumes: 2.2, nuts: 1.2, chestnuts: 2.5, roots: 25, vegetables: 25, fruit: 15 } },
+	indoor: { label: 'Food forest under glass', stack: 1.3, t: { legumes: 3, nuts: 1.5, chestnuts: 0, roots: 30, vegetables: 45, fruit: 35 } }
+};
+/**
+ * The food forest it takes to feed one person, m², planted in the diet's proportions (under the glass the chestnuts'
+ * calories as roots), with what each crop takes
+ * @param {'outdoor' | 'indoor'} where
+ */
+export function landFor(where) {
+	const f = FOREST[where];
+	/** @type {Record<string, number>} */
+	const m2 = {};
+	for (const [k, kg] of Object.entries(GROWN.kg)) {
+		let need = kg;
+		if (k === 'chestnuts' && !f.t.chestnuts) continue;
+		if (k === 'roots' && !f.t.chestnuts) need += (GROWN.kg.chestnuts * DIET.chestnuts.kcal) / DIET.roots.kcal;
+		m2[k] = (need / (/** @type {Record<string, number>} */ (f.t)[k] * 1000)) * 1e4 / f.stack;
+	}
+	return { m2, total: Object.values(m2).reduce((a, b) => a + b, 0) };
+}
+export const LAND_PERSON = { outdoor: landFor('outdoor'), indoor: landFor('indoor') };
+
 /** raw materials the tower hex grows, a hectare a year */
 export const RAW = {
 	hemp: { label: 'Hemp', unit: 't straw', per: 10, note: 'Fibre hemp gives 5–12 t/ha of dry straw a year (TFZ Bavaria trial: 11.2 t); ~30% of it is fibre, the rest hurds, plus ~0.7 t seed', src: 'yields' },
@@ -544,7 +603,7 @@ export const SOURCES = {
 	land: { label: 'Farmland', url: 'https://www.statistik.bayern.de', note: 'Bavaria: 79,000 €/ha in 2023, 78,170 in 2025.' },
 	buildings: { label: 'Building costs', url: 'https://www.bki.de', note: 'Timber multi-family homes 1,635–2,580 €/m² gross floor (BKI 2025, KG 300+400); offices 3,300–5,800. Living space in Germany 49.2 m² a person (Destatis 2024). Offices 14 m² a desk, co-working 12–14.' },
 	equipment: { label: 'Machines', note: 'Data centers ~10.5 M€ a MW of IT (Frankfurt, Turner & Townsend 2025–26); LFP storage 160 €/kWh utility, 250–400 commercial (BNEF 2025); PEM fuel cells 1,500–5,500 €/kW; small water works 150–3,000 € a person.' },
-	yields: { label: 'Yields', url: 'https://www.tfz.bayern.de', note: 'Hemp straw 5–12 t/ha (TFZ trial 11.2); Douglas fir 18.9 m³/ha a year (BWI); poplar coppice 8–15 t/ha; apples 26–35 t/ha (Destatis); bananas under cover 35–72 t/ha, papaya 30–80; bamboo in central Europe and tropical food forests are estimates.' },
+	yields: { label: 'Yields', url: 'https://www.tfz.bayern.de', note: 'Hemp straw 5–12 t/ha (TFZ trial 11.2); Douglas fir 18.9 m³/ha a year (BWI); poplar coppice 8–15 t/ha; apples 26–35 t/ha (Destatis); bananas under cover 35–72 t/ha, papaya 30–80; food forests: see FOREST in specs.js (crop yields from orchards and fields, the layers stacked 1.3×: an estimate); bamboo in central Europe is an estimate. Diet: EAT-Lancet Commission 2019, DGE 2024.' },
 	power: { label: 'Power price', url: 'https://euenergy.live', note: 'German day-ahead wholesale averaged ~90 €/MWh in 2025; small and mid industry paid ~183 €/MWh (BDEW 2025).' }
 };
 

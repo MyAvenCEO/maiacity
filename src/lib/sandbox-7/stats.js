@@ -5,7 +5,7 @@
  * and the energy it makes and uses; and the whole village's, its seven hexes added up (`villageStats`). Pure
  * functions: the same plan gives the same numbers, in the browser or in node.
  */
-import { capHeight, capOf, northCut, NORTH_TILT, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET_T, KINDS, PRICES, RAW, YIELD, ASSEMBLY, shellOf, towerFloors, towerShell } from './specs.js';
+import { capHeight, capOf, northCut, NORTH_TILT, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET, FOREST, GROWN, LAND_PERSON, KINDS, PRICES, RAW, ASSEMBLY, shellOf, towerFloors, towerShell } from './specs.js';
 import { HEX_AREA, USES, USE_IDS, landOf, zonesOf } from './layout.js';
 
 /** what each factory makes in a year and the power it takes (estimates: sized to build out a village of ~2,000
@@ -29,6 +29,14 @@ export const TOWER_EQUIPMENT = [
 	{ label: 'Water works for the tower’s 2,500 guests, workers and residents', eur: 2500 * 1000, note: 'membrane bioreactor and planted wetland, 150–3,000 € a person' },
 	{ label: 'Geothermal plant: a well triplet and a 4 MW ORC', eur: 37.5e6, note: '30–45 M€ today (our village energy research)' }
 ];
+
+/** crops added up, t a year @param {[Record<string, number>, number][]} list each with how many times it counts */
+const sumCrops = (list) => {
+	/** @type {Record<string, number>} */
+	const out = {};
+	for (const [c, n] of list) for (const [k, t] of Object.entries(c)) out[k] = (out[k] ?? 0) + t * n;
+	return out;
+};
 
 /**
  * Everything about a hex.
@@ -141,19 +149,32 @@ export function hexStats(plan, land = landOf(plan)) {
 	}
 	const eaters = plan.id === 'living' ? residents : (people[0].n * 2.2 + people[1].n * 0.7 * 1.6);
 
-	// ── food ──
-	const t = (/** @type {string} */ u) => ((land.m2[u] ?? 0) / 1e4) * (YIELD[u]?.t ?? 0);
+	// ── food: how many people the hex's food forests feed on the diet (DIET), against how many eat here ──
 	const deckFood = tower ? (floors.find((f) => f.id === 'deck')?.m2 ?? 0) * 0.4 : 0;
+	/** a food forest of `m2` planted for the diet: the people it feeds, and its harvest by crop, t */
+	const forest = (/** @type {'outdoor' | 'indoor'} */ where, /** @type {number} */ m2, /** @type {string} */ label, /** @type {boolean} */ inside) => {
+		const fed = m2 / LAND_PERSON[where].total;
+		/** @type {Record<string, number>} */
+		const crops = {};
+		for (const [k, kg] of Object.entries(GROWN.kg)) {
+			const key = k === 'chestnuts' && where === 'indoor' ? 'roots' : k;
+			const add = k === 'chestnuts' && where === 'indoor' ? (kg * DIET.chestnuts.kcal) / DIET.roots.kcal : kg;
+			crops[key] = (crops[key] ?? 0) + (fed * add) / 1000;
+		}
+		return { label, ha: m2 / 1e4, fed, t: Object.values(crops).reduce((a, b) => a + b, 0), crops, inside };
+	};
 	const food = {
-		need: eaters * DIET_T,
+		need: eaters,
 		eaters,
 		rows: [
-			{ label: YIELD.indoorFood.label, ha: (land.m2.indoorFood ?? 0) / 1e4, t: t('indoorFood'), inside: true },
-			...(deckFood ? [{ label: 'Food forest on the tower’s garden deck (40% of it), under the glass', ha: deckFood / 1e4, t: (deckFood / 1e4) * YIELD.indoorFood.t, inside: true }] : []),
-			{ label: YIELD.foodForest.label, ha: (land.m2.foodForest ?? 0) / 1e4, t: t('foodForest'), inside: false }
+			forest('indoor', land.m2.indoorFood ?? 0, `${FOREST.indoor.label} (${Math.round(LAND_PERSON.indoor.total)} m² feed a person)`, true),
+			...(deckFood ? [forest('indoor', deckFood, 'Food forest on the tower’s garden deck (40% of it), under the glass', true)] : []),
+			forest('outdoor', land.m2.foodForest ?? 0, `${FOREST.outdoor.label} (${Math.round(LAND_PERSON.outdoor.total)} m² feed a person)`, false)
 		].filter((r) => r.ha > 0)
 	};
-	const grown = food.rows.reduce((a, r) => a + r.t, 0);
+	const grown = food.rows.reduce((a, r) => a + r.fed, 0);
+	/** the harvest by crop, t a year */
+	const crops = sumCrops(food.rows.map((r) => [r.crops, 1]));
 
 	// ── raw materials (the tower hex) ──
 	const raw = Object.entries(RAW)
@@ -196,7 +217,7 @@ export function hexStats(plan, land = landOf(plan)) {
 		heatFrom: plan.id === 'living' ? [{ label: 'The data center’s waste heat (~85% of its power, at ~45 °C)', kwh: ENERGY.datacenterHeat }] : [{ label: 'The geothermal heat loop: 12.6 MW at 90→60 °C (~104 GWh a year)', kwh: 104e6 }]
 	};
 
-	return { hexHa: HEX_AREA / 1e4, uses, glassHa, buildings, materials, cost, total, equipment, people, residents, food: { ...food, grown }, raw, energy, floors, tower, factoryRun: FACTORY_RUN };
+	return { hexHa: HEX_AREA / 1e4, uses, glassHa, buildings, materials, cost, total, equipment, people, residents, food: { ...food, grown, crops }, raw, energy, floors, tower, factoryRun: FACTORY_RUN };
 }
 
 /**
@@ -238,9 +259,9 @@ export function villageStats(parts) {
 		{ label: 'Desks in the living hexes’ utilities domes', n: living.reduce((a, p) => a + p.n * (p.stats.people[1]?.n ?? 0), 0), note: `${living.reduce((a, p) => a + p.n, 0)} utilities domes, co-working` },
 		...towerPeople.slice(1)
 	];
-	const foodRows = merge((s) => s.food.rows, 'label', ['ha', 't']);
+	const foodRows = merge((s) => s.food.rows, 'label', ['ha', 't', 'fed']);
 	const need = parts.reduce((a, p) => a + p.n * p.stats.food.need, 0);
-	const food = { rows: foodRows, need, eaters: parts.reduce((a, p) => a + p.n * p.stats.food.eaters, 0), grown: foodRows.reduce((a, r) => a + r.t, 0) };
+	const food = { rows: foodRows, need, eaters: parts.reduce((a, p) => a + p.n * p.stats.food.eaters, 0), grown: foodRows.reduce((a, r) => a + r.fed, 0), crops: sumCrops(parts.map((p) => [p.stats.food.crops, p.n])) };
 	const makes = merge((s) => s.energy.makes, 'label', ['kwh']), used = merge((s) => s.energy.uses, 'label', ['kwh']);
 	const made = makes.reduce((a, m) => a + m.kwh, 0), usedKwh = used.reduce((a, m) => a + m.kwh, 0);
 	return {

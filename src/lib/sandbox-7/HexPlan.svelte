@@ -13,7 +13,7 @@
 	import { LIVING, TOWER_HEX, USES, VILLAGE, landOf } from './layout.js';
 	import { hexStats, siteCard, villageStats } from './stats.js';
 	import { DAYS, placeAll, sunShares } from './light.js';
-	import { ENERGY, KINDS, NORTH, PRICES, SOURCES, TOWER } from './specs.js';
+	import { DAY, DIET, ENERGY, GROWN, KINDS, LAND_PERSON, NORTH, PRICES, SOURCES, TOWER } from './specs.js';
 	import { FLOOR_COLOURS } from './scene.js';
 
 	/** @type {HTMLDivElement | undefined} */
@@ -341,16 +341,32 @@
 	{/if}
 
 	{#if panel.food}
+		{@const pct = (100 * stats.food.grown) / Math.max(1, stats.food.need)}
 		<section class="panel">
-			<h2>Food <span class="sub">a year</span></h2>
+			<h2>Food <span class="sub">a healthy diet, grown here</span></h2>
 			<table>
+				<thead><tr><th>Food forests</th><th class="num">ha</th><th class="num">feed</th></tr></thead>
 				<tbody>
-					{#each stats.food.rows as r (r.label)}<tr><td>{r.label}</td><td class="num">{ha(r.ha)} ha</td><td class="num">{n0(r.t)} t</td></tr>{/each}
-					<tr class="total"><td>Grown here</td><td></td><td class="num">{n0(stats.food.grown)} t</td></tr>
-					<tr><td>Eaten by {n0(stats.food.eaters)} people (508 kg each)</td><td></td><td class="num">{n0(stats.food.need)} t</td></tr>
+					{#each stats.food.rows as r (r.label)}<tr><td>{r.label}</td><td class="num">{ha(r.ha)}</td><td class="num">{n0(r.fed)}</td></tr>{/each}
+					<tr class="total"><td>People the hex can feed</td><td></td><td class="num">{n0(stats.food.grown)}</td></tr>
+					<tr><td>People who eat here</td><td></td><td class="num">{n0(stats.food.eaters)}</td></tr>
 				</tbody>
 			</table>
-			<p class="small">{stats.food.grown >= stats.food.need ? `The hex grows ${n0((100 * stats.food.grown) / stats.food.need)}% of what its people eat: ${n0(stats.food.grown - stats.food.need)} t a year to sell or to feed the tower hex.` : `The hex grows ${n0((100 * stats.food.grown) / stats.food.need)}% of what its people eat; the living hexes round it grow the rest.`} Fresh weight; yields are mid-range values from the sources.</p>
+			<p class="small">{pct >= 100 ? `The hex grows ${n0(pct)}% of what its people eat: food for ${n0(stats.food.grown - stats.food.need)} more, to share with the tower hex or to sell.` : `The hex grows ${n0(pct)}% of what its people eat; the living hexes round it grow the rest.`}</p>
+			<table>
+				<thead><tr><th>A person’s day</th><th class="num">g</th><th class="num">kcal</th></tr></thead>
+				<tbody>
+					{#each Object.entries(DIET) as [k, d] (k)}<tr><td>{d.label}</td><td class="num">{d.g}</td><td class="num">{n0((d.g / 1000) * d.kcal)}</td></tr>{/each}
+					<tr class="total"><td>{n0(DAY.protein)} g of protein</td><td></td><td class="num">{n0(DAY.kcal)}</td></tr>
+				</tbody>
+			</table>
+			<table>
+				<thead><tr><th>The harvest, a year</th><th class="num">t</th></tr></thead>
+				<tbody>
+					{#each Object.entries(stats.food.crops) as [k, t] (k)}<tr><td>{DIET[k].label}</td><td class="num">{tonnes(/** @type {number} */ (t))}</td></tr>{/each}
+				</tbody>
+			</table>
+			<p class="small">Only legumes, nuts and seeds, vegetables, fruit, chicken and eggs, modelled on the EAT-Lancet planetary health diet with chestnuts and roots for its grains. Every food forest has seven layers planted for this diet (nut and chestnut trees, fruit trees, hazel and berries, beans and vegetables, ground cover, roots, climbers); the hens roam under the trees and find three tenths of their feed, the rest is grown for them ({n0(GROWN.feed)} kg a person a year). A person takes {n0(LAND_PERSON.outdoor.total)} m² of food forest outdoors or {n0(LAND_PERSON.indoor.total)} m² under the glass, where it grows all year.</p>
 		</section>
 	{/if}
 
