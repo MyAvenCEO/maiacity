@@ -2,14 +2,15 @@
 // Card code in a sandbox. A config card may carry JavaScript (its `code`), proposed by anyone, an agent over the MCP
 // too, so it never runs in the page itself: each card gets its own QuickJS engine (quickjs-emscripten, compiled to
 // WebAssembly) with no page, no network, no keys and no clock to wait on, 8 MB of memory and a few milliseconds a call.
-// The code exports hooks (game/economy/params.js, HOOKS); the valley calls each one at its moment with a copy of what
-// it needs, { aven, good, valley, value }, and takes back a number. A card whose code throws, runs too long, eats its
-// memory or answers with no number is stopped for the run and the valley goes on with its own value. Every load gets
+// The code exports hooks (game/economy/params.js, HOOKS): every rule of the valley is one (Samuel, 2026-10-09: the
+// whole rulebook is card code, each section card's own or its default, game/economy/rules-code.js). The valley calls
+// each one at its moment with a copy of what it needs and takes back plain JSON. A card whose code throws, runs too
+// long, eats its memory or answers nothing is stopped for the run and the valley goes on with its own value. Every load gets
 // a fresh engine, dropped with the run, so whatever a card took is given back. Known gap: QuickJS checks the clock only
 // every few thousand loop turns, so code doing a heavy built-in call in each turn can hold the valley for a few
 // seconds before it is stopped, once; "Test the code" in the MIP form shows that before anyone accepts it.
 
-import { HOOK_NAMES } from '../../../game/economy/params.js';
+import { HOOK_NAMES, HOOKS, fullCards } from '../../../game/economy/params.js';
 
 /** a card's limits: memory, stack, time to load its code, time for one call */
 export const LIMITS = { memory: 8 << 20, stack: 256 << 10, loadMs: 200, callMs: 25 };
@@ -26,7 +27,7 @@ async function quickjs() {
 const BARE = `for (const k of ['ArrayBuffer', 'SharedArrayBuffer', 'DataView', 'Atomics', 'WeakRef', 'FinalizationRegistry', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float16Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array']) delete globalThis[k];`
 // inside each card's engine: what a hook is given is JSON, parsed there; the valley is set once a night
 const SEE = '(s) => { globalThis.valley = JSON.parse(s); }';
-const CALL = '(f, s) => { const x = JSON.parse(s); x.valley = globalThis.valley; return f(x); }';
+const CALL = '(f, s) => { const x = JSON.parse(s); x.valley = globalThis.valley; const r = f(x); return r === undefined ? undefined : JSON.stringify(r); }';
 
 const message = (e) => (e && typeof e === 'object' ? `${e.name ?? 'Error'}: ${e.message ?? JSON.stringify(e)}` : String(e));
 
@@ -84,7 +85,7 @@ function load(QJS, card) {
 				throw new Error(`${what}: ${why()}`);
 			}
 			const type = vm.typeof(r.value);
-			const v = type === 'number' ? vm.getNumber(r.value) : undefined;
+			const v = type === 'number' ? vm.getNumber(r.value) : type === 'string' ? vm.getString(r.value) : undefined;
 			r.value.dispose();
 			return { type, v };
 		};
@@ -94,8 +95,8 @@ function load(QJS, card) {
 			const { type, v } = run(fns[name], json, name);
 			unit.calls += 1;
 			unit.ms += performance.now() - t;
-			if (type !== 'number' || !Number.isFinite(v)) throw new Error(`${name} answered ${type === 'number' ? v : type === 'undefined' ? 'nothing' : `a ${type}`}, not a number`);
-			return v;
+			if (type !== 'string') throw new Error(`${name} answered nothing`);
+			return JSON.parse(v);
 		};
 	} catch (e) {
 		unit.error = e.message || String(e);
@@ -109,16 +110,17 @@ function load(QJS, card) {
 }
 
 /**
- * Load the code of every card that has some, in the config's order. The valley then calls `see(valley)` once a night
- * and `run(hook, args, value)` at each hook's moment: every card exporting that hook gets the value the one before it
- * made of it. Null when no card has code.
+ * Load the code of every card, every section card with its rules' code (its own, else the default), in the config's
+ * order. The valley then calls `see(valley)` once a night and `run(hook, args, value)` at each hook's moment: the card
+ * that owns the rule first, then every other card exporting that hook, each given what the one before made of it.
  */
 export async function loadCode(cards) {
-	const coded = (cards ?? []).filter((c) => typeof c?.code === 'string' && c.code.trim());
+	const coded = fullCards(cards).filter((c) => typeof c?.code === 'string' && c.code.trim());
 	if (!coded.length) return null;
 	const QJS = await quickjs();
 	const units = coded.map((c) => load(QJS, c));
-	const live = (name) => units.filter((u) => !u.error && u.hooks.includes(name));
+	const owner = Object.fromEntries(HOOKS.map((h) => [h.name, h.card]));
+	const live = (name) => units.filter((u) => !u.error && u.hooks.includes(name)).sort((a, b) => (b.id === owner[name]) - (a.id === owner[name]));
 	const fail = (u, e) => {
 		u.error = e.message || String(e);
 		u.failedAt = Date.now();
@@ -142,7 +144,8 @@ export async function loadCode(cards) {
 		run(name, args, value) {
 			for (const u of live(name))
 				try {
-					value = u.call(name, JSON.stringify({ ...args, value }));
+					const v = u.call(name, JSON.stringify({ ...args, value }));
+					if (v !== undefined) value = v;
 				} catch (e) {
 					fail(u, e);
 				}
@@ -173,10 +176,10 @@ export async function testCard(card, valley, sample) {
 			hooks: u.hooks.map((name) => {
 				const s = sample[name];
 				try {
-					return { name, good: s.good, value: s.value, answer: u.call(name, JSON.stringify(s)) };
+					return { name, good: s.good, value: JSON.stringify(s.value), answer: JSON.stringify(u.call(name, JSON.stringify(s))) };
 				} catch (e) {
 					const m = e.message || String(e);
-					return { name, good: s.good, value: s.value, error: m.startsWith(`${name}: `) ? m.slice(name.length + 2) : m.startsWith(`${name} `) ? m.slice(name.length + 1) : m };
+					return { name, good: s.good, value: JSON.stringify(s.value), error: m.startsWith(`${name}: `) ? m.slice(name.length + 2) : m.startsWith(`${name} `) ? m.slice(name.length + 1) : m };
 				}
 			}),
 			error: ''

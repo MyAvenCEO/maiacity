@@ -4,6 +4,9 @@
 // range and a plain sentence; and the config cards a config is made of. Shared by the page (src/lib/sandbox-8) and the
 // API, which checks every card a MIP (a MaiaCity improvement proposal) puts in against it.
 
+import { DEFAULT_CODE } from './rules-code.js';
+
+export { DEFAULT_CODE };
 export const GOODS = ['water', 'fruits', 'vegetables', 'legumes', 'chicken'];
 /** @type {Record<string, string>} */
 export const GOOD_LABEL = { water: 'WATER', fruits: 'FRUITS', vegetables: 'VEGETABLES', legumes: 'LEGUMES', chicken: 'CHICKEN' };
@@ -80,8 +83,8 @@ export function checkParam(key, value) {
 
 // ─────────────────────────────── config cards ───────────────────────────────
 // A config is a list of cards, and a MIP proposes cards. A policy or world card holds the values of one section of the
-// catalogue (and, later, the QuickJS code that goes with them); resource and recipe cards hold their JSON. A MIP's card
-// is always complete, so accepting it puts it into the config as it stands.
+// catalogue and the code of its rules (rules-code.js: the default when the card has none of its own); resource and
+// recipe cards hold their JSON. A MIP's card is always complete, so accepting it puts it into the config as it stands.
 
 export const CARD_KINDS = ['policy', 'world', 'resource', 'recipe'];
 
@@ -99,9 +102,19 @@ export const SECTIONS = [
 /** which card a param belongs to */
 export const CARD_OF = Object.fromEntries(PARAMS.map((p) => [p.key, SECTIONS.find((s) => s.name === p.section)?.id]));
 
-/** the catalogue as cards, with its default values */
+/** the catalogue as cards, with its default values and the code of its rules */
 export function defaultCards() {
-	return SECTIONS.map((s) => ({ ...s, description: '', values: Object.fromEntries(PARAMS.filter((p) => CARD_OF[p.key] === s.id).map((p) => [p.key, p.value])), code: '' }));
+	return SECTIONS.map((s) => ({ ...s, description: '', values: Object.fromEntries(PARAMS.filter((p) => CARD_OF[p.key] === s.id).map((p) => [p.key, p.value])), code: DEFAULT_CODE[s.id] ?? '' }));
+}
+
+/** a section card's code as it runs: its own, else its rules' default (rules-code.js) */
+export const codeOf = (card) => (card?.code?.trim() ? card.code : (DEFAULT_CODE[card?.id] ?? ''));
+/** a config's cards with every rule written out: each section card without code of its own gets its default, and a
+ * section the config lacks is added, so a world keeps its whole rulebook with it */
+export function fullCards(cards) {
+	const out = (cards ?? []).map((c) => (SECTIONS.some((s) => s.id === c.id) && !c.code?.trim() ? { ...c, code: DEFAULT_CODE[c.id] ?? '' } : c));
+	for (const d of defaultCards()) if (!out.some((c) => c.id === d.id)) out.push({ ...d, values: {} });
+	return out;
 }
 
 /** every value a config's cards hold, the catalogue's default where none does */
@@ -149,14 +162,22 @@ export function applyCards(cards, put = [], remove = []) {
 // ─────────────────────────────── card code ───────────────────────────────
 // A card's code is JavaScript run in the page's QuickJS sandbox (src/lib/sandbox-8/sandbox.js): no page, no network,
 // no keys, 8 MB and a few milliseconds a call. It exports hooks, named below; the valley calls each one at its moment
-// with one argument, { aven, valley, value } (and `good` where it says), where value is what the valley would use
-// without it (or what an earlier card's hook made of it). A hook returns a number; the valley keeps it within bounds.
+// with one argument: what the hook names, `valley` ({ day, values, weather, prices, avens, ... }) and `value`, what an
+// earlier card's hook made of it (the section card that owns a rule runs first; its own code, else the default in
+// rules-code.js). A hook returns plain JSON, which the valley checks and keeps within bounds.
 
-/** the hooks a card's code may export: when each runs, what it is given, and what it returns */
+/** the hooks a card's code may export: which card owns it, when it runs, what it is given, and what it returns */
 export const HOOKS = [
-	{ name: 'mint', when: 'each night, for each living aven', given: '{ aven, valley, value }', returns: 'the HEARTS this aven is given tonight (value: the Minting value)' },
-	{ name: 'decay', when: 'each night, for each aven', given: '{ aven, valley, value }', returns: 'the HEARTS this aven loses tonight, at most what it holds (value: its balance x Decay / 365)' },
-	{ name: 'rot', when: 'each night, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units of the good that rot tonight, whole, at most its stock (value: by the Rot values)' },
-	{ name: 'harvest', when: 'each morning, for each good an aven grows', given: '{ aven, good, valley, value }', returns: "the units its land gives today, whole (value: the land's capacity, swung by the harvest values and the weather)" }
+	{ name: 'mint', card: 'hearts', when: 'each night, for each living aven', given: '{ aven, valley, value }', returns: 'the HEARTS this aven is given tonight' },
+	{ name: 'decay', card: 'hearts', when: 'each night, for each aven', given: '{ aven, valley, value }', returns: 'the HEARTS this aven loses tonight, at most what it holds' },
+	{ name: 'want', card: 'trading', when: 'whenever the market looks, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units it wants to buy, whole' },
+	{ name: 'spare', card: 'trading', when: 'whenever the market looks, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units it can sell, whole, at most its stock' },
+	{ name: 'haggle', card: 'trading', when: "when a seller's price and a buyer's limit meet in the book", given: '{ good, ask, bid, sellerFlex, buyerFlex, valley, value }', returns: 'the price of the deal in HEARTS, or null: no deal' },
+	{ name: 'rebirth', card: 'avens', when: 'each morning, for each dead aven', given: '{ aven, dead (days since it died), valley, value }', returns: 'the HEARTS it is reborn with now, or -1: not yet' },
+	{ name: 'need', card: 'bodies', when: 'each night, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units it eats or drinks tonight, whole' },
+	{ name: 'body', card: 'bodies', when: 'each night, for each living aven, after it ate', given: '{ aven, need, short, valley, value }', returns: '{ water, food }: its two reserves, 0-100 (at 0 it dies)' },
+	{ name: 'rot', card: 'rot', when: 'each night, for each aven and good', given: '{ aven, good, dice, valley, value }', returns: 'the units of the good that rot tonight, whole, at most its stock' },
+	{ name: 'harvest', card: 'harvests', when: 'each morning, for each good an aven grows', given: '{ aven, good, capacity, dice, valley, value }', returns: '{ qty, kind } (kind: normal, bad, rich or dry), or a number of units' },
+	{ name: 'weather', card: 'weather', when: 'each night, once for the valley', given: '{ weather, day, dice, valley, value }', returns: '{ dry (days of dry spell left), dryFrom, rain (units each barrel catches) }' }
 ];
 export const HOOK_NAMES = HOOKS.map((h) => h.name);

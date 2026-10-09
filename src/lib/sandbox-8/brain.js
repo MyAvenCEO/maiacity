@@ -34,7 +34,7 @@ export const TOOLS = [
 const FIRST = [0.5, 1, 2, 4, 8, 15, 30, 60, 120, 250];
 const MOVES = [0.5, 0.6, 0.75, 0.9, 1, 1.1, 1.3, 1.6, 2];
 /** the most an aven can pay a unit and still buy one day's need: no bid above what its HEARTS cover */
-const afford = (a, g) => cents(Math.max(0.01, a.hearts) / Math.max(1, NEED[g]));
+const afford = (a, g) => cents(Math.max(0.01, a.hearts) / Math.max(1, (a.need?.[g] ?? NEED[g])));
 /** the price levels for one good, in HEARTS: around the aven's price as the day began, else the market's, else from
  * scratch; a buyer's never above what it can afford */
 function priceLevels(world, a, g, side) {
@@ -133,13 +133,13 @@ export function stateFor(world, a) {
 
 /** how long an aven lasts on what it holds, per good, and what buying a day's missing needs would cost today */
 function survivalFor(world, a) {
-	const days = Object.fromEntries(GOODS.map((g) => [g, NEED[g] ? Math.floor(a.stock[g] / NEED[g]) : null]));
+	const days = Object.fromEntries(GOODS.map((g) => [g, (a.need?.[g] ?? NEED[g]) ? Math.floor(a.stock[g] / (a.need?.[g] ?? NEED[g])) : null]));
 	const buys = GOODS.filter((g) => !a.grows.includes(g));
 	const priced = buys.every((g) => world.market[g].price != null);
-	const cost = priced ? buys.reduce((n, g) => n + NEED[g] * world.market[g].price, 0) : 0;
+	const cost = priced ? buys.reduce((n, g) => n + (a.need?.[g] ?? NEED[g]) * world.market[g].price, 0) : 0;
 	return {
 		days_my_stock_lasts: days,
-		short_tonight_unless_i_buy: Object.fromEntries(GOODS.filter((g) => a.stock[g] < NEED[g]).map((g) => [g, NEED[g] - a.stock[g]])),
+		short_tonight_unless_i_buy: Object.fromEntries(GOODS.filter((g) => a.stock[g] < (a.need?.[g] ?? NEED[g])).map((g) => [g, (a.need?.[g] ?? NEED[g]) - a.stock[g]])),
 		water_reserve: `${Math.round(a.body.water)} of 100; at 0 I die. With no water at all I last ${RULES.waterDays} days`,
 		food_reserve: `${Math.round(a.body.food)} of 100; at 0 I die. With no food at all I last ${RULES.foodDays} days`,
 		cost_of_one_day_of_what_i_must_buy_at_market_price: priced ? Math.round(cost * 100) / 100 : 'not known yet: some of it has never been traded',
@@ -158,7 +158,7 @@ export function questionsFor(world, a, { full = true, writes = false } = {}) {
 		a.brain.levels[`ask_${g}`] = lv.levels;
 		q[`ask_${g}`] = {
 			type: 'score',
-			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${NEED[g]} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford.${inCharacter(a, 'greed')} What should your selling price for ${GOOD_LABEL[g]} be?`,
+			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${(a.need?.[g] ?? NEED[g])} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 7-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford.${inCharacter(a, 'greed')} What should your selling price for ${GOOD_LABEL[g]} be?`,
 			criteria: lv.criteria
 		};
 	}
@@ -169,7 +169,7 @@ export function questionsFor(world, a, { full = true, writes = false } = {}) {
 		a.brain.levels[`bid_${g}`] = lv.levels;
 		q[`bid_${g}`] = {
 			type: 'score',
-			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${NEED[g]} a day, hold ${a.stock[g]} (${a.stock[g] < NEED[g] ? `short by ${NEED[g] - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / NEED[g])} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.${inCharacter(a, 'thrift')} What is the most you should pay for ${GOOD_LABEL[g]}?`,
+			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${(a.need?.[g] ?? NEED[g])} a day, hold ${a.stock[g]} (${a.stock[g] < (a.need?.[g] ?? NEED[g]) ? `short by ${(a.need?.[g] ?? NEED[g]) - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / (a.need?.[g] ?? NEED[g]))} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${deadline(a, g)} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 7-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked.${inCharacter(a, 'thrift')} What is the most you should pay for ${GOOD_LABEL[g]}?`,
 			criteria: lv.criteria
 		};
 	}

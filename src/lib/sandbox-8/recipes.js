@@ -101,7 +101,7 @@ export function craft(recipe, a) {
 
 /**
  * each resource's own decay, for one aven, one night: whole units for goods (rounded by chance), cents for HEARTS.
- * `adjust(resource, held, lost)`, when given, may change what is lost (card code), every resource, even one that keeps.
+ * `adjust(resource, held, lost, roll)`, when given, may change what is lost (card code), every resource, even one that keeps.
  * @returns {Record<string, number>} what was lost
  */
 export function decayAll(a, rand, adjust = null) {
@@ -110,8 +110,9 @@ export function decayAll(a, rand, adjust = null) {
 		if (!r.decay && !adjust) continue;
 		const [o, k] = pot(a, r.id);
 		const x = o[k] * r.decay;
-		let v = !r.decay ? 0 : r.held === 'store' ? Math.min(o[k], Math.floor(x) + (rand() < x % 1 ? 1 : 0)) : x;
-		if (adjust) v = adjust(r, o[k], v);
+		const roll = r.held === 'store' ? rand() : 0; // the chance that rounds a store's loss, given to the rot rule too
+		let v = !r.decay ? 0 : r.held === 'store' ? Math.min(o[k], Math.floor(x) + (roll < x % 1 ? 1 : 0)) : x;
+		if (adjust) v = adjust(r, o[k], v, roll);
 		if (!v) continue;
 		o[k] -= v;
 		lost[r.id] = v;
