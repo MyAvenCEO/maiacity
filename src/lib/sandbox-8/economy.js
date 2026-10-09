@@ -57,7 +57,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 		const home = { x: cx + Math.cos(a) * 250, y: cy + Math.sin(a) * 230 };
 		const grows = [GOODS[i], GOODS[(i + 1) % 5]];
 		/** capacity, units a day on average: water 8–13 (two growers cover the 15 all five drink), food 5–10 (two cover the 10 all eat, mostly) */
-		const produce = Object.fromEntries(grows.map((g) => [g, g === 'water' ? 8 + Math.floor(rand() * 6) : 5 + Math.floor(rand() * 6)]));
+		const produce = Object.fromEntries(grows.map((g) => [g, g === 'water' ? 6 + Math.floor(rand() * 5) : 5 + Math.floor(rand() * 6)]));
 		// its stance against the market: asks a markup over the market price for what it grows, a share of it for what it buys
 		const markup = {},
 			ask = {},
@@ -86,6 +86,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			flex: 0.1, // how far it gives in when haggling, as a share of its own price
 			reserveDays: 3, // how many days of each need it wants in stock
 			harvest: { ...produce }, // what its land actually gave last night
+			carry: {}, // what it bought and carries until it is back on its own land
 			plan: [], // today's route, as its brain chose it: aven ids to walk to in order, or 'home'
 			health: 100,
 			alive: true,
@@ -97,7 +98,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 		};
 	});
 	const market = Object.fromEntries(GOODS.map((g) => [g, { price: START_PRICE, ref: START_PRICE, supply: 0, demand: 0, open: START_PRICE, history: [START_PRICE], series: [], sells: [], wants: [] }]));
-	const world = { seed, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [] };
+	const world = { seed, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 } };
 	updateMarket(world);
 	return world;
 }
@@ -132,8 +133,10 @@ export function updateMarket(world) {
 
 /** one night's harvest of a good: about its capacity, give or take a quarter; one night in 20 a bad harvest (30–60%),
  * one in 20 a rich one (130–160%) */
-function harvest(world, cap) {
+function harvest(world, cap, g) {
 	const r = world.rand();
+	// in a dry spell the wells give far less: every WATER field on 25–50%
+	if (g === 'water' && world.weather.dry) return { qty: Math.max(0, Math.round(cap * (0.25 + world.rand() * 0.25))), kind: 'dry' };
 	let f, kind;
 	if (r < 0.05) (f = 0.3 + world.rand() * 0.3), (kind = 'bad');
 	else if (r > 0.95) (f = 1.3 + world.rand() * 0.3), (kind = 'rich');
@@ -197,6 +200,7 @@ export function trade(world, a, b) {
 			const total = qty * price;
 			seller.stock[g] -= qty;
 			buyer.stock[g] += qty;
+			buyer.carry[g] = (buyer.carry[g] ?? 0) + qty; // it carries this home
 			seller.hearts += total;
 			buyer.hearts -= total;
 			seller.today.sold[g] += qty;
@@ -272,6 +276,8 @@ export function step(world, dt) {
 		const d = Math.hypot(tx - a.x, ty - a.y);
 		const speed = WALK * (a.target.wander || (a.target.market && atMarket(a)) ? 0.35 : 1) * (0.5 + a.health / 200);
 		const move = speed * dt;
+		// back on its own land, it puts what it carries into its store
+		if (Math.hypot(a.x - a.territory.x, a.y - a.territory.y) < a.territory.r) a.carry = {};
 		if (d <= Math.max(move, a.target.aven ? MEET_R * 0.8 : 4)) {
 			// at the market it strolls between the stalls until its time there is up
 			if (a.target.market && world.t < a.target.until) a.target = marketSpot(world, a.target.until);
@@ -359,18 +365,36 @@ function endOfDay(world) {
 		a.hearts = Math.round(a.hearts * 100) / 100;
 	}
 	world.day += 1;
+	weather(world);
 	for (const a of world.avens) {
 		a.yesterday = a.today;
 		a.today = blankDay();
 		if (!a.alive) continue;
 		for (const g of a.grows) {
-			const { qty, kind } = harvest(world, a.produce[g]);
+			const { qty, kind } = harvest(world, a.produce[g], g);
 			a.harvest[g] = qty;
 			a.stock[g] += qty;
 			if (kind !== 'normal') log(world, a, { kind: 'grow', good: g, qty, cap: a.produce[g], note: kind });
 		}
+		// every land has a rain barrel: the second way to get water, for growers and buyers alike
+		if (world.weather.rain) {
+			a.stock.water += world.weather.rain;
+			log(world, a, { kind: 'rain', qty: world.weather.rain });
+		}
 	}
 	updateMarket(world);
+}
+
+/** the night's weather, valley-wide: one night in 25 a dry spell of 4–10 days begins (wells run low, no rain);
+ * otherwise one night in 3 it rains and every rain barrel catches 1–2 WATER */
+function weather(world) {
+	const w = world.weather;
+	if (w.dry) w.dry -= 1;
+	else if (world.rand() < 0.04) {
+		w.dry = 4 + Math.floor(world.rand() * 7);
+		w.dryFrom = world.day;
+	}
+	w.rain = !w.dry && world.rand() < 0.33 ? 1 + Math.floor(world.rand() * 2) : 0;
 }
 
 /** the board: the living by HEARTS, then the dead by how long they lasted @returns {any[]} */
