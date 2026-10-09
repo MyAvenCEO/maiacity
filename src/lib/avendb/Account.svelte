@@ -286,17 +286,24 @@
 
 	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through. */
 	const api = {
-		/** @param {string} actor @param {string} space @param {string} title @param {string} body */
-		write: (actor, space, title, body) => act('Writing the note', () => device.write(actor, space, title, body)),
-		/** @param {string} actor @param {string} space @param {string} entry @param {string} text */
-		setText: (actor, space, entry, text) => act('Saving', () => device.setText(actor, space, entry, 2, text)),
+		/**
+		 * A new note titled `title` that reads `body`: its entry, or `null` if it didn't go through.
+		 * @param {string} actor @param {string} space @param {string} title @param {string} body
+		 */
+		write: async (actor, space, title, body) => {
+			let made = null;
+			const ok = await act('Writing the note', async () => (made = await device.write(actor, space, title, body)));
+			return ok ? made : null;
+		},
 		/** @param {string} actor @param {string} space @param {string} title */
 		todo: (actor, space, title) => act('Adding the todo', () => device.todo(actor, space, title)),
 		/** @param {string} actor @param {string} space @param {string} entry @param {string} status */
 		setStatus: (actor, space, entry, status) => act('Saving', () => device.setStatus(actor, space, entry, status)),
-		/** Vault `vault`'s database as this browser holds it, for the DB & Schema tab. @param {string} vault */
+		/** Vault `vault`'s database as this browser holds it, for the database studio. @param {string} vault */
 		database: (vault) => device.database(vault),
-		/** A note's lines and every write of it, for its history. @param {string} space @param {string} entry */
+		/** The database's history: every signed edit this browser holds, for the studio's History. */
+		history: () => device.history(),
+		/** A note's main line, its proposals and every edit of it, for its page. @param {string} space @param {string} entry */
 		note: (space, entry) => device.note(space, entry),
 		/**
 		 * The note's text on line `line` (`null` for the main line).
@@ -305,12 +312,18 @@
 		setTextOn: (actor, space, entry, line, text) =>
 			act('Saving', () => device.setTextOn(actor, space, entry, line, 2, text)),
 		/**
-		 * A branch named `name` from version `from`: the new line, or `null` if it didn't go through.
+		 * The note's title on line `line` (`null` for the main line).
+		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} title
+		 */
+		setTitleOn: (actor, space, entry, line, title) =>
+			act('Renaming', () => device.setTitleOn(actor, space, entry, line, title)),
+		/**
+		 * A proposal named `name` from version `from`: its line, or `null` if it didn't go through.
 		 * @param {string} actor @param {string} space @param {string} entry @param {string[]} from @param {string} name
 		 */
-		branch: async (actor, space, entry, from, name) => {
+		propose: async (actor, space, entry, from, name) => {
 			let made = null;
-			const ok = await act('Starting the branch', async () => (made = await device.branch(actor, space, entry, from, name)));
+			const ok = await act('Proposing', async () => (made = await device.propose(actor, space, entry, from, name)));
 			return ok ? made : null;
 		},
 		/**
@@ -327,17 +340,18 @@
 		restore: (actor, space, entry, line, version) =>
 			act('Restoring', () => device.restore(actor, space, entry, line, version)),
 		/**
-		 * Write `op` undone on line `line`, every change since kept.
-		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} op
+		 * Edit `edit` undone on line `line`, every change since kept.
+		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} edit
 		 */
-		undo: (actor, space, entry, line, op) => act('Undoing', () => device.undo(actor, space, entry, line, op)),
+		undo: (actor, space, entry, line, edit) => act('Undoing', () => device.undo(actor, space, entry, line, edit)),
 		/**
-		 * What line `line` shows, as a new note of space `into`: the new entry, or `null` if it didn't go through.
+		 * A variant: what line `line` shows, as a new note of space `into`; the new entry, or `null` if it didn't go
+		 * through.
 		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} into
 		 */
-		fork: async (actor, space, entry, line, into) => {
+		variant: async (actor, space, entry, line, into) => {
 			let made = null;
-			const ok = await act('Forking', async () => (made = await device.fork(actor, space, entry, line, into)));
+			const ok = await act('Making the variant', async () => (made = await device.variant(actor, space, entry, line, into)));
 			return ok ? made : null;
 		},
 		/** @param {string} issuer @param {string} space @param {string | null} entry @param {string} role @param {string} grantee */

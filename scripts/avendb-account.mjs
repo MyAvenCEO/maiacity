@@ -2,12 +2,13 @@
  * The avenDB account's walk through, end to end: /app/avendb/ in a headless Chrome whose virtual authenticator holds a
  * passkey with PRF, against an avenDB server on this machine. The person signed up to maiaCITY with that passkey; the
  * account founds their vault with it in three ceremonies, claims the server, and names their vault and avenCEO with
- * none. A note of theirs is edited, branched, merged, undone, restored, made to match its branch and forked from its
- * history, with no ceremony, and their vault's DB & Schema tab shows its rows, schemas and lenses. Their vault then
+ * none. A note of theirs opens as a docs app opens a document, at an address of its own: started blank, titled,
+ * written, given a proposal, accepted into main, undone, restored, made to match its proposal and made a variant of,
+ * with no ceremony; their vault's studio shows its tables, schemas, lenses and every signed edit. Their vault then
  * founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, each named by hand, in one ceremony,
  * and the person acts as each in turn from the switcher at the foot: avenALICE writes a note and a todo and shares the
  * note with avenBOB, who reads it and its history and nothing else, and finds her todo sealed for him in her
- * database, while avenCHARLY sees nothing of hers; the Sync list shows
+ * table editor, while avenCHARLY sees nothing of hers; the Sync list shows
  * avenCEO's server relaying her home's ciphertext and opening none of it; making the coop an owner of her home takes
  * one ceremony, revoking avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here,
  * it comes back through the server for the passkey alone, in four ceremonies, with every vault and the note. Each step
@@ -148,8 +149,8 @@ const hasAll = async (names) => {
 	const now = await bar();
 	return names.every((n) => now.includes(n));
 };
-/** Look at vault `name`'s list `tab`. */
-async function look(name, tab = 'Notes & todos') {
+/** Look at vault `name`'s page `tab`. */
+async function look(name, tab = 'Notes') {
 	await page.click(`.bar .slot[aria-label="${name}"]`).catch(() => check(`${name} is in the bar`, false));
 	await sleep(150);
 	await click(tab, '.aside .tabs-list .item');
@@ -167,72 +168,110 @@ async function actAs(name) {
 	if (!ok) check(`the switcher offers to act as ${name}`, false);
 	return until(async () => (await text('.switcher .pill b')) === name, 5000);
 }
-/** The note titled `title`, as `.main` shows it: its words, whether it is editable, and its holders. */
+/** The page's address. */
+const hash = () => page.evaluate(() => location.hash);
+/** Go to page `label` of the vault looked at. */
+const goTo = (label) => click(label, '.aside .tabs-list .item');
+/** The note titled `title`, as the notes list shows it: its words, and who holds a role on it. */
 const note = (title) =>
 	page.evaluate((title) => {
-		const el = [...document.querySelectorAll('.main .note')].find((n) => n.querySelector('b')?.textContent === title);
+		const el = [...document.querySelectorAll('.main .note')].find((n) => n.querySelector('.info b')?.textContent === title);
 		if (!el) return null;
 		const chips = [...el.querySelectorAll('.who .chip')].map((c) => c.textContent?.replace(/\s+/g, ' ').trim());
-		const words = el.querySelector('.text')?.textContent ?? /** @type {HTMLTextAreaElement} */ (el.querySelector('textarea'))?.value;
-		return { words, editable: !!el.querySelector('textarea'), chips };
+		const variant = el.querySelector('.variant')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+		return { words: el.querySelector('.thumb .page span')?.textContent ?? '', chips, variant };
 	}, title);
+/** Open the note titled `title` from the notes list, on the whole screen. */
+async function openNote(title) {
+	await page.evaluate((title) => {
+		const el = [...document.querySelectorAll('.main .note')].find((n) => n.querySelector('.info b')?.textContent === title);
+		if (el instanceof HTMLElement) el.click();
+	}, title);
+	return until(async () => !!(await page.$('.shell.reading .doc .paper')), 10000);
+}
+/** Back from a note to the notes. */
+async function back() {
+	await page.click('.doc .top .back');
+	return until(async () => !!(await page.$('.shell .main')), 10000);
+}
 
-/** The note viewer's text on the line it shows: its editor's, or its words. */
+/** The note's text on the line it shows: its editor's, or its words. */
 const docText = () =>
 	page.evaluate(() => {
-		const doc = document.querySelector('.viewer .doc');
-		const field = doc?.querySelector('textarea');
-		return field ? field.value : (doc?.querySelector('.text')?.textContent ?? null);
+		const paper = document.querySelector('.doc .paper');
+		const field = paper?.querySelector('textarea');
+		return field ? field.value : (paper?.querySelector('.text')?.textContent ?? null);
 	});
-/** The note's history on the line shown, newest first: what each write did, and the words it put in and took out. */
-const writes = () =>
-	page.$$eval('.viewer .history li', (lis) =>
+/** The note's history on the line shown, newest first: what each edit did, and the words it put in and took out. */
+const edits = () =>
+	page.$$eval('.doc .history li', (lis) =>
 		lis.map((li) => ({
 			what: li.querySelector('.what b')?.textContent?.trim() ?? '',
 			ins: [...li.querySelectorAll('.diff ins')].map((e) => e.textContent),
 			del: [...li.querySelectorAll('.diff del')].map((e) => e.textContent)
 		}))
 	);
-/** The line the viewer shows. */
-const onLine = () => text('.viewer .lines .line.on b');
-/** Set the viewer's text, and save it on the line it shows. @param {string} t */
+/** The line the note shows: Main, or a proposal's name. */
+const onLine = () => text('.doc .versions .line.on b');
+/** Set the note's text, and save it on the line it shows. @param {string} t */
 async function saveText(t) {
 	await page.$eval(
-		'.viewer .doc textarea',
+		'.doc .paper textarea',
 		(e, t) => {
 			/** @type {HTMLTextAreaElement} */ (e).value = t;
 			e.dispatchEvent(new Event('input', { bubbles: true }));
 		},
 		t
 	);
-	await click('Save on', '.viewer .doc button');
-	return until(async () => (await docText()) === t && !(await page.$('.viewer .doc button.primary')), 30000);
+	await click('Save on', '.doc .top button');
+	return until(async () => (await docText()) === t && !(await page.$('.doc .top .unsaved')), 30000);
 }
-/** Click `label` on the newest write of the history whose words are `what`. */
-async function onWrite(what, label) {
+/** Title the note `t` on the line it shows, as a docs app does: typed over, then Enter. @param {string} t */
+async function retitle(t) {
+	await type('.doc .top input.title', t);
+	await page.keyboard.press('Enter');
+	await sleep(250);
+}
+/**
+ * Pick the edit of the history whose words are `what` (and that put in `ins`, if given), which shows its version, then
+ * click `label` on it, if given.
+ */
+async function onEdit(what, label = '', ins = null) {
 	const ok = await page.evaluate(
-		(what, label) => {
-			const li = [...document.querySelectorAll('.viewer .history li')].find(
-				(l) => l.querySelector('.what b')?.textContent?.trim() === what
+		(what, ins) => {
+			const li = [...document.querySelectorAll('.doc .history li')].find(
+				(l) =>
+					l.querySelector('.what b')?.textContent?.trim() === what &&
+					(ins === null || [...l.querySelectorAll('.diff ins')].map((e) => e.textContent).join('|') === ins)
 			);
-			const button = [...(li?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === label);
-			button?.click();
+			const button = li?.querySelector('button.what');
+			if (button instanceof HTMLElement) button.click();
 			return !!button;
 		},
 		what,
-		label
+		ins
 	);
-	if (!ok) check(`“${what}” has a ${label}`, false);
+	if (!ok) check(`the history has “${what}”`, false);
+	await sleep(250);
+	if (label) await click(label, '.doc .history li.on .actions button');
+}
+/** The studio's tables, each with its count of rows. */
+const tablesShown = () =>
+	page.$$eval('.main .tables button.t[data-table]', (els) =>
+		Object.fromEntries(els.map((e) => [e.getAttribute('data-table'), Number(e.querySelector('small')?.textContent ?? 0)]))
+	);
+/** The table editor's rows, each as its columns name its cells. */
+const gridRows = () =>
+	page.$$eval('.main .grid tr.rec', (rows) =>
+		rows.map((r) =>
+			Object.fromEntries([...r.querySelectorAll('td[data-col]')].map((c) => [c.getAttribute('data-col'), c.textContent?.replace(/\s+/g, ' ').trim()]))
+		)
+	);
+/** Pick the table `id` of the table editor. */
+async function pickTable(id) {
+	await page.click(`.main .tables button.t[data-table="${id}"]`).catch(() => check(`there is a ${id} table`, false));
 	await sleep(250);
 }
-/** The DB & Schema tab's rows: what each is, its title and its lines. */
-const rowsShown = () =>
-	page.$$eval('.main .db tbody tr.entry', (rows) =>
-		rows.map((r) => {
-			const cells = [...r.querySelectorAll('td')].map((c) => c.textContent?.replace(/\s+/g, ' ').trim() ?? '');
-			return { what: cells[1], title: cells[2], lines: cells[5] };
-		})
-	);
 
 const NOTE = 'Hello from Alice';
 const BODY = 'Only Bob may read this.';
@@ -285,78 +324,106 @@ try {
 	check('a new name, on its card', renamed, (await devices()).join(', '));
 	await shot('3-devices');
 
-	// a note's history and branches: edited, branched, merged, undone, restored, made to match and forked, all of it
-	// without a ceremony
+	// a note as a docs app keeps one: started blank, titled, written, proposed on, accepted, undone, restored, made to
+	// match its proposal and made a variant of, all of it without a ceremony
 	const noting = await ceremonies();
-	await click('Notes & todos', '.aside .tabs-list .item');
-	await type('.compose input.field', 'Plan');
-	await type('.compose textarea', 'Plant beans.');
-	await click('Write the note', '.compose button');
-	check('a note to work on', await until(async () => (await note('Plan'))?.words === 'Plant beans.'), JSON.stringify(await note('Plan')));
-	await click('History & branches', '.main .note .who button');
-	check('it opens on its history', await until(async () => (await text('.viewer h2')) === 'Plan', 10000), await text('.viewer h2'));
-	const lines = () => shown('.viewer .lines .line b');
-	check('one line, main, with one write', (await lines()).join() === 'main' && (await writes()).length === 1, (await lines()).join());
-	check('saved on main', await saveText('Plant beans and peas.'), await docText());
-	const edit = (await writes())[0];
+	await goTo('Notes');
+	check('Notes, at an address of its own', await until(async () => (await hash()) === '#notes', 5000), await hash());
+	await click('Blank note', '.main .start button');
+	const addressed = await until(async () => /^#notes\/[0-9a-f]{64}$/.test(await hash()), 30000);
+	check('a blank note opens at once, at an address of its own', addressed, await hash());
+	const paper = await until(async () => !!(await page.$('.shell.reading .doc .paper textarea')), 10000);
+	check('on the whole screen, a page to write on', paper);
+	await retitle('Plan');
+	const titled = await until(async () => (await edits())[0]?.what === 'Renamed it “Plan”', 30000);
+	check('titled “Plan”, an edit of its own', titled, JSON.stringify((await edits())[0]));
+	check('written, and saved on main', await saveText('Plant beans.'), await docText());
+	check('and saved again', await saveText('Plant beans and peas.'), await docText());
+	const edit = (await edits())[0];
 	check('the edit, word by word', edit?.what === 'Edited' && edit.ins.join('|') === ' and peas' && !edit.del.length, JSON.stringify(edit));
-	await click('New branch', '.viewer .lines button');
-	await type('#branch-name', 'draft');
-	await click('Start the branch', '.viewer .naming button');
-	check('a branch, draft, picked', await until(async () => (await onLine()) === 'draft'), (await lines()).join());
-	const start = (await writes())[0]?.what;
-	check('it starts from main', start === 'Started the branch “draft” from “main”', start);
-	check('saved on the branch', await saveText('Plant beans, peas and corn.'), await docText());
-	const against = await shown('.viewer .against .diff ins');
+	check('its history, newest first', (await edits()).at(-1)?.what === 'Wrote the note', JSON.stringify(await edits()));
+	await click('New proposal', '.doc .versions button');
+	await type('#proposal-name', 'draft');
+	await click('Propose', '.doc .versions .naming button');
+	const lines = () => shown('.doc .versions .line b');
+	check('a proposal, draft, picked', await until(async () => (await onLine()) === 'draft'), (await lines()).join());
+	const start = (await edits())[0]?.what;
+	check('it starts from main', start === 'Proposed “draft” from “main”', start);
+	check('saved on the proposal', await saveText('Plant beans, peas and corn.'), await docText());
+	const against = await shown('.doc .against .diff ins');
 	check('what it changes against main', against.join('|') === ', peas|corn', against.join('|'));
-	await shot('3b-branch');
-	await click('Merge into main', '.viewer .against button');
-	const merged = until(async () => (await onLine()) === 'main' && (await docText()) === 'Plant beans, peas and corn.');
-	check('merged: main reads the branch', await merged, await docText());
-	const merge = (await writes())[0];
-	check('the merge, and what it brought', merge?.what === 'Merged “draft” into “main”' && merge.ins.join('|') === ', peas |corn', JSON.stringify(merge));
-	await onWrite('Edited on “draft”', 'Undo');
-	check('the branch’s edit undone on main', await until(async () => (await docText()) === 'Plant beans and peas.'), await docText());
-	await onWrite('Wrote the note', 'View');
-	check('the first version, read-only', await until(async () => (await text('.viewer .old .text')) === 'Plant beans.', 5000));
-	await click('Restore it on “main”', '.viewer .old button');
+	await shot('3b-proposal');
+	await click('Accept into main', '.doc .banner button');
+	const merged = until(async () => (await onLine()) === 'Main' && (await docText()) === 'Plant beans, peas and corn.');
+	check('accepted: main reads the proposal', await merged, await docText());
+	const merge = (await edits())[0];
+	check('the merge, and what it brought', merge?.what === 'Accepted “draft” into main' && merge.ins.join('|') === ', peas |corn', JSON.stringify(merge));
+	await onEdit('Edited on “draft”', 'Undo');
+	check('the proposal’s edit undone on main', await until(async () => (await docText()) === 'Plant beans and peas.'), await docText());
+	await onEdit('Edited', '', 'Plant beans.');
+	const old = await until(async () => (await text('.doc .paper.old .text')) === 'Plant beans.', 5000);
+	check('the first version, read-only', old && (await text('.doc .top .mode')).startsWith('Viewing version'), await text('.doc .top .mode'));
+	await shot('3c-version');
+	await click('Restore this version', '.doc .banner.old button');
 	check('restored on main', await until(async () => (await docText()) === 'Plant beans.'), await docText());
-	await click('draft', '.viewer .lines .line');
-	check('the branch as it was', await until(async () => (await docText()) === 'Plant beans, peas and corn.', 5000), await docText());
-	check('saved on the branch again', await saveText('Corn first.'), await docText());
-	await click('Make main match it', '.viewer .against button');
-	const matched = until(async () => (await onLine()) === 'main' && (await docText()) === 'Corn first.');
-	check('main made to match the branch', await matched, await docText());
-	check('as a write of its own', (await writes())[0]?.what === 'Made “main” match “draft”', (await writes())[0]?.what);
-	await shot('3c-history');
-	await click('Fork into a new note', '.viewer .fork button');
-	check('forked', await waitText('Forked', 30000, '.viewer .fork'), await problem());
-	await click('Open the fork', '.viewer .fork button');
-	const fork = until(async () => (await docText()) === 'Corn first.' && (await writes()).length === 1, 10000);
-	check('the fork: the same text, with one write of its own', await fork, `${await docText()} ${(await writes()).length}`);
+	await click('draft', '.doc .versions .line');
+	check('the proposal as it was', await until(async () => (await docText()) === 'Plant beans, peas and corn.', 5000), await docText());
+	check('saved on the proposal again', await saveText('Corn first.'), await docText());
+	await click('Make main match it', '.doc .banner button');
+	const matched = until(async () => (await onLine()) === 'Main' && (await docText()) === 'Corn first.');
+	check('main made to match the proposal', await matched, await docText());
+	check('as an edit of its own', (await edits())[0]?.what === 'Made “main” match “draft”', (await edits())[0]?.what);
+	await shot('3d-history');
+	await click('Make a variant', '.doc .variants button');
+	check('a variant made', await waitText('Made a variant', 30000, '.doc .variants'), await problem());
+	await click('Open it', '.doc .variants .made a');
+	const variant = until(async () => (await docText()) === 'Corn first.' && (await edits()).length === 1, 10000);
+	check('the variant: the same text, with one edit of its own', await variant, `${await docText()} ${(await edits()).length}`);
+	check('it names the note it came from', (await text('.doc .variants')).includes('Variant of “Plan”'), await text('.doc .variants'));
 	check('none of it asked the passkey', (await ceremonies()) === noting, `${(await ceremonies()) - noting}`);
 	check('and no error', !(await problem()), await problem());
-	await shot('3d-fork');
+	await shot('3e-variant');
+	check('back to the notes', await back());
+	const cards = await shown('.main .note .info b');
+	check('both notes there, the variant named so', cards.length === 2 && (await text('.main')).includes('Variant of “Plan”'), cards.join(', '));
+	await shot('3f-notes');
 
-	// the vault's database, as this browser holds it, with its schemas and lenses
-	await click('DB & Schema', '.aside .tabs-list .item');
-	const rowsThere = async () => {
-		const what = (await rowsShown()).map((r) => r.what);
-		return what.includes('Device card') && what.includes('Vault profile') && what.filter((w) => w === 'Note').length === 2;
+	// the vault's studio, as this browser holds it: its tables, spaces, schemas, lenses and every signed edit
+	await goTo('Table editor');
+	check('the table editor, at an address of its own', (await hash()) === '#tables', await hash());
+	const held = async () => {
+		const t = await tablesShown();
+		return t.notes === 2 && t.device_cards >= 1 && t.vault_profiles >= 1;
 	};
-	check('its rows: this browser’s card, the vault’s profile, the note and its fork', await until(rowsThere, 20000), JSON.stringify(await rowsShown()));
-	const plan = (await rowsShown()).findIndex((r) => r.lines === 'main + 1 branch');
-	check('the note with its branch', plan >= 0 && (await rowsShown())[plan].title === 'Plan', JSON.stringify(await rowsShown()));
-	await page.evaluate((i) => /** @type {HTMLElement} */ (document.querySelectorAll('.main .db tbody tr.entry')[i])?.click(), plan);
+	check('its tables: the two notes, this browser’s card, the vault’s profile', await until(held, 20000), JSON.stringify(await tablesShown()));
+	await pickTable('notes');
+	const planRow = async () => (await gridRows()).findIndex((r) => r.title === 'Plan' && r.proposals === '1');
+	check('the note with its proposal', (await until(async () => (await planRow()) >= 0, 10000)), JSON.stringify(await gridRows()));
+	const types = await shown('.main .grid th[data-col] .type');
+	check('typed columns, as Postgres names them', types.includes('bytea') && types.includes('text'), types.join(', '));
+	await shot('3g-table-grid');
+	await page.evaluate((i) => /** @type {HTMLElement} */ (document.querySelectorAll('.main .grid tr.rec')[i])?.click(), await planRow());
 	await sleep(250);
-	const details = await text('.main .db tr.details');
-	check('its details: its branch and its record', details.includes('draft') && details.includes('Corn first.'), details.slice(0, 300));
+	const drawer = await text('.panel');
+	check('its row, opened: its proposal and its record', drawer.includes('draft') && drawer.includes('Corn first.'), drawer.slice(0, 300));
+	await shot('3g-table-editor');
+	await page.keyboard.press('Escape');
+	await goTo('Spaces');
+	check('its spaces', await waitText('signed edits held', 10000, '.main'), (await text('.main')).slice(0, 200));
+	await goTo('Schemas');
 	const schemaNames = await shown('.main .schemas .schema header b');
 	check('the schemas the app ships', ['Markdown document, v2', 'Todo, v2'].every((n) => schemaNames.includes(n)), schemaNames.join(', '));
 	const fieldNames = await shown('.main .schemas .fields td:first-child code');
 	check('field by field', ['blocks', 'tags', 'status', 'due'].every((n) => fieldNames.includes(n)), fieldNames.join(', '));
-	check('and the lens between v1 and v2', (await shown('.main .lenses .schema header b')).includes('Markdown document, v1 to v2'));
-	await shot('3e-database');
+	await shot('3h-schemas');
+	await goTo('Lenses');
+	check('and the lens between v1 and v2', (await shown('.main .lenses .lens header b')).includes('Markdown document, v1 to v2'));
+	await goTo('History');
+	check('every signed edit', await until(async () => (await page.$$('.main .grid tr.rec')).length > 10, 20000));
+	const said = await text('.main .grid');
+	check('each in words', said.includes('Samuel writes') && said.includes('proposing a change'), said.slice(0, 300));
+	check('with its post-quantum signature', said.includes('SLH-DSA'), said.slice(0, 300));
+	await shot('3i-history');
 
 	// the cast to enact, named by hand: four vaults Samuel's vault owns, in one ceremony
 	const founding = await ceremonies();
@@ -381,51 +448,69 @@ try {
 
 	// avenALICE writes a note and a todo in her home, and shares the note with avenBOB
 	check('acting as avenALICE', await actAs('avenALICE'), await text('.switcher .pill b'));
+	await look('avenALICE');
 	check('looking at her vault', (await text('.aside h1')) === 'avenALICE', await text('.aside h1'));
 	check('she owns her home', await waitText('avenALICE owns it', 5000, '.main'));
-	await type('.compose input.field', NOTE);
-	await type('.compose textarea', BODY);
-	await click('Write the note', '.compose button');
-	check('her note', await until(async () => (await note(NOTE))?.words === BODY), JSON.stringify(await note(NOTE)));
-	await type('.compose .row input', TODO);
-	await click('Add the todo', '.compose button');
+	await click('Blank note', '.main .start button');
+	check('her note opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
+	await retitle(NOTE);
+	check('titled', await until(async () => (await edits())[0]?.what === `Renamed it “${NOTE}”`, 30000), JSON.stringify((await edits())[0]));
+	check('written', await saveText(BODY), await docText());
+	const sharing = await ceremonies();
+	await click('Share', '.doc .top button');
+	await choose('.doc .sharebar select[aria-label="Share with"]', 'avenBOB');
+	await choose('.doc .sharebar select[aria-label="Role"]', 'reads');
+	await click('Share it', '.doc .sharebar button');
+	const holders = () => page.$$eval('.doc .people .person', (els) => els.map((e) => e.getAttribute('title')));
+	const shared = await until(async () => (await holders()).includes('avenBOB reads it'));
+	check('shared with avenBOB, who reads it', shared, (await holders()).join(', '));
+	check('sharing took no ceremony', (await ceremonies()) === sharing, `${(await ceremonies()) - sharing}`);
+	await shot('6-alice-note');
+	await back();
+	check('her note, in her notes', await until(async () => (await note(NOTE))?.words === BODY), JSON.stringify(await note(NOTE)));
+	check('with avenBOB among its readers', (await note(NOTE))?.chips.includes('avenBOB reads'), (await note(NOTE))?.chips.join(', '));
+	await goTo('Todos');
+	check('Todos, at an address of its own', (await hash()) === '#todos', await hash());
+	await type('.main .todos li.add input', TODO);
+	await click('Add the todo', '.main .todos li.add button');
 	check('her todo', await waitText(TODO, 30000, '.main .todos'));
 	await click('Open', '.main .todos .tick');
 	check('marked doing', await waitText('Doing', 30000, '.main .todos'));
-	const sharing = await ceremonies();
-	await click('Share', '.main .note .who button');
-	await choose('.main .note .share select[aria-label="Share with"]', 'avenBOB');
-	await choose('.main .note .share select[aria-label="Role"]', 'reads');
-	await click('Share it', '.main .note .share button');
-	const shared = await until(async () => (await note(NOTE))?.chips.includes('avenBOB reads'));
-	check('shared with avenBOB, who reads it', shared, (await note(NOTE))?.chips.join(', '));
-	check('sharing took no ceremony', (await ceremonies()) === sharing, `${(await ceremonies()) - sharing}`);
-	await shot('6-alice');
+	await shot('6b-alice-todos');
 
 	// avenBOB reads the note, and nothing else of hers
 	check('acting as avenBOB', await actAs('avenBOB'));
 	await look('avenALICE');
 	const bob = await note(NOTE);
 	check('he reads her note', bob?.words === BODY, JSON.stringify(bob));
-	check('and may not edit it', bob && !bob.editable, JSON.stringify(bob));
+	check('he starts no note there', !(await page.$('.main .start')));
+	await goTo('Todos');
 	check('her todo stays hidden', !(await text('.main')).includes(TODO));
-	check('he writes nothing new there', !(await page.$('.main .compose')));
+	check('he adds no todo there', !(await page.$('.main .todos li.add')));
 	await shot('7-bob');
-	await click('History & branches', '.main .note .who button');
-	check('he reads its history', await until(async () => (await text('.viewer h2')) === NOTE, 10000), await text('.viewer h2'));
-	const readOnly = !(await page.$('.viewer .doc textarea')) && !(await page.$('.viewer .lines button.btn'));
-	check('and changes none of it', readOnly && (await text('.viewer .head')).includes('only reads it'), await text('.viewer .head'));
-	await click('DB & Schema', '.aside .tabs-list .item');
+	await goTo('Notes');
+	await openNote(NOTE);
+	check('he opens it', await until(async () => (await docText()) === BODY, 10000), await docText());
+	const readOnly = !(await page.$('.doc .paper textarea')) && !(await page.$('.doc .top .share'));
+	check('nor propose on it', !(await text('.doc .versions')).includes('New proposal'), await text('.doc .versions'));
+	check('and may not edit it', readOnly && (await text('.doc .top .mode')).includes('only reads it'), await text('.doc .top .mode'));
+	check('he reads its history', (await edits()).length >= 3, JSON.stringify(await edits()));
+	await shot('7b-bob-note');
+	await back();
+	await goTo('Table editor');
 	const hers = async () => {
-		const rows = await rowsShown();
-		return rows.some((r) => r.what === 'Note' && r.title === NOTE) && rows.some((r) => r.what === 'Sealed');
+		const t = await tablesShown();
+		return t.notes >= 1 && t.sealed >= 1;
 	};
-	check('in her database, her note opens for him, her todo is sealed', await until(hers, 20000), JSON.stringify(await rowsShown()));
-	await shot('7b-bob-database');
+	check('in her table editor, her note opens for him, her todo is sealed', await until(hers, 20000), JSON.stringify(await tablesShown()));
+	await pickTable('notes');
+	check('her note’s row', await until(async () => (await gridRows()).some((r) => r.title === NOTE), 5000), JSON.stringify(await gridRows()));
+	await pickTable('sealed');
+	await shot('7c-bob-database');
 
 	// avenCHARLY: nothing of hers
 	check('acting as avenCHARLY', await actAs('avenCHARLY'));
-	await look('avenALICE');
+	await look('avenALICE', 'Notes');
 	const none = /avenCHARLY can't see the 2 entries in avenALICE's home/.test(await text('.main'));
 	check('he sees none of her 2 entries', !(await note(NOTE)) && none, (await text('.main')).slice(0, 300));
 	const dim = await page.$eval('.bar .slot[aria-label="avenALICE"] .mark', (e) => e.classList.contains('dim'));
@@ -479,11 +564,17 @@ try {
 	const fits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 	check('on a phone, nothing wider than the screen', fits);
 	await shot('12-phone');
-	await look('avenALICE', 'DB & Schema');
-	await waitText('Schemas', 10000, '.main');
-	check('as Samuel, her database offers to act as her', await waitText('Act as avenALICE', 5000, '.main .db .act'));
-	check('nor her database, whose tables scroll on their own', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+	await look('avenALICE', 'Table editor');
+	check('as Samuel, her table editor offers to act as her', await waitText('Act as avenALICE', 5000, '.main .db .act'));
+	check('nor her table editor, whose grid scrolls on its own', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 	await shot('12b-phone-database');
+	await actAs('avenALICE');
+	await look('avenALICE', 'Notes');
+	await openNote(NOTE);
+	const phoneNote = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+	check('a note on a phone: its columns one under another, nothing wider than the screen', phoneNote && (await docText()) === BODY);
+	await shot('12c-phone-note');
+	await back();
 	await page.setViewport(wide);
 
 	// the store kept it: after a reload it unlocks with one ceremony, every vault there
@@ -495,6 +586,7 @@ try {
 	check('in one ceremony', (await ceremonies()) - unlocking === 1, `${(await ceremonies()) - unlocking}`);
 	check('every vault there', await until(() => hasAll(SIX)), (await bar()).join(', '));
 	await actAs('avenALICE');
+	await look('avenALICE', 'Notes');
 	check('her note there', await until(async () => (await note(NOTE))?.words === BODY, 30000));
 	check('and no error', !(await problem()), await problem());
 	await shot('13-again');
@@ -507,14 +599,15 @@ try {
 	check('forgotten, it offers to sign in', await waitText('Sign in with my passkey'));
 	const signing = await ceremonies();
 	await click('Sign in with my passkey', '.account button');
-	const back = await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
-	check('signed in again, through the server', back, await problem());
+	const signedIn = await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
+	check('signed in again, through the server', signedIn, await problem());
 	check('in four ceremonies', (await ceremonies()) - signing === 4, `${(await ceremonies()) - signing}`);
 	check('every vault came back', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
 	await click('Owners & devices', '.aside .tabs-list .item');
 	const both = async () => (await devices()).includes(name) && (await devices()).includes('Samuel’s test browser');
 	check('its devices: the one forgotten, and this browser again', await until(both), (await devices()).join(', '));
 	await actAs('avenALICE');
+	await look('avenALICE', 'Notes');
 	check('her note came back', await until(async () => (await note(NOTE))?.words === BODY, 60000), JSON.stringify(await note(NOTE)));
 	check('no error after signing in', !(await problem()), await problem());
 	await shot('14-signed-in');

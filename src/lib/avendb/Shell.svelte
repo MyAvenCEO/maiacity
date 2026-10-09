@@ -1,20 +1,24 @@
 <!--
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its list (its notes and todos, its database and schemas, then its settings: About, Owners and
-	devices, Access, Sync); and its notes and todos, one note's history and branches, its database or the settings
-	picked, in the middle. At the foot, in the middle above the app's own buttons, the
-	vault the person acts as: their own, or any vault their vault owns, whose caps then decide what the page shows and
-	what it may do, as on a device of that vault alone. Marks of the vaults the acting vault holds nothing in are faded.
+	vault's name and its pages, as a database studio lists them: its notes and its todos; its database (the table
+	editor, its spaces, schemas and lenses, and its history, every signed edit); then its settings (About, Owners and
+	devices, Access, Sync); and the page picked in the middle. Each page has an address of its own (`#todos`), and so
+	has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole screen. At the
+	foot, in the middle above the app's own buttons, the vault the person acts as: their own, or any vault their vault
+	owns, whose caps then decide what the page shows and what it may do, as on a device of that vault alone. Marks of
+	the vaults the acting vault holds nothing in are faded.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
-	import Board from './Board.svelte';
 	import Database from './Database.svelte';
+	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import NewVaults from './NewVaults.svelte';
-	import NoteView from './NoteView.svelte';
+	import Note from './Note.svelte';
+	import Notes from './Notes.svelte';
 	import Settings from './Settings.svelte';
+	import Todos from './Todos.svelte';
 	import { KINDS, list, nameOf, reaches } from './vaults.js';
 
 	/**
@@ -26,21 +30,53 @@
 	/** the vault the person picked to act as, and the one to look at: their own until they pick another */
 	let enacted = $state('');
 	let picked = $state('');
-	/** @type {'board' | 'data' | 'about' | 'members' | 'access' | 'sync'} */
-	let tab = $state('board');
-	/** the note whose history and branches show, over the notes and todos */
-	let opened = $state(/** @type {{ space: string, entry: string } | null} */ (null));
 	let switching = $state(false);
 	let adding = $state(false);
 
-	const TABS = /** @type {const} */ ([
-		['board', 'Notes & todos'],
-		['data', 'DB & Schema'],
-		['about', 'About'],
-		['members', 'Owners & devices'],
-		['access', 'Access'],
-		['sync', 'Sync']
+	/** The vault's pages, in its list: each a group's, by its address, name and icon. */
+	const NAV = /** @type {const} */ ([
+		[
+			'',
+			[
+				['notes', 'Notes', 'note'],
+				['todos', 'Todos', 'todo']
+			]
+		],
+		[
+			'Database',
+			[
+				['tables', 'Table editor', 'table'],
+				['spaces', 'Spaces', 'space'],
+				['schemas', 'Schemas', 'schema'],
+				['lenses', 'Lenses', 'lens'],
+				['history', 'History', 'history']
+			]
+		],
+		[
+			'Settings',
+			[
+				['about', 'About', 'info'],
+				['members', 'Owners & devices', 'users'],
+				['access', 'Access', 'access'],
+				['sync', 'Sync', 'sync']
+			]
+		]
 	]);
+	/** @typedef {(typeof NAV)[number][1][number]} PageItem */
+	const PAGES = NAV.flatMap(([, items]) => /** @type {readonly PageItem[]} */ (items));
+	/** @typedef {PageItem[0]} Page */
+	/** the pages that show a vault as its owners see it, whoever acts */
+	const SETTINGS = /** @type {Page[]} */ (['about', 'members', 'access', 'sync']);
+
+	/** The page an address names: `#todos`, a note's `#notes/` and its entry, else the notes. @param {string} hash */
+	function parse(hash) {
+		const [page, entry] = hash.replace(/^#/, '').split('/');
+		const known = PAGES.find(([id]) => id === page)?.[0] ?? 'notes';
+		return { page: known, entry: known === 'notes' && /^[0-9a-f]{64}$/.test(entry ?? '') ? entry : '' };
+	}
+
+	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
+	const tab = $derived(route.page);
 
 	const busy = $derived(!!doing);
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
@@ -57,15 +93,25 @@
 	// its foot for its nav pill, which floats over the columns' own)
 	$effect(() => enter());
 
-	/** Act as vault `id`, and look at its own. @param {string} id */
-	function enact(id) {
-		[enacted, picked, tab, switching, opened] = [id, id, 'board', false, null];
+	/** Go to the page at address `to`: `todos`, or a note's `notes/` and its entry. @param {string} to */
+	function go(to) {
+		location.hash = to;
 	}
 
-	/** Show note `entry` of space `space`: its history and branches. @param {string} space @param {string} entry */
-	function open(space, entry) {
-		[tab, opened] = ['board', { space, entry }];
+	/** Act as vault `id`, and look at its own, on the same page. @param {string} id */
+	function enact(id) {
+		[enacted, picked, switching] = [id, id, false];
 	}
+
+	/** Open note `entry`, on the whole screen. @param {string} entry */
+	const open = (entry) => go(`notes/${entry}`);
+
+	// a note opens in its vault: its notes are where its back arrow goes
+	$effect(() => {
+		const entry = route.entry;
+		const space = entry ? world.spaces.find((s) => s.items.some((i) => i.entry === entry)) : undefined;
+		if (space) picked = space.founder;
+	});
 
 	/** Who owns vault `v`, as a line. @param {import('./vaults.js').VaultView} v */
 	function owners(v) {
@@ -79,9 +125,14 @@
 		v.id === world.mine ? 'You' : `${KINDS[v.kind]}, through ${list((v.via ?? []).map((o) => nameOf(byId.get(o))))}`;
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (switching = false)} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (switching = false)} onhashchange={() => (route = parse(location.hash))} />
 
-<div class="shell">
+<div class="shell" class:reading={!!route.entry}>
+	{#if route.entry}
+		{#key route.entry}
+			<Note {world} {actor} {api} {busy} entry={route.entry} />
+		{/key}
+	{:else}
 	<nav class="bar" aria-label="Vaults">
 		{#each [mine, ...rest] as v, i (v?.id)}
 			{#if v}
@@ -93,7 +144,7 @@
 					title="{nameOf(v)} · {KINDS[v.kind]}{out ? ` · ${nameOf(as)} holds nothing in it` : ''}"
 					aria-label={nameOf(v)}
 					aria-current={v.id === context ? 'true' : undefined}
-					onclick={() => ([picked, opened] = [v.id, null])}
+					onclick={() => (picked = v.id)}
 				>
 					<Mark vault={v} dim={out} />
 					{#if v.id === actor}<i class="acting" title="You act as it"></i>{/if}
@@ -111,9 +162,15 @@
 			<h1>{nameOf(here)}</h1>
 			<p class="soft">{owners(here)}</p>
 		</header>
-		<nav class="tabs-list" aria-label="{nameOf(here)}'s lists">
-			{#each TABS as [id, label] (id)}
-				<button class="item" class:on={tab === id} onclick={() => ([tab, opened] = [id, null])}>{label}</button>
+		<nav class="tabs-list" aria-label="{nameOf(here)}'s pages">
+			{#each NAV as [group, items] (group)}
+				{#if group}<small class="group">{group}</small>{/if}
+				{#each items as [id, label, icon] (id)}
+					<a class="item" class:on={tab === id} href="#{id}" aria-current={tab === id ? 'page' : undefined}>
+						<Icon name={icon} />
+						<span>{label}</span>
+					</a>
+				{/each}
 			{/each}
 		</nav>
 		{#if world.pqOnly}
@@ -124,37 +181,25 @@
 	</aside>
 
 	<section class="main">
-		{#if tab === 'board' && opened}
-			{#key `${opened.space} ${opened.entry}`}
-				<NoteView
-					{world}
-					{actor}
-					{api}
-					{busy}
-					space={opened.space}
-					entry={opened.entry}
-					onclose={() => (opened = null)}
-					onopen={open}
-				/>
-			{/key}
+		<header class="main-head">
+			<h2>{PAGES.find(([id]) => id === tab)?.[1]}</h2>
+			<p class="soft">
+				As <b>{nameOf(as)}</b>{#if actor === context}.{:else if !SETTINGS.includes(tab)}, looking at
+					{nameOf(here)}'s vault: you see what {nameOf(as)}'s caps allow.{:else}. {nameOf(here)}'s settings show
+					every cap and device, as its owners see them.{/if}
+			</p>
+		</header>
+		{#if tab === 'notes'}
+			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onact={enact} onopen={open} />
+		{:else if tab === 'todos'}
+			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onact={enact} />
+		{:else if tab === 'about' || tab === 'members' || tab === 'access' || tab === 'sync'}
+			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} />
 		{:else}
-			<header class="main-head">
-				<h2>{TABS.find(([id]) => id === tab)?.[1]}</h2>
-				<p class="soft">
-					As <b>{nameOf(as)}</b>{#if actor === context}.{:else if tab === 'board' || tab === 'data'}, looking at
-						{nameOf(here)}'s vault: you see what {nameOf(as)}'s caps allow.{:else}. {nameOf(here)}'s settings show
-						every cap and device, as its owners see them.{/if}
-				</p>
-			</header>
-			{#if tab === 'board'}
-				<Board {world} vault={context} {actor} {api} {busy} onaccess={() => (tab = 'access')} onact={enact} onopen={open} />
-			{:else if tab === 'data'}
-				<Database {world} vault={context} {actor} {api} onopen={open} onact={enact} />
-			{:else}
-				<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} />
-			{/if}
+			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onact={enact} onview={go} />
 		{/if}
 	</section>
+	{/if}
 
 	<div class="switcher">
 		{#if doing}<p class="toast" role="status">{doing}…</p>{/if}
@@ -188,6 +233,11 @@
 		height: 100vh;
 		height: 100dvh;
 		overflow: hidden;
+	}
+
+	/* a note open, on the whole screen */
+	.shell.reading {
+		grid-template-columns: minmax(0, 1fr);
 	}
 
 	.bar,
@@ -320,17 +370,35 @@
 		gap: 0.1rem;
 	}
 
+	/* a group's name over its pages, as a database studio heads its sidebar's sections */
+	.tabs-list .group {
+		padding: 1rem 0.6rem 0.3rem;
+		color: var(--soft);
+		font-size: 0.68rem;
+		font-weight: 600;
+	}
+
 	.item {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
 		width: 100%;
+		box-sizing: border-box;
 		padding: 0.42rem 0.6rem;
-		border: 0;
 		border-radius: 8px;
-		background: none;
-		font: inherit;
 		font-size: 0.9rem;
-		text-align: left;
 		color: inherit;
+		text-decoration: none;
 		cursor: pointer;
+	}
+
+	.item :global(svg) {
+		flex: none;
+		color: var(--soft);
+	}
+
+	.item.on :global(svg) {
+		color: var(--accent);
 	}
 
 	.item:hover {
@@ -516,6 +584,15 @@
 		.item {
 			width: auto;
 			white-space: nowrap;
+		}
+
+		.tabs-list .group {
+			display: none;
+		}
+
+		.shell.reading {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: minmax(0, 1fr);
 		}
 
 		.pq {
