@@ -261,10 +261,12 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
 3. **DNS**: an A record `avendb.maia.city` for the server. `api.yml`'s `dns` job sets it with a `HETZNER_DNS_TOKEN`;
    without one it is set by hand in the Hetzner DNS console. The relay needs a host name of its own: iroh's relay path
    is `/relay`, and `api.maia.city/relay` is the media vault's relay.
-4. **The setup code**: the GitHub secret `AVENDB_SETUP_CODE`, 20 or more characters made at random, only letters,
-   digits and `. _ ~ + / = -`, as it passes through the deploy's shell and compose's `.env` (any other is left out,
-   with a warning). Set or changed later, it reaches the server with the next run of `api.yml`, which can be started
-   by hand (Actions, API, Run workflow). Neither workflow logs it.
+4. **The setup code**: made on the server by `api.yml` once, 32 random letters and digits kept beside the database
+   password on the Hetzner volume, so it stays the same until someone claims the server. It reaches whoever claims
+   it sealed with age to the key `AVENDB_CODE_TO` names in `api.yml` (the step "avenDB's setup code, sealed"),
+   never in the clear in a log. The GitHub secret `AVENDB_SETUP_CODE`, if set, is used instead: 20 or more
+   characters made at random, only letters, digits and `. _ ~ + / = -`, as it passes through the deploy's shell and
+   compose's `.env` (any other is left out, with a warning).
 5. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) goes into
    the app's configuration.
 6. **The claim**: the person who runs it opens **This browser** with the setup code and founds their vault, which
