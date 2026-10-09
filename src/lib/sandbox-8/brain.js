@@ -4,8 +4,9 @@
 // The decisions come from Liquid's decision model d1:free (TypeSafe System One API): typed questions, answered with
 // calibrated probabilities. d1:free needs no API key, but Liquid keeps its requests for training, so only the game
 // state goes out, never anything about a person. There is no rule-based stand-in (Samuel): without a brain's answers the
-// valley waits. The one other brain is Samuel's own (2026-10-09): Qwen on his GPU machine, reached over Tailscale with an
-// OpenAI-style API, only from his local studio build. It answers the same typed questions when Liquid can't.
+// valley waits. Since 2026-10-09 the avens think on Samuel's own GPU machine, reached over Tailscale from his studio:
+// d1 itself (LiquidAI-d1-3b, the same decision API) by default, and Qwen, fast, when d1 can't (Samuel). Qwen answers the
+// same typed questions through its OpenAI-style chat. Liquid's hosted d1:free stays as a choice.
 
 import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents } from './economy.js';
 import { RULES } from './rules.js';
@@ -212,47 +213,74 @@ export function applyAnswers(world, a, answers, source) {
 	if (changes.length || a.ledger.at(-1)?.kind !== 'price') a.ledger.push({ day: world.day, t: world.t, kind: 'price', source, changes });
 }
 
-// ---- Qwen, on Samuel's GPU machine: the fallback brain (his local studio build only) ----
+// ---- Samuel's GPU machine: d1 and Qwen (his tailnet only) ----
 
-/** where it listens (Tailscale, plain http, OpenAI-style); changeable on the page */
-export const QWEN_URL = 'http://100.96.61.57:8000/v1';
-/** only a studio on Samuel's own Mac (or a local dev page) can reach it: never the public site */
-export const QWEN_HERE = native() || import.meta.env.DEV;
+/** where it listens (Tailscale, plain http, OpenAI-style /v1); d1's and Qwen's addresses are changeable on the page */
+export const BOX_URL = 'http://100.96.61.57:8000/v1';
+/** only a studio on a device in Samuel's tailnet (or a local dev page) can reach it: never the public site */
+export const BOX_HERE = native() || import.meta.env.DEV;
+
+const base = (/** @type {string} */ url) => url.trim().replace(/\/+$/, '');
 
 /** one call to it: natively from the studio (the page may not call plain http itself), else straight from a dev page */
-async function qwenCall(url, body, signal) {
+async function boxCall(url, body, signal) {
+	const fail = (status, out) => {
+		const why = out?.error?.message ?? (typeof out?.error === 'string' ? out.error : out?.detail ? JSON.stringify(out.detail) : '');
+		return new Error(`the GPU machine ${status}${why ? `: ${String(why).slice(0, 200)}` : ''}`);
+	};
 	if (native()) {
 		const res = await command('brain', { url, body: body ?? null });
-		if (res.status >= 400) throw new Error(`Qwen ${res.status}${res.body?.error?.message ? `: ${String(res.body.error.message).slice(0, 200)}` : ''}`);
+		if (res.status >= 400) throw fail(res.status, res.body);
 		return res.body;
 	}
 	const res = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal } : { signal });
 	const out = await res.json().catch(() => null);
-	if (!res.ok) throw new Error(`Qwen ${res.status}${out?.error?.message ? `: ${String(out.error.message).slice(0, 200)}` : ''}`);
+	if (!res.ok) throw fail(res.status, out);
 	return out;
 }
 
-const models = new Map(); // url -> the model it serves
-/** the model it serves: the first one named Qwen, else the first */
-export async function qwenModel(base, signal) {
-	if (!models.has(base)) {
-		const list = (await qwenCall(`${base}/models`, null, signal))?.data ?? [];
-		const id = (list.find((m) => /qwen/i.test(m.id)) ?? list[0])?.id;
-		if (!id) throw new Error('Qwen serves no model');
-		models.set(base, id);
+const lists = new Map(); // base url -> the models it serves
+/** the models it serves; reaching it is also how the page knows this device is in the tailnet
+ * @param {string} url @param {AbortSignal} [signal] @returns {Promise<string[]>} */
+export async function boxModels(url, signal) {
+	const b = base(url);
+	if (!lists.has(b)) lists.set(b, ((await boxCall(`${b}/models`, null, signal))?.data ?? []).map((m) => String(m.id)));
+	return lists.get(b);
+}
+/** the model it serves that is wanted ('d1' or 'qwen'), or throws
+ * @param {string} url @param {'d1' | 'qwen'} want @param {AbortSignal} [signal] */
+export async function boxModel(url, want, signal) {
+	const list = await boxModels(url, signal);
+	const id = list.find((m) => new RegExp(want, 'i').test(m));
+	if (!id) {
+		lists.delete(base(url)); // it may serve it soon: ask again next time
+		throw new Error(`no ${want === 'd1' ? 'd1' : 'Qwen'} at ${base(url)} (it serves ${list.join(', ') || 'nothing'})`);
 	}
-	return models.get(base);
+	return id;
 }
 
+const chatOnly = new Set(); // bases whose server has no decision API
+
 /**
- * ask Qwen the same typed questions: each score question becomes a pick among its numbered levels, each choice question
- * a pick among its keys, all in one JSON object it must fill (structured output where the server has it). Resolves to
- * answers shaped like Liquid's, { key: { score } | { choice } }, or throws.
- * @param {any} state @param {any} questions @param {{ signal?: AbortSignal, url?: string }} [opts]
+ * ask the GPU machine the same typed questions. d1 takes them as they are, on the decision API (llama-server's
+ * /v1/systemone, the request Liquid's hosted d1 takes). Qwen, or a server without that API, gets them as a chat: each
+ * score question a pick among its numbered levels, each choice question a pick among its keys, in one JSON object
+ * (structured output where the server has it). Resolves to answers shaped like Liquid's, or throws.
+ * @param {any} state @param {any} questions @param {{ signal?: AbortSignal, url?: string, want?: 'd1' | 'qwen' }} [opts]
  */
-export async function askQwen(state, questions, { signal, url = QWEN_URL } = {}) {
-	const base = url.replace(/\/+$/, '');
-	const model = await qwenModel(base, signal);
+export async function askBox(state, questions, { signal, url = BOX_URL, want = 'd1' } = {}) {
+	const b = base(url);
+	const model = await boxModel(b, want, signal);
+	if (/d1/i.test(model) && !chatOnly.has(b)) {
+		try {
+			const out = await boxCall(`${b}/systemone`, { model, state, questions }, signal);
+			if (!out?.answers) throw new Error('local d1 sent no answers');
+			return out.answers;
+		} catch (e) {
+			if (!/ 40[45]\b/.test(e?.message)) throw e;
+			chatOnly.add(b); // no decision API here: the chat it is, from now on
+		}
+	}
 	const keys = Object.keys(questions);
 	const options = (q) => (q.type === 'score' ? Object.fromEntries(q.criteria.map((c, i) => [i, c])) : q.criteria);
 	const schema = {
@@ -273,11 +301,11 @@ export async function askQwen(state, questions, { signal, url = QWEN_URL } = {})
 	};
 	let out;
 	try {
-		out = await qwenCall(`${base}/chat/completions`, { ...body, response_format: { type: 'json_schema', json_schema: { name: 'answers', schema, strict: true } } }, signal);
+		out = await boxCall(`${b}/chat/completions`, { ...body, response_format: { type: 'json_schema', json_schema: { name: 'answers', schema, strict: true } } }, signal);
 	} catch (e) {
 		// a server without structured output says 400: ask again, the JSON asked for in words
-		if (!/Qwen 400/.test(e?.message)) throw e;
-		out = await qwenCall(`${base}/chat/completions`, body, signal);
+		if (!/ 400\b/.test(e?.message)) throw e;
+		out = await boxCall(`${b}/chat/completions`, body, signal);
 	}
 	const text = String(out?.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '');
 	const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
@@ -285,7 +313,7 @@ export async function askQwen(state, questions, { signal, url = QWEN_URL } = {})
 	try {
 		picks = JSON.parse(json);
 	} catch {
-		throw new Error(`Qwen sent no JSON: ${text.slice(0, 80)}`);
+		throw new Error(`${want === 'd1' ? 'd1' : 'Qwen'} sent no JSON: ${text.slice(0, 80)}`);
 	}
 	const answers = {};
 	for (const k of keys) {
@@ -294,6 +322,6 @@ export async function askQwen(state, questions, { signal, url = QWEN_URL } = {})
 		if (q.type === 'score' && Number.isFinite(Number(v))) answers[k] = { score: Math.max(0, Math.min(q.criteria.length - 1, Number(v))) };
 		else if (q.type === 'choice' && v != null && String(v) in q.criteria) answers[k] = { choice: String(v) };
 	}
-	if (!Object.keys(answers).length) throw new Error('Qwen picked no option');
+	if (!Object.keys(answers).length) throw new Error(`${want === 'd1' ? 'd1' : 'Qwen'} picked no option`);
 	return answers;
 }
