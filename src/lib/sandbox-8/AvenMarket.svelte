@@ -50,7 +50,7 @@
 	let panelOpen = $state(true);
 	let page = $state('valley'); // the main view: 'valley' or 'stats'
 	let snap = $state.raw(snapshot());
-	let calls = $state({ asked: 0, answered: 0, failed: 0, lastError: /** @type {string} */ ('') });
+	let calls = $state({ asked: 0, answered: 0, failed: 0, limited: 0, lastError: /** @type {string} */ ('') });
 
 	/** @type {HTMLCanvasElement} */
 	let canvas;
@@ -84,6 +84,7 @@
 			// the chart's lines, only while the Prices tab is open: at most ~300 points a good
 			series: tab === 'prices' || page === 'stats' ? Object.fromEntries(GOODS.map((g) => { const all = world.market[g].series; const every = Math.max(1, Math.ceil(all.length / 300)); return [g, all.filter((/** @type {any} */ _p, /** @type {number} */ i) => i % every === 0 || i === all.length - 1).map((/** @type {any} */ p) => ({ ...p }))]; })) : {},
 			waiting: world.avens.filter((/** @type {any} */ x) => x.alive && !x.brain.ready).length,
+			stale: world.avens.filter((/** @type {any} */ x) => x.alive && x.brain.ready && world.t - (x.brain.last?.t ?? 0) >= STALE_H * 3600).length,
 			month: Math.floor((world.day - 1) / 30) + 1,
 			// the daily rows, only while the Stats view is open (each row is never changed once written)
 			stats: page === 'stats' ? world.stats.slice() : [],
@@ -115,53 +116,86 @@
 		};
 	}
 
-	// every aven thinks all day long, not once a morning (Samuel): as soon as its last decision is in, and at least
-	// THINK_H in-game hours and THINK_MS real time have passed, it asks Liquid again with what it sees now. There is
-	// no stand-in: an aven acts only on Liquid's answers, and when Liquid can't answer the valley pauses.
+	// every aven thinks all day long, not once a morning (Samuel): once its last decision is in and THINK_H in-game hours
+	// have passed, it asks Liquid again with what it sees now. There is no stand-in: an aven acts only on Liquid's
+	// answers, and the clock waits while any living aven's decision is older than STALE_H. Liquid's free model has a
+	// rate limit, so the asks go out one at a time, GAP_MS apart, the stalest aven first; a "too many requests" backs
+	// off (5 s, doubling to a minute) and asks again. Any other failure pauses the valley.
 	const THINK_H = 2;
-	const THINK_MS = 4000;
+	const STALE_H = 24;
+	const GAP_MS = 1500;
 	let down = $state(/** @type {string} */ (''));
+	let busy = $state(/** @type {string} */ (''));
+	const gate = { inFlight: 0, nextAt: 0, backoff: 0 };
+	const isRateLimit = (/** @type {string} */ m) => / 429\b|rate.limit|too many/i.test(m);
+
+	/** @param {any} a */
+	const lastAt = (a) => (a.brain.ready ? a.brain.last?.t ?? -Infinity : -Infinity);
 
 	/** @param {number} now real time, ms */
 	function think(now) {
-		for (const a of world.avens) {
-			if (!a.alive || a.brain.pending) continue;
-			if (a.brain.ready && (world.t - a.brain.t0 < THINK_H * 3600 || now - a.brain.realAt < THINK_MS)) continue;
-			a.brain.pending = true;
-			a.brain.t0 = world.t;
-			a.brain.realAt = now;
-			calls.asked++;
-			const ctrl = new AbortController();
-			const timer = setTimeout(() => ctrl.abort(), 25000);
-			const myWorld = world;
-			askLiquid(stateFor(world, a), questionsFor(world, a), { signal: ctrl.signal, ...LIQUID })
-				.then((answers) => {
-					if (myWorld !== world || !a.alive) return;
-					calls.answered++;
-					a.brain.error = null;
-					applyAnswers(world, a, answers, 'liquid');
-				})
-				.catch((/** @type {any} */ e) => {
-					if (myWorld !== world) return;
-					calls.failed++;
-					calls.lastError = e?.name === 'AbortError' ? 'timed out' : e?.message || 'unreachable';
-					a.brain.error = calls.lastError;
-					a.brain.t0 = -Infinity; // ask again as soon as the valley runs
-					// no decision, no game: pause until Liquid answers again
-					down = calls.lastError;
-					paused = true;
-				})
-				.finally(() => {
-					clearTimeout(timer);
-					a.brain.pending = false;
-				});
+		if (gate.inFlight || now < gate.nextAt) return;
+		// the stalest aven that is due: one with no decision yet first, then the oldest decision
+		let a = null;
+		for (const o of world.avens) {
+			if (!o.alive || o.brain.pending) continue;
+			if (o.brain.ready && world.t - o.brain.t0 < THINK_H * 3600) continue;
+			if (!a || lastAt(o) < lastAt(a)) a = o;
 		}
+		if (!a) return;
+		const me = a;
+		me.brain.pending = true;
+		me.brain.t0 = world.t;
+		gate.inFlight++;
+		calls.asked++;
+		const ctrl = new AbortController();
+		const timer = setTimeout(() => ctrl.abort(), 25000);
+		const myWorld = world;
+		askLiquid(stateFor(world, me), questionsFor(world, me), { signal: ctrl.signal, ...LIQUID })
+			.then((answers) => {
+				gate.backoff = 0;
+				gate.nextAt = performance.now() + GAP_MS;
+				busy = '';
+				if (myWorld !== world || !me.alive) return;
+				calls.answered++;
+				me.brain.error = null;
+				applyAnswers(world, me, answers, 'liquid');
+			})
+			.catch((/** @type {any} */ e) => {
+				const msg = e?.name === 'AbortError' ? 'timed out' : e?.message || 'unreachable';
+				me.brain.t0 = -Infinity; // it asks again first
+				if (isRateLimit(msg)) {
+					// Liquid is busy, not down: wait and ask again, the clock holds meanwhile
+					gate.backoff = Math.min(60000, gate.backoff ? gate.backoff * 2 : 5000);
+					gate.nextAt = performance.now() + gate.backoff;
+					busy = `Liquid's free model is busy (rate limit): asking again in ${Math.round(gate.backoff / 1000)} s.`;
+					if (myWorld === world) calls.limited++;
+					return;
+				}
+				gate.nextAt = performance.now() + GAP_MS;
+				if (myWorld !== world) return;
+				calls.failed++;
+				calls.lastError = msg;
+				me.brain.error = msg;
+				// no decision, no game: pause until Liquid answers again
+				down = msg;
+				paused = true;
+			})
+			.finally(() => {
+				clearTimeout(timer);
+				gate.inFlight--;
+				me.brain.pending = false;
+			});
 	}
+
+	/** the clock runs only while every living aven has a decision from Liquid no older than STALE_H */
+	const decided = () => world.avens.every((/** @type {any} */ a) => !a.alive || (a.brain.ready && world.t - lastAt(a) < STALE_H * 3600));
 
 	function reset() {
 		world = createWorld();
-		calls = { asked: 0, answered: 0, failed: 0, lastError: '' };
+		calls = { asked: 0, answered: 0, failed: 0, limited: 0, lastError: '' };
 		down = '';
+		busy = '';
 		paused = true;
 		started = false;
 		snap = snapshot();
@@ -419,8 +453,7 @@
 			last = now;
 			if (!paused) {
 				think(now);
-				// the clock runs only once every living aven has its first decision from Liquid
-				if (world.avens.every((/** @type {any} */ a) => !a.alive || a.brain.ready)) {
+				if (decided()) {
 					let game = (dtReal / 1000) * speed;
 					while (game > 0) {
 						const d = Math.min(120, game);
@@ -487,8 +520,8 @@
 		<canvas bind:this={canvas} onpointerdown={onPointer}></canvas>
 		{#if down}
 			<p class="liquid-note down">Paused: Liquid isn't answering ({down}). The avens never play without it. Press Play to ask again.</p>
-		{:else if !paused && snap.waiting}
-			<p class="liquid-note">Waiting for Liquid: {snap.waiting} aven{snap.waiting === 1 ? '' : 's'} still deciding {snap.waiting === 1 ? 'its' : 'their'} first prices.</p>
+		{:else if !paused && (snap.waiting || snap.stale || busy)}
+			<p class="liquid-note">{busy ? `${busy} ` : ''}{snap.waiting ? `Waiting for Liquid: ${snap.waiting} aven${snap.waiting === 1 ? '' : 's'} still deciding ${snap.waiting === 1 ? 'its' : 'their'} first prices.` : snap.stale ? `The clock waits for Liquid: ${snap.stale} aven${snap.stale === 1 ? '' : 's'} need a fresh decision.` : ''}</p>
 		{/if}
 		<div class="ticker" aria-label="Prices">
 			{#each GOODS as g (g)}
@@ -527,7 +560,7 @@
 			<p class="brain" class:dry={snap.weather.dry}>Water: {snap.weather.dry ? `dry spell, ${snap.weather.dry} more night${snap.weather.dry === 1 ? '' : 's'}: wells give 40 to 70%, no rain` : snap.weather.rain ? `rain last night, every barrel caught ${snap.weather.rain}` : 'no rain last night'}. Wells vary; one night in 3 it rains into every land's barrel.</p>
 			<p class="brain">HEARTS: every aven mints {snap.policy.mint} a day; every HEART decays {snap.policy.decay}% a year. <button class="link" onclick={() => setView('policy')}>Policies</button></p>
 			<p class="brain">
-				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
+				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.limited}&nbsp;· {calls.limited} waited out Liquid's rate limit{/if}{#if calls.failed}&nbsp;· {calls.failed} unanswered ({calls.lastError}){/if}
 			</p>
 		</section>
 
