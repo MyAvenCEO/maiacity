@@ -20,9 +20,6 @@ export const PARAMS = [
 	{ key: 'mint', view: 'policy', section: 'HEARTS', label: 'Minting', unit: 'HEARTS a day', min: 0, max: 10000, step: 1, value: 24, say: (v) => `Every living aven is given ${n(v)} new HEARTS each night.` },
 	{ key: 'decay', view: 'policy', section: 'HEARTS', label: 'Decay', unit: '% a year', min: 0, max: 100, step: 0.5, value: 7, say: (v) => `Every balance shrinks by ${v}% a year, charged nightly (${(v / 365).toFixed(3)}% a night), so hoarded HEARTS melt.` },
 	// ---- policies: prices ----
-	{ key: 'startPrice', view: 'policy', section: 'Prices', label: 'Starting price', unit: 'HEARTS a unit', min: 0.01, max: 100000, step: 1, value: 10, reset: true, say: (v) => `Every good starts at ${n(v)} HEARTS a unit.` },
-	{ key: 'priceDays', view: 'policy', section: 'Prices', label: 'Market speed', unit: 'days', min: 0.1, max: 60, step: 0.1, value: 2, say: (v) => `The market price follows wanted against offered with no cap; it takes ${v} day${v === 1 ? '' : 's'} to move by their full ratio (twice as much wanted as offered: ×2 in ${v} day${v === 1 ? '' : 's'}).` },
-	{ key: 'tradePull', view: 'policy', section: 'Prices', label: 'Pull of real trades', unit: '%', min: 0, max: 100, step: 5, value: 30, say: (v) => `Each night the market price moves ${v}% of the way to that day's average traded price.` },
 	// ---- policies: trading ----
 	{ key: 'haggleMax', view: 'policy', section: 'Trading', label: 'Haggling', unit: '%', min: 0, max: 100, step: 5, value: 100, say: (v) => (v ? `When prices don't meet, an aven may give in up to ${v}% of its own price.` : 'No haggling: a deal happens only at the seller\'s price.') },
 	{ key: 'meetHours', view: 'policy', section: 'Trading', label: 'Time between deals', unit: 'hours', min: 0.25, max: 48, step: 0.25, value: 1, say: (v) => `Two avens haggle at most once every ${v} hour${v === 1 ? '' : 's'}.` },

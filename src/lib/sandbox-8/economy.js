@@ -86,12 +86,10 @@ export function createWorld(seed = Date.now() % 1e9) {
 		const home = LANDS[i];
 		const grows = GOODS.filter((g) => lands[i].includes(g));
 		const produce = capacity[i];
-		// its stance against the market: asks a markup over the market price for what it grows, a share of it for what it buys
-		const markup = {},
-			ask = {},
+		// no prices to start with (Samuel: they discover them): its brain names its first price per good, in HEARTS
+		const ask = {},
 			bid = {};
-		for (const g of GOODS) markup[g] = grows.includes(g) ? 1 + rand() * 0.15 : 0.85 + rand() * 0.15;
-		for (const g of GOODS) (grows.includes(g) ? ask : bid)[g] = cents(RULES.startPrice * markup[g]);
+		for (const g of GOODS) (grows.includes(g) ? ask : bid)[g] = null;
 		return {
 			id: i,
 			name,
@@ -108,8 +106,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			decayed: 0, // HEARTS lost to decay so far
 			// two days' rations to start, so nobody starves before the first trade, plus the first day's harvest
 			stock: Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays + (produce[g] ?? 0)])),
-			markup, // per good: its price as a share of the market price, set by its brain each morning
-			ask, // what it sells for, per unit: the market price times its markup, moving with the market every hour
+			ask, // what it sells for, per unit, in HEARTS: set by its brain, null until it first decides
 			bid, // the most it pays, per unit, the same way
 			flex: 0.1, // how far it gives in when haggling, as a share of its own price
 			reserveDays: RULES.reserveDays, // how many days of each need it wants in stock
@@ -126,46 +123,41 @@ export function createWorld(seed = Date.now() % 1e9) {
 			metAt: {} // aven id -> in-game time of the last meeting, so they don't haggle on every frame
 		};
 	});
-	const market = Object.fromEntries(GOODS.map((g) => [g, { price: RULES.startPrice, ref: RULES.startPrice, supply: 0, demand: 0, open: RULES.startPrice, history: [RULES.startPrice], series: [], sells: [], wants: [] }]));
+	const market = Object.fromEntries(GOODS.map((g) => [g, { price: null, supply: 0, demand: 0, open: null, history: [], series: [], sells: [], wants: [] }]));
 	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally() };
 	updateMarket(world);
 	record(world, 0, {});
 	return world;
 }
 
-/**
- * The valley's market board, live: for each good, who sells how much at what price and who wants how much at what limit,
- * and a market price that follows the trades and leans with supply against demand. Every hour each aven's own prices
- * follow it, at the markup its brain chose.
- */
 /** a price in HEARTS, to the cent, never below 1 cent */
 export function cents(v) {
 	return Math.max(0.01, Math.round(v * 100) / 100);
 }
 
+/**
+ * The valley's market board, live: for each good, who sells how much at what price and who wants how much at what limit.
+ * The market price is discovered, never set (Samuel): the average price actually traded over the last 24 hours, else
+ * the last trade's, and none at all before the first trade. Every aven sets its own prices, in HEARTS.
+ */
 export function updateMarket(world) {
 	const live = world.avens.filter((a) => a.alive);
 	for (const g of GOODS) {
 		const m = world.market[g];
-		m.sells = live.filter((a) => spare(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: spare(a, g), price: a.ask[g] })).sort((x, y) => x.price - y.price);
-		m.wants = live.filter((a) => want(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: want(a, g), price: a.bid[g] })).sort((x, y) => y.price - x.price);
+		m.sells = live.filter((a) => a.ask[g] != null && spare(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: spare(a, g), price: a.ask[g] })).sort((x, y) => x.price - y.price);
+		m.wants = live.filter((a) => a.bid[g] != null && want(a, g) > 0).map((a) => ({ id: a.id, name: a.name, qty: want(a, g), price: a.bid[g] })).sort((x, y) => y.price - x.price);
 		m.supply = m.sells.reduce((n, o) => n + o.qty, 0);
 		// only what buyers can pay for counts as wanted: an aven with no HEARTS left can't lift the price
-		m.demand = m.wants.reduce((n, o) => n + Math.min(o.qty, Math.floor(world.avens[o.id].hearts / Math.max(1, o.price))), 0);
-		// more wanted than offered pushes the price up, more offered than wanted pulls it down, with no cap (Samuel: prices
-		// are 100% free): each hour the price moves by the 48th root of wanted ÷ offered, so twice as much wanted as
-		// offered raises it about 41% a day. What's offered counts at most each seller's daily surplus, so old stock piling
-		// up doesn't sink the price for ever
-		const flow = m.sells.reduce((n, o) => n + Math.min(o.qty, Math.max(1, world.avens[o.id].produce[g] - NEED[g])), 0);
-		m.ref = Math.max(0.01, m.ref * ((m.demand + 1) / (flow + 1)) ** (1 / (24 * RULES.priceDays)));
-		m.price = cents(m.ref);
+		m.demand = m.wants.reduce((n, o) => n + Math.min(o.qty, Math.floor(world.avens[o.id].hearts / Math.max(0.01, o.price))), 0);
+		const recent = world.trades.filter((t) => t.good === g && world.t - t.t < DAY_S);
+		const units = recent.reduce((n, t) => n + t.qty, 0);
+		m.price = units ? cents(recent.reduce((n, t) => n + t.qty * t.price, 0) / units) : world.lastPrice[g];
+		if (m.price == null) continue;
 		// the price over time, for the chart: one point an hour, the last 120 days
 		if (m.series.at(-1)?.t === world.t) m.series.at(-1).price = m.price;
 		else m.series.push({ t: world.t, price: m.price });
 		if (m.series.length > 24 * 120) m.series.shift();
 	}
-	for (const a of live)
-		for (const g of GOODS) (a.grows.includes(g) ? a.ask : a.bid)[g] = cents(world.market[g].price * a.markup[g]);
 }
 
 /** one night's harvest of a good, as its grow recipe says: about its capacity ± the swing, now and then a bad (30–60%)
@@ -225,7 +217,7 @@ export function trade(world, a, b) {
 		[b, a]
 	]) {
 		for (const g of seller.grows) {
-			if (buyer.bid[g] == null || spare(seller, g) <= 0 || want(buyer, g) <= 0) continue;
+			if (buyer.bid[g] == null || seller.ask[g] == null || spare(seller, g) <= 0 || want(buyer, g) <= 0) continue;
 			const deal = haggle(seller, buyer, g);
 			if (deal.price == null) {
 				log(world, seller, { kind: 'nodeal', good: g, with: buyer.name, ask: deal.ask, bid: deal.bid });
@@ -287,7 +279,7 @@ function pickTarget(world, a) {
 		if (w <= 0) continue;
 		const urgency = w / NEED[g];
 		for (const s of world.avens) {
-			if (s === a || !s.alive || !s.grows.includes(g) || spare(s, g) <= 0) continue;
+			if (s === a || !s.alive || !s.grows.includes(g) || spare(s, g) <= 0 || s.ask[g] == null || a.bid[g] == null) continue;
 			if (s.ask[g] * (1 - s.flex) > a.bid[g] * (1 + a.flex)) continue; // too dear even after haggling
 			const recent = a.metAt[s.id] != null && world.t - a.metAt[s.id] < 3 * 3600;
 			if (recent) continue;
@@ -356,11 +348,9 @@ function endOfDay(world) {
 	const nightRot = Object.fromEntries(GOODS.map((g) => [g, 0]));
 	for (const g of GOODS) {
 		const m = world.market[g];
-		// the day's average trade price pulls the market price part of the way towards it
 		world.tally.avg[g] = m.dayQty ? Math.round((m.dayValue / m.dayQty) * 10) / 10 : null;
-		if (m.dayQty) m.ref = Math.max(0.01, m.ref + (m.dayValue / m.dayQty - m.ref) * (RULES.tradePull / 100));
 		m.dayQty = m.dayValue = 0;
-		m.history.push(m.price);
+		if (m.price != null) m.history.push(m.price);
 		if (m.history.length > 120) m.history.shift();
 		m.open = m.price;
 	}
