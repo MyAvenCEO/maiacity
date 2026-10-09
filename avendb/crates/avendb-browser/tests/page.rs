@@ -259,7 +259,7 @@ async fn samuels_browsers_link_in_chromium() {
 
     // the server learned both from the Mac, and lets them in as devices it knows
     for found in [&linked, &other] {
-        let endpoint = found["endpoint"].as_str().and_then(|e| BlobId::from_hex(e)).expect("an endpoint");
+        let endpoint = found["endpoint"].as_str().and_then(BlobId::from_hex).expect("an endpoint");
         let endpoint = EndpointId::from_bytes(&endpoint.0).expect("an endpoint's key");
         until("the server knows the browser", || async { admission.admits(&endpoint) }).await;
     }
