@@ -263,7 +263,7 @@
 
 	// ---- the brains: what answers, and what steps in when it can't ----
 	/** @type {Record<string, string>} */
-	const NAME = { d1: 'Local d1', qwen: 'Qwen', liquid: 'Liquid' };
+	const NAME = { d1: 'd1', qwen: 'Qwen', liquid: 'Liquid' };
 	/** @type {Record<string, string>} */
 	const BRAINS = { d1: 'd1', qwen: 'Qwen' };
 	// d1 answers; when it can't, Qwen answers that ask and the picker turns to Qwen until it is set back to d1 (Samuel)
@@ -748,7 +748,7 @@
 			{@const [first, then] = PLAN[brain.mode]}
 			<p class="liquid-note down">Paused: {NAME[first]} isn't answering ({down}){#if then && calls.errors[then]}, nor is {NAME[then]} ({calls.errors[then]}){/if}. The avens never play without a brain. Press Play to ask again.</p>
 		{:else if !paused && (snap.waiting || snap.stale || busy)}
-			<p class="liquid-note">{busy ? `${busy} ` : ''}{snap.waiting ? `Waiting for Liquid: ${snap.waiting} aven${snap.waiting === 1 ? '' : 's'} still deciding ${snap.waiting === 1 ? 'its' : 'their'} first prices.` : snap.stale ? `The clock waits for Liquid: ${snap.stale} aven${snap.stale === 1 ? '' : 's'} need a fresh decision.` : ''}</p>
+			<p class="liquid-note">{busy ? `${busy} ` : ''}{snap.waiting ? `Waiting for ${NAME[brain.mode]}: ${snap.waiting} aven${snap.waiting === 1 ? '' : 's'} still deciding ${snap.waiting === 1 ? 'its' : 'their'} first prices.` : snap.stale ? `The clock waits for ${NAME[brain.mode]}: ${snap.stale} aven${snap.stale === 1 ? '' : 's'} need a fresh decision.` : ''}</p>
 		{/if}
 		<div class="ticker" aria-label="Prices">
 			{#each GOODS as g (g)}
