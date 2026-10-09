@@ -1,6 +1,6 @@
 /**
- * SANDBOX 6 · ONE VILLAGE · THE LIGHT — how much direct sun reaches each dome's south glass, so the living layouts can
- * be compared (Samuel, 2026-10-08: layout B puts the tall domes north and the low ones south "for better light").
+ * SANDBOX 6 · ONE VILLAGE · THE LIGHT — how much direct sun reaches each dome's south glass (Samuel, 2026-10-08: the
+ * living hex puts the tall domes north and the low ones south "for better light").
  *
  * The sun is followed through two days at the village's latitude (Munich, 48.1° N): the winter solstice, when the sun
  * stands lowest (18.4° at noon) and shadows are longest, and the equinox. Every 10 minutes while the sun is over 2°, a

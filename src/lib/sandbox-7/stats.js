@@ -149,8 +149,7 @@ export function hexStats(plan, land = landOf(plan)) {
 		eaters,
 		rows: [
 			{ label: YIELD.indoorFood.label, ha: (land.m2.indoorFood ?? 0) / 1e4, t: t('indoorFood'), inside: true },
-			{ label: YIELD.tropical.label, ha: (land.m2.tropical ?? 0) / 1e4, t: t('tropical'), inside: true },
-			...(deckFood ? [{ label: 'Food forest on the tower’s garden deck (40% of it), under the glass', ha: deckFood / 1e4, t: (deckFood / 1e4) * YIELD.tropical.t, inside: true }] : []),
+			...(deckFood ? [{ label: 'Food forest on the tower’s garden deck (40% of it), under the glass', ha: deckFood / 1e4, t: (deckFood / 1e4) * YIELD.indoorFood.t, inside: true }] : []),
 			{ label: YIELD.foodForest.label, ha: (land.m2.foodForest ?? 0) / 1e4, t: t('foodForest'), inside: false }
 		].filter((r) => r.ha > 0)
 	};

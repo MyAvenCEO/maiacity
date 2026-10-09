@@ -54,7 +54,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 			el.className = 'lbl';
 			const K = KINDS[b.site.kind];
 			const title = b.site.kind === 'tower' ? (h.plan.tower?.label ?? 'Tower') : b.site.kind === 'factory120' ? b.site.name : K.label;
-			const sub = b.site.kind === 'factory120' ? 'Dome120 factory' : b.site.kind === 'dome40' || b.site.kind === 'dome80' ? `${K.people} people, ${K.storeys} storeys` : b.site.kind === 'food120' ? 'Tropical food forest' : b.site.kind === 'util120' ? 'Utilities' : 'Factory, utilities, offices, homes';
+			const sub = b.site.kind === 'factory120' ? 'Dome120 factory' : b.site.kind === 'dome40' || b.site.kind === 'dome80' ? `${K.people} people, ${K.storeys} storeys` : b.site.kind === 'food120' ? 'Food forest under glass' : b.site.kind === 'util120' ? 'Utilities' : 'Factory, utilities, offices, homes';
 			el.innerHTML = `<b>${title}</b><span>${sub}</span>`;
 			const dims = document.createElement('em');
 			if (b.site.kind === 'tower' && h.plan.tower) dims.textContent = `Ø${h.plan.tower.D} m · ${h.plan.tower.H} m high`;

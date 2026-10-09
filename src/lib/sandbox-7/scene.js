@@ -449,7 +449,7 @@ function outline(/** @type {number} */ cx, /** @type {number} */ cz, /** @type {
 function sow(land, plants, /** @type {number} */ seed) {
 	const r = rng(seed);
 	/** @type {Record<string, [number, string, number][]>} spacing, kind, chance */
-	const SOW = { foodForest: [[8, 'broad', 0.75], [5, 'shrub', 0.3]], woodland: [[5.5, 'conifer', 0.95]], bamboo: [[4, 'bamboo', 0.9]], nature: [[14, 'broad', 0.35], [9, 'shrub', 0.2]], yard: [[30, 'broad', 0.3]], indoorFood: [[5, 'shrub', 0.8], [9, 'broad', 0.35]], tropical: [[7, 'palm', 0.9], [5, 'shrub', 0.4]] };
+	const SOW = { foodForest: [[8, 'broad', 0.75], [5, 'shrub', 0.3]], woodland: [[5.5, 'conifer', 0.95]], bamboo: [[4, 'bamboo', 0.9]], nature: [[14, 'broad', 0.35], [9, 'shrub', 0.2]], yard: [[30, 'broad', 0.3]], indoorFood: [[5, 'shrub', 0.7], [8, 'broad', 0.3], [9, 'palm', 0.3]] };
 	const id = Object.fromEntries(USE_IDS.map((u, k) => [k, u]));
 	const W = land.nx * CELL, H = land.nz * CELL;
 	for (const [use, list] of Object.entries(SOW))
@@ -462,7 +462,7 @@ function sow(land, plants, /** @type {number} */ seed) {
 					const c = land.cells[j * land.nx + i];
 					if (c === 255 || id[c] !== use || r() > chance) continue;
 					// under the glass the plants stay small enough for the dome
-					const inside = use === 'indoorFood' || use === 'tropical';
+					const inside = use === 'indoorFood';
 					plants.add(px, 0, pz, kind, inside && kind === 'broad' ? 0.7 : 1);
 				}
 		}
