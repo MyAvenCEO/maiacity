@@ -1,8 +1,8 @@
 #!/bin/sh
 # Checks each protocol model against the result its header expects ("// Expected: c0c1a0a0"): one letter and digit per
 # query, in order, 0 where the query holds and 1 where Verifpal finds an attack. Needs Verifpal 1.6.5 on the PATH, or
-# its path in $VERIFPAL (`cargo install verifpal --version 1.6.5`, with Rust 1.98 or later). The hello and the link
-# take minutes each.
+# its path in $VERIFPAL (`cargo install verifpal --version 1.6.5`, with Rust 1.98 or later). The hello takes some six
+# minutes, the others under one each.
 set -eu
 cd "$(dirname "$0")"
 verifpal=${VERIFPAL:-verifpal}

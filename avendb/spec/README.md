@@ -154,11 +154,12 @@ device restored from an old backup, a clone, or a stolen key. Every peer flags s
 
 The theorems take signatures and encryption as given. What devices say to each other on the network is modeled apart,
 in [Verifpal](https://verifpal.com) (`protocol/`), against an active attacker who also breaks the curves from the
-start: X25519, ed25519 and the passkey's P-256 give up their private keys (`PUBKEY[weak]`), and only ML-KEM-768,
-Classic McEliece and SLH-DSA hold, the schemes chosen because they would. Each model states the result it expects in
-its header, one letter and digit per query, 0 where the query holds and 1 where Verifpal finds an attack; each also
-holds a value that a weaker design would give away, so that it shows the attack it rules out. `protocol/check.sh` runs
-them all and fails on any other result.
+start: X25519, ed25519 and the passkey's P-256 give up their private keys (`PUBKEY[weak]`, or are left out where a
+curve only signs, as its signatures then prove nothing), and only ML-KEM-768, Classic McEliece and SLH-DSA hold, the
+schemes chosen because they would. Each model states the result it expects in its header, one letter and digit per
+query, 0 where the query holds and 1 where Verifpal finds an attack; each also holds a value that a weaker design
+would give away, so that it shows the attack it rules out. `protocol/check.sh` runs them all and fails on any other
+result.
 
 | Model | What it shows | Result |
 |---|---|---|
