@@ -71,7 +71,9 @@
 		tests[i] = await testCard($state.snapshot(cards[i]), valley, s).catch((e) => ({ hooks: [], error: e?.message || String(e) }));
 	}
 	const removing = $derived(removeText.split(/[\s,]+/).filter(Boolean));
-	const shown = $derived(show === 'open' ? mips.filter((m) => m.status === 'open') : mips);
+	// Open: what waits for the admin. History (Samuel): every decided MIP, the latest decision first, folded to one line
+	const shown = $derived(show === 'open' ? mips.filter((m) => m.status === 'open') : mips.filter((m) => m.status !== 'open').sort((a, b) => String(b.decided ?? '').localeCompare(String(a.decided ?? ''))));
+	let unfolded = $state(/** @type {Record<number, boolean>} */ ({}));
 
 	async function refresh() {
 		if (!acct?.play) return;
@@ -249,7 +251,7 @@
 				MIPs
 				<span class="filter">
 					<button class:on={show === 'open'} onclick={() => (show = 'open')}>Open</button>
-					<button class:on={show === 'all'} onclick={() => (show = 'all')}>All</button>
+					<button class:on={show === 'history'} onclick={() => (show = 'history')}>History</button>
 				</span>
 			</h3>
 			{#each shown as m (m.number)}
@@ -260,9 +262,11 @@
 					</div>
 					<div class="by">by {m.author_name ?? m.author ?? 'someone'}{m.via === 'mcp' ? ', through the MCP' : ''} · {when(m.created)}</div>
 					<div class="what">{what(m)}</div>
-					{#if m.description}<p class="prose">{m.description}</p>{/if}
-					{#each m.cards as card (card.id)}<ConfigCard {card} base={m.base?.[card.id] ?? null} />{/each}
-					{#each m.remove as id (id)}{#if m.base?.[id]}<ConfigCard card={m.base[id]} removed />{/if}{/each}
+					{#if m.status === 'open' || unfolded[m.number]}
+						{#if m.description}<p class="prose">{m.description}</p>{/if}
+						{#each m.cards as card (card.id)}<ConfigCard {card} base={m.base?.[card.id] ?? null} />{/each}
+						{#each m.remove as id (id)}{#if m.base?.[id]}<ConfigCard card={m.base[id]} removed />{/if}{/each}
+					{/if}
 					{#if m.status === 'open'}
 						<div class="decide">
 							{#if acct.admin}
@@ -274,11 +278,11 @@
 							{#if !acct.admin}<small>Only the admin accepts MIPs for now.</small>{/if}
 						</div>
 					{:else}
-						<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : ''}{m.note ? ` · "${m.note}"` : ''}</div>
+						<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : ''}{m.note ? ` · "${m.note}"` : ''} <button class="link" onclick={() => (unfolded[m.number] = !unfolded[m.number])}>{unfolded[m.number] ? 'Fold' : 'What it changed'}</button></div>
 					{/if}
 				</article>
 			{:else}
-				<p class="sub">{show === 'open' ? 'No open MIPs.' : 'No MIPs yet.'}</p>
+				<p class="sub">{show === 'open' ? 'No open MIPs.' : 'No MIP decided yet.'}</p>
 			{/each}
 		</section>
 	{/if}
@@ -553,5 +557,14 @@
 		.mips {
 			padding: 0.6rem 0.6rem var(--nav-room, 6rem);
 		}
+	}
+	.link {
+		border: 0;
+		background: none;
+		padding: 0;
+		color: inherit;
+		text-decoration: underline;
+		cursor: pointer;
+		font: inherit;
 	}
 </style>
