@@ -16,8 +16,7 @@ export const TOOLS = [
 	{ id: 'ask', label: 'Set my price', note: 'per good it grows, in HEARTS: no starting price, it names its first one and then moves it as it likes, from its own stock, its needs, the market\'s history and what others ask' },
 	{ id: 'bid', label: 'Set what I pay', note: 'per good it buys: the most it pays, in the same range, from how close it is to going short' },
 	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet, up to the haggling the Policies allow' },
-	{ id: 'reserve', label: 'Keep a stock', note: '1 to 7 days of food and water' },
-	{ id: 'visit', label: 'Plan my walk', note: 'where to go first and second today: the market square, another aven, or home to sell' }
+	{ id: 'reserve', label: 'Keep a stock', note: '1 to 7 days of food and water' }
 ];
 
 /** no starting prices (Samuel: they discover them). An aven's first price for a good is any of these, in HEARTS a
@@ -78,7 +77,7 @@ export function boardFor(world) {
 export function stateFor(world, a) {
 	const y = a.yesterday;
 	return {
-		game: `${world.avens.length} avens trade food and water for HEARTS. Each needs ${NEED.water} WATER and ${NEED.fruits} each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through ${RULES.waterDays} days; with no food at all it lives ${RULES.foodDays} days. Supply is only just above need, so shortages are common. Every aven mints ${RULES.mint} HEARTS a day and every HEART decays ${RULES.decay}% a year, so hoarded HEARTS shrink. There are no set prices: every aven names its own in HEARTS, and the market price is just the average actually traded over the last day. Goal: survive and end with the most HEARTS.`,
+		game: `${world.avens.length} avens trade food and water for HEARTS. Each needs ${NEED.water} WATER and ${NEED.fruits} each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through ${RULES.waterDays} days; with no food at all it lives ${RULES.foodDays} days. Supply is only just above need, so shortages are common. Every aven mints ${RULES.mint} HEARTS a day and every HEART decays ${RULES.decay}% a year, so hoarded HEARTS shrink. There are no set prices: every aven names its own in HEARTS. Every ${RULES.clearHours} hour${RULES.clearHours === 1 ? '' : 's'} the market matches each good's cheapest seller with the buyer who pays most, while the seller's price is within the buyer's limit (or close enough to haggle). The market price is just the average actually traded over the last day. Goal: survive and end with the most HEARTS.`,
 		day: world.day,
 		me: a.name,
 		hearts: a.hearts,
@@ -123,7 +122,7 @@ function survivalFor(world, a) {
 }
 
 /** the typed questions for one aven this morning */
-export function questionsFor(world, a, { full = true, walk = full } = {}) {
+export function questionsFor(world, a, { full = true } = {}) {
 	const q = {};
 	a.brain.levels = {}; // the price levels asked, so the answer is read against the same ones
 	for (const g of a.grows) {
@@ -148,25 +147,11 @@ export function questionsFor(world, a, { full = true, walk = full } = {}) {
 			criteria: lv.criteria
 		};
 	}
-	// the slower decisions (haggling, stock) only on a full ask, and where to walk on that or once its last walk is done:
-	// every ask carries the whole state once per question, so fewer questions is fewer tokens
+	// the slower decisions (haggling, stock) only on a full ask: every ask carries the whole state once per question, so
+	// fewer questions is fewer tokens. Where to walk is no decision: a buyer walks to fetch what it bought (Samuel).
 	if (full) q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: gives() };
 	if (full) q.reserve = { type: 'choice', instructions: 'How many days of food and water should you keep in stock from now on? A bigger stock guards against bad harvests, but fresh food rots: fruits 25%, vegetables 15%, chicken 30%, legumes 5% a night; water keeps.', criteria: RESERVE };
-	if (!full && !walk) return q;
-	const stops = visitOptions(world, a);
-	q.visit_1 = { type: 'choice', instructions: 'Who should you walk to now, to buy what you lack or sell what you grow?', criteria: stops };
-	q.visit_2 = { type: 'choice', instructions: 'And who next, after that visit?', criteria: stops };
 	return q;
-}
-
-/** where an aven can walk today: any living aven (what it grows and asks), or home to wait for buyers */
-function visitOptions(world, a) {
-	const out = { market: 'The market square in the middle of the valley: trade with everyone who is there', home: 'Stay on my own land and wait for buyers to come' };
-	for (const o of world.avens) {
-		if (o === a || !o.alive) continue;
-		out[o.name] = `Grows ${o.grows.map((g) => `${GOOD_LABEL[g]} at ${o.ask[g]}`).join(' and ')}; wants ${GOODS.filter((g) => want(o, g) > 0 && a.grows.includes(g)).map((g) => GOOD_LABEL[g]).join(', ') || 'nothing I grow'}`;
-	}
-	return out;
 }
 
 /** ask Liquid, through our API's relay when `relay` is given (browsers can't reach Liquid directly); resolves to the
@@ -191,14 +176,7 @@ export async function askLiquid(state, questions, { signal, relay } = {}) {
 /** apply one morning's answers to an aven's ledger of prices */
 export function applyAnswers(world, a, answers, source) {
 	const changes = [];
-	const route = [answers.visit_1?.choice, answers.visit_2?.choice].filter(Boolean);
-	if (route.length) {
-		a.plan = route.map((n) => (n === 'home' || n === 'market' ? n : world.avens.find((o) => o.name === n)?.id)).filter((x) => x != null);
-		a.target = null;
-		changes.push(`walks to ${route.join(', then ')}`);
-	}
 	for (const [key, ans] of Object.entries(answers)) {
-		if (key.startsWith('visit_')) continue;
 		if (key === 'reserve') {
 			const d = Number(ans.choice);
 			if (d > 0 && d !== a.reserveDays) {
@@ -223,6 +201,9 @@ export function applyAnswers(world, a, answers, source) {
 		book[g] = price;
 	}
 	a.brain.last = { day: world.day, t: world.t, source, answers };
+	// for the run's record in the database (when the page keeps one): what it decided, compactly
+	if (world.outbox)
+		world.outbox.push({ kind: 'decision', day: world.day, t: world.t, aven: a.name, changes, answers: Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v?.choice ?? (typeof v?.score === 'number' ? Math.round(v.score * 1000) / 1000 : null)])) });
 	a.brain.ready = true;
 	// an aven re-decides every few seconds: only a decision that changed something goes in its ledger
 	if (changes.length || a.ledger.at(-1)?.kind !== 'price') a.ledger.push({ day: world.day, t: world.t, kind: 'price', source, changes });

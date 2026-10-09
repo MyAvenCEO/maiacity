@@ -1,16 +1,15 @@
 <!--
 	avenCITY Sandbox 7 — avens trading ($lib/sandbox-8). Ten blobs in a 2D valley, each with 1,000 HEARTS and a territory
-	that grows 2 of the 5 goods. They walk to each other and trade at their own prices; all day long each one keeps re-deciding
-	them with Liquid's decision model d1:free, through our API's relay. No Liquid, no game: the valley pauses until it answers.
+	that grows 1 to 3 of the 5 goods. Every hour the market matches their asks and bids (no market place: after a deal the
+	buyer walks over to fetch its goods); all day long each one keeps re-deciding its prices with Liquid's decision model
+	d1:free, through our API's relay. No Liquid, no game: the valley pauses until it answers.
 	Survive, and end with the most HEARTS.
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, step, ranking, want, MARKET, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S } from './economy.js';
+	import { createWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S } from './economy.js';
 	import { RULES, setRules, changedRules } from './rules.js';
 	import RulesView from './RulesView.svelte';
-	// how the browser reaches Liquid, which sends no CORS headers: in development (the Mac build) through Vite's own
-	// proxy at /liquid, on the site through our API's relay
 	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
@@ -122,8 +121,7 @@
 	// before it thinks once a burst of 2 or 3 asks (~20,000 tokens each) has gone through, and sustains about one ask
 	// every 4 s (read off its console, 2026-10-09). So the asks go out one at a time, the stalest aven first, and the
 	// gap between them adapts: 10% shorter after an answer (down to GAP_MIN), 50% longer after a refusal (up to
-	// GAP_MAX). Only every third ask of an aven is a full one (haggling, stock, its walk); the rest ask its prices, and
-	// its walk when the last one is done.
+	// GAP_MAX). Only every third ask of an aven is a full one (haggling, stock); the rest ask its prices.
 	// Any failure but a refusal pauses the valley.
 	const THINK_H = 2;
 	const STALE_H = 24;
@@ -150,7 +148,6 @@
 		if (!a) return;
 		const me = a;
 		const full = !me.brain.ready || (me.brain.asks ?? 0) % 3 === 0;
-		const walk = full || !me.plan?.length;
 		me.brain.asks = (me.brain.asks ?? 0) + 1;
 		me.brain.pending = true;
 		me.brain.t0 = world.t;
@@ -159,7 +156,7 @@
 		const ctrl = new AbortController();
 		const timer = setTimeout(() => ctrl.abort(), 25000);
 		const myWorld = world;
-		askLiquid(stateFor(world, me), questionsFor(world, me, { full, walk }), { signal: ctrl.signal, ...LIQUID })
+		askLiquid(stateFor(world, me), questionsFor(world, me, { full }), { signal: ctrl.signal, ...LIQUID })
 			.then((answers) => {
 				gate.gap = Math.max(GAP_MIN, gate.gap * 0.9);
 				gate.nextAt = performance.now() + gate.gap;
@@ -323,32 +320,10 @@
 			ctx.fillStyle = light > 0.5 ? '#1f2a23aa' : '#f4f1e8aa';
 			ctx.font = '600 13px system-ui, sans-serif';
 			ctx.textAlign = 'center';
-			ctx.fillText(`${a.name}'s land`, t.x, t.y + t.r + 18);
+			ctx.fillText(a.alive ? `${a.name} · ${fmt(a.hearts)} ♥` : `${a.name} †`, t.x, t.y + t.r + 18);
 		}
 
-		// the market square in the middle: a paved round with stalls in the five goods' colours
-		ctx.fillStyle = light > 0.5 ? '#efe6d2' : '#5b5546';
-		ctx.strokeStyle = '#a8916088';
-		ctx.lineWidth = 3;
-		ctx.beginPath();
-		ctx.arc(MARKET.x, MARKET.y, MARKET.r, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.stroke();
-		GOODS.forEach((g, i) => {
-			const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-			const sx = MARKET.x + Math.cos(ang) * MARKET.r * 0.78,
-				sy = MARKET.y + Math.sin(ang) * MARKET.r * 0.78;
-			ctx.fillStyle = GOOD_COLOUR[g];
-			ctx.beginPath();
-			ctx.roundRect(sx - 9, sy - 6, 18, 12, 3);
-			ctx.fill();
-		});
-		ctx.fillStyle = light > 0.5 ? '#6b5a3a' : '#e8dcc0';
-		ctx.font = '700 13px system-ui, sans-serif';
-		ctx.textAlign = 'center';
-		ctx.fillText('MARKET', MARKET.x, MARKET.y + 4);
-
-		// trades just made: a ring and a coloured spark where they met
+		// trades just made: a ring on the seller's land, in the good's colour
 		for (const e of world.events) {
 			const age = (world.t - e.t) / 1800;
 			ctx.strokeStyle = `${GOOD_COLOUR[e.good]}${Math.round((1 - age) * 255)
@@ -414,7 +389,9 @@
 			ctx.fillStyle = light > 0.5 ? '#1f2a23' : '#f4f1e8';
 			ctx.font = '700 12px system-ui, sans-serif';
 			ctx.textAlign = 'center';
-			ctx.fillText(a.alive ? `${a.name} · ${fmt(a.hearts)} ♥` : `${a.name} †`, a.x, a.y - r - 12);
+			// away from home, fetching what it bought: its name goes with it
+			const away = Math.hypot(a.x - a.territory.x, a.y - a.territory.y) > 30;
+			if (away) ctx.fillText(a.name, a.x, a.y - r - 12);
 			// what it bought on the way: a small dot per good, until it is home
 			const carried = a.alive ? GOODS.filter((g) => a.carry[g] > 0) : [];
 			carried.forEach((g, i) => {
@@ -429,7 +406,7 @@
 			if (a.brain.pending) {
 				ctx.fillStyle = light > 0.5 ? '#1f2a23' : '#f4f1e8';
 				ctx.font = '11px system-ui, sans-serif';
-				ctx.fillText('thinking…', a.x, a.y + r + (carried.length ? 30 : 18));
+				ctx.fillText('thinking…', a.x + r + 34, a.y + 4);
 			}
 		}
 	}
