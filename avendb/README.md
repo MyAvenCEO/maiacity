@@ -49,8 +49,8 @@ cd .. && node scripts/avendb-smoke.mjs  # starts a dev server, opens the page, s
 ```
 
 `scripts/avendb-account.mjs` walks the account itself against an avenDB server on the same machine: founding the
-person's vault, the four vaults it owns, acting as each, sharing and revoking, signing in again; its header says how to
-build and start both.
+person's vault, a note's history and branches, the DB & Schema tab, the four vaults it owns, acting as each, sharing and
+revoking, signing in again; its header says how to build and start both.
 
 The Lean build needs [elan](https://github.com/leanprover/elan) (`spec/lean-toolchain` pins the version). After a change
 to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit them with the change.
@@ -144,8 +144,8 @@ device, or links it through the code another of their devices shows (a QR code t
 below); a test server's can take their place.
 
 Unlocked, the page lays out the vaults this browser knows as a chat app lays out its servers: a bar of vault marks, the
-person's own first; beside it the picked vault's name and its list, its notes and todos, then its settings; and at the
-foot, in the middle, the vault the person acts as. It all comes from the device's world (`Device::world`), shown again
+person's own first; beside it the picked vault's name and its list, its notes and todos, its DB & Schema tab, then its
+settings; and at the foot, in the middle, the vault the person acts as. It all comes from the device's world (`Device::world`), shown again
 the moment anything arrives (`Device::changed`):
 
 - **Names.** Every vault goes by the name on its profile, a document tagged `avendb:vault` in its home, the first space
@@ -164,6 +164,17 @@ the moment anything arrives (`Device::changed`):
 - **Settings.** Each vault's kind, owners, root and devices; who holds which role on each of its spaces, the grants in
   force and who may revoke them; and which devices receive each space, through which vault, and whether each opens it
   or only relays its ciphertext, as avenCEO's server does.
+- **A note's history.** Each note opens on its history and branches, as a docs app shows a document's (`Device::note`):
+  its lines, the main line and each branch, to switch between and edit on; every write of the line, newest first, with
+  what it changed word by word, its device and vault, to view, restore, undo or branch from; a branch merges into main,
+  makes main match it (a promote), or takes in what main has since; and any line forks into a new note with none of its
+  history (`Device::set_text_on`, `branch`, `merge`, `restore`, `undo`, `fork`). None of it asks the passkey: each is a
+  write like any other, checked against the acting vault's caps.
+- **DB & Schema.** Each vault's database as this browser holds it (`Device::database`): each space it founded, with its
+  key's epoch and the ops held on it by kind, and a table of its entries, cards and profiles too, each with its record,
+  the schema its writes name, its writes, lines and branches, and who holds a role on it. What the acting vault holds no
+  cap to read shows sealed, ids and counts only, as avenDB's server holds it. Below, the schemas the app ships and the
+  spaces publish, field by field, and the lenses that carry a record between their versions.
 
 #### In the Mac app
 

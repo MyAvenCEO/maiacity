@@ -413,3 +413,157 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
         n.shutdown().await.expect("the node shuts down");
     }
 }
+
+/// The text the note viewer shows on line `line` of `note`'s history (`Device::note`).
+fn on_line(note: &serde_json::Value, line: Option<&str>) -> String {
+    let lines = note["lines"].as_array().expect("its lines");
+    let found = lines.iter().find(|l| l["line"].as_str() == line).expect("the line");
+    found["text"].as_str().unwrap_or_default().to_string()
+}
+
+/// The kinds of `note`'s writes, in the order its device took them.
+fn kinds(note: &serde_json::Value) -> Vec<String> {
+    let commits = note["commits"].as_array().expect("its writes");
+    commits.iter().map(|c| c["kind"].as_str().unwrap_or_default().to_string()).collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_note_branches_merges_and_forks_and_the_database_shows_every_record() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    let mut lab = Lab::with_entropy([3; 32]);
+    let me = lab.device_with("the server", [7; 32]);
+    let (relay, admits) = (Some(url.clone()), Some(admission.clone()));
+    let opts = Options { relay, admission: admits, card: true, ..Options::local() };
+    let server = Node::spawn(lab, me, opts).await.expect("the server's node");
+    let eve = Browser::new(Passkey::from_seed([5; 32]));
+    let first = start("Eve's browser", &url, 7);
+    let first = Device::found(first, &server.offer(), None, eve.unlock([1; 32]), &eve).await.expect("her vault");
+    eve.steps();
+    let v = first.vault().await.expect("her vault");
+    let home = first.world().await.and_then(|w| named(&w, v).1).expect("her home");
+    let note = first.write(v, home, "Plan".into(), "Plant beans.".into()).await.expect("a note");
+    let at = (home, note);
+    first.set_text_on(v, at, None, 2, "Plant beans and peas.".into()).await.expect("an edit");
+    let shown = first.note(home, note).await.expect("its history");
+    assert_eq!(kinds(&shown), ["edit", "edit"]);
+    let commits = shown["commits"].as_array().expect("its writes");
+    assert_eq!(
+        (commits[1]["before"].as_str(), commits[1]["text"].as_str()),
+        (Some("Plant beans."), Some("Plant beans and peas."))
+    );
+    assert_eq!(commits[0]["before"], serde_json::Value::Null, "the first write built on nothing");
+    let edit = commits[1]["op"].as_str().expect("the edit's id").to_string();
+    // a branch from the main line's head: its own line, named, from that version
+    let heads = || async { first.note(home, note).await.expect("its history")["lines"][0]["heads"].clone() };
+    let from: Vec<String> = serde_json::from_value(heads().await).expect("the heads");
+    assert_eq!(from, std::slice::from_ref(&edit));
+    let ops = |ids: &[String]| ids.iter().map(|h| avendb::id::OpId(hex32(h))).collect::<Vec<_>>();
+    let draft = first.branch(v, at, ops(&from), "draft".into()).await.expect("a branch");
+    first.set_text_on(v, at, Some(draft), 2, "Plant beans, peas and corn.".into()).await.expect("an edit on it");
+    let shown = first.note(home, note).await.expect("its history");
+    let b = hex_of(&draft.0);
+    assert_eq!(shown["lines"][1]["name"].as_str(), Some("draft"));
+    assert_eq!(shown["lines"][1]["from"], serde_json::json!([edit]));
+    assert_eq!(
+        (on_line(&shown, None), on_line(&shown, Some(&b))),
+        ("Plant beans and peas.".into(), "Plant beans, peas and corn.".into())
+    );
+    assert_eq!(kinds(&shown), ["edit", "edit", "branch", "edit"]);
+    let corn = shown["commits"][3]["op"].as_str().expect("the branch's edit").to_string();
+    let all: Vec<&str> =
+        shown["commits"].as_array().expect("its writes").iter().map(|c| c["op"].as_str().unwrap()).collect();
+    assert_eq!(shown["lines"][0]["history"], serde_json::json!(all[..2]), "the main line: the first two");
+    assert_eq!(shown["lines"][1]["history"], serde_json::json!(all), "the branch: what it builds on, then its own");
+    assert_eq!(
+        shown["commits"][2]["from"],
+        serde_json::json!({ "line": null, "name": "main" }),
+        "it started from main"
+    );
+    // merged into the main line: a write that carries no change, and the main line shows the branch's edit
+    first.merge(v, at, (Some(draft), None), false).await.expect("merged");
+    let shown = first.note(home, note).await.expect("its history");
+    assert_eq!(kinds(&shown).last().map(String::as_str), Some("merge"));
+    assert_eq!(on_line(&shown, None), "Plant beans, peas and corn.");
+    let merge = &shown["commits"][4];
+    assert_eq!(merge["from"], serde_json::json!({ "line": b, "name": "draft" }), "it brought in the branch");
+    assert_eq!(
+        (merge["before"].as_str(), merge["text"].as_str()),
+        (Some("Plant beans and peas."), Some("Plant beans, peas and corn.")),
+        "what the merge brought to the main line"
+    );
+    // the branch's edit undone on the main line, every other change kept; then the first version restored
+    first.undo(v, at, None, avendb::id::OpId(hex32(&corn))).await.expect("undone");
+    assert_eq!(on_line(&first.note(home, note).await.expect("its history"), None), "Plant beans and peas.");
+    let made = first.note(home, note).await.expect("its history")["commits"][0]["op"].as_str().map(str::to_string);
+    let made = made.expect("the first write");
+    first.restore(v, at, None, ops(&[made])).await.expect("restored");
+    assert_eq!(on_line(&first.note(home, note).await.expect("its history"), None), "Plant beans.");
+    // the branch goes on, and a promote brings the main line to exactly what the branch shows
+    first.set_text_on(v, at, Some(draft), 2, "Corn first.".into()).await.expect("another edit on the branch");
+    first.merge(v, at, (Some(draft), None), true).await.expect("promoted");
+    let shown = first.note(home, note).await.expect("its history");
+    assert_eq!(kinds(&shown).last().map(String::as_str), Some("promote"));
+    assert_eq!((on_line(&shown, None), on_line(&shown, Some(&b))), ("Corn first.".into(), "Corn first.".into()));
+    // a fork: the branch's note as a new entry of her home, with none of its history
+    let fork = first.fork(v, at, Some(draft), home).await.expect("forked");
+    let forked = first.note(home, fork).await.expect("the fork's history");
+    assert_eq!((kinds(&forked), on_line(&forked, None)), (vec!["edit".to_string()], "Corn first.".to_string()));
+    assert_eq!(eve.steps(), [], "no ceremony for any of it");
+    // her database: the note's record and lines, the fork, her browser's card; the schemas the app ships
+    let db = first.database(v).await;
+    assert_eq!(db["vault"].as_str(), Some(hex_of(&v.0).as_str()));
+    let space = &db["spaces"][0];
+    assert_eq!(space["id"].as_str(), Some(hex_of(&home.0).as_str()));
+    let rows = space["rows"].as_array().expect("its rows");
+    let row = |e: EntryId| rows.iter().find(|r| r["entry"].as_str() == Some(hex_of(&e.0).as_str())).expect("the row");
+    let plan = row(note);
+    assert_eq!(
+        (plan["kind"].as_str(), plan["title"].as_str(), plan["tag"].as_str()),
+        (Some("document"), Some("Plan"), None)
+    );
+    assert_eq!((plan["lines"].as_u64(), plan["branches"].clone()), (Some(2), serde_json::json!(["draft"])));
+    assert_eq!(plan["writes"].as_u64(), Some(kinds(&shown).len() as u64));
+    assert_eq!(plan["record"]["blocks"][1]["text"].as_str(), Some("Corn first."));
+    assert_eq!(plan["actor"].as_str(), Some(hex_of(&v.0).as_str()), "her vault wrote it");
+    let schemas: Vec<String> = db["builtIn"]["schemas"]
+        .as_array()
+        .expect("the app's schemas")
+        .iter()
+        .map(|s| s["id"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(schemas.len(), 4);
+    assert_eq!(
+        plan["authored"],
+        serde_json::json!([avendb::lens::DOCUMENT_V2.id().to_hex()]),
+        "written under document v2"
+    );
+    assert!(schemas.contains(&avendb::lens::DOCUMENT_V2.id().to_hex()));
+    assert_eq!(row(fork)["record"]["blocks"][1]["text"].as_str(), Some("Corn first."));
+    let card = rows.iter().find(|r| r["tag"].as_str() == Some("card")).expect("her browser's card");
+    assert_eq!(card["title"].as_str(), Some("Eve's browser"));
+    assert_eq!(space["ops"]["founded"].as_u64(), Some(1));
+    assert!(space["ops"]["writes"].as_u64().is_some_and(|n| n >= kinds(&shown).len() as u64 + 2), "{}", space["ops"]);
+    assert!(space["ops"]["grants"].as_u64().is_some_and(|n| n >= 1), "avenCEO relays it");
+    assert_eq!(db["builtIn"]["lenses"][0]["title"].as_str(), Some("Markdown document, v1 to v2"));
+    // the server relays her home and opens none of it: its rows are sealed
+    let sealed = move |lab: &Lab, me| {
+        let held = lab.state(me).space(home).is_some_and(|s| s.entries.contains(&fork));
+        held && lab.item(me, home, note).is_none()
+    };
+    until("the server keeps her home's log, sealed", || server.read(sealed)).await;
+    for n in [first.node(), &server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// 32 bytes from their 64 hex digits.
+fn hex32(s: &str) -> [u8; 32] {
+    avendb::id::BlobId::from_hex(s).expect("an id").0
+}
+
+/// 32 bytes as their 64 hex digits, as the page sees them.
+fn hex_of(b: &[u8; 32]) -> String {
+    avendb::id::BlobId(*b).to_hex()
+}

@@ -39,6 +39,12 @@
 //! grants in force, the devices that sync it and whether each opens it or only relays its ciphertext, and the notes and
 //! todos there with each vault's role on each.
 //!
+//! Each note opens on its history (`Device::note`): its lines, the main line and each branch, and every write of it,
+//! each with what it changed, to edit on any line, start a branch, merge, promote, restore, undo or fork, acting for a
+//! vault as any write does (`Device::set_text_on`, `branch`, `merge`, `restore`, `undo`, `fork`). And each vault's
+//! database shows as the device holds it, every entry with its record, its schema and its writes, and the schemas and
+//! lenses the app ships and its spaces publish (`Device::database`, `data`).
+//!
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
 
@@ -53,7 +59,7 @@ use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, KeyScope};
 use avendb::lab::{Backup, Lab};
 use avendb::lens::{DocV2, Status};
-use avendb::policy::{Action, Grant, Grantee, Kind, Principal, Refusal, Role, Scope, State, Vault};
+use avendb::policy::{Action, Grant, Grantee, Kind, Line, Principal, Refusal, Role, Scope, State, Vault};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge, passkey_key};
 use avendb::wire::Wire as _;
 use avendb_net::{Authenticator, Node, Offer, Options, Step};
@@ -66,6 +72,8 @@ use tokio::sync::watch;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, future_to_promise};
 use zeroize::Zeroizing;
+
+mod data;
 
 /// The tag of a device's card: a document in the first space its person's vault founded, titled with the device's
 /// name, that the device wrote itself (`Device::card`).
@@ -395,6 +403,94 @@ impl Device {
     pub async fn write(&self, actor: VaultId, space: SpaceId, title: String, body: String) -> Result<EntryId> {
         let write = move |lab: &mut Lab, me| lab.create(me, actor, space, cast::document(&title, &body, me));
         self.node.act(write).await.map_err(|why| anyhow!("the document is refused: {why:?}"))
+    }
+
+    /// Vault `vault`'s database as the device holds it, for the page's DB & Schema tab (`data::database`).
+    pub async fn database(&self, vault: VaultId) -> Value {
+        self.node.read(move |lab, me| data::database(lab, me, vault)).await
+    }
+
+    /// Note `entry` of space `space` as the device holds it, for the page's note viewer: its lines and every write of it
+    /// the device counts (`data::note`). `None` if it counts none.
+    pub async fn note(&self, space: SpaceId, entry: EntryId) -> Option<Value> {
+        self.node.read(move |lab, me| data::note(lab, me, space, entry)).await
+    }
+
+    /// Sets the text of block `block` of entry `entry` in space `space` on line `line` of its history, acting for vault
+    /// `actor`; its peers are told.
+    pub async fn set_text_on(
+        &self,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        block: u64,
+        text: String,
+    ) -> Result<()> {
+        let edit =
+            move |lab: &mut Lab, me| lab.edit_on(me, actor, space, entry, line, |item| item.set_text(block, &text));
+        self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
+    }
+
+    /// Starts a branch named `name` of entry `entry` in space `space` from the version `from`, acting for vault
+    /// `actor` (`Lab::branch`): the new line, named by its first write.
+    pub async fn branch(
+        &self,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        from: Vec<OpId>,
+        name: String,
+    ) -> Result<OpId> {
+        let branch = move |lab: &mut Lab, me| lab.branch(me, actor, (space, entry), &from, &name);
+        self.node.act(branch).await.map_err(|why| anyhow!("the branch is refused: {why:?}"))
+    }
+
+    /// Merges line `from` of entry `entry` in space `space` into line `into`, acting for vault `actor`; with `promote`,
+    /// `into` then shows exactly what `from` does (`Lab::merge`, `Lab::promote`).
+    pub async fn merge(
+        &self,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        (from, into): (Line, Line),
+        promote: bool,
+    ) -> Result<OpId> {
+        let merge = move |lab: &mut Lab, me| match promote {
+            true => lab.promote(me, actor, (space, entry), from, into),
+            false => lab.merge(me, actor, (space, entry), from, into),
+        };
+        self.node.act(merge).await.map_err(|why| anyhow!("the merge is refused: {why:?}"))
+    }
+
+    /// Puts the record of version `version` of entry `entry` in space `space` back on line `line`, acting for vault
+    /// `actor` (`Lab::restore`).
+    pub async fn restore(
+        &self,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        version: Vec<OpId>,
+    ) -> Result<OpId> {
+        let restore = move |lab: &mut Lab, me| lab.restore(me, actor, (space, entry), line, &version);
+        self.node.act(restore).await.map_err(|why| anyhow!("the restore is refused: {why:?}"))
+    }
+
+    /// Undoes write `op` of entry `entry` in space `space` on line `line`, keeping every change made since, acting for
+    /// vault `actor` (`Lab::undo`).
+    pub async fn undo(&self, actor: VaultId, (space, entry): (SpaceId, EntryId), line: Line, op: OpId) -> Result<OpId> {
+        let undo = move |lab: &mut Lab, me| lab.undo(me, actor, (space, entry), line, op);
+        self.node.act(undo).await.map_err(|why| anyhow!("the undo is refused: {why:?}"))
+    }
+
+    /// Forks what line `line` of entry `entry` in space `space` shows into a new entry of space `into`, with none of
+    /// its history, acting for vault `actor` (`Lab::fork`): the new entry.
+    pub async fn fork(
+        &self,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        into: SpaceId,
+    ) -> Result<EntryId> {
+        let fork = move |lab: &mut Lab, me| lab.fork(me, actor, (space, entry), line, into);
+        self.node.act(fork).await.map_err(|why| anyhow!("the fork is refused: {why:?}"))
     }
 
     /// The spaces it knows, each with the vault that founded it and the documents it reads there, but for the devices'
@@ -1037,6 +1133,117 @@ impl PageDevice {
         })
     }
 
+    /// Vault `vault`'s (in hex) database as the device holds it, for the DB & Schema tab (`data::database`): a promise
+    /// of an object.
+    pub fn database(&self, vault: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let vault = VaultId(id(&vault)?);
+            js_sys::JSON::parse(&device.database(vault).await.to_string())
+        })
+    }
+
+    /// Note `entry` of space `space` (both in hex) as the device holds it, for the note viewer (`data::note`): a
+    /// promise of an object, of `undefined` while it counts no write of it.
+    pub fn note(&self, space: String, entry: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (space, entry) = (SpaceId(id(&space)?), EntryId(id(&entry)?));
+            let Some(note) = device.note(space, entry).await else { return Ok(JsValue::UNDEFINED) };
+            js_sys::JSON::parse(&note.to_string())
+        })
+    }
+
+    /// Sets the text of block `block` of entry `entry` in space `space` on line `line` of its history, acting for vault
+    /// `actor` (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its branch's.
+    #[wasm_bindgen(js_name = setTextOn)]
+    pub fn set_text_on(
+        &self,
+        actor: String,
+        space: String,
+        entry: String,
+        line: Option<String>,
+        block: u32,
+        text: String,
+    ) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, at, line) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?);
+            device.set_text_on(actor, at, line, block.into(), text).await.map_err(js_value)?;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
+    /// Starts a branch named `name` of entry `entry` in space `space` from the version `from`, an array of its writes,
+    /// acting for vault `actor` (`Device::branch`): a promise of the new line, its first write's id. Ids in hex.
+    pub fn branch(&self, actor: String, space: String, entry: String, from: Array, name: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, at, from) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, op_ids(&from)?);
+            Ok(hex(&device.branch(actor, at, from, name).await.map_err(js_value)?.0).into())
+        })
+    }
+
+    /// Merges line `from` of entry `entry` in space `space` into line `into`, acting for vault `actor`; with
+    /// `promote`, `into` then shows exactly what `from` does (`Device::merge`): a promise of the merge's write. Ids in
+    /// hex; a line is `null` for the main line.
+    pub fn merge(
+        &self,
+        actor: String,
+        space: String,
+        entry: String,
+        from: Option<String>,
+        into: Option<String>,
+        promote: bool,
+    ) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, at, lines) =
+                (VaultId(id(&actor)?), entry_at(&space, &entry)?, (line_of(from)?, line_of(into)?));
+            Ok(hex(&device.merge(actor, at, lines, promote).await.map_err(js_value)?.0).into())
+        })
+    }
+
+    /// Puts the record of version `version`, an array of writes, of entry `entry` in space `space` back on line
+    /// `line`, acting for vault `actor` (`Device::restore`): a promise of the write that does. Ids in hex.
+    pub fn restore(
+        &self,
+        actor: String,
+        space: String,
+        entry: String,
+        line: Option<String>,
+        version: Array,
+    ) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, at, line, version) =
+                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, op_ids(&version)?);
+            Ok(hex(&device.restore(actor, at, line, version).await.map_err(js_value)?.0).into())
+        })
+    }
+
+    /// Undoes write `op` of entry `entry` in space `space` on line `line`, keeping every change since, acting for vault
+    /// `actor` (`Device::undo`): a promise of the write that does. Ids in hex.
+    pub fn undo(&self, actor: String, space: String, entry: String, line: Option<String>, op: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, at, line, op) =
+                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, OpId(id(&op)?));
+            Ok(hex(&device.undo(actor, at, line, op).await.map_err(js_value)?.0).into())
+        })
+    }
+
+    /// Forks what line `line` of entry `entry` in space `space` shows into a new entry of space `into`, acting for
+    /// vault `actor` (`Device::fork`): a promise of the new entry. Ids in hex.
+    pub fn fork(&self, actor: String, space: String, entry: String, line: Option<String>, into: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, at, line, into) =
+                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, SpaceId(id(&into)?));
+            Ok(hex(&device.fork(actor, at, line, into).await.map_err(js_value)?.0).into())
+        })
+    }
+
     /// The spaces it knows and the documents it reads in each (`Device::notes`): a promise of
     /// `[{space, founder, docs: [{entry, title, text}]}]`, ids in hex.
     pub fn notes(&self) -> Promise {
@@ -1274,7 +1481,8 @@ impl Sheet {
     /// authenticator: the credential's id, the assertion and the PRF outputs, each in an array of its own.
     pub fn open(&self, sealed: &[u8], challenge: &[u8]) -> Result<JsValue, JsError> {
         let plain = keys::open_once(sealed, &self.0, &sheet_info(challenge));
-        let plain = plain.ok_or_else(|| JsError::new("the sign-in sheet's answer doesn't open here: it answers another ask"))?;
+        let plain = plain
+            .ok_or_else(|| JsError::new("the sign-in sheet's answer doesn't open here: it answers another ask"))?;
         ceremony_value(&plain).map_err(js_error)
     }
 }
@@ -1303,7 +1511,8 @@ fn sheet_info(challenge: &[u8]) -> Vec<u8> {
 fn ceremony_bytes(value: &JsValue) -> Result<Zeroizing<Vec<u8>>> {
     let id = Reflect::get(value, &"id".into()).ok().and_then(|id| id.as_string());
     let id = id.context("the ceremony brought no credential")?;
-    let (data, client, signature) = (field(value, "authenticatorData")?, field(value, "clientDataJSON")?, field(value, "signature")?);
+    let (data, client, signature) =
+        (field(value, "authenticatorData")?, field(value, "clientDataJSON")?, field(value, "signature")?);
     let prf_out = prf(value, "prf")?;
     let device = Reflect::get(value, &"devicePrf".into()).map_err(js_anyhow)?;
     let device = if device.is_undefined() || device.is_null() { None } else { Some(prf(value, "devicePrf")?) };
@@ -1441,6 +1650,22 @@ fn hex_bytes(s: &str) -> Option<Vec<u8>> {
 /// An id from its 64 lowercase hex digits.
 fn id(s: &str) -> Result<[u8; 32], JsValue> {
     BlobId::from_hex(s).map(|b| b.0).ok_or_else(|| JsError::new(&format!("{s:?} is no id")).into())
+}
+
+/// Entry `entry` of space `space`, from their ids.
+fn entry_at(space: &str, entry: &str) -> Result<(SpaceId, EntryId), JsValue> {
+    Ok((SpaceId(id(space)?), EntryId(id(entry)?)))
+}
+
+/// A line of an entry's history as the page names it: `null`, `undefined` or `""` for the main line, else the id of
+/// the write that started its branch.
+fn line_of(line: Option<String>) -> Result<Line, JsValue> {
+    line.filter(|l| !l.is_empty()).map(|l| id(&l).map(OpId)).transpose()
+}
+
+/// Writes, from an array of their ids.
+fn op_ids(ops: &Array) -> Result<Vec<OpId>, JsValue> {
+    ops.iter().map(|op| id(&op.as_string().unwrap_or_default()).map(OpId)).collect()
 }
 
 /// An error as the page sees it: the whole chain of what went wrong.

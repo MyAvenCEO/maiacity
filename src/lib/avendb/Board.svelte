@@ -1,9 +1,9 @@
 <!--
 	A vault's notes and todos, as the acting vault sees them: each of the vault's spaces, its home first, with what the
-	acting vault reads there, editable where it writes, and shared on where it owns. Everything else stays out of sight,
-	as on a device of the acting vault alone: the device's world says which vault holds which role on each space and
-	each entry (avendb-browser's `World`), and every write goes out acting for that vault, which the rules check against
-	its caps.
+	acting vault reads there, editable where it writes, and shared on where it owns; each note opens on its history and
+	branches (NoteView). Everything else stays out of sight, as on a device of the acting vault alone: the device's
+	world says which vault holds which role on each space and each entry (avendb-browser's `World`), and every write goes
+	out acting for that vault, which the rules check against its caps.
 -->
 <script>
 	import { untrack } from 'svelte';
@@ -11,9 +11,9 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   onaccess: () => void, onact: (vault: string) => void }}
+	 *   onaccess: () => void, onact: (vault: string) => void, onopen: (space: string, entry: string) => void }}
 	 */
-	let { world, vault, actor, api, busy, onaccess, onact } = $props();
+	let { world, vault, actor, api, busy, onaccess, onact, onopen } = $props();
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
@@ -162,6 +162,7 @@
 								<span class="chip" class:accent={h.id === actor}>{nameOf(byId.get(h.id))} {ROLES[h.role]}</span>
 							{/each}
 							{#if it.public}<span class="chip">everyone reads</span>{/if}
+							<button class="btn quiet" onclick={() => onopen(s.id, it.entry)}>History & branches</button>
 							{#if allows(it.roles[actor], 'owner')}
 								<button class="btn quiet" disabled={busy} onclick={() => openShare(it.entry)}>Share</button>
 							{/if}
