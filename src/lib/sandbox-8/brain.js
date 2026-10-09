@@ -13,30 +13,38 @@ export const LIQUID_MODEL = 'd1:free';
 
 /** each aven's tools: just enough to run its own business, each one a typed question its brain answers every morning */
 export const TOOLS = [
-	{ id: 'ask', label: 'Set my price', note: 'per good it grows: anything from a tenth of the market price to ten times it, chosen from its own stock, its needs, the market\'s history and what others ask; its price then follows the market every hour' },
+	{ id: 'ask', label: 'Set my price', note: 'per good it grows, in HEARTS: no starting price, it names its first one and then moves it as it likes, from its own stock, its needs, the market\'s history and what others ask' },
 	{ id: 'bid', label: 'Set what I pay', note: 'per good it buys: the most it pays, in the same range, from how close it is to going short' },
 	{ id: 'flex', label: 'Haggle', note: 'how far it gives in when prices don\'t meet, up to the haggling the Policies allow' },
 	{ id: 'reserve', label: 'Keep a stock', note: '1 to 7 days of food and water' },
 	{ id: 'visit', label: 'Plan my walk', note: 'where to go first and second today: the market square, another aven, or home to sell' }
 ];
 
-/** where a price can sit against the market price, from well under to well over */
-/** where an aven's price can sit against the market price: no cap from outside, a tenth to ten times (a score falls
- * between levels, so any price in between is possible) */
-const LEVELS = [0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.33, 2, 4, 10];
-const factors = () => LEVELS;
-const moves = () => LEVELS.map((f) => (f === 1 ? 'At the market price' : `${f}× the market price`));
+/** no starting prices (Samuel: they discover them). An aven's first price for a good is any of these, in HEARTS a
+ * unit; after that it moves its own price, from a quarter to four times, as often as it likes. A score falls between
+ * levels, so any price in between is possible. Liquid takes at most 10 levels a score question (more is a 422). */
+const FIRST = [0.5, 1, 2, 4, 8, 15, 30, 60, 120, 250];
+const MOVES = [0.25, 0.5, 0.7, 0.85, 1, 1.15, 1.4, 2, 4];
+/** the price levels for one good, in HEARTS: around the aven's own price, else the market's, else from scratch */
+function priceLevels(world, a, g, side) {
+	const mine = (side === 'ask' ? a.ask : a.bid)[g];
+	const base = mine ?? world.market[g].price;
+	if (base == null) return { levels: FIRST, criteria: FIRST.map((p) => `${p} HEARTS a unit`) };
+	const levels = MOVES.map((f) => cents(base * f));
+	const what = mine != null ? 'my price now' : 'the market price';
+	return { levels, criteria: MOVES.map((f, i) => `${levels[i]} HEARTS a unit (${f === 1 ? `keep ${what}` : `${f}× ${what}`})`) };
+}
 /** how far to give in when haggling */
 const flexes = () => [0, 0.1, 0.25, 0.5, 1].map((f) => Math.round(f * RULES.haggleMax) / 100);
 const gives = () => flexes().map((f, i) => (i ? `Give in up to ${Math.round(f * 100)}%` : 'Never give in'));
 const RESERVE = { '1': 'One day: spend as little as possible now', '2': 'Two days', '3': 'Three days', '5': 'Five days', '7': 'A week: never risk going hungry' };
 
-/** a score of 0–4 (may fall between levels) to a price factor */
-function factorOf(score, levels = factors()) {
+/** a score of 0 to levels-1 (may fall between levels) to a value between them; prices in between are geometric */
+function factorOf(score, levels, geometric = false) {
 	const n = levels.length - 1;
 	const s = Math.max(0, Math.min(n, score));
 	const i = Math.min(n - 1, Math.floor(s));
-	return levels[i] + (levels[i + 1] - levels[i]) * (s - i);
+	return geometric ? levels[i] * (levels[i + 1] / levels[i]) ** (s - i) : levels[i] + (levels[i + 1] - levels[i]) * (s - i);
 }
 
 /** the live market board as an aven sees it: per good, the price, how much is offered and wanted, and by whom */
@@ -67,7 +75,7 @@ export function boardFor(world) {
 export function stateFor(world, a) {
 	const y = a.yesterday;
 	return {
-		game: `${world.avens.length} avens trade food and water for HEARTS. Each needs ${NEED.water} WATER and ${NEED.fruits} each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through ${RULES.waterDays} days; with no food at all it lives ${RULES.foodDays} days. Supply is only just above need, so shortages are common. Every aven mints ${RULES.mint} HEARTS a day and every HEART decays ${RULES.decay}% a year, so hoarded HEARTS shrink. Prices are free: every aven sets its own, and the market price follows what is wanted, offered and traded. Goal: survive and end with the most HEARTS.`,
+		game: `${world.avens.length} avens trade food and water for HEARTS. Each needs ${NEED.water} WATER and ${NEED.fruits} each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day. With no water at all an aven lives through ${RULES.waterDays} days; with no food at all it lives ${RULES.foodDays} days. Supply is only just above need, so shortages are common. Every aven mints ${RULES.mint} HEARTS a day and every HEART decays ${RULES.decay}% a year, so hoarded HEARTS shrink. There are no set prices: every aven names its own in HEARTS, and the market price is just the average actually traded over the last day. Goal: survive and end with the most HEARTS.`,
 		day: world.day,
 		me: a.name,
 		hearts: a.hearts,
@@ -98,13 +106,15 @@ export function stateFor(world, a) {
 /** how long an aven lasts on what it holds, per good, and what buying a day's missing needs would cost today */
 function survivalFor(world, a) {
 	const days = Object.fromEntries(GOODS.map((g) => [g, NEED[g] ? Math.floor(a.stock[g] / NEED[g]) : null]));
-	const cost = GOODS.reduce((n, g) => n + (a.grows.includes(g) ? 0 : NEED[g] * world.market[g].price), 0);
+	const buys = GOODS.filter((g) => !a.grows.includes(g));
+	const priced = buys.every((g) => world.market[g].price != null);
+	const cost = priced ? buys.reduce((n, g) => n + NEED[g] * world.market[g].price, 0) : 0;
 	return {
 		days_my_stock_lasts: days,
 		short_tonight_unless_i_buy: Object.fromEntries(GOODS.filter((g) => a.stock[g] < NEED[g]).map((g) => [g, NEED[g] - a.stock[g]])),
 		water_reserve: `${Math.round(a.body.water)} of 100; at 0 I die. With no water at all I last ${RULES.waterDays} days`,
 		food_reserve: `${Math.round(a.body.food)} of 100; at 0 I die. With no food at all I last ${RULES.foodDays} days`,
-		cost_of_one_day_of_what_i_must_buy_at_market_price: Math.round(cost * 100) / 100,
+		cost_of_one_day_of_what_i_must_buy_at_market_price: priced ? Math.round(cost * 100) / 100 : 'not known yet: some of it has never been traded',
 		days_my_hearts_last_at_that_cost: cost ? Math.floor(a.hearts / cost) : null
 	};
 }
@@ -112,22 +122,27 @@ function survivalFor(world, a) {
 /** the typed questions for one aven this morning */
 export function questionsFor(world, a) {
 	const q = {};
+	a.brain.levels = {}; // the price levels asked, so the answer is read against the same ones
 	for (const g of a.grows) {
 		const m = world.market[g];
 		const sold = a.yesterday ? a.yesterday.sold[g] : 0;
+		const lv = priceLevels(world, a, g, 'ask');
+		a.brain.levels[`ask_${g}`] = lv.levels;
 		q[`ask_${g}`] = {
 			type: 'score',
-			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${NEED[g]} a day yourself and can spare ${spare(a, g)}). Its market price is ${m.price} HEARTS; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 14-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots. Where should your selling price for ${GOOD_LABEL[g]} sit against the market price?`,
-			criteria: moves()
+			instructions: `You grow ${GOOD_LABEL[g]} and hold ${a.stock[g]} (you need ${NEED[g]} a day yourself and can spare ${spare(a, g)}). ${m.price == null ? 'Nobody has traded it yet, so there is no market price: name your own' : `Its market price (the average traded over the last day) is ${m.price} HEARTS`}; right now ${m.supply} are offered and ${m.demand} wanted across the valley (see the market's 14-day history and what the other sellers ask). Yesterday you sold ${sold}${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of what you keep rots each night, so unsold stock is lost` : '; it keeps'}. Price it yourself to earn the most HEARTS: high when it is scarce and wanted, low enough to sell before it rots and at a price buyers can afford. What should your selling price for ${GOOD_LABEL[g]} be?`,
+			criteria: lv.criteria
 		};
 	}
 	for (const g of GOODS) {
 		if (a.grows.includes(g)) continue;
 		const m = world.market[g];
+		const lv = priceLevels(world, a, g, 'bid');
+		a.brain.levels[`bid_${g}`] = lv.levels;
 		q[`bid_${g}`] = {
 			type: 'score',
-			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${NEED[g]} a day, hold ${a.stock[g]} (${a.stock[g] < NEED[g] ? `short by ${NEED[g] - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / NEED[g])} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${g === 'water' ? `Your water reserve is ${Math.round(a.body.water)} of 100.` : `Your food reserve is ${Math.round(a.body.food)} of 100.`} You hold ${Math.round(a.hearts)} HEARTS. Its market price is ${m.price}; ${m.supply} are offered and ${m.demand} wanted (see the 14-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked. Where should the most you pay for ${GOOD_LABEL[g]} sit against the market price?`,
-			criteria: moves()
+			instructions: `You don't grow ${GOOD_LABEL[g]} and must buy it: you need ${NEED[g]} a day, hold ${a.stock[g]} (${a.stock[g] < NEED[g] ? `short by ${NEED[g] - a.stock[g]} tonight unless you buy` : `enough for ${Math.floor(a.stock[g] / NEED[g])} days`}) and want ${want(a, g)} more${ROT[g] ? `; ${Math.round(ROT[g] * 100)}% of a stock rots each night` : ''}. ${g === 'water' ? `Your water reserve is ${Math.round(a.body.water)} of 100.` : `Your food reserve is ${Math.round(a.body.food)} of 100.`} You hold ${Math.round(a.hearts)} HEARTS. ${m.price == null ? 'Nobody has traded it yet, so there is no market price' : `Its market price (the average traded over the last day) is ${m.price}`}; ${m.supply} are offered and ${m.demand} wanted (see the 14-day history and what sellers ask). Survival first, then keep the most HEARTS: pay up when you are about to go short, pay little when you are well stocked. What is the most you should pay for ${GOOD_LABEL[g]}?`,
+			criteria: lv.criteria
 		};
 	}
 	q.flex = { type: 'score', instructions: "When a buyer's limit and a seller's price don't meet, how far should you give in to strike the deal?", criteria: gives() };
@@ -157,7 +172,11 @@ export async function askLiquid(state, questions, { signal, relay } = {}) {
 		body: JSON.stringify(relay ? { state, questions } : { model: LIQUID_MODEL, state, questions }),
 		signal
 	});
-	if (!res.ok) throw new Error(`${relay ? 'relay' : 'Liquid'} ${res.status}${res.status >= 500 ? ` ${(await res.json().catch(() => null))?.error ?? ''}`.trimEnd() : ''}`);
+	if (!res.ok) {
+		const err = await res.json().catch(() => null);
+		const detail = err?.detail ? `: ${(typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail)).slice(0, 200)}` : '';
+		throw new Error(`${relay ? 'relay' : 'Liquid'} ${res.status}${err?.error ? ` ${err.error}` : ''}${detail}`);
+	}
 	const body = await res.json();
 	if (!body?.answers) throw new Error('Liquid sent no answers');
 	return body.answers;
@@ -190,13 +209,12 @@ export function applyAnswers(world, a, answers, source) {
 			continue;
 		}
 		const [side, g] = key.split('_');
-		if (a.markup[g] == null || typeof ans.score !== 'number' || (side === 'ask') !== a.grows.includes(g)) continue;
-		const f = Math.round(factorOf(ans.score) * 100) / 100;
-		const pct = Math.round((f - 1) * 100);
-		if (f !== a.markup[g]) changes.push(`${side === 'ask' ? 'sells' : 'pays up to'} ${GOOD_LABEL[g]} at market ${pct >= 0 ? '+' : ''}${pct}%`);
-		a.markup[g] = f;
+		const levels = a.brain.levels?.[key];
+		if (!levels || typeof ans.score !== 'number' || (side === 'ask') !== a.grows.includes(g)) continue;
 		const book = side === 'ask' ? a.ask : a.bid;
-		book[g] = cents(world.market[g].price * f);
+		const price = cents(factorOf(ans.score, levels, true));
+		if (price !== book[g]) changes.push(`${side === 'ask' ? 'sells' : 'pays up to'} ${GOOD_LABEL[g]} at ${price}`);
+		book[g] = price;
 	}
 	a.brain.last = { day: world.day, t: world.t, source, answers };
 	a.brain.ready = true;

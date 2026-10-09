@@ -54,7 +54,7 @@ export async function relayDecision(req, who) {
 			signal: AbortSignal.timeout(25_000)
 		});
 		const out = await res.json().catch(() => null);
-		if (!res.ok) return { status: 502, body: { error: `Liquid ${res.status}`, detail: out?.error ?? out?.detail ?? null } };
+		if (!res.ok) return { status: 502, body: { error: `Liquid ${res.status}`, detail: out?.detail ?? out?.error ?? null } };
 		if (!out?.answers) return { status: 502, body: { error: 'Liquid sent no answers' } };
 		return { status: 200, body: { answers: out.answers } };
 	} catch (e) {

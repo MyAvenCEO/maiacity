@@ -61,9 +61,11 @@
 	function fmt(n) {
 		return Math.round(n).toLocaleString('en-US');
 	}
-	/** @param {number} f a markup factor, as ±% against the market */
-	function pctOf(f) {
-		const p = Math.round((f - 1) * 100);
+	/** an aven's price against the market price, as ±% (nothing while the good has no market price)
+	 * @param {number | null} v @param {number | null} m */
+	function pctOf(v, m) {
+		if (v == null || m == null) return '';
+		const p = Math.round((v / m - 1) * 100);
 		return p ? `${p > 0 ? '+' : ''}${p}%` : '±0';
 	}
 	/** @param {number} t */
@@ -97,7 +99,7 @@
 					const recent = world.trades.filter((/** @type {any} */ t) => t.good === g && world.t - t.t < DAY_S);
 					const units = recent.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.qty, 0);
 					const avg = units ? Math.round(recent.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.qty * t.price, 0) / units) : null;
-					return [g, { avg, units, rotted: world.rotted[g], price: m.price, open: m.open, supply: m.supply, demand: m.demand, history: m.history.slice(-30).concat(m.price), sells: m.sells.map((/** @type {any} */ o) => ({ ...o })), wants: m.wants.map((/** @type {any} */ o) => ({ ...o })) }];
+					return [g, { avg, units, rotted: world.rotted[g], price: m.price, open: m.open, supply: m.supply, demand: m.demand, history: m.history.slice(-30).concat(m.price == null ? [] : [m.price]), sells: m.sells.map((/** @type {any} */ o) => ({ ...o })), wants: m.wants.map((/** @type {any} */ o) => ({ ...o })) }];
 				})
 			),
 			aven: {
@@ -106,7 +108,6 @@
 				body: { ...a.body },
 				harvest: { ...a.harvest },
 				ask: { ...a.ask },
-				markup: { ...a.markup },
 				bid: { ...a.bid },
 				ledger: a.ledger.slice(-80).reverse(),
 				brain: { ...a.brain }
@@ -491,7 +492,7 @@
 		{/if}
 		<div class="ticker" aria-label="Prices">
 			{#each GOODS as g (g)}
-				<span><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} <b>{snap.market[g].price}</b> <small>avg {snap.market[g].avg ?? '—'}</small></span>
+				<span><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} <b>{snap.market[g].price ?? '—'}</b> <small>avg {snap.market[g].avg ?? '—'}</small></span>
 			{/each}
 		</div>
 	</div>
@@ -571,16 +572,16 @@
 			<table class="avgs">
 				<thead><tr><th>Good</th><th>Market</th><th>Avg traded, 24 h</th><th>Units, 24 h</th></tr></thead>
 				<tbody>
-					{#each GOODS as g (g)}<tr><td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td><td class="num">{snap.market[g].price}</td><td class="num">{snap.market[g].avg ?? '—'}</td><td class="num">{snap.market[g].units}</td></tr>{/each}
+					{#each GOODS as g (g)}<tr><td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td><td class="num">{snap.market[g].price ?? '—'}</td><td class="num">{snap.market[g].avg ?? '—'}</td><td class="num">{snap.market[g].units}</td></tr>{/each}
 				</tbody>
 			</table>
 		</section>
 		{:else if tab === 'market'}
 		<section class="market-board">
-			<p class="sub">Live: who sells and who wants what, right now. The market price leans up when more is wanted than offered, down when more is offered, and follows each day's trades.</p>
+			<p class="sub">Live: who sells and who wants what, right now. No price is set: each aven names its own, and the market price is the average actually traded over the last day (none before the first trade).</p>
 			{#each GOODS as g (g)}
 				{@const m = snap.market[g]}
-				{@const change = m.open ? Math.round(((m.price - m.open) / m.open) * 100) : 0}
+				{@const change = m.open && m.price != null ? Math.round(((m.price - m.open) / m.open) * 100) : 0}
 				{@const lo = Math.min(...m.history)}
 				{@const hi = Math.max(...m.history)}
 				<div class="good">
@@ -589,7 +590,7 @@
 						<svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
 							<polyline fill="none" stroke={GOOD_COLOUR[g]} stroke-width="2" points={m.history.map((/** @type {number} */ p, /** @type {number} */ i) => `${(i / Math.max(1, m.history.length - 1)) * 100},${22 - ((p - lo) / Math.max(1, hi - lo)) * 20}`).join(' ')} />
 						</svg>
-						<span class="num" title="market price"><b>{m.price}</b> ♥ <small class:up={change > 0} class:down={change < 0}>{change > 0 ? '+' : ''}{change}%</small></span>
+						<span class="num" title="market price"><b>{m.price ?? '—'}</b> ♥ <small class:up={change > 0} class:down={change < 0}>{change > 0 ? '+' : ''}{change}%</small></span>
 					</div>
 					<div class="avg">Average traded, last 24 h: <b>{m.avg ?? '—'}</b>{m.avg != null ? ` ♥ over ${m.units} units` : ' (no trades)'}{ROT[g] ? ` · rots ${Math.round(ROT[g] * 100)}% a night, ${m.rotted} rotted so far` : ' · keeps'}</div>
 					<div class="sd">
@@ -617,7 +618,7 @@
 				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · water ${Math.round(snap.aven.body.water)} · food ${Math.round(snap.aven.body.food)}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.reserveDays} days in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
 			</p>
 			<div class="scroll"><table>
-				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, against the market">Sells</th><th title="pays up to, against the market">Pays</th></tr></thead>
+				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, and against the market price">Sells</th><th title="pays up to, and against the market price">Pays</th></tr></thead>
 				<tbody>
 					{#each GOODS as g (g)}
 						<tr>
@@ -626,9 +627,9 @@
 							<td class="num">{#if snap.aven.produce[g] != null}{snap.aven.produce[g]}<small>last {snap.aven.harvest[g]}</small>{/if}</td>
 							<td class="num">{ROT[g] ? `${Math.round(ROT[g] * 100)}%` : '—'}</td>
 							<td class="num">{snap.aven.stock[g]}</td>
-							<td class="num">{snap.market[g].price}</td>
-							<td class="num">{#if snap.aven.ask[g] != null}{snap.aven.ask[g]}<small>{pctOf(snap.aven.markup[g])}</small>{/if}</td>
-							<td class="num">{#if snap.aven.bid[g] != null}{snap.aven.bid[g]}<small>{pctOf(snap.aven.markup[g])}</small>{/if}</td>
+							<td class="num">{snap.market[g].price ?? '—'}</td>
+							<td class="num">{#if snap.aven.ask[g] != null}{snap.aven.ask[g]}<small>{pctOf(snap.aven.ask[g], snap.market[g].price)}</small>{/if}</td>
+							<td class="num">{#if snap.aven.bid[g] != null}{snap.aven.bid[g]}<small>{pctOf(snap.aven.bid[g], snap.market[g].price)}</small>{/if}</td>
 						</tr>
 					{/each}
 				</tbody>
