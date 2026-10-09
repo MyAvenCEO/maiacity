@@ -315,23 +315,23 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 const VERBS = /** @type {Record<string, string>} */ ({ relay: 'relay', read: 'read', write: 'write', owner: 'own' });
 
 /**
- * What edit `op` does, in words, naming what it touches as `s` names it; `grantOf` finds a grant's edit, for a
+ * What edit `edit` does, in words, naming what it touches as `s` names it; `grantOf` finds a grant's edit, for a
  * revocation.
- * @param {SignedEdit} op @param {Studio} s @param {(id: string) => SignedEdit | undefined} grantOf
+ * @param {SignedEdit} edit @param {Studio} s @param {(id: string) => SignedEdit | undefined} grantOf
  */
-export function describe(op, s, grantOf) {
-	const f = op.fields ?? {};
+export function describe(edit, s, grantOf) {
+	const f = edit.fields ?? {};
 	/** @param {any} p */
 	const who = (p) => (!p ? 'nobody' : p === 'public' ? 'everyone' : p.vault ? s.vaultName(p.vault) : s.signer(p.signer));
 	/** @param {any} sc */
 	const scope = (sc) => (sc?.entry ? `${s.entry(sc.space, sc.entry)} in ${s.space(sc.space)}` : s.space(sc?.space));
 	/** @param {any} k */
 	const key = (k) => (k?.vault ? `${s.vaultName(k.vault)}’s vault key` : k?.entry ? `the key of ${s.entry(k.space, k.entry)}` : `the key of ${s.space(k?.space)}`);
-	switch (op.kind) {
+	switch (edit.kind) {
 		case 'genesis': {
 			const owners = list((f.owners ?? []).map(who));
 			const agree = f.threshold > 1 ? `, ${f.threshold} of them to agree` : '';
-			return `Founds ${s.vaultName(op.id)}, a ${f.vaultKind} vault${owners ? `, owned by ${owners}` : ''}${agree}`;
+			return `Founds ${s.vaultName(edit.id)}, a ${f.vaultKind} vault${owners ? `, owned by ${owners}` : ''}${agree}`;
 		}
 		case 'addOwner':
 			return `Makes ${who(f.owner)} an owner of ${s.vaultName(f.vault)}`;
@@ -346,7 +346,7 @@ export function describe(op, s, grantOf) {
 		case 'setRoot':
 			return f.root ? `Makes ${s.signer(f.root)} the root of ${s.vaultName(f.vault)}` : `Clears ${s.vaultName(f.vault)}’s root`;
 		case 'foundSpace':
-			return `${s.vaultName(f.actor)} founds ${s.space(op.id)}`;
+			return `${s.vaultName(f.actor)} founds ${s.space(edit.id)}`;
 		case 'grant':
 			return `Lets ${who(f.grantee)} ${VERBS[f.role] ?? f.role} ${scope(f.scope)}`;
 		case 'revoke': {
@@ -366,6 +366,6 @@ export function describe(op, s, grantOf) {
 		case 'checkpoint':
 			return `Checkpoints ${s.entry(f.space, f.entry)}, covering ${count(f.covers?.length ?? 0, 'write')}`;
 		default:
-			return op.kind;
+			return edit.kind;
 	}
 }

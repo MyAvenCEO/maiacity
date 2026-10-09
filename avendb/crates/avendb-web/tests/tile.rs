@@ -1,5 +1,5 @@
 //! The avenDB tile's world through its JSON views and actions, as the page reads and changes it: made a step at a
-//! time, each device showing what its caps reach, apps editing through their schemas, branches, access, governance
+//! time, each device showing what its caps reach, apps editing through their schemas, proposals, access, governance
 //! signed by the passkeys it needs, and the Lab's columns.
 
 use avendb::cast::{AFTER_TEXT, CHARTER_TEXT, ONBOARDING_TEXT, WELCOME_TEXT};
@@ -144,20 +144,21 @@ fn an_app_edits_through_its_schema_and_every_device_shows_the_edit() {
     value["blocks"][1]["text"] = json!(AFTER_TEXT);
     let put = json!({"do": "put", "on": bob, "space": space, "entry": welcome, "value": value});
     let done = tile.act_json(&put, 2.0);
-    assert!(done["made"]["op"].is_string() && done["synced"].as_u64().is_some_and(|n| n > 0), "{done}");
+    assert!(done["made"]["edit"].is_string() && done["synced"].as_u64().is_some_and(|n| n > 0), "{done}");
     let again = tile.act_json(&put, 2.0);
     assert_eq!((&again["made"], &again["synced"]), (&Value::Null, &json!(0)), "the same view again changes nothing");
     // as on the network, every device online has the edit at once: nobody syncs by hand
     assert_eq!(texts(&tile, &phone, &space, &welcome), ["Welcome", AFTER_TEXT]);
     let e = show(&tile, json!({"view": "entry", "on": phone, "space": space, "entry": welcome}));
-    assert_eq!(each(&e["commits"], "/kind"), ["create", "edit"]);
-    let (create, edit) = (&e["commits"][0], &e["commits"][1]);
+    assert_eq!(each(&e["edits"], "/kind"), ["create", "edit"]);
+    let (create, edit) = (&e["edits"][0], &e["edits"][1]);
     assert_eq!(create["schemas"], json!([DOCUMENT_V1.id().to_hex()]));
     assert_eq!(edit["schemas"], json!([DOCUMENT_V2.id().to_hex()]));
     assert_eq!((&edit["author"]["name"], &edit["actor"]["name"]), (&json!("Bob's Mac"), &json!("Maia Coop")));
     assert_eq!(edit["when"], json!(2.0));
     // the first version opens read-only, as it was
-    let version = json!({"view": "version", "on": phone, "space": space, "entry": welcome, "version": [create["op"]]});
+    let version =
+        json!({"view": "version", "on": phone, "space": space, "entry": welcome, "version": [create["edit"]]});
     assert_eq!(show(&tile, version)["value"]["blocks"][1]["text"], json!(WELCOME_TEXT));
     // a new document, and a block added to it
     let mac = device(&tile, "Alice's Mac");
@@ -195,7 +196,7 @@ fn the_rules_refuse_with_their_reason_on_the_device_that_tries() {
 }
 
 #[test]
-fn branches_merge_promote_and_revert_from_the_page() {
+fn proposals_merge_promote_and_revert_from_the_page() {
     let mut tile = made();
     let (space, welcome) = (start(&tile, "space"), start(&tile, "entry"));
     let (mac, bob) = (device(&tile, "Alice's Mac"), device(&tile, "Bob's Mac"));
@@ -203,7 +204,7 @@ fn branches_merge_promote_and_revert_from_the_page() {
         show(tile, json!({"view": "entry", "on": on, "space": space, "entry": welcome, "line": line}))
     };
     let main = Value::Null;
-    let made = act(&mut tile, json!({"do": "branch", "on": bob, "space": space, "entry": welcome, "name": "draft"}));
+    let made = act(&mut tile, json!({"do": "propose", "on": bob, "space": space, "entry": welcome, "name": "draft"}));
     let draft = made["line"].clone();
     let mut value = at(&tile, &bob, &draft)["value"].clone();
     value["blocks"][1]["text"] = json!("Hello, Bob here");
@@ -213,20 +214,20 @@ fn branches_merge_promote_and_revert_from_the_page() {
     assert_eq!(each(&shown["lines"], "/name"), ["main", "draft"]);
     act(&mut tile, json!({"do": "merge", "on": mac, "space": space, "entry": welcome, "from": draft, "into": main}));
     assert_eq!(at(&tile, &mac, &main)["value"]["blocks"][1]["text"], json!("Hello, Bob here"));
-    assert_eq!(each(&at(&tile, &mac, &main)["commits"], "/kind"), ["create", "branch", "edit", "merge"]);
+    assert_eq!(each(&at(&tile, &mac, &main)["edits"], "/kind"), ["create", "propose", "edit", "merge"]);
     // reverting the merge takes main back to where it was before
     act(&mut tile, json!({"do": "revert", "on": mac, "space": space, "entry": welcome, "line": main}));
     assert_eq!(at(&tile, &mac, &main)["value"]["blocks"][1]["text"], json!(WELCOME_TEXT));
-    assert_eq!(each(&at(&tile, &mac, &main)["commits"], "/kind").last().map(String::as_str), Some("restore"));
+    assert_eq!(each(&at(&tile, &mac, &main)["edits"], "/kind").last().map(String::as_str), Some("restore"));
     act(&mut tile, json!({"do": "promote", "on": mac, "space": space, "entry": welcome, "from": draft, "into": main}));
     assert_eq!(at(&tile, &mac, &main)["record"], at(&tile, &mac, &draft)["record"]);
-    // a fork into Alice's Notes copies the record and none of the history
+    // a variant in Alice's Notes copies the record and none of the history
     let notes = id(&show(&tile, json!({"view": "spaces", "on": mac}))["spaces"], "Alice's Notes");
-    let fork = json!({"do": "fork", "on": mac, "space": space, "entry": welcome, "line": main, "into": notes});
-    let copy = act(&mut tile, fork)["entry"].clone();
+    let variant = json!({"do": "variant", "on": mac, "space": space, "entry": welcome, "line": main, "into": notes});
+    let copy = act(&mut tile, variant)["entry"].clone();
     let copied = show(&tile, json!({"view": "entry", "on": mac, "space": notes, "entry": copy}));
     assert_eq!(copied["record"], at(&tile, &mac, &main)["record"]);
-    assert_eq!(copied["commits"].as_array().map(Vec::len), Some(1));
+    assert_eq!(copied["edits"].as_array().map(Vec::len), Some(1));
     let onboarding = entry(&tile, &mac, "Handbook", "Onboarding");
     assert_eq!(texts(&tile, &mac, &space, &onboarding), ["Onboarding", ONBOARDING_TEXT], "the other entries stay");
 }
@@ -354,7 +355,7 @@ fn the_lab_shows_what_each_device_holds_and_opens() {
 }
 
 #[test]
-fn a_space_publishes_its_schemas_and_shows_what_each_commit_was_written_under() {
+fn a_space_publishes_its_schemas_and_shows_what_each_change_was_written_under() {
     let mut tile = made();
     let (mac, space) = (device(&tile, "Alice's Mac"), start(&tile, "space"));
     let lane = show(&tile, json!({"view": "schemas", "on": mac, "space": space}));
@@ -363,7 +364,7 @@ fn a_space_publishes_its_schemas_and_shows_what_each_commit_was_written_under() 
     assert_eq!(lane["lenses"][0]["id"], json!(DOCUMENT_LENS.id().to_hex()));
     assert_eq!(lane["mayPublish"], json!(true));
     let welcome = find(&lane["written"], "title", "Welcome");
-    assert_eq!(welcome["commits"][0]["schemas"], json!([DOCUMENT_V1.id().to_hex()]));
+    assert_eq!(welcome["edits"][0]["schemas"], json!([DOCUMENT_V1.id().to_hex()]));
     assert_eq!(lane["apps"].as_array().map(Vec::len), Some(6));
     let again = json!({"do": "publish", "on": mac, "space": space, "blob": DOCUMENT_V2.id().to_hex()});
     assert_eq!(refused(&mut tile, again), "AlreadyPublished");

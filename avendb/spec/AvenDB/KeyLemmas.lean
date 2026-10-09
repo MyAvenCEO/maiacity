@@ -3,7 +3,7 @@ import AvenDB.Lemmas
 /-!
 # Key lemmas
 
-Helpers for the key theorems in `Theorems.lean`. An accepted op leaves the key schedule alone; settling then rotates
+Helpers for the key theorems in `Theorems.lean`. An accepted edit leaves the key schedule alone; settling then rotates
 the stale families, seals each current key to its targets and publishes the public ones (`settle_seals`). `opens`
 finds every key `Knows` gives, so `staleKeys` sees whatever a holder could open. Without cycles, acting for a vault
 carries over to every coop it owns, so whoever may open a target may open what is sealed to it.
@@ -26,8 +26,8 @@ theorem foldl_inv_mem {α β : Type} (P : β → Prop) (f : β → α → β) :
     foldl_inv_mem P f l (fun b' a' ha' => hf b' a' (List.mem_cons_of_mem _ ha')) (f b a)
       (hf b a List.mem_cons_self h)
 
-/-- An accepted op leaves the key schedule alone: the epochs, the seals and what is published. -/
-theorem apply_keys {st post : State} {op : Op} (h : apply st op = some post) :
+/-- An accepted edit leaves the key schedule alone: the epochs, the seals and what is published. -/
+theorem apply_keys {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.epochs = st.epochs ∧ post.seals = st.seals ∧ post.published = st.published := by
   unfold apply at h
   dsimp only at h
@@ -67,8 +67,8 @@ theorem setVault_ids (st : State) (vt' : Vault) :
     ∀ v ∈ st.vaults, ∃ v' ∈ (setVault st vt').vaults, v'.id = v.id :=
   fun v hv => ⟨if v.id == vt'.id then vt' else v, List.mem_map_of_mem hv, by split <;> simp_all⟩
 
-/-- An accepted op keeps every key family: no vault, space or entry goes away. -/
-theorem keyScopes_apply {st post : State} {op : Op} (h : apply st op = some post) {k : KeyScope}
+/-- An accepted edit keeps every key family: no vault, space or entry goes away. -/
+theorem keyScopes_apply {st post : State} {edit : Edit} (h : apply st edit = some post) {k : KeyScope}
     (hk : k ∈ keyScopes st) : k ∈ keyScopes post := by
   unfold apply at h
   dsimp only at h
@@ -660,7 +660,7 @@ theorem ActsChain.listed {st : State} {s : SignerId} {v : VaultId} {ys : List Va
     · exact List.mem_append_right _ (List.mem_filterMap.2 ⟨_, hs, rfl⟩)
   | owner _ _ _ ih => exact ih
 
-/-- The chain an op names is a chain: a member of the last vault it names, up through owners to the vault it acts
+/-- The chain an edit names is a chain: a member of the last vault it names, up through owners to the vault it acts
     for. -/
 theorem ActsChain.of_actsVia {st : State} {s : SignerId} :
     ∀ {via : List VaultId} {v : VaultId}, actsVia st s via v = true → ActsChain st s v (v :: via)
@@ -678,7 +678,7 @@ theorem ActsChain.of_actsVia {st : State} {s : SignerId} :
       rw [hv] at ho
       exact .owner hv (List.contains_iff_mem.1 ho) (ActsChain.of_actsVia hvia)
 
-/-- Every chain is one an op can name. -/
+/-- Every chain is one an edit can name. -/
 theorem ActsChain.actsVia {st : State} {s : SignerId} {v : VaultId} {ys : List VaultId}
     (h : ActsChain st s v ys) : actsVia st s ys.tail v = true := by
   induction h with
@@ -989,7 +989,7 @@ theorem entitled_of_not_stale {pre post : State} {k : KeyScope} (hk : k ∈ keyS
 /-! ## T6, kept by every step -/
 
 /-- One step keeps the vault facts. -/
-theorem VaultFacts.step {st st' : State} {op : Op} (hf : VaultFacts st) (h : step st op = some st') :
+theorem VaultFacts.step {st st' : State} {edit : Edit} (hf : VaultFacts st) (h : step st edit = some st') :
     VaultFacts st' := by
   obtain ⟨hacyc, hex⟩ := step_owners hf.acyclic hf.ownersExist h
   exact ⟨hacyc, hex⟩
@@ -1067,18 +1067,18 @@ theorem KeyInv.knows_within {st : State} (hinv : KeyInv st) {f : KeyScope} (hf :
     · exact .inr (.unseal hs ih)
 
 /-- A step raises the epoch of each stale family, by how often it is stale. -/
-theorem epochOf_step {pre post : State} {op : Op} (hpost : apply pre op = some post) (k : KeyScope) :
+theorem epochOf_step {pre post : State} {edit : Edit} (hpost : apply pre edit = some post) (k : KeyScope) :
     (settle pre post).epochOf k = pre.epochOf k + (staleKeys pre post).count k := by
   rw [epochOf_settle]
   simp only [State.epochOf, (apply_keys hpost).1]
 
 /-- A family that isn't stale keeps its current key. -/
-theorem curKey_step {pre post : State} {op : Op} (hpost : apply pre op = some post) {k : KeyScope}
+theorem curKey_step {pre post : State} {edit : Edit} (hpost : apply pre edit = some post) {k : KeyScope}
     (hS : k ∉ staleKeys pre post) : (settle pre post).curKey k = pre.curKey k := by
   simp only [State.curKey, epochOf_step hpost, List.count_eq_zero.2 hS, Nat.add_zero]
 
 /-- A stale family moves to a later epoch. -/
-theorem epochOf_step_lt {pre post : State} {op : Op} (hpost : apply pre op = some post) {k : KeyScope}
+theorem epochOf_step_lt {pre post : State} {edit : Edit} (hpost : apply pre edit = some post) {k : KeyScope}
     (hS : k ∈ staleKeys pre post) : pre.epochOf k < (settle pre post).epochOf k := by
   rw [epochOf_step hpost]
   have := List.count_pos_iff.2 hS
@@ -1091,7 +1091,7 @@ theorem mayOpen_self (st : State) (v : VaultId) : MayOpen st (.vault v) (.vault 
 /-- Before the step, a holder opened the current key of a family that doesn't rotate only if it may open it after:
     holders listed before are checked by `staleKeys`; a signer listed nowhere opened only public keys, which everyone
     opened; and a vault that didn't exist opened only its own key and what everyone opened. -/
-theorem KeyInv.base_mayOpen {pre post : State} {op : Op} (hinv : KeyInv pre) (hpost : apply pre op = some post)
+theorem KeyInv.base_mayOpen {pre post : State} {edit : Edit} (hinv : KeyInv pre) (hpost : apply pre edit = some post)
     {h : Holder} {k : KeyScope} (hS : k ∉ staleKeys pre post) (hx : Knows pre (h.start pre) (pre.curKey k)) :
     MayOpen (settle pre post) h k := by
   rcases hinv.knows_old hx with hstart | ⟨k', e, heq, hk', -⟩
@@ -1141,8 +1141,8 @@ theorem KeyInv.base_mayOpen {pre post : State} {op : Op} (hinv : KeyInv pre) (hp
 /-- Before the step, the previous key of a family a holder may open now opened only current keys of families it may
     open now, if they don't rotate: a vault's key opens what the vault may open, and a space's or an entry's key
     opens keys within it, and what everyone opens. -/
-theorem KeyInv.closure_mayOpen {pre post : State} {op : Op} (hinv : KeyInv pre)
-    (hpost : apply pre op = some post) (hf' : VaultFacts (settle pre post)) {h : Holder} {f k : KeyScope}
+theorem KeyInv.closure_mayOpen {pre post : State} {edit : Edit} (hinv : KeyInv pre)
+    (hpost : apply pre edit = some post) (hf' : VaultFacts (settle pre post)) {h : Holder} {f k : KeyScope}
     (hS : k ∉ staleKeys pre post) (hf : MayOpen (settle pre post) h f)
     (hx : Knows pre [pre.curKey f] (pre.curKey k)) : MayOpen (settle pre post) h k := by
   cases hfs : f.scope? with
@@ -1197,7 +1197,7 @@ theorem KeyInv.mayKnow_new {pre st' : State} (hinv : KeyInv pre) {h : Holder} {k
     exact hk
 
 /-- A current key the holder may know after the step is one of a family it may open. -/
-theorem KeyInv.mayKnow_cur {pre post : State} {op : Op} (hinv : KeyInv pre) (hpost : apply pre op = some post)
+theorem KeyInv.mayKnow_cur {pre post : State} {edit : Edit} (hinv : KeyInv pre) (hpost : apply pre edit = some post)
     (hf' : VaultFacts (settle pre post)) {h : Holder} {k : KeyScope}
     (hx : MayKnow pre (settle pre post) h ((settle pre post).curKey k)) : MayOpen (settle pre post) h k := by
   by_cases hS : k ∈ staleKeys pre post
@@ -1211,7 +1211,7 @@ theorem KeyInv.mayKnow_cur {pre post : State} {op : Op} (hinv : KeyInv pre) (hpo
       omega
 
 /-- The current key of a family the holder may open is one it may know. -/
-theorem mayKnow_of_mayOpen {pre post : State} {op : Op} (hpost : apply pre op = some post) {h : Holder}
+theorem mayKnow_of_mayOpen {pre post : State} {edit : Edit} (hpost : apply pre edit = some post) {h : Holder}
     {k : KeyScope} (hk : MayOpen (settle pre post) h k) :
     MayKnow pre (settle pre post) h ((settle pre post).curKey k) := by
   by_cases hS : k ∈ staleKeys pre post
@@ -1238,7 +1238,7 @@ theorem KeyInv.mayKnow_signer {pre st' : State} (hinv : KeyInv pre) {h : Holder}
 
 /-- Everything a holder opens after the step is a key it may know: `MayKnow` holds the holder's start and what is
     published, and is closed under every seal, old, rotated or new. -/
-theorem KeyInv.mayKnow_closed {pre post : State} {op : Op} (hinv : KeyInv pre) (hpost : apply pre op = some post)
+theorem KeyInv.mayKnow_closed {pre post : State} {edit : Edit} (hinv : KeyInv pre) (hpost : apply pre edit = some post)
     (hf' : VaultFacts (settle pre post)) {h : Holder} {x : KeyName}
     (hx : Knows (settle pre post) (h.start (settle pre post)) x) : MayKnow pre (settle pre post) h x := by
   obtain ⟨-, hseals, hpubs⟩ := apply_keys hpost
@@ -1291,7 +1291,7 @@ theorem KeyInv.mayKnow_closed {pre post : State} {op : Op} (hinv : KeyInv pre) (
       · exact mayOpen_within (f := .space sp) (Or.inr ⟨e, rfl⟩) (hinv.mayKnow_cur hpost hf' ih)
 
 /-- Key families and epochs only grow, so what a seal may hold before a step it may hold after. -/
-theorem keyIn_step {pre post : State} {op : Op} (hpost : apply pre op = some post) {x : KeyName}
+theorem keyIn_step {pre post : State} {edit : Edit} (hpost : apply pre edit = some post) {x : KeyName}
     (hx : KeyIn pre x) : KeyIn (settle pre post) x := by
   cases x with
   | signer _ => trivial
@@ -1302,7 +1302,7 @@ theorem keyIn_step {pre post : State} {op : Op} (hpost : apply pre op = some pos
     omega
 
 /-- One step keeps `KeyInv`. -/
-theorem KeyInv.step {st st' : State} {op : Op} (hinv : KeyInv st) (h : step st op = some st') : KeyInv st' := by
+theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step st edit = some st') : KeyInv st' := by
   have hf' := hinv.facts.step h
   unfold AvenDB.step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -1373,8 +1373,8 @@ theorem keyInv_empty : KeyInv {} := by
   · simp [keyScopes] at hk
 
 /-- Every reachable state keeps `KeyInv`. -/
-theorem keyInv_replay (ops : List Op) : KeyInv (replay {} ops) :=
-  replay_inv KeyInv (fun _ _ _ h hs => h.step hs) ops {} keyInv_empty
+theorem keyInv_replay (edits : List Edit) : KeyInv (replay {} edits) :=
+  replay_inv KeyInv (fun _ _ _ h hs => h.step hs) edits {} keyInv_empty
 
 /-! ## T5, along the history
 
@@ -1418,8 +1418,8 @@ def SealsRead (sts : List State) (st : State) : Prop :=
 
 /-- A step whose result is part of the history keeps every seal justified: a rotation seals a family's key to its
     own next key, and a current key is sealed only to those entitled to it then. -/
-theorem SealsRead.step {sts : List State} {st st' : State} {op : Op} (hinv : SealsRead sts st)
-    (h : step st op = some st') (hst' : st' ∈ sts) : SealsRead sts st' := by
+theorem SealsRead.step {sts : List State} {st st' : State} {edit : Edit} (hinv : SealsRead sts st)
+    (h : step st edit = some st') (hst' : st' ∈ sts) : SealsRead sts st' := by
   unfold AvenDB.step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   obtain ⟨-, hseals, hpubs⟩ := apply_keys hpost
@@ -1457,19 +1457,20 @@ theorem sealsRead_empty (sts : List State) : SealsRead sts {} :=
   ⟨(fun _ hs => by cases hs), (fun _ hx => by cases hx)⟩
 
 /-- A trace holds the state it starts from. -/
-theorem mem_trace_self (st : State) : ∀ ops, st ∈ trace st ops
+theorem mem_trace_self (st : State) : ∀ edits, st ∈ trace st edits
   | [] => List.mem_singleton_self _
   | _ :: _ => List.mem_cons_self
 
 /-- A trace holds the state it ends in. -/
-theorem replay_mem_trace : ∀ (st : State) (ops : List Op), replay st ops ∈ trace st ops
+theorem replay_mem_trace : ∀ (st : State) (edits : List Edit), replay st edits ∈ trace st edits
   | _, [] => List.mem_singleton_self _
-  | st, op :: ops => List.mem_cons_of_mem _ (replay_mem_trace ((step st op).getD st) ops)
+  | st, edit :: edits => List.mem_cons_of_mem _ (replay_mem_trace ((step st edit).getD st) edits)
 
 /-- A step never lowers an epoch. -/
-theorem epochOf_le_step (st : State) (op : Op) (k : KeyScope) : st.epochOf k ≤ ((step st op).getD st).epochOf k := by
+theorem epochOf_le_step (st : State) (edit : Edit) (k : KeyScope) :
+    st.epochOf k ≤ ((step st edit).getD st).epochOf k := by
   unfold step
-  cases hp : apply st op with
+  cases hp : apply st edit with
   | none => exact Nat.le_refl _
   | some post =>
     show st.epochOf k ≤ (settle st post).epochOf k
@@ -1477,28 +1478,28 @@ theorem epochOf_le_step (st : State) (op : Op) (k : KeyScope) : st.epochOf k ≤
     exact Nat.le_add_right _ _
 
 /-- Epochs only grow along a replay: no state of its trace has an epoch beyond the one where the replay ends. -/
-theorem epochOf_le_replay (k : KeyScope) : ∀ (st : State) (ops : List Op), ∀ x ∈ trace st ops,
-    x.epochOf k ≤ (replay st ops).epochOf k
+theorem epochOf_le_replay (k : KeyScope) : ∀ (st : State) (edits : List Edit), ∀ x ∈ trace st edits,
+    x.epochOf k ≤ (replay st edits).epochOf k
   | _, [], _, hx => by rw [List.mem_singleton.1 hx]; exact Nat.le_refl _
-  | st, op :: ops, x, hx => by
+  | st, edit :: edits, x, hx => by
     rcases List.mem_cons.1 hx with rfl | hx
-    · exact Nat.le_trans (epochOf_le_step x op k) (epochOf_le_replay k _ ops _ (mem_trace_self _ ops))
-    · exact epochOf_le_replay k _ ops x hx
+    · exact Nat.le_trans (epochOf_le_step x edit k) (epochOf_le_replay k _ edits _ (mem_trace_self _ edits))
+    · exact epochOf_le_replay k _ edits x hx
 
 /-- Along a replay whose states are all part of the history, every seal stays justified. -/
-theorem sealsRead_replay {sts : List State} : ∀ (ops : List Op) (st : State), (∀ x ∈ trace st ops, x ∈ sts) →
-    SealsRead sts st → SealsRead sts (replay st ops)
+theorem sealsRead_replay {sts : List State} : ∀ (edits : List Edit) (st : State), (∀ x ∈ trace st edits, x ∈ sts) →
+    SealsRead sts st → SealsRead sts (replay st edits)
   | [], _, _, h => h
-  | op :: ops, st, htr, h => by
-    have htr' : ∀ x ∈ trace ((step st op).getD st) ops, x ∈ sts := fun x hx => htr x (List.mem_cons_of_mem _ hx)
-    show SealsRead sts (replay ((step st op).getD st) ops)
-    cases hs : step st op with
+  | edit :: edits, st, htr, h => by
+    have htr' : ∀ x ∈ trace ((step st edit).getD st) edits, x ∈ sts := fun x hx => htr x (List.mem_cons_of_mem _ hx)
+    show SealsRead sts (replay ((step st edit).getD st) edits)
+    cases hs : step st edit with
     | none =>
       rw [hs] at htr'
-      exact sealsRead_replay ops st htr' h
+      exact sealsRead_replay edits st htr' h
     | some st' =>
       rw [hs] at htr'
-      exact sealsRead_replay ops st' htr' (h.step hs (htr' st' (mem_trace_self st' ops)))
+      exact sealsRead_replay edits st' htr' (h.step hs (htr' st' (mem_trace_self st' edits)))
 
 /-- With every seal justified, a holder opens a signer's key only if it is that signer, and a key of a family only if
     it could read that family. -/

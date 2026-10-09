@@ -1,10 +1,10 @@
-//! Documents, schemas and branches (P4, P5; T9, T10, T11): the lenses, edits through a view, promote, and convergence
+//! Documents, schemas and proposals (P4, P5; T9, T10, T11): the lenses, edits through a view, promote, and convergence
 //! of items.
 
 mod common;
 
 use common::*;
-use avendb::branch::{Repo, MAIN};
+use avendb::history::{Repo, MAIN};
 use avendb::doc::Item;
 use serde_json::json;
 use avendb::lens::{BlockV1, DocV1, KindV1, Status, TodoV1, TodoV2, TypeV2};
@@ -75,35 +75,35 @@ fn edits_through_a_view_keep_what_it_cant_see() {
 }
 
 #[test]
-fn promote_equals_branch() {
+fn promote_equals_proposal() {
     let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
-    let rewrite = Some(repo.branch(MAC_B, &repo.heads(MAIN), "rewrite").unwrap());
+    let rewrite = Some(repo.propose(MAC_B, &repo.heads(MAIN), "rewrite").unwrap());
     repo.edit(MAC_B, rewrite, |i| i.set_text(2, "Welcome to the coop, rewritten"));
-    // main moves on meanwhile, on the block the branch rewrites and on another
+    // main moves on meanwhile, on the block the proposal rewrites and on another
     repo.edit(MAC_A, MAIN, |i| {
         i.set_text(2, "Welcome to Maia Coop: the greenhouse opens at nine.");
         i.push_block(paragraph(3, "an edit on main"));
     });
-    let (main, branch) = (repo.log(MAIN), repo.log(rewrite));
+    let (main, proposal) = (repo.log(MAIN), repo.log(rewrite));
     repo.promote(MAC_A, rewrite, MAIN);
-    // main shows exactly the branch's content (T10h, from T10d) and keeps both histories (T10e)
+    // main shows exactly the proposal's content (T10h, from T10d) and keeps both histories (T10e)
     let shown = |line| repo.item(line, MAC_A).map(|i| i.record());
     assert_eq!(shown(MAIN), shown(rewrite));
     assert_eq!(repo.item(MAIN, MAC_C).unwrap().as_document().unwrap().blocks.len(), 2);
     let log = repo.log(MAIN);
-    assert!(main.iter().chain(&branch).all(|op| log.contains(op)), "{log:?}");
+    assert!(main.iter().chain(&proposal).all(|edit| log.contains(edit)), "{log:?}");
 }
 
 #[test]
 fn merge_is_the_union_of_both_lines() {
     let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
-    let draft = Some(repo.branch(MAC_B, &repo.heads(MAIN), "draft").unwrap());
+    let draft = Some(repo.propose(MAC_B, &repo.heads(MAIN), "draft").unwrap());
     repo.edit(MAC_B, draft, |i| i.set_text(1, "Hello"));
     // until the merge, main doesn't show the draft (T10f)
     let before = repo.item(MAIN, MAC_A).unwrap().record();
     repo.edit(MAC_A, MAIN, |i| i.push_block(paragraph(3, "on main")));
     assert_eq!(repo.item(MAIN, MAC_A).unwrap().as_document().unwrap().blocks[0].text, "Welcome");
-    let (main, branch) = (repo.log(MAIN), repo.log(draft));
+    let (main, proposal) = (repo.log(MAIN), repo.log(draft));
     // merging either way shows both edits, the same (T10g); merging again changes nothing
     let mut other = repo.clone();
     let merge = repo.merge(MAC_A, draft, MAIN);
@@ -115,19 +115,19 @@ fn merge_is_the_union_of_both_lines() {
     repo.merge(MAC_A, draft, MAIN);
     assert_eq!(repo.item(MAIN, MAC_A).unwrap().record(), merged);
     let log = repo.log(MAIN);
-    assert!(main.iter().chain(&branch).chain([&merge]).all(|op| log.contains(op)) && merged != before);
+    assert!(main.iter().chain(&proposal).chain([&merge]).all(|edit| log.contains(edit)) && merged != before);
 }
 
 #[test]
-fn the_latest_commit_reverts_and_an_older_one_is_undone() {
+fn the_latest_change_reverts_and_an_older_one_is_undone() {
     let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
     let good = repo.item(MAIN, MAC_A).unwrap().record();
     let bad = repo.edit(MAC_B, MAIN, |i| i.set_text(2, "oops"));
-    // the latest commit goes back exactly, by restoring the version it built on
+    // the latest edit goes back exactly, by restoring the version it built on
     let built_on = repo.history().get(bad).unwrap().write.deps.clone();
     repo.restore(MAC_A, MAIN, &built_on);
     assert_eq!(repo.item(MAIN, MAC_A).unwrap().record(), good);
-    // an older bad commit is undone and what came after stays
+    // an older bad edit is undone and what came after stays
     let older = repo.edit(MAC_B, MAIN, |i| i.set_text(1, "Welcome!!!"));
     repo.edit(MAC_A, MAIN, |i| i.push_block(paragraph(3, "a later, good edit")));
     repo.undo(MAC_A, MAIN, older).unwrap();
@@ -135,7 +135,7 @@ fn the_latest_commit_reverts_and_an_older_one_is_undone() {
     let texts: Vec<&str> = doc.blocks.iter().map(|b| b.text.as_str()).collect();
     assert_eq!(texts, ["Welcome", WELCOME_TEXT, "a later, good edit"]);
     // and every version is still there
-    assert_eq!(repo.log(MAIN).len(), repo.history().commits().len());
+    assert_eq!(repo.log(MAIN).len(), repo.history().changes().len());
     let oops = repo.history().item_at(&[bad], MAC_A, MAIN).as_document().unwrap();
     assert_eq!(oops.blocks[1].text, "oops");
 }
@@ -155,7 +155,7 @@ fn a_fork_copies_the_record_and_the_schemas_that_wrote_it() {
 }
 
 #[test]
-fn same_ops_any_order_same_result() {
+fn same_edits_any_order_same_result() {
     // Alice and Bob edit the same block at the same moment on their own copies
     let base = document("Welcome", WELCOME_TEXT, MAC_A);
     let start = base.version();

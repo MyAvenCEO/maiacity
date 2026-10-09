@@ -263,7 +263,7 @@ async fn a_big_answer_comes_a_page_at_a_time() {
         .collect();
     let request = w.lab.request(w.server, w.mac_a);
     let (whole, _, _) = w.lab.reply(w.mac_a, w.server, &request, usize::MAX);
-    // pages of one op each
+    // pages of one edit each
     let (mac_a, passkey_a, server_d) = (w.mac_a, w.passkey_a, w.server);
     let paged = Options { page: 1, ..Options::local() };
     let mac = Node::spawn(w.lab.split(mac_a, &[passkey_a], [1; 32]), mac_a, paged.clone()).await.expect("a node");
@@ -276,7 +276,7 @@ async fn a_big_answer_comes_a_page_at_a_time() {
     until("the server holds every note", holds).await;
     quiet(&[&mac, &server]).await;
     let (requests, _) = server.sent();
-    assert!(requests >= whole.len(), "{} ops in {requests} requests: a page each", whole.len());
+    assert!(requests >= whole.len(), "{} edits in {requests} requests: a page each", whole.len());
     for n in [mac, server] {
         n.shutdown().await.expect("the node shuts down");
     }

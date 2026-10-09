@@ -9,7 +9,7 @@ use crate::doc::Item;
 use crate::id::{EntryId, GrantId, SignerId, SpaceId, VaultId};
 use crate::lab::Lab;
 use crate::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
-use crate::policy::{Action, Branch, Grant, Grantee, Kind, Principal, Role, Scope};
+use crate::policy::{Action, Grant, Grantee, Kind, Principal, Proposal, Role, Scope};
 
 pub fn vault(v: VaultId) -> Grantee {
     Grantee::Principal(Principal::Vault(v))
@@ -19,10 +19,10 @@ pub fn grant(scope: Scope, role: Role, grantee: Grantee, issuer: VaultId, parent
     Action::Grant(Grant { scope, role, grantee, issuer, parent }, vec![])
 }
 
-/// A write that builds on its entry's heads: the log fills in `deps` when it drafts the op.
+/// A write that builds on its entry's heads: the log fills in `deps` when it drafts the edit.
 pub fn write(space: SpaceId, entry: EntryId, actor: VaultId, epoch: u64) -> Action {
     let body = vec![0xc1, 0x9e, 0x47];
-    Action::Write { space, entry, actor, epoch, deps: vec![], branch: Branch::Main, via: vec![], body }
+    Action::Write { space, entry, actor, epoch, deps: vec![], proposal: Proposal::Main, via: vec![], body }
 }
 
 /// The Lab after scenarios 1 and 2, plus the server, avenCEO and a stranger.
@@ -79,7 +79,7 @@ pub fn claim_on(lab: &mut Lab, on: SignerId, passkey: SignerId, human: VaultId, 
     let draft = lab.draft(on, &[passkey, server], add).expect("avenCEO adds the server");
     let claim = lab.claim(on, draft, &[]).expect("the passkey signs the claim");
     let join = lab.accept_claim(server, claim).expect("the server takes the claim");
-    lab.receive(on, vec![join.op], join.blobs.into_iter().map(Into::into).collect());
+    lab.receive(on, vec![join.edit], join.blobs.into_iter().map(Into::into).collect());
     lab.sync(on, server);
     avenceo
 }

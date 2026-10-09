@@ -1,7 +1,7 @@
 //! One property per Lean theorem that the rules alone decide, checked on random histories: random signers trying random
 //! actions on top of scenarios 1 to 4, kept when the rules accept them, then replayed in other orders; and forked ones,
 //! where devices that were offline meet with concurrent changes. The lens laws (T9) are checked on random items, as any
-//! mix of apps could have stored them, read and edited through each app's view, and the branch laws (T10) on random
+//! mix of apps could have stored them, read and edited through each app's view, and the proposal laws (T10) on random
 //! histories of one document. Sync (T12, T13, T19) is checked between devices holding random parts of random histories,
 //! gaps and all. Each property carries its theorem's name; T7 (the blind server, which follows from T5) is guarded by
 //! the tests the Lean README lists.
@@ -10,15 +10,14 @@ mod common;
 
 use common::*;
 use serde_json::{json, Value};
-use avendb::branch::{Repo, MAIN};
+use avendb::history::{Repo, MAIN};
 use avendb::doc::Item;
-use avendb::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use avendb::id::{EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyName, KeyScope};
 use avendb::lens::{DocV2, View};
 use avendb::policy::{
-    Line,
-    checkpointed, order, removes, replay, trace, view, Action, Fact, Grantee, Holder, Kind, Log, Op, Principal, Refusal,
-    Role, Scope, State,
+    checkpointed, order, removes, replay, trace, view, Action, Edit, Fact, Grantee, Holder, Kind, Line, Log, Principal,
+    Refusal, Role, Scope, State,
 };
 use avendb::sync::{asks, digests, frontiers, log_of, receive, respond, respond_since, Ask};
 
@@ -179,24 +178,24 @@ fn clash_action(rng: &mut Rng, h: &History, author: SignerId) -> Option<Action> 
     }
 }
 
-/// Three devices take one random history offline, each adds its own random attempts, and then all the ops meet:
+/// Three devices take one random history offline, each adds its own random attempts, and then all the edits meet:
 /// writes, grants and revocations made concurrently with removals that hadn't seen them.
 fn forked_caps_history(seed: u64, n: usize) -> History {
     let base = history(seed, n / 2);
     let mut rng = Rng(seed.wrapping_mul(0x2545_f491_4f6c_dd1d) | 1);
-    let mut all: Vec<Op> = base.log.ops().to_vec();
+    let mut all: Vec<Edit> = base.log.edits().to_vec();
     let mut vaults = base.vaults.clone();
     for _ in 0..3 {
         let mut fork = History { log: base.log.clone(), vaults, spaces: base.spaces.clone() };
         attempts(&mut rng, &mut fork, n / 2, true);
-        for op in fork.log.ops() {
-            if !all.contains(op) {
-                all.push(op.clone());
+        for edit in fork.log.edits() {
+            if !all.contains(edit) {
+                all.push(edit.clone());
             }
         }
         vaults = fork.vaults;
     }
-    History { log: Log::from_ops(all), vaults, spaces: base.spaces }
+    History { log: Log::from_edits(all), vaults, spaces: base.spaces }
 }
 
 /// Who signs an attempt: half the time every passkey and one random signer, so that approvals pass and the rules'
@@ -209,7 +208,7 @@ fn signers(rng: &mut Rng) -> (SignerId, Vec<SignerId>) {
     }
 }
 
-/// A random vault op on `vaults`.
+/// A random vault edit on `vaults`.
 fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
     let principal = |rng: &mut Rng| {
         if rng.below(2) == 0 { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) }
@@ -270,7 +269,7 @@ fn vault_attempts(rng: &mut Rng, log: &mut Log, vaults: &mut Vec<VaultId>, n: us
     }
 }
 
-/// A random history of vault ops on top of scenarios 1 to 3, all on one device: what P1's rules decide. (From P2 the
+/// A random history of vault edits on top of scenarios 1 to 3, all on one device: what P1's rules decide. (From P2 the
 /// properties also run on `history`, where caps and writes mix with governance.)
 fn vault_history(seed: u64, n: usize) -> History {
     let mut c = cast();
@@ -281,30 +280,30 @@ fn vault_history(seed: u64, n: usize) -> History {
     History { log: c.log, vaults, spaces: vec![] }
 }
 
-/// Three devices take one random history offline, each adds its own random vault ops, and then all the ops meet:
+/// Three devices take one random history offline, each adds its own random vault edits, and then all the edits meet:
 /// concurrent governance, where two changes each fine alone may clash (two adds that close a cycle together, two
 /// owners removing each other, an add signed by an owner that a concurrent removal takes out).
 fn forked_history(seed: u64, n: usize) -> History {
     let base = vault_history(seed, n / 2);
     let mut rng = Rng(seed.wrapping_mul(0x2545_f491_4f6c_dd1d) | 1);
     let mut vaults = base.vaults.clone();
-    let mut all: Vec<Op> = base.log.ops().to_vec();
+    let mut all: Vec<Edit> = base.log.edits().to_vec();
     for _ in 0..3 {
         let mut log = base.log.clone();
         vault_attempts(&mut rng, &mut log, &mut vaults, n / 2, true);
-        for op in log.ops() {
-            if !all.contains(op) {
-                all.push(op.clone());
+        for edit in log.edits() {
+            if !all.contains(edit) {
+                all.push(edit.clone());
             }
         }
     }
-    History { log: Log::from_ops(all), vaults, spaces: vec![] }
+    History { log: Log::from_edits(all), vaults, spaces: vec![] }
 }
 
-/// Each op in replay order with the states just before and just after it.
-fn steps(ops: &[Op]) -> Vec<(Op, State, State)> {
-    let states = trace(ops);
-    order(ops).into_iter().enumerate().map(|(i, op)| (op, states[i].clone(), states[i + 1].clone())).collect()
+/// Each edit in replay order with the states just before and just after it.
+fn steps(edits: &[Edit]) -> Vec<(Edit, State, State)> {
+    let states = trace(edits);
+    order(edits).into_iter().enumerate().map(|(i, edit)| (edit, states[i].clone(), states[i + 1].clone())).collect()
 }
 
 #[test]
@@ -312,11 +311,12 @@ fn t1_authorized_writes() {
     let mut through = 0;
     for seed in SEEDS {
         for h in [history(seed, 60), forked_caps_history(seed, 60)] {
-            for (op, before, after) in steps(h.log.ops()) {
-                if let Action::Write { space, entry, actor, ref via, .. } = op.action {
-                    let new = after.writes(space, entry).contains(&op.id()) && !before.writes(space, entry).contains(&op.id());
+            for (edit, before, after) in steps(h.log.edits()) {
+                if let Action::Write { space, entry, actor, ref via, .. } = edit.action {
+                    let new = after.writes(space, entry).contains(&edit.id())
+                        && !before.writes(space, entry).contains(&edit.id());
                     if new {
-                        let acts = before.acts_via(op.author, via, actor) && before.acts_for(op.author, actor);
+                        let acts = before.acts_via(edit.author, via, actor) && before.acts_for(edit.author, actor);
                         assert!(acts, "seed {seed}");
                         through += usize::from(!via.is_empty());
                         assert!(before.holds(actor, Scope::Entry(space, entry), Role::Write), "seed {seed}");
@@ -333,10 +333,13 @@ fn t1_authorized_writes() {
 fn t1_revocation_wins() {
     // a write a step takes the authorization from stays only if the step is a removal that had seen it
     for seed in SEEDS {
-        for (op, before, after) in steps(forked_caps_history(seed, 60).log.ops()) {
+        for (edit, before, after) in steps(forked_caps_history(seed, 60).log.edits()) {
             for w in after.all_writes() {
                 if before.all_writes().contains(w) && before.authorized(w) && !after.authorized(w) {
-                    assert!(op.action.keep().is_some_and(|k| k.contains(&w.op)), "seed {seed}: {w:?} after {op:?}");
+                    assert!(
+                        edit.action.keep().is_some_and(|k| k.contains(&w.edit)),
+                        "seed {seed}: {w:?} after {edit:?}"
+                    );
                 }
             }
         }
@@ -346,8 +349,8 @@ fn t1_revocation_wins() {
 #[test]
 fn t2_consent() {
     for (seed, h) in SEEDS.flat_map(|seed| [(seed, vault_history(seed, 60)), (seed, forked_history(seed, 60))]) {
-        for (op, before, after) in steps(h.log.ops()) {
-            let sigs: Vec<SignerId> = op.sigs().collect();
+        for (edit, before, after) in steps(h.log.edits()) {
+            let sigs: Vec<SignerId> = edit.sigs().collect();
             for &v in &h.vaults {
                 let (Some(a), Some(b)) = (before.vault(v), after.vault(v)) else { continue };
                 for d in b.devices.iter().filter(|d| !a.devices.contains(d)) {
@@ -368,7 +371,7 @@ fn t21_vault_kinds() {
     let mut avens = 0;
     for seed in SEEDS {
         for h in [vault_history(seed, 60), forked_history(seed, 60), history(seed, 60)] {
-            for st in trace(h.log.ops()) {
+            for st in trace(h.log.edits()) {
                 for v in st.vaults() {
                     for p in &v.owners {
                         let fits = match (v.kind, *p) {
@@ -397,7 +400,7 @@ fn t21_vault_kinds() {
 fn devices_cannot_govern() {
     for seed in SEEDS {
         for h in [forked_history(seed, 60), forked_caps_history(seed, 60)] {
-            for st in trace(h.log.ops()) {
+            for st in trace(h.log.edits()) {
                 let governs = |s: SignerId| {
                     st.vaults().iter().any(|v| v.owners.contains(&Principal::Signer(s)) || v.root == Some(s))
                 };
@@ -435,7 +438,7 @@ fn t3_no_cycles() {
     for seed in SEEDS {
         for h in [vault_history(seed, 80), forked_history(seed, 80)] {
             // in every state along the way, not only the last
-            for st in trace(h.log.ops()) {
+            for st in trace(h.log.edits()) {
                 assert!(h.vaults.iter().all(|&v| !owns_itself(&st, v)), "seed {seed}");
             }
         }
@@ -444,29 +447,29 @@ fn t3_no_cycles() {
 
 #[test]
 fn t11_vault_logs_converge() {
-    // the same vault ops, received in any order, give the same vaults (T11 for P1)
+    // the same vault edits, received in any order, give the same vaults (T11 for P1)
     for seed in SEEDS {
-        let ops = forked_history(seed, 60).log.ops().to_vec();
-        let st = view(&ops);
+        let edits = forked_history(seed, 60).log.edits().to_vec();
+        let st = view(&edits);
         let mut rng = Rng(seed);
         for _ in 0..3 {
-            let mut shuffled = ops.clone();
+            let mut shuffled = edits.clone();
             rng.shuffle(&mut shuffled);
             assert!(view(&shuffled) == st, "seed {seed}");
-            assert_eq!(order(&shuffled), order(&ops), "seed {seed}");
+            assert_eq!(order(&shuffled), order(&edits), "seed {seed}");
         }
     }
 }
 
 #[test]
 fn forks_really_clash() {
-    // the forked histories exercise concurrency: across the seeds, ops that each fork accepted are refused once all
-    // the ops meet, among them adds that would close a cycle and removals of an owner already removed elsewhere
+    // the forked histories exercise concurrency: across the seeds, edits that each fork accepted are refused once all
+    // the edits meet, among them adds that would close a cycle and removals of an owner already removed elsewhere
     let mut refused = vec![];
     for seed in SEEDS {
         let mut st = State::default();
-        for op in order(forked_history(seed, 60).log.ops()) {
-            match st.step(&op) {
+        for edit in order(forked_history(seed, 60).log.edits()) {
+            match st.step(&edit) {
                 Ok(next) => st = next,
                 Err(why) => refused.push(why),
             }
@@ -491,11 +494,11 @@ fn t4_grants_name_vaults_and_t8_public_read_only() {
 fn t11_convergence() {
     for seed in SEEDS {
         for h in [history(seed, 60), forked_caps_history(seed, 60)] {
-            let ops = h.log.ops().to_vec();
-            let st = view(&ops);
+            let edits = h.log.edits().to_vec();
+            let st = view(&edits);
             let mut rng = Rng(seed);
             for _ in 0..3 {
-                let mut shuffled = ops.clone();
+                let mut shuffled = edits.clone();
                 rng.shuffle(&mut shuffled);
                 assert!(view(&shuffled) == st, "seed {seed}");
             }
@@ -508,11 +511,11 @@ fn t14_causally_closed() {
     // in every state along the way, every accepted write builds only on accepted writes of its own entry
     for seed in SEEDS {
         for h in [history(seed, 60), forked_caps_history(seed, 60)] {
-            for st in trace(h.log.ops()) {
+            for st in trace(h.log.edits()) {
                 let ws = st.all_writes();
                 for w in ws {
                     for d in &w.deps {
-                        let found = ws.iter().any(|x| x.op == *d && x.space == w.space && x.entry == w.entry);
+                        let found = ws.iter().any(|x| x.edit == *d && x.space == w.space && x.entry == w.entry);
                         assert!(found, "seed {seed}: {w:?} builds on a write that isn't there");
                     }
                 }
@@ -525,13 +528,13 @@ fn t14_causally_closed() {
 fn t16_strong_removal() {
     let mut cut = 0;
     for seed in SEEDS {
-        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
-        let (r, states) = (replay(&ops), trace(&ops));
-        for (i, x) in r.ops.iter().enumerate() {
+        let edits = forked_caps_history(seed, 60).log.edits().to_vec();
+        let (r, states) = (replay(&edits), trace(&edits));
+        for (i, x) in r.edits.iter().enumerate() {
             // what each removal that stands after it, and hadn't seen it, takes away
-            let hidden: Vec<Fact> = (i + 1..r.ops.len())
-                .filter(|&j| r.stood[j] && r.ops[j].action.keep().is_some_and(|k| !k.contains(&x.id())))
-                .flat_map(|j| removes(&r.ops, &r.ops[j]))
+            let hidden: Vec<Fact> = (i + 1..r.edits.len())
+                .filter(|&j| r.stood[j] && r.edits[j].action.keep().is_some_and(|k| !k.contains(&x.id())))
+                .flat_map(|j| removes(&r.edits, &r.edits[j]))
                 .collect();
             if r.stood[i] {
                 assert!(states[i].hide(&hidden).step(x).is_ok(), "seed {seed}: {x:?} stands on what a removal took away");
@@ -540,7 +543,7 @@ fn t16_strong_removal() {
             }
         }
     }
-    // and the forks do clash: some ops the state just before them accepts are cut
+    // and the forks do clash: some edits the state just before them accepts are cut
     assert!(cut > 0);
 }
 
@@ -550,26 +553,27 @@ fn t18_checkpointed_writes() {
     for seed in SEEDS {
         let h = forked_caps_history(seed, 60);
         let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
-        let mut ops = h.log.ops().to_vec();
+        let mut edits = h.log.edits().to_vec();
         // checkpoints of random writes, each covering more writes of its entry: most by the write's own author, some
         // by any signer, and some covering others' writes too, which the rules refuse
         let ws = h.log.view().all_writes().to_vec();
         for _ in 0..ws.len() / 2 {
             let w = &ws[rng.below(ws.len())];
             let author = if rng.below(4) > 0 { w.author } else { rng.pick(&SIGNERS) };
-            let same = ws.iter().filter(|x| x.space == w.space && x.entry == w.entry && x.op != w.op);
-            let covers = std::iter::once(w.op).chain(same.filter(|_| rng.below(3) == 0).map(|x| x.op)).collect();
-            ops.push(h.log.draft(author, &[], Action::Checkpoint { space: w.space, entry: w.entry, covers }));
+            let same = ws.iter().filter(|x| x.space == w.space && x.entry == w.entry && x.edit != w.edit);
+            let covers = std::iter::once(w.edit).chain(same.filter(|_| rng.below(3) == 0).map(|x| x.edit)).collect();
+            edits.push(h.log.draft(author, &[], Action::Checkpoint { space: w.space, entry: w.entry, covers }));
         }
         // a peer that no longer trusts the curves counts a write only if a checkpoint by its own author covers it
-        let st = replay(&checkpointed(&ops)).state;
+        let st = replay(&checkpointed(&edits)).state;
         for w in st.all_writes() {
-            let vouched = ops.iter().any(|c| {
-                c.author == w.author && matches!(&c.action, Action::Checkpoint { covers, .. } if covers.contains(&w.op))
+            let vouched = edits.iter().any(|c| {
+                c.author == w.author
+                    && matches!(&c.action, Action::Checkpoint { covers, .. } if covers.contains(&w.edit))
             });
             assert!(vouched, "seed {seed}: {w:?} counts with no checkpoint by its author");
         }
-        let all = view(&ops);
+        let all = view(&edits);
         counted += st.all_writes().len();
         dropped += all.all_writes().iter().filter(|w| !st.all_writes().contains(w)).count();
     }
@@ -579,59 +583,59 @@ fn t18_checkpointed_writes() {
 
 #[test]
 fn honest_logs_keep_all_they_accepted() {
-    // every op a device appended stands in its own view: its removals keep everything they had seen
+    // every edit a device appended stands in its own view: its removals keep everything they had seen
     for seed in SEEDS {
         let h = history(seed, 60);
-        let r = replay(h.log.ops());
+        let r = replay(h.log.edits());
         assert!(r.stood.iter().all(|&s| s), "seed {seed}");
     }
 }
 
-/// A random part of `ops`: each op with even odds.
-fn part(rng: &mut Rng, ops: &[Op]) -> Vec<Op> {
-    ops.iter().filter(|_| rng.below(2) == 0).cloned().collect()
+/// A random part of `edits`: each edit with even odds.
+fn part(rng: &mut Rng, edits: &[Edit]) -> Vec<Edit> {
+    edits.iter().filter(|_| rng.below(2) == 0).cloned().collect()
 }
 
-/// The ops of scenarios 1 to 4 that every random history starts with, and a random part of the rest.
-fn part_after_cast(rng: &mut Rng, ops: &[Op]) -> Vec<Op> {
+/// The edits of scenarios 1 to 4 that every random history starts with, and a random part of the rest.
+fn part_after_cast(rng: &mut Rng, edits: &[Edit]) -> Vec<Edit> {
     let mut c = cast();
     let coop = with_coop(&mut c);
     spaces(&mut c, coop);
-    let n = c.log.ops().len();
-    ops[..n].iter().cloned().chain(part(rng, &ops[n..])).collect()
+    let n = c.log.edits().len();
+    edits[..n].iter().cloned().chain(part(rng, &edits[n..])).collect()
 }
 
-fn ids(ops: &[Op]) -> std::collections::HashSet<OpId> {
-    ops.iter().map(Op::id).collect()
+fn ids(edits: &[Edit]) -> std::collections::HashSet<EditId> {
+    edits.iter().map(Edit::id).collect()
 }
 
 #[test]
 fn t19_frontier_sync_loses_nothing() {
-    // a device holding any part of the ops, gaps and all, asks a peer holding all of them or another part: it is sent
+    // a device holding any part of the edits, gaps and all, asks a peer holding all of them or another part: it is sent
     // whatever of the peer's whole answer it lacks, nothing beyond that answer (T12), and no more than if it had named
     // only its frontiers
     let mut cut = 0;
     for seed in SEEDS {
-        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let edits = forked_caps_history(seed, 60).log.edits().to_vec();
         let mut rng = Rng(seed);
         for _ in 0..3 {
-            let a = part(&mut rng, &ops);
-            let r = if rng.below(2) == 0 { ops.clone() } else { part(&mut rng, &ops) };
+            let a = part(&mut rng, &edits);
+            let r = if rng.below(2) == 0 { edits.clone() } else { part(&mut rng, &edits) };
             let (held, asked) = (ids(&a), asks(&a));
             let alone = Ask { haves: frontiers(&a), loose: asked.loose.clone() };
             for d in SIGNERS {
                 let whole = respond(&r, d);
                 let sent = respond_since(&r, d, &asked);
-                let lacks = whole.iter().find(|op| !held.contains(&op.id()) && !sent.contains(op));
+                let lacks = whole.iter().find(|edit| !held.contains(&edit.id()) && !sent.contains(edit));
                 assert!(lacks.is_none(), "seed {seed}: {d:?} lacks {lacks:?}");
-                assert!(sent.iter().all(|op| whole.contains(op)), "seed {seed}: {d:?} was sent beyond its answer");
+                assert!(sent.iter().all(|edit| whole.contains(edit)), "seed {seed}: {d:?} was sent beyond its answer");
                 let more = respond_since(&r, d, &alone).len();
                 assert!(sent.len() <= more, "seed {seed}: {d:?}");
                 cut += more - sent.len();
             }
         }
     }
-    // naming ops further back saves something
+    // naming edits further back saves something
     assert!(cut > 0);
 }
 
@@ -640,12 +644,12 @@ fn t19_partial_delivery() {
     // a device sent only part of each answer, any part in any order, asks again until nothing is left: it ends
     // holding everything it may receive, though it held gaps along the way
     for seed in SEEDS {
-        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let edits = forked_caps_history(seed, 60).log.edits().to_vec();
         let mut rng = Rng(seed);
         let d = rng.pick(&[MAC_A, PHONE_A, MAC_B, MAC_C, MAC_D]);
-        let mut held: Vec<Op> = vec![];
+        let mut held: Vec<Edit> = vec![];
         for round in 0.. {
-            let sent = respond_since(&ops, d, &asks(&held));
+            let sent = respond_since(&edits, d, &asks(&held));
             if sent.is_empty() {
                 break;
             }
@@ -655,30 +659,30 @@ fn t19_partial_delivery() {
             held = receive(&held, &got);
         }
         let held = ids(&held);
-        assert!(respond(&ops, d).iter().all(|op| held.contains(&op.id())), "seed {seed}");
+        assert!(respond(&edits, d).iter().all(|edit| held.contains(&edit.id())), "seed {seed}");
     }
 }
 
 #[test]
 fn t13_sync_converges() {
-    // two devices holding parts of the ops each ask the other once: for every item each may receive by the other's
+    // two devices holding parts of the edits each ask the other once: for every item each may receive by the other's
     // view, both then hold the same writes and checkpoints of it
     let mut checked = 0;
     for seed in SEEDS {
-        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let edits = forked_caps_history(seed, 60).log.edits().to_vec();
         let mut rng = Rng(seed);
         for _ in 0..3 {
-            let (p, q) = (part_after_cast(&mut rng, &ops), part_after_cast(&mut rng, &ops));
+            let (p, q) = (part_after_cast(&mut rng, &edits), part_after_cast(&mut rng, &edits));
             let (vp, vq) = (view(&p), view(&q));
             let devices = [MAC_A, PHONE_A, MAC_B, MAC_C];
             let pairs = devices.iter().flat_map(|&a| devices.iter().filter(move |&&b| b != a).map(move |&b| (a, b)));
             for (dp, dq) in pairs {
                 let p2 = ids(&receive(&p, &respond_since(&q, dp, &asks(&p))));
                 let q2 = ids(&receive(&q, &respond_since(&p, dq, &asks(&q))));
-                for op in &ops {
-                    let Some((sp, e)) = op.item() else { continue };
+                for edit in &edits {
+                    let Some((sp, e)) = edit.item() else { continue };
                     if vq.may_receive(dp, sp, e) && vp.may_receive(dq, sp, e) {
-                        assert_eq!(p2.contains(&op.id()), q2.contains(&op.id()), "seed {seed}: {dp:?} and {dq:?}");
+                        assert_eq!(p2.contains(&edit.id()), q2.contains(&edit.id()), "seed {seed}: {dp:?} and {dq:?}");
                         checked += 1;
                     }
                 }
@@ -690,19 +694,19 @@ fn t13_sync_converges() {
 
 #[test]
 fn t19_one_digest_per_log() {
-    // two devices hold the same ops of a log exactly when their digests of it are equal
+    // two devices hold the same edits of a log exactly when their digests of it are equal
     let (mut same, mut differ) = (0, 0);
     for seed in SEEDS {
-        let ops = forked_caps_history(seed, 60).log.ops().to_vec();
+        let edits = forked_caps_history(seed, 60).log.edits().to_vec();
         let mut rng = Rng(seed);
-        let a = part(&mut rng, &ops);
-        // and the same ops with about a quarter more: many logs untouched, some grown
-        let more = part(&mut rng, &ops);
+        let a = part(&mut rng, &edits);
+        // and the same edits with about a quarter more: many logs untouched, some grown
+        let more = part(&mut rng, &edits);
         let b = receive(&a, &part(&mut rng, &more));
         let (da, db) = (digests(&a), digests(&b));
         for l in da.keys().chain(db.keys()) {
-            let of = |x: &[Op]| -> Vec<OpId> {
-                let mut v: Vec<OpId> = x.iter().filter(|o| log_of(x, o) == Some(*l)).map(Op::id).collect();
+            let of = |x: &[Edit]| -> Vec<EditId> {
+                let mut v: Vec<EditId> = x.iter().filter(|o| log_of(x, o) == Some(*l)).map(Edit::id).collect();
                 v.sort();
                 v
             };
@@ -720,8 +724,8 @@ fn t12_sync_shares_only_caps() {
         let h = history(seed, 60);
         let st = h.log.view();
         for d in SIGNERS {
-            for op in respond(h.log.ops(), d) {
-                if let Action::Write { space, entry, .. } = op.action {
+            for edit in respond(h.log.edits(), d) {
+                if let Action::Write { space, entry, .. } = edit.action {
                     assert!(st.may_receive(d, space, entry), "seed {seed}: {d:?} got a write it has no cap on");
                 }
             }
@@ -743,7 +747,7 @@ fn t6_forward_secrecy() {
     let mut rotated = 0;
     for seed in SEEDS {
         for h in [history(seed, 60), forked_caps_history(seed, 60)] {
-            for (op, before, after) in steps(h.log.ops()) {
+            for (edit, before, after) in steps(h.log.edits()) {
                 for holder in every_holder(&after) {
                     let opened = after.opens(&holder.start(&after));
                     for k in after.key_scopes() {
@@ -754,7 +758,7 @@ fn t6_forward_secrecy() {
                 }
                 // which is why the schedule only looks for stale keys after a removal: nothing else makes any
                 let stale = after.stale_keys(&before);
-                assert!(op.is_removal() || stale.is_empty(), "seed {seed}: {op:?} makes {stale:?} stale");
+                assert!(edit.is_removal() || stale.is_empty(), "seed {seed}: {edit:?} makes {stale:?} stale");
                 rotated += stale.len();
             }
         }
@@ -798,7 +802,7 @@ fn t5_confidentiality() {
     let mut inherited = 0;
     for seed in SEEDS {
         for h in [history(seed, 60), forked_caps_history(seed, 60)] {
-            let sts = trace(h.log.ops());
+            let sts = trace(h.log.edits());
             let st = sts.last().unwrap();
             let (holders, families) = (every_holder(st), st.key_scopes());
             let ever = ever_reads(&sts, &holders, &families);
@@ -1068,17 +1072,17 @@ fn shown(repo: &Repo, line: Line) -> Value {
 }
 
 /// Each line with its history and what it shows.
-fn lines(repo: &Repo) -> Vec<(Line, Vec<OpId>, Value)> {
+fn lines(repo: &Repo) -> Vec<(Line, Vec<EditId>, Value)> {
     repo.history().lines().into_iter().map(|l| (l, repo.log(l), shown(repo, l))).collect()
 }
 
 #[test]
-fn t10_branches() {
-    // on random histories of one document, edited on random lines by random devices, branched from random versions,
+fn t10_proposals() {
+    // on random histories of one document, edited on random lines by random devices, proposed from random versions,
     // and merged and promoted between random lines: a write on one line leaves every other line as it was (T10f); a
     // merge's history is the union of both lines', so merging the other way shows the same and merging again changes
-    // nothing (T10g); a promote shows exactly the branch and keeps both histories (T10h); and undoing a line's latest
-    // commit gives back the version it built on
+    // nothing (T10g); a promote shows exactly the proposal and keeps both histories (T10h); and undoing a line's latest
+    // edit gives back the version it built on
     let mut done = [0; 5];
     for seed in SEEDS {
         let mut rng = Rng(seed);
@@ -1096,9 +1100,9 @@ fn t10_branches() {
                     into
                 }
                 1 => {
-                    let ops: Vec<OpId> = repo.history().commits().iter().map(|c| c.write.op).collect();
-                    let at = rng.pick(&ops);
-                    let b = Some(repo.branch(author, &[at], "a branch").expect("a version the repo holds"));
+                    let edits: Vec<EditId> = repo.history().changes().iter().map(|c| c.write.edit).collect();
+                    let at = rng.pick(&edits);
+                    let b = Some(repo.propose(author, &[at], "a proposal").expect("a version the repo holds"));
                     let start = repo.history().item_at(&[at], MAC_D, MAIN).record();
                     assert_eq!(shown(&repo, b), start, "seed {seed}");
                     b
@@ -1115,8 +1119,8 @@ fn t10_branches() {
                 3 => {
                     let mut other = repo.clone();
                     let merge = repo.merge(author, from, into);
-                    let union: Vec<OpId> = repo.log(into).into_iter().filter(|&op| op != merge).collect();
-                    let mut both: Vec<OpId> = [repo_log(&before, into), repo_log(&before, from)].concat();
+                    let union: Vec<EditId> = repo.log(into).into_iter().filter(|&edit| edit != merge).collect();
+                    let mut both: Vec<EditId> = [repo_log(&before, into), repo_log(&before, from)].concat();
                     both.sort();
                     both.dedup();
                     let mut got = union.clone();
@@ -1134,7 +1138,7 @@ fn t10_branches() {
                     assert_eq!(shown(&repo, into), shown(&repo, from), "seed {seed}");
                     let log = repo.log(into);
                     let kept = repo_log(&before, into).into_iter().chain(repo_log(&before, from));
-                    assert!(kept.into_iter().all(|op| log.contains(&op)), "seed {seed}");
+                    assert!(kept.into_iter().all(|edit| log.contains(&edit)), "seed {seed}");
                     into
                 }
             };
@@ -1149,6 +1153,6 @@ fn t10_branches() {
     assert!(done.iter().all(|&n| n > 20), "{done:?}");
 }
 
-fn repo_log(lines: &[(Line, Vec<OpId>, Value)], line: Line) -> Vec<OpId> {
+fn repo_log(lines: &[(Line, Vec<EditId>, Value)], line: Line) -> Vec<EditId> {
     lines.iter().find(|x| x.0 == line).map(|x| x.1.clone()).unwrap_or_default()
 }

@@ -1,13 +1,13 @@
 //! A passkey in the platform's authenticator (P8e): a browser's device never holds its person's passkey, only what
 //! one ceremony at a time brings back, an assertion over a challenge and the PRF output on the app's salt. It drafts
-//! each op the passkey signs, the passkey signs the op's id in a ceremony, and the device keeps the op; its own keys
-//! derive from the PRF output on a salt of its own. Here a software passkey stands in for the browser's
+//! each edit the passkey signs, the passkey signs the edit's id in a ceremony, and the device keeps the edit; its own
+//! keys derive from the PRF output on a salt of its own. Here a software passkey stands in for the browser's
 //! authenticator: it makes the same ceremonies, and the device's Lab sees nothing else of it.
 
 mod common;
 
 use common::*;
-use avendb::id::{OpId, SignerId};
+use avendb::id::{EditId, SignerId};
 use avendb::keys::{self, KeyScope};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Principal, Refusal};
@@ -37,21 +37,21 @@ fn genesis(passkey: SignerId) -> Action {
 }
 
 /// `action` signed by `signers` on device `on`, the passkey `passkey` among them in a ceremony of `authenticator`.
-fn ceremony(lab: &mut Lab, on: SignerId, signers: &[SignerId], action: Action, authenticator: &mut Passkey) -> OpId {
+fn ceremony(lab: &mut Lab, on: SignerId, signers: &[SignerId], action: Action, authenticator: &mut Passkey) -> EditId {
     let draft = lab.draft(on, signers, action).expect("the device's view takes it");
     let ceremony = authenticator.ceremony(draft.challenge());
     lab.complete(on, draft, &[(authenticator.id(), &ceremony)]).expect("the passkey signed it")
 }
 
-/// `to` asks `from` once, by the bytes alone, as in `split.rs`. How many ops were new to `to`.
+/// `to` asks `from` once, by the bytes alone, as in `split.rs`. How many edits were new to `to`.
 fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     let ((to, t), (from, f)) = (to, from);
     let request = Request::from_wire(&to.request(t, f).to_wire()).expect("a request");
-    let (ops, ids, more) = from.reply(f, t, &request, usize::MAX);
+    let (edits, ids, more) = from.reply(f, t, &request, usize::MAX);
     let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
-    let reply = Reply::from_wire(&Reply { ops, blobs, more }.to_wire()).expect("a reply");
+    let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
     let blobs = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
-    to.receive(t, reply.ops, blobs.collect())
+    to.receive(t, reply.edits, blobs.collect())
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn a_browser_founds_alices_vault_in_ceremonies() {
 }
 
 #[test]
-fn a_passkey_signs_only_in_its_ceremony_over_the_op() {
+fn a_passkey_signs_only_in_its_ceremony_over_the_edit() {
     let mut authenticator = Passkey::from_seed([1; 32]);
     let (mut lab, passkey, device) = browser(&mut authenticator, [5; 32]);
     let genesis = genesis(passkey);
@@ -96,11 +96,11 @@ fn a_passkey_signs_only_in_its_ceremony_over_the_op() {
     let theirs = Passkey::from_seed([2; 32]).ceremony(draft.challenge());
     assert_eq!(lab.complete(device, draft, &[(passkey, &theirs)]), Err(Refusal::BadSignature));
     assert!(lab.log(device).ids().is_empty(), "the device kept none of them");
-    // its own ceremony over the op's id does
+    // its own ceremony over the edit's id does
     let draft = lab.draft(device, &[passkey], genesis).expect("a draft");
     let own = authenticator.ceremony(draft.challenge());
     let id = lab.complete(device, draft, &[(passkey, &own)]).expect("the passkey signed it");
-    assert!(lab.signed_op(device, id).expect("kept").verify().is_ok());
+    assert!(lab.signed_edit(device, id).expect("kept").verify().is_ok());
     // a ceremony that isn't the passkey's own shows no passkey
     assert!(lab.web_passkey("Eve", Passkey::from_seed([3; 32]).public(), &own).is_none());
 }
@@ -155,14 +155,14 @@ fn a_browser_links_through_alices_mac_in_ceremonies() {
     let hello = PasskeyHello::from_wire(&hello.to_wire()).expect("a hello");
     let proven = hello.verify(&EXPORTER, true, device).expect("the Mac checks it");
     browser.receive(device, mac.link_card(w.mac_a, proven), vec![]);
-    // it joins Alice's vault: the fourth ceremony signs the op that adds it, and the Mac takes it
+    // it joins Alice's vault: the fourth ceremony signs the edit that adds it, and the Mac takes it
     let (vault, added) = browser.joining(device, passkey).expect("Alice's vault, by the card");
     assert_eq!((vault, added), (w.alice, None));
     let add = Action::AddDevice { vault, device, seal_to: None };
     let id = ceremony(&mut browser, device, &[passkey, device], add, &mut authenticator);
     let join = Join::from_wire(&browser.joined(device, id).to_wire()).expect("a join");
     mac.accept_join(w.mac_a, device, join).expect("the Mac takes the join");
-    assert_eq!(browser.joining(device, passkey), Ok((vault, Some(id))), "joined, it would send the same op again");
+    assert_eq!(browser.joining(device, passkey), Ok((vault, Some(id))), "joined, it would send the same edit again");
     for _ in 0..4 {
         ask((&mut mac, w.mac_a), (&mut browser, device));
         ask((&mut browser, device), (&mut mac, w.mac_a));

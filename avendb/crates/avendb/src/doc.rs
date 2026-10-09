@@ -1,6 +1,6 @@
 //! The two example items, each one Loro document: a markdown document and a todo. An item's Loro updates are what
-//! gets encrypted into `Write` ops and synced. Its content depends only on which updates it holds (Loro converges), so
-//! devices holding the same writes show the same item (T11, T13).
+//! gets encrypted into `Write` edits and synced. Its content depends only on which updates it holds (Loro converges),
+//! so devices holding the same writes show the same item (T11, T13).
 //!
 //! An item is one root map, `item`: the stored record, holding the fields of every schema version that wrote it
 //! (`lens`). Free text is a Loro text, so concurrent edits of it merge character by character; a list of records (a
@@ -16,7 +16,7 @@
 //!
 //! Each device edits as a Loro peer of its own on each line of an item's history, derived from its signer and the
 //! line, so an import can check that every op of a write is its signer's, and a device's edits on one line are one run
-//! of ops that the line's history holds whole (`branch`). No clock goes into the updates: the same edits export the
+//! of ops that the line's history holds whole (`history`). No clock goes into the updates: the same edits export the
 //! same bytes.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -177,8 +177,8 @@ impl Item {
     }
 
     /// A new item on `signer`'s device that stores exactly this one's record, and none of its history: one change,
-    /// naming every schema this one was written under, so apps read the copy as they read this one. A fork into another
-    /// entry starts from it.
+    /// naming every schema this one was written under, so apps read the copy as they read this one. A variant, a new
+    /// entry of another, starts from it.
     pub fn copy(&self, signer: SignerId) -> Item {
         let item = Item::new(signer);
         let record = self.record();
@@ -361,8 +361,9 @@ impl Clone for Item {
     }
 }
 
-/// The Loro peer of `signer`'s edits on line `line`: the first 8 bytes of a hash of the signer, and on a branch of the
-/// branch too. Two signers, or two lines, share a peer only by a 64-bit collision.
+/// The Loro peer of `signer`'s edits on line `line`: the first 8 bytes of a hash of the signer, and on a proposal, of
+/// the proposal too, for a purpose that keeps a proposal's old name, branch, so every peer stays what it was. Two
+/// signers, or two lines, share a peer only by a 64-bit collision.
 fn peer(signer: SignerId, line: Line) -> PeerID {
     let h = match line {
         None => crate::hash::hash("loro peer", &signer.0),
@@ -827,9 +828,9 @@ mod tests {
     fn each_signer_edits_as_its_own_peer() {
         assert_eq!(peer(ALICE, None), peer(ALICE, None));
         assert_ne!(peer(ALICE, None), peer(BOB, None));
-        let b = Some(crate::id::OpId::from_u64(1));
+        let b = Some(crate::id::EditId::from_u64(1));
         assert!(peer(ALICE, b) != peer(ALICE, None) && peer(ALICE, b) != peer(BOB, b));
-        assert_ne!(peer(ALICE, b), peer(ALICE, Some(crate::id::OpId::from_u64(2))));
+        assert_ne!(peer(ALICE, b), peer(ALICE, Some(crate::id::EditId::from_u64(2))));
         let doc = welcome(ALICE);
         let meta = LoroDoc::decode_import_blob_meta(&doc.export(&Version::default()), true).unwrap();
         assert_eq!(meta.partial_end_vv.keys().collect::<Vec<_>>(), [&peer(ALICE, None)]);
@@ -924,16 +925,16 @@ mod tests {
     }
 
     #[test]
-    fn a_shallow_snapshot_refuses_a_branch_from_before_it() {
-        // main moves on from Welcome's first version, and a branch starts from that version
+    fn a_shallow_snapshot_refuses_a_proposal_from_before_it() {
+        // main moves on from Welcome's first version, and a proposal starts from that version
         let base = welcome(ALICE);
         let start = base.version();
         let mut main = base.clone();
         main.set_text(2, NINE);
-        let mut branch = base.fork_on(BOB, Some(crate::id::OpId::from_u64(1)));
-        branch.set_text(1, "Welcome, everyone");
-        let update = branch.export(&start);
-        // a device that compacted main into a shallow snapshot can't take the branch's edit
+        let mut proposal = base.fork_on(BOB, Some(crate::id::EditId::from_u64(1)));
+        proposal.set_text(1, "Welcome, everyone");
+        let update = proposal.export(&start);
+        // a device that compacted main into a shallow snapshot can't take the proposal's edit
         let shallow = main.doc.export(ExportMode::shallow_snapshot(&main.doc.oplog_frontiers())).unwrap();
         let compacted = LoroDoc::new();
         compacted.import(&shallow).unwrap();
@@ -941,7 +942,7 @@ mod tests {
         // the full snapshot every device stores takes it
         let mut restored = Item::on(LoroDoc::new(), peer(ALICE, None));
         restored.doc.import(&main.bytes()).unwrap();
-        restored.import_on(&update, BOB, Some(crate::id::OpId::from_u64(1))).unwrap();
+        restored.import_on(&update, BOB, Some(crate::id::EditId::from_u64(1))).unwrap();
         let shown = (text(&restored, 1), text(&restored, 2));
         assert_eq!((shown.0.as_deref(), shown.1.as_deref()), (Some("Welcome, everyone"), Some(NINE)));
     }

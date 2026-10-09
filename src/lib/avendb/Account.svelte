@@ -182,7 +182,7 @@
 
 	/** Links this browser to the person's vault through `through`: the code another of their devices shows, or
 	 *  avenDB's server's, which hands over their vault for their passkey alone. The unlock, the pass to the relay, the
-	 *  passkey's hello, and the op that adds this browser to their vault. @param {string} through @param {string} what */
+	 *  passkey's hello, and the edit that adds this browser to their vault. @param {string} through @param {string} what */
 	const linkHere = (through, what = 'Linking this browser') =>
 		run(`${what}: ${asks} four times`, async () => {
 			const { unlock, sign, held } = await ceremonies(undefined);
@@ -199,7 +199,7 @@
 		run(`Unlocking: ${asks} once`, async () => {
 			const { unlock } = await ceremonies(meta.credential);
 			const kept = await store.load();
-			const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.ops, kept.keys);
+			const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.edits, kept.keys);
 			running(d);
 		});
 
@@ -226,10 +226,10 @@
 
 	/** Shows what `d` holds, then again each time it changes as its other devices sync with it, until it closes. @param {any} d */
 	async function watch(d) {
-		let [ops, keys] = await d.size();
+		let [edits, keys] = await d.size();
 		await refresh();
-		while (device === d && (await d.changed(ops, keys))) {
-			[ops, keys] = await d.size();
+		while (device === d && (await d.changed(edits, keys))) {
+			[edits, keys] = await d.size();
 			await refresh();
 		}
 	}

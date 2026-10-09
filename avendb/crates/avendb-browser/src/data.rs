@@ -3,18 +3,18 @@
 //! as it is on its main line and on each proposal, with every edit of it (`note`). Each reads the device's Lab and
 //! nothing else: what the device can't open shows as sealed, as the server sees all of it.
 //!
-//! The page's words: an edit is a signed op (the core's `Op`), a proposal a branch of a note's history (the core's
-//! `Branch`), a variant a fork of a note into a new one (`Lab::fork`).
+//! The page's words are the core's own: an edit (`Edit`); a proposal (`Proposal`), a line of a note's history that its
+//! main line may take in; and a variant (`Lab::variant`), a new note made from a line of another.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use avendb::branch::{Commit, History};
 use avendb::doc::Item;
-use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use avendb::history::{Change, History};
+use avendb::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyScope, Recipient};
 use avendb::lab::Lab;
 use avendb::lens::{self, DocV2, Lens, Schema};
-use avendb::policy::{Action, Branch, Grantee, Line, Principal, Scope, State};
+use avendb::policy::{Action, Grantee, Line, Principal, Proposal, Scope, State};
 use avendb::sign::{Classical, Signature, SignerKeys};
 use avendb::wire::Wire as _;
 use serde_json::{Map, Value, json};
@@ -81,7 +81,7 @@ fn row(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId, first: &Firsts) 
     });
     let history = lab.history(me, space, entry);
     let lines = history.map(History::lines).unwrap_or_default();
-    let name = |b: OpId| history.and_then(|h| h.name(b)).map_or(Value::Null, Value::from);
+    let name = |b: EditId| history.and_then(|h| h.name(b)).map_or(Value::Null, Value::from);
     let proposals: Vec<Value> = lines.iter().flatten().map(|&b| name(b)).collect();
     let (author, actor) = first.get(&(space, entry)).map_or((None, None), |(a, v)| (Some(hex(&a.0)), Some(hex(&v.0))));
     let authored: Vec<String> = item.map(|i| i.authored().iter().map(|b| b.to_hex()).collect()).unwrap_or_default();
@@ -93,7 +93,7 @@ fn row(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId, first: &Firsts) 
         "title": field("title"),
         "record": record,
         "authored": authored,
-        "edits": history.map_or(0, |h| h.commits().len()),
+        "edits": history.map_or(0, |h| h.changes().len()),
         "held": lab.fetched(me, space, entry),
         "lines": lines.len(),
         "proposals": proposals,
@@ -111,15 +111,15 @@ fn row(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId, first: &Firsts) 
 /// was published into its lane.
 fn counts(lab: &Lab, me: SignerId, space: SpaceId) -> Value {
     let log = lab.log(me);
-    let ops = || log.ops().iter().zip(log.ids());
-    let on = |id: &OpId| GrantId::from(*id);
-    let grants: BTreeSet<GrantId> = ops()
-        .filter(|(op, _)| matches!(&op.action, Action::Grant(g, _) if g.scope.space() == space))
+    let edits = || log.edits().iter().zip(log.ids());
+    let on = |id: &EditId| GrantId::from(*id);
+    let grants: BTreeSet<GrantId> = edits()
+        .filter(|(edit, _)| matches!(&edit.action, Action::Grant(g, _) if g.scope.space() == space))
         .map(|(_, id)| on(id))
         .collect();
     let (mut founded, mut writes, mut checkpoints, mut keys, mut revokes, mut published) = (0, 0, 0, 0, 0, 0);
-    for (op, id) in ops() {
-        match &op.action {
+    for (edit, id) in edits() {
+        match &edit.action {
             Action::FoundSpace { .. } if SpaceId::from(*id) == space => founded += 1,
             Action::Write { space: s, .. } if *s == space => writes += 1,
             Action::Checkpoint { space: s, .. } if *s == space => checkpoints += 1,
@@ -159,37 +159,37 @@ fn lens(l: &Lens) -> Value {
 /// checkpoint covers.
 pub fn history(lab: &Lab, me: SignerId) -> Value {
     let (held, st) = (lab.log(me), lab.state(me));
-    let counted: HashSet<OpId> = st.all_writes().iter().map(|w| w.op).collect();
+    let counted: HashSet<EditId> = st.all_writes().iter().map(|w| w.edit).collect();
     let grants: HashMap<GrantId, Scope> = held
-        .ops()
+        .edits()
         .iter()
         .zip(held.ids())
-        .filter_map(|(op, id)| match &op.action {
+        .filter_map(|(edit, id)| match &edit.action {
             Action::Grant(g, _) => Some((GrantId::from(*id), g.scope)),
             _ => None,
         })
         .collect();
     let edits: Vec<Value> = held
-        .ops()
+        .edits()
         .iter()
         .zip(held.ids())
         .enumerate()
-        .map(|(n, (op, &id))| {
-            let signed = lab.signed_op(me, id);
-            let (kind, fields) = action(id, &op.action);
+        .map(|(n, (edit, &id))| {
+            let signed = lab.signed_edit(me, id);
+            let (kind, fields) = action(id, &edit.action);
             json!({
                 "n": n + 1,
                 "id": hex(&id.0),
                 "kind": kind,
                 "fields": fields,
-                "author": hex(&op.author.0),
-                "cosigners": op.cosigners.iter().map(|s| hex(&s.0)).collect::<Vec<_>>(),
+                "author": hex(&edit.author.0),
+                "cosigners": edit.cosigners.iter().map(|s| hex(&s.0)).collect::<Vec<_>>(),
                 "sigs": signed.map(|s| s.sigs.iter().map(signature).collect::<Vec<_>>()).unwrap_or_default(),
-                "parents": ids(&op.parents),
-                "depth": op.depth,
+                "parents": ids(&edit.parents),
+                "depth": edit.depth,
                 "bytes": signed.map_or(0, |s| s.to_wire().len()),
-                "vaults": concerns(st, id, &op.action, &grants).iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
-                "counted": matches!(op.action, Action::Write { .. }).then(|| counted.contains(&id)),
+                "vaults": concerns(st, id, &edit.action, &grants).iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+                "counted": matches!(edit.action, Action::Write { .. }).then(|| counted.contains(&id)),
             })
         })
         .collect();
@@ -199,7 +199,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
 /// What edit `id` does, as the History view shows it: its kind, and its fields, ids in hex. What is sealed, a write's
 /// body, keys' boxes, shows by its size or its recipient alone, and a public key by whether there is one. A write's
 /// `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one.
-fn action(id: OpId, a: &Action) -> (&'static str, Value) {
+fn action(id: EditId, a: &Action) -> (&'static str, Value) {
     let vias = |via: &[VaultId]| via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
     match a {
         Action::Genesis { kind, owners, threshold, root, seal_to, .. } => (
@@ -248,11 +248,11 @@ fn action(id: OpId, a: &Action) -> (&'static str, Value) {
             "revoke",
             json!({ "grant": hex(&grant.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
         ),
-        Action::Write { space, entry, actor, epoch, deps, branch, via, body } => {
-            let line = match branch {
-                Branch::Main => None,
-                Branch::New => Some(id),
-                Branch::On(b) => Some(*b),
+        Action::Write { space, entry, actor, epoch, deps, proposal, via, body } => {
+            let line = match proposal {
+                Proposal::Main => None,
+                Proposal::New => Some(id),
+                Proposal::On(b) => Some(*b),
             };
             (
                 "write",
@@ -263,7 +263,7 @@ fn action(id: OpId, a: &Action) -> (&'static str, Value) {
                     "epoch": epoch,
                     "deps": ids(deps),
                     "line": line.map(|b| hex(&b.0)),
-                    "starts": *branch == Branch::New,
+                    "starts": *proposal == Proposal::New,
                     "via": vias(via),
                     "sealed": body.len(),
                 }),
@@ -313,14 +313,14 @@ fn signature(sig: &Signature) -> Value {
     let (classical, batch) = match &sig.classical {
         Classical::Ed25519(_) => ("ed25519", None),
         Classical::Passkey(_) => ("p256", None),
-        Classical::Batch { ops, .. } => ("p256", Some(ops.len())),
+        Classical::Batch { edits, .. } => ("p256", Some(edits.len())),
     };
     json!({ "signer": hex(&sig.keys.id().0), "by": by, "classical": classical, "batch": batch, "pq": sig.pq.as_ref().map(Vec::len) })
 }
 
 /// The vaults edit `id` concerns, by device `st`'s view: the vault it founds or changes, the vault it acts for and the
 /// owners it acts through, the founder of the space it touches, and a grant's grantee.
-fn concerns(st: &State, id: OpId, a: &Action, grants: &HashMap<GrantId, Scope>) -> Vec<VaultId> {
+fn concerns(st: &State, id: EditId, a: &Action, grants: &HashMap<GrantId, Scope>) -> Vec<VaultId> {
     let founder = |s: SpaceId| st.founder(s);
     let mut vaults: Vec<VaultId> = match a {
         Action::Genesis { owners, .. } => {
@@ -407,19 +407,19 @@ pub fn note(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId) -> Option<V
         let doc = lab.item_on(me, space, entry, line).and_then(Item::as_document);
         let start = line.and_then(|b| h.get(b));
         json!({
-            "line": line.map(|b: OpId| hex(&b.0)),
+            "line": line.map(|b: EditId| hex(&b.0)),
             "name": named(h, line),
             "from": start.map(|c| ids(&c.write.deps)),
             "heads": ids(&h.heads(line)),
-            "history": h.history(line).iter().map(|c| hex(&c.write.op.0)).collect::<Vec<_>>(),
+            "history": h.history(line).iter().map(|c| hex(&c.write.edit.0)).collect::<Vec<_>>(),
             "title": doc.as_ref().map(|d| d.title.clone()),
             "text": doc.as_ref().map(body),
             "blocks": doc.as_ref().map(|d| d.blocks.iter().map(|b| b.to_value()).collect::<Vec<_>>()),
         })
     };
     let lines: Vec<Value> = h.lines().into_iter().map(line).collect();
-    let shown = h.commits().len().saturating_sub(SHOWN);
-    let edits: Vec<Value> = h.commits().iter().enumerate().map(|(i, c)| edit(h, me, c, i >= shown)).collect();
+    let shown = h.changes().len().saturating_sub(SHOWN);
+    let edits: Vec<Value> = h.changes().iter().enumerate().map(|(i, c)| edit(h, me, c, i >= shown)).collect();
     Some(json!({ "space": hex(&space.0), "entry": hex(&entry.0), "lines": lines, "edits": edits }))
 }
 
@@ -430,31 +430,31 @@ pub fn note(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId) -> Option<V
 /// the line it brought in (`from`). With `shown`, the note's title and text at its version, and the text at the one
 /// it changed: what it built on, or for a merge or a promote, its own line's version before it, so the page's diff
 /// shows what it brought.
-fn edit(h: &History, me: SignerId, c: &Commit, shown: bool) -> Value {
+fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
     let w = &c.write;
     let line = w.line();
-    let on = |d: &OpId| h.get(*d).map(|x| x.write.line());
+    let on = |d: &EditId| h.get(*d).map(|x| x.write.line());
     let other = w.deps.iter().filter_map(on).find(|l| *l != line);
     let kind = match &c.body {
-        _ if w.branch == Branch::New => "propose",
+        _ if w.proposal == Proposal::New => "propose",
         None => "sealed",
         Some(change) if change.is_empty() => "merge",
         Some(_) if other.is_some() => "promote",
         Some(_) => "edit",
     };
-    let own: Vec<OpId> = w.deps.iter().copied().filter(|d| on(d) == Some(line)).collect();
+    let own: Vec<EditId> = w.deps.iter().copied().filter(|d| on(d) == Some(line)).collect();
     let base = if kind == "edit" || own.is_empty() { &w.deps } else { &own };
-    let at = |version: &[OpId]| h.item_at(version, me, line).as_document();
+    let at = |version: &[EditId]| h.item_at(version, me, line).as_document();
     let (after, before) =
-        if shown && matches!(kind, "edit" | "merge" | "promote") { (at(&[w.op]), at(base)) } else { (None, None) };
+        if shown && matches!(kind, "edit" | "merge" | "promote") { (at(&[w.edit]), at(base)) } else { (None, None) };
     json!({
-        "id": hex(&w.op.0),
+        "id": hex(&w.edit.0),
         "author": hex(&w.author.0),
         "actor": hex(&w.actor.0),
         "line": line.map(|b| hex(&b.0)),
         "deps": ids(&w.deps),
         "kind": kind,
-        "name": if kind == "propose" { h.name(w.op) } else { None },
+        "name": if kind == "propose" { h.name(w.edit) } else { None },
         "from": other.map(|l| json!({ "line": l.map(|b| hex(&b.0)), "name": named(h, l) })),
         "title": after.as_ref().map(|d| d.title.clone()),
         "text": after.as_ref().map(body),
@@ -475,6 +475,6 @@ fn body(doc: &DocV2) -> String {
     doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default()
 }
 
-fn ids(ops: &[OpId]) -> Vec<String> {
-    ops.iter().map(|op| hex(&op.0)).collect()
+fn ids(edits: &[EditId]) -> Vec<String> {
+    edits.iter().map(|edit| hex(&edit.0)).collect()
 }

@@ -1,9 +1,9 @@
 /-!
-# Documents, branches, merge and promote
+# Documents, proposals, merge and promote
 
 Loro isn't modelled op by op. A document's history is the list of its updates, and the `Loro` structure states
 what we rely on as laws: the content depends only on which updates are present (convergence), and `revertTo` can
-bring a document to the content of any version it contains (Loro's `revert_to`). Theorems about branches hold for
+bring a document to the content of any version it contains (Loro's `revert_to`). Theorems about proposals hold for
 every `Loro` that satisfies these laws, so no axiom is needed.
 -/
 
@@ -23,13 +23,13 @@ structure Loro where
   revert_new : ∀ h t, revertTo h t ∉ h
   reverts : ∀ h t, (∀ u ∈ t, u ∈ h) → materialize (h ++ [revertTo h t]) = materialize t
 
-/-- Merge a branch into main: import the updates main doesn't have. -/
-def merge (main branch : History) : History := main ++ branch.filter (fun u => decide (u ∉ main))
+/-- Merge a proposal into main: import the updates main doesn't have. -/
+def merge (main proposal : History) : History := main ++ proposal.filter (fun u => decide (u ∉ main))
 
-/-- Promote: merge, then revert to the branch's head. (The Loro research showed that reverting main first and
-    importing afterwards doesn't reliably give the branch's content.) -/
-def promote (L : Loro) (main branch : History) : History :=
-  merge main branch ++ [L.revertTo (merge main branch) branch]
+/-- Promote: merge, then revert to the proposal's head. (The Loro research showed that reverting main first and
+    importing afterwards doesn't reliably give the proposal's content.) -/
+def promote (L : Loro) (main proposal : History) : History :=
+  merge main proposal ++ [L.revertTo (merge main proposal) proposal]
 
 theorem mem_merge {a b : History} {u : Update} : u ∈ merge a b ↔ u ∈ a ∨ u ∈ b := by
   unfold merge
@@ -48,7 +48,7 @@ theorem mem_merge {a b : History} {u : Update} : u ∈ merge a b ↔ u ∈ a ∨
 theorem T10_merge_comm (L : Loro) (a b : History) : L.materialize (merge a b) = L.materialize (merge b a) :=
   L.converges _ _ fun u => by simp only [mem_merge, Or.comm]
 
-/-- T10b: merging the same branch again changes nothing. -/
+/-- T10b: merging the same proposal again changes nothing. -/
 theorem T10_merge_idem (L : Loro) (a b : History) :
     L.materialize (merge (merge a b) b) = L.materialize (merge a b) :=
   L.converges _ _ fun u => by simp only [mem_merge, or_self, or_assoc]
@@ -56,14 +56,14 @@ theorem T10_merge_idem (L : Loro) (a b : History) :
 /-- T10c: merging keeps every update of both sides; no history is lost. -/
 theorem T10_merge_keeps (a b : History) (u : Update) (h : u ∈ a ∨ u ∈ b) : u ∈ merge a b := mem_merge.2 h
 
-/-- T10d: promote ends with exactly the branch's content. -/
-theorem T10_promote_content (L : Loro) (main branch : History) :
-    L.materialize (promote L main branch) = L.materialize branch :=
+/-- T10d: promote ends with exactly the proposal's content. -/
+theorem T10_promote_content (L : Loro) (main proposal : History) :
+    L.materialize (promote L main proposal) = L.materialize proposal :=
   L.reverts _ _ fun _ hu => mem_merge.2 (Or.inr hu)
 
 /-- T10e: promote keeps both histories. -/
-theorem T10_promote_keeps (L : Loro) (main branch : History) (u : Update) (h : u ∈ main ∨ u ∈ branch) :
-    u ∈ promote L main branch :=
+theorem T10_promote_keeps (L : Loro) (main proposal : History) (u : Update) (h : u ∈ main ∨ u ∈ proposal) :
+    u ∈ promote L main proposal :=
   List.mem_append.2 (Or.inl (mem_merge.2 h))
 
 end AvenDB

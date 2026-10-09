@@ -1,17 +1,17 @@
 //! Linking a device by its passkey (P8c). A new device of Alice's says her passkey's hello on a connection to a
 //! device that holds her vault's log, her Mac or the server; that device hands it the logs of the vaults the passkey
 //! owns (the link card) and nothing else; the new device adds itself to the vault its passkey is the root of, signed by
-//! the passkey and by itself, and the peer accepts that one op; then the two sync by caps. Each device runs split off,
-//! as on a machine of its own, and they speak by the bytes they would send each other: `avendb-net` carries the same
-//! bytes over iroh.
+//! the passkey and by itself, and the peer accepts that one edit; then the two sync by caps. Each device runs split
+//! off, as on a machine of its own, and they speak by the bytes they would send each other: `avendb-net` carries the
+//! same bytes over iroh.
 
 mod common;
 
 use common::*;
-use avendb::id::{OpId, SignerId};
+use avendb::id::{EditId, SignerId};
 use avendb::keys::{KeyScope, Recipient};
 use avendb::lab::Lab;
-use avendb::policy::{Action, Op, Refusal};
+use avendb::policy::{Action, Edit, Refusal};
 use avendb::sign::{PasskeyHello, RelayPass};
 use avendb::wire::{Join, Reply, Request, Wire};
 
@@ -26,22 +26,22 @@ fn link(new: (&mut Lab, SignerId), passkey: SignerId, peer: (&mut Lab, SignerId)
     let hello = PasskeyHello::from_wire(&hello.to_wire()).expect("a passkey's hello");
     let proven = hello.verify(&EXPORTER, true, n).expect("the hello proves the passkey");
     assert_eq!(proven, passkey);
-    let card = Reply { ops: peer.link_card(p, proven), ..Reply::default() };
+    let card = Reply { edits: peer.link_card(p, proven), ..Reply::default() };
     let card = Reply::from_wire(&card.to_wire()).expect("a card");
-    new.receive(n, card.ops, vec![]);
+    new.receive(n, card.edits, vec![]);
     let join = Join::from_wire(&new.join(n, passkey)?.to_wire()).expect("a join");
     peer.accept_join(p, n, join).map(|_| ())
 }
 
-/// `to` asks `from` once, by the bytes alone, as in `split.rs`. How many ops were new to `to`.
+/// `to` asks `from` once, by the bytes alone, as in `split.rs`. How many edits were new to `to`.
 fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     let ((to, t), (from, f)) = (to, from);
     let request = Request::from_wire(&to.request(t, f).to_wire()).expect("a request");
-    let (ops, ids, more) = from.reply(f, t, &request, usize::MAX);
+    let (edits, ids, more) = from.reply(f, t, &request, usize::MAX);
     let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
-    let reply = Reply::from_wire(&Reply { ops, blobs, more }.to_wire()).expect("a reply");
+    let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
     let blobs = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
-    to.receive(t, reply.ops, blobs.collect())
+    to.receive(t, reply.edits, blobs.collect())
 }
 
 /// `a` and `b` ask each other until neither has anything new for the other.
@@ -52,7 +52,7 @@ fn settle(a: (&mut Lab, SignerId), b: (&mut Lab, SignerId)) {
             return;
         }
     }
-    panic!("they keep sending each other ops");
+    panic!("they keep sending each other edits");
 }
 
 #[test]
@@ -114,14 +114,14 @@ fn a_link_card_holds_the_logs_of_the_passkeys_vaults_and_nothing_else() {
     let eve = w.lab.passkey("Eve");
     let card = w.lab.link_card(w.mac_a, w.passkey_a);
     assert!(!card.is_empty());
-    assert!(card.iter().all(|s| s.op.vault_of() == Some(w.alice)), "Alice's vault's log alone: no coop, no space");
+    assert!(card.iter().all(|s| s.edit.vault_of() == Some(w.alice)), "Alice's vault's log alone: no coop, no space");
     let theirs = w.lab.link_card(w.server, w.passkey_a);
     assert_eq!(card, theirs, "the server, relaying the Handbook and Notes, holds the same and hands the same");
     let bob = w.lab.link_card(w.mac_a, w.passkey_b);
-    assert!(!bob.is_empty() && bob.iter().all(|s| s.op.vault_of() == Some(w.bob)), "Bob's passkey gets Bob's");
+    assert!(!bob.is_empty() && bob.iter().all(|s| s.edit.vault_of() == Some(w.bob)), "Bob's passkey gets Bob's");
     assert!(w.lab.link_card(w.mac_a, eve).is_empty(), "a passkey that owns nothing gets nothing");
     assert!(w.lab.link_card(w.mac_a, w.mac_b).is_empty(), "nor does a device");
-    assert!(card.iter().all(|s| s.op.item().is_none()), "no write, no checkpoint");
+    assert!(card.iter().all(|s| s.edit.item().is_none()), "no write, no checkpoint");
     let _ = h;
 }
 
@@ -136,9 +136,15 @@ fn a_device_joins_only_the_vault_its_passkey_is_the_root_of() {
     let card = w.lab.link_card(w.mac_a, w.passkey_a);
     w.lab.receive(new, card, vec![]);
     let join = w.lab.join(new, w.passkey_a).expect("it joins Alice's vault");
-    assert!(matches!(join.op.op.action, Action::AddDevice { vault, device, .. } if vault == w.alice && device == new));
-    assert_eq!(join.op.op.sigs().collect::<Vec<_>>(), vec![w.passkey_a, new], "signed by the passkey, then by itself");
-    assert_eq!(join.blobs.len(), 1, "with its McEliece key, which the op names");
+    assert!(
+        matches!(join.edit.edit.action, Action::AddDevice { vault, device, .. } if vault == w.alice && device == new)
+    );
+    assert_eq!(
+        join.edit.edit.sigs().collect::<Vec<_>>(),
+        vec![w.passkey_a, new],
+        "signed by the passkey, then by itself"
+    );
+    assert_eq!(join.blobs.len(), 1, "with its McEliece key, which the edit names");
     assert_eq!(w.lab.join(new, w.passkey_a), Ok(join), "asked again, the same join, as a link tried again sends");
     // a device whose person's passkey isn't at hand signs nothing
     let other = w.lab.device_of(w.passkey_a, "Alice's iPad");
@@ -162,7 +168,7 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     let join = w.lab.join(new, w.passkey_a).expect("a join");
     let add = |vault, device| Action::AddDevice { vault, device, seal_to: None };
     let unchecked = |lab: &mut Lab, on, signers: &[SignerId], action| {
-        Join { op: lab.sign_unchecked(on, signers, action).expect("signed"), blobs: vec![] }
+        Join { edit: lab.sign_unchecked(on, signers, action).expect("signed"), blobs: vec![] }
     };
     let no_consent = unchecked(&mut w.lab, new, &[w.passkey_a], add(w.alice, new));
     let eve_adds = unchecked(&mut w.lab, eves, &[eve, eves], add(w.alice, eves));
@@ -171,29 +177,29 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
     let accept = |mac: &mut Lab, from, join: &Join| mac.accept_join(w.mac_a, from, join.clone()).map(|_| ());
     assert_eq!(accept(&mut mac, eves, &join), Err(Refusal::NotJoining), "sent by another device than it adds");
-    assert_eq!(accept(&mut mac, new, &no_device), Err(Refusal::NotJoining), "an op adding no device");
+    assert_eq!(accept(&mut mac, new, &no_device), Err(Refusal::NotJoining), "an edit adding no device");
     let mut forged = join.clone();
-    forged.op.sigs[0].pq.as_mut().expect("both halves")[0] ^= 1;
+    forged.edit.sigs[0].pq.as_mut().expect("both halves")[0] ^= 1;
     assert_eq!(accept(&mut mac, new, &forged), Err(Refusal::BadSignature), "a changed signature");
     assert_eq!(accept(&mut mac, eves, &eve_adds), Err(Refusal::BelowThreshold), "Eve's passkey can't add to Alice's");
     assert_eq!(accept(&mut mac, new, &no_consent), Err(Refusal::NoConsent), "a device that didn't sign");
     assert_eq!(accept(&mut mac, eves, &eve_joins), Err(Refusal::UnknownVault), "a vault the Mac doesn't know");
-    let before: Vec<OpId> = mac.log(w.mac_a).ids().to_vec();
+    let before: Vec<EditId> = mac.log(w.mac_a).ids().to_vec();
     assert!(!mac.state(w.mac_a).vault(w.alice).expect("Alice's").devices.contains(&new));
     let id = mac.accept_join(w.mac_a, new, join.clone()).expect("the join itself is accepted");
     // besides the join it keeps only its own boxes of Alice's vault key for the new iPhone, sealed to its key
-    let ops = mac.log(w.mac_a).ops().iter().zip(mac.log(w.mac_a).ids());
-    let added: Vec<(&Op, &OpId)> = ops.filter(|(_, x)| !before.contains(x)).collect();
+    let edits = mac.log(w.mac_a).edits().iter().zip(mac.log(w.mac_a).ids());
+    let added: Vec<(&Edit, &EditId)> = edits.filter(|(_, x)| !before.contains(x)).collect();
     assert!(added.iter().any(|(_, x)| **x == id));
-    let boxes_for_it = |op: &Op| match &op.action {
+    let boxes_for_it = |edit: &Edit| match &edit.action {
         Action::Keys { key, boxes, .. } => {
             *key == KeyScope::Vault(w.alice) && boxes.iter().all(|b| b.to == Recipient::Signer(new))
         }
         _ => false,
     };
-    assert!(added.iter().all(|(op, x)| **x == id || (op.author == w.mac_a && boxes_for_it(op))), "{added:?}");
-    assert!(mac.signed_op(w.mac_a, id).is_some());
-    assert!(mac.blob(w.mac_a, join.op.op.blobs()[0]).is_some(), "with the McEliece key it names");
+    assert!(added.iter().all(|(edit, x)| **x == id || (edit.author == w.mac_a && boxes_for_it(edit))), "{added:?}");
+    assert!(mac.signed_edit(w.mac_a, id).is_some());
+    assert!(mac.blob(w.mac_a, join.edit.edit.blobs()[0]).is_some(), "with the McEliece key it names");
     assert_eq!(mac.accept_join(w.mac_a, new, join), Ok(id), "sent again, the same");
 }
 

@@ -6,11 +6,11 @@ use wasm_bindgen::prelude::*;
 
 use avendb::cast;
 use avendb::doc::Item;
-use avendb::id::{EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use avendb::id::{EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Grantee, Kind, Principal, Refusal, Role, Scope, State};
 
-use crate::show::{built_in, id_at, ids_at, line_at, ops_at, read_as};
+use crate::show::{built_in, edits_at, id_at, ids_at, line_at, read_as};
 use crate::tile::{acting, approvers, granting, hex, person_of, revoking, role_named, Tile};
 
 /// Why an action didn't happen: the rules refused it, or the page asked for something that isn't there.
@@ -40,7 +40,7 @@ impl From<&str> for Fail {
 #[wasm_bindgen]
 impl Tile {
     /// An action, asked for in JSON (`{"do": name, "on": device, …}`) at `now` by the page's clock: `ok` with what it
-    /// made and how many ops the devices online sent each other after it (`synced`), or why not: `refused` with the
+    /// made and how many edits the devices online sent each other after it (`synced`), or why not: `refused` with the
     /// rule's reason, or an `error`.
     pub fn act(&mut self, action: &str, now: f64) -> String {
         match serde_json::from_str::<Value>(action) {
@@ -72,7 +72,7 @@ impl Tile {
     }
 
     /// Every device online syncs with the others until nothing new arrives (`Lab::sync_all`), in another order each
-    /// time: how many ops they sent.
+    /// time: how many edits they sent.
     fn sync(&mut self) -> usize {
         self.counter += 1;
         let seed = self.counter;
@@ -138,7 +138,7 @@ impl Tile {
                 let e = self.lab_mut().create(d, actor, sp, item)?;
                 Ok(json!({"entry": hex(&e.0)}))
             }
-            "branch" | "merge" | "promote" | "restore" | "revert" | "undo" | "fork" => self.history(what, a),
+            "propose" | "merge" | "promote" | "restore" | "revert" | "undo" | "variant" => self.history(what, a),
             "grant" => {
                 let (d, sp) = (self.device(a, "on")?, self.space_at(a, "space")?);
                 let sc = match a["entry"] {
@@ -283,29 +283,29 @@ impl Tile {
             return Ok(Value::Null);
         }
         let actor = acting(lab.state(d), d, Scope::Entry(sp, e), Role::Write);
-        let op = self.lab_mut().edit_on(d, actor, sp, e, line, |item| {
+        let edit = self.lab_mut().edit_on(d, actor, sp, e, line, |item| {
             item.write(&view, &value);
         })?;
-        Ok(json!({"op": hex(&op.0)}))
+        Ok(json!({"edit": hex(&edit.0)}))
     }
 
-    /// Branch, merge, promote, restore, revert, undo or fork an entry's history.
+    /// Propose, merge, promote, restore, revert or undo on an entry's history, or make a variant of the entry.
     fn history(&mut self, what: &str, a: &Value) -> Result<Value, Fail> {
         let (d, sp, e) = self.entry_at(a)?;
         let st = self.lab().state(d);
         let actor = acting(st, d, Scope::Entry(sp, e), Role::Write);
         let line = line_at(a, "line")?;
         let item = (sp, e);
-        let op = match what {
-            "branch" => {
+        let edit = match what {
+            "propose" => {
                 let name = text_at(a, "name")?;
-                let from = match ops_at(a, "from") {
+                let from = match edits_at(a, "from") {
                     Ok(v) if !v.is_empty() => v,
                     _ => st.heads(sp, e, line),
                 };
-                // the branch is named by the write that starts it
-                let start = self.lab_mut().branch(d, actor, item, &from, name)?;
-                return Ok(json!({"op": hex(&start.0), "line": hex(&start.0)}));
+                // the proposal is named by the write that starts it
+                let start = self.lab_mut().propose(d, actor, item, &from, name)?;
+                return Ok(json!({"edit": hex(&start.0), "line": hex(&start.0)}));
             }
             "merge" | "promote" => {
                 let (from, into) = (line_at(a, "from")?, line_at(a, "into")?);
@@ -319,31 +319,31 @@ impl Tile {
                 }
             }
             "restore" => {
-                let version = ops_at(a, "version")?;
+                let version = edits_at(a, "version")?;
                 self.lab_mut().restore(d, actor, item, line, &version)?
             }
             "revert" => {
-                // the line goes back to the version its latest commit built on there: for a merge, the line's own
+                // the line goes back to the version its latest edit built on there: for a merge, the line's own
                 // heads before it, as what it merged in is what it reverts
                 let history = st.history(sp, e, line);
-                let own = |dep: &OpId| history.iter().any(|w| w.op == *dep && w.line() == line);
+                let own = |dep: &EditId| history.iter().any(|w| w.edit == *dep && w.line() == line);
                 let latest = history.last().map(|w| w.deps.iter().copied().filter(own).collect::<Vec<_>>());
                 let built_on = latest.filter(|deps| !deps.is_empty());
                 let built_on = built_on.ok_or("There is no earlier version to go back to.")?;
                 self.lab_mut().restore(d, actor, item, line, &built_on)?
             }
             "undo" => {
-                let op = OpId(id_at(a, "op")?);
-                self.lab_mut().undo(d, actor, item, line, op)?
+                let edit = EditId(id_at(a, "edit")?);
+                self.lab_mut().undo(d, actor, item, line, edit)?
             }
             _ => {
                 let into = self.space_at(a, "into")?;
                 let actor = acting(st, d, Scope::Space(into), Role::Write);
-                let copy = self.lab_mut().fork(d, actor, item, line, into)?;
+                let copy = self.lab_mut().variant(d, actor, item, line, into)?;
                 return Ok(json!({"entry": hex(&copy.0), "space": hex(&into.0)}));
             }
         };
-        Ok(json!({"op": hex(&op.0)}))
+        Ok(json!({"edit": hex(&edit.0)}))
     }
 
     /// Change a vault's owners or threshold: by the vault's approval, or an owner leaving on its own, approved by
@@ -457,7 +457,7 @@ pub(crate) fn why(r: Refusal) -> &'static str {
         Refusal::BadParent => "The grant it would rest on doesn't cover it.",
         Refusal::FutureEpoch => "It names a key that doesn't exist yet.",
         Refusal::UnknownDep => "It builds on a write this device doesn't hold.",
-        Refusal::NotOnBranch => "It isn't on that branch.",
+        Refusal::NotOnProposal => "It isn't on that proposal.",
         Refusal::UnknownKey => "That key doesn't exist.",
         Refusal::NotEntitled => "This device may not open that key.",
         Refusal::Unsealed => "A key would be sealed where the schedule doesn't seal it.",

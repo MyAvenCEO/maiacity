@@ -10,7 +10,7 @@
 //!
 //! - `Device::found`: a new person's first device founds their human vault, its first space and grants avenCEO, the
 //!   aven vault the server is a device of, relay on it, in three ceremonies: the unlock, the pass to the relay, and one
-//!   that signs the vault's genesis and the op that adds the device together (`avendb_net::Node::found_with`). The
+//!   that signs the vault's genesis and the edit that adds the device together (`avendb_net::Node::found_with`). The
 //!   passkey may be one the page just made, its P-256 key in its public key info, or one made before for the same
 //!   relying party, maiaCITY's from its sign-up: then its P-256 key is the one key both the unlock's and the pass's
 //!   assertions recover to (`sign::passkey_key`). The first person to found their vault through a server nobody has
@@ -21,7 +21,7 @@
 //! - `Device::open`: a device the page made before opens again from its store, in the unlock's ceremony alone; the
 //!   server's relay knows it.
 //!
-//! The page keeps what the device holds in IndexedDB (`js/store.js`): its ops in the order it took them and its
+//! The page keeps what the device holds in IndexedDB (`js/store.js`): its edits in the order it took them and its
 //! McEliece keys, as a node keeps them on disk (`avendb_net::Disk`), saved after each change (`Node::changes`).
 //!
 //! The page shows its person's account (`Device::account`): their human vault, its root passkey and its devices, each
@@ -31,21 +31,21 @@
 //!
 //! Their vault founds and owns more vaults, aven and coop vaults, as real as their own (`Device::found_vaults`): one
 //! ceremony of the passkey signs all their geneses, and then the device, acting for each through their vault (the
-//! op's `via`), founds its home, the first space it founds, grants avenCEO relay on it, and writes its profile there,
+//! edit's `via`), founds its home, the first space it founds, grants avenCEO relay on it, and writes its profile there,
 //! a document tagged `PROFILE` titled with its name (`Device::profile`). The device acts for every vault its person's
 //! vault owns, so the page enacts each of them: it writes, shares and revokes as that vault, and the rules check each
-//! op against that vault's caps, as any peer's would. The page shows the device's whole world (`Device::world`): every
-//! vault it knows, whom it acts for and through which owners, and every space with each vault's role on it, the
+//! edit against that vault's caps, as any peer's would. The page shows the device's whole world (`Device::world`):
+//! every vault it knows, whom it acts for and through which owners, and every space with each vault's role on it, the
 //! grants in force, the devices that sync it and whether each opens it or only relays its ciphertext, and the notes and
 //! todos there with each vault's role on each.
 //!
-//! Each note opens on its page (`Device::note`): its main line and each proposal (a branch of its history), and every
+//! Each note opens on its page (`Device::note`): its main line and each proposal (a proposal of its history), and every
 //! edit of it, each with what it changed, to edit on any line, retitle, propose, merge, promote, restore, undo or make
 //! a variant (a new note with what a line shows, tagged `VARIANT` with the note it came from), acting for a vault as
 //! any edit does (`Device::set_text_on`, `set_title_on`, `propose`, `merge`, `restore`, `undo`, `variant`). And each
 //! vault's database shows as the device holds it, every entry with its record, its schema and its edits, and the
 //! schemas and lenses the app ships and its spaces publish (`Device::database`, `data`); and the database's history,
-//! every signed edit the device holds (the core's ops), each with what it does, who signed it and how, and the vaults
+//! every signed edit the device holds (the core's edits), each with what it does, who signed it and how, and the vaults
 //! it concerns (`Device::history`).
 //!
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
@@ -58,7 +58,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::doc::Item;
-use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::keys::{self, KeyScope};
 use avendb::lab::{Backup, Lab};
 use avendb::lens::{DocV2, Status, TypeV2};
@@ -160,7 +160,7 @@ impl Device {
     }
 
     /// A new device of a person who has one already: it links through the device whose code reads `offer`
-    /// (`Node::link_with`), its passkey's hello and the op that adds it signed in their ceremonies, and joins its
+    /// (`Node::link_with`), its passkey's hello and the edit that adds it signed in their ceremonies, and joins its
     /// person's vault. It learns the passkey's P-256 key from the unlock and its pass to the relay (`passed`), so it
     /// needs no ceremony more than these four.
     pub async fn link(
@@ -473,15 +473,15 @@ impl Device {
     }
 
     /// Proposes a change to entry `entry` in space `space`: a proposal named `name`, a line of its own that starts
-    /// from version `from`, acting for vault `actor` (`Lab::branch`): the new line, named by its first edit.
+    /// from version `from`, acting for vault `actor` (`Lab::propose`): the new line, named by its first edit.
     pub async fn propose(
         &self,
         actor: VaultId,
         (space, entry): (SpaceId, EntryId),
-        from: Vec<OpId>,
+        from: Vec<EditId>,
         name: String,
-    ) -> Result<OpId> {
-        let propose = move |lab: &mut Lab, me| lab.branch(me, actor, (space, entry), &from, &name);
+    ) -> Result<EditId> {
+        let propose = move |lab: &mut Lab, me| lab.propose(me, actor, (space, entry), &from, &name);
         self.node.act(propose).await.map_err(|why| anyhow!("the proposal is refused: {why:?}"))
     }
 
@@ -493,7 +493,7 @@ impl Device {
         (space, entry): (SpaceId, EntryId),
         (from, into): (Line, Line),
         promote: bool,
-    ) -> Result<OpId> {
+    ) -> Result<EditId> {
         let merge = move |lab: &mut Lab, me| match promote {
             true => lab.promote(me, actor, (space, entry), from, into),
             false => lab.merge(me, actor, (space, entry), from, into),
@@ -508,16 +508,22 @@ impl Device {
         actor: VaultId,
         (space, entry): (SpaceId, EntryId),
         line: Line,
-        version: Vec<OpId>,
-    ) -> Result<OpId> {
+        version: Vec<EditId>,
+    ) -> Result<EditId> {
         let restore = move |lab: &mut Lab, me| lab.restore(me, actor, (space, entry), line, &version);
         self.node.act(restore).await.map_err(|why| anyhow!("the restore is refused: {why:?}"))
     }
 
-    /// Undoes write `op` of entry `entry` in space `space` on line `line`, keeping every change made since, acting for
-    /// vault `actor` (`Lab::undo`).
-    pub async fn undo(&self, actor: VaultId, (space, entry): (SpaceId, EntryId), line: Line, op: OpId) -> Result<OpId> {
-        let undo = move |lab: &mut Lab, me| lab.undo(me, actor, (space, entry), line, op);
+    /// Undoes write `edit` of entry `entry` in space `space` on line `line`, keeping every change made since, acting
+    /// for vault `actor` (`Lab::undo`).
+    pub async fn undo(
+        &self,
+        actor: VaultId,
+        (space, entry): (SpaceId, EntryId),
+        line: Line,
+        edit: EditId,
+    ) -> Result<EditId> {
+        let undo = move |lab: &mut Lab, me| lab.undo(me, actor, (space, entry), line, edit);
         self.node.act(undo).await.map_err(|why| anyhow!("the undo is refused: {why:?}"))
     }
 
@@ -560,20 +566,20 @@ impl Device {
             .await
     }
 
-    /// The signed ops it holds from the `from`th on, in the order it took them, each as its bytes on the wire; `None`
+    /// The signed edits it holds from the `from`th on, in the order it took them, each as its bytes on the wire; `None`
     /// if it holds fewer than `from`, as some of what the store kept failed their checks: then the store is written
     /// anew from the first.
-    pub async fn ops(&self, from: usize) -> Option<Vec<Vec<u8>>> {
+    pub async fn edits(&self, from: usize) -> Option<Vec<Vec<u8>>> {
         self.node
             .read(move |lab, me| {
                 let ids = lab.log(me).ids();
-                let wire = |id: &OpId| lab.signed_op(me, *id).expect("an op it holds").to_wire();
+                let wire = |id: &EditId| lab.signed_edit(me, *id).expect("an edit it holds").to_wire();
                 ids.get(from..).map(|ids| ids.iter().map(wire).collect())
             })
             .await
     }
 
-    /// Waits until it holds other than `held`, how many ops and McEliece keys its page's store holds
+    /// Waits until it holds other than `held`, how many edits and McEliece keys its page's store holds
     /// (`Node::changes`): true, or false once it closed.
     pub async fn changed(&self, held: (usize, usize)) -> bool {
         let (mut changes, mut closed) = (self.node.changes(), self.closed.subscribe());
@@ -678,13 +684,13 @@ pub struct SpaceView {
     pub roles: Vec<(VaultId, Role)>,
     /// The grants in force on it or on one of its entries, each with the vaults that may revoke it.
     pub grants: Vec<(GrantId, Grant, Vec<VaultId>)>,
-    /// The devices that receive its ops (`State::reaches`).
+    /// The devices that receive its edits (`State::reaches`).
     pub syncs: Vec<Syncing>,
     /// Its entries, but the devices' cards and the vaults' profiles.
     pub items: Vec<ItemView>,
 }
 
-/// A device that receives a space's ops: the vault it receives them through, and whether it opens any of what they
+/// A device that receives a space's edits: the vault it receives them through, and whether it opens any of what they
 /// hold, or only relays their ciphertext, as the server for avenCEO.
 pub struct Syncing {
     pub device: SignerId,
@@ -852,7 +858,7 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
         let revokers = |g: &Grant| st.vaults().iter().map(|v| v.id).filter(|&a| st.may_revoke(a, g)).collect();
         let grants = st.grants().into_iter().filter(|(_, g)| g.scope.space() == s.id);
         let grants = grants.map(|(id, g)| (id, g.clone(), revokers(&g))).collect();
-        // a vault receives the space's ops by a cap on it or on one of its entries: the strongest it holds
+        // a vault receives the space's edits by a cap on it or on one of its entries: the strongest it holds
         let best = |x: VaultId| {
             let on = |sc| [Role::Owner, Role::Write, Role::Read, Role::Relay].into_iter().find(|&r| st.holds(x, sc, r));
             s.entries.iter().filter_map(|&e| on(Scope::Entry(s.id, e))).chain(on(sc)).max()
@@ -890,7 +896,7 @@ fn item(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId, first: &Firsts)
                 let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
                 let of = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT)).and_then(BlobId::from_hex);
                 let history = lab.history(me, space, entry);
-                let edits = history.map_or(0, |h| h.commits().len());
+                let edits = history.map_or(0, |h| h.changes().len());
                 let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
                 What::Note { title: doc.title, text, variant_of: of.map(|b| EntryId(b.0)), edits, proposals }
             }
@@ -987,10 +993,11 @@ fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (SpaceId
     cards
 }
 
-/// What a store kept, read back (`js/store.js`): the signed ops, each as its bytes on the wire, in the order the device
-/// took them, and its McEliece keys. Reading stops at the first op that doesn't decode, as a store on disk does.
-pub fn backup(ops: &[Vec<u8>], keys: Vec<Arc<[u8]>>) -> Backup {
-    Backup::new(ops.iter().map_while(|op| Signed::from_wire(op).ok()).collect(), keys)
+/// What a store kept, read back (`js/store.js`): the signed edits, each as its bytes on the wire, in the order the
+/// device took them, and its McEliece keys. Reading stops at the first edit that doesn't decode, as a store on disk
+/// does.
+pub fn backup(edits: &[Vec<u8>], keys: Vec<Arc<[u8]>>) -> Backup {
+    Backup::new(edits.iter().map_while(|edit| Signed::from_wire(edit).ok()).collect(), keys)
 }
 
 /// A browser's device's Lab: its person's passkey, by its P-256 key and the ceremony that unlocked the device, and the
@@ -1087,20 +1094,21 @@ impl PageDevice {
     }
 
     /// The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
-    /// `passkey()`), and what its store kept, its `ops` in order and its McEliece `keys`, each bytes (`Device::open`).
+    /// `passkey()`), and what its store kept, its `edits` in order and its McEliece `keys`, each bytes
+    /// (`Device::open`).
     pub async fn open(
         name: String,
         relay: String,
         p256: String,
         unlock: JsValue,
-        ops: Array,
+        edits: Array,
         keys: Array,
     ) -> Result<PageDevice, JsError> {
         let p256 = hex_bytes(&p256).and_then(|b| <[u8; 33]>::try_from(b).ok());
         let p256 = p256.ok_or_else(|| JsError::new("a passkey's P-256 key is 33 bytes in hex"))?;
-        let ops: Vec<Vec<u8>> = ops.iter().map(|op| Uint8Array::new(&op).to_vec()).collect();
+        let edits: Vec<Vec<u8>> = edits.iter().map(|edit| Uint8Array::new(&edit).to_vec()).collect();
         let keys = keys.iter().map(|key| Arc::from(Uint8Array::new(&key).to_vec())).collect();
-        let backup = backup(&ops, keys);
+        let backup = backup(&edits, keys);
         let device = Device::open(starting(name, &relay)?, p256, unlocked(&unlock)?, &backup);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
@@ -1261,7 +1269,7 @@ impl PageDevice {
     pub fn propose(&self, actor: String, space: String, entry: String, from: Array, name: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, from) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, op_ids(&from)?);
+            let (actor, at, from) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, edit_ids(&from)?);
             Ok(hex(&device.propose(actor, at, from, name).await.map_err(js_value)?.0).into())
         })
     }
@@ -1299,7 +1307,7 @@ impl PageDevice {
         let device = self.0.clone();
         future_to_promise(async move {
             let (actor, at, line, version) =
-                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, op_ids(&version)?);
+                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, edit_ids(&version)?);
             Ok(hex(&device.restore(actor, at, line, version).await.map_err(js_value)?.0).into())
         })
     }
@@ -1310,7 +1318,7 @@ impl PageDevice {
         let device = self.0.clone();
         future_to_promise(async move {
             let (actor, at, line, edit) =
-                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, OpId(id(&edit)?));
+                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, EditId(id(&edit)?));
             Ok(hex(&device.undo(actor, at, line, edit).await.map_err(js_value)?.0).into())
         })
     }
@@ -1460,23 +1468,24 @@ impl PageDevice {
         })
     }
 
-    /// How many ops and McEliece keys it holds: a pair.
+    /// How many edits and McEliece keys it holds: a pair.
     pub fn size(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (ops, keys) = device.node.read(|lab, me| lab.size(me)).await;
-            Ok(Array::of2(&(ops as u32).into(), &(keys as u32).into()).into())
+            let (edits, keys) = device.node.read(|lab, me| lab.size(me)).await;
+            Ok(Array::of2(&(edits as u32).into(), &(keys as u32).into()).into())
         })
     }
 
-    /// Its signed ops from the `from`th on, in the order it took them, each bytes: a promise, of `undefined` if it
-    /// holds fewer than `from` (`Device::ops`).
-    pub fn ops(&self, from: u32) -> Promise {
+    /// Its signed edits from the `from`th on, in the order it took them, each bytes: a promise, of `undefined` if it
+    /// holds fewer than `from` (`Device::edits`).
+    pub fn edits(&self, from: u32) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let ops = device.ops(from as usize).await;
-            let bytes = |ops: Vec<Vec<u8>>| ops.iter().map(|op| Uint8Array::from(&op[..])).collect::<Array>().into();
-            Ok(ops.map_or(JsValue::UNDEFINED, bytes))
+            let edits = device.edits(from as usize).await;
+            let bytes =
+                |edits: Vec<Vec<u8>>| edits.iter().map(|edit| Uint8Array::from(&edit[..])).collect::<Array>().into();
+            Ok(edits.map_or(JsValue::UNDEFINED, bytes))
         })
     }
 
@@ -1498,11 +1507,11 @@ impl PageDevice {
         })
     }
 
-    /// Waits until it holds other than `ops` ops and `keys` McEliece keys, what the page's store holds: a promise of
-    /// true, or of false once the device closed.
-    pub fn changed(&self, ops: u32, keys: u32) -> Promise {
+    /// Waits until it holds other than `edits` edits and `keys` McEliece keys, what the page's store holds: a promise
+    /// of true, or of false once the device closed.
+    pub fn changed(&self, edits: u32, keys: u32) -> Promise {
         let device = self.0.clone();
-        future_to_promise(async move { Ok(device.changed((ops as usize, keys as usize)).await.into()) })
+        future_to_promise(async move { Ok(device.changed((edits as usize, keys as usize)).await.into()) })
     }
 
     /// Closes its connections and its endpoint.
@@ -1740,14 +1749,14 @@ fn entry_at(space: &str, entry: &str) -> Result<(SpaceId, EntryId), JsValue> {
 }
 
 /// A line of an entry's history as the page names it: `null`, `undefined` or `""` for the main line, else the id of
-/// the write that started its branch.
+/// the write that started its proposal.
 fn line_of(line: Option<String>) -> Result<Line, JsValue> {
-    line.filter(|l| !l.is_empty()).map(|l| id(&l).map(OpId)).transpose()
+    line.filter(|l| !l.is_empty()).map(|l| id(&l).map(EditId)).transpose()
 }
 
 /// Writes, from an array of their ids.
-fn op_ids(ops: &Array) -> Result<Vec<OpId>, JsValue> {
-    ops.iter().map(|op| id(&op.as_string().unwrap_or_default()).map(OpId)).collect()
+fn edit_ids(edits: &Array) -> Result<Vec<EditId>, JsValue> {
+    edits.iter().map(|edit| id(&edit.as_string().unwrap_or_default()).map(EditId)).collect()
 }
 
 /// An error as the page sees it: the whole chain of what went wrong.

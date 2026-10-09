@@ -1,26 +1,26 @@
 import AvenDB.Step
 import AvenDB.Logs
 import AvenDB.Lens
-import AvenDB.Branches
+import AvenDB.Proposals
 
 /-!
 # Test vectors for the Rust core
 
-The same cases run here and in `crates/avendb/tests/vectors.rs`. A step case is a list of ops applied one after the other
-from the empty state, as every peer applies them once they are in replay order; the model's answer is whether each op
-is accepted, and the state at the end. A view case gives each op the depth it claims, as ops made on different
-devices do, and the answer is which ops stand in the view (`standing`) and the view itself: that is where removals
+The same cases run here and in `crates/avendb/tests/vectors.rs`. A step case is a list of edits applied one after the
+other from the empty state, as every peer applies them once they are in replay order; the model's answer is whether each
+edit is accepted, and the state at the end. A view case gives each edit the depth it claims, as edits made on different
+devices do, and the answer is which edits stand in the view (`standing`) and the view itself: that is where removals
 cut what they hadn't seen. The Rust core must give the same answer for every case.
 
 `lake build` checks that `vectors/vaults.json` holds exactly what the model says, and fails when it doesn't
 (`VectorsCheck.lean`); `lake exe vectors` writes the file again after a change to the rules.
 
-The Rust core names what an op creates (a vault, a space, a grant) by the hash of that op, and orders ops of the same
-depth and rank by that hash, where the model picks numbers: the Rust side maps each number to what its op created, so
-every number is used once per case and no two ops of a view case share a depth and a rank. A blob is named by the hash
-of its bytes: the Rust side maps blob number `b` to the bytes `blob b`. The state includes the key schedule (each
-family's epoch where it isn't 0, every seal, and every published key), the schema lane, and each line of each entry's
-history: its writes and its heads, the main line first and then each branch in the order it started.
+The Rust core names what an edit creates (a vault, a space, a grant) by the hash of that edit, and orders edits of the
+same depth and rank by that hash, where the model picks numbers: the Rust side maps each number to what its edit
+created, so every number is used once per case and no two edits of a view case share a depth and a rank. A blob is named
+by the hash of its bytes: the Rust side maps blob number `b` to the bytes `blob b`. The state includes the key schedule
+(each family's epoch where it isn't 0, every seal, and every published key), the schema lane, and each line of each
+entry's history: its writes and its heads, the main line first and then each proposal in the order it started.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
 reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
@@ -30,35 +30,35 @@ core must read and write exactly the same.
 namespace AvenDB.Vectors
 
 structure Case where
-  name : String
-  ops  : List (SignerId × List SignerId × Action)
+  name  : String
+  edits : List (SignerId × List SignerId × Action)
 
-/-- A view case: each op with the depth it claims. A post-quantum case (`pq`) is the view of a peer that no longer
-    trusts the curves, which counts only the ops `checkpointed` keeps. -/
+/-- A view case: each edit with the depth it claims. A post-quantum case (`pq`) is the view of a peer that no longer
+    trusts the curves, which counts only the edits `checkpointed` keeps. -/
 structure ViewCase where
-  name : String
-  ops  : List (Nat × SignerId × List SignerId × Action)
-  pq   : Bool := false
+  name  : String
+  edits : List (Nat × SignerId × List SignerId × Action)
+  pq    : Bool := false
 
-/-- Apply the ops one after the other: whether each was accepted, and the state at the end. An op's id is its
+/-- Apply the edits one after the other: whether each was accepted, and the state at the end. An edit's id is its
     position. -/
-def run (ops : List (SignerId × List SignerId × Action)) : List Bool × State :=
-  let (accepted, st) := ops.zipIdx.foldl (fun (acc : List Bool × State) ((author, co, a), i) =>
-    let op : Op := { id := i, depth := i, author, cosigners := co, action := a }
-    match step acc.2 op with
+def run (edits : List (SignerId × List SignerId × Action)) : List Bool × State :=
+  let (accepted, st) := edits.zipIdx.foldl (fun (acc : List Bool × State) ((author, co, a), i) =>
+    let edit : Edit := { id := i, depth := i, author, cosigners := co, action := a }
+    match step acc.2 edit with
     | some st' => (acc.1 ++ [true], st')
     | none     => (acc.1 ++ [false], acc.2)) ([], {})
   (accepted, st)
 
-def ViewCase.toOps (c : ViewCase) : List Op :=
-  c.ops.zipIdx.map fun ((depth, author, co, a), i) => { id := i, depth, author, cosigners := co, action := a }
+def ViewCase.toEdits (c : ViewCase) : List Edit :=
+  c.edits.zipIdx.map fun ((depth, author, co, a), i) => { id := i, depth, author, cosigners := co, action := a }
 
-/-- Which ops stand in the view, in the order given, and the view. -/
+/-- Which edits stand in the view, in the order given, and the view. -/
 def runView (c : ViewCase) : List Bool × State :=
-  let ops := c.toOps
-  let held := if c.pq then checkpointed ops else ops
+  let edits := c.toEdits
+  let held := if c.pq then checkpointed edits else edits
   let stood := standing held
-  (ops.map fun o => stood.any (·.id == o.id), view held)
+  (edits.map fun o => stood.any (·.id == o.id), view held)
 
 /-! ## The cases
 
@@ -83,7 +83,7 @@ def g (id : GrantId) (sc : Scope) (r : Role) (to : Grantee) (issuer : VaultId) (
 def toVault (v : VaultId) : Grantee := .principal (.vault v)
 
 def cases : List Case := [
-  { name := "a human vault, its devices and a backup passkey", ops := [
+  { name := "a human vault, its devices and a backup passkey", edits := [
     (1, [], .genesis 100 .human [.signer 1] 1),
     (1, [2], .addDevice 100 2),
     (1, [3], .addDevice 100 3),
@@ -107,7 +107,7 @@ def cases : List Case := [
     (9, [], .removeOwner 100 (.signer 1) []),
     (9, [77], .addDevice 100 77),
     (1, [], .addDevice 100 3)] },
-  { name := "geneses", ops := [
+  { name := "geneses", edits := [
     (4, [], .genesis 101 .human [] 1),
     (4, [], .genesis 101 .human [.signer 4, .signer 4] 1),
     (4, [], .genesis 101 .human [.signer 4] 2),
@@ -117,7 +117,7 @@ def cases : List Case := [
     (4, [], .genesis 101 .human [.signer 4] 1),
     (4, [], .genesis 200 .coop [.vault 101, .vault 999] 1),
     (4, [], .genesis 200 .coop [.vault 101] 0)] },
-  { name := "a coop's governance", ops := humans ++ [
+  { name := "a coop's governance", edits := humans ++ [
     -- Bob has to consent to becoming an owner
     (1, [], .genesis 200 .coop [.vault 100, .vault 101] 2),
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 3),
@@ -136,7 +136,7 @@ def cases : List Case := [
     (1, [], .removeOwner 200 (.vault 100) []),
     -- devices belong to human vaults
     (1, [2], .addDevice 200 2)] },
-  { name := "no ownership cycles", ops := humans ++ [
+  { name := "no ownership cycles", edits := humans ++ [
     (1, [], .genesis 200 .coop [.vault 100] 1),
     (1, [], .genesis 201 .coop [.vault 200] 1),
     (1, [], .genesis 202 .coop [.vault 201] 1),
@@ -146,7 +146,7 @@ def cases : List Case := [
     (1, [4], .addOwner 201 (.vault 101)),
     -- two paths to the same coop are no cycle
     (1, [], .addOwner 202 (.vault 200))] },
-  { name := "concurrent changes, in replay order", ops := humans ++ [
+  { name := "concurrent changes, in replay order", edits := humans ++ [
     -- two owners remove each other: the first stands, the second would remove the last owner
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (1, [], .removeOwner 200 (.vault 101) []),
@@ -160,7 +160,7 @@ def cases : List Case := [
     (1, [4, 8], .genesis 203 .coop [.vault 100, .vault 101, .vault 103] 2),
     (1, [4], .removeOwner 203 (.vault 103) []),
     (8, [1, 6], .addOwner 203 (.vault 102))] },
-  { name := "the passkey as root", ops := [
+  { name := "the passkey as root", edits := [
     (1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
     -- the root signs the genesis that names it, and a coop has no root
     (4, [], .genesis 101 .human [.signer 4] 1 (some 5)),
@@ -181,7 +181,7 @@ def cases : List Case := [
     (9, [], .setRoot 100 none []),
     (9, [77], .addDevice 100 77),
     (9, [], .setRoot 100 (some 9) [])] },
-  { name := "three kinds of vault, and acts that name their chain", ops := humans ++ [
+  { name := "three kinds of vault, and acts that name their chain", edits := humans ++ [
     -- avenCEO, the relay server's aven vault, owned by Alice's human vault; the server joins as its device
     (1, [], .genesis 300 .aven [.vault 100] 1),
     (1, [600], .addDevice 300 600),
@@ -216,7 +216,7 @@ def cases : List Case := [
     (5, [], .foundSpace 19 205 [200, 101]),
     (5, [], .foundSpace 20 205 [101]),
     (5, [], .foundSpace 21 205 [200])] },
-  { name := "spaces, grants and Public", ops := humans ++ [
+  { name := "spaces, grants and Public", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     -- Alice's Mac founds the Handbook for the coop; Carol's passkey can't found a space for Alice
     (2, [], .foundSpace 10 200 [100]),
@@ -241,7 +241,7 @@ def cases : List Case := [
     (6, [], .write 10 1 102 0 [99]),
     (6, [], .write 10 1 102 1 [21]),
     (6, [], .write 10 2 102 0)] },
-  { name := "revocation, cascades and keep lists", ops := humans ++ [
+  { name := "revocation, cascades and keep lists", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (2, [], .foundSpace 12 100),
     (2, [], .write 12 21 100 0),
@@ -262,7 +262,7 @@ def cases : List Case := [
     (5, [], .write 12 21 200 0 [8] (via := [101])),
     (2, [], .revoke 99 100 []),
     (2, [], .revoke 14 100 [])] },
-  { name := "keys go only where the schedule seals them", ops := humans ++ [
+  { name := "keys go only where the schedule seals them", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     (2, [], .foundSpace 10 200 [100]),
     (2, [], .write 10 1 200 0 (via := [100])),
@@ -296,7 +296,7 @@ def cases : List Case := [
     (2, [], .keys (.entry 10 1) 0 [.scoped (.entry 10 1) 1]),
     (6, [], .keys (.entry 10 1) 1 []),
     (2, [], .keys (.entry 10 1) 1 [.scoped (.vault 102) 0])] },
-  { name := "the schema lane", ops := humans ++ [
+  { name := "the schema lane", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     (2, [], .foundSpace 10 200 [100]),
     (2, [], .foundSpace 11 100),
@@ -317,7 +317,7 @@ def cases : List Case := [
     (1, [4], g 2 (.space 10) .owner (toVault 103) 200 (via := [100])),
     (8, [], .publish 10 103 3),
     (5, [], .publish 10 200 4 [101])] },
-  { name := "a device vouches only for its own writes", ops := humans ++ [
+  { name := "a device vouches only for its own writes", edits := humans ++ [
     (2, [], .foundSpace 11 100),
     (1, [3], .addDevice 100 3),
     (2, [], .write 11 1 100 0),
@@ -336,7 +336,7 @@ def cases : List Case := [
     -- Bob's Mac, a stranger to Notes, can't vouch for Alice's edits
     (5, [], .checkpoint 11 2 [9]),
     (2, [], .checkpoint 11 2 [9])] },
-  { name := "branches of an entry", ops := humans ++ [
+  { name := "proposals of an entry", edits := humans ++ [
     (2, [], .foundSpace 10 100),
     (2, [], .write 10 1 100 0),
     (2, [], g 1 (.entry 10 1) .write (toVault 101) 100),
@@ -344,11 +344,11 @@ def cases : List Case := [
     -- Bob's Mac starts a draft of Welcome from its first version and writes on it
     (5, [], .write 10 1 101 0 [7] .new),
     (5, [], .write 10 1 101 0 [10] (.on 10)),
-    -- a reader can't start a branch, nor can a stranger
+    -- a reader can't start a proposal, nor can a stranger
     (6, [], .write 10 1 102 0 [7] .new),
     (555, [], .write 10 1 101 0 [7] .new),
-    -- a write on a branch builds on it: not on main alone, not on a write that didn't start one, not on a branch that
-    -- doesn't exist or is another entry's
+    -- a write on a proposal builds on it: not on main alone, not on a write that didn't start one, not on a proposal
+    -- that doesn't exist or is another entry's
     (2, [], .write 10 1 100 0 [7] (.on 10)),
     (2, [], .write 10 1 100 0 [11] (.on 11)),
     (2, [], .write 10 1 100 0 [7] (.on 99)),
@@ -359,40 +359,40 @@ def cases : List Case := [
     -- Bob carries on with the draft and brings main into it
     (5, [], .write 10 1 101 0 [11] (.on 10)),
     (5, [], .write 10 1 101 0 [19, 20] (.on 10)),
-    -- Alice's Mac starts a branch of its own from the merge, and Bob writes on it
+    -- Alice's Mac starts a proposal of its own from the merge, and Bob writes on it
     (2, [], .write 10 1 100 0 [19] .new),
     (5, [], .write 10 1 101 0 [22] (.on 22))] }]
 
-/-- Alice's, Bob's, Carol's and Dave's vaults, one op per depth. -/
+/-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
 
 def views : List ViewCase := [
-  { name := "a removed owner can't back-date governance", ops := humansV ++ [
+  { name := "a removed owner can't back-date governance", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     -- Bob, offline since the coop began, adds Dave
     (7, 4, [8], .addOwner 200 (.vault 103)),
     (8, 1, [], .setThreshold 200 1),
     -- Alice removes Bob, not having seen the add
     (9, 1, [], .removeOwner 200 (.vault 101) [])] },
-  { name := "a removal keeps what it had seen", ops := humansV ++ [
+  { name := "a removal keeps what it had seen", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 4, [8], .addOwner 200 (.vault 103)),
     (8, 1, [], .setThreshold 200 1),
     (9, 1, [], .removeOwner 200 (.vault 101) [7]),
     -- Bob no longer governs
     (10, 4, [], .setThreshold 200 1)] },
-  { name := "the senior owner wins a clash", ops := humansV ++ [
+  { name := "the senior owner wins a clash", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     -- Bob's removal of Alice sorts first, Alice's of Bob stands
     (7, 4, [], .removeOwner 200 (.vault 100) []),
     (8, 1, [], .removeOwner 200 (.vault 101) [])] },
-  { name := "removals that don't clash both stand", ops := humansV ++ [
+  { name := "removals that don't clash both stand", edits := humansV ++ [
     (6, 1, [4, 8], .genesis 200 .coop [.vault 100, .vault 101, .vault 103] 1),
     (7, 1, [], .removeOwner 200 (.vault 101) []),
     -- Dave leaves at the same time
     (8, 8, [], .removeOwner 200 (.vault 103) []),
     (9, 8, [], .setThreshold 200 1)] },
-  { name := "the root outranks a stolen second passkey", ops := [
+  { name := "the root outranks a stolen second passkey", edits := [
     (0, 1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
     (1, 1, [9], .addOwner 100 (.signer 9)),
     -- the thief, holding the second passkey: removes the root's passkey from the owners, adds a device of their own
@@ -400,7 +400,7 @@ def views : List ViewCase := [
     (3, 9, [555], .addDevice 100 555),
     -- the root removes the second passkey, having seen neither
     (4, 1, [], .removeOwner 100 (.signer 9) [])] },
-  { name := "a revoked writer's unseen edits are cut, with what builds on them", ops := humansV ++ [
+  { name := "a revoked writer's unseen edits are cut, with what builds on them", edits := humansV ++ [
     (6, 2, [], .foundSpace 12 100),
     (7, 2, [], .write 12 21 100 0),
     (8, 2, [], g 10 (.entry 12 21) .write (toVault 101) 100),
@@ -411,7 +411,7 @@ def views : List ViewCase := [
     (12, 6, [], .write 12 21 102 0 [11]),
     (13, 2, [], .revoke 10 100 [10]),
     (14, 6, [], .write 12 21 102 0 [10])] },
-  { name := "a revocation cuts a branch it hadn't seen, with every write on it", ops := humansV ++ [
+  { name := "a revocation cuts a proposal it hadn't seen, with every write on it", edits := humansV ++ [
     (6, 2, [], .foundSpace 12 100),
     (7, 2, [], .write 12 21 100 0),
     (8, 2, [], g 10 (.entry 12 21) .write (toVault 101) 100),
@@ -425,21 +425,21 @@ def views : List ViewCase := [
     -- Alice merges the draft she saw; Carol's merge of the other goes with it
     (15, 2, [], .write 12 21 100 0 [7, 11]),
     (16, 6, [], .write 12 21 102 0 [15, 13])] },
-  { name := "a lost device's back-dated edits are cut", ops := humansV ++ [
+  { name := "a lost device's back-dated edits are cut", edits := humansV ++ [
     (6, 1, [3], .addDevice 100 3),
     (7, 2, [], .foundSpace 11 100),
     -- an edit from the iPhone the Mac had seen, and one the thief made on an old copy
     (8, 3, [], .write 11 1 100 0),
     (9, 3, [], .write 11 2 100 0),
     (10, 1, [], .removeDevice 100 3 [8])] },
-  { name := "handing the root on cuts the old passkey's back-dated ops", ops := [
+  { name := "handing the root on cuts the old passkey's back-dated edits", edits := [
     (0, 1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
     (1, 1, [9], .addOwner 100 (.signer 9)),
     -- the old passkey, stolen later, adds a device on an old copy
     (2, 1, [555], .addDevice 100 555),
     (3, 1, [9], .setRoot 100 (some 9) [1]),
     (4, 9, [], .removeOwner 100 (.signer 1) [1])] },
-  { name := "a revoked reader's back-dated keys are cut", ops := humansV ++ [
+  { name := "a revoked reader's back-dated keys are cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], .foundSpace 10 200 [100]),
     (8, 2, [], .write 10 1 200 0 (via := [100])),
@@ -448,7 +448,7 @@ def views : List ViewCase := [
     (10, 6, [], .keys (.entry 10 1) 0 [.scoped (.vault 102) 0]),
     (11, 6, [], .keys (.entry 10 1) 0 [.scoped (.space 10) 0]),
     (12, 2, [], .revoke 1 200 [10] [100])] },
-  { name := "a removed owner's back-dated publish is cut", ops := humansV ++ [
+  { name := "a removed owner's back-dated publish is cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], .foundSpace 10 200 [100]),
     -- Bob's Mac publishes a schema for the coop, which Alice sees, and a lens on an old copy, which she doesn't
@@ -458,7 +458,7 @@ def views : List ViewCase := [
     -- Alice's Mac publishes the lens itself; Bob's Mac no longer can
     (11, 2, [], .publish 10 200 2 [100]),
     (12, 5, [], .publish 10 200 3 [101])] },
-  { name := "a removed owner's back-dated writes for the coop are cut", ops := humansV ++ [
+  { name := "a removed owner's back-dated writes for the coop are cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], .foundSpace 10 200 [100]),
     -- Bob's Mac writes for the coop through Bob's vault: an edit Alice sees, and one on an old copy, which she doesn't
@@ -468,7 +468,7 @@ def views : List ViewCase := [
     -- Alice's Mac writes on; Bob's Mac no longer can
     (11, 2, [], .write 10 1 200 0 [8] (via := [100])),
     (12, 5, [], .write 10 1 200 0 [11] (via := [101]))] },
-  { name := "once the curves fall, only vouched writes count", pq := true, ops := humansV ++ [
+  { name := "once the curves fall, only vouched writes count", pq := true, edits := humansV ++ [
     (6, 2, [], .foundSpace 11 100),
     (7, 1, [3], .addDevice 100 3),
     -- Alice's Mac edits Welcome and vouches for it; it vouches for its second edit of the Charter but not the
@@ -484,7 +484,7 @@ def views : List ViewCase := [
     (14, 3, [], .checkpoint 11 1 [13]),
     (15, 2, [], .write 11 1 100 0 [13]),
     (16, 3, [], .checkpoint 11 1 [15])] },
-  { name := "the senior revoker ranks first", ops := humansV ++ [
+  { name := "the senior revoker ranks first", edits := humansV ++ [
     (6, 2, [], .foundSpace 11 100),
     (7, 1, [], g 30 (.space 11) .owner (toVault 103) 100),
     (8, 8, [], g 31 (.space 11) .read (toVault 102) 103 (some 30)),
@@ -493,7 +493,7 @@ def views : List ViewCase := [
     -- revocation sorts first, and falls with the grant it rested on
     (11, 1, [], .revoke 30 100 [6, 7, 8, 9]),
     (10, 8, [], .revoke 31 103 [])] },
-  { name := "a vault settles before the coops it owns", ops := humansV ++ [
+  { name := "a vault settles before the coops it owns", edits := humansV ++ [
     (6, 1, [9], .addOwner 100 (.signer 9)),
     (7, 1, [10], .addOwner 100 (.signer 10)),
     (8, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
@@ -503,53 +503,53 @@ def views : List ViewCase := [
 
 /-! ## Sync cases
 
-A sync case is a list of ops a peer holds, each building on the frontier of its own log among the ops before it, as a
-device holding them all would build, unless it names other parents or claims another depth. The model's answers:
-which ops stand; each log's closed part and frontier; the forks; and for each device that asks, holding some of the
-ops, a peer holding all of them or some: the device's frontier of each log it holds, what it sends of it when it asks
-and its loose ops (`asks`), what the peer would send it whole (`respond`), and what it sends given what the device
-sent (`respondSince`). A parent no op of the case has (999) stands for an op nobody holds. -/
+A sync case is a list of edits a peer holds, each building on the frontier of its own log among the edits before it, as
+a device holding them all would build, unless it names other parents or claims another depth. The model's answers:
+which edits stand; each log's closed part and frontier; the forks; and for each device that asks, holding some of the
+edits, a peer holding all of them or some: the device's frontier of each log it holds, what it sends of it when it asks
+and its loose edits (`asks`), what the peer would send it whole (`respond`), and what it sends given what the device
+sent (`respondSince`). A parent no edit of the case has (999) stands for an edit nobody holds. -/
 
-/-- An op of a sync case. -/
-structure SyncOp where
+/-- An edit of a sync case. -/
+structure SyncEdit where
   author    : SignerId
   cosigners : List SignerId := []
   action    : Action
-  /-- The ops of its log it builds on, by place; `none` for the frontier of its log among the ops before it. -/
+  /-- The edits of its log it builds on, by place; `none` for the frontier of its log among the edits before it. -/
   parents   : Option (List Nat) := none
   /-- The depth it claims; `none` for its place. -/
   depth     : Option Nat := none
 
 structure SyncCase where
-  name : String
-  ops  : List SyncOp
-  /-- Who asks: a device, the places of the ops it holds, and those of the ops the peer holds (`none`: all). -/
-  asks : List (SignerId × List Nat × Option (List Nat))
-  /-- The passkeys that prove themselves to a peer holding every op, to link a new device (`linkCard`). -/
+  name  : String
+  edits : List SyncEdit
+  /-- Who asks: a device, the places of the edits it holds, and those of the edits the peer holds (`none`: all). -/
+  asks  : List (SignerId × List Nat × Option (List Nat))
+  /-- The passkeys that prove themselves to a peer holding every edit, to link a new device (`linkCard`). -/
   links : List SignerId := []
 
-def SyncCase.toOps (c : SyncCase) : List Op :=
-  c.ops.zipIdx.foldl (fun acc (o, i) =>
-    let op : Op :=
+def SyncCase.toEdits (c : SyncCase) : List Edit :=
+  c.edits.zipIdx.foldl (fun acc (o, i) =>
+    let edit : Edit :=
       { id := i, depth := o.depth.getD i, author := o.author, cosigners := o.cosigners, action := o.action }
-    let parents := o.parents.getD (match op.log? acc with
+    let parents := o.parents.getD (match edit.log? acc with
       | some l => frontiers acc l
       | none => [])
-    acc ++ [{ op with parents }]) []
+    acc ++ [{ edit with parents }]) []
 
-def plain (ops : List (SignerId × List SignerId × Action)) : List SyncOp :=
-  ops.map fun (author, cosigners, action) => { author, cosigners, action }
+def plain (edits : List (SignerId × List SignerId × Action)) : List SyncEdit :=
+  edits.map fun (author, cosigners, action) => { author, cosigners, action }
 
-/-- The ops of a case at the places `held`. -/
-def heldOps (ops : List Op) (held : List Nat) : List Op := ops.filter (held.contains ·.id)
+/-- The edits of a case at the places `held`. -/
+def heldEdits (edits : List Edit) (held : List Nat) : List Edit := edits.filter (held.contains ·.id)
 
-/-- The ops the peer holds: those at the places `peer`, or all of them. -/
-def peerOps (ops : List Op) : Option (List Nat) → List Op
-  | some ps => heldOps ops ps
-  | none => ops
+/-- The edits the peer holds: those at the places `peer`, or all of them. -/
+def peerEdits (edits : List Edit) : Option (List Nat) → List Edit
+  | some ps => heldEdits edits ps
+  | none => edits
 
 def syncs : List SyncCase := [
-  { name := "an item by caps, by frontiers", ops := plain (humans ++ [
+  { name := "an item by caps, by frontiers", edits := plain (humans ++ [
       (6, [7], .addDevice 102 7),
       (1, [3], .addDevice 100 3),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
@@ -574,7 +574,7 @@ def syncs : List SyncCase := [
       (5, [0, 1, 2, 3, 4, 5, 8, 9, 10], none),
       (555, [], none),
       (3, List.range 19, none)] },
-  { name := "forks", ops := plain (humans ++ [
+  { name := "forks", edits := plain (humans ++ [
       (1, [3], .addDevice 100 3),
       (2, [], .foundSpace 11 100),
       (2, [], .write 11 1 100 0),
@@ -586,12 +586,12 @@ def syncs : List SyncCase := [
       -- her passkey on two devices at once: a passkey isn't checked
       { author := 1, cosigners := [77], action := .addDevice 100 77 },
       { author := 1, action := .setThreshold 100 1, parents := some [6] },
-      -- the Mac building on an op nobody holds: outside the closed part, so neither in the frontier nor a fork
+      -- the Mac building on an edit nobody holds: outside the closed part, so neither in the frontier nor a fork
       { author := 2, action := .write 11 1 100 0 [8], parents := some [999] },
-      -- the iPhone claiming to be no deeper than the op it builds on: malformed, so it never stands
+      -- the iPhone claiming to be no deeper than the edit it builds on: malformed, so it never stands
       { author := 3, action := .write 11 1 100 0 [11], parents := some [11], depth := some 11 }],
     asks := [(3, [0, 1, 2, 3, 4, 5, 6, 7, 8, 11], none), (2, [], none)] },
-  { name := "a revocation joins its grant's log", ops := plain (humans ++ [
+  { name := "a revocation joins its grant's log", edits := plain (humans ++ [
       (6, [7], .addDevice 102 7),
       (2, [], .foundSpace 12 100),
       (2, [], .write 12 21 100 0),
@@ -603,7 +603,7 @@ def syncs : List SyncCase := [
     asks := [(7, [0, 1, 4, 6, 7, 8, 9], none), (7, [], none), (5, [2, 3], none),
       -- Carol holding the revocation but not the grant it revokes: it is loose, and isn't sent again
       (7, [0, 1, 4, 6, 7, 8, 11], none)] },
-  { name := "a device ahead of its peer", ops := plain (humans ++ [
+  { name := "a device ahead of its peer", edits := plain (humans ++ [
       (1, [3], .addDevice 100 3),
       (2, [], .foundSpace 11 100)] ++
       -- Alice's Mac edits her note seventeen times
@@ -616,7 +616,7 @@ def syncs : List SyncCase := [
       (2, List.range 25, some (List.range 20)),
       -- the iPhone, behind, asks a peer holding all of them
       (3, List.range 13, none)] },
-  { name := "linking a device by its passkey", ops := plain (humans ++ [
+  { name := "linking a device by its passkey", edits := plain (humans ++ [
       (1, [3], .addDevice 100 3),
       -- Alice's backup passkey, a second owner of her vault
       (1, [9], .addOwner 100 (.signer 9)),
@@ -678,7 +678,7 @@ def keyName : KeyName → String
   | .signer s   => obj [("signer", nat s)]
   | .scoped k e => obj [("key", keyScope k), ("epoch", nat e)]
 
-def branch : Branch → String
+def proposal : Proposal → String
   | .main => str "main"
   | .new  => str "new"
   | .on b => obj [("on", nat b)]
@@ -697,7 +697,7 @@ def action : Action → String
   | .revoke x a keep via => obj [("revoke", obj [("grant", nat x), ("actor", nat a), ("keep", ids keep),
       ("via", ids via)])]
   | .write sp e a epoch deps b via => obj [("write", obj [("space", nat sp), ("entry", nat e), ("actor", nat a),
-      ("epoch", nat epoch), ("deps", ids deps), ("branch", branch b), ("via", ids via)])]
+      ("epoch", nat epoch), ("deps", ids deps), ("proposal", proposal b), ("via", ids via)])]
   | .keys k epoch to pub => obj [("keys", obj [("key", keyScope k), ("epoch", nat epoch),
       ("to", arr (to.map keyName)), ("public", bool pub)])]
   | .publish sp a b via => obj [("publish", obj [("space", nat sp), ("actor", nat a), ("blob", nat b),
@@ -712,8 +712,8 @@ def space (x : Space) : String :=
   obj [("id", nat x.id), ("founder", nat x.founder), ("entries", ids x.entries)]
 
 def write (w : Write) : String :=
-  obj [("op", nat w.op), ("author", nat w.author), ("actor", nat w.actor), ("space", nat w.space),
-       ("entry", nat w.entry), ("epoch", nat w.epoch), ("deps", ids w.deps), ("branch", branch w.branch),
+  obj [("edit", nat w.edit), ("author", nat w.author), ("actor", nat w.actor), ("space", nat w.space),
+       ("entry", nat w.entry), ("epoch", nat w.epoch), ("deps", ids w.deps), ("proposal", proposal w.proposal),
        ("via", ids w.via)]
 
 /-- Each family's epoch, where it isn't 0, in the order the families came to be. -/
@@ -723,15 +723,15 @@ def epochs (st : State) : String :=
 
 def sealed (x : Seal) : String := obj [("secret", keyName x.secret), ("to", keyName x.to)]
 
-/-- Each line of each entry, the main line first and then each branch in the order it started: its history and its
+/-- Each line of each entry, the main line first and then each proposal in the order it started: its history and its
     heads. -/
 def lines (st : State) : String :=
   arr (st.spaces.flatMap fun x => x.entries.flatMap fun e =>
     let starts := st.writes.filterMap fun w =>
-      if w.space == x.id && w.entry == e && w.branch == .new then some w.op else none
+      if w.space == x.id && w.entry == e && w.proposal == .new then some w.edit else none
     (none :: starts.map some).map fun l =>
       obj [("space", nat x.id), ("entry", nat e), ("line", opt nat l),
-           ("history", ids ((history st.writes x.id e l).map (·.op))), ("heads", ids (heads st.writes x.id e l))])
+           ("history", ids ((history st.writes x.id e l).map (·.edit))), ("heads", ids (heads st.writes x.id e l))])
 
 def state (st : State) : String :=
   str "vaults" ++ ": " ++ arr (st.vaults.map vault) ++ ",\n " ++ str "spaces" ++ ": " ++ arr (st.spaces.map space) ++
@@ -742,17 +742,19 @@ def state (st : State) : String :=
     str "lines" ++ ": " ++ lines st
 
 def case (c : Case) : String :=
-  let (accepted, st) := run c.ops
-  let ops := c.ops.map fun (author, co, a) => obj [("author", nat author), ("cosigners", arr (co.map nat)), ("action", action a)]
-  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "ops" ++ ": [\n  " ++ ",\n  ".intercalate ops ++ "],\n " ++
-    str "accepted" ++ ": " ++ arr (accepted.map bool) ++ ",\n " ++ state st ++ "}"
+  let (accepted, st) := run c.edits
+  let edits := c.edits.map fun (author, co, a) =>
+    obj [("author", nat author), ("cosigners", arr (co.map nat)), ("action", action a)]
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "edits" ++ ": [\n  " ++ ",\n  ".intercalate edits ++
+    "],\n " ++ str "accepted" ++ ": " ++ arr (accepted.map bool) ++ ",\n " ++ state st ++ "}"
 
 def viewCase (c : ViewCase) : String :=
   let (stood, st) := runView c
-  let ops := c.ops.map fun (depth, author, co, a) =>
+  let edits := c.edits.map fun (depth, author, co, a) =>
     obj [("depth", nat depth), ("author", nat author), ("cosigners", arr (co.map nat)), ("action", action a)]
-  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "pq" ++ ": " ++ bool c.pq ++ ",\n " ++ str "ops" ++ ": [\n  " ++
-    ",\n  ".intercalate ops ++ "],\n " ++ str "standing" ++ ": " ++ arr (stood.map bool) ++ ",\n " ++ state st ++ "}"
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "pq" ++ ": " ++ bool c.pq ++ ",\n " ++ str "edits" ++
+    ": [\n  " ++ ",\n  ".intercalate edits ++ "],\n " ++ str "standing" ++ ": " ++ arr (stood.map bool) ++ ",\n " ++
+    state st ++ "}"
 
 def logId : LogId → String
   | .vault v    => obj [("vault", nat v)]
@@ -760,23 +762,23 @@ def logId : LogId → String
   | .entry sp e => obj [("space", nat sp), ("entry", nat e)]
 
 def syncCase (c : SyncCase) : String :=
-  let ops := c.toOps
-  let stood := standing ops
-  let opJson := ops.map fun o => obj [("depth", nat o.depth), ("author", nat o.author),
+  let edits := c.toEdits
+  let stood := standing edits
+  let editJson := edits.map fun o => obj [("depth", nat o.depth), ("author", nat o.author),
     ("cosigners", arr (o.cosigners.map nat)), ("action", action o.action), ("parents", ids o.parents)]
-  let logs := (logsOf ops).map fun l => obj [("log", logId l),
-    ("closed", ids ((closedPart (Op.log? ops) ops l).map (·.id))), ("frontier", ids (frontiers ops l))]
+  let logs := (logsOf edits).map fun l => obj [("log", logId l),
+    ("closed", ids ((closedPart (Edit.log? edits) edits l).map (·.id))), ("frontier", ids (frontiers edits l))]
   let asks := c.asks.map fun (d, held, peer) =>
-    let (h, p) := (heldOps ops held, peerOps ops peer)
+    let (h, p) := (heldEdits edits held, peerEdits edits peer)
     let sent := (logsOf h).map fun l => obj [("log", logId l), ("frontier", ids (frontiers h l)),
       ("haves", ids ((asks h).haves l))]
     obj [("device", nat d), ("held", ids held), ("peer", opt ids peer), ("logs", arr sent), ("loose", ids (loose h)),
          ("respond", ids ((respond p d).map (·.id))), ("since", ids ((respondSince p d (asks h)).map (·.id)))]
-  let links := c.links.map fun p => obj [("passkey", nat p), ("card", ids ((linkCard ops p).map (·.id)))]
-  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "ops" ++ ": [\n  " ++ ",\n  ".intercalate opJson ++
-    "],\n " ++ str "standing" ++ ": " ++ arr (ops.map fun o => bool (stood.any (·.id == o.id))) ++ ",\n " ++
+  let links := c.links.map fun p => obj [("passkey", nat p), ("card", ids ((linkCard edits p).map (·.id)))]
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "edits" ++ ": [\n  " ++ ",\n  ".intercalate editJson ++
+    "],\n " ++ str "standing" ++ ": " ++ arr (edits.map fun o => bool (stood.any (·.id == o.id))) ++ ",\n " ++
     str "logs" ++ ": [\n  " ++ ",\n  ".intercalate logs ++ "],\n " ++ str "forks" ++ ": " ++
-    arr ((allForks ops).map fun (a, b) => ids [a, b]) ++ ",\n " ++ str "asks" ++ ": [\n  " ++
+    arr ((allForks edits).map fun (a, b) => ids [a, b]) ++ ",\n " ++ str "asks" ++ ": [\n  " ++
     ",\n  ".intercalate asks ++ "],\n " ++ str "links" ++ ": " ++ arr links ++ "}"
 
 def render : String :=
@@ -784,58 +786,58 @@ def render : String :=
     ",\n".intercalate (views.map viewCase) ++ "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++
     "\n]}\n"
 
-/-- What an op creates, by the model's number: a vault, a space or a grant. -/
+/-- What an edit creates, by the model's number: a vault, a space or a grant. -/
 def created : Action → Option (Nat × Nat)
   | .genesis v .. => some (0, v)
   | .foundSpace sp _ _ => some (1, sp)
   | .grant x _ => some (2, x.id)
   | _ => none
 
--- every case refuses some ops and accepts others, so neither side can pass by always saying the same thing
-#guard cases.all fun c => let (acc, _) := run c.ops; acc.any id && acc.any (!·)
+-- every case refuses some edits and accepts others, so neither side can pass by always saying the same thing
+#guard cases.all fun c => let (acc, _) := run c.edits; acc.any id && acc.any (!·)
 #guard views.all fun c => let (stood, _) := runView c; stood.any id && stood.any (!·)
--- in a view case, every vault, space and grant number is created once, and no two ops share a depth and a rank,
+-- in a view case, every vault, space and grant number is created once, and no two edits share a depth and a rank,
 -- so the hashes the Rust core orders by never decide
-#guard views.all fun c => nodup (c.ops.filterMap fun (_, _, _, a) => created a)
-#guard views.all fun c => nodup (c.toOps.map fun o => (o.depth, o.rank))
+#guard views.all fun c => nodup (c.edits.filterMap fun (_, _, _, a) => created a)
+#guard views.all fun c => nodup (c.toEdits.map fun o => (o.depth, o.rank))
 -- in a step case, spaces and grants too
-#guard cases.all fun c => nodup (c.ops.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
+#guard cases.all fun c => nodup (c.edits.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
 -- a post-quantum case drops some writes that would stand in the full view, so the Rust core must drop them too
 #guard views.all fun c => !c.pq || (runView c).1 != (runView { c with pq := false }).1
--- in a sync case, every vault, space and grant number is created once, an op builds only on ops before it or on one
--- nobody holds, and no two ops in the replay order share a depth and a rank
-#guard syncs.all fun c => nodup (c.ops.filterMap fun o => created o.action)
-#guard syncs.all fun c => c.toOps.all fun o => o.parents.all fun p => p < o.id || p ≥ c.ops.length
-#guard syncs.all fun c => nodup ((order c.toOps).map fun o => (o.depth, o.rank))
+-- in a sync case, every vault, space and grant number is created once, an edit builds only on edits before it or on one
+-- nobody holds, and no two edits in the replay order share a depth and a rank
+#guard syncs.all fun c => nodup (c.edits.filterMap fun o => created o.action)
+#guard syncs.all fun c => c.toEdits.all fun o => o.parents.all fun p => p < o.id || p ≥ c.edits.length
+#guard syncs.all fun c => nodup ((order c.toEdits).map fun o => (o.depth, o.rank))
 -- what a device is sent when it asks is part of what it would be sent whole, and with what it held covers all of it
 -- (T12, T19)
-#guard syncs.all fun c => let ops := c.toOps; c.asks.all fun (d, held, peer) =>
-  let (h, p) := (heldOps ops held, peerOps ops peer)
+#guard syncs.all fun c => let edits := c.toEdits; c.asks.all fun (d, held, peer) =>
+  let (h, p) := (heldEdits edits held, peerEdits edits peer)
   let s := respondSince p d (asks h)
   s.all (respond p d).contains && (respond p d).all fun o => h.contains o || s.contains o
--- asking leaves something out, the ops further back leave out more than the frontiers alone and the loose ops more
--- than without them, some device is sent nothing new, some op is outside its log's closed part, some op is malformed,
--- and there is a fork
-#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
-  let p := peerOps ops peer
-  (respondSince p d (asks (heldOps ops held))).length < (respond p d).length
-#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
-  let (h, p) := (heldOps ops held, peerOps ops peer)
+-- asking leaves something out, the edits further back leave out more than the frontiers alone and the loose edits more
+-- than without them, some device is sent nothing new, some edit is outside its log's closed part, some edit is
+-- malformed, and there is a fork
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+  let p := peerEdits edits peer
+  (respondSince p d (asks (heldEdits edits held))).length < (respond p d).length
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+  let (h, p) := (heldEdits edits held, peerEdits edits peer)
   (respondSince p d (asks h)).length < (respondSince p d ⟨frontiers h, loose h⟩).length
-#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
-  let (h, p) := (heldOps ops held, peerOps ops peer)
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+  let (h, p) := (heldEdits edits held, peerEdits edits peer)
   (respondSince p d (asks h)).length < (respondSince p d ⟨(asks h).haves, []⟩).length
-#guard syncs.any fun c => let ops := c.toOps; c.asks.any fun (d, held, peer) =>
-  let p := peerOps ops peer
-  (respondSince p d (asks (heldOps ops held))).isEmpty && !(respond p d).isEmpty
-#guard syncs.any fun c => let ops := c.toOps; (logsOf ops).any fun l =>
-  (closedPart (Op.log? ops) ops l).length < (inLog (Op.log? ops) ops l).length
-#guard syncs.any fun c => (order c.toOps).length < c.ops.length
-#guard syncs.any fun c => !(allForks c.toOps).isEmpty
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+  let p := peerEdits edits peer
+  (respondSince p d (asks (heldEdits edits held))).isEmpty && !(respond p d).isEmpty
+#guard syncs.any fun c => let edits := c.toEdits; (logsOf edits).any fun l =>
+  (closedPart (Edit.log? edits) edits l).length < (inLog (Edit.log? edits) edits l).length
+#guard syncs.any fun c => (order c.toEdits).length < c.edits.length
+#guard syncs.any fun c => !(allForks c.toEdits).isEmpty
 -- a passkey that owns a vault is handed its log, one that owns none nothing, and the card holds no write (T20)
-#guard syncs.any fun c => c.links.any fun p => !(linkCard c.toOps p).isEmpty
-#guard syncs.any fun c => c.links.any fun p => (linkCard c.toOps p).isEmpty
-#guard syncs.all fun c => c.links.all fun p => (linkCard c.toOps p).all fun o => o.item?.isNone
+#guard syncs.any fun c => c.links.any fun p => !(linkCard c.toEdits p).isEmpty
+#guard syncs.any fun c => c.links.any fun p => (linkCard c.toEdits p).isEmpty
+#guard syncs.all fun c => c.links.all fun p => (linkCard c.toEdits p).all fun o => o.item?.isNone
 
 /-! ## The lens cases
 

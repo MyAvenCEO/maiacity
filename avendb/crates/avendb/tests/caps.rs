@@ -51,8 +51,8 @@ fn write_without_cap_rejected_on_import() {
     let handbook = spaces(&mut c, coop).handbook;
     c.log.append(MAC_A, &[], write(handbook, WELCOME, coop, 0)).unwrap();
     c.log.append(MAC_A, &[], grant(Scope::Entry(handbook, WELCOME), Role::Read, vault(c.carol), coop, None)).unwrap();
-    // Carol's Mac holds the same ops; her own peer refuses her edit of Welcome, as she only reads it…
-    let carols = Log::from_ops(c.log.ops().to_vec());
+    // Carol's Mac holds the same edits; her own peer refuses her edit of Welcome, as she only reads it…
+    let carols = Log::from_edits(c.log.edits().to_vec());
     assert_eq!(carols.check(MAC_C, &[], write(handbook, WELCOME, c.carol, 0)).err(), Some(Refusal::NoCap));
     // …and when a patched app sends it anyway, Alice's peer imports it but never accepts it
     let forced = carols.draft(MAC_C, &[], write(handbook, WELCOME, c.carol, 0));
@@ -111,8 +111,8 @@ fn a_revoked_owner_cannot_block_his_revocation() {
     c.log.append(PASSKEY_A, &[], revoke).unwrap();
     // the founder ranks first, wherever the revocations sort: both grants are gone, in either order of arrival
     for (a, b) in [(&c.log, &daves), (&daves, &c.log)] {
-        let mut all = a.ops().to_vec();
-        all.extend(b.ops().iter().filter(|o| !a.ops().contains(o)).cloned());
+        let mut all = a.edits().to_vec();
+        all.extend(b.edits().iter().filter(|o| !a.edits().contains(o)).cloned());
         let st = view(&all);
         assert!(st.grant(dave_owner).is_none() && st.grant(carol_read).is_none());
     }

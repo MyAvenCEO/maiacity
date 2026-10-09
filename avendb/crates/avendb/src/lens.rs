@@ -8,7 +8,7 @@
 //! the same thing, the newer version's fields win, and what neither stored shows its schema's default. An edit made on
 //! a view, an older app's too, goes back as the difference between the view before and after it (`View::put`): only
 //! what changed is written, in the representation the item already uses, so a default is never written and what the
-//! app can't see survives. A migration commit would do neither: two devices migrating at once can drop each other's
+//! app can't see survives. A migrating edit would do neither: two devices migrating at once can drop each other's
 //! new containers, and written defaults race real edits.
 //!
 //! The two examples, each in two versions, with a lens from v1 to v2:
@@ -538,7 +538,7 @@ pub enum Side {
 
 impl Step {
     fn of(v: &Value) -> Option<Step> {
-        let (op, x) = v.as_object().filter(|o| o.len() == 1)?.iter().next()?;
+        let (kind, x) = v.as_object().filter(|o| o.len() == 1)?.iter().next()?;
         let names = |v: &Value| v.as_array()?.iter().map(|f| Some(f.as_str()?.to_string())).collect::<Option<Vec<_>>>();
         let rows = |v: &Value| {
             let row = |r: &Value| match r.as_array()?.as_slice() {
@@ -547,7 +547,7 @@ impl Step {
             };
             v.as_array()?.iter().map(row).collect::<Option<Vec<_>>>()
         };
-        match op.as_str() {
+        match kind.as_str() {
             "convert" => Some(Step::Convert {
                 older: names(x.get("from")?)?,
                 newer: names(x.get("to")?)?,

@@ -91,7 +91,7 @@ impl Shared {
     }
 
     /// The device of blob connection `connection` may fetch each of `hashes`: McEliece keys this node offered, each
-    /// named by an op it may receive by this node's view.
+    /// named by an edit it may receive by this node's view.
     async fn may_fetch(self: &Arc<Self>, connection: u64, hashes: Vec<Hash>) -> bool {
         let Some(device) = self.blob_peers.lock().expect("blob peers").get(&connection).copied() else { return false };
         let ids: Option<Vec<BlobId>> = {

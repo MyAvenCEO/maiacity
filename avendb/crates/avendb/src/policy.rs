@@ -1,21 +1,21 @@
-//! The rules every peer applies, op for op the Lean model (`avendb/spec/AvenDB/State.lean` and `Step.lean`): who
-//! acts for which vault, who governs it, which caps a vault holds, which ops are accepted, and how a removal cuts what
-//! it hadn't seen.
+//! The rules every peer applies, edit for edit the Lean model (`avendb/spec/AvenDB/State.lean` and `Step.lean`): who
+//! acts for which vault, who governs it, which caps a vault holds, which edits are accepted, and how a removal cuts
+//! what it hadn't seen.
 //!
-//! Ops reach this module already verified: an op's author and cosigners are the signers whose signatures checked out
-//! (`sign::Signed::verify`). Three differences from the model: what an op creates (a vault, a space, a grant) is named
-//! by that op's id, where the model picks numbers; a refused op says why, where the model only says no; and ops carry
-//! what the model leaves out, the keys signers have keys sealed to, the boxes of a `Keys` op and the ciphertext of a
-//! write, which no rule reads beyond what the model says.
+//! Edits reach this module already verified: an edit's author and cosigners are the signers whose signatures checked
+//! out (`sign::Signed::verify`). Three differences from the model: what an edit creates (a vault, a space, a grant) is
+//! named by that edit's id, where the model picks numbers; a refused edit says why, where the model only says no; and
+//! edits carry what the model leaves out, the keys signers have keys sealed to, the boxes of a `Keys` edit and the
+//! ciphertext of a write, which no rule reads beyond what the model says.
 //!
 //! The key schedule is the model's too: each family's epoch, every seal (which key may open which) and every published
-//! key. Real keys follow it: a `Keys` op carries real boxes, and a peer accepts it only if each box is a seal of the
+//! key. Real keys follow it: a `Keys` edit carries real boxes, and a peer accepts it only if each box is a seal of the
 //! schedule, so what a device can really open is never more than what the schedule lets it (T5, T6).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use crate::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyBox, KeyId, KeyName, KeyScope, PublicKey, Seal};
 
 /// A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
@@ -101,31 +101,31 @@ pub struct Grant {
     pub parent: Option<GrantId>,
 }
 
-/// The line of an entry's history a write extends (`Branches.lean`).
+/// The line of an entry's history a write extends (`Proposals.lean`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum Branch {
+pub enum Proposal {
     #[default]
     Main,
-    /// A new branch, which this write starts: its id names the branch, its `deps` are the version the branch starts
-    /// from, and its body holds the branch's name, encrypted.
+    /// A new proposal, which this write starts: its id names the proposal, its `deps` are the version the proposal
+    /// starts from, and its body holds the proposal's name, encrypted.
     New,
-    /// The branch that write started.
-    On(OpId),
+    /// The proposal that write started.
+    On(EditId),
 }
 
-/// A line of an entry's history: `None` is the main line, `Some(b)` the branch write `b` started.
-pub type Line = Option<OpId>;
+/// A line of an entry's history: `None` is the main line, `Some(b)` the proposal write `b` started.
+pub type Line = Option<EditId>;
 
 /// Every change is one of these, signed. Governance (owners, threshold, devices, the root, owner grants) needs the
 /// vault's approval: its root, or its threshold of owners; everything else needs one device acting for the vault.
-/// Every removal names the ops it had seen and keeps (`keep`); what it hadn't seen and relied on what it takes away is
-/// cut (`view`). An op that acts for a vault (founds a space, grants, revokes, writes, publishes) names the owners
+/// Every removal names the edits it had seen and keeps (`keep`); what it hadn't seen and relied on what it takes away
+/// is cut (`view`). An edit that acts for a vault (founds a space, grants, revokes, writes, publishes) names the owners
 /// `via` its author acts through (`State::acts_via`): none when its author is a member of the vault, else from an owner
 /// of the vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop
 /// through `[bob]`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
-    /// A new vault; its id is this op's id. Every first owner signs, and so does the root, the passkey of a human
+    /// A new vault; its id is this edit's id. Every first owner signs, and so does the root, the passkey of a human
     /// vault, if it names one. `seal_to` brings, for signer owners, the key each has keys sealed to (a passkey's
     /// from its PRF output), where it has one.
     Genesis {
@@ -139,32 +139,32 @@ pub enum Action {
     /// The newcomer signs too, and a signer brings the key it has keys sealed to.
     AddOwner { vault: VaultId, owner: Principal, seal_to: Option<PublicKey> },
     /// By the vault's approval, or an owner leaving on its own.
-    RemoveOwner { vault: VaultId, owner: Principal, keep: Vec<OpId> },
+    RemoveOwner { vault: VaultId, owner: Principal, keep: Vec<EditId> },
     SetThreshold { vault: VaultId, threshold: u32 },
     /// A device of a human vault (a phone, a browser) or of an aven vault (a server); the device signs too, and
     /// brings the key it has keys sealed to.
     AddDevice { vault: VaultId, device: SignerId, seal_to: Option<PublicKey> },
     /// By the vault's approval, or the device leaving on its own.
-    RemoveDevice { vault: VaultId, device: SignerId, keep: Vec<OpId> },
+    RemoveDevice { vault: VaultId, device: SignerId, keep: Vec<EditId> },
     /// The root hands itself on to a new passkey, which signs too, or steps down (`None`).
-    SetRoot { vault: VaultId, root: Option<SignerId>, keep: Vec<OpId> },
-    /// A new space founded by `actor`, which holds owner on it; its id is this op's id.
+    SetRoot { vault: VaultId, root: Option<SignerId>, keep: Vec<EditId> },
+    /// A new space founded by `actor`, which holds owner on it; its id is this edit's id.
     FoundSpace { actor: VaultId, nonce: u64, via: Vec<VaultId> },
-    /// Its id is this op's id; the issuer acts through the owners `via`.
+    /// Its id is this edit's id; the issuer acts through the owners `via`.
     Grant(Grant, Vec<VaultId>),
     /// Ends `grant` and every grant resting on it.
-    Revoke { grant: GrantId, actor: VaultId, keep: Vec<OpId>, via: Vec<VaultId> },
-    /// An encrypted edit of one entry under the entry key's `epoch`, on the line `branch` of its history, building on
-    /// the entry's writes `deps` (its Loro frontier). The first write creates the entry. A write that starts a branch
-    /// builds on the version the branch starts from and holds the branch's name; a merge builds on the heads of both
-    /// lines.
+    Revoke { grant: GrantId, actor: VaultId, keep: Vec<EditId>, via: Vec<VaultId> },
+    /// An encrypted edit of one entry under the entry key's `epoch`, on the line `history` of its history, building on
+    /// the entry's writes `deps` (its Loro frontier). The first write creates the entry. A write that starts a proposal
+    /// builds on the version the proposal starts from and holds the proposal's name; a merge builds on the heads of
+    /// both lines.
     Write {
         space: SpaceId,
         entry: EntryId,
         actor: VaultId,
         epoch: u64,
-        deps: Vec<OpId>,
-        branch: Branch,
+        deps: Vec<EditId>,
+        proposal: Proposal,
         via: Vec<VaultId>,
         body: Vec<u8>,
     },
@@ -174,17 +174,17 @@ pub enum Action {
     /// signer that may open the key, and only if every box goes where the schedule seals the key.
     Keys { key: KeyScope, epoch: u64, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
     /// A schema or a lens, published into the space's schema lane by an owner of the space (T17): a blob that holds no
-    /// data, named by its hash (`BlobId::of`), and readable by whoever holds the space's ops.
+    /// data, named by its hash (`BlobId::of`), and readable by whoever holds the space's edits.
     Publish { space: SpaceId, actor: VaultId, via: Vec<VaultId>, blob: Vec<u8> },
     /// A device vouches for its own accepted writes of one entry, named in `covers`, with both halves of its signature,
     /// where the writes carry only the classical half (`sign`). It changes nothing; a peer that no longer trusts the
     /// curves counts only the writes a checkpoint covers (`checkpointed`).
-    Checkpoint { space: SpaceId, entry: EntryId, covers: Vec<OpId> },
+    Checkpoint { space: SpaceId, entry: EntryId, covers: Vec<EditId> },
 }
 
 impl Action {
-    /// The ops a removal had seen and keeps, for removals.
-    pub fn keep(&self) -> Option<&[OpId]> {
+    /// The edits a removal had seen and keeps, for removals.
+    pub fn keep(&self) -> Option<&[EditId]> {
         match self {
             Action::RemoveOwner { keep, .. }
             | Action::RemoveDevice { keep, .. }
@@ -194,7 +194,7 @@ impl Action {
         }
     }
 
-    fn keep_mut(&mut self) -> Option<&mut Vec<OpId>> {
+    fn keep_mut(&mut self) -> Option<&mut Vec<EditId>> {
         match self {
             Action::RemoveOwner { keep, .. }
             | Action::RemoveDevice { keep, .. }
@@ -204,7 +204,7 @@ impl Action {
         }
     }
 
-    /// The owners an act for a vault goes through, for the ops that act for one.
+    /// The owners an act for a vault goes through, for the edits that act for one.
     pub fn via(&self) -> Option<&[VaultId]> {
         match self {
             Action::FoundSpace { via, .. }
@@ -228,27 +228,27 @@ impl Action {
     }
 }
 
-/// A verified op: what it does, who signed it, and the ops of its own log it builds on.
+/// A verified edit: what it does, who signed it, and the edits of its own log it builds on.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Op {
-    /// The frontier of its own log (`sync::LogId`) as its device held it: what it builds on there. An op that starts a
-    /// log, a genesis or a space's founding, builds on nothing.
-    pub parents: Vec<OpId>,
-    /// Causal depth: one more than the deepest op its device held when it made it, in any log, 0 for the first. It
-    /// only orders ops: whatever a device had seen sorts before what it makes next. It travels with the op because a
-    /// peer often holds only part of an op's past (a vault's log without the ops around it), and every peer must still
-    /// order the op the same way.
+pub struct Edit {
+    /// The frontier of its own log (`sync::LogId`) as its device held it: what it builds on there. An edit that starts
+    /// a log, a genesis or a space's founding, builds on nothing.
+    pub parents: Vec<EditId>,
+    /// Causal depth: one more than the deepest edit its device held when it made it, in any log, 0 for the first. It
+    /// only orders edits: whatever a device had seen sorts before what it makes next. It travels with the edit because
+    /// a peer often holds only part of an edit's past (a vault's log without the edits around it), and every peer must
+    /// still order the edit the same way.
     pub depth: u64,
     pub author: SignerId,
     pub cosigners: Vec<SignerId>,
     pub action: Action,
 }
 
-impl Op {
-    /// The SHA-3 hash (`hash`) of the op's canonical encoding (`encode`): everything the op says, its signers
+impl Edit {
+    /// The SHA-3 hash (`hash`) of the edit's canonical encoding (`encode`): everything the edit says, its signers
     /// included. Each signer signs this id.
-    pub fn id(&self) -> OpId {
-        OpId(crate::encode::op_id(self))
+    pub fn id(&self) -> EditId {
+        EditId(crate::encode::edit_id(self))
     }
 
     /// Everyone who signed: the author first.
@@ -256,7 +256,7 @@ impl Op {
         std::iter::once(self.author).chain(self.cosigners.iter().copied())
     }
 
-    /// The vault a vault op changes; a genesis changes the vault it creates.
+    /// The vault a vault edit changes; a genesis changes the vault it creates.
     pub fn vault_of(&self) -> Option<VaultId> {
         match &self.action {
             Action::Genesis { .. } => Some(VaultId::from(self.id())),
@@ -279,8 +279,8 @@ impl Op {
         }
     }
 
-    /// The McEliece public keys the op names, which travel beside it as blobs: the keys signers bring to have keys
-    /// sealed to them, and the keys a `Keys` op announces.
+    /// The McEliece public keys the edit names, which travel beside it as blobs: the keys signers bring to have keys
+    /// sealed to them, and the keys a `Keys` edit announces.
     pub fn blobs(&self) -> Vec<BlobId> {
         match &self.action {
             Action::Genesis { seal_to, .. } => seal_to.iter().map(|(_, k)| k.mceliece).collect(),
@@ -298,7 +298,7 @@ impl Op {
         }
     }
 
-    /// The vault an op acts for: a space's founder, a grant's issuer, a revoker, a writer.
+    /// The vault an edit acts for: a space's founder, a grant's issuer, a revoker, a writer.
     pub fn actor(&self) -> Option<VaultId> {
         match &self.action {
             Action::FoundSpace { actor, .. }
@@ -353,15 +353,15 @@ pub struct Space {
 /// `actor` through the owners `via` (`State::acts_via`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Write {
-    pub op: OpId,
+    pub edit: EditId,
     pub author: SignerId,
     pub actor: VaultId,
     pub space: SpaceId,
     pub entry: EntryId,
     pub epoch: u64,
     /// The writes of the same entry it builds on.
-    pub deps: Vec<OpId>,
-    pub branch: Branch,
+    pub deps: Vec<EditId>,
+    pub proposal: Proposal,
     pub via: Vec<VaultId>,
 }
 
@@ -374,15 +374,15 @@ impl AsRef<Write> for Write {
 impl Write {
     /// The line it extends.
     pub fn line(&self) -> Line {
-        match self.branch {
-            Branch::Main => None,
-            Branch::New => Some(self.op),
-            Branch::On(b) => Some(b),
+        match self.proposal {
+            Proposal::Main => None,
+            Proposal::New => Some(self.edit),
+            Proposal::On(b) => Some(b),
         }
     }
 }
 
-/// Why a peer refused an op.
+/// Why a peer refused an edit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
     /// A signature doesn't verify, or covers other bytes (checked before any rule).
@@ -416,7 +416,7 @@ pub enum Refusal {
     NoDevices,
     /// Only a vault's root hands the root on.
     NotRoot,
-    /// The op's author doesn't act for the vault it claims to act for through the owners it names.
+    /// The edit's author doesn't act for the vault it claims to act for through the owners it names.
     NotActing,
     /// The vault doesn't hold the role this needs on the scope.
     NoCap,
@@ -430,9 +430,9 @@ pub enum Refusal {
     FutureEpoch,
     /// A write builds on a write its entry doesn't have (T14).
     UnknownDep,
-    /// A write on a branch builds on neither the write that started it nor another write on it, or names a branch its
-    /// entry doesn't have.
-    NotOnBranch,
+    /// A write on a proposal builds on neither the write that started it nor another write on it, or names a proposal
+    /// its entry doesn't have.
+    NotOnProposal,
     /// A key of a family that doesn't exist.
     UnknownKey,
     /// The signer boxes a key it may not open.
@@ -445,18 +445,18 @@ pub enum Refusal {
     AlreadyPublished,
     /// A checkpoint covers nothing, or something other than its own author's accepted writes of its entry.
     NotOwnWrite,
-    /// Not a rule of the ops but of a device: a signer's key isn't at hand, as the device is locked or the key is lost,
-    /// so nothing is signed.
+    /// Not a rule of the edits but of a device: a signer's key isn't at hand, as the device is locked or the key is
+    /// lost, so nothing is signed.
     Locked,
-    /// Not a rule of the ops but of an app: it opened the item read-only, as no lens it holds reaches every schema the
-    /// item was written under (`lens::Lane::view`), so it may not edit it.
+    /// Not a rule of the edits but of an app: it opened the item read-only, as no lens it holds reaches every schema
+    /// the item was written under (`lens::Lane::view`), so it may not edit it.
     ReadOnly,
-    /// Not a rule of the ops but of an app: its edit doesn't fit its own schema (`lens::View::put`).
+    /// Not a rule of the edits but of an app: its edit doesn't fit its own schema (`lens::View::put`).
     NotAView,
-    /// Not a rule of the ops but of a device: what a device on a connection sent to join a vault (`Lab::accept_join`)
+    /// Not a rule of the edits but of a device: what a device on a connection sent to join a vault (`Lab::accept_join`)
     /// adds no device, or another device than itself.
     NotJoining,
-    /// Not a rule of the ops but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
+    /// Not a rule of the edits but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
     /// device of an aven vault.
     NotClaiming,
 }
@@ -515,7 +515,7 @@ impl Seals {
     }
 }
 
-/// What a peer knows after replaying its ops: vaults, spaces, grants, accepted writes, and the key schedule.
+/// What a peer knows after replaying its edits: vaults, spaces, grants, accepted writes, and the key schedule.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
     /// In the order they were created.
@@ -597,8 +597,8 @@ impl State {
     }
 
     /// The accepted writes of one entry, in replay order.
-    pub fn writes(&self, sp: SpaceId, e: EntryId) -> Vec<OpId> {
-        self.writes.iter().filter(|w| w.space == sp && w.entry == e).map(|w| w.op).collect()
+    pub fn writes(&self, sp: SpaceId, e: EntryId) -> Vec<EditId> {
+        self.writes.iter().filter(|w| w.space == sp && w.entry == e).map(|w| w.edit).collect()
     }
 
     /// Every accepted write, in replay order.
@@ -606,10 +606,10 @@ impl State {
         &self.writes
     }
 
-    /// The lines of one entry's history: the main line, then each branch in the order it started.
+    /// The lines of one entry's history: the main line, then each proposal in the order it started.
     pub fn lines(&self, sp: SpaceId, e: EntryId) -> Vec<Line> {
-        let starts = self.writes.iter().filter(|w| w.space == sp && w.entry == e && w.branch == Branch::New);
-        std::iter::once(None).chain(starts.map(|w| Some(w.op))).collect()
+        let starts = self.writes.iter().filter(|w| w.space == sp && w.entry == e && w.proposal == Proposal::New);
+        std::iter::once(None).chain(starts.map(|w| Some(w.edit))).collect()
     }
 
     /// The history of line `line` of one entry: the line's own accepted writes and every write they build on, in replay
@@ -620,7 +620,7 @@ impl State {
 
     /// The writes of line `line` of one entry that no other write of its history builds on: what the next edit on the
     /// line builds on.
-    pub fn heads(&self, sp: SpaceId, e: EntryId, line: Line) -> Vec<OpId> {
+    pub fn heads(&self, sp: SpaceId, e: EntryId, line: Line) -> Vec<EditId> {
         tips(&self.history(sp, e, line))
     }
 
@@ -647,7 +647,7 @@ impl State {
         self.vault(v).is_some_and(|vt| vt.owners.contains(&Principal::Vault(o)))
     }
 
-    /// Signer `s` acts for vault `actor` through the owners `via`, as an op names them: `via` runs from an owner of
+    /// Signer `s` acts for vault `actor` through the owners `via`, as an edit names them: `via` runs from an owner of
     /// `actor` down, each vault an owner of the one before, to the vault `s` is a member of; with no `via`, `s` is a
     /// member of `actor` itself. A device of Bob's human vault acts for Bob's coop through `[bob]`.
     pub fn acts_via(&self, s: SignerId, via: &[VaultId], actor: VaultId) -> bool {
@@ -661,9 +661,9 @@ impl State {
         self.member(s, v)
     }
 
-    /// The owners signer `s` acts for vault `v` through, as an op names them (`acts_via`): none when `s` is a member of
-    /// `v`, else the shortest chain, the first owner in each vault's order winning a tie, or `None` if `s` doesn't act
-    /// for `v`.
+    /// The owners signer `s` acts for vault `v` through, as an edit names them (`acts_via`): none when `s` is a member
+    /// of `v`, else the shortest chain, the first owner in each vault's order winning a tie, or `None` if `s` doesn't
+    /// act for `v`.
     pub fn via(&self, s: SignerId, v: VaultId) -> Option<Vec<VaultId>> {
         // breadth first from `v` up its owners: the first vault `s` is a member of ends the shortest chain
         let mut paths: Vec<Vec<VaultId>> = vec![vec![]];
@@ -953,11 +953,11 @@ impl State {
         }
     }
 
-    /// After `op` was accepted in `pre`: rotate what went stale, then seal and publish. Outside removals, devices,
+    /// After `edit` was accepted in `pre`: rotate what went stale, then seal and publish. Outside removals, devices,
     /// owners and grants only grow, so does every entitlement, and by T6 no holder opened a current key in `pre` it
     /// wasn't entitled to: only a removal can make a key stale, and only then is it worth looking.
-    fn settle(&mut self, pre: &State, op: &Op) {
-        if op.is_removal() {
+    fn settle(&mut self, pre: &State, edit: &Edit) {
+        if edit.is_removal() {
             for k in self.stale_keys(pre) {
                 self.bump(k);
             }
@@ -1071,10 +1071,13 @@ impl State {
     /// After a removal from `pre`: drop every write the removal took the authorization from, unless the remover had
     /// seen it, and every write that builds on a dropped one. Writes that were already unauthorized (kept by an
     /// earlier removal) stay. Revocation wins over what it had not seen.
-    fn drop_unseen(&mut self, pre: &State, keep: &[OpId]) {
+    fn drop_unseen(&mut self, pre: &State, keep: &[EditId]) {
         let writes = std::mem::take(&mut self.writes);
-        let survivors: Vec<Write> =
-            writes.iter().filter(|w| keep.contains(&w.op) || !pre.authorized(w) || self.authorized(w)).cloned().collect();
+        let survivors: Vec<Write> = writes
+            .iter()
+            .filter(|w| keep.contains(&w.edit) || !pre.authorized(w) || self.authorized(w))
+            .cloned()
+            .collect();
         self.writes = Arc::new(close_deps(survivors));
     }
 
@@ -1096,26 +1099,26 @@ impl State {
         st
     }
 
-    /// Apply one op, then rotate and seal keys: the new state, or why the op is refused. Each rule is the model's
+    /// Apply one edit, then rotate and seal keys: the new state, or why the edit is refused. Each rule is the model's
     /// (`step` in `Step.lean`), checked in the same order.
-    pub fn step(&self, op: &Op) -> Result<State, Refusal> {
-        self.step_id(op, op.id())
+    pub fn step(&self, edit: &Edit) -> Result<State, Refusal> {
+        self.step_id(edit, edit.id())
     }
 
-    /// `step`, the op's id already worked out: a replay hashes each op once.
-    fn step_id(&self, op: &Op, id: OpId) -> Result<State, Refusal> {
+    /// `step`, the edit's id already worked out: a replay hashes each edit once.
+    fn step_id(&self, edit: &Edit, id: EditId) -> Result<State, Refusal> {
         let mut st = self.clone();
-        st.apply(op, id)?;
-        st.settle(self, op);
+        st.apply(edit, id)?;
+        st.settle(self, edit);
         Ok(st)
     }
 
-    /// The rules of `step` in place, without the keys, for op `op` whose id is `id`: every check comes before any
-    /// change, so a refused op leaves the state as it was.
-    fn apply(&mut self, op: &Op, id: OpId) -> Result<(), Refusal> {
-        let sigs: Vec<SignerId> = op.sigs().collect();
+    /// The rules of `step` in place, without the keys, for edit `edit` whose id is `id`: every check comes before any
+    /// change, so a refused edit leaves the state as it was.
+    fn apply(&mut self, edit: &Edit, id: EditId) -> Result<(), Refusal> {
+        let sigs: Vec<SignerId> = edit.sigs().collect();
         let approves = |st: &State, p| st.approves(&sigs, p);
-        match &op.action {
+        match &edit.action {
             Action::Genesis { kind, owners, threshold, root, seal_to, .. } => {
                 let v = VaultId::from(id);
                 if self.vault(v).is_some() {
@@ -1263,7 +1266,7 @@ impl State {
                 if self.space(sp).is_some() {
                     return Err(Refusal::Duplicate);
                 }
-                if !self.acts_via(op.author, via, actor) {
+                if !self.acts_via(edit.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 self.spaces.push(Space { id: sp, founder: actor, entries: vec![] });
@@ -1283,7 +1286,7 @@ impl State {
                     Grantee::Public if g.role != Role::Read => return Err(Refusal::PublicBeyondRead),
                     _ => {}
                 }
-                if !self.acts_via(op.author, via, g.issuer) {
+                if !self.acts_via(edit.author, via, g.issuer) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.holds(g.issuer, g.scope, Role::Owner) {
@@ -1301,7 +1304,7 @@ impl State {
             Action::Revoke { grant, actor, keep, via } => {
                 let (grant, actor) = (*grant, *actor);
                 let g = self.grant(grant).ok_or(Refusal::UnknownGrant)?;
-                if !self.acts_via(op.author, via, actor) {
+                if !self.acts_via(edit.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.may_revoke(actor, g) {
@@ -1315,13 +1318,13 @@ impl State {
                 self.grants.retain(|(x, _)| !pre.rests_on(grant, *x));
                 self.drop_unseen(&pre, keep);
             }
-            Action::Write { space, entry, actor, epoch, deps, branch, via, .. } => {
-                let (space, entry, actor, epoch, branch) = (*space, *entry, *actor, *epoch, *branch);
+            Action::Write { space, entry, actor, epoch, deps, proposal, via, .. } => {
+                let (space, entry, actor, epoch, proposal) = (*space, *entry, *actor, *epoch, *proposal);
                 let s = self.space(space).ok_or(Refusal::UnknownSpace)?;
-                if self.writes.iter().any(|w| w.op == id) {
+                if self.writes.iter().any(|w| w.edit == id) {
                     return Err(Refusal::Duplicate);
                 }
-                if !self.acts_via(op.author, via, actor) {
+                if !self.acts_via(edit.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.holds(actor, Scope::Entry(space, entry), Role::Write) {
@@ -1331,9 +1334,9 @@ impl State {
                     return Err(Refusal::FutureEpoch);
                 }
                 let (deps, via) = (deps.clone(), via.clone());
-                let w = Write { op: id, author: op.author, actor, space, entry, epoch, deps, branch, via };
+                let w = Write { edit: id, author: edit.author, actor, space, entry, epoch, deps, proposal, via };
                 // what it builds on was accepted, so the accepted writes stay causally closed (T14); a write on a
-                // branch builds on the branch's start, so whatever cuts the start cuts the whole branch
+                // proposal builds on the proposal's start, so whatever cuts the start cuts the whole proposal
                 builds_on(&self.writes, &w)?;
                 if !s.entries.contains(&entry) {
                     self.spaces.iter_mut().find(|x| x.id == space).expect("the space").entries.push(entry);
@@ -1345,7 +1348,7 @@ impl State {
                 if !self.key_scopes().contains(&key) {
                     return Err(Refusal::UnknownKey);
                 }
-                if !self.entitled(op.author, key) {
+                if !self.entitled(edit.author, key) {
                     return Err(Refusal::NotEntitled);
                 }
                 if epoch > self.epoch(key) {
@@ -1369,7 +1372,7 @@ impl State {
                     return Err(Refusal::AlreadyPublished);
                 }
                 // only an owner of the space publishes into its lane
-                if !self.acts_via(op.author, via, actor) {
+                if !self.acts_via(edit.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
                 if !self.holds(actor, Scope::Space(space), Role::Owner) {
@@ -1379,8 +1382,10 @@ impl State {
             }
             Action::Checkpoint { space, entry, covers } => {
                 // a device vouches for its own accepted writes of the entry, and changes nothing
-                let own = |c: &OpId| {
-                    self.writes.iter().any(|w| w.op == *c && w.author == op.author && w.space == *space && w.entry == *entry)
+                let own = |c: &EditId| {
+                    self.writes
+                        .iter()
+                        .any(|w| w.edit == *c && w.author == edit.author && w.space == *space && w.entry == *entry)
                 };
                 if covers.is_empty() || !covers.iter().all(own) {
                     return Err(Refusal::NotOwnWrite);
@@ -1391,61 +1396,67 @@ impl State {
     }
 }
 
-/// The ops a peer counts once it no longer trusts the curves, so neither ed25519 nor P-256: every op but a write, as
-/// each carries the hash-based half of its signatures too, and each write that a checkpoint by its own author covers.
-/// Removals cut what a forger signs on an old copy of the log (T16), so whoever broke a device's ed25519 key still
-/// writes nothing a checkpoint didn't cover.
-pub fn checkpointed(ops: &[Op]) -> Vec<Op> {
-    let covered: HashSet<(SignerId, OpId)> = ops
+/// The edits a peer counts once it no longer trusts the curves, so neither ed25519 nor P-256: every edit but a write,
+/// as each carries the hash-based half of its signatures too, and each write that a checkpoint by its own author
+/// covers. Removals cut what a forger signs on an old copy of the log (T16), so whoever broke a device's ed25519 key
+/// still writes nothing a checkpoint didn't cover.
+pub fn checkpointed(edits: &[Edit]) -> Vec<Edit> {
+    let covered: HashSet<(SignerId, EditId)> = edits
         .iter()
-        .filter_map(|op| match &op.action {
-            Action::Checkpoint { covers, .. } => Some(covers.iter().map(|&c| (op.author, c))),
+        .filter_map(|edit| match &edit.action {
+            Action::Checkpoint { covers, .. } => Some(covers.iter().map(|&c| (edit.author, c))),
             _ => None,
         })
         .flatten()
         .collect();
-    ops.iter().filter(|op| op.write_target().is_none() || covered.contains(&(op.author, op.id()))).cloned().collect()
+    edits
+        .iter()
+        .filter(|edit| edit.write_target().is_none() || covered.contains(&(edit.author, edit.id())))
+        .cloned()
+        .collect()
 }
 
 /// Write `w` builds only on writes of its own entry among `ws`.
 fn deps_in<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
-    w.deps.iter().all(|d| ws.iter().map(AsRef::as_ref).any(|x| x.op == *d && x.space == w.space && x.entry == w.entry))
+    w.deps
+        .iter()
+        .all(|d| ws.iter().map(AsRef::as_ref).any(|x| x.edit == *d && x.space == w.space && x.entry == w.entry))
 }
 
 /// Write `w` may follow the writes `ws`: it builds only on writes of its own entry among them (`UnknownDep`), and a
-/// write on a branch on the write that started it or another write on it (`NotOnBranch`).
+/// write on a proposal on the write that started it or another write on it (`NotOnProposal`).
 pub fn builds_on<W: AsRef<Write>>(ws: &[W], w: &Write) -> Result<(), Refusal> {
     if !deps_in(ws, w) {
         return Err(Refusal::UnknownDep);
     }
-    if !on_branch(ws, w) {
-        return Err(Refusal::NotOnBranch);
+    if !on_proposal(ws, w) {
+        return Err(Refusal::NotOnProposal);
     }
     Ok(())
 }
 
-/// Write `w` extends its line: the main line and a new branch need nothing more; a write on branch `b` builds on the
-/// write of its own entry that started `b`, or on another write on `b`.
-fn on_branch<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
+/// Write `w` extends its line: the main line and a new proposal need nothing more; a write on proposal `b` builds on
+/// the write of its own entry that started `b`, or on another write on `b`.
+fn on_proposal<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
     let ws = || ws.iter().map(AsRef::as_ref);
-    match w.branch {
-        Branch::On(b) => {
-            ws().any(|x| x.op == b && x.branch == Branch::New && x.space == w.space && x.entry == w.entry)
-                && w.deps.iter().any(|&d| d == b || ws().any(|x| x.op == d && x.branch == Branch::On(b)))
+    match w.proposal {
+        Proposal::On(b) => {
+            ws().any(|x| x.edit == b && x.proposal == Proposal::New && x.space == w.space && x.entry == w.entry)
+                && w.deps.iter().any(|&d| d == b || ws().any(|x| x.edit == d && x.proposal == Proposal::On(b)))
         }
-        Branch::Main | Branch::New => true,
+        Proposal::Main | Proposal::New => true,
     }
 }
 
 /// The history of line `line` among one entry's writes `ws`, in their order: the line's own writes and every write
-/// they build on (`Branches.lean`'s `history`). Each write comes after what it builds on, so one pass from the end
+/// they build on (`Proposals.lean`'s `history`). Each write comes after what it builds on, so one pass from the end
 /// collects them.
 pub fn history<'a, W: AsRef<Write> + 'a>(ws: impl DoubleEndedIterator<Item = &'a W>, line: Line) -> Vec<&'a W> {
-    let mut needed: HashSet<OpId> = HashSet::new();
+    let mut needed: HashSet<EditId> = HashSet::new();
     let mut out = vec![];
     for x in ws.rev() {
         let w = x.as_ref();
-        if w.line() == line || needed.contains(&w.op) {
+        if w.line() == line || needed.contains(&w.edit) {
             needed.extend(w.deps.iter().copied());
             out.push(x);
         }
@@ -1455,9 +1466,9 @@ pub fn history<'a, W: AsRef<Write> + 'a>(ws: impl DoubleEndedIterator<Item = &'a
 }
 
 /// The writes of `h` that no write of `h` builds on.
-pub fn tips<W: AsRef<Write>>(h: &[&W]) -> Vec<OpId> {
-    let built_on: HashSet<OpId> = h.iter().flat_map(|w| w.as_ref().deps.iter().copied()).collect();
-    h.iter().map(|w| w.as_ref().op).filter(|op| !built_on.contains(op)).collect()
+pub fn tips<W: AsRef<Write>>(h: &[&W]) -> Vec<EditId> {
+    let built_on: HashSet<EditId> = h.iter().flat_map(|w| w.as_ref().deps.iter().copied()).collect();
+    h.iter().map(|w| w.as_ref().edit).filter(|edit| !built_on.contains(edit)).collect()
 }
 
 /// Keep, in order, each write whose dependencies were kept. A write comes after the writes it builds on, so one pass
@@ -1472,42 +1483,43 @@ fn close_deps(ws: Vec<Write>) -> Vec<Write> {
     kept
 }
 
-/// The one order every peer replays in: causal depth, then removals first, then id. Each op appears once. An op that
-/// claims to be no deeper than a parent the peer holds is malformed and left out, so no op sorts ahead of its own
-/// past.
-pub fn order(ops: &[Op]) -> Vec<Op> {
-    order_ids(ops, &ids(ops)).0
+/// The one order every peer replays in: causal depth, then removals first, then id. Each edit appears once. An edit
+/// that claims to be no deeper than a parent the peer holds is malformed and left out, so no edit sorts ahead of its
+/// own past.
+pub fn order(edits: &[Edit]) -> Vec<Edit> {
+    order_ids(edits, &ids(edits)).0
 }
 
-/// Each op's id.
-fn ids(ops: &[Op]) -> Vec<OpId> {
-    ops.iter().map(Op::id).collect()
+/// Each edit's id.
+fn ids(edits: &[Edit]) -> Vec<EditId> {
+    edits.iter().map(Edit::id).collect()
 }
 
-/// `order`, given each op's id (`ids[i]` is `ops[i]`'s), and the ids in the order too: a replay hashes each op once.
-fn order_ids(ops: &[Op], ids: &[OpId]) -> (Vec<Op>, Vec<OpId>) {
-    let mut by_id: HashMap<OpId, &Op> = HashMap::with_capacity(ops.len());
-    for (op, &id) in ops.iter().zip(ids) {
-        by_id.entry(id).or_insert(op);
+/// `order`, given each edit's id (`ids[i]` is `edits[i]`'s), and the ids in the order too: a replay hashes each edit
+/// once.
+fn order_ids(edits: &[Edit], ids: &[EditId]) -> (Vec<Edit>, Vec<EditId>) {
+    let mut by_id: HashMap<EditId, &Edit> = HashMap::with_capacity(edits.len());
+    for (edit, &id) in edits.iter().zip(ids) {
+        by_id.entry(id).or_insert(edit);
     }
-    let mut out: Vec<(u64, u8, OpId, &Op)> = by_id
+    let mut out: Vec<(u64, u8, EditId, &Edit)> = by_id
         .iter()
-        .filter(|(_, op)| op.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < op.depth)))
-        .map(|(&id, &op)| (op.depth, op.rank(), id, op))
+        .filter(|(_, edit)| edit.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < edit.depth)))
+        .map(|(&id, &edit)| (edit.depth, edit.rank(), id, edit))
         .collect();
     out.sort_by_key(|a| (a.0, a.1, a.2));
-    out.into_iter().map(|(.., id, op)| (op.clone(), id)).unzip()
+    out.into_iter().map(|(.., id, edit)| (edit.clone(), id)).unzip()
 }
 
-/// What removal `r` takes away: the owner, the device, the root, or, among the grants the ops `ops` make, the grant
+/// What removal `r` takes away: the owner, the device, the root, or, among the grants the edits `edits` make, the grant
 /// and every grant resting on it.
-pub fn removes(ops: &[Op], r: &Op) -> Vec<Fact> {
-    removes_among(r, || grants_of(ops.iter().filter(|o| matches!(o.action, Action::Grant(..))).map(|o| (o, o.id()))))
+pub fn removes(edits: &[Edit], r: &Edit) -> Vec<Fact> {
+    removes_among(r, || grants_of(edits.iter().filter(|o| matches!(o.action, Action::Grant(..))).map(|o| (o, o.id()))))
 }
 
-/// Each grant op's grant id and parent, among ops paired with their ids.
-fn grants_of<'a>(ops: impl Iterator<Item = (&'a Op, OpId)>) -> Vec<(GrantId, Option<GrantId>)> {
-    ops.filter_map(|(o, id)| match &o.action {
+/// Each grant edit's grant id and parent, among edits paired with their ids.
+fn grants_of<'a>(edits: impl Iterator<Item = (&'a Edit, EditId)>) -> Vec<(GrantId, Option<GrantId>)> {
+    edits.filter_map(|(o, id)| match &o.action {
         Action::Grant(g, _) => Some((GrantId::from(id), g.parent)),
         _ => None,
     })
@@ -1515,7 +1527,7 @@ fn grants_of<'a>(ops: impl Iterator<Item = (&'a Op, OpId)>) -> Vec<(GrantId, Opt
 }
 
 /// `removes`, the grants (`grants_of`) worked out only for a revocation.
-fn removes_among(r: &Op, grants: impl FnOnce() -> Vec<(GrantId, Option<GrantId>)>) -> Vec<Fact> {
+fn removes_among(r: &Edit, grants: impl FnOnce() -> Vec<(GrantId, Option<GrantId>)>) -> Vec<Fact> {
     match r.action {
         Action::RemoveOwner { vault, owner, .. } => vec![Fact::Owner(vault, owner)],
         Action::RemoveDevice { vault, device, .. } => vec![Fact::Device(vault, device)],
@@ -1541,46 +1553,46 @@ fn removes_among(r: &Op, grants: impl FnOnce() -> Vec<(GrantId, Option<GrantId>)
     }
 }
 
-/// A removal among the ops being replayed: its position, the ops it keeps, and what it takes away.
+/// A removal among the edits being replayed: its position, the edits it keeps, and what it takes away.
 struct Cut {
     at: usize,
-    keep: HashSet<OpId>,
+    keep: HashSet<EditId>,
     facts: Vec<Fact>,
 }
 
-/// One replay of ops already in `order`, with the removals `rem` and no others: an op stands if `apply` accepts it on
-/// the state before it, and again with what each later removal that hadn't seen it takes away hidden. Which ops stood,
-/// and the state at the end; with `states`, every state along the way too.
+/// One replay of edits already in `order`, with the removals `rem` and no others: an edit stands if `apply` accepts it
+/// on the state before it, and again with what each later removal that hadn't seen it takes away hidden. Which edits
+/// stood, and the state at the end; with `states`, every state along the way too.
 struct Run {
     stood: Vec<bool>,
     state: State,
     states: Vec<State>,
 }
 
-fn run(ops: &[Op], ids: &[OpId], rem: &HashSet<OpId>, states: bool) -> Run {
+fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> Run {
     let grants = std::cell::OnceCell::new();
-    let grants = || grants.get_or_init(|| grants_of(ops.iter().zip(ids.iter().copied()))).clone();
-    let cuts: Vec<Cut> = ops
+    let grants = || grants.get_or_init(|| grants_of(edits.iter().zip(ids.iter().copied()))).clone();
+    let cuts: Vec<Cut> = edits
         .iter()
         .enumerate()
         .filter(|(i, _)| rem.contains(&ids[*i]))
         .map(|(at, r)| Cut { at, keep: r.action.keep().unwrap_or(&[]).iter().copied().collect(), facts: removes_among(r, grants) })
         .collect();
-    let mut out = Run { stood: Vec::with_capacity(ops.len()), state: State::default(), states: vec![] };
+    let mut out = Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![] };
     if states {
         out.states.push(State::default());
     }
-    for (i, op) in ops.iter().enumerate() {
+    for (i, edit) in edits.iter().enumerate() {
         let id = ids[i];
-        let mut stands = !op.is_removal() || rem.contains(&id);
+        let mut stands = !edit.is_removal() || rem.contains(&id);
         if stands {
             let hidden: Vec<Fact> =
                 cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id)).flat_map(|c| c.facts.iter().copied()).collect();
             if !hidden.is_empty() {
-                stands = out.state.hide(&hidden).apply(op, id).is_ok();
+                stands = out.state.hide(&hidden).apply(edit, id).is_ok();
             }
             if stands {
-                match out.state.step_id(op, id) {
+                match out.state.step_id(edit, id) {
                     Ok(next) => out.state = next,
                     Err(_) => stands = false,
                 }
@@ -1601,14 +1613,14 @@ fn run(ops: &[Op], ids: &[OpId], rem: &HashSet<OpId>, states: bool) -> Run {
 /// founder, then whoever issued a grant higher up the chain of the grant revoked, since a grant falls with the grant it
 /// rests on. So a removal is only ever kept out by one that ranks above it, and what ranks above it never rests on what
 /// it takes away.
-fn priority(base: &State, op: &Op) -> (u8, usize, u8, usize) {
-    match &op.action {
+fn priority(base: &State, edit: &Edit) -> (u8, usize, u8, usize) {
+    match &edit.action {
         Action::RemoveOwner { vault, .. } | Action::RemoveDevice { vault, .. } | Action::SetRoot { vault, .. } => {
             let tier = base.tier(*vault);
             match base.vault(*vault) {
                 None => (0, tier, 2, 0),
                 Some(vt) => {
-                    let sigs: Vec<SignerId> = op.sigs().collect();
+                    let sigs: Vec<SignerId> = edit.sigs().collect();
                     if vt.root.is_some_and(|r| sigs.contains(&r)) {
                         (0, tier, 0, 0)
                     } else if let Some(i) = vt.owners.iter().position(|&p| base.approves(&sigs, p)) {
@@ -1624,75 +1636,75 @@ fn priority(base: &State, op: &Op) -> (u8, usize, u8, usize) {
     }
 }
 
-/// The removals that stand among ops already in `order`, chosen one by one by priority: each stands if the ops
+/// The removals that stand among edits already in `order`, chosen one by one by priority: each stands if the edits
 /// replayed with it and the ones chosen before it accept it and keep accepting those.
-fn resolve(ops: &[Op], ids: &[OpId]) -> HashSet<OpId> {
+fn resolve(edits: &[Edit], ids: &[EditId]) -> HashSet<EditId> {
     let mut rem = HashSet::new();
-    if !ops.iter().any(Op::is_removal) {
+    if !edits.iter().any(Edit::is_removal) {
         return rem;
     }
-    let base = run(ops, ids, &rem, false).state;
-    let mut cands: Vec<usize> = (0..ops.len()).filter(|&i| ops[i].is_removal()).collect();
-    cands.sort_by_key(|&i| priority(&base, &ops[i]));
+    let base = run(edits, ids, &rem, false).state;
+    let mut cands: Vec<usize> = (0..edits.len()).filter(|&i| edits[i].is_removal()).collect();
+    cands.sort_by_key(|&i| priority(&base, &edits[i]));
     for r in cands {
         let mut trial = rem.clone();
         trial.insert(ids[r]);
-        let stood = run(ops, ids, &trial, false).stood;
-        if (0..ops.len()).all(|i| !trial.contains(&ids[i]) || stood[i]) {
+        let stood = run(edits, ids, &trial, false).stood;
+        if (0..edits.len()).all(|i| !trial.contains(&ids[i]) || stood[i]) {
             rem = trial;
         }
     }
     rem
 }
 
-/// A peer's replay of the ops it holds: the one order, which ops stand, and what it knows.
+/// A peer's replay of the edits it holds: the one order, which edits stand, and what it knows.
 pub struct Replay {
-    pub ops: Vec<Op>,
-    /// Each op's id, `ids[i]` being `ops[i]`'s.
-    pub ids: Vec<OpId>,
+    pub edits: Vec<Edit>,
+    /// Each edit's id, `ids[i]` being `edits[i]`'s.
+    pub ids: Vec<EditId>,
     pub stood: Vec<bool>,
     pub state: State,
 }
 
 impl Replay {
-    /// The ids of the ops that stand, in replay order.
-    pub fn standing(&self) -> Vec<OpId> {
+    /// The ids of the edits that stand, in replay order.
+    pub fn standing(&self) -> Vec<EditId> {
         self.ids.iter().zip(&self.stood).filter(|(_, s)| **s).map(|(id, _)| *id).collect()
     }
 }
 
-pub fn replay(ops: &[Op]) -> Replay {
-    replay_ids(ops, &ids(ops))
+pub fn replay(edits: &[Edit]) -> Replay {
+    replay_ids(edits, &ids(edits))
 }
 
-/// `replay`, given each op's id.
-fn replay_ids(ops: &[Op], ids: &[OpId]) -> Replay {
-    let (ops, ids) = order_ids(ops, ids);
-    let rem = resolve(&ops, &ids);
-    let Run { stood, state, .. } = run(&ops, &ids, &rem, false);
-    Replay { ops, ids, stood, state }
+/// `replay`, given each edit's id.
+fn replay_ids(edits: &[Edit], ids: &[EditId]) -> Replay {
+    let (edits, ids) = order_ids(edits, ids);
+    let rem = resolve(&edits, &ids);
+    let Run { stood, state, .. } = run(&edits, &ids, &rem, false);
+    Replay { edits, ids, stood, state }
 }
 
-/// What a peer holding `ops` knows: their replay in `order` from the empty state, refused ops skipped, every removal
-/// cutting what it hadn't seen.
-pub fn view(ops: &[Op]) -> State {
-    replay(ops).state
+/// What a peer holding `edits` knows: their replay in `order` from the empty state, refused edits skipped, every
+/// removal cutting what it hadn't seen.
+pub fn view(edits: &[Edit]) -> State {
+    replay(edits).state
 }
 
-/// Every state along the replay of `ops` in `order`, the empty state first and the view last.
-pub fn trace(ops: &[Op]) -> Vec<State> {
-    let (ops, ids) = order_ids(ops, &ids(ops));
-    let rem = resolve(&ops, &ids);
-    run(&ops, &ids, &rem, true).states
+/// Every state along the replay of `edits` in `order`, the empty state first and the view last.
+pub fn trace(edits: &[Edit]) -> Vec<State> {
+    let (edits, ids) = order_ids(edits, &ids(edits));
+    let rem = resolve(&edits, &ids);
+    run(&edits, &ids, &rem, true).states
 }
 
-/// A peer's ops. Each op appended builds on the frontier of its own log and sorts after everything the peer holds; ops
-/// from other peers are added as they arrive.
+/// A peer's edits. Each edit appended builds on the frontier of its own log and sorts after everything the peer holds;
+/// edits from other peers are added as they arrive.
 #[derive(Clone, Debug, Default)]
 pub struct Log {
-    ops: Vec<Op>,
-    /// Each op's id, hashed once.
-    ids: Vec<OpId>,
+    edits: Vec<Edit>,
+    /// Each edit's id, hashed once.
+    ids: Vec<EditId>,
 }
 
 impl Log {
@@ -1700,12 +1712,12 @@ impl Log {
         Self::default()
     }
 
-    pub fn ops(&self) -> &[Op] {
-        &self.ops
+    pub fn edits(&self) -> &[Edit] {
+        &self.edits
     }
 
-    /// Each op's id, `ids()[i]` being `ops()[i]`'s.
-    pub fn ids(&self) -> &[OpId] {
+    /// Each edit's id, `ids()[i]` being `edits()[i]`'s.
+    pub fn ids(&self) -> &[EditId] {
         &self.ids
     }
 
@@ -1713,69 +1725,69 @@ impl Log {
         self.replay().state
     }
 
-    /// The replay of the log's ops.
+    /// The replay of the log's edits.
     pub fn replay(&self) -> Replay {
-        replay_ids(&self.ops, &self.ids)
+        replay_ids(&self.edits, &self.ids)
     }
 
-    /// A log holding `ops`, as a peer that received them.
-    pub fn from_ops(ops: Vec<Op>) -> Self {
-        let ids = ids(&ops);
-        Self { ops, ids }
+    /// A log holding `edits`, as a peer that received them.
+    pub fn from_edits(edits: Vec<Edit>) -> Self {
+        let ids = ids(&edits);
+        Self { edits, ids }
     }
 
-    /// The op `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
+    /// The edit `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
     /// builds on the frontier of its own log (one that starts a log, a genesis or a space's founding, on nothing) and
-    /// is one deeper than the deepest op the log holds, so it sorts after everything this peer had seen. A write with
-    /// no `deps` on the main line or a branch builds on that line's heads. An act for a vault that names no `via`
+    /// is one deeper than the deepest edit the log holds, so it sorts after everything this peer had seen. A write with
+    /// no `deps` on the main line or a proposal builds on that line's heads. An act for a vault that names no `via`
     /// goes through the owners its author acts through (`State::via`). A removal keeps, beside what its `keep` names,
-    /// every op of the log that stands now and that it would cut otherwise: an honest device keeps all it had seen.
-    pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Op {
-        let depth = self.ops.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
-        let mut op = Op { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
-        if !matches!(op.action, Action::Genesis { .. } | Action::FoundSpace { .. })
-            && let Some(l) = crate::sync::log_of_new(&self.ops, &self.ids, &op)
+    /// every edit of the log that stands now and that it would cut otherwise: an honest device keeps all it had seen.
+    pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
+        let depth = self.edits.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
+        let mut edit = Edit { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
+        if !matches!(edit.action, Action::Genesis { .. } | Action::FoundSpace { .. })
+            && let Some(l) = crate::sync::log_of_new(&self.edits, &self.ids, &edit)
         {
-            op.parents = crate::sync::frontier_of(&self.ops, &self.ids, l);
+            edit.parents = crate::sync::frontier_of(&self.edits, &self.ids, l);
         }
         let view = std::cell::OnceCell::new();
         let view = || view.get_or_init(|| self.view());
-        if let Action::Write { space, entry, deps, branch, .. } = &mut op.action
+        if let Action::Write { space, entry, deps, proposal, .. } = &mut edit.action
             && deps.is_empty()
-            && *branch != Branch::New
+            && *proposal != Proposal::New
         {
-            let line = if let Branch::On(b) = *branch { Some(b) } else { None };
+            let line = if let Proposal::On(b) = *proposal { Some(b) } else { None };
             *deps = view().heads(*space, *entry, line);
         }
         // an act for a vault its author isn't a member of names the owners it goes through
-        if let Some(actor) = op.actor()
-            && op.action.via().is_some_and(<[VaultId]>::is_empty)
+        if let Some(actor) = edit.actor()
+            && edit.action.via().is_some_and(<[VaultId]>::is_empty)
             && let Some(chain) = view().via(author, actor)
         {
-            *op.action.via_mut().expect("an act for a vault") = chain;
+            *edit.action.via_mut().expect("an act for a vault") = chain;
         }
-        if op.is_removal() {
+        if edit.is_removal() {
             // replayed with the removals that stand now and this one, everything that stands now must still stand
             let before = self.replay();
-            let standing: HashSet<OpId> = before.standing().into_iter().collect();
-            let rem: HashSet<OpId> = before
-                .ops
+            let standing: HashSet<EditId> = before.standing().into_iter().collect();
+            let rem: HashSet<EditId> = before
+                .edits
                 .iter()
                 .zip(&before.ids)
                 .filter(|(o, id)| o.is_removal() && standing.contains(id))
                 .map(|(_, id)| *id)
                 .collect();
             loop {
-                let id = op.id();
-                let (mut all, mut all_ids) = (self.ops.clone(), self.ids.clone());
-                all.push(op.clone());
+                let id = edit.id();
+                let (mut all, mut all_ids) = (self.edits.clone(), self.ids.clone());
+                all.push(edit.clone());
                 all_ids.push(id);
-                let (ops, ids) = order_ids(&all, &all_ids);
+                let (edits, ids) = order_ids(&all, &all_ids);
                 let mut trial = rem.clone();
                 trial.insert(id);
-                let stood = run(&ops, &ids, &trial, false).stood;
-                let keep = op.action.keep_mut().expect("a removal");
-                let lost: Vec<OpId> = ids
+                let stood = run(&edits, &ids, &trial, false).stood;
+                let keep = edit.action.keep_mut().expect("a removal");
+                let lost: Vec<EditId> = ids
                     .iter()
                     .zip(&stood)
                     .filter(|&(id, s)| !*s && standing.contains(id) && !keep.contains(id))
@@ -1788,36 +1800,36 @@ impl Log {
                 keep.sort();
             }
         }
-        op
+        edit
     }
 
-    /// The frontier of log `l`: what an op of that log made here builds on.
-    pub fn frontier(&self, l: crate::sync::LogId) -> Vec<OpId> {
-        crate::sync::frontier_of(&self.ops, &self.ids, l)
+    /// The frontier of log `l`: what an edit of that log made here builds on.
+    pub fn frontier(&self, l: crate::sync::LogId) -> Vec<EditId> {
+        crate::sync::frontier_of(&self.edits, &self.ids, l)
     }
 
-    /// The op `append` would add, if the view accepts it.
-    pub fn check(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Result<Op, Refusal> {
-        let op = self.draft(author, cosigners, action);
-        self.view().step(&op)?;
-        Ok(op)
+    /// The edit `append` would add, if the view accepts it.
+    pub fn check(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Result<Edit, Refusal> {
+        let edit = self.draft(author, cosigners, action);
+        self.view().step(&edit)?;
+        Ok(edit)
     }
 
-    /// Append an op signed by `author` and `cosigners`, if the view accepts it.
-    pub fn append(&mut self, author: SignerId, cosigners: &[SignerId], action: Action) -> Result<OpId, Refusal> {
-        let op = self.check(author, cosigners, action)?;
-        let id = op.id();
-        self.ops.push(op);
+    /// Append an edit signed by `author` and `cosigners`, if the view accepts it.
+    pub fn append(&mut self, author: SignerId, cosigners: &[SignerId], action: Action) -> Result<EditId, Refusal> {
+        let edit = self.check(author, cosigners, action)?;
+        let id = edit.id();
+        self.edits.push(edit);
         self.ids.push(id);
         Ok(id)
     }
 
-    /// Add ops from a peer, each once, whether or not the view accepts them: acceptance is decided at replay.
-    pub fn receive(&mut self, ops: impl IntoIterator<Item = Op>) {
-        for op in ops {
-            let id = op.id();
+    /// Add edits from a peer, each once, whether or not the view accepts them: acceptance is decided at replay.
+    pub fn receive(&mut self, edits: impl IntoIterator<Item = Edit>) {
+        for edit in edits {
+            let id = edit.id();
             if !self.ids.contains(&id) {
-                self.ops.push(op);
+                self.edits.push(edit);
                 self.ids.push(id);
             }
         }
@@ -1835,7 +1847,7 @@ mod tests {
     }
 
     #[test]
-    fn an_op_never_sorts_ahead_of_a_parent_it_holds() {
+    fn an_edit_never_sorts_ahead_of_a_parent_it_holds() {
         let passkey = SignerId::from_u64(1);
         let mut log = Log::new();
         let genesis =
@@ -1843,9 +1855,9 @@ mod tests {
         let v = VaultId::from(log.append(passkey, &[], genesis).unwrap());
         let honest = log.draft(passkey, &[SignerId::from_u64(2)], Action::AddDevice { vault: v, device: SignerId::from_u64(2), seal_to: None });
         assert_eq!(honest.depth, 1);
-        // an op claiming to be no deeper than its parent is left out where the parent is held…
-        let shallow = Op { depth: 0, ..honest.clone() };
-        let with_parent = [log.ops()[0].clone(), shallow.clone(), honest.clone()];
+        // an edit claiming to be no deeper than its parent is left out where the parent is held…
+        let shallow = Edit { depth: 0, ..honest.clone() };
+        let with_parent = [log.edits()[0].clone(), shallow.clone(), honest.clone()];
         assert_eq!(order(&with_parent).iter().filter(|o| **o == shallow).count(), 0);
         assert_eq!(order(&with_parent).last(), Some(&honest));
         // …and orders by what it claims where it isn't, as it does on every peer missing that parent
@@ -1865,18 +1877,18 @@ mod tests {
     #[test]
     fn a_drop_takes_what_builds_on_it_along() {
         let w = |n: u64, deps: &[u64]| Write {
-            op: OpId::from_u64(n),
+            edit: EditId::from_u64(n),
             author: SignerId::from_u64(1),
             actor: VaultId::from_u64(1),
             space: SpaceId::from_u64(1),
             entry: EntryId::from_u64(1),
             epoch: 0,
-            deps: deps.iter().map(|&d| OpId::from_u64(d)).collect(),
-            branch: Branch::Main,
+            deps: deps.iter().map(|&d| EditId::from_u64(d)).collect(),
+            proposal: Proposal::Main,
             via: vec![],
         };
         // 2 builds on 1, 3 on 2, 4 on 1: without 2, 3 goes too
         let kept = close_deps(vec![w(1, &[]), w(3, &[2]), w(4, &[1])]);
-        assert_eq!(kept.iter().map(|x| x.op).collect::<Vec<_>>(), [OpId::from_u64(1), OpId::from_u64(4)]);
+        assert_eq!(kept.iter().map(|x| x.edit).collect::<Vec<_>>(), [EditId::from_u64(1), EditId::from_u64(4)]);
     }
 }

@@ -46,14 +46,14 @@ export class Device {
         return ret;
     }
     /**
-     * Waits until it holds other than `ops` ops and `keys` McEliece keys, what the page's store holds: a promise of
-     * true, or of false once the device closed.
-     * @param {number} ops
+     * Waits until it holds other than `edits` edits and `keys` McEliece keys, what the page's store holds: a promise
+     * of true, or of false once the device closed.
+     * @param {number} edits
      * @param {number} keys
      * @returns {Promise<any>}
      */
-    changed(ops, keys) {
-        const ret = wasm.device_changed(this.__wbg_ptr, ops, keys);
+    changed(edits, keys) {
+        const ret = wasm.device_changed(this.__wbg_ptr, edits, keys);
         return ret;
     }
     /**
@@ -74,6 +74,16 @@ export class Device {
         const ptr0 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.device_database(this.__wbg_ptr, ptr0, len0);
+        return ret;
+    }
+    /**
+     * Its signed edits from the `from`th on, in the order it took them, each bytes: a promise, of `undefined` if it
+     * holds fewer than `from` (`Device::edits`).
+     * @param {number} from
+     * @returns {Promise<any>}
+     */
+    edits(from) {
+        const ret = wasm.device_edits(this.__wbg_ptr, from);
         return ret;
     }
     /**
@@ -286,33 +296,24 @@ export class Device {
     }
     /**
      * The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
-     * `passkey()`), and what its store kept, its `ops` in order and its McEliece `keys`, each bytes (`Device::open`).
+     * `passkey()`), and what its store kept, its `edits` in order and its McEliece `keys`, each bytes
+     * (`Device::open`).
      * @param {string} name
      * @param {string} relay
      * @param {string} p256
      * @param {any} unlock
-     * @param {Array<any>} ops
+     * @param {Array<any>} edits
      * @param {Array<any>} keys
      * @returns {Promise<Device>}
      */
-    static open(name, relay, p256, unlock, ops, keys) {
+    static open(name, relay, p256, unlock, edits, keys) {
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(relay, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(p256, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.device_open(ptr0, len0, ptr1, len1, ptr2, len2, unlock, ops, keys);
-        return ret;
-    }
-    /**
-     * Its signed ops from the `from`th on, in the order it took them, each bytes: a promise, of `undefined` if it
-     * holds fewer than `from` (`Device::ops`).
-     * @param {number} from
-     * @returns {Promise<any>}
-     */
-    ops(from) {
-        const ret = wasm.device_ops(this.__wbg_ptr, from);
+        const ret = wasm.device_open(ptr0, len0, ptr1, len1, ptr2, len2, unlock, edits, keys);
         return ret;
     }
     /**
@@ -508,7 +509,7 @@ export class Device {
         return ret;
     }
     /**
-     * How many ops and McEliece keys it holds: a pair.
+     * How many edits and McEliece keys it holds: a pair.
      * @returns {Promise<any>}
      */
     size() {

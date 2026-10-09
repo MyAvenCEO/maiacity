@@ -1,7 +1,7 @@
 /*
  * What avenDB's vault screens share: a vault's name, initials and colour, the kinds and roles as a person reads them,
  * and what a vault may do, by the roles the device's world shows (avendb-browser's `World::to_json`). The rules
- * themselves are the device's: every op is checked against the acting vault's caps, as any peer checks it; these only
+ * themselves are the device's: every edit is checked against the acting vault's caps, as any peer checks it; these only
  * say beforehand what the page offers.
  */
 
@@ -108,7 +108,7 @@ export const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}
 export const list = (names) =>
 	names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 
-/** Why the rules refused an op, as a person reads it (avendb's `Refusal`). */
+/** Why the rules refused an edit, as a person reads it (avendb's `Refusal`). */
 const WHY = /** @type {const} */ ({
 	NoCap: 'the acting vault holds no cap for it',
 	NotActing: 'this browser doesn’t act for that vault',

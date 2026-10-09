@@ -19,9 +19,9 @@ fn vault_id_is_genesis_hash() {
         nonce,
         seal_to: vec![],
     };
-    let op = log.check(PASSKEY_A, &[], genesis(0)).unwrap();
+    let edit = log.check(PASSKEY_A, &[], genesis(0)).unwrap();
     let id = log.append(PASSKEY_A, &[], genesis(0)).unwrap();
-    assert_eq!(id, op.id());
+    assert_eq!(id, edit.id());
     let v = VaultId::from(id);
     assert_eq!(log.view().vault(v).map(|x| x.id), Some(v));
     // another genesis, even with the same owner, is another vault
@@ -87,13 +87,13 @@ fn ownership_cycle_rejected() {
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], human).err(), Some(Refusal::WrongOwnerKind));
 }
 
-/// What every device ends up with once the ops of two offline copies of a log meet, in either order.
+/// What every device ends up with once the edits of two offline copies of a log meet, in either order.
 fn meet(a: &Log, b: &Log) -> State {
     let (mut ab, mut ba) = (a.clone(), b.clone());
-    ab.receive(b.ops().to_vec());
-    ba.receive(a.ops().to_vec());
+    ab.receive(b.edits().to_vec());
+    ba.receive(a.edits().to_vec());
     let st = ab.view();
-    assert!(ba.view() == st, "the order the ops arrived in changed the result");
+    assert!(ba.view() == st, "the order the edits arrived in changed the result");
     st
 }
 
@@ -212,7 +212,7 @@ fn a_removed_owner_cannot_backdate_governance() {
 }
 
 #[test]
-fn handing_the_root_on_cuts_the_old_passkeys_backdated_ops() {
+fn handing_the_root_on_cuts_the_old_passkeys_backdated_edits() {
     let mut c = cast();
     c.log.append(PASSKEY_A, &[SECOND], Action::AddOwner { vault: c.alice, owner: Principal::Signer(SECOND), seal_to: None }).unwrap();
     let early = c.log.clone();
@@ -255,10 +255,10 @@ fn a_vault_settles_before_the_coops_it_owns() {
     assert_eq!(st.vault(alice).map(|v| v.owners.clone()), Some(vec![Principal::Signer(PASSKEY_A), Principal::Signer(third)]));
     assert_eq!(st.vault(pair).map(|v| v.owners.len()), Some(2));
     // exactly as on a device that never held the coop's log
-    let mut all = a.ops().to_vec();
-    all.extend(b.ops().iter().filter(|o| !a.ops().contains(o)).cloned());
+    let mut all = a.edits().to_vec();
+    all.extend(b.edits().iter().filter(|o| !a.edits().contains(o)).cloned());
     let without: Vec<_> = all.into_iter().filter(|o| o.vault_of() != Some(pair)).collect();
-    assert_eq!(Log::from_ops(without).view().vault(alice), st.vault(alice));
+    assert_eq!(Log::from_edits(without).view().vault(alice), st.vault(alice));
 }
 
 
@@ -322,17 +322,17 @@ fn an_aven_vaults_devices_act_for_it_but_never_govern_it() {
 }
 
 /// Acts name their chain (Examples.lean): an act for a vault its device isn't a member of names the owners it goes
-/// through, down to the vault the device belongs to, and an honest device's log names them as it drafts the op.
+/// through, down to the vault the device belongs to, and an honest device's log names them as it drafts the edit.
 #[test]
 fn an_act_for_a_coop_names_the_vault_it_goes_through() {
     let mut c = cast();
     let coop = with_coop(&mut c);
     let found = |actor, via| Action::FoundSpace { actor, nonce: 5, via };
     // Alice's Mac founds a space for the coop through Alice's vault: the log names it
-    let op = c.log.check(MAC_A, &[], found(coop, vec![])).unwrap();
-    assert_eq!(op.action.via(), Some(&[c.alice][..]));
+    let edit = c.log.check(MAC_A, &[], found(coop, vec![])).unwrap();
+    assert_eq!(edit.action.via(), Some(&[c.alice][..]));
     // with no chain, through Bob's vault, which the Mac isn't a member of, or Carol's, which owns no coop: refused
-    let bare = avendb::policy::Op { action: found(coop, vec![]), ..op.clone() };
+    let bare = avendb::policy::Edit { action: found(coop, vec![]), ..edit.clone() };
     assert_eq!(c.log.view().step(&bare).err(), Some(Refusal::NotActing));
     assert_eq!(c.log.check(MAC_A, &[], found(coop, vec![c.bob])).err(), Some(Refusal::NotActing));
     assert_eq!(c.log.check(MAC_C, &[], found(coop, vec![c.carol])).err(), Some(Refusal::NotActing));
@@ -340,8 +340,8 @@ fn an_act_for_a_coop_names_the_vault_it_goes_through() {
     let owners = vec![Principal::Vault(coop)];
     let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 4, seal_to: vec![] };
     let guild = VaultId::from(c.log.append(PASSKEY_A, &[PASSKEY_B], genesis).unwrap());
-    let op = c.log.check(MAC_B, &[], found(guild, vec![])).unwrap();
-    assert_eq!(op.action.via(), Some(&[coop, c.bob][..]));
+    let edit = c.log.check(MAC_B, &[], found(guild, vec![])).unwrap();
+    assert_eq!(edit.action.via(), Some(&[coop, c.bob][..]));
     assert_eq!(c.log.check(MAC_B, &[], found(guild, vec![c.bob])).err(), Some(Refusal::NotActing));
     assert_eq!(c.log.check(MAC_B, &[], found(guild, vec![coop])).err(), Some(Refusal::NotActing));
     // the server founds a space for avenCEO as its member, Alice's Mac through Alice's vault
@@ -361,7 +361,7 @@ fn a_removed_owners_unseen_writes_for_the_coop_are_cut() {
     c.log.append(MAC_A, &[], write(handbook, WELCOME, coop, 0)).unwrap();
     let mut offline = c.log.clone();
     let late = offline.append(MAC_B, &[], write(handbook, WELCOME, coop, 0)).unwrap();
-    assert_eq!(offline.ops().last().and_then(|o| o.action.via()), Some(&[c.bob][..]));
+    assert_eq!(offline.edits().last().and_then(|o| o.action.via()), Some(&[c.bob][..]));
     // Bob leaves the coop on his own, on a device that hadn't seen that write
     let leave = Action::RemoveOwner { vault: coop, owner: Principal::Vault(c.bob), keep: vec![] };
     c.log.append(PASSKEY_B, &[], leave).unwrap();
@@ -371,7 +371,7 @@ fn a_removed_owners_unseen_writes_for_the_coop_are_cut() {
 }
 
 /// T21: in every state the rules reach, each vault's owners fit its kind, only human and aven vaults have devices, and
-/// only human vaults a root, whatever the ops.
+/// only human vaults a root, whatever the edits.
 #[test]
 fn every_vault_keeps_to_its_kind() {
     let mut c = cast();

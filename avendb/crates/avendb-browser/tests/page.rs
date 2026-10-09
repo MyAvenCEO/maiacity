@@ -338,7 +338,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.expect("second", "wrote").await;
     tab.expect("first", "read").await;
     let closed = tab.expect("first", "closed").await;
-    eprintln!("Eve's first browser kept {} ops and {} McEliece keys in IndexedDB", closed["ops"], closed["keys"]);
+    eprintln!("Eve's first browser kept {} edits and {} McEliece keys in IndexedDB", closed["edits"], closed["keys"]);
 
     // the first browser opens again from its store, in the unlock alone, and edits the note once more
     tab.frame(&[("page", "again"), ("store", "first"), ("reads", APRIL), ("write", MAY)]).await;
@@ -346,7 +346,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     eprintln!("Eve's first browser opened again in {} ms", again["ms"]);
     assert_eq!(again["ceremonies"], 1, "the unlock alone: {again}");
     assert_eq!((&again["endpoint"], &again["vault"]), (&first["endpoint"], &first["vault"]), "the same device");
-    assert_eq!((&again["ops"], &again["keys"]), (&closed["ops"], &closed["keys"]), "holding what its store kept");
+    assert_eq!((&again["edits"], &again["keys"]), (&closed["edits"], &closed["keys"]), "holding what its store kept");
     tab.expect("again", "read").await;
     tab.expect("again", "wrote").await;
     tab.expect("second", "read again").await;

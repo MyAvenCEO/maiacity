@@ -1,31 +1,31 @@
 //! The Lean model's test vectors (`avendb/spec/vectors/vaults.json` and `lenses.json`, written by `lake exe vectors`,
-//! checked by every `lake build`). A step case's ops, applied one after the other from the empty state, must be
-//! accepted or refused exactly as the model says. A view case's ops, each at the depth it claims, must stand or be cut
-//! exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case where
-//! the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, spaces, grants,
+//! checked by every `lake build`). A step case's edits, applied one after the other from the empty state, must be
+//! accepted or refused exactly as the model says. A view case's edits, each at the depth it claims, must stand or be
+//! cut exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case
+//! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, spaces, grants,
 //! writes, key schedule (each family's epoch, every seal, every published key) and schema lanes. The lens vectors hold
 //! each app's view of many stored blocks and todos, and what each edit through a view stores.
 //!
-//! A sync case's ops, each with the parents and depth the model gives it, must stand as in the model, fall into the
+//! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
-//! must name the same ops of each log and the same loose ops, and be sent the same ops in the same order, whole
+//! must name the same edits of each log and the same loose edits, and be sent the same edits in the same order, whole
 //! (`respond`) and given what it named (`respond_since`); and each passkey that proves itself to link a new device
 //! must be handed the same vault logs (`link_card`).
 //!
-//! The model names what an op creates (a vault, a space, a grant) by a number, and an op by its place in the case; the
-//! core names them all by hashes, so each number maps to what its op created, and each place to that op's id. A keys
-//! op of the model names only where its boxes go; the core's carries the boxes too, which no rule opens, so here they
-//! are empty. A publish names its blob by a number: here the blob is the bytes `blob <number>`.
+//! The model names what an edit creates (a vault, a space, a grant) by a number, and an edit by its place in the case;
+//! the core names them all by hashes, so each number maps to what its edit created, and each place to that edit's id. A
+//! keys edit of the model names only where its boxes go; the core's carries the boxes too, which no rule opens, so here
+//! they are empty. A publish names its blob by a number: here the blob is the bytes `blob <number>`.
 
 use std::collections::HashMap;
 
 use serde_json::{json, Map, Value};
-use avendb::id::{BlobId, EntryId, GrantId, OpId, SignerId, SpaceId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
 use avendb::keys::{KeyBox, KeyId, KeyName, KeyScope, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
-    checkpointed, replay, Action, Branch, Grant, Grantee, Kind, Line, Op, Principal, Role, Scope, Space, State, Vault,
-    Write,
+    checkpointed, replay, Action, Edit, Grant, Grantee, Kind, Line, Principal, Proposal, Role, Scope, Space, State,
+    Vault, Write,
 };
 use avendb::sync::{asks, closed_part, forks, frontiers, link_card, respond, respond_since, LogId};
 
@@ -78,8 +78,8 @@ struct Names {
     vaults: HashMap<u64, VaultId>,
     spaces: HashMap<u64, SpaceId>,
     grants: HashMap<u64, GrantId>,
-    /// Each op's id, by its place in the case.
-    ops: Vec<OpId>,
+    /// Each edit's id, by its place in the case.
+    edits: Vec<EditId>,
 }
 
 impl Names {
@@ -98,13 +98,13 @@ impl Names {
         self.grants.get(&n).copied().unwrap_or(GrantId::from_u64(n))
     }
 
-    fn op(&self, v: &Value) -> OpId {
+    fn edit(&self, v: &Value) -> EditId {
         let n = num(v);
-        self.ops.get(n as usize).copied().unwrap_or(OpId::from_u64(n))
+        self.edits.get(n as usize).copied().unwrap_or(EditId::from_u64(n))
     }
 
-    fn ops(&self, v: &Value) -> Vec<OpId> {
-        list(v).iter().map(|x| self.op(x)).collect()
+    fn edits(&self, v: &Value) -> Vec<EditId> {
+        list(v).iter().map(|x| self.edit(x)).collect()
     }
 
     /// The owners an act goes through.
@@ -151,9 +151,9 @@ impl Names {
         }
     }
 
-    /// Ops by place, smallest id first: the model sorts by place, the core by id.
-    fn op_set(&self, v: &Value) -> Vec<OpId> {
-        let mut ids = self.ops(v);
+    /// Edits by place, smallest id first: the model sorts by place, the core by id.
+    fn edit_set(&self, v: &Value) -> Vec<EditId> {
+        let mut ids = self.edits(v);
         ids.sort();
         ids
     }
@@ -173,12 +173,12 @@ impl Names {
         }
     }
 
-    /// A write's line: "main", "new", or the branch the model's op number started.
-    fn branch(&self, v: &Value) -> Branch {
+    /// A write's line: "main", "new", or the proposal the model's edit number started.
+    fn proposal(&self, v: &Value) -> Proposal {
         match v.as_str() {
-            Some("main") => Branch::Main,
-            Some("new") => Branch::New,
-            _ => Branch::On(self.op(&v["on"])),
+            Some("main") => Proposal::Main,
+            Some("new") => Proposal::New,
+            _ => Proposal::On(self.edit(&v["on"])),
         }
     }
 
@@ -195,7 +195,7 @@ impl Names {
     fn action(&self, v: &Value) -> Action {
         let (name, x) = v.as_object().and_then(|o| o.iter().next()).unwrap_or_else(|| panic!("an action, not {v}"));
         let vault = || self.vault(&x["vault"]);
-        let keep = || self.ops(&x["keep"]);
+        let keep = || self.edits(&x["keep"]);
         match name.as_str() {
             "genesis" => Action::Genesis {
                 kind: kind(&x["kind"]),
@@ -229,8 +229,8 @@ impl Names {
                 entry: entry(&x["entry"]),
                 actor: self.vault(&x["actor"]),
                 epoch: num(&x["epoch"]),
-                deps: self.ops(&x["deps"]),
-                branch: self.branch(&x["branch"]),
+                deps: self.edits(&x["deps"]),
+                proposal: self.proposal(&x["proposal"]),
                 via: self.via(&x["via"]),
                 body: vec![],
             },
@@ -248,36 +248,38 @@ impl Names {
                 via: self.via(&x["via"]),
                 blob: blob(&x["blob"]),
             },
-            "checkpoint" => {
-                Action::Checkpoint { space: self.space(&x["space"]), entry: entry(&x["entry"]), covers: self.ops(&x["covers"]) }
-            }
+            "checkpoint" => Action::Checkpoint {
+                space: self.space(&x["space"]),
+                entry: entry(&x["entry"]),
+                covers: self.edits(&x["covers"]),
+            },
             other => panic!("no action {other}"),
         }
     }
 
-    /// The op at the next place of the case, from its JSON, at `depth`.
-    fn op_of(&self, v: &Value, depth: u64) -> Op {
+    /// The edit at the next place of the case, from its JSON, at `depth`.
+    fn edit_of(&self, v: &Value, depth: u64) -> Edit {
         let cosigners = list(&v["cosigners"]).iter().map(signer).collect();
-        Op { parents: vec![], depth, author: signer(&v["author"]), cosigners, action: self.action(&v["action"]) }
+        Edit { parents: vec![], depth, author: signer(&v["author"]), cosigners, action: self.action(&v["action"]) }
     }
 
-    /// Name what `op`, at the next place, creates. A vault's number names the vault only once its genesis is accepted,
-    /// as the step cases try one number more than once; spaces and grants have a number each.
-    fn created(&mut self, v: &Value, op: &Op, accepted: bool) {
+    /// Name what `edit`, at the next place, creates. A vault's number names the vault only once its genesis is
+    /// accepted, as the step cases try one number more than once; spaces and grants have a number each.
+    fn created(&mut self, v: &Value, edit: &Edit, accepted: bool) {
         let (name, x) = v["action"].as_object().and_then(|o| o.iter().next()).expect("an action");
         match name.as_str() {
             "genesis" if accepted => {
-                self.vaults.insert(num(&x["vault"]), VaultId::from(op.id()));
+                self.vaults.insert(num(&x["vault"]), VaultId::from(edit.id()));
             }
             "foundSpace" => {
-                self.spaces.insert(num(&x["space"]), SpaceId::from(op.id()));
+                self.spaces.insert(num(&x["space"]), SpaceId::from(edit.id()));
             }
             "grant" => {
-                self.grants.insert(num(&x["grant"]["id"]), GrantId::from(op.id()));
+                self.grants.insert(num(&x["grant"]["id"]), GrantId::from(edit.id()));
             }
             _ => {}
         }
-        self.ops.push(op.id());
+        self.edits.push(edit.id());
     }
 
     fn vault_of(&self, v: &Value) -> Vault {
@@ -297,14 +299,14 @@ impl Names {
 
     fn write_of(&self, v: &Value) -> Write {
         Write {
-            op: self.op(&v["op"]),
+            edit: self.edit(&v["edit"]),
             author: signer(&v["author"]),
             actor: self.vault(&v["actor"]),
             space: self.space(&v["space"]),
             entry: entry(&v["entry"]),
             epoch: num(&v["epoch"]),
-            deps: self.ops(&v["deps"]),
-            branch: self.branch(&v["branch"]),
+            deps: self.edits(&v["deps"]),
+            proposal: self.proposal(&v["proposal"]),
             via: self.via(&v["via"]),
         }
     }
@@ -336,12 +338,12 @@ impl Names {
         let ours: Vec<(SpaceId, BlobId)> = st.lane().iter().map(|p| (p.space, p.blob)).collect();
         assert_eq!(ours, lane, "{name}: lane");
         // each line of each entry, the main line first: its history and its heads
-        type Lines = Vec<(SpaceId, EntryId, Line, Vec<OpId>, Vec<OpId>)>;
+        type Lines = Vec<(SpaceId, EntryId, Line, Vec<EditId>, Vec<EditId>)>;
         let lines: Lines = list(&case["lines"])
             .iter()
             .map(|v| {
-                let line = (!v["line"].is_null()).then(|| self.op(&v["line"]));
-                (self.space(&v["space"]), entry(&v["entry"]), line, self.ops(&v["history"]), self.ops(&v["heads"]))
+                let line = (!v["line"].is_null()).then(|| self.edit(&v["line"]));
+                (self.space(&v["space"]), entry(&v["entry"]), line, self.edits(&v["history"]), self.edits(&v["heads"]))
             })
             .collect();
         let ours: Lines = st
@@ -350,7 +352,7 @@ impl Names {
             .flat_map(|x| x.entries.iter().map(move |&e| (x.id, e)))
             .flat_map(|(sp, e)| {
                 st.lines(sp, e).into_iter().map(move |l| {
-                    let history = st.history(sp, e, l).iter().map(|w| w.op).collect();
+                    let history = st.history(sp, e, l).iter().map(|w| w.edit).collect();
                     (sp, e, l, history, st.heads(sp, e, l))
                 })
             })
@@ -365,21 +367,26 @@ fn vectors() -> Value {
 }
 
 #[test]
-fn each_op_is_accepted_or_refused_as_in_the_lean_model() {
+fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
     let vectors = vectors();
     let cases = list(&vectors["cases"]);
     assert!(cases.len() >= 8);
     for case in cases {
         let name = case["name"].as_str().unwrap();
-        let (ops, accepted) = (list(&case["ops"]), list(&case["accepted"]));
-        assert_eq!(ops.len(), accepted.len(), "{name}");
+        let (edits, accepted) = (list(&case["edits"]), list(&case["accepted"]));
+        assert_eq!(edits.len(), accepted.len(), "{name}");
         let mut names = Names::default();
         let mut st = State::default();
-        for (i, (v, want)) in ops.iter().zip(accepted).enumerate() {
-            let op = names.op_of(v, 0);
-            let got = st.step(&op);
-            assert_eq!(got.is_ok(), want.as_bool().unwrap(), "{name}, op {i}: {v} gave {got:?}", got = got.as_ref().err());
-            names.created(v, &op, got.is_ok());
+        for (i, (v, want)) in edits.iter().zip(accepted).enumerate() {
+            let edit = names.edit_of(v, 0);
+            let got = st.step(&edit);
+            assert_eq!(
+                got.is_ok(),
+                want.as_bool().unwrap(),
+                "{name}, edit {i}: {v} gave {got:?}",
+                got = got.as_ref().err()
+            );
+            names.created(v, &edit, got.is_ok());
             if let Ok(next) = got {
                 st = next;
             }
@@ -389,25 +396,25 @@ fn each_op_is_accepted_or_refused_as_in_the_lean_model() {
 }
 
 #[test]
-fn each_op_stands_or_is_cut_as_in_the_lean_models_view() {
+fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
     let vectors = vectors();
     let cases = list(&vectors["views"]);
     assert!(cases.len() >= 8);
     for case in cases {
         let name = case["name"].as_str().unwrap();
-        let (ops, standing) = (list(&case["ops"]), list(&case["standing"]));
-        assert_eq!(ops.len(), standing.len(), "{name}");
+        let (edits, standing) = (list(&case["edits"]), list(&case["standing"]));
+        assert_eq!(edits.len(), standing.len(), "{name}");
         let mut names = Names::default();
         let mut held = vec![];
-        for v in ops {
-            let op = names.op_of(v, num(&v["depth"]));
-            names.created(v, &op, true);
-            held.push(op);
+        for v in edits {
+            let edit = names.edit_of(v, num(&v["depth"]));
+            names.created(v, &edit, true);
+            held.push(edit);
         }
         let r = if case["pq"].as_bool().unwrap() { replay(&checkpointed(&held)) } else { replay(&held) };
         let stood = r.standing();
-        for (i, (op, want)) in held.iter().zip(standing).enumerate() {
-            assert_eq!(stood.contains(&op.id()), want.as_bool().unwrap(), "{name}, op {i}: {}", ops[i]);
+        for (i, (edit, want)) in held.iter().zip(standing).enumerate() {
+            assert_eq!(stood.contains(&edit.id()), want.as_bool().unwrap(), "{name}, edit {i}: {}", edits[i]);
         }
         names.check_state(name, case, &r.state);
     }
@@ -423,15 +430,15 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
         let name = case["name"].as_str().unwrap();
         let mut names = Names::default();
         let mut all = vec![];
-        for v in list(&case["ops"]) {
-            let mut op = names.op_of(v, num(&v["depth"]));
-            op.parents = names.ops(&v["parents"]);
-            names.created(v, &op, true);
-            all.push(op);
+        for v in list(&case["edits"]) {
+            let mut edit = names.edit_of(v, num(&v["depth"]));
+            edit.parents = names.edits(&v["parents"]);
+            names.created(v, &edit, true);
+            all.push(edit);
         }
         let stood = replay(&all).standing();
         for (i, want) in list(&case["standing"]).iter().enumerate() {
-            assert_eq!(stood.contains(&names.ops[i]), want.as_bool().unwrap(), "{name}: op {i} stands");
+            assert_eq!(stood.contains(&names.edits[i]), want.as_bool().unwrap(), "{name}: edit {i} stands");
         }
         // every log, its closed part and its frontier
         let fronts = frontiers(&all);
@@ -440,24 +447,24 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
         sorted.sort();
         assert_eq!(fronts.keys().copied().collect::<Vec<_>>(), sorted, "{name}: logs");
         for (l, v) in logs.iter().zip(list(&case["logs"])) {
-            let mut closed: Vec<OpId> = closed_part(&all, *l).into_iter().collect();
+            let mut closed: Vec<EditId> = closed_part(&all, *l).into_iter().collect();
             closed.sort();
-            assert_eq!(closed, names.op_set(&v["closed"]), "{name}: closed part of {l:?}");
-            assert_eq!(fronts[l], names.op_set(&v["frontier"]), "{name}: frontier of {l:?}");
+            assert_eq!(closed, names.edit_set(&v["closed"]), "{name}: closed part of {l:?}");
+            assert_eq!(fronts[l], names.edit_set(&v["frontier"]), "{name}: frontier of {l:?}");
         }
-        let mut want: Vec<(OpId, OpId)> = list(&case["forks"])
+        let mut want: Vec<(EditId, EditId)> = list(&case["forks"])
             .iter()
             .map(|p| {
-                let (a, b) = (names.op(&p[0]), names.op(&p[1]));
+                let (a, b) = (names.edit(&p[0]), names.edit(&p[1]));
                 (a.min(b), a.max(b))
             })
             .collect();
         want.sort();
         assert_eq!(forks(&all), want, "{name}: forks");
         // each device that asks: what it names, and what it is sent
-        let at = |places: &Value| -> Vec<Op> {
-            let ids = names.ops(places);
-            all.iter().filter(|op| ids.contains(&op.id())).cloned().collect()
+        let at = |places: &Value| -> Vec<Edit> {
+            let ids = names.edits(places);
+            all.iter().filter(|edit| ids.contains(&edit.id())).cloned().collect()
         };
         for a in list(&case["asks"]) {
             let (d, held) = (signer(&a["device"]), at(&a["held"]));
@@ -470,18 +477,18 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             sorted.sort();
             assert_eq!(asked.haves.keys().copied().collect::<Vec<_>>(), sorted, "{what}: logs");
             for (l, v) in sent.iter().zip(list(&a["logs"])) {
-                assert_eq!(fronts[l], names.op_set(&v["frontier"]), "{what}: frontier of {l:?}");
-                assert_eq!(asked.haves[l], names.op_set(&v["haves"]), "{what}: what it names of {l:?}");
+                assert_eq!(fronts[l], names.edit_set(&v["frontier"]), "{what}: frontier of {l:?}");
+                assert_eq!(asked.haves[l], names.edit_set(&v["haves"]), "{what}: what it names of {l:?}");
             }
-            assert_eq!(asked.loose, names.op_set(&a["loose"]), "{what}: loose");
-            let ids = |ops: Vec<Op>| ops.iter().map(Op::id).collect::<Vec<_>>();
-            assert_eq!(ids(respond(&peer, d)), names.ops(&a["respond"]), "{what}: sent whole");
-            assert_eq!(ids(respond_since(&peer, d, &asked)), names.ops(&a["since"]), "{what}: sent");
+            assert_eq!(asked.loose, names.edit_set(&a["loose"]), "{what}: loose");
+            let ids = |edits: Vec<Edit>| edits.iter().map(Edit::id).collect::<Vec<_>>();
+            assert_eq!(ids(respond(&peer, d)), names.edits(&a["respond"]), "{what}: sent whole");
+            assert_eq!(ids(respond_since(&peer, d, &asked)), names.edits(&a["since"]), "{what}: sent");
         }
-        // each passkey that proves itself to a peer holding every op, to link a new device: the card it is handed
+        // each passkey that proves itself to a peer holding every edit, to link a new device: the card it is handed
         for l in list(&case["links"]) {
-            let card: Vec<OpId> = link_card(&all, signer(&l["passkey"])).iter().map(Op::id).collect();
-            assert_eq!(card, names.ops(&l["card"]), "{name}: the card for passkey {}", l["passkey"]);
+            let card: Vec<EditId> = link_card(&all, signer(&l["passkey"])).iter().map(Edit::id).collect();
+            assert_eq!(card, names.edits(&l["card"]), "{name}: the card for passkey {}", l["passkey"]);
             linked += 1;
         }
     }

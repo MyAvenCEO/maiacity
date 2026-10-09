@@ -8,8 +8,8 @@ use std::fmt::Debug;
 
 use serde_json::{json, Value};
 
-use crate::branch::MAIN;
 use crate::cast::*;
+use crate::history::MAIN;
 use crate::id::{GrantId, SignerId, SpaceId, VaultId};
 use crate::keys::{KeyName, KeyScope};
 use crate::lab::{Lab, Tamper};
@@ -128,7 +128,7 @@ pub static SCENARIOS: [Scenario; 21] = [
     Scenario { number: "5", title: "Write and sync", phase: "P3", play: write_and_sync },
     Scenario { number: "6", title: "One document via caps", phase: "P3", play: one_document_via_caps },
     Scenario { number: "7", title: "Public", phase: "P3", play: public },
-    Scenario { number: "8", title: "Branches", phase: "P5", play: branches },
+    Scenario { number: "8", title: "Proposals", phase: "P5", play: proposals },
     Scenario { number: "9", title: "Schema v2", phase: "P4", play: schema_v2 },
     Scenario { number: "10", title: "Revoke Carol", phase: "P3", play: revoke_carol },
     Scenario { number: "11", title: "Lost iPhone", phase: "P3", play: lost_iphone },
@@ -162,7 +162,7 @@ fn alices_vault(run: &mut Run) -> Done {
     let passkey = lab.passkey("Alice");
     let (mac, phone) = (lab.device_of(passkey, "Alice's Mac"), lab.device_of(passkey, "Alice's iPhone"));
     let alice = human_on(&mut lab, passkey, &[mac, phone]);
-    let genesis = lab.log(mac).ops()[0].clone();
+    let genesis = lab.log(mac).edits()[0].clone();
     let first = matches!(genesis.action, Action::Genesis { .. });
     run.check("Alice's Mac holds the genesis of Alice's vault first", first);
     run.same("the vault's id is the hash of its genesis", VaultId::from(genesis.id()), alice);
@@ -316,14 +316,14 @@ fn public(run: &mut Run) -> Done {
     Ok(())
 }
 
-fn branches(run: &mut Run) -> Done {
+fn proposals(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
     let (coop, item) = (h.coop, (h.space, h.welcome));
     let main_text = |lab: &Lab, d| text(lab, d, h.space, h.welcome, 2);
     let heads = |lab: &Lab, line| lab.state(w.mac_a).heads(h.space, h.welcome, line);
     let first = heads(&w.lab, MAIN);
-    let draft = w.lab.branch(w.mac_b, coop, item, &first, "Bob's greenhouse draft");
+    let draft = w.lab.propose(w.mac_b, coop, item, &first, "Bob's greenhouse draft");
     let draft = run.ok("Bob starts a draft of Welcome", draft)?;
     let edit = w.lab.edit_on(w.mac_b, coop, h.space, h.welcome, Some(draft), |i| i.set_text(2, "Hello, Bob here"));
     run.ok("and edits it there", edit)?;
@@ -352,9 +352,9 @@ fn branches(run: &mut Run) -> Done {
         main_text(&w.lab, w.mac_b).as_deref(),
         Some("Hello, Bob here"),
     );
-    // a second branch is promoted: main ends with exactly its content, though main moved on meanwhile
-    let rewrite = w.lab.branch(w.mac_a, coop, item, &heads(&w.lab, MAIN), "rewrite");
-    let rewrite = Some(run.ok("Alice starts a second branch, rewrite", rewrite)?);
+    // a second proposal is promoted: main ends with exactly its content, though main moved on meanwhile
+    let rewrite = w.lab.propose(w.mac_a, coop, item, &heads(&w.lab, MAIN), "rewrite");
+    let rewrite = Some(run.ok("Alice starts a second proposal, rewrite", rewrite)?);
     let edit = w.lab.edit_on(w.mac_a, coop, h.space, h.welcome, rewrite, |i| i.set_text(2, "Welcome to the coop"));
     run.ok("and rewrites Welcome there", edit)?;
     let meanwhile =
@@ -369,16 +369,16 @@ fn branches(run: &mut Run) -> Done {
     }
     let record = run.some("Bob's Mac shows Welcome", w.lab.item(w.mac_b, h.space, h.welcome))?.record().to_string();
     run.check("main no longer holds Bob's edit made meanwhile", !record.contains("meanwhile"));
-    // the latest commit is reverted: main goes back to the version it built on
+    // the latest edit is reverted: main goes back to the version it built on
     let good = run.some("Alice's Mac shows Welcome", w.lab.item(w.mac_a, h.space, h.welcome))?.as_document();
     let bad = run.ok("Bob makes a bad edit", w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.set_text(2, "oops")))?;
     w.lab.sync_all(8);
     let latest = w.lab.state(w.mac_a).history(h.space, h.welcome, MAIN).last().map(|w| w.deps.clone());
-    let built_on = run.some("main has a latest commit", latest)?;
+    let built_on = run.some("main has a latest edit", latest)?;
     run.ok("Alice reverts it", w.lab.restore(w.mac_a, coop, item, MAIN, &built_on))?;
     let now = w.lab.item(w.mac_a, h.space, h.welcome).and_then(|i| i.as_document());
     run.same("main is back to the version that edit built on", now, good);
-    // an older bad commit is undone by a diff-based restore, which keeps what came after
+    // an older bad edit is undone by a diff-based restore, which keeps what came after
     let older = w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.set_text(1, "Welcome!!!"));
     let older = run.ok("Bob makes another bad edit", older)?;
     let later = w.lab.edit(w.mac_b, coop, h.space, h.welcome, |i| i.push_block(paragraph(4, "a later, good edit")));
@@ -396,8 +396,8 @@ fn branches(run: &mut Run) -> Done {
     );
     // no version is lost from history: every write of Welcome is in main's, and any version opens read-only
     let history = run.some("Bob's Mac holds Welcome's history", w.lab.history(w.mac_b, h.space, h.welcome))?;
-    run.same("every write of Welcome is in main's history", history.history(MAIN).len(), history.commits().len());
-    run.check("the reverted edit is still there", history.commits().iter().any(|c| c.write.op == bad));
+    run.same("every write of Welcome is in main's history", history.history(MAIN).len(), history.changes().len());
+    run.check("the reverted edit is still there", history.changes().iter().any(|c| c.write.edit == bad));
     let old = history.item_at(&before_merge, w.mac_b, MAIN).as_document();
     let old = old.and_then(|d| d.blocks.get(1).map(|b| b.text.clone()));
     run.same("the version before the merge opens read-only, as it was", old.as_deref(), Some(WELCOME_TEXT));
@@ -405,14 +405,14 @@ fn branches(run: &mut Run) -> Done {
     let read = grant(Scope::Entry(h.space, h.welcome), Role::Read, vault(carol), coop, None);
     run.ok("the coop gives Carol read on Welcome", w.lab.submit(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(8);
-    let mine = w.lab.branch(w.mac_c, carol, item, &first, "mine").err();
-    run.same("Carol, who may only read Welcome, can't start a branch of it", mine, Some(Refusal::NoCap));
+    let mine = w.lab.propose(w.mac_c, carol, item, &first, "mine").err();
+    run.same("Carol, who may only read Welcome, can't start a proposal on it", mine, Some(Refusal::NoCap));
     let found = w.lab.submit(w.mac_c, &[w.mac_c], Action::FoundSpace { actor: carol, nonce: 8, via: vec![] });
     let mine = SpaceId::from(run.ok("Carol founds a space of their own", found)?);
-    let copy = run.ok("and forks Welcome into it", w.lab.fork(w.mac_c, carol, item, MAIN, mine))?;
+    let copy = run.ok("and makes a variant of Welcome in it", w.lab.variant(w.mac_c, carol, item, MAIN, mine))?;
     let record = |sp, e| w.lab.item(w.mac_c, sp, e).map(|i| i.record());
-    run.same("the fork holds Welcome's record", record(mine, copy), record(h.space, h.welcome));
-    run.same("and none of its history", w.lab.history(w.mac_c, mine, copy).map(|h| h.commits().len()), Some(1));
+    run.same("the variant holds Welcome's record", record(mine, copy), record(h.space, h.welcome));
+    run.same("and none of its history", w.lab.history(w.mac_c, mine, copy).map(|h| h.changes().len()), Some(1));
     Ok(())
 }
 
@@ -566,7 +566,7 @@ fn bob_leaves(run: &mut Run) -> Done {
     run.check("Bob can't open Welcome's new key", !w.lab.opens(w.mac_b, KeyScope::Entry(h.space, h.welcome)));
     run.check("Bob's Mac holds nothing written afterwards", !contains(&w.lab.store(w.mac_b), AFTER_TEXT));
     run.check("Bob's earlier edit stays", v.writes(h.space, h.welcome).contains(&bobs));
-    let author = w.lab.log(w.mac_a).ops().iter().find(|o| o.id() == bobs).map(|o| o.author);
+    let author = w.lab.log(w.mac_a).edits().iter().find(|o| o.id() == bobs).map(|o| o.author);
     run.same("attributed to Bob's Mac", author, Some(w.mac_b));
     Ok(())
 }
