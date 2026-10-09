@@ -49,7 +49,7 @@ export function boardFor(world) {
 export function stateFor(world, a) {
 	const y = a.yesterday;
 	return {
-		game: 'Five avens trade food and water for HEARTS. Each needs 3 WATER and 2 each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day or loses health; at 0 health it dies. Goal: survive and end with the most HEARTS.',
+		game: 'Five avens trade food and water for HEARTS. Each needs 3 WATER and 2 each of FRUITS, VEGETABLES, LEGUMES and CHICKEN every day or loses health; at 0 health it dies. Every aven mints 24 HEARTS a day and every HEART decays 7% a year (0.019% a night), so hoarded HEARTS shrink. Goal: survive and end with the most HEARTS.',
 		day: world.day,
 		me: a.name,
 		hearts: a.hearts,

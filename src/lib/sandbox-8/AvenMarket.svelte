@@ -5,7 +5,7 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { createWorld, step, ranking, MARKET, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
+	import { createWorld, step, ranking, MARKET, ROT, MINT_PER_DAY, DECAY_PER_YEAR, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, START_HEARTS } from './economy.js';
 	import PriceChart from './PriceChart.svelte';
 	import { stateFor, questionsFor, askLiquid, localAnswers, applyAnswers, LIQUID_MODEL, TOOLS } from './brain.js';
 
@@ -391,6 +391,7 @@
 					</li>
 				{/each}
 			</ol>
+			<p class="brain">HEARTS: every aven mints {MINT_PER_DAY} a day; every HEART decays {Math.round(DECAY_PER_YEAR * 100)}% a year.</p>
 			<p class="brain">
 				Brains: Liquid {LIQUID_MODEL} · {calls.answered} of {calls.asked} answered{#if calls.failed}&nbsp;· {calls.failed} unanswered, decided by the stand-in rule ({calls.lastError}){/if}
 			</p>
@@ -451,7 +452,7 @@
 		<section class="ledger">
 			<h3><i style:background={snap.aven.colour}></i>{snap.aven.name}'s ledger</h3>
 			<p class="sub">
-				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · health ${snap.aven.health}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.reserveDays} days in stock
+				{snap.aven.alive ? `${fmt(snap.aven.hearts)} HEARTS · health ${snap.aven.health}` : `died on day ${snap.aven.diedOn}`} · keeps {snap.aven.reserveDays} days in stock<br />minted +{fmt(snap.aven.minted)} · decayed −{fmt(snap.aven.decayed)} so far
 			</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Good</th><th title="needed a day">Need</th><th title="grows a day on average, and last night's harvest">Grows</th><th title="share that rots each night">Rots</th><th>Stock</th><th title="market price">Mkt</th><th title="sells at, against the market">Sells</th><th title="pays up to, against the market">Pays</th></tr></thead>
