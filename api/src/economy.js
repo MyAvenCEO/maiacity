@@ -532,7 +532,7 @@ export async function deleteRun(id) {
 // outside (an agent over the studio's MCP, or the admin) waits in `pending` until the page takes it in on its next
 // night (or when the world is next opened), and the page's write then clears what it took.
 
-const MAX_BRAIN = 20_000; // one aven's brain, in characters: it is kept small on purpose (a few hundred tokens)
+const MAX_BRAIN = 500_000; // one aven's brain, in characters: every memory is kept (Samuel, 2026-10-10), only its best goes into an ask
 const NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,39}$/;
 
 /** every aven's brain for a config: { aven name: { ...brain, pending: [edits not taken in yet], updated } } */
