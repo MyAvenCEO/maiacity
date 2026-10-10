@@ -322,7 +322,8 @@ export function createWorld(seed = Date.now() % 1e9) {
 		avens.forEach((a) => {
 			// its three plots, each dealt its own price (± plotSpread %)
 			a.plots = [0, 1, 2].map(() => Math.round((1 + ((rand() * 2 - 1) * RULES.plotSpread) / 100) * 100) / 100);
-			a.fields = [];
+			// fieldStart (World 28): one field already grown, the crops dealt in turn round the valley (two avens a good)
+			a.fields = RULES.fieldStart ? [{ crop: GOODS[a.id % GOODS.length], level: 1, since: 1 - (RULES[`ramp_${GOODS[a.id % GOODS.length]}`] ?? 0), from: null, levelSince: null }] : [];
 			a.ask = {};
 			a.bid = Object.fromEntries(GOODS.map((g) => [g, null]));
 			syncFields({ day: 1 }, a);

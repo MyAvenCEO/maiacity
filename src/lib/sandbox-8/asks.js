@@ -264,7 +264,15 @@ function fieldQuestions(world, a) {
 	// a good not traded yet is worth what the valley's budget says a unit is (a day's minting over a day's needs), not 0:
 	// a crop just planted has no price yet, and read as worthless it was abandoned before it grew (World 24)
 	const budget = RULES.mint / GOODS.reduce((n, g) => n + (NEED[g] ?? 0), 0);
-	const price = (g) => world.market[g].posted ?? world.market[g].price ?? budget;
+	const today = (g) => world.market[g].posted ?? world.market[g].price ?? budget;
+	// fieldPriceDays (World 28): a field lives for weeks, so it is reckoned on the crop's average price over the last
+	// days, not on today's spike or crash (World 27: a wave of level-ups at 100-400 a unit, then a flight at 0.01)
+	const span = (RULES.fieldPriceDays ?? 0) * 86400;
+	const average = (g) => {
+		const pts = (world.market[g].series ?? []).filter((p) => p.t >= world.t - span && p.price != null);
+		return pts.length ? pts.reduce((n, p) => n + p.price, 0) / pts.length : null;
+	};
+	const price = span > 0 ? (g) => average(g) ?? today(g) : today;
 	// what a crop will be worth once it grows: today's price, scaled by how far the valley's fields, those still
 	// growing included, will fall short of its need (dearer) or outgrow it (cheaper). Reckoned on today's price alone,
 	// every brain planted the same best crop and the valley grew one thing (World 24)
@@ -309,13 +317,17 @@ function fieldQuestions(world, a) {
 			while (sum < 0 && d < 365) (d++, (sum += fieldBase(g) * share * Math.min(1, grown + (ramp > 0 ? d / ramp : 1)) * at - opexOf(g, level)));
 			back = sum >= 0 ? ` (pays back in about ${d} days)` : ' (never pays back at this price)';
 		}
-		return `over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * at)} HEARTS (at about ${r(at)} a unit once the valley's fields grow${RULES.forecast ? ', yours included' : ''}, ${r(price(g))} today), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net${back}; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
+		return `over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * at)} HEARTS (at about ${r(at)} a unit once the valley's fields grow${RULES.forecast ? ', yours included' : ''}, ${r(today(g))} today${span > 0 ? `, ${r(price(g))} on average over ${RULES.fieldPriceDays} days` : ''}), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net${back}; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
 	};
 	const reserve = (RULES.fieldReserve ?? 0) * food;
 	const can = (cost) => a.hearts - cost >= reserve;
 	const market = fieldMarket(world);
 	const slots = Math.min(3, a.fields.length + 1);
+	// fieldTurn (World 28): one field a turn, each in turn, so a farm never flips whole on one day's numbers (World 27:
+	// each field reckoned alone against the same market, all three went to the same crop at once)
+	const turn = RULES.fieldTurn ? (a.fieldNext = (a.fieldNext ?? -1) + 1) % slots : null;
 	for (let slot = 0; slot < slots; slot++) {
+		if (turn != null && slot !== turn) continue;
 		const f = a.fields[slot];
 		const levels = [0];
 		const criteria = [];
