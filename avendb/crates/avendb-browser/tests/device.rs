@@ -605,7 +605,7 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     // the engine's history of it: each write as the note page names it, and the promote's change, the text it brought
     let log = run(&first, json!({ "op": "history", "entry": e })).await.expect("its history");
     assert_eq!(kinds(&log), kinds(&shown));
-    let brought = json!([{ "set": [["blocks", { "id": 2 }, "text"], "Corn first."] }]);
+    let brought = json!([{ "set": ["blocks", { "id": 2 }, "text"], "value": "Corn first." }]);
     assert_eq!(log["edits"].as_array().and_then(|es| es.last()).map(|p| &p["changes"]), Some(&brought));
     // a variant: the proposal's note as a new entry of her vault, with none of its history, that names its origin
     let mark = json!([{ "op": "insert", "path": ["tags"], "value": format!("avendb:variant:{e}") }]);

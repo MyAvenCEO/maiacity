@@ -67,7 +67,7 @@ function counted(passkey) {
 	};
 }
 
-async function run() {
+async function main() {
 	await init();
 	const store = await open(q.get('store'));
 	const meta = await store.meta();
@@ -91,8 +91,8 @@ async function run() {
 			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
 			device = await avendb.Device.found(name, relay, q.get('server'), made.spki, unlock, passkey.sign);
 			const vault = await device.vault();
-			const create = { op: 'create', vault, type: 'note', value: titled('Seeds', q.get('write')) };
-			const { entry } = await run(device, create);
+			const write = { op: 'create', vault, type: 'note', value: titled('Seeds', q.get('write')) };
+			const { entry } = await run(device, write);
 			note = { actor: vault, entry };
 		} else {
 			passkey = counted(ceremonies(avendb));
@@ -138,4 +138,4 @@ async function run() {
 	Object.assign(globalThis, { device });
 }
 
-run().catch((e) => report('error', { error: String(e?.stack ?? e) }));
+main().catch((e) => report('error', { error: String(e?.stack ?? e) }));

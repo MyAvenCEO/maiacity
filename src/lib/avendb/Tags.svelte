@@ -1,8 +1,8 @@
 <!--
 	An entry's tags, as chips, to add to and take off where the acting vault may: the entry's own vault tags it at once;
 	any other vault asks the vault's devices, who grant what its caps let it ask for, the tags their slices name to
-	relabel (avendb-browser's `Device::tag`). A tag can take the entry into a cap's slice or out of it: the vault's
-	devices then move it to the cell of the caps that hold it now, and who reads it changes with it.
+	relabel (the ops engine's `tag`). A tag can take the entry into a cap's slice or out of it: the vault's devices then
+	move it to the cell of the caps that hold it now, and who reads it changes with it.
 -->
 <script>
 	import { nameOf, tagging, tagsIn } from './vaults.js';
@@ -22,14 +22,17 @@
 	/** Whether the acting vault may add or take off tag `t`. @param {string} t */
 	const free = (t) => may === 'any' || may.includes(t);
 
+	/** Tags `add` added to the entry and `remove` taken off. @param {string[]} add @param {string[]} remove */
+	const tag = (add, remove) => api.run('Tagging', { op: 'tag', as: actor, entry: entry.entry, add, remove });
+
 	async function add() {
 		const more = tagsIn(text).filter((t) => !tags.includes(t) && free(t));
 		if (!more.length) return void (adding = false);
-		if (await api.tag(actor, entry.entry, more, [])) [text, adding] = ['', false];
+		if (await tag(more, [])) [text, adding] = ['', false];
 	}
 
 	/** @param {string} t */
-	const untag = (t) => api.tag(actor, entry.entry, [], [t]);
+	const untag = (t) => tag([], [t]);
 
 	const hint = $derived(
 		asks ? `asks ${nameOf(world.vaults.find((v) => v.id === entry.vault))}’s devices, who grant what its caps let it` : ''

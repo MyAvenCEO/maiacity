@@ -5,7 +5,8 @@ in which every read and every change of avenDB is a declarative JSON op, the sam
 caps that name those ops, still decentralized and Biscuit-like, fitting the local-first Loro and iroh design and the
 frontier sync, built from first principles, DRY, end to end. This file is the design. It builds on flat vaults
 (`FLAT-VAULTS.md`) and on the research behind them (`/mnt/project-files/sync-research/reports/E2E database dynamic
-caps and keys.md`), and changes none of their theorems.
+caps and keys.md`), and changes none of their theorems. The first task is built (O1 to O3, below); the second is
+the design still to build (C1 to C3).
 
 ## First principles
 
@@ -20,9 +21,9 @@ caps and keys.md`), and changes none of their theorems.
    with which role on which cell (T25). Everything an op says travels sealed. A finer rule changes what readers accept,
    never what relays carry.
 4. **One evaluator.** The selector that decides which cells a cap reaches, and so what a device syncs, is the label
-   half of every query. The function that turns a write into the ops it performed is the one that checks it against a
-   cap, the one that shows a history, and the one the page asks before it offers a button. Nothing is written twice,
-   in Rust and again in JavaScript.
+   half of every query. The function that turns a write into the changes it made is the one that shows a history, the
+   one that will check a write against a cap, and the one the page will ask before it offers a button. Nothing is
+   written twice, in Rust and again in JavaScript.
 
 ## Records, paths and values
 
@@ -30,83 +31,125 @@ An op reads and changes **records**: an entry's content as an app sees it throug
 version wrote it (one lens hop, `Lane::view`). The schema says how each field is stored (text, value, list of values,
 list of records with an integer `id`), so ops never name Loro containers.
 
-A **path** is a JSON array of steps from the record's root: a field name, or `{"id": n}` for the record with that id
-in a list of records. `["status"]`, `["tags"]`, `["blocks", {"id": 2}, "text"]`. A path ends at a field: a text, a
-value or a list of values changes as a whole (an op may splice a text or insert into a list of values, and the
-change is still that field's), while a list of records changes record by record.
+A **path** is a JSON array of steps from the record's root: `[]` the whole record, `["title"]` a field,
+`["blocks", {"id": 2}]` the row with id 2 of a list of records, `["blocks", {"id": 2}, "text"]` a field of that row.
+In a `where`, `["blocks", "*", "text"]` is that field of any row. A text, a value or a list of values changes as a
+whole (Loro still writes the smallest change to a text, so edits at once merge), while a list of records changes row
+by row.
 
 ## Reads
 
 ```
-{"op": "query", "vaults": [VaultId]?, "where": Where?, "schema": SchemaRef?, "select": [Path]?,
- "order": [[Path, "asc" | "desc"]]?, "limit": n?, "after": Cursor?, "line": Line?}
-{"op": "get", "entry": EntryId, "schema": SchemaRef?, "line": Line?, "at": [EditId]?}
-{"op": "history", "entry": EntryId, "line": Line?}
-{"op": "lines", "entry": EntryId}
+{"op": "query",   "vault": VaultId?, "where": Where?, "schema": SchemaRef?, "select": [Field]?,
+                  "order": [[Key, "asc" | "desc"]]?, "limit": n?, "offset": n?}
+{"op": "get",     "entry": EntryId, "schema": SchemaRef?, "line": Line?, "at": [EditId]?}
+{"op": "history", "entry": EntryId, "limit": n?}
 {"op": "schemas", "vault": VaultId}
 
-Where   = {"all": [Where]} | {"any": [Where]} | {"not": Where}
-        | Label                                   -- the cap selector's atoms, exactly as a slice writes them
-        | {"path": Path, Test}                    -- a value of the record
-Label   = {"type": [Sym]} | {"author": [VaultId]} | {"entry": [EntryId]} | {"created": [from, to]}
-        | {"tag": Sym} | {"noTag": [Sym]} | {"onlyTags": [Sym]}
-Test    = "eq": v | "ne": v | "lt": v | "le": v | "gt": v | "ge": v | "in": [v] | "has": v | "contains": "text"
-        | "exists": bool
-SchemaRef = a schema's id, or a built-in name ("document", "todo")
+Where     = {"all": [Where]} | {"any": [Where]} | {"not": Where}
+          | Label                                 -- the cap selector's atoms, exactly as a slice writes them
+          | {"path": Path, Test}                  -- a value of the record; a row step may be "*": any row
+Label     = {"type": [Sym]} | {"author": [VaultId]} | {"entry": [EntryId]} | {"created": [from, to]}
+          | {"tag": Sym} | {"noTag": [Sym]} | {"onlyTags": [Sym]}
+Test      = "eq": v | "ne": v | "lt": v | "le": v | "gt": v | "ge": v | "in": [v] | "has": v | "contains": "text"
+          | "exists": bool
+SchemaRef = "document" | "todo" (the app's built-ins), a schema's id in hex, or "stored": the record as the item
+            stores it, which ops read and never change. Left out: the newest schema of the record's own kind.
+Key       = a label ("type", "author", "entry", "created"), or a path into the record
+Line      = null or left out: the main line; a proposal, by the id of the write that started it
 ```
 
-- **Labels first.** The planner splits `where` into its label part, a `Selector` (`slice::Selector`, the very type
-  caps hold, normalised to the bounded or-of-ands), and the rest. The label part picks cells and entries from labels
-  alone; the rest runs on each record the device opens. A query never sees an entry the device can't open, and its
-  label part is the only part that could ever decide what a device syncs.
-- **Rows.** `{"entry", "vault", "type", "tags", "created", "author", "record" (or the selected paths), "readOnly",
-  "line", "heads"}`, ordered, at most `limit`, with a cursor for the next page. Every row comes with the schema's
-  fields (`{"path", "stored", "enum"?, "default"?}`), so a table can show any schema without knowing it.
-- **History** gives each write of a line with the ops it performed (below), its author, actor and schema: the
-  per-write diff the studio lacks today.
+- **Labels first.** The planner (`Where::plan`) turns the label part of `where` into a `Selector`, the very type caps
+  hold: its labels' or-of-ands, or the whole vault where that would pass a selector's bounds. A device picks entries
+  by the plan before it opens any, then tests the rest on each record it opens. The plan picks no less than the query
+  (O3), and a query never sees an entry the device can't open: its label part is the only part that could ever
+  decide what a device syncs.
+- **Rows.** `query` answers `{"rows", "count", "plan"}`: each row `{"entry", "vault", "type", "tags", "created",
+  "author", "schema", "readOnly", "record"}`, the record with only the fields `select` names, if it names any; in the
+  order the device took the entries, or by `order`; from the `offset`th, at most `limit`. `count` is how many rows
+  there are in all; `plan` is the selector they were picked by. `get` answers one row, with its `line`, the line's
+  `heads`, the version `at` (read-only) and the schemas the item was written under (`authored`).
+- **History** gives an entry's lines (`main` first, then each proposal with its name, where it started and its
+  heads) and every write of it the device counts: its id, its device (`author`), the vault it acted for (`actor`), its
+  line, what it builds on, what it is (`edit`, `propose`, `merge`, `promote` or `sealed`) and, for the latest `limit`
+  (200) that change anything, the changes it made to the stored record, as every reader sees them alike:
+  `{"set": path, "value": v}`, `{"unset": path}`, or `{"rows": field, "keys": [key]}`, a list's new order of rows.
+- **Schemas** gives the schemas and lenses a vault's entries are read through, the app's own first (`builtIn`).
 
 ## Changes
 
 ```
-{"op": "create", "vault": VaultId, "type": Sym, "tags": [Sym]?, "schema": SchemaRef?, "value": Record}
-{"op": "set",    "entry": EntryId, "path": Path, "value": v,                 "line": Line?, "schema": SchemaRef?}
-{"op": "unset",  "entry": EntryId, "path": Path,                             "line": Line?, "schema": SchemaRef?}
-{"op": "insert", "entry": EntryId, "path": Path, "value": v, "at": n?,       "line": Line?, "schema": SchemaRef?}
-{"op": "remove", "entry": EntryId, "path": Path,                             "line": Line?, "schema": SchemaRef?}
-{"op": "move",   "entry": EntryId, "path": Path, "to": n,                    "line": Line?, "schema": SchemaRef?}
-{"op": "splice", "entry": EntryId, "path": Path, "at": n, "delete": n, "insert": "text", "line": Line?, ...}
-{"op": "tag",    "entry": EntryId, "add": [Sym], "remove": [Sym]}
-{"op": "propose", "entry": EntryId, "from": [EditId], "name": "text"}
-{"op": "merge",  "entry": EntryId, "from": Line, "into": Line, "promote": bool?}
+{"op": "create",  "vault": VaultId, "type": Sym, "tags": [Sym]?, "schema": SchemaRef?, "value": Record}
+{"op": "set",     "entry": EntryId, "path": Path, "value": v,               "line": Line?, "schema": SchemaRef?}
+{"op": "unset",   "entry": EntryId, "path": Path,                           "line": Line?, "schema": SchemaRef?}
+{"op": "insert",  "entry": EntryId, "path": [Field], "value": v, "at": n?,  "line": Line?, "schema": SchemaRef?}
+{"op": "remove",  "entry": EntryId, "path": Path, "value": v?,              "line": Line?, "schema": SchemaRef?}
+{"op": "move",    "entry": EntryId, "path": [Field, {"id": n}], "to": n,    "line": Line?, "schema": SchemaRef?}
+{"op": "tag",     "entry": EntryId, "add": [Sym]?, "remove": [Sym]?}
+{"op": "propose", "entry": EntryId, "from": [EditId]?, "name": "text"}
+{"op": "merge",   "entry": EntryId, "from": Line, "into": Line?, "promote": bool?}
 {"op": "restore", "entry": EntryId, "line": Line?, "at": [EditId]}
-{"op": "undo",   "entry": EntryId, "line": Line?, "edit": EditId}
-{"op": "variant", "entry": EntryId, "line": Line?, "into": VaultId}
-{"op": "batch",  "ops": [Op]}
+{"op": "undo",    "entry": EntryId, "line": Line?, "edit": EditId}
+{"op": "variant", "entry": EntryId, "line": Line?, "into": VaultId, "schema": SchemaRef?, "ops": [RecordOp]?}
+{"op": "batch",   "ops": [Op]}
 ```
 
-Every change op may carry `"as": VaultId`, the vault it acts for (the device's own by default), as every edit does.
+Every change op may carry `"as": VaultId`, the vault it acts for (the device's own by default; a batch's for its
+ops that name none), as every edit does, and the rules judge it as they judge any peer's edit. An op carrying a field
+it doesn't take is refused, never half read.
 
-- **Apply, then write.** The record ops (`set` to `splice`) are pure functions on a record: the engine applies them to
-  the app's view of the line, checks the result is a view of the schema (`View::put`, else `NotAView`), and hands it to
-  `Item::write`, whose lens and Loro diff make the smallest change. So ops are schema-generic: a new schema needs no
-  new code. The ops of a batch on one entry become one write; a batch over several entries writes nothing unless every
-  one of them would be taken.
-- **The rest map onto what exists**: `create` onto `Lab::create` with `Item::made`, `tag` onto `Lab::tag`, the line
-  ops onto `History`'s drafts. Promote, restore, undo and variant become schema-generic too: they take their record
-  through its own view instead of the built-in document or todo (`kind_view` goes).
-- **Results.** `{"ok": {"entry"?, "edit"?, "line"?, "heads"?}}`, or `{"refused": Refusal, "why": "text"}`: one shape
-  for the page and the Mac app alike.
+- **The record ops** (`ops::Op`): `set` the whole record, a field, a row (all its fields) or a field of a row; `unset`
+  a field or a field of a row; `insert` a row into a list of records, or a value into a list of values, at place `at`
+  or last; `remove` a row, or (with `value`) every copy of a value from a list of values, a no-op if it holds none;
+  `move` a row to place `to` of the list without it. Each names a place (`ops::Loc`) and changes nothing it doesn't
+  cover (O2).
+- **Apply, then write.** The engine runs the record ops on the app's view of the line, fills each field they leave
+  out at its schema's default, checks the result is a view of the schema (`View::put`, else `NotAView`), and hands it
+  to `Item::write`, whose lens and Loro diff make the smallest change. So ops are schema-generic: a new schema needs
+  no new code. A record op that changes nothing writes nothing (its `edit` is `null`).
+- **The rest map onto what exists.** `create` onto `Lab::create` (with no `schema`, the one its value's `kind`
+  names; fields it leaves out take their defaults), `tag` onto `Lab::tag`, `propose` (from the main line's heads,
+  left out), `merge` (with `promote`, a merge that brings `into` to exactly what `from` shows), `restore` and `undo`
+  onto `History`'s lines, and
+  `variant`, a new entry of vault `into` that starts from the line's record, onto `Lab::variant_with`, with the record
+  ops (`ops`, which name no entry, line or schema) the copy runs before it is written, as the page's variant mark.
+  Promote, restore, undo and variant need no schema: they put back records the item's own changes wrote, each field
+  in the container it already has.
+- **Batches.** Every op of a batch is read before any runs. Record ops in a row on one entry's line, through one
+  schema, acting for one vault, make one write. The steps then run in order up to the first refused, and what ran
+  before it stands: the refusal says which op (`at`) and what the steps before it did (`done`).
+- **Answers.** `{"ok": ...}`, or `{"refused": name, "why": "words"}` (a batch's with `at` and `done`): a rule's
+  refusal by its name (`NoCap`, `NotActing`, `ReadOnly`, `NotAView`, `Locked`, `UnknownDep`, `NotOnProposal`, ...),
+  `BadOp` where the JSON says nothing the engine does or an op makes no sense of the record, `NoSchema` where no
+  schema reads the record, `NoEntry` where the device shows no such entry or line. One shape for the page and the Mac
+  app alike.
 
-## What a write did: the same ops
+## One engine, everywhere
 
-`diff(before, after)` turns two records into the ops that make one the other, in a normal form: `set` or `unset` of a
-field (a text, a value or a list of values, whole), and for a list of records the `remove` of each record gone, the
-`insert` of each new one, a `move` where the kept records changed order, and the `set` or `unset` of each field of a
-kept record that changed. A write's ops are the diff of its line before it (its deps) and after it. Two laws tie the
-halves together:
+`avendb::engine` runs every op on a device's Lab: `engine::read` for the four reads, which run on what the device
+holds and change nothing, and `engine::run` for changes. Each device has one entry point:
 
-- **Diff explains apply.** Applying `diff(r, s)` to `r` gives `s`.
-- **Apply is what it says.** Every op of `diff(r, apply(r, ops))` lies on a path one of `ops` names (or under it).
+- **The page's device** (`avendb-browser`): `Device::run(op)`, reads through the node's read lock, changes through
+  `act`, which tells its peers. `PageDevice.run(op)` hands it to JavaScript as a promise.
+- **The Mac app's device** (`avendb-device`, the sidecar): one call, `run`, the same JSON, the same answer.
+- **The page** (`src/lib/avendb/ops.js`, `Account.svelte`): `api.run(what, op)` runs a change and reports a refusal
+  in the engine's words; `api.ask(op)` returns the answer as it is. Notes, Todos, tags, the note's proposals, merges,
+  restores, undos and variants all write through it; the note page reads its lines through `get`.
+- **The studio's Query console** (Database, Query): any op as JSON, run with Ctrl+Enter or ⌘Enter, with examples for
+  the vault looked at. A query shows its rows as a table and, in words and as JSON, the selector its labels picked
+  them by before any entry was opened: the selector a cap on those entries would hold. A change acts as the acting
+  vault unless it names another.
+
+## What a write did: the same changes
+
+`ops::diff(before, after)` turns two records into the changes that make one the other, in a normal form: the new
+value of each place that changed (a field, or a field of a row; gone: `unset`), and the new rows of each list of
+records whose rows changed. A write's changes are the diff of its line's record before it (its own line's deps) and
+after it. Two laws tie the halves together, proved in `spec/AvenDB/Ops.lean`:
+
+- **O1, diff explains apply** (`apply_diff`): applying `diff(r, s)` to `r` gives `s`, so no change escapes a diff
+  (`diff_complete`) and a diff names only what changed (`diff_sound`).
+- **O2, ops do what they say** (`diff_within`): the diff of an op's run names only what its place covers.
 
 So a client that may run some ops can predict exactly what every reader will judge its write to have done.
 
@@ -136,10 +179,10 @@ work`, with the one rule `{"op": "set", "path": ["status"], "to": ["doing", "don
   of the entry learn what the writer may do there, and nothing else.
 - **Every reader checks the same way.** A reader takes a write by an actor that holds an unruled chain granting write
   on the entry's cell as today. Otherwise it takes it only if the write's proof opens a ruled chain granting write on
-  that cell whose rules allow every op of the write's diff (merges, which carry no content, need the `merge` rule).
-  A write no rule allows is read as one nobody can open: it stays in the log, as every edit does, and no record ever
-  shows it, nor anything that builds only on it. The verdict depends only on the replayed log and the write, so every
-  reader reaches the same one (convergence holds), with no steward online.
+  that cell whose rules allow every change of the write's diff (merges, which carry no content, need the `merge`
+  rule). A write no rule allows is read as one nobody can open: it stays in the log, as every edit does, and no record
+  ever shows it, nor anything that builds only on it. The verdict depends only on the replayed log and the write, so
+  every reader reaches the same one (convergence holds), with no steward online.
 - **Old data reads as before.** Caps without the bit are unruled, slices without rules or chain keys have none, and
   bodies without a proof carry none: what is in the vaults today keeps its meaning.
 - **The page asks the same evaluator.** `{"op": "may", "ops": [Op]}` answers whether this device may run them, and
@@ -157,10 +200,14 @@ unopened entry could evaluate it. Ruled writes travel like any other; their read
 
 ## Theorems
 
-New, in `spec/AvenDB/Ops.lean` and beside the existing ones:
+In `spec/AvenDB/Ops.lean`, beside the existing ones (vectors in `OpsVectors.lean`, which the Rust tests replay):
 
-- **O1 diff explains apply**, **O2 apply is what it says** (above), over JSON records with paths.
-- **O3 queries see only what opens**: a query's rows are entries the device reads, and its label part is a selector.
+- **O1 diff explains apply** and **O2 ops do what they say** (above), over flat records.
+- **O3 queries pick by labels** (`cover_sound`, `plan_sound`, `plan_run`): the plan picks every entry the query
+  does, so running the query on what the plan picks gives the same rows.
+
+Still to prove, with the second task:
+
 - **C1 chains narrow rules** (with T22): a chain allows no op one of its ruled links forbids.
 - **C2 readers agree**: whether a write counts is a function of the replayed state and the write.
 - **C3 ruled writes do what they may**: a counted write of a ruled chain changes only what its rules allow.
@@ -171,14 +218,15 @@ New, in `spec/AvenDB/Ops.lean` and beside the existing ones:
 
 | Phase | What | Ships as |
 |---|---|---|
-| O1 | Lean: records, paths, ops, apply, diff, queries; O1 to O3; vectors | one PR with O2 and O3 |
-| O2 | Rust: `ops` in the core (parse, apply, diff, where, planner), `Lab::run`, `Device::run`, one sidecar call `run`; generic promote, restore, undo and variant | |
-| O3 | Page: Notes, Todos, the table editor and the studio on `api.run`; a query console in the studio | |
-| C1 | Lean: rules in slices, chain narrowing, proof-carrying writes, acceptance; C1 to C4, T25 | one PR with C2 and C3 |
+| O1 | Lean: flat records, paths, changes, ops, apply, diff, where, plan; O1 to O3; vectors | PR #415, with O2, O3 |
+| O2 | Rust: `ops` and `engine` in the core, `Device::run`, the sidecar's `run`; generic promote and variant | |
+| O3 | Page: Notes, Todos, tags and the note page on `api.run`; the studio's Query console | |
+| C1 | Lean: rules in slices, chain narrowing, proof-carrying writes, acceptance; C1 to C4, T25 | one PR, with C2, C3 |
 | C2 | Rust: slice rules and the ruled bit, chain keys, proofs, every reader's check, `may` | |
 | C3 | Page: rules in the share dialog, buttons by `may`; the walks; server redeploy | |
 
 ## Later
 
 Live queries (a subscription that names what changed instead of re-running), updates by query (`set ... where`),
-indexes for large vaults, more than one lens hop, and entries split into facets for field-level reading.
+batches over several entries that write all or nothing, indexes for large vaults, more than one lens hop, and
+entries split into facets for field-level reading.

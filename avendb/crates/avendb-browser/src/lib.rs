@@ -48,14 +48,15 @@
 //! revoke it; every cell, the entries the same caps reach and one key opens, with the devices that sync it and whether
 //! each opens it or only relays its ciphertext; and every entry, with its type, its tags and each vault's role on it.
 //!
-//! Each note opens on its page (`Device::note`): its main line and each proposal (a proposal of its history), and every
-//! edit of it, each with what it changed, to edit on any line, retitle, propose, merge, promote, restore, undo or make
-//! a variant (a new note with what a line shows, marked with the note it came from), acting for a vault as any edit
-//! does (`Device::set_text_on`, `set_title_on`, `propose`, `merge`, `restore`, `undo`, `variant`). And each vault's
-//! database shows as the device holds it, every entry with its record, its type, its tags, its cell and its edits, and
-//! the schemas and lenses the app ships and the vault publishes (`Device::database`, `data`); and the database's
-//! history, every signed edit the device holds (the core's edits), each with what it does, who signed it and how, and
-//! the vaults it concerns (`Device::history`).
+//! Every read and change of the entries the device holds, whatever their schema, is one op of the ops engine
+//! (`Device::run`, `avendb::engine`, `avendb/docs/OPS.md`): JSON the page writes, which the device runs as the vault it
+//! names, and the rules check as they check any peer's edit. Each note opens on its page (`Device::note`): its main
+//! line and each proposal (a proposal of its history), and every edit of it, each with what it changed, to edit on any
+//! line, retitle, propose, merge, promote, restore, undo or make a variant (a new note with what a line shows, marked
+//! with the note it came from), each an op. And each vault's database shows as the device holds it, every entry with
+//! its record, its type, its tags, its cell and its edits, and the schemas and lenses the app ships and the vault
+//! publishes (`Device::database`, `data`); and the database's history, every signed edit the device holds (the core's
+//! edits), each with what it does, who signed it and how, and the vaults it concerns (`Device::history`).
 //!
 //! The same device runs natively in the Mac app (`avendb-device`, beside maiaCITY Studio): there its node binds UDP
 //! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it
