@@ -262,6 +262,17 @@
 		const fresh = !run.state.world; // made on the MCP and never played: dealt now, on its settings and seed
 		paused = true;
 		world = fresh ? createWorld(run.seed ?? undefined) : loadWorld(run.state.world, run.day_rows.map((/** @type {any} */ d) => d.stats));
+		// a new world that follows another starts from that world's last prices: its card's price hook gets each as
+		// `inherited` for its first price (a world never played on passes none)
+		if (fresh && s.after) {
+			try {
+				const prev = await loadWorldRun(s.after);
+				const last = prev.state?.world?.posted ?? prev.day_rows?.at(-1)?.stats?.price ?? null;
+				if (last) world.inherited = Object.fromEntries(Object.entries(last).filter(([, v]) => typeof v === 'number' && v > 0));
+			} catch {
+				// no prices to inherit: the card's own first price
+			}
+		}
 		rec = recorder(world, null, { id: run.id, name: run.name, sent: fresh ? 0 : world.stats.length });
 		saving = { days: rec.sent, error: '' };
 		here = { id: run.id, name: run.name, after: s.after ?? null };
@@ -1118,6 +1129,7 @@
 							<i style:background={row.colour}></i>
 							<b>{row.name}</b>
 							<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>
+							<span class="hp" title="health {row.alive ? `${row.health} of ${RULES.healthMax}` : '0'}"><i class:low={row.health / RULES.healthMax <= 0.3} style:width="{row.alive ? Math.max(0, Math.min(100, (row.health / RULES.healthMax) * 100)) : 0}%"></i></span>
 							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
 						</button>
 					</li>
@@ -1756,5 +1768,24 @@
 	}
 	.worldgrid .none {
 		grid-column: 1 / -1;
+	}
+	/* each aven's health on the board: a small bar beside its HEARTS */
+	.board .hp {
+		display: inline-block;
+		width: 44px;
+		height: 6px;
+		border-radius: 999px;
+		background: #1f2a231a;
+		overflow: hidden;
+		justify-self: end;
+	}
+	.board .hp i {
+		display: block;
+		height: 100%;
+		background: #3f9b62;
+		border-radius: 999px;
+	}
+	.board .hp i.low {
+		background: #d0533f;
 	}
 </style>
