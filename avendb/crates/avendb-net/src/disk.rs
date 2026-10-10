@@ -5,7 +5,9 @@
 //!
 //! Each edit is one record: its length in 4 bytes, big-endian, then its bytes on the wire. A crash can cut the last
 //! record short, so reading stops at the first record that doesn't decode whole, and the file is cut back to the
-//! records before it. The device checks every edit again as it takes it back (`Lab::restore_backup`); if any fails, the
+//! records before it. A store whose first record doesn't decode isn't one a crash cut short but one of another format,
+//! an earlier avenDB's: it is put aside whole, its edits and its keys, in `aside/`, never deleted, and the node starts
+//! on an empty store. The device checks every edit again as it takes it back (`Lab::restore_backup`); if any fails, the
 //! file is written anew without it (`adopt`). A key is written to a file of its own first and then renamed into
 //! place, so a key on disk is always whole, and one whose bytes don't hash to its name is dropped.
 
@@ -14,6 +16,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result};
 use avendb::id::{BlobId, SignerId};
@@ -26,6 +29,8 @@ const EDITS: &str = "ops";
 const KEYS: &str = "keys";
 /// A key on its way to disk, before it is renamed into place.
 const PART: &str = "part";
+/// Where a store of another format is put, under when, in seconds since 1970.
+const ASIDE: &str = "aside";
 
 /// A node's store in a folder of its own.
 pub struct Disk {
@@ -41,14 +46,19 @@ impl Disk {
     /// The store in folder `dir`, made if there is none, and what it holds: the edits in the order they were saved,
     /// every record that decodes whole, and every key that hashes to its name.
     pub fn open(dir: &Path) -> Result<(Disk, Backup)> {
-        fs::create_dir_all(dir.join(KEYS)).with_context(|| format!("the store at {}", dir.display()))?;
+        fs::create_dir_all(dir).with_context(|| format!("the store at {}", dir.display()))?;
         let path = dir.join(EDITS);
-        let bytes = match fs::read(&path) {
+        let mut bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e.into()),
         };
         let (signed, whole) = records(&bytes);
+        if whole == 0 && !bytes.is_empty() {
+            aside(dir)?;
+            bytes.clear();
+        }
+        fs::create_dir_all(dir.join(KEYS))?;
         let edits = OpenOptions::new().create(true).append(true).open(&path)?;
         if whole < bytes.len() {
             edits.set_len(whole as u64)?;
@@ -144,6 +154,22 @@ impl Disk {
         self.keys.insert(b);
         Ok(())
     }
+}
+
+/// Puts the store in folder `dir` aside whole, its edits and its keys, in `aside/` under the time.
+fn aside(dir: &Path) -> Result<()> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let (mut to, mut n) = (dir.join(ASIDE).join(now.to_string()), 0);
+    while to.exists() {
+        n += 1;
+        to = dir.join(ASIDE).join(format!("{now}-{n}"));
+    }
+    fs::create_dir_all(&to)?;
+    fs::rename(dir.join(EDITS), to.join(EDITS))?;
+    if dir.join(KEYS).exists() {
+        fs::rename(dir.join(KEYS), to.join(KEYS))?;
+    }
+    Ok(())
 }
 
 /// One record: the edit's length, then its bytes.
