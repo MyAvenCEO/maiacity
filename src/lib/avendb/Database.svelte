@@ -1,20 +1,21 @@
 <!--
 	A vault's database studio, as this browser holds it and the acting vault opens it (db.js `studio`), each page its
-	own item in the vault's list: the table editor (its entries as tables), its spaces, its schemas, its lenses, and
-	the database's history, every signed edit. It reads the database again whenever what the device holds changes, and
-	the history only while it shows. What the acting vault holds no cap to read shows sealed, as avenDB's server holds it.
+	own item in the vault's list: the table editor (its entries as tables, by type), its cells, its schemas, its lenses,
+	and the database's history, every signed edit. It reads the database again whenever what the device holds changes,
+	and the history only while it shows. What the acting vault holds no cap to read shows sealed, as avenDB's server
+	holds it.
 -->
 <script>
 	import History from './History.svelte';
 	import Lenses from './Lenses.svelte';
 	import Schemas from './Schemas.svelte';
-	import Spaces from './Spaces.svelte';
+	import Cells from './Cells.svelte';
 	import TableEditor from './TableEditor.svelte';
 	import { studio } from './db.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any,
-	 *   view: 'tables' | 'spaces' | 'schemas' | 'lenses' | 'history', onopen: (entry: string) => void,
+	 *   view: 'tables' | 'cells' | 'schemas' | 'lenses' | 'history', onopen: (entry: string) => void,
 	 *   onact: (vault: string) => void, onview: (view: string) => void }}
 	 */
 	let { world, vault, actor, api, view, onopen, onact, onview } = $props();
@@ -23,8 +24,8 @@
 	let failed = $state('');
 	let log = $state(/** @type {{ edits: import('./db.js').SignedEdit[] } | null} */ (null));
 	let logFailed = $state('');
-	/** the space the table editor shows: '' for all of them */
-	let space = $state('');
+	/** the cell the table editor shows: '' for all of them */
+	let cell = $state('');
 
 	// what the device holds changed, or another vault is picked: read its database again
 	$effect(() => {
@@ -63,8 +64,8 @@
 	});
 
 	const s = $derived(studio(world, db, vault, actor));
-	// a space of another vault leaves the table editor on all of this one's
-	const shown = $derived(s.spaces.some((sp) => sp.id === space) ? space : '');
+	// a cell of another vault leaves the table editor on all of this one's
+	const shown = $derived(s.cells.some((x) => x.id === cell) ? cell : '');
 </script>
 
 <div class="db">
@@ -73,9 +74,9 @@
 	{:else if !db || db.vault !== vault}
 		<p class="soft">Reading the database…</p>
 	{:else if view === 'tables'}
-		<TableEditor {s} bind:space={() => shown, (v) => (space = v)} {vault} {actor} {onopen} {onact} />
-	{:else if view === 'spaces'}
-		<Spaces {s} {db} onpick={(id) => ((space = id), onview('tables'))} />
+		<TableEditor {s} bind:cell={() => shown, (v) => (cell = v)} {vault} {actor} {onopen} {onact} />
+	{:else if view === 'cells'}
+		<Cells {s} {db} onpick={(id) => ((cell = id), onview('tables'))} />
 	{:else if view === 'schemas'}
 		<Schemas {s} onlens={() => onview('lenses')} />
 	{:else if view === 'lenses'}

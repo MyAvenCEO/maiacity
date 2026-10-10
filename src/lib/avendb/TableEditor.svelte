@@ -1,27 +1,28 @@
 <!--
-	The studio's table editor: a vault's entries as tables, as a database studio shows Postgres's: a space to pick, or
-	all of them, and its tables on the left, each entry in the one of what it is (notes, todos, devices' cards, vaults'
+	The studio's table editor: a vault's entries as tables, as a database studio shows Postgres's: a cell to pick, or
+	all of them, and its tables on the left, each entry in the one of its type (notes, todos, devices' cards, vaults'
 	profiles, other records, and what the acting vault holds no cap to read, sealed); the table picked as a grid, its
-	columns the fields of its schema, newest version first, each with its type, then what avenDB keeps of each row
-	(where it is, its schemas, edits, proposals, key epoch, size, who wrote it first and who holds a role on it); sorted
-	by a column, searched, and each row opened in a drawer, its record field by field.
+	columns the fields of its schema, newest version first, each with its type, then what avenDB keeps of each row (its
+	cell, the tags caps select it by, which its record's own fields don't hold, its schemas, edits, proposals, its key's
+	generation, size, who wrote it first and who holds a role on it); sorted by a column, searched, and each row opened
+	in a drawer, its record field by field.
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import Panel from './Panel.svelte';
 	import { cell, families, familyOf, hint, parsed, pgType, size, tables, typeOf } from './db.js';
-	import { allows, count, nameOf, ROLES, short } from './vaults.js';
+	import { allows, count, holders, nameOf, ROLES, short } from './vaults.js';
 
 	/**
-	 * @typedef {import('./db.js').RowView & { space: string }} Row
+	 * @typedef {import('./db.js').RowView} Row
 	 * @typedef {{ name: string, type: string, hint: string, pk?: boolean, sys?: boolean, get: (r: Row) => unknown }} Column
 	 */
 
 	/**
-	 * @type {{ s: import('./db.js').Studio, space: string, vault: string, actor: string,
+	 * @type {{ s: import('./db.js').Studio, cell: string, vault: string, actor: string,
 	 *   onopen: (entry: string) => void, onact: (vault: string) => void }}
 	 */
-	let { s, space = $bindable(''), vault, actor, onopen, onact } = $props();
+	let { s, cell: within = $bindable(''), vault, actor, onopen, onact } = $props();
 
 	let picked = $state('notes');
 	let query = $state('');
@@ -30,10 +31,10 @@
 	/** the row whose drawer is open */
 	let open = $state('');
 
-	const all = $derived(tables(s, space));
+	const all = $derived(tables(s, within));
 	const table = $derived(all.find((t) => t.id === picked) ?? all[0]);
 	const family = $derived(table?.family ? familyOf(families(s.schemas, s.lenses), table.family) : undefined);
-	const rowsHeld = $derived(s.spaces.reduce((n, sp) => n + sp.rows.length, 0));
+	const rowsHeld = $derived(s.rows.length);
 
 	/** The table's columns: its key, its schema's fields, newest version first, then what avenDB keeps of each row. */
 	const columns = $derived.by(() => {
@@ -65,7 +66,10 @@
 		}
 		/** @type {Column[]} */
 		const kept = [
-			...(space ? [] : [{ name: 'space', type: 'text', hint: 'The space it is in', get: (/** @type {Row} */ r) => s.space(r.space) }]),
+			...(within ? [] : [{ name: 'cell', type: 'text', hint: 'Its cell: the caps that reach it, under one key', get: (/** @type {Row} */ r) => s.cellName(r.cell) }]),
+			...(sealed
+				? []
+				: [{ name: 'cap_tags', type: 'text[]', hint: 'Its tags now, outside its record: what caps select it by', get: (/** @type {Row} */ r) => r.tags }]),
 			...(sealed
 				? []
 				: [
@@ -73,10 +77,10 @@
 					]),
 			{ name: 'edits', type: 'int4', hint: sealed ? 'The edits of it this browser holds, sealed' : 'The edits of it this browser counts', get: (r) => (sealed ? r.held : r.edits) },
 			...(sealed ? [] : [{ name: 'proposals', type: 'int4', hint: 'Its proposals: lines besides main', get: (/** @type {Row} */ r) => Math.max(0, r.lines - 1) }]),
-			{ name: 'key_epoch', type: 'int4', hint: 'Each rotation of its key, as owners revoke, starts a new epoch', get: (r) => r.epoch },
+			{ name: 'key_generation', type: 'int4', hint: 'Its cell key’s generation: it moves on when a reader may no longer read it', get: (r) => r.generation },
 			...(sealed ? [] : [{ name: 'loro_bytes', type: 'int8', hint: 'The size of its Loro document', get: (/** @type {Row} */ r) => r.bytes }]),
 			{ name: 'first_by', type: 'text', hint: 'The device and the vault of its first edit', get: first },
-			{ name: 'roles', type: 'text', hint: 'The vaults that hold a role on it', get: (r) => holders(r).map((h) => `${nameOf(s.byId.get(h.id))} ${ROLES[h.role]}`).join(', ') + (r.public ? ', everyone reads' : '') }
+			{ name: 'roles', type: 'text', hint: 'The vaults that hold a role on it', get: (r) => holders(r.roles).map((h) => `${nameOf(s.byId.get(h.id))} ${ROLES[h.role]}`).join(', ') + (r.public ? ', everyone reads' : '') }
 		];
 		return [...cols, ...kept.map((c) => ({ ...c, sys: true }))];
 	});
@@ -105,12 +109,6 @@
 		return `${device}, for ${s.vaultName(r.actor ?? '')}`;
 	}
 
-	/** The vaults that hold a role on row `r`, the strongest first. @param {Row} r */
-	const holders = (r) =>
-		Object.entries(r.roles)
-			.map(([id, role]) => ({ id, role }))
-			.sort((a, b) => ['owner', 'write', 'read', 'relay'].indexOf(a.role) - ['owner', 'write', 'read', 'relay'].indexOf(b.role));
-
 	/** Sort by column `name`, then the other way, then not at all. @param {string} name */
 	function sortBy(name) {
 		sort = sort.by !== name ? { by: name, down: false } : sort.down ? { by: '', down: false } : { by: name, down: true };
@@ -120,10 +118,10 @@
 <div class="editor">
 	<aside class="tables" aria-label="Tables">
 		<label class="pick">
-			<span>Space</span>
-			<select class="field" bind:value={space} aria-label="Space">
-				<option value="">All spaces</option>
-				{#each s.spaces as sp (sp.id)}<option value={sp.id}>{s.space(sp.id)}</option>{/each}
+			<span>Cell</span>
+			<select class="field" bind:value={within} aria-label="Cell">
+				<option value="">All cells</option>
+				{#each s.cells as x (x.id)}<option value={x.id}>{s.cellName(x.id)}</option>{/each}
 			</select>
 		</label>
 		<h4>Tables</h4>
@@ -148,7 +146,7 @@
 	</aside>
 
 	<section class="area">
-		{#if s.here?.via && vault !== actor && rowsHeld && !s.spaces.some((sp) => sp.rows.some(s.opens))}
+		{#if s.here?.via && vault !== actor && rowsHeld && !s.rows.some(s.opens)}
 			<div class="empty act">
 				<p>{nameOf(s.as)} holds no cap to open anything here; {nameOf(s.here)}’s own caps open all of it.</p>
 				<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(s.here)}</button>
@@ -170,7 +168,7 @@
 				<table>
 					<thead>
 						<tr>
-							{#each columns as c (c.name)}
+							{#each columns as c ((c.sys || c.pk ? 'avendb:' : '') + c.name)}
 								<th class:pk={c.pk} class:sys={c.sys} title={c.hint} data-col={c.name} aria-sort={sort.by === c.name ? (sort.down ? 'descending' : 'ascending') : undefined}>
 									<button onclick={() => sortBy(c.name)}>
 										{#if c.pk}<Icon name="key" size={12} />{/if}
@@ -187,7 +185,7 @@
 							<!-- the row opens on a click anywhere; its key cell's button takes the keyboard's -->
 							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 							<tr class="rec" class:on={open === r.entry} onclick={() => (open = r.entry)}>
-								{#each columns as c (c.name)}
+								{#each columns as c ((c.sys || c.pk ? 'avendb:' : '') + c.name)}
 									{@const v = cell(c.get(r))}
 									<td class={v.kind} class:pk={c.pk} class:sys={c.sys} data-col={c.name} title={c.pk ? r.entry : undefined}>
 										{#if c.pk}<button class="open mono" aria-label="Open the row {short(r.entry)}">{v.text}</button>{:else}{v.text}{/if}
@@ -203,7 +201,7 @@
 			</div>
 			<footer class="foot">
 				<span>{count(rows.length, 'row')}{query ? ` of ${table.rows.length}` : ''}</span>
-				<span class="soft">{space ? s.space(space) : count(s.spaces.length, 'space')} · {nameOf(s.here)}</span>
+				<span class="soft">{within ? `The cell ${s.cellName(within)}` : count(s.cells.length, 'cell')} · {nameOf(s.here)}</span>
 				<span class="soft">As {nameOf(s.as)}: what its caps open shows; the rest is in sealed.</span>
 			</footer>
 		{/if}
@@ -229,7 +227,7 @@
 					</div>
 				{/each}
 			</div>
-			{#if row.kind === 'document' && !row.tag}
+			{#if row.type === 'note'}
 				<button class="btn primary" onclick={() => onopen(row.entry)}>Open the note</button>
 			{/if}
 		{:else if row.record === null && (row.public || allows(row.roles[actor], 'read'))}
@@ -248,8 +246,16 @@
 		<dl>
 			<dt>Entry</dt>
 			<dd class="mono">{row.entry}</dd>
-			<dt>Space</dt>
-			<dd>{s.space(row.space)}</dd>
+			<dt>Cell</dt>
+			<dd>{s.cell(row.cell)}</dd>
+			{#if row.type !== null}
+				<dt>Type</dt>
+				<dd>{row.type}</dd>
+				<dt>Tags</dt>
+				<dd class="chips">
+					{#each row.tags ?? [] as t (t)}<span class="chip">#{t}</span>{:else}none{/each}
+				</dd>
+			{/if}
 			{#if opened}
 				<dt>Schemas</dt>
 				<dd>{row.authored.map(s.schemaName).join(', ') || 'none named'}</dd>
@@ -260,8 +266,8 @@
 				<dt>Proposals</dt>
 				<dd>{row.proposals.map((b) => b ?? 'one this browser can’t name').join(', ')}</dd>
 			{/if}
-			<dt>Key epoch</dt>
-			<dd>{row.epoch}</dd>
+			<dt>Key generation</dt>
+			<dd>{row.generation}</dd>
 			{#if opened && row.bytes}
 				<dt>Its Loro document</dt>
 				<dd>{size(row.bytes)}</dd>
@@ -270,7 +276,7 @@
 			<dd>{first(row) ?? 'nobody this browser knows'}</dd>
 			<dt>Roles</dt>
 			<dd class="chips">
-				{#each holders(row) as h (h.id)}
+				{#each holders(row.roles) as h (h.id)}
 					<span class="chip" class:accent={h.id === actor}>{nameOf(s.byId.get(h.id))} {ROLES[h.role]}</span>
 				{/each}
 				{#if row.public}<span class="chip ok">everyone reads</span>{/if}

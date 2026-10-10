@@ -139,32 +139,6 @@ export class Device {
         return ret;
     }
     /**
-     * Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
-     * space `space`, or on its entry `entry` if given, acting for vault `issuer` (`Device::grant`): a promise of the
-     * grant's id, after one ceremony for an owner's. Ids in hex.
-     * @param {string} issuer
-     * @param {string} space
-     * @param {string | null | undefined} entry
-     * @param {string} role
-     * @param {string} grantee
-     * @param {Function} ceremony
-     * @returns {Promise<any>}
-     */
-    grant(issuer, space, entry, role, grantee, ceremony) {
-        const ptr0 = passStringToWasm0(issuer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        var ptr2 = isLikeNone(entry) ? 0 : passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len2 = WASM_VECTOR_LEN;
-        const ptr3 = passStringToWasm0(role, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len3 = WASM_VECTOR_LEN;
-        const ptr4 = passStringToWasm0(grantee, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len4 = WASM_VECTOR_LEN;
-        const ret = wasm.device_grant(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ceremony);
-        return ret;
-    }
-    /**
      * The database's history, every signed edit it holds, in the order it took them, for the studio's History view
      * (`data::history`): a promise of an object.
      * @returns {Promise<any>}
@@ -229,49 +203,43 @@ export class Device {
         return ret;
     }
     /**
-     * Merges line `from` of entry `entry` in space `space` into line `into`, acting for vault `actor`; with
-     * `promote`, `into` then shows exactly what `from` does (`Device::merge`): a promise of the merge's edit. Ids in
-     * hex; a line is `null` for the main line.
+     * Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then
+     * shows exactly what `from` does (`Device::merge`): a promise of the merge's edit. Ids in hex; a line is `null`
+     * for the main line.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {string | null | undefined} from
      * @param {string | null | undefined} into
      * @param {boolean} promote
      * @returns {Promise<any>}
      */
-    merge(actor, space, entry, from, into, promote) {
+    merge(actor, entry, from, into, promote) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        var ptr3 = isLikeNone(from) ? 0 : passStringToWasm0(from, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len3 = WASM_VECTOR_LEN;
-        var ptr4 = isLikeNone(into) ? 0 : passStringToWasm0(into, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len4 = WASM_VECTOR_LEN;
-        const ret = wasm.device_merge(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, promote);
-        return ret;
-    }
-    /**
-     * Note `entry` of space `space` (both in hex) as the device holds it, for the note page (`data::note`): a
-     * promise of an object, of `undefined` while it counts no edit of it.
-     * @param {string} space
-     * @param {string} entry
-     * @returns {Promise<any>}
-     */
-    note(space, entry) {
-        const ptr0 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.device_note(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        var ptr2 = isLikeNone(from) ? 0 : passStringToWasm0(from, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        var ptr3 = isLikeNone(into) ? 0 : passStringToWasm0(into, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_merge(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, promote);
         return ret;
     }
     /**
-     * The spaces it knows and the documents it reads in each (`Device::notes`): a promise of
-     * `[{space, founder, docs: [{entry, title, text}]}]`, ids in hex.
+     * Note `entry` (in hex) as the device holds it, for the note page (`data::note`): a promise of an object, of
+     * `undefined` while it counts no edit of it.
+     * @param {string} entry
+     * @returns {Promise<any>}
+     */
+    note(entry) {
+        const ptr0 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.device_note(this.__wbg_ptr, ptr0, len0);
+        return ret;
+    }
+    /**
+     * The notes it reads, by vault (`Device::notes`): a promise of `[{vault, docs: [{entry, title, text}]}]`, ids in
+     * hex.
      * @returns {Promise<any>}
      */
     notes() {
@@ -356,156 +324,161 @@ export class Device {
         return ret;
     }
     /**
-     * Proposes a change to entry `entry` in space `space`: a proposal named `name` from the version `from`, an array
-     * of its edits, acting for vault `actor` (`Device::propose`): a promise of the new line, its first edit's id. Ids
-     * in hex.
+     * Proposes a change to entry `entry`: a proposal named `name` from the version `from`, an array of its edits,
+     * acting for vault `actor` (`Device::propose`): a promise of the new line, its first edit's id. Ids in hex.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {Array<any>} from
      * @param {string} name
      * @returns {Promise<any>}
      */
-    propose(actor, space, entry, from, name) {
+    propose(actor, entry, from, name) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr2 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ptr3 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_propose(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, from, ptr3, len3);
+        const ret = wasm.device_propose(this.__wbg_ptr, ptr0, len0, ptr1, len1, from, ptr2, len2);
         return ret;
     }
     /**
-     * Puts the record of version `version`, an array of edits, of entry `entry` in space `space` back on line
-     * `line`, acting for vault `actor` (`Device::restore`): a promise of the edit that does. Ids in hex.
+     * Puts the record of version `version`, an array of edits, of entry `entry` back on line `line`, acting for vault
+     * `actor` (`Device::restore`): a promise of the edit that does. Ids in hex.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {string | null | undefined} line
      * @param {Array<any>} version
      * @returns {Promise<any>}
      */
-    restore(actor, space, entry, line, version) {
+    restore(actor, entry, line, version) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        var ptr3 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_restore(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, version);
+        var ptr2 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ret = wasm.device_restore(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, version);
         return ret;
     }
     /**
-     * Ends grant `grant`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for
-     * an owner's grant.
+     * Ends cap `cap`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for an
+     * owner cap.
      * @param {string} actor
-     * @param {string} grant
+     * @param {string} cap
      * @param {Function} ceremony
      * @returns {Promise<any>}
      */
-    revoke(actor, grant, ceremony) {
+    revoke(actor, cap, ceremony) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(grant, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(cap, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ret = wasm.device_revoke(this.__wbg_ptr, ptr0, len0, ptr1, len1, ceremony);
         return ret;
     }
     /**
-     * Sets the status (`"open"`, `"doing"` or `"done"`) of todo `entry` in space `space`, acting for vault `actor`
-     * (each in hex): a promise, rejected if the device's view refuses the change.
+     * Sets the status (`"open"`, `"doing"` or `"done"`) of todo `entry`, acting for vault `actor` (both in hex): a
+     * promise, rejected if the device's view refuses the change.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {string} status
      * @returns {Promise<any>}
      */
-    setStatus(actor, space, entry, status) {
+    setStatus(actor, entry, status) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr2 = passStringToWasm0(status, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ptr3 = passStringToWasm0(status, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_setStatus(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        const ret = wasm.device_setStatus(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2);
         return ret;
     }
     /**
-     * Sets the text of block `block` of entry `entry` in space `space` on line `line` of its history, acting for vault
-     * `actor` (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its proposal's.
+     * Sets the text of block `block` of entry `entry` on line `line` of its history, acting for vault `actor`
+     * (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its proposal's.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {string | null | undefined} line
      * @param {number} block
      * @param {string} text
      * @returns {Promise<any>}
      */
-    setTextOn(actor, space, entry, line, block, text) {
+    setTextOn(actor, entry, line, block, text) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        var ptr3 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len3 = WASM_VECTOR_LEN;
-        const ptr4 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len4 = WASM_VECTOR_LEN;
-        const ret = wasm.device_setTextOn(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, block, ptr4, len4);
+        var ptr2 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_setTextOn(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, block, ptr3, len3);
         return ret;
     }
     /**
-     * Sets the text of block `block` of entry `entry` in space `space`, acting for vault `actor` (each in hex): a
-     * promise, rejected if the device's view refuses the edit.
+     * Sets the text of block `block` of entry `entry`, acting for vault `actor` (each in hex): a promise, rejected if
+     * the device's view refuses the edit.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {number} block
      * @param {string} text
      * @returns {Promise<any>}
      */
-    setText(actor, space, entry, block, text) {
+    setText(actor, entry, block, text) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr2 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ptr3 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_setText(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, block, ptr3, len3);
+        const ret = wasm.device_setText(this.__wbg_ptr, ptr0, len0, ptr1, len1, block, ptr2, len2);
         return ret;
     }
     /**
-     * Retitles document `entry` of space `space` on line `line`, acting for vault `actor` (`Device::set_title_on`): a
-     * promise. Ids in hex; a line is `null` for the main line, else its proposal's.
+     * Retitles document `entry` on line `line`, acting for vault `actor` (`Device::set_title_on`): a promise. Ids in
+     * hex; a line is `null` for the main line, else its proposal's.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {string | null | undefined} line
      * @param {string} title
      * @returns {Promise<any>}
      */
-    setTitleOn(actor, space, entry, line, title) {
+    setTitleOn(actor, entry, line, title) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var ptr2 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(title, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_setTitleOn(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        return ret;
+    }
+    /**
+     * Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
+     * what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel}`), acting for vault
+     * `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
+     * @param {string} issuer
+     * @param {string} over
+     * @param {any} slice
+     * @param {string} role
+     * @param {string} grantee
+     * @param {Function} ceremony
+     * @returns {Promise<any>}
+     */
+    share(issuer, over, slice, role, grantee, ceremony) {
+        const ptr0 = passStringToWasm0(issuer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(over, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(role, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        var ptr3 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len3 = WASM_VECTOR_LEN;
-        const ptr4 = passStringToWasm0(title, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len4 = WASM_VECTOR_LEN;
-        const ret = wasm.device_setTitleOn(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        const ptr3 = passStringToWasm0(grantee, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_share(this.__wbg_ptr, ptr0, len0, ptr1, len1, slice, ptr2, len2, ptr3, len3, ceremony);
         return ret;
     }
     /**
@@ -517,85 +490,94 @@ export class Device {
         return ret;
     }
     /**
-     * The text of block `block` of entry `entry` in space `space` (both in hex), as the device reads it: a promise, of
-     * `undefined` while it can't.
-     * @param {string} space
+     * Adds the tags `add` to entry `entry` and removes the tags `remove`, each an array of names, acting for vault
+     * `actor` (both in hex, `Device::tag`): a promise.
+     * @param {string} actor
+     * @param {string} entry
+     * @param {Array<any>} add
+     * @param {Array<any>} remove
+     * @returns {Promise<any>}
+     */
+    tag(actor, entry, add, remove) {
+        const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.device_tag(this.__wbg_ptr, ptr0, len0, ptr1, len1, add, remove);
+        return ret;
+    }
+    /**
+     * The text of block `block` of entry `entry` (in hex), as the device reads it: a promise, of `undefined` while it
+     * can't.
      * @param {string} entry
      * @param {number} block
      * @returns {Promise<any>}
      */
-    text(space, entry, block) {
-        const ptr0 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    text(entry, block) {
+        const ptr0 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.device_text(this.__wbg_ptr, ptr0, len0, ptr1, len1, block);
+        const ret = wasm.device_text(this.__wbg_ptr, ptr0, len0, block);
         return ret;
     }
     /**
-     * Writes a new todo titled `title` in space `space`, acting for vault `actor` (both in hex): a promise of its
-     * entry, in hex.
+     * Writes a new todo titled `title`, with the tags `tags`, an array of names, into vault `vault`, acting for vault
+     * `actor` (both in hex): a promise of its entry, in hex.
      * @param {string} actor
-     * @param {string} space
+     * @param {string} vault
      * @param {string} title
+     * @param {Array<any>} tags
      * @returns {Promise<any>}
      */
-    todo(actor, space, title) {
+    todo(actor, vault, title, tags) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(title, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.device_todo(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2);
+        const ret = wasm.device_todo(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, tags);
         return ret;
     }
     /**
-     * Undoes edit `edit` of entry `entry` in space `space` on line `line`, keeping every change since, acting for
-     * vault `actor` (`Device::undo`): a promise of the edit that does. Ids in hex.
+     * Undoes edit `edit` of entry `entry` on line `line`, keeping every change since, acting for vault `actor`
+     * (`Device::undo`): a promise of the edit that does. Ids in hex.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {string | null | undefined} line
      * @param {string} edit
      * @returns {Promise<any>}
      */
-    undo(actor, space, entry, line, edit) {
+    undo(actor, entry, line, edit) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        var ptr3 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len3 = WASM_VECTOR_LEN;
-        const ptr4 = passStringToWasm0(edit, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len4 = WASM_VECTOR_LEN;
-        const ret = wasm.device_undo(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        var ptr2 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(edit, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_undo(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
         return ret;
     }
     /**
-     * Makes a variant of entry `entry` in space `space`: a new note of space `into` with what line `line` shows,
-     * acting for vault `actor` (`Device::variant`): a promise of the new entry. Ids in hex.
+     * Makes a variant of entry `entry`: a new entry of vault `into` with what line `line` shows, acting for vault
+     * `actor` (`Device::variant`): a promise of the new entry. Ids in hex.
      * @param {string} actor
-     * @param {string} space
      * @param {string} entry
      * @param {string | null | undefined} line
      * @param {string} into
      * @returns {Promise<any>}
      */
-    variant(actor, space, entry, line, into) {
+    variant(actor, entry, line, into) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        var ptr3 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len3 = WASM_VECTOR_LEN;
-        const ptr4 = passStringToWasm0(into, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len4 = WASM_VECTOR_LEN;
-        const ret = wasm.device_variant(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        var ptr2 = isLikeNone(line) ? 0 : passStringToWasm0(line, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(into, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_variant(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
         return ret;
     }
     /**
@@ -616,24 +598,25 @@ export class Device {
         return ret;
     }
     /**
-     * Writes a new document titled `title` that reads `body` in space `space`, acting for vault `actor` (both in
-     * hex): a promise of its entry, in hex.
+     * Writes a new note titled `title` that reads `body`, with the tags `tags`, an array of names, into vault `vault`,
+     * acting for vault `actor` (both in hex): a promise of its entry, in hex.
      * @param {string} actor
-     * @param {string} space
+     * @param {string} vault
      * @param {string} title
      * @param {string} body
+     * @param {Array<any>} tags
      * @returns {Promise<any>}
      */
-    write(actor, space, title, body) {
+    write(actor, vault, title, body, tags) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(space, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(title, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
         const ptr3 = passStringToWasm0(body, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_write(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        const ret = wasm.device_write(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, tags);
         return ret;
     }
 }
@@ -1410,6 +1393,10 @@ function __wbg_get_imports() {
             const ret = arg0.status;
             return ret;
         },
+        __wbg_stringify_52ff602c1cc4fbb6: function() { return handleError(function (arg0) {
+            const ret = JSON.stringify(arg0);
+            return ret;
+        }, arguments); },
         __wbg_subarray_002b94d5e13d1411: function(arg0, arg1, arg2) {
             const ret = arg0.subarray(arg1 >>> 0, arg2 >>> 0);
             return ret;
@@ -1453,42 +1440,42 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3108, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3112, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5422, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5465, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue__core_7d5f0a2ba6a62c33___result__Result_____wasm_bindgen_61c7e10f51da098e___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 1848, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 1852, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___web_sys_e8fb2a5efce40016___features__gen_CloseEvent__CloseEvent______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 3498, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 3502, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___web_sys_e8fb2a5efce40016___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3071, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3075, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000006: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3149, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3153, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__1_);
             return ret;
         },
         __wbindgen_generic_0000000000000007: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3151, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3155, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
             const ret = makeClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__2_);
             return ret;
         },
         __wbindgen_generic_0000000000000008: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 4603, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 4607, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__3_);
             return ret;
         },

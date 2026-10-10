@@ -1,11 +1,13 @@
 <!--
-	A vault's todos, as the acting vault sees them: each of the vault's spaces, its home first, with the todos it reads
-	there, each a tick through open, doing and done where it writes, shared on where it owns, and a new todo where it
-	writes in the space. What it holds no cap on stays out of sight, as on a device of that vault alone.
+	A vault's todos, as the acting vault sees them: one flat list of every todo of the vault it reads, narrowed by a
+	tag, each a tick through open, doing and done where it writes, its tags, to add and take off where it may (Tags),
+	and shared on where it owns; and a new todo where it may add one, tagged as the slice of its cap asks. What it holds
+	no cap on stays out of sight, as on a device of that vault alone.
 -->
 <script>
 	import Share from './Share.svelte';
-	import { allows, count, nameOf, reads, ROLES } from './vaults.js';
+	import Tags from './Tags.svelte';
+	import { allows, count, creates, list, nameOf, reads, tagsIn, tagsOf } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -16,116 +18,138 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
 	const as = $derived(byId.get(actor));
-	const spaces = $derived(world.spaces.filter((s) => s.founder === vault));
+	const entries = $derived(world.entries.filter((e) => e.vault === vault));
+	const seen = $derived(entries.filter((e) => reads(e, actor)));
+	const todos = $derived(seen.filter((e) => e.kind === 'todo'));
+	const tags = $derived(tagsOf(todos));
+	/** the tag the todos are narrowed to: '' for all of them */
+	let only = $state('');
+	const shown = $derived(only && tags.some((t) => t.tag === only) ? todos.filter((e) => e.tags?.includes(only)) : todos);
+	const left = $derived(todos.filter((t) => t.status !== 'done').length);
 
-	/** each space's new todo, as the person types it */
-	let drafts = $state(/** @type {Record<string, string>} */ ({}));
+	/** the new todo, and its tags, as the person types them; and those the acting vault's cap asks for besides */
+	let draft = $state('');
+	let tagging = $state('');
+	const typed = $derived(tagsIn(tagging));
+	const asked = $derived(creates(world, vault, actor, 'todo', typed));
 	/** the todo whose share form is open */
 	let sharing = $state('');
 
 	const NEXT = /** @type {const} */ ({ open: 'doing', doing: 'done', done: 'open' });
 	const STATUS = /** @type {const} */ ({ open: 'Open', doing: 'Doing', done: 'Done' });
 
-	/** Space `s`'s name in its vault: Home, or Space 2. @param {import('./vaults.js').SpaceView} s */
-	const spaceName = (s) => (s.id === here?.home ? 'Home' : `Space ${spaces.indexOf(s) + 1}`);
-
-	/** @param {string} space */
-	async function add(space) {
-		const title = (drafts[space] ?? '').trim();
-		if (title && (await api.todo(actor, space, title))) drafts[space] = '';
+	async function add() {
+		const title = draft.trim();
+		if (title && asked && (await api.todo(actor, vault, title, [...typed, ...asked]))) draft = '';
 	}
 </script>
 
-{#each spaces as s (s.id)}
-	{@const role = s.roles[actor]}
-	{@const seen = s.items.filter((i) => reads(i, actor))}
-	{@const todos = seen.filter((i) => i.kind === 'todo')}
-	{@const left = todos.filter((t) => t.status !== 'done').length}
-	<section class="space">
-		<header class="space-head">
-			<h2>{spaceName(s)}</h2>
-			{#if todos.length}<span class="chip">{left} of {count(todos.length, 'todo')} left</span>{/if}
-			{#if role}<span class="chip accent">{nameOf(as)} {ROLES[role]} it</span>{/if}
-		</header>
+<section class="todos-of">
+	<header class="head">
+		{#if todos.length}<span class="chip">{left} of {count(todos.length, 'todo')} left</span>{/if}
+		{#each tags as t (t.tag)}
+			<button class="chip pick" class:on={only === t.tag} aria-pressed={only === t.tag} onclick={() => (only = only === t.tag ? '' : t.tag)}
+				>#{t.tag} <small>{t.uses}</small></button
+			>
+		{/each}
+	</header>
 
-		{#if !seen.length && !role}
-			<div class="empty">
-				<p>
-					{nameOf(as)} can't see {s.items.length ? `the ${count(s.items.length, 'entry', 'entries')}` : 'anything'} in
-					{nameOf(here)}'s {s.id === here?.home ? 'home' : 'space'}. A vault that owns it can share it with {nameOf(as)},
-					in <button class="link" onclick={onaccess}>Access</button>.
-				</p>
-				{#if here?.via && vault !== actor}
-					<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(here)}</button>
-				{/if}
-			</div>
-		{:else}
-			<ul class="card todos">
-				{#each todos as it (it.entry)}
-					{@const writes = allows(it.roles[actor], 'write')}
-					<li class={it.status ?? 'open'}>
-						<button
-							class="tick"
-							disabled={busy || !writes}
-							title={writes ? `Mark it ${NEXT[it.status ?? 'open']}` : `${nameOf(as)} only reads it`}
-							onclick={() => api.setStatus(actor, s.id, it.entry, NEXT[it.status ?? 'open'])}
-						>
-							{STATUS[it.status ?? 'open']}
-						</button>
-						<span class="title">{it.title}</span>
-						{#if it.by}<small class="soft">by {nameOf(byId.get(it.by))}</small>{/if}
-						{#if allows(it.roles[actor], 'owner')}
-							<button class="btn quiet" disabled={busy} onclick={() => (sharing = sharing === it.entry ? '' : it.entry)}>Share</button>
-						{/if}
-						{#if sharing === it.entry}
-							<div class="sharing">
-								<Share {world} {actor} {api} {busy} space={s.id} entry={it.entry} ondone={() => (sharing = '')} />
-							</div>
-						{/if}
-					</li>
-				{:else}
-					<li class="none soft">No todo here yet.</li>
-				{/each}
-				{#if allows(role, 'write')}
-					<li class="add">
-						<input
-							class="field grow"
-							placeholder="A new todo"
-							aria-label="A new todo in {spaceName(s)}"
-							bind:value={drafts[s.id]}
-							onkeydown={(e) => e.key === 'Enter' && add(s.id)}
-						/>
-						<button class="btn" disabled={busy || !(drafts[s.id] ?? '').trim()} onclick={() => add(s.id)}>Add the todo</button>
-					</li>
-				{/if}
-			</ul>
+	{#if !seen.length && vault !== actor}
+		<div class="empty">
+			<p>
+				{nameOf(as)} can't see {entries.length ? `the ${count(entries.length, 'entry', 'entries')}` : 'anything'} in
+				{nameOf(here)}. A vault that owns it can share its todos with {nameOf(as)}, all of them or those tagged one way, in
+				<button class="link" onclick={onaccess}>Access</button>.
+			</p>
+			{#if here?.via}
+				<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(here)}</button>
+			{/if}
+		</div>
+	{:else}
+		<ul class="card todos">
+			{#each shown as it (it.entry)}
+				{@const writes = allows(it.roles[actor], 'write')}
+				<li class={it.status ?? 'open'}>
+					<button
+						class="tick"
+						disabled={busy || !writes}
+						title={writes ? `Mark it ${NEXT[it.status ?? 'open']}` : `${nameOf(as)} only reads it`}
+						onclick={() => api.setStatus(actor, it.entry, NEXT[it.status ?? 'open'])}
+					>
+						{STATUS[it.status ?? 'open']}
+					</button>
+					<span class="title">{it.title}</span>
+					<Tags {world} {actor} {api} {busy} entry={it} />
+					{#if it.by !== vault}<small class="soft">by {nameOf(byId.get(it.by))}</small>{/if}
+					{#if allows(it.roles[actor], 'owner')}
+						<button class="btn quiet" disabled={busy} onclick={() => (sharing = sharing === it.entry ? '' : it.entry)}>Share</button>
+					{/if}
+					{#if sharing === it.entry}
+						<div class="sharing">
+							<Share {world} {actor} {api} {busy} {vault} entry={it.entry} ondone={() => (sharing = '')} />
+						</div>
+					{/if}
+				</li>
+			{:else}
+				<li class="none soft">No todo here{only ? ` tagged “${only}”` : ''} yet.</li>
+			{/each}
+			{#if asked}
+				<li class="add">
+					<input
+						class="field grow"
+						placeholder="A new todo"
+						aria-label="A new todo"
+						bind:value={draft}
+						onkeydown={(e) => e.key === 'Enter' && add()}
+					/>
+					<input class="field tagging" placeholder="tags (optional)" bind:value={tagging} aria-label="The new todo’s tags" />
+					<button class="btn" disabled={busy || !draft.trim()} onclick={add}>Add the todo</button>
+					{#if asked.length}
+						<small class="soft">Tagged {list(asked.map((t) => `“${t}”`))} too, as {nameOf(as)}’s cap asks.</small>
+					{/if}
+				</li>
+			{/if}
+		</ul>
+		{#if entries.length > seen.length}
+			<p class="soft">{count(entries.length - seen.length, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
 		{/if}
-	</section>
-{:else}
-	<div class="empty">{nameOf(here)} has no space yet{here?.via ? ': its home comes with its name.' : '.'}</div>
-{/each}
+	{/if}
+</section>
 
 <style>
-	.space {
-		max-width: 46rem;
+	.todos-of {
+		max-width: 52rem;
 		margin-bottom: 2rem;
 	}
 
-	.space-head {
+	.head {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.6rem;
+		gap: 0.35rem;
 		margin-bottom: 0.7rem;
 	}
 
-	.space-head h2 {
-		margin: 0;
-		font-family: var(--font-body);
-		font-size: 1.05rem;
-		font-weight: 600;
-		font-variation-settings: normal;
-		letter-spacing: 0;
+	.pick {
+		border: 1px solid transparent;
+		font: inherit;
+		font-size: 0.78rem;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.pick small {
+		color: var(--soft);
+	}
+
+	.pick.on {
+		border-color: var(--accent);
+		background: #d6e8e4;
+		color: #1f4f47;
+	}
+
+	.tagging {
+		width: 9rem;
 	}
 
 	.todos {

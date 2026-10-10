@@ -1,20 +1,29 @@
 <!--
-	The studio's spaces: what this browser holds in all, then each space the vault founded, as a database studio lists
-	its schemas (Postgres's namespaces): its key's epoch, whether everyone reads it, its entries, and the edits held on
-	it by kind. A click opens its tables.
+	The studio's cells: what this browser holds in all and of the vault, then each cell of its entries, as a database
+	studio lists its partitions. A cell is a dynamic group: the entries of the vault the same caps reach, whatever their
+	slices select, under one key of its own, which moves to its next generation when a reader may no longer read it. An
+	entry tagged into a cap's slice, or out of it, moves to another cell. No cell is named by hand: each is the caps
+	that reach it. A click opens its tables.
 -->
 <script>
 	import { count, nameOf, short } from './vaults.js';
 
-	/** @type {{ s: import('./db.js').Studio, db: import('./db.js').Db, onpick: (space: string) => void }} */
+	/** @type {{ s: import('./db.js').Studio, db: import('./db.js').Db, onpick: (cell: string) => void }} */
 	let { s, db, onpick } = $props();
 
-	const entries = $derived(s.spaces.reduce((n, sp) => n + sp.rows.length, 0));
+	/** the cells, the vault's own first, then by how many caps reach them */
+	const cells = $derived([...s.cells].sort((a, b) => a.caps.length - b.caps.length));
 </script>
 
 <div class="stats">
-	<div class="stat"><b>{s.spaces.length}</b><span>{s.spaces.length === 1 ? 'space' : 'spaces'}</span></div>
-	<div class="stat"><b>{entries}</b><span>{entries === 1 ? 'entry' : 'entries'}</span></div>
+	<div class="stat"><b>{s.rows.length}</b><span>{s.rows.length === 1 ? 'entry' : 'entries'}</span></div>
+	<div class="stat"><b>{cells.length}</b><span>{cells.length === 1 ? 'cell' : 'cells'}</span></div>
+	<div class="stat" title="Writes of its entries, and moves of them from cell to cell">
+		<b>{db.edits.writes}</b><span>writes, {count(db.edits.moves, 'move')}</span>
+	</div>
+	<div class="stat" title="Caps issued over it, and how many of those were revoked">
+		<b>{db.edits.caps}</b><span>caps, {db.edits.revokes} revoked</span>
+	</div>
 	<div class="stat" title="Every signed edit this browser holds, of every vault it knows">
 		<b>{db.held.edits}</b><span>signed edits held</span>
 	</div>
@@ -27,43 +36,35 @@
 	<table>
 		<thead>
 			<tr>
-				<th>Space</th>
+				<th>Cell</th>
 				<th>Id</th>
-				<th>Read by</th>
-				<th class="num">Key epoch</th>
+				<th>Reached by</th>
+				<th class="num">Key generation</th>
 				<th class="num">Entries</th>
-				<th class="num">Writes</th>
-				<th class="num">Checkpoints</th>
-				<th class="num">Key edits</th>
-				<th class="num">Grants</th>
-				<th class="num">Published</th>
 			</tr>
 		</thead>
 		<tbody>
-			{#each s.spaces as sp (sp.id)}
+			{#each cells as x (x.id)}
 				<!-- the row opens on a click anywhere; its first cell's button takes the keyboard's -->
 				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-				<tr class="rec" onclick={() => onpick(sp.id)}>
-					<td><button class="open" onclick={(e) => (e.stopPropagation(), onpick(sp.id))}>{s.space(sp.id)}</button></td>
-					<td class="mono" title={sp.id}>{short(sp.id)}</td>
-					<td>{#if sp.public}<span class="chip ok">everyone</span>{:else}<span class="chip">its caps’ holders</span>{/if}</td>
-					<td class="num">{sp.epoch}</td>
-					<td class="num">{sp.rows.length}</td>
-					<td class="num">{sp.edits.writes}</td>
-					<td class="num">{sp.edits.checkpoints}</td>
-					<td class="num">{sp.edits.keys}</td>
-					<td class="num">{sp.edits.grants}{sp.edits.revokes ? ` (${sp.edits.revokes} revoked)` : ''}</td>
-					<td class="num">{sp.edits.published}</td>
+				<tr class="rec" onclick={() => onpick(x.id)}>
+					<td><button class="open" onclick={(e) => (e.stopPropagation(), onpick(x.id))}>{s.cellName(x.id)}</button></td>
+					<td class="mono" title={x.id}>{short(x.id)}</td>
+					<td class="reach">{x.caps.length ? s.cell(x.id).replace(/^Shared: /, '') : 'no cap but those on the whole vault'}</td>
+					<td class="num">{x.generation}</td>
+					<td class="num">{x.entries}</td>
 				</tr>
 			{:else}
-				<tr><td colspan="10" class="soft">{nameOf(s.here)} has founded no space yet.</td></tr>
+				<tr><td colspan="5" class="soft">{nameOf(s.here)} holds no entry yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>
 </div>
 <p class="soft note">
-	A space is a namespace with a key of its own: its entries are sealed to whoever holds a cap on it, and each rotation
-	of its key, as owners revoke, starts a new epoch. {count(s.spaces.length, 'space')} of {nameOf(s.here)}.
+	A cell is never named by hand: it is the entries the same caps reach, under one key. A cap on a type or a tag reaches
+	every entry that matches it, now and later, so a cell grows and shrinks as entries are written and tagged, and each
+	device receives exactly the cells its vaults' caps reach. {count(cells.length, 'cell')} of {nameOf(s.here)}; its seed is
+	at generation {db.seed}.
 </p>
 
 <style>
@@ -149,6 +150,12 @@
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
+	}
+
+	.reach {
+		max-width: 28rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.note {

@@ -2,7 +2,7 @@
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
 	vault's name and its pages, as a database studio lists them: its notes and its todos; its database (the table
-	editor, its spaces, schemas and lenses, and its history, every signed edit); then its settings (About, Owners and
+	editor, its cells, schemas and lenses, and its history, every signed edit); then its settings (About, Owners and
 	devices, Access, Sync); and the page picked in the middle. Each page has an address of its own (`#todos`), and so
 	has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole screen. At the
 	foot, in the middle above the app's own buttons, the vault the person acts as: their own, or any vault their vault
@@ -46,7 +46,7 @@
 			'Database',
 			[
 				['tables', 'Table editor', 'table'],
-				['spaces', 'Spaces', 'space'],
+				['cells', 'Cells', 'cell'],
 				['schemas', 'Schemas', 'schema'],
 				['lenses', 'Lenses', 'lens'],
 				['history', 'History', 'history']
@@ -109,8 +109,8 @@
 	// a note opens in its vault: its notes are where its back arrow goes
 	$effect(() => {
 		const entry = route.entry;
-		const space = entry ? world.spaces.find((s) => s.items.some((i) => i.entry === entry)) : undefined;
-		if (space) picked = space.founder;
+		const of = entry ? world.entries.find((e) => e.entry === entry)?.vault : undefined;
+		if (of) picked = of;
 	});
 
 	/** Who owns vault `v`, as a line. @param {import('./vaults.js').VaultView} v */

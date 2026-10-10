@@ -370,7 +370,8 @@ impl Device {
         self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the change is refused: {why:?}"))
     }
 
-    /// Adds the tags `add` to entry `entry` and removes the tags `remove`, acting for vault `actor`; its peers are told.
+    /// Adds the tags `add` to entry `entry` and removes the tags `remove`, acting for vault `actor`; its peers are
+    /// told.
     /// They count at once when `actor` is the entry's vault; anyone else asks the vault's stewards, its devices, who
     /// answer with what the caps it holds let it ask for (`Lab::tag`). A tag that takes an entry into or out of a
     /// cap's slice moves it to the cell those caps reach.
@@ -472,7 +473,14 @@ impl Device {
 
     /// Sets the text of block `block` of entry `entry` on line `line` of its history, acting for vault `actor`; its
     /// peers are told.
-    pub async fn set_text_on(&self, actor: VaultId, entry: EntryId, line: Line, block: u64, text: String) -> Result<()> {
+    pub async fn set_text_on(
+        &self,
+        actor: VaultId,
+        entry: EntryId,
+        line: Line,
+        block: u64,
+        text: String,
+    ) -> Result<()> {
         let edit = move |lab: &mut Lab, me| lab.edit_on(me, actor, entry, line, |item| item.set_text(block, &text));
         self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
     }
@@ -506,8 +514,8 @@ impl Device {
         self.node.act(propose).await.map_err(|why| anyhow!("the proposal is refused: {why:?}"))
     }
 
-    /// Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then shows
-    /// exactly what `from` does (`Lab::merge`, `Lab::promote`).
+    /// Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then
+    /// shows exactly what `from` does (`Lab::merge`, `Lab::promote`).
     pub async fn merge(
         &self,
         actor: VaultId,
@@ -721,9 +729,11 @@ pub struct EntryView {
     pub vault: VaultId,
     /// The vault its first write acted for.
     pub by: VaultId,
-    /// Its type and its tags now, if the device reads them: they travel inside its encrypted writes.
+    /// Its type, its tags now and when it was created, in seconds since 1970, if the device reads them: they travel
+    /// inside its encrypted writes.
     pub ty: Option<String>,
     pub tags: Option<Vec<String>>,
+    pub created: Option<u64>,
     pub cell: CellId,
     /// Everyone may read it.
     pub public: bool,
@@ -747,7 +757,7 @@ impl World {
     /// The world as device `me`'s page reads it (`PageDevice::world`): ids in 64 hex digits, kinds, roles and statuses
     /// by their lowercase names, a slice as `words::slice_value` writes it, `null` where the device doesn't read it, a
     /// vault's `via` `null` where the device doesn't act for it, a cap's `grantee` `"public"` for everyone, an
-    /// entry's `type` and `tags` `null` where the device doesn't read them and its `roles` by vault.
+    /// entry's `type`, `tags` and `created` `null` where the device doesn't read them and its `roles` by vault.
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let owner = |p: &Principal| match p {
@@ -815,6 +825,7 @@ impl World {
                 "by": hex(&i.by.0),
                 "type": i.ty,
                 "tags": i.tags,
+                "created": i.created,
                 "cell": hex(&i.cell.0),
                 "public": i.public,
                 "roles": roles,
@@ -859,7 +870,8 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
     };
     let vaults = st.vaults().iter().map(vault).collect();
     let cap = |cp: &Issued| {
-        let reaches = |en: &&avendb::policy::Entry| en.vault == cp.cap.over && (cp.cap.wide || in_cell(st, en.cell(), cp.id));
+        let reaches =
+            |en: &&avendb::policy::Entry| en.vault == cp.cap.over && (cp.cap.wide || in_cell(st, en.cell(), cp.id));
         CapView {
             id: cp.id,
             cap: cp.cap.clone(),
@@ -913,9 +925,12 @@ fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
     };
     let st = lab.state(me);
     let meaning = lab.meaning(me, en.id);
-    let (ty, tags) = match &meaning {
-        Some(m) => (Some(m.attrs.ty.0.clone()), Some(m.attrs.tags.iter().map(|t| t.0.clone()).collect())),
-        None => (None, None),
+    let (ty, tags, created) = match &meaning {
+        Some(m) => {
+            let tags = m.attrs.tags.iter().map(|t| t.0.clone()).collect();
+            (Some(m.attrs.ty.0.clone()), Some(tags), Some(m.attrs.created))
+        }
+        None => (None, None, None),
     };
     let (v, x) = (en.vault, en.cell());
     EntryView {
@@ -924,6 +939,7 @@ fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
         by: en.creator,
         ty,
         tags,
+        created,
         cell: x,
         public: st.public_key(KeyFam::Cell(v, x)),
         roles: roles(st, v, x),
@@ -978,7 +994,9 @@ fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: CellId) -
         best.map(|(_, g)| g).or(public.then_some(own))
     };
     let k = KeyFam::Cell(v, x);
-    let sync = |&(d, own): &(SignerId, VaultId)| Some(Syncing { device: d, through: through(d, own)?, opens: st.entitled(d, k) });
+    let sync = |&(d, own): &(SignerId, VaultId)| {
+        Some(Syncing { device: d, through: through(d, own)?, opens: st.entitled(d, k) })
+    };
     devices.iter().filter_map(sync).collect()
 }
 

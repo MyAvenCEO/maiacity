@@ -2,21 +2,20 @@
 	Your account (P8e, P8f): the person's own avenDB. Their account is their human vault: its root is their passkey,
 	which stays in the browser's authenticator and is the vault's only recovery, and this browser is one of its devices,
 	its keys derived from the passkey at every unlock, what it holds kept in IndexedDB so that it opens again in one
-	ceremony. Every device of the vault shows by the name on its card, which the device writes itself into the vault's
-	first space, end-to-end encrypted like the notes there (avendb-browser's `Device::card`), and every vault by the name
-	on its profile, which this browser writes into the vault's home (`Device::profile`): the person's own by their
-	maiaCITY name, avenCEO's as avenCEO. In the Mac app the device runs natively beside the app ($lib/avendb/native.js):
-	its node on UDP sockets of its own, its store in a folder on the Mac, and the device a page there made before moves
-	into that folder as it unlocks. A new person founds their vault here with the passkey they signed up to maiaCITY
-	with (the same relying party, maia.city), or one they make here; the first to found a vault through a server nobody
-	has claimed yet claims it in the same ceremony, so their vault owns avenCEO, the aven vault the server is a device
-	of. A person with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their
-	vault's log as ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every
-	device. Or it links through the code another of their devices shows, scanned as a QR code or opened as a link
-	(?link=). Once unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and
-	the aven and coop vaults their vault founds and owns, each of which they act as. avenDB's server runs at
-	avendb.maia.city: its relay and its code are filled in, and a test server's can take their place (?relay=,
-	?server=).
+	ceremony. Every device of the vault shows by the name on its card, an entry of the vault the device writes itself,
+	end-to-end encrypted like its notes (avendb-browser's `Device::card`), and every vault by the name on its profile,
+	an entry this browser writes into it (`Device::profile`): the person's own by their maiaCITY name, avenCEO's as
+	avenCEO. In the Mac app the device runs natively beside the app ($lib/avendb/native.js): its node on UDP sockets of
+	its own, its store in a folder on the Mac, and the device a page there made before moves into that folder as it
+	unlocks. A new person founds their vault here with the passkey they signed up to maiaCITY with (the same relying
+	party, maia.city), or one they make here; the first to found a vault through a server nobody has claimed yet claims
+	it in the same ceremony, so their vault owns avenCEO, the aven vault the server is a device of. A person with an
+	account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log as
+	ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or it
+	links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once
+	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and the aven and
+	coop vaults their vault founds and owns, each of which they act as. avenDB's server runs at avendb.maia.city: its
+	relay and its code are filled in, and a test server's can take their place (?relay=, ?server=).
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -254,22 +253,35 @@
 
 	const unlockHere = () =>
 		run(`Unlocking: ${asks} once`, async () => {
-			if (mac && moving) {
-				// the page's device moves into the app's folder, the same device; then the page lets go of its copy, so
-				// that it never runs twice
-				const kept = await store.load();
-				const info = await mac.call('adopt', meta, kept.edits.map(mac.base64), kept.keys.map(mac.base64));
-				store.close();
-				await stores.remove(STORE);
-				[store, moving] = [null, false];
-				return macOpened(info);
+			try {
+				await unlocking();
+			} catch (e) {
+				// a store of the device taken out of its vault, or kept before avenDB started fresh with flat vaults
+				if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
+				throw new Error(
+					`What ${here} kept holds no vault of yours: it was taken out of your vault, or kept before avenDB started fresh. Forget it here, then sign in or set up your account again with your passkey.`
+				);
 			}
-			if (mac) return macOpened(await mac.call('open'));
-			const { unlock } = await ceremonies(meta.credential);
-			const kept = await store.load();
-			const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.edits, kept.keys);
-			running(d);
 		});
+
+	/** Opens the device this browser, or the app, holds, in the unlock alone. */
+	async function unlocking() {
+		if (mac && moving) {
+			// the page's device moves into the app's folder, the same device; then the page lets go of its copy, so
+			// that it never runs twice
+			const kept = await store.load();
+			const info = await mac.call('adopt', meta, kept.edits.map(mac.base64), kept.keys.map(mac.base64));
+			store.close();
+			await stores.remove(STORE);
+			[store, moving] = [null, false];
+			return macOpened(info);
+		}
+		if (mac) return macOpened(await mac.call('open'));
+		const { unlock } = await ceremonies(meta.credential);
+		const kept = await store.load();
+		const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.edits, kept.keys);
+		running(d);
+	}
 
 	/** The device runs from here on, its store following it, even should keeping what opens it again fail: it can
 	 *  still show its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
@@ -316,8 +328,8 @@
 		world = w;
 		if (!w) return;
 		const mine = w.vaults.find((v) => v.id === w.mine);
-		// its card, so the person's other devices show it by name: once it holds its vault's first space, as a device
-		// just linked does soon after; what it writes comes back as a change, and shows
+		// its card, so the person's other devices show it by name: once it holds its vault's key, as a device just
+		// linked does soon after; what it writes comes back as a change, and shows
 		const card = mine?.devices.find((x) => x.me);
 		if (card && card.name !== meta.name && !carding) {
 			carding = true;
@@ -344,7 +356,7 @@
 		}
 	}
 
-	/** The passkey's ceremony for what its vault approves: new vaults, an owner's grant or its revocation. */
+	/** The passkey's ceremony for what its vault approves: new vaults, an owner cap or its revocation. */
 	const approver = async () => (mac ? undefined : (await ceremonies(meta.credential)).sign);
 
 	/**
@@ -360,82 +372,91 @@
 	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through. */
 	const api = {
 		/**
-		 * A new note titled `title` that reads `body`: its entry, or `null` if it didn't go through.
-		 * @param {string} actor @param {string} space @param {string} title @param {string} body
+		 * A new note titled `title` that reads `body`, tagged `tags`, in vault `vault`: its entry, or `null` if it didn't
+		 * go through.
+		 * @param {string} actor @param {string} vault @param {string} title @param {string} body @param {string[]} tags
 		 */
-		write: async (actor, space, title, body) => {
+		write: async (actor, vault, title, body, tags) => {
 			let made = null;
-			const ok = await act('Writing the note', async () => (made = await device.write(actor, space, title, body)));
+			const ok = await act('Writing the note', async () => (made = await device.write(actor, vault, title, body, tags)));
 			return ok ? made : null;
 		},
-		/** @param {string} actor @param {string} space @param {string} title */
-		todo: (actor, space, title) => act('Adding the todo', () => device.todo(actor, space, title)),
-		/** @param {string} actor @param {string} space @param {string} entry @param {string} status */
-		setStatus: (actor, space, entry, status) => act('Saving', () => device.setStatus(actor, space, entry, status)),
+		/** @param {string} actor @param {string} vault @param {string} title @param {string[]} tags */
+		todo: (actor, vault, title, tags) => act('Adding the todo', () => device.todo(actor, vault, title, tags)),
+		/** @param {string} actor @param {string} entry @param {string} status */
+		setStatus: (actor, entry, status) => act('Saving', () => device.setStatus(actor, entry, status)),
+		/**
+		 * Tags `add` added to entry `entry` and `remove` taken off: at once for the entry's vault, else asked of its
+		 * devices, who grant what the acting vault's caps let it ask for.
+		 * @param {string} actor @param {string} entry @param {string[]} add @param {string[]} remove
+		 */
+		tag: (actor, entry, add, remove) => act('Tagging', () => device.tag(actor, entry, add, remove)),
 		/** Vault `vault`'s database as this browser holds it, for the database studio. @param {string} vault */
 		database: (vault) => device.database(vault),
 		/** The database's history: every signed edit this browser holds, for the studio's History. */
 		history: () => device.history(),
-		/** A note's main line, its proposals and every edit of it, for its page. @param {string} space @param {string} entry */
-		note: (space, entry) => device.note(space, entry),
+		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
+		note: (entry) => device.note(entry),
 		/**
 		 * The note's text on line `line` (`null` for the main line).
-		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} text
+		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} text
 		 */
-		setTextOn: (actor, space, entry, line, text) =>
-			act('Saving', () => device.setTextOn(actor, space, entry, line, 2, text)),
+		setTextOn: (actor, entry, line, text) => act('Saving', () => device.setTextOn(actor, entry, line, 2, text)),
 		/**
 		 * The note's title on line `line` (`null` for the main line).
-		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} title
+		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} title
 		 */
-		setTitleOn: (actor, space, entry, line, title) =>
-			act('Renaming', () => device.setTitleOn(actor, space, entry, line, title)),
+		setTitleOn: (actor, entry, line, title) => act('Renaming', () => device.setTitleOn(actor, entry, line, title)),
 		/**
 		 * A proposal named `name` from version `from`: its line, or `null` if it didn't go through.
-		 * @param {string} actor @param {string} space @param {string} entry @param {string[]} from @param {string} name
+		 * @param {string} actor @param {string} entry @param {string[]} from @param {string} name
 		 */
-		propose: async (actor, space, entry, from, name) => {
+		propose: async (actor, entry, from, name) => {
 			let made = null;
-			const ok = await act('Proposing', async () => (made = await device.propose(actor, space, entry, from, name)));
+			const ok = await act('Proposing', async () => (made = await device.propose(actor, entry, from, name)));
 			return ok ? made : null;
 		},
 		/**
 		 * Line `from` merged into line `into`; with `promote`, `into` brought to exactly what `from` shows.
-		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} from
-		 * @param {string | null} into @param {boolean} promote
+		 * @param {string} actor @param {string} entry @param {string | null} from @param {string | null} into
+		 * @param {boolean} promote
 		 */
-		merge: (actor, space, entry, from, into, promote) =>
-			act(promote ? 'Making it match' : 'Merging', () => device.merge(actor, space, entry, from, into, promote)),
+		merge: (actor, entry, from, into, promote) =>
+			act(promote ? 'Making it match' : 'Merging', () => device.merge(actor, entry, from, into, promote)),
 		/**
 		 * Version `version` put back on line `line`.
-		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string[]} version
+		 * @param {string} actor @param {string} entry @param {string | null} line @param {string[]} version
 		 */
-		restore: (actor, space, entry, line, version) =>
-			act('Restoring', () => device.restore(actor, space, entry, line, version)),
+		restore: (actor, entry, line, version) => act('Restoring', () => device.restore(actor, entry, line, version)),
 		/**
 		 * Edit `edit` undone on line `line`, every change since kept.
-		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} edit
+		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} edit
 		 */
-		undo: (actor, space, entry, line, edit) => act('Undoing', () => device.undo(actor, space, entry, line, edit)),
+		undo: (actor, entry, line, edit) => act('Undoing', () => device.undo(actor, entry, line, edit)),
 		/**
-		 * A variant: what line `line` shows, as a new note of space `into`; the new entry, or `null` if it didn't go
-		 * through.
-		 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} into
+		 * A variant: what line `line` shows, as a new entry of vault `into`, of its type and with its tags; the new
+		 * entry, or `null` if it didn't go through.
+		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} into
 		 */
-		variant: async (actor, space, entry, line, into) => {
+		variant: async (actor, entry, line, into) => {
 			let made = null;
-			const ok = await act('Making the variant', async () => (made = await device.variant(actor, space, entry, line, into)));
+			const ok = await act('Making the variant', async () => (made = await device.variant(actor, entry, line, into)));
 			return ok ? made : null;
 		},
-		/** @param {string} issuer @param {string} space @param {string | null} entry @param {string} role @param {string} grantee */
-		grant: (issuer, space, entry, role, grantee) =>
+		/**
+		 * A cap: role `role` on what `slice` selects of vault `over`, to vault `grantee` or `"public"`, acting for vault
+		 * `issuer`; making a vault owner takes the passkey.
+		 * @param {string} issuer @param {string} over @param {import('./vaults.js').Slice} slice @param {string} role
+		 * @param {string} grantee
+		 */
+		share: (issuer, over, slice, role, grantee) =>
 			act(role === 'owner' ? `Sharing: ${asks} once` : 'Sharing', async () =>
-				device.grant(issuer, space, entry ?? undefined, role, grantee, await approver())
+				device.share(issuer, over, slice, role, grantee, await approver())
 			),
-		/** @param {string} actor @param {string} grant @param {string} role */
-		revoke: (actor, grant, role) =>
+		/** @param {string} actor @param {string} cap @param {string} role */
+		revoke: (actor, cap, role) =>
 			act(role === 'owner' ? `Revoking: ${asks} once` : 'Revoking', async () =>
-				device.revoke(actor, grant, await approver())
+				device.revoke(actor, cap, await approver())
 			),
 		/** @param {{ name: string, kind: string }[]} vaults */
 		foundVaults: (vaults) =>

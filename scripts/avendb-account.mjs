@@ -6,11 +6,12 @@
  * written, given a proposal, accepted into main, undone, restored, made to match its proposal and made a variant of,
  * with no ceremony; their vault's studio shows its tables, schemas, lenses and every signed edit. Their vault then
  * founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, each named by hand, in one ceremony,
- * and the person acts as each in turn from the switcher at the foot: avenALICE writes a note and a todo and shares the
- * note with avenBOB, who reads it and its history and nothing else, and finds her todo sealed for him in her
- * table editor, while avenCHARLY sees nothing of hers; the Sync list shows
- * avenCEO's server relaying her home's ciphertext and opening none of it; making the coop an owner of her home takes
- * one ceremony, revoking avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here,
+ * and the person acts as each in turn from the switcher at the foot: avenALICE writes a note and two todos, one tagged
+ * “work”, and shares the note with avenBOB, and every todo tagged “work”, a rule rather than a list: he reads the note
+ * and its history and that todo, and a todo she tags “work” later, and nothing else, and finds her other todo sealed for
+ * him in her table editor, while avenCHARLY sees nothing of hers; the Sync list shows her cells, avenCEO's server
+ * relaying their ciphertext and opening none of it; making the coop an owner of her whole vault takes one ceremony,
+ * revoking avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here,
  * it comes back through the server for the passkey alone, in four ceremonies, with every vault and the note. Each step
  * is screenshot.
  *
@@ -276,6 +277,8 @@ async function pickTable(id) {
 const NOTE = 'Hello from Alice';
 const BODY = 'Only Bob may read this.';
 const TODO = 'Plant the north beds';
+const WORK = 'Fix the greenhouse door';
+const LATER = 'Order seeds';
 
 try {
 	await page.goto(`${base}/app/avendb/?${new URLSearchParams({ relay, server })}`, { waitUntil: 'domcontentloaded' });
@@ -388,7 +391,7 @@ try {
 	check('both notes there, the variant named so', cards.length === 2 && (await text('.main')).includes('Variant of “Plan”'), cards.join(', '));
 	await shot('3f-notes');
 
-	// the vault's studio, as this browser holds it: its tables, spaces, schemas, lenses and every signed edit
+	// the vault's studio, as this browser holds it: its tables, cells, schemas, lenses and every signed edit
 	await goTo('Table editor');
 	check('the table editor, at an address of its own', (await hash()) === '#tables', await hash());
 	const held = async () => {
@@ -408,8 +411,8 @@ try {
 	check('its row, opened: its proposal and its record', drawer.includes('draft') && drawer.includes('Corn first.'), drawer.slice(0, 300));
 	await shot('3g-table-editor');
 	await page.keyboard.press('Escape');
-	await goTo('Spaces');
-	check('its spaces', await waitText('signed edits held', 10000, '.main'), (await text('.main')).slice(0, 200));
+	await goTo('Cells');
+	check('its cells', await waitText('signed edits held', 10000, '.main'), (await text('.main')).slice(0, 200));
 	await goTo('Schemas');
 	const schemaNames = await shown('.main .schemas .schema header b');
 	check('the schemas the app ships', ['Markdown document, v2', 'Todo, v2'].every((n) => schemaNames.includes(n)), schemaNames.join(', '));
@@ -446,11 +449,11 @@ try {
 	check('Samuel may act as any of them', SIX.every((n) => actors.includes(n)), actors.join(', '));
 	await shot('5-six-vaults');
 
-	// avenALICE writes a note and a todo in her home, and shares the note with avenBOB
+	// avenALICE writes a note and todos in her vault, and shares the note with avenBOB, and her todos tagged “work”
 	check('acting as avenALICE', await actAs('avenALICE'), await text('.switcher .pill b'));
 	await look('avenALICE');
 	check('looking at her vault', (await text('.aside h1')) === 'avenALICE', await text('.aside h1'));
-	check('she owns her home', await waitText('avenALICE owns it', 5000, '.main'));
+	check('she may start a note in her vault', !!(await page.$('.main .start')));
 	await click('Blank note', '.main .start button');
 	check('her note opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
 	await retitle(NOTE);
@@ -459,7 +462,8 @@ try {
 	const sharing = await ceremonies();
 	await click('Share', '.doc .top button');
 	await choose('.doc .sharebar select[aria-label="Share with"]', 'avenBOB');
-	await choose('.doc .sharebar select[aria-label="Role"]', 'reads');
+	check('sharing starts at the least: this note alone, to read', (await text('.doc .sharebar')).includes('Only “Hello from Alice”'), await text('.doc .sharebar'));
+	await choose('.doc .sharebar select[aria-label="Role"]', 'to read');
 	await click('Share it', '.doc .sharebar button');
 	const holders = () => page.$$eval('.doc .people .person', (els) => els.map((e) => e.getAttribute('title')));
 	const shared = await until(async () => (await holders()).includes('avenBOB reads it'));
@@ -476,6 +480,32 @@ try {
 	check('her todo', await waitText(TODO, 30000, '.main .todos'));
 	await click('Open', '.main .todos .tick');
 	check('marked doing', await waitText('Doing', 30000, '.main .todos'));
+	await type('.main .todos li.add input[aria-label="A new todo"]', WORK);
+	await type('.main .todos li.add input[aria-label="The new todo’s tags"]', 'work');
+	await click('Add the todo', '.main .todos li.add button');
+	check('a todo tagged “work”', await waitText('#work', 30000, '.main .todos'), await text('.main .todos'));
+	await type('.main .todos li.add input[aria-label="A new todo"]', LATER);
+	await click('Add the todo', '.main .todos li.add button');
+	check('and one more, untagged', await waitText(LATER, 30000, '.main .todos'));
+	await goTo('Access');
+	await choose('.main select[aria-label="What"]', 'every');
+	await choose('.main select[aria-label="Type"]', 'todo');
+	await type('.main input[aria-label="Tagged"]', 'work');
+	await choose('.main select[aria-label="Share with"]', 'avenBOB');
+	const preview = await text('.main .share .preview');
+	check('the rule, in words, and what it reaches now', preview.includes('todos tagged “work”') && preview.includes(`“${WORK}”`), preview);
+	await click('Share', '.main .card button.primary');
+	const rule = await until(async () => (await shown('.main .grants li')).some((l) => l?.includes('avenBOB') && l.includes('todos tagged “work”')));
+	check('avenBOB reads her todos tagged “work”: a cap on a rule', rule, (await shown('.main .grants li')).join(' | '));
+	await goTo('Todos');
+	await page.evaluate((later) => {
+		const li = [...document.querySelectorAll('.main .todos li')].find((l) => l.querySelector('.title')?.textContent === later);
+		/** @type {HTMLElement | null | undefined} */ (li?.querySelector('.tags .more'))?.click();
+	}, LATER);
+	await sleep(200);
+	await type('.main .todos .tags input', 'work');
+	await click('Tag', '.main .todos .tags button');
+	check('her later todo tagged “work” too', await until(async () => (await text('.main .todos')).split('#work').length > 2, 30000), await text('.main .todos'));
 	await shot('6b-alice-todos');
 
 	// avenBOB reads the note, and nothing else of hers
@@ -485,7 +515,8 @@ try {
 	check('he reads her note', bob?.words === BODY, JSON.stringify(bob));
 	check('he starts no note there', !(await page.$('.main .start')));
 	await goTo('Todos');
-	check('her todo stays hidden', !(await text('.main')).includes(TODO));
+	check('he reads her todos tagged “work”, the one tagged later too', await until(async () => (await text('.main')).includes(WORK) && (await text('.main')).includes(LATER), 60000), await text('.main'));
+	check('her other todo stays hidden', !(await text('.main')).includes(TODO));
 	check('he adds no todo there', !(await page.$('.main .todos li.add')));
 	await shot('7-bob');
 	await goTo('Notes');
@@ -511,38 +542,44 @@ try {
 	// avenCHARLY: nothing of hers
 	check('acting as avenCHARLY', await actAs('avenCHARLY'));
 	await look('avenALICE', 'Notes');
-	const none = /avenCHARLY can't see the 2 entries in avenALICE's home/.test(await text('.main'));
-	check('he sees none of her 2 entries', !(await note(NOTE)) && none, (await text('.main')).slice(0, 300));
+	const none = /avenCHARLY can't see the \d+ entries in avenALICE/.test(await text('.main'));
+	check('he sees none of her entries', !(await note(NOTE)) && none, (await text('.main')).slice(0, 300));
 	const dim = await page.$eval('.bar .slot[aria-label="avenALICE"] .mark', (e) => e.classList.contains('dim'));
 	check('her mark faded for him', dim);
 	await shot('8-charly');
 	await click('Act as avenALICE', '.main .empty button');
 	check('from there, one click acts as her', await until(async () => (await text('.switcher .pill b')) === 'avenALICE', 5000));
 
-	// who receives her home: this browser opens it, avenCEO's server only relays its ciphertext
+	// who receives her cells: this browser opens them, avenCEO's server only relays their ciphertext
 	await look('avenALICE', 'Sync');
 	const sync = await text('.main');
-	check('this browser opens her home', sync.includes('Samuel’s test browser') && sync.includes('opens it'), sync.slice(0, 400));
-	check('avenCEO’s server relays its ciphertext only', /avenCEO's server.*relays its ciphertext only/.test(sync), sync.slice(0, 400));
+	check('her cells: her own, and those her caps share', sync.includes('Its own entries') && sync.includes('Shared: avenBOB reads'), sync.slice(0, 400));
+	check('this browser opens them', sync.includes('Samuel’s test browser') && sync.includes('opens it'), sync.slice(0, 400));
+	check('avenCEO’s server relays their ciphertext only', /avenCEO's server.*relays its ciphertext only/.test(sync), sync.slice(0, 400));
 	await shot('9-sync');
 
-	// as avenALICE: the coop owns her home too, which her owner's passkey approves; revoking avenBOB's read needs none
+	// as avenALICE: the coop owns her whole vault too, which her owner's passkey approves; revoking avenBOB's read needs
+	// none
 	await look('avenALICE', 'Access');
 	const owning = await ceremonies();
+	await choose('.main select[aria-label="What"]', 'the whole vault');
 	await choose('.main select[aria-label="Share with"]', 'Maia City COOP');
-	await choose('.main select[aria-label="Role"]', 'owns (your passkey approves)');
+	await choose('.main select[aria-label="Role"]', 'to own (your passkey approves)');
 	await click('Share', '.main .card button.primary');
-	const coop = await until(async () => /Maia City COOP owns/.test(await text('.main')), 60000);
-	check('the coop owns her home', coop, await problem());
+	const coop = await until(async () => /Maia City COOP owns the whole vault/.test(await text('.main')), 60000);
+	check('the coop owns her whole vault', coop, await problem());
 	check('in one ceremony', (await ceremonies()) - owning === 1, `${(await ceremonies()) - owning}`);
 	const revoking = await ceremonies();
-	const revoked = await page.evaluate(() => {
-		const li = [...document.querySelectorAll('.main .grants li')].find((l) => l.textContent?.includes('avenBOB'));
-		const button = li?.querySelector('button');
-		button?.click();
-		return !!button;
-	});
-	check('she may revoke avenBOB’s read', revoked);
+	const revoke = () =>
+		page.evaluate(() => {
+			const li = [...document.querySelectorAll('.main .grants li')].find((l) => l.textContent?.includes('avenBOB'));
+			const button = li?.querySelector('button');
+			button?.click();
+			return !!button;
+		});
+	check('she may revoke avenBOB’s read', await revoke());
+	await until(async () => (await shown('.main .grants li')).filter((l) => l?.includes('avenBOB')).length < 2);
+	check('and his read of her todos tagged “work”', await revoke());
 	const gone = await until(async () => !(await shown('.main .grants li')).some((l) => l?.includes('avenBOB')));
 	check('revoked', gone, (await shown('.main .grants li')).join(' | '));
 	check('with no ceremony', (await ceremonies()) === revoking, `${(await ceremonies()) - revoking}`);
