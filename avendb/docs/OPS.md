@@ -361,7 +361,7 @@ publishes its schema (S3); the vectors replay `Vectors.lean`'s writes that don't
 | C1 | Lean: rules in slices, chain narrowing, proof-carrying writes, acceptance; C1 to C4, T25 | PR #431, with C2, C3 |
 | C2 | Rust: slice rules and the ruled bit, chain keys, proofs, every reader's check, `may` | |
 | C3 | Page: rules in the share dialog, buttons by `may`; the walks; server redeploy | |
-| S1 | Lean, Rust and page: every reader judges each write by its entry's schemas; S1 to S4 | PR, with the walks |
+| S1 | Lean, Rust and page: every reader judges each write by its entry's schemas; S1 to S4 | PR #434 |
 
 ## Later
 
