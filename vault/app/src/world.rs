@@ -548,7 +548,7 @@ async fn open_window(handle: &AppHandle) -> Res<()> {
         return Ok(());
     }
     let window = WebviewWindowBuilder::new(handle, LABEL, WebviewUrl::App("/games/sandbox-4/?film".into()))
-        .title("maiaCITY Studio · world renderer")
+        .title("The OS · world renderer")
         .inner_size(640.0, 640.0)
         .position(0.0, 0.0)
         .decorations(false)

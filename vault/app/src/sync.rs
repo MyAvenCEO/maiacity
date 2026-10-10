@@ -34,7 +34,7 @@ pub async fn vault_connect(app: State<'_, App>, auth: State<'_, Auth>) -> Res<Ne
 }
 
 pub async fn connect(vault: &Vault, auth: &Auth) -> Res<Network> {
-    connect_as(vault, auth, &format!("maiaCITY Studio · {}", auth::host_name())).await
+    connect_as(vault, auth, &format!("The OS · {}", auth::host_name())).await
 }
 
 /// Pair a node (this Mac's, or a drive's) under a label and join the vault's network with it.

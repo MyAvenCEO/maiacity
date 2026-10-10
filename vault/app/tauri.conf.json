@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "maiaCITY Studio",
+  "productName": "The OS",
   "version": "0.1.0",
   "identifier": "city.maia.studio",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "maiaCITY Studio",
+        "title": "The OS",
         "url": "/app/studio/",
         "width": 1320,
         "height": 860,

@@ -140,7 +140,7 @@ pub async fn auth_status(auth: State<'_, Auth>) -> Result<AuthState, String> {
 #[tauri::command]
 pub async fn auth_start(handle: AppHandle, auth: State<'_, Auth>) -> Result<DeviceStart, String> {
     let api = api_base();
-    let label = format!("maiaCITY Studio · {}", host_name());
+    let label = format!("The OS · {}", host_name());
     let started: Started = auth
         .http
         .post(format!("{api}/api/device/start"))
