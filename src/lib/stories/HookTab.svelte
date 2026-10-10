@@ -584,7 +584,7 @@
 		background: #f6c75a;
 		font-family: var(--font-display);
 		font-size: clamp(0.72rem, 1.3vw, 0.95rem);
-		font-weight: 760;
+		font-weight: 900;
 		letter-spacing: 0;
 		text-transform: uppercase;
 		color: #14304f;

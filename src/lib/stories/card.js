@@ -47,7 +47,7 @@ export async function renderCard(layers, hook, o = {}) {
 	const shown = layers.filter((l) => l.on !== false);
 	// the pictures first, all of them, so a missing one is said before anything is drawn
 	const pics = new Map(await Promise.all(shown.filter((l) => (l.kind === 'image' || l.kind === 'cutout') && l.hash).map(async (l) => /** @type {[string, HTMLImageElement]} */ ([/** @type {string} */ (l.hash), await picture(/** @type {string} */ (l.hash))]))));
-	if (typeof document !== 'undefined' && document.fonts?.load) await Promise.all([document.fonts.load(`800 100px ${FONT}`), document.fonts.load(`760 100px ${FONT}`)]).catch(() => {});
+	if (typeof document !== 'undefined' && document.fonts?.load) await Promise.all([document.fonts.load(`800 100px ${FONT}`), document.fonts.load(`900 100px ${FONT}`)]).catch(() => {});
 
 	const canvas = document.createElement('canvas');
 	canvas.width = W;
@@ -101,7 +101,7 @@ export async function renderCard(layers, hook, o = {}) {
 		} else if (l.kind === 'badge') {
 			// dark marine words, tight, on the solid gold fill (white on a dark fill), as Card.svelte
 			const fs = cq(sizeOf(l));
-			ctx.font = `760 ${fs}px ${FONT}`;
+			ctx.font = `900 ${fs}px ${FONT}`;
 			if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 			ctx.textBaseline = 'alphabetic';
 			const words = (l.text || 'DAY 1').toUpperCase();
