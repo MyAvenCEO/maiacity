@@ -434,8 +434,12 @@ function shares(asks, total) {
 function clearPosted(world) {
 	const live = world.avens.filter((a) => a.alive && a.brain.ready);
 	world.posted ??= {};
+	// the day's opening round: the first after the night's harvest, when the whole day's supply is on offer and nothing
+	// of it traded yet (later rounds see only what is left: a daily flow measured by the hour)
+	const opening = world.postedDay !== world.day;
+	world.postedDay = world.day;
 	for (const g of GOODS) {
-		const ask = (price, round) => posted(ruled('price', { good: g, price, ...round }, price, (v, o) => posted(v) ?? o));
+		const ask = (price, round) => posted(ruled('price', { good: g, price, opening, ...round }, price, (v, o) => posted(v) ?? o));
 		let p = posted(world.posted[g]) ?? ask(null, { demand: 0, need: 0, supply: 0, traded: 0 });
 		if (p == null) continue;
 		const sellers = live.filter((a) => spare(a, g) > 0);

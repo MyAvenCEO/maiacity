@@ -31,7 +31,7 @@ const decide = (a) => {
 	};
 	// where an option says what it costs and risks in HEARTS, the cheapest total of the two
 	const priced = (x) => {
-		const v = x.criteria.map((c) => c.match(/costs ([\d.]+) HEARTS now, risks about ([\d.]+) HEARTS/)).map((m) => (m ? Number(m[1]) + Number(m[2]) : null));
+		const v = x.criteria.map((c) => c.match(/costs ([\d.]+) HEARTS now.*?risks about ([\d.]+) HEARTS/)).map((m) => (m ? Number(m[1]) + Number(m[2]) : null));
 		return v.every((n) => n != null) ? v.indexOf(Math.min(...v)) : null;
 	};
 	const answers = Object.fromEntries(Object.entries(q).map(([k, x]) => [k, { score: k.startsWith('buy_') ? (priced(x) ?? pick(k)) : 0 }]));
