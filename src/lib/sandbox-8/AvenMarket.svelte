@@ -668,6 +668,24 @@
 		await loadWorlds();
 		await openWorld({ id: r.world, name: r.name });
 	}
+	/** an amend MIP accepted: where it amends the world open here, that world plays on its new rules from now on (its
+	 * kept settings in the database already have them; this brings the open valley in step, so the next save keeps them) */
+	async function amendedWorld(/** @type {any} */ r) {
+		await loadWorlds();
+		if (!here.id || r.amended !== here.id) return;
+		let run;
+		try {
+			run = await loadWorldRun(here.id);
+		} catch {
+			return;
+		}
+		const cards = run.state?.settings?.config?.cards;
+		if (!cards?.length) return;
+		useConfig({ id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, cards, params: { ...DEFAULTS, ...Object.assign({}, ...cards.map((/** @type {any} */ c) => c.values ?? {})) } }, changedRules());
+		useCode();
+		activity(world, { kind: 'world', source: 'amend', changes: [`${here.name}'s rules are amended`, ...(r.diff ?? [])] });
+		snap = snapshot();
+	}
 	/** @param {string} v */
 	function setView(v) {
 		page = v;
@@ -1086,7 +1104,7 @@
 	{/if}
 	{#if page === 'mips'}
 		<div class="statspage">
-			<ProposalsView {acct} {configs} {worlds} here={null} playing={null} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
+			<ProposalsView {acct} {configs} {worlds} here={null} playing={null} onworld={madeWorld} onamend={amendedWorld} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 

@@ -881,4 +881,13 @@ export const MIGRATIONS: Migration[] = [
       UPDATE mips SET world_id = world->>'after' WHERE action = 'world' AND world_id IS NULL;
     `,
   },
+  {
+    // A MIP may amend a running world's own rules (Samuel, 2026-10-10): action 'amend', for the world it is proposed in;
+    // accepting it changes that world's kept cards from then on, not the config.
+    id: "0040-economy-amend-mips",
+    sql: `
+      ALTER TABLE mips DROP CONSTRAINT IF EXISTS mips_action_check;
+      ALTER TABLE mips ADD CONSTRAINT mips_action_check CHECK (action IN ('edit', 'create', 'delete', 'world', 'amend'));
+    `,
+  },
 ];

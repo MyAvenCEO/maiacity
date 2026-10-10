@@ -12,8 +12,8 @@
 	import ConfigCard from './ConfigCard.svelte';
 	import { HOOKS } from '../../../game/economy/params.js';
 
-	/** @type {{ acct: any, configs: any[], worlds: any[], here: string | null, playing: { id: string | null, name: string, version: number } | null, onworld: (made: any) => void, onreload: () => void }} */
-	let { acct, configs, worlds, here, playing, onworld, onreload } = $props();
+	/** @type {{ acct: any, configs: any[], worlds: any[], here: string | null, playing: { id: string | null, name: string, version: number } | null, onworld: (made: any) => void, onamend?: (done: any) => void, onreload: () => void }} */
+	let { acct, configs, worlds, here, playing, onworld, onamend = () => {}, onreload } = $props();
 
 	let mips = $state(/** @type {any[]} */ ([]));
 	let error = $state('');
@@ -57,6 +57,7 @@
 			const r = await decide(m.number, accept, notes[m.number] ?? '');
 			await refresh();
 			if (accept && r?.world) onworld(r);
+			if (accept && r?.amended) onamend(r);
 			else if (accept) onreload();
 		} catch (e) {
 			error = /** @type {any} */ (e)?.message || 'It could not be decided.';
@@ -85,6 +86,7 @@
 	function what(m) {
 		if (m.action === 'create') return `Creates the config ${m.config} ("${m.name}") from ${m.from ?? "the catalogue's defaults"}`;
 		if (m.action === 'delete') return `Deletes the config ${m.config}`;
+		if (m.action === 'amend') return `Amends ${m.world?.name ?? m.world_name ?? 'its world'}'s own rules while it runs: the cards below, from when it is accepted`;
 		if (m.action === 'world') return `Starts a new world${m.world?.name ? ` "${m.world.name}"` : ''} on ${configs.find((c) => c.id === m.config)?.name ?? m.config}${m.cards.length || m.remove.length ? ' with the cards below' : ''}, its avens asking ${m.world?.model === 'qwen' ? 'Qwen' : 'd1'}`;
 		return `Changes the config ${m.config}${m.base_version ? ` (proposed on version ${m.base_version})` : ''}${m.name ? `, renamed "${m.name}"` : ''}`;
 	}
@@ -94,7 +96,7 @@
 	<header class="top">
 		<div>
 			<h2>Proposals</h2>
-			<p>MIPs, MaiaCity improvement proposals: one list, numbered in order, each belonging to the world it was proposed in. A config is everything the valley runs on, as config cards: values, data and the QuickJS code that goes with them. A MIP is a title, a description and the cards as they would be; a new world is a MIP too, with every setting it starts with. MIPs are proposed over the studio's MCP. Once the admin accepts one here, its cards go into the config as a new version, or the new world appears under Worlds.</p>
+			<p>MIPs, MaiaCity improvement proposals: one list, numbered in order, each belonging to the world it was proposed in. A config is everything the valley runs on, as config cards: values, data and the QuickJS code that goes with them. A MIP is a title, a description and the cards as they would be; a new world is a MIP too, with every setting it starts with, and so is a change to a running world's own rules (amend). MIPs are proposed over the studio's MCP. Once the admin accepts one here, its cards go into the config as a new version, the new world appears under Worlds, or the world amended plays on its new rules.</p>
 		</div>
 	</header>
 
@@ -170,7 +172,7 @@
 				{#if !acct.admin}<small>Only the admin accepts MIPs for now.</small>{/if}
 			</div>
 		{:else}
-			<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : m.result?.world ? `: ${m.result.name} is made` : ''}{m.note ? ` · "${m.note}"` : ''} <button class="link" onclick={() => (unfolded[m.number] = !unfolded[m.number])}>{unfolded[m.number] ? 'Fold' : 'What it changed'}</button>{#if m.result?.world && m.result.world !== here} · <button class="link" onclick={() => onworld(m.result)}>Open it</button>{/if}</div>
+			<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : m.result?.world ? `: ${m.result.name} is made` : m.result?.amended ? `: ${m.result.name}'s rules are amended` : ''}{m.note ? ` · "${m.note}"` : ''} <button class="link" onclick={() => (unfolded[m.number] = !unfolded[m.number])}>{unfolded[m.number] ? 'Fold' : 'What it changed'}</button>{#if m.result?.world && m.result.world !== here} · <button class="link" onclick={() => onworld(m.result)}>Open it</button>{/if}</div>
 		{/if}
 	</article>
 {/snippet}

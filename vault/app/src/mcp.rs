@@ -514,7 +514,7 @@ pub struct EconomyMips {
 pub struct EconomyMip {
     /// the MIP: { title, description (prose: what and why), world_id (required: the id of the world it is proposed in,
     /// from economy_runs; MIPs are one global list, each belonging to a world), config (the config's id), action ("edit" the default,
-    /// "create" a new config, "delete" it, or "world": a new world, made fresh on the config once accepted, with
+    /// "create" a new config, "delete" it, "amend": change the running world world_id's own rules (cards on top of its own, from when it is accepted; config ignored), or "world": a new world, made fresh on the config once accepted, with
     /// world: { name, values ({ key: number } tried on top), model ("d1" or "qwen"), seed, after (the id of the world
     /// it follows, from economy_runs; default its world_id) }; the answer lists every setting that differs from
     /// that world), name and about (a new config's name and description; on edit, a rename), from (create: the config
@@ -1579,7 +1579,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one, or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
+        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one, or amend a running world's own rules (action amend: its cards on top of the world's own, the world plays on them once accepted), or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
     )]
     async fn economy_mip_create(&self, Parameters(a): Parameters<EconomyMip>) -> String {
         let mut mip = a.mip;

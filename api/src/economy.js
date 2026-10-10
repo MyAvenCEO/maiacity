@@ -25,7 +25,7 @@ export class EconomyError extends Error {
 }
 
 const SLUG = /^[a-z][a-z0-9-]{1,40}$/;
-const ACTIONS = ["edit", "create", "delete", "world"];
+const ACTIONS = ["edit", "create", "delete", "world", "amend"];
 const MAX_CARDS = 100;
 const MAX_MIP = 1_000_000; // one MIP's cards, in characters
 const MAX_JSON = 2_000_000; // one request's days, in characters
@@ -97,7 +97,7 @@ export function catalogue() {
  *   { config, action: edit | create | delete, name?, about?, from?, cards: [card], remove: [card id] }
  */
 async function checkMip(body, q = db) {
-  const config = text(body?.config, 41) || (body?.action === "world" ? "valley" : "");
+  const config = text(body?.config, 41) || (body?.action === "world" || body?.action === "amend" ? "valley" : "");
   const action = body?.action ?? "edit";
   if (!ACTIONS.includes(action)) throw new EconomyError(`A MIP's action is one of ${ACTIONS.join(", ")}.`);
   const { rows } = await q.query("SELECT * FROM econ_configs WHERE id = $1", [config]);
@@ -132,6 +132,9 @@ async function checkMip(body, q = db) {
   const prev = action === "world" ? await followed(body?.world, q) : null;
   const prevSettings = prev?.state?.settings ?? null;
   if (prevSettings?.config?.cards?.length) baseCards = prevSettings.config.cards;
+  // amend (Samuel, 2026-10-10): a world's own rules, changed while it runs; its cards are the base, not the config's
+  const own = action === "amend" ? await amended(body?.world_id, q) : null;
+  if (own) baseCards = own.state.settings.config.cards;
 
   const raw = body?.cards ?? [];
   if (!Array.isArray(raw)) throw new EconomyError("A MIP's cards are a list.");
@@ -152,10 +155,11 @@ async function checkMip(body, q = db) {
     if (!remove.includes(k)) remove.push(k);
   }
   if (action === "edit" && !cards.length && !remove.length && name == null && about == null) throw new EconomyError("A MIP needs at least one card, or a card to take out, or a new name.");
+  if (action === "amend" && !cards.length && !remove.length) throw new EconomyError("A MIP that amends a world needs at least one card, or a card to take out.");
   const base = Object.fromEntries([...cards.map((c) => c.id), ...remove].map((id) => [id, baseCards.find((c) => c.id === id) ?? null]));
-  const world = action === "world" ? worldSpec(body?.world, applyCards(baseCards, cards, remove), prev) : null;
+  const world = action === "world" ? worldSpec(body?.world, applyCards(baseCards, cards, remove), prev) : action === "amend" ? amendSpec(own, applyCards(baseCards, cards, remove)) : null;
   const start = action === "world" ? { cards: applyCards(baseCards, cards, remove), values: { ...worldValues(prevSettings?.local), ...world.values } } : null;
-  return { start, config, action, name: action === "create" ? name || config : action === "world" ? null : name, about: action === "world" ? null : about, from, cards, remove, base, base_version: live ? Number(live.version) : null, world };
+  return { start, config, action, name: action === "create" ? name || config : action === "world" || action === "amend" ? null : name, about: action === "world" || action === "amend" ? null : about, from, cards, remove, base, base_version: live ? Number(live.version) : null, world };
 }
 
 /**
@@ -171,6 +175,22 @@ async function followed(w, q) {
     : await q.query("SELECT id, name, state FROM econ_runs WHERE state IS NOT NULL ORDER BY saved DESC NULLS LAST LIMIT 1");
   if (afterId && !rows[0]) throw new EconomyError(`No world ${afterId} to follow.`);
   return rows[0] ?? null;
+}
+
+/** the world an amend MIP changes: kept whole, with its own settings */
+async function amended(id, q) {
+  const worldId = id ? text(id, 41) : null;
+  if (!worldId) throw new EconomyError("A MIP that amends a world names it: world_id.");
+  const { rows } = await q.query("SELECT id, name, state FROM econ_runs WHERE id = $1", [worldId]);
+  if (!rows[0]) throw new EconomyError(`No world ${worldId}.`);
+  if (!rows[0].state?.settings?.config?.cards?.length) throw new EconomyError(`${rows[0].name} is not kept whole, so its rules can't be amended.`);
+  return rows[0];
+}
+
+/** an amend MIP's world: which one, and every setting it changes there */
+function amendSpec(w, cards) {
+  const spec = worldSpec({ name: w.name, model: w.state.settings.model, values: {} }, cards, w);
+  return { amends: w.id, name: w.name, diff: spec.diff };
 }
 
 function worldSpec(w, cards, prev) {
@@ -276,9 +296,15 @@ export async function decideMip(number, by, { accept, note } = {}) {
       return { number, status: "rejected" };
     }
     // the config may have moved on since it was proposed: check again, against now
-    const m = await checkMip({ config: row.config_id, action: row.action, name: row.name, about: row.about, from: row.from_id, cards: row.cards, remove: row.remove, world: row.world }, tx);
+    const m = await checkMip({ config: row.config_id, action: row.action, name: row.name, about: row.about, from: row.from_id, cards: row.cards, remove: row.remove, world: row.world, world_id: row.world_id }, tx);
     let result;
-    if (m.action === "world") {
+    if (m.action === "amend") {
+      // the world's own rules change, from now on, as it runs: its kept settings take the MIP's cards; an open page
+      // picks them up (the result says which world), and every save from then on keeps them
+      const cards = applyCards((await amended(row.world_id, tx)).state.settings.config.cards, m.cards, m.remove);
+      await tx.query("UPDATE econ_runs SET state = jsonb_set(state, '{settings,config,cards}', ($2::text)::jsonb) WHERE id = $1", [row.world_id, json(cards)]);
+      result = { amended: row.world_id, name: m.world.name, diff: m.world.diff };
+    } else if (m.action === "world") {
       // the world is made, fresh, with every setting the MIP proposed; it waits in the list until it is opened
       const w = await createWorld(by, { name: m.world.name, config: m.config, cards: m.start.cards, values: m.start.values, model: m.world.model, seed: m.world.seed, mip: number, after: m.world.after }, tx);
       result = { world: w.id, name: w.name, diff: m.world.diff, after_name: m.world.after_name };
