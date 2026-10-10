@@ -885,7 +885,29 @@ export class Studio {
 	// (Safari lets a page make sound only from a click: the context is woken by the Play button)
 	/** @type {AudioContext | null} */
 	ctx = null;
-	audioCtx = () => (this.ctx ??= new AudioContext());
+	/** the audio clock would not run (WebKit kept it suspended or interrupted): the timeline plays silent until a click turns it on */
+	soundOff = $state(false);
+	audioCtx = () => {
+		if (this.ctx && this.ctx.state !== 'closed') return this.ctx;
+		const ac = (this.ctx = new AudioContext());
+		ac.onstatechange = () => this.ctx === ac && (this.soundOff = ac.state !== 'running' && this.playing);
+		return ac;
+	};
+	/**
+	 * Sound on, from a click: a fresh audio clock made and resumed inside the click itself (WebKit lets a page start
+	 * sound only from one), and the sounds laid on it again. Decoded sounds play on any clock.
+	 */
+	soundOn = () => {
+		this.silence();
+		const old = this.ctx;
+		this.ctx = null;
+		void old?.close().catch(() => {});
+		const ac = this.audioCtx();
+		void ac.resume().then(() => {
+			this.soundOff = ac.state !== 'running';
+			if (this.playing && this.ctx === ac) this.schedule();
+		}, () => (this.soundOff = true));
+	};
 	/** @type {{ src: AudioBufferSourceNode; gain: GainNode }[]} */
 	nodes = [];
 	ctxStart = 0;
@@ -1127,6 +1149,7 @@ export class Studio {
 		this.silence();
 		void this.flush();
 		void this.ctx?.close();
+		this.ctx = null;
 		for (const s of Object.values(this.sources)) if (s.url.startsWith('blob:')) URL.revokeObjectURL(s.url);
 	}
 
@@ -1236,14 +1259,13 @@ export class Studio {
 	 * changed) — a new one in its place (decoded sounds play on any). Says when it could not.
 	 */
 	async running() {
-		await this.audioCtx().resume().catch(() => {});
-		if (this.audioCtx().state === 'running') return;
-		const was = this.audioCtx().state;
-		this.silence();
-		void this.ctx?.close().catch(() => {});
-		this.ctx = null;
-		await this.audioCtx().resume().catch(() => {});
-		if (this.audioCtx().state !== 'running') console.warn(`play: the audio clock is ${this.audioCtx().state} (was ${was}) — the timeline plays silent`);
+		// resumed inside the click that pressed Play (this runs before any await): a clock made after an await stays
+		// suspended in WebKit, so it is never replaced here; and a resume WebKit never answers (an interrupted clock)
+		// does not hold the playback back
+		const ac = this.audioCtx();
+		await Promise.race([ac.resume().catch(() => {}), new Promise((ok) => setTimeout(ok, 800))]);
+		this.soundOff = ac.state !== 'running';
+		if (this.soundOff) console.warn(`play: the audio clock is ${ac.state} — the timeline plays silent until Sound on is clicked`);
 	}
 
 	/** @param {number} run */
@@ -1284,6 +1306,7 @@ export class Studio {
 		this.run++;
 		this.starting = false;
 		this.playing = false;
+		this.soundOff = false;
 		cancelAnimationFrame(this.frame);
 		this.world.halt();
 		this.silence();
