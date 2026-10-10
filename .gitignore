@@ -43,6 +43,8 @@ static/**/*.svg
 static/**/*.mp3
 static/**/*.wav
 static/**/*.ogg
+# except the Maia City circle logo, served from the repo for the fields valley's centre (Samuel, 2026-10-10)
+!static/sandbox-8/maia-city-circle.png
 static/**/*.pdf
 
 # The local mirror of the media library: every file as <cid>.<ext> (`bun media library`)
