@@ -19,9 +19,9 @@
 	let error = $state('');
 	let busy = $state(false);
 	let notes = $state(/** @type {Record<number, string>} */ ({}));
-	// every world's MIPs, or only the open world's
+	// every world's MIPs, always (Samuel, 2026-10-10: no filter), each saying which world it belongs to
 	// svelte-ignore state_referenced_locally
-	let only = $state(!!here);
+	const only = false;
 
 	const mine = (/** @type {any} */ m) => !only || !here || m.world_id === here || m.result?.world === here;
 	// what waits for the admin first, then every decided MIP, the latest decision first, folded to one line
@@ -96,7 +96,6 @@
 			<h2>Proposals</h2>
 			<p>MIPs, MaiaCity improvement proposals: one list, numbered in order, each belonging to the world it was proposed in. A config is everything the valley runs on, as config cards: values, data and the QuickJS code that goes with them. A MIP is a title, a description and the cards as they would be; a new world is a MIP too, with every setting it starts with. MIPs are proposed over the studio's MCP. Once the admin accepts one here, its cards go into the config as a new version, or the new world appears under Worlds.</p>
 		</div>
-		{#if here}<div class="actions"><span class="filter"><button class:on={only} onclick={() => (only = true)}>{hereName}</button><button class:on={!only} onclick={() => (only = false)}>Every world</button></span></div>{/if}
 	</header>
 
 	{#if !acct?.play}
@@ -321,19 +320,6 @@
 		padding: 0.2rem 0.3rem;
 		border-top: 1px solid #1f2a2312;
 		vertical-align: top;
-	}
-	.filter {
-		display: flex;
-		gap: 0.2rem;
-		margin-left: auto;
-	}
-	.filter button {
-		font-size: 0.72rem;
-		padding: 0.1rem 0.5rem;
-	}
-	.filter button.on {
-		background: #24452f;
-		color: #f4f1e8;
 	}
 	.mip {
 		border-top: 1px solid #1f2a231f;
