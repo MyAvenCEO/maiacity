@@ -106,8 +106,8 @@ export async function renderCard(layers, hook, o = {}) {
 			ctx.textBaseline = 'alphabetic';
 			const words = (l.text || 'DAY 1').toUpperCase();
 			const tw = ctx.measureText(words).width;
-			const padX = 0.9 * fs;
-			const padY = 0.5 * fs;
+			const padX = 0.55 * fs;
+			const padY = 0.3 * fs;
 			const bw2 = tw + 2 * padX;
 			const bh2 = fs + 2 * padY;
 			turn(bw2, bh2);
@@ -115,7 +115,7 @@ export async function renderCard(layers, hook, o = {}) {
 			ctx.shadowBlur = cq(1.2);
 			ctx.shadowOffsetY = cq(0.3);
 			ctx.beginPath();
-			ctx.roundRect(bx, by, bw2, bh2, 0.45 * fs);
+			ctx.roundRect(bx, by, bw2, bh2, 0.35 * fs);
 			ctx.fillStyle = colorOf(l.color ?? 'gold');
 			ctx.fill();
 			ctx.shadowBlur = 0;
