@@ -414,7 +414,7 @@
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
 			// the MaiaCity COOP's ledger: what the avens paid it for their fields, and for what
 			coop: world.coop ? { hearts: world.coop.hearts, from: { ...world.coop.from } } : null,
-			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
+			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, stock: world.layout === 'coop' ? { ...o.stock } : null, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
 				GOODS.map((g) => {
 					const m = world.market[g];
@@ -1052,22 +1052,7 @@
 			ctx.strokeStyle = a.alive ? a.colour : '#8a8a86';
 			ctx.lineWidth = 2;
 			ctx.stroke();
-			// its store: a small dot per good on the far side of its home
-			GOODS.forEach((g, i) => {
-				const ang = away + ((i - 2) * Math.PI) / 9;
-				const [sx, sy] = [h.x + Math.cos(ang) * (R + 16), h.y + Math.sin(ang) * (R + 16)];
-				ctx.globalAlpha = a.stock[g] > 0 ? 1 : 0.35;
-				ctx.fillStyle = a.alive ? GOOD_COLOUR[g] : '#8a8a86';
-				ctx.beginPath();
-				ctx.arc(sx, sy, 8, 0, Math.PI * 2);
-				ctx.fill();
-				ctx.globalAlpha = 1;
-				ctx.fillStyle = '#fff';
-				ctx.font = '700 9px system-ui, sans-serif';
-				ctx.textBaseline = 'middle';
-				ctx.fillText(String(a.stock[g]), sx, sy + 0.5);
-				ctx.textBaseline = 'alphabetic';
-			});
+			// its store is on the board, beside its health (Samuel, 2026-10-10), not on the map
 			const [nx, ny] = [h.x + Math.cos(away) * (R + 38), h.y + Math.sin(away) * (R + 38)];
 			ctx.fillStyle = light > 0.5 ? '#1f2a23cc' : '#f4f1e8cc';
 			ctx.font = '600 12px system-ui, sans-serif';
@@ -1307,7 +1292,7 @@
 			{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
 				<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>MaiaCity COOP</b><span>the valley's ledger: every HEART paid for fields</span></span><span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
 			{/if}
-			<ol class="board">
+			<ol class="board" class:stocked={snap.board.some((/** @type {any} */ r) => r.stock)}>
 				{#each snap.board as row (row.id)}
 					<li class:sel={row.id === selected} class:dead={!row.alive}>
 						<button onclick={() => select(row.id)}>
@@ -1315,6 +1300,7 @@
 							<b>{row.name}</b>
 							<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>
 							<span class="hp" title="health {row.alive ? `${row.health} of ${RULES.healthMax}` : '0'}"><i class:low={row.health / RULES.healthMax <= 0.3} style:width="{row.alive ? Math.max(0, Math.min(100, (row.health / RULES.healthMax) * 100)) : 0}%"></i></span>
+							{#if row.stock}<span class="store" title="in store: {GOODS.map((g) => `${row.stock?.[g] ?? 0} ${GOOD_LABEL[g]}`).join(', ')}">{#each GOODS as g (g)}<em class:none={!(row.stock?.[g] > 0)} style:background={GOOD_COLOUR[g]}>{row.stock?.[g] ?? 0}</em>{/each}</span>{/if}
 							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
 						</button>
 					</li>
@@ -2052,5 +2038,29 @@
 		margin-left: auto;
 		font-size: 1.05rem;
 		font-weight: 700;
+	}
+	.board.stocked button {
+		grid-template-columns: 14px 3.2rem auto 1fr auto 4.6rem;
+	}
+	/* each aven's store on the board, between its health and its HEARTS */
+	.board .store {
+		display: flex;
+		gap: 2px;
+	}
+	.board .store em {
+		min-width: 1.15rem;
+		height: 1.15rem;
+		padding: 0 2px;
+		border-radius: 999px;
+		color: #fff;
+		font-style: normal;
+		font-size: 0.6rem;
+		font-weight: 700;
+		line-height: 1.15rem;
+		text-align: center;
+		box-sizing: border-box;
+	}
+	.board .store em.none {
+		opacity: 0.3;
 	}
 </style>
