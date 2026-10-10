@@ -29,10 +29,10 @@
 	let canvas = $state(null);
 
 	/** the colours a text can be, by name (a badge: its fill; alert is the red one); anything else is taken as written */
-	const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b' };
+	const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b', marine: '#14304f' };
 	const colorOf = (/** @type {string | undefined} */ c) => COLOR[/** @type {keyof typeof COLOR} */ (c ?? 'white')] ?? c ?? '#fff';
-	/** a badge's words: white on any fill but a white one */
-	const onFill = (/** @type {string | undefined} */ c) => ((c ?? 'gold') === 'white' ? COLOR.ink : '#fff');
+	/** a badge's words: white on any fill but the white one, the cold style, whose words are the dark marine blue */
+	const onFill = (/** @type {string | undefined} */ c) => ((c ?? 'gold') === 'white' ? COLOR.marine : '#fff');
 	const rotOf = (/** @type {Layer} */ l) => l.rot ?? 0;
 	const turned = (/** @type {Layer} */ l) => (rotOf(l) ? `rotate(${rotOf(l)}deg)` : undefined);
 

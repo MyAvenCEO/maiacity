@@ -30,7 +30,7 @@
 	/** @type {Record<LayerKind, string>} */
 	const KIND_NOTE = { image: 'a picture from the vault, the background usually', cutout: 'a transparent PNG laid over it: a face out of a frame', text: 'the words, big (empty: the image title, else the hook)', badge: 'the day, bottom right' };
 	const COLORS = ['white', 'gold', 'ink'];
-	/** a badge's fill: gold (the day), alert (red, a warning), ink, white */
+	/** a badge's fill: gold (the day), alert (red, a warning), ink, white (the cold one: dark marine blue words) */
 	const FILLS = ['gold', 'alert', 'ink', 'white'];
 
 	const layers = $derived(item.thumbnail?.layers ?? []);
