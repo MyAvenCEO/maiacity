@@ -166,25 +166,29 @@ export function invest(world, a, slot, code) {
 		a.invested = (a.invested ?? 0) + n;
 		world.tally.invested = (world.tally.invested ?? 0) + n;
 	};
+	// what it keeps for food (fieldReserve days of what it buys, at today's prices): no field may eat into it
+	const reserve = (RULES.fieldReserve ?? 0) * GOODS.filter((g) => !a.grows.includes(g)).reduce((n, g) => n + NEED[g] * (world.market[g].posted ?? world.market[g].price ?? RULES.mint / 11), 0);
+	const can = (cost) => a.hearts - cost >= reserve;
 	let change;
 	if (!f) {
 		const g = GOODS[code - 2];
 		if (!g || slot !== a.fields.length) return null;
 		const cost = openCost(slot, g, a);
-		if (a.hearts < cost) return `couldn't open field ${slot + 1} (${cost} HEARTS)`;
+		if (!can(cost)) return `couldn't open field ${slot + 1} (${cost} HEARTS, keeping ${Math.round(reserve)} for food)`;
 		pay(cost, 'fields');
 		a.fields.push({ crop: g, level: 1, since: world.day, from: null, levelSince: null });
 		change = { label: `opens field ${slot + 1} with`, to: GOOD_LABEL[g], unit: `for ${cost} HEARTS to the MaiaCity COOP` };
 	} else if (code === 1) {
 		if (f.level >= 3) return null;
 		const cost = capexOf(f.crop, f.level + 1);
-		if (a.hearts < cost) return `couldn't level up its ${GOOD_LABEL[f.crop]} field (${cost} HEARTS)`;
+		if (!can(cost)) return `couldn't level up its ${GOOD_LABEL[f.crop]} field (${cost} HEARTS, keeping ${Math.round(reserve)} for food)`;
 		pay(cost, 'levels');
 		Object.assign(f, { from: f.level, level: f.level + 1, levelSince: world.day });
 		change = { label: `levels up its ${GOOD_LABEL[f.crop]} field`, from: f.level - 1, to: f.level, unit: `for ${cost} HEARTS to the MaiaCity COOP` };
 	} else {
 		const g = GOODS[code - 2];
 		if (!g || g === f.crop) return null;
+		if (world.day - f.since < (RULES.holdDays ?? 0)) return `couldn't change field ${slot + 1} yet (from day ${f.since + RULES.holdDays})`;
 		change = { label: `changes field ${slot + 1}`, from: GOOD_LABEL[f.crop], to: GOOD_LABEL[g], unit: 'back to level 1' };
 		Object.assign(f, { crop: g, level: 1, since: world.day, from: null, levelSince: null });
 	}
@@ -765,6 +769,16 @@ function endOfDay(world) {
 			world.tally.minted += out;
 		}
 		a.hearts = Math.round(a.hearts * 100) / 100;
+	}
+	// the MaiaCity COOP pays its members (coopShare % of its balance, in equal shares to the living)
+	const live = world.avens.filter((a) => a.alive);
+	if (world.coop && RULES.coopShare > 0 && live.length) {
+		const each = Math.floor((world.coop.hearts * RULES.coopShare) / 100 / live.length * 100) / 100;
+		if (each > 0) {
+			for (const a of live) a.hearts = Math.round((a.hearts + each) * 100) / 100;
+			world.coop.hearts = Math.round((world.coop.hearts - each * live.length) * 100) / 100;
+			world.coop.paid = Math.round(((world.coop.paid ?? 0) + each * live.length) * 100) / 100;
+		}
 	}
 	world.day += 1;
 	// the dead come back after a while (Samuel: 7 days; the rebirth rule), on their own land, fresh: the starting
