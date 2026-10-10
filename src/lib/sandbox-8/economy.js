@@ -105,7 +105,7 @@ export function coopTake(world, a, n, what) {
 	a.hearts = Math.round((a.hearts - n) * 100) / 100;
 }
 /** the COOP's place in a fields valley, and how big it is */
-export const COOP_SPOT = { x: 600, y: 410, r: 64 };
+export const COOP_SPOT = { x: 600, y: 410, r: 96 };
 /** how far from the COOP the valley's edge lies, along a direction */
 export function edgeAlong(ang) {
 	const dx = Math.cos(ang),
