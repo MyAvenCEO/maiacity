@@ -3,7 +3,8 @@
  * app's web view shows it, its calls to the app answered here as the app answers them (vault/app/src/avendb.rs): each
  * `avendb` call goes to the native device (avendb-device), which this runs as the app does, and each sign-in sheet it
  * asks for is answered by a passkey of maia.city's, sealed as the sheet's page seals it (avendb-browser's
- * `sealCeremony`, from the page's own module), against an avenDB server on this machine. The person founds their vault
+ * `sealCeremony`, from the page's own module), against an avenDB server on this machine. Signing in before they have an
+ * account, as on a server that started fresh, the page names the button that sets one up; the person founds their vault
  * from the "Mac" in three sheets; the page shows the device native, on its own UDP sockets; reloaded, it opens with no
  * sheet, as the device runs on; the app quits and starts again, and the device opens from its folder in one sheet; it
  * is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
@@ -397,6 +398,14 @@ try {
 	const name = await page.$eval('.account .name input', (e) => /** @type {HTMLInputElement} */ (e).value);
 	check('named as the app', name === 'maiaCITY Studio on Mac', name);
 	await shot('1-new');
+
+	// signing in with no account yet, as on a fresh server: the page names the button that sets one up
+	await click('Sign in with my passkey', '.account button');
+	const setUpFirst = () => problem().then((p) => p.includes('“Use my maiaCITY passkey”'));
+	const named = await until(setUpFirst, 120000);
+	check('signing in with no account names the button that sets one up', named, await problem());
+	check('after three sheets: unlock, pass, hello', app.sheets().join(',') === 'unlock,pass,hello');
+	await shot('1b-no-account');
 
 	await click('Use my maiaCITY passkey');
 	check('the vault is founded natively', await opened(), await problem());

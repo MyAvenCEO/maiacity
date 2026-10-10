@@ -188,9 +188,13 @@
 		running(new mac.NativeDevice(info));
 	}
 
-	/** @param {Error} e */
+	/** A sign-in whose passkey roots no vault the other side holds: say which button sets one up. @param {Error} e */
 	const noAccount = (e) => {
-		throw /no vault of this passkey/.test(e.message) ? new Error('This passkey has no account yet: set one up first.') : e;
+		if (!/no vault of this passkey/.test(e.message)) throw e;
+		throw new Error(
+			'This passkey has no account yet: set one up with “Use my maiaCITY passkey”, ' +
+				'or pick the passkey you set yours up with.'
+		);
 	};
 
 	/**
