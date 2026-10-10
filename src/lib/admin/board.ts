@@ -5,8 +5,9 @@ import { STATUSES, type ContentItem, type Delivery, type Format, type Platform, 
 
 export const STATUS_LABEL: Record<Status, string> = {
 	idea: 'Idea',
-	hook: 'Hook',
 	journey: 'Journey',
+	hook: 'Hook',
+	thumbnail: 'Thumbnail',
 	writing: 'Writing',
 	movie: 'Movie',
 	derivatives: 'Derivatives',

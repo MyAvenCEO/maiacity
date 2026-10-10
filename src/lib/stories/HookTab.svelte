@@ -3,12 +3,12 @@
 	title everywhere (the card, the article, the header, YouTube); the intro, the trailer, is the first 3–30 s of the
 	film: why to care, and the viewer's transformation; the description is the overview and the detail. The hooks
 	tried are listed on the left (each with its parts named), the one on the card among them — click a variant and it
-	goes on the card, and the YouTube preview on the right shows it. The 16:9 master card every other shape is made
-	from is rendered in the repo (scripts/film/thumbnail.mjs) and pushed with the story; until then a stand-in shows
-	the hook on it.
+	goes on the card, and the YouTube preview on the right shows it: the 16:9 card as rendered, else as designed in
+	layers on the Thumbnail step, else a stand-in with the hook and the day's badge on it.
 -->
 <script>
 	import { HOOK_PARTS, fileUrl } from '$lib/auth/client';
+	import Card from './Card.svelte';
 
 	/** @typedef {import('$lib/auth/client').ContentItem} ContentItem */
 	/** @typedef {import('$lib/auth/client').HookVariant} HookVariant */
@@ -19,11 +19,17 @@
 
 	// YouTube's limits (the delivery skill, platforms.md): a title 1–100 characters, a description up to 5,000 bytes
 	const bytes = (/** @type {string} */ s) => new TextEncoder().encode(s ?? '').length;
+	/** the 16:9 card, by hash: the one designed on the Thumbnail step and rendered, else a render's */
 	const card = $derived(
-		(item.deliveries ?? [])
-			.filter((d) => d.kind === 'thumbnail' && d.aspect === '16:9')
-			.sort((a, b) => Number(b.timeline === 'day') - Number(a.timeline === 'day'))[0]
+		item.thumbnail?.card ??
+			(item.deliveries ?? [])
+				.filter((d) => d.kind === 'thumbnail' && d.aspect === '16:9')
+				.sort((a, b) => Number(b.timeline === 'day') - Number(a.timeline === 'day'))[0]?.hash
 	);
+	/** the card as designed in layers (the Thumbnail step), shown until it is rendered */
+	const layers = $derived(item.thumbnail?.layers ?? []);
+	/** the day's badge, bottom right of the stand-in: the badge layer's words */
+	const badge = $derived(layers.find((l) => l.kind === 'badge' && l.on !== false)?.text ?? (layers.some((l) => l.kind === 'badge') ? 'DAY 1' : ''));
 	// the hook is the title: YouTube's limit is 100 characters, and a title past ~60 is cut in most lists
 	const hookLen = $derived((item.hook ?? '').length);
 	const descBytes = $derived(bytes(item.description ?? ''));
@@ -173,15 +179,17 @@
 	<aside class="yt" aria-label="How it looks on YouTube">
 		<div class="frame">
 			{#if card}
-				<img src={fileUrl(card.hash)} alt="The 16:9 title card" />
+				<img src={fileUrl(card)} alt="The 16:9 title card" />
+			{:else if layers.length}
+				<Card {layers} hook={title} />
 			{:else}
 				<div class="stand-in">
 					<b>{title}</b>
-					<small>maiaCITY</small>
+					{#if badge}<small class="day">{badge}</small>{/if}
 				</div>
 			{/if}
 		</div>
-		<p class="cardnote">{card ? '16:9 master title card' : 'Stand-in: the 16:9 master card is not rendered yet'}</p>
+		<p class="cardnote">{card ? '16:9 master title card' : layers.length ? 'As designed on the Thumbnail step, not rendered yet' : 'Stand-in: the card is designed on the Thumbnail step'}</p>
 		<h3>{title}</h3>
 		<p class="chan">maiaCITY</p>
 		{#if item.intro}<p class="intro">{item.intro}</p>{/if}
@@ -532,6 +540,7 @@
 	}
 
 	.stand-in {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-end;
@@ -553,12 +562,21 @@
 		-webkit-box-orient: vertical;
 	}
 
-	.stand-in small {
-		margin-top: 0.5rem;
-		font-size: 0.7rem;
-		letter-spacing: 0.14em;
+	/* the day's badge, bottom right: gold, letter-spaced, a gold edge on a dark fill */
+	.stand-in .day {
+		position: absolute;
+		right: 5%;
+		bottom: 7%;
+		padding: 0.3em 0.7em;
+		border: 2px solid #f6c75a;
+		border-radius: 7px;
+		background: rgb(10 14 12 / 0.55);
+		font-family: var(--font-display);
+		font-size: clamp(0.72rem, 1.3vw, 0.95rem);
+		font-weight: 760;
+		letter-spacing: 0.16em;
 		text-transform: uppercase;
-		opacity: 0.75;
+		color: #f6c75a;
 	}
 
 	.cardnote {

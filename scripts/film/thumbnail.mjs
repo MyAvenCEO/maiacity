@@ -21,8 +21,9 @@
 // The frame should be large (a 2160 still, rendered 3240 wide), so the wide and the tall crops stay sharp; a shape
 // can have its own frame — "frames": { "9x16": "<a taller still's hash>" } — when the main one is too small to crop.
 // Set like a YouTube thumbnail: few words, heavy and big enough to read at phone size, the number in gold, a firm
-// shade behind them and nothing else across the picture — no day stamp: a story goes by its name, never a day. The font
-// (Fraunces) and the frames are embedded (setContent cannot load files).
+// shade behind them and nothing else across the picture. A story goes by its name, never a day — but a card may wear
+// a badge, bottom right ("badge": "DAY 1"): gold, letter-spaced, a gold edge on a dark fill, as the Thumbnail step
+// draws it (src/lib/stories/Card.svelte). The font (Fraunces) and the frames are embedded (setContent cannot load files).
 import puppeteer from 'puppeteer-core';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -33,7 +34,7 @@ import { ideaTag, nameOfDay } from '../../src/lib/stories/names.js';
 const config = process.argv[2];
 if (!config) throw new Error('usage: node scripts/film/thumbnail.mjs blog/day-NN-<slug>/thumbnail.json');
 const settings = JSON.parse(readFileSync(config, 'utf8'));
-const { frame, frames = {}, title: TITLE, shapes: only, place = {}, width = {}, day: dayNo } = settings;
+const { frame, frames = {}, title: TITLE, shapes: only, place = {}, width = {}, day: dayNo, badge: BADGE = '' } = settings;
 const dir = mkdtempSync(join(tmpdir(), 'title-cards-'));
 // every frame it is set on, by its hash: the vault's bytes, fetched once into the cache
 const refs = [frame, ...Object.values(frames), ...(settings.split ? [settings.split.old, settings.split.new] : [])].filter(Boolean);
@@ -78,8 +79,10 @@ html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:${h
 .h{font-weight:830;font-size:${u(138)};line-height:.92;letter-spacing:-.025em;margin-top:${u(6)}}
 .x{font-weight:560;font-style:italic;font-size:${u(58)};line-height:1.12;margin-top:${u(22)};color:#fff}
 .x b{font-style:normal;font-weight:820;color:#f6c75a}
+.d{position:absolute;right:${u(80)};bottom:${u(80)};padding:${u(20)} ${u(36)};border:${u(5)} solid #f6c75a;border-radius:${u(18)};background:rgba(10,14,12,.55);font-weight:760;font-size:${u(52)};line-height:1;letter-spacing:.16em;text-transform:uppercase;color:#f6c75a}
 </style></head><body>${hook ? '' : '<div class="bg"></div>'}<div class="shade"></div>
 <div class="t"><div class="k">${TITLE.kicker}</div><div class="n">${TITLE.big}</div><div class="h">${TITLE.line}</div><div class="x">${TITLE.after}</div></div>
+${!hook && BADGE ? `<div class="d">${BADGE}</div>` : ''}
 </body></html>`, { waitUntil: 'load' });
 	await page.evaluate(() => document.fonts.ready);
 	const out = join(dir, hook ? `hook-${s.tag}.png` : `thumbnail-${s.tag}.jpg`);

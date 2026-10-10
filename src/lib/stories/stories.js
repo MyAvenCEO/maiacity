@@ -9,7 +9,8 @@ import { base } from '$app/paths';
 export const STAGE_NOTE = {
 	idea: 'The brainstorm pad: links, concepts, fragments',
 	journey: 'The arc: from where to where, beat by beat, and what the viewer feels',
-	hook: 'The hook, the intro, the description and the 16:9 title card',
+	hook: 'The hook, the intro and the description',
+	thumbnail: 'The 16:9 title card, designed in layers: the picture, the cut-out, the hook, the badge',
 	writing: 'The long-form article: the master every output derives from',
 	movie: 'The film, in the studio: script to render',
 	derivatives: 'The posts derived from the article and the film',
