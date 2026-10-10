@@ -40,7 +40,7 @@ export const PLAY: Place[] = withVersions([
 	{ href: `${base}/app/games/sandbox-5/`, label: 'Sandbox 4', icon: 'play', release: 'draft', note: 'The dome cell, its food forest grown from our plants', cover: '5ddd7dc657e28a84e7ef48b8064dafe5698791950dea387e7059b1c41e5d2fc1.jpg', anchors: 'the Plants, each at the version its forest was planted with' },
 	{ href: `${base}/app/games/sandbox-6/`, label: 'Sandbox 5', icon: 'play', release: 'draft', note: 'A valley of settlers: production chains, an open market, abundance for all', cover: 'a36f799daadadb75a3d845776dc8ee9730f8fd92fb1458edff5d9819c155a7c8.jpg' },
 	{ href: `${base}/app/games/sandbox-7/`, label: 'Sandbox 6', icon: 'play', release: 'draft', note: 'One village at its real size: six living hexes of terraced Dome40 and Dome80 homes and Dome120s round the Tower180 hex, in tonnes, euros and hectares', cover: '46e52e9e393b192c0a6db481e95fbf623e8d12d2753a3e1d15d1663292d2c716.jpg' },
-	{ href: `${base}/app/games/sandbox-8/`, label: 'Sandbox 7', icon: 'play', release: 'draft', note: 'Ten avens with 1,000 HEARTS each grow, trade and set their own prices to survive and end richest', cover: '36f27a9a480000eeb8a41b6db0e873dbf2128f8f828ccf13aa2173da1af6d181.jpg' }
+	{ href: `${base}/app/games/sandbox-8/`, label: 'Sandbox 7', icon: 'play', release: 'draft', note: 'Ten avens with 1,000 HEARTS each grow, trade and set their own prices to survive and end richest', cover: '7b7e8e8cb78a18de52e4f096a23926966400522283921a104ab5eff21dff8571.jpg' }
 ]);
 
 // the 3D worlds made from real places, to walk and to film (an admin's: drafts, opened from the Worlds tile)
