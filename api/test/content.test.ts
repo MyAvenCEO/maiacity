@@ -41,9 +41,9 @@ test("an idea goes to the backlog; given a date it is scheduled; moved, it keeps
   expect((await listContent()).length).toBe(0);
 });
 
-test("a story moves through eight steps, and keeps its pad, its hook, its description and its journey", async () => {
+test("a story moves through nine steps, and keeps its pad, its hook, its description, its journey and its thumbnail", async () => {
   const { STATUSES, saveContent: save } = await import("../src/content");
-  expect(STATUSES).toEqual(["idea", "journey", "hook", "writing", "movie", "derivatives", "scheduled", "published"]);
+  expect(STATUSES).toEqual(["idea", "journey", "hook", "thumbnail", "writing", "movie", "derivatives", "scheduled", "published"]);
   const s = await createContent("admin", { title: "Day 0 · the test story", idea: "- links\n- a 10 s trailer" });
   expect(s.status).toBe("idea");
   expect(s.idea).toContain("10 s trailer");
@@ -82,6 +82,17 @@ test("a story moves through eight steps, and keeps its pad, its hook, its descri
   // the intro: the first seconds of the film, kept apart from the hook and the description
   const withIntro = await save(s.id, { intro: "The moment I woke up today, I knew." });
   expect([withIntro.intro, withIntro.hook, withIntro.description]).toEqual(["The moment I woke up today, I knew.", "94% loaded. The last 6% is you.", "still"]);
+  // the title card, designed in layers: kinds checked, numbers kept, a hash checked, the rest untouched by other patches
+  const designed = await save(s.id, { thumbnail: { layers: [
+    { kind: "image", hash: "a".repeat(64), fit: "cover" }, { id: "face", kind: "cutout", hash: "b".repeat(64), x: 2, y: 8.123, w: 44 },
+    { kind: "text", text: "", x: 48, y: 20, w: 48, size: 7.5, color: "gold" }, { kind: "badge", text: "DAY 1", on: false },
+  ], card: "c".repeat(64) } });
+  expect(designed.thumbnail.layers!.map((l) => [l.id, l.kind, l.on, l.y ?? null])).toEqual([["l1", "image", true, null], ["face", "cutout", true, 8.12], ["l3", "text", true, 20], ["l4", "badge", false, null]]);
+  expect(designed.thumbnail.card).toBe("c".repeat(64));
+  expect(designed.status).toBe("journey");
+  await expect(save(s.id, { thumbnail: { layers: [{ kind: "sticker" }] } })).rejects.toThrow(/one of/);
+  await expect(save(s.id, { thumbnail: { layers: [{ kind: "image", hash: "nope" }] } })).rejects.toThrow(/hash/);
+  expect((await save(s.id, { status: "thumbnail" })).thumbnail.layers!.length).toBe(4);
   await expect(save(s.id, { journey: { beats: [{ title: "?", type: "montage" }] } })).rejects.toThrow(/beat is one of/);
   await expect(save(s.id, { journey: { beats: [{ type: "hook" }] } })).rejects.toThrow(/title/);
   await expect(save(s.id, { status: "draft" })).rejects.toThrow(/status is one of/);

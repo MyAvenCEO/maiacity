@@ -25,7 +25,7 @@ export const CHANNELS = ["journal", "youtube", "linkedin", "instagram", "x"];
 /** what a derivative is, across platforms: an article (the blog post; on X, an X Article — long form), a film, a
  *  YouTube Short (≤ 3 min, square or vertical), a Reel, a post, a thread */
 export const FORMATS = ["article", "video", "short", "reel", "post", "thread"];
-export const STATUSES = ["idea", "journey", "hook", "writing", "movie", "derivatives", "scheduled", "published"];
+export const STATUSES = ["idea", "journey", "hook", "thumbnail", "writing", "movie", "derivatives", "scheduled", "published"];
 /** from the derivatives on, the base article is locked: they were written from it */
 const LOCKED = ["derivatives", "scheduled", "published"];
 /** what a beat of the journey is (arc.md's hidden machine, with the low, the turn and the vision a movement ends on) */
@@ -51,6 +51,26 @@ export type HookVariant = {
   subject?: string; action?: string; end?: string; contrast?: string; proof?: string; time?: string; anchor?: string;
   promise?: string; objection?: string; dial?: number; note?: string;
 };
+
+/** The kinds of layer a title card is designed from, bottom to top as they usually go. */
+export const LAYER_KINDS = ["image", "cutout", "text", "badge"] as const;
+/**
+ * One layer of the title card, placed on its 16:9 canvas in percent of the canvas (x, y: the top-left corner; w: the
+ * width; size: a text's size, in percent of the canvas width): a picture (the background, usually), a cut-out (a
+ * transparent PNG: his face, out of a frame), the hook as text (an empty text is the story's hook), or a badge ("DAY 1").
+ */
+export type Layer = {
+  id: string; kind: (typeof LAYER_KINDS)[number]; name?: string;
+  /** shown, or hidden for the moment */
+  on?: boolean;
+  /** a picture or a cut-out: the vault file, by hash; how the background fills the canvas */
+  hash?: string; fit?: "cover" | "contain";
+  /** a text or a badge: its words; its colour (white, gold) */
+  text?: string; color?: string; align?: "left" | "center" | "right";
+  x?: number; y?: number; w?: number; size?: number;
+};
+/** The title card as designed: its layers, and the 16:9 card rendered from them (by hash), once there is one. */
+export type Thumbnail = { layers?: Layer[]; card?: string | null };
 
 /** One file a film is delivered as: which channels it is for, and what it is (for the upload step, later). */
 export type Delivery = {
@@ -100,6 +120,8 @@ export type Item = {
   /** the description that goes under the hook (YouTube's, the journal's lede): the overview and the detail */
   description: string;
   journey: Journey;
+  /** the title card as designed, layer by layer, and the card rendered from it */
+  thumbnail: Thumbnail;
   /** the media vault's story it is filed in (an iroh namespace id), once the Mac app has made it */
   story: string | null;
   created: string; updated: string;
@@ -163,6 +185,41 @@ function hooksOf(v: unknown): HookVariant[] {
   });
 }
 
+/** The title card as sent: its layers kept to their kinds, fields and lengths; a layer of an unknown kind refused. */
+function thumbnailOf(v: unknown): Thumbnail {
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new ContentError("Send the thumbnail as an object.");
+  const t = v as Record<string, unknown>;
+  const layers = t.layers === undefined ? [] : t.layers;
+  if (!Array.isArray(layers) || layers.length > 24) throw new ContentError("The thumbnail's layers are a list (24 at most).");
+  const hash = (h: unknown) => (h && /^[0-9a-f]{64}$/.test(String(h)) ? String(h) : undefined);
+  const num = (n: unknown, lo: number, hi: number) => (Number.isFinite(Number(n)) ? Math.min(hi, Math.max(lo, Math.round(Number(n) * 100) / 100)) : undefined);
+  const out: Thumbnail = {
+    layers: layers.map((x, i): Layer => {
+      const l = (x ?? {}) as Record<string, unknown>;
+      const kind = String(l.kind);
+      if (!(LAYER_KINDS as readonly string[]).includes(kind)) throw new ContentError(`A layer is one of: ${LAYER_KINDS.join(", ")}.`);
+      if (l.hash && !hash(l.hash)) throw new ContentError("A layer's picture is a vault file, by its hash.");
+      const o: Layer = { id: text(l.id, 40) || `l${i + 1}`, kind: kind as Layer["kind"], on: l.on !== false };
+      if (l.name) o.name = text(l.name, 60);
+      if (hash(l.hash)) o.hash = hash(l.hash);
+      if (l.fit === "contain" || l.fit === "cover") o.fit = l.fit;
+      if (l.text !== undefined) o.text = text(l.text, 300);
+      if (l.color) o.color = text(l.color, 24);
+      if (l.align === "left" || l.align === "center" || l.align === "right") o.align = l.align;
+      for (const k of ["x", "y", "w", "size"] as const) {
+        const n = num(l[k], -100, 300);
+        if (n !== undefined) o[k] = n;
+      }
+      return o;
+    }),
+  };
+  if (t.card !== undefined) {
+    if (t.card !== null && t.card !== "" && !hash(t.card)) throw new ContentError("The card is a vault file, by its hash.");
+    out.card = hash(t.card) ?? null;
+  }
+  return out;
+}
+
 function clean(b: Record<string, unknown>, partial: boolean) {
   const o: Partial<Item> = {};
   if (b.title !== undefined || !partial) {
@@ -192,6 +249,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   if (b.intro !== undefined) o.intro = text(b.intro, 5000);
   if (b.journey !== undefined) o.journey = journeyOf(b.journey);
   if (b.hooks !== undefined) o.hooks = hooksOf(b.hooks);
+  if (b.thumbnail !== undefined) o.thumbnail = thumbnailOf(b.thumbnail);
   if (b.project !== undefined) o.project = b.project ? text(b.project, 40).trim() || null : null;
   if (b.story !== undefined) {
     if (b.story !== null && !/^[0-9a-f]{64}$/.test(String(b.story))) throw new ContentError("A story is filed by its vault id.");
@@ -215,7 +273,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   return o;
 }
 
-const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, hooks, idea, intro, description, journey, story, created, updated";
+const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, hooks, idea, intro, description, journey, thumbnail, story, created, updated";
 // arrays travel as JSON text: Bun's client does not send a JS array as text[]
 const arr = (i: number) => `ARRAY(SELECT jsonb_array_elements_text(($${i}::text)::jsonb))`;
 
@@ -244,10 +302,10 @@ export async function createContent(founderId: string, body: Record<string, unkn
   const o = clean(body, false);
   const status = o.status ?? (o.scheduled_at ? "scheduled" : "idea");
   const { rows } = await once(db.query<Item>(
-    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id, idea, description, hook, project, journey, hooks, intro)
-     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10, $11, $12, $13, $14, ($15::text)::jsonb, ($16::text)::jsonb, $17) RETURNING ${COLS}`,
+    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id, idea, description, hook, project, journey, hooks, intro, thumbnail)
+     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10, $11, $12, $13, $14, ($15::text)::jsonb, ($16::text)::jsonb, $17, ($18::text)::jsonb) RETURNING ${COLS}`,
     [o.title, o.kind, JSON.stringify(o.channels ?? []), status, o.scheduled_at ?? null, o.body ?? "", JSON.stringify(o.hashes ?? []), o.link ?? null, JSON.stringify(o.tags ?? []), founderId,
-     o.idea ?? "", o.description ?? "", o.hook ?? null, o.project ?? null, JSON.stringify(o.journey ?? {}), JSON.stringify(o.hooks ?? []), o.intro ?? ""],
+     o.idea ?? "", o.description ?? "", o.hook ?? null, o.project ?? null, JSON.stringify(o.journey ?? {}), JSON.stringify(o.hooks ?? []), o.intro ?? "", JSON.stringify(o.thumbnail ?? {})],
   ));
   return rows[0]!;
 }
@@ -278,13 +336,15 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
         story = CASE WHEN $21::boolean THEN $22 ELSE story END,
         hooks = CASE WHEN $23::text IS NULL THEN hooks ELSE ($23::text)::jsonb END,
         intro = coalesce($24, intro),
+        thumbnail = CASE WHEN $25::text IS NULL THEN thumbnail ELSE ($25::text)::jsonb END,
         updated = now()
       WHERE id = $1 RETURNING ${COLS}`,
     [id, o.title ?? null, o.kind ?? null, has("channels") ? JSON.stringify(o.channels) : null, o.status ?? null,
      has("scheduled_at"), o.scheduled_at ?? null, o.body ?? null, has("hashes") ? JSON.stringify(o.hashes) : null,
      has("link"), o.link ?? null, has("tags") ? JSON.stringify(o.tags) : null, has("posts") ? JSON.stringify(o.posts) : null,
      has("hook"), o.hook ?? null, o.idea ?? null, o.description ?? null, has("journey") ? JSON.stringify(o.journey) : null,
-     has("project"), o.project ?? null, has("story"), o.story ?? null, has("hooks") ? JSON.stringify(o.hooks) : null, o.intro ?? null],
+     has("project"), o.project ?? null, has("story"), o.story ?? null, has("hooks") ? JSON.stringify(o.hooks) : null, o.intro ?? null,
+     has("thumbnail") ? JSON.stringify(o.thumbnail) : null],
   ));
   if (!rows[0]) throw new ContentError("No such item.", 404);
   return rows[0];

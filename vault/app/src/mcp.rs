@@ -561,8 +561,8 @@ pub struct EconomyBrainEdit {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct Item {
-    /// the content item, as the API takes it: title, day, platform, status (idea, hook, draft, derivatives,
-    /// scheduled, published), body, deliveries …
+    /// the content item, as the API takes it: title, day, platform, status (idea, journey, hook, thumbnail, writing,
+    /// movie, derivatives, scheduled, published), body, deliveries …
     pub item: Value,
 }
 
@@ -1529,7 +1529,7 @@ impl Studio {
 
     // ── the Stories board: every story by its steps, its posts per platform ──
 
-    #[tool(description = "The Stories board: every story (and idea) with its posts per platform (blog, Instagram, X, LinkedIn …) and the step it stands on: idea → hook → journey → writing → movie → derivatives → scheduled → published")]
+    #[tool(description = "The Stories board: every story (and idea) with its posts per platform (blog, Instagram, X, LinkedIn …) and the step it stands on: idea → journey → hook → thumbnail → writing → movie → derivatives → scheduled → published")]
     async fn content_list(&self, Parameters(r): Parameters<Range>) -> String {
         let q = match (r.from, r.to) {
             (Some(f), Some(t)) => format!("?from={f}&to={t}"),
@@ -1544,7 +1544,7 @@ impl Studio {
         text(self.api("POST", "/api/content", Some(a.item)).await)
     }
 
-    #[tool(description = "Change a story on the board — its pad, hook (the attention grabber: the title everywhere, on the card, the article, the header), intro (the trailer: the first 3-30 s of the film, why to care, the transformation), description (the overview and the detail), hooks (the variants tried: [{ text, subject, action, end, contrast, proof, time, anchor, promise, objection, dial 1-4, note }], the one on the card being the one whose text is the hook), journey, article, files, schedule, or step (idea → hook → journey → writing → movie → derivatives → scheduled → published: publish mode)")]
+    #[tool(description = "Change a story on the board — its pad, hook (the attention grabber: the title everywhere, on the card, the article, the header), intro (the trailer: the first 3-30 s of the film, why to care, the transformation), description (the overview and the detail), hooks (the variants tried: [{ text, subject, action, end, contrast, proof, time, anchor, promise, objection, dial 1-4, note }], the one on the card being the one whose text is the hook), thumbnail (the 16:9 title card in layers, placed in percent of the canvas: { layers: [{ kind: image | cutout | text | badge, hash (a vault file: the picture, the cut-out), fit: cover | contain, text (empty = the hook), color: white | gold, x, y, w, size, on }], card: the rendered card's hash }), journey, article, files, schedule, or step (idea → journey → hook → thumbnail → writing → movie → derivatives → scheduled → published: publish mode)")]
     async fn content_save(&self, Parameters(a): Parameters<SaveArgs>) -> String {
         text(self.api("PUT", &format!("/api/content/{}", a.id), Some(a.patch)).await)
     }

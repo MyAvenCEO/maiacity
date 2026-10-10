@@ -916,4 +916,16 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE content_items ADD COLUMN intro TEXT NOT NULL DEFAULT '';
     `,
   },
+  {
+    // A Thumbnail step between Hook and Writing (Samuel, 2026-10-10): the title card designed in layers, like an image
+    // editor — the background picture, his face cut out, the hook as text, the day badge — each placed on the 16:9
+    // canvas; and the card rendered from them, by hash.
+    id: "0044-story-thumbnail",
+    sql: `
+      ALTER TABLE content_items ADD COLUMN thumbnail JSONB NOT NULL DEFAULT '{}'::jsonb;
+      ALTER TABLE content_items DROP CONSTRAINT IF EXISTS content_items_status_check;
+      ALTER TABLE content_items ADD CONSTRAINT content_items_status_check
+        CHECK (status IN ('idea', 'journey', 'hook', 'thumbnail', 'writing', 'movie', 'derivatives', 'scheduled', 'published'));
+    `,
+  },
 ];

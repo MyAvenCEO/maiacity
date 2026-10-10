@@ -284,12 +284,12 @@ export async function deleteTimeline(id: string): Promise<void> {
 // ─────────────────────────────── the stories ───────────────────────────────
 
 /**
- * Where a story stands, in the order it moves: its brainstorm pad; its hook (title, description, the 16:9 title card);
- * its journey (the arc, beat by beat); the long-form master article (writing); the film (movie); the article locked
- * and the posts derived from it; dated; out. The API sends its own list with every GET /api/content — this is the
+ * Where a story stands, in the order it moves: its brainstorm pad; its journey (the arc, beat by beat); its hook (the
+ * title, the intro, the description); its thumbnail (the 16:9 title card, designed in layers); the long-form master
+ * article (writing); the film (movie); the article locked and the posts derived from it; dated; out. The API sends its own list with every GET /api/content — this is the
  * fallback until it has answered.
  */
-export const STATUSES = ['idea', 'journey', 'hook', 'writing', 'movie', 'derivatives', 'scheduled', 'published'] as const;
+export const STATUSES = ['idea', 'journey', 'hook', 'thumbnail', 'writing', 'movie', 'derivatives', 'scheduled', 'published'] as const;
 export type Status = (typeof STATUSES)[number];
 
 /** What a beat of the journey is, as the arc moves (storyteller, arc.md) — each its own colour on the board. */
@@ -316,6 +316,35 @@ export type HookVariant = { id: string; text: string; promise?: string; objectio
 	Record<HookPart, string>
 >;
 
+/** The kinds of layer a title card is designed from, bottom to top as they usually go. */
+export const LAYER_KINDS = ['image', 'cutout', 'text', 'badge'] as const;
+export type LayerKind = (typeof LAYER_KINDS)[number];
+/**
+ * One layer of the title card on its 16:9 canvas, in percent of the canvas (x, y: the top-left corner; w: the width;
+ * size: a text's size in percent of the canvas width): a picture (the background), a cut-out (a transparent PNG: a
+ * face out of a frame), the hook as text (an empty text is the story's hook) or a badge ("DAY 1").
+ */
+export type Layer = {
+	id: string;
+	kind: LayerKind;
+	name?: string;
+	/** shown, or hidden for the moment */
+	on?: boolean;
+	/** a picture or a cut-out: the vault file by hash; how a background fills the canvas */
+	hash?: string;
+	fit?: 'cover' | 'contain';
+	/** a text or a badge: its words, its colour (white, gold) */
+	text?: string;
+	color?: string;
+	align?: 'left' | 'center' | 'right';
+	x?: number;
+	y?: number;
+	w?: number;
+	size?: number;
+};
+/** The title card as designed: its layers, and the 16:9 card rendered from them (by hash), once there is one. */
+export type Thumbnail = { layers?: Layer[]; card?: string | null };
+
 export type ContentItem = {
 	id: string;
 	title: string;
@@ -334,6 +363,8 @@ export type ContentItem = {
 	journey: Journey;
 	/** the hooks tried, the one on the card among them (its line is `hook`) */
 	hooks: HookVariant[];
+	/** the title card as designed, layer by layer, and the card rendered from it */
+	thumbnail: Thumbnail;
 	/** the media vault's story it is filed in, once the Mac app has made it (an iroh namespace id) */
 	story: string | null;
 	hashes: string[];
