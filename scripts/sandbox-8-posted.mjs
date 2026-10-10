@@ -49,7 +49,7 @@ const decide = (a, full = false) => {
 		const codes = x.criteria.map((c) => c);
 		const levels = a.brain.levels[k];
 		const best = GOODS.map((g, i) => [g, i]).sort((p, q) => short(q[0]) - short(p[0]))[(a.id + w.day) % 2];
-		if (!f) return slot === a.fields.length && short(best[0]) > taste && a.hearts > openCost(slot) * 1.5 ? levels.indexOf(2 + best[1]) : 0;
+		if (!f) return slot === a.fields.length && short(best[0]) > taste && a.hearts > openCost(slot, best[0], a) * 1.5 ? levels.indexOf(2 + best[1]) : 0;
 		if (short(f.crop) > taste && f.level < 3 && a.hearts > capexOf(f.crop, f.level + 1) * 1.5) return levels.indexOf(1);
 		if (short(f.crop) < 0.7 && short(best[0]) > taste * 1.3) return levels.indexOf(2 + best[1]);
 		return 0;

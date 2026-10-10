@@ -70,7 +70,15 @@ export const capexOf = (g, level) => hooked('capex', { good: g, level }, RULES[`
 /** what a field of `g` at `level` costs a night (the Fields card's opex rule) */
 export const opexOf = (g, level) => hooked('opex', { good: g, level }, RULES[`opex${level}_${g}`] ?? 0, 0, 1e9);
 /** what opening field number `slot` (0, 1, 2) costs */
-export const openCost = (slot) => (slot === 0 ? RULES.field1 : slot === 1 ? RULES.field2 : slot === 2 ? RULES.field3 : 0);
+/** what opening field number `slot` (0, 1, 2) with crop `g` costs an aven: the field's price (field1-3), made dearer or
+ * cheaper by its crop (as levelling that crop up is, against the vegetables' 300) and by its own plot, dealt when the
+ * world was made (plotSpread: ± a few % each; Samuel, 2026-10-10: not every field costs the same) */
+export const openCost = (slot, g = null, a = null) => {
+	const base = slot === 0 ? RULES.field1 : slot === 1 ? RULES.field2 : slot === 2 ? RULES.field3 : 0;
+	const crop = g ? (RULES[`capex2_${g}`] ?? 300) / 300 : 1;
+	const plot = a?.plots?.[slot] ?? 1;
+	return Math.round((base * crop * plot) / 10) * 10;
+};
 /** a crop's field capacity at level 1 */
 export const fieldBase = (g) => RULES[`cap_${g}`] ?? 0;
 /** a field's yield at a level, as a share of level 1 */
@@ -162,7 +170,7 @@ export function invest(world, a, slot, code) {
 	if (!f) {
 		const g = GOODS[code - 2];
 		if (!g || slot !== a.fields.length) return null;
-		const cost = openCost(slot);
+		const cost = openCost(slot, g, a);
 		if (a.hearts < cost) return `couldn't open field ${slot + 1} (${cost} HEARTS)`;
 		pay(cost, 'fields');
 		a.fields.push({ crop: g, level: 1, since: world.day, from: null, levelSince: null });
@@ -303,6 +311,8 @@ export function createWorld(seed = Date.now() % 1e9) {
 		// no fields to start with (Samuel, 2026-10-10): each aven opens its first itself, choosing its crop; until its
 		// fields grow it lives on its starting rations and the market
 		avens.forEach((a) => {
+			// its three plots, each dealt its own price (± plotSpread %)
+			a.plots = [0, 1, 2].map(() => Math.round((1 + ((rand() * 2 - 1) * RULES.plotSpread) / 100) * 100) / 100);
 			a.fields = [];
 			a.ask = {};
 			a.bid = Object.fromEntries(GOODS.map((g) => [g, null]));
