@@ -255,8 +255,8 @@ impl Service {
     }
 
     /// A new device of a person who has one already (`Device::link`), linked through the device or the server whose
-    /// code reads `through`, in two ceremonies: the unlock, which is the passkey's pass for the new device, and the
-    /// join.
+    /// code reads `through`, in one ceremony: the unlock, which is the passkey's pass for the new device and signs the
+    /// edit that adds it too.
     async fn link(self: &Arc<Self>, name: String, relay: String, through: String) -> Result<Value> {
         let _life = self.life.lock().await;
         self.fresh()?;
@@ -264,7 +264,7 @@ impl Service {
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         let start = self.start(&name, &relay)?;
         let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
-        let d = Device::link(start, &through, new, unlock, &sheets).await?;
+        let d = Device::link(start, &through, new, unlock).await?;
         self.started(d, (name, relay, nonce, sheets.credential()?))
     }
 

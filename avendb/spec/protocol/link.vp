@@ -22,6 +22,11 @@
 // gives nobody but the iPhone anything, as the card shows. The join the Mac accepts is the iPhone's own, on this
 // connection, as is the card it names.
 //
+// Since 2026-10-10 the unlock signs the join too, so the iPhone links in that one ceremony: the join's classical half
+// is the pass's own assertion (`sign::Classical::Pass`, `Node::link_by_pass`), which names the device and not the op,
+// and its hash-based half is over the op itself, made from the same ceremony's PRF output, as below. With the curves
+// broken that half is all the model keeps of either signature, so the model and its result stay as they were.
+//
 // Modeling notes. The code is read off the Mac's screen, and the Mac knows the passkey from its vault's log, whose ops
 // are signed: guarded transfers. The Mac knows the passkey's SLH-DSA key, so the model leaves out the P-256 keys the
 // assertion recovers to, which the checker tries each of (`RelayPass::passkeys`): a key nobody holds roots no vault.

@@ -19,8 +19,9 @@
 //!   found their vault through a server nobody has claimed yet claims it in that same ceremony (P8f): their vault owns
 //!   avenCEO.
 //! - `Device::link`: a device of a person who has one already links through the code it shows
-//!   (`avendb_net::Node::link_with`), in two ceremonies, the unlock and the join: its passkey is the key, of those the
-//!   unlock's assertion recovers to, whose vault the peer hands over.
+//!   (`avendb_net::Node::link_by_pass`), in one ceremony, the unlock, which is its passkey's pass for it and signs the
+//!   edit that adds it too: its passkey is the key, of those the unlock's assertion recovers to, whose vault the peer
+//!   hands over.
 //! - `Device::open`: a device the page made before opens again from its store, in the unlock's ceremony alone; the
 //!   server's relay knows it.
 //!
@@ -240,20 +241,16 @@ impl Device {
 
     /// A new device of a person who has one already, `fresh`, unlocked by `unlock`, whose ceremony is over `fresh`'s
     /// challenge at `start.now`, so that it is the passkey's pass for the device: it links through the device whose
-    /// code reads `offer` (`Node::link_with`), which takes the pass and hands back the vault of the passkey it is from,
-    /// signs the edit that adds it in one ceremony more, and joins its person's vault. Its passkey is the key, of those
-    /// the unlock's assertion recovers to, whose vault the peer handed over.
-    pub async fn link(
-        start: Start,
-        offer: &Offer,
-        fresh: Fresh,
-        unlock: Unlock,
-        authenticator: &impl Authenticator,
-    ) -> Result<Device> {
+    /// code reads `offer` (`Node::link_by_pass`), which takes the pass and hands back the vault of the passkey it is
+    /// from, and joins its person's vault by the edit that adds it, which the same ceremony signs as that pass: one
+    /// ceremony in all. Its passkey is the key, of those the unlock's assertion recovers to, whose vault the peer
+    /// handed over.
+    pub async fn link(start: Start, offer: &Offer, fresh: Fresh, unlock: Unlock) -> Result<Device> {
         let (lab, me, passkeys, pass) = passed(&start, None, &fresh, &unlock)?;
+        let mask = fresh.mask(&unlock);
         let node = Device::spawn(lab, me, &start, Some(pass.clone())).await?;
-        let (passkey, _) = node.link_with(offer, &pass, authenticator).await?;
-        Device::of(node, passkey, &passkeys, Some(fresh.mask(&unlock))).await
+        let (passkey, _) = node.link_by_pass(offer, &pass, unlock.ceremony).await?;
+        Device::of(node, passkey, &passkeys, Some(mask)).await
     }
 
     /// The device the page made before, opened again from what its store kept (`backup`), unlocked by the ceremony of
@@ -1228,17 +1225,11 @@ impl PageDevice {
 
     /// A new device named `name` of a person who has one already, unlocked by `unlock(challenge)`, linked through the
     /// device whose code reads `offer` (`Device::link`).
-    pub async fn link(
-        name: String,
-        relay: String,
-        offer: String,
-        unlock: Function,
-        ceremony: Function,
-    ) -> Result<PageDevice, JsError> {
+    pub async fn link(name: String, relay: String, offer: String, unlock: Function) -> Result<PageDevice, JsError> {
         let offer = Offer::from_text(&offer).map_err(js_error)?;
         let (start, fresh) = (starting(name, &relay)?, Fresh::new().map_err(js_error)?);
-        let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
-        let device = Device::link(start, &offer, fresh, unlock, &ceremonies);
+        let unlock = unlocking(&unlock, fresh.challenge(start.now)).await?;
+        let device = Device::link(start, &offer, fresh, unlock);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 

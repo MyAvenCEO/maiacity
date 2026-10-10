@@ -88,10 +88,10 @@ async fn found(
 }
 
 /// A new browser's device at `start` that links through the device whose code is `offer`, as the page's does
-/// (`PageDevice::link`): `browser` unlocks it, its salt ending in `nonce`, then signs its join.
+/// (`PageDevice::link`): `browser` unlocks it, its salt ending in `nonce`, and that one ceremony signs its join too.
 async fn link(start: Start, offer: &Offer, browser: &Browser, nonce: [u8; 32]) -> anyhow::Result<Device> {
     let (fresh, unlock) = browser.fresh(&start, nonce);
-    Device::link(start, offer, fresh, unlock, browser).await
+    Device::link(start, offer, fresh, unlock).await
 }
 
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
@@ -157,11 +157,11 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let note = first.write(vault, vault, titled("Seeds", "Tomatoes in March."), vec![]).await.expect("a note");
     let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;
     until("the server keeps her note", || server.read(holds)).await;
-    // her second browser links through the first one's code, in two ceremonies: the unlock, then its join
+    // her second browser links through the first one's code, in one ceremony: the unlock, which signs its join too
     let other = start("Eve's other browser", &url, 8);
     let code = first.node().offer();
     let other = link(other, &code, &eve, [2; 32]).await.expect("it links through the first");
-    assert_eq!(eve.steps(), [Step::Join]);
+    assert!(eve.steps().is_empty(), "no ceremony but the unlock");
     assert_eq!((other.vault().await, other.p256()), (Some(vault), p256), "it learned her passkey's key");
     until("it reads her note", || shows(&other, note, "Tomatoes in March.")).await;
     other.set_text(vault, note, 2, "Tomatoes in April.".into()).await.expect("it edits the note");
@@ -215,7 +215,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     }
     let new = start("Eve's new browser", &url, 11);
     let new = link(new, &server.offer(), &eve, [3; 32]).await.expect("it links through the server");
-    assert_eq!(eve.steps(), [Step::Join]);
+    assert!(eve.steps().is_empty(), "no ceremony but the unlock");
     assert_eq!(new.vault().await, Some(vault), "to her vault");
     until("it reads her note", || shows(&new, note, "Tomatoes in May.")).await;
     assert!(new.card("Eve's new browser".into()).await.expect("its card"));
@@ -246,7 +246,7 @@ async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_a
     let code = mac.offer();
     let browser = link(start("Alice's browser", &url, 7), &code, &alices, [1; 32]);
     let browser = browser.await.expect("it links through the Mac's code");
-    assert_eq!(alices.steps(), [Step::Join]);
+    assert!(alices.steps().is_empty(), "no ceremony but the unlock");
     assert_eq!(browser.vault().await, Some(alice));
     let (coop, welcome) = (h.coop, h.welcome);
     until("it reads Welcome", || shows(&browser, welcome, WELCOME_TEXT)).await;

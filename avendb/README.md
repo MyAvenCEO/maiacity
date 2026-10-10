@@ -166,9 +166,11 @@ once for each edit.
   sign-up (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on the server knows
   the device. The first person to found their vault through a server nobody has claimed yet claims it in that same
   ceremony (see [avenCEO](#avenceo)).
-- **Link** (`Device::link`, `Node::link_with`): a browser of a person who has a device already links through the code
-  that device shows, in two ceremonies: the unlock, which is the pass, and the join. It never saw the passkey made: of
-  the keys the unlock's assertion recovers to, its passkey's is the one whose vault the peer hands over.
+- **Link** (`Device::link`, `Node::link_by_pass`): a browser of a person who has a device already links through the
+  code that device shows, in one ceremony: the unlock, which is the pass and signs the join too (`Classical::Pass`: the
+  pass's assertion names the device, the hash-based half from the same ceremony's PRF output signs the join itself).
+  It never saw the passkey made: of the keys the unlock's assertion recovers to, its passkey's is the one whose vault
+  the peer hands over.
 - **Open** (`Device::open`): what the device holds is kept in IndexedDB (`js/store.js`), its edits in the order it took
   them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
   one ceremony, the unlock; the relay knows it, so it needs no pass.
@@ -318,7 +320,7 @@ and one headless Chromium driven over its DevTools protocol, whose virtual authe
 Each of her browsers is a frame of one tab, with a store of its own in IndexedDB: the first makes her passkey, founds
 her vault, claims the server and writes a note (7.3 s, two ceremonies after the one that makes the passkey, the
 server's claim and avenCEO's keys among the work); the second links through the first one's code and edits the note
-(3.7 s, two ceremonies); the first closes and opens again from its store (0.9 s, one ceremony), reads the edit and
+(3.7 s, one ceremony); the first closes and opens again from its store (0.9 s, one ceremony), reads the edit and
 edits it once more. `tests/device.rs` runs the same natively, with a software passkey in the authenticator's place,
 and Alice's browsers linking through her Mac.
 

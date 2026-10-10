@@ -191,17 +191,16 @@ export class Device {
      * @param {string} relay
      * @param {string} offer
      * @param {Function} unlock
-     * @param {Function} ceremony
      * @returns {Promise<Device>}
      */
-    static link(name, relay, offer, unlock, ceremony) {
+    static link(name, relay, offer, unlock) {
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(relay, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(offer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.device_link(ptr0, len0, ptr1, len1, ptr2, len2, unlock, ceremony);
+        const ret = wasm.device_link(ptr0, len0, ptr1, len1, ptr2, len2, unlock);
         return ret;
     }
     /**

@@ -336,6 +336,11 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
                 }
                 _ => edits.push(EditId::from_u64(g.next())),
             },
+            Classical::Pass { assertion, made } => match g.below(3) {
+                0 => assertion.signature = mutate(g, &assertion.signature),
+                1 => assertion.client_data_json = mutate(g, &assertion.client_data_json),
+                _ => *made ^= 1 << g.below(64),
+            },
         },
         _ => {
             s.pq = match &s.pq {
