@@ -67,9 +67,10 @@ export type Layer = {
   on?: boolean;
   /** a picture or a cut-out: the vault file, by hash; how the background fills the canvas */
   hash?: string; fit?: "cover" | "contain";
-  /** a text or a badge: its words; its colour (white, gold) */
+  /** a text or a badge: its words; its colour (white, gold; a badge: gold, alert, ink, white) */
   text?: string; color?: string; align?: "left" | "center" | "right";
-  x?: number; y?: number; w?: number; size?: number;
+  /** its place and size in percent of the canvas; turned by rot degrees about its centre */
+  x?: number; y?: number; w?: number; size?: number; rot?: number;
 };
 /** The title card as designed: its layers, and the 16:9 card rendered from them (by hash), once there is one. */
 export type Thumbnail = { layers?: Layer[]; card?: string | null };
@@ -220,6 +221,9 @@ function thumbnailOf(v: unknown): Thumbnail {
         const n = num(l[k], -100, 300);
         if (n !== undefined) o[k] = n;
       }
+      // turned, in degrees about its centre
+      const rot = num(l.rot, -180, 180);
+      if (rot) o.rot = rot;
       return o;
     }),
   };

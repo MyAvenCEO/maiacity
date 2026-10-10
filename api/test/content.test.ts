@@ -85,9 +85,10 @@ test("a story moves through nine steps, and keeps its pad, its hook, its descrip
   // the title card, designed in layers: kinds checked, numbers kept, a hash checked, the rest untouched by other patches
   const designed = await save(s.id, { thumbnail: { layers: [
     { kind: "image", hash: "a".repeat(64), fit: "cover" }, { id: "face", kind: "cutout", hash: "b".repeat(64), x: 2, y: 8.123, w: 44 },
-    { kind: "text", text: "", x: 48, y: 20, w: 48, size: 7.5, color: "gold" }, { kind: "badge", text: "DAY 1", on: false },
+    { kind: "text", text: "", x: 48, y: 20, w: 48, size: 7.5, color: "gold", rot: -6.5 }, { kind: "badge", text: "DAY 1", on: false, rot: 400 },
   ], card: "c".repeat(64) } });
   expect(designed.thumbnail.layers!.map((l) => [l.id, l.kind, l.on, l.y ?? null])).toEqual([["l1", "image", true, null], ["face", "cutout", true, 8.12], ["l3", "text", true, 20], ["l4", "badge", false, null]]);
+  expect(designed.thumbnail.layers!.map((l) => l.rot ?? null)).toEqual([null, null, -6.5, 180]);
   expect(designed.thumbnail.card).toBe("c".repeat(64));
   expect(designed.status).toBe("journey");
   await expect(save(s.id, { thumbnail: { layers: [{ kind: "sticker" }] } })).rejects.toThrow(/one of/);

@@ -369,7 +369,7 @@ export type Layer = {
 	/** a picture or a cut-out: the vault file by hash; how a background fills the canvas */
 	hash?: string;
 	fit?: 'cover' | 'contain';
-	/** a text or a badge: its words, its colour (white, gold) */
+	/** a text or a badge: its words, its colour (white, gold; a badge: gold, alert, ink, white) */
 	text?: string;
 	color?: string;
 	align?: 'left' | 'center' | 'right';
@@ -377,6 +377,8 @@ export type Layer = {
 	y?: number;
 	w?: number;
 	size?: number;
+	/** turned, in degrees about its centre */
+	rot?: number;
 };
 /** The title card as designed: its layers, and the 16:9 card rendered from them (by hash), once there is one. */
 export type Thumbnail = { layers?: Layer[]; card?: string | null };

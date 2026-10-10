@@ -30,6 +30,8 @@
 	/** @type {Record<LayerKind, string>} */
 	const KIND_NOTE = { image: 'a picture from the vault, the background usually', cutout: 'a transparent PNG laid over it: a face out of a frame', text: 'the words, big (empty: the image title, else the hook)', badge: 'the day, bottom right' };
 	const COLORS = ['white', 'gold', 'ink'];
+	/** a badge's fill: gold (the day), alert (red, a warning), ink, white */
+	const FILLS = ['gold', 'alert', 'ink', 'white'];
 
 	const layers = $derived(item.thumbnail?.layers ?? []);
 	/** what an empty text layer says: the image title, else the hook */
@@ -140,17 +142,18 @@
 	/** the number fields a layer has, each with its range */
 	const NUMS = $derived(
 		picked
-			? /** @type {{ key: 'x' | 'y' | 'w' | 'size', label: string, min: number, max: number, step: number }[]} */ ([
+			? /** @type {{ key: 'x' | 'y' | 'w' | 'size' | 'rot', label: string, min: number, max: number, step: number }[]} */ ([
 					{ key: 'x', label: 'Left', min: -50, max: 100, step: 0.5 },
 					{ key: 'y', label: 'Top', min: -50, max: 100, step: 0.5 },
-					...(picked.kind === 'badge' ? [] : [{ key: 'w', label: 'Width', min: 5, max: 150, step: 0.5 }]),
-					...(picked.kind === 'text' || picked.kind === 'badge' ? [{ key: 'size', label: 'Size', min: 1, max: 20, step: 0.1 }] : [])
+					...(picked.kind === 'badge' ? [] : [{ key: 'w', label: picked.kind === 'text' ? 'Width at most' : 'Width', min: 5, max: 150, step: 0.5 }]),
+					...(picked.kind === 'text' || picked.kind === 'badge' ? [{ key: 'size', label: 'Size', min: 1, max: 20, step: 0.1 }] : []),
+					{ key: 'rot', label: 'Turned', min: -45, max: 45, step: 0.5 }
 				])
 			: []
 	);
 	/** the value a number field shows: the layer's, else the kind's default (the card's own) */
-	const DEFAULT = { image: { x: 0, y: 0, w: 100, size: 0 }, cutout: { x: 0, y: 10, w: 45, size: 0 }, text: { x: 48, y: 16, w: 48, size: 6.2 }, badge: { x: 82, y: 86, w: 0, size: 2.4 } };
-	const numOf = (/** @type {Layer} */ l, /** @type {'x' | 'y' | 'w' | 'size'} */ k) => l[k] ?? DEFAULT[l.kind][k];
+	const DEFAULT = { image: { x: 0, y: 0, w: 100, size: 0, rot: 0 }, cutout: { x: 0, y: 10, w: 45, size: 0, rot: 0 }, text: { x: 48, y: 16, w: 48, size: 6.2, rot: 0 }, badge: { x: 82, y: 86, w: 0, size: 2.4, rot: 0 } };
+	const numOf = (/** @type {Layer} */ l, /** @type {'x' | 'y' | 'w' | 'size' | 'rot'} */ k) => l[k] ?? DEFAULT[l.kind][k];
 
 </script>
 
@@ -159,7 +162,7 @@
 	<div class="stage">
 		{#if layers.length}
 			<Card {layers} {hook} selected={pickedId} editable onselect={(id) => (pickedId = id)} onmove={(id, x, y) => edit(id, { x, y })} onresize={(id, patch) => edit(id, patch)} />
-			<p class="stagenote">Click a layer to pick it, drag it to move it, drag its gold corner to size it. 16:9, every place in percent of the card.</p>
+			<p class="stagenote">Click a layer to pick it, drag it to move it, a corner to size it, the handle above to turn it. 16:9, every place in percent of the card.</p>
 		{:else}
 			<div class="blank">
 				<p>No layers yet.</p>
@@ -189,7 +192,7 @@
 		</div>
 		<!-- the card as it goes out: these layers drawn at full size, into the vault -->
 		{#if layers.length}
-			<div class="file">
+			<div class="filing">
 				<button class="render" disabled={rendering === 'drawing' || rendering === 'filing'} onclick={render}>
 					{rendering === 'drawing' ? 'Drawing…' : rendering === 'filing' ? 'Into the vault…' : native() ? 'Render the card' : 'Render and download'}
 				</button>
@@ -257,7 +260,7 @@
 					<label class="field">
 						<span>Colour</span>
 						<select value={picked.color ?? (picked.kind === 'badge' ? 'gold' : 'white')} onchange={(e) => edit(picked.id, { color: e.currentTarget.value })}>
-							{#each COLORS as c (c)}<option value={c}>{c}</option>{/each}
+							{#each picked.kind === 'badge' ? FILLS : COLORS as c (c)}<option value={c}>{c}</option>{/each}
 						</select>
 					</label>
 					{#if picked.kind === 'text'}
@@ -272,7 +275,7 @@
 
 				{#each NUMS as n (n.key)}
 					<label class="field num">
-						<span>{n.label} <small>{numOf(picked, n.key)}{n.key === 'size' ? ' · % of the width' : ' %'}</small></span>
+						<span>{n.label} <small>{numOf(picked, n.key)}{n.key === 'size' ? ' · % of the width' : n.key === 'rot' ? '°' : ' %'}</small></span>
 						<input type="range" min={n.min} max={n.max} step={n.step} value={numOf(picked, n.key)} oninput={(e) => edit(picked.id, { [n.key]: Number(e.currentTarget.value) })} />
 					</label>
 				{/each}
@@ -364,7 +367,7 @@
 		cursor: default;
 	}
 
-	.file {
+	.filing {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;

@@ -8,8 +8,10 @@ import { fileUrl } from '$lib/auth/client';
 /** @typedef {import('$lib/auth/client').Layer} Layer */
 
 /** the colours a text can be, by name; anything else is taken as written — as Card.svelte */
-const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22' };
+const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b' };
 const colorOf = (/** @type {string | undefined} */ c) => COLOR[/** @type {keyof typeof COLOR} */ (c ?? 'white')] ?? c ?? '#fff';
+/** a badge's words: white on any fill but a white one — as Card.svelte */
+const onFill = (/** @type {string | undefined} */ c) => ((c ?? 'gold') === 'white' ? COLOR.ink : '#fff');
 const FONT = '"Fraunces Variable", "Iowan Old Style", Georgia, serif';
 
 /** a layer's box, in percent of the canvas; its defaults by kind — as Card.svelte */
@@ -30,26 +32,8 @@ function picture(hash) {
 	});
 }
 
-/**
- * Words wrapped to a width: the layer's own line breaks kept, each line broken further where it would run past.
- * @param {CanvasRenderingContext2D} ctx @param {string} text @param {number} width
- */
-function wrap(ctx, text, width) {
-	/** @type {string[]} */
-	const out = [];
-	for (const para of text.split('\n')) {
-		let line = '';
-		for (const word of para.split(/\s+/).filter(Boolean)) {
-			const next = line ? `${line} ${word}` : word;
-			if (line && ctx.measureText(next).width > width) {
-				out.push(line);
-				line = word;
-			} else line = next;
-		}
-		out.push(line);
-	}
-	return out;
-}
+/** A text's lines: where its words break them (the image title is one line per entry) — as Card.svelte, white-space: pre. */
+const linesOf = (/** @type {string} */ text) => text.split('\n').map((l) => l.replace(/\s+$/, ''));
 
 /**
  * The card as a JPEG, drawn from its layers at `width` pixels (3240 for the master: the wide and the tall crops stay
@@ -78,11 +62,20 @@ export async function renderCard(layers, hook, o = {}) {
 		const b = boxOf(l);
 		const bx = (b.x / 100) * W;
 		const by = (b.y / 100) * H;
-		const bw = (b.w / 100) * W;
+		const bwMax = (b.w / 100) * W;
 		ctx.save();
+		/** the layer turned about its box's centre, as the page does (transform-origin: center) @param {number} w @param {number} h */
+		const turn = (w, h) => {
+			if (!l.rot) return;
+			ctx.translate(bx + w / 2, by + h / 2);
+			ctx.rotate((l.rot * Math.PI) / 180);
+			ctx.translate(-(bx + w / 2), -(by + h / 2));
+		};
 		if (l.kind === 'image') {
 			const img = l.hash ? pics.get(l.hash) : undefined;
+			const bw = bwMax;
 			const bh = (b.w / 100) * H; // the box is 16:9 like the canvas
+			turn(bw, bh);
 			if (img) {
 				ctx.beginPath();
 				ctx.rect(bx, by, bw, bh);
@@ -97,43 +90,50 @@ export async function renderCard(layers, hook, o = {}) {
 		} else if (l.kind === 'cutout') {
 			const img = l.hash ? pics.get(l.hash) : undefined;
 			if (img) {
+				const bw = bwMax;
 				const dh = (bw * img.naturalHeight) / img.naturalWidth;
+				turn(bw, dh);
 				ctx.shadowColor = 'rgba(0,0,0,0.45)';
 				ctx.shadowBlur = cq(2);
 				ctx.shadowOffsetY = cq(1);
 				ctx.drawImage(img, bx, by, bw, dh);
 			}
 		} else if (l.kind === 'badge') {
+			// white words, compact, on a solid fill in the badge's colour (gold), as Card.svelte
 			const fs = cq(sizeOf(l));
 			ctx.font = `760 ${fs}px ${FONT}`;
-			if ('letterSpacing' in ctx) ctx.letterSpacing = `${0.16 * fs}px`;
+			if ('letterSpacing' in ctx) ctx.letterSpacing = `${0.04 * fs}px`;
 			ctx.textBaseline = 'alphabetic';
 			const words = (l.text || 'DAY 1').toUpperCase();
 			const tw = ctx.measureText(words).width;
-			const padX = 0.8 * fs;
-			const padY = 0.45 * fs;
-			const border = 0.12 * fs;
-			const bw2 = tw + 2 * padX + 2 * border;
-			const bh2 = fs + 2 * padY + 2 * border;
-			const r = 0.45 * fs;
+			const padX = 0.9 * fs;
+			const padY = 0.5 * fs;
+			const bw2 = tw + 2 * padX;
+			const bh2 = fs + 2 * padY;
+			turn(bw2, bh2);
+			ctx.shadowColor = 'rgba(0,0,0,0.35)';
+			ctx.shadowBlur = cq(1.2);
+			ctx.shadowOffsetY = cq(0.3);
 			ctx.beginPath();
-			ctx.roundRect(bx, by, bw2, bh2, r);
-			ctx.fillStyle = 'rgba(10,14,12,0.55)';
-			ctx.fill();
-			ctx.lineWidth = border;
-			ctx.strokeStyle = colorOf(l.color ?? 'gold');
-			ctx.stroke();
+			ctx.roundRect(bx, by, bw2, bh2, 0.45 * fs);
 			ctx.fillStyle = colorOf(l.color ?? 'gold');
-			ctx.fillText(words, bx + border + padX, by + border + padY + fs * 0.82);
+			ctx.fill();
+			ctx.shadowBlur = 0;
+			ctx.shadowOffsetY = 0;
+			ctx.fillStyle = onFill(l.color);
+			ctx.fillText(words, bx + padX, by + padY + fs * 0.82);
 		} else {
 			const fs = cq(sizeOf(l));
 			const padX = cq(1.6);
 			const padY = cq(1.2);
 			ctx.font = `800 ${fs}px ${FONT}`;
 			if ('letterSpacing' in ctx) ctx.letterSpacing = `${-0.025 * fs}px`;
-			const lines = wrap(ctx, l.text || hook || 'The hook', bw - 2 * padX);
+			// the box hugs the lines, never wider than the layer's width — as Card.svelte (width: max-content)
+			const lines = linesOf(l.text || hook || 'The hook');
 			const lh = 0.95 * fs;
+			const bw = Math.min(bwMax, Math.max(...lines.map((line) => ctx.measureText(line).width)) + 2 * padX);
 			const bh2 = lines.length * lh + 2 * padY;
+			turn(bw, bh2);
 			// the shade: a dark box with a soft halo, as the page's box-shadow
 			ctx.shadowColor = 'rgba(0,0,0,0.32)';
 			ctx.shadowBlur = cq(3);
