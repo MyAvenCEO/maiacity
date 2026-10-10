@@ -8,10 +8,10 @@ import { fileUrl } from '$lib/auth/client';
 /** @typedef {import('$lib/auth/client').Layer} Layer */
 
 /** the colours a text can be, by name; anything else is taken as written — as Card.svelte */
-const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b' };
+const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b', marine: '#14304f' };
 const colorOf = (/** @type {string | undefined} */ c) => COLOR[/** @type {keyof typeof COLOR} */ (c ?? 'white')] ?? c ?? '#fff';
-/** a badge's words: white on any fill but a white one — as Card.svelte */
-const onFill = (/** @type {string | undefined} */ c) => ((c ?? 'gold') === 'white' ? COLOR.ink : '#fff');
+/** a badge's words: white on any fill but the white one, the cold style, whose words are the dark marine blue — as Card.svelte */
+const onFill = (/** @type {string | undefined} */ c) => ((c ?? 'gold') === 'white' ? COLOR.marine : '#fff');
 const FONT = '"Fraunces Variable", "Iowan Old Style", Georgia, serif';
 
 /** a layer's box, in percent of the canvas; its defaults by kind — as Card.svelte */
