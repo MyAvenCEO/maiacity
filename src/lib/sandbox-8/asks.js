@@ -284,13 +284,15 @@ function fieldQuestions(world, a) {
 	// aven's own field left out: a crop it left looked empty, the one it grew crowded, and every option said switch
 	const planned = (g) => live.reduce((n, o) => n + (o.fields ?? []).filter((h) => h.crop === g).reduce((m, h) => m + fieldBase(g) * levelShare(h.level), 0), 0) + rain(g);
 	const supplyNow = (g) => live.reduce((n, o) => n + (o.fields ?? []).filter((h) => h.crop === g).reduce((m, h) => m + fieldYield(world, h), 0), 0) + rain(g);
-	// forecast 2 (World 29): the market's price level (each good's price today, weighted by what the valley needs of it,
-	// as a geometric mean, so one runaway price doesn't lift every crop: an arithmetic mean put water at 42 a unit while
-	// it sold at 0.04) shaped by the valley's own balance once every planted field and the option have grown: need ÷ that supply. No
-	// lagging average and no stale price: in World 28 a 14-day average of frozen prices rated the crop grown 3.5 times
-	// over at 919 and the one nobody grew at 16
-	const needAll = GOODS.reduce((n, g) => n + (NEED[g] ?? 0), 0);
-	const priceLevel = Math.exp(GOODS.reduce((n, g) => n + (NEED[g] ?? 0) * Math.log(Math.max(1e-4, today(g))), 0) / needAll);
+	// forecast 2 (World 29): the market's price level (the middle of the goods' prices today, so neither one runaway price
+	// lifts every crop nor two crashed ones sink them all) shaped by the valley's own balance once every planted field and
+	// the option have grown: need ÷ that supply. An arithmetic mean put water at 42 a unit while it sold at 0.04; a
+	// geometric one fell to near 0 once two overgrown crops hit the price floor, every crop looked worthless and only the
+	// keep cost counted, so a stand-in that picks the biggest net drifted into WATER and LEGUMES (the cheapest to keep)
+	// until they grew 285-440% of need and the rest 45-50%. No lagging average and no stale price: in World 28 a 14-day
+	// average of frozen prices rated the crop grown 3.5 times over at 919 and the one nobody grew at 16
+	const prices = GOODS.map((g) => today(g)).sort((x, y) => x - y);
+	const priceLevel = prices[Math.floor(prices.length / 2)];
 	const coverage = (g, move = {}) => {
 		const need = live.length * (NEED[g] ?? 0);
 		const grown = planned(g) + (move[g] ?? 0);
