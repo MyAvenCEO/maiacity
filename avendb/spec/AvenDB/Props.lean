@@ -49,22 +49,22 @@ def CausallyClosed (st : State) : Prop :=
 /-- Readers count no write that builds on one they don't count. -/
 def CountsClosed (st : State) : Prop := ∀ w ∈ st.writes, ∀ d ∈ w.deps, d ∈ st.uncounted → w.edit ∈ st.uncounted
 
-/-! ## Rules
+/-! ## Ops
 
-What every reader of an entry sees of the caps when it judges a write: each cap without its selector and relabel set,
-which only the readers of that cap open, and without its rules, but for the caps of the chain the write's proof names,
-whose rules the proof opens. -/
+What every reader of an entry sees of the caps when it judges a write: each cap without its selector, which only the
+readers of that cap open, and without its ops, but for the caps of the chain the write's proof names, whose ops the
+proof opens. -/
 
-/-- The caps whose rules a write's proof `p` opens: the chain of the cap it names. -/
+/-- The caps whose ops a write's proof `p` opens: the chain of the cap it names. -/
 def proofCaps (st : State) : Option CapId → List CapId
   | none => []
   | some p => (st.caps.filter (·.id == p)).flatMap fun c => (chain st c).map (·.id)
 
-/-- A cap as every reader of an entry sees it, judging a write whose proof opens the rules of the caps `vis`. -/
+/-- A cap as every reader of an entry sees it, judging a write whose proof opens the ops of the caps `vis`. -/
 def Cap.seen (vis : List CapId) (c : Cap) : Cap :=
-  { c with select := .all, relabel := [], rules := if vis.contains c.id then c.rules else [] }
+  { c with select := .all, ops := if vis.contains c.id then c.ops else [] }
 
-/-- A state as every reader of an entry sees it, judging a write whose proof opens the rules of the caps `vis`. -/
+/-- A state as every reader of an entry sees it, judging a write whose proof opens the ops of the caps `vis`. -/
 def State.seen (st : State) (vis : List CapId) : State := { st with caps := st.caps.map (Cap.seen vis) }
 
 /-! ## Keys -/
@@ -88,12 +88,12 @@ def KeyFam.vault : KeyFam → VaultId
 
 /-! ## Relays
 
-A relay reads no selector, no type, no tag, no rule and no record: it sees a cap without its selector, relabel set
-and rules (only whether it is ruled), and a write without its header, tags, proof, touches and whether it fits its
-schemas. What it then works out of the edits is the operational part of the state. -/
+A relay reads no selector, no type, no tag, no op and no record: it sees a cap without its selector and ops (only
+its role, their class), and a write without its header, tags, proof, touches and whether it fits its schemas. What it
+then works out of the edits is the operational part of the state. -/
 
 /-- A cap as a relay sees it. -/
-def Cap.blind (c : Cap) : Cap := { c with select := .all, relabel := [], rules := [] }
+def Cap.blind (c : Cap) : Cap := { c with select := .all, ops := [] }
 
 /-- An action as a relay sees it. -/
 def Action.blind : Action → Action

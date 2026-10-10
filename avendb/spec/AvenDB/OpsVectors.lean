@@ -237,7 +237,7 @@ def op : Op → String
 
 def sym (t : Sym) : String := str (toString t)
 
-/-- A label as a cap's slice writes it (`avendb-browser/src/words.rs`). -/
+/-- A label as a cap's selector writes it (`avendb::slice::Atom::to_json`). -/
 def atom : Atom → String
   | .typeIn ts       => obj [("type", arr (ts.map sym))]
   | .authorIn vs     => obj [("author", arr (vs.map fun v => str (hexId v)))]
@@ -247,9 +247,17 @@ def atom : Atom → String
   | .tagNone ts      => obj [("noTag", arr (ts.map sym))]
   | .tagsWithin ts   => obj [("onlyTags", arr (ts.map sym))]
 
+/-- A conjunction of labels as a `where` writes it: one label, or all of them. -/
+def conj : List Atom → String
+  | [x] => atom x
+  | d   => obj [("all", arr (d.map atom))]
+
+/-- A selector as a query's `where` of labels alone writes it, in its normal form (`avendb::slice::Selector::to_json`):
+    the whole vault, one conjunction, or any of several. -/
 def selector : Selector → String
-  | .all      => str "all"
-  | .anyOf ds => arr (ds.map fun d => arr (d.map atom))
+  | .all       => obj [("all", arr [])]
+  | .anyOf [d] => conj d
+  | .anyOf ds  => obj [("any", arr (ds.map conj))]
 
 def target : Target → String
   | .at p     => path p

@@ -20,10 +20,10 @@
 //! snapshot refuses the updates of a proposal that starts before it.
 //!
 //! A line's history is made of the writes the entry's readers count (`Change::counted`, C1 to C4, S1 to S4): a write
-//! counts where it fits the schemas its entry was written under, through a ruled cap only where the rules of its
-//! cap's chain allow what it touches, and only if what it builds on counts too. Both are read off what it carries, on
-//! the history before it (`History::reading`). So a write that breaks its schema, or that no rule allows, changes no
-//! line anyone shows, and nothing a device writes builds on it.
+//! counts where it fits the schemas its entry was written under, through a cap only where the ops of the caps of its
+//! chain allow what it touches and the tags it asks for, and only if what it builds on counts too. Both are read off
+//! what it carries, on the history before it (`History::reading`). So a write that breaks its schema, or that no op of
+//! its caps allows, changes no line anyone shows, and nothing a device writes builds on it.
 //!
 //! `History` is what a device holds of one entry, every accepted write with what it could open; the Lab builds one
 //! for each entry it shows. `Repo` keeps one locally, with no keys and no caps, for the tests and the property checks.

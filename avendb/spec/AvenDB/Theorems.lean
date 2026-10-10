@@ -133,49 +133,57 @@ theorem T23_creations (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) {p
 
 /-! ## Caps that name ops
 
-C1 to C4 (`avendb/docs/OPS.md`): a write cap's rules say which ops its grantee's writes may make, and every reader of
-an entry counts a write only where the rules of the chain its proof names allow what it touches. The half of C3 about
-a write's changes, `changes_allowed`, is proven in `Rules.lean`. -/
+C1 to C4 (`avendb/docs/OPS.md`): a cap is a name and the ops its grantee may make, its role the class of its strongest
+op, and every reader of an entry counts a write by anyone but the entry's vault only where the cap the write's proof
+names reaches the entry and every cap of its chain is the class of its ops and allows what the write touches. The half
+of C3 about a write's changes, `changes_allowed`, is proven in `Rules.lean`. -/
 
-/-- C1 (chains narrow rules): a chain allows no write that one of its ruled caps forbids. -/
+/-- C1 (chains narrow): a chain allows no write that one of its caps forbids, and lets nothing through a cap whose role
+    isn't the class of its ops. -/
 theorem chain_narrows {st : State} {cp c : Cap} {main : Bool} {ts : List Touch}
-    (h : chainAllows st cp main ts = true) (hc : c ∈ chain st cp) (hr : c.ruled = true) :
-    allowsAll c.rules main ts = true :=
-  Ruling.chain_narrows h hc hr
+    (h : chainAllows st cp main ts = true) (hc : c ∈ chain st cp) :
+    c.role = levelOf c.ops ∧ allowsAll c.ops main ts = true :=
+  Ruling.chain_narrows h hc
 
-/-- C1, a cap and the cap it rests on: in every reachable state a cap's chain is ruled where the chain of the cap it
-    rests on is, and allows no write that chain doesn't allow (T22's twin for rules). -/
+/-- C1, a cap and the cap it rests on: in every reachable state a cap's chain allows no write the chain of the cap it
+    rests on doesn't allow (T22's twin for ops). -/
 theorem child_narrows {st : State} (hr : Reachable st) {c pc : Cap} (hc : c ∈ st.caps) (hp : c.parent = some pc.id)
-    (hpc : pc ∈ st.caps) :
-    (ruledChain st pc = true → ruledChain st c = true) ∧
-      ∀ main ts, chainAllows st c main ts = true → chainAllows st pc main ts = true :=
+    (hpc : pc ∈ st.caps) : ∀ main ts, chainAllows st c main ts = true → chainAllows st pc main ts = true :=
   Ruling.child_narrows hr hc hp hpc
 
-/-- C2 (readers agree): whether the readers of an entry count a write reads no selector, relabel set, type or tag, and
-    no rules but those of the chain the write's proof names, so every reader of the entry, whatever caps it opened,
-    counts the same writes. -/
+/-- C2 (readers agree): whether the readers of an entry count a write reads no selector, type or tag, and no ops but
+    those of the chain the write's proof names, so every reader of the entry, whatever caps it opened, counts the same
+    writes. -/
 theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (deps : List EditId)
     (proof : Option CapId) (main : Bool) (ts : List Touch) (fits : Bool) :
     counts (st.seen (proofCaps st proof)) a { en with attrs } deps proof main ts fits =
       counts st a en deps proof main ts fits :=
   Ruling.counts_seen st a en attrs deps proof main ts fits
 
-/-- C2, creations: whether the readers of an entry count its creation reads no selector, relabel set or rules but
-    those of the chain the creation's proof names. -/
+/-- C2, creations: whether the readers of an entry count its creation reads no selector and no ops but those of the
+    chain the creation's proof names. -/
 theorem creates_seen (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) (fits : Bool) :
     creates (st.seen (proofCaps st proof)) a v x proof fits = creates st a v x proof fits :=
   Ruling.creates_seen st a v x proof fits
 
-/-- C3 (ruled writes do what they may): a counted write whose actor isn't the entry's vault, and reaches the entry
-    only through ruled chains, relies on the cap its proof names, which its actor holds with write or more and which
-    reaches the entry, and every ruled cap of that cap's chain allows every touch of it. -/
+/-- C3 (counted writes do what they may): a counted write whose actor isn't the entry's vault relies on the cap its
+    proof names, which its actor holds with write or more and which reaches the entry, and every cap of that cap's
+    chain is the class of its ops and allows every touch of it. -/
 theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option CapId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
-    (hv : a ≠ en.vault)
-    (hr : ∀ cp ∈ st.caps, holdsCap st a cp .write = true → inCell st cp en = true → ruledChain st cp = true) :
+    (hv : a ≠ en.vault) :
     ∃ cp ∈ st.caps, proof = some cp.id ∧ holdsCap st a cp .write = true ∧ inCell st cp en = true ∧
-      ∀ c ∈ chain st cp, c.ruled = true → allowsAll c.rules main ts = true :=
-  Ruling.counted_allowed hc hv hr
+      ∀ c ∈ chain st cp, c.role = levelOf c.ops ∧ allowsAll c.ops main ts = true :=
+  Ruling.counted_allowed hc hv
+
+/-- C3, by class: each touch of such a write is allowed, in every cap of the chain, by an op that writes; a read,
+    relay, backup or share op lets nothing through. -/
+theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option CapId}
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault) :
+    ∃ cp ∈ st.caps, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ ts, ∃ o ∈ c.ops, o.allows main t = true ∧
+      o.level = .write :=
+  Ruling.counted_writes hc hv
 
 /-- C4 (allowed writes count): a write that fits, builds on writes its readers count, whose proof names a cap its
     actor holds with write or more that reaches the entry, and whose chain allows every touch of it, counts. -/
@@ -227,7 +235,7 @@ theorem S2_first_write {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List O
   Ops.fits_new h hs hne hw
 
 /-- S3 (writes that don't fit count for no reader): readers count no write and no creation whose result doesn't fit,
-    whatever its caps and rules, and so (C4) nothing built on it. -/
+    whatever its caps and their ops, and so (C4) nothing built on it. -/
 theorem S3_unfit_uncounted (st : State) (a v : VaultId) (en : Entry) (deps : List EditId) (proof : Option CapId)
     (main : Bool) (ts : List Touch) (x : Cell) :
     counts st a en deps proof main ts false = false ∧ creates st a v x proof false = false := by

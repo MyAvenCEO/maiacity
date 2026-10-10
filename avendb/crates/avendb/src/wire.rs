@@ -18,7 +18,7 @@ use crate::encode::{Encode, VERSION};
 use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
-use crate::rules::{On, Opening, Proof, Rule, Scalar, Step, MAX_OPENINGS, MAX_RULES, MAX_STEPS, MAX_VALUES};
+use crate::rules::{Grant, On, Proof, Rule, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_RULES, MAX_STEPS, MAX_VALUES};
 use crate::sign::{Assertion, Classical, Hello, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
@@ -220,11 +220,6 @@ impl<'a> Reader<'a> {
         let out: Vec<T> = self.seq(min)?;
         if out.len() <= max { Ok(out) } else { Err(WireError::Unknown) }
     }
-
-    /// No bytes are left: what an optional part at the end of a value, left out, leaves.
-    fn done(&self) -> bool {
-        self.at == self.bytes.len()
-    }
 }
 
 /// The inverse of `Encode`, from bytes a peer sent.
@@ -383,19 +378,15 @@ impl Decode for Selector {
     }
 }
 
-/// A ruled cap's rules and the openings above it follow only where it has them (`encode`): bytes left after the tags
-/// are those, and they are never there for a slice without them.
+/// Only with a name of at most `rules::MAX_NAME` characters, and a chain of at most `rules::MAX_GRANTS` caps.
 impl Decode for Slice {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        let (select, relabel) = (Selector::decode(r)?, r.seq(4)?);
-        if r.done() {
-            return Ok(Slice { select, relabel, rules: None, above: vec![] });
-        }
-        let (rules, above) = (r.option()?, r.bounded(36, MAX_OPENINGS)?);
-        if rules.is_none() && above.is_empty() {
+        let name = String::decode(r)?;
+        if name.chars().count() > MAX_NAME {
             return Err(WireError::Unknown);
         }
-        Ok(Slice { select, relabel, rules, above })
+        let (select, grant, above) = (Selector::decode(r)?, Grant::decode(r)?, r.bounded(36, MAX_GRANTS - 1)?);
+        Ok(Slice { name, select, grant, above })
     }
 }
 
@@ -403,8 +394,7 @@ impl Decode for Select {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
             0 => Ok(Select::Clear(Slice::decode(r)?)),
-            1 => Ok(Select::Sealed { boxes: r.seq(4)?, slice: r.bytes()?, rules: None }),
-            2 => Ok(Select::Sealed { boxes: r.seq(4)?, slice: r.bytes()?, rules: Some(r.array()?) }),
+            1 => Ok(Select::Sealed { boxes: r.seq(4)?, slice: r.bytes()?, commitment: r.array()? }),
             _ => Err(WireError::Unknown),
         }
     }
@@ -444,40 +434,45 @@ impl Decode for Scalar {
     }
 }
 
-/// Only within the bounds rules keep (`rules::MAX_STEPS`, `rules::MAX_VALUES`).
+/// Only within the bounds ops keep (`rules::MAX_STEPS`, `rules::MAX_VALUES`).
 impl Decode for Rule {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let path = |r: &mut Reader<'_>| r.bounded(1, MAX_STEPS);
-        Ok(match r.u8()? {
-            0 => {
-                let path = path(r)?;
-                let to = match r.u8()? {
-                    0 => None,
-                    1 => Some(r.bounded(1, MAX_VALUES)?),
-                    _ => return Err(WireError::Unknown),
-                };
-                Rule::Set { path, to, on: r.option()? }
+        // a list of at most `MAX_VALUES`, or none
+        fn values<T: Decode>(r: &mut Reader<'_>, min: usize) -> Result<Option<Vec<T>>, WireError> {
+            match r.u8()? {
+                0 => Ok(None),
+                1 => Ok(Some(r.bounded(min, MAX_VALUES)?)),
+                _ => Err(WireError::Unknown),
             }
-            1 => Rule::Insert { path: path(r)?, on: r.option()? },
-            2 => Rule::Remove { path: path(r)?, on: r.option()? },
-            3 => Rule::Move { path: path(r)?, on: r.option()? },
-            4 => Rule::Merge { on: r.option()? },
-            5 => Rule::Propose,
-            6 => Rule::Create,
+        }
+        Ok(match r.u8()? {
+            0 => Rule::Relay,
+            1 => Rule::Backup,
+            2 => Rule::Read,
+            3 => Rule::Create,
+            4 => Rule::Set { path: path(r)?, to: values(r, 1)?, on: r.option()? },
+            5 => Rule::Insert { path: path(r)?, on: r.option()? },
+            6 => Rule::Remove { path: path(r)?, on: r.option()? },
+            7 => Rule::Move { path: path(r)?, on: r.option()? },
+            8 => Rule::Tag(values(r, 4)?),
+            9 => Rule::Propose,
+            10 => Rule::Merge { on: r.option()? },
+            11 => Rule::Share,
             _ => return Err(WireError::Unknown),
         })
     }
 }
 
-impl Decode for Opening {
+impl Decode for Grant {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Opening { rules: r.bounded(1, MAX_RULES)?, salt: r.array()? })
+        Ok(Grant { ops: r.bounded(1, MAX_RULES)?, salt: r.array()? })
     }
 }
 
 impl Decode for Proof {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Proof { cap: CapId::decode(r)?, openings: r.bounded(36, MAX_OPENINGS)? })
+        Ok(Proof { cap: CapId::decode(r)?, grants: r.bounded(36, MAX_GRANTS)? })
     }
 }
 
@@ -493,12 +488,10 @@ impl Decode for TagDelta {
     }
 }
 
-/// A write's proof follows only where it carries one (`encode`).
 impl Decode for Body {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let (header, tags, answers, content) = (r.option()?, TagDelta::decode(r)?, r.set(32)?, r.bytes()?);
-        let proof = if r.done() { None } else { Some(Proof::decode(r)?) };
-        Ok(Body { header, tags, answers, content, proof })
+        Ok(Body { header, tags, answers, content, proof: r.option()? })
     }
 }
 

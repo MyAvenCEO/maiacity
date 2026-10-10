@@ -13,9 +13,10 @@ use crate::doc::Item;
 use crate::history::MAIN;
 use crate::id::{CellId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName};
-use crate::lab::{Lab, Tamper};
+use crate::lab::{Lab, NewCap, Tamper};
 use crate::lens::{Status, DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
 use crate::policy::{mk_cell, Action, Grantee, Kind, Principal, Refusal, Role};
+use crate::rules::Rule;
 use crate::slice::{Selector, Sym};
 
 /// One scenario of the plan.
@@ -993,9 +994,10 @@ fn asking_for_a_tag(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, carol, mac) = (w.alice, w.bob, w.carol, w.mac_a);
-    let mut work = cap(alice, vault(bob), Role::Write, tagged("todo", "work"));
-    work.slice.relabel = syms(&["urgent"]);
-    let what = "Alice shares her todos tagged work with Bob, write, and lets him ask for the urgent tag";
+    let set = Rule::Set { path: vec![], to: None, on: None };
+    let ops = vec![Rule::Read, set, Rule::Tag(Some(syms(&["urgent"])))];
+    let work = NewCap { name: "Work".into(), ops, ..cap(alice, vault(bob), Role::Write, tagged("todo", "work")) };
+    let what = "Alice shares her todos tagged work with Bob: he edits them and may ask for the urgent tag alone";
     let work = run.ok(what, w.lab.issue(mac, &[mac], work))?;
     let urgent = cap(alice, vault(carol), Role::Read, tagged("todo", "urgent"));
     let urgent = run.ok("and her urgent todos with Carol, read", w.lab.issue(mac, &[mac], urgent))?;
@@ -1011,10 +1013,13 @@ fn asking_for_a_tag(run: &mut Run) -> Done {
     run.check("Carol reads it now, and Bob still does", both);
     let granted = Some(syms(&["work", "urgent"]));
     run.same("Bob's Mac reads its tags as Alice's Mac granted them", tags(&w.lab, w.mac_b, lib.door), granted);
-    let ask = w.lab.tag(w.mac_b, bob, lib.solar, &[], &["work"]);
-    run.ok("Bob takes the work tag off the solar todo, which his cap doesn't let him ask for", ask)?;
+    let mac_b = w.mac_b;
+    let refused = w.lab.tag(mac_b, bob, lib.solar, &[], &["work"]).err();
+    run.same("Bob's app won't take the work tag off the solar todo: his cap", refused, Some(Refusal::NotAllowed));
+    let ask = w.lab.patched(|lab| lab.tag(mac_b, bob, lib.solar, &[], &["work"]));
+    run.ok("a patched app asks Alice's Mac to all the same", ask)?;
     w.lab.sync_all(22);
-    run.same("Alice's Mac answers, and keeps the tag", tags(&w.lab, mac, lib.solar), Some(syms(&["work"])));
+    run.same("Alice's Mac counts no such ask, and keeps the tag", tags(&w.lab, mac, lib.solar), Some(syms(&["work"])));
     run.check("so the solar todo stays in Bob's slice", w.lab.reads(w.mac_b, lib.solar));
     run.same("and Bob's own write never counted", tags(&w.lab, w.mac_b, lib.solar), Some(syms(&["work"])));
     Ok(())

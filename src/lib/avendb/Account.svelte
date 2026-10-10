@@ -23,7 +23,7 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import { answer } from './ops.js';
-	import { count, plain } from './vaults.js';
+	import { count, levelOf, plain } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
@@ -434,14 +434,15 @@
 		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
 		note: (entry) => device.note(entry),
 		/**
-		 * A cap: role `role` on what `slice` selects of vault `over`, to vault `grantee` or `"public"`, acting for vault
-		 * `issuer`; making a vault owner takes the passkey.
-		 * @param {string} issuer @param {string} over @param {import('./vaults.js').Slice} slice @param {string} role
+		 * A cap: the named group of ops `spec` names on what its `where` picks of vault `over` (`{name, where, ops}`),
+		 * to vault `grantee` or `"everyone"`, acting for vault `issuer`; one whose ops share it on takes the passkey.
+		 * @param {string} issuer @param {string} over
+		 * @param {{ name: string, where: import('./vaults.js').Where, ops: import('./vaults.js').Op[] }} spec
 		 * @param {string} grantee
 		 */
-		share: (issuer, over, slice, role, grantee) =>
-			act(role === 'owner' ? `Sharing: ${asks} once` : 'Sharing', async () =>
-				device.share(issuer, over, slice, role, grantee, await approver())
+		share: (issuer, over, spec, grantee) =>
+			act(levelOf(spec.ops) === 'owner' ? `Sharing: ${asks} once` : 'Sharing', async () =>
+				device.share(issuer, over, spec, grantee, await approver())
 			),
 		/** @param {string} actor @param {string} cap @param {string} role */
 		revoke: (actor, cap, role) =>

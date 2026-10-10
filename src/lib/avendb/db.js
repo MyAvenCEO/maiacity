@@ -7,9 +7,11 @@
  */
 import {
 	allows,
+	capName,
 	capWords,
 	cellWords,
 	count,
+	EVERYONE,
 	granteeOf,
 	list,
 	nameOf,
@@ -17,7 +19,7 @@ import {
 	ROLES,
 	short,
 	singular,
-	sliceWords
+	whereWords
 } from './vaults.js';
 
 /**
@@ -37,7 +39,7 @@ import {
  *   pq: number | null }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
  *   parents: string[], depth: number, bytes: number, vaults: string[], counted: boolean | null,
- *   allowed: boolean | null, why: 'builds-on' | 'sealed' | 'unfit' | 'rules' | null }} SignedEdit
+ *   allowed: boolean | null, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null }} SignedEdit
  * @typedef {{ name: string, type: string, hint: string, required: boolean, fallback: string | null,
  *   fields: Field[] }} Field
  * @typedef {{ schemas: SchemaView[], lenses: (LensView | null)[], name: string }} Family
@@ -80,21 +82,24 @@ export function studio(world, db, vault, actor) {
 		const c = world.caps.find((x) => x.id === id);
 		return c ? capWords(c, world) : `cap ${short(id)}`;
 	};
-	/** Cap `id`'s slice in words, where it is in force and this browser reads it. @param {string} id */
+	/** Cap `id`'s name and slice in words, where it is in force and this browser reads it. @param {string} id */
 	const slice = (id) => {
 		const c = world.caps.find((x) => x.id === id);
-		return c?.slice ? sliceWords(c.slice, world) : null;
+		return c?.slice ? `“${c.slice.name}” on ${whereWords(c.slice.where, world)}` : null;
 	};
 	/** Cell `id` in words: what reaches it. @param {string} id */
 	const cell = (id) => cellWords(world.cells.find((x) => x.id === id), world);
-	/** Cell `id`, short, as a grid's cell names it: "its own", or the roles the caps that reach it give. @param {string} id */
+	/**
+	 * Cell `id`, short, as a grid's cell names it: "its own", or who holds the caps that reach it, and which.
+	 * @param {string} id
+	 */
 	const cellName = (id) => {
 		const caps = world.cells.find((x) => x.id === id)?.caps ?? cells.find((x) => x.id === id)?.caps;
 		if (!caps) return `cell ${short(id)}`;
 		if (!caps.length) return 'its own';
 		const named = caps.map((id) => {
 			const c = world.caps.find((x) => x.id === id);
-			return c ? `${granteeOf(c, world)} ${ROLES[c.role]}` : 'a cap';
+			return c ? `${granteeOf(c, world)} (${capName(c)})` : 'a cap';
 		});
 		return list(named);
 	};
@@ -345,9 +350,6 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 	checkpoint: 'checkpoint'
 });
 
-/** What a role lets its holder do, as a verb. */
-const VERBS = /** @type {Record<string, string>} */ ({ relay: 'relay', backup: 'back up', read: 'read', write: 'write', owner: 'own' });
-
 /**
  * What edit `edit` does, in words, naming what it touches as `s` names it; `edits` finds an edit by its id, a cap's
  * for its revocation. A cap's slice is sealed in its edit: it shows in words where the cap is in force and this browser
@@ -356,12 +358,21 @@ const VERBS = /** @type {Record<string, string>} */ ({ relay: 'relay', backup: '
  */
 export function describe(edit, s, edits) {
 	const f = edit.fields ?? {};
-	/** a principal, or a cap's grantee: a vault's id or "public" @param {any} p */
-	const who = (p) =>
-		!p ? 'nobody' : p === 'public' ? 'everyone' : typeof p === 'string' ? s.vaultName(p) : p.vault ? s.vaultName(p.vault) : s.signer(p.signer);
-	/** what the cap edit `id`, of fields `c`, gives: its slice in words, or that it is sealed @param {string} id @param {any} c */
-	const reach = (id, c) =>
-		c.wide ? `the whole of ${s.vaultName(c.over)}` : `${s.slice(id) ?? `a slice (${size(c.sealed ?? 0)} sealed)`} of ${s.vaultName(c.over)}`;
+	/** a principal, or a cap's grantee: a vault's id or "everyone" @param {any} p */
+	const who = (p) => {
+		if (!p) return 'nobody';
+		if (p === EVERYONE) return 'everyone';
+		return typeof p === 'string' ? s.vaultName(p) : p.vault ? s.vaultName(p.vault) : s.signer(p.signer);
+	};
+	/**
+	 * the cap edit `id`, of fields `c`, gives: its name and slice in words, or what its role does and that its slice is
+	 * sealed @param {string} id @param {any} c
+	 */
+	const reach = (id, c) => {
+		const where = c.wide ? 'the whole' : `a slice (${size(c.sealed ?? 0)} sealed)`;
+		const role = ROLES[/** @type {keyof typeof ROLES} */ (c.role)] ?? c.role;
+		return `cap ${s.slice(id) ?? `that ${role} ${where}`} of ${s.vaultName(c.over)}`;
+	};
 	/** a key of the schedule, by its name @param {any} k */
 	const key = (k) =>
 		k?.signer
@@ -395,13 +406,12 @@ export function describe(edit, s, edits) {
 			return f.root ? `Makes ${s.signer(f.root)} the root of ${s.vaultName(f.vault)}` : `Clears ${s.vaultName(f.vault)}’s root`;
 		case 'cap': {
 			const through = f.parent ? `, through its own cap ${short(f.parent)}` : '';
-			return `${s.vaultName(f.issuer)} lets ${who(f.grantee)} ${VERBS[f.role] ?? f.role} ${reach(edit.id, f)}${through}`;
+			return `${s.vaultName(f.issuer)} gives ${who(f.grantee)} the ${reach(edit.id, f)}${through}`;
 		}
 		case 'revoke': {
 			const c = edits(f.cap);
 			if (!c) return `${s.vaultName(f.actor)} revokes cap ${short(f.cap)}`;
-			const right = `${VERBS[c.fields.role] ?? c.fields.role} ${reach(c.id, c.fields)}`;
-			return `${s.vaultName(f.actor)} revokes ${who(c.fields.grantee)}’s right to ${right}`;
+			return `${s.vaultName(f.actor)} revokes ${who(c.fields.grantee)}’s ${reach(c.id, c.fields)}`;
 		}
 		case 'write': {
 			const line = f.starts ? ', proposing a change' : f.line ? ', on a proposal' : '';

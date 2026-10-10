@@ -2,8 +2,9 @@
 	A vault's settings, as its aside lists them: About (what it is, who approves a change to it, how this browser acts
 	for it), Owners and devices (who owns it, what it owns, the devices that act for it, and for the person's own vault
 	this browser's name, linking the next device and forgetting this one), Access (every cap in force over it, each a
-	role on a slice of it in words, what it reaches now and who may revoke it; sharing a slice of it as the acting
-	vault; and the caps it holds in other vaults), and Sync (its cells, the entries the same caps reach under one key,
+	named group of ops on a slice of it, clustered by its group: the group's name and ops as chips, then who holds it on
+	what, what it reaches now and who may revoke it; sharing a slice of it as the acting vault; and the caps it holds in
+	other vaults), and Sync (its cells, the entries the same caps reach under one key,
 	each with the devices that receive its edits and whether each opens them or only relays their ciphertext). All of it
 	is the device's world (avendb-browser's `World`); sharing and revoking go out acting for the acting vault, and the
 	rules check them against its caps.
@@ -11,25 +12,24 @@
 <script>
 	import { native } from '$lib/native';
 	import Mark from './Mark.svelte';
+	import Ops from './Ops.svelte';
 	import Share from './Share.svelte';
 	import {
+		capName,
 		cellWords,
 		count,
+		EVERYONE,
 		granteeOf,
 		KIND_HINTS,
 		KINDS,
 		list,
 		nameOf,
 		reads,
-		relabelWords,
-		ROLE_HINTS,
-		ROLES,
-		rulesWords,
 		short,
 		shares,
-		sliceWords,
 		STRONGEST,
-		titleOf
+		titleOf,
+		whereWords
 	} from './vaults.js';
 
 	/**
@@ -46,10 +46,25 @@
 	const v = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(vault)));
 	const as = $derived(byId.get(actor));
 	const owned = $derived(world.vaults.filter((x) => x.owners.some((o) => 'vault' in o && o.vault === vault)));
-	/** the caps in force over the vault, the strongest first; and those it holds in other vaults */
-	const over = $derived(
-		world.caps.filter((c) => c.over === vault).sort((a, b) => STRONGEST.indexOf(a.role) - STRONGEST.indexOf(b.role))
-	);
+	/**
+	 * the caps in force over the vault by their group, a name and its ops, the strongest first (a cap whose slice this
+	 * device doesn't read alone in its own); and those it holds in other vaults
+	 */
+	const groups = $derived.by(() => {
+		/**
+		 * @type {Map<string, { name: string, ops: import('./vaults.js').Op[] | null, role: string,
+		 *   caps: typeof world.caps }>}
+		 */
+		const by = new Map();
+		for (const c of world.caps.filter((c) => c.over === vault)) {
+			const key = c.slice ? JSON.stringify([c.slice.name, c.slice.ops]) : c.id;
+			const g = by.get(key);
+			if (g) g.caps.push(c);
+			else by.set(key, { name: capName(c), ops: c.slice?.ops ?? null, role: c.role, caps: [c] });
+		}
+		const rank = (/** @type {{ role: string }} */ g) => STRONGEST.indexOf(/** @type {any} */ (g.role));
+		return [...by].sort(([, a], [, b]) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+	});
 	const held = $derived(world.caps.filter((c) => c.grantee === vault && c.over !== vault));
 	/** its cells, the entries the same caps reach, its own first */
 	const cells = $derived(world.cells.filter((x) => x.vault === vault).sort((a, b) => a.caps.length - b.caps.length));
@@ -273,34 +288,54 @@
 		<article class="card wide">
 			<h3>Caps over {nameOf(v)}</h3>
 			<p class="soft">
-				Each is a role on a slice of it: a rule over its entries' types and tags, or chosen entries, never a fixed group. What
-				it reaches changes as entries are written and tagged. {nameOf(v)} itself holds every right over all of it.
+				Each cap is a named group of ops, what its holder may do, on a slice of it: a rule over its entries'
+				types and tags, or chosen entries. What it reaches changes as entries are written and tagged.
+				{nameOf(v)} itself holds every right over all of it.
 			</p>
-			<ul class="list grants">
-				{#each over as c (c.id)}
-					<li>
-						<span class="cap">
-							{#if c.grantee === 'public'}<span class="chip">Everyone</span>{:else}<Mark vault={byId.get(c.grantee)} size={28} />{/if}
-							<span>
-								<b>{granteeOf(c, world)}</b>
-								<span class="chip" class:accent={c.grantee === actor} title={ROLE_HINTS[c.role]}>{ROLES[c.role]}</span>
-								{sliceWords(c.slice, world)}
-								{#if rulesWords(c.slice)}<span class="rules">· {rulesWords(c.slice)}</span>{/if}
-								<small class="soft">
-									· reaches {count(c.entries.length, 'entry', 'entries')} now · given by {nameOf(byId.get(c.issuer))}{c.parent
-										? ', through an owner cap of its own'
-										: ''}{c.slice?.relabel.length ? ` · ${relabelWords(c.slice)}` : ''}
-								</small>
-							</span>
-						</span>
-						{#if c.revokers.includes(actor)}
-							<button class="btn quiet danger" disabled={busy} onclick={() => api.revoke(actor, c.id, c.role)}>Revoke</button>
+			{#each groups as [key, g] (key)}
+				<section class="group">
+					<div class="group-head">
+						<b>{g.name}</b>
+						{#if g.ops}
+							<Ops ops={g.ops} />
+						{:else}
+							<span class="soft">its ops are sealed from {here}</span>
 						{/if}
-					</li>
-				{:else}
-					<li class="soft">No cap: only {nameOf(v)} itself holds anything in it.</li>
-				{/each}
-			</ul>
+					</div>
+					<ul class="list grants">
+						{#each g.caps as c (c.id)}
+							<li>
+								<span class="cap">
+									{#if c.grantee === EVERYONE}
+										<span class="chip">Everyone</span>
+									{:else}
+										<Mark vault={byId.get(c.grantee)} size={28} />
+									{/if}
+									<span>
+										<b class:mine={c.grantee === actor}>{granteeOf(c, world)}</b>
+										on {whereWords(c.slice?.where, world)}
+										<small class="soft">
+											· reaches {count(c.entries.length, 'entry', 'entries')} now · given by
+											{nameOf(byId.get(c.issuer))}{c.parent
+												? ', through an owner cap of its own, whose ops narrow it too'
+												: ''}
+										</small>
+									</span>
+								</span>
+								{#if c.revokers.includes(actor)}
+									<button
+										class="btn quiet danger"
+										disabled={busy}
+										onclick={() => api.revoke(actor, c.id, c.role)}>Revoke</button
+									>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{:else}
+				<p class="soft">No cap: only {nameOf(v)} itself holds anything in it.</p>
+			{/each}
 		</article>
 
 		<article class="card">
@@ -321,10 +356,12 @@
 				{#each held as c (c.id)}
 					<li>
 						<Mark vault={byId.get(c.over)} size={28} />
-						<span>
-							<span class="chip">{ROLES[c.role]}</span>
-							{sliceWords(c.slice, world)} of <b>{nameOf(byId.get(c.over))}</b>{#if rulesWords(c.slice)},
-								and {rulesWords(c.slice)}{/if}
+						<span class="held">
+							<span>
+								<b>{capName(c)}</b> on {whereWords(c.slice?.where, world)} of
+								<b>{nameOf(byId.get(c.over))}</b>
+							</span>
+							{#if c.slice}<Ops ops={c.slice.ops} />{/if}
 						</span>
 					</li>
 				{:else}
@@ -424,6 +461,29 @@
 
 	.grants li {
 		justify-content: space-between;
+	}
+
+	.group + .group {
+		margin-top: 0.9rem;
+	}
+
+	.group-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		padding-bottom: 0.35rem;
+		border-bottom: 1px solid var(--edge);
+	}
+
+	.mine {
+		color: var(--accent);
+	}
+
+	.held {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
 	}
 
 	.cap {

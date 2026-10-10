@@ -29,6 +29,7 @@ use avendb::policy::{
     checkpointed, mk_cell, order, removes, replay, trace, view, Action, Cap, Edit, Entry, Fact, Grantee, Holder, Issued,
     Kind, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Role, State, Vault, Write,
 };
+use avendb::rules::Grant;
 use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{asks, digests, frontiers, log_of, receive, respond, respond_since, Ask, LogId};
 use avendb::wire::Wire;
@@ -537,7 +538,9 @@ fn a_cap(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     let role = if grantee == Grantee::Public && rng.below(2) == 0 { Role::Read } else { rng.pick(&ROLES) };
     let select = if rng.below(4) == 0 { Selector::All } else { a_selector(rng, h) };
     let wide = select == Selector::All && rng.below(6) > 0;
-    let bytes = Select::Clear(Slice::of(select.clone())).to_wire();
+    let grant = Grant { ops: role.ops(), salt: [0; 32] };
+    let slice = Slice { name: role.group().into(), select: select.clone(), grant, above: vec![] };
+    let bytes = Select::Clear(slice).to_wire();
     let cap = Cap { over, grantee, role, wide, select: bytes, parent, issuer, nonce: rng.next() };
     let (author, cosigners) = signers_for(rng, st, issuer, role == Role::Owner);
     Attempt { author, cosigners, action: Action::Cap(cap, vec![]), said: Said::Selector(select) }
@@ -1603,9 +1606,9 @@ fn t23_cells_mean_what_caps_say() {
 }
 
 /// A relay's twin of a history (T25): every edit as a peer that reads no selector, no type and no tag sees it, a cap
-/// selecting the whole vault (ruled as it was), a write with an empty body, a new entry's header blank. The twins hash
-/// to other ids, so whatever names an edit is renamed: what an edit creates (a vault, a cap), the cells the caps make,
-/// and every edit named as a parent, a dependency, a stay, a proposal, kept or covered.
+/// selecting the whole vault (its ops as they were), a write with an empty body, a new entry's header blank. The twins
+/// hash to other ids, so whatever names an edit is renamed: what an edit creates (a vault, a cap), the cells the caps
+/// make, and every edit named as a parent, a dependency, a stay, a proposal, kept or covered.
 #[derive(Default)]
 struct Twin {
     edits: HashMap<EditId, EditId>,
@@ -1718,16 +1721,15 @@ impl Twin {
                 Action::SetRoot { vault: self.vault(vault), root, keep: self.edits(&keep) }
             }
             Action::Cap(c, via) => {
-                // of the selector, a relay reads whether the cap is ruled: the commitment to its rules, in the clear
-                let rules = Select::from_wire(&c.select).ok().and_then(|s| s.commitment());
-                let select = match rules {
-                    Some(_) => Select::Sealed { boxes: vec![], slice: vec![], rules },
-                    None => Select::Clear(Slice::all()),
+                // of the selector, a relay reads the commitment to the cap's ops, in the clear
+                let select = match Select::from_wire(&c.select) {
+                    Ok(s) => Select::Sealed { boxes: vec![], slice: vec![], commitment: s.commitment() }.to_wire(),
+                    Err(_) => vec![],
                 };
                 let cap = Cap {
                     over: self.vault(c.over),
                     grantee: self.grantee(c.grantee),
-                    select: select.to_wire(),
+                    select,
                     parent: c.parent.map(|p| self.cap(p)),
                     issuer: self.vault(c.issuer),
                     ..c
@@ -1801,7 +1803,6 @@ fn ops(st: &State, t: &Twin) -> Ops {
         chain: cp.chain.iter().map(|&c| t.cap(c)).collect(),
         intake: t.caps(&cp.intake).into(),
         commitment: cp.commitment,
-        ruled: cp.ruled,
     };
     let entry = |en: &Entry| Entry {
         id: en.id,

@@ -7,7 +7,7 @@ The proof of T25: a peer that reads no selector, no type and no tag, such as the
 as an owner does and knows the same of the operational part of the state. Stated as in `Theorems.lean`.
 
 A simulation. Every rule a peer checks or applies reads only the operational part of a state (`State.ops`): the caps
-without their selectors and relabel sets, the entries without their attributes and whether they were let in
+without their selectors and ops, the entries without their attributes and whether they were let in
 (`admits` and `effSelects`, which read those, only ever feed `admitted`). So checking an edit on a state's operational
 part, as the relay's copy of it, accepts and refuses alike and changes the operational part alike (`apply_ops`), and
 so does settling keys. A relay's copy of an edit keeps its id, depth, author, signers, parents and kind, so it sorts in

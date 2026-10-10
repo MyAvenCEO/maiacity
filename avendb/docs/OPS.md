@@ -6,7 +6,8 @@ caps that name those ops, still decentralized and Biscuit-like, fitting the loca
 frontier sync, built from first principles, DRY, end to end. This file is the design. It builds on flat vaults
 (`FLAT-VAULTS.md`) and on the research behind them (`/mnt/project-files/sync-research/reports/E2E database dynamic
 caps and keys.md`), and changes none of their theorems. Both are built (O1 to O3, then C1 to C3, below), and so is
-what Samuel asked next: every reader checks each write against the schemas of what it changes (S1 to S4).
+what Samuel asked next: every reader checks each write against the schemas of what it changes (S1 to S4); and then
+every cap became a named group of ops and nothing else, with a Public group everyone reads (G1).
 
 ## First principles
 
@@ -153,35 +154,52 @@ after it. Two laws tie the halves together, proved in `spec/AvenDB/Ops.lean`:
 
 So a client that may run some ops can predict exactly what every reader will judge its write to have done.
 
-## Caps that name ops
+## Caps: named groups of ops
 
-A write cap's slice may carry **rules**: which ops its grantee's writes may make, as op patterns, beside its selector
-(which entries) and its relabel set (which tags it may ask for). A cap without rules is unruled and lets its grantee
-change anything of the entries it reaches, as before.
+Samuel's ask (2026-10-10, 14:33): one definition of a cap, made of JSON ops alone, with no legacy beside it; every cap
+a named group of the ops it allows; and a Public cap everyone reads. So a cap is three things and nothing else:
 
 ```
-Slice   = { select: Selector, relabel: [Sym], rules: [Rule]? }
-Rule    = {"op": "set", "path": Pattern, "to": [v]?, "on": On?}   -- any change at or under the path; to: only to these
+Cap     = { name: Text, where: Where, ops: [Op] }        -- name: 1 to 64 characters; where: labels alone
+Op      = {"op": "relay" | "backup" | "read" | "create" | "propose" | "share"}
+        | {"op": "set", "path": Pattern, "to": [v]?, "on": On?}   -- any change at or under the path; to: only to these
         | {"op": "insert" | "remove" | "move", "path": Pattern?, "on": On?}   -- rows of a list of records
-        | {"op": "merge", "on": On?} | {"op": "propose"} | {"op": "create"}
+        | {"op": "tag", "tags": [tag]?}                           -- ask for these tags, added or removed; left out: any
+        | {"op": "merge", "on": On?}
 Pattern = a path whose steps may be "*": any one field or any one row; [] is the whole record
 On      = "main" | "proposals"                                     -- left out: either
 ```
 
-A slice carries at most 64 rules, a pattern at most 8 steps and a `to` at most 64 plain values (`null`, `true`,
-`false`, integers, texts); a proof opens at most 16 caps. A rule with a field it doesn't take is refused, never
-ignored.
+- **Its `where`** is a query's `where` of labels alone (type, author, entry, created, tags; `slice::Selector`), the
+  same the label half of every query compiles to; `{"all": []}`, or left out, is the whole vault. It decides the cells
+  the cap reaches, and so what syncs where.
+- **Its ops** say everything the grantee may do there: `relay` (find its devices, keep nothing), `backup` (keep and
+  pass on the ciphertext), `read` (open it), the ops that write (`create`, `set`, `insert`, `remove`, `move`, `tag`,
+  `propose`, `merge`) and `share` (issue caps resting on it). A cap keeps them in one order, each once
+  (`rules::normalize`): `read` goes with every op that writes or shares, as a writer reads what it builds on; `relay`
+  and `backup` go without saying beside `read`; and a cap names one op at least and 64 at most. The tags a grantee may
+  ask for are `tag` ops, judged like every other touch, not a list of their own.
+- **Its role** is never written: it is the class of its strongest op (`rules::level_of`): relay, backup, read, write
+  (any op that writes) or owner (`share`). Relays, cells and every operational rule read the role, in the clear (T25);
+  readers check it against the ops (C1).
+- **Its name** says what it is to a person. The core offers built-in groups (`rules::groups`, `Rules.lean`'s
+  `groups`, the `groups` op): **Owner** (edit and share), **Editor** (read, create, set, any tag, propose, merge),
+  **Suggester** (read, set on proposals, propose, merge on proposals), **Viewer** (read), **Public** (read, to
+  everyone), **Backup** and **Relay**. Anyone may name a group of their own. A cap to everyone is the Public group
+  alone: any op but `read` is refused (`PublicBeyondRead`), so everyone only ever reads (T8).
 
-"Bob may set the status of the todos tagged work, to doing or done" is a write cap whose selector picks
-`[[{"type": ["todo"]}, {"tag": "work"}]]`, with the one rule `{"op": "set", "path": ["status"], "to": ["doing",
-"done"]}`. "Carol may suggest changes to the notes" is `[{"op": "propose"}, {"op": "set", "path": [], "on":
-"proposals"}, {"op": "merge", "on": "proposals"}]`: she edits her own proposals, and only a writer the main line lets
-in merges them there. "Dave may tick the items of this checklist" is `{"op": "set", "path": ["blocks", "*",
-"checked"]}`.
+"Bob may set the status of the todos tagged work, to doing or done" is `{"name": "Tick work", "where": {"all":
+[{"type": ["todo"]}, {"tag": "work"}]}, "ops": [{"op": "read"}, {"op": "set", "path": ["status"], "to": ["doing",
+"done"]}]}`. "Carol may suggest changes to the notes" is a Suggester cap on `{"type": ["note"]}`: she edits her own
+proposals, and only a writer the main line lets in merges them there. "Dave may tick the items of this checklist" is
+`{"op": "set", "path": ["blocks", "*", "checked"]}`. "Everyone reads the todos tagged public" is a Public cap.
+
+A pattern has at most 8 steps and a `to` at most 64 plain values (`null`, `true`, `false`, integers, texts); a proof
+opens at most 16 caps. An op with a field it doesn't take is refused, never ignored.
 
 ### What a write did: its touches
 
-Rules judge a write by what its ops do, not by the record before and after it: a write that sets a field to the
+Ops judge a write by what its Loro ops do, not by the record before and after it: a write that sets a field to the
 value it already holds changes nothing, yet carries a newer Loro op that wins over an edit made at once. So every
 reader reads a write's **touches** off the Loro ops it carries, imported on the version it builds on (`doc::Item::
 footprint`), the same for every reader:
@@ -192,78 +210,77 @@ footprint`), the same for every reader:
 - `insert(field)`, `remove(field)`, `move(field)`: a row of that list of records added, deleted or moved. What a
   write does inside a row it adds is part of adding it.
 - `create` for the write that creates its entry, `propose` for one that starts a proposal, `merge` for one that
-  brings another line's writes in (a promote also carries the changes it makes).
+  brings another line's writes in (a promote also carries the changes it makes), and `tag(t)` for each tag it asks
+  the vault's devices to add or remove.
 
-A rule allows a touch where its op names the touch's kind (`set` names all of `set`, `insert`, `remove` and `move`,
-unless it lists the values it may set `to`), its path reaches the touch's place (names it or a place above it), and its
-line holds the write's: `main` for the main line, `proposals` for any proposal. Rules allow a write when every touch is
-allowed by one of them. Tags stay with the relabel set.
+An op allows a touch where it names the touch's kind (`set` names all of `set`, `insert`, `remove` and `move`, unless
+it lists the values it may set `to`; `tag` names the tags it lists, or any), its path reaches the touch's place (names
+it or a place above it), and its line holds the write's: `main` for the main line, `proposals` for any proposal. A
+cap's ops allow a write when every touch is allowed by one of them. A read, relay, backup or share op allows no touch.
 
 ### Chains narrow
 
-A cap's chain is the cap and the caps it rests on (T22). The chain is **ruled** when one of its caps is, and then
-allows a write when **every** ruled cap of it allows the write: a child cap claiming more gains nothing, as for
-selectors, roles and relabel sets (C1). An unruled cap under a ruled one is ruled by it.
+A cap's chain is the cap and the caps it rests on (T22). A chain allows a write when **every** cap of it allows the
+write: a child cap claiming more gains nothing, as for selectors and roles (C1).
 
-### One bit in the clear, rules in the proof
+### The role in the clear, the ops in the proof
 
 Whoever reads an entry must be able to tell what a writer's chain allows, though the caps' slices are sealed to their
-vaults only. So the rules travel with the write, and are checked against the cap:
+vaults only. So the ops travel with the write, and are checked against the cap:
 
-- **A commitment in the clear.** A ruled cap's `select` carries, in the clear, the hash of its rules and a salt of 32
-  random bytes (`H("rules", rules, salt)`). That is the one bit a relay learns: that some write cap is restricted,
-  never how. The salt keeps the commitment from being guessed. The rules and the salt are in the sealed slice.
-- **Openings down the chain.** A child cap's sealed slice carries the rules and salt of every ruled cap above it, as
+- **A commitment in the clear.** Every cap's `select` carries, in the clear, the hash of its ops and a salt of 32
+  random bytes (`rules::Grant::commitment`). It tells a relay nothing: the salt keeps it from being guessed. The ops
+  and the salt are in the sealed slice, with the name and the `where`.
+- **Openings down the chain.** A child cap's sealed slice carries the grants (ops and salt) of every cap above it, as
   its issuer read them in its own slice, so its grantee can show its whole chain.
-- **Proof-carrying writes.** A write whose actor reaches the entry only through ruled chains carries, inside its
-  encrypted body, a proof: the cap it relies on, and the rules and salt of each ruled cap of that cap's chain. Readers
-  of the entry learn what the writer may do there, and nothing of any selector.
+- **Proof-carrying writes.** Every write through a cap carries, inside its encrypted body, a proof (`rules::Proof`):
+  the cap it relies on, and the grant of each cap of that cap's chain, root first. Readers of the entry learn what the
+  writer may do there, and nothing of any selector.
 
 ### Every reader counts the same writes
 
 Relays accept a write as before, by what they see: who acts, with which role on which cell (T25). Readers also judge
-it. A write **counts** when it builds only on writes that count, and its actor is the entry's vault, or holds a live
-cap with write or more reaching the entry through an unruled chain, or its proof names such a cap whose chain is
-ruled: every opening hashes to its cap's commitment, and every ruled cap's rules allow every touch. A creation counts
-the same way through the cap it is created through, with the touch `create`. Whether a write counts is decided by what
-was true when it was accepted: the caps its actor held then (`policy::Write::caps`, none for a write that acts for the
-entry's own vault), the cell its entry was in, its proof and the writes it builds on (C2). Nothing of it reads a
-selector, an entry's type or its tags, so every reader of the entry, whatever caps it opened, reaches the same
-verdict.
+it. A write **counts** when it fits (below), builds only on writes that count, and its actor is the entry's vault, or
+its proof names a live cap its actor holds with write or more that reaches the entry, every grant of whose chain
+hashes to its cap's commitment, is of its cap's role, and allows every touch. A creation counts the same way through
+the cap it is created through, with the touch `create`. Whether a write counts is decided by what was true when it was
+accepted: the caps its actor held then (`policy::Write::caps`, none for a write that acts for the entry's own vault),
+the cell its entry was in, its proof and the writes it builds on (C2). Nothing of it reads a selector, an entry's type
+or its tags, so every reader of the entry, whatever caps it opened, reaches the same verdict.
 
 A write that doesn't count is read as one nobody can open: it stays in the log, as every edit does, and no record
 ever shows it, nor anything that builds on it. A line's history is its writes that count and what they build on.
 Devices build only on writes they count (a line's heads leave the others out), so an honest edit is never lost to
-one that doesn't count. The engine refuses an op its caps' rules don't allow (`NotAllowed`) before anything is
-written, and attaches the proof a write needs: the first ruled cap it holds whose chain allows the write. An app
-patched to skip that check (`Lab::patched`, in the tests) writes all the same, and no reader counts what it
-wrote, its own device neither, nor what anyone builds on it.
-
-Old data keeps its meaning: caps without a commitment are unruled, slices without rules have none, and bodies
-without a proof carry none.
+one that doesn't count. The engine refuses an op its caps' ops don't allow (`NotAllowed`) before anything is
+written, and attaches the proof a write needs: the first cap it holds whose chain allows the write. An app patched to
+skip that check (`Lab::patched`, in the tests) writes all the same, and no reader counts what it wrote, its own device
+neither, nor what anyone builds on it. A vault's devices grant a tag a write asks for only where they count the
+write, and its cap still holds write and picks the entry before and after the change.
 
 ### The page asks the same evaluator
 
 `{"op": "may", "ops": [Op], "as": VaultId?}` answers whether the device would make each op, on what it holds now: it
-runs each dry (checked, proven against the rules of the caps it relies on and refused as running it would be, then not
+runs each dry (checked, proven against the ops of the caps it relies on and refused as running it would be, then not
 made) and answers `{"ok": [true | {"refused": name, "why": "..."}]}`, one answer for each op, each judged on its own as
 the next op a person might run. It writes nothing and tells no peer. A change that changes nothing writes nothing, so
-it is never refused by the rules.
+it is never refused.
 
 The page asks before it offers a button: a todo's tick, a note's save and rename, a proposal, a merge, a restore and
-an undo. A refusal by the rules (`NotAllowed`) holds the button back and says why; a note whose line the rules let a
-vault change nowhere reads as viewing, and one it may only suggest changes to offers a proposal. The page keeps no
-copy of the rules: its helpers for roles, selectors and relabel sets (`reads`, `matches`, `creates`, `tagging` in
-`vaults.js`) only pick what to show, and the device refuses what they get wrong.
+an undo. A refusal (`NotAllowed`) holds the button back and says why; a note whose line the ops let a vault change
+nowhere reads as viewing, and one it may only suggest changes to offers a proposal. The page keeps no copy of the
+check: its helpers (`reads`, `matches`, `creates`, `tagging` and `levelOf` in `vaults.js`) only pick what to show, and
+the device refuses what they get wrong.
 
-The share dialog writes the rules of a cap that writes: any change (no rules), only suggest changes (Carol's rules
-above), change only some fields, set one field to some values, or any rules as JSON, each with or without adding new
-entries (`create`). The fields and values it offers are those of the newest schema of what it shares (the `schemas`
-op: the one no lens reads on from). Access says each cap's rules in words, and those of the caps it rests on. A note
-says how many of its edits no reader counts, and the studio's history marks each such write: it stays in the log,
-sealed, and changes nothing anyone reads.
+The share dialog gives a cap as `{name, where, ops}` (`Device::share`): what it picks (one entry, every note or todo
+tagged one way and not another, or the whole vault), with whom (a vault, or everyone), and as which group: a built-in
+one, its ops shown as chips, or a group of its own, named, built op by op (change anything or one field, set one field
+to some values, add entries, ask for tags, start proposals, change on proposals, merge into main, share on) or written
+as JSON, the fields and values those of the newest schema of what it shares (the `schemas` op). To everyone it offers
+the Public group alone. Access lists the caps over a vault by their group, its name and its ops as chips, then who
+holds it on what. A note says how many of its edits no reader counts, and the studio's history marks each such write:
+it stays in the log, sealed, and changes nothing anyone reads.
 
-Reads get no rules, by the first principle: a read cap is its selector.
+Reads get no finer ops, by the first principle: a read cap is its `where`.
 
 ## Writes that fit their schemas
 
@@ -271,7 +288,7 @@ Samuel's question (2026-10-10, 10:35): do the ops also enforce clean validation 
 An app writes only views of its schema (`View::put`, else `NotAView`), but a patched one could write anything, and
 every reader would merge it. So every reader of an entry also judges each write it opens by the schemas the entry was
 written under once the write is in (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`), and a write that doesn't fit
-counts for no reader, as one the rules of its caps don't allow.
+counts for no reader, as one the ops of its caps don't allow.
 
 - **The schemas.** Each change of an item names the schema it was written under (`doc`), so the set grows with the
   writes. Each must be in the vault's lane or built in, and all of one kind: a write that tags a todo with a
@@ -288,11 +305,11 @@ counts for no reader, as one the rules of its caps don't allow.
 - **Readers, not relays.** Whether a write fits is read off its sealed body, so only its readers can tell; relays
   accept or refuse it alike (S4). Its readers all reach one verdict: the schemas it names travel in its body, and the
   lane is in the vault's log.
-- **Counted like the rules.** A write that doesn't fit is read as one nobody can open (S3): it stays in the log, no
+- **Counted like the ops.** A write that doesn't fit is read as one nobody can open (S3): it stays in the log, no
   record shows it, nor anything built on it, and devices build on the writes they count, so every device keeps the
   last record that fit. A device refuses to make one (`NotAView`), and an app patched to skip that check
   (`Lab::patched`) writes it all the same, which no reader counts, its own device neither. The `history` op says why a
-  write doesn't count (`why`: `unfit`, `rules`, `builds-on` or `sealed`), and so do the note page and the studio.
+  write doesn't count (`why`: `unfit`, `ops`, `builds-on` or `sealed`), and so do the note page and the studio.
 - **A lane that grows.** A write under a schema the lane doesn't hold yet counts once its vault publishes it, for every
   reader. A lane only grows, so a verdict changes at most once, from not counted to counted.
 
@@ -303,7 +320,7 @@ Old data keeps its meaning: apps only ever wrote views of their schemas, which f
 Nothing changes in how devices sync: cells stay the unit, compiled from the caps' selectors, and relays route cell
 ids. The label half of a query is the same selector, so a device that wants less than its caps reach (a phone that
 holds only todos) syncs the cells its own query picks; a query's value half never decides sync, as no relay or
-unopened entry could evaluate it. Ruled writes travel like any other; their readers judge them.
+unopened entry could evaluate it. Writes through caps travel like any other; their readers judge them.
 
 ## Theorems
 
@@ -316,19 +333,23 @@ In `spec/AvenDB/Ops.lean`, beside the existing ones (vectors in `OpsVectors.lean
 And for caps that name ops, stated in `spec/AvenDB/Theorems.lean` and proven in `RuleLemmas.lean` and `Rules.lean`
 (vectors in `Vectors.lean`):
 
-- **C1 chains narrow rules** (`chain_narrows`, `child_narrows`): a chain allows no write one of its ruled caps
-  forbids, and a cap's chain allows no more than the chain of the cap it rests on (T22's twin for rules).
+- **C1 chains narrow** (`chain_narrows`, `child_narrows`): a chain allows no write one of its caps forbids, and lets
+  nothing through a cap whose role isn't the class of its ops; a cap's chain allows no more than the chain of the cap
+  it rests on (T22's twin for ops).
 - **C2 readers agree** (`counts_seen`, `creates_seen`): whether a write counts reads no selector, type or tag, and no
-  rules but those of the chain its proof names, so it is the same for every reader of the entry, whatever caps it
+  ops but those of the chain its proof names, so it is the same for every reader of the entry, whatever caps it
   opened.
-- **C3 ruled writes do what they may** (`counted_allowed`, `changes_allowed`): a counted write whose actor reaches the
-  entry only through ruled chains has every touch allowed by every ruled cap of the chain its proof names; where its
-  touches' places cover what it changed, every change of its diff is at a place a rule allows.
+- **C3 counted writes do what they may** (`counted_allowed`, `counted_writes`, `changes_allowed`): a counted write
+  whose actor isn't the entry's vault relies on the cap its proof names, which reaches the entry, and every cap of
+  that cap's chain allows every touch of it, each by an op that writes (a read, relay, backup or share op lets
+  nothing through); where its touches' places cover what it changed, every change of its diff is at a place an op
+  allows.
 - **C4 allowed writes count** (`allowed_counts`, `allowed_creates`, `uncounted_closed`): a write that builds on
   writes that count, whose proof names a cap its actor holds reaching the entry, and whose chain allows its touches,
   counts, and so does a creation whose chain allows `create`; no write that builds on one that doesn't count counts.
-- **T25 still holds**: relays see one bit more of a cap, and nothing of its rules, of a write's proof or of what it
-  touches.
+- **T8 Public only reads** (`T8_public_read_only`): no step gives everyone more than `read`.
+- **T25 still holds**: relays see a cap's role and the commitment to its ops, and nothing of its name, its `where`,
+  its ops, a write's proof or what it touches.
 
 And for writes that fit their schemas, S1 and S2 proven in `Schemas.lean` for any schemas, S3 and S4 stated in
 `Theorems.lean` (vectors in `Vectors.lean`):
@@ -337,16 +358,16 @@ And for writes that fit their schemas, S1 and S2 proven in `Schemas.lean` for an
   record or row around it.
 - **S2 records that fit stay so** (`fits_clean`, `fits_new`): a record that fits keeps fitting through a write that
   fits, and an entry's first write, if it fits, makes a record that fits of nothing.
-- **S3 writes that don't fit count for no reader** (`S3_unfit_uncounted`, `S3_step`), whatever their caps and rules,
+- **S3 writes that don't fit count for no reader** (`S3_unfit_uncounted`, `S3_step`), whatever their caps and ops,
   and so (C4) nothing built on them.
 - **S4 relays don't judge records** (`S4_fit_unread`): whether a write fits changes nothing but which writes its
   readers count.
 
 The Rust side is tested against them: `tests/rules.rs` writes random records in turn from two devices, wholesale or by
 random ops, and checks that each write's touches cover every change of its diff and name the value of each place they
-alone cover (C3's `Within`); `tests/engine.rs` runs ruled caps end to end, a grantee's `may`, a write no rule allows
-and what builds on it counted by no reader, chains of ruled caps (C1) and suggesting through proposals; the vectors
-replay `Vectors.lean`'s ruled caps. `tests/schemas.rs` walks random writes over two versions of a schema (S1, S2);
+alone cover (C3's `Within`); `tests/engine.rs` runs caps of each group end to end, a grantee's `may`, a write no op
+allows and what builds on it counted by no reader, chains of caps (C1), suggesting through proposals, the groups and a
+Public cap; the vectors replay `Vectors.lean`'s caps. `tests/schemas.rs` walks random writes over two versions of a schema (S1, S2);
 `tests/properties.rs` edits random stored records through every app's view, which always fit; `tests/engine.rs` runs
 a patched app's writes that break their schema, a proposal built on one, and a write that counts once its vault
 publishes its schema (S3); the vectors replay `Vectors.lean`'s writes that don't fit.
@@ -362,6 +383,7 @@ publishes its schema (S3); the vectors replay `Vectors.lean`'s writes that don't
 | C2 | Rust: slice rules and the ruled bit, chain keys, proofs, every reader's check, `may` | |
 | C3 | Page: rules in the share dialog, buttons by `may`; the walks; server redeploy | |
 | S1 | Lean, Rust and page: every reader judges each write by its entry's schemas; S1 to S4 | PR #434 |
+| G1 | Lean, Rust and page: a cap is `{name, where, ops}` alone, its role their class, every write proven; built-in groups and Public; tags as `tag` ops; wire version 6 | this PR |
 
 ## Later
 

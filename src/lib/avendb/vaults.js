@@ -1,10 +1,12 @@
 /*
  * What avenDB's vault screens share: a vault's name, initials and colour, the kinds and roles as a person reads them,
- * a cap's slice in words, and what a vault may do, by the caps and roles the device's world shows (avendb-browser's
+ * a cap in words, and what a vault may do, by the caps and roles the device's world shows (avendb-browser's
  * `World::to_json`). A vault is a flat library: its entries are in it directly, each with a type and tags, and every
- * right is a cap on a slice of it, a selector over those (avendb-browser's `words`). The rules themselves are the
- * device's: every edit is checked against the acting vault's caps, as any peer checks it; these only say beforehand
- * what the page offers.
+ * right is a cap: a named group of JSON ops on a slice of it, a query's `where` over their labels (avendb's `slice`
+ * and `rules`). Its role is the class of its strongest op. The built-in groups (Owner, Editor, Suggester, Viewer,
+ * Public, Backup, Relay) come with the world, from avendb's `rules::groups`. The rules themselves are the device's:
+ * every edit is checked against the acting vault's caps, as any peer checks it; these only say beforehand what the
+ * page offers.
  */
 
 /** @typedef {'human' | 'coop' | 'aven'} Kind */
@@ -15,23 +17,35 @@
  *   threshold: number, root: string | null, devices: DeviceView[], via: string[] | null }} VaultView
  */
 /**
- * A test of a selector: an object of one field (avendb-browser's `words`).
+ * A test of a label: an object of one field (avendb's `slice::Atom`).
  * @typedef {{ type: string[] } | { author: string[] } | { entry: string[] } | { created: [number, number] } |
  *   { tag: string } | { noTag: string[] } | { onlyTags: string[] }} Atom
  */
-/** @typedef {'all' | Atom[][]} Selector */
 /**
- * A rule a cap that writes may carry: an op its grantee's writes may make, at or under a path whose steps may be "*"
- * (any one field or row), only to some values, on the main line or on proposals (avendb's `rules`, avendb/docs/OPS.md).
- * @typedef {{ op: 'set' | 'insert' | 'remove' | 'move' | 'merge' | 'propose' | 'create',
- *   path?: (string | { id: number })[], to?: (string | number | boolean | null)[], on?: 'main' | 'proposals' }} Rule
+ * What a cap picks: a query's `where` of labels alone (avendb's `slice::Selector::to_json`); `{ all: [] }` is the whole
+ * vault, `{ any: [] }` nothing.
+ * @typedef {Atom | { all: Where[] } | { any: Where[] }} Where
  */
 /**
- * What a cap shares: what its selector picks and the tags its grantee may ask for; for a ruled cap, its rules, and
- * those of the ruled caps it rests on, root first (`above`), which every write through it keeps to as well.
- * @typedef {{ select: Selector, relabel: string[], rules?: Rule[], above?: Rule[][] }} Slice
+ * An op a cap names (avendb's `rules`, avendb/docs/OPS.md): relay, back up or read its slice; add entries; change a
+ * value at or under a path whose steps may be "*" (any one field or row), only to some values; add, delete or reorder
+ * rows; ask for tags (any, or those listed); start proposals; merge, on the main line or on proposals; share it on.
+ * @typedef {{ op: 'relay' | 'backup' | 'read' | 'create' | 'set' | 'insert' | 'remove' | 'move' | 'tag' | 'propose' |
+ *   'merge' | 'share', path?: (string | { id: number })[], to?: (string | number | boolean | null)[],
+ *   on?: 'main' | 'proposals', tags?: string[] }} Op
  */
 /**
+ * A cap as its readers read it: its name, what it picks, its ops, and those of the caps it rests on, root first
+ * (`above`), which every write through it keeps to as well (avendb's `slice::Slice::to_json`).
+ * @typedef {{ name: string, where: Where, ops: Op[], above: Op[][] }} Slice
+ */
+/**
+ * A built-in group of ops, as the share dialog offers it (avendb's `rules::Group`).
+ * @typedef {{ name: string, hint: string, ops: Op[], everyone: boolean }} Group
+ */
+/**
+ * A cap in force: `grantee` a vault's id or `"everyone"`, `role` the class of its ops, `slice` `null` where the device
+ * doesn't read it.
  * @typedef {{ id: string, over: string, issuer: string, grantee: string, role: Role, wide: boolean,
  *   parent: string | null, chain: string[], slice: Slice | null, revokers: string[], entries: string[] }} CapView
  */
@@ -48,7 +62,7 @@
  */
 /**
  * @typedef {{ me: string, mine: string, pqOnly: boolean, vaults: VaultView[], caps: CapView[], cells: CellView[],
- *   entries: EntryView[] }} WorldView
+ *   entries: EntryView[], groups: Group[] }} WorldView
  */
 
 /** Each role ranked: each includes the ones before it. */
@@ -137,7 +151,7 @@ export const reads = (e, actor) => e.public || allows(e.roles[actor], 'read');
 export function reaches(world, v, actor) {
 	if (v === actor) return true;
 	return (
-		world.caps.some((c) => c.over === v && (c.grantee === actor || c.grantee === 'public')) ||
+		world.caps.some((c) => c.over === v && (c.grantee === actor || c.grantee === EVERYONE)) ||
 		world.entries.some((e) => e.vault === v && reads(e, actor))
 	);
 }
@@ -171,15 +185,41 @@ export function titleOf(world, e) {
 /** A day, as a person reads it. @param {number} at seconds since 1970 */
 const day = (at) => new Date(at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
+/** A cap's grantee for everyone: the Public group's. */
+export const EVERYONE = 'everyone';
+
 /**
- * A slice in words: "todos tagged “work”", "the whole vault", or "a slice sealed from this device" where the device
- * doesn't read it, as its selector is sealed to the vault, its grantee and its issuer alone.
- * @param {Slice | null} slice @param {WorldView} world
+ * What a `where` of labels picks, as the entries that pass every test of one of its conjunctions: `'all'` for the whole
+ * vault (avendb's `ops::Where::cover`).
+ * @param {Where} w @returns {'all' | Atom[][]}
  */
-export function sliceWords(slice, world) {
-	if (!slice) return 'a slice sealed from this device';
-	if (slice.select === 'all') return 'the whole vault';
-	if (!slice.select.length) return 'nothing';
+export function conjunctions(w) {
+	if ('all' in w) {
+		/** @type {Atom[][]} */
+		let out = [[]];
+		for (const x of w.all) {
+			const c = conjunctions(x);
+			if (c !== 'all') out = out.flatMap((d) => c.map((e) => [...d, ...e]));
+		}
+		return out.some((d) => !d.length) ? 'all' : out;
+	}
+	if ('any' in w) {
+		const cs = w.any.map(conjunctions);
+		return cs.includes('all') ? 'all' : cs.flatMap((c) => /** @type {Atom[][]} */ (c));
+	}
+	return [[w]];
+}
+
+/**
+ * What a cap picks, in words: "todos tagged “work”", "the whole vault", or "a slice sealed from this device" where the
+ * device doesn't read it, as a cap's slice is sealed to the vault, its grantee and its issuer alone.
+ * @param {Where | null | undefined} where @param {WorldView} world
+ */
+export function whereWords(where, world) {
+	if (!where) return 'a slice sealed from this device';
+	const select = conjunctions(where);
+	if (select === 'all') return 'the whole vault';
+	if (!select.length) return 'nothing';
 	const byId = new Map(world.vaults.map((v) => [v.id, v]));
 	/** @param {Atom[]} atoms */
 	const conjunction = (atoms) => {
@@ -198,19 +238,16 @@ export function sliceWords(slice, world) {
 		}
 		return [noun, ...rest].join(' ');
 	};
-	return slice.select.map(conjunction).join('; or ');
+	return select.map(conjunction).join('; or ');
 }
 
-/** The tags of a slice's grantee may ask the vault's devices to add or remove, in words. @param {Slice | null} slice */
-export const relabelWords = (slice) =>
-	slice?.relabel.length ? `may ask to tag ${list(slice.relabel.map(quote), 'or')}` : '';
-
 /** A cap's grantee, as a person reads it. @param {CapView} c @param {WorldView} world */
-export const granteeOf = (c, world) => (c.grantee === 'public' ? 'Everyone' : nameOf(world.vaults.find((v) => v.id === c.grantee)));
+export const granteeOf = (c, world) =>
+	c.grantee === EVERYONE ? 'Everyone' : nameOf(world.vaults.find((v) => v.id === c.grantee));
 
 /**
  * A rule's place in words: "anything", "its status", "any row of its blocks", "the checked of row 2 of its blocks".
- * @param {Rule['path']} path
+ * @param {Op['path']} path
  */
 function placeWords(path = []) {
 	const field = (/** @type {string | { id: number }} */ s) => (s === '*' ? 'any field' : `its ${s}`);
@@ -223,11 +260,11 @@ function placeWords(path = []) {
 	return path.length === 3 ? `${cell} of ${row(r)} of ${field(f)}` : path.map((s) => JSON.stringify(s)).join(' › ');
 }
 
-/** The lines a rule holds on, in words. @param {Rule['on']} on */
+/** The lines an op holds on, in words. @param {Op['on']} on */
 const onWords = (on) => (on === 'main' ? ' on the main line' : on === 'proposals' ? ' on a proposal' : '');
 
-/** A rule in words: "set its status to “done”", "change anything on a proposal", "start proposals". @param {Rule} r */
-export function ruleWords(r) {
+/** An op in words: "set its status to “done”", "change anything on a proposal", "start proposals". @param {Op} r */
+export function opWords(r) {
 	const [on, rows] = [onWords(r.on), r.path?.length ? placeWords(r.path) : 'any list'];
 	switch (r.op) {
 		case 'set': {
@@ -248,40 +285,52 @@ export function ruleWords(r) {
 			return 'start proposals';
 		case 'create':
 			return 'add new entries';
+		case 'tag':
+			return r.tags ? `ask for the tags ${list(r.tags.map(quote), 'or')}` : 'ask for any tag';
+		case 'read':
+			return 'read';
+		case 'backup':
+			return 'keep its ciphertext';
+		case 'relay':
+			return 'find its devices';
+		case 'share':
+			return 'share it on';
 		default:
 			return JSON.stringify(r);
 	}
 }
 
+/** Ops in words: "read, set its status to “done” and add new entries". @param {Op[]} ops */
+export const opsWords = (ops) => list(ops.map(opWords)) || 'nothing';
+
+/** The class of each op that doesn't change entries: every other op writes (avendb's `rules::Rule::level`). */
+const LEVEL = /** @type {Record<string, Role>} */ ({ relay: 'relay', backup: 'backup', read: 'read', share: 'owner' });
+
+/** A cap's role: the class of its strongest op (avendb's `rules::level_of`). @param {Op[]} ops @returns {Role} */
+export const levelOf = (ops) =>
+	ops.map((o) => LEVEL[o.op] ?? 'write').reduce((a, b) => (RANK[b] > RANK[a] ? b : a), /** @type {Role} */ ('relay'));
+
+/** Two lists of ops say the same, op for op (the device puts them in order). @param {Op[]} a @param {Op[]} b */
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 /**
- * What a ruled cap's grantee may do, in words: "may only set its status to “done”", and only what the ruled caps it
- * rests on allow; '' for a cap without rules, whose grantee makes any change its role allows.
- * @param {Slice | null | undefined} slice
+ * The built-in group a cap's ops are, if they are one: the Public group's for everyone.
+ * @param {CapView} c @param {WorldView} world
  */
-export function rulesWords(slice) {
-	/** @param {Rule[]} rs */
-	const words = (rs) => list(rs.map(ruleWords)) || 'change nothing';
-	const above = (slice?.above ?? []).map(words).join('; ');
-	if (!slice?.rules) return above ? `may only ${above}, as the cap it rests on allows` : '';
-	return `may only ${words(slice.rules)}${above ? `, and only what the cap it rests on allows (${above})` : ''}`;
+export const groupOf = (c, world) =>
+	c.slice && world.groups.find((g) => same(g.ops, c.slice?.ops ?? []) && g.everyone === (c.grantee === EVERYONE));
+
+/** A cap's name, or its role's class where the device doesn't read its slice. @param {CapView} c */
+export const capName = (c) => c.slice?.name ?? `A sealed cap that ${ROLES[c.role]}`;
+
+/** The tags ops let a write ask for: any, or those they list. @param {Op[]} ops @returns {'any' | string[]} */
+function asksFor(ops) {
+	const tag = ops.filter((o) => o.op === 'tag');
+	return tag.some((o) => !o.tags) ? 'any' : [...new Set(tag.flatMap((o) => o.tags ?? []))];
 }
 
-/** The rules that let a cap's grantee only suggest changes: start proposals, change anything on one and bring the main
- *  line into one, never write the main line. */
-export const SUGGEST = /** @type {Rule[]} */ ([
-	{ op: 'propose' },
-	{ op: 'set', path: [], on: 'proposals' },
-	{ op: 'merge', on: 'proposals' }
-]);
-
-/** What a cap that writes lets its grantee change, as the share dialog offers it. */
-export const MAY = /** @type {const} */ ({
-	any: 'make any change',
-	suggest: 'only suggest changes, on proposals',
-	fields: 'change only some fields',
-	values: 'set one field to some values',
-	json: 'keep to rules written as JSON'
-});
+/** What two sets of tags both allow. @param {'any' | string[]} a @param {'any' | string[]} b */
+const both = (a, b) => (a === 'any' ? b : b === 'any' ? a : a.filter((t) => b.includes(t)));
 
 /** The kind of record each type of entry holds. */
 const KIND_OF = /** @type {Record<string, string>} */ ({ note: 'document', todo: 'todo' });
@@ -307,13 +356,13 @@ export function fieldsOf(lane, type) {
 }
 
 /**
- * A cap in words: "avenBOB reads todos tagged “work”", "avenBOB writes “Fix the door”, and may only set its status to
- * “done”".
+ * A cap in words: "avenBOB, Viewer, on todos tagged “work”", "avenBOB, Tick done, on “Fix the door”: read and set its
+ * status to “done”"; a built-in group's ops go without saying.
  * @param {CapView} c @param {WorldView} world
  */
 export function capWords(c, world) {
-	const rules = rulesWords(c.slice);
-	return `${granteeOf(c, world)} ${ROLES[c.role]} ${sliceWords(c.slice, world)}${rules ? `, and ${rules}` : ''}`;
+	const what = groupOf(c, world) || !c.slice ? '' : `: ${opsWords(c.slice.ops)}`;
+	return `${granteeOf(c, world)}, ${capName(c)}, on ${whereWords(c.slice?.where, world)}${what}`;
 }
 
 /**
@@ -334,8 +383,14 @@ function passes(t, a) {
 	return false;
 }
 
-/** Whether selector `s` holds an entry of attributes `a`, as `avendb::slice::Selector::matches`. @param {Selector} s @param {Attrs} a */
-export const matches = (s, a) => s === 'all' || s.some((d) => d.every((t) => passes(t, a)));
+/**
+ * Whether `where` picks an entry of attributes `a`, as `avendb::slice::Selector::matches`.
+ * @param {Where} w @param {Attrs} a
+ */
+export function matches(w, a) {
+	const s = conjunctions(w);
+	return s === 'all' || s.some((d) => d.every((t) => passes(t, a)));
+}
 
 /** Entry `e`'s attributes, if the device reads them. @param {EntryView} e @returns {Attrs | null} */
 export const attrsOf = (e) =>
@@ -343,10 +398,10 @@ export const attrsOf = (e) =>
 
 /**
  * Whether vault `actor` may add an entry of type `type` with the tags `tags` to vault `vault`, and with which tags more:
- * the vault itself may add anything; any other vault through a cap over it it holds with write or more, whose slice
- * holds the new entry once it carries the tags its slice asks for (a tag it must carry, as "todos tagged “work”" asks
- * for "work"). The tags to add, or `null` if no cap lets it. The device decides: its rules check the cap, and the
- * vault's devices put the entry where its slice says.
+ * the vault itself may add anything; any other vault through a cap over it it holds with write or more, whose ops and
+ * those of the caps it rests on add entries, and whose slice holds the new entry once it carries the tags its slice
+ * asks for (a tag it must carry, as "todos tagged “work”" asks for "work"). The tags to add, or `null` if no cap lets
+ * it. The device decides: the ops check the cap, and the vault's devices put the entry where its slice says.
  * @param {WorldView} world @param {string} vault @param {string} actor @param {string} type @param {string[]} [tags]
  * @returns {string[] | null}
  */
@@ -355,9 +410,10 @@ export function creates(world, vault, actor, type, tags = []) {
 	const now = Math.floor(Date.now() / 1000);
 	for (const c of world.caps) {
 		if (c.over !== vault || c.grantee !== actor || !allows(c.role, 'write')) continue;
-		if (c.wide || !c.slice) return [];
-		const select = c.slice.select;
-		if (select === 'all') return [];
+		if (!c.slice) return [];
+		if (![c.slice.ops, ...c.slice.above].every((ops) => ops.some((o) => o.op === 'create'))) continue;
+		const select = conjunctions(c.slice.where);
+		if (c.wide || select === 'all') return [];
 		for (const d of select) {
 			const more = d.flatMap((t) => ('tag' in t && !tags.includes(t.tag) ? [t.tag] : []));
 			const a = { type, author: actor, entry: null, created: now, tags: [...tags, ...new Set(more)] };
@@ -378,13 +434,20 @@ export const shares = (world, vault, actor) =>
 /**
  * The tags vault `actor` may add to or remove from entry `e`: any, as the vault itself, whose devices tag its entries
  * at once (`'any'`); else those its caps over the vault let it ask the vault's devices for, of the caps with write or
- * more that reach the entry.
+ * more that reach the entry: what the tag ops of each cap and of every cap it rests on all allow.
  * @param {WorldView} world @param {EntryView} e @param {string} actor @returns {'any' | string[]}
  */
 export function tagging(world, e, actor) {
 	if (e.vault === actor) return 'any';
 	const caps = world.caps.filter((c) => c.over === e.vault && c.grantee === actor && allows(c.role, 'write'));
-	return [...new Set(caps.filter((c) => c.entries.includes(e.entry)).flatMap((c) => c.slice?.relabel ?? []))];
+	/** @type {'any' | string[]} */
+	let out = [];
+	for (const c of caps.filter((c) => c.entries.includes(e.entry) && c.slice)) {
+		const s = /** @type {Slice} */ (c.slice);
+		const may = [s.ops, ...s.above].map(asksFor).reduce(both);
+		out = out === 'any' || may === 'any' ? 'any' : [...new Set([...out, ...may])];
+	}
+	return out;
 }
 
 /** The tags of `entries`, as many as carry each, the most used first. @param {EntryView[]} entries */
@@ -417,10 +480,11 @@ const WHY = /** @type {const} */ ({
 	BelowThreshold: 'it needs the approval of the vault’s owners',
 	NoConsent: 'someone it names hasn’t signed it',
 	BadParent: 'the acting vault’s own right to share it isn’t in force',
-	PublicBeyondRead: 'everyone may only read',
+	PublicBeyondRead: 'everyone may only read: the Public group',
+	BadCap: 'a cap needs a name and at least one op',
 	CapToSigner: 'caps go to vaults, never to a key',
 	CapToItself: 'a vault holds every right over itself already',
-	NotAllowed: 'the rules of the cap it writes through don’t allow that change',
+	NotAllowed: 'the ops of the cap it writes through don’t allow that change',
 	UnknownVault: 'this browser doesn’t know that vault yet',
 	UnknownCap: 'that cap isn’t in force',
 	UnknownEntry: 'this browser doesn’t know that entry yet',

@@ -1,34 +1,33 @@
 <!--
-	Share a slice of a vault on, as the acting vault: one entry, or a rule, every note or todo, or those tagged one way
-	and not another, or the whole vault; with another vault this browser knows, which then relays, backs up, reads, writes
-	or owns it, or with everyone, who may only read. It starts at the least: the one entry it opens on, or else the vault's
-	todos, to read. A rule is a cap on whatever matches it, now and later, never a list: an entry tagged to match it
-	later is shared then, one untagged leaves it, and the vault's devices move each into the cell the caps that hold it
-	share, under that cell's key (avendb-browser's `Device::share`, a slice as its `words` read it). A cap that writes
-	may carry rules, the ops its grantee's writes may make: only suggest changes on proposals, change only some fields,
-	set one field to some values, or rules written as JSON (avendb/docs/OPS.md); the fields are those of the newest
-	schema of what it shares. The preview says what it reaches now, of what the acting vault reads, and what its rules
-	allow. Making a vault an owner needs the acting vault's passkey; the rest none. A vault that isn't the one shared
-	from shares only through an owner cap of its own, and reaches no further than it, nor beyond its rules.
+	Share a slice of a vault on, as the acting vault, as a cap: a name, what it picks and the JSON ops its grantee may
+	make there (avendb-browser's `Device::share`, `{name, where, ops}` as its `words` read it; avendb/docs/OPS.md). What
+	it picks is one entry, every note or todo, or those tagged one way and not another, or the whole vault: a rule,
+	never a list, so an entry tagged to match it later is shared then, one untagged leaves it, and the vault's devices
+	move each into the cell the caps that hold it share, under that cell's key. Its ops are a group: a built-in one
+	(Owner, Editor, Suggester, Viewer, Backup, Relay, the core's `groups`), or one of its own, named, built op by op or
+	written as JSON, the fields those of the newest schema of what it shares; with everyone, the Public group alone,
+	which only reads. It starts at the least: the one entry it opens on, or else the vault's todos, for a Viewer. The
+	preview says what it reaches now, of what the acting vault reads. A cap whose ops share it on needs the acting
+	vault's passkey; the rest none. A vault that isn't the one shared from shares only through an owner cap of its own,
+	and reaches no further than it, nor beyond its ops.
 -->
 <script>
+	import Ops from './Ops.svelte';
 	import {
-		allows,
 		attrsOf,
 		capWords,
 		count,
+		EVERYONE,
 		fieldsOf,
+		levelOf,
 		list,
 		matches,
-		MAY,
 		nameOf,
+		opsWords,
 		reads,
-		ROLE_HINTS,
-		rulesWords,
-		sliceWords,
-		SUGGEST,
 		tagsIn,
-		titleOf
+		titleOf,
+		whereWords
 	} from './vaults.js';
 
 	/**
@@ -46,21 +45,25 @@
 	const others = $derived(world.vaults.filter((v) => v.id !== vault && v.id !== actor));
 	const one = $derived(world.entries.find((e) => e.entry === entry));
 
+	/** Ops as a group of its own writes them: one a line. @param {import('./vaults.js').Op[]} ops */
+	const lines = (ops) => `[\n${ops.map((o) => `  ${JSON.stringify(o)}`).join(',\n')}\n]`;
+
 	let what = $state(/** @type {'entry' | 'rule' | 'all'} */ ('rule'));
 	let types = $state('todo');
 	let tagged = $state('');
 	let untagged = $state('');
 	let grantee = $state('');
-	let role = $state(/** @type {import('./vaults.js').Role} */ ('read'));
-	let relabel = $state('');
-	/** what a cap that writes lets its grantee change (`MAY`), and the fields, the field and values, or the JSON */
-	let may = $state(/** @type {keyof typeof MAY} */ ('any'));
-	let picked = $state(/** @type {string[]} */ ([]));
+	/** the built-in group it gives, by name, or `''` for a group of its own */
+	let group = $state('Viewer');
+	let name = $state('');
+	/** a group of its own's ops, as JSON: what the builder adds to and takes from, and what a person may write */
+	let json = $state(lines([{ op: 'read' }]));
+	/** the op the builder adds next, and the field, the values and the tags it names */
+	let adding = $state('set');
 	let field = $state('');
 	let values = $state(/** @type {unknown[]} */ ([]));
-	let json = $state('');
-	let adds = $state(false);
-	/** the schemas and lenses the vault's entries are read through (the `schemas` op), for the fields rules name */
+	let asks = $state('');
+	/** the schemas and lenses the vault's entries are read through (the `schemas` op), for the fields ops name */
 	let lane = $state(/** @type {any} */ (null));
 
 	// the one entry it opens on, by default: the least
@@ -73,8 +76,41 @@
 		api.ask({ op: 'schemas', vault: v }).then((/** @type {any} */ out) => v === vault && (lane = out?.ok ?? null));
 	});
 
-	const to = $derived(grantee || others[0]?.id || 'public');
-	const given = $derived(to === 'public' ? 'read' : role);
+	const to = $derived(grantee || others[0]?.id || EVERYONE);
+	/** the groups it may give: Public alone to everyone, every other one to a vault */
+	const groups = $derived(world.groups.filter((g) => g.everyone === (to === EVERYONE)));
+	/** the group it gives, or none for a group of its own, which only a vault takes */
+	const theGroup = $derived(
+		group || to === EVERYONE
+			? (groups.find((g) => g.name === group) ?? groups.find((g) => g.name === 'Viewer') ?? groups[0])
+			: undefined
+	);
+
+	/** The ops it gives: the group's, or those its JSON lists, `null` while that isn't a list of ops. */
+	const ops = $derived.by(() => {
+		if (theGroup) return theGroup.ops;
+		try {
+			const xs = JSON.parse(json);
+			return Array.isArray(xs) && xs.every((x) => typeof x?.op === 'string') ? xs : null;
+		} catch {
+			return null;
+		}
+	});
+
+	/** What it picks, as a query's `where` of labels. @returns {import('./vaults.js').Where} */
+	const where = $derived.by(() => {
+		if (what === 'entry' && entry) return { entry: [entry] };
+		if (what === 'all') return { all: [] };
+		/** @type {import('./vaults.js').Atom[]} */
+		const tests = [{ type: types.split(',') }];
+		for (const tag of tagsIn(tagged)) tests.push({ tag });
+		const not = tagsIn(untagged);
+		if (not.length) tests.push({ noTag: not });
+		return tests.length === 1 ? tests[0] : { all: tests };
+	});
+
+	/** The cap as the device takes it: `{name, where, ops}`, named by its group, or by hand for a group of its own. */
+	const spec = $derived(ops && { name: theGroup?.name ?? name.trim(), where, ops });
 
 	/** the fields of what it shares, each once, with the values each takes where it takes only some */
 	const fields = $derived.by(() => {
@@ -83,62 +119,66 @@
 		return all.filter((f, i) => all.findIndex((g) => g.name === f.name) === i);
 	});
 	const valued = $derived(fields.filter((f) => f.values));
-	const theField = $derived(valued.find((f) => f.name === field) ?? valued[0]);
+	const theField = $derived.by(() => {
+		const of = adding === 'values' ? valued : fields;
+		return of.find((f) => f.name === field) ?? of[0];
+	});
 
-	/**
-	 * The rules the cap carries, as the device takes them: none for a cap that doesn't write or makes any change,
-	 * `null` while the JSON doesn't read as a list.
-	 * @type {import('./vaults.js').Rule[] | null | undefined}
-	 */
-	const rules = $derived.by(() => {
-		if (!allows(given, 'write') || may === 'any') return undefined;
-		/** @type {any} */
-		let rs = [];
-		if (may === 'suggest') {
-			rs = SUGGEST;
-		} else if (may === 'fields') {
-			rs = picked.filter((f) => fields.some((g) => g.name === f)).map((f) => ({ op: 'set', path: [f] }));
-		} else if (may === 'values' && theField) {
-			const to = values.filter((x) => theField.values?.includes(/** @type {any} */ (x)));
-			rs = [{ op: 'set', path: [theField.name], to }];
-		} else if (may === 'json') {
-			try {
-				rs = JSON.parse(json);
-			} catch {
-				return null;
-			}
-			if (!Array.isArray(rs)) return null;
+	/** The ops the builder adds, as a person picks one; a field's only where what it shares has fields. */
+	const ADD = $derived({
+		set: 'change anything',
+		...(fields.length ? { field: 'change one field' } : {}),
+		...(valued.length ? { values: 'set one field to some values' } : {}),
+		create: 'add new entries',
+		tag: 'ask for tags',
+		propose: 'start proposals',
+		proposals: 'change anything on a proposal',
+		merge: 'merge proposals into the main line',
+		share: 'share it on'
+	});
+
+	/** The op the builder adds, or `null` while it names nothing. @returns {import('./vaults.js').Op | null} */
+	const next = $derived.by(() => {
+		if (adding === 'set') return { op: 'set' };
+		if (adding === 'field') return theField ? { op: 'set', path: [theField.name] } : null;
+		if (adding === 'values') {
+			const to = /** @type {any[]} */ (values.filter((x) => theField?.values?.includes(/** @type {any} */ (x))));
+			return theField && to.length ? { op: 'set', path: [theField.name], to } : null;
 		}
-		return adds ? [...rs, { op: 'create' }] : rs;
+		if (adding === 'tag') return tagsIn(asks).length ? { op: 'tag', tags: tagsIn(asks) } : { op: 'tag' };
+		if (adding === 'proposals') return { op: 'set', on: 'proposals' };
+		if (adding === 'merge') return { op: 'merge', on: 'main' };
+		return /** @type {import('./vaults.js').Op} */ ({ op: adding });
 	});
 
-	/** The slice as the device takes it (`{select, relabel, rules?}`). @returns {import('./vaults.js').Slice} */
-	const slice = $derived.by(() => {
-		const asks = allows(given, 'write') ? tagsIn(relabel) : [];
-		const ruled = rules ? { rules } : {};
-		if (what === 'entry' && entry) return { select: [[{ entry: [entry] }]], relabel: asks, ...ruled };
-		if (what === 'all') return { select: /** @type {'all'} */ ('all'), relabel: asks, ...ruled };
-		/** @type {import('./vaults.js').Atom[]} */
-		const tests = [{ type: types.split(',') }];
-		for (const tag of tagsIn(tagged)) tests.push({ tag });
-		const not = tagsIn(untagged);
-		if (not.length) tests.push({ noTag: not });
-		return { select: [tests], relabel: asks, ...ruled };
-	});
+	function add() {
+		if (!ops || !next || ops.some((o) => JSON.stringify(o) === JSON.stringify(next))) return;
+		json = lines([...ops, next]);
+		[values, asks] = [[], ''];
+	}
+
+	/** @param {number} i */
+	const drop = (i) => ops && (json = lines(ops.filter((_, j) => j !== i)));
 
 	/** What it reaches now, of the vault's entries the acting vault reads; and how many it can't tell. */
 	const reach = $derived.by(() => {
 		const of = world.entries.filter((e) => e.vault === vault);
 		const known = of.filter((e) => reads(e, actor) && attrsOf(e));
-		const hits = known.filter((e) => matches(slice.select, /** @type {import('./vaults.js').Attrs} */ (attrsOf(e))));
+		const hits = known.filter((e) => matches(where, /** @type {import('./vaults.js').Attrs} */ (attrsOf(e))));
 		return { hits, unknown: of.length - known.length };
 	});
 
+	/** The cap as JSON, an op a line. */
+	const shown = $derived.by(() => {
+		if (!spec) return null;
+		const [name, where] = [JSON.stringify(spec.name), JSON.stringify(spec.where)];
+		return `{\n "name": ${name},\n "where": ${where},\n "ops": ${lines(spec.ops).replaceAll('\n', '\n ')}\n}`;
+	});
+
 	async function give() {
-		if (await api.share(actor, vault, $state.snapshot(slice), given, to)) {
+		if (spec && (await api.share(actor, vault, $state.snapshot(spec), to))) {
 			// back to the least for the next share
-			[tagged, untagged, relabel, role] = ['', '', '', 'read'];
-			[may, picked, values, json, adds] = ['any', [], [], '', false];
+			[tagged, untagged, grantee, group, name, json] = ['', '', '', 'Viewer', '', lines([{ op: 'read' }])];
 			what = entry ? 'entry' : 'rule';
 			ondone();
 		}
@@ -167,66 +207,75 @@
 		<span class="lead">with</span>
 		<select class="field" value={to} onchange={(e) => (grantee = e.currentTarget.value)} aria-label="Share with">
 			{#each others as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
-			<option value="public">Everyone (public)</option>
+			<option value={EVERYONE}>Everyone</option>
 		</select>
-		{#if to !== 'public'}
-			<select class="field" bind:value={role} aria-label="Role">
-				<option value="relay">to relay (connects only, keeps nothing)</option>
-				<option value="backup">to back up (ciphertext only)</option>
-				<option value="read">to read</option>
-				<option value="write">to write</option>
-				<option value="owner">to own (your passkey approves)</option>
-			</select>
-		{/if}
-		{#if allows(given, 'write')}
-			<input class="field tags" placeholder="tags it may ask for" bind:value={relabel} aria-label="Tags it may ask for" />
+	</div>
+	<div class="row" role="radiogroup" aria-label="Its group of ops">
+		<span class="lead">as</span>
+		{#each groups as g (g.name)}
+			<button
+				class="btn group"
+				class:on={theGroup?.name === g.name}
+				role="radio"
+				aria-checked={theGroup?.name === g.name}
+				title={g.hint}
+				onclick={() => (group = g.name)}>{g.name}</button
+			>
+		{/each}
+		{#if to !== EVERYONE}
+			<button
+				class="btn group"
+				class:on={!theGroup}
+				role="radio"
+				aria-checked={!theGroup}
+				onclick={() => (group = '')}>A group of its own</button
+			>
 		{/if}
 	</div>
-	{#if allows(given, 'write')}
+	{#if !theGroup}
 		<div class="row">
-			<span class="lead">and</span>
-			<select class="field" bind:value={may} aria-label="What it may change">
-				{#each Object.entries(MAY) as [k, words] (k)}
-					{#if k !== 'values' || valued.length}<option value={k}>{words}</option>{/if}
-				{/each}
+			<span class="lead">named</span>
+			<input class="field" maxlength="64" placeholder="Tick todos done" bind:value={name} aria-label="Its name" />
+		</div>
+		<div class="row">
+			<span class="lead">may</span>
+			<select class="field" bind:value={adding} aria-label="An op to add">
+				{#each Object.entries(ADD) as [k, words] (k)}<option value={k}>{words}</option>{/each}
 			</select>
-			{#if may === 'fields'}
-				{#each fields as f (f.name)}
-					<label class="pick"><input type="checkbox" bind:group={picked} value={f.name} /> {f.name}</label>
-				{/each}
-			{:else if may === 'values' && theField}
+			{#if (adding === 'field' || adding === 'values') && theField}
 				<select
 					class="field"
 					value={theField.name}
 					onchange={(e) => (field = e.currentTarget.value)}
 					aria-label="Which field"
 				>
-					{#each valued as f (f.name)}<option value={f.name}>{f.name}</option>{/each}
+					{#each adding === 'values' ? valued : fields as f (f.name)}
+						<option value={f.name}>{f.name}</option>
+					{/each}
 				</select>
-				{#each theField.values ?? [] as x (String(x))}
+			{/if}
+			{#if adding === 'values'}
+				{#each theField?.values ?? [] as x (String(x))}
 					<label class="pick"><input type="checkbox" bind:group={values} value={x} /> {String(x)}</label>
 				{/each}
+			{:else if adding === 'tag'}
+				<input class="field tags" placeholder="which (any)" bind:value={asks} aria-label="Tags to ask for" />
 			{/if}
-			{#if may !== 'any'}
-				<label class="pick"><input type="checkbox" bind:checked={adds} /> and add new entries</label>
-			{/if}
+			<button class="btn" disabled={!ops || !next} onclick={add}>Add</button>
 		</div>
-		{#if may === 'json'}
-			<textarea
-				class="field json"
-				rows="3"
-				bind:value={json}
-				placeholder={'[{ "op": "set", "path": ["status"], "to": ["done"] }]'}
-				aria-label="Its rules, as JSON"
-			></textarea>
-		{/if}
+	{/if}
+	<Ops ops={ops ?? []} ondrop={theGroup ? undefined : drop} />
+	{#if !theGroup}
+		<textarea class="field json" rows="4" bind:value={json} aria-label="Its ops, as JSON"></textarea>
 	{/if}
 	<p class="soft preview">
-		{ROLE_HINTS[given]}: {sliceWords(slice, world)}.
-		{#if rules === null}
-			Its rules are a JSON list of ops, as avenDB’s docs write them.
-		{:else if rules}
-			It {rulesWords(slice)}{rules.some((r) => r.op === 'create') ? '' : ', and adds no entry'}.
+		{spec?.name || 'Its group'} on {whereWords(where, world)}: {theGroup
+			? theGroup.hint.replace(/^\w/, (c) => c.toLowerCase())
+			: `it may ${ops ? opsWords(ops) : '…'}`}.
+		{#if !ops}
+			Its ops are a JSON list, as avenDB’s docs write them.
+		{:else if levelOf(ops) === 'owner'}
+			Your passkey approves it, as it lets them share it on.
 		{/if}
 		{#if what === 'entry'}
 			Only {titleOf(world, entry)}, nothing else of {nameOf(byId.get(vault))}.
@@ -241,7 +290,17 @@
 			It reaches no further than {nameOf(byId.get(actor))}’s own cap: {list(through.map((c) => capWords(c, world)), 'or')}.
 		{/if}
 	</p>
-	<button class="btn primary" disabled={busy || (what === 'rule' && !types) || rules === null} onclick={give}>
+	{#if shown}
+		<details class="as-json">
+			<summary class="soft">The cap, as JSON</summary>
+			<pre class="mono">{shown}</pre>
+		</details>
+	{/if}
+	<button
+		class="btn primary"
+		disabled={busy || !spec?.name || !spec.ops.length || (what === 'rule' && !types)}
+		onclick={give}
+	>
 		{entry ? 'Share it' : 'Share'}
 	</button>
 </div>
@@ -255,13 +314,24 @@
 	}
 
 	.lead {
-		min-width: 2.6rem;
+		min-width: 3.2rem;
 		font-size: 0.86rem;
 		font-weight: 600;
 	}
 
 	.tags {
 		width: 9.5rem;
+	}
+
+	/* .btn.group, to outweigh the page's `.avendb .btn` */
+	.btn.group {
+		padding: 0.28rem 0.7rem;
+	}
+
+	.btn.group.on {
+		border-color: var(--accent);
+		background: #d6e8e4;
+		color: #1f4f47;
 	}
 
 	.pick {
@@ -282,5 +352,19 @@
 		margin: 0;
 		font-size: 0.82rem;
 		line-height: 1.5;
+	}
+
+	.as-json summary {
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.as-json pre {
+		margin: 0.3rem 0 0;
+		padding: 0.5rem 0.65rem;
+		border-radius: 8px;
+		background: rgb(0 0 0 / 0.04);
+		white-space: pre-wrap;
+		word-break: break-all;
 	}
 </style>

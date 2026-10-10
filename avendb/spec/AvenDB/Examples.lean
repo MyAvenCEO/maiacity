@@ -69,17 +69,18 @@ def byId (e : EntryId) : Selector := .anyOf [[.entryIn [e]]]
     `issuer` issues it. -/
 def capOf (id : CapId) (over grantee : VaultId) (role : Role) (sel : Selector) (parent : Option CapId := none)
     (issuer : VaultId := over) : Cap :=
-  { id, over, grantee := .principal (.vault grantee), role, wide := sel == .all, select := sel, relabel := [], parent,
+  { id, over, grantee := .principal (.vault grantee), role, wide := sel == .all, select := sel, ops := role.ops, parent,
     issuer }
 
 /-- Cap `id` over vault `over`: everyone reads what `sel` selects. -/
 def publicCap (id : CapId) (over : VaultId) (sel : Selector) : Cap :=
   { capOf id over over .read sel with grantee := .«public» }
 
-/-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in cell `x`. -/
+/-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in cell `x`, through the cap `proof`
+    names, if it isn't the vault. -/
 def create (v : VaultId) (e : EntryId) (actor : VaultId) (x : Cell) (t : Sym) (tags : List Sym := [])
-    (via : List VaultId := []) : Action :=
-  .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0⟩)) (tags := { add := tags })
+    (via : List VaultId := []) (proof : Option CapId := none) : Action :=
+  .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0⟩)) (tags := { add := tags }) (proof := proof)
 
 /-- Edits in sequence: each builds on the one before, ids count from `start`. -/
 def chain (start : Nat) (steps : List (SignerId × List SignerId × Action)) : List Edit :=
@@ -415,12 +416,12 @@ only that; whether the entry lies in the writer's slice (`admits`, the entry's `
 and one moves it on to its semantic cell. -/
 
 -- Bob creates the lamp todo, tagged work, in his cap's intake cell, and nowhere else
-def intake : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob [32] todo [work])]
+def intake : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob [32] todo [work] (proof := some 32))]
 #guard refused intake == []
 #guard !accepted shared (attempt macB [] (create alice lamp bob [] todo [work]))
 #guard !accepted shared (attempt macB [] (create alice lamp bob [31, 32] todo [work]))
 -- it lies in his slice; Carol's cap selects it too, but she reads it only once a steward has moved it
-#guard admits (view shared) bob alice [32] ⟨todo, bob, lamp, 0, [work]⟩
+#guard admits (view shared) bob alice [32] ⟨todo, bob, lamp, 0, [work]⟩ (some 32)
 #guard ((view intake).entry? lamp).map (·.admitted) == some true
 #guard upkeep intake lamp == some [31, 32] && !reads intake macC lamp && reads intake macB lamp
 def intake' : List Edit := intake ++ chain 521 [(macA, [], .move alice lamp [31, 32] [520])]
@@ -430,9 +431,9 @@ def intake' : List Edit := intake ++ chain 521 [(macA, [], .move alice lamp [31,
 
 -- a note Bob makes in the same cell is accepted too, but lies outside his slice: a steward moves it to the cell of no
 -- caps, where only Alice reads it, keeping what Bob wrote
-def outside : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob [32] note [work])]
+def outside : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob [32] note [work] (proof := some 32))]
 #guard refused outside == []
-#guard !admits (view shared) bob alice [32] ⟨note, bob, lamp, 0, [work]⟩
+#guard !admits (view shared) bob alice [32] ⟨note, bob, lamp, 0, [work]⟩ (some 32)
 #guard ((view outside).entry? lamp).map (·.admitted) == some false && upkeep outside lamp == some []
 def outside' : List Edit := outside ++ chain 521 [(macA, [], .move alice lamp [] [520])]
 -- moved, Bob neither reads nor writes it, and it stays
@@ -957,7 +958,7 @@ no more. -/
 
 def kept : List Edit := workShare ++ chain 520 [
   (macA, [], .cap (capOf 34 alice bob .write urgentTodos)),
-  (macB, [], create alice lamp bob [32] todo [work]),
+  (macB, [], create alice lamp bob [32] todo [work] (proof := some 32)),
   (macA, [], .write alice lamp alice none 0 [521] (tags := { add := [urgent], remove := [work] })),
   (macA, [], .move alice lamp [34] [521, 522])] ++ offline 530 524 [
   (passkeyA, [], .revoke 34 alice [520])]
@@ -972,7 +973,7 @@ Alice's passkey revokes that cap without having seen it: the lamp falls with its
 nobody creates it again, so an entry key's name never names two keys. -/
 
 def fallen : List Edit := workShare ++ chain 520 [
-  (macB, [], create alice lamp bob [32] todo [work]),
+  (macB, [], create alice lamp bob [32] todo [work] (proof := some 32)),
   (passkeyA, [], .revoke 32 alice [])]
 #guard let st := replay {} fallen; st.entry? lamp == none && entryWrites st lamp == [] && st.born.contains lamp
 #guard (step (replay {} fallen) (attempt macA [] (create alice lamp alice [] todo))).isNone

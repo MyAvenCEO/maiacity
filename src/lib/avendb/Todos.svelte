@@ -1,8 +1,8 @@
 <!--
 	A vault's todos, as the acting vault sees them: one flat list of every todo of the vault it reads, narrowed by a
-	tag, each a tick through open, doing and done where it writes and the rules of its caps allow the next one (the
+	tag, each a tick through open, doing and done where it writes and the ops of its caps allow the next one (the
 	device answers, by a dry run of each tick: `may`), its tags, to add and take off where it may (Tags), and shared on
-	where it owns; and a new todo where it may add one, tagged as the slice of its cap asks, and where the rules of
+	where it owns; and a new todo where it may add one, tagged as the slice of its cap asks, and where the ops of
 	that cap allow it (`may` again). What it holds no cap on stays out of sight, as on a device of that vault alone.
 -->
 <script>
@@ -55,7 +55,7 @@
 		if (await api.run('Adding the todo', { ...adding(title), as: actor })) draft = '';
 	}
 
-	/** why the rules of the cap the acting vault adds through don't let it add the todo, as the device answers: '' */
+	/** why the ops of the cap the acting vault adds through don't let it add the todo, as the device answers: '' */
 	let unadded = $state('');
 	$effect(() => {
 		if (!asked) return;
@@ -115,15 +115,15 @@
 			{#each shown as it (it.entry)}
 				{@const writes = allows(it.roles[actor], 'write')}
 				{@const answer = ticks[it.entry]}
-				{@const ruled = answer === true ? null : answer}
+				{@const refused = answer === true ? null : answer}
 				<li class={it.status ?? 'open'}>
 					<button
 						class="tick"
-						disabled={busy || !writes || !!ruled}
+						disabled={busy || !writes || !!refused}
 						title={!writes
 							? `${nameOf(as)} only reads it`
-							: ruled
-								? `It can't be marked ${NEXT[it.status ?? 'open']}: ${ruled.why}`
+							: refused
+								? `It can't be marked ${NEXT[it.status ?? 'open']}: ${refused.why}`
 								: `Mark it ${NEXT[it.status ?? 'open']}`}
 						onclick={() => tick(it.entry, NEXT[it.status ?? 'open'])}
 					>

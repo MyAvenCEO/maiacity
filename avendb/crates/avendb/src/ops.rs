@@ -674,6 +674,16 @@ impl Where {
         }
     }
 
+    /// It tests labels alone, with no test of a value and no `not`: its cover picks exactly what it does, and a cap may
+    /// pick by it (`slice::Selector::of_json`).
+    pub fn labels_only(&self) -> bool {
+        match self {
+            Where::Yes | Where::No | Where::Label(_) => true,
+            Where::Test(..) | Where::Not(_) => false,
+            Where::And(u, w) | Where::Or(u, w) => u.labels_only() && w.labels_only(),
+        }
+    }
+
     /// The selector of its labels: values and negations are left to the tests, so it picks no less.
     pub fn cover(&self) -> Selector {
         match self {

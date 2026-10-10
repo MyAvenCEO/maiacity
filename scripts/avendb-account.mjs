@@ -9,10 +9,10 @@
  * and the person acts as each in turn from the switcher at the foot: avenALICE writes a note and two todos, one tagged
  * “work”, and shares the note with avenBOB, and every todo tagged “work”, a rule rather than a list: he reads the note
  * and its history and that todo, and a todo she tags “work” later, and nothing else, and finds her other todo sealed for
- * him in her table editor, while avenCHARLY sees nothing of hers; then she lets avenCHARLY write on a plan of hers by
- * a cap whose rules let him only suggest changes: the plan reads as viewing to him, he proposes and writes on his
+ * him in her table editor, while avenCHARLY sees nothing of hers; then she gives avenCHARLY a Suggester cap on a plan
+ * of hers, whose ops let him only suggest changes: the plan reads as viewing to him, he proposes and writes on his
  * proposal, which he may not accept, and she accepts it into main; the Sync list shows her cells, avenCEO's server
- * relaying their ciphertext and opening none of it; making the coop an owner of her whole vault takes one ceremony,
+ * relaying their ciphertext and opening none of it; making the coop an Owner of her whole vault takes one ceremony,
  * revoking avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here,
  * it comes back through the server for the passkey alone, in one ceremony, with every vault and the note. Each step
  * is screenshot.
@@ -467,8 +467,9 @@ try {
 	const sharing = await ceremonies();
 	await click('Share', '.doc .top button');
 	await choose('.doc .sharebar select[aria-label="Share with"]', 'avenBOB');
-	check('sharing starts at the least: this note alone, to read', (await text('.doc .sharebar')).includes('Only “Hello from Alice”'), await text('.doc .sharebar'));
-	await choose('.doc .sharebar select[aria-label="Role"]', 'to read');
+	const least = await text('.doc .sharebar');
+	const viewer = least.includes('Only “Hello from Alice”') && least.includes('reads it');
+	check('sharing starts at the least: this note alone, for a Viewer', viewer, least);
 	await click('Share it', '.doc .sharebar button');
 	const holders = () => page.$$eval('.doc .people .person', (els) => els.map((e) => e.getAttribute('title')));
 	const shared = await until(async () => (await holders()).includes('avenBOB reads it'));
@@ -555,7 +556,7 @@ try {
 	await click('Act as avenALICE', '.main .empty button');
 	check('from there, one click acts as her', await until(async () => (await text('.switcher .pill b')) === 'avenALICE', 5000));
 
-	// a cap whose rules let avenCHARLY only suggest changes to a plan of hers, on proposals she accepts
+	// a Suggester cap, whose ops let avenCHARLY only suggest changes to a plan of hers, on proposals she accepts
 	await look('avenALICE', 'Notes');
 	await click('Blank note', '.main .start button');
 	check('her plan opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
@@ -565,19 +566,22 @@ try {
 	check('written', await saveText(SOW), await docText());
 	await click('Share', '.doc .top button');
 	await choose('.doc .sharebar select[aria-label="Share with"]', 'avenCHARLY');
-	await choose('.doc .sharebar select[aria-label="Role"]', 'to write');
-	await choose('.doc .sharebar select[aria-label="What it may change"]', 'only suggest changes, on proposals');
-	const rules = await text('.doc .sharebar .preview');
-	const suggests =
-		rules.includes('may only start proposals, change anything on a proposal') && rules.includes('adds no entry');
-	check('its rules in words: he may only suggest changes', suggests, rules);
+	await click('Suggester', '.doc .sharebar button.group');
+	const chips = await text('.doc .sharebar .ops');
+	const suggests = ['start proposals', 'change anything on a proposal'].every((op) => chips.includes(op));
+	check('its ops as chips: he may suggest changes', suggests, chips);
+	check('and add nothing', !chips.includes('add new'), chips);
 	await click('Share it', '.doc .sharebar button');
 	const writes = until(async () => (await holders()).includes('avenCHARLY writes it'));
 	check('avenCHARLY writes it', await writes, (await holders()).join(', '));
 	await back();
 	await goTo('Access');
-	const words = async () => (await shown('.main .grants li')).find((l) => l?.includes('avenCHARLY')) ?? '';
-	check('her Access says the cap’s rules', (await words()).includes('may only start proposals'), await words());
+	const group = async () => (await shown('.main .group')).find((g) => g?.includes('avenCHARLY')) ?? '';
+	const suggester = async () => {
+		const g = await group();
+		return g.startsWith('Suggester') && g.includes('start proposals');
+	};
+	check('her Access shows his cap by its group and ops', await suggester(), await group());
 	check('acting as avenCHARLY', await actAs('avenCHARLY'));
 	await look('avenALICE', 'Notes');
 	await openNote(PLAN);
@@ -617,7 +621,8 @@ try {
 	// who receives her cells: this browser opens them, avenCEO's server only relays their ciphertext
 	await look('avenALICE', 'Sync');
 	const sync = await text('.main');
-	check('her cells: her own, and those her caps share', sync.includes('Its own entries') && sync.includes('Shared: avenBOB reads'), sync.slice(0, 400));
+	const shares = sync.includes('Its own entries') && sync.includes('Shared: avenBOB, Viewer');
+	check('her cells: her own, and those her caps share', shares, sync.slice(0, 400));
 	check('this browser opens them', sync.includes('Samuel’s test browser') && sync.includes('opens it'), sync.slice(0, 400));
 	check('avenCEO’s server relays their ciphertext only', /avenCEO's server.*relays its ciphertext only/.test(sync), sync.slice(0, 400));
 	await shot('9-sync');
@@ -628,9 +633,13 @@ try {
 	const owning = await ceremonies();
 	await choose('.main select[aria-label="What"]', 'the whole vault');
 	await choose('.main select[aria-label="Share with"]', 'Maia City COOP');
-	await choose('.main select[aria-label="Role"]', 'to own (your passkey approves)');
+	await click('Owner', '.main .share button.group');
 	await click('Share', '.main .card button.primary');
-	const coop = await until(async () => /Maia City COOP owns the whole vault/.test(await text('.main')), 60000);
+	const owns = async () => {
+		const groups = await shown('.main .group');
+		return groups.some((g) => g?.startsWith('Owner') && g.includes('Maia City COOP on the whole vault'));
+	};
+	const coop = await until(owns, 60000);
 	check('the coop owns her whole vault', coop, await problem());
 	check('in one ceremony', (await ceremonies()) - owning === 1, `${(await ceremonies()) - owning}`);
 	const revoking = await ceremonies();

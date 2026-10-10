@@ -39,16 +39,16 @@ TagDelta  = { add: [Sym], remove: [Sym] }
 A write's tag delta counts when it acts for the entry's vault, and a new entry's added tags are its first tags. Any
 other writer's delta is an **ask**: the vault's stewards answer each ask in a write of their own that names it
 (`answers`), granting the part the asker's caps let it ask for: those with write or more whose slice holds the entry
-both before the whole ask and after it, each as far as the `relabel` set of every cap of its chain allows.
+both before the whole ask and after it, each as far as the `tag` ops of every cap of its chain allow (`OPS.md`).
 
 ## Caps
 
 A cap is an edit in a log of its own (`LogId::Cap`), issued by a vault acting through `via`:
 
 ```
-Cap    { over: VaultId, grantee: Vault(VaultId) | Public, role: relay < read < write < owner,
+Cap    { over: VaultId, grantee: Vault(VaultId) | Public, role: relay < backup < read < write < owner,
          wide: bool,                     -- selects the whole vault (`Selector::All`), in the clear
-         select: Select,                 -- its Slice { select, relabel }, sealed (in the clear for Public)
+         select: Select,                 -- its Slice { name, select, ops }, sealed (in the clear for Public)
          parent: Option<CapId>, issuer: VaultId, nonce: u64 }
 Revoke { cap: CapId, actor: VaultId, keep: [EditId], via }
 ```
@@ -57,12 +57,14 @@ Revoke { cap: CapId, actor: VaultId, keep: [EditId], via }
   each of at most 16 tests: `type in`, `author in`, `entry in`, `created in [t1, t2)`, `tag has`, `tag has none of`,
   `tags within` (lists of at most 1,000). Type, author, entry and created never change; tags do. "All todos of xyz" is
   `type in {todo}, author in {xyz}`, or `type in {todo}, tag has xyz` for a project label; one note is `entry in {e}`.
-- **Roles.** Relay holds no key: it stores and forwards the slice's ciphertext (the server). Read holds the slice's
-  keys. Write also writes the slice's entries and creates entries through the cap. Owner also issues caps on the slice
-  to others, and is governance: issuing an owner cap takes the issuer's approval (its root, or its threshold of owners).
+- **Roles.** A cap is a named group of ops (`OPS.md`, caps), and its role is the class of its strongest op. Relay
+  holds no key and keeps nothing. Backup keeps and forwards the slice's ciphertext (the server). Read holds the
+  slice's keys. Write also writes the slice's entries, as far as its ops allow, and creates entries through the cap.
+  Owner also issues caps on the slice to others, and is governance: issuing an owner cap takes the issuer's approval
+  (its root, or its threshold of owners).
 - **Chains (T22).** A cap with a `parent` rests on a live owner cap over the same vault whose grantee is its issuer; a
   wide cap rests only on a wide one. What a chain selects is the AND of its selectors, its role the lowest along it,
-  its relabel set the intersection, so a cap that claims more than its parent gains nothing. A root cap (no parent) is
+  what it allows what every cap's ops allow, so a cap that claims more than its parent gains nothing. A root cap (no parent) is
   issued by the vault it is over.
 - **Public** gets read alone (T8). Caps name vaults or Public, never signers (T4), nor the vault they are over. A
   device is never a grantee: a cap to a vault reaches its devices, and a new phone needs no new cap.

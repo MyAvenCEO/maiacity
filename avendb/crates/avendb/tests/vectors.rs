@@ -19,9 +19,10 @@
 //! of caps: the core keeps its caps sorted by id and names it by the hash of its vault and those caps. What no rule
 //! reads travels encrypted or sealed in the core: a cap's selector, a write's header and tags. Here a cap carries its
 //! selector's JSON where its sealed selector goes, and a write its header's and tags' JSON where its ciphertext goes, and
-//! the readings (`Readings`) hold what a reader opens of them. A ruled cap's selector JSON goes inside a sealed
-//! selector, beside the commitment to its rules, salted with its number; a write's proof and touches go into the
-//! readings, its proof opening the rules of the ruled caps of its cap's chain. A keys edit of the model names only
+//! the readings (`Readings`) hold what a reader opens of them. A cap's selector JSON goes inside a sealed selector,
+//! beside the commitment to its ops, salted with its number; a write's proof and touches go into the readings, its
+//! proof opening the ops of every cap of its cap's chain. The core's built-in groups of ops are the model's. A keys
+//! edit of the model names only
 //! where its boxes go; the core's carries the boxes too, which no rule opens, so here they are empty. A publish names
 //! its blob by a number: here the blob is the bytes `blob <number>`. A type or a tag is a number in the model, and its
 //! digits here.
@@ -37,7 +38,7 @@ use avendb::policy::{
     checkpointed, history, mk_cell, replay, tips, Action, Cap, Edit, Grantee, Kind, Line, Principal, Proposal, Readings,
     Role, State, Vault,
 };
-use avendb::rules::{rules_of_json, Opening, Proof, Touch};
+use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
 use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta};
 use avendb::sync::{asks, closed_part, forks, frontiers, link_card, respond, respond_since, LogId};
 use avendb::wire::Wire;
@@ -110,12 +111,12 @@ fn header(v: &Value) -> Header {
     Header { ty: sym(&v["type"]), created: num(&v["created"]) }
 }
 
-/// A ruled cap's rules, salted with its number; none for a cap without rules.
-fn opening(cap: &Value) -> Option<Opening> {
-    let rules = rules_of_json(cap.get("rules")?).expect("the model's rules");
+/// A cap's ops, salted with its number.
+fn grant(cap: &Value) -> Grant {
+    let ops = ops_of_json(&cap["ops"]).expect("the model's ops");
     let mut salt = [0; 32];
     salt[..8].copy_from_slice(&num(&cap["id"]).to_le_bytes());
-    Some(Opening { rules, salt })
+    Grant { ops, salt }
 }
 
 /// Two collections hold the same items, whatever their order: what differs is shown.
@@ -134,9 +135,9 @@ struct Names {
     /// Each edit's id, by its place in the case.
     edits: Vec<EditId>,
     readings: Readings,
-    /// Each cap's parent, and each ruled cap's rules: what a proof opens.
+    /// Each cap's parent, and its ops: what a proof opens.
     parents: HashMap<CapId, Option<CapId>>,
-    openings: HashMap<CapId, Opening>,
+    grants: HashMap<CapId, Grant>,
 }
 
 impl Names {
@@ -231,13 +232,11 @@ impl Names {
         }
     }
 
-    /// A cap as the core issues it: its selector and the tags it relabels where its sealed selector goes, sealed
-    /// beside the commitment to its rules if it has any, its number as its nonce.
+    /// A cap as the core issues it: its selector where its sealed slice goes, beside the commitment to its ops, its
+    /// number as its nonce.
     fn cap_of(&self, v: &Value) -> Cap {
-        let mut select = serde_json::to_vec(&json!({"select": v["select"], "relabel": v["relabel"]})).unwrap();
-        if let Some(o) = opening(v) {
-            select = Select::Sealed { boxes: vec![], slice: select, rules: Some(o.commitment()) }.to_wire();
-        }
+        let slice = serde_json::to_vec(&v["select"]).unwrap();
+        let select = Select::Sealed { boxes: vec![], slice, commitment: grant(v).commitment() }.to_wire();
         Cap {
             over: self.vault(&v["over"]),
             grantee: self.grantee(&v["grantee"]),
@@ -380,9 +379,7 @@ impl Names {
                 let (cap, parent) = (CapId::from(id), &x["cap"]["parent"]);
                 self.readings.selectors.insert(cap, self.selector(&x["cap"]["select"]));
                 self.parents.insert(cap, (!parent.is_null()).then(|| self.cap(parent)));
-                if let Some(o) = opening(&x["cap"]) {
-                    self.openings.insert(cap, o);
-                }
+                self.grants.insert(cap, grant(&x["cap"]));
                 self.caps.insert(num(&x["cap"]["id"]), cap);
             }
             ("write", x) => {
@@ -392,8 +389,8 @@ impl Names {
                 self.readings.tags.insert(id, tag_delta(&x["tags"]));
                 if let Some(c) = x.get("proof") {
                     let cap = self.cap(c);
-                    let openings = self.chain(cap).iter().filter_map(|c| self.openings.get(c).cloned()).collect();
-                    self.readings.proofs.insert(id, Proof { cap, openings });
+                    let grants = self.chain(cap).iter().filter_map(|c| self.grants.get(c).cloned()).collect();
+                    self.readings.proofs.insert(id, Proof { cap, grants });
                 }
                 let touches = x.get("touches").map_or(&[][..], list).iter().map(|t| Touch::of_json(t).unwrap());
                 self.readings.touches.insert(id, touches.collect());
@@ -563,6 +560,15 @@ fn vectors() -> Value {
 /// where an edit is its place. A step reads no depth.
 fn step_depth(v: &Value, i: usize) -> u64 {
     if variant(&v["action"]).0 == "genesis" { 0 } else { i as u64 }
+}
+
+#[test]
+fn the_built_in_groups_are_the_models() {
+    let ours: Vec<Value> = rules::groups()
+        .iter()
+        .map(|g| json!({ "name": g.name, "ops": rules::ops_to_json(&g.ops), "everyone": g.everyone }))
+        .collect();
+    assert_eq!(Value::Array(ours), vectors()["groups"]);
 }
 
 #[test]

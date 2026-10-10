@@ -2,11 +2,11 @@
 //! labels and test what they open; record ops through an app's schema and its lens, which write only what changed;
 //! every write's changes in its entry's history, the same for every reader; batches, proposals, merges, restores,
 //! undos and variants as ops; and every op's write judged as any peer's, by the caps of the vault it acts for, by the
-//! rules of a ruled cap's chain (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas its entry was written under
-//! (S1 to S4): `may` answers before a page offers a button, a write they don't allow is refused, and one a patched app
-//! makes all the same counts for no reader, nor anything built on it. Alice's library (`cast::library`) and the coop's
-//! handbook (`cast::handbook`, Welcome written by a v1 app) are the data; the ops are JSON, as the page and the Mac app
-//! send them.
+//! ops of every cap of the chain it relies on (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas its entry was
+//! written under (S1 to S4): `may` answers before a page offers a button, a write they don't allow is refused, and one
+//! a patched app makes all the same counts for no reader, nor anything built on it. Alice's library (`cast::library`)
+//! and the coop's handbook (`cast::handbook`, Welcome written by a v1 app) are the data; the ops are JSON, as the page
+//! and the Mac app send them.
 
 use avendb::cast::{self, World};
 use avendb::engine;
@@ -60,13 +60,13 @@ fn a_query_picks_by_labels_then_tests_what_it_opens() {
     let work = json!({ "op": "query", "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] } });
     let work = ok(run(&mut w, mac, work));
     assert_eq!(entries(&work), [hex(l.door), hex(l.solar)]);
-    assert_eq!(work["plan"], json!([[{ "type": ["todo"] }, { "tag": "work" }]]));
+    assert_eq!(work["plan"], json!({ "all": [{ "type": ["todo"] }, { "tag": "work" }] }));
     // values, through the todo's schema: every todo is open, its default, though none wrote it
     let open = json!({ "path": ["status"], "eq": "open" });
     let open = json!({ "op": "query", "vault": alice, "where": open, "schema": "todo" });
     let open = ok(run(&mut w, mac, open));
     assert_eq!(entries(&open), [hex(l.door), hex(l.seeds), hex(l.solar)]);
-    assert_eq!(open["plan"], json!("all"));
+    assert_eq!(open["plan"], json!({ "all": [] }));
     // a note isn't one of the todo schema, so no row; through its own schema each entry shows its kind's record
     let all = ok(run(&mut w, mac, json!({ "op": "query", "vault": alice })));
     assert_eq!(all["count"], 5);
@@ -312,14 +312,14 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     assert_eq!(list(&schemas["lenses"]).len(), 2);
 }
 
-/// Rules from their JSON.
-fn rules(v: Value) -> Vec<Rule> {
-    rules::rules_of_json(&v).unwrap_or_else(|why| panic!("{v}: {why}"))
+/// Ops from their JSON.
+fn ops_of(v: Value) -> Vec<Rule> {
+    rules::ops_of_json(&v).unwrap_or_else(|why| panic!("{v}: {why}"))
 }
 
-/// A cap over `over` giving `grantee` write on entry `e`, ruled by `rules`.
-fn ruled(over: VaultId, grantee: VaultId, e: EntryId, rules: Vec<Rule>) -> NewCap {
-    NewCap { rules: Some(rules), ..cast::cap(over, cast::vault(grantee), Role::Write, cast::by_id(e)) }
+/// A cap over `over` naming the ops `ops` for `grantee` on entry `e`.
+fn on_entry(over: VaultId, grantee: VaultId, e: EntryId, ops: Vec<Rule>) -> NewCap {
+    NewCap { name: "Door".into(), ops, ..cast::cap(over, cast::vault(grantee), Role::Write, cast::by_id(e)) }
 }
 
 /// Whether device `d`, acting for `actor`, would make each of `ops`: `true`, or the refusal's name.
@@ -340,18 +340,18 @@ fn title(w: &World, d: SignerId, e: EntryId) -> String {
 }
 
 #[test]
-fn a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow() {
+fn a_cap_lets_its_grantee_make_only_what_its_ops_allow() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
     // Alice lets Bob move the door todo along, and nothing else
-    let along = rules(json!([{ "op": "set", "path": ["status"], "to": ["doing", "done"] }]));
-    w.lab.issue(mac, &[mac], ruled(alice, bob, l.door, along)).expect("Alice shares the door with Bob");
+    let along = ops_of(json!([{ "op": "set", "path": ["status"], "to": ["doing", "done"] }]));
+    w.lab.issue(mac, &[mac], on_entry(alice, bob, l.door, along)).expect("Alice shares the door with Bob");
     w.lab.sync_all(0);
     let set = |path: &str, value: &str| json!({ "op": "set", "entry": hex(l.door), "path": [path], "value": value });
     let (done, open, retitle) = (set("status", "done"), set("status", "open"), set("title", "The door"));
-    // his page asks before it offers a button: the rules answer, and nothing is made; what changes nothing writes
-    // nothing, which no rule refuses
+    // his page asks before it offers a button: the ops answer, and nothing is made; what changes nothing writes
+    // nothing, which no op refuses
     let asked = may(&mut w, mac_b, bob, &[done.clone(), retitle.clone(), open.clone()]);
     assert_eq!(asked, [json!(true), json!("NotAllowed"), json!(true)]);
     assert_eq!(cast::status(&w.lab, mac_b, l.door), Some(Status::Open));
@@ -362,7 +362,7 @@ fn a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow() {
     w.lab.sync_all(1);
     assert_eq!(cast::status(&w.lab, mac, l.door), Some(Status::Done));
     assert!(counted(&mut w, mac, l.door).iter().all(|c| c.1));
-    // a patched app that ignores the rules makes the write all the same: no reader counts it, its own device neither
+    // a patched app that ignores the ops makes the write all the same: no reader counts it, its own device neither
     let lawless = w.lab.patched(|lab| engine::run(lab, mac_b, &retitle));
     let lawless = ok(lawless)["edit"].as_str().expect("an edit").to_string();
     w.lab.sync_all(2);
@@ -386,25 +386,26 @@ fn a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow() {
     }
 }
 
-/// C1: a cap resting on a ruled owner cap is held to the owner cap's rules as well as its own, whether it has any.
+/// C1: a cap resting on an owner cap is held to the owner cap's ops as well as its own.
 #[test]
-fn c1_a_cap_resting_on_a_ruled_owner_cap_is_held_to_both() {
+fn c1_a_cap_resting_on_an_owner_cap_is_held_to_both() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let coop = cast::coop_on(&mut w);
     let (alice, carol, dave) = (w.alice, w.carol, w.dave);
     let (mac, mac_b, mac_c, mac_d) = (w.mac_a, w.mac_b, w.mac_c, w.mac_d);
     // the coop may change the door's status and title, and share it on
-    let owner = rules(json!([{ "op": "set", "path": ["status"] }, { "op": "set", "path": ["title"] }]));
-    let owner = NewCap { role: Role::Owner, ..ruled(alice, coop, l.door, owner) };
+    let owner = json!([{ "op": "set", "path": ["status"] }, { "op": "set", "path": ["title"] }, { "op": "share" }]);
+    let owner = ops_of(owner);
+    let owner = on_entry(alice, coop, l.door, owner);
     let owner = w.lab.issue(mac, &[w.passkey_a], owner).expect("Alice's passkey gives the coop the door");
     w.lab.sync_all(0);
-    // acting for the coop, Bob lets Dave retitle it, and Carol write it with no rules of her own
-    let retitle = rules(json!([{ "op": "set", "path": ["title"] }]));
+    // acting for the coop, Bob lets Dave retitle it, and Carol edit it as an Editor
+    let retitle = ops_of(json!([{ "op": "set", "path": ["title"] }]));
     let to_dave = cast::cap_on(alice, cast::vault(dave), Role::Write, cast::by_id(l.door), owner, coop);
-    w.lab.issue(mac_b, &[mac_b], NewCap { rules: Some(retitle), ..to_dave }).expect("Bob gives Dave a ruled cap");
+    w.lab.issue(mac_b, &[mac_b], NewCap { ops: retitle, ..to_dave }).expect("Bob gives Dave a cap that retitles");
     let to_carol = cast::cap_on(alice, cast::vault(carol), Role::Write, cast::by_id(l.door), owner, coop);
-    w.lab.issue(mac_b, &[mac_b], to_carol).expect("and Carol an unruled one");
+    w.lab.issue(mac_b, &[mac_b], to_carol).expect("and Carol an Editor one");
     w.lab.sync_all(1);
     let set = |path: &str, value: &str| json!({ "op": "set", "entry": hex(l.door), "path": [path], "value": value });
     let asks = [set("status", "doing"), set("title", "The greenhouse door"), set("notes", "Oil the hinges")];
@@ -434,7 +435,7 @@ fn a_cap_that_only_suggests_writes_on_proposals_an_owner_merges() {
         { "op": "set", "path": [], "on": "proposals" },
         { "op": "merge", "on": "proposals" },
     ]);
-    w.lab.issue(mac, &[mac], ruled(alice, carol, l.plan, rules(suggest))).expect("Alice lets Carol suggest");
+    w.lab.issue(mac, &[mac], on_entry(alice, carol, l.plan, ops_of(suggest))).expect("Alice lets Carol suggest");
     w.lab.sync_all(0);
     let plan = hex(l.plan);
     let retitle = |line: &Value| {

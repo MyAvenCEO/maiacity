@@ -5,13 +5,14 @@
 
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
-use crate::rules::{On, Opening, Proof, Rule, Scalar, Step};
+use crate::rules::{Grant, On, Proof, Rule, Scalar, Step};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
-/// The version byte every edit starts with: 5 since flat vaults, whose caps select slices of a vault and whose entries
-/// sit in cells (4 since the three kinds of vault, 3 since P5, whose writes name the line of history they extend, 2
-/// since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
-pub const VERSION: u8 = 5;
+/// The version byte every edit starts with: 6 since caps are named groups of ops, each cap's slice holding its name and
+/// its ops and every write through a cap carrying a proof (5 since flat vaults, whose caps select slices of a vault and
+/// whose entries sit in cells, 4 since the three kinds of vault, 3 since P5, whose writes name the line of history
+/// they extend, 2 since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
+pub const VERSION: u8 = 6;
 
 /// An edit's id: the hash of its encoding, for a purpose that keeps an edit's old name, op (`hash::PREFIX`).
 pub(crate) fn edit_id(edit: &Edit) -> [u8; 32] {
@@ -298,21 +299,15 @@ impl Encode for Selector {
     }
 }
 
-/// A ruled cap's rules and the openings above it follow only where it has them, so a slice without them keeps the
-/// bytes it had before caps named ops; a slice is always read from the bytes of its own (`wire`).
 impl Encode for Slice {
     fn encode(&self, out: &mut Vec<u8>) {
+        self.name.encode(out);
         self.select.encode(out);
-        self.relabel.encode(out);
-        if self.rules.is_some() || !self.above.is_empty() {
-            self.rules.encode(out);
-            self.above.encode(out);
-        }
+        self.grant.encode(out);
+        self.above.encode(out);
     }
 }
 
-/// A sealed slice of a ruled cap carries the commitment to its rules beside it (tag 2), so a sealed slice of a cap
-/// without rules keeps the bytes it had before caps named ops (tag 1).
 impl Encode for Select {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -320,13 +315,8 @@ impl Encode for Select {
                 out.push(0);
                 slice.encode(out);
             }
-            Select::Sealed { boxes, slice, rules: None } => {
+            Select::Sealed { boxes, slice, commitment } => {
                 out.push(1);
-                boxes.encode(out);
-                slice.encode(out);
-            }
-            Select::Sealed { boxes, slice, rules: Some(commitment) } => {
-                out.push(2);
                 boxes.encode(out);
                 slice.encode(out);
                 commitment.encode(out);
@@ -378,43 +368,52 @@ impl Encode for Scalar {
     }
 }
 
+/// Tagged in the order caps list their ops.
 impl Encode for Rule {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
+            Rule::Relay => out.push(0),
+            Rule::Backup => out.push(1),
+            Rule::Read => out.push(2),
+            Rule::Create => out.push(3),
             Rule::Set { path, to, on } => {
-                out.push(0);
+                out.push(4);
                 path.encode(out);
                 to.as_deref().encode(out);
                 on.encode(out);
             }
             Rule::Insert { path, on } => {
-                out.push(1);
+                out.push(5);
                 path.encode(out);
                 on.encode(out);
             }
             Rule::Remove { path, on } => {
-                out.push(2);
+                out.push(6);
                 path.encode(out);
                 on.encode(out);
             }
             Rule::Move { path, on } => {
-                out.push(3);
+                out.push(7);
                 path.encode(out);
                 on.encode(out);
             }
+            Rule::Tag(tags) => {
+                out.push(8);
+                tags.as_deref().encode(out);
+            }
+            Rule::Propose => out.push(9),
             Rule::Merge { on } => {
-                out.push(4);
+                out.push(10);
                 on.encode(out);
             }
-            Rule::Propose => out.push(5),
-            Rule::Create => out.push(6),
+            Rule::Share => out.push(11),
         }
     }
 }
 
-impl Encode for Opening {
+impl Encode for Grant {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.rules.encode(out);
+        self.ops.encode(out);
         self.salt.encode(out);
     }
 }
@@ -422,7 +421,7 @@ impl Encode for Opening {
 impl Encode for Proof {
     fn encode(&self, out: &mut Vec<u8>) {
         self.cap.encode(out);
-        self.openings.encode(out);
+        self.grants.encode(out);
     }
 }
 
@@ -440,17 +439,13 @@ impl Encode for TagDelta {
     }
 }
 
-/// A write's proof follows only where it carries one, so a body without one keeps the bytes it had before caps named
-/// ops; a body is always read from the bytes of its own (`wire`).
 impl Encode for Body {
     fn encode(&self, out: &mut Vec<u8>) {
         self.header.encode(out);
         self.tags.encode(out);
         self.answers.encode(out);
         self.content.encode(out);
-        if let Some(proof) = &self.proof {
-            proof.encode(out);
-        }
+        self.proof.encode(out);
     }
 }
 
