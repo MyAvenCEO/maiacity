@@ -56,21 +56,61 @@ struct Track {
 const TRACK_EVERY: u64 = 6;
 const TRACK_WIDTH: f64 = 480.0;
 
-/// The handler's state on the thread AVFoundation calls it on: its GPU (the kernels compiled once) and, for the
-/// composition it was last called for, each clip's cube and where its face is. A new composition (the grade changed:
-/// every load is one) starts them afresh — kept by clip alone, a clip played its first grade for ever.
+/// One composition's handler state: its GPU (the kernels compiled once, the output cube loaded), each clip's cubes and
+/// where its face is. Made once with the composition, before it plays: AVFoundation calls the handler on whichever of
+/// its worker threads is free, and state kept per thread was made again on every new one — the output cube, most of a
+/// second each time, and playback stood still for it. A new composition (the grade changed: every load is one) has its
+/// own — kept by clip alone, a clip played its first grade for ever.
 struct Handler {
     gpu: Gpu,
-    generation: u64,
-    cubes: std::collections::HashMap<String, Cube>,
-    tracks: std::collections::HashMap<String, Track>,
+    cubes: HashMap<String, Cube>,
+    tracks: HashMap<String, Track>,
+    /// per clip, its picture when its file is a still (a PNG, a JPEG …): a still is no movie, so the composition has
+    /// nothing of it on its track and the handler is handed an empty frame there — the clip's own picture is used
+    stills: Vec<Option<Retained<objc2_core_image::CIImage>>>,
 }
 
-thread_local! {
-    static GPU: std::cell::RefCell<Option<Handler>> = const { std::cell::RefCell::new(None) };
+/// Whether a file's first bytes are a still's: PNG, JPEG, TIFF, OpenEXR, HEIC/AVIF.
+fn is_still(head: &[u8]) -> bool {
+    head.starts_with(b"\x89PNG")
+        || head.starts_with(&[0xFF, 0xD8, 0xFF])
+        || head.starts_with(b"II*\0")
+        || head.starts_with(b"MM\0*")
+        || head.starts_with(&[0x76, 0x2F, 0x31, 0x01])
+        || (head.len() >= 12 && &head[4..8] == b"ftyp" && matches!(&head[8..12], b"heic" | b"heix" | b"mif1" | b"avif"))
 }
 
-/// Each composition's number (what the handler's state belongs to).
+impl Handler {
+    /// The state for `program`: the GPU, the output cube and every clip's cubes, made now.
+    fn new(program: &Program) -> Result<Self> {
+        let mut gpu = Gpu::new()?;
+        gpu.set_output(&program.output);
+        let mut cubes = HashMap::new();
+        for p in &program.clips {
+            for (key, lut) in &p.cubes {
+                cubes.entry(key.clone()).or_insert_with(|| gpu.cube(lut));
+            }
+        }
+        let stills = program
+            .clips
+            .iter()
+            .map(|p| match p.source.head(12) {
+                Ok(head) if is_still(&head) => p.source.read_all().ok().and_then(|b| vault_media::gpu::load_image(&b).ok()),
+                _ => None,
+            })
+            .collect();
+        Ok(Self { gpu, cubes, tracks: HashMap::new(), stills })
+    }
+}
+
+/// The handler's state, shared by the threads AVFoundation calls it on — one at a time (the composition's queue is
+/// serial), so the lock is never waited on.
+struct Shared(std::sync::Mutex<Handler>);
+// SAFETY: Core Image's context and kernels are thread-safe; the rest is ours, and only touched under the lock
+unsafe impl Send for Shared {}
+unsafe impl Sync for Shared {}
+
+/// Each composition's number (the studio's `player_state` reads which one the last frame was for).
 static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// Frames the handlers were asked for, made, and failed, all told; and the last one's composition and time (the
@@ -83,24 +123,23 @@ pub static LAST: std::sync::Mutex<(u64, f64)> = std::sync::Mutex::new((0, 0.0));
 impl Program {
     /// One frame: the source frame the composition decoded (its file's code values), turned upright by its file's own
     /// transform (`turns`, per clip: the composition hands frames over as they are stored), through the whole chain.
-    fn frame(&self, src: &objc2_core_image::CIImage, t: f64, turns: &[objc2_core_foundation::CGAffineTransform], generation: u64) -> Result<(crate::gpu::Image, Retained<objc2_core_image::CIContext>)> {
-        GPU.with(|cell| {
-            let mut cell = cell.borrow_mut();
-            if cell.is_none() {
-                *cell = Some(Handler { gpu: Gpu::new()?, generation: 0, cubes: Default::default(), tracks: Default::default() });
-            }
-            let st = cell.as_mut().unwrap();
-            if st.generation != generation {
-                st.generation = generation;
-                st.cubes.clear();
-                st.tracks.clear();
-                st.gpu.set_output(&self.output);
-            }
-            let Handler { gpu, cubes, tracks, .. } = st;
+    fn frame(&self, st: &mut Handler, src: &objc2_core_image::CIImage, t: f64, turns: &[objc2_core_foundation::CGAffineTransform]) -> Result<(crate::gpu::Image, Retained<objc2_core_image::CIContext>)> {
+        {
+            let Handler { gpu, cubes, tracks, stills } = st;
             let (w, h) = (self.width, self.height);
             let Some((i, p)) = self.clips.iter().enumerate().find(|(_, p)| t >= p.clip.start - 1e-6 && t < p.clip.start + p.clip.dur - 1e-6) else {
                 return Ok((gpu.black(w, h), gpu.context()));
             };
+            // a still's own picture; and no picture at all (an empty frame: nothing of this clip on the track) is black,
+            // never a scale of nothing
+            let src: &objc2_core_image::CIImage = match stills.get(i).and_then(Option::as_deref) {
+                Some(still) => still,
+                None => src,
+            };
+            let ext = crate::gpu::Extent::ext(src);
+            if !(ext.size.width > 0.0 && ext.size.height > 0.0 && ext.size.width.is_finite() && ext.size.height.is_finite()) {
+                return Ok((gpu.black(w, h), gpu.context()));
+            }
             let upright = match turns.get(i) {
                 Some(turn) => gpu.orient(src, *turn),
                 None => objc2::Message::retain(src),
@@ -135,7 +174,7 @@ impl Program {
             };
             let pic = crate::render::chain_with(gpu, &framed, w, h, &p.steps, cubes, n, &mut face_of)?;
             Ok((gpu.output(&pic)?, gpu.context()))
-        })
+        }
     }
 }
 
@@ -169,6 +208,7 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
         }
         let prog = program.clone();
         let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let state = Arc::new(Shared(std::sync::Mutex::new(Handler::new(&program)?)));
         let handler = RcBlock::new(move |req: NonNull<AVAsynchronousCIImageFilteringRequest>| {
             let _sources = &assets;
             let req = req.as_ref();
@@ -182,7 +222,8 @@ pub fn composition(program: Arc<Program>) -> Result<(Retained<AVMutableCompositi
             });
             ASKED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             *LAST.lock().unwrap() = (generation, t);
-            objc2::rc::autoreleasepool(|_| match prog.frame(&src, t, &turns, generation) {
+            let mut st = state.0.lock().unwrap_or_else(|e| e.into_inner());
+            objc2::rc::autoreleasepool(|_| match prog.frame(&mut st, &src, t, &turns) {
                 Ok((img, ctx)) => {
                     MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     req.finishWithImage_context(&img, Some(&ctx))
@@ -234,17 +275,17 @@ mod tests {
 
     #[test]
     fn each_composition_grades_with_its_own_cubes() {
-        // the handler runs on one thread for composition after composition: a clip graded red in one, then with no
-        // look in the next, is red only in the first (kept by clip alone, it played its first grade for ever)
+        // each composition grades with its own state: a clip graded red in one, then with no look in the next, is red
+        // only in the first (kept by clip alone, it played its first grade for ever)
         let gpu = Gpu::new().unwrap();
         let px: Vec<f32> = (0..64 * 36).flat_map(|_| [0.4, 0.4, 0.4, 1.0]).collect();
         let src = gpu.from_rgba(&px, 64, 36);
         let red: Vec<f32> = (0..8).flat_map(|_| [0.6f32, 0.3, 0.2]).collect();
         let graded = program(Some(Lut3d::from_rgb("red", 2, red).unwrap()));
-        let (a, _) = graded.frame(&src, 1.0, &[], 101).unwrap();
+        let (a, _) = graded.frame(&mut Handler::new(&graded).unwrap(), &src, 1.0, &[]).unwrap();
         let warm = centre(&a);
         let plain = program(None);
-        let (b, _) = plain.frame(&src, 1.0, &[], 102).unwrap();
+        let (b, _) = plain.frame(&mut Handler::new(&plain).unwrap(), &src, 1.0, &[]).unwrap();
         let after = centre(&b);
         assert!(warm[0] > warm[2] + 0.2, "the look plays: {warm:?}");
         assert!((after[0] - after[2]).abs() < 0.02, "the next composition has no look, and shows none: {after:?}");

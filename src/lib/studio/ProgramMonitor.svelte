@@ -112,7 +112,11 @@
 		/** @type {import('@tauri-apps/api/core').Channel<ArrayBuffer>} */
 		const frames = new Channel();
 		// an empty message: the player failed (the Mac logged why) — loaded again, a few times at most
-		frames.onmessage = (m) => (m.byteLength ? void draw(m) : failed(key));
+		// raw bytes; over Tauri's postMessage fallback the same frame comes as an array of numbers
+		frames.onmessage = (m) => {
+			const buf = m instanceof ArrayBuffer ? m : Array.isArray(m) ? new Uint8Array(m).buffer : null;
+			return buf?.byteLength ? void draw(buf) : failed(key);
+		};
 		await mac('player_load', { timeline: s.liveTimeline(), shape: s.viewShape, files, profiles, width: 1600, frames });
 		loaded = key;
 	};

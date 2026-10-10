@@ -661,10 +661,12 @@ export class Studio {
 	settle = undefined;
 	// ── revert and reapply: the timeline as it was a step ago (a burst of changes — a slider's drag — is one step) ──
 	/** @typedef {{ clips: Clip[], grade: Timeline['grade'] }} Step */
+	// raw: each step stays a plain object (replaced whole, never changed in place), so it can be cloned back — a deep
+	// state proxy made structuredClone throw (DataCloneError) and Revert did nothing
 	/** @type {Step[]} */
-	past = $state([]);
+	past = $state.raw([]);
 	/** @type {Step[]} */
-	future = $state([]);
+	future = $state.raw([]);
 	/** @type {Step | null} the timeline as it stood when the last burst of changes began */
 	baseline = null;
 	lastChange = 0;
