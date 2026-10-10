@@ -19,6 +19,7 @@ use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
 use crate::sign::{Assertion, Classical, Hello, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
+use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
 
 /// Why bytes from a peer are no message.
@@ -71,7 +72,9 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join, RelayPass, Claim, PublicKey);
+wire!(
+    Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join, RelayPass, Claim, PublicKey, Slice, Select, Body
+);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -313,6 +316,81 @@ impl Decode for Recipient {
 impl Decode for KeyBox {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(KeyBox { to: Recipient::decode(r)?, bytes: r.bytes()? })
+    }
+}
+
+/// A name: UTF-8 behind its length.
+impl Decode for Sym {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        String::from_utf8(r.bytes()?).map(Sym).map_err(|_| WireError::Unknown)
+    }
+}
+
+impl Decode for Atom {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(match r.u8()? {
+            0 => Atom::TypeIn(r.seq(4)?),
+            1 => Atom::AuthorIn(r.seq(32)?),
+            2 => Atom::EntryIn(r.seq(32)?),
+            3 => Atom::CreatedIn(u64::decode(r)?, u64::decode(r)?),
+            4 => Atom::TagHas(Sym::decode(r)?),
+            5 => Atom::TagNone(r.seq(4)?),
+            6 => Atom::TagsWithin(r.seq(4)?),
+            _ => return Err(WireError::Unknown),
+        })
+    }
+}
+
+/// Only within the bounds a selector keeps (`Selector::bounded`).
+impl Decode for Selector {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let select = match r.u8()? {
+            0 => Selector::All,
+            1 => {
+                let n = r.count(4)?;
+                let mut ds = Vec::with_capacity(n.min(16));
+                for _ in 0..n {
+                    ds.push(r.seq(1)?);
+                }
+                Selector::AnyOf(ds)
+            }
+            _ => return Err(WireError::Unknown),
+        };
+        if select.bounded() { Ok(select) } else { Err(WireError::Unknown) }
+    }
+}
+
+impl Decode for Slice {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Slice { select: Selector::decode(r)?, relabel: r.seq(4)? })
+    }
+}
+
+impl Decode for Select {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        match r.u8()? {
+            0 => Ok(Select::Clear(Slice::decode(r)?)),
+            1 => Ok(Select::Sealed { boxes: r.seq(4)?, slice: r.bytes()? }),
+            _ => Err(WireError::Unknown),
+        }
+    }
+}
+
+impl Decode for Header {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Header { ty: Sym::decode(r)?, created: u64::decode(r)? })
+    }
+}
+
+impl Decode for TagDelta {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(TagDelta { add: r.seq(4)?, remove: r.seq(4)? })
+    }
+}
+
+impl Decode for Body {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Body { header: r.option()?, tags: TagDelta::decode(r)?, answers: r.set(32)?, content: r.bytes()? })
     }
 }
 
@@ -781,7 +859,7 @@ mod tests {
                 kinds.insert(std::mem::discriminant(&edit.action));
             }
         }
-        assert!(kinds.len() >= 6, "genesis, devices, keys, spaces, grants and writes all crossed: {}", kinds.len());
+        assert!(kinds.len() >= 6, "genesis, devices, keys, caps and writes all crossed: {}", kinds.len());
         let ask = crate::sync::asks(w.lab.log(w.mac_b).edits());
         assert!(!ask.haves.is_empty());
         assert_eq!(Ask::from_wire(&ask.to_wire()), Ok(ask.clone()));
@@ -840,13 +918,13 @@ mod tests {
             let bytes = Request { ask: Ask::default(), wants, after: None }.to_wire();
             assert_eq!(Request::from_wire(&bytes), Err(WireError::Unordered));
         }
-        let (x, y) = (LogId::Vault(VaultId([1; 32])), LogId::Space(SpaceId([0; 32])));
+        let (x, y) = (LogId::Vault(VaultId([1; 32])), LogId::Entry(EntryId([0; 32])));
         let mut ask = Ask::default();
         ask.haves.insert(y, vec![]);
         ask.haves.insert(x, vec![EditId([1; 32])]);
         let mut bytes = ask.to_wire();
         assert_eq!(Ask::from_wire(&bytes), Ok(ask));
-        // swap the two logs: the vault's log (37 bytes, then its one edit) after the space's
+        // swap the two logs: the vault's log (37 bytes, then its one edit) after the entry's
         let (first, rest) = bytes[4..].split_at(33 + 4 + 32);
         let swapped = [&rest[..33 + 4], first].concat();
         bytes.splice(4..4 + swapped.len(), swapped);

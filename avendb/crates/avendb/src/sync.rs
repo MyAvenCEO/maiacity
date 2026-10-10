@@ -1,28 +1,28 @@
 //! Sync by cells, entry by entry, as in `avendb/spec/AvenDB/Sync.lean`, and by frontiers, log by log, as in
 //! `Logs.lean`. A device asks a peer for what it may receive; the connection proves which device is asking (iroh's
-//! endpoint key is the device's ed25519 key, and the device shows the rest of its keys, which hash to its signer id). The
-//! peer answers from its own view: the logs of the entries and cells the device may receive (it acts for their vault, or
-//! for the grantee of a live cap that reaches their cell, or that cap is public), the logs of every cap it needs to check
-//! those (the caps of every cell such an entry was ever in, the vault's wide caps, the caps its own vaults hold or are
-//! over, and every cap those rest on), and the logs of every vault all that names, up their chains of owners. A
-//! revocation sits in the log of the cap it ends, so a device whose cap was revoked hears of it, and knows what it may
-//! no longer do. Nothing about any other entry or cell leaves the peer (T12): not its writes, not even its cell. Two
-//! devices that answered each other hold the same writes for every entry they share (T13). Receiving is not reading:
-//! a relay cap gets the ciphertext and no key.
+//! endpoint key is the device's ed25519 key, and the device shows the rest of its keys, which hash to its signer id).
+//! The peer answers from its own view: the logs of the entries and cells the device may receive (it acts for their
+//! vault, or for the grantee of a live cap that reaches their cell, or that cap is public), the logs of every cap it
+//! needs to check those (the caps of every cell such an entry was ever in, the vault's wide caps, the caps its own
+//! vaults hold or are over, and every cap those rest on), and the logs of every vault all that names, up their chains
+//! of owners. A revocation sits in the log of the cap it ends, so a device whose cap was revoked hears of it, and knows
+//! what it may no longer do. Nothing about any other entry or cell leaves the peer (T12): not its writes, not even its
+//! cell. Two devices that answered each other hold the same writes for every entry they share (T13). Receiving is not
+//! reading: a relay cap gets the ciphertext and no key.
 //!
 //! Every edit belongs to one log (`log_of`): a vault's (its governance, its seed's keys, its schema lane), a cap's (the
-//! cap, its revocation, its keys), a cell's (its keys), or an entry's (its writes, moves, checkpoints and keys). It names
-//! as its parents the frontier of its own log as its device held it. So each log is a small history of its own, and two
-//! copies of a log compare by their frontiers alone: one hash per log (`digests`), which is what devices gossip. A device
-//! asks with its frontier of each log it holds and a few edits further back, the edits 1, 2, 4, 8, … steps back and the
-//! oldest, and with the edits it holds outside them (`asks`); the peer sends only what lies beyond the ones it holds
-//! (`respond_since`). A peer that is behind holds the whole frontier and sends exactly what the device lacks; one that
-//! lacks the device's latest edits still holds one of them close by, and sends back little the device holds. That
-//! withholds nothing the device lacks (T19): a device names of a log only edits of the part whose whole past it holds, so
-//! an edit whose parent hasn't arrived waits outside, with whatever builds on it, until the gap is filled. A device signs
-//! its edits in a log one after another, each building on the last, so two edits of one device in one log where neither
-//! builds on the other mean its key signed twice from the same past (`forks`): a cloned device, one restored from an old
-//! backup, or a stolen key.
+//! cap, its revocation, its keys), a cell's (its keys), or an entry's (its writes, moves, checkpoints and keys). It
+//! names as its parents the frontier of its own log as its device held it. So each log is a small history of its own,
+//! and two copies of a log compare by their frontiers alone: one hash per log (`digests`), which is what devices
+//! gossip. A device asks with its frontier of each log it holds and a few edits further back, the edits 1, 2, 4, 8, …
+//! steps back and the oldest, and with the edits it holds outside them (`asks`); the peer sends only what lies beyond
+//! the ones it holds (`respond_since`). A peer that is behind holds the whole frontier and sends exactly what the
+//! device lacks; one that lacks the device's latest edits still holds one of them close by, and sends back little the
+//! device holds. That withholds nothing the device lacks (T19): a device names of a log only edits of the part whose
+//! whole past it holds, so an edit whose parent hasn't arrived waits outside, with whatever builds on it, until the gap
+//! is filled. A device signs its edits in a log one after another, each building on the last, so two edits of one
+//! device in one log where neither builds on the other mean its key signed twice from the same past (`forks`): a cloned
+//! device, one restored from an old backup, or a stolen key.
 //!
 //! A big reply comes a page at a time (P8d), each edit after the edits it builds on (`place`): the device takes each
 //! page as it comes and asks on after the last edit it got, until the peer has nothing more.
@@ -142,7 +142,8 @@ impl<'a> Reach<'a> {
                 || grantee(cp.cap.grantee)
                 || (vaults.contains(&cp.cap.over) && (cp.cap.wide || stayed.contains(&cp.id)))
         };
-        let caps: HashSet<CapId> = st.caps().iter().filter(|cp| sees(cp)).flat_map(|cp| cp.chain.iter().copied()).collect();
+        let caps = st.caps().iter().filter(|cp| sees(cp)).flat_map(|cp| cp.chain.iter().copied());
+        let caps: HashSet<CapId> = caps.collect();
         reach.caps = caps;
         reach
     }

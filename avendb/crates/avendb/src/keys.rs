@@ -155,6 +155,11 @@ impl Secret {
         Secret(bytes)
     }
 
+    /// A key derived from this one and `data`: whoever holds this key derives it, and nobody else.
+    pub fn child(&self, purpose: &str, data: &[u8]) -> Secret {
+        Secret(hash::keyed(&self.0, purpose, data))
+    }
+
     fn from_slice(bytes: &[u8]) -> Option<Secret> {
         Some(Secret(bytes.try_into().ok()?))
     }
@@ -555,6 +560,23 @@ pub fn open_edit(key: &Secret, body: &[u8], context: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     decrypt(key, &body[33..], context)
+}
+
+/// The key of entry `e` in its stay `stay` (`None` for the stay its creation began), derived from the key of that
+/// stay's cell at a generation: the schedule's seal of an entry key to its cell key (`KeyName::Entry`). Whoever opens
+/// the cell key derives the key of each entry in it, so a cell's entries need no box of their own; only a move wraps
+/// the keys of an entry's earlier stays under the key of its new one.
+pub fn entry_key(cell: &Secret, e: EntryId, stay: Option<EditId>) -> Secret {
+    let mut data = Vec::with_capacity(65);
+    data.extend_from_slice(&e.0);
+    match stay {
+        None => data.push(0),
+        Some(s) => {
+            data.push(1);
+            data.extend_from_slice(&s.0);
+        }
+    }
+    cell.child("entry key", &data)
 }
 
 /// Randomness from a seed, the Lab's: its keys and nonces come from it, so a failing test replays exactly, and a device

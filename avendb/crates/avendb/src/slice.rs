@@ -5,7 +5,8 @@
 //! no rule of `policy` reads any of this: only a vault's stewards (the devices acting for it) and a cap's grantee read
 //! a selector, and only an entry's readers its header and tags (`policy::Meaning`).
 
-use crate::id::{EntryId, VaultId};
+use crate::id::{EditId, EntryId, VaultId};
+use crate::keys::KeyBox;
 
 /// A type (`note`, `todo`, …) or a tag: a short name.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -141,6 +142,49 @@ pub struct Header {
     pub created: u64,
 }
 
+/// What a cap's sealed `select` holds (`policy::Cap::select`): its selector, and the tags its grantee may ask the
+/// vault's stewards to add or remove.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Slice {
+    pub select: Selector,
+    pub relabel: Vec<Sym>,
+}
+
+impl Slice {
+    /// The whole vault, with no tags to ask for: a wide cap's slice.
+    pub fn all() -> Slice {
+        Slice { select: Selector::All, relabel: vec![] }
+    }
+
+    /// The entries `select` picks, with no tags to ask for.
+    pub fn of(select: Selector) -> Slice {
+        Slice { select, relabel: vec![] }
+    }
+}
+
+/// What a cap's `select` holds (`policy::Cap::select`): its slice, in the clear for a cap to Public, else sealed: the
+/// slice encrypted under a key of its own and bound to the cap (`keys::seal_edit`, `encode::cap_context`), and that key
+/// in a box for each vault that reads the slice, wrapped or sealed to the vault's seed (`encode::select_info`): the
+/// vault the cap is over, whose stewards keep its entries in their cells, its grantee unless it only relays, and its
+/// issuer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Select {
+    Clear(Slice),
+    Sealed { boxes: Vec<KeyBox>, slice: Vec<u8> },
+}
+
+/// What a write's ciphertext holds: the header of the entry it creates; the tags it adds and removes, which count when
+/// it acts for the entry's vault and otherwise ask the vault's stewards to; the writes whose asks it answers, a
+/// steward's; and its content: a Loro update, a proposal's name, or nothing for a merge or a write of tags alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Body {
+    pub header: Option<Header>,
+    pub tags: TagDelta,
+    /// Smallest first, no repeats.
+    pub answers: Vec<EditId>,
+    pub content: Vec<u8>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,7 +204,8 @@ mod tests {
         let work_todos = Selector::AnyOf(vec![vec![Atom::TypeIn(vec!["todo".into()]), Atom::TagHas("work".into())]]);
         assert!(work_todos.matches(&attrs("todo", &["work"])));
         assert!(!work_todos.matches(&attrs("todo", &["home"])) && !work_todos.matches(&attrs("note", &["work"])));
-        let either = Selector::AnyOf(vec![vec![Atom::EntryIn(vec![EntryId::from_u64(7)])], vec![Atom::TagHas("x".into())]]);
+        let seven = vec![Atom::EntryIn(vec![EntryId::from_u64(7)])];
+        let either = Selector::AnyOf(vec![seven, vec![Atom::TagHas("x".into())]]);
         assert!(either.matches(&attrs("note", &[])));
         let a = attrs("note", &["a", "b"]);
         assert!(Atom::CreatedIn(10, 11).test(&a) && !Atom::CreatedIn(0, 10).test(&a));

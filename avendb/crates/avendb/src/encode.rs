@@ -5,6 +5,7 @@
 
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
+use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
 /// The version byte every edit starts with: 5 since flat vaults, whose caps select slices of a vault and whose entries
 /// sit in cells (4 since the three kinds of vault, 3 since P5, whose writes name the line of history they extend, 2
@@ -32,6 +33,24 @@ pub fn write_context(edit: &Edit) -> Vec<u8> {
         body.clear();
     }
     bytes(&edit)
+}
+
+/// What a cap's sealed slice is bound to: the cap with an empty `select`, so the slice can't be moved to another cap,
+/// another grantee or another role.
+pub fn cap_context(cap: &Cap) -> Vec<u8> {
+    let mut out = vec![VERSION];
+    Cap { select: vec![], ..cap.clone() }.encode(&mut out);
+    out
+}
+
+/// What a box of a cap's selector key is bound to (`slice::Select`): the cap with an empty `select`, the key it holds,
+/// and for whom. It opens as no other box, and for no other cap.
+pub fn select_info(cap: &Cap, id: KeyId, to: &Recipient) -> Vec<u8> {
+    let mut out = cap_context(cap);
+    out.extend_from_slice(b"selector key");
+    id.encode(&mut out);
+    to.encode(&mut out);
+    out
 }
 
 /// What a box is bound to: which key it holds, and for whom. A box can't be passed off as another key's, nor moved to
@@ -204,6 +223,110 @@ impl Encode for KeyBox {
     fn encode(&self, out: &mut Vec<u8>) {
         self.to.encode(out);
         self.bytes.encode(out);
+    }
+}
+
+impl Encode for Sym {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.0.len() as u32).encode(out);
+        out.extend_from_slice(self.0.as_bytes());
+    }
+}
+
+impl Encode for Atom {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Atom::TypeIn(ts) => {
+                out.push(0);
+                ts.encode(out);
+            }
+            Atom::AuthorIn(vs) => {
+                out.push(1);
+                vs.encode(out);
+            }
+            Atom::EntryIn(es) => {
+                out.push(2);
+                es.encode(out);
+            }
+            Atom::CreatedIn(from, to) => {
+                out.push(3);
+                from.encode(out);
+                to.encode(out);
+            }
+            Atom::TagHas(t) => {
+                out.push(4);
+                t.encode(out);
+            }
+            Atom::TagNone(ts) => {
+                out.push(5);
+                ts.encode(out);
+            }
+            Atom::TagsWithin(ts) => {
+                out.push(6);
+                ts.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for Selector {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Selector::All => out.push(0),
+            Selector::AnyOf(ds) => {
+                out.push(1);
+                (ds.len() as u32).encode(out);
+                for d in ds {
+                    d.encode(out);
+                }
+            }
+        }
+    }
+}
+
+impl Encode for Slice {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.select.encode(out);
+        self.relabel.encode(out);
+    }
+}
+
+impl Encode for Select {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Select::Clear(slice) => {
+                out.push(0);
+                slice.encode(out);
+            }
+            Select::Sealed { boxes, slice } => {
+                out.push(1);
+                boxes.encode(out);
+                slice.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for Header {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.ty.encode(out);
+        self.created.encode(out);
+    }
+}
+
+impl Encode for TagDelta {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.add.encode(out);
+        self.remove.encode(out);
+    }
+}
+
+impl Encode for Body {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.header.encode(out);
+        self.tags.encode(out);
+        self.answers.encode(out);
+        self.content.encode(out);
     }
 }
 

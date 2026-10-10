@@ -981,8 +981,8 @@ impl State {
         a == v || self.caps_held(a).any(|cp| self.holds(a, cp, Role::Write) && self.in_cell(cp, e, v, cell))
     }
 
-    /// Vault `a` may write entry `e`, by what every peer sees (no selector, type or tag): it is the entry's vault, or it
-    /// holds a cap with write or more that reaches the entry's cell.
+    /// Vault `a` may write entry `e`, by what every peer sees (no selector, type or tag): it is the entry's vault, or
+    /// it holds a cap with write or more that reaches the entry's cell.
     pub fn may_write(&self, a: VaultId, e: EntryId) -> bool {
         self.entry(e).is_some_and(|en| self.may_write_in(a, en.id, en.vault, self.caps_of(en.cell())))
     }
@@ -1016,8 +1016,8 @@ impl State {
         a == v || self.caps_held(a).any(|cp| cp.cap.over == v && cp.cap.wide && self.holds(a, cp, Role::Owner))
     }
 
-    /// A cap's parent is a live owner cap over the same vault that its issuer holds, and a wide cap rests only on a wide
-    /// one (so a wide cap's whole chain is wide); a root cap is issued by the vault it is over.
+    /// A cap's parent is a live owner cap over the same vault that its issuer holds, and a wide cap rests only on a
+    /// wide one (so a wide cap's whole chain is wide); a root cap is issued by the vault it is over.
     fn cap_parent_ok(&self, c: &Cap) -> bool {
         match c.parent {
             None => c.issuer == c.over,
@@ -1072,8 +1072,8 @@ impl State {
 
     /* The semantic layer: what only an entry's readers and its vault's stewards know. */
 
-    /// Cap `cp` with its whole chain selects attributes `a`, by the selectors `r` holds (T22): every cap of the chain is
-    /// wide or its selector matches. A selector `r` doesn't hold selects nothing.
+    /// Cap `cp` with its whole chain selects attributes `a`, by the selectors `r` holds (T22): every cap of the chain
+    /// is wide or its selector matches. A selector `r` doesn't hold selects nothing.
     pub fn eff_selects(&self, cp: &Issued, a: &Attrs, r: &Readings) -> bool {
         cp.chain.iter().all(|c| {
             self.cap(*c).is_some_and(|x| x.cap.wide || r.selectors.get(c).is_some_and(|s| s.matches(a)))
@@ -1225,7 +1225,9 @@ impl State {
                 }
                 _ => vec![],
             },
-            KeyFam::Cell(v, x) => std::iter::once(v).chain(self.read_caps(v, self.caps_of(x)).filter_map(grantee)).collect(),
+            KeyFam::Cell(v, x) => {
+                std::iter::once(v).chain(self.read_caps(v, self.caps_of(x)).filter_map(grantee)).collect()
+            }
         }
     }
 
@@ -1290,8 +1292,8 @@ impl State {
         }
     }
 
-    /// What an agent holding the keys `start` can open: what is published, and whatever is sealed or wrapped to a key it
-    /// can open, or derived from one. No key is learned any other way.
+    /// What an agent holding the keys `start` can open: what is published, and whatever is sealed or wrapped to a key
+    /// it can open, or derived from one. No key is learned any other way.
     pub fn opens(&self, start: &[KeyName]) -> HashSet<KeyName> {
         let mut by_to: HashMap<KeyName, Vec<KeyName>> = HashMap::new();
         for s in &self.seals.list {
@@ -1326,8 +1328,8 @@ impl State {
     }
 
     /// Signer `d` may box key `name`: the key of a family that exists, at an epoch it has reached, that `d` should be
-    /// able to open; or the key of one of an entry's stays at a generation that stay's cell has reached, when `d` should
-    /// be able to open the key of the entry's cell.
+    /// able to open; or the key of one of an entry's stays at a generation that stay's cell has reached, when `d`
+    /// should be able to open the key of the entry's cell.
     fn may_box(&self, d: SignerId, name: KeyName) -> Result<(), Refusal> {
         match name {
             KeyName::Signer(_) => Err(Refusal::UnknownKey),
@@ -1453,7 +1455,8 @@ impl State {
                 if !owners.iter().all(|&p| approves(p)) {
                     return Err(Refusal::NoConsent);
                 }
-                let vt = Vault { id: v, kind: *kind, owners: owners.clone(), threshold: *threshold, devices: vec![], root: *root };
+                let (owners_, devices) = (owners.clone(), vec![]);
+                let vt = Vault { id: v, kind: *kind, owners: owners_, threshold: *threshold, devices, root: *root };
                 let keys = seal_to.iter().filter(|(s, _)| owners.contains(&Principal::Signer(*s))).cloned().collect();
                 Ok(Change::Genesis(vt, keys))
             }
@@ -1649,8 +1652,19 @@ impl State {
                             intake,
                             retags: vec![],
                         };
-                        let (deps, via) = (vec![], via.clone());
-                        let w = Write { edit: id, author: edit.author, actor, entry: e, stay: None, generation, deps, proposal, via, first: true, cell };
+                        let w = Write {
+                            edit: id,
+                            author: edit.author,
+                            actor,
+                            entry: e,
+                            stay: None,
+                            generation,
+                            deps: vec![],
+                            proposal,
+                            via: via.clone(),
+                            first: true,
+                            cell,
+                        };
                         Ok(Change::Create(en, w, x.as_slice().into()))
                     }
                     None => {
@@ -1976,8 +1990,8 @@ impl State {
 
     /// The families whose current key some holder could open before a change but should no longer open after it, unless
     /// the family is public now: these start a new epoch. A family that stops being public is one: everyone held its
-    /// key. So is a cell that comes back into use, an entry moving into it again: while it was empty its key didn't move
-    /// on with the removals, so whoever a removal took out then may still open it. A vault's cap and cell keys are
+    /// key. So is a cell that comes back into use, an entry moving into it again: while it was empty its key didn't
+    /// move on with the removals, so whoever a removal took out then may still open it. A vault's cap and cell keys are
     /// derived from its seed, so when the seed starts a new generation they all start a new epoch too. Called after the
     /// change, with the holders and the families from before it, while the epochs and the seals are still as they were.
     fn stale_keys(&self, holders: &[Holder], before: &HashSet<KeyFam>) -> Vec<KeyFam> {
@@ -2314,7 +2328,10 @@ fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> R
         .iter()
         .enumerate()
         .filter(|(i, _)| rem.contains(&ids[*i]))
-        .map(|(at, r)| Cut { at, keep: r.action.keep().unwrap_or(&[]).iter().copied().collect(), facts: removes_among(r, caps) })
+        .map(|(at, r)| {
+            let keep = r.action.keep().unwrap_or(&[]).iter().copied().collect();
+            Cut { at, keep, facts: removes_among(r, caps) }
+        })
         .collect();
     let mut out = Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![] };
     if states {
@@ -2324,8 +2341,8 @@ fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> R
         let id = ids[i];
         let mut stands = !edit.is_removal() || rem.contains(&id);
         if stands {
-            let hidden: Vec<Fact> =
-                cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id)).flat_map(|c| c.facts.iter().cloned()).collect();
+            let cut = cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id));
+            let hidden: Vec<Fact> = cut.flat_map(|c| c.facts.iter().cloned()).collect();
             if !hidden.is_empty() {
                 stands = out.state.hide(&hidden).check(edit, id).is_ok();
             }
@@ -2373,23 +2390,28 @@ fn priority(base: &State, edit: &Edit) -> (u8, usize, u8, usize) {
 }
 
 /// The removals that stand among edits already in `order`, chosen one by one by priority: each stands if the edits
-/// replayed with it and the ones chosen before it accept it and keep accepting those.
+/// replayed with it and the ones chosen before it accept it and keep accepting those. Moves rank last, and are not
+/// tried one by one: a move takes away only what writes of its own entry rested on, which no removal and no move rests
+/// on, so with the removals chosen before it a move stands exactly where the replay accepts it, whichever other moves
+/// stand. The model tries each (`resolve` in `Step.lean`), which chooses the same; trying each here would replay a
+/// vault's edits once for every move it ever made.
 fn resolve(edits: &[Edit], ids: &[EditId]) -> HashSet<EditId> {
     let mut rem = HashSet::new();
-    if !edits.iter().any(Edit::is_removal) {
-        return rem;
-    }
-    let base = run(edits, ids, &rem, false).state;
-    let mut cands: Vec<usize> = (0..edits.len()).filter(|&i| edits[i].is_removal()).collect();
-    cands.sort_by_key(|&i| priority(&base, &edits[i]));
-    for r in cands {
-        let mut trial = rem.clone();
-        trial.insert(ids[r]);
-        let stood = run(edits, ids, &trial, false).stood;
-        if (0..edits.len()).all(|i| !trial.contains(&ids[i]) || stood[i]) {
-            rem = trial;
+    let moves = |i: &usize| matches!(edits[*i].action, Action::Move { .. });
+    let mut cands: Vec<usize> = (0..edits.len()).filter(|&i| edits[i].is_removal() && !moves(&i)).collect();
+    if !cands.is_empty() {
+        let base = run(edits, ids, &rem, false).state;
+        cands.sort_by_key(|&i| priority(&base, &edits[i]));
+        for r in cands {
+            let mut trial = rem.clone();
+            trial.insert(ids[r]);
+            let stood = run(edits, ids, &trial, false).stood;
+            if (0..edits.len()).all(|i| !trial.contains(&ids[i]) || stood[i]) {
+                rem = trial;
+            }
         }
     }
+    rem.extend((0..edits.len()).filter(moves).map(|i| ids[i]));
     rem
 }
 
@@ -2477,8 +2499,19 @@ impl Log {
     /// than the deepest edit the log holds, so it sorts after everything this peer had seen. A write with no `deps` on
     /// the main line or a proposal builds on that line's heads. An act for a vault that names no `via` goes through the
     /// owners its author acts through (`State::via`). A removal keeps, beside what its `keep` names, every edit of the
-    /// log that stands now and that it would cut otherwise: an honest device keeps all it had seen.
+    /// log that stands now and that it would cut otherwise: an honest device keeps all it had seen. A move takes away
+    /// only what the writes of its entry rested on, so it keeps every write of its entry that stands now.
     pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
+        self.draft_with(None, author, cosigners, action)
+    }
+
+    /// `draft`, given `view`, what the log's edits say as the caller worked it out already: no replay, but for a
+    /// removal other than a move.
+    pub fn draft_on(&self, view: &State, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
+        self.draft_with(Some(view), author, cosigners, action)
+    }
+
+    fn draft_with(&self, given: Option<&State>, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
         let depth = self.edits.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
         let mut edit = Edit { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
         if !matches!(edit.action, Action::Genesis { .. } | Action::Cap(..))
@@ -2486,8 +2519,8 @@ impl Log {
         {
             edit.parents = crate::sync::frontier_of(&self.edits, &self.ids, l);
         }
-        let view = std::cell::OnceCell::new();
-        let view = || view.get_or_init(|| self.view());
+        let own = std::cell::OnceCell::new();
+        let view = || given.unwrap_or_else(|| own.get_or_init(|| self.view()));
         if let Action::Write { entry, deps, proposal, create: None, .. } = &mut edit.action
             && deps.is_empty()
             && *proposal != Proposal::New
@@ -2502,7 +2535,11 @@ impl Log {
         {
             *edit.action.via_mut().expect("an act for a vault") = chain;
         }
-        if edit.is_removal() {
+        if let Action::Move { entry, keep, .. } = &mut edit.action {
+            keep.extend(view().writes(*entry));
+            keep.sort();
+            keep.dedup();
+        } else if edit.is_removal() {
             // replayed with the removals that stand now and this one, everything that stands now must still stand
             let before = self.replay();
             let standing: HashSet<EditId> = before.standing().into_iter().collect();

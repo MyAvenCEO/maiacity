@@ -23,14 +23,17 @@
 //! | P7 the tile | `cast`: the scenarios' people, devices and vaults, made a step at a time; `scenarios`: the plan's scenarios, each check recorded green or red, for the tests and the tile's Lab; `keys`: McEliece pairs made from a seed anywhere, so a page makes them in its workers; `lab`: names, spare keys made ahead; `history`: the schemas each write was written under | |
 //! | P8a devices on iroh | `wire`: every message between devices as bytes and back, one encoding each: signed edits, hellos, requests, replies, announcements; `sign`: a device's hello, its SLH-DSA signature on a connection; `lab`: a device split off to run on its own (`avendb-net` puts it on iroh), what it asks a peer, answers it and tells it, McEliece keys handed out only within a peer's reach | |
 
+pub mod cast;
 pub mod doc;
 pub mod encode;
 pub mod hash;
 pub mod history;
 pub mod id;
 pub mod keys;
+pub mod lab;
 pub mod lens;
 pub mod policy;
+pub mod scenarios;
 pub mod sign;
 pub mod slice;
 pub mod sync;
