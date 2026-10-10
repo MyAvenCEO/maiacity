@@ -41,14 +41,40 @@
 	/** @type {string | null} the layer picked */
 	let pickedId = $state(null);
 	const picked = $derived(layers.find((l) => l.id === pickedId) ?? null);
+	// ── the room: the card and the aside fit the window under the header, so nothing scrolls but the layers list ──
+	/** @type {HTMLElement | null} */
+	let thumb = $state(null);
+	/** the height left under the pane's top, above the steps bar and the nav pill, in px (0 until measured) */
+	let room = $state(0);
+	function fit() {
+		if (!thumb || window.innerWidth <= 900) return; // a phone scrolls
+		// the steps bar and the nav pill at the bottom: about 8rem; then whatever the page still overflows by
+		const bottom = 8.5 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+		room = Math.max(240, Math.floor(window.innerHeight - (thumb.getBoundingClientRect().top + window.scrollY) - bottom));
+		// what the page still overflows by comes off the room, a few passes (the card's height follows its width)
+		let passes = 0;
+		const trim = () => {
+			const over = document.documentElement.scrollHeight - window.innerHeight;
+			if (over > 0 && passes++ < 4) {
+				room = Math.max(240, room - over);
+				requestAnimationFrame(trim);
+			}
+		};
+		requestAnimationFrame(trim);
+	}
+
 	/** @type {import('$lib/auth/client').VaultFile[]} the pictures in the story's vault bucket (by its tag) */
 	let bucket = $state([]);
-	onMount(async () => {
-		try {
-			bucket = (await listVaultFiles({ tag: ideaTag(item.title) })).filter((f) => f.kind === 'image' || f.mime.startsWith('image/'));
-		} catch {
-			// the board's own hashes still show
-		}
+	onMount(() => {
+		fit();
+		const again = () => fit();
+		window.addEventListener('resize', again);
+		const fonts = /** @type {{ ready?: Promise<unknown> } | undefined} */ (document.fonts);
+		fonts?.ready?.then(again).catch(() => {});
+		listVaultFiles({ tag: ideaTag(item.title) })
+			.then((got) => (bucket = got.filter((f) => f.kind === 'image' || f.mime.startsWith('image/'))))
+			.catch(() => {}); // the board's own hashes still show
+		return () => window.removeEventListener('resize', again);
 	});
 	/** the files the story carries, every picture a layer names, and the pictures in its vault bucket: what the picker offers */
 	const files = $derived([...new Set([...(item.hashes ?? []), ...layers.flatMap((l) => (l.hash ? [l.hash] : [])), ...bucket.map((f) => f.hash)])]);
@@ -157,7 +183,7 @@
 
 </script>
 
-<div class="thumb">
+<div class="thumb" bind:this={thumb} style:--room={room ? `${room}px` : undefined}>
 	<!-- the card, large, in the middle -->
 	<div class="stage">
 		{#if layers.length}
@@ -302,16 +328,17 @@
 		grid-template-columns: minmax(0, 1fr) minmax(0, 21rem);
 		align-items: start;
 		gap: 2rem;
+		/* until measured: the window less the header and the bars */
+		--room: calc(100dvh - 20rem);
 	}
 
 	/* ── the card ── */
-	/* the card stays put while the layers aside scrolls */
+	/* the card fits the room (16:9 of it at most) and stays put while the layers aside scrolls */
 	.stage {
-		position: sticky;
-		top: 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		max-width: calc(var(--room) * 16 / 9);
 		min-width: 0;
 	}
 
@@ -393,12 +420,11 @@
 	/* ── the layers ── */
 	/* the aside: the small preview and the render row stay at its top; the layers and the inspector scroll under them */
 	.layers {
-		position: sticky;
-		top: 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
-		max-height: calc(100vh - 8rem);
+		box-sizing: border-box;
+		max-height: var(--room);
 		padding: 0.9rem;
 		border: 1px solid var(--line);
 		border-radius: 14px;
@@ -764,9 +790,11 @@
 			grid-template-columns: minmax(0, 1fr);
 		}
 
-		.stage,
+		.stage {
+			max-width: none;
+		}
+
 		.layers {
-			position: static;
 			max-height: none;
 		}
 
