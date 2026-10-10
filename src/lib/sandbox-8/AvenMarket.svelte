@@ -9,8 +9,8 @@
 	from the database, changed only by MIPs (the Proposals view), and every run is saved there day by day (store.js).
 -->
 <script>
+	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
-	import maiaCityCircle from './maia-city-circle.webp';
 	import { wayBack } from '$lib/app/back.svelte.js';
 	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
 	import { loadCode } from './sandbox.js';
@@ -940,9 +940,8 @@
 	/** a fields valley: the Maia City Coop in the middle, the land cut into one wedge per aven out to the valley's edge,
 	 * each aven's home in its wedge with its three field plots around it (F1, F2, F3: its crop, level and last harvest;
 	 * an unopened plot dashed), its store below and its name */
-	// the Maia City circle logo, shipped with the game (Samuel, 2026-10-10: copied into its folder), so it shows before
-	// the vault's copy (e748f466…) has synced to the server
-	const coopLogo = typeof Image === 'undefined' ? /** @type {any} */ ({}) : Object.assign(new Image(), { src: maiaCityCircle });
+	// the Maia City circle logo, served from the repo's static folder (Samuel, 2026-10-10), not from the vault's sync
+	const coopLogo = typeof Image === 'undefined' ? /** @type {any} */ ({}) : Object.assign(new Image(), { src: `${base}/sandbox-8/maia-city-circle.png` });
 	function drawCoopValley(/** @type {CanvasRenderingContext2D} */ ctx, /** @type {number} */ light) {
 		const n = world.avens.length;
 		const C = COOP_SPOT;
