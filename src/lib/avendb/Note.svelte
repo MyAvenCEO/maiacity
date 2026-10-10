@@ -13,6 +13,7 @@
 	import { diff } from './diff.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
+	import { blockText, variantMark } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import { allows, count, creates, holders as rank, hue, nameOf, ROLES, short } from './vaults.js';
@@ -173,19 +174,36 @@
 	async function propose() {
 		const name = naming?.name.trim();
 		if (!naming || !name) return;
-		const made = await api.propose(actor, entry, naming.from, name);
-		if (made) [line, viewing, naming] = [made, '', null];
+		const made = await api.run('Proposing', { op: 'propose', as: actor, entry, from: naming.from, name });
+		if (made) [line, viewing, naming] = [made.line, '', null];
+	}
+
+	/** The blocks of the note on line `on`, as its schema reads them: none if the device can't read it.
+	 *  @param {string | null} on @returns {Promise<{ id: number, type: string }[]>} */
+	async function blocksOn(on) {
+		const got = await api.ask({ op: 'get', entry, line: on });
+		return got.ok?.record.blocks ?? [];
 	}
 
 	async function save() {
 		if (!here || !unsaved) return;
-		await api.setTextOn(actor, entry, here.line, drafts[k]);
+		const [on, text] = [here.line, drafts[k]];
+		// its text is its first paragraph, block 2, which a note written elsewhere may not have yet
+		const op = (await blocksOn(on)).some((b) => b.id === 2)
+			? { op: 'set', path: blockText(2), value: text }
+			: { op: 'insert', path: ['blocks'], value: { id: 2, type: 'paragraph', text } };
+		await api.run('Saving', { ...op, as: actor, entry, line: on });
 	}
 
 	async function retitle() {
 		const title = (titles[k] ?? '').trim();
 		if (!here || !title || title === (here.title ?? '')) return;
-		await api.setTitleOn(actor, entry, here.line, title);
+		const on = here.line;
+		// the heading a note opens with, block 1, is its title too: one write changes both
+		const heading = (await blocksOn(on)).some((b) => b.id === 1 && b.type === 'heading');
+		const set = (/** @type {unknown[]} */ path) => ({ op: 'set', entry, line: on, path, value: title });
+		const ops = heading ? [set(['title']), set(blockText(1))] : [set(['title'])];
+		await api.run('Renaming', { op: 'batch', as: actor, ops });
 	}
 
 	/**
@@ -193,23 +211,33 @@
 	 * @param {string | null} from @param {string | null} to @param {boolean} promote
 	 */
 	async function merge(from, to, promote) {
-		if (await api.merge(actor, entry, from, to, promote)) [line, viewing] = [to, ''];
+		const op = { op: 'merge', as: actor, entry, from, into: to, promote };
+		if (await api.run(promote ? 'Making it match' : 'Merging', op)) [line, viewing] = [to, ''];
 	}
 
 	/** Put version `id` back on the line. @param {string} id */
 	async function restore(id) {
-		if (here && (await api.restore(actor, entry, here.line, [id]))) viewing = '';
+		if (!here) return;
+		if (await api.run('Restoring', { op: 'restore', as: actor, entry, line: here.line, at: [id] })) viewing = '';
 	}
 
 	/** Undo edit `id` on the line, keeping every change since. @param {string} id */
 	async function undo(id) {
-		if (here && (await api.undo(actor, entry, here.line, id))) viewing = '';
+		if (!here) return;
+		if (await api.run('Undoing', { op: 'undo', as: actor, entry, line: here.line, edit: id })) viewing = '';
 	}
 
 	async function variant() {
 		const target = targets.some((v) => v.id === into) ? into : targets[0]?.id;
 		if (!here || !target) return;
-		made = (await api.variant(actor, entry, here.line, target)) ?? '';
+		// the copy names the note it came from, in place of the note this one came from, if any, in its first write
+		const from = item?.variantOf;
+		const mark = [
+			...(from ? [{ op: 'remove', path: ['tags'], value: variantMark(from) }] : []),
+			{ op: 'insert', path: ['tags'], value: variantMark(entry) }
+		];
+		const op = { op: 'variant', as: actor, entry, line: here.line, into: target, ops: mark };
+		made = (await api.run('Making the variant', op))?.entry ?? '';
 	}
 
 	/**

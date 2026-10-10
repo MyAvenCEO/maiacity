@@ -1,13 +1,14 @@
 <!--
 	A vault's database studio, as this browser holds it and the acting vault opens it (db.js `studio`), each page its
-	own item in the vault's list: the table editor (its entries as tables, by type), its cells, its schemas, its lenses,
-	and the database's history, every signed edit. It reads the database again whenever what the device holds changes,
-	and the history only while it shows. What the acting vault holds no cap to read shows sealed, as avenDB's server
-	holds it.
+	own item in the vault's list: the query console (any op of the ops engine), the table editor (its entries as tables,
+	by type), its cells, its schemas, its lenses, and the database's history, every signed edit. It reads the database
+	again whenever what the device holds changes, and the history only while it shows. What the acting vault holds no
+	cap to read shows sealed, as avenDB's server holds it.
 -->
 <script>
 	import History from './History.svelte';
 	import Lenses from './Lenses.svelte';
+	import Query from './Query.svelte';
 	import Schemas from './Schemas.svelte';
 	import Cells from './Cells.svelte';
 	import TableEditor from './TableEditor.svelte';
@@ -15,7 +16,7 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any,
-	 *   view: 'tables' | 'cells' | 'schemas' | 'lenses' | 'history', onopen: (entry: string) => void,
+	 *   view: 'query' | 'tables' | 'cells' | 'schemas' | 'lenses' | 'history', onopen: (entry: string) => void,
 	 *   onact: (vault: string) => void, onview: (view: string) => void }}
 	 */
 	let { world, vault, actor, api, view, onopen, onact, onview } = $props();
@@ -69,7 +70,9 @@
 </script>
 
 <div class="db">
-	{#if failed}
+	{#if view === 'query'}
+		<Query {world} {vault} {actor} {api} {onopen} />
+	{:else if failed}
 		<p class="error">Reading the database failed: {failed}</p>
 	{:else if !db || db.vault !== vault}
 		<p class="soft">Reading the database…</p>

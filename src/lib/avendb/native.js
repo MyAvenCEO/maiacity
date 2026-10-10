@@ -99,24 +99,13 @@ export class NativeDevice {
 		return call('profile', vault, name);
 	}
 
-	/** @param {string} actor @param {string} vault @param {string} title @param {string} body @param {string[]} tags */
-	write(actor, vault, title, body, tags) {
-		return call('write', actor, vault, title, body, tags);
-	}
-
-	/** @param {string} actor @param {string} vault @param {string} title @param {string[]} tags */
-	todo(actor, vault, title, tags) {
-		return call('todo', actor, vault, title, tags);
-	}
-
-	/** @param {string} actor @param {string} entry @param {string} status */
-	setStatus(actor, entry, status) {
-		return call('setStatus', actor, entry, status);
-	}
-
-	/** @param {string} actor @param {string} entry @param {string[]} add @param {string[]} remove */
-	tag(actor, entry, add, remove) {
-		return call('tag', actor, entry, add, remove);
+	/**
+	 * Op `op` of avenDB's ops engine (avendb/docs/OPS.md), any read or change of the entries it holds, whatever their
+	 * schema: its answer, `{ ok }` or `{ refused, why }`.
+	 * @param {object} op
+	 */
+	run(op) {
+		return call('run', op);
 	}
 
 	/** @param {string} vault */
@@ -131,46 +120,6 @@ export class NativeDevice {
 	/** @param {string} entry */
 	note(entry) {
 		return call('note', entry);
-	}
-
-	/**
-	 * @param {string} actor @param {string} entry @param {string | null} line @param {number} block @param {string} text
-	 */
-	setTextOn(actor, entry, line, block, text) {
-		return call('setTextOn', actor, entry, line, block, text);
-	}
-
-	/** @param {string} actor @param {string} entry @param {string | null} line @param {string} title */
-	setTitleOn(actor, entry, line, title) {
-		return call('setTitleOn', actor, entry, line, title);
-	}
-
-	/** @param {string} actor @param {string} entry @param {string[]} from @param {string} name */
-	propose(actor, entry, from, name) {
-		return call('propose', actor, entry, from, name);
-	}
-
-	/**
-	 * @param {string} actor @param {string} entry @param {string | null} from @param {string | null} into
-	 * @param {boolean} promote
-	 */
-	merge(actor, entry, from, into, promote) {
-		return call('merge', actor, entry, from, into, promote);
-	}
-
-	/** @param {string} actor @param {string} entry @param {string | null} line @param {string[]} version */
-	restore(actor, entry, line, version) {
-		return call('restore', actor, entry, line, version);
-	}
-
-	/** @param {string} actor @param {string} entry @param {string | null} line @param {string} edit */
-	undo(actor, entry, line, edit) {
-		return call('undo', actor, entry, line, edit);
-	}
-
-	/** @param {string} actor @param {string} entry @param {string | null} line @param {string} into */
-	variant(actor, entry, line, into) {
-		return call('variant', actor, entry, line, into);
 	}
 
 	/**

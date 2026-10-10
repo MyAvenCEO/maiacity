@@ -5,7 +5,8 @@ defaultTargets = ["AvenDB", "VectorsCheck"]
 [[lean_lib]]
 name = "AvenDB"
 
-# `lake exe vectors` writes vectors/vaults.json and vectors/lenses.json, the cases the Rust core replays (crates/avendb/tests)
+# `lake exe vectors` writes vectors/vaults.json, vectors/lenses.json and vectors/ops.json, the cases the Rust core
+# replays (crates/avendb/tests)
 [[lean_exe]]
 name = "vectors"
 root = "WriteVectors"
@@ -13,7 +14,7 @@ root = "WriteVectors"
 # `lake build` checks the files against the model, again whenever a file or the rules change
 [[lean_lib]]
 name = "VectorsCheck"
-needs = ["vaults-json", "lenses-json"]
+needs = ["vaults-json", "lenses-json", "ops-json"]
 
 [[input_file]]
 name = "vaults-json"
@@ -23,4 +24,9 @@ text = true
 [[input_file]]
 name = "lenses-json"
 path = "vectors/lenses.json"
+text = true
+
+[[input_file]]
+name = "ops-json"
+path = "vectors/ops.json"
 text = true

@@ -1,13 +1,13 @@
 <!--
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its pages, as a database studio lists them: its notes and its todos; its database (the table
-	editor, its cells, schemas and lenses, and its history, every signed edit); then its settings (About, Owners and
-	devices, Access, Sync); and the page picked in the middle. Each page has an address of its own (`#todos`), and so
-	has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole screen. At the
-	foot, in the middle above the app's own buttons, the vault the person acts as: their own, or any vault their vault
-	owns, whose caps then decide what the page shows and what it may do, as on a device of that vault alone. Marks of
-	the vaults the acting vault holds nothing in are faded.
+	vault's name and its pages, as a database studio lists them: its notes and its todos; its database (the query
+	console, the table editor, its cells, schemas and lenses, and its history, every signed edit); then its settings
+	(About, Owners and devices, Access, Sync); and the page picked in the middle. Each page has an address of its own
+	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
+	screen. At the foot, in the middle above the app's own buttons, the vault the person acts as: their own, or any
+	vault their vault owns, whose caps then decide what the page shows and what it may do, as on a device of that vault
+	alone. Marks of the vaults the acting vault holds nothing in are faded.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
@@ -45,6 +45,7 @@
 		[
 			'Database',
 			[
+				['query', 'Query', 'search'],
 				['tables', 'Table editor', 'table'],
 				['cells', 'Cells', 'cell'],
 				['schemas', 'Schemas', 'schema'],
