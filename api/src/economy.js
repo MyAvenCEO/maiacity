@@ -215,7 +215,7 @@ function worldSpec(w, cards, prev) {
     for (const id of Object.keys(a)) if (!b[id]) diff.push(`card ${a[id].name || id} taken out`);
     if (s.model && s.model !== model) diff.push(`model: ${s.model} → ${model}`);
   }
-  return { name: text(w?.name, 80), values, model, seed, after: prev?.id ?? null, after_name: prev?.name ?? null, diff };
+  return { name: text(w?.name, 80), values, model, seed, after: prev?.id ?? null, after_name: prev?.name ?? null, diff, forget: forgetOf(w?.forget) };
 }
 
 const mipRow = (r) => ({
@@ -323,7 +323,7 @@ export async function decideMip(number, by, { accept, note } = {}) {
       result = { amended: row.world_id, name: m.world.name, diff: m.world.diff };
     } else if (m.action === "world") {
       // the world is made, fresh, with every setting the MIP proposed; it waits in the list until it is opened
-      const w = await createWorld(by, { name: m.world.name, config: m.config, cards: m.start.cards, values: m.start.values, model: m.world.model, seed: m.world.seed, mip: number, after: m.world.after }, tx);
+      const w = await createWorld(by, { name: m.world.name, config: m.config, cards: m.start.cards, values: m.start.values, model: m.world.model, seed: m.world.seed, mip: number, after: m.world.after, forget: m.world.forget ?? null }, tx);
       result = { world: w.id, name: w.name, diff: m.world.diff, after_name: m.world.after_name };
     } else if (m.action === "delete") {
       const { rows: n } = await tx.query("SELECT count(*)::int AS n FROM econ_configs WHERE deleted IS NULL");
@@ -433,7 +433,7 @@ async function createWorld(player, body, q = db) {
   const local = worldValues(body?.values);
   const params = paramsOf(cards);
   const model = ["d1", "qwen"].includes(body?.model) ? body.model : "d1";
-  const settings = { config: { id: cfg ? configId : null, name: cfg?.name ?? (text(body?.config_name, 80) || "Cards given"), version: cfg?.version ?? 0, cards, params }, local, model, mip: body?.mip ?? null, after: text(body?.after, 41) || null };
+  const settings = { config: { id: cfg ? configId : null, name: cfg?.name ?? (text(body?.config_name, 80) || "Cards given"), version: cfg?.version ?? 0, cards, params }, local, model, mip: body?.mip ?? null, after: text(body?.after, 41) || null, forget: forgetOf(body?.forget) };
   const seed = body?.seed != null && Number.isFinite(Number(body.seed)) ? Math.trunc(Number(body.seed)) : Math.floor(Math.random() * 1e9);
   const { rows } = await q.query(
     `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary, name, state, saved)
@@ -592,16 +592,46 @@ export async function editBrain(configId, aven, by, body) {
     wants: nums(body?.wants, 6),
     ...(body?.lesson ? { lesson: text(body.lesson, 110) } : {}),
     ...(body?.forget_lesson != null && Number.isFinite(Number(body.forget_lesson)) ? { forget_lesson: Number(body.forget_lesson) } : {}),
+    ...(memoryRefs(body?.forget).length ? { forget: memoryRefs(body.forget) } : {}),
     note: text(body?.note, 200),
   };
-  if (!Object.keys(edit.dials).length && !Object.keys(edit.wants).length && !edit.lesson && edit.forget_lesson == null)
-    throw new EconomyError("Nothing to change: send dials, wants, lesson or forget_lesson.");
+  if (!Object.keys(edit.dials).length && !Object.keys(edit.wants).length && !edit.lesson && edit.forget_lesson == null && !edit.forget)
+    throw new EconomyError("Nothing to change: send dials, wants, lesson, forget_lesson or forget.");
   await db.query(
     `INSERT INTO econ_brains (config_id, aven, pending) VALUES ($1, $2, ($3::text)::jsonb)
      ON CONFLICT (config_id, aven) DO UPDATE SET pending = econ_brains.pending || EXCLUDED.pending, updated = now()`,
     [id, name, json([edit])],
   );
   return { config: id, aven: name, edit, note: "It takes effect on the aven's next night in a running game, or when the next run starts." };
+}
+
+/** memory entries to forget (Samuel, 2026-10-10), as the page's mind.js names them: [{ list, ref }], `list` one of a
+ * brain's memory lists, `ref` a lesson's id or another line's words */
+const MEMORY_LISTS = ["lessons", "log", "deathLog", "tabu"];
+function memoryRefs(v) {
+  return (Array.isArray(v) ? v : [])
+    .filter((f) => f && MEMORY_LISTS.includes(f.list) && (typeof f.ref === "number" || (typeof f.ref === "string" && f.ref.length)))
+    .slice(0, 200)
+    .map((f) => ({ list: f.list, ref: typeof f.ref === "number" ? f.ref : String(f.ref).slice(0, 300) }));
+}
+/** a new world's forgetting: { aven name: [{ list, ref }] }, what each aven's copied brain forgets as the world begins */
+function forgetOf(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out = Object.fromEntries(Object.entries(v).filter(([k]) => NAME.test(k)).slice(0, 40).map(([k, l]) => [k, memoryRefs(l)]).filter(([, l]) => l.length));
+  return Object.keys(out).length ? out : null;
+}
+
+/** A world MIP's forgetting, set or changed while it is open (its author or an admin): { forget: { aven: [{ list, ref }] } } */
+export async function setMipForget(number, who, admin, forget) {
+  const r = await db.query(
+    "UPDATE mips SET world = jsonb_set(world, '{forget}', ($3::text)::jsonb) WHERE number = $1 AND status = 'open' AND action = 'world' AND (author = $2 OR $4)",
+    [number, who, json(forgetOf(forget)), !!admin],
+  );
+  if (!r.affectedRows) {
+    await getMip(number); // 404 when there is no such MIP
+    throw new EconomyError("Only an open world MIP can change what its brains forget, by its author or an admin.", 403);
+  }
+  return getMip(number);
 }
 
 /** forget every aven's brain for a config (the admin): the next run starts with fresh characters */

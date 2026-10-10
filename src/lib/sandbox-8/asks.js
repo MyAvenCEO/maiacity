@@ -283,7 +283,9 @@ function fieldQuestions(world, a) {
 		return price(g) * Math.max(0.25, Math.min(4, Math.max(floor, supplyNow(g)) / Math.max(floor, planned(g) + (move[g] ?? 0))));
 	};
 	const r = (x) => Math.round(x * 10) / 10;
-	const H = 14; // every option is reckoned over the next two weeks, so what a change loses while it grows shows
+	// every option is reckoned over the next fieldHorizon days (14 until World 27), so what a change loses while it grows
+	// shows; a field lasts the whole world, and reckoned on two weeks a second field or a level-up never paid (World 26)
+	const H = RULES.fieldHorizon ?? 14;
 	const food = GOODS.filter((g) => !a.grows.includes(g)).reduce((n, g) => n + (NEED[g] ?? 0) * price(g), 0); // a day of what it buys
 	/** units a field yields over the next H days: `grown` how far it has grown now (0 for a new crop), its level's share */
 	const units = (g, share, grown, ramp = RULES[`ramp_${g}`] ?? 7) => {
@@ -298,7 +300,16 @@ function fieldQuestions(world, a) {
 		const at = later(g, move);
 		const net = u * at - keep - once;
 		const left = a.hearts - once;
-		return `over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * at)} HEARTS (at about ${r(at)} a unit once the valley's fields grow${RULES.forecast ? ', yours included' : ''}, ${r(price(g))} today), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
+		// over a horizon longer than two weeks (World 27 on), what is paid now also says when it is earned back
+		let back = '';
+		if (once > 0 && H > 14) {
+			let sum = -once;
+			let d = 0;
+			const ramp = RULES[`ramp_${g}`] ?? 7;
+			while (sum < 0 && d < 365) (d++, (sum += fieldBase(g) * share * Math.min(1, grown + (ramp > 0 ? d / ramp : 1)) * at - opexOf(g, level)));
+			back = sum >= 0 ? ` (pays back in about ${d} days)` : ' (never pays back at this price)';
+		}
+		return `over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * at)} HEARTS (at about ${r(at)} a unit once the valley's fields grow${RULES.forecast ? ', yours included' : ''}, ${r(price(g))} today), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net${back}; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
 	};
 	const reserve = (RULES.fieldReserve ?? 0) * food;
 	const can = (cost) => a.hearts - cost >= reserve;

@@ -9,11 +9,11 @@
 	import ActivityFeed from './ActivityFeed.svelte';
 	import { GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, ROT, DAY_S } from './economy.js';
 	import { RULES } from './rules.js';
-	import { DIALS } from './mind.js';
+	import { DIALS, memoryOf } from './mind.js';
 	import { short, times, logScale, logAt } from './format.js';
 
-	/** @type {{ data: any, aven: any, market: any, names: Record<string, string>, trialDays: number, onselect: (id: number) => void, lineOf: (e: any) => string, admin?: boolean, mindNote?: string, onforget?: () => void }} */
-	let { data, aven: a, market, names, trialDays, onselect, lineOf, admin = false, mindNote = '', onforget } = $props();
+	/** @type {{ data: any, aven: any, market: any, names: Record<string, string>, trialDays: number, onselect: (id: number) => void, lineOf: (e: any) => string, admin?: boolean, mindNote?: string, onforget?: () => void, onforgetone?: (name: string, list: string, ref: any) => void }} */
+	let { data, aven: a, market, names, trialDays, onselect, lineOf, admin = false, mindNote = '', onforget, onforgetone } = $props();
 
 	const fmt = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US');
 	/** @param {number} t */
@@ -123,9 +123,15 @@
 						{/each}
 					</ul>
 					<p class="now">{m.trial ? `Trying ${traitLabel(m.trial).toLowerCase()} ${m.trial.from}→${m.trial.to} since day ${m.trial.day}: kept only if it beats ${m.base}/day.` : m.base == null ? `Measuring its setting for ${trialDays} days before its next trial.` : `Its last ${trialDays} days scored ${m.base}/day: it picks its next trial.`}</p>
-					{#if m.log.length}<h4>Trials</h4><ul class="lines">{#each m.log.slice().reverse() as line, i (i)}<li>{line}</li>{/each}</ul>{/if}
-					{#if m.lessons.length}<h4>Lessons</h4><ul class="lines">{#each m.lessons as l (l.id)}<li>#{l.id} {l.text} <small>+{l.up} −{l.down}</small></li>{/each}</ul>{/if}
-					{#if m.deathLog.length}<h4>Deaths</h4><ul class="lines death">{#each m.deathLog.slice().reverse() as line, i (i)}<li>{line}</li>{/each}</ul>{/if}
+					<!-- every memory list the same way (mind.js MEMORY), newest first, each entry forgettable by the admin -->
+					{#each memoryOf(m) as list (list.key)}
+						<h4>{list.label}</h4>
+						<ul class="lines" class:death={list.key === 'deathLog'}>
+							{#each list.entries.slice().reverse() as e, i (i)}
+								<li>{e.text}{#if e.world} <small>{e.world}</small>{/if}{#if admin && onforgetone}<button class="drop" title="Forget this {list.label.toLowerCase().replace(/s$/, '')}" onclick={() => onforgetone(a.name, list.key, e.ref)}>forget</button>{/if}</li>
+							{/each}
+						</ul>
+					{/each}
 					{#if mindNote}<p class="sub miss">{mindNote}</p>{/if}
 					{#if admin}<button class="forget" onclick={onforget}>Forget every brain in this world</button>{/if}
 				{:else}
@@ -470,6 +476,21 @@
 	}
 	.lines.death li {
 		color: #b8483b;
+	}
+	.lines .drop {
+		margin-left: 0.4rem;
+		background: none;
+		border: 0;
+		padding: 0;
+		color: #b3261e;
+		cursor: pointer;
+		font: inherit;
+		font-size: 0.7rem;
+		opacity: 0.6;
+	}
+	.lines .drop:hover {
+		opacity: 1;
+		text-decoration: underline;
 	}
 	.forget {
 		margin-top: 0.6rem;

@@ -26,7 +26,7 @@ import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queue
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
-import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
+import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -257,6 +257,20 @@ const server = Bun.serve({
         }
       },
     },
+    // POST { forget: { aven: [{ list, ref }] } } — what a new world's copied brains forget as it begins; an open world MIP's author or an admin
+    "/api/economy/mips/:number/forget": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          const body = ((await readJson(req)) ?? {}) as { forget?: unknown };
+          return json(req, await setMipForget(Number(req.params.number), me.id, can(me, "economy:admin"), body.forget));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
     "/api/economy/mips/:number/withdraw": {
       OPTIONS: preflight,
       POST: async (req) => {
@@ -373,7 +387,7 @@ const server = Bun.serve({
         }
       },
     },
-    // POST { dials, wants, lesson, forget_lesson, note }: an edit to one aven's brain, taken in on its next night
+    // POST { dials, wants, lesson, forget_lesson, forget: [{ list, ref }], note }: an edit to one aven's brain, taken in on its next night
     "/api/economy/brains/:config/:aven": {
       OPTIONS: preflight,
       POST: async (req) => {
