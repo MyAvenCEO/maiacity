@@ -266,6 +266,13 @@ pub trait Authenticator {
     fn ceremony(&self, challenge: [u8; 32], step: Step) -> impl Future<Output = Result<Ceremony>>;
 }
 
+/// Who signs the edit adding a new device for its passkey (`Node::linking`): a ceremony of its own, or the one that
+/// unlocked the device, its pass.
+enum Joins<'a, A> {
+    By(&'a A),
+    Pass(Ceremony),
+}
+
 /// What a passkey's ceremony signs as its device founds its person's vault, links, claims a server or has their vault
 /// approve a change. The ceremony that unlocks a new device, its pass, comes before any of them, from the device's own
 /// app (`sign::RelayPass`).
@@ -460,6 +467,23 @@ impl Node {
         pass: &RelayPass,
         authenticator: &impl Authenticator,
     ) -> Result<(SignerId, VaultId)> {
+        self.linking(offer, pass, Joins::By(authenticator)).await
+    }
+
+    /// `link_with`, in the one ceremony that unlocked this device, `unlock`, which is the passkey's pass for it: that
+    /// ceremony signs the edit adding the device too, as the pass (`sign::Classical::Pass`), its PRF output making the
+    /// hash-based half over the edit itself, so that a browser signs in to its person's vault in one ceremony. That
+    /// passkey and the vault it joined.
+    pub async fn link_by_pass(&self, offer: &Offer, pass: &RelayPass, unlock: Ceremony) -> Result<(SignerId, VaultId)> {
+        self.linking(offer, pass, Joins::<InLab>::Pass(unlock)).await
+    }
+
+    async fn linking<A: Authenticator>(
+        &self,
+        offer: &Offer,
+        pass: &RelayPass,
+        joins: Joins<'_, A>,
+    ) -> Result<(SignerId, VaultId)> {
         let peer = self.offered(offer).await?;
         let card = session::exchange(&peer.conn, session::LINK, &pass.to_wire(), session::REPLY_LIMIT).await?;
         let Reply { mut edits, .. } = Reply::from_wire(&card)?;
@@ -479,7 +503,13 @@ impl Node {
                     lab.draft(me, &[passkey, me], Action::AddDevice { vault, device: me, seal_to: None })
                 };
                 let draft = self.shared.lab(add).await.map_err(|why| anyhow!("the join is refused: {why:?}"))?;
-                let ceremony = authenticator.ceremony(draft.challenge(), Step::Join).await?;
+                let (draft, ceremony) = match joins {
+                    Joins::By(authenticator) => {
+                        let ceremony = authenticator.ceremony(draft.challenge(), Step::Join).await?;
+                        (draft, ceremony)
+                    }
+                    Joins::Pass(unlock) => (draft.by_pass(pass.made), unlock),
+                };
                 let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &ceremony)]);
                 self.shared.lab(complete).await.map_err(|why| anyhow!("the passkey didn't sign the join: {why:?}"))?
             }

@@ -330,6 +330,7 @@ fn signature(sig: &Signature) -> Value {
         Classical::Ed25519(_) => ("ed25519", None),
         Classical::Passkey(_) => ("p256", None),
         Classical::Batch { edits, .. } => ("p256", Some(edits.len())),
+        Classical::Pass { .. } => ("p256", None),
     };
     json!({ "signer": hex(&sig.keys.id().0), "by": by, "classical": classical, "batch": batch, "pq": sig.pq.as_ref().map(Vec::len) })
 }

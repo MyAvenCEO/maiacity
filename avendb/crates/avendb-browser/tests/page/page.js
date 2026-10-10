@@ -98,7 +98,7 @@ async function main() {
 			passkey = counted(ceremonies(avendb));
 			trace('unlocking and linking');
 			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
-			device = await avendb.Device.link(name, relay, q.get('offer'), unlock, passkey.sign);
+			device = await avendb.Device.link(name, relay, q.get('offer'), unlock);
 			note = { actor: q.get('actor'), entry: q.get('entry') };
 		}
 		const credential = passkey.passkey.held.id;

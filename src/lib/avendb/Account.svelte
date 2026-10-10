@@ -51,6 +51,11 @@
 	let phase = $state('loading');
 	let doing = $state('');
 	let error = $state('');
+	/** @typedef {{ title: string, signs: string }} Prompt */
+	/** @type {Prompt[]} the passkey's prompts what is under way asks for, each with what it signs */
+	let prompts = $state([]);
+	/** which of them is up: -1 before the first */
+	let prompted = $state(-1);
 	let relay = $state('');
 	let server = $state('');
 	let code = $state('');
@@ -198,20 +203,30 @@
 		);
 	};
 
+	/** The passkey's prompts, by what each signs. */
+	const PROMPT = {
+		make: { title: 'Make your passkey', signs: 'nothing yet: it makes the key that signs the rest' },
+		unlock: { title: `Unlock ${here}`, signs: `a pass for ${here}'s new keys, for 10 minutes` },
+		vault: { title: 'Create your vault', signs: `your new vault, with ${here} in it` },
+		signIn: { title: 'Sign in', signs: `${here}'s pass and its place in your vault` },
+		reopen: { title: 'Unlock', signs: `nothing new: it opens your vault ${here === 'this Mac' ? 'on this Mac' : 'here'}` }
+	};
+
 	/**
-	 * Runs `work`, showing what it does and what went wrong: whether it went through.
-	 * @param {string} what @param {() => Promise<unknown>} work
+	 * Runs `work`, showing what it does, the passkey's prompts it asks for (`prompts`), and what went wrong: whether
+	 * it went through. `work` moves on to each prompt with `next` as it asks for it.
+	 * @param {string} what @param {(next: () => void) => Promise<unknown>} work @param {Prompt[]} [asked]
 	 */
-	async function run(what, work) {
-		[doing, error] = [what, ''];
+	async function run(what, work, asked = []) {
+		[doing, error, prompts, prompted] = [what, '', asked, mac ? 0 : -1];
 		try {
-			await work();
+			await work(() => prompted++);
 			return true;
 		} catch (e) {
 			error = plain(/** @type {Error} */ (e).message ?? String(e));
 			return false;
 		} finally {
-			doing = '';
+			[doing, prompts, prompted] = ['', [], -1];
 		}
 	}
 
@@ -225,44 +240,55 @@
 	 *  device in it, which also claims the server if nobody has yet; one ceremony more to make the passkey.
 	 *  @param {boolean} fresh */
 	const found = (fresh) =>
-		run(`Setting up your account: ${asks} ${fresh ? 'three times' : 'twice'}`, async () => {
-			if (mac) {
-				await macOpened(await mac.call('found', name.trim(), relay, server));
-				remember('relay', relay);
-				remember('server', server);
-				return;
-			}
-			const { passkey, unlock, sign, held } = await ceremonies(undefined);
-			const made = fresh ? await passkey.create(person || name) : null;
-			if (made) held.id = made.id;
-			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
-			const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, sign);
-			await started(d, nonce, held.id);
-		});
+		run(
+			`Setting up your account: ${asks} ${fresh ? 'three times' : 'twice'}`,
+			async (next) => {
+				if (mac) {
+					await macOpened(await mac.call('found', name.trim(), relay, server));
+					remember('relay', relay);
+					remember('server', server);
+					return;
+				}
+				const { passkey, unlock, sign, held } = await ceremonies(undefined);
+				if (fresh) next();
+				const made = fresh ? await passkey.create(person || name) : null;
+				if (made) held.id = made.id;
+				const nonce = crypto.getRandomValues(new Uint8Array(32));
+				const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => (next(), unlock(nonce, challenge));
+				const signNext = (/** @type {Uint8Array<ArrayBuffer>} */ challenge, /** @type {string} */ step) => (next(), sign(challenge, step));
+				const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, signNext);
+				await started(d, nonce, held.id);
+			},
+			fresh ? [PROMPT.make, PROMPT.unlock, PROMPT.vault] : [PROMPT.unlock, PROMPT.vault]
+		);
 
 	/** Links this browser to the person's vault through `through`: the code another of their devices shows, or
-	 *  avenDB's server's, which hands over their vault for their passkey alone. The unlock, which is the passkey's pass
-	 *  for this new device, and the edit that adds it to their vault. @param {string} through @param {string} what */
+	 *  avenDB's server's, which hands over their vault for their passkey alone. One ceremony, the unlock, which is the
+	 *  passkey's pass for this new device and signs the edit that adds it to their vault too. @param {string} through
+	 *  @param {string} what */
 	const linkHere = (through, what = `Linking ${here}`) =>
-		run(`${what}: ${asks} twice`, async () => {
-			if (mac) {
-				await macOpened(await mac.call('link', name.trim(), relay, through.trim()).catch(noAccount));
-				remember('relay', relay);
-				remember('server', server);
-				return;
-			}
-			const { unlock, sign, held } = await ceremonies(undefined);
-			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
-			const d = await avendb.Device.link(name.trim(), relay, through.trim(), unlockNew, sign).catch(noAccount);
-			await started(d, nonce, held.id);
-		});
+		run(
+			`${what}: ${asks} once`,
+			async (next) => {
+				if (mac) {
+					await macOpened(await mac.call('link', name.trim(), relay, through.trim()).catch(noAccount));
+					remember('relay', relay);
+					remember('server', server);
+					return;
+				}
+				const { unlock, held } = await ceremonies(undefined);
+				const nonce = crypto.getRandomValues(new Uint8Array(32));
+				const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => (next(), unlock(nonce, challenge));
+				const d = await avendb.Device.link(name.trim(), relay, through.trim(), unlockNew).catch(noAccount);
+				await started(d, nonce, held.id);
+			},
+			[PROMPT.signIn]
+		);
 
 	const unlockHere = () =>
-		run(`Unlocking: ${asks} once`, async () => {
+		run(`Unlocking: ${asks} once`, async (next) => {
 			try {
-				await unlocking();
+				await unlocking(next);
 			} catch (e) {
 				// a store of the device taken out of its vault, or kept before avenDB started fresh with flat vaults
 				if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
@@ -270,10 +296,11 @@
 					`What ${here} kept holds no vault of yours: it was taken out of your vault, or kept before avenDB started fresh. Forget it here, then sign in or set up your account again with your passkey.`
 				);
 			}
-		});
+		}, [PROMPT.reopen]);
 
-	/** Opens the device this browser, or the app, holds, in the unlock alone. */
-	async function unlocking() {
+	/** Opens the device this browser, or the app, holds, in the unlock alone, moving on to its prompt with `next`.
+	 *  @param {() => void} [next] */
+	async function unlocking(next = () => {}) {
 		if (mac && moving) {
 			// the page's device moves into the app's folder, the same device; then the page lets go of its copy, so
 			// that it never runs twice
@@ -287,6 +314,7 @@
 		if (mac) return macOpened(await mac.call('open'));
 		const { unlock } = await ceremonies(meta.credential);
 		const kept = await store.load();
+		next();
 		const opens = [meta.name, meta.relay, meta.passkey, meta.mask];
 		const d = await avendb.Device.open(...opens, await unlock(unhex(meta.nonce)), kept.edits, kept.keys);
 		running(d);
@@ -472,6 +500,21 @@
 			<h1>{person || 'You'}</h1>
 			<p>Your own database, end-to-end encrypted and quantum-proof: a vault only you hold, on every device you link to it.</p>
 		</header>
+		{#if doing}
+			<div class="asking" role="status">
+				<p class="soft">{doing}…</p>
+				{#if prompts.length}
+					<ol class="prompts">
+						{#each prompts as p, i (p.title)}
+							<li class:now={i === prompted} class:done={i < prompted}>
+								<span class="n">{i < prompted ? '✓' : i + 1}</span>
+								<span><b>{p.title}</b><small>Signs: {p.signs}</small></span>
+							</li>
+						{/each}
+					</ol>
+				{/if}
+			</div>
+		{/if}
 
 		{#if phase === 'loading'}
 			<p class="soft">Loading your account…</p>
@@ -558,7 +601,6 @@
 				</article>
 			</div>
 		{/if}
-		{#if doing}<p class="soft" role="status">{doing}…</p>{/if}
 		{#if error}<p class="error" role="alert">{error}</p>{/if}
 	</div>
 {/if}
@@ -615,5 +657,65 @@
 
 	summary {
 		cursor: pointer;
+	}
+
+	.asking {
+		margin: 0 0 1.2rem;
+	}
+
+	.asking > p {
+		margin: 0;
+	}
+
+	.prompts {
+		display: grid;
+		gap: 0.4rem;
+		max-width: 34rem;
+		margin: 0.5rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.prompts li {
+		display: flex;
+		gap: 0.65rem;
+		align-items: flex-start;
+		padding: 0.55rem 0.75rem;
+		border: 1px solid var(--line);
+		border-radius: 0.6rem;
+		opacity: 0.5;
+	}
+
+	.prompts li.now {
+		opacity: 1;
+		border-color: var(--accent);
+	}
+
+	.prompts li.done {
+		opacity: 0.75;
+	}
+
+	.prompts .n {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 1.4rem;
+		height: 1.4rem;
+		border-radius: 50%;
+		font-size: 0.75rem;
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+		color: var(--accent);
+	}
+
+	.prompts b {
+		display: block;
+		font-size: 0.92rem;
+	}
+
+	.prompts small {
+		display: block;
+		color: var(--soft);
+		font-size: 0.8rem;
+		line-height: 1.35;
 	}
 </style>

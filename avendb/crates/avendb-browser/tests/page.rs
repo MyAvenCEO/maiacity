@@ -4,7 +4,7 @@
 //! over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and each of her browsers
 //! is a frame of the tab, with a store of its own in IndexedDB. Her first browser makes the passkey, founds her vault
 //! and claims the server in one ceremony after the unlock, and writes a note; her second links through the first one's
-//! code in two ceremonies and edits it; the first closes, and opens again from its store in one ceremony, and edits the
+//! code in one ceremony and edits it; the first closes, and opens again from its store in one ceremony, and edits the
 //! note once more. Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs it.
 
 use std::collections::VecDeque;
@@ -323,7 +323,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let holds = move |lab: &Lab, me| lab.fetched(me, entry) > 0;
     until("the server keeps her note", || server.read(holds)).await;
 
-    // her second browser links through the first one's code, in two ceremonies, and edits the note
+    // her second browser links through the first one's code, in one ceremony, and edits the note
     let field = |key| first[key].as_str().unwrap_or_else(|| panic!("{key} in {first}"));
     let note = [("actor", field("actor")), ("entry", field("entry"))];
     let offer = first["offer"].as_str().expect("the first browser's code");
@@ -332,7 +332,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.frame(&[&second[..], &steps, &note[..]].concat()).await;
     let second = tab.expect("second", "started").await;
     eprintln!("Eve's second browser linked in {} ms", second["ms"]);
-    assert_eq!(second["ceremonies"], 2, "the unlock, which is the passkey's pass, and the join: {second}");
+    assert_eq!(second["ceremonies"], 1, "the unlock, which is the passkey's pass and signs the join: {second}");
     assert_eq!(second["vault"], first["vault"], "it joined her vault");
     tab.expect("second", "read").await;
     tab.expect("second", "wrote").await;

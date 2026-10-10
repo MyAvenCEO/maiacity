@@ -140,6 +140,13 @@ pub enum Classical {
     /// A passkey's WebAuthn assertion over several edits it signed in one ceremony: its challenge is their batch's
     /// (`batch_challenge`), and `edits` holds their ids, smallest first, the edit's among them.
     Batch { assertion: Assertion, edits: Vec<EditId> },
+    /// A passkey's pass for a new device (`RelayPass`), made at `made`, as the classical half of the edit that adds
+    /// that device to the passkey's vault: the assertion over the pass's challenge (`pass_challenge`), the device's and
+    /// `made`'s. The ceremony that unlocks a new device signs up or in with it: the passkey approves the device, by the
+    /// curve, and the edit itself by the hash-based half, which the pass's ceremony's PRF output makes and which this
+    /// half never goes without. It counts only on an edit adding that very device, which cosigns it
+    /// (`Action::AddDevice`, `Signed::verify`).
+    Pass { assertion: Assertion, made: u64 },
 }
 
 /// What `navigator.credentials.get` returns; the passkey's key is among the signer's keys.
@@ -163,7 +170,12 @@ impl Signed {
     pub fn verify(&self) -> Result<&Edit, Refusal> {
         let signers: Vec<SignerId> = self.edit.sigs().collect();
         let (id, pq) = (self.edit.id(), needs_pq(&self.edit));
-        let all = signers.len() == self.sigs.len() && signers.iter().zip(&self.sigs).all(|(&s, sig)| verify(s, id, sig, pq));
+        let joins = match self.edit.action {
+            Action::AddDevice { device, .. } if self.edit.cosigners.contains(&device) => Some(device),
+            _ => None,
+        };
+        let verifies = |(&s, sig): (&SignerId, &Signature)| verify_adding(s, id, sig, pq, joins);
+        let all = signers.len() == self.sigs.len() && signers.iter().zip(&self.sigs).all(verifies);
         if all { Ok(&self.edit) } else { Err(Refusal::BadSignature) }
     }
 }
@@ -336,6 +348,12 @@ pub fn needs_pq(edit: &Edit) -> bool {
 /// `sig` is `signer`'s signature on edit `edit`: its keys hash to the signer, its classical half verifies, and so does
 /// its hash-based half wherever it is present, as it must be when `pq`.
 pub fn verify(signer: SignerId, edit: EditId, sig: &Signature, pq: bool) -> bool {
+    verify_adding(signer, edit, sig, pq, None)
+}
+
+/// `verify`, on an edit that adds device `joins` to a vault, which it cosigns (`Action::AddDevice`), if it is one:
+/// there a passkey's pass for that device (`Classical::Pass`) is the classical half too, beside its hash-based half.
+pub fn verify_adding(signer: SignerId, edit: EditId, sig: &Signature, pq: bool, joins: Option<SignerId>) -> bool {
     if sig.keys.id() != signer {
         return false;
     }
@@ -349,6 +367,10 @@ pub fn verify(signer: SignerId, edit: EditId, sig: &Signature, pq: bool) -> bool
             let set = edits.windows(2).all(|w| w[0] < w[1]);
             set && edits.contains(&edit) && assertion.verify(p256, EditId(batch_challenge(edits)))
         }
+        (SignerKeys::Passkey { p256, .. }, Classical::Pass { assertion, made }) => match joins {
+            Some(device) => sig.pq.is_some() && assertion.verify(p256, EditId(pass_challenge(device, *made))),
+            None => false,
+        },
         _ => false,
     };
     classical
@@ -496,6 +518,17 @@ impl Ceremony {
         let slh = self.of(&keys, batch_challenge(batch))?;
         let classical = Classical::Batch { assertion: self.assertion.clone(), edits: batch.to_vec() };
         Some(Signature { keys, classical, pq: pq.then(|| sign_pq(&slh, edit)) })
+    }
+
+    /// The signature on edit `edit`, which adds the device `device` to a vault (`Action::AddDevice`), of the passkey
+    /// whose keys are `keys`, as this ceremony is that passkey's pass for the device, made at `made` (`pass`): the
+    /// pass's assertion as its classical half (`Classical::Pass`), and the hash-based half over the edit's own id,
+    /// which it always carries. So the ceremony that unlocks a new device also signs the edit adding it, and the device
+    /// signs in with one ceremony. `None` unless this is that passkey's ceremony over the device's `pass_challenge`.
+    pub fn sign_adding(&self, keys: SignerKeys, edit: EditId, device: SignerId, made: u64) -> Option<Signature> {
+        let slh = self.of(&keys, pass_challenge(device, made))?;
+        let classical = Classical::Pass { assertion: self.assertion.clone(), made };
+        Some(Signature { keys, classical, pq: Some(sign_pq(&slh, edit)) })
     }
 
     /// Its passkey's pass (`RelayPass`) for the device whose keys are `device`, made at `made`: `None` unless they are a
@@ -924,6 +957,44 @@ mod tests {
         let lone = ceremony.sign_in(passkey.keys(), b.id(), &batch, true).expect("its signature");
         let swapped = Signature { pq: lone.pq, ..sig };
         assert!(!verify(passkey.id(), a.id(), &swapped, true));
+    }
+
+    #[test]
+    fn a_pass_signs_the_edit_adding_its_device_and_nothing_else() {
+        let mut passkey = Passkey::from_seed([1; 32]);
+        let (device, other) = (DeviceKey::from_secret([2; 32]), DeviceKey::from_secret([3; 32]));
+        let made = 1_760_000_000;
+        let unlock = passkey.ceremony(pass_challenge(device.id(), made));
+        let adds = |d: SignerId, cosigners: Vec<SignerId>| Edit {
+            parents: vec![],
+            depth: 0,
+            author: passkey.id(),
+            cosigners,
+            action: Action::AddDevice { vault: VaultId::from_u64(1), device: d, seal_to: None },
+        };
+        let join = adds(device.id(), vec![device.id()]);
+        let sig = unlock.sign_adding(passkey.keys(), join.id(), device.id(), made).expect("the pass's signature");
+        let signed = Signed { edit: join.clone(), sigs: vec![sig.clone(), device.sign(join.id(), true)] };
+        assert!(signed.verify().is_ok(), "the unlock signs the edit adding its device");
+        // not for another device, nor at another time, nor without the device cosigning
+        assert!(unlock.sign_adding(passkey.keys(), join.id(), other.id(), made).is_none());
+        let theirs = adds(other.id(), vec![other.id()]);
+        let moved = Signed { edit: theirs.clone(), sigs: vec![sig.clone(), other.sign(theirs.id(), true)] };
+        assert!(moved.verify().is_err(), "another device's join");
+        let Classical::Pass { assertion, .. } = sig.classical.clone() else { unreachable!("a pass's signature") };
+        let later = Signature { classical: Classical::Pass { assertion, made: made + 1 }, ..sig.clone() };
+        let later = Signed { edit: join.clone(), sigs: vec![later, device.sign(join.id(), true)] };
+        assert!(later.verify().is_err(), "another time");
+        let alone = adds(device.id(), vec![]);
+        let alone_sig = unlock.sign_adding(passkey.keys(), alone.id(), device.id(), made).expect("signed");
+        assert!(Signed { edit: alone.clone(), sigs: vec![alone_sig] }.verify().is_err(), "the device must cosign");
+        // the hash-based half is the edit's own, and never left out
+        assert!(!verify(passkey.id(), join.id(), &sig, true), "a pass counts on an edit adding its device alone");
+        let bare = Signature { pq: None, ..sig.clone() };
+        assert!(Signed { edit: join.clone(), sigs: vec![bare, device.sign(join.id(), true)] }.verify().is_err());
+        let other_join = Edit { depth: 1, ..join.clone() };
+        let swapped = Signed { edit: other_join.clone(), sigs: vec![sig, device.sign(other_join.id(), true)] };
+        assert!(swapped.verify().is_err(), "its hash-based half signs this very edit");
     }
 
     #[test]

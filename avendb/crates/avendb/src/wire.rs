@@ -582,6 +582,11 @@ impl Encode for Classical {
                 assertion.encode(out);
                 edits.encode(out);
             }
+            Classical::Pass { assertion, made } => {
+                out.push(3);
+                assertion.encode(out);
+                made.encode(out);
+            }
         }
     }
 }
@@ -592,6 +597,7 @@ impl Decode for Classical {
             0 => Ok(Classical::Ed25519(r.array()?)),
             1 => Ok(Classical::Passkey(Assertion::decode(r)?)),
             2 => Ok(Classical::Batch { assertion: Assertion::decode(r)?, edits: r.set(32)? }),
+            3 => Ok(Classical::Pass { assertion: Assertion::decode(r)?, made: u64::decode(r)? }),
             _ => Err(WireError::Unknown),
         }
     }

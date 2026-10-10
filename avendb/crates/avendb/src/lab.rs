@@ -166,6 +166,9 @@ pub struct Unsigned {
     /// The ids of the edits drafted together with it, its own among them, smallest first: one ceremony signs them all
     /// (`sign::batch_challenge`). Empty for an edit drafted alone.
     batch: Vec<EditId>,
+    /// When the pass was made that the passkey signs it with, for an edit adding a new device, as the ceremony that
+    /// unlocked the device signs it (`by_pass`).
+    pass: Option<u64>,
 }
 
 /// The McEliece keys it brings show only their number.
@@ -179,6 +182,12 @@ impl Unsigned {
     /// The edit drafted.
     pub fn edit(&self) -> &Edit {
         &self.edit
+    }
+
+    /// The same, for its passkey to sign with its pass for the new device it adds, made at `made`: the ceremony that
+    /// unlocked the device, which is that pass, signs it, and no other ceremony (`sign::Ceremony::sign_adding`).
+    pub fn by_pass(self, made: u64) -> Unsigned {
+        Unsigned { pass: Some(made), batch: vec![], ..self }
     }
 
     /// What each passkey's ceremony signs: the edit's id, or, for edits drafted together (`Lab::drafting`), their
@@ -206,7 +215,7 @@ impl Drafting<'_> {
         let edit = self.log.check(author, cosigners, action)?;
         let (id, held) = (edit.id(), self.log.ids().len());
         self.log.receive([edit.clone()]);
-        self.drafts.push(Unsigned { edit, blobs, held, batch: vec![] });
+        self.drafts.push(Unsigned { edit, blobs, held, batch: vec![], pass: None });
         Ok(id)
     }
 
@@ -721,7 +730,7 @@ impl Lab {
         }
         let (id, pq) = (edit.id(), sign::needs_pq(&edit));
         let signers: Vec<SignerId> = edit.sigs().filter(|&s| s != server).collect();
-        let signature = |s| self.sign_by(s, id, pq, ceremonies, &batch);
+        let signature = |s| self.sign_by(s, id, pq, ceremonies, &batch, None);
         let sigs = signers.into_iter().map(signature).collect::<Result<_, _>>()?;
         let store = self.held(on);
         let logs: Vec<EditId> = vault_logs(store.log.edits(), store.view(), vec![vault]).iter().map(Edit::id).collect();
@@ -772,7 +781,7 @@ impl Lab {
         }
         // its own signature in its place among the edit's signers, the others' in theirs
         let (id, pq) = (add.id(), sign::needs_pq(&add));
-        let mine = self.sign_by(d, id, pq, &[], &[])?;
+        let mine = self.sign_by(d, id, pq, &[], &[], None)?;
         let mut theirs = sigs.into_iter();
         let all: Option<Vec<Signature>> =
             add.sigs().map(|s| if s == d { Some(mine.clone()) } else { theirs.next() }).collect();
@@ -794,8 +803,10 @@ impl Lab {
     }
 
     /// Signer `s`'s signature on edit `id`: by its ceremony among `ceremonies`, over the edit's id or, with the edits
-    /// `batch` drafted together, over theirs (`Ceremony::sign_in`), or by its key at hand; both halves if `pq`.
-    /// `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its own over that challenge.
+    /// `batch` drafted together, over theirs (`Ceremony::sign_in`), or, with `pass`, the device an edit adds and when
+    /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`); or by its key at hand; both
+    /// halves if `pq`. `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its own over that
+    /// challenge.
     fn sign_by(
         &mut self,
         s: SignerId,
@@ -803,10 +814,16 @@ impl Lab {
         pq: bool,
         ceremonies: &[(SignerId, &Ceremony)],
         batch: &[EditId],
+        pass: Option<(SignerId, u64)>,
     ) -> Result<Signature, Refusal> {
         match ceremonies.iter().find(|(c, _)| *c == s) {
             Some((_, c)) => {
-                c.sign_in(self.keys_of(s).ok_or(Refusal::Locked)?, id, batch, pq).ok_or(Refusal::BadSignature)
+                let keys = self.keys_of(s).ok_or(Refusal::Locked)?;
+                let signed = match pass {
+                    Some((device, made)) => c.sign_adding(keys, id, device, made),
+                    None => c.sign_in(keys, id, batch, pq),
+                };
+                signed.ok_or(Refusal::BadSignature)
             }
             None => self.keys.get_mut(&s).and_then(|k| k.sign(id, pq)).ok_or(Refusal::Locked),
         }
@@ -990,7 +1007,7 @@ impl Lab {
         let blobs = self.fill_seal_to(&mut action);
         let log = &self.held(on).log;
         let edit = log.check(author, cosigners, action)?;
-        Ok(Unsigned { edit, blobs, held: log.ids().len(), batch: vec![] })
+        Ok(Unsigned { edit, blobs, held: log.ids().len(), batch: vec![], pass: None })
     }
 
     /// Edits to draft on device `on` one after another, each on top of those before it, for the passkeys among their
@@ -1038,14 +1055,23 @@ impl Lab {
         draft: Unsigned,
         ceremonies: &[(SignerId, &Ceremony)],
     ) -> Result<EditId, Refusal> {
-        let Unsigned { edit, blobs, held, batch } = draft;
+        let Unsigned { edit, blobs, held, batch, pass } = draft;
         if self.held(on).log.ids().len() != held {
             self.held(on).view().step(&edit)?;
         }
         let (id, pq) = (edit.id(), sign::needs_pq(&edit));
         let ceremony = |s: SignerId| ceremonies.iter().find(|(c, _)| *c == s).map(|(_, c)| *c);
         let signers: Vec<SignerId> = edit.sigs().collect();
-        let signature = |s| self.sign_by(s, id, pq, ceremonies, &batch);
+        let pass = match (&edit.action, pass) {
+            (Action::AddDevice { device, .. }, Some(made)) => Some((*device, made)),
+            (_, Some(_)) => return Err(Refusal::BadSignature),
+            (_, None) => None,
+        };
+        // the pass signs for the passkey alone: every other signer as ever
+        let signature = |s: SignerId| {
+            let by_pass = pass.filter(|_| matches!(self.keys_of(s), Some(SignerKeys::Passkey { .. })));
+            self.sign_by(s, id, pq, ceremonies, &batch, by_pass)
+        };
         let sigs = signers.into_iter().map(signature).collect::<Result<_, _>>()?;
         let signed = Signed { edit, sigs };
         debug_assert!(signed.verify().is_ok());
@@ -1740,7 +1766,9 @@ impl Lab {
                 }
                 match &sig.classical {
                     Classical::Ed25519(b) => out.extend(b),
-                    Classical::Passkey(a) | Classical::Batch { assertion: a, .. } => {
+                    Classical::Passkey(a)
+                    | Classical::Batch { assertion: a, .. }
+                    | Classical::Pass { assertion: a, .. } => {
                         for part in [&a.authenticator_data, &a.client_data_json, &a.signature] {
                             out.extend(part);
                         }
