@@ -1,5 +1,6 @@
 <!--
-	A story's article: the long-form master, the fullest telling of it, which the blog publishes and every other output
+	A story's words: its film script (the story's timeline read as a screenplay, the same as the studio's Script tab)
+	and its article: the long-form master, the fullest telling of it, which the blog publishes and every other output
 	derives from. Read as the journal sets it (the cover, the title, the words), or written as Markdown with its front
 	matter. Read only once its posts derive from it (move it back to Writing to change it), and when it lives in the
 	repo (edited there, pushed with the story).
@@ -7,14 +8,17 @@
 <script>
 	import { renderMarkdown, splitArticle } from '$lib/admin/markdown';
 	import { wordsOf } from './stories.js';
+	import ScriptView from './ScriptView.svelte';
 
 	/** @typedef {import('$lib/auth/client').ContentItem} ContentItem */
 
 	/** @type {{ item: ContentItem, locked: boolean, onchange: (patch: Partial<ContentItem>) => void }} */
 	let { item, locked, onchange } = $props();
 
-	/** @type {'read' | 'write'} */
-	let mode = $state('read');
+	// a film's story opens on its script; a journal day on its article
+	const film = () => !!(item.timeline_id || item.project);
+	/** @type {'script' | 'read' | 'write'} */
+	let mode = $state(film() ? 'script' : 'read');
 	const article = $derived(item.body?.trim() ? splitArticle(item.body) : null);
 	const html = $derived(article ? renderMarkdown(article.body) : '');
 	const size = $derived(wordsOf(article?.body ?? ''));
@@ -29,18 +33,18 @@
 
 <div class="writing">
 	<div class="bar">
-		{#if !why}
-			<div class="modes" role="tablist" aria-label="Read or write">
-				<button role="tab" aria-selected={mode === 'read'} class:on={mode === 'read'} onclick={() => (mode = 'read')}>Read</button>
-				<button role="tab" aria-selected={mode === 'write'} class:on={mode === 'write'} onclick={() => (mode = 'write')}>Write</button>
-			</div>
-		{:else}
-			<p class="why">{why}</p>
-		{/if}
-		<span class="size">{size.words.toLocaleString('en-GB')} words · {size.minutes} min</span>
+		<div class="modes" role="tablist" aria-label="The script, or the article to read or write">
+			<button role="tab" aria-selected={mode === 'script'} class:on={mode === 'script'} onclick={() => (mode = 'script')}>Script</button>
+			<button role="tab" aria-selected={mode === 'read'} class:on={mode === 'read'} onclick={() => (mode = 'read')}>Read</button>
+			{#if !why}<button role="tab" aria-selected={mode === 'write'} class:on={mode === 'write'} onclick={() => (mode = 'write')}>Write</button>{/if}
+		</div>
+		{#if why && mode !== 'script'}<p class="why">{why}</p>{/if}
+		{#if mode !== 'script'}<span class="size">{size.words.toLocaleString('en-GB')} words · {size.minutes} min</span>{/if}
 	</div>
 
-	{#if mode === 'write' && !why}
+	{#if mode === 'script'}
+		<ScriptView {item} />
+	{:else if mode === 'write' && !why}
 		<textarea
 			aria-label="The article, in Markdown"
 			value={item.body}

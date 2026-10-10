@@ -10,44 +10,33 @@
 <script>
 	import { clockText } from './studio.svelte.js';
 	import { transcriptOf } from './transcript.js';
+	import { PART, feelingsOf, pagesOf, sectionsOf, speakerOf } from './screenplay.js';
+	import { listContent } from '$lib/auth/client';
+	import { storyHref } from '$lib/stories/stories.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
-	const PART = /** @type {Record<string, string>} */ ({ hook: 'Hook', act1: 'Act One', act2: 'Act Two', act3: 'Act Three', cliffhanger: 'Cliffhanger' });
-	const sections = $derived(s.clips.filter((c) => c.kind === 'section' && c.section !== 'thumbnail').sort((a, b) => a.start - b.start));
+	const sections = $derived(sectionsOf(s.clips));
 	const thumbnail = $derived(s.clips.find((c) => c.kind === 'section' && c.section === 'thumbnail'));
-	/** the feelings the viewer goes through in a part, in order, each with whether the tension rises to it (↑) or is
-	 *  released into it (↓) @param {import('./studio.svelte.js').Clip} part */
-	const journey = (part) => {
-		const pts = [...(part.tension ?? [])].sort((a, b) => a.t - b.t);
-		return pts.flatMap((p, i) => (p.feel ? [{ feel: p.feel, up: i === 0 || p.v >= (pts[i - 1]?.v ?? 0) }] : []));
-	};
-	/** the part of the story a moment is in @param {number} t */
-	const partAt = (t) => sections.findLast((c) => t >= c.start - 0.05) ?? null;
-	/** the script's pages: each shot with its part, its scene, and whether a new part or scene starts with it */
-	const pages = $derived.by(() => {
-		/** @type {{ shot: import('./studio.svelte.js').ScriptShot, scene: string, part: import('./studio.svelte.js').Clip | null, newPart: boolean, newScene: boolean }[]} */
-		const out = [];
-		let lastPart = /** @type {string | null} */ (null), lastScene = '';
-		for (const sc of s.script)
-			for (const sh of sc.shots) {
-				const part = partAt(sh.clip.start);
-				out.push({ shot: sh, scene: sc.scene, part, newPart: (part?.id ?? null) !== lastPart, newScene: sc.scene !== lastScene });
-				lastPart = part?.id ?? null;
-				lastScene = sc.scene;
-			}
-		return out;
-	});
-	/** who speaks a voice clip, and whether we see them say it @param {import('./studio.svelte.js').Clip} l */
-	function speaker(l) {
-		const m = l.hash ? s.byHash.get(l.hash) : undefined;
-		const name = String(m?.meta?.speaker ?? 'Samuel').toUpperCase();
-		const seen = !!l.hash && s.clips.some((c) => c.track === 'V1' && c.hash === l.hash && l.start < c.start + c.dur && c.start < l.start + l.dur);
-		return seen ? name : `${name} (V.O.)`;
-	}
+	const pages = $derived(pagesOf(s.script, sections));
+	/** @param {import('./studio.svelte.js').Clip} l */
+	const speaker = (l) => speakerOf(l, s.clips, s.byHash);
 	/** what a voice clip says: a line's words, or the recorded voice's captions @param {import('./studio.svelte.js').Clip} l */
 	const said = (l) => (l.kind === 'line' ? (l.text ?? '') : s.phrases.filter((p) => p.clip === l.id).map((p) => p.words.map((w) => w.word).join(' ')).join(' '));
+	// the story on the Stories board this script is the film of (made from it, or filed under its project): the same
+	// script is read there, in its Writing step
+	let items = $state(/** @type {import('$lib/auth/client').ContentItem[]} */ ([]));
+	$effect(() => {
+		listContent()
+			.then((r) => (items = r.items))
+			.catch(() => {});
+	});
+	const story = $derived.by(() => {
+		const t = s.current;
+		if (!t) return null;
+		return items.find((i) => i.timeline_id === t.id) ?? (t.project ? items.find((i) => i.project?.toLowerCase() === t.project?.toLowerCase()) : undefined) ?? null;
+	});
 	/** @param {string} scene */
 	const heading = (scene) => scene.toUpperCase();
 
@@ -125,6 +114,7 @@
 
 <aside class="script">
 	<header>
+		{#if story}<a class="story" href={storyHref(story.id, 'writing')} title="The same script, in the story's Writing step">{story.title} · Writing ›</a>{/if}
 		<span class="by">Written by the agent through MCP · the timeline switcher is top right</span>
 	</header>
 
@@ -137,7 +127,7 @@
 			{#if p.newPart && p.part}
 				<h2>{PART[p.part.section ?? ''] ?? p.part.section}</h2>
 				{#if p.part.text}<p class="intent">{p.part.text}</p>{/if}
-				{@const feels = journey(p.part)}
+				{@const feels = feelingsOf(p.part)}
 				{#if feels.length}<p class="journey">The viewer: {#each feels as f, i (i)}{#if i} · {/if}<span>{f.feel} {f.up ? '↑' : '↓'}</span>{/each}</p>{/if}
 			{/if}
 			{#if p.newScene}<h3>{heading(p.scene)}</h3>{/if}
@@ -200,6 +190,13 @@
 		background: var(--raised);
 		font: inherit;
 		font-size: 0.78rem;
+	}
+
+	.story {
+		font-size: 0.74rem;
+		font-weight: 600;
+		color: var(--accent);
+		text-decoration: none;
 	}
 
 	.by {
