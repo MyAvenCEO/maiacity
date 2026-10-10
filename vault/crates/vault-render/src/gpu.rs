@@ -376,11 +376,14 @@ impl Gpu {
                 }
             }
         }
-        let bytes: Vec<u8> = px.iter().flat_map(|x| x.to_ne_bytes()).collect();
+        // the floats' own bytes, handed over whole: made one by one (a 129³ cube is 35 MB) it took most of a second
+        // in a debug build, and the player made it on every thread AVFoundation called it on
+        // SAFETY: f32 has no padding and every byte of it is a valid u8; the slice lives as long as `px`
+        let bytes = unsafe { std::slice::from_raw_parts(px.as_ptr().cast::<u8>(), std::mem::size_of_val(px.as_slice())) };
         // SAFETY: the data outlives nothing: NSData copies it
         let image = unsafe {
             CIImage::imageWithBitmapData_bytesPerRow_size_format_colorSpace(
-                &NSData::from_vec(bytes),
+                &NSData::with_bytes(bytes),
                 w * 16,
                 CGSize { width: w as f64, height: h as f64 },
                 kCIFormatRGBAf,

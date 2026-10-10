@@ -43,3 +43,14 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 opt-level = 2
+
+# Our own picture crates optimised too: the player builds the grade's 129³ output cube in them, 0.6 s at opt-level 0
+# and 18 ms at 2, and at 0 that alone stalled playback for a second at a time
+[profile.dev.package.vault-render]
+opt-level = 2
+
+[profile.dev.package.vault-color]
+opt-level = 2
+
+[profile.dev.package.vault-media]
+opt-level = 2
