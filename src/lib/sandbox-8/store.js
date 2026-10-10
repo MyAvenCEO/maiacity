@@ -14,6 +14,8 @@ export const loadMips = () => apiCall('/api/economy/mips');
 export const propose = (mip) => post('/api/economy/mips', mip);
 export const decide = (number, accept, note = '') => post(`/api/economy/mips/${number}/decide`, { accept, note });
 export const withdraw = (number) => post(`/api/economy/mips/${number}/withdraw`, {});
+/** the GitHub PRs a MIP needs (its engine changes in code): the whole list, [{ number, title }] */
+export const linkPrs = (number, prs) => post(`/api/economy/mips/${number}/prs`, { prs });
 export const loadRuns = (limit = 50) => apiCall(`/api/economy/runs?limit=${limit}`);
 /** one world (run) with every day's stats row and the valley as it last stood */
 export const loadWorldRun = (id) => apiCall(`/api/economy/runs/${encodeURIComponent(id)}?state=1`);

@@ -890,4 +890,12 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE mips ADD CONSTRAINT mips_action_check CHECK (action IN ('edit', 'create', 'delete', 'world', 'amend'));
     `,
   },
+  {
+    // A MIP links the GitHub PRs whose engine changes it needs (Samuel, 2026-10-10): what changed in the code between
+    // worlds, beside what changed in the cards. A list of { number, title }.
+    id: "0041-economy-mip-prs",
+    sql: `
+      ALTER TABLE mips ADD COLUMN prs JSONB NOT NULL DEFAULT '[]'::jsonb;
+    `,
+  },
 ];
