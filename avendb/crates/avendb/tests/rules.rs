@@ -28,7 +28,7 @@ fn touches(item: &Item, view: &View, change: impl FnOnce(&mut Value)) -> Vec<Val
     let mut bobs = item.fork_as(BOB);
     let since = bobs.version();
     assert!(bobs.write(view, &seen), "a view of the app's schema: {seen}");
-    let touched = item.clone().footprint(&bobs.export(&since), BOB, None).expect("it imports whole");
+    let touched = item.clone().footprint(&bobs.export(&since), BOB, None).expect("it imports whole").touches;
     touched.iter().map(Touch::to_json).collect()
 }
 
@@ -146,7 +146,7 @@ fn c3_touches_cover_every_change() {
             let mut device = item.fork_as(signer);
             let since = device.version();
             device.put_record(&Value::Object(after.clone()));
-            let touched = item.footprint(&device.export(&since), signer, None).expect("it imports whole");
+            let touched = item.footprint(&device.export(&since), signer, None).expect("it imports whole").touches;
             assert_eq!(item.record(), Value::Object(after.clone()));
             let why = |c: &str| format!("{before:?} to {after:?}: {c} in {touched:?}");
             assert!(touched.iter().all(|t| t.loc() != Some(Loc::Root)), "{}", why("an op placed nowhere"));

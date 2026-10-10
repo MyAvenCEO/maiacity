@@ -27,7 +27,7 @@
 	 * @typedef {{ id: string, author: string, actor: string, line: string | null, deps: string[],
 	 *   kind: 'edit' | 'propose' | 'merge' | 'promote' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
-	 *   before: string | null, counted: boolean }} EditView
+	 *   before: string | null, counted: boolean, why: 'builds-on' | 'sealed' | 'unfit' | 'rules' | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
 	 * @typedef {{ vault: string | null, entry: string, lines: LineView[], edits: EditView[] }} NoteData
 	 */
@@ -88,10 +88,12 @@
 	const as = $derived(byId.get(actor));
 	/** the devices this browser knows, by id: their name and their vault */
 	const devices = $derived(new Map(world.vaults.flatMap((v) => v.devices.map((d) => [d.id, { name: d.name, vault: v }]))));
-	/** every edit of the note its readers count, numbered in the order the device took them; and how many they don't */
+	/** every edit of the note its readers count, numbered in the order the device took them; how many they don't count
+	 * as what they make of it breaks its schema, and how many they don't for any other reason */
 	const counted = $derived((note?.edits ?? []).filter((e) => e.counted !== false));
 	const numbered = $derived(counted.map((e, i) => ({ ...e, n: i + 1 })));
-	const uncounted = $derived((note?.edits.length ?? 0) - counted.length);
+	const unfit = $derived((note?.edits ?? []).filter((e) => e.why === 'unfit').length);
+	const uncounted = $derived((note?.edits.length ?? 0) - counted.length - unfit);
 	/** the line's edits, newest first */
 	const history = $derived.by(() => {
 		const on = new Set(here?.history ?? []);
@@ -358,6 +360,11 @@
 			<p class="meta">
 				{#if item}<Tags {world} {actor} {api} {busy} entry={item} />{/if}
 				{vaultName(item?.vault)}{note ? ` · ${count(numbered.length, 'edit')}` : ''} ·
+				{#if unfit}
+					<b class="unsaved" title="What they make of the note breaks its schema: no one counts them"
+						>{count(unfit, 'edit')} {unfit === 1 ? 'breaks' : 'break'} its schema</b
+					> ·
+				{/if}
 				{#if uncounted}
 					<b class="unsaved" title="The rules of their caps don’t allow what they change: no one counts them"
 						>{count(uncounted, 'edit')} not allowed</b

@@ -24,7 +24,7 @@ use avendb::doc::Item;
 use avendb::history::{Repo, MAIN};
 use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
-use avendb::lens::{DocV2, View};
+use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{
     checkpointed, mk_cell, order, removes, replay, trace, view, Action, Cap, Edit, Entry, Fact, Grantee, Holder, Issued,
     Kind, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Role, State, Vault, Write,
@@ -2120,6 +2120,44 @@ fn t9_put_get_todos() {
         }
     }
     assert!(kept > 0);
+}
+
+#[test]
+fn s1_every_edit_an_app_makes_fits() {
+    // on random documents and todos as any mix of apps could have stored them, with values no schema takes, blocks no
+    // app reads and ids two blocks share, every edit an app makes through its view fits the schemas both apps wrote
+    // them under (`Lane::fits`): what it didn't change holds back nothing it changed, so a device never refuses its
+    // app's edit and every reader counts it. A block with no id is no row, and no app writes one: those it leaves out.
+    let lane = Lane::with_built_ins([]);
+    let docs: BTreeSet<BlobId> = [DOCUMENT_V1.id(), DOCUMENT_V2.id()].into();
+    let todos: BTreeSet<BlobId> = [TODO_V1.id(), TODO_V2.id()].into();
+    let mut judged = 0;
+    for seed in RUNS {
+        let mut rng = Rng(seed);
+        for _ in 0..50 {
+            let doc = stored_document(&mut rng);
+            let todo = stored_todo(&mut rng);
+            let rows = blocks(&doc).iter().all(|b| b["id"].is_u64());
+            for newer in [false, true] {
+                let view = if newer { View::document_v2() } else { View::document_v1() };
+                let mut edited = view.get(&doc).expect("every document reads");
+                for _ in 0..1 + rng.below(3) {
+                    edit_document(&mut rng, &mut edited, newer);
+                }
+                let put = view.put(&doc, &edited).expect("an edited view is a view");
+                assert!(!rows || lane.fits(&docs, &doc, &put), "seed {seed}: {doc} edited into {put}");
+                let view = if newer { View::todo_v2() } else { View::todo_v1() };
+                let mut edited = view.get(&todo).expect("every todo reads");
+                for _ in 0..1 + rng.below(3) {
+                    edit_todo(&mut rng, &mut edited, newer);
+                }
+                let put = view.put(&todo, &edited).expect("an edited view is a view");
+                assert!(lane.fits(&todos, &todo, &put), "seed {seed}: {todo} edited into {put}");
+                judged += 1 + usize::from(rows);
+            }
+        }
+    }
+    assert!(judged > 6000, "{judged}");
 }
 
 /// One random edit of a document, as a user makes it in a v2 app; a new one where an undo took the first write back.

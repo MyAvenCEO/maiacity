@@ -261,7 +261,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
 /// The schemas and lenses device `me` reads vault `v`'s entries through: the app's own, then what the vault's lane
 /// publishes.
 fn lane(lab: &Lab, me: SignerId, v: VaultId) -> Lane {
-    Lane::new(lens::blobs::ALL.iter().map(|b| b.as_bytes()).chain(lab.state(me).lane_of(v)))
+    Lane::with_built_ins(lab.state(me).lane_of(v))
 }
 
 /// The schema a record's kind names: of those in the lane whose `kind` is that constant, the newest, the one no lens
@@ -489,6 +489,10 @@ pub struct Wrote {
     /// The version it changed: what it built on, or for a merge or a promote, its own line's version before it, so its
     /// changes are what it brought.
     pub base: Vec<EditId>,
+    /// Why its readers don't count it, if they don't: it builds on a write they don't count (`builds-on`); they can't
+    /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); or the rules of
+    /// the caps it relies on don't allow what it touches (`rules`, C1 to C4).
+    pub why: Option<&'static str>,
 }
 
 pub fn wrote(h: &History, c: &history::Change) -> Wrote {
@@ -505,7 +509,19 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
     };
     let own: Vec<EditId> = w.deps.iter().copied().filter(|d| on(d) == Some(line)).collect();
     let base = if kind == "edit" || own.is_empty() { w.deps.clone() } else { own };
-    Wrote { kind, from, base }
+    let builds_on = || w.deps.iter().any(|d| h.get(*d).is_some_and(|x| !x.counted));
+    let why = if c.counted {
+        None
+    } else if builds_on() {
+        Some("builds-on")
+    } else if c.body.is_none() {
+        Some("sealed")
+    } else if !c.fits {
+        Some("unfit")
+    } else {
+        Some("rules")
+    };
+    Wrote { kind, from, base, why }
 }
 
 /// A line by name: `main`, or its proposal's, `None` for a proposal whose name the device can't open.
@@ -519,9 +535,10 @@ pub fn line_name(h: &History, line: Line) -> Option<String> {
 /// `{"op": "history", "entry", "limit"?}`: entry `entry`'s lines, the main line first, then each proposal in the order
 /// it started, each with its name, the version it started from and its heads; and every write of it the device holds,
 /// in the order it took them, each with its id, its device (`author`), the vault it acted for, its line, what it
-/// builds on, what it is (`wrote`), whether its readers count it (`counted`: a write no rule of its caps allows, or
-/// that builds on one, is on no line) and, for the latest `limit` (`SHOWN`, left out) that change anything, the
-/// changes it made to the stored record (`ops::diff`), which every reader of the entry sees alike.
+/// builds on, what it is (`wrote`), whether its readers count it (`counted`: a write that breaks its entry's schemas,
+/// that no rule of its caps allows, or that builds on one, is on no line), why not (`why`) and, for the latest `limit`
+/// (`SHOWN`, left out) that change anything, the changes it made to the stored record (`ops::diff`), which every
+/// reader of the entry sees alike.
 fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let entry = entry_of(o)?;
     let limit = count_of(o, "limit")?.unwrap_or(SHOWN);
@@ -553,6 +570,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "deps": ids(&w.deps),
             "kind": x.kind,
             "counted": c.counted,
+            "why": x.why,
             "name": if x.kind == "propose" { h.name(w.edit) } else { None },
             "from": x.from.map(|l| json!({ "line": line_json(l), "name": line_name(h, l) })),
             "changes": changes,

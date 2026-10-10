@@ -132,8 +132,9 @@ structure State where
   /-- Only while checking an edit that a move after it hadn't seen (`hide`): each entry such a move took to a cell, and
       that cell. A write must be allowed there too. -/
   narrow    : List (EntryId × Cell) := []
-  /-- The accepted writes an entry's readers don't count: no rule its actor's caps carry allows it, or it builds on one
-      they don't count (`counts`). Known to the entry's readers only. -/
+  /-- The accepted writes an entry's readers don't count: what it makes of the record doesn't fit the entry's schemas,
+      no rule its actor's caps carry allows it, or it builds on one they don't count (`counts`). Known to the entry's
+      readers only. -/
   uncounted : List EditId := []
   deriving Repr
 
@@ -312,19 +313,20 @@ def lets (st : State) (cp : Cap) (proof : Option CapId) (main : Bool) (ts : List
   !ruledChain st cp || (proof == some cp.id && chainAllows st cp main ts)
 
 /-- The readers of entry `en` count a write of it by vault `a` that builds on `deps`, carries the proof `proof` and
-    touches `ts`, on the main line (`main`) or on a proposal: they count what it builds on, and `a` is the entry's
-    vault or holds a cap with write or more reaching the entry that lets the write through. -/
+    touches `ts`, on the main line (`main`) or on a proposal, and whose result fits the entry's schemas or not
+    (`fits`): it fits, they count what it builds on, and `a` is the entry's vault or holds a cap with write or more
+    reaching the entry that lets the write through. -/
 def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof : Option CapId) (main : Bool)
-    (ts : List Touch) : Bool :=
-  deps.all (fun d => !st.uncounted.contains d) &&
+    (ts : List Touch) (fits : Bool) : Bool :=
+  fits && deps.all (fun d => !st.uncounted.contains d) &&
     (a == en.vault || st.caps.any fun cp => holdsCap st a cp .write && inCell st cp en && lets st cp proof main ts)
 
-/-- The readers of an entry of vault `v` count its creation in cell `x` by vault `a`, with the proof `proof`: `a` is
-    `v`, or `x` is the intake cell of a cap over `v` that `a` holds with write or more and that lets a creation
-    through. -/
-def creates (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) : Bool :=
-  a == v || st.caps.any fun cp =>
-    cp.over == v && holdsCap st a cp .write && intake st cp == x && lets st cp proof true [.create]
+/-- The readers of an entry of vault `v` count its creation in cell `x` by vault `a`, with the proof `proof`, whose
+    record fits its schemas or not (`fits`): it fits, and `a` is `v`, or `x` is the intake cell of a cap over `v` that
+    `a` holds with write or more and that lets a creation through. -/
+def creates (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) (fits : Bool) : Bool :=
+  fits && (a == v || st.caps.any fun cp =>
+    cp.over == v && holdsCap st a cp .write && intake st cp == x && lets st cp proof true [.create])
 
 /-- Vault `a` creating an entry of vault `v` in cell `x` with attributes `attrs`, with the proof `proof`, stays inside
     its own slice: it is `v`, or `x` is the intake cell of a cap over `v` it holds with write or more whose slice holds

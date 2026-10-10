@@ -88,9 +88,9 @@ def KeyFam.vault : KeyFam → VaultId
 
 /-! ## Relays
 
-A relay reads no selector, no type, no tag and no rule: it sees a cap without its selector, relabel set and rules
-(only whether it is ruled), and a write without its header, tags, proof and touches. What it then works out of the
-edits is the operational part of the state. -/
+A relay reads no selector, no type, no tag, no rule and no record: it sees a cap without its selector, relabel set
+and rules (only whether it is ruled), and a write without its header, tags, proof, touches and whether it fits its
+schemas. What it then works out of the edits is the operational part of the state. -/
 
 /-- A cap as a relay sees it. -/
 def Cap.blind (c : Cap) : Cap := { c with select := .all, relabel := [], rules := [] }
@@ -98,8 +98,8 @@ def Cap.blind (c : Cap) : Cap := { c with select := .all, relabel := [], rules :
 /-- An action as a relay sees it. -/
 def Action.blind : Action → Action
   | .cap c via => .cap c.blind via
-  | .write v e a s g deps p via create _ _ _ =>
-    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none []
+  | .write v e a s g deps p via create _ _ _ _ =>
+    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none [] true
   | a => a
 
 def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }

@@ -1,19 +1,20 @@
 //! The ops engine on the Lab (`avendb::engine`, `docs/OPS.md`): queries that pick entries by the selector of their
 //! labels and test what they open; record ops through an app's schema and its lens, which write only what changed;
 //! every write's changes in its entry's history, the same for every reader; batches, proposals, merges, restores,
-//! undos and variants as ops; and the rules judging each op's write as any peer's, by the caps of the vault it acts
-//! for, and by the rules of a ruled cap's chain (C1 to C4, `spec/AvenDB/Theorems.lean`): `may` answers before a page
-//! offers a button, a write the rules don't allow is refused, and one a patched app makes all the same counts for no
-//! reader, nor anything built on it. Alice's library (`cast::library`) and the coop's handbook (`cast::handbook`,
-//! Welcome written by a v1 app) are the data; the ops are JSON, as the page and the Mac app send them.
+//! undos and variants as ops; and every op's write judged as any peer's, by the caps of the vault it acts for, by the
+//! rules of a ruled cap's chain (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas its entry was written under
+//! (S1 to S4): `may` answers before a page offers a button, a write they don't allow is refused, and one a patched app
+//! makes all the same counts for no reader, nor anything built on it. Alice's library (`cast::library`) and the coop's
+//! handbook (`cast::handbook`, Welcome written by a v1 app) are the data; the ops are JSON, as the page and the Mac app
+//! send them.
 
 use avendb::cast::{self, World};
 use avendb::engine;
 use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewCap, Tamper};
-use avendb::lens::{Status, TypeV2};
-use avendb::policy::Role;
+use avendb::lens::{Schema, Status, TypeV2, View};
+use avendb::policy::{Action, Refusal, Role};
 use avendb::rules::{self, Rule};
 use serde_json::{json, Value};
 
@@ -362,7 +363,7 @@ fn a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow() {
     assert_eq!(cast::status(&w.lab, mac, l.door), Some(Status::Done));
     assert!(counted(&mut w, mac, l.door).iter().all(|c| c.1));
     // a patched app that ignores the rules makes the write all the same: no reader counts it, its own device neither
-    let lawless = w.lab.ignoring_rules(|lab| engine::run(lab, mac_b, &retitle));
+    let lawless = w.lab.patched(|lab| engine::run(lab, mac_b, &retitle));
     let lawless = ok(lawless)["edit"].as_str().expect("an edit").to_string();
     w.lab.sync_all(2);
     for d in [mac, mac_b] {
@@ -463,4 +464,112 @@ fn a_cap_that_only_suggests_writes_on_proposals_an_owner_merges() {
         let texts: Vec<&str> = doc.blocks.iter().map(|b| b.text.as_str()).collect();
         assert_eq!((doc.title.as_str(), texts), ("Spring plan", vec!["Plan", "Spring first.", "Sow beans"]));
     }
+}
+
+/// S3: a write whose record breaks the schemas its entry was written under counts for no reader, nor anything built
+/// on it; a device refuses to make one, and one a patched app makes all the same changes no record anyone shows.
+#[test]
+fn s3_a_write_that_breaks_its_schema_counts_for_no_reader() {
+    let mut w = cast::world();
+    let t = cast::todos_on(&mut w);
+    w.lab.sync_all(0);
+    let (bob, mac, mac_b, mac_c) = (w.bob, w.mac_a, w.mac_b, w.mac_c);
+    let door = hex(t.door);
+    let status = |value: &str| json!({ "op": "set", "entry": door, "path": ["status"], "value": value });
+    ok(run(&mut w, mac_b, status("doing")));
+    // what Bob's Mac would write for an app that breaks the todo's schema: a status it doesn't take, a todo of no
+    // kind, a field it doesn't name, or the todo retitled through the schema of a document, another kind
+    let record = w.lab.item(mac_b, t.door).expect("the door").record();
+    let with = |change: &dyn Fn(&mut Value)| {
+        let mut r = record.clone();
+        change(&mut r);
+        r
+    };
+    let later = with(&|r| r["status"] = json!("later"));
+    let kindless = with(&|r| drop(r.as_object_mut().expect("a record").remove("kind")));
+    let colour = with(&|r| r["colour"] = json!("red"));
+    for bad in [&later, &kindless, &colour] {
+        assert_eq!(w.lab.edit(mac_b, bob, t.door, |item| item.put_record(bad)), Err(Refusal::NotAView), "{bad}");
+    }
+    let retitled = with(&|r| r["title"] = json!("The door"));
+    let document = w.lab.edit(mac_b, bob, t.door, |item| item.set_record(View::document_v2(), &retitled));
+    assert_eq!(document, Err(Refusal::NotAView));
+    assert_eq!(may(&mut w, mac_b, bob, &[status("later")]), [json!("NotAView")]);
+    // a patched app makes one all the same: no reader counts it, its own device neither, and each keeps the last
+    // record that fit
+    let patched = w.lab.patched(|lab| lab.edit(mac_b, bob, t.door, |item| item.put_record(&later)));
+    let patched = patched.expect("a patched app makes it").to_hex();
+    w.lab.sync_all(1);
+    for d in [mac, mac_b, mac_c] {
+        assert_eq!(counted(&mut w, d, t.door).last(), Some(&(patched.clone(), false)));
+        assert_eq!(w.lab.item(d, t.door).expect("the door").record()["status"], "doing");
+    }
+    // the latest write each device holds, why it doesn't count, and how many lines it shows
+    let latest = |w: &mut World, d| {
+        let history = ok(run(w, d, json!({ "op": "history", "entry": door })));
+        let last = list(&history["edits"]).last().expect("its writes").clone();
+        (last["id"].clone(), last["why"].clone(), list(&history["lines"]).len())
+    };
+    assert_eq!(latest(&mut w, mac), (json!(patched), json!("unfit"), 1));
+    // nor anything built on it: a proposal Bob starts from that version
+    let from = json!({ "op": "propose", "entry": door, "from": [patched], "name": "Later" });
+    let started = ok(run(&mut w, mac_b, from))["edit"].clone();
+    w.lab.sync_all(2);
+    for d in [mac, mac_b, mac_c] {
+        assert_eq!(latest(&mut w, d), (started.clone(), json!("builds-on"), 1));
+    }
+    // what Bob's app writes next builds on the writes his readers count, and counts
+    ok(run(&mut w, mac_b, status("done")));
+    w.lab.sync_all(3);
+    for d in [mac, mac_b, mac_c] {
+        assert_eq!(cast::status(&w.lab, d, t.door), Some(Status::Done));
+        assert_eq!(counted(&mut w, d, t.door).last().map(|c| c.1), Some(true));
+    }
+}
+
+/// A todo schema of Alice's own: v2, where a todo may be blocked too.
+const TODO_V3: &str = r#"{ "title": "Todo, v3", "type": "object", "properties": {
+  "kind": { "const": "todo" },
+  "title": { "type": "string", "default": "" },
+  "status": { "enum": ["open", "doing", "blocked", "done"], "default": "open" },
+  "notes": { "type": "string", "x-loro": "text", "default": "" },
+  "due": { "type": "string", "format": "date" } },
+  "required": ["kind"] }"#;
+
+/// A write is judged under the schemas of its vault's lane and the built-in ones: one a patched app writes through a
+/// schema the lane doesn't hold counts for no reader until the vault publishes it, and from then on, as a lane only
+/// grows, for every reader.
+#[test]
+fn a_write_counts_once_the_lane_holds_its_schema() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let (alice, mac) = (w.alice, w.mac_a);
+    let v3 = Schema::parse(TODO_V3.as_bytes()).expect("a schema");
+    let (door, schema) = (hex(l.door), v3.id().to_hex());
+    let get = json!({ "op": "get", "entry": door, "schema": schema });
+    let blocked = json!({ "op": "set", "entry": door, "schema": schema, "path": ["status"], "value": "blocked" });
+    // an app on v3 neither reads nor writes through it while Alice's lane doesn't hold it
+    assert_eq!(refused(&run(&mut w, mac, get.clone())), "NoSchema");
+    assert_eq!(refused(&run(&mut w, mac, blocked)), "NoSchema");
+    // a patched one writes through it all the same, which no reader counts: the todo stores no status still, so is
+    // open, its default
+    let patched = w.lab.patched(|lab| {
+        lab.edit(mac, alice, l.door, |item| {
+            let mut r = item.record();
+            r["status"] = json!("blocked");
+            item.set_record(&View::plain(&v3), &r);
+        })
+    });
+    let patched = patched.expect("a patched app makes it").to_hex();
+    let stored = |w: &World| w.lab.item(mac, l.door).expect("the door").record()["status"].clone();
+    assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(patched.clone(), false)));
+    assert_eq!(stored(&w), Value::Null);
+    // once Alice publishes v3 into her lane, the write fits the schemas it was written under, and counts
+    let publish = Action::Publish { vault: alice, actor: alice, via: vec![], blob: TODO_V3.as_bytes().to_vec() };
+    w.lab.submit(mac, &[mac], publish).expect("Alice publishes v3");
+    assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(patched, true)));
+    assert_eq!(stored(&w), "blocked");
+    // an app on v3 reads it, read-only: no lens joins v3 to v2, which the todo was written under too
+    let seen = ok(run(&mut w, mac, get));
+    assert_eq!((seen["record"]["status"].clone(), seen["readOnly"].clone()), (json!("blocked"), json!(true)));
 }

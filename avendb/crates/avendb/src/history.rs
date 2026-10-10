@@ -19,10 +19,11 @@
 //! (`doc::Item::copy`). A device stores full Loro snapshots (`doc::Item::bytes`), never shallow ones: a shallow
 //! snapshot refuses the updates of a proposal that starts before it.
 //!
-//! A line's history is made of the writes the entry's readers count (`Change::counted`, C1 to C4): a write through a
-//! ruled cap counts where the rules of its cap's chain allow what it touches, and only if what it builds on counts
-//! too. Its touches are read off what it carries, on the history before it (`History::touches`). So a write that no
-//! rule allows changes no line anyone shows, and nothing a device writes builds on it.
+//! A line's history is made of the writes the entry's readers count (`Change::counted`, C1 to C4, S1 to S4): a write
+//! counts where it fits the schemas its entry was written under, through a ruled cap only where the rules of its
+//! cap's chain allow what it touches, and only if what it builds on counts too. Both are read off what it carries, on
+//! the history before it (`History::reading`). So a write that breaks its schema, or that no rule allows, changes no
+//! line anyone shows, and nothing a device writes builds on it.
 //!
 //! `History` is what a device holds of one entry, every accepted write with what it could open; the Lab builds one
 //! for each entry it shows. `Repo` keeps one locally, with no keys and no caps, for the tests and the property checks.
@@ -33,6 +34,7 @@ use serde_json::{Map, Value};
 
 use crate::doc::Item;
 use crate::id::{BlobId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::lens::Lane;
 use crate::policy::{self, Line, Proposal, Refusal, Write};
 use crate::rules::{self, Touch};
 
@@ -40,12 +42,14 @@ use crate::rules::{self, Touch};
 pub const MAIN: Line = None;
 
 /// One accepted write of an entry as a device holds it: the write, what it carries if the device could open it (a
-/// Loro update, nothing for a merge, or for a write that starts a proposal, the proposal's name), and whether the
-/// entry's readers count it (`policy::State::lets`).
+/// Loro update, nothing for a merge, or for a write that starts a proposal, the proposal's name), whether it fits the
+/// schemas its entry was written under as far as the entry's readers judged it (`History::reading`, which they read
+/// only where what it builds on counts), and whether they count it (`policy::State::lets`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Change {
     pub write: Write,
     pub body: Option<Vec<u8>>,
+    pub fits: bool,
     pub counted: bool,
 }
 
@@ -74,11 +78,37 @@ pub struct History {
     changes: Vec<Change>,
 }
 
-/// A scratch item of an entry and the writes it holds, which `History::touches_on` grows from one write's version to
-/// the next's where it holds no write outside it: so reading the touches of a run of writes imports each once.
+/// A scratch item of an entry, the writes it holds and the schemas they were written under, which
+/// `History::reading_on` grows from one write's version to the next's where it holds no write outside it: so reading a
+/// run of writes imports each once.
 pub struct Scratch {
     item: Item,
     holds: HashSet<EditId>,
+    authored: BTreeSet<BlobId>,
+    /// The write it was last grown by: it holds that write's version and that write, and nothing else.
+    tip: Option<EditId>,
+}
+
+impl Scratch {
+    fn new(signer: SignerId, line: Line) -> Scratch {
+        Scratch { item: Item::new_on(signer, line), holds: HashSet::new(), authored: BTreeSet::new(), tip: None }
+    }
+
+    /// Import the update change `c` carries, noting the schemas it was written under.
+    fn import(&mut self, c: &Change) {
+        let since = self.item.version();
+        if import(&mut self.item, c) {
+            self.authored.extend(self.item.authored_since(&since));
+        }
+    }
+}
+
+/// What a write's readers read off what it carries (`History::reading`): what it touches (`rules::Touch`), `None` where
+/// they can't read it; and whether it fits the schemas its entry was written under (`lens::Lane::fits`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reading {
+    pub touches: Option<Vec<Touch>>,
+    pub fits: bool,
 }
 
 impl History {
@@ -167,57 +197,89 @@ impl History {
         }
     }
 
-    /// What write `w` touches (`rules::Touch`), as its readers read it off what it carries, `body` (`None`: they
-    /// can't open it), on this history, which holds the writes before it: its creation; a proposal's start; another
-    /// line merged in, where it builds on a write its line's history doesn't hold; and what its update's ops touch,
-    /// imported on the version it builds on (`doc::Item::footprint`). `None` where it carries an update they can't
-    /// open or that doesn't import there whole: no rule allows what they can't read.
-    pub fn touches(&self, w: &Write, body: Option<&[u8]>, signer: SignerId) -> Option<Vec<Touch>> {
-        self.touches_on(&mut None, w, body, signer)
+    /// What write `w`'s readers read off what it carries, `body` (`None`: they can't open it), on this history, which
+    /// holds the writes before it, judging it by the schemas `lane` holds.
+    ///
+    /// What it touches: its creation; a proposal's start; another line merged in, where it builds on a write its line's
+    /// history doesn't hold; and what its update's ops touch, imported on the version it builds on
+    /// (`doc::Item::footprint`). `None` where it carries an update they can't open or that doesn't import there whole:
+    /// no rule allows what they can't read.
+    ///
+    /// Whether it fits (`lens::Lane::fits`): what its update changes, from the record of that version (nothing, for a
+    /// creation) to the record after it, under the schemas the entry was written under once it is in. A proposal's
+    /// start, a merge and a write of tags alone change no record, and fit; a write they can't open, or whose update
+    /// doesn't import there whole, they can't judge, and it doesn't.
+    pub fn reading(&self, w: &Write, body: Option<&[u8]>, signer: SignerId, lane: &Lane) -> Reading {
+        self.reading_on(&mut None, w, body, signer, lane)
     }
 
-    /// `touches`, on the scratch item `at` holds, made anew where it holds a write outside the version `w` builds on.
-    pub fn touches_on(
+    /// `reading`, on the scratch item `at` holds, made anew where it holds a write outside the version `w` builds on.
+    pub fn reading_on(
         &self,
         at: &mut Option<Scratch>,
         w: &Write,
         body: Option<&[u8]>,
         signer: SignerId,
-    ) -> Option<Vec<Touch>> {
-        if w.first {
-            return Some(vec![Touch::Create]);
+        lane: &Lane,
+    ) -> Reading {
+        if w.proposal == Proposal::New && !w.first {
+            return Reading { touches: Some(vec![Touch::Propose]), fits: true };
         }
-        if w.proposal == Proposal::New {
-            return Some(vec![Touch::Propose]);
-        }
-        let held: HashSet<EditId> = self.history(w.line()).iter().map(|c| c.write.edit).collect();
         let mut out = vec![];
-        if w.deps.iter().any(|d| !held.contains(d)) {
+        if w.first {
+            out.push(Touch::Create);
+        } else if !self.on_its_line(w) {
             out.push(Touch::Merge);
         }
-        let update = body?;
+        // a creation touches its creation alone, whatever it holds
+        let unread = |out: Vec<Touch>| Reading { touches: w.first.then_some(out), fits: false };
+        let Some(update) = body else { return unread(out) };
         if update.is_empty() {
-            return Some(out);
+            return Reading { touches: Some(out), fits: true };
         }
-        let version = self.version(&w.deps);
-        let within: HashSet<EditId> = version.iter().map(|c| c.write.edit).collect();
         let s = match at.take() {
-            Some(s) if s.holds.is_subset(&within) => at.insert(s),
-            _ => at.insert(Scratch { item: Item::new_on(signer, w.line()), holds: HashSet::new() }),
-        };
-        for c in version {
-            if s.holds.insert(c.write.edit) {
-                import(&mut s.item, c);
+            // it holds the version `w` builds on, and nothing else
+            Some(s) if s.tip.is_some() && w.deps == s.tip.as_slice() => at.insert(s),
+            s => {
+                let version = self.version(&w.deps);
+                let within: HashSet<EditId> = version.iter().map(|c| c.write.edit).collect();
+                let s = match s {
+                    Some(s) if s.holds.is_subset(&within) => at.insert(s),
+                    _ => at.insert(Scratch::new(signer, w.line())),
+                };
+                for c in version {
+                    if s.holds.insert(c.write.edit) {
+                        s.import(c);
+                    }
+                }
+                s
             }
-        }
+        };
         s.holds.insert(w.edit);
-        let Some(touched) = s.item.footprint(update, w.author, w.line()) else {
+        s.tip = Some(w.edit);
+        let since = s.item.version();
+        let Some(footprint) = s.item.footprint(update, w.author, w.line()) else {
             // it may hold part of the update: made anew next time
             *at = None;
-            return None;
+            return unread(out);
         };
-        out.extend(touched);
-        Some(rules::dedup(out))
+        s.authored.extend(s.item.authored_since(&since));
+        let fits = lane.fits(&s.authored, &footprint.before, &footprint.after);
+        if !w.first {
+            out.extend(footprint.touches);
+        }
+        Reading { touches: Some(rules::dedup(out)), fits }
+    }
+
+    /// Write `w` builds only on writes its line's history holds: no other line's writes come in with it.
+    fn on_its_line(&self, w: &Write) -> bool {
+        // what it builds on on its own line, and counts, is in that history
+        let same = |d: &EditId| self.get(*d).is_some_and(|c| c.counted && c.write.line() == w.line());
+        if w.deps.iter().all(same) {
+            return true;
+        }
+        let held: HashSet<EditId> = self.history(w.line()).iter().map(|c| c.write.edit).collect();
+        w.deps.iter().all(|d| held.contains(d))
     }
 
     /// The record `signer` shows on `line`: `{}` before any update.
@@ -466,7 +528,7 @@ impl Repo {
         let (stay, generation, cell, first) = (None, 0, CellId::of(actor, &[]), self.history.changes.is_empty());
         let (deps, proposal, via, caps) = (d.deps, d.proposal, vec![], vec![]);
         let write = Write { edit, author, actor, entry, stay, generation, deps, proposal, via, first, cell, caps };
-        self.history.push(Change { write, body: Some(d.body), counted: true })?;
+        self.history.push(Change { write, body: Some(d.body), fits: true, counted: true })?;
         Ok(edit)
     }
 }

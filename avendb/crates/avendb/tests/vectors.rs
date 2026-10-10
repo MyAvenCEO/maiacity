@@ -397,6 +397,9 @@ impl Names {
                 }
                 let touches = x.get("touches").map_or(&[][..], list).iter().map(|t| Touch::of_json(t).unwrap());
                 self.readings.touches.insert(id, touches.collect());
+                if x.get("fits") == Some(&Value::Bool(false)) {
+                    self.readings.unfit.insert(id);
+                }
             }
             _ => {}
         }

@@ -29,7 +29,7 @@ lake exe vectors
 | File | What it holds |
 |---|---|
 | `Basic.lean` | Ids, principals (signers and vaults), roles relay < read < write < owner, grantees, selectors and what they test (type, author, entry, creation time, tags), cells, key families and key names |
-| `State.lean` | What a peer knows: the three kinds of vault (human, coop, aven) and what each may be owned by; acting for a vault through the chain of owners an edit names (`actsVia`), approving for it (its root, or its threshold of owners); caps and the chains they rest on; entries, their stays and cells; the operational rules a relay can check (who may write, create, revoke) and the semantic layer only readers and stewards know (an entry's attributes, whether its creation was let in, its semantic cell, `desired`); which writes an entry's readers count, by the rules of the chain a write's proof names (`lets`, `counts`, `creates`, `counted`); symbolic keys (`Knows`), rotation, sealing and entry keys |
+| `State.lean` | What a peer knows: the three kinds of vault (human, coop, aven) and what each may be owned by; acting for a vault through the chain of owners an edit names (`actsVia`), approving for it (its root, or its threshold of owners); caps and the chains they rest on; entries, their stays and cells; the operational rules a relay can check (who may write, create, revoke) and the semantic layer only readers and stewards know (an entry's attributes, whether its creation was let in, its semantic cell, `desired`); which writes an entry's readers count, by the rules of the chain a write's proof names and whether it fits its entry's schemas (`lets`, `counts`, `creates`, `counted`); symbolic keys (`Knows`), rotation, sealing and entry keys |
 | `Step.lean` | Every edit and the rules that accept or refuse it: governance, caps and revocations, writes that create entries in cells, moves, keys, publishing into a vault's schema lane, checkpoints, writes on a proposal (which build on its start); the one order every peer replays in; strong removal: what a removal or a move cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
 | `Sync.lean` | What a peer sends a device: sync by cells, entry by entry (each entry's writes, moves, checkpoints and keys), with the caps and vaults needed to check them; and what it hands a new device whose passkey proved itself on their connection, the logs of the vaults the passkey owns (`linkCard`) |
 | `Logs.lean` | Every edit in one log, a vault's, a cap's, a cell's or an entry's, building on that log's frontier; each log's closed part (the edits whose whole past is held) and frontier; what a device names of each log when it asks (its frontier, the edits 1, 2, 4, 8, … steps back and the oldest) and its loose edits; what a peer sends beyond them (`respondSince`); forks |
@@ -40,8 +40,9 @@ lake exe vectors
 | `OpsVectors.lean` | The ops cases for the Rust engine, in the very JSON the page sends: diffs, runs of ops, and queries with the selectors they pick by (`lake exe vectors` writes them to `vectors/ops.json`) |
 | `Rules.lean` | Caps that name ops: rules (op patterns on paths with `*`, the values a set may take, the lines they hold on), a write's touches (what its Loro ops did, place by place) and what rules allow; the half of C3 about a write's changes (`changes_allowed`) |
 | `RuleLemmas.lean` | The proofs of C1 to C4: chains narrow rules, readers agree whether a write counts, counted writes did what their chain allows, allowed writes count and what builds on an uncounted one never does |
+| `Schemas.lean` | Writes that fit their schemas: what the schemas a write is judged under let a record hold, place by place, row by row and in its own fields (`Fit`); a write judged by its diff (`Fit.fits`); S1 and S2, a write judged by what it changed and records that fit staying so |
 | `Props.lean` | The predicates and views the theorems are stated with, apart from their proofs |
-| `Theorems.lean` | T1 to T8, T11 to T26 and C1 to C4; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
+| `Theorems.lean` | T1 to T8, T11 to T26, C1 to C4 and S1 to S4; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas for vaults and writes: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane |
 | `CapLemmas.lean` | The helper lemmas for caps, cells and removals: well-formed cap chains (T22), cells meaning what the selectors say (T23), the replay and strong removal (T16, T18), the generations along a replay (T15) |
 | `RelayLemmas.lean` | The proof of T25: every rule reads only the operational part of a state, so a relay that opens no selector, type or tag has every edit stand or fall as an owner does |
@@ -93,6 +94,10 @@ lake exe vectors
 | C2 | Readers agree: whether a write or a creation counts reads no selector, relabel set, type or tag, and no rules but those of the chain its proof names, so every reader of the entry reaches the same verdict (`counts_seen`, `creates_seen`) | Proven | `a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow`, the vectors |
 | C3 | Ruled writes do what they may: a counted write that relies on ruled caps has every touch allowed by every ruled cap of its proof's chain, and where its touches' places cover its diff, every change is at a place a rule allows (`counted_allowed`, `changes_allowed`) | Proven | `c3_touches_cover_every_change`, `touches_name_the_field_the_row_and_the_value`, `a_cap_that_only_suggests_writes_on_proposals_an_owner_merges` |
 | C4 | Allowed writes count: a write that builds on counted writes, whose proof names a cap its actor holds reaching the entry and whose chain allows its touches, counts, and so does such a creation; no write that builds on an uncounted one counts (`allowed_counts`, `allowed_creates`, `uncounted_closed`) | Proven | `a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow`, `the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps`, the vectors |
+| S1 | A write is judged by what it changed: it fits its schemas exactly when each change of its diff does, on the record or row around it, so a value it didn't change holds it back nowhere else (`fits_iff`) | Proven | `s1_a_write_is_judged_by_what_it_changed`, `s2_a_record_that_fits_keeps_fitting` |
+| S2 | Records that fit stay so: a record that fits keeps fitting through a write that fits, and an entry's first write, if it fits, makes a record that fits of nothing (`fits_clean`, `fits_new`) | Proven | `s2_a_record_that_fits_keeps_fitting`, `s1_every_edit_an_app_makes_fits` |
+| S3 | Writes that don't fit count for no reader: no write and no creation whose result doesn't fit its schemas counts, whatever its caps and rules, nor anything built on it (`S3_unfit_uncounted`, `S3_step`) | Proven | `s3_a_write_that_breaks_its_schema_counts_for_no_reader`, `a_write_counts_once_the_lane_holds_its_schema`, the vectors |
+| S4 | Relays don't judge records: whether a write fits, which only its readers can tell, changes nothing but which writes they count (`S4_fit_unread`) | Proven | the vectors |
 
 The Rust scenario tests (`crates/avendb/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
 and keys in the Lab. The vectors (`crates/avendb/tests/vectors.rs`) hold the Rust rules to the model's answers edit by
@@ -164,6 +169,13 @@ ops, imported on the version it builds on, and counts the write only where every
 touch and everything it builds on counts (C2 to C4), so a chain allows no more than any ruled cap of it (C1). A write
 that doesn't count stays in the log and shows on no line, nor does anything built on it: an app patched to skip the
 rules writes nothing anyone reads.
+
+Every reader also judges each write by the schemas its entry was written under once the write is in, which must be in
+the vault's lane or built in and all of one kind: each place it changed holds a value one of them takes there, each
+row it added or changed reads under one of them, the record's own fields too where it changed them, and it makes no
+copy of a row. A write is judged by what it changed alone (S1), so a record that fits stays so (S2); one that doesn't
+fit counts for no reader, nor anything built on it (S3), so every device keeps the last record that fit, whatever a
+patched app writes; and relays, which open no write, judge none (S4).
 
 Every edit is named by a SHA-3 hash, and every signature on it but a write's has a hash-based half (SLH-DSA) beside the
 classical one, so governance, caps and keys hold even once the curves fall. A write carries only the classical
@@ -264,3 +276,4 @@ what is still red.
 | F | Flat vaults: no spaces; caps on any slice of a vault (types, tags, entries, authors, creation times) resting on caps; cells, stewards that move entries to the cells their caps pick and answer tag asks, creation through a cap's intake cell; seeds, cap keys, cell keys and entry keys derived per stay, a cell coming back into use moving on; sync by cells | T22, T23, T24, T25, and T1, T4 to T8, T12, T13, T15 to T17 again |
 | O | Ops: one JSON language to read and change any record, the same engine on every device, the page and the studio on it | O1, O2, O3 |
 | C | Caps that name ops: rules in a write cap's sealed slice with a commitment in the clear, proof-carrying writes, every reader counting only what the rules allow; `may` for the page; rules in the share dialog | C1, C2, C3, C4, and T25 again |
+| S | Writes that fit their schemas: every reader judging each write by its entry's schemas, devices refusing what doesn't fit, the page saying why a write doesn't count | S1, S2, S3, S4 |

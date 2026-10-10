@@ -5,14 +5,16 @@ import AvenDB.RelayLemmas
 import AvenDB.KeyLemmas
 import AvenDB.SyncLemmas
 import AvenDB.RuleLemmas
+import AvenDB.Schemas
 
 /-!
 # The theorems
 
 What must always hold, stated over the executable model. T9 (lenses) and T10 (proposals) are proven in their own files.
 The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (caps, cells, removals and replay),
-`RuleLemmas.lean` (caps that name ops), `RelayLemmas.lean` (blind relays), `KeyLemmas.lean` (keys) and
-`SyncLemmas.lean` (convergence and sync); the predicates the statements use are in `Props.lean`.
+`RuleLemmas.lean` (caps that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean` (blind
+relays), `KeyLemmas.lean` (keys) and `SyncLemmas.lean` (convergence and sync); the predicates the statements use are in
+`Props.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed, wrapped or encrypted data reveals nothing without its
@@ -153,40 +155,41 @@ theorem child_narrows {st : State} (hr : Reachable st) {c pc : Cap} (hc : c ∈ 
     no rules but those of the chain the write's proof names, so every reader of the entry, whatever caps it opened,
     counts the same writes. -/
 theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (deps : List EditId)
-    (proof : Option CapId) (main : Bool) (ts : List Touch) :
-    counts (st.seen (proofCaps st proof)) a { en with attrs } deps proof main ts =
-      counts st a en deps proof main ts :=
-  Ruling.counts_seen st a en attrs deps proof main ts
+    (proof : Option CapId) (main : Bool) (ts : List Touch) (fits : Bool) :
+    counts (st.seen (proofCaps st proof)) a { en with attrs } deps proof main ts fits =
+      counts st a en deps proof main ts fits :=
+  Ruling.counts_seen st a en attrs deps proof main ts fits
 
 /-- C2, creations: whether the readers of an entry count its creation reads no selector, relabel set or rules but
     those of the chain the creation's proof names. -/
-theorem creates_seen (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) :
-    creates (st.seen (proofCaps st proof)) a v x proof = creates st a v x proof :=
-  Ruling.creates_seen st a v x proof
+theorem creates_seen (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) (fits : Bool) :
+    creates (st.seen (proofCaps st proof)) a v x proof fits = creates st a v x proof fits :=
+  Ruling.creates_seen st a v x proof fits
 
 /-- C3 (ruled writes do what they may): a counted write whose actor isn't the entry's vault, and reaches the entry
     only through ruled chains, relies on the cap its proof names, which its actor holds with write or more and which
     reaches the entry, and every ruled cap of that cap's chain allows every touch of it. -/
 theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option CapId}
-    {main : Bool} {ts : List Touch} (hc : counts st a en deps proof main ts = true) (hv : a ≠ en.vault)
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault)
     (hr : ∀ cp ∈ st.caps, holdsCap st a cp .write = true → inCell st cp en = true → ruledChain st cp = true) :
     ∃ cp ∈ st.caps, proof = some cp.id ∧ holdsCap st a cp .write = true ∧ inCell st cp en = true ∧
       ∀ c ∈ chain st cp, c.ruled = true → allowsAll c.rules main ts = true :=
   Ruling.counted_allowed hc hv hr
 
-/-- C4 (allowed writes count): a write that builds on writes its readers count, whose proof names a cap its actor
-    holds with write or more that reaches the entry, and whose chain allows every touch of it, counts. -/
+/-- C4 (allowed writes count): a write that fits, builds on writes its readers count, whose proof names a cap its
+    actor holds with write or more that reaches the entry, and whose chain allows every touch of it, counts. -/
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Cap} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.caps) (hh : holdsCap st a cp .write = true)
     (hi : inCell st cp en = true) (ha : chainAllows st cp main ts = true) :
-    counts st a en deps (some cp.id) main ts = true :=
+    counts st a en deps (some cp.id) main ts true = true :=
   Ruling.allowed_counts hd hcp hh hi ha
 
-/-- C4, creations: a creation in the intake cell of a cap over the vault that its actor holds with write or more,
-    whose proof names that cap and whose chain allows `create`, counts. -/
+/-- C4, creations: a creation that fits, in the intake cell of a cap over the vault that its actor holds with write or
+    more, whose proof names that cap and whose chain allows `create`, counts. -/
 theorem allowed_creates {st : State} {a v : VaultId} {cp : Cap} (hcp : cp ∈ st.caps) (hv : cp.over = v)
     (hh : holdsCap st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :
-    creates st a v (intake st cp) (some cp.id) = true :=
+    creates st a v (intake st cp) (some cp.id) true = true :=
   Ruling.allowed_creates hcp hv hh ha
 
 /-- C4, what builds on writes that don't count: in every reachable state the readers of an entry count no write that
@@ -194,6 +197,59 @@ theorem allowed_creates {st : State} {a v : VaultId} {cp : Cap} (hcp : cp ∈ st
     don't count or anything built on it. -/
 theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st :=
   Ruling.uncounted_closed hr
+
+/-! ## Writes that fit their schemas
+
+S1 to S4 (`avendb/docs/OPS.md`): every reader of an entry counts a write only where what it makes of the record fits
+the schemas the entry was written under, so every device keeps the last record that fit, whatever a patched app
+writes. S1 and S2, about records, are proven in `Schemas.lean`. -/
+
+/-- S1 (a write is judged by what it changed): the write from `r` to `s` fits exactly when each change of what it
+    changed does, on the record or row around it: a value it didn't change, which two devices' writes at once may
+    have left behind, holds it back nowhere else. -/
+theorem S1_judged_by_changes {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List String}
+    {r s : Ops.Record V} (h : Ops.Reaches ps fs r s) :
+    fit.fits ps fs r s = true ↔
+      (∀ p, r.leaf p ≠ s.leaf p → fit.change r s (.set p (s.leaf p)) = true) ∧
+      (∀ f, r.rows f ≠ s.rows f → fit.change r s (.order f (s.rows f)) = true) :=
+  Ops.fits_iff h
+
+/-- S2 (records that fit stay so): a record that fits keeps fitting through a write that fits. -/
+theorem S2_clean_stays_clean {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List String}
+    {r s : Ops.Record V} (h : Ops.Reaches ps fs r s) (hr : fit.Clean r) (hw : fit.fits ps fs r s = true) :
+    fit.Clean s :=
+  Ops.fits_clean h hr hw
+
+/-- S2, the first write: the first write of an entry, if it fits, makes a record that fits of nothing. -/
+theorem S2_first_write {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List String}
+    {s : Ops.Record V} (h : Ops.Reaches ps fs Ops.Record.empty s) (hs : s.Formed) (hne : s ≠ Ops.Record.empty)
+    (hw : fit.fits ps fs Ops.Record.empty s = true) : fit.Clean s :=
+  Ops.fits_new h hs hne hw
+
+/-- S3 (writes that don't fit count for no reader): readers count no write and no creation whose result doesn't fit,
+    whatever its caps and rules, and so (C4) nothing built on it. -/
+theorem S3_unfit_uncounted (st : State) (a v : VaultId) (en : Entry) (deps : List EditId) (proof : Option CapId)
+    (main : Bool) (ts : List Touch) (x : Cell) :
+    counts st a en deps proof main ts false = false ∧ creates st a v x proof false = false := by
+  simp [counts, creates]
+
+/-- S3, a step: a write accepted whose result doesn't fit is one its readers don't count. -/
+theorem S3_step {st st' : State} {edit : Edit} (h : step st edit = some st')
+    {v e actor stay gen deps proposal via create tags proof touches}
+    (ha : edit.action = .write v e actor stay gen deps proposal via create tags proof touches false) :
+    edit.id ∈ st'.uncounted :=
+  Ruling.step_unfit h ha
+
+/-- S4 (relays don't judge records): whether a write fits, which only its readers can tell, changes nothing but which
+    writes they count: the write is accepted or refused alike, and leaves the same operational part of the state. -/
+theorem S4_fit_unread (st : State) (edit : Edit) {v e a s g deps p via create tags proof ts} {f : Bool}
+    (ha : edit.action = .write v e a s g deps p via create tags proof ts f) (f' : Bool) :
+    (apply st { edit with action := .write v e a s g deps p via create tags proof ts f' }).map State.ops =
+      (apply st edit).map State.ops := by
+  have hb : ({ edit with action := .write v e a s g deps p via create tags proof ts f' } : Edit).blind =
+      edit.blind := by
+    simp only [Edit.blind, Action.blind, ha]
+  rw [← Relays.apply_sim (st := st) (st' := st) rfl edit, ← Relays.apply_sim (st := st) (st' := st) rfl, hb]
 
 /-! ## The schema lane -/
 

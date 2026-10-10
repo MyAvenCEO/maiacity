@@ -158,8 +158,8 @@ fn lens(l: &Lens) -> Value {
 /// sealed by its size alone), its author and cosigners, each signature by its signer and its halves (`signature`), the
 /// edits of its log it builds on and its causal depth, its size on the wire, and the vaults it concerns (`concerns`);
 /// for a write, whether the device counts it, as once it no longer trusts the curves it counts only the writes a
-/// checkpoint covers, and whether its entry's readers do, as the rules of the caps it relies on allow it and what it
-/// builds on (`allowed`, `Change::counted`).
+/// checkpoint covers, and whether its entry's readers do, as it fits its entry's schemas, the rules of the caps it
+/// relies on allow it and what it builds on counts (`allowed`, `Change::counted`), and why not (`why`, `wrote`).
 pub fn history(lab: &Lab, me: SignerId) -> Value {
     let (held, st) = (lab.log(me), lab.state(me));
     let counted: HashSet<EditId> = st.all_writes().iter().map(|w| w.edit).collect();
@@ -172,6 +172,11 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
             _ => None,
         })
         .collect();
+    // write `id`, as its entry's history holds it
+    let write = |id: EditId, a: &Action| match a {
+        Action::Write { entry, .. } => lab.history(me, *entry).and_then(|h| Some((h, h.get(id)?))),
+        _ => None,
+    };
     let edits: Vec<Value> = held
         .edits()
         .iter()
@@ -179,7 +184,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
         .enumerate()
         .map(|(n, (edit, &id))| {
             let signed = lab.signed_edit(me, id);
-            let (kind, fields) = action(id, &edit.action);
+            let ((kind, fields), written) = (action(id, &edit.action), write(id, &edit.action));
             json!({
                 "n": n + 1,
                 "id": hex(&id.0),
@@ -193,10 +198,8 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
                 "bytes": signed.map_or(0, |s| s.to_wire().len()),
                 "vaults": concerns(st, id, &edit.action, &caps).iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
                 "counted": matches!(edit.action, Action::Write { .. }).then(|| counted.contains(&id)),
-                "allowed": match &edit.action {
-                    Action::Write { entry, .. } => lab.history(me, *entry).and_then(|h| h.get(id)).map(|c| c.counted),
-                    _ => None,
-                },
+                "allowed": written.map(|(_, c)| c.counted),
+                "why": written.and_then(|(h, c)| wrote(h, c).why),
             })
         })
         .collect();
@@ -441,11 +444,12 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the line it extends, what
 /// it builds on, and what it is, as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the
 /// start of a proposal (`propose`, with its name), a `merge` of two lines, a `promote`, or `sealed`; and the line it
-/// brought in, or for a proposal the line it started from (`from`); and whether the note's readers count it, as the
-/// rules of the caps it relies on allow it and what it builds on (`Change::counted`). With `shown`, the note's title
-/// and text at its version, and the text at the one it changed, so the page's diff shows what it brought.
+/// brought in, or for a proposal the line it started from (`from`); and whether the note's readers count it, as it
+/// fits the note's schemas, the rules of the caps it relies on allow it and what it builds on counts
+/// (`Change::counted`), and why not (`why`). With `shown`, the note's title and text at its version, and the text at
+/// the one it changed, so the page's diff shows what it brought.
 fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
-    let (w, Wrote { kind, from, base }) = (&c.write, wrote(h, c));
+    let (w, Wrote { kind, from, base, why }) = (&c.write, wrote(h, c));
     let line = w.line();
     let at = |version: &[EditId]| h.item_at(version, me, line).as_document();
     let (after, before) =
@@ -463,6 +467,7 @@ fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
         "text": after.as_ref().map(body),
         "before": before.as_ref().map(body),
         "counted": c.counted,
+        "why": why,
     })
 }
 

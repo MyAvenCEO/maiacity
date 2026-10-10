@@ -104,18 +104,20 @@ def newCap (id over : Nat) (to : Grantee) (r : Role) (issuer : VaultId) (select 
   .cap { id, over, grantee := to, role := r, wide, select, relabel, parent, issuer, ruled := rules.isSome,
          rules := rules.getD [] } via
 
-/-- A write that creates entry `e` of vault `v` in cell `x`, with the proof `proof`. -/
+/-- A write that creates entry `e` of vault `v` in cell `x`, with the proof `proof`, whose record fits its schemas or
+    not (`fits`). -/
 def newEntry (v e : Nat) (actor : VaultId) (x : Cell) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
-    (via : List VaultId := []) (gen : Nat := 0) (proof : Option CapId := none) : Action :=
+    (via : List VaultId := []) (gen : Nat := 0) (proof : Option CapId := none) (fits : Bool := true) : Action :=
   .write v e actor none gen (via := via) (create := some (x, ⟨type, created⟩)) (tags := { add := tags })
-    (proof := proof)
+    (proof := proof) (fits := fits)
 
 /-- A write of entry `e`, in its stay `stay` at generation `gen` of that stay's cell, with the proof `proof`, touching
-    `touches`. -/
+    `touches`, whose result fits the entry's schemas or not (`fits`). -/
 def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (gen : Nat := 0)
     (proposal : Proposal := .main) (via : List VaultId := []) (add : List Sym := []) (remove : List Sym := [])
-    (proof : Option CapId := none) (touches : List Touch := []) : Action :=
+    (proof : Option CapId := none) (touches : List Touch := []) (fits : Bool := true) : Action :=
   .write v e actor stay gen deps proposal via (tags := { add, remove }) (proof := proof) (touches := touches)
+    (fits := fits)
 
 /-- Setting a todo's field `f` to the text `x`. -/
 def sets (f x : String) : Touch := .set (.field f) (some (.str x))
@@ -600,7 +602,24 @@ def cases : List Case := [
     (8, [], newEntry 100 22 103 [30] todo (proof := some 30)),
     (6, [], newEntry 100 24 102 [30, 31] todo (proof := some 31)),
     -- a cap rests only on an owner cap, so Bob can't pass his own on to Carol, even narrowed
-    (5, [], newCap 34 100 (toVault 102) .write 101 todos (parent := some 32) (rules := some [statusRule]))] }]
+    (5, [], newCap 34 100 (toVault 102) .write 101 todos (parent := some 32) (rules := some [statusRule]))] },
+  { name := "schemas: a write whose result doesn't fit its schemas counts for no reader", edits := humans ++ [
+    -- Alice's todo, which Bob may write
+    (2, [], newEntry 100 21 100 [] todo),
+    (2, [], newCap 30 100 (toVault 101) .write 100 todos),
+    (2, [], .move 100 21 [30] []),
+    -- every write below is accepted, as relays see it; its readers count only what fits, and what builds on it
+    (5, [], wr 100 21 101 [6] (stay := some 8)),
+    (5, [], wr 100 21 101 [9] (stay := some 8) (fits := false)),
+    (5, [], wr 100 21 101 [10] (stay := some 8)),
+    -- the vault itself writes nothing that doesn't fit either
+    (2, [], wr 100 21 100 [9] (stay := some 8) (fits := false)),
+    (2, [], wr 100 21 100 [9] (stay := some 8)),
+    -- nor creates: a todo that doesn't fit counts for no reader, nor a write on it
+    (2, [], newEntry 100 22 100 [] todo (fits := false)),
+    (2, [], wr 100 22 100 [14]),
+    -- fitting is no cap: Carol holds none, and writes nothing
+    (6, [], wr 100 21 102 [9] (stay := some 8))] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -1022,12 +1041,13 @@ def action : Action → String
   | .cap c via => obj [("cap", obj [("cap", capJson c), ("via", ids via)])]
   | .revoke c a keep via => obj [("revoke", obj [("cap", nat c), ("actor", nat a), ("keep", ids keep),
       ("via", ids via)])]
-  | .write v e a s g deps p via create tags pr ts => obj [("write", obj ([("vault", nat v), ("entry", nat e),
+  | .write v e a s g deps p via create tags pr ts ft => obj [("write", obj ([("vault", nat v), ("entry", nat e),
       ("actor", nat a), ("stay", opt nat s), ("gen", nat g), ("deps", ids deps), ("proposal", proposal p),
       ("via", ids via), ("create", opt (fun (x, h) => obj [("cell", ids x), ("header", header h)]) create),
       ("tags", tagDelta tags)] ++ (match pr with
         | some c => [("proof", nat c)]
-        | none => []) ++ if ts.isEmpty then [] else [("touches", arr (ts.map touch))]))]
+        | none => []) ++ (if ts.isEmpty then [] else [("touches", arr (ts.map touch))]) ++
+        if ft then [] else [("fits", bool false)]))]
   | .move v e to keep via => obj [("move", obj [("vault", nat v), ("entry", nat e), ("to", ids to),
       ("keep", ids keep), ("via", ids via)])]
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),

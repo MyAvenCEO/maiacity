@@ -1178,13 +1178,15 @@ impl State {
         w.caps.is_empty() || w.caps.iter().any(through)
     }
 
-    /// The writes of entry `e` its readers don't count, by the proofs and touches `r` holds, in the order they were
-    /// accepted (`State.lean`'s `uncounted`): a write no cap of its lets through, and every write that builds on one.
+    /// The writes of entry `e` its readers don't count, by the proofs, touches and fits `r` holds, in the order they
+    /// were accepted (`State.lean`'s `uncounted`): a write that doesn't fit, one no cap of its lets through, and every
+    /// write that builds on one.
     pub fn uncounted(&self, e: EntryId, r: &Readings) -> Vec<EditId> {
         let mut out = vec![];
         for w in self.entry_writes(e) {
             let touches = r.touches.get(&w.edit).map(Vec::as_slice);
-            if w.deps.iter().any(|d| out.contains(d)) || !self.lets(w, r.proofs.get(&w.edit), touches) {
+            let lets = !r.unfit.contains(&w.edit) && self.lets(w, r.proofs.get(&w.edit), touches);
+            if w.deps.iter().any(|d| out.contains(d)) || !lets {
                 out.push(w.edit);
             }
         }
@@ -2234,7 +2236,8 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
 
 /// What an entry's readers and its vault's stewards read where no relay can: each cap's selector, opened from its
 /// sealed `select`; each entry's header and each write's tags and proof, from inside the writes' bodies; and what each
-/// write touches, read off its update on the version it builds on (`history::History::touches`).
+/// write touches, and whether it fits the schemas its entry was written under, read off its update on the version it
+/// builds on (`history::History::reading`).
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
     pub selectors: HashMap<CapId, Selector>,
@@ -2244,6 +2247,8 @@ pub struct Readings {
     pub tags: HashMap<EditId, TagDelta>,
     pub proofs: HashMap<EditId, Proof>,
     pub touches: HashMap<EditId, Vec<rules::Touch>>,
+    /// The writes that don't fit.
+    pub unfit: HashSet<EditId>,
 }
 
 /// What an entry means to its readers (`State::meaning`).
