@@ -1,13 +1,35 @@
 ---
 name: hook-writer
-description: Hooks for every maiaCITY story — titles, first lines, a film's first seconds and spoken hook, rehooks (headings, acts), title cards and thumbnails, social first lines. The anatomy of a hook (subject, action, end state, contrast, proof, time, anchor, promise, objection killer), the extreme dial, the question hook, the split title card, the first frame of a film. Use it whenever a title, a hook, a first line, a title card or a thumbnail is written, scored or rewritten.
+description: Hooks for every maiaCITY story — the hook (the attention grabber that is the title everywhere), the intro (the first 3–30 s of a film, why to care, the transformation), the description (the overview), rehooks (headings, acts), title cards and thumbnails, social first lines. The anatomy of a hook (subject, action, end state, contrast, proof, time, anchor, promise, objection killer), the extreme dial, the question hook, the split title card, the first frame of a film. Use it whenever a title, a hook, a first line, a title card or a thumbnail is written, scored or rewritten.
 ---
 
 # Hook writer
 
-The title sells the click, the first line sells the read, the first three seconds sell the film. A hook is not
-written, it is **assembled** from parts — and then pushed as far as the truth goes. Its one job: **grab attention and
-make leaving impossible.**
+The hook sells the click, the intro sells the watch, the description sells the rest. A hook is not written, it is
+**assembled** from parts — and then pushed as far as the truth goes. Its one job: **grab attention and make leaving
+impossible.**
+
+## Hook, intro, description — three things, each its own job
+
+A story carries three texts out, and they are not the same text at three lengths (Samuel, 2026-10-10). Each one does
+one job, and the next one only starts once the one before has done its own:
+
+| | What it is | Its job | Where it goes | How long |
+|---|---|---|---|---|
+| **Hook** | the one attention-grabbing line; **it is the title** — there is no separate title any more | grab attention | first, always: the article's title, the thumbnail's words, the page header, the YouTube title, the first line of every post | one sentence, ~10 words; readable in one second at phone size |
+| **Intro** | the trailer: the first seconds of the film, or the first lines after the hook | spark curiosity — *why should I care, and what is my transformation?* | the first 3–30 s of a film (3–10 s for a short, up to 30 s for long form); the lines under the hook in an article or a post | 1–4 sentences; spoken, one breath per sentence |
+| **Description** | the overview and the detail | tell what it is, where it goes, what is in it | under the hook on YouTube and the journal (the first two lines show before "more"), then the links and the chapters | as long as it needs; the first two lines matter most |
+
+- **The hook replaces the title.** A story has a working name on the board (how we refer to it); what goes out under
+  it is the hook. Never ship a title beside a hook: the hook *is* the title, on the card, in the header, in the feed.
+- **The intro is where the promise lives.** The hook anchors a feeling; the intro answers *is this worth my time?* —
+  the promise (what the viewer gets for staying), the objection killer, and the pain in the viewer's own life
+  (`storyteller`, `arc.md`). In a film it is spoken, over the first shots, and ends on the arching question.
+- **The description does not hook.** It may repeat the hook as its first line (YouTube shows it), then it informs:
+  what the film is, the pieces, the links. No second hook, no teaser that the body does not pay.
+- **On the board** (the Stories board's Hook step): the variants tried on the left, the one on the card chosen among
+  them, then the hook, the intro and the description as three fields. Written through MCP (`content_save`:
+  `hook`, `intro`, `description`, `hooks`) or in the fields; the YouTube preview shows the hook as the title.
 
 ## The anatomy of a hook — every part, named
 
@@ -150,11 +172,11 @@ The hook is also set into the day's title cards (`scripts/film/thumbnail.mjs`; f
 
 ## Compact
 
-- **A title: at most ~10 words.** A title card: readable in one second at phone size. A spoken film hook: within the
-  first ~10 s, one breath.
+- **A hook: at most ~10 words** (it is the title). A title card: readable in one second at phone size. A spoken film
+  hook: within the first ~10 s, one breath; the intro that follows it: 3–30 s by the film's length.
 - One sentence is usually the whole hook. The line after it disqualifies the obvious answer (*"Not the overworked.
   Not the underpaid."*) — the reader's first guess is the biggest threat to the second paragraph.
-- Can a word come out? Take it out. Titles die of length.
+- Can a word come out? Take it out. Hooks die of length.
 - Banned: colon subtitles, listicles ("7 ways to…"), clickbait the body does not pay, a question the subtitle answers.
 
 ## Rehooks

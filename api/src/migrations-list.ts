@@ -907,4 +907,13 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE content_items ADD COLUMN hooks JSONB NOT NULL DEFAULT '[]'::jsonb;
     `,
   },
+  {
+    // Three things, each its own job (Samuel, 2026-10-10): the hook grabs attention and is the title everywhere
+    // (the article's, the thumbnail's, the header's); the intro, the first 3–30 s of a film, sparks curiosity and
+    // says why to care and what the viewer's transformation is; the description is the overview and the detail.
+    id: "0043-story-intro",
+    sql: `
+      ALTER TABLE content_items ADD COLUMN intro TEXT NOT NULL DEFAULT '';
+    `,
+  },
 ];

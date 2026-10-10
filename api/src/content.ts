@@ -3,7 +3,9 @@
  * idea → journey → hook → writing → movie → derivatives → scheduled → published: its journey (the arc beat by beat,
  * the feeling of each), the hook (its title, description and thumbnail), the long-form master article (writing), the
  * film (movie, made in the studio); moving it on to "derivatives" locks the article, and everything that goes out is
- * derived from it then. The hook is picked from the variants tried (`hooks`: each line with its parts named).
+ * derived from it then. Three things carry a story out, each its own job: the hook grabs attention and is the title
+ * everywhere (picked from the variants tried, `hooks`); the intro, the first 3–30 s of a film, sparks curiosity and
+ * says why to care and what the viewer's transformation is; the description is the overview and the detail.
  * A film is one item, whatever its cuts: every render of the project's timelines files its
  * deliveries on it (the 4K master, the 1080 copy, the 9:16 Reel, their thumbnails), and its posts, one per platform,
  * are written for them — prepared, never typed in a form. Once a story has a hook, the Mac app files it in a story
@@ -93,7 +95,9 @@ export type Item = {
   hooks: HookVariant[];
   /** the brainstorm pad: links, concepts, fragments (Markdown) */
   idea: string;
-  /** the description that goes under the hook (YouTube's, the journal's lede) */
+  /** the intro, the trailer: the first 3–30 s of the film (by its length), why to care and the transformation */
+  intro: string;
+  /** the description that goes under the hook (YouTube's, the journal's lede): the overview and the detail */
   description: string;
   journey: Journey;
   /** the media vault's story it is filed in (an iroh namespace id), once the Mac app has made it */
@@ -185,6 +189,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   if (b.hook !== undefined) o.hook = b.hook ? text(b.hook, 300).trim() : null;
   if (b.idea !== undefined) o.idea = text(b.idea, 100000);
   if (b.description !== undefined) o.description = text(b.description, 5000);
+  if (b.intro !== undefined) o.intro = text(b.intro, 5000);
   if (b.journey !== undefined) o.journey = journeyOf(b.journey);
   if (b.hooks !== undefined) o.hooks = hooksOf(b.hooks);
   if (b.project !== undefined) o.project = b.project ? text(b.project, 40).trim() || null : null;
@@ -210,7 +215,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   return o;
 }
 
-const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, hooks, idea, description, journey, story, created, updated";
+const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, hooks, idea, intro, description, journey, story, created, updated";
 // arrays travel as JSON text: Bun's client does not send a JS array as text[]
 const arr = (i: number) => `ARRAY(SELECT jsonb_array_elements_text(($${i}::text)::jsonb))`;
 
@@ -239,10 +244,10 @@ export async function createContent(founderId: string, body: Record<string, unkn
   const o = clean(body, false);
   const status = o.status ?? (o.scheduled_at ? "scheduled" : "idea");
   const { rows } = await once(db.query<Item>(
-    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id, idea, description, hook, project, journey, hooks)
-     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10, $11, $12, $13, $14, ($15::text)::jsonb, ($16::text)::jsonb) RETURNING ${COLS}`,
+    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id, idea, description, hook, project, journey, hooks, intro)
+     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10, $11, $12, $13, $14, ($15::text)::jsonb, ($16::text)::jsonb, $17) RETURNING ${COLS}`,
     [o.title, o.kind, JSON.stringify(o.channels ?? []), status, o.scheduled_at ?? null, o.body ?? "", JSON.stringify(o.hashes ?? []), o.link ?? null, JSON.stringify(o.tags ?? []), founderId,
-     o.idea ?? "", o.description ?? "", o.hook ?? null, o.project ?? null, JSON.stringify(o.journey ?? {}), JSON.stringify(o.hooks ?? [])],
+     o.idea ?? "", o.description ?? "", o.hook ?? null, o.project ?? null, JSON.stringify(o.journey ?? {}), JSON.stringify(o.hooks ?? []), o.intro ?? ""],
   ));
   return rows[0]!;
 }
@@ -272,13 +277,14 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
         project = CASE WHEN $19::boolean THEN $20 ELSE project END,
         story = CASE WHEN $21::boolean THEN $22 ELSE story END,
         hooks = CASE WHEN $23::text IS NULL THEN hooks ELSE ($23::text)::jsonb END,
+        intro = coalesce($24, intro),
         updated = now()
       WHERE id = $1 RETURNING ${COLS}`,
     [id, o.title ?? null, o.kind ?? null, has("channels") ? JSON.stringify(o.channels) : null, o.status ?? null,
      has("scheduled_at"), o.scheduled_at ?? null, o.body ?? null, has("hashes") ? JSON.stringify(o.hashes) : null,
      has("link"), o.link ?? null, has("tags") ? JSON.stringify(o.tags) : null, has("posts") ? JSON.stringify(o.posts) : null,
      has("hook"), o.hook ?? null, o.idea ?? null, o.description ?? null, has("journey") ? JSON.stringify(o.journey) : null,
-     has("project"), o.project ?? null, has("story"), o.story ?? null, has("hooks") ? JSON.stringify(o.hooks) : null],
+     has("project"), o.project ?? null, has("story"), o.story ?? null, has("hooks") ? JSON.stringify(o.hooks) : null, o.intro ?? null],
   ));
   if (!rows[0]) throw new ContentError("No such item.", 404);
   return rows[0];

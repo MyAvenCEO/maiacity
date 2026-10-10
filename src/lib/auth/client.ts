@@ -327,7 +327,9 @@ export type ContentItem = {
 	body: string;
 	/** the brainstorm pad: links, concepts, fragments (Markdown) */
 	idea: string;
-	/** the description under the hook (YouTube's, the journal's lede) */
+	/** the intro, the trailer: the first 3–30 s of the film (by its length), why to care and the transformation */
+	intro: string;
+	/** the description under the hook (YouTube's, the journal's lede): the overview and the detail */
 	description: string;
 	journey: Journey;
 	/** the hooks tried, the one on the card among them (its line is `hook`) */
