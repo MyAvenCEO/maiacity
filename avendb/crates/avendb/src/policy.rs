@@ -680,7 +680,7 @@ enum Change {
     Cap(Issued),
     /// The caps that end, in the order they were issued.
     Revoke(Vec<CapId>),
-    Create(Entry, Write, Arc<[CapId]>),
+    Create(Entry, Box<Write>, Arc<[CapId]>),
     /// A write, and whether it acts for its entry's vault, so its tags count.
     Write(Write, bool),
     Move { at: usize, stay: EditId, to: CellId, caps: Arc<[CapId]> },
@@ -1665,7 +1665,7 @@ impl State {
                             first: true,
                             cell,
                         };
-                        Ok(Change::Create(en, w, x.as_slice().into()))
+                        Ok(Change::Create(en, Box::new(w), x.as_slice().into()))
                     }
                     None => {
                         let en = self.entry(e).ok_or(Refusal::UnknownEntry)?;
@@ -1850,7 +1850,7 @@ impl State {
                 Arc::make_mut(&mut self.born).push(e);
                 Arc::make_mut(&mut self.entry_at).insert(e, i);
                 Arc::make_mut(&mut self.entries).push(en);
-                self.add_write(w);
+                self.add_write(*w);
                 Touch::Created { entry: i, fresh }
             }
             Change::Write(w, retag) => {
@@ -2392,13 +2392,15 @@ fn priority(base: &State, edit: &Edit) -> (u8, usize, u8, usize) {
 /// The removals that stand among edits already in `order`, chosen one by one by priority: each stands if the edits
 /// replayed with it and the ones chosen before it accept it and keep accepting those. Moves rank last, and are not
 /// tried one by one: a move takes away only what writes of its own entry rested on, which no removal and no move rests
-/// on, so with the removals chosen before it a move stands exactly where the replay accepts it, whichever other moves
-/// stand. The model tries each (`resolve` in `Step.lean`), which chooses the same; trying each here would replay a
-/// vault's edits once for every move it ever made.
+/// on, so with the removals chosen before them the moves that stand are those one replay with all of them accepts,
+/// and only those take anything away; a move the replay refuses cuts nothing. The model tries each (`resolve` in
+/// `Step.lean`), which chooses the same; trying each here would replay a vault's edits once for every move it ever
+/// made.
 fn resolve(edits: &[Edit], ids: &[EditId]) -> HashSet<EditId> {
     let mut rem = HashSet::new();
-    let moves = |i: &usize| matches!(edits[*i].action, Action::Move { .. });
-    let mut cands: Vec<usize> = (0..edits.len()).filter(|&i| edits[i].is_removal() && !moves(&i)).collect();
+    let moving = |i: &usize| matches!(edits[*i].action, Action::Move { .. });
+    let moves: Vec<usize> = (0..edits.len()).filter(moving).collect();
+    let mut cands: Vec<usize> = (0..edits.len()).filter(|i| edits[*i].is_removal() && !moving(i)).collect();
     if !cands.is_empty() {
         let base = run(edits, ids, &rem, false).state;
         cands.sort_by_key(|&i| priority(&base, &edits[i]));
@@ -2411,7 +2413,12 @@ fn resolve(edits: &[Edit], ids: &[EditId]) -> HashSet<EditId> {
             }
         }
     }
-    rem.extend((0..edits.len()).filter(moves).map(|i| ids[i]));
+    if !moves.is_empty() {
+        let mut trial = rem.clone();
+        trial.extend(moves.iter().map(|&i| ids[i]));
+        let stood = run(edits, ids, &trial, false).stood;
+        rem.extend(moves.into_iter().filter(|&i| stood[i]).map(|i| ids[i]));
+    }
     rem
 }
 
