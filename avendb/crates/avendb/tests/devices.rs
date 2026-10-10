@@ -176,7 +176,7 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
     // someone else, who knows nothing of this avenCEO, gives it relay on their whole vault once they hold the card
     let mut w = world();
     let bob = w.bob;
-    let relay = cap(bob, vault(avenceo), Role::Relay, Selector::All);
+    let relay = cap(bob, vault(avenceo), Role::Backup, Selector::All);
     let refused = w.lab.issue(w.mac_b, &[w.mac_b], relay.clone()).err();
     assert_eq!(refused, Some(Refusal::UnknownVault), "a vault Bob's Mac doesn't know gets no cap");
     let n = card.len();

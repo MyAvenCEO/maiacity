@@ -25,6 +25,7 @@ pub fn kind_name(kind: Kind) -> &'static str {
 pub fn role_name(role: Role) -> &'static str {
     match role {
         Role::Relay => "relay",
+        Role::Backup => "backup",
         Role::Read => "read",
         Role::Write => "write",
         Role::Owner => "owner",
@@ -39,14 +40,15 @@ pub fn status_name(status: Status) -> &'static str {
     }
 }
 
-/// A role by its name: `"relay"`, `"read"`, `"write"` or `"owner"`.
+/// A role by its name: `"relay"`, `"backup"`, `"read"`, `"write"` or `"owner"`.
 pub fn role_of(name: &str) -> Result<Role> {
     Ok(match name {
         "relay" => Role::Relay,
+        "backup" => Role::Backup,
         "read" => Role::Read,
         "write" => Role::Write,
         "owner" => Role::Owner,
-        _ => bail!("a role is relay, read, write or owner"),
+        _ => bail!("a role is relay, backup, read, write or owner"),
     })
 }
 

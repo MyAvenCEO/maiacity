@@ -32,7 +32,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::hash::Hasher;
 use crate::id::{CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName};
-use crate::policy::{view, Action, Edit, Grantee, Principal, State};
+use crate::policy::{view, Action, Edit, Grantee, Principal, Role, State};
 
 /// A log: a vault's, a cap's, a cell's or an entry's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -99,11 +99,11 @@ struct Reach<'a> {
     st: &'a State,
     /// The vaults the device acts for.
     acts: HashSet<VaultId>,
-    /// The vaults whose every cell it may receive: it acts for them, or a live wide cap over them names a vault it acts
-    /// for, or is public.
+    /// The vaults whose every cell it may receive: it acts for them, or a live wide cap over them (backup or more)
+    /// names a vault it acts for, or is public.
     whole: HashSet<VaultId>,
-    /// The live caps that aren't wide naming a vault it acts for, or public, with the vault each is over: it may
-    /// receive the cells they are in.
+    /// The live caps, backup or more, that aren't wide naming a vault it acts for, or public, with the vault each is
+    /// over: it may receive the cells they are in.
     granting: HashMap<CapId, VaultId>,
     /// The caps it may learn about (`reachesCap`).
     caps: HashSet<CapId>,
@@ -119,7 +119,9 @@ impl<'a> Reach<'a> {
         };
         let mut whole = acts.clone();
         let mut granting = HashMap::new();
-        for cp in st.caps().iter().filter(|cp| st.live(cp.id) && names(cp.cap.grantee)) {
+        // a relay cap lets its holder know the vault's devices, from the vault's log, and nothing of its entries
+        let keeps = |cp: &&crate::policy::Issued| cp.cap.role.allows(Role::Backup);
+        for cp in st.caps().iter().filter(|cp| st.live(cp.id) && names(cp.cap.grantee)).filter(keeps) {
             if cp.cap.wide {
                 whole.insert(cp.cap.over);
             } else {

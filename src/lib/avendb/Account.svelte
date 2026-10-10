@@ -58,6 +58,8 @@
 	let prompted = $state(-1);
 	let relay = $state('');
 	let server = $state('');
+	/** Whether the vault founded here has avenDB's server keep its ciphertext: on unless the person turns it off. */
+	let backup = $state(true);
 	let code = $state('');
 	/** whether another device's link brought the person here, to link this browser */
 	let arrived = $state(false);
@@ -237,14 +239,15 @@
 
 	/** Founds the person's human vault with the passkey they signed up to maiaCITY with, or with one made here if
 	 *  `fresh`: the unlock, which is the passkey's pass for this new device, and one ceremony for the vault and this
-	 *  device in it, which also claims the server if nobody has yet; one ceremony more to make the passkey.
-	 *  @param {boolean} fresh */
+	 *  device in it, which also claims the server if nobody has yet; one ceremony more to make the passkey. The vault
+	 *  gives avenDB's server a backup cap, keeping its ciphertext, unless the person turned `backup` off: then a relay
+	 *  cap, which lets their devices through and keeps nothing. @param {boolean} fresh */
 	const found = (fresh) =>
 		run(
 			`Setting up your account: ${asks} ${fresh ? 'three times' : 'twice'}`,
 			async (next) => {
 				if (mac) {
-					await macOpened(await mac.call('found', name.trim(), relay, server));
+					await macOpened(await mac.call('found', name.trim(), relay, server, backup));
 					remember('relay', relay);
 					remember('server', server);
 					return;
@@ -256,7 +259,7 @@
 				const nonce = crypto.getRandomValues(new Uint8Array(32));
 				const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => (next(), unlock(nonce, challenge));
 				const signNext = (/** @type {Uint8Array<ArrayBuffer>} */ challenge, /** @type {string} */ step) => (next(), sign(challenge, step));
-				const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, signNext);
+				const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, signNext, backup);
 				await started(d, nonce, held.id);
 			},
 			fresh ? [PROMPT.make, PROMPT.unlock, PROMPT.vault] : [PROMPT.unlock, PROMPT.vault]
@@ -465,6 +468,10 @@
 				await store.setMeta(meta);
 				await device.card(name);
 			}),
+		/** Whether avenDB's server backs up the person's vault, or only relays for it; `null` if it holds no cap on it. */
+		backsUp: async () => (await device.backsUp()) ?? null,
+		/** Has avenDB's server back up the person's vault, or only relay for it, from now on. @param {boolean} on */
+		backUp: (on) => act(on ? 'Turning backups on' : 'Turning backups off', () => device.backUp(on)),
 		forget: () => forget()
 	};
 
@@ -598,6 +605,17 @@
 						<input class="field" placeholder="The server’s code: AVENDB1…" bind:value={server} />
 						<p class="soft">The first person to found their vault through a server owns avenCEO, the aven vault the server is a device of.</p>
 					</details>
+					<label class="check">
+						<input type="checkbox" bind:checked={backup} />
+						<span>
+							Back up to avenDB's server
+							<span class="soft">
+								{backup
+									? 'It keeps your vault encrypted, which it can never open, so your passkey alone brings it back.'
+									: 'It only connects your devices and keeps nothing: your vault lives on your devices alone.'}
+							</span>
+						</span>
+					</label>
 				</article>
 			</div>
 		{/if}
@@ -649,6 +667,19 @@
 
 	.name {
 		display: block;
+	}
+
+	.check {
+		display: flex;
+		gap: 0.5rem;
+		align-items: flex-start;
+		margin-top: 0.6rem;
+		cursor: pointer;
+	}
+
+	.check .soft {
+		display: block;
+		font-size: 0.85rem;
 	}
 
 	details {

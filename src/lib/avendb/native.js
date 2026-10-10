@@ -99,6 +99,16 @@ export class NativeDevice {
 		return call('profile', vault, name);
 	}
 
+	/** Whether avenDB's server backs up the person's vault, or only relays for it; `null` if it holds no cap on it. */
+	backsUp() {
+		return call('backsUp');
+	}
+
+	/** Has avenDB's server back up the person's vault, or only relay for it. @param {boolean} on */
+	backUp(on) {
+		return call('backUp', on);
+	}
+
 	/**
 	 * Op `op` of avenDB's ops engine (avendb/docs/OPS.md), any read or change of the entries it holds, whatever their
 	 * schema: its answer, `{ ok }` or `{ refused, why }`.

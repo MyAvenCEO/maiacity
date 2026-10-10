@@ -43,10 +43,11 @@ def Edit.log? (edit : Edit) : Option LogId :=
     | .entry e _ _ => some (.entry e)
 
 /-- Device `d` may receive the edits of cell `x` of vault `v`: it acts for the vault, or for the grantee of a live cap
-    over it, relay or more, that is in the cell or wide, or such a cap is public. Receiving is not reading: relay gets
-    no key. -/
+    over it, backup or more, that is in the cell or wide, or such a cap is public. Receiving is not reading: backup gets
+    no key, and relay gets nothing of the cell, only the vault's log. -/
 def mayReceiveCell (st : State) (d : SignerId) (v : VaultId) (x : Cell) : Bool :=
   actsFor st d v || st.caps.any fun cp => cp.over == v && st.live cp.id && (cp.wide || x.contains cp.id) &&
+    cp.role.allows .backup &&
     match cp.grantee with
     | .principal (.vault g)  => actsFor st d g
     | .principal (.signer _) => false

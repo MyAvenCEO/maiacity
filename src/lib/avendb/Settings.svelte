@@ -59,6 +59,13 @@
 
 	let renaming = $state(/** @type {string | null} */ (null));
 	let naming = $state(/** @type {string | null} */ (null));
+	/** Whether avenDB's server backs up the person's vault (true), only relays for it (false), or holds no cap (null). */
+	let backs = $state(/** @type {boolean | null | undefined} */ (undefined));
+	$effect(() => {
+		if (vault !== world.mine) return;
+		void world;
+		api.backsUp().then((/** @type {boolean | null} */ b) => (backs = b), () => (backs = null));
+	});
 
 	/** A device's name: its card's, or what it is. @param {string} id */
 	function deviceName(id) {
@@ -142,6 +149,23 @@
 				agrees its keys with X25519MLKEM768, and every hash is SHA-3.
 			</p>
 		</article>
+		{#if vault === world.mine && backs != null}
+			<article class="card">
+				<h3>Backup</h3>
+				<p>
+					<span class="chip" class:ok={backs}>{backs ? 'Backed up' : 'Relay only'}</span>
+				</p>
+				<p class="soft">
+					{backs
+						? "avenDB's server keeps your vault encrypted, which it can never open, so your passkey alone brings it back with every device lost."
+						: "avenDB's server only helps your devices find and reach each other and keeps nothing: your vault lives on your devices alone, so losing them all loses it."}
+				</p>
+				<p class="soft">Turning it off keeps what the server holds already; it just stops taking more.</p>
+				<button class="btn" disabled={busy} onclick={() => api.backUp(!backs)}>
+					{backs ? 'Turn backups off' : 'Turn backups on'}
+				</button>
+			</article>
+		{/if}
 	</div>
 {:else if tab === 'members'}
 	<div class="cards">

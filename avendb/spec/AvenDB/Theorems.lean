@@ -264,6 +264,18 @@ theorem T25_blind_relays (edits : List Edit) :
       (standing (edits.map Edit.blind)).map (·.id) = (standing edits).map (·.id) :=
   Relays.T25_blind_relays edits
 
+/-- T26 (relay alone): a device that acts for no vault an entry's cell belongs to, and holds over that vault nothing
+    but relay caps, receives none of the cell's edits: relay lets a server know a vault's devices, from its log, and
+    keep nothing of its entries. Backup is what keeps them. -/
+theorem T26_relay_keeps_nothing (st : State) (d : SignerId) (v : VaultId) (x : Cell) (hact : actsFor st d v = false)
+    (hrelay : ∀ cp ∈ st.caps, cp.over = v → cp.role = .relay) : mayReceiveCell st d v x = false := by
+  unfold mayReceiveCell
+  simp only [hact, Bool.false_or, List.any_eq_false]
+  intro cp hcp
+  by_cases hov : cp.over = v
+  · simp [hrelay cp hcp hov, Role.allows, Role.rank]
+  · simp [hov]
+
 /-! ## Convergence and sync -/
 
 /-- T11 (convergence): peers holding the same edits, received in any order, end in the same state. Assumes ids don't

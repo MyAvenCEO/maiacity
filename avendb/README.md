@@ -3,8 +3,8 @@
 The user-owned, end-to-end encrypted database of maia.city. Every identity is a vault, like a smart account: a human
 vault is a person's, owned by their passkeys, with their devices; a coop vault is owned by human and coop vaults; an
 aven vault, an agent's such as avenCEO, the server's, is owned the same way, and its servers act for it but never govern
-it. A vault is a flat library of entries, each a Loro document whose type and tags travel sealed inside its edits.
-Caps give other vaults relay, read, write or owner on any slice of a vault: one entry, every todo, whatever is tagged
+it. A vault is a flat library of entries, each a Loro document whose type and tags travel sealed inside its edits. Caps
+give other vaults relay, backup, read, write or owner on any slice of a vault: one entry, every todo, whatever is tagged
 one way and not another, or all of it; so groups are never fixed, only ever what caps select, and least access is the
 default. The entries the same caps reach share a cell and its key, and each device syncs exactly the cells its vaults'
 caps reach, so servers and relays only ever see ciphertext (see [Flat vaults](#flat-vaults)).
@@ -74,11 +74,12 @@ A vault holds its entries itself, with nothing between them and it: no spaces, n
 (`note`, `todo`, `card`, `profile`), fixed when it is made, and tags that change, and both travel inside its encrypted
 writes, so no relay ever sees them. `docs/FLAT-VAULTS.md` is the design as built; in short:
 
-- **Caps on slices.** A cap gives a vault relay, read, write or owner on a slice of another, or everyone read on it: a
-  selector over the entries' types, tags, authors, ids and creation times, AND and OR of those, or the whole vault.
-  "Every todo tagged work" is one cap, which reaches each todo tagged so now and later, and lets go of one untagged. A
-  cap's selector is sealed to the vault it is over, its grantee and its issuer, so relays see who holds which role and
-  nothing of what it selects. A cap may rest on an owner cap its issuer holds, and then never reaches further (T22).
+- **Caps on slices.** A cap gives a vault relay, backup, read, write or owner on a slice of another, or everyone read on
+  it: a selector over the entries' types, tags, authors, ids and creation times, AND and OR of those, or the whole
+  vault. "Every todo tagged work" is one cap, which reaches each todo tagged so now and later, and lets go of one
+  untagged. A cap's selector is sealed to the vault it is over, its grantee and its issuer, so relays see who holds
+  which role and nothing of what it selects. A cap may rest on an owner cap its issuer holds, and then never reaches
+  further (T22).
 - **Cells.** The entries the same caps reach share a cell, and a cell is what keys, sync and rotation work on: one key
   per cell and generation, and a key per entry derived from it (T24). The vault's own devices keep each entry in the
   cell its caps call for (T23), moving it as its tags change or a new cap selects it; a move is a signed edit, and a
@@ -88,8 +89,9 @@ writes, so no relay ever sees them. `docs/FLAT-VAULTS.md` is the design as built
 - **Tags by request.** The vault's own devices tag its entries at once. Another vault asks them in its write, and they
   grant only the tags its caps let it ask for, where its slice holds the entry before and after.
 - **Sync is the caps.** A device receives an entry's edits only if one of its vaults acts for the entry's vault or
-  holds a live cap that reaches its cell (T12); a relay cap hands over the ciphertext and no key (T25). So the caps
-  decide both who reads what and which devices sync what.
+  holds a live cap, backup or more, that reaches its cell (T12); a backup cap hands over the ciphertext and no key
+  (T25), and a relay cap hands over nothing of the vault's entries, only its log, so its holder knows the vault's
+  devices and lets them through (T26). So the caps decide both who reads what and which devices sync what.
 
 ## Linking a device
 
@@ -157,15 +159,16 @@ alone; the SLH-DSA half still signs each edit's own id. So a person is asked onc
 once for each edit.
 
 - **Found** (`Device::found`, `Node::found_with`): a new person's first browser founds their human vault with the
-  passkey they signed up to maiaCITY with, or one it makes, gives avenCEO relay on the whole of it, so the server keeps
-  its entries, and writes its card there, in two ceremonies: the unlock, which is the pass to the relay, and one for
-  the vault's genesis and the edit that adds the device together (three with a new passkey). Its P-256 key comes from
-  the new passkey's public key info, or, for maiaCITY's, from the second ceremony: the device drafts it all for each
-  key the unlock's assertion recovers to, in one batch, and keeps the drafts of the key the second ceremony's
+  passkey they signed up to maiaCITY with, or one it makes, gives avenCEO backup on the whole of it, so the server keeps
+  its entries, or, if the person turned backups off at setup, relay, so the server only lets their devices through and
+  helps them find each other, and writes its card there, in two ceremonies: the unlock, which is the pass to the relay,
+  and one for the vault's genesis and the edit that adds the device together (three with a new passkey). Its P-256 key
+  comes from the new passkey's public key info, or, for maiaCITY's, from the second ceremony: the device drafts it all
+  for each key the unlock's assertion recovers to, in one batch, and keeps the drafts of the key the second ceremony's
   assertion verifies under (`Lab::drafting_for`). The server's relay lets any passkey's pass in while it is open to
-  sign-up (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on the server knows
-  the device. The first person to found their vault through a server nobody has claimed yet claims it in that same
-  ceremony (see [avenCEO](#avenceo)).
+  sign-up (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on the server knows the
+  device. The first person to found their vault through a server nobody has claimed yet claims it in that same ceremony
+  (see [avenCEO](#avenceo)).
 - **Link** (`Device::link`, `Node::link_by_pass`): a browser of a person who has a device already links through the
   code that device shows, in one ceremony: the unlock, which is the pass and signs the join too (`Classical::Pass`: the
   pass's assertion names the device, the hash-based half from the same ceremony's PRF output signs the join itself).
@@ -195,17 +198,18 @@ shown again the moment anything arrives (`Device::changed`):
   its vault and writes again to rename itself (`Device::card`). Both are end-to-end encrypted like the notes beside
   them.
 - **Vaults it owns.** The person's vault founds aven and coop vaults it owns, any number in one ceremony of its passkey
-  (`Device::found_vaults`, over `Node::approve_with`); the device then gives avenCEO relay on each and writes its name
-  there. Its "+" opens on one empty row: the person names each vault they found.
+  (`Device::found_vaults`, over `Node::approve_with`); the device then gives avenCEO the same role it holds on the
+  person's vault, backup or relay, on each and writes its name there. Its "+" opens on one empty row: the person names
+  each vault they found.
 - **Acting as.** The person acts as any vault their vault owns, through it, from the switcher at the foot. The page then
   shows what that vault's caps allow and nothing else, and every write, tag, cap and revocation goes out acting for
   that vault, which the rules check as any peer checks them. Marks of the vaults the acting vault holds nothing in are
   faded.
 - **Sharing.** A note or a todo is shared alone from its own Share button; a vault's Access page shares a rule: every
-  note or todo, tagged one way (and not another), or the whole vault, with another vault to relay, read, write or own,
-  or with everyone to read (`Device::share`). The form starts at the least, one entry or the vault's todos, to read,
-  and says in words what the cap selects and which entries it reaches now; a rule reaches every entry that comes to
-  match it later too, and lets go of one that stops. Caps up to write, and revoking them, need no ceremony; making a
+  note or todo, tagged one way (and not another), or the whole vault, with another vault to relay, back up, read, write
+  or own, or with everyone to read (`Device::share`). The form starts at the least, one entry or the vault's todos, to
+  read, and says in words what the cap selects and which entries it reaches now; a rule reaches every entry that comes
+  to match it later too, and lets go of one that stops. Caps up to write, and revoking them, need no ceremony; making a
   vault an owner, or revoking that, takes one, the owners' approval (`Device::revoke`). A vault that isn't the one
   shared from shares only through an owner cap of its own, and never further than it.
 - **Tags.** Each note and todo shows its tags, to add and take off: the vault's own devices tag at once; any other
@@ -358,9 +362,11 @@ ciphertext and opens nothing but what is public.
 - A store of an earlier format, as when avenDB started fresh with flat vaults, is put aside whole in its folder's
   `aside/`, never deleted, and the server starts on an empty store, nobody's until a human vault claims it again; its
   device's secret stays, and with it its offer.
-- A device takes the server's contact card, avenCEO's log, and can then give avenCEO relay on its vault, a cap on the
+- A device takes the server's contact card, avenCEO's log, and can then give avenCEO backup on its vault, a cap on the
   whole of it with no key. The server keeps the vault's edits and McEliece keys and serves them to the devices that may
-  hold them, also while the device that wrote them is away.
+  hold them, also while the device that wrote them is away. With relay instead (backups off, at setup or later in a
+  vault's Settings, `Device::back_up`), the server learns only the vault's devices, from its log, to let them through
+  its relay; it keeps none of its entries, and what it kept before stays kept.
 - Its relay lets in only the devices the server knows: those of the vaults acting for the vaults it relays and of
   avenCEO's owners, and itself; until a human vault claims the server, also any passkey's pass. A device the server
   doesn't know yet makes its first contact straight, over UDP, or through the relay by a pass its person's passkey

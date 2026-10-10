@@ -205,8 +205,10 @@ impl Device {
     /// person's human vault with itself in it, in one ceremony of the passkey (`avendb_net::Node::found_with`), drafted
     /// for each of those keys and kept for the one the ceremony's assertion verifies under; if nobody has claimed the
     /// server yet, the same ceremony claims it, and their vault owns avenCEO, the aven vault the server is a device of.
-    /// Then it gives avenCEO relay on the whole vault, so the server keeps its entries and knows the device from then
-    /// on, and writes its card there (`Device::card`). The relay honours the pass while it is open to sign-up
+    /// Then it gives avenCEO backup on the whole vault, so the server keeps their ciphertext and knows the device
+    /// from then on, or, if `backup` is false, relay alone, so the server knows the vault's devices, lets them through
+    /// and helps them find each other, and keeps none of its entries (`server_role`, `Device::back_up`); and writes its
+    /// card there (`Device::card`). The relay honours the pass while it is open to sign-up
     /// (`avendb_net::Admission::open`) or while nobody has claimed the server.
     pub async fn found(
         start: Start,
@@ -215,6 +217,7 @@ impl Device {
         fresh: Fresh,
         unlock: Unlock,
         authenticator: &impl Authenticator,
+        backup: bool,
     ) -> Result<Device> {
         let (lab, me, passkeys, pass) = passed(&start, p256, &fresh, &unlock)?;
         let node = Device::spawn(lab, me, &start, Some(pass)).await?;
@@ -231,8 +234,9 @@ impl Device {
         let device = Device::of(node, passkey, &passkeys, Some(fresh.mask(&unlock))).await?;
         let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
-            let relay = cast::cap(vault, cast::vault(avenceo), Role::Relay, Selector::All);
-            lab.issue(me, &[me], relay).map_err(|why| anyhow!("avenCEO's relay is refused: {why:?}"))?;
+            let role = if backup { Role::Backup } else { Role::Relay };
+            let server = cast::cap(vault, cast::vault(avenceo), role, Selector::All);
+            lab.issue(me, &[me], server).map_err(|why| anyhow!("avenCEO's cap is refused: {why:?}"))?;
             let card = named(&name, me);
             lab.create(me, vault, vault, CARD, &[], card).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
             Ok::<_, anyhow::Error>(())
@@ -334,6 +338,57 @@ impl Device {
         self.node.read(owns_aven).await
     }
 
+    /// Whether avenDB's server keeps a backup of its person's vault: avenCEO holds backup on the whole of it
+    /// (`server_role`). `None` while it knows no avenCEO.
+    pub async fn backs_up(&self) -> Option<bool> {
+        self.node
+            .read(|lab, me| {
+                let mine = lab.vault_of(me)?;
+                let st = lab.state(me);
+                Some(server_role(st, mine, avenceo(st, mine)?) == Role::Backup)
+            })
+            .await
+    }
+
+    /// Has avenDB's server keep a backup of its person's vault and of every vault the server holds a cap on the whole
+    /// of that this device acts for, if `on`, or relay alone, which keeps nothing of their entries from then on: it
+    /// gives avenCEO the one role on each, then revokes the caps of the other. What the server kept before, it keeps.
+    /// Whether anything changed.
+    pub async fn back_up(&self, on: bool) -> Result<bool> {
+        let (want, other) = if on { (Role::Backup, Role::Relay) } else { (Role::Relay, Role::Backup) };
+        let change = move |lab: &mut Lab, me| {
+            let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+            let st = lab.state(me);
+            let Some(avenceo) = avenceo(st, mine) else { return Ok(false) };
+            let to = Grantee::Principal(Principal::Vault(avenceo));
+            let server = |cp: &&Issued| cp.cap.wide && cp.cap.grantee == to && st.live(cp.id);
+            let mut vaults: Vec<VaultId> = st.caps().iter().filter(server).map(|cp| cp.cap.over).collect();
+            vaults.sort();
+            vaults.dedup();
+            vaults.retain(|&v| st.acts_for(me, v));
+            let mut plan = vec![];
+            for &v in &vaults {
+                let has = st.caps_over(v).any(|cp| server(&cp) && cp.cap.role == want);
+                let ends = st.caps_over(v).filter(|cp| server(cp) && cp.cap.role == other).map(|cp| cp.id);
+                let ends: Vec<CapId> = ends.collect();
+                plan.push((v, has, ends));
+            }
+            let mut changed = false;
+            for (v, has, ends) in plan {
+                if !has {
+                    lab.issue(me, &[me], cast::cap(v, cast::vault(avenceo), want, Selector::All))?;
+                    changed = true;
+                }
+                for cap in ends {
+                    lab.submit(me, &[me], Action::Revoke { cap, actor: v, keep: vec![], via: vec![] })?;
+                    changed = true;
+                }
+            }
+            Ok(changed)
+        };
+        self.node.act(change).await.map_err(|why: Refusal| anyhow!("the server's cap is refused: {why:?}"))
+    }
+
     /// Its person's account by its view (`Account`): `None` while it belongs to no vault.
     pub async fn account(&self) -> Option<Account> {
         self.node
@@ -426,7 +481,8 @@ impl Device {
             let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
             let st = lab.state(me);
             if let Some(avenceo) = avenceo(st, mine).filter(|&a| a != vault && !relays(st, vault, a)) {
-                lab.issue(me, &[me], cast::cap(vault, cast::vault(avenceo), Role::Relay, Selector::All))?;
+                let role = server_role(st, mine, avenceo);
+                lab.issue(me, &[me], cast::cap(vault, cast::vault(avenceo), role, Selector::All))?;
             }
             lab.create(me, vault, vault, PROFILE, &[], named(&name, me)).map(|_| true)
         };
@@ -958,6 +1014,13 @@ fn relays(st: &State, over: VaultId, to: VaultId) -> bool {
     st.caps_over(over).any(|cp| cp.cap.wide && st.holds(to, cp, Role::Relay))
 }
 
+/// What the server's vault `avenceo` holds on the whole of vault `mine`: backup, if any cap in force there gives it
+/// backup or more, else relay alone. The vaults `mine` owns give the server the same.
+fn server_role(st: &State, mine: VaultId, avenceo: VaultId) -> Role {
+    let backs_up = st.caps_over(mine).any(|cp| cp.cap.wide && st.holds(avenceo, cp, Role::Backup));
+    if backs_up { Role::Backup } else { Role::Relay }
+}
+
 /// The owner cap vault `issuer`'s right to share a slice of vault `over` rests on: none if it is the vault itself, else
 /// one in force over the vault that it holds, a cap on the whole vault first, and only such a one if the new cap is on
 /// the whole vault (`wide`), as a cap on the whole vault rests only on another.
@@ -1057,13 +1120,14 @@ impl PageDevice {
         spki: Option<Vec<u8>>,
         unlock: Function,
         ceremony: Function,
+        backup: Option<bool>,
     ) -> Result<PageDevice, JsError> {
         let not_p256 = || JsError::new("not a P-256 passkey's public key info");
         let p256 = spki.map(|spki| sign::spki_p256(&spki).ok_or_else(not_p256)).transpose()?;
         let server = Offer::from_text(&server).map_err(js_error)?;
         let (start, fresh) = (starting(name, &relay)?, Fresh::new().map_err(js_error)?);
         let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
-        let device = Device::found(start, &server, p256, fresh, unlock, &ceremonies);
+        let device = Device::found(start, &server, p256, fresh, unlock, &ceremonies, backup.unwrap_or(true));
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 
@@ -1138,6 +1202,22 @@ impl PageDevice {
     pub fn owns_aven(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.owns_aven().await.into()) })
+    }
+
+    /// Whether avenDB's server keeps a backup of its person's vault (`Device::backs_up`): a promise of a bool, or of
+    /// `undefined` while it knows no avenCEO.
+    #[wasm_bindgen(js_name = backsUp)]
+    pub fn backs_up(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.backs_up().await.map_or(JsValue::UNDEFINED, JsValue::from)) })
+    }
+
+    /// Has avenDB's server keep a backup of its person's vaults, if `on`, or relay alone (`Device::back_up`): a promise
+    /// of whether anything changed.
+    #[wasm_bindgen(js_name = backUp)]
+    pub fn back_up(&self, on: bool) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.back_up(on).await.map_err(js_value)?.into()) })
     }
 
     /// Its person's account (`Device::account`): a promise of `{vault, root, devices: [{id, name, me}], ownsAven}`, ids

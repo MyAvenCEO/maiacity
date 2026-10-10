@@ -799,7 +799,7 @@ def syncs : List SyncCase := [
       -- Alice's note and her todo; avenCEO may hold her notes, and read none
       (2, [], newEntry 100 1 100 [] note),
       (2, [], newEntry 100 21 100 [] todo),
-      (2, [], newCap 30 100 (toVault 300) .relay 100 notes),
+      (2, [], newCap 30 100 (toVault 300) .backup 100 notes),
       (2, [], .move 100 1 [30] []),
       (2, [], wr 100 1 100 [8] (stay := some 11)),
       (2, [], .keys (cellKey 100 [30] 0) [seedKey 100 0])]),
@@ -853,6 +853,7 @@ def kind : Kind → String
 
 def role : Role → String
   | .relay => str "relay"
+  | .backup => str "backup"
   | .read  => str "read"
   | .write => str "write"
   | .owner => str "owner"

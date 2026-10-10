@@ -8,7 +8,7 @@
  */
 
 /** @typedef {'human' | 'coop' | 'aven'} Kind */
-/** @typedef {'relay' | 'read' | 'write' | 'owner'} Role */
+/** @typedef {'relay' | 'backup' | 'read' | 'write' | 'owner'} Role */
 /** @typedef {{ id: string, name?: string | null, me: boolean }} DeviceView */
 /**
  * @typedef {{ id: string, kind: Kind, name: string | null, owners: ({ vault: string } | { signer: string })[],
@@ -42,13 +42,13 @@
  */
 
 /** Each role ranked: each includes the ones before it. */
-const RANK = { relay: 1, read: 2, write: 3, owner: 4 };
+const RANK = { relay: 1, backup: 2, read: 3, write: 4, owner: 5 };
 
 /** Whether `role` allows `need`. @param {Role | null | undefined} role @param {Role} need */
 export const allows = (role, need) => !!role && RANK[role] >= RANK[need];
 
 /** The roles, the strongest first. */
-export const STRONGEST = /** @type {const} */ (['owner', 'write', 'read', 'relay']);
+export const STRONGEST = /** @type {const} */ (['owner', 'write', 'read', 'backup', 'relay']);
 
 /** The kinds, as a person reads them. */
 export const KINDS = /** @type {const} */ ({ human: 'Human vault', coop: 'Coop vault', aven: 'Aven vault' });
@@ -64,6 +64,7 @@ export const KIND_HINTS = /** @type {const} */ ({
 /** The roles, as a person reads them. */
 export const ROLES = /** @type {const} */ ({
 	relay: 'relays',
+	backup: 'backs up',
 	read: 'reads',
 	write: 'writes',
 	owner: 'owns'
@@ -71,7 +72,8 @@ export const ROLES = /** @type {const} */ ({
 
 /** What each role allows. */
 export const ROLE_HINTS = /** @type {const} */ ({
-	relay: 'Keeps and forwards the ciphertext, and opens nothing: the server’s role',
+	relay: 'Knows its devices, to let them through and help them find each other, and keeps none of its entries',
+	backup: 'Keeps and forwards the ciphertext, and opens nothing: the server’s role unless you turn backups off',
 	read: 'Opens and reads it',
 	write: 'Reads and writes, and adds entries that fall in it',
 	owner: 'Reads, writes, and shares it on: your passkey approves making a vault owner'

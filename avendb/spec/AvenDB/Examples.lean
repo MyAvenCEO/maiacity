@@ -492,7 +492,7 @@ def wideCaps : List Edit := shared ++ chain 540 [
   (passkeyA, [], .genesis avenCEO .aven [.vault alice] 1),
   (passkeyA, [server], .addDevice avenCEO server),
   (macA, [], .cap (capOf 50 alice dave .read .all)),
-  (macA, [], .cap (capOf 51 alice avenCEO .relay .all))]
+  (macA, [], .cap (capOf 51 alice avenCEO .backup .all))]
 -- a wide cap splits no cell: there is nothing to move
 #guard refused wideCaps == [] && tidy wideCaps
 -- Dave reads every entry, in every cell
