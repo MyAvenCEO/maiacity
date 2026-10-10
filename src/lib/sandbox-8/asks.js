@@ -269,8 +269,19 @@ function fieldQuestions(world, a) {
 	// growing included, will fall short of its need (dearer) or outgrow it (cheaper). Reckoned on today's price alone,
 	// every brain planted the same best crop and the valley grew one thing (World 24)
 	const live = world.avens.filter((o) => o.alive);
-	const planned = (g) => live.reduce((n, o) => n + (o.fields ?? []).filter((h) => h.crop === g).reduce((m, h) => m + fieldBase(g) * levelShare(h.level), 0), 0) + (g === 'water' && world.weather ? live.length * (RULES.rainChance / 100) * (1 + RULES.rainMax) / 2 : 0);
-	const later = (g) => price(g) * Math.max(0.25, Math.min(4, (live.length * (NEED[g] ?? 0)) / Math.max(0.5, planned(g))));
+	const rain = (g) => (g === 'water' && world.weather ? live.length * (RULES.rainChance / 100) * (1 + RULES.rainMax) / 2 : 0);
+	// forecast 1 (World 25's switching): today's price already holds today's scarcity, so it moves only by how far the
+	// valley's supply changes from now until its fields have grown, this aven's own move counted (`move`: the units a day
+	// the option adds to, or takes from, each crop). Read off need ÷ planned instead, scarcity counted twice and the
+	// aven's own field left out: a crop it left looked empty, the one it grew crowded, and every option said switch
+	const planned = (g) => live.reduce((n, o) => n + (o.fields ?? []).filter((h) => h.crop === g).reduce((m, h) => m + fieldBase(g) * levelShare(h.level), 0), 0) + rain(g);
+	const supplyNow = (g) => live.reduce((n, o) => n + (o.fields ?? []).filter((h) => h.crop === g).reduce((m, h) => m + fieldYield(world, h), 0), 0) + rain(g);
+	const later = (g, move = {}) => {
+		const need = live.length * (NEED[g] ?? 0);
+		if (!RULES.forecast) return price(g) * Math.max(0.25, Math.min(4, need / Math.max(0.5, planned(g))));
+		const floor = Math.max(0.5, need / 4);
+		return price(g) * Math.max(0.25, Math.min(4, Math.max(floor, supplyNow(g)) / Math.max(floor, planned(g) + (move[g] ?? 0))));
+	};
 	const r = (x) => Math.round(x * 10) / 10;
 	const H = 14; // every option is reckoned over the next two weeks, so what a change loses while it grows shows
 	const food = GOODS.filter((g) => !a.grows.includes(g)).reduce((n, g) => n + (NEED[g] ?? 0) * price(g), 0); // a day of what it buys
@@ -281,12 +292,13 @@ function fieldQuestions(world, a) {
 		return n;
 	};
 	/** an option over the next two weeks: what it yields and is worth, what it costs, its net, and what it leaves */
-	const reckon = (g, share, grown, once, level) => {
+	const reckon = (g, share, grown, once, level, move = {}) => {
 		const u = units(g, share, grown);
 		const keep = opexOf(g, level) * H;
-		const net = u * later(g) - keep - once;
+		const at = later(g, move);
+		const net = u * at - keep - once;
 		const left = a.hearts - once;
-		return `over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * later(g))} HEARTS (at about ${r(later(g))} a unit once the valley's fields grow, ${r(price(g))} today), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
+		return `over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * at)} HEARTS (at about ${r(at)} a unit once the valley's fields grow${RULES.forecast ? ', yours included' : ''}, ${r(price(g))} today), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
 	};
 	const reserve = (RULES.fieldReserve ?? 0) * food;
 	const can = (cost) => a.hearts - cost >= reserve;
@@ -302,7 +314,7 @@ function fieldQuestions(world, a) {
 			criteria.push(`keep its ${GOOD_LABEL[f.crop]} field at level ${f.level}${grown < 1 ? ` (still growing: ${Math.round(grown * 100)}%)` : ''}: ${reckon(f.crop, levelShare(f.level), grown, 0, f.level)}`);
 			if (f.level < 3 && can(capexOf(f.crop, f.level + 1))) {
 				levels.push(1);
-				criteria.push(`level it up to ${f.level + 1} for ${capexOf(f.crop, f.level + 1)} HEARTS: ${reckon(f.crop, levelShare(f.level + 1), grown, capexOf(f.crop, f.level + 1), f.level + 1)}`);
+				criteria.push(`level it up to ${f.level + 1} for ${capexOf(f.crop, f.level + 1)} HEARTS: ${reckon(f.crop, levelShare(f.level + 1), grown, capexOf(f.crop, f.level + 1), f.level + 1, { [f.crop]: fieldBase(f.crop) * (levelShare(f.level + 1) - levelShare(f.level)) })}`);
 			}
 			// a crop is a commitment (holdDays): it can be changed only once it has been in the ground that long
 			const free = world.day - f.since >= (RULES.holdDays ?? 0);
@@ -310,7 +322,7 @@ function fieldQuestions(world, a) {
 				for (const [i, g] of GOODS.entries())
 					if (g !== f.crop) {
 						levels.push(2 + i);
-						criteria.push(`change it to ${GOOD_LABEL[g]} (back to level 1, nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, 0, 1)}`);
+						criteria.push(`change it to ${GOOD_LABEL[g]} (back to level 1, nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, 0, 1, { [g]: fieldBase(g), [f.crop]: -fieldBase(f.crop) * levelShare(f.level) })}`);
 					}
 			else note = ` It was planted on day ${f.since}: its crop can be changed from day ${f.since + RULES.holdDays}.`;
 		} else {
@@ -318,7 +330,7 @@ function fieldQuestions(world, a) {
 			for (const [i, g] of GOODS.entries()) {
 				if (!can(openCost(slot, g, a))) continue;
 				levels.push(2 + i);
-				criteria.push(`open field ${slot + 1} with ${GOOD_LABEL[g]} for ${openCost(slot, g, a)} HEARTS (nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, openCost(slot, g, a), 1)}`);
+				criteria.push(`open field ${slot + 1} with ${GOOD_LABEL[g]} for ${openCost(slot, g, a)} HEARTS (nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, openCost(slot, g, a), 1, { [g]: fieldBase(g) })}`);
 			}
 		}
 		const key = `field${slot + 1}`;
@@ -326,7 +338,7 @@ function fieldQuestions(world, a) {
 		a.brain.labels[key] = `field ${slot + 1}`;
 		q[key] = {
 			type: 'score',
-			instructions: `You farm your own fields and decide what they grow: you can level a field up (paid once, then it costs more a night and yields more; you pay the MaiaCity COOP), change its crop (back to level 1, and nothing until it grows) or open up to 3 fields. What a field yields you sell at the posted price, or eat. Every option is reckoned over the next ${H} days, so a crop that has to grow first, or a field you can't afford to keep, shows what it really costs; keep enough HEARTS to buy the food you don't grow${reserve ? ` (you can't spend below ${Math.round(reserve)}: ${RULES.fieldReserve} days of it)` : ''}. You hold ${Math.round(a.hearts)} HEARTS. The market: ${market}. Grow what is scarce and dear, not what everyone else already grows. ${f ? `Your field ${slot + 1} grows ${GOOD_LABEL[f.crop]} at level ${f.level}.${note}` : `${a.fields.length ? `You have ${a.fields.length} field${a.fields.length === 1 ? '' : 's'}.` : 'You have no field yet: until you open one and it grows, you live on your stores and the market.'}`} What do you do with field ${slot + 1}?`,
+			instructions: `You farm your own fields and decide what they grow: you can level a field up (paid once, then it costs more a night and yields more; you pay the MaiaCity COOP), change its crop (back to level 1, and nothing until it grows) or open up to 3 fields. What a field yields you sell at the posted price, or eat. Every option is reckoned over the next ${H} days, so a crop that has to grow first, or a field you can't afford to keep, shows what it really costs; keep enough HEARTS to buy the food you don't grow${reserve ? ` (you can't spend below ${Math.round(reserve)}: ${RULES.fieldReserve} days of it)` : ''}. You hold ${Math.round(a.hearts)} HEARTS. The market: ${market}.${RULES.forecast ? '' : ' Grow what is scarce and dear, not what everyone else already grows.'} ${f ? `Your field ${slot + 1} grows ${GOOD_LABEL[f.crop]} at level ${f.level}.${note}` : `${a.fields.length ? `You have ${a.fields.length} field${a.fields.length === 1 ? '' : 's'}.` : 'You have no field yet: until you open one and it grows, you live on your stores and the market.'}`} What do you do with field ${slot + 1}?`,
 			criteria
 		};
 	}
