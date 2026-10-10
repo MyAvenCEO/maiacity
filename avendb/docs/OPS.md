@@ -310,7 +310,7 @@ replay `Vectors.lean`'s ruled caps.
 | O1 | Lean: flat records, paths, changes, ops, apply, diff, where, plan; O1 to O3; vectors | PR #415, with O2, O3 |
 | O2 | Rust: `ops` and `engine` in the core, `Device::run`, the sidecar's `run`; generic promote and variant | |
 | O3 | Page: Notes, Todos, tags and the note page on `api.run`; the studio's Query console | |
-| C1 | Lean: rules in slices, chain narrowing, proof-carrying writes, acceptance; C1 to C4, T25 | one PR, with C2, C3 |
+| C1 | Lean: rules in slices, chain narrowing, proof-carrying writes, acceptance; C1 to C4, T25 | PR #431, with C2, C3 |
 | C2 | Rust: slice rules and the ruled bit, chain keys, proofs, every reader's check, `may` | |
 | C3 | Page: rules in the share dialog, buttons by `may`; the walks; server redeploy | |
 
