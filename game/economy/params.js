@@ -58,6 +58,14 @@ export const PARAMS = [
 	{ key: 'swing', view: 'world', section: 'Harvests', label: 'Harvest swing', unit: '±%', min: 0, max: 100, step: 1, value: 25, say: (v) => `A normal night's harvest is its land's capacity ±${v}%.` },
 	{ key: 'badChance', view: 'world', section: 'Harvests', label: 'Bad harvests', unit: '% of nights', min: 0, max: 100, step: 1, value: 5, say: (v) => `${v}% of nights a field gives a bad harvest (30–60%).` },
 	{ key: 'richChance', view: 'world', section: 'Harvests', label: 'Rich harvests', unit: '% of nights', min: 0, max: 100, step: 1, value: 5, say: (v) => `${v}% of nights a field gives a rich harvest (130–160%).` },
+	// ---- world: fields (Samuel, 2026-10-10: every aven an entrepreneur: what it grows, and how much, is its own decision) ----
+	{ key: 'fieldsOn', view: 'world', section: 'Fields', label: 'Own fields', unit: '0 = off, 1 = on', min: 0, max: 1, step: 1, value: 0, reset: true, say: (v) => (v ? 'Every aven farms its own fields: it starts with one crop at level 1 and decides what to plant, which field to level up and which crop to change, paying for each.' : 'The land decides what each aven grows (no fields of its own).') },
+	{ key: 'fieldWater', view: 'world', section: 'Fields', label: 'A WATER field', unit: 'units a day at level 2', min: 0, max: 200, step: 1, value: 12, reset: true, say: (v) => `A WATER field gives about ${v} a day at level 2 (half at level 1, one and a half times at level 3).` },
+	{ key: 'fieldFood', view: 'world', section: 'Fields', label: 'A food field', unit: 'units a day at level 2', min: 0, max: 200, step: 1, value: 8, reset: true, say: (v) => `A FRUITS, VEGETABLES, LEGUMES or CHICKEN field gives about ${v} a day at level 2 (half at level 1, one and a half times at level 3).` },
+	{ key: 'field2', view: 'world', section: 'Fields', label: 'A second field', unit: 'HEARTS', min: 0, max: 100000, step: 10, value: 300, say: (v) => `Opening a second field costs ${n(v)} HEARTS.` },
+	{ key: 'field3', view: 'world', section: 'Fields', label: 'A third field', unit: 'HEARTS', min: 0, max: 100000, step: 10, value: 600, say: (v) => `Opening a third field costs ${n(v)} HEARTS.` },
+	{ key: 'rampDays', view: 'world', section: 'Fields', label: 'A new crop grows in', unit: 'days', min: 0, max: 60, step: 1, value: 7, say: (v) => `A crop planted (or changed) starts at level 1 and takes ${v} days to give its full yield.` },
+	{ key: 'levelDays', view: 'world', section: 'Fields', label: 'A level-up grows in', unit: 'days', min: 0, max: 60, step: 1, value: 3, say: (v) => `A field levelled up reaches its new yield over ${v} days.` },
 	// ---- world: weather ----
 	{ key: 'dryChance', view: 'world', section: 'Weather', label: 'Dry spells', unit: '% of nights', min: 0, max: 100, step: 0.5, value: 2.5, say: (v) => (v ? `A dry spell begins about one night in ${Math.round(100 / v)}.` : 'No dry spells.') },
 	{ key: 'dryMin', view: 'world', section: 'Weather', label: 'Shortest dry spell', unit: 'days', min: 1, max: 60, step: 1, value: 3, say: (v) => `A dry spell lasts at least ${v} days.` },
@@ -99,7 +107,8 @@ export const SECTIONS = [
 	{ id: 'rot', kind: 'world', name: 'Rot' },
 	{ id: 'land', kind: 'world', name: 'Land and production' },
 	{ id: 'harvests', kind: 'world', name: 'Harvests' },
-	{ id: 'weather', kind: 'world', name: 'Weather' }
+	{ id: 'weather', kind: 'world', name: 'Weather' },
+	{ id: 'fields', kind: 'world', name: 'Fields' }
 ];
 /** which card a param belongs to */
 export const CARD_OF = Object.fromEntries(PARAMS.map((p) => [p.key, SECTIONS.find((s) => s.name === p.section)?.id]));
@@ -177,6 +186,8 @@ export const HOOKS = [
 	{ name: 'haggle', card: 'trading', when: "when a seller's price and a buyer's limit meet in the book", given: '{ good, ask, bid, sellerFlex, buyerFlex, valley, value }', returns: 'the price of the deal in HEARTS, or null: no deal' },
 	{ name: 'match', card: 'trading', when: 'each time the market clears, for each good, again and again until it answers null', given: '{ good, sellers, buyers (each { id, name, price, qty, flex, hearts }, in no order), valley, value }', returns: '{ seller, buyer } (ids): the next two to strike a deal, or null: the round ends for this good' },
 	{ name: 'price', card: 'trading', when: 'each time the market clears, once for each good, after its trades (only where the Trading card exports it: the market then clears at a posted price)', given: '{ good, price (the posted price it cleared at; null before the first round), inherited (on the first call, price null: the good\'s last price in the world this one follows, else null), previous (on the first call: every good\'s last price there, for its relative prices; else null), prices (every good\'s posted price as this round began: the whole price level), opening (true in the day\'s first round, when the night\'s harvest is all on offer and nothing of it traded yet), demand (units wanted at it), need (the part of demand buyers need to live through tomorrow, filled first), supply (units offered at it), traded, valley, value }', returns: 'the posted price for the next round, in HEARTS (above 0): everyone trades at it, the long side shared out pro rata; demand above supply should raise it, supply above demand lower it' },
+	{ name: 'capex', card: 'fields', when: 'when an aven levels a field up', given: '{ good, level (the level it goes to: 2 or 3), valley, value }', returns: 'what it costs, in HEARTS (burned)' },
+	{ name: 'opex', card: 'fields', when: 'each night, for each field', given: '{ good, level, valley, value }', returns: 'what the field costs that night, in HEARTS (burned); a field its aven can\'t pay for gives nothing that night' },
 	{ name: 'rebirth', card: 'avens', when: 'each morning, for each dead aven', given: '{ aven, dead (days since it died), valley, value }', returns: 'the HEARTS it is reborn with now, or -1: not yet' },
 	{ name: 'need', card: 'bodies', when: 'each night, for each aven and good', given: '{ aven, good, valley, value }', returns: 'the units it eats or drinks tonight, whole' },
 	{ name: 'body', card: 'bodies', when: 'each night, for each living aven, after it ate', given: '{ aven, need, short, valley, value }', returns: '{ water, food }: its two reserves, 0-100, and if it keeps its own, health (0 to healthMax, else the lower reserve, scaled) and memo (a small object, handed back as aven.memo the next night); at 0 in any of them it dies' },

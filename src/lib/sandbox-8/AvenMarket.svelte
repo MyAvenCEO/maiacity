@@ -11,7 +11,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { wayBack } from '$lib/app/back.svelte.js';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
@@ -423,6 +423,8 @@
 				ask: { ...a.ask },
 				bid: { ...a.bid },
 				choices: { ...(a.choices ?? {}) },
+				// its own fields (where its world has them): crop, level and how far grown
+				fields: (a.fields ?? []).map((/** @type {any} */ f) => ({ crop: f.crop, level: f.level, grown: Math.round(fieldGrown(world, f) * 100), yield: Math.round(fieldYield(world, f) * 10) / 10 })),
 				ledger: page === 'avens' ? a.ledger.slice(-200).reverse() : [],
 				brain: { ...a.brain, labels: { ...(a.brain.labels ?? {}) }, units: { ...(a.brain.units ?? {}) } },
 				mind: a.mind && page === 'avens' ? JSON.parse(JSON.stringify(keepMind(a.mind))) : null

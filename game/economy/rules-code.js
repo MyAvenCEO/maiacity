@@ -295,5 +295,16 @@ export function weather({ weather, day, dice, valley }) {
   w.rain = !w.dry && v.rainMax > 0 && dice[2] < v.rainChance / 100 ? 1 + Math.floor(dice[3] * v.rainMax) : 0;
   return w;
 }
+`,
+	fields: `// Fields: what levelling a field up costs once (CAPEX) and what keeping it costs each night (OPEX), per crop, in
+// HEARTS, both burned. Chicken costs most (feed, and it rots fastest), legumes least (cheap, and they keep)
+const CAPEX = { water: [0, 0, 200, 500], fruits: [0, 0, 150, 400], vegetables: [0, 0, 150, 400], legumes: [0, 0, 120, 300], chicken: [0, 0, 250, 600] };
+const OPEX = { water: [0, 2, 5, 10], fruits: [0, 2, 5, 10], vegetables: [0, 2, 4, 9], legumes: [0, 1, 3, 7], chicken: [0, 3, 6, 13] };
+export function capex({ good, level }) {
+  return CAPEX[good]?.[level] ?? 0;
+}
+export function opex({ good, level }) {
+  return OPEX[good]?.[level] ?? 0;
+}
 `
 };

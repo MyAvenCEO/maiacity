@@ -81,6 +81,9 @@
 		<header>
 			<h2><i style:background={a.colour}></i>{a.name}</h2>
 			<span class="grows">grows {#each a.grows as g (g)}<em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]} {/each}</span>
+			{#if a.fields?.length}
+				<span class="fields">fields {#each a.fields as f, i (i)}<span class="field"><em style:background={GOOD_COLOUR[f.crop]}></em>{GOOD_LABEL[f.crop]} <b>L{f.level}</b>{f.grown < 100 ? ` · growing ${f.grown}%` : ''} · {f.yield} a day</span>{/each}</span>
+			{/if}
 			<p>{a.alive ? `No. ${rank} on the board` : `Died on day ${a.diedOn}, reborn on day ${a.diedOn + RULES.rebirthDays}`} · decides with {names[a.brain.last?.source] ?? a.brain.last?.source ?? 'no brain yet'}</p>
 		</header>
 
@@ -638,5 +641,19 @@
 	}
 	.bars .num small {
 		opacity: 0.6;
+	}
+	.fields {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.6rem;
+		font-size: 0.8rem;
+		opacity: 0.85;
+	}
+	.fields .field em {
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 3px;
+		margin-right: 0.2rem;
 	}
 </style>
