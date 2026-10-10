@@ -346,7 +346,7 @@
 		padding: 0.3em 0.55em;
 		border-radius: 0.35em;
 		font-family: var(--font-display);
-		font-weight: 760;
+		font-weight: 900;
 		line-height: 1;
 		letter-spacing: 0;
 		text-transform: uppercase;

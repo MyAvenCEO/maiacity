@@ -79,7 +79,7 @@ html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:${h
 .h{font-weight:830;font-size:${u(138)};line-height:.92;letter-spacing:-.025em;margin-top:${u(6)}}
 .x{font-weight:560;font-style:italic;font-size:${u(58)};line-height:1.12;margin-top:${u(22)};color:#fff}
 .x b{font-style:normal;font-weight:820;color:#f6c75a}
-.d{position:absolute;right:${u(80)};bottom:${u(80)};padding:${u(16)} ${u(29)};border-radius:${u(18)};background:#f6c75a;box-shadow:0 ${u(8)} ${u(30)} rgba(0,0,0,.35);font-weight:760;font-size:${u(52)};line-height:1;letter-spacing:0;text-transform:uppercase;color:#14304f}
+.d{position:absolute;right:${u(80)};bottom:${u(80)};padding:${u(16)} ${u(29)};border-radius:${u(18)};background:#f6c75a;box-shadow:0 ${u(8)} ${u(30)} rgba(0,0,0,.35);font-weight:900;font-size:${u(52)};line-height:1;letter-spacing:0;text-transform:uppercase;color:#14304f}
 </style></head><body>${hook ? '' : '<div class="bg"></div>'}<div class="shade"></div>
 <div class="t"><div class="k">${TITLE.kicker}</div><div class="n">${TITLE.big}</div><div class="h">${TITLE.line}</div><div class="x">${TITLE.after}</div></div>
 ${!hook && BADGE ? `<div class="d">${BADGE}</div>` : ''}
