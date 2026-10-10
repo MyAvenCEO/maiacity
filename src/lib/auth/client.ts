@@ -304,6 +304,18 @@ export type Beat = { id: string; title: string; type: BeatType; text: string; li
 /** The journey: the transformation (from → to), the one arching question, and the beats in order. */
 export type Journey = { from?: string; to?: string; question?: string; beats?: Beat[] };
 
+/** The parts a hook is assembled from (the hook-writer skill): four required, two optional, and the feeling it anchors. */
+export const HOOK_PARTS = ['subject', 'action', 'end', 'contrast', 'proof', 'time', 'anchor'] as const;
+export type HookPart = (typeof HOOK_PARTS)[number];
+/**
+ * One hook tried for a story: the line, its parts named (so the subject, the verb and the contrast can be pointed
+ * at), the promise and the objection killer after it, how far up the extreme dial it sits (1 mild … 3 extreme, 4
+ * false) and a note. The one whose line is the story's `hook` is on the title card.
+ */
+export type HookVariant = { id: string; text: string; promise?: string; objection?: string; dial?: number; note?: string } & Partial<
+	Record<HookPart, string>
+>;
+
 export type ContentItem = {
 	id: string;
 	title: string;
@@ -318,6 +330,8 @@ export type ContentItem = {
 	/** the description under the hook (YouTube's, the journal's lede) */
 	description: string;
 	journey: Journey;
+	/** the hooks tried, the one on the card among them (its line is `hook`) */
+	hooks: HookVariant[];
 	/** the media vault's story it is filed in, once the Mac app has made it (an iroh namespace id) */
 	story: string | null;
 	hashes: string[];

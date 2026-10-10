@@ -65,6 +65,20 @@ test("a story moves through eight steps, and keeps its pad, its hook, its descri
   expect(x.journey.beats!.map((b) => [b.id, b.type, b.link ?? null, b.tension])).toEqual([["b1", "hook", null, 0.4], ["b2", "obstacle", "but", 1]]);
   expect(x.journey.beats![1]!.text.length).toBe(4000);
   expect(x.journey.beats![0]!.feel).toBe("curiosity");
+  // the hook is picked from the variants tried, each with its parts named
+  x = await save(s.id, {
+    hooks: [
+      { text: "94% loaded. The last 6% is you.", subject: "you", action: "complete the load", end: "the bar fills", contrast: "a number ↔ a person", anchor: "curiosity", promise: "On Sunday the bar fills.", objection: "Not a trailer.", dial: 3 },
+      { text: "A valley is loading.", dial: 9, note: "runner-up" },
+    ],
+    hook: "94% loaded. The last 6% is you.",
+  });
+  expect(x.hooks.map((h) => [h.id, h.dial ?? null, h.subject ?? null])).toEqual([["h1", 3, "you"], ["h2", 4, null]]);
+  expect(x.hooks[0]!.objection).toBe("Not a trailer.");
+  expect(x.hook).toBe(x.hooks[0]!.text);
+  await expect(save(s.id, { hooks: [{ dial: 2 }] })).rejects.toThrow(/needs its line/);
+  await expect(save(s.id, { hooks: "none" })).rejects.toThrow(/list/);
+  expect((await save(s.id, { description: "still" })).hooks.length).toBe(2); // untouched by other patches
   await expect(save(s.id, { journey: { beats: [{ title: "?", type: "montage" }] } })).rejects.toThrow(/beat is one of/);
   await expect(save(s.id, { journey: { beats: [{ type: "hook" }] } })).rejects.toThrow(/title/);
   await expect(save(s.id, { status: "draft" })).rejects.toThrow(/status is one of/);

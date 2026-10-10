@@ -898,4 +898,13 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE mips ADD COLUMN prs JSONB NOT NULL DEFAULT '[]'::jsonb;
     `,
   },
+  {
+    // A story's hook is picked from variants (Samuel, 2026-10-10): the hooks tried, each with its parts named as the
+    // hook-writer skill writes them (subject, action, end state, contrast, proof, time, anchor), its promise and
+    // objection killer, and how far up the extreme dial it goes. The one on the title card is the story's `hook`.
+    id: "0042-story-hook-variants",
+    sql: `
+      ALTER TABLE content_items ADD COLUMN hooks JSONB NOT NULL DEFAULT '[]'::jsonb;
+    `,
+  },
 ];
