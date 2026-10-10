@@ -208,17 +208,25 @@
 	let worlds = $state(/** @type {any[]} */ ([]));
 	let here = $state({ id: /** @type {string | null} */ (null), name: '', after: /** @type {string | null} */ (null) }); // the world on the page, and the world it follows
 	let worldNote = $state('');
-	let openMips = $state(0); // MIPs waiting for a decision, for the welcome screen
+	let openMips = $state(/** @type {any[]} */ ([])); // MIPs waiting for a decision, listed in the welcome screen's aside
+	let focusMip = $state(/** @type {number | null} */ (null)); // the proposal the Proposals page opens on, picked from that aside
 	async function loadWorlds() {
 		if (!acct.play) return;
 		try {
 			worlds = (await loadRuns(100)).runs;
 			worldNote = '';
-			openMips = ((await loadMips().catch(() => null))?.mips ?? []).filter((/** @type {any} */ m) => m.status === 'open').length;
+			openMips = ((await loadMips().catch(() => null))?.mips ?? []).filter((/** @type {any} */ m) => m.status === 'open');
 		} catch (e) {
 			worldNote = `The worlds could not be read (${/** @type {any} */ (e)?.message || e}).`;
 		}
 	}
+	/** the Proposals page, scrolled to one proposal (Samuel, 2026-10-10: the welcome screen lists the open ones in an aside) */
+	function openMip(/** @type {number | null} */ n) {
+		focusMip = n;
+		setView('mips');
+	}
+	const whenMip = (/** @type {string} */ t) => (t ? new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+	const worldOfMip = (/** @type {any} */ m) => (m.world_id ? m.world_name ?? 'a deleted world' : m.action === 'world' ? m.world?.name ?? 'a new world' : m.config ?? '');
 	/** what this world runs on: its config (cards and values), the changes tried on top, and the model its avens ask */
 	const settingsOf = () => ({ config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, cards: fullCards(CONFIG.cards), params: { ...DEFAULTS } }, local: changedRules(), model: brain.mode });
 	let keeping = false;
@@ -1055,10 +1063,6 @@
 		<div class="statspage worlds">
 			<h2>Worlds</h2>
 			<p class="sub">Pick a world to enter it: its valley, its views and its clock load with it, and the Back in the pill below brings you here again. Each world is a capsule: its settings, and every aven's HEARTS and brain in it, are its own. New worlds are proposed over the studio's MCP and appear here once accepted.</p>
-			<button class="proposals-tile" onclick={() => setView('mips')}>
-				<b>Proposals</b>
-				<span>Every MIP of every world: what waits for a decision, and what was decided.{openMips ? ` ${openMips} open.` : ''}</span>
-			</button>
 			{#if !acct.play}
 				<p class="sub">{acct.note || 'Sign in to see the worlds.'}</p>
 				<div class="new"><button class="go" onclick={tryValley}>Try a valley here (not kept)</button></div>
@@ -1067,35 +1071,54 @@
 			{#if acct.play}
 				{@const kept = worlds.filter((w) => w.saved)}
 				{@const old = worlds.filter((w) => !w.saved)}
-				<div class="worldgrid">
-					{#each kept as w (w.id)}
-						<button class="worldtile" class:sel={w.id === here.id} onclick={() => (w.id === here.id ? setView('valley') : openWorld(w))}>
-							<b>{w.name || 'A world'}</b>
-							<span class="cfg">{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</span>
-							<span class="facts"><span><b>{w.days}</b> days</span><span><b>{w.alive ?? '—'}</b> alive</span></span>
-							<span class="lead">{w.summary?.leader ? `Leader ${w.summary.leader}` : 'No leader yet'}</span>
-							<span class="when">{w.id === here.id ? 'Open now' : `Kept ${new Date(w.saved).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}</span>
-						</button>
-					{:else}
-						<p class="sub none">No world yet: propose one over the studio's MCP, then accept it under Proposals.</p>
-					{/each}
-				</div>
-				{#if old.length}
-					<details class="old">
-						<summary>{old.length} earlier {old.length === 1 ? 'world' : 'worlds'}, history only</summary>
-						<p class="sub">They ran before worlds were kept whole, so they can't be entered: only their days are kept (economy_run on the MCP).</p>
+				<div class="home">
+					<div class="main">
 						<div class="worldgrid">
-							{#each old as w (w.id)}
-								<div class="worldtile past">
+							{#each kept as w (w.id)}
+								<button class="worldtile" class:sel={w.id === here.id} onclick={() => (w.id === here.id ? setView('valley') : openWorld(w))}>
 									<b>{w.name || 'A world'}</b>
 									<span class="cfg">{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</span>
 									<span class="facts"><span><b>{w.days}</b> days</span><span><b>{w.alive ?? '—'}</b> alive</span></span>
-									<span class="lead">{w.summary?.leader ? `Leader ${w.summary.leader}` : ''}</span>
-								</div>
+									<span class="lead">{w.summary?.leader ? `Leader ${w.summary.leader}` : 'No leader yet'}</span>
+									<span class="when">{w.id === here.id ? 'Open now' : `Kept ${new Date(w.saved).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}</span>
+								</button>
+							{:else}
+								<p class="sub none">No world yet: propose one over the studio's MCP, then accept it under Proposals.</p>
 							{/each}
 						</div>
-					</details>
-				{/if}
+						{#if old.length}
+							<details class="old">
+								<summary>{old.length} earlier {old.length === 1 ? 'world' : 'worlds'}, history only</summary>
+								<p class="sub">They ran before worlds were kept whole, so they can't be entered: only their days are kept (economy_run on the MCP).</p>
+								<div class="worldgrid">
+									{#each old as w (w.id)}
+										<div class="worldtile past">
+											<b>{w.name || 'A world'}</b>
+											<span class="cfg">{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</span>
+											<span class="facts"><span><b>{w.days}</b> days</span><span><b>{w.alive ?? '—'}</b> alive</span></span>
+											<span class="lead">{w.summary?.leader ? `Leader ${w.summary.leader}` : ''}</span>
+										</div>
+									{/each}
+								</div>
+							</details>
+						{/if}
+					</div>
+					<!-- the open proposals, each a click to its detail on the Proposals page, and the whole list behind "See all" -->
+					<div class="open-mips">
+						<div class="head">
+							<h3>Open proposals</h3>
+							<button class="link" onclick={() => openMip(null)}>See all</button>
+						</div>
+						{#each openMips as m (m.number)}
+							<button class="omip" onclick={() => openMip(m.number)}>
+								<b>MIP-{m.number} · {m.title}</b>
+								<span>{worldOfMip(m)} · by {m.author_name ?? m.author ?? 'someone'} · {whenMip(m.created)}</span>
+							</button>
+						{:else}
+							<p class="sub none">Nothing waits for a decision.</p>
+						{/each}
+					</div>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -1116,7 +1139,7 @@
 	{/if}
 	{#if page === 'mips'}
 		<div class="statspage">
-			<ProposalsView {acct} {configs} {worlds} here={null} playing={null} onworld={madeWorld} onamend={amendedWorld} onreload={() => reloadConfigs().catch(() => {})} />
+			<ProposalsView {acct} {configs} {worlds} here={null} playing={null} focus={focusMip} onworld={madeWorld} onamend={amendedWorld} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 
@@ -1257,6 +1280,9 @@
 	}
 	.worlds > * {
 		max-width: 980px;
+	}
+	.worlds > .home {
+		max-width: 1280px;
 	}
 	.worlds h2 {
 		margin: 0 0 4px;
@@ -1686,32 +1712,83 @@
 		}
 	}
 
-	/* the welcome screen: a world is a tile, four in a row */
-	.proposals-tile {
+	/* the welcome screen: the worlds as tiles, three in a row, and the open proposals in an aside on the right */
+	.home {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 280px;
+		gap: 18px;
+		align-items: start;
+		max-width: 1280px;
+	}
+	.open-mips {
+		border: 1px solid rgb(38 56 44 / 0.16);
+		border-radius: 14px;
+		background: #fff;
+		padding: 12px 14px 14px;
+		position: sticky;
+		top: 0;
+	}
+	.open-mips .head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+		margin-bottom: 6px;
+	}
+	.open-mips h3 {
+		margin: 0;
+		font-size: 14px;
+	}
+	.open-mips .link {
+		background: none;
+		border: 0;
+		padding: 0;
+		color: #2f6b46;
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+		text-decoration: underline;
+	}
+	.open-mips .omip {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 2px;
 		width: 100%;
-		margin: 4px 0 18px;
-		padding: 16px 18px;
+		padding: 8px 0;
 		text-align: left;
-		border: 1px solid var(--ink, #263828);
-		border-radius: 14px;
-		background: rgb(38 56 44 / 0.04);
+		border: 0;
+		border-top: 1px solid rgb(38 56 44 / 0.12);
+		background: none;
 		cursor: pointer;
+		color: inherit;
 	}
-	.proposals-tile b {
-		font-size: 1.1em;
+	.open-mips .omip:hover b {
+		color: #2f6b46;
 	}
-	.proposals-tile span {
-		opacity: 0.75;
+	.open-mips .omip b {
+		font-size: 13px;
+		line-height: 1.3;
 	}
-	.proposals-tile:hover {
-		background: rgb(38 56 44 / 0.09);
+	.open-mips .omip span {
+		font-size: 12px;
+		opacity: 0.65;
+	}
+	.open-mips .none {
+		margin: 4px 0 0;
+		font-size: 13px;
+	}
+	@media (max-width: 900px) {
+		.home {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.open-mips {
+			position: static;
+			order: -1;
+		}
 	}
 	.worldgrid {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 12px;
 	}
 	@media (max-width: 1100px) {
