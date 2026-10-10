@@ -56,7 +56,7 @@ ids! {
     CellId,
     /// A signed edit: the hash of its encoding with its signatures.
     EditId,
-    /// Bytes named by their hash: a schema or a lens in a space's schema lane, or a Classic McEliece public key.
+    /// Bytes named by their hash: a schema or a lens in a vault's schema lane, or a Classic McEliece public key.
     BlobId,
 }
 

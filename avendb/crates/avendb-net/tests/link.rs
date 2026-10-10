@@ -13,9 +13,10 @@ use std::sync::Mutex;
 
 use avendb::cast::*;
 use avendb::id::SignerId;
-use avendb::keys::KeyScope;
+use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::sign::{Ceremony, Passkey, device_salt};
+use avendb::sync::{LogId, log_of};
 use avendb::wire::{Reply, Wire};
 use avendb_net::{ALPN, Authenticator, Node, Offer, Options, Step, exporter, pq_provider};
 use iroh::endpoint::{Connection, presets};
@@ -49,9 +50,9 @@ async fn quiet(nodes: &[&Node]) {
     }
 }
 
-/// Whether the node's device reads `body` in block 2 of entry `e` of space `sp`.
-async fn reads(n: &Node, sp: avendb::id::SpaceId, e: avendb::id::EntryId, body: &'static str) -> bool {
-    n.read(move |lab, me| text(lab, me, sp, e, 2).as_deref() == Some(body)).await
+/// Whether the node's device reads `body` in block 2 of entry `e`.
+async fn reads(n: &Node, e: avendb::id::EntryId, body: &'static str) -> bool {
+    n.read(move |lab, me| text(lab, me, e, 2).as_deref() == Some(body)).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -71,11 +72,11 @@ async fn a_new_iphone_links_by_scanning_the_code_alices_mac_shows() {
     assert_eq!(phone.link(&scanned, passkey_a).await.expect("the new iPhone links"), alice, "to Alice's vault");
     let knows = move |lab: &Lab, me| lab.state(me).vault(alice).is_some_and(|v| v.devices.contains(&new));
     assert!(mac.read(knows).await, "and the Mac counts it among Alice's devices");
-    let (coop, space, welcome) = (h.coop, h.space, h.welcome);
-    until("the new iPhone reads Welcome", || reads(&phone, space, welcome, WELCOME_TEXT)).await;
-    let edit = move |lab: &mut Lab, me| lab.edit(me, coop, space, welcome, |i| i.set_text(2, AFTER_TEXT));
+    let (coop, welcome) = (h.coop, h.welcome);
+    until("the new iPhone reads Welcome", || reads(&phone, welcome, WELCOME_TEXT)).await;
+    let edit = move |lab: &mut Lab, me| lab.edit(me, coop, welcome, |i| i.set_text(2, AFTER_TEXT));
     phone.act(edit).await.expect("the new iPhone edits Welcome");
-    until("the Mac reads its edit", || reads(&mac, space, welcome, AFTER_TEXT)).await;
+    until("the Mac reads its edit", || reads(&mac, welcome, AFTER_TEXT)).await;
     quiet(&[&mac, &phone]).await;
     for n in [mac, phone] {
         n.shutdown().await.expect("the node shuts down");
@@ -118,8 +119,7 @@ async fn a_browser_links_with_the_passkey_in_its_authenticator_in_two_ceremonies
     assert_eq!(linked, alice, "to Alice's vault");
     let steps = authenticator.0.lock().expect("the authenticator").1.clone();
     assert_eq!(steps, [Step::Hello, Step::Join], "in two ceremonies: the passkey's hello, then the edit adding it");
-    let (space, welcome) = (h.space, h.welcome);
-    until("the browser reads Welcome", || reads(&browser, space, welcome, WELCOME_TEXT)).await;
+    until("the browser reads Welcome", || reads(&browser, h.welcome, WELCOME_TEXT)).await;
     assert!(changes.has_changed().expect("the node runs"), "what the browser holds changed");
     let (edits, _) = *changes.borrow_and_update();
     assert_eq!(edits, browser.read(|lab, me| lab.size(me).0).await, "it says how many edits it holds");
@@ -143,12 +143,15 @@ async fn alice_gets_her_vault_back_through_the_server_with_her_passkey_alone() {
     // the app knows the server's offer
     let offer = Offer::from_text(&server.offer().to_text()).expect("the server's offer");
     assert_eq!(mac.link(&offer, passkey_a).await.expect("the new Mac links through the server"), alice);
-    let (space, welcome, onboarding, notes) = (h.space, h.welcome, h.onboarding, h.notes);
-    until("the new Mac reads Welcome", || reads(&mac, space, welcome, WELCOME_TEXT)).await;
-    until("and Onboarding", || reads(&mac, space, onboarding, ONBOARDING_TEXT)).await;
-    assert!(mac.read(move |lab, me| lab.opens(me, KeyScope::Space(notes))).await, "and opens Alice's Notes");
-    let keys = [KeyScope::Vault(alice), KeyScope::Vault(h.coop), KeyScope::Space(space), KeyScope::Space(notes)];
-    let opens = move |lab: &Lab, me| keys.iter().any(|&k| lab.opens(me, k));
+    let (coop, welcome, onboarding) = (h.coop, h.welcome, h.onboarding);
+    until("the new Mac reads Welcome", || reads(&mac, welcome, WELCOME_TEXT)).await;
+    until("and Onboarding", || reads(&mac, onboarding, ONBOARDING_TEXT)).await;
+    assert!(mac.read(move |lab, me| lab.opens(me, KeyFam::Seed(alice))).await, "and opens her vault's seed");
+    let opens = move |lab: &Lab, me| {
+        let cell = lab.state(me).entry(welcome).map(|en| KeyFam::Cell(coop, en.cell()));
+        let keys = [KeyFam::Seed(alice), KeyFam::Seed(coop)].into_iter().chain(cell);
+        lab.reads(me, welcome) || keys.into_iter().any(|k| lab.opens(me, k))
+    };
     assert!(!server.read(opens).await, "the server, which handed over the vault's log, opens none of its keys");
     quiet(&[&mac, &server]).await;
     for n in [mac, server] {
@@ -226,7 +229,8 @@ async fn a_node_hands_its_card_for_a_passkeys_hello_on_that_very_connection_alon
     let hello = lab.passkey_hello(new, passkey_a, &exporter, true).expect("the passkey's hello").to_wire();
     let card = Reply::from_wire(&say(&conn, link, &hello).await.expect("its card")).expect("a reply");
     assert!(!card.edits.is_empty(), "the passkey's own hello on this connection gets its card");
-    assert!(card.edits.iter().all(|s| s.edit.vault_of() == Some(alice)), "the log of Alice's vault alone");
+    let alices = |s: &avendb::sign::Signed| log_of(&s.edit, s.edit.id()) == Some(LogId::Vault(alice));
+    assert!(card.edits.iter().all(alices), "the log of Alice's vault alone");
     // the iPad's join, sent on the new iPhone's connection: refused; the new iPhone's own: accepted
     lab.receive(other, card.edits.clone(), vec![]);
     let theirs = lab.join(other, passkey_a).expect("the iPad's join").to_wire();

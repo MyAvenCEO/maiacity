@@ -1,17 +1,20 @@
 //! A device on a machine of its own (P8b): randomness drawn from the machine, a device that keeps a secret of its own
 //! (the server), claimed once by the first human vault to claim it, as a device of avenCEO (P8f), in the same ceremony
-//! that founds that vault, the contact card the server hands out, and a store reopened from what the device saved,
-//! which goes on vouching for the device's writes.
+//! that founds that vault, which then acts for avenCEO and never governs it; the contact card the server hands out,
+//! avenCEO's vault log, which another vault needs before it gives avenCEO a cap; and a store reopened from what the
+//! device saved, which goes on vouching for the device's writes.
 
 mod common;
 
-use common::*;
-use avendb::id::{SignerId, SpaceId, VaultId};
-use avendb::keys::KeyScope;
+use avendb::id::{SignerId, VaultId};
+use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Action, Kind, Principal, Refusal, Role, Scope};
-use avendb::sign::Classical;
+use avendb::policy::{Action, Kind, Principal, Refusal, Role};
+use avendb::sign::{Classical, Signed};
+use avendb::slice::Selector;
+use avendb::sync::{log_of, LogId};
 use avendb::wire::Claim;
+use common::*;
 
 #[test]
 fn a_lab_on_a_machine_makes_its_keys_from_the_machines_randomness() {
@@ -63,13 +66,14 @@ fn the_first_human_vault_to_claim_the_server_owns_it_for_good() {
     assert_eq!(vault.devices, vec![server], "owned by Alice's vault, with the server its one device");
     assert_eq!(lab.state(mac).vault(avenceo).map(|v| v.devices.clone()), Some(vec![server]), "on her Mac too");
     // the server opens avenCEO's key, which Alice's Mac boxed for it, and nothing of Alice's own
-    assert!(lab.opens(server, KeyScope::Vault(avenceo)) && !lab.opens(server, KeyScope::Vault(alice)));
+    assert!(lab.opens(server, KeyFam::Seed(avenceo)) && !lab.opens(server, KeyFam::Seed(alice)));
     // it acts for avenCEO, and never governs it
     let other = lab.device("another server");
     let add = Action::AddDevice { vault: avenceo, device: other, seal_to: None };
     assert_eq!(lab.submit(server, &[server, other], add.clone()), Err(Refusal::BelowThreshold));
-    let found = lab.submit(server, &[server], Action::FoundSpace { actor: avenceo, nonce: 1, via: vec![] });
-    assert!(found.is_ok(), "the server founds a space for avenCEO");
+    let note = document("Status", "The relay is up.", server);
+    let note = lab.create(server, avenceo, avenceo, "note", &[], note).expect("the server writes in avenCEO's vault");
+    assert!(lab.reads(server, note), "and reads what it wrote");
     lab.submit(mac, &[passkey, other], add).expect("Alice's passkey adds a second server, through her vault");
     // nobody claims it again
     assert!(matches!(lab.claim_key(server), Err(Refusal::AlreadyMember)));
@@ -157,7 +161,7 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     let genesis = avendb::id::EditId(eve.0);
     assert_eq!(batched(genesis), 4, "her passkey's signature on her vault's genesis names all four edits");
     lab.sync(mac, server);
-    assert!(lab.opens(server, KeyScope::Vault(avenceo)), "and the server opens avenCEO's key");
+    assert!(lab.opens(server, KeyFam::Seed(avenceo)), "and the server opens avenCEO's key");
 }
 
 #[test]
@@ -165,20 +169,19 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
     let (mut lab, server, passkey, mac, alice) = unclaimed(5);
     let avenceo = claim_on(&mut lab, mac, passkey, alice, server);
     let card = lab.card(server);
-    assert!(card.iter().any(|s| s.edit.vault_of() == Some(avenceo)), "the card holds avenCEO's log");
-    let ours = |s: &avendb::sign::Signed| matches!(s.edit.vault_of(), Some(v) if v == avenceo || v == alice);
-    assert!(card.iter().all(ours), "and its owner's, and nothing else");
-    // someone else, who knows nothing of this avenCEO, grants it relay once they hold the card
+    let log = |s: &Signed| log_of(&s.edit, s.edit.id());
+    assert!(card.iter().any(|s| log(s) == Some(LogId::Vault(avenceo))), "the card holds avenCEO's log");
+    let ours = |s: &Signed| matches!(log(s), Some(LogId::Vault(v)) if v == avenceo || v == alice);
+    assert!(card.iter().all(ours), "and its owner's, and nothing else: no cap, cell or entry");
+    // someone else, who knows nothing of this avenCEO, gives it relay on their whole vault once they hold the card
     let mut w = world();
     let bob = w.bob;
-    let found = w.lab.submit(w.mac_b, &[w.mac_b], Action::FoundSpace { actor: bob, nonce: 9, via: vec![] });
-    let garden = SpaceId::from(found.expect("Bob founds a space"));
-    let relay = grant(Scope::Space(garden), Role::Relay, vault(avenceo), bob, None);
-    let granted = w.lab.submit(w.mac_b, &[w.mac_b], relay.clone());
-    assert!(granted.is_err(), "a vault Bob's Mac doesn't know gets no grant");
+    let relay = cap(bob, vault(avenceo), Role::Relay, Selector::All);
+    let refused = w.lab.issue(w.mac_b, &[w.mac_b], relay.clone()).err();
+    assert_eq!(refused, Some(Refusal::UnknownVault), "a vault Bob's Mac doesn't know gets no cap");
     let n = card.len();
     assert_eq!(w.lab.receive(w.mac_b, card, vec![]), n, "Bob's Mac takes every edit of the card");
-    w.lab.submit(w.mac_b, &[w.mac_b], relay).expect("with the card, the server relays the space");
+    w.lab.issue(w.mac_b, &[w.mac_b], relay).expect("with the card, the server relays Bob's vault");
     assert!(w.lab.peers(w.mac_b).iter().any(|(d, _)| *d == server), "and Bob's Mac knows the server as a peer");
 }
 
@@ -186,7 +189,7 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
 fn a_device_reopened_from_what_it_saved_vouches_for_its_writes_as_before() {
     let mut w = world();
     let h = handbook(&mut w);
-    let after = w.lab.edit(w.mac_a, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("an edit");
+    let after = w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("an edit");
     let saved = w.lab.backup(w.mac_a);
     // the device starts again from what it saved, as a node does from its store on disk
     w.lab.restore_backup(w.mac_a, &saved);
@@ -195,5 +198,5 @@ fn a_device_reopened_from_what_it_saved_vouches_for_its_writes_as_before() {
         edit.author == w.mac_a && matches!(&edit.action, Action::Checkpoint { covers, .. } if covers.contains(&after))
     });
     assert!(vouched, "a checkpoint of its own covers the edit it made before it started again");
-    assert_eq!(text(&w.lab, w.mac_a, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "and it shows the edit");
+    assert_eq!(text(&w.lab, w.mac_a, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "and it shows the edit");
 }

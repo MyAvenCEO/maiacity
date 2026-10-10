@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use avendb::id::{BlobId, EntryId, SpaceId};
+use avendb::id::{BlobId, EntryId};
 use avendb::lab::Lab;
 use avendb_net::{Admission, Node, Options};
 use avendb_server::Relay;
@@ -319,13 +319,13 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     assert_eq!(owners.await, Some(vec![eve]), "the server is a device of avenCEO, which her vault owns");
     let endpoint = EndpointId::from_bytes(&id(&first, "endpoint")).expect("an endpoint");
     until("the server learns her browser from what it relays", || async { admission.admits(&endpoint) }).await;
-    let (space, entry) = (SpaceId(id(&first, "space")), EntryId(id(&first, "entry")));
-    let holds = move |lab: &Lab, me| lab.state(me).space(space).is_some_and(|s| s.entries.contains(&entry));
-    until("the server keeps her space's log", || server.read(holds)).await;
+    let entry = EntryId(id(&first, "entry"));
+    let holds = move |lab: &Lab, me| lab.fetched(me, entry) > 0;
+    until("the server keeps her note", || server.read(holds)).await;
 
     // her second browser links through the first one's code, in four ceremonies, and edits the note
     let field = |key| first[key].as_str().unwrap_or_else(|| panic!("{key} in {first}"));
-    let note = [("actor", field("actor")), ("space", field("space")), ("entry", field("entry"))];
+    let note = [("actor", field("actor")), ("entry", field("entry"))];
     let offer = first["offer"].as_str().expect("the first browser's code");
     let second = [("page", "second"), ("store", "second"), ("name", "Eve's other browser"), ("relay", &url)];
     let steps = [("offer", offer), ("reads", MARCH), ("write", APRIL), ("then", MAY)];

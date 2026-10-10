@@ -26,7 +26,7 @@ serde_json.workspace = true
 # a closed device's page stops waiting for its changes
 tokio = { version = "1.44", default-features = false, features = ["sync"] }
 zeroize = "1.8"
-# pinned to the wasm-bindgen CLI that writes the page's package, as avendb-web's
+# pinned to the wasm-bindgen CLI that writes the page's package
 wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "=0.4.79"
 js-sys = "=0.3.106"

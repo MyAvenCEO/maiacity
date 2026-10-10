@@ -27,7 +27,7 @@ const sleep = (/** @type {number} */ ms) => new Promise((done) => setTimeout(don
 /** Waits until the device reads `body` in block 2 of the note, two minutes at most. */
 async function reads(device, note, body) {
 	const end = Date.now() + 120_000;
-	while ((await device.text(note.space, note.entry, 2)) !== body) {
+	while ((await device.text(note.entry, 2)) !== body) {
 		if (Date.now() > end) throw new Error(`it doesn't read ${JSON.stringify(body)} within two minutes`);
 		await sleep(100);
 	}
@@ -67,16 +67,16 @@ async function run() {
 			const unlock = await passkey.unlock(nonce);
 			trace('founding');
 			device = await avendb.Device.found(name, relay, q.get('server'), made.spki, unlock, passkey.sign);
-			const [notes] = await device.notes();
-			const entry = await device.write(notes.founder, notes.space, 'Seeds', q.get('write'));
-			note = { actor: notes.founder, space: notes.space, entry };
+			const vault = await device.vault();
+			const entry = await device.write(vault, vault, 'Seeds', q.get('write'), []);
+			note = { actor: vault, entry };
 		} else {
 			passkey = counted(ceremonies(avendb));
 			trace('unlocking');
 			const unlock = await passkey.unlock(nonce);
 			trace('linking');
 			device = await avendb.Device.link(name, relay, q.get('offer'), unlock, passkey.sign);
-			note = { actor: q.get('actor'), space: q.get('space'), entry: q.get('entry') };
+			note = { actor: q.get('actor'), entry: q.get('entry') };
 		}
 		const credential = passkey.passkey.held.id;
 		await store.setMeta({ name, relay, nonce: hex(nonce), credential, passkey: device.passkey(), note });
@@ -93,7 +93,7 @@ async function run() {
 		await report('read');
 	}
 	if (q.get('write') && !q.get('server')) {
-		await device.setText(note.actor, note.space, note.entry, 2, q.get('write'));
+		await device.setText(note.actor, note.entry, 2, q.get('write'));
 		await report('wrote');
 	}
 	if (q.get('then')) {

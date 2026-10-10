@@ -22,7 +22,6 @@ history and proposals, and, from P8, its own iroh networking (its own ALPN, its 
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay (see [A device in the browser](#a-device-in-the-browser)) |
 | `crates/avendb-device` | The same device run natively beside the Mac app, as its sidecar: its node on UDP sockets of its own, its store in a folder on disk, the app's page talking to it in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, and a compose file that runs it on this machine; neither is deployed |
-| `crates/avendb-web` | The core as WebAssembly over the Lab's simulated world, read through JSON views and changed through JSON actions; once the tile's Lab, no longer on the page, its tests still run with the workspace's |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T21) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |

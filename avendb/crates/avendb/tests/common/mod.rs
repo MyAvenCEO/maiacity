@@ -85,6 +85,7 @@ pub fn creation(vault: VaultId, entry: EntryId, actor: VaultId, cell: &[CapId]) 
 impl Cast {
     /// `signer` creates entry `entry` of vault `vault` for `actor`, of type `ty` with tags `tags`, in the cell of the
     /// caps `cell`; its readers read the header and tags.
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         &mut self,
         signer: SignerId,

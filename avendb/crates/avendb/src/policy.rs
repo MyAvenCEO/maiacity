@@ -1146,8 +1146,8 @@ impl State {
         self.epochs.iter().map(|(k, e)| (*k, *e))
     }
 
-    /// The removal whose settling moved family `k` to epoch `e`: real derived keys mix it in (`lab`), so two devices
-    /// that saw different removals never derive one key for different audiences.
+    /// The removal whose settling moved family `k` to epoch `e`: the same on every peer that holds the same edits,
+    /// whichever way it replayed them.
     pub fn moved_by(&self, k: KeyFam, e: u64) -> Option<EditId> {
         self.moved.get(&(k, e)).copied()
     }

@@ -27,8 +27,8 @@
 //! - **Store** (P8b): with `Options::store`, a node keeps what its device holds in a folder (`Disk`), saved as it
 //!   changes, and starts again from it.
 //! - **The server** (P8b, `server`): a node whose device keeps a secret of its own beside its store, and which hands
-//!   its contact card, avenCEO's log, to whoever asks (`Node::contact`), so that a device can grant avenCEO relay on a
-//!   space. Devices reach each other and the server through its relay, which lets in only the devices the server
+//!   its contact card, avenCEO's log, to whoever asks (`Node::contact`), so that a vault can give avenCEO relay on its
+//!   entries. Devices reach each other and the server through its relay, which lets in only the devices the server
 //!   knows (`Admission`).
 //! - **avenCEO** (P8f): a new server belongs to no vault, and the first human vault to claim it owns it
 //!   (`Node::claim`): the server hands its key to seal to whoever asks while nobody has claimed it, the person's
@@ -78,8 +78,8 @@ use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Drafting, Lab, Unsigned};
 use avendb::policy::{Action, Kind, Principal, Refusal};
-use avendb::sign::{Ceremony, RelayPass, hello_challenge};
-use avendb::sync::{place, LogId};
+use avendb::sign::{Ceremony, RelayPass, Signed, hello_challenge};
+use avendb::sync::{log_of, place, LogId};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use iroh::address_lookup::MemoryLookup;
@@ -226,8 +226,8 @@ pub struct Admitted {
 impl Admission {
     /// An admission open to sign-up (P8e): its relay honours a pass of any passkey, for its ten minutes, so that a
     /// person's first device with no UDP of its own, a browser, founds their vault and makes it known to the server
-    /// (it grants the server relay on a space): from then on the server knows the device. A device on UDP reaches the
-    /// server so anyway; the relay's minutes are what it opens.
+    /// (the vault gives the server relay on its entries): from then on the server knows the device. A device on UDP
+    /// reaches the server so anyway; the relay's minutes are what it opens.
     pub fn open() -> Admission {
         Admission { open: true, ..Admission::default() }
     }
@@ -280,8 +280,8 @@ pub enum Step {
     /// The genesis of avenCEO, the aven vault its person's human vault founds as their device claims a server, and the
     /// edit that adds the server to it, drafted together (`Node::claim_with`).
     Claim,
-    /// Changes its person's vault approves, as the root of the vaults it owns: new vaults it owns, an owner's grant,
-    /// the revocation of one, drafted together (`Node::approve_with`).
+    /// Changes its person's vault approves, as the root of the vaults it owns: new vaults it owns, an owner cap, the
+    /// revocation of one, drafted together (`Node::approve_with`).
     Approve,
 }
 
@@ -457,7 +457,7 @@ impl Node {
         let card = session::exchange(&peer.conn, session::LINK, &hello.to_wire(), session::REPLY_LIMIT).await?;
         let Reply { mut edits, .. } = Reply::from_wire(&card)?;
         // a card carries vault logs, and nothing else
-        edits.retain(|s| s.edit.vault_of().is_some());
+        edits.retain(of_a_vault);
         let joining = self.shared.lab(move |lab, me| {
             lab.receive(me, edits, Vec::new());
             lab.joining(me, passkey)
@@ -590,7 +590,7 @@ impl Node {
     }
 
     /// Edits that need the approval of a vault its person's passkey `passkey` roots, or of one their vault owns, as the
-    /// genesis of a vault their vault owns or a grant of owner: `draft` drafts them on this device one on top of the
+    /// genesis of a vault their vault owns or an owner cap: `draft` drafts them on this device one on top of the
     /// other (`Lab::drafting`), and `authenticator` signs them all in one ceremony; then this device keeps them in that
     /// order and tells its peers. What `draft` returned. Fails if this device's view refuses one, or the passkey
     /// didn't sign them.
@@ -690,7 +690,7 @@ impl Node {
         self.shared.lookup.add_endpoint_info(addr);
     }
 
-    /// Act on its Lab as its device, as its app does: a write, a grant, an edit. Then it tells its peers of whatever
+    /// Act on its Lab as its device, as its app does: a write, a cap, an edit. Then it tells its peers of whatever
     /// changed.
     pub async fn act<T: Send + 'static>(&self, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let out = self.shared.lab(f).await;
@@ -710,7 +710,7 @@ impl Node {
     }
 
     /// Ask the device at endpoint `peer` for its contact card (`Lab::card`), as a device asks the server for its
-    /// vault's log before it grants the server relay on a space. How many edits were new.
+    /// vault's log before a vault gives the server relay on its entries. How many edits were new.
     pub async fn contact(&self, peer: EndpointId) -> Result<usize> {
         self.shared.contact(peer).await
     }
@@ -770,6 +770,11 @@ fn reopen(mut lab: Lab, me: SignerId, store: Option<PathBuf>) -> Result<(Lab, Op
         disk.adopt(&lab, me)?;
     }
     Ok((lab, disk))
+}
+
+/// `s` is an edit of a vault's log (`sync::log_of`), all that a card carries.
+fn of_a_vault(s: &Signed) -> bool {
+    matches!(log_of(&s.edit, s.edit.id()), Some(LogId::Vault(_)))
 }
 
 /// The endpoints of the devices `known` (`Lab::peers`): each one's ed25519 key.
@@ -1082,7 +1087,7 @@ impl Shared {
         let reply = session::exchange(&peer.conn, session::CARD, &[], session::REPLY_LIMIT).await?;
         let Reply { mut edits, .. } = Reply::from_wire(&reply)?;
         // a card carries vault logs, and nothing else
-        edits.retain(|s| s.edit.vault_of().is_some());
+        edits.retain(of_a_vault);
         let new = self.lab(move |lab, me| lab.receive(me, edits, Vec::new())).await;
         if new > 0 {
             self.changed.notify_one();

@@ -2,7 +2,7 @@
 //! makes that secret, and belongs to no vault until the first human vault to claim it does (P8f, `Node::claim`,
 //! `Node::found_with`): from then on it is a device of avenCEO, an aven vault that human vault owns, which it acts for
 //! and never governs, and it starts again from what the folder holds. It hands its contact card, avenCEO's log, to
-//! whoever asks, so that a device can grant avenCEO relay on a space; it holds only ciphertext, and opens nothing but
+//! whoever asks, so that a vault can give avenCEO relay on its entries; it holds only ciphertext, and opens nothing but
 //! what is public and avenCEO's own. Its relay (the `avendb-server` binary) lets in only the devices it knows
 //! (`Admission`).
 

@@ -1,14 +1,16 @@
 //! A passkey in the platform's authenticator (P8e): a browser's device never holds its person's passkey, only what
 //! one ceremony at a time brings back, an assertion over a challenge and the PRF output on the app's salt. It drafts
 //! each edit the passkey signs, the passkey signs the edit's id in a ceremony, and the device keeps the edit; its own
-//! keys derive from the PRF output on a salt of its own. Here a software passkey stands in for the browser's
-//! authenticator: it makes the same ceremonies, and the device's Lab sees nothing else of it.
+//! keys derive from the PRF output on a salt of its own. It writes with no ceremony, a note of its vault in a cell
+//! whose key it makes; and once it joins Alice's vault, the keys of the coop's cells reach it as they reach any of
+//! Alice's devices. Here a software passkey stands in for the browser's authenticator: it makes the same ceremonies,
+//! and the device's Lab sees nothing else of it.
 
 mod common;
 
 use common::*;
-use avendb::id::{EditId, SignerId};
-use avendb::keys::{self, KeyScope};
+use avendb::id::{CellId, EditId, SignerId};
+use avendb::keys::{self, KeyFam};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Principal, Refusal};
 use avendb::sign::{self, Passkey, PasskeyHello, RelayPass, device_salt, hello_challenge, pass_challenge, passkey_key};
@@ -65,20 +67,20 @@ fn a_browser_founds_alices_vault_in_ceremonies() {
     let add = Action::AddDevice { vault, device, seal_to: None };
     ceremony(&mut lab, device, &[passkey, device], add, &mut authenticator);
     assert_eq!(lab.vault_of(device), Some(vault), "the browser belongs to the vault its passkey founded");
-    assert!(lab.opens(device, KeyScope::Vault(vault)), "and opens its key");
-    // the device writes on its own, with no ceremony
-    let found = Action::FoundSpace { actor: vault, nonce: 1, via: vec![] };
-    let space = lab.submit(device, &[device], found).expect("the browser founds a space").into();
-    let note = lab.create(device, vault, space, document("Seeds", "Tomatoes in March.", device));
-    let note = note.expect("and writes in it");
-    assert_eq!(text(&lab, device, space, note, 2).as_deref(), Some("Tomatoes in March."));
+    assert!(lab.opens(device, KeyFam::Seed(vault)), "and opens its seed");
+    // the device writes on its own, with no ceremony: a note in its vault, in the cell of no caps, as no cap selects it
+    let note = lab.create(device, vault, vault, "note", &[], document("Seeds", "Tomatoes in March.", device));
+    let note = note.expect("the browser writes a note");
+    let cell = KeyFam::Cell(vault, CellId::of(vault, &[]));
+    assert!(lab.opens(device, cell), "under the key of a cell it made");
+    assert_eq!(text(&lab, device, note, 2).as_deref(), Some("Tomatoes in March."));
     // locked, it opens nothing; the PRF output on its salt unlocks it again, and nothing else does
     lab.lock(device);
-    assert!(!lab.opens(device, KeyScope::Vault(vault)));
+    assert!(!lab.opens(device, KeyFam::Seed(vault)) && !lab.opens(device, cell));
     assert!(!lab.unlock(device), "the Lab holds no passkey to derive its keys from");
     assert!(!lab.unlock_with(device, *authenticator.prf(&device_salt(&[6; 32]))), "another salt's output");
     assert!(lab.unlock_with(device, *authenticator.prf(&device_salt(&[5; 32]))));
-    assert_eq!(text(&lab, device, space, note, 2).as_deref(), Some("Tomatoes in March."), "it reads again");
+    assert_eq!(text(&lab, device, note, 2).as_deref(), Some("Tomatoes in March."), "it reads again");
 }
 
 #[test]
@@ -167,6 +169,8 @@ fn a_browser_links_through_alices_mac_in_ceremonies() {
         ask((&mut mac, w.mac_a), (&mut browser, device));
         ask((&mut browser, device), (&mut mac, w.mac_a));
     }
-    assert!(browser.opens(device, KeyScope::Space(h.space)), "the browser opens the Handbook's key");
-    assert_eq!(text(&browser, device, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
+    let cell = KeyFam::Cell(h.coop, CellId::of(h.coop, &[]));
+    assert!(browser.opens(device, KeyFam::Seed(h.coop)), "the browser opens the coop's seed");
+    assert!(browser.opens(device, cell), "and the key of the cell Welcome is in");
+    assert_eq!(text(&browser, device, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
 }

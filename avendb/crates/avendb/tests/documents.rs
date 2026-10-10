@@ -1,13 +1,18 @@
-//! Documents, schemas and proposals (P4, P5; T9, T10, T11): the lenses, edits through a view, promote, and convergence
-//! of items.
+//! Documents, schemas and proposals (P4, P5; T9, T10, T11), item by item: the lenses between schema versions, edits
+//! through an app's view that keep what it can't see, proposals merged and promoted, the latest change reverted and an
+//! older one undone, a variant that copies a record into a new entry, and items that converge whatever order their
+//! edits arrive in and refuse an update whose ops aren't its signer's. In a flat vault each item is one entry, a doc, a
+//! note or a todo: its writes carry its Loro updates, encrypted, on the main line or on a proposal, and an app reads
+//! it through the schemas and lenses in its vault's lane, which the vault and any vault holding a wide owner cap over
+//! it publish into (T17, in `caps.rs`).
 
 mod common;
 
-use common::*;
+use avendb::doc::{DocError, Item};
 use avendb::history::{Repo, MAIN};
-use avendb::doc::Item;
-use serde_json::json;
 use avendb::lens::{BlockV1, DocV1, KindV1, Status, TodoV1, TodoV2, TypeV2};
+use common::*;
+use serde_json::json;
 
 fn welcome_v1() -> DocV1 {
     let block = |id, kind, text: &str| BlockV1 { id, kind, text: text.into() };
@@ -29,7 +34,8 @@ fn lens_round_trip_v1() {
     let doc = welcome_v1();
     assert_eq!(doc.fwd().bwd(), doc);
     for done in [false, true] {
-        let todo = TodoV1 { title: "Fix the greenhouse door".into(), done, notes: "hinge".into(), due: Some("2026-10-10".into()) };
+        let (notes, due) = ("hinge".into(), Some("2026-10-10".into()));
+        let todo = TodoV1 { title: "Fix the greenhouse door".into(), done, notes, due };
         assert_eq!(todo.fwd().bwd(), todo);
     }
     // v2 → v1 → v2 too, for what v1 can say (T9b, T9e); a todo in progress reads as not done in v1
@@ -148,7 +154,7 @@ fn a_fork_copies_the_record_and_the_schemas_that_wrote_it() {
     assert_eq!((copy.record(), copy.authored()), (welcome.record(), welcome.authored()));
     assert_eq!(copy.authored().len(), 2);
     // with no history: one change, by the device that copied it
-    let mut reader = avendb::doc::Item::new(MAC_C);
+    let mut reader = Item::new(MAC_C);
     assert!(reader.import(&copy.export(&Default::default()), MAC_A).is_err());
     reader.import(&copy.export(&Default::default()), MAC_B).unwrap();
     assert_eq!(reader.as_document(), welcome.as_document());
@@ -186,7 +192,7 @@ fn an_update_from_the_wrong_peer_is_refused() {
     bobs.set_text(2, "Bob's version");
     let update = bobs.export(&start);
     let mut alices = base.fork_as(MAC_A);
-    assert_eq!(alices.import(&update, MAC_C), Err(avendb::doc::DocError::WrongPeer));
-    assert_eq!(alices.import(b"not a loro update", MAC_B), Err(avendb::doc::DocError::Malformed));
+    assert_eq!(alices.import(&update, MAC_C), Err(DocError::WrongPeer));
+    assert_eq!(alices.import(b"not a loro update", MAC_B), Err(DocError::Malformed));
     assert!(alices.import(&update, MAC_B).is_ok());
 }

@@ -5,8 +5,9 @@
 //! lost, her passkey alone gets her vault back on a new browser, through the server. Alice's browser links through the
 //! code her Mac shows and edits Welcome. The first person to found their vault through a new server claims it from
 //! their first browser, in the same ceremony (P8f), and her vault founds four more vaults it owns in one more ceremony:
-//! her browser acts as each of them, and each one's caps decide what it may do. Every device, the server too, trusts
-//! no curve: only the writes a checkpoint covers count.
+//! her browser acts as each of them, and what each shares, a note by its id, its todos by their type, or the whole of
+//! it, decides what the others may read and write. Every device, the server too, trusts no curve: only the writes a
+//! checkpoint covers count.
 //! `tests/page.rs` runs the same in Chromium, the passkey in its virtual authenticator.
 
 use std::future::Future;
@@ -15,13 +16,14 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
-use avendb::id::{EntryId, SignerId, SpaceId, VaultId};
-use avendb::keys::KeyScope;
+use avendb::id::{EntryId, SignerId, VaultId};
+use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::lens::Status;
-use avendb::policy::{Kind, Principal, Role, Scope};
+use avendb::policy::{Kind, Principal, Role};
 use avendb::sign::{Ceremony, Passkey, device_salt};
-use avendb_browser::{Device, ItemView, Start, Unlock, What, World as Seen, backup};
+use avendb::slice::{Selector, Slice};
+use avendb_browser::{Device, EntryView, PROFILE, Start, Unlock, What, World as Seen, backup};
 use avendb_net::{Admission, Authenticator, Node, Options, Step};
 use avendb_server::Relay;
 use iroh::RelayUrl;
@@ -88,9 +90,14 @@ async fn names(d: &Device) -> Vec<String> {
     devices.into_iter().map(|(_, name)| name.unwrap_or_else(|| "?".into())).collect()
 }
 
-/// Whether device `d` reads `body` in block 2 of entry `e` in space `sp`.
-async fn shows(d: &Device, sp: SpaceId, e: EntryId, body: &str) -> bool {
-    d.text(sp, e, 2).await.as_deref() == Some(body)
+/// Whether device `d` reads `body` in block 2 of entry `e`.
+async fn shows(d: &Device, e: EntryId, body: &str) -> bool {
+    d.text(e, 2).await.as_deref() == Some(body)
+}
+
+/// A note's title and the text of its first paragraph.
+fn titled(title: &str, text: &str) -> (String, String) {
+    (title.into(), text.into())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -114,27 +121,24 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let vault = first.vault().await.expect("the browser belongs to her vault");
     assert!(!first.owns_aven().await, "avenCEO is Alice's vault's, which claimed the server before Eve");
     until("the server learns her browser from what it relays", || async { admission.admits(&first.node().id()) }).await;
-    let notes = first.notes().await;
-    let [space] = notes.as_slice() else { panic!("her first space, and no other: {}", notes.len()) };
-    assert_eq!((space.founder, space.docs.len()), (vault, 0), "no note yet: its card is none");
-    let space = space.space;
+    assert!(first.notes().await.is_empty(), "no note yet: her browser's card is none");
     // her account: her vault, her passkey its root, and her browser, by the name on its card
     let account = first.account().await.expect("her account");
     assert_eq!((account.vault, account.root, account.owns_aven), (vault, Some(first.passkey()), false));
     assert_eq!(account.devices, [(first.node().device(), Some("Eve's browser".into()))]);
-    let note = first.write(vault, space, "Seeds".into(), "Tomatoes in March.".into()).await.expect("a note");
-    let holds = move |lab: &Lab, me| lab.state(me).space(space).is_some_and(|s| s.entries.contains(&note));
-    until("the server keeps her space's log", || server.read(holds)).await;
+    let note = first.write(vault, vault, titled("Seeds", "Tomatoes in March."), vec![]).await.expect("a note");
+    let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;
+    until("the server keeps her note", || server.read(holds)).await;
     // her second browser links through the first one's code, in four ceremonies
     let other = start("Eve's other browser", &url, 8);
     let code = first.node().offer();
     let other = Device::link(other, &code, eve.unlock([2; 32]), &eve).await.expect("it links through the first");
     assert_eq!(eve.steps(), [Step::Pass, Step::Hello, Step::Join]);
     assert_eq!((other.vault().await, other.p256()), (Some(vault), p256), "it learned her passkey's key");
-    until("it reads her note", || shows(&other, space, note, "Tomatoes in March.")).await;
-    other.set_text(vault, space, note, 2, "Tomatoes in April.".into()).await.expect("it edits the note");
-    until("the first reads the edit", || shows(&first, space, note, "Tomatoes in April.")).await;
-    // the second writes its card, as it holds her first space now; each shows both browsers by name
+    until("it reads her note", || shows(&other, note, "Tomatoes in March.")).await;
+    other.set_text(vault, note, 2, "Tomatoes in April.".into()).await.expect("it edits the note");
+    until("the first reads the edit", || shows(&first, note, "Tomatoes in April.")).await;
+    // the second writes its card, as it holds her vault's keys now; each shows both browsers by name
     assert!(other.card("Eve's other browser".into()).await.expect("its card"), "it had none");
     let both = ["Eve's browser", "Eve's other browser"];
     until("the first shows both by name", || async { names(&first).await == both }).await;
@@ -144,7 +148,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     assert!(!first.card("Eve's Mac".into()).await.expect("the same name"), "nothing to write");
     let renamed = ["Eve's Mac", "Eve's other browser"];
     until("the second shows the new name", || async { names(&other).await == renamed }).await;
-    let titles: Vec<_> = other.notes().await.into_iter().flat_map(|s| s.docs).map(|(_, title, _)| title).collect();
+    let titles: Vec<_> = other.notes().await.into_iter().flat_map(|n| n.docs).map(|(_, title, _)| title).collect();
     assert_eq!(titles, ["Seeds"]);
     // the first browser closes, and opens again from what its store kept, in the unlock alone
     let edits = first.edits(0).await.expect("its edits");
@@ -160,10 +164,10 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let again = Device::open(again, p256, eve.unlock([1; 32]), &kept).await.expect("it opens again");
     assert!(eve.steps().is_empty(), "with no ceremony but the unlock");
     assert_eq!(again.node().id(), first.node().id(), "the same device");
-    assert!(shows(&again, space, note, "Tomatoes in April.").await, "it reads what its store kept");
+    assert!(shows(&again, note, "Tomatoes in April.").await, "it reads what its store kept");
     assert_eq!(names(&again).await, renamed, "and both cards");
-    other.set_text(vault, space, note, 2, "Tomatoes in May.".into()).await.expect("another edit");
-    let may = || shows(&again, space, note, "Tomatoes in May.");
+    other.set_text(vault, note, 2, "Tomatoes in May.".into()).await.expect("another edit");
+    let may = || shows(&again, note, "Tomatoes in May.");
     until("the relay lets it in again, as the server knows it", may).await;
     // a store cut short reads back up to where it was cut; an unlock of another passkey opens nothing
     let mut cut = edits.clone();
@@ -180,10 +184,10 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let new = Device::link(new, &server.offer(), eve.unlock([3; 32]), &eve).await.expect("it links through the server");
     assert_eq!(eve.steps(), [Step::Pass, Step::Hello, Step::Join]);
     assert_eq!(new.vault().await, Some(vault), "to her vault");
-    until("it reads her note", || shows(&new, space, note, "Tomatoes in May.")).await;
+    until("it reads her note", || shows(&new, note, "Tomatoes in May.")).await;
     assert!(new.card("Eve's new browser".into()).await.expect("its card"));
     assert_eq!(names(&new).await, ["Eve's Mac", "Eve's other browser", "Eve's new browser"]);
-    let opens = move |lab: &Lab, me| lab.opens(me, KeyScope::Vault(vault)) || lab.opens(me, KeyScope::Space(space));
+    let opens = move |lab: &Lab, me| lab.opens(me, KeyFam::Seed(vault)) || lab.reads(me, note);
     assert!(!server.read(opens).await, "the server, which handed over her vault's log, opens none of its keys");
     for n in [new.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
@@ -211,10 +215,10 @@ async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_a
     let browser = browser.await.expect("it links through the Mac's code");
     assert_eq!(alices.steps(), [Step::Pass, Step::Hello, Step::Join]);
     assert_eq!(browser.vault().await, Some(alice));
-    let (coop, space, welcome) = (h.coop, h.space, h.welcome);
-    until("it reads Welcome", || shows(&browser, space, welcome, WELCOME_TEXT)).await;
-    browser.set_text(coop, space, welcome, 2, AFTER_TEXT.into()).await.expect("it edits Welcome");
-    let reads = move |lab: &Lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(AFTER_TEXT);
+    let (coop, welcome) = (h.coop, h.welcome);
+    until("it reads Welcome", || shows(&browser, welcome, WELCOME_TEXT)).await;
+    browser.set_text(coop, welcome, 2, AFTER_TEXT.into()).await.expect("it edits Welcome");
+    let reads = move |lab: &Lab, me| text(lab, me, welcome, 2).as_deref() == Some(AFTER_TEXT);
     until("the Mac reads its edit", || mac.read(reads)).await;
     until("once it joined, the server knows it", || async { admission.admits(&browser.node().id()) }).await;
     // her other browser links through the first one's code: browser to browser
@@ -223,12 +227,12 @@ async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_a
     let other = Device::link(other, &code, alices.unlock([2; 32]), &alices);
     let other = other.await.expect("it links through the browser's code");
     assert_eq!(other.vault().await, Some(alice));
-    until("it reads the edit", || shows(&other, space, welcome, AFTER_TEXT)).await;
+    until("it reads the edit", || shows(&other, welcome, AFTER_TEXT)).await;
     assert_eq!(browser.node().proven(other.node().id()), Some(other.node().device()), "through the first browser");
     let both = move |lab: &Lab, me| lab.state(me).vault(alice).map(|v| v.devices.len()) == Some(4);
     until("the Mac counts both browsers among Alice's devices", || mac.read(both)).await;
-    // an edit its view refuses fails: Alice's own vault holds no right on the coop's Handbook
-    assert!(browser.set_text(alice, space, welcome, 2, "Alice's own words".into()).await.is_err());
+    // an edit its view refuses fails: Alice's own vault, acting as itself and not for the coop, holds no cap on Welcome
+    assert!(browser.set_text(alice, welcome, 2, "Alice's own words".into()).await.is_err());
     for n in [browser.node(), other.node(), &mac, &server] {
         n.shutdown().await.expect("the node shuts down");
     }
@@ -258,13 +262,10 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let shape = move |lab: &Lab, _| lab.state(me).vault(avenceo).map(|v| (v.kind, v.owners.clone()));
     assert_eq!(server.read(shape).await, Some((Kind::Aven, vec![Principal::Vault(vault)])), "owned by her vault");
     assert!(first.owns_aven().await, "as her browser shows");
-    // her first space is relayed by avenCEO: the server keeps its log and knows her browser for good
-    let notes = first.notes().await;
-    let [space] = notes.as_slice() else { panic!("her first space: {}", notes.len()) };
-    let space = space.space;
-    let note = first.write(vault, space, "Seeds".into(), "Tomatoes in March.".into()).await.expect("a note");
-    let holds = move |lab: &Lab, me| lab.state(me).space(space).is_some_and(|s| s.entries.contains(&note));
-    until("the server keeps her space's log", || server.read(holds)).await;
+    // her vault gives avenCEO relay on the whole of it: the server keeps her note and knows her browser for good
+    let note = first.write(vault, vault, titled("Seeds", "Tomatoes in March."), vec![]).await.expect("a note");
+    let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;
+    until("the server keeps her note", || server.read(holds)).await;
     until("and knows her browser", || async { admission.admits(&first.node().id()) }).await;
     let stranger = Passkey::from_seed([9; 32]).id();
     assert!(!admission.honours(&stranger), "claimed, its relay honours no stranger's pass");
@@ -278,16 +279,28 @@ fn role(roles: &[(VaultId, Role)], v: VaultId) -> Option<Role> {
     roles.iter().find(|(x, _)| *x == v).map(|(_, r)| *r)
 }
 
-/// Entry `e` of space `sp` in the world `w` a device shows.
-fn item(w: &Seen, sp: SpaceId, e: EntryId) -> &ItemView {
-    let space = w.spaces.iter().find(|s| s.space == sp).expect("the space");
-    space.items.iter().find(|i| i.entry == e).expect("the entry")
+/// Entry `e` in the world `w` a device shows.
+fn item(w: &Seen, e: EntryId) -> &EntryView {
+    w.entries.iter().find(|i| i.entry == e).expect("the entry")
 }
 
-/// Vault `v`'s name and home in the world `w` a device shows.
-fn named(w: &Seen, v: VaultId) -> (Option<String>, Option<SpaceId>) {
-    let vault = w.vaults.iter().find(|x| x.vault.id == v).expect("the vault");
-    (vault.name.clone(), vault.home)
+/// Vault `v`'s name in the world `w` a device shows, as its profile reads.
+fn named(w: &Seen, v: VaultId) -> Option<String> {
+    w.vaults.iter().find(|x| x.vault.id == v).expect("the vault").name.clone()
+}
+
+/// Vault `v`'s profile in the world `w` a device shows.
+fn profile(w: &Seen, v: VaultId) -> EntryId {
+    let of = |i: &&EntryView| i.vault == v && i.ty.as_deref() == Some(PROFILE);
+    w.entries.iter().find(of).expect("its profile").entry
+}
+
+/// How device `d` takes the edits of the cell entry `e` is in, as the world `w` a device shows: through which of its
+/// vaults, and whether it opens them.
+fn syncs(w: &Seen, e: EntryId, d: SignerId) -> Option<(VaultId, bool)> {
+    let x = item(w, e).cell;
+    let cell = w.cells.iter().find(|c| c.id == x).expect("its cell");
+    cell.syncs.iter().find(|s| s.device == d).map(|s| (s.through, s.opens))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -313,25 +326,20 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     let ids: Vec<VaultId> = w.vaults.iter().map(|v| v.vault.id).collect();
     assert_eq!(ids, [eve_v, avenceo], "her vault and avenCEO");
     assert_eq!(w.vaults[1].via, Some(vec![eve_v]), "her browser acts for avenCEO through her vault");
-    // her vault's and avenCEO's profiles, written by her browser with no ceremony; avenCEO's home is its own, which
-    // its server opens, while her home it only relays
+    // her vault's and avenCEO's profiles, written by her browser with no ceremony; avenCEO's entries are its own,
+    // which its server opens, while hers it only relays
     assert!(first.profile(eve_v, "Eve".into()).await.expect("her profile"));
     assert!(first.profile(avenceo, "avenCEO".into()).await.expect("avenCEO's profile"));
     assert!(!first.profile(eve_v, "Eve".into()).await.expect("unchanged"), "it reads Eve already");
     assert_eq!(eve.steps(), [], "no ceremony");
     let w = first.world().await.expect("her world");
-    let (eve_home, ceo_home) = (named(&w, eve_v), named(&w, avenceo));
-    assert_eq!((eve_home.0.as_deref(), ceo_home.0.as_deref()), (Some("Eve"), Some("avenCEO")));
-    let (eve_home, ceo_home) = (eve_home.1.expect("her home"), ceo_home.1.expect("avenCEO's home"));
-    let opens = |w: &Seen, sp: SpaceId, d: SignerId| {
-        let space = w.spaces.iter().find(|s| s.space == sp).expect("the space");
-        space.syncs.iter().find(|x| x.device == d).map(|x| (x.through, x.opens))
-    };
+    assert_eq!((named(&w, eve_v).as_deref(), named(&w, avenceo).as_deref()), (Some("Eve"), Some("avenCEO")));
+    let (eve_p, ceo_p) = (profile(&w, eve_v), profile(&w, avenceo));
     let (mine, srv) = (first.node().device(), server.device());
-    assert_eq!(opens(&w, eve_home, srv), Some((avenceo, false)), "the server relays her home's ciphertext");
-    assert_eq!(opens(&w, eve_home, mine), Some((eve_v, true)));
-    assert_eq!(opens(&w, ceo_home, srv), Some((avenceo, true)), "avenCEO's own home its server opens");
-    // four vaults her vault owns, in one ceremony
+    assert_eq!(syncs(&w, eve_p, srv), Some((avenceo, false)), "the server relays her entries' ciphertext");
+    assert_eq!(syncs(&w, eve_p, mine), Some((eve_v, true)));
+    assert_eq!(syncs(&w, ceo_p, srv), Some((avenceo, true)), "avenCEO's own entries its server opens");
+    // four vaults her vault owns, in one ceremony, each of which gives avenCEO relay on the whole of it
     let avens = ["avenALICE", "avenBOB", "avenCHARLY"].map(|n| (Kind::Aven, n.to_string()));
     let new = avens.into_iter().chain([(Kind::Coop, "Maia City COOP".to_string())]).collect();
     let vaults = first.found_vaults(new, &eve).await.expect("four vaults");
@@ -345,68 +353,81 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
         assert_eq!((x.vault.kind, x.name.as_deref()), (kind, Some(name)));
         assert_eq!((&x.vault.owners[..], x.vault.root), (&[Principal::Vault(eve_v)][..], None), "her vault owns it");
         assert_eq!(x.via, Some(vec![eve_v]), "her browser acts for it through her vault");
-        let home = x.home.expect("its home");
-        assert_eq!(opens(&w, home, srv), Some((avenceo, false)), "the server relays its home");
-        assert_eq!(opens(&w, home, mine), Some((v, true)), "her browser opens it, acting for it");
+        assert_eq!(syncs(&w, profile(&w, v), srv), Some((avenceo, false)), "the server relays its entries");
+        assert_eq!(syncs(&w, profile(&w, v), mine), Some((v, true)), "her browser opens them, acting for it");
     }
-    let alice_home = named(&w, alice).1.expect("avenALICE's home");
-    // avenALICE writes a note in her home; avenBOB may not write there, nor read it
-    let note = first.write(alice, alice_home, "Plan".into(), "Plant beans.".into()).await.expect("a note");
+    // avenALICE writes a note into her vault; avenBOB may not write there, nor read it
+    let plan = titled("Plan", "Plant beans.");
+    let note = first.write(alice, alice, plan, vec!["garden".into()]).await.expect("a note");
     let w = first.world().await.expect("her world");
-    let it = item(&w, alice_home, note);
+    let it = item(&w, note);
     assert!(matches!(&it.what, What::Note { title, text, .. } if title == "Plan" && text == "Plant beans."));
-    assert_eq!((it.by, role(&it.roles, alice), role(&it.roles, bob)), (Some(alice), Some(Role::Owner), None));
+    assert_eq!((it.ty.as_deref(), it.tags.as_deref()), (Some("note"), Some(&["garden".to_string()][..])));
+    let (alices, bobs) = (role(&it.roles, alice), role(&it.roles, bob));
+    assert_eq!((it.vault, it.by, alices, bobs), (alice, alice, Some(Role::Owner), None));
     assert_eq!(role(&it.roles, avenceo), Some(Role::Relay));
-    let refused = first.write(bob, alice_home, "Mine".into(), "Not here.".into()).await;
-    assert!(refused.unwrap_err().to_string().contains("NoCap"), "avenBOB holds no cap on avenALICE's home");
-    // she shares the note with avenBOB to read, without a ceremony: he reads it and can't edit it
-    let read = first.grant(alice, Scope::Entry(alice_home, note), Role::Read, vault(bob), &eve).await.expect("shared");
-    assert_eq!(eve.steps(), [], "a read grant needs no ceremony");
-    let w = first.world().await.expect("her world");
-    let it = item(&w, alice_home, note);
-    assert_eq!((role(&it.roles, bob), role(&it.roles, charly)), (Some(Role::Read), None));
-    let edit = first.set_text(bob, alice_home, note, 2, "Plant peas.".into()).await;
+    let refused = first.write(bob, alice, titled("Mine", "Not here."), vec![]).await;
+    assert!(refused.unwrap_err().to_string().contains("NoCap"), "avenBOB holds no cap on avenALICE's vault");
+    // she shares the note by its id with avenBOB to read, with no ceremony: her browser moves it to the cell of that
+    // cap, under a key of its own, which avenBOB reads; he can't edit it
+    let by_note = Slice::of(by_id(note));
+    let read = first.share(alice, alice, by_note, Role::Read, vault(bob), &eve).await.expect("shared");
+    assert_eq!(eve.steps(), [], "a read cap needs no ceremony");
+    let moved = || async {
+        let w = first.world().await.expect("her world");
+        let roles = &item(&w, note).roles;
+        (role(roles, bob), role(roles, charly)) == (Some(Role::Read), None)
+    };
+    until("the note moves to the cell avenBOB reads", moved).await;
+    let edit = first.set_text(bob, note, 2, "Plant peas.".into()).await;
     assert!(edit.unwrap_err().to_string().contains("NoCap"), "avenBOB only reads it");
-    let refused = first.grant(charly, Scope::Space(alice_home), Role::Read, vault(charly), &eve).await;
-    assert!(refused.unwrap_err().to_string().contains("NoCap"), "avenCHARLY gives itself nothing");
-    // write on the whole home: avenBOB adds a todo there and closes it
-    let write = first.grant(alice, Scope::Space(alice_home), Role::Write, vault(bob), &eve).await.expect("write");
-    let todo = first.todo(bob, alice_home, "Water the beans".into()).await.expect("avenBOB's todo");
-    first.set_status(bob, alice_home, todo, Status::Done).await.expect("avenBOB closes it");
+    let refused = first.share(charly, alice, Slice::of(Selector::All), Role::Read, vault(charly), &eve).await;
+    assert!(refused.unwrap_err().to_string().contains("BadParent"), "avenCHARLY gives itself nothing");
+    // write on her todos, by their type: avenBOB adds a todo to her vault and closes it
+    let todos = Slice::of(of_type("todo"));
+    let write = first.share(alice, alice, todos, Role::Write, vault(bob), &eve).await.expect("write");
+    let todo = first.todo(bob, alice, "Water the beans".into(), vec![]).await.expect("avenBOB's todo");
+    first.set_status(bob, todo, Status::Done).await.expect("avenBOB closes it");
     let w = first.world().await.expect("her world");
-    let it = item(&w, alice_home, todo);
+    let it = item(&w, todo);
     assert!(matches!(&it.what, What::Todo { title, status: Status::Done } if title == "Water the beans"));
-    assert_eq!(it.by, Some(bob), "avenBOB wrote it");
-    // owner for the coop is governance: her passkey approves it in a ceremony
-    first.grant(alice, Scope::Space(alice_home), Role::Owner, vault(coop), &eve).await.expect("the coop owns it");
+    assert_eq!((it.vault, it.by), (alice, bob), "avenBOB wrote it into her vault");
+    // owner of the whole of her vault for the coop is governance: her passkey approves it in a ceremony
+    let all = Slice::of(Selector::All);
+    first.share(alice, alice, all, Role::Owner, vault(coop), &eve).await.expect("the coop owns it");
     assert_eq!(eve.steps(), [Step::Approve]);
     let w = first.world().await.expect("her world");
-    let roles = w.spaces.iter().find(|s| s.space == alice_home).map(|s| s.roles.clone()).unwrap_or_default();
-    assert_eq!((role(&roles, coop), role(&roles, bob)), (Some(Role::Owner), Some(Role::Write)));
+    let roles = &item(&w, todo).roles;
+    assert_eq!((role(roles, coop), role(roles, bob)), (Some(Role::Owner), Some(Role::Write)));
     // avenALICE takes avenBOB's write back: he writes no more there, and still reads the note
     first.revoke(alice, write, &eve).await.expect("revoked");
-    assert_eq!(eve.steps(), [], "a write grant ends without a ceremony");
-    let refused = first.todo(bob, alice_home, "Again".into()).await;
+    assert_eq!(eve.steps(), [], "a write cap ends without a ceremony");
+    let refused = first.todo(bob, alice, "Again".into(), vec![]).await;
     assert!(refused.unwrap_err().to_string().contains("NoCap"));
     let w = first.world().await.expect("her world");
-    assert_eq!(role(&item(&w, alice_home, note).roles, bob), Some(Role::Read), "{read:?} stands");
+    assert_eq!(role(&item(&w, note).roles, bob), Some(Role::Read), "{read:?} stands");
     let json = w.to_json(mine);
     assert_eq!((json["pqOnly"].as_bool(), json["vaults"][2]["name"].as_str()), (Some(true), Some("avenALICE")));
+    let caps = json["caps"].as_array().expect("its caps");
+    let shared = caps.iter().find(|c| c["id"] == hex_of(&read.0)).expect("the read cap");
+    let by_id = serde_json::json!([[{ "entry": [hex_of(&note.0)] }]]);
+    assert_eq!((&shared["role"], &shared["slice"]["select"]), (&"read".into(), &by_id), "the note by its id");
     // the server keeps it all, counts the writes, each covered by a checkpoint, and opens none of avenALICE's keys
-    let counts = move |lab: &Lab, me| lab.state(me).writes(alice_home, note).len() == 1;
+    let counts = move |lab: &Lab, me| lab.state(me).entry_writes(note).count() == 1;
     until("the server counts avenALICE's note", || server.read(counts)).await;
-    let opens_none =
-        move |lab: &Lab, me| !lab.opens(me, KeyScope::Space(alice_home)) && !lab.opens(me, KeyScope::Vault(alice));
-    assert!(server.read(opens_none).await, "it relays avenALICE's home and opens nothing of it");
+    let opens_none = move |lab: &Lab, me| {
+        !lab.reads(me, note) && !lab.opens(me, KeyFam::Seed(alice)) && lab.item(me, note).is_none()
+    };
+    assert!(server.read(opens_none).await, "it relays avenALICE's entries and opens none of them");
     // her second browser signs in through the server with her passkey alone: the same world, every name, the note
     let other = start("Eve's other browser", &url, 8);
     let other = Device::link(other, &server.offer(), eve.unlock([2; 32]), &eve).await.expect("it signs in");
     let reads = || async {
         let Some(w) = other.world().await else { return false };
         let names: Vec<_> = w.vaults.iter().filter_map(|v| v.name.clone()).collect();
-        let beans = |i: &ItemView| matches!(&i.what, What::Note { text, .. } if text == "Plant beans.");
+        let beans = |i: &EntryView| matches!(&i.what, What::Note { text, .. } if text == "Plant beans.");
         names == ["Eve", "avenCEO", "avenALICE", "avenBOB", "avenCHARLY", "Maia City COOP"]
-            && w.spaces.iter().any(|s| s.items.iter().any(beans))
+            && w.entries.iter().any(beans)
     };
     until("her other browser shows every vault and avenALICE's note", reads).await;
     for n in [first.node(), other.node(), &server] {
@@ -442,11 +463,9 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let first = Device::found(first, &server.offer(), None, eve.unlock([1; 32]), &eve).await.expect("her vault");
     eve.steps();
     let v = first.vault().await.expect("her vault");
-    let home = first.world().await.and_then(|w| named(&w, v).1).expect("her home");
-    let note = first.write(v, home, "Plan".into(), "Plant beans.".into()).await.expect("a note");
-    let at = (home, note);
-    first.set_text_on(v, at, None, 2, "Plant beans and peas.".into()).await.expect("an edit");
-    let shown = first.note(home, note).await.expect("its history");
+    let note = first.write(v, v, titled("Plan", "Plant beans."), vec![]).await.expect("a note");
+    first.set_text_on(v, note, None, 2, "Plant beans and peas.".into()).await.expect("an edit");
+    let shown = first.note(note).await.expect("its history");
     assert_eq!(kinds(&shown), ["edit", "edit"]);
     let edits = shown["edits"].as_array().expect("its edits");
     assert_eq!(
@@ -456,13 +475,13 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(edits[0]["before"], serde_json::Value::Null, "the first edit built on nothing");
     let edit = edits[1]["id"].as_str().expect("the edit's id").to_string();
     // a proposal from the main line's head: its own line, named, from that version
-    let heads = || async { first.note(home, note).await.expect("its history")["lines"][0]["heads"].clone() };
+    let heads = || async { first.note(note).await.expect("its history")["lines"][0]["heads"].clone() };
     let from: Vec<String> = serde_json::from_value(heads().await).expect("the heads");
     assert_eq!(from, std::slice::from_ref(&edit));
     let edits = |ids: &[String]| ids.iter().map(|h| avendb::id::EditId(hex32(h))).collect::<Vec<_>>();
-    let draft = first.propose(v, at, edits(&from), "draft".into()).await.expect("a proposal");
-    first.set_text_on(v, at, Some(draft), 2, "Plant beans, peas and corn.".into()).await.expect("an edit on it");
-    let shown = first.note(home, note).await.expect("its history");
+    let draft = first.propose(v, note, edits(&from), "draft".into()).await.expect("a proposal");
+    first.set_text_on(v, note, Some(draft), 2, "Plant beans, peas and corn.".into()).await.expect("an edit on it");
+    let shown = first.note(note).await.expect("its history");
     let b = hex_of(&draft.0);
     assert_eq!(shown["lines"][1]["name"].as_str(), Some("draft"));
     assert_eq!(shown["lines"][1]["from"], serde_json::json!([edit]));
@@ -482,8 +501,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         "it started from main"
     );
     // merged into the main line: an edit that carries no change, and the main line shows the proposal's edit
-    first.merge(v, at, (Some(draft), None), false).await.expect("merged");
-    let shown = first.note(home, note).await.expect("its history");
+    first.merge(v, note, (Some(draft), None), false).await.expect("merged");
+    let shown = first.note(note).await.expect("its history");
     assert_eq!(kinds(&shown).last().map(String::as_str), Some("merge"));
     assert_eq!(on_line(&shown, None), "Plant beans, peas and corn.");
     let merge = &shown["edits"][4];
@@ -494,43 +513,41 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         "what the merge brought to the main line"
     );
     // the proposal's edit undone on the main line, every other change kept; then the first version restored
-    first.undo(v, at, None, avendb::id::EditId(hex32(&corn))).await.expect("undone");
-    assert_eq!(on_line(&first.note(home, note).await.expect("its history"), None), "Plant beans and peas.");
-    let made = first.note(home, note).await.expect("its history")["edits"][0]["id"].as_str().map(str::to_string);
+    first.undo(v, note, None, avendb::id::EditId(hex32(&corn))).await.expect("undone");
+    assert_eq!(on_line(&first.note(note).await.expect("its history"), None), "Plant beans and peas.");
+    let made = first.note(note).await.expect("its history")["edits"][0]["id"].as_str().map(str::to_string);
     let made = made.expect("the first edit");
-    first.restore(v, at, None, edits(&[made])).await.expect("restored");
-    assert_eq!(on_line(&first.note(home, note).await.expect("its history"), None), "Plant beans.");
+    first.restore(v, note, None, edits(&[made])).await.expect("restored");
+    assert_eq!(on_line(&first.note(note).await.expect("its history"), None), "Plant beans.");
     // the proposal goes on, and a promote brings the main line to exactly what the proposal shows
-    first.set_text_on(v, at, Some(draft), 2, "Corn first.".into()).await.expect("another edit on the proposal");
-    first.merge(v, at, (Some(draft), None), true).await.expect("promoted");
-    let shown = first.note(home, note).await.expect("its history");
+    first.set_text_on(v, note, Some(draft), 2, "Corn first.".into()).await.expect("another edit on the proposal");
+    first.merge(v, note, (Some(draft), None), true).await.expect("promoted");
+    let shown = first.note(note).await.expect("its history");
     assert_eq!(kinds(&shown).last().map(String::as_str), Some("promote"));
     assert_eq!((on_line(&shown, None), on_line(&shown, Some(&b))), ("Corn first.".into(), "Corn first.".into()));
-    // a variant: the proposal's note as a new entry of her home, with none of its history, that names its origin
-    let variant = first.variant(v, at, Some(draft), home).await.expect("a variant");
-    let made = first.note(home, variant).await.expect("the variant's history");
+    // a variant: the proposal's note as a new entry of her vault, with none of its history, that names its origin
+    let variant = first.variant(v, note, Some(draft), v).await.expect("a variant");
+    let made = first.note(variant).await.expect("the variant's history");
     assert_eq!((kinds(&made), on_line(&made, None)), (vec!["edit".to_string()], "Corn first.".to_string()));
     let world = first.world().await.expect("her world");
-    let items = world.spaces.iter().flat_map(|s| &s.items);
-    let item = |e: EntryId| items.clone().find(|i| i.entry == e).map(|i| &i.what);
-    assert!(matches!(item(variant), Some(What::Note { variant_of: Some(of), edits: 1, .. }) if *of == note));
-    assert!(matches!(item(note), Some(What::Note { variant_of: None, proposals: 1, .. })), "one proposal");
+    let what = |e: EntryId| world.entries.iter().find(|i| i.entry == e).map(|i| &i.what);
+    assert!(matches!(what(variant), Some(What::Note { variant_of: Some(of), edits: 1, .. }) if *of == note));
+    assert!(matches!(what(note), Some(What::Note { variant_of: None, proposals: 1, .. })), "one proposal");
     // and a new title on the main line, which leaves the proposal's
-    first.set_title_on(v, at, None, "Garden plan".into()).await.expect("retitled");
-    let shown = first.note(home, note).await.expect("its history");
-    assert_eq!((shown["lines"][0]["title"].as_str(), shown["lines"][1]["title"].as_str()), (Some("Garden plan"), Some("Plan")));
+    first.set_title_on(v, note, None, "Garden plan".into()).await.expect("retitled");
+    let shown = first.note(note).await.expect("its history");
+    let titles = (shown["lines"][0]["title"].as_str(), shown["lines"][1]["title"].as_str());
+    assert_eq!(titles, (Some("Garden plan"), Some("Plan")));
     assert_eq!(eve.steps(), [], "no ceremony for any of it");
     // her database: the note's record and lines, the variant, her browser's card; the schemas the app ships
     let db = first.database(v).await;
     assert_eq!(db["vault"].as_str(), Some(hex_of(&v.0).as_str()));
-    let space = &db["spaces"][0];
-    assert_eq!(space["id"].as_str(), Some(hex_of(&home.0).as_str()));
-    let rows = space["rows"].as_array().expect("its rows");
+    let rows = db["rows"].as_array().expect("its rows");
     let row = |e: EntryId| rows.iter().find(|r| r["entry"].as_str() == Some(hex_of(&e.0).as_str())).expect("the row");
     let plan = row(note);
     assert_eq!(
-        (plan["kind"].as_str(), plan["title"].as_str(), plan["tag"].as_str()),
-        (Some("document"), Some("Garden plan"), None)
+        (plan["kind"].as_str(), plan["title"].as_str(), plan["type"].as_str(), &plan["tags"]),
+        (Some("document"), Some("Garden plan"), Some("note"), &serde_json::json!([]))
     );
     assert_eq!((plan["lines"].as_u64(), plan["proposals"].clone()), (Some(2), serde_json::json!(["draft"])));
     assert_eq!(plan["edits"].as_u64(), Some(kinds(&shown).len() as u64));
@@ -553,15 +570,19 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(row(variant)["record"]["blocks"][1]["text"].as_str(), Some("Corn first."));
     let tags = &row(variant)["record"]["tags"];
     assert_eq!(tags, &serde_json::json!([format!("avendb:variant:{}", hex_of(&note.0))]), "it names its origin");
-    let card = rows.iter().find(|r| r["tag"].as_str() == Some("card")).expect("her browser's card");
+    let card = rows.iter().find(|r| r["type"].as_str() == Some("card")).expect("her browser's card");
     assert_eq!(card["title"].as_str(), Some("Eve's browser"));
-    assert_eq!(space["edits"]["founded"].as_u64(), Some(1));
-    let writes = space["edits"]["writes"].as_u64();
-    assert!(writes.is_some_and(|n| n >= kinds(&shown).len() as u64 + 2), "{}", space["edits"]);
-    assert!(space["edits"]["grants"].as_u64().is_some_and(|n| n >= 1), "avenCEO relays it");
+    assert_eq!(db["edits"]["founded"].as_u64(), Some(1));
+    let writes = db["edits"]["writes"].as_u64();
+    assert!(writes.is_some_and(|n| n >= kinds(&shown).len() as u64 + 2), "{}", db["edits"]);
+    assert!(db["edits"]["caps"].as_u64().is_some_and(|n| n >= 1), "avenCEO relays it");
+    let cells = db["cells"].as_array().expect("its cells");
+    let one = (cells.len(), cells[0]["entries"].as_u64(), cells[0]["caps"].as_array().map(Vec::len));
+    assert_eq!(one, (1, Some(3), Some(0)), "her card, the note and its variant: no cap splits her vault");
     assert_eq!(db["builtIn"]["lenses"][0]["title"].as_str(), Some("Markdown document, v1 to v2"));
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
-    // browser added to it, her home, avenCEO's relay on it, and each write, every one counted, as a checkpoint covers it
+    // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted, as a checkpoint
+    // covers it
     let log = first.history().await;
     let edits = log["edits"].as_array().expect("its edits");
     assert_eq!(edits.len(), first.edits(0).await.expect("its edits").len(), "every edit it holds");
@@ -573,16 +594,17 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(genesis["fields"]["root"].as_str(), Some(hex_of(&first.passkey().0).as_str()), "her passkey roots it");
     let sigs = genesis["sigs"].as_array().expect("its signatures");
     assert!(sigs.iter().any(|s| s["by"] == "passkey" && s["pq"].as_u64().is_some_and(|n| n > 1000)), "{sigs:?}");
-    assert!(of("addDevice").iter().any(|o| o["fields"]["device"].as_str() == Some(hex_of(&first.node().device().0).as_str())));
-    let homes = of("foundSpace");
-    assert!(homes.iter().any(|o| o["id"].as_str() == Some(hex_of(&home.0).as_str())), "her home");
-    assert!(of("grant").iter().any(|o| o["fields"]["role"] == "relay"), "avenCEO's relay");
+    let browser = hex_of(&first.node().device().0);
+    assert!(of("addDevice").iter().any(|o| o["fields"]["device"].as_str() == Some(browser.as_str())));
+    let relay = |o: &&serde_json::Value| o["fields"]["role"] == "relay" && o["fields"]["wide"] == true;
+    assert!(of("cap").iter().any(relay), "avenCEO's relay on the whole of her vault");
     let writes = of("write");
     let mine = writes.iter().filter(|o| o["fields"]["entry"].as_str() == Some(hex_of(&note.0).as_str()));
     assert_eq!(mine.clone().count(), kinds(&shown).len(), "each write of the note");
     assert!(mine.clone().all(|o| o["counted"] == true), "every one counted");
     assert!(mine.clone().all(|o| o["fields"]["sealed"].as_u64().is_some_and(|n| n > 0)), "its body by its size alone");
-    assert!(mine.clone().any(|o| o["fields"]["starts"] == true && o["fields"]["line"] == o["id"]), "the proposal's start");
+    let starts = |o: &&serde_json::Value| o["fields"]["starts"] == true && o["fields"]["line"] == o["id"];
+    assert!(mine.clone().any(starts), "the proposal's start");
     assert!(writes.iter().all(|o| o["vaults"].as_array().is_some_and(|vs| vs.contains(&hex_of(&v.0).into()))));
     assert!(!of("checkpoint").is_empty() && !of("keys").is_empty());
     assert!(edits
@@ -590,12 +612,9 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .all(|o| o["bytes"].as_u64().is_some_and(|n| n > 0) && !o["sigs"].as_array().unwrap().is_empty()));
     let text = log.to_string();
     assert!(!text.contains("Corn first") && !text.contains("Plant beans"), "no note's text in its history: sealed");
-    // the server relays her home and opens none of it: its rows are sealed
-    let sealed = move |lab: &Lab, me| {
-        let held = lab.state(me).space(home).is_some_and(|s| s.entries.contains(&variant));
-        held && lab.item(me, home, note).is_none()
-    };
-    until("the server keeps her home's log, sealed", || server.read(sealed)).await;
+    // the server relays her entries and opens none of them: its rows are sealed
+    let sealed = move |lab: &Lab, me| lab.fetched(me, variant) > 0 && lab.item(me, note).is_none();
+    until("the server keeps her entries, sealed", || server.read(sealed)).await;
     for n in [first.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }

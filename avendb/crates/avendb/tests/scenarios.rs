@@ -1,6 +1,5 @@
 //! The plan's acceptance scenarios on the Lab (`avendb::scenarios`), each its own test, numbered as in the plan: every
-//! check of each must hold. The avenDB tile's Lab plays the same scenarios and shows each check.
-//! `avendb/spec/AvenDB/Examples.lean` runs them on the Lean model.
+//! check of each must hold. `avendb/spec/AvenDB/Examples.lean` runs them on the Lean model.
 
 use avendb::scenarios::{scenario, SCENARIOS};
 
