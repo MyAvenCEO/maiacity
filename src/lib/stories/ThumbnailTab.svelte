@@ -3,9 +3,10 @@
 	middle, its layers listed on the right (top layer first, each shown or hidden, picked by a click here or on the
 	card, moved by dragging it there), and under the list what the picked layer is made of: the picture (one of the
 	story's files, by hash), how it fits, its place and size; a text's words (empty: the hook itself), colour and
-	alignment; a badge's words. Under the card: "Render the card" draws these layers at full size (card.js, the same
-	layout) and, in the Mac app, files the JPEG in the story's vault bucket as its 16:9 card (role:thumbnail), by hash —
-	that is what goes out; on the web it downloads, to be ingested by hand. The picker offers the story's files: the
+	alignment; a badge's words. Under the small preview: "Render the card" draws these layers at full size (card.js, the
+	same layout) and, in the Mac app, files the JPEG in the story's vault bucket as its 16:9 card (role:thumbnail), by
+	hash — that is what goes out, nothing of it shown here again (the card on the page IS the card); on the web it
+	downloads, to be ingested by hand. The picker offers the story's files: the
 	ones linked on the board and every picture in its vault bucket (tagged with the story's name).
 -->
 <script>
@@ -151,12 +152,6 @@
 	const DEFAULT = { image: { x: 0, y: 0, w: 100, size: 0 }, cutout: { x: 0, y: 10, w: 45, size: 0 }, text: { x: 48, y: 16, w: 48, size: 6.2 }, badge: { x: 82, y: 86, w: 0, size: 2.4 } };
 	const numOf = (/** @type {Layer} */ l, /** @type {'x' | 'y' | 'w' | 'size'} */ k) => l[k] ?? DEFAULT[l.kind][k];
 
-	/** @param {string} v */
-	function setCard(v) {
-		const h = v.trim().toLowerCase();
-		if (h && !/^[0-9a-f]{64}$/.test(h)) return;
-		onchange({ thumbnail: { ...(item.thumbnail ?? {}), layers, card: h || null } });
-	}
 </script>
 
 <div class="thumb">
@@ -172,25 +167,6 @@
 				<small>A picture · a cut-out · the hook · the day badge</small>
 			</div>
 		{/if}
-
-		<section class="out" aria-label="The rendered card">
-			<div class="outhead">
-				<span>The card that goes out <small>rendered from these layers, by hash</small></span>
-				{#if layers.length}
-					<button class="render" disabled={rendering === 'drawing' || rendering === 'filing'} onclick={render}>
-						{rendering === 'drawing' ? 'Drawing…' : rendering === 'filing' ? 'Into the vault…' : native() ? 'Render the card' : 'Render and download'}
-					</button>
-				{/if}
-			</div>
-			{#if renderNote}<p class="rendernote" class:bad={rendering === 'failed'}>{renderNote}</p>{/if}
-			{#if item.thumbnail?.card}
-				<img class="rendered" src={fileUrl(item.thumbnail.card)} alt="The 16:9 title card, rendered" />
-			{/if}
-			<label class="hashfield">
-				<span>Its hash</span>
-				<input value={item.thumbnail?.card ?? ''} maxlength="64" placeholder="64 hex characters, once it is rendered and in the vault" spellcheck="false" onchange={(e) => setCard(e.currentTarget.value)} />
-			</label>
-		</section>
 	</div>
 
 	<!-- the layers, top first; what the picked one is made of -->
@@ -211,6 +187,15 @@
 				<small>maiaCITY</small>
 			</div>
 		</div>
+		<!-- the card as it goes out: these layers drawn at full size, into the vault -->
+		{#if layers.length}
+			<div class="file">
+				<button class="render" disabled={rendering === 'drawing' || rendering === 'filing'} onclick={render}>
+					{rendering === 'drawing' ? 'Drawing…' : rendering === 'filing' ? 'Into the vault…' : native() ? 'Render the card' : 'Render and download'}
+				</button>
+				{#if renderNote}<p class="rendernote" class:bad={rendering === 'failed'}>{renderNote}</p>{/if}
+			</div>
+		{/if}
 		<div class="head">
 			<span>Layers <small>{layers.length}</small></span>
 			<span class="adds">
@@ -359,25 +344,8 @@
 		font-size: 0.72rem;
 	}
 
-	.out {
-		margin-top: 1.2rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--line);
-	}
 
-	.outhead {
-		display: flex;
-		justify-content: space-between;
-		margin-bottom: 0.5rem;
-		font-size: 0.82rem;
-		font-weight: 600;
-	}
 
-	.outhead small {
-		margin-left: 0.4rem;
-		font-weight: 400;
-		color: var(--muted);
-	}
 
 	.render {
 		padding: 0.35rem 0.9rem;
@@ -396,8 +364,17 @@
 		cursor: default;
 	}
 
+	.file {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem;
+		padding-bottom: 0.6rem;
+		border-bottom: 1px solid var(--line);
+	}
+
 	.rendernote {
-		margin: 0 0 0.6rem;
+		margin: 0;
 		font-size: 0.78rem;
 		color: var(--ink-soft);
 	}
@@ -406,33 +383,8 @@
 		color: #9c3b26;
 	}
 
-	.rendered {
-		display: block;
-		width: min(100%, 32rem);
-		border-radius: 10px;
-		box-shadow: 0 6px 24px rgb(38 56 44 / 0.15);
-	}
 
-	.hashfield {
-		display: flex;
-		align-items: baseline;
-		gap: 0.6rem;
-		margin-top: 0.6rem;
-		font-size: 0.75rem;
-		color: var(--muted);
-	}
 
-	.hashfield input {
-		flex: 1;
-		min-width: 0;
-		padding: 0.3rem 0.5rem;
-		border: 1px solid var(--line);
-		border-radius: 8px;
-		background: #fff;
-		font: inherit;
-		font-family: ui-monospace, monospace;
-		font-size: 0.72rem;
-	}
 
 	/* ── the layers ── */
 	.layers {
