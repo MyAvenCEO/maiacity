@@ -5,8 +5,8 @@ in which every read and every change of avenDB is a declarative JSON op, the sam
 caps that name those ops, still decentralized and Biscuit-like, fitting the local-first Loro and iroh design and the
 frontier sync, built from first principles, DRY, end to end. This file is the design. It builds on flat vaults
 (`FLAT-VAULTS.md`) and on the research behind them (`/mnt/project-files/sync-research/reports/E2E database dynamic
-caps and keys.md`), and changes none of their theorems. The first task is built (O1 to O3, below); the second is
-the design still to build (C1 to C3).
+caps and keys.md`), and changes none of their theorems. Both are built (O1 to O3, then C1 to C3, below), and so is
+what Samuel asked next: every reader checks each write against the schemas of what it changes (S1 to S4).
 
 ## First principles
 
@@ -236,7 +236,7 @@ ever shows it, nor anything that builds on it. A line's history is its writes th
 Devices build only on writes they count (a line's heads leave the others out), so an honest edit is never lost to
 one that doesn't count. The engine refuses an op its caps' rules don't allow (`NotAllowed`) before anything is
 written, and attaches the proof a write needs: the first ruled cap it holds whose chain allows the write. An app
-patched to skip that check (`Lab::ignoring_rules`, in the tests) writes all the same, and no reader counts what it
+patched to skip that check (`Lab::patched`, in the tests) writes all the same, and no reader counts what it
 wrote, its own device neither, nor what anyone builds on it.
 
 Old data keeps its meaning: caps without a commitment are unruled, slices without rules have none, and bodies
@@ -264,6 +264,39 @@ says how many of its edits no reader counts, and the studio's history marks each
 sealed, and changes nothing anyone reads.
 
 Reads get no rules, by the first principle: a read cap is its selector.
+
+## Writes that fit their schemas
+
+Samuel's question (2026-10-10, 10:35): do the ops also enforce clean validation against the JSON schemas, end to end?
+An app writes only views of its schema (`View::put`, else `NotAView`), but a patched one could write anything, and
+every reader would merge it. So every reader of an entry also judges each write it opens by the schemas the entry was
+written under once the write is in (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`), and a write that doesn't fit
+counts for no reader, as one the rules of its caps don't allow.
+
+- **The schemas.** Each change of an item names the schema it was written under (`doc`), so the set grows with the
+  writes. Each must be in the vault's lane or built in, and all of one kind: a write that tags a todo with a
+  document's schema, to write a document's fields into it, fits nothing.
+- **What is judged.** The write's diff (`ops::diff`) from the record before it, on the version it builds on, to the
+  record after it. Each place it changed holds a value one of the schemas lets it hold there; each list of records it
+  changed is one they name, holding no copy of a row it didn't hold before (copies are what two devices adding a row
+  with one id at once make, never one write); each row it added, or one of whose fields it changed, reads under one
+  of them, so holds what that schema requires of a row; and the record's own fields read under one of them where it
+  changed one of them, or added or dropped a list. A write that changes nothing fits.
+- **Only what it changed.** A value the write didn't change, which two devices' writes at once may have left behind,
+  holds it back nowhere but in the record or row around a change, which must still read (S1). A record that fits keeps
+  fitting through writes that fit, from the first on (S2), so an app's edits always fit (`tests/properties.rs`).
+- **Readers, not relays.** Whether a write fits is read off its sealed body, so only its readers can tell; relays
+  accept or refuse it alike (S4). Its readers all reach one verdict: the schemas it names travel in its body, and the
+  lane is in the vault's log.
+- **Counted like the rules.** A write that doesn't fit is read as one nobody can open (S3): it stays in the log, no
+  record shows it, nor anything built on it, and devices build on the writes they count, so every device keeps the
+  last record that fit. A device refuses to make one (`NotAView`), and an app patched to skip that check
+  (`Lab::patched`) writes it all the same, which no reader counts, its own device neither. The `history` op says why a
+  write doesn't count (`why`: `unfit`, `rules`, `builds-on` or `sealed`), and so do the note page and the studio.
+- **A lane that grows.** A write under a schema the lane doesn't hold yet counts once its vault publishes it, for every
+  reader. A lane only grows, so a verdict changes at most once, from not counted to counted.
+
+Old data keeps its meaning: apps only ever wrote views of their schemas, which fit.
 
 ## Sync
 
@@ -297,11 +330,26 @@ And for caps that name ops, stated in `spec/AvenDB/Theorems.lean` and proven in 
 - **T25 still holds**: relays see one bit more of a cap, and nothing of its rules, of a write's proof or of what it
   touches.
 
+And for writes that fit their schemas, S1 and S2 proven in `Schemas.lean` for any schemas, S3 and S4 stated in
+`Theorems.lean` (vectors in `Vectors.lean`):
+
+- **S1 a write is judged by what it changed** (`fits_iff`): it fits exactly when each change of its diff does, on the
+  record or row around it.
+- **S2 records that fit stay so** (`fits_clean`, `fits_new`): a record that fits keeps fitting through a write that
+  fits, and an entry's first write, if it fits, makes a record that fits of nothing.
+- **S3 writes that don't fit count for no reader** (`S3_unfit_uncounted`, `S3_step`), whatever their caps and rules,
+  and so (C4) nothing built on them.
+- **S4 relays don't judge records** (`S4_fit_unread`): whether a write fits changes nothing but which writes its
+  readers count.
+
 The Rust side is tested against them: `tests/rules.rs` writes random records in turn from two devices, wholesale or by
 random ops, and checks that each write's touches cover every change of its diff and name the value of each place they
 alone cover (C3's `Within`); `tests/engine.rs` runs ruled caps end to end, a grantee's `may`, a write no rule allows
 and what builds on it counted by no reader, chains of ruled caps (C1) and suggesting through proposals; the vectors
-replay `Vectors.lean`'s ruled caps.
+replay `Vectors.lean`'s ruled caps. `tests/schemas.rs` walks random writes over two versions of a schema (S1, S2);
+`tests/properties.rs` edits random stored records through every app's view, which always fit; `tests/engine.rs` runs
+a patched app's writes that break their schema, a proposal built on one, and a write that counts once its vault
+publishes its schema (S3); the vectors replay `Vectors.lean`'s writes that don't fit.
 
 ## Phases
 
@@ -313,6 +361,7 @@ replay `Vectors.lean`'s ruled caps.
 | C1 | Lean: rules in slices, chain narrowing, proof-carrying writes, acceptance; C1 to C4, T25 | PR #431, with C2, C3 |
 | C2 | Rust: slice rules and the ruled bit, chain keys, proofs, every reader's check, `may` | |
 | C3 | Page: rules in the share dialog, buttons by `may`; the walks; server redeploy | |
+| S1 | Lean, Rust and page: every reader judges each write by its entry's schemas; S1 to S4 | PR #434 |
 
 ## Later
 

@@ -10,9 +10,9 @@ A chain allows a write where every ruled cap of it does, and a cap's chain is th
 cap itself (T22), so a cap allows no more than the cap it rests on (C1). Whether a write counts reads, of the caps,
 what every peer reads and the rules of the chain the write's proof names, and of the entry its id, vault and cell
 alone (C2). A counted write that relies on ruled caps did only what the chain its proof names allows (C3), and a write
-that builds on counted writes, whose proof names a cap its actor holds that reaches the entry and whose chain allows
-it, counts (C4). Readers count no write that builds on one they don't count, since each write is judged when it comes,
-on what it builds on, and the writes they don't count only grow.
+that fits, builds on counted writes, whose proof names a cap its actor holds that reaches the entry and whose chain
+allows it, counts (C4). Readers count no write that builds on one they don't count, since each write is judged when it
+comes, on what it builds on, and the writes they don't count only grow; nor one whose result doesn't fit (S3).
 -/
 
 namespace AvenDB.Ruling
@@ -133,9 +133,9 @@ theorem lets_seen (st : State) {cp : Cap} (hcp : cp ∈ st.caps) (proof : Option
 /-- C2: whether readers count a write reads no selector, no relabel set, no type and no tag, and no rules but those
     of the chain its proof names. -/
 theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (deps : List EditId)
-    (proof : Option CapId) (main : Bool) (ts : List Touch) :
-    counts (st.seen (proofCaps st proof)) a { en with attrs } deps proof main ts =
-      counts st a en deps proof main ts := by
+    (proof : Option CapId) (main : Bool) (ts : List Touch) (fits : Bool) :
+    counts (st.seen (proofCaps st proof)) a { en with attrs } deps proof main ts fits =
+      counts st a en deps proof main ts fits := by
   unfold counts
   rw [seen_caps, List.any_map]
   congr 2
@@ -144,18 +144,19 @@ theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (dep
 
 /-- C2, creations: whether readers count a creation reads no selector, no relabel set and no rules but those of the
     chain its proof names. -/
-theorem creates_seen (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) :
-    creates (st.seen (proofCaps st proof)) a v x proof = creates st a v x proof := by
+theorem creates_seen (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) (fits : Bool) :
+    creates (st.seen (proofCaps st proof)) a v x proof fits = creates st a v x proof fits := by
   unfold creates
   rw [seen_caps, List.any_map]
-  congr 1
+  congr 2
   refine Caps.any_congr_mem fun cp hcp => ?_
   simp only [Function.comp_def, seen_over, holdsCap_seen, intake_seen, lets_seen st hcp]
 
 /-! ## C3: ruled writes do what they may -/
 
 theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option CapId}
-    {main : Bool} {ts : List Touch} (hc : counts st a en deps proof main ts = true) (hv : a ≠ en.vault)
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault)
     (hr : ∀ cp ∈ st.caps, holdsCap st a cp .write = true → inCell st cp en = true → ruledChain st cp = true) :
     ∃ cp ∈ st.caps, proof = some cp.id ∧ holdsCap st a cp .write = true ∧ inCell st cp en = true ∧
       ∀ c ∈ chain st cp, c.ruled = true → allowsAll c.rules main ts = true := by
@@ -173,18 +174,19 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Cap} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.caps) (hh : holdsCap st a cp .write = true)
     (hi : inCell st cp en = true) (ha : chainAllows st cp main ts = true) :
-    counts st a en deps (some cp.id) main ts = true := by
+    counts st a en deps (some cp.id) main ts true = true := by
   unfold counts
-  simp only [Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true, Bool.not_eq_true', beq_iff_eq, List.any_eq_true]
+  simp only [Bool.true_and, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true, Bool.not_eq_true', beq_iff_eq,
+    List.any_eq_true]
   refine ⟨fun d hd' => ?_, .inr ⟨cp, hcp, ⟨hh, hi⟩, ?_⟩⟩
   · simpa using hd d hd'
   · simp [lets, ha]
 
 theorem allowed_creates {st : State} {a v : VaultId} {cp : Cap} (hcp : cp ∈ st.caps) (hv : cp.over = v)
     (hh : holdsCap st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :
-    creates st a v (intake st cp) (some cp.id) = true := by
+    creates st a v (intake st cp) (some cp.id) true = true := by
   unfold creates
-  simp only [Bool.or_eq_true, beq_iff_eq, List.any_eq_true, Bool.and_eq_true]
+  simp only [Bool.true_and, Bool.or_eq_true, beq_iff_eq, List.any_eq_true, Bool.and_eq_true]
   exact .inr ⟨cp, hcp, ⟨⟨⟨hv, hh⟩, rfl⟩, by simp [lets, ha]⟩⟩
 
 /-! ## Nothing counts that builds on what doesn't -/
@@ -247,7 +249,7 @@ theorem apply_countsClosed {st post : State} {edit : Edit} (hcc : CausallyClosed
   unfold apply at h
   dsimp only at h
   split at h
-  case h_10 v e actor stay gen deps proposal via create tags proof touches hact =>
+  case h_10 v e actor stay gen deps proposal via create tags proof touches fits hact =>
     split at h
     · cases h
     rename_i hok
@@ -272,11 +274,41 @@ theorem apply_countsClosed {st post : State} {edit : Edit} (hcc : CausallyClosed
           exact ⟨x, hx, hxd⟩
         · rintro ⟨d, hd, hdu⟩
           simp only [counts, Bool.and_eq_false_iff, List.all_eq_false]
-          exact .inl ⟨d, hd, by simpa using hdu⟩
+          exact .inl (.inr ⟨d, hd, by simpa using hdu⟩)
   all_goals (repeat' split at h) <;> (try cases h) <;>
     first
     | exact CountsClosed.mono hc (fun w hw => hw) rfl
     | (refine CountsClosed.drop hc ?_ ?_ _ <;> first | exact fun w hw => hw | rfl)
+
+/-! ## Writes that don't fit -/
+
+/-- An accepted write whose result doesn't fit its schemas is one its readers don't count. -/
+theorem apply_unfit {st post : State} {edit : Edit} (h : apply st edit = some post)
+    {v e actor stay gen deps proposal via create tags proof touches}
+    (ha : edit.action = .write v e actor stay gen deps proposal via create tags proof touches false) :
+    edit.id ∈ post.uncounted := by
+  unfold apply at h
+  rw [ha] at h
+  dsimp only at h
+  split at h
+  · cases h
+  split at h
+  · repeat' split at h
+    all_goals try cases h
+    simp [State.counting, creates]
+  · repeat' split at h
+    all_goals try cases h
+    all_goals simp [State.counting, counts]
+
+/-- The same of a step, which also settles keys. -/
+theorem step_unfit {st post : State} {edit : Edit} (h : step st edit = some post)
+    {v e actor stay gen deps proposal via create tags proof touches}
+    (ha : edit.action = .write v e actor stay gen deps proposal via create tags proof touches false) :
+    edit.id ∈ post.uncounted := by
+  unfold step at h
+  obtain ⟨mid, hmid, rfl⟩ := Option.map_eq_some_iff.1 h
+  rw [settle_uncounted]
+  exact apply_unfit hmid ha
 
 /-- Readers count no write that builds on one they don't count, in every reachable state. -/
 theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st := by

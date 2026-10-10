@@ -12,6 +12,12 @@
 //! app can't see survives. A migrating edit would do neither: two devices migrating at once can drop each other's
 //! new containers, and written defaults race real edits.
 //!
+//! Every reader judges each write by the schemas its entry was written under once the write is in (`Lane::fits`, S1 to
+//! S4 in `avendb/spec/AvenDB/Schemas.lean`), and by what it changed alone: a write that doesn't fit counts for no
+//! reader, nor anything built on it (`history::History::reading`). So a patched app that writes a value its schema
+//! doesn't allow, drops a field it requires, or tags an item with another kind's schema changes no record anyone
+//! shows, and every device keeps the last record that fit.
+//!
 //! The two examples, each in two versions, with a lens from v1 to v2:
 //! - Markdown documents: v1 blocks have a `kind` (h1, h2, h3, p, li, code); v2 blocks have a `type` with a heading
 //!   `level`, items can be `checked`, code can name its `lang`, and the document gains `tags`.
@@ -30,6 +36,7 @@ use std::sync::LazyLock;
 use serde_json::{Map, Value};
 
 use crate::id::BlobId;
+use crate::ops::{self, Change, Flat, Key, Path};
 
 /// A record: a map of fields, as JSON. `null` reads as absent.
 pub type Record = Map<String, Value>;
@@ -420,6 +427,17 @@ impl Type {
             Type::Value(_) => Stored::Value,
             Type::List(_) => Stored::List,
             Type::Records(_) => Stored::Records,
+        }
+    }
+
+    /// Whether `v` fits here as one value: a text, a value the check holds, a list of values each of which it holds. A
+    /// list of records holds rows, never one value.
+    fn fits(&self, v: &Value) -> bool {
+        match self {
+            Type::Text => v.is_string(),
+            Type::Value(c) => c.holds(v),
+            Type::List(c) => v.as_array().is_some_and(|xs| xs.iter().all(|x| c.holds(x))),
+            Type::Records(_) => false,
         }
     }
 }
@@ -923,6 +941,12 @@ impl Lane {
         lane
     }
 
+    /// The lane of the blobs `published` and of the built-in ones, which apps read through before any lane publishes
+    /// anything (`blobs::ALL`): what a device reads and judges a vault's entries by.
+    pub fn with_built_ins<'a>(published: impl IntoIterator<Item = &'a [u8]>) -> Lane {
+        Lane::new(blobs::ALL.iter().map(|b| b.as_bytes()).chain(published))
+    }
+
     pub fn schema(&self, id: BlobId) -> Option<&Schema> {
         self.schemas.get(&id)
     }
@@ -953,6 +977,88 @@ impl Lane {
             },
             xs => (xs.iter().find_map(|&x| joined(x)).unwrap_or_else(|| View::plain(app)), true),
         }
+    }
+
+    /// Whether a write that makes the stored record `before` into `after` fits the schemas `authored` names, those its
+    /// entry was written under once it is in (`Schemas.lean`'s `Fit.fits`): each in the lane, and all of one kind, so
+    /// that no write tags an item with another kind's schema to write that kind's fields into it. Only what it changed
+    /// is judged (S1): each place it changed holds a value one of them lets it hold there; each list of records it
+    /// changed is one they name, holding no copy of a row it didn't hold before; each row it added, or one of whose
+    /// fields it changed, reads under one of them; and the record's own fields read under one of them where it changed
+    /// one of them, or added or dropped a list. A write that changes nothing fits.
+    pub fn fits(&self, authored: &BTreeSet<BlobId>, before: &Value, after: &Value) -> bool {
+        let empty = Record::new();
+        let (before, after) = (before.as_object().unwrap_or(&empty), after.as_object().unwrap_or(&empty));
+        let (r, s) = (Flat::of(before), Flat::of(after));
+        let changes = r.diff(&s);
+        if changes.is_empty() {
+            return true;
+        }
+        let Some(under) = authored.iter().map(|id| self.schemas.get(id)).collect::<Option<Vec<_>>>() else {
+            return false;
+        };
+        if under.windows(2).any(|w| w[0].kind() != w[1].kind()) {
+            return false;
+        }
+        let fit = Fit(under);
+        let top = std::cell::OnceCell::new();
+        let top = || *top.get_or_init(|| fit.top(after));
+        let row = |f: &str, k: &Key| fit.row(f, &s.row(f, k));
+        changes.iter().all(|c| match c {
+            Change::Set(p, v) => {
+                v.as_ref().is_none_or(|v| fit.leaf(p, v))
+                    && match p {
+                        Path::Top(_) => top(),
+                        Path::Row(f, k, _) => !s.holds(f, k) || row(f, k),
+                    }
+            }
+            Change::Order(_, None) => top(),
+            Change::Order(f, Some(ks)) => {
+                let old = r.lists.get(f);
+                fit.rows(f, old, ks) && (old.is_some() || top()) && ks.iter().all(|k| r.holds(f, k) || row(f, k))
+            }
+        })
+    }
+}
+
+/// The schemas a write is judged under (`Lane::fits`; `Schemas.lean`'s `Fit`): what they let a record hold.
+struct Fit<'a>(Vec<&'a Schema>);
+
+impl Fit<'_> {
+    /// One of them lets place `p` hold `v`.
+    fn leaf(&self, p: &Path, v: &Value) -> bool {
+        self.0.iter().any(|x| {
+            let field = match p {
+                Path::Top(f) => x.root.field(f),
+                Path::Row(f, _, g) => x.root.records(f).and_then(|shape| shape.field(g)),
+            };
+            field.is_some_and(|field| field.ty.fits(v))
+        })
+    }
+
+    /// One of them names `f` a list of records, or of values while it holds none (an empty list is either), and `new`
+    /// holds no copy of a row `old` doesn't: a write may keep or move the copies two devices adding a row with one id
+    /// at once make, never make one.
+    fn rows(&self, f: &str, old: Option<&Vec<Key>>, new: &[Key]) -> bool {
+        let named = |x: &&Schema| match x.root.field(f).map(|field| &field.ty) {
+            Some(Type::Records(_)) => true,
+            Some(Type::List(_)) => new.is_empty(),
+            _ => false,
+        };
+        self.0.iter().any(named) && new.iter().all(|k| k.copy == 0 || old.is_some_and(|ks| ks.contains(k)))
+    }
+
+    /// The record's own fields read under one of them: it holds what that schema requires, by its own values and by
+    /// which lists it holds, whatever their rows.
+    fn top(&self, s: &Record) -> bool {
+        let own = |v: &Value| if ops::rows(v).is_some() { Value::Array(vec![]) } else { v.clone() };
+        let own: Record = s.iter().map(|(f, v)| (f.clone(), own(v))).collect();
+        self.0.iter().any(|x| x.root.read(&own).is_some())
+    }
+
+    /// A row of list `f` reads under one of them: it holds what that schema requires of a row.
+    fn row(&self, f: &str, row: &Record) -> bool {
+        self.0.iter().any(|x| x.root.records(f).is_some_and(|shape| shape.read(row).is_some()))
     }
 }
 

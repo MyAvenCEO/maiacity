@@ -59,6 +59,11 @@
 	/** why a write's entry's readers don't count it, where the rules of its caps don't allow it */
 	const NOT_ALLOWED =
 		'the rules of the caps it relies on don’t allow what it changes, or what it builds on: no reader counts it';
+	/** why they don't, where what it makes of the entry's record breaks the schemas the entry was written under */
+	const UNFIT = 'what it makes of its entry’s record breaks the entry’s schema: no reader counts it';
+	/** what an edit its readers don't count shows, and why @param {import('./db.js').SignedEdit} e */
+	const uncounted = (e) =>
+		e.why === 'unfit' ? { chip: 'breaks its schema', why: UNFIT } : { chip: 'not allowed', why: NOT_ALLOWED };
 </script>
 
 {#if failed}
@@ -110,7 +115,9 @@
 						<td class="what">
 							{said.get(e.id)}
 							{#if e.counted === false}<span class="chip warn" title="No checkpoint of its author covers it yet">not counted</span>{/if}
-							{#if e.allowed === false}<span class="chip warn" title={NOT_ALLOWED}>not allowed</span>{/if}
+							{#if e.allowed === false}
+								<span class="chip warn" title={uncounted(e).why}>{uncounted(e).chip}</span>
+							{/if}
 						</td>
 						<td>{signers(e)}</td>
 						<td><span class="sigs">
@@ -159,7 +166,11 @@
 			{/if}
 			{#if picked.allowed !== null}
 				<dt>Allowed</dt>
-				<dd>{picked.allowed ? 'Yes: the rules of its caps allow what it changes' : `No: ${NOT_ALLOWED}`}</dd>
+				{#if picked.allowed}
+					<dd>Yes: it fits its schema, and the rules of its caps allow it</dd>
+				{:else}
+					<dd>No: {uncounted(picked).why}</dd>
+				{/if}
 			{/if}
 		</dl>
 		<h4 class="kept">Signatures</h4>

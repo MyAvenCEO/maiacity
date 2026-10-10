@@ -1163,7 +1163,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, same st⟩))
   · -- write
-    rename_i v e actor stay gen deps proposal via create tags proof touches heq
+    rename_i v e actor stay gen deps proposal via create tags proof touches fits heq
     dsimp only at h
     split at h
     · cases h

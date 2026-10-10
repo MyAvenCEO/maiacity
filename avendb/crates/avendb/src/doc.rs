@@ -76,6 +76,15 @@ pub enum DocError {
     WrongPeer,
 }
 
+/// What an update does to the item it imports into (`Item::footprint`): what its ops touch, and the record before and
+/// after it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Footprint {
+    pub touches: Vec<Touch>,
+    pub before: Value,
+    pub after: Value,
+}
+
 /// One item as one device holds it: a Loro document whose edits carry that device's peer.
 pub struct Item {
     doc: LoroDoc,
@@ -356,8 +365,9 @@ impl Item {
     /// it; a field of a row set or changed (`Set` at the row's field, the row by its id), where that field is a list of
     /// records before and after (else at the field); a list of records made to add rows to is adding them. An op
     /// nowhere in the record (outside the root map, or in a container it no longer reaches) touches the whole record.
-    /// `None` where the update doesn't import, or imports only in part: it builds on ops the item doesn't hold.
-    pub fn footprint(&mut self, update: &[u8], signer: SignerId, line: Line) -> Option<Vec<Touch>> {
+    /// With them, the record before and after it, which readers judge it by too (`lens::Lane::fits`). `None` where the
+    /// update doesn't import, or imports only in part: it builds on ops the item doesn't hold.
+    pub fn footprint(&mut self, update: &[u8], signer: SignerId, line: Line) -> Option<Footprint> {
         let (before, was) = (self.record(), self.doc.oplog_vv());
         self.import_on(update, signer, line).ok()?;
         let (after, now, p) = (self.record(), self.doc.oplog_vv(), peer(signer, line));
@@ -447,7 +457,7 @@ impl Item {
                 out.push(Touch::Set(Loc::Field(k), None));
             }
         }
-        Some(crate::rules::dedup(out))
+        Some(Footprint { touches: crate::rules::dedup(out), before, after })
     }
 
     /// The history up to `frontiers` and nothing after, as before an import that went wrong.

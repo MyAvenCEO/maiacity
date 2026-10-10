@@ -1,7 +1,7 @@
 //! Rules: caps that name ops, as in `avendb/spec/AvenDB/Rules.lean` (`avendb/docs/OPS.md`, caps that name ops). A
 //! write cap's slice may carry rules: which ops its grantee's writes may make, as op patterns. Every reader of an
 //! entry judges each write by its touches, what its Loro ops did, place by place, read off the write imported on the
-//! version it builds on (`doc::Item::footprint`, `history::History::touches`): a value set at a place, rows of a list
+//! version it builds on (`doc::Item::footprint`, `history::History::reading`): a value set at a place, rows of a list
 //! added, deleted or moved, the entry created, a proposal started, another line merged in. Rules allow a write when
 //! each touch is allowed by one of them.
 //!

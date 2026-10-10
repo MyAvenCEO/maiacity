@@ -115,32 +115,45 @@ impl Flat {
             }
         }
         for (f, ks) in &self.lists {
-            let row = |k: &Key| {
-                let mut r = Record::new();
-                r.insert("id".into(), k.id.into());
-                for (p, v) in self.leaves.range(Path::Row(f.clone(), *k, String::new())..) {
-                    match p {
-                        Path::Row(f2, k2, g) if f2 == f && k2 == k => drop(r.insert(g.clone(), v.clone())),
-                        _ => break,
-                    }
-                }
-                Value::Object(r)
-            };
-            out.insert(f.clone(), ks.iter().map(row).collect());
+            out.insert(f.clone(), ks.iter().map(|k| Value::Object(self.row(f, k))).collect());
         }
         out
     }
+
+    /// Row `k` of list `f`: its id and its fields.
+    pub fn row(&self, f: &str, k: &Key) -> Record {
+        let mut r = Record::new();
+        r.insert("id".into(), k.id.into());
+        for (p, v) in self.leaves.range(Path::Row(f.to_string(), *k, String::new())..) {
+            match p {
+                Path::Row(f2, k2, g) if f2 == f && k2 == k => drop(r.insert(g.clone(), v.clone())),
+                _ => break,
+            }
+        }
+        r
+    }
+
+    /// Row `k` is in list `f`.
+    pub fn holds(&self, f: &str, k: &Key) -> bool {
+        self.lists.get(f).is_some_and(|ks| ks.contains(k))
+    }
+
+    /// The changes that make this record into `after`: each list's new rows, by field, then each place's new value, by
+    /// place.
+    pub fn diff(&self, after: &Flat) -> Vec<Change> {
+        let (r, s) = (self, after);
+        let lists: BTreeSet<&String> = r.lists.keys().chain(s.lists.keys()).collect();
+        let orders = lists.into_iter().filter(|f| r.lists.get(*f) != s.lists.get(*f));
+        let orders = orders.map(|f| Change::Order(f.clone(), s.lists.get(f).cloned()));
+        let paths: BTreeSet<&Path> = r.leaves.keys().chain(s.leaves.keys()).collect();
+        let sets = paths.into_iter().filter(|p| r.leaves.get(*p) != s.leaves.get(*p));
+        orders.chain(sets.map(|p| Change::Set(p.clone(), s.leaves.get(p).cloned()))).collect()
+    }
 }
 
-/// The changes that make `before` into `after`: each list's new rows, by field, then each place's new value, by place.
+/// The changes that make `before` into `after` (`Flat::diff`).
 pub fn diff(before: &Record, after: &Record) -> Vec<Change> {
-    let (r, s) = (Flat::of(before), Flat::of(after));
-    let lists: BTreeSet<&String> = r.lists.keys().chain(s.lists.keys()).collect();
-    let orders = lists.into_iter().filter(|f| r.lists.get(*f) != s.lists.get(*f));
-    let orders = orders.map(|f| Change::Order(f.clone(), s.lists.get(f).cloned()));
-    let paths: BTreeSet<&Path> = r.leaves.keys().chain(s.leaves.keys()).collect();
-    let sets = paths.into_iter().filter(|p| r.leaves.get(*p) != s.leaves.get(*p));
-    orders.chain(sets.map(|p| Change::Set(p.clone(), s.leaves.get(p).cloned()))).collect()
+    Flat::of(before).diff(&Flat::of(after))
 }
 
 /// What a list's new rows do to its old ones: the rows they add, the rows they drop, and whether the rows they keep

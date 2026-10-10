@@ -37,7 +37,7 @@ import {
  *   pq: number | null }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
  *   parents: string[], depth: number, bytes: number, vaults: string[], counted: boolean | null,
- *   allowed: boolean | null }} SignedEdit
+ *   allowed: boolean | null, why: 'builds-on' | 'sealed' | 'unfit' | 'rules' | null }} SignedEdit
  * @typedef {{ name: string, type: string, hint: string, required: boolean, fallback: string | null,
  *   fields: Field[] }} Field
  * @typedef {{ schemas: SchemaView[], lenses: (LensView | null)[], name: string }} Family

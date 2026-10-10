@@ -12,4 +12,5 @@ import AvenDB.Examples
 import AvenDB.Vectors
 import AvenDB.Ops
 import AvenDB.Rules
+import AvenDB.Schemas
 import AvenDB.OpsVectors

@@ -230,7 +230,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     post.writes = st.writes ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ w.edit = edit.id ∧ w.author = edit.author ∧
       (∀ x ∈ st.writes, x.edit ≠ w.edit) ∧ depsIn st.writes w = true ∧
-      ∃ v e a s g d p via cr tg pr tc, edit.action = .write v e a s g d p via cr tg pr tc) ∨
+      ∃ v e a s g d p via cr tg pr tc ft, edit.action = .write v e a s g d p via cr tg pr tc ft) ∨
     (post.writes.Sublist st.writes ∧ ∀ w ∈ post.writes, depsIn post.writes w = true) := by
   unfold apply at h
   dsimp only at h
@@ -244,8 +244,8 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       intro x hx hxe
       simp only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq] at hok
       exact hok (.inl ⟨x, hx, hxe⟩)
-    have hw : ∃ v e a s g d p via cr tg pr tc, edit.action = .write v e a s g d p via cr tg pr tc :=
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, hact⟩
+    have hw : ∃ v e a s g d p via cr tg pr tc ft, edit.action = .write v e a s g d p via cr tg pr tc ft :=
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
     split at h
     · -- a new entry: its first write builds on nothing
       repeat' split at h
@@ -539,7 +539,7 @@ theorem resolve_stands (edits : List Edit) :
 theorem replay_writes_from :
     ∀ (l : List Edit) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
       ∃ o ∈ l, o.id = w.edit ∧ o.author = w.author ∧
-        ∃ v e a s g d p via cr tg pr tc, o.action = .write v e a s g d p via cr tg pr tc
+        ∃ v e a s g d p via cr tg pr tc ft, o.action = .write v e a s g d p via cr tg pr tc ft
   | [], _, _, h => .inl h
   | edit :: edits, st, w, h => by
     change w ∈ (replay ((step st edit).getD st) edits).writes at h
@@ -658,7 +658,7 @@ theorem T16_resolved_removals_stand (edits : List Edit) :
 theorem T18_checkpointed_writes (edits : List Edit) {w : Write} (hw : w ∈ (view (checkpointed edits)).writes) :
     ∃ c ∈ edits, c.author = w.author ∧ ∃ e covers, c.action = .checkpoint e covers ∧ w.edit ∈ covers := by
   rw [view_eq_replay] at hw
-  rcases replay_writes_from _ {} w hw with h | ⟨o, ho, hid, hauth, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
+  rcases replay_writes_from _ {} w hw with h | ⟨o, ho, hid, hauth, _, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
   · simp at h
   · -- the write's edit counts only with a checkpoint by its author that covers it
     obtain ⟨-, hkeep⟩ := List.mem_filter.1 (standing_mem _ o ho)

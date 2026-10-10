@@ -541,7 +541,8 @@ pub struct Lab {
     now: u64,
     /// A dry run (`dry`): a write is checked, proven and refused as ever, and then not made.
     dry: bool,
-    /// Its devices ignore the rules of the caps they write through (`ignoring_rules`).
+    /// Its devices are a patched app's (`patched`): they ignore the rules of the caps they write through, and the
+    /// schemas of what they write.
     lawless: bool,
 }
 
@@ -1290,6 +1291,26 @@ impl Lab {
         proofs.next().map(Some).ok_or(Refusal::NotAllowed)
     }
 
+    /// The proof write `w` of device `on` carries (`prove`), with what it touches as its readers will read it off
+    /// `content` on the history `h` holds before it, of an entry of vault `vault` (`History::reading`). `NotAView` if
+    /// it doesn't fit the schemas the entry was written under, of the vault's lane and the built-in ones, unless the
+    /// device is a patched app's (`patched`).
+    fn proven(
+        &self,
+        on: SignerId,
+        view: &State,
+        (vault, h): (VaultId, &History),
+        w: &Write,
+        content: &[u8],
+    ) -> Result<Option<Proof>, Refusal> {
+        let read = h.reading(w, Some(content), on, &Lane::with_built_ins(view.lane_of(vault)));
+        let proof = self.prove(on, view, w, read.touches.as_deref())?;
+        if !(read.fits || self.lawless) {
+            return Err(Refusal::NotAView);
+        }
+        Ok(proof)
+    }
+
     /// Run `f` dry: every write it asks for is checked, proven and refused as ever, and then not made (`may`).
     pub fn dry<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
         let was = std::mem::replace(&mut self.dry, true);
@@ -1298,10 +1319,11 @@ impl Lab {
         out
     }
 
-    /// Run `f` as devices that ignore the rules of the caps they write through, as a patched app would: their writes
-    /// carry no proof and are made all the same, and no reader of their entries counts them, the writer's own device
-    /// neither, nor anything built on them (`State::uncounted`).
-    pub fn ignoring_rules<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
+    /// Run `f` as devices of a patched app, which ignore the rules of the caps they write through and the schemas of
+    /// what they write: their writes carry no proof and are made all the same, whether they fit or not, and no reader
+    /// of their entries counts those that break either, the writer's own device neither, nor anything built on them
+    /// (`History::reading`, `State::uncounted`).
+    pub fn patched<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
         let was = std::mem::replace(&mut self.lawless, true);
         let out = f(self);
         self.lawless = was;
@@ -1388,8 +1410,8 @@ impl Lab {
             body: vec![],
         };
         let (edit, w) = self.check_write(on, &view, action)?;
-        let proof = self.prove(on, &view, &w, Some(&[Touch::Create]))?;
         let (tags, content) = (TagDelta { add: tags, remove: vec![] }, item.export(&Version::default()));
+        let proof = self.proven(on, &view, (vault, &History::default()), &w, &content)?;
         self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof }, x)?;
         Ok(entry)
     }
@@ -1457,8 +1479,9 @@ impl Lab {
     }
 
     /// Add the tags `add` to an entry and remove the tags `remove`, on device `on`, acting for `actor`: a write on its
-    /// main line carrying only the tags. They count at once when `actor` is the entry's vault; anyone else asks the
-    /// vault's stewards, who answer with what its caps let it ask for.
+    /// main line carrying only the tags, building on the line's heads, as the device counts them. They count at once
+    /// when `actor` is the entry's vault; anyone else asks the vault's stewards, who answer with what its caps let it
+    /// ask for.
     pub fn tag(
         &mut self,
         on: SignerId,
@@ -1470,7 +1493,8 @@ impl Lab {
         self.unlocked(on)?;
         let syms = |ts: &[&str]| ts.iter().map(|&t| Sym::new(t)).collect();
         let tags = TagDelta { add: syms(add), remove: syms(remove) };
-        self.make(on, actor, entry, Draft { proposal: Proposal::Main, deps: vec![], body: vec![] }, tags)
+        let deps = self.shown(on, entry).heads(MAIN);
+        self.make(on, actor, entry, Draft { proposal: Proposal::Main, deps, body: vec![] }, tags)
     }
 
     /// Start a proposal named `name` of an entry, from the version `from` (any of its writes, with what they build on),
@@ -1603,14 +1627,7 @@ impl Lab {
         let (via, create) = (vec![], None);
         let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body: vec![] };
         let (edit, w) = self.check_write(on, &view, action)?;
-        // what it touches, read as its readers will, where it needs a proof
-        let proof = match view.lets(&w, None, None) {
-            true => None,
-            false => {
-                let touches = self.shown(on, entry).touches(&w, Some(&content), on);
-                self.prove(on, &view, &w, touches.as_deref())?
-            }
-        };
+        let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, &content)?;
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof }, x)
     }
 
@@ -2743,31 +2760,33 @@ fn key_box(
 fn show_items(d: SignerId, store: &mut Store) {
     let st = &store.replay.state;
     let mut old = std::mem::take(&mut store.shown);
-    let mut shown = BTreeMap::new();
+    let (mut shown, mut lanes) = (BTreeMap::new(), HashMap::new());
     for en in st.entries() {
         let ws: Vec<&Write> = st.entry_writes(en.id).collect();
         let mut h = Hasher::new("lab shown");
         for w in &ws {
             h.update(&w.edit.0).update(&[store.bodies.contains_key(&w.edit) as u8]);
         }
+        // the lane it judges the writes by: it only grows
+        h.update(&(st.lane_of(en.vault).count() as u64).to_be_bytes());
         let print = h.finalize();
         if let Some(s) = old.remove(&en.id).filter(|s| s.print == print) {
             shown.insert(en.id, s);
             continue;
         }
-        // each write counted where its caps let it through, by its proof and what it touches, and what it builds on
-        // counts (`policy::State::lets`); what it touches read only where that takes it, on one scratch item
+        // each write counted where what it builds on counts, it fits the schemas the entry was written under, and its
+        // caps let it through, by its proof and what it touches (`policy::State::lets`): both read off it on one
+        // scratch item (`History::reading_on`)
+        let lane = lanes.entry(en.vault).or_insert_with(|| Lane::with_built_ins(st.lane_of(en.vault)));
         let (mut history, mut scratch) = (History::default(), None);
         for w in ws {
             let body = store.bodies.get(&w.edit);
             let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
             let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
-            let counted = w.deps.iter().all(counts)
-                && (st.lets(w, None, None) || {
-                    let touches = history.touches_on(&mut scratch, w, content, d);
-                    st.lets(w, proof, touches.as_deref())
-                });
-            let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), counted };
+            let read = w.deps.iter().all(counts).then(|| history.reading_on(&mut scratch, w, content, d, lane));
+            let fits = read.as_ref().is_none_or(|r| r.fits);
+            let counted = read.is_some_and(|r| r.fits && st.lets(w, proof, r.touches.as_deref()));
+            let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, counted };
             history.push(change).expect("the view's writes are causally closed");
         }
         let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();
