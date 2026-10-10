@@ -521,8 +521,17 @@ pub struct EconomyMip {
     /// it starts from), cards: [whole config cards as they will be once accepted (for a world: on top of the world it follows, its cards and values as played; send only what changes): { id, kind
     /// (policy, world, resource or recipe), name, description, values: { key: number } (keys from economy_configs'
     /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }],
-    /// remove: [ids of cards to take out] }
+    /// remove: [ids of cards to take out], prs: [the GitHub PRs whose engine changes in code it needs (a hook its card code
+    /// calls, a rule the page runs): { number, title }, at most 10; shown on the proposal as links] }
     pub mip: Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct EconomyMipPrs {
+    /// the MIP's number
+    pub number: u64,
+    /// the whole list, replacing what it links now (empty clears it): [{ number, title }], at most 10, PRs of MyAvenCEO/maiacity
+    pub prs: Value,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1587,6 +1596,13 @@ impl Studio {
             o.insert("via".to_string(), json!("mcp"));
         }
         text(self.api("POST", "/api/economy/mips", Some(mip)).await)
+    }
+
+    #[tool(
+        description = "Link the GitHub PRs a MIP needs: the engine changes in code its cards rely on (a hook their code calls, a rule the page runs), shown on the proposal as links beside what it changes in the cards. Open or decided MIPs; its author or an admin; the list replaces what it links now. Only a link: the code ships by merging the PR."
+    )]
+    async fn economy_mip_prs(&self, Parameters(a): Parameters<EconomyMipPrs>) -> String {
+        text(self.api("POST", &format!("/api/economy/mips/{}/prs", a.number), Some(json!({ "prs": a.prs }))).await)
     }
 
     #[tool(

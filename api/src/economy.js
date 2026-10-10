@@ -234,6 +234,7 @@ const mipRow = (r) => ({
   world: r.world ?? null,
   world_id: r.world_id ?? null,
   world_name: r.world_name ?? null,
+  prs: r.prs ?? [],
   status: r.status,
   author: r.author,
   author_name: r.author_name ?? null,
@@ -246,6 +247,22 @@ const mipRow = (r) => ({
 });
 
 const MIP_SELECT = "SELECT m.*, f.name AS author_name, w.name AS world_name FROM mips m LEFT JOIN founders f ON f.id = m.author LEFT JOIN econ_runs w ON w.id = m.world_id";
+
+/** The GitHub PRs a MIP needs: the engine changes, in code, that its cards rely on (a hook the cards call, a new rule
+ *  the page runs). A list of { number, title }, at most 10, each number once; a bare number is fine too. */
+function prsOf(list) {
+  if (list == null) return [];
+  if (!Array.isArray(list)) throw new EconomyError("prs is a list of { number, title }.");
+  const out = [];
+  for (const p of list) {
+    const number = Number(typeof p === "object" && p ? p.number : p);
+    if (!Number.isInteger(number) || number < 1) throw new EconomyError("Each PR needs its number, a whole number from 1.");
+    if (out.some((o) => o.number === number)) continue;
+    out.push({ number, title: (typeof p === "object" && p ? text(p.title, 160) : null) || null });
+  }
+  if (out.length > 10) throw new EconomyError("At most 10 PRs on a MIP.");
+  return out;
+}
 
 /** Propose: a title, a description in prose, and the cards. `via` says where it came from: the page or an agent over MCP. */
 export async function createMip(author, body) {
@@ -265,9 +282,9 @@ export async function createMip(author, body) {
   const m = await checkMip(body);
   const via = body?.via === "mcp" ? "mcp" : "page";
   const { rows } = await db.query(
-    `INSERT INTO mips (title, description, config_id, action, name, about, from_id, cards, remove, base, base_version, author, via, world, world_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, ($9::text)::jsonb, ($10::text)::jsonb, $11, $12, $13, ($14::text)::jsonb, $15) RETURNING number`,
-    [title, text(body?.description, 20000), m.config, m.action, m.name, m.about, m.from, json(m.cards), json(m.remove), json(m.base), m.base_version, author, via, json(m.world), worldId],
+    `INSERT INTO mips (title, description, config_id, action, name, about, from_id, cards, remove, base, base_version, author, via, world, world_id, prs)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, ($9::text)::jsonb, ($10::text)::jsonb, $11, $12, $13, ($14::text)::jsonb, $15, ($16::text)::jsonb) RETURNING number`,
+    [title, text(body?.description, 20000), m.config, m.action, m.name, m.about, m.from, json(m.cards), json(m.remove), json(m.base), m.base_version, author, via, json(m.world), worldId, json(prsOf(body?.prs))],
   );
   return getMip(Number(rows[0].number));
 }
@@ -333,6 +350,18 @@ export async function decideMip(number, by, { accept, note } = {}) {
     );
     return { number, status: "accepted", ...result };
   });
+}
+
+/** Link the GitHub PRs a MIP needs, open or decided: its author or an admin sets the whole list (an empty one clears it).
+ *  Only a link: the code itself ships by merging the PR, never through the MIP. */
+export async function linkMipPrs(number, who, admin, prs) {
+  const list = prsOf(prs ?? []);
+  const r = await db.query("UPDATE mips SET prs = ($3::text)::jsonb WHERE number = $1 AND (author = $2 OR $4)", [number, who, json(list), !!admin]);
+  if (!r.affectedRows) {
+    await getMip(number); // 404 when there is no such MIP
+    throw new EconomyError("Only its author or an admin can link PRs to a MIP.", 403);
+  }
+  return getMip(number);
 }
 
 /** The author takes back an open MIP of their own. */

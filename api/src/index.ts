@@ -26,7 +26,7 @@ import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queue
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
-import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
+import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -238,6 +238,20 @@ const server = Bun.serve({
         try {
           const body = ((await readJson(req)) ?? {}) as { accept?: boolean; note?: string };
           return json(req, await decideMip(Number(req.params.number), me.id, { accept: body.accept === true, note: body.note }));
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // POST { prs: [{ number, title }] } — the GitHub PRs a MIP needs (its engine changes in code); its author or an admin
+    "/api/economy/mips/:number/prs": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "economy:play");
+        if (me instanceof Response) return me;
+        try {
+          const body = ((await readJson(req)) ?? {}) as { prs?: unknown };
+          return json(req, await linkMipPrs(Number(req.params.number), me.id, can(me, "economy:admin"), body.prs));
         } catch (e) {
           return fail(req, e);
         }
