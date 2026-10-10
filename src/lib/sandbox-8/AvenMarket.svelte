@@ -1104,7 +1104,7 @@
 	{/if}
 	{#if page === 'stats'}
 		<div class="statspage">
-			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} />
+			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} market={snap.market} />
 		</div>
 	{/if}
 	{#if page === 'policy' || page === 'world'}
