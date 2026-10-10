@@ -164,6 +164,7 @@ function harvestFields(world, a) {
 export function invest(world, a, slot, code) {
 	if (!fieldsOn() || !a.alive || !a.fields || !Number.isInteger(code) || code <= 0) return null;
 	const f = a.fields[slot];
+	const was = f ? { crop: f.crop, level: f.level } : null;
 	const pay = (n, what) => {
 		coopTake(world, a, n, what);
 		a.invested = (a.invested ?? 0) + n;
@@ -197,6 +198,12 @@ export function invest(world, a, slot, code) {
 	}
 	syncFields(world, a);
 	log(world, a, { kind: 'field', slot, ...change });
+	// what moved, for the brains (forecast 2): its own moves, and the valley's last day of them
+	const move = { day: world.day, t: world.t, name: a.name, slot, ...(f && code !== 1 ? { from: was.crop, fromLevel: was.level } : {}), to: a.fields[slot].crop, level: a.fields[slot].level, kind: !f ? 'open' : code === 1 ? 'level' : 'change' };
+	(a.fieldMoves ??= []).push(move);
+	if (a.fieldMoves.length > 12) a.fieldMoves.shift();
+	(world.fieldLog ??= []).push(move);
+	world.fieldLog = world.fieldLog.filter((m) => world.t - m.t <= DAY_S);
 	return change;
 }
 
@@ -400,6 +407,9 @@ export function updateMarket(world) {
 		const recent = world.trades.filter((t) => t.good === g && world.t - t.t < DAY_S);
 		const units = recent.reduce((n, t) => n + t.qty, 0);
 		m.price = units ? cents(recent.reduce((n, t) => n + t.qty * t.price, 0) / units) : world.lastPrice[g];
+		// postedShown (World 29): in a posted-price market the posted price is the price, traded or not; the last traded
+		// one froze for a crop nobody grew (World 28: fruits shown at 0.51 for ten days while posted at 185)
+		if (RULES.postedShown && isPosted && m.posted != null) m.price = m.posted;
 		if (m.price == null) continue;
 		// the price over time, for the chart: one point an hour, the last 120 days
 		if (m.series.at(-1)?.t === world.t) m.series.at(-1).price = m.price;
