@@ -1319,10 +1319,15 @@
 						<button onclick={() => select(row.id)}>
 							<i style:background={row.colour}></i>
 							<b>{row.name}</b>
-							<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>
+							<!-- a fields valley (its board shows stores): no land squares (its fields are on the map), and a dead aven's row
+							     is one line, when it died and comes back (Samuel, 2026-10-10) -->
+							{#if row.stock && !row.alive}<span class="num gone">died day {row.diedOn} · back day {row.diedOn + RULES.rebirthDays}</span>
+							{:else}
+							{#if !row.stock}<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>{/if}
 							<span class="hp" title="health {row.alive ? `${row.health} of ${RULES.healthMax}` : '0'}"><i class:low={row.health / RULES.healthMax <= 0.3} style:width="{row.alive ? Math.max(0, Math.min(100, (row.health / RULES.healthMax) * 100)) : 0}%"></i></span>
 							{#if row.stock}<span class="store" title="in store: {GOODS.map((g) => `${row.stock?.[g] ?? 0} ${GOOD_LABEL[g]}`).join(', ')}">{#each GOODS as g (g)}<em class:none={!(row.stock?.[g] > 0)} style:background={GOOD_COLOUR[g]}>{row.stock?.[g] ?? 0}</em>{/each}</span>{/if}
 							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
+							{/if}
 						</button>
 					</li>
 				{/each}
@@ -2058,7 +2063,11 @@
 		margin-left: auto;
 	}
 	.board.stocked button {
-		grid-template-columns: 14px 3.2rem auto 1fr auto 4.6rem;
+		grid-template-columns: 14px 3.2rem 1fr auto 4.6rem;
+	}
+	.board.stocked .num.gone {
+		grid-column: 3 / -1;
+		white-space: nowrap;
 	}
 	/* each aven's store on the board, between its health and its HEARTS */
 	.board .store {
