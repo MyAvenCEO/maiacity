@@ -91,7 +91,7 @@ fn server_holds_only_ciphertext() {
     assert!(w.lab.fetched(w.server, h.welcome) > 0 && w.lab.fetched(w.server, h.onboarding) > 0);
     let st = w.lab.state(w.mac_a);
     let relay = st.caps_over(h.coop).find(|cp| cp.cap.grantee == vault(w.avenceo)).expect("avenCEO's relay cap");
-    assert!(relay.cap.wide && relay.cap.role == Role::Relay);
+    assert!(relay.cap.wide && relay.cap.role == Role::Backup);
     assert!(!st.key_fams().contains(&KeyFam::Cap(h.coop, relay.id)));
     // it holds no key of the coop: not its seed, its cell's or its entries'…
     let keys = keys_of(st, h.coop);

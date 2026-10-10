@@ -247,7 +247,7 @@ pub fn coop_on(w: &mut World) -> VaultId {
 /// Vault `v` gives avenCEO relay on all its entries, on Alice's Mac, for the server to hold and pass them on: a wide
 /// cap, which reaches every cell and splits none.
 pub fn relay_on(w: &mut World, v: VaultId) -> CapId {
-    let relay = cap(v, vault(w.avenceo), Role::Relay, Selector::All);
+    let relay = cap(v, vault(w.avenceo), Role::Backup, Selector::All);
     w.lab.issue(w.mac_a, &[w.mac_a], relay).expect("the vault gives the server relay")
 }
 

@@ -148,7 +148,7 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     assert!(!relay.admission().admits(&bob_mac), "and not yet Bob's");
     // the coop gives this avenCEO relay on the whole of it, and Alice writes Welcome into it
     let relayed = move |lab: &mut Lab, me| {
-        lab.issue(me, &[me], cap(coop, vault(v), Role::Relay, Selector::All))?;
+        lab.issue(me, &[me], cap(coop, vault(v), Role::Backup, Selector::All))?;
         lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))
     };
     let welcome = mac.act(relayed).await.expect("the coop, relayed by avenCEO, and Welcome");
@@ -370,7 +370,7 @@ async fn a_persons_first_browser_founds_their_vault_through_a_relay_open_to_sign
     // in its ten minutes, the browser founds her vault, takes the server's card and gives it relay on all of it
     let eve = browser.act(move |lab, me| human_on(lab, eve_key, &[me])).await;
     assert!(browser.contact(server.id()).await.expect("the server's card") > 0);
-    let relay_on = move |lab: &mut Lab, me| lab.issue(me, &[me], cap(eve, vault(avenceo), Role::Relay, Selector::All));
+    let relay_on = move |lab: &mut Lab, me| lab.issue(me, &[me], cap(eve, vault(avenceo), Role::Backup, Selector::All));
     let relayed = browser.act(relay_on).await.expect("Eve's vault, relayed by the server");
     until("the server learns Eve's browser from what it relays", || async { admission.admits(&browser.id()) }).await;
     let holds = move |lab: &Lab, me| lab.state(me).vault(eve).is_some() && lab.state(me).cap(relayed).is_some();

@@ -345,7 +345,7 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 });
 
 /** What a role lets its holder do, as a verb. */
-const VERBS = /** @type {Record<string, string>} */ ({ relay: 'relay', read: 'read', write: 'write', owner: 'own' });
+const VERBS = /** @type {Record<string, string>} */ ({ relay: 'relay', backup: 'back up', read: 'read', write: 'write', owner: 'own' });
 
 /**
  * What edit `edit` does, in words, naming what it touches as `s` names it; `edits` finds an edit by its id, a cap's

@@ -124,7 +124,7 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
     assert!(!admission.admits(&mac.id()), "the server knows no device of Alice's yet");
     // on Alice's Mac, the coop gives this avenCEO relay on the whole of it, and Alice writes Welcome into it
     let relayed = move |lab: &mut Lab, me| {
-        lab.issue(me, &[me], cap(coop, vault(v), Role::Relay, Selector::All))?;
+        lab.issue(me, &[me], cap(coop, vault(v), Role::Backup, Selector::All))?;
         lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))
     };
     let welcome = mac.act(relayed).await.expect("the coop, relayed by avenCEO, and Welcome");

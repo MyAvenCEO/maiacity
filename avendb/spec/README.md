@@ -37,7 +37,7 @@ lake exe vectors
 | `Proposals.lean` | Proposals write by write: each write extends one line of its entry's history, the main line or a proposal; a line's history and heads; the order writes come in (`Ordered`); T10f to T10h, which tie `Doc.lean`'s merge and promote to the writes |
 | `Lens.lean` | The markdown document and the todo in two schema versions and the lenses between them; items as stored, projected on read into each app's schema, and edits through each app's view; the lens laws (T9) |
 | `Props.lean` | The predicates and views the theorems are stated with, apart from their proofs |
-| `Theorems.lean` | T1 to T8 and T11 to T25; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
+| `Theorems.lean` | T1 to T8 and T11 to T26; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas for vaults and writes: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane |
 | `CapLemmas.lean` | The helper lemmas for caps, cells and removals: well-formed cap chains (T22), cells meaning what the selectors say (T23), the replay and strong removal (T16, T18), the generations along a replay (T15) |
 | `RelayLemmas.lean` | The proof of T25: every rule reads only the operational part of a state, so a relay that opens no selector, type or tag has every edit stand or fall as an owner does |
@@ -80,6 +80,7 @@ lake exe vectors
 | T23 | Cells mean what the caps say: where an entry's cell, revoked caps left aside, is its semantic cell, the write rule every peer checks without reading a selector, a type or a tag allows exactly the vaults the caps' selectors allow; and that rule never refuses a creation inside its creator's slice | Proven | `t23_cells_mean_what_caps_say`, `scenario_19_share_every_entry_of_a_type`, `scenario_23_creating_through_a_cap`, the vectors |
 | T24 | An entry's key reaches only its cell's readers: whoever opens the key of an entry in its current stay, at its cell's current generation, may open that cell's current key; and over the history a holder opens a key of an entry only if it could read some cell the entry was in | Proven | `t24_entry_keys_reach_only_cell_readers`, `scenario_21_a_tag_moves_an_entry_out_of_a_slice`, `scenario_26_a_cell_that_comes_back_into_use_moves_on` |
 | T25 | Blind relays: a peer that reads no selector, no type and no tag, such as the server, holding the same edits as an owner, has every edit stand or fall alike and knows the same of the vaults, caps, cells, writes and keys | Proven | `t25_blind_relays`, `scenario_25_wide_caps_relays_and_public` |
+| T26 | Relay alone: a device acting for no vault of a cell, with nothing but relay caps over that vault, receives none of the cell's edits; relay lets the server know a vault's devices and keeps nothing, backup keeps the ciphertext | Proven | `T26_relay_keeps_nothing`, `a_relay_cap_keeps_nothing` |
 
 The Rust scenario tests (`crates/avendb/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
 and keys in the Lab. The vectors (`crates/avendb/tests/vectors.rs`) hold the Rust rules to the model's answers edit by

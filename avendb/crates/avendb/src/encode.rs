@@ -358,10 +358,11 @@ impl Encode for Principal {
 impl Encode for Role {
     fn encode(&self, out: &mut Vec<u8>) {
         out.push(match self {
-            Role::Relay => 0,
+            Role::Backup => 0,
             Role::Read => 1,
             Role::Write => 2,
             Role::Owner => 3,
+            Role::Relay => 4,
         });
     }
 }

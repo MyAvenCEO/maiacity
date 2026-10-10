@@ -67,7 +67,7 @@ fn pick_from<'a, T>(rng: &mut Rng, xs: &'a [T]) -> Option<&'a T> {
 const SIGNERS: [SignerId; 11] =
     [PASSKEY_A, MAC_A, PHONE_A, PASSKEY_B, MAC_B, PASSKEY_C, MAC_C, PASSKEY_D, MAC_D, NEW_DEVICE, STRANGER];
 const ENTRIES: [EntryId; 9] = [WELCOME, CHARTER, ONBOARDING, DOOR, SEEDS, SOLAR, PLAN, DIARY, LAMP];
-const ROLES: [Role; 4] = [Role::Relay, Role::Read, Role::Write, Role::Owner];
+const ROLES: [Role; 5] = [Role::Relay, Role::Backup, Role::Read, Role::Write, Role::Owner];
 const TYPES: [&str; 3] = ["doc", "note", "todo"];
 const TAGS: [&str; 4] = ["work", "home", "garden", "door"];
 const BLOBS: [&[u8]; 3] = [b"a schema", b"its next version", b"a lens between the two"];
@@ -1148,7 +1148,7 @@ fn ids(edits: &[Edit]) -> HashSet<EditId> {
 }
 
 /// Device `d` may receive the edits of the cell of the caps `caps` of vault `v` by `st` (`mayReceiveCell`): it acts for
-/// the vault, or for the grantee of a live cap over it, relay or more, that is in the cell or wide, or such a cap is
+/// the vault, or for the grantee of a live cap over it, backup or more, that is in the cell or wide, or such a cap is
 /// public.
 fn may_receive_cell(st: &State, d: SignerId, v: VaultId, caps: &[CapId]) -> bool {
     let names = |g: Grantee| match g {
@@ -1156,8 +1156,11 @@ fn may_receive_cell(st: &State, d: SignerId, v: VaultId, caps: &[CapId]) -> bool
         Grantee::Principal(Principal::Signer(_)) => false,
         Grantee::Public => true,
     };
+    let keeps = |cp: &Issued| cp.cap.role.allows(Role::Backup);
     st.acts_for(d, v)
-        || st.caps_over(v).any(|cp| st.live(cp.id) && (cp.cap.wide || caps.contains(&cp.id)) && names(cp.cap.grantee))
+        || st.caps_over(v).any(|cp| {
+            st.live(cp.id) && keeps(cp) && (cp.cap.wide || caps.contains(&cp.id)) && names(cp.cap.grantee)
+        })
 }
 
 /// Device `d` may receive the edits of entry `e` by `st` (`mayReceive`): it may receive the entry's cell.

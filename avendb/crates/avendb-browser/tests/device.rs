@@ -85,7 +85,7 @@ async fn found(
     nonce: [u8; 32],
 ) -> anyhow::Result<Device> {
     let (fresh, unlock) = browser.fresh(&start, nonce);
-    Device::found(start, server, p256, fresh, unlock, browser).await
+    Device::found(start, server, p256, fresh, unlock, browser, true).await
 }
 
 /// A new browser's device at `start` that links through the device whose code is `offer`, as the page's does
@@ -435,7 +435,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     assert_eq!((it.ty.as_deref(), it.tags.as_deref()), (Some("note"), Some(&["garden".to_string()][..])));
     let (alices, bobs) = (role(&it.roles, alice), role(&it.roles, bob));
     assert_eq!((it.vault, it.by, alices, bobs), (alice, alice, Some(Role::Owner), None));
-    assert_eq!(role(&it.roles, avenceo), Some(Role::Relay));
+    assert_eq!(role(&it.roles, avenceo), Some(Role::Backup));
     let refused = write_note(&first, bob, alice, titled("Mine", "Not here."), &[]).await;
     assert_eq!(refused.expect_err("refused")["refused"], "NoCap", "avenBOB holds no cap on avenALICE's vault");
     // she shares the note by its id with avenBOB to read, with no ceremony: her browser moves it to the cell of that
@@ -685,8 +685,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert!(sigs.iter().any(|s| s["by"] == "passkey" && s["pq"].as_u64().is_some_and(|n| n > 1000)), "{sigs:?}");
     let browser = hex_of(&first.node().device().0);
     assert!(of("addDevice").iter().any(|o| o["fields"]["device"].as_str() == Some(browser.as_str())));
-    let relay = |o: &&Value| o["fields"]["role"] == "relay" && o["fields"]["wide"] == true;
-    assert!(of("cap").iter().any(relay), "avenCEO's relay on the whole of her vault");
+    let backup = |o: &&Value| o["fields"]["role"] == "backup" && o["fields"]["wide"] == true;
+    assert!(of("cap").iter().any(backup), "avenCEO's backup of the whole of her vault");
     let writes = of("write");
     let mine = writes.iter().filter(|o| o["fields"]["entry"].as_str() == Some(hex_of(&note.0).as_str()));
     assert_eq!(mine.clone().count(), kinds(&shown).len(), "each write of the note");

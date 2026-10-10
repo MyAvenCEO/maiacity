@@ -1,7 +1,7 @@
 <!--
 	Share a slice of a vault on, as the acting vault: one entry, or a rule, every note or todo, or those tagged one way
-	and not another, or the whole vault; with another vault this browser knows, which then relays, reads, writes or owns
-	it, or with everyone, who may only read. It starts at the least: the one entry it opens on, or else the vault's
+	and not another, or the whole vault; with another vault this browser knows, which then relays, backs up, reads, writes
+	or owns it, or with everyone, who may only read. It starts at the least: the one entry it opens on, or else the vault's
 	todos, to read. A rule is a cap on whatever matches it, now and later, never a list: an entry tagged to match it
 	later is shared then, one untagged leaves it, and the vault's devices move each into the cell the caps that hold it
 	share, under that cell's key (avendb-browser's `Device::share`, a slice as its `words` read it). The preview says
@@ -113,7 +113,8 @@
 		</select>
 		{#if to !== 'public'}
 			<select class="field" bind:value={role} aria-label="Role">
-				<option value="relay">to relay (ciphertext only)</option>
+				<option value="relay">to relay (connects only, keeps nothing)</option>
+				<option value="backup">to back up (ciphertext only)</option>
 				<option value="read">to read</option>
 				<option value="write">to write</option>
 				<option value="owner">to own (your passkey approves)</option>

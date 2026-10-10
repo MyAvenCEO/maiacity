@@ -83,6 +83,7 @@ fn kind(v: &Value) -> Kind {
 fn role(v: &Value) -> Role {
     match v.as_str() {
         Some("relay") => Role::Relay,
+        Some("backup") => Role::Backup,
         Some("read") => Role::Read,
         Some("write") => Role::Write,
         Some("owner") => Role::Owner,

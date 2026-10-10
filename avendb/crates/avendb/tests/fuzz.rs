@@ -393,8 +393,8 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                 0 => c.select = mutate(g, &c.select),
                 1 => c.over = vault(g),
                 2 => {
-                    let roles = [Role::Relay, Role::Read, Role::Write, Role::Owner];
-                    c.role = roles.into_iter().filter(|&r| r != c.role).nth(g.below(3)).expect("another role");
+                    let roles = [Role::Relay, Role::Backup, Role::Read, Role::Write, Role::Owner];
+                    c.role = roles.into_iter().filter(|&r| r != c.role).nth(g.below(4)).expect("another role");
                 }
                 3 => c.wide = !c.wide,
                 4 => {

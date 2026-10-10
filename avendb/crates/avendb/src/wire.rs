@@ -416,10 +416,11 @@ impl Decode for Principal {
 impl Decode for Role {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(Role::Relay),
+            0 => Ok(Role::Backup),
             1 => Ok(Role::Read),
             2 => Ok(Role::Write),
             3 => Ok(Role::Owner),
+            4 => Ok(Role::Relay),
             _ => Err(WireError::Unknown),
         }
     }

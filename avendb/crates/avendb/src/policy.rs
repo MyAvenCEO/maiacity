@@ -61,11 +61,14 @@ pub enum Principal {
     Vault(VaultId),
 }
 
-/// What a cap allows; each role includes the ones before it. Relay stores and forwards the ciphertext of the entries a
-/// cap reaches and gets no key: it is the server's role. Owner also issues caps on its slice and is governance.
+/// What a cap allows; each role includes the ones before it. Relay only knows the vault's devices, so that its holder,
+/// a server, lets them through its relay and helps them find each other: it receives none of the entries. Backup also
+/// stores and forwards the ciphertext of the entries a cap reaches, and gets no key: the server's role by default.
+/// Owner also issues caps on its slice and is governance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Role {
     Relay,
+    Backup,
     Read,
     Write,
     Owner,
@@ -2622,8 +2625,9 @@ mod tests {
 
     #[test]
     fn each_role_includes_the_ones_before_it() {
-        assert!(Role::Owner.allows(Role::Read) && Role::Write.allows(Role::Write) && Role::Read.allows(Role::Relay));
-        assert!(!Role::Relay.allows(Role::Read) && !Role::Read.allows(Role::Write));
+        assert!(Role::Owner.allows(Role::Read) && Role::Write.allows(Role::Write) && Role::Read.allows(Role::Backup));
+        assert!(Role::Backup.allows(Role::Relay) && !Role::Relay.allows(Role::Backup));
+        assert!(!Role::Backup.allows(Role::Read) && !Role::Read.allows(Role::Write));
     }
 
     #[test]

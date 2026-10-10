@@ -35,20 +35,24 @@ inductive Principal where
   | vault  (v : VaultId)
   deriving DecidableEq, Repr
 
-/-- relay < read < write < owner. Relay may hold and pass on the encrypted edits of a slice but gets no key for it:
-    that is the server's role. Owner also shares the slice on and is governance. -/
+/-- relay < backup < read < write < owner. Relay only learns the vault's devices, from its log, so that a server lets
+    them through and helps them find each other: it receives none of the slice's edits. Backup may hold and pass on the
+    encrypted edits of a slice but gets no key for it: that is the server's role by default. Owner also shares the slice
+    on and is governance. -/
 inductive Role where
   | relay
+  | backup
   | read
   | write
   | owner
   deriving DecidableEq, Repr
 
 def Role.rank : Role → Nat
-  | .relay => 0
-  | .read  => 1
-  | .write => 2
-  | .owner => 3
+  | .relay  => 0
+  | .backup => 1
+  | .read   => 2
+  | .write  => 3
+  | .owner  => 4
 
 /-- A cap with role `r` allows what `need` allows. -/
 def Role.allows (r need : Role) : Bool := decide (need.rank ≤ r.rank)

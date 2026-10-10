@@ -283,7 +283,7 @@ fn a_wide_cap_reaches_every_cell_and_splits_none() {
     c.tidy(MAC_A);
     let ceo = aven_of_alice(&mut c);
     let backup = c.issue(MAC_A, &[], alice, vault(dave), Role::Read, Selector::All).unwrap();
-    let relay = c.issue(MAC_A, &[], alice, vault(ceo), Role::Relay, Selector::All).unwrap();
+    let relay = c.issue(MAC_A, &[], alice, vault(ceo), Role::Backup, Selector::All).unwrap();
     // the wide caps split no cell: no entry has anywhere to move, and no cell may name one
     let v = c.log.view();
     let (bobs, none) = (Some(CellId::of(alice, &[work])), Some(CellId::of(alice, &[])));
@@ -298,4 +298,26 @@ fn a_wide_cap_reaches_every_cell_and_splits_none() {
     assert!(relayed.len() == LIBRARY.len() && LIBRARY.iter().all(|e| relayed.contains(e)));
     assert!(LIBRARY.iter().all(|&e| !reads(&v, SERVER, e)));
     assert!(v.has_fam(KeyFam::Cap(alice, backup)) && !v.has_fam(KeyFam::Cap(alice, relay)));
+}
+
+/// Relay alone (T26): Alice gives avenCEO relay on her whole vault, no backup. The server learns her vault's devices,
+/// from her vault's log, so its relay lets them through and they find each other there, and receives none of her
+/// entries; backup on top of it brings them.
+#[test]
+fn a_relay_cap_keeps_nothing() {
+    let mut c = alices_library();
+    let alice = c.alice;
+    let ceo = aven_of_alice(&mut c);
+    let relay = c.issue(MAC_A, &[], alice, vault(ceo), Role::Relay, Selector::All).unwrap();
+    let sent = respond(c.log.edits(), SERVER);
+    assert!(entries_in(&sent).is_empty(), "no entry of Alice's");
+    let known = avendb::policy::view(&sent);
+    let hers = known.vault(alice).expect("Alice's vault, from its log");
+    assert!(hers.devices.contains(&MAC_A), "her devices, for the relay to let through");
+    assert!(sent.iter().any(|e| CapId::from(e.id()) == relay), "the cap itself");
+    // with backup, the server keeps the ciphertext of every entry, and still reads none
+    c.issue(MAC_A, &[], alice, vault(ceo), Role::Backup, Selector::All).unwrap();
+    let kept = entries_in(&respond(c.log.edits(), SERVER));
+    assert!(LIBRARY.iter().all(|e| kept.contains(e)));
+    assert!(LIBRARY.iter().all(|&e| !reads(&c.log.view(), SERVER, e)));
 }

@@ -147,7 +147,7 @@ impl Service {
         tracing::debug!("call {call}");
         match call {
             "status" => Ok(self.status()),
-            "found" => self.found(a.text(0)?, a.text(1)?, a.text(2)?).await,
+            "found" => self.found(a.text(0)?, a.text(1)?, a.text(2)?, a.get(3).as_bool().unwrap_or(true)).await,
             "link" => self.link(a.text(0)?, a.text(1)?, a.text(2)?).await,
             "open" => self.open().await,
             "adopt" => self.adopt(a.get(0), a.list(1)?, a.list(2)?).await,
@@ -174,6 +174,8 @@ impl Service {
             "world" => d.world().await.map_or(Value::Null, |w| w.to_json(d.node().device())),
             "card" => json!(d.card(a.text(0)?).await?),
             "profile" => json!(d.profile(vault(0)?, a.text(1)?).await?),
+            "backsUp" => d.backs_up().await.map_or(Value::Null, Value::from),
+            "backUp" => json!(d.back_up(a.get(0).as_bool().unwrap_or(true)).await?),
             "run" => d.run(a.get(0).clone()).await,
             "database" => d.database(vault(0)?).await,
             "note" => d.note(entry(0)?).await.unwrap_or(Value::Null),
@@ -217,15 +219,15 @@ impl Service {
 
     /// The first device of a new person (`Device::found`), in two ceremonies: the unlock, which is the passkey's pass
     /// for the new device, and one for the vault and the device in it, which also claims the server whose code reads
-    /// `server` if nobody has.
-    async fn found(self: &Arc<Self>, name: String, relay: String, server: String) -> Result<Value> {
+    /// `server` if nobody has; the server backs the vault up unless `backup` is false, and then only relays.
+    async fn found(self: &Arc<Self>, name: String, relay: String, server: String, backup: bool) -> Result<Value> {
         let _life = self.life.lock().await;
         self.fresh()?;
         let server = Offer::from_text(server.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         let start = self.start(&name, &relay)?;
         let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
-        let d = Device::found(start, &server, None, new, unlock, &sheets).await?;
+        let d = Device::found(start, &server, None, new, unlock, &sheets, backup).await?;
         self.started(d, (name, relay, nonce, sheets.credential()?))
     }
 
