@@ -45,6 +45,8 @@ static/**/*.wav
 static/**/*.ogg
 # except the Maia City circle logo, served from the repo for the fields valley's centre (Samuel, 2026-10-10)
 !static/sandbox-8/maia-city-circle.png
+# The OS logo (the Mac app icon set is generated from it, vault/app/icon-source.png).
+!static/the-os.png
 static/**/*.pdf
 
 # The local mirror of the media library: every file as <cid>.<ext> (`bun media library`)
