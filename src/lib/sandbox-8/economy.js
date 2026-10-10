@@ -441,7 +441,7 @@ function clearPosted(world) {
 	for (const g of GOODS) {
 		const ask = (price, round) => posted(ruled('price', { good: g, price, opening, ...round }, price, (v, o) => posted(v) ?? o));
 		// a good's first price: the card's, given what the world it follows last asked for it (inherited), if any
-		let p = posted(world.posted[g]) ?? ask(null, { demand: 0, need: 0, supply: 0, traded: 0, inherited: world.inherited?.[g] ?? null });
+		let p = posted(world.posted[g]) ?? ask(null, { demand: 0, need: 0, supply: 0, traded: 0, inherited: world.inherited?.[g] ?? null, previous: world.inherited ?? null });
 		if (p == null) continue;
 		const sellers = live.filter((a) => spare(a, g) > 0);
 		const buyers = live.filter((a) => want(a, g) > 0 && a.hearts >= p);

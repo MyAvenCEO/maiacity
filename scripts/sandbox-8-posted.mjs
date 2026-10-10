@@ -1,6 +1,6 @@
 // Sandbox 7: a posted-price world (a Trading card with a `price` hook) played for N days with a stand-in brain that
 // always picks the middle answer of each question, so the market alone has to find the prices. Prints each good's
-// posted price, what traded and who is alive, day by day. Run: node scripts/sandbox-8-posted.mjs <cards.json> [days] [seed]
+// posted price, what traded and who is alive, day by day. Run: node scripts/sandbox-8-posted.mjs <cards.json> [days] [seed] [inherited-prices.json]
 import fs from 'node:fs';
 import { createWorld, step, CODE, seeValley, GOODS } from '../src/lib/sandbox-8/economy.js';
 import { newMind, wear, night } from '../src/lib/sandbox-8/mind.js';
@@ -13,6 +13,8 @@ const days = Number(process.argv[3] ?? 40);
 useConfig({ id: 'test', name: 'test', version: 1, cards, params: Object.assign({}, ...cards.map((c) => c.values ?? {})) });
 CODE.run = await loadCode(cards);
 const w = createWorld(Number(process.argv[4] ?? 4242));
+// a world that follows another: the prices it left, as a JSON file { good: price } (optional)
+if (process.argv[5]) w.inherited = JSON.parse(fs.readFileSync(process.argv[5], 'utf8'));
 for (const a of w.avens) wear(a, newMind(a.name, a.reserveDays));
 seeValley(w);
 // the stand-in brain, asked every 2 game hours: for each good it buys, the most days of stock (of 0-7) whose cost at
