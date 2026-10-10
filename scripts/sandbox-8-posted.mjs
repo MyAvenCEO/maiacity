@@ -1,6 +1,6 @@
 // Sandbox 7: a posted-price world (a Trading card with a `price` hook) played for N days with a stand-in brain that
 // always picks the middle answer of each question, so the market alone has to find the prices. Prints each good's
-// posted price, what traded and who is alive, day by day. Run: node scripts/sandbox-8-posted.mjs <cards.json> [days] [seed] [inherited-prices.json]
+// posted price, what traded and who is alive, day by day. NAIVE=1 to answer field questions like a brain reading only the options. Run: node scripts/sandbox-8-posted.mjs <cards.json> [days] [seed] [inherited-prices.json]
 import fs from 'node:fs';
 import { createWorld, step, CODE, seeValley, GOODS, fieldBase, levelShare, openCost, capexOf } from '../src/lib/sandbox-8/economy.js';
 import { newMind, wear, night } from '../src/lib/sandbox-8/mind.js';
@@ -39,7 +39,13 @@ const decide = (a, full = false) => {
 	// a field decision, as a careful entrepreneur would: plant (or open) where the valley's fields, those still growing
 	// included, give least against what it needs; level up where its own crop is short; each aven a little different
 	// (its own taste for risk), and one move at a time
+	// NAIVE=1: like a brain that reads only the options, the one whose stated net over the next two weeks is largest
+	const naive = (x) => {
+		const v = x.criteria.map((c) => Number(c.match(/(-?\d+) net/)?.[1] ?? (/don't open/.test(c) ? 0 : -1e9)));
+		return v.indexOf(Math.max(...v));
+	};
 	const field = (k, x) => {
+		if (process.env.NAIVE) return naive(x);
 		const slot = Number(k.slice(5)) - 1;
 		const f = a.fields[slot];
 		const live = w.avens.filter((o) => o.alive);
