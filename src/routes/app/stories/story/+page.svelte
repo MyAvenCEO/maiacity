@@ -1,6 +1,6 @@
 <!--
 	One story, on its own page: its steps as tabs along the bottom (as the studio's), the step it stands on marked —
-	Idea (the brainstorm pad) · Journey (the arc, beat by beat) · Hook (the hook, the intro, the description) · Thumbnail (the 16:9 card, in layers) ·
+	Idea (the brainstorm pad) · Hook (the hook, the intro, the description) · Thumbnail (the 16:9 card, in layers) · Journey (the arc, beat by beat) ·
 	Writing (the long-form article) · Movie (the film, in the studio) · Derivatives (the posts) · Scheduled (when) ·
 	Published (where). Every tab can be looked at and worked on whatever step the story stands on; it moves on (or back)
 	with the buttons under its title, or on the Stories board. What is typed is saved a moment after the typing stops.
