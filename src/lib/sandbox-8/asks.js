@@ -276,7 +276,7 @@ function fieldQuestions(world, a) {
 			criteria.push(`don't open ${slot ? `field ${slot + 1}` : 'a field'} yet`);
 			for (const [i, g] of GOODS.entries()) {
 				levels.push(2 + i);
-				criteria.push(`open field ${slot + 1} with ${GOOD_LABEL[g]} for ${openCost(slot)} HEARTS: grown in ${RULES[`ramp_${g}`]} days, then ${worth(g, 1)}`);
+				criteria.push(`open field ${slot + 1} with ${GOOD_LABEL[g]} for ${openCost(slot, g, a)} HEARTS: grown in ${RULES[`ramp_${g}`]} days, then ${worth(g, 1)}`);
 			}
 		}
 		const key = `field${slot + 1}`;
