@@ -220,6 +220,62 @@ async fn vault_ingest(
     result.map_err(err)
 }
 
+/// A file the studio made itself (a title card rendered from its layers on the Thumbnail step): its bytes come as
+/// the request's raw body; the `x-ingest` header carries, percent-encoded, a JSON { name, story, tags, title,
+/// description, public }. Written to a temporary folder and ingested like a picked file (the three-hash check, the
+/// story's bucket, its tags), then described; answers its hash.
+#[tauri::command]
+async fn vault_ingest_bytes(handle: AppHandle, app: State<'_, App>, request: tauri::ipc::Request<'_>) -> Res<serde_json::Value> {
+    gate()?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("send the file's bytes as the body".into()) };
+    let about = request.headers().get("x-ingest").and_then(|v| v.to_str().ok()).map(percent_decode).unwrap_or_else(|| "{}".into());
+    let about: serde_json::Value = serde_json::from_str(&about).map_err(err)?;
+    let name = about["name"].as_str().filter(|n| !n.is_empty() && !n.contains('/') && !n.starts_with('.')).unwrap_or("made.bin");
+    let dir = std::env::temp_dir().join(format!("maiacity-made-{}", ingest::now_iso().replace([':', '.'], "-")));
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).map_err(err)?;
+    let tags: Vec<String> = about["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect()).unwrap_or_default();
+    let story = about["story"].as_str().filter(|s| !s.is_empty()).map(String::from);
+    if app.busy.swap(true, Ordering::SeqCst) {
+        return Err("an ingest is already running".into());
+    }
+    let result = run_ingest(&handle, &app.vault, vec![path.display().to_string()], tags, story, None, true).await;
+    app.busy.store(false, Ordering::SeqCst);
+    let _ = std::fs::remove_dir_all(&dir);
+    let summary = result.map_err(err)?;
+    let hash = Hash::new(bytes);
+    // what it is, as the studio says: a file the same bytes already made keeps its place, its words are set anew
+    let patch: serde_json::Map<String, serde_json::Value> = ["title", "description", "public"]
+        .iter()
+        .filter(|k| !about[*k].is_null())
+        .map(|k| (k.to_string(), about[*k].clone()))
+        .collect();
+    if !patch.is_empty() {
+        app.vault.catalog.describe(hash, &serde_json::Value::Object(patch)).await.map_err(err)?;
+    }
+    Ok(serde_json::json!({ "hash": hash.to_hex(), "files": summary.files, "verified": summary.verified, "duplicates": summary.duplicates, "mismatches": summary.mismatches }))
+}
+
+/// "%20" and the like back to their bytes (a header is ASCII; the JSON in it is sent percent-encoded).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or("zz"), 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Ingest into a story (its id; None: the inbox), every file in one class or each told from itself.
 async fn run_ingest(
     handle: &AppHandle,
@@ -495,6 +551,7 @@ fn main() {
             vault_status,
             vault_list,
             vault_describe,
+            vault_ingest_bytes,
             log_js,
             stories::stories_list,
             sources::ingest_sources,

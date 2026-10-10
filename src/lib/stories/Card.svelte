@@ -16,10 +16,11 @@
 	 *   selected?: string | null,
 	 *   editable?: boolean,
 	 *   onselect?: (id: string) => void,
-	 *   onmove?: (id: string, x: number, y: number) => void
+	 *   onmove?: (id: string, x: number, y: number) => void,
+	 *   onresize?: (id: string, patch: { w?: number, size?: number }) => void
 	 * }}
 	 */
-	let { layers, hook = '', selected = null, editable = false, onselect, onmove } = $props();
+	let { layers, hook = '', selected = null, editable = false, onselect, onmove, onresize } = $props();
 
 	/** @type {HTMLElement | null} */
 	let canvas = $state(null);
@@ -35,9 +36,32 @@
 	}
 	const sizeOf = (/** @type {Layer} */ l) => l.size ?? (l.kind === 'badge' ? 2.4 : 6.2);
 
-	// ── dragging a layer (the Thumbnail step) ──
+	// ── dragging a layer (the Thumbnail step): its body moves it, the grip at its corner sizes it ──
 	/** @type {{ id: string, px: number, py: number, x: number, y: number } | null} */
 	let drag = null;
+	/** @type {{ id: string, px: number, w: number, size: number, badge: boolean } | null} */
+	let grip = null;
+
+	/** @param {PointerEvent} e @param {Layer} l */
+	function gripDown(e, l) {
+		if (!editable || e.button !== 0) return;
+		const b = boxOf(l);
+		grip = { id: l.id, px: e.clientX, w: b.w, size: sizeOf(l), badge: l.kind === 'badge' };
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture(e.pointerId);
+		e.preventDefault();
+		e.stopPropagation();
+	}
+
+	/** @param {PointerEvent} e */
+	function gripMove(e) {
+		if (!grip || !canvas) return;
+		const dx = ((e.clientX - grip.px) / canvas.getBoundingClientRect().width) * 100;
+		// a badge has no width of its own: its corner sets its size (a badge is about four times its size wide)
+		if (grip.badge) onresize?.(grip.id, { size: Math.max(0.8, Math.round((grip.size + dx / 4) * 10) / 10) });
+		else onresize?.(grip.id, { w: Math.max(4, Math.round((grip.w + dx) * 10) / 10) });
+	}
+
+	const gripUp = () => (grip = null);
 
 	/** @param {PointerEvent} e @param {Layer} l */
 	function down(e, l) {
@@ -67,7 +91,7 @@
 		{@const b = boxOf(l)}
 		{#if l.kind === 'image'}
 			<div
-				class="layer image"
+				class="layer image" role="presentation"
 				class:picked={selected === l.id}
 				style:left="{b.x}%"
 				style:top="{b.y}%"
@@ -83,22 +107,25 @@
 				{:else}
 					<span class="none">No picture yet</span>
 				{/if}
+				{#if editable && selected === l.id}<span class="grip" role="presentation" title="Drag to size it" onpointerdown={(e) => gripDown(e, l)} onpointermove={gripMove} onpointerup={gripUp} onpointercancel={gripUp}></span>{/if}
 			</div>
 		{:else if l.kind === 'cutout'}
-			<div class="layer cutout" class:picked={selected === l.id} style:left="{b.x}%" style:top="{b.y}%" style:width="{b.w}%" onpointerdown={(e) => down(e, l)} onpointermove={move} onpointerup={up} onpointercancel={up}>
+			<div class="layer cutout" role="presentation" class:picked={selected === l.id} style:left="{b.x}%" style:top="{b.y}%" style:width="{b.w}%" onpointerdown={(e) => down(e, l)} onpointermove={move} onpointerup={up} onpointercancel={up}>
 				{#if l.hash}
 					<img src={fileUrl(l.hash)} alt="" draggable="false" />
 				{:else}
 					<span class="none">No cut-out yet</span>
 				{/if}
+				{#if editable && selected === l.id}<span class="grip" role="presentation" title="Drag to size it" onpointerdown={(e) => gripDown(e, l)} onpointermove={gripMove} onpointerup={gripUp} onpointercancel={gripUp}></span>{/if}
 			</div>
 		{:else if l.kind === 'badge'}
-			<div class="layer badge" class:picked={selected === l.id} style:left="{b.x}%" style:top="{b.y}%" style:font-size="{sizeOf(l)}cqw" style:color={colorOf(l.color ?? 'gold')} onpointerdown={(e) => down(e, l)} onpointermove={move} onpointerup={up} onpointercancel={up}>
+			<div class="layer badge" role="presentation" class:picked={selected === l.id} style:left="{b.x}%" style:top="{b.y}%" style:font-size="{sizeOf(l)}cqw" style:color={colorOf(l.color ?? 'gold')} onpointerdown={(e) => down(e, l)} onpointermove={move} onpointerup={up} onpointercancel={up}>
 				{l.text || 'DAY 1'}
+				{#if editable && selected === l.id}<span class="grip" role="presentation" title="Drag to size it" onpointerdown={(e) => gripDown(e, l)} onpointermove={gripMove} onpointerup={gripUp} onpointercancel={gripUp}></span>{/if}
 			</div>
 		{:else}
 			<div
-				class="layer text"
+				class="layer text" role="presentation"
 				class:picked={selected === l.id}
 				style:left="{b.x}%"
 				style:top="{b.y}%"
@@ -112,6 +139,7 @@
 				onpointercancel={up}
 			>
 				{l.text || hook || 'The hook'}
+				{#if editable && selected === l.id}<span class="grip" role="presentation" title="Drag to size it" onpointerdown={(e) => gripDown(e, l)} onpointermove={gripMove} onpointerup={gripUp} onpointercancel={gripUp}></span>{/if}
 			</div>
 		{/if}
 	{/each}
@@ -146,6 +174,22 @@
 	.editable .picked {
 		outline: 2px solid #f6c75a;
 		outline-offset: -2px;
+	}
+
+	/* the picked layer's corner: drag it to size the layer */
+	.grip {
+		position: absolute;
+		right: -0.7cqw;
+		bottom: -0.7cqw;
+		width: 1.6cqw;
+		height: 1.6cqw;
+		min-width: 12px;
+		min-height: 12px;
+		border: 2px solid #1d2b22;
+		border-radius: 3px;
+		background: #f6c75a;
+		cursor: nwse-resize;
+		touch-action: none;
 	}
 
 	.image img {
