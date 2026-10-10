@@ -89,8 +89,9 @@ caps select; the cell is the one unit of keys, sync and rotation.
   semantic cell, and moves it whenever its semantic cell changes: `Move { vault, entry, to, keep }` (a tag changed, a
   new cap selects it). Only devices acting for the vault steward; a vault holding a wide owner cap reads everything but
   moves nothing. Moves are removals: a write the move hadn't seen that relied on the old cell is cut, so nobody
-  backdates an edit into an entry after it left their slice. A device that never hears of the move (the entry left its
-  reach) can still write by its own view; that write is dropped wherever the move is known.
+  backdates an edit into an entry after it left their slice; a move that doesn't stand itself (its steward was removed
+  from the vault meanwhile, say) cuts nothing. A device that never hears of the move (the entry left its reach) can
+  still write by its own view; that write is dropped wherever the move is known.
 - **Revoked caps stay put.** Only the live part of an entry's cell has to equal its semantic cell; a revoked cap in it
   is ignored, so a revocation moves no entry: the cells it was in move on to a new generation whose key only their
   remaining caps get. An entry that moves for another reason drops the revoked caps from its new cell.
