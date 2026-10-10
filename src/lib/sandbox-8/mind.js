@@ -12,12 +12,14 @@
 //   (the score: HEARTS gained a day, less a heavy price for every unit of water gone short and a lighter one for food),
 //   keep the change only if it beat the last stretch on the old setting by a margin, else go back. The game's number
 //   decides, never the brain's opinion of itself (agents grading themselves inflate their memories, 2026 research).
-//   Every trial leaves one compact line in the aven's log, a change that just failed is not offered again for a while,
-//   and a run's start folds the older lines into one tally, so the log never grows.
+//   Every trial leaves one compact line in the aven's log, and a change that just failed is not offered again for a while.
 // - Lessons, as in Agentic Context Engineering (ACE): a short playbook of the aven's own lines, each with a count of
 //   the stretches that bore it out and went against it, grown by small edits (one new lesson at a time, weighed by the
-//   next stretch's score against the last), never rewritten whole, so it neither bloats nor collapses; a lesson that
-//   lost twice more than it won goes. Only a brain that writes text (Qwen) adds lessons.
+//   next stretch's score against the last), never rewritten whole; a lesson that lost twice more than it won goes. Only a
+//   brain that writes text (Qwen) adds lessons.
+// - Every memory is kept, and copied whole into a new world (Samuel, 2026-10-10: all of them, not the last five); what
+//   no longer applies is forgotten by hand or by a new world's MIP. Each ask carries only the best of it (PROMPT): the
+//   ten lessons that bore out best, the newest trials and deaths.
 // - Deaths: when and why it died, and what stood around it, one line each. Dying of thirst also makes it keep more
 //   water from then on, without asking: the one instinct the valley gives it.
 // The mind lives in the database (api/src/economy.js, econ_brains) per world (its run's id) and aven name: read when it opens,
@@ -54,7 +56,7 @@ export const WANTS = {
 export const TRIAL_DAYS = 3; // one trial's budget, in game days: a day alone is mostly luck
 const MARGIN = 2; // a trial must beat the old setting by this much a day to be kept, so luck alone rarely keeps one
 const SHORT = { water: 30, food: 6 }; // what a unit gone short costs the score, in HEARTS: water kills, food waits
-const KEEP = { log: 8, lessons: 5, deaths: 4 };
+const PROMPT = { trials: 6, lessons: 10, deaths: 4 }; // how much of its memory goes into each ask
 const TABU = 3; // a change that failed is not offered again for this many trials
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(v)));
@@ -173,7 +175,7 @@ export function wholeMind(m, name, reserveDays) {
 		);
 	out.dials = whole('dials', t.dials, Object.fromEntries(Object.keys(DIALS).map((k) => [k, { min: 0, max: 10 }])));
 	out.wants = whole('wants', t.wants, WANTS);
-	for (const k of ['log', 'lessons', 'deathLog', 'tabu']) out[k] = Array.isArray(m[k]) ? m[k].slice(-50) : [];
+	for (const k of ['log', 'lessons', 'deathLog', 'tabu']) out[k] = Array.isArray(m[k]) ? m[k].slice() : [];
 	out.tally = {
 		trials: Number(m.tally?.trials) || 0,
 		kept: Number(m.tally?.kept) || 0
@@ -191,8 +193,6 @@ export function beginRun(m, world = 'a world', { resume = false } = {}) {
 	if (!resume) m.runs += 1; // worlds played
 	m.world = world;
 	birth(m);
-	// sleep on it: the older trial lines fold into the tally, the newest few stay as they are
-	if (m.log.length > KEEP.log / 2) m.log.splice(0, m.log.length - KEEP.log / 2);
 	Object.assign(m, {
 		trial: null,
 		base: null,
@@ -213,7 +213,6 @@ export function wear(a, m) {
 const label = (t) => `${t.kind === 'wants' ? `${t.key} stock` : t.key} ${t.from}→${t.to}`;
 function note(m, line) {
 	m.log.push(line);
-	if (m.log.length > KEEP.log) m.log.splice(0, m.log.length - KEEP.log);
 }
 
 /** one day's score for a trial: HEARTS gained, less what going short cost (the Brains card's `score` hook) */
@@ -259,7 +258,6 @@ export function night(world) {
 				`kept ${m.wants.water}d water, ${m.wants.food}d food`
 			].filter(Boolean);
 			m.deathLog.push(`d${a.diedOn} died of ${cause}: ${bits.join(', ')}`);
-			if (m.deathLog.length > KEEP.deaths) m.deathLog.splice(0, m.deathLog.length - KEEP.deaths);
 			if (m.trial) {
 				m[m.trial.kind][m.trial.key] = m.trial.from;
 				note(m, `d${a.diedOn} ${label(m.trial)}: died during it, undone`);
@@ -380,10 +378,6 @@ export function addLesson(m, text) {
 			.slice(0, 40);
 	if (m.lessons.some((l) => key(l.text) === key(t))) return false;
 	m.lessons.push({ id: ++m.lessonId, text: t, up: 0, down: 0, world: m.world });
-	if (m.lessons.length > KEEP.lessons) {
-		const worst = m.lessons.reduce((w, l) => (l.up - l.down < w.up - w.down ? l : w), m.lessons[0]);
-		m.lessons.splice(m.lessons.indexOf(worst), 1);
-	}
 	return true;
 }
 /** every memory a brain keeps, as one interface (Samuel, 2026-10-10): each list, what an entry says, the world it came
@@ -458,10 +452,18 @@ export function mindFor(a) {
 			? `${label(m.trial)} since day ${m.trial.day}: kept only if my score beats ${m.base}/day`
 			: 'nothing: measuring my current setting',
 		score_means: t.score,
-		trials: m.log.slice(-6).filter((l) => !hidden(l)),
-		lessons: m.lessons.filter((l) => !hidden(l.text)).map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down}${l.world ? `, learned in ${l.world}` : ''})`),
-		deaths_in_my_line: m.deathLog.slice()
+		trials: m.log.slice(-PROMPT.trials).filter((l) => !hidden(l)),
+		lessons: best(m.lessons.filter((l) => !hidden(l.text))).map((l) => `#${l.id} ${l.text} (+${l.up} −${l.down}${l.world ? `, learned in ${l.world}` : ''})`),
+		deaths_in_my_line: m.deathLog.slice(-PROMPT.deaths)
 	};
+}
+
+/** its best lessons for an ask: the PROMPT.lessons that bore out best (up − down, the newer first on a tie), in the
+ * order it learned them */
+function best(list) {
+	if (list.length <= PROMPT.lessons) return list;
+	const top = new Set(list.slice().sort((x, y) => y.up - y.down - (x.up - x.down) || y.id - x.id).slice(0, PROMPT.lessons));
+	return list.filter((l) => top.has(l));
 }
 
 /** how far its character and wants have moved since it was new */
