@@ -574,7 +574,7 @@
 		-webkit-box-orient: vertical;
 	}
 
-	/* the day's badge, bottom right: white words, compact, on solid gold */
+	/* the day's badge, bottom right: dark marine words, tight, on solid gold */
 	.stand-in .day {
 		position: absolute;
 		right: 5%;
@@ -585,9 +585,9 @@
 		font-family: var(--font-display);
 		font-size: clamp(0.72rem, 1.3vw, 0.95rem);
 		font-weight: 760;
-		letter-spacing: 0.04em;
+		letter-spacing: 0;
 		text-transform: uppercase;
-		color: #fff;
+		color: #14304f;
 	}
 
 	.cardnote {
