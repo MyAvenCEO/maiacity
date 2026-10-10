@@ -1,19 +1,22 @@
-//! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted edits, signed edits, schemas, lenses,
-//! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced, and from P8 every message on the wire
-//! (signed edits, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins). Nothing
-//! panics; a changed box, edit or signed edit is refused, a changed message reads as nothing or as another message
-//! whose own bytes these are, and a changed Loro update that is refused leaves the item as it was. Every mutation is
-//! drawn from a fixed seed, so a failure replays exactly.
+//! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted writes, signed edits, schemas, lenses,
+//! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced; from P8 every message on the wire
+//! (signed edits, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins); and with
+//! flat vaults what only readers read: a cap's slice, its selector in the clear or sealed, and a write's body. Nothing
+//! panics; a changed box, write, signed edit or sealed selector is refused, a changed message reads as nothing or as
+//! another message whose own bytes these are, and a changed Loro update that is refused leaves the item as it was.
+//! Every mutation is drawn from a fixed seed, so a failure replays exactly.
 
 use std::fmt::Debug;
 
 use serde_json::{json, Map, Value};
 use avendb::doc::{Item, Version};
-use avendb::id::{BlobId, EditId, EntryId, SignerId, SpaceId, VaultId};
-use avendb::keys::{self, SeededRng, Secret};
+use avendb::encode::{cap_context, select_info, write_context};
+use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::keys::{self, KeyBox, KeyFam, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
-use avendb::policy::{Action, Edit, Proposal};
+use avendb::policy::{Action, Cap, Edit, Grantee, Principal, Proposal, Role};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
+use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
 
@@ -84,7 +87,7 @@ fn mutate(g: &mut Gen, bytes: &[u8]) -> Vec<u8> {
 fn a_changed_box_opens_to_nothing() {
     let mut rng = SeededRng::new("fuzz", b"boxes");
     let (key, to, other) = (Secret::generate(&mut rng), Secret::generate(&mut rng), Secret::generate(&mut rng));
-    let info = b"the Handbook's key at epoch 0, for Alice's vault key";
+    let info = b"the door's cell key at generation 0, for Alice's vault key";
     let sealed = keys::seal(&key, &to.public(), &to.mceliece_public(), info, &mut rng).expect("a key to seal to");
     let wrapped = keys::wrap(&key, &to, info, &mut rng);
     let opened = |bytes: &[u8], with: &Secret, info: &[u8]| keys::open(bytes, with, info).map(|k| k.id());
@@ -93,7 +96,7 @@ fn a_changed_box_opens_to_nothing() {
     // not for another key, nor bound to anything else
     assert_eq!(opened(&sealed, &other, info), None);
     assert_eq!(opened(&wrapped, &other, info), None);
-    assert_eq!(opened(&sealed, &to, b"the Handbook's key at epoch 1"), None);
+    assert_eq!(opened(&sealed, &to, b"the door's cell key at generation 1"), None);
     assert_eq!(opened(&wrapped, &to, b""), None);
     let mut g = Gen::new(1);
     // each try at a sealed box costs both decapsulations, so fewer of them
@@ -109,23 +112,196 @@ fn a_changed_box_opens_to_nothing() {
     }
 }
 
-#[test]
-fn a_changed_edit_decrypts_to_nothing() {
-    let mut rng = SeededRng::new("fuzz", b"edits");
-    let key = Secret::generate(&mut rng);
-    let context = b"the write edit, with an empty body";
-    let body = keys::seal_edit(&key, b"Welcome to Maia Coop: the greenhouse opens at eight.", context, &mut rng);
-    assert!(keys::open_edit(&key, &body, context).is_some());
-    let mut g = Gen::new(2);
-    for _ in 0..5000 {
-        let bad = mutate(&mut g, &body);
-        assert_eq!(keys::open_edit(&key, &bad, context), None, "{bad:?}");
-        let bad = mutate(&mut g, context);
-        assert_eq!(keys::open_edit(&key, &body, &bad), None, "{bad:?}");
+/// Alice's and Bob's vaults, and the door todo in Alice's.
+const ALICE: VaultId = VaultId::from_u64(100);
+const BOB: VaultId = VaultId::from_u64(101);
+const DOOR: EntryId = EntryId::from_u64(21);
+
+/// What the sealed parts of `signed_edits` open with: the key of the door in its first stay, under which its writes
+/// are encrypted, and the current seeds of Alice's and Bob's vaults, to which the cap's selector key is wrapped.
+struct Keys {
+    door: Secret,
+    alice: Secret,
+    bob: Secret,
+}
+
+fn keys() -> Keys {
+    let mut rng = SeededRng::new("fuzz", b"keys");
+    Keys { door: Secret::generate(&mut rng), alice: Secret::generate(&mut rng), bob: Secret::generate(&mut rng) }
+}
+
+/// What the cap of `signed_edits` shares: Alice's work todos, and the tag `done` for Bob to ask her stewards for.
+fn work_todos() -> Slice {
+    let select = Selector::AnyOf(vec![vec![Atom::TypeIn(vec![Sym::new("todo")]), Atom::TagHas(Sym::new("work"))]]);
+    Slice { select, relabel: vec![Sym::new("done")] }
+}
+
+/// The body of the write that creates the door: its header, its first tags and its content.
+fn door_created() -> Body {
+    let header = Some(Header { ty: Sym::new("todo"), created: 1_791_500_000 });
+    let tags = TagDelta { add: vec![Sym::new("work")], remove: vec![] };
+    Body { header, tags, answers: vec![], content: b"Fix the door".to_vec() }
+}
+
+/// The body of a write of tags alone, by a steward answering what two writes asked for.
+fn door_retagged() -> Body {
+    let tags = TagDelta { add: vec![Sym::new("done")], remove: vec![Sym::new("work")] };
+    Body { header: None, tags, answers: vec![EditId::from_u64(4), EditId::from_u64(6)], content: vec![] }
+}
+
+/// Who a box of a key for vault `v`'s seed `seed` goes to.
+fn to_seed(v: VaultId, seed: &Secret) -> Recipient {
+    Recipient::Key { name: KeyName::Scoped(KeyFam::Seed(v), 0), id: seed.id() }
+}
+
+/// The `select` of `cap`, holding `slice`, sealed under a key of its own, which is wrapped under the seeds of Alice's
+/// vault, which the cap is over and which issues it, and of Bob's, its grantee (`slice::Select`).
+fn seal_select(cap: &Cap, slice: &Slice, k: &Keys, rng: &mut SeededRng) -> Vec<u8> {
+    let key = Secret::generate(rng);
+    let sealed = keys::seal_edit(&key, &slice.to_wire(), &cap_context(cap), rng);
+    let boxes = [(ALICE, &k.alice), (BOB, &k.bob)].map(|(v, seed)| {
+        let to = to_seed(v, seed);
+        KeyBox { to, bytes: keys::wrap(&key, seed, &select_info(cap, key.id(), &to), rng) }
+    });
+    Select::Sealed { boxes: boxes.to_vec(), slice: sealed }.to_wire()
+}
+
+/// The slice the selector of `cap` holds, opened with vault `v`'s seed `seed` as a reader opens it: in the clear, or
+/// through the box for that seed; `None` if it never opens.
+fn open_select(cap: &Cap, v: VaultId, seed: &Secret) -> Option<Slice> {
+    let (boxes, sealed) = match Select::from_wire(&cap.select).ok()? {
+        Select::Clear(slice) => return Some(slice),
+        Select::Sealed { boxes, slice } => (boxes, slice),
+    };
+    let id = keys::edit_key(&sealed)?;
+    let b = boxes.iter().find(|b| b.to == to_seed(v, seed))?;
+    let key = keys::open(&b.bytes, seed, &select_info(cap, id, &b.to)).filter(|k| k.id() == id)?;
+    Slice::from_wire(&keys::open_edit(&key, &sealed, &cap_context(cap))?).ok()
+}
+
+/// The write `edit`, with `body` encrypted under `key` and bound to the edit (`encode::write_context`).
+fn seal_body(mut edit: Edit, body: &Body, key: &Secret, rng: &mut SeededRng) -> Edit {
+    let sealed = keys::seal_edit(key, &body.to_wire(), &write_context(&edit), rng);
+    if let Action::Write { body, .. } = &mut edit.action {
+        *body = sealed;
+    }
+    edit
+}
+
+/// A signed edit of each kind: governance, which both halves sign, by a passkey with the new device consenting; a
+/// write creating the door in the cell of two caps, and a write of its tags on a proposal, through the owners it names,
+/// which only the classical half signs; a cap for Bob to write Alice's work todos, its selector sealed; and a steward's
+/// move of the door to another cell, keeping the writes it had seen.
+struct Edits {
+    add: Signed,
+    create: Signed,
+    write: Signed,
+    cap: Signed,
+    moved: Signed,
+}
+
+impl Edits {
+    fn all(&self) -> [&Signed; 5] {
+        [&self.add, &self.create, &self.write, &self.cap, &self.moved]
     }
 }
 
-/// `sig` with one part changed: a key, the classical half, or the hash-based half (changed or left out).
+fn signed_edits() -> Edits {
+    let device = DeviceKey::from_secret([7; 32]);
+    let mut passkey = Passkey::from_seed([9; 32]);
+    let (k, mut rng) = (keys(), SeededRng::new("fuzz", b"edits"));
+    let by_device = |edit: Edit| {
+        let pq = avendb::sign::needs_pq(&edit);
+        Signed { sigs: vec![device.sign(edit.id(), pq)], edit }
+    };
+    let add = Edit {
+        parents: vec![EditId::from_u64(1)],
+        depth: 1,
+        author: passkey.id(),
+        cosigners: vec![device.id()],
+        action: Action::AddDevice { vault: ALICE, device: device.id(), seal_to: None },
+    };
+    let sigs = vec![passkey.sign(add.id(), true), device.sign(add.id(), true)];
+    let add = Signed { edit: add, sigs };
+    let author = device.id();
+    let edit = |depth: u64, action: Action| Edit { parents: vec![], depth, author, cosigners: vec![], action };
+    let (cell, main) = (vec![CapId::from_u64(8), CapId::from_u64(9)], Proposal::Main);
+    let create = Action::Write {
+        vault: ALICE,
+        entry: DOOR,
+        actor: ALICE,
+        stay: None,
+        generation: 1,
+        deps: vec![],
+        proposal: main,
+        via: vec![],
+        create: Some(cell),
+        body: vec![],
+    };
+    let create = by_device(seal_body(edit(2, create), &door_created(), &k.door, &mut rng));
+    let write = Action::Write {
+        vault: ALICE,
+        entry: DOOR,
+        actor: ALICE,
+        stay: None,
+        generation: 1,
+        deps: vec![create.edit.id()],
+        proposal: Proposal::On(create.edit.id()),
+        via: vec![VaultId::from_u64(3), VaultId::from_u64(4)],
+        create: None,
+        body: vec![],
+    };
+    let write = by_device(seal_body(edit(3, write), &door_retagged(), &k.door, &mut rng));
+    let (grantee, role, issuer) = (Grantee::Principal(Principal::Vault(BOB)), Role::Write, ALICE);
+    let mut cap = Cap { over: ALICE, grantee, role, wide: false, select: vec![], parent: None, issuer, nonce: 7 };
+    cap.select = seal_select(&cap, &work_todos(), &k, &mut rng);
+    let cap = by_device(edit(4, Action::Cap(cap, vec![])));
+    let keep = vec![create.edit.id(), write.edit.id()];
+    let moved = Action::Move { vault: ALICE, entry: DOOR, to: vec![CapId::from_u64(9)], keep, via: vec![] };
+    let moved = by_device(edit(5, moved));
+    Edits { add, create, write, cap, moved }
+}
+
+/// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another edit drafted with it.
+fn batched(add: &Signed) -> Signed {
+    let mut passkey = Passkey::from_seed([9; 32]);
+    let device = DeviceKey::from_secret([7; 32]);
+    let mut batch = vec![add.edit.id(), EditId::from_u64(3)];
+    batch.sort();
+    let ceremony = passkey.ceremony(avendb::sign::batch_challenge(&batch));
+    let sig = ceremony.sign_in(passkey.keys(), add.edit.id(), &batch, true).expect("an edit of the batch");
+    Signed { edit: add.edit.clone(), sigs: vec![sig, device.sign(add.edit.id(), true)] }
+}
+
+#[test]
+fn a_changed_write_decrypts_to_nothing() {
+    // a write's body opens with its entry's key, bound to the write as it is with an empty body: the body changed, or
+    // the same body in a write that says anything else, opens to nothing
+    let (edits, k) = (signed_edits(), keys());
+    let open = |body: &[u8], context: &[u8]| keys::open_edit(&k.door, body, context);
+    let mut g = Gen::new(2);
+    let mut elsewhere = 0;
+    for (signed, plain) in [(&edits.create, door_created()), (&edits.write, door_retagged())] {
+        let Action::Write { body, .. } = &signed.edit.action else { unreachable!("a write") };
+        let context = write_context(&signed.edit);
+        assert_eq!(open(body, &context).map(|b| Body::from_wire(&b)), Some(Ok(plain)));
+        for _ in 0..2500 {
+            let bad = mutate(&mut g, body);
+            assert_eq!(open(&bad, &context), None, "{bad:?}");
+            let bad = mutate(&mut g, &context);
+            assert_eq!(open(body, &bad), None, "{bad:?}");
+            let other = write_context(&mutate_edit(&mut g, &signed.edit));
+            if other != context {
+                assert_eq!(open(body, &other), None, "{other:?}");
+                elsewhere += 1;
+            }
+        }
+    }
+    // and the changed writes mostly said something else than their body
+    assert!(elsewhere > 2500, "{elsewhere}");
+}
+
+/// `sig` with one part changed: a key, the classical half, or the hash-based half (changed, left out or made up).
 fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     let mut s = sig.clone();
     match g.below(3) {
@@ -164,26 +340,74 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
         _ => {
             s.pq = match &s.pq {
                 Some(bytes) if g.below(4) > 0 => Some(mutate(g, bytes)),
-                _ => None,
+                Some(_) => None,
+                None => Some(g.bytes()),
             }
         }
     }
     s
 }
 
-/// `edit` with one field changed.
+/// `edit` with one field changed: of the edit, or of its action, a write's, a cap's, a move's or a device's.
 fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
     let mut o = edit.clone();
+    let id = |g: &mut Gen| EditId::from_u64(g.next());
+    let cap = |g: &mut Gen| CapId::from_u64(g.next());
+    let vault = |g: &mut Gen| VaultId::from_u64(g.next());
     match g.below(5) {
         0 => o.depth ^= 1 << g.below(64),
-        1 => o.parents.push(EditId::from_u64(g.next())),
+        1 => o.parents.push(id(g)),
         2 => o.author = SignerId::from_u64(g.next()),
         3 => o.cosigners.push(SignerId::from_u64(g.next())),
         _ => match &mut o.action {
-            Action::AddDevice { device, .. } => *device = SignerId::from_u64(g.next()),
-            Action::Write { body, proposal, .. } => match g.below(3) {
-                0 => *proposal = [Proposal::Main, Proposal::New, Proposal::On(EditId::from_u64(g.next()))][g.below(3)],
-                _ => *body = mutate(g, body),
+            Action::AddDevice { vault: v, device, .. } => match g.below(2) {
+                0 => *v = vault(g),
+                _ => *device = SignerId::from_u64(g.next()),
+            },
+            Action::Write { entry, actor, stay, generation, deps, proposal, via, create, body, .. } => {
+                match g.below(9) {
+                    0 => *entry = EntryId::from_u64(g.next()),
+                    1 => *actor = vault(g),
+                    2 => *stay = if stay.is_some() && g.below(2) == 0 { None } else { Some(id(g)) },
+                    3 => *generation ^= 1 << g.below(64),
+                    4 => deps.push(id(g)),
+                    5 => {
+                        let others = [Proposal::Main, Proposal::New, Proposal::On(id(g))];
+                        *proposal = others.into_iter().filter(|p| p != proposal).nth(g.below(2)).expect("another");
+                    }
+                    6 => via.push(vault(g)),
+                    7 => match create {
+                        Some(cell) if g.below(2) == 0 => cell.push(cap(g)),
+                        Some(_) => *create = None,
+                        None => *create = Some(vec![]),
+                    },
+                    _ => *body = mutate(g, body),
+                }
+            }
+            Action::Cap(c, via) => match g.below(9) {
+                0 => c.select = mutate(g, &c.select),
+                1 => c.over = vault(g),
+                2 => {
+                    let roles = [Role::Relay, Role::Read, Role::Write, Role::Owner];
+                    c.role = roles.into_iter().filter(|&r| r != c.role).nth(g.below(3)).expect("another role");
+                }
+                3 => c.wide = !c.wide,
+                4 => {
+                    c.grantee = match c.grantee {
+                        Grantee::Principal(_) if g.below(2) == 0 => Grantee::Public,
+                        _ => Grantee::Principal(Principal::Vault(vault(g))),
+                    }
+                }
+                5 => c.parent = if c.parent.is_some() && g.below(2) == 0 { None } else { Some(cap(g)) },
+                6 => c.issuer = vault(g),
+                7 => c.nonce ^= 1 << g.below(64),
+                _ => via.push(vault(g)),
+            },
+            Action::Move { entry, to, keep, via, .. } => match g.below(4) {
+                0 => *entry = EntryId::from_u64(g.next()),
+                1 => to.push(cap(g)),
+                2 => keep.push(id(g)),
+                _ => via.push(vault(g)),
             },
             other => unreachable!("{other:?}"),
         },
@@ -191,54 +415,12 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
     o
 }
 
-/// Two signed edits: governance, which both halves sign, by a passkey with the new device consenting; and a write on a
-/// proposal, which only the classical half signs.
-/// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another edit drafted with it.
-fn batched(add: &Signed) -> Signed {
-    let mut passkey = Passkey::from_seed([9; 32]);
-    let device = DeviceKey::from_secret([7; 32]);
-    let mut batch = vec![add.edit.id(), EditId::from_u64(3)];
-    batch.sort();
-    let ceremony = passkey.ceremony(avendb::sign::batch_challenge(&batch));
-    let sig = ceremony.sign_in(passkey.keys(), add.edit.id(), &batch, true).expect("an edit of the batch");
-    Signed { edit: add.edit.clone(), sigs: vec![sig, device.sign(add.edit.id(), true)] }
-}
-
-fn signed_edits() -> (Signed, Signed) {
-    let device = DeviceKey::from_secret([7; 32]);
-    let mut passkey = Passkey::from_seed([9; 32]);
-    let alice = VaultId::from_u64(100);
-    // governance, which both halves sign, by the passkey with the new device consenting
-    let add = Edit {
-        parents: vec![EditId::from_u64(1)],
-        depth: 1,
-        author: passkey.id(),
-        cosigners: vec![device.id()],
-        action: Action::AddDevice { vault: alice, device: device.id(), seal_to: None },
-    };
-    let sigs = vec![passkey.sign(add.id(), true), device.sign(add.id(), true)];
-    let add = Signed { edit: add, sigs };
-    // and a write on a proposal, which only the classical half signs
-    let action = Action::Write {
-        space: SpaceId::from_u64(10),
-        entry: EntryId::from_u64(1),
-        actor: alice,
-        epoch: 0,
-        deps: vec![EditId::from_u64(5)],
-        proposal: Proposal::On(EditId::from_u64(5)),
-        via: vec![VaultId::from_u64(3), VaultId::from_u64(4)],
-        body: vec![1, 2, 3],
-    };
-    let write = Edit { parents: vec![EditId::from_u64(2)], depth: 2, author: device.id(), cosigners: vec![], action };
-    let write = Signed { sigs: vec![device.sign(write.id(), false)], edit: write };
-    (add, write)
-}
-
 #[test]
 fn a_changed_signed_edit_is_refused() {
-    let (add, write) = signed_edits();
+    let edits = signed_edits();
+    let batched = batched(&edits.add);
     let mut g = Gen::new(3);
-    for signed in [&add, &write, &batched(&add)] {
+    for signed in edits.all().into_iter().chain([&batched]) {
         assert!(signed.verify().is_ok());
         for _ in 0..300 {
             let mut bad = signed.clone();
@@ -256,10 +438,61 @@ fn a_changed_signed_edit_is_refused() {
             }
         }
     }
-    // the classical half alone signs no governance
-    let mut classical = add.clone();
-    classical.sigs.iter_mut().for_each(|s| s.pq = None);
-    assert!(classical.verify().is_err());
+    // the classical half alone signs nothing but a write: no governance, no cap, no move
+    for signed in [&edits.add, &edits.cap, &edits.moved] {
+        let mut classical = signed.clone();
+        classical.sigs.iter_mut().for_each(|s| s.pq = None);
+        assert!(classical.verify().is_err(), "{classical:?}");
+    }
+    // which it signs alone
+    for signed in [&edits.create, &edits.write] {
+        assert!(signed.sigs.iter().all(|s| s.pq.is_none()) && signed.verify().is_ok());
+    }
+}
+
+#[test]
+fn a_changed_selector_opens_to_nothing_or_to_its_own_slice() {
+    let (edits, k) = (signed_edits(), keys());
+    let Action::Cap(cap, _) = &edits.cap.edit.action else { unreachable!("a cap") };
+    // the vault the cap is over and its grantee open the slice; another vault's seed, or the wrong one, opens nothing
+    let readers = [(ALICE, &k.alice), (BOB, &k.bob)];
+    for (v, seed) in readers {
+        assert_eq!(open_select(cap, v, seed), Some(work_todos()));
+    }
+    assert_eq!(open_select(cap, VaultId::from_u64(102), &k.door), None);
+    assert_eq!(open_select(cap, ALICE, &k.bob), None);
+    let mut g = Gen::new(6);
+    // the selector's bytes changed: what still reads as a sealed selector opens to nothing, or to the slice it held
+    // where the box opened and the sealed slice are as they were
+    let (mut sealed, mut same) = (0, 0);
+    for _ in 0..3000 {
+        let bad = Cap { select: mutate(&mut g, &cap.select), ..cap.clone() };
+        if !matches!(Select::from_wire(&bad.select), Ok(Select::Sealed { .. })) {
+            continue;
+        }
+        sealed += 1;
+        for (v, seed) in readers {
+            if let Some(slice) = open_select(&bad, v, seed) {
+                assert_eq!(slice, work_todos(), "{bad:?}");
+                same += 1;
+            }
+        }
+    }
+    assert!(sealed > 100 && same > 0, "{sealed} still sealed, {same} opened");
+    // the same selector in a cap that says anything else opens to nothing: it is bound to the vault the cap is over,
+    // its grantee, role, width, parent, issuer and nonce
+    let mut bound = 0;
+    for _ in 0..1000 {
+        let o = mutate_edit(&mut g, &edits.cap.edit);
+        let Action::Cap(other, _) = &o.action else { unreachable!("a cap") };
+        if other.select == cap.select && other != cap {
+            for (v, seed) in readers {
+                assert_eq!(open_select(other, v, seed), None, "{other:?}");
+            }
+            bound += 1;
+        }
+    }
+    assert!(bound > 100, "{bound}");
 }
 
 /// Mutate the bytes of `value` `n` times: each changed message reads as nothing, or as another value whose own
@@ -281,16 +514,33 @@ fn wire_mutations<T: Wire + PartialEq + Debug>(g: &mut Gen, value: &T, n: usize,
 
 #[test]
 fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
-    let (add, write) = signed_edits();
+    let edits = signed_edits();
     let mut g = Gen::new(11);
     // a signed edit read from changed bytes is refused, whatever it changed into, its passkey's half by itself or in a
     // batch
-    let batched = batched(&add);
+    let batched = batched(&edits.add);
     assert!(batched.verify().is_ok());
-    for signed in [&add, &write, &batched] {
+    for signed in edits.all().into_iter().chain([&batched]) {
         let read = wire_mutations(&mut g, signed, 1500, |s: &Signed| assert!(s.verify().is_err(), "{s:?}"));
         assert!(read > 0, "some changes still read as a signed edit, to be refused");
         wire_mutations(&mut g, &signed.edit, 1000, |o: &Edit| assert_ne!(o, &signed.edit));
+    }
+    // what only readers read: a slice, a selector in the clear or sealed, and a write's body; a selector only within
+    // the bounds a peer accepts
+    let bounded = |s: &Slice| assert!(s.select.bounded(), "{s:?}");
+    wire_mutations(&mut g, &work_todos(), 3000, bounded);
+    wire_mutations(&mut g, &Select::Clear(work_todos()), 3000, |s: &Select| {
+        if let Select::Clear(s) = s {
+            bounded(s);
+        }
+    });
+    let Action::Cap(cap, _) = &edits.cap.edit.action else { unreachable!("a cap") };
+    let sealed = Select::from_wire(&cap.select).expect("a sealed selector");
+    assert!(matches!(sealed, Select::Sealed { .. }));
+    wire_mutations(&mut g, &sealed, 3000, |_| {});
+    for body in [door_created(), door_retagged()] {
+        let answers = |b: &Body| assert!(b.answers.windows(2).all(|w| w[0] < w[1]), "{b:?}");
+        wire_mutations(&mut g, &body, 3000, answers);
     }
     // a hello read from changed bytes proves no device on the connection
     let device = DeviceKey::from_secret([7; 32]);
@@ -313,38 +563,41 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     wire_mutations(&mut g, &pass, 1500, |p: &RelayPass| assert_eq!(p.verify(&p.endpoint, now.max(p.made)), None));
     // a join read from changed bytes carries a refused edit, or the same edit beside other bytes, which the device
     // checks against the ids its edit names
+    let add = &edits.add;
     let join = Join { edit: add.clone(), blobs: vec![vec![1; 40], vec![2; 3]] };
-    wire_mutations(&mut g, &join, 1500, |j: &Join| assert!(j.edit == add || j.edit.verify().is_err(), "{j:?}"));
+    wire_mutations(&mut g, &join, 1500, |j: &Join| assert!(j.edit == *add || j.edit.verify().is_err(), "{j:?}"));
     // a claim read from changed bytes carries edits and signatures that don't verify
     let claim = Claim { card: vec![add.clone()], add: add.edit.clone(), sigs: add.sigs.clone() };
     wire_mutations(&mut g, &claim, 1500, |c: &Claim| {
-        assert!(c.card.iter().all(|s| *s == add || s.verify().is_err()), "{c:?}");
+        assert!(c.card.iter().all(|s| s == add || s.verify().is_err()), "{c:?}");
         let signed = Signed { edit: c.add.clone(), sigs: c.sigs.clone() };
-        assert!(signed == add || signed.verify().is_err(), "{c:?}");
+        assert!(signed == *add || signed.verify().is_err(), "{c:?}");
     });
     // the key a server hands for a claim reads back only from its own bytes
     let key = avendb::keys::Secret::from_bytes([5; 32]).public();
     wire_mutations(&mut g, &key, 1000, |_| {});
-    // what a sync carries: asks, requests, replies and announcements
-    let log = |n: u64| LogId::Entry(SpaceId::from_u64(10), EntryId::from_u64(n));
+    // what a sync carries: asks of each kind of log, requests, replies and announcements
+    let cell = LogId::Cell(ALICE, CellId::of(ALICE, &[CapId::from_u64(8), CapId::from_u64(9)]));
     let mut ask = Ask::default();
-    ask.haves.insert(LogId::Vault(VaultId::from_u64(100)), vec![EditId::from_u64(1), EditId::from_u64(2)]);
-    ask.haves.insert(LogId::Space(SpaceId::from_u64(10)), vec![]);
-    ask.haves.insert(log(1), vec![EditId::from_u64(5)]);
+    ask.haves.insert(LogId::Vault(ALICE), vec![EditId::from_u64(1), EditId::from_u64(2)]);
+    ask.haves.insert(LogId::Cap(CapId::from_u64(12)), vec![]);
+    ask.haves.insert(cell, vec![EditId::from_u64(4)]);
+    ask.haves.insert(LogId::Entry(DOOR), vec![EditId::from_u64(5), EditId::from_u64(6)]);
     ask.loose = vec![EditId::from_u64(7), EditId::from_u64(9)];
     wire_mutations(&mut g, &ask, 3000, |_| {});
     let (wants, after) = (vec![BlobId::from_u64(3), BlobId::from_u64(4)], Some((9, EditId::from_u64(8))));
     let request = Request { ask, wants, after };
     wire_mutations(&mut g, &request, 3000, |_| {});
     let blobs = vec![(BlobId::from_u64(3), [1; 32]), (BlobId::from_u64(4), [2; 32])];
-    let reply = Reply { edits: vec![add.clone(), write.clone()], blobs, more: true };
-    let sent = [add.clone(), write.clone()];
+    let sent: Vec<Signed> = edits.all().into_iter().cloned().collect();
+    let reply = Reply { edits: sent.clone(), blobs, more: true };
     wire_mutations(&mut g, &reply, 1500, |r: &Reply| {
         for edit in r.edits.iter().filter(|o| !sent.contains(o)) {
             assert!(edit.verify().is_err(), "{edit:?}");
         }
     });
-    let announce = Announce { digests: vec![(LogId::Vault(VaultId::from_u64(100)), [3; 32]), (log(1), [4; 32])] };
+    let logs = [LogId::Vault(ALICE), LogId::Cap(CapId::from_u64(12)), cell, LogId::Entry(DOOR)];
+    let announce = Announce { digests: logs.into_iter().zip(1..).map(|(l, n)| (l, [n; 32])).collect() };
     wire_mutations(&mut g, &announce, 3000, |_| {});
 }
 

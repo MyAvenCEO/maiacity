@@ -1,15 +1,16 @@
 //! The device's secure boundary (P8c): a device's secrets stay in its memory, and only while it needs them. Every key
-//! wipes itself as it is dropped, and prints as its id alone; a locked device keeps no key, nothing a key opened, and
-//! no secret half of a key that nothing else in its process holds; and once it unlocks, it draws randomness that a
-//! copy of its memory taken while it was locked can't foresee. One test, alone in its binary, as the McEliece pairs it
-//! looks for are the process's, which other tests would make and forget meanwhile.
+//! wipes itself as it is dropped, and prints as its id alone; a locked device keeps no key (no seed, no cell's key, no
+//! entry's key derived from one), nothing a key opened (no selector, no entry's type or tags), and no secret half of a
+//! key that nothing else in its process holds; and once it unlocks, it draws randomness that a copy of its memory taken
+//! while it was locked can't foresee. One test, alone in its binary, as the McEliece pairs it looks for are the
+//! process's, which other tests would make and forget meanwhile.
 
 mod common;
 
 use std::mem::ManuallyDrop;
 
-use avendb::id::{EntryId, SignerId};
-use avendb::keys::{self, KeyId, KeyScope, Secret};
+use avendb::id::{CellId, EntryId, SignerId};
+use avendb::keys::{self, KeyFam, KeyId, Secret};
 use avendb::lab::Lab;
 use avendb::sign::{DeviceKey, Passkey};
 use common::*;
@@ -27,8 +28,8 @@ fn held(lab: &Lab, d: SignerId) -> Vec<KeyId> {
     lab.secrets(d).iter().map(Secret::id).collect()
 }
 
-/// The entry Alice's iPhone, split off with seed `seed` from a world of its own, creates first, after it locked and
-/// unlocked again if `relock`: its id is the first thing it draws from its randomness.
+/// The entry Alice's iPhone, split off with seed `seed` from a world of its own, creates first, a note of the coop's,
+/// after it locked and unlocked again if `relock`: its id is the first thing it draws from its randomness.
 fn first_entry(seed: [u8; 32], relock: bool) -> EntryId {
     let mut w = world();
     let h = handbook(&mut w);
@@ -38,7 +39,8 @@ fn first_entry(seed: [u8; 32], relock: bool) -> EntryId {
         alone.lock(phone);
         assert!(alone.unlock(phone));
     }
-    alone.create(phone, h.coop, h.space, document("A note", "Seeds for the garden.", phone)).expect("a note")
+    let note = document("A note", "Seeds for the garden.", phone);
+    alone.create(phone, h.coop, h.coop, "note", &[], note).expect("a note")
 }
 
 #[test]
@@ -66,23 +68,27 @@ fn a_device_keeps_its_secrets_inside_and_only_while_it_needs_them() {
     assert!(keys::pair_made(own), "the iPhone made its own key's pair to open what is sealed to it");
     let phones = held(&w.lab, phone);
     let shared: Vec<Secret> = w.lab.secrets(mac).into_iter().filter(|s| phones.contains(&s.id())).collect();
-    assert!(shared.len() >= 4, "the vault, coop and space keys both open: {shared:?}");
+    let what = "the seeds of Alice's vault, avenCEO and the coop, the key of the coop's cell and its two entries' keys";
+    assert!(shared.len() >= 6, "{what} both open: {shared:?}");
     for s in &shared {
         s.public();
     }
     w.lab.lock(phone);
     assert!(w.lab.secrets(phone).is_empty(), "a locked device holds no key");
+    assert!(w.lab.meaning(phone, h.welcome).is_none(), "nor reads what an entry is");
     assert!(!keys::pair_made(own), "nor the secret half of its own");
     assert!(shared.iter().all(|s| keys::pair_made(s.id())), "the Mac's keys keep their pairs");
     assert!(w.lab.unlock(phone));
-    let opens = [KeyScope::Vault(alice), KeyScope::Vault(h.coop), KeyScope::Space(h.space), KeyScope::Space(h.notes)];
+    let none = KeyFam::Cell(h.coop, CellId::of(h.coop, &[]));
+    let opens = [KeyFam::Seed(alice), KeyFam::Seed(w.avenceo), KeyFam::Seed(h.coop), none];
     assert!(opens.iter().all(|&k| w.lab.opens(phone, k)), "unlocked, it opens them all again");
+    assert!(w.lab.meaning(phone, h.welcome).is_some(), "and reads what Welcome is");
     assert!(keys::pair_made(own), "making its pair again to open the vault key the Mac sealed to it");
 
     // on a machine of its own, once the iPhone locks, its process holds the secret half of no key the iPhone held
     let mut alone = w.lab.split(phone, &[w.passkey_a], [3; 32]);
     let keys: Vec<Secret> = alone.secrets(phone);
-    assert!(keys.len() >= 5, "its own and the keys it opened: {keys:?}");
+    assert!(keys.len() >= 7, "its own and the keys it opened and derived: {keys:?}");
     for s in &keys {
         s.public();
     }

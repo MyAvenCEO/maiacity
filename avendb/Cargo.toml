@@ -9,7 +9,6 @@ members = [
     "crates/avendb-device",
     "crates/avendb-net",
     "crates/avendb-server",
-    "crates/avendb-web",
 ]
 
 [workspace.package]

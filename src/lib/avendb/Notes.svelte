@@ -1,13 +1,15 @@
 <!--
-	A vault's notes, as a docs app lists its documents: a blank note to start, made at once and opened, then each of the
-	vault's spaces, its home first, with the notes the acting vault reads there as pages, each with its edits, its
+	A vault's notes, as a docs app lists its documents: a blank note to start, made at once and opened, then every note
+	of the vault the acting vault reads, one flat library, narrowed by a tag; each a page with its tags, its edits, its
 	proposals, whether it is a variant of another, and who holds a role on it; a click opens it (Note). Everything else
 	stays out of sight, as on a device of the acting vault alone: the device's world says which vault holds which role
-	on each space and each entry (avendb-browser's `World`), and every edit goes out acting for that vault.
+	on each entry, by the caps whose slices hold it (avendb-browser's `World`), and every edit goes out acting for that
+	vault. A vault other than this one adds a note only through a cap with write on a slice that holds it, tagged as its
+	slice asks.
 -->
 <script>
 	import Icon from './Icon.svelte';
-	import { allows, count, nameOf, reads, ROLES } from './vaults.js';
+	import { count, creates, holders, list, nameOf, reads, ROLES, tagsIn, tagsOf } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -18,118 +20,107 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
 	const as = $derived(byId.get(actor));
-	const spaces = $derived(world.spaces.filter((s) => s.founder === vault));
-	/** the spaces of this vault the acting vault writes in: a new note goes to the one picked, the first at first */
-	const writable = $derived(spaces.filter((s) => allows(s.roles[actor], 'write')));
-	let into = $state('');
-	const target = $derived(writable.find((s) => s.id === into) ?? writable[0]);
+	const entries = $derived(world.entries.filter((e) => e.vault === vault));
+	const seen = $derived(entries.filter((e) => reads(e, actor)));
+	const docs = $derived(seen.filter((e) => e.kind === 'note'));
+	const hidden = $derived(entries.length - seen.length);
+	const tags = $derived(tagsOf(docs));
+	/** the tag the notes are narrowed to: '' for all of them */
+	let only = $state('');
+	const shown = $derived(only && tags.some((t) => t.tag === only) ? docs.filter((e) => e.tags?.includes(only)) : docs);
+	/** the new note's tags, as the person types them, and those the acting vault's cap asks for besides */
+	let tagging = $state('');
+	const typed = $derived(tagsIn(tagging));
+	const asked = $derived(creates(world, vault, actor, 'note', typed));
 	/** every note this browser knows, by entry: to name the one a variant came from */
-	const notes = $derived(new Map(world.spaces.flatMap((s) => s.items.filter((i) => i.kind === 'note').map((i) => [i.entry, i]))));
+	const notes = $derived(new Map(world.entries.filter((e) => e.kind === 'note').map((e) => [e.entry, e])));
 
-	/** Space `s`'s name in its vault: Home, or Space 2. @param {import('./vaults.js').SpaceView} s */
-	const spaceName = (s) => (s.id === here?.home ? 'Home' : `Space ${spaces.indexOf(s) + 1}`);
-
-	/**
-	 * The vaults that hold a role on an item, the strongest first.
-	 * @param {Record<string, import('./vaults.js').Role>} roles
-	 */
-	const holders = (roles) =>
-		Object.entries(roles)
-			.map(([id, role]) => ({ id, role }))
-			.sort((a, b) => ['owner', 'write', 'read', 'relay'].indexOf(a.role) - ['owner', 'write', 'read', 'relay'].indexOf(b.role));
-
-	/** A blank note in the space picked, opened at once. */
+	/** A blank note, tagged as typed and as the cap asks, opened at once. */
 	async function blank() {
-		if (!target) return;
-		const made = await api.write(actor, target.id, 'Untitled note', '');
-		if (made) onopen(made);
+		if (!asked) return;
+		const made = await api.write(actor, vault, 'Untitled note', '', [...typed, ...asked]);
+		if (!made) return;
+		tagging = '';
+		onopen(made);
 	}
 </script>
 
-{#if writable.length}
+{#if asked}
 	<section class="start" aria-label="Start a new note">
 		<button class="blank" disabled={busy} onclick={blank}>
 			<span class="sheet"><Icon name="plus" size={34} /></span>
 			<span class="label">Blank note</span>
 		</button>
-		<p class="soft">
-			A new note, as <b>{nameOf(as)}</b>{#if writable.length > 1}, in
-				<select class="field" bind:value={into} aria-label="New note in">
-					{#each writable as s (s.id)}<option value={s.id}>{spaceName(s)}</option>{/each}
-				</select>{:else}, in {spaceName(writable[0])}{/if}: it opens at once, to title and write.
-		</p>
+		<div class="say">
+			<p class="soft">
+				A new note in {nameOf(here)}, as <b>{nameOf(as)}</b>{#if asked.length}, tagged {list(asked.map((t) => `“${t}”`))}
+					as its cap asks{/if}: it opens at once, to title and write.
+			</p>
+			<input class="field" placeholder="Tags for it (optional)" bind:value={tagging} aria-label="The new note’s tags" />
+		</div>
 	</section>
 {/if}
 
-{#each spaces as s (s.id)}
-	{@const role = s.roles[actor]}
-	{@const seen = s.items.filter((i) => reads(i, actor))}
-	{@const docs = seen.filter((i) => i.kind === 'note')}
-	{@const hidden = s.items.length - seen.length}
-	<section class="space">
-		<header class="space-head">
-			<h2>{spaceName(s)}</h2>
-			{#if role}
-				<span class="chip accent">{nameOf(as)} {ROLES[role]} it</span>
-			{:else if s.public}
-				<span class="chip">Public: everyone reads it</span>
-			{:else if seen.length}
-				<span class="chip">Shared with {nameOf(as)}: {count(seen.length, 'entry', 'entries')}</span>
-			{:else}
-				<span class="chip warn">{nameOf(as)} holds no cap here</span>
-			{/if}
-		</header>
+{#if tags.length}
+	<nav class="filter" aria-label="Narrow by tag">
+		<button class="chip" class:on={!only} aria-pressed={!only} onclick={() => (only = '')}>All {docs.length}</button>
+		{#each tags as t (t.tag)}
+			<button class="chip" class:on={only === t.tag} aria-pressed={only === t.tag} onclick={() => (only = only === t.tag ? '' : t.tag)}
+				>#{t.tag} <small>{t.uses}</small></button
+			>
+		{/each}
+	</nav>
+{/if}
 
-		{#if !seen.length && !role}
-			<div class="empty">
-				<p>
-					{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}'s
-					{s.id === here?.home ? 'home' : 'space'}: it holds no cap on it, nor on any of its entries. A vault that owns it
-					can share it with {nameOf(as)}, in <button class="link" onclick={onaccess}>Access</button>.
-				</p>
-				{#if here?.via && vault !== actor}
-					<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(here)}</button>
-				{/if}
-			</div>
-		{:else if docs.length}
-			<div class="docs">
-				{#each docs as it (it.entry)}
-					{@const origin = it.variantOf ? notes.get(it.variantOf) : undefined}
-					<a class="note" href="#notes/{it.entry}" aria-label={it.title}>
-						<span class="thumb" aria-hidden="true">
-							<span class="page"><b>{it.title}</b><span>{it.text}</span></span>
-						</span>
-						<span class="info">
-							<b>{it.title}</b>
-							<small class="soft">
-								{count(it.edits ?? 0, 'edit')}{it.proposals ? ` · ${count(it.proposals, 'proposal')}` : ''}{it.by
-									? ` · by ${nameOf(byId.get(it.by))}`
-									: ''}
-							</small>
-							{#if it.variantOf}
-								<small class="variant"><Icon name="variant" size={12} /> Variant of {origin ? `“${origin.title}”` : 'a note'}</small>
-							{/if}
-							<span class="who">
-								{#each holders(it.roles) as h (h.id)}
-									<span class="chip" class:accent={h.id === actor}>{nameOf(byId.get(h.id))} {ROLES[h.role]}</span>
-								{/each}
-								{#if it.public}<span class="chip">everyone reads</span>{/if}
-							</span>
-						</span>
-					</a>
-				{/each}
-			</div>
-		{:else}
-			<p class="soft">No note here{role && allows(role, 'write') ? ' yet: start one above.' : '.'}</p>
+{#if !seen.length && vault !== actor}
+	<div class="empty">
+		<p>
+			{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: it holds no
+			cap on any of it. A vault that owns it can share some of it with {nameOf(as)}, a note, its todos, whatever is tagged
+			one way, in <button class="link" onclick={onaccess}>Access</button>.
+		</p>
+		{#if here?.via}
+			<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(here)}</button>
 		{/if}
-
-		{#if hidden > 0 && (seen.length || role)}
-			<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
-		{/if}
-	</section>
+	</div>
+{:else if shown.length}
+	<div class="docs">
+		{#each shown as it (it.entry)}
+			{@const origin = it.variantOf ? notes.get(it.variantOf) : undefined}
+			<a class="note" href="#notes/{it.entry}" aria-label={it.title}>
+				<span class="thumb" aria-hidden="true">
+					<span class="page"><b>{it.title}</b><span>{it.text}</span></span>
+				</span>
+				<span class="info">
+					<b>{it.title}</b>
+					<small class="soft">
+						{count(it.edits ?? 0, 'edit')}{it.proposals ? ` · ${count(it.proposals, 'proposal')}` : ''}{it.by !== vault
+							? ` · by ${nameOf(byId.get(it.by))}`
+							: ''}
+					</small>
+					{#if it.variantOf}
+						<small class="variant"><Icon name="variant" size={12} /> Variant of {origin?.title ? `“${origin.title}”` : 'a note'}</small>
+					{/if}
+					{#if it.tags?.length}
+						<span class="who">{#each it.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>
+					{/if}
+					<span class="who">
+						{#each holders(it.roles) as h (h.id)}
+							<span class="chip" class:accent={h.id === actor}>{nameOf(byId.get(h.id))} {ROLES[h.role]}</span>
+						{/each}
+						{#if it.public}<span class="chip">everyone reads</span>{/if}
+					</span>
+				</span>
+			</a>
+		{/each}
+	</div>
 {:else}
-	<div class="empty">{nameOf(here)} has no space yet{here?.via ? ': its home comes with its name.' : '.'}</div>
-{/each}
+	<p class="soft">No note here{asked ? ' yet: start one above.' : '.'}</p>
+{/if}
+
+{#if hidden > 0 && seen.length}
+	<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
+{/if}
 
 <style>
 	.start {
@@ -144,15 +135,9 @@
 	}
 
 	.start p {
-		flex: 1 1 14rem;
 		margin: 0;
 		font-size: 0.86rem;
 		line-height: 1.5;
-	}
-
-	.start select {
-		margin: 0 0.2rem;
-		padding: 0.15rem 0.4rem;
 	}
 
 	.blank {
@@ -194,25 +179,47 @@
 		font-weight: 600;
 	}
 
-	.space {
-		margin-bottom: 2rem;
+	.say {
+		display: flex;
+		flex: 1 1 14rem;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.5rem;
 	}
 
-	.space-head {
+	.say .field {
+		width: min(100%, 16rem);
+	}
+
+	/* the tags as a docs app's filters: one picked narrows the notes to those that carry it */
+	.filter {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.6rem;
-		margin-bottom: 0.8rem;
+		gap: 0.3rem;
+		margin: 0 0 1rem;
 	}
 
-	.space-head h2 {
-		margin: 0;
-		font-family: var(--font-body);
-		font-size: 1.05rem;
-		font-weight: 600;
-		font-variation-settings: normal;
-		letter-spacing: 0;
+	.filter button {
+		border: 1px solid transparent;
+		font: inherit;
+		font-size: 0.78rem;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.filter button small {
+		color: var(--soft);
+	}
+
+	.filter button.on {
+		border-color: var(--accent);
+		background: #d6e8e4;
+		color: #1f4f47;
+	}
+
+	.tag {
+		background: #e4e9f3;
+		color: #2b3f63;
 	}
 
 	/* the notes as a docs app's documents: a page's thumbnail over its title */

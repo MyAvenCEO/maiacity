@@ -1,43 +1,56 @@
 //! The Lab: in-process devices on a network the test controls. Each device has its own keys, its own edits and its own
 //! store, exactly what a real device would hold; there is also a relay server, a device of the aven vault avenCEO,
-//! which holds relay caps and never read, and any number of strangers. The scenario tests run on it, and so does the
-//! avenDB tile's Lab screen.
+//! which holds relay caps and never reads, and any number of strangers. The scenario tests run on it, and so do the
+//! nodes: a device split off to run on its own (`split`) is what `avendb-net` puts on iroh.
 //!
-//! It grows with the phases: devices and their edits in P1, caps and sync by caps in P2, keys, reading and the blind
-//! server in P3, apps on a schema reading and editing items through their space's lane in P4, locked devices, blobs and
-//! checkpoints in P4b, history and proposals in P5, in P6 offline devices, sync by what each device holds of each log,
-//! gossip of one digest per log in random orders, and backups, whose restored devices fork, and in P7 what the tile
-//! shows and needs: each signer's name, and spare keys made ahead, so that a page making McEliece pairs in its workers
-//! never waits for one. In P8 a device splits off to run on a machine of its own (`split`), and in P8c a new device
-//! links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`). In P8e a passkey in the
-//! platform's authenticator signs in ceremonies (`sign::Ceremony`): an edit is drafted (`draft`), each such passkey
-//! signs its id in a ceremony, and then it is kept (`complete`); several edits drafted together (`drafting`) are signed
-//! in one ceremony, over their batch (`sign::batch_challenge`). A browser's device derives its keys from the PRF output
-//! its passkey evaluated on its salt (`web_device`). A server no vault has claimed yet becomes a device of a new aven
-//! vault, avenCEO, owned by the human vault of the first device that claims it (`claim`, `accept_claim`).
+//! A vault is a flat library of entries (notes, todos, profiles), each with a type and tags, and caps grant relay,
+//! read, write or owner on any slice of it (`slice::Selector`): the whole vault, a type, a tag, an author, one entry,
+//! or any AND/OR of those. An entry sits in the cell of the caps whose slices hold it, and every rule, every key and
+//! all sync go by cells (`policy`). The devices acting for a vault are its stewards: they read every selector of the
+//! vault's caps and every entry's header and tags, and keep each entry in the cell its meaning asks for by moving it
+//! (`policy::Meaning`). A steward creates an entry straight in its cell; anyone else creates it in the intake cell of
+//! the cap it creates it through, for a steward to move. A write by anyone but the vault that adds or removes tags asks
+//! the stewards to, and a steward answers it with a write acting for the vault, carrying what the asker's caps let it
+//! ask for: the tags each cap's chain lets it relabel, where the cap's slice holds the entry before and after.
+//!
+//! A cap's selector travels sealed in the cap (`slice::Select`), to the seeds of the vault it is over, of its grantee
+//! and of its issuer; a write's header, tags and content travel in its encrypted body (`slice::Body`). A device keeps
+//! what it opened of both, as no edit changes them, and what it reads in them (`policy::Readings`).
+//!
+//! Every unlocked device keeps its keys up to date as an honest app would, each time its edits change. It opens every
+//! box its standing `Keys` edits hold for a key it has and every key published in the clear, and derives the key of
+//! each entry in each cell whose key it holds, for each stay the entry had there (`keys::entry_key`). For each family
+//! it may open (a vault's seed, a cap's key, a cell's key), it makes a random key of each epoch from the oldest it
+//! holds to the current one where nobody has yet; announces the public half of each current seed it holds, as keys are
+//! sealed only to seeds and signers; boxes each current key for every target the schedule names that has no box yet,
+//! wrapped where it holds the target's key, sealed to a signer's or a seed's public half otherwise, and left for a
+//! steward where it is a cap's key it doesn't hold; publishes it if the family is public; and wraps each older key it
+//! holds under the next epoch's. Where an entry moved to another cell, it wraps the keys of the entry's earlier stays
+//! under the key it is under now (a move link), so the entry's readers read its whole history and nothing else of the
+//! cells it left. An owner key (a passkey) authoring an edit on a device lends it, for that ceremony only, the key that
+//! is sealed to the owner: that is how a new device reads again after every other device is lost.
 //!
 //! A device shows each entry on every line of its history (`history`): it opens each write it can, and builds the item
-//! of each line from the updates of that line's history. Proposing, merging, promoting, restoring, undoing and
-//! making a variant are writes like any edit, encrypted under the entry's key and checked against the writer's caps.
+//! of each line from the updates of that line's history. Proposing, merging, promoting, restoring, undoing and making a
+//! variant are writes like any edit, encrypted under the entry's key and checked against the writer's caps.
 //!
 //! A person's device derives its keys from their passkey at every unlock (`sign::Passkey::device`) and holds them only
 //! while it is unlocked: a locked device keeps its edits and their ciphertext, and no key, nor anything a key opened.
-//! The server and strangers have keys of their own.
-//!
-//! Every unlocked device keeps its keys up to date as an honest app would, each time its edits change: it opens every
-//! box its standing `Keys` edits hold for a key it has, and for each family it may open, it makes the key of each epoch
-//! from its oldest to the current one if nobody has yet, announces each current vault or space key it holds (keys are
-//! sealed to those), boxes it for every target the schedule names that has no box yet, publishes it if the family is
-//! public, and wraps each older key it holds under the next epoch's key if nobody has yet. A box is wrapped where the
-//! device holds the key it goes to, and sealed to that key's public half otherwise. An owner key (a passkey) authoring
-//! an edit on a device lends it, for that ceremony only, the key that is sealed to the owner: that is how a new device
-//! reads again after every other device is lost.
+//! The server and strangers have keys of their own. A passkey in the platform's authenticator signs in ceremonies
+//! (`sign::Ceremony`): an edit is drafted (`draft`), each such passkey signs its id in a ceremony, and then it is kept
+//! (`complete`); several edits drafted together (`drafting`) are signed in one ceremony, over their batch
+//! (`sign::batch_challenge`). A browser's device derives its keys from the PRF output its passkey evaluated on its salt
+//! (`web_device`). A new device links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`),
+//! and a server no vault has claimed yet becomes a device of a new aven vault, avenCEO, owned by the human vault of the
+//! first device that claims it (`claim`, `accept_claim`).
 //!
 //! A Classic McEliece public key travels as a blob beside the edits that name it (`policy::Edit::blobs`): a device
 //! keeps the blobs of the edits it keeps, each only if it hashes to its id, and seals to a key once it holds that key's
 //! blob. Before it syncs, a device vouches for the writes it made since its last checkpoint
 //! (`policy::Action::Checkpoint`); once peers stop trusting the curves (`set_pq_only`), each counts only the writes a
 //! checkpoint by their author covers (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
+//! Devices sync by what each holds of each log, gossip one digest per log in random orders, and go offline and come
+//! back; a device restored from a backup forks from what it made since (`forks`).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -48,22 +61,29 @@ use serde_json::Value;
 use zeroize::Zeroizing;
 
 use crate::doc::{Item, Version};
-use crate::encode::{self, box_info, write_context};
+use crate::encode::{self, box_info, cap_context, select_info, write_context};
 use crate::hash::{Hasher, Reader};
 use crate::history::{Change, Draft, History, MAIN};
-use crate::id::{BlobId, EditId, EntryId, SignerId, SpaceId, VaultId};
-use crate::keys::{self, KeyBox, KeyId, KeyName, KeyScope, PublicKey, Recipient, SeededRng, Secret};
+use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
-use crate::policy::{checkpointed, replay, Action, Edit, Kind, Line, Log, Principal, Proposal, Refusal, Replay, State};
+use crate::policy::{
+    checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Issued, Kind, Line, Log, Meaning, Principal, Proposal,
+    Readings, Refusal, Replay, Role, State, Write,
+};
 use crate::sign::{
     self, Ceremony, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed,
 };
-use crate::sync::{answer, asks_ids, beyond, digests_ids, forks_in, link_places, logs_of, vault_logs, LogId, Place};
+use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
+use crate::sync::{
+    answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
+};
 use crate::wire::{Claim, Join, Request, Wire as _};
 
-/// A device keeps its keys up to date in a few rounds at most: one to make and seal keys, one to seal newer keys to
-/// the keys it just made, one to find nothing left. More means an edit the rules refuse, made again and again.
-const ROUNDS: usize = 6;
+/// A device keeps its keys and cells up to date in a few rounds at most: one to make and seal keys and move entries,
+/// one to seal the keys of the cells they moved to and link their history, one to answer what moved, one to find
+/// nothing left. More means an edit the rules refuse, made again and again.
+const ROUNDS: usize = 10;
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
@@ -77,7 +97,7 @@ pub enum Tamper {
     ForgedSignature { claimed: SignerId, action: Action },
     /// An accepted write with one byte of its ciphertext changed.
     ChangedCiphertext(EditId),
-    /// A key from before a revocation, sealed again to the revoked device and replayed.
+    /// A key from before a removal, sealed again to the removed device and replayed.
     ReplayedSeal { key: KeyName, to: SignerId },
     /// An edit signed with only the classical half of `signer`'s key, as whoever broke its curve (ed25519, or a
     /// passkey's P-256) could sign it: the hash-based half is missing.
@@ -203,16 +223,73 @@ impl Drafting<'_> {
     }
 }
 
-/// A key a device opened: its family, its epoch and its secret.
-#[derive(Clone)]
-struct Opened {
-    key: KeyScope,
-    epoch: u64,
-    secret: Secret,
+/// The keys a device holds, opened, made or derived: each by its id, with its name. A name can have more than one key,
+/// as devices that make a family's key at the same time each make one; its keys are told apart by their ids.
+#[derive(Default)]
+struct Keyring {
+    by_id: HashMap<KeyId, (KeyName, Secret)>,
+    /// Each name's keys, the smallest id first.
+    by_name: HashMap<KeyName, Vec<KeyId>>,
+    /// The epochs of each family it holds a key of.
+    epochs: HashMap<KeyFam, BTreeSet<u64>>,
+    /// Its cell keys, in the order it took them: what the entry keys derive from.
+    cells: Vec<KeyId>,
+}
+
+impl Keyring {
+    /// Hold `secret` as a key of `name`: false if it holds that key already.
+    fn insert(&mut self, name: KeyName, secret: Secret) -> bool {
+        let id = secret.id();
+        if self.by_id.contains_key(&id) {
+            return false;
+        }
+        let ids = self.by_name.entry(name).or_default();
+        let at = ids.partition_point(|x| *x < id);
+        ids.insert(at, id);
+        if let KeyName::Scoped(k, e) = name {
+            self.epochs.entry(k).or_default().insert(e);
+            if let KeyFam::Cell(..) = k {
+                self.cells.push(id);
+            }
+        }
+        self.by_id.insert(id, (name, secret));
+        true
+    }
+
+    fn contains(&self, id: &KeyId) -> bool {
+        self.by_id.contains_key(id)
+    }
+
+    /// Key `id`, if it holds it as a key of `name`.
+    fn get(&self, id: &KeyId, name: KeyName) -> Option<&Secret> {
+        self.by_id.get(id).filter(|(n, _)| *n == name).map(|(_, s)| s)
+    }
+
+    /// Its keys of `name`, the smallest id first.
+    fn held(&self, name: KeyName) -> impl Iterator<Item = &Secret> {
+        self.by_name.get(&name).into_iter().flatten().map(|id| &self.by_id[id].1)
+    }
+
+    fn first(&self, name: KeyName) -> Option<&Secret> {
+        self.held(name).next()
+    }
+
+    /// The epochs of family `k` it holds a key of, the oldest first.
+    fn epochs(&self, k: KeyFam) -> impl Iterator<Item = u64> + '_ {
+        self.epochs.get(&k).into_iter().flatten().copied()
+    }
+
+    fn ids(&self) -> impl Iterator<Item = &KeyId> {
+        self.by_id.keys()
+    }
+
+    fn secrets(&self) -> impl Iterator<Item = &Secret> {
+        self.by_id.values().map(|(_, s)| s)
+    }
 }
 
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
-/// them; the keys it opened; and the entries it shows.
+/// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
     log: Log,
     signed: HashMap<EditId, Signed>,
@@ -220,9 +297,20 @@ struct Store {
     /// The replay of its edits: which stand, and what it knows. Of the checkpointed ones only, once it no longer trusts
     /// the curves.
     replay: Replay,
-    /// By id, so the first of a family's keys at an epoch is the one with the smallest id. Empty while it is locked.
-    keys: BTreeMap<KeyId, Opened>,
-    shown: BTreeMap<(SpaceId, EntryId), Shown>,
+    /// Empty while it is locked, as is everything below but what it made itself and has to vouch for.
+    keys: Keyring,
+    /// The entry keys it derived: by the key of the cell it derived each from, the entry and the stay.
+    derived: HashSet<(KeyId, EntryId, Option<EditId>)>,
+    /// The slices of the caps whose selectors it opened, and the caps whose selectors never open for it: garbled, or
+    /// with no box for a key it holds that opens, or, where it is a steward, for no seed of the vault the cap is over.
+    slices: HashMap<CapId, Slice>,
+    unreadable: HashSet<CapId>,
+    /// The bodies of the writes it opened, and the writes whose bodies never open: garbled under the key they name.
+    bodies: HashMap<EditId, Body>,
+    spoilt: HashSet<EditId>,
+    /// What it reads of selectors, headers and tags, from the two above.
+    readings: Readings,
+    shown: BTreeMap<EntryId, Shown>,
     /// The writes it made itself that no checkpoint of its own covers yet.
     unvouched: Vec<EditId>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
@@ -236,7 +324,13 @@ impl Default for Store {
             signed: HashMap::new(),
             blobs: HashMap::new(),
             replay: replay(&[]),
-            keys: BTreeMap::new(),
+            keys: Keyring::default(),
+            derived: HashSet::new(),
+            slices: HashMap::new(),
+            unreadable: HashSet::new(),
+            bodies: HashMap::new(),
+            spoilt: HashSet::new(),
+            readings: Readings::default(),
             shown: BTreeMap::new(),
             unvouched: vec![],
             digests: None,
@@ -249,59 +343,77 @@ impl Store {
         &self.replay.state
     }
 
-    /// The keys it holds of family `k` at epoch `e`, the smallest id first.
-    fn held(&self, k: KeyScope, e: u64) -> impl Iterator<Item = &Opened> {
-        self.keys.values().filter(move |o| o.key == k && o.epoch == e)
+    /// Forget every key and everything a key opened, as it locks.
+    fn forget(&mut self) {
+        self.keys = Keyring::default();
+        self.derived.clear();
+        self.slices.clear();
+        self.unreadable.clear();
+        self.bodies.clear();
+        self.spoilt.clear();
+        self.readings = Readings::default();
+        self.shown.clear();
+    }
+
+    /// It read the selector of every live cap over vault `v` and of every cap those rest on, or knows it never will:
+    /// what a steward waits for before it works out any entry's cell.
+    fn reads_caps(&self, st: &State, v: VaultId) -> bool {
+        let read = |c: &CapId| self.slices.contains_key(c) || self.unreadable.contains(c);
+        st.caps_over(v).filter(|cp| st.live(cp.id)).all(|cp| cp.chain.iter().all(read))
     }
 }
 
-/// What a device shows of one entry: its history, every accepted write with what the device could open, and the item
-/// of each line where it opens any update.
-#[derive(Default)]
+/// What a device shows of one entry: its history, every accepted write with what the device could open, the item of
+/// each line where it opens any update, and a hash of which writes it holds and opened, to build it again only once
+/// that changes.
 struct Shown {
     history: History,
     items: BTreeMap<Line, Item>,
+    print: [u8; 32],
 }
 
-/// What a device's standing `Keys` edits say: the keys announced, the boxes, and what is published.
+/// What a device's standing `Keys` edits say: the seeds announced, the boxes, and what is published.
 #[derive(Default)]
 struct KeyIndex {
-    /// Each key announced, by family and epoch, with the public key it is sealed to.
-    made: BTreeMap<(KeyScope, u64), Vec<(KeyId, PublicKey)>>,
-    /// Each box, after the key it holds.
-    boxes: Vec<(KeyScope, u64, KeyId, KeyBox)>,
-    /// Each key published in the clear.
-    clear: Vec<(KeyScope, u64, KeyId, [u8; 32])>,
+    /// Each seed key announced, by name, with the public half keys are sealed to.
+    made: HashMap<KeyName, Vec<(KeyId, PublicKey)>>,
+    /// Each box, after the name and the id of the key it holds.
+    boxes: Vec<(KeyName, KeyId, KeyBox)>,
+    /// Which key has a box for which: its name, its id, the name of the key the box goes to.
+    boxed: HashSet<(KeyName, KeyId, KeyName)>,
+    /// Each key published in the clear, and their ids.
+    clear: Vec<(KeyName, KeyId, [u8; 32])>,
+    cleared: HashSet<KeyId>,
+    /// The names some device made a key of: announced, boxed, wrapped or published, or with a box under it.
+    exists: HashSet<KeyName>,
 }
 
 impl KeyIndex {
     fn of(r: &Replay) -> KeyIndex {
         let mut ix = KeyIndex::default();
         for (edit, _) in r.edits.iter().zip(&r.stood).filter(|(_, stood)| **stood) {
-            if let Action::Keys { key, epoch, id, public, boxes, clear } = &edit.action {
+            if let Action::Keys { name, id, public, boxes, clear } = &edit.action {
+                ix.exists.insert(*name);
                 if let Some(p) = public {
-                    ix.made.entry((*key, *epoch)).or_default().push((*id, p.clone()));
+                    ix.made.entry(*name).or_default().push((*id, p.clone()));
                 }
-                ix.boxes.extend(boxes.iter().map(|b| (*key, *epoch, *id, b.clone())));
-                ix.clear.extend(clear.map(|c| (*key, *epoch, *id, c)));
+                for b in boxes {
+                    ix.exists.insert(b.to.name());
+                    ix.boxed.insert((*name, *id, b.to.name()));
+                    ix.boxes.push((*name, *id, b.clone()));
+                }
+                if let Some(c) = clear {
+                    ix.clear.push((*name, *id, *c));
+                    ix.cleared.insert(*id);
+                }
             }
         }
         ix
     }
 
-    /// Key `id` of `k` at `e` has a box for `to`: for a family's key, to any of its keys at that epoch.
-    fn boxed(&self, k: KeyScope, e: u64, id: KeyId, to: KeyName) -> bool {
-        self.boxes.iter().any(|(bk, be, bid, b)| (*bk, *be, *bid) == (k, e, id) && b.to.name() == to)
-    }
-
-    fn cleared(&self, id: KeyId) -> bool {
-        self.clear.iter().any(|c| c.2 == id)
-    }
-
-    /// Some device made a key of `k` at `e`: it is announced, boxed or wrapped, or something is wrapped under it.
-    fn exists(&self, k: KeyScope, e: u64) -> bool {
-        self.made.contains_key(&(k, e))
-            || self.boxes.iter().any(|(bk, be, _, b)| (*bk, *be) == (k, e) || b.to.name() == KeyName::Scoped(k, e))
+    /// Key `id` of `name` is announced, its public half with it.
+    fn announced(&self, name: KeyName, id: KeyId) -> bool {
+        self.made.get(&name).is_some_and(|m| m.iter().any(|x| x.0 == id))
     }
 }
 
@@ -314,7 +426,7 @@ pub fn spare_keys(n: usize) {
     SPARES.store(n, Ordering::Relaxed);
 }
 
-/// Keys made ahead for vault and space keys, each with its McEliece pair on its way.
+/// Keys made ahead for seeds, each with its McEliece pair on its way.
 #[derive(Default)]
 struct Spares {
     keys: VecDeque<Secret>,
@@ -367,6 +479,29 @@ impl Backup {
     }
 }
 
+/// A cap to issue (`Lab::issue`): its grantee holds `role` over the entries of vault `over` that `slice` selects, and
+/// may ask the vault's stewards to add or remove the tags its relabel set names. A slice that selects all makes a wide
+/// cap.
+#[derive(Clone, Debug)]
+pub struct NewCap {
+    pub over: VaultId,
+    pub grantee: Grantee,
+    pub role: Role,
+    pub slice: Slice,
+    /// The owner cap its issuer relies on: `None` when the vault itself issues it.
+    pub parent: Option<CapId>,
+    pub issuer: VaultId,
+}
+
+/// One edit a device's upkeep calls for.
+#[derive(Debug)]
+enum Work {
+    /// An edit signed as it is: a `Keys` edit, or a steward's move.
+    Edit(Action),
+    /// A steward's write acting for vault `vault` on entry `entry`, carrying `body`: its answer to asks for tags.
+    Retag { vault: VaultId, entry: EntryId, body: Body },
+}
+
 pub struct Lab {
     /// The keys at hand: passkeys, owner keys, and unlocked devices.
     keys: HashMap<SignerId, Key>,
@@ -390,6 +525,8 @@ pub struct Lab {
     pq_only: bool,
     /// The devices off the network: they neither send nor receive.
     offline: HashSet<SignerId>,
+    /// The time a new entry's header says it was created at, in seconds since 1970 (`set_now`).
+    now: u64,
 }
 
 impl Default for Lab {
@@ -423,17 +560,24 @@ impl Lab {
             spares: Spares::default(),
             pq_only: false,
             offline: HashSet::new(),
+            now: 0,
         };
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
     }
 
-    /// Keep `n` keys made ahead for the vault and space keys devices make, each with its McEliece pair on its way
+    /// Keep `n` keys made ahead for the seeds devices make, each with its McEliece pair on its way
     /// (`keys::Secret::prepare`), so that making one never waits for its pair: a device takes a spare and makes
     /// another. A real device would do the same, as making a pair takes most of a second.
     pub fn keep_spares(&mut self, n: usize) {
         self.spares.keep = n;
         self.spares.fill(&mut self.rng);
+    }
+
+    /// The time new entries' headers say they were created at, from now on, in seconds since 1970: a node sets it from
+    /// its clock before it creates an entry. A Lab starts at 0.
+    pub fn set_now(&mut self, now: u64) {
+        self.now = now;
     }
 
     /// The name the Lab made signer `s` with.
@@ -451,7 +595,8 @@ impl Lab {
     fn seed(&mut self, what: &str, name: &str) -> Reader {
         self.made += 1;
         let mut h = Hasher::new("lab key");
-        h.update(&self.made.to_be_bytes()).update(&(what.len() as u32).to_be_bytes()).update(what.as_bytes()).update(name.as_bytes());
+        h.update(&self.made.to_be_bytes()).update(&(what.len() as u32).to_be_bytes());
+        h.update(what.as_bytes()).update(name.as_bytes());
         if self.on_machine {
             let mut drawn = Zeroizing::new([0u8; 32]);
             self.rng.fill_bytes(&mut *drawn);
@@ -626,7 +771,8 @@ impl Lab {
         }
         let vault = *vault;
         // the claim brings vault logs, and nothing else, each edit signed
-        let card: Vec<Signed> = card.into_iter().filter(|s| s.edit.vault_of().is_some()).collect();
+        let vault_log = |s: &Signed| matches!(log_of(&s.edit, s.edit.id()), Some(LogId::Vault(_)));
+        let card: Vec<Signed> = card.into_iter().filter(vault_log).collect();
         for signed in &card {
             signed.verify()?;
         }
@@ -689,21 +835,20 @@ impl Lab {
 
     /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped. So does the
     /// secret half of each of their McEliece pairs that nothing else here holds (`keys::forget_pairs`): another
-    /// signer's own key, a key another device opened, or a spare. Its edits and their ciphertext stay, and it still
+    /// signer's own key, a key another device holds, or a spare. Its edits and their ciphertext stay, and it still
     /// receives and passes on edits.
     pub fn lock(&mut self, d: SignerId) {
         let own = self.keys.remove(&d).and_then(|k| k.seal_secret()).map(|s| s.id());
         let mut gone: BTreeSet<KeyId> = own.into_iter().collect();
         let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
-        gone.extend(store.keys.keys());
-        store.keys.clear();
-        store.shown.clear();
+        gone.extend(store.keys.ids());
+        store.forget();
         // what passkeys in the platform's authenticator lent in their ceremonies, nothing here holds
         gone.extend(self.keys.values().filter_map(|k| if let Key::Web { pair, .. } = k { Some(*pair) } else { None }));
         for secret in self.keys.values().filter_map(Key::seal_secret) {
             gone.remove(&secret.id());
         }
-        for id in self.stores.values().flat_map(|store| store.keys.keys()) {
+        for id in self.stores.values().flat_map(|store| store.keys.ids()) {
             gone.remove(id);
         }
         for spare in &self.spares.keys {
@@ -827,7 +972,7 @@ impl Lab {
     }
 
     /// Device `from` hands vault `v`'s log to device `to`, as when two people exchange contact cards: a peer needs a
-    /// vault's log before it accepts a grant to that vault.
+    /// vault's log before it accepts a cap to that vault.
     pub fn share_contact(&mut self, from: SignerId, to: SignerId, v: VaultId) {
         let store = self.held(from);
         let ids: Vec<EditId> = vault_logs(store.log.edits(), store.view(), vec![v]).iter().map(Edit::id).collect();
@@ -923,78 +1068,292 @@ impl Lab {
         blobs
     }
 
-    /// Bring device `d`'s keys and items up to date with its edits, `lent` holding the keys of owners signing on it
-    /// right now. Each round replays its edits, opens what it can, and makes the `Keys` edits still missing. A locked
-    /// device only replays.
+    /// Issue a cap on device `on`, signed by `signers`, if `on`'s view accepts it: its id. An owner cap is governance,
+    /// so the issuer's root, or its threshold of owners, signs too. Its selector is sealed (`slice::Select`).
+    /// `UnknownKey` if `on` can't seal it to the vault the cap is over, or to its grantee, as it holds no seed of
+    /// theirs nor its announced public half.
+    pub fn issue(&mut self, on: SignerId, signers: &[SignerId], cap: NewCap) -> Result<CapId, Refusal> {
+        let draft = self.draft_cap(on, signers, cap)?;
+        self.complete(on, draft, &[]).map(CapId::from)
+    }
+
+    /// The cap `issue` issues, drafted for the passkeys among its signers to sign in their ceremonies (`draft`).
+    pub fn draft_cap(&mut self, on: SignerId, signers: &[SignerId], new: NewCap) -> Result<Unsigned, Refusal> {
+        self.unlocked(on)?;
+        let NewCap { over, grantee, role, slice, parent, issuer } = new;
+        let wide = slice.select == Selector::All;
+        let nonce = self.rng.next_u64();
+        let mut cap = Cap { over, grantee, role, wide, select: vec![], parent, issuer, nonce };
+        cap.select = self.seal_select(on, &cap, &slice)?;
+        self.draft(on, signers, Action::Cap(cap, vec![]))
+    }
+
+    /// The `select` of `cap`, holding `slice`: in the clear for a cap to Public, else sealed under a key of its own,
+    /// which is boxed to the seed of each vault that reads it: the vault the cap is over, its grantee unless the cap
+    /// only relays, and its issuer where `on` holds or knows the issuer's seed (`slice::Select`).
+    fn seal_select(&mut self, on: SignerId, cap: &Cap, slice: &Slice) -> Result<Vec<u8>, Refusal> {
+        if cap.grantee == Grantee::Public {
+            return Ok(Select::Clear(slice.clone()).to_wire());
+        }
+        let grantee = match cap.grantee {
+            Grantee::Principal(Principal::Vault(g)) if cap.role.allows(Role::Read) => Some(g),
+            _ => None,
+        };
+        let mut readers: Vec<VaultId> = [Some(cap.over), grantee, Some(cap.issuer)].into_iter().flatten().collect();
+        let mut seen = HashSet::new();
+        readers.retain(|v| seen.insert(*v));
+        let Lab { stores, rng, .. } = self;
+        let store = stores.get(&on).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
+        let (st, ix) = (store.view(), KeyIndex::of(&store.replay));
+        let key = Secret::generate(rng);
+        let sealed = keys::seal_edit(&key, &slice.to_wire(), &cap_context(cap), rng);
+        let info = |to: &Recipient| select_info(cap, key.id(), to);
+        let mut boxes = vec![];
+        for v in readers {
+            match key_box(&key, st.current(KeyFam::Seed(v)), &info, st, store, &ix, &[], rng) {
+                Some(b) => boxes.push(b),
+                None if v == cap.over || Some(v) == grantee => return Err(Refusal::UnknownKey),
+                None => {}
+            }
+        }
+        Ok(Select::Sealed { boxes, slice: sealed }.to_wire())
+    }
+
+    /// Bring device `d`'s keys, cells and items up to date with its edits, `lent` holding the keys of owners signing on
+    /// it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and makes the
+    /// edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
         for round in 0.. {
             let pq_only = self.pq_only;
-            let Some(store) = self.stores.get_mut(&d) else { return };
+            let Lab { stores, rng, spares, .. } = self;
+            let Some(store) = stores.get_mut(&d) else { return };
             store.replay = if pq_only { replay(&checkpointed(store.log.edits())) } else { store.log.replay() };
             // a locked device holds no key, and opens nothing
             if !unlocked {
                 return;
             }
             let ix = KeyIndex::of(&store.replay);
-            open_keys(&mut store.keys, &ix, &mine);
-            let actions = upkeep(d, store, &ix, &mine, &mut self.rng, &mut self.spares);
-            if actions.is_empty() {
+            open_keys(store, &ix, &mine);
+            read(d, store);
+            let work = upkeep(d, store, &ix, &mine, rng, spares);
+            if work.is_empty() {
                 show_items(d, store);
                 return;
             }
-            assert!(round < ROUNDS, "{d:?} keeps making keys edits its own view refuses: {actions:?}");
-            for action in actions {
-                let edit = self.held(d).log.draft(d, &[], action);
-                let signed = self.sign(edit).expect("an unlocked device signs");
-                self.keep(d, vec![signed], &Blobs::new());
+            assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
+            // what its edits say, every write counted: what it drafts on
+            let view = if pq_only { store.log.view() } else { store.replay.state.clone() };
+            for w in work {
+                self.work(d, &view, w);
+            }
+            if pq_only {
+                self.vouch(d);
             }
         }
     }
 
-    /// Create an item in `space` on device `on`, acting for `actor`: its first encrypted write. The item must have
-    /// been made on `on`, as its Loro edits carry `on`'s peer.
-    pub fn create(&mut self, on: SignerId, actor: VaultId, space: SpaceId, item: Item) -> Result<EntryId, Refusal> {
-        self.unlocked(on)?;
+    /// Sign and keep on device `d` an edit its upkeep calls for, drafted on `view`, what `d`'s edits say.
+    fn work(&mut self, d: SignerId, view: &State, w: Work) {
+        let edit = match w {
+            Work::Edit(action) => self.held(d).log.draft_on(view, d, &[], action),
+            Work::Retag { vault, entry, body } => {
+                let en = view.entry(entry).expect("an entry of the view");
+                let (stay, x) = (en.stay(), en.cell());
+                let generation = view.epoch(KeyFam::Cell(vault, x));
+                let action = Action::Write {
+                    vault,
+                    entry,
+                    actor: vault,
+                    stay,
+                    generation,
+                    deps: vec![],
+                    proposal: Proposal::Main,
+                    via: vec![],
+                    create: None,
+                    body: vec![],
+                };
+                let edit = self.held(d).log.draft_on(view, d, &[], action);
+                self.seal_write(d, edit, body, x).expect("an unlocked device signs");
+                return;
+            }
+        };
+        let signed = self.sign(edit).expect("an unlocked device signs");
+        self.keep(d, vec![signed], &Blobs::new());
+    }
+
+    /// What device `d` makes of its edits, every write counted: what it drafts and checks its own edits by.
+    fn full_view(&self, d: SignerId) -> std::borrow::Cow<'_, State> {
+        let store = self.held(d);
+        if self.pq_only { std::borrow::Cow::Owned(store.log.view()) } else { std::borrow::Cow::Borrowed(store.view()) }
+    }
+
+    /// The edit `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts it.
+    fn check_on(&self, on: SignerId, view: &State, action: Action) -> Result<Edit, Refusal> {
+        let edit = self.held(on).log.draft_on(view, on, &[], action);
+        view.accepts(&edit, edit.id())?;
+        Ok(edit)
+    }
+
+    /// A new entry's id: 32 random bytes.
+    fn new_entry_id(&mut self) -> EntryId {
         let mut id = [0u8; 32];
         self.rng.fill_bytes(&mut id);
-        let entry = EntryId(id);
-        let (deps, proposal, via, body) = (vec![], Proposal::Main, vec![], vec![]);
-        let draft = Action::Write { space, entry, actor, epoch: 0, deps, proposal, via, body };
-        let edit = self.held(on).log.check(on, &[], draft)?;
-        self.write(on, edit, &item.export(&Version::default()))?;
+        EntryId(id)
+    }
+
+    /// Create an entry of vault `vault` of type `ty` with tags `tags` holding `item`, on device `on`, acting for
+    /// `actor`: its first encrypted write. A steward puts it in its cell, once it reads the selectors of every cap of
+    /// the vault, and in the vault's own cell before (a steward moves it); anyone else in the intake cell of a cap it
+    /// holds with write or more (`policy::Issued::intake`) whose slice holds it, or of the first such cap if it reads
+    /// none of their selectors. The item must have been made on `on`, as its Loro edits carry `on`'s peer. `NoCap` if
+    /// `actor` holds no such cap, or every slice it reads leaves the entry out.
+    pub fn create(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        ty: &str,
+        tags: &[&str],
+        item: Item,
+    ) -> Result<EntryId, Refusal> {
+        self.unlocked(on)?;
+        let entry = self.new_entry_id();
+        let header = Header { ty: Sym::new(ty), created: self.now };
+        let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
+        let cell = self.intake(on, actor, vault, entry, &header, &tags)?;
+        self.create_as(on, actor, vault, entry, cell, header, tags, item)
+    }
+
+    /// `create` in the cell of the caps `cell`, whatever their slices say: what a device that ignores where its entry
+    /// belongs does, which the rules check by the cell alone.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_in(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        cell: Vec<CapId>,
+        ty: &str,
+        tags: &[&str],
+        item: Item,
+    ) -> Result<EntryId, Refusal> {
+        self.unlocked(on)?;
+        let entry = self.new_entry_id();
+        let header = Header { ty: Sym::new(ty), created: self.now };
+        let tags = tags.iter().map(|&t| Sym::new(t)).collect();
+        self.create_as(on, actor, vault, entry, cell, header, tags, item)
+    }
+
+    /// The first write of entry `entry`, in the cell of the caps `cell`, under the generation the cell is at, or the
+    /// one it moves to as the entry brings it back into use (`policy::State::reenters`).
+    #[allow(clippy::too_many_arguments)]
+    fn create_as(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        entry: EntryId,
+        cell: Vec<CapId>,
+        header: Header,
+        tags: Vec<Sym>,
+        item: Item,
+    ) -> Result<EntryId, Refusal> {
+        let view = self.full_view(on).into_owned();
+        let x = CellId::of(vault, &cell);
+        let generation = view.epoch(KeyFam::Cell(vault, x)) + view.reenters(vault, x) as u64;
+        let action = Action::Write {
+            vault,
+            entry,
+            actor,
+            stay: None,
+            generation,
+            deps: vec![],
+            proposal: Proposal::Main,
+            via: vec![],
+            create: Some(cell),
+            body: vec![],
+        };
+        let edit = self.check_on(on, &view, action)?;
+        let tags = TagDelta { add: tags, remove: vec![] };
+        let body = Body { header: Some(header), tags, answers: vec![], content: item.export(&Version::default()) };
+        self.write(on, edit, body, x)?;
         Ok(entry)
     }
 
-    /// Edit an item on device `on`, acting for `actor`, on its main line: `edit_on`.
+    /// The cell a new entry goes in (`create`).
+    fn intake(
+        &self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        entry: EntryId,
+        header: &Header,
+        tags: &[Sym],
+    ) -> Result<Vec<CapId>, Refusal> {
+        let (store, st) = (self.held(on), self.full_view(on));
+        let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.to_vec() };
+        if actor == vault {
+            let complete = store.reads_caps(&st, vault);
+            return Ok(if complete { semantic_cell(&st, vault, &attrs, &store.readings) } else { vec![] });
+        }
+        let caps: Vec<&Issued> =
+            st.caps_held(actor).filter(|cp| cp.cap.over == vault && st.holds(actor, cp, Role::Write)).collect();
+        // its own selector, as the grantee reads it: the stewards judge by the whole chain
+        let holds = |cp: &&Issued| store.slices.get(&cp.id).map(|s| cp.cap.wide || s.select.matches(&attrs));
+        if let Some(cp) = caps.iter().find(|cp| holds(cp) == Some(true)) {
+            return Ok(cp.intake.to_vec());
+        }
+        if !caps.is_empty() && caps.iter().all(|cp| holds(cp).is_some()) {
+            return Err(Refusal::NoCap);
+        }
+        caps.first().map(|cp| cp.intake.to_vec()).ok_or(Refusal::NoCap)
+    }
+
+    /// Edit an entry on device `on`, acting for `actor`, on its main line: `edit_on`.
     pub fn edit(
         &mut self,
         on: SignerId,
         actor: VaultId,
-        space: SpaceId,
         entry: EntryId,
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
-        self.edit_on(on, actor, space, entry, MAIN, change)
+        self.edit_on(on, actor, entry, MAIN, change)
     }
 
-    /// Edit an item on line `line` of its history, on device `on`, acting for `actor`: `change` edits the item as the
-    /// device shows it there, and what changed becomes one encrypted write under the entry's current key, building on
-    /// the line's heads.
+    /// Edit an entry on line `line` of its history, on device `on`, acting for `actor`: `change` edits the item as the
+    /// device shows it there, and what changed becomes one encrypted write under the entry's key now, building on the
+    /// line's heads.
     pub fn edit_on(
         &mut self,
         on: SignerId,
         actor: VaultId,
-        space: SpaceId,
         entry: EntryId,
         line: Line,
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, space, entry).edit(line, on, change);
-        self.make(on, actor, (space, entry), draft)
+        let draft = self.shown(on, entry).edit(line, on, change);
+        self.make(on, actor, entry, draft, TagDelta::default())
+    }
+
+    /// Add the tags `add` to an entry and remove the tags `remove`, on device `on`, acting for `actor`: a write on its
+    /// main line carrying only the tags. They count at once when `actor` is the entry's vault; anyone else asks the
+    /// vault's stewards, who answer with what its caps let it ask for.
+    pub fn tag(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        entry: EntryId,
+        add: &[&str],
+        remove: &[&str],
+    ) -> Result<EditId, Refusal> {
+        self.unlocked(on)?;
+        let syms = |ts: &[&str]| ts.iter().map(|&t| Sym::new(t)).collect();
+        let tags = TagDelta { add: syms(add), remove: syms(remove) };
+        self.make(on, actor, entry, Draft { proposal: Proposal::Main, deps: vec![], body: vec![] }, tags)
     }
 
     /// Start a proposal named `name` of an entry, from the version `from` (any of its writes, with what they build on),
@@ -1003,13 +1362,13 @@ impl Lab {
         &mut self,
         on: SignerId,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         from: &[EditId],
         name: &str,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, space, entry).propose(from, name);
-        self.make(on, actor, (space, entry), draft)
+        let draft = self.shown(on, entry).propose(from, name);
+        self.make(on, actor, entry, draft, TagDelta::default())
     }
 
     /// Merge line `from` of an entry into line `into`: a write on `into` building on the heads of both.
@@ -1017,13 +1376,13 @@ impl Lab {
         &mut self,
         on: SignerId,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         from: Line,
         into: Line,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, space, entry).merge(from, into);
-        self.make(on, actor, (space, entry), draft)
+        let draft = self.shown(on, entry).merge(from, into);
+        self.make(on, actor, entry, draft, TagDelta::default())
     }
 
     /// Promote line `from` of an entry into line `into`: a merge whose write brings `into` to exactly what `from`
@@ -1032,13 +1391,13 @@ impl Lab {
         &mut self,
         on: SignerId,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         from: Line,
         into: Line,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, space, entry).promote(from, into, on);
-        self.make(on, actor, (space, entry), draft)
+        let draft = self.shown(on, entry).promote(from, into, on);
+        self.make(on, actor, entry, draft, TagDelta::default())
     }
 
     /// Put the record of `version` back on line `line` of an entry: restore an earlier version, or revert the
@@ -1047,13 +1406,13 @@ impl Lab {
         &mut self,
         on: SignerId,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         line: Line,
         version: &[EditId],
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, space, entry).restore(line, version, on);
-        self.make(on, actor, (space, entry), draft)
+        let draft = self.shown(on, entry).restore(line, version, on);
+        self.make(on, actor, entry, draft, TagDelta::default())
     }
 
     /// Undo the edit `edit` on line `line` of an entry, keeping every change made since (`history::undo`). `UnknownDep`
@@ -1062,82 +1421,88 @@ impl Lab {
         &mut self,
         on: SignerId,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         line: Line,
         edit: EditId,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, space, entry).undo(line, edit, on).ok_or(Refusal::UnknownDep)?;
-        self.make(on, actor, (space, entry), draft)
+        let draft = self.shown(on, entry).undo(line, edit, on).ok_or(Refusal::UnknownDep)?;
+        self.make(on, actor, entry, draft, TagDelta::default())
     }
 
-    /// A variant of what device `on` shows on line `line` of an entry: a new entry of space `into` with its record,
-    /// and none of its history, as `on`'s first write of the new entry, acting for `actor`. `ReadOnly` if it shows
-    /// nothing there.
+    /// A variant of what device `on` shows on line `line` of an entry: a new entry of vault `into` with its record, its
+    /// type and its tags, and none of its history, as `on`'s first write of the new entry, acting for `actor`.
+    /// `ReadOnly` if it shows nothing there.
     pub fn variant(
         &mut self,
         on: SignerId,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         line: Line,
-        into: SpaceId,
+        into: VaultId,
     ) -> Result<EntryId, Refusal> {
         self.unlocked(on)?;
-        let copy = self.item_on(on, space, entry, line).ok_or(Refusal::ReadOnly)?.copy(on);
-        self.create(on, actor, into, copy)
+        let copy = self.item_on(on, entry, line).ok_or(Refusal::ReadOnly)?.copy(on);
+        let m = self.meaning(on, entry).ok_or(Refusal::ReadOnly)?;
+        let tags: Vec<&str> = m.attrs.tags.iter().map(Sym::as_str).collect();
+        self.create(on, actor, into, m.attrs.ty.as_str(), &tags, copy)
     }
 
     /// What device `d` shows of an entry: its history, empty if it holds no write of it.
-    fn shown(&self, d: SignerId, space: SpaceId, entry: EntryId) -> &History {
+    fn shown(&self, d: SignerId, entry: EntryId) -> &History {
         static NONE: std::sync::LazyLock<History> = std::sync::LazyLock::new(History::default);
-        self.held(d).shown.get(&(space, entry)).map_or(&NONE, |s| &s.history)
+        self.held(d).shown.get(&entry).map_or(&NONE, |s| &s.history)
     }
 
-    /// Make the write `draft` describes on device `on`, acting for `actor`, under the entry's current key in what the
-    /// device knows (T15).
+    /// Make the write `draft` describes of entry `entry` on device `on`, acting for `actor`, carrying the tags `tags`,
+    /// under the entry's key in its stay now, at its cell's generation now, in what the device knows (T15).
     fn make(
         &mut self,
         on: SignerId,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         draft: Draft,
+        tags: TagDelta,
     ) -> Result<EditId, Refusal> {
-        let store = self.held(on);
-        let epoch = store.view().epoch(KeyScope::Entry(space, entry));
+        let view = self.full_view(on).into_owned();
+        let en = view.entry(entry).ok_or(Refusal::UnknownEntry)?;
+        let (vault, stay, x) = (en.vault, en.stay(), en.cell());
+        let generation = view.epoch(KeyFam::Cell(vault, x));
         let Draft { proposal, deps, body } = draft;
-        let action = Action::Write { space, entry, actor, epoch, deps, proposal, via: vec![], body: vec![] };
-        let edit = store.log.check(on, &[], action)?;
-        self.write(on, edit, &body)
+        let (via, create) = (vec![], None);
+        let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body: vec![] };
+        let edit = self.check_on(on, &view, action)?;
+        self.write(on, edit, Body { header: None, tags, answers: vec![], content: body }, x)
     }
 
-    /// Encrypt `update` into the write `edit` under its entry's key at the write's epoch (the first the device holds,
-    /// or a new one), bound to the edit, then sign and keep it; once peers count only checkpointed writes, vouch for it
-    /// at once.
-    fn write(&mut self, on: SignerId, mut edit: Edit, update: &[u8]) -> Result<EditId, Refusal> {
-        let Action::Write { space, entry, epoch, .. } = edit.action else { unreachable!("a write") };
-        let k = KeyScope::Entry(space, entry);
-        let store = self.stores.get_mut(&on).expect("a device");
-        let held = store.held(k, epoch).next().map(|o| o.secret.clone());
-        let secret = match held {
-            Some(secret) => secret,
-            None => {
-                let secret = Secret::generate(&mut self.rng);
-                store.keys.insert(secret.id(), Opened { key: k, epoch, secret: secret.clone() });
-                secret
-            }
-        };
-        let body = keys::seal_edit(&secret, update, &write_context(&edit), &mut self.rng);
-        if let Action::Write { body: b, .. } = &mut edit.action {
-            *b = body;
-        }
-        let id = edit.id();
-        let signed = self.sign(edit)?;
-        self.keep(on, vec![signed], &Blobs::new());
-        self.stores.get_mut(&on).expect("a device").unvouched.push(id);
+    /// Encrypt `body` into the write `edit`, whose stay is in cell `x`, then sign and keep it (`seal_write`); once
+    /// peers count only checkpointed writes, vouch for it at once; and bring the device up to date.
+    fn write(&mut self, on: SignerId, edit: Edit, body: Body, x: CellId) -> Result<EditId, Refusal> {
+        let id = self.seal_write(on, edit, body, x)?;
         if self.pq_only {
             self.vouch(on);
         }
         self.refresh(on, &[]);
+        Ok(id)
+    }
+
+    /// Encrypt `body` into the write `edit`, whose stay is in cell `x`, under the key of its entry in that stay at the
+    /// generation it names (`entry_key_for`), bound to the edit, then sign and keep it.
+    fn seal_write(&mut self, on: SignerId, mut edit: Edit, body: Body, x: CellId) -> Result<EditId, Refusal> {
+        let Action::Write { vault, entry, stay, generation, .. } = edit.action else { unreachable!("a write") };
+        let Lab { stores, rng, .. } = self;
+        let store = stores.get_mut(&on).expect("a device");
+        let key = entry_key_for(store, rng, vault, x, entry, stay, generation);
+        let sealed = keys::seal_edit(&key, &body.to_wire(), &write_context(&edit), rng);
+        if let Action::Write { body: b, .. } = &mut edit.action {
+            *b = sealed;
+        }
+        let id = edit.id();
+        let signed = self.sign(edit)?;
+        self.keep(on, vec![signed], &Blobs::new());
+        let store = self.stores.get_mut(&on).expect("a device");
+        store.bodies.insert(id, body);
+        store.unvouched.push(id);
         Ok(id)
     }
 
@@ -1162,15 +1527,15 @@ impl Lab {
         // its own writes as every edit it holds has them, whether it counts them yet or not
         let full = if self.pq_only { Some(store.log.view()) } else { None };
         let st = full.as_ref().unwrap_or(store.view());
-        let mut by: BTreeMap<(SpaceId, EntryId), Vec<EditId>> = BTreeMap::new();
+        let mut by: BTreeMap<EntryId, Vec<EditId>> = BTreeMap::new();
         for w in st.all_writes() {
             if unvouched.contains(&w.edit) {
-                by.entry((w.space, w.entry)).or_default().push(w.edit);
+                by.entry(w.entry).or_default().push(w.edit);
             }
         }
         let made = !by.is_empty();
-        for ((space, entry), covers) in by {
-            let edit = self.held(d).log.draft(d, &[], Action::Checkpoint { space, entry, covers });
+        for (entry, covers) in by {
+            let edit = self.held(d).log.draft(d, &[], Action::Checkpoint { entry, covers });
             let signed = self.sign(edit).expect("an unlocked device signs");
             self.keep(d, vec![signed], &Blobs::new());
         }
@@ -1191,17 +1556,22 @@ impl Lab {
         self.pq_only
     }
 
-    /// The schemas and lenses published into `space`'s lane, as device `d` holds them.
-    pub fn lane(&self, d: SignerId, space: SpaceId) -> Lane {
-        Lane::new(self.held(d).view().lane_of(space))
+    /// The schemas and lenses published into vault `v`'s lane, as device `d` holds them.
+    pub fn lane(&self, d: SignerId, v: VaultId) -> Lane {
+        Lane::new(self.held(d).view().lane_of(v))
     }
 
-    /// The item as an app on schema `app` shows it on device `d`, through a lens from the space's lane where another
+    /// The vault entry `entry` is of, by device `d`'s view.
+    pub fn vault_of_entry(&self, d: SignerId, entry: EntryId) -> Option<VaultId> {
+        Some(self.held(d).view().entry(entry)?.vault)
+    }
+
+    /// The item as an app on schema `app` shows it on device `d`, through a lens from its vault's lane where another
     /// version wrote it, and whether the app opens it read-only (`Lane::view`). `None` if the device shows no such item
     /// or the app reads nothing of it.
-    pub fn open(&self, d: SignerId, space: SpaceId, entry: EntryId, app: &Schema) -> Option<(Value, bool)> {
-        let item = self.item(d, space, entry)?;
-        let (view, read_only) = self.lane(d, space).view(app, &item.authored());
+    pub fn open(&self, d: SignerId, entry: EntryId, app: &Schema) -> Option<(Value, bool)> {
+        let item = self.item(d, entry)?;
+        let (view, read_only) = self.lane(d, self.vault_of_entry(d, entry)?).view(app, &item.authored());
         Some((item.read(&view)?, read_only))
     }
 
@@ -1213,14 +1583,14 @@ impl Lab {
         &mut self,
         on: SignerId,
         actor: VaultId,
-        space: SpaceId,
         entry: EntryId,
         app: &Schema,
         change: impl FnOnce(&mut Value),
     ) -> Result<Option<EditId>, Refusal> {
         self.unlocked(on)?;
-        let item = self.item(on, space, entry).ok_or(Refusal::ReadOnly)?;
-        let (view, read_only) = self.lane(on, space).view(app, &item.authored());
+        let item = self.item(on, entry).ok_or(Refusal::ReadOnly)?;
+        let vault = self.vault_of_entry(on, entry).ok_or(Refusal::ReadOnly)?;
+        let (view, read_only) = self.lane(on, vault).view(app, &item.authored());
         let seen = item.read(&view).filter(|_| !read_only).ok_or(Refusal::ReadOnly)?;
         let mut value = seen.clone();
         change(&mut value);
@@ -1230,7 +1600,7 @@ impl Lab {
         if value == seen {
             return Ok(None);
         }
-        self.edit(on, actor, space, entry, |item| {
+        self.edit(on, actor, entry, |item| {
             item.write(&view, &value);
         })
         .map(Some)
@@ -1238,36 +1608,62 @@ impl Lab {
 
     /// The item as device `d` shows it on its main line: the writes of the line's history it counts and can decrypt.
     /// `None` if it counts or opens none.
-    pub fn item(&self, d: SignerId, space: SpaceId, entry: EntryId) -> Option<&Item> {
-        self.item_on(d, space, entry, MAIN)
+    pub fn item(&self, d: SignerId, entry: EntryId) -> Option<&Item> {
+        self.item_on(d, entry, MAIN)
     }
 
     /// The item as device `d` shows it on line `line`.
-    pub fn item_on(&self, d: SignerId, space: SpaceId, entry: EntryId, line: Line) -> Option<&Item> {
-        self.held(d).shown.get(&(space, entry))?.items.get(&line)
+    pub fn item_on(&self, d: SignerId, entry: EntryId, line: Line) -> Option<&Item> {
+        self.held(d).shown.get(&entry)?.items.get(&line)
     }
 
     /// An entry's history as device `d` holds it: every write it counts, with what it could open, its lines and their
     /// heads, the proposals' names, and any version to open read-only (`History::item_at`). `None` if it counts no
     /// write of the entry.
-    pub fn history(&self, d: SignerId, space: SpaceId, entry: EntryId) -> Option<&History> {
-        self.held(d).shown.get(&(space, entry)).map(|s| &s.history)
+    pub fn history(&self, d: SignerId, entry: EntryId) -> Option<&History> {
+        self.held(d).shown.get(&entry).map(|s| &s.history)
     }
 
     /// How many writes of the entry device `d` holds, whether it can decrypt them or not.
-    pub fn fetched(&self, d: SignerId, space: SpaceId, entry: EntryId) -> usize {
-        self.held(d).log.edits().iter().filter(|edit| edit.write_target() == Some((space, entry))).count()
+    pub fn fetched(&self, d: SignerId, entry: EntryId) -> usize {
+        let writes = |edit: &&Edit| matches!(edit.action, Action::Write { entry: e, .. } if e == entry);
+        self.held(d).log.edits().iter().filter(writes).count()
+    }
+
+    /// The entries device `d` knows of, in the order they were created: those of its vaults, and those its vaults'
+    /// caps reach, whether it reads them or only relays them.
+    pub fn entries(&self, d: SignerId) -> Vec<EntryId> {
+        self.held(d).view().entries().iter().map(|en| en.id).collect()
+    }
+
+    /// What entry `entry` means to device `d`, by what it reads (`policy::State::meaning`): its type, its author, its
+    /// tags now, its cell, and where a steward would move it. `None` if it doesn't read the entry's header.
+    pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
+        let store = self.held(d);
+        store.view().meaning(entry, &store.readings)
+    }
+
+    /// The slice of cap `cap` as device `d` reads it: `None` unless its selector is sealed to a vault `d` acts for
+    /// (or is public), and `d` opened it.
+    pub fn slice(&self, d: SignerId, cap: CapId) -> Option<&Slice> {
+        self.held(d).slices.get(&cap)
+    }
+
+    /// Device `d` holds the key its view says entry `entry` is under now: it reads what is written to it next.
+    pub fn reads(&self, d: SignerId, entry: EntryId) -> bool {
+        let store = self.held(d);
+        store.view().entry_key(entry).is_some_and(|name| store.keys.first(name).is_some())
     }
 
     /// Device `d` can open the current key of `k` with what it holds: the key of the latest epoch any device knows.
-    pub fn opens(&self, d: SignerId, k: KeyScope) -> bool {
+    pub fn opens(&self, d: SignerId, k: KeyFam) -> bool {
         let current = self.stores.values().map(|s| s.view().epoch(k)).max().unwrap_or(0);
-        self.held(d).held(k, current).next().is_some()
+        self.held(d).keys.first(KeyName::Scoped(k, current)).is_some()
     }
 
-    /// Device `d` holds the key of `k` at epoch `epoch`: it opened it, or made it.
-    pub fn holds_key(&self, d: SignerId, k: KeyScope, epoch: u64) -> bool {
-        self.held(d).held(k, epoch).next().is_some()
+    /// Device `d` holds a key of `name`: it opened it, made it, or derived it.
+    pub fn holds_key(&self, d: SignerId, name: KeyName) -> bool {
+        self.held(d).keys.first(name).is_some()
     }
 
     /// The edits device `d` holds; `log(d).view()` is what they say, every write counted.
@@ -1287,16 +1683,16 @@ impl Lab {
     }
 
     /// Every secret signer `s` holds here, to search views, logs and stores for secrets that shouldn't be there: its
-    /// own key, the one keys are sealed to for it, then, for a device, each key it opened. None while it is locked.
+    /// own key, the one keys are sealed to for it, then, for a device, each key it holds. None while it is locked.
     pub fn secrets(&self, s: SignerId) -> Vec<Secret> {
         let Some(key) = self.keys.get(&s) else { return vec![] };
-        let opened = self.stores.get(&s).into_iter().flat_map(|store| store.keys.values().map(|o| o.secret.clone()));
-        key.seal_secret().into_iter().chain(opened).collect()
+        let held = self.stores.get(&s).into_iter().flat_map(|store| store.keys.secrets().cloned());
+        key.seal_secret().into_iter().chain(held).collect()
     }
 
     /// Every byte device `d` stores, to search for plaintext that shouldn't be there: its signed edits, the keys it
-    /// opened, and the items it shows, as their content reads. The McEliece public keys it holds are left out: public,
-    /// and a megabyte each.
+    /// holds, the bodies and selectors it opened, and the items it shows, as their content reads. The McEliece public
+    /// keys it holds are left out: public, and a megabyte each.
     pub fn store(&self, d: SignerId) -> Vec<u8> {
         let store = self.held(d);
         let mut out = vec![];
@@ -1318,15 +1714,18 @@ impl Lab {
                 out.extend(sig.pq.iter().flatten());
             }
         }
-        for o in store.keys.values() {
-            out.extend(o.secret.bytes());
+        for secret in store.keys.secrets() {
+            out.extend(secret.bytes());
+        }
+        for body in store.bodies.values() {
+            out.extend(body.to_wire());
+        }
+        for slice in store.slices.values() {
+            out.extend(slice.to_wire());
         }
         for shown in store.shown.values() {
             for item in shown.items.values() {
                 out.extend(item.record().to_string().into_bytes());
-            }
-            for c in shown.history.changes().iter().filter(|c| c.write.proposal == Proposal::New) {
-                out.extend(c.body.iter().flatten());
             }
         }
         out
@@ -1345,12 +1744,6 @@ impl Lab {
     /// Device `d` is on the network.
     pub fn online(&self, d: SignerId) -> bool {
         !self.offline.contains(&d)
-    }
-
-    /// What device `from` makes of the edits it holds, every write counted: what it answers by.
-    fn full_view(&self, from: SignerId) -> std::borrow::Cow<'_, State> {
-        let store = self.held(from);
-        if self.pq_only { std::borrow::Cow::Owned(store.log.view()) } else { std::borrow::Cow::Borrowed(store.view()) }
     }
 
     /// Device `to` asks device `from` once, with what it holds of each log (`sync::asks`), and `from` answers with what
@@ -1457,6 +1850,7 @@ impl Lab {
             spares,
             pq_only: self.pq_only,
             offline: HashSet::new(),
+            now: self.now,
         }
     }
 
@@ -1523,7 +1917,7 @@ impl Lab {
 
     /// What device `d` hands a device whose passkey `passkey` proved itself on their connection (`sync::link_card`):
     /// the signed edits of the logs of the vaults the passkey owns, and of every vault that owns one of them, up the
-    /// chains, so that the device can add itself to its person's vault (`join`). Nothing about any space or entry
+    /// chains, so that the device can add itself to its person's vault (`join`). Nothing about any cap, cell or entry
     /// (T20); a passkey that owns no vault gets nothing.
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
@@ -1534,7 +1928,7 @@ impl Lab {
     /// Device `d` adds itself to the vault whose root is its person's passkey `passkey`, by its view, as a new device
     /// does once it holds the passkey's link card (`link_card`): the edit, signed by the passkey and by `d`, sealing to
     /// `d`'s own key, and the McEliece key it names, for the peer to accept (`accept_join`). As the passkey signs on
-    /// `d`, it lends `d` what is sealed to it: `d` opens the vault's key and boxes it for itself. If `d` is in that
+    /// `d`, it lends `d` what is sealed to it: `d` opens the vault's seed and boxes it for itself. If `d` is in that
     /// vault already, as when a link is tried again, the edit that added it. `UnknownVault` if no vault in `d`'s view
     /// has the passkey as its root, `Locked` if the passkey isn't at hand.
     pub fn join(&mut self, d: SignerId, passkey: SignerId) -> Result<Join, Refusal> {
@@ -1552,7 +1946,9 @@ impl Lab {
         let store = self.held(d);
         let st = store.view();
         let vault = st.vaults().iter().find(|v| v.root == Some(passkey)).ok_or(Refusal::UnknownVault)?;
-        let adds = |edit: &Edit| matches!(edit.action, Action::AddDevice { vault: v, device, .. } if v == vault.id && device == d);
+        let adds = |edit: &Edit| {
+            matches!(edit.action, Action::AddDevice { vault: v, device, .. } if v == vault.id && device == d)
+        };
         let edits = store.log.edits().iter().zip(store.log.ids());
         let added =
             vault.devices.contains(&d).then(|| edits.rev().find(|(edit, _)| adds(edit)).map(|(_, id)| *id)).flatten();
@@ -1793,17 +2189,16 @@ impl Lab {
                 signed
             }
             Tamper::ReplayedSeal { key, to: victim } => {
-                let KeyName::Scoped(k, e) = key else { panic!("a family's key, not {key:?}") };
                 // the first device holding the old key seals it again, straight to the victim's own key
-                let holder = self.devices.iter().copied().find(|d| self.held(*d).held(k, e).next().is_some());
+                let holder = self.devices.iter().copied().find(|d| self.held(*d).keys.first(key).is_some());
                 let holder = holder.expect("a device holding the key");
-                let secret = self.held(holder).held(k, e).next().expect("held").secret.clone();
+                let secret = self.held(holder).keys.first(key).expect("held").clone();
                 let (pk, blob) = self.seal_public(victim).expect("a signer of the Lab");
                 let recipient = Recipient::Signer(victim);
-                let info = box_info(k, e, secret.id(), &recipient);
+                let info = box_info(key, secret.id(), &recipient);
                 let bytes = keys::seal(&secret, &pk, &blob, &info, &mut self.rng).expect("a key");
                 let boxes = vec![KeyBox { to: recipient, bytes }];
-                let action = Action::Keys { key: k, epoch: e, id: secret.id(), public: None, boxes, clear: None };
+                let action = Action::Keys { name: key, id: secret.id(), public: None, boxes, clear: None };
                 let edit = self.held(holder).log.draft(holder, &[], action);
                 self.sign(edit)?
             }
@@ -1821,46 +2216,183 @@ impl Lab {
 }
 
 /// Open every box the device can: for one of `mine` (its own key, and what owners lend it), or for a key it already
-/// opened; then every key published in the clear. A box counts only if what opens is the key it names.
-fn open_keys(keyring: &mut BTreeMap<KeyId, Opened>, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
+/// holds; then every key published in the clear; then derive the keys of the entries in each cell whose key it holds;
+/// and again, until nothing more opens. A box counts only if what opens is the key it names.
+fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
+    // the stays each cell had: the entries whose keys a key of the cell derives, and in which stay
+    let mut stays: HashMap<CellId, Vec<(EntryId, Option<EditId>)>> = HashMap::new();
+    for en in store.replay.state.entries() {
+        for (s, x) in &en.stays {
+            stays.entry(*x).or_default().push((en.id, *s));
+        }
+    }
     loop {
         let mut more = false;
-        for (k, e, id, b) in &ix.boxes {
-            if keyring.contains_key(id) {
+        for (name, id, b) in &ix.boxes {
+            if store.keys.contains(id) {
                 continue;
             }
             let with = match b.to {
                 Recipient::Signer(s) => mine.iter().find(|m| m.0 == s).map(|m| m.1.clone()),
-                Recipient::Key { key, epoch, id: under } => {
-                    keyring.get(&under).filter(|o| o.key == key && o.epoch == epoch).map(|o| o.secret.clone())
-                }
+                Recipient::Key { name: to, id: under } => store.keys.get(&under, to).cloned(),
             };
             let Some(with) = with else { continue };
-            if let Some(secret) = keys::open(&b.bytes, &with, &box_info(*k, *e, *id, &b.to))
+            if let Some(secret) = keys::open(&b.bytes, &with, &box_info(*name, *id, &b.to))
                 && secret.id() == *id
             {
-                keyring.insert(*id, Opened { key: *k, epoch: *e, secret });
-                more = true;
+                more |= store.keys.insert(*name, secret);
             }
         }
-        for &(k, e, id, bytes) in &ix.clear {
+        for &(name, id, bytes) in &ix.clear {
             let secret = Secret::from_bytes(bytes);
-            if !keyring.contains_key(&id) && secret.id() == id {
-                keyring.insert(id, Opened { key: k, epoch: e, secret });
-                more = true;
+            if !store.keys.contains(&id) && secret.id() == id {
+                more |= store.keys.insert(name, secret);
             }
         }
+        more |= derive(store, &stays);
         if !more {
             return;
         }
     }
 }
 
-/// The `Keys` edits device `d` should make, by its view: for each family it may open, a key made for each epoch from
-/// its oldest to the current one where nobody made one yet; each current key it holds announced if it is a vault or
-/// space key nobody announced yet, boxed for every target without a box yet, and published if the family is public; and
-/// each older key it holds wrapped under the next epoch's key if nobody wrapped it yet. `mine` are the keys of the
-/// signers it may box for by wrapping: its own, and what owners lend it.
+/// Derive the key of each entry that ever stayed in a cell whose key the device holds, for that stay, at that key's
+/// generation (`keys::entry_key`): true if it derived any.
+fn derive(store: &mut Store, stays: &HashMap<CellId, Vec<(EntryId, Option<EditId>)>>) -> bool {
+    let mut new = vec![];
+    for id in &store.keys.cells {
+        let (name, cell) = &store.keys.by_id[id];
+        let KeyName::Scoped(KeyFam::Cell(_, x), g) = *name else { continue };
+        for &(e, s) in stays.get(&x).into_iter().flatten() {
+            if store.derived.insert((*id, e, s)) {
+                new.push((KeyName::Entry(e, s, g), keys::entry_key(cell, e, s)));
+            }
+        }
+    }
+    let more = !new.is_empty();
+    for (name, key) in new {
+        store.keys.insert(name, key);
+    }
+    more
+}
+
+/// The key of entry `e` in its stay `stay`, in cell `x` of vault `v`, at generation `g`: one the device holds, or one
+/// it derives from a key it holds of the cell at that generation, or from a new key of the cell where it holds none,
+/// which it keeps, and boxes as it brings its keys up to date.
+#[allow(clippy::too_many_arguments)]
+fn entry_key_for(
+    store: &mut Store,
+    rng: &mut SeededRng,
+    v: VaultId,
+    x: CellId,
+    e: EntryId,
+    stay: Option<EditId>,
+    g: u64,
+) -> Secret {
+    let name = KeyName::Entry(e, stay, g);
+    if let Some(key) = store.keys.first(name) {
+        return key.clone();
+    }
+    let cell = KeyName::Scoped(KeyFam::Cell(v, x), g);
+    let under = match store.keys.first(cell) {
+        Some(key) => key.clone(),
+        None => {
+            let key = Secret::generate(rng);
+            store.keys.insert(cell, key.clone());
+            key
+        }
+    };
+    let key = keys::entry_key(&under, e, stay);
+    store.derived.insert((under.id(), e, stay));
+    store.keys.insert(name, key.clone());
+    key
+}
+
+/// Open what the device's keys open of its edits and keep it: the selector of each cap (`open_select`), and the body of
+/// each write its view counts, or whose tags count (`policy::Entry::retags`); then what it reads in them.
+fn read(d: SignerId, store: &mut Store) {
+    let st = &store.replay.state;
+    for cp in st.caps() {
+        if store.slices.contains_key(&cp.id) || store.unreadable.contains(&cp.id) {
+            continue;
+        }
+        match open_select(&cp.cap, &store.keys, st.acts_for(d, cp.cap.over)) {
+            Ok(Some(slice)) => {
+                store.slices.insert(cp.id, slice);
+            }
+            Ok(None) => {}
+            Err(()) => {
+                store.unreadable.insert(cp.id);
+            }
+        }
+    }
+    let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
+    let wanted = st.all_writes().iter().map(|w| w.edit).chain(retags);
+    let wanted: Vec<EditId> =
+        wanted.filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
+    if !wanted.is_empty() {
+        let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
+        for id in wanted {
+            let Some(edit) = edits.get(&id) else { continue };
+            let Action::Write { entry, stay, generation, body, .. } = &edit.action else { continue };
+            let Some(key) = keys::edit_key(body) else {
+                store.spoilt.insert(id);
+                continue;
+            };
+            let Some(key) = store.keys.get(&key, KeyName::Entry(*entry, *stay, *generation)) else { continue };
+            match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
+                Some(b) => {
+                    store.bodies.insert(id, b);
+                }
+                None => {
+                    store.spoilt.insert(id);
+                }
+            }
+        }
+    }
+    let mut r = Readings::default();
+    for (c, s) in &store.slices {
+        r.selectors.insert(*c, s.select.clone());
+    }
+    for (id, b) in &store.bodies {
+        if let Some(h) = &b.header {
+            r.headers.insert(*id, h.clone());
+        }
+        r.tags.insert(*id, b.tags.clone());
+    }
+    store.readings = r;
+}
+
+/// The slice cap `cap`'s selector holds (`slice::Select`), opened with the keys `keys`: `Ok(None)` while none of its
+/// boxes goes to a key held, `Err` if it never opens: it is garbled, a box for a key held doesn't open, or what that
+/// opens doesn't, or, for a steward of the vault the cap is over (`steward`), no box goes to any seed of that vault.
+fn open_select(cap: &Cap, keys: &Keyring, steward: bool) -> Result<Option<Slice>, ()> {
+    let (boxes, sealed) = match Select::from_wire(&cap.select).map_err(drop)? {
+        Select::Clear(slice) => return Ok(Some(slice)),
+        Select::Sealed { boxes, slice } => (boxes, slice),
+    };
+    let id = keys::edit_key(&sealed).ok_or(())?;
+    let to_over = |b: &&KeyBox| matches!(b.to.name(), KeyName::Scoped(KeyFam::Seed(v), _) if v == cap.over);
+    if steward && !boxes.iter().any(|b| to_over(&b)) {
+        return Err(());
+    }
+    for b in &boxes {
+        let Recipient::Key { name, id: under } = b.to else { continue };
+        let Some(with) = keys.get(&under, name) else { continue };
+        let key = keys::open(&b.bytes, with, &select_info(cap, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
+        let plain = keys::open_edit(&key, &sealed, &cap_context(cap)).ok_or(())?;
+        return Slice::from_wire(&plain).map(Some).map_err(drop);
+    }
+    Ok(None)
+}
+
+/// The edits device `d` should make, by its view: the `Keys` edits its keys call for, and, for each vault it acts for,
+/// its stewardship (`steward`). For each family it may open: a key made for each epoch from the oldest it holds to the
+/// current one where nobody made one yet; each current key it holds announced if it is a seed nobody announced yet,
+/// boxed for every target without a box yet, and published if the family is public; each older key it holds wrapped
+/// under the next epoch's key if nobody wrapped it yet. For each entry it reads, the keys of the entry's earlier stays
+/// it holds wrapped under the key the schedule links them to, if nobody did yet. `mine` are the keys of the signers it
+/// may box for by wrapping: its own, and what owners lend it.
 fn upkeep(
     d: SignerId,
     store: &mut Store,
@@ -1868,129 +2400,233 @@ fn upkeep(
     mine: &[(SignerId, Secret)],
     rng: &mut SeededRng,
     spares: &mut Spares,
-) -> Vec<Action> {
+) -> Vec<Work> {
     let st = store.replay.state.clone();
-    let families: Vec<KeyScope> = st.key_scopes().into_iter().filter(|&k| st.entitled(d, k)).collect();
-    // a key for every epoch from the oldest it holds to the current one, where nobody made one yet: several rotations at
-    // once leave the epochs between without a key, and the history must stay one chain
+    let families: Vec<KeyFam> = st.key_fams().into_iter().filter(|&k| st.entitled(d, k)).collect();
+    // a key for every epoch from the oldest it holds to the current one, where nobody made one yet: several rotations
+    // at once leave the epochs between without a key, and the history must stay one chain
     for &k in &families {
         let e = st.epoch(k);
-        let from = store.keys.values().filter(|o| o.key == k).map(|o| o.epoch + 1).min().unwrap_or(e).min(e);
+        let from = store.keys.epochs(k).next().map_or(e, |x| (x + 1).min(e));
         for x in from..=e {
-            if store.held(k, x).next().is_none() && !ix.exists(k, x) {
-                // keys are sealed to vault and space keys, never to an entry key, which is only ever wrapped under the
-                // next one: only those carry a public half, announced below, and its McEliece pair takes a while
-                let secret =
-                    if x == e && !matches!(k, KeyScope::Entry(..)) { spares.take(rng) } else { Secret::generate(rng) };
-                store.keys.insert(secret.id(), Opened { key: k, epoch: x, secret });
+            let name = KeyName::Scoped(k, x);
+            if store.keys.first(name).is_none() && !ix.exists.contains(&name) {
+                // keys are sealed only to seeds: only those carry a public half, announced below, and its McEliece pair
+                // takes a while to make
+                let seed = matches!(k, KeyFam::Seed(_)) && x == e;
+                store.keys.insert(name, if seed { spares.take(rng) } else { Secret::generate(rng) });
             }
         }
     }
     let mut out = vec![];
     for &k in &families {
         let e = st.epoch(k);
-        let current: Vec<Secret> = store.held(k, e).map(|o| o.secret.clone()).collect();
+        let name = KeyName::Scoped(k, e);
+        let current: Vec<Secret> = store.keys.held(name).cloned().collect();
         for secret in current {
             let id = secret.id();
-            let sealed_to = !matches!(k, KeyScope::Entry(..));
-            let new = sealed_to && !ix.made.get(&(k, e)).is_some_and(|m| m.iter().any(|x| x.0 == id));
-            let public = new.then(|| {
+            let public = (matches!(k, KeyFam::Seed(_)) && !ix.announced(name, id)).then(|| {
                 let public = secret.public();
                 store.blobs.insert(public.mceliece, secret.mceliece_public());
                 public
             });
+            let info = |to: &Recipient| box_info(name, id, to);
             let mut boxes = vec![];
             for t in st.targets(k) {
-                if !ix.boxed(k, e, id, t)
-                    && let Some(b) = key_box(&secret, (k, e), t, &st, store, ix, mine, rng)
+                if !ix.boxed.contains(&(name, id, t))
+                    && let Some(b) = key_box(&secret, t, &info, &st, store, ix, mine, rng)
                 {
                     boxes.push(b);
                 }
             }
-            let clear = (st.public_key(k) && !ix.cleared(id)).then(|| secret.bytes());
+            let clear = (st.public_key(k) && !ix.cleared.contains(&id)).then(|| secret.bytes());
             if public.is_some() || !boxes.is_empty() || clear.is_some() {
-                out.push(Action::Keys { key: k, epoch: e, id, public, boxes, clear });
+                out.push(Work::Edit(Action::Keys { name, id, public, boxes, clear }));
             }
         }
         // the history: each older key under a key of the next epoch, so whoever reads now reads what came before
-        let older: Vec<Opened> = store.keys.values().filter(|o| o.key == k && o.epoch < e).cloned().collect();
-        for o in older {
-            let id = o.secret.id();
-            let wrapped = ix.boxes.iter().any(|(bk, be, bid, b)| {
-                (*bk, *be, *bid) == (k, o.epoch, id) && b.to.name() == KeyName::Scoped(k, o.epoch + 1)
-            });
-            let Some(next) = store.held(k, o.epoch + 1).next() else { continue };
-            if wrapped {
+        let older: Vec<u64> = store.keys.epochs(k).filter(|&x| x < e).collect();
+        for x in older {
+            let (name, next) = (KeyName::Scoped(k, x), KeyName::Scoped(k, x + 1));
+            let Some(under) = store.keys.first(next).cloned() else { continue };
+            for secret in store.keys.held(name) {
+                let id = secret.id();
+                if ix.boxed.contains(&(name, id, next)) {
+                    continue;
+                }
+                let to = Recipient::Key { name: next, id: under.id() };
+                let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
+                let boxes = vec![KeyBox { to, bytes }];
+                out.push(Work::Edit(Action::Keys { name, id, public: None, boxes, clear: None }));
+            }
+        }
+    }
+    // move links: the keys of an entry's earlier stays under a key of its stay now, as the schedule links them
+    for en in st.entries() {
+        if !st.entitled(d, KeyFam::Cell(en.vault, en.cell())) {
+            continue;
+        }
+        let generation = st.epoch(KeyFam::Cell(en.vault, en.cell()));
+        let mut seen = HashSet::new();
+        for w in st.entry_writes(en.id).filter(|w| w.stay != en.stay()) {
+            let name = w.key();
+            if !seen.insert(name) {
                 continue;
             }
-            let to = Recipient::Key { key: k, epoch: o.epoch + 1, id: next.secret.id() };
-            let bytes = keys::wrap(&o.secret, &next.secret, &box_info(k, o.epoch, id, &to), rng);
-            out.push(Action::Keys { key: k, epoch: o.epoch, id, public: None, boxes: vec![KeyBox { to, bytes }], clear: None });
+            let linked = (0..=generation).map(|g| KeyName::Entry(en.id, en.stay(), g)).find(|&to| st.sealed(name, to));
+            let Some(to_name) = linked else { continue };
+            let Some(under) = store.keys.first(to_name).cloned() else { continue };
+            for secret in store.keys.held(name) {
+                let id = secret.id();
+                if ix.boxed.contains(&(name, id, to_name)) {
+                    continue;
+                }
+                let to = Recipient::Key { name: to_name, id: under.id() };
+                let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
+                let boxes = vec![KeyBox { to, bytes }];
+                out.push(Work::Edit(Action::Keys { name, id, public: None, boxes, clear: None }));
+            }
         }
+    }
+    for vt in st.vaults().iter().filter(|vt| st.acts_for(d, vt.id)) {
+        out.extend(steward(store, &st, vt.id));
     }
     out
 }
 
-/// A box of `secret`, a key of family `of.0` at epoch `of.1`, for target `t`: wrapped under the target's key where
-/// the device holds it (its own key, a key an owner lends it, or a family's key it opened), and sealed otherwise to the
-/// target's public key, an X-Wing key and the McEliece blob it names, once the blob is checked against that name.
-/// `None` while the device holds neither.
+/// What a steward of vault `v` does, once it reads the selector of every cap of the vault (`Store::reads_caps`): for
+/// each entry whose creation and tags it reads, it answers the asks for tags no write acting for the vault answered
+/// yet, with what each asker's caps let it ask for, in one write acting for the vault; and moves an entry no ask waits
+/// on to the cell its meaning asks for, if it isn't there (`policy::Meaning::desired`).
+fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
+    if !store.reads_caps(st, v) {
+        return vec![];
+    }
+    let r = &store.readings;
+    let mut out = vec![];
+    for en in st.entries().iter().filter(|en| en.vault == v) {
+        if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
+            continue;
+        }
+        let Some(m) = st.meaning(en.id, r) else { continue };
+        let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
+        let answered: HashSet<EditId> =
+            ours.filter_map(|w| store.bodies.get(&w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
+        let asks: Vec<&Write> = st
+            .entry_writes(en.id)
+            .filter(|w| w.actor != v && !w.first && !answered.contains(&w.edit))
+            .filter(|w| store.bodies.get(&w.edit).is_some_and(|b| !b.tags.is_empty()))
+            .collect();
+        if asks.is_empty() {
+            if let Some(to) = m.desired {
+                out.push(Work::Edit(Action::Move { vault: v, entry: en.id, to, keep: vec![], via: vec![] }));
+            }
+            continue;
+        }
+        let mut tags = m.attrs.tags.clone();
+        for w in &asks {
+            let attrs = Attrs { tags: tags.clone(), ..m.attrs.clone() };
+            tags = granted(st, store, w.actor, v, &attrs, &store.bodies[&w.edit].tags).apply(&tags);
+        }
+        let add = tags.iter().filter(|t| !m.attrs.tags.contains(t)).cloned().collect();
+        let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
+        let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
+        answers.sort();
+        let body = Body { header: None, tags: TagDelta { add, remove }, answers, content: vec![] };
+        out.push(Work::Retag { vault: v, entry: en.id, body });
+    }
+    out
+}
+
+/// The part of `ask`, the tags vault `a` asks the stewards of vault `v` to add to and remove from an entry whose
+/// attributes are `attrs`, that a's caps let it ask for: those over `v` it holds with write or more whose slice holds
+/// the entry before the change and after it, each as far as every cap of its chain lets its grantee relabel.
+fn granted(st: &State, store: &Store, a: VaultId, v: VaultId, attrs: &Attrs, ask: &TagDelta) -> TagDelta {
+    let r = &store.readings;
+    let after = Attrs { tags: ask.apply(&attrs.tags), ..attrs.clone() };
+    let mut may: HashSet<&Sym> = HashSet::new();
+    for cp in st.caps_held(a).filter(|cp| cp.cap.over == v && st.holds(a, cp, Role::Write)) {
+        if !st.eff_selects(cp, attrs, r) || !st.eff_selects(cp, &after, r) {
+            continue;
+        }
+        let relabel = |c: &CapId| store.slices.get(c).map(|s| &s.relabel[..]).unwrap_or_default();
+        let mut chain = cp.chain.iter().map(relabel);
+        let first: HashSet<&Sym> = chain.next().unwrap_or_default().iter().collect();
+        may.extend(chain.fold(first, |acc, xs| acc.into_iter().filter(|t| xs.contains(t)).collect()));
+    }
+    let keep = |ts: &[Sym]| ts.iter().filter(|t| may.contains(t)).cloned().collect();
+    TagDelta { add: keep(&ask.add), remove: keep(&ask.remove) }
+}
+
+/// The semantic cell of an entry of vault `v` its creator, the vault, made with attributes `attrs`, by what `r` reads:
+/// the live caps over `v` that aren't wide whose slice holds it, in canonical order (`policy::Meaning::cell`).
+fn semantic_cell(st: &State, v: VaultId, attrs: &Attrs, r: &Readings) -> Vec<CapId> {
+    let picks = st.caps_over(v).filter(|cp| st.live(cp.id) && !cp.cap.wide && st.eff_selects(cp, attrs, r));
+    mk_cell(&picks.map(|cp| cp.id).collect::<Vec<_>>())
+}
+
+/// A box of `secret` for target `t`, bound to `info(recipient)`: wrapped under the target's key where the device holds
+/// it (its own key, a key an owner lends it, or a key it holds), and sealed otherwise to the target's public half, a
+/// signer's or an announced seed's, an X-Wing key and the McEliece blob it names, once the blob is checked against that
+/// name. `None` while the device holds neither, and for a cap's or a cell's key it doesn't hold: a steward boxes those.
 #[allow(clippy::too_many_arguments)]
 fn key_box(
     secret: &Secret,
-    of: (KeyScope, u64),
     t: KeyName,
+    info: &dyn Fn(&Recipient) -> Vec<u8>,
     st: &State,
     store: &Store,
     ix: &KeyIndex,
     mine: &[(SignerId, Secret)],
     rng: &mut SeededRng,
 ) -> Option<KeyBox> {
-    let (k, e) = of;
-    let info = |to: &Recipient| box_info(k, e, secret.id(), to);
     let held = match t {
-        KeyName::Signer(s) => mine.iter().find(|m| m.0 == s).map(|m| (Recipient::Signer(s), m.1.clone())),
-        KeyName::Scoped(tk, te) => {
-            store.held(tk, te).next().map(|o| (Recipient::Key { key: tk, epoch: te, id: o.secret.id() }, o.secret.clone()))
-        }
+        KeyName::Signer(s) => mine.iter().find(|m| m.0 == s).map(|m| (Recipient::Signer(s), &m.1)),
+        _ => store.keys.first(t).map(|k| (Recipient::Key { name: t, id: k.id() }, k)),
     };
     if let Some((to, under)) = held {
-        let bytes = keys::wrap(secret, &under, &info(&to), rng);
+        let bytes = keys::wrap(secret, under, &info(&to), rng);
         return Some(KeyBox { to, bytes });
     }
     let (to, pk) = match t {
         KeyName::Signer(s) => (Recipient::Signer(s), st.seal_key(s)?),
-        KeyName::Scoped(tk, te) => {
-            let made = ix.made.get(&(tk, te))?.iter().filter(|(_, p)| store.blobs.contains_key(&p.mceliece));
+        KeyName::Scoped(KeyFam::Seed(_), _) => {
+            let made = ix.made.get(&t)?.iter().filter(|(_, p)| store.blobs.contains_key(&p.mceliece));
             let (i, p) = made.min_by_key(|m| m.0)?;
-            (Recipient::Key { key: tk, epoch: te, id: *i }, p)
+            (Recipient::Key { name: t, id: *i }, p)
         }
+        _ => return None,
     };
     let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
     let bytes = keys::seal(secret, pk, blob, &info(&to), rng)?;
     Some(KeyBox { to, bytes })
 }
 
-/// Rebuild what device `d` shows of each entry: its history, each write of its view with what the device can decrypt,
-/// in replay order, and the item of each line. A write opens only under a key of its own entry at its own epoch.
+/// Rebuild what device `d` shows of each entry whose writes, or what it opened of them, changed: its history, each
+/// write of its view with the content of its body where the device opened it, in replay order, and the item of each
+/// line.
 fn show_items(d: SignerId, store: &mut Store) {
-    let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
-    let st = store.view();
+    let st = &store.replay.state;
+    let mut old = std::mem::take(&mut store.shown);
     let mut shown = BTreeMap::new();
-    for space in st.spaces() {
-        for &entry in &space.entries {
-            let mut history = History::default();
-            for w in st.all_writes().iter().filter(|w| w.space == space.id && w.entry == entry) {
-                let edit = edits[&w.edit];
-                let Action::Write { epoch, body, .. } = &edit.action else { continue };
-                let key = keys::edit_key(body).and_then(|id| store.keys.get(&id));
-                let key = key.filter(|o| o.key == KeyScope::Entry(space.id, entry) && o.epoch == *epoch);
-                let opened = key.and_then(|key| keys::open_edit(&key.secret, body, &write_context(edit)));
-                history.push(Change { write: w.clone(), body: opened }).expect("the view's writes are causally closed");
-            }
-            let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();
-            shown.insert((space.id, entry), Shown { history, items });
+    for en in st.entries() {
+        let ws: Vec<&Write> = st.entry_writes(en.id).collect();
+        let mut h = Hasher::new("lab shown");
+        for w in &ws {
+            h.update(&w.edit.0).update(&[store.bodies.contains_key(&w.edit) as u8]);
         }
+        let print = h.finalize();
+        if let Some(s) = old.remove(&en.id).filter(|s| s.print == print) {
+            shown.insert(en.id, s);
+            continue;
+        }
+        let mut history = History::default();
+        for w in ws {
+            let body = store.bodies.get(&w.edit).map(|b| b.content.clone());
+            history.push(Change { write: w.clone(), body }).expect("the view's writes are causally closed");
+        }
+        let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();
+        shown.insert(en.id, Shown { history, items, print });
     }
     store.shown = shown;
 }

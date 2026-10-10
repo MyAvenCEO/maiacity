@@ -3,9 +3,11 @@
 The user-owned, end-to-end encrypted database of maia.city. Every identity is a vault, like a smart account: a human
 vault is a person's, owned by their passkeys, with their devices; a coop vault is owned by human and coop vaults; an
 aven vault, an agent's such as avenCEO, the server's, is owned the same way, and its servers act for it but never govern
-it. Vaults hold caps on spaces and single entries, every item is a Loro document whose edits are encrypted under the
-item's own key, and each device syncs exactly the items its vaults hold caps on, so servers and relays only ever see
-ciphertext.
+it. A vault is a flat library of entries, each a Loro document whose type and tags travel sealed inside its edits.
+Caps give other vaults relay, read, write or owner on any slice of a vault: one entry, every todo, whatever is tagged
+one way and not another, or all of it; so groups are never fixed, only ever what caps select, and least access is the
+default. The entries the same caps reach share a cell and its key, and each device syncs exactly the cells its vaults'
+caps reach, so servers and relays only ever see ciphertext (see [Flat vaults](#flat-vaults)).
 
 avenDB is its own package in the maiacity repo, apart from the media vault in `vault/`: it has its own Cargo workspace
 and lockfile, so the two never build together, and nothing here changes what the media vault, its server or the Studio
@@ -22,11 +24,10 @@ history and proposals, and, from P8, its own iroh networking (its own ALPN, its 
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay (see [A device in the browser](#a-device-in-the-browser)) |
 | `crates/avendb-device` | The same device run natively beside the Mac app, as its sidecar: its node on UDP sockets of its own, its store in a folder on disk, the app's page talking to it in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, and a compose file that runs it on this machine; neither is deployed |
-| `crates/avendb-web` | The core as WebAssembly over the Lab's simulated world, read through JSON views and changed through JSON actions; once the tile's Lab, no longer on the page, its tests still run with the workspace's |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
-| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T21) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
-| `docs/` | The research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
+| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T25) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
+| `docs/` | Flat vaults as built (`FLAT-VAULTS.md`), and the research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
 
 ## Build and test
 
@@ -51,7 +52,10 @@ cd .. && node scripts/avendb-smoke.mjs  # starts a dev server, opens the page, s
 
 `scripts/avendb-account.mjs` walks the account itself against an avenDB server on the same machine: founding the
 person's vault, a note with its proposals, variants and history, the studio's pages, the four vaults it owns, acting as
-each, sharing and revoking, signing in again; its header says how to build and start both.
+each, sharing a note alone and every todo tagged one way, tagging, revoking, signing in again; its header says how to
+build and start both. It needs a device built with passkeys of localhost. `scripts/avendb-native.mjs` walks much the
+same story through the native device, as the Mac app runs it, each sheet answered by a passkey of maia.city's, so it
+runs on the device as it ships.
 
 The Lean build needs [elan](https://github.com/leanprover/elan) (`spec/lean-toolchain` pins the version). After a change
 to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit them with the change.
@@ -63,6 +67,29 @@ in `avendb_net`): it counts a write only once a checkpoint by its author covers 
 edit carries an SLH-DSA signature beside its classical one, both checked. A node checkpoints each write of its own as it
 makes it, and what it held before as it starts. Keys are sealed with X-Wing and Classic McEliece both, every connection
 agrees its keys with X25519MLKEM768 alone, and every hash is SHA-3.
+
+## Flat vaults
+
+A vault holds its entries itself, with nothing between them and it: no spaces, no folders. Each entry has a type
+(`note`, `todo`, `card`, `profile`), fixed when it is made, and tags that change, and both travel inside its encrypted
+writes, so no relay ever sees them. `docs/FLAT-VAULTS.md` is the design as built; in short:
+
+- **Caps on slices.** A cap gives a vault relay, read, write or owner on a slice of another, or everyone read on it: a
+  selector over the entries' types, tags, authors, ids and creation times, AND and OR of those, or the whole vault.
+  "Every todo tagged work" is one cap, which reaches each todo tagged so now and later, and lets go of one untagged. A
+  cap's selector is sealed to the vault it is over, its grantee and its issuer, so relays see who holds which role and
+  nothing of what it selects. A cap may rest on an owner cap its issuer holds, and then never reaches further (T22).
+- **Cells.** The entries the same caps reach share a cell, and a cell is what keys, sync and rotation work on: one key
+  per cell and generation, and a key per entry derived from it (T24). The vault's own devices keep each entry in the
+  cell its caps call for (T23), moving it as its tags change or a new cap selects it; a move is a signed edit, and a
+  write that relied on the old cell and that the move hadn't seen falls with it. A cap on the whole vault splits no
+  cell. Revoking a cap moves no entry: each cell it reached moves to a new generation, which only the remaining caps
+  get.
+- **Tags by request.** The vault's own devices tag its entries at once. Another vault asks them in its write, and they
+  grant only the tags its caps let it ask for, where its slice holds the entry before and after.
+- **Sync is the caps.** A device receives an entry's edits only if one of its vaults acts for the entry's vault or
+  holds a live cap that reaches its cell (T12); a relay cap hands over the ciphertext and no key (T25). So the caps
+  decide both who reads what and which devices sync what.
 
 ## Linking a device
 
@@ -77,7 +104,7 @@ through the server once every other device is lost.
    exporter and the new device (`PasskeyHello`). Said on another connection, for the other end or for another device,
    it proves nothing.
 3. The peer checks it against the passkey its vaults name and hands back the link card: the logs of the vaults the
-   passkey owns and of those that own them, up the chains, and nothing about any space or entry (T20).
+   passkey owns and of those that own them, up the chains, and nothing about any cap or entry (T20).
 4. The new device adds itself to the vault the passkey is the root of, signed by the passkey and by itself (`join`),
    and sends that edit with its McEliece key. The peer takes it only for the device on the connection, and only if the
    rules take it (`accept_join`); it boxes the vault key for the new device, and the two sync by caps.
@@ -123,13 +150,13 @@ alone; the SLH-DSA half still signs each edit's own id. So a person is asked onc
 once for each edit.
 
 - **Found** (`Device::found`, `Node::found_with`): a new person's first browser founds their human vault with the
-  passkey they signed up to maiaCITY with, or one it makes, then its first space, and grants avenCEO relay on it, in
-  three ceremonies: the unlock, the pass to the relay, and one for the vault's genesis and the edit that adds the device
-  together (four with a new passkey). Its P-256 key comes from the new passkey's public key info, or, for maiaCITY's,
-  as the one key both the unlock's and the pass's assertions recover to. The server's relay lets any passkey's pass in
-  while it is open to sign-up (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on
-  the server knows the device. The first person to found their vault through a server nobody has claimed yet claims
-  it in that same ceremony (see [avenCEO](#avenceo)).
+  passkey they signed up to maiaCITY with, or one it makes, gives avenCEO relay on the whole of it, so the server keeps
+  its entries, and writes its card there, in three ceremonies: the unlock, the pass to the relay, and one for the
+  vault's genesis and the edit that adds the device together (four with a new passkey). Its P-256 key comes from the
+  new passkey's public key info, or, for maiaCITY's, as the one key both the unlock's and the pass's assertions recover
+  to. The server's relay lets any passkey's pass in while it is open to sign-up (`AVENDB_SIGNUP`, open by default), so
+  a person with no device yet gets in; from then on the server knows the device. The first person to found their vault
+  through a server nobody has claimed yet claims it in that same ceremony (see [avenCEO](#avenceo)).
 - **Link** (`Device::link`, `Node::link_with`): a browser of a person who has a device already links through the code
   that device shows, in four ceremonies: the unlock, the pass, the passkey's hello, and the join. It never saw the
   passkey made, so it learns its P-256 key as the one key both the unlock's and the pass's assertions recover to
@@ -147,27 +174,37 @@ below); a test server's can take their place.
 
 Unlocked, the page lays out the vaults this browser knows as a chat app lays out its servers: a bar of vault marks, the
 person's own first; beside it the picked vault's name and its pages, as a database studio lists them: Notes and Todos;
-its database (Table editor, Spaces, Schemas, Lenses, History); then its settings (About, Owners & devices, Access,
+its database (Table editor, Cells, Schemas, Lenses, History); then its settings (About, Owners & devices, Access,
 Sync); and at the foot, in the middle, the vault the person acts as. Each page has an address of its own (`#todos`,
 `#schemas`), and so has each note (`#notes/` and its entry). It all comes from the device's world (`Device::world`),
 shown again the moment anything arrives (`Device::changed`):
 
-- **Names.** Every vault goes by the name on its profile, a document tagged `avendb:vault` in its home, the first space
-  it founded, whose first write acted for the vault (`Device::profile`): the person's own by their maiaCITY name,
-  avenCEO's as avenCEO, written by whichever of their devices comes first. Every device goes by the name on its card, a
-  document tagged `avendb:device` that it writes itself into its vault's first space and writes again to rename itself
-  (`Device::card`). Both are end-to-end encrypted like the notes beside them.
+- **Names.** Every vault goes by the name on its profile, an entry of type `profile` of the vault, written acting for
+  it (`Device::profile`): the person's own by their maiaCITY name, avenCEO's as avenCEO, written by whichever of their
+  devices comes first. Every device goes by the name on its card, an entry of type `card` that it writes itself into
+  its vault and writes again to rename itself (`Device::card`). Both are end-to-end encrypted like the notes beside
+  them.
 - **Vaults it owns.** The person's vault founds aven and coop vaults it owns, any number in one ceremony of its passkey
-  (`Device::found_vaults`, over `Node::approve_with`); the device then founds each one's home, lets avenCEO relay it and
-  writes its name there. Its "+" opens on one empty row: the person names each vault they found.
+  (`Device::found_vaults`, over `Node::approve_with`); the device then gives avenCEO relay on each and writes its name
+  there. Its "+" opens on one empty row: the person names each vault they found.
 - **Acting as.** The person acts as any vault their vault owns, through it, from the switcher at the foot. The page then
-  shows what that vault's caps allow and nothing else, and every write, grant and revocation goes out acting for that
-  vault, which the rules check as any peer checks them. Sharing with a role up to write, and revoking it, needs no
-  ceremony; making a vault an owner of a space, or revoking that, takes one, the owners' approval
-  (`Device::grant`, `Device::revoke`). Marks of the vaults the acting vault holds nothing in are faded.
-- **Settings.** Each vault's kind, owners, root and devices; who holds which role on each of its spaces, the grants in
-  force and who may revoke them; and which devices receive each space, through which vault, and whether each opens it
-  or only relays its ciphertext, as avenCEO's server does.
+  shows what that vault's caps allow and nothing else, and every write, tag, cap and revocation goes out acting for
+  that vault, which the rules check as any peer checks them. Marks of the vaults the acting vault holds nothing in are
+  faded.
+- **Sharing.** A note or a todo is shared alone from its own Share button; a vault's Access page shares a rule: every
+  note or todo, tagged one way (and not another), or the whole vault, with another vault to relay, read, write or own,
+  or with everyone to read (`Device::share`). The form starts at the least, one entry or the vault's todos, to read,
+  and says in words what the cap selects and which entries it reaches now; a rule reaches every entry that comes to
+  match it later too, and lets go of one that stops. Caps up to write, and revoking them, need no ceremony; making a
+  vault an owner, or revoking that, takes one, the owners' approval (`Device::revoke`). A vault that isn't the one
+  shared from shares only through an owner cap of its own, and never further than it.
+- **Tags.** Each note and todo shows its tags, to add and take off: the vault's own devices tag at once; any other
+  vault asks them to, and they grant what its caps let it ask for (`Device::tag`). A tag can take an entry into a
+  cap's slice or out of it, and the vault's devices then move it to its new cell.
+- **Settings.** Each vault's kind, owners, root and devices; every cap over it, in words, what it reaches now, who
+  gave it and who may revoke it, and the caps it holds elsewhere; and its cells, the entries the same caps reach, each
+  with the devices that receive it, through which vault, and whether each opens it or only relays its ciphertext, as
+  avenCEO's server does.
 - **Notes and todos.** Notes lists a vault's notes as a docs app lists documents, a blank note first, made and opened
   at once; Todos its todos, each ticked through open, doing and done. Each note opens as a docs app opens a document,
   on the whole screen (`Device::note`): its title, edited in place (`Device::set_title_on`, which retitles its heading
@@ -175,14 +212,15 @@ shown again the moment anything arrives (`Device::changed`):
   and its **variants**, the notes made from it; in the middle the note as a page; on the right its **history**, every
   **edit** of the line, newest first, with what it changed word by word, its device and vault, to view, restore, undo
   or propose from. A proposal is accepted into main, makes main match it (a promote), or takes in what main has since;
-  a variant is a new note with what a line reads now and none of its history, tagged `avendb:variant:` and the note it
-  came from (`Device::set_text_on`, `propose`, `merge`, `restore`, `undo`, `variant`). None of it asks the passkey:
-  each is an edit like any other, checked against the acting vault's caps.
+  a variant is a new note with what a line reads now, its tags and none of its history, marked with the note it came
+  from (`Device::set_text_on`, `propose`, `merge`, `restore`, `undo`, `variant`). None of it asks the passkey: each is
+  an edit like any other, checked against the acting vault's caps. Todos and notes each narrow to a tag.
 - **The studio.** Each vault's database as this browser holds it (`Device::database`), as a database studio shows
   Postgres's: the **Table editor**, its entries as tables (notes, todos, device_cards, vault_profiles, and sealed for
   what the acting vault holds no cap to read, ids and counts only, as avenDB's server holds it), each a grid of typed
-  columns, its schema's fields then what avenDB keeps of each row, sorted, searched, each row opened in a drawer;
-  **Spaces**, each with its key's epoch and the edits held on it by kind; **Schemas**, each family's versions side by
+  columns, its schema's fields then what avenDB keeps of each row (its cell, the tags caps select it by, its key's
+  generation), sorted, searched, each row opened in a drawer, a cell at a time or all of them; **Cells**, each with
+  the caps that reach it, its key's generation and its entries; **Schemas**, each family's versions side by
   side with the lens between, field by field; **Lenses**, each step both ways; and **History**, every signed edit the
   browser holds (`Device::history`), in words, with its signatures, its depth and its size, and what it builds on.
 
@@ -221,7 +259,8 @@ each call a line of JSON on the device's stdin, each answer one on its stdout.
 - **On disk.** It keeps what it holds in a folder (`~/Library/Application Support/city.maia.studio/avendb/`), as the
   server does (`Disk`): its store, and `meta.json`, what opens it again (its name, its relay, its salt's own bytes and
   its passkey's credential and P-256 key), as the page keeps them. No secret: its keys derive from the passkey at every
-  unlock. It runs on while the app does, whichever page is open, and opens again in the unlock alone.
+  unlock. It runs on while the app does, whichever page is open, and opens again in the unlock alone. A store of an
+  earlier format is put aside, as the server's is, and the page then offers to forget it and sign in again.
 - **Its ceremonies** run in the same sign-in sheet, which the app shows for it: the device makes the one-time X-Wing
   key itself, names it in the sheet's URL, and opens what the sheet page sealed to it; the page sees none of it.
 - **Moving in.** A device a page in the app made before moves into the folder as it unlocks (`adopt`): the edits and
@@ -304,10 +343,13 @@ ciphertext and opens nothing but what is public.
   until a human vault claims it (see [avenCEO](#avenceo)). It logs its offer (`AVENDB1…`): its device, its endpoint, its
   public address and its relay. The app keeps it, so that devices reach the server, and a new device links through it
   with its person's passkey alone.
-- A device takes the server's contact card, avenCEO's log, and can then grant avenCEO relay on a space. The server keeps
-  that space's edits and McEliece keys and serves them to the devices that may hold them, also while the device that
-  wrote them is away.
-- Its relay lets in only the devices the server knows: those of the vaults acting in the spaces it relays and of
+- A store of an earlier format, as when avenDB started fresh with flat vaults, is put aside whole in its folder's
+  `aside/`, never deleted, and the server starts on an empty store, nobody's until a human vault claims it again; its
+  device's secret stays, and with it its offer.
+- A device takes the server's contact card, avenCEO's log, and can then give avenCEO relay on its vault, a cap on the
+  whole of it with no key. The server keeps the vault's edits and McEliece keys and serves them to the devices that may
+  hold them, also while the device that wrote them is away.
+- Its relay lets in only the devices the server knows: those of the vaults acting for the vaults it relays and of
   avenCEO's owners, and itself; until a human vault claims the server, also any passkey's pass. A device the server
   doesn't know yet makes its first contact straight, over UDP, or through the relay by a pass its person's passkey
   signed, for ten minutes. A device taken out of its vault is let go, and turned away when it tries
@@ -344,15 +386,15 @@ in the same ceremony (`Node::found_with`).
    device of an aven vault by the rules, then signs it too, in its place, and keeps it (`Lab::accept_claim`). Its
    answer, the edit and its McEliece key, lets the device box avenCEO's key for it; then they sync.
 
-So nobody claims it after: whoever founds a vault later finds avenCEO on the server's card and grants it relay, and so
+So nobody claims it after: whoever founds a vault later finds avenCEO on the server's card and gives it relay, and so
 does one who lost a race for it, their vault founded all the same. A new server is therefore claimed by whoever founds
 a vault through it first, which should be the person who runs it. A device of a vault founded before claims a server
 the same way (`Node::claim`), avenCEO's genesis and the edit that adds the server in one ceremony; a claim whose answer
 was lost finds the server avenCEO's device already, and one the server didn't take is tried again on the same
 avenCEO. In the tile, **Your account** says so once its vault owns avenCEO.
 
-A space relayed by avenCEO is relayed to avenCEO's devices and, as for any grant to a vault, to the devices that act for
-it: its owners'. They receive what the server's disk holds, the space's edits as ciphertext, never a key.
+A vault avenCEO relays is relayed to avenCEO's devices and, as for any cap to a vault, to the devices that act for
+it: its owners'. They receive what the server's disk holds, the vault's edits as ciphertext, never a key.
 
 ### Deploying the server
 
@@ -378,8 +420,8 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
 
 Its store and its device's secret live on the Hetzner volume, so a rebuilt server is still the same device; the
 database backups don't hold them. Losing them makes a new server, a device of nobody: avenCEO's owners remove the lost
-device from avenCEO, then claim the new server (`Node::claim`), which adds it to the same avenCEO, so every space
-avenCEO relays keeps its grant.
+device from avenCEO, then claim the new server (`Node::claim`), which adds it to the same avenCEO, so every vault
+avenCEO relays keeps its cap.
 
 ## Plan
 
@@ -405,4 +447,5 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8f, one prompt | No setup code: the first human vault founded through the server owns avenCEO; edits drafted together signed in one ceremony over their batch, so a first browser founds its vault, adds itself and claims the server in one prompt after the unlock and the pass (three in all, four with a new passkey), and This browser says when its vault owns avenCEO | Merged |
 | P8f, account | The tile opens on the person's account, the Lab apart and made only when opened: their human vault, its root passkey and its devices, each by the name on its card, an end-to-end encrypted document the device writes itself; a new browser signs in with the passkey alone, through the server; the Lab's simulated person is Alice | Merged |
 | P8f, real vaults | Real vaults the person controls instead of the simulated Lab: the vaults this browser knows as a chat app's servers, each by the name on its profile; new aven and coop vaults their vault owns in one ceremony; acting as any of them, its caps deciding what the page shows and does; each vault's owners, devices, access and syncing devices; every node post-quantum only | Merged |
+| Flat vaults | No spaces: entries straight in their vault, their type and tags sealed in their writes; caps on any slice (types, tags, authors, entries, creation time, any AND and OR of those), in chains that only narrow (T22); cells, the entries the same caps reach, one key per cell and a key per entry derived from it (T24), kept to what the caps say by the vault's own devices, who move entries as tags change and answer other vaults' tag asks (T23); relays that route by cells and never see a selector, a type or a tag (T25); the page's sharing by rule, tags, Access, Sync and Cells; the server's data started fresh | Merged |
 | P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |

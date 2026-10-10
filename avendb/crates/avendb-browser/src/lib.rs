@@ -8,13 +8,13 @@
 //! brings the PRF output on the device's own salt, from which its keys derive (`Unlock`). Then a device starts in one
 //! of three ways:
 //!
-//! - `Device::found`: a new person's first device founds their human vault, its first space and grants avenCEO, the
-//!   aven vault the server is a device of, relay on it, in three ceremonies: the unlock, the pass to the relay, and one
-//!   that signs the vault's genesis and the edit that adds the device together (`avendb_net::Node::found_with`). The
-//!   passkey may be one the page just made, its P-256 key in its public key info, or one made before for the same
-//!   relying party, maiaCITY's from its sign-up: then its P-256 key is the one key both the unlock's and the pass's
-//!   assertions recover to (`sign::passkey_key`). The first person to found their vault through a server nobody has
-//!   claimed yet claims it in that same ceremony (P8f): their vault owns avenCEO.
+//! - `Device::found`: a new person's first device founds their human vault, gives avenCEO, the aven vault the server
+//!   is a device of, relay on the whole of it, and writes its card there, in three ceremonies: the unlock, the pass to
+//!   the relay, and one that signs the vault's genesis and the edit that adds the device together
+//!   (`avendb_net::Node::found_with`). The passkey may be one the page just made, its P-256 key in its public key info,
+//!   or one made before for the same relying party, maiaCITY's from its sign-up: then its P-256 key is the one key both
+//!   the unlock's and the pass's assertions recover to (`sign::passkey_key`). The first person to found their vault
+//!   through a server nobody has claimed yet claims it in that same ceremony (P8f): their vault owns avenCEO.
 //! - `Device::link`: a device of a person who has one already links through the code it shows
 //!   (`avendb_net::Node::link_with`), in four ceremonies (the unlock, the pass, the passkey's hello, the join). The
 //!   passkey's P-256 key is the one key both the unlock's and the pass's assertions recover to (`sign::passkey_key`).
@@ -24,29 +24,35 @@
 //! The page keeps what the device holds in IndexedDB (`js/store.js`): its edits in the order it took them and its
 //! McEliece keys, as a node keeps them on disk (`avendb_net::Disk`), saved after each change (`Node::changes`).
 //!
+//! A vault holds its entries itself, flat: each entry has a type (`note`, `todo`, `card`, `profile`) and tags, all of
+//! it inside the entry's encrypted writes. A vault shares what it holds by caps (`Device::share`), each on a slice of
+//! its entries, whatever its selector picks (`words`): every entry of a type, those with a tag, one entry, or the whole
+//! vault. Nothing is shared but what a cap names: least is the default. A relay cap hands out ciphertext and no key,
+//! which is how a vault lets avenCEO, the server's vault, keep and pass on its entries: a cap on the whole vault.
+//!
 //! The page shows its person's account (`Device::account`): their human vault, its root passkey and its devices, each
-//! by the name on its card. A card is a document tagged `CARD` that the device writes into the first space its vault
-//! founded, titled with its name (`Device::card`), so it travels end-to-end encrypted like any note and every device of
-//! the vault shows the others by name. Notes leave cards out.
+//! by the name on its card. A card is an entry of type `card` of their vault that the device writes itself, titled
+//! with its name (`Device::card`), so it travels end-to-end encrypted like any note and every device of the vault shows
+//! the others by name.
 //!
 //! Their vault founds and owns more vaults, aven and coop vaults, as real as their own (`Device::found_vaults`): one
 //! ceremony of the passkey signs all their geneses, and then the device, acting for each through their vault (the
-//! edit's `via`), founds its home, the first space it founds, grants avenCEO relay on it, and writes its profile there,
-//! a document tagged `PROFILE` titled with its name (`Device::profile`). The device acts for every vault its person's
-//! vault owns, so the page enacts each of them: it writes, shares and revokes as that vault, and the rules check each
-//! edit against that vault's caps, as any peer's would. The page shows the device's whole world (`Device::world`):
-//! every vault it knows, whom it acts for and through which owners, and every space with each vault's role on it, the
-//! grants in force, the devices that sync it and whether each opens it or only relays its ciphertext, and the notes and
-//! todos there with each vault's role on each.
+//! edit's `via`), gives avenCEO relay on it and writes its profile, an entry of type `profile` titled with its name
+//! (`Device::profile`). The device acts for every vault its person's vault owns, so the page enacts each of them: it
+//! writes, tags, shares and revokes as that vault, and the rules check each edit against that vault's caps, as any
+//! peer's would. The page shows the device's whole world (`Device::world`): every vault it knows, whom it acts for and
+//! through which owners; every cap in force, with its slice where the device reads it, what it reaches and who may
+//! revoke it; every cell, the entries the same caps reach and one key opens, with the devices that sync it and whether
+//! each opens it or only relays its ciphertext; and every entry, with its type, its tags and each vault's role on it.
 //!
 //! Each note opens on its page (`Device::note`): its main line and each proposal (a proposal of its history), and every
 //! edit of it, each with what it changed, to edit on any line, retitle, propose, merge, promote, restore, undo or make
-//! a variant (a new note with what a line shows, tagged `VARIANT` with the note it came from), acting for a vault as
-//! any edit does (`Device::set_text_on`, `set_title_on`, `propose`, `merge`, `restore`, `undo`, `variant`). And each
-//! vault's database shows as the device holds it, every entry with its record, its schema and its edits, and the
-//! schemas and lenses the app ships and its spaces publish (`Device::database`, `data`); and the database's history,
-//! every signed edit the device holds (the core's edits), each with what it does, who signed it and how, and the vaults
-//! it concerns (`Device::history`).
+//! a variant (a new note with what a line shows, marked with the note it came from), acting for a vault as any edit
+//! does (`Device::set_text_on`, `set_title_on`, `propose`, `merge`, `restore`, `undo`, `variant`). And each vault's
+//! database shows as the device holds it, every entry with its record, its type, its tags, its cell and its edits, and
+//! the schemas and lenses the app ships and the vault publishes (`Device::database`, `data`); and the database's
+//! history, every signed edit the device holds (the core's edits), each with what it does, who signed it and how, and
+//! the vaults it concerns (`Device::history`).
 //!
 //! The same device runs natively in the Mac app (`avendb-device`, beside maiaCITY Studio): there its node binds UDP
 //! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it
@@ -63,12 +69,13 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::doc::Item;
-use avendb::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
-use avendb::keys::{self, KeyScope};
-use avendb::lab::{Backup, Lab};
+use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::keys::{self, KeyFam};
+use avendb::lab::{Backup, Lab, NewCap};
 use avendb::lens::{DocV2, Status, TypeV2};
-use avendb::policy::{Action, Grant, Grantee, Kind, Line, Principal, Refusal, Role, Scope, State, Vault};
+use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Line, Principal, Refusal, Role, State, Vault};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge, passkey_key};
+use avendb::slice::{Selector, Slice, Sym};
 use avendb::wire::Wire as _;
 use avendb_net::{Authenticator, Node, Offer, Options, Step};
 use iroh::RelayUrl;
@@ -82,17 +89,26 @@ use wasm_bindgen_futures::{JsFuture, future_to_promise};
 use zeroize::Zeroizing;
 
 mod data;
+pub mod words;
 
-/// The tag of a device's card: a document in the first space its person's vault founded, titled with the device's
-/// name, that the device wrote itself (`Device::card`).
-pub const CARD: &str = "avendb:device";
+use words::{hex, kind_name, role_name, slice_value, status_name};
 
-/// The tag of a vault's profile: a document in its home, the first space it founded, titled with the vault's name,
-/// written acting for the vault (`Device::profile`).
-pub const PROFILE: &str = "avendb:vault";
+/// The type of a device's card: an entry of its person's human vault, titled with the device's name, that the device
+/// wrote itself (`Device::card`).
+pub const CARD: &str = "card";
 
-/// The start of the tag of a variant: a note made from what one line of another shows (`Device::variant`), tagged
-/// with that note's entry in hex.
+/// The type of a vault's profile: an entry of the vault, titled with its name, written acting for the vault
+/// (`Device::profile`).
+pub const PROFILE: &str = "profile";
+
+/// The type of a note: a document, titled, its text in its first paragraph (`cast::document`).
+pub const NOTE: &str = "note";
+
+/// The type of a todo.
+pub const TODO: &str = "todo";
+
+/// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
+/// one line of another shows (`Device::variant`), marked with that note's entry in hex.
 pub const VARIANT: &str = "avendb:variant:";
 
 /// What the ceremony that unlocks a device brings back: the ceremony itself, over a challenge of the page's own, and
@@ -132,10 +148,10 @@ impl Device {
     /// relay, which lets it in by the passkey's pass, it takes the card of the server whose code reads `server`, then
     /// founds the person's human vault with itself in it, in one ceremony of the passkey
     /// (`avendb_net::Node::found_with`); if nobody has claimed the server yet, the same ceremony claims it, and their
-    /// vault owns avenCEO, the aven vault the server is a device of. Then it founds their first space, grants avenCEO
-    /// relay on it, so the server keeps the space's log and knows the device from then on, and writes its card there
-    /// (`Device::card`). The relay honours the pass while it is open to sign-up (`avendb_net::Admission::open`) or
-    /// while nobody has claimed the server.
+    /// vault owns avenCEO, the aven vault the server is a device of. Then it gives avenCEO relay on the whole vault, so
+    /// the server keeps its entries and knows the device from then on, and writes its card there (`Device::card`). The
+    /// relay honours the pass while it is open to sign-up (`avendb_net::Admission::open`) or while nobody has claimed
+    /// the server.
     pub async fn found(
         start: Start,
         server: &Offer,
@@ -157,11 +173,10 @@ impl Device {
         let (vault, avenceo) = device.node.found_with(server, passkey, authenticator).await?;
         let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
-            let space = lab.submit(me, &[me], Action::FoundSpace { actor: vault, nonce: 1, via: vec![] });
-            let space = SpaceId::from(space.map_err(|why| anyhow!("the space is refused: {why:?}"))?);
-            let relay = cast::grant(Scope::Space(space), Role::Relay, cast::vault(avenceo), vault, None);
-            lab.submit(me, &[me], relay).map_err(|why| anyhow!("avenCEO's relay is refused: {why:?}"))?;
-            lab.create(me, vault, space, card(&name, me)).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
+            let relay = cast::cap(vault, cast::vault(avenceo), Role::Relay, Selector::All);
+            lab.issue(me, &[me], relay).map_err(|why| anyhow!("avenCEO's relay is refused: {why:?}"))?;
+            let card = named(&name, me);
+            lab.create(me, vault, vault, CARD, &[], card).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
             Ok::<_, anyhow::Error>(())
         };
         device.node.act(found).await?;
@@ -249,30 +264,30 @@ impl Device {
             .read(|lab, me| {
                 let vault = lab.state(me).vault(lab.vault_of(me)?)?;
                 let mut names = cards(lab, me, vault.id);
-                let name = |d: &SignerId| (*d, names.remove(d).map(|(_, _, name)| name));
+                let name = |d: &SignerId| (*d, names.remove(d).map(|(_, name)| name));
                 let devices = vault.devices.iter().map(name).collect();
                 Some(Account { vault: vault.id, root: vault.root, devices, owns_aven: owns_aven(lab, me) })
             })
             .await
     }
 
-    /// Its card reads `name`: written into the first space its vault founded if it has none yet, its title set if it
-    /// reads otherwise; its peers are told. Whether it wrote: not while it knows no space of its vault, as a device
-    /// just linked until the space arrives, nor if its card reads `name` already.
+    /// Its card reads `name`: written into its vault if it has none yet, its title set if it reads otherwise; its peers
+    /// are told. Whether it wrote: not while it holds no key of its vault's seed yet, as a device just linked until
+    /// another device of the vault boxes it one, nor if its card reads `name` already.
     pub async fn card(&self, name: String) -> Result<bool> {
         let card = move |lab: &mut Lab, me| {
             let Some(vault) = lab.vault_of(me) else { return Ok(false) };
-            if let Some((space, entry, title)) = cards(lab, me, vault).remove(&me) {
+            if let Some((entry, title)) = cards(lab, me, vault).remove(&me) {
                 if title == name {
                     return Ok(false);
                 }
-                lab.edit(me, vault, space, entry, move |item| _ = item.edit_document(|d| d.title = name))?;
+                lab.edit(me, vault, entry, move |item| _ = item.edit_document(|d| d.title = name))?;
                 return Ok(true);
             }
-            let Some(space) = lab.state(me).spaces().iter().find(|s| s.founder == vault).map(|s| s.id) else {
+            if !lab.holds_key(me, lab.state(me).current(KeyFam::Seed(vault))) {
                 return Ok(false);
-            };
-            lab.create(me, vault, space, card(&name, me)).map(|_| true)
+            }
+            lab.create(me, vault, vault, CARD, &[], named(&name, me)).map(|_| true)
         };
         self.node.act(card).await.map_err(|why: Refusal| anyhow!("the card is refused: {why:?}"))
     }
@@ -284,8 +299,8 @@ impl Device {
 
     /// New vaults its person's vault founds and owns alone, each of kind `Kind::Aven` or `Kind::Coop` and named: one
     /// ceremony of the passkey signs all their geneses (`avendb_net::Node::approve_with`); then the device, acting for
-    /// each through its own vault, founds its home, grants avenCEO relay on it so the server keeps its log, and writes
-    /// its profile there (`Device::profile`). Their ids, in the order named.
+    /// each through its own vault, gives avenCEO relay on it so the server keeps its entries, and writes its profile
+    /// (`Device::profile`). Their ids, in the order named.
     pub async fn found_vaults(
         &self,
         new: Vec<(Kind, String)>,
@@ -319,83 +334,90 @@ impl Device {
         Ok(vaults)
     }
 
-    /// Vault `vault`'s profile reads `name`, written by this device acting for the vault: in its home, which the device
-    /// founds first if the vault has none, and on which it grants avenCEO relay, so the server keeps its log, unless
-    /// the vault is avenCEO itself; or, if it has a profile, its title set. Whether it wrote: not if the profile reads
-    /// `name` already. Fails if the device doesn't act for the vault.
+    /// Vault `vault`'s profile reads `name`, written by this device acting for the vault; or, if it has a profile, its
+    /// title set. A vault that has none yet gives avenCEO relay on the whole of it first, so the server keeps its
+    /// entries, unless it is avenCEO itself or does so already. Whether it wrote: not if the profile reads `name`
+    /// already. Fails if the device doesn't act for the vault.
     pub async fn profile(&self, vault: VaultId, name: String) -> Result<bool> {
-        let home = nonce()?;
         let profile = move |lab: &mut Lab, me| {
-            let first = firsts(lab.state(me));
-            if let Some((space, entry, title)) = profile_of(lab, me, vault, &first) {
+            if let Some((entry, title)) = profile_of(lab, me, vault) {
                 if title == name {
                     return Ok(false);
                 }
-                lab.edit(me, vault, space, entry, move |item| _ = item.edit_document(|d| d.title = name))?;
+                lab.edit(me, vault, entry, move |item| _ = item.edit_document(|d| d.title = name))?;
                 return Ok(true);
             }
-            let space = match home_of(lab.state(me), vault) {
-                Some(space) => space,
-                None => {
-                    let found = Action::FoundSpace { actor: vault, nonce: home, via: vec![] };
-                    let space = SpaceId::from(lab.submit(me, &[me], found)?);
-                    let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
-                    if let Some(avenceo) = avenceo(lab.state(me), mine).filter(|&a| a != vault) {
-                        let relay = cast::grant(Scope::Space(space), Role::Relay, cast::vault(avenceo), vault, None);
-                        lab.submit(me, &[me], relay)?;
-                    }
-                    space
-                }
-            };
-            lab.create(me, vault, space, tagged(&name, PROFILE, me)).map(|_| true)
+            let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+            let st = lab.state(me);
+            if let Some(avenceo) = avenceo(st, mine).filter(|&a| a != vault && !relays(st, vault, a)) {
+                lab.issue(me, &[me], cast::cap(vault, cast::vault(avenceo), Role::Relay, Selector::All))?;
+            }
+            lab.create(me, vault, vault, PROFILE, &[], named(&name, me)).map(|_| true)
         };
         self.node.act(profile).await.map_err(|why: Refusal| anyhow!("the profile is refused: {why:?}"))
     }
 
-    /// Writes a new todo titled `title` in space `space`, acting for vault `actor`: its entry.
-    pub async fn todo(&self, actor: VaultId, space: SpaceId, title: String) -> Result<EntryId> {
-        let todo = move |lab: &mut Lab, me| lab.create(me, actor, space, Item::todo(&title, me));
+    /// Writes a new todo titled `title` with tags `tags` into vault `vault`, acting for vault `actor`, the vault itself
+    /// or one holding a cap with write or more on a slice that holds it: its entry.
+    pub async fn todo(&self, actor: VaultId, vault: VaultId, title: String, tags: Vec<String>) -> Result<EntryId> {
+        let todo = move |lab: &mut Lab, me| lab.create(me, actor, vault, TODO, &strs(&tags), Item::todo(&title, me));
         self.node.act(todo).await.map_err(|why| anyhow!("the todo is refused: {why:?}"))
     }
 
-    /// Sets the status of todo `entry` in space `space`, acting for vault `actor`; its peers are told.
-    pub async fn set_status(&self, actor: VaultId, space: SpaceId, entry: EntryId, status: Status) -> Result<()> {
-        let edit = move |lab: &mut Lab, me| lab.edit(me, actor, space, entry, |item| item.set_status(status));
+    /// Sets the status of todo `entry`, acting for vault `actor`; its peers are told.
+    pub async fn set_status(&self, actor: VaultId, entry: EntryId, status: Status) -> Result<()> {
+        let edit = move |lab: &mut Lab, me| lab.edit(me, actor, entry, |item| item.set_status(status));
         self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the change is refused: {why:?}"))
     }
 
-    /// Gives `grantee` the role `role` on `scope`, acting for vault `issuer`, which must hold owner on it: as the
-    /// space's founder, or by a grant of owner, on which this one then rests. Making someone owner is governance, which
-    /// the passkey approves in a ceremony; anything less this device signs alone. The grant's id.
-    pub async fn grant(
+    /// Adds the tags `add` to entry `entry` and removes the tags `remove`, acting for vault `actor`; its peers are
+    /// told.
+    /// They count at once when `actor` is the entry's vault; anyone else asks the vault's stewards, its devices, who
+    /// answer with what the caps it holds let it ask for (`Lab::tag`). A tag that takes an entry into or out of a
+    /// cap's slice moves it to the cell those caps reach.
+    pub async fn tag(&self, actor: VaultId, entry: EntryId, add: Vec<String>, remove: Vec<String>) -> Result<()> {
+        let tag = move |lab: &mut Lab, me| lab.tag(me, actor, entry, &strs(&add), &strs(&remove));
+        self.node.act(tag).await.map(|_| ()).map_err(|why| anyhow!("the tags are refused: {why:?}"))
+    }
+
+    /// Gives `grantee` the role `role` on what `slice` selects of vault `over`, acting for vault `issuer`: the vault
+    /// itself, or a vault holding an owner cap over it, on which this one then rests, a wide one for a cap on the whole
+    /// vault (`parent`). Making someone owner is governance, which the passkey approves in a ceremony; anything less
+    /// this device signs alone. The cap's slice is sealed to the vault, its grantee and its issuer. The cap's id.
+    pub async fn share(
         &self,
         issuer: VaultId,
-        scope: Scope,
+        over: VaultId,
+        slice: Slice,
         role: Role,
         grantee: Grantee,
         authenticator: &impl Authenticator,
-    ) -> Result<GrantId> {
-        let parent = move |lab: &Lab, me| parent(lab.state(me), issuer, scope);
-        let parent = self.node.read(parent).await;
-        let grant = cast::grant(scope, role, grantee, issuer, parent);
-        let refused = |why| anyhow!("the grant is refused: {why:?}");
-        let id = if role == Role::Owner {
-            let passkey = self.passkey;
-            let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey], grant);
-            self.node.approve_with(passkey, draft, authenticator).await?
-        } else {
-            self.node.act(move |lab, me| lab.submit(me, &[me], grant)).await.map_err(refused)?
-        };
-        Ok(GrantId::from(id))
+    ) -> Result<CapId> {
+        let wide = slice.select == Selector::All;
+        let parent = self.node.read(move |lab, me| parent(lab.state(me), issuer, over, wide)).await;
+        let new = NewCap { over, grantee, role, slice, parent, issuer };
+        let refused = |why| anyhow!("the cap is refused: {why:?}");
+        if role != Role::Owner {
+            return self.node.act(move |lab, me| lab.issue(me, &[me], new)).await.map_err(refused);
+        }
+        let passkey = self.passkey;
+        let draft = self.node.act(move |lab, me| lab.draft_cap(me, &[passkey], new)).await.map_err(refused)?;
+        let ceremony = authenticator.ceremony(draft.challenge(), Step::Approve).await?;
+        let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &ceremony)]);
+        let id = self.node.act(complete).await.map_err(|why| anyhow!("the passkey didn't sign the cap: {why:?}"))?;
+        Ok(CapId::from(id))
     }
 
-    /// Ends grant `grant` and every grant resting on it, acting for vault `actor`, which issued it, founded its space,
-    /// or may revoke the grant it rests on. Ending an owner's grant is governance, which the passkey approves in a
+    /// Ends cap `cap` and every cap resting on it, acting for vault `actor`, which issued it, is the vault it is over,
+    /// holds it, or may revoke a cap it rests on. Ending an owner cap is governance, which the passkey approves in a
     /// ceremony.
-    pub async fn revoke(&self, actor: VaultId, grant: GrantId, authenticator: &impl Authenticator) -> Result<()> {
-        let role = self.node.read(move |lab, me| lab.state(me).grant(grant).map(|g| g.role)).await;
-        let revoke = Action::Revoke { grant, actor, keep: vec![], via: vec![] };
-        if role.context("no such grant in force")? == Role::Owner {
+    pub async fn revoke(&self, actor: VaultId, cap: CapId, authenticator: &impl Authenticator) -> Result<()> {
+        let role = move |lab: &Lab, me| {
+            let st = lab.state(me);
+            st.cap(cap).filter(|cp| st.live(cp.id)).map(|cp| cp.cap.role)
+        };
+        let revoke = Action::Revoke { cap, actor, keep: vec![], via: vec![] };
+        if self.node.read(role).await.context("no such cap in force")? == Role::Owner {
             let passkey = self.passkey;
             let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey], revoke);
             self.node.approve_with(passkey, draft, authenticator).await?;
@@ -406,28 +428,30 @@ impl Device {
         Ok(())
     }
 
-    /// The text of block `block` of entry `entry` in space `space`, as the device reads it: `None` while it can't.
-    pub async fn text(&self, space: SpaceId, entry: EntryId, block: u64) -> Option<String> {
-        self.node.read(move |lab, me| cast::text(lab, me, space, entry, block)).await
+    /// The text of block `block` of entry `entry`, as the device reads it: `None` while it can't.
+    pub async fn text(&self, entry: EntryId, block: u64) -> Option<String> {
+        self.node.read(move |lab, me| cast::text(lab, me, entry, block)).await
     }
 
-    /// Sets the text of block `block` of entry `entry` in space `space`, acting for vault `actor`; its peers are told.
-    pub async fn set_text(
-        &self,
-        actor: VaultId,
-        space: SpaceId,
-        entry: EntryId,
-        block: u64,
-        text: String,
-    ) -> Result<()> {
-        let edit = move |lab: &mut Lab, me| lab.edit(me, actor, space, entry, |item| item.set_text(block, &text));
+    /// Sets the text of block `block` of entry `entry`, acting for vault `actor`; its peers are told.
+    pub async fn set_text(&self, actor: VaultId, entry: EntryId, block: u64, text: String) -> Result<()> {
+        let edit = move |lab: &mut Lab, me| lab.edit(me, actor, entry, |item| item.set_text(block, &text));
         self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
     }
 
-    /// Writes a new document titled `title` that reads `body` in space `space`, acting for vault `actor`: its entry.
-    pub async fn write(&self, actor: VaultId, space: SpaceId, title: String, body: String) -> Result<EntryId> {
-        let write = move |lab: &mut Lab, me| lab.create(me, actor, space, cast::document(&title, &body, me));
-        self.node.act(write).await.map_err(|why| anyhow!("the document is refused: {why:?}"))
+    /// Writes a new note titled `title` that reads `body`, with tags `tags`, into vault `vault`, acting for vault
+    /// `actor`: its entry.
+    pub async fn write(
+        &self,
+        actor: VaultId,
+        vault: VaultId,
+        (title, body): (String, String),
+        tags: Vec<String>,
+    ) -> Result<EntryId> {
+        let write = move |lab: &mut Lab, me| {
+            lab.create(me, actor, vault, NOTE, &strs(&tags), cast::document(&title, &body, me))
+        };
+        self.node.act(write).await.map_err(|why| anyhow!("the note is refused: {why:?}"))
     }
 
     /// Vault `vault`'s database as the device holds it, for the page's database studio (`data::database`).
@@ -435,10 +459,10 @@ impl Device {
         self.node.read(move |lab, me| data::database(lab, me, vault)).await
     }
 
-    /// Note `entry` of space `space` as the device holds it, for the page's note page: its main line, its proposals and
-    /// every edit of it the device counts (`data::note`). `None` if it counts none.
-    pub async fn note(&self, space: SpaceId, entry: EntryId) -> Option<Value> {
-        self.node.read(move |lab, me| data::note(lab, me, space, entry)).await
+    /// Note `entry` as the device holds it, for the page's note page: its main line, its proposals and every edit of it
+    /// the device counts (`data::note`). `None` if it counts none.
+    pub async fn note(&self, entry: EntryId) -> Option<Value> {
+        self.node.read(move |lab, me| data::note(lab, me, entry)).await
     }
 
     /// The database's history: every signed edit it holds, in the order it took them, for the studio's History view
@@ -447,32 +471,25 @@ impl Device {
         self.node.read(data::history).await
     }
 
-    /// Sets the text of block `block` of entry `entry` in space `space` on line `line` of its history, acting for vault
-    /// `actor`; its peers are told.
+    /// Sets the text of block `block` of entry `entry` on line `line` of its history, acting for vault `actor`; its
+    /// peers are told.
     pub async fn set_text_on(
         &self,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         line: Line,
         block: u64,
         text: String,
     ) -> Result<()> {
-        let edit =
-            move |lab: &mut Lab, me| lab.edit_on(me, actor, space, entry, line, |item| item.set_text(block, &text));
+        let edit = move |lab: &mut Lab, me| lab.edit_on(me, actor, entry, line, |item| item.set_text(block, &text));
         self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
     }
 
-    /// Retitles document `entry` of space `space` on line `line` of its history, and its opening heading with it,
-    /// acting for vault `actor`; its peers are told. Refused if it isn't a document.
-    pub async fn set_title_on(
-        &self,
-        actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
-        line: Line,
-        title: String,
-    ) -> Result<()> {
+    /// Retitles document `entry` on line `line` of its history, and its opening heading with it, acting for vault
+    /// `actor`; its peers are told. Refused if it isn't a document.
+    pub async fn set_title_on(&self, actor: VaultId, entry: EntryId, line: Line, title: String) -> Result<()> {
         let edit = move |lab: &mut Lab, me| {
-            if lab.item_on(me, space, entry, line).and_then(Item::as_document).is_none() {
+            if lab.item_on(me, entry, line).and_then(Item::as_document).is_none() {
                 return Ok(None);
             }
             // the heading a note opens with (`cast::document`'s block 1) is its title too
@@ -484,102 +501,80 @@ impl Device {
                     d.title = title;
                 });
             };
-            lab.edit_on(me, actor, space, entry, line, retitle).map(Some)
+            lab.edit_on(me, actor, entry, line, retitle).map(Some)
         };
         let made = self.node.act(edit).await.map_err(|why| anyhow!("the edit is refused: {why:?}"))?;
         made.map(|_| ()).context("only a document has a title")
     }
 
-    /// Proposes a change to entry `entry` in space `space`: a proposal named `name`, a line of its own that starts
-    /// from version `from`, acting for vault `actor` (`Lab::propose`): the new line, named by its first edit.
-    pub async fn propose(
-        &self,
-        actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
-        from: Vec<EditId>,
-        name: String,
-    ) -> Result<EditId> {
-        let propose = move |lab: &mut Lab, me| lab.propose(me, actor, (space, entry), &from, &name);
+    /// Proposes a change to entry `entry`: a proposal named `name`, a line of its own that starts from version `from`,
+    /// acting for vault `actor` (`Lab::propose`): the new line, named by its first edit.
+    pub async fn propose(&self, actor: VaultId, entry: EntryId, from: Vec<EditId>, name: String) -> Result<EditId> {
+        let propose = move |lab: &mut Lab, me| lab.propose(me, actor, entry, &from, &name);
         self.node.act(propose).await.map_err(|why| anyhow!("the proposal is refused: {why:?}"))
     }
 
-    /// Merges line `from` of entry `entry` in space `space` into line `into`, acting for vault `actor`; with `promote`,
-    /// `into` then shows exactly what `from` does (`Lab::merge`, `Lab::promote`).
+    /// Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then
+    /// shows exactly what `from` does (`Lab::merge`, `Lab::promote`).
     pub async fn merge(
         &self,
         actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
+        entry: EntryId,
         (from, into): (Line, Line),
         promote: bool,
     ) -> Result<EditId> {
         let merge = move |lab: &mut Lab, me| match promote {
-            true => lab.promote(me, actor, (space, entry), from, into),
-            false => lab.merge(me, actor, (space, entry), from, into),
+            true => lab.promote(me, actor, entry, from, into),
+            false => lab.merge(me, actor, entry, from, into),
         };
         self.node.act(merge).await.map_err(|why| anyhow!("the merge is refused: {why:?}"))
     }
 
-    /// Puts the record of version `version` of entry `entry` in space `space` back on line `line`, acting for vault
-    /// `actor` (`Lab::restore`).
-    pub async fn restore(
-        &self,
-        actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
-        line: Line,
-        version: Vec<EditId>,
-    ) -> Result<EditId> {
-        let restore = move |lab: &mut Lab, me| lab.restore(me, actor, (space, entry), line, &version);
+    /// Puts the record of version `version` of entry `entry` back on line `line`, acting for vault `actor`
+    /// (`Lab::restore`).
+    pub async fn restore(&self, actor: VaultId, entry: EntryId, line: Line, version: Vec<EditId>) -> Result<EditId> {
+        let restore = move |lab: &mut Lab, me| lab.restore(me, actor, entry, line, &version);
         self.node.act(restore).await.map_err(|why| anyhow!("the restore is refused: {why:?}"))
     }
 
-    /// Undoes write `edit` of entry `entry` in space `space` on line `line`, keeping every change made since, acting
-    /// for vault `actor` (`Lab::undo`).
-    pub async fn undo(
-        &self,
-        actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
-        line: Line,
-        edit: EditId,
-    ) -> Result<EditId> {
-        let undo = move |lab: &mut Lab, me| lab.undo(me, actor, (space, entry), line, edit);
+    /// Undoes write `edit` of entry `entry` on line `line`, keeping every change made since, acting for vault `actor`
+    /// (`Lab::undo`).
+    pub async fn undo(&self, actor: VaultId, entry: EntryId, line: Line, edit: EditId) -> Result<EditId> {
+        let undo = move |lab: &mut Lab, me| lab.undo(me, actor, entry, line, edit);
         self.node.act(undo).await.map_err(|why| anyhow!("the undo is refused: {why:?}"))
     }
 
-    /// Makes a variant of entry `entry` in space `space`: a new entry of space `into` with what its line `line` shows
-    /// and none of its history, a document tagged `VARIANT` with the entry it came from in place of any such tag it
-    /// had, acting for vault `actor`: the new entry.
-    pub async fn variant(
-        &self,
-        actor: VaultId,
-        (space, entry): (SpaceId, EntryId),
-        line: Line,
-        into: SpaceId,
-    ) -> Result<EntryId> {
+    /// Makes a variant of entry `entry`: a new entry of vault `into` with what its line `line` shows and none of its
+    /// history, of its type and with its tags, its document marked `VARIANT` with the entry it came from in place of
+    /// any such mark it had, acting for vault `actor`: the new entry.
+    pub async fn variant(&self, actor: VaultId, entry: EntryId, line: Line, into: VaultId) -> Result<EntryId> {
         let variant = move |lab: &mut Lab, me| {
-            let mut copy = lab.item_on(me, space, entry, line).ok_or(Refusal::ReadOnly)?.copy(me);
+            let mut copy = lab.item_on(me, entry, line).ok_or(Refusal::ReadOnly)?.copy(me);
+            let m = lab.meaning(me, entry).ok_or(Refusal::ReadOnly)?;
             copy.edit_document(|d| {
                 d.tags.retain(|t| !t.starts_with(VARIANT));
                 d.tags.push(format!("{VARIANT}{}", hex(&entry.0)));
             });
-            lab.create(me, actor, into, copy)
+            let tags: Vec<&str> = m.attrs.tags.iter().map(Sym::as_str).collect();
+            lab.create(me, actor, into, m.attrs.ty.as_str(), &tags, copy)
         };
         self.node.act(variant).await.map_err(|why| anyhow!("the variant is refused: {why:?}"))
     }
 
-    /// The spaces it knows, each with the vault that founded it and the documents it reads there, but for the devices'
-    /// cards: their entry, title and the text of their first paragraph (block 2), as `cast::document` writes them.
+    /// The notes it reads, by their vault, of each vault that has one: each note's entry, title and the text of its
+    /// first paragraph (block 2), as `cast::document` writes them.
     pub async fn notes(&self) -> Vec<Notes> {
         self.node
             .read(|lab, me| {
-                let state = lab.state(me);
-                let read = |s: &avendb::policy::Space| {
-                    let doc = |&e: &EntryId| Some((e, lab.item(me, s.id, e)?.as_document()?));
-                    let docs = s.entries.iter().filter_map(doc).filter(|(_, d)| !is_card(d));
-                    let text = |e| cast::text(lab, me, s.id, e, 2).unwrap_or_default();
-                    let docs = docs.map(|(e, d)| (e, d.title.clone(), text(e)));
-                    Notes { space: s.id, founder: s.founder, docs: docs.collect() }
+                let st = lab.state(me);
+                let read = |v: &Vault| {
+                    let notes = st.entries().iter().filter(|en| en.vault == v.id && typed(lab, me, en.id, NOTE));
+                    let doc = |e: EntryId| Some((e, lab.item(me, e)?.as_document()?));
+                    let docs = notes.filter_map(|en| doc(en.id));
+                    let docs = docs.map(|(e, d)| (e, d.title, cast::text(lab, me, e, 2).unwrap_or_default()));
+                    Notes { vault: v.id, docs: docs.collect() }
                 };
-                state.spaces().iter().map(read).collect()
+                st.vaults().iter().map(read).filter(|n| !n.docs.is_empty()).collect()
             })
             .await
     }
@@ -622,10 +617,9 @@ impl Device {
     }
 }
 
-/// The documents of one space, as a device reads them (`Device::notes`): each one's entry, title and text.
+/// The notes of one vault, as a device reads them (`Device::notes`): each one's entry, title and text.
 pub struct Notes {
-    pub space: SpaceId,
-    pub founder: VaultId,
+    pub vault: VaultId,
     pub docs: Vec<(EntryId, String, String)>,
 }
 
@@ -646,35 +640,32 @@ fn owns_aven(lab: &Lab, me: SignerId) -> bool {
     lab.state(me).vaults().iter().any(avenceo)
 }
 
-/// Device `device`'s card, titled `name` (`CARD`).
-fn card(name: &str, device: SignerId) -> Item {
-    tagged(name, CARD, device)
+/// A document titled `title`, made on device `device`: a card's or a profile's record.
+fn named(title: &str, device: SignerId) -> Item {
+    Item::document(title, device)
 }
 
-/// A document titled `title`, tagged `tag`, made on device `device`.
-fn tagged(title: &str, tag: &str, device: SignerId) -> Item {
-    let mut item = Item::document(title, device);
-    item.edit_document(|d| d.tags.push(tag.into()));
-    item
+/// Entry `e` is of type `ty`, as device `me` reads its header.
+fn typed(lab: &Lab, me: SignerId, e: EntryId, ty: &str) -> bool {
+    lab.meaning(me, e).is_some_and(|m| m.attrs.ty.as_str() == ty)
 }
 
-fn is_card(doc: &DocV2) -> bool {
-    doc.tags.iter().any(|t| t == CARD)
+/// Tags as the Lab takes them.
+fn strs(tags: &[String]) -> Vec<&str> {
+    tags.iter().map(String::as_str).collect()
 }
 
-fn is_profile(doc: &DocV2) -> bool {
-    doc.tags.iter().any(|t| t == PROFILE)
-}
-
-/// A device's world by its view (`Device::world`): every vault it knows, in the order they were founded, and every
-/// space, in the order they were.
+/// A device's world by its view (`Device::world`): every vault it knows, in the order they were founded; every cap in
+/// force, in the order they were issued; every cell an entry is in; and every entry, in the order they were created.
 pub struct World {
     /// Its own vault, its person's.
     pub mine: VaultId,
     /// It trusts no curve (`Lab::set_pq_only`): only the writes a checkpoint by their author covers count.
     pub pq_only: bool,
     pub vaults: Vec<VaultView>,
-    pub spaces: Vec<SpaceView>,
+    pub caps: Vec<CapView>,
+    pub cells: Vec<CellView>,
+    pub entries: Vec<EntryView>,
 }
 
 /// A vault as a device shows it.
@@ -687,29 +678,45 @@ pub struct VaultView {
     /// The owners the device acts for it through (`State::via`): none for its own vault, `None` if it doesn't act for
     /// it.
     pub via: Option<Vec<VaultId>>,
-    /// Its home: the first space it founded, where its profile is.
-    pub home: Option<SpaceId>,
 }
 
-/// A space as a device shows it.
-pub struct SpaceView {
-    pub space: SpaceId,
-    pub founder: VaultId,
+/// A cap in force as a device shows it.
+pub struct CapView {
+    pub id: CapId,
+    pub cap: Cap,
+    /// The caps it rests on, from its root cap down to itself.
+    pub chain: Vec<CapId>,
+    /// Its slice, if the device reads it: its selector is sealed to the vault it is over, its grantee and its issuer,
+    /// so a device acting for none of them sees only that it is there, and what it reaches.
+    pub slice: Option<Slice>,
+    /// The vaults that may revoke it.
+    pub revokers: Vec<VaultId>,
+    /// The entries it reaches now: every entry of its vault for a cap on the whole vault, else those in a cell of
+    /// caps it is one of.
+    pub entries: Vec<EntryId>,
+}
+
+/// A cell as a device shows it: the entries of a vault that the same caps reach, under one key.
+pub struct CellView {
+    pub id: CellId,
+    pub vault: VaultId,
+    /// The caps that reach it beside the vault's caps on the whole of it: none for the cell of the vault's own entries
+    /// that no cap selects.
+    pub caps: Vec<CapId>,
+    /// Its key's generation: it moves on when a reader may no longer read it.
+    pub generation: u64,
+    pub entries: Vec<EntryId>,
+    /// The vaults that read it: its own, and each vault a cap with read or more that reaches it names.
+    pub readers: Vec<VaultId>,
     /// Everyone may read it.
     pub public: bool,
-    /// The role each vault holds on the whole space, the strongest, of the vaults that hold one: its founder's is
-    /// owner.
-    pub roles: Vec<(VaultId, Role)>,
-    /// The grants in force on it or on one of its entries, each with the vaults that may revoke it.
-    pub grants: Vec<(GrantId, Grant, Vec<VaultId>)>,
-    /// The devices that receive its edits (`State::reaches`).
+    /// The devices that receive its edits.
     pub syncs: Vec<Syncing>,
-    /// Its entries, but the devices' cards and the vaults' profiles.
-    pub items: Vec<ItemView>,
 }
 
-/// A device that receives a space's edits: the vault it receives them through, and whether it opens any of what they
-/// hold, or only relays their ciphertext, as the server for avenCEO.
+/// A device that receives a cell's edits: the vault it receives them through, the one of those it acts for that holds
+/// the strongest role on the cell, and whether it opens any of what they hold, or only relays their ciphertext, as the
+/// server for avenCEO.
 pub struct Syncing {
     pub device: SignerId,
     pub through: VaultId,
@@ -717,13 +724,20 @@ pub struct Syncing {
 }
 
 /// An entry as a device shows it.
-pub struct ItemView {
+pub struct EntryView {
     pub entry: EntryId,
+    pub vault: VaultId,
     /// The vault its first write acted for.
-    pub by: Option<VaultId>,
+    pub by: VaultId,
+    /// Its type, its tags now and when it was created, in seconds since 1970, if the device reads them: they travel
+    /// inside its encrypted writes.
+    pub ty: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub created: Option<u64>,
+    pub cell: CellId,
     /// Everyone may read it.
     pub public: bool,
-    /// The role each vault holds on it, the strongest, of the vaults that hold one.
+    /// The strongest role each vault holds on it: its own vault's is owner.
     pub roles: Vec<(VaultId, Role)>,
     pub what: What,
 }
@@ -741,12 +755,11 @@ pub enum What {
 
 impl World {
     /// The world as device `me`'s page reads it (`PageDevice::world`): ids in 64 hex digits, kinds, roles and statuses
-    /// by their lowercase names, each vault's and each item's roles by vault, a vault's `via` `null` where the device
-    /// doesn't act for it, a grant's `grantee` `"public"` for everyone and its `entry` `null` for the whole space.
+    /// by their lowercase names, a slice as `words::slice_value` writes it, `null` where the device doesn't read it, a
+    /// vault's `via` `null` where the device doesn't act for it, a cap's `grantee` `"public"` for everyone, an
+    /// entry's `type`, `tags` and `created` `null` where the device doesn't read them and its `roles` by vault.
     pub fn to_json(&self, me: SignerId) -> Value {
-        let roles = |roles: &[(VaultId, Role)]| {
-            Value::Object(roles.iter().map(|(v, r)| (hex(&v.0), Value::from(role_name(*r)))).collect())
-        };
+        let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
             Principal::Signer(s) => json!({ "signer": hex(&s.0) }),
@@ -761,34 +774,40 @@ impl World {
                 "threshold": v.vault.threshold,
                 "root": v.vault.root.map(|r| hex(&r.0)),
                 "devices": v.vault.devices.iter().map(device).collect::<Vec<_>>(),
-                "via": v.via.as_ref().map(|via| via.iter().map(|o| hex(&o.0)).collect::<Vec<_>>()),
-                "home": v.home.map(|h| hex(&h.0)),
+                "via": v.via.as_deref().map(ids),
             })
         };
-        let grant = |(id, g, revokers): &(GrantId, Grant, Vec<VaultId>)| {
-            let grantee = match g.grantee {
-                Grantee::Public => "public".to_string(),
-                Grantee::Principal(Principal::Vault(v)) => hex(&v.0),
-                Grantee::Principal(Principal::Signer(s)) => hex(&s.0),
-            };
-            let entry = match g.scope {
-                Scope::Space(_) => None,
-                Scope::Entry(_, e) => Some(hex(&e.0)),
-            };
+        let cap = |c: &CapView| {
             json!({
-                "id": hex(&id.0),
-                "role": role_name(g.role),
-                "grantee": grantee,
-                "issuer": hex(&g.issuer.0),
-                "entry": entry,
-                "parent": g.parent.map(|p| hex(&p.0)),
-                "revokers": revokers.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+                "id": hex(&c.id.0),
+                "over": hex(&c.cap.over.0),
+                "issuer": hex(&c.cap.issuer.0),
+                "grantee": grantee_name(c.cap.grantee),
+                "role": role_name(c.cap.role),
+                "wide": c.cap.wide,
+                "parent": c.cap.parent.map(|p| hex(&p.0)),
+                "chain": c.chain.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
+                "slice": c.slice.as_ref().map(slice_value),
+                "revokers": ids(&c.revokers),
+                "entries": c.entries.iter().map(|e| hex(&e.0)).collect::<Vec<_>>(),
             })
         };
         let syncing = |x: &Syncing| {
             json!({ "device": hex(&x.device.0), "through": hex(&x.through.0), "opens": x.opens })
         };
-        let item = |i: &ItemView| {
+        let cell = |c: &CellView| {
+            json!({
+                "id": hex(&c.id.0),
+                "vault": hex(&c.vault.0),
+                "caps": c.caps.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
+                "generation": c.generation,
+                "entries": c.entries.iter().map(|e| hex(&e.0)).collect::<Vec<_>>(),
+                "readers": ids(&c.readers),
+                "public": c.public,
+                "syncs": c.syncs.iter().map(syncing).collect::<Vec<_>>(),
+            })
+        };
+        let entry = |i: &EntryView| {
             let (kind, title, text, status) = match &i.what {
                 What::Note { title, text, .. } => ("note", Some(title), Some(text), None),
                 What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
@@ -798,11 +817,18 @@ impl World {
                 What::Note { variant_of, edits, proposals, .. } => (variant_of.map(|e| hex(&e.0)), *edits, *proposals),
                 _ => (None, 0, 0),
             };
+            let roles: serde_json::Map<String, Value> =
+                i.roles.iter().map(|(v, r)| (hex(&v.0), Value::from(role_name(*r)))).collect();
             json!({
                 "entry": hex(&i.entry.0),
-                "by": i.by.map(|v| hex(&v.0)),
+                "vault": hex(&i.vault.0),
+                "by": hex(&i.by.0),
+                "type": i.ty,
+                "tags": i.tags,
+                "created": i.created,
+                "cell": hex(&i.cell.0),
                 "public": i.public,
-                "roles": roles(&i.roles),
+                "roles": roles,
                 "kind": kind,
                 "title": title,
                 "text": text,
@@ -812,49 +838,24 @@ impl World {
                 "proposals": proposals,
             })
         };
-        let space = |s: &SpaceView| {
-            json!({
-                "id": hex(&s.space.0),
-                "founder": hex(&s.founder.0),
-                "public": s.public,
-                "roles": roles(&s.roles),
-                "grants": s.grants.iter().map(grant).collect::<Vec<_>>(),
-                "syncs": s.syncs.iter().map(syncing).collect::<Vec<_>>(),
-                "items": s.items.iter().map(item).collect::<Vec<_>>(),
-            })
-        };
         json!({
             "me": hex(&me.0),
             "mine": hex(&self.mine.0),
             "pqOnly": self.pq_only,
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
-            "spaces": self.spaces.iter().map(space).collect::<Vec<_>>(),
+            "caps": self.caps.iter().map(cap).collect::<Vec<_>>(),
+            "cells": self.cells.iter().map(cell).collect::<Vec<_>>(),
+            "entries": self.entries.iter().map(entry).collect::<Vec<_>>(),
         })
     }
 }
 
-fn kind_name(kind: Kind) -> &'static str {
-    match kind {
-        Kind::Human => "human",
-        Kind::Coop => "coop",
-        Kind::Aven => "aven",
-    }
-}
-
-fn role_name(role: Role) -> &'static str {
-    match role {
-        Role::Relay => "relay",
-        Role::Read => "read",
-        Role::Write => "write",
-        Role::Owner => "owner",
-    }
-}
-
-fn status_name(status: Status) -> &'static str {
-    match status {
-        Status::Open => "open",
-        Status::Doing => "doing",
-        Status::Done => "done",
+/// A cap's grantee as the page names it: `"public"` for everyone, else the vault's id.
+fn grantee_name(g: Grantee) -> String {
+    match g {
+        Grantee::Public => "public".to_string(),
+        Grantee::Principal(Principal::Vault(v)) => hex(&v.0),
+        Grantee::Principal(Principal::Signer(s)) => hex(&s.0),
     }
 }
 
@@ -862,153 +863,201 @@ fn status_name(status: Status) -> &'static str {
 fn world(lab: &Lab, me: SignerId) -> Option<World> {
     let st = lab.state(me);
     let mine = lab.vault_of(me)?;
-    let first = firsts(st);
     let vault = |v: &Vault| {
-        let names = cards(lab, me, v.id).into_iter().map(|(d, (_, _, name))| (d, name)).collect();
-        let name = profile_of(lab, me, v.id, &first).map(|(_, _, name)| name);
-        VaultView { vault: v.clone(), name, names, via: st.via(me, v.id), home: home_of(st, v.id) }
+        let names = cards(lab, me, v.id).into_iter().map(|(d, (_, name))| (d, name)).collect();
+        let name = profile_of(lab, me, v.id).map(|(_, name)| name);
+        VaultView { vault: v.clone(), name, names, via: st.via(me, v.id) }
     };
     let vaults = st.vaults().iter().map(vault).collect();
+    let cap = |cp: &Issued| {
+        let reaches =
+            |en: &&avendb::policy::Entry| en.vault == cp.cap.over && (cp.cap.wide || in_cell(st, en.cell(), cp.id));
+        CapView {
+            id: cp.id,
+            cap: cp.cap.clone(),
+            chain: cp.chain.to_vec(),
+            slice: lab.slice(me, cp.id).cloned(),
+            revokers: st.vaults().iter().map(|v| v.id).filter(|&a| st.may_revoke(a, cp)).collect(),
+            entries: st.entries().iter().filter(reaches).map(|en| en.id).collect(),
+        }
+    };
+    let caps = st.caps().iter().filter(|cp| st.live(cp.id)).map(cap).collect();
     let devices: Vec<(SignerId, VaultId)> =
         st.vaults().iter().flat_map(|v| v.devices.iter().map(move |&d| (d, v.id))).collect();
-    let space = |s: &avendb::policy::Space| {
-        let sc = Scope::Space(s.id);
-        let revokers = |g: &Grant| st.vaults().iter().map(|v| v.id).filter(|&a| st.may_revoke(a, g)).collect();
-        let grants = st.grants().into_iter().filter(|(_, g)| g.scope.space() == s.id);
-        let grants = grants.map(|(id, g)| (id, g.clone(), revokers(&g))).collect();
-        // a vault receives the space's edits by a cap on it or on one of its entries: the strongest it holds
-        let best = |x: VaultId| {
-            let on = |sc| [Role::Owner, Role::Write, Role::Read, Role::Relay].into_iter().find(|&r| st.holds(x, sc, r));
-            s.entries.iter().filter_map(|&e| on(Scope::Entry(s.id, e))).chain(on(sc)).max()
-        };
-        let opens = |d: SignerId| {
-            st.entitled(d, KeyScope::Space(s.id)) || s.entries.iter().any(|&e| st.entitled(d, KeyScope::Entry(s.id, e)))
-        };
-        // a device receives them through the vault it acts for that holds the strongest cap, the first of those
-        let syncing = |&(d, own): &(SignerId, VaultId)| {
-            let acting = st.vaults().iter().filter(|x| st.acts_for(d, x.id));
-            let held = acting.filter_map(|x| Some((best(x.id)?, x.id)));
-            let stronger = |a: Option<(Role, VaultId)>, b: (Role, VaultId)| match a {
-                Some(a) if a.0 >= b.0 => Some(a),
-                _ => Some(b),
-            };
-            let through = held.fold(None, stronger);
-            Syncing { device: d, through: through.map_or(own, |(_, v)| v), opens: opens(d) }
-        };
-        let syncs = devices.iter().filter(|(d, _)| st.reaches(*d, sc)).map(syncing).collect();
-        let items = s.entries.iter().filter_map(|&e| item(lab, me, s.id, e, &first)).collect();
-        let (public, roles) = (st.is_public(sc), roles(st, sc));
-        SpaceView { space: s.id, founder: s.founder, public, roles, grants, syncs, items }
-    };
-    let spaces = st.spaces().iter().map(space).collect();
-    Some(World { mine, pq_only: lab.pq_only(), vaults, spaces })
+    let mut cells: Vec<CellView> = vec![];
+    for en in st.entries() {
+        let (v, x) = (en.vault, en.cell());
+        if let Some(c) = cells.iter_mut().find(|c| c.id == x) {
+            c.entries.push(en.id);
+            continue;
+        }
+        let k = KeyFam::Cell(v, x);
+        cells.push(CellView {
+            id: x,
+            vault: v,
+            caps: st.cell_caps(x).unwrap_or_default().to_vec(),
+            generation: st.epoch(k),
+            entries: vec![en.id],
+            readers: st.readers(k),
+            public: st.public_key(k),
+            syncs: syncing(st, &devices, v, x),
+        });
+    }
+    let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
+    Some(World { mine, pq_only: lab.pq_only(), vaults, caps, cells, entries })
 }
 
-/// Entry `entry` of space `space` as device `me` shows it: `None` for a device's card or a vault's profile.
-fn item(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId, first: &Firsts) -> Option<ItemView> {
-    let what = match lab.item(me, space, entry) {
+/// Entry `en` as device `me` shows it.
+fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
+    let what = match lab.item(me, en.id) {
         None => What::Sealed,
         Some(item) => match (item.as_document(), item.as_todo()) {
-            (Some(doc), _) if is_card(&doc) || is_profile(&doc) => return None,
             (Some(doc), _) => {
                 let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
-                let of = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT)).and_then(BlobId::from_hex);
-                let history = lab.history(me, space, entry);
+                let history = lab.history(me, en.id);
                 let edits = history.map_or(0, |h| h.changes().len());
                 let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
-                What::Note { title: doc.title, text, variant_of: of.map(|b| EntryId(b.0)), edits, proposals }
+                What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), edits, proposals }
             }
             (None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (None, None) => What::Sealed,
         },
     };
-    let (st, sc) = (lab.state(me), Scope::Entry(space, entry));
-    let by = first.get(&(space, entry)).map(|&(_, actor)| actor);
-    Some(ItemView { entry, by, public: st.is_public(sc), roles: roles(st, sc), what })
-}
-
-/// The strongest role each vault holds on `sc`, of those that hold one.
-fn roles(st: &State, sc: Scope) -> Vec<(VaultId, Role)> {
-    let strongest = |v: &Vault| {
-        let held = [Role::Owner, Role::Write, Role::Read, Role::Relay].into_iter().find(|&r| st.holds(v.id, sc, r));
-        held.map(|r| (v.id, r))
-    };
-    st.vaults().iter().filter_map(strongest).collect()
-}
-
-/// The author and the vault of each entry's first accepted write, by space and entry.
-type Firsts = BTreeMap<(SpaceId, EntryId), (SignerId, VaultId)>;
-
-fn firsts(st: &State) -> Firsts {
-    let mut first = BTreeMap::new();
-    for w in st.all_writes() {
-        first.entry((w.space, w.entry)).or_insert((w.author, w.actor));
-    }
-    first
-}
-
-/// Vault `vault`'s home: the first space it founded.
-fn home_of(st: &State, vault: VaultId) -> Option<SpaceId> {
-    st.spaces().iter().find(|s| s.founder == vault).map(|s| s.id)
-}
-
-/// Vault `vault`'s profile as device `me` reads it: the first document tagged `PROFILE` in a space the vault founded
-/// whose first write acted for the vault, where it is and the name it reads.
-fn profile_of(lab: &Lab, me: SignerId, vault: VaultId, first: &Firsts) -> Option<(SpaceId, EntryId, String)> {
     let st = lab.state(me);
-    let founded = st.spaces().iter().filter(|s| s.founder == vault);
-    let mut entries = founded.flat_map(|s| s.entries.iter().map(|&e| (s.id, e)));
-    entries.find_map(|(s, e)| {
-        let doc = lab.item(me, s, e)?.as_document().filter(is_profile)?;
-        (first.get(&(s, e))?.1 == vault).then_some((s, e, doc.title))
+    let meaning = lab.meaning(me, en.id);
+    let (ty, tags, created) = match &meaning {
+        Some(m) => {
+            let tags = m.attrs.tags.iter().map(|t| t.0.clone()).collect();
+            (Some(m.attrs.ty.0.clone()), Some(tags), Some(m.attrs.created))
+        }
+        None => (None, None, None),
+    };
+    let (v, x) = (en.vault, en.cell());
+    EntryView {
+        entry: en.id,
+        vault: v,
+        by: en.creator,
+        ty,
+        tags,
+        created,
+        cell: x,
+        public: st.public_key(KeyFam::Cell(v, x)),
+        roles: roles(st, v, x),
+        what,
+    }
+}
+
+/// The note a document is a variant of, by its mark (`VARIANT`), if it is one.
+fn variant_of(doc: &DocV2) -> Option<EntryId> {
+    let of = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT)).and_then(BlobId::from_hex);
+    of.map(|b| EntryId(b.0))
+}
+
+/// Cap `cap` is one of the caps of cell `x`.
+fn in_cell(st: &State, x: CellId, cap: CapId) -> bool {
+    st.cell_caps(x).is_some_and(|caps| caps.contains(&cap))
+}
+
+/// The caps in force that reach cell `x` of vault `v`: over the vault, and on the whole of it or among the cell's.
+fn reaching(st: &State, v: VaultId, x: CellId) -> impl Iterator<Item = &Issued> {
+    st.caps_over(v).filter(move |cp| st.live(cp.id) && (cp.cap.wide || in_cell(st, x, cp.id)))
+}
+
+/// The strongest role each vault holds on cell `x` of vault `v`: the vault itself owner, and each vault a cap in force
+/// that reaches the cell names, the strongest of those caps.
+fn roles(st: &State, v: VaultId, x: CellId) -> Vec<(VaultId, Role)> {
+    let mut roles = vec![(v, Role::Owner)];
+    for cp in reaching(st, v, x) {
+        let Grantee::Principal(Principal::Vault(g)) = cp.cap.grantee else { continue };
+        match roles.iter_mut().find(|(a, _)| *a == g) {
+            Some((_, r)) => *r = (*r).max(cp.cap.role),
+            None => roles.push((g, cp.cap.role)),
+        }
+    }
+    roles
+}
+
+/// The devices `devices` (each with its own vault) that receive the edits of cell `x` of vault `v`, as a peer sends
+/// them (`avendb::sync`): those acting for the vault, or for a vault a cap that reaches the cell names, or every
+/// device, through its own vault, if a cap to everyone reaches it.
+fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: CellId) -> Vec<Syncing> {
+    let caps: Vec<&Issued> = reaching(st, v, x).collect();
+    let public = caps.iter().any(|cp| cp.cap.grantee == Grantee::Public);
+    let through = |d: SignerId, own: VaultId| {
+        let mut best: Option<(Role, VaultId)> = st.acts_for(d, v).then_some((Role::Owner, v));
+        for cp in &caps {
+            let Grantee::Principal(Principal::Vault(g)) = cp.cap.grantee else { continue };
+            if st.acts_for(d, g) && best.is_none_or(|(r, _)| cp.cap.role > r) {
+                best = Some((cp.cap.role, g));
+            }
+        }
+        best.map(|(_, g)| g).or(public.then_some(own))
+    };
+    let k = KeyFam::Cell(v, x);
+    let sync = |&(d, own): &(SignerId, VaultId)| {
+        Some(Syncing { device: d, through: through(d, own)?, opens: st.entitled(d, k) })
+    };
+    devices.iter().filter_map(sync).collect()
+}
+
+/// The cards of vault `vault` as device `me` reads them, by the device that wrote each, the author of its entry's first
+/// write: its entry and the name it reads. A device's first card counts, should it hold two.
+fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (EntryId, String)> {
+    let st = lab.state(me);
+    let mut cards = BTreeMap::new();
+    for en in st.entries().iter().filter(|en| en.vault == vault && en.creator == vault) {
+        let author = st.write(en.creation).map(|w| w.author);
+        let doc = || lab.item(me, en.id).and_then(Item::as_document);
+        if let Some(author) = author.filter(|_| typed(lab, me, en.id, CARD))
+            && let Some(doc) = doc()
+        {
+            cards.entry(author).or_insert((en.id, doc.title));
+        }
+    }
+    cards
+}
+
+/// Vault `vault`'s profile as device `me` reads it: its first entry of type `PROFILE` that it wrote itself, and the
+/// name it reads.
+fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, String)> {
+    let st = lab.state(me);
+    let profiles = st.entries().iter().filter(|en| en.vault == vault && en.creator == vault);
+    profiles.filter(|en| typed(lab, me, en.id, PROFILE)).find_map(|en| {
+        let doc = lab.item(me, en.id)?.as_document()?;
+        Some((en.id, doc.title))
     })
 }
 
-/// avenCEO by this view: the aven vault with a device, the server, that holds relay on the home of vault `mine`, as
-/// its person's first device granted it (`Device::found`).
+/// avenCEO by this view: the aven vault with a device, the server, that vault `mine` gives relay on the whole of it, as
+/// its person's first device did (`Device::found`).
 fn avenceo(st: &State, mine: VaultId) -> Option<VaultId> {
-    let home = Scope::Space(home_of(st, mine)?);
-    let relays = |v: &&Vault| v.kind == Kind::Aven && !v.devices.is_empty() && st.holds(v.id, home, Role::Relay);
-    st.vaults().iter().find(relays).map(|v| v.id)
+    let server = |v: &&Vault| v.kind == Kind::Aven && !v.devices.is_empty() && relays(st, mine, v.id);
+    st.vaults().iter().find(server).map(|v| v.id)
 }
 
-/// The grant vault `issuer`'s right to grant on `scope` rests on: none if it founded the space, else a grant of owner
-/// to it covering the scope, if it holds one.
-fn parent(st: &State, issuer: VaultId, scope: Scope) -> Option<GrantId> {
-    if st.founder(scope.space()) == Some(issuer) {
+/// Vault `to` holds a cap in force on the whole of vault `over`, relay or more.
+fn relays(st: &State, over: VaultId, to: VaultId) -> bool {
+    st.caps_over(over).any(|cp| cp.cap.wide && st.holds(to, cp, Role::Relay))
+}
+
+/// The owner cap vault `issuer`'s right to share a slice of vault `over` rests on: none if it is the vault itself, else
+/// one in force over the vault that it holds, a cap on the whole vault first, and only such a one if the new cap is on
+/// the whole vault (`wide`), as a cap on the whole vault rests only on another.
+fn parent(st: &State, issuer: VaultId, over: VaultId, wide: bool) -> Option<CapId> {
+    if issuer == over {
         return None;
     }
-    let owner = |g: &Grant| {
-        g.grantee == Grantee::Principal(Principal::Vault(issuer)) && g.role == Role::Owner && g.scope.covers(scope)
-    };
-    st.grants().into_iter().find(|(_, g)| owner(g)).map(|(id, _)| id)
+    let owner = |cp: &&Issued| cp.cap.over == over && st.holds(issuer, cp, Role::Owner) && (cp.cap.wide || !wide);
+    let mut held: Vec<&Issued> = st.caps_held(issuer).filter(owner).collect();
+    held.sort_by_key(|cp| !cp.cap.wide);
+    held.first().map(|cp| cp.id)
 }
 
-/// A nonce of the machine's or the browser's randomness, so that no two vaults or spaces founded alike share an id.
+/// A nonce of the machine's or the browser's randomness, so that no two vaults founded alike share an id.
 fn nonce() -> Result<u64> {
     let mut bytes = [0; 8];
     getrandom::fill(&mut bytes).map_err(|e| anyhow!("no randomness: {e}"))?;
     Ok(u64::from_le_bytes(bytes))
-}
-
-/// The cards in the spaces vault `vault` founded, as device `me` reads them, by the device that wrote each, the author
-/// of its entry's first write: where it is and the name it reads. A device's first card counts, should it hold two.
-fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (SpaceId, EntryId, String)> {
-    let state = lab.state(me);
-    let mut first = BTreeMap::new();
-    for w in state.all_writes() {
-        first.entry((w.space, w.entry)).or_insert(w.author);
-    }
-    let mut cards = BTreeMap::new();
-    for s in state.spaces().iter().filter(|s| s.founder == vault) {
-        for &e in &s.entries {
-            let doc = lab.item(me, s.id, e).and_then(Item::as_document).filter(is_card);
-            if let (Some(doc), Some(&author)) = (doc, first.get(&(s.id, e))) {
-                cards.entry(author).or_insert((s.id, e, doc.title));
-            }
-        }
-    }
-    cards
 }
 
 /// What a store kept, read back (`js/store.js`): the signed edits, each as its bytes on the wire, in the order the
@@ -1189,35 +1238,32 @@ impl PageDevice {
         future_to_promise(async move { Ok(device.card(name).await.map_err(js_value)?.into()) })
     }
 
-    /// The text of block `block` of entry `entry` in space `space` (both in hex), as the device reads it: a promise, of
-    /// `undefined` while it can't.
-    pub fn text(&self, space: String, entry: String, block: u32) -> Promise {
+    /// The text of block `block` of entry `entry` (in hex), as the device reads it: a promise, of `undefined` while it
+    /// can't.
+    pub fn text(&self, entry: String, block: u32) -> Promise {
         let device = self.0.clone();
-        future_to_promise(async move {
-            let (space, entry) = (SpaceId(id(&space)?), EntryId(id(&entry)?));
-            Ok(device.text(space, entry, block.into()).await.into())
-        })
+        future_to_promise(async move { Ok(device.text(EntryId(id(&entry)?), block.into()).await.into()) })
     }
 
-    /// Sets the text of block `block` of entry `entry` in space `space`, acting for vault `actor` (each in hex): a
-    /// promise, rejected if the device's view refuses the edit.
+    /// Sets the text of block `block` of entry `entry`, acting for vault `actor` (each in hex): a promise, rejected if
+    /// the device's view refuses the edit.
     #[wasm_bindgen(js_name = setText)]
-    pub fn set_text(&self, actor: String, space: String, entry: String, block: u32, text: String) -> Promise {
+    pub fn set_text(&self, actor: String, entry: String, block: u32, text: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, space, entry) = (VaultId(id(&actor)?), SpaceId(id(&space)?), EntryId(id(&entry)?));
-            device.set_text(actor, space, entry, block.into(), text).await.map_err(js_value)?;
+            let (actor, entry) = (VaultId(id(&actor)?), EntryId(id(&entry)?));
+            device.set_text(actor, entry, block.into(), text).await.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }
 
-    /// Writes a new document titled `title` that reads `body` in space `space`, acting for vault `actor` (both in
-    /// hex): a promise of its entry, in hex.
-    pub fn write(&self, actor: String, space: String, title: String, body: String) -> Promise {
+    /// Writes a new note titled `title` that reads `body`, with the tags `tags`, an array of names, into vault `vault`,
+    /// acting for vault `actor` (both in hex): a promise of its entry, in hex.
+    pub fn write(&self, actor: String, vault: String, title: String, body: String, tags: Array) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, space) = (VaultId(id(&actor)?), SpaceId(id(&space)?));
-            Ok(hex(&device.write(actor, space, title, body).await.map_err(js_value)?.0).into())
+            let (actor, vault, tags) = (VaultId(id(&actor)?), VaultId(id(&vault)?), names(&tags)?);
+            Ok(hex(&device.write(actor, vault, (title, body), tags).await.map_err(js_value)?.0).into())
         })
     }
 
@@ -1231,13 +1277,12 @@ impl PageDevice {
         })
     }
 
-    /// Note `entry` of space `space` (both in hex) as the device holds it, for the note page (`data::note`): a
-    /// promise of an object, of `undefined` while it counts no edit of it.
-    pub fn note(&self, space: String, entry: String) -> Promise {
+    /// Note `entry` (in hex) as the device holds it, for the note page (`data::note`): a promise of an object, of
+    /// `undefined` while it counts no edit of it.
+    pub fn note(&self, entry: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (space, entry) = (SpaceId(id(&space)?), EntryId(id(&entry)?));
-            let Some(note) = device.note(space, entry).await else { return Ok(JsValue::UNDEFINED) };
+            let Some(note) = device.note(EntryId(id(&entry)?)).await else { return Ok(JsValue::UNDEFINED) };
             js_sys::JSON::parse(&note.to_string())
         })
     }
@@ -1249,56 +1294,46 @@ impl PageDevice {
         future_to_promise(async move { js_sys::JSON::parse(&device.history().await.to_string()) })
     }
 
-    /// Sets the text of block `block` of entry `entry` in space `space` on line `line` of its history, acting for vault
-    /// `actor` (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its proposal's.
+    /// Sets the text of block `block` of entry `entry` on line `line` of its history, acting for vault `actor`
+    /// (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its proposal's.
     #[wasm_bindgen(js_name = setTextOn)]
-    pub fn set_text_on(
-        &self,
-        actor: String,
-        space: String,
-        entry: String,
-        line: Option<String>,
-        block: u32,
-        text: String,
-    ) -> Promise {
+    pub fn set_text_on(&self, actor: String, entry: String, line: Option<String>, block: u32, text: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, line) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?);
-            device.set_text_on(actor, at, line, block.into(), text).await.map_err(js_value)?;
+            let (actor, entry, line) = (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?);
+            device.set_text_on(actor, entry, line, block.into(), text).await.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }
 
-    /// Retitles document `entry` of space `space` on line `line`, acting for vault `actor` (`Device::set_title_on`): a
-    /// promise. Ids in hex; a line is `null` for the main line, else its proposal's.
+    /// Retitles document `entry` on line `line`, acting for vault `actor` (`Device::set_title_on`): a promise. Ids in
+    /// hex; a line is `null` for the main line, else its proposal's.
     #[wasm_bindgen(js_name = setTitleOn)]
-    pub fn set_title_on(&self, actor: String, space: String, entry: String, line: Option<String>, title: String) -> Promise {
+    pub fn set_title_on(&self, actor: String, entry: String, line: Option<String>, title: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, line) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?);
-            device.set_title_on(actor, at, line, title).await.map_err(js_value)?;
+            let (actor, entry, line) = (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?);
+            device.set_title_on(actor, entry, line, title).await.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }
 
-    /// Proposes a change to entry `entry` in space `space`: a proposal named `name` from the version `from`, an array
-    /// of its edits, acting for vault `actor` (`Device::propose`): a promise of the new line, its first edit's id. Ids
-    /// in hex.
-    pub fn propose(&self, actor: String, space: String, entry: String, from: Array, name: String) -> Promise {
+    /// Proposes a change to entry `entry`: a proposal named `name` from the version `from`, an array of its edits,
+    /// acting for vault `actor` (`Device::propose`): a promise of the new line, its first edit's id. Ids in hex.
+    pub fn propose(&self, actor: String, entry: String, from: Array, name: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, from) = (VaultId(id(&actor)?), entry_at(&space, &entry)?, edit_ids(&from)?);
-            Ok(hex(&device.propose(actor, at, from, name).await.map_err(js_value)?.0).into())
+            let (actor, entry, from) = (VaultId(id(&actor)?), EntryId(id(&entry)?), edit_ids(&from)?);
+            Ok(hex(&device.propose(actor, entry, from, name).await.map_err(js_value)?.0).into())
         })
     }
 
-    /// Merges line `from` of entry `entry` in space `space` into line `into`, acting for vault `actor`; with
-    /// `promote`, `into` then shows exactly what `from` does (`Device::merge`): a promise of the merge's edit. Ids in
-    /// hex; a line is `null` for the main line.
+    /// Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then
+    /// shows exactly what `from` does (`Device::merge`): a promise of the merge's edit. Ids in hex; a line is `null`
+    /// for the main line.
     pub fn merge(
         &self,
         actor: String,
-        space: String,
         entry: String,
         from: Option<String>,
         into: Option<String>,
@@ -1306,68 +1341,59 @@ impl PageDevice {
     ) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, lines) =
-                (VaultId(id(&actor)?), entry_at(&space, &entry)?, (line_of(from)?, line_of(into)?));
-            Ok(hex(&device.merge(actor, at, lines, promote).await.map_err(js_value)?.0).into())
+            let (actor, entry, lines) = (VaultId(id(&actor)?), EntryId(id(&entry)?), (line_of(from)?, line_of(into)?));
+            Ok(hex(&device.merge(actor, entry, lines, promote).await.map_err(js_value)?.0).into())
         })
     }
 
-    /// Puts the record of version `version`, an array of edits, of entry `entry` in space `space` back on line
-    /// `line`, acting for vault `actor` (`Device::restore`): a promise of the edit that does. Ids in hex.
-    pub fn restore(
-        &self,
-        actor: String,
-        space: String,
-        entry: String,
-        line: Option<String>,
-        version: Array,
-    ) -> Promise {
+    /// Puts the record of version `version`, an array of edits, of entry `entry` back on line `line`, acting for vault
+    /// `actor` (`Device::restore`): a promise of the edit that does. Ids in hex.
+    pub fn restore(&self, actor: String, entry: String, line: Option<String>, version: Array) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, line, version) =
-                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, edit_ids(&version)?);
-            Ok(hex(&device.restore(actor, at, line, version).await.map_err(js_value)?.0).into())
+            let (actor, entry, line, version) =
+                (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?, edit_ids(&version)?);
+            Ok(hex(&device.restore(actor, entry, line, version).await.map_err(js_value)?.0).into())
         })
     }
 
-    /// Undoes edit `edit` of entry `entry` in space `space` on line `line`, keeping every change since, acting for
-    /// vault `actor` (`Device::undo`): a promise of the edit that does. Ids in hex.
-    pub fn undo(&self, actor: String, space: String, entry: String, line: Option<String>, edit: String) -> Promise {
+    /// Undoes edit `edit` of entry `entry` on line `line`, keeping every change since, acting for vault `actor`
+    /// (`Device::undo`): a promise of the edit that does. Ids in hex.
+    pub fn undo(&self, actor: String, entry: String, line: Option<String>, edit: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, line, edit) =
-                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, EditId(id(&edit)?));
-            Ok(hex(&device.undo(actor, at, line, edit).await.map_err(js_value)?.0).into())
+            let (actor, entry, line, edit) =
+                (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?, EditId(id(&edit)?));
+            Ok(hex(&device.undo(actor, entry, line, edit).await.map_err(js_value)?.0).into())
         })
     }
 
-    /// Makes a variant of entry `entry` in space `space`: a new note of space `into` with what line `line` shows,
-    /// acting for vault `actor` (`Device::variant`): a promise of the new entry. Ids in hex.
-    pub fn variant(&self, actor: String, space: String, entry: String, line: Option<String>, into: String) -> Promise {
+    /// Makes a variant of entry `entry`: a new entry of vault `into` with what line `line` shows, acting for vault
+    /// `actor` (`Device::variant`): a promise of the new entry. Ids in hex.
+    pub fn variant(&self, actor: String, entry: String, line: Option<String>, into: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, at, line, into) =
-                (VaultId(id(&actor)?), entry_at(&space, &entry)?, line_of(line)?, SpaceId(id(&into)?));
-            Ok(hex(&device.variant(actor, at, line, into).await.map_err(js_value)?.0).into())
+            let (actor, entry, line, into) =
+                (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?, VaultId(id(&into)?));
+            Ok(hex(&device.variant(actor, entry, line, into).await.map_err(js_value)?.0).into())
         })
     }
 
-    /// The spaces it knows and the documents it reads in each (`Device::notes`): a promise of
-    /// `[{space, founder, docs: [{entry, title, text}]}]`, ids in hex.
+    /// The notes it reads, by vault (`Device::notes`): a promise of `[{vault, docs: [{entry, title, text}]}]`, ids in
+    /// hex.
     pub fn notes(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let spaces = Array::new();
+            let vaults = Array::new();
             for notes in device.notes().await {
                 let docs = Array::new();
                 for (entry, title, text) in notes.docs {
                     let entry = hex(&entry.0).into();
                     docs.push(&object(&[("entry", entry), ("title", title.into()), ("text", text.into())]));
                 }
-                let (space, founder) = (hex(&notes.space.0).into(), hex(&notes.founder.0).into());
-                spaces.push(&object(&[("space", space), ("founder", founder), ("docs", docs.into())]));
+                vaults.push(&object(&[("vault", hex(&notes.vault.0).into()), ("docs", docs.into())]));
             }
-            Ok(spaces.into())
+            Ok(vaults.into())
         })
     }
 
@@ -1412,76 +1438,75 @@ impl PageDevice {
         })
     }
 
-    /// Writes a new todo titled `title` in space `space`, acting for vault `actor` (both in hex): a promise of its
-    /// entry, in hex.
-    pub fn todo(&self, actor: String, space: String, title: String) -> Promise {
+    /// Writes a new todo titled `title`, with the tags `tags`, an array of names, into vault `vault`, acting for vault
+    /// `actor` (both in hex): a promise of its entry, in hex.
+    pub fn todo(&self, actor: String, vault: String, title: String, tags: Array) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, space) = (VaultId(id(&actor)?), SpaceId(id(&space)?));
-            Ok(hex(&device.todo(actor, space, title).await.map_err(js_value)?.0).into())
+            let (actor, vault, tags) = (VaultId(id(&actor)?), VaultId(id(&vault)?), names(&tags)?);
+            Ok(hex(&device.todo(actor, vault, title, tags).await.map_err(js_value)?.0).into())
         })
     }
 
-    /// Sets the status (`"open"`, `"doing"` or `"done"`) of todo `entry` in space `space`, acting for vault `actor`
-    /// (each in hex): a promise, rejected if the device's view refuses the change.
+    /// Sets the status (`"open"`, `"doing"` or `"done"`) of todo `entry`, acting for vault `actor` (both in hex): a
+    /// promise, rejected if the device's view refuses the change.
     #[wasm_bindgen(js_name = setStatus)]
-    pub fn set_status(&self, actor: String, space: String, entry: String, status: String) -> Promise {
+    pub fn set_status(&self, actor: String, entry: String, status: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, space, entry) = (VaultId(id(&actor)?), SpaceId(id(&space)?), EntryId(id(&entry)?));
-            let status = match status.as_str() {
-                "open" => Status::Open,
-                "doing" => Status::Doing,
-                "done" => Status::Done,
-                _ => return Err(JsError::new("a todo is open, doing or done").into()),
-            };
-            device.set_status(actor, space, entry, status).await.map_err(js_value)?;
+            let (actor, entry) = (VaultId(id(&actor)?), EntryId(id(&entry)?));
+            let status = words::status_of(&status).map_err(js_value)?;
+            device.set_status(actor, entry, status).await.map_err(js_value)?;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
+    /// Adds the tags `add` to entry `entry` and removes the tags `remove`, each an array of names, acting for vault
+    /// `actor` (both in hex, `Device::tag`): a promise.
+    pub fn tag(&self, actor: String, entry: String, add: Array, remove: Array) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, entry) = (VaultId(id(&actor)?), EntryId(id(&entry)?));
+            device.tag(actor, entry, names(&add)?, names(&remove)?).await.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }
 
     /// Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
-    /// space `space`, or on its entry `entry` if given, acting for vault `issuer` (`Device::grant`): a promise of the
-    /// grant's id, after one ceremony for an owner's. Ids in hex.
-    pub fn grant(
+    /// what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel}`), acting for vault
+    /// `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
+    pub fn share(
         &self,
         issuer: String,
-        space: String,
-        entry: Option<String>,
+        over: String,
+        slice: JsValue,
         role: String,
         grantee: String,
         ceremony: Function,
     ) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (issuer, space) = (VaultId(id(&issuer)?), SpaceId(id(&space)?));
-            let scope = match entry {
-                Some(entry) => Scope::Entry(space, EntryId(id(&entry)?)),
-                None => Scope::Space(space),
-            };
-            let role = match role.as_str() {
-                "relay" => Role::Relay,
-                "read" => Role::Read,
-                "write" => Role::Write,
-                "owner" => Role::Owner,
-                _ => return Err(JsError::new("a role is relay, read, write or owner").into()),
-            };
+            let (issuer, over) = (VaultId(id(&issuer)?), VaultId(id(&over)?));
+            let slice = String::from(js_sys::JSON::stringify(&slice)?);
+            let slice = serde_json::from_str(&slice).map_err(|e| JsError::new(&format!("no slice: {e}")))?;
+            let slice = words::slice_of(&slice).map_err(js_value)?;
+            let role = words::role_of(&role).map_err(js_value)?;
             let grantee = match grantee.as_str() {
                 "public" => Grantee::Public,
                 v => cast::vault(VaultId(id(v)?)),
             };
-            let grant = device.grant(issuer, scope, role, grantee, &Js(ceremony)).await.map_err(js_value)?;
-            Ok(hex(&grant.0).into())
+            let cap = device.share(issuer, over, slice, role, grantee, &Js(ceremony)).await.map_err(js_value)?;
+            Ok(hex(&cap.0).into())
         })
     }
 
-    /// Ends grant `grant`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for
-    /// an owner's grant.
-    pub fn revoke(&self, actor: String, grant: String, ceremony: Function) -> Promise {
+    /// Ends cap `cap`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for an
+    /// owner cap.
+    pub fn revoke(&self, actor: String, cap: String, ceremony: Function) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, grant) = (VaultId(id(&actor)?), GrantId(id(&grant)?));
-            device.revoke(actor, grant, &Js(ceremony)).await.map_err(js_value)?;
+            let (actor, cap) = (VaultId(id(&actor)?), CapId(id(&cap)?));
+            device.revoke(actor, cap, &Js(ceremony)).await.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }
@@ -1744,11 +1769,6 @@ fn now() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// 32 bytes as 64 lowercase hex digits, as the page sees every id.
-fn hex(b: &[u8; 32]) -> String {
-    BlobId(*b).to_hex()
-}
-
 /// Bytes from their lowercase hex digits.
 fn hex_bytes(s: &str) -> Option<Vec<u8>> {
     let digit = |c: u8| (c as char).to_digit(16).filter(|_| !c.is_ascii_uppercase()).map(|d| d as u8);
@@ -1761,9 +1781,9 @@ fn id(s: &str) -> Result<[u8; 32], JsValue> {
     BlobId::from_hex(s).map(|b| b.0).ok_or_else(|| JsError::new(&format!("{s:?} is no id")).into())
 }
 
-/// Entry `entry` of space `space`, from their ids.
-fn entry_at(space: &str, entry: &str) -> Result<(SpaceId, EntryId), JsValue> {
-    Ok((SpaceId(id(space)?), EntryId(id(entry)?)))
+/// Names, types or tags, from an array of them.
+fn names(xs: &Array) -> Result<Vec<String>, JsValue> {
+    xs.iter().map(|x| x.as_string().ok_or_else(|| JsError::new("a name is text").into())).collect()
 }
 
 /// A line of an entry's history as the page names it: `null`, `undefined` or `""` for the main line, else the id of

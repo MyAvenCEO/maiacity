@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
-use avendb::id::{EntryId, SpaceId};
+use avendb::id::EntryId;
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::sign::{Ceremony, PRF_SALT, Passkey, device_salt};
@@ -204,22 +204,26 @@ fn id(v: &Value) -> [u8; 32] {
     bytes.try_into().expect("32 bytes")
 }
 
-/// The vault the device belongs to and its first space, as its world shows them.
-async fn home(app: &mut App) -> (Value, Value) {
-    let world = app.call("world", json!([])).await.expect("its world");
-    let mine = world["mine"].clone();
-    let spaces = world["spaces"].as_array().expect("its spaces");
-    let first = spaces.iter().find(|s| s["founder"] == mine).expect("its vault's first space");
-    (mine, first["id"].clone())
+/// Entry `entry` as the device's world shows it, once `check` holds of it, 60 seconds at most.
+async fn shown(app: &mut App, entry: &Value, what: &str, check: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let world = app.call("world", json!([])).await.expect("its world");
+        let entries = world["entries"].as_array().expect("its entries");
+        if let Some(shown) = entries.iter().find(|i| i["entry"] == *entry && check(i)) {
+            return shown.clone();
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
-/// The title and text of entry `entry` of space `space`, as the device's world shows them.
-async fn note(app: &mut App, space: &Value, entry: &Value) -> Option<(String, String)> {
+/// The title and text of note `entry`, as the device's world shows it.
+async fn note(app: &mut App, entry: &Value) -> Option<(String, String)> {
     let world = app.call("world", json!([])).await.expect("its world");
-    let spaces = world["spaces"].as_array().expect("its spaces");
-    let items = spaces.iter().find(|s| s["id"] == *space)?["items"].as_array()?.clone();
-    let item = items.into_iter().find(|i| i["entry"] == *entry)?;
-    Some((item["title"].as_str()?.to_string(), item["text"].as_str()?.to_string()))
+    let entries = world["entries"].as_array().expect("its entries");
+    let note = entries.iter().find(|i| i["entry"] == *entry)?;
+    Some((note["title"].as_str()?.to_string(), note["text"].as_str()?.to_string()))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -250,13 +254,32 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(status["meta"]["credential"], CREDENTIAL, "the credential her ceremonies named");
     let again = app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await;
     assert_eq!(again, Err("this Mac holds an avenDB account already: forget it here first".into()));
-    // a note in her vault's first space, which the server keeps
-    let (vault, space) = home(&mut app).await;
-    let args = json!([vault, space, "Seeds", "Tomatoes in March."]);
+    // a note in her vault, which the server keeps, as the relay cap her vault gave it at its founding reaches it
+    let vault = app.call("world", json!([])).await.expect("its world")["mine"].clone();
+    let args = json!([vault, vault, "Seeds", "Tomatoes in March.", ["garden"]]);
     let entry = app.call("write", args).await.expect("a note");
-    let (sp, e) = (SpaceId(id(&space)), EntryId(id(&entry)));
-    let holds = move |lab: &Lab, me| lab.state(me).space(sp).is_some_and(|s| s.entries.contains(&e));
-    until("the server keeps her space's log", || server.read(holds)).await;
+    let e = EntryId(id(&entry));
+    let holds = move |lab: &Lab, me| lab.fetched(me, e) > 0;
+    until("the server keeps her note", || server.read(holds)).await;
+    let garden = |n: &Value| n["type"] == "note" && n["tags"] == json!(["garden"]) && n["title"] == "Seeds";
+    shown(&mut app, &entry, "her note, tagged", garden).await;
+    // a todo for her work, which she shares with everyone to read, and then no longer
+    let todo = app.call("todo", json!([vault, vault, "Sow tomatoes", ["work"]])).await.expect("a todo");
+    assert_eq!(app.call("setStatus", json!([vault, todo, "doing"])).await, Ok(Value::Null));
+    assert_eq!(app.call("tag", json!([vault, todo, ["urgent"], []])).await, Ok(Value::Null));
+    let doing = |t: &Value| t["status"] == "doing" && t["tags"] == json!(["work", "urgent"]) && t["public"] == false;
+    shown(&mut app, &todo, "her todo, doing and urgent", doing).await;
+    let work = json!({ "select": [[{ "type": ["todo"] }, { "tag": "work" }]] });
+    let cap = app.call("share", json!([vault, vault, work, "read", "public"])).await.expect("a cap");
+    shown(&mut app, &todo, "her work todos, public", |t| t["public"] == true).await;
+    let world = app.call("world", json!([])).await.expect("its world");
+    let caps = world["caps"].as_array().expect("its caps");
+    let shared = caps.iter().find(|c| c["id"] == cap).expect("the cap");
+    let (grantee, role, select) = (&shared["grantee"], &shared["role"], &shared["slice"]["select"]);
+    assert_eq!((grantee, role, select), (&json!("public"), &json!("read"), &work["select"]), "her work todos");
+    assert_eq!(shown(&mut app, &entry, "her note", |n| n["public"] == false).await["title"], "Seeds", "not a todo");
+    assert_eq!(app.call("revoke", json!([vault, cap])).await, Ok(Value::Null));
+    shown(&mut app, &todo, "her work todos, hers alone again", |t| t["public"] == false).await;
     let size = app.call("size", json!([])).await.expect("its size");
     assert!(size[0].as_u64().expect("its edits") > 0, "it holds her vault's edits: {size}");
     assert_eq!(app.call("changed", json!([0, 0])).await, Ok(json!(true)), "it holds more than nothing at once");
@@ -278,7 +301,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!((&opened["id"], &opened["endpoint"]), (&device["id"], &device["endpoint"]), "the same device");
     assert_eq!(app.call("open", json!([])).await, Ok(opened), "open already");
     assert!(app.asked().is_empty());
-    let read = note(&mut app, &space, &entry).await;
+    let read = note(&mut app, &entry).await;
     assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what its folder kept");
     // she forgets it here: its store and what opens it are put aside, never deleted
     assert_eq!(app.call("forget", json!([])).await, Ok(Value::Null));
@@ -309,8 +332,8 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
     };
     let page = Device::found(start, &server.offer(), None, browser.unlock(nonce), &browser).await.expect("her vault");
     let vault = page.vault().await.expect("her vault");
-    let space = page.notes().await[0].space;
-    let entry = page.write(vault, space, "Seeds".into(), "Tomatoes in March.".into()).await.expect("a note");
+    let seeds = ("Seeds".into(), "Tomatoes in March.".into());
+    let entry = page.write(vault, vault, seeds, vec![]).await.expect("a note");
     let edits = page.edits(0).await.expect("its edits");
     let mut keys = vec![];
     for id in page.key_ids().await {
@@ -334,8 +357,8 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
     assert_eq!(app.asked(), ["unlock"]);
     assert_eq!(adopted["id"], hex(&device.0), "the same device");
     assert!(adopted["sockets"].as_array().expect("its sockets").is_empty(), "on its relay alone, as asked");
-    let (space, entry) = (json!(hex(&space.0)), json!(hex(&entry.0)));
-    let read = note(&mut app, &space, &entry).await;
+    let entry = json!(hex(&entry.0));
+    let read = note(&mut app, &entry).await;
     assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what the page kept");
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!(status["meta"], meta, "what opens it, as the page kept it");
@@ -344,7 +367,7 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
     let mut app = App::start(&folder.0, Passkey::from_seed([5; 32]), false);
     let opened = app.call("open", json!([])).await.expect("it opens again");
     assert_eq!((app.asked(), &opened["id"]), (vec!["unlock".to_string()], &adopted["id"]));
-    let read = note(&mut app, &space, &entry).await;
+    let read = note(&mut app, &entry).await;
     assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "from its folder");
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");

@@ -1,7 +1,8 @@
 //! Schemas and the lenses between their versions, as data: a schema is a JSON Schema and a lens a short list of steps,
-//! each a blob named by its SHA-3 hash (`BlobId`). A space's owners publish them into its schema lane
-//! (`Action::Publish`, T17), so an app learns a newer version's lens from the lane instead of shipping with it. The
-//! model is `avendb/spec/AvenDB/Lens.lean` (T9), and `avendb/spec/vectors/lenses.json` holds this engine to it.
+//! each a blob named by its SHA-3 hash (`BlobId`). A vault, or a vault holding a wide owner cap over it, publishes them
+//! into its schema lane (`Action::Publish`, T17), so an app learns a newer version's lens from the lane instead of
+//! shipping with it. The model is `avendb/spec/AvenDB/Lens.lean` (T9), and `avendb/spec/vectors/lenses.json` holds
+//! this engine to it.
 //!
 //! Nothing is migrated. Each edit is tagged with the schema it was written under (its Loro commit message, see `doc`),
 //! and an item is projected on read into the app's schema through the lens (`View::get`): where both versions stored
@@ -887,7 +888,7 @@ impl View {
     }
 }
 
-/// The schemas and lenses a device holds from a space's lane.
+/// The schemas and lenses a device holds from a vault's lane.
 #[derive(Clone, Debug, Default)]
 pub struct Lane {
     schemas: BTreeMap<BlobId, Schema>,

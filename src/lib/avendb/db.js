@@ -5,21 +5,34 @@
  * signed edit of the database's history does, in words. The device decides all of it (avendb-browser's
  * `Device::database` and `Device::history`); these only lay it out.
  */
-import { allows, count, list, nameOf, short } from './vaults.js';
+import {
+	allows,
+	capWords,
+	cellWords,
+	count,
+	granteeOf,
+	list,
+	nameOf,
+	reaches,
+	ROLES,
+	short,
+	singular,
+	sliceWords
+} from './vaults.js';
 
 /**
  * @typedef {{ id: string, title: string, json: string }} SchemaView
  * @typedef {{ id: string, title: string, from: string, to: string, json: string }} LensView
- * @typedef {{ entry: string, kind: string, tag: 'card' | 'profile' | null, title: string | null, record: any,
- *   authored: string[], edits: number, held: number, lines: number, proposals: (string | null)[], epoch: number,
- *   bytes: number, author: string | null, actor: string | null, public: boolean,
+ * @typedef {{ entry: string, type: string | null, tags: string[] | null, kind: string, title: string | null,
+ *   record: any, authored: string[], edits: number, held: number, lines: number, proposals: (string | null)[],
+ *   cell: string, generation: number, bytes: number, author: string | null, actor: string | null, public: boolean,
  *   roles: Record<string, import('./vaults.js').Role> }} RowView
- * @typedef {{ founded: number, writes: number, checkpoints: number, keys: number, grants: number, revokes: number,
- *   published: number }} EditCounts
- * @typedef {{ id: string, public: boolean, epoch: number, edits: EditCounts, schemas: SchemaView[], lenses: LensView[],
- *   rows: RowView[] }} SpaceView
+ * @typedef {{ id: string, caps: string[], generation: number, entries: number }} CellRow
+ * @typedef {{ founded: number, writes: number, moves: number, checkpoints: number, keys: number, caps: number,
+ *   revokes: number, published: number }} EditCounts
  * @typedef {{ vault: string, held: { edits: number, keys: number },
- *   builtIn: { schemas: SchemaView[], lenses: LensView[] }, spaces: SpaceView[] }} Db
+ *   builtIn: { schemas: SchemaView[], lenses: LensView[] }, seed: number, edits: EditCounts, schemas: SchemaView[],
+ *   lenses: LensView[], cells: CellRow[], rows: RowView[] }} Db
  * @typedef {{ signer: string, by: 'device' | 'passkey', classical: 'ed25519' | 'p256', batch: number | null,
  *   pq: number | null }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
@@ -27,33 +40,30 @@ import { allows, count, list, nameOf, short } from './vaults.js';
  * @typedef {{ name: string, type: string, hint: string, required: boolean, fallback: string | null,
  *   fields: Field[] }} Field
  * @typedef {{ schemas: SchemaView[], lenses: (LensView | null)[], name: string }} Family
- * @typedef {{ id: string, label: string, hint: string, family: string | null, rows: (RowView & { space: string })[] }} Table
+ * @typedef {{ id: string, label: string, hint: string, family: string | null, rows: RowView[] }} Table
  */
 
 /**
- * Vault `vault`'s database as the page shows it to vault `actor`: what this browser holds of it, the schemas and
- * lenses the acting vault may read (the app's own, then what the spaces it reads publish), and how to name what the
- * views show: vaults, devices and passkeys, spaces, entries, schemas.
+ * Vault `vault`'s database as the page shows it to vault `actor`: what this browser holds of it, its cells, the schemas
+ * and lenses the acting vault may read (the app's own, then what the vault's lane publishes, to who holds anything in
+ * it), and how to name what the views show: vaults, devices and passkeys, cells, caps, entries, schemas.
  * @param {import('./vaults.js').WorldView} world @param {Db | null} db @param {string} vault @param {string} actor
  */
 export function studio(world, db, vault, actor) {
 	const byId = new Map(world.vaults.map((v) => [v.id, v]));
 	const here = byId.get(vault);
 	const as = byId.get(actor);
-	const spaces = db?.vault === vault ? db.spaces : [];
-	/** whether the acting vault reads space `id`: its lane's schemas show only to who reads it */
-	const readsSpace = (/** @type {string} */ id) => {
-		const s = world.spaces.find((x) => x.id === id);
-		return !!s && (s.public || allows(s.roles[actor], 'read'));
-	};
+	const held = db?.vault === vault ? db : null;
+	const rows = held?.rows ?? [];
+	const cells = held?.cells ?? [];
 	/** Whether the acting vault opens row `r`, and this browser holds its record. @param {RowView} r */
 	const opens = (r) => (r.public || allows(r.roles[actor], 'read')) && r.record !== null;
-	const read = spaces.filter((s) => readsSpace(s.id));
-	const schemas = byIds([...(db?.builtIn.schemas ?? []), ...read.flatMap((s) => s.schemas)]);
-	const lenses = byIds([...(db?.builtIn.lenses ?? []), ...read.flatMap((s) => s.lenses)]);
+	const lane = reaches(world, vault, actor);
+	const schemas = byIds([...(db?.builtIn.schemas ?? []), ...(lane ? (held?.schemas ?? []) : [])]);
+	const lenses = byIds([...(db?.builtIn.lenses ?? []), ...(lane ? (held?.lenses ?? []) : [])]);
 	/** the rows the acting vault opens, by the schemas they were written under */
 	const uses = new Map();
-	for (const r of spaces.flatMap((s) => s.rows).filter(opens)) for (const id of r.authored) uses.set(id, (uses.get(id) ?? 0) + 1);
+	for (const r of rows.filter(opens)) for (const id of r.authored) uses.set(id, (uses.get(id) ?? 0) + 1);
 
 	/** The vault or signer `id` names, as a person reads it: a vault, a device by its name, a vault's passkey. */
 	const signer = (/** @type {string} */ id) => {
@@ -64,28 +74,59 @@ export function studio(world, db, vault, actor) {
 		}
 		return `key ${short(id)}`;
 	};
-	/** Space `id`, by its vault: "Home" or "Space 2" in this vault, "avenALICE’s home" in another. */
-	const space = (/** @type {string} */ id) => {
-		const s = world.spaces.find((x) => x.id === id);
-		if (!s) return `space ${short(id)}`;
-		const founder = byId.get(s.founder);
-		const n = world.spaces.filter((x) => x.founder === s.founder).indexOf(s);
-		const own = founder?.home === id ? 'home' : `space ${n + 1}`;
-		return s.founder === vault ? own[0].toUpperCase() + own.slice(1) : `${nameOf(founder)}’s ${own}`;
+	/** Cap `id` in words, where it is in force and this browser knows it. @param {string} id */
+	const cap = (id) => {
+		const c = world.caps.find((x) => x.id === id);
+		return c ? capWords(c, world) : `cap ${short(id)}`;
 	};
-	/** Entry `entry` of space `sp`: its title in quotes if the acting vault reads it, else its id. */
-	const entry = (/** @type {string} */ sp, /** @type {string} */ entry) => {
-		const row = spaces.find((s) => s.id === sp)?.rows.find((r) => r.entry === entry);
+	/** Cap `id`'s slice in words, where it is in force and this browser reads it. @param {string} id */
+	const slice = (id) => {
+		const c = world.caps.find((x) => x.id === id);
+		return c?.slice ? sliceWords(c.slice, world) : null;
+	};
+	/** Cell `id` in words: what reaches it. @param {string} id */
+	const cell = (id) => cellWords(world.cells.find((x) => x.id === id), world);
+	/** Cell `id`, short, as a grid's cell names it: "its own", or the roles the caps that reach it give. @param {string} id */
+	const cellName = (id) => {
+		const caps = world.cells.find((x) => x.id === id)?.caps ?? cells.find((x) => x.id === id)?.caps;
+		if (!caps) return `cell ${short(id)}`;
+		if (!caps.length) return 'its own';
+		const named = caps.map((id) => {
+			const c = world.caps.find((x) => x.id === id);
+			return c ? `${granteeOf(c, world)} ${ROLES[c.role]}` : 'a cap';
+		});
+		return list(named);
+	};
+	/** Entry `entry`: its title in quotes if the acting vault reads it, else what it is and its id. @param {string} entry */
+	const entry = (entry) => {
+		const row = rows.find((r) => r.entry === entry);
 		if (row && opens(row) && row.title) return `“${row.title}”`;
-		const item = world.spaces.find((s) => s.id === sp)?.items.find((i) => i.entry === entry);
-		if (item && item.kind !== 'sealed' && (item.public || allows(item.roles[actor], 'read')) && item.title)
-			return `“${item.title}”`;
-		return `entry ${short(entry)}`;
+		const e = world.entries.find((x) => x.entry === entry);
+		if (e && e.kind !== 'sealed' && (e.public || allows(e.roles[actor], 'read')) && e.title) return `“${e.title}”`;
+		return `${e?.type ? `a ${singular(e.type)}` : 'entry'} ${short(entry)}`;
 	};
 	/** A schema by its id: its title, or the start of its id. @param {string} id */
 	const schemaName = (id) => schemas.get(id)?.title ?? `schema ${short(id)}`;
 
-	return { byId, here, as, spaces, opens, schemas, lenses, uses, signer, space, entry, schemaName, vaultName: (/** @type {string} */ id) => nameOf(byId.get(id)) };
+	return {
+		byId,
+		here,
+		as,
+		rows,
+		cells,
+		opens,
+		schemas,
+		lenses,
+		uses,
+		signer,
+		cap,
+		slice,
+		cell,
+		cellName,
+		entry,
+		schemaName,
+		vaultName: (/** @type {string} */ id) => nameOf(byId.get(id))
+	};
 }
 
 /** @typedef {ReturnType<typeof studio>} Studio */
@@ -97,37 +138,29 @@ function byIds(all) {
 	return map;
 }
 
-/** The tables of a vault's database: its entries, by what they are, as the acting vault sees them. */
+/** The tables of a vault's database: its entries, by their type, as the acting vault sees them. */
 const TABLES = /** @type {const} */ ([
 	['notes', 'Notes: Markdown documents', 'document'],
 	['todos', 'Todos', 'todo'],
-	['device_cards', 'Each device’s card: a document in its vault’s home, named for the device', 'document'],
-	['vault_profiles', 'The vault’s profile: a document in its home, titled with its name', 'document'],
-	['records', 'Records of any other kind', null],
+	['device_cards', 'Each device’s card: a document of its vault, named for the device', 'document'],
+	['vault_profiles', 'The vault’s profile: a document of it, titled with its name', 'document'],
+	['records', 'Entries of any other type', null],
 	['sealed', 'What the acting vault holds no cap to read: its ciphertext, as avenDB’s server holds it', null]
 ]);
 
+/** The table of each type. */
+const BY_TYPE = /** @type {Record<string, string>} */ ({ note: 'notes', todo: 'todos', card: 'device_cards', profile: 'vault_profiles' });
+
 /**
- * The tables of the spaces `spaces` (one of them, or all), each with its rows, as `s.opens` says the acting vault
- * opens them: `records` only when it has any.
- * @param {Studio} s @param {string} only a space's id, or '' for every space
+ * The tables of the vault's entries, of one cell or of all of them, each with its rows, as `s.opens` says the acting
+ * vault opens them: `records` only when it has any.
+ * @param {Studio} s @param {string} only a cell's id, or '' for every cell
  * @returns {Table[]}
  */
 export function tables(s, only) {
-	const rows = s.spaces.filter((sp) => !only || sp.id === only).flatMap((sp) => sp.rows.map((r) => ({ ...r, space: sp.id })));
+	const rows = s.rows.filter((r) => !only || r.cell === only);
 	/** @param {RowView} r */
-	const table = (r) =>
-		!s.opens(r)
-			? 'sealed'
-			: r.tag === 'card'
-				? 'device_cards'
-				: r.tag === 'profile'
-					? 'vault_profiles'
-					: r.kind === 'document'
-						? 'notes'
-						: r.kind === 'todo'
-							? 'todos'
-							: 'records';
+	const table = (r) => (!s.opens(r) ? 'sealed' : (BY_TYPE[r.type ?? ''] ?? 'records'));
 	return TABLES.map(([id, hint, family]) => ({ id, label: id, hint, family, rows: rows.filter((r) => table(r) === id) })).filter(
 		(t) => t.id !== 'records' || t.rows.length
 	);
@@ -285,12 +318,12 @@ export const sideOf = (side) =>
 /** The kinds of edits, as the History view groups them. */
 export const GROUPS = /** @type {const} */ ([
 	['all', 'All', []],
-	['writes', 'Writes', ['write']],
+	['writes', 'Writes & moves', ['write', 'move']],
 	['checkpoints', 'Checkpoints', ['checkpoint']],
 	['keys', 'Keys', ['keys']],
-	['caps', 'Caps', ['grant', 'revoke']],
+	['caps', 'Caps', ['cap', 'revoke']],
 	['vaults', 'Vaults & devices', ['genesis', 'addOwner', 'removeOwner', 'setThreshold', 'addDevice', 'removeDevice', 'setRoot']],
-	['spaces', 'Spaces & schemas', ['foundSpace', 'publish']]
+	['schemas', 'Schemas', ['publish']]
 ]);
 
 /** Each kind of edit, as its chip names it. */
@@ -302,10 +335,10 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 	addDevice: 'add device',
 	removeDevice: 'remove device',
 	setRoot: 'set root',
-	foundSpace: 'found space',
-	grant: 'grant',
+	cap: 'cap',
 	revoke: 'revoke',
 	write: 'write',
+	move: 'move',
 	keys: 'keys',
 	publish: 'publish',
 	checkpoint: 'checkpoint'
@@ -315,18 +348,32 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 const VERBS = /** @type {Record<string, string>} */ ({ relay: 'relay', read: 'read', write: 'write', owner: 'own' });
 
 /**
- * What edit `edit` does, in words, naming what it touches as `s` names it; `grantOf` finds a grant's edit, for a
- * revocation.
- * @param {SignedEdit} edit @param {Studio} s @param {(id: string) => SignedEdit | undefined} grantOf
+ * What edit `edit` does, in words, naming what it touches as `s` names it; `edits` finds an edit by its id, a cap's
+ * for its revocation. A cap's slice is sealed in its edit: it shows in words where the cap is in force and this browser
+ * reads it.
+ * @param {SignedEdit} edit @param {Studio} s @param {(id: string) => SignedEdit | undefined} edits
  */
-export function describe(edit, s, grantOf) {
+export function describe(edit, s, edits) {
 	const f = edit.fields ?? {};
-	/** @param {any} p */
-	const who = (p) => (!p ? 'nobody' : p === 'public' ? 'everyone' : p.vault ? s.vaultName(p.vault) : s.signer(p.signer));
-	/** @param {any} sc */
-	const scope = (sc) => (sc?.entry ? `${s.entry(sc.space, sc.entry)} in ${s.space(sc.space)}` : s.space(sc?.space));
-	/** @param {any} k */
-	const key = (k) => (k?.vault ? `${s.vaultName(k.vault)}’s vault key` : k?.entry ? `the key of ${s.entry(k.space, k.entry)}` : `the key of ${s.space(k?.space)}`);
+	/** a principal, or a cap's grantee: a vault's id or "public" @param {any} p */
+	const who = (p) =>
+		!p ? 'nobody' : p === 'public' ? 'everyone' : typeof p === 'string' ? s.vaultName(p) : p.vault ? s.vaultName(p.vault) : s.signer(p.signer);
+	/** what the cap edit `id`, of fields `c`, gives: its slice in words, or that it is sealed @param {string} id @param {any} c */
+	const reach = (id, c) =>
+		c.wide ? `the whole of ${s.vaultName(c.over)}` : `${s.slice(id) ?? `a slice (${size(c.sealed ?? 0)} sealed)`} of ${s.vaultName(c.over)}`;
+	/** a key of the schedule, by its name @param {any} k */
+	const key = (k) =>
+		k?.signer
+			? `${s.signer(k.signer)}’s own key`
+			: k?.seed
+				? `${s.vaultName(k.seed)}’s seed`
+				: k?.cap
+					? `the key of ${s.cap(k.cap)}`
+					: k?.cell
+						? `the key of the cell ${s.cellName(k.cell)} of ${s.vaultName(k.vault)}`
+						: k?.entry
+							? `the key of ${s.entry(k.entry)}`
+							: 'a key';
 	switch (edit.kind) {
 		case 'genesis': {
 			const owners = list((f.owners ?? []).map(who));
@@ -345,26 +392,34 @@ export function describe(edit, s, grantOf) {
 			return `Unlinks ${s.signer(f.device)} from ${s.vaultName(f.vault)}`;
 		case 'setRoot':
 			return f.root ? `Makes ${s.signer(f.root)} the root of ${s.vaultName(f.vault)}` : `Clears ${s.vaultName(f.vault)}’s root`;
-		case 'foundSpace':
-			return `${s.vaultName(f.actor)} founds ${s.space(edit.id)}`;
-		case 'grant':
-			return `Lets ${who(f.grantee)} ${VERBS[f.role] ?? f.role} ${scope(f.scope)}`;
+		case 'cap': {
+			const through = f.parent ? `, through its own cap ${short(f.parent)}` : '';
+			return `${s.vaultName(f.issuer)} lets ${who(f.grantee)} ${VERBS[f.role] ?? f.role} ${reach(edit.id, f)}${through}`;
+		}
 		case 'revoke': {
-			const g = grantOf(f.grant)?.fields;
-			return g ? `Revokes ${who(g.grantee)}’s right to ${VERBS[g.role] ?? g.role} ${scope(g.scope)}` : `Revokes grant ${short(f.grant)}`;
+			const c = edits(f.cap);
+			if (!c) return `${s.vaultName(f.actor)} revokes cap ${short(f.cap)}`;
+			const right = `${VERBS[c.fields.role] ?? c.fields.role} ${reach(c.id, c.fields)}`;
+			return `${s.vaultName(f.actor)} revokes ${who(c.fields.grantee)}’s right to ${right}`;
 		}
 		case 'write': {
 			const line = f.starts ? ', proposing a change' : f.line ? ', on a proposal' : '';
-			return `${s.vaultName(f.actor)} writes ${s.entry(f.space, f.entry)}${line}: ${size(f.sealed)} sealed`;
+			const made = f.create
+				? `creates ${s.entry(f.entry)} in ${f.create.length ? `the cell of ${list(f.create.map(s.cap))}` : 'the vault’s own cell'}`
+				: `writes ${s.entry(f.entry)}${line}`;
+			return `${s.vaultName(f.actor)} ${made}: ${size(f.sealed)} sealed`;
 		}
+		case 'move':
+			return `Moves ${s.entry(f.entry)} to ${f.to?.length ? `the cell of ${list(f.to.map(s.cap))}` : 'the vault’s own cell'}`;
 		case 'keys': {
 			const to = f.boxes?.length ? `, sealed to ${count(f.boxes.length, 'holder')}` : '';
-			return `${f.epoch ? `Rotates ${key(f.key)} to epoch ${f.epoch}` : `Makes ${key(f.key)}`}${to}`;
+			const at = f.key?.generation ? `Rotates ${key(f.key)} to generation ${f.key.generation}` : `Makes ${key(f.key)}`;
+			return `${at}${to}${f.public ? ', announcing its public half' : ''}${f.clear ? ', in the clear: everyone reads it' : ''}`;
 		}
 		case 'publish':
-			return `Publishes ${f.title ? `“${f.title}”` : `a blob of ${size(f.bytes)}`} into ${s.space(f.space)}`;
+			return `Publishes ${f.title ? `“${f.title}”` : `a blob of ${size(f.bytes)}`} into ${s.vaultName(f.vault)}’s lane`;
 		case 'checkpoint':
-			return `Checkpoints ${s.entry(f.space, f.entry)}, covering ${count(f.covers?.length ?? 0, 'write')}`;
+			return `Checkpoints ${s.entry(f.entry)}, covering ${count(f.covers?.length ?? 0, 'write')}`;
 		default:
 			return edit.kind;
 	}

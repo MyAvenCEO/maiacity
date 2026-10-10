@@ -6,9 +6,7 @@ import AvenDB.Logs
 import AvenDB.Doc
 import AvenDB.Proposals
 import AvenDB.Lens
-import AvenDB.Lemmas
-import AvenDB.KeyLemmas
-import AvenDB.SyncLemmas
+import AvenDB.Props
 import AvenDB.Theorems
 import AvenDB.Examples
 import AvenDB.Vectors

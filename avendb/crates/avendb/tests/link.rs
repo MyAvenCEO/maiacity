@@ -1,22 +1,26 @@
-//! Linking a device by its passkey (P8c). A new device of Alice's says her passkey's hello on a connection to a
-//! device that holds her vault's log, her Mac or the server; that device hands it the logs of the vaults the passkey
-//! owns (the link card) and nothing else; the new device adds itself to the vault its passkey is the root of, signed by
-//! the passkey and by itself, and the peer accepts that one edit; then the two sync by caps. Each device runs split
-//! off, as on a machine of its own, and they speak by the bytes they would send each other: `avendb-net` carries the
-//! same bytes over iroh.
+//! Linking a device by its passkey (P8c), as a device's QR code or the server's offer starts it. A new device of
+//! Alice's says her passkey's hello on a connection to a device that holds her vault's log, her Mac or the server; that
+//! device hands it the logs of the vaults the passkey owns (the link card), vault logs alone and nothing of any cap,
+//! cell or entry (T20); the new device adds itself to the vault its passkey is the root of, signed by the passkey and
+//! by itself, and the peer accepts that one edit; then the two sync by caps and cells, and the new device reads every
+//! entry of its vault and of the vaults it acts for. Each device runs split off, as on a machine of its own, and they
+//! speak by the bytes they would send each other: `avendb-net` carries the same bytes over iroh.
 
 mod common;
 
-use common::*;
-use avendb::id::{EditId, SignerId};
-use avendb::keys::{KeyScope, Recipient};
+use avendb::id::{CellId, EditId, SignerId};
+use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Edit, Refusal};
-use avendb::sign::{PasskeyHello, RelayPass};
+use avendb::sign::{PasskeyHello, RelayPass, Signed};
+use avendb::sync::{log_of, LogId};
 use avendb::wire::{Join, Reply, Request, Wire};
+use common::*;
 
 /// The TLS exporter of the connection between the new device, which dials, and its peer.
 const EXPORTER: [u8; 32] = [9; 32];
+
+const DIARY_TEXT: &str = "Dear diary: the seedlings are up.";
 
 /// The new device `new` links through `peer` by the bytes alone: the passkey's hello, which the peer checks, the link
 /// card the peer hands back, and the join the new device then sends, which the peer accepts or refuses.
@@ -55,39 +59,57 @@ fn settle(a: (&mut Lab, SignerId), b: (&mut Lab, SignerId)) {
     panic!("they keep sending each other edits");
 }
 
+/// The log a signed edit belongs to.
+fn log(s: &Signed) -> Option<LogId> {
+    log_of(&s.edit, s.edit.id())
+}
+
 #[test]
 fn a_new_iphone_links_through_alices_mac_by_the_passkey_alone() {
     let mut w = world();
     let h = handbook(&mut w);
+    let alice = w.alice;
+    let diary = document("Diary", DIARY_TEXT, w.mac_a);
+    let diary = w.lab.create(w.mac_a, alice, alice, "note", &[], diary).expect("Alice writes her diary on her Mac");
     let new = w.lab.device_of(w.passkey_a, "Alice's new iPhone");
     let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
     let mut phone = w.lab.split(new, &[w.passkey_a], [2; 32]);
     // before it links, the Mac sends it nothing: it belongs to no vault the Mac knows
     assert_eq!(ask((&mut phone, new), (&mut mac, w.mac_a)), 0);
     link((&mut phone, new), w.passkey_a, (&mut mac, w.mac_a)).expect("the new iPhone links");
-    assert_eq!(phone.vault_of(new), Some(w.alice), "it added itself to Alice's vault");
-    let devices = &mac.state(w.mac_a).vault(w.alice).expect("Alice's vault").devices;
+    assert_eq!(phone.vault_of(new), Some(alice), "it added itself to Alice's vault");
+    let devices = &mac.state(w.mac_a).vault(alice).expect("Alice's vault").devices;
     assert!(devices.contains(&new), "and the Mac counts it among Alice's devices");
     settle((&mut phone, new), (&mut mac, w.mac_a));
-    let keys = [KeyScope::Vault(w.alice), KeyScope::Vault(h.coop), KeyScope::Space(h.space), KeyScope::Space(h.notes)];
+    // the seeds of Alice's vault and of the coop, and the keys of the cells Welcome and her diary are in
+    let none = |v| KeyFam::Cell(v, CellId::of(v, &[]));
+    let keys = [KeyFam::Seed(alice), KeyFam::Seed(h.coop), none(h.coop), none(alice)];
     for k in keys {
         assert!(phone.opens(new, k), "the new iPhone opens {k:?}");
     }
-    assert_eq!(text(&phone, new, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
+    assert_eq!(text(&phone, new, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
+    assert_eq!(text(&phone, new, diary, 2).as_deref(), Some(DIARY_TEXT), "and her diary");
     // locked and unlocked again, it opens them by its own key: it boxed Alice's vault key for itself as it joined
     phone.lock(new);
+    assert!(keys.iter().all(|&k| !phone.opens(new, k)), "locked, it opens none of them");
     assert!(phone.unlock(new));
     assert!(keys.iter().all(|&k| phone.opens(new, k)), "unlocked, it opens them again");
     // and it writes, which the Mac reads
-    phone.edit(new, h.coop, h.space, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("the new iPhone edits Welcome");
+    phone.edit(new, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("the new iPhone edits Welcome");
     settle((&mut phone, new), (&mut mac, w.mac_a));
-    assert_eq!(text(&mac, w.mac_a, h.space, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "the Mac reads its edit");
+    assert_eq!(text(&mac, w.mac_a, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "the Mac reads its edit");
 }
 
 #[test]
 fn alice_gets_her_vault_back_through_the_server_with_her_passkey_alone() {
     let mut w = world();
     let h = handbook(&mut w);
+    // Alice's own vault gives the server relay too, and holds her diary
+    let alice = w.alice;
+    relay_on(&mut w, alice);
+    let diary = document("Diary", DIARY_TEXT, w.mac_a);
+    let diary = w.lab.create(w.mac_a, alice, alice, "note", &[], diary).expect("Alice writes her diary");
+    w.lab.sync_all(1);
     // Alice loses her Mac and her iPhone; her passkey, synced by her platform, is on her new Mac
     w.lab.lose(w.mac_a);
     w.lab.lose(w.phone_a);
@@ -96,33 +118,37 @@ fn alice_gets_her_vault_back_through_the_server_with_her_passkey_alone() {
     let mut mac = w.lab.split(new, &[w.passkey_a], [2; 32]);
     link((&mut mac, new), w.passkey_a, (&mut server, w.server)).expect("the new Mac links through the server");
     settle((&mut mac, new), (&mut server, w.server));
-    assert_eq!(text(&mac, new, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "the new Mac reads Welcome");
-    assert_eq!(text(&mac, new, h.space, h.onboarding, 2).as_deref(), Some(ONBOARDING_TEXT), "and Onboarding");
-    assert!(mac.opens(new, KeyScope::Space(h.notes)), "and opens Alice's Notes");
+    assert_eq!(text(&mac, new, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "the new Mac reads Welcome");
+    assert_eq!(text(&mac, new, h.onboarding, 2).as_deref(), Some(ONBOARDING_TEXT), "and Onboarding");
+    assert_eq!(text(&mac, new, diary, 2).as_deref(), Some(DIARY_TEXT), "and her diary, which the server relays");
     // the server, which handed over the vault's log, opens none of its keys and holds no text
-    let keys = [KeyScope::Vault(w.alice), KeyScope::Vault(h.coop), KeyScope::Space(h.space), KeyScope::Space(h.notes)];
+    let none = |v| KeyFam::Cell(v, CellId::of(v, &[]));
+    let keys = [KeyFam::Seed(alice), KeyFam::Seed(h.coop), none(h.coop), none(alice)];
     for k in keys {
+        assert!(mac.opens(new, k), "the new Mac opens {k:?}");
         assert!(!server.opens(w.server, k), "the server opens no key: {k:?}");
     }
-    assert!(!contains(&server.store(w.server), WELCOME_TEXT), "Welcome's text appears nowhere in its store");
+    let store = server.store(w.server);
+    assert!(!contains(&store, WELCOME_TEXT) && !contains(&store, DIARY_TEXT), "and no text appears in its store");
 }
 
 #[test]
 fn a_link_card_holds_the_logs_of_the_passkeys_vaults_and_nothing_else() {
     let mut w = world();
-    let h = handbook(&mut w);
+    handbook(&mut w);
     let eve = w.lab.passkey("Eve");
     let card = w.lab.link_card(w.mac_a, w.passkey_a);
     assert!(!card.is_empty());
-    assert!(card.iter().all(|s| s.edit.vault_of() == Some(w.alice)), "Alice's vault's log alone: no coop, no space");
+    let alices = card.iter().all(|s| log(s) == Some(LogId::Vault(w.alice)));
+    assert!(alices, "Alice's vault's log alone: nothing of the coop, nor of any cap, cell or entry");
     let theirs = w.lab.link_card(w.server, w.passkey_a);
-    assert_eq!(card, theirs, "the server, relaying the Handbook and Notes, holds the same and hands the same");
+    assert_eq!(card, theirs, "the server, relaying the coop's entries, holds the same and hands the same");
     let bob = w.lab.link_card(w.mac_a, w.passkey_b);
-    assert!(!bob.is_empty() && bob.iter().all(|s| s.edit.vault_of() == Some(w.bob)), "Bob's passkey gets Bob's");
+    let bobs = bob.iter().all(|s| log(s) == Some(LogId::Vault(w.bob)));
+    assert!(!bob.is_empty() && bobs, "Bob's passkey gets Bob's");
     assert!(w.lab.link_card(w.mac_a, eve).is_empty(), "a passkey that owns nothing gets nothing");
     assert!(w.lab.link_card(w.mac_a, w.mac_b).is_empty(), "nor does a device");
-    assert!(card.iter().all(|s| s.edit.item().is_none()), "no write, no checkpoint");
-    let _ = h;
+    assert!(card.iter().all(|s| s.edit.entry().is_none()), "no write, no move, no checkpoint");
 }
 
 #[test]
@@ -173,7 +199,7 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     let no_consent = unchecked(&mut w.lab, new, &[w.passkey_a], add(w.alice, new));
     let eve_adds = unchecked(&mut w.lab, eves, &[eve, eves], add(w.alice, eves));
     let eve_joins = unchecked(&mut w.lab, eves, &[eve, eves], add(eves_vault, eves));
-    let no_device = unchecked(&mut w.lab, new, &[new], Action::FoundSpace { actor: w.alice, nonce: 9, via: vec![] });
+    let no_device = unchecked(&mut w.lab, new, &[new], Action::SetThreshold { vault: w.alice, threshold: 1 });
     let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
     let accept = |mac: &mut Lab, from, join: &Join| mac.accept_join(w.mac_a, from, join.clone()).map(|_| ());
     assert_eq!(accept(&mut mac, eves, &join), Err(Refusal::NotJoining), "sent by another device than it adds");
@@ -192,8 +218,8 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     let added: Vec<(&Edit, &EditId)> = edits.filter(|(_, x)| !before.contains(x)).collect();
     assert!(added.iter().any(|(_, x)| **x == id));
     let boxes_for_it = |edit: &Edit| match &edit.action {
-        Action::Keys { key, boxes, .. } => {
-            *key == KeyScope::Vault(w.alice) && boxes.iter().all(|b| b.to == Recipient::Signer(new))
+        Action::Keys { name: KeyName::Scoped(KeyFam::Seed(v), _), boxes, .. } => {
+            *v == w.alice && boxes.iter().all(|b| b.to == Recipient::Signer(new))
         }
         _ => false,
     };
@@ -233,6 +259,6 @@ fn a_browser_takes_alices_passkey_in_and_links_by_a_pass_to_the_relay() {
     let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
     link((&mut page, browser), passkey, (&mut mac, w.mac_a)).expect("the browser links");
     settle((&mut page, browser), (&mut mac, w.mac_a));
-    assert_eq!(text(&page, browser, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
+    assert_eq!(text(&page, browser, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
     assert!(page.roots(browser).contains(&passkey), "it knows Alice's vault now, and Bob's, a coop owner");
 }

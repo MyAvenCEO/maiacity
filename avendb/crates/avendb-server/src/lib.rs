@@ -1,7 +1,7 @@
 //! avenDB's server (P8b), as its binary runs it: its node (`avendb_net::server`) in a folder of its own, holding only
 //! ciphertext, and beside it its relay, through which devices with no UDP of their own reach the server and each
-//! other. The relay lets in only the devices the node knows (`Admission`): the devices of the vaults acting in the
-//! spaces it relays, and the node itself; and it lets go of a device the node stops knowing, as when the device is
+//! other. The relay lets in only the devices the node knows (`Admission`): the devices of the vaults acting for the
+//! vaults it relays, and the node itself; and it lets go of a device the node stops knowing, as when the device is
 //! taken out of its vault. A new device with no UDP of its own, as a browser's, which the node can't know before it
 //! joined, shows a pass its person's passkey signed (P8d, `avendb::sign::RelayPass`): the relay lets it in for ten
 //! minutes if the passkey roots a vault the node knows, long enough to link, and lets it go once its pass runs out,

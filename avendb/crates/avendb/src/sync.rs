@@ -1,100 +1,201 @@
-//! Sync by caps, item by item, as in `avendb/spec/AvenDB/Sync.lean`, and by frontiers, log by log, as in `Logs.lean`.
-//! A device asks a peer for what it may receive; the connection proves which device is asking (iroh's endpoint key is
-//! the device's ed25519 key, and the device shows the rest of its keys, which hash to its signer id). The peer answers
-//! from its own view: the logs of the vaults that device acts for, and for each item it may receive, the encrypted
-//! writes and checkpoints, the auth edits of the scopes covering it, and the logs of every vault those edits act for or
-//! name, up their chains of owners. A revocation that took one of the device's caps away reaches it too, so it knows
-//! what it may no longer do. Nothing else about other items leaves the peer (T12), and two devices that answered each
-//! other hold the same writes for every item they share (T13).
+//! Sync by cells, entry by entry, as in `avendb/spec/AvenDB/Sync.lean`, and by frontiers, log by log, as in
+//! `Logs.lean`. A device asks a peer for what it may receive; the connection proves which device is asking (iroh's
+//! endpoint key is the device's ed25519 key, and the device shows the rest of its keys, which hash to its signer id).
+//! The peer answers from its own view: the logs of the entries and cells the device may receive (it acts for their
+//! vault, or for the grantee of a live cap that reaches their cell, or that cap is public), the logs of every cap it
+//! needs to check those (the caps of every cell such an entry was ever in, the vault's wide caps, the caps its own
+//! vaults hold or are over, and every cap those rest on), and the logs of every vault all that names, up their chains
+//! of owners. A revocation sits in the log of the cap it ends, so a device whose cap was revoked hears of it, and knows
+//! what it may no longer do. Nothing about any other entry or cell leaves the peer (T12): not its writes, not even its
+//! cell. Two devices that answered each other hold the same writes for every entry they share (T13). Receiving is not
+//! reading: a relay cap gets the ciphertext and no key.
 //!
-//! Every edit belongs to one log: a vault's, a space's or an entry's (`LogId`), and names as its parents the frontier
-//! of its own log as its device held it. So each log is a small history of its own, and two copies of a log compare by
-//! their frontiers alone: one hash per log (`digests`), which is what devices gossip. A device asks with its frontier
-//! of each log it holds and a few edits further back, the edits 1, 2, 4, 8, … steps back and the oldest, and with the
-//! edits it holds outside them (`asks`); the peer sends only what lies beyond the ones it holds (`respond_since`). A
-//! peer that is behind holds the whole frontier and sends exactly what the device lacks; one that lacks the device's
-//! latest edits still holds one of them close by, and sends back little the device holds. That withholds nothing the
-//! device lacks (T19): a device names of a log only edits of the part whose whole past it holds, so an edit whose
-//! parent hasn't arrived waits outside, with whatever builds on it, until the gap is filled. A device signs its edits
-//! in a log one after another, each building on the last, so two edits of one device in one log where neither builds on
-//! the other mean its key signed twice from the same past (`forks`): a cloned device, one restored from an old backup,
-//! or a stolen key.
+//! Every edit belongs to one log (`log_of`): a vault's (its governance, its seed's keys, its schema lane), a cap's (the
+//! cap, its revocation, its keys), a cell's (its keys), or an entry's (its writes, moves, checkpoints and keys). It
+//! names as its parents the frontier of its own log as its device held it. So each log is a small history of its own,
+//! and two copies of a log compare by their frontiers alone: one hash per log (`digests`), which is what devices
+//! gossip. A device asks with its frontier of each log it holds and a few edits further back, the edits 1, 2, 4, 8, …
+//! steps back and the oldest, and with the edits it holds outside them (`asks`); the peer sends only what lies beyond
+//! the ones it holds (`respond_since`). A peer that is behind holds the whole frontier and sends exactly what the
+//! device lacks; one that lacks the device's latest edits still holds one of them close by, and sends back little the
+//! device holds. That withholds nothing the device lacks (T19): a device names of a log only edits of the part whose
+//! whole past it holds, so an edit whose parent hasn't arrived waits outside, with whatever builds on it, until the gap
+//! is filled. A device signs its edits in a log one after another, each building on the last, so two edits of one
+//! device in one log where neither builds on the other mean its key signed twice from the same past (`forks`): a cloned
+//! device, one restored from an old backup, or a stolen key.
 //!
 //! A big reply comes a page at a time (P8d), each edit after the edits it builds on (`place`): the device takes each
 //! page as it comes and asks on after the last edit it got, until the peer has nothing more.
-//!
-//! Vault logs in P1, items by caps in P2, frontiers, forks and the proofs (T11, T12, T13, T19) in P6; on the wire (P8)
-//! it runs on its own iroh ALPN, with the bytes in iroh-blobs and the digests on iroh-gossip.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::hash::Hasher;
-use crate::id::{EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
-use crate::policy::{removes, view, Action, Edit, Fact, Grant, Grantee, Principal, Scope, State};
+use crate::id::{CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::keys::{KeyFam, KeyName};
+use crate::policy::{view, Action, Edit, Grantee, Principal, State};
 
-/// What a peer holding `edits` sends device `d`: the writes of every item `d` may receive, the auth edits of every
-/// scope it reaches and the revocations that took its caps away, and the logs of the vaults it acts for, of the vaults
-/// those edits act for or name, and of every vault that owns one of them, up the chains.
+/// A log: a vault's, a cap's, a cell's or an entry's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LogId {
+    Vault(VaultId),
+    Cap(CapId),
+    Cell(VaultId, CellId),
+    Entry(EntryId),
+}
+
+/// The log of edit `edit`, whose id is `id` (`Edit.log?`): a vault edit, a schema or lens, and a seed's key go to their
+/// vault's; a cap, its revocation and its key to the cap's; a cell's key to the cell's; a write, a move, a checkpoint
+/// and an entry's key to the entry's. A signer's own key is never boxed, so a `Keys` edit naming one is of no log. The
+/// id names the log only of an edit that starts one, a genesis or a cap.
+pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
+    Some(match &edit.action {
+        Action::Genesis { .. } => LogId::Vault(VaultId::from(id)),
+        Action::AddOwner { vault, .. }
+        | Action::RemoveOwner { vault, .. }
+        | Action::SetThreshold { vault, .. }
+        | Action::AddDevice { vault, .. }
+        | Action::RemoveDevice { vault, .. }
+        | Action::SetRoot { vault, .. }
+        | Action::Publish { vault, .. } => LogId::Vault(*vault),
+        Action::Cap(..) => LogId::Cap(CapId::from(id)),
+        Action::Revoke { cap, .. } => LogId::Cap(*cap),
+        Action::Write { entry, .. } | Action::Move { entry, .. } | Action::Checkpoint { entry, .. } => {
+            LogId::Entry(*entry)
+        }
+        Action::Keys { name, .. } => match *name {
+            KeyName::Signer(_) => return None,
+            KeyName::Scoped(KeyFam::Seed(v), _) => LogId::Vault(v),
+            KeyName::Scoped(KeyFam::Cap(_, c), _) => LogId::Cap(c),
+            KeyName::Scoped(KeyFam::Cell(v, x), _) => LogId::Cell(v, x),
+            KeyName::Entry(e, ..) => LogId::Entry(e),
+        },
+    })
+}
+
+/// The log of each of `edits` (`ids[i]` being `edits[i]`'s id).
+pub(crate) fn logs_of(edits: &[Edit], ids: &[EditId]) -> Vec<Option<LogId>> {
+    edits.iter().zip(ids).map(|(edit, &id)| log_of(edit, id)).collect()
+}
+
+/// The vaults an edit names (`Edit.vaultsNamed`): what it acts for, through, or about.
+fn vaults_named(edit: &Edit) -> Vec<VaultId> {
+    match &edit.action {
+        Action::Cap(c, via) => {
+            let grantee = match c.grantee {
+                Grantee::Principal(Principal::Vault(g)) => Some(g),
+                _ => None,
+            };
+            [c.over, c.issuer].into_iter().chain(grantee).chain(via.iter().copied()).collect()
+        }
+        Action::Revoke { actor, via, .. } => std::iter::once(*actor).chain(via.iter().copied()).collect(),
+        Action::Write { vault, actor, via, .. } => [*vault, *actor].into_iter().chain(via.iter().copied()).collect(),
+        Action::Move { vault, via, .. } => std::iter::once(*vault).chain(via.iter().copied()).collect(),
+        _ => vec![],
+    }
+}
+
+/// What one device may receive by a view, worked out once for the whole of a reply.
+struct Reach<'a> {
+    st: &'a State,
+    /// The vaults the device acts for.
+    acts: HashSet<VaultId>,
+    /// The vaults whose every cell it may receive: it acts for them, or a live wide cap over them names a vault it acts
+    /// for, or is public.
+    whole: HashSet<VaultId>,
+    /// The live caps that aren't wide naming a vault it acts for, or public, with the vault each is over: it may
+    /// receive the cells they are in.
+    granting: HashMap<CapId, VaultId>,
+    /// The caps it may learn about (`reachesCap`).
+    caps: HashSet<CapId>,
+}
+
+impl<'a> Reach<'a> {
+    fn new(st: &'a State, d: SignerId) -> Reach<'a> {
+        let acts: HashSet<VaultId> = st.vaults().iter().map(|v| v.id).filter(|&v| st.acts_for(d, v)).collect();
+        let names = |g: Grantee| match g {
+            Grantee::Principal(Principal::Vault(g)) => acts.contains(&g),
+            Grantee::Principal(Principal::Signer(_)) => false,
+            Grantee::Public => true,
+        };
+        let mut whole = acts.clone();
+        let mut granting = HashMap::new();
+        for cp in st.caps().iter().filter(|cp| st.live(cp.id) && names(cp.cap.grantee)) {
+            if cp.cap.wide {
+                whole.insert(cp.cap.over);
+            } else {
+                granting.insert(cp.id, cp.cap.over);
+            }
+        }
+        let mut reach = Reach { st, acts, whole, granting, caps: HashSet::new() };
+        // the caps of every cell an entry it may receive was ever in, and the vaults of those entries, for their wide
+        // caps
+        let (mut stayed, mut vaults) = (HashSet::new(), HashSet::new());
+        for en in st.entries().iter().filter(|en| reach.cell(en.vault, en.cell())) {
+            vaults.insert(en.vault);
+            for (_, x) in &en.stays {
+                stayed.extend(st.cell_caps(*x).unwrap_or_default().iter().copied());
+            }
+        }
+        let grantee = |g: Grantee| matches!(g, Grantee::Principal(Principal::Vault(g)) if reach.acts.contains(&g));
+        let sees = |cp: &crate::policy::Issued| {
+            reach.acts.contains(&cp.cap.over)
+                || grantee(cp.cap.grantee)
+                || (vaults.contains(&cp.cap.over) && (cp.cap.wide || stayed.contains(&cp.id)))
+        };
+        let caps = st.caps().iter().filter(|cp| sees(cp)).flat_map(|cp| cp.chain.iter().copied());
+        let caps: HashSet<CapId> = caps.collect();
+        reach.caps = caps;
+        reach
+    }
+
+    /// It may receive the edits of cell `x` of vault `v` (`mayReceiveCell`).
+    fn cell(&self, v: VaultId, x: CellId) -> bool {
+        self.whole.contains(&v)
+            || self.st.cell_caps(x).unwrap_or_default().iter().any(|c| self.granting.get(c) == Some(&v))
+    }
+
+    /// It may receive log `l` (`mayReceiveLog`). Vault logs come as the vaults the rest names.
+    fn log(&self, l: LogId) -> bool {
+        match l {
+            LogId::Entry(e) => self.st.entry(e).is_some_and(|en| self.cell(en.vault, en.cell())),
+            LogId::Cell(v, x) => self.cell(v, x),
+            LogId::Cap(c) => self.caps.contains(&c),
+            LogId::Vault(_) => false,
+        }
+    }
+}
+
+/// What a peer holding `edits` sends device `d`: the edits of every entry, cell and cap log `d` may receive, and of the
+/// logs of the vaults `d` acts for and that those edits name, up their owners.
 pub fn respond(edits: &[Edit], d: SignerId) -> Vec<Edit> {
     answer(edits, &view(edits), d).into_iter().map(|i| edits[i].clone()).collect()
 }
 
-/// `respond`, by the view `st` of `edits`: the places in `edits` of what it sends.
+/// `respond`, by the view `st` of `edits`: the places in `edits` of what it sends, the entry, cell and cap logs' first.
 pub(crate) fn answer(edits: &[Edit], st: &State, d: SignerId) -> Vec<usize> {
-    let all = 0..edits.len();
-    let writes: Vec<usize> =
-        all.clone().filter(|&i| edits[i].item().is_some_and(|(sp, e)| st.may_receive(d, sp, e))).collect();
-    let auth: Vec<usize> = all
-        .clone()
-        .filter(|&i| {
-            auth_scope(edits, &edits[i]).is_some_and(|sc| st.reaches(d, sc)) || takes_from(st, edits, d, &edits[i])
-        })
+    let reach = Reach::new(st, d);
+    let logs: Vec<Option<LogId>> = edits.iter().map(|edit| log_of(edit, edit.id())).collect();
+    let mut may: HashMap<LogId, bool> = HashMap::new();
+    let items: Vec<usize> = (0..edits.len())
+        .filter(|&i| logs[i].is_some_and(|l| *may.entry(l).or_insert_with(|| reach.log(l))))
         .collect();
-    let mut vs: Vec<VaultId> = st.vaults().iter().map(|x| x.id).filter(|&v| st.acts_for(d, v)).collect();
-    vs.extend(writes.iter().chain(&auth).filter_map(|&i| edits[i].actor()));
-    vs.extend(auth.iter().filter_map(|&i| edits[i].grantee()));
-    let vaults = close_vaults(st, vs);
-    let vault_edits = all.filter(|&i| edits[i].vault_of().is_some_and(|v| vaults.contains(&v)));
-    writes.into_iter().chain(auth).chain(vault_edits).collect()
-}
-
-/// The scope an auth edit is about: a space's founding, a grant's scope, for a revocation the scope of the grant it
-/// revokes, looked up among `edits`, the scope of a space or entry key, or the space a schema or lens is published
-/// into.
-fn auth_scope(edits: &[Edit], edit: &Edit) -> Option<Scope> {
-    match &edit.action {
-        Action::FoundSpace { .. } => Some(Scope::Space(SpaceId::from(edit.id()))),
-        Action::Grant(g, _) => Some(g.scope),
-        Action::Revoke { grant, .. } => edits.iter().find_map(|o| match &o.action {
-            Action::Grant(g, _) if GrantId::from(o.id()) == *grant => Some(g.scope),
-            _ => None,
-        }),
-        Action::Keys { key, .. } => key.scope(),
-        Action::Publish { space, .. } => Some(Scope::Space(*space)),
-        _ => None,
-    }
-}
-
-/// Revocation `edit` takes a cap from device `d`: among the grants it takes away is one naming a vault `d` acts for.
-/// `d` hears of it, and learns nothing more about the scope.
-pub fn takes_from(st: &State, edits: &[Edit], d: SignerId, edit: &Edit) -> bool {
-    if !matches!(edit.action, Action::Revoke { .. }) {
-        return false;
-    }
-    let taken = removes(edits, edit);
-    edits.iter().any(|o| match o.action {
-        Action::Grant(Grant { grantee: Grantee::Principal(Principal::Vault(v)), .. }, _) => {
-            taken.contains(&Fact::Grant(GrantId::from(o.id()))) && st.acts_for(d, v)
-        }
-        _ => false,
-    })
+    let mut vs: Vec<VaultId> = reach.acts.iter().copied().collect();
+    vs.sort();
+    vs.extend(items.iter().flat_map(|&i| vaults_named(&edits[i])));
+    let vaults: HashSet<VaultId> = close_vaults(st, vs).into_iter().collect();
+    let vault_edits = (0..edits.len()).filter(|&i| matches!(logs[i], Some(LogId::Vault(v)) if vaults.contains(&v)));
+    items.iter().copied().chain(vault_edits).collect()
 }
 
 /// The edits of the logs of `vs` and of every vault that owns one of them, up the chains, as `st` knows them: what a
 /// contact card carries.
 pub fn vault_logs(edits: &[Edit], st: &State, vs: Vec<VaultId>) -> Vec<Edit> {
-    let vaults = close_vaults(st, vs);
-    edits.iter().filter(|edit| edit.vault_of().is_some_and(|v| vaults.contains(&v))).cloned().collect()
+    let vaults: HashSet<VaultId> = close_vaults(st, vs).into_iter().collect();
+    edits
+        .iter()
+        .filter(|edit| matches!(log_of(edit, edit.id()), Some(LogId::Vault(v)) if vaults.contains(&v)))
+        .cloned()
+        .collect()
 }
 
 /// The vaults passkey `p` owns in `st`: those it is an owner or the root of.
@@ -105,26 +206,30 @@ pub fn owned_by(st: &State, p: SignerId) -> Vec<VaultId> {
 
 /// What a peer holding `edits` hands a device whose passkey `p` proved itself on their connection (P8c): the logs of
 /// the vaults `p` owns, and of every vault that owns one of them, up the chains, as a new device of `p`'s person needs
-/// them to add itself to its vault. Nothing about any space or entry (T20): the device asks for the rest once it acts
-/// for the vault.
+/// them to add itself to its vault. Nothing about any cap, cell or entry (T20): the device asks for the rest once it
+/// acts for the vault.
 pub fn link_card(edits: &[Edit], p: SignerId) -> Vec<Edit> {
     link_places(edits, &view(edits), p).into_iter().map(|i| edits[i].clone()).collect()
 }
 
 /// `link_card`, by the view `st` of `edits`: the places in `edits` of what it hands over.
 pub(crate) fn link_places(edits: &[Edit], st: &State, p: SignerId) -> Vec<usize> {
-    let vaults = close_vaults(st, owned_by(st, p));
-    (0..edits.len()).filter(|&i| edits[i].vault_of().is_some_and(|v| vaults.contains(&v))).collect()
+    let vaults: HashSet<VaultId> = close_vaults(st, owned_by(st, p)).into_iter().collect();
+    (0..edits.len())
+        .filter(|&i| matches!(log_of(&edits[i], edits[i].id()), Some(LogId::Vault(v)) if vaults.contains(&v)))
+        .collect()
 }
 
 /// `vs` and every vault that owns one of them, directly or further up.
 pub fn close_vaults(st: &State, mut vs: Vec<VaultId>) -> Vec<VaultId> {
+    let mut seen: HashSet<VaultId> = HashSet::new();
+    vs.retain(|v| seen.insert(*v));
     let mut i = 0;
     while i < vs.len() {
         if let Some(vt) = st.vault(vs[i]) {
             for p in &vt.owners {
                 if let Principal::Vault(o) = *p
-                    && !vs.contains(&o)
+                    && seen.insert(o)
                 {
                     vs.push(o);
                 }
@@ -146,83 +251,9 @@ pub fn receive(edits: &[Edit], incoming: &[Edit]) -> Vec<Edit> {
     out
 }
 
-/// The writes one item has in the view of `edits`, in replay order.
-pub fn item_writes(edits: &[Edit], sp: SpaceId, e: EntryId) -> Vec<EditId> {
-    view(edits).writes(sp, e)
-}
-
-/// A log: a vault's, a space's or an entry's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LogId {
-    Vault(VaultId),
-    Space(SpaceId),
-    Entry(SpaceId, EntryId),
-}
-
-impl From<Scope> for LogId {
-    fn from(sc: Scope) -> LogId {
-        match sc {
-            Scope::Space(sp) => LogId::Space(sp),
-            Scope::Entry(sp, e) => LogId::Entry(sp, e),
-        }
-    }
-}
-
-/// The scope of each grant among `edits`, by its id: where a revocation of it belongs.
-fn grant_scopes<'a>(edits: impl Iterator<Item = (&'a Edit, EditId)>) -> HashMap<GrantId, Scope> {
-    edits.filter_map(|(o, id)| match &o.action {
-        Action::Grant(g, _) => Some((GrantId::from(id), g.scope)),
-        _ => None,
-    })
-    .collect()
-}
-
-/// The log of `edit`, `id` being its id, with `grants` the scopes of the grants a peer holds: a vault edit and a
-/// vault's key in the vault's log; a write and a checkpoint in their entry's; a space's founding, a grant, a
-/// revocation, a space or entry key and a schema or lens in the log of the scope they are about, so a revocation joins
-/// the log of the grant it revokes (none while that grant isn't held).
-fn log_in(grants: &HashMap<GrantId, Scope>, edit: &Edit, id: EditId) -> Option<LogId> {
-    let sc = match &edit.action {
-        Action::Genesis { .. } => return Some(LogId::Vault(VaultId::from(id))),
-        Action::FoundSpace { .. } => Scope::Space(SpaceId::from(id)),
-        Action::Grant(g, _) => g.scope,
-        Action::Revoke { grant, .. } => *grants.get(grant)?,
-        Action::Publish { space, .. } => Scope::Space(*space),
-        Action::Keys { key, .. } => match key.scope() {
-            Some(sc) => sc,
-            None => return edit.vault_of().map(LogId::Vault),
-        },
-        _ => {
-            if let Some(v) = edit.vault_of() {
-                return Some(LogId::Vault(v));
-            }
-            let (sp, e) = edit.item()?;
-            Scope::Entry(sp, e)
-        }
-    };
-    Some(sc.into())
-}
-
-/// The log of each of `edits` (`ids[i]` being `edits[i]`'s id), among them.
-pub(crate) fn logs_of(edits: &[Edit], ids: &[EditId]) -> Vec<Option<LogId>> {
-    let grants = grant_scopes(edits.iter().zip(ids.iter().copied()));
-    edits.iter().zip(ids).map(|(edit, &id)| log_in(&grants, edit, id)).collect()
-}
-
-/// The log of edit `edit` among the edits `edits` a peer holds.
-pub fn log_of(edits: &[Edit], edit: &Edit) -> Option<LogId> {
-    let grants = grant_scopes(edits.iter().map(|o| (o, o.id())));
-    log_in(&grants, edit, edit.id())
-}
-
-/// The log of an edit being made among `edits` (`ids[i]` being `edits[i]`'s id), before it has its parents: any edit
-/// but one that starts a log, whose log is named by its own id.
-pub(crate) fn log_of_new(edits: &[Edit], ids: &[EditId], edit: &Edit) -> Option<LogId> {
-    let grants = match edit.action {
-        Action::Revoke { .. } => grant_scopes(edits.iter().zip(ids.iter().copied())),
-        _ => HashMap::new(),
-    };
-    log_in(&grants, edit, EditId([0; 32]))
+/// The writes one entry has in the view of `edits`, in replay order.
+pub fn entry_writes(edits: &[Edit], e: EntryId) -> Vec<EditId> {
+    view(edits).writes(e)
 }
 
 /// One log's edits among a peer's, by id: the first edit of each id.
@@ -232,18 +263,18 @@ struct LogEdits<'a> {
 }
 
 impl<'a> LogEdits<'a> {
-    /// The edits of log `l`, `logs[i]` being the log of `edits[i]` and `ids[i]` its id.
-    fn new(edits: &'a [Edit], ids: &[EditId], logs: &[Option<LogId>], l: LogId) -> LogEdits<'a> {
+    /// The edits of log `l` among `edits` (`ids[i]` being `edits[i]`'s id).
+    fn new(edits: &'a [Edit], ids: &[EditId], l: LogId) -> LogEdits<'a> {
         let mut log = LogEdits::default();
-        for ((edit, &id), lg) in edits.iter().zip(ids).zip(logs) {
-            if *lg == Some(l) {
+        for (edit, &id) in edits.iter().zip(ids) {
+            if log_of(edit, id) == Some(l) {
                 log.by_id.entry(id).or_insert(edit);
             }
         }
         log
     }
 
-    /// Every log's edits.
+    /// Every log's edits, `logs[i]` being the log of `edits[i]` and `ids[i]` its id.
     fn all(edits: &'a [Edit], ids: &[EditId], logs: &[Option<LogId>]) -> BTreeMap<LogId, LogEdits<'a>> {
         let mut all: BTreeMap<LogId, LogEdits<'a>> = BTreeMap::new();
         for ((edit, &id), lg) in edits.iter().zip(ids).zip(logs) {
@@ -349,13 +380,13 @@ impl<'a> LogEdits<'a> {
 /// The frontier of log `l` among `edits` (`ids[i]` being `edits[i]`'s id): the ids of the edits of its closed part that
 /// no edit of it builds on, smallest first. What an edit made now builds on.
 pub(crate) fn frontier_of(edits: &[Edit], ids: &[EditId], l: LogId) -> Vec<EditId> {
-    LogEdits::new(edits, ids, &logs_of(edits, ids), l).frontier().0
+    LogEdits::new(edits, ids, l).frontier().0
 }
 
 /// The part of log `l` among `edits` whose whole past is held, as ids: what a peer counts in the log's frontier.
 pub fn closed_part(edits: &[Edit], l: LogId) -> HashSet<EditId> {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
-    LogEdits::new(edits, &ids, &logs_of(edits, &ids), l).closed()
+    LogEdits::new(edits, &ids, l).closed()
 }
 
 /// The frontier of every log among `edits`: what an edit made now builds on, and what each log's digest hashes.
@@ -396,8 +427,8 @@ pub struct Ask {
     /// Of each log, its frontier, the edits 1, 2, 4, 8, … steps back from it by the shortest way, and the oldest, all
     /// of its closed part: the peer sends nothing at or below them.
     pub haves: BTreeMap<LogId, Vec<EditId>>,
-    /// The edits it holds outside every closed part, smallest first: waiting for their past, or of no log it knows, as
-    /// a revocation of a grant it never held. The peer doesn't send them again.
+    /// The edits it holds outside every closed part, smallest first: waiting for their past, or of no log. The peer
+    /// doesn't send them again.
     pub loose: Vec<EditId>,
 }
 

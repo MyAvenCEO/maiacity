@@ -6,8 +6,15 @@
  * `sealCeremony`, from the page's own module), against an avenDB server on this machine. The person founds their vault
  * from the "Mac" in three sheets; the page shows the device native, on its own UDP sockets; reloaded, it opens with no
  * sheet, as the device runs on; the app quits and starts again, and the device opens from its folder in one sheet; it
- * is renamed; forgotten, its store is put aside in its folder, and the person signs in again through the server in
- * four sheets. Each step is screenshot.
+ * is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
+ * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
+ * each in turn: avenALICE writes a note and three todos, one tagged “work”, and shares the note alone with avenBOB, and
+ * every todo tagged “work”, a rule: he reads the note and that todo, and one she tags “work” later, and finds her other
+ * todo sealed in her studio, while avenCHARLY sees nothing of hers; her Sync page shows her cells, avenCEO's server
+ * relaying their ciphertext; making the coop an owner of her whole vault takes one sheet, revoking avenBOB's caps none.
+ * Forgotten, the device's store is put aside in its folder, and the person signs in again through the server in four
+ * sheets, every vault and her note coming back. Last, the store becomes an earlier avenDB's: the device puts it aside,
+ * and the page says it holds no vault and forgets it. Each step is screenshot.
  *
  *   cd avendb && cargo build -p avendb-server -p avendb-device
  *   AVENDB_DATA=$(mktemp -d) AVENDB_BIND=127.0.0.1:7421 AVENDB_RELAY_BIND=127.0.0.1:3360 \
@@ -19,7 +26,7 @@
  */
 import { spawn } from 'node:child_process';
 import { createHash, createHmac, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -230,6 +237,158 @@ const opened = () => page.waitForSelector('.shell', { timeout: 180000 }).then(()
 const devices = () => shown('.main .list li b');
 const at = `${base}/app/avendb/?${new URLSearchParams({ relay, server })}`;
 
+/** Pick the option worded `label` of the select `selector`. */
+async function choose(selector, label) {
+	const ok = await page.evaluate(
+		(selector, label) => {
+			const s = document.querySelector(selector);
+			if (!(s instanceof HTMLSelectElement)) return false;
+			const o = [...s.options].find((o) => o.textContent?.trim() === label);
+			if (!o) return false;
+			s.value = o.value;
+			s.dispatchEvent(new Event('change', { bubbles: true }));
+			return true;
+		},
+		selector,
+		label
+	);
+	if (!ok) check(`there is a “${label}” to choose`, false);
+	await sleep(150);
+	return ok;
+}
+const SIX = ['Samuel', 'avenCEO', 'avenALICE', 'avenBOB', 'avenCHARLY', 'Maia City COOP'];
+const hasAll = async (/** @type {string[]} */ names) => {
+	const now = await bar();
+	return names.every((n) => now.includes(n));
+};
+/** Look at vault `name`'s page `tab`. */
+async function look(name, tab = 'Notes') {
+	await page.click(`.bar .slot[aria-label="${name}"]`).catch(() => check(`${name} is in the bar`, false));
+	await sleep(150);
+	await click(tab, '.aside .tabs-list .item');
+	return until(async () => (await text('.aside h1')) === name, 5000);
+}
+/** Act as vault `name`, from the switcher at the foot. */
+async function actAs(name) {
+	if (!(await page.$('.switcher .menu'))) await page.click('.switcher .pill');
+	const ok = await page.evaluate((name) => {
+		const all = [...document.querySelectorAll('.switcher .menu button')];
+		const el = all.find((b) => b.querySelector('.who b')?.textContent?.trim() === name);
+		if (el instanceof HTMLElement) el.click();
+		return !!el;
+	}, name);
+	if (!ok) check(`the switcher offers to act as ${name}`, false);
+	return until(async () => (await text('.switcher .pill b')) === name, 5000);
+}
+/** Go to page `label` of the vault looked at. */
+const goTo = (label) => click(label, '.aside .tabs-list .item');
+/** The note titled `title`, as the notes list shows it: its words, and who holds a role on it. */
+const note = (title) =>
+	page.evaluate((title) => {
+		const el = [...document.querySelectorAll('.main .note')].find((n) => n.querySelector('.info b')?.textContent === title);
+		if (!el) return null;
+		const chips = [...el.querySelectorAll('.who .chip')].map((c) => c.textContent?.replace(/\s+/g, ' ').trim());
+		return { words: el.querySelector('.thumb .page span')?.textContent ?? '', chips };
+	}, title);
+/** Open the note titled `title` from the notes list, on the whole screen. */
+async function openNote(title) {
+	await page.evaluate((title) => {
+		const el = [...document.querySelectorAll('.main .note')].find((n) => n.querySelector('.info b')?.textContent === title);
+		if (el instanceof HTMLElement) el.click();
+	}, title);
+	return until(async () => !!(await page.$('.shell.reading .doc .paper')), 10000);
+}
+/** Back from a note to the notes. */
+async function back() {
+	await page.click('.doc .top .back');
+	return until(async () => !!(await page.$('.shell .main')), 10000);
+}
+/** The note's text on the line it shows: its editor's, or its words. */
+const docText = () =>
+	page.evaluate(() => {
+		const paper = document.querySelector('.doc .paper');
+		const field = paper?.querySelector('textarea');
+		return field ? field.value : (paper?.querySelector('.text')?.textContent ?? null);
+	});
+/** The note's history on the line shown, newest first: what each edit did, and the words it put in. */
+const edits = () =>
+	page.$$eval('.doc .history li', (lis) =>
+		lis.map((li) => ({
+			what: li.querySelector('.what b')?.textContent?.trim() ?? '',
+			ins: [...li.querySelectorAll('.diff ins')].map((e) => e.textContent)
+		}))
+	);
+/** The line the note shows: Main, or a proposal's name. */
+const onLine = () => text('.doc .versions .line.on b');
+/** Set the note's text, and save it on the line it shows. @param {string} t */
+async function saveText(t) {
+	await page.$eval(
+		'.doc .paper textarea',
+		(e, t) => {
+			/** @type {HTMLTextAreaElement} */ (e).value = t;
+			e.dispatchEvent(new Event('input', { bubbles: true }));
+		},
+		t
+	);
+	await click('Save on', '.doc .top button');
+	return until(async () => (await docText()) === t && !(await page.$('.doc .top .unsaved')), 30000);
+}
+/** Title the note `t` on the line it shows, as a docs app does: typed over, then Enter. @param {string} t */
+async function retitle(t) {
+	await type('.doc .top input.title', t);
+	await page.keyboard.press('Enter');
+	await sleep(250);
+}
+/** Pick the edit of the history whose words are `what` (and that put in `ins`, if given), then click `label` on it. */
+async function onEdit(what, label = '', ins = null) {
+	const ok = await page.evaluate(
+		(what, ins) => {
+			const li = [...document.querySelectorAll('.doc .history li')].find(
+				(l) =>
+					l.querySelector('.what b')?.textContent?.trim() === what &&
+					(ins === null || [...l.querySelectorAll('.diff ins')].map((e) => e.textContent).join('|') === ins)
+			);
+			const button = li?.querySelector('button.what');
+			if (button instanceof HTMLElement) button.click();
+			return !!button;
+		},
+		what,
+		ins
+	);
+	if (!ok) check(`the history has “${what}”`, false);
+	await sleep(250);
+	if (label) await click(label, '.doc .history li.on .actions button');
+}
+/** The studio's tables, each with its count of rows. */
+const tablesShown = () =>
+	page.$$eval('.main .tables button.t[data-table]', (els) =>
+		Object.fromEntries(els.map((e) => [e.getAttribute('data-table'), Number(e.querySelector('small')?.textContent ?? 0)]))
+	);
+/** The table editor's rows, each as its columns name its cells. */
+const gridRows = () =>
+	page.$$eval('.main .grid tr.rec', (rows) =>
+		rows.map((r) =>
+			Object.fromEntries([...r.querySelectorAll('td[data-col]')].map((c) => [c.getAttribute('data-col'), c.textContent?.replace(/\s+/g, ' ').trim()]))
+		)
+	);
+/** Pick the table `id` of the table editor. */
+async function pickTable(id) {
+	await page.click(`.main .tables button.t[data-table="${id}"]`).catch(() => check(`there is a ${id} table`, false));
+	await sleep(250);
+}
+/** The todo titled `title`'s row in the todos list: its words. */
+const todoRow = (title) =>
+	page.evaluate((title) => {
+		const li = [...document.querySelectorAll('.main .todos li')].find((l) => l.querySelector('.title')?.textContent === title);
+		return li?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+	}, title);
+
+const NOTE = 'Hello from Alice';
+const BODY = 'Only Bob may read this.';
+const TODO = 'Plant the north beds';
+const WORK = 'Fix the greenhouse door';
+const LATER = 'Order seeds';
+
 try {
 	await page.goto(at, { waitUntil: 'domcontentloaded' });
 	check('it opens on the account, offering the maiaCITY passkey', await waitText('Use my maiaCITY passkey'));
@@ -276,6 +435,200 @@ try {
 	check('renamed, on its card', await until(async () => (await devices()).includes('Samuel’s test Mac')), (await devices()).join(', '));
 	await shot('4-again');
 
+	// a note as a docs app keeps one: titled, written, proposed on, accepted, undone and restored, with no sheet
+	app.sheets();
+	await goTo('Notes');
+	await click('Blank note', '.main .start button');
+	const addressed = await until(async () => /^#notes\/[0-9a-f]{64}$/.test(await page.evaluate(() => location.hash)), 30000);
+	check('a blank note opens at an address of its own', addressed, await page.evaluate(() => location.hash));
+	check('a page to write on', await until(async () => !!(await page.$('.shell.reading .doc .paper textarea')), 10000));
+	await retitle('Plan');
+	const titled = await until(async () => (await edits())[0]?.what === 'Renamed it “Plan”', 30000);
+	check('titled “Plan”, an edit of its own', titled, JSON.stringify((await edits())[0]));
+	check('written, and saved on main', await saveText('Plant beans.'), await docText());
+	check('and saved again', await saveText('Plant beans and peas.'), await docText());
+	await click('New proposal', '.doc .versions button');
+	await type('#proposal-name', 'draft');
+	await click('Propose', '.doc .versions .naming button');
+	check('a proposal, draft, picked', await until(async () => (await onLine()) === 'draft'), await onLine());
+	check('saved on the proposal', await saveText('Plant beans, peas and corn.'), await docText());
+	await click('Accept into main', '.doc .banner button');
+	const merged = until(async () => (await onLine()) === 'Main' && (await docText()) === 'Plant beans, peas and corn.');
+	check('accepted: main reads the proposal', await merged, await docText());
+	await onEdit('Edited on “draft”', 'Undo');
+	check('the proposal’s edit undone on main', await until(async () => (await docText()) === 'Plant beans and peas.'), await docText());
+	await onEdit('Edited', '', 'Plant beans.');
+	await until(async () => (await text('.doc .paper.old .text')) === 'Plant beans.', 5000);
+	await click('Restore this version', '.doc .banner.old button');
+	check('the first version restored on main', await until(async () => (await docText()) === 'Plant beans.'), await docText());
+	check('none of it asked for a sheet', app.sheets().length === 0);
+	check('and no error', !(await problem()), await problem());
+	await shot('5-note');
+	await back();
+
+	// four vaults Samuel's vault owns, named by hand, in one sheet
+	await page.click('.bar .add');
+	await page.waitForSelector('.dialog');
+	for (const [i, n] of SIX.slice(2).entries()) {
+		if (i) await click('Add another', '.dialog button');
+		await type(`.dialog input[aria-label="Vault ${i + 1}'s name"]`, n);
+	}
+	await choose(`.dialog select[aria-label="Vault 4's kind"]`, 'Coop');
+	await click('Create 4 vaults', '.dialog button');
+	check('six vaults in the bar', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
+	check('in one sheet', app.sheets().join(',') === 'approve');
+	check('the dialog closed, no error', !(await page.$('.dialog')) && !(await problem()), await problem());
+	await shot('6-six-vaults');
+
+	// avenALICE writes a note and todos, and shares the note alone with avenBOB, and every todo tagged “work”
+	check('acting as avenALICE', await actAs('avenALICE'), await text('.switcher .pill b'));
+	await look('avenALICE');
+	await click('Blank note', '.main .start button');
+	check('her note opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
+	await retitle(NOTE);
+	check('titled', await until(async () => (await edits())[0]?.what === `Renamed it “${NOTE}”`, 30000), JSON.stringify((await edits())[0]));
+	check('written', await saveText(BODY), await docText());
+	await click('Share', '.doc .top button');
+	await choose('.doc .sharebar select[aria-label="Share with"]', 'avenBOB');
+	const least = await text('.doc .sharebar');
+	check('sharing starts at the least: this note alone, to read', least.includes(`Only “${NOTE}”`) && least.includes('reads it'), least);
+	await click('Share it', '.doc .sharebar button');
+	const holders = () => page.$$eval('.doc .people .person', (els) => els.map((e) => e.getAttribute('title')));
+	check('avenBOB reads it', await until(async () => (await holders()).includes('avenBOB reads it')), (await holders()).join(', '));
+	await shot('7-alice-note');
+	await back();
+	check('her note, with avenBOB among its readers', (await note(NOTE))?.chips.includes('avenBOB reads'), JSON.stringify(await note(NOTE)));
+	await goTo('Todos');
+	await type('.main .todos li.add input[aria-label="A new todo"]', TODO);
+	await click('Add the todo', '.main .todos li.add button');
+	check('her todo', await waitText(TODO, 30000, '.main .todos'));
+	await click('Open', '.main .todos .tick');
+	check('marked doing', await waitText('Doing', 30000, '.main .todos'));
+	await type('.main .todos li.add input[aria-label="A new todo"]', WORK);
+	await type('.main .todos li.add input[aria-label="The new todo’s tags"]', 'work');
+	await click('Add the todo', '.main .todos li.add button');
+	check('a todo tagged “work”', await until(async () => (await todoRow(WORK))?.includes('#work'), 30000), await todoRow(WORK));
+	await type('.main .todos li.add input[aria-label="A new todo"]', LATER);
+	await type('.main .todos li.add input[aria-label="The new todo’s tags"]', '');
+	await click('Add the todo', '.main .todos li.add button');
+	check('and one more, untagged', await until(async () => !!(await todoRow(LATER)), 30000), await text('.main .todos'));
+	check('three todos, none done', (await text('.main .todos-of .head')).includes('3 of 3 todos left'), await text('.main .todos-of .head'));
+	await goTo('Access');
+	await choose('.main select[aria-label="What"]', 'every');
+	await choose('.main select[aria-label="Type"]', 'todo');
+	await type('.main input[aria-label="Tagged"]', 'work');
+	await choose('.main select[aria-label="Share with"]', 'avenBOB');
+	const preview = await text('.main .share .preview');
+	check('the rule in words, and what it reaches now', preview.includes('todos tagged “work”') && preview.includes(`“${WORK}”`), preview);
+	await click('Share', '.main .card button.primary');
+	const ruled = async () => (await shown('.main .grants li')).some((l) => l?.includes('avenBOB') && l.includes('todos tagged “work”'));
+	check('avenBOB reads her todos tagged “work”: a cap on a rule', await until(ruled), (await shown('.main .grants li')).join(' | '));
+	check('sharing took no sheet', app.sheets().length === 0);
+	await shot('8-alice-access');
+	await goTo('Todos');
+	await page.evaluate((later) => {
+		const li = [...document.querySelectorAll('.main .todos li')].find((l) => l.querySelector('.title')?.textContent === later);
+		/** @type {HTMLElement | null | undefined} */ (li?.querySelector('.tags .more'))?.click();
+	}, LATER);
+	await sleep(200);
+	await type('.main .todos .tags input', 'work');
+	await click('Tag', '.main .todos .tags button');
+	check('her later todo tagged “work” too', await until(async () => (await todoRow(LATER))?.includes('#work'), 30000), await todoRow(LATER));
+	await shot('8b-alice-todos');
+	await goTo('Cells');
+	const cells = () => page.$$eval('.main .grid tr.rec', (rows) => rows.length);
+	check('her cells: her own, and the one avenBOB’s caps share', await until(async () => (await cells()) >= 2, 10000), `${await cells()}`);
+	await goTo('Table editor');
+	const mine = async () => {
+		const t = await tablesShown();
+		return t.notes === 1 && t.todos === 3;
+	};
+	check('her table editor: her note and her three todos', await until(mine, 20000), JSON.stringify(await tablesShown()));
+
+	// avenBOB reads her note and her todos tagged “work”, and nothing else of hers
+	check('acting as avenBOB', await actAs('avenBOB'));
+	await look('avenALICE');
+	check('he reads her note', await until(async () => (await note(NOTE))?.words === BODY, 30000), JSON.stringify(await note(NOTE)));
+	check('he starts no note there', !(await page.$('.main .start')));
+	await goTo('Todos');
+	const both = async () => (await text('.main')).includes(WORK) && (await text('.main')).includes(LATER);
+	check('he reads her todos tagged “work”, the one tagged later too', await until(both, 60000), await text('.main'));
+	check('her other todo stays hidden', !(await text('.main')).includes(TODO));
+	check('he adds no todo there', !(await page.$('.main .todos li.add')));
+	await shot('9-bob');
+	await goTo('Notes');
+	await openNote(NOTE);
+	check('he opens it', await until(async () => (await docText()) === BODY, 10000), await docText());
+	const readOnly = !(await page.$('.doc .paper textarea')) && !(await page.$('.doc .top .share'));
+	check('and may not edit it', readOnly && (await text('.doc .top .mode')).includes('only reads it'), await text('.doc .top .mode'));
+	await back();
+	await goTo('Table editor');
+	const hers = async () => {
+		const t = await tablesShown();
+		return t.notes === 1 && t.todos === 2 && t.sealed >= 1;
+	};
+	check('in her table editor, her note and two todos open for him, the rest sealed', await until(hers, 20000), JSON.stringify(await tablesShown()));
+	await shot('9b-bob-database');
+
+	// avenCHARLY: nothing of hers
+	check('acting as avenCHARLY', await actAs('avenCHARLY'));
+	await look('avenALICE', 'Notes');
+	const none = /avenCHARLY can't see the \d+ entries in avenALICE/.test(await text('.main'));
+	check('he sees none of her entries', !(await note(NOTE)) && none, (await text('.main')).slice(0, 300));
+	await shot('10-charly');
+	await click('Act as avenALICE', '.main .empty button');
+	check('from there, one click acts as her', await until(async () => (await text('.switcher .pill b')) === 'avenALICE', 5000));
+
+	// who receives her cells: this Mac opens them, avenCEO's server only relays their ciphertext
+	await look('avenALICE', 'Sync');
+	const sync = await text('.main');
+	check('her cells: her own, and those her caps share', sync.includes('Its own entries') && sync.includes('Shared: avenBOB reads'), sync.slice(0, 400));
+	check('this Mac opens them', sync.includes('Samuel’s test Mac') && sync.includes('opens it'), sync.slice(0, 400));
+	check('avenCEO’s server relays their ciphertext only', /avenCEO's server.*relays its ciphertext only/.test(sync), sync.slice(0, 600));
+	await shot('11-sync');
+
+	// the coop owns her whole vault too, which the passkey approves in a sheet; revoking avenBOB's caps needs none
+	await look('avenALICE', 'Access');
+	app.sheets();
+	await choose('.main select[aria-label="What"]', 'the whole vault');
+	await choose('.main select[aria-label="Share with"]', 'Maia City COOP');
+	await choose('.main select[aria-label="Role"]', 'to own (your passkey approves)');
+	await click('Share', '.main .card button.primary');
+	check('the coop owns her whole vault', await until(async () => /Maia City COOP owns the whole vault/.test(await text('.main')), 60000), await problem());
+	check('in one sheet', app.sheets().join(',') === 'approve');
+	const revoke = () =>
+		page.evaluate(() => {
+			const li = [...document.querySelectorAll('.main .grants li')].find((l) => l.textContent?.includes('avenBOB'));
+			const button = li?.querySelector('button');
+			button?.click();
+			return !!button;
+		});
+	check('she may revoke avenBOB’s read of her note', await revoke());
+	await until(async () => (await shown('.main .grants li')).filter((l) => l?.includes('avenBOB')).length < 2);
+	check('and his read of her todos tagged “work”', await revoke());
+	const gone = await until(async () => !(await shown('.main .grants li')).some((l) => l?.includes('avenBOB')));
+	check('revoked', gone, (await shown('.main .grants li')).join(' | '));
+	check('with no sheet', app.sheets().length === 0);
+	await shot('12-access');
+
+	// the same page in a narrow window: her todos and Access fit it, nothing wider than the screen
+	await page.setViewport({ width: 390, height: 844 });
+	const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+	await look('avenALICE', 'Todos');
+	check('her todos, tags and all, fit a phone’s width', await fits());
+	await shot('12b-phone-todos');
+	await look('avenALICE', 'Access');
+	check('and her Access', await fits());
+	await shot('12c-phone-access');
+	await page.setViewport({ width: 1300, height: 1000 });
+	await actAs('avenBOB');
+	await look('avenALICE');
+	check('avenBOB no longer reads her note', await until(async () => !(await note(NOTE)), 30000));
+	await goTo('Todos');
+	check('nor her todos', !(await text('.main')).includes(WORK), await text('.main'));
+	await actAs('Samuel');
+	await look('Samuel', 'Owners & devices');
+
 	// forgotten here, its store is put aside; the passkey alone gets the vault back through the server
 	page.once('dialog', (d) => d.accept());
 	await click('Forget my account on this Mac');
@@ -285,9 +638,31 @@ try {
 	await click('Sign in with my passkey', '.account button');
 	check('signed in again, through the server', await opened(), await problem());
 	check('in four sheets: unlock, pass, hello, join', app.sheets().join(',') === 'unlock,pass,hello,join');
-	check('its vault came back', await until(async () => (await bar()).includes('avenCEO'), 120000), (await bar()).join(', '));
+	check('every vault came back', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
+	await actAs('avenALICE');
+	await look('avenALICE', 'Notes');
+	check('her note came back', await until(async () => (await note(NOTE))?.words === BODY, 60000), JSON.stringify(await note(NOTE)));
 	check('no error after signing in', !(await problem()), await problem());
-	await shot('5-signed-in');
+	await shot('13-signed-in');
+
+	// an earlier avenDB's store, as when avenDB started fresh: the app starts again, the device puts the store aside,
+	// and the page says what it kept holds no vault, and offers to forget it here
+	await app.quit();
+	const ops = join(folder, 'store', 'ops');
+	const earlier = readFileSync(ops);
+	earlier[4] = (earlier[4] + 1) & 0xff;
+	writeFileSync(ops, earlier);
+	app = new App();
+	await page.reload({ waitUntil: 'domcontentloaded' });
+	check('an earlier store: it asks to unlock', await waitText('Your account is on this Mac'));
+	await click('Unlock');
+	check('it says what this Mac kept holds no vault', await waitText('kept holds no vault of yours'), await problem());
+	const put = existsSync(join(folder, 'store', 'aside')) ? readdirSync(join(folder, 'store', 'aside')) : [];
+	check('the earlier store put aside, not deleted', put.length === 1, put.join(', '));
+	page.once('dialog', (d) => d.accept());
+	await click('Forget it here', '.account button');
+	check('forgotten, it offers to sign in again', await waitText('Sign in with my passkey'));
+	await shot('14-earlier-store');
 } catch (e) {
 	check(`the walk through finishes: ${e instanceof Error ? e.message : e}`, false);
 	await page.screenshot({ path: `${out}/failed.png` }).catch(() => {});

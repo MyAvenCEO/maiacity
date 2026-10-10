@@ -33,12 +33,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
-use avendb::id::{BlobId, EditId, EntryId, GrantId, SpaceId, VaultId};
+use avendb::id::{BlobId, CapId, EditId, EntryId, VaultId};
 use avendb::keys;
-use avendb::lens::Status;
-use avendb::policy::{Grantee, Kind, Line, Role, Scope};
+use avendb::policy::{Grantee, Kind, Line};
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Start, Unlock, backup};
+use avendb_browser::{Device, Start, Unlock, backup, words};
 use avendb_net::{Authenticator, Offer, Step};
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -161,7 +160,7 @@ impl Service {
     /// A call on the open device, as the page's device answers it.
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
-        let vault = |i| a.id(i).map(VaultId);
+        let (vault, entry) = (|i| a.id(i).map(VaultId), |i| a.id(i).map(EntryId));
         Ok(match call {
             "size" => {
                 let (edits, keys) = d.node().read(|lab, me| lab.size(me)).await;
@@ -174,29 +173,35 @@ impl Service {
             "world" => d.world().await.map_or(Value::Null, |w| w.to_json(d.node().device())),
             "card" => json!(d.card(a.text(0)?).await?),
             "profile" => json!(d.profile(vault(0)?, a.text(1)?).await?),
-            "write" => hex(&d.write(vault(0)?, SpaceId(a.id(1)?), a.text(2)?, a.text(3)?).await?.0).into(),
-            "todo" => hex(&d.todo(vault(0)?, SpaceId(a.id(1)?), a.text(2)?).await?.0).into(),
+            "write" => {
+                let (actor, into) = (vault(0)?, vault(1)?);
+                hex(&d.write(actor, into, (a.text(2)?, a.text(3)?), a.names(4)?).await?.0).into()
+            }
+            "todo" => hex(&d.todo(vault(0)?, vault(1)?, a.text(2)?, a.names(3)?).await?.0).into(),
             "setStatus" => {
-                let status = status(&a.text(3)?)?;
-                d.set_status(vault(0)?, SpaceId(a.id(1)?), EntryId(a.id(2)?), status).await?;
+                d.set_status(vault(0)?, entry(1)?, words::status_of(&a.text(2)?)?).await?;
+                Value::Null
+            }
+            "tag" => {
+                d.tag(vault(0)?, entry(1)?, a.names(2)?, a.names(3)?).await?;
                 Value::Null
             }
             "database" => d.database(vault(0)?).await,
-            "note" => d.note(SpaceId(a.id(0)?), EntryId(a.id(1)?)).await.unwrap_or(Value::Null),
+            "note" => d.note(entry(0)?).await.unwrap_or(Value::Null),
             "history" => d.history().await,
             "setTextOn" => {
-                d.set_text_on(vault(0)?, a.at(1)?, a.line(3)?, a.count(4)? as u64, a.text(5)?).await?;
+                d.set_text_on(vault(0)?, entry(1)?, a.line(2)?, a.count(3)? as u64, a.text(4)?).await?;
                 Value::Null
             }
             "setTitleOn" => {
-                d.set_title_on(vault(0)?, a.at(1)?, a.line(3)?, a.text(4)?).await?;
+                d.set_title_on(vault(0)?, entry(1)?, a.line(2)?, a.text(3)?).await?;
                 Value::Null
             }
-            "propose" => hex(&d.propose(vault(0)?, a.at(1)?, a.edits(3)?, a.text(4)?).await?.0).into(),
-            "merge" => hex(&d.merge(vault(0)?, a.at(1)?, (a.line(3)?, a.line(4)?), a.flag(5)?).await?.0).into(),
-            "restore" => hex(&d.restore(vault(0)?, a.at(1)?, a.line(3)?, a.edits(4)?).await?.0).into(),
-            "undo" => hex(&d.undo(vault(0)?, a.at(1)?, a.line(3)?, EditId(a.id(4)?)).await?.0).into(),
-            "variant" => hex(&d.variant(vault(0)?, a.at(1)?, a.line(3)?, SpaceId(a.id(4)?)).await?.0).into(),
+            "propose" => hex(&d.propose(vault(0)?, entry(1)?, a.edits(2)?, a.text(3)?).await?.0).into(),
+            "merge" => hex(&d.merge(vault(0)?, entry(1)?, (a.line(2)?, a.line(3)?), a.flag(4)?).await?.0).into(),
+            "restore" => hex(&d.restore(vault(0)?, entry(1)?, a.line(2)?, a.edits(3)?).await?.0).into(),
+            "undo" => hex(&d.undo(vault(0)?, entry(1)?, a.line(2)?, EditId(a.id(3)?)).await?.0).into(),
+            "variant" => hex(&d.variant(vault(0)?, entry(1)?, a.line(2)?, vault(3)?).await?.0).into(),
             "foundVaults" => {
                 let mut new = vec![];
                 for v in a.list(0)? {
@@ -210,27 +215,17 @@ impl Service {
                 let vaults = d.found_vaults(new, &self.approver()?).await?;
                 json!(vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>())
             }
-            "grant" => {
-                let (issuer, space) = (vault(0)?, SpaceId(a.id(1)?));
-                let scope = match a.get(2).as_str().filter(|e| !e.is_empty()) {
-                    Some(entry) => Scope::Entry(space, EntryId(id(entry)?)),
-                    None => Scope::Space(space),
-                };
-                let role = match a.text(3)?.as_str() {
-                    "relay" => Role::Relay,
-                    "read" => Role::Read,
-                    "write" => Role::Write,
-                    "owner" => Role::Owner,
-                    _ => bail!("a role is relay, read, write or owner"),
-                };
+            "share" => {
+                let (issuer, over, slice) = (vault(0)?, vault(1)?, words::slice_of(a.get(2))?);
+                let role = words::role_of(&a.text(3)?)?;
                 let grantee = match a.text(4)?.as_str() {
                     "public" => Grantee::Public,
                     v => cast::vault(VaultId(id(v)?)),
                 };
-                hex(&d.grant(issuer, scope, role, grantee, &self.approver()?).await?.0).into()
+                hex(&d.share(issuer, over, slice, role, grantee, &self.approver()?).await?.0).into()
             }
             "revoke" => {
-                d.revoke(vault(0)?, GrantId(a.id(1)?), &self.approver()?).await?;
+                d.revoke(vault(0)?, CapId(a.id(1)?), &self.approver()?).await?;
                 Value::Null
             }
             _ => bail!("no call {call:?}"),
@@ -411,7 +406,7 @@ impl Service {
         Ok(())
     }
 
-    /// The passkey's ceremonies for what its vault approves (new vaults, an owner's grant, its revocation): in the
+    /// The passkey's ceremonies for what its vault approves (new vaults, an owner cap, its revocation): in the
     /// sheet, with the passkey that opened the device.
     fn approver(self: &Arc<Self>) -> Result<Sheets> {
         let meta = self.meta()?.context("this Mac holds no avenDB account")?;
@@ -634,9 +629,10 @@ impl Args<'_> {
         id(&self.text(i)?)
     }
 
-    /// Entry `i + 1` of space `i`.
-    fn at(&self, i: usize) -> Result<(SpaceId, EntryId)> {
-        Ok((SpaceId(self.id(i)?), EntryId(self.id(i + 1)?)))
+    /// Names, types or tags, from a list of them.
+    fn names(&self, i: usize) -> Result<Vec<String>> {
+        let name = |x: &Value| x.as_str().map(str::to_string).context("a name is text");
+        self.list(i)?.iter().map(name).collect()
     }
 
     /// A line of an entry's history: `null` or `""` for its main line, else its proposal's first edit.
@@ -651,15 +647,6 @@ impl Args<'_> {
     fn edits(&self, i: usize) -> Result<Vec<EditId>> {
         self.list(i)?.iter().map(|e| Ok(EditId(id(e.as_str().unwrap_or_default())?))).collect()
     }
-}
-
-fn status(status: &str) -> Result<Status> {
-    Ok(match status {
-        "open" => Status::Open,
-        "doing" => Status::Doing,
-        "done" => Status::Done,
-        _ => bail!("a todo is open, doing or done"),
-    })
 }
 
 /// `text` as a QR code, an SVG image at least `size` pixels wide, as avendb-browser's `qrSvg` draws it.

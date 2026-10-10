@@ -3,13 +3,14 @@
 //! integers are big-endian and fixed-size, sequences carry their length, and every enum starts with a tag. The first
 //! byte is the format's version, so a later format can live beside this one.
 
-use crate::keys::{KeyBox, KeyId, KeyScope, PublicKey, Recipient};
-use crate::policy::{Action, Edit, Grant, Grantee, Kind, Principal, Proposal, Role, Scope};
+use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
+use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
+use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
-/// The version byte every edit starts with: 4 since the three kinds of vault, whose acts for a vault name the owners
-/// they go through (3 since P5, whose writes name the line of history they extend, 2 since P4b, whose ids are SHA-3
-/// hashes and whose signers sign twice).
-pub const VERSION: u8 = 4;
+/// The version byte every edit starts with: 5 since flat vaults, whose caps select slices of a vault and whose entries
+/// sit in cells (4 since the three kinds of vault, 3 since P5, whose writes name the line of history they extend, 2
+/// since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
+pub const VERSION: u8 = 5;
 
 /// An edit's id: the hash of its encoding, for a purpose that keeps an edit's old name, op (`hash::PREFIX`).
 pub(crate) fn edit_id(edit: &Edit) -> [u8; 32] {
@@ -25,7 +26,7 @@ pub fn bytes(edit: &Edit) -> Vec<u8> {
 }
 
 /// What a write's ciphertext is bound to: the edit's bytes with an empty body, so the edit can't be moved to another
-/// edit, entry or epoch.
+/// edit, entry, stay or generation.
 pub fn write_context(edit: &Edit) -> Vec<u8> {
     let mut edit = edit.clone();
     if let Action::Write { body, .. } = &mut edit.action {
@@ -34,12 +35,29 @@ pub fn write_context(edit: &Edit) -> Vec<u8> {
     bytes(&edit)
 }
 
+/// What a cap's sealed slice is bound to: the cap with an empty `select`, so the slice can't be moved to another cap,
+/// another grantee or another role.
+pub fn cap_context(cap: &Cap) -> Vec<u8> {
+    let mut out = vec![VERSION];
+    Cap { select: vec![], ..cap.clone() }.encode(&mut out);
+    out
+}
+
+/// What a box of a cap's selector key is bound to (`slice::Select`): the cap with an empty `select`, the key it holds,
+/// and for whom. It opens as no other box, and for no other cap.
+pub fn select_info(cap: &Cap, id: KeyId, to: &Recipient) -> Vec<u8> {
+    let mut out = cap_context(cap);
+    out.extend_from_slice(b"selector key");
+    id.encode(&mut out);
+    to.encode(&mut out);
+    out
+}
+
 /// What a box is bound to: which key it holds, and for whom. A box can't be passed off as another key's, nor moved to
 /// another recipient.
-pub fn box_info(key: KeyScope, epoch: u64, id: KeyId, to: &Recipient) -> Vec<u8> {
+pub fn box_info(name: KeyName, id: KeyId, to: &Recipient) -> Vec<u8> {
     let mut out = vec![VERSION];
-    key.encode(&mut out);
-    epoch.encode(&mut out);
+    name.encode(&mut out);
     id.encode(&mut out);
     to.encode(&mut out);
     out
@@ -47,6 +65,18 @@ pub fn box_info(key: KeyScope, epoch: u64, id: KeyId, to: &Recipient) -> Vec<u8>
 
 pub(crate) trait Encode {
     fn encode(&self, out: &mut Vec<u8>);
+}
+
+impl<T: Encode + ?Sized> Encode for &T {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (**self).encode(out);
+    }
+}
+
+impl Encode for bool {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.push(*self as u8);
+    }
 }
 
 impl Encode for u32 {
@@ -115,9 +145,9 @@ macro_rules! ids {
 ids!(
     crate::id::SignerId,
     crate::id::VaultId,
-    crate::id::SpaceId,
     crate::id::EntryId,
-    crate::id::GrantId,
+    crate::id::CapId,
+    crate::id::CellId,
     crate::id::EditId,
     crate::id::BlobId,
     KeyId
@@ -130,21 +160,44 @@ impl Encode for PublicKey {
     }
 }
 
-impl Encode for KeyScope {
+impl Encode for KeyFam {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            KeyScope::Vault(v) => {
+            KeyFam::Seed(v) => {
                 out.push(0);
                 v.encode(out);
             }
-            KeyScope::Space(sp) => {
+            KeyFam::Cap(v, c) => {
                 out.push(1);
-                sp.encode(out);
+                v.encode(out);
+                c.encode(out);
             }
-            KeyScope::Entry(sp, e) => {
+            KeyFam::Cell(v, x) => {
                 out.push(2);
-                sp.encode(out);
+                v.encode(out);
+                x.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for KeyName {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            KeyName::Signer(s) => {
+                out.push(0);
+                s.encode(out);
+            }
+            KeyName::Scoped(k, epoch) => {
+                out.push(1);
+                k.encode(out);
+                epoch.encode(out);
+            }
+            KeyName::Entry(e, stay, generation) => {
+                out.push(2);
                 e.encode(out);
+                stay.encode(out);
+                generation.encode(out);
             }
         }
     }
@@ -157,10 +210,9 @@ impl Encode for Recipient {
                 out.push(0);
                 s.encode(out);
             }
-            Recipient::Key { key, epoch, id } => {
+            Recipient::Key { name, id } => {
                 out.push(1);
-                key.encode(out);
-                epoch.encode(out);
+                name.encode(out);
                 id.encode(out);
             }
         }
@@ -171,6 +223,110 @@ impl Encode for KeyBox {
     fn encode(&self, out: &mut Vec<u8>) {
         self.to.encode(out);
         self.bytes.encode(out);
+    }
+}
+
+impl Encode for Sym {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.0.len() as u32).encode(out);
+        out.extend_from_slice(self.0.as_bytes());
+    }
+}
+
+impl Encode for Atom {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Atom::TypeIn(ts) => {
+                out.push(0);
+                ts.encode(out);
+            }
+            Atom::AuthorIn(vs) => {
+                out.push(1);
+                vs.encode(out);
+            }
+            Atom::EntryIn(es) => {
+                out.push(2);
+                es.encode(out);
+            }
+            Atom::CreatedIn(from, to) => {
+                out.push(3);
+                from.encode(out);
+                to.encode(out);
+            }
+            Atom::TagHas(t) => {
+                out.push(4);
+                t.encode(out);
+            }
+            Atom::TagNone(ts) => {
+                out.push(5);
+                ts.encode(out);
+            }
+            Atom::TagsWithin(ts) => {
+                out.push(6);
+                ts.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for Selector {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Selector::All => out.push(0),
+            Selector::AnyOf(ds) => {
+                out.push(1);
+                (ds.len() as u32).encode(out);
+                for d in ds {
+                    d.encode(out);
+                }
+            }
+        }
+    }
+}
+
+impl Encode for Slice {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.select.encode(out);
+        self.relabel.encode(out);
+    }
+}
+
+impl Encode for Select {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Select::Clear(slice) => {
+                out.push(0);
+                slice.encode(out);
+            }
+            Select::Sealed { boxes, slice } => {
+                out.push(1);
+                boxes.encode(out);
+                slice.encode(out);
+            }
+        }
+    }
+}
+
+impl Encode for Header {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.ty.encode(out);
+        self.created.encode(out);
+    }
+}
+
+impl Encode for TagDelta {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.add.encode(out);
+        self.remove.encode(out);
+    }
+}
+
+impl Encode for Body {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.header.encode(out);
+        self.tags.encode(out);
+        self.answers.encode(out);
+        self.content.encode(out);
     }
 }
 
@@ -210,22 +366,6 @@ impl Encode for Role {
     }
 }
 
-impl Encode for Scope {
-    fn encode(&self, out: &mut Vec<u8>) {
-        match self {
-            Scope::Space(sp) => {
-                out.push(0);
-                sp.encode(out);
-            }
-            Scope::Entry(sp, e) => {
-                out.push(1);
-                sp.encode(out);
-                e.encode(out);
-            }
-        }
-    }
-}
-
 impl Encode for Grantee {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -238,13 +378,16 @@ impl Encode for Grantee {
     }
 }
 
-impl Encode for Grant {
+impl Encode for Cap {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.scope.encode(out);
-        self.role.encode(out);
+        self.over.encode(out);
         self.grantee.encode(out);
-        self.issuer.encode(out);
+        self.role.encode(out);
+        self.wide.encode(out);
+        self.select.encode(out);
         self.parent.encode(out);
+        self.issuer.encode(out);
+        self.nonce.encode(out);
     }
 }
 
@@ -302,60 +445,62 @@ impl Encode for Action {
                 device.encode(out);
                 keep.encode(out);
             }
-            Action::FoundSpace { actor, nonce, via } => {
-                out.push(6);
-                actor.encode(out);
-                nonce.encode(out);
-                via.encode(out);
-            }
-            Action::Grant(g, via) => {
-                out.push(7);
-                g.encode(out);
-                via.encode(out);
-            }
-            Action::Revoke { grant, actor, keep, via } => {
-                out.push(8);
-                grant.encode(out);
-                actor.encode(out);
-                keep.encode(out);
-                via.encode(out);
-            }
-            Action::Write { space, entry, actor, epoch, deps, proposal, via, body } => {
-                out.push(9);
-                space.encode(out);
-                entry.encode(out);
-                actor.encode(out);
-                epoch.encode(out);
-                deps.encode(out);
-                proposal.encode(out);
-                via.encode(out);
-                body.encode(out);
-            }
             Action::SetRoot { vault, root, keep } => {
-                out.push(10);
+                out.push(6);
                 vault.encode(out);
                 root.encode(out);
                 keep.encode(out);
             }
-            Action::Keys { key, epoch, id, public, boxes, clear } => {
+            Action::Cap(c, via) => {
+                out.push(7);
+                c.encode(out);
+                via.encode(out);
+            }
+            Action::Revoke { cap, actor, keep, via } => {
+                out.push(8);
+                cap.encode(out);
+                actor.encode(out);
+                keep.encode(out);
+                via.encode(out);
+            }
+            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body } => {
+                out.push(9);
+                vault.encode(out);
+                entry.encode(out);
+                actor.encode(out);
+                stay.encode(out);
+                generation.encode(out);
+                deps.encode(out);
+                proposal.encode(out);
+                via.encode(out);
+                create.as_deref().encode(out);
+                body.encode(out);
+            }
+            Action::Move { vault, entry, to, keep, via } => {
+                out.push(10);
+                vault.encode(out);
+                entry.encode(out);
+                to.encode(out);
+                keep.encode(out);
+                via.encode(out);
+            }
+            Action::Keys { name, id, public, boxes, clear } => {
                 out.push(11);
-                key.encode(out);
-                epoch.encode(out);
+                name.encode(out);
                 id.encode(out);
                 public.encode(out);
                 boxes.encode(out);
                 clear.encode(out);
             }
-            Action::Publish { space, actor, via, blob } => {
+            Action::Publish { vault, actor, via, blob } => {
                 out.push(12);
-                space.encode(out);
+                vault.encode(out);
                 actor.encode(out);
                 via.encode(out);
                 blob.encode(out);
             }
-            Action::Checkpoint { space, entry, covers } => {
+            Action::Checkpoint { entry, covers } => {
                 out.push(13);
-                space.encode(out);
                 entry.encode(out);
                 covers.encode(out);
             }
@@ -376,12 +521,23 @@ impl Encode for Edit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id::{SignerId, VaultId};
+    use crate::id::{CapId, EditId, EntryId, SignerId, VaultId};
 
     fn genesis(nonce: u64) -> Edit {
         let owners = vec![Principal::Signer(SignerId::from_u64(1))];
         let action = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
         Edit { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
+    }
+
+    fn write(stay: Option<EditId>, proposal: Proposal, via: Vec<VaultId>, create: Option<Vec<CapId>>) -> Edit {
+        let (vault, entry, actor) = (VaultId::from_u64(1), EntryId::from_u64(1), VaultId::from_u64(1));
+        let (deps, body) = (vec![], vec![]);
+        let action = Action::Write { vault, entry, actor, stay, generation: 0, deps, proposal, via, create, body };
+        Edit { action, ..genesis(0) }
+    }
+
+    fn distinct(ids: &[[u8; 32]]) -> bool {
+        ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y))
     }
 
     #[test]
@@ -395,7 +551,7 @@ mod tests {
         o.cosigners = vec![SignerId::from_u64(3)];
         others.push(o);
         let mut o = base.clone();
-        o.parents = vec![crate::id::EditId::from_u64(9)];
+        o.parents = vec![EditId::from_u64(9)];
         others.push(o);
         let mut o = base.clone();
         o.depth = 1;
@@ -415,31 +571,62 @@ mod tests {
     }
 
     #[test]
-    fn a_writes_line_changes_its_id() {
-        let write = |proposal| {
-            let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
-            let actor = VaultId::from_u64(1);
-            let (deps, via, body) = (vec![], vec![], vec![]);
-            let action = Action::Write { space, entry, actor, epoch: 0, deps, proposal, via, body };
-            edit_id(&Edit { action, ..genesis(0) })
-        };
-        let (a, b) = (crate::id::EditId::from_u64(1), crate::id::EditId::from_u64(2));
-        let ids = [write(Proposal::Main), write(Proposal::New), write(Proposal::On(a)), write(Proposal::On(b))];
-        assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
+    fn a_writes_line_stay_and_cell_change_its_id() {
+        let (a, b) = (EditId::from_u64(1), EditId::from_u64(2));
+        let main = |stay| write(stay, Proposal::Main, vec![], None);
+        let ids = [
+            edit_id(&main(None)),
+            edit_id(&main(Some(a))),
+            edit_id(&main(Some(b))),
+            edit_id(&write(None, Proposal::New, vec![], None)),
+            edit_id(&write(None, Proposal::On(a), vec![], None)),
+            edit_id(&write(None, Proposal::On(b), vec![], None)),
+            edit_id(&write(None, Proposal::Main, vec![], Some(vec![]))),
+            edit_id(&write(None, Proposal::Main, vec![], Some(vec![CapId::from_u64(1)]))),
+        ];
+        assert!(distinct(&ids));
     }
 
     #[test]
     fn the_owners_an_act_goes_through_change_its_id() {
-        let (space, entry) = (crate::id::SpaceId::from_u64(1), crate::id::EntryId::from_u64(1));
-        let actor = VaultId::from_u64(1);
-        let write = |via: Vec<VaultId>| {
-            let (deps, proposal, body) = (vec![], Proposal::Main, vec![]);
-            let action = Action::Write { space, entry, actor, epoch: 0, deps, proposal, via, body };
-            edit_id(&Edit { action, ..genesis(0) })
-        };
+        let w = |via: Vec<VaultId>| edit_id(&write(None, Proposal::Main, via, None));
         let (b, g) = (VaultId::from_u64(2), VaultId::from_u64(3));
-        let ids = [write(vec![]), write(vec![b]), write(vec![g]), write(vec![g, b]), write(vec![b, g])];
-        assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
+        assert!(distinct(&[w(vec![]), w(vec![b]), w(vec![g]), w(vec![g, b]), w(vec![b, g])]));
+    }
+
+    #[test]
+    fn a_caps_slice_and_width_change_its_id() {
+        let cap = |wide, select: &[u8]| {
+            let c = Cap {
+                over: VaultId::from_u64(1),
+                grantee: Grantee::Principal(Principal::Vault(VaultId::from_u64(2))),
+                role: Role::Read,
+                wide,
+                select: select.to_vec(),
+                parent: None,
+                issuer: VaultId::from_u64(1),
+                nonce: 0,
+            };
+            edit_id(&Edit { action: Action::Cap(c, vec![]), ..genesis(0) })
+        };
+        assert!(distinct(&[cap(false, b""), cap(true, b""), cap(false, b"todos"), cap(false, b"notes")]));
+    }
+
+    #[test]
+    fn a_box_is_bound_to_its_key_and_recipient() {
+        let (v, e) = (VaultId::from_u64(1), EntryId::from_u64(1));
+        let id = KeyId([7; 32]);
+        let seed = KeyName::Scoped(KeyFam::Seed(v), 0);
+        let infos = [
+            box_info(seed, id, &Recipient::Signer(SignerId::from_u64(1))),
+            box_info(seed, id, &Recipient::Signer(SignerId::from_u64(2))),
+            box_info(KeyName::Scoped(KeyFam::Seed(v), 1), id, &Recipient::Signer(SignerId::from_u64(1))),
+            box_info(KeyName::Entry(e, None, 0), id, &Recipient::Signer(SignerId::from_u64(1))),
+            box_info(KeyName::Entry(e, Some(EditId::from_u64(3)), 0), id, &Recipient::Signer(SignerId::from_u64(1))),
+            box_info(seed, KeyId([8; 32]), &Recipient::Signer(SignerId::from_u64(1))),
+            box_info(seed, id, &Recipient::Key { name: KeyName::Scoped(KeyFam::Seed(v), 1), id }),
+        ];
+        assert!(infos.iter().enumerate().all(|(i, x)| infos[i + 1..].iter().all(|y| x != y)));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! The server peer (P8b) in a folder of its own: it keeps its device across restarts, belongs to no vault until the
 //! first human vault to claim it makes it a device of avenCEO (P8f), and keeps that too; it hands avenCEO's card to
-//! whoever asks, relays a space once a device grants avenCEO relay there, holding only ciphertext, and from then on
-//! knows the devices of the vaults acting in that space, whom its relay lets in.
+//! whoever asks, relays a vault once the vault gives avenCEO relay on it, holding only ciphertext, and from then on
+//! knows the devices of the vaults acting for it, whom its relay lets in.
 
 mod common;
 
@@ -9,10 +9,11 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use avendb::cast::*;
-use avendb::id::{SignerId, SpaceId, VaultId};
-use avendb::keys::KeyScope;
+use avendb::id::{SignerId, VaultId};
+use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Action, Kind, Principal, Role, Scope};
+use avendb::policy::{Kind, Principal, Role};
+use avendb::slice::Selector;
 use avendb_net::{Admission, Node, Options, server};
 use common::Folder;
 use iroh::{EndpointId, SecretKey};
@@ -75,9 +76,9 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     let owned = Some((Kind::Aven, vec![Principal::Vault(bob)], None, vec![server.device()]));
     assert_eq!(server.read(shape).await, owned, "owned by Bob's vault, the server its one device");
     assert_eq!(bobs.read(shape).await, owned, "on Bob's Mac too");
-    let opens = move |lab: &Lab, me| lab.opens(me, KeyScope::Vault(avenceo));
-    until("the server opens avenCEO's key, boxed for it by Bob's Mac", || server.read(opens)).await;
-    assert!(!server.read(move |lab, me| lab.opens(me, KeyScope::Vault(bob))).await, "and not Bob's vault's key");
+    let opens = move |lab: &Lab, me| lab.opens(me, KeyFam::Seed(avenceo));
+    until("the server opens avenCEO's seed, boxed for it by Bob's Mac", || server.read(opens)).await;
+    assert!(!server.read(move |lab, me| lab.opens(me, KeyFam::Seed(bob))).await, "and not Bob's vault's seed");
     assert!(!admission.honours(&anyone), "once claimed, its relay honours only the passes of people it knows");
     assert!(admission.honours(&passkey_b) && admission.admits(&bobs.id()), "Bob's among them");
     // nobody claims it again
@@ -99,12 +100,12 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_device_takes_the_servers_card_and_the_server_relays_its_space() {
+async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
     let dir = Folder::new("card");
     let admission = Admission::default();
     let server = server::open(dir.path(), admitting(&admission)).await.expect("a new server");
     let mut w = world();
-    let (coop, _, _) = handbook_spaces(&mut w);
+    let coop = handbook_ready(&mut w);
     let (mac_a, passkey_a, mac_d, passkey_d, stranger_d) = (w.mac_a, w.passkey_a, w.mac_d, w.passkey_d, w.stranger);
     let (bob_mac, carol_mac) = (endpoint(&w, w.mac_b), endpoint(&w, w.mac_c));
     let daves = node(&mut w, mac_d, &[passkey_d], 4).await;
@@ -121,26 +122,22 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_space() {
     let server_d = server.device();
     assert_eq!(mac.read(move |lab, me| lab.aven_of(me, server_d)).await, Some(v), "it names avenCEO");
     assert!(!admission.admits(&mac.id()), "the server knows no device of Alice's yet");
-    // the coop founds the Garden on Alice's Mac, gives avenCEO relay on it, and Alice writes Welcome there
-    let garden = move |lab: &mut Lab, me| {
-        let garden = lab.submit(me, &[me], Action::FoundSpace { actor: coop, nonce: 11, via: vec![] })?;
-        let garden = SpaceId::from(garden);
-        lab.submit(me, &[me], grant(Scope::Space(garden), Role::Relay, vault(v), coop, None))?;
-        let welcome = lab.create(me, coop, garden, document("Welcome", WELCOME_TEXT, me))?;
-        Ok::<_, avendb::policy::Refusal>((garden, welcome))
+    // on Alice's Mac, the coop gives this avenCEO relay on the whole of it, and Alice writes Welcome into it
+    let relayed = move |lab: &mut Lab, me| {
+        lab.issue(me, &[me], cap(coop, vault(v), Role::Relay, Selector::All))?;
+        lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))
     };
-    let (garden, welcome) = mac.act(garden).await.expect("the Garden, relayed by avenCEO, and Welcome");
-    let holds = || server.read(move |lab, me| lab.fetched(me, garden, welcome) > 0);
+    let welcome = mac.act(relayed).await.expect("the coop, relayed by avenCEO, and Welcome");
+    let holds = || server.read(move |lab, me| lab.fetched(me, welcome) > 0);
     until("the server holds Welcome's edits, never asked to sync", holds).await;
-    let opens = move |lab: &Lab, me| {
-        lab.opens(me, KeyScope::Entry(garden, welcome)) || lab.opens(me, KeyScope::Space(garden))
-    };
-    assert!(!server.read(opens).await, "and opens neither Welcome's key nor the Garden's");
+    let opens = move |lab: &Lab, me| lab.reads(me, welcome) || lab.opens(me, KeyFam::Seed(coop));
+    assert!(!server.read(opens).await, "and opens neither Welcome's key nor the coop's seed");
     let store = server.read(|lab, me| lab.store(me)).await;
     assert!(!contains(&store, WELCOME_TEXT), "Welcome's text appears nowhere in its store");
     let on_disk: Vec<u8> = std::fs::read(dir.path().join("ops")).expect("its store on disk");
     assert!(!contains(&on_disk, WELCOME_TEXT), "nor on its disk");
-    // from the Garden's logs it knows the coop's owners' devices: its relay lets them in, and no one else
+    // from the coop's log it knows the devices of the vaults acting for the coop: its relay lets them in, and no one
+    // else
     until("the server knows Alice's Mac", || async { admission.admits(&mac.id()) }).await;
     assert!(admission.admits(&bob_mac) && admission.admits(&server.id()), "and Bob's Mac, and itself");
     assert!(admission.admits(&daves.id()), "and Dave's Mac, of avenCEO's owner");

@@ -1,12 +1,12 @@
 <!--
-	One note as a docs app shows a document, the whole screen: at the top its title, where it is, its edits, the line
-	being edited, who holds a role on it and Share; on the left its main line and its proposals, each a line of its own
-	to switch to, and its variants, the notes made from it; in the middle the note on the line picked, as a page, to
-	edit there, and what a proposal changes against main, to accept it, make main match it or bring main's changes in;
-	on the right its history, every edit of that line, newest first, each with what it changed, word by word, who made
-	it, and the version it made, to view, restore, undo or propose from. A variant is a new note with what a line reads
-	now, and none of its history. All of it acts for the acting vault, whose caps the device checks as any peer does: a
-	note it only reads, it reads, every version of it.
+	One note as a docs app shows a document, the whole screen: at the top its title, its vault, its tags, its edits, the
+	line being edited, who holds a role on it and Share (this note alone, or a rule its tags match); on the left its
+	main line and its proposals, each a line of its own to switch to, and its variants, the notes made from it; in the
+	middle the note on the line picked, as a page, to edit there, and what a proposal changes against main, to accept
+	it, make main match it or bring main's changes in; on the right its history, every edit of that line, newest first,
+	each with what it changed, word by word, who made it, and the version it made, to view, restore, undo or propose
+	from. A variant is a new note with what a line reads now, and none of its history. All of it acts for the acting
+	vault, whose caps the device checks as any peer does: a note it only reads, it reads, every version of it.
 -->
 <script>
 	import { untrack } from 'svelte';
@@ -14,7 +14,8 @@
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import Share from './Share.svelte';
-	import { allows, count, hue, nameOf, ROLES, short } from './vaults.js';
+	import Tags from './Tags.svelte';
+	import { allows, count, creates, holders as rank, hue, nameOf, ROLES, short } from './vaults.js';
 
 	/**
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
@@ -24,7 +25,7 @@
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
 	 *   before: string | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
-	 * @typedef {{ space: string, entry: string, lines: LineView[], edits: EditView[] }} NoteData
+	 * @typedef {{ vault: string | null, entry: string, lines: LineView[], edits: EditView[] }} NoteData
 	 */
 
 	/** @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string }} */
@@ -45,21 +46,20 @@
 	let named = {};
 	/** a new proposal being named: the version it starts from, that version in words, and its name */
 	let naming = $state(/** @type {{ from: string[], at: string, name: string } | null} */ (null));
-	/** the space a variant goes to, and the variant made */
+	/** the vault a variant goes to, and the variant made */
 	let into = $state('');
 	let made = $state('');
 	let sharing = $state(false);
 
-	const space = $derived(world.spaces.find((s) => s.items.some((i) => i.entry === entry)));
-	const item = $derived(space?.items.find((i) => i.entry === entry));
+	const item = $derived(world.entries.find((e) => e.entry === entry));
 
 	// what the device holds changed: read the note again
 	$effect(() => {
 		void world;
-		const [sp, e] = [space?.id, entry];
-		if (!sp) return;
+		const [known, e] = [!!item, entry];
+		if (!known) return;
 		let gone = false;
-		api.note(sp, e).then(
+		api.note(e).then(
 			(/** @type {NoteData | undefined} */ n) => {
 				if (!gone) [note, loaded] = [n ?? null, true];
 			},
@@ -94,21 +94,17 @@
 	const seen = $derived(viewing ? history.find((e) => e.id === viewing) : undefined);
 	/** the line's one latest edit, which restoring changes nothing */
 	const latest = $derived(here?.heads.length === 1 ? here.heads[0] : '');
-	/** the spaces the acting vault writes in, to make a variant in */
-	const targets = $derived(world.spaces.filter((s) => allows(s.roles[actor], 'write')));
-	/** the notes this browser reads, with their spaces, by entry */
-	const notes = $derived(
-		new Map(world.spaces.flatMap((s) => s.items.filter((i) => i.kind === 'note').map((i) => [i.entry, { space: s, item: i }])))
+	/** the vaults the acting vault may add the variant to, of the note's type and with its tags, as its caps let it */
+	const targets = $derived(
+		world.vaults.filter((v) => creates(world, v.id, actor, item?.type ?? 'note', item?.tags ?? [])?.length === 0)
 	);
+	/** the notes this browser reads, by entry */
+	const notes = $derived(new Map(world.entries.filter((e) => e.kind === 'note').map((e) => [e.entry, e])));
 	const origin = $derived(item?.variantOf ? notes.get(item.variantOf) : undefined);
-	const variants = $derived([...notes.values()].filter((n) => n.item.variantOf === entry));
+	const variants = $derived([...notes.values()].filter((n) => n.variantOf === entry));
 	const unsaved = $derived(!!here && writes && !seen && (drafts[k] ?? '') !== (here.text ?? ''));
 	/** the vaults that hold a role on the note, the strongest first */
-	const holders = $derived(
-		Object.entries(item?.roles ?? {})
-			.map(([id, role]) => ({ id, role }))
-			.sort((a, b) => ['owner', 'write', 'read', 'relay'].indexOf(a.role) - ['owner', 'write', 'read', 'relay'].indexOf(b.role))
-	);
+	const holders = $derived(rank(item?.roles ?? {}));
 
 	$effect(() => {
 		const now = lines;
@@ -130,13 +126,8 @@
 	/** Line `l` quoted, as a sentence names it. @param {string | null} l */
 	const at = (l) => `“${lineName(lineOf(l))}”`;
 
-	/** A space by its founder: their home, or one of their spaces. @param {import('./vaults.js').SpaceView | undefined} s */
-	function spaceName(s) {
-		if (!s) return 'a space';
-		const v = byId.get(s.founder);
-		const n = world.spaces.filter((x) => x.founder === s.founder).indexOf(s);
-		return v?.home === s.id ? `${nameOf(v)}’s home` : `${nameOf(v)}’s space ${n + 1}`;
-	}
+	/** Vault `id`, by name. @param {string | undefined} id */
+	const vaultName = (id) => (id ? nameOf(byId.get(id)) : 'a vault');
 
 	/** Who made edit `e`: its device by name, and the vault it acted for. @param {EditView} e */
 	function who(e) {
@@ -181,20 +172,20 @@
 
 	async function propose() {
 		const name = naming?.name.trim();
-		if (!naming || !name || !space) return;
-		const made = await api.propose(actor, space.id, entry, naming.from, name);
+		if (!naming || !name) return;
+		const made = await api.propose(actor, entry, naming.from, name);
 		if (made) [line, viewing, naming] = [made, '', null];
 	}
 
 	async function save() {
-		if (!here || !space || !unsaved) return;
-		await api.setTextOn(actor, space.id, entry, here.line, drafts[k]);
+		if (!here || !unsaved) return;
+		await api.setTextOn(actor, entry, here.line, drafts[k]);
 	}
 
 	async function retitle() {
 		const title = (titles[k] ?? '').trim();
-		if (!here || !space || !title || title === (here.title ?? '')) return;
-		await api.setTitleOn(actor, space.id, entry, here.line, title);
+		if (!here || !title || title === (here.title ?? '')) return;
+		await api.setTitleOn(actor, entry, here.line, title);
 	}
 
 	/**
@@ -202,23 +193,23 @@
 	 * @param {string | null} from @param {string | null} to @param {boolean} promote
 	 */
 	async function merge(from, to, promote) {
-		if (space && (await api.merge(actor, space.id, entry, from, to, promote))) [line, viewing] = [to, ''];
+		if (await api.merge(actor, entry, from, to, promote)) [line, viewing] = [to, ''];
 	}
 
 	/** Put version `id` back on the line. @param {string} id */
 	async function restore(id) {
-		if (here && space && (await api.restore(actor, space.id, entry, here.line, [id]))) viewing = '';
+		if (here && (await api.restore(actor, entry, here.line, [id]))) viewing = '';
 	}
 
 	/** Undo edit `id` on the line, keeping every change since. @param {string} id */
 	async function undo(id) {
-		if (here && space && (await api.undo(actor, space.id, entry, here.line, id))) viewing = '';
+		if (here && (await api.undo(actor, entry, here.line, id))) viewing = '';
 	}
 
 	async function variant() {
-		const target = into || targets[0]?.id;
-		if (!here || !space || !target) return;
-		made = (await api.variant(actor, space.id, entry, here.line, target)) ?? '';
+		const target = targets.some((v) => v.id === into) ? into : targets[0]?.id;
+		if (!here || !target) return;
+		made = (await api.variant(actor, entry, here.line, target)) ?? '';
 	}
 
 	/**
@@ -268,7 +259,8 @@
 				<h1 class="title">{(seen ? seen.title : here?.title) ?? item?.title ?? 'A note'}</h1>
 			{/if}
 			<p class="meta">
-				{spaceName(space)}{note ? ` · ${count(note.edits.length, 'edit')}` : ''} ·
+				{#if item}<Tags {world} {actor} {api} {busy} entry={item} />{/if}
+				{vaultName(item?.vault)}{note ? ` · ${count(note.edits.length, 'edit')}` : ''} ·
 				{#if unsaved}<b class="unsaved">Unsaved changes</b>{:else}Every edit signed and saved{/if}
 			</p>
 		</div>
@@ -296,7 +288,7 @@
 		</div>
 	</header>
 
-	{#if sharing && space}
+	{#if sharing && item}
 		<div class="sharebar">
 			<span class="who">
 				{#each holders as h (h.id)}
@@ -304,11 +296,11 @@
 				{/each}
 				{#if item?.public}<span class="chip">everyone reads</span>{/if}
 			</span>
-			<Share {world} {actor} {api} {busy} space={space.id} {entry} ondone={() => (sharing = false)} />
+			<Share {world} {actor} {api} {busy} vault={item.vault} {entry} ondone={() => (sharing = false)} />
 		</div>
 	{/if}
 
-	{#if !space}
+	{#if !item}
 		<p class="soft pad">This browser doesn’t know this note.</p>
 	{:else if !loaded}
 		<p class="soft pad">Opening the note…</p>
@@ -376,29 +368,29 @@
 				<section class="variants">
 					<h4>Variants <small>{variants.length || ''}</small></h4>
 					{#if origin}
-						<a class="variant" href="#notes/{origin.item.entry}">
-							<Icon name="back" size={13} /> <span>Variant of <b>“{origin.item.title}”</b></span>
+						<a class="variant" href="#notes/{origin.entry}">
+							<Icon name="back" size={13} /> <span>Variant of <b>“{origin.title}”</b></span>
 						</a>
 					{:else if item?.variantOf}
 						<p class="hint soft">A variant of a note {nameOf(as)} doesn’t read.</p>
 					{/if}
-					{#each variants as v (v.item.entry)}
-						<a class="variant" href="#notes/{v.item.entry}">
-							<Icon name="variant" size={13} /> <span><b>“{v.item.title}”</b> <small>in {spaceName(v.space)}</small></span>
+					{#each variants as v (v.entry)}
+						<a class="variant" href="#notes/{v.entry}">
+							<Icon name="variant" size={13} /> <span><b>“{v.title}”</b> <small>in {vaultName(v.vault)}</small></span>
 						</a>
 					{/each}
 					{#if targets.length}
 						{#if targets.length > 1}
 							<select class="field" bind:value={into} aria-label="Make the variant in">
-								{#each targets as s (s.id)}<option value={s.id}>{spaceName(s)}</option>{/each}
+								{#each targets as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
 							</select>
 						{/if}
 						<button class="btn add" disabled={busy} onclick={variant}>
 							<Icon name="variant" size={14} /> Make a variant
 						</button>
 						<p class="hint soft">
-							A new note{targets.length === 1 ? ` in ${spaceName(targets[0])}` : ''} with what {at(here.line)} reads now, and
-							none of its history.
+							A new note{targets.length === 1 ? ` in ${nameOf(targets[0])}` : ''}, with its tags, of what {at(here.line)} reads
+							now, and none of its history.
 						</p>
 						{#if made}
 							<p class="made">Made a variant. <a href="#notes/{made}">Open it</a></p>

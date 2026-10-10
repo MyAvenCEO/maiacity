@@ -8,11 +8,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use avendb::cast::*;
-use avendb::id::{BlobId, EntryId, SignerId, SpaceId};
-use avendb::keys::KeyScope;
+use avendb::id::{BlobId, EntryId, SignerId, VaultId};
+use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::lens::Status;
-use avendb::policy::{Action, Role, Scope};
+use avendb::policy::{Action, Kind, Principal};
 use avendb::sign::Hello;
 use avendb::wire::Wire;
 use avendb_net::{ALPN, Node, Options, exporter, pq_provider};
@@ -37,9 +37,9 @@ fn meet(nodes: &[&Node]) {
     }
 }
 
-/// Whether the node's device shows todo `e` of space `sp`.
-async fn shows(n: &Node, sp: SpaceId, e: EntryId) -> bool {
-    n.read(move |lab, me| status(lab, me, sp, e).is_some()).await
+/// Whether the node's device shows todo `e`.
+async fn shows(n: &Node, e: EntryId) -> bool {
+    n.read(move |lab, me| status(lab, me, e).is_some()).await
 }
 
 /// Whether the node's device holds each of the McEliece keys `keys`.
@@ -96,7 +96,7 @@ async fn say_hello(from: &Endpoint, to: &Node, hello: Saying<'_>) -> (Option<Hel
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn scenario_5_over_iroh() {
     let mut w = world();
-    let (coop, space, _) = handbook_spaces(&mut w);
+    let coop = handbook_ready(&mut w);
     let (mac_a, passkey_a, server_d, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.server, w.mac_b, w.passkey_b);
     let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
     let server = node(&mut w, server_d, &[], 2).await;
@@ -106,16 +106,19 @@ async fn scenario_5_over_iroh() {
         n.know(server.addr());
         server.know(n.addr());
     }
-    let write = move |lab: &mut Lab, me| lab.create(me, coop, space, document_v1("Welcome", WELCOME_TEXT, me));
+    let write = move |lab: &mut Lab, me| {
+        lab.create(me, coop, coop, "doc", &[], document_v1("Welcome", WELCOME_TEXT, me))
+    };
     let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
-    let reads = || bob.read(move |lab, me| text(lab, me, space, welcome, 2).as_deref() == Some(WELCOME_TEXT));
+    let reads = || bob.read(move |lab, me| text(lab, me, welcome, 2).as_deref() == Some(WELCOME_TEXT));
     until("Bob's Mac reads Welcome, never asked to sync", reads).await;
     assert_eq!(bob.proven(mac.id()), None, "Bob's Mac never reached Alice's: Welcome came through the server");
-    assert!(server.read(move |lab, me| lab.fetched(me, space, welcome) > 0).await, "the server holds Welcome's edits");
+    assert!(server.read(move |lab, me| lab.fetched(me, welcome) > 0).await, "the server holds Welcome's edits");
     let opens = move |lab: &Lab, me| {
-        lab.opens(me, KeyScope::Entry(space, welcome)) || lab.opens(me, KeyScope::Space(space))
+        let cell = lab.state(me).entry(welcome).expect("Welcome").cell();
+        lab.reads(me, welcome) || lab.opens(me, KeyFam::Cell(coop, cell)) || lab.opens(me, KeyFam::Seed(coop))
     };
-    assert!(!server.read(opens).await, "the server opens neither Welcome's key nor the Handbook's");
+    assert!(!server.read(opens).await, "the server opens neither Welcome's key, nor its cell's, nor the coop's");
     let store = server.read(|lab, me| lab.store(me)).await;
     assert!(!contains(&store, WELCOME_TEXT), "Welcome's text appears nowhere in the server's store");
     quiet(&[&mac, &server, &bob]).await;
@@ -128,7 +131,7 @@ async fn scenario_5_over_iroh() {
 async fn scenario_17_over_iroh() {
     let mut w = world();
     let t = todos_on(&mut w);
-    let (space, door, seeds, solar, bob_vault) = (t.space, t.door, t.seeds, t.solar, w.bob);
+    let (door, seeds, solar, bob_vault) = (t.door, t.seeds, t.solar, w.bob);
     let (mac_a, passkey_a, mac_c, passkey_c, mac_b, passkey_b) =
         (w.mac_a, w.passkey_a, w.mac_c, w.passkey_c, w.mac_b, w.passkey_b);
     let stranger_d = w.stranger;
@@ -139,20 +142,20 @@ async fn scenario_17_over_iroh() {
     let stranger = node(&mut w, stranger_d, &[], 5).await;
     meet(&[&mac, &carol, &bob, &stranger]);
     let straight = "with the server offline, Carol's Mac gets the door todo straight from Alice's Mac";
-    until(straight, || shows(&carol, space, door)).await;
-    let none = carol.read(move |lab, me| [seeds, solar].iter().all(|&e| lab.fetched(me, space, e) == 0)).await;
+    until(straight, || shows(&carol, door)).await;
+    let none = carol.read(move |lab, me| [seeds, solar].iter().all(|&e| lab.fetched(me, e) == 0)).await;
     assert!(none, "and nothing of the other two todos");
     let asked = stranger.sync_with(mac.id()).await.expect("the stranger asks Alice's Mac");
     assert_eq!(asked, 0, "a device without a cap that asks gets nothing");
-    assert_eq!(stranger.read(move |lab, me| lab.fetched(me, space, door)).await, 0, "of the door todo neither");
-    until("Bob's Mac gets the door todo too", || shows(&bob, space, door)).await;
-    let doing = move |lab: &mut Lab, me| lab.edit(me, bob_vault, space, door, |i| i.set_status(Status::Doing));
+    assert_eq!(stranger.read(move |lab, me| lab.fetched(me, door)).await, 0, "of the door todo neither");
+    until("Bob's Mac gets the door todo too", || shows(&bob, door)).await;
+    let doing = move |lab: &mut Lab, me| lab.edit(me, bob_vault, door, |i| i.set_status(Status::Doing));
     bob.act(doing).await.expect("Bob starts on it on Bob's Mac");
-    let in_progress = || carol.read(move |lab, me| status(lab, me, space, door) == Some(Status::Doing));
+    let in_progress = || carol.read(move |lab, me| status(lab, me, door) == Some(Status::Doing));
     until("Bob's and Carol's Macs sync directly: Carol sees it in progress", in_progress).await;
-    let todo = move |lab: &Lab, me| lab.item(me, space, door).and_then(|i| i.as_todo());
+    let todo = move |lab: &Lab, me| lab.item(me, door).and_then(|i| i.as_todo());
     assert_eq!(carol.read(todo).await, bob.read(todo).await, "both show the same todo");
-    assert_eq!(w.lab.fetched(w.server, space, door), 0, "the server never got it");
+    assert_eq!(w.lab.fetched(w.server, door), 0, "the server never got it");
     quiet(&[&mac, &carol, &bob, &stranger]).await;
 }
 
@@ -205,16 +208,17 @@ async fn a_connection_is_served_only_once_its_hello_proves_its_device() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     let mut w = world();
-    let (coop, _, _) = handbook_spaces(&mut w);
-    // the coop founds a space on Alice's Mac, whose new key is sealed to through the McEliece keys
-    let found = Action::FoundSpace { actor: coop, nonce: 7, via: vec![] };
-    let found = w.lab.submit(w.mac_a, &[w.mac_a], found).expect("a space");
-    let garden = SpaceId::from(found);
-    let relay = grant(Scope::Space(garden), Role::Relay, vault(w.avenceo), coop, None);
-    w.lab.submit(w.mac_a, &[w.mac_a], relay).expect("the server relays it");
+    let coop = handbook_ready(&mut w);
+    // the coop founds the Garden, an aven vault it owns, on Alice's Mac, Alice and Bob consenting: the public half of
+    // its seed, which caps over it are sealed to, is a new McEliece key; and it gives the server relay on all of it
+    let (owners, nonce) = (vec![Principal::Vault(coop)], 7);
+    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+    let garden = w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("the Garden");
+    let garden = VaultId::from(garden);
+    relay_on(&mut w, garden);
     let server_holds = w.lab.blob_ids(w.server);
     let new: Vec<BlobId> = w.lab.blob_ids(w.mac_a).into_iter().filter(|b| !server_holds.contains(b)).collect();
-    assert!(!new.is_empty(), "the space's key brings McEliece keys the server lacks");
+    assert!(!new.is_empty(), "the Garden's seed brings McEliece keys the server lacks");
     let key = |b| w.lab.blob(w.mac_a, b).expect("a key").to_vec();
     let keys: Vec<(BlobId, Vec<u8>)> = new.iter().map(|&b| (b, key(b))).collect();
     let (mac_a, passkey_a, server_d, mac_b, passkey_b, mac_c, passkey_c) =
@@ -224,9 +228,9 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     let bob = node(&mut w, mac_b, &[passkey_b], 3).await;
     let carol = node(&mut w, mac_c, &[passkey_c], 4).await;
     meet(&[&mac, &server, &bob, &carol]);
-    until("the server fetches each new McEliece key with the space's log", || holds(&server, new.clone())).await;
+    until("the server fetches each new McEliece key with the Garden's log", || holds(&server, new.clone())).await;
     until("and Bob's Mac", || holds(&bob, new.clone())).await;
-    until("which opens the new space's key", || bob.read(move |lab, me| lab.opens(me, KeyScope::Space(garden)))).await;
+    until("which opens the Garden's seed", || bob.read(move |lab, me| lab.opens(me, KeyFam::Seed(garden)))).await;
     assert!(!holds(&carol, new.clone()).await, "Carol's Mac, outside the coop, holds none of them");
     // by hand: over iroh-blobs, Alice's Mac hands each key to Bob's Mac and to no other; each asks Alice's Mac
     // first, so its hello proves it there, even if all it holds came through the server
@@ -254,11 +258,11 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_big_answer_comes_a_page_at_a_time() {
     let mut w = world();
-    let (coop, space, _) = handbook_spaces(&mut w);
+    let coop = handbook_ready(&mut w);
     let notes: Vec<EntryId> = (0..16)
         .map(|i| {
             let note = document(&format!("Note {i}"), "Seeds for the greenhouse.", w.mac_a);
-            w.lab.create(w.mac_a, coop, space, note).expect("Alice's Mac writes a note")
+            w.lab.create(w.mac_a, coop, coop, "doc", &[], note).expect("Alice's Mac writes a note")
         })
         .collect();
     let request = w.lab.request(w.server, w.mac_a);
@@ -271,7 +275,7 @@ async fn a_big_answer_comes_a_page_at_a_time() {
     meet(&[&mac, &server]);
     let holds = || {
         let notes = notes.clone();
-        server.read(move |lab, me| notes.iter().all(|&e| lab.fetched(me, space, e) > 0))
+        server.read(move |lab, me| notes.iter().all(|&e| lab.fetched(me, e) > 0))
     };
     until("the server holds every note", holds).await;
     quiet(&[&mac, &server]).await;
@@ -285,7 +289,7 @@ async fn a_big_answer_comes_a_page_at_a_time() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_peer_out_of_reach_is_tried_less_and_less_often() {
     let mut w = world();
-    handbook_spaces(&mut w);
+    handbook_ready(&mut w);
     let (mac_a, passkey_a) = (w.mac_a, w.passkey_a);
     // Alice's Mac on its own: every peer it knows is out of reach
     let opts = Options { retry: Duration::from_millis(100), ..Options::local() };

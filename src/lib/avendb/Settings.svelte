@@ -1,17 +1,35 @@
 <!--
 	A vault's settings, as its aside lists them: About (what it is, who approves a change to it, how this browser acts
 	for it), Owners and devices (who owns it, what it owns, the devices that act for it, and for the person's own vault
-	this browser's name, linking the next device and forgetting this one), Access (which vault holds which role on each
-	of its spaces, the grants in force, revoking them, and sharing a space as the acting vault), and Sync (the devices
-	that receive each space's edits, and whether each opens them or only relays their ciphertext). All of it is the
-	device's world (avendb-browser's `World`); sharing and revoking go out acting for the acting vault, and the rules
-	check them against its caps.
+	this browser's name, linking the next device and forgetting this one), Access (every cap in force over it, each a
+	role on a slice of it in words, what it reaches now and who may revoke it; sharing a slice of it as the acting
+	vault; and the caps it holds in other vaults), and Sync (its cells, the entries the same caps reach under one key,
+	each with the devices that receive its edits and whether each opens them or only relays their ciphertext). All of it
+	is the device's world (avendb-browser's `World`); sharing and revoking go out acting for the acting vault, and the
+	rules check them against its caps.
 -->
 <script>
-	import { untrack } from 'svelte';
 	import { native } from '$lib/native';
 	import Mark from './Mark.svelte';
-	import { allows, count, KIND_HINTS, KINDS, list, nameOf, ROLE_HINTS, ROLES, short } from './vaults.js';
+	import Share from './Share.svelte';
+	import {
+		cellWords,
+		count,
+		granteeOf,
+		KIND_HINTS,
+		KINDS,
+		list,
+		nameOf,
+		reads,
+		relabelWords,
+		ROLE_HINTS,
+		ROLES,
+		short,
+		shares,
+		sliceWords,
+		STRONGEST,
+		titleOf
+	} from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -26,9 +44,14 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const v = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(vault)));
 	const as = $derived(byId.get(actor));
-	const spaces = $derived(world.spaces.filter((s) => s.founder === vault));
 	const owned = $derived(world.vaults.filter((x) => x.owners.some((o) => 'vault' in o && o.vault === vault)));
-	const others = $derived(world.vaults.filter((x) => x.id !== actor));
+	/** the caps in force over the vault, the strongest first; and those it holds in other vaults */
+	const over = $derived(
+		world.caps.filter((c) => c.over === vault).sort((a, b) => STRONGEST.indexOf(a.role) - STRONGEST.indexOf(b.role))
+	);
+	const held = $derived(world.caps.filter((c) => c.grantee === vault && c.over !== vault));
+	/** its cells, the entries the same caps reach, its own first */
+	const cells = $derived(world.cells.filter((x) => x.vault === vault).sort((a, b) => a.caps.length - b.caps.length));
 	/** every device this browser knows, by its id: its name and the vault it is a device of */
 	const devices = $derived(
 		new Map(world.vaults.flatMap((x) => x.devices.map((d) => [d.id, { ...d, vault: x }])))
@@ -36,15 +59,6 @@
 
 	let renaming = $state(/** @type {string | null} */ (null));
 	let naming = $state(/** @type {string | null} */ (null));
-	/** @type {Record<string, { grantee: string, role: string }>} each space's share form */
-	let forms = $state({});
-
-	$effect(() => {
-		const [now, to] = [spaces, others[0]?.id ?? ''];
-		untrack(() => {
-			for (const s of now) forms[s.id] ??= { grantee: to, role: 'read' };
-		});
-	});
 
 	/** A device's name: its card's, or what it is. @param {string} id */
 	function deviceName(id) {
@@ -62,24 +76,14 @@
 		return `It acts for it through ${list(chain)}, which ${v.via.length === 1 ? 'owns it' : 'own it in turn'}.`;
 	});
 
-	/** The scope a grant covers, as a person reads it. @param {import('./vaults.js').SpaceView} s @param {import('./vaults.js').GrantView} g */
-	function scope(s, g) {
-		if (!g.entry) return 'the whole space';
-		const it = s.items.find((i) => i.entry === g.entry);
-		return it?.title ? `“${it.title}”` : 'one entry';
+	/** The entries a cell holds, as a person reads them: titled where the acting vault reads them. @param {string[]} es */
+	function titles(es) {
+		const known = es.map((e) => world.entries.find((x) => x.entry === e)).filter((x) => !!x);
+		const named = known.filter((x) => reads(x, actor) && x.title).map((x) => titleOf(world, x.entry));
+		const sealed = es.length - named.length;
+		const more = named.length > 5 ? [`${named.length - 5} more`] : [];
+		return list([...named.slice(0, 5), ...more, ...(sealed ? [`${sealed} sealed for ${nameOf(as)}`] : [])]);
 	}
-
-	/** @param {import('./vaults.js').SpaceView} s */
-	async function give(s) {
-		const f = forms[s.id];
-		const role = f.grantee === 'public' ? 'read' : f.role;
-		await api.grant(actor, s.id, null, role, f.grantee);
-	}
-
-	const holders = (/** @type {Record<string, string>} */ roles) =>
-		Object.entries(roles).sort(
-			(a, b) => ['owner', 'write', 'read', 'relay'].indexOf(a[1]) - ['owner', 'write', 'read', 'relay'].indexOf(b[1])
-		);
 </script>
 
 {#if tab === 'about'}
@@ -108,7 +112,7 @@
 						</button>
 						<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
 					</div>
-					<p class="soft">Its name is its profile, a note in its home, end-to-end encrypted like the others.</p>
+					<p class="soft">Its name is its profile, an entry of it, end-to-end encrypted like the others.</p>
 				{/if}
 			{/if}
 		</article>
@@ -240,92 +244,85 @@
 		{/if}
 	</div>
 {:else if tab === 'access'}
-	{#each spaces as s, n (s.id)}
-		{@const f = forms[s.id]}
-		{@const mayShare = allows(s.roles[actor], 'owner')}
-		<section class="space">
-			<h2>{s.id === v.home ? 'Home' : `Space ${n + 1}`}</h2>
-			<div class="cards">
-				<article class="card">
-					<h3>Who holds what</h3>
-					<ul class="list">
-						{#each holders(s.roles) as [id, role] (id)}
-							<li title={ROLE_HINTS[/** @type {import('./vaults.js').Role} */ (role)]}>
-								<Mark vault={byId.get(id)} size={28} />
-								<b>{nameOf(byId.get(id))}</b>
-								<span class="chip" class:accent={id === actor}>{ROLES[/** @type {import('./vaults.js').Role} */ (role)]}</span>
-								{#if id === s.founder}<span class="soft">founded it</span>{/if}
-							</li>
-						{/each}
-						{#if s.public}<li><span class="chip">Everyone reads it</span></li>{/if}
-					</ul>
-					<p class="soft">On the whole space. A note shared on its own shows its own holders.</p>
-				</article>
+	<div class="cards">
+		<article class="card wide">
+			<h3>Caps over {nameOf(v)}</h3>
+			<p class="soft">
+				Each is a role on a slice of it: a rule over its entries' types and tags, or chosen entries, never a fixed group. What
+				it reaches changes as entries are written and tagged. {nameOf(v)} itself holds every right over all of it.
+			</p>
+			<ul class="list grants">
+				{#each over as c (c.id)}
+					<li>
+						<span class="cap">
+							{#if c.grantee === 'public'}<span class="chip">Everyone</span>{:else}<Mark vault={byId.get(c.grantee)} size={28} />{/if}
+							<span>
+								<b>{granteeOf(c, world)}</b>
+								<span class="chip" class:accent={c.grantee === actor} title={ROLE_HINTS[c.role]}>{ROLES[c.role]}</span>
+								{sliceWords(c.slice, world)}
+								<small class="soft">
+									· reaches {count(c.entries.length, 'entry', 'entries')} now · given by {nameOf(byId.get(c.issuer))}{c.parent
+										? ', through an owner cap of its own'
+										: ''}{c.slice?.relabel.length ? ` · ${relabelWords(c.slice)}` : ''}
+								</small>
+							</span>
+						</span>
+						{#if c.revokers.includes(actor)}
+							<button class="btn quiet danger" disabled={busy} onclick={() => api.revoke(actor, c.id, c.role)}>Revoke</button>
+						{/if}
+					</li>
+				{:else}
+					<li class="soft">No cap: only {nameOf(v)} itself holds anything in it.</li>
+				{/each}
+			</ul>
+		</article>
 
-				<article class="card">
-					<h3>Grants in force</h3>
-					{#if !s.grants.length}<p class="soft">None: only its founder holds it.</p>{/if}
-					<ul class="list grants">
-						{#each s.grants as g (g.id)}
-							<li>
-								<span>
-									<b>{nameOf(byId.get(g.issuer))}</b> gave
-									<b>{g.grantee === 'public' ? 'everyone' : nameOf(byId.get(g.grantee))}</b>
-									<span class="chip">{ROLES[g.role]}</span> on {scope(s, g)}
-								</span>
-								{#if g.revokers.includes(actor)}
-									<button class="btn quiet danger" disabled={busy} onclick={() => api.revoke(actor, g.id, g.role)}>Revoke</button>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				</article>
+		<article class="card">
+			<h3>Share some of it as {nameOf(as)}</h3>
+			{#if shares(world, vault, actor)}
+				<Share {world} {actor} {api} {busy} {vault} />
+			{:else}
+				<p class="soft">
+					{nameOf(as)} holds no owner cap over {nameOf(v)}: only the vault itself, or a vault it lets own some of it, shares it
+					on.
+				</p>
+			{/if}
+		</article>
 
-				<article class="card">
-					<h3>Share the space as {nameOf(as)}</h3>
-					{#if mayShare && f}
-						<div class="row">
-							<select class="field" bind:value={f.grantee} aria-label="Share with">
-								{#each others as x (x.id)}<option value={x.id}>{nameOf(x)}</option>{/each}
-								<option value="public">Everyone (public)</option>
-							</select>
-							{#if f.grantee !== 'public'}
-								<select class="field" bind:value={f.role} aria-label="Role">
-									<option value="relay">relays (ciphertext only)</option>
-									<option value="read">reads</option>
-									<option value="write">writes</option>
-									<option value="owner">owns (your passkey approves)</option>
-								</select>
-							{/if}
-							<button class="btn primary" disabled={busy || !f.grantee} onclick={() => give(s)}>Share</button>
-						</div>
-						<p class="soft">{ROLE_HINTS[/** @type {import('./vaults.js').Role} */ (f.grantee === 'public' ? 'read' : f.role)]}.</p>
-					{:else}
-						<p class="soft">
-							{nameOf(as)} {s.roles[actor] ? `only ${ROLES[s.roles[actor]]} it` : 'holds no cap on it'}: only a vault that owns
-							a space shares it on.
-						</p>
-					{/if}
-				</article>
-			</div>
-		</section>
-	{:else}
-		<div class="empty">{nameOf(v)} has founded no space yet.</div>
-	{/each}
+		<article class="card">
+			<h3>What {nameOf(v)} holds elsewhere</h3>
+			<ul class="list">
+				{#each held as c (c.id)}
+					<li>
+						<Mark vault={byId.get(c.over)} size={28} />
+						<span><span class="chip">{ROLES[c.role]}</span> {sliceWords(c.slice, world)} of <b>{nameOf(byId.get(c.over))}</b></span>
+					</li>
+				{:else}
+					<li class="soft">No cap in another vault.</li>
+				{/each}
+			</ul>
+		</article>
+	</div>
 {:else if tab === 'sync'}
 	<p class="lead-in soft">
-		A device receives a space's edits only if it acts for a vault holding a cap on it. A device whose vault only relays it
-		keeps and forwards the ciphertext, and opens none of it.
+		{nameOf(v)}'s entries sync by cells: the entries the same caps reach share one key, and go to the devices of {nameOf(v)}
+		and of each vault those caps name, and to no one else. A tag that takes an entry into a cap's slice, or out of it, moves
+		it to another cell. A device whose vault only relays a cell keeps and forwards its ciphertext, and opens none of it.
 	</p>
-	{#each spaces as s, n (s.id)}
-		<section class="space">
-			<h2>{s.id === v.home ? 'Home' : `Space ${n + 1}`}</h2>
+	{#each cells as x (x.id)}
+		<section class="cell">
+			<h2>{cellWords(x, world)}</h2>
+			<p class="soft">
+				{count(x.entries.length, 'entry', 'entries')}: {titles(x.entries)} · key generation {x.generation}{x.public
+					? ' · everyone reads it'
+					: ''}
+			</p>
 			<ul class="card list">
-				{#each s.syncs as x (x.device)}
+				{#each x.syncs as d (d.device)}
 					<li>
-						<b>{deviceName(x.device)}</b>
-						<span class="soft">of {nameOf(devices.get(x.device)?.vault)}, through {nameOf(byId.get(x.through))}</span>
-						{#if x.opens}
+						<b>{deviceName(d.device)}</b>
+						<span class="soft">of {nameOf(devices.get(d.device)?.vault)}, through {nameOf(byId.get(d.through))}</span>
+						{#if d.opens}
 							<span class="chip ok">opens it</span>
 						{:else}
 							<span class="chip">relays its ciphertext only</span>
@@ -337,7 +334,7 @@
 			</ul>
 		</section>
 	{:else}
-		<div class="empty">{nameOf(v)} has founded no space yet.</div>
+		<div class="empty">{nameOf(v)} holds no entry yet.</div>
 	{/each}
 {/if}
 
@@ -399,6 +396,17 @@
 		justify-content: space-between;
 	}
 
+	.cap {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		line-height: 1.5;
+	}
+
+	.wide {
+		grid-column: 1 / -1;
+	}
+
 	.list li input.field {
 		flex: 1 1 10rem;
 	}
@@ -414,11 +422,17 @@
 		height: 28px;
 	}
 
-	.space {
+	.cell {
 		margin-bottom: 1.8rem;
 	}
 
-	.space h2 {
+	.cell > p {
+		margin: 0 0 0.6rem;
+		font-size: 0.84rem;
+		line-height: 1.5;
+	}
+
+	.cell h2 {
 		margin: 0 0 0.6rem;
 		font-family: var(--font-body);
 		font-size: 1.05rem;

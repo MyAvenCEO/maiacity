@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # avenDB's page's WebAssembly: avendb-browser, the page's own device (Your account), with its JS modules, into
 # src/lib/avendb/device/. The package is committed, so the site builds without Rust: run this after changing avendb,
-# avendb-net or avendb-browser, and commit what it writes. (avendb-web, the simulated Lab's tile, is no longer on the
-# page; its tests still run with the workspace's.)
+# avendb-net or avendb-browser, and commit what it writes.
 #
 #   avendb/scripts/build-web.sh
 #

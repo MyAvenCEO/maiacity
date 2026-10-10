@@ -4,137 +4,142 @@
 //! nothing else: what the device can't open shows as sealed, as the server sees all of it.
 //!
 //! The page's words are the core's own: an edit (`Edit`); a proposal (`Proposal`), a line of a note's history that its
-//! main line may take in; and a variant (`Lab::variant`), a new note made from a line of another.
+//! main line may take in; a variant (`Lab::variant`), a new note made from a line of another; a cap, what a vault
+//! shares of its entries; and a cell, the entries of a vault the same caps reach, under one key.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use avendb::doc::Item;
 use avendb::history::{Change, History};
-use avendb::id::{BlobId, EditId, EntryId, GrantId, SignerId, SpaceId, VaultId};
-use avendb::keys::{KeyScope, Recipient};
+use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
 use avendb::lens::{self, DocV2, Lens, Schema};
-use avendb::policy::{Action, Grantee, Line, Principal, Proposal, Scope, State};
+use avendb::policy::{Action, Entry, Grantee, Line, Principal, Proposal, State};
 use avendb::sign::{Classical, Signature, SignerKeys};
 use avendb::wire::Wire as _;
 use serde_json::{Map, Value, json};
 
-use crate::{Firsts, firsts, hex, is_card, is_profile, kind_name, role_name, roles};
+use crate::{grantee_name, hex, kind_name, role_name, roles};
 
 /// The most edits of one note whose text the note page shows, the latest: each version is made from scratch from the
 /// updates it holds.
 const SHOWN: usize = 200;
 
 /// Vault `vault`'s database as device `me` holds it, for the page's database studio: how many edits and McEliece keys
-/// the device holds in all; the schemas and lenses the app ships (`lens::blobs`); and each space the vault founded, in
-/// the order founded, with its key's epoch, the edits the device holds on it by kind, the schemas and lenses its lane
-/// publishes, and every entry, cards and profiles too (`row`).
+/// the device holds in all; the schemas and lenses the app ships (`lens::blobs`); its seed's generation; the edits the
+/// device holds on it by kind; the schemas and lenses its lane publishes; each cell its entries are in, the first
+/// first, with the caps that reach it beside the vault's caps on the whole of it, its key's generation and how many
+/// entries it holds; and every entry, cards and profiles too, in the order they were created (`row`).
 pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let st = lab.state(me);
-    let first = firsts(st);
     let (edits, keys) = lab.size(me);
-    let founded = st.spaces().iter().filter(|s| s.founder == vault);
-    let spaces: Vec<Value> = founded
-        .map(|s| {
-            let lane = lab.lane(me, s.id);
-            json!({
-                "id": hex(&s.id.0),
-                "public": st.is_public(Scope::Space(s.id)),
-                "epoch": st.epoch(KeyScope::Space(s.id)),
-                "edits": counts(lab, me, s.id),
-                "schemas": lane.schemas().map(schema).collect::<Vec<_>>(),
-                "lenses": lane.lenses().map(lens).collect::<Vec<_>>(),
-                "rows": s.entries.iter().map(|&e| row(lab, me, s.id, e, &first)).collect::<Vec<_>>(),
-            })
+    let lane = lab.lane(me, vault);
+    let entries: Vec<&Entry> = st.entries().iter().filter(|en| en.vault == vault).collect();
+    let mut cells: Vec<CellId> = vec![];
+    for en in &entries {
+        if !cells.contains(&en.cell()) {
+            cells.push(en.cell());
+        }
+    }
+    let cell = |x: &CellId| {
+        json!({
+            "id": hex(&x.0),
+            "caps": caps(st.cell_caps(*x).unwrap_or_default()),
+            "generation": st.epoch(KeyFam::Cell(vault, *x)),
+            "entries": entries.iter().filter(|en| en.cell() == *x).count(),
         })
-        .collect();
+    };
     let schemas = [&*lens::DOCUMENT_V1, &*lens::DOCUMENT_V2, &*lens::TODO_V1, &*lens::TODO_V2].map(schema);
     json!({
         "vault": hex(&vault.0),
         "held": { "edits": edits, "keys": keys },
         "builtIn": { "schemas": schemas, "lenses": [lens(&lens::DOCUMENT_LENS), lens(&lens::TODO_LENS)] },
-        "spaces": spaces,
+        "seed": st.epoch(KeyFam::Seed(vault)),
+        "edits": counts(lab, me, vault),
+        "schemas": lane.schemas().map(schema).collect::<Vec<_>>(),
+        "lenses": lane.lenses().map(lens).collect::<Vec<_>>(),
+        "cells": cells.iter().map(cell).collect::<Vec<_>>(),
+        "rows": entries.iter().map(|en| row(lab, me, en)).collect::<Vec<_>>(),
     })
 }
 
-/// Entry `entry` of space `space` as the studio's table editor shows it: its record as the device opens it on the main
-/// line (`null` if it opens none of it), its `kind` as the record names it (`"sealed"` then), whether it is a device's
-/// card or a vault's profile, the schemas its edits were made under, how many edits of it the device counts and holds,
-/// its lines (the main line and each proposal) and its proposals' names, its key's epoch, the size of its Loro
-/// document, the device and the vault of its first edit, and who may read it.
-fn row(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId, first: &Firsts) -> Value {
-    let (st, sc) = (lab.state(me), Scope::Entry(space, entry));
-    let item = lab.item(me, space, entry);
+/// Entry `en` as the studio's table editor shows it: its type and its tags now, if the device reads them; its record
+/// as the device opens it on the main line (`null` if it opens none of it), and its `kind` as the record names it
+/// (`"sealed"` then); the schemas its edits were made under; how many edits of it the device counts and holds; its
+/// lines (the main line and each proposal) and its proposals' names; its cell and its key's generation there; the size
+/// of its Loro document; the device and the vault of its first edit; and who may read it.
+fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
+    let (st, entry) = (lab.state(me), en.id);
+    let item = lab.item(me, entry);
     let record = item.map(Item::record);
     let field = |name: &str| record.as_ref().and_then(|r| r.get(name)).cloned();
     let kind = field("kind").and_then(|k| k.as_str().map(str::to_string));
     let kind = kind.unwrap_or_else(|| if item.is_some() { "record" } else { "sealed" }.into());
-    let doc = item.and_then(Item::as_document);
-    let tag = doc.as_ref().and_then(|d| {
-        if is_card(d) {
-            Some("card")
-        } else if is_profile(d) {
-            Some("profile")
-        } else {
-            None
-        }
-    });
-    let history = lab.history(me, space, entry);
+    let meaning = lab.meaning(me, entry);
+    let history = lab.history(me, entry);
     let lines = history.map(History::lines).unwrap_or_default();
     let name = |b: EditId| history.and_then(|h| h.name(b)).map_or(Value::Null, Value::from);
     let proposals: Vec<Value> = lines.iter().flatten().map(|&b| name(b)).collect();
-    let (author, actor) = first.get(&(space, entry)).map_or((None, None), |(a, v)| (Some(hex(&a.0)), Some(hex(&v.0))));
+    let author = st.write(en.creation).map(|w| hex(&w.author.0));
     let authored: Vec<String> = item.map(|i| i.authored().iter().map(|b| b.to_hex()).collect()).unwrap_or_default();
-    let roles: Map<String, Value> = roles(st, sc).iter().map(|(v, r)| (hex(&v.0), role_name(*r).into())).collect();
+    let (v, x) = (en.vault, en.cell());
+    let roles: Map<String, Value> = roles(st, v, x).iter().map(|(v, r)| (hex(&v.0), role_name(*r).into())).collect();
     json!({
         "entry": hex(&entry.0),
+        "type": meaning.as_ref().map(|m| m.attrs.ty.as_str().to_string()),
+        "tags": meaning.as_ref().map(|m| m.attrs.tags.iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>()),
         "kind": kind,
-        "tag": tag,
         "title": field("title"),
         "record": record,
         "authored": authored,
         "edits": history.map_or(0, |h| h.changes().len()),
-        "held": lab.fetched(me, space, entry),
+        "held": lab.fetched(me, entry),
         "lines": lines.len(),
         "proposals": proposals,
-        "epoch": st.epoch(KeyScope::Entry(space, entry)),
+        "cell": hex(&x.0),
+        "generation": st.epoch(KeyFam::Cell(v, x)),
         "bytes": item.map_or(0, |i| i.bytes().len()),
         "author": author,
-        "actor": actor,
-        "public": st.is_public(sc),
+        "actor": hex(&en.creator.0),
+        "public": st.public_key(KeyFam::Cell(v, x)),
         "roles": roles,
     })
 }
 
-/// The edits device `me` holds on space `space`, by kind: its founding, the writes and checkpoints of its entries, the
-/// keys edits of its keys and its entries', the grants on it or on its entries and the revocations of those, and what
-/// was published into its lane.
-fn counts(lab: &Lab, me: SignerId, space: SpaceId) -> Value {
-    let log = lab.log(me);
+/// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves and checkpoints of its
+/// entries, the keys edits of its keys and its entries', the caps over it and the revocations of those, and what was
+/// published into its lane.
+fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
+    let (log, st) = (lab.log(me), lab.state(me));
     let edits = || log.edits().iter().zip(log.ids());
-    let on = |id: &EditId| GrantId::from(*id);
-    let grants: BTreeSet<GrantId> = edits()
-        .filter(|(edit, _)| matches!(&edit.action, Action::Grant(g, _) if g.scope.space() == space))
-        .map(|(_, id)| on(id))
+    let of = |e: &EntryId| st.entry(*e).map(|en| en.vault) == Some(vault);
+    let caps: HashSet<CapId> = edits()
+        .filter(|(edit, _)| matches!(&edit.action, Action::Cap(c, _) if c.over == vault))
+        .map(|(_, id)| CapId::from(*id))
         .collect();
-    let (mut founded, mut writes, mut checkpoints, mut keys, mut revokes, mut published) = (0, 0, 0, 0, 0, 0);
+    let (mut founded, mut writes, mut moves, mut checkpoints, mut keys, mut revokes, mut published) =
+        (0, 0, 0, 0, 0, 0, 0);
     for (edit, id) in edits() {
         match &edit.action {
-            Action::FoundSpace { .. } if SpaceId::from(*id) == space => founded += 1,
-            Action::Write { space: s, .. } if *s == space => writes += 1,
-            Action::Checkpoint { space: s, .. } if *s == space => checkpoints += 1,
-            Action::Keys { key: KeyScope::Space(s) | KeyScope::Entry(s, _), .. } if *s == space => keys += 1,
-            Action::Revoke { grant, .. } if grants.contains(grant) => revokes += 1,
-            Action::Publish { space: s, .. } if *s == space => published += 1,
+            Action::Genesis { .. } if VaultId::from(*id) == vault => founded += 1,
+            Action::Write { vault: v, .. } if *v == vault => writes += 1,
+            Action::Move { vault: v, .. } if *v == vault => moves += 1,
+            Action::Checkpoint { entry, .. } if of(entry) => checkpoints += 1,
+            Action::Keys { name: KeyName::Scoped(k, _), .. } if k.vault() == vault => keys += 1,
+            Action::Keys { name: KeyName::Entry(e, ..), .. } if of(e) => keys += 1,
+            Action::Revoke { cap, .. } if caps.contains(cap) => revokes += 1,
+            Action::Publish { vault: v, .. } if *v == vault => published += 1,
             _ => {}
         }
     }
     json!({
         "founded": founded,
         "writes": writes,
+        "moves": moves,
         "checkpoints": checkpoints,
         "keys": keys,
-        "grants": grants.len(),
+        "caps": caps.len(),
         "revokes": revokes,
         "published": published,
     })
@@ -160,12 +165,12 @@ fn lens(l: &Lens) -> Value {
 pub fn history(lab: &Lab, me: SignerId) -> Value {
     let (held, st) = (lab.log(me), lab.state(me));
     let counted: HashSet<EditId> = st.all_writes().iter().map(|w| w.edit).collect();
-    let grants: HashMap<GrantId, Scope> = held
+    let caps: HashMap<CapId, VaultId> = held
         .edits()
         .iter()
         .zip(held.ids())
         .filter_map(|(edit, id)| match &edit.action {
-            Action::Grant(g, _) => Some((GrantId::from(*id), g.scope)),
+            Action::Cap(c, _) => Some((CapId::from(*id), c.over)),
             _ => None,
         })
         .collect();
@@ -188,7 +193,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
                 "parents": ids(&edit.parents),
                 "depth": edit.depth,
                 "bytes": signed.map_or(0, |s| s.to_wire().len()),
-                "vaults": concerns(st, id, &edit.action, &grants).iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+                "vaults": concerns(st, id, &edit.action, &caps).iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
                 "counted": matches!(edit.action, Action::Write { .. }).then(|| counted.contains(&id)),
             })
         })
@@ -197,8 +202,10 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
 }
 
 /// What edit `id` does, as the History view shows it: its kind, and its fields, ids in hex. What is sealed, a write's
-/// body, keys' boxes, shows by its size or its recipient alone, and a public key by whether there is one. A write's
-/// `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one.
+/// body, a cap's slice, keys' boxes, shows by its size or its recipient alone, and a public key by whether there is
+/// one. A write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one; a
+/// write that creates its entry names the cell it goes in (`create`), and its `stay` the move that put the entry where
+/// it is now (`null` for where it was created).
 fn action(id: EditId, a: &Action) -> (&'static str, Value) {
     let vias = |via: &[VaultId]| via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
     match a {
@@ -232,23 +239,24 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         Action::SetRoot { vault, root, keep } => {
             ("setRoot", json!({ "vault": hex(&vault.0), "root": root.map(|r| hex(&r.0)), "keep": keep.len() }))
         }
-        Action::FoundSpace { actor, via, .. } => ("foundSpace", json!({ "actor": hex(&actor.0), "via": vias(via) })),
-        Action::Grant(g, via) => (
-            "grant",
+        Action::Cap(c, via) => (
+            "cap",
             json!({
-                "scope": scope(g.scope),
-                "role": role_name(g.role),
-                "grantee": grantee(&g.grantee),
-                "issuer": hex(&g.issuer.0),
-                "parent": g.parent.map(|p| hex(&p.0)),
+                "over": hex(&c.over.0),
+                "role": role_name(c.role),
+                "grantee": grantee_name(c.grantee),
+                "wide": c.wide,
+                "issuer": hex(&c.issuer.0),
+                "parent": c.parent.map(|p| hex(&p.0)),
                 "via": vias(via),
+                "sealed": c.select.len(),
             }),
         ),
-        Action::Revoke { grant, actor, keep, via } => (
+        Action::Revoke { cap, actor, keep, via } => (
             "revoke",
-            json!({ "grant": hex(&grant.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
+            json!({ "cap": hex(&cap.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
         ),
-        Action::Write { space, entry, actor, epoch, deps, proposal, via, body } => {
+        Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body } => {
             let line = match proposal {
                 Proposal::Main => None,
                 Proposal::New => Some(id),
@@ -257,37 +265,48 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
             (
                 "write",
                 json!({
-                    "space": hex(&space.0),
+                    "vault": hex(&vault.0),
                     "entry": hex(&entry.0),
                     "actor": hex(&actor.0),
-                    "epoch": epoch,
+                    "stay": stay.map(|s| hex(&s.0)),
+                    "generation": generation,
                     "deps": ids(deps),
                     "line": line.map(|b| hex(&b.0)),
                     "starts": *proposal == Proposal::New,
                     "via": vias(via),
+                    "create": create.as_deref().map(caps),
                     "sealed": body.len(),
                 }),
             )
         }
-        Action::Keys { key, epoch, id: key_id, public, boxes, clear } => (
+        Action::Move { vault, entry, to, keep, via } => (
+            "move",
+            json!({
+                "vault": hex(&vault.0),
+                "entry": hex(&entry.0),
+                "to": caps(to),
+                "keep": keep.len(),
+                "via": vias(via),
+            }),
+        ),
+        Action::Keys { name, id: key_id, public, boxes, clear } => (
             "keys",
             json!({
-                "key": key_scope(*key),
-                "epoch": epoch,
+                "key": key_name(*name),
                 "id": hex(&key_id.0),
                 "public": public.is_some(),
                 "boxes": boxes.iter().map(|b| recipient(&b.to)).collect::<Vec<_>>(),
                 "clear": clear.is_some(),
             }),
         ),
-        Action::Publish { space, actor, via, blob } => {
+        Action::Publish { vault, actor, via, blob } => {
             let title = Schema::parse(blob)
                 .map(|s| s.title().to_string())
                 .or_else(|| Lens::parse(blob).map(|l| l.title().to_string()));
             (
                 "publish",
                 json!({
-                    "space": hex(&space.0),
+                    "vault": hex(&vault.0),
                     "actor": hex(&actor.0),
                     "via": vias(via),
                     "blob": BlobId::of(blob).to_hex(),
@@ -296,8 +315,8 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 }),
             )
         }
-        Action::Checkpoint { space, entry, covers } => {
-            ("checkpoint", json!({ "space": hex(&space.0), "entry": hex(&entry.0), "covers": ids(covers) }))
+        Action::Checkpoint { entry, covers } => {
+            ("checkpoint", json!({ "entry": hex(&entry.0), "covers": ids(covers) }))
         }
     }
 }
@@ -319,9 +338,10 @@ fn signature(sig: &Signature) -> Value {
 }
 
 /// The vaults edit `id` concerns, by device `st`'s view: the vault it founds or changes, the vault it acts for and the
-/// owners it acts through, the founder of the space it touches, and a grant's grantee.
-fn concerns(st: &State, id: EditId, a: &Action, grants: &HashMap<GrantId, Scope>) -> Vec<VaultId> {
-    let founder = |s: SpaceId| st.founder(s);
+/// owners it acts through, the vault a cap is over and its grantee, the vault of the entry it touches or of the key
+/// it boxes.
+fn concerns(st: &State, id: EditId, a: &Action, caps: &HashMap<CapId, VaultId>) -> Vec<VaultId> {
+    let of = |e: &EntryId| st.entry(*e).map(|en| en.vault);
     let mut vaults: Vec<VaultId> = match a {
         Action::Genesis { owners, .. } => {
             let owners = owners.iter().filter_map(|o| if let Principal::Vault(v) = o { Some(*v) } else { None });
@@ -334,25 +354,23 @@ fn concerns(st: &State, id: EditId, a: &Action, grants: &HashMap<GrantId, Scope>
         Action::SetThreshold { vault, .. }
         | Action::AddDevice { vault, .. }
         | Action::RemoveDevice { vault, .. }
-        | Action::SetRoot { vault, .. } => vec![*vault],
-        Action::FoundSpace { actor, .. } => vec![*actor],
-        Action::Grant(g, _) => {
-            let to = match g.grantee {
+        | Action::SetRoot { vault, .. }
+        | Action::Move { vault, .. } => vec![*vault],
+        Action::Cap(c, _) => {
+            let to = match c.grantee {
                 Grantee::Principal(Principal::Vault(v)) => Some(v),
                 _ => None,
             };
-            [Some(g.issuer), to, founder(g.scope.space())].into_iter().flatten().collect()
+            [Some(c.issuer), Some(c.over), to].into_iter().flatten().collect()
         }
-        Action::Revoke { grant, actor, .. } => {
-            [Some(*actor), grants.get(grant).and_then(|s| founder(s.space()))].into_iter().flatten().collect()
-        }
-        Action::Write { space, actor, .. } | Action::Publish { space, actor, .. } => {
-            [Some(*actor), founder(*space)].into_iter().flatten().collect()
-        }
-        Action::Keys { key: KeyScope::Vault(v), .. } => vec![*v],
-        Action::Keys { key: KeyScope::Space(s) | KeyScope::Entry(s, _), .. } | Action::Checkpoint { space: s, .. } => {
-            founder(*s).into_iter().collect()
-        }
+        Action::Revoke { cap, actor, .. } => [Some(*actor), caps.get(cap).copied()].into_iter().flatten().collect(),
+        Action::Write { vault, actor, .. } | Action::Publish { vault, actor, .. } => vec![*actor, *vault],
+        Action::Keys { name, .. } => match *name {
+            KeyName::Signer(_) => vec![],
+            KeyName::Scoped(k, _) => vec![k.vault()],
+            KeyName::Entry(e, ..) => of(&e).into_iter().collect(),
+        },
+        Action::Checkpoint { entry, .. } => of(entry).into_iter().collect(),
     };
     vaults.extend(a.via().unwrap_or_default());
     let mut seen = HashSet::new();
@@ -367,44 +385,37 @@ fn principal(p: &Principal) -> Value {
     }
 }
 
-fn grantee(g: &Grantee) -> Value {
-    match g {
-        Grantee::Public => Value::from("public"),
-        Grantee::Principal(p) => principal(p),
-    }
+fn caps(xs: &[CapId]) -> Vec<String> {
+    xs.iter().map(|c| hex(&c.0)).collect()
 }
 
-fn scope(s: Scope) -> Value {
-    match s {
-        Scope::Space(sp) => json!({ "space": hex(&sp.0) }),
-        Scope::Entry(sp, e) => json!({ "space": hex(&sp.0), "entry": hex(&e.0) }),
-    }
-}
-
-fn key_scope(k: KeyScope) -> Value {
+/// A key of the schedule as the History view names it: a signer's own key, one generation of a vault's seed, of a
+/// cap's key or of a cell's key, or the key of an entry in one of its stays at one generation of that stay's cell.
+fn key_name(k: KeyName) -> Value {
     match k {
-        KeyScope::Vault(v) => json!({ "vault": hex(&v.0) }),
-        KeyScope::Space(sp) => json!({ "space": hex(&sp.0) }),
-        KeyScope::Entry(sp, e) => json!({ "space": hex(&sp.0), "entry": hex(&e.0) }),
+        KeyName::Signer(s) => json!({ "signer": hex(&s.0) }),
+        KeyName::Scoped(KeyFam::Seed(v), g) => json!({ "seed": hex(&v.0), "generation": g }),
+        KeyName::Scoped(KeyFam::Cap(v, c), g) => json!({ "vault": hex(&v.0), "cap": hex(&c.0), "generation": g }),
+        KeyName::Scoped(KeyFam::Cell(v, x), g) => json!({ "vault": hex(&v.0), "cell": hex(&x.0), "generation": g }),
+        KeyName::Entry(e, stay, g) => {
+            json!({ "entry": hex(&e.0), "stay": stay.map(|s| hex(&s.0)), "generation": g })
+        }
     }
 }
 
-/// Whom a key's box goes to: a signer, or the holders of a key of the schedule at its epoch.
+/// Whom a key's box goes to: a signer, or the holders of a key of the schedule.
 fn recipient(r: &Recipient) -> Value {
-    match r {
-        Recipient::Signer(s) => json!({ "signer": hex(&s.0) }),
-        Recipient::Key { key, epoch, .. } => json!({ "key": key_scope(*key), "epoch": epoch }),
-    }
+    key_name(r.name())
 }
 
-/// Note `entry` of space `space` as device `me` holds it, for the page's note page: its lines, the main line first,
-/// then each proposal in the order it started, each with its name (`named`), the version it started from, its heads,
-/// its history (its own edits and every edit they build on, oldest first), and the note it shows there; and every edit
-/// of it the device counts, in the order the device took them (`edit`). `None` if it counts none.
-pub fn note(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId) -> Option<Value> {
-    let h = lab.history(me, space, entry)?;
+/// Note `entry` as device `me` holds it, for the page's note page: its lines, the main line first, then each proposal
+/// in the order it started, each with its name (`named`), the version it started from, its heads, its history (its own
+/// edits and every edit they build on, oldest first), and the note it shows there; and every edit of it the device
+/// counts, in the order the device took them (`edit`). `None` if it counts none.
+pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
+    let h = lab.history(me, entry)?;
     let line = |line| {
-        let doc = lab.item_on(me, space, entry, line).and_then(Item::as_document);
+        let doc = lab.item_on(me, entry, line).and_then(Item::as_document);
         let start = line.and_then(|b| h.get(b));
         json!({
             "line": line.map(|b: EditId| hex(&b.0)),
@@ -420,7 +431,8 @@ pub fn note(lab: &Lab, me: SignerId, space: SpaceId, entry: EntryId) -> Option<V
     let lines: Vec<Value> = h.lines().into_iter().map(line).collect();
     let shown = h.changes().len().saturating_sub(SHOWN);
     let edits: Vec<Value> = h.changes().iter().enumerate().map(|(i, c)| edit(h, me, c, i >= shown)).collect();
-    Some(json!({ "space": hex(&space.0), "entry": hex(&entry.0), "lines": lines, "edits": edits }))
+    let vault = lab.vault_of_entry(me, entry).map(|v| hex(&v.0));
+    Some(json!({ "entry": hex(&entry.0), "vault": vault, "lines": lines, "edits": edits }))
 }
 
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the line it extends, what

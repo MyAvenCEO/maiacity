@@ -1,6 +1,5 @@
 //! The plan's acceptance scenarios on the Lab (`avendb::scenarios`), each its own test, numbered as in the plan: every
-//! check of each must hold. The avenDB tile's Lab plays the same scenarios and shows each check.
-//! `avendb/spec/AvenDB/Examples.lean` runs them on the Lean model.
+//! check of each must hold. `avendb/spec/AvenDB/Examples.lean` runs them on the Lean model.
 
 use avendb::scenarios::{scenario, SCENARIOS};
 
@@ -38,7 +37,7 @@ fn scenario_03_the_coop_key_opens_only_on_owner_devices() {
 }
 
 #[test]
-fn scenario_04_spaces() {
+fn scenario_04_a_vaults_own_entries() {
     play("4");
 }
 
@@ -118,11 +117,53 @@ fn scenario_18_a_a_backup_passkey_when_the_passkey_is_lost_too() {
 }
 
 #[test]
+fn scenario_19_share_every_entry_of_a_type() {
+    play("19");
+}
+
+#[test]
+fn scenario_20_share_by_a_tag() {
+    play("20");
+}
+
+#[test]
+fn scenario_21_a_tag_moves_an_entry_out_of_a_slice() {
+    play("21");
+}
+
+#[test]
+fn scenario_22_asking_for_a_tag() {
+    play("22");
+}
+
+#[test]
+fn scenario_23_creating_through_a_cap() {
+    play("23");
+}
+
+#[test]
+fn scenario_24_a_cap_resting_on_a_cap() {
+    play("24");
+}
+
+#[test]
+fn scenario_25_wide_caps_relays_and_public() {
+    play("25");
+}
+
+#[test]
+fn scenario_26_a_cell_that_comes_back_into_use_moves_on() {
+    play("26");
+}
+
+#[test]
 fn every_scenario_has_its_test() {
-    let tested =
-        ["1", "1b", "2", "3", "3b", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"];
+    let tested = [
+        "1", "1b", "2", "3", "3b", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18",
+        "18b", "19", "20", "21", "22", "23", "24", "25", "26",
+    ];
     let numbers: Vec<&str> = SCENARIOS.iter().map(|s| s.number).collect();
-    assert_eq!(numbers, [&tested[..], &["18", "18b"]].concat());
+    assert_eq!(numbers, tested);
 }
 
 #[test]

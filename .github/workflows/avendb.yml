@@ -18,7 +18,6 @@ on:
       - '!avendb/docs/**'
       - '!avendb/scripts/**'
       - '!avendb/**/*.md'
-      - '!avendb/crates/avendb-web/**'
       - '!avendb/crates/avendb-browser/**'
       - '.github/workflows/avendb.yml'
   workflow_dispatch:

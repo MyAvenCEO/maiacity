@@ -99,19 +99,24 @@ export class NativeDevice {
 		return call('profile', vault, name);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} title @param {string} body */
-	write(actor, space, title, body) {
-		return call('write', actor, space, title, body);
+	/** @param {string} actor @param {string} vault @param {string} title @param {string} body @param {string[]} tags */
+	write(actor, vault, title, body, tags) {
+		return call('write', actor, vault, title, body, tags);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} title */
-	todo(actor, space, title) {
-		return call('todo', actor, space, title);
+	/** @param {string} actor @param {string} vault @param {string} title @param {string[]} tags */
+	todo(actor, vault, title, tags) {
+		return call('todo', actor, vault, title, tags);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} entry @param {string} status */
-	setStatus(actor, space, entry, status) {
-		return call('setStatus', actor, space, entry, status);
+	/** @param {string} actor @param {string} entry @param {string} status */
+	setStatus(actor, entry, status) {
+		return call('setStatus', actor, entry, status);
+	}
+
+	/** @param {string} actor @param {string} entry @param {string[]} add @param {string[]} remove */
+	tag(actor, entry, add, remove) {
+		return call('tag', actor, entry, add, remove);
 	}
 
 	/** @param {string} vault */
@@ -123,63 +128,64 @@ export class NativeDevice {
 		return call('history');
 	}
 
-	/** @param {string} space @param {string} entry */
-	note(space, entry) {
-		return call('note', space, entry);
+	/** @param {string} entry */
+	note(entry) {
+		return call('note', entry);
 	}
 
 	/**
-	 * @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {number} block
-	 * @param {string} text
+	 * @param {string} actor @param {string} entry @param {string | null} line @param {number} block @param {string} text
 	 */
-	setTextOn(actor, space, entry, line, block, text) {
-		return call('setTextOn', actor, space, entry, line, block, text);
+	setTextOn(actor, entry, line, block, text) {
+		return call('setTextOn', actor, entry, line, block, text);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} title */
-	setTitleOn(actor, space, entry, line, title) {
-		return call('setTitleOn', actor, space, entry, line, title);
+	/** @param {string} actor @param {string} entry @param {string | null} line @param {string} title */
+	setTitleOn(actor, entry, line, title) {
+		return call('setTitleOn', actor, entry, line, title);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} entry @param {string[]} from @param {string} name */
-	propose(actor, space, entry, from, name) {
-		return call('propose', actor, space, entry, from, name);
+	/** @param {string} actor @param {string} entry @param {string[]} from @param {string} name */
+	propose(actor, entry, from, name) {
+		return call('propose', actor, entry, from, name);
 	}
 
 	/**
-	 * @param {string} actor @param {string} space @param {string} entry @param {string | null} from
-	 * @param {string | null} into @param {boolean} promote
+	 * @param {string} actor @param {string} entry @param {string | null} from @param {string | null} into
+	 * @param {boolean} promote
 	 */
-	merge(actor, space, entry, from, into, promote) {
-		return call('merge', actor, space, entry, from, into, promote);
+	merge(actor, entry, from, into, promote) {
+		return call('merge', actor, entry, from, into, promote);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string[]} version */
-	restore(actor, space, entry, line, version) {
-		return call('restore', actor, space, entry, line, version);
+	/** @param {string} actor @param {string} entry @param {string | null} line @param {string[]} version */
+	restore(actor, entry, line, version) {
+		return call('restore', actor, entry, line, version);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} edit */
-	undo(actor, space, entry, line, edit) {
-		return call('undo', actor, space, entry, line, edit);
+	/** @param {string} actor @param {string} entry @param {string | null} line @param {string} edit */
+	undo(actor, entry, line, edit) {
+		return call('undo', actor, entry, line, edit);
 	}
 
-	/** @param {string} actor @param {string} space @param {string} entry @param {string | null} line @param {string} into */
-	variant(actor, space, entry, line, into) {
-		return call('variant', actor, space, entry, line, into);
+	/** @param {string} actor @param {string} entry @param {string | null} line @param {string} into */
+	variant(actor, entry, line, into) {
+		return call('variant', actor, entry, line, into);
 	}
 
 	/**
-	 * A grant, as the page's device makes it; the passkey's ceremony, if it needs one, runs in the app's sheet.
-	 * @param {string} issuer @param {string} space @param {string | undefined} entry @param {string} role @param {string} grantee
+	 * A cap, as the page's device issues it: role `role` on what `slice` selects of vault `over`, to vault `grantee` or
+	 * `"public"`; the passkey's ceremony, if it needs one, runs in the app's sheet.
+	 * @param {string} issuer @param {string} over @param {import('./vaults.js').Slice} slice @param {string} role
+	 * @param {string} grantee
 	 */
-	grant(issuer, space, entry, role, grantee) {
-		return call('grant', issuer, space, entry ?? null, role, grantee);
+	share(issuer, over, slice, role, grantee) {
+		return call('share', issuer, over, slice, role, grantee);
 	}
 
-	/** @param {string} actor @param {string} grant */
-	revoke(actor, grant) {
-		return call('revoke', actor, grant);
+	/** @param {string} actor @param {string} cap */
+	revoke(actor, cap) {
+		return call('revoke', actor, cap);
 	}
 
 	/** New vaults its person's vault owns, in one ceremony, in the app's sheet. @param {{ name: string, kind: string }[]} vaults */

@@ -3,16 +3,16 @@ import AvenDB.Sync
 /-!
 # Logs, frontiers and forks
 
-Every edit belongs to one log: a vault's, a space's or an entry's (`Edit.log?`). An edit names as its parents the
-frontier of its own log as its device held it, so each log is a small history of its own, and two copies of a log
-compare by their frontiers alone: one hash per log on the wire. A device that asks a peer sends, for each log it holds,
-its frontier and a few edits further back (`haves`): those 1, 2, 4, 8, … steps back from the frontier, and the oldest.
-The peer sends back only what lies beyond the ones it holds (`respondSince`): the edits of the log that are not among
-them and that none of them builds on (`missing`). A peer that is behind holds the whole frontier and sends exactly what
-the device lacks; one that lacks the device's latest edits still holds one of them close by, so it sends back little the
-device holds. That withholds nothing the device lacks (T19), because a device sends only edits of the part of a log
-whose whole past it holds (`closedPart`): an edit whose parent hasn't arrived waits outside, with whatever builds on it,
-until the gap is filled.
+Every edit belongs to one log (`Edit.log?`, in `Sync.lean`): a vault's, a cap's, a cell's or an entry's. An edit names
+as its parents the frontier of its own log as its device held it, so each log is a small history of its own, and two
+copies of a log compare by their frontiers alone: one hash per log on the wire. A device that asks a peer sends, for
+each log it holds, its frontier and a few edits further back (`haves`): those 1, 2, 4, 8, … steps back from the
+frontier, and the oldest. The peer sends back only what lies beyond the ones it holds (`respondSince`): the edits of
+the log that are not among them and that none of them builds on (`missing`). A peer that is behind holds the whole
+frontier and sends exactly what the device lacks; one that lacks the device's latest edits still holds one of them
+close by, so it sends back little the device holds. That withholds nothing the device lacks (T19), because a device
+sends only edits of the part of a log whose whole past it holds (`closedPart`): an edit whose parent hasn't arrived
+waits outside, with whatever builds on it, until the gap is filled.
 
 A device signs its edits in a log one after another, each building on the one before, so two edits of one device in one
 log where neither builds on the other (`forks`) mean its key signed twice from the same past: a cloned device, one
@@ -23,30 +23,6 @@ removal still sorts after everything its device had seen, in whatever log.
 -/
 
 namespace AvenDB
-
-/-- A log: a vault's, a space's, or an entry's. -/
-inductive LogId where
-  | vault (v : VaultId)
-  | space (sp : SpaceId)
-  | entry (sp : SpaceId) (e : EntryId)
-  deriving DecidableEq, Repr
-
-/-- The log of a space or of an entry. -/
-def Scope.log : Scope → LogId
-  | .space sp   => .space sp
-  | .entry sp e => .entry sp e
-
-/-- The log edit `edit` belongs to, among the edits `edits`: a vault edit and a vault's key go to the vault's log; a
-    write and a checkpoint to their entry's; a space's founding, a grant, a revocation, a space or entry key and a
-    schema or lens to the log of the scope they are about (`authScope?`), so a revocation joins the log of the grant it
-    revokes. -/
-def Edit.log? (edits : List Edit) (edit : Edit) : Option LogId :=
-  match edit.vaultOf? with
-  | some v => some (.vault v)
-  | none =>
-    match edit.item? with
-    | some (sp, e) => some (.entry sp e)
-    | none => (edit.authScope? edits).map Scope.log
 
 section
 variable (lg : Edit → Option LogId)
@@ -130,16 +106,15 @@ end
 /-! ## Sync by frontiers -/
 
 /-- The logs the edits `edits` belong to, each once. -/
-def logsOf (edits : List Edit) : List LogId := (edits.filterMap (Edit.log? edits)).eraseDups
+def logsOf (edits : List Edit) : List LogId := (edits.filterMap Edit.log?).eraseDups
 
 /-- The frontier of each log a device holding `edits` holds: what its digest of the log hashes. -/
-def frontiers (edits : List Edit) (l : LogId) : List EditId := frontier (Edit.log? edits) edits l
+def frontiers (edits : List Edit) (l : LogId) : List EditId := frontier Edit.log? edits l
 
-/-- The edits among `edits` outside every closed part, smallest first: waiting for their past, or of no log a peer
-    holding them knows, as a revocation of a grant it never held. -/
+/-- The edits among `edits` outside every closed part, smallest first: waiting for their past, or of no log. -/
 def loose (edits : List Edit) : List EditId :=
-  let out := edits.filter fun o => match o.log? edits with
-    | some l => !(closedPart (Edit.log? edits) edits l).any (·.id == o.id)
+  let out := edits.filter fun o => match o.log? with
+    | some l => !(closedPart Edit.log? edits l).any (·.id == o.id)
     | none   => true
   (out.map Edit.id).eraseDups.mergeSort fun a b => decide (a ≤ b)
 
@@ -151,13 +126,13 @@ structure Ask where
   loose : List EditId
 
 /-- What a device holding `edits` sends when it asks a peer. -/
-def asks (edits : List Edit) : Ask := ⟨haves (Edit.log? edits) edits, loose edits⟩
+def asks (edits : List Edit) : Ask := ⟨haves Edit.log? edits, loose edits⟩
 
 /-- What a peer holding `edits` sends device `d` that asked with `a` (`asks`): what `respond` would send, but none of
     the device's loose edits, and of each log only what lies beyond the edits it sent of it. -/
 def respondSince (edits : List Edit) (d : SignerId) (a : Ask) : List Edit :=
-  (respond edits d).filter fun edit => !a.loose.contains edit.id && match edit.log? edits with
-    | some l => !(ancestors (Edit.log? edits) edits l (a.haves l)).contains edit.id
+  (respond edits d).filter fun edit => !a.loose.contains edit.id && match edit.log? with
+    | some l => !(ancestors Edit.log? edits l (a.haves l)).contains edit.id
     | none   => true
 
 /-- The signers that are some vault's devices in what a peer holding `edits` knows. -/
@@ -165,6 +140,6 @@ def devicesIn (edits : List Edit) (s : SignerId) : Bool := (view edits).vaults.a
 
 /-- Every fork among the edits a peer holds, log by log. -/
 def allForks (edits : List Edit) : List (EditId × EditId) :=
-  (logsOf edits).flatMap (forks (Edit.log? edits) (devicesIn edits) edits)
+  (logsOf edits).flatMap (forks Edit.log? (devicesIn edits) edits)
 
 end AvenDB

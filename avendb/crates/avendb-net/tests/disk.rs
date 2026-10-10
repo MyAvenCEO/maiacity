@@ -1,6 +1,7 @@
 //! A node's store on disk (P8b): the signed edits its device holds, in the order it took them, and the McEliece keys
-//! they name come back whole; a record a crash cut short is dropped and the file cut back, an edit whose signatures
-//! fail is dropped and the file written anew, and a node started again from its folder holds and shows what it held.
+//! they name come back whole; a record a crash cut short is dropped and the file cut back, a store of another format
+//! is put aside whole, an edit whose signatures fail is dropped and the file written anew, and a node started again
+//! from its folder holds and shows what it held.
 
 mod common;
 
@@ -26,7 +27,7 @@ fn edits_and_keys_come_back_in_the_order_they_were_taken() {
     assert_eq!(ids, w.lab.log(w.mac_a).ids(), "every edit, in the order the Mac took them");
     assert_eq!((disk.len(), saved.blob_count()), w.lab.size(w.mac_a), "and every McEliece key");
     w.lab.restore_backup(w.mac_a, &saved);
-    assert_eq!(text(&w.lab, w.mac_a, h.space, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "it shows Welcome again");
+    assert_eq!(text(&w.lab, w.mac_a, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "it shows Welcome again");
 }
 
 #[test]
@@ -58,6 +59,34 @@ fn a_record_cut_short_is_dropped_and_the_file_cut_back() {
 }
 
 #[test]
+fn a_store_of_another_format_is_put_aside_whole() {
+    let mut w = world();
+    handbook(&mut w);
+    let dir = Folder::new("format");
+    Disk::open(dir.path()).expect("a store").0.adopt(&w.lab, w.mac_a).expect("saved");
+    // an earlier avenDB's store: its first edit, and every one after it, of another format version
+    let edits = dir.path().join("ops");
+    let mut bytes = fs::read(&edits).expect("the edits");
+    bytes[4] = bytes[4].wrapping_add(1);
+    fs::write(&edits, &bytes).expect("changed");
+    let (disk, saved) = Disk::open(dir.path()).expect("a new store");
+    assert!(disk.is_empty() && saved.signed().is_empty(), "the node starts on an empty store");
+    assert_eq!(saved.blob_count(), 0, "with no key");
+    let aside = fs::read_dir(dir.path().join("aside")).expect("aside");
+    let aside: Vec<_> = aside.map(|e| e.expect("one").path()).collect();
+    assert_eq!(aside.len(), 1, "the old store put aside, once");
+    assert_eq!(fs::read(aside[0].join("ops")).expect("its edits"), bytes, "its edits as they were");
+    let keys = fs::read_dir(aside[0].join("keys")).expect("its keys").count();
+    assert_eq!(keys, w.lab.size(w.mac_a).1, "and its keys");
+    // the new store keeps what it takes from then on
+    drop(disk);
+    Disk::open(dir.path()).expect("the new store").0.adopt(&w.lab, w.mac_a).expect("saved");
+    let (_, saved) = Disk::open(dir.path()).expect("the new store again");
+    assert_eq!(saved.signed().len(), w.lab.log(w.mac_a).ids().len(), "every edit");
+    assert_eq!(fs::read_dir(dir.path().join("aside")).expect("aside").count(), 1, "and nothing more put aside");
+}
+
+#[test]
 fn an_edit_whose_signatures_fail_is_dropped_and_the_store_written_anew() {
     let mut w = world();
     handbook(&mut w);
@@ -82,22 +111,22 @@ fn an_edit_whose_signatures_fail_is_dropped_and_the_store_written_anew() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_node_started_again_holds_and_shows_what_it_held() {
     let mut w = world();
-    let (coop, space, _) = handbook_spaces(&mut w);
+    let coop = handbook_ready(&mut w);
     let (mac_a, passkey_a) = (w.mac_a, w.passkey_a);
     let dir = Folder::new("restart");
     let opts = Options { store: Some(dir.path().to_path_buf()), ..Options::local() };
     let mac = Node::spawn(w.lab.split(mac_a, &[passkey_a], [1; 32]), mac_a, opts.clone()).await.expect("a node");
-    let write = move |lab: &mut Lab, me| lab.create(me, coop, space, document("Welcome", WELCOME_TEXT, me));
+    let write = move |lab: &mut Lab, me| lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me));
     let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
     mac.shutdown().await.expect("it stops");
     drop(mac);
     // the same Mac from a world that never saw Welcome: what it took comes from its store
     let mut again = world();
-    handbook_spaces(&mut again);
+    handbook_ready(&mut again);
     let lab = again.lab.split(mac_a, &[passkey_a], [1; 32]);
-    assert!(lab.item(mac_a, space, welcome).is_none(), "a world of its own holds no Welcome");
+    assert!(lab.item(mac_a, welcome).is_none(), "a world of its own holds no Welcome");
     let mac = Node::spawn(lab, mac_a, opts).await.expect("the node again");
-    let shows = move |lab: &Lab, me| text(lab, me, space, welcome, 2);
+    let shows = move |lab: &Lab, me| text(lab, me, welcome, 2);
     assert_eq!(mac.read(shows).await.as_deref(), Some(WELCOME_TEXT), "started again, it shows Welcome");
     mac.shutdown().await.expect("it stops");
 }
