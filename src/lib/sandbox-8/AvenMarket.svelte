@@ -26,7 +26,6 @@
 	// browsers can't call Liquid (no CORS), so every build, the local Mac one too, asks through api.maia.city, which holds the key
 	const LIQUID = { relay: import.meta.env.VITE_LIQUID_RELAY || 'https://api.maia.city/api/liquid/decide' };
 	import PriceChart from './PriceChart.svelte';
-	import DepthChart from './DepthChart.svelte';
 	import { short } from './format.js';
 	import StatsView from './StatsView.svelte';
 	import { stateFor, questionsFor, promptFor, askLiquid, askBox, boxModels, boxModel, applyAnswers, LIQUID_MODEL, BOX_URL, BOX_HERE } from './brain.js';
@@ -1105,7 +1104,7 @@
 	{/if}
 	{#if page === 'stats'}
 		<div class="statspage">
-			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} />
+			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} market={snap.market} />
 		</div>
 	{/if}
 	{#if page === 'policy' || page === 'world'}
@@ -1142,7 +1141,6 @@
 			<button class:on={tab === 'decisions'} onclick={() => (tab = 'decisions')}>Activity</button>
 			<button class:on={tab === 'wants'} onclick={() => (tab = 'wants')}>Wants</button>
 			<button class:on={tab === 'prices'} onclick={() => (tab = 'prices')}>Prices</button>
-			<button onclick={() => setView('avens')} title="Everything about {snap.aven.name}: its brain, stock, days and ledger">{snap.aven.name} ›</button>
 		</nav>
 
 		{#if tab === 'wants'}
@@ -1176,7 +1174,6 @@
 		{:else if tab === 'prices'}
 		<section>
 			<PriceChart series={snap.series} now={snap.t} />
-			<DepthChart market={snap.market} />
 			<table class="avgs">
 				<thead><tr><th>Good</th><th>Market</th><th>Avg traded, 24 h</th><th>Units, 24 h</th></tr></thead>
 				<tbody>

@@ -5,12 +5,14 @@
 <script>
 	import { GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, DAY_S } from './economy.js';
 	import LineChart from './LineChart.svelte';
+	import DepthChart from './DepthChart.svelte';
 
-	/** @type {{ stats: any[], series: Record<string, { t: number, price: number }[]>, now: number, avens: { id: number, name: string, colour: string, alive: boolean }[] }} */
-	let { stats, series, now, avens } = $props();
+	/** @type {{ stats: any[], series: Record<string, { t: number, price: number }[]>, now: number, avens: { id: number, name: string, colour: string, alive: boolean }[], market?: any }} */
+	let { stats, series, now, avens, market = null } = $props();
 
 	const CHARTS = [
 		{ k: 'prices', label: 'Prices' },
+		{ k: 'books', label: 'Order books' },
 		{ k: 'daily', label: 'Day by day' },
 		{ k: 'trades', label: 'Trades' },
 		{ k: 'hearts', label: 'HEARTS per aven' },
@@ -125,6 +127,9 @@
 	<div class="grid">
 		{#if chartsOn.prices}
 			<div class="wide"><LineChart log title="Market price" unit="HEARTS a unit, log scale" note={showAvg ? 'Solid: the market price (the average traded over the last 24 hours), hour by hour. Dashed: the average price actually traded that day.' : 'The market price (the average traded over the last 24 hours), hour by hour.'} lines={priceLines} {from} {to} {shade} /></div>
+		{/if}
+		{#if chartsOn.books && market}
+			<div class="wide"><DepthChart {market} /></div>
 		{/if}
 		{#if chartsOn.daily}
 			<div class="wide daily">
