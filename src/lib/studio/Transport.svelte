@@ -8,9 +8,11 @@
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
+	// both asked inside the click: Play makes its audio clock there (WebKit starts sound only from a click)
 	async function playFullscreen() {
-		await s.screen?.requestFullscreen().catch(() => {});
-		if (!s.playing && !s.starting) await s.play();
+		const full = s.screen?.requestFullscreen().catch(() => {});
+		if (!s.playing && !s.starting) void s.play();
+		await full;
 	}
 	const keys = $derived(s.tab === 'edit' ? 'Space play · B or ⌘K cuts at the playhead · I / O mark the source · Delete removes · ← → nudge' : 'Space play · click a clip to select it');
 </script>
@@ -20,7 +22,7 @@
 	<button class="ic play" onclick={s.toggle} aria-label={s.playing || s.starting ? 'Pause' : 'Play'} title="{s.playing || s.starting ? 'Pause' : 'Play'} (Space)">{s.playing || s.starting ? '❚❚' : '▶'}</button>
 	<span class="time">{clockText(s.time)}<span> / {clockText(s.end)}</span></span>
 	{#if s.soundOff}
-		<button class="pill warn" onclick={s.soundOn} title="The Mac kept the sound off (its output changed, or it slept): click to turn it on">🔇 Sound on</button>
+		<button class="pill warn" onclick={s.soundOn} title="The Mac held the sound off (its output changed, or it slept): click to turn it on">🔇 Sound on</button>
 	{/if}
 
 	<span class="grow"></span>
