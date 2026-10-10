@@ -1,6 +1,6 @@
 /**
  * The stories board. An item is one story — from the first idea on its brainstorm pad to what went live — moving
- * idea → journey → hook → writing → movie → derivatives → scheduled → published: its journey (the arc beat by beat,
+ * idea → hook → thumbnail → journey → writing → movie → derivatives → scheduled → published: its journey (the arc beat by beat,
  * the feeling of each), the hook (its title, description and thumbnail), the long-form master article (writing), the
  * film (movie, made in the studio); moving it on to "derivatives" locks the article, and everything that goes out is
  * derived from it then. Three things carry a story out, each its own job: the hook grabs attention and is the title
@@ -25,7 +25,7 @@ export const CHANNELS = ["journal", "youtube", "linkedin", "instagram", "x"];
 /** what a derivative is, across platforms: an article (the blog post; on X, an X Article — long form), a film, a
  *  YouTube Short (≤ 3 min, square or vertical), a Reel, a post, a thread */
 export const FORMATS = ["article", "video", "short", "reel", "post", "thread"];
-export const STATUSES = ["idea", "journey", "hook", "thumbnail", "writing", "movie", "derivatives", "scheduled", "published"];
+export const STATUSES = ["idea", "hook", "thumbnail", "journey", "writing", "movie", "derivatives", "scheduled", "published"];
 /** from the derivatives on, the base article is locked: they were written from it */
 const LOCKED = ["derivatives", "scheduled", "published"];
 /** what a beat of the journey is (arc.md's hidden machine, with the low, the turn and the vision a movement ends on) */
@@ -478,12 +478,12 @@ export async function saveDay(
   const when = day.scheduled_at ? new Date(day.scheduled_at) : null;
   if (when && Number.isNaN(when.getTime())) throw new ContentError("That is not a date.");
   const journey = day.journey !== undefined ? journeyOf(day.journey) : undefined;
-  // the stage it has reached: its journey first, then the hook (the title, its cards), then the article written from
+  // the stage it has reached: the hook first (the title, its cards), then its journey, then the article written from
   // them, then its posts — never back
   const order = (s: string | undefined) => STATUSES.indexOf(s ?? "idea");
   const status = (s: string | undefined) => {
-    const reached = posts?.length ? "derivatives" : day.body !== undefined ? "writing" : day.hook !== undefined ? "hook"
-      : journey?.beats?.length ? "journey" : "idea";
+    const reached = posts?.length ? "derivatives" : day.body !== undefined ? "writing" : journey?.beats?.length ? "journey"
+      : day.hook !== undefined ? "hook" : "idea";
     return order(s) >= order(reached) ? s! : reached;
   };
   const { rows } = await db.query<Item>(

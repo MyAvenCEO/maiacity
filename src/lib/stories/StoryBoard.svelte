@@ -1,5 +1,5 @@
 <!--
-	The board: every story, one card each, in the step it stands on — Idea · Journey · Hook · Writing · Movie ·
+	The board: every story, one card each, in the step it stands on — Idea · Hook · Thumbnail · Journey · Writing · Movie ·
 	Derivatives · Scheduled · Published (in the order the API gives). The Idea column is the backlog, and its one line at
 	the top captures a new idea. Drag a card to another column, or use its ‹ › (a card scheduled without a date goes out
 	tomorrow at 09:00); click it to open the story on its own page, at the step it stands on.
