@@ -10,13 +10,14 @@
 -->
 <script>
 	import { onMount } from 'svelte';
+	import { wayBack } from '$lib/app/back.svelte.js';
 	import { createWorld, saveWorld, loadWorld, step, ranking, want, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
-	import { loadConfigs, loadRuns, loadWorldRun, saveWorldState, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
+	import { loadConfigs, loadRuns, loadMips, loadWorldRun, saveWorldState, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
 	import { wholeMind, beginRun, wear, night, editMind, keepMind, worldStamp, enterWorld, traits, TRIAL_DAYS } from './mind.js';
 	import AvensView from './AvensView.svelte';
 	import ActivityFeed from './ActivityFeed.svelte';
@@ -208,11 +209,13 @@
 	let worlds = $state(/** @type {any[]} */ ([]));
 	let here = $state({ id: /** @type {string | null} */ (null), name: '', after: /** @type {string | null} */ (null) }); // the world on the page, and the world it follows
 	let worldNote = $state('');
+	let openMips = $state(0); // MIPs waiting for a decision, for the welcome screen
 	async function loadWorlds() {
 		if (!acct.play) return;
 		try {
 			worlds = (await loadRuns(100)).runs;
 			worldNote = '';
+			openMips = ((await loadMips().catch(() => null))?.mips ?? []).filter((/** @type {any} */ m) => m.status === 'open').length;
 		} catch (e) {
 			worldNote = `The worlds could not be read (${/** @type {any} */ (e)?.message || e}).`;
 		}
@@ -642,6 +645,12 @@
 	// are proposed over the studio's MCP, never here; once accepted under Proposals they appear in the list
 	let trial = $state(false); // signed out, nothing is kept: a valley to try here
 	const inWorld = $derived(!!here.id || trial);
+	/** the welcome screen and the Proposals stand outside every world: no world's views, no clock */
+	const outside = $derived(page === 'home' || page === 'mips');
+	// out of a world, or out of the Proposals, the nav pill's Back leads to the welcome screen (Samuel, 2026-10-10)
+	$effect(() => {
+		if (page !== 'home') return wayBack('Back to the worlds', home);
+	});
 	/** back to the worlds: the one open pauses (and is kept as it stands) */
 	function home() {
 		if (!paused) toggle();
@@ -969,26 +978,26 @@
 <div class="market" class:open={panelOpen} class:statsview={page !== 'valley'}>
 	<header>
 		<div class="title">
-			{#if inWorld}
+			{#if inWorld && !outside}
 				<b>Sandbox 7 · {here.name || 'A valley to try (not kept)'}</b>
 				<span>Day {snap.day} · {snap.time} · month {snap.month}</span>
 			{:else}
 				<b>Sandbox 7</b>
-				<span>Pick a world</span>
+				<span>{page === 'mips' ? 'Proposals' : 'Pick a world'}</span>
 			{/if}
 		</div>
-		<nav class="views" aria-label="View">
-			<button class:on={page === 'home'} onclick={home}>Worlds</button>
-			{#if inWorld}
+		<!-- a world's own views; the welcome screen and the Proposals have none (Samuel, 2026-10-10): the nav pill's Back
+		     leads out of a world, or out of the Proposals, to the welcome screen -->
+		{#if inWorld && !outside}
+			<nav class="views" aria-label="View">
 				<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
 				<button class:on={page === 'avens'} onclick={() => setView('avens')}>Avens</button>
 				<button class:on={page === 'stats'} onclick={() => setView('stats')}>Stats</button>
 				<button class:on={page === 'policy'} onclick={() => setView('policy')}>Policies</button>
 				<button class:on={page === 'world'} onclick={() => setView('world')}>World</button>
-			{/if}
-			<button class:on={page === 'mips'} onclick={() => setView('mips')}>Proposals</button>
-		</nav>
-		<div class="controls" hidden={!inWorld || page === 'home'}>
+			</nav>
+		{/if}
+		<div class="controls" hidden={!inWorld || outside}>
 			<button onclick={toggle}>{paused ? (started ? '▶ Play' : '▶ Start') : '❚❚ Pause'}</button>
 			<select bind:value={speed} aria-label="Speed">
 				{#each SPEEDS as sp (sp.k)}<option value={sp.k}>{sp.label}</option>{/each}
@@ -1015,7 +1024,11 @@
 	{#if page === 'home'}
 		<div class="statspage worlds">
 			<h2>Worlds</h2>
-			<p class="sub">Pick a world to open it; its valley, its views and its clock load with it. Each world is a capsule: its settings, and every aven's HEARTS and brain in it, are its own. New worlds are proposed over the studio's MCP and appear here once accepted under Proposals.</p>
+			<p class="sub">Pick a world to enter it: its valley, its views and its clock load with it, and the Back in the pill below brings you here again. Each world is a capsule: its settings, and every aven's HEARTS and brain in it, are its own. New worlds are proposed over the studio's MCP and appear here once accepted.</p>
+			<button class="proposals-tile" onclick={() => setView('mips')}>
+				<b>Proposals</b>
+				<span>Every MIP of every world: what waits for a decision, and what was decided.{openMips ? ` ${openMips} open.` : ''}</span>
+			</button>
 			{#if !acct.play}
 				<p class="sub">{acct.note || 'Sign in to see the worlds.'}</p>
 				<div class="new"><button class="go" onclick={tryValley}>Try a valley here (not kept)</button></div>
@@ -1024,35 +1037,33 @@
 			{#if acct.play}
 				{@const kept = worlds.filter((w) => w.saved)}
 				{@const old = worlds.filter((w) => !w.saved)}
-				<table class="worldlist">
-					<thead><tr><th>World</th><th>Config</th><th>Days</th><th>Alive</th><th>Leader</th><th>Kept</th><th></th></tr></thead>
-					<tbody>
-						{#each kept as w (w.id)}
-							<tr class="pick" class:sel={w.id === here.id} onclick={() => (w.id === here.id ? setView('valley') : openWorld(w))}>
-								<td><b>{w.name || 'A world'}</b></td>
-								<td>{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</td>
-								<td class="num">{w.days}</td>
-								<td class="num">{w.alive ?? '—'}</td>
-								<td>{w.summary?.leader ?? '—'}</td>
-								<td>{new Date(w.saved).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
-								<td><button>{w.id === here.id ? 'Playing' : 'Open'}</button></td>
-							</tr>
-						{:else}
-							<tr><td colspan="7" class="none">No world yet: propose one over the studio's MCP, then accept it under Proposals.</td></tr>
-						{/each}
-					</tbody>
-				</table>
+				<div class="worldgrid">
+					{#each kept as w (w.id)}
+						<button class="worldtile" class:sel={w.id === here.id} onclick={() => (w.id === here.id ? setView('valley') : openWorld(w))}>
+							<b>{w.name || 'A world'}</b>
+							<span class="cfg">{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</span>
+							<span class="facts"><span><b>{w.days}</b> days</span><span><b>{w.alive ?? '—'}</b> alive</span></span>
+							<span class="lead">{w.summary?.leader ? `Leader ${w.summary.leader}` : 'No leader yet'}</span>
+							<span class="when">{w.id === here.id ? 'Open now' : `Kept ${new Date(w.saved).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}</span>
+						</button>
+					{:else}
+						<p class="sub none">No world yet: propose one over the studio's MCP, then accept it under Proposals.</p>
+					{/each}
+				</div>
 				{#if old.length}
 					<details class="old">
 						<summary>{old.length} earlier {old.length === 1 ? 'world' : 'worlds'}, history only</summary>
-						<p class="sub">They ran before worlds were kept whole, so they can't be opened: only their days are kept (economy_run on the MCP).</p>
-						<table class="worldlist">
-							<tbody>
-								{#each old as w (w.id)}
-									<tr><td><b>{w.name || 'A world'}</b></td><td>{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</td><td class="num">{w.days} days</td><td class="num">{w.alive ?? '—'} alive</td><td>{w.summary?.leader ?? '—'}</td></tr>
-								{/each}
-							</tbody>
-						</table>
+						<p class="sub">They ran before worlds were kept whole, so they can't be entered: only their days are kept (economy_run on the MCP).</p>
+						<div class="worldgrid">
+							{#each old as w (w.id)}
+								<div class="worldtile past">
+									<b>{w.name || 'A world'}</b>
+									<span class="cfg">{w.summary?.config?.name ?? w.config_id ?? 'Defaults'}{w.config_version ? ` v${w.config_version}` : ''}</span>
+									<span class="facts"><span><b>{w.days}</b> days</span><span><b>{w.alive ?? '—'}</b> alive</span></span>
+									<span class="lead">{w.summary?.leader ? `Leader ${w.summary.leader}` : ''}</span>
+								</div>
+							{/each}
+						</div>
 					</details>
 				{/if}
 			{/if}
@@ -1075,7 +1086,7 @@
 	{/if}
 	{#if page === 'mips'}
 		<div class="statspage">
-			<ProposalsView {acct} {configs} {worlds} here={inWorld ? here.id : null} playing={inWorld ? snap.config : null} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
+			<ProposalsView {acct} {configs} {worlds} here={null} playing={null} onworld={madeWorld} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 
@@ -1238,34 +1249,6 @@
 		font-weight: 600;
 		cursor: pointer;
 	}
-	.worldlist {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 13px;
-	}
-	.worldlist th,
-	.worldlist td {
-		text-align: left;
-		padding: 7px 8px;
-		border-bottom: 1px solid #1f2a2318;
-		white-space: nowrap;
-	}
-	.worldlist th {
-		font-weight: 600;
-		opacity: 0.7;
-	}
-	.worldlist tr.sel td {
-		background: #2f6b4614;
-	}
-	.worldlist .none {
-		opacity: 0.6;
-	}
-	.worldlist tr.pick {
-		cursor: pointer;
-	}
-	.worldlist tr.pick:hover td {
-		background: #2f6b460d;
-	}
 	.worlds .old {
 		margin-top: 18px;
 		opacity: 0.75;
@@ -1277,12 +1260,6 @@
 	@media (max-width: 760px) {
 		.worlds {
 			padding: 12px 12px 96px;
-		}
-		.worldlist th:nth-child(2),
-		.worldlist td:nth-child(2),
-		.worldlist th:nth-child(5),
-		.worldlist td:nth-child(5) {
-			display: none;
 		}
 	}
 	.views {
@@ -1678,5 +1655,88 @@
 		header {
 			padding: 0.3rem 0.6rem;
 		}
+	}
+
+	/* the welcome screen: a world is a tile, four in a row */
+	.proposals-tile {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		width: 100%;
+		margin: 4px 0 18px;
+		padding: 16px 18px;
+		text-align: left;
+		border: 1px solid var(--ink, #263828);
+		border-radius: 14px;
+		background: rgb(38 56 44 / 0.04);
+		cursor: pointer;
+	}
+	.proposals-tile b {
+		font-size: 1.1em;
+	}
+	.proposals-tile span {
+		opacity: 0.75;
+	}
+	.proposals-tile:hover {
+		background: rgb(38 56 44 / 0.09);
+	}
+	.worldgrid {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 12px;
+	}
+	@media (max-width: 1100px) {
+		.worldgrid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	@media (max-width: 560px) {
+		.worldgrid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+	.worldtile {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 6px;
+		min-height: 132px;
+		padding: 14px 16px;
+		text-align: left;
+		border: 1px solid rgb(38 56 44 / 0.16);
+		border-radius: 14px;
+		background: #fff;
+		cursor: pointer;
+	}
+	.worldtile:hover {
+		border-color: rgb(38 56 44 / 0.45);
+	}
+	.worldtile.sel {
+		border-color: var(--ink, #263828);
+		box-shadow: inset 0 0 0 1px var(--ink, #263828);
+	}
+	.worldtile.past {
+		cursor: default;
+		opacity: 0.6;
+		background: transparent;
+	}
+	.worldtile > b {
+		font-size: 1.05em;
+	}
+	.worldtile .cfg,
+	.worldtile .lead,
+	.worldtile .when {
+		font-size: 0.85em;
+		opacity: 0.7;
+	}
+	.worldtile .facts {
+		display: flex;
+		gap: 14px;
+	}
+	.worldtile .when {
+		margin-top: auto;
+	}
+	.worldgrid .none {
+		grid-column: 1 / -1;
 	}
 </style>
