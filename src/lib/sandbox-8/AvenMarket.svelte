@@ -883,7 +883,8 @@
 				ctx.fill();
 			}
 			ctx.restore();
-			if (a.alive) {
+			// its health ring (a fields valley shows health on the board only: on the map it read as a second home ring)
+			if (a.alive && world.layout !== 'coop') {
 				const share = a.health / RULES.healthMax;
 				ctx.strokeStyle = share > 0.6 ? '#4fb37a' : share > 0.3 ? '#f0a03c' : '#e05a6d';
 				ctx.lineWidth = 3;
