@@ -39,10 +39,12 @@
 //! The server and strangers have keys of their own. A passkey in the platform's authenticator signs in ceremonies
 //! (`sign::Ceremony`): an edit is drafted (`draft`), each such passkey signs its id in a ceremony, and then it is kept
 //! (`complete`); several edits drafted together (`drafting`) are signed in one ceremony, over their batch
-//! (`sign::batch_challenge`). A browser's device derives its keys from the PRF output its passkey evaluated on its salt
-//! (`web_device`). A new device links to its person's vault by its passkey alone (`link_card`, `join`, `accept_join`),
-//! and a server no vault has claimed yet becomes a device of a new aven vault, avenCEO, owned by the human vault of the
-//! first device that claims it (`claim`, `accept_claim`).
+//! (`sign::batch_challenge`). A browser's device holds the secret its keys derive from only while it is unlocked
+//! (`device_with`): the PRF output its passkey evaluated on its salt, or a secret of its own masked by that output. A
+//! device that doesn't know its passkey's P-256 key yet drafts its edits for each key the passkey's first ceremony
+//! recovers to, all in one batch (`drafting_for`). A new device links to its person's vault by its passkey alone
+//! (`link_card`, `join`, `accept_join`), and a server no vault has claimed yet becomes a device of a new aven vault,
+//! avenCEO, owned by the human vault of the first device that claims it (`claim`, `accept_claim`).
 //!
 //! A Classic McEliece public key travels as a blob beside the edits that name it (`policy::Edit::blobs`): a device
 //! keeps the blobs of the edits it keeps, each only if it hashes to its id, and seals to a key once it holds that key's
@@ -71,9 +73,7 @@ use crate::policy::{
     checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Issued, Kind, Line, Log, Meaning, Principal, Proposal,
     Readings, Refusal, Replay, Role, State, Write,
 };
-use crate::sign::{
-    self, Ceremony, Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed,
-};
+use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{
     answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
@@ -651,7 +651,10 @@ impl Lab {
         id
     }
 
-    /// A device whose keys come from `secret`, 32 bytes the device keeps itself, as the server does on its disk.
+    /// A device whose keys come from `secret`, 32 bytes the device keeps itself, as the server does on its disk; or that
+    /// a browser's device holds while it is unlocked (P8e): the PRF output its passkey evaluated on the device's salt
+    /// (`sign::device_salt`), or, for a device made since 2026-10-10, a secret of its own that this output masks. It
+    /// starts unlocked.
     pub fn device_with(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
         self.add_device(DeviceKey::from_secret(secret), name)
     }
@@ -671,15 +674,6 @@ impl Lab {
         self.keys.insert(id, Key::Web { keys, seal, pair });
         self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
         Some(id)
-    }
-
-    /// A person's device in a browser (P8e): its keys derive from `prf`, the PRF output its passkey `passkey`
-    /// evaluated on the device's salt (`sign::device_salt(nonce)`) in a ceremony, as at every unlock (`unlock_with`).
-    /// It starts unlocked.
-    pub fn web_device(&mut self, passkey: SignerId, name: &str, nonce: [u8; 32], prf: [u8; 32]) -> SignerId {
-        let id = self.add_device(DeviceKey::from_secret(prf), name);
-        self.salts.insert(id, (passkey, nonce));
-        id
     }
 
     /// The public keys of signer `s`, if its key is at hand: a passkey's, or a device's while it is unlocked.
@@ -868,10 +862,10 @@ impl Lab {
         true
     }
 
-    /// Unlock device `d` with `prf`, the PRF output its passkey evaluated on the device's salt in a ceremony, as a
-    /// browser's device unlocks (P8e, `web_device`): its keys derive again. False if they derive another device.
-    pub fn unlock_with(&mut self, d: SignerId, prf: [u8; 32]) -> bool {
-        let key = DeviceKey::from_secret(prf);
+    /// Unlock device `d` with `secret`, the secret its keys come from, as a browser's device unlocks with what its
+    /// passkey's ceremony brings back (P8e, `device_with`): its keys derive again. False if they derive another device.
+    pub fn unlock_with(&mut self, d: SignerId, secret: [u8; 32]) -> bool {
+        let key = DeviceKey::from_secret(secret);
         if key.id() != d || !self.stores.contains_key(&d) {
             return false;
         }
@@ -1004,6 +998,33 @@ impl Lab {
     /// person once for, where it would otherwise ask once for each edit.
     pub fn drafting(&self, on: SignerId) -> Drafting<'_> {
         Drafting { lab: self, log: self.held(on).log.clone(), drafts: vec![] }
+    }
+
+    /// Edits to draft on device `on` for each of `passkeys`, one of which is its person's, as a device that doesn't
+    /// know yet which of the keys the passkey's first ceremony recovers to is the passkey's (`sign::RelayPass`): `draft`
+    /// drafts a set for each passkey, each set on its own (`drafting`), and every edit of every set is signed over one
+    /// batch, so that the person's next ceremony signs them all and verifies under their passkey's key alone. Its set is
+    /// the one to keep (`complete`); the others' edits nobody ever signs, and their ids show only inside the batch. Each
+    /// passkey with what `draft` returned for it and its set.
+    pub fn drafting_for<T>(
+        &self,
+        on: SignerId,
+        passkeys: &[SignerId],
+        draft: impl Fn(&mut Drafting<'_>, SignerId) -> Result<T, Refusal>,
+    ) -> Result<Vec<(SignerId, T, Vec<Unsigned>)>, Refusal> {
+        let mut sets = vec![];
+        for &passkey in passkeys {
+            let mut drafting = self.drafting(on);
+            let out = draft(&mut drafting, passkey)?;
+            sets.push((passkey, out, drafting.drafts));
+        }
+        let mut batch: Vec<EditId> = sets.iter().flat_map(|(_, _, drafts)| drafts.iter().map(|d| d.edit.id())).collect();
+        batch.sort();
+        batch.dedup();
+        if batch.len() > 1 {
+            sets.iter_mut().flat_map(|(_, _, drafts)| drafts.iter_mut()).for_each(|d| d.batch = batch.clone());
+        }
+        Ok(sets)
     }
 
     /// Sign `draft` (`draft`, `drafting`) and keep it on device `on`: each signer by its ceremony among `ceremonies`,
@@ -1871,30 +1892,15 @@ impl Lab {
         }
     }
 
-    /// What passkey `passkey`, used on device `d`, says on `d`'s connection whose TLS exporter is `exporter`, for the
-    /// end that dialed if `dialer`, after `d`'s own hello (`sign::PasskeyHello`): `None` unless the passkey is at hand,
-    /// as it is on a device only while its person uses it there.
-    pub fn passkey_hello(
-        &mut self,
-        d: SignerId,
-        passkey: SignerId,
-        exporter: &[u8; 32],
-        dialer: bool,
-    ) -> Option<PasskeyHello> {
-        match self.keys.get_mut(&passkey)? {
-            Key::Passkey(p) => Some(p.hello(exporter, dialer, d)),
-            Key::Device(_) | Key::Web { .. } => None,
-        }
-    }
-
-    /// The pass passkey `passkey`, used on device `d`, makes `d` to the server's relay at `made`, seconds since 1970
-    /// (`sign::RelayPass`): for `d`'s endpoint alone, which the relay lets in for ten minutes if the passkey roots a
-    /// vault the server knows (`roots`). `None` unless the passkey is at hand and `d` is a device of the Lab.
+    /// The pass passkey `passkey`, used on device `d`, makes `d` at `made`, seconds since 1970 (`sign::RelayPass`): for
+    /// `d` alone, which the server's relay lets in for ten minutes if the passkey roots a vault the server knows
+    /// (`roots`), and which a peer hands the passkey's link card on (`link_card`). `None` unless the passkey is at hand
+    /// and `d` is an unlocked device of the Lab.
     pub fn relay_pass(&mut self, d: SignerId, passkey: SignerId, made: u64) -> Option<RelayPass> {
         let Key::Device(device) = self.keys.get(&d)? else { return None };
-        let SignerKeys::Device { ed25519, .. } = device.keys() else { unreachable!("a device's keys") };
+        let device = device.keys();
         match self.keys.get_mut(&passkey)? {
-            Key::Passkey(p) => Some(p.pass(ed25519, made)),
+            Key::Passkey(p) => Some(p.pass(device, made)),
             Key::Device(_) | Key::Web { .. } => None,
         }
     }

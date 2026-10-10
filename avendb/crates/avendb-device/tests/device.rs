@@ -1,10 +1,11 @@
 //! The Mac app's native device (avendb-device), as the app runs it: lines of JSON on its stdin and stdout, and each of
 //! its person's passkey's ceremonies in the sign-in sheet, which the app shows and whose page seals what it brings back
 //! to the key the device made for that ceremony alone. Here the app is the test, and the sheet's page a software
-//! passkey that seals as the page does (avendb-browser's `sealCeremony`). Eve founds her vault from the Mac in three
+//! passkey that seals as the page does (avendb-browser's `sealCeremony`). Eve founds her vault from the Mac in two
 //! sheets, through a relay open to sign-up; the device keeps her vault in its folder, opens again from it in the
-//! unlock's sheet alone, and puts it aside when she forgets it there. A device her browser made before moves into the
-//! folder as it opens (`adopt`), the same device, and opens again from the folder after.
+//! unlock's sheet alone, and puts it aside when she forgets it there. A device her browser made before, before
+//! 2026-10-10 even, moves into the folder as it opens (`adopt`), the same device, and opens again from the folder
+//! after.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -19,7 +20,7 @@ use avendb::id::EntryId;
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::sign::{Ceremony, PRF_SALT, Passkey, device_salt};
-use avendb_browser::{Device, Start, Unlock};
+use avendb_browser::{Device, Fresh, Start, Unlock};
 use avendb_device::{ASIDE, Config, META, SHEET, STORE, serve};
 use avendb_net::{Admission, Authenticator, Node, Options, Step};
 use avendb_server::Relay;
@@ -147,11 +148,11 @@ impl Authenticator for Browser {
 }
 
 impl Browser {
-    /// The ceremony that unlocks the device whose salt ends in `nonce`.
-    fn unlock(&self, nonce: [u8; 32]) -> Unlock {
+    /// The ceremony that unlocks the device whose salt ends in `nonce`, over `challenge`.
+    fn unlock(&self, nonce: [u8; 32], challenge: [u8; 32]) -> Unlock {
         let mut passkey = self.0.lock().expect("the authenticator");
         let device = passkey.prf(&device_salt(&nonce));
-        Unlock { ceremony: passkey.ceremony([0xaa; 32]), nonce, device }
+        Unlock { ceremony: passkey.ceremony(challenge), device }
     }
 }
 
@@ -243,15 +244,16 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(found, Err("You closed the sign-in sheet.".into()));
     assert_eq!(app.asked(), ["unlock"]);
     assert!(!dir.join(META).exists(), "nothing to open");
-    // she founds her vault from the Mac in three sheets: the unlock, the pass to the relay, and her vault
+    // she founds her vault from the Mac in two sheets: the unlock, which is her passkey's pass for it, and her vault
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
-    assert_eq!(app.asked(), ["unlock", "pass", "found"]);
+    assert_eq!(app.asked(), ["unlock", "found"]);
     assert_eq!(device["passkey"], hex(&Passkey::from_seed([5; 32]).public()), "her passkey's key");
     assert!(!device["sockets"].as_array().expect("its sockets").is_empty(), "UDP sockets of its own");
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["open"], &status["device"]), (&json!(true), &device));
     assert_eq!(status["meta"]["name"], "Eve's Mac");
     assert_eq!(status["meta"]["credential"], CREDENTIAL, "the credential her ceremonies named");
+    assert!(status["meta"]["mask"].as_str().is_some_and(|m| m.len() == 64), "its secret, masked: {status}");
     let again = app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await;
     assert_eq!(again, Err("this Mac holds an avenDB account already: forget it here first".into()));
     // a note in her vault, which the server keeps, as the relay cap her vault gave it at its founding reaches it
@@ -319,9 +321,11 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_it_after() {
     let (_relay, url, server) = server().await;
-    // the app's page made her device before, in the web view, its store in IndexedDB
+    // the app's page made her device before, in the web view, its store in IndexedDB; before 2026-10-10 even, so its
+    // secret is the PRF output on its salt itself, and the page kept no mask
     let browser = Browser(Mutex::new(Passkey::from_seed([5; 32])));
     let nonce = [1; 32];
+    let old = Fresh::from_secret(*browser.0.lock().expect("the authenticator").prf(&device_salt(&nonce)));
     let start = Start {
         name: "Eve's Mac".into(),
         relay: url.clone(),
@@ -330,7 +334,8 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
         direct: false,
         store: None,
     };
-    let page = Device::found(start, &server.offer(), None, browser.unlock(nonce), &browser).await.expect("her vault");
+    let unlock = browser.unlock(nonce, old.challenge(start.now));
+    let page = Device::found(start, &server.offer(), None, old, unlock, &browser).await.expect("her vault");
     let vault = page.vault().await.expect("her vault");
     let seeds = ("Seeds".into(), "Tomatoes in March.".into());
     let entry = page.write(vault, vault, seeds, vec![]).await.expect("a note");

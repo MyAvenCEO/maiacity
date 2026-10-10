@@ -15,7 +15,7 @@ use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::{self, KeyBox, KeyFam, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{Action, Cap, Edit, Grantee, Principal, Proposal, Role};
-use avendb::sign::{Classical, DeviceKey, Hello, Passkey, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
+use avendb::sign::{Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
@@ -549,18 +549,13 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     let hello = device.hello(&exporter, true);
     assert_eq!(hello.verify(&exporter, true, &endpoint), Some(device.id()));
     wire_mutations(&mut g, &hello, 1000, |h: &Hello| assert_eq!(h.verify(&exporter, true, &endpoint), None));
-    // a passkey's hello read from changed bytes proves no passkey for that device on the connection
+    // a pass read from changed bytes is the passkey's for no device: a changed signature recovers to other keys,
+    // nobody's
     let mut passkey = Passkey::from_seed([6; 32]);
-    let new = passkey.device([1; 32]).id();
-    let hello = passkey.hello(&exporter, true, new);
-    assert_eq!(hello.verify(&exporter, true, new), Some(passkey.id()));
-    wire_mutations(&mut g, &hello, 1500, |h: &PasskeyHello| assert_eq!(h.verify(&exporter, true, new), None));
-    // a relay pass read from changed bytes lets its endpoint in by no passkey
-    let endpoint = [3; 32];
-    let pass = passkey.pass(endpoint, 1_791_500_000);
-    assert_eq!(pass.verify(&endpoint, pass.made), Some(passkey.id()));
-    let now = pass.made;
-    wire_mutations(&mut g, &pass, 1500, |p: &RelayPass| assert_eq!(p.verify(&p.endpoint, now.max(p.made)), None));
+    let pass = passkey.pass(passkey.device([1; 32]).keys(), 1_791_500_000);
+    assert!(pass.passkeys(pass.made).contains(&passkey.id()));
+    let (now, theirs) = (pass.made, passkey.id());
+    wire_mutations(&mut g, &pass, 1500, |p: &RelayPass| assert!(!p.passkeys(now.max(p.made)).contains(&theirs)));
     // a join read from changed bytes carries a refused edit, or the same edit beside other bytes, which the device
     // checks against the ids its edit names
     let add = &edits.add;

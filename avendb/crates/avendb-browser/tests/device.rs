@@ -23,8 +23,8 @@ use avendb::lens::Status;
 use avendb::policy::{Kind, Principal, Role};
 use avendb::sign::{Ceremony, Passkey, device_salt};
 use avendb::slice::{Selector, Slice};
-use avendb_browser::{Device, EntryView, PROFILE, Start, Unlock, What, World as Seen, backup};
-use avendb_net::{Admission, Authenticator, Node, Options, Step};
+use avendb_browser::{Device, EntryView, Fresh, PROFILE, Start, Unlock, What, World as Seen, backup};
+use avendb_net::{Admission, Authenticator, Node, Offer, Options, Step};
 use avendb_server::Relay;
 use iroh::RelayUrl;
 
@@ -47,11 +47,20 @@ impl Browser {
         Browser(Mutex::new((passkey, vec![])))
     }
 
-    /// The ceremony that unlocks the device whose salt ends in `nonce`, over a challenge of the page's.
-    fn unlock(&self, nonce: [u8; 32]) -> Unlock {
+    /// The ceremony that unlocks the device whose salt ends in `nonce`, over `challenge`: a new device's
+    /// (`Fresh::challenge`), or one of the page's.
+    fn unlock(&self, nonce: [u8; 32], challenge: [u8; 32]) -> Unlock {
         let mut held = self.0.lock().expect("the authenticator");
         let device = held.0.prf(&device_salt(&nonce));
-        Unlock { ceremony: held.0.ceremony([0xaa; 32]), nonce, device }
+        Unlock { ceremony: held.0.ceremony(challenge), device }
+    }
+
+    /// A new device starting at `start`, its salt ending in `nonce`, as a page makes one: its own secret, and the
+    /// ceremony that unlocks it, over the challenge that makes it its passkey's pass for the device.
+    fn fresh(&self, start: &Start, nonce: [u8; 32]) -> (Fresh, Unlock) {
+        let fresh = Fresh::new().expect("a new device's secret");
+        let unlock = self.unlock(nonce, fresh.challenge(start.now));
+        (fresh, unlock)
     }
 
     /// The ceremonies it made since it was last asked, by what for.
@@ -63,6 +72,26 @@ impl Browser {
 /// Where a browser's device named `name` starts, through the relay at `url`, its randomness drawn from `seed`.
 fn start(name: &str, url: &RelayUrl, seed: u8) -> Start {
     Start { name: name.into(), relay: url.clone(), entropy: [seed; 32], now: now(), direct: false, store: None }
+}
+
+/// A new browser's device at `start` that founds its person's vault through the server whose code is `server`, as the
+/// page's does (`PageDevice::found`): `browser` unlocks it, its salt ending in `nonce`, then signs the rest.
+async fn found(
+    start: Start,
+    server: &Offer,
+    p256: Option<[u8; 33]>,
+    browser: &Browser,
+    nonce: [u8; 32],
+) -> anyhow::Result<Device> {
+    let (fresh, unlock) = browser.fresh(&start, nonce);
+    Device::found(start, server, p256, fresh, unlock, browser).await
+}
+
+/// A new browser's device at `start` that links through the device whose code is `offer`, as the page's does
+/// (`PageDevice::link`): `browser` unlocks it, its salt ending in `nonce`, then signs its join.
+async fn link(start: Start, offer: &Offer, browser: &Browser, nonce: [u8; 32]) -> anyhow::Result<Device> {
+    let (fresh, unlock) = browser.fresh(&start, nonce);
+    Device::link(start, offer, fresh, unlock, browser).await
 }
 
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
@@ -113,10 +142,9 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let eve = Browser::new(Passkey::from_seed([5; 32]));
     let p256 = eve.0.lock().expect("the authenticator").0.public();
     let first = start("Eve's browser", &url, 7);
-    let first = Device::found(first, &server.offer(), None, eve.unlock([1; 32]), &eve).await;
-    let first = first.expect("her vault");
-    assert_eq!(eve.steps(), [Step::Pass, Step::Found], "the pass, then one ceremony for her vault and her browser");
-    assert_eq!(first.p256(), p256, "it learned her passkey's key from the unlock and the pass");
+    let first = found(first, &server.offer(), None, &eve, [1; 32]).await.expect("her vault");
+    assert_eq!(eve.steps(), [Step::Found], "after the unlock, one ceremony for her vault and her browser");
+    assert_eq!(first.p256(), p256, "it learned her passkey's key: the one of the unlock's the second verifies under");
     assert!(first.node().endpoint().bound_sockets().is_empty(), "with no UDP of its own");
     let vault = first.vault().await.expect("the browser belongs to her vault");
     assert!(!first.owns_aven().await, "avenCEO is Alice's vault's, which claimed the server before Eve");
@@ -129,11 +157,11 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let note = first.write(vault, vault, titled("Seeds", "Tomatoes in March."), vec![]).await.expect("a note");
     let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;
     until("the server keeps her note", || server.read(holds)).await;
-    // her second browser links through the first one's code, in four ceremonies
+    // her second browser links through the first one's code, in two ceremonies: the unlock, then its join
     let other = start("Eve's other browser", &url, 8);
     let code = first.node().offer();
-    let other = Device::link(other, &code, eve.unlock([2; 32]), &eve).await.expect("it links through the first");
-    assert_eq!(eve.steps(), [Step::Pass, Step::Hello, Step::Join]);
+    let other = link(other, &code, &eve, [2; 32]).await.expect("it links through the first");
+    assert_eq!(eve.steps(), [Step::Join]);
     assert_eq!((other.vault().await, other.p256()), (Some(vault), p256), "it learned her passkey's key");
     until("it reads her note", || shows(&other, note, "Tomatoes in March.")).await;
     other.set_text(vault, note, 2, "Tomatoes in April.".into()).await.expect("it edits the note");
@@ -160,8 +188,12 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     assert_eq!(first.edits(edits.len()).await, Some(vec![]));
     first.node().shutdown().await.expect("the node shuts down");
     let kept = backup(&edits, keys.clone());
+    let (mask, page) = (first.mask(), [0xaa; 32]);
+    assert!(mask.is_some(), "it keeps its secret masked by the PRF output on its salt");
+    let unmasked = Device::open(start("Eve's browser", &url, 9), p256, None, eve.unlock([1; 32], page), &kept);
+    assert!(unmasked.await.is_err(), "unmasked, the PRF output alone is another device's secret");
     let again = start("Eve's browser", &url, 9);
-    let again = Device::open(again, p256, eve.unlock([1; 32]), &kept).await.expect("it opens again");
+    let again = Device::open(again, p256, mask, eve.unlock([1; 32], page), &kept).await.expect("it opens again");
     assert!(eve.steps().is_empty(), "with no ceremony but the unlock");
     assert_eq!(again.node().id(), first.node().id(), "the same device");
     assert!(shows(&again, note, "Tomatoes in April.").await, "it reads what its store kept");
@@ -175,14 +207,15 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     assert_eq!(backup(&cut, keys.clone()).signed().len(), 3);
     let mallory = Browser::new(Passkey::from_seed([6; 32]));
     let theirs = start("Eve's browser", &url, 10);
-    assert!(Device::open(theirs, p256, mallory.unlock([1; 32]), &kept).await.is_err(), "not her passkey's ceremony");
+    let theirs = Device::open(theirs, p256, mask, mallory.unlock([1; 32], page), &kept);
+    assert!(theirs.await.is_err(), "not her passkey's ceremony");
     // with both her browsers lost, her passkey alone gets her vault back on a new one, through the server (P8c)
     for n in [again.node(), other.node()] {
         n.shutdown().await.expect("the node shuts down");
     }
     let new = start("Eve's new browser", &url, 11);
-    let new = Device::link(new, &server.offer(), eve.unlock([3; 32]), &eve).await.expect("it links through the server");
-    assert_eq!(eve.steps(), [Step::Pass, Step::Hello, Step::Join]);
+    let new = link(new, &server.offer(), &eve, [3; 32]).await.expect("it links through the server");
+    assert_eq!(eve.steps(), [Step::Join]);
     assert_eq!(new.vault().await, Some(vault), "to her vault");
     until("it reads her note", || shows(&new, note, "Tomatoes in May.")).await;
     assert!(new.card("Eve's new browser".into()).await.expect("its card"));
@@ -211,9 +244,9 @@ async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_a
     // Alice's browser: her passkey, a name, the relay; its keys are its own
     let alices = Browser::new(Passkey::from_seed(*secret));
     let code = mac.offer();
-    let browser = Device::link(start("Alice's browser", &url, 7), &code, alices.unlock([1; 32]), &alices);
+    let browser = link(start("Alice's browser", &url, 7), &code, &alices, [1; 32]);
     let browser = browser.await.expect("it links through the Mac's code");
-    assert_eq!(alices.steps(), [Step::Pass, Step::Hello, Step::Join]);
+    assert_eq!(alices.steps(), [Step::Join]);
     assert_eq!(browser.vault().await, Some(alice));
     let (coop, welcome) = (h.coop, h.welcome);
     until("it reads Welcome", || shows(&browser, welcome, WELCOME_TEXT)).await;
@@ -224,8 +257,7 @@ async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_a
     // her other browser links through the first one's code: browser to browser
     let other = start("Alice's other browser", &url, 8);
     let code = browser.node().offer();
-    let other = Device::link(other, &code, alices.unlock([2; 32]), &alices);
-    let other = other.await.expect("it links through the browser's code");
+    let other = link(other, &code, &alices, [2; 32]).await.expect("it links through the browser's code");
     assert_eq!(other.vault().await, Some(alice));
     until("it reads the edit", || shows(&other, welcome, AFTER_TEXT)).await;
     assert_eq!(browser.node().proven(other.node().id()), Some(other.node().device()), "through the first browser");
@@ -250,13 +282,12 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let opts = Options { relay, admission: admits, card: true, ..Options::local() };
     let server = Node::spawn(lab, me, opts).await.expect("the server's node");
     // Eve comes first: her first browser makes her passkey, whose public key info shows its P-256 key, then founds her
-    // vault, adds itself to it and claims the server, all in one ceremony after the unlock and the pass
+    // vault, adds itself to it and claims the server, all in one ceremony after the unlock
     let eve = Browser::new(Passkey::from_seed([5; 32]));
     let p256 = eve.0.lock().expect("the authenticator").0.public();
     let first = start("Eve's browser", &url, 7);
-    let first = Device::found(first, &server.offer(), Some(p256), eve.unlock([1; 32]), &eve).await;
-    let first = first.expect("her vault claims the server");
-    assert_eq!(eve.steps(), [Step::Pass, Step::Found], "one ceremony for her vault, her browser and the claim");
+    let first = found(first, &server.offer(), Some(p256), &eve, [1; 32]).await.expect("her vault claims the server");
+    assert_eq!(eve.steps(), [Step::Found], "one ceremony for her vault, her browser and the claim");
     let vault = first.vault().await.expect("her vault");
     let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
     let shape = move |lab: &Lab, _| lab.state(me).vault(avenceo).map(|v| (v.kind, v.owners.clone()));
@@ -315,7 +346,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     let server = Node::spawn(lab, me, opts).await.expect("the server's node");
     let eve = Browser::new(Passkey::from_seed([5; 32]));
     let first = start("Eve's browser", &url, 7);
-    let first = Device::found(first, &server.offer(), None, eve.unlock([1; 32]), &eve).await.expect("her vault");
+    let first = found(first, &server.offer(), None, &eve, [1; 32]).await.expect("her vault");
     eve.steps();
     let eve_v = first.vault().await.expect("her vault");
     let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
@@ -421,7 +452,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     assert!(server.read(opens_none).await, "it relays avenALICE's entries and opens none of them");
     // her second browser signs in through the server with her passkey alone: the same world, every name, the note
     let other = start("Eve's other browser", &url, 8);
-    let other = Device::link(other, &server.offer(), eve.unlock([2; 32]), &eve).await.expect("it signs in");
+    let other = link(other, &server.offer(), &eve, [2; 32]).await.expect("it signs in");
     let reads = || async {
         let Some(w) = other.world().await else { return false };
         let names: Vec<_> = w.vaults.iter().filter_map(|v| v.name.clone()).collect();
@@ -460,7 +491,7 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let server = Node::spawn(lab, me, opts).await.expect("the server's node");
     let eve = Browser::new(Passkey::from_seed([5; 32]));
     let first = start("Eve's browser", &url, 7);
-    let first = Device::found(first, &server.offer(), None, eve.unlock([1; 32]), &eve).await.expect("her vault");
+    let first = found(first, &server.offer(), None, &eve, [1; 32]).await.expect("her vault");
     eve.steps();
     let v = first.vault().await.expect("her vault");
     let note = first.write(v, v, titled("Plan", "Plant beans."), vec![]).await.expect("a note");

@@ -1,7 +1,7 @@
 <!--
 	Your account (P8e, P8f): the person's own avenDB. Their account is their human vault: its root is their passkey,
 	which stays in the browser's authenticator and is the vault's only recovery, and this browser is one of its devices,
-	its keys derived from the passkey at every unlock, what it holds kept in IndexedDB so that it opens again in one
+	its keys unmasked by the passkey at every unlock, what it holds kept in IndexedDB so that it opens again in one
 	ceremony. Every device of the vault shows by the name on its card, an entry of the vault the device writes itself,
 	end-to-end encrypted like its notes (avendb-browser's `Device::card`), and every vault by the name on its profile,
 	an entry this browser writes into it (`Device::profile`): the person's own by their maiaCITY name, avenCEO's as
@@ -220,10 +220,11 @@
 	}
 
 	/** Founds the person's human vault with the passkey they signed up to maiaCITY with, or with one made here if
-	 *  `fresh`: the unlock, the pass to the relay, and one ceremony for the vault and this device in it, which also
-	 *  claims the server if nobody has yet; one ceremony more to make the passkey. @param {boolean} fresh */
+	 *  `fresh`: the unlock, which is the passkey's pass for this new device, and one ceremony for the vault and this
+	 *  device in it, which also claims the server if nobody has yet; one ceremony more to make the passkey.
+	 *  @param {boolean} fresh */
 	const found = (fresh) =>
-		run(`Setting up your account: ${asks} ${fresh ? 'four' : 'three'} times`, async () => {
+		run(`Setting up your account: ${asks} ${fresh ? 'three times' : 'twice'}`, async () => {
 			if (mac) {
 				await macOpened(await mac.call('found', name.trim(), relay, server));
 				remember('relay', relay);
@@ -234,15 +235,16 @@
 			const made = fresh ? await passkey.create(person || name) : null;
 			if (made) held.id = made.id;
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, await unlock(nonce), sign);
+			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
+			const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, sign);
 			await started(d, nonce, held.id);
 		});
 
 	/** Links this browser to the person's vault through `through`: the code another of their devices shows, or
-	 *  avenDB's server's, which hands over their vault for their passkey alone. The unlock, the pass to the relay, the
-	 *  passkey's hello, and the edit that adds this browser to their vault. @param {string} through @param {string} what */
+	 *  avenDB's server's, which hands over their vault for their passkey alone. The unlock, which is the passkey's pass
+	 *  for this new device, and the edit that adds it to their vault. @param {string} through @param {string} what */
 	const linkHere = (through, what = `Linking ${here}`) =>
-		run(`${what}: ${asks} four times`, async () => {
+		run(`${what}: ${asks} twice`, async () => {
 			if (mac) {
 				await macOpened(await mac.call('link', name.trim(), relay, through.trim()).catch(noAccount));
 				remember('relay', relay);
@@ -251,7 +253,8 @@
 			}
 			const { unlock, sign, held } = await ceremonies(undefined);
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const d = await avendb.Device.link(name.trim(), relay, through.trim(), await unlock(nonce), sign).catch(noAccount);
+			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
+			const d = await avendb.Device.link(name.trim(), relay, through.trim(), unlockNew, sign).catch(noAccount);
 			await started(d, nonce, held.id);
 		});
 
@@ -283,7 +286,8 @@
 		if (mac) return macOpened(await mac.call('open'));
 		const { unlock } = await ceremonies(meta.credential);
 		const kept = await store.load();
-		const d = await avendb.Device.open(meta.name, meta.relay, meta.passkey, await unlock(unhex(meta.nonce)), kept.edits, kept.keys);
+		const opens = [meta.name, meta.relay, meta.passkey, meta.mask];
+		const d = await avendb.Device.open(...opens, await unlock(unhex(meta.nonce)), kept.edits, kept.keys);
 		running(d);
 	}
 
@@ -291,7 +295,7 @@
 	 *  still show its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
 	 *  @param {string} credential */
 	async function started(d, nonce, credential) {
-		meta = { name: name.trim(), relay, nonce: hex(nonce), credential, passkey: d.passkey() };
+		meta = { name: name.trim(), relay, nonce: hex(nonce), mask: d.mask(), credential, passkey: d.passkey() };
 		running(d);
 		remember('relay', relay);
 		remember('server', server);

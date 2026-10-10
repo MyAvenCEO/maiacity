@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result, anyhow};
+use avendb::id::SignerId;
 use avendb_net::{Admission, Node, Offer, Options, server, token_pass};
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use iroh_relay::server::{
@@ -192,14 +193,18 @@ struct Gate {
 impl Gate {
     /// When the pass the client of `request` shows runs out, if it is one the relay honours at `now`: for the client's
     /// own endpoint, by a passkey that roots a vault the server knows or by any while sign-up is open, made within its
-    /// ten minutes, and signed both ways. The passkey is checked first, the signatures, which take a while, last.
+    /// ten minutes, and signed both ways. The passkeys it may be from are checked first, the signatures, which take a
+    /// while, last: the relay honours it if it honours one of the passkeys that made it (`RelayPass::passkeys`).
     fn pass(&self, request: &ClientRequest, now: u64) -> Option<u64> {
         let pass = token_pass(&request.auth_token()?)?;
-        if !self.admission.honours(&pass.keys.id()) {
+        if pass.endpoint() != Some(*request.endpoint_id().as_bytes()) {
             return None;
         }
-        pass.verify(request.endpoint_id().as_bytes(), now)?;
-        Some(pass.expires())
+        let honours = |p: &SignerId| self.admission.honours(p);
+        if !pass.candidates().iter().any(honours) {
+            return None;
+        }
+        pass.passkeys(now).iter().any(honours).then(|| pass.expires())
     }
 
     /// The relay still lets `endpoint` in at `now`: the server knows it, or its pass hasn't run out.

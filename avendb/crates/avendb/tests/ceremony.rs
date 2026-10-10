@@ -1,10 +1,12 @@
 //! A passkey in the platform's authenticator (P8e): a browser's device never holds its person's passkey, only what
 //! one ceremony at a time brings back, an assertion over a challenge and the PRF output on the app's salt. It drafts
 //! each edit the passkey signs, the passkey signs the edit's id in a ceremony, and the device keeps the edit; its own
-//! keys derive from the PRF output on a salt of its own. It writes with no ceremony, a note of its vault in a cell
-//! whose key it makes; and once it joins Alice's vault, the keys of the coop's cells reach it as they reach any of
-//! Alice's devices. Here a software passkey stands in for the browser's authenticator: it makes the same ceremonies,
-//! and the device's Lab sees nothing else of it.
+//! keys come from the PRF output on a salt of its own, or from a secret of its own that output masks. It writes with
+//! no ceremony, a note of its vault in a cell whose key it makes; and once it joins Alice's vault, the keys of the
+//! coop's cells reach it as they reach any of Alice's devices. A new device signs up or in with two ceremonies: the one
+//! that unlocks it is its passkey's pass for it, as it made its secret first, and the next founds or joins its vault,
+//! which also shows which of the keys the first one recovers to is the passkey's. Here a software passkey stands in for
+//! the browser's authenticator: it makes the same ceremonies, and the device's Lab sees nothing else of it.
 
 mod common;
 
@@ -13,11 +15,8 @@ use avendb::id::{CellId, EditId, SignerId};
 use avendb::keys::{self, KeyFam};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Principal, Refusal};
-use avendb::sign::{self, Passkey, PasskeyHello, RelayPass, device_salt, hello_challenge, pass_challenge, passkey_key};
+use avendb::sign::{self, Passkey, RelayPass, device_salt, pass_challenge};
 use avendb::wire::{Join, Reply, Request, Wire};
-
-/// The TLS exporter of the connection between the browser, which dials, and its peer.
-const EXPORTER: [u8; 32] = [9; 32];
 
 /// The time a pass is made at: seconds since 1970.
 const NOW: u64 = 1_791_500_000;
@@ -28,7 +27,7 @@ fn browser(authenticator: &mut Passkey, nonce: [u8; 32]) -> (Lab, SignerId, Sign
     let mut lab = Lab::with_entropy([7; 32]);
     let unlock = authenticator.ceremony([1; 32]);
     let passkey = lab.web_passkey("Alice", authenticator.public(), &unlock).expect("the passkey's own ceremony");
-    let device = lab.web_device(passkey, "Alice's browser", nonce, *authenticator.prf(&device_salt(&nonce)));
+    let device = lab.device_with("Alice's browser", *authenticator.prf(&device_salt(&nonce)));
     (lab, passkey, device)
 }
 
@@ -118,8 +117,7 @@ fn the_lab_holds_no_secret_of_a_browsers_passkey() {
     ceremony(&mut lab, device, &[passkey, device], add, &mut authenticator);
     assert!(lab.secrets(passkey).is_empty(), "no secret of the passkey");
     assert!(lab.passkey_secret(passkey).is_none(), "nor its private key");
-    assert!(lab.passkey_hello(device, passkey, &EXPORTER, true).is_none(), "it says a hello in a ceremony alone");
-    assert!(lab.relay_pass(device, passkey, NOW).is_none(), "and makes a pass in one");
+    assert!(lab.relay_pass(device, passkey, NOW).is_none(), "it makes a pass in a ceremony alone");
     // the McEliece pair of the key sealed to the passkey, which it lent the device, is forgotten as the device locks
     let pair = authenticator.seal_secret().id();
     assert!(keys::pair_made(pair), "the device opened the vault key with it");
@@ -127,39 +125,77 @@ fn the_lab_holds_no_secret_of_a_browsers_passkey() {
     assert!(!keys::pair_made(pair), "the process forgot the passkey's pair");
 }
 
+/// A new browser's device and the ceremony that unlocks it, which is its passkey's pass for it made at `NOW`: the
+/// browser made the device's secret, `secret`, before the ceremony, so that its challenge names the device. With the
+/// passkey's keys for each P-256 key the ceremony's assertion recovers to, as the browser can't tell which is the
+/// passkey's yet.
+fn fresh(authenticator: &mut Passkey, secret: [u8; 32]) -> (Lab, SignerId, Vec<SignerId>, RelayPass) {
+    let key = sign::DeviceKey::from_secret(secret);
+    let unlock = authenticator.ceremony(pass_challenge(key.id(), NOW));
+    let mut lab = Lab::with_entropy([7; 32]);
+    let device = lab.device_with("Alice's browser", secret);
+    let pass = unlock.pass(key.keys(), NOW).expect("the unlock is the passkey's pass for the device");
+    let recovered = unlock.assertion.recover().into_iter();
+    let passkeys: Vec<SignerId> = recovered.filter_map(|p256| lab.web_passkey("Alice", p256, &unlock)).collect();
+    (lab, device, passkeys, RelayPass::from_wire(&pass.to_wire()).expect("a pass"))
+}
+
 #[test]
-fn a_browser_links_through_alices_mac_in_ceremonies() {
+fn a_new_browser_founds_its_vault_in_two_ceremonies() {
+    let mut authenticator = Passkey::from_seed([1; 32]);
+    let (mut lab, device, passkeys, pass) = fresh(&mut authenticator, [6; 32]);
+    assert!(passkeys.contains(&authenticator.id()) && passkeys.len() >= 2, "a few passkeys it may be, Alice's among them");
+    assert_eq!(pass.passkeys(NOW), passkeys, "the relay would let it in as any of them");
+    assert_eq!(pass.device.id(), device);
+    // its vault and itself in it, for each of them, in one batch: the second ceremony signs them all
+    let found = |d: &mut avendb::lab::Drafting<'_>, p: SignerId| {
+        let vault = d.draft(&[p], genesis(p))?.into();
+        d.draft(&[p, device], Action::AddDevice { vault, device, seal_to: None })?;
+        Ok(vault)
+    };
+    let sets = lab.drafting_for(device, &passkeys, found).expect("each drafts");
+    let challenge = sets[0].2[0].challenge();
+    assert!(sets.iter().flat_map(|(_, _, ds)| ds).all(|d| d.challenge() == challenge), "one batch");
+    let ceremony = authenticator.ceremony(challenge);
+    // the set of every other key fails, as the ceremony's assertion verifies under the passkey's key alone
+    let mut kept = vec![];
+    for (passkey, vault, drafts) in sets {
+        let done: Result<Vec<EditId>, Refusal> =
+            drafts.into_iter().map(|d| lab.complete(device, d, &[(passkey, &ceremony)])).collect();
+        match done {
+            Ok(_) => kept.push((passkey, vault)),
+            Err(why) => assert_eq!(why, Refusal::BadSignature, "{passkey:?}"),
+        }
+    }
+    assert_eq!(kept.len(), 1, "one passkey's set is kept");
+    let (passkey, vault) = kept[0];
+    assert_eq!(passkey, authenticator.id(), "Alice's");
+    assert_eq!(lab.vault_of(device), Some(vault), "the browser belongs to the vault its passkey founded");
+    assert!(lab.opens(device, KeyFam::Seed(vault)), "and opens its seed");
+    for id in lab.log(device).ids().to_vec() {
+        assert!(lab.signed_edit(device, id).expect("kept").verify().is_ok(), "every edit it kept is signed");
+    }
+}
+
+#[test]
+fn a_browser_links_through_alices_mac_in_two_ceremonies() {
     let mut w = world();
     let h = handbook(&mut w);
     let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
     let secret = w.lab.passkey_secret(w.passkey_a).expect("Alice's software passkey");
     // the browser's authenticator holds Alice's passkey, as her platform syncs it; the browser never saw it made
     let mut authenticator = Passkey::from_seed(*secret);
-    let nonce = [5; 32];
-    let unlock = authenticator.ceremony([1; 32]);
-    let key = sign::DeviceKey::from_secret(*authenticator.prf(&device_salt(&nonce)));
-    let sign::SignerKeys::Device { ed25519: endpoint, .. } = key.keys() else { unreachable!() };
-    // its pass to the relay: a second ceremony, so the passkey's key is the one both assertions recover to
-    let pass = authenticator.ceremony(pass_challenge(&endpoint, NOW));
-    let p256 = passkey_key(&unlock.assertion, &pass.assertion).expect("one key recovers from both");
-    assert_eq!(p256, authenticator.public());
-    let mut browser = Lab::with_entropy([7; 32]);
-    let passkey = browser.web_passkey("Alice", p256, &unlock).expect("Alice's passkey");
-    assert_eq!(passkey, w.passkey_a);
-    let device = browser.web_device(passkey, "Alice's browser", nonce, *authenticator.prf(&device_salt(&nonce)));
-    let pass = pass.pass(browser.keys_of(passkey).expect("its keys"), endpoint, NOW).expect("a pass");
-    let pass = RelayPass::from_wire(&pass.to_wire()).expect("a pass");
-    assert_eq!(pass.verify(&endpoint, NOW), Some(w.passkey_a), "the relay would let it in");
-    // its hello on the connection to the Mac: a third ceremony, which the Mac checks before it hands its link card
-    let keys = browser.keys_of(passkey).expect("its keys");
-    let hello = authenticator.ceremony(hello_challenge(&EXPORTER, true, device));
-    let hello = hello.hello(keys, &EXPORTER, true, device).expect("the passkey's hello");
-    let hello = PasskeyHello::from_wire(&hello.to_wire()).expect("a hello");
-    let proven = hello.verify(&EXPORTER, true, device).expect("the Mac checks it");
-    browser.receive(device, mac.link_card(w.mac_a, proven), vec![]);
-    // it joins Alice's vault: the fourth ceremony signs the edit that adds it, and the Mac takes it
-    let (vault, added) = browser.joining(device, passkey).expect("Alice's vault, by the card");
-    assert_eq!((vault, added), (w.alice, None));
+    let (mut browser, device, passkeys, pass) = fresh(&mut authenticator, [6; 32]);
+    assert!(passkeys.contains(&w.passkey_a));
+    // on their connection, where the browser's hello proved its device, the Mac hands it the link card of each
+    // passkey the pass may be from: only Alice's roots a vault
+    assert_eq!(pass.device.id(), device, "the pass is for the device on the connection");
+    let card = pass.passkeys(NOW).into_iter().flat_map(|p| mac.link_card(w.mac_a, p)).collect();
+    browser.receive(device, card, vec![]);
+    let joining: Vec<_> = passkeys.iter().filter_map(|&p| Some((p, browser.joining(device, p).ok()?))).collect();
+    assert_eq!(joining, [(w.passkey_a, (w.alice, None))], "Alice's vault, by the card, so her passkey is Alice's");
+    let (passkey, vault) = (w.passkey_a, w.alice);
+    // it joins Alice's vault: the second ceremony signs the edit that adds it, and the Mac takes it
     let add = Action::AddDevice { vault, device, seal_to: None };
     let id = ceremony(&mut browser, device, &[passkey, device], add, &mut authenticator);
     let join = Join::from_wire(&browser.joined(device, id).to_wire()).expect("a join");

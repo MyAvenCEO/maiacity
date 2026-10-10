@@ -1,7 +1,7 @@
 // avenDB's passkey in the browser's own authenticator (P8e): WebAuthn with the PRF extension. The passkey never
 // leaves the authenticator; each ceremony brings back an assertion over a challenge and the PRF output on the app's
-// salt, and the one that unlocks a device also the output on the device's own salt, from which the device's keys
-// derive. The device (avendb-browser's `Device`) asks for each ceremony it needs. Every ceremony requires user
+// salt, and the one that unlocks a device also the output on the device's own salt, which masks the secret the device's
+// keys come from. The device (avendb-browser's `Device`) asks for each ceremony it needs. Every ceremony requires user
 // verification: an authenticator's PRF (CTAP2's hmac-secret) answers with another secret without it, so the outputs
 // stay the same only if each ceremony verifies the person. The passkey may be the one the person signed up to
 // maiaCITY with, for the same relying party, if it has PRF: maiaCITY's sign-up asks for it (src/lib/auth/client.ts).
@@ -127,9 +127,10 @@ export async function inSheet(avendb, what, id, challenge, salt, deviceSalt) {
 
 /**
  * The ceremonies of a device of avenDB's module `avendb` (its `prfSalt` and `deviceSalt`) with the passkey whose
- * credential's id is `id` (any of the person's if none): `unlock(nonce)` unlocks the device whose salt ends in `nonce`
- * and remembers which passkey did, and `sign(challenge, step)` is every ceremony the device asks for after it. In the
- * Mac app, each in its sign-in sheet.
+ * credential's id is `id` (any of the person's if none): `unlock(nonce, challenge)` unlocks the device whose salt ends
+ * in `nonce`, over `challenge` if given, a new device's, which makes the unlock its passkey's pass for it, and
+ * remembers which passkey did; `sign(challenge, step)` is every ceremony the device asks for after it. In the Mac app,
+ * each in its sign-in sheet.
  */
 export function ceremonies(avendb, id) {
 	const salt = avendb.prfSalt();
@@ -140,8 +141,7 @@ export function ceremonies(avendb, id) {
 			: ceremony(held.id, challenge, salt, deviceSalt);
 	return {
 		held,
-		async unlock(nonce) {
-			const challenge = crypto.getRandomValues(new Uint8Array(32));
+		async unlock(nonce, challenge = crypto.getRandomValues(new Uint8Array(32))) {
 			const unlock = await run('unlock', challenge, avendb.deviceSalt(nonce));
 			held.id = unlock.id;
 			return { ...unlock, nonce };

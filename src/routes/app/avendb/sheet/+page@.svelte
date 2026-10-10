@@ -15,8 +15,6 @@
 	/** @type {Record<string, string>} what each ceremony is for, by the step the device names */
 	const FOR = {
 		unlock: 'to unlock avenDB in the app',
-		pass: 'to let the app reach avenDB’s server',
-		hello: 'to show your vault it is you',
 		join: 'to add the app to your vault as one of its devices',
 		found: 'to found your vault',
 		claim: 'to claim avenDB’s server',

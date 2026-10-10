@@ -1,7 +1,7 @@
 /*
  * The avenDB account's walk through, end to end: /app/avendb/ in a headless Chrome whose virtual authenticator holds a
  * passkey with PRF, against an avenDB server on this machine. The person signed up to maiaCITY with that passkey; the
- * account founds their vault with it in three ceremonies, claims the server, and names their vault and avenCEO with
+ * account founds their vault with it in two ceremonies, claims the server, and names their vault and avenCEO with
  * none. A note of theirs opens as a docs app opens a document, at an address of its own: started blank, titled,
  * written, given a proposal, accepted into main, undone, restored, made to match its proposal and made a variant of,
  * with no ceremony; their vault's studio shows its tables, schemas, lenses and every signed edit. Their vault then
@@ -12,7 +12,7 @@
  * him in her table editor, while avenCHARLY sees nothing of hers; the Sync list shows her cells, avenCEO's server
  * relaying their ciphertext and opening none of it; making the coop an owner of her whole vault takes one ceremony,
  * revoking avenBOB's read none. The account opens again after a reload in one ceremony; forgotten here,
- * it comes back through the server for the passkey alone, in four ceremonies, with every vault and the note. Each step
+ * it comes back through the server for the passkey alone, in two ceremonies, with every vault and the note. Each step
  * is screenshot.
  *
  * Passkeys of localhost count only in a device built with avendb's `localhost-passkeys`, never in one that ships, so
@@ -307,9 +307,9 @@ try {
 	const t = Date.now();
 	const open = await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
 	check(`the vault is founded, in ${((Date.now() - t) / 1000).toFixed(1)} s`, open, await problem());
-	check('in three ceremonies', (await ceremonies()) - before === 3, `${(await ceremonies()) - before}`);
+	check('in two ceremonies', (await ceremonies()) - before === 2, `${(await ceremonies()) - before}`);
 	check('its vault and avenCEO named, in the bar', await until(() => hasAll(['Samuel', 'avenCEO'])), (await bar()).join(', '));
-	check('naming them took no ceremony', (await ceremonies()) - before === 3, `${(await ceremonies()) - before}`);
+	check('naming them took no ceremony', (await ceremonies()) - before === 2, `${(await ceremonies()) - before}`);
 	check('the person’s own vault first', (await bar())[0] === 'Samuel', (await bar()).join(', '));
 	check('quantum-proof: post-quantum only', (await text('.aside')).includes('Post-quantum only'));
 	check('acting as Samuel', (await text('.switcher .pill b')) === 'Samuel', await text('.switcher .pill b'));
@@ -638,7 +638,7 @@ try {
 	await click('Sign in with my passkey', '.account button');
 	const signedIn = await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
 	check('signed in again, through the server', signedIn, await problem());
-	check('in four ceremonies', (await ceremonies()) - signing === 4, `${(await ceremonies()) - signing}`);
+	check('in two ceremonies', (await ceremonies()) - signing === 2, `${(await ceremonies()) - signing}`);
 	check('every vault came back', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
 	await click('Owners & devices', '.aside .tabs-list .item');
 	const both = async () => (await devices()).includes(name) && (await devices()).includes('Samuel’s test browser');

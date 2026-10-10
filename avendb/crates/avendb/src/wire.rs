@@ -1,9 +1,9 @@
 //! The wire (P8): what devices send each other, as bytes, and back. An edit keeps the bytes its id hashes (`encode`); a
 //! signed edit adds its signatures, and the messages of a sync wrap what `sync` asks and answers: a device's hello on a
 //! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`). A new device
-//! links (P8c) with its passkey's hello (`PasskeyHello`), then joins its person's vault (`Join`); a device with no UDP
-//! of its own reaches the server's relay first by its passkey's pass (`RelayPass`, P8d). The first human vault to
-//! claim a server nobody has claimed yet (`Claim`) owns it: the server becomes a device of the aven vault avenCEO,
+//! shows its passkey's pass for it (`RelayPass`, P8d): to the server's relay, which lets it in if it has no UDP of its
+//! own, and to the peer it links through (P8c), which hands it its vault; then it joins (`Join`). The first human vault
+//! to claim a server nobody has claimed yet (`Claim`) owns it: the server becomes a device of the aven vault avenCEO,
 //! which that human vault owns.
 //!
 //! Every value has exactly one encoding, and a decoder takes only bytes that encode back to themselves: integers are
@@ -18,7 +18,7 @@ use crate::encode::{Encode, VERSION};
 use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
-use crate::sign::{Assertion, Classical, Hello, PasskeyHello, RelayPass, Signature, SignerKeys, Signed};
+use crate::sign::{Assertion, Classical, Hello, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
 
@@ -72,9 +72,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(
-    Signed, Ask, Hello, Request, Reply, Announce, PasskeyHello, Join, RelayPass, Claim, PublicKey, Slice, Select, Body
-);
+wire!(Signed, Ask, Hello, Request, Reply, Announce, Join, RelayPass, Claim, PublicKey, Slice, Select, Body);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -728,34 +726,20 @@ impl Decode for Hello {
     }
 }
 
-impl Encode for PasskeyHello {
-    fn encode(&self, out: &mut Vec<u8>) {
-        self.keys.encode(out);
-        self.assertion.encode(out);
-        self.sig.encode(out);
-    }
-}
-
-impl Decode for PasskeyHello {
-    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(PasskeyHello { keys: SignerKeys::decode(r)?, assertion: Assertion::decode(r)?, sig: r.bytes()? })
-    }
-}
-
 impl Encode for RelayPass {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.keys.encode(out);
+        self.slh.encode(out);
         self.assertion.encode(out);
         self.sig.encode(out);
-        self.endpoint.encode(out);
+        self.device.encode(out);
         self.made.encode(out);
     }
 }
 
 impl Decode for RelayPass {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        let (keys, assertion, sig) = (SignerKeys::decode(r)?, Assertion::decode(r)?, r.bytes()?);
-        Ok(RelayPass { keys, assertion, sig, endpoint: r.array()?, made: u64::decode(r)? })
+        let (slh, assertion, sig) = (r.array()?, Assertion::decode(r)?, r.bytes()?);
+        Ok(RelayPass { slh, assertion, sig, device: SignerKeys::decode(r)?, made: u64::decode(r)? })
     }
 }
 

@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::SignerId;
-use avendb::sign::{Hello, PasskeyHello};
+use avendb::sign::{Hello, RelayPass};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
 use iroh::endpoint::{Connection, RecvStream, VarInt};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 
-use crate::{ALPN, Peer, Shared, WAIT};
+use crate::{ALPN, Peer, Shared, WAIT, unix_now};
 
 /// A request, answered by a reply.
 pub(crate) const REQUEST: u8 = 0;
@@ -19,8 +19,9 @@ pub(crate) const REQUEST: u8 = 0;
 pub(crate) const ANNOUNCE: u8 = 1;
 /// A request for the node's contact card, answered by its vault logs, if it hands its card out (the server).
 pub(crate) const CARD: u8 = 2;
-/// A passkey's hello (P8c), said for the peer's device on this connection, answered by the passkey's link card: the
-/// logs of the vaults it owns (`Lab::link_card`).
+/// A passkey's pass for the peer's device (P8c, `sign::RelayPass`), the device whose hello proved it on this
+/// connection, answered by the link card of each passkey the pass may be from: the logs of the vaults it owns
+/// (`Lab::link_card`).
 pub(crate) const LINK: u8 = 3;
 /// A new device's join (P8c), answered by nothing once the node accepts it (`Lab::accept_join`).
 pub(crate) const JOIN: u8 = 4;
@@ -120,8 +121,9 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
 
 /// The answer to the message on the stream `recv`: a request gets a reply, and an announcement nothing, but the
 /// node asks the peer if its digests differ; a request for its card gets its vault logs, if it hands its card out. A
-/// passkey's hello that proves the passkey for the peer's device on this connection gets the passkey's link card, and
-/// a join the node accepts gets nothing, and the node tells the new device what it holds. A server nobody has claimed
+/// passkey's pass for the device whose hello proved it on this connection, made in its minutes, gets the link card of
+/// each passkey it may be from, and a join the node accepts gets nothing, and the node tells the new device what it
+/// holds. A server nobody has claimed
 /// yet hands its key to seal to whoever asks, and answers the first claim it takes with its join (P8f).
 async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Result<Vec<u8>> {
     let message = recv.read_to_end(MESSAGE_LIMIT).await?;
@@ -146,11 +148,17 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             Ok(Reply { edits, ..Reply::default() }.to_wire())
         }
         LINK => {
-            let hello = PasskeyHello::from_wire(body)?;
-            // the peer said it for its own end of this connection: the dialer's if this node listened
-            let proven = hello.verify(&exporter(&peer.conn)?, !peer.dialed, device);
-            let passkey = proven.context("the passkey's hello proves no passkey for this device on this connection")?;
-            let edits = shared.lab(move |lab, me| lab.link_card(me, passkey)).await;
+            let pass = RelayPass::from_wire(body)?;
+            // for the device on the other end of this connection alone, whose hello proved it
+            if pass.device.id() != device {
+                bail!("a pass for another device than the one on this connection");
+            }
+            let passkeys = pass.passkeys(unix_now());
+            if passkeys.is_empty() {
+                bail!("the pass is no passkey's for this device now");
+            }
+            let card = move |lab: &mut avendb::lab::Lab, me| passkeys.iter().flat_map(|&p| lab.link_card(me, p)).collect();
+            let edits = shared.lab(card).await;
             Ok(Reply { edits, ..Reply::default() }.to_wire())
         }
         JOIN => {
@@ -195,7 +203,7 @@ impl ProtocolHandler for Protocol {
         let shared = self.0.clone();
         match n0_future::time::timeout(WAIT, listen_hello(&shared, &conn)).await {
             Ok(Ok(device)) => {
-                let peer = shared.connected(conn, device, false);
+                let peer = shared.connected(conn, device);
                 serve(shared, peer).await;
             }
             _ => conn.close(REFUSED, b"no hello"),

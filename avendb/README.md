@@ -99,12 +99,15 @@ through the server once every other device is lost.
 1. A device that holds the vault, Alice's Mac say, shows its offer as a QR code (`Node::offer`, text `AVENDB1…` in the
    code's alphanumeric mode): its device, its endpoint and where to reach it. The app knows the server's offer, which
    the server logs as it starts.
-2. The new device scans it, connects, and both devices say their hellos. Then the new device says its passkey's hello:
-   a WebAuthn assertion and an SLH-DSA signature, both over a hash of which end it speaks for, the connection's TLS
-   exporter and the new device (`PasskeyHello`). Said on another connection, for the other end or for another device,
-   it proves nothing.
-3. The peer checks it against the passkey its vaults name and hands back the link card: the logs of the vaults the
-   passkey owns and of those that own them, up the chains, and nothing about any cap or entry (T20).
+2. The new device scans it, connects, and both devices say their hellos, each an SLH-DSA signature over the
+   connection's TLS exporter. Then the new device shows its passkey's pass for it (`RelayPass`): the ceremony that
+   unlocked it, a WebAuthn assertion and an SLH-DSA signature, both over a hash of the new device's keys and the time.
+   A pass for another device than the one whose hello proved it on the connection, or out of its ten minutes, proves
+   nothing.
+3. The peer recovers the passkeys the assertion may be from, two, rarely up to four, each with the pass's SLH-DSA key,
+   and hands back the link card of each: the logs of the vaults the passkey owns and of those that own them, up the
+   chains, and nothing about any cap or entry (T20). Only the person's passkey owns any: a key nobody holds signs no
+   genesis.
 4. The new device adds itself to the vault the passkey is the root of, signed by the passkey and by itself (`join`),
    and sends that edit with its McEliece key. The peer takes it only for the device on the connection, and only if the
    rules take it (`accept_join`); it boxes the vault key for the new device, and the two sync by caps.
@@ -112,7 +115,7 @@ through the server once every other device is lost.
 A device the server doesn't know yet reaches it straight, over UDP, as its relay lets in only the devices it knows,
 or, with no UDP of its own, as in a browser, through the relay by its passkey's pass (see
 [A device in the browser](#a-device-in-the-browser)). Once the device has joined, the relay lets it in. A forged code
-gains an attacker nothing: the passkey's hello names the new device and the connection, and every edit of a card is
+gains an attacker nothing: the pass names the new device, which alone says its hello, and every edit of a card is
 signed.
 
 ## A device in the browser
@@ -121,13 +124,14 @@ signed.
 device of its own, as a Mac or a phone is.
 
 - A page has no UDP, so its node reaches every peer through the server's relay. The relay lets in only the devices the
-  server knows, so a new device shows it a pass its person's passkey signed (`sign::RelayPass`): a WebAuthn assertion
-  and an SLH-DSA signature over the device's endpoint and the time. The relay honours it for ten minutes, and only for
-  a passkey that is the root of a vault the server knows. Replayed, it lets in that same endpoint and no other. The pass
+  server knows, so a new device shows it a pass its person's passkey signed (`sign::RelayPass`), in the ceremony that
+  unlocks the device: a WebAuthn assertion and an SLH-DSA signature over the device's keys and the time. The relay
+  honours it for ten minutes, and only if a passkey it may be from is the root of a vault the server knows. Replayed,
+  it lets in that same endpoint and no other. The pass
   rides in iroh's relay handshake, as its auth token, so the relay needs no route of its own. Once the device joined its
   vault, the server knows it, and it needs no pass.
 - It links as any new device does: it takes the code another device of its person shows, a Mac's or another
-  browser's, its passkey says its hello on their connection, it joins the vault, and they sync. Then the page reads
+  browser's, shows its passkey's pass on their connection, joins the vault, and they sync. Then the page reads
   and edits documents, and shows its own code, through which the next device links.
 - Its TLS is rustls with ring, as aws-lc-rs doesn't build for a browser, and X25519MLKEM768 is written in pure Rust
   (`avendb_net::kx`, checked against aws-lc-rs's). Its tasks and timers run on the page's event loop.
@@ -142,7 +146,10 @@ back (`sign::Ceremony`): an assertion over a challenge, and the PRF output on th
 SLH-DSA key and the key sealed to it derive. The device drafts each edit the passkey signs (`Lab::draft`), the passkey
 signs the edit's id as the ceremony's challenge, and the device keeps the edit (`Lab::complete`). The ceremony that
 unlocks the device also brings the PRF output on the device's own salt, which ends in 32 random bytes kept on the
-device; its keys derive from it at every unlock. The Lab holds no secret of the passkey: it lends the seal secret from
+device. A new device makes the secret its keys come from itself (`Fresh`) and keeps it masked by that output, so its
+keys are known before its first ceremony, whose challenge names them: that unlock is its passkey's pass for it. Every
+unlock after brings the output that unmasks the secret again; a device made before 2026-10-10 keeps no mask, as the
+output is its secret. The Lab holds no secret of the passkey: it lends the seal secret from
 the ceremony for that edit alone, and forgets the McEliece pair it made from it once the device locks. Edits drafted
 together (`Lab::drafting`) are signed in one ceremony, over their batch: its challenge is the hash of their ids,
 smallest first (`sign::batch_challenge`), and each edit's signature carries those ids, so it counts for those edits
@@ -151,16 +158,17 @@ once for each edit.
 
 - **Found** (`Device::found`, `Node::found_with`): a new person's first browser founds their human vault with the
   passkey they signed up to maiaCITY with, or one it makes, gives avenCEO relay on the whole of it, so the server keeps
-  its entries, and writes its card there, in three ceremonies: the unlock, the pass to the relay, and one for the
-  vault's genesis and the edit that adds the device together (four with a new passkey). Its P-256 key comes from the
-  new passkey's public key info, or, for maiaCITY's, as the one key both the unlock's and the pass's assertions recover
-  to. The server's relay lets any passkey's pass in while it is open to sign-up (`AVENDB_SIGNUP`, open by default), so
-  a person with no device yet gets in; from then on the server knows the device. The first person to found their vault
-  through a server nobody has claimed yet claims it in that same ceremony (see [avenCEO](#avenceo)).
+  its entries, and writes its card there, in two ceremonies: the unlock, which is the pass to the relay, and one for
+  the vault's genesis and the edit that adds the device together (three with a new passkey). Its P-256 key comes from
+  the new passkey's public key info, or, for maiaCITY's, from the second ceremony: the device drafts it all for each
+  key the unlock's assertion recovers to, in one batch, and keeps the drafts of the key the second ceremony's
+  assertion verifies under (`Lab::drafting_for`). The server's relay lets any passkey's pass in while it is open to
+  sign-up (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in; from then on the server knows
+  the device. The first person to found their vault through a server nobody has claimed yet claims it in that same
+  ceremony (see [avenCEO](#avenceo)).
 - **Link** (`Device::link`, `Node::link_with`): a browser of a person who has a device already links through the code
-  that device shows, in four ceremonies: the unlock, the pass, the passkey's hello, and the join. It never saw the
-  passkey made, so it learns its P-256 key as the one key both the unlock's and the pass's assertions recover to
-  (`sign::passkey_key`).
+  that device shows, in two ceremonies: the unlock, which is the pass, and the join. It never saw the passkey made: of
+  the keys the unlock's assertion recovers to, its passkey's is the one whose vault the peer hands over.
 - **Open** (`Device::open`): what the device holds is kept in IndexedDB (`js/store.js`), its edits in the order it took
   them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
   one ceremony, the unlock; the relay knows it, so it needs no pass.
@@ -257,10 +265,11 @@ each call a line of JSON on the device's stdin, each answer one on its stdout.
   where one lets it (UPnP, NAT-PMP, PCP: `Options::direct`), so it reaches the person's other devices directly wherever
   it can, and through the relay only where it must. Its TLS is aws-lc-rs, X25519MLKEM768 only, like the server's.
 - **On disk.** It keeps what it holds in a folder (`~/Library/Application Support/city.maia.studio/avendb/`), as the
-  server does (`Disk`): its store, and `meta.json`, what opens it again (its name, its relay, its salt's own bytes and
-  its passkey's credential and P-256 key), as the page keeps them. No secret: its keys derive from the passkey at every
-  unlock. It runs on while the app does, whichever page is open, and opens again in the unlock alone. A store of an
-  earlier format is put aside, as the server's is, and the page then offers to forget it and sign in again.
+  server does (`Disk`): its store, and `meta.json`, what opens it again (its name, its relay, its salt's own bytes, its
+  mask and its passkey's credential and P-256 key), as the page keeps them. No secret: its keys come back from the
+  mask and the passkey's PRF output at every unlock, and either alone tells nothing. It runs on while the app does,
+  whichever page is open, and opens again in the unlock alone. A store of an earlier format is put aside, as the
+  server's is, and the page then offers to forget it and sign in again.
 - **Its ceremonies** run in the same sign-in sheet, which the app shows for it: the device makes the one-time X-Wing
   key itself, names it in the sheet's URL, and opens what the sheet page sealed to it; the page sees none of it.
 - **Moving in.** A device a page in the app made before moves into the folder as it unlocks (`adopt`): the edits and
@@ -307,10 +316,11 @@ that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129
 `$AVENDB_CHROMIUM`) and runs `tests/page.rs`: a relay open to sign-up and a new server, nobody's yet, on this machine,
 and one headless Chromium driven over its DevTools protocol, whose virtual authenticator, with PRF, holds Eve's passkey.
 Each of her browsers is a frame of one tab, with a store of its own in IndexedDB: the first makes her passkey, founds
-her vault, claims the server and writes a note (8.0 s, three ceremonies, the server's claim and avenCEO's keys among
-the work); the second links through the first one's code and edits the note (3.8 s, four ceremonies); the first closes
-and opens again from its store (0.8 s, one ceremony), reads the edit and edits it once more. `tests/device.rs` runs the same natively, with a software passkey in the authenticator's place, and Alice's
-browsers linking through her Mac.
+her vault, claims the server and writes a note (7.3 s, two ceremonies after the one that makes the passkey, the
+server's claim and avenCEO's keys among the work); the second links through the first one's code and edits the note
+(3.7 s, two ceremonies); the first closes and opens again from its store (0.9 s, one ceremony), reads the edit and
+edits it once more. `tests/device.rs` runs the same natively, with a software passkey in the authenticator's place,
+and Alice's browsers linking through her Mac.
 
 ## The device's secure boundary
 
@@ -447,5 +457,6 @@ Each phase is one PR, merged when its Rust tests pass and its theorems are prove
 | P8f, one prompt | No setup code: the first human vault founded through the server owns avenCEO; edits drafted together signed in one ceremony over their batch, so a first browser founds its vault, adds itself and claims the server in one prompt after the unlock and the pass (three in all, four with a new passkey), and This browser says when its vault owns avenCEO | Merged |
 | P8f, account | The tile opens on the person's account, the Lab apart and made only when opened: their human vault, its root passkey and its devices, each by the name on its card, an end-to-end encrypted document the device writes itself; a new browser signs in with the passkey alone, through the server; the Lab's simulated person is Alice | Merged |
 | P8f, real vaults | Real vaults the person controls instead of the simulated Lab: the vaults this browser knows as a chat app's servers, each by the name on its profile; new aven and coop vaults their vault owns in one ceremony; acting as any of them, its caps deciding what the page shows and does; each vault's owners, devices, access and syncing devices; every node post-quantum only | Merged |
+| Two prompts | Setup and sign-in in two passkey prompts each: a new device makes its own secret, kept masked by the PRF output on its salt, so the ceremony that unlocks it is its passkey's pass for it, to the relay and to the peer it links through (no hello of the passkey's any more); a device that doesn't know its passkey's key yet drafts its vault for each key the unlock recovers to, in one batch, and keeps the one the next ceremony verifies under | Merged |
 | Flat vaults | No spaces: entries straight in their vault, their type and tags sealed in their writes; caps on any slice (types, tags, authors, entries, creation time, any AND and OR of those), in chains that only narrow (T22); cells, the entries the same caps reach, one key per cell and a key per entry derived from it (T24), kept to what the caps say by the vault's own devices, who move entries as tags change and answer other vaults' tag asks (T23); relays that route by cells and never see a selector, a type or a tag (T25); the page's sharing by rule, tags, Access, Sync and Cells; the server's data started fresh | Merged |
 | P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |

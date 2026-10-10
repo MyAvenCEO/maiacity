@@ -4,7 +4,7 @@
  * web view may not use maia.city's passkeys, so every ceremony runs in its sign-in sheet: maia.city's sheet page
  * (/app/avendb/sheet/, here the dev server's) in a frame over the app, as the app's `passkey_sheet` command shows it in
  * macOS's sign-in sheet (vault/app/src/passkey.rs); the frame's way back to `city.maia.studio://` is caught and handed
- * to the app's page, as the sheet hands it to the app. The person founds their vault in three sheets, creates a vault
+ * to the app's page, as the sheet hands it to the app. The person founds their vault in two sheets, creates a vault
  * in one, and opens the account again after a reload in one; what each sheet sends back is sealed to the app's page,
  * so no PRF output crosses open. Each step is screenshot.
  *
@@ -189,20 +189,20 @@ try {
 		});
 	});
 
-	// founding: the unlock, the pass, the vault and this device, each in a sheet
+	// founding: the unlock, which is the pass, then the vault and this device, each in a sheet
 	const before = await ceremonies();
 	await page.evaluate(() => (/** @type {any} */ (window).__sheetPause = 1500));
 	await click('Use my maiaCITY passkey');
 	check('the sign-in sheet shows over the app', await until(() => page.$('iframe.sign-in-sheet').then(Boolean), 15000));
-	check('saying the sheet asks', await waitText('a sign-in sheet asks for your passkey three times', 5000), await text('.account [role=status]'));
+	check('saying the sheet asks', await waitText('a sign-in sheet asks for your passkey twice', 5000), await text('.account [role=status]'));
 	await sleep(500);
 	await shot('2-sheet');
 	await page.evaluate(() => (/** @type {any} */ (window).__sheetPause = 0));
 	const t = Date.now();
 	const open = await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
 	check(`the vault is founded through the sheets, in ${((Date.now() - t) / 1000).toFixed(1)} s`, open, await problem());
-	check('in three sheets', (await sheets()) === 3, `${await sheets()}`);
-	check('and three ceremonies', (await ceremonies()) - before === 3, `${(await ceremonies()) - before}`);
+	check('in two sheets', (await sheets()) === 2, `${await sheets()}`);
+	check('and two ceremonies', (await ceremonies()) - before === 2, `${(await ceremonies()) - before}`);
 	check('each answer sealed: no PRF output crosses open', await sealed());
 	check('its vault and avenCEO named, in the bar', await until(async () => (await bar()).join() === 'Samuel,avenCEO'), (await bar()).join(', '));
 	check('no error', !(await problem()), await problem());

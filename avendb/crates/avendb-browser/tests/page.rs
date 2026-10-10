@@ -3,9 +3,9 @@
 //! starts a relay open to sign-up and a new server, nobody's yet, on this machine, and drives one headless Chromium
 //! over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and each of her browsers
 //! is a frame of the tab, with a store of its own in IndexedDB. Her first browser makes the passkey, founds her vault
-//! and claims the server in one ceremony after the unlock and the pass, and writes a note; her second links through the
-//! first one's code and edits it; the first closes, and opens again from its store in one ceremony, and edits the note
-//! once more. Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs it.
+//! and claims the server in one ceremony after the unlock, and writes a note; her second links through the first one's
+//! code in two ceremonies and edits it; the first closes, and opens again from its store in one ceremony, and edits the
+//! note once more. Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs it.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -307,13 +307,13 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let opts = Options { relay: Some(relay.url()), admission: Some(admission.clone()), card: true, ..Options::local() };
     let server = Node::spawn(lab, server_d, opts).await.expect("the server");
 
-    // Eve's first browser makes her passkey, founds her vault, claims the server and writes a note, in three ceremonies
+    // Eve's first browser makes her passkey, founds her vault, claims the server and writes a note, in two ceremonies
     let code = server.offer().to_text();
     let params = [("store", "first"), ("name", "Eve's browser"), ("relay", &url), ("server", &code)];
     tab.frame(&[&params[..], &[("page", "first"), ("write", MARCH), ("reads", APRIL), ("close", "1")]].concat()).await;
     let first = tab.expect("first", "started").await;
     eprintln!("Eve's first browser founded her vault in {} ms, in {} ceremonies", first["ms"], first["ceremonies"]);
-    assert_eq!(first["ceremonies"], 3, "the unlock, the pass, and one for her vault and the claim: {first}");
+    assert_eq!(first["ceremonies"], 2, "the unlock, and one for her vault and the claim: {first}");
     let owners = server.read(|lab, me| lab.vault_of(me).and_then(|v| Some(lab.state(me).vault(v)?.owners.clone())));
     let eve = avendb::policy::Principal::Vault(avendb::id::VaultId(id(&first, "vault")));
     assert_eq!(owners.await, Some(vec![eve]), "the server is a device of avenCEO, which her vault owns");
@@ -323,7 +323,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let holds = move |lab: &Lab, me| lab.fetched(me, entry) > 0;
     until("the server keeps her note", || server.read(holds)).await;
 
-    // her second browser links through the first one's code, in four ceremonies, and edits the note
+    // her second browser links through the first one's code, in two ceremonies, and edits the note
     let field = |key| first[key].as_str().unwrap_or_else(|| panic!("{key} in {first}"));
     let note = [("actor", field("actor")), ("entry", field("entry"))];
     let offer = first["offer"].as_str().expect("the first browser's code");
@@ -332,7 +332,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.frame(&[&second[..], &steps, &note[..]].concat()).await;
     let second = tab.expect("second", "started").await;
     eprintln!("Eve's second browser linked in {} ms", second["ms"]);
-    assert_eq!(second["ceremonies"], 4, "the unlock, the pass, the passkey's hello and the join: {second}");
+    assert_eq!(second["ceremonies"], 2, "the unlock, which is the passkey's pass, and the join: {second}");
     assert_eq!(second["vault"], first["vault"], "it joined her vault");
     tab.expect("second", "read").await;
     tab.expect("second", "wrote").await;
