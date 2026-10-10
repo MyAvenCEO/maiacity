@@ -8,7 +8,8 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { loadMips, decide, withdraw, linkPrs } from './store.js';
+	import { loadMips, decide, withdraw, linkPrs, setForget, loadMinds } from './store.js';
+	import { memoryOf } from './mind.js';
 	import ConfigCard from './ConfigCard.svelte';
 	import { HOOKS } from '../../../game/economy/params.js';
 
@@ -116,6 +117,41 @@
 		}
 	}
 
+	// ---- the brains a new world starts with (Samuel, 2026-10-10): each aven's copy from the world it follows, every
+	// memory listed, and what the MIP has it forget (its author or an admin marks an entry while the MIP is open) ----
+	let brainsOf = $state(/** @type {Record<string, any>} */ ({})); // the followed world's brains, by its id
+	/** @param {string} id */
+	async function loadBrains(id) {
+		if (!id || brainsOf[id]) return;
+		brainsOf[id] = 'loading';
+		try {
+			brainsOf[id] = await loadMinds(id, true);
+		} catch (e) {
+			brainsOf[id] = { error: /** @type {any} */ (e)?.message || 'could not be read' };
+		}
+	}
+	const forgotten = (/** @type {any} */ m, /** @type {string} */ aven, /** @type {string} */ list, /** @type {any} */ ref) =>
+		(m.world?.forget?.[aven] ?? []).some((/** @type {any} */ f) => f.list === list && String(f.ref) === String(ref));
+	const forgetCount = (/** @type {any} */ m) => Object.values(m.world?.forget ?? {}).reduce((n, l) => n + /** @type {any[]} */ (l).length, 0);
+	/** mark one memory to forget in the new world, or keep it after all */
+	async function toggleForget(/** @type {any} */ m, /** @type {string} */ aven, /** @type {string} */ list, /** @type {any} */ ref) {
+		const all = JSON.parse(JSON.stringify(m.world?.forget ?? {}));
+		const mine = (all[aven] ??= []);
+		const i = mine.findIndex((/** @type {any} */ f) => f.list === list && String(f.ref) === String(ref));
+		if (i >= 0) mine.splice(i, 1);
+		else mine.push({ list, ref });
+		busy = true;
+		try {
+			const r = await setForget(m.number, all);
+			m.world = r.world;
+			mips = mips.map((x) => (x.number === m.number ? r : x));
+		} catch (e) {
+			error = /** @type {any} */ (e)?.message || 'Could not change what its brains forget.';
+		} finally {
+			busy = false;
+		}
+	}
+
 	const when = (/** @type {string} */ t) => (t ? new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 	/** the world a MIP belongs to, in words */
 	const worldOf = (/** @type {any} */ m) =>
@@ -212,6 +248,31 @@
 						{#if m.world.diff?.length}<div class="chips">{#each m.world.diff as d (d)}<span class="chip">{d}</span>{/each}</div>{/if}
 					{:else}<p>The first world: nothing to compare it with.</p>{/if}
 				</div>
+				{#if m.action === 'world' && m.world.after}
+					{@const own = brainsOf[m.world.after]}
+					{@const edits = m.status === 'open' && canLink(m)}
+					<details class="brains" ontoggle={(e) => /** @type {HTMLDetailsElement} */ (e.currentTarget).open && loadBrains(m.world.after)}>
+						<summary>Brains: each aven starts with its brain from {m.world.after_name ?? 'the world it follows'}{forgetCount(m) ? `, forgetting ${forgetCount(m)} ${forgetCount(m) === 1 ? 'memory' : 'memories'}` : ', every memory kept'}</summary>
+						{#if own === 'loading'}<p class="sub">Loading…</p>
+						{:else if own?.error}<p class="sub">The brains could not be read ({own.error}).</p>
+						{:else if own}
+							{#each Object.entries(own).sort(([a], [b]) => a.localeCompare(b)) as [aven, brain] (aven)}
+								<div class="brain">
+									<b>{aven}</b>
+									{#each memoryOf(brain) as list (list.key)}
+										<p class="list">{list.label}</p>
+										<ul>
+											{#each list.entries as e, i (i)}
+												{@const gone = forgotten(m, aven, list.key, e.ref)}
+												<li class:gone>{e.text}{#if e.world} <small>{e.world}</small>{/if}{#if edits}<button class="drop" disabled={busy} onclick={() => toggleForget(m, aven, list.key, e.ref)}>{gone ? 'keep' : 'forget'}</button>{:else if gone} <small>forgotten</small>{/if}</li>
+											{/each}
+										</ul>
+									{:else}<p class="sub">Nothing remembered yet.</p>{/each}
+								</div>
+							{:else}<p class="sub">No brains kept there: the avens start fresh.</p>{/each}
+						{/if}
+					</details>
+				{/if}
 			{/if}
 			{@const changed = m.cards.filter((/** @type {any} */ c) => !sameCard(c, m.base?.[c.id]))}
 			{@const same = m.cards.filter((/** @type {any} */ c) => sameCard(c, m.base?.[c.id]))}
@@ -241,6 +302,42 @@
 {/snippet}
 
 <style>
+	.brains {
+		margin: 0.5rem 0;
+		font-size: 0.82rem;
+	}
+	.brains summary {
+		cursor: pointer;
+		font-weight: 600;
+	}
+	.brains .brain {
+		margin: 0.5rem 0 0.7rem;
+	}
+	.brains .list {
+		margin: 0.3rem 0 0.1rem;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.6;
+	}
+	.brains ul {
+		margin: 0;
+		padding-left: 1.1rem;
+	}
+	.brains li.gone {
+		text-decoration: line-through;
+		opacity: 0.5;
+	}
+	.brains .drop {
+		margin-left: 0.4rem;
+		background: none;
+		border: 0;
+		padding: 0;
+		color: #b3261e;
+		cursor: pointer;
+		font: inherit;
+		font-size: 0.72rem;
+	}
 	.world-diff {
 		background: #f4f1e8;
 		border-radius: 8px;

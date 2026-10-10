@@ -19,7 +19,7 @@
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
 	import { loadConfigs, loadRuns, loadMips, loadWorldRun, saveWorldState, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
-	import { wholeMind, beginRun, wear, night, editMind, keepMind, worldStamp, enterWorld, traits, TRIAL_DAYS } from './mind.js';
+	import { wholeMind, beginRun, wear, night, editMind, keepMind, worldStamp, enterWorld, traits, TRIAL_DAYS, forgetMemory } from './mind.js';
 	import AvensView from './AvensView.svelte';
 	import ActivityFeed from './ActivityFeed.svelte';
 	import { me, may } from '$lib/auth/client';
@@ -110,8 +110,12 @@
 			const own = raw[a.name]?.dials ? raw[a.name] : null;
 			const { pending, updated, ...was } = own ?? copies[a.name] ?? {};
 			const m = wholeMind(own || copies[a.name] ? was : null, a.name, RULES.reserveDays);
-			if (!own && copies[a.name]) enterWorld(m, stamp, PARAMS); // a copy learns what is set differently here
-			else m.stamp = stamp;
+			if (!own && copies[a.name]) {
+				enterWorld(m, stamp, PARAMS); // a copy learns what is set differently here
+				// and forgets what its world's MIP said it should (memories from worlds that no longer apply)
+				const gone = (here.forget?.[a.name] ?? []).filter((/** @type {any} */ f) => forgetMemory(m, f.list, f.ref)).length;
+				if (gone) m.log.push(`${here.name || 'this world'} begins: forgot ${gone} ${gone === 1 ? 'memory' : 'memories'} of earlier worlds`);
+			} else m.stamp = stamp;
 			takeEdits(m, raw[a.name]?.pending); // edits made for this world (a copy's old ones stay behind)
 			minds[a.name] = m;
 		}
@@ -144,6 +148,14 @@
 		}
 	}
 	/** the admin: every aven in this world forgets everything and plays on with a new brain */
+	/** forget one memory of one aven's brain in this world (the admin, from the Avens view): taken in now, kept with the
+	 * world's brains on the next night */
+	function forgetOne(/** @type {string} */ name, /** @type {string} */ list, /** @type {any} */ ref) {
+		const m = minds[name];
+		if (!m) return;
+		editMind(m, { forget: [{ list, ref }], by: 'the admin' });
+		snap = snapshot();
+	}
 	async function forgetAll() {
 		if (!confirm(`Forget every aven's brain in ${here.name || 'this world'}? Their characters, trials, lessons and deaths go, and they play on with new ones.`)) return;
 		try {
@@ -207,7 +219,7 @@
 	// ---- worlds (Samuel, 2026-10-09): every world is kept with its settings, and can be opened again and played on;
 	// a new one starts fresh. Each is a capsule: its avens' money and brains are its own ----
 	let worlds = $state(/** @type {any[]} */ ([]));
-	let here = $state({ id: /** @type {string | null} */ (null), name: '', after: /** @type {string | null} */ (null) }); // the world on the page, and the world it follows
+	let here = $state({ id: /** @type {string | null} */ (null), name: '', after: /** @type {string | null} */ (null), forget: /** @type {Record<string, any[]> | null} */ (null) }); // the world on the page, the world it follows, and what its copied brains forget
 	let worldNote = $state('');
 	let openMips = $state(/** @type {any[]} */ ([])); // MIPs waiting for a decision, listed in the welcome screen's aside
 	let focusMip = $state(/** @type {number | null} */ (null)); // the proposal the Proposals page opens on, picked from that aside
@@ -283,7 +295,7 @@
 		}
 		rec = recorder(world, null, { id: run.id, name: run.name, sent: fresh ? 0 : world.stats.length });
 		saving = { days: rec.sent, error: '' };
-		here = { id: run.id, name: run.name, after: s.after ?? null };
+		here = { id: run.id, name: run.name, after: s.after ?? null, forget: s.forget ?? null };
 		trial = false;
 		// its own brains, as it left them (or as the MCP set them for a world not played yet)
 		await loadAllMinds();
@@ -330,7 +342,7 @@
 		const r = (rec = recorder(world, { config_id: CONFIG.id, config_version: CONFIG.version, config: { cards: CONFIG.cards, params: { ...RULES }, local: changedRules() }, seed: world.seed, brain: PLAN[brain.mode].filter(Boolean).map((/** @type {any} */ k) => (k === 'liquid' ? LIQUID_MODEL : box[k] || k)).join(', falling back to '), summary: summary() }));
 		r.ready.then(() => {
 			if (rec !== r || !r.id) return;
-			here = { id: r.id, name: r.name, after: null };
+			here = { id: r.id, name: r.name, after: null, forget: null };
 			for (const a of world.avens) if (a.mind) a.mind.world = r.name;
 			if (!mindsOf) mindsOf = r.id; // its new brains are kept with it from now on
 			keepWorld();
@@ -651,7 +663,7 @@
 			syncMinds(true);
 		}
 		rec = null;
-		here = { id: null, name: '', after: null };
+		here = { id: null, name: '', after: null, forget: null };
 		saving = { days: 0, error: '' };
 		world = createWorld();
 		paused = true;
@@ -1276,7 +1288,7 @@
 	{/if}
 	{#if page === 'avens' && snap.avens}
 		<div class="statspage">
-			<AvensView data={snap.avens} aven={snap.aven} market={snap.market} names={NAME} trialDays={TRIAL_DAYS} onselect={select} {lineOf} admin={acct.admin} {mindNote} onforget={forgetAll} />
+			<AvensView data={snap.avens} aven={snap.aven} market={snap.market} names={NAME} trialDays={TRIAL_DAYS} onselect={select} {lineOf} admin={acct.admin} {mindNote} onforget={forgetAll} onforgetone={forgetOne} />
 		</div>
 	{/if}
 	{#if page === 'stats'}

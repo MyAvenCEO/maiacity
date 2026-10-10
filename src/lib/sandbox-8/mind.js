@@ -386,6 +386,29 @@ export function addLesson(m, text) {
 	}
 	return true;
 }
+/** every memory a brain keeps, as one interface (Samuel, 2026-10-10): each list, what an entry says, the world it came
+ * from where it knows, and how an entry is named to forget it (a lesson by its id, any other line by its words). The
+ * Avens view lists them all this way, and a new world's MIP says which of the copied ones its brains forget */
+export const MEMORY = [
+	{ key: 'lessons', label: 'Lessons', ref: (l) => l.id, text: (l) => `#${l.id} ${l.text} (+${l.up} −${l.down})`, world: (l) => l.world ?? null },
+	{ key: 'log', label: 'Trials', ref: (s) => s, text: (s) => s, world: () => null },
+	{ key: 'deathLog', label: 'Deaths', ref: (s) => s, text: (s) => s, world: () => null },
+	{ key: 'tabu', label: 'Not to try again soon', ref: (s) => s, text: (s) => s, world: () => null }
+];
+/** a brain's memories, list by list (only the lists that hold something), each entry { ref, text, world } */
+export function memoryOf(m) {
+	return MEMORY.map((k) => ({ key: k.key, label: k.label, entries: (Array.isArray(m?.[k.key]) ? m[k.key] : []).map((e) => ({ ref: k.ref(e), text: k.text(e), world: k.world(e) })) })).filter((l) => l.entries.length);
+}
+/** forget one entry of one memory list; true if it was there */
+export function forgetMemory(m, list, ref) {
+	const k = MEMORY.find((x) => x.key === list);
+	if (!k || !Array.isArray(m?.[list])) return false;
+	const i = m[list].findIndex((e) => String(k.ref(e)) === String(ref));
+	if (i < 0) return false;
+	m[list].splice(i, 1);
+	return true;
+}
+
 /** what a brain is never told: that the dead come back, and with how much */
 const HIDDEN = ['rebirthDays', 'startHearts'];
 const hidden = (text) => /\breborn\b|\brebirth\b|\bcome back\b|\bnext life\b/i.test(text);
@@ -514,6 +537,7 @@ export function editMind(m, e) {
 			if (to !== m.wants[k]) (said.push(`${k} stock ${m.wants[k]}→${to}`), (m.wants[k] = to));
 		}
 	if (e?.lesson && addLesson(m, e.lesson)) said.push(`lesson: ${m.lessons.at(-1).text}`);
+	for (const f of Array.isArray(e?.forget) ? e.forget : []) if (forgetMemory(m, f?.list, f?.ref)) said.push(f.list === 'lessons' ? `forgot #${f.ref}` : `forgot "${String(f.ref).slice(0, 40)}"`);
 	if (e?.forget_lesson != null) {
 		const i = m.lessons.findIndex((l) => l.id === Number(e.forget_lesson));
 		if (i >= 0) (said.push(`forgot #${m.lessons[i].id}`), m.lessons.splice(i, 1));

@@ -16,6 +16,8 @@ export const decide = (number, accept, note = '') => post(`/api/economy/mips/${n
 export const withdraw = (number) => post(`/api/economy/mips/${number}/withdraw`, {});
 /** the GitHub PRs a MIP needs (its engine changes in code): the whole list, [{ number, title }] */
 export const linkPrs = (number, prs) => post(`/api/economy/mips/${number}/prs`, { prs });
+/** what a new world's copied brains forget as it begins (an open world MIP): { aven: [{ list, ref }] } */
+export const setForget = (number, forget) => post(`/api/economy/mips/${number}/forget`, { forget });
 export const loadRuns = (limit = 50) => apiCall(`/api/economy/runs?limit=${limit}`);
 /** one world (run) with every day's stats row and the valley as it last stood */
 export const loadWorldRun = (id) => apiCall(`/api/economy/runs/${encodeURIComponent(id)}?state=1`);
