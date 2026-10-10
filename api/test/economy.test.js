@@ -156,3 +156,21 @@ test("a new world starts from the world it follows: its cards and values as play
   expect(card(s.config, "trading").code).toContain("return null");
   expect(card(s.config, "bodies").values.healthMax).toBe(10);
 });
+
+test("an amend MIP changes a running world's own rules, and nothing else", async () => {
+  const made = await createMip("admin", { title: "A world to amend", world_id: W, action: "world", world: { name: "Amend me", model: "qwen" }, cards: [] });
+  const w = await decideMip(made.number, "admin", { accept: true });
+  const before = (await pg.query("SELECT version FROM econ_configs WHERE id = 'valley'")).rows[0].version;
+  const step = await createMip("admin", { title: "A faster price", world_id: w.world, action: "amend", cards: [{ id: "trading", kind: "policy", values: { haggleMax: 0 }, code: "export function price({ price }) { return price; }" }] });
+  expect(step.action).toBe("amend");
+  expect(step.world.amends).toBe(w.world);
+  expect(step.world.diff).toContain("Haggling: 100 → 0 %");
+  const r = await decideMip(step.number, "admin", { accept: true });
+  expect(r.amended).toBe(w.world);
+  const { rows } = await pg.query("SELECT state FROM econ_runs WHERE id = $1", [w.world]);
+  const t = card(rows[0].state.settings.config, "trading");
+  expect(t.values.haggleMax).toBe(0);
+  expect(t.code).toContain("export function price");
+  expect((await pg.query("SELECT version FROM econ_configs WHERE id = 'valley'")).rows[0].version).toBe(before);
+  await expect(createMip("admin", { title: "No world", action: "amend", world_id: null, cards: [] })).rejects.toThrow();
+});
