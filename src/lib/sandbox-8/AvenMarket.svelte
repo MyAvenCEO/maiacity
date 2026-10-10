@@ -10,6 +10,7 @@
 -->
 <script>
 	import { onMount } from 'svelte';
+	import { asset } from '$lib/media/url';
 	import { wayBack } from '$lib/app/back.svelte.js';
 	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
 	import { loadCode } from './sandbox.js';
@@ -412,7 +413,7 @@
 			// the valley's activity (economy.js, activity), newest first, only while the Activity tab is open
 			decisions: tab === 'decisions' && page === 'valley' ? (world.decisions ?? []).slice(-200).reverse().map((/** @type {any} */ d) => ({ ...d })) : [],
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
-			// the MaiaCity COOP's ledger: what the avens paid it for their fields, and for what
+			// the Maia City Coop's ledger: what the avens paid it for their fields, and for what
 			coop: world.coop ? { hearts: world.coop.hearts, from: { ...world.coop.from } } : null,
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, stock: world.layout === 'coop' ? { ...o.stock } : null, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
@@ -924,9 +925,11 @@
 		}
 	}
 
-	/** a fields valley: the MaiaCity COOP in the middle, the land cut into one wedge per aven out to the valley's edge,
+	/** a fields valley: the Maia City Coop in the middle, the land cut into one wedge per aven out to the valley's edge,
 	 * each aven's home in its wedge with its three field plots around it (F1, F2, F3: its crop, level and last harvest;
 	 * an unopened plot dashed), its store below and its name */
+	// the Maia City circle logo, from the vault by its hash
+	const coopLogo = typeof Image === 'undefined' ? /** @type {any} */ ({}) : Object.assign(new Image(), { src: asset('e748f4660f0e2fc0ae6ed685ef5b6d454c0f0a653ae56309715828fa0316ab5b') });
 	function drawCoopValley(/** @type {CanvasRenderingContext2D} */ ctx, /** @type {number} */ light) {
 		const n = world.avens.length;
 		const C = COOP_SPOT;
@@ -1033,23 +1036,14 @@
 			});
 		});
 		borders.forEach((draw) => draw());
-		// the COOP
-		ctx.beginPath();
-		ctx.arc(C.x, C.y, C.r, 0, Math.PI * 2);
-		ctx.fillStyle = light > 0.5 ? '#f7f3e8' : '#24452f';
-		ctx.fill();
-		ctx.strokeStyle = '#24452f';
-		ctx.lineWidth = 2.5;
-		ctx.stroke();
-		ctx.fillStyle = ink;
-		ctx.textAlign = 'center';
-		ctx.font = '700 19px system-ui, sans-serif';
-		ctx.fillText('MaiaCity', C.x, C.y - 16);
-		ctx.fillText('COOP', C.x, C.y + 6);
-		ctx.font = '600 14px system-ui, sans-serif';
-		ctx.globalAlpha = 0.8;
-		ctx.fillText(`${fmt(world.coop?.hearts ?? 0)} ♥`, C.x, C.y + 32);
-		ctx.globalAlpha = 1;
+		// the Maia City Coop: its logo, nothing else (Samuel, 2026-10-10; its balance is on the board)
+		if (coopLogo.complete && coopLogo.naturalWidth) ctx.drawImage(coopLogo, C.x - C.r, C.y - C.r, C.r * 2, C.r * 2);
+		else {
+			ctx.beginPath();
+			ctx.arc(C.x, C.y, C.r, 0, Math.PI * 2);
+			ctx.fillStyle = '#f1e6d4';
+			ctx.fill();
+		}
 		// each home and its fields
 		for (const a of world.avens) {
 			const h = a.territory;
@@ -1301,7 +1295,7 @@
 		<section>
 			<h3>Board</h3>
 			{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
-				<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>MaiaCity COOP</b><span>the valley's ledger: every HEART paid for fields</span></span><span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
+				<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>Maia City Coop</b><span>the valley's ledger: every HEART paid for fields</span></span><span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
 			{/if}
 			<ol class="board" class:stocked={snap.board.some((/** @type {any} */ r) => r.stock)}>
 				{#each snap.board as row (row.id)}
@@ -2022,7 +2016,7 @@
 	.board .hp i.low {
 		background: #d0533f;
 	}
-	/* the MaiaCity COOP, on top of the board */
+	/* the Maia City Coop, on top of the board */
 	.coop {
 		display: flex;
 		align-items: center;
