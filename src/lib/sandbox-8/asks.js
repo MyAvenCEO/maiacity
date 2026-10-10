@@ -329,6 +329,16 @@ function fieldQuestions(world, a) {
 	// of the others). Priced as if surplus only lowered the price a little, a crop 97% covered beat keeping one the valley
 	// lacked, and water fell from 1.64 to 0.0008 (World 30)
 	const lacking = (g, mine) => Math.max(0, live.length * (NEED[g] ?? 0) - (planned(g) - mine));
+	// forecast 5 (World 32): the lack measured on what the valley really harvested lately (fields lie fallow when their
+	// owner can't pay the keep, harvests have luck), plus the others' fields still growing; and what the aven eats of a crop
+	// itself counts too, since growing it saves buying it. On field nameplates alone the valley looked covered while it ran
+	// 7-23 short a day, and a lone aven closed the field that fed it, then never opened another (Bo, World 31)
+	const recent = (g) => {
+		const rows = (world.stats ?? []).slice(-3);
+		return rows.length ? rows.reduce((n, s) => n + (s.harvest?.[g] ?? 0), 0) / rows.length : planned(g);
+	};
+	const lackReal = (g, mine) => Math.max(0, live.length * (NEED[g] ?? 0) - (recent(g) - mine + Math.max(0, planned(g) - supplyNow(g))));
+	const eats = (g) => Math.max(0, (NEED[g] ?? 0) - (a.fields ?? []).filter((h) => h.crop === g).reduce((n, h) => n + fieldYield(world, h), 0));
 	const valued = (g, share, grown, gap, ramp = RULES[`ramp_${g}`] ?? 7) => {
 		let n = 0;
 		for (let d = 1; d <= H; d++) n += Math.min(gap, fieldBase(g) * share * Math.min(1, grown + (ramp > 0 ? d / ramp : 1)));
@@ -337,8 +347,8 @@ function fieldQuestions(world, a) {
 	const reckon = (g, share, grown, once, level, move = {}, mine = 0) => {
 		const u = units(g, share, grown);
 		const keep = opexOf(g, level) * H;
-		const gap = RULES.forecast === 4 ? lacking(g, mine) : null;
-		const at = RULES.forecast === 4 ? today(g) : later(g, move);
+		const gap = RULES.forecast === 5 ? Math.max(lackReal(g, mine), mine ? NEED[g] ?? 0 : eats(g)) : RULES.forecast === 4 ? lacking(g, mine) : null;
+		const at = RULES.forecast >= 4 ? today(g) : later(g, move);
 		const sells = gap == null ? u : valued(g, share, grown, gap);
 		const net = sells * at - keep - once;
 		const left = a.hearts - once;
@@ -353,7 +363,7 @@ function fieldQuestions(world, a) {
 		}
 		const cover = RULES.forecast >= 2 ? `${coverage(g, move)}; ` : '';
 		if (gap != null)
-			return `${cover}the others' fields leave the valley lacking about ${Math.round(gap)} ${GOOD_LABEL[g]} a day; over the next ${H} days this field grows about ${Math.round(u)}, of which about ${Math.round(sells)} fill that lack, worth ${Math.round(sells * at)} HEARTS at ${r(at)} a unit today${u - sells >= 1 ? ' (the rest is more than the valley needs: worth next to nothing)' : ''}, for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net${back}; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
+			return `${cover}${RULES.forecast === 5 ? `the valley harvested about ${Math.round(recent(g))} ${GOOD_LABEL[g]} a day lately against a need of ${live.length * (NEED[g] ?? 0)}; what sells or feeds you is about ${Math.round(gap)} a day (what the valley will lack, or what you eat of it yourself, whichever is more)` : `the others' fields leave the valley lacking about ${Math.round(gap)} ${GOOD_LABEL[g]} a day`}; over the next ${H} days this field grows about ${Math.round(u)}, of which about ${Math.round(sells)} fill that lack, worth ${Math.round(sells * at)} HEARTS at ${r(at)} a unit today${u - sells >= 1 ? ' (the rest is more than the valley needs: worth next to nothing)' : ''}, for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net${back}; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
 		return `${cover}over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * at)} HEARTS (at about ${r(at)} a unit once the valley's fields grow${RULES.forecast ? ', yours included' : ''}, ${r(today(g))} today${span > 0 ? `, ${r(price(g))} on average over ${RULES.fieldPriceDays} days` : ''}), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net${back}; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
 	};
 	const reserve = (RULES.fieldReserve ?? 0) * food;
@@ -400,7 +410,7 @@ function fieldQuestions(world, a) {
 			const grown = fieldGrown(world, f);
 			const mine = fieldBase(f.crop) * levelShare(f.level);
 			criteria.push(`keep its ${GOOD_LABEL[f.crop]} field at level ${f.level}${grown < 1 ? ` (still growing: ${Math.round(grown * 100)}%)` : ''}: ${reckon(f.crop, levelShare(f.level), grown, 0, f.level, {}, mine)}`);
-			if (f.level < 3 && can(capexOf(f.crop, f.level + 1))) {
+			if (RULES.fieldLevels !== 0 && f.level < 3 && can(capexOf(f.crop, f.level + 1))) {
 				levels.push(1);
 				criteria.push(`level it up to ${f.level + 1} for ${capexOf(f.crop, f.level + 1)} HEARTS: ${reckon(f.crop, levelShare(f.level + 1), grown, capexOf(f.crop, f.level + 1), f.level + 1, { [f.crop]: fieldBase(f.crop) * (levelShare(f.level + 1) - levelShare(f.level)) }, mine)}`);
 			}

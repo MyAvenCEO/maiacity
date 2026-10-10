@@ -190,7 +190,7 @@ export function invest(world, a, slot, code) {
 		change = { label: `closes field ${slot + 1}`, from: GOOD_LABEL[f.crop], to: 'nothing', unit: `its keep stops` };
 		a.fields.splice(slot, 1);
 	} else if (code === 1) {
-		if (f.level >= 3) return null;
+		if (f.level >= 3 || RULES.fieldLevels === 0) return null;
 		const cost = capexOf(f.crop, f.level + 1);
 		if (!can(cost)) return `couldn't level up its ${GOOD_LABEL[f.crop]} field (${cost} HEARTS, keeping ${Math.round(reserve)} for food)`;
 		pay(cost, 'levels');
