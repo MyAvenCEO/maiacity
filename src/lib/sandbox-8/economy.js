@@ -439,7 +439,9 @@ function clearPosted(world) {
 	const opening = world.postedDay !== world.day;
 	world.postedDay = world.day;
 	for (const g of GOODS) {
-		const ask = (price, round) => posted(ruled('price', { good: g, price, opening, ...round }, price, (v, o) => posted(v) ?? o));
+		// every good's posted price as the round began, so a card can see the whole price level (a basket's cost), not one
+		const all = { ...world.posted };
+		const ask = (price, round) => posted(ruled('price', { good: g, price, opening, prices: all, ...round }, price, (v, o) => posted(v) ?? o));
 		// a good's first price: the card's, given what the world it follows last asked for it (inherited), if any
 		let p = posted(world.posted[g]) ?? ask(null, { demand: 0, need: 0, supply: 0, traded: 0, inherited: world.inherited?.[g] ?? null, previous: world.inherited ?? null });
 		if (p == null) continue;
