@@ -31,8 +31,8 @@
 	/** the colours a text can be, by name (a badge: its fill; alert is the red one); anything else is taken as written */
 	const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b', marine: '#14304f' };
 	const colorOf = (/** @type {string | undefined} */ c) => COLOR[/** @type {keyof typeof COLOR} */ (c ?? 'white')] ?? c ?? '#fff';
-	/** a badge's words: white on any fill but the white one, the cold style, whose words are the dark marine blue */
-	const onFill = (/** @type {string | undefined} */ c) => ((c ?? 'gold') === 'white' ? COLOR.marine : '#fff');
+	/** a badge's words: the dark marine blue on the light fills (gold, white), white on the dark ones (alert, ink) */
+	const onFill = (/** @type {string | undefined} */ c) => (['gold', 'white'].includes(c ?? 'gold') ? COLOR.marine : '#fff');
 	const rotOf = (/** @type {Layer} */ l) => l.rot ?? 0;
 	const turned = (/** @type {Layer} */ l) => (rotOf(l) ? `rotate(${rotOf(l)}deg)` : undefined);
 
@@ -341,14 +341,14 @@
 		white-space: pre;
 	}
 
-	/* the day's badge: white words, compact, on a solid gold fill */
+	/* the day's badge: dark marine words, tight, on a solid gold fill */
 	.badge {
 		padding: 0.5em 0.9em;
 		border-radius: 0.45em;
 		font-family: var(--font-display);
 		font-weight: 760;
 		line-height: 1;
-		letter-spacing: 0.04em;
+		letter-spacing: 0;
 		text-transform: uppercase;
 		white-space: nowrap;
 		box-shadow: 0 0.3cqw 1.2cqw rgb(0 0 0 / 0.35);

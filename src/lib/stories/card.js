@@ -10,8 +10,8 @@ import { fileUrl } from '$lib/auth/client';
 /** the colours a text can be, by name; anything else is taken as written — as Card.svelte */
 const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b', marine: '#14304f' };
 const colorOf = (/** @type {string | undefined} */ c) => COLOR[/** @type {keyof typeof COLOR} */ (c ?? 'white')] ?? c ?? '#fff';
-/** a badge's words: white on any fill but the white one, the cold style, whose words are the dark marine blue — as Card.svelte */
-const onFill = (/** @type {string | undefined} */ c) => ((c ?? 'gold') === 'white' ? COLOR.marine : '#fff');
+/** a badge's words: the dark marine blue on the light fills (gold, white), white on the dark ones (alert, ink) — as Card.svelte */
+const onFill = (/** @type {string | undefined} */ c) => (['gold', 'white'].includes(c ?? 'gold') ? COLOR.marine : '#fff');
 const FONT = '"Fraunces Variable", "Iowan Old Style", Georgia, serif';
 
 /** a layer's box, in percent of the canvas; its defaults by kind — as Card.svelte */
@@ -99,10 +99,10 @@ export async function renderCard(layers, hook, o = {}) {
 				ctx.drawImage(img, bx, by, bw, dh);
 			}
 		} else if (l.kind === 'badge') {
-			// white words, compact, on a solid fill in the badge's colour (gold), as Card.svelte
+			// dark marine words, tight, on the solid gold fill (white on a dark fill), as Card.svelte
 			const fs = cq(sizeOf(l));
 			ctx.font = `760 ${fs}px ${FONT}`;
-			if ('letterSpacing' in ctx) ctx.letterSpacing = `${0.04 * fs}px`;
+			if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 			ctx.textBaseline = 'alphabetic';
 			const words = (l.text || 'DAY 1').toUpperCase();
 			const tw = ctx.measureText(words).width;

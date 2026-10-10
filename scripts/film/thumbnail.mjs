@@ -22,7 +22,7 @@
 // can have its own frame — "frames": { "9x16": "<a taller still's hash>" } — when the main one is too small to crop.
 // Set like a YouTube thumbnail: few words, heavy and big enough to read at phone size, the number in gold, a firm
 // shade behind them and nothing else across the picture. A story goes by its name, never a day — but a card may wear
-// a badge, bottom right ("badge": "DAY 1"): white words, compact, on solid gold, as the Thumbnail step
+// a badge, bottom right ("badge": "DAY 1"): dark marine words, tight, on solid gold, as the Thumbnail step
 // draws it (src/lib/stories/Card.svelte). The font (Fraunces) and the frames are embedded (setContent cannot load files).
 import puppeteer from 'puppeteer-core';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -79,7 +79,7 @@ html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:${h
 .h{font-weight:830;font-size:${u(138)};line-height:.92;letter-spacing:-.025em;margin-top:${u(6)}}
 .x{font-weight:560;font-style:italic;font-size:${u(58)};line-height:1.12;margin-top:${u(22)};color:#fff}
 .x b{font-style:normal;font-weight:820;color:#f6c75a}
-.d{position:absolute;right:${u(80)};bottom:${u(80)};padding:${u(24)} ${u(40)};border-radius:${u(18)};background:#f6c75a;box-shadow:0 ${u(8)} ${u(30)} rgba(0,0,0,.35);font-weight:760;font-size:${u(52)};line-height:1;letter-spacing:.04em;text-transform:uppercase;color:#fff}
+.d{position:absolute;right:${u(80)};bottom:${u(80)};padding:${u(24)} ${u(40)};border-radius:${u(18)};background:#f6c75a;box-shadow:0 ${u(8)} ${u(30)} rgba(0,0,0,.35);font-weight:760;font-size:${u(52)};line-height:1;letter-spacing:0;text-transform:uppercase;color:#14304f}
 </style></head><body>${hook ? '' : '<div class="bg"></div>'}<div class="shade"></div>
 <div class="t"><div class="k">${TITLE.kicker}</div><div class="n">${TITLE.big}</div><div class="h">${TITLE.line}</div><div class="x">${TITLE.after}</div></div>
 ${!hook && BADGE ? `<div class="d">${BADGE}</div>` : ''}
