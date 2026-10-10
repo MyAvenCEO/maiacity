@@ -884,7 +884,7 @@ export class Studio {
 	});
 
 	// ── sound: one Web Audio clock; every clip is scheduled on it, sample-exact ──
-	// (Safari lets a page make sound only from a click: the context is woken by the Play button)
+	// (Safari lets a page make sound only from a click: the clock is made and woken by the Play button)
 	/** @type {AudioContext | null} */
 	ctx = null;
 	/** the audio clock would not run (WebKit kept it suspended or interrupted): the timeline plays silent until a click turns it on */
@@ -892,19 +892,49 @@ export class Studio {
 	audioCtx = () => {
 		if (this.ctx && this.ctx.state !== 'closed') return this.ctx;
 		const ac = (this.ctx = new AudioContext());
-		ac.onstatechange = () => this.ctx === ac && (this.soundOff = ac.state !== 'running' && this.playing);
+		ac.onstatechange = () => {
+			if (this.ctx !== ac) return;
+			if (this.playing && ac.state !== 'running') console.warn(`play: the audio clock went ${ac.state} while playing`);
+			this.soundOff = ac.state !== 'running' && this.playing;
+		};
+		this.watchDevices();
 		return ac;
 	};
+	/**
+	 * A new audio clock in place of the last one (closed, its sounds with it), as a reload makes. A clock kept for a
+	 * while can go deaf: WebKit goes on saying it runs after the Mac's output changed or slept, and only a page reload
+	 * (a new clock) was heard again. Made inside a click (Play, Sound on): WebKit starts sound only from one.
+	 */
+	freshClock() {
+		this.silence();
+		const old = this.ctx;
+		this.ctx = null;
+		void old?.close().catch(() => {});
+		return this.audioCtx();
+	}
+	/** @type {OfflineAudioContext | null} */
+	decoder = null;
+	/**
+	 * Sounds are decoded on a context of their own that never plays (a decoded sound plays on any clock): the playing
+	 * clock can be thrown away at any Play without a decode in flight failing with it.
+	 * @param {ArrayBuffer} bytes
+	 */
+	decode = (bytes) => (this.decoder ??= new OfflineAudioContext(1, 1, 48000)).decodeAudioData(bytes);
+	/** @type {(() => void) | null} */
+	deviceChange = null;
+	/** a change of the Mac's sound devices (headphones in or out, a speaker woken), said in the app's log */
+	watchDevices() {
+		const md = navigator.mediaDevices;
+		if (this.deviceChange || !md?.addEventListener) return;
+		this.deviceChange = () => console.warn(`play: the Mac's sound devices changed${this.playing ? ' while playing' : ''} (audio ${this.ctx?.state ?? 'none'})`);
+		md.addEventListener('devicechange', this.deviceChange);
+	}
 	/**
 	 * Sound on, from a click: a fresh audio clock made and resumed inside the click itself (WebKit lets a page start
 	 * sound only from one), and the sounds laid on it again. Decoded sounds play on any clock.
 	 */
 	soundOn = () => {
-		this.silence();
-		const old = this.ctx;
-		this.ctx = null;
-		void old?.close().catch(() => {});
-		const ac = this.audioCtx();
+		const ac = this.freshClock();
 		void ac.resume().then(() => {
 			this.soundOff = ac.state !== 'running';
 			if (this.playing && this.ctx === ac) this.schedule();
@@ -981,7 +1011,7 @@ export class Studio {
 			/** @type {AudioBuffer | undefined} */
 			let buffer;
 			if (m?.kind === 'audio' || !m) {
-				buffer = await this.audioCtx().decodeAudioData(bytes.slice(0));
+				buffer = await this.decode(bytes.slice(0));
 				duration = buffer.duration;
 				peaks = peaksOf(buffer);
 			}
@@ -1019,7 +1049,7 @@ export class Studio {
 				const from = this.proxy(m).hash ?? hash;
 				const res = await fetch(raw(from));
 				if (!res.ok) throw new Error(`the vault did not give ${from.slice(0, 12)} (${res.status})`);
-				const buffer = await this.audioCtx().decodeAudioData(await res.arrayBuffer());
+				const buffer = await this.decode(await res.arrayBuffer());
 				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
 				this.soundState[hash] = 'ready';
 			} catch (e) {
@@ -1043,12 +1073,14 @@ export class Studio {
 	}
 
 	silence() {
-		for (const { src } of this.nodes) {
+		for (const { src, gain } of this.nodes) {
 			try {
 				src.stop();
 			} catch {
 				/* already ended */
 			}
+			// let go of the bus: each play's chains would otherwise stay on it, play after play
+			gain.disconnect();
 		}
 		this.nodes = [];
 	}
@@ -1156,20 +1188,69 @@ export class Studio {
 	 * did not play it.
 	 */
 	soundCheck() {
-		const ac = this.ctx, b = ac && this.buses.get(ac);
+		const ac = this.ctx;
 		if (!ac || !this.playing) return;
-		let peak = 0;
-		if (b) {
-			const buf = new Float32Array(b.meter.fftSize);
-			b.meter.getFloatTimeDomainData(buf);
-			for (const x of buf) peak = Math.max(peak, Math.abs(x));
-		}
+		const peak = this.peak();
 		const db = peak > 0 ? `${(20 * Math.log10(peak)).toFixed(1)} dBFS` : 'silence';
-		const ahead = this.clips.filter((c) => onSoundTrack(c) && c.hash && c.start + c.dur > this.time && c.start < this.time + 0.5);
+		const ahead = this.underPlayhead();
 		console.warn(
 			`play: sound check at ${this.time.toFixed(2)} s — audio ${ac.state}, ${ac.sampleRate} Hz, clock ${ac.currentTime.toFixed(2)} s, ${this.nodes.length} sound(s) on the clock, ${ahead.length} under the playhead, output peak ${db}`,
 			ahead.map((c) => `${this.clipName(c)} [${c.track}] vol ${c.vol} ${this.sources[c.hash ?? '']?.buffer ? 'decoded' : 'not decoded'}`).join('; ')
 		);
+	}
+	/** the sound clips sounding at the playhead (past their fade in, before their fade out) */
+	underPlayhead = () => this.clips.filter((c) => onSoundTrack(c) && c.hash && c.start + 0.1 <= this.time && this.time < c.start + c.dur - 0.35);
+	/** the loudest sample that went out on the clock's bus in the last moment (0: nothing) */
+	peak() {
+		const b = this.ctx && this.buses.get(this.ctx);
+		if (!b) return 0;
+		const buf = new Float32Array(b.meter.fftSize);
+		b.meter.getFloatTimeDomainData(buf);
+		let peak = 0;
+		for (const x of buf) peak = Math.max(peak, Math.abs(x));
+		return peak;
+	}
+	/** @type {ReturnType<typeof setInterval> | undefined} */
+	listener = undefined;
+	/**
+	 * Listens once a second while the timeline plays, and says in the app's log what goes wrong with the sound: a clock
+	 * no longer running, or one that stopped counting (the playhead stops with it), is woken, else a new clock is laid in
+	 * its place with the sounds on it (the Sound on pill shows when WebKit holds it off); a sound due that never reaches
+	 * the bus is said with what the clock held.
+	 * @param {number} run
+	 */
+	listen(run) {
+		clearInterval(this.listener);
+		let ac = this.ctx, clock = ac?.currentTime ?? 0, wall = performance.now(), quiet = 0, stuck = 0, renewed = false;
+		this.listener = setInterval(() => {
+			if (run !== this.run || !this.playing) return clearInterval(this.listener);
+			if (!this.ctx) return;
+			const now = performance.now();
+			if (this.ctx !== ac) ((ac = this.ctx), (clock = ac.currentTime), (wall = now), (quiet = stuck = 0));
+			const ran = ac.currentTime - clock, waited = (now - wall) / 1000;
+			((clock = ac.currentTime), (wall = now));
+			if (ac.state !== 'running' || ran < waited / 2) {
+				if (!stuck++) {
+					console.warn(`play: the audio clock is ${ac.state} and counted ${ran.toFixed(2)} s in ${waited.toFixed(2)} s, at ${this.time.toFixed(2)} s — woken`);
+					void ac.resume().catch(() => {});
+				} else if (stuck === 3 && !renewed) {
+					renewed = true;
+					console.warn(`play: the audio clock would not wake (${ac.state}) — a new one in its place`);
+					const fresh = this.freshClock();
+					this.schedule();
+					void fresh.resume().then(() => (this.soundOff = fresh.state !== 'running'), () => (this.soundOff = true));
+				}
+				return;
+			}
+			stuck = 0;
+			const due = this.underPlayhead().filter((c) => this.sources[c.hash ?? '']?.buffer && c.vol > 0);
+			quiet = due.length && this.peak() === 0 ? quiet + 1 : 0;
+			if (quiet === 2)
+				console.warn(
+					`play: nothing reaches the output at ${this.time.toFixed(2)} s though ${due.length} sound(s) are under the playhead — audio ${ac.state}, clock ${ac.currentTime.toFixed(2)} s, ${this.nodes.length} on the clock:`,
+					due.map((c) => `${this.clipName(c)} [${c.track}] vol ${c.vol}`).join('; ')
+				);
+		}, 1000);
 	}
 	/** how many sounds are laid on the clock (for the transport's readout, and the tests) */
 	scheduled = () => this.nodes.length;
@@ -1184,6 +1265,9 @@ export class Studio {
 		this.poll(false);
 		if (this.vaultWatch) clearInterval(this.vaultWatch), (this.vaultWatch = null);
 		this.silence();
+		clearInterval(this.listener);
+		if (this.deviceChange) navigator.mediaDevices?.removeEventListener('devicechange', this.deviceChange);
+		this.deviceChange = null;
 		void this.flush();
 		void this.ctx?.close();
 		this.ctx = null;
@@ -1292,14 +1376,13 @@ export class Studio {
 
 	/** @param {number} run */
 	/**
-	 * The audio clock running: resumed, and — when WebKit leaves it suspended or interrupted (the Mac slept, the output
-	 * changed) — a new one in its place (decoded sounds play on any). Says when it could not.
+	 * The audio clock running: a new one for every Play, as a reload makes (decoded sounds play on any) — a clock kept
+	 * from a play before could have gone deaf while it waited. Says when it could not run.
 	 */
 	async running() {
-		// resumed inside the click that pressed Play (this runs before any await): a clock made after an await stays
-		// suspended in WebKit, so it is never replaced here; and a resume WebKit never answers (an interrupted clock)
-		// does not hold the playback back
-		const ac = this.audioCtx();
+		// made and resumed inside the click that pressed Play (this runs before any await): a clock made after an await
+		// stays suspended in WebKit; and a resume WebKit never answers (an interrupted clock) does not hold the playback back
+		const ac = this.freshClock();
 		await Promise.race([ac.resume().catch(() => {}), new Promise((ok) => setTimeout(ok, 800))]);
 		this.soundOff = ac.state !== 'running';
 		if (this.soundOff) console.warn(`play: the audio clock is ${ac.state} — the timeline plays silent until Sound on is clicked`);
@@ -1338,6 +1421,7 @@ export class Studio {
 		this.syncVideo(true);
 		this.frame = requestAnimationFrame(this.tick);
 		setTimeout(() => run === this.run && this.soundCheck(), 1500);
+		this.listen(run);
 	}
 
 	stop() {
@@ -1345,6 +1429,7 @@ export class Studio {
 		this.starting = false;
 		this.playing = false;
 		this.soundOff = false;
+		clearInterval(this.listener);
 		cancelAnimationFrame(this.frame);
 		this.world.halt();
 		this.silence();
