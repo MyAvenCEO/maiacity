@@ -7,7 +7,7 @@
 <script>
 	import LineChart from './LineChart.svelte';
 	import ActivityFeed from './ActivityFeed.svelte';
-	import { GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, ROT, DAY_S } from './economy.js';
+	import { GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, ROT, DAY_S } from './economy.js'; // GOODS: listed in rainbow order
 	import { RULES } from './rules.js';
 	import { DIALS, memoryOf } from './mind.js';
 	import { short, times, logScale, logAt } from './format.js';

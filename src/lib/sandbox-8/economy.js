@@ -8,7 +8,10 @@
 
 /** @type {Record<string, string>} */
 // a validated categorical palette (distinct for colour-blind eyes too), in a fixed order
-export const GOOD_COLOUR = { water: '#2a78d6', fruits: '#eb6834', vegetables: '#1baf7a', legumes: '#eda100', chicken: '#e87ba4' };
+// the goods' colours run along the rainbow (Samuel, 2026-10-10): fruits red, legumes yellow, vegetables green, water
+// blue, chicken violet; GOODS_SHOWN is the order every view lists them in (GOODS keeps the engine's own order)
+export const GOOD_COLOUR = { water: '#2a78d6', fruits: '#e0483a', vegetables: '#1baf7a', legumes: '#e9b10c', chicken: '#9a5fd1' };
+export const GOODS_SHOWN = ['fruits', 'legumes', 'vegetables', 'water', 'chicken'];
 // every number the valley runs on (needs, rot, the HEARTS policy, prices, land, weather) lives in rules.js
 import { RULES, NEED, ROT, GOODS, GOOD_LABEL } from './rules.js';
 import { RECIPES, craft, decayAll } from './recipes.js';
@@ -202,7 +205,9 @@ export const WORLD = { w: 1200, h: 820 };
 const homeSpot = (a) => ({ x: a.territory.x, y: a.territory.y - 6 });
 
 const NAMES = ['Ama', 'Bo', 'Cyra', 'Dov', 'Eli', 'Fen', 'Gia', 'Hal', 'Ivo', 'Juno'];
-const COLOURS = ['#e05a6d', '#f0a03c', '#4fb37a', '#4f8fd9', '#9b6bd6', '#2bb3b1', '#b8763a', '#d65db1', '#7f8c3a', '#5a6bd6'];
+// the avens' colours run along the rainbow too, so a valley's wedges go round it (Samuel, 2026-10-10); a world keeps
+// the colours it was made with
+const COLOURS = ['#e0484f', '#f07f2d', '#f0b429', '#9cc43a', '#3fae5a', '#22b3a6', '#3aa0e0', '#3f6fd8', '#7b5bd6', '#c254c4'];
 /** a small seeded random, so a reset with the same seed gives the same valley; `at` picks it up where a saved world
  * left it (its `.at()`) */
 export function rng(seed, at = null) {

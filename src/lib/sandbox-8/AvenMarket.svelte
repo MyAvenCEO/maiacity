@@ -12,7 +12,7 @@
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { wayBack } from '$lib/app/back.svelte.js';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js'; // GOODS: listed in rainbow order
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
@@ -1076,6 +1076,11 @@
 			ctx.arc(h.x, h.y, 32, 0, Math.PI * 2);
 			ctx.fillStyle = light > 0.5 ? '#fbf8f0' : '#1f2a23';
 			ctx.fill();
+			// tinted in its aven's colour: whose home it is, at a glance (Samuel, 2026-10-10)
+			ctx.fillStyle = a.alive ? a.colour : '#8a8a86';
+			ctx.globalAlpha = 0.28;
+			ctx.fill();
+			ctx.globalAlpha = 1;
 			ctx.strokeStyle = a.alive ? a.colour : '#8a8a86';
 			ctx.lineWidth = 2;
 			ctx.stroke();

@@ -3,7 +3,7 @@
 	every chart shares the same range of days, and dry spells are shaded orange behind each one.
 -->
 <script>
-	import { GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, DAY_S } from './economy.js';
+	import { GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, DAY_S } from './economy.js'; // GOODS: listed in rainbow order
 	import LineChart from './LineChart.svelte';
 	import DepthChart from './DepthChart.svelte';
 

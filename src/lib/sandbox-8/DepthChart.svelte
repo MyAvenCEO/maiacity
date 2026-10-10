@@ -6,7 +6,7 @@
 	alike. Hover a step to see whose price it is.
 -->
 <script>
-	import { GOODS, GOOD_LABEL, GOOD_COLOUR } from './economy.js';
+	import { GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR } from './economy.js'; // GOODS: listed in rainbow order
 	import { short, logScale, logAt } from './format.js';
 
 	/** @typedef {{ name: string, qty: number, price: number }} Order */
