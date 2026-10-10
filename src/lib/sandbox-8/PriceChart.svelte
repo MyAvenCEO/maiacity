@@ -4,7 +4,7 @@
 	the same height at 1 and at 10,000. Hover or touch to read every good's price at that moment.
 -->
 <script>
-	import { GOODS, GOOD_LABEL, GOOD_COLOUR, DAY_S } from './economy.js';
+	import { GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, DAY_S } from './economy.js'; // GOODS: listed in rainbow order
 	import { short, logScale, logAt } from './format.js';
 
 	/** @type {{ series: Record<string, { t: number, price: number }[]>, now: number }} */
