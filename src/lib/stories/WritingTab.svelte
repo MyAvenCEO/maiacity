@@ -1,9 +1,9 @@
 <!--
-	A story's words: its film script (the story's timeline read as a screenplay, the same as the studio's Script tab)
-	and its article: the long-form master, the fullest telling of it, which the blog publishes and every other output
-	derives from. Read as the journal sets it (the cover, the title, the words), or written as Markdown with its front
-	matter. Read only once its posts derive from it (move it back to Writing to change it), and when it lives in the
-	repo (edited there, pushed with the story).
+	A story's words. A film's story is its script alone: its timeline read as a screenplay, the same as the studio's
+	Script tab. A journal day's is its article: the long-form master, the fullest telling of it, which the blog
+	publishes and every other output derives from. Read as the journal sets it (the cover, the title, the words), or
+	written as Markdown with its front matter. Read only once its posts derive from it (move it back to Writing to
+	change it), and when it lives in the repo (edited there, pushed with the story).
 -->
 <script>
 	import { renderMarkdown, splitArticle } from '$lib/admin/markdown';
@@ -15,10 +15,10 @@
 	/** @type {{ item: ContentItem, locked: boolean, onchange: (patch: Partial<ContentItem>) => void }} */
 	let { item, locked, onchange } = $props();
 
-	// a film's story opens on its script; a journal day on its article
-	const film = () => !!(item.timeline_id || item.project);
-	/** @type {'script' | 'read' | 'write'} */
-	let mode = $state(film() ? 'script' : 'read');
+	// a film's story is its script alone; a journal day is its article, read or written
+	const film = $derived(!!(item.timeline_id || item.project));
+	/** @type {'read' | 'write'} */
+	let mode = $state('read');
 	const article = $derived(item.body?.trim() ? splitArticle(item.body) : null);
 	const html = $derived(article ? renderMarkdown(article.body) : '');
 	const size = $derived(wordsOf(article?.body ?? ''));
@@ -32,37 +32,38 @@
 </script>
 
 <div class="writing">
-	<div class="bar">
-		<div class="modes" role="tablist" aria-label="The script, or the article to read or write">
-			<button role="tab" aria-selected={mode === 'script'} class:on={mode === 'script'} onclick={() => (mode = 'script')}>Script</button>
-			<button role="tab" aria-selected={mode === 'read'} class:on={mode === 'read'} onclick={() => (mode = 'read')}>Read</button>
-			{#if !why}<button role="tab" aria-selected={mode === 'write'} class:on={mode === 'write'} onclick={() => (mode = 'write')}>Write</button>{/if}
-		</div>
-		{#if why && mode !== 'script'}<p class="why">{why}</p>{/if}
-		{#if mode !== 'script'}<span class="size">{size.words.toLocaleString('en-GB')} words · {size.minutes} min</span>{/if}
-	</div>
-
-	{#if mode === 'script'}
+	{#if film}
 		<ScriptView {item} />
-	{:else if mode === 'write' && !why}
-		<textarea
-			aria-label="The article, in Markdown"
-			value={item.body}
-			placeholder={'---\ntitle: …\nsubtitle: …\n---\n\nThe whole story, in full: every detail, every source. The film and the posts are cut from this.'}
-			oninput={(e) => onchange({ body: e.currentTarget.value })}
-		></textarea>
-	{:else if article}
-		<!-- as the journal sets it: the cover edge to edge, then one centred column — the title, the words -->
-		<article class="article">
-			{#if article.cover}<figure class="a-hero"><img src={article.cover} alt="" style:object-position={article.coverPosition} /></figure>{/if}
-			<div class="a-col">
-				<h1 class="a-title">{article.title ?? item.title}</h1>
-				{#if article.subtitle}<p class="a-sub">{article.subtitle}</p>{/if}
-				<div class="prose a-body">{@html html}</div>
-			</div>
-		</article>
 	{:else}
-		<p class="empty">No article yet. It is written last of the words, from the journey: the fullest telling, the blog post every output comes from.</p>
+		<div class="bar">
+			<div class="modes" role="tablist" aria-label="The article, to read or write">
+				<button role="tab" aria-selected={mode === 'read'} class:on={mode === 'read'} onclick={() => (mode = 'read')}>Read</button>
+				{#if !why}<button role="tab" aria-selected={mode === 'write'} class:on={mode === 'write'} onclick={() => (mode = 'write')}>Write</button>{/if}
+			</div>
+			{#if why}<p class="why">{why}</p>{/if}
+			<span class="size">{size.words.toLocaleString('en-GB')} words · {size.minutes} min</span>
+		</div>
+
+		{#if mode === 'write' && !why}
+			<textarea
+				aria-label="The article, in Markdown"
+				value={item.body}
+				placeholder={'---\ntitle: …\nsubtitle: …\n---\n\nThe whole story, in full: every detail, every source. The film and the posts are cut from this.'}
+				oninput={(e) => onchange({ body: e.currentTarget.value })}
+			></textarea>
+		{:else if article}
+			<!-- as the journal sets it: the cover edge to edge, then one centred column — the title, the words -->
+			<article class="article">
+				{#if article.cover}<figure class="a-hero"><img src={article.cover} alt="" style:object-position={article.coverPosition} /></figure>{/if}
+				<div class="a-col">
+					<h1 class="a-title">{article.title ?? item.title}</h1>
+					{#if article.subtitle}<p class="a-sub">{article.subtitle}</p>{/if}
+					<div class="prose a-body">{@html html}</div>
+				</div>
+			</article>
+		{:else}
+			<p class="empty">No article yet. It is written last of the words, from the journey: the fullest telling, the blog post every output comes from.</p>
+		{/if}
 	{/if}
 </div>
 

@@ -74,7 +74,7 @@
 					<h2>{PART[p.part.section ?? ''] ?? p.part.section}</h2>
 					{#if p.part.text}<p class="intent">{p.part.text}</p>{/if}
 					{@const feels = feelingsOf(p.part)}
-					{#if feels.length}<p class="journey">The viewer: {#each feels as f, i (i)}{#if i} · {/if}<span>{f.feel} {f.up ? '↑' : '↓'}</span>{/each}</p>{/if}
+					{#if feels.length}<p class="journey">The viewer: {#each feels as f, i (i)}{i ? ' · ' : ''}<span>{f.feel} {f.up ? '↑' : '↓'}</span>{/each}</p>{/if}
 				{/if}
 				{#if p.newScene}<h3>{p.scene.toUpperCase()}</h3>{/if}
 				<div class="shot">
@@ -101,7 +101,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.8rem;
+		width: 100%;
 		max-width: 46rem;
+		margin: 0 auto;
 	}
 
 	.bar {
