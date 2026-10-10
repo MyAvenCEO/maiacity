@@ -6,25 +6,28 @@
 	it, make main match it or bring main's changes in; on the right its history, every edit of that line, newest first,
 	each with what it changed, word by word, who made it, and the version it made, to view, restore, undo or propose
 	from. A variant is a new note with what a line reads now, and none of its history. All of it acts for the acting
-	vault, whose caps the device checks as any peer does: a note it only reads, it reads, every version of it.
+	vault, whose caps the device checks as any peer does: a note it only reads, it reads, every version of it; and a
+	button offers what the rules of the caps it writes through allow, as the device answers a dry run of it (`may`): a
+	vault that may only suggest changes proposes them, for one whose cap allows it to accept. An edit no rule allows,
+	no reader counts, nor anything built on it: the note says how many there are, and shows none of them.
 -->
 <script>
 	import { untrack } from 'svelte';
 	import { diff } from './diff.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { blockText, variantMark } from './ops.js';
+	import { blockText, may, variantMark } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import { allows, count, creates, holders as rank, hue, nameOf, ROLES, short } from './vaults.js';
 
 	/**
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
-	 *   title: string | null, text: string | null }} LineView
+	 *   title: string | null, text: string | null, blocks: { id: number, type: string }[] | null }} LineView
 	 * @typedef {{ id: string, author: string, actor: string, line: string | null, deps: string[],
 	 *   kind: 'edit' | 'propose' | 'merge' | 'promote' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
-	 *   before: string | null }} EditView
+	 *   before: string | null, counted: boolean }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
 	 * @typedef {{ vault: string | null, entry: string, lines: LineView[], edits: EditView[] }} NoteData
 	 */
@@ -85,8 +88,10 @@
 	const as = $derived(byId.get(actor));
 	/** the devices this browser knows, by id: their name and their vault */
 	const devices = $derived(new Map(world.vaults.flatMap((v) => v.devices.map((d) => [d.id, { name: d.name, vault: v }]))));
-	/** every edit of the note, numbered in the order the device took them */
-	const numbered = $derived((note?.edits ?? []).map((e, i) => ({ ...e, n: i + 1 })));
+	/** every edit of the note its readers count, numbered in the order the device took them; and how many they don't */
+	const counted = $derived((note?.edits ?? []).filter((e) => e.counted !== false));
+	const numbered = $derived(counted.map((e, i) => ({ ...e, n: i + 1 })));
+	const uncounted = $derived((note?.edits.length ?? 0) - counted.length);
 	/** the line's edits, newest first */
 	const history = $derived.by(() => {
 		const on = new Set(here?.history ?? []);
@@ -96,9 +101,11 @@
 	/** the line's one latest edit, which restoring changes nothing */
 	const latest = $derived(here?.heads.length === 1 ? here.heads[0] : '');
 	/** the vaults the acting vault may add the variant to, of the note's type and with its tags, as its caps let it */
-	const targets = $derived(
+	const into_ = $derived(
 		world.vaults.filter((v) => creates(world, v.id, actor, item?.type ?? 'note', item?.tags ?? [])?.length === 0)
 	);
+	/** of those, the ones the rules of its caps there let it add the variant to (`can`) */
+	const targets = $derived(into_.filter((v) => lets(`variant ${v.id}`)));
 	/** the notes this browser reads, by entry */
 	const notes = $derived(new Map(world.entries.filter((e) => e.kind === 'note').map((e) => [e.entry, e])));
 	const origin = $derived(item?.variantOf ? notes.get(item.variantOf) : undefined);
@@ -106,6 +113,56 @@
 	const unsaved = $derived(!!here && writes && !seen && (drafts[k] ?? '') !== (here.text ?? ''));
 	/** the vaults that hold a role on the note, the strongest first */
 	const holders = $derived(rank(item?.roles ?? {}));
+
+	/**
+	 * What the rules of the caps the acting vault writes through let it do on the line shown, as the device answers a
+	 * dry run of each (`may`): save its text (`write`), rename it (`title`, and `heading`, the heading it opens with),
+	 * propose, accept the proposal into main, make main match it, update it from main, restore or undo the version
+	 * shown, and make a variant in each vault it may add one to (`variant` and the vault). Only the rules' refusal
+	 * (`NotAllowed`) holds a button back: what the person then does is the device's to refuse, as any op.
+	 */
+	let can = $state(/** @type {Record<string, boolean>} */ ({}));
+	/** The rules let the acting vault do `what` (`can`), as they do until the device answers. @param {string} what */
+	const lets = (what) => can[what] !== false;
+	/** Why a button doesn't offer `what`, for its title: nothing where the rules allow it. @param {string} what */
+	const barred = (what) => (lets(what) ? undefined : `The rules of ${nameOf(as)}’s cap don’t allow it`);
+	/** what the acting vault may do on the line, in words, where it writes the note and the rules allow no change */
+	const ruled = $derived.by(() => {
+		if (!writes || lets('write') || lets('title')) return '';
+		if (here?.line === null && lets('propose')) return `${nameOf(as)} may only propose changes`;
+		return `the rules of ${nameOf(as)}’s cap allow no change here`;
+	});
+
+	$effect(() => {
+		if (!here) return;
+		const [on, blocks, title] = [here.line, here.blocks ?? [], `${here.title ?? ''} `];
+		/** @type {Record<string, object>} */
+		const asks = Object.fromEntries(into_.map((v) => [`variant ${v.id}`, varying(v.id)]));
+		if (writes) {
+			asks.write = saving(on, `${here.text ?? ''} `, blocks);
+			asks.title = { op: 'set', entry, line: on, path: ['title'], value: title };
+			asks.heading = { op: 'set', entry, line: on, path: blockText(1), value: title };
+			asks.propose = { op: 'propose', entry, from: here.heads, name: 'a proposal' };
+		}
+		if (writes && on !== null) {
+			asks.accept = { op: 'merge', entry, from: on, into: null };
+			asks.promote = { op: 'merge', entry, from: on, into: null, promote: true };
+			asks.update = { op: 'merge', entry, from: null, into: on };
+		}
+		if (writes && seen) {
+			asks.restore = { op: 'restore', entry, line: on, at: [seen.id] };
+			asks.undo = { op: 'undo', entry, line: on, edit: seen.id };
+		}
+		const names = Object.keys(asks);
+		let gone = false;
+		may(api, actor, Object.values(asks)).then((answers) => {
+			const allowed = (/** @type {true | { refused: string }} */ a) => a === true || a.refused !== 'NotAllowed';
+			if (!gone) can = Object.fromEntries(names.map((n, i) => [n, allowed(answers[i])]));
+		});
+		return () => {
+			gone = true;
+		};
+	});
 
 	$effect(() => {
 		const now = lines;
@@ -185,22 +242,30 @@
 		return got.ok?.record.blocks ?? [];
 	}
 
+	/**
+	 * The op that saves `text` on line `on`, whose blocks are `blocks`: its text is its first paragraph, block 2,
+	 * which a note written elsewhere may not have yet.
+	 * @param {string | null} on @param {string} text @param {{ id: number }[]} blocks
+	 */
+	function saving(on, text, blocks) {
+		const op = blocks.some((b) => b.id === 2)
+			? { op: 'set', path: blockText(2), value: text }
+			: { op: 'insert', path: ['blocks'], value: { id: 2, type: 'paragraph', text } };
+		return { ...op, entry, line: on };
+	}
+
 	async function save() {
 		if (!here || !unsaved) return;
 		const [on, text] = [here.line, drafts[k]];
-		// its text is its first paragraph, block 2, which a note written elsewhere may not have yet
-		const op = (await blocksOn(on)).some((b) => b.id === 2)
-			? { op: 'set', path: blockText(2), value: text }
-			: { op: 'insert', path: ['blocks'], value: { id: 2, type: 'paragraph', text } };
-		await api.run('Saving', { ...op, as: actor, entry, line: on });
+		await api.run('Saving', { ...saving(on, text, await blocksOn(on)), as: actor });
 	}
 
 	async function retitle() {
 		const title = (titles[k] ?? '').trim();
 		if (!here || !title || title === (here.title ?? '')) return;
 		const on = here.line;
-		// the heading a note opens with, block 1, is its title too: one write changes both
-		const heading = (await blocksOn(on)).some((b) => b.id === 1 && b.type === 'heading');
+		// the heading a note opens with, block 1, is its title too: one write changes both, where the rules allow both
+		const heading = lets('heading') && (await blocksOn(on)).some((b) => b.id === 1 && b.type === 'heading');
 		const set = (/** @type {unknown[]} */ path) => ({ op: 'set', entry, line: on, path, value: title });
 		const ops = heading ? [set(['title']), set(blockText(1))] : [set(['title'])];
 		await api.run('Renaming', { op: 'batch', as: actor, ops });
@@ -227,17 +292,21 @@
 		if (await api.run('Undoing', { op: 'undo', as: actor, entry, line: here.line, edit: id })) viewing = '';
 	}
 
-	async function variant() {
-		const target = targets.some((v) => v.id === into) ? into : targets[0]?.id;
-		if (!here || !target) return;
+	/** The op that makes a variant of the line shown in vault `target`. @param {string} target */
+	function varying(target) {
 		// the copy names the note it came from, in place of the note this one came from, if any, in its first write
 		const from = item?.variantOf;
 		const mark = [
 			...(from ? [{ op: 'remove', path: ['tags'], value: variantMark(from) }] : []),
 			{ op: 'insert', path: ['tags'], value: variantMark(entry) }
 		];
-		const op = { op: 'variant', as: actor, entry, line: here.line, into: target, ops: mark };
-		made = (await api.run('Making the variant', op))?.entry ?? '';
+		return { op: 'variant', entry, line: here?.line ?? null, into: target, ops: mark };
+	}
+
+	async function variant() {
+		const target = targets.some((v) => v.id === into) ? into : targets[0]?.id;
+		if (!here || !target) return;
+		made = (await api.run('Making the variant', { ...varying(target), as: actor }))?.entry ?? '';
 	}
 
 	/**
@@ -275,7 +344,7 @@
 		<a class="back" href="#notes" title="All notes" aria-label="All notes"><Icon name="back" size={20} /></a>
 		<span class="docicon" aria-hidden="true"><Icon name="note" size={24} /></span>
 		<div class="heading">
-			{#if here && writes && !seen}
+			{#if here && writes && !seen && lets('title')}
 				<input
 					class="title"
 					bind:value={titles[k]}
@@ -288,15 +357,29 @@
 			{/if}
 			<p class="meta">
 				{#if item}<Tags {world} {actor} {api} {busy} entry={item} />{/if}
-				{vaultName(item?.vault)}{note ? ` · ${count(note.edits.length, 'edit')}` : ''} ·
+				{vaultName(item?.vault)}{note ? ` · ${count(numbered.length, 'edit')}` : ''} ·
+				{#if uncounted}
+					<b class="unsaved" title="The rules of their caps don’t allow what they change: no one counts them"
+						>{count(uncounted, 'edit')} not allowed</b
+					> ·
+				{/if}
 				{#if unsaved}<b class="unsaved">Unsaved changes</b>{:else}Every edit signed and saved{/if}
 			</p>
 		</div>
 		<div class="tools">
 			{#if here}
-				<span class="mode chip" class:warn={!!seen} class:accent={!seen && writes}>
-					{#if seen}Viewing version #{seen.n}{:else if !writes}Viewing: {nameOf(as)} only reads it{:else if here.line === null}Editing
-						main{:else}Editing proposal “{lineName(here)}”{/if}
+				<span class="mode chip" class:warn={!!seen} class:accent={!seen && writes && !ruled}>
+					{#if seen}
+						Viewing version #{seen.n}
+					{:else if !writes}
+						Viewing: {nameOf(as)} only reads it
+					{:else if ruled}
+						Viewing: {ruled}
+					{:else if here.line === null}
+						Editing main
+					{:else}
+						Editing proposal “{lineName(here)}”
+					{/if}
 				</span>
 			{/if}
 			{#if unsaved}
@@ -386,7 +469,12 @@
 								</div>
 							</div>
 						{:else}
-							<button class="btn add" disabled={busy} onclick={() => proposeFrom(here.heads, `the latest of ${at(here.line)}`)}>
+							<button
+								class="btn add"
+								disabled={busy || !lets('propose')}
+								title={barred('propose')}
+								onclick={() => proposeFrom(here.heads, `the latest of ${at(here.line)}`)}
+							>
 								<Icon name="proposal" size={14} /> New proposal
 							</button>
 						{/if}
@@ -434,10 +522,22 @@
 						<span class="soft">as it was after: {what(seen)}</span>
 						<span class="actions">
 							{#if writes && seen.id !== latest}
-								<button class="btn primary" disabled={busy} onclick={() => restore(seen.id)}>Restore this version</button>
+								<button
+									class="btn primary"
+									disabled={busy || !lets('restore')}
+									title={barred('restore')}
+									onclick={() => restore(seen.id)}>Restore this version</button
+								>
 							{/if}
 							{#if writes}
-								<button class="btn" disabled={busy} onclick={() => proposeFrom([seen.id], `version #${seen.n}`)}>Propose from here</button>
+								<button
+									class="btn"
+									disabled={busy || !lets('propose')}
+									title={barred('propose')}
+									onclick={() => proposeFrom([seen.id], `version #${seen.n}`)}
+								>
+									Propose from here
+								</button>
 							{/if}
 							<button class="btn quiet" onclick={() => (viewing = '')}>Back to the latest</button>
 						</span>
@@ -451,9 +551,24 @@
 						</span>
 						{#if writes}
 							<span class="actions">
-								<button class="btn primary" disabled={busy} onclick={() => merge(here.line, null, false)}>Accept into main</button>
-								<button class="btn" disabled={busy} onclick={() => merge(here.line, null, true)}>Make main match it</button>
-								<button class="btn" disabled={busy} onclick={() => merge(null, here.line, false)}>Update from main</button>
+								<button
+									class="btn primary"
+									disabled={busy || !lets('accept')}
+									title={barred('accept')}
+									onclick={() => merge(here.line, null, false)}>Accept into main</button
+								>
+								<button
+									class="btn"
+									disabled={busy || !lets('promote')}
+									title={barred('promote')}
+									onclick={() => merge(here.line, null, true)}>Make main match it</button
+								>
+								<button
+									class="btn"
+									disabled={busy || !lets('update')}
+									title={barred('update')}
+									onclick={() => merge(null, here.line, false)}>Update from main</button
+								>
 							</span>
 						{/if}
 					</div>
@@ -462,7 +577,7 @@
 				<article class="paper" class:old={!!seen}>
 					{#if seen}
 						<div class="text">{seen.text || '…'}</div>
-					{:else if writes}
+					{:else if writes && lets('write')}
 						<textarea
 							class="text"
 							use:grow={drafts[k]}
@@ -522,12 +637,27 @@
 							{#if e.id === viewing && writes}
 								<div class="row actions">
 									{#if e.text !== null && e.id !== latest}
-										<button class="btn quiet" disabled={busy} onclick={() => restore(e.id)}>Restore</button>
+										<button
+											class="btn quiet"
+											disabled={busy || !lets('restore')}
+											title={barred('restore')}
+											onclick={() => restore(e.id)}>Restore</button
+										>
 									{/if}
 									{#if (e.kind === 'edit' || e.kind === 'promote') && e.deps.length}
-										<button class="btn quiet" disabled={busy} onclick={() => undo(e.id)}>Undo</button>
+										<button
+											class="btn quiet"
+											disabled={busy || !lets('undo')}
+											title={barred('undo')}
+											onclick={() => undo(e.id)}>Undo</button
+										>
 									{/if}
-									<button class="btn quiet" disabled={busy} onclick={() => proposeFrom([e.id], `version #${e.n}`)}>
+									<button
+										class="btn quiet"
+										disabled={busy || !lets('propose')}
+										title={barred('propose')}
+										onclick={() => proposeFrom([e.id], `version #${e.n}`)}
+									>
 										Propose from here
 									</button>
 								</div>

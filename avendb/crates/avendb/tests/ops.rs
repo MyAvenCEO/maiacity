@@ -6,9 +6,12 @@
 //! hold of exactly the model's entries. A type or a tag is a number in the model, and its digits here; a vault or an
 //! entry is its number in 64 hex digits.
 
+mod records;
+
 use avendb::id::{EntryId, VaultId};
 use avendb::ops::{diff, run_all, Change, Flat, Op, Record, Where};
 use avendb::slice::{Attrs, Sym};
+use records::{random_op, random_record, Rng, FIELDS};
 use serde_json::{json, Value};
 
 const OPS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/ops.json");
@@ -95,89 +98,6 @@ fn each_query_picks_and_holds_as_the_models() {
             assert!(!w.holds(a, r) || plan.matches(a), "{case}: the plan misses {}", a.entry.to_hex());
         }
     }
-}
-
-/// xorshift64*: small and deterministic, so a failing seed can be replayed.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
-    }
-
-    fn below(&mut self, n: usize) -> usize {
-        (self.next() % n as u64) as usize
-    }
-
-    fn pick<T: Clone>(&mut self, xs: &[T]) -> T {
-        xs[self.below(xs.len())].clone()
-    }
-}
-
-const FIELDS: [&str; 4] = ["title", "blocks", "tags", "n"];
-const CELLS: [&str; 4] = ["text", "type", "level", "id"];
-
-fn scalar(rng: &mut Rng) -> Value {
-    rng.pick(&[json!("a"), json!("B"), json!(""), json!(1), json!(-2), json!(true), json!(null), json!(1.5)])
-}
-
-/// A row with id 1 to 4: a second row may share its id, as when two devices add one at once.
-fn row(rng: &mut Rng) -> Value {
-    let mut r = Record::new();
-    r.insert("id".into(), (rng.below(4) as i64 + 1).into());
-    for g in &CELLS[..3] {
-        if rng.below(2) == 0 {
-            r.insert(g.to_string(), scalar(rng));
-        }
-    }
-    Value::Object(r)
-}
-
-fn value(rng: &mut Rng) -> Value {
-    match rng.below(4) {
-        0 => scalar(rng),
-        1 => (0..rng.below(3)).map(|_| scalar(rng)).collect(),
-        _ => (0..rng.below(4)).map(|_| row(rng)).collect(),
-    }
-}
-
-fn random_record(rng: &mut Rng) -> Record {
-    let mut r = Record::new();
-    for f in FIELDS {
-        if rng.below(3) != 0 {
-            r.insert(f.to_string(), value(rng));
-        }
-    }
-    r
-}
-
-/// An op on fields and rows that are there or not, ids that are there or not: the run may refuse it.
-fn random_op(rng: &mut Rng, r: &Record) -> Value {
-    let f = rng.pick(&FIELDS);
-    let rows = r.get(f).and_then(Value::as_array).into_iter().flatten();
-    let ids: Vec<i64> = rows.filter_map(|x| x["id"].as_i64()).collect();
-    let id = if ids.is_empty() || rng.below(4) == 0 { rng.below(5) as i64 + 1 } else { rng.pick(&ids) };
-    let g = rng.pick(&CELLS);
-    let mut op = match rng.below(11) {
-        0 => json!({ "op": "set", "path": [], "value": random_record(rng) }),
-        1 => json!({ "op": "set", "path": [f], "value": value(rng) }),
-        2 => json!({ "op": "unset", "path": [f] }),
-        3 => json!({ "op": "set", "path": [f, { "id": id }], "value": { "text": scalar(rng) } }),
-        4 => json!({ "op": "set", "path": [f, { "id": id }, g], "value": scalar(rng) }),
-        5 => json!({ "op": "unset", "path": [f, { "id": id }, g] }),
-        6 => json!({ "op": "insert", "path": [f], "value": row(rng) }),
-        7 => json!({ "op": "remove", "path": [f, { "id": id }] }),
-        8 => json!({ "op": "move", "path": [f, { "id": id }], "to": rng.below(4) }),
-        9 => json!({ "op": "insert", "path": [f], "value": scalar(rng) }),
-        _ => json!({ "op": "remove", "path": [f], "value": scalar(rng) }),
-    };
-    if rng.below(3) == 0 && matches!(op["op"].as_str(), Some("insert")) {
-        op["at"] = rng.below(4).into();
-    }
-    op
 }
 
 /// O1: a diff applied gives the record after, between any two records.

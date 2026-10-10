@@ -12,9 +12,11 @@
  * each in turn: avenALICE writes a note and three todos, one tagged “work”, adds a fourth from her studio’s query
  * console and queries those she has left there, and shares the note alone with avenBOB, and every todo tagged “work”, a
  * rule: he reads the note and that todo, and one she tags “work” later, and finds her other todos sealed in her studio,
- * while avenCHARLY sees nothing of hers; her Sync page shows her cells, avenCEO's server relaying their ciphertext;
+ * while avenCHARLY sees nothing of hers; then she lets avenCHARLY write on a plan of hers by a cap whose rules let him
+ * only suggest changes: the plan reads as viewing to him, he proposes and writes on his proposal, which he may not
+ * accept, and she accepts it into main; her Sync page shows her cells, avenCEO's server relaying their ciphertext;
  * making the coop an owner of her whole vault takes one sheet, revoking avenBOB's caps none. Forgotten, the device's
- * store is put aside in its folder, and the person signs in again through the server in two sheets, every vault and her
+ * store is put aside in its folder, and the person signs in again through the server in one sheet, every vault and her
  * note coming back. Last, the store becomes an earlier avenDB's: the device puts it aside, and the page says it holds
  * no vault and forgets it. Each step is screenshot.
  *
@@ -390,6 +392,9 @@ const BODY = 'Only Bob may read this.';
 const TODO = 'Plant the north beds';
 const WORK = 'Fix the greenhouse door';
 const LATER = 'Order seeds';
+const PLAN = 'Spring plan';
+const SOW = 'Sow beans.';
+const SOWN = 'Sow beans and peas.';
 
 try {
 	await page.goto(at, { waitUntil: 'domcontentloaded' });
@@ -603,6 +608,65 @@ try {
 	await click('Act as avenALICE', '.main .empty button');
 	check('from there, one click acts as her', await until(async () => (await text('.switcher .pill b')) === 'avenALICE', 5000));
 
+	// a cap whose rules let avenCHARLY only suggest changes to a plan of hers, on proposals she accepts
+	await look('avenALICE', 'Notes');
+	await click('Blank note', '.main .start button');
+	check('her plan opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
+	await retitle(PLAN);
+	const planned = until(async () => (await edits())[0]?.what === `Renamed it “${PLAN}”`, 30000);
+	check('titled', await planned, JSON.stringify((await edits())[0]));
+	check('written', await saveText(SOW), await docText());
+	await click('Share', '.doc .top button');
+	await choose('.doc .sharebar select[aria-label="Share with"]', 'avenCHARLY');
+	await choose('.doc .sharebar select[aria-label="Role"]', 'to write');
+	await choose('.doc .sharebar select[aria-label="What it may change"]', 'only suggest changes, on proposals');
+	const rules = await text('.doc .sharebar .preview');
+	const suggests =
+		rules.includes('may only start proposals, change anything on a proposal') && rules.includes('adds no entry');
+	check('its rules in words: he may only suggest changes', suggests, rules);
+	await click('Share it', '.doc .sharebar button');
+	const writes = until(async () => (await holders()).includes('avenCHARLY writes it'));
+	check('avenCHARLY writes it', await writes, (await holders()).join(', '));
+	await back();
+	await goTo('Access');
+	const words = async () => (await shown('.main .grants li')).find((l) => l?.includes('avenCHARLY')) ?? '';
+	check('her Access says the cap’s rules', (await words()).includes('may only start proposals'), await words());
+	check('acting as avenCHARLY', await actAs('avenCHARLY'));
+	await look('avenALICE', 'Notes');
+	await openNote(PLAN);
+	check('he opens her plan', await until(async () => (await docText()) === SOW, 30000), await docText());
+	const proposes = async () => (await text('.doc .top .mode')).includes('avenCHARLY may only propose changes');
+	check('on main he may only propose changes', await until(proposes, 10000), await text('.doc .top .mode'));
+	const viewing = !(await page.$('.doc .paper textarea')) && !(await page.$('.doc .top input.title'));
+	check('so main is no page to write on', viewing);
+	await click('New proposal', '.doc .versions button');
+	await type('#proposal-name', 'peas too');
+	await click('Propose', '.doc .versions .naming button');
+	check('his proposal, picked', await until(async () => (await onLine()) === 'peas too'), await onLine());
+	const writable = await until(async () => !!(await page.$('.doc .paper textarea')), 10000);
+	check('he writes on it', writable && (await saveText(SOWN)), await docText());
+	const barred = (label) =>
+		page.evaluate((label) => {
+			const all = [...document.querySelectorAll('.doc .banner button')];
+			const b = all.find((e) => e.textContent?.trim() === label);
+			return b instanceof HTMLButtonElement && b.disabled && !!b.title;
+		}, label);
+	const unmerged = (await until(() => barred('Accept into main'), 10000)) && (await barred('Make main match it'));
+	check('he may not accept it into main, nor make main match it', unmerged);
+	check('and no error', !(await problem()), await problem());
+	await shot('10b-charly-proposes');
+	await back();
+	check('acting as avenALICE again', await actAs('avenALICE'));
+	await look('avenALICE', 'Notes');
+	await openNote(PLAN);
+	await click('peas too', '.doc .versions .line');
+	check('she sees his proposal', await until(async () => (await docText()) === SOWN, 30000), await docText());
+	await click('Accept into main', '.doc .banner button');
+	const accepted = until(async () => (await onLine()) === 'Main' && (await docText()) === SOWN);
+	check('she accepts it: main reads his change', await accepted, await docText());
+	await shot('10c-alice-accepts');
+	await back();
+
 	// who receives her cells: this Mac opens them, avenCEO's server only relays their ciphertext
 	await look('avenALICE', 'Sync');
 	const sync = await text('.main');
@@ -661,7 +725,7 @@ try {
 	check('its store put aside, not deleted', aside.some((a) => a.endsWith('-forgotten')) && !existsSync(join(folder, 'meta.json')), aside.join(', '));
 	await click('Sign in with my passkey', '.account button');
 	check('signed in again, through the server', await opened(), await problem());
-	check('in two sheets: unlock, join', app.sheets().join(',') === 'unlock,join');
+	check('in one sheet: unlock', app.sheets().join(',') === 'unlock');
 	check('every vault came back', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
 	await actAs('avenALICE');
 	await look('avenALICE', 'Notes');

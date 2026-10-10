@@ -4,10 +4,12 @@
 	or owns it, or with everyone, who may only read. It starts at the least: the one entry it opens on, or else the vault's
 	todos, to read. A rule is a cap on whatever matches it, now and later, never a list: an entry tagged to match it
 	later is shared then, one untagged leaves it, and the vault's devices move each into the cell the caps that hold it
-	share, under that cell's key (avendb-browser's `Device::share`, a slice as its `words` read it). The preview says
-	what it reaches now, of what the acting vault reads. Making a vault an owner needs the acting vault's passkey; the
-	rest none. A vault that isn't the one shared from shares only through an owner cap of its own, and reaches no
-	further than it.
+	share, under that cell's key (avendb-browser's `Device::share`, a slice as its `words` read it). A cap that writes
+	may carry rules, the ops its grantee's writes may make: only suggest changes on proposals, change only some fields,
+	set one field to some values, or rules written as JSON (avendb/docs/OPS.md); the fields are those of the newest
+	schema of what it shares. The preview says what it reaches now, of what the acting vault reads, and what its rules
+	allow. Making a vault an owner needs the acting vault's passkey; the rest none. A vault that isn't the one shared
+	from shares only through an owner cap of its own, and reaches no further than it, nor beyond its rules.
 -->
 <script>
 	import {
@@ -15,12 +17,16 @@
 		attrsOf,
 		capWords,
 		count,
+		fieldsOf,
 		list,
 		matches,
+		MAY,
 		nameOf,
 		reads,
 		ROLE_HINTS,
+		rulesWords,
 		sliceWords,
+		SUGGEST,
 		tagsIn,
 		titleOf
 	} from './vaults.js';
@@ -47,26 +53,77 @@
 	let grantee = $state('');
 	let role = $state(/** @type {import('./vaults.js').Role} */ ('read'));
 	let relabel = $state('');
+	/** what a cap that writes lets its grantee change (`MAY`), and the fields, the field and values, or the JSON */
+	let may = $state(/** @type {keyof typeof MAY} */ ('any'));
+	let picked = $state(/** @type {string[]} */ ([]));
+	let field = $state('');
+	let values = $state(/** @type {unknown[]} */ ([]));
+	let json = $state('');
+	let adds = $state(false);
+	/** the schemas and lenses the vault's entries are read through (the `schemas` op), for the fields rules name */
+	let lane = $state(/** @type {any} */ (null));
 
 	// the one entry it opens on, by default: the least
 	$effect.pre(() => {
 		if (entry) what = 'entry';
 	});
 
+	$effect(() => {
+		const v = vault;
+		api.ask({ op: 'schemas', vault: v }).then((/** @type {any} */ out) => v === vault && (lane = out?.ok ?? null));
+	});
+
 	const to = $derived(grantee || others[0]?.id || 'public');
 	const given = $derived(to === 'public' ? 'read' : role);
 
-	/** The slice as the device takes it (`{select, relabel}`). @returns {import('./vaults.js').Slice} */
+	/** the fields of what it shares, each once, with the values each takes where it takes only some */
+	const fields = $derived.by(() => {
+		const of = what === 'entry' && one?.type ? [one.type] : what === 'all' ? ['note', 'todo'] : types.split(',');
+		const all = of.flatMap((t) => fieldsOf(lane, t));
+		return all.filter((f, i) => all.findIndex((g) => g.name === f.name) === i);
+	});
+	const valued = $derived(fields.filter((f) => f.values));
+	const theField = $derived(valued.find((f) => f.name === field) ?? valued[0]);
+
+	/**
+	 * The rules the cap carries, as the device takes them: none for a cap that doesn't write or makes any change,
+	 * `null` while the JSON doesn't read as a list.
+	 * @type {import('./vaults.js').Rule[] | null | undefined}
+	 */
+	const rules = $derived.by(() => {
+		if (!allows(given, 'write') || may === 'any') return undefined;
+		/** @type {any} */
+		let rs = [];
+		if (may === 'suggest') {
+			rs = SUGGEST;
+		} else if (may === 'fields') {
+			rs = picked.filter((f) => fields.some((g) => g.name === f)).map((f) => ({ op: 'set', path: [f] }));
+		} else if (may === 'values' && theField) {
+			const to = values.filter((x) => theField.values?.includes(/** @type {any} */ (x)));
+			rs = [{ op: 'set', path: [theField.name], to }];
+		} else if (may === 'json') {
+			try {
+				rs = JSON.parse(json);
+			} catch {
+				return null;
+			}
+			if (!Array.isArray(rs)) return null;
+		}
+		return adds ? [...rs, { op: 'create' }] : rs;
+	});
+
+	/** The slice as the device takes it (`{select, relabel, rules?}`). @returns {import('./vaults.js').Slice} */
 	const slice = $derived.by(() => {
 		const asks = allows(given, 'write') ? tagsIn(relabel) : [];
-		if (what === 'entry' && entry) return { select: [[{ entry: [entry] }]], relabel: asks };
-		if (what === 'all') return { select: /** @type {'all'} */ ('all'), relabel: asks };
+		const ruled = rules ? { rules } : {};
+		if (what === 'entry' && entry) return { select: [[{ entry: [entry] }]], relabel: asks, ...ruled };
+		if (what === 'all') return { select: /** @type {'all'} */ ('all'), relabel: asks, ...ruled };
 		/** @type {import('./vaults.js').Atom[]} */
 		const tests = [{ type: types.split(',') }];
 		for (const tag of tagsIn(tagged)) tests.push({ tag });
 		const not = tagsIn(untagged);
 		if (not.length) tests.push({ noTag: not });
-		return { select: [tests], relabel: asks };
+		return { select: [tests], relabel: asks, ...ruled };
 	});
 
 	/** What it reaches now, of the vault's entries the acting vault reads; and how many it can't tell. */
@@ -81,6 +138,7 @@
 		if (await api.share(actor, vault, $state.snapshot(slice), given, to)) {
 			// back to the least for the next share
 			[tagged, untagged, relabel, role] = ['', '', '', 'read'];
+			[may, picked, values, json, adds] = ['any', [], [], '', false];
 			what = entry ? 'entry' : 'rule';
 			ondone();
 		}
@@ -124,8 +182,52 @@
 			<input class="field tags" placeholder="tags it may ask for" bind:value={relabel} aria-label="Tags it may ask for" />
 		{/if}
 	</div>
+	{#if allows(given, 'write')}
+		<div class="row">
+			<span class="lead">and</span>
+			<select class="field" bind:value={may} aria-label="What it may change">
+				{#each Object.entries(MAY) as [k, words] (k)}
+					{#if k !== 'values' || valued.length}<option value={k}>{words}</option>{/if}
+				{/each}
+			</select>
+			{#if may === 'fields'}
+				{#each fields as f (f.name)}
+					<label class="pick"><input type="checkbox" bind:group={picked} value={f.name} /> {f.name}</label>
+				{/each}
+			{:else if may === 'values' && theField}
+				<select
+					class="field"
+					value={theField.name}
+					onchange={(e) => (field = e.currentTarget.value)}
+					aria-label="Which field"
+				>
+					{#each valued as f (f.name)}<option value={f.name}>{f.name}</option>{/each}
+				</select>
+				{#each theField.values ?? [] as x (String(x))}
+					<label class="pick"><input type="checkbox" bind:group={values} value={x} /> {String(x)}</label>
+				{/each}
+			{/if}
+			{#if may !== 'any'}
+				<label class="pick"><input type="checkbox" bind:checked={adds} /> and add new entries</label>
+			{/if}
+		</div>
+		{#if may === 'json'}
+			<textarea
+				class="field json"
+				rows="3"
+				bind:value={json}
+				placeholder={'[{ "op": "set", "path": ["status"], "to": ["done"] }]'}
+				aria-label="Its rules, as JSON"
+			></textarea>
+		{/if}
+	{/if}
 	<p class="soft preview">
 		{ROLE_HINTS[given]}: {sliceWords(slice, world)}.
+		{#if rules === null}
+			Its rules are a JSON list of ops, as avenDB’s docs write them.
+		{:else if rules}
+			It {rulesWords(slice)}{rules.some((r) => r.op === 'create') ? '' : ', and adds no entry'}.
+		{/if}
 		{#if what === 'entry'}
 			Only {titleOf(world, entry)}, nothing else of {nameOf(byId.get(vault))}.
 		{:else if what === 'all'}
@@ -139,7 +241,9 @@
 			It reaches no further than {nameOf(byId.get(actor))}’s own cap: {list(through.map((c) => capWords(c, world)), 'or')}.
 		{/if}
 	</p>
-	<button class="btn primary" disabled={busy || (what === 'rule' && !types)} onclick={give}>{entry ? 'Share it' : 'Share'}</button>
+	<button class="btn primary" disabled={busy || (what === 'rule' && !types) || rules === null} onclick={give}>
+		{entry ? 'Share it' : 'Share'}
+	</button>
 </div>
 
 <style>
@@ -158,6 +262,19 @@
 
 	.tags {
 		width: 9.5rem;
+	}
+
+	.pick {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.82rem;
+	}
+
+	.json {
+		width: min(100%, 36rem);
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.8rem;
 	}
 
 	.preview {

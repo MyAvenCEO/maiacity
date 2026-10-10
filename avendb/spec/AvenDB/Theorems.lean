@@ -4,14 +4,15 @@ import AvenDB.CapLemmas
 import AvenDB.RelayLemmas
 import AvenDB.KeyLemmas
 import AvenDB.SyncLemmas
+import AvenDB.RuleLemmas
 
 /-!
 # The theorems
 
 What must always hold, stated over the executable model. T9 (lenses) and T10 (proposals) are proven in their own files.
 The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (caps, cells, removals and replay),
-`RelayLemmas.lean` (blind relays), `KeyLemmas.lean` (keys) and `SyncLemmas.lean` (convergence and sync); the
-predicates the statements use are in `Props.lean`.
+`RuleLemmas.lean` (caps that name ops), `RelayLemmas.lean` (blind relays), `KeyLemmas.lean` (keys) and
+`SyncLemmas.lean` (convergence and sync); the predicates the statements use are in `Props.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed, wrapped or encrypted data reveals nothing without its
@@ -123,9 +124,76 @@ theorem T23_cells_mean_slices {st : State} (hr : Reachable st) (en : Entry) (hce
   Caps.T23_cells_mean_slices hr en hcell a
 
 /-- T23, new entries: the rule every peer checks never refuses a creation that stays inside its creator's slice. -/
-theorem T23_creations (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) (h : admits st a v x attrs = true) :
+theorem T23_creations (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) {proof : Option CapId}
+    (h : admits st a v x attrs proof = true) :
     mayCreate st a v x = true :=
   Caps.T23_creations st a v x attrs h
+
+/-! ## Caps that name ops
+
+C1 to C4 (`avendb/docs/OPS.md`): a write cap's rules say which ops its grantee's writes may make, and every reader of
+an entry counts a write only where the rules of the chain its proof names allow what it touches. The half of C3 about
+a write's changes, `changes_allowed`, is proven in `Rules.lean`. -/
+
+/-- C1 (chains narrow rules): a chain allows no write that one of its ruled caps forbids. -/
+theorem chain_narrows {st : State} {cp c : Cap} {main : Bool} {ts : List Touch}
+    (h : chainAllows st cp main ts = true) (hc : c ∈ chain st cp) (hr : c.ruled = true) :
+    allowsAll c.rules main ts = true :=
+  Ruling.chain_narrows h hc hr
+
+/-- C1, a cap and the cap it rests on: in every reachable state a cap's chain is ruled where the chain of the cap it
+    rests on is, and allows no write that chain doesn't allow (T22's twin for rules). -/
+theorem child_narrows {st : State} (hr : Reachable st) {c pc : Cap} (hc : c ∈ st.caps) (hp : c.parent = some pc.id)
+    (hpc : pc ∈ st.caps) :
+    (ruledChain st pc = true → ruledChain st c = true) ∧
+      ∀ main ts, chainAllows st c main ts = true → chainAllows st pc main ts = true :=
+  Ruling.child_narrows hr hc hp hpc
+
+/-- C2 (readers agree): whether the readers of an entry count a write reads no selector, relabel set, type or tag, and
+    no rules but those of the chain the write's proof names, so every reader of the entry, whatever caps it opened,
+    counts the same writes. -/
+theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (deps : List EditId)
+    (proof : Option CapId) (main : Bool) (ts : List Touch) :
+    counts (st.seen (proofCaps st proof)) a { en with attrs } deps proof main ts =
+      counts st a en deps proof main ts :=
+  Ruling.counts_seen st a en attrs deps proof main ts
+
+/-- C2, creations: whether the readers of an entry count its creation reads no selector, relabel set or rules but
+    those of the chain the creation's proof names. -/
+theorem creates_seen (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) :
+    creates (st.seen (proofCaps st proof)) a v x proof = creates st a v x proof :=
+  Ruling.creates_seen st a v x proof
+
+/-- C3 (ruled writes do what they may): a counted write whose actor isn't the entry's vault, and reaches the entry
+    only through ruled chains, relies on the cap its proof names, which its actor holds with write or more and which
+    reaches the entry, and every ruled cap of that cap's chain allows every touch of it. -/
+theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option CapId}
+    {main : Bool} {ts : List Touch} (hc : counts st a en deps proof main ts = true) (hv : a ≠ en.vault)
+    (hr : ∀ cp ∈ st.caps, holdsCap st a cp .write = true → inCell st cp en = true → ruledChain st cp = true) :
+    ∃ cp ∈ st.caps, proof = some cp.id ∧ holdsCap st a cp .write = true ∧ inCell st cp en = true ∧
+      ∀ c ∈ chain st cp, c.ruled = true → allowsAll c.rules main ts = true :=
+  Ruling.counted_allowed hc hv hr
+
+/-- C4 (allowed writes count): a write that builds on writes its readers count, whose proof names a cap its actor
+    holds with write or more that reaches the entry, and whose chain allows every touch of it, counts. -/
+theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
+    {cp : Cap} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.caps) (hh : holdsCap st a cp .write = true)
+    (hi : inCell st cp en = true) (ha : chainAllows st cp main ts = true) :
+    counts st a en deps (some cp.id) main ts = true :=
+  Ruling.allowed_counts hd hcp hh hi ha
+
+/-- C4, creations: a creation in the intake cell of a cap over the vault that its actor holds with write or more,
+    whose proof names that cap and whose chain allows `create`, counts. -/
+theorem allowed_creates {st : State} {a v : VaultId} {cp : Cap} (hcp : cp ∈ st.caps) (hv : cp.over = v)
+    (hh : holdsCap st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :
+    creates st a v (intake st cp) (some cp.id) = true :=
+  Ruling.allowed_creates hcp hv hh ha
+
+/-- C4, what builds on writes that don't count: in every reachable state the readers of an entry count no write that
+    builds on one they don't count, so a line's history of counted writes is whole, and no record shows a write they
+    don't count or anything built on it. -/
+theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st :=
+  Ruling.uncounted_closed hr
 
 /-! ## The schema lane -/
 

@@ -5,7 +5,8 @@
 	signed it and how (a classical half, which counts for nothing once only post-quantum counts, and an SLH-DSA half),
 	its causal depth and its size; each opens in a drawer, every field and signature, and the edits it builds on. What
 	an edit seals, a write's body, a cap's slice or a key's boxes, shows by its size alone, as avenDB's server sees it;
-	a cap's slice shows in words where this browser reads it.
+	a cap's slice shows in words where this browser reads it. A write the rules of the caps it relies on don't allow,
+	or that builds on one, says so: no reader of its entry counts it.
 -->
 <script>
 	import Panel from './Panel.svelte';
@@ -54,6 +55,10 @@
 
 	/** Who signed edit `e`: its author, then its cosigners. @param {import('./db.js').SignedEdit} e */
 	const signers = (e) => list([e.author, ...e.cosigners].map(s.signer));
+
+	/** why a write's entry's readers don't count it, where the rules of its caps don't allow it */
+	const NOT_ALLOWED =
+		'the rules of the caps it relies on don’t allow what it changes, or what it builds on: no reader counts it';
 </script>
 
 {#if failed}
@@ -105,6 +110,7 @@
 						<td class="what">
 							{said.get(e.id)}
 							{#if e.counted === false}<span class="chip warn" title="No checkpoint of its author covers it yet">not counted</span>{/if}
+							{#if e.allowed === false}<span class="chip warn" title={NOT_ALLOWED}>not allowed</span>{/if}
 						</td>
 						<td>{signers(e)}</td>
 						<td><span class="sigs">
@@ -150,6 +156,10 @@
 			{#if picked.counted !== null}
 				<dt>Counted</dt>
 				<dd>{picked.counted ? 'Yes: a checkpoint of its author covers it' : 'Not yet: no checkpoint of its author covers it'}</dd>
+			{/if}
+			{#if picked.allowed !== null}
+				<dt>Allowed</dt>
+				<dd>{picked.allowed ? 'Yes: the rules of its caps allow what it changes' : `No: ${NOT_ALLOWED}`}</dd>
 			{/if}
 		</dl>
 		<h4 class="kept">Signatures</h4>

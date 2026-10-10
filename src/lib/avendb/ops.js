@@ -21,6 +21,20 @@ export function answer(out) {
 }
 
 /**
+ * Whether the acting vault `actor` may make each of the change ops `ops` now, as the device answers by a dry run of
+ * each that checks, proves and refuses as running it would, and makes nothing (the engine's `may`): `true`, or the
+ * refusal, `{ refused, why }`. What a page asks before it offers a button, so the rules stay the device's alone.
+ * @param {{ ask: (op: object) => Promise<any> }} api @param {string} actor @param {object[]} ops
+ * @returns {Promise<(true | { refused: string, why: string })[]>}
+ */
+export async function may(api, actor, ops) {
+	if (!ops.length) return [];
+	const out = await api.ask({ op: 'may', as: actor, ops });
+	const [refused, why] = [out?.refused ?? 'NoAnswer', out?.why ?? 'the device didn’t answer'];
+	return out?.ok ?? ops.map(() => ({ refused, why }));
+}
+
+/**
  * A note as this app writes one, a document of avenDB's own schema: titled `title`, its opening heading (block 1)
  * the title too, then a paragraph (block 2) that reads `text`.
  * @param {string} title @param {string} text

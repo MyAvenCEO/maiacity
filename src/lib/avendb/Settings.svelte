@@ -24,6 +24,7 @@
 		relabelWords,
 		ROLE_HINTS,
 		ROLES,
+		rulesWords,
 		short,
 		shares,
 		sliceWords,
@@ -284,6 +285,7 @@
 								<b>{granteeOf(c, world)}</b>
 								<span class="chip" class:accent={c.grantee === actor} title={ROLE_HINTS[c.role]}>{ROLES[c.role]}</span>
 								{sliceWords(c.slice, world)}
+								{#if rulesWords(c.slice)}<span class="rules">· {rulesWords(c.slice)}</span>{/if}
 								<small class="soft">
 									· reaches {count(c.entries.length, 'entry', 'entries')} now · given by {nameOf(byId.get(c.issuer))}{c.parent
 										? ', through an owner cap of its own'
@@ -319,7 +321,11 @@
 				{#each held as c (c.id)}
 					<li>
 						<Mark vault={byId.get(c.over)} size={28} />
-						<span><span class="chip">{ROLES[c.role]}</span> {sliceWords(c.slice, world)} of <b>{nameOf(byId.get(c.over))}</b></span>
+						<span>
+							<span class="chip">{ROLES[c.role]}</span>
+							{sliceWords(c.slice, world)} of <b>{nameOf(byId.get(c.over))}</b>{#if rulesWords(c.slice)},
+								and {rulesWords(c.slice)}{/if}
+						</span>
 					</li>
 				{:else}
 					<li class="soft">No cap in another vault.</li>

@@ -158,7 +158,8 @@ fn lens(l: &Lens) -> Value {
 /// sealed by its size alone), its author and cosigners, each signature by its signer and its halves (`signature`), the
 /// edits of its log it builds on and its causal depth, its size on the wire, and the vaults it concerns (`concerns`);
 /// for a write, whether the device counts it, as once it no longer trusts the curves it counts only the writes a
-/// checkpoint covers.
+/// checkpoint covers, and whether its entry's readers do, as the rules of the caps it relies on allow it and what it
+/// builds on (`allowed`, `Change::counted`).
 pub fn history(lab: &Lab, me: SignerId) -> Value {
     let (held, st) = (lab.log(me), lab.state(me));
     let counted: HashSet<EditId> = st.all_writes().iter().map(|w| w.edit).collect();
@@ -192,6 +193,10 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
                 "bytes": signed.map_or(0, |s| s.to_wire().len()),
                 "vaults": concerns(st, id, &edit.action, &caps).iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
                 "counted": matches!(edit.action, Action::Write { .. }).then(|| counted.contains(&id)),
+                "allowed": match &edit.action {
+                    Action::Write { entry, .. } => lab.history(me, *entry).and_then(|h| h.get(id)).map(|c| c.counted),
+                    _ => None,
+                },
             })
         })
         .collect();
@@ -436,8 +441,9 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the line it extends, what
 /// it builds on, and what it is, as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the
 /// start of a proposal (`propose`, with its name), a `merge` of two lines, a `promote`, or `sealed`; and the line it
-/// brought in, or for a proposal the line it started from (`from`). With `shown`, the note's title and text at its
-/// version, and the text at the one it changed, so the page's diff shows what it brought.
+/// brought in, or for a proposal the line it started from (`from`); and whether the note's readers count it, as the
+/// rules of the caps it relies on allow it and what it builds on (`Change::counted`). With `shown`, the note's title
+/// and text at its version, and the text at the one it changed, so the page's diff shows what it brought.
 fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
     let (w, Wrote { kind, from, base }) = (&c.write, wrote(h, c));
     let line = w.line();
@@ -456,6 +462,7 @@ fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
         "title": after.as_ref().map(|d| d.title.clone()),
         "text": after.as_ref().map(body),
         "before": before.as_ref().map(body),
+        "counted": c.counted,
     })
 }
 

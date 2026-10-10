@@ -757,6 +757,12 @@ impl Node {
         self.shared.lab(|lab, me| f(lab, me)).await
     }
 
+    /// Act on its Lab as its device in a dry run (`Lab::dry`): every edit asked for is checked and refused as ever,
+    /// and none is made, so its peers are told of nothing.
+    pub async fn dry<T: Send + 'static>(&self, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
+        self.shared.lab(|lab, me| lab.dry(|lab| f(lab, me))).await
+    }
+
     /// Ask the device at endpoint `peer` now, whatever it announced: the edits and McEliece keys it may send this one.
     /// How many edits were new.
     pub async fn sync_with(&self, peer: EndpointId) -> Result<usize> {

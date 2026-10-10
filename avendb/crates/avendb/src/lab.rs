@@ -73,6 +73,7 @@ use crate::policy::{
     checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Issued, Kind, Line, Log, Meaning, Principal, Proposal,
     Readings, Refusal, Replay, Role, State, Write,
 };
+use crate::rules::{Opening, Proof, Rule, Touch};
 use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{
@@ -490,7 +491,8 @@ impl Backup {
 
 /// A cap to issue (`Lab::issue`): its grantee holds `role` over the entries of vault `over` that `slice` selects, and
 /// may ask the vault's stewards to add or remove the tags its relabel set names. A slice that selects all makes a wide
-/// cap.
+/// cap. With `rules`, a cap with write or more lets its grantee's writes make only the ops they name (`rules`), and
+/// the caps resting on it no more; the Lab seals them into its slice with a salt of their own.
 #[derive(Clone, Debug)]
 pub struct NewCap {
     pub over: VaultId,
@@ -500,6 +502,7 @@ pub struct NewCap {
     /// The owner cap its issuer relies on: `None` when the vault itself issues it.
     pub parent: Option<CapId>,
     pub issuer: VaultId,
+    pub rules: Option<Vec<Rule>>,
 }
 
 /// One edit a device's upkeep calls for.
@@ -536,6 +539,10 @@ pub struct Lab {
     offline: HashSet<SignerId>,
     /// The time a new entry's header says it was created at, in seconds since 1970 (`set_now`).
     now: u64,
+    /// A dry run (`dry`): a write is checked, proven and refused as ever, and then not made.
+    dry: bool,
+    /// Its devices ignore the rules of the caps they write through (`ignoring_rules`).
+    lawless: bool,
 }
 
 impl Default for Lab {
@@ -570,6 +577,8 @@ impl Lab {
             pq_only: false,
             offline: HashSet::new(),
             now: 0,
+            dry: false,
+            lawless: false,
         };
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
@@ -1124,10 +1133,26 @@ impl Lab {
         self.complete(on, draft, &[]).map(CapId::from)
     }
 
-    /// The cap `issue` issues, drafted for the passkeys among its signers to sign in their ceremonies (`draft`).
+    /// The cap `issue` issues, drafted for the passkeys among its signers to sign in their ceremonies (`draft`). A
+    /// cap with write or more carries its rules, if any, and the openings of the ruled caps it rests on, which its
+    /// issuer reads in the slice of the cap it rests on: so its grantee can prove its writes (`rules::Proof`).
+    /// `NotAllowed` if the cap it rests on is ruled and `on` doesn't read that cap's slice.
     pub fn draft_cap(&mut self, on: SignerId, signers: &[SignerId], new: NewCap) -> Result<Unsigned, Refusal> {
         self.unlocked(on)?;
-        let NewCap { over, grantee, role, slice, parent, issuer } = new;
+        let NewCap { over, grantee, role, mut slice, parent, issuer, rules } = new;
+        (slice.rules, slice.above) = (None, vec![]);
+        if role.allows(Role::Write) {
+            let store = self.held(on);
+            let ruled = parent.and_then(|p| store.view().cap(p)).filter(|p| p.ruled);
+            if let Some(p) = ruled {
+                slice.above = store.slices.get(&p.id).map(Slice::openings).ok_or(Refusal::NotAllowed)?;
+            }
+            slice.rules = rules.map(|rules| {
+                let mut salt = [0u8; 32];
+                self.rng.fill_bytes(&mut salt);
+                Opening { rules, salt }
+            });
+        }
         let wide = slice.select == Selector::All;
         let nonce = self.rng.next_u64();
         let mut cap = Cap { over, grantee, role, wide, select: vec![], parent, issuer, nonce };
@@ -1163,7 +1188,7 @@ impl Lab {
                 None => {}
             }
         }
-        Ok(Select::Sealed { boxes, slice: sealed }.to_wire())
+        Ok(Select::Sealed { boxes, slice: sealed, rules: slice.rules.as_ref().map(Opening::commitment) }.to_wire())
     }
 
     /// Bring device `d`'s keys, cells and items up to date with its edits, `lent` holding the keys of owners signing on
@@ -1237,11 +1262,50 @@ impl Lab {
         if self.pq_only { std::borrow::Cow::Owned(store.log.view()) } else { std::borrow::Cow::Borrowed(store.view()) }
     }
 
-    /// The edit `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts it.
-    fn check_on(&self, on: SignerId, view: &State, action: Action) -> Result<Edit, Refusal> {
+    /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
+    /// it: the edit, and the write it is, with the caps its readers judge it by.
+    fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         let edit = self.held(on).log.draft_on(view, on, &[], action);
-        view.accepts(&edit, edit.id())?;
-        Ok(edit)
+        let w = view.accepted_write(&edit, edit.id())?.expect("a write");
+        Ok((edit, w))
+    }
+
+    /// The proof write `w` of device `on` carries, which touches `touches` (`rules::Proof`): none where its readers
+    /// count it without one (it acts for its entry's vault, or a cap it relies on is unruled), else one for the first
+    /// ruled cap whose chain's rules, as `on` reads them, allow every touch. `NotAllowed` if none does, or `on` can't
+    /// read what the write touches.
+    fn prove(
+        &self,
+        on: SignerId,
+        view: &State,
+        w: &Write,
+        touches: Option<&[Touch]>,
+    ) -> Result<Option<Proof>, Refusal> {
+        if self.lawless || view.lets(w, None, None) {
+            return Ok(None);
+        }
+        let store = self.held(on);
+        let proofs = w.caps.iter().filter_map(|c| Some(Proof { cap: *c, openings: store.slices.get(c)?.openings() }));
+        let mut proofs = proofs.filter(|p| view.lets(w, Some(p), touches));
+        proofs.next().map(Some).ok_or(Refusal::NotAllowed)
+    }
+
+    /// Run `f` dry: every write it asks for is checked, proven and refused as ever, and then not made (`may`).
+    pub fn dry<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
+        let was = std::mem::replace(&mut self.dry, true);
+        let out = f(self);
+        self.dry = was;
+        out
+    }
+
+    /// Run `f` as devices that ignore the rules of the caps they write through, as a patched app would: their writes
+    /// carry no proof and are made all the same, and no reader of their entries counts them, the writer's own device
+    /// neither, nor anything built on them (`State::uncounted`).
+    pub fn ignoring_rules<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
+        let was = std::mem::replace(&mut self.lawless, true);
+        let out = f(self);
+        self.lawless = was;
+        out
     }
 
     /// A new entry's id: 32 random bytes.
@@ -1323,10 +1387,10 @@ impl Lab {
             create: Some(cell),
             body: vec![],
         };
-        let edit = self.check_on(on, &view, action)?;
-        let tags = TagDelta { add: tags, remove: vec![] };
-        let body = Body { header: Some(header), tags, answers: vec![], content: item.export(&Version::default()) };
-        self.write(on, edit, body, x)?;
+        let (edit, w) = self.check_write(on, &view, action)?;
+        let proof = self.prove(on, &view, &w, Some(&[Touch::Create]))?;
+        let (tags, content) = (TagDelta { add: tags, remove: vec![] }, item.export(&Version::default()));
+        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof }, x)?;
         Ok(entry)
     }
 
@@ -1348,9 +1412,15 @@ impl Lab {
         }
         let caps: Vec<&Issued> =
             st.caps_held(actor).filter(|cp| cp.cap.over == vault && st.holds(actor, cp, Role::Write)).collect();
-        // its own selector, as the grantee reads it: the stewards judge by the whole chain
+        // its own selector, as the grantee reads it: the stewards judge by the whole chain; and of those, one whose
+        // rules let a creation through first
         let holds = |cp: &&Issued| store.slices.get(&cp.id).map(|s| cp.cap.wide || s.select.matches(&attrs));
-        if let Some(cp) = caps.iter().find(|cp| holds(cp) == Some(true)) {
+        let creates = |cp: &Issued| {
+            let proof = store.slices.get(&cp.id).map(|s| Proof { cap: cp.id, openings: s.openings() });
+            st.lets_through(cp, proof.as_ref(), true, Some(&[Touch::Create]))
+        };
+        let held: Vec<&Issued> = caps.iter().copied().filter(|cp| holds(cp) == Some(true)).collect();
+        if let Some(cp) = held.iter().find(|cp| creates(cp)).or(held.first()) {
             return Ok(cp.intake.to_vec());
         }
         if !caps.is_empty() && caps.iter().all(|cp| holds(cp).is_some()) {
@@ -1529,16 +1599,28 @@ impl Lab {
         let en = view.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let (vault, stay, x) = (en.vault, en.stay(), en.cell());
         let generation = view.epoch(KeyFam::Cell(vault, x));
-        let Draft { proposal, deps, body } = draft;
+        let Draft { proposal, deps, body: content } = draft;
         let (via, create) = (vec![], None);
         let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body: vec![] };
-        let edit = self.check_on(on, &view, action)?;
-        self.write(on, edit, Body { header: None, tags, answers: vec![], content: body }, x)
+        let (edit, w) = self.check_write(on, &view, action)?;
+        // what it touches, read as its readers will, where it needs a proof
+        let proof = match view.lets(&w, None, None) {
+            true => None,
+            false => {
+                let touches = self.shown(on, entry).touches(&w, Some(&content), on);
+                self.prove(on, &view, &w, touches.as_deref())?
+            }
+        };
+        self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof }, x)
     }
 
     /// Encrypt `body` into the write `edit`, whose stay is in cell `x`, then sign and keep it (`seal_write`); once
-    /// peers count only checkpointed writes, vouch for it at once; and bring the device up to date.
+    /// peers count only checkpointed writes, vouch for it at once; and bring the device up to date. In a dry run,
+    /// nothing: its id.
     fn write(&mut self, on: SignerId, edit: Edit, body: Body, x: CellId) -> Result<EditId, Refusal> {
+        if self.dry {
+            return Ok(edit.id());
+        }
         let id = self.seal_write(on, edit, body, x)?;
         if self.pq_only {
             self.vouch(on);
@@ -1914,6 +1996,8 @@ impl Lab {
             pq_only: self.pq_only,
             offline: HashSet::new(),
             now: self.now,
+            dry: false,
+            lawless: false,
         }
     }
 
@@ -2407,6 +2491,9 @@ fn read(d: SignerId, store: &mut Store) {
             r.headers.insert(*id, h.clone());
         }
         r.tags.insert(*id, b.tags.clone());
+        if let Some(p) = &b.proof {
+            r.proofs.insert(*id, p.clone());
+        }
     }
     store.readings = r;
 }
@@ -2417,7 +2504,7 @@ fn read(d: SignerId, store: &mut Store) {
 fn open_select(cap: &Cap, keys: &Keyring, steward: bool) -> Result<Option<Slice>, ()> {
     let (boxes, sealed) = match Select::from_wire(&cap.select).map_err(drop)? {
         Select::Clear(slice) => return Ok(Some(slice)),
-        Select::Sealed { boxes, slice } => (boxes, slice),
+        Select::Sealed { boxes, slice, .. } => (boxes, slice),
     };
     let id = keys::edit_key(&sealed).ok_or(())?;
     let to_over = |b: &&KeyBox| matches!(b.to.name(), KeyName::Scoped(KeyFam::Seed(v), _) if v == cap.over);
@@ -2580,7 +2667,7 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
         let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
         answers.sort();
-        let body = Body { header: None, tags: TagDelta { add, remove }, answers, content: vec![] };
+        let body = Body { header: None, tags: TagDelta { add, remove }, answers, content: vec![], proof: None };
         out.push(Work::Retag { vault: v, entry: en.id, body });
     }
     out
@@ -2668,10 +2755,20 @@ fn show_items(d: SignerId, store: &mut Store) {
             shown.insert(en.id, s);
             continue;
         }
-        let mut history = History::default();
+        // each write counted where its caps let it through, by its proof and what it touches, and what it builds on
+        // counts (`policy::State::lets`); what it touches read only where that takes it, on one scratch item
+        let (mut history, mut scratch) = (History::default(), None);
         for w in ws {
-            let body = store.bodies.get(&w.edit).map(|b| b.content.clone());
-            history.push(Change { write: w.clone(), body }).expect("the view's writes are causally closed");
+            let body = store.bodies.get(&w.edit);
+            let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
+            let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
+            let counted = w.deps.iter().all(counts)
+                && (st.lets(w, None, None) || {
+                    let touches = history.touches_on(&mut scratch, w, content, d);
+                    st.lets(w, proof, touches.as_deref())
+                });
+            let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), counted };
+            history.push(change).expect("the view's writes are causally closed");
         }
         let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();
         shown.insert(en.id, Shown { history, items, print });

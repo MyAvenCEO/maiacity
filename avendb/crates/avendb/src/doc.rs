@@ -18,18 +18,24 @@
 //! line, so an import can check that every op of a write is its signer's, and a device's edits on one line are one run
 //! of ops that the line's history holds whole (`history`). No clock goes into the updates: the same edits export the
 //! same bytes.
+//!
+//! What a write touches (`rules::Touch`), which a ruled cap's rules judge, is read off its Loro ops once imported on
+//! the version it builds on (`Item::footprint`): each op by the place its container has in the record then.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use loro::{
-    CommitOptions, Container, Counter, EncodedBlobMode, ExportMode, Frontiers, ID, LoroDoc, LoroList, LoroMap,
-    LoroMovableList, LoroResult, LoroText, LoroValue, PeerID, ToJson, UpdateOptions, ValueOrContainer, VersionVector,
+    CommitOptions, Container, ContainerID, ContainerType, Counter, EncodedBlobMode, ExportMode, Frontiers, ID, IdSpan,
+    Index, JsonMapOp, JsonMovableListOp, JsonOpContent, LoroDoc, LoroList, LoroMap, LoroMovableList, LoroResult,
+    LoroText, LoroValue, PeerID, ToJson, UpdateOptions, ValueOrContainer, VersionVector,
 };
 use serde_json::Value;
 
 use crate::id::{BlobId, SignerId};
 use crate::lens::{BlockV2, DocV1, DocV2, Record, Status, Stored, TodoV1, TodoV2, View};
+use crate::ops::{self, Loc};
 use crate::policy::Line;
+use crate::rules::{Scalar, Touch};
 
 /// Peer ids at the very top are Loro's: it refuses `PeerID::MAX` and marks things internally with a few below it.
 const RESERVED: u64 = 16;
@@ -342,6 +348,108 @@ impl Item {
         Ok(())
     }
 
+    /// Import an update `signer` wrote on line `line` (`import_on`) on this item, which holds the version it builds on,
+    /// and read what it touches (`rules::Touch`): each of its ops by the place its container has in the record once it
+    /// is in. A value set at a field (`Set` with the value, where it set one plain value; `null` where it deleted one);
+    /// a text, a list of values or a map changed in a field (`Set`, no value); a row of a list of records added,
+    /// deleted or moved (`Insert`, `Remove`, `Move`), whatever the op does inside a row it adds being part of adding
+    /// it; a field of a row set or changed (`Set` at the row's field, the row by its id), where that field is a list of
+    /// records before and after (else at the field); a list of records made to add rows to is adding them. An op
+    /// nowhere in the record (outside the root map, or in a container it no longer reaches) touches the whole record.
+    /// `None` where the update doesn't import, or imports only in part: it builds on ops the item doesn't hold.
+    pub fn footprint(&mut self, update: &[u8], signer: SignerId, line: Line) -> Option<Vec<Touch>> {
+        let (before, was) = (self.record(), self.doc.oplog_vv());
+        self.import_on(update, signer, line).ok()?;
+        let (after, now, p) = (self.record(), self.doc.oplog_vv(), peer(signer, line));
+        let others = |q: &PeerID| *q != p && now.get(q) != was.get(q);
+        if !self.parked.is_empty() || now.keys().any(others) {
+            return None;
+        }
+        let (start, end) = (was.get(&p).copied().unwrap_or(0), now.get(&p).copied().unwrap_or(0));
+        // a container its own ops made: what it does inside one is part of making it
+        let made = |c: &ContainerID| {
+            matches!(c, ContainerID::Normal { peer, counter, .. } if *peer == p && (start..end).contains(counter))
+        };
+        let inside_made = |c: &ContainerID| {
+            let mut at = Some(c.clone());
+            while let Some(c) = at {
+                if made(&c) {
+                    return true;
+                }
+                at = c.parse_mergeable().map(|(parent, ..)| parent);
+            }
+            false
+        };
+        let rows = |f: &str| {
+            let is = |r: &Value| r.get(f).and_then(ops::rows).is_some();
+            is(&before) && is(&after)
+        };
+        let row_id = |f: &str, i: usize| after.get(f)?.get(i)?.get("id")?.as_i64();
+        let (mut out, mut lists) = (vec![], vec![]);
+        for op in self.doc.export_json_in_id_span(IdSpan::new(p, start, end)).iter().flat_map(|c| &c.ops) {
+            let Some(path) = self.doc.get_path_to_container(&op.container) else {
+                if !inside_made(&op.container) {
+                    out.push(Touch::Set(Loc::Root, None));
+                }
+                continue;
+            };
+            let root = ContainerID::Root { name: ROOT.into(), container_type: ContainerType::Map };
+            if path.first().is_none_or(|(c, _)| *c != root) {
+                out.push(Touch::Set(Loc::Root, None));
+                continue;
+            }
+            if path.iter().any(|(c, _)| made(c)) {
+                continue;
+            }
+            let Some((list, Index::Key(f))) = path.get(1) else {
+                // the root map's own fields
+                out.push(match &op.content {
+                    JsonOpContent::Map(JsonMapOp::Insert { key, value }) if container(value) => {
+                        lists.push(key.clone());
+                        continue;
+                    }
+                    JsonOpContent::Map(JsonMapOp::Insert { key, value }) => Touch::Set(field(key), scalar(value)),
+                    JsonOpContent::Map(JsonMapOp::Delete { key }) => Touch::Set(field(key), Some(Scalar::Null)),
+                    _ => Touch::Set(Loc::Root, None),
+                });
+                continue;
+            };
+            let f = f.to_string();
+            let movable = list.container_type() == ContainerType::MovableList;
+            let row = match path.get(2) {
+                Some((r, Index::Seq(i))) if movable && r.container_type() == ContainerType::Map && rows(&f) => {
+                    row_id(&f, *i)
+                }
+                _ => None,
+            };
+            out.push(match (path.len(), &op.content, row) {
+                (2, JsonOpContent::MovableList(JsonMovableListOp::Insert { .. }), _) => Touch::Insert(f),
+                (2, JsonOpContent::MovableList(JsonMovableListOp::Delete { .. }), _) => Touch::Remove(f),
+                (2, JsonOpContent::MovableList(JsonMovableListOp::Move { .. }), _) => Touch::Move(f),
+                (2, JsonOpContent::Tree(_) | JsonOpContent::Future(_), _) => Touch::Set(Loc::Root, None),
+                // a field of a row, by the row's id: its id itself names the row, so changing it changes the list
+                (3, JsonOpContent::Map(JsonMapOp::Insert { key, value }), Some(id)) if key != "id" => {
+                    Touch::Set(Loc::Cell(f, id, key.clone()), if container(value) { None } else { scalar(value) })
+                }
+                (3, JsonOpContent::Map(JsonMapOp::Delete { key }), Some(id)) if key != "id" => {
+                    Touch::Set(Loc::Cell(f, id, key.clone()), Some(Scalar::Null))
+                }
+                (4.., _, Some(id)) => match path.get(3) {
+                    Some((_, Index::Key(g))) if g.as_str() != "id" => Touch::Set(Loc::Cell(f, id, g.to_string()), None),
+                    _ => Touch::Set(Loc::Field(f), None),
+                },
+                _ => Touch::Set(Loc::Field(f), None),
+            });
+        }
+        // a list of records made to add rows to is adding them
+        for k in lists {
+            if !out.contains(&Touch::Insert(k.clone())) {
+                out.push(Touch::Set(Loc::Field(k), None));
+            }
+        }
+        Some(crate::rules::dedup(out))
+    }
+
     /// The history up to `frontiers` and nothing after, as before an import that went wrong.
     fn put_back(&mut self, frontiers: &Frontiers) {
         let doc = self.doc.fork_at(frontiers).expect("a version the item held");
@@ -378,6 +486,33 @@ fn kind_view(record: &Value) -> &'static View {
     match record.get("kind").and_then(Value::as_str) {
         Some("todo") => View::todo_v2(),
         _ => View::document_v2(),
+    }
+}
+
+/// A field of the record.
+fn field(key: &str) -> Loc {
+    Loc::Field(key.to_string())
+}
+
+/// A map slot's value that makes a container there: a container, or the marker of a mergeable one, which Loro stores
+/// as a binary value starting with its magic (`loro::LoroValue::Binary`).
+fn container(v: &LoroValue) -> bool {
+    match v {
+        LoroValue::Container(_) => true,
+        LoroValue::Binary(b) => b.len() == 8 && b.starts_with(&[0, b'L', b'M', 1]),
+        _ => false,
+    }
+}
+
+/// The plain value a map slot was set to, as a rule names it: none for a number that isn't an integer, a binary, a
+/// list, a map or a container.
+fn scalar(v: &LoroValue) -> Option<Scalar> {
+    match v {
+        LoroValue::Null => Some(Scalar::Null),
+        LoroValue::Bool(b) => Some(Scalar::Bool(*b)),
+        LoroValue::I64(i) => Some(Scalar::Int(*i)),
+        LoroValue::String(s) => Some(Scalar::Text(s.to_string())),
+        _ => None,
     }
 }
 

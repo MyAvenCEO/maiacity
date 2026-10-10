@@ -1,4 +1,4 @@
-import AvenDB.Basic
+import AvenDB.Rules
 
 /-!
 # State
@@ -8,9 +8,10 @@ the key schedule (current epochs, seals, published keys), and each vault's schem
 so the same definitions that the theorems talk about also produce the test vectors the Rust core must match.
 
 Two layers. The operational one (who acts, which caps are live, which cell an entry is in, who may write it, the keys)
-reads nothing a relay can't see: no selector, no type, no tag. The semantic one (an entry's attributes, whether its
-creation was let in, its semantic cell) is what only its readers, and the vault's own devices, the stewards, know; no
-operational rule reads it, and the stewards keep the cells equal to it by moving entries (T23).
+reads nothing a relay can't see: no selector, no type, no tag, no rule. The semantic one (an entry's attributes, whether
+its creation was let in, its semantic cell, which writes its readers count) is what only its readers, and the vault's
+own devices, the stewards, know; no operational rule reads it, and the stewards keep the cells equal to it by moving
+entries (T23).
 -/
 
 namespace AvenDB
@@ -45,6 +46,11 @@ structure Cap where
   /-- The owner cap its issuer relied on; `none` when the vault itself issued it. -/
   parent  : Option CapId
   issuer  : VaultId
+  /-- It carries rules, as one bit in the clear (the commitment to its rules): its grantee's writes count only where
+      the rules of every ruled cap of its chain allow them (`Rules.lean`). -/
+  ruled   : Bool := false
+  /-- Its rules, sealed with its selector: whoever reads a write relying on it reads them, through the write's proof. -/
+  rules   : List Rule := []
   deriving DecidableEq, Repr
 
 /-- An entry of a vault: a note, a todo, a profile. -/
@@ -55,8 +61,8 @@ structure Entry where
   stays    : List (Option EditId × Cell)
   /-- What its first write says of it, and its tags now: known to its readers only. -/
   attrs    : Attrs
-  /-- Its creator was the vault itself, or created it inside the slice of the cap it created it through: known to the
-      vault's stewards only. -/
+  /-- Its creator was the vault itself, or created it inside the slice of the cap it created it through, whose rules
+      let it: known to the vault's stewards only. -/
   admitted : Bool
   deriving DecidableEq, Repr
 
@@ -126,6 +132,9 @@ structure State where
   /-- Only while checking an edit that a move after it hadn't seen (`hide`): each entry such a move took to a cell, and
       that cell. A write must be allowed there too. -/
   narrow    : List (EntryId × Cell) := []
+  /-- The accepted writes an entry's readers don't count: no rule its actor's caps carry allows it, or it builds on one
+      they don't count (`counts`). Known to the entry's readers only. -/
+  uncounted : List EditId := []
   deriving Repr
 
 namespace State
@@ -146,6 +155,9 @@ def curKey (st : State) (k : KeyFam) : KeyName := .scoped k (st.epochOf k)
 
 /-- A bound on chain length: without ownership cycles a chain never visits more vaults than exist. -/
 def depth (st : State) : Nat := st.vaults.length + 1
+
+/-- The accepted writes the readers of their entries count: what a line's history is made of (`Proposals.lean`). -/
+def counted (st : State) : List Write := st.writes.filter fun w => !st.uncounted.contains w.edit
 
 end State
 
@@ -287,11 +299,40 @@ def capSelects (cp : Cap) (a : Attrs) : Bool := cp.wide || cp.select.matches a
 /-- The slice cap `cp` really grants: what every cap of its chain selects (T22). -/
 def effSelects (st : State) (cp : Cap) (a : Attrs) : Bool := (chain st cp).all (capSelects · a)
 
-/-- Vault `a` creating an entry of vault `v` in cell `x` with attributes `attrs` stays inside its own slice: it is `v`,
-    or `x` is the intake cell of a cap over `v` it holds with write or more whose slice holds the new entry. -/
-def admits (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) : Bool :=
+/-- Cap `cp`'s chain is ruled: one of its caps is. -/
+def ruledChain (st : State) (cp : Cap) : Bool := (chain st cp).any (·.ruled)
+
+/-- Every ruled cap of `cp`'s chain allows the touches `ts` of a write on the main line (`main`) or on a proposal. -/
+def chainAllows (st : State) (cp : Cap) (main : Bool) (ts : List Touch) : Bool :=
+  (chain st cp).all fun c => !c.ruled || allowsAll c.rules main ts
+
+/-- A write through cap `cp` passes its rules, by what its proof shows: `cp`'s chain is unruled, or the proof names
+    `cp` and the chain allows the write's touches. -/
+def lets (st : State) (cp : Cap) (proof : Option CapId) (main : Bool) (ts : List Touch) : Bool :=
+  !ruledChain st cp || (proof == some cp.id && chainAllows st cp main ts)
+
+/-- The readers of entry `en` count a write of it by vault `a` that builds on `deps`, carries the proof `proof` and
+    touches `ts`, on the main line (`main`) or on a proposal: they count what it builds on, and `a` is the entry's
+    vault or holds a cap with write or more reaching the entry that lets the write through. -/
+def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof : Option CapId) (main : Bool)
+    (ts : List Touch) : Bool :=
+  deps.all (fun d => !st.uncounted.contains d) &&
+    (a == en.vault || st.caps.any fun cp => holdsCap st a cp .write && inCell st cp en && lets st cp proof main ts)
+
+/-- The readers of an entry of vault `v` count its creation in cell `x` by vault `a`, with the proof `proof`: `a` is
+    `v`, or `x` is the intake cell of a cap over `v` that `a` holds with write or more and that lets a creation
+    through. -/
+def creates (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) : Bool :=
   a == v || st.caps.any fun cp =>
-    cp.over == v && holdsCap st a cp .write && intake st cp == x && effSelects st cp attrs
+    cp.over == v && holdsCap st a cp .write && intake st cp == x && lets st cp proof true [.create]
+
+/-- Vault `a` creating an entry of vault `v` in cell `x` with attributes `attrs`, with the proof `proof`, stays inside
+    its own slice: it is `v`, or `x` is the intake cell of a cap over `v` it holds with write or more whose slice holds
+    the new entry and that lets a creation through. -/
+def admits (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) (proof : Option CapId := none) : Bool :=
+  a == v || st.caps.any fun cp =>
+    cp.over == v && holdsCap st a cp .write && intake st cp == x && effSelects st cp attrs &&
+      lets st cp proof true [.create]
 
 /-- An entry's semantic cell: the live caps over its vault that aren't wide and whose slice holds it; none for an entry
     whose creator made it outside its own slice. -/

@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 
 use crate::id::{EditId, EntryId, VaultId};
 use crate::keys::KeyBox;
+use crate::rules::{Opening, Proof};
 
 /// A type (`note`, `todo`, …) or a tag: a short name.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -224,23 +225,33 @@ pub struct Header {
     pub created: u64,
 }
 
-/// What a cap's sealed `select` holds (`policy::Cap::select`): its selector, and the tags its grantee may ask the
-/// vault's stewards to add or remove.
+/// What a cap's sealed `select` holds (`policy::Cap::select`): its selector, the tags its grantee may ask the vault's
+/// stewards to add or remove, and for a ruled cap its rules (`rules`): the ops its grantee's writes may make, with the
+/// salt whose hash with them is the commitment its `select` carries in the clear. A cap resting on ruled caps carries
+/// their openings too (`above`, root first), copied by its issuer from the slice of the cap it rests on: so its grantee
+/// can prove a write against every ruled cap of its chain (`rules::Proof`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Slice {
     pub select: Selector,
     pub relabel: Vec<Sym>,
+    pub rules: Option<Opening>,
+    pub above: Vec<Opening>,
 }
 
 impl Slice {
-    /// The whole vault, with no tags to ask for: a wide cap's slice.
+    /// The whole vault, with no tags to ask for and no rules: a wide cap's slice.
     pub fn all() -> Slice {
-        Slice { select: Selector::All, relabel: vec![] }
+        Slice::of(Selector::All)
     }
 
-    /// The entries `select` picks, with no tags to ask for.
+    /// The entries `select` picks, with no tags to ask for and no rules.
     pub fn of(select: Selector) -> Slice {
-        Slice { select, relabel: vec![] }
+        Slice { select, relabel: vec![], rules: None, above: vec![] }
+    }
+
+    /// The openings of every ruled cap of its cap's chain, root first: what a write relying on its cap proves.
+    pub fn openings(&self) -> Vec<Opening> {
+        self.above.iter().chain(&self.rules).cloned().collect()
     }
 }
 
@@ -249,15 +260,29 @@ impl Slice {
 /// in a box for each vault that reads the slice, wrapped or sealed to the vault's seed (`encode::select_info`): the
 /// vault the cap is over, whose stewards keep its entries in their cells, its grantee unless it only relays, and its
 /// issuer.
+///
+/// The commitment to a ruled cap's rules (`rules::Opening::commitment`) travels in the clear beside its sealed slice:
+/// the one bit every peer, a relay too, learns of its rules, that it has some.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Select {
     Clear(Slice),
-    Sealed { boxes: Vec<KeyBox>, slice: Vec<u8> },
+    Sealed { boxes: Vec<KeyBox>, slice: Vec<u8>, rules: Option<[u8; 32]> },
+}
+
+impl Select {
+    /// The commitment to its cap's rules: none for a cap without rules.
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        match self {
+            Select::Clear(slice) => slice.rules.as_ref().map(Opening::commitment),
+            Select::Sealed { rules, .. } => *rules,
+        }
+    }
 }
 
 /// What a write's ciphertext holds: the header of the entry it creates; the tags it adds and removes, which count when
 /// it acts for the entry's vault and otherwise ask the vault's stewards to; the writes whose asks it answers, a
-/// steward's; and its content: a Loro update, a proposal's name, or nothing for a merge or a write of tags alone.
+/// steward's; its content: a Loro update, a proposal's name, or nothing for a merge or a write of tags alone; and the
+/// proof of a write that relies on a ruled cap (`rules::Proof`), which its readers check its touches against.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Body {
     pub header: Option<Header>,
@@ -265,6 +290,7 @@ pub struct Body {
     /// Smallest first, no repeats.
     pub answers: Vec<EditId>,
     pub content: Vec<u8>,
+    pub proof: Option<Proof>,
 }
 
 #[cfg(test)]

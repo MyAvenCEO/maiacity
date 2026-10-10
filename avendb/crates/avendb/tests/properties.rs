@@ -1603,9 +1603,9 @@ fn t23_cells_mean_what_caps_say() {
 }
 
 /// A relay's twin of a history (T25): every edit as a peer that reads no selector, no type and no tag sees it, a cap
-/// selecting the whole vault, a write with an empty body, a new entry's header blank. The twins hash to other ids, so
-/// whatever names an edit is renamed: what an edit creates (a vault, a cap), the cells the caps make, and every edit
-/// named as a parent, a dependency, a stay, a proposal, kept or covered.
+/// selecting the whole vault (ruled as it was), a write with an empty body, a new entry's header blank. The twins hash
+/// to other ids, so whatever names an edit is renamed: what an edit creates (a vault, a cap), the cells the caps make,
+/// and every edit named as a parent, a dependency, a stay, a proposal, kept or covered.
 #[derive(Default)]
 struct Twin {
     edits: HashMap<EditId, EditId>,
@@ -1718,10 +1718,16 @@ impl Twin {
                 Action::SetRoot { vault: self.vault(vault), root, keep: self.edits(&keep) }
             }
             Action::Cap(c, via) => {
+                // of the selector, a relay reads whether the cap is ruled: the commitment to its rules, in the clear
+                let rules = Select::from_wire(&c.select).ok().and_then(|s| s.commitment());
+                let select = match rules {
+                    Some(_) => Select::Sealed { boxes: vec![], slice: vec![], rules },
+                    None => Select::Clear(Slice::all()),
+                };
                 let cap = Cap {
                     over: self.vault(c.over),
                     grantee: self.grantee(c.grantee),
-                    select: Select::Clear(Slice::all()).to_wire(),
+                    select: select.to_wire(),
                     parent: c.parent.map(|p| self.cap(p)),
                     issuer: self.vault(c.issuer),
                     ..c
@@ -1794,6 +1800,8 @@ fn ops(st: &State, t: &Twin) -> Ops {
         },
         chain: cp.chain.iter().map(|&c| t.cap(c)).collect(),
         intake: t.caps(&cp.intake).into(),
+        commitment: cp.commitment,
+        ruled: cp.ruled,
     };
     let entry = |en: &Entry| Entry {
         id: en.id,
@@ -1812,6 +1820,7 @@ fn ops(st: &State, t: &Twin) -> Ops {
         proposal: t.proposal(w.proposal),
         via: t.vaults(&w.via),
         cell: t.cell(w.cell),
+        caps: w.caps.iter().map(|&c| t.cap(c)).collect(),
         ..w.clone()
     };
     let moved = |k: KeyFam, e: u64| (1..=e).map(|i| st.moved_by(k, i).map(|m| t.edit(m))).collect();

@@ -24,8 +24,10 @@ the model's order (a cell in another order is refused by the model and could be 
 side compares the cells of the state as sets. A blob is named by the hash of its bytes: the Rust side maps blob number
 `b` to the bytes `blob b`. The state includes each entry's stays and, as its readers see it, its attributes, whether its
 creation was let in, its semantic cell and where a steward would move it; the key schedule (each family's epoch where it
-isn't 0, every seal and every published key, all three compared as sets); the schema lane; and each line of each entry's
-history: its writes and its heads, the main line first and then each proposal in the order it started.
+isn't 0, every seal and every published key, all three compared as sets); the schema lane; the writes its readers don't
+count (`uncounted`); and each line of each entry's history, of the writes they count: its writes and its heads, the main
+line first and then each proposal in the order it started. A write carries its proof and its touches, as its readers
+read them off its body; a ruled cap, its rules.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
 reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
@@ -95,22 +97,31 @@ def humans : List (SignerId × List SignerId × Action) := [
 
 def toVault (v : VaultId) : Grantee := .principal (.vault v)
 
-/-- Cap `id` over vault `over`, issued by `issuer`. -/
+/-- Cap `id` over vault `over`, issued by `issuer`; with `rules`, ruled by them. -/
 def newCap (id over : Nat) (to : Grantee) (r : Role) (issuer : VaultId) (select : Selector := .all)
-    (wide : Bool := false) (parent : Option CapId := none) (relabel : List Sym := []) (via : List VaultId := []) :
-    Action :=
-  .cap { id, over, grantee := to, role := r, wide, select, relabel, parent, issuer } via
+    (wide : Bool := false) (parent : Option CapId := none) (relabel : List Sym := []) (via : List VaultId := [])
+    (rules : Option (List Rule) := none) : Action :=
+  .cap { id, over, grantee := to, role := r, wide, select, relabel, parent, issuer, ruled := rules.isSome,
+         rules := rules.getD [] } via
 
-/-- A write that creates entry `e` of vault `v` in cell `x`. -/
+/-- A write that creates entry `e` of vault `v` in cell `x`, with the proof `proof`. -/
 def newEntry (v e : Nat) (actor : VaultId) (x : Cell) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
-    (via : List VaultId := []) (gen : Nat := 0) : Action :=
+    (via : List VaultId := []) (gen : Nat := 0) (proof : Option CapId := none) : Action :=
   .write v e actor none gen (via := via) (create := some (x, ⟨type, created⟩)) (tags := { add := tags })
+    (proof := proof)
 
-/-- A write of entry `e`, in its stay `stay` at generation `gen` of that stay's cell. -/
+/-- A write of entry `e`, in its stay `stay` at generation `gen` of that stay's cell, with the proof `proof`, touching
+    `touches`. -/
 def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (gen : Nat := 0)
-    (proposal : Proposal := .main) (via : List VaultId := []) (add : List Sym := []) (remove : List Sym := []) :
-    Action :=
-  .write v e actor stay gen deps proposal via (tags := { add, remove })
+    (proposal : Proposal := .main) (via : List VaultId := []) (add : List Sym := []) (remove : List Sym := [])
+    (proof : Option CapId := none) (touches : List Touch := []) : Action :=
+  .write v e actor stay gen deps proposal via (tags := { add, remove }) (proof := proof) (touches := touches)
+
+/-- Setting a todo's field `f` to the text `x`. -/
+def sets (f x : String) : Touch := .set (.field f) (some (.str x))
+
+/-- Setting a todo's status, to open or done only. -/
+def statusRule : Rule := .set [.field "status"] (some [.str "open", .str "done"]) none
 
 def seedKey (v ε : Nat) : KeyName := .scoped (.seed v) ε
 def capKey (v c ε : Nat) : KeyName := .scoped (.cap v c) ε
@@ -533,7 +544,63 @@ def cases : List Case := [
     (5, [], wr 100 1 101 [19, 20] (stay := some 9) (proposal := .on 10)),
     -- Alice's Mac starts a proposal of its own from the merge, and Bob writes on it
     (2, [], wr 100 1 100 [19] (stay := some 9) (proposal := .new)),
-    (5, [], wr 100 1 101 [22] (stay := some 9) (proposal := .on 22))] }]
+    (5, [], wr 100 1 101 [22] (stay := some 9) (proposal := .on 22))] },
+  { name := "rules: a write cap that may only set a todo's status", edits := humans ++ [
+    -- Alice's todo; Bob may set its status, to open or done, and Carol reads it
+    (2, [], newEntry 100 21 100 [] todo),
+    (2, [], newCap 30 100 (toVault 101) .write 100 todos (rules := some [statusRule])),
+    (2, [], newCap 31 100 (toVault 102) .read 100 todos),
+    (2, [], .move 100 21 [30, 31] []),
+    -- every write below is accepted, as relays see it; its readers count only what the rules allow, with the proof
+    -- that names Bob's cap
+    (5, [], wr 100 21 101 [6] (stay := some 9) (proof := some 30) (touches := [sets "status" "done"])),
+    (5, [], wr 100 21 101 [10] (stay := some 9) (proof := some 30) (touches := [sets "title" "Lamp"])),
+    -- what builds on a write they don't count, they don't count either
+    (5, [], wr 100 21 101 [11] (stay := some 9) (proof := some 30) (touches := [sets "status" "open"])),
+    -- a ruled chain needs a proof that names a cap its actor holds, and the values the rule lists
+    (5, [], wr 100 21 101 [10] (stay := some 9) (touches := [sets "status" "open"])),
+    (5, [], wr 100 21 101 [10] (stay := some 9) (proof := some 31) (touches := [sets "status" "open"])),
+    (5, [], wr 100 21 101 [10] (stay := some 9) (proof := some 30) (touches := [sets "status" "lost"])),
+    -- the vault itself writes anything
+    (2, [], wr 100 21 100 [10] (stay := some 9) (touches := [sets "title" "Lamp"])),
+    -- Bob's cap has no rule to create: his todo is accepted, but not counted, and not let into his slice
+    (5, [], newEntry 100 22 101 [30] todo (proof := some 30)),
+    -- a second cap lets him create todos, add their items and set their status; not edit an item or remove one
+    (2, [], newCap 32 100 (toVault 101) .write 100 todos (rules := some [.create, .insert [.field "items"] none,
+      statusRule])),
+    (5, [], newEntry 100 23 101 [32] todo (proof := some 32)),
+    (5, [], wr 100 23 101 [19] (proof := some 32) (touches := [.insert "items"])),
+    (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.set (.cell "items" 1 "text") (some (.str "milk"))])),
+    (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.remove "items"])),
+    -- rules never widen a cap: Carol reads, and writes nothing, whatever proof she names
+    (6, [], wr 100 21 102 [10] (stay := some 9) (proof := some 31) (touches := [sets "status" "done"]))] },
+  { name := "rules: a ruled chain narrows the caps resting on it, and a suggester writes on proposals",
+    edits := humans ++ [
+    (2, [], newEntry 100 21 100 [] todo),
+    -- Alice's passkey makes Dave owner of her todos, ruled: he may set their status and create them
+    (1, [], newCap 30 100 (toVault 103) .owner 100 todos (rules := some [.set [.field "status"] none none, .create])),
+    -- Dave lets Carol write anything, which his own rules still narrow, and Bob write with no rules of his own
+    (8, [], newCap 31 100 (toVault 102) .write 103 todos (parent := some 30) (rules := some [.set [] none none])),
+    (8, [], newCap 32 100 (toVault 101) .write 103 todos (parent := some 30)),
+    -- Alice lets Carol suggest: start proposals and write on them
+    (2, [], newCap 33 100 (toVault 102) .write 100 todos (rules := some [.propose, .set [] none (some .proposals)])),
+    (2, [], .move 100 21 [30, 31, 32, 33] []),
+    (6, [], wr 100 21 102 [6] (stay := some 11) (proof := some 31) (touches := [sets "status" "done"])),
+    (6, [], wr 100 21 102 [12] (stay := some 11) (proof := some 31) (touches := [sets "title" "Lamp"])),
+    (5, [], wr 100 21 101 [12] (stay := some 11) (proof := some 32) (touches := [sets "status" "open"])),
+    (5, [], wr 100 21 101 [14] (stay := some 11) (touches := [sets "status" "done"])),
+    -- Carol's suggestion counts on its proposal, not on the main line
+    (6, [], wr 100 21 102 [14] (stay := some 11) (proposal := .new) (proof := some 33) (touches := [.propose])),
+    (6, [], wr 100 21 102 [16] (stay := some 11) (proposal := .on 16) (proof := some 33)
+      (touches := [sets "title" "Desk lamp"])),
+    (6, [], wr 100 21 102 [14] (stay := some 11) (proof := some 33) (touches := [sets "title" "Desk lamp"])),
+    -- Alice merges it
+    (2, [], wr 100 21 100 [14, 17] (stay := some 11) (touches := [.merge, sets "title" "Desk lamp"])),
+    -- Dave creates through his cap; Carol's chain doesn't let her
+    (8, [], newEntry 100 22 103 [30] todo (proof := some 30)),
+    (6, [], newEntry 100 24 102 [30, 31] todo (proof := some 31)),
+    -- a cap rests only on an owner cap, so Bob can't pass his own on to Carol, even narrowed
+    (5, [], newCap 34 100 (toVault 102) .write 101 todos (parent := some 32) (rules := some [statusRule]))] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -875,10 +942,54 @@ def selector : Selector → String
   | .all      => str "all"
   | .anyOf ds => obj [("anyOf", arr (ds.map fun d => arr (d.map atom)))]
 
+def jsonVal : Ops.Val → String
+  | .null   => "null"
+  | .bool x => bool x
+  | .int n  => toString n
+  | .str x  => str x
+
+def step : Step → String
+  | .field f => str f
+  | .row i   => obj [("id", toString i)]
+  | .any     => str "*"
+
+def path (ps : List Step) : String := arr (ps.map step)
+
+def onJson : Option On → List (String × String)
+  | none => []
+  | some .main => [("on", str "main")]
+  | some .proposals => [("on", str "proposals")]
+
+/-- A rule as the docs write it (`avendb/docs/OPS.md`). -/
+def rule : Rule → String
+  | .set p to o => obj ([("op", str "set"), ("path", path p)] ++
+      (match to with
+        | some vs => [("to", arr (vs.map jsonVal))]
+        | none => []) ++ onJson o)
+  | .insert p o => obj ([("op", str "insert"), ("path", path p)] ++ onJson o)
+  | .remove p o => obj ([("op", str "remove"), ("path", path p)] ++ onJson o)
+  | .move p o => obj ([("op", str "move"), ("path", path p)] ++ onJson o)
+  | .merge o => obj ([("op", str "merge")] ++ onJson o)
+  | .propose => obj [("op", str "propose")]
+  | .create => obj [("op", str "create")]
+
+/-- What a write touches: `{"set": path, "to": v}` (no `to` where no one value was set), `{"insert": field}`, ... -/
+def touch : Touch → String
+  | .set l to => obj ([("set", path l.steps)] ++ match to with
+      | some v => [("to", jsonVal v)]
+      | none => [])
+  | .insert f => obj [("insert", str f)]
+  | .remove f => obj [("remove", str f)]
+  | .move f => obj [("move", str f)]
+  | .create => str "create"
+  | .propose => str "propose"
+  | .merge => str "merge"
+
+/-- A cap; a ruled one with its rules, which the cases without rules leave out. -/
 def capJson (c : Cap) : String :=
-  obj [("id", nat c.id), ("over", nat c.over), ("grantee", grantee c.grantee), ("role", role c.role),
+  obj ([("id", nat c.id), ("over", nat c.over), ("grantee", grantee c.grantee), ("role", role c.role),
        ("wide", bool c.wide), ("select", selector c.select), ("relabel", ids c.relabel), ("parent", opt nat c.parent),
-       ("issuer", nat c.issuer)]
+       ("issuer", nat c.issuer)] ++ if c.ruled then [("rules", arr (c.rules.map rule))] else [])
 
 def keyFam : KeyFam → String
   | .seed v   => obj [("seed", nat v)]
@@ -911,10 +1022,12 @@ def action : Action → String
   | .cap c via => obj [("cap", obj [("cap", capJson c), ("via", ids via)])]
   | .revoke c a keep via => obj [("revoke", obj [("cap", nat c), ("actor", nat a), ("keep", ids keep),
       ("via", ids via)])]
-  | .write v e a s g deps p via create tags => obj [("write", obj [("vault", nat v), ("entry", nat e),
+  | .write v e a s g deps p via create tags pr ts => obj [("write", obj ([("vault", nat v), ("entry", nat e),
       ("actor", nat a), ("stay", opt nat s), ("gen", nat g), ("deps", ids deps), ("proposal", proposal p),
       ("via", ids via), ("create", opt (fun (x, h) => obj [("cell", ids x), ("header", header h)]) create),
-      ("tags", tagDelta tags)])]
+      ("tags", tagDelta tags)] ++ (match pr with
+        | some c => [("proof", nat c)]
+        | none => []) ++ if ts.isEmpty then [] else [("touches", arr (ts.map touch))]))]
   | .move v e to keep via => obj [("move", obj [("vault", nat v), ("entry", nat e), ("to", ids to),
       ("keep", ids keep), ("via", ids via)])]
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),
@@ -946,14 +1059,14 @@ def write (w : Write) : String :=
 def sealed (x : Seal) : String := obj [("secret", keyName x.secret), ("to", keyName x.to)]
 
 /-- Each line of each entry, the main line first and then each proposal in the order it started: its history and its
-    heads. -/
+    heads, of the writes the entry's readers count. -/
 def lines (st : State) : String :=
   arr (st.entries.flatMap fun en =>
-    let starts := st.writes.filterMap fun w =>
+    let starts := st.counted.filterMap fun w =>
       if w.entry == en.id && w.proposal == .new then some w.edit else none
     (none :: starts.map some).map fun l =>
-      obj [("entry", nat en.id), ("line", opt nat l), ("history", ids ((history st.writes en.id l).map (·.edit))),
-           ("heads", ids (heads st.writes en.id l))])
+      obj [("entry", nat en.id), ("line", opt nat l), ("history", ids ((history st.counted en.id l).map (·.edit))),
+           ("heads", ids (heads st.counted en.id l))])
 
 def state (st : State) : String :=
   ",\n ".intercalate [
@@ -967,6 +1080,7 @@ def state (st : State) : String :=
     str "seals" ++ ": " ++ arr (st.seals.map sealed),
     str "published" ++ ": " ++ arr (st.published.map keyName),
     str "lane" ++ ": " ++ arr (st.lane.map fun (v, b) => obj [("vault", nat v), ("blob", nat b)]),
+    str "uncounted" ++ ": " ++ ids st.uncounted,
     str "lines" ++ ": " ++ lines st]
 
 def case (c : Case) : String :=
@@ -1027,7 +1141,7 @@ def cellsOf : Action → List Cell :=
     | .scoped (.cell _ x) _ => [x]
     | _ => []
   fun
-  | .write _ _ _ _ _ _ _ _ (some (x, _)) _ => [x]
+  | .write _ _ _ _ _ _ _ _ (some (x, _)) _ _ _ => [x]
   | .move _ _ to _ _ => [to]
   | .keys s to _ => named s ++ to.flatMap named
   | _ => []

@@ -5,11 +5,11 @@
 	stays out of sight, as on a device of the acting vault alone: the device's world says which vault holds which role
 	on each entry, by the caps whose slices hold it (avendb-browser's `World`), and every edit goes out acting for that
 	vault. A vault other than this one adds a note only through a cap with write on a slice that holds it, tagged as its
-	slice asks.
+	slice asks, and where the rules of that cap allow it, as the device answers a dry run of adding it (`may`).
 -->
 <script>
 	import Icon from './Icon.svelte';
-	import { noteRecord } from './ops.js';
+	import { may, noteRecord } from './ops.js';
 	import { count, creates, holders, list, nameOf, reads, ROLES, tagsIn, tagsOf } from './vaults.js';
 
 	/**
@@ -36,27 +36,56 @@
 	/** every note this browser knows, by entry: to name the one a variant came from */
 	const notes = $derived(new Map(world.entries.filter((e) => e.kind === 'note').map((e) => [e.entry, e])));
 
-	/** A blank note, tagged as typed and as the cap asks, opened at once. */
+	/** the tags the cap asks a new note to carry, in words */
+	const tagsWords = $derived(asked?.length ? `, tagged ${list(asked.map((t) => `“${t}”`))} as its cap asks` : '');
+
+	/** The op that adds a blank note, tagged as typed and as the cap asks. */
+	const blankNote = () => ({
+		op: 'create',
+		vault,
+		type: 'note',
+		tags: [...typed, ...(asked ?? [])],
+		value: noteRecord('Untitled note', '')
+	});
+
+	/** A blank note, opened at once. */
 	async function blank() {
 		if (!asked) return;
-		const [tags, value] = [[...typed, ...asked], noteRecord('Untitled note', '')];
-		const made = await api.run('Writing the note', { op: 'create', as: actor, vault, type: 'note', tags, value });
+		const made = await api.run('Writing the note', { ...blankNote(), as: actor });
 		if (!made) return;
 		tagging = '';
 		onopen(made.entry);
 	}
+
+	/** why the rules of the cap the acting vault adds through don't let it add the note, as the device answers: '' */
+	let unadded = $state('');
+	$effect(() => {
+		if (!asked) return;
+		const op = blankNote();
+		let gone = false;
+		may(api, actor, [op]).then(([a]) => {
+			if (!gone) unadded = a !== true && a.refused === 'NotAllowed' ? a.why : '';
+		});
+		return () => {
+			gone = true;
+		};
+	});
 </script>
 
 {#if asked}
 	<section class="start" aria-label="Start a new note">
-		<button class="blank" disabled={busy} onclick={blank}>
+		<button class="blank" disabled={busy || !!unadded} onclick={blank}>
 			<span class="sheet"><Icon name="plus" size={34} /></span>
 			<span class="label">Blank note</span>
 		</button>
 		<div class="say">
 			<p class="soft">
-				A new note in {nameOf(here)}, as <b>{nameOf(as)}</b>{#if asked.length}, tagged {list(asked.map((t) => `“${t}”`))}
-					as its cap asks{/if}: it opens at once, to title and write.
+				{#if unadded}
+					{nameOf(as)} can’t add a note here: {unadded}.
+				{:else}
+					A new note in {nameOf(here)}, as <b>{nameOf(as)}</b>{tagsWords}: it opens at once, to title and
+					write.
+				{/if}
 			</p>
 			<input class="field" placeholder="Tags for it (optional)" bind:value={tagging} aria-label="The new note’s tags" />
 		</div>

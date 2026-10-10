@@ -25,7 +25,8 @@ namespace AvenDB.Relays
 def eblind (en : Entry) : Entry := { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false }
 
 /-- The operational part blinds the caps and the entries and keeps the rest. -/
-theorem ops_eq (st : State) : st.ops = { st with caps := st.caps.map Cap.blind, entries := st.entries.map eblind } :=
+theorem ops_eq (st : State) :
+    st.ops = { st with caps := st.caps.map Cap.blind, entries := st.entries.map eblind, uncounted := [] } :=
   rfl
 
 /-- The operational part keeps the vaults. -/
@@ -48,6 +49,8 @@ theorem ops_published (st : State) : st.ops.published = st.published := by cases
 theorem ops_lane (st : State) : st.ops.lane = st.lane := by cases st; rfl
 /-- The operational part keeps the entry ids ever created. -/
 theorem ops_born (st : State) : st.ops.born = st.born := by cases st; rfl
+/-- The operational part knows nothing of which writes readers count. -/
+theorem ops_uncounted (st : State) : st.ops.uncounted = [] := by cases st; rfl
 
 /-- A cap as a relay sees it keeps its id. -/
 theorem blind_id (c : Cap) : c.blind.id = c.id := by cases c; rfl
@@ -394,6 +397,12 @@ theorem ops_with_writes (s : State) (W : List Write) :
     ({ s with writes := W } : State).ops = { s.ops with writes := W } := by
   cases s; rfl
 
+/-- Changing the writes, and which of them readers count, commutes with taking the operational part, which knows
+    nothing of the second. -/
+theorem ops_with_counted (s : State) (W : List Write) (U : List EditId) :
+    ({ s with writes := W, uncounted := U } : State).ops = { s.ops with writes := W } := by
+  cases s; rfl
+
 /-- Hiding facts commutes with taking the operational part. -/
 theorem hide_ops (st : State) (fs : List Fact) : (hide st fs).ops = hide st.ops fs := by
   unfold hide; split <;> rfl
@@ -581,7 +590,7 @@ theorem apply_ops (st : State) (edit : Edit) :
           | none => rfl
           | some x =>
             simp only [epochOf_ops, ops_writes]
-            simp only [map_ite_none, Option.map_some, ops_with_writes, setEntry_ops, ops_ops]
+            simp only [map_ite_none, Option.map_some, ops_with_counted, setEntry_ops, ops_ops]
             rfl
       · simp only [apply, hav, ite_false, Bool.false_eq_true, actsVia_ops, entry?_ops]
         simp only [map_ite_none]
@@ -594,7 +603,7 @@ theorem apply_ops (st : State) (edit : Edit) :
           | none => rfl
           | some x =>
             simp only [epochOf_ops, ops_writes]
-            simp only [map_ite_none, Option.map_some, ops_with_writes, ops_ops]
+            simp only [map_ite_none, Option.map_some, ops_with_counted, ops_ops]
     | some p =>
       obtain ⟨x, hdr⟩ := p
       simp only [Option.map_some]

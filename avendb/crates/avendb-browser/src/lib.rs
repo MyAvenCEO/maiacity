@@ -80,6 +80,7 @@ use avendb::keys::{self, KeyFam};
 use avendb::lab::{Backup, Lab, NewCap};
 use avendb::lens::{DocV2, Status};
 use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Principal, Refusal, Role, State, Vault};
+use avendb::rules::Rule;
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
 use avendb::wire::Wire as _;
@@ -491,20 +492,26 @@ impl Device {
 
     /// Gives `grantee` the role `role` on what `slice` selects of vault `over`, acting for vault `issuer`: the vault
     /// itself, or a vault holding an owner cap over it, on which this one then rests, a wide one for a cap on the whole
-    /// vault (`parent`). Making someone owner is governance, which the passkey approves in a ceremony; anything less
-    /// this device signs alone. The cap's slice is sealed to the vault, its grantee and its issuer. The cap's id.
+    /// vault (`parent`). A cap that writes may carry `rules`: the ops its grantee's writes may make (`avendb::rules`).
+    /// Making someone owner is governance, which the passkey approves in a ceremony; anything less this device signs
+    /// alone. The cap's slice is sealed to the vault, its grantee and its issuer. The cap's id.
+    #[allow(clippy::too_many_arguments)]
     pub async fn share(
         &self,
         issuer: VaultId,
         over: VaultId,
         slice: Slice,
+        rules: Option<Vec<Rule>>,
         role: Role,
         grantee: Grantee,
         authenticator: &impl Authenticator,
     ) -> Result<CapId> {
+        if rules.is_some() && !role.allows(Role::Write) {
+            bail!("only a cap that writes carries rules");
+        }
         let wide = slice.select == Selector::All;
         let parent = self.node.read(move |lab, me| parent(lab.state(me), issuer, over, wide)).await;
-        let new = NewCap { over, grantee, role, slice, parent, issuer };
+        let new = NewCap { over, grantee, role, slice, parent, issuer, rules };
         let refused = |why| anyhow!("the cap is refused: {why:?}");
         if role != Role::Owner {
             return self.node.act(move |lab, me| lab.issue(me, &[me], new)).await.map_err(refused);
@@ -539,10 +546,14 @@ impl Device {
 
     /// Runs op `op` of the ops engine (`avendb::engine`, `avendb/docs/OPS.md`): any read or change of the entries it
     /// holds, whatever their schema, as JSON. Its answer: `{"ok": ...}`, or `{"refused": ..., "why": ...}`. A read
-    /// runs on what the device holds; a change is a write of the vault it acts for (`"as"`), and its peers are told.
+    /// runs on what the device holds; a change is a write of the vault it acts for (`"as"`), and its peers are told;
+    /// asking whether changes would be made (`may`) is a dry run, which changes nothing and tells no one.
     pub async fn run(&self, op: Value) -> Value {
         if engine::reads(&op) {
             return self.node.read(move |lab, me| engine::read(lab, me, &op)).await;
+        }
+        if engine::asks(&op) {
+            return self.node.dry(move |lab, me| engine::run(lab, me, &op)).await;
         }
         self.node.act(move |lab, me| engine::run(lab, me, &op)).await
     }
@@ -1325,8 +1336,8 @@ impl PageDevice {
     }
 
     /// Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
-    /// what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel}`), acting for vault
-    /// `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
+    /// what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel, rules?}`), acting for
+    /// vault `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
     pub fn share(
         &self,
         issuer: String,
@@ -1340,14 +1351,16 @@ impl PageDevice {
         future_to_promise(async move {
             let (issuer, over) = (VaultId(id(&issuer)?), VaultId(id(&over)?));
             let slice = String::from(js_sys::JSON::stringify(&slice)?);
-            let slice = serde_json::from_str(&slice).map_err(|e| JsError::new(&format!("no slice: {e}")))?;
+            let slice: Value = serde_json::from_str(&slice).map_err(|e| JsError::new(&format!("no slice: {e}")))?;
+            let rules = words::rules_of(&slice).map_err(js_value)?;
             let slice = words::slice_of(&slice).map_err(js_value)?;
             let role = words::role_of(&role).map_err(js_value)?;
             let grantee = match grantee.as_str() {
                 "public" => Grantee::Public,
                 v => cast::vault(VaultId(id(v)?)),
             };
-            let cap = device.share(issuer, over, slice, role, grantee, &Js(ceremony)).await.map_err(js_value)?;
+            let js = Js(ceremony);
+            let cap = device.share(issuer, over, slice, rules, role, grantee, &js).await.map_err(js_value)?;
             Ok(hex(&cap.0).into())
         })
     }
