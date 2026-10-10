@@ -15,6 +15,7 @@
 	import Card from './Card.svelte';
 	import { renderCard } from './card.js';
 	import { ideaTag } from './names.js';
+	import { cardWords } from './stories.js';
 
 	/** @typedef {import('$lib/auth/client').ContentItem} ContentItem */
 	/** @typedef {import('$lib/auth/client').Layer} Layer */
@@ -26,11 +27,14 @@
 	/** @type {Record<LayerKind, string>} */
 	const KIND_LABEL = { image: 'Picture', cutout: 'Cut-out', text: 'Text', badge: 'Badge' };
 	/** @type {Record<LayerKind, string>} */
-	const KIND_NOTE = { image: 'a picture from the vault, the background usually', cutout: 'a transparent PNG laid over it: a face out of a frame', text: 'the hook, big (empty: the hook itself)', badge: 'the day, bottom right' };
+	const KIND_NOTE = { image: 'a picture from the vault, the background usually', cutout: 'a transparent PNG laid over it: a face out of a frame', text: 'the words, big (empty: the image title, else the hook)', badge: 'the day, bottom right' };
 	const COLORS = ['white', 'gold', 'ink'];
 
 	const layers = $derived(item.thumbnail?.layers ?? []);
-	const hook = $derived((item.hook ?? '').trim() || item.title);
+	/** what an empty text layer says: the image title, else the hook */
+	const hook = $derived(cardWords(item));
+	/** the title under the small preview: the hook itself */
+	const title = $derived((item.hook ?? '').trim() || item.title);
 	/** @type {string | null} the layer picked */
 	let pickedId = $state(null);
 	const picked = $derived(layers.find((l) => l.id === pickedId) ?? null);
@@ -63,7 +67,7 @@
 					story: item.story,
 					tags: [ideaTag(item.title), 'role:thumbnail', 'shape:16x9'],
 					title: `${item.title} · title card 16:9`,
-					description: hook,
+					description: title,
 					public: true
 				});
 				onchange({ thumbnail: { ...(item.thumbnail ?? {}), layers, card: got.hash }, hashes: [...new Set([...(item.hashes ?? []), got.hash])] });
@@ -203,7 +207,7 @@
 				{/if}
 			</div>
 			<div class="minitext">
-				<b>{hook}</b>
+				<b>{title}</b>
 				<small>maiaCITY</small>
 			</div>
 		</div>
@@ -262,7 +266,7 @@
 					{/if}
 				{:else}
 					<label class="field">
-						<span>Words {#if picked.kind === 'text'}<small>empty: the hook</small>{/if}</span>
+						<span>Words {#if picked.kind === 'text'}<small>empty: the image title, else the hook</small>{/if}</span>
 						<textarea rows="3" maxlength="300" value={picked.text ?? ''} placeholder={picked.kind === 'text' ? hook : 'DAY 1'} oninput={(e) => edit(picked.id, { text: e.currentTarget.value })}></textarea>
 					</label>
 					<label class="field">

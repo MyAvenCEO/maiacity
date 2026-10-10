@@ -9,6 +9,7 @@
 <script>
 	import { HOOK_PARTS, fileUrl } from '$lib/auth/client';
 	import Card from './Card.svelte';
+	import { cardWords } from './stories.js';
 
 	/** @typedef {import('$lib/auth/client').ContentItem} ContentItem */
 	/** @typedef {import('$lib/auth/client').HookVariant} HookVariant */
@@ -35,6 +36,11 @@
 	const descBytes = $derived(bytes(item.description ?? ''));
 	/** what goes out as the title: the hook; the story's working name only until there is one */
 	const title = $derived((item.hook ?? '').trim() || item.title);
+	/** the words on the card: the image title (the catchwords), else the hook */
+	const words = $derived(cardWords(item));
+	/** the image title as typed: one catchword per line */
+	const imageTitle = $derived((item.image_title ?? []).join('\n'));
+	const linesOf = (/** @type {string} */ v) => v.split('\n').map((l) => l.trim()).filter(Boolean);
 
 	// ── the variants ──
 	/** @type {Record<HookPart, string>} what each part is called on the card */
@@ -59,7 +65,7 @@
 	/** The variant goes on the card: its line becomes the story's hook. */
 	function choose(/** @type {HookVariant} */ h) {
 		openId = h.id;
-		if (h.text.trim()) onchange({ hook: h.text });
+		if (h.text.trim()) onchange({ hook: h.text, ...(h.image_title?.length ? { image_title: h.image_title } : {}) });
 	}
 
 	/** A new variant: the line on the card, when it is not among them yet; else an empty one, opened to write. */
@@ -114,6 +120,7 @@
 									{#each HOOK_PARTS as p (p)}
 										<label class="field"><span>{PART_LABEL[p]}</span><input maxlength="160" value={h[p] ?? ''} oninput={(e) => edit(h.id, { [p]: e.currentTarget.value })} /></label>
 									{/each}
+									<label class="field"><span>Image title <small>catchwords, one per line</small></span><textarea rows="2" value={(h.image_title ?? []).join('\n')} oninput={(e) => edit(h.id, { image_title: linesOf(e.currentTarget.value) })}></textarea></label>
 									<label class="field"><span>Promise</span><input maxlength="300" value={h.promise ?? ''} oninput={(e) => edit(h.id, { promise: e.currentTarget.value })} /></label>
 									<label class="field"><span>Objection killer</span><input maxlength="300" value={h.objection ?? ''} oninput={(e) => edit(h.id, { objection: e.currentTarget.value })} /></label>
 									<label class="field">
@@ -134,6 +141,7 @@
 									{:else}
 										<p class="none">No parts named yet: point at its subject, its verb and its contrast.</p>
 									{/if}
+									{#if h.image_title?.length}<p class="after"><b>Image title</b> {h.image_title.join(' · ')}</p>{/if}
 									{#if h.promise}<p class="after"><b>Promise</b> {h.promise}</p>{/if}
 									{#if h.objection}<p class="after"><b>Objection</b> {h.objection}</p>{/if}
 									{#if h.note}<p class="note">{h.note}</p>{/if}
@@ -159,6 +167,10 @@
 			<textarea class="big" rows="2" value={item.hook ?? ''} maxlength="300" placeholder="One line, ~10 words, readable in a second: the most extreme true thing" oninput={(e) => onchange({ hook: e.currentTarget.value })}></textarea>
 		</label>
 		<label>
+			<span>Image title <small>the hook's catchwords for the card, even more compact · one per line · {(item.image_title ?? []).length} / 8</small></span>
+			<textarea class="catch" rows="2" value={imageTitle} placeholder={"a '1' million lives\ndecision"} oninput={(e) => onchange({ image_title: linesOf(e.currentTarget.value) })}></textarea>
+		</label>
+		<label>
 			<span>Intro <small>the trailer: the first 3–30 s · why should I care, what is my transformation · {(item.intro ?? '').length} / 5,000</small></span>
 			<textarea rows="4" value={item.intro ?? ''} maxlength="5000" placeholder="The first seconds after the hook: the promise, the objection killer, the pain in the viewer’s own life — ending on the question the story answers" oninput={(e) => onchange({ intro: e.currentTarget.value })}></textarea>
 		</label>
@@ -181,10 +193,10 @@
 			{#if card}
 				<img src={fileUrl(card)} alt="The 16:9 title card" />
 			{:else if layers.length}
-				<Card {layers} hook={title} />
+				<Card {layers} hook={words} />
 			{:else}
 				<div class="stand-in">
-					<b>{title}</b>
+					<b>{words}</b>
 					{#if badge}<small class="day">{badge}</small>{/if}
 				</div>
 			{/if}
