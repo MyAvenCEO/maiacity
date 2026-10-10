@@ -1,13 +1,13 @@
-//! Linking a device by QR code (P8c), over iroh. A new device scans the code Alice's Mac shows (`Node::offer`), its
-//! passkey's hello proves the passkey on their connection, it gets the logs of the vaults the passkey owns, adds itself
-//! to Alice's vault and syncs the rest. With every other device of Alice's lost, the same through the server, whose
-//! offer the app knows. And what a node refuses: a passkey's hello said on another connection, for the other end or
-//! for another device, and a join of another device than the one on the connection.
+//! Linking a device by QR code (P8c), over iroh. A new device scans the code Alice's Mac shows (`Node::offer`), shows
+//! its passkey's pass for it on their connection, where its hello proves it, gets the logs of the vaults the passkey
+//! owns, adds itself to Alice's vault and syncs the rest. With every other device of Alice's lost, the same through
+//! the server, whose offer the app knows. And what a node refuses: a pass for another device than the one on the
+//! connection, one out of its minutes, and a join of another device than the one on the connection.
 
 mod common;
 
 use std::future::Future;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use std::sync::Mutex;
 
@@ -15,7 +15,7 @@ use avendb::cast::*;
 use avendb::id::SignerId;
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::sign::{Ceremony, Passkey, device_salt};
+use avendb::sign::{Ceremony, DeviceKey, PASS_LIFE, PASS_SKEW, Passkey, pass_challenge};
 use avendb::sync::{LogId, log_of};
 use avendb::wire::{Reply, Wire};
 use avendb_net::{ALPN, Authenticator, Node, Offer, Options, Step, exporter, pq_provider};
@@ -25,6 +25,11 @@ use iroh::{Endpoint, SecretKey};
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8) -> Node {
     Node::spawn(w.lab.split(d, with, [seed; 32]), d, Options::local()).await.expect("a node")
+}
+
+/// The time by this machine's clock, as a node checks a pass by it: seconds since 1970.
+fn now() -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("after 1970").as_secs()
 }
 
 /// Waits until `check` holds, 30 seconds at most.
@@ -101,24 +106,29 @@ async fn a_browser_links_with_the_passkey_in_its_authenticator_in_two_ceremonies
     let h = handbook(&mut w);
     let secret = w.lab.passkey_secret(w.passkey_a).expect("Alice's software passkey");
     let mut passkey = Passkey::from_seed(*secret);
-    // the browser's Lab holds the passkey's keys, from the ceremony that unlocked the browser, and no secret of it
-    let (mut lab, nonce) = (Lab::with_entropy([7; 32]), [5; 32]);
-    let unlock = passkey.ceremony([1; 32]);
-    let alices = lab.web_passkey("Alice", passkey.public(), &unlock).expect("Alice's passkey");
-    let new = lab.web_device(alices, "Alice's browser", nonce, *passkey.prf(&device_salt(&nonce)));
-    let (mac_a, alice) = (w.mac_a, w.alice);
+    // the browser makes its secret first, so that the ceremony that unlocks it is the passkey's pass for it; its Lab
+    // holds the keys of each passkey the pass may be from, and no secret of any
+    let (key, made) = (DeviceKey::from_secret([5; 32]), now());
+    let unlock = passkey.ceremony(pass_challenge(key.id(), made));
+    let pass = unlock.pass(key.keys(), made).expect("the passkey's pass for the browser");
+    let mut lab = Lab::with_entropy([7; 32]);
+    let new = lab.device_with("Alice's browser", [5; 32]);
+    for p256 in unlock.assertion.recover() {
+        lab.web_passkey("Alice", p256, &unlock).expect("a passkey the pass may be from");
+    }
+    let (mac_a, passkey_a, alice) = (w.mac_a, w.passkey_a, w.alice);
     let mac = node(&mut w, mac_a, &[], 1).await;
     let browser = Node::spawn(lab, new, Options::local()).await.expect("the browser's node");
     let mut changes = browser.changes();
     let offer = Offer::from_text(&mac.offer().to_text()).expect("the Mac's code");
-    // Eve's passkey in the authenticator: its hello isn't Alice's passkey's, and the link fails
+    // Eve's passkey in the authenticator: the join it signs isn't Alice's passkey's, and the link fails
     let eves = Browser(Mutex::new((Passkey::from_seed([9; 32]), vec![])));
-    assert!(browser.link_with(&offer, alices, &eves).await.is_err(), "another passkey's ceremony");
+    assert!(browser.link_with(&offer, &pass, &eves).await.is_err(), "another passkey's ceremony");
     let authenticator = Browser(Mutex::new((passkey, vec![])));
-    let linked = browser.link_with(&offer, alices, &authenticator).await.expect("the browser links");
-    assert_eq!(linked, alice, "to Alice's vault");
+    let linked = browser.link_with(&offer, &pass, &authenticator).await.expect("the browser links");
+    assert_eq!(linked, (passkey_a, alice), "to Alice's vault, as her passkey");
     let steps = authenticator.0.lock().expect("the authenticator").1.clone();
-    assert_eq!(steps, [Step::Hello, Step::Join], "in two ceremonies: the passkey's hello, then the edit adding it");
+    assert_eq!(steps, [Step::Join], "in two ceremonies: the unlock, which is its pass, then the edit adding it");
     until("the browser reads Welcome", || reads(&browser, h.welcome, WELCOME_TEXT)).await;
     assert!(changes.has_changed().expect("the node runs"), "what the browser holds changed");
     let (edits, _) = *changes.borrow_and_update();
@@ -199,11 +209,11 @@ async fn say(conn: &Connection, kind: u8, body: &[u8]) -> Option<Vec<u8>> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_node_hands_its_card_for_a_passkeys_hello_on_that_very_connection_alone() {
+async fn a_node_hands_its_card_for_a_pass_for_the_device_on_that_very_connection_alone() {
     let mut w = world();
     let new = w.lab.device_of(w.passkey_a, "Alice's new iPhone");
     let other = w.lab.device_of(w.passkey_a, "Alice's iPad");
-    let (mac_a, mac_b, passkey_a, alice) = (w.mac_a, w.mac_b, w.passkey_a, w.alice);
+    let (mac_a, passkey_a, passkey_b, alice) = (w.mac_a, w.passkey_a, w.passkey_b, w.alice);
     let mac = node(&mut w, mac_a, &[], 1).await;
     // the new iPhone by hand: its keys and the passkey stay in the Lab
     let raw = client(*w.lab.endpoint_secret(new).expect("its key")).await;
@@ -213,22 +223,28 @@ async fn a_node_hands_its_card_for_a_passkeys_hello_on_that_very_connection_alon
     send.write_all(&w.lab.hello(new, &exporter, true).expect("its hello").to_wire()).await.expect("its hello");
     send.finish().expect("ends");
     recv.read_to_end(64 << 10).await.expect("the Mac's hello back");
-    let (link, join) = (3, 4);
+    let (link, join, now) = (3, 4, now());
     let lab = &mut w.lab;
     let refused = [
-        ("said on another connection", lab.passkey_hello(new, passkey_a, &[7; 32], true)),
-        ("said for the listening end", lab.passkey_hello(new, passkey_a, &exporter, false)),
-        ("said for another device", lab.passkey_hello(mac_b, passkey_a, &exporter, true)),
+        ("for another device", lab.relay_pass(other, passkey_a, now)),
+        ("made too long ago", lab.relay_pass(new, passkey_a, now - PASS_LIFE - 60)),
+        ("made too far ahead", lab.relay_pass(new, passkey_a, now + PASS_SKEW + 60)),
     ];
-    for (what, hello) in refused {
-        let hello = hello.expect("the passkey's hello").to_wire();
-        assert!(say(&conn, link, &hello).await.is_none(), "a passkey's hello {what}: refused");
+    for (what, pass) in refused {
+        let pass = pass.expect("the passkey's pass").to_wire();
+        assert!(say(&conn, link, &pass).await.is_none(), "a pass {what}: refused");
     }
     let device = lab.hello(new, &exporter, true).expect("its hello").to_wire();
-    assert!(say(&conn, link, &device).await.is_none(), "a device's hello is no passkey's");
-    let hello = lab.passkey_hello(new, passkey_a, &exporter, true).expect("the passkey's hello").to_wire();
-    let card = Reply::from_wire(&say(&conn, link, &hello).await.expect("its card")).expect("a reply");
-    assert!(!card.edits.is_empty(), "the passkey's own hello on this connection gets its card");
+    assert!(say(&conn, link, &device).await.is_none(), "a device's hello is no pass");
+    // Alice's assertion with the hash-based half of Bob's passkey's pass: the pass of a passkey that is nobody's
+    let mut mixed = lab.relay_pass(new, passkey_a, now).expect("Alice's pass");
+    let bobs = lab.relay_pass(new, passkey_b, now).expect("Bob's pass");
+    (mixed.slh, mixed.sig) = (bobs.slh, bobs.sig);
+    let card = Reply::from_wire(&say(&conn, link, &mixed.to_wire()).await.expect("a card")).expect("a reply");
+    assert!(card.edits.is_empty(), "which roots no vault: an empty card");
+    let pass = lab.relay_pass(new, passkey_a, now).expect("the passkey's pass").to_wire();
+    let card = Reply::from_wire(&say(&conn, link, &pass).await.expect("its card")).expect("a reply");
+    assert!(!card.edits.is_empty(), "the passkey's pass for the device on this connection gets its card");
     let alices = |s: &avendb::sign::Signed| log_of(&s.edit, s.edit.id()) == Some(LogId::Vault(alice));
     assert!(card.edits.iter().all(alices), "the log of Alice's vault alone");
     // the iPad's join, sent on the new iPhone's connection: refused; the new iPhone's own: accepted

@@ -5,7 +5,7 @@
  * asks for is answered by a passkey of maia.city's, sealed as the sheet's page seals it (avendb-browser's
  * `sealCeremony`, from the page's own module), against an avenDB server on this machine. Signing in before they have an
  * account, as on a server that started fresh, the page names the button that sets one up; the person founds their vault
- * from the "Mac" in three sheets; the page shows the device native, on its own UDP sockets; reloaded, it opens with no
+ * from the "Mac" in two sheets; the page shows the device native, on its own UDP sockets; reloaded, it opens with no
  * sheet, as the device runs on; the app quits and starts again, and the device opens from its folder in one sheet; it
  * is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
  * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
@@ -13,7 +13,7 @@
  * every todo tagged “work”, a rule: he reads the note and that todo, and one she tags “work” later, and finds her other
  * todo sealed in her studio, while avenCHARLY sees nothing of hers; her Sync page shows her cells, avenCEO's server
  * relaying their ciphertext; making the coop an owner of her whole vault takes one sheet, revoking avenBOB's caps none.
- * Forgotten, the device's store is put aside in its folder, and the person signs in again through the server in four
+ * Forgotten, the device's store is put aside in its folder, and the person signs in again through the server in two
  * sheets, every vault and her note coming back. Last, the store becomes an earlier avenDB's: the device puts it aside,
  * and the page says it holds no vault and forgets it. Each step is screenshot.
  *
@@ -404,12 +404,12 @@ try {
 	const setUpFirst = () => problem().then((p) => p.includes('“Use my maiaCITY passkey”'));
 	const named = await until(setUpFirst, 120000);
 	check('signing in with no account names the button that sets one up', named, await problem());
-	check('after three sheets: unlock, pass, hello', app.sheets().join(',') === 'unlock,pass,hello');
+	check('after one sheet: unlock', app.sheets().join(',') === 'unlock');
 	await shot('1b-no-account');
 
 	await click('Use my maiaCITY passkey');
 	check('the vault is founded natively', await opened(), await problem());
-	check('in three sheets: unlock, pass, found', app.sheets().join(',') === 'unlock,pass,found');
+	check('in two sheets: unlock, found', app.sheets().join(',') === 'unlock,found');
 	check('its vault and avenCEO in the bar', await until(async () => (await bar()).includes('avenCEO')), (await bar()).join(', '));
 	check('no error', !(await problem()), await problem());
 	await shot('2-founded');
@@ -646,7 +646,7 @@ try {
 	check('its store put aside, not deleted', aside.some((a) => a.endsWith('-forgotten')) && !existsSync(join(folder, 'meta.json')), aside.join(', '));
 	await click('Sign in with my passkey', '.account button');
 	check('signed in again, through the server', await opened(), await problem());
-	check('in four sheets: unlock, pass, hello, join', app.sheets().join(',') === 'unlock,pass,hello,join');
+	check('in two sheets: unlock, join', app.sheets().join(',') === 'unlock,join');
 	check('every vault came back', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
 	await actAs('avenALICE');
 	await look('avenALICE', 'Notes');

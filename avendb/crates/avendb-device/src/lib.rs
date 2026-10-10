@@ -18,10 +18,11 @@
 //! sheet's URL, and opens what the sheet's page sealed to it (`keys::open_once`), so nothing crosses the app open.
 //!
 //! The device keeps no secret. Its folder holds its store and what opens it again (`meta.json`: its name, its relay,
-//! its salt's own bytes, its passkey's credential and P-256 key), as the page keeps them; its keys derive from its
-//! passkey at every unlock. The device the page made before moves here as it opens (`adopt`): the store the page read
-//! from IndexedDB becomes the folder's. A store that no device opens any more is put aside in the folder, never
-//! deleted.
+//! its salt's own bytes, its secret masked by the PRF output on its salt, which only its passkey computes again, and
+//! its passkey's credential and P-256 key), as the page keeps them; its keys come back at every unlock. A device made
+//! before 2026-10-10 keeps no mask: the PRF output on its salt is its secret. The device the page made before moves
+//! here as it opens (`adopt`): the store the page read from IndexedDB becomes the folder's. A store that no device
+//! opens any more is put aside in the folder, never deleted.
 
 use std::collections::HashMap;
 use std::fs;
@@ -37,7 +38,7 @@ use avendb::id::{BlobId, CapId, EditId, EntryId, VaultId};
 use avendb::keys;
 use avendb::policy::{Grantee, Kind, Line};
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Start, Unlock, backup, words};
+use avendb_browser::{Device, Fresh, Start, Unlock, backup, words};
 use avendb_net::{Authenticator, Offer, Step};
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -239,27 +240,31 @@ impl Service {
         json!({ "meta": meta, "open": device.is_some(), "device": device.map(|d| info(&d)) })
     }
 
-    /// The first device of a new person (`Device::found`), in three ceremonies: the unlock, the pass to the relay, and
-    /// one for the vault and the device in it, which also claims the server whose code reads `server` if nobody has.
+    /// The first device of a new person (`Device::found`), in two ceremonies: the unlock, which is the passkey's pass
+    /// for the new device, and one for the vault and the device in it, which also claims the server whose code reads
+    /// `server` if nobody has.
     async fn found(self: &Arc<Self>, name: String, relay: String, server: String) -> Result<Value> {
         let _life = self.life.lock().await;
         self.fresh()?;
         let server = Offer::from_text(server.trim())?;
-        let (sheets, nonce) = (Sheets::new(self.clone(), None), random()?);
-        let unlock = sheets.unlock(nonce).await?;
-        let d = Device::found(self.start(&name, &relay)?, &server, None, unlock, &sheets).await?;
+        let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
+        let start = self.start(&name, &relay)?;
+        let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
+        let d = Device::found(start, &server, None, new, unlock, &sheets).await?;
         self.started(d, (name, relay, nonce, sheets.credential()?))
     }
 
     /// A new device of a person who has one already (`Device::link`), linked through the device or the server whose
-    /// code reads `through`, in four ceremonies: the unlock, the pass, the passkey's hello and the join.
+    /// code reads `through`, in two ceremonies: the unlock, which is the passkey's pass for the new device, and the
+    /// join.
     async fn link(self: &Arc<Self>, name: String, relay: String, through: String) -> Result<Value> {
         let _life = self.life.lock().await;
         self.fresh()?;
         let through = Offer::from_text(through.trim())?;
-        let (sheets, nonce) = (Sheets::new(self.clone(), None), random()?);
-        let unlock = sheets.unlock(nonce).await?;
-        let d = Device::link(self.start(&name, &relay)?, &through, unlock, &sheets).await?;
+        let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
+        let start = self.start(&name, &relay)?;
+        let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
+        let d = Device::link(start, &through, new, unlock, &sheets).await?;
         self.started(d, (name, relay, nonce, sheets.credential()?))
     }
 
@@ -272,8 +277,9 @@ impl Service {
         }
         let meta = self.meta()?.context("this Mac holds no avenDB account yet")?;
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
-        let unlock = sheets.unlock(meta.nonce).await?;
-        let d = Device::open(self.start(&meta.name, &meta.relay)?, meta.p256, unlock, &backup(&[], vec![])).await?;
+        let unlock = sheets.unlock(meta.nonce, random()?).await?;
+        let start = self.start(&meta.name, &meta.relay)?;
+        let d = Device::open(start, meta.p256, meta.mask, unlock, &backup(&[], vec![])).await?;
         self.opened(d, &meta)
     }
 
@@ -288,8 +294,9 @@ impl Service {
         let edits = edits.iter().map(bytes).collect::<Result<Vec<_>>>()?;
         let keys = keys.iter().map(|k| bytes(k).map(Arc::from)).collect::<Result<Vec<Arc<[u8]>>>>()?;
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
-        let unlock = sheets.unlock(meta.nonce).await?;
-        let d = Device::open(self.start(&meta.name, &meta.relay)?, meta.p256, unlock, &backup(&edits, keys)).await?;
+        let unlock = sheets.unlock(meta.nonce, random()?).await?;
+        let start = self.start(&meta.name, &meta.relay)?;
+        let d = Device::open(start, meta.p256, meta.mask, unlock, &backup(&edits, keys)).await?;
         self.opened(d, &meta)
     }
 
@@ -358,11 +365,11 @@ impl Service {
     }
 
     /// Device `d`, new here, runs from here on; the folder keeps what opens it again: its name, relay, salt's own
-    /// bytes and passkey's credential.
+    /// bytes, mask and passkey's credential.
     fn started(&self, d: Device, opens: (String, String, [u8; 32], String)) -> Result<Value> {
         let (name, relay, nonce, credential) = opens;
-        let meta = Meta { name: name.trim().into(), relay: relay.trim().into(), nonce, credential, p256: d.p256() };
-        self.opened(d, &meta)
+        let (name, relay, mask, p256) = (name.trim().into(), relay.trim().into(), d.mask(), d.p256());
+        self.opened(d, &Meta { name, relay, nonce, mask, credential, p256 })
     }
 
     /// Device `d` runs from here on, opened again by `meta`, which the folder keeps.
@@ -438,38 +445,46 @@ impl Service {
     }
 }
 
-/// What opens the device again, as the page keeps it: its name, its relay, its salt's own 32 bytes, the credential of
-/// its person's passkey (base64url) and that passkey's P-256 key, compressed.
+/// What opens the device again, as the page keeps it: its name, its relay, its salt's own 32 bytes, its secret masked
+/// by the PRF output on its salt (`avendb_browser::Fresh::mask`), none for a device made before 2026-10-10, the
+/// credential of its person's passkey (base64url) and that passkey's P-256 key, compressed.
 #[derive(Clone)]
 struct Meta {
     name: String,
     relay: String,
     nonce: [u8; 32],
+    mask: Option<[u8; 32]>,
     credential: String,
     p256: [u8; 33],
 }
 
 impl Meta {
-    /// As the page keeps it: the nonce and the P-256 key (`passkey`) in hex.
+    /// As the page keeps it: the nonce, the mask, if any, and the P-256 key (`passkey`) in hex.
     fn to_json(&self) -> Value {
-        json!({
+        let mut meta = json!({
             "name": self.name,
             "relay": self.relay,
             "nonce": hex(&self.nonce),
             "credential": self.credential,
             "passkey": hex(&self.p256),
-        })
+        });
+        if let Some(mask) = self.mask {
+            meta["mask"] = hex(&mask).into();
+        }
+        meta
     }
 
     fn from_json(v: &Value) -> Result<Meta> {
         let field =
             |k: &str| v.get(k).and_then(Value::as_str).with_context(|| format!("what opens the device: no {k}"));
         let nonce = unhex(field("nonce")?).and_then(|b| b.try_into().ok());
+        let mask = v.get("mask").and_then(Value::as_str).map(|m| unhex(m).and_then(|b| b.try_into().ok()));
         let p256 = unhex(field("passkey")?).and_then(|b| b.try_into().ok());
         Ok(Meta {
             name: field("name")?.into(),
             relay: field("relay")?.into(),
             nonce: nonce.context("a device's nonce is 32 bytes in hex")?,
+            mask: mask.map(|m| m.context("a device's mask is 32 bytes in hex")).transpose()?,
             credential: field("credential")?.into(),
             p256: p256.context("a passkey's P-256 key is 33 bytes in hex")?,
         })
@@ -516,12 +531,13 @@ impl Sheets {
         self.credential.lock().expect("the credential").clone().context("no ceremony named the passkey")
     }
 
-    /// The ceremony that unlocks the device whose salt ends in `nonce` (`sign::device_salt`), over a challenge of its
+    /// The ceremony that unlocks the device whose salt ends in `nonce` (`sign::device_salt`), over `challenge`: a new
+    /// device's, which makes the unlock its passkey's pass for it (`avendb_browser::Fresh::challenge`), or one of its
     /// own.
-    async fn unlock(&self, nonce: [u8; 32]) -> Result<Unlock> {
-        let brought = self.ask("unlock", random()?, Some(&nonce)).await?;
+    async fn unlock(&self, nonce: [u8; 32], challenge: [u8; 32]) -> Result<Unlock> {
+        let brought = self.ask("unlock", challenge, Some(&nonce)).await?;
         let device = brought.device.context("the sheet brought no PRF output on the device's salt")?;
-        Ok(Unlock { ceremony: Ceremony::new(brought.assertion, *brought.prf), nonce, device })
+        Ok(Unlock { ceremony: Ceremony::new(brought.assertion, *brought.prf), device })
     }
 
     /// One ceremony in the sheet, for `what`, over `challenge`, with the PRF output on the app's salt and, given
@@ -563,9 +579,7 @@ impl Sheets {
 impl Authenticator for Sheets {
     async fn ceremony(&self, challenge: [u8; 32], step: Step) -> Result<Ceremony> {
         let what = match step {
-            Step::Pass => "pass",
             Step::Found => "found",
-            Step::Hello => "hello",
             Step::Join => "join",
             Step::Claim => "claim",
             Step::Approve => "approve",

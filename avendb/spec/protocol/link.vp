@@ -1,42 +1,57 @@
-// Linking a new device by its passkey (P8c; crates/avendb-net/src/lib.rs `Node::link`, session.rs `LINK` and `JOIN`,
-// crates/avendb/src/sign.rs `PasskeyHello`, crates/avendb/src/lab.rs `link_card`, `join` and `accept_join`). Alice's
-// new iPhone scans the code her Mac shows (`Offer`): the Mac's endpoint and device. On a connection to the Mac, after
-// both devices' hellos, the iPhone says her passkey's hello: a WebAuthn assertion and an SLH-DSA signature, both over a
-// hash of which end it speaks for, the connection's TLS exporter and the iPhone's device. The Mac checks it against
-// the passkey its vault's log names and hands back the link card, the logs of the vaults the passkey owns; the iPhone
-// then sends its join, the op adding itself to Alice's vault, signed by the passkey and by itself, which the Mac takes
-// only for the device on the connection.
+// Linking a new device by its passkey (P8c; crates/avendb-net/src/lib.rs `Node::link_with`, session.rs `LINK` and
+// `JOIN`, crates/avendb/src/sign.rs `RelayPass`, crates/avendb/src/lab.rs `link_card`, `join` and `accept_join`).
+// Alice's new iPhone makes its keys first, then the ceremony that unlocks it is her passkey's pass for it: a WebAuthn
+// assertion and an SLH-DSA signature, both over a hash of the iPhone's device and the time it was made. The iPhone
+// scans the code her Mac shows (`Offer`): the Mac's endpoint and device. On a connection to the Mac, after both
+// devices' hellos, the iPhone shows the pass. The Mac checks it against the passkey its vault's log names, for the
+// device whose hello proved it on this connection, and hands back the link card, the logs of the vaults the passkey
+// owns; the iPhone then sends its join, the op adding itself to Alice's vault, signed by the passkey and by itself,
+// which the Mac takes only for the device on the connection.
 //
-// Expected: c0c1a0a0
+// Expected: c0c1a1a0
 //
 // The curves fall from the start (`PUBKEY[weak]`): X25519, ed25519 and the passkey's P-256. ML-KEM-768 and SLH-DSA
-// hold. Nothing ties the new iPhone's keys to Alice before it joins: the attacker can be any device it likes. The card
-// the Mac hands over on a passkey's hello stays secret (`card`), where a card handed to whichever device said its
-// hello would not (`unchecked`); the passkey's hello the Mac takes is the iPhone's, and so is the join it accepts.
+// hold. Nothing ties the new iPhone's keys to Alice before it joins: the attacker can be any device it likes. The pass
+// travels in the clear, as at the relay, and names no connection: whoever replays it on a connection of its own says
+// no hello of the iPhone's there. The card the Mac hands over on the pass stays secret (`card`), where a card handed
+// to whichever device said its hello would not (`unchecked`). The pass the Mac takes is the passkey's for the iPhone,
+// for its minutes rather than for this connection alone, as at the relay: shown again on another of the iPhone's own
+// connections, the Mac takes it twice (`p_pass`). Verifpal finds no forgery, only an agreement that isn't injective, a
+// replay of a pass the Mac adds nothing of its own to; at one session, with no other run to replay it from, the query
+// holds (`--sessions 1` gives c0c1a0a0). That is the price of the unlock being the pass, one ceremony fewer, and it
+// gives nobody but the iPhone anything, as the card shows. The join the Mac accepts is the iPhone's own, on this
+// connection, as is the card it names.
 //
 // Modeling notes. The code is read off the Mac's screen, and the Mac knows the passkey from its vault's log, whose ops
-// are signed: guarded transfers. With the curves broken, a signature by one proves nothing the attacker can't forge,
-// so the model leaves out what only they sign: the passkey's WebAuthn assertion, the ed25519 signatures on the join
-// and TLS's own endpoint signatures; it keeps what still proves something, the SLH-DSA signatures. Left in, they give
-// the same result at one session, and stretch the search at two from under a minute to more than a quarter of an hour.
-// The handshake is TLS's key exchange alone, X25519 and ML-KEM, from which come the keys and the exporter (see hello.vp
-// for the whole handshake). A device's id is the hash of its two public keys, as `SignerKeys::id` makes it; the hellos
-// and the join travel in the clear, as the authentication queries ask about values on the wire.
+// are signed: guarded transfers. The Mac knows the passkey's SLH-DSA key, so the model leaves out the P-256 keys the
+// assertion recovers to, which the checker tries each of (`RelayPass::passkeys`): a key nobody holds roots no vault.
+// With the curves broken, a signature by one proves nothing the attacker can't forge, so the model leaves out what
+// only they sign: the passkey's WebAuthn assertion, the ed25519 signatures on the join and TLS's own endpoint
+// signatures; it keeps what still proves something, the SLH-DSA signatures. Left in, they give the same result at one
+// session, and stretch the search at two from under a minute to more than a quarter of an hour. The pass's time, which
+// the Mac checks against its clock, is a value the iPhone makes and sends beside it. The handshake is TLS's key
+// exchange alone, X25519 and ML-KEM, from which come the keys and the exporter (see hello.vp for the whole handshake).
+// A device's id is the hash of its two public keys, as `SignerKeys::id` makes it; the hellos and the join travel in
+// the clear, as the authentication queries ask about values on the wire.
 
 attacker[active]
 
 principal Phone[
-	knows public tls, dialer, listener, add_device
+	knows public tls, dialer, listener, add_device, pass
 	knows private ph_ed, ph_slh
 	ph_ed_pk = PUBKEY[weak](ph_ed)
 	ph_slh_pk = PUBKEY(ph_slh)
+	p_device = HASH(ph_ed_pk, ph_slh_pk)
 	// Alice's passkey, synced to the new iPhone by her platform: its hash-based half
 	knows private pk_slh
 	pk_slh_pub = PUBKEY(pk_slh)
+	// the ceremony that unlocks the iPhone, its keys made first: the passkey's pass for it, at a time of its own
+	generates made
+	p_pass = SIGN(pk_slh, HASH(pass, p_device, made))
 ]
 
 principal Macbook[
-	knows public tls, dialer, listener, add_device
+	knows public tls, dialer, listener, add_device, pass
 	knows private mac_slh
 	mac_slh_pk = PUBKEY(mac_slh)
 	generates card, unchecked
@@ -88,18 +103,15 @@ Macbook -> Phone: m_hello, n_unchecked, m_unchecked
 principal Phone[
 	// the device the code names answers
 	_ = SIGNVERIF(mac_slh_pk, CONCAT(p_exporter, listener), m_hello)?
-	p_device = HASH(ph_ed_pk, ph_slh_pk)
-	// the passkey's hello: its hash-based half, over one challenge
-	p_challenge = HASH(dialer, p_exporter, p_device)
-	p_passkey = SIGN(pk_slh, p_challenge)
 ]
 
-Phone -> Macbook: p_passkey
+// the pass, as the iPhone made it
+Phone -> Macbook: made, p_pass
 
 principal Macbook[
-	m_challenge = HASH(dialer, m_exporter, m_device)
-	_ = SIGNVERIF(pk_slh_pub, m_challenge, p_passkey)?
-	// the link card, for the passkey's own hello on this connection
+	// for the device whose hello proved it on this connection
+	_ = SIGNVERIF(pk_slh_pub, HASH(pass, m_device, made), p_pass)?
+	// the link card, for the passkey's own pass for this device
 	generates n_card
 	m_card = AEAD_ENC(m_down, n_card, card, nil)
 ]
@@ -126,6 +138,6 @@ principal Macbook[
 queries[
 	confidentiality? card
 	confidentiality? unchecked
-	authentication? Phone -> Macbook: p_passkey
+	authentication? Phone -> Macbook: p_pass
 	authentication? Phone -> Macbook: p_join_passkey
 ]

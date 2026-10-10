@@ -1,9 +1,9 @@
 //! Linking a device by its passkey (P8c), as a device's QR code or the server's offer starts it. A new device of
-//! Alice's says her passkey's hello on a connection to a device that holds her vault's log, her Mac or the server; that
-//! device hands it the logs of the vaults the passkey owns (the link card), vault logs alone and nothing of any cap,
-//! cell or entry (T20); the new device adds itself to the vault its passkey is the root of, signed by the passkey and
-//! by itself, and the peer accepts that one edit; then the two sync by caps and cells, and the new device reads every
-//! entry of its vault and of the vaults it acts for. Each device runs split off, as on a machine of its own, and they
+//! Alice's shows her passkey's pass for it on a connection to a device that holds her vault's log, her Mac or the
+//! server, where its hello proved it; that device hands it the logs of the vaults the passkey owns (the link card),
+//! vault logs alone and nothing of any cap, cell or entry (T20); the new device adds itself to the vault its passkey
+//! is the root of, signed by the passkey and by itself, and the peer accepts that one edit; then the two sync by caps
+//! and cells, and the new device reads every entry of its vault and of the vaults it acts for. Each device runs split off, as on a machine of its own, and they
 //! speak by the bytes they would send each other: `avendb-net` carries the same bytes over iroh.
 
 mod common;
@@ -12,25 +12,27 @@ use avendb::id::{CellId, EditId, SignerId};
 use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Edit, Refusal};
-use avendb::sign::{PasskeyHello, RelayPass, Signed};
+use avendb::sign::{RelayPass, Signed};
 use avendb::sync::{log_of, LogId};
 use avendb::wire::{Join, Reply, Request, Wire};
 use common::*;
 
-/// The TLS exporter of the connection between the new device, which dials, and its peer.
-const EXPORTER: [u8; 32] = [9; 32];
+/// When a new device's pass is made, and checked: seconds since 1970.
+const NOW: u64 = 1_791_500_000;
 
 const DIARY_TEXT: &str = "Dear diary: the seedlings are up.";
 
-/// The new device `new` links through `peer` by the bytes alone: the passkey's hello, which the peer checks, the link
-/// card the peer hands back, and the join the new device then sends, which the peer accepts or refuses.
+/// The new device `new` links through `peer` by the bytes alone: the passkey's pass for it, which the peer checks for
+/// the device whose hello proved it on their connection, the link card the peer hands back for each passkey the pass
+/// may be from, and the join the new device then sends, which the peer accepts or refuses.
 fn link(new: (&mut Lab, SignerId), passkey: SignerId, peer: (&mut Lab, SignerId)) -> Result<(), Refusal> {
     let ((new, n), (peer, p)) = (new, peer);
-    let hello = new.passkey_hello(n, passkey, &EXPORTER, true).expect("the passkey is at hand");
-    let hello = PasskeyHello::from_wire(&hello.to_wire()).expect("a passkey's hello");
-    let proven = hello.verify(&EXPORTER, true, n).expect("the hello proves the passkey");
-    assert_eq!(proven, passkey);
-    let card = Reply { edits: peer.link_card(p, proven), ..Reply::default() };
+    let pass = new.relay_pass(n, passkey, NOW).expect("the passkey is at hand");
+    let pass = RelayPass::from_wire(&pass.to_wire()).expect("a passkey's pass");
+    assert_eq!(pass.device.id(), n, "for the device on the connection");
+    let passkeys = pass.passkeys(NOW);
+    assert!(passkeys.contains(&passkey), "the pass may be the passkey's");
+    let card = Reply { edits: passkeys.into_iter().flat_map(|q| peer.link_card(p, q)).collect(), ..Reply::default() };
     let card = Reply::from_wire(&card.to_wire()).expect("a card");
     new.receive(n, card.edits, vec![]);
     let join = Join::from_wire(&new.join(n, passkey)?.to_wire()).expect("a join");
@@ -178,7 +180,7 @@ fn a_device_joins_only_the_vault_its_passkey_is_the_root_of() {
     w.lab.receive(other, card, vec![]);
     let mut ipad = w.lab.split(other, &[], [3; 32]);
     assert_eq!(ipad.join(other, w.passkey_a).err(), Some(Refusal::Locked));
-    assert!(ipad.passkey_hello(other, w.passkey_a, &EXPORTER, true).is_none(), "nor says the passkey's hello");
+    assert!(ipad.relay_pass(other, w.passkey_a, NOW).is_none(), "nor makes the passkey's pass");
 }
 
 #[test]
@@ -241,13 +243,13 @@ fn a_browser_takes_alices_passkey_in_and_links_by_a_pass_to_the_relay() {
     assert_eq!(passkey, w.passkey_a, "the same passkey");
     let browser = page.device_of(passkey, "Alice's browser");
     // its pass to the server's relay: for its own endpoint, by the passkey that roots a vault the server knows
-    let made = 1_791_500_000;
+    let made = NOW;
     let pass = page.relay_pass(browser, passkey, made).expect("a pass");
     let endpoint = page.endpoint_secret(browser).expect("unlocked");
     let endpoint = ed25519_dalek::SigningKey::from_bytes(&endpoint).verifying_key().to_bytes();
-    assert_eq!(pass.endpoint, endpoint, "for the browser's endpoint");
+    assert_eq!(pass.endpoint(), Some(endpoint), "for the browser's endpoint");
     let pass = RelayPass::from_wire(&pass.to_wire()).expect("a pass, as the relay reads it");
-    assert_eq!(pass.verify(&endpoint, made + 60), Some(passkey), "by Alice's passkey");
+    assert!(pass.passkeys(made + 60).contains(&passkey), "by Alice's passkey");
     let roots = w.lab.roots(w.server);
     for p in [w.passkey_a, w.passkey_b, w.passkey_c, w.passkey_d] {
         assert!(roots.contains(&p), "the server knows the people whose vaults it knows");

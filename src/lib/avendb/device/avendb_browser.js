@@ -3,9 +3,11 @@
  * The device as the page holds it (`Device`): every call that waits on the network or on its person is a promise.
  *
  * A ceremony is the page's: `ceremony(challenge, step)`, a function the device calls with the 32 bytes the passkey
- * signs and what for (`"pass"`, `"found"`, `"hello"`, `"join"`, `"claim"`, `"approve"`), which resolves to the
- * ceremony's `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`.
- * The unlock is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, and `nonce`.
+ * signs and what for (`"found"`, `"join"`, `"claim"`, `"approve"`), which resolves to the ceremony's
+ * `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`. The unlock
+ * is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, `nonce` the 32 bytes the
+ * page keeps for the device. A new device asks for it as `unlock(challenge)`, a function that resolves to it, over the
+ * challenge that makes it the passkey's pass for the device (`Fresh`).
  */
 export class Device {
     static __wrap(ptr) {
@@ -116,13 +118,13 @@ export class Device {
     /**
      * The first device named `name` of a new person, reaching its peers through the relay at `relay` alone, whose
      * passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`, or `undefined` for a passkey made
-     * before, as at maiaCITY's sign-up: it founds their human vault and makes it known to the server whose code reads
-     * `server`, which it claims if nobody has yet (`Device::found`).
+     * before, as at maiaCITY's sign-up: unlocked by `unlock(challenge)`, it founds their human vault and makes it
+     * known to the server whose code reads `server`, which it claims if nobody has yet (`Device::found`).
      * @param {string} name
      * @param {string} relay
      * @param {string} server
      * @param {Uint8Array | null | undefined} spki
-     * @param {any} unlock
+     * @param {Function} unlock
      * @param {Function} ceremony
      * @returns {Promise<Device>}
      */
@@ -183,12 +185,12 @@ export class Device {
         return ret;
     }
     /**
-     * A new device named `name` of a person who has one already, linked through the device whose code reads `offer`
-     * (`Device::link`).
+     * A new device named `name` of a person who has one already, unlocked by `unlock(challenge)`, linked through the
+     * device whose code reads `offer` (`Device::link`).
      * @param {string} name
      * @param {string} relay
      * @param {string} offer
-     * @param {any} unlock
+     * @param {Function} unlock
      * @param {Function} ceremony
      * @returns {Promise<Device>}
      */
@@ -201,6 +203,20 @@ export class Device {
         const len2 = WASM_VECTOR_LEN;
         const ret = wasm.device_link(ptr0, len0, ptr1, len1, ptr2, len2, unlock, ceremony);
         return ret;
+    }
+    /**
+     * The mask its secret is kept under, in hex (`Device::mask`): what the page keeps too, beside its salt's own
+     * bytes, to open the device again; `undefined` for a device made before 2026-10-10.
+     * @returns {string | undefined}
+     */
+    mask() {
+        const ret = wasm.device_mask(this.__wbg_ptr);
+        let v1;
+        if (ret[0] !== 0) {
+            v1 = getStringFromWasm0(ret[0], ret[1]);
+            wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        }
+        return v1;
     }
     /**
      * Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then
@@ -264,24 +280,27 @@ export class Device {
     }
     /**
      * The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
-     * `passkey()`), and what its store kept, its `edits` in order and its McEliece `keys`, each bytes
-     * (`Device::open`).
+     * `passkey()`), the mask its secret is kept under (in hex, `mask()`), `undefined` for a device made before
+     * 2026-10-10, and what its store kept, its `edits` in order and its McEliece `keys`, each bytes (`Device::open`).
      * @param {string} name
      * @param {string} relay
      * @param {string} p256
+     * @param {string | null | undefined} mask
      * @param {any} unlock
      * @param {Array<any>} edits
      * @param {Array<any>} keys
      * @returns {Promise<Device>}
      */
-    static open(name, relay, p256, unlock, edits, keys) {
+    static open(name, relay, p256, mask, unlock, edits, keys) {
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(relay, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(p256, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.device_open(ptr0, len0, ptr1, len1, ptr2, len2, unlock, edits, keys);
+        var ptr3 = isLikeNone(mask) ? 0 : passStringToWasm0(mask, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len3 = WASM_VECTOR_LEN;
+        const ret = wasm.device_open(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, unlock, edits, keys);
         return ret;
     }
     /**
@@ -1445,7 +1464,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5465, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5464, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue__core_7d5f0a2ba6a62c33___result__Result_____wasm_bindgen_61c7e10f51da098e___JsError___true_);
             return ret;
         },

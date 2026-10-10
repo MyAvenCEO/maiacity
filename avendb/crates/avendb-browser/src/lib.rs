@@ -5,19 +5,22 @@
 //! The person's passkey stays in the browser's own authenticator (P8e): WebAuthn with the PRF extension
 //! (`js/passkey.js`). The device never holds it, only what one ceremony at a time brings back, an assertion over a
 //! challenge and the PRF output on the app's salt (`avendb::sign::Ceremony`). The ceremony that unlocks the device also
-//! brings the PRF output on the device's own salt, from which its keys derive (`Unlock`). Then a device starts in one
-//! of three ways:
+//! brings the PRF output on the device's own salt (`Unlock`), which masks the secret its keys come from: a new device
+//! makes that secret itself (`Fresh`), so that the ceremony unlocking it names it and is its passkey's pass for it
+//! (`avendb::sign::RelayPass`), to the server's relay and to the peer it links through. Then a device starts in one of
+//! three ways:
 //!
 //! - `Device::found`: a new person's first device founds their human vault, gives avenCEO, the aven vault the server
-//!   is a device of, relay on the whole of it, and writes its card there, in three ceremonies: the unlock, the pass to
-//!   the relay, and one that signs the vault's genesis and the edit that adds the device together
-//!   (`avendb_net::Node::found_with`). The passkey may be one the page just made, its P-256 key in its public key info,
-//!   or one made before for the same relying party, maiaCITY's from its sign-up: then its P-256 key is the one key both
-//!   the unlock's and the pass's assertions recover to (`sign::passkey_key`). The first person to found their vault
-//!   through a server nobody has claimed yet claims it in that same ceremony (P8f): their vault owns avenCEO.
+//!   is a device of, relay on the whole of it, and writes its card there, in two ceremonies: the unlock, and one that
+//!   signs the vault's genesis and the edit that adds the device together (`avendb_net::Node::found_with`). The
+//!   passkey may be one the page just made, its P-256 key in its public key info, or one made before for the same
+//!   relying party, maiaCITY's from its sign-up: then the device drafts it all for each key the unlock's assertion
+//!   recovers to, in one batch, and keeps what the second ceremony's assertion verifies under. The first person to
+//!   found their vault through a server nobody has claimed yet claims it in that same ceremony (P8f): their vault owns
+//!   avenCEO.
 //! - `Device::link`: a device of a person who has one already links through the code it shows
-//!   (`avendb_net::Node::link_with`), in four ceremonies (the unlock, the pass, the passkey's hello, the join). The
-//!   passkey's P-256 key is the one key both the unlock's and the pass's assertions recover to (`sign::passkey_key`).
+//!   (`avendb_net::Node::link_with`), in two ceremonies, the unlock and the join: its passkey is the key, of those the
+//!   unlock's assertion recovers to, whose vault the peer hands over.
 //! - `Device::open`: a device the page made before opens again from its store, in the unlock's ceremony alone; the
 //!   server's relay knows it.
 //!
@@ -74,7 +77,7 @@ use avendb::keys::{self, KeyFam};
 use avendb::lab::{Backup, Lab, NewCap};
 use avendb::lens::{DocV2, Status, TypeV2};
 use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Line, Principal, Refusal, Role, State, Vault};
-use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge, passkey_key};
+use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice, Sym};
 use avendb::wire::Wire as _;
 use avendb_net::{Authenticator, Node, Offer, Options, Step};
@@ -111,12 +114,60 @@ pub const TODO: &str = "todo";
 /// one line of another shows (`Device::variant`), marked with that note's entry in hex.
 pub const VARIANT: &str = "avendb:variant:";
 
-/// What the ceremony that unlocks a device brings back: the ceremony itself, over a challenge of the page's own, and
-/// the PRF output on the device's salt (`sign::device_salt`), which ends in `nonce`, its 32 bytes kept on the device.
+/// What the ceremony that unlocks a device brings back: the ceremony itself, over a new device's challenge
+/// (`Fresh::challenge`) or one of the page's own, and the PRF output on the device's salt (`sign::device_salt`), which
+/// masks the secret its keys come from (`Fresh::mask`), or, for a device made before 2026-10-10, is that secret.
 pub struct Unlock {
     pub ceremony: Ceremony,
-    pub nonce: [u8; 32],
     pub device: Zeroizing<[u8; 32]>,
+}
+
+/// A new device before the ceremony that unlocks it (P8e): the secret its keys come from, 32 bytes of the machine's or
+/// the browser's randomness, so that its keys are known before that ceremony, whose challenge names the device
+/// (`challenge`). Then the unlock is its passkey's pass for it (`sign::RelayPass`), and the device signs up or in with
+/// one ceremony more. It keeps the secret masked by the PRF output on its salt (`mask`), which only its passkey
+/// computes again.
+pub struct Fresh {
+    secret: Zeroizing<[u8; 32]>,
+    keys: SignerKeys,
+}
+
+impl Fresh {
+    /// A new device, its secret from the machine's or the browser's randomness.
+    pub fn new() -> Result<Fresh> {
+        let mut secret = Zeroizing::new([0; 32]);
+        getrandom::fill(&mut *secret).map_err(|e| anyhow!("no randomness: {e}"))?;
+        let keys = DeviceKey::from_secret(*secret).keys();
+        Ok(Fresh { secret, keys })
+    }
+
+    /// A new device whose secret is `secret`, as a test makes one.
+    pub fn from_secret(secret: [u8; 32]) -> Fresh {
+        Fresh { secret: Zeroizing::new(secret), keys: DeviceKey::from_secret(secret).keys() }
+    }
+
+    /// Its keys.
+    pub fn keys(&self) -> SignerKeys {
+        self.keys
+    }
+
+    /// The challenge of the ceremony that unlocks it at `now`, seconds since 1970 (`Start::now`), which makes that
+    /// ceremony its passkey's pass for it.
+    pub fn challenge(&self, now: u64) -> [u8; 32] {
+        pass_challenge(self.keys.id(), now)
+    }
+
+    /// What it keeps of its secret: the secret masked by the PRF output on its salt that `unlock` brought back.
+    pub fn mask(&self, unlock: &Unlock) -> [u8; 32] {
+        *xor(&self.secret, &unlock.device)
+    }
+}
+
+/// The XOR of `a` and `b`: a device's secret masked by the PRF output on its salt, or a mask unmasked by it.
+fn xor(a: &[u8; 32], b: &[u8; 32]) -> Zeroizing<[u8; 32]> {
+    let mut out = Zeroizing::new([0; 32]);
+    out.iter_mut().zip(a.iter().zip(b)).for_each(|(o, (a, b))| *o = a ^ b);
+    out
 }
 
 /// Where a device starts: its name, the relay it reaches its peers through, 32 bytes of the browser's randomness and
@@ -132,45 +183,49 @@ pub struct Start {
     pub store: Option<PathBuf>,
 }
 
-/// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, and whether it
-/// closed.
+/// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, the mask its
+/// secret is kept under (`Fresh::mask`), none for a device made before 2026-10-10, and whether it closed.
 pub struct Device {
     node: Node,
     passkey: SignerId,
     p256: [u8; 33],
+    mask: Option<[u8; 32]>,
     closed: watch::Sender<bool>,
 }
 
 impl Device {
-    /// The first device of a new person, whose passkey's P-256 key is `p256` (from its public key info,
-    /// `sign::spki_p256`, as the browser made it), or, if the page doesn't know it, the one key the unlock's and the
-    /// pass's assertions recover to (`passed`), as for the passkey the person made at maiaCITY's sign-up. Through the
-    /// relay, which lets it in by the passkey's pass, it takes the card of the server whose code reads `server`, then
-    /// founds the person's human vault with itself in it, in one ceremony of the passkey
-    /// (`avendb_net::Node::found_with`); if nobody has claimed the server yet, the same ceremony claims it, and their
-    /// vault owns avenCEO, the aven vault the server is a device of. Then it gives avenCEO relay on the whole vault, so
-    /// the server keeps its entries and knows the device from then on, and writes its card there (`Device::card`). The
-    /// relay honours the pass while it is open to sign-up (`avendb_net::Admission::open`) or while nobody has claimed
-    /// the server.
+    /// The first device of a new person, `fresh`, unlocked by `unlock`, whose ceremony is over `fresh`'s challenge at
+    /// `start.now`, so that it is the passkey's pass for the device. The passkey's P-256 key is `p256` (from its public
+    /// key info, `sign::spki_p256`, as the browser made it), or, if the page doesn't know it, one of the keys the
+    /// unlock's assertion recovers to (`passed`), as for the passkey the person made at maiaCITY's sign-up. Through the
+    /// relay, which lets it in by the pass, it takes the card of the server whose code reads `server`, then founds the
+    /// person's human vault with itself in it, in one ceremony of the passkey (`avendb_net::Node::found_with`), drafted
+    /// for each of those keys and kept for the one the ceremony's assertion verifies under; if nobody has claimed the
+    /// server yet, the same ceremony claims it, and their vault owns avenCEO, the aven vault the server is a device of.
+    /// Then it gives avenCEO relay on the whole vault, so the server keeps its entries and knows the device from then
+    /// on, and writes its card there (`Device::card`). The relay honours the pass while it is open to sign-up
+    /// (`avendb_net::Admission::open`) or while nobody has claimed the server.
     pub async fn found(
         start: Start,
         server: &Offer,
         p256: Option<[u8; 33]>,
+        fresh: Fresh,
         unlock: Unlock,
         authenticator: &impl Authenticator,
     ) -> Result<Device> {
-        let (lab, passkey, me, p256, pass) = passed(&start, p256, &unlock, authenticator).await?;
-        let device = Device::spawn(lab, me, (passkey, p256), &start, Some(pass)).await?;
-        device.node.know(server.addr.clone());
+        let (lab, me, passkeys, pass) = passed(&start, p256, &fresh, &unlock)?;
+        let node = Device::spawn(lab, me, &start, Some(pass)).await?;
+        node.know(server.addr.clone());
         let mut tries = 0;
-        while let Err(e) = device.node.contact(server.addr.id).await {
+        while let Err(e) = node.contact(server.addr.id).await {
             tries += 1;
             if tries == 20 {
                 return Err(e.context("the server's card"));
             }
             sleep(Duration::from_millis(500)).await;
         }
-        let (vault, avenceo) = device.node.found_with(server, passkey, authenticator).await?;
+        let (passkey, vault, avenceo) = node.found_with(server, &passkeys, authenticator).await?;
+        let device = Device::of(node, passkey, &passkeys, Some(fresh.mask(&unlock))).await?;
         let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
             let relay = cast::cap(vault, cast::vault(avenceo), Role::Relay, Selector::All);
@@ -183,33 +238,43 @@ impl Device {
         Ok(device)
     }
 
-    /// A new device of a person who has one already: it links through the device whose code reads `offer`
-    /// (`Node::link_with`), its passkey's hello and the edit that adds it signed in their ceremonies, and joins its
-    /// person's vault. It learns the passkey's P-256 key from the unlock and its pass to the relay (`passed`), so it
-    /// needs no ceremony more than these four.
+    /// A new device of a person who has one already, `fresh`, unlocked by `unlock`, whose ceremony is over `fresh`'s
+    /// challenge at `start.now`, so that it is the passkey's pass for the device: it links through the device whose
+    /// code reads `offer` (`Node::link_with`), which takes the pass and hands back the vault of the passkey it is from,
+    /// signs the edit that adds it in one ceremony more, and joins its person's vault. Its passkey is the key, of those
+    /// the unlock's assertion recovers to, whose vault the peer handed over.
     pub async fn link(
         start: Start,
         offer: &Offer,
+        fresh: Fresh,
         unlock: Unlock,
         authenticator: &impl Authenticator,
     ) -> Result<Device> {
-        let (lab, passkey, me, p256, pass) = passed(&start, None, &unlock, authenticator).await?;
-        let device = Device::spawn(lab, me, (passkey, p256), &start, Some(pass)).await?;
-        device.node.link_with(offer, passkey, authenticator).await?;
-        Ok(device)
+        let (lab, me, passkeys, pass) = passed(&start, None, &fresh, &unlock)?;
+        let node = Device::spawn(lab, me, &start, Some(pass.clone())).await?;
+        let (passkey, _) = node.link_with(offer, &pass, authenticator).await?;
+        Device::of(node, passkey, &passkeys, Some(fresh.mask(&unlock))).await
     }
 
     /// The device the page made before, opened again from what its store kept (`backup`), unlocked by the ceremony of
-    /// the passkey whose P-256 key is `p256`: the relay knows it, so it needs no pass. A device with a folder of its
-    /// own (`Start::store`) opens from what the folder holds, or, while it holds nothing, from `backup`, which it then
-    /// keeps there: so the Mac app's device moves from its page's store to disk.
-    pub async fn open(start: Start, p256: [u8; 33], unlock: Unlock, backup: &Backup) -> Result<Device> {
-        let (mut lab, passkey, me) = lab(&start, p256, &unlock)?;
+    /// the passkey whose P-256 key is `p256`, its secret kept under `mask` (`Fresh::mask`), none for a device made
+    /// before 2026-10-10: the relay knows it, so it needs no pass. A device with a folder of its own (`Start::store`)
+    /// opens from what the folder holds, or, while it holds nothing, from `backup`, which it then keeps there: so the
+    /// Mac app's device moves from its page's store to disk.
+    pub async fn open(
+        start: Start,
+        p256: [u8; 33],
+        mask: Option<[u8; 32]>,
+        unlock: Unlock,
+        backup: &Backup,
+    ) -> Result<Device> {
+        let (mut lab, passkey, me) = lab(&start, p256, mask, &unlock)?;
         lab.restore_backup(me, backup);
         if start.store.is_none() && lab.vault_of(me).is_none() {
             bail!("the store holds no vault this device belongs to");
         }
-        let device = Device::spawn(lab, me, (passkey, p256), &start, None).await?;
+        let node = Device::spawn(lab, me, &start, None).await?;
+        let device = Device { node, passkey, p256, mask, closed: watch::Sender::new(false) };
         if device.vault().await.is_none() {
             device.close().await.ok();
             bail!("the store holds no vault this device belongs to");
@@ -217,19 +282,25 @@ impl Device {
         Ok(device)
     }
 
-    /// A node for device `me` of `lab`, of the person whose passkey is `passkey`, which reaches its peers through the
-    /// relay, let in by `pass` if the relay doesn't know it yet, and directly too if it binds a socket; with its store
-    /// in a folder, if it has one.
-    async fn spawn(
-        lab: Lab,
-        me: SignerId,
-        (passkey, p256): (SignerId, [u8; 33]),
-        start: &Start,
-        pass: Option<RelayPass>,
-    ) -> Result<Device> {
+    /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by `pass` if the relay
+    /// doesn't know it yet, and directly too if it binds a socket; with its store in a folder, if it has one.
+    async fn spawn(lab: Lab, me: SignerId, start: &Start, pass: Option<RelayPass>) -> Result<Node> {
         let (direct, relay, store) = (start.direct, Some(start.relay.clone()), start.store.clone());
         let opts = Options { bind: None, direct, relay, relay_pass: pass, store, ..Options::local() };
-        Ok(Device { node: Node::spawn(lab, me, opts).await?, passkey, p256, closed: watch::Sender::new(false) })
+        Node::spawn(lab, me, opts).await
+    }
+
+    /// The new device whose node is `node`, of the person whose passkey turned out to be `passkey`, of `passkeys`,
+    /// those its unlock may have been from (`passed`), its secret kept under `mask`: it forgets the others' keys, which
+    /// nobody holds.
+    async fn of(node: Node, passkey: SignerId, passkeys: &[SignerId], mask: Option<[u8; 32]>) -> Result<Device> {
+        let others: Vec<SignerId> = passkeys.iter().copied().filter(|&p| p != passkey).collect();
+        let forget = move |lab: &mut Lab, _| {
+            others.into_iter().for_each(|p| lab.lose(p));
+            lab.keys_of(passkey)
+        };
+        let Some(SignerKeys::Passkey { p256, .. }) = node.act(forget).await else { bail!("the passkey's keys") };
+        Ok(Device { node, passkey, p256, mask, closed: watch::Sender::new(false) })
     }
 
     /// Its node.
@@ -245,6 +316,12 @@ impl Device {
     /// Its person's passkey.
     pub fn passkey(&self) -> SignerId {
         self.passkey
+    }
+
+    /// The mask its secret is kept under (`Fresh::mask`): what the page keeps, beside its salt's own bytes, to open the
+    /// device again. None for a device made before 2026-10-10, whose secret is the PRF output on its salt itself.
+    pub fn mask(&self) -> Option<[u8; 32]> {
+        self.mask
     }
 
     /// The vault it belongs to, by its view.
@@ -1067,39 +1144,40 @@ pub fn backup(edits: &[Vec<u8>], keys: Vec<Arc<[u8]>>) -> Backup {
     Backup::new(edits.iter().map_while(|edit| Signed::from_wire(edit).ok()).collect(), keys)
 }
 
-/// A browser's device's Lab: its person's passkey, by its P-256 key and the ceremony that unlocked the device, and the
-/// device, its keys from the PRF output on its salt.
-fn lab(start: &Start, p256: [u8; 33], unlock: &Unlock) -> Result<(Lab, SignerId, SignerId)> {
+/// A browser's device's Lab as it opens again: its person's passkey, by its P-256 key and the ceremony that unlocked
+/// the device, and the device, its keys from its secret, which the PRF output on its salt unmasks from `mask`
+/// (`Fresh::mask`), or, for a device made before 2026-10-10, with no mask, is.
+fn lab(start: &Start, p256: [u8; 33], mask: Option<[u8; 32]>, unlock: &Unlock) -> Result<(Lab, SignerId, SignerId)> {
     let mut lab = Lab::with_entropy(start.entropy);
     let passkey = lab.web_passkey("the person", p256, &unlock.ceremony);
     let passkey = passkey.context("the unlock's ceremony isn't of the passkey with this P-256 key")?;
-    let me = lab.web_device(passkey, &start.name, unlock.nonce, *unlock.device);
+    let secret = mask.map_or_else(|| unlock.device.clone(), |mask| xor(&mask, &unlock.device));
+    let me = lab.device_with(&start.name, *secret);
     Ok((lab, passkey, me))
 }
 
-/// A new device's Lab, its person's passkey and the device, the passkey's P-256 key and its pass to the relay for the
-/// device, made in a ceremony. The P-256 key is `p256` if the page knows it, from the public key info of a passkey it
-/// just made; else, for a passkey made before (on another device, or at maiaCITY's sign-up, for the same relying
-/// party), the one key both the unlock's and the pass's assertions recover to (`sign::passkey_key`).
-async fn passed(
+/// A new device's Lab and the device, `fresh`; the passkeys its person's may be, each with its keys in the Lab; and the
+/// passkey's pass for the device, the unlock, whose ceremony is over `fresh`'s challenge at `start.now`. The passkey
+/// is the one whose P-256 key is `p256` if the page knows it, from the public key info of a passkey it just made; else,
+/// for a passkey made before (on another device, or at maiaCITY's sign-up, for the same relying party), one of the
+/// keys the unlock's assertion recovers to (`sign::RelayPass::candidates`), each of them a passkey here.
+fn passed(
     start: &Start,
     p256: Option<[u8; 33]>,
+    fresh: &Fresh,
     unlock: &Unlock,
-    authenticator: &impl Authenticator,
-) -> Result<(Lab, SignerId, SignerId, [u8; 33], RelayPass)> {
-    let SignerKeys::Device { ed25519: endpoint, .. } = DeviceKey::from_secret(*unlock.device).keys() else {
-        bail!("a device's keys")
-    };
-    let ceremony = authenticator.ceremony(pass_challenge(&endpoint, start.now), Step::Pass).await?;
-    let p256 = match p256 {
-        Some(p256) => p256,
-        None => passkey_key(&unlock.ceremony.assertion, &ceremony.assertion)
-            .context("no one key of a passkey signed both the unlock and the pass")?,
-    };
-    let (lab, passkey, me) = lab(start, p256, unlock)?;
-    let keys = lab.keys_of(passkey).context("the passkey's keys")?;
-    let pass = ceremony.pass(keys, endpoint, start.now).context("the passkey's pass to the relay")?;
-    Ok((lab, passkey, me, p256, pass))
+) -> Result<(Lab, SignerId, Vec<SignerId>, RelayPass)> {
+    let pass = unlock.ceremony.pass(fresh.keys(), start.now);
+    let pass = pass.context("the unlock's ceremony isn't over this new device's challenge")?;
+    let mut lab = Lab::with_entropy(start.entropy);
+    let me = lab.device_with(&start.name, *fresh.secret);
+    let keys = p256.map_or_else(|| unlock.ceremony.assertion.recover(), |p256| vec![p256]);
+    let passkey = |p256| lab.web_passkey("the person", p256, &unlock.ceremony);
+    let passkeys: Vec<SignerId> = keys.into_iter().filter_map(passkey).collect();
+    if passkeys.is_empty() {
+        bail!("the unlock's ceremony isn't of the passkey with this P-256 key");
+    }
+    Ok((lab, me, passkeys, pass))
 }
 
 /// Report a panic on the page's console: the device can't go on after one, and the page starts over.
@@ -1117,9 +1195,11 @@ pub fn start() {
 /// The device as the page holds it (`Device`): every call that waits on the network or on its person is a promise.
 ///
 /// A ceremony is the page's: `ceremony(challenge, step)`, a function the device calls with the 32 bytes the passkey
-/// signs and what for (`"pass"`, `"found"`, `"hello"`, `"join"`, `"claim"`, `"approve"`), which resolves to the
-/// ceremony's `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`.
-/// The unlock is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, and `nonce`.
+/// signs and what for (`"found"`, `"join"`, `"claim"`, `"approve"`), which resolves to the ceremony's
+/// `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`. The unlock
+/// is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, `nonce` the 32 bytes the
+/// page keeps for the device. A new device asks for it as `unlock(challenge)`, a function that resolves to it, over the
+/// challenge that makes it the passkey's pass for the device (`Fresh`).
 #[wasm_bindgen(js_name = Device)]
 pub struct PageDevice(Rc<Device>);
 
@@ -1127,56 +1207,62 @@ pub struct PageDevice(Rc<Device>);
 impl PageDevice {
     /// The first device named `name` of a new person, reaching its peers through the relay at `relay` alone, whose
     /// passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`, or `undefined` for a passkey made
-    /// before, as at maiaCITY's sign-up: it founds their human vault and makes it known to the server whose code reads
-    /// `server`, which it claims if nobody has yet (`Device::found`).
+    /// before, as at maiaCITY's sign-up: unlocked by `unlock(challenge)`, it founds their human vault and makes it
+    /// known to the server whose code reads `server`, which it claims if nobody has yet (`Device::found`).
     pub async fn found(
         name: String,
         relay: String,
         server: String,
         spki: Option<Vec<u8>>,
-        unlock: JsValue,
+        unlock: Function,
         ceremony: Function,
     ) -> Result<PageDevice, JsError> {
         let not_p256 = || JsError::new("not a P-256 passkey's public key info");
         let p256 = spki.map(|spki| sign::spki_p256(&spki).ok_or_else(not_p256)).transpose()?;
         let server = Offer::from_text(&server).map_err(js_error)?;
-        let ceremonies = Js(ceremony);
-        let device = Device::found(starting(name, &relay)?, &server, p256, unlocked(&unlock)?, &ceremonies);
+        let (start, fresh) = (starting(name, &relay)?, Fresh::new().map_err(js_error)?);
+        let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
+        let device = Device::found(start, &server, p256, fresh, unlock, &ceremonies);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 
-    /// A new device named `name` of a person who has one already, linked through the device whose code reads `offer`
-    /// (`Device::link`).
+    /// A new device named `name` of a person who has one already, unlocked by `unlock(challenge)`, linked through the
+    /// device whose code reads `offer` (`Device::link`).
     pub async fn link(
         name: String,
         relay: String,
         offer: String,
-        unlock: JsValue,
+        unlock: Function,
         ceremony: Function,
     ) -> Result<PageDevice, JsError> {
         let offer = Offer::from_text(&offer).map_err(js_error)?;
-        let ceremonies = Js(ceremony);
-        let device = Device::link(starting(name, &relay)?, &offer, unlocked(&unlock)?, &ceremonies);
+        let (start, fresh) = (starting(name, &relay)?, Fresh::new().map_err(js_error)?);
+        let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
+        let device = Device::link(start, &offer, fresh, unlock, &ceremonies);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 
     /// The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
-    /// `passkey()`), and what its store kept, its `edits` in order and its McEliece `keys`, each bytes
-    /// (`Device::open`).
+    /// `passkey()`), the mask its secret is kept under (in hex, `mask()`), `undefined` for a device made before
+    /// 2026-10-10, and what its store kept, its `edits` in order and its McEliece `keys`, each bytes (`Device::open`).
     pub async fn open(
         name: String,
         relay: String,
         p256: String,
+        mask: Option<String>,
         unlock: JsValue,
         edits: Array,
         keys: Array,
     ) -> Result<PageDevice, JsError> {
         let p256 = hex_bytes(&p256).and_then(|b| <[u8; 33]>::try_from(b).ok());
         let p256 = p256.ok_or_else(|| JsError::new("a passkey's P-256 key is 33 bytes in hex"))?;
+        let not_mask = || JsError::new("a device's mask is 32 bytes in hex");
+        let mask = mask.map(|m| hex_bytes(&m).and_then(|b| <[u8; 32]>::try_from(b).ok()).ok_or_else(not_mask));
+        let mask = mask.transpose()?;
         let edits: Vec<Vec<u8>> = edits.iter().map(|edit| Uint8Array::new(&edit).to_vec()).collect();
         let keys = keys.iter().map(|key| Arc::from(Uint8Array::new(&key).to_vec())).collect();
         let backup = backup(&edits, keys);
-        let device = Device::open(starting(name, &relay)?, p256, unlocked(&unlock)?, &backup);
+        let device = Device::open(starting(name, &relay)?, p256, mask, unlocked(&unlock)?, &backup);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 
@@ -1193,6 +1279,12 @@ impl PageDevice {
     /// Its person's passkey's P-256 key, compressed, in hex: what the page keeps to open the device again.
     pub fn passkey(&self) -> String {
         self.0.p256.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// The mask its secret is kept under, in hex (`Device::mask`): what the page keeps too, beside its salt's own
+    /// bytes, to open the device again; `undefined` for a device made before 2026-10-10.
+    pub fn mask(&self) -> Option<String> {
+        self.0.mask.map(|mask| hex(&mask))
     }
 
     /// Its code, for the next device of its person to link through (`Offer::to_text`).
@@ -1690,9 +1782,7 @@ struct Js(Function);
 impl Authenticator for Js {
     async fn ceremony(&self, challenge: [u8; 32], step: Step) -> Result<Ceremony> {
         let step = match step {
-            Step::Pass => "pass",
             Step::Found => "found",
-            Step::Hello => "hello",
             Step::Join => "join",
             Step::Claim => "claim",
             Step::Approve => "approve",
@@ -1712,11 +1802,16 @@ fn ceremony_of(value: &JsValue) -> Result<Ceremony> {
 
 /// The unlock as the page brings it back.
 fn unlocked(value: &JsValue) -> Result<Unlock, JsError> {
-    let unlock = || {
-        let nonce = field(value, "nonce")?.try_into().map_err(|_| anyhow!("a device's nonce is 32 bytes"))?;
-        Ok(Unlock { ceremony: ceremony_of(value)?, nonce, device: prf(value, "devicePrf")? })
-    };
+    let unlock = || Ok(Unlock { ceremony: ceremony_of(value)?, device: prf(value, "devicePrf")? });
     unlock().map_err(js_error)
+}
+
+/// The ceremony that unlocks a new device, over `challenge` (`Fresh::challenge`): what the page's `unlock(challenge)`
+/// resolves to.
+async fn unlocking(unlock: &Function, challenge: [u8; 32]) -> Result<Unlock, JsError> {
+    let thrown = |e: JsValue| js_error(js_anyhow(e));
+    let promise = unlock.call1(&JsValue::NULL, &Uint8Array::from(&challenge[..])).map_err(thrown)?;
+    unlocked(&JsFuture::from(Promise::from(promise)).await.map_err(thrown)?)
 }
 
 /// The bytes in field `name` of `value`, as the page holds them: the very array it brought, not a copy, or a view of
@@ -1810,4 +1905,29 @@ fn js_value(e: anyhow::Error) -> JsValue {
 /// What the page threw, as an error.
 fn js_anyhow(e: JsValue) -> anyhow::Error {
     anyhow!("{}", e.as_string().or_else(|| js_sys::Error::from(e).message().as_string()).unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use avendb::sign::{Passkey, device_salt};
+
+    use super::*;
+
+    #[test]
+    fn a_device_opens_with_its_secret_unmasked_or_one_made_before_masks_with_the_prf_output_itself() {
+        let mut passkey = Passkey::from_seed([5; 32]);
+        let device = passkey.prf(&device_salt(&[1; 32]));
+        let unlock = Unlock { ceremony: passkey.ceremony([0xaa; 32]), device: device.clone() };
+        let relay = "http://localhost:3340".parse().expect("a relay's URL");
+        let start = Start { name: "Eve's browser".into(), relay, entropy: [7; 32], now: 0, direct: false, store: None };
+        // a device made since 2026-10-10: its own secret, kept masked by the PRF output on its salt
+        let fresh = Fresh::from_secret([9; 32]);
+        let mask = fresh.mask(&unlock);
+        assert_ne!(mask, [9; 32], "the mask is no secret of the device's");
+        let (_, _, me) = lab(&start, passkey.public(), Some(mask), &unlock).expect("it opens");
+        assert_eq!(me, fresh.keys().id());
+        // one made before: the PRF output is its secret
+        let (_, _, me) = lab(&start, passkey.public(), None, &unlock).expect("it opens");
+        assert_eq!(me, DeviceKey::from_secret(*device).id());
+    }
 }

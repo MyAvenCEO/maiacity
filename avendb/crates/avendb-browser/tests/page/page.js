@@ -39,7 +39,7 @@ function counted(passkey) {
 	return {
 		passkey,
 		count: () => count,
-		unlock: (nonce) => (count++, passkey.unlock(nonce)),
+		unlock: (nonce, challenge) => (count++, passkey.unlock(nonce, challenge)),
 		sign: (challenge, step) => (count++, trace(`a ceremony: ${step}`), passkey.sign(challenge, step))
 	};
 }
@@ -54,7 +54,8 @@ async function run() {
 		passkey = counted(ceremonies(avendb, meta.credential));
 		const unlock = await passkey.unlock(unhex(meta.nonce));
 		const kept = await store.load();
-		device = await avendb.Device.open(meta.name, meta.relay, meta.passkey, unlock, kept.edits, kept.keys);
+		const { name, relay, passkey: p256, mask } = meta;
+		device = await avendb.Device.open(name, relay, p256, mask, unlock, kept.edits, kept.keys);
 		note = meta.note;
 	} else {
 		const [name, relay] = [q.get('name'), q.get('relay')];
@@ -63,23 +64,22 @@ async function run() {
 			trace('making the passkey');
 			const made = await create(name);
 			passkey = counted(ceremonies(avendb, made.id));
-			trace('unlocking');
-			const unlock = await passkey.unlock(nonce);
-			trace('founding');
+			trace('unlocking and founding');
+			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
 			device = await avendb.Device.found(name, relay, q.get('server'), made.spki, unlock, passkey.sign);
 			const vault = await device.vault();
 			const entry = await device.write(vault, vault, 'Seeds', q.get('write'), []);
 			note = { actor: vault, entry };
 		} else {
 			passkey = counted(ceremonies(avendb));
-			trace('unlocking');
-			const unlock = await passkey.unlock(nonce);
-			trace('linking');
+			trace('unlocking and linking');
+			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
 			device = await avendb.Device.link(name, relay, q.get('offer'), unlock, passkey.sign);
 			note = { actor: q.get('actor'), entry: q.get('entry') };
 		}
 		const credential = passkey.passkey.held.id;
-		await store.setMeta({ name, relay, nonce: hex(nonce), credential, passkey: device.passkey(), note });
+		const mask = device.mask();
+		await store.setMeta({ name, relay, nonce: hex(nonce), mask, credential, passkey: device.passkey(), note });
 	}
 	const saving = store.follow(device);
 	const ms = Math.round(performance.now() - start);
