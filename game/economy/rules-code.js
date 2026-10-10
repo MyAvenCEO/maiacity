@@ -296,15 +296,13 @@ export function weather({ weather, day, dice, valley }) {
   return w;
 }
 `,
-	fields: `// Fields: what levelling a field up costs once (CAPEX) and what keeping it costs each night (OPEX), per crop, in
-// HEARTS, both burned. Chicken costs most (feed, and it rots fastest), legumes least (cheap, and they keep)
-const CAPEX = { water: [0, 0, 200, 500], fruits: [0, 0, 150, 400], vegetables: [0, 0, 150, 400], legumes: [0, 0, 120, 300], chicken: [0, 0, 250, 600] };
-const OPEX = { water: [0, 2, 5, 10], fruits: [0, 2, 5, 10], vegetables: [0, 2, 4, 9], legumes: [0, 1, 3, 7], chicken: [0, 3, 6, 13] };
-export function capex({ good, level }) {
-  return CAPEX[good]?.[level] ?? 0;
+	fields: `// Fields: what levelling a field up costs once (CAPEX) and what keeping it costs each night (OPEX), in HEARTS, both
+// paid to the MaiaCity COOP. Each crop has its own, in the card's values (capex2_<crop>, capex3_<crop>, opex1-3_<crop>)
+export function capex({ good, level, valley }) {
+  return valley.values['capex' + level + '_' + good] ?? 0;
 }
-export function opex({ good, level }) {
-  return OPEX[good]?.[level] ?? 0;
+export function opex({ good, level, valley }) {
+  return valley.values['opex' + level + '_' + good] ?? 0;
 }
 `
 };

@@ -270,13 +270,13 @@ function fieldQuestions(world, a) {
 			for (const [i, g] of GOODS.entries())
 				if (g !== f.crop) {
 					levels.push(2 + i);
-					criteria.push(`change it to ${GOOD_LABEL[g]}: back to level 1, grown in ${RULES.rampDays} days, then ${worth(g, 1)}`);
+					criteria.push(`change it to ${GOOD_LABEL[g]}: back to level 1, grown in ${RULES[`ramp_${g}`]} days, then ${worth(g, 1)}`);
 				}
 		} else {
 			criteria.push(`don't open field ${slot + 1} yet`);
 			for (const [i, g] of GOODS.entries()) {
 				levels.push(2 + i);
-				criteria.push(`open field ${slot + 1} with ${GOOD_LABEL[g]} for ${openCost(slot)} HEARTS: grown in ${RULES.rampDays} days, then ${worth(g, 1)}`);
+				criteria.push(`open field ${slot + 1} with ${GOOD_LABEL[g]} for ${openCost(slot)} HEARTS: grown in ${RULES[`ramp_${g}`]} days, then ${worth(g, 1)}`);
 			}
 		}
 		const key = `field${slot + 1}`;
@@ -284,7 +284,7 @@ function fieldQuestions(world, a) {
 		a.brain.labels[key] = `field ${slot + 1}`;
 		q[key] = {
 			type: 'score',
-			instructions: `You farm your own fields and decide what they grow: you can level a field up (paid once, then it costs more a night and yields more), change its crop (back to level 1, and it takes days to grow) or open up to 3 fields. What a field yields you sell at the posted price, or eat. You hold ${Math.round(a.hearts)} HEARTS. The market: ${market}. Grow what is scarce and dear, not what everyone else already grows. ${f ? `Your field ${slot + 1} grows ${GOOD_LABEL[f.crop]} at level ${f.level}.` : `You have ${a.fields.length} field${a.fields.length === 1 ? '' : 's'}.`} What do you do with field ${slot + 1}?`,
+			instructions: `You farm your own fields and decide what they grow: you can level a field up (paid once, then it costs more a night and yields more; you pay the MaiaCity COOP), change its crop (back to level 1, and it takes days to grow) or open up to 3 fields. What a field yields you sell at the posted price, or eat. You hold ${Math.round(a.hearts)} HEARTS. The market: ${market}. Grow what is scarce and dear, not what everyone else already grows. ${f ? `Your field ${slot + 1} grows ${GOOD_LABEL[f.crop]} at level ${f.level}.` : `You have ${a.fields.length} field${a.fields.length === 1 ? '' : 's'}.`} What do you do with field ${slot + 1}?`,
 			criteria
 		};
 	}

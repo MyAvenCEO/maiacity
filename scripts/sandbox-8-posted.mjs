@@ -49,15 +49,15 @@ const decide = (a, full = false) => {
 		const codes = x.criteria.map((c) => c);
 		const levels = a.brain.levels[k];
 		const best = GOODS.map((g, i) => [g, i]).sort((p, q) => short(q[0]) - short(p[0]))[(a.id + w.day) % 2];
-		if (!f) return slot === a.fields.length && short(best[0]) > taste && a.hearts > openCost(slot) * 2 ? levels.indexOf(2 + best[1]) : 0;
-		if (short(f.crop) > taste && f.level < 3 && a.hearts > capexOf(f.crop, f.level + 1) * 2) return levels.indexOf(1);
+		if (!f) return slot === a.fields.length && short(best[0]) > taste && a.hearts > openCost(slot) * 1.5 ? levels.indexOf(2 + best[1]) : 0;
+		if (short(f.crop) > taste && f.level < 3 && a.hearts > capexOf(f.crop, f.level + 1) * 1.5) return levels.indexOf(1);
 		if (short(f.crop) < 0.7 && short(best[0]) > taste * 1.3) return levels.indexOf(2 + best[1]);
 		return 0;
 	};
 	const answers = Object.fromEntries(Object.entries(q).map(([k, x]) => [k, { score: k.startsWith('buy_') ? (priced(x) ?? pick(k)) : k.startsWith('field') ? Math.max(0, field(k, x)) : 0 }]));
 	applyAnswers(w, a, answers, 'stand-in');
 };
-const totals = { short: 0, rot: 0, deaths: 0, alive: w.avens.length };
+const totals = { short: 0, rot: 0, deaths: 0, deaths10: 0, alive: w.avens.length };
 for (let k = 0; k < days * 96; k++) {
 	if (k % 8 === 0) for (const a of w.avens) if (a.alive) decide(a, k % 24 === 0);
 	if (step(w, 900)) {
@@ -66,12 +66,13 @@ for (let k = 0; k < days * 96; k++) {
 		totals.short += Object.values(r.short).reduce((n, x) => n + Object.values(x).reduce((m, q) => m + q, 0), 0);
 		totals.rot += GOODS.reduce((n, g) => n + r.rotted[g], 0);
 		totals.deaths += Math.max(0, totals.alive - r.alive);
+		if (r.day <= 10) totals.deaths10 += Math.max(0, totals.alive - r.alive);
 		totals.alive = r.alive;
 		if (process.env.FIELDS) console.log('   fields', w.avens.map((x) => `${x.name}:${(x.fields ?? []).map((f) => f.crop.slice(0, 3) + f.level).join('+')}|${Math.round(x.hearts)}`).join(' '));
 		console.log(`d${r.day} alive ${r.alive} posted ${GOODS.map((g) => `${g.slice(0, 3)} ${w.posted?.[g] ?? '-'}`).join(' ')} | units ${GOODS.map((g) => r.units[g]).join('/')} rot ${GOODS.map((g) => r.rotted[g]).join('/')}`);
 	}
 }
-console.log(`totals: deaths ${totals.deaths}, units short ${totals.short}, rotted ${totals.rot}, alive at the end ${totals.alive}`);
+console.log(`totals: deaths ${totals.deaths} (first 10 days ${totals.deaths10}), coop ${Math.round(w.coop?.hearts ?? 0)}, units short ${totals.short}, rotted ${totals.rot}, alive at the end ${totals.alive}`);
 const info = CODE.run.info();
 console.log('errors', JSON.stringify(info.errors));
 CODE.run.dispose();

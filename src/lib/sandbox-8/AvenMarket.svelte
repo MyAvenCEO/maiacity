@@ -11,7 +11,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { wayBack } from '$lib/app/back.svelte.js';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
@@ -412,6 +412,8 @@
 			// the valley's activity (economy.js, activity), newest first, only while the Activity tab is open
 			decisions: tab === 'decisions' && page === 'valley' ? (world.decisions ?? []).slice(-200).reverse().map((/** @type {any} */ d) => ({ ...d })) : [],
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
+			// the MaiaCity COOP's ledger: what the avens paid it for their fields, and for what
+			coop: world.coop ? { hearts: world.coop.hearts, from: { ...world.coop.from } } : null,
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
 				GOODS.map((g) => {
@@ -1159,6 +1161,9 @@
 					</li>
 				{/each}
 			</ol>
+			{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
+				<p class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><b>MaiaCity COOP</b> <span>the valley's ledger for fields</span> <span class="num">{fmt(snap.coop.hearts)} ♥</span></p>
+			{/if}
 			<p class="brain">Model <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Model">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select></p>
 		</section>
 
@@ -1863,5 +1868,23 @@
 	}
 	.board .hp i.low {
 		background: #d0533f;
+	}
+	/* the MaiaCity COOP under the board */
+	.coop {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin: 0.4rem 0 0;
+		padding: 0.35rem 0.45rem;
+		border-radius: 8px;
+		background: #24452f12;
+		font-size: 0.8rem;
+	}
+	.coop span:not(.num) {
+		opacity: 0.6;
+		font-size: 0.72rem;
+	}
+	.coop .num {
+		margin-left: auto;
 	}
 </style>
