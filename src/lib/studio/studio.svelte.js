@@ -1130,9 +1130,44 @@ export class Studio {
 			for (const [t, db] of keys) if (t > into && t < into + length) kg.gain.linearRampToValueAtTime(lin(db), at(when + (t - into)));
 			node = node.connect(kg);
 		}
-		node.connect(gain).connect(ac.destination);
+		node.connect(gain).connect(this.bus(ac));
 		src.start(at(when), offset, length);
 		this.nodes.push({ src, gain });
+	}
+	/** @type {WeakMap<AudioContext, { input: GainNode, meter: AnalyserNode }>} */
+	buses = new WeakMap();
+	/** Every sound goes out through one bus, metered on its way to the speakers. @param {AudioContext} ac */
+	bus(ac) {
+		let b = this.buses.get(ac);
+		if (!b) {
+			const input = ac.createGain(), meter = ac.createAnalyser();
+			meter.fftSize = 2048;
+			input.connect(meter);
+			input.connect(ac.destination);
+			this.buses.set(ac, (b = { input, meter }));
+		}
+		return b.input;
+	}
+	/**
+	 * What the speakers get, a moment after Play: the clock's state, how many sounds are on it and the loudest sample
+	 * that went out, said in the app's log — so a silent playback says whether the studio made no sound or the Mac
+	 * did not play it.
+	 */
+	soundCheck() {
+		const ac = this.ctx, b = ac && this.buses.get(ac);
+		if (!ac || !this.playing) return;
+		let peak = 0;
+		if (b) {
+			const buf = new Float32Array(b.meter.fftSize);
+			b.meter.getFloatTimeDomainData(buf);
+			for (const x of buf) peak = Math.max(peak, Math.abs(x));
+		}
+		const db = peak > 0 ? `${(20 * Math.log10(peak)).toFixed(1)} dBFS` : 'silence';
+		const ahead = this.clips.filter((c) => onSoundTrack(c) && c.hash && c.start + c.dur > this.time && c.start < this.time + 0.5);
+		console.warn(
+			`play: sound check at ${this.time.toFixed(2)} s — audio ${ac.state}, ${ac.sampleRate} Hz, clock ${ac.currentTime.toFixed(2)} s, ${this.nodes.length} sound(s) on the clock, ${ahead.length} under the playhead, output peak ${db}`,
+			ahead.map((c) => `${this.clipName(c)} [${c.track}] vol ${c.vol} ${this.sources[c.hash ?? '']?.buffer ? 'decoded' : 'not decoded'}`).join('; ')
+		);
 	}
 	/** how many sounds are laid on the clock (for the transport's readout, and the tests) */
 	scheduled = () => this.nodes.length;
@@ -1300,6 +1335,7 @@ export class Studio {
 			);
 		this.syncVideo(true);
 		this.frame = requestAnimationFrame(this.tick);
+		setTimeout(() => run === this.run && this.soundCheck(), 1500);
 	}
 
 	stop() {
