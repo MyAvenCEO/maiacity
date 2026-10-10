@@ -162,7 +162,6 @@
 	<div class="stage">
 		{#if layers.length}
 			<Card {layers} {hook} selected={pickedId} editable onselect={(id) => (pickedId = id)} onmove={(id, x, y) => edit(id, { x, y })} onresize={(id, patch) => edit(id, patch)} />
-			<p class="stagenote">Click a layer to pick it, drag it to move it, a corner to size it, the handle above to turn it. 16:9, every place in percent of the card.</p>
 		{:else}
 			<div class="blank">
 				<p>No layers yet.</p>
@@ -174,9 +173,11 @@
 
 	<!-- the layers, top first; what the picked one is made of -->
 	<aside class="layers" aria-label="The layers">
-		<!-- how it looks small: a YouTube list entry at phone size, the card beside its title -->
-		<div class="small" aria-label="How it looks on a phone">
+		<!-- how it looks small: a YouTube list entry (dark, the card wide, the title white beside it, a New chip, a length) -->
+		<div class="small" aria-label="How it looks on YouTube">
 			<div class="mini">
+				<span class="new">New</span>
+				<span class="length">0:15</span>
 				{#if layers.length}
 					<Card {layers} {hook} />
 				{:else if item.thumbnail?.card}
@@ -187,7 +188,8 @@
 			</div>
 			<div class="minitext">
 				<b>{title}</b>
-				<small>maiaCITY</small>
+				<small>maiaCITY <i class="tick" title="Verified">✓</i></small>
+				<small class="meta">▷ 1.2K · 1d ago</small>
 			</div>
 		</div>
 		<!-- the card as it goes out: these layers drawn at full size, into the vault -->
@@ -199,6 +201,7 @@
 				{#if renderNote}<p class="rendernote" class:bad={rendering === 'failed'}>{renderNote}</p>{/if}
 			</div>
 		{/if}
+		<div class="scroll">
 		<div class="head">
 			<span>Layers <small>{layers.length}</small></span>
 			<span class="adds">
@@ -289,6 +292,7 @@
 		{:else if layers.length}
 			<p class="empty">Pick a layer, in the list or on the card.</p>
 		{/if}
+		</div>
 	</aside>
 </div>
 
@@ -301,17 +305,14 @@
 	}
 
 	/* ── the card ── */
+	/* the card stays put while the layers aside scrolls */
 	.stage {
+		position: sticky;
+		top: 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
-	}
-
-	.stagenote {
-		margin: 0;
-		font-size: 0.72rem;
-		color: var(--muted);
 	}
 
 	.blank {
@@ -390,6 +391,7 @@
 
 
 	/* ── the layers ── */
+	/* the aside: the small preview and the render row stay at its top; the layers and the inspector scroll under them */
 	.layers {
 		position: sticky;
 		top: 1rem;
@@ -397,11 +399,21 @@
 		flex-direction: column;
 		gap: 0.6rem;
 		max-height: calc(100vh - 8rem);
-		overflow: auto;
 		padding: 0.9rem;
 		border: 1px solid var(--line);
 		border-radius: 14px;
 		background: #fff;
+	}
+
+	.scroll {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 0.6rem;
+		min-height: 0;
+		margin: 0 -0.9rem -0.9rem;
+		padding: 0 0.9rem 0.9rem;
+		overflow: auto;
 	}
 
 	.head {
@@ -529,18 +541,49 @@
 	}
 
 	/* ── how it looks small ── */
+	/* YouTube's list entry, dark: the card about 55% wide, the words beside it in its own sans */
 	.small {
 		display: flex;
-		gap: 0.6rem;
-		padding-bottom: 0.7rem;
-		border-bottom: 1px solid var(--line);
+		gap: 0.55rem;
+		margin: -0.9rem -0.9rem 0;
+		padding: 0.6rem 0.6rem 0.7rem;
+		border-radius: 14px 14px 0 0;
+		background: #0f0f0f;
+		font-family: Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+		color: #f1f1f1;
 	}
 
 	.mini {
+		position: relative;
 		flex: none;
-		width: 9.5rem;
+		width: 55%;
 		overflow: hidden;
 		border-radius: 8px;
+	}
+
+	.mini .new,
+	.mini .length {
+		position: absolute;
+		z-index: 1;
+		padding: 0.1rem 0.3rem;
+		border-radius: 4px;
+		font-size: 0.62rem;
+		font-weight: 600;
+		line-height: 1.2;
+	}
+
+	.mini .new {
+		top: 0.3rem;
+		left: 0.3rem;
+		background: #fff;
+		color: #0f0f0f;
+	}
+
+	.mini .length {
+		right: 0.3rem;
+		bottom: 0.3rem;
+		background: rgb(0 0 0 / 0.8);
+		color: #fff;
 	}
 
 	.mini img,
@@ -562,17 +605,27 @@
 	.minitext b {
 		display: -webkit-box;
 		overflow: hidden;
-		font-size: 0.8rem;
-		font-weight: 600;
+		font-size: 0.78rem;
+		font-weight: 500;
 		line-height: 1.3;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
+		color: #f1f1f1;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
 		-webkit-box-orient: vertical;
 	}
 
 	.minitext small {
-		font-size: 0.68rem;
-		color: var(--muted);
+		font-size: 0.66rem;
+		color: #aaa;
+	}
+
+	.minitext .tick {
+		font-style: normal;
+		font-size: 0.6rem;
+	}
+
+	.minitext .meta {
+		margin-top: -0.1rem;
 	}
 
 	.kind {
@@ -711,9 +764,14 @@
 			grid-template-columns: minmax(0, 1fr);
 		}
 
+		.stage,
 		.layers {
 			position: static;
 			max-height: none;
+		}
+
+		.scroll {
+			overflow: visible;
 		}
 	}
 </style>
