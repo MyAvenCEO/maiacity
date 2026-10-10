@@ -147,6 +147,42 @@ export type MediaItem = {
 // ── the media vault: devices the admin paired (only these sync), and revoking one ──
 export type VaultDevice = { endpoint_id: string; label: string; created: string; seen: string | null; revoked_at: string | null };
 export const listVaultDevices = () => call<VaultDevice[]>('/api/vault/devices');
+
+/** One file the vault server knows (its mirror of the catalog): what every device can see of it. */
+export type VaultFile = {
+	hash: string;
+	size: number;
+	mime: string;
+	kind: string;
+	title: string;
+	description: string;
+	tags: string[];
+	public: boolean;
+	meta: Record<string, unknown>;
+	/** its bytes are on the server (else still syncing from the Mac) */
+	stored: boolean;
+	added: string;
+};
+/** The vault's files carrying a tag ("idea:Coming Soon - Sunday 19.10."), newest first — media:admin. */
+export const listVaultFiles = (q: { tag?: string; kind?: string } = {}) => {
+	const p = new URLSearchParams();
+	if (q.tag) p.set('tag', q.tag);
+	if (q.kind) p.set('kind', q.kind);
+	const qs = p.toString();
+	return call<VaultFile[]>(`/api/vault/files${qs ? `?${qs}` : ''}`);
+};
+
+/**
+ * A file the studio made itself (a title card rendered from its layers) into this Mac's vault, into a story with its
+ * tags, titled and described — maiaCITY Studio only. The bytes go as the raw body, the rest in a header.
+ */
+export async function ingestBytes(
+	bytes: ArrayBuffer | Uint8Array,
+	about: { name: string; story?: string | null; tags?: string[]; title?: string; description?: string; public?: boolean }
+): Promise<{ hash: string; files: number; verified: number; duplicates: number; mismatches: number }> {
+	const { invoke } = await import('@tauri-apps/api/core');
+	return invoke('vault_ingest_bytes', bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), { headers: { 'x-ingest': encodeURIComponent(JSON.stringify(about)) } });
+}
 export async function revokeVaultDevice(endpointId: string): Promise<void> {
 	await call(`/api/vault/devices/${endpointId}`, { method: 'DELETE' });
 }

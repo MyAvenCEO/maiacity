@@ -3,12 +3,18 @@
 	middle, its layers listed on the right (top layer first, each shown or hidden, picked by a click here or on the
 	card, moved by dragging it there), and under the list what the picked layer is made of: the picture (one of the
 	story's files, by hash), how it fits, its place and size; a text's words (empty: the hook itself), colour and
-	alignment; a badge's words. Under the card: the card rendered from these layers (scripts/film/thumbnail.mjs, or by
-	hand on the Mac), by hash, once there is one — that is what goes out.
+	alignment; a badge's words. Under the card: "Render the card" draws these layers at full size (card.js, the same
+	layout) and, in the Mac app, files the JPEG in the story's vault bucket as its 16:9 card (role:thumbnail), by hash —
+	that is what goes out; on the web it downloads, to be ingested by hand. The picker offers the story's files: the
+	ones linked on the board and every picture in its vault bucket (tagged with the story's name).
 -->
 <script>
-	import { LAYER_KINDS, fileUrl } from '$lib/auth/client';
+	import { onMount } from 'svelte';
+	import { LAYER_KINDS, fileUrl, ingestBytes, listVaultFiles } from '$lib/auth/client';
+	import { native } from '$lib/native';
 	import Card from './Card.svelte';
+	import { renderCard } from './card.js';
+	import { ideaTag } from './names.js';
 
 	/** @typedef {import('$lib/auth/client').ContentItem} ContentItem */
 	/** @typedef {import('$lib/auth/client').Layer} Layer */
@@ -28,8 +34,54 @@
 	/** @type {string | null} the layer picked */
 	let pickedId = $state(null);
 	const picked = $derived(layers.find((l) => l.id === pickedId) ?? null);
-	/** the files the story carries, newest last, plus every picture a layer names: what the picker offers */
-	const files = $derived([...new Set([...(item.hashes ?? []), ...layers.flatMap((l) => (l.hash ? [l.hash] : []))])]);
+	/** @type {import('$lib/auth/client').VaultFile[]} the pictures in the story's vault bucket (by its tag) */
+	let bucket = $state([]);
+	onMount(async () => {
+		try {
+			bucket = (await listVaultFiles({ tag: ideaTag(item.title) })).filter((f) => f.kind === 'image' || f.mime.startsWith('image/'));
+		} catch {
+			// the board's own hashes still show
+		}
+	});
+	/** the files the story carries, every picture a layer names, and the pictures in its vault bucket: what the picker offers */
+	const files = $derived([...new Set([...(item.hashes ?? []), ...layers.flatMap((l) => (l.hash ? [l.hash] : [])), ...bucket.map((f) => f.hash)])]);
+	const titleOf = (/** @type {string} */ h) => bucket.find((f) => f.hash === h)?.title || h;
+
+	// ── the render: the layers drawn at full size, into the vault (the Mac app) or downloaded (the web) ──
+	/** @type {'' | 'drawing' | 'filing' | 'done' | 'failed'} */
+	let rendering = $state('');
+	let renderNote = $state('');
+	async function render() {
+		rendering = 'drawing';
+		renderNote = '';
+		try {
+			const blob = await renderCard(layers, hook);
+			if (native()) {
+				rendering = 'filing';
+				const got = await ingestBytes(await blob.arrayBuffer(), {
+					name: 'title-card-16x9.jpg',
+					story: item.story,
+					tags: [ideaTag(item.title), 'role:thumbnail', 'shape:16x9'],
+					title: `${item.title} · title card 16:9`,
+					description: hook,
+					public: true
+				});
+				onchange({ thumbnail: { ...(item.thumbnail ?? {}), layers, card: got.hash }, hashes: [...new Set([...(item.hashes ?? []), got.hash])] });
+				renderNote = got.duplicates ? 'The same card was in the vault already: it is the card.' : `In the vault${item.story ? ', in the story' : ', in the inbox'}: it is the card.`;
+			} else {
+				const a = document.createElement('a');
+				a.href = URL.createObjectURL(blob);
+				a.download = `${item.title.replace(/[^\w.-]+/g, '-')}-title-card-16x9.jpg`;
+				a.click();
+				setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+				renderNote = 'Downloaded. In the Mac app it goes straight into the vault.';
+			}
+			rendering = 'done';
+		} catch (e) {
+			rendering = 'failed';
+			renderNote = /** @type {Error} */ (e).message;
+		}
+	}
 	/** @type {Record<string, boolean>} a file that is not a picture (a film, a sound) is hidden from the picker */
 	let broken = $state({});
 
@@ -107,8 +159,8 @@
 	<!-- the card, large, in the middle -->
 	<div class="stage">
 		{#if layers.length}
-			<Card {layers} {hook} selected={pickedId} editable onselect={(id) => (pickedId = id)} onmove={(id, x, y) => edit(id, { x, y })} />
-			<p class="stagenote">Click a layer to pick it, drag it to move it. 16:9, every place in percent of the card.</p>
+			<Card {layers} {hook} selected={pickedId} editable onselect={(id) => (pickedId = id)} onmove={(id, x, y) => edit(id, { x, y })} onresize={(id, patch) => edit(id, patch)} />
+			<p class="stagenote">Click a layer to pick it, drag it to move it, drag its gold corner to size it. 16:9, every place in percent of the card.</p>
 		{:else}
 			<div class="blank">
 				<p>No layers yet.</p>
@@ -120,7 +172,13 @@
 		<section class="out" aria-label="The rendered card">
 			<div class="outhead">
 				<span>The card that goes out <small>rendered from these layers, by hash</small></span>
+				{#if layers.length}
+					<button class="render" disabled={rendering === 'drawing' || rendering === 'filing'} onclick={render}>
+						{rendering === 'drawing' ? 'Drawing…' : rendering === 'filing' ? 'Into the vault…' : native() ? 'Render the card' : 'Render and download'}
+					</button>
+				{/if}
 			</div>
+			{#if renderNote}<p class="rendernote" class:bad={rendering === 'failed'}>{renderNote}</p>{/if}
 			{#if item.thumbnail?.card}
 				<img class="rendered" src={fileUrl(item.thumbnail.card)} alt="The 16:9 title card, rendered" />
 			{/if}
@@ -133,6 +191,22 @@
 
 	<!-- the layers, top first; what the picked one is made of -->
 	<aside class="layers" aria-label="The layers">
+		<!-- how it looks small: a YouTube list entry at phone size, the card beside its title -->
+		<div class="small" aria-label="How it looks on a phone">
+			<div class="mini">
+				{#if layers.length}
+					<Card {layers} {hook} />
+				{:else if item.thumbnail?.card}
+					<img src={fileUrl(item.thumbnail.card)} alt="" />
+				{:else}
+					<div class="minibox"></div>
+				{/if}
+			</div>
+			<div class="minitext">
+				<b>{hook}</b>
+				<small>maiaCITY</small>
+			</div>
+		</div>
 		<div class="head">
 			<span>Layers <small>{layers.length}</small></span>
 			<span class="adds">
@@ -143,11 +217,14 @@
 			<ol class="list">
 				{#each [...layers].reverse() as l (l.id)}
 					<li class:picked={pickedId === l.id} class:off={l.on === false}>
-						<button class="eye" aria-pressed={l.on !== false} title={l.on === false ? 'Show it' : 'Hide it'} onclick={() => edit(l.id, { on: l.on === false })}>{l.on === false ? '○' : '●'}</button>
-						<button class="row" onclick={() => (pickedId = pickedId === l.id ? null : l.id)}>
+						<button class="row" aria-pressed={pickedId === l.id} onclick={() => (pickedId = l.id)}>
 							<span class="kind">{KIND_LABEL[l.kind]}</span>
 							<b>{nameOf(l)}</b>
 						</button>
+						<label class="eye" title={l.on === false ? 'Hidden: show it' : 'Shown: hide it'}>
+							<input type="checkbox" checked={l.on !== false} onchange={(e) => edit(l.id, { on: e.currentTarget.checked })} />
+							<i></i>
+						</label>
 					</li>
 				{/each}
 			</ol>
@@ -165,7 +242,7 @@
 							<div class="files">
 								{#each files as h (h)}
 									{#if !broken[h]}
-										<button class="file" class:chosen={picked.hash === h} title={h} onclick={() => edit(picked.id, { hash: h })}>
+										<button class="file" class:chosen={picked.hash === h} title={titleOf(h)} onclick={() => edit(picked.id, { hash: h })}>
 											<img src={fileUrl(h)} alt="" loading="lazy" onerror={() => (broken = { ...broken, [h]: true })} />
 										</button>
 									{/if}
@@ -298,6 +375,33 @@
 		color: var(--muted);
 	}
 
+	.render {
+		padding: 0.35rem 0.9rem;
+		border: 1px solid var(--ink);
+		border-radius: 999px;
+		background: var(--ink);
+		font: inherit;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--paper);
+		cursor: pointer;
+	}
+
+	.render:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.rendernote {
+		margin: 0 0 0.6rem;
+		font-size: 0.78rem;
+		color: var(--ink-soft);
+	}
+
+	.rendernote.bad {
+		color: #9c3b26;
+	}
+
 	.rendered {
 		display: block;
 		width: min(100%, 32rem);
@@ -385,7 +489,7 @@
 
 	.list li {
 		display: flex;
-		align-items: stretch;
+		align-items: center;
 		gap: 0.2rem;
 		border-radius: 8px;
 	}
@@ -406,20 +510,110 @@
 		cursor: pointer;
 	}
 
-	.eye {
-		width: 1.8rem;
-		font-size: 0.7rem;
-		color: var(--ink-soft);
-	}
-
 	.row {
 		display: flex;
 		flex: 1;
 		align-items: baseline;
 		gap: 0.5rem;
 		min-width: 0;
-		padding: 0.4rem 0.4rem 0.4rem 0;
+		padding: 0.4rem 0.4rem 0.4rem 0.5rem;
 		text-align: left;
+	}
+
+	/* shown or hidden: a small switch, its own control beside the row */
+	.eye {
+		display: flex;
+		align-items: center;
+		padding: 0 0.4rem;
+		cursor: pointer;
+	}
+
+	.eye input {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		opacity: 0;
+	}
+
+	.eye i {
+		position: relative;
+		display: block;
+		width: 1.6rem;
+		height: 0.9rem;
+		border-radius: 999px;
+		background: #cfcabd;
+		transition: background 0.15s;
+	}
+
+	.eye i::after {
+		content: '';
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: calc(0.9rem - 4px);
+		height: calc(0.9rem - 4px);
+		border-radius: 50%;
+		background: #fff;
+		transition: transform 0.15s;
+	}
+
+	.eye input:checked + i {
+		background: var(--sage);
+	}
+
+	.eye input:checked + i::after {
+		transform: translateX(0.7rem);
+	}
+
+	.eye input:focus-visible + i {
+		outline: 2px solid var(--terracotta);
+	}
+
+	/* ── how it looks small ── */
+	.small {
+		display: flex;
+		gap: 0.6rem;
+		padding-bottom: 0.7rem;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.mini {
+		flex: none;
+		width: 9.5rem;
+		overflow: hidden;
+		border-radius: 8px;
+	}
+
+	.mini img,
+	.minibox {
+		display: block;
+		aspect-ratio: 16 / 9;
+		width: 100%;
+		object-fit: cover;
+		background: #1d2b22;
+	}
+
+	.minitext {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		min-width: 0;
+	}
+
+	.minitext b {
+		display: -webkit-box;
+		overflow: hidden;
+		font-size: 0.8rem;
+		font-weight: 600;
+		line-height: 1.3;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+	}
+
+	.minitext small {
+		font-size: 0.68rem;
+		color: var(--muted);
 	}
 
 	.kind {
