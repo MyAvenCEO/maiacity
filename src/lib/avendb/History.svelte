@@ -5,7 +5,7 @@
 	signed it and how (a classical half, which counts for nothing once only post-quantum counts, and an SLH-DSA half),
 	its causal depth and its size; each opens in a drawer, every field and signature, and the edits it builds on. What
 	an edit seals, a write's body, a cap's slice or a key's boxes, shows by its size alone, as avenDB's server sees it;
-	a cap's slice shows in words where this browser reads it. A write the rules of the caps it relies on don't allow,
+	a cap's slice shows in words where this browser reads it. A write the ops of the caps it relies on don't allow,
 	or that builds on one, says so: no reader of its entry counts it.
 -->
 <script>
@@ -56,9 +56,9 @@
 	/** Who signed edit `e`: its author, then its cosigners. @param {import('./db.js').SignedEdit} e */
 	const signers = (e) => list([e.author, ...e.cosigners].map(s.signer));
 
-	/** why a write's entry's readers don't count it, where the rules of its caps don't allow it */
+	/** why a write's entry's readers don't count it, where the ops of its caps don't allow it */
 	const NOT_ALLOWED =
-		'the rules of the caps it relies on don’t allow what it changes, or what it builds on: no reader counts it';
+		'the ops of the caps it relies on don’t allow what it changes, or what it builds on: no reader counts it';
 	/** why they don't, where what it makes of the entry's record breaks the schemas the entry was written under */
 	const UNFIT = 'what it makes of its entry’s record breaks the entry’s schema: no reader counts it';
 	/** what an edit its readers don't count shows, and why @param {import('./db.js').SignedEdit} e */
@@ -167,7 +167,7 @@
 			{#if picked.allowed !== null}
 				<dt>Allowed</dt>
 				{#if picked.allowed}
-					<dd>Yes: it fits its schema, and the rules of its caps allow it</dd>
+					<dd>Yes: it fits its schema, and the ops of its caps allow it</dd>
 				{:else}
 					<dd>No: {uncounted(picked).why}</dd>
 				{/if}

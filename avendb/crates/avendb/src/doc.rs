@@ -19,8 +19,8 @@
 //! of ops that the line's history holds whole (`history`). No clock goes into the updates: the same edits export the
 //! same bytes.
 //!
-//! What a write touches (`rules::Touch`), which a ruled cap's rules judge, is read off its Loro ops once imported on
-//! the version it builds on (`Item::footprint`): each op by the place its container has in the record then.
+//! What a write touches (`rules::Touch`), which the ops of the caps it relies on judge, is read off its Loro ops once
+//! imported on the version it builds on (`Item::footprint`): each op by the place its container has in the record then.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 

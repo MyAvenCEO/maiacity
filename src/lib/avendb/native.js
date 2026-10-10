@@ -133,13 +133,13 @@ export class NativeDevice {
 	}
 
 	/**
-	 * A cap, as the page's device issues it: role `role` on what `slice` selects of vault `over`, to vault `grantee` or
-	 * `"public"`; the passkey's ceremony, if it needs one, runs in the app's sheet.
-	 * @param {string} issuer @param {string} over @param {import('./vaults.js').Slice} slice @param {string} role
-	 * @param {string} grantee
+	 * A cap, as the page's device issues it: the named group of ops `spec` names on what its `where` picks of vault
+	 * `over` (`{name, where, ops}`), to vault `grantee` or `"everyone"`; the passkey's ceremony, if it needs one, runs
+	 * in the app's sheet.
+	 * @param {string} issuer @param {string} over @param {object} spec @param {string} grantee
 	 */
-	share(issuer, over, slice, role, grantee) {
-		return call('share', issuer, over, slice, role, grantee);
+	share(issuer, over, spec, grantee) {
+		return call('share', issuer, over, spec, grantee);
 	}
 
 	/** @param {string} actor @param {string} cap */

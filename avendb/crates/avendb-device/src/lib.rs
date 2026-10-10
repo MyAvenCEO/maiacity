@@ -33,10 +33,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::cast;
 use avendb::id::{BlobId, CapId, EntryId, VaultId};
 use avendb::keys;
-use avendb::policy::{Grantee, Kind};
+use avendb::policy::Kind;
 use avendb::sign::{self, Assertion, Ceremony};
 use avendb_browser::{Device, Fresh, Start, Unlock, backup, words};
 use avendb_net::{Authenticator, Offer, Step};
@@ -194,13 +193,8 @@ impl Service {
                 json!(vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>())
             }
             "share" => {
-                let (issuer, over, slice) = (vault(0)?, vault(1)?, words::slice_of(a.get(2))?);
-                let (rules, role) = (words::rules_of(a.get(2))?, words::role_of(&a.text(3)?)?);
-                let grantee = match a.text(4)?.as_str() {
-                    "public" => Grantee::Public,
-                    v => cast::vault(VaultId(id(v)?)),
-                };
-                hex(&d.share(issuer, over, slice, rules, role, grantee, &self.approver()?).await?.0).into()
+                let (issuer, over, grantee) = (vault(0)?, vault(1)?, words::grantee_of(&a.text(3)?)?);
+                hex(&d.share(issuer, over, a.get(2), grantee, &self.approver()?).await?.0).into()
             }
             "revoke" => {
                 d.revoke(vault(0)?, CapId(a.id(1)?), &self.approver()?).await?;

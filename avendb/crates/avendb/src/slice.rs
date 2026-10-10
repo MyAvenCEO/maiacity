@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use crate::id::{EditId, EntryId, VaultId};
 use crate::keys::KeyBox;
-use crate::rules::{Opening, Proof};
+use crate::rules::{self, Grant, Proof, Rule};
 
 /// A type (`note`, `todo`, …) or a tag: a short name.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -156,8 +156,10 @@ impl Selector {
         }
     }
 
-    /// How the page and the ops write a selector (JSON): `"all"`, the whole vault, or a list of conjunctions, each a
-    /// list of tests, of which an entry passes every test of at least one. A test is an object of one field:
+    /// How the page and the ops write a selector: as a query's `where` of labels alone (`ops::Where`), in its normal
+    /// form: `{"all": []}`, the whole vault; `{"any": []}`, nothing; one test; `{"all": [test, ..]}`, the entries that
+    /// pass every test; or `{"any": [..]}` of those, the entries that pass every test of at least one. A test is an
+    /// object of one field:
     ///
     /// - `{"type": ["todo", "note"]}`: its type is one of these;
     /// - `{"author": [vault, ..]}`: the vault that created it is one of these, by its id in 64 hex digits;
@@ -167,24 +169,30 @@ impl Selector {
     /// - `{"noTag": ["private", ..]}`: it carries none of these tags;
     /// - `{"onlyTags": ["work", "home"]}`: every tag it carries is one of these.
     ///
-    /// "Bob's work todos" is `[[{"type": ["todo"]}, {"tag": "work"}]]`.
+    /// "Bob's work todos" is `{"all": [{"type": ["todo"]}, {"tag": "work"}]}`.
     pub fn to_json(&self) -> Value {
+        let all = |d: &[Atom]| match d {
+            [one] => one.to_json(),
+            _ => json!({ "all": d.iter().map(Atom::to_json).collect::<Vec<_>>() }),
+        };
         match self {
-            Selector::All => Value::from("all"),
-            Selector::AnyOf(ds) => ds.iter().map(|d| d.iter().map(Atom::to_json).collect::<Vec<_>>()).collect(),
+            Selector::All => json!({ "all": [] }),
+            Selector::AnyOf(ds) if ds.len() == 1 => all(&ds[0]),
+            Selector::AnyOf(ds) => json!({ "any": ds.iter().map(|d| all(d)).collect::<Vec<_>>() }),
         }
     }
 
-    /// A selector from its JSON: fails on anything else, and on a selector beyond the bounds a peer accepts.
+    /// A selector from its JSON, a `where` of labels alone (`ops::Where::of_json`): fails on anything else, on a test
+    /// of a value or a `not`, which no selector holds, and on a selector beyond the bounds a peer accepts.
     pub fn of_json(v: &Value) -> Result<Selector, String> {
-        if v.as_str() == Some("all") {
-            return Ok(Selector::All);
+        let w = crate::ops::Where::of_json(v)?;
+        if !w.labels_only() {
+            return Err("a cap picks entries by their labels alone: type, author, entry, created and tags".into());
         }
-        let conjunction = |d: &Value| -> Result<Vec<Atom>, String> {
-            d.as_array().ok_or("a conjunction is a list of tests")?.iter().map(Atom::of_json).collect()
+        let selector = match w.cover() {
+            Selector::AnyOf(ds) if ds.iter().any(Vec::is_empty) => Selector::All,
+            s => s,
         };
-        let ds = v.as_array().ok_or("a selector is \"all\" or a list of conjunctions")?;
-        let selector = Selector::AnyOf(ds.iter().map(conjunction).collect::<Result<_, _>>()?);
         if !selector.bounded() {
             return Err("a selector this big no peer accepts".into());
         }
@@ -225,56 +233,73 @@ pub struct Header {
     pub created: u64,
 }
 
-/// What a cap's sealed `select` holds (`policy::Cap::select`): its selector, the tags its grantee may ask the vault's
-/// stewards to add or remove, and for a ruled cap its rules (`rules`): the ops its grantee's writes may make, with the
-/// salt whose hash with them is the commitment its `select` carries in the clear. A cap resting on ruled caps carries
-/// their openings too (`above`, root first), copied by its issuer from the slice of the cap it rests on: so its grantee
-/// can prove a write against every ruled cap of its chain (`rules::Proof`).
+/// What a cap's sealed `select` holds (`policy::Cap::select`): its name, its selector, and its grant: the ops its
+/// grantee may make, with the salt whose hash with them is the commitment its `select` carries in the clear. A cap
+/// resting on others carries their grants too (`above`, root first), copied by its issuer from the slice of the cap it
+/// rests on: so its grantee can prove a write against every cap of its chain (`rules::Proof`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Slice {
+    pub name: String,
     pub select: Selector,
-    pub relabel: Vec<Sym>,
-    pub rules: Option<Opening>,
-    pub above: Vec<Opening>,
+    pub grant: Grant,
+    pub above: Vec<Grant>,
 }
 
 impl Slice {
-    /// The whole vault, with no tags to ask for and no rules: a wide cap's slice.
-    pub fn all() -> Slice {
-        Slice::of(Selector::All)
+    /// The grants of every cap of its cap's chain, root first: what a write relying on its cap proves.
+    pub fn grants(&self) -> Vec<Grant> {
+        self.above.iter().chain([&self.grant]).cloned().collect()
     }
 
-    /// The entries `select` picks, with no tags to ask for and no rules.
-    pub fn of(select: Selector) -> Slice {
-        Slice { select, relabel: vec![], rules: None, above: vec![] }
+    /// How the page and the docs write a cap's slice: `{"name", "where", "ops"}` (`spec_of_json`), with the ops of the
+    /// caps it rests on, root first, as `"above"`: what the caps of its chain allow too. No salt.
+    pub fn to_json(&self) -> Value {
+        let above: Vec<Value> = self.above.iter().map(|g| rules::ops_to_json(&g.ops)).collect();
+        json!({
+            "name": self.name,
+            "where": self.select.to_json(),
+            "ops": rules::ops_to_json(&self.grant.ops),
+            "above": above,
+        })
     }
+}
 
-    /// The openings of every ruled cap of its cap's chain, root first: what a write relying on its cap proves.
-    pub fn openings(&self) -> Vec<Opening> {
-        self.above.iter().chain(&self.rules).cloned().collect()
+/// What a new cap names, from its JSON as the page and the docs write it: `{"name": "Work todos", "where": {"all":
+/// [{"type": ["todo"]}, {"tag": "work"}]}, "ops": [{"op": "read"}, {"op": "set", "path": ["status"]}]}`, `where` left
+/// out for the whole vault (`Selector::of_json`, `rules::Rule::of_json`): its name, its selector and its ops in order
+/// (`rules::normalize`). Fails on anything else, on a name blank or too long and on no op.
+pub fn spec_of_json(v: &Value) -> Result<(String, Selector, Vec<Rule>), String> {
+    let o = v.as_object().ok_or("a cap is {name, where, ops}")?;
+    if let Some(k) = o.keys().find(|k| !matches!(k.as_str(), "name" | "where" | "ops")) {
+        return Err(format!("a cap takes no field {k:?}: it is {{name, where, ops}}"));
     }
+    let name = o.get("name").and_then(Value::as_str).ok_or("a cap has a name")?;
+    rules::name_ok(name)?;
+    let select = o.get("where").map_or(Ok(Selector::All), Selector::of_json)?;
+    let ops = rules::normalize(rules::ops_of_json(o.get("ops").ok_or("a cap names its ops")?)?)?;
+    Ok((name.to_string(), select, ops))
 }
 
 /// What a cap's `select` holds (`policy::Cap::select`): its slice, in the clear for a cap to Public, else sealed: the
 /// slice encrypted under a key of its own and bound to the cap (`keys::seal_edit`, `encode::cap_context`), and that key
 /// in a box for each vault that reads the slice, wrapped or sealed to the vault's seed (`encode::select_info`): the
-/// vault the cap is over, whose stewards keep its entries in their cells, its grantee unless it only relays, and its
-/// issuer.
+/// vault the cap is over, whose stewards keep its entries in their cells, its grantee unless it only relays or keeps,
+/// and its issuer.
 ///
-/// The commitment to a ruled cap's rules (`rules::Opening::commitment`) travels in the clear beside its sealed slice:
-/// the one bit every peer, a relay too, learns of its rules, that it has some.
+/// The commitment to a cap's ops (`rules::Grant::commitment`) travels in the clear beside its sealed slice: salted, it
+/// tells every peer, a relay too, nothing of them, and binds what a proof opens to what the cap was issued with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Select {
     Clear(Slice),
-    Sealed { boxes: Vec<KeyBox>, slice: Vec<u8>, rules: Option<[u8; 32]> },
+    Sealed { boxes: Vec<KeyBox>, slice: Vec<u8>, commitment: [u8; 32] },
 }
 
 impl Select {
-    /// The commitment to its cap's rules: none for a cap without rules.
-    pub fn commitment(&self) -> Option<[u8; 32]> {
+    /// The commitment to its cap's ops.
+    pub fn commitment(&self) -> [u8; 32] {
         match self {
-            Select::Clear(slice) => slice.rules.as_ref().map(Opening::commitment),
-            Select::Sealed { rules, .. } => *rules,
+            Select::Clear(slice) => slice.grant.commitment(),
+            Select::Sealed { commitment, .. } => *commitment,
         }
     }
 }
@@ -282,7 +307,7 @@ impl Select {
 /// What a write's ciphertext holds: the header of the entry it creates; the tags it adds and removes, which count when
 /// it acts for the entry's vault and otherwise ask the vault's stewards to; the writes whose asks it answers, a
 /// steward's; its content: a Loro update, a proposal's name, or nothing for a merge or a write of tags alone; and the
-/// proof of a write that relies on a ruled cap (`rules::Proof`), which its readers check its touches against.
+/// proof of a write through a cap (`rules::Proof`), which its readers check its touches and asks against.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Body {
     pub header: Option<Header>,

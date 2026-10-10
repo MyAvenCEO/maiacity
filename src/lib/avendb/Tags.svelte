@@ -1,8 +1,8 @@
 <!--
 	An entry's tags, as chips, to add to and take off where the acting vault may: the entry's own vault tags it at once;
-	any other vault asks the vault's devices, who grant what its caps let it ask for, the tags their slices name to
-	relabel (the ops engine's `tag`). A tag can take the entry into a cap's slice or out of it: the vault's devices then
-	move it to the cell of the caps that hold it now, and who reads it changes with it.
+	any other vault asks the vault's devices, who grant what its caps let it ask for, the tags the `tag` ops of each
+	cap and of every cap it rests on all allow. A tag can take the entry into a cap's slice or out of it: the vault's
+	devices then move it to the cell of the caps that hold it now, and who reads it changes with it.
 -->
 <script>
 	import { nameOf, tagging, tagsIn } from './vaults.js';

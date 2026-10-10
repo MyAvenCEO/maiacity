@@ -15,7 +15,7 @@ use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::{self, KeyBox, KeyFam, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{Action, Cap, Edit, Grantee, Principal, Proposal, Role};
-use avendb::rules::{On, Opening, Proof, Rule, Scalar, Step};
+use avendb::rules::{Grant, On, Proof, Rule, Scalar, Step};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
@@ -131,10 +131,11 @@ fn keys() -> Keys {
     Keys { door: Secret::generate(&mut rng), alice: Secret::generate(&mut rng), bob: Secret::generate(&mut rng) }
 }
 
-/// What the cap of `signed_edits` shares: Alice's work todos, and the tag `done` for Bob to ask her stewards for.
+/// What the cap of `signed_edits` shares: Alice's work todos, for Bob to edit and ask her stewards for the tag `done`.
 fn work_todos() -> Slice {
     let select = Selector::AnyOf(vec![vec![Atom::TypeIn(vec![Sym::new("todo")]), Atom::TagHas(Sym::new("work"))]]);
-    Slice { select, relabel: vec![Sym::new("done")], rules: None, above: vec![] }
+    let ops = vec![Rule::Read, Rule::Set { path: vec![], to: None, on: None }, Rule::Tag(Some(vec![Sym::new("done")]))];
+    Slice { name: "Work todos".into(), select, grant: Grant { ops, salt: [4; 32] }, above: vec![] }
 }
 
 /// The body of the write that creates the door: its header, its first tags and its content.
@@ -150,12 +151,13 @@ fn door_retagged() -> Body {
     Body { header: None, tags, answers: vec![EditId::from_u64(4), EditId::from_u64(6)], content: vec![], proof: None }
 }
 
-/// Alice's work todos as a ruled cap shares them (`rules`): its own rules, to tick a todo done on the main line, add
-/// its items, merge proposals in and start them, under the rules of a ruled cap above it, which every kind of rule,
-/// step and value appears in.
-fn ruled_todos() -> Slice {
+/// Alice's work todos as a narrower cap shares them (`rules`): its own ops, to tick a todo done on the main line, add
+/// its items, merge proposals in and start them, under the ops of a cap above it, which every kind of op, step and
+/// value appears in.
+fn tick_todos() -> Slice {
     let (done, items) = (Step::Field("done".into()), Step::Field("items".into()));
-    let rules = vec![
+    let ops = vec![
+        Rule::Read,
         Rule::Set { path: vec![done], to: Some(vec![Scalar::Bool(true)]), on: Some(On::Main) },
         Rule::Insert { path: vec![items.clone()], on: None },
         Rule::Merge { on: Some(On::Proposals) },
@@ -169,14 +171,18 @@ fn ruled_todos() -> Slice {
         Rule::Move { path: vec![Step::Any], on: None },
         Rule::Merge { on: None },
         Rule::Create,
+        Rule::Tag(None),
+        Rule::Relay,
+        Rule::Backup,
+        Rule::Share,
     ];
-    let above = vec![Opening { rules: above, salt: [9; 32] }];
-    Slice { rules: Some(Opening { rules, salt: [5; 32] }), above, ..work_todos() }
+    let above = vec![Grant { ops: above, salt: [9; 32] }];
+    Slice { name: "Done on main".into(), grant: Grant { ops, salt: [5; 32] }, above, ..work_todos() }
 }
 
-/// The write of tags of `door_retagged` by a steward relying on the ruled cap of `ruled_todos`, with its proof.
+/// The write of tags of `door_retagged` by a steward relying on the cap of `tick_todos`, with its proof.
 fn door_proven() -> Body {
-    let proof = Proof { cap: CapId::from_u64(9), openings: ruled_todos().openings() };
+    let proof = Proof { cap: CapId::from_u64(9), grants: tick_todos().grants() };
     Body { proof: Some(proof), ..door_retagged() }
 }
 
@@ -186,8 +192,8 @@ fn to_seed(v: VaultId, seed: &Secret) -> Recipient {
 }
 
 /// The `select` of `cap`, holding `slice`, sealed under a key of its own, which is wrapped under the seeds of Alice's
-/// vault, which the cap is over and which issues it, and of Bob's, its grantee, with the commitment to the slice's
-/// rules if it has any (`slice::Select`).
+/// vault, which the cap is over and which issues it, and of Bob's, its grantee, with the commitment to the slice's ops
+/// (`slice::Select`).
 fn seal_select(cap: &Cap, slice: &Slice, k: &Keys, rng: &mut SeededRng) -> Vec<u8> {
     let key = Secret::generate(rng);
     let sealed = keys::seal_edit(&key, &slice.to_wire(), &cap_context(cap), rng);
@@ -195,8 +201,7 @@ fn seal_select(cap: &Cap, slice: &Slice, k: &Keys, rng: &mut SeededRng) -> Vec<u
         let to = to_seed(v, seed);
         KeyBox { to, bytes: keys::wrap(&key, seed, &select_info(cap, key.id(), &to), rng) }
     });
-    let rules = slice.rules.as_ref().map(Opening::commitment);
-    Select::Sealed { boxes: boxes.to_vec(), slice: sealed, rules }.to_wire()
+    Select::Sealed { boxes: boxes.to_vec(), slice: sealed, commitment: slice.grant.commitment() }.to_wire()
 }
 
 /// The slice the selector of `cap` holds, opened with vault `v`'s seed `seed` as a reader opens it: in the clear, or
@@ -566,7 +571,7 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     // what only readers read: a slice, a selector in the clear or sealed, and a write's body; a selector only within
     // the bounds a peer accepts
     let bounded = |s: &Slice| assert!(s.select.bounded(), "{s:?}");
-    for slice in [work_todos(), ruled_todos()] {
+    for slice in [work_todos(), tick_todos()] {
         wire_mutations(&mut g, &slice, 3000, bounded);
         wire_mutations(&mut g, &Select::Clear(slice), 3000, |s: &Select| {
             if let Select::Clear(s) = s {
@@ -576,9 +581,9 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     }
     let Action::Cap(cap, _) = &edits.cap.edit.action else { unreachable!("a cap") };
     let sealed = Select::from_wire(&cap.select).expect("a sealed selector");
-    let Select::Sealed { boxes, slice, rules: None } = sealed.clone() else { unreachable!("sealed, unruled") };
-    let commitment = ruled_todos().rules.as_ref().map(Opening::commitment);
-    for select in [sealed, Select::Sealed { boxes, slice, rules: commitment }] {
+    let Select::Sealed { boxes, slice, .. } = sealed.clone() else { unreachable!("sealed") };
+    let commitment = tick_todos().grant.commitment();
+    for select in [sealed, Select::Sealed { boxes, slice, commitment }] {
         wire_mutations(&mut g, &select, 3000, |_| {});
     }
     for body in [door_created(), door_retagged(), door_proven()] {

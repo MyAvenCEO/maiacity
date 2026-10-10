@@ -36,10 +36,10 @@ inductive Action where
       proposal builds on the version the proposal starts from, and a merge also on the heads of the line it brings in.
       A write that creates its entry (`create`) names the cell it goes in and carries its header, and its stay is the
       one its creation begins (`none`). Its tags (`tags`, encrypted with the rest of the body) count only when it acts
-      for the vault, except that a new entry's added tags are its first tags. Its body may carry a proof (`proof`): the
-      ruled cap it relies on, whose chain's rules its readers then read; and its readers read off its Loro update
-      what it touches (`touches`, `Rules.lean`) and whether what it makes of the record fits the schemas the entry
-      was written under up to it (`fits`, `Schemas.lean`). -/
+      for the vault, except that a new entry's added tags are its first tags. Its body carries a proof (`proof`) where
+      it acts through a cap: the cap it relies on, whose chain's ops its readers then read; and its readers read off
+      its Loro update what it touches (`touches`, `Rules.lean`), besides the tags it asks for, and whether what it
+      makes of the record fits the schemas the entry was written under up to it (`fits`, `Schemas.lean`). -/
   | write        (v : VaultId) (e : EntryId) (actor : VaultId) (stay : Option EditId) (gen : Nat)
                  (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
                  (create : Option (Cell × Header) := none) (tags : TagDelta := {}) (proof : Option CapId := none)
@@ -301,8 +301,9 @@ def apply (st : State) (edit : Edit) : Option State :=
               -- only the vault's own devices change tags; anyone else asks them to, in its body
               let st' := if actor == v then setEntry st { en with attrs := { en.attrs with tags := tags.apply en.attrs.tags } }
                 else st
-              -- its readers count it if it fits, its rules allow what it touches and they count what it builds on
-              let ok := counts st actor en deps proof (proposal == .main) touches fits
+              -- its readers count it if it fits, its caps' ops allow what it touches and the tags it asks for, and
+              -- they count what it builds on
+              let ok := counts st actor en deps proof (proposal == .main) (touches ++ tags.touches) fits
               some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id }
   | .move v e to keep via =>
     match st.entry? e with

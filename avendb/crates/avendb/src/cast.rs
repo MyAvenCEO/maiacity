@@ -14,21 +14,23 @@ use crate::id::{CapId, EditId, EntryId, SignerId, VaultId};
 use crate::lab::{Lab, NewCap};
 use crate::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
 use crate::policy::{Action, Grantee, Kind, Principal, Proposal, Role};
-use crate::slice::{Atom, Selector, Slice};
+use crate::slice::{Atom, Selector};
 
 /// Vault `v` as a cap's grantee.
 pub fn vault(v: VaultId) -> Grantee {
     Grantee::Principal(Principal::Vault(v))
 }
 
-/// A root cap over vault `over`, issued by the vault itself: `grantee` holds `role` on what `select` picks.
+/// A root cap over vault `over`, issued by the vault itself: `grantee` holds the built-in group of `role`, Public for
+/// everyone, on what `select` picks.
 pub fn cap(over: VaultId, grantee: Grantee, role: Role, select: Selector) -> NewCap {
-    NewCap { over, grantee, role, slice: Slice::of(select), parent: None, issuer: over, rules: None }
+    let name = if grantee == Grantee::Public { "Public" } else { role.group() };
+    NewCap { over, grantee, name: name.into(), select, ops: role.ops(), parent: None, issuer: over }
 }
 
 /// A cap over vault `over` resting on the owner cap `parent`, issued by its grantee `issuer`.
 pub fn cap_on(over: VaultId, grantee: Grantee, role: Role, select: Selector, parent: CapId, issuer: VaultId) -> NewCap {
-    NewCap { over, grantee, role, slice: Slice::of(select), parent: Some(parent), issuer, rules: None }
+    NewCap { parent: Some(parent), issuer, ..cap(over, grantee, role, select) }
 }
 
 /// The entries of type `ty`: "all todos".

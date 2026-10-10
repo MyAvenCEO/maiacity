@@ -8,10 +8,10 @@ the key schedule (current epochs, seals, published keys), and each vault's schem
 so the same definitions that the theorems talk about also produce the test vectors the Rust core must match.
 
 Two layers. The operational one (who acts, which caps are live, which cell an entry is in, who may write it, the keys)
-reads nothing a relay can't see: no selector, no type, no tag, no rule. The semantic one (an entry's attributes, whether
-its creation was let in, its semantic cell, which writes its readers count) is what only its readers, and the vault's
-own devices, the stewards, know; no operational rule reads it, and the stewards keep the cells equal to it by moving
-entries (T23).
+reads nothing a relay can't see: no selector, no type, no tag, of a cap's ops only its role. The semantic one (an
+entry's attributes, whether its creation was let in, its semantic cell, which writes its readers count) is what only its
+readers, and the vault's own devices, the stewards, know; no operational rule reads it, and the stewards keep the cells
+equal to it by moving entries (T23).
 -/
 
 namespace AvenDB
@@ -29,28 +29,26 @@ structure Vault where
   root      : Option SignerId
   deriving DecidableEq, Repr
 
-/-- A cap: `grantee` holds `role` over the entries of vault `over` that `select` picks, and that every cap it rests on
-    picks too. -/
+/-- A cap: `grantee` may make the ops `ops` on the entries of vault `over` that `select` picks, and that every cap it
+    rests on picks too. -/
 structure Cap where
   id      : CapId
   over    : VaultId
   grantee : Grantee
+  /-- The class of its ops (`levelOf`), in the clear: what relays and every operational rule read of it. Its readers
+      count a write through it only where it is the class of its ops (`chainAllows`). -/
   role    : Role
   /-- It selects the whole vault, in the clear, so a peer that reads no selector knows it reaches every cell. -/
   wide    : Bool
   /-- Sealed to `over`'s and the grantee's vault keys (in the clear for Public): no relay reads it, nor does any
       operational rule. -/
   select  : Selector
-  /-- The tags its grantee may ask the vault's stewards to add or remove, sealed with the selector. -/
-  relabel : List Sym
+  /-- The ops its grantee may make (`Rules.lean`), sealed with its selector, under a commitment in the clear: whoever
+      reads a write relying on it reads them, through the write's proof. -/
+  ops     : List Rule
   /-- The owner cap its issuer relied on; `none` when the vault itself issued it. -/
   parent  : Option CapId
   issuer  : VaultId
-  /-- It carries rules, as one bit in the clear (the commitment to its rules): its grantee's writes count only where
-      the rules of every ruled cap of its chain allow them (`Rules.lean`). -/
-  ruled   : Bool := false
-  /-- Its rules, sealed with its selector: whoever reads a write relying on it reads them, through the write's proof. -/
-  rules   : List Rule := []
   deriving DecidableEq, Repr
 
 /-- An entry of a vault: a note, a todo, a profile. -/
@@ -61,7 +59,7 @@ structure Entry where
   stays    : List (Option EditId × Cell)
   /-- What its first write says of it, and its tags now: known to its readers only. -/
   attrs    : Attrs
-  /-- Its creator was the vault itself, or created it inside the slice of the cap it created it through, whose rules
+  /-- Its creator was the vault itself, or created it inside the slice of the cap it created it through, whose ops
       let it: known to the vault's stewards only. -/
   admitted : Bool
   deriving DecidableEq, Repr
@@ -133,7 +131,7 @@ structure State where
       that cell. A write must be allowed there too. -/
   narrow    : List (EntryId × Cell) := []
   /-- The accepted writes an entry's readers don't count: what it makes of the record doesn't fit the entry's schemas,
-      no rule its actor's caps carry allows it, or it builds on one they don't count (`counts`). Known to the entry's
+      the ops of its actor's caps don't allow it, or it builds on one they don't count (`counts`). Known to the entry's
       readers only. -/
   uncounted : List EditId := []
   deriving Repr
@@ -300,22 +298,20 @@ def capSelects (cp : Cap) (a : Attrs) : Bool := cp.wide || cp.select.matches a
 /-- The slice cap `cp` really grants: what every cap of its chain selects (T22). -/
 def effSelects (st : State) (cp : Cap) (a : Attrs) : Bool := (chain st cp).all (capSelects · a)
 
-/-- Cap `cp`'s chain is ruled: one of its caps is. -/
-def ruledChain (st : State) (cp : Cap) : Bool := (chain st cp).any (·.ruled)
-
-/-- Every ruled cap of `cp`'s chain allows the touches `ts` of a write on the main line (`main`) or on a proposal. -/
+/-- Every cap of `cp`'s chain is what its role says, the class of its ops, and allows the touches `ts` of a write on
+    the main line (`main`) or on a proposal. -/
 def chainAllows (st : State) (cp : Cap) (main : Bool) (ts : List Touch) : Bool :=
-  (chain st cp).all fun c => !c.ruled || allowsAll c.rules main ts
+  (chain st cp).all fun c => c.role == levelOf c.ops && allowsAll c.ops main ts
 
-/-- A write through cap `cp` passes its rules, by what its proof shows: `cp`'s chain is unruled, or the proof names
-    `cp` and the chain allows the write's touches. -/
+/-- A write through cap `cp` makes only ops it may, by what its proof shows: the proof names `cp`, and `cp`'s chain
+    allows the write's touches. -/
 def lets (st : State) (cp : Cap) (proof : Option CapId) (main : Bool) (ts : List Touch) : Bool :=
-  !ruledChain st cp || (proof == some cp.id && chainAllows st cp main ts)
+  proof == some cp.id && chainAllows st cp main ts
 
 /-- The readers of entry `en` count a write of it by vault `a` that builds on `deps`, carries the proof `proof` and
     touches `ts`, on the main line (`main`) or on a proposal, and whose result fits the entry's schemas or not
     (`fits`): it fits, they count what it builds on, and `a` is the entry's vault or holds a cap with write or more
-    reaching the entry that lets the write through. -/
+    reaching the entry whose ops let the write through. -/
 def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof : Option CapId) (main : Bool)
     (ts : List Touch) (fits : Bool) : Bool :=
   fits && deps.all (fun d => !st.uncounted.contains d) &&
@@ -323,14 +319,14 @@ def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof :
 
 /-- The readers of an entry of vault `v` count its creation in cell `x` by vault `a`, with the proof `proof`, whose
     record fits its schemas or not (`fits`): it fits, and `a` is `v`, or `x` is the intake cell of a cap over `v` that
-    `a` holds with write or more and that lets a creation through. -/
+    `a` holds with write or more whose ops let a creation through. -/
 def creates (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) (fits : Bool) : Bool :=
   fits && (a == v || st.caps.any fun cp =>
     cp.over == v && holdsCap st a cp .write && intake st cp == x && lets st cp proof true [.create])
 
 /-- Vault `a` creating an entry of vault `v` in cell `x` with attributes `attrs`, with the proof `proof`, stays inside
     its own slice: it is `v`, or `x` is the intake cell of a cap over `v` it holds with write or more whose slice holds
-    the new entry and that lets a creation through. -/
+    the new entry and whose ops let a creation through. -/
 def admits (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) (proof : Option CapId := none) : Bool :=
   a == v || st.caps.any fun cp =>
     cp.over == v && holdsCap st a cp .write && intake st cp == x && effSelects st cp attrs &&

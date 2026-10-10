@@ -12,10 +12,11 @@
  * each in turn: avenALICE writes a note and three todos, one tagged “work”, adds a fourth from her studio’s query
  * console and queries those she has left there, and shares the note alone with avenBOB, and every todo tagged “work”, a
  * rule: he reads the note and that todo, and one she tags “work” later, and finds her other todos sealed in her studio,
- * while avenCHARLY sees nothing of hers; then she lets avenCHARLY write on a plan of hers by a cap whose rules let him
+ * while avenCHARLY sees nothing of hers; then she gives avenCHARLY a Suggester cap on a plan of hers, whose ops let him
  * only suggest changes: the plan reads as viewing to him, he proposes and writes on his proposal, which he may not
  * accept, and she accepts it into main; her Sync page shows her cells, avenCEO's server relaying their ciphertext;
- * making the coop an owner of her whole vault takes one sheet, revoking avenBOB's caps none. Forgotten, the device's
+ * making the coop an Owner of her whole vault takes one sheet, revoking avenBOB's caps none; and the Public group lets
+ * everyone read her todos tagged “work”, avenBOB among them again. Forgotten, the device's
  * store is put aside in its folder, and the person signs in again through the server in one sheet, every vault and her
  * note coming back. Last, the store becomes an earlier avenDB's: the device puts it aside, and the page says it holds
  * no vault and forgets it. Each step is screenshot.
@@ -608,7 +609,7 @@ try {
 	await click('Act as avenALICE', '.main .empty button');
 	check('from there, one click acts as her', await until(async () => (await text('.switcher .pill b')) === 'avenALICE', 5000));
 
-	// a cap whose rules let avenCHARLY only suggest changes to a plan of hers, on proposals she accepts
+	// a Suggester cap, whose ops let avenCHARLY only suggest changes to a plan of hers, on proposals she accepts
 	await look('avenALICE', 'Notes');
 	await click('Blank note', '.main .start button');
 	check('her plan opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
@@ -618,19 +619,22 @@ try {
 	check('written', await saveText(SOW), await docText());
 	await click('Share', '.doc .top button');
 	await choose('.doc .sharebar select[aria-label="Share with"]', 'avenCHARLY');
-	await choose('.doc .sharebar select[aria-label="Role"]', 'to write');
-	await choose('.doc .sharebar select[aria-label="What it may change"]', 'only suggest changes, on proposals');
-	const rules = await text('.doc .sharebar .preview');
-	const suggests =
-		rules.includes('may only start proposals, change anything on a proposal') && rules.includes('adds no entry');
-	check('its rules in words: he may only suggest changes', suggests, rules);
+	await click('Suggester', '.doc .sharebar button.group');
+	const chips = await text('.doc .sharebar .ops');
+	const suggests = ['start proposals', 'change anything on a proposal'].every((op) => chips.includes(op));
+	check('its ops as chips: he may suggest changes', suggests, chips);
+	check('and add nothing', !chips.includes('add new'), chips);
 	await click('Share it', '.doc .sharebar button');
 	const writes = until(async () => (await holders()).includes('avenCHARLY writes it'));
 	check('avenCHARLY writes it', await writes, (await holders()).join(', '));
 	await back();
 	await goTo('Access');
-	const words = async () => (await shown('.main .grants li')).find((l) => l?.includes('avenCHARLY')) ?? '';
-	check('her Access says the cap’s rules', (await words()).includes('may only start proposals'), await words());
+	const group = async () => (await shown('.main .group')).find((g) => g?.includes('avenCHARLY')) ?? '';
+	const suggester = async () => {
+		const g = await group();
+		return g.startsWith('Suggester') && g.includes('start proposals');
+	};
+	check('her Access shows his cap by its group and ops', await suggester(), await group());
 	check('acting as avenCHARLY', await actAs('avenCHARLY'));
 	await look('avenALICE', 'Notes');
 	await openNote(PLAN);
@@ -670,7 +674,8 @@ try {
 	// who receives her cells: this Mac opens them, avenCEO's server only relays their ciphertext
 	await look('avenALICE', 'Sync');
 	const sync = await text('.main');
-	check('her cells: her own, and those her caps share', sync.includes('Its own entries') && sync.includes('Shared: avenBOB reads'), sync.slice(0, 400));
+	const shares = sync.includes('Its own entries') && sync.includes('Shared: avenBOB, Viewer');
+	check('her cells: her own, and those her caps share', shares, sync.slice(0, 400));
 	check('this Mac opens them', sync.includes('Samuel’s test Mac') && sync.includes('opens it'), sync.slice(0, 400));
 	check('avenCEO’s server relays their ciphertext only', /avenCEO's server.*relays its ciphertext only/.test(sync), sync.slice(0, 600));
 	await shot('11-sync');
@@ -680,9 +685,13 @@ try {
 	app.sheets();
 	await choose('.main select[aria-label="What"]', 'the whole vault');
 	await choose('.main select[aria-label="Share with"]', 'Maia City COOP');
-	await choose('.main select[aria-label="Role"]', 'to own (your passkey approves)');
+	await click('Owner', '.main .share button.group');
 	await click('Share', '.main .card button.primary');
-	check('the coop owns her whole vault', await until(async () => /Maia City COOP owns the whole vault/.test(await text('.main')), 60000), await problem());
+	const owns = async () => {
+		const groups = await shown('.main .group');
+		return groups.some((g) => g?.startsWith('Owner') && g.includes('Maia City COOP on the whole vault'));
+	};
+	check('the coop owns her whole vault', await until(owns, 60000), await problem());
 	check('in one sheet', app.sheets().join(',') === 'approve');
 	const revoke = () =>
 		page.evaluate(() => {
@@ -714,6 +723,45 @@ try {
 	check('avenBOB no longer reads her note', await until(async () => !(await note(NOTE)), 30000));
 	await goTo('Todos');
 	check('nor her todos', !(await text('.main')).includes(WORK), await text('.main'));
+
+	// everyone reads her todos tagged “work”: the Public group, which only reads
+	await actAs('avenALICE');
+	await look('avenALICE', 'Access');
+	await choose('.main select[aria-label="What"]', 'every');
+	await choose('.main select[aria-label="Type"]', 'todo');
+	await type('.main input[aria-label="Tagged"]', 'work');
+	await choose('.main select[aria-label="Share with"]', 'avenCHARLY');
+	await click('A group of its own', '.main .share button.group');
+	await type('.main .share input[aria-label="Its name"]', 'Tick work');
+	await choose('.main .share select[aria-label="An op to add"]', 'set one field to some values');
+	await choose('.main .share select[aria-label="Which field"]', 'status');
+	await page.evaluate(() => {
+		const picks = [...document.querySelectorAll('.main .share .pick input')];
+		/** @type {HTMLElement | undefined} */ (picks.find((i) => i.getAttribute('value') === 'done'))?.click();
+	});
+	await click('Add', '.main .share button');
+	const own = await text('.main .share .ops');
+	check('a group of its own, built op by op', own.includes('set its status to “done”'), own);
+	const json = await text('.main .share .as-json pre');
+	check('and the cap as JSON', json.includes('"name": "Tick work"') && json.includes('"to":["done"]'), json);
+	await shot('12e-own-group');
+	await choose('.main select[aria-label="Share with"]', 'Everyone');
+	const only = await shown('.main .share button.group');
+	check('to everyone, the Public group alone', only.join(',') === 'Public', only.join(','));
+	await click('Share', '.main .card button.primary');
+	const everyone = async () => {
+		const groups = await shown('.main .group');
+		return groups.some((g) => g?.startsWith('Public') && g.includes('Everyone on todos tagged “work”'));
+	};
+	const publicly = await until(everyone, 30000);
+	check('everyone reads her todos tagged “work”', publicly, (await shown('.main .group')).join(' | '));
+	check('with no sheet', app.sheets().length === 0);
+	await shot('12d-public');
+	await actAs('avenBOB');
+	await look('avenALICE', 'Todos');
+	const again = await until(async () => (await text('.main')).includes(WORK), 60000);
+	check('avenBOB reads them again, as anyone does', again, await text('.main'));
+	check('and nothing else of hers', !(await text('.main')).includes(TODO), await text('.main'));
 	await actAs('Samuel');
 	await look('Samuel', 'Owners & devices');
 

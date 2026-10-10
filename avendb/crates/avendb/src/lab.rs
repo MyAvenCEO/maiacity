@@ -10,8 +10,8 @@
 //! vault's caps and every entry's header and tags, and keep each entry in the cell its meaning asks for by moving it
 //! (`policy::Meaning`). A steward creates an entry straight in its cell; anyone else creates it in the intake cell of
 //! the cap it creates it through, for a steward to move. A write by anyone but the vault that adds or removes tags asks
-//! the stewards to, and a steward answers it with a write acting for the vault, carrying what the asker's caps let it
-//! ask for: the tags each cap's chain lets it relabel, where the cap's slice holds the entry before and after.
+//! the stewards to, and a steward answers it with a write acting for the vault, carrying what each counted ask asks for
+//! (its proof's chain allows those tags) where the slice of the cap it proves holds the entry before and after.
 //!
 //! A cap's selector travels sealed in the cap (`slice::Select`), to the seeds of the vault it is over, of its grantee
 //! and of its issuer; a write's header, tags and content travel in its encrypted body (`slice::Body`). A device keeps
@@ -73,7 +73,7 @@ use crate::policy::{
     checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Issued, Kind, Line, Log, Meaning, Principal, Proposal,
     Readings, Refusal, Replay, Role, State, Write,
 };
-use crate::rules::{Opening, Proof, Rule, Touch};
+use crate::rules::{self, Grant, Proof, Rule, Touch};
 use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{
@@ -489,20 +489,20 @@ impl Backup {
     }
 }
 
-/// A cap to issue (`Lab::issue`): its grantee holds `role` over the entries of vault `over` that `slice` selects, and
-/// may ask the vault's stewards to add or remove the tags its relabel set names. A slice that selects all makes a wide
-/// cap. With `rules`, a cap with write or more lets its grantee's writes make only the ops they name (`rules`), and
-/// the caps resting on it no more; the Lab seals them into its slice with a salt of their own.
+/// A cap to issue (`Lab::issue`): a named group of ops (`rules`) its grantee may make on the entries of vault `over`
+/// that `select` picks, and that every cap it rests on allows and picks too. Its role is the class of its ops
+/// (`rules::level_of`); a selector that picks all makes a wide cap. The Lab seals its name, selector and ops into its
+/// slice, the ops with a salt of their own.
 #[derive(Clone, Debug)]
 pub struct NewCap {
     pub over: VaultId,
     pub grantee: Grantee,
-    pub role: Role,
-    pub slice: Slice,
+    pub name: String,
+    pub select: Selector,
+    pub ops: Vec<Rule>,
     /// The owner cap its issuer relies on: `None` when the vault itself issues it.
     pub parent: Option<CapId>,
     pub issuer: VaultId,
-    pub rules: Option<Vec<Rule>>,
 }
 
 /// One edit a device's upkeep calls for.
@@ -541,8 +541,8 @@ pub struct Lab {
     now: u64,
     /// A dry run (`dry`): a write is checked, proven and refused as ever, and then not made.
     dry: bool,
-    /// Its devices are a patched app's (`patched`): they ignore the rules of the caps they write through, and the
-    /// schemas of what they write.
+    /// Its devices are a patched app's (`patched`): they ignore the ops of the caps they write through, and the schemas
+    /// of what they write.
     lawless: bool,
 }
 
@@ -1134,26 +1134,29 @@ impl Lab {
         self.complete(on, draft, &[]).map(CapId::from)
     }
 
-    /// The cap `issue` issues, drafted for the passkeys among its signers to sign in their ceremonies (`draft`). A
-    /// cap with write or more carries its rules, if any, and the openings of the ruled caps it rests on, which its
-    /// issuer reads in the slice of the cap it rests on: so its grantee can prove its writes (`rules::Proof`).
-    /// `NotAllowed` if the cap it rests on is ruled and `on` doesn't read that cap's slice.
+    /// The cap `issue` issues, drafted for the passkeys among its signers to sign in their ceremonies (`draft`). It
+    /// carries its ops in order (`rules::normalize`) and the grants of the caps it rests on, which its issuer reads in
+    /// the slice of the cap it rests on: so its grantee can prove its writes (`rules::Proof`). `BadCap` for a cap of no
+    /// name, no op, too many or a selector beyond the bounds a peer accepts, or resting on a chain too long to prove;
+    /// `NotAllowed` if `on` doesn't read the slice of the cap it rests on.
     pub fn draft_cap(&mut self, on: SignerId, signers: &[SignerId], new: NewCap) -> Result<Unsigned, Refusal> {
         self.unlocked(on)?;
-        let NewCap { over, grantee, role, mut slice, parent, issuer, rules } = new;
-        (slice.rules, slice.above) = (None, vec![]);
-        if role.allows(Role::Write) {
-            let store = self.held(on);
-            let ruled = parent.and_then(|p| store.view().cap(p)).filter(|p| p.ruled);
-            if let Some(p) = ruled {
-                slice.above = store.slices.get(&p.id).map(Slice::openings).ok_or(Refusal::NotAllowed)?;
-            }
-            slice.rules = rules.map(|rules| {
-                let mut salt = [0u8; 32];
-                self.rng.fill_bytes(&mut salt);
-                Opening { rules, salt }
-            });
+        let NewCap { over, grantee, name, select, ops, parent, issuer } = new;
+        let ops = rules::normalize(ops).map_err(|_| Refusal::BadCap)?;
+        if rules::name_ok(&name).is_err() || !select.bounded() {
+            return Err(Refusal::BadCap);
         }
+        let above = match parent {
+            Some(p) => self.held(on).slices.get(&p).map(Slice::grants).ok_or(Refusal::NotAllowed)?,
+            None => vec![],
+        };
+        if above.len() >= rules::MAX_GRANTS {
+            return Err(Refusal::BadCap);
+        }
+        let mut salt = [0u8; 32];
+        self.rng.fill_bytes(&mut salt);
+        let role = rules::level_of(&ops);
+        let slice = Slice { name, select, grant: Grant { ops, salt }, above };
         let wide = slice.select == Selector::All;
         let nonce = self.rng.next_u64();
         let mut cap = Cap { over, grantee, role, wide, select: vec![], parent, issuer, nonce };
@@ -1189,7 +1192,7 @@ impl Lab {
                 None => {}
             }
         }
-        Ok(Select::Sealed { boxes, slice: sealed, rules: slice.rules.as_ref().map(Opening::commitment) }.to_wire())
+        Ok(Select::Sealed { boxes, slice: sealed, commitment: slice.grant.commitment() }.to_wire())
     }
 
     /// Bring device `d`'s keys, cells and items up to date with its edits, `lent` holding the keys of owners signing on
@@ -1211,9 +1214,10 @@ impl Lab {
             let ix = KeyIndex::of(&store.replay);
             open_keys(store, &ix, &mine);
             read(d, store);
+            // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
+            show_items(d, store);
             let work = upkeep(d, store, &ix, &mine, rng, spares);
             if work.is_empty() {
-                show_items(d, store);
                 return;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
@@ -1271,28 +1275,30 @@ impl Lab {
         Ok((edit, w))
     }
 
-    /// The proof write `w` of device `on` carries, which touches `touches` (`rules::Proof`): none where its readers
-    /// count it without one (it acts for its entry's vault, or a cap it relies on is unruled), else one for the first
-    /// ruled cap whose chain's rules, as `on` reads them, allow every touch. `NotAllowed` if none does, or `on` can't
-    /// read what the write touches.
+    /// The proof write `w` of device `on` carries, which touches `touches` and asks for the tags `asks`
+    /// (`rules::Proof`): none where it acts for its entry's vault, so relies on no cap, else one for the first cap it
+    /// relies on whose chain's ops, as `on` reads them, allow every touch and every tag it asks for. `NotAllowed` if
+    /// none does, or `on` can't read what the write touches.
     fn prove(
         &self,
         on: SignerId,
         view: &State,
         w: &Write,
         touches: Option<&[Touch]>,
+        asks: &TagDelta,
     ) -> Result<Option<Proof>, Refusal> {
-        if self.lawless || view.lets(w, None, None) {
+        if self.lawless || w.caps.is_empty() {
             return Ok(None);
         }
         let store = self.held(on);
-        let proofs = w.caps.iter().filter_map(|c| Some(Proof { cap: *c, openings: store.slices.get(c)?.openings() }));
-        let mut proofs = proofs.filter(|p| view.lets(w, Some(p), touches));
+        let proofs = w.caps.iter().filter_map(|c| Some(Proof { cap: *c, grants: store.slices.get(c)?.grants() }));
+        let mut proofs = proofs.filter(|p| view.lets(w, Some(p), touches, asks));
         proofs.next().map(Some).ok_or(Refusal::NotAllowed)
     }
 
     /// The proof write `w` of device `on` carries (`prove`), with what it touches as its readers will read it off
-    /// `content` on the history `h` holds before it, of an entry of vault `vault` (`History::reading`). `NotAView` if
+    /// `content` on the history `h` holds before it, of an entry of vault `vault` (`History::reading`), and the tags it
+    /// asks for, `asks`. `NotAView` if
     /// it doesn't fit the schemas the entry was written under, of the vault's lane and the built-in ones, unless the
     /// device is a patched app's (`patched`).
     fn proven(
@@ -1301,10 +1307,10 @@ impl Lab {
         view: &State,
         (vault, h): (VaultId, &History),
         w: &Write,
-        content: &[u8],
+        (content, asks): (&[u8], &TagDelta),
     ) -> Result<Option<Proof>, Refusal> {
         let read = h.reading(w, Some(content), on, &Lane::with_built_ins(view.lane_of(vault)));
-        let proof = self.prove(on, view, w, read.touches.as_deref())?;
+        let proof = self.prove(on, view, w, read.touches.as_deref(), asks)?;
         if !(read.fits || self.lawless) {
             return Err(Refusal::NotAView);
         }
@@ -1319,7 +1325,7 @@ impl Lab {
         out
     }
 
-    /// Run `f` as devices of a patched app, which ignore the rules of the caps they write through and the schemas of
+    /// Run `f` as devices of a patched app, which ignore the ops of the caps they write through and the schemas of
     /// what they write: their writes carry no proof and are made all the same, whether they fit or not, and no reader
     /// of their entries counts those that break either, the writer's own device neither, nor anything built on them
     /// (`History::reading`, `State::uncounted`).
@@ -1411,7 +1417,7 @@ impl Lab {
         };
         let (edit, w) = self.check_write(on, &view, action)?;
         let (tags, content) = (TagDelta { add: tags, remove: vec![] }, item.export(&Version::default()));
-        let proof = self.proven(on, &view, (vault, &History::default()), &w, &content)?;
+        let proof = self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags))?;
         self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof }, x)?;
         Ok(entry)
     }
@@ -1435,11 +1441,11 @@ impl Lab {
         let caps: Vec<&Issued> =
             st.caps_held(actor).filter(|cp| cp.cap.over == vault && st.holds(actor, cp, Role::Write)).collect();
         // its own selector, as the grantee reads it: the stewards judge by the whole chain; and of those, one whose
-        // rules let a creation through first
+        // ops let a creation through first
         let holds = |cp: &&Issued| store.slices.get(&cp.id).map(|s| cp.cap.wide || s.select.matches(&attrs));
         let creates = |cp: &Issued| {
-            let proof = store.slices.get(&cp.id).map(|s| Proof { cap: cp.id, openings: s.openings() });
-            st.lets_through(cp, proof.as_ref(), true, Some(&[Touch::Create]))
+            let proof = store.slices.get(&cp.id).map(|s| Proof { cap: cp.id, grants: s.grants() });
+            st.lets_through(cp, proof.as_ref(), true, &[Touch::Create])
         };
         let held: Vec<&Issued> = caps.iter().copied().filter(|cp| holds(cp) == Some(true)).collect();
         if let Some(cp) = held.iter().find(|cp| creates(cp)).or(held.first()) {
@@ -1627,7 +1633,7 @@ impl Lab {
         let (via, create) = (vec![], None);
         let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body: vec![] };
         let (edit, w) = self.check_write(on, &view, action)?;
-        let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, &content)?;
+        let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags))?;
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof }, x)
     }
 
@@ -2648,8 +2654,9 @@ fn upkeep(
 
 /// What a steward of vault `v` does, once it reads the selector of every cap of the vault (`Store::reads_caps`): for
 /// each entry whose creation and tags it reads, it answers the asks for tags no write acting for the vault answered
-/// yet, with what each asker's caps let it ask for, in one write acting for the vault; and moves an entry no ask waits
-/// on to the cell its meaning asks for, if it isn't there (`policy::Meaning::desired`).
+/// yet, granting each its entry's readers count (`show_items`) where the asker may (`granted`), in one write acting
+/// for the vault; and moves an entry no ask waits on to the cell its meaning asks for, if it isn't there
+/// (`policy::Meaning::desired`).
 fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
     if !store.reads_caps(st, v) {
         return vec![];
@@ -2675,10 +2682,14 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
             }
             continue;
         }
+        let shown = store.shown.get(&en.id).map(|s| &s.history);
+        let counted = |w: &Write| shown.and_then(|h| h.get(w.edit)).is_some_and(|c| c.counted);
         let mut tags = m.attrs.tags.clone();
         for w in &asks {
             let attrs = Attrs { tags: tags.clone(), ..m.attrs.clone() };
-            tags = granted(st, store, w.actor, v, &attrs, &store.bodies[&w.edit].tags).apply(&tags);
+            if counted(w) && granted(st, store, w, &attrs) {
+                tags = store.bodies[&w.edit].tags.apply(&tags);
+            }
         }
         let add = tags.iter().filter(|t| !m.attrs.tags.contains(t)).cloned().collect();
         let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
@@ -2690,24 +2701,16 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
     out
 }
 
-/// The part of `ask`, the tags vault `a` asks the stewards of vault `v` to add to and remove from an entry whose
-/// attributes are `attrs`, that a's caps let it ask for: those over `v` it holds with write or more whose slice holds
-/// the entry before the change and after it, each as far as every cap of its chain lets its grantee relabel.
-fn granted(st: &State, store: &Store, a: VaultId, v: VaultId, attrs: &Attrs, ask: &TagDelta) -> TagDelta {
+/// The stewards grant what a write its readers count asks for, the tags it adds to and removes from an entry whose
+/// attributes are `attrs`, which the chain of the cap its proof names allows (`policy::State::lets`): where its writer
+/// still holds that cap, with write or more, and its slice holds the entry before the change and after it.
+fn granted(st: &State, store: &Store, w: &Write, attrs: &Attrs) -> bool {
     let r = &store.readings;
-    let after = Attrs { tags: ask.apply(&attrs.tags), ..attrs.clone() };
-    let mut may: HashSet<&Sym> = HashSet::new();
-    for cp in st.caps_held(a).filter(|cp| cp.cap.over == v && st.holds(a, cp, Role::Write)) {
-        if !st.eff_selects(cp, attrs, r) || !st.eff_selects(cp, &after, r) {
-            continue;
-        }
-        let relabel = |c: &CapId| store.slices.get(c).map(|s| &s.relabel[..]).unwrap_or_default();
-        let mut chain = cp.chain.iter().map(relabel);
-        let first: HashSet<&Sym> = chain.next().unwrap_or_default().iter().collect();
-        may.extend(chain.fold(first, |acc, xs| acc.into_iter().filter(|t| xs.contains(t)).collect()));
-    }
-    let keep = |ts: &[Sym]| ts.iter().filter(|t| may.contains(t)).cloned().collect();
-    TagDelta { add: keep(&ask.add), remove: keep(&ask.remove) }
+    let after = Attrs { tags: store.bodies[&w.edit].tags.apply(&attrs.tags), ..attrs.clone() };
+    let cap = r.proofs.get(&w.edit).and_then(|p| st.cap(p.cap));
+    cap.is_some_and(|cp| {
+        st.holds(w.actor, cp, Role::Write) && st.eff_selects(cp, attrs, r) && st.eff_selects(cp, &after, r)
+    })
 }
 
 /// The semantic cell of an entry of vault `v` its creator, the vault, made with attributes `attrs`, by what `r` reads:
@@ -2760,7 +2763,7 @@ fn key_box(
 fn show_items(d: SignerId, store: &mut Store) {
     let st = &store.replay.state;
     let mut old = std::mem::take(&mut store.shown);
-    let (mut shown, mut lanes) = (BTreeMap::new(), HashMap::new());
+    let (mut shown, mut lanes, none) = (BTreeMap::new(), HashMap::new(), TagDelta::default());
     for en in st.entries() {
         let ws: Vec<&Write> = st.entry_writes(en.id).collect();
         let mut h = Hasher::new("lab shown");
@@ -2775,17 +2778,18 @@ fn show_items(d: SignerId, store: &mut Store) {
             continue;
         }
         // each write counted where what it builds on counts, it fits the schemas the entry was written under, and its
-        // caps let it through, by its proof and what it touches (`policy::State::lets`): both read off it on one
-        // scratch item (`History::reading_on`)
+        // caps let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`): the
+        // first two read off it on one scratch item (`History::reading_on`)
         let lane = lanes.entry(en.vault).or_insert_with(|| Lane::with_built_ins(st.lane_of(en.vault)));
         let (mut history, mut scratch) = (History::default(), None);
         for w in ws {
             let body = store.bodies.get(&w.edit);
             let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
+            let asks = body.map(|b| &b.tags).unwrap_or(&none);
             let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
             let read = w.deps.iter().all(counts).then(|| history.reading_on(&mut scratch, w, content, d, lane));
             let fits = read.as_ref().is_none_or(|r| r.fits);
-            let counted = read.is_some_and(|r| r.fits && st.lets(w, proof, r.touches.as_deref()));
+            let counted = read.is_some_and(|r| r.fits && st.lets(w, proof, r.touches.as_deref(), asks));
             let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, counted };
             history.push(change).expect("the view's writes are causally closed");
         }

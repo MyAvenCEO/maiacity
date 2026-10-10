@@ -12,12 +12,14 @@
 //!   its labels first (`ops::Where::plan`), so a device opens no more than the selector picks, then ordered and a page
 //!   at a time. `get`: one entry on a line, or at a version. `history`: an entry's lines and every write of it, each
 //!   with the changes it made to the entry's stored record (`ops::diff`), as every reader sees them alike. `schemas`:
-//!   the schemas and lenses a vault's entries are read through.
+//!   the schemas and lenses a vault's entries are read through. `groups`: the built-in groups of ops a cap names
+//!   (`rules::groups`), which the page offers when it shares.
 //! - **Changes** (`run`). `create`; the record ops (`ops::Op`): `set`, `unset`, `insert`, `remove`, `move`; `tag`;
 //!   `propose`, `merge`, `restore`, `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make
 //!   one write. Each acts for a vault (`"as"`, the device's own by default), as every edit does, and the rules judge
-//!   it as they judge any peer's. A write through a ruled cap carries the proof that the cap's rules allow what it
-//!   touches, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`).
+//!   it as they judge any peer's. A write through a cap carries the proof that the ops of the caps of its chain allow
+//!   what it touches and the tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't
+//!   count it (`rules`).
 //! - **Asking** (`may`). Whether each of some change ops would be made, by a dry run of each that checks, proves and
 //!   refuses as `run` does and makes nothing: what a page asks before it offers a button.
 //!
@@ -37,6 +39,7 @@ use crate::lab::Lab;
 use crate::lens::{self, Lane, Schema, View};
 use crate::ops::{self, Op, Path, Record, Where};
 use crate::policy::{Line, Proposal, Refusal};
+use crate::rules;
 use crate::slice::Attrs;
 
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
@@ -87,7 +90,8 @@ impl Refused {
 fn rule(r: &Refusal) -> String {
     let why = match r {
         Refusal::NoCap => "the vault it acts for holds no cap that allows this",
-        Refusal::NotAllowed => "the rules of the caps the vault acts through don't allow what it does",
+        Refusal::NotAllowed => "the ops of the caps the vault acts through don't allow what it does",
+        Refusal::BadCap => "a cap has a name, at least one op, and a selector and a chain within bounds",
         Refusal::NotActing => "the device doesn't act for that vault",
         Refusal::ReadOnly => "the entry opens read-only: no lens reaches every schema it was written under",
         Refusal::NotAView => "the record would not fit its schema",
@@ -111,6 +115,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "get" => &["entry", "schema", "line", "at"],
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
+        "groups" => &[],
         "create" => &["vault", "type", "tags", "schema", "value", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
@@ -127,7 +132,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read.
-const READS: [&str; 4] = ["query", "get", "history", "schemas"];
+const READS: [&str; 5] = ["query", "get", "history", "schemas", "groups"];
 
 /// Op `v`'s name and fields, if it is an op the engine runs and carries no field it doesn't take.
 fn op_of(v: &Value) -> Result<(&str, &Map<String, Value>), Refused> {
@@ -168,6 +173,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "get" => get(lab, me, o),
         "history" => history(lab, me, o),
         "schemas" => schemas(lab, me, o),
+        "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
     });
     answer(out)
@@ -490,8 +496,8 @@ pub struct Wrote {
     /// changes are what it brought.
     pub base: Vec<EditId>,
     /// Why its readers don't count it, if they don't: it builds on a write they don't count (`builds-on`); they can't
-    /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); or the rules of
-    /// the caps it relies on don't allow what it touches (`rules`, C1 to C4).
+    /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); or the ops of
+    /// the caps it relies on don't allow what it touches or the tags it asks for (`ops`, C1 to C4).
     pub why: Option<&'static str>,
 }
 
@@ -519,7 +525,7 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
     } else if !c.fits {
         Some("unfit")
     } else {
-        Some("rules")
+        Some("ops")
     };
     Wrote { kind, from, base, why }
 }
@@ -762,7 +768,7 @@ fn change(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
 
 /// `{"op": "may", "ops", "as"?}`: whether device `me` would make each of the change ops `ops`, each acting for the
 /// vault it names (`as`, else the may's, else the device's own), each on what the device holds now: for each, `true`,
-/// or the refusal running it would meet. Each runs dry (`Lab::dry`): checked, proven against the rules of the caps it
+/// or the refusal running it would meet. Each runs dry (`Lab::dry`): checked, proven against the ops of the caps it
 /// relies on and refused as `run` would, and then not made.
 fn may(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
     let (_, o) = op_of(v)?;

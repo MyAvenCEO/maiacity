@@ -7,7 +7,7 @@
 	each with what it changed, word by word, who made it, and the version it made, to view, restore, undo or propose
 	from. A variant is a new note with what a line reads now, and none of its history. All of it acts for the acting
 	vault, whose caps the device checks as any peer does: a note it only reads, it reads, every version of it; and a
-	button offers what the rules of the caps it writes through allow, as the device answers a dry run of it (`may`): a
+	button offers what the ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a
 	vault that may only suggest changes proposes them, for one whose cap allows it to accept. An edit no rule allows,
 	no reader counts, nor anything built on it: the note says how many there are, and shows none of them.
 -->
@@ -27,7 +27,7 @@
 	 * @typedef {{ id: string, author: string, actor: string, line: string | null, deps: string[],
 	 *   kind: 'edit' | 'propose' | 'merge' | 'promote' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
-	 *   before: string | null, counted: boolean, why: 'builds-on' | 'sealed' | 'unfit' | 'rules' | null }} EditView
+	 *   before: string | null, counted: boolean, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
 	 * @typedef {{ vault: string | null, entry: string, lines: LineView[], edits: EditView[] }} NoteData
 	 */
@@ -106,7 +106,7 @@
 	const into_ = $derived(
 		world.vaults.filter((v) => creates(world, v.id, actor, item?.type ?? 'note', item?.tags ?? [])?.length === 0)
 	);
-	/** of those, the ones the rules of its caps there let it add the variant to (`can`) */
+	/** of those, the ones the ops of its caps there let it add the variant to (`can`) */
 	const targets = $derived(into_.filter((v) => lets(`variant ${v.id}`)));
 	/** the notes this browser reads, by entry */
 	const notes = $derived(new Map(world.entries.filter((e) => e.kind === 'note').map((e) => [e.entry, e])));
@@ -117,22 +117,22 @@
 	const holders = $derived(rank(item?.roles ?? {}));
 
 	/**
-	 * What the rules of the caps the acting vault writes through let it do on the line shown, as the device answers a
+	 * What the ops of the caps the acting vault writes through let it do on the line shown, as the device answers a
 	 * dry run of each (`may`): save its text (`write`), rename it (`title`, and `heading`, the heading it opens with),
 	 * propose, accept the proposal into main, make main match it, update it from main, restore or undo the version
-	 * shown, and make a variant in each vault it may add one to (`variant` and the vault). Only the rules' refusal
+	 * shown, and make a variant in each vault it may add one to (`variant` and the vault). Only the ops' refusal
 	 * (`NotAllowed`) holds a button back: what the person then does is the device's to refuse, as any op.
 	 */
 	let can = $state(/** @type {Record<string, boolean>} */ ({}));
-	/** The rules let the acting vault do `what` (`can`), as they do until the device answers. @param {string} what */
+	/** The ops let the acting vault do `what` (`can`), as they do until the device answers. @param {string} what */
 	const lets = (what) => can[what] !== false;
-	/** Why a button doesn't offer `what`, for its title: nothing where the rules allow it. @param {string} what */
-	const barred = (what) => (lets(what) ? undefined : `The rules of ${nameOf(as)}’s cap don’t allow it`);
-	/** what the acting vault may do on the line, in words, where it writes the note and the rules allow no change */
-	const ruled = $derived.by(() => {
+	/** Why a button doesn't offer `what`, for its title: nothing where the ops allow it. @param {string} what */
+	const barred = (what) => (lets(what) ? undefined : `The ops of ${nameOf(as)}’s cap don’t allow it`);
+	/** what the acting vault may do on the line, in words, where it writes the note and the ops allow no change */
+	const viewOnly = $derived.by(() => {
 		if (!writes || lets('write') || lets('title')) return '';
 		if (here?.line === null && lets('propose')) return `${nameOf(as)} may only propose changes`;
-		return `the rules of ${nameOf(as)}’s cap allow no change here`;
+		return `the ops of ${nameOf(as)}’s cap allow no change here`;
 	});
 
 	$effect(() => {
@@ -266,7 +266,7 @@
 		const title = (titles[k] ?? '').trim();
 		if (!here || !title || title === (here.title ?? '')) return;
 		const on = here.line;
-		// the heading a note opens with, block 1, is its title too: one write changes both, where the rules allow both
+		// the heading a note opens with, block 1, is its title too: one write changes both, where the ops allow both
 		const heading = lets('heading') && (await blocksOn(on)).some((b) => b.id === 1 && b.type === 'heading');
 		const set = (/** @type {unknown[]} */ path) => ({ op: 'set', entry, line: on, path, value: title });
 		const ops = heading ? [set(['title']), set(blockText(1))] : [set(['title'])];
@@ -366,7 +366,7 @@
 					> ·
 				{/if}
 				{#if uncounted}
-					<b class="unsaved" title="The rules of their caps don’t allow what they change: no one counts them"
+					<b class="unsaved" title="The ops of their caps don’t allow what they change: no one counts them"
 						>{count(uncounted, 'edit')} not allowed</b
 					> ·
 				{/if}
@@ -375,13 +375,13 @@
 		</div>
 		<div class="tools">
 			{#if here}
-				<span class="mode chip" class:warn={!!seen} class:accent={!seen && writes && !ruled}>
+				<span class="mode chip" class:warn={!!seen} class:accent={!seen && writes && !viewOnly}>
 					{#if seen}
 						Viewing version #{seen.n}
 					{:else if !writes}
 						Viewing: {nameOf(as)} only reads it
-					{:else if ruled}
-						Viewing: {ruled}
+					{:else if viewOnly}
+						Viewing: {viewOnly}
 					{:else if here.line === null}
 						Editing main
 					{:else}

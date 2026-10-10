@@ -1,22 +1,21 @@
 //! How the page names what the core says (JSON): kinds, roles and statuses by their lowercase names, ids in 64 hex
-//! digits, and a cap's slice, what it shares of its vault's entries. The Mac app's device takes the same words
-//! (`avendb-device`).
+//! digits, a cap's grantee, and a cap itself. The Mac app's device takes the same words (`avendb-device`).
 //!
-//! A slice is `{select, relabel, rules?}`: `relabel` the tags its grantee may ask the vault's stewards to add or
-//! remove, and `select` its selector as the core writes it (`avendb::slice::Selector::to_json`): `"all"`, the whole
-//! vault, or a list of conjunctions of tests of its type, author, id, creation and tags. "Bob's work todos" is
-//! `[[{"type": ["todo"]}, {"tag": "work"}]]`. A cap that writes may carry `rules`, the ops its grantee's writes may
-//! make, as the docs write them (`avendb::rules`, `avendb/docs/OPS.md`): "only tick a todo done" is
-//! `[{"op": "set", "path": ["status"], "to": ["done"]}]`. A slice the page reads names, as `above`, the rules of the
-//! ruled caps it rests on too, which narrow it further.
+//! A cap is a named group of ops on a slice of its vault (`avendb::slice::spec_of_json`): `{"name": "Work todos",
+//! "where": {"all": [{"type": ["todo"]}, {"tag": "work"}]}, "ops": [{"op": "read"}, {"op": "set", "path": ["status"],
+//! "to": ["done"]}]}`, the ops as the docs write them (`avendb::rules`, `avendb/docs/OPS.md`), `where` a query's
+//! `where` of labels alone, left out for the whole vault. Its role is the class of its strongest op, which the page
+//! reads and never names. A cap the page reads carries, as `above`, the ops of the caps it rests on too, which narrow
+//! it further (`avendb::slice::Slice::to_json`). The built-in groups the page offers come from the core (`{"op":
+//! "groups"}`, `avendb::rules::groups`).
 
-use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::BlobId;
+use anyhow::{Result, anyhow, bail};
+use avendb::id::{BlobId, VaultId};
 use avendb::lens::Status;
-use avendb::policy::{Kind, Role};
-use avendb::rules::{self, Rule};
-use avendb::slice::{Selector, Slice, Sym};
-use serde_json::{Value, json};
+use avendb::policy::{Grantee, Kind, Principal, Role};
+use avendb::rules::Rule;
+use avendb::slice::{self, Selector};
+use serde_json::Value;
 
 pub fn kind_name(kind: Kind) -> &'static str {
     match kind {
@@ -44,18 +43,6 @@ pub fn status_name(status: Status) -> &'static str {
     }
 }
 
-/// A role by its name: `"relay"`, `"backup"`, `"read"`, `"write"` or `"owner"`.
-pub fn role_of(name: &str) -> Result<Role> {
-    Ok(match name {
-        "relay" => Role::Relay,
-        "backup" => Role::Backup,
-        "read" => Role::Read,
-        "write" => Role::Write,
-        "owner" => Role::Owner,
-        _ => bail!("a role is relay, backup, read, write or owner"),
-    })
-}
-
 /// A todo's status by its name: `"open"`, `"doing"` or `"done"`.
 pub fn status_of(name: &str) -> Result<Status> {
     Ok(match name {
@@ -76,122 +63,88 @@ pub fn id_of(s: &str) -> Result<[u8; 32]> {
     BlobId::from_hex(s).map(|b| b.0).ok_or_else(|| anyhow!("{s:?} is no id"))
 }
 
-/// A slice as the page reads it: `{select, relabel}`, with the rules of a ruled cap and of the ruled caps it rests on,
-/// root first (`above`), if any.
-pub fn slice_value(s: &Slice) -> Value {
-    let relabel: Vec<&str> = s.relabel.iter().map(Sym::as_str).collect();
-    let mut v = json!({ "select": selector_value(&s.select), "relabel": relabel });
-    if let Some(o) = &s.rules {
-        v["rules"] = rules::rules_to_json(&o.rules);
-    }
-    if !s.above.is_empty() {
-        v["above"] = s.above.iter().map(|o| rules::rules_to_json(&o.rules)).collect();
-    }
-    v
-}
-
-/// A selector as the page reads it: `"all"`, or its conjunctions (`Selector::to_json`).
-pub fn selector_value(s: &Selector) -> Value {
-    s.to_json()
-}
-
-/// A slice from what the page wrote (`slice_value`): `relabel` may be left out, for no tags to ask for; its rules are
-/// `rules_of`'s, which the core seals into it with a salt of its own. Fails on anything else, and on a selector beyond
-/// the bounds a peer accepts (`Selector::bounded`).
-pub fn slice_of(v: &Value) -> Result<Slice> {
-    let o = v.as_object().context("a slice is {select, relabel, rules?}")?;
-    if let Some(other) = o.keys().find(|k| !matches!(k.as_str(), "select" | "relabel" | "rules")) {
-        bail!("a slice has no field {other:?}");
-    }
-    let select = selector_of(o.get("select").context("a slice selects something")?)?;
-    let relabel = match o.get("relabel") {
-        None | Some(Value::Null) => vec![],
-        Some(v) => syms(v).context("relabel is a list of tags")?,
-    };
-    Ok(Slice { relabel, ..Slice::of(select) })
-}
-
-/// The rules a slice the page wrote carries (`slice_of`): none if it names none.
-pub fn rules_of(v: &Value) -> Result<Option<Vec<Rule>>> {
-    match v.get("rules") {
-        None | Some(Value::Null) => Ok(None),
-        Some(rs) => rules::rules_of_json(rs).map(Some).map_err(|why| anyhow!(why)),
+/// A cap's grantee as the page names it: `"everyone"` for Public, else the vault's id.
+pub fn grantee_name(g: Grantee) -> String {
+    match g {
+        Grantee::Public => "everyone".to_string(),
+        Grantee::Principal(Principal::Vault(v)) => hex(&v.0),
+        Grantee::Principal(Principal::Signer(s)) => hex(&s.0),
     }
 }
 
-/// A selector from what the page wrote (`selector_value`).
-pub fn selector_of(v: &Value) -> Result<Selector> {
-    Selector::of_json(v).map_err(|why| anyhow!(why))
+/// A cap's grantee from what the page wrote (`grantee_name`): `"everyone"`, or a vault's id.
+pub fn grantee_of(name: &str) -> Result<Grantee> {
+    Ok(match name {
+        "everyone" => Grantee::Public,
+        v => Grantee::Principal(Principal::Vault(VaultId(id_of(v)?))),
+    })
 }
 
-/// A list of names: types or tags.
-fn syms(v: &Value) -> Option<Vec<Sym>> {
-    v.as_array()?.iter().map(|x| x.as_str().map(Sym::new)).collect()
+/// A new cap's name, selector and ops from what the page wrote (`avendb::slice::spec_of_json`).
+pub fn spec_of(v: &Value) -> Result<(String, Selector, Vec<Rule>)> {
+    slice::spec_of_json(v).map_err(|why| anyhow!(why))
 }
 
 #[cfg(test)]
 mod tests {
-    use avendb::id::{EntryId, VaultId};
-    use avendb::slice::Atom;
+    use avendb::rules::{self, Grant};
+    use avendb::slice::{Atom, Slice};
+    use serde_json::json;
 
     use super::*;
 
     #[test]
-    fn a_slice_reads_back_from_its_words() {
-        let work = Selector::AnyOf(vec![vec![Atom::TypeIn(vec!["todo".into()]), Atom::TagHas("work".into())]]);
-        let any = Selector::AnyOf(vec![
-            vec![Atom::EntryIn(vec![EntryId([7; 32])]), Atom::AuthorIn(vec![VaultId([9; 32])])],
-            vec![Atom::CreatedIn(10, 20), Atom::TagNone(vec!["private".into()])],
-            vec![Atom::TagsWithin(vec!["a".into(), "b".into()])],
-        ]);
-        for select in [Selector::All, work, any] {
-            let slice = Slice { relabel: vec!["urgent".into()], ..Slice::of(select) };
-            assert_eq!(slice_of(&slice_value(&slice)).expect("its own words"), slice);
-        }
-        let todos = json!({ "select": [[{ "type": ["todo"] }]] });
-        assert_eq!(slice_of(&todos).expect("relabel left out").relabel, vec![]);
+    fn a_cap_reads_from_its_words() {
+        let work = json!({
+            "name": "Work todos",
+            "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] },
+            "ops": [{ "op": "set", "path": ["status"], "to": ["done"] }, { "op": "merge", "on": "proposals" }],
+        });
+        let (name, select, ops) = spec_of(&work).expect("a cap");
+        assert_eq!(name, "Work todos");
+        assert_eq!(select, Selector::AnyOf(vec![vec![Atom::TypeIn(vec!["todo".into()]), Atom::TagHas("work".into())]]));
+        // in order, read beside what writes
+        let read_first = json!([{ "op": "read" }, work["ops"][0], work["ops"][1]]);
+        assert_eq!(rules::ops_to_json(&ops), read_first);
+        // the whole vault where it picks nothing narrower; what the page reads back says the same
+        let public = json!({ "name": "Public", "ops": [{ "op": "read" }] });
+        let (name, select, ops) = spec_of(&public).expect("a cap");
+        assert_eq!((name.as_str(), &select, &ops[..]), ("Public", &Selector::All, &[Rule::Read][..]));
+        let above = vec![Grant { ops: Role::Owner.ops(), salt: [3; 32] }];
+        let slice = Slice { name, select, grant: Grant { ops, salt: [4; 32] }, above };
+        let read = slice.to_json();
+        assert_eq!((&read["where"], &read["ops"]), (&json!({ "all": [] }), &json!([{ "op": "read" }])));
+        assert_eq!(read["above"][0], rules::ops_to_json(&Role::Owner.ops()));
+        let again = spec_of(&json!({ "name": read["name"], "where": read["where"], "ops": read["ops"] }));
+        assert_eq!(again.expect("its own words").1, Selector::All);
     }
 
     #[test]
-    fn a_slice_carries_its_rules_in_words() {
-        let done = json!([{ "op": "set", "path": ["status"], "to": ["done"] }, { "op": "merge", "on": "proposals" }]);
-        let ruled = json!({ "select": "all", "rules": done });
-        let rules = rules_of(&ruled).expect("rules").expect("some rules");
-        assert_eq!(rules::rules_to_json(&rules), done);
-        assert_eq!(slice_of(&ruled).expect("a slice"), Slice::all());
-        assert_eq!(rules_of(&json!({ "select": "all" })).expect("no rules"), None);
-        // what the page reads of a ruled cap's slice: its rules, and those of the ruled caps it rests on
-        let opening = |rules| rules::Opening { rules, salt: [3; 32] };
-        let slice = Slice { rules: Some(opening(rules)), above: vec![opening(vec![Rule::Create])], ..Slice::all() };
-        let read = slice_value(&slice);
-        assert_eq!((&read["rules"], &read["above"]), (&done, &json!([[{ "op": "create" }]])));
+    fn a_cap_written_otherwise_is_refused() {
+        let ops = json!([{ "op": "read" }]);
         let bad = [
-            json!([{ "op": "fly" }]),
-            json!([{ "op": "set" }]),
-            json!({ "op": "create" }),
-            json!([{ "op": "set", "path": ["size"], "to": [1.5] }]),
-            json!([{ "op": "create", "path": [] }]),
+            json!({ "where": { "all": [] }, "ops": ops }),
+            json!({ "name": " ", "ops": ops }),
+            json!({ "name": "x".repeat(65), "ops": ops }),
+            json!({ "name": "None", "ops": [] }),
+            json!({ "name": "Fly", "ops": [{ "op": "fly" }] }),
+            json!({ "name": "Set", "ops": [{ "op": "set" }] }),
+            json!({ "name": "Half", "ops": [{ "op": "set", "path": ["size"], "to": [1.5] }] }),
+            json!({ "name": "Colour", "where": { "colour": ["red"] }, "ops": ops }),
+            json!({ "name": "Title", "where": { "path": ["title"], "eq": "x" }, "ops": ops }),
+            json!({ "name": "Bob", "who": "Bob", "ops": ops }),
+            json!({ "name": "Role", "role": "read", "ops": ops }),
         ];
-        for rules in bad {
-            assert!(rules_of(&json!({ "select": "all", "rules": rules })).is_err(), "{rules}");
+        for cap in bad {
+            assert!(spec_of(&cap).is_err(), "{cap}");
         }
     }
 
     #[test]
-    fn a_slice_written_otherwise_is_refused() {
-        let bad = [
-            json!({ "select": "some" }),
-            json!({ "select": [[{ "type": "todo" }]] }),
-            json!({ "select": [[{ "type": ["todo"], "tag": "work" }]] }),
-            json!({ "select": [[{ "colour": ["red"] }]] }),
-            json!({ "select": [[{ "created": [1] }]] }),
-            json!({ "select": [[{ "entry": ["beef"] }]] }),
-            json!({ "select": "all", "who": "Bob" }),
-            json!({ "relabel": [] }),
-            json!({ "select": vec![json!([]); 9] }),
-        ];
-        for slice in bad {
-            assert!(slice_of(&slice).is_err(), "{slice}");
+    fn a_grantee_reads_back_from_its_name() {
+        for g in [Grantee::Public, Grantee::Principal(Principal::Vault(VaultId([7; 32])))] {
+            assert_eq!(grantee_of(&grantee_name(g)).expect("its own name"), g);
         }
+        assert!(grantee_of("public").is_err() && grantee_of("beef").is_err());
     }
 }

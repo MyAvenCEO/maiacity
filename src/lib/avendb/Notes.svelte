@@ -5,7 +5,7 @@
 	stays out of sight, as on a device of the acting vault alone: the device's world says which vault holds which role
 	on each entry, by the caps whose slices hold it (avendb-browser's `World`), and every edit goes out acting for that
 	vault. A vault other than this one adds a note only through a cap with write on a slice that holds it, tagged as its
-	slice asks, and where the rules of that cap allow it, as the device answers a dry run of adding it (`may`).
+	slice asks, and where the ops of that cap allow it, as the device answers a dry run of adding it (`may`).
 -->
 <script>
 	import Icon from './Icon.svelte';
@@ -57,7 +57,7 @@
 		onopen(made.entry);
 	}
 
-	/** why the rules of the cap the acting vault adds through don't let it add the note, as the device answers: '' */
+	/** why the ops of the cap the acting vault adds through don't let it add the note, as the device answers: '' */
 	let unadded = $state('');
 	$effect(() => {
 		if (!asked) return;

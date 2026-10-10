@@ -80,7 +80,7 @@ use avendb::keys::{self, KeyFam};
 use avendb::lab::{Backup, Lab, NewCap};
 use avendb::lens::{DocV2, Status};
 use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Principal, Refusal, Role, State, Vault};
-use avendb::rules::Rule;
+use avendb::rules;
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
 use avendb::wire::Wire as _;
@@ -98,7 +98,7 @@ use zeroize::Zeroizing;
 mod data;
 pub mod words;
 
-use words::{hex, kind_name, role_name, slice_value, status_name};
+use words::{grantee_name, hex, kind_name, role_name, status_name};
 
 /// The type of a device's card: an entry of its person's human vault, titled with the device's name, that the device
 /// wrote itself (`Device::card`).
@@ -490,28 +490,23 @@ impl Device {
         self.node.act(profile).await.map_err(|why: Refusal| anyhow!("the profile is refused: {why:?}"))
     }
 
-    /// Gives `grantee` the role `role` on what `slice` selects of vault `over`, acting for vault `issuer`: the vault
-    /// itself, or a vault holding an owner cap over it, on which this one then rests, a wide one for a cap on the whole
-    /// vault (`parent`). A cap that writes may carry `rules`: the ops its grantee's writes may make (`avendb::rules`).
-    /// Making someone owner is governance, which the passkey approves in a ceremony; anything less this device signs
+    /// Gives `grantee` the cap `spec` describes, a named group of ops on a slice of vault `over` (`{name, where, ops}`,
+    /// `words::spec_of`), acting for vault `issuer`: the vault itself, or a vault holding an owner cap over it, on
+    /// which this one then rests, a wide one for a cap on the whole vault (`parent`). A cap whose ops share is an
+    /// owner's, and giving one is governance, which the passkey approves in a ceremony; anything less this device signs
     /// alone. The cap's slice is sealed to the vault, its grantee and its issuer. The cap's id.
-    #[allow(clippy::too_many_arguments)]
     pub async fn share(
         &self,
         issuer: VaultId,
         over: VaultId,
-        slice: Slice,
-        rules: Option<Vec<Rule>>,
-        role: Role,
+        spec: &Value,
         grantee: Grantee,
         authenticator: &impl Authenticator,
     ) -> Result<CapId> {
-        if rules.is_some() && !role.allows(Role::Write) {
-            bail!("only a cap that writes carries rules");
-        }
-        let wide = slice.select == Selector::All;
+        let (name, select, ops) = words::spec_of(spec)?;
+        let (role, wide) = (rules::level_of(&ops), select == Selector::All);
         let parent = self.node.read(move |lab, me| parent(lab.state(me), issuer, over, wide)).await;
-        let new = NewCap { over, grantee, role, slice, parent, issuer, rules };
+        let new = NewCap { over, grantee, name, select, ops, parent, issuer };
         let refused = |why| anyhow!("the cap is refused: {why:?}");
         if role != Role::Owner {
             return self.node.act(move |lab, me| lab.issue(me, &[me], new)).await.map_err(refused);
@@ -740,9 +735,11 @@ pub enum What {
 
 impl World {
     /// The world as device `me`'s page reads it (`PageDevice::world`): ids in 64 hex digits, kinds, roles and statuses
-    /// by their lowercase names, a slice as `words::slice_value` writes it, `null` where the device doesn't read it, a
-    /// vault's `via` `null` where the device doesn't act for it, a cap's `grantee` `"public"` for everyone, an
-    /// entry's `type`, `tags` and `created` `null` where the device doesn't read them and its `roles` by vault.
+    /// by their lowercase names, a cap's slice as the core writes it (`{name, where, ops, above}`,
+    /// `avendb::slice::Slice::to_json`), `null` where the device doesn't read it, a vault's `via` `null` where the
+    /// device doesn't act for it, a cap's `grantee` `"everyone"` for Public (`words::grantee_name`), an entry's `type`,
+    /// `tags` and `created` `null` where the device doesn't read them and its `roles` by vault; and the built-in groups
+    /// of ops the page offers when it shares (`avendb::rules::groups`).
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let owner = |p: &Principal| match p {
@@ -772,7 +769,7 @@ impl World {
                 "wide": c.cap.wide,
                 "parent": c.cap.parent.map(|p| hex(&p.0)),
                 "chain": c.chain.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
-                "slice": c.slice.as_ref().map(slice_value),
+                "slice": c.slice.as_ref().map(Slice::to_json),
                 "revokers": ids(&c.revokers),
                 "entries": c.entries.iter().map(|e| hex(&e.0)).collect::<Vec<_>>(),
             })
@@ -831,16 +828,8 @@ impl World {
             "caps": self.caps.iter().map(cap).collect::<Vec<_>>(),
             "cells": self.cells.iter().map(cell).collect::<Vec<_>>(),
             "entries": self.entries.iter().map(entry).collect::<Vec<_>>(),
+            "groups": rules::groups().iter().map(rules::Group::to_json).collect::<Vec<_>>(),
         })
-    }
-}
-
-/// A cap's grantee as the page names it: `"public"` for everyone, else the vault's id.
-fn grantee_name(g: Grantee) -> String {
-    match g {
-        Grantee::Public => "public".to_string(),
-        Grantee::Principal(Principal::Vault(v)) => hex(&v.0),
-        Grantee::Principal(Principal::Signer(s)) => hex(&s.0),
     }
 }
 
@@ -1335,32 +1324,17 @@ impl PageDevice {
         })
     }
 
-    /// Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
-    /// what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel, rules?}`), acting for
-    /// vault `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
-    pub fn share(
-        &self,
-        issuer: String,
-        over: String,
-        slice: JsValue,
-        role: String,
-        grantee: String,
-        ceremony: Function,
-    ) -> Promise {
+    /// Gives `grantee`, a vault's id or `"everyone"`, the cap `spec` describes on vault `over`, a named group of ops on
+    /// a slice of it (`{name, where, ops}`, `words::spec_of`), acting for vault `issuer` (`Device::share`): a promise
+    /// of the cap's id, after one ceremony for an owner's. Ids in hex.
+    pub fn share(&self, issuer: String, over: String, spec: JsValue, grantee: String, ceremony: Function) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
             let (issuer, over) = (VaultId(id(&issuer)?), VaultId(id(&over)?));
-            let slice = String::from(js_sys::JSON::stringify(&slice)?);
-            let slice: Value = serde_json::from_str(&slice).map_err(|e| JsError::new(&format!("no slice: {e}")))?;
-            let rules = words::rules_of(&slice).map_err(js_value)?;
-            let slice = words::slice_of(&slice).map_err(js_value)?;
-            let role = words::role_of(&role).map_err(js_value)?;
-            let grantee = match grantee.as_str() {
-                "public" => Grantee::Public,
-                v => cast::vault(VaultId(id(v)?)),
-            };
-            let js = Js(ceremony);
-            let cap = device.share(issuer, over, slice, rules, role, grantee, &js).await.map_err(js_value)?;
+            let spec = String::from(js_sys::JSON::stringify(&spec)?);
+            let spec: Value = serde_json::from_str(&spec).map_err(|e| JsError::new(&format!("no cap: {e}")))?;
+            let grantee = words::grantee_of(&grantee).map_err(js_value)?;
+            let cap = device.share(issuer, over, &spec, grantee, &Js(ceremony)).await.map_err(js_value)?;
             Ok(hex(&cap.0).into())
         })
     }

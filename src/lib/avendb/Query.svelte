@@ -9,7 +9,7 @@
 <script>
 	import { cell } from './db.js';
 	import { reads } from './ops.js';
-	import { count, nameOf, short, sliceWords } from './vaults.js';
+	import { count, nameOf, short, whereWords } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any,
@@ -154,7 +154,7 @@
 {:else if rows}
 	<p class="picked soft">
 		{count(out.ok.count, 'row')}{out.ok.count > rows.length ? `, ${rows.length} shown` : ''}. Picked by its labels
-		before any entry was opened, as a cap selects: <b>{sliceWords({ select: out.ok.plan, relabel: [] }, world)}</b>
+		before any entry was opened, as a cap selects: <b>{whereWords(out.ok.plan, world)}</b>
 		<code>{JSON.stringify(out.ok.plan)}</code>
 	</p>
 	{#if rows.length}

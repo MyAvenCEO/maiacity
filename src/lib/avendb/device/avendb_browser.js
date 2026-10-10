@@ -356,27 +356,24 @@ export class Device {
         return ret;
     }
     /**
-     * Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
-     * what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel, rules?}`), acting for
-     * vault `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
+     * Gives `grantee`, a vault's id or `"everyone"`, the cap `spec` describes on vault `over`, a named group of ops on
+     * a slice of it (`{name, where, ops}`, `words::spec_of`), acting for vault `issuer` (`Device::share`): a promise
+     * of the cap's id, after one ceremony for an owner's. Ids in hex.
      * @param {string} issuer
      * @param {string} over
-     * @param {any} slice
-     * @param {string} role
+     * @param {any} spec
      * @param {string} grantee
      * @param {Function} ceremony
      * @returns {Promise<any>}
      */
-    share(issuer, over, slice, role, grantee, ceremony) {
+    share(issuer, over, spec, grantee, ceremony) {
         const ptr0 = passStringToWasm0(issuer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(over, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(role, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr2 = passStringToWasm0(grantee, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ptr3 = passStringToWasm0(grantee, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_share(this.__wbg_ptr, ptr0, len0, ptr1, len1, slice, ptr2, len2, ptr3, len3, ceremony);
+        const ret = wasm.device_share(this.__wbg_ptr, ptr0, len0, ptr1, len1, spec, ptr2, len2, ceremony);
         return ret;
     }
     /**
@@ -1230,7 +1227,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5446, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5447, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue__core_7d5f0a2ba6a62c33___result__Result_____wasm_bindgen_61c7e10f51da098e___JsError___true_);
             return ret;
         },
