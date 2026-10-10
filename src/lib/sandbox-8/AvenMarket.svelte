@@ -11,7 +11,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { wayBack } from '$lib/app/back.svelte.js';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js';
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
@@ -770,7 +770,10 @@
 		ctx.roundRect(0, 0, WORLD.w, WORLD.h, 28);
 		ctx.fill();
 
-		// territories
+		// a fields valley (its own layout, Samuel's sketch): the COOP in the middle, a wedge of land per aven, its fields
+		// around its home; older worlds keep the ring of round lands below
+		if (world.layout === 'coop') drawCoopValley(ctx, light);
+		else
 		for (const a of world.avens) {
 			const t = a.territory;
 			ctx.fillStyle = a.alive ? `${a.colour}22` : '#80808018';
@@ -918,6 +921,120 @@
 				ctx.font = '11px system-ui, sans-serif';
 				ctx.fillText('thinking…', a.x + r + 34, a.y + 4);
 			}
+		}
+	}
+
+	/** a fields valley: the MaiaCity COOP in the middle, the land cut into one wedge per aven out to the valley's edge,
+	 * each aven's home in its wedge with its three field plots around it (F1, F2, F3: its crop, level and last harvest;
+	 * an unopened plot dashed), its store below and its name */
+	function drawCoopValley(/** @type {CanvasRenderingContext2D} */ ctx, /** @type {number} */ light) {
+		const n = world.avens.length;
+		const C = COOP_SPOT;
+		const ink = light > 0.5 ? '#1f2a23' : '#f4f1e8';
+		const at = (/** @type {number} */ ang, /** @type {number} */ d) => /** @type {[number, number]} */ ([C.x + Math.cos(ang) * d, C.y + Math.sin(ang) * d]);
+		// each aven's wedge, tinted in its colour
+		world.avens.forEach((/** @type {any} */ a, /** @type {number} */ i) => {
+			const a0 = -Math.PI / 2 + (i / n) * Math.PI * 2,
+				a1 = -Math.PI / 2 + ((i + 1) / n) * Math.PI * 2;
+			ctx.beginPath();
+			ctx.moveTo(...at(a0, C.r));
+			for (let k = 0; k <= 16; k++) {
+				const ang = a0 + ((a1 - a0) * k) / 16;
+				ctx.lineTo(...at(ang, edgeAlong(ang)));
+			}
+			ctx.lineTo(...at(a1, C.r));
+			ctx.arc(C.x, C.y, C.r, a1, a0, true);
+			ctx.closePath();
+			ctx.fillStyle = a.alive ? `${a.colour}16` : '#8080800f';
+			ctx.fill();
+			ctx.strokeStyle = light > 0.5 ? '#1f2a2333' : '#f4f1e833';
+			ctx.lineWidth = 1.5;
+			ctx.stroke();
+		});
+		// the COOP
+		ctx.beginPath();
+		ctx.arc(C.x, C.y, C.r, 0, Math.PI * 2);
+		ctx.fillStyle = light > 0.5 ? '#f7f3e8' : '#24452f';
+		ctx.fill();
+		ctx.strokeStyle = '#24452f';
+		ctx.lineWidth = 2.5;
+		ctx.stroke();
+		ctx.fillStyle = ink;
+		ctx.textAlign = 'center';
+		ctx.font = '700 14px system-ui, sans-serif';
+		ctx.fillText('MaiaCity', C.x, C.y - 10);
+		ctx.fillText('COOP', C.x, C.y + 7);
+		ctx.font = '600 11px system-ui, sans-serif';
+		ctx.globalAlpha = 0.75;
+		ctx.fillText(`${fmt(world.coop?.hearts ?? 0)} ♥`, C.x, C.y + 25);
+		ctx.globalAlpha = 1;
+		// each home and its fields
+		for (const a of world.avens) {
+			const h = a.territory;
+			const away = Math.atan2(h.y - C.y, h.x - C.x); // its wedge's direction, out from the COOP
+			const R = 50;
+			for (let k = 0; k < 3; k++) {
+				const f = a.fields?.[k];
+				const s0 = away - Math.PI / 2 + (k * Math.PI) / 3 - Math.PI / 6,
+					s1 = s0 + Math.PI / 3;
+				ctx.beginPath();
+				ctx.moveTo(h.x, h.y);
+				ctx.arc(h.x, h.y, R, s0 + 0.06, s1 - 0.06);
+				ctx.closePath();
+				if (f) {
+					const grown = fieldGrown(world, f);
+					ctx.fillStyle = a.alive ? GOOD_COLOUR[f.crop] : '#8a8a86';
+					ctx.globalAlpha = 0.35 + 0.65 * grown;
+					ctx.fill();
+					ctx.globalAlpha = 1;
+				} else {
+					ctx.setLineDash([4, 4]);
+					ctx.strokeStyle = light > 0.5 ? '#1f2a2355' : '#f4f1e855';
+					ctx.lineWidth = 1.2;
+					ctx.stroke();
+					ctx.setLineDash([]);
+				}
+				const [lx, ly] = [h.x + Math.cos((s0 + s1) / 2) * R * 0.62, h.y + Math.sin((s0 + s1) / 2) * R * 0.62];
+				ctx.fillStyle = f ? '#fff' : ink;
+				ctx.textBaseline = 'middle';
+				ctx.font = '700 10px system-ui, sans-serif';
+				ctx.globalAlpha = f ? 1 : 0.5;
+				ctx.fillText(f ? `L${f.level}` : `F${k + 1}`, lx, ly - 5);
+				ctx.font = '600 9px system-ui, sans-serif';
+				if (f) ctx.fillText(String(a.harvest?.[f.crop] ?? 0), lx, ly + 6);
+				ctx.globalAlpha = 1;
+				ctx.textBaseline = 'alphabetic';
+			}
+			// its home
+			ctx.beginPath();
+			ctx.arc(h.x, h.y, 21, 0, Math.PI * 2);
+			ctx.fillStyle = light > 0.5 ? '#fbf8f0' : '#1f2a23';
+			ctx.fill();
+			ctx.strokeStyle = a.alive ? a.colour : '#8a8a86';
+			ctx.lineWidth = 2;
+			ctx.stroke();
+			// its store: a small dot per good on the far side of its home
+			GOODS.forEach((g, i) => {
+				const ang = away + ((i - 2) * Math.PI) / 9;
+				const [sx, sy] = [h.x + Math.cos(ang) * (R + 16), h.y + Math.sin(ang) * (R + 16)];
+				ctx.globalAlpha = a.stock[g] > 0 ? 1 : 0.35;
+				ctx.fillStyle = a.alive ? GOOD_COLOUR[g] : '#8a8a86';
+				ctx.beginPath();
+				ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.globalAlpha = 1;
+				ctx.fillStyle = '#fff';
+				ctx.font = '700 9px system-ui, sans-serif';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(String(a.stock[g]), sx, sy + 0.5);
+				ctx.textBaseline = 'alphabetic';
+			});
+			const [nx, ny] = [h.x + Math.cos(away) * (R + 38), h.y + Math.sin(away) * (R + 38)];
+			ctx.fillStyle = light > 0.5 ? '#1f2a23cc' : '#f4f1e8cc';
+			ctx.font = '600 12px system-ui, sans-serif';
+			ctx.textBaseline = 'middle';
+			ctx.fillText(a.alive ? `${a.name} · ${fmt(a.hearts)} ♥` : `${a.name} †`, nx, ny);
+			ctx.textBaseline = 'alphabetic';
 		}
 	}
 

@@ -96,6 +96,21 @@ export function coopTake(world, a, n, what) {
 	c.from[what] = Math.round(((c.from[what] ?? 0) + n) * 100) / 100;
 	a.hearts = Math.round((a.hearts - n) * 100) / 100;
 }
+/** the COOP's place in a fields valley, and how big it is */
+export const COOP_SPOT = { x: 600, y: 410, r: 64 };
+/** how far from the COOP the valley's edge lies, along a direction */
+export function edgeAlong(ang) {
+	const dx = Math.cos(ang),
+		dy = Math.sin(ang);
+	const t = [dx > 0 ? (WORLD.w - COOP_SPOT.x) / dx : dx < 0 ? -COOP_SPOT.x / dx : Infinity, dy > 0 ? (WORLD.h - COOP_SPOT.y) / dy : dy < 0 ? -COOP_SPOT.y / dy : Infinity];
+	return Math.min(...t);
+}
+/** where aven i of n lives in a fields valley: in the middle of its wedge, a little past half way to the edge */
+export function wedgeHome(i, n) {
+	const ang = -Math.PI / 2 + ((i + 0.5) / n) * Math.PI * 2;
+	const d = COOP_SPOT.r + (edgeAlong(ang) - COOP_SPOT.r) * 0.58;
+	return { x: COOP_SPOT.x + Math.cos(ang) * d, y: COOP_SPOT.y + Math.sin(ang) * d, ang };
+}
 /** what an aven grows follows its fields; what it grows a day, as far as they have grown */
 export function syncFields(world, a) {
 	a.grows = GOODS.filter((g) => a.fields.some((f) => f.crop === g));
@@ -296,8 +311,14 @@ export function createWorld(seed = Date.now() % 1e9) {
 			a.harvest = { ...a.produce };
 			a.stock = Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays + Math.round(a.produce[g] ?? 0)]));
 		});
+		// the valley around the MaiaCity COOP (Samuel's sketch, 2026-10-10): the COOP in the middle, the land cut into one
+		// wedge per aven from it out to the valley's edge, each aven's home in its wedge with its fields around it
+		avens.forEach((a, i) => {
+			const home = wedgeHome(i, avens.length);
+			Object.assign(a, { home, territory: { x: home.x, y: home.y, r: 70 }, x: home.x, y: home.y - 6 });
+		});
 	}
-	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, coop: { hearts: 0, from: {} }, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
+	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, coop: { hearts: 0, from: {} }, layout: fieldsOn() ? 'coop' : 'ring', rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
 	updateMarket(world);
 	record(world, 0, {});
 	return world;
