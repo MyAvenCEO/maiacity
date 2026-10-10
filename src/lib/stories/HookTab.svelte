@@ -579,7 +579,7 @@
 		position: absolute;
 		right: 5%;
 		bottom: 7%;
-		padding: 0.35em 0.8em;
+		padding: 0.3em 0.55em;
 		border-radius: 7px;
 		background: #f6c75a;
 		font-family: var(--font-display);

@@ -343,8 +343,8 @@
 
 	/* the day's badge: dark marine words, tight, on a solid gold fill */
 	.badge {
-		padding: 0.5em 0.9em;
-		border-radius: 0.45em;
+		padding: 0.3em 0.55em;
+		border-radius: 0.35em;
 		font-family: var(--font-display);
 		font-weight: 760;
 		line-height: 1;
