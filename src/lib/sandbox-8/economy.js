@@ -70,7 +70,7 @@ export const capexOf = (g, level) => hooked('capex', { good: g, level }, RULES[`
 /** what a field of `g` at `level` costs a night (the Fields card's opex rule) */
 export const opexOf = (g, level) => hooked('opex', { good: g, level }, RULES[`opex${level}_${g}`] ?? 0, 0, 1e9);
 /** what opening field number `slot` (0, 1, 2) costs */
-export const openCost = (slot) => (slot === 1 ? RULES.field2 : slot === 2 ? RULES.field3 : 0);
+export const openCost = (slot) => (slot === 0 ? RULES.field1 : slot === 1 ? RULES.field2 : slot === 2 ? RULES.field3 : 0);
 /** a crop's field capacity at level 1 */
 export const fieldBase = (g) => RULES[`cap_${g}`] ?? 0;
 /** a field's yield at a level, as a share of level 1 */
@@ -300,16 +300,15 @@ export function createWorld(seed = Date.now() % 1e9) {
 	const market = Object.fromEntries(GOODS.map((g) => [g, { price: null, supply: 0, demand: 0, open: null, history: [], series: [], sells: [], wants: [] }]));
 	// own fields: every aven starts with one, its land's first crop at level 1, grown; and its starting rations
 	if (fieldsOn()) {
-		// the first crops spread evenly: every crop on as many fields as the others (two each for ten avens), dealt by the seed
-		const first = avens.map((_, i) => GOODS[i % GOODS.length]).sort(() => rand() - 0.5);
-		avens.forEach((a, i) => {
-			a.fields = [{ crop: first[i], level: 1, since: -rampOf(first[i]), from: null, levelSince: null }];
+		// no fields to start with (Samuel, 2026-10-10): each aven opens its first itself, choosing its crop; until its
+		// fields grow it lives on its starting rations and the market
+		avens.forEach((a) => {
+			a.fields = [];
 			a.ask = {};
-			a.bid = {};
-			for (const g of GOODS) (g === first[i] ? a.ask : a.bid)[g] = null;
+			a.bid = Object.fromEntries(GOODS.map((g) => [g, null]));
 			syncFields({ day: 1 }, a);
-			a.harvest = { ...a.produce };
-			a.stock = Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays + Math.round(a.produce[g] ?? 0)]));
+			a.harvest = Object.fromEntries(GOODS.map((g) => [g, 0]));
+			a.stock = Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays]));
 		});
 		// the valley around the MaiaCity COOP (Samuel's sketch, 2026-10-10): the COOP in the middle, the land cut into one
 		// wedge per aven from it out to the valley's edge, each aven's home in its wedge with its fields around it
