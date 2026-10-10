@@ -27,7 +27,7 @@ test("the valley is there from the start: the catalogue's defaults as cards, at 
   const [valley] = await listConfigs();
   expect(valley.id).toBe("valley");
   expect(valley.version).toBe(1);
-  expect(valley.cards.map((c) => c.id)).toEqual(["hearts", "trading", "brains", "avens", "bodies", "rot", "land", "harvests", "weather"]);
+  expect(valley.cards.map((c) => c.id)).toEqual(["hearts", "trading", "brains", "avens", "bodies", "rot", "land", "harvests", "weather", "fields"]);
   expect(valley.params).toEqual(DEFAULT_PARAMS);
   expect((await getConfig("valley")).versions).toEqual([expect.objectContaining({ version: 1, mip: null })]);
   // what card code may export, for agents writing it over the MCP
@@ -100,7 +100,7 @@ test("a MIP creates a config from another with new cards, edits and deletes; rej
   expect(dry.params.mint).toBe(30); // copied from the valley as it is now
   expect(dry.params.rainChance).toBe(5);
   expect(dry.params.swing).toBe(DEFAULT_PARAMS.swing); // its card taken out: the catalogue's default
-  expect(dry.cards.map((c) => c.id)).toEqual(["hearts", "trading", "brains", "avens", "bodies", "rot", "land", "weather", "wells"]);
+  expect(dry.cards.map((c) => c.id)).toEqual(["hearts", "trading", "brains", "avens", "bodies", "rot", "land", "weather", "fields", "wells"]);
   await expect(createMip("alice", { world_id: W, title: "again", config: "dry-valley", action: "create" })).rejects.toThrow(/already a config/);
 
   const no = await createMip("alice", { world_id: W, title: "Rename", config: "dry-valley", name: "Desert" });

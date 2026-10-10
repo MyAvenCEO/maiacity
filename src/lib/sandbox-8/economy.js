@@ -58,6 +58,107 @@ function remembered(key, f) {
 	return memo.get(key);
 }
 
+// ─────────────── fields (Samuel, 2026-10-10: every aven an entrepreneur) ───────────────
+// Where the Fields card turns them on (fieldsOn), an aven's land is up to three fields it farms itself: each one crop at
+// level 1 to 3 (half, all or one and a half times the crop's field capacity), which it can level up (CAPEX) and keeps
+// paying for each night (OPEX), both burned; a crop planted or changed starts again at level 1 and grows into its yield
+// over rampDays, a level-up over levelDays. What it grows is then its own decision, made by its brain (asks.js).
+export const fieldsOn = () => RULES.fieldsOn >= 1;
+const LEVEL_SHARE = [0, 0.5, 1, 1.5];
+const CAPEX_OWN = { water: [0, 0, 200, 500], fruits: [0, 0, 150, 400], vegetables: [0, 0, 150, 400], legumes: [0, 0, 120, 300], chicken: [0, 0, 250, 600] };
+const OPEX_OWN = { water: [0, 2, 5, 10], fruits: [0, 2, 5, 10], vegetables: [0, 2, 4, 9], legumes: [0, 1, 3, 7], chicken: [0, 3, 6, 13] };
+/** what levelling a field of `g` up to `level` costs, once (the Fields card's capex rule) */
+export const capexOf = (g, level) => hooked('capex', { good: g, level }, CAPEX_OWN[g]?.[level] ?? 0, 0, 1e9);
+/** what a field of `g` at `level` costs a night (the Fields card's opex rule) */
+export const opexOf = (g, level) => hooked('opex', { good: g, level }, OPEX_OWN[g]?.[level] ?? 0, 0, 1e9);
+/** what opening field number `slot` (0, 1, 2) costs */
+export const openCost = (slot) => (slot === 1 ? RULES.field2 : slot === 2 ? RULES.field3 : 0);
+/** a crop's field capacity at level 2 */
+export const fieldBase = (g) => (g === 'water' ? RULES.fieldWater : RULES.fieldFood);
+/** a field's share of its crop's capacity at a level */
+export const levelShare = (level) => LEVEL_SHARE[level] ?? 0;
+/** how far a field has grown into its yield, 0 to 1 */
+export const fieldGrown = (world, f) => (RULES.rampDays > 0 ? Math.min(1, Math.max(0, (world.day - f.since) / RULES.rampDays)) : 1);
+/** a field's yield a day today, before the night's luck: its level's share of the crop's capacity, as far as grown */
+export function fieldYield(world, f) {
+	const was = f.from ?? f.level;
+	const up = RULES.levelDays > 0 && f.from != null ? Math.min(1, Math.max(0, (world.day - f.levelSince) / RULES.levelDays)) : 1;
+	return fieldBase(f.crop) * (LEVEL_SHARE[was] + (LEVEL_SHARE[f.level] - LEVEL_SHARE[was]) * up) * fieldGrown(world, f);
+}
+/** what an aven grows follows its fields; what it grows a day, as far as they have grown */
+export function syncFields(world, a) {
+	a.grows = GOODS.filter((g) => a.fields.some((f) => f.crop === g));
+	a.produce = Object.fromEntries(a.grows.map((g) => [g, Math.round(a.fields.filter((f) => f.crop === g).reduce((n, f) => n + fieldYield(world, f), 0) * 10) / 10]));
+	for (const g of GOODS) {
+		if (a.grows.includes(g) && !(g in a.ask)) a.ask[g] = null;
+		if (!a.grows.includes(g) && !(g in a.bid)) a.bid[g] = null;
+	}
+}
+/** the night's harvest of an aven's own fields: each paid for tonight (else it lies fallow), each on its own luck */
+function harvestFields(world, a) {
+	a.harvest = Object.fromEntries(GOODS.map((g) => [g, 0]));
+	for (const f of a.fields) {
+		const cost = opexOf(f.crop, f.level);
+		if (cost > a.hearts) {
+			log(world, a, { kind: 'grow', good: f.crop, qty: 0, cap: 0, note: 'fallow: it could not pay for its field' });
+			continue;
+		}
+		a.hearts = Math.round((a.hearts - cost) * 100) / 100;
+		a.opex = (a.opex ?? 0) + cost;
+		world.tally.opex = (world.tally.opex ?? 0) + cost;
+		const cap = fieldYield(world, f);
+		const roll = dice(world, 3);
+		const own = harvest(world, cap, f.crop, roll);
+		const top = Math.max(100, cap * 10);
+		const grown = ruled('harvest', { aven: a, good: f.crop, capacity: cap, dice: roll }, own, (v, o) =>
+			typeof v === 'number' && Number.isFinite(v) ? { qty: Math.min(top, Math.max(0, Math.round(v))), kind: o.kind } : v && Number.isFinite(v.qty) ? { qty: Math.min(top, Math.max(0, Math.round(v.qty))), kind: ['normal', 'bad', 'rich', 'dry'].includes(v.kind) ? v.kind : 'normal' } : o
+		);
+		a.harvest[f.crop] += grown.qty;
+		a.stock[f.crop] += grown.qty;
+		if (grown.kind !== 'normal') log(world, a, { kind: 'grow', good: f.crop, qty: grown.qty, cap: Math.round(cap), note: grown.kind });
+	}
+	syncFields(world, a);
+}
+/**
+ * One decision about a field: slot 0-2, code 0 = keep (or leave unopened), 1 = level up, 2 + i = plant GOODS[i] (on an
+ * open field: change its crop, back to level 1; on the next unopened one: open it). Paid for at once, burned. Returns
+ * the change in the feed's words, or a sentence why it couldn't, or null for no change.
+ */
+export function invest(world, a, slot, code) {
+	if (!fieldsOn() || !a.alive || !a.fields || !Number.isInteger(code) || code <= 0) return null;
+	const f = a.fields[slot];
+	const pay = (n) => {
+		a.hearts = Math.round((a.hearts - n) * 100) / 100;
+		a.invested = (a.invested ?? 0) + n;
+		world.tally.invested = (world.tally.invested ?? 0) + n;
+	};
+	let change;
+	if (!f) {
+		const g = GOODS[code - 2];
+		if (!g || slot !== a.fields.length) return null;
+		const cost = openCost(slot);
+		if (a.hearts < cost) return `couldn't open field ${slot + 1} (${cost} HEARTS)`;
+		pay(cost);
+		a.fields.push({ crop: g, level: 1, since: world.day, from: null, levelSince: null });
+		change = { label: `opens field ${slot + 1} with`, to: GOOD_LABEL[g], unit: `for ${cost} HEARTS` };
+	} else if (code === 1) {
+		if (f.level >= 3) return null;
+		const cost = capexOf(f.crop, f.level + 1);
+		if (a.hearts < cost) return `couldn't level up its ${GOOD_LABEL[f.crop]} field (${cost} HEARTS)`;
+		pay(cost);
+		Object.assign(f, { from: f.level, level: f.level + 1, levelSince: world.day });
+		change = { label: `levels up its ${GOOD_LABEL[f.crop]} field`, from: f.level - 1, to: f.level, unit: `for ${cost} HEARTS` };
+	} else {
+		const g = GOODS[code - 2];
+		if (!g || g === f.crop) return null;
+		change = { label: `changes field ${slot + 1}`, from: GOOD_LABEL[f.crop], to: GOOD_LABEL[g], unit: 'back to level 1' };
+		Object.assign(f, { crop: g, level: 1, since: world.day, from: null, levelSince: null });
+	}
+	syncFields(world, a);
+	log(world, a, { kind: 'field', slot, ...change });
+	return change;
+}
+
 export const WORLD = { w: 1200, h: 820 };
 /** where an aven stands at home: the middle of its land */
 const homeSpot = (a) => ({ x: a.territory.x, y: a.territory.y - 6 });
@@ -171,6 +272,17 @@ export function createWorld(seed = Date.now() % 1e9) {
 		};
 	});
 	const market = Object.fromEntries(GOODS.map((g) => [g, { price: null, supply: 0, demand: 0, open: null, history: [], series: [], sells: [], wants: [] }]));
+	// own fields: every aven starts with one, its land's first crop at level 1, grown; and its starting rations
+	if (fieldsOn())
+		for (const a of avens) {
+			a.fields = [{ crop: a.grows[0], level: 1, since: -RULES.rampDays, from: null, levelSince: null }];
+			a.ask = {};
+			a.bid = {};
+			for (const g of GOODS) (g === a.grows[0] ? a.ask : a.bid)[g] = null;
+			syncFields({ day: 1 }, a);
+			a.harvest = { ...a.produce };
+			a.stock = Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays + Math.round(a.produce[g] ?? 0)]));
+		}
 	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
 	updateMarket(world);
 	record(world, 0, {});
@@ -640,6 +752,8 @@ function endOfDay(world) {
 		a.yesterday = a.today;
 		a.today = blankDay();
 		if (!a.alive) continue;
+		if (fieldsOn() && a.fields) harvestFields(world, a);
+		else
 		for (const g of a.grows) {
 			const roll = dice(world, 3);
 			const own = harvest(world, a.produce[g], g, roll);

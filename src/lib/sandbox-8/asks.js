@@ -6,7 +6,7 @@
 // logic natively below, only as the fallback for a hook that fails or a page where QuickJS can't load;
 // scripts/sandbox-8-rules.mjs checks the two agree. Transport (Liquid, the GPU box) stays in brain.js.
 
-import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, activity, changeText } from './economy.js';
+import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, activity, changeText, fieldsOn, invest, capexOf, opexOf, openCost, fieldBase, fieldYield, fieldGrown, levelShare } from './economy.js';
 import { RULES } from './rules.js';
 import { mindFor, inCharacter, mindQuestions, applyMind, traits, DIALS } from './mind.js';
 
@@ -229,7 +229,66 @@ export function questionsFor(world, a, { full = true, writes = false } = {}) {
 	// trials (scored by the game) and by the admin's edits. After a stretch is measured, a full ask also picks the next
 	// trial, and a brain that writes adds a lesson (mind.js).
 	if (full) Object.assign(out, mindQuestions(a, { writes }));
+	// its own fields (where its world has them): what to keep, level up, change or open, every option priced
+	if (full && fieldsOn() && a.fields) Object.assign(out, fieldQuestions(world, a));
 	return out;
+}
+
+/** the market as an entrepreneur reads it: per crop, its price, what the valley needs, and every field that grows it,
+ * whose and at what level (Samuel, 2026-10-10: it sees what the others do and decides what to grow) */
+function fieldMarket(world) {
+	const live = world.avens.filter((o) => o.alive);
+	return GOODS.map((g) => {
+		const p = world.market[g].posted ?? world.market[g].price;
+		const fields = live.flatMap((o) => (o.fields ?? []).filter((f) => f.crop === g).map((f) => `${o.name} L${f.level}${fieldGrown(world, f) < 1 ? ' growing' : ''}`));
+		const yieldNow = live.reduce((n, o) => n + (o.fields ?? []).filter((f) => f.crop === g).reduce((m, f) => m + fieldYield(world, f), 0), 0);
+		const need = live.length * (NEED[g] ?? 0);
+		return `${GOOD_LABEL[g]}: ${p == null ? 'no price yet' : `${p} HEARTS a unit`}; the valley needs ${need} a day and its fields give about ${Math.round(yieldNow)}${fields.length ? ` (${fields.join(', ')})` : ' (nobody grows it)'}`;
+	}).join('. ');
+}
+/** one question per field (and one for the next field it could open): keep, level up, or plant another crop */
+function fieldQuestions(world, a) {
+	const q = {};
+	const price = (g) => world.market[g].posted ?? world.market[g].price ?? 0;
+	const r = (x) => Math.round(x * 10) / 10;
+	const worth = (g, level) => {
+		const y = fieldBase(g) * levelShare(level);
+		return `about ${r(y)} a day, worth ${r(y * price(g))} HEARTS at today's price, for ${opexOf(g, level)} HEARTS a night: about ${r(y * price(g) - opexOf(g, level))} a day net`;
+	};
+	const market = fieldMarket(world);
+	const slots = Math.min(3, a.fields.length + 1);
+	for (let slot = 0; slot < slots; slot++) {
+		const f = a.fields[slot];
+		const levels = [0];
+		const criteria = [];
+		if (f) {
+			criteria.push(`keep its ${GOOD_LABEL[f.crop]} field at level ${f.level}${fieldGrown(world, f) < 1 ? ` (still growing: ${Math.round(fieldGrown(world, f) * 100)}%)` : ''}: ${worth(f.crop, f.level)}`);
+			if (f.level < 3) {
+				levels.push(1);
+				criteria.push(`level it up to ${f.level + 1}: ${capexOf(f.crop, f.level + 1)} HEARTS now, then ${worth(f.crop, f.level + 1)}`);
+			}
+			for (const [i, g] of GOODS.entries())
+				if (g !== f.crop) {
+					levels.push(2 + i);
+					criteria.push(`change it to ${GOOD_LABEL[g]}: back to level 1, grown in ${RULES.rampDays} days, then ${worth(g, 1)}`);
+				}
+		} else {
+			criteria.push(`don't open field ${slot + 1} yet`);
+			for (const [i, g] of GOODS.entries()) {
+				levels.push(2 + i);
+				criteria.push(`open field ${slot + 1} with ${GOOD_LABEL[g]} for ${openCost(slot)} HEARTS: grown in ${RULES.rampDays} days, then ${worth(g, 1)}`);
+			}
+		}
+		const key = `field${slot + 1}`;
+		a.brain.levels[key] = levels;
+		a.brain.labels[key] = `field ${slot + 1}`;
+		q[key] = {
+			type: 'score',
+			instructions: `You farm your own fields and decide what they grow: you can level a field up (paid once, then it costs more a night and yields more), change its crop (back to level 1, and it takes days to grow) or open up to 3 fields. What a field yields you sell at the posted price, or eat. You hold ${Math.round(a.hearts)} HEARTS. The market: ${market}. Grow what is scarce and dear, not what everyone else already grows. ${f ? `Your field ${slot + 1} grows ${GOOD_LABEL[f.crop]} at level ${f.level}.` : `You have ${a.fields.length} field${a.fields.length === 1 ? '' : 's'}.`} What do you do with field ${slot + 1}?`,
+			criteria
+		};
+	}
+	return q;
 }
 /** what the `ask` hook is given, besides `valley`: each good's price anchor, what the aven wants and can spare, its
  * character's line per decision */
@@ -313,6 +372,15 @@ export function applyAnswers(world, a, answers, source) {
 	const set = (key, from, to, unit = a.brain.units?.[key]) => (from === to ? kept : changes).push({ label: a.brain.labels?.[key] ?? labelOf(key), from, to, ...(unit ? { unit } : {}) });
 	for (const [key, ans] of Object.entries(answers)) {
 		if (key === 'next_trial' || key === 'lesson') continue;
+		if (/^field[123]$/.test(key)) {
+			// a decision about a field: the option it picked, acted on at once (and paid for)
+			const levels = a.brain.levels?.[key];
+			const pick = numberOf(ans) ?? (typeof ans.score === 'number' ? ans.score : null);
+			if (!levels || pick == null) continue;
+			const c = invest(world, a, Number(key.slice(5)) - 1, levels[Math.max(0, Math.min(levels.length - 1, Math.round(pick)))]);
+			if (c) changes.push(c);
+			continue;
+		}
 		if (key === 'reserve') {
 			const d = Number(ans.choice);
 			if (d > 0) {
