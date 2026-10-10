@@ -19,6 +19,9 @@
 	<button class="ic" onclick={() => s.seek(0)} aria-label="To the start" title="To the start">⏮</button>
 	<button class="ic play" onclick={s.toggle} aria-label={s.playing || s.starting ? 'Pause' : 'Play'} title="{s.playing || s.starting ? 'Pause' : 'Play'} (Space)">{s.playing || s.starting ? '❚❚' : '▶'}</button>
 	<span class="time">{clockText(s.time)}<span> / {clockText(s.end)}</span></span>
+	{#if s.soundOff}
+		<button class="pill warn" onclick={s.soundOn} title="The Mac kept the sound off (its output changed, or it slept): click to turn it on">🔇 Sound on</button>
+	{/if}
 
 	<span class="grow"></span>
 
@@ -107,6 +110,11 @@
 		font-size: 0.72rem;
 		color: var(--dim);
 		cursor: pointer;
+	}
+
+	.pill.warn {
+		border-color: #d9a441;
+		color: #f0c36a;
 	}
 
 	.pill:disabled {
