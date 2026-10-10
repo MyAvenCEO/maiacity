@@ -49,14 +49,15 @@
 //! revoke it; every cell, the entries the same caps reach and one key opens, with the devices that sync it and whether
 //! each opens it or only relays its ciphertext; and every entry, with its type, its tags and each vault's role on it.
 //!
-//! Each note opens on its page (`Device::note`): its main line and each proposal (a proposal of its history), and every
-//! edit of it, each with what it changed, to edit on any line, retitle, propose, merge, promote, restore, undo or make
-//! a variant (a new note with what a line shows, marked with the note it came from), acting for a vault as any edit
-//! does (`Device::set_text_on`, `set_title_on`, `propose`, `merge`, `restore`, `undo`, `variant`). And each vault's
-//! database shows as the device holds it, every entry with its record, its type, its tags, its cell and its edits, and
-//! the schemas and lenses the app ships and the vault publishes (`Device::database`, `data`); and the database's
-//! history, every signed edit the device holds (the core's edits), each with what it does, who signed it and how, and
-//! the vaults it concerns (`Device::history`).
+//! Every read and change of the entries the device holds, whatever their schema, is one op of the ops engine
+//! (`Device::run`, `avendb::engine`, `avendb/docs/OPS.md`): JSON the page writes, which the device runs as the vault it
+//! names, and the rules check as they check any peer's edit. Each note opens on its page (`Device::note`): its main
+//! line and each proposal (a proposal of its history), and every edit of it, each with what it changed, to edit on any
+//! line, retitle, propose, merge, promote, restore, undo or make a variant (a new note with what a line shows, marked
+//! with the note it came from), each an op. And each vault's database shows as the device holds it, every entry with
+//! its record, its type, its tags, its cell and its edits, and the schemas and lenses the app ships and the vault
+//! publishes (`Device::database`, `data`); and the database's history, every signed edit the device holds (the core's
+//! edits), each with what it does, who signed it and how, and the vaults it concerns (`Device::history`).
 //!
 //! The same device runs natively in the Mac app (`avendb-device`, beside maiaCITY Studio): there its node binds UDP
 //! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it
@@ -73,13 +74,14 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::doc::Item;
+use avendb::engine;
 use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::{self, KeyFam};
 use avendb::lab::{Backup, Lab, NewCap};
-use avendb::lens::{DocV2, Status, TypeV2};
-use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Line, Principal, Refusal, Role, State, Vault};
+use avendb::lens::{DocV2, Status};
+use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Principal, Refusal, Role, State, Vault};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
-use avendb::slice::{Selector, Slice, Sym};
+use avendb::slice::{Selector, Slice};
 use avendb::wire::Wire as _;
 use avendb_net::{Authenticator, Node, Offer, Options, Step};
 use iroh::RelayUrl;
@@ -431,29 +433,6 @@ impl Device {
         self.node.act(profile).await.map_err(|why: Refusal| anyhow!("the profile is refused: {why:?}"))
     }
 
-    /// Writes a new todo titled `title` with tags `tags` into vault `vault`, acting for vault `actor`, the vault itself
-    /// or one holding a cap with write or more on a slice that holds it: its entry.
-    pub async fn todo(&self, actor: VaultId, vault: VaultId, title: String, tags: Vec<String>) -> Result<EntryId> {
-        let todo = move |lab: &mut Lab, me| lab.create(me, actor, vault, TODO, &strs(&tags), Item::todo(&title, me));
-        self.node.act(todo).await.map_err(|why| anyhow!("the todo is refused: {why:?}"))
-    }
-
-    /// Sets the status of todo `entry`, acting for vault `actor`; its peers are told.
-    pub async fn set_status(&self, actor: VaultId, entry: EntryId, status: Status) -> Result<()> {
-        let edit = move |lab: &mut Lab, me| lab.edit(me, actor, entry, |item| item.set_status(status));
-        self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the change is refused: {why:?}"))
-    }
-
-    /// Adds the tags `add` to entry `entry` and removes the tags `remove`, acting for vault `actor`; its peers are
-    /// told.
-    /// They count at once when `actor` is the entry's vault; anyone else asks the vault's stewards, its devices, who
-    /// answer with what the caps it holds let it ask for (`Lab::tag`). A tag that takes an entry into or out of a
-    /// cap's slice moves it to the cell those caps reach.
-    pub async fn tag(&self, actor: VaultId, entry: EntryId, add: Vec<String>, remove: Vec<String>) -> Result<()> {
-        let tag = move |lab: &mut Lab, me| lab.tag(me, actor, entry, &strs(&add), &strs(&remove));
-        self.node.act(tag).await.map(|_| ()).map_err(|why| anyhow!("the tags are refused: {why:?}"))
-    }
-
     /// Gives `grantee` the role `role` on what `slice` selects of vault `over`, acting for vault `issuer`: the vault
     /// itself, or a vault holding an owner cap over it, on which this one then rests, a wide one for a cap on the whole
     /// vault (`parent`). Making someone owner is governance, which the passkey approves in a ceremony; anything less
@@ -502,30 +481,14 @@ impl Device {
         Ok(())
     }
 
-    /// The text of block `block` of entry `entry`, as the device reads it: `None` while it can't.
-    pub async fn text(&self, entry: EntryId, block: u64) -> Option<String> {
-        self.node.read(move |lab, me| cast::text(lab, me, entry, block)).await
-    }
-
-    /// Sets the text of block `block` of entry `entry`, acting for vault `actor`; its peers are told.
-    pub async fn set_text(&self, actor: VaultId, entry: EntryId, block: u64, text: String) -> Result<()> {
-        let edit = move |lab: &mut Lab, me| lab.edit(me, actor, entry, |item| item.set_text(block, &text));
-        self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
-    }
-
-    /// Writes a new note titled `title` that reads `body`, with tags `tags`, into vault `vault`, acting for vault
-    /// `actor`: its entry.
-    pub async fn write(
-        &self,
-        actor: VaultId,
-        vault: VaultId,
-        (title, body): (String, String),
-        tags: Vec<String>,
-    ) -> Result<EntryId> {
-        let write = move |lab: &mut Lab, me| {
-            lab.create(me, actor, vault, NOTE, &strs(&tags), cast::document(&title, &body, me))
-        };
-        self.node.act(write).await.map_err(|why| anyhow!("the note is refused: {why:?}"))
+    /// Runs op `op` of the ops engine (`avendb::engine`, `avendb/docs/OPS.md`): any read or change of the entries it
+    /// holds, whatever their schema, as JSON. Its answer: `{"ok": ...}`, or `{"refused": ..., "why": ...}`. A read
+    /// runs on what the device holds; a change is a write of the vault it acts for (`"as"`), and its peers are told.
+    pub async fn run(&self, op: Value) -> Value {
+        if engine::reads(&op) {
+            return self.node.read(move |lab, me| engine::read(lab, me, &op)).await;
+        }
+        self.node.act(move |lab, me| engine::run(lab, me, &op)).await
     }
 
     /// Vault `vault`'s database as the device holds it, for the page's database studio (`data::database`).
@@ -543,114 +506,6 @@ impl Device {
     /// (`data::history`).
     pub async fn history(&self) -> Value {
         self.node.read(data::history).await
-    }
-
-    /// Sets the text of block `block` of entry `entry` on line `line` of its history, acting for vault `actor`; its
-    /// peers are told.
-    pub async fn set_text_on(
-        &self,
-        actor: VaultId,
-        entry: EntryId,
-        line: Line,
-        block: u64,
-        text: String,
-    ) -> Result<()> {
-        let edit = move |lab: &mut Lab, me| lab.edit_on(me, actor, entry, line, |item| item.set_text(block, &text));
-        self.node.act(edit).await.map(|_| ()).map_err(|why| anyhow!("the edit is refused: {why:?}"))
-    }
-
-    /// Retitles document `entry` on line `line` of its history, and its opening heading with it, acting for vault
-    /// `actor`; its peers are told. Refused if it isn't a document.
-    pub async fn set_title_on(&self, actor: VaultId, entry: EntryId, line: Line, title: String) -> Result<()> {
-        let edit = move |lab: &mut Lab, me| {
-            if lab.item_on(me, entry, line).and_then(Item::as_document).is_none() {
-                return Ok(None);
-            }
-            // the heading a note opens with (`cast::document`'s block 1) is its title too
-            let retitle = |item: &mut Item| {
-                _ = item.edit_document(|d| {
-                    if let Some(h) = d.blocks.iter_mut().find(|b| b.id == 1 && b.r#type == TypeV2::Heading) {
-                        h.text.clone_from(&title);
-                    }
-                    d.title = title;
-                });
-            };
-            lab.edit_on(me, actor, entry, line, retitle).map(Some)
-        };
-        let made = self.node.act(edit).await.map_err(|why| anyhow!("the edit is refused: {why:?}"))?;
-        made.map(|_| ()).context("only a document has a title")
-    }
-
-    /// Proposes a change to entry `entry`: a proposal named `name`, a line of its own that starts from version `from`,
-    /// acting for vault `actor` (`Lab::propose`): the new line, named by its first edit.
-    pub async fn propose(&self, actor: VaultId, entry: EntryId, from: Vec<EditId>, name: String) -> Result<EditId> {
-        let propose = move |lab: &mut Lab, me| lab.propose(me, actor, entry, &from, &name);
-        self.node.act(propose).await.map_err(|why| anyhow!("the proposal is refused: {why:?}"))
-    }
-
-    /// Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then
-    /// shows exactly what `from` does (`Lab::merge`, `Lab::promote`).
-    pub async fn merge(
-        &self,
-        actor: VaultId,
-        entry: EntryId,
-        (from, into): (Line, Line),
-        promote: bool,
-    ) -> Result<EditId> {
-        let merge = move |lab: &mut Lab, me| match promote {
-            true => lab.promote(me, actor, entry, from, into),
-            false => lab.merge(me, actor, entry, from, into),
-        };
-        self.node.act(merge).await.map_err(|why| anyhow!("the merge is refused: {why:?}"))
-    }
-
-    /// Puts the record of version `version` of entry `entry` back on line `line`, acting for vault `actor`
-    /// (`Lab::restore`).
-    pub async fn restore(&self, actor: VaultId, entry: EntryId, line: Line, version: Vec<EditId>) -> Result<EditId> {
-        let restore = move |lab: &mut Lab, me| lab.restore(me, actor, entry, line, &version);
-        self.node.act(restore).await.map_err(|why| anyhow!("the restore is refused: {why:?}"))
-    }
-
-    /// Undoes write `edit` of entry `entry` on line `line`, keeping every change made since, acting for vault `actor`
-    /// (`Lab::undo`).
-    pub async fn undo(&self, actor: VaultId, entry: EntryId, line: Line, edit: EditId) -> Result<EditId> {
-        let undo = move |lab: &mut Lab, me| lab.undo(me, actor, entry, line, edit);
-        self.node.act(undo).await.map_err(|why| anyhow!("the undo is refused: {why:?}"))
-    }
-
-    /// Makes a variant of entry `entry`: a new entry of vault `into` with what its line `line` shows and none of its
-    /// history, of its type and with its tags, its document marked `VARIANT` with the entry it came from in place of
-    /// any such mark it had, acting for vault `actor`: the new entry.
-    pub async fn variant(&self, actor: VaultId, entry: EntryId, line: Line, into: VaultId) -> Result<EntryId> {
-        let variant = move |lab: &mut Lab, me| {
-            let mut copy = lab.item_on(me, entry, line).ok_or(Refusal::ReadOnly)?.copy(me);
-            let m = lab.meaning(me, entry).ok_or(Refusal::ReadOnly)?;
-            copy.edit_document(|d| {
-                d.tags.retain(|t| !t.starts_with(VARIANT));
-                d.tags.push(format!("{VARIANT}{}", hex(&entry.0)));
-            });
-            let tags: Vec<&str> = m.attrs.tags.iter().map(Sym::as_str).collect();
-            lab.create(me, actor, into, m.attrs.ty.as_str(), &tags, copy)
-        };
-        self.node.act(variant).await.map_err(|why| anyhow!("the variant is refused: {why:?}"))
-    }
-
-    /// The notes it reads, by their vault, of each vault that has one: each note's entry, title and the text of its
-    /// first paragraph (block 2), as `cast::document` writes them.
-    pub async fn notes(&self) -> Vec<Notes> {
-        self.node
-            .read(|lab, me| {
-                let st = lab.state(me);
-                let read = |v: &Vault| {
-                    let notes = st.entries().iter().filter(|en| en.vault == v.id && typed(lab, me, en.id, NOTE));
-                    let doc = |e: EntryId| Some((e, lab.item(me, e)?.as_document()?));
-                    let docs = notes.filter_map(|en| doc(en.id));
-                    let docs = docs.map(|(e, d)| (e, d.title, cast::text(lab, me, e, 2).unwrap_or_default()));
-                    Notes { vault: v.id, docs: docs.collect() }
-                };
-                st.vaults().iter().map(read).filter(|n| !n.docs.is_empty()).collect()
-            })
-            .await
     }
 
     /// The signed edits it holds from the `from`th on, in the order it took them, each as its bytes on the wire; `None`
@@ -691,12 +546,6 @@ impl Device {
     }
 }
 
-/// The notes of one vault, as a device reads them (`Device::notes`): each one's entry, title and text.
-pub struct Notes {
-    pub vault: VaultId,
-    pub docs: Vec<(EntryId, String, String)>,
-}
-
 /// Its person's account as a device shows it (`Device::account`): their human vault, its root passkey, its devices,
 /// each with the name on its card if it wrote one, and whether the vault owns avenCEO.
 pub struct Account {
@@ -722,11 +571,6 @@ fn named(title: &str, device: SignerId) -> Item {
 /// Entry `e` is of type `ty`, as device `me` reads its header.
 fn typed(lab: &Lab, me: SignerId, e: EntryId, ty: &str) -> bool {
     lab.meaning(me, e).is_some_and(|m| m.attrs.ty.as_str() == ty)
-}
-
-/// Tags as the Lab takes them.
-fn strs(tags: &[String]) -> Vec<&str> {
-    tags.iter().map(String::as_str).collect()
 }
 
 /// A device's world by its view (`Device::world`): every vault it knows, in the order they were founded; every cap in
@@ -1321,32 +1165,14 @@ impl PageDevice {
         future_to_promise(async move { Ok(device.card(name).await.map_err(js_value)?.into()) })
     }
 
-    /// The text of block `block` of entry `entry` (in hex), as the device reads it: a promise, of `undefined` while it
-    /// can't.
-    pub fn text(&self, entry: String, block: u32) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move { Ok(device.text(EntryId(id(&entry)?), block.into()).await.into()) })
-    }
-
-    /// Sets the text of block `block` of entry `entry`, acting for vault `actor` (each in hex): a promise, rejected if
-    /// the device's view refuses the edit.
-    #[wasm_bindgen(js_name = setText)]
-    pub fn set_text(&self, actor: String, entry: String, block: u32, text: String) -> Promise {
+    /// Runs op `op`, an object of the ops engine's (`Device::run`): a promise of its answer, `{ok}` or
+    /// `{refused, why}`.
+    pub fn run(&self, op: JsValue) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, entry) = (VaultId(id(&actor)?), EntryId(id(&entry)?));
-            device.set_text(actor, entry, block.into(), text).await.map_err(js_value)?;
-            Ok(JsValue::UNDEFINED)
-        })
-    }
-
-    /// Writes a new note titled `title` that reads `body`, with the tags `tags`, an array of names, into vault `vault`,
-    /// acting for vault `actor` (both in hex): a promise of its entry, in hex.
-    pub fn write(&self, actor: String, vault: String, title: String, body: String, tags: Array) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, vault, tags) = (VaultId(id(&actor)?), VaultId(id(&vault)?), names(&tags)?);
-            Ok(hex(&device.write(actor, vault, (title, body), tags).await.map_err(js_value)?.0).into())
+            let op = String::from(js_sys::JSON::stringify(&op)?);
+            let op = serde_json::from_str(&op).map_err(|e| JsError::new(&format!("no op: {e}")))?;
+            js_sys::JSON::parse(&device.run(op).await.to_string())
         })
     }
 
@@ -1375,109 +1201,6 @@ impl PageDevice {
     pub fn history(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { js_sys::JSON::parse(&device.history().await.to_string()) })
-    }
-
-    /// Sets the text of block `block` of entry `entry` on line `line` of its history, acting for vault `actor`
-    /// (`Device::set_text_on`): a promise. Ids in hex; a line is `null` for the main line, else its proposal's.
-    #[wasm_bindgen(js_name = setTextOn)]
-    pub fn set_text_on(&self, actor: String, entry: String, line: Option<String>, block: u32, text: String) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry, line) = (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?);
-            device.set_text_on(actor, entry, line, block.into(), text).await.map_err(js_value)?;
-            Ok(JsValue::UNDEFINED)
-        })
-    }
-
-    /// Retitles document `entry` on line `line`, acting for vault `actor` (`Device::set_title_on`): a promise. Ids in
-    /// hex; a line is `null` for the main line, else its proposal's.
-    #[wasm_bindgen(js_name = setTitleOn)]
-    pub fn set_title_on(&self, actor: String, entry: String, line: Option<String>, title: String) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry, line) = (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?);
-            device.set_title_on(actor, entry, line, title).await.map_err(js_value)?;
-            Ok(JsValue::UNDEFINED)
-        })
-    }
-
-    /// Proposes a change to entry `entry`: a proposal named `name` from the version `from`, an array of its edits,
-    /// acting for vault `actor` (`Device::propose`): a promise of the new line, its first edit's id. Ids in hex.
-    pub fn propose(&self, actor: String, entry: String, from: Array, name: String) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry, from) = (VaultId(id(&actor)?), EntryId(id(&entry)?), edit_ids(&from)?);
-            Ok(hex(&device.propose(actor, entry, from, name).await.map_err(js_value)?.0).into())
-        })
-    }
-
-    /// Merges line `from` of entry `entry` into line `into`, acting for vault `actor`; with `promote`, `into` then
-    /// shows exactly what `from` does (`Device::merge`): a promise of the merge's edit. Ids in hex; a line is `null`
-    /// for the main line.
-    pub fn merge(
-        &self,
-        actor: String,
-        entry: String,
-        from: Option<String>,
-        into: Option<String>,
-        promote: bool,
-    ) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry, lines) = (VaultId(id(&actor)?), EntryId(id(&entry)?), (line_of(from)?, line_of(into)?));
-            Ok(hex(&device.merge(actor, entry, lines, promote).await.map_err(js_value)?.0).into())
-        })
-    }
-
-    /// Puts the record of version `version`, an array of edits, of entry `entry` back on line `line`, acting for vault
-    /// `actor` (`Device::restore`): a promise of the edit that does. Ids in hex.
-    pub fn restore(&self, actor: String, entry: String, line: Option<String>, version: Array) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry, line, version) =
-                (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?, edit_ids(&version)?);
-            Ok(hex(&device.restore(actor, entry, line, version).await.map_err(js_value)?.0).into())
-        })
-    }
-
-    /// Undoes edit `edit` of entry `entry` on line `line`, keeping every change since, acting for vault `actor`
-    /// (`Device::undo`): a promise of the edit that does. Ids in hex.
-    pub fn undo(&self, actor: String, entry: String, line: Option<String>, edit: String) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry, line, edit) =
-                (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?, EditId(id(&edit)?));
-            Ok(hex(&device.undo(actor, entry, line, edit).await.map_err(js_value)?.0).into())
-        })
-    }
-
-    /// Makes a variant of entry `entry`: a new entry of vault `into` with what line `line` shows, acting for vault
-    /// `actor` (`Device::variant`): a promise of the new entry. Ids in hex.
-    pub fn variant(&self, actor: String, entry: String, line: Option<String>, into: String) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry, line, into) =
-                (VaultId(id(&actor)?), EntryId(id(&entry)?), line_of(line)?, VaultId(id(&into)?));
-            Ok(hex(&device.variant(actor, entry, line, into).await.map_err(js_value)?.0).into())
-        })
-    }
-
-    /// The notes it reads, by vault (`Device::notes`): a promise of `[{vault, docs: [{entry, title, text}]}]`, ids in
-    /// hex.
-    pub fn notes(&self) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let vaults = Array::new();
-            for notes in device.notes().await {
-                let docs = Array::new();
-                for (entry, title, text) in notes.docs {
-                    let entry = hex(&entry.0).into();
-                    docs.push(&object(&[("entry", entry), ("title", title.into()), ("text", text.into())]));
-                }
-                vaults.push(&object(&[("vault", hex(&notes.vault.0).into()), ("docs", docs.into())]));
-            }
-            Ok(vaults.into())
-        })
     }
 
     /// Its world (`Device::world`, as `World::to_json` writes it): a promise of an object, of `undefined` while it
@@ -1518,40 +1241,6 @@ impl PageDevice {
         future_to_promise(async move {
             let vault = VaultId(id(&vault)?);
             Ok(device.profile(vault, name).await.map_err(js_value)?.into())
-        })
-    }
-
-    /// Writes a new todo titled `title`, with the tags `tags`, an array of names, into vault `vault`, acting for vault
-    /// `actor` (both in hex): a promise of its entry, in hex.
-    pub fn todo(&self, actor: String, vault: String, title: String, tags: Array) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, vault, tags) = (VaultId(id(&actor)?), VaultId(id(&vault)?), names(&tags)?);
-            Ok(hex(&device.todo(actor, vault, title, tags).await.map_err(js_value)?.0).into())
-        })
-    }
-
-    /// Sets the status (`"open"`, `"doing"` or `"done"`) of todo `entry`, acting for vault `actor` (both in hex): a
-    /// promise, rejected if the device's view refuses the change.
-    #[wasm_bindgen(js_name = setStatus)]
-    pub fn set_status(&self, actor: String, entry: String, status: String) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry) = (VaultId(id(&actor)?), EntryId(id(&entry)?));
-            let status = words::status_of(&status).map_err(js_value)?;
-            device.set_status(actor, entry, status).await.map_err(js_value)?;
-            Ok(JsValue::UNDEFINED)
-        })
-    }
-
-    /// Adds the tags `add` to entry `entry` and removes the tags `remove`, each an array of names, acting for vault
-    /// `actor` (both in hex, `Device::tag`): a promise.
-    pub fn tag(&self, actor: String, entry: String, add: Array, remove: Array) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let (actor, entry) = (VaultId(id(&actor)?), EntryId(id(&entry)?));
-            device.tag(actor, entry, names(&add)?, names(&remove)?).await.map_err(js_value)?;
-            Ok(JsValue::UNDEFINED)
         })
     }
 
@@ -1865,22 +1554,6 @@ fn hex_bytes(s: &str) -> Option<Vec<u8>> {
 /// An id from its 64 lowercase hex digits.
 fn id(s: &str) -> Result<[u8; 32], JsValue> {
     BlobId::from_hex(s).map(|b| b.0).ok_or_else(|| JsError::new(&format!("{s:?} is no id")).into())
-}
-
-/// Names, types or tags, from an array of them.
-fn names(xs: &Array) -> Result<Vec<String>, JsValue> {
-    xs.iter().map(|x| x.as_string().ok_or_else(|| JsError::new("a name is text").into())).collect()
-}
-
-/// A line of an entry's history as the page names it: `null`, `undefined` or `""` for the main line, else the id of
-/// the write that started its proposal.
-fn line_of(line: Option<String>) -> Result<Line, JsValue> {
-    line.filter(|l| !l.is_empty()).map(|l| id(&l).map(EditId)).transpose()
-}
-
-/// Writes, from an array of their ids.
-fn edit_ids(edits: &Array) -> Result<Vec<EditId>, JsValue> {
-    edits.iter().map(|edit| id(&edit.as_string().unwrap_or_default()).map(EditId)).collect()
 }
 
 /// An error as the page sees it: the whole chain of what went wrong.

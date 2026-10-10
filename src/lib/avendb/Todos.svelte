@@ -40,8 +40,13 @@
 
 	async function add() {
 		const title = draft.trim();
-		if (title && asked && (await api.todo(actor, vault, title, [...typed, ...asked]))) draft = '';
+		if (!title || !asked) return;
+		const [tags, value] = [[...typed, ...asked], { kind: 'todo', title }];
+		if (await api.run('Adding the todo', { op: 'create', as: actor, vault, type: 'todo', tags, value })) draft = '';
 	}
+
+	/** Todo `entry` ticked on to `status`. @param {string} entry @param {string} status */
+	const tick = (entry, status) => api.run('Saving', { op: 'set', as: actor, entry, path: ['status'], value: status });
 </script>
 
 <section class="todos-of">
@@ -74,7 +79,7 @@
 						class="tick"
 						disabled={busy || !writes}
 						title={writes ? `Mark it ${NEXT[it.status ?? 'open']}` : `${nameOf(as)} only reads it`}
-						onclick={() => api.setStatus(actor, it.entry, NEXT[it.status ?? 'open'])}
+						onclick={() => tick(it.entry, NEXT[it.status ?? 'open'])}
 					>
 						{STATUS[it.status ?? 'open']}
 					</button>

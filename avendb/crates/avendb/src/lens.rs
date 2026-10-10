@@ -491,6 +491,20 @@ impl Schema {
         &self.title
     }
 
+    /// The kind its records name, where its `kind` field is a constant: `"document"`, `"todo"`.
+    pub fn kind(&self) -> Option<&str> {
+        match &self.root.field("kind")?.ty {
+            Type::Value(Check::OneOf(vs)) if vs.len() == 1 => vs[0].as_str(),
+            _ => None,
+        }
+    }
+
+    /// A record as an app on this schema sees it, with no lens: each field it names that fits, else the field's
+    /// default. `None` if it lacks a field the schema requires.
+    pub fn read(&self, r: &Value) -> Option<Value> {
+        Some(Value::Object(self.root.read(r.as_object()?)?))
+    }
+
     /// How an item stores field `field`, of each record of the list `list` if given.
     fn stored(&self, list: Option<&str>, field: &str) -> Option<Stored> {
         let shape = match list {
@@ -944,6 +958,9 @@ impl Lane {
 
 /// The blobs of the two examples' schemas and lenses, exactly as the apps ship and publish them.
 pub mod blobs {
+    /// Every one of them: what the app reads through before any lane publishes anything.
+    pub const ALL: [&str; 6] = [DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2, DOCUMENT_LENS, TODO_LENS];
+
     pub const DOCUMENT_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Markdown document, v1",

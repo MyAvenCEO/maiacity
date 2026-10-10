@@ -9,13 +9,14 @@
  * sheet, as the device runs on; the app quits and starts again, and the device opens from its folder in one sheet; it
  * is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
  * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
- * each in turn: avenALICE writes a note and three todos, one tagged “work”, and shares the note alone with avenBOB, and
- * every todo tagged “work”, a rule: he reads the note and that todo, and one she tags “work” later, and finds her other
- * todo sealed in her studio, while avenCHARLY sees nothing of hers; her Sync page shows her cells, avenCEO's server
- * relaying their ciphertext; making the coop an owner of her whole vault takes one sheet, revoking avenBOB's caps none.
- * Forgotten, the device's store is put aside in its folder, and the person signs in again through the server in two
- * sheets, every vault and her note coming back. Last, the store becomes an earlier avenDB's: the device puts it aside,
- * and the page says it holds no vault and forgets it. Each step is screenshot.
+ * each in turn: avenALICE writes a note and three todos, one tagged “work”, adds a fourth from her studio’s query
+ * console and queries those she has left there, and shares the note alone with avenBOB, and every todo tagged “work”, a
+ * rule: he reads the note and that todo, and one she tags “work” later, and finds her other todos sealed in her studio,
+ * while avenCHARLY sees nothing of hers; her Sync page shows her cells, avenCEO's server relaying their ciphertext;
+ * making the coop an owner of her whole vault takes one sheet, revoking avenBOB's caps none. Forgotten, the device's
+ * store is put aside in its folder, and the person signs in again through the server in two sheets, every vault and her
+ * note coming back. Last, the store becomes an earlier avenDB's: the device puts it aside, and the page says it holds
+ * no vault and forgets it. Each step is screenshot.
  *
  *   cd avendb && cargo build -p avendb-server -p avendb-device
  *   AVENDB_DATA=$(mktemp -d) AVENDB_BIND=127.0.0.1:7421 AVENDB_RELAY_BIND=127.0.0.1:3360 \
@@ -553,6 +554,20 @@ try {
 		return t.notes === 1 && t.todos === 3;
 	};
 	check('her table editor: her note and her three todos', await until(mine, 20000), JSON.stringify(await tablesShown()));
+
+	// her studio's query console: any op as JSON, a change and a query, through the device's one call, `run`
+	await goTo('Query');
+	await click('Add a todo', '.main .examples button');
+	await click('Run', '.main .editor button');
+	const added = async () => /"entry": "[0-9a-f]{64}"/.test(await text('.main .json'));
+	check('a todo added from the console, as she acts', await until(added, 30000), await text('.main'));
+	await click('Todos left', '.main .examples button');
+	await click('Run', '.main .editor button');
+	const left = async () => (await shown('.main .grid tbody tr')).length === 4;
+	check('her todos left, by a query: four rows', await until(left, 30000), await text('.main'));
+	const picked = await text('.main .picked');
+	check('picked by its labels before any entry opened, as a cap picks', picked.includes('Picked by its labels') && picked.includes('todos'), picked);
+	await shot('8c-alice-query');
 
 	// avenBOB reads her note and her todos tagged “work”, and nothing else of hers
 	check('acting as avenBOB', await actAs('avenBOB'));

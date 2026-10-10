@@ -3,25 +3,16 @@
 //! (`avendb-device`).
 //!
 //! A slice is `{select, relabel}`: `relabel` the tags its grantee may ask the vault's stewards to add or remove, and
-//! `select` either `"all"`, the whole vault, or a list of conjunctions, each a list of tests, of which an entry passes
-//! every test of at least one (`avendb::slice::Selector`). A test is an object of one field:
-//!
-//! - `{"type": ["todo", "note"]}`: its type is one of these;
-//! - `{"author": [vault, ..]}`: the vault that created it is one of these;
-//! - `{"entry": [entry, ..]}`: it is one of these entries;
-//! - `{"created": [from, to]}`: it was created at or after `from` and before `to`, seconds since 1970;
-//! - `{"tag": "work"}`: it carries this tag;
-//! - `{"noTag": ["private", ..]}`: it carries none of these tags;
-//! - `{"onlyTags": ["work", "home"]}`: every tag it carries is one of these.
-//!
-//! "Bob's work todos" is `[[{"type": ["todo"]}, {"tag": "work"}]]`.
+//! `select` its selector as the core writes it (`avendb::slice::Selector::to_json`): `"all"`, the whole vault, or a
+//! list of conjunctions of tests of its type, author, id, creation and tags. "Bob's work todos" is
+//! `[[{"type": ["todo"]}, {"tag": "work"}]]`.
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::{BlobId, EntryId, VaultId};
+use avendb::id::BlobId;
 use avendb::lens::Status;
 use avendb::policy::{Kind, Role};
-use avendb::slice::{Atom, Selector, Slice, Sym};
-use serde_json::{Map, Value, json};
+use avendb::slice::{Selector, Slice, Sym};
+use serde_json::{Value, json};
 
 pub fn kind_name(kind: Kind) -> &'static str {
     match kind {
@@ -84,22 +75,9 @@ pub fn slice_value(s: &Slice) -> Value {
     json!({ "select": selector_value(&s.select), "relabel": s.relabel.iter().map(Sym::as_str).collect::<Vec<_>>() })
 }
 
-/// A selector as the page reads it: `"all"`, or its conjunctions.
+/// A selector as the page reads it: `"all"`, or its conjunctions (`Selector::to_json`).
 pub fn selector_value(s: &Selector) -> Value {
-    let syms = |xs: &[Sym]| xs.iter().map(|x| x.as_str().to_string()).collect::<Vec<_>>();
-    let atom = |a: &Atom| match a {
-        Atom::TypeIn(ts) => json!({ "type": syms(ts) }),
-        Atom::AuthorIn(vs) => json!({ "author": vs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>() }),
-        Atom::EntryIn(es) => json!({ "entry": es.iter().map(|e| hex(&e.0)).collect::<Vec<_>>() }),
-        Atom::CreatedIn(from, to) => json!({ "created": [from, to] }),
-        Atom::TagHas(t) => json!({ "tag": t.as_str() }),
-        Atom::TagNone(ts) => json!({ "noTag": syms(ts) }),
-        Atom::TagsWithin(ts) => json!({ "onlyTags": syms(ts) }),
-    };
-    match s {
-        Selector::All => Value::from("all"),
-        Selector::AnyOf(ds) => ds.iter().map(|d| d.iter().map(atom).collect::<Vec<_>>()).collect(),
-    }
+    s.to_json()
 }
 
 /// A slice from what the page wrote (`slice_value`): `relabel` may be left out, for no tags to ask for. Fails on
@@ -119,44 +97,7 @@ pub fn slice_of(v: &Value) -> Result<Slice> {
 
 /// A selector from what the page wrote (`selector_value`).
 pub fn selector_of(v: &Value) -> Result<Selector> {
-    if v.as_str() == Some("all") {
-        return Ok(Selector::All);
-    }
-    let conjunction = |d: &Value| -> Result<Vec<Atom>> {
-        d.as_array().context("a conjunction is a list of tests")?.iter().map(atom_of).collect()
-    };
-    let ds = v.as_array().context("a selector is \"all\" or a list of conjunctions")?;
-    let selector = Selector::AnyOf(ds.iter().map(conjunction).collect::<Result<_>>()?);
-    if !selector.bounded() {
-        bail!("a selector this big no peer accepts");
-    }
-    Ok(selector)
-}
-
-/// One test of a selector, an object of one field.
-fn atom_of(v: &Value) -> Result<Atom> {
-    let o: &Map<String, Value> = v.as_object().context("a test is an object of one field")?;
-    let [(name, value)] = o.iter().collect::<Vec<_>>()[..] else { bail!("a test is an object of one field") };
-    let ids = |v: &Value| -> Result<Vec<[u8; 32]>> {
-        let xs = v.as_array().context("a list of ids")?;
-        xs.iter().map(|x| id_of(x.as_str().context("an id is text")?)).collect()
-    };
-    Ok(match name.as_str() {
-        "type" => Atom::TypeIn(syms(value).context("type is a list of types")?),
-        "author" => Atom::AuthorIn(ids(value)?.into_iter().map(VaultId).collect()),
-        "entry" => Atom::EntryIn(ids(value)?.into_iter().map(EntryId).collect()),
-        "created" => {
-            let at = |i: usize| value.get(i).and_then(Value::as_u64);
-            match (value.as_array().map(Vec::len), at(0), at(1)) {
-                (Some(2), Some(from), Some(to)) => Atom::CreatedIn(from, to),
-                _ => bail!("created is [from, to], seconds since 1970"),
-            }
-        }
-        "tag" => Atom::TagHas(Sym::new(value.as_str().context("tag is one tag")?)),
-        "noTag" => Atom::TagNone(syms(value).context("noTag is a list of tags")?),
-        "onlyTags" => Atom::TagsWithin(syms(value).context("onlyTags is a list of tags")?),
-        other => bail!("no test is called {other:?}"),
-    })
+    Selector::of_json(v).map_err(|why| anyhow!(why))
 }
 
 /// A list of names: types or tags.
@@ -166,6 +107,9 @@ fn syms(v: &Value) -> Option<Vec<Sym>> {
 
 #[cfg(test)]
 mod tests {
+    use avendb::id::{EntryId, VaultId};
+    use avendb::slice::Atom;
+
     use super::*;
 
     #[test]

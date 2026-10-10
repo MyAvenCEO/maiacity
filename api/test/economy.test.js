@@ -3,7 +3,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
-import { addDays, catalogue, createMip, decideMip, getConfig, getMip, getRun, listConfigs, listMips, listRuns, startRun, withdrawMip } from "../src/economy.js";
+import { addDays, catalogue, createMip, decideMip, getConfig, getMip, getRun, linkMipPrs, listConfigs, listMips, listRuns, startRun, withdrawMip } from "../src/economy.js";
 import { DEFAULT_PARAMS, HOOK_NAMES } from "../../game/economy/params.js";
 
 const pg = new PGlite();
@@ -173,4 +173,17 @@ test("an amend MIP changes a running world's own rules, and nothing else", async
   expect(t.code).toContain("export function price");
   expect((await pg.query("SELECT version FROM econ_configs WHERE id = 'valley'")).rows[0].version).toBe(before);
   await expect(createMip("admin", { title: "No world", action: "amend", world_id: null, cards: [] })).rejects.toThrow();
+});
+
+test("a MIP links the GitHub PRs it needs: on proposing, and later by its author or an admin", async () => {
+  const m = await createMip("alice", { title: "Needs a hook", world_id: W, action: "world", world: { name: "Linked", model: "qwen" }, cards: [], prs: [{ number: 408, title: "Daily opening price" }, 408, 413] });
+  expect(m.prs).toEqual([{ number: 408, title: "Daily opening price" }, { number: 413, title: null }]);
+  expect((await createMip("alice", { title: "No code", world_id: W, action: "world", world: { name: "Linked", model: "qwen" }, cards: [] })).prs).toEqual([]);
+  await expect(createMip("alice", { title: "Bad", world_id: W, action: "world", world: { name: "Linked", model: "qwen" }, cards: [], prs: [{ number: -1 }] })).rejects.toThrow();
+  await expect(linkMipPrs(m.number, "admin-not", false, [1])).rejects.toThrow("author or an admin");
+  expect((await linkMipPrs(m.number, "alice", false, [{ number: 405, title: "World 19" }])).prs).toEqual([{ number: 405, title: "World 19" }]);
+  await decideMip(m.number, "admin", { accept: false });
+  // decided MIPs too: what shipped in code is part of the record
+  expect((await linkMipPrs(m.number, "admin", true, [])).prs).toEqual([]);
+  await expect(linkMipPrs(99999, "admin", true, [])).rejects.toThrow("No such MIP");
 });

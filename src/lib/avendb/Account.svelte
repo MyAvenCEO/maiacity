@@ -22,6 +22,7 @@
 	import { me } from '$lib/auth/client';
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
+	import { answer } from './ops.js';
 	import { count, plain } from './vaults.js';
 
 	const STORE = 'avendb-browser';
@@ -408,77 +409,27 @@
 	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through. */
 	const api = {
 		/**
-		 * A new note titled `title` that reads `body`, tagged `tags`, in vault `vault`: its entry, or `null` if it didn't
-		 * go through.
-		 * @param {string} actor @param {string} vault @param {string} title @param {string} body @param {string[]} tags
+		 * Runs op `op` of avenDB's ops engine as `what` (./ops.js): a change of what this browser holds, acting for the
+		 * vault the op names (`as`). What it did, or `null` if it didn't go through, with why shown.
+		 * @param {string} what @param {object} op
 		 */
-		write: async (actor, vault, title, body, tags) => {
-			let made = null;
-			const ok = await act('Writing the note', async () => (made = await device.write(actor, vault, title, body, tags)));
-			return ok ? made : null;
+		run: async (what, op) => {
+			let done = null;
+			const ok = await act(what, async () => (done = answer(await device.run(op))));
+			return ok ? done : null;
 		},
-		/** @param {string} actor @param {string} vault @param {string} title @param {string[]} tags */
-		todo: (actor, vault, title, tags) => act('Adding the todo', () => device.todo(actor, vault, title, tags)),
-		/** @param {string} actor @param {string} entry @param {string} status */
-		setStatus: (actor, entry, status) => act('Saving', () => device.setStatus(actor, entry, status)),
 		/**
-		 * Tags `add` added to entry `entry` and `remove` taken off: at once for the entry's vault, else asked of its
-		 * devices, who grant what the acting vault's caps let it ask for.
-		 * @param {string} actor @param {string} entry @param {string[]} add @param {string[]} remove
+		 * Runs op `op` as it is, a read or a change, as the studio's console does: the device's answer, `{ ok }` or
+		 * `{ refused, why }`.
+		 * @param {object} op
 		 */
-		tag: (actor, entry, add, remove) => act('Tagging', () => device.tag(actor, entry, add, remove)),
+		ask: (op) => device.run(op),
 		/** Vault `vault`'s database as this browser holds it, for the database studio. @param {string} vault */
 		database: (vault) => device.database(vault),
 		/** The database's history: every signed edit this browser holds, for the studio's History. */
 		history: () => device.history(),
 		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
 		note: (entry) => device.note(entry),
-		/**
-		 * The note's text on line `line` (`null` for the main line).
-		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} text
-		 */
-		setTextOn: (actor, entry, line, text) => act('Saving', () => device.setTextOn(actor, entry, line, 2, text)),
-		/**
-		 * The note's title on line `line` (`null` for the main line).
-		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} title
-		 */
-		setTitleOn: (actor, entry, line, title) => act('Renaming', () => device.setTitleOn(actor, entry, line, title)),
-		/**
-		 * A proposal named `name` from version `from`: its line, or `null` if it didn't go through.
-		 * @param {string} actor @param {string} entry @param {string[]} from @param {string} name
-		 */
-		propose: async (actor, entry, from, name) => {
-			let made = null;
-			const ok = await act('Proposing', async () => (made = await device.propose(actor, entry, from, name)));
-			return ok ? made : null;
-		},
-		/**
-		 * Line `from` merged into line `into`; with `promote`, `into` brought to exactly what `from` shows.
-		 * @param {string} actor @param {string} entry @param {string | null} from @param {string | null} into
-		 * @param {boolean} promote
-		 */
-		merge: (actor, entry, from, into, promote) =>
-			act(promote ? 'Making it match' : 'Merging', () => device.merge(actor, entry, from, into, promote)),
-		/**
-		 * Version `version` put back on line `line`.
-		 * @param {string} actor @param {string} entry @param {string | null} line @param {string[]} version
-		 */
-		restore: (actor, entry, line, version) => act('Restoring', () => device.restore(actor, entry, line, version)),
-		/**
-		 * Edit `edit` undone on line `line`, every change since kept.
-		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} edit
-		 */
-		undo: (actor, entry, line, edit) => act('Undoing', () => device.undo(actor, entry, line, edit)),
-		/**
-		 * A variant: what line `line` shows, as a new entry of vault `into`, of its type and with its tags; the new
-		 * entry, or `null` if it didn't go through.
-		 * @param {string} actor @param {string} entry @param {string | null} line @param {string} into
-		 */
-		variant: async (actor, entry, line, into) => {
-			let made = null;
-			const ok = await act('Making the variant', async () => (made = await device.variant(actor, entry, line, into)));
-			return ok ? made : null;
-		},
 		/**
 		 * A cap: role `role` on what `slice` selects of vault `over`, to vault `grantee` or `"public"`, acting for vault
 		 * `issuer`; making a vault owner takes the passkey.

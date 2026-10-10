@@ -34,9 +34,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
-use avendb::id::{BlobId, CapId, EditId, EntryId, VaultId};
+use avendb::id::{BlobId, CapId, EntryId, VaultId};
 use avendb::keys;
-use avendb::policy::{Grantee, Kind, Line};
+use avendb::policy::{Grantee, Kind};
 use avendb::sign::{self, Assertion, Ceremony};
 use avendb_browser::{Device, Fresh, Start, Unlock, backup, words};
 use avendb_net::{Authenticator, Offer, Step};
@@ -174,35 +174,10 @@ impl Service {
             "world" => d.world().await.map_or(Value::Null, |w| w.to_json(d.node().device())),
             "card" => json!(d.card(a.text(0)?).await?),
             "profile" => json!(d.profile(vault(0)?, a.text(1)?).await?),
-            "write" => {
-                let (actor, into) = (vault(0)?, vault(1)?);
-                hex(&d.write(actor, into, (a.text(2)?, a.text(3)?), a.names(4)?).await?.0).into()
-            }
-            "todo" => hex(&d.todo(vault(0)?, vault(1)?, a.text(2)?, a.names(3)?).await?.0).into(),
-            "setStatus" => {
-                d.set_status(vault(0)?, entry(1)?, words::status_of(&a.text(2)?)?).await?;
-                Value::Null
-            }
-            "tag" => {
-                d.tag(vault(0)?, entry(1)?, a.names(2)?, a.names(3)?).await?;
-                Value::Null
-            }
+            "run" => d.run(a.get(0).clone()).await,
             "database" => d.database(vault(0)?).await,
             "note" => d.note(entry(0)?).await.unwrap_or(Value::Null),
             "history" => d.history().await,
-            "setTextOn" => {
-                d.set_text_on(vault(0)?, entry(1)?, a.line(2)?, a.count(3)? as u64, a.text(4)?).await?;
-                Value::Null
-            }
-            "setTitleOn" => {
-                d.set_title_on(vault(0)?, entry(1)?, a.line(2)?, a.text(3)?).await?;
-                Value::Null
-            }
-            "propose" => hex(&d.propose(vault(0)?, entry(1)?, a.edits(2)?, a.text(3)?).await?.0).into(),
-            "merge" => hex(&d.merge(vault(0)?, entry(1)?, (a.line(2)?, a.line(3)?), a.flag(4)?).await?.0).into(),
-            "restore" => hex(&d.restore(vault(0)?, entry(1)?, a.line(2)?, a.edits(3)?).await?.0).into(),
-            "undo" => hex(&d.undo(vault(0)?, entry(1)?, a.line(2)?, EditId(a.id(3)?)).await?.0).into(),
-            "variant" => hex(&d.variant(vault(0)?, entry(1)?, a.line(2)?, vault(3)?).await?.0).into(),
             "foundVaults" => {
                 let mut new = vec![];
                 for v in a.list(0)? {
@@ -630,10 +605,6 @@ impl Args<'_> {
         Ok(usize::try_from(n)?)
     }
 
-    fn flag(&self, i: usize) -> Result<bool> {
-        self.get(i).as_bool().with_context(|| format!("argument {} is true or false", i + 1))
-    }
-
     fn list(&self, i: usize) -> Result<&[Value]> {
         self.get(i).as_array().map(Vec::as_slice).with_context(|| format!("argument {} is a list", i + 1))
     }
@@ -641,25 +612,6 @@ impl Args<'_> {
     /// An id, from its 64 lowercase hex digits.
     fn id(&self, i: usize) -> Result<[u8; 32]> {
         id(&self.text(i)?)
-    }
-
-    /// Names, types or tags, from a list of them.
-    fn names(&self, i: usize) -> Result<Vec<String>> {
-        let name = |x: &Value| x.as_str().map(str::to_string).context("a name is text");
-        self.list(i)?.iter().map(name).collect()
-    }
-
-    /// A line of an entry's history: `null` or `""` for its main line, else its proposal's first edit.
-    fn line(&self, i: usize) -> Result<Line> {
-        match self.get(i).as_str() {
-            None | Some("") => Ok(None),
-            Some(line) => Ok(Some(EditId(id(line)?))),
-        }
-    }
-
-    /// Edits, from a list of their ids.
-    fn edits(&self, i: usize) -> Result<Vec<EditId>> {
-        self.list(i)?.iter().map(|e| Ok(EditId(id(e.as_str().unwrap_or_default())?))).collect()
     }
 }
 

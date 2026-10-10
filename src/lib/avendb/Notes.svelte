@@ -9,6 +9,7 @@
 -->
 <script>
 	import Icon from './Icon.svelte';
+	import { noteRecord } from './ops.js';
 	import { count, creates, holders, list, nameOf, reads, ROLES, tagsIn, tagsOf } from './vaults.js';
 
 	/**
@@ -38,10 +39,11 @@
 	/** A blank note, tagged as typed and as the cap asks, opened at once. */
 	async function blank() {
 		if (!asked) return;
-		const made = await api.write(actor, vault, 'Untitled note', '', [...typed, ...asked]);
+		const [tags, value] = [[...typed, ...asked], noteRecord('Untitled note', '')];
+		const made = await api.run('Writing the note', { op: 'create', as: actor, vault, type: 'note', tags, value });
 		if (!made) return;
 		tagging = '';
-		onopen(made);
+		onopen(made.entry);
 	}
 </script>
 

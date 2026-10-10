@@ -8,7 +8,7 @@
 -->
 <script>
 	import { onMount } from 'svelte';
-	import { loadMips, decide, withdraw } from './store.js';
+	import { loadMips, decide, withdraw, linkPrs } from './store.js';
 	import ConfigCard from './ConfigCard.svelte';
 	import { HOOKS } from '../../../game/economy/params.js';
 
@@ -73,6 +73,32 @@
 			await refresh();
 		} catch (e) {
 			error = /** @type {any} */ (e)?.message || 'It could not be withdrawn.';
+		} finally {
+			busy = false;
+		}
+	}
+
+	// the GitHub PRs a MIP needs (Samuel, 2026-10-10): what changed in the engine's code between worlds, beside what
+	// changed in its cards; its author or the admin links them, here or over the MCP
+	const REPO = 'https://github.com/MyAvenCEO/maiacity/pull/';
+	let editing = $state(/** @type {Record<number, string>} */ ({}));
+	const canLink = (/** @type {any} */ m) => acct.admin || m.author === acct.id;
+	/** @param {any} m */
+	function editPrs(m) {
+		editing[m.number] = (m.prs ?? []).map((/** @type {any} */ p) => `#${p.number}`).join(' ');
+	}
+	/** @param {any} m */
+	async function savePrs(m) {
+		// numbers, #numbers or whole PR links; the titles already known stay
+		const nums = [...new Set([...(editing[m.number] ?? '').matchAll(/\d+/g)].map((x) => Number(x[0])))];
+		const prs = nums.map((number) => ({ number, title: (m.prs ?? []).find((/** @type {any} */ p) => p.number === number)?.title ?? null }));
+		busy = true;
+		try {
+			await linkPrs(m.number, prs);
+			delete editing[m.number];
+			await refresh();
+		} catch (e) {
+			error = /** @type {any} */ (e)?.message || 'The PRs could not be linked.';
 		} finally {
 			busy = false;
 		}
@@ -150,6 +176,20 @@
 		</div>
 		<div class="by">{worldOf(m)} · by {m.author_name ?? m.author ?? 'someone'}{m.via === 'mcp' ? ', through the MCP' : ''} · {when(m.created)}</div>
 		<div class="what">{what(m)}</div>
+		{#if editing[m.number] != null}
+			<div class="prs edit">
+				<span>Code:</span>
+				<input placeholder="PR numbers or links, e.g. #408 #413" bind:value={editing[m.number]} onkeydown={(e) => e.key === 'Enter' && savePrs(m)} />
+				<button class="go" disabled={busy} onclick={() => savePrs(m)}>Save</button>
+				<button disabled={busy} onclick={() => delete editing[m.number]}>Cancel</button>
+			</div>
+		{:else if m.prs?.length || canLink(m)}
+			<div class="prs">
+				<span>Code:</span>
+				{#each m.prs ?? [] as p (p.number)}<a class="pr" href={REPO + p.number} target="_blank" rel="noopener" title="Open PR #{p.number} on GitHub"><b>#{p.number}</b>{p.title ? ` ${p.title}` : ''} ↗</a>{:else}<small>no engine changes linked</small>{/each}
+				{#if canLink(m)}<button class="link" onclick={() => editPrs(m)}>{m.prs?.length ? 'Edit' : 'Link a PR'}</button>{/if}
+			</div>
+		{/if}
 		{#if m.status === 'open' || unfolded[m.number]}
 			{#if m.description}<p class="prose">{m.description}</p>{/if}
 			{#if m.world}
@@ -394,6 +434,34 @@
 	}
 	.what {
 		color: #24452f;
+	}
+	.prs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		align-items: center;
+		font-size: 0.75rem;
+		color: #6b6a66;
+		margin-top: 0.3rem;
+	}
+	.pr {
+		border: 1px solid #1f2a2322;
+		border-radius: 999px;
+		padding: 0.05rem 0.5rem;
+		color: #24452f;
+		background: #f6f8fa;
+		text-decoration: none;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.pr:hover {
+		border-color: #24452f;
+	}
+	.prs.edit input {
+		flex: 1;
+		min-width: 10rem;
 	}
 	.prose {
 		white-space: pre-wrap;

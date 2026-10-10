@@ -10,21 +10,18 @@
 use std::collections::{HashMap, HashSet};
 
 use avendb::doc::Item;
+use avendb::engine::{SHOWN, Wrote, line_name, wrote};
 use avendb::history::{Change, History};
 use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
 use avendb::lens::{self, DocV2, Lens, Schema};
-use avendb::policy::{Action, Entry, Grantee, Line, Principal, Proposal, State};
+use avendb::policy::{Action, Entry, Grantee, Principal, Proposal, State};
 use avendb::sign::{Classical, Signature, SignerKeys};
 use avendb::wire::Wire as _;
 use serde_json::{Map, Value, json};
 
 use crate::{grantee_name, hex, kind_name, role_name, roles};
-
-/// The most edits of one note whose text the note page shows, the latest: each version is made from scratch from the
-/// updates it holds.
-const SHOWN: usize = 200;
 
 /// Vault `vault`'s database as device `me` holds it, for the page's database studio: how many edits and McEliece keys
 /// the device holds in all; the schemas and lenses the app ships (`lens::blobs`); its seed's generation; the edits the
@@ -420,7 +417,7 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
         let start = line.and_then(|b| h.get(b));
         json!({
             "line": line.map(|b: EditId| hex(&b.0)),
-            "name": named(h, line),
+            "name": line_name(h, line),
             "from": start.map(|c| ids(&c.write.deps)),
             "heads": ids(&h.heads(line)),
             "history": h.history(line).iter().map(|c| hex(&c.write.edit.0)).collect::<Vec<_>>(),
@@ -437,29 +434,16 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
 }
 
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the line it extends, what
-/// it builds on, and what it is: an `edit` of the text, the start of a proposal (`propose`, with its name), a `merge`
-/// of two lines, which carries no change, a `promote`, a merge that brings its line to the other's record, or
-/// `sealed`, an edit the device can't open; for a proposal, the line it started from, and for a merge or a promote,
-/// the line it brought in (`from`). With `shown`, the note's title and text at its version, and the text at the one
-/// it changed: what it built on, or for a merge or a promote, its own line's version before it, so the page's diff
-/// shows what it brought.
+/// it builds on, and what it is, as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the
+/// start of a proposal (`propose`, with its name), a `merge` of two lines, a `promote`, or `sealed`; and the line it
+/// brought in, or for a proposal the line it started from (`from`). With `shown`, the note's title and text at its
+/// version, and the text at the one it changed, so the page's diff shows what it brought.
 fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
-    let w = &c.write;
+    let (w, Wrote { kind, from, base }) = (&c.write, wrote(h, c));
     let line = w.line();
-    let on = |d: &EditId| h.get(*d).map(|x| x.write.line());
-    let other = w.deps.iter().filter_map(on).find(|l| *l != line);
-    let kind = match &c.body {
-        _ if w.proposal == Proposal::New => "propose",
-        None => "sealed",
-        Some(change) if change.is_empty() => "merge",
-        Some(_) if other.is_some() => "promote",
-        Some(_) => "edit",
-    };
-    let own: Vec<EditId> = w.deps.iter().copied().filter(|d| on(d) == Some(line)).collect();
-    let base = if kind == "edit" || own.is_empty() { &w.deps } else { &own };
     let at = |version: &[EditId]| h.item_at(version, me, line).as_document();
     let (after, before) =
-        if shown && matches!(kind, "edit" | "merge" | "promote") { (at(&[w.edit]), at(base)) } else { (None, None) };
+        if shown && matches!(kind, "edit" | "merge" | "promote") { (at(&[w.edit]), at(&base)) } else { (None, None) };
     json!({
         "id": hex(&w.edit.0),
         "author": hex(&w.author.0),
@@ -468,19 +452,11 @@ fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
         "deps": ids(&w.deps),
         "kind": kind,
         "name": if kind == "propose" { h.name(w.edit) } else { None },
-        "from": other.map(|l| json!({ "line": l.map(|b| hex(&b.0)), "name": named(h, l) })),
+        "from": from.map(|l| json!({ "line": l.map(|b| hex(&b.0)), "name": line_name(h, l) })),
         "title": after.as_ref().map(|d| d.title.clone()),
         "text": after.as_ref().map(body),
         "before": before.as_ref().map(body),
     })
-}
-
-/// A line of a note by name: `main`, or its proposal's, `None` for a proposal whose name the device can't open.
-fn named(h: &History, line: Line) -> Option<String> {
-    match line {
-        None => Some("main".into()),
-        Some(b) => h.name(b),
-    }
 }
 
 /// A note's text: its first paragraph, block 2, as `cast::document` writes it.

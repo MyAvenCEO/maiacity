@@ -1488,11 +1488,25 @@ impl Lab {
         line: Line,
         into: VaultId,
     ) -> Result<EntryId, Refusal> {
+        self.variant_with(on, actor, entry, (line, into), |_| Ok(()))
+    }
+
+    /// `variant`, with `change` made to the copy before it is written: one first write holds both, as when the ops
+    /// engine's `variant` marks where the copy came from.
+    pub fn variant_with<E: From<Refusal>>(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        entry: EntryId,
+        (line, into): (Line, VaultId),
+        change: impl FnOnce(&mut Item) -> Result<(), E>,
+    ) -> Result<EntryId, E> {
         self.unlocked(on)?;
-        let copy = self.item_on(on, entry, line).ok_or(Refusal::ReadOnly)?.copy(on);
+        let mut copy = self.item_on(on, entry, line).ok_or(Refusal::ReadOnly)?.copy(on);
+        change(&mut copy)?;
         let m = self.meaning(on, entry).ok_or(Refusal::ReadOnly)?;
         let tags: Vec<&str> = m.attrs.tags.iter().map(Sym::as_str).collect();
-        self.create(on, actor, into, m.attrs.ty.as_str(), &tags, copy)
+        Ok(self.create(on, actor, into, m.attrs.ty.as_str(), &tags, copy)?)
     }
 
     /// What device `d` shows of an entry: its history, empty if it holds no write of it.
