@@ -291,8 +291,14 @@ function fieldQuestions(world, a) {
 	// keep cost counted, so a stand-in that picks the biggest net drifted into WATER and LEGUMES (the cheapest to keep)
 	// until they grew 285-440% of need and the rest 45-50%. No lagging average and no stale price: in World 28 a 14-day
 	// average of frozen prices rated the crop grown 3.5 times over at 919 and the one nobody grew at 16
+	// fieldLevel 1 (World 30): what the valley actually spent on goods over the last day, per unit it needs a day. The
+	// middle price sank too once three of five goods sat at the floor (World 29: fruits shown at 0.00007 a unit while they
+	// traded at 16.9, every option read 0 and only the keep showed, so the farmers of dead crops bled); spending falls only
+	// if the valley stops buying. Before the first trade: a day's minting per unit of a day's needs
 	const prices = GOODS.map((g) => today(g)).sort((x, y) => x - y);
-	const priceLevel = prices[Math.floor(prices.length / 2)];
+	const spent = (world.trades ?? []).filter((t) => world.t - t.t < 86400).reduce((n, t) => n + t.qty * t.price, 0);
+	const needed = live.length * GOODS.reduce((n, g) => n + (NEED[g] ?? 0), 0);
+	const priceLevel = RULES.fieldLevel ? (spent > 0 ? spent / Math.max(1, needed) : budget) : prices[Math.floor(prices.length / 2)];
 	const coverage = (g, move = {}) => {
 		const need = live.length * (NEED[g] ?? 0);
 		const grown = planned(g) + (move[g] ?? 0);
