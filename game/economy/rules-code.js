@@ -297,7 +297,7 @@ export function weather({ weather, day, dice, valley }) {
 }
 `,
 	fields: `// Fields: what levelling a field up costs once (CAPEX) and what keeping it costs each night (OPEX), in HEARTS, both
-// paid to the MaiaCity COOP. Each crop has its own, in the card's values (capex2_<crop>, capex3_<crop>, opex1-3_<crop>)
+// paid to the Maia City Coop. Each crop has its own, in the card's values (capex2_<crop>, capex3_<crop>, opex1-3_<crop>)
 export function capex({ good, level, valley }) {
   return valley.values['capex' + level + '_' + good] ?? 0;
 }

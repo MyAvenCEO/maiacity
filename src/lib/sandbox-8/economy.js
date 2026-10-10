@@ -61,7 +61,7 @@ function remembered(key, f) {
 // ─────────────── fields (Samuel, 2026-10-10: every aven an entrepreneur) ───────────────
 // Where the Fields card turns them on (fieldsOn), an aven's land is up to three fields it farms itself: each one crop at
 // level 1 to 3 (each crop its own capacity at level 1; level 2 and 3 yield level2% and level3% of it), which it can level
-// up (CAPEX) and keeps paying for each night (OPEX), both paid to the MaiaCity COOP; a crop planted or changed starts
+// up (CAPEX) and keeps paying for each night (OPEX), both paid to the Maia City Coop; a crop planted or changed starts
 // again at level 1 and grows into its yield over its own ramp_<crop> days, a level-up over levelDays. What it grows is
 // then its own decision, made by its brain (asks.js).
 export const fieldsOn = () => RULES.fieldsOn >= 1;
@@ -94,7 +94,7 @@ export function fieldYield(world, f) {
 	return fieldBase(f.crop) * (levelShare(was) + (levelShare(f.level) - levelShare(was)) * up) * fieldGrown(world, f);
 }
 /**
- * The MaiaCity COOP (Samuel, 2026-10-10): the valley's own ledger, where every HEART paid for fields lands (opening a
+ * The Maia City Coop (Samuel, 2026-10-10): the valley's own ledger, where every HEART paid for fields lands (opening a
  * field, levelling one up, each night's keep). For now money only flows in.
  */
 export function coopTake(world, a, n, what) {
@@ -177,14 +177,14 @@ export function invest(world, a, slot, code) {
 		if (!can(cost)) return `couldn't open field ${slot + 1} (${cost} HEARTS, keeping ${Math.round(reserve)} for food)`;
 		pay(cost, 'fields');
 		a.fields.push({ crop: g, level: 1, since: world.day, from: null, levelSince: null });
-		change = { label: `opens field ${slot + 1} with`, to: GOOD_LABEL[g], unit: `for ${cost} HEARTS to the MaiaCity COOP` };
+		change = { label: `opens field ${slot + 1} with`, to: GOOD_LABEL[g], unit: `for ${cost} HEARTS to the Maia City Coop` };
 	} else if (code === 1) {
 		if (f.level >= 3) return null;
 		const cost = capexOf(f.crop, f.level + 1);
 		if (!can(cost)) return `couldn't level up its ${GOOD_LABEL[f.crop]} field (${cost} HEARTS, keeping ${Math.round(reserve)} for food)`;
 		pay(cost, 'levels');
 		Object.assign(f, { from: f.level, level: f.level + 1, levelSince: world.day });
-		change = { label: `levels up its ${GOOD_LABEL[f.crop]} field`, from: f.level - 1, to: f.level, unit: `for ${cost} HEARTS to the MaiaCity COOP` };
+		change = { label: `levels up its ${GOOD_LABEL[f.crop]} field`, from: f.level - 1, to: f.level, unit: `for ${cost} HEARTS to the Maia City Coop` };
 	} else {
 		const g = GOODS[code - 2];
 		if (!g || g === f.crop) return null;
@@ -324,7 +324,7 @@ export function createWorld(seed = Date.now() % 1e9) {
 			a.harvest = Object.fromEntries(GOODS.map((g) => [g, 0]));
 			a.stock = Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays]));
 		});
-		// the valley around the MaiaCity COOP (Samuel's sketch, 2026-10-10): the COOP in the middle, the land cut into one
+		// the valley around the Maia City Coop (Samuel's sketch, 2026-10-10): the COOP in the middle, the land cut into one
 		// wedge per aven from it out to the valley's edge, each aven's home in its wedge with its fields around it
 		avens.forEach((a, i) => {
 			const home = wedgeHome(i, avens.length);
@@ -770,7 +770,7 @@ function endOfDay(world) {
 		}
 		a.hearts = Math.round(a.hearts * 100) / 100;
 	}
-	// the MaiaCity COOP pays its members (coopShare % of its balance, in equal shares to the living)
+	// the Maia City Coop pays its members (coopShare % of its balance, in equal shares to the living)
 	const live = world.avens.filter((a) => a.alive);
 	if (world.coop && RULES.coopShare > 0 && live.length) {
 		const each = Math.floor((world.coop.hearts * RULES.coopShare) / 100 / live.length * 100) / 100;
