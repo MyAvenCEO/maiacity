@@ -61,6 +61,10 @@ export const BEAT_COLOR = {
 /** @type {Record<BeatType, number>} */
 export const BEAT_TENSION = { hook: 0.6, context: 0.25, problem: 0.5, intention: 0.4, obstacle: 0.7, low: 0.85, turn: 0.75, solution: 0.5, vision: 0.3 };
 
+/** The words on a story's card: its image title (the hook's catchwords, one per line), else the hook, else its name. */
+export const cardWords = (/** @type {{ image_title?: string[], hook?: string | null, title: string }} */ i) =>
+	(i.image_title ?? []).filter(Boolean).join('\n') || (i.hook ?? '').trim() || i.title;
+
 /** A story's own page, at a tab. */
 export const storyHref = (/** @type {string} */ id, /** @type {string} */ tab = '') =>
 	`${base}/app/stories/story/?id=${encodeURIComponent(id)}${tab ? `&tab=${tab}` : ''}`;

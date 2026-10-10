@@ -93,6 +93,12 @@ test("a story moves through nine steps, and keeps its pad, its hook, its descrip
   await expect(save(s.id, { thumbnail: { layers: [{ kind: "sticker" }] } })).rejects.toThrow(/one of/);
   await expect(save(s.id, { thumbnail: { layers: [{ kind: "image", hash: "nope" }] } })).rejects.toThrow(/hash/);
   expect((await save(s.id, { status: "thumbnail" })).thumbnail.layers!.length).toBe(4);
+  // the image title: the hook's catchwords for the card, on the item and on a variant
+  const titled = await save(s.id, { image_title: ["a '1' million lives", " decision ", ""], hooks: [{ text: "A 1 million lives decision", image_title: ["1 million lives", "decision"] }] });
+  expect(titled.image_title).toEqual(["a '1' million lives", "decision"]);
+  expect(titled.hooks[0]!.image_title).toEqual(["1 million lives", "decision"]);
+  await expect(save(s.id, { image_title: "one line" })).rejects.toThrow(/list/);
+  expect((await save(s.id, { description: "again" })).image_title).toEqual(["a '1' million lives", "decision"]);
   await expect(save(s.id, { journey: { beats: [{ title: "?", type: "montage" }] } })).rejects.toThrow(/beat is one of/);
   await expect(save(s.id, { journey: { beats: [{ type: "hook" }] } })).rejects.toThrow(/title/);
   await expect(save(s.id, { status: "draft" })).rejects.toThrow(/status is one of/);

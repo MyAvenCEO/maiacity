@@ -348,7 +348,7 @@ export type HookPart = (typeof HOOK_PARTS)[number];
  * at), the promise and the objection killer after it, how far up the extreme dial it sits (1 mild … 3 extreme, 4
  * false) and a note. The one whose line is the story's `hook` is on the title card.
  */
-export type HookVariant = { id: string; text: string; promise?: string; objection?: string; dial?: number; note?: string } & Partial<
+export type HookVariant = { id: string; text: string; promise?: string; objection?: string; dial?: number; note?: string; image_title?: string[] } & Partial<
 	Record<HookPart, string>
 >;
 
@@ -399,6 +399,8 @@ export type ContentItem = {
 	journey: Journey;
 	/** the hooks tried, the one on the card among them (its line is `hook`) */
 	hooks: HookVariant[];
+	/** the image title: the hook's catchwords for the card, even more compact, one per line ("a '1' million lives", "decision") */
+	image_title: string[];
 	/** the title card as designed, layer by layer, and the card rendered from it */
 	thumbnail: Thumbnail;
 	/** the media vault's story it is filed in, once the Mac app has made it (an iroh namespace id) */

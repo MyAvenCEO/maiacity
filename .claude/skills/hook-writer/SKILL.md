@@ -20,6 +20,11 @@ one job, and the next one only starts once the one before has done its own:
 | **Intro** | the trailer: the first seconds of the film, or the first lines after the hook | spark curiosity — *why should I care, and what is my transformation?* | the first 3–30 s of a film (3–10 s for a short, up to 30 s for long form); the lines under the hook in an article or a post | 1–4 sentences; spoken, one breath per sentence |
 | **Description** | the overview and the detail | tell what it is, where it goes, what is in it | under the hook on YouTube and the journal (the first two lines show before "more"), then the links and the chapters | as long as it needs; the first two lines matter most |
 
+- **The image title is the hook, even more compact.** Beside the full hook line, a story (and each variant) carries
+  an *image title*: a short list of catchwords, one per line on the card — `"a '1' million lives"`, `"decision"`
+  for the hook "A 1 million lives decision, I didn't dare to take". Two to four lines, the number or the one
+  strange word on a line of its own; the card's text layer shows them when it has no words of its own. On the
+  board: `image_title` (a list); on a variant, `image_title` too. The hook stays the title everywhere else.
 - **The hook replaces the title.** A story has a working name on the board (how we refer to it); what goes out under
   it is the hook. Never ship a title beside a hook: the hook *is* the title, on the card, in the header, in the feed.
 - **The intro is where the promise lives.** The hook anchors a feeling; the intro answers *is this worth my time?* —

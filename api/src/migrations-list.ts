@@ -928,4 +928,13 @@ export const MIGRATIONS: Migration[] = [
         CHECK (status IN ('idea', 'journey', 'hook', 'thumbnail', 'writing', 'movie', 'derivatives', 'scheduled', 'published'));
     `,
   },
+  {
+    // The image title (Samuel, 2026-10-10): the hook's catchwords for the card, even more compact than the hook —
+    // a short list, one per line on the title card ("a '1' million lives", "decision"), beside the full hook line
+    // that stays the title. On the item, and on each hook variant.
+    id: "0045-story-image-title",
+    sql: `
+      ALTER TABLE content_items ADD COLUMN image_title JSONB NOT NULL DEFAULT '[]'::jsonb;
+    `,
+  },
 ];

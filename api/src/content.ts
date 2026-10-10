@@ -50,6 +50,8 @@ export type HookVariant = {
   id: string; text: string;
   subject?: string; action?: string; end?: string; contrast?: string; proof?: string; time?: string; anchor?: string;
   promise?: string; objection?: string; dial?: number; note?: string;
+  /** its catchwords for the card: the hook, even more compact, one per line */
+  image_title?: string[];
 };
 
 /** The kinds of layer a title card is designed from, bottom to top as they usually go. */
@@ -113,6 +115,8 @@ export type Item = {
   hook: string | null;
   /** the hooks tried, the one on the card among them */
   hooks: HookVariant[];
+  /** the image title: the hook's catchwords for the card, even more compact, one per line ("a '1' million lives", "decision") */
+  image_title: string[];
   /** the brainstorm pad: links, concepts, fragments (Markdown) */
   idea: string;
   /** the intro, the trailer: the first 3–30 s of the film (by its length), why to care and the transformation */
@@ -134,6 +138,11 @@ const list = (v: unknown, allowed?: string[]) => {
 };
 
 const text = (v: unknown, max: number) => String(v ?? "").slice(0, max);
+/** The image title as sent: a list of catchwords (8 at most, 80 characters each), empty ones dropped. */
+const imageTitleOf = (v: unknown) => {
+  if (!Array.isArray(v)) throw new ContentError("The image title is a list of catchwords.");
+  return v.map((x) => text(x, 80).trim()).filter(Boolean).slice(0, 8);
+};
 
 /**
  * The article itself, for the lock: not whether the post is out yet (its `draft:` line — publishing flips it), nor the
@@ -179,6 +188,7 @@ function hooksOf(v: unknown): HookVariant[] {
     if (h.promise) out.promise = text(h.promise, 300);
     if (h.objection) out.objection = text(h.objection, 300);
     if (h.note) out.note = text(h.note, 200);
+    if (h.image_title !== undefined) out.image_title = imageTitleOf(h.image_title);
     const dial = Number(h.dial);
     if (Number.isFinite(dial)) out.dial = Math.min(4, Math.max(1, Math.round(dial)));
     return out;
@@ -249,6 +259,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   if (b.intro !== undefined) o.intro = text(b.intro, 5000);
   if (b.journey !== undefined) o.journey = journeyOf(b.journey);
   if (b.hooks !== undefined) o.hooks = hooksOf(b.hooks);
+  if (b.image_title !== undefined) o.image_title = imageTitleOf(b.image_title);
   if (b.thumbnail !== undefined) o.thumbnail = thumbnailOf(b.thumbnail);
   if (b.project !== undefined) o.project = b.project ? text(b.project, 40).trim() || null : null;
   if (b.story !== undefined) {
@@ -273,7 +284,7 @@ function clean(b: Record<string, unknown>, partial: boolean) {
   return o;
 }
 
-const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, hooks, idea, intro, description, journey, thumbnail, story, created, updated";
+const COLS = "id, title, kind, channels, status, scheduled_at, body, hashes, link, tags, deliveries, posts, timeline_id, project, source, hook, hooks, image_title, idea, intro, description, journey, thumbnail, story, created, updated";
 // arrays travel as JSON text: Bun's client does not send a JS array as text[]
 const arr = (i: number) => `ARRAY(SELECT jsonb_array_elements_text(($${i}::text)::jsonb))`;
 
@@ -302,10 +313,10 @@ export async function createContent(founderId: string, body: Record<string, unkn
   const o = clean(body, false);
   const status = o.status ?? (o.scheduled_at ? "scheduled" : "idea");
   const { rows } = await once(db.query<Item>(
-    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id, idea, description, hook, project, journey, hooks, intro, thumbnail)
-     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10, $11, $12, $13, $14, ($15::text)::jsonb, ($16::text)::jsonb, $17, ($18::text)::jsonb) RETURNING ${COLS}`,
+    `INSERT INTO content_items (title, kind, channels, status, scheduled_at, body, hashes, link, tags, founder_id, idea, description, hook, project, journey, hooks, intro, thumbnail, image_title)
+     VALUES ($1, $2, ${arr(3)}, $4, $5, $6, ${arr(7)}, $8, ${arr(9)}, $10, $11, $12, $13, $14, ($15::text)::jsonb, ($16::text)::jsonb, $17, ($18::text)::jsonb, ($19::text)::jsonb) RETURNING ${COLS}`,
     [o.title, o.kind, JSON.stringify(o.channels ?? []), status, o.scheduled_at ?? null, o.body ?? "", JSON.stringify(o.hashes ?? []), o.link ?? null, JSON.stringify(o.tags ?? []), founderId,
-     o.idea ?? "", o.description ?? "", o.hook ?? null, o.project ?? null, JSON.stringify(o.journey ?? {}), JSON.stringify(o.hooks ?? []), o.intro ?? "", JSON.stringify(o.thumbnail ?? {})],
+     o.idea ?? "", o.description ?? "", o.hook ?? null, o.project ?? null, JSON.stringify(o.journey ?? {}), JSON.stringify(o.hooks ?? []), o.intro ?? "", JSON.stringify(o.thumbnail ?? {}), JSON.stringify(o.image_title ?? [])],
   ));
   return rows[0]!;
 }
@@ -337,6 +348,7 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
         hooks = CASE WHEN $23::text IS NULL THEN hooks ELSE ($23::text)::jsonb END,
         intro = coalesce($24, intro),
         thumbnail = CASE WHEN $25::text IS NULL THEN thumbnail ELSE ($25::text)::jsonb END,
+        image_title = CASE WHEN $26::text IS NULL THEN image_title ELSE ($26::text)::jsonb END,
         updated = now()
       WHERE id = $1 RETURNING ${COLS}`,
     [id, o.title ?? null, o.kind ?? null, has("channels") ? JSON.stringify(o.channels) : null, o.status ?? null,
@@ -344,7 +356,7 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
      has("link"), o.link ?? null, has("tags") ? JSON.stringify(o.tags) : null, has("posts") ? JSON.stringify(o.posts) : null,
      has("hook"), o.hook ?? null, o.idea ?? null, o.description ?? null, has("journey") ? JSON.stringify(o.journey) : null,
      has("project"), o.project ?? null, has("story"), o.story ?? null, has("hooks") ? JSON.stringify(o.hooks) : null, o.intro ?? null,
-     has("thumbnail") ? JSON.stringify(o.thumbnail) : null],
+     has("thumbnail") ? JSON.stringify(o.thumbnail) : null, has("image_title") ? JSON.stringify(o.image_title) : null],
   ));
   if (!rows[0]) throw new ContentError("No such item.", 404);
   return rows[0];
