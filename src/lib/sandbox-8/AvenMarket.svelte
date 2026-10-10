@@ -973,6 +973,8 @@
 		// price), each coloured as the crop it grows; an unopened plot left bare
 		const edge = (/** @type {number} */ ang) => edgeAlong(ang);
 		const inner = () => C.r;
+		/** @type {(() => void)[]} */
+		const borders = [];
 		world.avens.forEach((/** @type {any} */ a, /** @type {number} */ i) => {
 			const a0 = -Math.PI / 2 + (i / n) * Math.PI * 2,
 				a1 = -Math.PI / 2 + ((i + 1) / n) * Math.PI * 2;
@@ -1016,12 +1018,21 @@
 				ctx.globalAlpha = 1;
 				ctx.textBaseline = 'alphabetic';
 			});
-			// the wedge's own border, in the aven's colour
-			path(region(a0, a1, inner, edge));
-			ctx.strokeStyle = a.alive ? `${a.colour}99` : '#80808066';
-			ctx.lineWidth = 2;
-			ctx.stroke();
+			// the wedge's own border, in the aven's colour, drawn inside its land once every plot is down, so a neighbour's
+			// border never covers it (Samuel, 2026-10-10)
+			borders.push(() => {
+				const land = region(a0, a1, inner, edge);
+				ctx.save();
+				path(land);
+				ctx.clip();
+				path(land);
+				ctx.strokeStyle = a.alive ? `${a.colour}cc` : '#80808066';
+				ctx.lineWidth = 6; // 3 inside the clip
+				ctx.stroke();
+				ctx.restore();
+			});
 		});
+		borders.forEach((draw) => draw());
 		// the COOP
 		ctx.beginPath();
 		ctx.arc(C.x, C.y, C.r, 0, Math.PI * 2);
@@ -2017,10 +2028,9 @@
 		align-items: center;
 		gap: 0.6rem;
 		margin: 0 0 0.6rem;
-		padding: 0.55rem 0.7rem;
-		border-radius: 10px;
-		background: #24452f;
-		color: #f4f1e8;
+		padding: 0.4rem 0.35rem;
+		border-radius: 8px;
+		border: 1.5px dotted #24452f88;
 	}
 	.coop-name {
 		display: flex;
@@ -2028,7 +2038,7 @@
 		line-height: 1.2;
 	}
 	.coop-name b {
-		font-size: 0.92rem;
+		font-size: 0.85rem;
 	}
 	.coop-name span {
 		font-size: 0.68rem;
@@ -2036,8 +2046,6 @@
 	}
 	.coop .num {
 		margin-left: auto;
-		font-size: 1.05rem;
-		font-weight: 700;
 	}
 	.board.stocked button {
 		grid-template-columns: 14px 3.2rem auto 1fr auto 4.6rem;
