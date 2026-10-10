@@ -1,9 +1,11 @@
 <!--
-	A story's hook: the hooks tried, listed on the left (each with its parts named, the hook-writer skill's anatomy),
-	the one on the title card among them — click a variant and it goes on the card, and the YouTube preview on the
-	right shows it; then the title, the hook line, the description under it, and the one 16:9 master title card every
-	other shape is made from. The card itself is rendered in the repo (scripts/film/thumbnail.mjs) and pushed with the
-	story; until then a stand-in shows the hook on the card.
+	A story's hook step: three texts, each its own job (the hook-writer skill). The hook grabs attention and is the
+	title everywhere (the card, the article, the header, YouTube); the intro, the trailer, is the first 3–30 s of the
+	film: why to care, and the viewer's transformation; the description is the overview and the detail. The hooks
+	tried are listed on the left (each with its parts named), the one on the card among them — click a variant and it
+	goes on the card, and the YouTube preview on the right shows it. The 16:9 master card every other shape is made
+	from is rendered in the repo (scripts/film/thumbnail.mjs) and pushed with the story; until then a stand-in shows
+	the hook on it.
 -->
 <script>
 	import { HOOK_PARTS, fileUrl } from '$lib/auth/client';
@@ -15,16 +17,18 @@
 	/** @type {{ item: ContentItem, onchange: (patch: Partial<ContentItem>) => void }} */
 	let { item, onchange } = $props();
 
-	// YouTube's limits (the delivery skill, platforms.md): a title 1–100 characters, a description up to 5,000 bytes;
-	// a title past ~60 characters is cut in most lists
+	// YouTube's limits (the delivery skill, platforms.md): a title 1–100 characters, a description up to 5,000 bytes
 	const bytes = (/** @type {string} */ s) => new TextEncoder().encode(s ?? '').length;
 	const card = $derived(
 		(item.deliveries ?? [])
 			.filter((d) => d.kind === 'thumbnail' && d.aspect === '16:9')
 			.sort((a, b) => Number(b.timeline === 'day') - Number(a.timeline === 'day'))[0]
 	);
-	const titleLen = $derived((item.title ?? '').length);
+	// the hook is the title: YouTube's limit is 100 characters, and a title past ~60 is cut in most lists
+	const hookLen = $derived((item.hook ?? '').length);
 	const descBytes = $derived(bytes(item.description ?? ''));
+	/** what goes out as the title: the hook; the story's working name only until there is one */
+	const title = $derived((item.hook ?? '').trim() || item.title);
 
 	// ── the variants ──
 	/** @type {Record<HookPart, string>} what each part is called on the card */
@@ -145,16 +149,16 @@
 
 	<div class="fields">
 		<label>
-			<span>Title <small class:over={titleLen > 100} class:long={titleLen > 60 && titleLen <= 100}>{titleLen} / 100</small></span>
-			<input class="big" value={item.title} maxlength="200" oninput={(e) => onchange({ title: e.currentTarget.value })} />
+			<span>Hook <small>grabs attention · the title everywhere: the card, the article, the header · <b class:over={hookLen > 100} class:long={hookLen > 60 && hookLen <= 100}>{hookLen} / 100</b>{chosen ? ` · variant ${hooks.indexOf(chosen) + 1}` : ''}</small></span>
+			<textarea class="big" rows="2" value={item.hook ?? ''} maxlength="300" placeholder="One line, ~10 words, readable in a second: the most extreme true thing" oninput={(e) => onchange({ hook: e.currentTarget.value })}></textarea>
 		</label>
 		<label>
-			<span>Hook <small>the line on the title card · {(item.hook ?? '').length} / 300{chosen ? ` · variant ${hooks.indexOf(chosen) + 1}` : ''}</small></span>
-			<textarea rows="2" value={item.hook ?? ''} maxlength="300" placeholder="Few words, big type: the promise" oninput={(e) => onchange({ hook: e.currentTarget.value })}></textarea>
+			<span>Intro <small>the trailer: the first 3–30 s · why should I care, what is my transformation · {(item.intro ?? '').length} / 5,000</small></span>
+			<textarea rows="4" value={item.intro ?? ''} maxlength="5000" placeholder="The first seconds after the hook: the promise, the objection killer, the pain in the viewer’s own life — ending on the question the story answers" oninput={(e) => onchange({ intro: e.currentTarget.value })}></textarea>
 		</label>
 		<label>
-			<span>Description <small class:over={descBytes > 5000}>{descBytes} / 5,000 bytes</small></span>
-			<textarea rows="9" value={item.description ?? ''} maxlength="5000" placeholder="What the film is, in the first two lines (they show before “more”); then the links, the chapters" oninput={(e) => onchange({ description: e.currentTarget.value })}></textarea>
+			<span>Description <small>the overview and the detail · <b class:over={descBytes > 5000}>{descBytes} / 5,000 bytes</b></small></span>
+			<textarea rows="8" value={item.description ?? ''} maxlength="5000" placeholder="What the film is, in the first two lines (they show before “more”); then the links, the chapters" oninput={(e) => onchange({ description: e.currentTarget.value })}></textarea>
 		</label>
 		<p class="vault">
 			{#if item.story}
@@ -172,14 +176,15 @@
 				<img src={fileUrl(card.hash)} alt="The 16:9 title card" />
 			{:else}
 				<div class="stand-in">
-					<b>{item.hook || item.title}</b>
+					<b>{title}</b>
 					<small>maiaCITY</small>
 				</div>
 			{/if}
 		</div>
 		<p class="cardnote">{card ? '16:9 master title card' : 'Stand-in: the 16:9 master card is not rendered yet'}</p>
-		<h3>{item.title}</h3>
+		<h3>{title}</h3>
 		<p class="chan">maiaCITY</p>
+		{#if item.intro}<p class="intro">{item.intro}</p>{/if}
 		{#if item.description}<p class="desc">{item.description}</p>{/if}
 	</aside>
 </div>
@@ -448,11 +453,15 @@
 		text-transform: none;
 	}
 
-	small.long {
+	small b {
+		font-weight: 400;
+	}
+
+	small .long {
 		color: #b07a1a;
 	}
 
-	small.over {
+	small .over {
 		color: #9c3b26;
 		font-weight: 600;
 	}
@@ -476,6 +485,7 @@
 	.big {
 		font-family: var(--font-display);
 		font-size: 1.35rem;
+		line-height: 1.25;
 	}
 
 	input:focus-visible,
@@ -575,6 +585,14 @@
 		margin: 0.3rem 0 0.6rem;
 		font-size: 0.82rem;
 		color: var(--muted);
+	}
+
+	.intro {
+		margin: 0 0 0.6rem;
+		font-size: 0.86rem;
+		line-height: 1.5;
+		white-space: pre-line;
+		color: var(--ink);
 	}
 
 	.desc {

@@ -79,6 +79,9 @@ test("a story moves through eight steps, and keeps its pad, its hook, its descri
   await expect(save(s.id, { hooks: [{ dial: 2 }] })).rejects.toThrow(/needs its line/);
   await expect(save(s.id, { hooks: "none" })).rejects.toThrow(/list/);
   expect((await save(s.id, { description: "still" })).hooks.length).toBe(2); // untouched by other patches
+  // the intro: the first seconds of the film, kept apart from the hook and the description
+  const withIntro = await save(s.id, { intro: "The moment I woke up today, I knew." });
+  expect([withIntro.intro, withIntro.hook, withIntro.description]).toEqual(["The moment I woke up today, I knew.", "94% loaded. The last 6% is you.", "still"]);
   await expect(save(s.id, { journey: { beats: [{ title: "?", type: "montage" }] } })).rejects.toThrow(/beat is one of/);
   await expect(save(s.id, { journey: { beats: [{ type: "hook" }] } })).rejects.toThrow(/title/);
   await expect(save(s.id, { status: "draft" })).rejects.toThrow(/status is one of/);

@@ -1544,7 +1544,7 @@ impl Studio {
         text(self.api("POST", "/api/content", Some(a.item)).await)
     }
 
-    #[tool(description = "Change a story on the board — its pad, hook (the line on the title card), hooks (the variants tried: [{ text, subject, action, end, contrast, proof, time, anchor, promise, objection, dial 1-4, note }], the one on the card being the one whose text is the hook), journey, article, files, schedule, or step (idea → hook → journey → writing → movie → derivatives → scheduled → published: publish mode)")]
+    #[tool(description = "Change a story on the board — its pad, hook (the attention grabber: the title everywhere, on the card, the article, the header), intro (the trailer: the first 3-30 s of the film, why to care, the transformation), description (the overview and the detail), hooks (the variants tried: [{ text, subject, action, end, contrast, proof, time, anchor, promise, objection, dial 1-4, note }], the one on the card being the one whose text is the hook), journey, article, files, schedule, or step (idea → hook → journey → writing → movie → derivatives → scheduled → published: publish mode)")]
     async fn content_save(&self, Parameters(a): Parameters<SaveArgs>) -> String {
         text(self.api("PUT", &format!("/api/content/{}", a.id), Some(a.patch)).await)
     }
