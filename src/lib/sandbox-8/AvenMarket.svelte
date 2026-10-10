@@ -932,29 +932,63 @@
 		const C = COOP_SPOT;
 		const ink = light > 0.5 ? '#1f2a23' : '#f4f1e8';
 		const at = (/** @type {number} */ ang, /** @type {number} */ d) => /** @type {[number, number]} */ ([C.x + Math.cos(ang) * d, C.y + Math.sin(ang) * d]);
-		// each aven's wedge, cut into its three plots (Samuel, 2026-10-10: the fields span the whole land, each plot its own
-		// size, its share as dealt with its price), each coloured as the crop it grows; an unopened plot left bare
-		const wedge = (/** @type {number} */ a0, /** @type {number} */ a1) => {
+		// a part of a wedge, between two angles and two distances from the COOP (each a function of the angle), as points
+		const region = (/** @type {number} */ b0, /** @type {number} */ b1, /** @type {(ang: number) => number} */ rin, /** @type {(ang: number) => number} */ rout) => {
+			/** @type {[number, number][]} */
+			const pts = [];
+			for (let k = 0; k <= 16; k++) pts.push(at(b0 + ((b1 - b0) * k) / 16, rout(b0 + ((b1 - b0) * k) / 16)));
+			for (let k = 16; k >= 0; k--) pts.push(at(b0 + ((b1 - b0) * k) / 16, rin(b0 + ((b1 - b0) * k) / 16)));
+			return pts;
+		};
+		/** its area (any simple polygon) and the middle of it */
+		const measure = (/** @type {[number, number][]} */ pts) => {
+			let A = 0,
+				cx = 0,
+				cy = 0;
+			pts.forEach(([x0, y0], k) => {
+				const [x1, y1] = pts[(k + 1) % pts.length];
+				const f = x0 * y1 - x1 * y0;
+				A += f;
+				cx += (x0 + x1) * f;
+				cy += (y0 + y1) * f;
+			});
+			return { area: Math.abs(A / 2), x: cx / (3 * A || 1), y: cy / (3 * A || 1) };
+		};
+		const path = (/** @type {[number, number][]} */ pts) => {
 			ctx.beginPath();
-			ctx.moveTo(...at(a0, C.r));
-			for (let k = 0; k <= 12; k++) {
-				const ang = a0 + ((a1 - a0) * k) / 12;
-				ctx.lineTo(...at(ang, edgeAlong(ang)));
-			}
-			ctx.lineTo(...at(a1, C.r));
-			ctx.arc(C.x, C.y, C.r, a1, a0, true);
+			pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
 			ctx.closePath();
 		};
+		/** the value in lo..hi at which `f` reaches `want` (f grows with it) */
+		const solve = (/** @type {(v: number) => number} */ f, /** @type {number} */ want, /** @type {number} */ lo, /** @type {number} */ hi) => {
+			for (let k = 0; k < 30; k++) {
+				const mid = (lo + hi) / 2;
+				if (f(mid) < want) lo = mid;
+				else hi = mid;
+			}
+			return (lo + hi) / 2;
+		};
+		// each aven's wedge, cut into its three plots as Samuel drew it (2026-10-10): F1 the tip, from the COOP out; beyond
+		// it, the wedge's outer band split side by side into F2 and F3. Each plot its own size (its share, dealt with its
+		// price), each coloured as the crop it grows; an unopened plot left bare
+		const edge = (/** @type {number} */ ang) => edgeAlong(ang);
+		const inner = () => C.r;
 		world.avens.forEach((/** @type {any} */ a, /** @type {number} */ i) => {
 			const a0 = -Math.PI / 2 + (i / n) * Math.PI * 2,
 				a1 = -Math.PI / 2 + ((i + 1) / n) * Math.PI * 2;
 			const share = a.plots?.length === 3 ? a.plots : [1, 1, 1];
 			const sum = share.reduce((/** @type {number} */ m, /** @type {number} */ x) => m + x, 0);
-			let from = a0;
-			for (let k = 0; k < 3; k++) {
-				const to = from + ((a1 - a0) * share[k]) / sum;
+			const whole = measure(region(a0, a1, inner, edge)).area;
+			// where the tip ends: the share of the way out from the COOP to the edge that gives F1 its share of the land
+			const cut = (/** @type {number} */ t) => (/** @type {number} */ ang) => C.r + (edge(ang) - C.r) * t;
+			const t = solve((v) => measure(region(a0, a1, inner, cut(v))).area, (whole * share[0]) / sum, 0.05, 0.95);
+			const band = measure(region(a0, a1, cut(t), edge)).area;
+			// where the band splits: the angle that gives F2 its share of the band
+			const split = solve((v) => measure(region(a0, v, cut(t), edge)).area, (band * share[1]) / (share[1] + share[2]), a0, a1);
+			const plots = [region(a0, a1, inner, cut(t)), region(a0, split, cut(t), edge), region(split, a1, cut(t), edge)];
+			plots.forEach((pts, k) => {
 				const f = a.fields?.[k];
-				wedge(from, to);
+				path(pts);
 				if (f) {
 					ctx.fillStyle = a.alive ? GOOD_COLOUR[f.crop] : '#8a8a86';
 					ctx.globalAlpha = 0.22 + 0.4 * fieldGrown(world, f) + 0.08 * (f.level - 1);
@@ -964,26 +998,26 @@
 				}
 				ctx.fill();
 				ctx.globalAlpha = 1;
-				ctx.strokeStyle = light > 0.5 ? '#1f2a2322' : '#f4f1e822';
+				ctx.strokeStyle = light > 0.5 ? '#1f2a2333' : '#f4f1e833';
 				ctx.lineWidth = 1;
 				ctx.stroke();
-				// what the plot is: its number, crop and level, last night's harvest, out towards the edge
-				const mid = (from + to) / 2;
-				const [lx, ly] = at(mid, C.r + (edgeAlong(mid) - C.r) * 0.86);
+				// what the plot is: its number, crop and level, last night's harvest. The tip's label sits near the COOP
+				// (the home stands at the tip's outer edge); the band's out towards the valley's edge
+				const mid = k === 0 ? (a0 + a1) / 2 : k === 1 ? (a0 + split) / 2 : (split + a1) / 2;
+				const [lx, ly] = k === 0 ? at(mid, C.r + (edge(mid) - C.r) * t * 0.55) : at(mid, cut(t)(mid) + (edge(mid) - cut(t)(mid)) * 0.62);
 				ctx.textAlign = 'center';
 				ctx.textBaseline = 'middle';
 				ctx.fillStyle = ink;
 				ctx.globalAlpha = f ? 0.85 : 0.4;
 				ctx.font = '700 10px system-ui, sans-serif';
-				ctx.fillText(f ? `${GOOD_LABEL[f.crop]} L${f.level}` : `F${k + 1}`, lx, ly - 6);
+				ctx.fillText(f ? `F${k + 1} · ${GOOD_LABEL[f.crop]} L${f.level}` : `F${k + 1}`, lx, ly - 6);
 				ctx.font = '600 9px system-ui, sans-serif';
 				ctx.fillText(f ? (fieldGrown(world, f) < 1 ? `growing ${Math.round(fieldGrown(world, f) * 100)}%` : `${a.harvest?.[f.crop] ?? 0} last night`) : 'not opened', lx, ly + 6);
 				ctx.globalAlpha = 1;
 				ctx.textBaseline = 'alphabetic';
-				from = to;
-			}
+			});
 			// the wedge's own border, in the aven's colour
-			wedge(a0, a1);
+			path(region(a0, a1, inner, edge));
 			ctx.strokeStyle = a.alive ? `${a.colour}99` : '#80808066';
 			ctx.lineWidth = 2;
 			ctx.stroke();
