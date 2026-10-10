@@ -24,10 +24,33 @@ const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16)
 const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
 const sleep = (/** @type {number} */ ms) => new Promise((done) => setTimeout(done, ms));
 
+/** Op `op` of the ops engine run on the device, as the page runs every read and change: what it did, or it throws. */
+async function run(device, op) {
+	const out = await device.run(op);
+	if (!('ok' in out)) throw new Error(`${op.op} refused: ${out.refused}, ${out.why}`);
+	return out.ok;
+}
+
+/** The text of block 2 of the note, as the device reads it: undefined while it can't. */
+async function text(device, note) {
+	const out = await device.run({ op: 'get', entry: note.entry });
+	return out.ok?.record.blocks?.find((/** @type {{id: number}} */ b) => b.id === 2)?.text;
+}
+
+/** A note as the page writes one: its heading (block 1) the title too, then a paragraph (block 2) that reads `text`. */
+const titled = (/** @type {string} */ title, /** @type {string} */ text) => ({
+	kind: 'document',
+	title,
+	blocks: [
+		{ id: 1, type: 'heading', level: 1, text: title },
+		{ id: 2, type: 'paragraph', text }
+	]
+});
+
 /** Waits until the device reads `body` in block 2 of the note, two minutes at most. */
 async function reads(device, note, body) {
 	const end = Date.now() + 120_000;
-	while ((await device.text(note.entry, 2)) !== body) {
+	while ((await text(device, note)) !== body) {
 		if (Date.now() > end) throw new Error(`it doesn't read ${JSON.stringify(body)} within two minutes`);
 		await sleep(100);
 	}
@@ -68,7 +91,8 @@ async function run() {
 			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
 			device = await avendb.Device.found(name, relay, q.get('server'), made.spki, unlock, passkey.sign);
 			const vault = await device.vault();
-			const entry = await device.write(vault, vault, 'Seeds', q.get('write'), []);
+			const create = { op: 'create', vault, type: 'note', value: titled('Seeds', q.get('write')) };
+			const { entry } = await run(device, create);
 			note = { actor: vault, entry };
 		} else {
 			passkey = counted(ceremonies(avendb));
@@ -93,7 +117,8 @@ async function run() {
 		await report('read');
 	}
 	if (q.get('write') && !q.get('server')) {
-		await device.setText(note.actor, note.entry, 2, q.get('write'));
+		const path = ['blocks', { id: 2 }, 'text'];
+		await run(device, { op: 'set', as: note.actor, entry: note.entry, path, value: q.get('write') });
 		await report('wrote');
 	}
 	if (q.get('then')) {

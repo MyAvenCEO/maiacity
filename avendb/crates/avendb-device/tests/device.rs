@@ -219,6 +219,22 @@ async fn shown(app: &mut App, entry: &Value, what: &str, check: impl Fn(&Value) 
     }
 }
 
+/// Op `op` of the ops engine, run on the device as the page runs every read and change: what it did, or its refusal,
+/// whole.
+async fn run(app: &mut App, op: Value) -> Result<Value, Value> {
+    let out = app.call("run", json!([op])).await.expect("an answer");
+    out.get("ok").cloned().ok_or(out)
+}
+
+/// A note as the page writes one: a document titled `title`, its heading (block 1) the title too, then a paragraph
+/// (block 2) that reads `text`.
+fn titled(title: &str, text: &str) -> Value {
+    json!({ "kind": "document", "title": title, "blocks": [
+        { "id": 1, "type": "heading", "level": 1, "text": title },
+        { "id": 2, "type": "paragraph", "text": text },
+    ] })
+}
+
 /// The title and text of note `entry`, as the device's world shows it.
 async fn note(app: &mut App, entry: &Value) -> Option<(String, String)> {
     let world = app.call("world", json!([])).await.expect("its world");
@@ -258,17 +274,23 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(again, Err("this Mac holds an avenDB account already: forget it here first".into()));
     // a note in her vault, which the server keeps, as the relay cap her vault gave it at its founding reaches it
     let vault = app.call("world", json!([])).await.expect("its world")["mine"].clone();
-    let args = json!([vault, vault, "Seeds", "Tomatoes in March.", ["garden"]]);
-    let entry = app.call("write", args).await.expect("a note");
+    let seeds = titled("Seeds", "Tomatoes in March.");
+    let write = json!({ "op": "create", "vault": vault, "type": "note", "tags": ["garden"], "value": seeds });
+    let entry = run(&mut app, write).await.expect("a note")["entry"].clone();
     let e = EntryId(id(&entry));
     let holds = move |lab: &Lab, me| lab.fetched(me, e) > 0;
     until("the server keeps her note", || server.read(holds)).await;
     let garden = |n: &Value| n["type"] == "note" && n["tags"] == json!(["garden"]) && n["title"] == "Seeds";
     shown(&mut app, &entry, "her note, tagged", garden).await;
     // a todo for her work, which she shares with everyone to read, and then no longer
-    let todo = app.call("todo", json!([vault, vault, "Sow tomatoes", ["work"]])).await.expect("a todo");
-    assert_eq!(app.call("setStatus", json!([vault, todo, "doing"])).await, Ok(Value::Null));
-    assert_eq!(app.call("tag", json!([vault, todo, ["urgent"], []])).await, Ok(Value::Null));
+    let sow = json!({ "kind": "todo", "title": "Sow tomatoes" });
+    let todo = json!({ "op": "create", "vault": vault, "type": "todo", "tags": ["work"], "value": sow });
+    let todo = run(&mut app, todo).await.expect("a todo")["entry"].clone();
+    let doing = json!({ "op": "batch", "ops": [
+        { "op": "set", "entry": todo, "path": ["status"], "value": "doing" },
+        { "op": "tag", "entry": todo, "add": ["urgent"] },
+    ] });
+    assert_eq!(run(&mut app, doing).await.map(|done| done.as_array().map(Vec::len)), Ok(Some(2)), "two writes");
     let doing = |t: &Value| t["status"] == "doing" && t["tags"] == json!(["work", "urgent"]) && t["public"] == false;
     shown(&mut app, &todo, "her todo, doing and urgent", doing).await;
     let work = json!({ "select": [[{ "type": ["todo"] }, { "tag": "work" }]] });
@@ -290,7 +312,9 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     let svg = app.call("qrSvg", json!([device["offer"], 240])).await.expect("a QR code");
     assert!(svg.as_str().expect("an image").contains("<svg"), "an SVG image");
     assert_eq!(app.call("nope", json!([])).await, Err("no call \"nope\"".into()));
-    assert_eq!(app.call("write", json!(["x"])).await, Err("\"x\" is no id".into()));
+    assert_eq!(app.call("note", json!(["x"])).await, Err("\"x\" is no id".into()));
+    let nope = run(&mut app, json!({ "op": "nope" })).await.expect_err("no such op");
+    assert_eq!((&nope["refused"], &nope["why"]), (&json!("BadOp"), &json!("no op is called \"nope\"")));
     assert!(app.asked().is_empty(), "with no sheet");
     app.quit().await;
     // the app starts again: the device opens from its folder in the unlock's sheet alone, the same device
@@ -337,8 +361,9 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
     let unlock = browser.unlock(nonce, old.challenge(start.now));
     let page = Device::found(start, &server.offer(), None, old, unlock, &browser).await.expect("her vault");
     let vault = page.vault().await.expect("her vault");
-    let seeds = ("Seeds".into(), "Tomatoes in March.".into());
-    let entry = page.write(vault, vault, seeds, vec![]).await.expect("a note");
+    let seeds = titled("Seeds", "Tomatoes in March.");
+    let write = json!({ "op": "create", "vault": vault.to_hex(), "type": "note", "value": seeds });
+    let entry = page.run(write).await["ok"]["entry"].clone();
     let edits = page.edits(0).await.expect("its edits");
     let mut keys = vec![];
     for id in page.key_ids().await {
@@ -362,7 +387,6 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
     assert_eq!(app.asked(), ["unlock"]);
     assert_eq!(adopted["id"], hex(&device.0), "the same device");
     assert!(adopted["sockets"].as_array().expect("its sockets").is_empty(), "on its relay alone, as asked");
-    let entry = json!(hex(&entry.0));
     let read = note(&mut app, &entry).await;
     assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what the page kept");
     let status = app.call("status", json!([])).await.expect("its status");

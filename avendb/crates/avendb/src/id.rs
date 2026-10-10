@@ -21,6 +21,29 @@ macro_rules! ids {
                 }
                 Self(id)
             }
+
+            /// The id in 64 lowercase hex digits, as the page names every id and lenses name schemas.
+            pub fn to_hex(&self) -> String {
+                self.0.iter().map(|b| format!("{b:02x}")).collect()
+            }
+
+            /// An id from its 64 lowercase hex digits: `None` for anything else.
+            pub fn from_hex(s: &str) -> Option<Self> {
+                let digit = |c: u8| match c {
+                    b'0'..=b'9' => Some(c - b'0'),
+                    b'a'..=b'f' => Some(c - b'a' + 10),
+                    _ => None,
+                };
+                let s = s.as_bytes();
+                if s.len() != 64 {
+                    return None;
+                }
+                let mut id = [0u8; 32];
+                for (i, b) in id.iter_mut().enumerate() {
+                    *b = digit(s[2 * i])? << 4 | digit(s[2 * i + 1])?;
+                }
+                Some(Self(id))
+            }
         }
 
         /// A small-number id prints as its number, a hash as its first four bytes.
@@ -64,29 +87,6 @@ impl BlobId {
     /// The id of a blob: the hash of its bytes (`hash`), unlike any other hash of them.
     pub fn of(bytes: &[u8]) -> BlobId {
         BlobId(crate::hash::hash("blob id", bytes))
-    }
-
-    /// The id in lowercase hex, as lenses name schemas and edits name the schema they were written under.
-    pub fn to_hex(&self) -> String {
-        self.0.iter().map(|b| format!("{b:02x}")).collect()
-    }
-
-    /// An id from its lowercase hex: `None` for anything else.
-    pub fn from_hex(s: &str) -> Option<BlobId> {
-        let digit = |c: u8| match c {
-            b'0'..=b'9' => Some(c - b'0'),
-            b'a'..=b'f' => Some(c - b'a' + 10),
-            _ => None,
-        };
-        let s = s.as_bytes();
-        if s.len() != 64 {
-            return None;
-        }
-        let mut id = [0u8; 32];
-        for (i, b) in id.iter_mut().enumerate() {
-            *b = digit(s[2 * i])? << 4 | digit(s[2 * i + 1])?;
-        }
-        Some(BlobId(id))
     }
 }
 

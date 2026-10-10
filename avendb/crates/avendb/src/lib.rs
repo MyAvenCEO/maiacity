@@ -27,16 +27,19 @@
 //! | P7 the tile | `cast`: the scenarios' people, devices and vaults, made a step at a time; `scenarios`: the plan's scenarios, each check recorded green or red, for the tests and the tile's Lab; `keys`: McEliece pairs made from a seed anywhere, so a page makes them in its workers; `lab`: names, spare keys made ahead; `history`: the schemas each write was written under | |
 //! | F flat vaults | `slice`: what a cap shares, its selector sealed to the vaults it names; `policy`: spaces folded into vaults, an entry's type and tags in its encrypted writes, cells, caps resting on caps, stewards that move entries and answer the tags others ask for, creation through a cap's intake cell; `keys`: a key for each cell, an entry's key derived for each stay; `sync`: the logs of caps and cells; `lab`: stewardship in each device's upkeep | T20, T22 to T25 |
 //! | P8a devices on iroh | `wire`: every message between devices as bytes and back, one encoding each: signed edits, hellos, requests, replies, announcements; `sign`: a device's hello, its SLH-DSA signature on a connection; `lab`: a device split off to run on its own (`avendb-net` puts it on iroh), what it asks a peer, answers it and tells it, McEliece keys handed out only within a peer's reach | |
+//! | O ops | `ops`: one JSON language to read and change any record, whatever its schema: records flat, the diff of two records, ops on a record and the place each names, `where` with its labels' selector; `engine`: every op run on a device's Lab, a query, a read or a write | O1 to O3 |
 
 pub mod cast;
 pub mod doc;
 pub mod encode;
+pub mod engine;
 pub mod hash;
 pub mod history;
 pub mod id;
 pub mod keys;
 pub mod lab;
 pub mod lens;
+pub mod ops;
 pub mod policy;
 pub mod scenarios;
 pub mod sign;
