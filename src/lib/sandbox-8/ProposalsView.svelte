@@ -82,6 +82,9 @@
 	/** the world a MIP belongs to, in words */
 	const worldOf = (/** @type {any} */ m) =>
 		m.world_id ? `in ${m.world_name ?? 'a deleted world'}` : m.action === 'world' && !m.world?.after ? 'a world from scratch' : 'from before MIPs had a world';
+	/** a card the MIP carries as it already was: its values, data and code all the same */
+	const sameCard = (/** @type {any} */ c, /** @type {any} */ b) =>
+		!!b && JSON.stringify(c.values ?? {}) === JSON.stringify(b.values ?? {}) && (c.code ?? '') === (b.code ?? '') && JSON.stringify(c.data ?? null) === JSON.stringify(b.data ?? null);
 	/** @param {any} m */
 	function what(m) {
 		if (m.action === 'create') return `Creates the config ${m.config} ("${m.name}") from ${m.from ?? "the catalogue's defaults"}`;
@@ -152,14 +155,22 @@
 			{#if m.world}
 				<div class="world-diff">
 					{#if Object.keys(m.world.values ?? {}).length}<p><b>Values on top:</b> {Object.entries(m.world.values).map(([k, v]) => `${k} ${v}`).join(', ')}</p>{/if}
-					{#if m.world.after_name}
-						<p><b>Against {m.world.after_name}:</b> {m.world.diff?.length ? '' : 'the same settings.'}</p>
-						{#if m.world.diff?.length}<ul>{#each m.world.diff as d (d)}<li>{d}</li>{/each}</ul>{/if}
+					{#if m.world.after_name || m.world.amends}
+						<p class="against"><b>What changes against {m.world.after_name ?? m.world.name}</b>{m.world.diff?.length ? '' : ': nothing, the same settings.'}</p>
+						{#if m.world.diff?.length}<div class="chips">{#each m.world.diff as d (d)}<span class="chip">{d}</span>{/each}</div>{/if}
 					{:else}<p>The first world: nothing to compare it with.</p>{/if}
 				</div>
 			{/if}
-			{#each m.cards as card (card.id)}<ConfigCard {card} base={m.base?.[card.id] ?? null} />{/each}
+			{@const changed = m.cards.filter((/** @type {any} */ c) => !sameCard(c, m.base?.[c.id]))}
+			{@const same = m.cards.filter((/** @type {any} */ c) => sameCard(c, m.base?.[c.id]))}
+			{#each changed as card (card.id)}<ConfigCard {card} base={m.base?.[card.id] ?? null} />{/each}
 			{#each m.remove as id (id)}{#if m.base?.[id]}<ConfigCard card={m.base[id]} removed />{/if}{/each}
+			{#if same.length}
+				<details class="same-cards">
+					<summary>{same.length} card{same.length === 1 ? '' : 's'} the same: {same.map((/** @type {any} */ c) => c.name || c.id).join(', ')}</summary>
+					{#each same as card (card.id)}<ConfigCard {card} base={m.base?.[card.id] ?? null} />{/each}
+				</details>
+			{/if}
 		{/if}
 		{#if m.status === 'open'}
 			<div class="decide">
@@ -187,9 +198,30 @@
 	.world-diff p {
 		margin: 0.2rem 0;
 	}
-	.world-diff ul {
-		margin: 0.2rem 0 0.2rem 1.1rem;
-		padding: 0;
+	.world-diff .against {
+		font-size: 0.85rem;
+	}
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin: 0.3rem 0 0.15rem;
+	}
+	.chip {
+		font-size: 0.75rem;
+		background: #eda10024;
+		color: #6b4600;
+		border-radius: 999px;
+		padding: 0.15rem 0.6rem;
+	}
+	.same-cards {
+		margin-top: 0.5rem;
+		font-size: 0.8rem;
+		color: #6b6a66;
+	}
+	.same-cards summary {
+		cursor: pointer;
+		padding: 0.35rem 0.1rem;
 	}
 	.mips {
 		height: 100%;
