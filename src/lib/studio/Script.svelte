@@ -128,7 +128,7 @@
 				<h2>{PART[p.part.section ?? ''] ?? p.part.section}</h2>
 				{#if p.part.text}<p class="intent">{p.part.text}</p>{/if}
 				{@const feels = feelingsOf(p.part)}
-				{#if feels.length}<p class="journey">The viewer: {#each feels as f, i (i)}{#if i} · {/if}<span>{f.feel} {f.up ? '↑' : '↓'}</span>{/each}</p>{/if}
+				{#if feels.length}<p class="journey">The viewer: {#each feels as f, i (i)}{i ? ' · ' : ''}<span>{f.feel} {f.up ? '↑' : '↓'}</span>{/each}</p>{/if}
 			{/if}
 			{#if p.newScene}<h3>{heading(p.scene)}</h3>{/if}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
