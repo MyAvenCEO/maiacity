@@ -212,7 +212,7 @@
 		</header>
 
 		<section class="pane" aria-label={statusLabel(tab)}>
-			<p class="note">{STAGE_NOTE[tab] ?? ''}</p>
+			{#if tab !== 'thumbnail'}<p class="note">{STAGE_NOTE[tab] ?? ''}</p>{/if}
 			{#if tab === 'idea'}
 				<IdeaTab {item} onchange={edit} />
 			{:else if tab === 'hook'}

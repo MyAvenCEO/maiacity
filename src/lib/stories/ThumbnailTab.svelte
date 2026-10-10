@@ -30,6 +30,8 @@
 	/** @type {Record<LayerKind, string>} */
 	const KIND_NOTE = { image: 'a picture from the vault, the background usually', cutout: 'a transparent PNG laid over it: a face out of a frame', text: 'the words, big (empty: the image title, else the hook)', badge: 'the day, bottom right' };
 	const COLORS = ['white', 'gold', 'ink'];
+	/** a badge's fill: gold (the day), alert (red, a warning), ink, white */
+	const FILLS = ['gold', 'alert', 'ink', 'white'];
 
 	const layers = $derived(item.thumbnail?.layers ?? []);
 	/** what an empty text layer says: the image title, else the hook */
@@ -140,17 +142,18 @@
 	/** the number fields a layer has, each with its range */
 	const NUMS = $derived(
 		picked
-			? /** @type {{ key: 'x' | 'y' | 'w' | 'size', label: string, min: number, max: number, step: number }[]} */ ([
+			? /** @type {{ key: 'x' | 'y' | 'w' | 'size' | 'rot', label: string, min: number, max: number, step: number }[]} */ ([
 					{ key: 'x', label: 'Left', min: -50, max: 100, step: 0.5 },
 					{ key: 'y', label: 'Top', min: -50, max: 100, step: 0.5 },
-					...(picked.kind === 'badge' ? [] : [{ key: 'w', label: 'Width', min: 5, max: 150, step: 0.5 }]),
-					...(picked.kind === 'text' || picked.kind === 'badge' ? [{ key: 'size', label: 'Size', min: 1, max: 20, step: 0.1 }] : [])
+					...(picked.kind === 'badge' ? [] : [{ key: 'w', label: picked.kind === 'text' ? 'Width at most' : 'Width', min: 5, max: 150, step: 0.5 }]),
+					...(picked.kind === 'text' || picked.kind === 'badge' ? [{ key: 'size', label: 'Size', min: 1, max: 20, step: 0.1 }] : []),
+					{ key: 'rot', label: 'Turned', min: -45, max: 45, step: 0.5 }
 				])
 			: []
 	);
 	/** the value a number field shows: the layer's, else the kind's default (the card's own) */
-	const DEFAULT = { image: { x: 0, y: 0, w: 100, size: 0 }, cutout: { x: 0, y: 10, w: 45, size: 0 }, text: { x: 48, y: 16, w: 48, size: 6.2 }, badge: { x: 82, y: 86, w: 0, size: 2.4 } };
-	const numOf = (/** @type {Layer} */ l, /** @type {'x' | 'y' | 'w' | 'size'} */ k) => l[k] ?? DEFAULT[l.kind][k];
+	const DEFAULT = { image: { x: 0, y: 0, w: 100, size: 0, rot: 0 }, cutout: { x: 0, y: 10, w: 45, size: 0, rot: 0 }, text: { x: 48, y: 16, w: 48, size: 6.2, rot: 0 }, badge: { x: 82, y: 86, w: 0, size: 2.4, rot: 0 } };
+	const numOf = (/** @type {Layer} */ l, /** @type {'x' | 'y' | 'w' | 'size' | 'rot'} */ k) => l[k] ?? DEFAULT[l.kind][k];
 
 </script>
 
@@ -159,7 +162,6 @@
 	<div class="stage">
 		{#if layers.length}
 			<Card {layers} {hook} selected={pickedId} editable onselect={(id) => (pickedId = id)} onmove={(id, x, y) => edit(id, { x, y })} onresize={(id, patch) => edit(id, patch)} />
-			<p class="stagenote">Click a layer to pick it, drag it to move it, drag its gold corner to size it. 16:9, every place in percent of the card.</p>
 		{:else}
 			<div class="blank">
 				<p>No layers yet.</p>
@@ -171,9 +173,11 @@
 
 	<!-- the layers, top first; what the picked one is made of -->
 	<aside class="layers" aria-label="The layers">
-		<!-- how it looks small: a YouTube list entry at phone size, the card beside its title -->
-		<div class="small" aria-label="How it looks on a phone">
+		<!-- how it looks small: a YouTube list entry (dark, the card wide, the title white beside it, a New chip, a length) -->
+		<div class="small" aria-label="How it looks on YouTube">
 			<div class="mini">
+				<span class="new">New</span>
+				<span class="length">0:15</span>
 				{#if layers.length}
 					<Card {layers} {hook} />
 				{:else if item.thumbnail?.card}
@@ -184,18 +188,20 @@
 			</div>
 			<div class="minitext">
 				<b>{title}</b>
-				<small>maiaCITY</small>
+				<small>maiaCITY <i class="tick" title="Verified">✓</i></small>
+				<small class="meta">▷ 1.2K · 1d ago</small>
 			</div>
 		</div>
 		<!-- the card as it goes out: these layers drawn at full size, into the vault -->
 		{#if layers.length}
-			<div class="file">
+			<div class="filing">
 				<button class="render" disabled={rendering === 'drawing' || rendering === 'filing'} onclick={render}>
 					{rendering === 'drawing' ? 'Drawing…' : rendering === 'filing' ? 'Into the vault…' : native() ? 'Render the card' : 'Render and download'}
 				</button>
 				{#if renderNote}<p class="rendernote" class:bad={rendering === 'failed'}>{renderNote}</p>{/if}
 			</div>
 		{/if}
+		<div class="scroll">
 		<div class="head">
 			<span>Layers <small>{layers.length}</small></span>
 			<span class="adds">
@@ -257,7 +263,7 @@
 					<label class="field">
 						<span>Colour</span>
 						<select value={picked.color ?? (picked.kind === 'badge' ? 'gold' : 'white')} onchange={(e) => edit(picked.id, { color: e.currentTarget.value })}>
-							{#each COLORS as c (c)}<option value={c}>{c}</option>{/each}
+							{#each picked.kind === 'badge' ? FILLS : COLORS as c (c)}<option value={c}>{c}</option>{/each}
 						</select>
 					</label>
 					{#if picked.kind === 'text'}
@@ -272,7 +278,7 @@
 
 				{#each NUMS as n (n.key)}
 					<label class="field num">
-						<span>{n.label} <small>{numOf(picked, n.key)}{n.key === 'size' ? ' · % of the width' : ' %'}</small></span>
+						<span>{n.label} <small>{numOf(picked, n.key)}{n.key === 'size' ? ' · % of the width' : n.key === 'rot' ? '°' : ' %'}</small></span>
 						<input type="range" min={n.min} max={n.max} step={n.step} value={numOf(picked, n.key)} oninput={(e) => edit(picked.id, { [n.key]: Number(e.currentTarget.value) })} />
 					</label>
 				{/each}
@@ -286,6 +292,7 @@
 		{:else if layers.length}
 			<p class="empty">Pick a layer, in the list or on the card.</p>
 		{/if}
+		</div>
 	</aside>
 </div>
 
@@ -298,17 +305,14 @@
 	}
 
 	/* ── the card ── */
+	/* the card stays put while the layers aside scrolls */
 	.stage {
+		position: sticky;
+		top: 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
-	}
-
-	.stagenote {
-		margin: 0;
-		font-size: 0.72rem;
-		color: var(--muted);
 	}
 
 	.blank {
@@ -364,7 +368,7 @@
 		cursor: default;
 	}
 
-	.file {
+	.filing {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -387,6 +391,7 @@
 
 
 	/* ── the layers ── */
+	/* the aside: the small preview and the render row stay at its top; the layers and the inspector scroll under them */
 	.layers {
 		position: sticky;
 		top: 1rem;
@@ -394,11 +399,21 @@
 		flex-direction: column;
 		gap: 0.6rem;
 		max-height: calc(100vh - 8rem);
-		overflow: auto;
 		padding: 0.9rem;
 		border: 1px solid var(--line);
 		border-radius: 14px;
 		background: #fff;
+	}
+
+	.scroll {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 0.6rem;
+		min-height: 0;
+		margin: 0 -0.9rem -0.9rem;
+		padding: 0 0.9rem 0.9rem;
+		overflow: auto;
 	}
 
 	.head {
@@ -526,18 +541,49 @@
 	}
 
 	/* ── how it looks small ── */
+	/* YouTube's list entry, dark: the card about 55% wide, the words beside it in its own sans */
 	.small {
 		display: flex;
-		gap: 0.6rem;
-		padding-bottom: 0.7rem;
-		border-bottom: 1px solid var(--line);
+		gap: 0.55rem;
+		margin: -0.9rem -0.9rem 0;
+		padding: 0.6rem 0.6rem 0.7rem;
+		border-radius: 14px 14px 0 0;
+		background: #0f0f0f;
+		font-family: Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+		color: #f1f1f1;
 	}
 
 	.mini {
+		position: relative;
 		flex: none;
-		width: 9.5rem;
+		width: 55%;
 		overflow: hidden;
 		border-radius: 8px;
+	}
+
+	.mini .new,
+	.mini .length {
+		position: absolute;
+		z-index: 1;
+		padding: 0.1rem 0.3rem;
+		border-radius: 4px;
+		font-size: 0.62rem;
+		font-weight: 600;
+		line-height: 1.2;
+	}
+
+	.mini .new {
+		top: 0.3rem;
+		left: 0.3rem;
+		background: #fff;
+		color: #0f0f0f;
+	}
+
+	.mini .length {
+		right: 0.3rem;
+		bottom: 0.3rem;
+		background: rgb(0 0 0 / 0.8);
+		color: #fff;
 	}
 
 	.mini img,
@@ -559,17 +605,27 @@
 	.minitext b {
 		display: -webkit-box;
 		overflow: hidden;
-		font-size: 0.8rem;
-		font-weight: 600;
+		font-size: 0.78rem;
+		font-weight: 500;
 		line-height: 1.3;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
+		color: #f1f1f1;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
 		-webkit-box-orient: vertical;
 	}
 
 	.minitext small {
-		font-size: 0.68rem;
-		color: var(--muted);
+		font-size: 0.66rem;
+		color: #aaa;
+	}
+
+	.minitext .tick {
+		font-style: normal;
+		font-size: 0.6rem;
+	}
+
+	.minitext .meta {
+		margin-top: -0.1rem;
 	}
 
 	.kind {
@@ -708,9 +764,14 @@
 			grid-template-columns: minmax(0, 1fr);
 		}
 
+		.stage,
 		.layers {
 			position: static;
 			max-height: none;
+		}
+
+		.scroll {
+			overflow: visible;
 		}
 	}
 </style>
