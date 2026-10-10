@@ -11,7 +11,7 @@ export const STAGE_NOTE = {
 	hook: 'The hook, the intro and the description',
 	thumbnail: 'The 16:9 title card, designed in layers: the picture, the cut-out, the hook, the badge',
 	journey: 'The arc: from where to where, beat by beat, and what the viewer feels',
-	writing: 'The long-form article: the master every output derives from',
+	writing: 'The script (the film’s timeline, as the studio reads it) and the long-form article every output derives from',
 	movie: 'The film, in the studio: script to render',
 	derivatives: 'The posts derived from the article and the film',
 	scheduled: 'When each post goes out',

@@ -23,6 +23,7 @@ import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, prox
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
+import { scriptOf } from './screenplay.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
 import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.js';
@@ -805,23 +806,7 @@ export class Studio {
 	}
 
 	// ── the script: the timeline's own clips read as scenes of shots, each with the lines said under it ──────────
-	script = $derived.by(() => {
-		/** @type {ScriptScene[]} */
-		const out = [];
-		const lines = this.clips.filter((c) => c.track === 'A1').sort((a, b) => a.start - b.start);
-		const shots = this.clips.filter((c) => c.track === 'V1').sort((a, b) => a.start - b.start);
-		// each line is said under one shot: the last that has begun where it begins (a cut a hair after the line's
-		// start, or a shot that ends a hair after it, never puts it under two)
-		const under = new Map(lines.map((l) => [l.id, shots.findLast((c) => c.start - 0.05 <= l.start)?.id]));
-		for (const c of shots) {
-			const scene = c.script?.scene ?? out.at(-1)?.scene ?? 'Scene 1';
-			if (out.at(-1)?.scene !== scene) out.push({ scene, shots: [] });
-			const kind = c.kind === 'slate' ? 'text' : isWorld(c) ? 'world' : this.byHash.get(c.hash ?? '')?.kind === 'image' ? 'storyboard' : 'footage';
-			const mine = lines.filter((l) => under.get(l.id) === c.id);
-			/** @type {ScriptScene} */ (out.at(-1)).shots.push({ clip: c, stage: kind, lines: mine });
-		}
-		return out;
-	});
+	script = $derived(scriptOf(this.clips, this.byHash));
 	/**
 	 * A shot's place in the script: its scene, label, description, notes, size (any tab; the cut stays).
 	 * @param {string} id @param {import('$lib/auth/client').ClipScript} patch
