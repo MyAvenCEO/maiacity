@@ -230,7 +230,17 @@ export function questionsFor(world, a, { full = true, writes = false } = {}) {
 	// trial, and a brain that writes adds a lesson (mind.js).
 	if (full) Object.assign(out, mindQuestions(a, { writes }));
 	// its own fields (where its world has them): what to keep, level up, change or open, every option priced
-	if (full && fieldsOn() && a.fields) Object.assign(out, fieldQuestions(world, a));
+	// one aven at a time (Samuel's World 24: asked together, all ten opened the same crop): at most one aven a game hour
+	// gets its field questions, the one that has waited longest for them, so each decides on the fields the ones
+	// before it just opened
+	if (full && fieldsOn() && a.fields) {
+		const waited = (/** @type {any} */ o) => o.fieldAt ?? -Infinity;
+		const next = world.avens.filter((o) => o.alive).every((o) => waited(a) <= waited(o));
+		if (next && world.t - (world.fieldLast ?? -Infinity) >= 3600) {
+			a.fieldAt = world.fieldLast = world.t;
+			Object.assign(out, fieldQuestions(world, a));
+		}
+	}
 	return out;
 }
 

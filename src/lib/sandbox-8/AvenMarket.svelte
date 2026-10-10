@@ -932,23 +932,60 @@
 		const C = COOP_SPOT;
 		const ink = light > 0.5 ? '#1f2a23' : '#f4f1e8';
 		const at = (/** @type {number} */ ang, /** @type {number} */ d) => /** @type {[number, number]} */ ([C.x + Math.cos(ang) * d, C.y + Math.sin(ang) * d]);
-		// each aven's wedge, tinted in its colour
-		world.avens.forEach((/** @type {any} */ a, /** @type {number} */ i) => {
-			const a0 = -Math.PI / 2 + (i / n) * Math.PI * 2,
-				a1 = -Math.PI / 2 + ((i + 1) / n) * Math.PI * 2;
+		// each aven's wedge, cut into its three plots (Samuel, 2026-10-10: the fields span the whole land, each plot its own
+		// size, its share as dealt with its price), each coloured as the crop it grows; an unopened plot left bare
+		const wedge = (/** @type {number} */ a0, /** @type {number} */ a1) => {
 			ctx.beginPath();
 			ctx.moveTo(...at(a0, C.r));
-			for (let k = 0; k <= 16; k++) {
-				const ang = a0 + ((a1 - a0) * k) / 16;
+			for (let k = 0; k <= 12; k++) {
+				const ang = a0 + ((a1 - a0) * k) / 12;
 				ctx.lineTo(...at(ang, edgeAlong(ang)));
 			}
 			ctx.lineTo(...at(a1, C.r));
 			ctx.arc(C.x, C.y, C.r, a1, a0, true);
 			ctx.closePath();
-			ctx.fillStyle = a.alive ? `${a.colour}16` : '#8080800f';
-			ctx.fill();
-			ctx.strokeStyle = light > 0.5 ? '#1f2a2333' : '#f4f1e833';
-			ctx.lineWidth = 1.5;
+		};
+		world.avens.forEach((/** @type {any} */ a, /** @type {number} */ i) => {
+			const a0 = -Math.PI / 2 + (i / n) * Math.PI * 2,
+				a1 = -Math.PI / 2 + ((i + 1) / n) * Math.PI * 2;
+			const share = a.plots?.length === 3 ? a.plots : [1, 1, 1];
+			const sum = share.reduce((/** @type {number} */ m, /** @type {number} */ x) => m + x, 0);
+			let from = a0;
+			for (let k = 0; k < 3; k++) {
+				const to = from + ((a1 - a0) * share[k]) / sum;
+				const f = a.fields?.[k];
+				wedge(from, to);
+				if (f) {
+					ctx.fillStyle = a.alive ? GOOD_COLOUR[f.crop] : '#8a8a86';
+					ctx.globalAlpha = 0.22 + 0.4 * fieldGrown(world, f) + 0.08 * (f.level - 1);
+				} else {
+					ctx.fillStyle = a.alive ? a.colour : '#808080';
+					ctx.globalAlpha = 0.06;
+				}
+				ctx.fill();
+				ctx.globalAlpha = 1;
+				ctx.strokeStyle = light > 0.5 ? '#1f2a2322' : '#f4f1e822';
+				ctx.lineWidth = 1;
+				ctx.stroke();
+				// what the plot is: its number, crop and level, last night's harvest, out towards the edge
+				const mid = (from + to) / 2;
+				const [lx, ly] = at(mid, C.r + (edgeAlong(mid) - C.r) * 0.86);
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillStyle = ink;
+				ctx.globalAlpha = f ? 0.85 : 0.4;
+				ctx.font = '700 10px system-ui, sans-serif';
+				ctx.fillText(f ? `${GOOD_LABEL[f.crop]} L${f.level}` : `F${k + 1}`, lx, ly - 6);
+				ctx.font = '600 9px system-ui, sans-serif';
+				ctx.fillText(f ? (fieldGrown(world, f) < 1 ? `growing ${Math.round(fieldGrown(world, f) * 100)}%` : `${a.harvest?.[f.crop] ?? 0} last night`) : 'not opened', lx, ly + 6);
+				ctx.globalAlpha = 1;
+				ctx.textBaseline = 'alphabetic';
+				from = to;
+			}
+			// the wedge's own border, in the aven's colour
+			wedge(a0, a1);
+			ctx.strokeStyle = a.alive ? `${a.colour}99` : '#80808066';
+			ctx.lineWidth = 2;
 			ctx.stroke();
 		});
 		// the COOP
@@ -961,50 +998,18 @@
 		ctx.stroke();
 		ctx.fillStyle = ink;
 		ctx.textAlign = 'center';
-		ctx.font = '700 14px system-ui, sans-serif';
-		ctx.fillText('MaiaCity', C.x, C.y - 10);
-		ctx.fillText('COOP', C.x, C.y + 7);
-		ctx.font = '600 11px system-ui, sans-serif';
-		ctx.globalAlpha = 0.75;
-		ctx.fillText(`${fmt(world.coop?.hearts ?? 0)} ♥`, C.x, C.y + 25);
+		ctx.font = '700 19px system-ui, sans-serif';
+		ctx.fillText('MaiaCity', C.x, C.y - 16);
+		ctx.fillText('COOP', C.x, C.y + 6);
+		ctx.font = '600 14px system-ui, sans-serif';
+		ctx.globalAlpha = 0.8;
+		ctx.fillText(`${fmt(world.coop?.hearts ?? 0)} ♥`, C.x, C.y + 32);
 		ctx.globalAlpha = 1;
 		// each home and its fields
 		for (const a of world.avens) {
 			const h = a.territory;
 			const away = Math.atan2(h.y - C.y, h.x - C.x); // its wedge's direction, out from the COOP
-			const R = 50;
-			for (let k = 0; k < 3; k++) {
-				const f = a.fields?.[k];
-				const s0 = away - Math.PI / 2 + (k * Math.PI) / 3 - Math.PI / 6,
-					s1 = s0 + Math.PI / 3;
-				ctx.beginPath();
-				ctx.moveTo(h.x, h.y);
-				ctx.arc(h.x, h.y, R, s0 + 0.06, s1 - 0.06);
-				ctx.closePath();
-				if (f) {
-					const grown = fieldGrown(world, f);
-					ctx.fillStyle = a.alive ? GOOD_COLOUR[f.crop] : '#8a8a86';
-					ctx.globalAlpha = 0.35 + 0.65 * grown;
-					ctx.fill();
-					ctx.globalAlpha = 1;
-				} else {
-					ctx.setLineDash([4, 4]);
-					ctx.strokeStyle = light > 0.5 ? '#1f2a2355' : '#f4f1e855';
-					ctx.lineWidth = 1.2;
-					ctx.stroke();
-					ctx.setLineDash([]);
-				}
-				const [lx, ly] = [h.x + Math.cos((s0 + s1) / 2) * R * 0.62, h.y + Math.sin((s0 + s1) / 2) * R * 0.62];
-				ctx.fillStyle = f ? '#fff' : ink;
-				ctx.textBaseline = 'middle';
-				ctx.font = '700 10px system-ui, sans-serif';
-				ctx.globalAlpha = f ? 1 : 0.5;
-				ctx.fillText(f ? `L${f.level}` : `F${k + 1}`, lx, ly - 5);
-				ctx.font = '600 9px system-ui, sans-serif';
-				if (f) ctx.fillText(String(a.harvest?.[f.crop] ?? 0), lx, ly + 6);
-				ctx.globalAlpha = 1;
-				ctx.textBaseline = 'alphabetic';
-			}
+			const R = 30;
 			// its home
 			ctx.beginPath();
 			ctx.arc(h.x, h.y, 21, 0, Math.PI * 2);
@@ -1265,6 +1270,9 @@
 	<aside>
 		<section>
 			<h3>Board</h3>
+			{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
+				<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>MaiaCity COOP</b><span>the valley's ledger: every HEART paid for fields</span></span><span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
+			{/if}
 			<ol class="board">
 				{#each snap.board as row (row.id)}
 					<li class:sel={row.id === selected} class:dead={!row.alive}>
@@ -1278,9 +1286,6 @@
 					</li>
 				{/each}
 			</ol>
-			{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
-				<p class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><b>MaiaCity COOP</b> <span>the valley's ledger for fields</span> <span class="num">{fmt(snap.coop.hearts)} ♥</span></p>
-			{/if}
 			<p class="brain">Model <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Model">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select></p>
 		</section>
 
@@ -1986,22 +1991,32 @@
 	.board .hp i.low {
 		background: #d0533f;
 	}
-	/* the MaiaCity COOP under the board */
+	/* the MaiaCity COOP, on top of the board */
 	.coop {
 		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-		margin: 0.4rem 0 0;
-		padding: 0.35rem 0.45rem;
-		border-radius: 8px;
-		background: #24452f12;
-		font-size: 0.8rem;
+		align-items: center;
+		gap: 0.6rem;
+		margin: 0 0 0.6rem;
+		padding: 0.55rem 0.7rem;
+		border-radius: 10px;
+		background: #24452f;
+		color: #f4f1e8;
 	}
-	.coop span:not(.num) {
-		opacity: 0.6;
-		font-size: 0.72rem;
+	.coop-name {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.2;
+	}
+	.coop-name b {
+		font-size: 0.92rem;
+	}
+	.coop-name span {
+		font-size: 0.68rem;
+		opacity: 0.75;
 	}
 	.coop .num {
 		margin-left: auto;
+		font-size: 1.05rem;
+		font-weight: 700;
 	}
 </style>
