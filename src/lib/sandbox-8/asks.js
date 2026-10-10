@@ -6,7 +6,7 @@
 // logic natively below, only as the fallback for a hook that fails or a page where QuickJS can't load;
 // scripts/sandbox-8-rules.mjs checks the two agree. Transport (Liquid, the GPU box) stays in brain.js.
 
-import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, activity, changeText, fieldsOn, invest, capexOf, opexOf, openCost, fieldBase, fieldYield, fieldGrown, levelShare } from './economy.js';
+import { GOODS, GOOD_LABEL, NEED, ROT, want, spare, cents, brainRule, activity, changeText, fieldsOn, invest, CLOSE, capexOf, opexOf, openCost, fieldBase, fieldYield, fieldGrown, levelShare } from './economy.js';
 import { RULES } from './rules.js';
 import { mindFor, inCharacter, mindQuestions, applyMind, traits, DIALS } from './mind.js';
 
@@ -305,7 +305,7 @@ function fieldQuestions(world, a) {
 		const floor = Math.max(0.5, need / 4);
 		return price(g) * Math.max(0.25, Math.min(4, Math.max(floor, supplyNow(g)) / Math.max(floor, planned(g) + (move[g] ?? 0))));
 	};
-	const r = (x) => (RULES.forecast === 2 && Math.abs(x) < 1 ? Number(x.toPrecision(2)) : Math.round(x * 10) / 10); // forecast 2: a price under 1 keeps two digits (0.043, not 0)
+	const r = (x) => (RULES.forecast >= 2 && Math.abs(x) < 1 ? Number(x.toPrecision(2)) : Math.round(x * 10) / 10); // forecast 2: a price under 1 keeps two digits (0.043, not 0)
 	// every option is reckoned over the next fieldHorizon days (14 until World 27), so what a change loses while it grows
 	// shows; a field lasts the whole world, and reckoned on two weeks a second field or a level-up never paid (World 26)
 	const H = RULES.fieldHorizon ?? 14;
@@ -332,7 +332,7 @@ function fieldQuestions(world, a) {
 			while (sum < 0 && d < 365) (d++, (sum += fieldBase(g) * share * Math.min(1, grown + (ramp > 0 ? d / ramp : 1)) * at - opexOf(g, level)));
 			back = sum >= 0 ? ` (pays back in about ${d} days)` : ' (never pays back at this price)';
 		}
-		const cover = RULES.forecast === 2 ? `${coverage(g, move)}; ` : '';
+		const cover = RULES.forecast >= 2 ? `${coverage(g, move)}; ` : '';
 		return `${cover}over the next ${H} days about ${Math.round(u)} ${GOOD_LABEL[g]} worth ${Math.round(u * at)} HEARTS (at about ${r(at)} a unit once the valley's fields grow${RULES.forecast ? ', yours included' : ''}, ${r(today(g))} today${span > 0 ? `, ${r(price(g))} on average over ${RULES.fieldPriceDays} days` : ''}), for ${once ? `${once} now and ` : ''}${Math.round(keep)} in keep: ${Math.round(net)} net${back}; it leaves you ${Math.round(left)} HEARTS${food > 0 ? ` (${Math.max(0, Math.floor(left / food))} days of the food you buy)` : ''}`;
 	};
 	const reserve = (RULES.fieldReserve ?? 0) * food;
@@ -343,9 +343,9 @@ function fieldQuestions(world, a) {
 		const pts = (world.market[g].series ?? []).filter((p) => p.t >= from && p.price != null);
 		return pts.length ? pts.reduce((n, p) => n + p.price, 0) / pts.length : today(g);
 	};
-	const past = RULES.forecast === 2
+	const past = RULES.forecast >= 2
 		? (a.fieldMoves ?? [])
-				.filter((m) => m.kind === 'change' && world.day > m.day)
+				.filter((m) => m.kind === 'change' && m.to && world.day > m.day)
 				.slice(-3)
 				.map((m) => {
 					const days = world.day - m.day;
@@ -358,11 +358,11 @@ function fieldQuestions(world, a) {
 					return `day ${m.day}, field ${m.slot + 1} ${GOOD_LABEL[m.from]} → ${GOOD_LABEL[m.to]}: it has earned you about ${Math.round(earned)} HEARTS since; keeping ${GOOD_LABEL[m.from]} would have earned about ${Math.round(kept)}`;
 				})
 		: [];
-	const lately = RULES.forecast === 2 ? (world.fieldLog ?? []).filter((m) => world.t - m.t <= 86400 && m.name !== a.name) : [];
+	const lately = RULES.forecast >= 2 ? (world.fieldLog ?? []).filter((m) => world.t - m.t <= 86400 && m.name !== a.name) : [];
 	const valleyMoves = lately.length
-		? ` In the last day: ${lately.map((m) => (m.kind === 'open' ? `${m.name} opened ${GOOD_LABEL[m.to]}` : m.kind === 'level' ? `${m.name} levelled up ${GOOD_LABEL[m.to]}` : `${m.name} switched ${GOOD_LABEL[m.from]} to ${GOOD_LABEL[m.to]}`)).join('; ')}.`
-		: RULES.forecast === 2 ? ' In the last day nobody else changed a field.' : '';
-	const longGame = RULES.forecast === 2
+		? ` In the last day: ${lately.map((m) => (m.kind === 'open' ? `${m.name} opened ${GOOD_LABEL[m.to]}` : m.kind === 'close' ? `${m.name} closed its ${GOOD_LABEL[m.from]} field` : m.kind === 'level' ? `${m.name} levelled up ${GOOD_LABEL[m.to]}` : `${m.name} switched ${GOOD_LABEL[m.from]} to ${GOOD_LABEL[m.to]}`)).join('; ')}.`
+		: RULES.forecast >= 2 ? ' In the last day nobody else changed a field.' : '';
+	const longGame = RULES.forecast >= 2
 		? ` This is a long game: the valley needs every good every day, and a field earns over weeks, not on today's price. Judge an option by what the valley will lack or have too much of once it is done (its coverage), and by what your own past moves earned.${past.length ? ` Your last field moves: ${past.join('; ')}.` : ''}${valleyMoves}`
 		: '';
 	const slots = Math.min(3, a.fields.length + 1);
@@ -391,6 +391,12 @@ function fieldQuestions(world, a) {
 						criteria.push(`change it to ${GOOD_LABEL[g]} (back to level 1, nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, 0, 1, { [g]: fieldBase(g), [f.crop]: -fieldBase(f.crop) * levelShare(f.level) })}`);
 					}
 			else note = ` It was planted on day ${f.since}: its crop can be changed from day ${f.since + RULES.holdDays}.`;
+			// fieldClose (World 30): a farm can shrink as well as grow, so a crop the valley overgrows stops costing its keep
+			if (RULES.fieldClose) {
+				levels.push(CLOSE);
+				const gone = { [f.crop]: -fieldBase(f.crop) * levelShare(f.level) };
+				criteria.push(`close it: its ${Math.round(opexOf(f.crop, f.level) * H)} HEARTS of keep over the next ${H} days stop, and nothing more grows on it${RULES.forecast >= 2 ? `; ${coverage(f.crop, gone)}` : ''}; you can open a field here again later, at the price of opening one: 0 net; it leaves you ${Math.round(a.hearts)} HEARTS`);
+			}
 		} else {
 			criteria.push(`don't open ${slot ? `field ${slot + 1}` : 'a field'} yet: it leaves you ${Math.round(a.hearts)} HEARTS`);
 			for (const [i, g] of GOODS.entries()) {
@@ -404,7 +410,7 @@ function fieldQuestions(world, a) {
 		a.brain.labels[key] = `field ${slot + 1}`;
 		q[key] = {
 			type: 'score',
-			instructions: `You farm your own fields and decide what they grow: you can level a field up (paid once, then it costs more a night and yields more; you pay the Maia City Coop), change its crop (back to level 1, and nothing until it grows) or open up to 3 fields. What a field yields you sell at the posted price, or eat. Every option is reckoned over the next ${H} days, so a crop that has to grow first, or a field you can't afford to keep, shows what it really costs; keep enough HEARTS to buy the food you don't grow${reserve ? ` (you can't spend below ${Math.round(reserve)}: ${RULES.fieldReserve} days of it)` : ''}. You hold ${Math.round(a.hearts)} HEARTS. The market: ${market}.${RULES.forecast ? '' : ' Grow what is scarce and dear, not what everyone else already grows.'}${longGame} ${f ? `Your field ${slot + 1} grows ${GOOD_LABEL[f.crop]} at level ${f.level}.${note}` : `${a.fields.length ? `You have ${a.fields.length} field${a.fields.length === 1 ? '' : 's'}.` : 'You have no field yet: until you open one and it grows, you live on your stores and the market.'}`} What do you do with field ${slot + 1}?`,
+			instructions: `You farm your own fields and decide what they grow: you can level a field up (paid once, then it costs more a night and yields more; you pay the Maia City Coop), change its crop (back to level 1, and nothing until it grows)${RULES.fieldClose ? ', close it (its keep stops)' : ''} or open up to 3 fields. What a field yields you sell at the posted price, or eat. Every option is reckoned over the next ${H} days, so a crop that has to grow first, or a field you can't afford to keep, shows what it really costs; keep enough HEARTS to buy the food you don't grow${reserve ? ` (you can't spend below ${Math.round(reserve)}: ${RULES.fieldReserve} days of it)` : ''}. You hold ${Math.round(a.hearts)} HEARTS. The market: ${market}.${RULES.forecast ? '' : ' Grow what is scarce and dear, not what everyone else already grows.'}${longGame} ${f ? `Your field ${slot + 1} grows ${GOOD_LABEL[f.crop]} at level ${f.level}.${note}` : `${a.fields.length ? `You have ${a.fields.length} field${a.fields.length === 1 ? '' : 's'}.` : 'You have no field yet: until you open one and it grows, you live on your stores and the market.'}`} What do you do with field ${slot + 1}?`,
 			criteria
 		};
 	}

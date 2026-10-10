@@ -161,6 +161,8 @@ function harvestFields(world, a) {
  * open field: change its crop, back to level 1; on the next unopened one: open it). Paid for at once, burned. Returns
  * the change in the feed's words, or a sentence why it couldn't, or null for no change.
  */
+/** the code that closes a field (after 2 + every good's index) */
+export const CLOSE = 2 + GOODS.length;
 export function invest(world, a, slot, code) {
 	if (!fieldsOn() || !a.alive || !a.fields || !Number.isInteger(code) || code <= 0) return null;
 	const f = a.fields[slot];
@@ -182,6 +184,11 @@ export function invest(world, a, slot, code) {
 		pay(cost, 'fields');
 		a.fields.push({ crop: g, level: 1, since: world.day, from: null, levelSince: null });
 		change = { label: `opens field ${slot + 1} with`, to: GOOD_LABEL[g], unit: `for ${cost} HEARTS to the Maia City Coop` };
+	} else if (code === CLOSE) {
+		// fieldClose (World 30): the field goes, its keep stops; the fields after it move up a plot
+		if (!RULES.fieldClose) return null;
+		change = { label: `closes field ${slot + 1}`, from: GOOD_LABEL[f.crop], to: 'nothing', unit: `its keep stops` };
+		a.fields.splice(slot, 1);
 	} else if (code === 1) {
 		if (f.level >= 3) return null;
 		const cost = capexOf(f.crop, f.level + 1);
@@ -199,7 +206,7 @@ export function invest(world, a, slot, code) {
 	syncFields(world, a);
 	log(world, a, { kind: 'field', slot, ...change });
 	// what moved, for the brains (forecast 2): its own moves, and the valley's last day of them
-	const move = { day: world.day, t: world.t, name: a.name, slot, ...(f && code !== 1 ? { from: was.crop, fromLevel: was.level } : {}), to: a.fields[slot].crop, level: a.fields[slot].level, kind: !f ? 'open' : code === 1 ? 'level' : 'change' };
+	const move = { day: world.day, t: world.t, name: a.name, slot, ...(f && code !== 1 ? { from: was.crop, fromLevel: was.level } : {}), to: code === CLOSE ? null : a.fields[slot].crop, level: code === CLOSE ? 0 : a.fields[slot].level, kind: !f ? 'open' : code === CLOSE ? 'close' : code === 1 ? 'level' : 'change' };
 	(a.fieldMoves ??= []).push(move);
 	if (a.fieldMoves.length > 12) a.fieldMoves.shift();
 	(world.fieldLog ??= []).push(move);
