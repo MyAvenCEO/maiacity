@@ -12,8 +12,8 @@
 	import ConfigCard from './ConfigCard.svelte';
 	import { HOOKS } from '../../../game/economy/params.js';
 
-	/** @type {{ acct: any, configs: any[], worlds: any[], here: string | null, playing: { id: string | null, name: string, version: number } | null, onworld: (made: any) => void, onamend?: (done: any) => void, onreload: () => void }} */
-	let { acct, configs, worlds, here, playing, onworld, onamend = () => {}, onreload } = $props();
+	/** @type {{ acct: any, configs: any[], worlds: any[], here: string | null, playing: { id: string | null, name: string, version: number } | null, focus?: number | null, onworld: (made: any) => void, onamend?: (done: any) => void, onreload: () => void }} */
+	let { acct, configs, worlds, here, playing, focus = null, onworld, onamend = () => {}, onreload } = $props();
 
 	let mips = $state(/** @type {any[]} */ ([]));
 	let error = $state('');
@@ -48,6 +48,18 @@
 		const every = setInterval(refresh, 15000);
 		window.addEventListener('focus', refresh);
 		return () => (clearInterval(every), window.removeEventListener('focus', refresh));
+	});
+	// opened on one proposal (from the welcome screen's aside): once the list is in, it is unfolded, scrolled to and lit for a moment
+	let lit = $state(/** @type {number | null} */ (null));
+	let shown = /** @type {number | null} */ (null);
+	$effect(() => {
+		const n = focus;
+		if (n == null || shown === n || !mips.some((m) => m.number === n)) return;
+		shown = n;
+		unfolded[n] = true;
+		lit = n;
+		setTimeout(() => document.getElementById(`mip-${n}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 0);
+		setTimeout(() => (lit === n ? (lit = null) : null), 2500);
 	});
 
 	/** @param {any} m @param {boolean} accept */
@@ -169,7 +181,7 @@
 </div>
 
 {#snippet mip(/** @type {any} */ m)}
-	<article class="mip {m.status}">
+	<article class="mip {m.status}" class:lit={lit === m.number} id="mip-{m.number}">
 		<div class="mip-head">
 			<b>MIP-{m.number} · {m.title}</b>
 			<span class="status">{m.status}</span>
@@ -398,9 +410,23 @@
 	.mip {
 		border-top: 1px solid #1f2a231f;
 		padding: 0.7rem 0;
+		scroll-margin-top: 12px;
 	}
 	.mip:first-of-type {
 		border-top: 0;
+	}
+	.mip.lit {
+		animation: lit 2.5s ease-out;
+		border-radius: 10px;
+	}
+	@keyframes lit {
+		0%,
+		40% {
+			box-shadow: 0 0 0 3px #eda10066;
+		}
+		100% {
+			box-shadow: 0 0 0 3px transparent;
+		}
 	}
 	.mip-head {
 		display: flex;
