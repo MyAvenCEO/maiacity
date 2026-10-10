@@ -20,7 +20,17 @@
  *   { tag: string } | { noTag: string[] } | { onlyTags: string[] }} Atom
  */
 /** @typedef {'all' | Atom[][]} Selector */
-/** @typedef {{ select: Selector, relabel: string[] }} Slice */
+/**
+ * A rule a cap that writes may carry: an op its grantee's writes may make, at or under a path whose steps may be "*"
+ * (any one field or row), only to some values, on the main line or on proposals (avendb's `rules`, avendb/docs/OPS.md).
+ * @typedef {{ op: 'set' | 'insert' | 'remove' | 'move' | 'merge' | 'propose' | 'create',
+ *   path?: (string | { id: number })[], to?: (string | number | boolean | null)[], on?: 'main' | 'proposals' }} Rule
+ */
+/**
+ * What a cap shares: what its selector picks and the tags its grantee may ask for; for a ruled cap, its rules, and
+ * those of the ruled caps it rests on, root first (`above`), which every write through it keeps to as well.
+ * @typedef {{ select: Selector, relabel: string[], rules?: Rule[], above?: Rule[][] }} Slice
+ */
 /**
  * @typedef {{ id: string, over: string, issuer: string, grantee: string, role: Role, wide: boolean,
  *   parent: string | null, chain: string[], slice: Slice | null, revokers: string[], entries: string[] }} CapView
@@ -198,8 +208,113 @@ export const relabelWords = (slice) =>
 /** A cap's grantee, as a person reads it. @param {CapView} c @param {WorldView} world */
 export const granteeOf = (c, world) => (c.grantee === 'public' ? 'Everyone' : nameOf(world.vaults.find((v) => v.id === c.grantee)));
 
-/** A cap in words: "avenBOB reads todos tagged “work”". @param {CapView} c @param {WorldView} world */
-export const capWords = (c, world) => `${granteeOf(c, world)} ${ROLES[c.role]} ${sliceWords(c.slice, world)}`;
+/**
+ * A rule's place in words: "anything", "its status", "any row of its blocks", "the checked of row 2 of its blocks".
+ * @param {Rule['path']} path
+ */
+function placeWords(path = []) {
+	const field = (/** @type {string | { id: number }} */ s) => (s === '*' ? 'any field' : `its ${s}`);
+	const row = (/** @type {string | { id: number }} */ s) => (typeof s === 'object' ? `row ${s.id}` : 'any row');
+	const [f, r, g] = path;
+	if (!path.length) return 'anything';
+	if (path.length === 1) return field(f);
+	if (path.length === 2) return `${row(r)} of ${field(f)}`;
+	const cell = g === '*' ? 'any field' : `the ${g}`;
+	return path.length === 3 ? `${cell} of ${row(r)} of ${field(f)}` : path.map((s) => JSON.stringify(s)).join(' › ');
+}
+
+/** The lines a rule holds on, in words. @param {Rule['on']} on */
+const onWords = (on) => (on === 'main' ? ' on the main line' : on === 'proposals' ? ' on a proposal' : '');
+
+/** A rule in words: "set its status to “done”", "change anything on a proposal", "start proposals". @param {Rule} r */
+export function ruleWords(r) {
+	const [on, rows] = [onWords(r.on), r.path?.length ? placeWords(r.path) : 'any list'];
+	switch (r.op) {
+		case 'set': {
+			const place = placeWords(r.path ?? []);
+			const values = r.to?.map((v) => (typeof v === 'string' ? quote(v) : String(v)));
+			return `${values ? `set ${place} to ${list(values, 'or') || 'no value'}` : `change ${place}`}${on}`;
+		}
+		case 'insert':
+			return `add rows to ${rows}${on}`;
+		case 'remove':
+			return `delete rows of ${rows}${on}`;
+		case 'move':
+			return `reorder the rows of ${rows}${on}`;
+		case 'merge':
+			if (r.on === 'main') return 'merge proposals into the main line';
+			return r.on === 'proposals' ? 'bring the main line into a proposal' : 'merge one line into another';
+		case 'propose':
+			return 'start proposals';
+		case 'create':
+			return 'add new entries';
+		default:
+			return JSON.stringify(r);
+	}
+}
+
+/**
+ * What a ruled cap's grantee may do, in words: "may only set its status to “done”", and only what the ruled caps it
+ * rests on allow; '' for a cap without rules, whose grantee makes any change its role allows.
+ * @param {Slice | null | undefined} slice
+ */
+export function rulesWords(slice) {
+	/** @param {Rule[]} rs */
+	const words = (rs) => list(rs.map(ruleWords)) || 'change nothing';
+	const above = (slice?.above ?? []).map(words).join('; ');
+	if (!slice?.rules) return above ? `may only ${above}, as the cap it rests on allows` : '';
+	return `may only ${words(slice.rules)}${above ? `, and only what the cap it rests on allows (${above})` : ''}`;
+}
+
+/** The rules that let a cap's grantee only suggest changes: start proposals, change anything on one and bring the main
+ *  line into one, never write the main line. */
+export const SUGGEST = /** @type {Rule[]} */ ([
+	{ op: 'propose' },
+	{ op: 'set', path: [], on: 'proposals' },
+	{ op: 'merge', on: 'proposals' }
+]);
+
+/** What a cap that writes lets its grantee change, as the share dialog offers it. */
+export const MAY = /** @type {const} */ ({
+	any: 'make any change',
+	suggest: 'only suggest changes, on proposals',
+	fields: 'change only some fields',
+	values: 'set one field to some values',
+	json: 'keep to rules written as JSON'
+});
+
+/** The kind of record each type of entry holds. */
+const KIND_OF = /** @type {Record<string, string>} */ ({ note: 'document', todo: 'todo' });
+
+/**
+ * The fields of the newest schema of the records of entries of type `type`, of those a vault's entries are read through
+ * (the `schemas` op's answer: the one no lens reads on to a newer one), each with the values it takes where it takes
+ * only some (an enum, or true and false): what a rule may name.
+ * @param {{ schemas: { id: string, kind: string, json: string }[], lenses: { from: string }[] } | null} lane
+ * @param {string} type @returns {{ name: string, values: (string | number | boolean | null)[] | null }[]}
+ */
+export function fieldsOf(lane, type) {
+	const kind = KIND_OF[type] ?? type;
+	const s = lane?.schemas.find((x) => x.kind === kind && !lane.lenses.some((l) => l.from === x.id));
+	try {
+		const props = s ? (JSON.parse(s.json).properties ?? {}) : {};
+		return Object.entries(props)
+			.filter(([name]) => name !== 'kind')
+			.map(([name, p]) => ({ name, values: p.enum ?? (p.type === 'boolean' ? [true, false] : null) }));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * A cap in words: "avenBOB reads todos tagged “work”", "avenBOB writes “Fix the door”, and may only set its status to
+ * “done”".
+ * @param {CapView} c @param {WorldView} world
+ */
+export function capWords(c, world) {
+	const rules = rulesWords(c.slice);
+	return `${granteeOf(c, world)} ${ROLES[c.role]} ${sliceWords(c.slice, world)}${rules ? `, and ${rules}` : ''}`;
+}
 
 /**
  * What a selector tests of an entry, as the device's `slice::Attrs`: its type, the vault that created it, its id, when
@@ -305,6 +420,7 @@ const WHY = /** @type {const} */ ({
 	PublicBeyondRead: 'everyone may only read',
 	CapToSigner: 'caps go to vaults, never to a key',
 	CapToItself: 'a vault holds every right over itself already',
+	NotAllowed: 'the rules of the cap it writes through don’t allow that change',
 	UnknownVault: 'this browser doesn’t know that vault yet',
 	UnknownCap: 'that cap isn’t in force',
 	UnknownEntry: 'this browser doesn’t know that entry yet',

@@ -23,12 +23,12 @@ pub fn vault(v: VaultId) -> Grantee {
 
 /// A root cap over vault `over`, issued by the vault itself: `grantee` holds `role` on what `select` picks.
 pub fn cap(over: VaultId, grantee: Grantee, role: Role, select: Selector) -> NewCap {
-    NewCap { over, grantee, role, slice: Slice::of(select), parent: None, issuer: over }
+    NewCap { over, grantee, role, slice: Slice::of(select), parent: None, issuer: over, rules: None }
 }
 
 /// A cap over vault `over` resting on the owner cap `parent`, issued by its grantee `issuer`.
 pub fn cap_on(over: VaultId, grantee: Grantee, role: Role, select: Selector, parent: CapId, issuer: VaultId) -> NewCap {
-    NewCap { over, grantee, role, slice: Slice::of(select), parent: Some(parent), issuer }
+    NewCap { over, grantee, role, slice: Slice::of(select), parent: Some(parent), issuer, rules: None }
 }
 
 /// The entries of type `ty`: "all todos".

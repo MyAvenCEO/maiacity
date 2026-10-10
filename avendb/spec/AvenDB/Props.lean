@@ -46,6 +46,27 @@ def PublicReadOnly (st : State) : Prop := ∀ c ∈ st.caps, c.grantee = .«publ
 def CausallyClosed (st : State) : Prop :=
   ∀ w ∈ st.writes, ∀ d ∈ w.deps, ∃ x ∈ st.writes, x.edit = d ∧ x.entry = w.entry
 
+/-- Readers count no write that builds on one they don't count. -/
+def CountsClosed (st : State) : Prop := ∀ w ∈ st.writes, ∀ d ∈ w.deps, d ∈ st.uncounted → w.edit ∈ st.uncounted
+
+/-! ## Rules
+
+What every reader of an entry sees of the caps when it judges a write: each cap without its selector and relabel set,
+which only the readers of that cap open, and without its rules, but for the caps of the chain the write's proof names,
+whose rules the proof opens. -/
+
+/-- The caps whose rules a write's proof `p` opens: the chain of the cap it names. -/
+def proofCaps (st : State) : Option CapId → List CapId
+  | none => []
+  | some p => (st.caps.filter (·.id == p)).flatMap fun c => (chain st c).map (·.id)
+
+/-- A cap as every reader of an entry sees it, judging a write whose proof opens the rules of the caps `vis`. -/
+def Cap.seen (vis : List CapId) (c : Cap) : Cap :=
+  { c with select := .all, relabel := [], rules := if vis.contains c.id then c.rules else [] }
+
+/-- A state as every reader of an entry sees it, judging a write whose proof opens the rules of the caps `vis`. -/
+def State.seen (st : State) (vis : List CapId) : State := { st with caps := st.caps.map (Cap.seen vis) }
+
 /-! ## Keys -/
 
 /-- `h` may open the current key of `k` in `st`: it is entitled to it, or the family is public. -/
@@ -67,16 +88,18 @@ def KeyFam.vault : KeyFam → VaultId
 
 /-! ## Relays
 
-A relay reads no selector, no type and no tag: it sees a cap without its selector and relabel set, and a write without
-its header and tags. What it then works out of the edits is the operational part of the state. -/
+A relay reads no selector, no type, no tag and no rule: it sees a cap without its selector, relabel set and rules
+(only whether it is ruled), and a write without its header, tags, proof and touches. What it then works out of the
+edits is the operational part of the state. -/
 
 /-- A cap as a relay sees it. -/
-def Cap.blind (c : Cap) : Cap := { c with select := .all, relabel := [] }
+def Cap.blind (c : Cap) : Cap := { c with select := .all, relabel := [], rules := [] }
 
 /-- An action as a relay sees it. -/
 def Action.blind : Action → Action
   | .cap c via => .cap c.blind via
-  | .write v e a s g deps p via create _ => .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {}
+  | .write v e a s g deps p via create _ _ _ =>
+    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none []
   | a => a
 
 def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
@@ -84,6 +107,7 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 /-- The operational part of a state: all of it but what only readers see. -/
 def State.ops (st : State) : State :=
   { st with caps := st.caps.map Cap.blind,
-            entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false } }
+            entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false },
+            uncounted := [] }
 
 end AvenDB

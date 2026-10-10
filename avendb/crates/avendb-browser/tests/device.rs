@@ -21,6 +21,7 @@ use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::lens::Status;
 use avendb::policy::{Kind, Principal, Role};
+use avendb::rules::rules_of_json;
 use avendb::sign::{Ceremony, Passkey, device_salt};
 use avendb::slice::{Selector, Slice};
 use avendb_browser::{Device, EntryView, Fresh, PROFILE, Start, Unlock, What, World as Seen, backup};
@@ -441,7 +442,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     // she shares the note by its id with avenBOB to read, with no ceremony: her browser moves it to the cell of that
     // cap, under a key of its own, which avenBOB reads; he can't edit it
     let by_note = Slice::of(by_id(note));
-    let read = first.share(alice, alice, by_note, Role::Read, vault(bob), &eve).await.expect("shared");
+    let read = first.share(alice, alice, by_note, None, Role::Read, vault(bob), &eve).await.expect("shared");
     assert_eq!(eve.steps(), [], "a read cap needs no ceremony");
     let moved = || async {
         let w = first.world().await.expect("her world");
@@ -451,11 +452,11 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     until("the note moves to the cell avenBOB reads", moved).await;
     let edit = run(&first, set_text(bob, note, None, 2, "Plant peas.")).await;
     assert_eq!(edit.expect_err("refused")["refused"], "NoCap", "avenBOB only reads it");
-    let refused = first.share(charly, alice, Slice::of(Selector::All), Role::Read, vault(charly), &eve).await;
+    let refused = first.share(charly, alice, Slice::of(Selector::All), None, Role::Read, vault(charly), &eve).await;
     assert!(refused.unwrap_err().to_string().contains("BadParent"), "avenCHARLY gives itself nothing");
     // write on her todos, by their type: avenBOB adds a todo to her vault and closes it
     let todos = Slice::of(of_type("todo"));
-    let write = first.share(alice, alice, todos, Role::Write, vault(bob), &eve).await.expect("write");
+    let write = first.share(alice, alice, todos, None, Role::Write, vault(bob), &eve).await.expect("write");
     let (by, into) = (bob.to_hex(), alice.to_hex());
     let new_todo = |title: &str| {
         let value = json!({ "kind": "todo", "title": title });
@@ -468,9 +469,38 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     let it = item(&w, todo);
     assert!(matches!(&it.what, What::Todo { title, status: Status::Done } if title == "Water the beans"));
     assert_eq!((it.vault, it.by), (alice, bob), "avenBOB wrote it into her vault");
+    // a write on her todos whose rules let avenCHARLY only tick them done: the page asks first which ops would be
+    // made (may), and a write its rules don't allow is refused, as its readers wouldn't count it
+    let value = json!({ "kind": "todo", "title": "Weed the beds" });
+    let weed = json!({ "op": "create", "as": into, "vault": into, "type": "todo", "value": value });
+    let weed = entry(run(&first, weed).await.expect("her own todo"));
+    let rule = json!([{ "op": "set", "path": ["status"], "to": ["done"] }]);
+    let (tick, todos) = (rules_of_json(&rule).expect("a rule"), Slice::of(of_type("todo")));
+    let ruled = first.share(alice, alice, todos, Some(tick), Role::Write, vault(charly), &eve).await.expect("ruled");
+    let reaches = || async {
+        let w = first.world().await.expect("her world");
+        role(&item(&w, weed).roles, charly) == Some(Role::Write)
+    };
+    until("her todo moves to the cell avenCHARLY writes", reaches).await;
+    let (c, at) = (charly.to_hex(), weed.to_hex());
+    let set = |path: &str, value: &str| json!({ "op": "set", "as": c, "entry": at, "path": [path], "value": value });
+    let asked = run(&first, json!({ "op": "may", "ops": [set("status", "done"), set("title", "Dig")] })).await;
+    let asked = asked.expect("an answer");
+    assert_eq!((&asked[0], &asked[1]["refused"]), (&json!(true), &json!("NotAllowed")), "{asked}");
+    let refused = run(&first, set("title", "Dig")).await;
+    assert_eq!(refused.expect_err("refused")["refused"], "NotAllowed", "her rules let avenCHARLY only tick it");
+    run(&first, set("status", "done")).await.expect("avenCHARLY ticks it");
+    let add = json!({ "op": "create", "vault": into, "type": "todo", "value": { "kind": "todo", "title": "Dig" } });
+    let asked = run(&first, json!({ "op": "may", "as": c, "ops": [add] })).await.expect("an answer");
+    assert_eq!(asked[0]["refused"], "NotAllowed", "nor do they let it add a todo: {asked}");
+    let w = first.world().await.expect("her world");
+    assert!(matches!(&item(&w, weed).what, What::Todo { title, status: Status::Done } if title == "Weed the beds"));
+    let json = w.to_json(mine);
+    let shown = json["caps"].as_array().expect("its caps").iter().find(|c| c["id"] == hex_of(&ruled.0));
+    assert_eq!(shown.expect("the ruled cap")["slice"]["rules"], rule, "the page reads its rules");
     // owner of the whole of her vault for the coop is governance: her passkey approves it in a ceremony
     let all = Slice::of(Selector::All);
-    first.share(alice, alice, all, Role::Owner, vault(coop), &eve).await.expect("the coop owns it");
+    first.share(alice, alice, all, None, Role::Owner, vault(coop), &eve).await.expect("the coop owns it");
     assert_eq!(eve.steps(), [Step::Approve]);
     let w = first.world().await.expect("her world");
     let roles = &item(&w, todo).roles;
@@ -544,6 +574,7 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let shown = first.note(note).await.expect("its history");
     assert_eq!(kinds(&shown), ["edit", "edit"]);
     let edits = shown["edits"].as_array().expect("its edits");
+    assert!(edits.iter().all(|e| e["counted"] == true), "the edits of the note's own vault all count");
     assert_eq!(
         (edits[1]["before"].as_str(), edits[1]["text"].as_str()),
         (Some("Plant beans."), Some("Plant beans and peas."))
@@ -691,6 +722,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let mine = writes.iter().filter(|o| o["fields"]["entry"].as_str() == Some(hex_of(&note.0).as_str()));
     assert_eq!(mine.clone().count(), kinds(&shown).len(), "each write of the note");
     assert!(mine.clone().all(|o| o["counted"] == true), "every one counted");
+    assert!(mine.clone().all(|o| o["allowed"] == true), "and allowed, as her vault's own");
+    assert!(of("cap").iter().all(|o| o["allowed"].is_null()), "a cap is no write");
     assert!(mine.clone().all(|o| o["fields"]["sealed"].as_u64().is_some_and(|n| n > 0)), "its body by its size alone");
     let starts = |o: &&Value| o["fields"]["starts"] == true && o["fields"]["line"] == o["id"];
     assert!(mine.clone().any(starts), "the proposal's start");

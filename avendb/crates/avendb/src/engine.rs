@@ -16,7 +16,10 @@
 //! - **Changes** (`run`). `create`; the record ops (`ops::Op`): `set`, `unset`, `insert`, `remove`, `move`; `tag`;
 //!   `propose`, `merge`, `restore`, `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make
 //!   one write. Each acts for a vault (`"as"`, the device's own by default), as every edit does, and the rules judge
-//!   it as they judge any peer's.
+//!   it as they judge any peer's. A write through a ruled cap carries the proof that the cap's rules allow what it
+//!   touches, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`).
+//! - **Asking** (`may`). Whether each of some change ops would be made, by a dry run of each that checks, proves and
+//!   refuses as `run` does and makes nothing: what a page asks before it offers a button.
 //!
 //! Every op answers `{"ok": ...}` or `{"refused": name, "why": "..."}`: a rule of the edits or of a device
 //! (`policy::Refusal`, by its name), `BadOp` where the JSON says nothing the engine does or an op makes no sense of the
@@ -84,6 +87,7 @@ impl Refused {
 fn rule(r: &Refusal) -> String {
     let why = match r {
         Refusal::NoCap => "the vault it acts for holds no cap that allows this",
+        Refusal::NotAllowed => "the rules of the caps the vault acts through don't allow what it does",
         Refusal::NotActing => "the device doesn't act for that vault",
         Refusal::ReadOnly => "the entry opens read-only: no lens reaches every schema it was written under",
         Refusal::NotAView => "the record would not fit its schema",
@@ -117,7 +121,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "restore" => &["entry", "line", "at", "as"],
         "undo" => &["entry", "line", "edit", "as"],
         "variant" => &["entry", "line", "into", "schema", "ops", "as"],
-        "batch" => &["ops", "as"],
+        "batch" | "may" => &["ops", "as"],
         _ => return None,
     })
 }
@@ -146,7 +150,15 @@ pub fn run(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
     if reads(v) {
         return read(lab, me, v);
     }
+    if op_of(v).is_ok_and(|(name, _)| name == "may") {
+        return answer(may(lab, me, v));
+    }
     answer(change(lab, me, v))
+}
+
+/// Whether op `v` changes nothing, though it runs on the Lab: `may`, whose dry runs make nothing.
+pub fn asks(v: &Value) -> bool {
+    op_of(v).is_ok_and(|(name, _)| name == "may")
 }
 
 /// Runs read op `v` on device `me`: its answer, `{"ok": ...}` or a refusal. A change is refused, as it isn't run.
@@ -505,10 +517,11 @@ pub fn line_name(h: &History, line: Line) -> Option<String> {
 }
 
 /// `{"op": "history", "entry", "limit"?}`: entry `entry`'s lines, the main line first, then each proposal in the order
-/// it started, each with its name, the version it started from and its heads; and every write of it the device counts,
+/// it started, each with its name, the version it started from and its heads; and every write of it the device holds,
 /// in the order it took them, each with its id, its device (`author`), the vault it acted for, its line, what it
-/// builds on, what it is (`wrote`) and, for the latest `limit` (`SHOWN`, left out) that change anything, the changes it
-/// made to the stored record (`ops::diff`), which every reader of the entry sees alike.
+/// builds on, what it is (`wrote`), whether its readers count it (`counted`: a write no rule of its caps allows, or
+/// that builds on one, is on no line) and, for the latest `limit` (`SHOWN`, left out) that change anything, the
+/// changes it made to the stored record (`ops::diff`), which every reader of the entry sees alike.
 fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let entry = entry_of(o)?;
     let limit = count_of(o, "limit")?.unwrap_or(SHOWN);
@@ -539,6 +552,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "line": line_json(w.line()),
             "deps": ids(&w.deps),
             "kind": x.kind,
+            "counted": c.counted,
             "name": if x.kind == "propose" { h.name(w.edit) } else { None },
             "from": x.from.map(|l| json!({ "line": line_json(l), "name": line_name(h, l) })),
             "changes": changes,
@@ -689,6 +703,7 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
             Step::Variant { entry: entry_of(o)?, line, into: vault_of(o, "into")?, schema, ops }
         }
         "batch" => return Err(bad("a batch holds no batch")),
+        "may" => return Err(bad("may asks about change ops, not about may")),
         name => return Err(bad(format!("{name} only reads: read it, don't run it"))),
     };
     Ok(Act { actor, step })
@@ -725,6 +740,26 @@ fn change(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
         done.push(out);
     }
     Ok(done.into())
+}
+
+/// `{"op": "may", "ops", "as"?}`: whether device `me` would make each of the change ops `ops`, each acting for the
+/// vault it names (`as`, else the may's, else the device's own), each on what the device holds now: for each, `true`,
+/// or the refusal running it would meet. Each runs dry (`Lab::dry`): checked, proven against the rules of the caps it
+/// relies on and refused as `run` would, and then not made.
+fn may(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
+    let (_, o) = op_of(v)?;
+    let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?;
+    let ops = o.get("ops").and_then(Value::as_array).ok_or_else(|| bad("may takes the ops it asks about: ops"))?;
+    let one = |lab: &mut Lab, op: &Value| -> Result<Value, Refused> {
+        let act = act_of(op)?;
+        let actor = act.actor.or(actor).or_else(|| lab.vault_of(me)).ok_or(Refusal::NotActing)?;
+        lab.dry(|lab| step(lab, me, actor, act.step))
+    };
+    let answers = ops.iter().map(|op| match one(lab, op) {
+        Ok(_) => Value::Bool(true),
+        Err(why) => why.to_json(),
+    });
+    Ok(answers.collect::<Vec<_>>().into())
 }
 
 /// Step `s`, acting for `actor`, on device `me`.

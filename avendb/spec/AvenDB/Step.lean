@@ -36,10 +36,13 @@ inductive Action where
       proposal builds on the version the proposal starts from, and a merge also on the heads of the line it brings in.
       A write that creates its entry (`create`) names the cell it goes in and carries its header, and its stay is the
       one its creation begins (`none`). Its tags (`tags`, encrypted with the rest of the body) count only when it acts
-      for the vault, except that a new entry's added tags are its first tags. -/
+      for the vault, except that a new entry's added tags are its first tags. Its body may carry a proof (`proof`): the
+      ruled cap it relies on, whose chain's rules its readers then read; and its readers read off its Loro update
+      what it touches (`touches`, `Rules.lean`). -/
   | write        (v : VaultId) (e : EntryId) (actor : VaultId) (stay : Option EditId) (gen : Nat)
                  (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
-                 (create : Option (Cell × Header) := none) (tags : TagDelta := {})
+                 (create : Option (Cell × Header) := none) (tags : TagDelta := {}) (proof : Option CapId := none)
+                 (touches : List Touch := [])
   /-- A steward, acting for vault `v`, moves its entry `e` to cell `to`, keeping the writes it had seen. -/
   | move         (v : VaultId) (e : EntryId) (to : Cell) (keep : List EditId) (via : List VaultId := [])
   /-- The real boxes of one key: `secret` sealed or wrapped to the keys `to`, or published (`pub`). The schedule already
@@ -81,6 +84,10 @@ def nodup [BEq α] : List α → Bool
 
 def setVault (st : State) (vt : Vault) : State :=
   { st with vaults := st.vaults.map fun x => if x.id == vt.id then vt else x }
+
+/-- The writes readers don't count, and write `w` among them unless they count it (`ok`). -/
+def State.counting (st : State) (ok : Bool) (w : EditId) : List EditId :=
+  if ok then st.uncounted else st.uncounted ++ [w]
 
 def setEntry (st : State) (en : Entry) : State :=
   { st with entries := st.entries.map fun x => if x.id == en.id then en else x }
@@ -258,7 +265,7 @@ def apply (st : State) (edit : Edit) : Option State :=
       -- the cap and every cap resting on it end
       else some (dropUnseen st { st with revoked := st.revoked ++
         ((st.caps.filter fun x => restsOn st cid x.id && !st.revoked.contains x.id).map (·.id)) } keep)
-  | .write v e actor stay gen deps proposal via create tags =>
+  | .write v e actor stay gen deps proposal via create tags proof touches =>
     if st.writes.any (·.edit == edit.id) || !actsVia st edit.author via actor then none
     else match create with
     | some (x, hdr) =>
@@ -270,9 +277,11 @@ def apply (st : State) (edit : Edit) : Option State :=
           gen > st.epochOf (.cell v x) + (reenters st v x).toNat then none
       else
         let attrs : Attrs := ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩
-        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs⟩
+        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof⟩
+        -- its readers count it if the cap it was created through lets a creation through
         some { st with entries := st.entries ++ [en], born := st.born ++ [e],
-                       writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, gen, [], .main, via, true, x⟩] }
+                       writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, gen, [], .main, via, true, x⟩],
+                       uncounted := st.counting (creates st actor v x proof) edit.id }
     | none =>
       match st.entry? e with
       | none => none
@@ -291,7 +300,9 @@ def apply (st : State) (edit : Edit) : Option State :=
               -- only the vault's own devices change tags; anyone else asks them to, in its body
               let st' := if actor == v then setEntry st { en with attrs := { en.attrs with tags := tags.apply en.attrs.tags } }
                 else st
-              some { st' with writes := st'.writes ++ [w] }
+              -- its readers count it if its rules allow what it touches and they count what it builds on
+              let ok := counts st actor en deps proof (proposal == .main) touches
+              some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id }
   | .move v e to keep via =>
     match st.entry? e with
     | none => none

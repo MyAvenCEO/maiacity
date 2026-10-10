@@ -1,10 +1,12 @@
 <!--
 	A vault's todos, as the acting vault sees them: one flat list of every todo of the vault it reads, narrowed by a
-	tag, each a tick through open, doing and done where it writes, its tags, to add and take off where it may (Tags),
-	and shared on where it owns; and a new todo where it may add one, tagged as the slice of its cap asks. What it holds
-	no cap on stays out of sight, as on a device of that vault alone.
+	tag, each a tick through open, doing and done where it writes and the rules of its caps allow the next one (the
+	device answers, by a dry run of each tick: `may`), its tags, to add and take off where it may (Tags), and shared on
+	where it owns; and a new todo where it may add one, tagged as the slice of its cap asks, and where the rules of
+	that cap allow it (`may` again). What it holds no cap on stays out of sight, as on a device of that vault alone.
 -->
 <script>
+	import { may } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import { allows, count, creates, list, nameOf, reads, tagsIn, tagsOf } from './vaults.js';
@@ -38,15 +40,53 @@
 	const NEXT = /** @type {const} */ ({ open: 'doing', doing: 'done', done: 'open' });
 	const STATUS = /** @type {const} */ ({ open: 'Open', doing: 'Doing', done: 'Done' });
 
+	/** The op that adds a todo titled `title`, tagged as typed and as the cap asks. @param {string} title */
+	const adding = (title) => ({
+		op: 'create',
+		vault,
+		type: 'todo',
+		tags: [...typed, ...(asked ?? [])],
+		value: { kind: 'todo', title }
+	});
+
 	async function add() {
 		const title = draft.trim();
 		if (!title || !asked) return;
-		const [tags, value] = [[...typed, ...asked], { kind: 'todo', title }];
-		if (await api.run('Adding the todo', { op: 'create', as: actor, vault, type: 'todo', tags, value })) draft = '';
+		if (await api.run('Adding the todo', { ...adding(title), as: actor })) draft = '';
 	}
 
+	/** why the rules of the cap the acting vault adds through don't let it add the todo, as the device answers: '' */
+	let unadded = $state('');
+	$effect(() => {
+		if (!asked) return;
+		const op = adding('A todo');
+		let gone = false;
+		may(api, actor, [op]).then(([a]) => {
+			if (!gone) unadded = a !== true && a.refused === 'NotAllowed' ? a.why : '';
+		});
+		return () => {
+			gone = true;
+		};
+	});
+
+	/** The op that ticks todo `entry` on to `status`. @param {string} entry @param {string} status */
+	const ticking = (entry, status) => ({ op: 'set', as: actor, entry, path: ['status'], value: status });
 	/** Todo `entry` ticked on to `status`. @param {string} entry @param {string} status */
-	const tick = (entry, status) => api.run('Saving', { op: 'set', as: actor, entry, path: ['status'], value: status });
+	const tick = (entry, status) => api.run('Saving', ticking(entry, status));
+
+	/** whether the acting vault may tick each todo it writes on, by entry, as the device answers: `true`, or why not */
+	let ticks = $state(/** @type {Record<string, true | { refused: string, why: string }>} */ ({}));
+	$effect(() => {
+		const writable = shown.filter((it) => allows(it.roles[actor], 'write'));
+		const ops = writable.map((it) => ticking(it.entry, NEXT[it.status ?? 'open']));
+		let gone = false;
+		may(api, actor, ops).then((answers) => {
+			if (!gone) ticks = Object.fromEntries(writable.map((it, i) => [it.entry, answers[i]]));
+		});
+		return () => {
+			gone = true;
+		};
+	});
 </script>
 
 <section class="todos-of">
@@ -74,11 +114,17 @@
 		<ul class="card todos">
 			{#each shown as it (it.entry)}
 				{@const writes = allows(it.roles[actor], 'write')}
+				{@const answer = ticks[it.entry]}
+				{@const ruled = answer === true ? null : answer}
 				<li class={it.status ?? 'open'}>
 					<button
 						class="tick"
-						disabled={busy || !writes}
-						title={writes ? `Mark it ${NEXT[it.status ?? 'open']}` : `${nameOf(as)} only reads it`}
+						disabled={busy || !writes || !!ruled}
+						title={!writes
+							? `${nameOf(as)} only reads it`
+							: ruled
+								? `It can't be marked ${NEXT[it.status ?? 'open']}: ${ruled.why}`
+								: `Mark it ${NEXT[it.status ?? 'open']}`}
 						onclick={() => tick(it.entry, NEXT[it.status ?? 'open'])}
 					>
 						{STATUS[it.status ?? 'open']}
@@ -108,8 +154,12 @@
 						onkeydown={(e) => e.key === 'Enter' && add()}
 					/>
 					<input class="field tagging" placeholder="tags (optional)" bind:value={tagging} aria-label="The new todo’s tags" />
-					<button class="btn" disabled={busy || !draft.trim()} onclick={add}>Add the todo</button>
-					{#if asked.length}
+					<button class="btn" disabled={busy || !draft.trim() || !!unadded} onclick={add}
+						>Add the todo</button
+					>
+					{#if unadded}
+						<small class="soft">{nameOf(as)} can’t add it: {unadded}.</small>
+					{:else if asked.length}
 						<small class="soft">Tagged {list(asked.map((t) => `“${t}”`))} too, as {nameOf(as)}’s cap asks.</small>
 					{/if}
 				</li>

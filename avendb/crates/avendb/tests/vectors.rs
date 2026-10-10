@@ -5,8 +5,8 @@
 //! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, caps, entries
 //! (their stays, and as their readers see them their attributes, whether their creation was let in, their semantic
 //! cell and where a steward would move them), writes, key schedule (each family's epoch, every seal, every published
-//! key) and schema lanes. The lens vectors hold each app's view of many stored blocks and todos, and what each edit
-//! through a view stores.
+//! key), schema lanes, and the writes their readers count, line by line. The lens vectors hold each app's view of many
+//! stored blocks and todos, and what each edit through a view stores.
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -19,9 +19,12 @@
 //! of caps: the core keeps its caps sorted by id and names it by the hash of its vault and those caps. What no rule
 //! reads travels encrypted or sealed in the core: a cap's selector, a write's header and tags. Here a cap carries its
 //! selector's JSON where its sealed selector goes, and a write its header's and tags' JSON where its ciphertext goes, and
-//! the readings (`Readings`) hold what a reader opens of them. A keys edit of the model names only where its boxes go;
-//! the core's carries the boxes too, which no rule opens, so here they are empty. A publish names its blob by a number:
-//! here the blob is the bytes `blob <number>`. A type or a tag is a number in the model, and its digits here.
+//! the readings (`Readings`) hold what a reader opens of them. A ruled cap's selector JSON goes inside a sealed
+//! selector, beside the commitment to its rules, salted with its number; a write's proof and touches go into the
+//! readings, its proof opening the rules of the ruled caps of its cap's chain. A keys edit of the model names only
+//! where its boxes go; the core's carries the boxes too, which no rule opens, so here they are empty. A publish names
+//! its blob by a number: here the blob is the bytes `blob <number>`. A type or a tag is a number in the model, and its
+//! digits here.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
@@ -31,11 +34,13 @@ use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
-    checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Kind, Line, Principal, Proposal, Readings, Role, State,
-    Vault,
+    checkpointed, history, mk_cell, replay, tips, Action, Cap, Edit, Grantee, Kind, Line, Principal, Proposal, Readings,
+    Role, State, Vault,
 };
-use avendb::slice::{Atom, Attrs, Header, Selector, Sym, TagDelta};
+use avendb::rules::{rules_of_json, Opening, Proof, Touch};
+use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta};
 use avendb::sync::{asks, closed_part, forks, frontiers, link_card, respond, respond_since, LogId};
+use avendb::wire::Wire;
 use serde_json::{json, Map, Value};
 
 const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
@@ -105,6 +110,14 @@ fn header(v: &Value) -> Header {
     Header { ty: sym(&v["type"]), created: num(&v["created"]) }
 }
 
+/// A ruled cap's rules, salted with its number; none for a cap without rules.
+fn opening(cap: &Value) -> Option<Opening> {
+    let rules = rules_of_json(cap.get("rules")?).expect("the model's rules");
+    let mut salt = [0; 32];
+    salt[..8].copy_from_slice(&num(&cap["id"]).to_le_bytes());
+    Some(Opening { rules, salt })
+}
+
 /// Two collections hold the same items, whatever their order: what differs is shown.
 fn same_set<T: Clone + Debug + Eq + Hash>(ours: impl IntoIterator<Item = T>, want: impl IntoIterator<Item = T>, what: &str) {
     let (ours, want): (HashSet<T>, HashSet<T>) = (ours.into_iter().collect(), want.into_iter().collect());
@@ -121,6 +134,9 @@ struct Names {
     /// Each edit's id, by its place in the case.
     edits: Vec<EditId>,
     readings: Readings,
+    /// Each cap's parent, and each ruled cap's rules: what a proof opens.
+    parents: HashMap<CapId, Option<CapId>>,
+    openings: HashMap<CapId, Opening>,
 }
 
 impl Names {
@@ -215,10 +231,13 @@ impl Names {
         }
     }
 
-    /// A cap as the core issues it: its selector and the tags it relabels where its sealed selector goes, its number
-    /// as its nonce.
+    /// A cap as the core issues it: its selector and the tags it relabels where its sealed selector goes, sealed
+    /// beside the commitment to its rules if it has any, its number as its nonce.
     fn cap_of(&self, v: &Value) -> Cap {
-        let select = serde_json::to_vec(&json!({"select": v["select"], "relabel": v["relabel"]})).unwrap();
+        let mut select = serde_json::to_vec(&json!({"select": v["select"], "relabel": v["relabel"]})).unwrap();
+        if let Some(o) = opening(v) {
+            select = Select::Sealed { boxes: vec![], slice: select, rules: Some(o.commitment()) }.to_wire();
+        }
         Cap {
             over: self.vault(&v["over"]),
             grantee: self.grantee(&v["grantee"]),
@@ -358,19 +377,40 @@ impl Names {
                 self.vaults.insert(num(&x["vault"]), VaultId::from(id));
             }
             ("cap", x) => {
-                let selector = self.selector(&x["cap"]["select"]);
-                self.caps.insert(num(&x["cap"]["id"]), CapId::from(id));
-                self.readings.selectors.insert(CapId::from(id), selector);
+                let (cap, parent) = (CapId::from(id), &x["cap"]["parent"]);
+                self.readings.selectors.insert(cap, self.selector(&x["cap"]["select"]));
+                self.parents.insert(cap, (!parent.is_null()).then(|| self.cap(parent)));
+                if let Some(o) = opening(&x["cap"]) {
+                    self.openings.insert(cap, o);
+                }
+                self.caps.insert(num(&x["cap"]["id"]), cap);
             }
             ("write", x) => {
                 if !x["create"].is_null() {
                     self.readings.headers.insert(id, header(&x["create"]["header"]));
                 }
                 self.readings.tags.insert(id, tag_delta(&x["tags"]));
+                if let Some(c) = x.get("proof") {
+                    let cap = self.cap(c);
+                    let openings = self.chain(cap).iter().filter_map(|c| self.openings.get(c).cloned()).collect();
+                    self.readings.proofs.insert(id, Proof { cap, openings });
+                }
+                let touches = x.get("touches").map_or(&[][..], list).iter().map(|t| Touch::of_json(t).unwrap());
+                self.readings.touches.insert(id, touches.collect());
             }
             _ => {}
         }
         self.edits.push(id);
+    }
+
+    /// The caps cap `c` rests on, from its root down to itself.
+    fn chain(&self, c: CapId) -> Vec<CapId> {
+        let mut chain = vec![c];
+        while let Some(&Some(p)) = chain.last().and_then(|c| self.parents.get(c)) {
+            chain.push(p);
+        }
+        chain.reverse();
+        chain
     }
 
     fn vault_of(&self, v: &Value) -> Vault {
@@ -480,19 +520,29 @@ impl Names {
             list(&case["lane"]).iter().map(|v| (self.vault(&v["vault"]), BlobId::of(&blob(&v["blob"])))).collect();
         let ours: Vec<(VaultId, BlobId)> = st.lane().iter().map(|p| (p.vault, p.blob)).collect();
         assert_eq!(ours, lane, "{name}: lane");
-        // each line of each entry, the main line first: its history and its heads
+        // the writes the entries' readers don't count, of those the state holds
+        let uncounted: HashSet<EditId> =
+            st.entries().iter().flat_map(|en| st.uncounted(en.id, &self.readings)).collect();
+        let held: HashSet<EditId> = st.all_writes().iter().map(|w| w.edit).collect();
+        let want = self.edits(&case["uncounted"]).into_iter().filter(|e| held.contains(e));
+        same_set(uncounted.iter().copied(), want, &format!("{name}: uncounted"));
+        // each line of each entry, the main line first: its history and its heads, of the writes they count
         type Lines = Vec<(EntryId, Line, Vec<EditId>, Vec<EditId>)>;
         let lines: Lines = list(&case["lines"])
             .iter()
             .map(|v| (entry(&v["entry"]), self.opt_edit(&v["line"]), self.edits(&v["history"]), self.edits(&v["heads"])))
             .collect();
+        let counted: Vec<_> = st.all_writes().iter().filter(|w| !uncounted.contains(&w.edit)).collect();
         let ours: Lines = st
             .entries()
             .iter()
             .flat_map(|en| {
-                st.lines(en.id).into_iter().map(move |l| {
-                    let history = st.history(en.id, l).iter().map(|w| w.edit).collect();
-                    (en.id, l, history, st.heads(en.id, l))
+                let ws: Vec<_> = counted.iter().copied().filter(|w| w.entry == en.id).collect();
+                let starts = ws.iter().filter(|w| w.proposal == Proposal::New).map(|w| Some(w.edit));
+                let lines: Vec<Line> = std::iter::once(None).chain(starts).collect();
+                lines.into_iter().map(move |l| {
+                    let h = history(ws.iter(), l);
+                    (en.id, l, h.iter().map(|w| w.edit).collect(), tips(&h))
                 })
             })
             .collect();

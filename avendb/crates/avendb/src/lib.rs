@@ -28,6 +28,7 @@
 //! | F flat vaults | `slice`: what a cap shares, its selector sealed to the vaults it names; `policy`: spaces folded into vaults, an entry's type and tags in its encrypted writes, cells, caps resting on caps, stewards that move entries and answer the tags others ask for, creation through a cap's intake cell; `keys`: a key for each cell, an entry's key derived for each stay; `sync`: the logs of caps and cells; `lab`: stewardship in each device's upkeep | T20, T22 to T25 |
 //! | P8a devices on iroh | `wire`: every message between devices as bytes and back, one encoding each: signed edits, hellos, requests, replies, announcements; `sign`: a device's hello, its SLH-DSA signature on a connection; `lab`: a device split off to run on its own (`avendb-net` puts it on iroh), what it asks a peer, answers it and tells it, McEliece keys handed out only within a peer's reach | |
 //! | O ops | `ops`: one JSON language to read and change any record, whatever its schema: records flat, the diff of two records, ops on a record and the place each names, `where` with its labels' selector; `engine`: every op run on a device's Lab, a query, a read or a write | O1 to O3 |
+//! | C caps that name ops | `rules`: op patterns a write cap's slice carries, sealed, with their commitment in the clear, a write's touches and the proof it carries; `policy`: the writes an entry's readers count, by the rules of the caps they rely on; `doc`, `history`: a write's touches read off its Loro update, each line's history of counted writes; `lab`: caps issued with rules, writes refused that their rules don't allow, a dry run; `engine`: `may` | C1 to C4 |
 
 pub mod cast;
 pub mod doc;
@@ -41,6 +42,7 @@ pub mod lab;
 pub mod lens;
 pub mod ops;
 pub mod policy;
+pub mod rules;
 pub mod scenarios;
 pub mod sign;
 pub mod slice;

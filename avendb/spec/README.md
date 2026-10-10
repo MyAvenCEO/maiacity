@@ -29,15 +29,19 @@ lake exe vectors
 | File | What it holds |
 |---|---|
 | `Basic.lean` | Ids, principals (signers and vaults), roles relay < read < write < owner, grantees, selectors and what they test (type, author, entry, creation time, tags), cells, key families and key names |
-| `State.lean` | What a peer knows: the three kinds of vault (human, coop, aven) and what each may be owned by; acting for a vault through the chain of owners an edit names (`actsVia`), approving for it (its root, or its threshold of owners); caps and the chains they rest on; entries, their stays and cells; the operational rules a relay can check (who may write, create, revoke) and the semantic layer only readers and stewards know (an entry's attributes, whether its creation was let in, its semantic cell, `desired`); symbolic keys (`Knows`), rotation, sealing and entry keys |
+| `State.lean` | What a peer knows: the three kinds of vault (human, coop, aven) and what each may be owned by; acting for a vault through the chain of owners an edit names (`actsVia`), approving for it (its root, or its threshold of owners); caps and the chains they rest on; entries, their stays and cells; the operational rules a relay can check (who may write, create, revoke) and the semantic layer only readers and stewards know (an entry's attributes, whether its creation was let in, its semantic cell, `desired`); which writes an entry's readers count, by the rules of the chain a write's proof names (`lets`, `counts`, `creates`, `counted`); symbolic keys (`Knows`), rotation, sealing and entry keys |
 | `Step.lean` | Every edit and the rules that accept or refuse it: governance, caps and revocations, writes that create entries in cells, moves, keys, publishing into a vault's schema lane, checkpoints, writes on a proposal (which build on its start); the one order every peer replays in; strong removal: what a removal or a move cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
 | `Sync.lean` | What a peer sends a device: sync by cells, entry by entry (each entry's writes, moves, checkpoints and keys), with the caps and vaults needed to check them; and what it hands a new device whose passkey proved itself on their connection, the logs of the vaults the passkey owns (`linkCard`) |
 | `Logs.lean` | Every edit in one log, a vault's, a cap's, a cell's or an entry's, building on that log's frontier; each log's closed part (the edits whose whole past is held) and frontier; what a device names of each log when it asks (its frontier, the edits 1, 2, 4, 8, … steps back and the oldest) and its loose edits; what a peer sends beyond them (`respondSince`); forks |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Proposals.lean` | Proposals write by write: each write extends one line of its entry's history, the main line or a proposal; a line's history and heads; the order writes come in (`Ordered`); T10f to T10h, which tie `Doc.lean`'s merge and promote to the writes |
 | `Lens.lean` | The markdown document and the todo in two schema versions and the lenses between them; items as stored, projected on read into each app's schema, and edits through each app's view; the lens laws (T9) |
+| `Ops.lean` | One language to read and change any record ([OPS.md](../docs/OPS.md)): records flat, a value at each place and the rows of each list of records by id; changes, `apply` and `diff`; the ops apps send, each naming a place; queries whose `where` mixes a cap's labels with tests of values, and the selector a device picks entries by (O1 to O3) |
+| `OpsVectors.lean` | The ops cases for the Rust engine, in the very JSON the page sends: diffs, runs of ops, and queries with the selectors they pick by (`lake exe vectors` writes them to `vectors/ops.json`) |
+| `Rules.lean` | Caps that name ops: rules (op patterns on paths with `*`, the values a set may take, the lines they hold on), a write's touches (what its Loro ops did, place by place) and what rules allow; the half of C3 about a write's changes (`changes_allowed`) |
+| `RuleLemmas.lean` | The proofs of C1 to C4: chains narrow rules, readers agree whether a write counts, counted writes did what their chain allows, allowed writes count and what builds on an uncounted one never does |
 | `Props.lean` | The predicates and views the theorems are stated with, apart from their proofs |
-| `Theorems.lean` | T1 to T8 and T11 to T26; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
+| `Theorems.lean` | T1 to T8, T11 to T26 and C1 to C4; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas for vaults and writes: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane |
 | `CapLemmas.lean` | The helper lemmas for caps, cells and removals: well-formed cap chains (T22), cells meaning what the selectors say (T23), the replay and strong removal (T16, T18), the generations along a replay (T15) |
 | `RelayLemmas.lean` | The proof of T25: every rule reads only the operational part of a state, so a relay that opens no selector, type or tag has every edit stand or fall as an owner does |
@@ -48,6 +52,7 @@ lake exe vectors
 | `VectorsCheck.lean`, `WriteVectors.lean` | Check the files in `vectors/` on every build; write them (`lake exe vectors`) |
 | `vectors/vaults.json` | The cases with the model's answers, read by `crates/avendb/tests/vectors.rs` |
 | `vectors/lenses.json` | The lens cases with the model's views and edits, read by `the_lens_vectors` |
+| `vectors/ops.json` | The ops cases with the model's changes, records and plans, read by `crates/avendb/tests/ops.rs` |
 | `protocol/*.vp` | Verifpal models of what devices say to each other: the hello on every connection, linking a new device by its passkey, and the sealed box (see [Protocol models](#protocol-models)) |
 | `protocol/check.sh` | Checks each model against the result its header expects |
 
@@ -81,6 +86,13 @@ lake exe vectors
 | T24 | An entry's key reaches only its cell's readers: whoever opens the key of an entry in its current stay, at its cell's current generation, may open that cell's current key; and over the history a holder opens a key of an entry only if it could read some cell the entry was in | Proven | `t24_entry_keys_reach_only_cell_readers`, `scenario_21_a_tag_moves_an_entry_out_of_a_slice`, `scenario_26_a_cell_that_comes_back_into_use_moves_on` |
 | T25 | Blind relays: a peer that reads no selector, no type and no tag, such as the server, holding the same edits as an owner, has every edit stand or fall alike and knows the same of the vaults, caps, cells, writes and keys | Proven | `t25_blind_relays`, `scenario_25_wide_caps_relays_and_public` |
 | T26 | Relay alone: a device acting for no vault of a cell, with nothing but relay caps over that vault, receives none of the cell's edits; relay lets the server know a vault's devices and keeps nothing, backup keeps the ciphertext | Proven | `T26_relay_keeps_nothing`, `a_relay_cap_keeps_nothing` |
+| O1 | A diff explains any two records: applying the diff of `r` and `s` to `r` gives `s`, it names every change and only what changed (`apply_diff`, `diff_complete`, `diff_sound`) | Proven | `o1_a_diff_explains_any_two_records`, `each_diff_makes_the_models_changes` |
+| O2 | Ops do what they say: the diff of a change within some places names only what those places cover (`diff_within`) | Proven | `o2_ops_change_only_what_they_name`, `each_run_ends_where_the_models_does` |
+| O3 | Queries pick by labels: the selector a query's labels make picks every entry the query does, so a device picks by labels and tests values only in what it opens (`cover_sound`, `plan_sound`, `plan_run`) | Proven | `o3_a_plan_picks_no_less_than_its_query`, `each_query_picks_and_holds_as_the_models`, `a_query_picks_by_labels_then_tests_what_it_opens` |
+| C1 | Chains narrow rules: a chain allows no write one of its ruled caps forbids, and a cap's chain allows no more than the chain of the cap it rests on (`chain_narrows`, `child_narrows`) | Proven | `c1_a_cap_resting_on_a_ruled_owner_cap_is_held_to_both`, the vectors |
+| C2 | Readers agree: whether a write or a creation counts reads no selector, relabel set, type or tag, and no rules but those of the chain its proof names, so every reader of the entry reaches the same verdict (`counts_seen`, `creates_seen`) | Proven | `a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow`, the vectors |
+| C3 | Ruled writes do what they may: a counted write that relies on ruled caps has every touch allowed by every ruled cap of its proof's chain, and where its touches' places cover its diff, every change is at a place a rule allows (`counted_allowed`, `changes_allowed`) | Proven | `c3_touches_cover_every_change`, `touches_name_the_field_the_row_and_the_value`, `a_cap_that_only_suggests_writes_on_proposals_an_owner_merges` |
+| C4 | Allowed writes count: a write that builds on counted writes, whose proof names a cap its actor holds reaching the entry and whose chain allows its touches, counts, and so does such a creation; no write that builds on an uncounted one counts (`allowed_counts`, `allowed_creates`, `uncounted_closed`) | Proven | `a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow`, `the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps`, the vectors |
 
 The Rust scenario tests (`crates/avendb/tests/scenarios.rs`) run the same scenarios as `Examples.lean`, on real devices
 and keys in the Lab. The vectors (`crates/avendb/tests/vectors.rs`) hold the Rust rules to the model's answers edit by
@@ -143,6 +155,15 @@ that relied on the old cell, so nobody backdates an edit into an entry after it 
 entry's earlier keys under its new one, so whoever reads it now reads its whole history and nothing of an entry it
 can't read now (T24). A cell no entry is in keeps its key through removals; an entry that brings it back into use moves
 it to a new generation, which whoever a removal took out meanwhile doesn't open.
+
+A write cap may carry rules: the ops its grantee's writes may make, as patterns on paths ([OPS.md](../docs/OPS.md)).
+Its sealed slice holds them, and its `select` shows only a salted hash of them in the clear, the one bit a relay learns
+(T25). A write that relies on a ruled chain carries, inside its encrypted body, a proof: the cap it relies on, and the
+rules and salt of each ruled cap of that cap's chain. Every reader of the entry reads the write's touches off its Loro
+ops, imported on the version it builds on, and counts the write only where every ruled cap of the chain allows every
+touch and everything it builds on counts (C2 to C4), so a chain allows no more than any ruled cap of it (C1). A write
+that doesn't count stays in the log and shows on no line, nor does anything built on it: an app patched to skip the
+rules writes nothing anyone reads.
 
 Every edit is named by a SHA-3 hash, and every signature on it but a write's has a hash-based half (SLH-DSA) beside the
 classical one, so governance, caps and keys hold even once the curves fall. A write carries only the classical
@@ -241,3 +262,5 @@ what is still red.
 | P7 | The avenDB tile | |
 | P8 | Sync on its own iroh ALPN with X25519MLKEM768 on every connection and the bytes in iroh-blobs; linking a new device by its passkey, through a device's QR code or the server (P8c); the protocol models; a device in the browser, let onto the relay by its passkey's pass, and big answers a page at a time (P8d); the browser's own passkey signing in ceremonies over each edit, a new person's first browser founding their vault, and the store in IndexedDB (P8e); three kinds of vault, every act for a coop or an aven vault naming its chain, and the server a device of avenCEO, claimed by the first human vault founded through it, in the ceremony that founds it (P8f) | T20, T21 |
 | F | Flat vaults: no spaces; caps on any slice of a vault (types, tags, entries, authors, creation times) resting on caps; cells, stewards that move entries to the cells their caps pick and answer tag asks, creation through a cap's intake cell; seeds, cap keys, cell keys and entry keys derived per stay, a cell coming back into use moving on; sync by cells | T22, T23, T24, T25, and T1, T4 to T8, T12, T13, T15 to T17 again |
+| O | Ops: one JSON language to read and change any record, the same engine on every device, the page and the studio on it | O1, O2, O3 |
+| C | Caps that name ops: rules in a write cap's sealed slice with a commitment in the clear, proof-carrying writes, every reader counting only what the rules allow; `may` for the page; rules in the share dialog | C1, C2, C3, C4, and T25 again |

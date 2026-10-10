@@ -9,6 +9,10 @@
 //! tags say, is known only to an entry's readers and the vault's own devices, the stewards, who keep every entry in
 //! the cell its meaning asks for by moving it (`Meaning`, T23).
 //!
+//! Caps may name ops (`rules`): a ruled cap's rules travel sealed in its slice, and only the commitment to them is in
+//! the clear, in its `select`. So no rule here reads them either: every write is accepted as before, and its readers,
+//! who read its proof and what it touches, count it or not (`State::lets`, `State::uncounted`; C1 to C4).
+//!
 //! Edits reach this module already verified: an edit's author and cosigners are the signers whose signatures checked
 //! out (`sign::Signed::verify`). Where the core differs from the model: what an edit creates (a vault, a cap) is named
 //! by that edit's id, where the model picks numbers; a cell is named by its id, and the caps of every cell the state
@@ -34,7 +38,9 @@ use std::sync::Arc;
 
 use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Seal};
-use crate::slice::{Attrs, Header, Selector, TagDelta};
+use crate::rules::{self, Opening, Proof};
+use crate::slice::{Attrs, Header, Select, Selector, TagDelta};
+use crate::wire::Wire;
 
 /// A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
 /// devices act for it. A coop vault is owned by human and coop vaults. An aven vault, an agent such as the relay
@@ -97,8 +103,9 @@ pub struct Cap {
     pub role: Role,
     /// It selects the whole vault, in the clear, so a peer that reads no selector knows it reaches every cell.
     pub wide: bool,
-    /// Its selector, and the tags its grantee may ask the vault's stewards to add or remove, sealed to `over`'s vault
-    /// key and the grantee's (in the clear for Public). No rule here reads it: its readers do (`Readings`).
+    /// Its selector, the tags its grantee may ask the vault's stewards to add or remove, and its rules, sealed to
+    /// `over`'s vault key and the grantee's (in the clear for Public), with the commitment to its rules in the clear
+    /// (`slice::Select`). No rule here reads it but for that commitment: its readers do (`Readings`).
     pub select: Vec<u8>,
     /// The owner cap its issuer relied on; `None` when the vault itself issued it.
     pub parent: Option<CapId>,
@@ -336,6 +343,10 @@ pub struct Issued {
     /// through it puts it there, where only those caps' grantees, the wide caps and the stewards read it, until a
     /// steward moves it to its semantic cell.
     pub intake: Arc<[CapId]>,
+    /// The commitment to its rules, from its `select`: none for a cap without rules, or whose `select` doesn't read.
+    pub commitment: Option<[u8; 32]>,
+    /// A cap of its chain carries rules: its grantee's writes count only where they allow them (`State::lets`).
+    pub ruled: bool,
 }
 
 /// An entry of a vault: a note, a todo, a profile.
@@ -394,6 +405,10 @@ pub struct Write {
     pub first: bool,
     /// The cell its entry was in when it was accepted, where a removal judges it (`State::authorized`).
     pub cell: CellId,
+    /// The caps its readers judge it by (`State::lets`): those with write or more its actor held, live, that reached
+    /// its entry when it was accepted, or for a creation those whose intake cell it was created in. None for a write
+    /// that acts for its entry's own vault.
+    pub caps: Vec<CapId>,
 }
 
 impl AsRef<Write> for Write {
@@ -457,6 +472,9 @@ pub enum Refusal {
     /// The vault holds no cap that allows this: no live cap with the role it needs that reaches the entry, no cap whose
     /// intake is the cell it creates in, no right to revoke the cap, no wide owner cap over the vault's lane.
     NoCap,
+    /// Not a rule of the edits but of a device: no cap the vault writes through has rules that allow what the write
+    /// does (`rules`), so its readers wouldn't count it, and the device doesn't make it.
+    NotAllowed,
     /// Caps name vaults, never signers (T4).
     CapToSigner,
     /// A cap never names the vault it is over: that vault holds every right over itself already.
@@ -984,6 +1002,13 @@ impl State {
         a == v || self.caps_held(a).any(|cp| self.holds(a, cp, Role::Write) && self.in_cell(cp, e, v, cell))
     }
 
+    /// The caps through which vault `a` may write entry `e` of vault `v` in the cell of the caps `cell`: those it holds
+    /// with write or more that reach the entry there.
+    fn write_caps(&self, a: VaultId, e: EntryId, v: VaultId, cell: &[CapId]) -> Vec<CapId> {
+        let reach = |cp: &&Issued| self.holds(a, cp, Role::Write) && self.in_cell(cp, e, v, cell);
+        self.caps_held(a).filter(reach).map(|cp| cp.id).collect()
+    }
+
     /// Vault `a` may write entry `e`, by what every peer sees (no selector, type or tag): it is the entry's vault, or
     /// it holds a cap with write or more that reaches the entry's cell.
     pub fn may_write(&self, a: VaultId, e: EntryId) -> bool {
@@ -1092,9 +1117,12 @@ impl State {
         let first = r.tags.get(&en.creation).map(|d| d.apply(&[])).unwrap_or_default();
         let mut attrs =
             Attrs { ty: header.ty.clone(), author: en.creator, entry: en.id, created: header.created, tags: first };
-        // its creator was the vault, or created it in the intake cell of a cap whose slice held it then
+        // its creator was the vault, or created it in the intake cell of a cap whose slice held it then, and whose
+        // rules let a creation through
+        let proof = r.proofs.get(&en.creation);
+        let through = |cp: &Issued| self.lets_through(cp, proof, true, Some(&[rules::Touch::Create]));
         let admitted = en.creator == en.vault
-            || en.intake.iter().any(|&c| self.cap(c).is_some_and(|cp| self.eff_selects(cp, &attrs, r)));
+            || en.intake.iter().any(|&c| self.cap(c).is_some_and(|cp| self.eff_selects(cp, &attrs, r) && through(cp)));
         for w in &en.retags {
             if let Some(d) = r.tags.get(w) {
                 attrs.tags = d.apply(&attrs.tags);
@@ -1110,6 +1138,57 @@ impl State {
         let live: Vec<CapId> = self.caps_of(en.cell()).iter().copied().filter(|&c| self.live(c)).collect();
         let desired = (live != cell).then(|| cell.clone());
         Some(Meaning { attrs, admitted, cell, desired })
+    }
+
+    /// Every ruled cap of `cp`'s chain, root first, is opened by one of `openings` in turn, whose rules allow the
+    /// touches `touches` of a write on the main line (`main`) or on a proposal (`State.lean`'s `chainAllows`): each
+    /// opening hashes to the commitment its cap carries in the clear.
+    pub fn chain_allows(&self, cp: &Issued, openings: &[Opening], main: bool, touches: &[rules::Touch]) -> bool {
+        let commitments: Vec<[u8; 32]> = cp.chain.iter().filter_map(|&c| self.cap(c)?.commitment).collect();
+        commitments.len() == openings.len()
+            && commitments.iter().zip(openings).all(|(c, o)| {
+                o.commitment() == *c && rules::allows_all(&o.rules, main, touches)
+            })
+    }
+
+    /// A write through cap `cp` passes its rules, by what its proof shows (`State.lean`'s `lets`): `cp`'s chain carries
+    /// no rules, or the proof names `cp` and opens its chain's rules, which allow every touch of the write, on the main
+    /// line (`main`) or on a proposal. Touches its readers couldn't read (`None`) pass no rule.
+    pub fn lets_through(
+        &self,
+        cp: &Issued,
+        proof: Option<&Proof>,
+        main: bool,
+        touches: Option<&[rules::Touch]>,
+    ) -> bool {
+        !cp.ruled
+            || match (proof, touches) {
+                (Some(p), Some(ts)) => p.cap == cp.id && self.chain_allows(cp, &p.openings, main, ts),
+                _ => false,
+            }
+    }
+
+    /// Write `w`'s caps let it through, by its proof `proof` and its touches `touches` (C1 to C3; `State.lean`'s
+    /// `counts`, but for what it builds on): it acts for its entry's vault, so it relies on no cap (`Write::caps`), or
+    /// one of the caps it was accepted through lets it. A creation touches only its creation.
+    pub fn lets(&self, w: &Write, proof: Option<&Proof>, touches: Option<&[rules::Touch]>) -> bool {
+        let touches = if w.first { Some(&[rules::Touch::Create][..]) } else { touches };
+        let main = w.proposal == Proposal::Main;
+        let through = |c: &CapId| self.cap(*c).is_some_and(|cp| self.lets_through(cp, proof, main, touches));
+        w.caps.is_empty() || w.caps.iter().any(through)
+    }
+
+    /// The writes of entry `e` its readers don't count, by the proofs and touches `r` holds, in the order they were
+    /// accepted (`State.lean`'s `uncounted`): a write no cap of its lets through, and every write that builds on one.
+    pub fn uncounted(&self, e: EntryId, r: &Readings) -> Vec<EditId> {
+        let mut out = vec![];
+        for w in self.entry_writes(e) {
+            let touches = r.touches.get(&w.edit).map(Vec::as_slice);
+            if w.deps.iter().any(|d| out.contains(d)) || !self.lets(w, r.proofs.get(&w.edit), touches) {
+                out.push(w.edit);
+            }
+        }
+        out
     }
 
     /// The write rule by meaning: vault `a` is the entry's vault, or holds a live cap with write or more over it that
@@ -1592,7 +1671,10 @@ impl State {
                     .filter(|&x| if x == cid { !c.wide } else { self.cap(x).is_some_and(|y| !y.cap.wide) })
                     .collect();
                 let intake = mk_cell(&narrow).into();
-                Ok(Change::Cap(Issued { id: cid, cap: c.clone(), chain, intake }))
+                // the one bit of its rules every peer reads: that it has some
+                let commitment = Select::from_wire(&c.select).ok().and_then(|s| s.commitment());
+                let ruled = commitment.is_some() || c.parent.and_then(|p| self.cap(p)).is_some_and(|p| p.ruled);
+                Ok(Change::Cap(Issued { id: cid, cap: c.clone(), chain, intake, commitment, ruled }))
             }
             &Action::Revoke { cap, actor, ref via, .. } => {
                 let c = self.cap(cap).ok_or(Refusal::UnknownCap)?;
@@ -1646,15 +1728,6 @@ impl State {
                         if generation > self.epoch(KeyFam::Cell(v, cell)) + self.reenters(v, cell) as u64 {
                             return Err(Refusal::FutureEpoch);
                         }
-                        let en = Entry {
-                            id: e,
-                            vault: v,
-                            stays: vec![(None, cell)],
-                            creator: actor,
-                            creation: id,
-                            intake,
-                            retags: vec![],
-                        };
                         let w = Write {
                             edit: id,
                             author: edit.author,
@@ -1667,11 +1740,29 @@ impl State {
                             via: via.clone(),
                             first: true,
                             cell,
+                            caps: intake.clone(),
+                        };
+                        let en = Entry {
+                            id: e,
+                            vault: v,
+                            stays: vec![(None, cell)],
+                            creator: actor,
+                            creation: id,
+                            intake,
+                            retags: vec![],
                         };
                         Ok(Change::Create(en, Box::new(w), x.as_slice().into()))
                     }
                     None => {
                         let en = self.entry(e).ok_or(Refusal::UnknownEntry)?;
+                        if en.vault != v {
+                            return Err(Refusal::WrongVault);
+                        }
+                        // a vault holds no cap over itself, so its own writes rely on none
+                        let caps = self.write_caps(actor, e, v, self.caps_of(en.cell()));
+                        if actor != v && caps.is_empty() {
+                            return Err(Refusal::NoCap);
+                        }
                         let (deps, via) = (deps.clone(), via.clone());
                         let w = Write {
                             edit: id,
@@ -1685,13 +1776,8 @@ impl State {
                             via,
                             first: false,
                             cell: en.cell(),
+                            caps,
                         };
-                        if en.vault != v {
-                            return Err(Refusal::WrongVault);
-                        }
-                        if !self.may_write_in(actor, e, v, self.caps_of(en.cell())) {
-                            return Err(Refusal::NoCap);
-                        }
                         let x = en.stay_cell(stay).ok_or(Refusal::UnknownStay)?;
                         if generation > self.epoch(KeyFam::Cell(v, x)) {
                             return Err(Refusal::FutureEpoch);
@@ -2102,6 +2188,16 @@ impl State {
     pub fn accepts(&self, edit: &Edit, id: EditId) -> Result<(), Refusal> {
         self.check(edit, id).map(drop)
     }
+
+    /// `accepts`, and for a write, the write it would be, with the caps its readers would judge it by (`Write::caps`):
+    /// what a device proves a write of its own by (`rules::Proof`).
+    pub fn accepted_write(&self, edit: &Edit, id: EditId) -> Result<Option<Write>, Refusal> {
+        Ok(match self.check(edit, id)? {
+            Change::Create(_, w, _) => Some(*w),
+            Change::Write(w, _) => Some(w),
+            _ => None,
+        })
+    }
 }
 
 /// Everything the keys `start` open through the seals `by_to` (each key with the keys sealed to it).
@@ -2137,7 +2233,8 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
 }
 
 /// What an entry's readers and its vault's stewards read where no relay can: each cap's selector, opened from its
-/// sealed `select`; each entry's header and each write's tags, from inside the writes' bodies.
+/// sealed `select`; each entry's header and each write's tags and proof, from inside the writes' bodies; and what each
+/// write touches, read off its update on the version it builds on (`history::History::touches`).
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
     pub selectors: HashMap<CapId, Selector>,
@@ -2145,6 +2242,8 @@ pub struct Readings {
     pub headers: HashMap<EditId, Header>,
     /// By the write.
     pub tags: HashMap<EditId, TagDelta>,
+    pub proofs: HashMap<EditId, Proof>,
+    pub touches: HashMap<EditId, Vec<rules::Touch>>,
 }
 
 /// What an entry means to its readers (`State::meaning`).
@@ -2152,7 +2251,8 @@ pub struct Readings {
 pub struct Meaning {
     /// What its first write says of it, and its tags now.
     pub attrs: Attrs,
-    /// Its creator was the vault itself, or created it inside the slice of a cap it created it through.
+    /// Its creator was the vault itself, or created it inside the slice of a cap it created it through, whose rules let
+    /// a creation through.
     pub admitted: bool,
     /// Its semantic cell: the live caps over its vault that aren't wide and whose slice holds it, in canonical order;
     /// none for an entry its creator made outside its own slice.

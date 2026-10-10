@@ -195,12 +195,12 @@ impl Service {
             }
             "share" => {
                 let (issuer, over, slice) = (vault(0)?, vault(1)?, words::slice_of(a.get(2))?);
-                let role = words::role_of(&a.text(3)?)?;
+                let (rules, role) = (words::rules_of(a.get(2))?, words::role_of(&a.text(3)?)?);
                 let grantee = match a.text(4)?.as_str() {
                     "public" => Grantee::Public,
                     v => cast::vault(VaultId(id(v)?)),
                 };
-                hex(&d.share(issuer, over, slice, role, grantee, &self.approver()?).await?.0).into()
+                hex(&d.share(issuer, over, slice, rules, role, grantee, &self.approver()?).await?.0).into()
             }
             "revoke" => {
                 d.revoke(vault(0)?, CapId(a.id(1)?), &self.approver()?).await?;

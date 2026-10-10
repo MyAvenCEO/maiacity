@@ -2,13 +2,19 @@
 //! labels and test what they open; record ops through an app's schema and its lens, which write only what changed;
 //! every write's changes in its entry's history, the same for every reader; batches, proposals, merges, restores,
 //! undos and variants as ops; and the rules judging each op's write as any peer's, by the caps of the vault it acts
-//! for. Alice's library (`cast::library`) and the coop's handbook (`cast::handbook`, Welcome written by a v1 app) are
-//! the data; the ops are JSON, as the page and the Mac app send them.
+//! for, and by the rules of a ruled cap's chain (C1 to C4, `spec/AvenDB/Theorems.lean`): `may` answers before a page
+//! offers a button, a write the rules don't allow is refused, and one a patched app makes all the same counts for no
+//! reader, nor anything built on it. Alice's library (`cast::library`) and the coop's handbook (`cast::handbook`,
+//! Welcome written by a v1 app) are the data; the ops are JSON, as the page and the Mac app send them.
 
 use avendb::cast::{self, World};
 use avendb::engine;
-use avendb::id::{EntryId, SignerId};
+use avendb::id::{EntryId, SignerId, VaultId};
+use avendb::keys::KeyFam;
+use avendb::lab::{NewCap, Tamper};
 use avendb::lens::{Status, TypeV2};
+use avendb::policy::Role;
+use avendb::rules::{self, Rule};
 use serde_json::{json, Value};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
@@ -303,4 +309,158 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     assert_eq!(kinds, ["document", "document", "todo", "todo"]);
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     assert_eq!(list(&schemas["lenses"]).len(), 2);
+}
+
+/// Rules from their JSON.
+fn rules(v: Value) -> Vec<Rule> {
+    rules::rules_of_json(&v).unwrap_or_else(|why| panic!("{v}: {why}"))
+}
+
+/// A cap over `over` giving `grantee` write on entry `e`, ruled by `rules`.
+fn ruled(over: VaultId, grantee: VaultId, e: EntryId, rules: Vec<Rule>) -> NewCap {
+    NewCap { rules: Some(rules), ..cast::cap(over, cast::vault(grantee), Role::Write, cast::by_id(e)) }
+}
+
+/// Whether device `d`, acting for `actor`, would make each of `ops`: `true`, or the refusal's name.
+fn may(w: &mut World, d: SignerId, actor: VaultId, ops: &[Value]) -> Vec<Value> {
+    let answers = ok(run(w, d, json!({ "op": "may", "as": actor.to_hex(), "ops": ops })));
+    list(&answers).iter().map(|a| if *a == json!(true) { a.clone() } else { a["refused"].clone() }).collect()
+}
+
+/// The writes of entry `e` device `d` holds, in the order it took them: each one's id, and whether it counts.
+fn counted(w: &mut World, d: SignerId, e: EntryId) -> Vec<(String, bool)> {
+    let history = ok(run(w, d, json!({ "op": "history", "entry": hex(e) })));
+    let edit = |x: &Value| (x["id"].as_str().expect("an id").to_string(), x["counted"].as_bool().expect("counted"));
+    list(&history["edits"]).iter().map(edit).collect()
+}
+
+fn title(w: &World, d: SignerId, e: EntryId) -> String {
+    w.lab.item(d, e).and_then(|i| i.as_todo()).expect("a todo the device shows").title
+}
+
+#[test]
+fn a_ruled_cap_lets_its_grantee_make_only_what_its_rules_allow() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
+    // Alice lets Bob move the door todo along, and nothing else
+    let along = rules(json!([{ "op": "set", "path": ["status"], "to": ["doing", "done"] }]));
+    w.lab.issue(mac, &[mac], ruled(alice, bob, l.door, along)).expect("Alice shares the door with Bob");
+    w.lab.sync_all(0);
+    let set = |path: &str, value: &str| json!({ "op": "set", "entry": hex(l.door), "path": [path], "value": value });
+    let (done, open, retitle) = (set("status", "done"), set("status", "open"), set("title", "The door"));
+    // his page asks before it offers a button: the rules answer, and nothing is made; what changes nothing writes
+    // nothing, which no rule refuses
+    let asked = may(&mut w, mac_b, bob, &[done.clone(), retitle.clone(), open.clone()]);
+    assert_eq!(asked, [json!(true), json!("NotAllowed"), json!(true)]);
+    assert_eq!(cast::status(&w.lab, mac_b, l.door), Some(Status::Open));
+    // what they allow is made, carrying its proof, and every reader counts it; what they don't is refused
+    ok(run(&mut w, mac_b, done));
+    assert_eq!(may(&mut w, mac_b, bob, &[open, set("status", "doing")]), [json!("NotAllowed"), json!(true)]);
+    assert_eq!(refused(&run(&mut w, mac_b, retitle.clone())), "NotAllowed");
+    w.lab.sync_all(1);
+    assert_eq!(cast::status(&w.lab, mac, l.door), Some(Status::Done));
+    assert!(counted(&mut w, mac, l.door).iter().all(|c| c.1));
+    // a patched app that ignores the rules makes the write all the same: no reader counts it, its own device neither
+    let lawless = w.lab.ignoring_rules(|lab| engine::run(lab, mac_b, &retitle));
+    let lawless = ok(lawless)["edit"].as_str().expect("an edit").to_string();
+    w.lab.sync_all(2);
+    for d in [mac, mac_b] {
+        assert_eq!(counted(&mut w, d, l.door).last(), Some(&(lawless.clone(), false)));
+        assert_eq!(title(&w, d, l.door), "Fix the greenhouse door");
+    }
+    // nor anything built on it: a write of Alice's own that a patched app of hers makes on it (C4)
+    let st = w.lab.state(mac);
+    let en = st.entry(l.door).expect("the door");
+    let action = cast::write(alice, l.door, alice, en.stay(), st.epoch(KeyFam::Cell(alice, en.cell())));
+    let on_it = w.lab.tamper(mac, Tamper::Unchecked { signers: vec![mac], action }).expect("Alice's Mac takes it");
+    assert!(w.lab.history(mac, l.door).and_then(|h| h.get(on_it)).is_some_and(|c| !c.counted));
+    assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(on_it.to_hex(), false)));
+    // what Alice's app writes builds on the writes her readers count, and counts
+    ok(run(&mut w, mac, set("title", "Fix the door, again")));
+    w.lab.sync_all(3);
+    for d in [mac, mac_b] {
+        assert_eq!(title(&w, d, l.door), "Fix the door, again");
+        assert_eq!(counted(&mut w, d, l.door).last().map(|c| c.1), Some(true));
+    }
+}
+
+/// C1: a cap resting on a ruled owner cap is held to the owner cap's rules as well as its own, whether it has any.
+#[test]
+fn c1_a_cap_resting_on_a_ruled_owner_cap_is_held_to_both() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let coop = cast::coop_on(&mut w);
+    let (alice, carol, dave) = (w.alice, w.carol, w.dave);
+    let (mac, mac_b, mac_c, mac_d) = (w.mac_a, w.mac_b, w.mac_c, w.mac_d);
+    // the coop may change the door's status and title, and share it on
+    let owner = rules(json!([{ "op": "set", "path": ["status"] }, { "op": "set", "path": ["title"] }]));
+    let owner = NewCap { role: Role::Owner, ..ruled(alice, coop, l.door, owner) };
+    let owner = w.lab.issue(mac, &[w.passkey_a], owner).expect("Alice's passkey gives the coop the door");
+    w.lab.sync_all(0);
+    // acting for the coop, Bob lets Dave retitle it, and Carol write it with no rules of her own
+    let retitle = rules(json!([{ "op": "set", "path": ["title"] }]));
+    let to_dave = cast::cap_on(alice, cast::vault(dave), Role::Write, cast::by_id(l.door), owner, coop);
+    w.lab.issue(mac_b, &[mac_b], NewCap { rules: Some(retitle), ..to_dave }).expect("Bob gives Dave a ruled cap");
+    let to_carol = cast::cap_on(alice, cast::vault(carol), Role::Write, cast::by_id(l.door), owner, coop);
+    w.lab.issue(mac_b, &[mac_b], to_carol).expect("and Carol an unruled one");
+    w.lab.sync_all(1);
+    let set = |path: &str, value: &str| json!({ "op": "set", "entry": hex(l.door), "path": [path], "value": value });
+    let asks = [set("status", "doing"), set("title", "The greenhouse door"), set("notes", "Oil the hinges")];
+    let no = json!("NotAllowed");
+    assert_eq!(may(&mut w, mac_b, coop, &asks), [json!(true), json!(true), no.clone()]);
+    assert_eq!(may(&mut w, mac_d, dave, &asks), [no.clone(), json!(true), no.clone()]);
+    assert_eq!(may(&mut w, mac_c, carol, &asks), [json!(true), json!(true), no]);
+    // what they make reaches every reader, and counts
+    ok(run(&mut w, mac_d, set("title", "The greenhouse door")));
+    ok(run(&mut w, mac_c, set("status", "doing")));
+    w.lab.sync_all(2);
+    for d in [mac, mac_b, mac_c, mac_d] {
+        assert_eq!(title(&w, d, l.door), "The greenhouse door");
+        assert_eq!(cast::status(&w.lab, d, l.door), Some(Status::Doing));
+        assert!(counted(&mut w, d, l.door).iter().all(|c| c.1));
+    }
+}
+
+#[test]
+fn a_cap_that_only_suggests_writes_on_proposals_an_owner_merges() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let (alice, carol, mac, mac_c) = (w.alice, w.carol, w.mac_a, w.mac_c);
+    // Carol may start proposals of the plan, change anything on them and bring the main line into them
+    let suggest = json!([
+        { "op": "propose" },
+        { "op": "set", "path": [], "on": "proposals" },
+        { "op": "merge", "on": "proposals" },
+    ]);
+    w.lab.issue(mac, &[mac], ruled(alice, carol, l.plan, rules(suggest))).expect("Alice lets Carol suggest");
+    w.lab.sync_all(0);
+    let plan = hex(l.plan);
+    let retitle = |line: &Value| {
+        json!({ "op": "set", "entry": plan, "line": line, "path": ["title"], "value": "Spring plan" })
+    };
+    assert_eq!(refused(&run(&mut w, mac_c, retitle(&Value::Null))), "NotAllowed");
+    let line = ok(run(&mut w, mac_c, json!({ "op": "propose", "entry": plan, "name": "Spring" })))["line"].clone();
+    ok(run(&mut w, mac_c, retitle(&line)));
+    let beans = json!({ "id": 3, "type": "paragraph", "text": "Sow beans" });
+    ok(run(&mut w, mac_c, json!({ "op": "insert", "entry": plan, "line": line, "path": ["blocks"], "value": beans })));
+    // Alice adds to the main line, which Carol brings into her proposal; she can't merge it back herself
+    ok(run(&mut w, mac, json!({ "op": "tag", "entry": plan, "add": ["spring"] })));
+    let body = json!({ "op": "set", "entry": plan, "path": ["blocks", { "id": 2 }, "text"], "value": "Spring first." });
+    ok(run(&mut w, mac, body));
+    w.lab.sync_all(1);
+    ok(run(&mut w, mac_c, json!({ "op": "merge", "entry": plan, "from": null, "into": line })));
+    let merge = json!({ "op": "merge", "entry": plan, "from": line });
+    assert_eq!(refused(&run(&mut w, mac_c, merge.clone())), "NotAllowed");
+    // Alice's readers count the proposal, and she merges it
+    w.lab.sync_all(2);
+    assert!(counted(&mut w, mac, l.plan).iter().all(|c| c.1));
+    assert_eq!(w.lab.item(mac, l.plan).unwrap().as_document().unwrap().title, "Plan");
+    ok(run(&mut w, mac, merge));
+    w.lab.sync_all(3);
+    for d in [mac, mac_c] {
+        let doc = w.lab.item(d, l.plan).unwrap().as_document().unwrap();
+        let texts: Vec<&str> = doc.blocks.iter().map(|b| b.text.as_str()).collect();
+        assert_eq!((doc.title.as_str(), texts), ("Spring plan", vec!["Plan", "Spring first.", "Sow beans"]));
+    }
 }

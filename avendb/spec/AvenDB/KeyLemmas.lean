@@ -152,11 +152,13 @@ inductive Change (st : State) : State → Prop where
       (∀ g, c.grantee = .principal (.vault g) → (st.vault? g).isSome = true) →
       Change st { st with caps := st.caps ++ [c] }
   | revoke (rs : List CapId) : Change st { st with revoked := st.revoked ++ rs }
-  | create (en : Entry) (w : Write) (x : Cell) : st.entry? en.id = none → en.id ∉ st.born →
+  | create (en : Entry) (w : Write) (x : Cell) (u : List EditId) : st.entry? en.id = none → en.id ∉ st.born →
       (st.vault? en.vault).isSome = true → en.stays = [(none, x)] → w.entry = en.id → w.stay = none →
-      Change st { st with entries := st.entries ++ [en], born := st.born ++ [en.id], writes := st.writes ++ [w] }
-  | write (en : Entry) (w : Write) (st₁ : State) : st.entry? w.entry = some en → w.stay ∈ en.stays.map (·.1) →
-      (st₁ = st ∨ ∃ a, st₁ = setEntry st { en with attrs := a }) → Change st { st₁ with writes := st₁.writes ++ [w] }
+      Change st { st with entries := st.entries ++ [en], born := st.born ++ [en.id], writes := st.writes ++ [w],
+                          uncounted := u }
+  | write (en : Entry) (w : Write) (st₁ : State) (u : List EditId) : st.entry? w.entry = some en →
+      w.stay ∈ en.stays.map (·.1) → (st₁ = st ∨ ∃ a, st₁ = setEntry st { en with attrs := a }) →
+      Change st { st₁ with writes := st₁.writes ++ [w], uncounted := u }
   | move (en : Entry) (σ : Option EditId) (x : Cell) : st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
       Change st (setEntry st { en with stays := (σ, x) :: en.stays })
   | lane (l : List (VaultId × BlobId)) : Change st { st with lane := l }
@@ -259,16 +261,16 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none, List.contains_iff_mem] at hfresh
-    exact Change.applied (.create _ _ _ hfresh.1.1.1.1.1 hfresh.1.1.1.1.2
+    exact Change.applied (.create _ _ _ _ hfresh.1.1.1.1.1 hfresh.1.1.1.1.2
       (Option.isSome_iff_ne_none.2 hfresh.1.1.1.2) rfl rfl rfl)
   · -- a write to an entry, by its own vault
     rename_i he _ _ _ hx _ _ _ _
     cases h
-    exact Change.applied (.write _ _ _ he (List.mem_map.2 ⟨_, stayCell_mem hx, rfl⟩) (.inr ⟨_, rfl⟩))
+    exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayCell_mem hx, rfl⟩) (.inr ⟨_, rfl⟩))
   · -- a write to an entry, by another vault
     rename_i he _ _ _ hx _ _ _ _
     cases h
-    exact Change.applied (.write _ _ _ he (List.mem_map.2 ⟨_, stayCell_mem hx, rfl⟩) (.inl rfl))
+    exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayCell_mem hx, rfl⟩) (.inl rfl))
   · -- move
     rename_i he _ hnew
     cases h
@@ -425,9 +427,9 @@ theorem Sane.set_entry {st : State} (hs : Sane st) {en en' : Entry} (hen : en �
     · exact hs.writeStay w hw y hy hyw
 
 /-- Adding a write of an entry ever created, in a stay of its entry, keeps the state sane. -/
-theorem Sane.addWrite {st : State} (hs : Sane st) {w : Write} (hb : w.entry ∈ st.born)
+theorem Sane.addWrite {st : State} (hs : Sane st) {w : Write} {u : List EditId} (hb : w.entry ∈ st.born)
     (hstay : ∀ en ∈ st.entries, en.id = w.entry → w.stay ∈ en.stays.map (·.1)) :
-    Sane { st with writes := st.writes ++ [w] } where
+    Sane { st with writes := st.writes ++ [w], uncounted := u } where
   owners := hs.owners
   capIds := hs.capIds
   capOver := hs.capOver
@@ -536,7 +538,7 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
       · exact hs.capGrantee cp hcp g hg
       · rw [List.mem_singleton.1 hcp] at hg; exact hgr g hg
   | revoke rs => exact hs.congr rfl rfl rfl rfl rfl
-  | create en w x hfree hnew hv hstays hwe hws =>
+  | create en w x _ hfree hnew hv hstays hwe hws =>
     have hnot : ∀ y ∈ st.entries, y.id ≠ en.id := fun y hy hid => by
       unfold State.entry? at hfree
       rw [List.find?_eq_none] at hfree
@@ -578,7 +580,7 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
         exact absurd hyx (hnot y hy)
       · rw [List.mem_singleton.1 hx, List.mem_singleton.1 hy, hws, hstays]
         simp
-  | write en w st₁ he hstay h₁ =>
+  | write en w st₁ _ he hstay h₁ =>
     have hen := entry?_mem he
     have hid := entry?_id he
     rcases h₁ with rfl | ⟨a, rfl⟩
@@ -1891,9 +1893,9 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
     | none => rw [hl] at hx; cases hx
     | some _ => rfl
   | cap c _ _ _ => exact ⟨⟨[c], rfl⟩, fun e he => he, fun x hx => hx⟩
-  | create en w x _ _ _ _ _ _ =>
+  | create en w x _ _ _ _ _ _ _ =>
     exact ⟨⟨[], by simp⟩, fun e he => List.mem_append_left _ he, fun x hx => hx⟩
-  | write en w st₁ _ _ h₁ =>
+  | write en w st₁ _ _ _ h₁ =>
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
     · exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
@@ -1935,13 +1937,13 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
   | cap _ _ _ _ => exact hsame
   | revoke _ => exact hsame
   | lane _ => exact hsame
-  | create en w x _ hnew _ _ _ _ =>
+  | create en w x _ _ hnew _ _ _ _ =>
     intro y hy
     rcases List.mem_append.1 hy with hy | hy
     · exact hsame y hy
     · rw [List.mem_singleton.1 hy]
       exact .inr hnew
-  | write en w st₁ he _ h₁ =>
+  | write en w st₁ _ he _ h₁ =>
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact hsame
     · exact hset en _ (entry?_mem he) ⟨rfl, rfl, [], rfl⟩

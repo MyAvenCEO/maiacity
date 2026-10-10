@@ -357,8 +357,8 @@ export class Device {
     }
     /**
      * Gives `grantee`, a vault's id or `"public"`, the role `role` (`"relay"`, `"read"`, `"write"` or `"owner"`) on
-     * what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel}`), acting for vault
-     * `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
+     * what `slice` selects of vault `over`, a slice as `words` reads it (`{select, relabel, rules?}`), acting for
+     * vault `issuer` (`Device::share`): a promise of the cap's id, after one ceremony for an owner's. Ids in hex.
      * @param {string} issuer
      * @param {string} over
      * @param {any} slice
@@ -1230,7 +1230,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5419, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5446, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue__core_7d5f0a2ba6a62c33___result__Result_____wasm_bindgen_61c7e10f51da098e___JsError___true_);
             return ret;
         },
