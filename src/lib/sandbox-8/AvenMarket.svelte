@@ -849,16 +849,19 @@
 		}
 
 		// the avens: wobbling blobs, a health arc, a name
+		// on a fields valley each aven is a bigger dot with its name inside, below its eyes (Samuel, 2026-10-10)
+		const big = world.layout === 'coop' ? 1.6 : 1;
 		for (const a of world.avens) {
-			const r = 15;
+			const r = 15 * big;
 			const wob = now / 260 + a.id * 1.7;
 			ctx.save();
 			ctx.translate(a.x, a.y);
+			ctx.scale(big, big);
 			if (!a.alive) ctx.scale(1.3, 0.55);
 			ctx.beginPath();
 			for (let i = 0; i <= 24; i++) {
 				const ang = (i / 24) * Math.PI * 2;
-				const rr = r * (1 + (a.alive ? 0.08 : 0.02) * Math.sin(ang * 3 + wob) + (a.alive ? 0.05 : 0) * Math.cos(ang * 2 - wob * 1.3));
+				const rr = 15 * (1 + (a.alive ? 0.08 : 0.02) * Math.sin(ang * 3 + wob) + (a.alive ? 0.05 : 0) * Math.cos(ang * 2 - wob * 1.3));
 				const px = Math.cos(ang) * rr,
 					py = Math.sin(ang) * rr;
 				if (i) ctx.lineTo(px, py);
@@ -883,6 +886,14 @@
 				ctx.fill();
 			}
 			ctx.restore();
+			if (big > 1) {
+				ctx.fillStyle = a.alive ? '#fff' : '#f4f1e8';
+				ctx.font = '700 10px system-ui, sans-serif';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(a.alive ? a.name : `${a.name} †`, a.x, a.y + (a.alive ? 10 : 0));
+				ctx.textBaseline = 'alphabetic';
+			}
 			// its health ring (a fields valley shows health on the board only: on the map it read as a second home ring)
 			if (a.alive && world.layout !== 'coop') {
 				const share = a.health / RULES.healthMax;
@@ -906,7 +917,7 @@
 			ctx.textAlign = 'center';
 			// away from home, fetching what it bought: its name goes with it
 			const away = Math.hypot(a.x - a.territory.x, a.y - a.territory.y) > 30;
-			if (away) ctx.fillText(a.name, a.x, a.y - r - 12);
+			if (away && big === 1) ctx.fillText(a.name, a.x, a.y - r - 12);
 			// what it bought on the way: a small dot per good, until it is home
 			const carried = a.alive ? GOODS.filter((g) => a.carry[g] > 0) : [];
 			carried.forEach((g, i) => {
@@ -1048,23 +1059,15 @@
 		// each home and its fields
 		for (const a of world.avens) {
 			const h = a.territory;
-			const away = Math.atan2(h.y - C.y, h.x - C.x); // its wedge's direction, out from the COOP
-			const R = 30;
 			// its home
 			ctx.beginPath();
-			ctx.arc(h.x, h.y, 21, 0, Math.PI * 2);
+			ctx.arc(h.x, h.y, 32, 0, Math.PI * 2);
 			ctx.fillStyle = light > 0.5 ? '#fbf8f0' : '#1f2a23';
 			ctx.fill();
 			ctx.strokeStyle = a.alive ? a.colour : '#8a8a86';
 			ctx.lineWidth = 2;
 			ctx.stroke();
-			// its store is on the board, beside its health (Samuel, 2026-10-10), not on the map
-			const [nx, ny] = [h.x + Math.cos(away) * (R + 38), h.y + Math.sin(away) * (R + 38)];
-			ctx.fillStyle = light > 0.5 ? '#1f2a23cc' : '#f4f1e8cc';
-			ctx.font = '600 12px system-ui, sans-serif';
-			ctx.textBaseline = 'middle';
-			ctx.fillText(a.alive ? `${a.name} · ${fmt(a.hearts)} ♥` : `${a.name} †`, nx, ny);
-			ctx.textBaseline = 'alphabetic';
+			// its store, HEARTS and health are on the board (Samuel, 2026-10-10); its name is inside its dot
 		}
 	}
 
