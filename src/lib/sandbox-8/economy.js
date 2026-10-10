@@ -60,30 +60,41 @@ function remembered(key, f) {
 
 // ─────────────── fields (Samuel, 2026-10-10: every aven an entrepreneur) ───────────────
 // Where the Fields card turns them on (fieldsOn), an aven's land is up to three fields it farms itself: each one crop at
-// level 1 to 3 (half, all or one and a half times the crop's field capacity), which it can level up (CAPEX) and keeps
-// paying for each night (OPEX), both burned; a crop planted or changed starts again at level 1 and grows into its yield
-// over rampDays, a level-up over levelDays. What it grows is then its own decision, made by its brain (asks.js).
+// level 1 to 3 (each crop its own capacity at level 1; level 2 and 3 yield level2% and level3% of it), which it can level
+// up (CAPEX) and keeps paying for each night (OPEX), both paid to the MaiaCity COOP; a crop planted or changed starts
+// again at level 1 and grows into its yield over its own ramp_<crop> days, a level-up over levelDays. What it grows is
+// then its own decision, made by its brain (asks.js).
 export const fieldsOn = () => RULES.fieldsOn >= 1;
-const LEVEL_SHARE = [0, 0.5, 1, 1.5];
-const CAPEX_OWN = { water: [0, 0, 200, 500], fruits: [0, 0, 150, 400], vegetables: [0, 0, 150, 400], legumes: [0, 0, 120, 300], chicken: [0, 0, 250, 600] };
-const OPEX_OWN = { water: [0, 2, 5, 10], fruits: [0, 2, 5, 10], vegetables: [0, 2, 4, 9], legumes: [0, 1, 3, 7], chicken: [0, 3, 6, 13] };
 /** what levelling a field of `g` up to `level` costs, once (the Fields card's capex rule) */
-export const capexOf = (g, level) => hooked('capex', { good: g, level }, CAPEX_OWN[g]?.[level] ?? 0, 0, 1e9);
+export const capexOf = (g, level) => hooked('capex', { good: g, level }, RULES[`capex${level}_${g}`] ?? 0, 0, 1e9);
 /** what a field of `g` at `level` costs a night (the Fields card's opex rule) */
-export const opexOf = (g, level) => hooked('opex', { good: g, level }, OPEX_OWN[g]?.[level] ?? 0, 0, 1e9);
+export const opexOf = (g, level) => hooked('opex', { good: g, level }, RULES[`opex${level}_${g}`] ?? 0, 0, 1e9);
 /** what opening field number `slot` (0, 1, 2) costs */
 export const openCost = (slot) => (slot === 1 ? RULES.field2 : slot === 2 ? RULES.field3 : 0);
-/** a crop's field capacity at level 2 */
-export const fieldBase = (g) => (g === 'water' ? RULES.fieldWater : RULES.fieldFood);
-/** a field's share of its crop's capacity at a level */
-export const levelShare = (level) => LEVEL_SHARE[level] ?? 0;
+/** a crop's field capacity at level 1 */
+export const fieldBase = (g) => RULES[`cap_${g}`] ?? 0;
+/** a field's yield at a level, as a share of level 1 */
+export const levelShare = (level) => (level === 1 ? 1 : level === 2 ? RULES.level2 / 100 : level === 3 ? RULES.level3 / 100 : 0);
+/** how long a crop takes to grow into its yield */
+export const rampOf = (g) => RULES[`ramp_${g}`] ?? 7;
 /** how far a field has grown into its yield, 0 to 1 */
-export const fieldGrown = (world, f) => (RULES.rampDays > 0 ? Math.min(1, Math.max(0, (world.day - f.since) / RULES.rampDays)) : 1);
+export const fieldGrown = (world, f) => (rampOf(f.crop) > 0 ? Math.min(1, Math.max(0, (world.day - f.since) / rampOf(f.crop))) : 1);
 /** a field's yield a day today, before the night's luck: its level's share of the crop's capacity, as far as grown */
 export function fieldYield(world, f) {
 	const was = f.from ?? f.level;
 	const up = RULES.levelDays > 0 && f.from != null ? Math.min(1, Math.max(0, (world.day - f.levelSince) / RULES.levelDays)) : 1;
-	return fieldBase(f.crop) * (LEVEL_SHARE[was] + (LEVEL_SHARE[f.level] - LEVEL_SHARE[was]) * up) * fieldGrown(world, f);
+	return fieldBase(f.crop) * (levelShare(was) + (levelShare(f.level) - levelShare(was)) * up) * fieldGrown(world, f);
+}
+/**
+ * The MaiaCity COOP (Samuel, 2026-10-10): the valley's own ledger, where every HEART paid for fields lands (opening a
+ * field, levelling one up, each night's keep). For now money only flows in.
+ */
+export function coopTake(world, a, n, what) {
+	if (!(n > 0)) return;
+	const c = (world.coop ??= { hearts: 0, from: {} });
+	c.hearts = Math.round((c.hearts + n) * 100) / 100;
+	c.from[what] = Math.round(((c.from[what] ?? 0) + n) * 100) / 100;
+	a.hearts = Math.round((a.hearts - n) * 100) / 100;
 }
 /** what an aven grows follows its fields; what it grows a day, as far as they have grown */
 export function syncFields(world, a) {
@@ -103,7 +114,7 @@ function harvestFields(world, a) {
 			log(world, a, { kind: 'grow', good: f.crop, qty: 0, cap: 0, note: 'fallow: it could not pay for its field' });
 			continue;
 		}
-		a.hearts = Math.round((a.hearts - cost) * 100) / 100;
+		coopTake(world, a, cost, 'nights');
 		a.opex = (a.opex ?? 0) + cost;
 		world.tally.opex = (world.tally.opex ?? 0) + cost;
 		const cap = fieldYield(world, f);
@@ -127,8 +138,8 @@ function harvestFields(world, a) {
 export function invest(world, a, slot, code) {
 	if (!fieldsOn() || !a.alive || !a.fields || !Number.isInteger(code) || code <= 0) return null;
 	const f = a.fields[slot];
-	const pay = (n) => {
-		a.hearts = Math.round((a.hearts - n) * 100) / 100;
+	const pay = (n, what) => {
+		coopTake(world, a, n, what);
 		a.invested = (a.invested ?? 0) + n;
 		world.tally.invested = (world.tally.invested ?? 0) + n;
 	};
@@ -138,16 +149,16 @@ export function invest(world, a, slot, code) {
 		if (!g || slot !== a.fields.length) return null;
 		const cost = openCost(slot);
 		if (a.hearts < cost) return `couldn't open field ${slot + 1} (${cost} HEARTS)`;
-		pay(cost);
+		pay(cost, 'fields');
 		a.fields.push({ crop: g, level: 1, since: world.day, from: null, levelSince: null });
-		change = { label: `opens field ${slot + 1} with`, to: GOOD_LABEL[g], unit: `for ${cost} HEARTS` };
+		change = { label: `opens field ${slot + 1} with`, to: GOOD_LABEL[g], unit: `for ${cost} HEARTS to the MaiaCity COOP` };
 	} else if (code === 1) {
 		if (f.level >= 3) return null;
 		const cost = capexOf(f.crop, f.level + 1);
 		if (a.hearts < cost) return `couldn't level up its ${GOOD_LABEL[f.crop]} field (${cost} HEARTS)`;
-		pay(cost);
+		pay(cost, 'levels');
 		Object.assign(f, { from: f.level, level: f.level + 1, levelSince: world.day });
-		change = { label: `levels up its ${GOOD_LABEL[f.crop]} field`, from: f.level - 1, to: f.level, unit: `for ${cost} HEARTS` };
+		change = { label: `levels up its ${GOOD_LABEL[f.crop]} field`, from: f.level - 1, to: f.level, unit: `for ${cost} HEARTS to the MaiaCity COOP` };
 	} else {
 		const g = GOODS[code - 2];
 		if (!g || g === f.crop) return null;
@@ -273,17 +284,20 @@ export function createWorld(seed = Date.now() % 1e9) {
 	});
 	const market = Object.fromEntries(GOODS.map((g) => [g, { price: null, supply: 0, demand: 0, open: null, history: [], series: [], sells: [], wants: [] }]));
 	// own fields: every aven starts with one, its land's first crop at level 1, grown; and its starting rations
-	if (fieldsOn())
-		for (const a of avens) {
-			a.fields = [{ crop: a.grows[0], level: 1, since: -RULES.rampDays, from: null, levelSince: null }];
+	if (fieldsOn()) {
+		// the first crops spread evenly: every crop on as many fields as the others (two each for ten avens), dealt by the seed
+		const first = avens.map((_, i) => GOODS[i % GOODS.length]).sort(() => rand() - 0.5);
+		avens.forEach((a, i) => {
+			a.fields = [{ crop: first[i], level: 1, since: -rampOf(first[i]), from: null, levelSince: null }];
 			a.ask = {};
 			a.bid = {};
-			for (const g of GOODS) (g === a.grows[0] ? a.ask : a.bid)[g] = null;
+			for (const g of GOODS) (g === first[i] ? a.ask : a.bid)[g] = null;
 			syncFields({ day: 1 }, a);
 			a.harvest = { ...a.produce };
 			a.stock = Object.fromEntries(GOODS.map((g) => [g, NEED[g] * RULES.startDays + Math.round(a.produce[g] ?? 0)]));
-		}
-	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
+		});
+	}
+	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, coop: { hearts: 0, from: {} }, rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
 	updateMarket(world);
 	record(world, 0, {});
 	return world;
