@@ -114,7 +114,6 @@ test("a story moves through nine steps, and keeps its pad, its hook, its descrip
   expect(await unfiledStories()).toEqual([]);
   await expect(fileStory(s.id, "not-a-namespace")).rejects.toThrow(/vault id/);
   await deleteContent(s.id);
-  await deleteContent(other.id);
 });
 
 test("the stories migration: a draft is being written, an idea's text becomes its pad", async () => {
@@ -182,4 +181,17 @@ test("stories, not days: a name another item already has is not taken twice", as
     { title: "The 1 million decision", project: "The 1 million decision" },
     { title: "The old card", project: null },
   ]);
+});
+
+test("a story is pointed at the timeline its film is cut on, and let go of it", async () => {
+  const story = await createContent("admin", { title: "Coming Soon", kind: "post" });
+  const { rows } = await pg.query<{ id: string }>("INSERT INTO timelines (name, project, founder_id) VALUES ('First cut', 'Coming Soon', 'admin') RETURNING id");
+  const tl = rows[0]!.id;
+  const on = await saveContent(story.id, { timeline_id: tl });
+  expect(on.timeline_id).toBe(tl);
+  expect((await saveContent(story.id, { title: "Coming Soon - Sunday" })).timeline_id).toBe(tl);
+  await expect(saveContent(story.id, { timeline_id: "not-a-timeline" })).rejects.toThrow(/by its id/);
+  await expect(saveContent(story.id, { timeline_id: "00000000-0000-4000-8000-000000000000" })).rejects.toThrow(/No such timeline/);
+  expect((await saveContent(story.id, { timeline_id: null })).timeline_id).toBeNull();
+  await deleteContent(story.id);
 });

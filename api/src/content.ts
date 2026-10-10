@@ -271,6 +271,12 @@ function clean(b: Record<string, unknown>, partial: boolean) {
     o.story = (b.story as string | null) ?? null;
   }
   if (b.link !== undefined) o.link = b.link ? String(b.link).slice(0, 500) : null;
+  // the studio timeline the story's film is cut on (its script is read from it in the Writing step)
+  if (b.timeline_id !== undefined) {
+    if (b.timeline_id !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(b.timeline_id)))
+      throw new ContentError("A timeline is named by its id.");
+    o.timeline_id = (b.timeline_id as string | null) ?? null;
+  }
   // the derivatives, sent back whole (the calendar moves one to another day): each still a known platform and format
   if (b.posts !== undefined) {
     if (!Array.isArray(b.posts) || b.posts.some((p) => !p || !CHANNELS.includes(p.platform) || (p.format && !FORMATS.includes(p.format)) || typeof p.text !== "string"))
@@ -308,7 +314,9 @@ async function once<T>(q: Promise<T>): Promise<T> {
   try {
     return await q;
   } catch (e) {
-    if (/ix_content_project|duplicate key/i.test(String((e as Error).message))) throw new ContentError("Another story already has that day.", 409);
+    const m = String((e as Error).message);
+    if (/violates foreign key.*timeline/i.test(m) || /timeline_id_fkey/i.test(m)) throw new ContentError("No such timeline.", 404);
+    if (/ix_content_project|duplicate key/i.test(m)) throw new ContentError("Another story already has that day.", 409);
     throw e;
   }
 }
@@ -353,6 +361,7 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
         intro = coalesce($24, intro),
         thumbnail = CASE WHEN $25::text IS NULL THEN thumbnail ELSE ($25::text)::jsonb END,
         image_title = CASE WHEN $26::text IS NULL THEN image_title ELSE ($26::text)::jsonb END,
+        timeline_id = CASE WHEN $27::boolean THEN $28::uuid ELSE timeline_id END,
         updated = now()
       WHERE id = $1 RETURNING ${COLS}`,
     [id, o.title ?? null, o.kind ?? null, has("channels") ? JSON.stringify(o.channels) : null, o.status ?? null,
@@ -360,7 +369,8 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
      has("link"), o.link ?? null, has("tags") ? JSON.stringify(o.tags) : null, has("posts") ? JSON.stringify(o.posts) : null,
      has("hook"), o.hook ?? null, o.idea ?? null, o.description ?? null, has("journey") ? JSON.stringify(o.journey) : null,
      has("project"), o.project ?? null, has("story"), o.story ?? null, has("hooks") ? JSON.stringify(o.hooks) : null, o.intro ?? null,
-     has("thumbnail") ? JSON.stringify(o.thumbnail) : null, has("image_title") ? JSON.stringify(o.image_title) : null],
+     has("thumbnail") ? JSON.stringify(o.thumbnail) : null, has("image_title") ? JSON.stringify(o.image_title) : null,
+     has("timeline_id"), o.timeline_id ?? null],
   ));
   if (!rows[0]) throw new ContentError("No such item.", 404);
   return rows[0];
