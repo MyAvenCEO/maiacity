@@ -356,6 +356,9 @@ function fieldQuestions(world, a) {
 	// bill of about 270 a day, and starved before their fields gave (days 13-14); one net number hid it
 	// fieldCash (World 33): the plan with any forecast, forecast 6 has it built in
 	const plan = RULES.forecast >= 6 || !!RULES.fieldCash;
+	// fieldCash 2 (World 34): closing a field and not opening one count their plan too; under 1 they read a fixed 0 net
+	// while every other option counted its starving, so an aven whose plan ran out of food money closed the field that fed it
+	const planAll = plan && RULES.fieldCash >= 2;
 	const gapOf = (g, mine) => Math.max(lackReal(g, mine), mine ? NEED[g] ?? 0 : eats(g));
 	// what a field brings in a day: under forecast 4 on, what of its crop the valley lacks or it eats, at today's price;
 	// under the others, all it yields, at the forecast's price
@@ -493,10 +496,12 @@ function fieldQuestions(world, a) {
 			if (RULES.fieldClose) {
 				levels.push(CLOSE);
 				const gone = { [f.crop]: -fieldBase(f.crop) * levelShare(f.level) };
-				criteria.push(`close it: its ${Math.round(opexOf(f.crop, f.level) * H)} HEARTS of keep over the next ${H} days stop, and nothing more grows on it${RULES.forecast >= 2 ? `; ${coverage(f.crop, gone)}` : ''}; you can open a field here again later, at the price of opening one: 0 net; it leaves you ${Math.round(a.hearts)} HEARTS${plan ? planText(cashPlan(0, () => 0, here.income, 0, here.keep)) : ''}`);
+				const p = plan ? cashPlan(0, () => 0, here.income, 0, here.keep) : null;
+				criteria.push(`close it: its ${Math.round(opexOf(f.crop, f.level) * H)} HEARTS of keep over the next ${H} days stop, and nothing more grows on it${RULES.forecast >= 2 ? `; ${coverage(f.crop, gone)}` : ''}; you can open a field here again later, at the price of opening one: ${planAll ? Math.round(-planCost(p)) : 0} net; it leaves you ${Math.round(a.hearts)} HEARTS${p ? planText(p) : ''}`);
 			}
 		} else {
-			criteria.push(`don't open ${slot ? `field ${slot + 1}` : 'a field'} yet: it leaves you ${Math.round(a.hearts)} HEARTS${plan ? planText(cashPlan(0, () => 0, 0, 0, 0)) : ''}`);
+			const p = plan ? cashPlan(0, () => 0, 0, 0, 0) : null;
+			criteria.push(`don't open ${slot ? `field ${slot + 1}` : 'a field'} yet: ${planAll ? `${Math.round(-planCost(p))} net; ` : ''}it leaves you ${Math.round(a.hearts)} HEARTS${p ? planText(p) : ''}`);
 			for (const [i, g] of GOODS.entries()) {
 				if (!can(openCost(slot, g, a))) continue;
 				levels.push(2 + i);
