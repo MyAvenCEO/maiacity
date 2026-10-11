@@ -25,8 +25,9 @@ export const DAY_S = 86400; // in-game seconds in a day
  * showed the valley to; a hook runs only once it has seen it */
 export const CODE = { run: /** @type {any} */ (null), seen: /** @type {any} */ (null) };
 
-/** what card code sees of an aven (a copy: nothing it does reaches the valley) */
-export const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, harvest: a.harvest ?? null, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, memo: a.memo ?? {}, reserveDays: a.reserveDays, ask: a.ask, bid: a.bid, flex: a.flex, choices: a.choices ?? {}, yesterday: a.yesterday ?? null, minted: a.minted, decayed: a.decayed });
+/** what card code sees of an aven (a copy: nothing it does reaches the valley), its fields too: a price can count the
+ * ones still growing into their yield */
+export const avenView = (a) => ({ id: a.id, name: a.name, alive: a.alive, hearts: a.hearts, health: a.health, grows: a.grows, produce: a.produce, harvest: a.harvest ?? null, stock: a.stock, body: a.body, need: a.need ?? null, keep: a.keep ?? null, memo: a.memo ?? {}, reserveDays: a.reserveDays, ask: a.ask, bid: a.bid, flex: a.flex, choices: a.choices ?? {}, yesterday: a.yesterday ?? null, minted: a.minted, decayed: a.decayed, fields: (a.fields ?? []).map((f) => ({ crop: f.crop, level: f.level, since: f.since, from: f.from ?? null, levelSince: f.levelSince ?? null })) });
 /** ...and of the valley, once a night */
 function valleyView(world) {
 	const live = world.avens.filter((a) => a.alive);
