@@ -202,7 +202,11 @@ export function invest(world, a, slot, code) {
 		const g = GOODS[code - 2];
 		if (!g || g === f.crop) return null;
 		if (world.day - f.since < (RULES.holdDays ?? 0)) return `couldn't change field ${slot + 1} yet (from day ${f.since + RULES.holdDays})`;
-		change = { label: `changes field ${slot + 1}`, from: GOOD_LABEL[f.crop], to: GOOD_LABEL[g], unit: 'back to level 1' };
+		// fieldChange (World 36): a new crop is a new field's worth of work, paid as opening it
+		const cost = RULES.fieldChange ? openCost(slot, g, a) : 0;
+		if (cost && !can(cost)) return `couldn't change field ${slot + 1} (${cost} HEARTS, keeping ${Math.round(reserve)} for food)`;
+		if (cost) pay(cost, 'fields');
+		change = { label: `changes field ${slot + 1}`, from: GOOD_LABEL[f.crop], to: GOOD_LABEL[g], unit: cost ? `for ${cost} HEARTS to the Maia City Coop, back to level 1` : 'back to level 1' };
 		Object.assign(f, { crop: g, level: 1, since: world.day, from: null, levelSince: null });
 	}
 	syncFields(world, a);
@@ -340,6 +344,12 @@ export function createWorld(seed = Date.now() % 1e9) {
 			a.plots = [0, 1, 2].map(() => Math.round((1 + ((rand() * 2 - 1) * RULES.plotSpread) / 100) * 100) / 100);
 			// fieldStart (World 28): one field already grown, the crops dealt in turn round the valley (two avens a good)
 			a.fields = RULES.fieldStart ? [{ crop: GOODS[a.id % GOODS.length], level: 1, since: 1 - (RULES[`ramp_${GOODS[a.id % GOODS.length]}`] ?? 0), from: null, levelSince: null }] : [];
+			// fieldStart 2 (World 36): the starting field isn't a gift; its price is paid to the Coop as the world begins
+			if (RULES.fieldStart === 2) {
+				a.startPaid = openCost(0, a.fields[0].crop, a);
+				a.hearts = Math.round((a.hearts - a.startPaid) * 100) / 100;
+				a.invested = (a.invested ?? 0) + a.startPaid;
+			}
 			a.ask = {};
 			a.bid = Object.fromEntries(GOODS.map((g) => [g, null]));
 			syncFields({ day: 1 }, a);
@@ -353,7 +363,8 @@ export function createWorld(seed = Date.now() % 1e9) {
 			Object.assign(a, { home, territory: { x: home.x, y: home.y, r: 70 }, x: home.x, y: home.y - 6 });
 		});
 	}
-	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, coop: { hearts: 0, from: {} }, layout: fieldsOn() ? 'coop' : 'ring', rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
+	const paidIn = avens.reduce((n, a) => n + (a.startPaid ?? 0), 0);
+	const world = { seed, startHearts: RULES.startHearts, t: 0, day: 1, avens, coop: { hearts: paidIn, from: paidIn ? { fields: paidIn } : {} }, layout: fieldsOn() ? 'coop' : 'ring', rotted: Object.fromEntries(GOODS.map((g) => [g, 0])), trades: [], rand, market, lastPrice: Object.fromEntries(GOODS.map((g) => [g, null])), events: [], weather: { dry: 0, dryFrom: 0, rain: 0 }, stats: [], tally: blankTally(), outbox: null };
 	updateMarket(world);
 	record(world, 0, {});
 	return world;
