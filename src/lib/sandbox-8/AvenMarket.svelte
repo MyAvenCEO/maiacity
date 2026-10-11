@@ -12,7 +12,7 @@
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { wayBack } from '$lib/app/back.svelte.js';
-	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText } from './economy.js'; // GOODS: listed in rainbow order
+	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText, cashFlow } from './economy.js'; // GOODS: listed in rainbow order
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
@@ -426,8 +426,8 @@
 			decisions: tab === 'decisions' && page === 'valley' ? (world.decisions ?? []).slice(-200).reverse().map((/** @type {any} */ d) => ({ ...d })) : [],
 			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
 			// the Maia City Coop's ledger: what the avens paid it for their fields, and for what
-			coop: world.coop ? { hearts: world.coop.hearts, from: { ...world.coop.from } } : null,
-			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, stock: world.layout === 'coop' ? { ...o.stock } : null, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
+			coop: world.coop ? { hearts: world.coop.hearts, from: { ...world.coop.from }, flow: world.layout === 'coop' ? cashFlow(world.coop.days, 3) : null } : null,
+			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, stock: world.layout === 'coop' ? { ...o.stock } : null, flow: world.layout === 'coop' && o.cashDays?.length ? cashFlow(o.cashDays, 3).net : null, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
 			market: Object.fromEntries(
 				GOODS.map((g) => {
 					const m = world.market[g];
@@ -1316,7 +1316,7 @@
 		<section>
 			<h3>Board</h3>
 			{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
-				<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>Maia City Coop</b><span>the valley's ledger: every HEART paid for fields</span></span><span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
+				<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>Maia City Coop</b><span>{#if snap.coop.flow?.days}<span title="a day over its last 3 days: in from fields {fmt(snap.coop.flow.per.fields ?? 0)} and keep {fmt(snap.coop.flow.per.keep ?? 0)}; out as the dividend {fmt(-(snap.coop.flow.per.dividend ?? 0))}">a day: in {fmt((snap.coop.flow.per.fields ?? 0) + (snap.coop.flow.per.keep ?? 0))}, out {fmt(-(snap.coop.flow.per.dividend ?? 0))} dividend</span>{:else}the valley's ledger: every HEART paid for fields{/if}</span></span>{#if snap.coop.flow?.days}<span class="flow" class:neg={snap.coop.flow.net < 0} title="the Coop's cash flow: HEARTS in less out, a day over its last 3 days">{snap.coop.flow.net >= 0 ? '+' : ''}{fmt(snap.coop.flow.net)}/d</span>{/if}<span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
 			{/if}
 			<ol class="board" class:stocked={snap.board.some((/** @type {any} */ r) => r.stock)}>
 				{#each snap.board as row (row.id)}
@@ -1330,6 +1330,7 @@
 							{:else}
 							{#if !row.stock}<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>{/if}
 							<span class="hp" title="health {row.alive ? `${row.health} of ${RULES.healthMax}` : '0'}"><i class:low={row.health / RULES.healthMax <= 0.3} style:width="{row.alive ? Math.max(0, Math.min(100, (row.health / RULES.healthMax) * 100)) : 0}%"></i></span>
+							{#if row.stock && row.flow != null}<span class="flow" class:neg={row.flow < 0} title="cash flow: HEARTS in less out, a day over its last 3 days">{row.flow >= 0 ? '+' : ''}{fmt(row.flow)}/d</span>{:else if row.stock}<span></span>{/if}
 							{#if row.stock}<span class="store" title="in store: {GOODS.map((g) => `${row.stock?.[g] ?? 0} ${GOOD_LABEL[g]}`).join(', ')}">{#each GOODS as g (g)}<em class:none={!(row.stock?.[g] > 0)} style:background={GOOD_COLOUR[g]}>{row.stock?.[g] ?? 0}</em>{/each}</span>{/if}
 							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
 							{/if}
@@ -2060,7 +2061,7 @@
 	.coop-name b {
 		font-size: 0.85rem;
 	}
-	.coop-name span {
+	.coop-name > span {
 		font-size: 0.68rem;
 		opacity: 0.75;
 	}
@@ -2068,7 +2069,32 @@
 		margin-left: auto;
 	}
 	.board.stocked button {
-		grid-template-columns: 14px 3.2rem 1fr auto 4.6rem;
+		grid-template-columns: 14px 3rem 44px auto auto 1fr;
+		gap: 0.3rem;
+	}
+	.board.stocked .num {
+		white-space: nowrap;
+	}
+	/* its cash flow a day, beside its store (Samuel, 2026-10-11) */
+	.board .flow,
+	.coop .flow {
+		font-size: 0.72rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: #2e7d4f;
+		text-align: right;
+		white-space: nowrap;
+	}
+	.coop .flow {
+		margin-left: auto;
+	}
+	.coop .flow + .num {
+		margin-left: 0.5rem;
+		white-space: nowrap;
+	}
+	.board .flow.neg,
+	.coop .flow.neg {
+		color: #b3261e;
 	}
 	.board.stocked .num.gone {
 		grid-column: 3 / -1;
