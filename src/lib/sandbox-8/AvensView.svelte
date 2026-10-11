@@ -7,7 +7,7 @@
 <script>
 	import LineChart from './LineChart.svelte';
 	import ActivityFeed from './ActivityFeed.svelte';
-	import { GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, ROT, DAY_S } from './economy.js'; // GOODS: listed in rainbow order
+	import { GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, ROT, DAY_S, cashFlow, opexOf } from './economy.js'; // GOODS: listed in rainbow order
 	import { RULES } from './rules.js';
 	import { DIALS, memoryOf } from './mind.js';
 	import { short, times, logScale, logAt } from './format.js';
@@ -138,6 +138,39 @@
 					<p class="sub">Its brain loads with the world.</p>
 				{/if}
 			</section>
+
+			{#if a.fields && a.cashDays}
+				{@const flow = cashFlow(a.cashDays, 7)}
+				{@const fieldRows = a.fields.map((/** @type {any} */ f) => { const p = market[f.crop]?.price ?? 0; const keep = opexOf(f.crop, f.level); return { ...f, price: p, gross: f.yield * p, keep, margin: f.yield * p - keep }; })}
+				{@const bills = GOODS.map((g) => { const own = fieldRows.filter((/** @type {any} */ f) => f.crop === g).reduce((/** @type {number} */ n, /** @type {any} */ f) => n + f.yield, 0); const buy = Math.max(0, NEED[g] - own); return { g, own: Math.min(own, NEED[g]), buy, bill: buy * (market[g]?.price ?? 0) }; })}
+				{@const stores = GOODS.reduce((n, g) => n + (a.stock?.[g] ?? 0) * (market[g]?.price ?? 0), 0)}
+				<!-- its cash flow (Samuel, 2026-10-11: cash flow says more than the balance): what came in and went out a day,
+				     and what earns and costs today -->
+				<section class="card cash">
+					<h3>Cash flow</h3>
+					<p class="flow-net" class:neg={flow.net < 0}><b>{flow.net >= 0 ? '+' : ''}{short(flow.net)}</b> HEARTS a day <small>over its last {flow.days} day{flow.days === 1 ? '' : 's'}{flow.net < 0 && a.hearts > 0 ? ` · its ${short(a.hearts)} HEARTS last about ${Math.floor(a.hearts / -flow.net)} days at this rate` : ''}</small></p>
+					<table class="book"><tbody>
+						{#each [['sales', 'Sales'], ['mint', 'Mint'], ['dividend', 'Coop dividend'], ['food', 'Food bought'], ['keep', 'Field keep'], ['fields', 'Fields bought'], ['decay', 'HEARTS decay']] as [k, label] (k)}
+							{#if flow.per[k]}<tr class:out={flow.per[k] < 0}><td>{label}</td><td class="num">{flow.per[k] > 0 ? '+' : ''}{short(flow.per[k])}</td></tr>{/if}
+						{/each}
+						<tr class="total"><td>Net a day</td><td class="num">{flow.net >= 0 ? '+' : ''}{short(flow.net)}</td></tr>
+					</tbody></table>
+					<h4>What earns, at today's prices</h4>
+					<table class="book"><thead><tr><th>Field</th><th class="num">Yield a day</th><th class="num">Price</th><th class="num">Worth a day</th><th class="num">Keep</th><th class="num">Margin</th></tr></thead><tbody>
+						{#each fieldRows as f, i (i)}<tr><td><em style:background={GOOD_COLOUR[f.crop]}></em>{GOOD_LABEL[f.crop]} L{f.level}{f.grown < 100 ? ` · ${f.grown}% grown` : ''}</td><td class="num">{short(f.yield)}</td><td class="num">{short(f.price)}</td><td class="num">{short(f.gross)}</td><td class="num">−{short(f.keep)}</td><td class="num" class:neg={f.margin < 0}>{f.margin >= 0 ? '+' : ''}{short(f.margin)}</td></tr>{:else}<tr><td colspan="6" class="none">No field: nothing earns.</td></tr>{/each}
+						<tr><td>Stores</td><td colspan="2"></td><td class="num">{short(stores)}</td><td colspan="2"><small>if it all sold today</small></td></tr>
+					</tbody></table>
+					<h4>What it must buy, at today's prices</h4>
+					<table class="book"><thead><tr><th>Good</th><th class="num">Needs a day</th><th class="num">Own fields</th><th class="num">Buys</th><th class="num">Costs a day</th></tr></thead><tbody>
+						{#each bills as b (b.g)}<tr><td><em style:background={GOOD_COLOUR[b.g]}></em>{GOOD_LABEL[b.g]}</td><td class="num">{NEED[b.g]}</td><td class="num">{short(b.own)}</td><td class="num">{short(b.buy)}</td><td class="num">{b.bill > 0 ? `−${short(b.bill)}` : '0'}</td></tr>{/each}
+						<tr class="total"><td>Food bill a day</td><td colspan="3"></td><td class="num">−{short(bills.reduce((n, b) => n + b.bill, 0))}</td></tr>
+					</tbody></table>
+					{#if a.cashDays.length}
+						<h4>Day by day</h4>
+						<div class="days">{#each a.cashDays.slice(-7) as d (d.day)}{@const n = Object.values(d.cash ?? {}).reduce((/** @type {number} */ s, /** @type {any} */ v) => s + v, 0)}<span class:neg={n < 0} title={Object.entries(d.cash ?? {}).map(([k, v]) => `${k} ${short(/** @type {number} */ (v))}`).join(', ')}><small>d{d.day}</small>{n >= 0 ? '+' : ''}{short(n)}</span>{/each}</div>
+					{/if}
+				</section>
+			{/if}
 
 			<section class="card">
 				<h3>Stock and limits</h3>
@@ -359,6 +392,64 @@
 		padding: 0.7rem 0.85rem;
 		box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
 		min-width: 0;
+	}
+	.cash .flow-net {
+		margin: 0.2rem 0 0.5rem;
+		font-size: 0.9rem;
+	}
+	.cash .flow-net b {
+		font-size: 1.25rem;
+		color: #2e7d4f;
+	}
+	.cash .flow-net.neg b,
+	.cash .neg {
+		color: #b3261e;
+	}
+	.cash .book {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.8rem;
+		margin-bottom: 0.4rem;
+	}
+	.cash .book td,
+	.cash .book th {
+		padding: 0.15rem 0.3rem;
+		border-bottom: 1px solid #0000000d;
+		text-align: left;
+		font-weight: 500;
+	}
+	.cash .book .num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.cash .book tr.out td.num {
+		color: #b3261e;
+	}
+	.cash .book tr.total td {
+		font-weight: 700;
+		border-bottom: 0;
+	}
+	.cash .book em {
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 2px;
+		margin-right: 0.3rem;
+	}
+	.cash .days {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		font-size: 0.78rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.cash .days span {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 0.15rem 0.35rem;
+		border-radius: 6px;
+		background: #00000008;
 	}
 	.card.chart {
 		padding: 0.4rem 0.5rem;

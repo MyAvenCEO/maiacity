@@ -106,6 +106,8 @@ export function coopTake(world, a, n, what) {
 	c.hearts = Math.round((c.hearts + n) * 100) / 100;
 	c.from[what] = Math.round(((c.from[what] ?? 0) + n) * 100) / 100;
 	a.hearts = Math.round((a.hearts - n) * 100) / 100;
+	book(a, what === 'nights' ? 'keep' : 'fields', -n);
+	coopBook(world, what === 'nights' ? 'keep' : 'fields', n);
 }
 /** the COOP's place in a fields valley, and how big it is */
 export const COOP_SPOT = { x: 600, y: 410, r: 96 };
@@ -440,7 +442,28 @@ function harvest(world, cap, g, dice) {
 const dice = (world, n) => Array.from({ length: n }, () => world.rand());
 
 function blankDay() {
-	return { sold: Object.fromEntries(GOODS.map((g) => [g, 0])), bought: Object.fromEntries(GOODS.map((g) => [g, 0])), short: {} };
+	return { sold: Object.fromEntries(GOODS.map((g) => [g, 0])), bought: Object.fromEntries(GOODS.map((g) => [g, 0])), short: {}, cash: {} };
+}
+/** the cash book (Samuel, 2026-10-11: cash flow says more than a balance): every HEART in or out of an aven's purse,
+ * by what for, day by day. In: sales, mint, dividend; out: food (what it bought), keep (its fields a night), fields
+ * (opening one, levelling up), decay */
+export function book(a, kind, n) {
+	if (!n || !a.today) return;
+	(a.today.cash ??= {})[kind] = Math.round(((a.today.cash[kind] ?? 0) + n) * 100) / 100;
+}
+/** the Maia City Coop's own cash book: in from fields (opening, levels) and their nightly keep, out as the dividend */
+function coopBook(world, kind, n) {
+	const c = world.coop;
+	if (!c || !n) return;
+	(c.today ??= {})[kind] = Math.round(((c.today[kind] ?? 0) + n) * 100) / 100;
+}
+/** an aven's (or the Coop's) cash flow over its last `days` closed days: each kind's average a day, and the net */
+export function cashFlow(days, n = 7) {
+	const list = (days ?? []).slice(-n);
+	const by = {};
+	for (const d of list) for (const [k, v] of Object.entries(d.cash ?? d)) if (k !== 'day') by[k] = (by[k] ?? 0) + v;
+	const per = Object.fromEntries(Object.entries(by).map(([k, v]) => [k, Math.round((v / Math.max(1, list.length)) * 100) / 100]));
+	return { days: list.length, per, net: Math.round(Object.values(per).reduce((s, v) => s + v, 0) * 100) / 100 };
 }
 
 /** what this aven still wants of a good it doesn't grow, to reach its reserve: its mind's wants (days of water, days of
@@ -540,6 +563,8 @@ function transfer(world, seller, buyer, g, qty, price, haggled) {
 	else buyer.fetch.push({ from: seller.id, goods: { [g]: qty } });
 	seller.hearts += total;
 	buyer.hearts -= total;
+	book(seller, 'sales', total);
+	book(buyer, 'food', -total);
 	seller.today.sold[g] += qty;
 	buyer.today.bought[g] += qty;
 	world.lastPrice[g] = price;
@@ -770,6 +795,7 @@ function endOfDay(world) {
 		if (a.alive && Object.keys(rotted).length) log(world, a, { kind: 'rot', rotted });
 		a.today.rotted = rotted;
 		if (lost.HEARTS) {
+			book(a, 'decay', -lost.HEARTS);
 			a.decayed += lost.HEARTS;
 			world.tally.decayed += lost.HEARTS;
 		}
@@ -789,6 +815,7 @@ function endOfDay(world) {
 			const out = hooked('mint', { aven: a }, mint.out.HEARTS, 0, 1e6);
 			craft(out === mint.out.HEARTS ? mint : { ...mint, out: { HEARTS: out } }, a);
 			a.minted += out;
+			book(a, 'mint', out);
 			world.tally.minted += out;
 		}
 		a.hearts = Math.round(a.hearts * 100) / 100;
@@ -798,7 +825,8 @@ function endOfDay(world) {
 	if (world.coop && RULES.coopShare > 0 && live.length) {
 		const each = Math.floor((world.coop.hearts * RULES.coopShare) / 100 / live.length * 100) / 100;
 		if (each > 0) {
-			for (const a of live) a.hearts = Math.round((a.hearts + each) * 100) / 100;
+			for (const a of live) (a.hearts = Math.round((a.hearts + each) * 100) / 100), book(a, 'dividend', each);
+			coopBook(world, 'dividend', -each * live.length);
 			world.coop.hearts = Math.round((world.coop.hearts - each * live.length) * 100) / 100;
 			world.coop.paid = Math.round(((world.coop.paid ?? 0) + each * live.length) * 100) / 100;
 		}
@@ -829,7 +857,15 @@ function endOfDay(world) {
 	else if (wasDry && !world.weather.dry) activity(world, { kind: 'weather', changes: ['the dry spell is over'] });
 	news(world);
 	seeValley(world);
+	// the day's cash books close: the last two weeks of each are kept
+	if (world.coop) {
+		(world.coop.days ??= []).push({ day: world.day - 1, ...(world.coop.today ?? {}) });
+		if (world.coop.days.length > 14) world.coop.days.shift();
+		world.coop.today = {};
+	}
 	for (const a of world.avens) {
+		(a.cashDays ??= []).push({ day: world.day - 1, cash: { ...(a.today?.cash ?? {}) } });
+		if (a.cashDays.length > 14) a.cashDays.shift();
 		a.yesterday = a.today;
 		a.today = blankDay();
 		if (!a.alive) continue;
