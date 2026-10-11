@@ -488,7 +488,7 @@ function fieldQuestions(world, a) {
 			if (free)
 				for (const [i, g] of GOODS.entries())
 					if (g !== f.crop) {
-						const switchCost = RULES.fieldChange ? openCost(slot, g, a) : 0;
+						const switchCost = RULES.fieldChange ? Math.round((openCost(slot, g, a) * Math.min(100, RULES.fieldChange)) / 1000) * 10 : 0;
 						if (switchCost && !can(switchCost)) continue;
 						levels.push(2 + i);
 						criteria.push(`change it to ${GOOD_LABEL[g]}${switchCost ? ` for ${switchCost} HEARTS` : ''} (back to level 1, nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, switchCost, 1, { [g]: fieldBase(g), [f.crop]: -fieldBase(f.crop) * levelShare(f.level) }, 0, here)}`);

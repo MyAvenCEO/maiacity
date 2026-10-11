@@ -202,8 +202,8 @@ export function invest(world, a, slot, code) {
 		const g = GOODS[code - 2];
 		if (!g || g === f.crop) return null;
 		if (world.day - f.since < (RULES.holdDays ?? 0)) return `couldn't change field ${slot + 1} yet (from day ${f.since + RULES.holdDays})`;
-		// fieldChange (World 36): a new crop is a new field's worth of work, paid as opening it
-		const cost = RULES.fieldChange ? openCost(slot, g, a) : 0;
+		// fieldChange (World 36): a new crop costs a share of opening the field with it (Samuel: not much, but a bit)
+		const cost = RULES.fieldChange ? Math.round((openCost(slot, g, a) * Math.min(100, RULES.fieldChange)) / 1000) * 10 : 0;
 		if (cost && !can(cost)) return `couldn't change field ${slot + 1} (${cost} HEARTS, keeping ${Math.round(reserve)} for food)`;
 		if (cost) pay(cost, 'fields');
 		change = { label: `changes field ${slot + 1}`, from: GOOD_LABEL[f.crop], to: GOOD_LABEL[g], unit: cost ? `for ${cost} HEARTS to the Maia City Coop, back to level 1` : 'back to level 1' };
