@@ -488,8 +488,10 @@ function fieldQuestions(world, a) {
 			if (free)
 				for (const [i, g] of GOODS.entries())
 					if (g !== f.crop) {
+						const switchCost = RULES.fieldChange ? openCost(slot, g, a) : 0;
+						if (switchCost && !can(switchCost)) continue;
 						levels.push(2 + i);
-						criteria.push(`change it to ${GOOD_LABEL[g]} (back to level 1, nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, 0, 1, { [g]: fieldBase(g), [f.crop]: -fieldBase(f.crop) * levelShare(f.level) }, 0, here)}`);
+						criteria.push(`change it to ${GOOD_LABEL[g]}${switchCost ? ` for ${switchCost} HEARTS` : ''} (back to level 1, nothing until it grows in ${RULES[`ramp_${g}`]} days): ${reckon(g, 1, 0, switchCost, 1, { [g]: fieldBase(g), [f.crop]: -fieldBase(f.crop) * levelShare(f.level) }, 0, here)}`);
 					}
 			else note = ` It was planted on day ${f.since}: its crop can be changed from day ${f.since + RULES.holdDays}.`;
 			// fieldClose (World 30): a farm can shrink as well as grow, so a crop the valley overgrows stops costing its keep
