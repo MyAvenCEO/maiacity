@@ -914,24 +914,8 @@ function payOut(S, dt, B) {
 		const over = co.tre[k] - wcTarget(S, k);
 		if (!(over > 0)) continue;
 		const pay = over * Math.min(1, (S.sc.payout * dt) / 365);
-		let div = pay * S.sc.divShare;
-		// eligible holdings
-		let H = 0;
-		for (let i = 0; i < N; i++) H += S.hold[i * M + k];
-		for (let j = 0; j < M; j++) if (j !== k && c[j].active) H += c[j].tre[k];
-		B.eligK[k] += H * dt;
-		if (!(H > 0)) div = 0;
-		if (div > 0) {
-			const f = div / H;
-			for (let i = 0; i < N; i++) {
-				const d = S.hold[i * M + k] * f;
-				S.hold[i * M + k] += d;
-				S.inc[i] += d * S.P[k];
-			}
-			for (let j = 0; j < M; j++) if (j !== k && c[j].active) c[j].tre[k] += c[j].tre[k] * f;
-			B.divK[k] += div;
-			B.divR += div * S.P[k];
-		}
+		const div = holders(S, k) > 0 ? pay * S.sc.divShare : 0;
+		if (div > 0) (co.tre[k] -= div), payDiv(S, k, div, B);
 		const work = pay - div;
 		if (work > 0 && hrs > 0) {
 			for (let i = 0; i < N; i++) {
@@ -939,18 +923,37 @@ function payOut(S, dt, B) {
 				if (w > 0) (S.hold[i * M + k] += w), (S.inc[i] += w * S.P[k]);
 			}
 			B.propR += work * S.P[k];
+			co.tre[k] -= work;
 		}
-		co.tre[k] -= div + (hrs > 0 ? work : 0);
 	}
-	// eligible holdings of COOPs that paid nothing this step still count for the yield
-	for (let k = 0; k < M; k++) {
-		const co = c[k];
-		if (!co.active || k === JUNK || co.tre[k] - wcTarget(S, k) > 0) continue;
-		let H = 0;
-		for (let i = 0; i < N; i++) H += S.hold[i * M + k];
-		for (let j = 0; j < M; j++) if (j !== k && c[j].active) H += c[j].tre[k];
-		B.eligK[k] += H * dt;
+}
+
+/** the MIND k that may get a dividend: what people and other treasuries hold (not the COOP itself, not the pools) */
+function holders(S, k) {
+	let H = 0;
+	for (let i = 0; i < S.N; i++) H += S.hold[i * M + k];
+	for (let j = 0; j < M; j++) if (j !== k && S.c[j].active) H += S.c[j].tre[k];
+	return H;
+}
+
+/** a dividend of div MIND k, pro rata to its holders (people and other treasuries) */
+function payDiv(S, k, div, B) {
+	const H = holders(S, k);
+	if (!(div > 0 && H > 0)) return;
+	const f = div / H, c = S.c;
+	for (let i = 0; i < S.N; i++) {
+		const d = S.hold[i * M + k] * f;
+		S.hold[i * M + k] += d;
+		S.inc[i] += d * S.P[k];
 	}
+	for (let j = 0; j < M; j++) if (j !== k && c[j].active) c[j].tre[k] += c[j].tre[k] * f;
+	B.divK[k] += div;
+	B.divR += div * S.P[k];
+}
+
+/** eligible holdings of every MIND, for the dividend yield */
+function eligible(S, dt, B) {
+	for (let k = 0; k < M; k++) if (S.c[k].active && k !== JUNK) B.eligK[k] += holders(S, k) * dt;
 }
 
 function deliver(S, dt, T, B) {
@@ -1122,7 +1125,12 @@ function deliver(S, dt, T, B) {
 		const co = c[s];
 		B.payR += pay[s] * P[s];
 		co.revenueR += pay[s] * P[s];
-		if (mech === 'b') treasuryIn(S, s, pay[s]), (B.treInR += pay[s] * P[s]);
+		if (mech === 'b') {
+			// Law 5: a share of every sale goes at once to everyone who holds the seller's MIND
+			const d = S.sc.turnDiv > 0 && s !== JUNK && holders(S, s) > 0 ? pay[s] * S.sc.turnDiv : 0;
+			treasuryIn(S, s, pay[s] - d), (B.treInR += (pay[s] - d) * P[s]);
+			if (d > 0) payDiv(S, s, d, B);
+		}
 		else if (mech === 'c') (S.tot.burned += pay[s]), (B.burned += pay[s]);
 		else if (mech === 'd') {
 			const target = wcTarget(S, s);
@@ -1372,6 +1380,7 @@ function step(S, dt) {
 	deliver(S, dt, T, B);
 	payWages(S, dt, B);
 	payOut(S, dt, B);
+	eligible(S, dt, B);
 	capTreasuries(S, B);
 	capacity(S, dt);
 	deposits(S, dt);
@@ -1500,7 +1509,7 @@ function closeYear(S) {
 
 // ── scenarios ────────────────────────────────────────────────────────────────────────────────────────────────────────
 const N0 = QUICK ? 120 : 250;
-const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', payout: 12, divShare: 0.5, wageR: WAGE_R, capDays: 60, arbTo: 'bot', avenRule: 'price', popGrowth: 0, years: 60 };
+const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', turnDiv: 0.2, payout: 12, divShare: 0, wageR: WAGE_R, capDays: 60, arbTo: 'bot', avenRule: 'price', popGrowth: 0, years: 60 };
 const DAILY_YEARS = 1;
 const DAILY_AFTER = 90; // days of daily steps after a shock
 
@@ -1650,21 +1659,23 @@ const results = {};
 const csvRows = [];
 // the main scenario and the side comparisons
 const RUNS = {
-	main: { mech: 'b', label: 'Main: pay → seller\'s treasury → paid out' },
-	hoard: { mech: 'b', payout: 0, label: 'Same, but treasuries pay out nothing beyond costs' },
+	main: { mech: 'b', label: 'Main: pay → 20 % to holders, the rest to the seller\'s treasury → paid out for work' },
+	hoard: { mech: 'b', payout: 0, label: 'Same, but treasuries keep their surplus' },
 	retire: { mech: 'd', label: 'Side: treasury surplus retired, not paid out' },
 	quota: { mech: 'a', label: 'Side: hold to use (rejected)' }
 };
 // the fairness ladder: how treasuries pay out their surplus, and how high prices are against the MIND stock
 const LADDER = [
-	['hoard', 'no payout (treasuries keep their surplus)', { payout: 0 }],
-	['work', 'all of it for work proposals', { divShare: 0 }],
-	['main', 'half dividends, half work (main)', {}],
-	['div', 'all of it as dividends', { divShare: 1 }],
-	['div-w5', 'all dividends, prices ×2.5 (wage 5 R/h)', { divShare: 1, wageR: 5 }],
-	['div-w10', 'all dividends, prices ×5 (wage 10 R/h)', { divShare: 1, wageR: 10 }],
+	['hoard', 'no dividend, surplus kept', { turnDiv: 0, payout: 0 }],
+	['work', 'no dividend, surplus for work proposals', { turnDiv: 0 }],
+	['half', 'no Law 5: surplus half as dividends, half for work', { turnDiv: 0, divShare: 0.5 }],
+	['turn10', 'Law 5 at 10 % of every sale', { turnDiv: 0.1 }],
+	['main', 'Law 5 at 20 % of every sale (main)', {}],
+	['turn30', 'Law 5 at 30 % of every sale', { turnDiv: 0.3 }],
+	['keep', 'Law 5 at 20 %, surplus kept (no work proposals)', { payout: 0 }],
+	['main-w5', 'main, prices ×2.5 (wage 5 R/h)', { wageR: 5 }],
 	['allwork', 'main, but everyone offers some work', { allWork: true }],
-	['retire', 'surplus retired (side)', { mech: 'd' }]
+	['retire', 'surplus retired (side)', { mech: 'd', turnDiv: 0 }]
 ];
 
 /** the R value of the partners' reserves in every pool that holds MIND k, at the end of a year */
@@ -1789,7 +1800,7 @@ P('');
 const S0 = results['main:base'];
 P(`Land: ${f(S0.landTotal / N0)} m² a person (${f(S0.landLeasable / N0)} leasable, the rest streets and parks), all of it the City COOP's. Seed capacities: 115 % of the starting need (goods exist, money does not) or 25 % (empty city).`);
 P('');
-P('Main scenario: a person pays for what a COOP makes in that COOP\'s MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). A tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools; sales are not levied. A treasury pays for inputs and building from other COOPs, for operating work (2 R an hour, in its prices) and ground rent; what it holds of its own MIND above 60 days of running costs and planned building it pays out within about a month, half as a dividend to everyone who holds its MIND (people and other treasuries, pro rata), half for accepted work proposals (to the people who offer work, by hours). No rent payout, no basic income.');
+P('Main scenario: a person pays for what a COOP makes in that COOP\'s MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). A tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools; sales are not levied. A treasury pays for inputs and building from other COOPs, for operating work (2 R an hour, in its prices) and ground rent; Law 5: 20 % of every sale goes at once, as a dividend in the seller\'s own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the people who offer work, by hours). No rent payout, no basic income.');
 P('');
 
 P('## 1. Main scenario against the side comparisons (60 years from a cold start with goods)');
