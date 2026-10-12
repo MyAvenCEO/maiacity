@@ -164,7 +164,7 @@
 
 <div class="scene" bind:this={box}>
 	{#each labels as l (l.id)}
-		<span class="tag" class:bad={l.bad} style:left="{l.x}px" style:top="{l.y}px">
+		<span class="tag" class:bad={l.bad} style:transform="translate({l.x.toFixed(1)}px, {l.y.toFixed(1)}px) translate(-50%, -100%)">
 			{l.id}<small>mind · {Math.round(l.share * 100)}%</small>
 		</span>
 	{/each}
@@ -191,9 +191,11 @@
 		height: 100%;
 	}
 
+	/* moved by transform, not left/top, so a label moving every frame never re-lays out the page */
 	.tag {
 		position: absolute;
-		transform: translate(-50%, -100%);
+		left: 0;
+		top: 0;
 		display: grid;
 		justify-items: center;
 		padding: 0.15rem 0.45rem;
