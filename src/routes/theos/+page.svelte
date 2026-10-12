@@ -813,8 +813,8 @@
 				<strong>Figure 11.</strong> The whole machine, simulated. People on the outer ring invest their daily HEARTS
 				(terracotta) into six COOPs. Each HEART converts into that COOP's MIND as it arrives, so the COOP
 				never holds a HEART. Half returns to its investor (gold), and half sinks into the COOP's treasury, its working
-				capital, whose ring grows and slowly melts. Every few seconds, one COOP becomes extractive and gives back less for each
-				HEART. The Avens see that a HEART buys less utility there, and they send investment to the other COOPs without
+				capital, whose ring grows and slowly melts. Every few seconds, one COOP becomes extractive: its MIND buys less utility, so
+				the gold half that returns is worth less (a smaller dot). The Avens see that a HEART buys less utility there, and they send investment to the other COOPs without
 				any vote. The animation runs the rates faster, so you can see the melting.
 			</figcaption>
 		</figure>
