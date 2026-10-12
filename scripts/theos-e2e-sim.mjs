@@ -45,21 +45,27 @@ const W_STAR = U / 2 / RATE; // the paper's resting MIND holding of a person, 62
 const M_STAR = U / RATE; // the paper's steady state of all money a person, 125,143
 
 // ── goods, in real units ─────────────────────────────────────────────────────────────────────────────────────────────
-const FOOD = 0, ENERGY = 1, HOUSING = 2, WATER = 3, GOODS = 4, CARE = 5, PANELS = 6, MAT = 7, NPROD = 8;
-const PNAME = ['food', 'energy', 'housing', 'water', 'goods', 'care', 'panels', 'materials'];
-const PUNIT = ['kcal', 'kWh', 'm²', 'L', 'kg', 'h', 'kWp', 'kg'];
-const NHH = 6; // what households buy: products 0..5
-const BASIC = [2000, 3, 20, 100, 0, 0]; // basic needs a person a day (shortfall below 98 % of these)
-const SAT = [2800, 12, 50, 250, 6, 4]; // satiation: basics saturate, goods and care only far up
-const BETA = [0.14, 0.14, 0.3, 0.04, 0.22, 0.16]; // Stone–Geary marginal budget shares above the basics
+// experiences / new products (EXPER) exist only in the dynamic world: a composite of new products and services, a unit
+// worth 1 R at genesis prices, with no hard satiation
+const FOOD = 0, ENERGY = 1, HOUSING = 2, WATER = 3, GOODS = 4, CARE = 5, EXPER = 6, PANELS = 7, MAT = 8, NPROD = 9;
+const PNAME = ['food', 'energy', 'housing', 'water', 'goods', 'care', 'experiences', 'panels', 'materials'];
+const PUNIT = ['kcal', 'kWh', 'm²', 'L', 'kg', 'h', 'unit', 'kWp', 'kg'];
+const NHH = 7; // what households buy: products 0..6 (experiences only in the dynamic world)
+const NHH_STATIC = 6; // the static world draws tastes for products 0..5 only
+const BASIC = [2000, 3, 20, 100, 0, 0, 0]; // basic needs a person a day (shortfall below 98 % of these)
+const SAT = [2800, 12, 50, 250, 6, 4, Infinity]; // satiation: basics saturate, goods and care only far up, experiences never
+const BETA = [0.14, 0.14, 0.3, 0.04, 0.22, 0.16, 0.35]; // Stone–Geary marginal budget shares above the basics
 const WAGE_R = 2; // R an hour of operating work, the default nominal anchor (costs, and so prices, are quoted in R)
-const PRICE_CAP = 2; // COOPs price between variable cost and twice full cost, and ration when sold out
+const PRICE_CAP = 2; // static world: COOPs price between variable cost and twice full cost, and ration when sold out
 const BUILT_SHARE = 0.2; // land the City keeps for streets and parks
 
 // ── COOPs: production functions (per unit of output, per unit of capacity) ───────────────────────────────────────────
 const CITY = 0, SOLAR = 1, PANEL = 2, AGRI = 3, GREEN = 4, HABITAT = 5, BUILD = 6, GOODSC = 7, CAREC = 8, JUNK = 9, GEO = 10, AGRIB = 11;
-const M = 12;
-const SPECS = [
+// the dynamic world's genesis rivals (slots 12–17) and the slots new COOPs are founded into (18 …)
+const WIND = 12, NEST = 13, MAKER = 14, CLINIC = 15, FEST = 16, ARTS = 17, FIRST_FREE = 18;
+const M_STATIC = 12;
+const M_DYN = QUICK ? 34 : 40;
+const BASE_SPECS = [
 	// the City COOP: owns all land (leases it), runs water, streets and parks; inputs per litre, plus a fixed upkeep a citizen
 	{ id: 'CITY', product: WATER, inputs: [[ENERGY, 0.0006], [MAT, 0.00002]], capital: [[MAT, 2], [ENERGY, 2]], dep: 0.02, land: 0.02, work: 0.00001, gMax: 0.5, upkeep: [[ENERGY, 0.3], [MAT, 0.3]], upkeepWork: 0.05 },
 	{ id: 'SOLAR', product: ENERGY, inputs: [[MAT, 0.002]], capital: [[PANELS, 0.365], [MAT, 15]], dep: 0.04, land: 2.2, work: 0.0005, gMax: 0.5 },
@@ -75,7 +81,34 @@ const SPECS = [
 	{ id: 'GEO', product: ENERGY, inputs: [[MAT, 0.0003]], capital: [[MAT, 150], [ENERGY, 600]], dep: 0.0125, land: 0.5, work: 0.0002, gMax: 0.5, lumpy: true },
 	{ id: 'AGRI-B', product: FOOD, inputs: [[ENERGY, 0.0004], [MAT, 0.00002]], capital: [[MAT, 0.5]], dep: 0.05, land: 0.28, work: 0.00005, gMax: 0.5 }
 ];
-const NAMES = SPECS.map((s) => s.id);
+// the dynamic world: every household good starts with two rivals that use somewhat different technology (full cost
+// within about ±10 % of each other at genesis prices), plus two COOPs for experiences / new products
+const RIVAL_SPECS = [
+	{ id: 'WIND', product: ENERGY, inputs: [[MAT, 0.003]], capital: [[MAT, 600], [ENERGY, 180]], dep: 0.05, land: 1.4, work: 0.0008, gMax: 0.5 },
+	{ id: 'NEST', product: HOUSING, inputs: [[ENERGY, 0.04], [MAT, 0.012]], capital: [[MAT, 420], [ENERGY, 140]], dep: 0.015, land: 0.6, work: 0.0025, gMax: 0.3 },
+	{ id: 'MAKER', product: GOODS, inputs: [[ENERGY, 4.2], [MAT, 1.35]], capital: [[MAT, 380], [ENERGY, 400]], dep: 0.08, land: 1.6, work: 0.33, gMax: 0.5 },
+	{ id: 'CLINIC', product: CARE, inputs: [[ENERGY, 0.25], [MAT, 0.04]], capital: [[MAT, 80], [ENERGY, 30]], dep: 0.06, land: 2.5, work: 0.95, gMax: 0.5 },
+	{ id: 'FEST', product: EXPER, inputs: [[ENERGY, 0.12], [MAT, 0.03]], capital: [[MAT, 40], [ENERGY, 30]], dep: 0.08, land: 0.8, work: 0.4, gMax: 0.6 },
+	{ id: 'ARTS', product: EXPER, inputs: [[ENERGY, 0.08], [MAT, 0.05]], capital: [[MAT, 60], [ENERGY, 20]], dep: 0.06, land: 1.0, work: 0.45, gMax: 0.6 }
+];
+const EMPTY_SPEC = { id: '', product: -1, inputs: [], capital: [], dep: 0, land: 0, work: 0, gMax: 0 };
+// genesis split of each product between its sellers (dynamic world)
+const GEN_SHARE = { [CITY]: 1, [SOLAR]: 0.6, [WIND]: 0.4, [PANEL]: 1, [AGRI]: 0.75, [GREEN]: 0.25, [HABITAT]: 0.6, [NEST]: 0.4, [BUILD]: 1, [GOODSC]: 0.6, [MAKER]: 0.4, [CAREC]: 0.6, [CLINIC]: 0.4, [FEST]: 0.5, [ARTS]: 0.5 };
+const GENESIS_DYN = [CITY, SOLAR, PANEL, AGRI, GREEN, HABITAT, BUILD, GOODSC, CAREC, WIND, NEST, MAKER, CLINIC, FEST, ARTS];
+// how long unsold stock keeps: food and goods can be stored (and rot); everything else is made to order (dynamic world)
+const ROT = { [FOOD]: 0.02, [GOODS]: 0.002 };
+const STOCK_DAYS = 14;
+const PCODE = ['FOOD', 'ENERGY', 'HOME', 'WATER', 'MAKE', 'CARE', 'EXP', 'PANEL', 'MAT'];
+// the run being stepped: its number of MIND slots, its COOPs' production functions and names (bound per run)
+let M = M_STATIC;
+let SPECS = BASE_SPECS;
+let NAMES = BASE_SPECS.map((s) => s.id);
+const BASE_NAMES = BASE_SPECS.map((s) => s.id);
+function bind(S) {
+	M = S.M;
+	SPECS = S.specs;
+	NAMES = S.names;
+}
 const BASE_COOPS = 9;
 const REF = [SOLAR, HABITAT, CITY]; // the reference unit R: geometric mean of these three MIND prices
 // equal-weight baskets the COOPs chose (each member has ≥ 3 partners; the graph is connected)
@@ -84,6 +117,11 @@ const BASKETS = [
 	[PANEL, BUILD, SOLAR, GOODSC],
 	[AGRI, GREEN, CAREC, CITY],
 	[HABITAT, BUILD, CITY, GREEN, GOODSC, CAREC]
+];
+const DYN_BASKETS = [
+	[WIND, NEST, CITY, BUILD, AGRI],
+	[MAKER, CLINIC, CITY, SOLAR, GREEN],
+	[FEST, ARTS, CITY, HABITAT, GOODSC, WIND]
 ];
 
 // ── seeded randomness ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -105,7 +143,7 @@ function gini(v, n) {
 
 // ── initial sizing: a Leontief pass for what N people need, so capacities and land start in proportion ─────────────────
 function requirements(N) {
-	const hh = [2600, 10, 40, 200, 1.2, 1.5]; // close to what people want once they can afford it
+	const hh = [2600, 10, 40, 200, 1.2, 1.5, 0]; // close to what people want once they can afford it
 	const X = new Float64Array(M);
 	for (let it = 0; it < 300; it++) {
 		const need = new Float64Array(NPROD);
@@ -132,25 +170,47 @@ function requirements(N) {
 	return { X, K, land };
 }
 
+/** the dynamic world's genesis sizing: the same Leontief pass, each product split between its rivals (GEN_SHARE) */
+function requirementsDyn(N) {
+	const hh = [2600, 10, 40, 200, 1.2, 1.5, 2];
+	const X = new Float64Array(M);
+	for (let it = 0; it < 300; it++) {
+		const need = new Float64Array(NPROD);
+		for (let g = 0; g < NHH; g++) need[g] += hh[g] * N;
+		for (const k of GENESIS_DYN) {
+			const sp = SPECS[k], K = X[k] / 0.85;
+			for (const [j, a] of sp.inputs) need[j] += a * X[k];
+			for (const [j, c] of sp.capital) need[j] += (c * K * (sp.dep + 0.05)) / 365;
+			if (sp.upkeep) for (const [j, a] of sp.upkeep) need[j] += a * N;
+		}
+		for (const k of GENESIS_DYN) X[k] = need[SPECS[k].product] * GEN_SHARE[k];
+	}
+	const K = X.map((x) => x / 0.85);
+	let land = 0;
+	for (const k of GENESIS_DYN) land += SPECS[k].land * K[k];
+	return { X, K, land };
+}
+
 // initial goods prices, R a unit (quoted in the reference unit, charged in own MIND at its TWAP price), chosen so the basic bundle costs about the daily investor half (tatonnement
 // moves them from there)
-const P0 = [0.0009, 0.25, 0.12, 0.003, 2, 1.5, 400, 0.15];
+const P0 = [0.0009, 0.25, 0.12, 0.003, 2, 1.5, 1, 400, 0.15];
 
 // ── the world ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function initPerson(S, i, day) {
+	const dyn = !!S.sc.dynamic, nh = dyn ? NHH : NHH_STATIC;
 	let bs = 0;
-	for (let g = 0; g < NHH; g++) {
+	for (let g = 0; g < nh; g++) {
 		const v = BETA[g] * Math.exp(0.35 * gauss(S));
 		S.beta[i * NHH + g] = v;
 		bs += v;
 	}
-	for (let g = 0; g < NHH; g++) S.beta[i * NHH + g] /= bs;
+	for (let g = 0; g < nh; g++) S.beta[i * NHH + g] /= bs;
 	let vs = 0;
 	for (let k = 0; k < M; k++) {
 		let v = 0;
-		if (k < BASE_COOPS) {
+		if (dyn ? GEN_SHARE[k] !== undefined : k < BASE_COOPS) {
 			const p = SPECS[k].product;
-			v = p >= 0 && p < NHH ? S.beta[i * NHH + p] * (k === AGRI ? 0.75 : k === GREEN ? 0.25 : 1) : 0.03;
+			v = p >= 0 && p < NHH ? S.beta[i * NHH + p] * (dyn ? GEN_SHARE[k] : k === AGRI ? 0.75 : k === GREEN ? 0.25 : 1) : 0.03;
 			if (k === CITY) v += 0.06; // water, streets, parks, land
 			v *= Math.exp(0.5 * gauss(S));
 		}
@@ -165,8 +225,10 @@ function initPerson(S, i, day) {
 	// post-AI (main): no human labour is paid. Every human's Aven proposes work items (operating and building), and the
 	// COOPs pay the Aven's human for them; Avens differ in what they deliver (lognormal, spread sc.avenSigma, mean 2).
 	// The old world (sc.labour): 40 % of people offer no work (children, the old, carers), the rest offer hours.
+	// The dynamic world flags every tenth person as a test group whose Aven delivers nothing: they live from what they own.
 	const sg = S.sc.avenSigma ?? 0.6;
 	S.workH[i] = S.sc.labour && rnd(S) < 0.4 ? 0 : 2 * Math.exp(sg * gauss(S) - (sg * sg) / 2);
+	if (dyn && S.sc.zeroAven && i % 10 === 9) (S.workH[i] = 0), (S.zeroAven[i] = 1);
 	S.ybar[i] = 12;
 	S.born[i] = day;
 	S.ring[i] = 0;
@@ -179,14 +241,28 @@ function newCoop(k) {
 		costEma: 0, capEma: 0, heartsEma: 0, outValEma: 0, poolDue: 0, baskets: [], insolv: 0, module: 0, ordIn: new Float64Array(M),
 		ordCap: new Float64Array(M), selfIn: 0, selfCap: 0, need: new Float64Array(M), tgt: new Float64Array(M),
 		buy: new Float64Array(M), sell: new Float64Array(M), rentDue: 0, wageOwn: 0, Keff: 0, made: 0, failed: false,
-		leaseFee: 0, revenueR: 0
+		leaseFee: 0, revenueR: 0,
+		// dynamic world: productivity (index and its yearly growth), a taste shifter, unsold stock, a capacity shock, its life
+		A: 1, ga: 0, taste: 0, stock: 0, shockUntil: -1, bornT: 0, endT: null, endWhy: null, netEma: 0, dryDays: 0, lowDays: 0,
+		inR: 0, outR: 0, marginEma: 0, peakMade: 0
 	};
 }
 
+/** a COOP's yearly productivity growth: about 2 % on average, uneven (sc.prodSd), between −0.5 % and 6 % */
+function drawGrowth(S) {
+	if (!S.sc.prodGrowth) return 0;
+	return Math.max(-0.005, Math.min(0.06, S.sc.prodMean + S.sc.prodSd * gauss(S)));
+}
+
 function init(sc) {
-	const N0 = sc.N0;
+	const N0 = sc.N0, dyn = !!sc.dynamic;
 	const Nmax = sc.popGrowth ? Math.ceil(N0 * Math.exp(sc.popGrowth * sc.years) * 1.05) + 5 : N0;
-	const S = { sc, t: 0, rs: sc.seed >>> 0 || 1, N: N0, Nmax, popAcc: 0 };
+	const S = { sc, t: 0, rs: sc.seed >>> 0 || 1, N: N0, Nmax, popAcc: 0, M: dyn ? M_DYN : M_STATIC };
+	S.specs = dyn
+		? Array.from({ length: M_DYN }, (_, k) => ({ ...(k < M_STATIC ? BASE_SPECS[k] : k < FIRST_FREE ? RIVAL_SPECS[k - M_STATIC] : EMPTY_SPEC) }))
+		: BASE_SPECS.map((s) => ({ ...s }));
+	S.names = S.specs.map((s) => s.id);
+	bind(S);
 	S.hold = new Float64Array(Nmax * M);
 	S.alloc = new Float64Array(Nmax * M);
 	S.values = new Float64Array(Nmax * M);
@@ -196,15 +272,18 @@ function init(sc) {
 	S.inc = new Float64Array(Nmax);
 	S.born = new Float64Array(Nmax);
 	S.ring = new Uint8Array(Nmax);
+	S.zeroAven = new Uint8Array(Nmax);
 	S.cons = new Float64Array(Nmax * NHH);
 	S.reqU = new Float64Array(Nmax * M);
 	S.pbuy = new Float64Array(Nmax * M);
 	S.psell = new Float64Array(Nmax * M);
 	for (let i = 0; i < Nmax; i++) initPerson(S, i, 0);
 	S.c = SPECS.map((_, k) => newCoop(k));
-	const req = requirements(N0);
+	const gen = dyn ? GENESIS_DYN : [...Array(BASE_COOPS).keys()];
+	if (dyn) for (let k = 0; k < M; k++) S.c[k].active = gen.includes(k);
+	const req = dyn ? requirementsDyn(N0) : requirements(N0);
 	S.req0 = req;
-	for (let k = 0; k < BASE_COOPS; k++) {
+	for (const k of gen) {
 		const co = S.c[k];
 		co.K = req.K[k] * sc.seedCap;
 		co.land = SPECS[k].land * co.K;
@@ -214,7 +293,7 @@ function init(sc) {
 	}
 	S.landTotal = (req.land * 1.6) / (1 - BUILT_SHARE); // fixed for ever; 20 % of it streets and parks
 	S.landLeasable = req.land * 1.6;
-	S.pools = BASKETS.map((m) => newPool(m));
+	S.pools = (dyn ? BASKETS.concat(DYN_BASKETS) : BASKETS).map((m) => newPool(m));
 	S.pools.forEach((p, pi) => p.m.forEach((k) => S.c[k].baskets.push(pi)));
 	S.P = new Float64Array(M).fill(1); // consensus MIND prices in R; par is the prior until a pool prices a MIND
 	S.Ptw = new Float64Array(M).fill(1);
@@ -225,9 +304,33 @@ function init(sc) {
 	S.routeCostEma = 0.01;
 	S.leaseUnmet = 0;
 	S.tot = { issued: 0, melted: 0, burned: 0, arbR: 0 };
+	S.ref = REF.slice();
 	S.Y = [];
 	S.cur = newBucket();
 	S.first = { d1: null, d30: { pd: 0, s: 0, sg: [0, 0, 0, 0] }, routeIn: 0, routeCost: 0 };
+	if (dyn) {
+		// the work-item rate, R a unit. Main: the Avens' rate card (2 R a unit; Avens are AI and deliver what is asked).
+		// Ladder (sc.avenMarket): each Aven's capacity is fixed, sized so the genesis plants use 95 % of it, and the rate
+		// moves with how much of it is used
+		S.wage = sc.wageR;
+		let wk = 0;
+		for (const k of gen) wk += SPECS[k].work * req.X[k] + (SPECS[k].upkeepWork ? SPECS[k].upkeepWork * N0 : 0);
+		S.avenCap = wk / 0.95; // work units all Avens can deliver a day
+		S.avenU = 0.95;
+		for (const k of gen) (S.c[k].ga = drawGrowth(S)), (S.c[k].taste = 0);
+		S.tasteLg = new Float64Array(NHH);
+		S.tasteG = new Float64Array(NHH).fill(1);
+		S.events = [];
+		S.highDays = new Float64Array(NPROD);
+		S.lastFound = new Float64Array(NPROD).fill(-1e9);
+		S.founder = new Int32Array(Nmax).fill(-1);
+		S.founderUntil = new Float64Array(Nmax);
+		S.divI = new Float64Array(Nmax); // Law 5 dividends a person received this step (R)
+		S.realAcc = new Float64Array(Nmax); // real consumption at base-year prices, summed over the year
+		S.realDays = 0;
+		S.watch = []; // windows after shocks and failures: did anyone lose basics?
+		S.proof = { covMin: Infinity, covMinT: 0, covMinLate: Infinity, covMinLateT: 0, shortPdLate: 0, pdLate: 0, zStrictMinLate: Infinity, zCovMinLate: Infinity };
+	}
 	buildGraph(S);
 	return S;
 }
@@ -245,7 +348,12 @@ function newBucket() {
 		burned: 0, retired: 0, issued: 0, payR: 0, cpiSum: 0, cpiN: 0, rentR: 0, wagesR: 0, divR: 0, propR: 0, pFail: 0,
 		divK: new Float64Array(M), eligK: new Float64Array(M), treInR: 0, heartInR: 0, salesHHR: 0, b2bR: 0,
 		// the round trip (R): own half to wallets, the tenth to the pools, dividends to people and to treasuries, melt by place
-		walHeartR: 0, poolHeartR: 0, divHHR: 0, divTR: 0, meltWR: 0, meltTR: 0, meltPR: 0, meltAR: 0
+		walHeartR: 0, poolHeartR: 0, divHHR: 0, divTR: 0, meltWR: 0, meltTR: 0, meltPR: 0, meltAR: 0,
+		// dynamic world: failures (liquidation to holders, what holders and pools lost), stock that rotted, events, MIND count
+		// melted, Aven work demand, and the per-person proof checks
+		liqHHR: 0, liqTR: 0, lossWalR: 0, lossTreR: 0, lossPoolR: 0, burnTreR: 0, rotR: 0, failN: 0, exitN: 0, foundN: 0, shockN: 0,
+		meltCnt: 0, workU: 0, wageSum: 0, avenUSum: 0, covMin: Infinity, zPd: 0, zStrictOk: 0, zStrictMin: Infinity, zStrictSum: 0,
+		zCovMin: Infinity, zShort: 0, watchPd: 0, watchShort: 0, basicMindSum: 0
 	};
 }
 
@@ -394,7 +502,7 @@ function arbitrage(S) {
 function updatePrices(S, dt) {
 	const P = S.P;
 	for (const p of S.pools) {
-		let ok = true;
+		let ok = !p.dead;
 		for (let i = 0; i < p.m.length; i++) if (!(p.x[i] > 1e-12)) ok = false;
 		p.live = ok;
 	}
@@ -418,8 +526,8 @@ function updatePrices(S, dt) {
 		}
 		for (let k = 0; k < M; k++) if (den[k] > 0) lnP[k] = num[k] / den[k];
 		let ref = 0, nr = 0;
-		for (const k of REF) if (S.live[k]) (ref += lnP[k]), nr++;
-		if (nr === REF.length) for (let k = 0; k < M; k++) if (den[k] > 0) lnP[k] -= ref / nr;
+		for (const k of S.ref) if (S.live[k]) (ref += lnP[k]), nr++;
+		if (nr === S.ref.length) for (let k = 0; k < M; k++) if (den[k] > 0) lnP[k] -= ref / nr;
 	}
 	const a = Math.min(1, dt / 7);
 	for (let k = 0; k < M; k++) {
@@ -445,7 +553,7 @@ const effCap = (S, k) => {
 	const co = S.c[k], sp = SPECS[k];
 	let K = co.K;
 	if (sp.land > 0) K = Math.min(K, co.land / sp.land);
-	return K * co.prodF;
+	return K * co.prodF * co.A;
 };
 
 function meltAll(S, f) {
@@ -457,7 +565,7 @@ function meltAll(S, f) {
 	for (const p of S.pools) for (let i = 0; i < p.x.length; i++) (lost += p.x[i]), (pl += p.x[i] * P[p.m[i]]), (p.x[i] *= f);
 	for (let k = 0; k < M; k++) (lost += S.arb[k]), (a += S.arb[k] * P[k]), (S.arb[k] *= f);
 	S.tot.melted += lost * g;
-	if (S.cur) (S.cur.meltWR += w * g), (S.cur.meltTR += t * g), (S.cur.meltPR += pl * g), (S.cur.meltAR += a * g);
+	if (S.cur) (S.cur.meltWR += w * g), (S.cur.meltTR += t * g), (S.cur.meltPR += pl * g), (S.cur.meltAR += a * g), (S.cur.meltCnt += lost * g);
 }
 
 function grow(S, dt) {
@@ -490,7 +598,7 @@ function invest(S, dt) {
 	const ea = Math.min(1, dt / 90);
 	for (let k = 0; k < M; k++) {
 		const co = S.c[k];
-		if (to[k] > 0) treasuryIn(S, k, to[k], true), (S.cur.treInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.heartInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.poolHeartR += to[k] * POOL_SHARE * S.P[k]);
+		if (to[k] > 0) treasuryIn(S, k, to[k], true), (S.cur.treInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.heartInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.poolHeartR += to[k] * POOL_SHARE * S.P[k]), (co.inR += to[k] * (1 - POOL_SHARE) * S.P[k]);
 		co.heartsEma += ea * ((2 * to[k]) / dt - co.heartsEma);
 		S.cur.hearts[k] += 2 * to[k];
 	}
@@ -514,7 +622,8 @@ function sellerTable(S) {
 		if (!t.s.length) continue;
 		const lo = Math.min(...t.sh);
 		let sum = 0;
-		const w = t.sh.map((p) => Math.pow(p / lo, -6));
+		// logit, ε = 6; the dynamic world adds each seller's drifting taste shifter (demand shifts between rivals)
+		const w = t.sh.map((p, x) => Math.pow(p / lo, -6) * Math.exp(S.c[t.s[x]].taste));
 		w.forEach((x) => (sum += x));
 		let pi = 0;
 		t.sh = w.map((x, i) => {
@@ -540,7 +649,7 @@ function demand(budget, pi, beta, bo, out) {
 		return;
 	}
 	let extra = budget - basic;
-	const free = [true, true, true, true, true, true];
+	const free = new Array(NHH).fill(true);
 	for (let g = 0; g < NHH; g++) {
 		out[g] = BASIC[g];
 		if (!isFinite(pi[g])) (free[g] = false), (out[g] = 0);
@@ -589,13 +698,13 @@ function plan(S, dt, T) {
 		const want = new Float64Array(NPROD), wantCap = new Float64Array(NPROD);
 		// inputs: replace this step's use and close 30 % of the gap to a 14-day stock
 		const useDay = new Float64Array(NPROD);
-		for (const [j, a] of sp.inputs) useDay[j] += plannedDay * a;
+		for (const [j, a] of sp.inputs) useDay[j] += plannedDay * (a / co.A);
 		if (sp.upkeep) for (const [j, a] of sp.upkeep) useDay[j] += a * S.N;
 		for (let j = 0; j < NPROD; j++) if (useDay[j] > 0) want[j] += Math.max(0, useDay[j] * dt + 0.3 * Math.min(1, dt / 3) * (useDay[j] * 14 - co.inv[j]));
 		// capacity: grow while sold out and covered, replace wear while used, else let it shrink
 		let dK = 0;
 		if (sp.lumpy && co.K <= 0) {
-			const margin = unitR(S, sp.product) - varCostR(S, k), payback = margin > 0 ? capCostR(S, k) / (margin * 365) : Infinity;
+			const margin = unitR(S, sp.product) - varCostR(S, k), payback = margin > 0 ? capCostR(S, k) / co.A / (margin * 365) : Infinity;
 			dK = mech === 'a' || payback <= 0.4 / sp.dep ? co.module : 0;
 		}
 		else {
@@ -604,12 +713,19 @@ function plan(S, dt, T) {
 			// grow only what pays back within 40 % of the asset's life at today's prices (quotas: no prices, demand only);
 			// replace wear on whatever is still used
 			let growOK = true;
-			if (mech !== 'a') {
+			if (S.sc.dynamic) {
+				// dynamic world: demand exceeds capacity when the COOP is sold out or its price stands above full cost; a COOP
+				// invests its surplus there first (up to its ramp limit gMax at a 30 % margin or when rationing), as long as it
+				// still holds 20 days of running costs
+				const fc = fullCostR(S, k), m = fc > 0 ? co.priceR / fc - 1 : 0;
+				growOK = false;
+				if (S.sc.growth !== false && co.zEma >= 0.8 && cover >= 20) g = sp.gMax * Math.min(1, Math.max(0, (m - 0.05) / 0.25, (co.zEma - 0.95) / 0.15));
+			} else if (mech !== 'a') {
 				const margin = co.priceR - varCostR(S, k), payback = margin > 0 ? capCostR(S, k) / (margin * 365) : Infinity;
 				const life = sp.dep > 0 ? 1 / sp.dep : 50;
 				growOK = payback <= 0.4 * life;
 			}
-			if (co.zEma >= 0.9 && cover >= 20 && growOK) g = sp.gMax * Math.min(1, (co.zEma - 0.85) / 0.2);
+			if (growOK && co.zEma >= 0.9 && cover >= 20) g = sp.gMax * Math.min(1, (co.zEma - 0.85) / 0.2);
 			const repl = co.zEma >= 0.6 ? sp.dep : 0;
 			dK = (co.K * (g + repl) * dt) / 365;
 		}
@@ -650,8 +766,8 @@ function plan(S, dt, T) {
 			}
 		}
 		co.rentDue = k === CITY || S.t < (co.graceUntil || 0) ? 0 : co.land * S.rho * dt + co.leaseFee * dt;
-		const hours = sp.work * plannedDay * dt + (sp.upkeepWork ? sp.upkeepWork * S.N * dt : 0);
-		co.wageOwn = S.P[k] > 0 ? (hours * S.sc.wageR) / S.P[k] : 0;
+		const hours = (sp.work / co.A) * plannedDay * dt + (sp.upkeepWork ? sp.upkeepWork * S.N * dt : 0);
+		co.wageOwn = S.P[k] > 0 ? (hours * wageR(S)) / S.P[k] : 0;
 		// what it needs to hold
 		if (mech === 'a') {
 			for (let s = 0; s < M; s++) {
@@ -685,6 +801,9 @@ function plan(S, dt, T) {
 	}
 }
 
+/** the rate for a unit of Aven work, R: fixed in the static world (the nominal anchor), set by demand in the dynamic one */
+const wageR = (S) => (S.sc.dynamic ? S.wage : S.sc.wageR);
+
 const valueOf = (S, v) => {
 	let s = 0;
 	for (let k = 0; k < M; k++) s += v[k] * S.P[k];
@@ -697,6 +816,9 @@ function trade(S, dt, T, B) {
 	const sellQ = new Float64Array(M), buyQ = new Float64Array(M);
 	const pi = new Float64Array(NHH), x = new Float64Array(NHH), need = new Float64Array(M), tgt = new Float64Array(M);
 	for (let g = 0; g < NHH; g++) pi[g] = T[g].pi;
+	const bb = new Float64Array(NHH);
+	let basicR = 0;
+	for (let g = 0; g < 4; g++) basicR += BASIC[g] * (isFinite(pi[g]) ? pi[g] : 0);
 	const reb = 1 - Math.exp(-(mech === 'a' ? 0.1 : 0.2) * dt);
 	const spend = new Float64Array(M);
 	for (let i = 0; i < N; i++) {
@@ -705,10 +827,19 @@ function trade(S, dt, T, B) {
 		for (let k = 0; k < M; k++) W += S.hold[b + k] * P[k];
 		need.fill(0);
 		tgt.fill(0);
-		if (mech !== 'a') {
+		if (S.sc.dynamic) {
+			// dynamic world: a person spends a share sc.spendRate a year of what they own (they keep about 1 / spendRate years
+			// of spending); basics come first. At rest the share of income spent is then spendRate / (spendRate + melt).
+			const bd = Math.max((S.sc.spendRate * W) / 365, basicR);
+			const bud = Math.min(W, dt * bd);
+			for (let g = 0; g < NHH; g++) bb[g] = S.beta[i * NHH + g] * S.tasteG[g];
+			demand(bud / dt, pi, bb, 0, x);
+		} else if (mech !== 'a') {
 			const y = S.ybar[i];
 			const bud = Math.min(W, dt * Math.max(0, y + (W - 3 * y) / 15));
 			demand(bud / dt, pi, S.beta, i * NHH, x);
+		}
+		if (mech !== 'a') {
 			let spendR = 0;
 			for (let g = 0; g < NHH; g++) {
 				const t = T[g];
@@ -859,7 +990,8 @@ function orders(h, b, need, tgt, reb, P, pbuy, psell, sellQ, buyQ, self) {
 	for (let s = 0; s < M; s++) {
 		const hs = h[b + s];
 		const keep = Math.max(tgt[s], need[s]);
-		const sq = f1 * Math.max(0, hs - keep) + f2 * Math.max(0, Math.min(hs, keep) - need[s]);
+		// a MIND with no market (a failed COOP's, taken out of the pools) cannot be sold
+		const sq = P[s] > 0 ? f1 * Math.max(0, hs - keep) + f2 * Math.max(0, Math.min(hs, keep) - need[s]) : 0;
 		h[b + s] -= sq;
 		if (isP) {
 			psell[b + s] = sq;
@@ -881,6 +1013,7 @@ function payRent(S, dt, B) {
 		if (!co.active || k === CITY || co.rentDue <= 0) continue;
 		const paid = Math.min(co.rentDue, co.tre[CITY]);
 		co.tre[CITY] -= paid;
+		co.outR += paid * S.P[CITY];
 		paidAll += paid;
 		if (paid < co.rentDue * 0.999) {
 			const f = 1 - paid / co.rentDue;
@@ -889,6 +1022,7 @@ function payRent(S, dt, B) {
 	}
 	B.rentR += paidAll * S.P[CITY];
 	B.treInR += paidAll * S.P[CITY];
+	S.c[CITY].inR += paidAll * S.P[CITY];
 	treasuryIn(S, CITY, paidAll);
 }
 
@@ -940,6 +1074,12 @@ function payOut(S, dt, B) {
 /** the MIND k that may get a dividend: what people and other treasuries hold (not the COOP itself, not the pools) */
 function holders(S, k) {
 	let H = 0;
+	if (S.sc.dynamic) {
+		// (rounding can leave −1e-16 behind a payment; it must not take a share)
+		for (let i = 0; i < S.N; i++) H += Math.max(0, S.hold[i * M + k]);
+		for (let j = 0; j < M; j++) if (j !== k && S.c[j].active) H += Math.max(0, S.c[j].tre[k]);
+		return H;
+	}
 	for (let i = 0; i < S.N; i++) H += S.hold[i * M + k];
 	for (let j = 0; j < M; j++) if (j !== k && S.c[j].active) H += S.c[j].tre[k];
 	return H;
@@ -951,13 +1091,15 @@ function payDiv(S, k, div, B) {
 	if (!(div > 0 && H > 0)) return;
 	const f = div / H, c = S.c;
 	let hh = 0;
+	const dI = S.divI, pos = !!S.sc.dynamic;
 	for (let i = 0; i < S.N; i++) {
-		const d = S.hold[i * M + k] * f;
+		const d = (pos ? Math.max(0, S.hold[i * M + k]) : S.hold[i * M + k]) * f;
 		S.hold[i * M + k] += d;
 		S.inc[i] += d * S.P[k];
+		if (dI) dI[i] += d * S.P[k];
 		hh += d;
 	}
-	for (let j = 0; j < M; j++) if (j !== k && c[j].active) c[j].tre[k] += c[j].tre[k] * f;
+	for (let j = 0; j < M; j++) if (j !== k && c[j].active) c[j].tre[k] += (pos ? Math.max(0, c[j].tre[k]) : c[j].tre[k]) * f;
 	B.divHHR += hh * S.P[k];
 	B.divTR += (div - hh) * S.P[k];
 	B.divK[k] += div;
@@ -1031,7 +1173,15 @@ function deliver(S, dt, T, B) {
 		const co = c[s], sp = SPECS[s];
 		if (!co.active || sp.product < 0) continue;
 		let Y = co.Keff * dt;
-		for (const [j, a] of sp.inputs) if (a > 0) Y = Math.min(Y, co.inv[j] / a);
+		for (const [j, a] of sp.inputs) if (a > 0) Y = Math.min(Y, co.inv[j] / (a / co.A));
+		// dynamic world: food and goods are made ahead into a stock (STOCK_DAYS of demand) and sold from it; unsold stock
+		// rots; everything else is made to order
+		co._prod = -1;
+		if (S.sc.dynamic && ROT[sp.product] !== undefined) {
+			const target = STOCK_DAYS * co.reqEma;
+			co._prod = Math.min(Y, Math.max(0, co.reqEma * dt + 0.3 * Math.min(1, dt / 3) * (target - co.stock)));
+			Y = co._prod + co.stock;
+		}
 		const capAll = totC[s] + co.selfCap;
 		const all = tot[s] + totH[s] + co.selfIn + capAll;
 		co.zNow = co.Keff > 0 ? all / (co.Keff * dt) : all > 0 ? 9 : 0;
@@ -1043,6 +1193,13 @@ function deliver(S, dt, T, B) {
 			f2[s] = totU[s] > 0 ? Math.min(1, spare / totU[s]) : 0;
 			spare = Math.max(0, spare - f2[s] * totU[s]);
 			fi[s] = f1[s];
+			fc[s] = capAll > 0 ? Math.min(1, spare / capAll) : 0;
+		} else if (S.sc.dynamic) {
+			// dynamic world: a sold-out COOP serves running orders (households and other COOPs' inputs) pro rata, with no
+			// priority for anyone, and new capacity from what is left; its price does the rest
+			const run = tot[s] + co.selfIn + totH[s];
+			fi[s] = fl[s] = run > 0 ? Math.min(1, Y / run) : 0;
+			spare = Math.max(0, Y - run);
 			fc[s] = capAll > 0 ? Math.min(1, spare / capAll) : 0;
 		} else {
 			// inputs first (production keeps running), then households and new capacity in proportion
@@ -1077,6 +1234,7 @@ function deliver(S, dt, T, B) {
 				d = fl[s] * r;
 				const pm = d * c[s].price;
 				S.hold[b + s] -= pm;
+				if (S.spendI) S.spendI[i] += pm * P[s];
 				pay[s] += pm;
 				B.salesHHR += pm * P[s];
 			}
@@ -1121,6 +1279,7 @@ function deliver(S, dt, T, B) {
 			if (mech !== 'a') {
 				const pm = (dIn + dCap) * c[s].price;
 				co.tre[s] -= pm;
+				co.outR += dIn * c[s].price * P[s]; // running costs only: building new capacity is investment, not a loss
 				pay[s] += pm;
 				B.b2bR += pm * P[s];
 			}
@@ -1142,6 +1301,7 @@ function deliver(S, dt, T, B) {
 			// Law 5, every sale pays its owners: a share of every sale goes at once to everyone who holds the seller's MIND
 			const d = S.sc.turnDiv > 0 && s !== JUNK && holders(S, s) > 0 ? pay[s] * S.sc.turnDiv : 0;
 			treasuryIn(S, s, pay[s] - d), (B.treInR += (pay[s] - d) * P[s]);
+			co.inR += (pay[s] - d) * P[s];
 			if (d > 0) payDiv(S, s, d, B);
 		}
 		else if (mech === 'c') (S.tot.burned += pay[s]), (B.burned += pay[s]);
@@ -1161,9 +1321,17 @@ function deliver(S, dt, T, B) {
 		if (!co.active) continue;
 		if (sp.product >= 0) {
 			const made = co._made || 0;
-			for (const [j, a] of sp.inputs) co.inv[j] = Math.max(0, co.inv[j] - a * made);
+			// what it produced: its deliveries, or, for goods made ahead, this step's production (the rest went to stock)
+			const prodQ = co._prod >= 0 ? co._prod : made;
+			if (co._prod >= 0) {
+				const left = Math.max(0, co.stock + co._prod - made), rotted = left * (1 - Math.exp(-ROT[sp.product] * dt));
+				co.stock = left - rotted;
+				B.rotR += rotted * co.priceR;
+			}
+			for (const [j, a] of sp.inputs) co.inv[j] = Math.max(0, co.inv[j] - (a / co.A) * prodQ);
 			co.made = made / dt;
-			hoursD += sp.work * made;
+			co.prodD = prodQ / dt;
+			hoursD += (sp.work / co.A) * prodQ;
 			const piR = T[sp.product].s.includes(s) ? (mech === 'a' ? P[s] / Math.max(1e-12, co.q) * RATE / 365 : co.price * P[s]) : 0;
 			co.outValEma += ea * ((made * piR) / dt - co.outValEma);
 			co.zEma += Math.min(1, dt / 14) * ((co.zNow || 0) - co.zEma);
@@ -1189,17 +1357,21 @@ function payWages(S, dt, B) {
 	let supply = 0;
 	for (let i = 0; i < N; i++) supply += S.workH[i] * dt;
 	const demandH = S.hoursD || 0;
+	if (S.sc.dynamic) (S.avenU = demandH / dt / S.avenCap), (B.workU += demandH);
 	if (supply <= 0 || demandH <= 0) return;
-	const eD = Math.min(1, supply / demandH);
+	// static world: Avens are paid for at most what they offer; dynamic world: every work item done is paid at the rate,
+	// and the rate itself moves with how much of the Avens' capacity is used (adjust)
+	const eD = S.sc.dynamic ? 1 : Math.min(1, supply / demandH);
 	const wageM = new Float64Array(M);
 	let totR = 0;
 	for (let k = 0; k < M; k++) {
 		const co = c[k], sp = SPECS[k];
 		if (!co.active || !(S.P[k] > 0)) continue;
-		const h = (sp.work * (co.made || 0) * dt + (sp.upkeepWork ? sp.upkeepWork * N * dt : 0)) * eD;
-		const due = (h * S.sc.wageR) / S.P[k];
+		const h = ((sp.work / co.A) * (co.prodD || 0) * dt + (sp.upkeepWork ? sp.upkeepWork * N * dt : 0)) * eD;
+		const due = (h * wageR(S)) / S.P[k];
 		const paid = Math.min(due, co.tre[k]);
 		co.tre[k] -= paid;
+		co.outR += paid * S.P[k];
 		wageM[k] = paid;
 		totR += paid * S.P[k];
 	}
@@ -1266,7 +1438,39 @@ function deposits(S, dt) {
 function adjust(S, dt) {
 	const mech = S.sc.mech, c = S.c, P = S.P;
 	const st = Math.min(dt, 7);
-	if (mech !== 'a') {
+	if (S.sc.dynamic) {
+		// dynamic world: free prices. A COOP sets its price in its own MIND: up while it is sold out or rationing, down while
+		// capacity sits idle or stock piles up. Its normal choice is not to sell below its variable cost; with stock that
+		// would rot (more than twice its stock target) it clears it down to 60 % of that. Law 5 sends a share of every sale to
+		// the owners, so "variable cost" here is what a unit costs the treasury: variable cost ÷ (1 − Law 5's share). No cap.
+		for (let s = 0; s < M; s++) {
+			const co = c[s], sp = SPECS[s];
+			if (!co.active || sp.product < 0) continue;
+			const z = co.zNow || 0;
+			let step = (z > 1 ? 0.1 : 0.05) * st * (z - 0.95);
+			let clear = false;
+			if (ROT[sp.product] !== undefined && co.reqEma > 0) {
+				const sr = co.stock / (STOCK_DAYS * co.reqEma);
+				step -= 0.03 * st * Math.max(0, sr - 1.2);
+				clear = sr > 2;
+			}
+			step = Math.max(-0.25, Math.min(0.25, step));
+			const tw = Math.max(1e-9, S.Ptw[s]);
+			co.price *= Math.exp(step);
+			// what a unit costs the treasury: its variable cost, of which the treasury keeps only 1 − Law 5's share of the price
+			const floorR = varCostR(S, s) / (1 - S.sc.turnDiv);
+			co.price = Math.max(co.price, ((clear ? 0.6 : 1) * floorR) / tw, 1e-12);
+			co.priceR = co.price * tw;
+		}
+		// the work-item rate (ladder only): up while the Avens' capacity is more than 95 % used, down while it is not
+		const u = S.avenU;
+		if (S.sc.avenMarket) {
+			S.wage *= Math.exp(Math.max(-0.02, Math.min(0.02, 0.02 * st * (u - 0.95))));
+			S.wage = Math.max(S.wage, 1e-3);
+		}
+		S.cur.wageSum += S.wage * dt;
+		S.cur.avenUSum += u * dt;
+	} else if (mech !== 'a') {
 		for (let s = 0; s < M; s++) {
 			const co = c[s], sp = SPECS[s];
 			if (!co.active || sp.product < 0) continue;
@@ -1293,15 +1497,15 @@ function adjust(S, dt) {
 /** variable cost of a unit in R: inputs, wages, ground rent (and, for the City, nothing for its own land) */
 function varCostR(S, k) {
 	const sp = SPECS[k], co = S.c[k];
-	let cost = sp.work * S.sc.wageR + (k === CITY ? 0 : (sp.land * S.rho * S.P[CITY]) / Math.max(0.05, co.prodF));
-	for (const [j, a] of sp.inputs) cost += a * unitR(S, j);
+	let cost = (sp.work / co.A) * wageR(S) + (k === CITY ? 0 : (sp.land * S.rho * S.P[CITY]) / Math.max(0.05, co.prodF * co.A));
+	for (const [j, a] of sp.inputs) cost += (a / co.A) * unitR(S, j);
 	return cost;
 }
 /** full cost of a unit in R: variable cost plus wear and a 10 %/yr return on the capacity it uses */
 function fullCostR(S, k) {
 	const sp = SPECS[k], co = S.c[k];
 	const u = Math.max(0.5, Math.min(1, co.Keff > 0 ? (co.made || 0) / co.Keff : 1));
-	return varCostR(S, k) + (capCostR(S, k) * (sp.dep + 0.1)) / 365 / u;
+	return varCostR(S, k) + ((capCostR(S, k) / co.A) * (sp.dep + 0.1)) / 365 / u;
 }
 /** what a unit of capacity costs to build, in R */
 function capCostR(S, k) {
@@ -1344,6 +1548,8 @@ function updateAlloc(S, dt) {
 	for (let k = 0; k < M; k++) {
 		const co = c[k];
 		if (!co.active || !S.live[k] || k === JUNK && !S.live[k]) continue;
+		// dynamic world: Avens invest in a new COOP's MIND only once its pool has traded for a year (its founders do before)
+		if (S.sc.dynamic && S.t - co.bornT < 365 && co.bornT > 0) continue;
 		let s;
 		if (rule === 'output') s = co.heartsEma > 0 ? (co.outValEma + (k === CITY ? co.rentEma || 0 : 0)) / co.heartsEma : 0;
 		else s = S.Ptw[k] * (1 - S.routeCostEma * (1 - S.spendShare[k]));
@@ -1366,6 +1572,15 @@ function updateAlloc(S, dt) {
 			for (let k = 0; k < M; k++) S.alloc[b + k] = k === JUNK ? 1 : 0;
 			continue;
 		}
+		// Law 3: the founders of a new COOP invest all their HEARTS in it for its first year
+		if (S.founder && S.founder[i] >= 0) {
+			const fk = S.founder[i];
+			if (S.t < S.founderUntil[i] && c[fk].active) {
+				for (let k = 0; k < M; k++) S.alloc[b + k] = k === fk ? 1 : 0;
+				continue;
+			}
+			S.founder[i] = -1;
+		}
 		for (let k = 0; k < M; k++) {
 			const tg = any ? 0.25 * S.values[b + k] + 0.75 * w[k] : S.values[b + k];
 			S.alloc[b + k] += rate * ((c[k].active ? tg : 0) - S.alloc[b + k]);
@@ -1376,10 +1591,314 @@ function updateAlloc(S, dt) {
 	for (let i = 0; i < N; i++) S.ybar[i] += ea * (S.inc[i] / dt - S.ybar[i]);
 }
 
+// ── the dynamic world: productivity, shocks, taste drift, foundings (Law 3), failures and exits ─────────────────────────
+/** productivity growth, capacity shocks and drifting tastes, at the start of a step */
+function world(S, dt, B) {
+	const sc = S.sc, c = S.c, sq = Math.sqrt(dt / 365);
+	for (let k = 0; k < M; k++) {
+		const co = c[k], sp = SPECS[k];
+		if (!co.active || sp.product < 0) continue;
+		if (sc.prodGrowth) co.A *= Math.exp((co.ga * dt) / 365);
+		if (co.shockUntil >= 0) {
+			if (S.t >= co.shockUntil) (co.prodF = 1), (co.shockUntil = -1);
+		} else if (sc.shockRate > 0 && rnd(S) < (sc.shockRate * dt) / 365) {
+			// a capacity shock: 30–50 % of the plant out for 2–8 months
+			co.prodF = 1 - (0.3 + 0.2 * rnd(S));
+			co.shockUntil = S.t + 60 + 180 * rnd(S);
+			B.shockN++;
+			S.events.push({ t: S.t, type: 'shock', k, name: NAMES[k], product: sp.product, note: `−${Math.round((1 - co.prodF) * 100)} % capacity for ${Math.round(co.shockUntil - S.t)} days` });
+			S.watch.push(co.shockUntil + 30);
+		}
+		// demand shifts between rivals: each seller's taste shifter drifts (mean-reverting over about 5 years)
+		if (sc.tasteSd > 0) co.taste += (-co.taste * dt) / (5 * 365) + sc.tasteSd * sq * gauss(S);
+	}
+	// and between goods: what people want of each good drifts too (mean-reverting over about 10 years)
+	if (sc.tasteSd > 0)
+		for (let g = 0; g < NHH; g++) {
+			S.tasteLg[g] += (-S.tasteLg[g] * dt) / (10 * 365) + 0.5 * sc.tasteSd * sq * gauss(S);
+			S.tasteG[g] = Math.exp(S.tasteLg[g]);
+		}
+}
+
+/** per person, every step: basic-need coverage, real consumption at base-year prices, and the zero-Aven group's checks */
+function proofStep(S, dt, T, B) {
+	let basicR = 0;
+	for (let g = 0; g < 4; g++) basicR += BASIC[g] * (isFinite(T[g].pi) ? T[g].pi : 0);
+	let watching = false;
+	for (const u of S.watch) if (S.t < u) watching = true;
+	for (let i = 0; i < S.N; i++) {
+		const b = i * NHH;
+		let cov = Infinity, real = 0;
+		for (let g = 0; g < 4; g++) cov = Math.min(cov, S.cons[b + g] / BASIC[g]);
+		for (let g = 0; g < NHH; g++) real += S.cons[b + g] * P0[g];
+		S.realAcc[i] += real * dt;
+		if (cov < B.covMin) B.covMin = cov;
+		if (process.env.DBG && cov < 0.9 && S.t > 400) {
+			let W = 0;
+			const hs = [];
+			for (let k = 0; k < M; k++) (W += S.hold[i * M + k] * S.P[k]), Math.abs(S.hold[i * M + k] * S.P[k]) > 1 && hs.push(`${NAMES[k]}:${(S.hold[i * M + k] * S.P[k]).toFixed(0)}`);
+			console.log('DBG t', S.t.toFixed(1), 'i', i, 'cov', cov.toFixed(3), 'cons', Array.from(S.cons.subarray(b, b + 4)).map((x) => x.toFixed(1)).join(' '), 'W', W.toFixed(1), 'div', (S.divI[i] / dt).toFixed(3), 'basic', basicR.toFixed(3), 'pi', [0, 1, 2, 3].map((g) => T[g].pi.toPrecision(3)).join(' '), hs.join(' '));
+		}
+		if (watching) (B.watchPd += dt), cov < 0.98 && (B.watchShort += dt);
+		if (S.zeroAven[i]) {
+			const r = basicR > 0 ? S.divI[i] / dt / basicR : 0; // Law 5 dividends a day ÷ a day's basic bundle
+			B.zPd += dt;
+			if (r >= 1) B.zStrictOk += dt;
+			if (r < B.zStrictMin) B.zStrictMin = r;
+			B.zStrictSum += r * dt;
+			if (cov < B.zCovMin) B.zCovMin = cov;
+			if (cov < 0.98) B.zShort += dt;
+		}
+		S.divI[i] = 0;
+	}
+	S.realDays += dt;
+}
+
+/** a slot for a new COOP: one never used, else one whose COOP ended more than 30 days ago (all its MIND is retired) */
+const freeSlot = (S) => {
+	for (let k = FIRST_FREE; k < M; k++) if (!S.c[k].used && !S.c[k].active && !S.c[k].failed) return k;
+	for (let k = 1; k < M; k++) if (k !== JUNK && k !== GEO && k !== AGRIB && S.c[k].failed && !S.c[k].active && S.t - S.c[k].endT > 30) return k;
+	return -1;
+};
+/** clean a slot for reuse: the old COOP's MIND is fully retired, so only prices and per-slot state are reset */
+function resetSlot(S, k) {
+	S.P[k] = 1;
+	S.Ptw[k] = 1;
+	S.arb[k] = 0;
+	S.spendShare[k] = 0;
+	S.live[k] = 0;
+	for (let i = 0; i < S.Nmax; i++) (S.hold[i * M + k] = 0), (S.alloc[i * M + k] = 0), (S.values[i * M + k] = 0), (S.reqU[i * M + k] = 0), (S.pbuy[i * M + k] = 0), (S.psell[i * M + k] = 0);
+	for (const co of S.c) co.tre[k] = 0;
+}
+
+/** Law 3: a new COOP bootstraps from its founders' HEARTS and a basket with three partners (the City and two others) */
+function newBasket(S, kk) {
+	const cand = [];
+	for (let k = 0; k < M; k++) if (k !== kk && k !== CITY && S.c[k].active && SPECS[k].product >= 0 && S.live[k] && S.c[k].baskets.length) cand.push(k);
+	const partners = [CITY];
+	while (partners.length < 3 && cand.length) partners.push(cand.splice(Math.floor(rnd(S) * cand.length), 1)[0]);
+	S.pools.push(newPool([kk, ...partners]));
+	const pi = S.pools.length - 1;
+	S.c[kk].baskets.push(pi);
+	for (const k of partners) S.c[k].baskets.push(pi);
+	buildGraph(S);
+	S.P[kk] = 1;
+	S.Ptw[kk] = 1;
+	// its founders: a few people (not the zero-Aven test group, who only own) put all their HEARTS into it for a year
+	const nF = Math.max(3, Math.round(S.sc.founderShare * S.N));
+	for (let n = 0, tries = 0; n < nF && tries < 50 * nF; tries++) {
+		const i = Math.floor(rnd(S) * S.N);
+		if (S.zeroAven[i] || S.founder[i] >= 0) continue;
+		S.founder[i] = kk;
+		S.founderUntil[i] = S.t + 365;
+		S.values[i * M + kk] = 0.1;
+		n++;
+	}
+	return partners;
+}
+
+function newName(S, base) {
+	for (let n = 2; ; n++) {
+		const id = `${base}${n}`;
+		if (!S.names.includes(id)) return id;
+	}
+}
+
+/** a rival is founded where a product's margin over full cost stayed above 30 % for 90 days */
+function found(S, g, B) {
+	const kk = freeSlot(S);
+	if (kk < 0) return;
+	const sellers = [];
+	let tot = 0, Amax = 0, pmin = Infinity;
+	for (let k = 0; k < M; k++) {
+		const co = S.c[k];
+		if (co.active && SPECS[k].product === g && co.Keff > 0) sellers.push(k), (tot += co.made), (Amax = Math.max(Amax, co.A)), (pmin = Math.min(pmin, co.priceR));
+	}
+	if (!sellers.length) return;
+	const tpl = SPECS[sellers[Math.floor(rnd(S) * sellers.length)]];
+	resetSlot(S, kk);
+	const r = () => 0.85 + 0.3 * rnd(S);
+	S.specs[kk] = { ...tpl, id: newName(S, PCODE[g]), inputs: tpl.inputs.map(([j, a]) => [j, a * r()]), capital: tpl.capital.map(([j, c]) => [j, c * r()]), work: tpl.work * r(), land: tpl.land * r(), lumpy: true, upkeep: undefined, upkeepWork: undefined };
+	S.names[kk] = S.specs[kk].id;
+	const co = (S.c[kk] = newCoop(kk));
+	co.used = co.active = true;
+	co.bornT = S.t;
+	co.A = Amax * (0.95 + 0.1 * rnd(S)); // it starts with today's technology
+	co.ga = drawGrowth(S);
+	co.module = Math.max(1e-6, 0.08 * tot); // its first plant: 8 % of the market
+	co.reqEma = co.module;
+	co.priceR = co.price = pmin;
+	const partners = newBasket(S, kk);
+	S.lastFound[g] = S.t;
+	S.highDays[g] = 0;
+	B.foundN++;
+	S.events.push({ t: S.t, type: 'found', k: kk, name: NAMES[kk], product: g, note: `rival in ${PNAME[g]}, partners ${partners.map((x) => NAMES[x]).join(', ')}` });
+}
+
+/** a failed COOP's plant and land go to the City COOP, which leases them to a successor (same plant, new MIND) */
+function successor(S, fk, B) {
+	const kk = freeSlot(S);
+	if (kk < 0) return -1;
+	const a = S.c[fk], g = SPECS[fk].product;
+	resetSlot(S, kk);
+	S.specs[kk] = { ...SPECS[fk], id: newName(S, `${NAMES[fk].replace(/-B\d*$/, '')}-B`), lumpy: false };
+	S.names[kk] = S.specs[kk].id;
+	const b = (S.c[kk] = newCoop(kk));
+	b.used = b.active = true;
+	b.bornT = S.t;
+	b.K = a.K;
+	b.land = a.land;
+	b.capInv = a.capInv.slice();
+	b.inv = a.inv.slice();
+	b.stock = a.stock;
+	b.reqEma = a.reqEma;
+	b.zEma = 1;
+	b.priceR = b.price = a.priceR;
+	b.graceUntil = S.t + 180;
+	b.leaseFee = S.P[CITY] > 0 ? (capCostR(S, fk) * a.K * 0.06) / 365 / S.P[CITY] : 0; // 6 %/yr of the plant's value, in CITYmind
+	let As = 0, n = 0;
+	for (let k = 0; k < M; k++) if (k !== fk && S.c[k].active && SPECS[k].product === g) (As += S.c[k].A), n++;
+	b.A = Math.max(a.A, n ? As / n : a.A); // new management brings the rivals' average practice
+	b.ga = drawGrowth(S);
+	a.K = 0;
+	a.land = 0;
+	a.capInv.fill(0);
+	a.inv.fill(0);
+	a.stock = 0;
+	newBasket(S, kk);
+	for (let i = 0; i < S.N; i++) S.values[i * M + kk] = S.values[i * M + fk];
+	return kk;
+}
+
+/**
+ * a COOP ends (failure: treasury dry and losing; exit: it lost its market): its MIND leaves the pools (the pools' reserve
+ * of it is retired), what its treasury holds of other MINDs goes to the holders of its MIND pro rata, and all of its MIND
+ * is retired: it is worth nothing from now on
+ */
+function endCoop(S, k, type, why, B) {
+	const co = S.c[k], P = S.P, N = S.N;
+	const kk = type === 'fail' && co.K > 0 ? successor(S, k, B) : -1;
+	// the pools: retire their reserve of it, and take it out
+	for (let pi = 0; pi < S.pools.length; pi++) {
+		const p = S.pools[pi], at = p.pos[k];
+		if (at < 0) continue;
+		B.lossPoolR += p.x[at] * P[k];
+		S.tot.burned += p.x[at];
+		B.burned += p.x[at];
+		const keep = p.m.map((_, i) => i).filter((i) => i !== at);
+		p.m = keep.map((i) => p.m[i]);
+		p.x = Float64Array.from(keep.map((i) => p.x[i]));
+		p.depR = Float64Array.from(keep.map((i) => p.depR[i]));
+		p.pos = new Int32Array(M).fill(-1);
+		p.m.forEach((m, i) => (p.pos[m] = i));
+		if (p.m.length < 2) {
+			p.dead = true;
+			p.live = false;
+			for (const m of p.m) S.c[m].baskets = S.c[m].baskets.filter((x) => x !== pi);
+		}
+	}
+	co.baskets = [];
+	// liquidation: its treasury's other MINDs to the holders of its MIND (people and other treasuries)
+	const H = holders(S, k);
+	for (let j = 0; j < M; j++) {
+		const a = co.tre[j];
+		if (j === k || !(a > 0)) continue;
+		co.tre[j] = 0;
+		if (H > 0) {
+			const f = a / H;
+			let hh = 0;
+			for (let i = 0; i < N; i++) {
+				const d = Math.max(0, S.hold[i * M + k]) * f;
+				S.hold[i * M + j] += d;
+				S.inc[i] += d * P[j];
+				hh += d;
+			}
+			for (let x = 0; x < M; x++) if (x !== k && S.c[x].active) S.c[x].tre[j] += Math.max(0, S.c[x].tre[k]) * f;
+			B.liqHHR += hh * P[j];
+			B.liqTR += (a - hh) * P[j];
+		} else (S.tot.burned += a), (B.burned += a);
+	}
+	// retire all of its MIND: in its own treasury, its pool dues, in wallets and in other treasuries
+	let r = co.tre[k] + co.poolDue;
+	B.burnTreR += r * P[k];
+	co.tre[k] = 0;
+	co.poolDue = 0;
+	for (let i = 0; i < N; i++) (B.lossWalR += S.hold[i * M + k] * P[k]), (r += S.hold[i * M + k]), (S.hold[i * M + k] = 0), (S.alloc[i * M + k] = 0), (S.values[i * M + k] = 0);
+	for (let x = 0; x < M; x++) if (x !== k) (B.lossTreR += S.c[x].tre[k] * P[k]), (r += S.c[x].tre[k]), (S.c[x].tre[k] = 0);
+	r += S.arb[k];
+	S.arb[k] = 0;
+	S.tot.burned += r;
+	B.burned += r;
+	co.active = false;
+	co.failed = true;
+	co.endT = S.t;
+	co.endWhy = why;
+	co.K = 0;
+	co.land = 0;
+	co.capInv.fill(0);
+	co.inv.fill(0);
+	co.stock = 0;
+	P[k] = 0;
+	S.Ptw[k] = 0;
+	// the reference unit R follows the successor (or the largest remaining seller of the same product)
+	const ri = S.ref.indexOf(k);
+	if (ri >= 0) {
+		let alt = kk;
+		if (alt < 0) {
+			let best = 0;
+			for (let x = 0; x < M; x++) if (S.c[x].active && SPECS[x].product === SPECS[k].product && S.c[x].made > best) (best = S.c[x].made), (alt = x);
+		}
+		if (alt >= 0) S.ref[ri] = alt;
+		else S.ref.splice(ri, 1);
+	}
+	if (type === 'fail') B.failN++;
+	else B.exitN++;
+	S.events.push({ t: S.t, type, k, name: NAMES[k], product: SPECS[k].product, note: why + (kk >= 0 ? `; the City leases its plant to ${NAMES[kk]}` : '') });
+	S.watch.push(S.t + 180);
+	buildGraph(S);
+}
+
+/** margins, cash flow, foundings, failures and exits, at the end of a step */
+function lifecycle(S, dt, B) {
+	const c = S.c, sc = S.sc, a90 = Math.min(1, dt / 90);
+	const out = new Float64Array(NPROD), mw = new Float64Array(NPROD), n = new Int32Array(NPROD);
+	for (let k = 0; k < M; k++) {
+		const co = c[k], sp = SPECS[k];
+		if (!co.active || sp.product < 0) continue;
+		co.netEma += a90 * ((co.inR - co.outR) / dt - co.netEma);
+		co.inR = co.outR = 0;
+		const fc = fullCostR(S, k), m = fc > 0 ? co.priceR / fc - 1 : 0;
+		co.marginEma += a90 * (m - co.marginEma);
+		if (co.Keff > 0) (out[sp.product] += co.made), (mw[sp.product] += co.made * co.marginEma), n[sp.product]++;
+	}
+	for (let k = 0; k < M; k++) {
+		const co = c[k], sp = SPECS[k];
+		if (!co.active || sp.product < 0 || k === CITY) continue;
+		const cover = co.costEma > 0 ? valueOf(S, co.tre) / co.costEma : 99;
+		// failure: the treasury runs dry (under 30 days of running costs) and it keeps losing MIND, for 180 days
+		if (cover < 30 && co.netEma < 0) co.dryDays += dt;
+		else co.dryDays = Math.max(0, co.dryDays - dt);
+		// a newly founded COOP that never built its first plant in 3 years is wound up
+		if (co.dryDays >= 180) endCoop(S, k, 'fail', 'treasury dry and losing MIND for 180 days', B);
+		else if (co.K <= 0 && S.t - co.bornT > 3 * 365) endCoop(S, k, 'exit', 'never built its first plant', B);
+	}
+	const building = new Uint8Array(NPROD);
+	for (let k = 0; k < M; k++) if (c[k].active && SPECS[k].product >= 0 && c[k].K <= 0) building[SPECS[k].product] = 1;
+	for (let g = 0; g < NPROD; g++) {
+		if (g === WATER || !(out[g] > 0)) continue;
+		const m = mw[g] / out[g];
+		S.highDays[g] = m > 0.3 ? S.highDays[g] + dt : 0;
+		// a rival is founded when the product's margin over full cost (sales-weighted, smoothed over 90 days) stayed above
+		// 30 % for 90 days, from year sc.foundFrom, at most one every sc.foundGap years a product, none while one is building
+		if (S.highDays[g] >= 90 && S.t >= sc.foundFrom * 365 && S.t - S.lastFound[g] >= sc.foundGap * 365 && !building[g] && n[g] < sc.maxSellers) found(S, g, B);
+	}
+}
+
 function step(S, dt) {
 	const B = S.cur;
 	if (S.sc.popGrowth) grow(S, dt);
 	meltAll(S, Math.exp((-RATE * dt) / 365));
+	if (S.sc.dynamic) world(S, dt, B);
 	invest(S, dt);
 	for (let k = 0; k < M; k++) if (S.c[k].active) S.c[k].Keff = effCap(S, k);
 	if (S.sc.mech === 'a') quotas(S);
@@ -1393,6 +1912,7 @@ function step(S, dt) {
 	deliver(S, dt, T, B);
 	payWages(S, dt, B);
 	payOut(S, dt, B);
+	if (S.sc.dynamic) proofStep(S, dt, T, B);
 	eligible(S, dt, B);
 	capTreasuries(S, B);
 	capacity(S, dt);
@@ -1404,10 +1924,67 @@ function step(S, dt) {
 	S.c[CITY].rentEma = (S.c[CITY].rentEma || 0) + Math.min(1, dt / 90) * ((rentNow - (S._rentPrev || 0)) / dt - (S.c[CITY].rentEma || 0));
 	S._rentPrev = rentNow;
 	updateAlloc(S, dt);
+	if (S.sc.dynamic) lifecycle(S, dt, B);
 	B.steps++;
 	B.days += dt;
 	S.t += dt;
 	if (Math.floor(S.t / 365) > S.Y.length) closeYear(S);
+}
+
+/** the dynamic world's yearly record: units people can feel, dispersion, competition, and the per-person proof checks */
+function dynYear(S, B, W, split, yk) {
+	const N = S.N, P = S.P, c = S.c;
+	const inc = B.walHeartR + B.wagesR + B.propR + B.divHHR + B.liqHHR;
+	// a day of living: what an average person's daily consumption costs, R
+	const L = B.pd > 0 ? B.salesHHR / B.pd : null;
+	// MIND prices of the COOPs that are alive: min, max, spread of log prices
+	const lp = [];
+	for (let k = 0; k < M; k++) if (c[k].active && S.live[k] && P[k] > 0) lp.push(Math.log(P[k]));
+	const mu = lp.reduce((a, b) => a + b, 0) / Math.max(1, lp.length);
+	const sdLog = lp.length > 1 ? Math.sqrt(lp.reduce((a, b) => a + (b - mu) * (b - mu), 0) / (lp.length - 1)) : 0;
+	// each MIND's return this year: price change plus dividends (paid in itself), from the start of the year
+	const rk = new Array(M).fill(null);
+	const P0y = S.prevP0;
+	if (P0y) for (let k = 0; k < M; k++) if (c[k].active && P0y[k] > 0 && P[k] > 0) rk[k] = (P[k] * (1 + yk[k])) / P0y[k] - 1;
+	// real consumption a person (base-year prices, R a day): by decile, the zero-Aven group, the poorest person
+	const real = new Float64Array(N), days = Math.max(1e-9, S.realDays);
+	let zr = 0, zn = 0, zMin = Infinity, zW = 0, zWmin = Infinity;
+	for (let i = 0; i < N; i++) {
+		real[i] = S.realAcc[i] / days;
+		S.realAcc[i] = 0;
+		if (S.zeroAven[i]) (zr += real[i]), zn++, (zMin = Math.min(zMin, real[i])), (zW += W[i]), (zWmin = Math.min(zWmin, W[i]));
+	}
+	S.realDays = 0;
+	const sorted = Array.from(real).sort((a, b) => a - b);
+	const dec = [];
+	for (let d = 0; d < 10; d++) {
+		const a = Math.floor((d * N) / 10), b = Math.floor(((d + 1) * N) / 10);
+		let s = 0;
+		for (let i = a; i < b; i++) s += sorted[i];
+		dec.push(s / Math.max(1, b - a));
+	}
+	const cpi = B.cpiN ? B.cpiSum / B.cpiN : null; // a day's basic bundle, R
+	const mindR = split.total > 0 ? split.totalR / split.total : 1; // R a MIND, on average over all MIND
+	return {
+		L, inc: inc / Math.max(1, B.pd), spend: B.salesHHR / Math.max(1, B.pd), spendShare: inc > 0 ? B.salesHHR / inc : null,
+		meltWshare: inc > 0 ? B.meltWR / inc : null, treShareR: split.totalR > 0 ? split.treR / split.totalR : null,
+		poolShareR: split.totalR > 0 ? split.poolR / split.totalR : null, pMin: lp.length ? Math.exp(Math.min(...lp)) : null,
+		pMax: lp.length ? Math.exp(Math.max(...lp)) : null, sdLog, nLive: lp.length, rk,
+		wage: B.days > 0 ? B.wageSum / B.days : null, avenU: B.days > 0 ? B.avenUSum / B.days : null,
+		covMin: B.covMin, shortPd: B.sAny, pd: B.pd, watchPd: B.watchPd, watchShort: B.watchShort,
+		zStrictShare: B.zPd > 0 ? B.zStrictOk / B.zPd : null, zStrictMin: B.zStrictMin, zStrictMean: B.zPd > 0 ? B.zStrictSum / B.zPd : null,
+		zCovMin: B.zCovMin, zShort: B.zShort, zW: zn ? zW / zn : null, zWmin: zn ? zWmin : null, zReal: zn ? zr / zn : null, zRealMin: zn ? zMin : null,
+		dec, realMean: real.reduce((a, b) => a + b, 0) / N, giniReal: gini(real, N),
+		basicR: cpi, basicMind: cpi !== null ? cpi / mindR : null, mindR,
+		failN: B.failN, exitN: B.exitN, foundN: B.foundN, shockN: B.shockN, rotR: B.rotR, meltCnt: B.meltCnt, burned: B.burned,
+		liqHH: B.liqHHR, liqT: B.liqTR, lossWal: B.lossWalR, lossTre: B.lossTreR, lossPool: B.lossPoolR, burnTre: B.burnTreR,
+		meanA: (() => {
+			let a = 0, w = 0;
+			for (let k = 0; k < M; k++) if (c[k].active && SPECS[k].product >= 0) (a += c[k].A * c[k].made * c[k].priceR), (w += c[k].made * c[k].priceR);
+			return w > 0 ? a / w : null;
+		})(),
+		coops: c.map((co, k) => ({ name: NAMES[k], product: SPECS[k].product, active: co.active, failed: co.failed, made: co.made, priceR: co.priceR, A: co.A, ga: co.ga, K: co.K, P: P[k], cover: co.active && co.costEma > 0 ? valueOf(S, co.tre) / co.costEma : null, bornT: co.bornT, endT: co.endT }))
+	};
 }
 
 // ── yearly snapshot ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1492,6 +2069,7 @@ function closeYear(S) {
 	for (let i = 0; i < N; i++) if (S.workH[i] > med) (wW += W[i]), nW++;
 		else (wO += W[i]), nO++;
 	S.prevHold = S.hold.slice(0, N * M);
+	S.prevP0 = S.prevP;
 	S.prevP = Float64Array.from(P);
 	S.prevN = N;
 	let ringY = null, ringW = null;
@@ -1503,7 +2081,9 @@ function closeYear(S) {
 		ringW = na && nb && wb > 0 ? wa / na / (wb / nb) : null;
 	}
 	const poolMem = S.pools.map((p) => ({ m: p.m.slice(), v: Array.from(p.x).map((x, i) => x * P[p.m[i]]) }));
+	const dyn = S.sc.dynamic ? dynYear(S, B, W, split, yk) : null;
 	S.Y.push({
+		dyn,
 		year: S.Y.length + 1, N, t: S.t,
 		short: B.pd > 0 ? B.sAny / B.pd : 0, shortG: B.sg.map((x) => (B.pd > 0 ? x / B.pd : 0)),
 		newShort: B.newPd > 0 ? B.newS / B.newPd : null,
@@ -1529,11 +2109,19 @@ function closeYear(S) {
 // ── scenarios ────────────────────────────────────────────────────────────────────────────────────────────────────────
 const N0 = QUICK ? 120 : 250;
 const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', turnDiv: 0.2, payout: 12, divShare: 0, wageR: WAGE_R, capDays: 60, arbTo: 'bot', avenRule: 'price', popGrowth: 0, years: 60 };
+// the dynamic world (the new main): free prices, rivals in every good, experiences, reserves of 9 months, productivity
+// growth, shocks, foundings and failures, a zero-Aven test group (every tenth person)
+const DYN = {
+	...BASE, dynamic: true, capDays: 270, spendRate: 0.5, zeroAven: true, prodGrowth: true,
+	prodMean: 0.02, prodSd: 0.015, shockRate: 0.05, tasteSd: 0.15, maxSellers: 6, founderShare: 0.04, growth: true, foundFrom: 3, foundGap: 2,
+	avenMarket: false
+};
 const DAILY_YEARS = 1;
 const DAILY_AFTER = 90; // days of daily steps after a shock
 
 /** run until a day, daily for the first year and for 90 days after a shock, weekly in between */
 function advance(S, until, dailyFrom = -1e9) {
+	bind(S);
 	while (S.t < until - 1e-9) {
 		const daily = S.t < DAILY_YEARS * 365 || (S.t >= dailyFrom && S.t < dailyFrom + DAILY_AFTER);
 		const dt = daily ? 1 : Math.min(7, until - S.t);
@@ -1541,7 +2129,11 @@ function advance(S, until, dailyFrom = -1e9) {
 	}
 }
 
-const clone = (S) => structuredClone(S);
+const clone = (S) => {
+	const X = structuredClone(S);
+	bind(X);
+	return X;
+};
 
 function branchFailure(S, commons) {
 	// the food COOP that makes most of the city's food fails: its plant breaks down and its management turns
@@ -1641,6 +2233,28 @@ function runFrom(S, years, opts = {}) {
 }
 
 // ── debug: one run, a line a year ────────────────────────────────────────────────────────────────────────────────────
+// ── debug: one dynamic run, a line a year (--dyn YEARS [--set key=value,…]) ─────────────────────────────────────────────
+if (ARGS.includes('--dyn')) {
+	const yrs = +(ARGS[ARGS.indexOf('--dyn') + 1] || 20);
+	const extra = {};
+	if (ARGS.includes('--set')) for (const kv of ARGS[ARGS.indexOf('--set') + 1].split(',')) extra[kv.split('=')[0]] = +kv.split('=')[1];
+	const S = init({ ...DYN, years: yrs, ...extra });
+	const d1 = Date.now();
+	const r2 = (x, d = 2) => (x === null || x === undefined || !isFinite(x) ? '-' : (+x).toFixed(d));
+	let last = 0;
+	while (S.t < yrs * 365 - 1e-9) {
+		advance(S, Math.min(yrs * 365, S.t + 365));
+		const y = S.Y[S.Y.length - 1], d = y.dyn;
+		console.log(`y${y.year} short ${r2(y.short * 100)}% [${y.shortG.map((x) => r2(x * 100, 1)).join(" ")}] covMin ${r2(d.covMin)} L ${r2(d.L)} inc ${r2(d.inc)} spend ${r2(d.spend)} (${r2(d.spendShare * 100, 0)}%) meltW ${r2(d.meltWshare * 100, 0)}% tre ${r2(d.treShareR * 100, 0)}% ppl ${r2(y.peopleShareR * 100, 0)}% wage ${r2(d.wage)} u ${r2(d.avenU)} yield ${r2(y.yield * 100)}% mu ${r2((y.muRet ?? 0) * 100)}% P[${r2(d.pMin)}..${r2(d.pMax)}] sd ${r2(d.sdLog, 3)} live ${d.nLive} f/e/n ${d.failN}/${d.exitN}/${d.foundN} A ${r2(d.meanA)} basic ${r2(d.basicR)} z: strict ${r2(d.zStrictShare * 100, 0)}% min ${r2(d.zStrictMin)} cov ${r2(d.zCovMin)} W ${r2(d.zW, 0)} real ${r2(d.zReal)} dec ${r2(d.dec[0])}..${r2(d.dec[9])} m ${Math.round(y.mPer)} gini ${r2(y.gini)} (${((Date.now() - d1) / 1000).toFixed(1)} s)`);
+		const pr = d.coops.map((c, k) => (c.active && c.product >= 0 ? `${c.name}:${r2(c.P)}/${c.priceR.toPrecision(2)}/${r2(c.made / Math.max(1e-9, 1), 0)}${c.cover !== null ? '/' + Math.round(c.cover) : ''}` : null)).filter(Boolean);
+		console.log('   ', pr.join(' '));
+		for (const e of S.events.slice(last)) if (e.type !== 'shock') console.log('    *', (e.t / 365).toFixed(2), e.type, e.name, e.note);
+		last = S.events.length;
+	}
+	console.log('time', (Date.now() - d1) / 1000, 's');
+	process.exit(0);
+}
+
 if (ARGS.includes('--debug')) {
 	const mech = ARGS[ARGS.indexOf('--debug') + 1] || 'd';
 	const yrs = +(ARGS[ARGS.indexOf('--debug') + 2] || 10);
