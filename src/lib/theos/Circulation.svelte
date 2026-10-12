@@ -169,7 +169,7 @@
 		</span>
 	{/each}
 	<div class="keys" aria-hidden="true">
-		<span><i class="h"></i>HEARTS, sent by people</span>
+		<span><i class="h"></i>HEARTS, invested by people</span>
 		<span><i class="m"></i>MIND, half back to the investor</span>
 		<span><i class="s"></i>MIND, half into the COOP's treasury</span>
 	</div>

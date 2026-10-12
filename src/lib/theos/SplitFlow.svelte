@@ -21,8 +21,8 @@
 	<path d="M420 200 H512 V240 H420 Z" fill="#26382c" opacity="0.55" />
 
 	<rect x="210" y="100" width="52" height="100" rx="8" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5" />
-	<text x="236" y="146" text-anchor="middle" class="node">COOP</text>
-	<text x="236" y="162" text-anchor="middle" class="sub">convert</text>
+	<text x="236" y="146" text-anchor="middle" class="node">invest</text>
+	<text x="236" y="162" text-anchor="middle" class="sub">HEART→MIND</text>
 
 	<rect x="512" y="196" width="160" height="80" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5" />
 	<text x="592" y="222" text-anchor="middle" class="node">COOP treasury</text>
