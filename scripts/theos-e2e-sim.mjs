@@ -1126,7 +1126,7 @@ function deliver(S, dt, T, B) {
 		B.payR += pay[s] * P[s];
 		co.revenueR += pay[s] * P[s];
 		if (mech === 'b') {
-			// Law 5: a share of every sale goes at once to everyone who holds the seller's MIND
+			// every sale pays its owners: a share of every sale goes at once to everyone who holds the seller's MIND
 			const d = S.sc.turnDiv > 0 && s !== JUNK && holders(S, s) > 0 ? pay[s] * S.sc.turnDiv : 0;
 			treasuryIn(S, s, pay[s] - d), (B.treInR += (pay[s] - d) * P[s]);
 			if (d > 0) payDiv(S, s, d, B);
@@ -1668,11 +1668,11 @@ const RUNS = {
 const LADDER = [
 	['hoard', 'no dividend, surplus kept', { turnDiv: 0, payout: 0 }],
 	['work', 'no dividend, surplus for work proposals', { turnDiv: 0 }],
-	['half', 'no Law 5: surplus half as dividends, half for work', { turnDiv: 0, divShare: 0.5 }],
-	['turn10', 'Law 5 at 10 % of every sale', { turnDiv: 0.1 }],
-	['main', 'Law 5 at 20 % of every sale (main)', {}],
-	['turn30', 'Law 5 at 30 % of every sale', { turnDiv: 0.3 }],
-	['keep', 'Law 5 at 20 %, surplus kept (no work proposals)', { payout: 0 }],
+	['half', 'no sale dividend: surplus half as dividends, half for work', { turnDiv: 0, divShare: 0.5 }],
+	['turn10', 'sale dividend at 10 % of every sale', { turnDiv: 0.1 }],
+	['main', 'sale dividend at 20 % of every sale (main)', {}],
+	['turn30', 'sale dividend at 30 % of every sale', { turnDiv: 0.3 }],
+	['keep', 'sale dividend at 20 %, surplus kept (no work proposals)', { payout: 0 }],
 	['main-w5', 'main, prices ×2.5 (wage 5 R/h)', { wageR: 5 }],
 	['allwork', 'main, but everyone offers some work', { allWork: true }],
 	['retire', 'surplus retired (side)', { mech: 'd', turnDiv: 0 }]
@@ -1800,7 +1800,7 @@ P('');
 const S0 = results['main:base'];
 P(`Land: ${f(S0.landTotal / N0)} m² a person (${f(S0.landLeasable / N0)} leasable, the rest streets and parks), all of it the City COOP's. Seed capacities: 115 % of the starting need (goods exist, money does not) or 25 % (empty city).`);
 P('');
-P('Main scenario: a person pays for what a COOP makes in that COOP\'s MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). A tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools; sales are not levied. A treasury pays for inputs and building from other COOPs, for operating work (2 R an hour, in its prices) and ground rent; Law 5: 20 % of every sale goes at once, as a dividend in the seller\'s own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the people who offer work, by hours). No rent payout, no basic income.');
+P('Main scenario: a person pays for what a COOP makes in that COOP\'s MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). A tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools; sales are not levied. A treasury pays for inputs and building from other COOPs, for operating work (2 R an hour, in its prices) and ground rent; Every sale pays its owners: 20 % of every sale goes at once, as a dividend in the seller\'s own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the people who offer work, by hours). No rent payout, no basic income.');
 P('');
 
 P('## 1. Main scenario against the side comparisons (60 years from a cold start with goods)');
