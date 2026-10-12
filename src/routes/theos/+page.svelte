@@ -49,14 +49,15 @@
 </script>
 
 <svelte:head>
-	<title>theOS · The Operating System for Abundism · maiaCITY</title>
+	<title>theOS · The civilizational operating system of Abundism · maiaCITY</title>
 	<meta name="description" content="theOS: a macroeconomic and system-engineering framework for a post-labour economy. Universal intent allocation, continuous demurrage, protocol-owned liquidity and open market governance, by Samuel Andert." />
 </svelte:head>
 
 <main class="paper">
 	<header class="masthead">
+		<p class="brand">theOS</p>
 		<p class="kind">Working paper · v5 · October 2026 · maiaCITY</p>
-		<h1>theOS: The Operating System for Abundism</h1>
+		<h1>The civilizational operating system of Abundism</h1>
 		<p class="subtitle">A macroeconomic and system-engineering framework for a post-labour economy</p>
 		<p class="author">Samuel Andert</p>
 		<p class="affil">maiaCITY · Munich</p>
@@ -604,7 +605,7 @@
 			{/each}
 		</ol>
 		<p class="cite-as">
-			<strong>Cite as:</strong> Andert, S. (2026). theOS: The Operating System for Abundism. A macroeconomic and
+			<strong>Cite as:</strong> Andert, S. (2026). theOS: The civilizational operating system of Abundism. A macroeconomic and
 			system-engineering framework for a post-labour economy, v5. maiaCITY working paper.
 		</p>
 	</section>
@@ -627,6 +628,15 @@
 		text-align: center;
 		padding-bottom: 2rem;
 		border-bottom: 1px solid var(--line);
+	}
+
+	.brand {
+		margin: 0 0 0.9rem;
+		font-family: var(--font-display);
+		font-size: 1.5rem;
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		color: var(--terracotta);
 	}
 
 	.kind {
