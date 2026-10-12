@@ -108,4 +108,96 @@ export function selectionSeries(years = 10, k = 0.25) {
 	];
 }
 
+// ── Fair ownership (Section 9.2) ─────────────────────────────────────────────────────────────────────────────────────
+
+/** Germany's wealth Gini today (Bundesbank PHF 2023), the start and the capitalism baseline of Figure 12 */
+export const GINI_DE = 0.72;
+
+/** the MIND a person owns at rest: half of their own HEARTS a year, against the melt */
+export const ownLevel = (r = RATE, u = UIA_DAY * 365) => u / 2 / r;
+
+/** the Gini of everyone's holdings after t years, from a start with Gini g0 and mean m0 (no spread of returns) */
+export const giniAt = (g0, t, r = RATE, m0 = ownLevel(r)) => {
+	const e = Math.exp(-r * t);
+	return (g0 * e * m0) / (e * m0 + ownLevel(r) * (1 - e));
+};
+
+/** years until a fortune k times the resting level is down to twice it */
+export const levelYears = (k, r = RATE) => Math.log(k - 1) / r;
+
+/** a share of the resting level reached after t years, starting from nothing (a newborn) */
+export const reachedBy = (t, r = RATE) => 1 - Math.exp(-r * t);
+
+// ln Γ(z), Lanczos
+const LG = [676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+function lgamma(z) {
+	if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z);
+	z -= 1;
+	let x = 0.99999999999980993;
+	for (let i = 0; i < 8; i++) x += LG[i] / (z + i + 1);
+	const t = z + 7.5;
+	return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+}
+
+/** Proposition 2: the shape α of the resting (inverse-gamma) spread, and its Gini Γ(α−½)/(√π Γ(α)) */
+export const shape = (sigma, r = RATE, mu = 0) => 1 + (2 * (r - mu)) / (sigma * sigma);
+export const giniRest = (sigma, r = RATE, mu = 0) => {
+	const a = shape(sigma, r, mu);
+	return a <= 1 ? 1 : Math.exp(lgamma(a - 0.5) - lgamma(a)) / Math.sqrt(Math.PI);
+};
+
+// a small seeded random source, so the page and the server draw the same simulation
+function rng(seed) {
+	let s = seed >>> 0;
+	const u = () => {
+		s = (s + 0x6d2b79f5) >>> 0;
+		let t = s;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+	return () => Math.sqrt(-2 * Math.log(u() || 1e-12)) * Math.cos(2 * Math.PI * u());
+}
+
+const gini = (w) => {
+	const v = [...w].sort((a, b) => a - b), n = v.length;
+	let s = 0, tot = 0;
+	for (let i = 0; i < n; i++) (s += (2 * (i + 1) - n - 1) * v[i]), (tot += v[i]);
+	return s / (n * tot);
+};
+
+/** Figure 12: ownership inequality over 100 years, from Germany's spread today, under theOS with three spreads of returns */
+export function giniSeries(years = 100, n = 1500, dt = 0.5) {
+	const r = RATE, a = (UIA_DAY * 365) / 2, rest = a / r;
+	const out = [{ id: 'cap', label: 'capitalism today', dash: '5 4', points: [[0, GINI_DE], [years, GINI_DE]] }];
+	out.push({ id: 's0', label: 'theOS, same returns', points: Array.from({ length: years / 2 + 1 }, (_, i) => [i * 2, giniAt(GINI_DE, i * 2)]) });
+	// a lognormal start with Gini 0.72 (σ_ln = √2·Φ⁻¹(0.86)), scaled to the resting level
+	const sl = Math.SQRT2 * 1.0803;
+	for (const [sigma, seed] of [[0.1, 7], [0.2, 11]]) {
+		const z = rng(seed);
+		let w = Array.from({ length: n }, () => Math.exp(sl * z()));
+		const m = w.reduce((s, x) => s + x, 0) / n;
+		w = w.map((x) => (x / m) * rest);
+		const pts = [[0, gini(w)]];
+		const k = Math.exp(-0.5 * sigma * sigma * dt - r * dt), q = sigma * Math.sqrt(dt);
+		for (let step = 1; step <= years / dt; step++) {
+			for (let i = 0; i < n; i++) w[i] = w[i] * k * Math.exp(q * z()) + a * dt;
+			if ((step * dt) % 2 === 0) pts.push([step * dt, gini(w)]);
+		}
+		out.push({ id: `s${sigma}`, label: `theOS, spread ${Math.round(sigma * 100)} %`, points: pts });
+	}
+	return out;
+}
+
+/** Figure 13: the resting Gini against the spread of people's returns, for three demurrage rates */
+export const dialSeries = (rates = [0.03, RATE, 0.1]) =>
+	rates.map((r) => ({
+		id: `d${r}`,
+		label: `${Math.round(r * 100)} % a year`,
+		points: Array.from({ length: 46 }, (_, i) => {
+			const s = 0.05 + i * 0.01;
+			return [s, giniRest(s, r)];
+		})
+	}));
+
 export const fmt = (n, d = 0) => n.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
