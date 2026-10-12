@@ -532,13 +532,18 @@
 		<p>
 			So a COOP starts life in two parts. First, people invest their HEARTS, and each HEART converts into the COOP's MIND
 			at that very moment. A COOP never holds a HEART. Its treasury holds only MINDs: its own MIND, and the MINDs of other
-			COOPs that it gets as payment or buys. Second, it partners with at least three other COOPs, whose MINDs join its
+			COOPs that it buys for its own needs. Second, it partners with at least three other COOPs, whose MINDs join its
 			own MIND in its first basket. Only then can people trade its MIND.
 		</p>
 		<p>
 			For example, the solar COOP's SOLARmind might sit in one basket with TRAMmind, AGRImind and STEELmind. It might
 			sit in another basket with WATERmind, COMPUTEmind, HABITATmind and ARTmind. No HEARTS ever sit in a pool, because
 			every HEART converted into MIND at the moment of its investment.
+		</p>
+		<p>
+			The pools also do the routing. When a COOP sells something, it always gets its own MIND. The buyer's Aven pays
+			with whatever MINDs the buyer holds. In the background, the pools convert them into the seller's MIND and route it
+			to the seller. So the tram COOP gets only TRAMmind for a ride, whatever its passengers hold.
 		</p>
 		<figure>
 			<SplitFlow />
@@ -718,6 +723,32 @@
 				years, the idle HEARTS keep 3 %. The project that wears still delivers 61 % of the utility of its first year.
 			</figcaption>
 		</figure>
+		<h3>8.1 Land that nobody can sell</h3>
+		<p>
+			Melting money has one old weakness. Wealth flees into whatever does not melt, and the largest such store is land
+			<Cite k="gesell keynes36" />. If land could be bought, the success of every COOP would end up as a higher land
+			price, and the owners of land would collect it without building anything. Henry George showed that this rent is
+			value that the whole community creates <Cite k="george" />. theOS closes this door with one rule.
+		</p>
+		<div class="law">
+			<p class="lawname">The land rule</p>
+			<p>
+				All land belongs to the city's land COOP. Every citizen holds one equal share in it. Nobody can sell or buy
+				land or a share. Whoever wants to build, a person or a COOP, leases a plot and pays a yearly ground rent in MIND.
+			</p>
+		</div>
+		<p>
+			A lease works like the German <em>Erbbaurecht</em>, a heritable building right. It runs for a long, fixed term,
+			and what the builder builds belongs to the builder for that term. When the term ends, the plot returns to the land
+			COOP, and the lease can start again. The ground rent follows the value of the location. A plot near the tram and
+			the market costs more than a plot at the edge, because the city around it makes it worth more.
+		</p>
+		<p>
+			So the value that the city creates returns to the city. The land COOP uses the rent for what every citizen shares:
+			streets, parks, water and the other commons. Every citizen's share is equal, comes with citizenship and ends with
+			it, so nobody can collect land the way that people collect money. Land is now inside the melt: it earns nothing for
+			anyone who only holds it.
+		</p>
 		<p>
 			Long-lived COOPs need good management for decades. The last part of the machine is how they govern themselves.
 		</p>
@@ -796,9 +827,10 @@
 				<tbody>
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, 24 a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
 					<tr><td>MIND</td><td>Ownership of a COOP and utility, the right to use what it makes; people hold it as ownership and access, the COOP holds it as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Used to make, sell and buy the COOP's services; a tenth of every treasury into the pools; or melted</td></tr>
-					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs; owned by the protocol, not by a COOP</td><td>10 % of every treasury, automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades</td></tr>
+					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; owned by the protocol, not by a COOP</td><td>10 % of every treasury, automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
 					<tr><td>Avens</td><td>One person's arithmetic: invest, trade, pay, leave</td><td>One per person</td><td>Work only for their human</td></tr>
+					<tr><td>Land COOP</td><td>Holds all land for all citizens and leases it; never sells it</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder, spent on the commons</td></tr>
 					<tr><td>COOP governance</td><td>How each COOP decides; improved by selection</td><td>Chosen by each COOP</td><td>Tested by where people invest</td></tr>
 				</tbody>
 			</table>
@@ -935,7 +967,8 @@
 					<tr><td>Allocation</td><td>Every agent gets 24 personal HEARTS a day, which it can only invest</td><td>Every resident gets 24 personal HEARTS a day, one identity per person</td></tr>
 					<tr><td>Demurrage</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>The same rule, fixed in the protocol</td></tr>
 					<tr><td>COOPs</td><td>Agents found COOPs and invest HEARTS, which convert into MIND</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
-					<tr><td>Markets</td><td>Protocol-owned baskets of 4 to 8 MINDs, fed with 10 % of every treasury</td><td>Avens route every purchase through the pools</td></tr>
+					<tr><td>Markets</td><td>Protocol-owned baskets of 4 to 8 MINDs, fed with 10 % of every treasury</td><td>Avens route every purchase through the pools; the seller gets its own MIND</td></tr>
+					<tr><td>Land</td><td>One land COOP holds the map; agents lease plots and pay ground rent</td><td>The city's land COOP holds all land; every citizen holds one equal share; builders lease plots like an Erbbaurecht</td></tr>
 					<tr><td>Agents</td><td>AI agents with memory and goals; later, human players join them</td><td>One Aven per resident, on their own device</td></tr>
 					<tr><td>Governance</td><td>Rule changes as open proposals, measured world by world</td><td>COOPs choose their own governance and compete (Section 9)</td></tr>
 				</tbody>
@@ -963,9 +996,10 @@
 				that can exclude people <Cite k="soul" />. maiaCITY's passkey-based vaults are a start, not a proof.
 			</li>
 			<li>
-				<strong>Escape into assets.</strong> This is Gesell's warning from Section 2: melting money pushes wealth into
-				land and into anything else that does not decay <Cite k="gesell" />. For land and other stores of value outside
-				the protocol, theOS must decide: hold them in common, or make them carry the same demurrage.
+				<strong>Escape into assets.</strong> Melting money pushes wealth into anything that does not decay
+				<Cite k="gesell keynes36" />. The land rule of Section 8.1 closes the largest door. Other stores of value remain,
+				such as euros, art or rare objects. theOS must also decide how the land COOP sets the ground rent, and how
+				citizens decide what it builds with it.
 			</li>
 			<li>
 				<strong>The rate.</strong> 7 % is a choice, not a law of nature. From fairness between generations, Section 5.3
