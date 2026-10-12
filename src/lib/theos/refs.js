@@ -19,6 +19,7 @@ export const REFS = [
 	{ key: 'fisher33', text: 'Fisher, I., with Cohrssen, H. R. L. & Fisher, H. W. (1933). Stamp Scrip. Adelphi.' },
 	{ key: 'frey', text: 'Frey, C. B. & Osborne, M. A. (2017). The Future of Employment: How Susceptible Are Jobs to Computerisation? Technological Forecasting and Social Change, 114, 254–280.', url: 'https://doi.org/10.1016/j.techfore.2016.08.019' },
 	{ key: 'gelleri', text: 'Gelleri, C. (2009). Chiemgauer Regiomoney: Theory and Practice of a Local Currency. International Journal of Community Currency Research, 13, 61–75.' },
+	{ key: 'george', text: 'George, H. (1879). Progress and Poverty. New York: D. Appleton.' },
 	{ key: 'georgescu', text: 'Georgescu-Roegen, N. (1971). The Entropy Law and the Economic Process. Harvard University Press.' },
 	{ key: 'gesell', text: 'Gesell, S. (1916). Die natürliche Wirtschaftsordnung durch Freiland und Freigeld. Translated as The Natural Economic Order (1929).' },
 	{ key: 'hanson', text: 'Hanson, R. (2013). Shall We Vote on Values, But Bet on Beliefs? Journal of Political Philosophy, 21(2), 151–178.' },
