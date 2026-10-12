@@ -244,20 +244,20 @@
 				economy only by being invested into cooperatives, defined in the next law.
 			</li>
 			<li>
-				<strong>Open cooperatives, each with its own MIND.</strong> A cooperative, or COOP, is a shared enterprise owned
-				by the people who invest in it and use it, such as an energy COOP running a power plant or a food COOP running a
-				farm. Anyone, alone or together, can found a COOP at any time without permission, for energy, food, compute, housing, art, or any need not yet met. A COOP and its
-				MIND are one thing: founding a COOP creates its currency, and to use what it produces (drawing electricity,
-				eating from its food network) one spends that MIND. A MIND is ownership and utility in one: holding it is a share
-				in the COOP, and spending it is how one uses what the COOP makes.
+				<strong>Open cooperative creation.</strong> A cooperative, or COOP, is an enterprise owned by the people who
+				invest in it and use it, such as an energy COOP running a power plant or a food COOP running a farm. Anyone,
+				alone or together, can found a COOP at any time without permission, for energy, food, compute, housing, art,
+				or any need not yet met.
 			</li>
 			<li>
-				<strong>The 50/50 commons split.</strong> Investing one of one's personal HEARTS into a COOP converts it directly into that COOP's own currency, its
-				MIND (SOLARmind for a solar COOP, AGRImind for a farming COOP, and so on). Half goes to the investor, called
-				INVESTORmind: their share of the COOP and their right to use what it produces. Half goes to the COOP's own
-				treasury, called TREASURYmind. The COOP uses it as its reserve for trading, so that its MIND can always be
-				exchanged; because the protocol rather than outside traders holds this reserve, it is called
-				<em>protocol-owned liquidity</em> (Section 7).
+				<strong>Every COOP has its own MIND, created by HEARTS and split 50/50.</strong> A COOP's MIND is its own
+				currency (SOLARmind for a solar COOP, AGRImind for a farming COOP), and it is ownership and utility in one:
+				holding MIND is a share in the COOP, and spending MIND is how one uses what the COOP makes. MIND comes into
+				being only when HEARTS are invested: every personal HEART put into a COOP creates its MIND, split in two
+				equal halves. One half goes to the investor (INVESTORmind). The other half goes to the COOP's own treasury
+				(TREASURYmind), which the COOP uses as its trading reserve so that its MIND can always be exchanged; because
+				the protocol, not outside traders, owns this reserve, it is called <em>protocol-owned liquidity</em>
+				(Section 7).
 			</li>
 		</ol>
 		<p>
