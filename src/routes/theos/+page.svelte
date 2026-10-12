@@ -39,7 +39,6 @@
 	// a number inside TeX: its thousands comma must not read as punctuation
 	const tn = (v, d = 0) => fmt(v, d).replace(/,/g, '{,}');
 	const ev = lifeForRate(RATE);
-	const advantage = Math.exp((0.07 - 0.01) * 50);
 
 	// the paper's arc: where we come from, the system itself, where it leads
 	const parts = [
@@ -97,9 +96,9 @@
 		</p>
 		<p>
 			Second, each HEART that a person invests converts into one unit of that COOP's MIND. A MIND is the COOP's shared
-			intelligence, carried as one currency of ownership and utility. To hold it is to own part of the COOP; to spend it
-			is to use what the COOP makes. Half of the new MIND goes to the investor and half to the COOP's treasury, the money
-			that the COOP works with. A tenth of every treasury flows into liquidity pools, and with these pools anyone can
+			intelligence, carried as one currency of ownership and utility. To hold it is to own part of the COOP and to draw a
+			share of what it makes; to spend it is to buy more. Half of the new MIND goes to the investor and half to the COOP's
+			treasury, the money that the COOP works with. A tenth of that treasury half flows into liquidity pools, and with these pools anyone can
 			trade any MIND for any other. The pools belong to the protocol itself: the base layer of theOS, which no person or
 			COOP owns.
 		</p>
@@ -109,12 +108,13 @@
 		</p>
 		<p>
 			We then show what follows from these rules. Money enters only as HEARTS, changes form only by investment and
-			leaves only by melting. So the total amount of money settles at a fixed level per person, and every balance moves
-			toward that level. Nobody stays rich by sitting still, and nobody starts with nothing for long.
+			leaves only by melting. So the total amount of money settles at a fixed level per person, and the MIND that each
+			person holds moves toward one resting level. Nobody stays rich by sitting still, and nobody starts with nothing for long.
 		</p>
 		<p>
-			Mathematically, this rule is the same as Stéphane Laborde's Relative Theory of Money. Long-lived infrastructure
-			becomes the best place to put money, and COOPs compete on the quality of their management. A personal AI agent,
+			Mathematically, this rule is the same as Stéphane Laborde's Relative Theory of Money. Because HEARTS can only be
+			invested, a project no longer has to beat the return of a bond; it only has to be useful. COOPs compete on the
+			quality of their management. A personal AI agent,
 			called an Aven, does the arithmetic for each person, so taking part needs only two simple choices a day.
 		</p>
 		<p>
@@ -348,7 +348,8 @@
 			<p>
 				Every COOP has its own MIND: SOLARmind for a solar COOP, AGRImind for a farming COOP. A MIND is the COOP's
 				shared intelligence, its automated capacity to make something. It is one currency of ownership and utility. To
-				hold it is to own part of the COOP, and to spend it is to use what the COOP makes. Only investment creates MIND.
+				hold it is to own part of the COOP and to draw a share of what the COOP makes. To spend it is to buy more. Only
+				investment creates MIND.
 				Each invested HEART converts into one new MIND of its COOP: half goes to the investor and half to the COOP's
 				treasury. Both halves are the same MIND; there is only one kind.
 			</p>
@@ -359,18 +360,28 @@
 			the COOP's treasury. It is the same SOLARmind in both places, and it does every job.
 		</p>
 		<p>
-			In Anna's wallet, it makes her a part-owner of the solar COOP and gives her the right to use its electricity. In
-			the treasury, it is the COOP's working capital: the money that the COOP uses for its daily work. With it, the COOP
-			<em>makes</em> its services: it pays for panels, steel and upkeep. The COOP <em>sells</em> its services in it: when
-			Anna switches on a lamp, she spends a little SOLARmind, and it flows back into the treasury. And the COOP
-			<em>buys</em> what it needs from other COOPs with it.
+			In Anna's wallet, the SOLARmind is her share of the solar COOP. It makes her a part-owner, and it gives her a share
+			of the power that the COOP sets aside for the people who hold its MIND. When Anna switches on her lamp, no
+			SOLARmind moves: the lamp draws on her share. The share costs her only the melt, 7 % a year, and her daily HEARTS
+			refill it. A share that she does not use is lost; she cannot sell it back. If she needs more power than her share
+			gives, her Aven buys the extra. It pays with any MIND she holds, the pools convert it, and the solar COOP receives
+			SOLARmind.
+		</p>
+		<p>
+			In the treasury, the SOLARmind is the COOP's working capital: the money that the COOP uses for its daily work. A
+			tenth of this half drips into the pools. With the rest, the COOP <em>makes</em> its services: it pays for panels, steel and
+			upkeep. When it <em>buys</em> panels, it pays in SOLARmind, the pools convert it, and the panel COOP receives
+			PANELmind. The COOP <em>sells</em> the power that its holders do not draw, and every buyer pays it in SOLARmind.
+			Every COOP is paid only in its own MIND.
 		</p>
 		<figure>
 			<FollowOneHeart />
 			<figcaption>
 				<strong>Figure 3.</strong> Law 4, step by step. One HEART converts into one SOLARmind. Half goes to Anna's
-				wallet and half to the treasury. The treasury pays another COOP with its half, and Anna's lamp sends a little
-				back. The areas of the coins are to scale. Tap a number to go to a step.
+				wallet as her share, and half to the treasury as working capital. A tenth of the treasury half drips into the
+				pool, and the treasury pays the panel COOP through the pool, so the panel COOP receives its own PANELmind. Anna's
+				lamp draws on her share, and no SOLARmind moves. The areas of the coins are to scale. Tap a number to go to a
+				step.
 			</figcaption>
 		</figure>
 		<p>
@@ -453,13 +464,14 @@
 			below, and an inflated city's money falls to it from above. The gap halves every {fmt(halfLife(), 1)} years.
 		</p>
 		<p>
-			There is no central bank, no interest rate to set and no inflation target. The money supply can never exceed
-			<Tex tex={String.raw`N u / r`} />, and the whole policy is the four laws and one rate.
+			There is no central bank, no interest rate to set and no inflation target. From any start, the money supply moves
+			to <Tex tex={String.raw`N u / r`} />, and the whole policy is the four laws and one rate.
 		</p>
 		<p>
 			The same rule levels people. Every balance that sits still melts toward zero, while everyone gets the same
-			{UIA_DAY} HEARTS a day. So nobody stays rich by holding, and nobody starts with nothing for long. There is no tax
-			and no redistribution. The levelling comes from the rule itself.
+			{UIA_DAY} HEARTS a day. So nobody stays rich by holding, and nobody starts with nothing for long. Nobody collects a
+			tax, and nobody decides who gets what. The melt works like a flat levy on every holding, and the daily HEARTS work
+			like an equal grant to every person. The levelling comes from the rule itself.
 		</p>
 		<figure>
 			<LineChart
@@ -491,13 +503,15 @@
 			<Tex tex={String.raw`x = B / (M/N)`} />. Because the average grows at the rate <Tex tex="c" />,
 			<Tex tex={String.raw`\dot x = c - c\,x = c\,(1 - x)`} />. In theOS, measure money per person relative to the
 			steady state, <Tex tex={String.raw`b = m/m^{*}`} />. From (3), <Tex tex={String.raw`\dot b = r - r\,b = r\,(1 - b)`} />.
-			The two are the same equation. ∎
+			The two are the same equation. ∎ It also holds for each person: because using a share does not use up the MIND
+			(Section 4), a holder's MIND relative to the average follows <Tex tex={String.raw`\dot x = r\,(1 - x)`} /> once
+			the money has settled.
 		</p>
 		<p>
 			Laborde keeps the dividend relative and lets the amount of money grow. theOS keeps the dividend fixed and lets the
 			money melt. In both, every member's relative position changes in the same way. What theOS gains is a unit that
-			people can think in, 24 a day, one per hour. It also gains prices that do not drift upward with a growing money
-			supply.
+			people can think in, 24 a day, one per hour. And once the money has settled, prices no longer drift upward with a
+			growing money supply. They fall as output grows.
 		</p>
 		<p>
 			If we solve (4) for <Tex tex={String.raw`e_v`} /> at <Tex tex="c = 0.07" />, we get
@@ -527,7 +541,8 @@
 		<div class="law">
 			<p class="lawname">The liquidity rule</p>
 			<p>
-				A tenth of every COOP's treasury flows automatically into liquidity pools. Each pool holds a basket of 4 to 8
+				A tenth of every COOP's treasury half flows automatically into liquidity pools: of each invested HEART, 5 %
+				drips into the pools in the COOP's own MIND. What a COOP earns by selling is not levied. Each pool holds a basket of 4 to 8
 				different MINDs. The COOP chooses which baskets its MIND joins. The pools belong to the protocol, not to any
 				COOP. Nobody can ever withdraw what enters a pool; it leaves only through trades.
 			</p>
@@ -553,7 +568,8 @@
 			<figcaption>
 				<strong>Figure 7.</strong> One HEART invested into a COOP converts into one MIND and is gone. Half of that MIND
 				goes to the investor, half to the COOP's treasury, its working capital. Both halves are the same MIND. A tenth
-				of the treasury flows on into the protocol's pools, baskets of 4 to 8 MINDs, and never returns.
+				of the treasury half, 5 % of the HEART, flows on into the protocol's pools, baskets of 4 to 8 MINDs, and never
+				returns.
 			</figcaption>
 		</figure>
 		<h3>6.1 The design: one equal-weight basket</h3>
@@ -667,8 +683,8 @@
 		<ul>
 			<li>
 				<strong>Keeping money at work.</strong> Every currency melts at the same rate, so a trade from one into another
-				cannot escape demurrage. But the Aven can keep idle balances small. It invests HEARTS as they arrive, and it
-				holds only about as much MIND as its human will soon use.
+				cannot escape demurrage. But the Aven can keep idle balances small. It invests HEARTS as they arrive. It keeps the
+				shares that its human uses, and only a small float of MIND for buying.
 			</li>
 			<li>
 				<strong>Paying without thinking.</strong> When Anna takes a tram, her Aven finds the cheapest route through the
@@ -701,17 +717,20 @@
 			<Cite k="gesell keynes36" />.
 		</p>
 		<p>
-			In theOS, there is no safe alternative. Idle HEARTS lose 7 % a year, and the MINDs that an investment creates melt
-			at the same rate. So no balance anywhere earns a return for doing nothing. What lasts is what the investment built.
-			Compare the utility that a project keeps delivering, which changes at its real rate <Tex tex="g" />, with intent
-			that stays idle. The result is a factor
+			In theOS, there is no safe alternative inside the city. HEARTS cannot be lent or parked; they can only be invested.
+			So a project does not have to beat a bond. It only has to deliver something that people use. Idle HEARTS lose 7 %
+			a year, and the MINDs that an investment creates melt at the same rate, so no balance anywhere earns a return for
+			doing nothing. Compare what is left after <Tex tex="T" /> years of the same intent: left idle, or built into a
+			project whose utility changes at its real rate <Tex tex="g" />:
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} A(T) = e^{(g + r)\,T} \\ g = -1\,\%,\ r = 7\,\%,\ T = 50 \;\Rightarrow\; A \approx ${tn(advantage, 1)} \end{gathered} \tag{7}`} />
+		<Tex display tex={String.raw`\begin{gathered} \text{idle: } e^{-rT}, \qquad \text{built: } e^{gT} \\ r = 7\,\%,\ g = -1\,\%,\ T = 50 \;\Rightarrow\; ${tn(Math.exp(-RATE * 50) * 100)}\,\% \text{ against } ${tn(Math.exp(-0.01 * 50) * 100)}\,\% \end{gathered} \tag{7}`} />
 		<p>
-			Take a project that only keeps its utility, or even loses 1 % of it a year. Over half a century, it is worth about
-			twenty times more than idle HEARTS. The discount rate tells how much less a future benefit counts than a benefit today.
-			In theOS it turns negative, and the long future becomes worth more, not less. Investment flows toward what people
-			keep using: grids, water systems, domes, rail.
+			What lasts is what the investment built. But the melt does not make the far future worth more to an investor: the
+			investor's MIND melts too, so a share of use in fifty years is worth less to its holder than a share of use today.
+			What the melt changes is who gains. The later years of a long-lived project serve the people who hold its MIND
+			then, the next generations. Nothing pays for sitting still, so the only way to make intent last is to build what
+			people keep using: grids, water systems, domes, rail. Whether Avens fund such long projects as readily as short
+			ones is a question for the game (Section 11).
 		</p>
 		<figure>
 			<LineChart
@@ -738,19 +757,23 @@
 			<p>
 				All land belongs to the City COOP. Every citizen holds one equal share in it. Nobody can sell or buy
 				land or a share. Whoever wants to build, a person or a COOP, leases a plot and pays a yearly ground rent in MIND.
+				The rent can be paid in any MIND; the pools convert it, and the City COOP receives its own CITYmind.
 			</p>
 		</div>
 		<p>
 			A lease works like the German <em>Erbbaurecht</em>, a heritable building right. It runs for a long, fixed term,
 			and what the builder builds belongs to the builder for that term. When the term ends, the plot returns to the City
 			COOP, and the lease can start again. The ground rent follows the value of the location. A plot near the tram and
-			the market costs more than a plot at the edge, because the city around it makes it worth more.
+			the market costs more than a plot at the edge, because the city around it makes it worth more. The City COOP
+			sets the rent anew at fixed intervals, by auction or by the lessee's own published value, so that no lessee can
+			keep the value of the land for itself.
 		</p>
 		<p>
 			So the value that the city creates returns to the city. There is no separate commons beside the City COOP: what
 			all citizens share, such as streets, parks and water, the City COOP holds and runs, and the ground rent pays for
 			it. Every citizen's share is equal, comes with citizenship and ends with
-			it, so nobody can collect land the way that people collect money. So land can no longer store
+			it. It is a membership, not money and not a MIND, so it does not bend Law 4, and nobody can collect land the way
+			that people collect money. So land can no longer store
 			private wealth, and the melt has no way around it.
 		</p>
 		<p>
@@ -830,8 +853,8 @@
 				</thead>
 				<tbody>
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, 24 a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
-					<tr><td>MIND</td><td>Ownership of a COOP and utility, the right to use what it makes; people hold it as ownership and access, the COOP holds it as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Used to make, sell and buy the COOP's services; a tenth of every treasury into the pools; or melted</td></tr>
-					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; owned by the protocol, not by a COOP</td><td>10 % of every treasury, automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades</td></tr>
+					<tr><td>MIND</td><td>Ownership of a COOP and a share of what it makes; people hold it as their share, the COOP holds it as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Held for its share of output; spent to buy more, and the seller always receives its own MIND; 5 % of every HEART into the pools; or melted</td></tr>
+					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; owned by the protocol, not by a COOP</td><td>A tenth of every treasury half (5 % of every HEART), automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
 					<tr><td>Avens</td><td>One person's arithmetic: invest, trade, pay, leave</td><td>One per person</td><td>Work only for their human</td></tr>
 					<tr><td>City COOP</td><td>Holds all land and what all citizens share, and leases land; never sells it</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder; pays for streets, parks and water</td></tr>
@@ -861,6 +884,8 @@
 			that person <Tex tex="i" /> owns, valued in a common basket of MINDs. Each year, the person gets half of what
 			their own HEARTS convert into: <Tex tex="a = u/2" />. Demurrage takes <Tex tex={String.raw`r\,W_i`} />. So every
 			holding moves toward the same resting level <Tex tex={String.raw`W^{*} = a/r \approx ${tn(ownLevel())}`} /> MIND.
+			This works because using a share does not use up the MIND: Anna's lamp draws on her SOLARmind without spending
+			it (Section 4).
 			Start with holdings as unequal as Germany's today, with a Gini index <Tex tex="G_0" /> and a mean
 			<Tex tex="m_0" />. Then the Gini index after <Tex tex="t" /> years is
 		</p>
@@ -938,7 +963,7 @@
 			automated economy in equal measure of issuance.
 		</p>
 		<p>
-			theOS does not promise equal outcomes. People who use more own less. People whose work serves others get more.
+			theOS does not promise equal outcomes. People who buy more than their shares give them own less. People whose work serves others get more.
 			People who choose better COOPs hold more. theOS promises that no difference grows without limit, and that nobody
 			inherits a difference for long. In Rawls's terms, theOS is a property-owning democracy whose "beginning of each
 			period" is every day <Cite k="rawls" />.
@@ -971,7 +996,7 @@
 					<tr><td>Allocation</td><td>Every agent gets 24 personal HEARTS a day, which it can only invest</td><td>Every resident gets 24 personal HEARTS a day, one identity per person</td></tr>
 					<tr><td>Demurrage</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>The same rule, fixed in the protocol</td></tr>
 					<tr><td>COOPs</td><td>Agents found COOPs and invest HEARTS, which convert into MIND</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
-					<tr><td>Markets</td><td>Protocol-owned baskets of 4 to 8 MINDs, fed with 10 % of every treasury</td><td>Avens route every purchase through the pools; the seller gets its own MIND</td></tr>
+					<tr><td>Markets</td><td>Protocol-owned baskets of 4 to 8 MINDs, fed with 5 % of every invested HEART</td><td>Avens route every purchase through the pools; the seller gets its own MIND</td></tr>
 					<tr><td>Land</td><td>One City COOP holds the map; agents lease plots and pay ground rent</td><td>The City COOP holds all land; every citizen holds one equal share; builders lease plots like an Erbbaurecht</td></tr>
 					<tr><td>Agents</td><td>AI agents with memory and goals; later, human players join them</td><td>One Aven per resident, on their own device</td></tr>
 					<tr><td>Governance</td><td>Rule changes as open proposals, measured world by world</td><td>COOPs choose their own governance and compete (Section 9)</td></tr>
@@ -1025,13 +1050,21 @@
 				a small group.
 			</li>
 			<li>
-				<strong>The conditions of fairness.</strong> Proposition 2 holds only under four rules. First, no holder may
-				earn more than the rate of demurrage, year after year. Arbitrage profits from the protocol pools are such a
+				<strong>The conditions of fairness.</strong> Proposition 2 holds only under six rules. First, no holder may
+				earn more than the rate of demurrage, year after year, on any holding. Arbitrage profits from the protocol pools are such a
 				return, so they must flow back to all Avens, or batch trading must remove them. Second, every COOP must accept
 				HEARTS from anyone, one for one. A COOP that closes its doors creates scarcity for its first owners. Third,
 				theOS must decide how euros can buy MIND, because those purchases bring outside inequality in. Fourth, theOS
-				must say what happens to MIND when a person dies. Demurrage leaves only {pct(Math.exp(-RATE * 30) * 100)} of a
-				holding after a 30-year generation, so this rule matters less than it seems.
+				must say what happens to MIND when a person dies. People hold half of all MIND, so this is a real flow. The
+				simplest rule sends it to the City COOP. Fifth, shares are used or lost. If a holder could sell unused shares
+				back, holding would earn more than the melt, and the largest holdings would grow without limit. Sixth, land
+				stays with the City COOP. In the end-to-end simulation, private land keeps the Gini index near 0.5; with all land
+				in the City COOP, it settles at 0.29.
+			</li>
+			<li>
+				<strong>Long-lived projects.</strong> A treasury's savings melt while it saves, and theOS has no credit. So a
+				tidal barrier or a fusion plant needs binding pledges of HEARTS over years before it can start. The game must
+				test if Avens fund such projects.
 			</li>
 			<li>
 				<strong>Exchange between people.</strong> People can only invest HEARTS. So two questions need their own
@@ -1045,8 +1078,8 @@
 		<p>
 			We started with two questions: who gets what is made, and who decides what is made next. Capitalism answered both
 			with wages and ownership, and automation now removes that answer. theOS answers them differently: everyone gets an
-			equal, daily share of direction and of ownership. That share can only build things, and what it builds belongs to those who built
-			it. All money melts like the world it measures, so nobody can keep wealth idle and out of reach. The whole
+			equal, daily share of direction and of ownership. That share can only build things. What it builds belongs to those who hold its MIND,
+			on land that belongs to everyone. All money melts like the world it measures, so nobody can keep wealth idle and out of reach. The whole
 			architecture fits in one line:
 		</p>
 		<Tex display tex={String.raw`\left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} = \mathrm{ABUNDANCE} \tag{11}`} />
