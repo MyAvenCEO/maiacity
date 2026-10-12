@@ -1,8 +1,10 @@
 // Sandbox 7: a posted-price world (a Trading card with a `price` hook) played for N days with a stand-in brain that
 // always picks the middle answer of each question, so the market alone has to find the prices. Prints each good's
-// posted price, what traded and who is alive, day by day. NAIVE=1 to answer field questions like a brain reading only the options. Run: node scripts/sandbox-8-posted.mjs <cards.json> [days] [seed] [inherited-prices.json]
+// posted price, what traded and who is alive, day by day. NAIVE=1 to answer field questions like a brain reading only
+// the options, FIELDS=1 to print each aven's fields, ROWS=1 a JSON row a day as well (scripts/sandbox-8-price-test.mjs
+// reads them). Run: node scripts/sandbox-8-posted.mjs <cards.json> [days] [seed] [inherited-prices.json]
 import fs from 'node:fs';
-import { createWorld, step, CODE, seeValley, GOODS, fieldBase, levelShare, openCost, capexOf } from '../src/lib/sandbox-8/economy.js';
+import { createWorld, step, CODE, seeValley, GOODS, fieldBase, levelShare, rampOf, openCost, capexOf } from '../src/lib/sandbox-8/economy.js';
 import { newMind, wear, night } from '../src/lib/sandbox-8/mind.js';
 import { questionsFor, applyAnswers } from '../src/lib/sandbox-8/asks.js';
 import { loadCode } from '../src/lib/sandbox-8/sandbox.js';
@@ -17,6 +19,8 @@ const w = createWorld(Number(process.argv[4] ?? 4242));
 if (process.argv[5]) w.inherited = JSON.parse(fs.readFileSync(process.argv[5], 'utf8'));
 for (const a of w.avens) wear(a, newMind(a.name, a.reserveDays));
 seeValley(w);
+// what the start paid the Coop: ROWS counts only what is paid after it
+const paid0 = Object.values(w.coop?.from ?? {}).reduce((n, x) => n + x, 0);
 // the stand-in brain, asked every 2 game hours: for each good it buys, the most days of stock (of 0-7) whose cost at
 // the posted price stays within a tenth of its HEARTS, at least 1 day while it can pay for it: cheap goods it stocks up
 // on, dear ones it buys day by day. The market has to find the prices from that alone.
@@ -75,6 +79,19 @@ for (let k = 0; k < days * 96; k++) {
 		if (r.day <= 10) totals.deaths10 += Math.max(0, totals.alive - r.alive);
 		totals.alive = r.alive;
 		if (process.env.FIELDS) console.log('   fields', w.avens.map((x) => `${x.name}:${(x.fields ?? []).map((f) => f.crop.slice(0, 3) + f.level).join('+')}|${Math.round(x.hearts)}`).join(' '));
+		// ROWS=1: the day as one JSON row too, for scripts/sandbox-8-price-test.mjs: by good the posted price, what the
+		// living need, harvest, stock, rot and shortage, a field's yield and growing time; the day's field moves; the
+		// Coop's HEARTS and all it was paid since the start; each aven's HEARTS and fields (crop, level, yield when grown)
+		if (process.env.ROWS) {
+			const live = w.avens.filter((x) => x.alive);
+			const by = (f) => Object.fromEntries(GOODS.map((g) => [g, f(g)]));
+			const row = { day: r.day, alive: r.alive, posted: by((g) => w.posted?.[g] ?? null), need: by((g) => live.reduce((n, x) => n + (x.need?.[g] ?? 0), 0)), harvest: r.harvest, stock: r.stock, rotted: r.rotted, short: by((g) => Object.values(r.short).reduce((n, s) => n + (s[g] ?? 0), 0)), field: by(fieldBase), ramp: by(rampOf) };
+			row.moves = (w.fieldLog ?? []).filter((m) => m.day === r.day).map((m) => ({ name: m.name, kind: m.kind, to: m.to }));
+			row.coop = Math.round(w.coop?.hearts ?? 0);
+			row.paid = Math.round(Object.values(w.coop?.from ?? {}).reduce((n, x) => n + x, 0) - paid0);
+			row.avens = w.avens.map((x) => ({ name: x.name, alive: x.alive, hearts: Math.round(x.hearts), fields: (x.fields ?? []).map((f) => [f.crop, f.level, fieldBase(f.crop) * levelShare(f.level)]) }));
+			console.log('row ' + JSON.stringify(row));
+		}
 		console.log(`d${r.day} alive ${r.alive} posted ${GOODS.map((g) => `${g.slice(0, 3)} ${w.posted?.[g] ?? '-'}`).join(' ')} | units ${GOODS.map((g) => r.units[g]).join('/')} rot ${GOODS.map((g) => r.rotted[g]).join('/')}`);
 	}
 }
