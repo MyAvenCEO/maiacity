@@ -8,8 +8,10 @@
 // harvested last night, and what the fields still growing will add, against what the living need over the time a
 // new field takes to grow, plus a few days of need in hand. Fields already planted lower the price before they
 // harvest, so a rush into one crop stops paying the next morning; and the price keeps paying until the valley holds
-// those days in hand, so a margin above bare need is worth growing. A slow reference level, starting from the
-// good's first price, drifts toward where the valley holds its days in hand.
+// those days in hand, so a margin above bare need is worth growing. A slow reference level drifts toward where the
+// valley holds its days in hand. Every good starts from the same price, the middle of the prices the world inherits:
+// started from World 36's last prices one by one, vegetables at 0.07 could never pay for a field (the margin moves a
+// price at most 4x), and on a rough copy of World 36 that start lost 187 avens over 9 seeds against 1 from the middle.
 
 // days of need the price keeps paying for in hand; how strongly the price answers the margin; how slowly the reference
 // drifts (in multiples of the crop's growing time)
@@ -20,10 +22,12 @@ const DRIFT = 8;
 const ref = {};
 const fresh = {};
 
-export function price({ good, price, inherited, opening, valley }) {
+export function price({ good, price, inherited, previous, opening, valley }) {
   if (price == null) {
     fresh[good] = true;
-    return inherited ?? 2;
+    // a world's first price: the middle of the prices it inherits, the same for every good (2 when it inherits none)
+    const all = Object.values(previous ?? {}).filter((p) => p > 0).sort((a, b) => a - b);
+    return all.length ? all[Math.floor(all.length / 2)] : (inherited ?? 2);
   }
   if (!opening) return price;
   const v = valley.values;
