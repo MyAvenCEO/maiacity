@@ -5,7 +5,7 @@
 	let {
 		series, // [{ id, label, color, points: [[x, y], ...], dash? }]
 		x, // { min, max, ticks: [..], fmt, label, log? }
-		y, // { min, max, ticks: [..], fmt, label }
+		y, // { min, max, ticks: [..], fmt, label, log? }
 		refs = [], // [{ axis: 'x' | 'y', at, label, end?, below? }]
 		height = 300,
 		endLabels = true,
@@ -23,22 +23,27 @@
 	const ih = $derived(H - pad.t - pad.b);
 
 	const tx = (v) => (x.log ? Math.log10(v) : v);
+	const ty = (v) => (y.log ? Math.log10(v) : v);
 	const sx = (v) => pad.l + ((tx(v) - tx(x.min)) / (tx(x.max) - tx(x.min))) * iw;
-	const sy = (v) => pad.t + (1 - (v - y.min) / (y.max - y.min)) * ih;
-	const clampY = (v) => Math.max(y.min, Math.min(y.max, v));
+	const sy = (v) => pad.t + (1 - (ty(v) - ty(y.min)) / (ty(y.max) - ty(y.min))) * ih;
+	// on a log axis, the clamp also works in log space (a value at or below zero sits on the floor)
+	const clampY = (v) => (y.log && !(v > 0) ? y.min : Math.max(y.min, Math.min(y.max, v)));
 
 	const path = (pts) => pts.map(([a, b], i) => `${i ? 'L' : 'M'}${sx(a).toFixed(1)},${sy(clampY(b)).toFixed(1)}`).join('');
 
 	// end labels, nudged apart so they never sit on each other
 	const ends = $derived.by(() => {
 		const e = series.map((s) => ({ s, y: sy(clampY(s.points.at(-1)[1])) })).sort((a, b) => a.y - b.y);
-		for (let i = 1; i < e.length; i++) if (e[i].y - e[i - 1].y < 15) e[i].y = e[i - 1].y + 15;
+		for (let i = 1; i < e.length; i++) if (e[i].y - e[i - 1].y < 16) e[i].y = e[i - 1].y + 16;
 		for (const l of e) l.y = Math.max(l.y, pad.t + 6);
-		for (let i = 1; i < e.length; i++) if (e[i].y - e[i - 1].y < 15) e[i].y = e[i - 1].y + 15;
+		for (let i = 1; i < e.length; i++) if (e[i].y - e[i - 1].y < 16) e[i].y = e[i - 1].y + 16;
 		const over = e.length ? e.at(-1).y - (pad.t + ih + 4) : 0;
 		if (over > 0) e.forEach((l) => (l.y -= over));
 		return e;
 	});
+
+	// a label on a horizontal reference line starts to the right of any vertical reference line near the left edge
+	const yRefX = $derived(Math.max(pad.l + 6, ...refs.filter((q) => q.axis === 'x' && sx(q.at) < pad.l + iw / 4).map((q) => sx(q.at) + 6)));
 
 	let hover = $state(null); // index into the points
 	let svg;
@@ -90,7 +95,7 @@
 			{#each refs as r, i (i)}
 				{#if r.axis === 'y'}
 					<line class="ref" x1={pad.l} x2={W - pad.r} y1={sy(r.at)} y2={sy(r.at)} />
-					<text class="reflabel" x={r.end ? W - pad.r - 4 : pad.l + 6} y={sy(r.at) + (r.below ? 16 : -6)} text-anchor={r.end ? 'end' : 'start'}>{r.label}</text>
+					<text class="reflabel" x={r.end ? W - pad.r - 4 : yRefX} y={sy(r.at) + (r.below ? 16 : -6)} text-anchor={r.end ? 'end' : 'start'}>{r.label}</text>
 				{:else}
 					<line class="ref" x1={sx(r.at)} x2={sx(r.at)} y1={pad.t} y2={pad.t + ih} />
 					<text class="reflabel" x={sx(r.at) + 6} y={pad.t + 12}>{r.label}</text>
@@ -204,6 +209,11 @@
 		font-size: 11.5px;
 		fill: var(--ink-soft);
 		font-style: italic;
+		/* a halo in the figure's colour, so that a line that crosses the label never hides it */
+		paint-order: stroke;
+		stroke: var(--paper);
+		stroke-width: 3px;
+		stroke-linejoin: round;
 	}
 
 	.end {

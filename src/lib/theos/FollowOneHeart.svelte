@@ -98,7 +98,7 @@
 			</g>
 		{/each}
 		<text y="44" text-anchor="middle" class="node">SOLARmind holders</text>
-		<text y="59" text-anchor="middle" class="sub">people and COOPs</text>
+		<text y="59" text-anchor="middle" class="sub">people and other COOPs</text>
 		{#if held > 0.001}
 			<circle cx="-12" cy="-44" r={r(held) + 1} fill={GOLD} opacity="0.88" />
 			<text x="-2" y="-46" class="amt">{held.toFixed(2)}</text>

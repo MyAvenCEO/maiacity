@@ -19,8 +19,9 @@
  * at most 60 days of running costs in its own MIND and the protocol retires the rest), the base of the 10 % rule
  * (inflow / stock), whether the City pays its surplus out, the working-capital target, and the Avens' investment rule
  * (price / delivered output). Behaviour the paper leaves open is set here: COOPs price between variable cost and twice
- * full cost and ration when sold out (inputs first, then households and new capacity), wages are 2 R an hour (the
- * nominal anchor), Avens keep about a week of spending in the MINDs they pay with.
+ * full cost and ration when sold out (inputs first, then households and new capacity), Aven work items are paid 2 R a
+ * unit, to the human whose Aven delivers (the nominal anchor; no human labour is paid), Avens keep about a week of
+ * spending in the MINDs they pay with.
  *
  *
  * The dynamic world (the main scenario since v2; the world above is kept as "static (previous main)"): COOPs set
@@ -69,7 +70,7 @@ const NHH_STATIC = 6; // the static world draws tastes for products 0..5 only
 const BASIC = [2000, 3, 20, 100, 0, 0, 0]; // basic needs a person a day (shortfall below 98 % of these)
 const SAT = [2800, 12, 50, 250, 6, 4, Infinity]; // satiation: basics saturate, goods and care only far up, experiences never
 const BETA = [0.14, 0.14, 0.3, 0.04, 0.22, 0.16, 0.35]; // Stone–Geary marginal budget shares above the basics
-const WAGE_R = 2; // R an hour of operating work, the default nominal anchor (costs, and so prices, are quoted in R)
+const WAGE_R = 2; // R a unit of Aven work items, paid to the human whose Aven delivers: the nominal anchor (costs, and so prices, are quoted in R)
 const PRICE_CAP = 2; // static world: COOPs price between variable cost and twice full cost, and ration when sold out
 const BUILT_SHARE = 0.2; // land the City keeps for streets and parks
 
