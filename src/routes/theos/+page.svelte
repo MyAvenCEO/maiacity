@@ -85,9 +85,10 @@
 			First, every person receives their own personal currency every day, simply for being alive: {UIA_DAY} HEARTS, one
 			for every hour. Samuel's are SamuelHEARTS, Anna's are AnnaHEARTS. HEARTS are not spending money but a voice: they
 			can only be invested into cooperatives, shared enterprises that make what a city needs, such as energy, food or
-			housing. Second, each investment is converted into that cooperative's own currency, its MIND, which is what one spends to
-			use what the cooperative makes. Half of it goes to the investor and half stays with the cooperative as its working
-			capital. Third, all money slowly melts, losing {pct(RATE * 100)} of its value a year, just as
+			housing. Second, each invested HEART is converted into one unit of that cooperative's MIND: its shared intelligence,
+			carried as one currency that is its protocol, its ownership and its utility at once. Half goes to the investor
+			and half to the cooperative, and the same MIND is what the cooperative creates, sells and buys its services
+			with. Third, all money slowly melts, losing {pct(RATE * 100)} of its value a year, just as
 			food spoils and machines wear out, so wealth keeps moving instead of being hoarded.
 		</p>
 		<p>
@@ -398,27 +399,28 @@
 		<div class="law">
 			<p class="lawname">Law 4 · Every COOP has its own MIND, created by investing HEARTS</p>
 			<p>
-				Every COOP has its own currency, its MIND: SOLARmind for a solar COOP, AGRImind for a farming COOP. A MIND is
-				ownership and utility in one. Holding it is a share in the COOP; spending it is how one uses what the COOP
-				makes. MIND comes into being only through investment: every HEART invested into a COOP is converted into one
-				new MIND of that COOP, in two equal halves. One half goes to the investor (INVESTORmind), the other to the
-				COOP's own treasury (TREASURYmind).
+				Every COOP has its own MIND: SOLARmind for a solar COOP, AGRImind for a farming COOP. A MIND is the COOP's
+				shared intelligence, its automated capacity to make something, carried as one currency that is three things
+				at once: the COOP's protocol, ownership of it, and the right to use it. MIND comes into being only through
+				investment: every HEART invested into a COOP is converted into one new MIND of that COOP, half to the
+				investor and half to the COOP's treasury. Both halves are the same MIND; there is only one kind.
 			</p>
 		</div>
 		<p>
 			Follow one HEART. Anna invests one AnnaHEART into the solar COOP. The HEART is converted: it disappears for good,
 			and nobody holds it afterwards, not even the COOP. In its place one new SOLARmind appears: half in Anna's
-			wallet, where it is her share in the solar COOP and her right to draw its electricity, and half in the COOP's
-			treasury. The two halves have different jobs. Anna's half is ownership and access. The treasury's half is the
-			COOP's working capital, what it pays its suppliers and other COOPs with. When Anna switches on a lamp, she spends
-			a little of her SOLARmind, and it flows back into the solar COOP's treasury as income. Value is built wherever
-			people send their HEARTS, and it is used by spending the MINDs those HEARTS created.
+			wallet and half in the COOP's treasury. It is the same SOLARmind in both places, and it does every job. In
+			Anna's wallet it is her share in the solar COOP and her right to draw its electricity. In the treasury it is the
+			COOP's working capital: the COOP <em>creates</em> with it, paying for panels, steel and upkeep. The COOP
+			<em>sells</em> its services in it: when Anna switches on a lamp, she spends a little SOLARmind, and it flows
+			back into the treasury. And it <em>buys</em> what it needs from other COOPs with it. Value is built wherever
+			people send their HEARTS, and it is used through the MINDs those HEARTS created.
 		</p>
 		<p>
 			MINDs melt at the same 7 % a year as HEARTS, so a COOP's currency is worth holding only while the COOP keeps
 			producing. That raises a practical question. If every COOP has its own currency, how does Anna pay for a tram ride
-			with SOLARmind, and how does the solar COOP pay the steel COOP for a new turbine? A small part of each treasury is
-			the answer.
+			with SOLARmind, and how does the solar COOP pay the steel COOP in STEELmind for a new turbine? A small part of
+			each treasury is the answer.
 		</p>
 	</section>
 
@@ -450,15 +452,15 @@
 		<figure>
 			<SplitFlow />
 			<figcaption>
-				<strong>Figure 4.</strong> One HEART invested into a COOP is converted into MIND and is gone. Half of the
-				MIND goes to the investor; the other half becomes the COOP's treasury, its working capital. Only a small
-				portion of the treasury goes into pools against other COOPs' MINDs.
+				<strong>Figure 4.</strong> One HEART invested into a COOP is converted into one MIND and is gone. Half of
+				that MIND goes to the investor, half to the COOP's treasury, its working capital; both are the same MIND.
+				Only a small portion of the treasury goes into pools against other COOPs' MINDs.
 			</figcaption>
 		</figure>
 		<p>
 			Impermanent loss does not disappear; it moves onto the COOP's books, where it is an operating cost of keeping its
 			currency liquid, like wear on a machine. Because only a small portion of the treasury sits in pools, a price swing
-			touches only that portion. Anna's INVESTORmind is never part of a pool, and a speculative attack thins a pool
+			touches only that portion. The MIND in Anna's wallet is never part of a pool, and a speculative attack thins a pool
 			while the COOP's working capital and its turbines keep going.
 		</p>
 		<figure>
@@ -497,7 +499,7 @@
 			</li>
 			<li>
 				<strong>The life one wants to draw on:</strong> a mix of MINDs, for example 40 % AGRImind, 30 % SOLARmind and
-				30 % COMPUTEmind. The Aven swaps the INVESTORmind its human holds into that mix through the pools.
+				30 % COMPUTEmind. The Aven swaps the MINDs its human holds into that mix through the pools.
 			</li>
 		</ol>
 		<p>The Aven does the rest.</p>
@@ -620,7 +622,7 @@
 			<li><strong>Universal Intent Allocation.</strong> Every person receives 24 personal HEARTS a day, one per hour.</li>
 			<li><strong>Pure investment.</strong> HEARTS earn no interest and buy nothing; they can only be invested.</li>
 			<li><strong>Open cooperative creation.</strong> Anyone can found a COOP, at any time, without permission.</li>
-			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> The HEARTS are converted into MIND: half to the investor, half to the COOP's treasury as working capital.</li>
+			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> One HEART converts into one MIND, half to the investor, half to the COOP's treasury as working capital.</li>
 		</ol>
 		<p>
 			On top of them, each part of the machine has exactly one job. Table 1 lists them; nothing in theOS does two of
@@ -634,8 +636,7 @@
 				</thead>
 				<tbody>
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, 24 a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
-					<tr><td>INVESTORmind</td><td>Ownership of a COOP and access to what it makes</td><td>Half of every investment</td><td>Spent on the COOP's output, swapped in pools, or melted</td></tr>
-					<tr><td>TREASURYmind</td><td>The COOP's working capital</td><td>Half of every investment, plus its MIND spent by users</td><td>Paid to other COOPs through the pools, a small part held in pools, or melted</td></tr>
+					<tr><td>MIND</td><td>A COOP's intelligence: its protocol, ownership and utility in one; held by people as their share and access, by the COOP as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Used to create, sell and buy the COOP's services, a small part held in pools, or melted</td></tr>
 					<tr><td>AMM pools</td><td>Price and exchange between MINDs</td><td>A small part of COOP treasuries, MIND against MIND</td><td>Never holds HEARTS</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
 					<tr><td>Avens</td><td>One person's arithmetic: invest, swap, pay, leave</td><td>One per person</td><td>Work only for their human</td></tr>
@@ -646,8 +647,8 @@
 		<p>
 			This also makes theOS's monetary policy complete and short. Money is <em>issued</em> only as HEARTS, at
 			<Tex tex="u" /> per person a year. It changes form only by <em>conversion</em>, one HEART into one MIND,
-			which neither creates nor destroys money. It <em>circulates</em> as MIND: users pay a COOP in its own MIND, the
-			COOP pays its suppliers by swapping through the pools. And it <em>leaves</em> only by demurrage. With
+			which neither creates nor destroys money. It <em>circulates</em> as MIND: a COOP creates, sells and buys its
+			services in it, and pays other COOPs by swapping through the pools. And it <em>leaves</em> only by demurrage. With
 			<Tex tex="H" /> all HEARTS and <Tex tex="M" /> all MINDs held by <Tex tex="N" /> people and their COOPs,
 		</p>
 		<Tex display tex={String.raw`\begin{gathered} \frac{d(H + M)}{dt} = N u - r\,(H + M) \\ H + M \;\to\; \frac{N u}{r} = N \cdot ${tn(steadyState())} \end{gathered} \tag{9}`} />
@@ -754,7 +755,8 @@
 		<Tex display tex={String.raw`\left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} = \mathrm{ABUNDANCE} \tag{10}`} />
 		<p>
 			<strong>HEARTS</strong> are human intention, issued equally to everyone, every day. <strong>MINDS</strong> are
-			what that intention becomes: ownership of the cooperatives' automated infrastructure and the right to use it.
+			what that intention becomes: the shared intelligence of the cooperatives, their protocol, ownership and utility
+			in one.
 			<strong>ACTION</strong> is the conscious act of turning the one into the other. Neither intention without capacity nor capacity without intention builds
 			anything; only the product does, within the limits of one planet <Cite k="raworth" />.
 		</p>
