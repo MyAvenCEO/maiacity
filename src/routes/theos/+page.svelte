@@ -243,7 +243,8 @@
 				<strong>Open cooperatives, each with its own MIND.</strong> Anyone, alone or together, can found a COOP at
 				any time without permission, for energy, food, compute, housing, art, or any need not yet met. A COOP and its
 				MIND are one thing: founding a COOP creates its currency, and to use what it produces (drawing electricity,
-				eating from its food network) one spends that MIND. A COOP's currency is a claim on its output, not on its profit.
+				eating from its food network) one spends that MIND. A MIND is ownership and utility in one: holding it is a share
+				in the COOP, and spending it is how one uses what the COOP makes.
 			</li>
 			<li>
 				<strong>The 50/50 commons split.</strong> Investing one of one's personal HEARTS into a COOP converts it directly into that COOP's own currency, its
