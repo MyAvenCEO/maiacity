@@ -46,13 +46,13 @@ const range = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + ((b - a) 
 export const idleSeries = (rates = [0.03, RATE, 0.1], years = 40) =>
 	rates.map((r) => ({ r, points: range(0, years, 160).map((t) => [t, decay(100, r, t)]) }));
 
-/** Figure 4: a newborn, a median and a very rich member under the same UIA and demurrage */
+/** Figure 3: money per person (HEARTS and MINDs) from three starts under the same UIA and demurrage */
 export const convergenceSeries = (r = RATE, years = 60) => {
 	const star = steadyState(r);
 	return [
-		{ id: 'rich', label: 'Starts with 1,000,000', b0: 1_000_000 },
-		{ id: 'mid', label: 'Starts with 125,000', b0: 125_000 },
-		{ id: 'newborn', label: 'Newborn, starts with 0', b0: 0 }
+		{ id: 'rich', label: 'Starts with 1,000,000 per person', b0: 1_000_000 },
+		{ id: 'mid', label: 'Starts at 125,000 per person', b0: 125_000 },
+		{ id: 'newborn', label: 'A new city, starts with 0', b0: 0 }
 	].map((s) => ({ ...s, points: range(0, years, 240).map((t) => [t, balanceAt(s.b0, t, r)]), star }));
 };
 
