@@ -91,8 +91,9 @@
 			food spoils and machines wear out, so wealth keeps moving instead of being hoarded.
 		</p>
 		<p>
-			We then show what follows from these rules. Over time every balance is drawn toward the same level, so nobody stays
-			rich by sitting still and nobody starts with nothing for long. The rule turns out to be mathematically the same as
+			We then show what follows from these rules. Money enters only as HEARTS, changes form only by investment, and
+			leaves only by melting, so the total amount of money settles at a fixed level per person, and every balance is
+			drawn toward it: nobody stays rich by sitting still and nobody starts with nothing for long. The rule turns out to be mathematically the same as
 			Stéphane Laborie's Relative Theory of Money. Long-lasting infrastructure becomes the best place to put money, and
 			cooperatives compete on how well they are run. A personal AI agent, an Aven, does the arithmetic for each person,
 			so that taking part takes two simple choices a day.
@@ -328,6 +329,11 @@
 			property of the rule itself. The money supply of <Tex tex="N" /> people can never exceed
 			<Tex tex={String.raw`N u / r`} />, so the daily allocation can never inflate without limit.
 		</p>
+		<p>
+			Because HEARTS can only be invested, <Tex tex={String.raw`B^{*}`} /> is the most uninvested intent anyone can
+			ever pile up, not a fortune: a person who invests every day holds almost none. Section 10 shows that the same
+			bound holds for all money in theOS, HEARTS and MINDs together.
+		</p>
 		<figure>
 			<LineChart
 				title="Balances under the UIA and demurrage converge to the same steady state"
@@ -338,9 +344,9 @@
 			/>
 			<figcaption>
 				<strong>Figure 3.</strong> Three members under the same rule: a newborn with nothing, a member at the
-				average, and one who starts with a million. With no spending at all they meet at <Tex tex="u/r" />. Move the
+				average, and one who starts with a million HEARTS. If none of them invests, they meet at <Tex tex="u/r" />. Move the
 				slider under Figure 2: a lower rate raises the steady state and slows the convergence, a higher one does the
-				opposite. Real balances also move with spending and income; the rule sets where they are pulled.
+				opposite. Real balances are lower, because HEARTS leave as they are invested; the rule sets the ceiling.
 			</figcaption>
 		</figure>
 		<h3>5.3 The same rule as the Relative Theory of Money</h3>
@@ -394,23 +400,25 @@
 			<p>
 				Every COOP has its own currency, its MIND: SOLARmind for a solar COOP, AGRImind for a farming COOP. A MIND is
 				ownership and utility in one. Holding it is a share in the COOP; spending it is how one uses what the COOP
-				makes. MIND comes into being only through investment: every HEART invested into a COOP creates new MIND of
-				that COOP, in two equal halves. One half goes to the investor (INVESTORmind), the other to the COOP's own
-				treasury (TREASURYmind).
+				makes. MIND comes into being only through investment: every HEART invested into a COOP is converted into one
+				new MIND of that COOP, in two equal halves. One half goes to the investor (INVESTORmind), the other to the
+				COOP's own treasury (TREASURYmind).
 			</p>
 		</div>
 		<p>
 			Follow one HEART. Anna invests one AnnaHEART into the solar COOP. The HEART is converted: it disappears for good,
-			and nobody holds it afterwards, not even the COOP. In its place new SOLARmind appears: half in Anna's wallet,
-			where it is her share in the solar COOP and her right to draw its electricity, and half in the COOP's treasury.
-			That treasury half is the COOP's working capital, what it pays its builders, suppliers and machines with. When Anna switches on a lamp, she spends a little
-			of her SOLARmind. Value is built wherever people send their HEARTS, and it is used by spending the MINDs those
-			HEARTS created.
+			and nobody holds it afterwards, not even the COOP. In its place one new SOLARmind appears: half in Anna's
+			wallet, where it is her share in the solar COOP and her right to draw its electricity, and half in the COOP's
+			treasury. The two halves have different jobs. Anna's half is ownership and access. The treasury's half is the
+			COOP's working capital, what it pays its suppliers and other COOPs with. When Anna switches on a lamp, she spends
+			a little of her SOLARmind, and it flows back into the solar COOP's treasury as income. Value is built wherever
+			people send their HEARTS, and it is used by spending the MINDs those HEARTS created.
 		</p>
 		<p>
 			MINDs melt at the same 7 % a year as HEARTS, so a COOP's currency is worth holding only while the COOP keeps
 			producing. That raises a practical question. If every COOP has its own currency, how does Anna pay for a tram ride
-			with SOLARmind? A small part of the treasury is the answer.
+			with SOLARmind, and how does the solar COOP pay the steel COOP for a new turbine? A small part of each treasury is
+			the answer.
 		</p>
 	</section>
 
@@ -489,7 +497,7 @@
 			</li>
 			<li>
 				<strong>The life one wants to draw on:</strong> a mix of MINDs, for example 40 % AGRImind, 30 % SOLARmind and
-				30 % COMPUTEmind.
+				30 % COMPUTEmind. The Aven swaps the INVESTORmind its human holds into that mix through the pools.
 			</li>
 		</ol>
 		<p>The Aven does the rest.</p>
@@ -504,8 +512,9 @@
 				pools of Section 7 from the MINDs she holds to the one the tram COOP accepts, and pays in the same moment.
 			</li>
 			<li>
-				<strong>Leaving a bad COOP.</strong> If a COOP turns corrupt or wasteful, its MIND buys less per HEART in the
-				pools. The Aven sees the worse rate and moves its human's investment and spending to a better COOP. Albert
+				<strong>Leaving a bad COOP.</strong> If a COOP turns corrupt or wasteful, it delivers less for its MIND, and its
+				MIND falls against the other MINDs in the pools. The Aven sees that a HEART invested there now buys less use
+				and moves its human's investment and spending to a better COOP. Albert
 				Hirschman named the two ways members discipline an organisation: <em>exit</em>, leaving for a better one, and
 				<em>voice</em>, speaking up from inside <Cite k="hirschman" />. Avens make exit effortless and continuous.
 			</li>
@@ -513,8 +522,8 @@
 		<p>
 			Prices here do what Hayek asked of them, carrying knowledge no planner holds <Cite k="hayek45" />, and the many
 			competing MINDs come close to his proposal for competing private currencies <Cite k="hayek76" />, with one
-			difference: the money underneath is issued equally to every person, not by whoever can. With the whole system in
-			place, we can ask what it changes about the long term.
+			difference: every MIND is created from HEARTS issued equally to every person, not by whoever can. With people,
+			COOPs, pools and Avens in place, we can ask what the system changes about the long term.
 		</p>
 	</section>
 
@@ -527,27 +536,29 @@
 			return on money puts under every investment <Cite k="gesell keynes36" />.
 		</p>
 		<p>
-			In theOS the safe alternative melts. Idle HEARTS lose 7 % a year, so a project with a real return
-			<Tex tex="g" /> beats holding money by a factor
+			In theOS there is no safe alternative. Idle HEARTS lose 7 % a year, and the MINDs an investment creates melt at
+			the same rate, so no balance anywhere earns a return for doing nothing. What lasts is what the investment built.
+			Comparing the use a project keeps delivering, which changes at its real rate <Tex tex="g" />, with intent left
+			idle gives a factor
 		</p>
 		<Tex display tex={String.raw`\begin{gathered} A(T) = e^{(g + r)\,T} \\ g = -1\,\%,\ r = 7\,\%,\ T = 50 \;\Rightarrow\; A \approx ${tn(advantage, 1)} \end{gathered} \tag{7}`} />
 		<p>
-			A project that merely keeps its usefulness, or even loses 1 % of it a year, is about twenty times better than idle
-			money over half a century. The discount rate, how much less a future benefit counts than a present one, turns
+			A project that merely keeps its usefulness, or even loses 1 % of it a year, is worth about twenty times more than
+			idle HEARTS over half a century. The discount rate, how much less a future benefit counts than a present one, turns
 			negative, and the long future becomes worth more, not less. Investment flows toward what keeps being used: grids,
 			water systems, domes, rail.
 		</p>
 		<figure>
 			<LineChart
-				title="1,000 HEARTS of purchasing power over 50 years, idle or built into infrastructure"
+				title="1,000 HEARTS over 50 years, left idle or built into infrastructure"
 				series={infra}
 				x={{ min: 0, max: 50, ticks: [0, 10, 20, 30, 40, 50], fmt: (v, tip) => (tip ? `Year ${fmt(v, 1)}` : `${v}`), label: 'Years' }}
 				y={{ min: 0, max: 1000, ticks: [0, 250, 500, 750, 1000], fmt: (v, tip) => fmt(v), label: 'Value left of 1,000' }}
 			/>
 			<figcaption>
-				<strong>Figure 6.</strong> The same 1,000 HEARTS of purchasing power, left idle under 7 % demurrage or built
-				into infrastructure that holds its real value (0 %) or slowly wears (−1 %). After 50 years the idle sum keeps
-				3 %; the wearing project keeps 61 %.
+				<strong>Figure 6.</strong> The same 1,000 HEARTS, left idle under 7 % demurrage or invested into
+				infrastructure whose use holds its real value (0 %) or slowly wears (−1 %). After 50 years the idle HEARTS
+				keep 3 %; the wearing project still delivers 61 % of its first-year use.
 			</figcaption>
 		</figure>
 		<p>
@@ -579,7 +590,7 @@
 			<Tex tex="f_i" /> the use it delivers per HEART, the shares follow the equation of natural selection, known as
 			replicator dynamics: whatever does better than average grows, whatever does worse shrinks,
 		</p>
-		<Tex display tex={String.raw`\dot s_i = k\, s_i \left(f_i - \bar f\right), \qquad \bar f = \textstyle\sum_j s_j f_j. \tag{8}`} />
+		<Tex display tex={String.raw`\begin{gathered} \dot s_i = k\, s_i \left(f_i - \bar f\right) \\ \bar f = \textstyle\sum_j s_j f_j \end{gathered} \tag{8}`} />
 		<p>
 			Alchian proposed this mechanism in 1950 to explain why markets select efficient firms even when no firm optimises
 			<Cite k="alchian" />. Demurrage sharpens it: a COOP that stops receiving HEARTS watches its treasury melt. Below the
@@ -601,7 +612,7 @@
 				years C carries most of the sector. Governance becomes a technology that improves by selection.
 			</figcaption>
 		</figure>
-		<h3>10.1 The whole machine</h3>
+		<h3>10.1 The whole machine: one role each, one monetary policy</h3>
 		<p>
 			All the pieces are now on the table. The four laws, in one place:
 		</p>
@@ -612,17 +623,47 @@
 			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> The HEARTS are converted into MIND: half to the investor, half to the COOP's treasury as working capital.</li>
 		</ol>
 		<p>
-			On top of them, demurrage keeps all money moving, small COOP-owned pools of MIND against MIND keep every MIND tradeable, Avens do the
-			arithmetic, and selection improves the COOPs. Figure 8 shows it running.
+			On top of them, each part of the machine has exactly one job. Table 1 lists them; nothing in theOS does two of
+			these jobs, and no job is done twice.
+		</p>
+		<div class="table-wrap">
+			<table>
+				<caption><strong>Table 1.</strong> The parts of theOS and their roles.</caption>
+				<thead>
+					<tr><th>Part</th><th>Its one job</th><th>Comes from</th><th>Goes to</th></tr>
+				</thead>
+				<tbody>
+					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, 24 a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
+					<tr><td>INVESTORmind</td><td>Ownership of a COOP and access to what it makes</td><td>Half of every investment</td><td>Spent on the COOP's output, swapped in pools, or melted</td></tr>
+					<tr><td>TREASURYmind</td><td>The COOP's working capital</td><td>Half of every investment, plus its MIND spent by users</td><td>Paid to other COOPs through the pools, a small part held in pools, or melted</td></tr>
+					<tr><td>AMM pools</td><td>Price and exchange between MINDs</td><td>A small part of COOP treasuries, MIND against MIND</td><td>Never holds HEARTS</td></tr>
+					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
+					<tr><td>Avens</td><td>One person's arithmetic: invest, swap, pay, leave</td><td>One per person</td><td>Work only for their human</td></tr>
+					<tr><td>COOP governance</td><td>How each COOP decides; improved by selection</td><td>Chosen by each COOP</td><td>Tested by where HEARTS flow</td></tr>
+				</tbody>
+			</table>
+		</div>
+		<p>
+			This also makes theOS's monetary policy complete and short. Money is <em>issued</em> only as HEARTS, at
+			<Tex tex="u" /> per person a year. It changes form only by <em>conversion</em>, one HEART into one MIND,
+			which neither creates nor destroys money. It <em>circulates</em> as MIND: users pay a COOP in its own MIND, the
+			COOP pays its suppliers by swapping through the pools. And it <em>leaves</em> only by demurrage. With
+			<Tex tex="H" /> all HEARTS and <Tex tex="M" /> all MINDs held by <Tex tex="N" /> people and their COOPs,
+		</p>
+		<Tex display tex={String.raw`\begin{gathered} \frac{d(H + M)}{dt} = N u - r\,(H + M) \\ H + M \;\to\; \frac{N u}{r} = N \cdot ${tn(steadyState())} \end{gathered} \tag{9}`} />
+		<p>
+			Whatever people invest, spend or trade, the total amount of money settles at
+			{fmt(steadyState())} per person, the same level as (3). There is no central bank, no interest rate to set and
+			no inflation target: the policy is the four laws and one rate. Figure 8 shows the machine running.
 		</p>
 		<figure class="wide">
 		<Circulation />
 		<figcaption>
 				<strong>Figure 8.</strong> The whole machine, simulated. People on the outer ring send their daily HEARTS
 				(terracotta) into six COOPs. Every HEART that lands is invested and creates that COOP's MIND: half returns to
-				its investor (gold), half sinks into the COOP's treasury, its working capital, whose ring grows and slowly melts. Every few seconds
-				one COOP turns extractive and gives back less for each HEART; the Avens see that a HEART buys less there and
-				route around it, without anyone voting. Rates are sped up so the decay can be seen.
+				its investor (gold), half sinks into the COOP's treasury, its working capital, whose ring grows and slowly
+				melts. No HEART survives the landing. Every few seconds one COOP turns extractive and gives back less for
+				each HEART; the Avens see that a HEART buys less use there and route around it, without anyone voting. Rates are sped up so the decay can be seen.
 			</figcaption>
 		</figure>
 	</section>
@@ -642,7 +683,7 @@
 		</p>
 		<div class="table-wrap">
 			<table>
-				<caption><strong>Table 1.</strong> Each part of theOS, first in the game, then in the city.</caption>
+				<caption><strong>Table 2.</strong> Each part of theOS, first in the game, then in the city.</caption>
 				<thead>
 					<tr><th>Element</th><th>In the game</th><th>In the city</th></tr>
 				</thead>
@@ -710,11 +751,11 @@
 			who built it. All money melts like the world it measures, so nothing can be hoarded out of reach. The whole
 			architecture fits in one line:
 		</p>
-		<Tex display tex={String.raw`\left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} = \mathrm{ABUNDANCE} \tag{9}`} />
+		<Tex display tex={String.raw`\left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} = \mathrm{ABUNDANCE} \tag{10}`} />
 		<p>
-			<strong>HEARTS</strong> are human intention, issued equally to everyone, every day. <strong>MINDS</strong> are the
-			shared intelligence and automated infrastructure of the cooperatives. <strong>ACTION</strong> is the conscious act
-			of directing the one into the other. Neither intention without capacity nor capacity without intention builds
+			<strong>HEARTS</strong> are human intention, issued equally to everyone, every day. <strong>MINDS</strong> are
+			what that intention becomes: ownership of the cooperatives' automated infrastructure and the right to use it.
+			<strong>ACTION</strong> is the conscious act of turning the one into the other. Neither intention without capacity nor capacity without intention builds
 			anything; only the product does, within the limits of one planet <Cite k="raworth" />.
 		</p>
 		<p>
