@@ -1,10 +1,10 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 6: one HEART, invested into a COOP: the MIND it creates goes half to the investor, half to the treasury as working capital. Band widths are to scale.
+	// Figure 7: one HEART, invested into a COOP: the MIND it creates goes half to the investor, half to the treasury as working capital. Band widths are to scale.
 </script>
 
 <div class="scroll">
-<svg viewBox="0 0 680 300" role="img" aria-label="One HEART invested in a COOP is converted into MIND and is gone: half to the investor's wallet, half to the COOP treasury as working capital; a tenth of the treasury flows into the protocol's pools, baskets of 4 to 12 MINDs.">
+<svg viewBox="0 0 680 300" role="img" aria-label="One HEART invested into a COOP converts into one MIND and is gone. Half goes to the investor's wallet, half to the COOP's treasury as working capital. A tenth of the treasury flows into the protocol's pools, baskets of 4 to 8 MINDs.">
 	<defs>
 		<linearGradient id="split-heart" x1="0" x2="1">
 			<stop offset="0" stop-color="#c8744f" stop-opacity="0.85" />
@@ -31,7 +31,7 @@
 
 	<rect x="512" y="22" width="160" height="76" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5" />
 	<text x="592" y="52" text-anchor="middle" class="node">Your wallet</text>
-	<text x="592" y="70" text-anchor="middle" class="sub">equity and the right</text>
+	<text x="592" y="70" text-anchor="middle" class="sub">ownership and the right</text>
 	<text x="592" y="84" text-anchor="middle" class="sub">to use what it makes</text>
 	<path d="M420 40 H512 V80 H420 Z" fill="#d9a520" opacity="0.6" />
 

@@ -26,7 +26,7 @@ export const REFS = [
 	{ key: 'keynes30', text: 'Keynes, J. M. (1930). Economic Possibilities for Our Grandchildren. In Essays in Persuasion (1931). Macmillan.' },
 	{ key: 'keynes36', text: 'Keynes, J. M. (1936). The General Theory of Employment, Interest and Money, ch. 23 “Notes on Mercantilism, the Usury Laws, Stamped Money and Theories of Under-Consumption”. Macmillan.' },
 	{ key: 'kocherlakota', text: 'Kocherlakota, N. R. (1998). Money Is Memory. Journal of Economic Theory, 81(2), 232–251.' },
-	{ key: 'laborie', text: 'Laborie, S. (2010; 2.718 ed. 2017). Théorie Relative de la Monnaie (Relative Theory of Money). Self-published, libre licence.', url: 'http://trm.creationmonetaire.info/' },
+	{ key: 'laborie', text: 'Laborde, S. (2010; 2.718 ed. 2017). Théorie Relative de la Monnaie (Relative Theory of Money). Self-published, libre licence.', url: 'http://trm.creationmonetaire.info/' },
 	{ key: 'qv', text: 'Lalley, S. P. & Weyl, E. G. (2018). Quadratic Voting: How Mechanism Design Can Radicalize Democracy. AEA Papers and Proceedings, 108, 33–37.' },
 	{ key: 'lietaer', text: 'Lietaer, B. (2001). The Future of Money: Creating New Wealth, Work and a Wiser World. Century.' },
 	{ key: 'balancer', text: 'Martinelli, F. & Mushegian, N. (2019). Balancer: A Non-Custodial Portfolio Manager, Liquidity Provider, and Price Sensor. Whitepaper; weighted pools of up to 8 tokens in Balancer v3 (2024).', url: 'https://docs.balancer.fi/concepts/explore-available-balancer-pools/weighted-pool/weighted-pool.html' },

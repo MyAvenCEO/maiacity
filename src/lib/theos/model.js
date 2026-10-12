@@ -23,7 +23,7 @@ export const steadyState = (r = RATE, u = UIA_DAY * 365) => u / r;
 /** dB/dt = u − rB, solved: a member who starts with b0 */
 export const balanceAt = (b0, t, r = RATE, u = UIA_DAY * 365) => steadyState(r, u) + (b0 - steadyState(r, u)) * Math.exp(-r * t);
 
-/** Laborie's RTM rate from life expectancy: c = ln(ev/2) / (ev/2) */
+/** Laborde's RTM rate from life expectancy: c = ln(ev/2) / (ev/2) */
 export const rtmRate = (ev) => Math.log(ev / 2) / (ev / 2);
 
 /** the life expectancy whose RTM rate equals r (the branch above ev/2 = e) */
