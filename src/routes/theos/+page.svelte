@@ -438,10 +438,10 @@
 		</p>
 		<p>
 			In Anna's wallet, the SOLARmind is her ownership: she is now a part-owner of the solar COOP. While she holds it,
-			its value follows the COOP's success, through its price and through a share of every sale. When Anna switches on
-			her lamp, she pays for the power in SOLARmind. She can pay with any MIND that she holds: the pools convert it, and
-			the solar COOP always receives SOLARmind. What she spends goes back to the COOP. What she keeps stays her
-			ownership.
+			its value follows the COOP's success, through its price and through a share of every sale (Law 5). When Anna
+			switches on her lamp, she pays for the power in SOLARmind. She can pay with any MIND that she holds: the pools
+			convert it, and the solar COOP always receives SOLARmind. What she spends goes back to the COOP. What she keeps
+			stays her ownership.
 		</p>
 		<p>
 			In the treasury, the SOLARmind is the COOP's working capital. A tenth of this half drips into the pools. The COOP
@@ -1324,8 +1324,8 @@
 		<h3>11.2 COOPs and their treasuries</h3>
 		<ul>
 			<li>
-				<strong>Self-dealing and related parties.</strong> Nothing in the laws stops a founder from investing in his own
-				COOP. He then controls {fmt(selfDealDay(), 1)} MIND a day instead of {fmt(honestDay())}: both halves, less the
+				<strong>Self-dealing and related parties.</strong> Nothing in the laws stops a founder from investing in their own
+				COOP. The founder then controls {fmt(selfDealDay(), 1)} MIND a day instead of {fmt(honestDay())}: both halves, less the
 				tenth that drips into the pools. Four friends can act as each other's three basket partners, and trade MINDs
 				that make nothing for real ones. Two COOPs could also sell to each other in a circle. Every round would move
 				MIND from their treasuries to their holders as dividends (Law 5). We propose a related-party rule. When a COOP's
