@@ -1,6 +1,6 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 6: one HEART, followed through the 50/50 commons split. Band widths are to scale.
+	// Figure 6: one HEART, invested into a COOP: the MIND it creates goes half to the investor, half to the treasury. Band widths are to scale.
 </script>
 
 <div class="scroll">

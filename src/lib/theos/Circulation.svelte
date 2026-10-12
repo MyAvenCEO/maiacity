@@ -1,7 +1,7 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Figure 1: the loop of theOS, live. People on the outer ring send their daily HEARTS (terracotta) into the
-	// cooperatives in the middle; every HEART that lands is minted into the COOP's MIND and split 50/50: one half flies
+	// cooperatives in the middle; every HEART that lands is invested and creates the COOP's MIND in two halves: one half flies
 	// back to its investor (gold), the other sinks into the COOP's treasury (its ring grows). Everything shrinks a
 	// little as it travels: demurrage. Every few seconds one COOP turns extractive; the avens notice and route around it.
 	import { onMount } from 'svelte';
@@ -117,7 +117,7 @@
 					if (d.t >= 1) {
 						live.splice(i, 1);
 						if (d.kind === 'heart') {
-							// minted into MIND, split 50/50
+							// invested: creates MIND, half to the investor, half to the treasury
 							const home = people[(Math.random() * N_PEOPLE) | 0].position;
 							if (Math.random() < d.coop.efficiency) send('mind', d.to, home.clone().setY(0.25), d.coop);
 							send('sink', d.to, d.coop.g.position.clone().setY(0.08), d.coop);

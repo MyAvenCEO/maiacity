@@ -250,10 +250,10 @@
 				or any need not yet met.
 			</li>
 			<li>
-				<strong>Every COOP has its own MIND, created by HEARTS and split 50/50.</strong> A COOP's MIND is its own
+				<strong>Every COOP has its own MIND, created by investing HEARTS.</strong> A COOP's MIND is its own
 				currency (SOLARmind for a solar COOP, AGRImind for a farming COOP), and it is ownership and utility in one:
 				holding MIND is a share in the COOP, and spending MIND is how one uses what the COOP makes. MIND comes into
-				being only when HEARTS are invested: every personal HEART put into a COOP creates its MIND, split in two
+				being through investment: every personal HEART invested into a COOP creates new MIND of that COOP, in two
 				equal halves. One half goes to the investor (INVESTORmind). The other half goes to the COOP's own treasury
 				(TREASURYmind), which the COOP uses as its trading reserve so that its MIND can always be exchanged; because
 				the protocol, not outside traders, owns this reserve, it is called <em>protocol-owned liquidity</em>
@@ -269,8 +269,8 @@
 		<Circulation />
 		<figcaption>
 			<strong>Figure 1.</strong> The loop of theOS, simulated. People on the outer ring send their daily HEARTS
-			(terracotta) into six cooperatives. Every HEART that lands is minted into that cooperative's MIND and split
-			50/50: one half returns to its investor (gold), the other sinks into the treasury, whose ring grows and slowly
+			(terracotta) into six cooperatives. Every HEART that lands is invested and creates that cooperative's MIND
+			in two halves: one half returns to its investor (gold), the other sinks into the treasury, whose ring grows and slowly
 			melts. Every few seconds one cooperative turns extractive, giving back less for each HEART; the Avens, the
 			people's personal AI agents (Section 5), see that a HEART buys less there and route around it, without anyone
 			voting. Rates are sped up so the decay can be seen.
@@ -481,14 +481,14 @@
 		<figure>
 			<SplitFlow />
 			<figcaption>
-				<strong>Figure 6.</strong> One HEART through the 50/50 commons split. Half of the minted MIND goes to the
+				<strong>Figure 6.</strong> One HEART invested into a COOP. Half of the MIND it creates goes to the
 				investor; the other half stays with the COOP and is paired with the HEART itself in the COOP's own pool.
 				Nobody outside the COOP provides its liquidity.
 			</figcaption>
 		</figure>
 
 		<p>
-			The 50/50 split changes who carries that loss. Every COOP owns half of its MIND supply and receives every HEART
+			The way MIND is created changes who carries that loss. Every COOP owns half of its MIND supply and receives every HEART
 			invested in it, which is exactly what it needs to seed and own its pool. Impermanent loss does not disappear; it
 			moves onto the COOP's balance sheet, where it is booked as an operating cost of keeping its currency liquid, like
 			wear on a machine. An investor's INVESTORmind is never part of a pool and is never diluted by a swing. A
@@ -575,7 +575,7 @@
 				<tbody>
 					<tr><td>Allocation</td><td>Every agent receives 24 personal HEARTS a day, only investable</td><td>Every resident receives 24 personal HEARTS a day, one identity per person</td></tr>
 					<tr><td>Demurrage</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>The same rule, fixed in the protocol</td></tr>
-					<tr><td>Cooperatives</td><td>Agents found COOPs, one MIND each, with the 50/50 split</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
+					<tr><td>Cooperatives</td><td>Agents found COOPs and invest HEARTS into their MINDs</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
 					<tr><td>Markets</td><td>AMM pools owned by each COOP</td><td>Avens route every purchase through the pools</td></tr>
 					<tr><td>Agents</td><td>AI agents with memory and goals, later joined by human players</td><td>One Aven per resident, on their own device</td></tr>
 					<tr><td>Governance</td><td>Rule changes as open proposals, measured world by world</td><td>The evolutionary matrix of Section 8</td></tr>
@@ -585,7 +585,7 @@
 		<h3>9.1 A roadmap in four steps</h3>
 		<ol>
 			<li><strong>Continuous decay.</strong> Run Eq. (1) in the game and measure how agents' behaviour changes with the rate.</li>
-			<li><strong>MINDs and the 50/50 split.</strong> Let agents found several cooperatives, each with its own MIND and pool, and watch which ones survive.</li>
+			<li><strong>HEARTS into MINDs.</strong> Let agents found several cooperatives, each with its own MIND and pool, and watch which ones survive.</li>
 			<li><strong>Human intents.</strong> Let people set the two daily choices of Section 5 and leave the rest to their Aven, so humans and AI agents share one economy.</li>
 			<li><strong>The first real village.</strong> One village centre with its energy, food and housing cooperatives, run on the rules that survived the game.</li>
 		</ol>
