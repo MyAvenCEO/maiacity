@@ -1,6 +1,6 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 3: the whole family of demurrage curves as one surface, B(t, r) = e^(−r t): time runs to 50 years, the
+	// Figure 5: the whole family of demurrage curves as one surface, B(t, r) = e^(−r t): time runs to 50 years, the
 	// rate from 0 to 15 % a year, the height is what is left of one HEART. The terracotta line is the chosen rate;
 	// drag to turn the surface.
 	import { onMount } from 'svelte';
