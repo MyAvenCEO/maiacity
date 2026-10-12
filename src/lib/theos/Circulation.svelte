@@ -171,7 +171,7 @@
 	<div class="keys" aria-hidden="true">
 		<span><i class="h"></i>HEARTS, sent by people</span>
 		<span><i class="m"></i>INVESTORmind, back to the investor</span>
-		<span><i class="s"></i>TREASURYmind, into the COOP's pool</span>
+		<span><i class="s"></i>TREASURYmind, into the COOP's treasury</span>
 	</div>
 </div>
 

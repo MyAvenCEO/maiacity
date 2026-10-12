@@ -85,9 +85,9 @@
 			First, every person receives their own personal currency every day, simply for being alive: {UIA_DAY} HEARTS, one
 			for every hour. Samuel's are SamuelHEARTS, Anna's are AnnaHEARTS. HEARTS are not spending money but a voice: they
 			can only be invested into cooperatives, shared enterprises that make what a city needs, such as energy, food or
-			housing. Second, each investment becomes that cooperative's own currency, its MIND, which is what one spends to use
-			what the cooperative makes. Half of it goes to the investor and half stays with the cooperative, so that its
-			currency can always be traded. Third, all money slowly melts, losing {pct(RATE * 100)} of its value a year, just as
+			housing. Second, each investment is converted into that cooperative's own currency, its MIND, which is what one spends to
+			use what the cooperative makes. Half of it goes to the investor and half stays with the cooperative as its working
+			capital. Third, all money slowly melts, losing {pct(RATE * 100)} of its value a year, just as
 			food spoils and machines wear out, so wealth keeps moving instead of being hoarded.
 		</p>
 		<p>
@@ -400,16 +400,17 @@
 			</p>
 		</div>
 		<p>
-			Follow one HEART. Anna invests one AnnaHEART into the solar COOP. The HEART disappears from her wallet, and the
-			COOP now holds it. New SOLARmind appears: half in Anna's wallet, where it is her share in the solar COOP and her
-			right to draw its electricity, and half in the COOP's treasury. When Anna switches on a lamp, she spends a little
+			Follow one HEART. Anna invests one AnnaHEART into the solar COOP. The HEART is converted: it disappears for good,
+			and nobody holds it afterwards, not even the COOP. In its place new SOLARmind appears: half in Anna's wallet,
+			where it is her share in the solar COOP and her right to draw its electricity, and half in the COOP's treasury.
+			That treasury half is the COOP's working capital, what it pays its builders, suppliers and machines with. When Anna switches on a lamp, she spends a little
 			of her SOLARmind. Value is built wherever people send their HEARTS, and it is used by spending the MINDs those
 			HEARTS created.
 		</p>
 		<p>
 			MINDs melt at the same 7 % a year as HEARTS, so a COOP's currency is worth holding only while the COOP keeps
 			producing. That raises a practical question. If every COOP has its own currency, how does Anna pay for a tram ride
-			with SOLARmind? The treasury half is the answer.
+			with SOLARmind? A small part of the treasury is the answer.
 		</p>
 	</section>
 
@@ -420,7 +421,8 @@
 			<em>liquid</em>. theOS uses automated market makers (AMMs) for this. An AMM is a pool holding two currencies
 			that sets their exchange rate from the ratio of its reserves, so anyone can trade at any time against a formula
 			instead of waiting for a buyer or seller <Cite k="uniswap" />. Such pools have been shown to give reliable public
-			prices <Cite k="angeris" />. A pool holding <Tex tex="x" /> HEARTS and <Tex tex="y" /> of a MIND keeps
+			prices <Cite k="angeris" />. In theOS every pool pairs two MINDs, for example SOLARmind and TRAMmind. A pool holding <Tex tex="x" /> of one
+			MIND and <Tex tex="y" /> of the other keeps
 		</p>
 		<Tex display tex={String.raw`x \cdot y = k, \qquad p = \frac{x}{y} \tag{5}`} />
 		<p>
@@ -431,34 +433,37 @@
 		</p>
 		<Tex display tex={String.raw`\mathrm{IL}(p) = \frac{2\sqrt{p}}{1 + p} - 1. \tag{6}`} />
 		<p>
-			In theOS nobody outside the COOP provides this reserve. Law 4 already gave every COOP what it needs: the HEARTS
-			invested in it and the TREASURYmind half of every investment. The COOP pairs them in its own pool. Because the
-			protocol, not outside traders, owns this reserve, it is called <em>protocol-owned liquidity</em>.
+			In theOS nobody outside the COOPs provides this reserve. Law 4 already gave every COOP a treasury of its own MIND.
+			Most of it stays working capital; the COOP puts only a small portion into pools, paired against the MINDs of
+			other COOPs, so that its currency can be swapped for theirs. No HEARTS ever sit in a pool, because every HEART was
+			converted into MIND the moment it was invested. Because the COOPs themselves, not outside traders, own these
+			reserves, this is called <em>protocol-owned liquidity</em>.
 		</p>
 		<figure>
 			<SplitFlow />
 			<figcaption>
-				<strong>Figure 4.</strong> One HEART invested into a COOP. Half of the MIND it creates goes to the
-				investor; the other half stays with the COOP and is paired with the HEART itself in the COOP's own pool.
-				Nobody outside the COOP provides its liquidity.
+				<strong>Figure 4.</strong> One HEART invested into a COOP is converted into MIND and is gone. Half of the
+				MIND goes to the investor; the other half becomes the COOP's treasury, its working capital. Only a small
+				portion of the treasury goes into pools against other COOPs' MINDs.
 			</figcaption>
 		</figure>
 		<p>
 			Impermanent loss does not disappear; it moves onto the COOP's books, where it is an operating cost of keeping its
-			currency liquid, like wear on a machine. Anna's INVESTORmind is never part of a pool and is never diluted by a
-			price swing. A speculative attack thins the COOP's pool while its turbines keep turning.
+			currency liquid, like wear on a machine. Because only a small portion of the treasury sits in pools, a price swing
+			touches only that portion. Anna's INVESTORmind is never part of a pool, and a speculative attack thins a pool
+			while the COOP's working capital and its turbines keep going.
 		</p>
 		<figure>
 			<LineChart
 				title="Impermanent loss of a constant-product pool against the price move"
 				series={il}
 				endLabels={false}
-				x={{ min: 0.1, max: 10, log: true, ticks: [0.1, 0.25, 0.5, 1, 2, 4, 10], fmt: (v, tip) => `${tip ? 'Price ×' : '×'}${fmt(v, v < 1 ? 2 : tip ? 2 : 0)}`, label: 'Price change of the MIND against HEARTS (log scale)' }}
+				x={{ min: 0.1, max: 10, log: true, ticks: [0.1, 0.25, 0.5, 1, 2, 4, 10], fmt: (v, tip) => `${tip ? 'Price ×' : '×'}${fmt(v, v < 1 ? 2 : tip ? 2 : 0)}`, label: 'Price change between the two MINDs (log scale)' }}
 				y={{ min: -45, max: 0, ticks: [0, -10, -20, -30, -40], fmt: (v, tip) => `${fmt(v, tip ? 1 : 0)} %`, label: 'Loss against holding' }}
 				refs={[{ axis: 'y', at: impermanentLoss(2) * 100, label: `price ×2 or ÷2: ${fmt(impermanentLoss(2) * 100, 1)} %`, end: true, below: true }]}
 			/>
 			<figcaption>
-				<strong>Figure 5.</strong> Impermanent loss from (6). A doubling or halving of a MIND's price costs the pool
+				<strong>Figure 5.</strong> Impermanent loss from (6). A doubling or halving of one MIND's price against the other costs the pool
 				5.7 % against simply holding; a tenfold move costs 42.5 %. In theOS this is a cost the COOP carries, never
 				the individual.
 			</figcaption>
@@ -604,10 +609,10 @@
 			<li><strong>Universal Intent Allocation.</strong> Every person receives 24 personal HEARTS a day, one per hour.</li>
 			<li><strong>Pure investment.</strong> HEARTS earn no interest and buy nothing; they can only be invested.</li>
 			<li><strong>Open cooperative creation.</strong> Anyone can found a COOP, at any time, without permission.</li>
-			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> Half to the investor, half to the COOP's treasury.</li>
+			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> The HEARTS are converted into MIND: half to the investor, half to the COOP's treasury as working capital.</li>
 		</ol>
 		<p>
-			On top of them, demurrage keeps all money moving, protocol-owned pools keep every MIND tradeable, Avens do the
+			On top of them, demurrage keeps all money moving, small COOP-owned pools of MIND against MIND keep every MIND tradeable, Avens do the
 			arithmetic, and selection improves the COOPs. Figure 8 shows it running.
 		</p>
 		<figure class="wide">
@@ -615,7 +620,7 @@
 		<figcaption>
 				<strong>Figure 8.</strong> The whole machine, simulated. People on the outer ring send their daily HEARTS
 				(terracotta) into six COOPs. Every HEART that lands is invested and creates that COOP's MIND: half returns to
-				its investor (gold), half sinks into the COOP's treasury, whose ring grows and slowly melts. Every few seconds
+				its investor (gold), half sinks into the COOP's treasury, its working capital, whose ring grows and slowly melts. Every few seconds
 				one COOP turns extractive and gives back less for each HEART; the Avens see that a HEART buys less there and
 				route around it, without anyone voting. Rates are sped up so the decay can be seen.
 			</figcaption>
@@ -645,7 +650,7 @@
 					<tr><td>Allocation</td><td>Every agent receives 24 personal HEARTS a day, only investable</td><td>Every resident receives 24 personal HEARTS a day, one identity per person</td></tr>
 					<tr><td>Demurrage</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>The same rule, fixed in the protocol</td></tr>
 					<tr><td>Cooperatives</td><td>Agents found COOPs and invest HEARTS into their MINDs</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
-					<tr><td>Markets</td><td>AMM pools owned by each COOP</td><td>Avens route every purchase through the pools</td></tr>
+					<tr><td>Markets</td><td>Small AMM pools of MIND against MIND, owned by the COOPs</td><td>Avens route every purchase through the pools</td></tr>
 					<tr><td>Agents</td><td>AI agents with memory and goals, later joined by human players</td><td>One Aven per resident, on their own device</td></tr>
 					<tr><td>Governance</td><td>Rule changes as open proposals, measured world by world</td><td>COOPs choose their own governance and compete (Section 10)</td></tr>
 				</tbody>
@@ -654,7 +659,7 @@
 		<h3>11.1 A roadmap in four steps</h3>
 		<ol>
 			<li><strong>Continuous decay.</strong> Run Eq. (1) in the game and measure how agents' behaviour changes with the rate.</li>
-			<li><strong>HEARTS into MINDs.</strong> Let agents found several cooperatives, each with its own MIND and pool, and watch which ones survive.</li>
+			<li><strong>HEARTS into MINDs.</strong> Let agents found several cooperatives, each with its own MIND, treasury and pools, and watch which ones survive.</li>
 			<li><strong>Human intents.</strong> Let people make the two daily choices of Section 8 and leave the rest to their Aven, so humans and AI agents share one economy.</li>
 			<li><strong>The first real village.</strong> One village centre with its energy, food and housing cooperatives, run on the rules that survived the game.</li>
 		</ol>
