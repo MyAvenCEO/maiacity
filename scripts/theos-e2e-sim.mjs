@@ -162,7 +162,11 @@ function initPerson(S, i, day) {
 		S.alloc[i * M + k] = S.values[i * M + k];
 		S.hold[i * M + k] = 0;
 	}
-	S.workH[i] = !S.sc.allWork && rnd(S) < 0.4 ? 0 : 2 * Math.exp(-0.18 + 0.6 * gauss(S)); // 40 % offer no work (children, the old, carers)
+	// post-AI (main): no human labour is paid. Every human's Aven proposes work items (operating and building), and the
+	// COOPs pay the Aven's human for them; Avens differ in what they deliver (lognormal, spread sc.avenSigma, mean 2).
+	// The old world (sc.labour): 40 % of people offer no work (children, the old, carers), the rest offer hours.
+	const sg = S.sc.avenSigma ?? 0.6;
+	S.workH[i] = S.sc.labour && rnd(S) < 0.4 ? 0 : 2 * Math.exp(sg * gauss(S) - (sg * sg) / 2);
 	S.ybar[i] = 12;
 	S.born[i] = day;
 	S.ring[i] = 0;
@@ -239,7 +243,9 @@ function newBucket() {
 		pd: 0, sAny: 0, sg: [0, 0, 0, 0], newPd: 0, newS: 0, cons: new Float64Array(NHH), routeIn: 0, routeCost: 0,
 		routeFee: 0, hopsIn: 0, insolv: new Float64Array(M), steps: 0, days: 0, arbR: 0, hearts: new Float64Array(M),
 		burned: 0, retired: 0, issued: 0, payR: 0, cpiSum: 0, cpiN: 0, rentR: 0, wagesR: 0, divR: 0, propR: 0, pFail: 0,
-		divK: new Float64Array(M), eligK: new Float64Array(M), treInR: 0, heartInR: 0, salesHHR: 0, b2bR: 0
+		divK: new Float64Array(M), eligK: new Float64Array(M), treInR: 0, heartInR: 0, salesHHR: 0, b2bR: 0,
+		// the round trip (R): own half to wallets, the tenth to the pools, dividends to people and to treasuries, melt by place
+		walHeartR: 0, poolHeartR: 0, divHHR: 0, divTR: 0, meltWR: 0, meltTR: 0, meltPR: 0, meltAR: 0
 	};
 }
 
@@ -444,12 +450,14 @@ const effCap = (S, k) => {
 
 function meltAll(S, f) {
 	const n = S.N * M;
-	let lost = 0;
-	for (let x = 0; x < n; x++) (lost += S.hold[x]), (S.hold[x] *= f);
-	for (const co of S.c) for (let k = 0; k < M; k++) (lost += co.tre[k]), (co.tre[k] *= f);
-	for (const p of S.pools) for (let i = 0; i < p.x.length; i++) (lost += p.x[i]), (p.x[i] *= f);
-	for (let k = 0; k < M; k++) (lost += S.arb[k]), (S.arb[k] *= f);
-	S.tot.melted += lost * (1 - f);
+	let lost = 0, w = 0, t = 0, pl = 0, a = 0;
+	const P = S.P, g = 1 - f;
+	for (let x = 0; x < n; x++) (lost += S.hold[x]), (w += S.hold[x] * P[x % M]), (S.hold[x] *= f);
+	for (const co of S.c) for (let k = 0; k < M; k++) (lost += co.tre[k]), (t += co.tre[k] * P[k]), (co.tre[k] *= f);
+	for (const p of S.pools) for (let i = 0; i < p.x.length; i++) (lost += p.x[i]), (pl += p.x[i] * P[p.m[i]]), (p.x[i] *= f);
+	for (let k = 0; k < M; k++) (lost += S.arb[k]), (a += S.arb[k] * P[k]), (S.arb[k] *= f);
+	S.tot.melted += lost * g;
+	if (S.cur) (S.cur.meltWR += w * g), (S.cur.meltTR += t * g), (S.cur.meltPR += pl * g), (S.cur.meltAR += a * g);
 }
 
 function grow(S, dt) {
@@ -477,11 +485,12 @@ function invest(S, dt) {
 			}
 		}
 		S.inc[i] = inc;
+		S.cur.walHeartR += inc;
 	}
 	const ea = Math.min(1, dt / 90);
 	for (let k = 0; k < M; k++) {
 		const co = S.c[k];
-		if (to[k] > 0) treasuryIn(S, k, to[k], true), (S.cur.treInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.heartInR += to[k] * (1 - POOL_SHARE) * S.P[k]);
+		if (to[k] > 0) treasuryIn(S, k, to[k], true), (S.cur.treInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.heartInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.poolHeartR += to[k] * POOL_SHARE * S.P[k]);
 		co.heartsEma += ea * ((2 * to[k]) / dt - co.heartsEma);
 		S.cur.hearts[k] += 2 * to[k];
 	}
@@ -941,12 +950,16 @@ function payDiv(S, k, div, B) {
 	const H = holders(S, k);
 	if (!(div > 0 && H > 0)) return;
 	const f = div / H, c = S.c;
+	let hh = 0;
 	for (let i = 0; i < S.N; i++) {
 		const d = S.hold[i * M + k] * f;
 		S.hold[i * M + k] += d;
 		S.inc[i] += d * S.P[k];
+		hh += d;
 	}
 	for (let j = 0; j < M; j++) if (j !== k && c[j].active) c[j].tre[k] += c[j].tre[k] * f;
+	B.divHHR += hh * S.P[k];
+	B.divTR += (div - hh) * S.P[k];
 	B.divK[k] += div;
 	B.divR += div * S.P[k];
 }
@@ -1473,9 +1486,10 @@ function closeYear(S) {
 			sigma = Math.sqrt(lr.reduce((x, y) => x + (y - mu) * (y - mu), 0) / (lr.length - 1));
 		}
 	}
-	// workers (who offer hours) against people who do not work
+	// the people whose Avens (or, in the old world, whose own hours) earn the top half of work pay, against the rest
 	let wW = 0, nW = 0, wO = 0, nO = 0;
-	for (let i = 0; i < N; i++) if (S.workH[i] > 0) (wW += W[i]), nW++;
+	const med = Array.from(S.workH.subarray(0, N)).sort((x, y) => x - y)[Math.floor(N / 2)];
+	for (let i = 0; i < N; i++) if (S.workH[i] > med) (wW += W[i]), nW++;
 		else (wO += W[i]), nO++;
 	S.prevHold = S.hold.slice(0, N * M);
 	S.prevP = Float64Array.from(P);
@@ -1502,7 +1516,12 @@ function closeYear(S) {
 		rentR: B.rentR, wagesR: B.wagesR, divR: B.divR, payR: B.payR, pFail: B.pFail, prices: c.map((co) => co.price), q: c.map((co) => co.q),
 		sigma, muRet, muPrice, ringY, ringW, poolMem, yield: eligAll > 0 ? divAll / eligAll : 0, propR: B.propR, treInR: B.treInR,
 		workRatio: nW && nO && wO > 0 ? wW / nW / (wO / nO) : null, peopleShareR: split.totalR > 0 ? split.walR / split.totalR : null,
-		yk: Array.from(yk), flows: { heartIn: B.heartInR, salesHH: B.salesHHR, b2b: B.b2bR, rent: B.rentR, wages: B.wagesR, prop: B.propR, div: B.divR }
+		yk: Array.from(yk), flows: { heartIn: B.heartInR, salesHH: B.salesHHR, b2b: B.b2bR, rent: B.rentR, wages: B.wagesR, prop: B.propR, div: B.divR },
+		rt: {
+			walHeart: B.walHeartR, treHeart: B.heartInR, poolHeart: B.poolHeartR, ops: B.wagesR, prop: B.propR, divHH: B.divHHR, divT: B.divTR,
+			buy: B.salesHHR, b2b: B.b2bR, rent: B.rentR, routeCost: B.routeCost, routeFee: B.routeFee,
+			meltW: B.meltWR, meltT: B.meltTR, meltP: B.meltPR, meltA: B.meltAR, days: B.days
+		}
 	});
 	S.cur = newBucket();
 }
@@ -1670,11 +1689,13 @@ const LADDER = [
 	['work', 'no dividend, surplus for work proposals', { turnDiv: 0 }],
 	['half', 'no Law 5: surplus half as dividends, half for work', { turnDiv: 0, divShare: 0.5 }],
 	['turn10', 'Law 5 at 10 % of every sale', { turnDiv: 0.1 }],
-	['main', 'Law 5 at 20 % of every sale (main)', {}],
+	['main', 'Law 5 at 20 % of every sale, every human\'s Aven works (main)', {}],
 	['turn30', 'Law 5 at 30 % of every sale', { turnDiv: 0.3 }],
 	['keep', 'Law 5 at 20 %, surplus kept (no work proposals)', { payout: 0 }],
 	['main-w5', 'main, prices ×2.5 (wage 5 R/h)', { wageR: 5 }],
-	['allwork', 'main, but everyone offers some work', { allWork: true }],
+	['labour', 'old world: human labour paid, 40 % without work', { labour: true }],
+	['aven-equal', 'main, all Avens deliver alike', { avenSigma: 0 }],
+	['aven-wide', 'main, Avens differ twice as much', { avenSigma: 1.2 }],
 	['retire', 'surplus retired (side)', { mech: 'd', turnDiv: 0 }]
 ];
 
@@ -1800,7 +1821,7 @@ P('');
 const S0 = results['main:base'];
 P(`Land: ${f(S0.landTotal / N0)} m² a person (${f(S0.landLeasable / N0)} leasable, the rest streets and parks), all of it the City COOP's. Seed capacities: 115 % of the starting need (goods exist, money does not) or 25 % (empty city).`);
 P('');
-P('Main scenario: a person pays for what a COOP makes in that COOP\'s MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). A tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools; sales are not levied. A treasury pays for inputs and building from other COOPs, for operating work (2 R an hour, in its prices) and ground rent; Law 5, every sale pays its owners: 20 % of every sale goes at once, as a dividend in the seller\'s own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the people who offer work, by hours). No rent payout, no basic income.');
+P('Main scenario: a person pays for what a COOP makes in that COOP\'s MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). A tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools; sales are not levied. No human labour is paid: every human has one Aven, and the Avens do and propose all work items. A treasury pays for inputs and building from other COOPs, for operating work items (2 R a unit, in its prices; paid to the human whose Aven does them) and ground rent; Law 5, every sale pays its owners: 20 % of every sale goes at once, as a dividend in the seller\'s own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the humans whose Avens propose and deliver the work, by what each Aven delivers). No rent payout, no basic income.');
 P('');
 
 P('## 1. Main scenario against the side comparisons (60 years from a cold start with goods)');
@@ -1822,16 +1843,17 @@ metric('… with the arbitrage bot', (S) => pct(avg(S, ssA, ssB, (y) => y.split.
 metric('People\'s share of all MIND (by value)', (S) => pct(avg(S, ssA, ssB, (y) => y.peopleShareR), 0));
 metric(`Mean a person holds, R (paper W* = ${f(W_STAR)})`, (S) => f(avg(S, ssA, ssB, (y) => y.meanW)));
 metric('Gini of what people hold', (S) => f(avg(S, ssA, ssB, (y) => y.gini), 2));
-metric('Workers\' mean holding ÷ non-workers\'', (S) => f(avg(S, ssA, ssB, (y) => y.workRatio), 1));
+metric('Mean holding: top half of Aven pay ÷ bottom half', (S) => f(avg(S, ssA, ssB, (y) => y.workRatio), 1));
 metric('Gini of consumption', (S) => f(Math.max(0, avg(S, ssA, ssB, (y) => y.giniC)), 2));
 metric('Dividend yield a year', (S) => pct(avg(S, ssA, ssB, (y) => y.yield), 1));
-metric('Paid for work proposals, R a person a year', (S) => f(avg(S, ssA, ssB, (y) => y.propR / y.N)));
+metric('Paid for Aven work items (operating), R a person a year', (S) => f(avg(S, ssA, ssB, (y) => y.wagesR / y.N)));
+metric('Paid for Aven work proposals, R a person a year', (S) => f(avg(S, ssA, ssB, (y) => y.propR / y.N)));
 metric('Paid as dividends, R a person a year', (S) => f(avg(S, ssA, ssB, (y) => y.divR / y.N)));
 metric('Burned or retired, share of issuance', (S) => pct(avg(S, ssA, ssB, (y) => y.burned / y.issued), 0));
 metric('Basic bundle, R a day: year 1 / 10 / 60', (S) => `${f(at(S, 1).cpi, 2)} / ${f(at(S, 10).cpi, 2)} / ${f(at(S, YRS).cpi, 2)}`);
 metric('COOP-days short of working capital (60 y)', (S) => f(S.Y.reduce((s, y) => s + y.insolv.reduce((a, b) => a + b, 0), 0)));
 table(['Measure', ...KEYS.map((k) => RUNS[k].label)], rows1);
-P('Under hold-to-use the "basic bundle" is the yearly melt on the MIND stock that grants a day of basic use. "Workers" are the 60 % of people who offer some hours of work; the rest (children, the old, carers) offer none.');
+P('Under hold-to-use the "basic bundle" is the yearly melt on the MIND stock that grants a day of basic use. No human labour is paid: every human has one Aven, the Avens do and propose the work items, and what an Aven delivers differs from Aven to Aven (lognormal, spread 0.6). "Top half" are the people whose Avens earn more than the median.');
 P('');
 
 P('## 2. MIND prices over time, main scenario (R)');
@@ -1866,9 +1888,9 @@ P('');
 		const melt = avg(S, ssA, ssB, (y) => (y.split.treR * RATE) / y.N);
 		return [RUNS[k].label, f(g((x) => x.heartIn)), f(g((x) => x.salesHH)), f(g((x) => x.b2b + x.rent)), f(inn), f(g((x) => x.b2b + x.rent)), f(g((x) => x.wages)), `${f(g((x) => x.prop))} (${pct(g((x) => x.prop) / inn, 0)})`, `${f(g((x) => x.div))} (${pct(g((x) => x.div) / inn, 0)})`, f(melt), f(avg(S, ssA, ssB, (y) => (y.retired || 0) / y.N))];
 	});
-	table(['Run', 'in: treasury half of HEARTS', 'in: sales to people', 'in: sales to COOPs and rent', 'in: total', 'out: inputs, building, rent', 'out: operating wages', 'out: work proposals (share of in)', 'out: dividends (share of in)', 'melt on treasuries', 'retired (MIND)'], rows);
+	table(['Run', 'in: treasury half of HEARTS', 'in: sales to people', 'in: sales to COOPs and rent', 'in: total', 'out: inputs, building, rent', 'out: Aven work items, operating', 'out: Aven work proposals (share of in)', 'out: dividends (share of in)', 'melt on treasuries', 'retired (MIND)'], rows);
 	const S = results['main:base'];
-	P(`Days of running costs a treasury holds (main, year ${YRS}): ${NAMES.slice(0, BASE_COOPS).map((n) => `${n} ${f(at(S, YRS).cover[n])}`).join(', ')}. Work proposals pay ${f(avg(S, ssA, ssB, (y) => y.propR) / hoursYear(S), 1)} R an hour offered, on top of the operating wage of ${WAGE_R} R an hour.`);
+	P(`Days of running costs a treasury holds (main, year ${YRS}): ${NAMES.slice(0, BASE_COOPS).map((n) => `${n} ${f(at(S, YRS).cover[n])}`).join(', ')}. A person\'s Aven earns ${f(avg(S, ssA, ssB, (y) => y.wagesR / y.N))} R a year for operating items and ${f(avg(S, ssA, ssB, (y) => y.propR / y.N))} R for work proposals; the person also gets ${f(avg(S, ssA, ssB, (y) => y.rt.divHH / y.N))} R of dividends.`);
 	P('');
 }
 
@@ -1877,12 +1899,12 @@ P('');
 P(`Each run: ${BR} years from a cold start (steady state = years ${lA + 1}–${lB}); then everyone's holdings are made as unequal as Germany's wealth (Gini 0.72, same total) and the run goes on to year ${LAD_END}.`);
 P('');
 const ratio = (x) => (x === null || !isFinite(x) ? '–' : x > 1000 ? '> 1,000' : f(x, 1));
-table(['Treasury payout', 'basic-need shortfall', 'people\'s share of all MIND', `mean holding, R (W* = ${f(W_STAR)})`, 'workers ÷ non-workers', 'Gini owned at rest', 'dividend yield', 'μ: mean return (dividends + price)', 'σ across people', 'Prop. 2 Gini', 'work pay, R an hour offered', 'work + dividends, share of treasury inflow'], LADDER.map(([key, label]) => {
+table(['Treasury payout', 'basic-need shortfall', 'people\'s share of all MIND', `mean holding, R (W* = ${f(W_STAR)})`, 'top ÷ bottom half of work pay', 'Gini owned at rest', 'dividend yield', 'μ: mean return (dividends + price)', 'σ across people', 'Prop. 2 Gini', 'work pay a person, R a year', 'work + dividends, share of treasury inflow'], LADDER.map(([key, label]) => {
 	const S = results[`lad:${key}`];
 	const p2 = prop2(S, lA, lB);
 	const inn = avg(S, lA, lB, (y) => y.flows.heartIn + y.flows.salesHH + y.flows.b2b + y.flows.rent);
 	const outp = avg(S, lA, lB, (y) => y.flows.prop + y.flows.div);
-	return [label, pct(avg(S, lA, lB, (y) => y.short), 1), pct(avg(S, lA, lB, (y) => y.peopleShareR), 0), f(avg(S, lA, lB, (y) => y.meanW)), ratio(avg(S, lA, lB, (y) => y.workRatio)), f(avg(S, lA, lB, (y) => y.gini), 2), pct(avg(S, lA, lB, (y) => y.yield), 1), pct(p2.mu, 1), pct(p2.sg, 2), p2.g === null ? '–' : f(p2.g, 2), f(avg(S, lA, lB, (y) => y.propR) / hoursYear(S), 1), pct(outp / inn, 0)];
+	return [label, pct(avg(S, lA, lB, (y) => y.short), 1), pct(avg(S, lA, lB, (y) => y.peopleShareR), 0), f(avg(S, lA, lB, (y) => y.meanW)), ratio(avg(S, lA, lB, (y) => y.workRatio)), f(avg(S, lA, lB, (y) => y.gini), 2), pct(avg(S, lA, lB, (y) => y.yield), 1), pct(p2.mu, 1), pct(p2.sg, 2), p2.g === null ? '–' : f(p2.g, 2), f(avg(S, lA, lB, (y) => (y.propR + y.wagesR) / y.N)), pct(outp / inn, 0)];
 }));
 table(['Treasury payout', 'μ', 'Gini at start', '+1 y', '+5 y', '+10 y', `+${LAD_END - BR} y`, 'Eq. (9), melt r: +10 / +20', 'Eq. (9) with r − μ: +10 / +20'], LADDER.map(([key, label]) => {
 	const S = results[`lad:${key}`];
@@ -1959,6 +1981,54 @@ P('');
 		return (n * Math.exp(-RATE * 20) * at(S, BR + 20).P[k]) / at(S, BR + 1).P[k];
 	};
 	table(['HEARTS to GEO, share (20 y)', 'years until built', 'GEO share of energy +20 y', 'GEO plant left after 20 y', '1 GEOmind of year 1 after founding, worth +20 y (with dividends, after melt)', '1 SOLARmind, same', 'paper Eq. (7) factor, 20 y'], [[pct(h, 2), built, pct(e, 0), pct(Math.exp(-SPECS[GEO].dep * 20), 0), f(claim(GEO), 2), f(claim(SOLAR), 2), f(Math.exp((RATE - 0.01) * 20), 2)]]);
+}
+
+P('## 7. The round trip and the macro checks (main scenario, steady state)');
+P('');
+{
+	// one day of the whole economy, R a person a day, averaged over the steady state: what flows into and out of each
+	// place, the change of what that place holds, and what the flows do not explain (routing costs and price moves)
+	const S = results['main:base'];
+	const pd = (fn) => avg(S, ssA, ssB, (y) => fn(y.rt, y) / y.N / Math.max(1, y.rt.days));
+	const d = (key) => avg(S, ssA, ssB, (y) => {
+		const prev = S.Y[y.year - 2];
+		return prev ? (y.split[key] - prev.split[key]) / y.N / 365 : null;
+	});
+	const row = (place, ins, outs, dk) => {
+		const inT = ins.reduce((a, [, v]) => a + v, 0), outT = outs.reduce((a, [, v]) => a + v, 0), ch = d(dk);
+		return [place, ins.map(([l, v]) => `${l} ${f(v, 2)}`).join('; '), outs.map(([l, v]) => `${l} ${f(v, 2)}`).join('; '), f(inT - outT, 2), f(ch, 2), f(ch - (inT - outT), 2)];
+	};
+	const wal = row('People\'s wallets',
+		[['own half of the HEARTS they invest', pd((r) => r.walHeart)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['dividends', pd((r) => r.divHH)]],
+		[['buying from COOPs', pd((r) => r.buy)], ['melt', pd((r) => r.meltW)]], 'walR');
+	const tre = row('COOP treasuries',
+		[['treasury half of HEARTS (after the tenth)', pd((r) => r.treHeart)], ['sales to people', pd((r) => r.buy)]],
+		[['dividends to people', pd((r) => r.divHH)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['melt', pd((r) => r.meltT)]], 'treR');
+	const pool = row('Pools',
+		[['the tenth of the treasury half', pd((r) => r.poolHeart)], ['routing costs', pd((r) => r.routeCost)]],
+		[['melt', pd((r) => r.meltP)]], 'poolR');
+	table(['Place', 'in (R a person a day)', 'out', 'in − out', 'change of what it holds', 'not explained: routing, price moves'], [wal, tre, pool]);
+	P(`Between treasuries (these cancel out, so they are not in the table): sales to other COOPs ${f(pd((r) => r.b2b), 2)}, ground rent to the City COOP ${f(pd((r) => r.rent), 2)}, dividends to treasuries that hold other MINDs ${f(pd((r) => r.divT), 2)} R a person a day. People pay routing costs only on the share of their payments that the pools convert.`);
+	P('');
+	const issued = pd((r) => r.walHeart + r.treHeart + r.poolHeart), melt = pd((r) => r.meltW + r.meltT + r.meltP + r.meltA);
+	const inc = pd((r) => r.walHeart + r.ops + r.prop + r.divHH);
+	const p2 = prop2(S, ssA, ssB);
+	const drift = Math.pow(at(S, YRS).cpi / at(S, ssA).cpi, 1 / (YRS - ssA)) - 1;
+	const short = avg(S, ssA, ssB, (y) => y.short), ins = S.Y.reduce((a, y) => a + y.insolv.reduce((x, z) => x + z, 0), 0);
+	const insLate = S.Y.slice(10).reduce((a, y) => a + y.insolv.reduce((x, z) => x + z, 0), 0);
+	const ok = (b) => (b ? '✓' : '✗');
+	P('Macro checks:');
+	P('');
+	P(`- ${ok(Math.abs(issued - melt) / issued < 0.03)} New money equals the melt at rest: ${f(issued, 2)} R a person a day issued (24 HEARTS converted), ${f(melt, 2)} R melted.`);
+	P(`- ${ok(Math.abs(avg(S, ssA, ssB, (y) => y.mPer) / M_STAR - 1) < 0.05)} Money a person rests at the paper's level u/r: ${f(avg(S, ssA, ssB, (y) => y.mPer))} MIND against ${f(M_STAR)}.`);
+	P(`- ${ok(short < 0.001)} Every basic need is met: shortfall ${pct(short, 2)} at rest; consumption Gini ${f(Math.max(0, avg(S, ssA, ssB, (y) => y.giniC)), 2)}.`);
+	P(`- ${ok(insLate === 0)} COOPs stay solvent: ${f(ins)} COOP-days short of working capital in ${YRS} years, ${f(insLate)} after year 10.`);
+	P(`- ${ok(Math.abs(drift) < 0.01)} Prices are stable at rest: the basic bundle changes ${pct(drift, 2)} a year over years ${ssA + 1}–${ssB}.`);
+	P(`- ${ok(avg(S, ssA, ssB, (y) => y.peopleShareR) > 0.8)} People own the economy: ${pct(avg(S, ssA, ssB, (y) => y.peopleShareR), 0)} of all MIND by value.`);
+	P(`- ${ok(p2.mu !== null && p2.mu < RATE)} Holding never beats the melt: μ = ${pct(p2.mu, 1)} (dividend yield ${pct(avg(S, ssA, ssB, (y) => y.yield), 1)}) against r = ${pct(RATE, 0)}, so Proposition 2's Gini stays bounded (${p2.g === null ? '–' : f(p2.g, 2)}).`);
+	P(`- Where a person's income comes from, at rest: own half of the HEARTS ${pct(pd((r) => r.walHeart) / inc, 0)}, Aven work items ${pct(pd((r) => r.ops) / inc, 0)}, Aven work proposals ${pct(pd((r) => r.prop) / inc, 0)}, dividends ${pct(pd((r) => r.divHH) / inc, 0)}. No wage for human labour.`);
+	P(`- Gini of what people hold: ${f(avg(S, ssA, ssB, (y) => y.gini), 2)}; the top half of Aven pay holds ${f(avg(S, ssA, ssB, (y) => y.workRatio), 1)}× the bottom half.`);
+	P('');
 }
 
 P(`_Runtime ${((Date.now() - T0) / 1000).toFixed(1)} s._`);
