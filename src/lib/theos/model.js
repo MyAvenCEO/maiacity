@@ -23,6 +23,31 @@ export const steadyState = (r = RATE, u = UIA_DAY * 365) => u / r;
 /** dB/dt = u − rB, solved: a member who starts with b0 */
 export const balanceAt = (b0, t, r = RATE, u = UIA_DAY * 365) => steadyState(r, u) + (b0 - steadyState(r, u)) * Math.exp(-r * t);
 
+/** the share of an idle balance that a continuous rate r takes in one year: 1 − e^(−r) */
+export const yearlyLoss = (r = RATE) => 1 - Math.exp(-r);
+
+/** the steady state when the population grows at the rate nu a year: u / (r + ν) */
+export const steadyStateGrowth = (nu, r = RATE, u = UIA_DAY * 365) => u / (r + nu);
+
+/** years until a city that starts with nothing reaches the share f of its steady state */
+export const yearsToReach = (f, r = RATE) => -Math.log(1 - f) / r;
+
+/** the rate u / m(t) at which a member's relative balance moves, in a city that started with nothing */
+export const relativeRate = (t, r = RATE) => r / (1 - Math.exp(-r * t));
+
+/** MIND a day that a founder controls when he invests all his HEARTS into his own COOP: both halves, less the tenth
+ *  of the treasury half that drips into the pools; an honest investor keeps only the investor half */
+export const selfDealDay = (pool = 0.1) => UIA_DAY * (0.5 + 0.5 * (1 - pool));
+export const honestDay = () => UIA_DAY / 2;
+
+/** what is left of an equal-weight pool of n MINDs when one MIND's price falls to the share p: p^(1/n) */
+export const poolAfterCrash = (p, n) => Math.pow(p, 1 / n);
+/** the same tokens simply held, not in a pool */
+export const heldAfterCrash = (p, n) => (n - 1 + p) / n;
+
+/** how many exchange rates n currencies have between them */
+export const pairCount = (n) => (n * (n - 1)) / 2;
+
 /** Laborde's RTM rate from life expectancy: c = ln(ev/2) / (ev/2) */
 export const rtmRate = (ev) => Math.log(ev / 2) / (ev / 2);
 
@@ -45,21 +70,21 @@ export const basketLvr = (n, sigma, rho = 0) => 0.5 * sigma * sigma * (1 - rho) 
 
 const range = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
 
-/** Figure 2: 100 HEARTS left idle, under three rates */
+/** Figure 4: 100 HEARTS or MINDs left idle, under three rates */
 export const idleSeries = (rates = [0.03, RATE, 0.1], years = 40) =>
 	rates.map((r) => ({ r, points: range(0, years, 160).map((t) => [t, decay(100, r, t)]) }));
 
-/** Figure 3: money per person (HEARTS and MINDs) from three starts under the same UIA and demurrage */
+/** Figure 6: the count of all HEARTS and MINDs per person (wallets, treasuries and pools) from three starts */
 export const convergenceSeries = (r = RATE, years = 60) => {
 	const star = steadyState(r);
 	return [
 		{ id: 'rich', label: 'Starts with 1,000,000 per person', b0: 1_000_000 },
-		{ id: 'mid', label: 'Starts at 125,000 per person', b0: 125_000 },
+		{ id: 'mid', label: `Starts at the 7 % steady state, ${fmt(steadyState(RATE))}`, b0: steadyState(RATE) },
 		{ id: 'newborn', label: 'A new city, starts with 0', b0: 0 }
 	].map((s) => ({ ...s, points: range(0, years, 240).map((t) => [t, balanceAt(s.b0, t, r)]), star }));
 };
 
-/** Figure 5: what 1,000 HEARTS of purchasing power is worth after t years, parked or built into infrastructure */
+/** Figure 9: 1,000 HEARTS left idle and melting, against the yearly use of what they built, at a real rate of 0 or −1 % */
 export const infraSeries = (years = 50) =>
 	[
 		{ id: 'idle', label: 'Idle HEARTS (−7 %)', r: RATE },
@@ -67,7 +92,7 @@ export const infraSeries = (years = 50) =>
 		{ id: 'flat', label: 'Project at 0 % real', r: 0 }
 	].map((s) => ({ ...s, points: range(0, years, 200).map((t) => [t, decay(1000, s.r, t)]) }));
 
-/** Figure 5: a basket's yearly LVR against how many MINDs it holds, for three kinds of MIND */
+/** Figure 8: a basket's yearly LVR against how many MINDs it holds, for three kinds of MIND */
 export const lvrSeries = () =>
 	[
 		{ id: 'calm', label: 'σ 20 %, independent', sigma: 0.2, rho: 0 },
@@ -76,15 +101,15 @@ export const lvrSeries = () =>
 	].map((s) => ({ ...s, points: range(2, 8, 6).map((n) => [n, basketLvr(n, s.sigma, s.rho) * 100]) }));
 
 /**
- * Figure 8: three cooperatives in one sector, replicator dynamics. Each COOP turns a HEART into f units of utility;
+ * Figure 10: three cooperatives in one sector, replicator dynamics. Each COOP turns a HEART into f units of utility;
  * avens route a share k of the gap to the mean every month. Bureaucracy (B) loses efficiency while it argues, capture
  * (A) slowly turns extractive, C keeps improving. Shares of the sector's flow over ten years.
  */
-export function selectionSeries(years = 10, k = 0.25) {
+export function selectionSeries(years = 10, k = 0.25, learn = 0.05) {
 	const fit = {
 		A: (t) => 1.0 - 0.06 * t, // capital-weighted: drifts towards extraction
 		B: (t) => 0.95 - 0.02 * t, // demarchy: steady but slow
-		C: (t) => 0.9 + 0.05 * t // QV + AI executive: learns
+		C: (t) => 0.9 + learn * t // QV + AI executive: learns
 	};
 	let s = { A: 1 / 3, B: 1 / 3, C: 1 / 3 };
 	const steps = years * 12;
@@ -106,6 +131,14 @@ export function selectionSeries(years = 10, k = 0.25) {
 		{ id: 'B', label: 'COOP B · 1 person, 1 vote', points: out.B },
 		{ id: 'C', label: 'COOP C · QV + AI executive', points: out.C }
 	];
+}
+
+/** Figure 10 in numbers: the year in which C first leads the sector, and C's share (%) after `at` years */
+export function selectionStats(learn = 0.05, at = 5, years = 30) {
+	const [A, B, C] = selectionSeries(years, 0.25, learn).map((s) => s.points);
+	const i = C.findIndex(([, c], j) => j > 0 && c > A[j][1] && c > B[j][1]);
+	const k = C.findIndex(([t]) => Math.abs(t - at) < 1e-9);
+	return { lead: i < 0 ? null : C[i][0], share: C[k][1] };
 }
 
 // ── Fair ownership (Section 9.2) ─────────────────────────────────────────────────────────────────────────────────────
@@ -170,7 +203,7 @@ const gini = (w) => {
 export function giniSeries(years = 100, n = 1500, dt = 0.5) {
 	const r = RATE, a = (UIA_DAY * 365) / 2, rest = a / r;
 	const out = [{ id: 'cap', label: 'capitalism today', dash: '5 4', points: [[0, GINI_DE], [years, GINI_DE]] }];
-	out.push({ id: 's0', label: 'theOS, same returns', points: Array.from({ length: years / 2 + 1 }, (_, i) => [i * 2, giniAt(GINI_DE, i * 2)]) });
+	out.push({ id: 's0', label: 'theOS, everyone keeps the same', points: Array.from({ length: years / 2 + 1 }, (_, i) => [i * 2, giniAt(GINI_DE, i * 2)]) });
 	// a lognormal start with Gini 0.72 (σ_ln = √2·Φ⁻¹(0.86)), scaled to the resting level
 	const sl = Math.SQRT2 * 1.0803;
 	for (const [sigma, seed] of [[0.1, 7], [0.2, 11]]) {
