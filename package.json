@@ -36,6 +36,7 @@
 		"@tauri-apps/api": "^2",
 		"@tauri-apps/plugin-dialog": "^2",
 		"@types/three": "^0.186.0",
+		"katex": "0.16.22",
 		"marked": "^18.0.12",
 		"quickjs-emscripten-core": "^0.32.0",
 		"three": "^0.186.0",
