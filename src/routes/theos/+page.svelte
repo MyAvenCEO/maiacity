@@ -108,17 +108,6 @@
 		</ol>
 	</nav>
 
-	<figure class="wide">
-		<Circulation />
-		<figcaption>
-			<strong>Figure 1.</strong> The loop of theOS, simulated. People on the outer ring send their daily HEARTS
-			(terracotta) into six cooperatives. Every HEART that lands is minted into that cooperative's MIND and split
-			50/50: one half returns to its investor (gold), the other sinks into the treasury, whose ring grows and slowly
-			melts. Every few seconds one cooperative turns extractive; the Avens see that a HEART buys less there and route
-			around it, without anyone voting. Rates are sped up so the decay can be seen.
-		</figcaption>
-	</figure>
-
 	<section id="why">
 		<h2><span>1</span>Why: the distribution crisis</h2>
 		<p>
@@ -135,23 +124,27 @@
 		<p>
 			Production does not fall when labour leaves it; it rises. What fails is distribution. If income flows to
 			whoever owns the machines, and the return on that capital outruns growth, wealth concentrates without limit, as
-			Piketty documented for the twentieth century under the simple inequality <Tex tex="r > g" /> <Cite k="piketty" />.
-			A universal basic income is the standard answer <Cite k="parijs" />, but a cash transfer funded by taxing the
+			Piketty documented for the twentieth century under the simple inequality <Tex tex="r > g" />: when the return on
+			capital, <Tex tex="r" />, is larger than the growth of the whole economy, <Tex tex="g" />, those who already own
+			take a growing share of everything <Cite k="piketty" />.
+			A universal basic income, a fixed sum of money paid to everyone without conditions, is the standard answer
+			<Cite k="parijs" />, but a cash transfer funded by taxing the
 			owners leaves the structure intact: people receive consumption, never direction. They can spend, but they cannot
 			decide what the automated economy builds next.
 		</p>
 		<p>
 			There is a second, older failure underneath. Frederick Soddy, a Nobel chemist, pointed out in 1926 that real
 			wealth obeys the laws of thermodynamics while debt obeys compound interest: houses crumble, harvests rot, machines
-			rust, but a claim on them can grow for ever <Cite k="soddy" />. Georgescu-Roegen later made entropy the core of
-			his economics <Cite k="georgescu" />. Money that does not decay lets its owner step outside the physics everyone
+			rust, but a claim on them can grow for ever <Cite k="soddy" />. Georgescu-Roegen later made entropy, the tendency of every ordered thing to
+			run down unless energy keeps it up, the core of his economics <Cite k="georgescu" />. Money that does not decay lets its owner step outside the physics everyone
 			else lives in, and the most rational use of a surplus becomes to sit on it.
 		</p>
 		<p class="thesis">
 			theOS starts from these two observations. It replaces the wage as the distribution channel with a daily
 			allocation of <em>steering</em> rather than spending power, and it puts money back under the same entropy as the
-			things it stands for. The rest of this paper explains how those two moves fit together, why they are stable,
-			and what is still unknown.
+			things it stands for. Together they aim at what we call Abundism: an economy in which automation makes the basics
+			plentiful and everyone shares in deciding what is built. The rest of this paper explains how those two moves fit
+			together, why they are stable, and what is still unknown.
 		</p>
 	</section>
 
@@ -164,8 +157,10 @@
 		<dl class="lineage">
 			<dt>Silvio Gesell, 1916</dt>
 			<dd>
-				<em>Freigeld</em>: money should carry a holding cost, like every good it competes with, so that it circulates
-				instead of waiting for a higher interest rate. Gesell paired it with <em>Freiland</em>, common ownership of
+				<em>Freigeld</em> (free money): money should carry a holding cost, like every good it competes with, so that it
+				circulates instead of waiting for a higher interest rate. Such a fee on holding money is called
+				<em>demurrage</em>, the word for the charge a ship pays for every day it lies idle in port. It is the central
+				idea this paper builds on. Gesell paired it with <em>Freiland</em>, common ownership of
 				land, because otherwise wealth simply flees from money into soil <Cite k="gesell" />.
 			</dd>
 			<dt>Wörgl, 1932–33</dt>
@@ -176,22 +171,25 @@
 			</dd>
 			<dt>Irving Fisher, 1933; John Maynard Keynes, 1936</dt>
 			<dd>
-				Fisher, the author of the equation of exchange <Tex tex="MV = PQ" /> <Cite k="fisher11" />, wrote a book-length
-				case for stamp scrip in the United States <Cite k="fisher33" />. Keynes devoted part of chapter 23 of the
+				Fisher, the author of the equation of exchange <Tex tex="MV = PQ" /> <Cite k="fisher11" /> (the money supply
+				<Tex tex="M" /> times how often it changes hands, <Tex tex="V" />, equals prices <Tex tex="P" /> times the goods
+				traded, <Tex tex="Q" />), wrote a book-length case for stamp scrip in the United States: notes that stay valid
+				only if a small stamp is bought for them every week <Cite k="fisher33" />. Keynes devoted part of chapter 23 of the
 				<em>General Theory</em> to Gesell and predicted that “the future will learn more from the spirit of Gesell than
 				from that of Marx” <Cite k="keynes36" />.
 			</dd>
 			<dt>Kennedy, Lietaer, Gelleri, 1995–2009</dt>
 			<dd>
 				Margrit Kennedy showed how compound interest silently transfers wealth upward <Cite k="kennedy" />; Bernard
-				Lietaer argued for complementary currencies alongside national money <Cite k="lietaer" />. The Chiemgauer in
+				Lietaer argued for complementary currencies, local or purpose-made money that runs alongside the national one <Cite k="lietaer" />. The Chiemgauer in
 				Bavaria has run a regional demurrage currency since 2003, losing 2 % a quarter <Cite k="gelleri" />.
 			</dd>
 			<dt>Stéphane Laborie, 2010</dt>
 			<dd>
 				The <em>Relative Theory of Money</em> (Théorie Relative de la Monnaie) asks what monetary rule treats every
 				generation symmetrically, the living and those not yet born. Its answer: every member co-creates the same share
-				of money, a universal dividend that grows the money supply by a rate <Tex tex="c" /> tied to life expectancy
+				of money, a <em>universal dividend</em>, new money paid to every member alike, which grows the money supply by a yearly
+				rate <Tex tex="c" /> tied to life expectancy
 				<Cite k="laborie" />. The Ğ1 currency has run on it since 2017 <Cite k="duniter" />. Section 4 shows that theOS is
 				the same rule written in a fixed unit.
 			</dd>
@@ -207,17 +205,21 @@
 			</dd>
 			<dt>Ostrom, Hirschman, Weyl, 1970–2022</dt>
 			<dd>
-				Elinor Ostrom showed that commons are governed well by the people who use them when the rules fit their place
-				<Cite k="ostrom" />. Albert Hirschman named the two ways members discipline an organisation, exit and voice
-				<Cite k="hirschman" />. Quadratic voting and quadratic funding gave voice a price that protects minorities
-				<Cite k="qv qf" />, and <em>Radical Markets</em> and the work on soulbound identity explored markets that are
-				designed rather than inherited <Cite k="radical soul" />.
+				Elinor Ostrom showed that commons, resources a community shares such as a pasture or a fishery, are governed well by the people who use them when the rules fit their place
+				<Cite k="ostrom" />. Albert Hirschman named the two ways members discipline an organisation: <em>exit</em>, leaving for a better one,
+				and <em>voice</em>, speaking up from inside <Cite k="hirschman" />. Quadratic voting, where casting
+				<Tex tex="n" /> votes on one question costs <Tex tex="n^2" />, lets people show how strongly they care without
+				letting the largest holder decide everything; quadratic funding applies the same idea to public goods
+				<Cite k="qv qf" />. <em>Radical Markets</em> and the work on soulbound identity, credentials that belong to a
+				person and cannot be sold, explored markets that are designed rather than inherited <Cite k="radical soul" />.
 			</dd>
 			<dt>Automated market makers, 2018–</dt>
 			<dd>
-				Constant-product pools let anyone trade against a formula instead of an order book <Cite k="uniswap" />, and
-				were later shown to be reliable price oracles <Cite k="angeris" />. They are what makes thousands of small
-				currencies liquid without a human market maker for each.
+				An automated market maker (AMM) is a pool holding two currencies that sets their exchange rate from the ratio of
+				its reserves, so anyone can trade at any time against a formula instead of waiting for a buyer or seller
+				<Cite k="uniswap" />. AMMs were later shown to give reliable public prices <Cite k="angeris" />. They are what makes
+				thousands of small currencies <em>liquid</em>, exchangeable at any moment, without a human trader standing ready
+				for each.
 			</dd>
 		</dl>
 	</section>
@@ -230,39 +232,58 @@
 		</p>
 		<ol class="laws">
 			<li>
-				<strong>Universal Intent Allocation (UIA).</strong> Every human receives {UIA_DAY} HEARTS a day,
+				<strong>Universal Intent Allocation (UIA).</strong> <em>Universal</em> because everyone receives it,
+				<em>intent</em> because it expresses what a person wants built, <em>allocation</em> because it is handed out,
+				not earned. Every human receives {UIA_DAY} HEARTS a day,
 				unconditionally, one per hour lived, in a currency of their own: Samuel's are SamuelHEARTS, Anna's are
 				AnnaHEARTS. Only their owner can invest them. It is not a survival handout: it is an inalienable share in
 				steering where the automated economy puts its effort.
 			</li>
 			<li>
 				<strong>Pure investment.</strong> HEARTS cannot earn interest and cannot buy goods directly. They enter the
-				economy only by being invested into cooperatives.
+				economy only by being invested into cooperatives, defined in the next law.
 			</li>
 			<li>
-				<strong>Open cooperatives, each with its own MIND.</strong> Anyone, alone or together, can found a COOP at
-				any time without permission, for energy, food, compute, housing, art, or any need not yet met. A COOP and its
+				<strong>Open cooperatives, each with its own MIND.</strong> A cooperative, or COOP, is a shared enterprise owned
+				by the people who invest in it and use it, such as an energy COOP running a power plant or a food COOP running a
+				farm. Anyone, alone or together, can found a COOP at any time without permission, for energy, food, compute, housing, art, or any need not yet met. A COOP and its
 				MIND are one thing: founding a COOP creates its currency, and to use what it produces (drawing electricity,
 				eating from its food network) one spends that MIND. A MIND is ownership and utility in one: holding it is a share
 				in the COOP, and spending it is how one uses what the COOP makes.
 			</li>
 			<li>
 				<strong>The 50/50 commons split.</strong> Investing one of one's personal HEARTS into a COOP converts it directly into that COOP's own currency, its
-				MIND (SOLARmind, AGRImind and so on). Half goes to the investor as INVESTORmind, personal equity and the right
-				to use what the COOP produces; half goes to the COOP's treasury as TREASURYmind, protocol-owned liquidity.
+				MIND (SOLARmind for a solar COOP, AGRImind for a farming COOP, and so on). Half goes to the investor, called
+				INVESTORmind: their share of the COOP and their right to use what it produces. Half goes to the COOP's own
+				treasury, called TREASURYmind. The COOP uses it as its reserve for trading, so that its MIND can always be
+				exchanged; because the protocol rather than outside traders holds this reserve, it is called
+				<em>protocol-owned liquidity</em> (Section 7).
 			</li>
 		</ol>
 		<p>
 			Two quantities follow from these rules. HEARTS are the intent of people; MINDs are the productive capacity of
-			cooperatives. Both decay at the same rate, which is the subject of the next section.
+			cooperatives. Both decay at the same rate, which is the subject of the next section. Figure 1 shows the four
+			laws working together.
 		</p>
+	<figure class="wide">
+		<Circulation />
+		<figcaption>
+			<strong>Figure 1.</strong> The loop of theOS, simulated. People on the outer ring send their daily HEARTS
+			(terracotta) into six cooperatives. Every HEART that lands is minted into that cooperative's MIND and split
+			50/50: one half returns to its investor (gold), the other sinks into the treasury, whose ring grows and slowly
+			melts. Every few seconds one cooperative turns extractive, giving back less for each HEART; the Avens, the
+			people's personal AI agents (Section 5), see that a HEART buys less there and route around it, without anyone
+			voting. Rates are sped up so the decay can be seen.
+		</figcaption>
+	</figure>
 	</section>
 
 	<section id="entropy">
 		<h2><span>4</span>Demurrage as economic entropy</h2>
 		<h3>4.1 Continuous decay</h3>
 		<p>
-			Every HEART and every MIND loses value at a hardcoded rate of <Tex tex="r = 0.07" /> a year. The decay is applied
+			Demurrage, the holding fee met in Section 2, applies to all money in theOS. Every HEART and every MIND loses value at a
+			hardcoded rate of <Tex tex="r = 0.07" /> a year. The decay is applied
 			continuously, every time a balance is touched, so there is no settlement date to game and no moment where moving
 			money just before a cut-off pays:
 		</p>
@@ -368,9 +389,9 @@
 	<section id="avens">
 		<h2><span>5</span>The Aven layer: zero cognitive load</h2>
 		<p>
-			A world of thousands of cooperative currencies would be unusable by people. Herbert Simon's bounded rationality
-			<Cite k="simon" /> is not a flaw to be educated away; it is the design constraint. theOS therefore puts a personal
-			AI agent, an Aven, between every human and the market. Humans act on values and goals; Avens do the arithmetic.
+			A world of thousands of cooperative currencies would be unusable by people. Herbert Simon's bounded rationality,
+			the fact that people can weigh only a few options at a time <Cite k="simon" />, is not a flaw to be educated away; it is the design constraint. theOS therefore puts an Aven, a personal AI
+			agent that works only for its human, between every human and the market. Humans act on values and goals; Avens do the arithmetic.
 		</p>
 		<h3>5.1 Two human choices a day</h3>
 		<ol>
@@ -392,7 +413,7 @@
 			</li>
 			<li>
 				<strong>Seamless consumption.</strong> When its human draws water or takes a tram, the Aven finds the cheapest
-				route through the AMM pools to the MIND that service needs and settles in the same moment.
+				route through the AMM pools (Section 2) to the MIND that service needs and settles in the same moment.
 			</li>
 			<li>
 				<strong>Exit without effort.</strong> If a COOP turns corrupt or inefficient, its MIND buys less per HEART on
@@ -412,7 +433,7 @@
 		<h2><span>6</span>The infrastructure paradox, inverted</h2>
 		<p>
 			Long-lived infrastructure is hard to finance in capitalism because every project competes with a safe
-			alternative: a government bond that pays a positive return for doing nothing. Any 50-year tidal barrier must
+			alternative: a government bond, a loan to the state that pays a fixed return for doing nothing. Any 50-year tidal barrier must
 			beat that, and a risk premium on top. Gesell and Keynes both saw the floor that a positive return on money puts
 			under every investment decision <Cite k="gesell keynes36" />.
 		</p>
@@ -423,7 +444,8 @@
 		<Tex display tex={String.raw`\begin{gathered} A(T) = e^{(g + r)\,T} \\ g = -1\,\%,\ r = 7\,\%,\ T = 50 \;\Rightarrow\; A \approx ${tn(advantage, 1)} \end{gathered} \tag{5}`} />
 		<p>
 			A project that merely preserves its usefulness, or even loses 1 % of it a year, is about twenty times better than
-			cash over half a century. The discount rate of a demurrage economy is negative, and the long future becomes
+			cash over half a century. The discount rate, how much less a future benefit counts than a present one, is negative in a demurrage
+			economy, and the long future becomes
 			worth more, not less. Capital looks for physical anchors that keep being used: grids, aquifers, domes, rail.
 		</p>
 		<figure>
@@ -449,9 +471,10 @@
 		</p>
 		<Tex display tex={String.raw`x \cdot y = k, \qquad p = \frac{x}{y} \tag{6}`} />
 		<p>
-			In ordinary decentralised finance, private liquidity providers fund these pools and carry impermanent loss: when
-			the price moves by a factor <Tex tex="p" />, their share is worth less than if they had simply held the two
-			tokens,
+			Whatever the trades, the product of the two reserves stays constant, and the price follows from their ratio. In
+			ordinary decentralised finance, private <em>liquidity providers</em> deposit the two currencies into these pools
+			and carry <em>impermanent loss</em>: when the price moves by a factor <Tex tex="p" />, their deposit is worth less
+			than if they had simply kept the two currencies,
 		</p>
 		<Tex display tex={String.raw`\mathrm{IL}(p) = \frac{2\sqrt{p}}{1 + p} - 1. \tag{7}`} />
 
@@ -496,15 +519,17 @@
 		</p>
 		<ul>
 			<li><strong>COOP A</strong>, capital-weighted: one token, one vote. Large holders steer.</li>
-			<li><strong>COOP B</strong>, a strict demarchy <Cite k="burnheim" />: one person, one vote on every operational choice.</li>
+			<li><strong>COOP B</strong>, strict direct democracy: one person, one vote on every operational choice.</li>
 			<li>
 				<strong>COOP C</strong>, quadratic voting on strategy <Cite k="qv" /> with an AI executive for daily
-				operations, and prediction markets for questions of fact <Cite k="hanson" />.
+				operations, and prediction markets, where people bet on outcomes so that prices reveal what is likely, for questions of fact
+				<Cite k="hanson" />.
 			</li>
 		</ul>
 		<p>
 			Avens send each HEART where it buys the most utility. If <Tex tex="s_i" /> is a COOP's share of the sector's
-			flow and <Tex tex="f_i" /> the utility it delivers per HEART, the shares follow replicator dynamics,
+			flow and <Tex tex="f_i" /> the utility it delivers per HEART, the shares follow replicator dynamics, the
+			equation of natural selection: whatever does better than average grows, whatever does worse shrinks,
 		</p>
 		<Tex display tex={String.raw`\dot s_i = k\, s_i \left(f_i - \bar f\right), \qquad \bar f = \textstyle\sum_j s_j f_j, \tag{8}`} />
 		<p>
@@ -571,7 +596,7 @@
 		<p>A blueprint is only scientific if it says where it could fail. These are the questions theOS has not yet answered.</p>
 		<ul>
 			<li>
-				<strong>One person, one allocation.</strong> The UIA needs Sybil-resistant identity: one human, one stream of
+				<strong>One person, one allocation.</strong> The UIA needs Sybil-resistant identity, so that no one can pretend to be many people: one human, one stream of
 				HEARTS, without a central registry that can exclude people <Cite k="soul" />. maiaCITY's passkey-based vaults
 				are a start, not a proof.
 			</li>
