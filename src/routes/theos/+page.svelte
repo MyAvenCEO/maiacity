@@ -255,7 +255,7 @@
 		</div>
 		<p>
 			The name says what it is. <em>Universal</em>, because everyone receives it. <em>Intent</em>, because it expresses
-			what a person wants to see built. <em>Allocation</em>, because it is handed out, not earned. It is not a survival
+			what a person wants to see built. <em>Allocation</em>, because it is the right to allocate: to invest one's HEARTS into the COOPs one chooses. It is not a survival
 			handout but a share in steering where the automated economy puts its effort. That is why the second law is needed.
 		</p>
 		<div class="law">
