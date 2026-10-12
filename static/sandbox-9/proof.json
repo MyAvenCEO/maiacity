@@ -1,0 +1,3041 @@
+{
+	"generated": "2026-10-12T20:21:43.924Z",
+	"mode": "full",
+	"where": "node",
+	"wallMs": 71743,
+	"people": 250,
+	"baseYears": 30,
+	"seeds": [
+		20261012,
+		1,
+		2,
+		3,
+		4
+	],
+	"pass": false,
+	"parts": [
+		{
+			"id": "P1",
+			"title": "No one starves",
+			"claim": "Every person gets at least 98 % of each basic (food, water, energy, a bed) on every day after day 0.",
+			"pass": true,
+			"evidence": [
+				"Seed 20261012: 0 person-days short; lowest share anyone got: food 105.3 %, water 150.0 %, energy 300.0 %, a bed 100.0 %.",
+				"Seed 1: 0 person-days short; lowest share anyone got: food 105.4 %, water 150.0 %, energy 300.0 %, a bed 100.0 %.",
+				"Seed 2: 0 person-days short; lowest share anyone got: food 104.9 %, water 150.0 %, energy 300.0 %, a bed 100.0 %.",
+				"Seed 3: 0 person-days short; lowest share anyone got: food 106.4 %, water 150.0 %, energy 300.0 %, a bed 100.0 %.",
+				"Seed 4: 0 person-days short; lowest share anyone got: food 104.9 %, water 150.0 %, energy 300.0 %, a bed 100.0 %."
+			]
+		},
+		{
+			"id": "P2s",
+			"title": "No one has to work (strict)",
+			"claim": "The owner-only people (5 %, no Aven output, nothing held at the start) live on their Law 5 dividends alone, every day from day 120 at the latest.",
+			"pass": true,
+			"evidence": [
+				"Seed 20261012: dividends alone pay every owner-only person’s basics every day from day 9 (target 120); 13 people in the cohort.",
+				"Seed 1: dividends alone pay every owner-only person’s basics every day from day 9 (target 120); 13 people in the cohort.",
+				"Seed 2: dividends alone pay every owner-only person’s basics every day from day 9 (target 120); 13 people in the cohort.",
+				"Seed 3: dividends alone pay every owner-only person’s basics every day from day 9 (target 120); 13 people in the cohort.",
+				"Seed 4: dividends alone pay every owner-only person’s basics every day from day 9 (target 120); 13 people in the cohort."
+			]
+		},
+		{
+			"id": "P2n",
+			"title": "No one has to work (normal)",
+			"claim": "Dividends plus spending some of what they hold pay the owner-only people’s basics every day, and their holding never runs out.",
+			"pass": true,
+			"evidence": [
+				"Seed 20261012: 0 failing days; lowest holding 2926 → 55707 days of basics.",
+				"Seed 1: 0 failing days; lowest holding 2955 → 55438 days of basics.",
+				"Seed 2: 0 failing days; lowest holding 3142 → 58659 days of basics.",
+				"Seed 3: 0 failing days; lowest holding 2943 → 59302 days of basics.",
+				"Seed 4: 0 failing days; lowest holding 3089 → 58176 days of basics."
+			]
+		},
+		{
+			"id": "P3",
+			"title": "Living standards rise for everyone",
+			"claim": "Every tenth, by holdings and by Aven output, never falls more than 2 % in any 5 years (2 years of recovery after a scheduled shock), and rises or sits within 5 % of the physics ceiling; COOPs stay solvent or leave through receivership with no basic short.",
+			"pass": false,
+			"evidence": [
+				"Seed 20261012: 20/20 tenths pass; worst fall 1.83 % (holdings tenth 1); poorest tenth by holdings 11.5 → 33.3; 6 receiverships, 0 basic person-days short around them.",
+				"Seed 1: 20/20 tenths pass; worst fall 1.16 % (holdings tenth 1); poorest tenth by holdings 11.5 → 33.8; 3 receiverships, 0 basic person-days short around them.",
+				"Seed 2: 0/20 tenths pass (failing: holdings decile 1, holdings decile 2, holdings decile 3, holdings decile 4, holdings decile 5, holdings decile 6, holdings decile 7, holdings decile 8, holdings decile 9, holdings decile 10, aven decile 1, aven decile 2, aven decile 3, aven decile 4, aven decile 5, aven decile 6, aven decile 7, aven decile 8, aven decile 9, aven decile 10); worst fall 25.76 % (holdings tenth 10); poorest tenth by holdings 11.4 → 14.6; 25 receiverships, 0 basic person-days short around them.",
+				"Seed 3: 0/20 tenths pass (failing: holdings decile 1, holdings decile 2, holdings decile 3, holdings decile 4, holdings decile 5, holdings decile 6, holdings decile 7, holdings decile 8, holdings decile 9, holdings decile 10, aven decile 1, aven decile 2, aven decile 3, aven decile 4, aven decile 5, aven decile 6, aven decile 7, aven decile 8, aven decile 9, aven decile 10); worst fall 26.99 % (holdings tenth 10); poorest tenth by holdings 11.4 → 15.2; 24 receiverships, 0 basic person-days short around them.",
+				"Seed 4: 4/20 tenths pass (failing: holdings decile 1, holdings decile 2, holdings decile 3, holdings decile 4, holdings decile 7, holdings decile 8, holdings decile 9, holdings decile 10, aven decile 1, aven decile 2, aven decile 3, aven decile 4, aven decile 7, aven decile 8, aven decile 9, aven decile 10); worst fall 12.03 % (holdings tenth 10); poorest tenth by holdings 11.5 → 18.9; 25 receiverships, 0 basic person-days short around them."
+			]
+		},
+		{
+			"id": "AB",
+			"title": "Abundance limited only by physics",
+			"claim": "MIND (a person cannot pay) never binds a basic while physics allows enough; doubling HEARTS changes only prices; doubling a binding physical limit raises living standards.",
+			"pass": true,
+			"evidence": [
+				"Seed 20261012: MIND bound a basic on 0 days; electricity used 84.6 kWh a person a day in the last year, 58.5 of it surplus.",
+				"Seed 1: MIND bound a basic on 0 days; electricity used 84.3 kWh a person a day in the last year, 58.1 of it surplus.",
+				"Seed 2: MIND bound a basic on 0 days; electricity used 82.6 kWh a person a day in the last year, 56.8 of it surplus.",
+				"Seed 3: MIND bound a basic on 0 days; electricity used 224.9 kWh a person a day in the last year, 188.3 of it surplus.",
+				"Seed 4: MIND bound a basic on 0 days; electricity used 82.9 kWh a person a day in the last year, 56.9 of it surplus.",
+				"X9: largest change: compute -0.3 %; living standard -0.2 %; food 0.0 %, water 0.0 %, energy 0.0 %, bed 0.0 %, goods 0.0 %, spring 0.0 %, compute -0.3 %",
+				"AB1: spring 1.20 → 2.00 h a person a day (badge “nature” on 100.0 % of base days), mean 56.58 → 57.44, poorest decile 26.36 → 27.21; physics ceiling 62.37 → 63.22"
+			]
+		}
+	],
+	"experiments": [
+		{
+			"id": "X1",
+			"question": "Do the poor eat when water gets dear?",
+			"ruleChanged": "Law 5 share 20 % (base) vs 0 % (changed). Both worlds have a drought: rain −70 % for 120 days from June of year 4. Prices are fully dynamic.",
+			"years": 5,
+			"pass": true,
+			"claim": "With Law 5 at 20 %, nobody is short, the poorest limit bar stays above the water price, and dividends alone pay the owner-only cohort’s basics through the drought.",
+			"evidence": "20 %: short 0 person-days, lowest bar 4984.68× the price, owner-only dividends ≥ 2.05× the bundle. 0 %: short 0, bar 5782.40×, dividends 0.00×.",
+			"takeaway": "In the drought, water cost 2.46× its earlier price with Law 5 and 1.74× without. The lowest limit bar stood at 4984.68× the water price with Law 5 and 5782.40× without. Owner-only dividends paid 2.05× their basic bundle at worst with Law 5, and 0.00× without. Person-days short: 0 with Law 5, 0 without.",
+			"ms": 6749
+		},
+		{
+			"id": "X2",
+			"question": "Can a blob live without working?",
+			"ruleChanged": "The owner-only cohort (5 %, Aven output 0, nothing held at the start) spends dividends and some of what it holds (base) vs dividends only (changed).",
+			"years": 3,
+			"pass": true,
+			"claim": "Normal: never short from day 1. Strict: dividends alone pay the basic bundle by day 120, and the dividends-only cohort is never short after it.",
+			"evidence": "normal short 0; dividends-only short 0 (after day 120: 0, last day -1); strict test from day 10",
+			"takeaway": "On dividends only, the owner-only blobs were never short of a basic. Spending some of what they hold as well, they were short 0 person-days. Dividends alone paid every member’s bundle every day from day 10. Their living standard in the last year: 7.37 on dividends only, 13.55 normally.",
+			"ms": 5272
+		},
+		{
+			"id": "X3",
+			"question": "Where does the MIND end up?",
+			"ruleChanged": "Treasuries pay their surplus above the 270-day reserve out for Aven work proposals (base) vs keep it (changed).",
+			"years": 8,
+			"pass": true,
+			"claim": "Law 5 alone is not enough: with payout people hold most of the MIND, at least 20 points more than when treasuries keep their surplus.",
+			"evidence": "people’s share 82.3 % (payout) vs 53.5 % (keep), gap 28.8 %",
+			"takeaway": "With payout, people held 82.3 % of all MIND at the end; when treasuries kept their surplus, 53.5 %. Treasuries held 9.2 % vs 40.3 %. The poorest decile lived at 27.80 with payout and 13.68 without.",
+			"ms": 7728
+		},
+		{
+			"id": "X4",
+			"question": "Does inequality fade?",
+			"ruleChanged": "Melt 7 % a year (base) vs 0 % (changed). In both worlds, holdings are made as unequal as Germany’s (Gini 0.72) at the start of year 9.",
+			"years": 15,
+			"pass": true,
+			"claim": "The melt fades every advantage: with it, at least half the shock’s extra inequality is gone by the end, and the Gini ends lower than without the melt.",
+			"evidence": "Gini 0.36 → 0.73 → 0.45 with melt; 0.36 → 0.73 → 0.49 without",
+			"takeaway": "The shock raised the Gini of holdings to 0.73. With the melt it fell to 0.45 by the end. Without the melt it fell to 0.49.",
+			"ms": 13828
+		},
+		{
+			"id": "X5",
+			"question": "What if a food COOP fails?",
+			"ruleChanged": "Two food COOPs at genesis (base) vs one (changed). In both worlds the food COOP AGRI fails on day 300: its output drops to 10 % for a year.",
+			"years": 3,
+			"pass": false,
+			"claim": "Two sellers of each basic keep everyone fed: with two food COOPs, nobody is short of food when one fails.",
+			"evidence": "two food COOPs: 1,400 person-days short of food (the second seller was alive at the failure; receivership after 30 days); one: 1,300",
+			"takeaway": "With two food COOPs, people were short of food 1,400 person-days; with one, 1,300. The failing COOP went into receivership after 30 days (two sellers) and 30 days (one). The lowest food share anyone got was 83.5 % vs 90.5 %.",
+			"ms": 4570
+		},
+		{
+			"id": "X6",
+			"question": "Can four friends cheat?",
+			"ruleChanged": "Avens send HEARTS by delivered output per HEART (base) vs by the MIND’s pool price (changed). In both worlds, four friends open a COOP that makes nothing on day 365. They pay themselves 90 % of its treasury and buy its MIND to push its price.",
+			"years": 2,
+			"pass": true,
+			"claim": "Avens that follow delivered output starve a ring: it gets less than under the price rule, and no more than its share of the people.",
+			"evidence": "ring share of others’ HEARTS 0.5 % (output) vs 4.0 % (price); its share of people 4.0 %",
+			"takeaway": "Following delivered output, Avens sent the ring 0.5 % of others’ HEARTS; following the pool price, 4.0 %. The ring is 4.0 % of the people. Its members ended at 0.36× the others’ mean holding (output rule) and 0.20× (price rule).",
+			"ms": 3994
+		},
+		{
+			"id": "X7",
+			"question": "Who keeps the surplus?",
+			"ruleChanged": "Two competing COOPs per good at genesis (base) vs one (changed).",
+			"years": 6,
+			"pass": false,
+			"claim": "When sellers compete, citizens win: with two sellers basics sell closer to cost, sellers keep less of the revenue, and nobody is short.",
+			"evidence": "price ÷ full cost 0.99 (two) vs 0.99 (one); sellers’ share 43.0 % vs 41.0 %; short 0 vs 0",
+			"takeaway": "With two sellers per good, basics sold at 0.99× their full cost; with one, at 0.99×. Sellers kept 43.0 % vs 41.0 % of basics revenue above variable cost. The poorest decile lived at 26.36 vs 25.90.",
+			"ms": 7091
+		},
+		{
+			"id": "X8",
+			"question": "Which price rule feeds everyone?",
+			"ruleChanged": "Forward-margin price with Mark-0’s guard (base) vs Primer’s adaptive price (changed): each seller asks 3 % more after a day it sold out, and 3 % less after a day with stock left.",
+			"years": 6,
+			"pass": false,
+			"claim": "A price that reads need and the harvest pipeline feeds everyone: no one short, and no more shortage or price swing than Primer’s baseline.",
+			"evidence": "short 0 (forward) vs 0 (Primer); daily swing 0.2 % vs 0.1 %",
+			"takeaway": "With the forward margin, 0 person-days were short; with Primer’s adaptive price, 0. Basics’ prices swung 0.2 % a day vs 0.1 %. The poorest decile lived at 26.36 vs 31.04.",
+			"ms": 6604
+		},
+		{
+			"id": "X9",
+			"question": "Does more money make us richer?",
+			"ruleChanged": "24 (base) vs 48 (changed) HEARTS a day for every person.",
+			"years": 6,
+			"pass": true,
+			"claim": "Doubling HEARTS changes only prices: real consumption of every good, and the mean living standard, within ±1 %.",
+			"evidence": "largest change: compute -0.3 %; living standard -0.2 %; food 0.0 %, water 0.0 %, energy 0.0 %, bed 0.0 %, goods 0.0 %, spring 0.0 %, compute -0.3 %",
+			"takeaway": "With twice the HEARTS, food’s price in R went ×2.37, water’s ×2.00, energy’s ×2.00. What people got changed by at most 0.3 % for any good. The mean living standard changed by -0.2 %.",
+			"ms": 6855
+		},
+		{
+			"id": "X10",
+			"question": "Does more energy make us richer?",
+			"ruleChanged": "The geothermal stage and R&D on surplus energy on (base) vs both off (changed).",
+			"years": 10,
+			"pass": true,
+			"claim": "Living standards (mean and poorest decile) end higher with surplus energy and R&D than without, and innovation advances only with it.",
+			"evidence": "mean 59.05 vs 16.60; poorest decile 29.58 vs 6.23; innovation 32.3 % vs 0.0 %",
+			"takeaway": "With geothermal and R&D, a person used 78.50 kWh a day, and 50.04 kWh of surplus fed innovation (32.3 % of the way to the floors). Without, 22.37 kWh and 0.0 %. The poorest decile went from 14.24 to 29.58 with surplus energy, and from 3.29 to 6.23 without. Person-days short: 0 vs 59,400.",
+			"ms": 10619
+		},
+		{
+			"id": "X11",
+			"question": "What stops a small village first?",
+			"ruleChanged": "250 blobs (base) vs 100 blobs (changed) on the same hex, built for 250, with dome solar and no geothermal stage yet (world model 5.5).",
+			"years": 6,
+			"pass": true,
+			"claim": "Physics, not money, sets the limit: MIND never binds a basic while physics allows need, and fewer people on the same hex are short less.",
+			"evidence": "MIND-bound basic days 0 (250) and 0 (100); days short a person 551.00 vs 0.00; short days by limit (250): {\"water: energy\":216,\"energy: energy\":551,\"bed: energy\":551}",
+			"takeaway": "With 250 blobs, someone was short of energy on 551 days and of water on 216. With 100, on 0 and 0 days. MIND bound a basic on 0 days with 250 and 0 with 100. Wood was bound by energy (250) and demand (100).",
+			"ms": 7322
+		},
+		{
+			"id": "X12",
+			"question": "Do newcomers eat?",
+			"ruleChanged": "A constant population (base) vs +2 % a year (changed), on the same fixed land. Newcomers arrive with an Aven and nothing held.",
+			"years": 8,
+			"pass": false,
+			"claim": "Growth raises rent, not hunger: newcomers are never short, and ground rent ends higher than with a constant population.",
+			"evidence": "newcomers short 2424 of 14595 person-days; rent at the end 9.78e-4 (growth) vs 2.51e-4 (constant)",
+			"takeaway": "With growth the village went from 100 to 117 people. Newcomers lived 14,595 person-days in their first three years and were short on 2,424. Ground rent went from 1.19e-4 to 9.78e-4 R a m² a day (constant population: 2.51e-4). The mean living standard ended at 57.61 vs 57.79.",
+			"ms": 8523
+		},
+		{
+			"id": "X13",
+			"question": "Private land or City land?",
+			"ruleChanged": "All land belongs to the City COOP and is leased for ground rent (base) vs land owned by people, unequally (a Pareto draw), with the rent paid to them (changed).",
+			"years": 8,
+			"pass": false,
+			"claim": "Land that nobody can sell keeps ownership fairer: the holdings Gini ends lower with City land than with private land, and nobody is short.",
+			"evidence": "Gini 0.36 (City) vs 0.35 (private); short 0 vs 0",
+			"takeaway": "With City land the holdings Gini ended at 0.36; with private land, at 0.35. The poorest decile lived at 27.80 vs 28.05, the top decile at 65.90 vs 65.90.",
+			"ms": 8173
+		},
+		{
+			"id": "X14",
+			"question": "What happens on day 1?",
+			"ruleChanged": "The bootstrap of §11.4 on (base: each Aven’s first HEARTS go to the basics COOPs it buys from, and pools fill on day 0) vs off (changed: first HEARTS into three COOPs of the Aven’s taste).",
+			"years": 1,
+			"pass": true,
+			"claim": "Seed the pools, and the first day feeds everyone: with the bootstrap nobody is short on day 0 or after.",
+			"evidence": "bootstrap: 0.0 % short on day 0, 0 person-days in year 1; without: 100.0 % on day 0, 600 person-days",
+			"takeaway": "With the bootstrap, 0.0 % of people were short on day 0 and 0.0 % on day 1. Without it, 100.0 % and 100.0 %. Over year 1: 0 vs 600 person-days short.",
+			"ms": 2727
+		},
+		{
+			"id": "AB1",
+			"question": "Does doubling a binding physical limit raise living standards?",
+			"ruleChanged": "The hot spring’s warm ponds are fixed by nature and bind every day: 2 sites (base) vs 4 (changed).",
+			"years": 6,
+			"pass": true,
+			"claim": "Doubling the binding physical limit raises living standards: more of the good, a higher mean living standard and a higher one for the poorest decile.",
+			"evidence": "spring 1.20 → 2.00 h a person a day (badge “nature” on 100.0 % of base days), mean 56.58 → 57.44, poorest decile 26.36 → 27.21; physics ceiling 62.37 → 63.22",
+			"takeaway": "Doubling the warm ponds took spring time from 1.20 to 2.00 hours a person a day, and its price from 0.12 to 0.04 R. The mean living standard went from 56.58 to 57.44 (1.5 %), the poorest decile’s from 26.36 to 27.21.",
+			"ms": 6726
+		},
+		{
+			"id": "SH",
+			"question": "Through a drought, a dark winter, two failing COOPs and a failing well, does everyone keep the basics, and does every decile recover within two years?",
+			"ruleChanged": "No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (HOME-B, a bed COOP, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).",
+			"years": 9,
+			"pass": false,
+			"claim": "Nobody is short in any shock, and every decile is back within two years (P3 holds with the shocks excused for two years).",
+			"evidence": "short 6,100 person-days ({\"water: energy\":30,\"energy: energy\":61,\"bed: energy\":61}); P3 fails (worst fall outside the windows 7.4 %; failing: holdings decile 2, holdings decile 3, holdings decile 4, holdings decile 5, aven decile 2, aven decile 3, aven decile 4, aven decile 5)",
+			"takeaway": "Through the shocks, 6,100 person-days were short of a basic (0 without shocks). The largest fall of any decile outside the two-year recovery windows was 7.4 % (1.4 % without). The mean living standard ended at 57.39 vs 58.29. There were 8 receiverships vs 9.",
+			"ms": 9364
+		}
+	],
+	"ledgers": [
+		{
+			"seed": 20261012,
+			"checks": 10950,
+			"mind": 5.2786120057458645e-15,
+			"matter": 8.116589545586889e-16,
+			"energy": 1.6552592943948348e-15,
+			"leaks": 0
+		},
+		{
+			"seed": 1,
+			"checks": 10950,
+			"mind": 5.2786120057458645e-15,
+			"matter": 7.77841276367258e-16,
+			"energy": 1.655153105635927e-15,
+			"leaks": 0
+		},
+		{
+			"seed": 2,
+			"checks": 10950,
+			"mind": 5.2786120057458645e-15,
+			"matter": 6.190737262569762e-16,
+			"energy": 1.6544729331154475e-15,
+			"leaks": 0
+		},
+		{
+			"seed": 3,
+			"checks": 10950,
+			"mind": 5.2786120057458645e-15,
+			"matter": 1.5934703409190383e-15,
+			"energy": 1.6537888619867708e-15,
+			"leaks": 0
+		},
+		{
+			"seed": 4,
+			"checks": 10950,
+			"mind": 5.2786120057458645e-15,
+			"matter": 6.663028107658294e-16,
+			"energy": 1.4186365686651142e-15,
+			"leaks": 0
+		}
+	],
+	"runs": [
+		{
+			"seed": 20261012,
+			"years": 30,
+			"ms": 14854,
+			"receiverships": 6,
+			"founded": 2
+		},
+		{
+			"seed": 1,
+			"years": 30,
+			"ms": 14730,
+			"receiverships": 3,
+			"founded": 1
+		},
+		{
+			"seed": 2,
+			"years": 30,
+			"ms": 20214,
+			"receiverships": 25,
+			"founded": 25
+		},
+		{
+			"seed": 3,
+			"years": 30,
+			"ms": 22384,
+			"receiverships": 24,
+			"founded": 25
+		},
+		{
+			"seed": 4,
+			"years": 30,
+			"ms": 20480,
+			"receiverships": 25,
+			"founded": 24
+		}
+	],
+	"suite": {
+		"generated": "2026-10-12T20:40:05.186Z",
+		"command": "node scripts/sandbox-9-proof.mjs",
+		"wallSeconds": 262,
+		"headline": [
+			{
+				"part": "P1 — no one starves",
+				"holds": true,
+				"base": "0, 0, 0, 0, 0 person-days short (seeds 20261012, 1, 2, 3, 4)",
+				"breaks": [
+					"X5",
+					"X12",
+					"SH",
+					"B15",
+					"B29"
+				]
+			},
+			{
+				"part": "P2 strict — dividends alone pay the basic bundle",
+				"holds": true,
+				"base": "holds every day from day 9, 9, 9, 9, 9 (target ≤ 120)",
+				"breaks": [
+					"B03"
+				]
+			},
+			{
+				"part": "P2 normal — no one has to work to survive",
+				"holds": true,
+				"base": "0, 0, 0, 0, 0 failures",
+				"breaks": []
+			},
+			{
+				"part": "P3 — living standards rise for every decile",
+				"holds": true,
+				"base": "worst 5-year fall 1.68 %, 0.88 %, 1.33 %, 1.19 %, 1.16 %; deciles failing 0, 0, 0, 0, 0",
+				"breaks": [
+					"SH",
+					"S01"
+				]
+			},
+			{
+				"part": "Abundance limited only by physics",
+				"holds": false,
+				"base": "MIND bound a basic on 0, 0, 0, 0, 0 days; X9 PASS, AB1 PASS, B28 PASS, B29 FAIL",
+				"breaks": [
+					"B29"
+				]
+			}
+		],
+		"seeds": [
+			{
+				"seed": 20261012,
+				"pass": true,
+				"P1": true,
+				"shortPD": 0,
+				"strictFrom": 9,
+				"P2normal": true,
+				"P3": true,
+				"P3failed": [],
+				"mindBindsBasics": 0,
+				"seconds": 22.3
+			},
+			{
+				"seed": 1,
+				"pass": true,
+				"P1": true,
+				"shortPD": 0,
+				"strictFrom": 9,
+				"P2normal": true,
+				"P3": true,
+				"P3failed": [],
+				"mindBindsBasics": 0,
+				"seconds": 22.23
+			},
+			{
+				"seed": 2,
+				"pass": true,
+				"P1": true,
+				"shortPD": 0,
+				"strictFrom": 9,
+				"P2normal": true,
+				"P3": true,
+				"P3failed": [],
+				"mindBindsBasics": 0,
+				"seconds": 22.91
+			},
+			{
+				"seed": 3,
+				"pass": true,
+				"P1": true,
+				"shortPD": 0,
+				"strictFrom": 9,
+				"P2normal": true,
+				"P3": true,
+				"P3failed": [],
+				"mindBindsBasics": 0,
+				"seconds": 21.35
+			},
+			{
+				"seed": 4,
+				"pass": true,
+				"P1": true,
+				"shortPD": 0,
+				"strictFrom": 9,
+				"P2normal": true,
+				"P3": true,
+				"P3failed": [],
+				"mindBindsBasics": 0,
+				"seconds": 19.33
+			}
+		],
+		"experiments": [
+			{
+				"id": "X1",
+				"question": "Do the poor eat when water gets dear?",
+				"ruleChanged": "Law 5 share 20 % (base) vs 0 % (changed). Both worlds have a drought: rain −70 % for 120 days from June of year 4. Prices are fully dynamic.",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 5,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "With Law 5 at 20 %, nobody is short, the poorest limit bar stays above the water price, and dividends alone pay the owner-only cohort’s basics through the drought.",
+				"evidence": "20 %: short 0 person-days, lowest bar 5130.60× the price, owner-only dividends ≥ 2.52× the bundle. 0 %: short 0, bar 5796.25×, dividends 0.00×.",
+				"takeaway": "In the drought, water cost 2.46× its earlier price with Law 5 and 1.74× without. The lowest limit bar stood at 5130.60× the water price with Law 5 and 5796.25× without. Owner-only dividends paid 2.52× their basic bundle at worst with Law 5, and 0.00× without. Person-days short: 0 with Law 5, 0 without.",
+				"metrics": [
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic (after day 0)",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "shortInDrought",
+						"label": "person-days short in the drought and 90 days after",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "waterPeak",
+						"label": "water price at its drought peak ÷ the 90 days before",
+						"base": 2.457,
+						"changed": 1.739
+					},
+					{
+						"id": "poorWaterBar",
+						"label": "lowest limit bar ÷ water price in the drought (anyone)",
+						"base": 5131,
+						"changed": 5796
+					},
+					{
+						"id": "strictInDrought",
+						"label": "owner-only: lowest dividends ÷ basic bundle in the drought",
+						"base": 2.52,
+						"changed": 0
+					},
+					{
+						"id": "ownerShort",
+						"label": "owner-only person-days short (after day 0)",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "poorL",
+						"label": "poorest Aven decile, living standard in the drought",
+						"base": 22.47,
+						"changed": 22.98
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 54.71,
+						"changed": 57.26
+					}
+				],
+				"seconds": 7.818
+			},
+			{
+				"id": "X2",
+				"question": "Can a blob live without working?",
+				"ruleChanged": "The owner-only cohort (5 %, Aven output 0, nothing held at the start) spends dividends and some of what it holds (base) vs dividends only (changed).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 3,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Normal: never short from day 1. Strict: dividends alone pay the basic bundle by day 120, and the dividends-only cohort is never short after it.",
+				"evidence": "normal short 0; dividends-only short 0 (after day 120: 0, last day -1); strict test from day 10",
+				"takeaway": "On dividends only, the owner-only blobs were never short of a basic. Spending some of what they hold as well, they were short 0 person-days. Dividends alone paid every member’s bundle every day from day 10. Their living standard in the last year: 7.37 on dividends only, 13.53 normally.",
+				"metrics": [
+					{
+						"id": "ownerShort",
+						"label": "owner-only person-days short (after day 0)",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "ownerShortAfter120",
+						"label": "owner-only person-days short after day 120",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "lastShortDay",
+						"label": "last day an owner-only person was short",
+						"base": -1,
+						"changed": -1
+					},
+					{
+						"id": "strictFrom",
+						"label": "strict test (dividends ≥ bundle, all of the cohort) holds every day from day",
+						"base": 10,
+						"changed": 1
+					},
+					{
+						"id": "ownerL",
+						"label": "owner-only living standard, last year",
+						"base": 13.53,
+						"changed": 7.369
+					},
+					{
+						"id": "ownerHoldDays",
+						"label": "owner-only lowest holding, days of the basic bundle, end",
+						"base": 8124,
+						"changed": 12120
+					}
+				],
+				"seconds": 7.768
+			},
+			{
+				"id": "X3",
+				"question": "Where does the MIND end up?",
+				"ruleChanged": "Treasuries pay their surplus above the 270-day reserve out for Aven work proposals (base) vs keep it (changed).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 8,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Law 5 alone is not enough: with payout people hold most of the MIND, at least 20 points more than when treasuries keep their surplus.",
+				"evidence": "people’s share 82.2 % (payout) vs 53.1 % (keep), gap 29.1 %",
+				"takeaway": "With payout, people held 82.2 % of all MIND at the end; when treasuries kept their surplus, 53.1 %. Treasuries held 9.3 % vs 40.7 %. The poorest decile lived at 27.86 with payout and 13.68 without.",
+				"metrics": [
+					{
+						"id": "peopleShare",
+						"label": "people’s share of all MIND (R), end",
+						"base": 0.8222,
+						"changed": 0.5315
+					},
+					{
+						"id": "treShare",
+						"label": "treasuries’ share of all MIND, end",
+						"base": 0.09261,
+						"changed": 0.4071
+					},
+					{
+						"id": "poolShare",
+						"label": "pools’ share of all MIND, end",
+						"base": 0.08523,
+						"changed": 0.06142
+					},
+					{
+						"id": "strictMed",
+						"label": "owner-only median dividends ÷ basic bundle, last year",
+						"base": 2.42,
+						"changed": 4.18
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 58.09,
+						"changed": 27.72
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest holdings decile, last year",
+						"base": 27.86,
+						"changed": 13.68
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "p3",
+						"label": "Proposition 3 holds (1 = yes)",
+						"base": 1,
+						"changed": 0
+					}
+				],
+				"seconds": 12.34
+			},
+			{
+				"id": "X4",
+				"question": "Does inequality fade?",
+				"ruleChanged": "Melt 7 % a year (base) vs 0 % (changed). In both worlds, holdings are made as unequal as Germany’s (Gini 0.72) at the start of year 9.",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 15,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "The melt fades every advantage: with it, at least half the shock’s extra inequality is gone by the end, and the Gini ends lower than without the melt.",
+				"evidence": "Gini 0.36 → 0.73 → 0.45 with melt; 0.36 → 0.73 → 0.49 without",
+				"takeaway": "The shock raised the Gini of holdings to 0.73. With the melt it fell to 0.45 by the end. Without the melt it fell to 0.49.",
+				"metrics": [
+					{
+						"id": "giniBefore",
+						"label": "holdings Gini just before the shock",
+						"base": 0.358,
+						"changed": 0.3563
+					},
+					{
+						"id": "giniAfter",
+						"label": "holdings Gini a month after the shock",
+						"base": 0.7276,
+						"changed": 0.729
+					},
+					{
+						"id": "gini3",
+						"label": "holdings Gini 3 years after",
+						"base": 0.5366,
+						"changed": 0.572
+					},
+					{
+						"id": "giniEnd",
+						"label": "holdings Gini at the end",
+						"base": 0.4499,
+						"changed": 0.4884
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest holdings decile, last year",
+						"base": 38.28,
+						"changed": 53.78
+					}
+				],
+				"seconds": 14.92
+			},
+			{
+				"id": "X5",
+				"question": "What if a food COOP fails?",
+				"ruleChanged": "Two food COOPs at genesis (base) vs one (changed). In both worlds the food COOP AGRI fails on day 300: its output drops to 10 % for a year.",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 3,
+				"seed": 20261012,
+				"pass": false,
+				"claim": "Two sellers of each basic keep everyone fed: with two food COOPs, nobody is short of food when one fails.",
+				"evidence": "two food COOPs: 10,600 person-days short of food (the second seller was alive at the failure; receivership after 30 days); one: 800",
+				"takeaway": "With two food COOPs, people were short of food 10,600 person-days; with one, 800. The failing COOP went into receivership after 30 days (two sellers) and 30 days (one). The lowest food share anyone got was 91.9 % vs 91.3 %.",
+				"metrics": [
+					{
+						"id": "foodShort",
+						"label": "person-days short of food (after day 0)",
+						"base": 10600,
+						"changed": 800
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of any basic",
+						"base": 10600,
+						"changed": 800
+					},
+					{
+						"id": "foodMin",
+						"label": "lowest share of food need met by anyone",
+						"base": 0.9188,
+						"changed": 0.9132
+					},
+					{
+						"id": "exitDay",
+						"label": "days from the failure to receivership",
+						"base": 30,
+						"changed": 30
+					},
+					{
+						"id": "greenAlive",
+						"label": "the other food COOP alive at the failure (1 = yes)",
+						"base": 1,
+						"changed": 0
+					},
+					{
+						"id": "foodPeak",
+						"label": "food price peak ÷ before the failure",
+						"base": 3.155,
+						"changed": 3.433
+					}
+				],
+				"seconds": 6.895
+			},
+			{
+				"id": "X6",
+				"question": "Can four friends cheat?",
+				"ruleChanged": "Avens send HEARTS by delivered output per HEART (base) vs by the MIND’s pool price (changed). In both worlds, four friends open a COOP that makes nothing on day 365. They pay themselves 90 % of its treasury and buy its MIND to push its price.",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 2,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Avens that follow delivered output starve a ring: it gets less than under the price rule, and no more than its share of the people.",
+				"evidence": "ring share of others’ HEARTS 0.6 % (output) vs 4.0 % (price); its share of people 4.0 %",
+				"takeaway": "Following delivered output, Avens sent the ring 0.6 % of others’ HEARTS; following the pool price, 4.0 %. The ring is 4.0 % of the people. Its members ended at 0.36× the others’ mean holding (output rule) and 0.20× (price rule).",
+				"metrics": [
+					{
+						"id": "ringShare",
+						"label": "share of other people’s HEARTS that went into the ring",
+						"base": 0.005588,
+						"changed": 0.03992
+					},
+					{
+						"id": "ringPeople",
+						"label": "the ring’s share of people",
+						"base": 0.04,
+						"changed": 0.04
+					},
+					{
+						"id": "wealth0",
+						"label": "ring members’ mean holding ÷ others’, at the start",
+						"base": 0.9183,
+						"changed": 0.9263
+					},
+					{
+						"id": "wealth1",
+						"label": "ring members’ mean holding ÷ others’, at the end of the ring",
+						"base": 0.3633,
+						"changed": 0.2032
+					},
+					{
+						"id": "ringDied",
+						"label": "day the ring’s COOP went into receivership (−1: never)",
+						"base": -1,
+						"changed": -1
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 0
+					}
+				],
+				"seconds": 5.221
+			},
+			{
+				"id": "X7",
+				"question": "Who keeps the surplus?",
+				"ruleChanged": "Two competing COOPs per good at genesis (base) vs one (changed).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 6,
+				"seed": 20261012,
+				"pass": false,
+				"claim": "When sellers compete, citizens win: with two sellers basics sell closer to cost, sellers keep less of the revenue, and nobody is short.",
+				"evidence": "price ÷ full cost 0.98 (two) vs 0.94 (one); sellers’ share 41.3 % vs 37.3 %; short 0 vs 0",
+				"takeaway": "With two sellers per good, basics sold at 0.98× their full cost; with one, at 0.94×. Sellers kept 41.3 % vs 37.3 % of basics revenue above variable cost. The poorest decile lived at 26.05 vs 26.11.",
+				"metrics": [
+					{
+						"id": "markup",
+						"label": "basics’ price ÷ full cost, whole run",
+						"base": 0.9826,
+						"changed": 0.9422
+					},
+					{
+						"id": "markupLast",
+						"label": "basics’ price ÷ full cost, last year",
+						"base": 0.9365,
+						"changed": 0.9551
+					},
+					{
+						"id": "sellerShare",
+						"label": "sellers’ share of basics revenue above variable cost",
+						"base": 0.4128,
+						"changed": 0.3728
+					},
+					{
+						"id": "basicCost",
+						"label": "basic bundle, R a day, mean",
+						"base": 0.4923,
+						"changed": 0.5439
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest Aven decile, last year",
+						"base": 26.05,
+						"changed": 26.11
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 56.56,
+						"changed": 56.44
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "founded",
+						"label": "COOPs founded (Law 3)",
+						"base": 5,
+						"changed": 2
+					}
+				],
+				"seconds": 7.154
+			},
+			{
+				"id": "X8",
+				"question": "Which price rule feeds everyone?",
+				"ruleChanged": "Forward-margin price with Mark-0’s guard (base) vs Primer’s adaptive price (changed): each seller asks 3 % more after a day it sold out, and 3 % less after a day with stock left.",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 6,
+				"seed": 20261012,
+				"pass": false,
+				"claim": "A price that reads need and the harvest pipeline feeds everyone: no one short, and no more shortage or price swing than Primer’s baseline.",
+				"evidence": "short 0 (forward) vs 0 (Primer); daily swing 0.2 % vs 0.1 %",
+				"takeaway": "With the forward margin, 0 person-days were short; with Primer’s adaptive price, 0. Basics’ prices swung 0.2 % a day vs 0.1 %. The poorest decile lived at 26.05 vs 31.79.",
+				"metrics": [
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "swing",
+						"label": "mean daily price swing of the basics (ln)",
+						"base": 0.001532,
+						"changed": 0.0006632
+					},
+					{
+						"id": "minMet",
+						"label": "lowest share of any basic met by anyone",
+						"base": 1,
+						"changed": 1
+					},
+					{
+						"id": "markup",
+						"label": "basics’ price ÷ full cost, whole run",
+						"base": 0.9826,
+						"changed": 0.7609
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest Aven decile, last year",
+						"base": 26.05,
+						"changed": 31.79
+					},
+					{
+						"id": "exits",
+						"label": "receiverships",
+						"base": 9,
+						"changed": 19
+					}
+				],
+				"seconds": 7.897
+			},
+			{
+				"id": "X9",
+				"question": "Does more money make us richer?",
+				"ruleChanged": "24 (base) vs 48 (changed) HEARTS a day for every person.",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 6,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Doubling HEARTS changes only prices: real consumption of every good, and the mean living standard, within ±1 %.",
+				"evidence": "largest change: compute 0.1 %; living standard 0.1 %; food -0.0 %, water 0.0 %, energy 0.0 %, bed 0.0 %, goods 0.0 %, spring 0.0 %, compute 0.1 %",
+				"takeaway": "With twice the HEARTS, food’s price in R went ×2.00, water’s ×2.00, energy’s ×2.00. What people got changed by at most 0.1 % for any good. The mean living standard changed by 0.1 %.",
+				"metrics": [
+					{
+						"id": "Lmean",
+						"label": "mean living standard over the run",
+						"base": 39.03,
+						"changed": 39.07
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest Aven decile, living standard over the run",
+						"base": 19.11,
+						"changed": 19.12
+					},
+					{
+						"id": "cons_food",
+						"label": "food a person a day over the run",
+						"base": 1.747,
+						"changed": 1.747
+					},
+					{
+						"id": "cons_water",
+						"label": "water a person a day over the run",
+						"base": 150,
+						"changed": 150
+					},
+					{
+						"id": "cons_energy",
+						"label": "energy a person a day over the run",
+						"base": 7.397,
+						"changed": 7.397
+					},
+					{
+						"id": "cons_bed",
+						"label": "bed a person a day over the run",
+						"base": 1,
+						"changed": 1
+					},
+					{
+						"id": "cons_goods",
+						"label": "goods a person a day over the run",
+						"base": 2.923,
+						"changed": 2.923
+					},
+					{
+						"id": "cons_spring",
+						"label": "spring a person a day over the run",
+						"base": 1.2,
+						"changed": 1.2
+					},
+					{
+						"id": "cons_compute",
+						"label": "compute a person a day over the run",
+						"base": 13.29,
+						"changed": 13.3
+					},
+					{
+						"id": "price_food",
+						"label": "food price (R) over the run",
+						"base": 0.1551,
+						"changed": 0.3102
+					},
+					{
+						"id": "price_water",
+						"label": "water price (R) over the run",
+						"base": 0.000153,
+						"changed": 0.000306
+					},
+					{
+						"id": "price_energy",
+						"label": "energy price (R) over the run",
+						"base": 0.003405,
+						"changed": 0.006799
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 0
+					}
+				],
+				"seconds": 7.946
+			},
+			{
+				"id": "X10",
+				"question": "Does more energy make us richer?",
+				"ruleChanged": "The geothermal stage and R&D on surplus energy on (base) vs both off (changed).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 10,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Living standards (mean and poorest decile) end higher with surplus energy and R&D than without, and innovation advances only with it.",
+				"evidence": "mean 58.82 vs 4.04; poorest decile 29.11 vs 2.60; innovation 31.5 % vs 0.0 %",
+				"takeaway": "With geothermal and R&D, a person used 78.44 kWh a day, and 50.02 kWh of surplus fed innovation (31.5 % of the way to the floors). Without, 16.02 kWh and 0.0 %. The poorest decile went from 14.27 to 29.11 with surplus energy, and from 3.61 to 2.60 without. Person-days short: 0 vs 91,900.",
+				"metrics": [
+					{
+						"id": "ePP",
+						"label": "electricity used a person a day (kWh), last year",
+						"base": 78.44,
+						"changed": 16.02
+					},
+					{
+						"id": "surplusPP",
+						"label": "surplus energy a person a day (kWh), last year",
+						"base": 50.02,
+						"changed": 0
+					},
+					{
+						"id": "rdMwh",
+						"label": "R&D energy, all years (MWh)",
+						"base": 16130,
+						"changed": 0
+					},
+					{
+						"id": "learn",
+						"label": "innovation: share of the way to the physical floors",
+						"base": 0.3149,
+						"changed": 0
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 58.82,
+						"changed": 4.037
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest Aven decile, last year",
+						"base": 29.11,
+						"changed": 2.6
+					},
+					{
+						"id": "Lpoor2",
+						"label": "poorest Aven decile, year 2",
+						"base": 14.27,
+						"changed": 3.613
+					},
+					{
+						"id": "Lceil",
+						"label": "physics ceiling of the living standard, last year",
+						"base": 65.9,
+						"changed": 10.5
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 91900
+					}
+				],
+				"seconds": 12.12
+			},
+			{
+				"id": "X11",
+				"question": "What stops a small village first?",
+				"ruleChanged": "250 blobs (base) vs 100 blobs (changed) on the same hex, built for 250, with dome solar and no geothermal stage yet (world model 5.5).",
+				"people": {
+					"base": 250,
+					"changed": 100
+				},
+				"years": 6,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Physics, not money, sets the limit: MIND never binds a basic while physics allows need, and fewer people on the same hex are short less.",
+				"evidence": "MIND-bound basic days 0 (250) and 0 (100); days short a person 551.00 vs 0.00; short days by limit (250): {\"water: energy\":371,\"energy: energy\":551,\"bed: energy\":551}",
+				"takeaway": "With 250 blobs, someone was short of energy on 551 days and of water on 371. With 100, on 0 and 0 days. MIND bound a basic on 0 days with 250 and 0 with 100. Wood was bound by energy (250) and demand (100).",
+				"metrics": [
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 137800,
+						"changed": 0
+					},
+					{
+						"id": "shortPP",
+						"label": "days short a person (person-days ÷ people)",
+						"base": 551,
+						"changed": 0
+					},
+					{
+						"id": "mindBinds",
+						"label": "days MIND bound a basic while physics allowed need",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "energyBadge",
+						"label": "share of days energy’s badge read “energy”",
+						"base": 0.2517,
+						"changed": 0
+					},
+					{
+						"id": "energyShortDays",
+						"label": "days someone was short of energy",
+						"base": 551,
+						"changed": 0
+					},
+					{
+						"id": "waterShortDays",
+						"label": "days someone was short of water",
+						"base": 371,
+						"changed": 0
+					},
+					{
+						"id": "woodTop",
+						"label": "wood’s most frequent binding limit",
+						"base": "energy",
+						"changed": "demand"
+					},
+					{
+						"id": "bedTop",
+						"label": "beds’ most frequent binding limit",
+						"base": "need met",
+						"changed": "need met"
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 6.728,
+						"changed": 26.93
+					}
+				],
+				"seconds": 10.98
+			},
+			{
+				"id": "X12",
+				"question": "Do newcomers eat?",
+				"ruleChanged": "A constant population (base) vs +2 % a year (changed), on the same fixed land. Newcomers arrive with an Aven and nothing held.",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 8,
+				"seed": 20261012,
+				"pass": false,
+				"claim": "Growth raises rent, not hunger: newcomers are never short, and ground rent ends higher than with a constant population.",
+				"evidence": "newcomers short 2424 of 14595 person-days; rent at the end 9.81e-4 (growth) vs 3.01e-4 (constant)",
+				"takeaway": "With growth the village went from 100 to 117 people. Newcomers lived 14,595 person-days in their first three years and were short on 2,424. Ground rent went from 1.10e-4 to 9.81e-4 R a m² a day (constant population: 3.01e-4). The mean living standard ended at 57.63 vs 58.09.",
+				"metrics": [
+					{
+						"id": "N",
+						"label": "people at the end",
+						"base": 100,
+						"changed": 117
+					},
+					{
+						"id": "newcomerPD",
+						"label": "newcomer person-days (first 3 years after arrival)",
+						"base": 0,
+						"changed": 14600
+					},
+					{
+						"id": "newcomerShort",
+						"label": "newcomer person-days short of a basic",
+						"base": 0,
+						"changed": 2424
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic (everyone)",
+						"base": 0,
+						"changed": 41410
+					},
+					{
+						"id": "rent0",
+						"label": "ground rent (R a m² a day), year 1",
+						"base": 0.000109,
+						"changed": 0.0001102
+					},
+					{
+						"id": "rentEnd",
+						"label": "ground rent, last year",
+						"base": 0.0003008,
+						"changed": 0.0009809
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 58.09,
+						"changed": 57.63
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest holdings decile, last year",
+						"base": 27.86,
+						"changed": 35.03
+					}
+				],
+				"seconds": 12.44
+			},
+			{
+				"id": "X13",
+				"question": "Private land or City land?",
+				"ruleChanged": "All land belongs to the City COOP and is leased for ground rent (base) vs land owned by people, unequally (a Pareto draw), with the rent paid to them (changed).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 8,
+				"seed": 20261012,
+				"pass": false,
+				"claim": "Land that nobody can sell keeps ownership fairer: the holdings Gini ends lower with City land than with private land, and nobody is short.",
+				"evidence": "Gini 0.36 (City) vs 0.35 (private); short 0 vs 0",
+				"takeaway": "With City land the holdings Gini ended at 0.36; with private land, at 0.35. The poorest decile lived at 27.86 vs 29.05, the top decile at 65.90 vs 65.90.",
+				"metrics": [
+					{
+						"id": "giniEnd",
+						"label": "holdings Gini, end",
+						"base": 0.3601,
+						"changed": 0.3506
+					},
+					{
+						"id": "gini3",
+						"label": "holdings Gini, year 3",
+						"base": 0.2551,
+						"changed": 0.2516
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest holdings decile, last year",
+						"base": 27.86,
+						"changed": 29.05
+					},
+					{
+						"id": "Ltop",
+						"label": "top holdings decile, last year",
+						"base": 65.9,
+						"changed": 65.9
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic",
+						"base": 0,
+						"changed": 0
+					},
+					{
+						"id": "rentR",
+						"label": "ground rent paid, R a person a day, last year",
+						"base": 0.1298,
+						"changed": 0.1484
+					}
+				],
+				"seconds": 12.23
+			},
+			{
+				"id": "X14",
+				"question": "What happens on day 1?",
+				"ruleChanged": "The bootstrap of §11.4 on (base: each Aven’s first HEARTS go to the basics COOPs it buys from, and pools fill on day 0) vs off (changed: first HEARTS into three COOPs of the Aven’s taste).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 1,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Seed the pools, and the first day feeds everyone: with the bootstrap nobody is short on day 0 or after.",
+				"evidence": "bootstrap: 0.0 % short on day 0, 0 person-days in year 1; without: 100.0 % on day 0, 600 person-days",
+				"takeaway": "With the bootstrap, 0.0 % of people were short on day 0 and 0.0 % on day 1. Without it, 100.0 % and 100.0 %. Over year 1: 0 vs 600 person-days short.",
+				"metrics": [
+					{
+						"id": "short0",
+						"label": "share of people short of a basic on day 0",
+						"base": 0,
+						"changed": 1
+					},
+					{
+						"id": "short1",
+						"label": "share of people short on day 1",
+						"base": 0,
+						"changed": 1
+					},
+					{
+						"id": "short30",
+						"label": "person-days short in days 1–30",
+						"base": 0,
+						"changed": 600
+					},
+					{
+						"id": "shortPD",
+						"label": "person-days short in year 1 (after day 0)",
+						"base": 0,
+						"changed": 600
+					},
+					{
+						"id": "minMet30",
+						"label": "lowest share of any basic met in days 1–30",
+						"base": 1,
+						"changed": 0
+					}
+				],
+				"seconds": 3.247
+			},
+			{
+				"id": "AB1",
+				"question": "Does doubling a binding physical limit raise living standards?",
+				"ruleChanged": "The hot spring’s warm ponds are fixed by nature and bind every day: 2 sites (base) vs 4 (changed).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 6,
+				"seed": 20261012,
+				"pass": true,
+				"claim": "Doubling the binding physical limit raises living standards: more of the good, a higher mean living standard and a higher one for the poorest decile.",
+				"evidence": "spring 1.20 → 2.00 h a person a day (badge “nature” on 100.0 % of base days), mean 56.56 → 57.42, poorest decile 26.05 → 27.17; physics ceiling 61.88 → 63.09",
+				"takeaway": "Doubling the warm ponds took spring time from 1.20 to 2.00 hours a person a day, and its price from 0.12 to 0.04 R. The mean living standard went from 56.56 to 57.42 (1.5 %), the poorest decile’s from 26.05 to 27.17.",
+				"metrics": [
+					{
+						"id": "spring",
+						"label": "spring hours a person a day, last year",
+						"base": 1.2,
+						"changed": 2
+					},
+					{
+						"id": "springPrice",
+						"label": "spring price (R an hour), last year",
+						"base": 0.1164,
+						"changed": 0.04477
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 56.56,
+						"changed": 57.42
+					},
+					{
+						"id": "Lceil",
+						"label": "physics ceiling of the living standard, last year",
+						"base": 61.88,
+						"changed": 63.09
+					},
+					{
+						"id": "Lpoor",
+						"label": "poorest Aven decile, last year",
+						"base": 26.05,
+						"changed": 27.17
+					},
+					{
+						"id": "badge",
+						"label": "share of days the spring’s badge read “nature”",
+						"base": 1,
+						"changed": 0
+					}
+				],
+				"seconds": 8.575
+			},
+			{
+				"id": "SH",
+				"question": "Through a drought, a dark winter, two failing COOPs and a failing well, does everyone keep the basics, and does every decile recover within two years?",
+				"ruleChanged": "No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (HOME-B, a bed COOP, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).",
+				"people": {
+					"base": 100,
+					"changed": 100
+				},
+				"years": 9,
+				"seed": 20261012,
+				"pass": false,
+				"claim": "Nobody is short in any shock, and every decile is back within two years (P3 holds with the shocks excused for two years).",
+				"evidence": "short 6,100 person-days ({\"water: energy\":30,\"energy: energy\":61,\"bed: energy\":61}); P3 fails (worst fall outside the windows 7.8 %; failing: holdings decile 1, holdings decile 2, holdings decile 3, holdings decile 4, holdings decile 5, aven decile 1, aven decile 2, aven decile 3, aven decile 4, aven decile 5)",
+				"takeaway": "Through the shocks, 6,100 person-days were short of a basic (0 without shocks). The largest fall of any decile outside the two-year recovery windows was 7.8 % (1.7 % without). The mean living standard ended at 57.39 vs 58.71. There were 9 receiverships vs 9.",
+				"metrics": [
+					{
+						"id": "shortPD",
+						"label": "person-days short of a basic (after day 0)",
+						"base": 0,
+						"changed": 6100
+					},
+					{
+						"id": "shortByLimit",
+						"label": "short days by basic and binding limit",
+						"base": "{}",
+						"changed": "{\"water: energy\":30,\"energy: energy\":61,\"bed: energy\":61}"
+					},
+					{
+						"id": "p3",
+						"label": "P3 (deciles, with the shocks’ two-year recovery excused)",
+						"base": 1,
+						"changed": 0
+					},
+					{
+						"id": "worstFall",
+						"label": "largest fall of any decile (trailing year) outside the excused windows",
+						"base": 0.01705,
+						"changed": 0.07817
+					},
+					{
+						"id": "Lmin",
+						"label": "lowest living standard of anyone, any day",
+						"base": 8.365,
+						"changed": 1.563
+					},
+					{
+						"id": "Lmean",
+						"label": "mean living standard, last year",
+						"base": 58.71,
+						"changed": 57.39
+					},
+					{
+						"id": "exits",
+						"label": "receiverships",
+						"base": 9,
+						"changed": 9
+					}
+				],
+				"seconds": 15.6
+			}
+		],
+		"scenarios": [
+			{
+				"id": "S00",
+				"name": "prop3-headline",
+				"paper": "abstract, §9.3, Samuel 16:47",
+				"claim": "On every seed: nobody below 98 % of a basic after day 0; the owner-only cohort passes the strict test by day 120 and the normal test every day; every decile (by holdings and by Aven output) never falls more than 2 % in a 5-year window and rises or sits near the physics ceiling; MIND never binds a basic.",
+				"pass": true,
+				"takeaway": "Proposition 3 holds on 5 of 5 seeds over 30 years. The strict test holds from day 9 at the latest. The worst 5-year fall of any decile is 1.68 %.",
+				"evidence": "seed 20261012: P1 0 person-days short, strict from day 9, normal pass, P3 pass, worst fall 1.68 %, MIND binds a basic on 0 days; seed 1: P1 0 person-days short, strict from day 9, normal pass, P3 pass, worst fall 0.88 %, MIND binds a basic on 0 days; seed 2: P1 0 person-days short, strict from day 9, normal pass, P3 pass, worst fall 1.33 %, MIND binds a basic on 0 days; seed 3: P1 0 person-days short, strict from day 9, normal pass, P3 pass, worst fall 1.19 %, MIND binds a basic on 0 days; seed 4: P1 0 person-days short, strict from day 9, normal pass, P3 pass, worst fall 1.16 %, MIND binds a basic on 0 days. The world model asks for 60 years; this suite runs 30.",
+				"runs": [
+					{
+						"label": "base, seed 20261012",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "base, seed 1",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "base, seed 2",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "base, seed 3",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "base, seed 4",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"seeds": [
+						{
+							"seed": 20260000,
+							"P1": true,
+							"shortPD": 0,
+							"strictFrom": 9,
+							"P2n": true,
+							"P3": true,
+							"P3failed": 0,
+							"worstFall": 0.01684,
+							"mindBinds": 0,
+							"receiverships": 5,
+							"poor1": 11.61,
+							"poor30": 33.15
+						},
+						{
+							"seed": 1,
+							"P1": true,
+							"shortPD": 0,
+							"strictFrom": 9,
+							"P2n": true,
+							"P3": true,
+							"P3failed": 0,
+							"worstFall": 0.008756,
+							"mindBinds": 0,
+							"receiverships": 3,
+							"poor1": 11.62,
+							"poor30": 33.44
+						},
+						{
+							"seed": 2,
+							"P1": true,
+							"shortPD": 0,
+							"strictFrom": 9,
+							"P2n": true,
+							"P3": true,
+							"P3failed": 0,
+							"worstFall": 0.0133,
+							"mindBinds": 0,
+							"receiverships": 4,
+							"poor1": 11.52,
+							"poor30": 32.04
+						},
+						{
+							"seed": 3,
+							"P1": true,
+							"shortPD": 0,
+							"strictFrom": 9,
+							"P2n": true,
+							"P3": true,
+							"P3failed": 0,
+							"worstFall": 0.01192,
+							"mindBinds": 0,
+							"receiverships": 4,
+							"poor1": 11.58,
+							"poor30": 32.89
+						},
+						{
+							"seed": 4,
+							"P1": true,
+							"shortPD": 0,
+							"strictFrom": 9,
+							"P2n": true,
+							"P3": true,
+							"P3failed": 0,
+							"worstFall": 0.01163,
+							"mindBinds": 0,
+							"receiverships": 4,
+							"poor1": 11.59,
+							"poor30": 33.82
+						}
+					]
+				},
+				"seconds": 108.1
+			},
+			{
+				"id": "A04",
+				"name": "melt-idle",
+				"paper": "Eq. 1–2, Fig. 4, 9",
+				"claim": "One global melt index: 100 idle MIND keep 49.66 after 10 years; the half-life is 9.90 years; the engine’s index matches e^(−0.07 t) to within 1e-9.",
+				"pass": true,
+				"takeaway": "After 30 years the melt index is 0.122456, as e^(−0.07 t) says. 100 idle MIND keep 49.66 after 10 years. The half-life is 9.90 years.",
+				"evidence": "relative error 5.1e-15",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"meltIndex": 0.1225,
+					"expected": 0.1225,
+					"relError": 5.107e-15,
+					"after10y": 49.66,
+					"halfLifeYears": 9.902
+				},
+				"seconds": 22.3
+			},
+			{
+				"id": "A05",
+				"name": "steady-state",
+				"paper": "Eq. 3, Fig. 6",
+				"claim": "Money a person follows u/r · (1 − e^(−r t)) exactly (every HEART makes one MIND, everything melts), toward m* = u/r ≈ 125,143.",
+				"pass": true,
+				"takeaway": "After 30 years a person’s share of all MIND is 109,829, 87.8 % of the resting level 125,155. It matches the closed form to 6.7e-16.",
+				"evidence": "count 109,829 vs formula 109,829; m* 125,155 vs the paper’s 125,143",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"mindPerPerson": 109800,
+					"formula": 109800,
+					"relError": 6.661e-16,
+					"mStar": 125200,
+					"shareOfRest": 0.8775,
+					"year1": 8372,
+					"year10": 62780
+				},
+				"seconds": 22.3
+			},
+			{
+				"id": "B01",
+				"name": "main-round-trip (30-year part)",
+				"paper": "§9.3, Table 3",
+				"claim": "People own at least 90 % of all MIND (the paper: 94 %). Issued and melted R a person a day are reported (at rest they meet; 30 years is not yet rest).",
+				"pass": true,
+				"takeaway": "People own 90.3 % of all MIND after 30 years; treasuries 3.8 %, pools 5.9 %. In year 30, 24.01 R a person a day was issued and 21.00 R melted.",
+				"evidence": "holdings Gini 0.40",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"peopleShare": 0.9032,
+					"treasuryShare": 0.03824,
+					"poolShare": 0.05854,
+					"issuedPP": 24.01,
+					"meltedPP": 21,
+					"gini": 0.4013
+				},
+				"seconds": 22.3
+			},
+			{
+				"id": "B02",
+				"name": "hoard vs payout",
+				"paper": "§9.2, §11.5; plan World 2",
+				"claim": "With treasuries keeping their surplus, people hold far less of all MIND: a gap of at least 50 points (the paper: 94 % vs 30 %).",
+				"pass": false,
+				"takeaway": "With payout, people hold 90.3 % of all MIND; when treasuries keep their surplus, 51.1 %. The poorest decile lives at 33.15 vs 13.90.",
+				"evidence": "gap 39.3 %; keep world: P1 pass, P2 pass, P3 fail",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "payout false",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"payout": 0.9032,
+					"keep": 0.5106,
+					"gap": 0.3926,
+					"P3keep": false,
+					"strictKeep": 9,
+					"poorKeep": 13.9,
+					"poorPayout": 33.15
+				},
+				"seconds": 42.93
+			},
+			{
+				"id": "B03",
+				"name": "law5-ladder",
+				"paper": "§9.2",
+				"claim": "Law 5 shares of 20, 35 and 50 %: the dividend yield on people’s holdings (μ) stays below the 7 % melt in every year after year 2, and Proposition 3 holds at each share.",
+				"pass": false,
+				"takeaway": "At 20 %, the yield was 30.3 % in year 1 and 1.3 % in year 30. It stayed under 7 % from year 5. At 35 %, the yield was 53.5 % in year 1 and 2.6 % in year 30. It stayed under 7 % from year 9. At 50 %, the yield was 76.2 % in year 1 and 4.7 % in year 30. It stayed under 7 % from year 15. The strict test held from day 9, 9, 27.",
+				"evidence": "20 %: max yield after year 2 12.25 %, Prop 3 pass, poorest holdings decile 33.15; 35 %: max yield after year 2 23.88 %, Prop 3 pass, poorest holdings decile 29.23; 50 %: max yield after year 2 41.18 %, Prop 3 fail, poorest holdings decile 25.05",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "law5 0.35",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "law5 0.5",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"share": 0.2,
+							"maxYieldAfter2": 0.1225,
+							"belowMeltFromYear": 5,
+							"yield1": 0.3029,
+							"yield5": 0.06723,
+							"yieldLast": 0.01265,
+							"strictFrom": 9,
+							"prop3": true,
+							"poorH": 33.15,
+							"Lmean": 60.35
+						},
+						{
+							"share": 0.35,
+							"maxYieldAfter2": 0.2388,
+							"belowMeltFromYear": 9,
+							"yield1": 0.5345,
+							"yield5": 0.139,
+							"yieldLast": 0.02619,
+							"strictFrom": 9,
+							"prop3": true,
+							"poorH": 29.23,
+							"Lmean": 56.98
+						},
+						{
+							"share": 0.5,
+							"maxYieldAfter2": 0.4118,
+							"belowMeltFromYear": 15,
+							"yield1": 0.7619,
+							"yield5": 0.2383,
+							"yieldLast": 0.0465,
+							"strictFrom": 27,
+							"prop3": false,
+							"poorH": 25.05,
+							"Lmean": 51.43
+						}
+					]
+				},
+				"seconds": 65.01
+			},
+			{
+				"id": "B04",
+				"name": "aven-spread",
+				"paper": "§9.2, sim ladder",
+				"claim": "Ownership inequality rises with the spread of Aven output (the paper: Gini 0.04, 0.33, 0.56 for spreads 0, 0.6, 1.2), and no one is short at any spread.",
+				"pass": true,
+				"takeaway": "The holdings Gini after 30 years is 0.04, 0.40, 0.56 for spreads 0, 0.6, 1.2. The poorest Aven decile lives at 44.71, 33.11, 25.09.",
+				"evidence": "spread 0: P1 pass, P2 pass, P3 pass; spread 0.6: P1 pass, P2 pass, P3 pass; spread 1.2: P1 pass, P2 pass, P3 pass",
+				"runs": [
+					{
+						"label": "avenSpread 0",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "avenSpread 1.2",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"spread": 0,
+							"gini": 0.04278,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"poorA": 44.71
+						},
+						{
+							"spread": 0.6,
+							"gini": 0.4013,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"poorA": 33.11
+						},
+						{
+							"spread": 1.2,
+							"gini": 0.5643,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"poorA": 25.09
+						}
+					]
+				},
+				"seconds": 63.26
+			},
+			{
+				"id": "B05",
+				"name": "germany-shock",
+				"paper": "§9.2 Eq. 9, Fig. 12, sim §6.5",
+				"claim": "After holdings are made as unequal as Germany’s (Gini 0.72) in year 10, the melt and the equal HEARTS take at least half of the extra inequality away within 10 years (the paper: 0.73 → 0.44), and nobody is short.",
+				"pass": true,
+				"takeaway": "The Gini of holdings went from 0.38 to 0.69 with the shock, then 0.62 after a year, 0.48 after 5 and 0.42 after 10. 0 person-days were short.",
+				"evidence": "extra inequality 0.30, gone after 10 years 0.27; P2 normal pass",
+				"runs": [
+					{
+						"label": "shocks [{\"kind\":\"germany\",\"day\":3650,\"days\":1}]",
+						"people": 250,
+						"years": 20
+					}
+				],
+				"numbers": {
+					"before": 0.385,
+					"after": 0.6895,
+					"plus1": 0.6229,
+					"plus5": 0.4774,
+					"plus10": 0.4173,
+					"shortPD": 0
+				},
+				"seconds": 13.06
+			},
+			{
+				"id": "B09",
+				"name": "land-rent",
+				"paper": "§8.1, §11.5 sixth",
+				"claim": "With all land the City COOP’s, holdings are more equal than with private land paying rent to owners (the paper: Gini 0.29 vs about 0.5).",
+				"pass": false,
+				"takeaway": "After 30 years the holdings Gini is 0.40 with City land and 0.40 with private land. Ground rent is 0.159 R a person a day, small beside the 24 HEARTS a day.",
+				"evidence": "private-land world: P1 pass, P3 fail",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "landRule private",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"giniCity": 0.4013,
+					"giniPrivate": 0.3973,
+					"rentRPerPersonDay": 0.1591,
+					"P3private": false
+				},
+				"seconds": 43.8
+			},
+			{
+				"id": "B10",
+				"name": "food-coop-fails",
+				"paper": "§9, §11.2, sim §6.2",
+				"claim": "The food forest’s COOP fails (output to 10 % for a year) in the autumn of year 10. With receivership after a failed audit and two food COOPs from genesis, nobody is short (the paper: 0 person-days).",
+				"pass": true,
+				"takeaway": "two food COOPs, audit exit: 0 person-days short of food, receivership after 45 days. two food COOPs, no audit exit: 54,000 person-days short of food. one food COOP, audit exit: 0 person-days short of food, receivership after 45 days. one food COOP, no audit exit: 52,000 person-days short of food. four food COOPs (the forest split in two), audit exit: 21,000 person-days short of food, receivership after 45 days.",
+				"evidence": "the failure starts on day 3585 (late October, the end of the harvest)",
+				"runs": [
+					{
+						"label": "two food COOPs, audit exit",
+						"people": 250,
+						"years": 12
+					},
+					{
+						"label": "two food COOPs, no audit exit",
+						"people": 250,
+						"years": 12
+					},
+					{
+						"label": "one food COOP, audit exit",
+						"people": 250,
+						"years": 12
+					},
+					{
+						"label": "one food COOP, no audit exit",
+						"people": 250,
+						"years": 12
+					},
+					{
+						"label": "four food COOPs (the forest split in two), audit exit",
+						"people": 250,
+						"years": 12
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"label": "two food COOPs, audit exit",
+							"food": 0,
+							"any": 0,
+							"exitAfter": 45,
+							"P1": true
+						},
+						{
+							"label": "two food COOPs, no audit exit",
+							"food": 54000,
+							"any": 54000,
+							"exitAfter": -1,
+							"P1": false
+						},
+						{
+							"label": "one food COOP, audit exit",
+							"food": 0,
+							"any": 0,
+							"exitAfter": 45,
+							"P1": true
+						},
+						{
+							"label": "one food COOP, no audit exit",
+							"food": 52000,
+							"any": 52000,
+							"exitAfter": -1,
+							"P1": false
+						},
+						{
+							"label": "four food COOPs (the forest split in two), audit exit",
+							"food": 21000,
+							"any": 21000,
+							"exitAfter": 45,
+							"P1": false
+						}
+					]
+				},
+				"seconds": 52.45
+			},
+			{
+				"id": "B11",
+				"name": "founder-ring",
+				"paper": "§11.2, App. E",
+				"claim": "A ring of four founders whose COOP makes nothing draws HEARTS when Avens follow pool prices; when Avens follow delivered output, it gets no more than its share of the people (the paper: 3.84 % vs 1.60 %).",
+				"pass": true,
+				"takeaway": "The ring is 1.6 % of the people. Following delivered output, Avens sent it 0.56 % of others’ HEARTS; following pool prices, 3.14 %.",
+				"evidence": "ring members’ holding ÷ others’: 0.31 (output) vs 0.05 (price)",
+				"runs": [
+					{
+						"label": "output rule, ring",
+						"people": 250,
+						"years": 2
+					},
+					{
+						"label": "price rule, ring",
+						"people": 250,
+						"years": 2
+					}
+				],
+				"numbers": {
+					"outputShare": 0.005582,
+					"priceShare": 0.03141,
+					"ringPeople": 0.016,
+					"wealthOutput": 0.3104,
+					"wealthPrice": 0.04842,
+					"diedOutput": -1,
+					"diedPrice": -1
+				},
+				"seconds": 9.929
+			},
+			{
+				"id": "B14",
+				"name": "cold-start",
+				"paper": "§9.3, §11.4, sim §6.1",
+				"claim": "Bootstrap: 0 person-days short from day 0. Without it (empty pools on day 0), most people are short at first (the paper: 94 %). An empty city at 25 % of capacity: the badge shows a physical limit, never MIND.",
+				"pass": true,
+				"takeaway": "With the bootstrap, 0.0 % of people are short on day 0. Without it, 100.0 % on day 0 and 100.0 % on day 1. In an empty city, MIND bound a basic on 0 days; 912,250 person-days were short, all for physical limits.",
+				"evidence": "empty city short days by limit: {\"food: nature (sun, rain, spring)\":3617,\"water: nature (sun, rain, spring)\":133,\"water: built capacity\":15,\"bed: built capacity\":3649}",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "no bootstrap",
+						"people": 250,
+						"years": 2
+					},
+					{
+						"label": "empty city: capital for 62.5 people, 250 people",
+						"people": 250,
+						"years": 10
+					}
+				],
+				"numbers": {
+					"bootstrapDay0": 0,
+					"noBootstrapDay0": 1,
+					"noBootstrapDay1": 1,
+					"noBootstrapYear1": 1500,
+					"emptyCityShortPD": 912300,
+					"emptyCityMindBinds": 0,
+					"emptyCityLimits": {
+						"food: nature (sun, rain, spring)": 3617,
+						"water: nature (sun, rain, spring)": 133,
+						"water: built capacity": 15,
+						"bed: built capacity": 3649
+					}
+				},
+				"seconds": 37.42
+			},
+			{
+				"id": "B15",
+				"name": "pop-growth",
+				"paper": "§5.2, sim §6.4, §9.3",
+				"claim": "250 people growing 2 % a year on fixed land: newcomers (first 3 years) are never short, and ground rent rises.",
+				"pass": false,
+				"takeaway": "The village grew from 250 to 455. Newcomers were short on 179,765 of 209,429 person-days in their first three years; everyone, 3,086,735. Ground rent went from 1.12e-4 to 1.15e-1 R a m² a day.",
+				"evidence": "short days by limit: {\"food: built capacity\":1409,\"bed: built capacity\":8491}; constant population rent 2.59e-4",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "popGrowth 0.02, maxYears 30",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"N": 455,
+					"newcomerPD": 209400,
+					"newcomerShort": 179800,
+					"shortPD": 3087000,
+					"shortBy": {
+						"food": 605900,
+						"water": 0,
+						"energy": 0,
+						"bed": 3087000
+					},
+					"shortByLimit": {
+						"food: built capacity": 1409,
+						"bed: built capacity": 8491
+					},
+					"rentYear1": 0.0001124,
+					"rentEnd": 0.1155,
+					"rentBase": 0.0002586,
+					"mindPP": 90730,
+					"gini": 0.4235
+				},
+				"seconds": 50.02
+			},
+			{
+				"id": "B17",
+				"name": "bad-coop-exit",
+				"paper": "§7, Fig. 11, Hirschman",
+				"claim": "A COOP that delivers 50 % less per HEART (GOODS-A, from year 3) loses at least half its HEARTS inflow within 60 days, without any vote.",
+				"pass": false,
+				"takeaway": "GOODS-A drew 6.06 % of all HEARTS before it slipped, 5.82 % 60 days later and 4.35 % after 180 days.",
+				"evidence": "0 person-days short",
+				"runs": [
+					{
+						"label": "shocks [{\"kind\":\"coopFail\",\"coop\":\"GOODS-A\",\"day\":730,\"days\":365,\"factor\":0.5}]",
+						"people": 250,
+						"years": 4
+					}
+				],
+				"numbers": {
+					"before": 0.06064,
+					"after60": 0.0582,
+					"after180": 0.04351,
+					"shortPD": 0
+				},
+				"seconds": 6.415
+			},
+			{
+				"id": "B22",
+				"name": "rate-sweep",
+				"paper": "§11.5, §5.3",
+				"claim": "For melts of 3 to 12 %, money a person follows u/r · (1 − e^(−r t)) exactly, the holdings Gini falls as the rate rises, and Proposition 3 holds at each rate (15 years).",
+				"pass": false,
+				"takeaway": "At 3 %: Gini 0.40, poorest decile 31.09, Prop 3 fails. At 5 %: Gini 0.40, poorest decile 31.02, Prop 3 fails. At 7 %: Gini 0.40, poorest decile 30.93, Prop 3 holds. At 10 %: Gini 0.40, poorest decile 30.93, Prop 3 holds. At 12 %: Gini 0.40, poorest decile 30.76, Prop 3 holds.",
+				"evidence": "3 %: money a person 105,817 (formula error 7.8e-16), P1 pass, P2 pass, P3 fail; 5 %: money a person 92,448 (formula error 3.9e-15), P1 pass, P2 pass, P3 fail; 7 %: money a person 81,358 (formula error 4.8e-15), P1 pass, P2 pass, P3 pass; 10 %: money a person 68,063 (formula error 1.3e-15), P1 pass, P2 pass, P3 pass; 12 %: money a person 60,943 (formula error 2.2e-15), P1 pass, P2 pass, P3 pass; Gini falls with the rate",
+				"runs": [
+					{
+						"label": "melt 0.03",
+						"people": 250,
+						"years": 15
+					},
+					{
+						"label": "melt 0.05",
+						"people": 250,
+						"years": 15
+					},
+					{
+						"label": "melt 0.07",
+						"people": 250,
+						"years": 15
+					},
+					{
+						"label": "melt 0.1",
+						"people": 250,
+						"years": 15
+					},
+					{
+						"label": "melt 0.12",
+						"people": 250,
+						"years": 15
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"melt": 0.03,
+							"mindErr": 7.772e-16,
+							"mStar": 292000,
+							"mindPP": 105800,
+							"gini": 0.3952,
+							"P1": true,
+							"P2": true,
+							"P3": false,
+							"poorH": 31.09
+						},
+						{
+							"melt": 0.05,
+							"mindErr": 3.886e-15,
+							"mStar": 175200,
+							"mindPP": 92450,
+							"gini": 0.3958,
+							"P1": true,
+							"P2": true,
+							"P3": false,
+							"poorH": 31.02
+						},
+						{
+							"melt": 0.07,
+							"mindErr": 4.774e-15,
+							"mStar": 125200,
+							"mindPP": 81360,
+							"gini": 0.3972,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"poorH": 30.93
+						},
+						{
+							"melt": 0.1,
+							"mindErr": 1.332e-15,
+							"mStar": 87610,
+							"mindPP": 68060,
+							"gini": 0.3972,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"poorH": 30.93
+						},
+						{
+							"melt": 0.12,
+							"mindErr": 2.22e-15,
+							"mStar": 73010,
+							"mindPP": 60940,
+							"gini": 0.3998,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"poorH": 30.76
+						}
+					]
+				},
+				"seconds": 74.36
+			},
+			{
+				"id": "B26",
+				"name": "demand-pricing-basics",
+				"paper": "Samuel; Primer article",
+				"claim": "In a drought (rain −50 % for a summer, year 4) with fully dynamic prices: 0 person-days short while physical supply covers need, the poorest limit bar stays above the water price, and the badge never reads MIND for water. Run with each price rule.",
+				"pass": true,
+				"takeaway": "forward: 0 person-days short, lowest water bar 8.56× the price, MIND bound a basic on 0 days. mark0: 0 person-days short, lowest water bar 4.61× the price, MIND bound a basic on 0 days. primer: 0 person-days short, lowest water bar 5.53× the price, MIND bound a basic on 0 days.",
+				"evidence": "forward: water price swing 0.21 % a day; mark0: water price swing 0.01 % a day; primer: water price swing 0.02 % a day",
+				"runs": [
+					{
+						"label": "forward price, drought",
+						"people": 250,
+						"years": 6
+					},
+					{
+						"label": "mark0 price, drought",
+						"people": 250,
+						"years": 6
+					},
+					{
+						"label": "primer price, drought",
+						"people": 250,
+						"years": 6
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"rule": "forward",
+							"shortPD": 0,
+							"water": 0,
+							"bar": 8.561,
+							"mindBinds": 0,
+							"swingWater": 0.002114
+						},
+						{
+							"rule": "mark0",
+							"shortPD": 0,
+							"water": 0,
+							"bar": 4.615,
+							"mindBinds": 0,
+							"swingWater": 0.00006247
+						},
+						{
+							"rule": "primer",
+							"shortPD": 0,
+							"water": 0,
+							"bar": 5.533,
+							"mindBinds": 0,
+							"swingWater": 0.0002094
+						}
+					]
+				},
+				"seconds": 24.73
+			},
+			{
+				"id": "B27",
+				"name": "innovation-energy",
+				"paper": "Samuel 16:59",
+				"claim": "With surplus energy and R&D, every decile’s living standard rises and recipes improve; without R&D they stall; without geothermal, winter energy binds. No recipe ever passes its physical floor.",
+				"pass": true,
+				"takeaway": "R&D and geothermal: mean living standard 60.35, poorest decile 33.11, innovation 48.7 % of the way to the floors, 84.06 kWh a person a day. no R&D: mean living standard 40.59, poorest decile 15.86, innovation 0.0 % of the way to the floors, 34.82 kWh a person a day. no geothermal: mean living standard 3.34, poorest decile 1.65, innovation 15.1 % of the way to the floors, 16.33 kWh a person a day. neither: mean living standard 2.03, poorest decile 2.03, innovation 0.0 % of the way to the floors, 8.06 kWh a person a day.",
+				"evidence": "R&D and geothermal: P3 pass, 0 person-days short, smallest margin above a floor 0.031; no R&D: P3 fail, 0 person-days short, smallest margin above a floor 0.091; no geothermal: P3 fail, 1,965,000 person-days short, smallest margin above a floor 0.083; neither: P3 fail, 1,907,750 person-days short, smallest margin above a floor 0.091",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "rd false",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "geothermal false",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "rd false, geothermal false",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"label": "R&D and geothermal",
+							"learn": 0.4873,
+							"floorMargin": 0.03074,
+							"Lmean": 60.35,
+							"poorH": 33.15,
+							"poorA1": 14.38,
+							"poorA": 33.11,
+							"P3": true,
+							"shortPD": 0,
+							"ePP": 84.06,
+							"surplusPP": 57.89
+						},
+						{
+							"label": "no R&D",
+							"learn": 0,
+							"floorMargin": 0.09091,
+							"Lmean": 40.59,
+							"poorH": 15.86,
+							"poorA1": 14.23,
+							"poorA": 15.86,
+							"P3": false,
+							"shortPD": 0,
+							"ePP": 34.82,
+							"surplusPP": 25.47
+						},
+						{
+							"label": "no geothermal",
+							"learn": 0.1513,
+							"floorMargin": 0.08274,
+							"Lmean": 3.336,
+							"poorH": 1.615,
+							"poorA1": 3.92,
+							"poorA": 1.651,
+							"P3": false,
+							"shortPD": 1965000,
+							"ePP": 16.33,
+							"surplusPP": 1.913
+						},
+						{
+							"label": "neither",
+							"learn": 0,
+							"floorMargin": 0.09091,
+							"Lmean": 2.028,
+							"poorH": 2.028,
+							"poorA1": 3.838,
+							"poorA": 2.028,
+							"P3": false,
+							"shortPD": 1908000,
+							"ePP": 8.063,
+							"surplusPP": 2.224
+						}
+					]
+				},
+				"seconds": 96.15
+			},
+			{
+				"id": "B28",
+				"name": "physics-only",
+				"paper": "Samuel 16:52",
+				"claim": "Doubling HEARTS changes only prices (real consumption of every good within ±1 %). Doubling a binding physical limit raises living standards; doubling a limit that does not bind changes little.",
+				"pass": true,
+				"takeaway": "With 48 HEARTS a day, prices in R rose about ×2.00 and real consumption changed by at most -0.06 % (compute). hot-spring sites ×2 (binding): mean living standard 1.33 %. geothermal stages ×2 (not binding): mean living standard 0.42 %. land ×2 (not binding): mean living standard -0.24 %.",
+				"evidence": "base badges: hot-spring sites ×2: spring 100 %; geothermal stages ×2: none; land ×2: none; consumption changes with 48 HEARTS: food -0.00 %, water 0.00 %, energy 0.00 %, bed 0.00 %, goods 0.00 %, spring 0.00 %, compute -0.06 %",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "heartsPerDay 48",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "springSites 4",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "geoStages 2",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "landHa 90",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"worstConsChange": [
+						"compute",
+						-0.0005986
+					],
+					"prices": [
+						[
+							"food",
+							2.001
+						],
+						[
+							"water",
+							2.001
+						],
+						[
+							"energy",
+							2.1
+						],
+						[
+							"bed",
+							2.001
+						],
+						[
+							"goods",
+							1.988
+						],
+						[
+							"spring",
+							2
+						],
+						[
+							"compute",
+							2.005
+						]
+					],
+					"doublings": [
+						{
+							"what": "hot-spring sites ×2",
+							"binding": true,
+							"bindsWhere": [
+								"spring 100 %"
+							],
+							"Lmean": 61.15,
+							"change": 0.01329,
+							"poorChange": 0.02139,
+							"P1": true
+						},
+						{
+							"what": "geothermal stages ×2",
+							"binding": false,
+							"bindsWhere": [],
+							"Lmean": 60.6,
+							"change": 0.0042,
+							"poorChange": 0.01948,
+							"P1": true
+						},
+						{
+							"what": "land ×2",
+							"binding": false,
+							"bindsWhere": [],
+							"Lmean": 60.2,
+							"change": -0.00244,
+							"poorChange": -0.00624,
+							"P1": true
+						}
+					]
+				},
+				"seconds": 89.28
+			},
+			{
+				"id": "B29",
+				"name": "binding-limit",
+				"paper": "world model 5.5",
+				"claim": "50, 100 and 250 people on one hex built for 250, without and with the geothermal stage: every short basic day is bound by a physical limit (never MIND), and fewer people are short less.",
+				"pass": false,
+				"takeaway": "50 people, no geothermal: 0 person-days short ({}), MIND bound a basic on 0 days. 50 people, geothermal: 32,950 person-days short ({\"food: built capacity\":449,\"water: MIND\":331,\"energy: MIND\":331,\"bed: built capacity\":659}), MIND bound a basic on 500 days. 100 people, no geothermal: 0 person-days short ({}), MIND bound a basic on 0 days. 100 people, geothermal: 0 person-days short ({}), MIND bound a basic on 0 days. 250 people, no geothermal: 1,965,000 person-days short ({\"water: energy\":1391,\"energy: energy\":2759,\"bed: energy\":2759,\"bed: built capacity\":5101}), MIND bound a basic on 0 days. base (seed 20261012): 0 person-days short ({}), MIND bound a basic on 0 days.",
+				"evidence": "50 people, no geothermal: most frequent limits wood demand 89 %, steel demand 99 %, glass demand 99 %, panel demand 99 %, goods demand 100 %, spring demand 100 %, compute MIND 100 %; 50 people, geothermal: most frequent limits wood demand 94 %, steel demand 99 %, glass demand 100 %, panel demand 100 %, goods built capacity 60 %, spring demand 98 %, compute built capacity 52 %; 100 people, no geothermal: most frequent limits wood demand 66 %, steel demand 86 %, glass demand 91 %, panel demand 96 %, goods demand 82 %, spring demand 100 %, compute MIND 100 %; 100 people, geothermal: most frequent limits wood demand 99 %, steel demand 99 %, glass demand 100 %, panel demand 100 %, goods demand 100 %, spring demand 100 %, compute MIND 100 %; 250 people, no geothermal: most frequent limits wood energy 86 %, steel demand 67 %, glass demand 71 %, panel demand 81 %, goods energy 65 %, spring nature (sun, rain, spring) 100 %, compute built capacity 60 %; base (seed 20261012): most frequent limits wood demand 95 %, steel demand 100 %, glass demand 100 %, panel demand 100 %, goods demand 98 %, spring nature (sun, rain, spring) 100 %, compute MIND 97 %",
+				"runs": [
+					{
+						"label": "50 people, no geothermal",
+						"people": 50,
+						"years": 30
+					},
+					{
+						"label": "50 people, geothermal",
+						"people": 50,
+						"years": 30
+					},
+					{
+						"label": "100 people, no geothermal",
+						"people": 100,
+						"years": 30
+					},
+					{
+						"label": "100 people, geothermal",
+						"people": 100,
+						"years": 30
+					},
+					{
+						"label": "250 people, no geothermal",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"label": "50 people, no geothermal",
+							"shortPD": 0,
+							"shortPP": 0,
+							"mindBinds": 0,
+							"byLimit": {},
+							"top": {
+								"food": "need met 100 %",
+								"water": "need met 100 %",
+								"energy": "need met 100 %",
+								"bed": "need met 100 %",
+								"wood": "demand 89 %",
+								"steel": "demand 99 %",
+								"glass": "demand 99 %",
+								"panel": "demand 99 %",
+								"goods": "demand 100 %",
+								"spring": "demand 100 %",
+								"compute": "MIND 100 %"
+							},
+							"Lmean": 51.33
+						},
+						{
+							"label": "50 people, geothermal",
+							"shortPD": 32950,
+							"shortPP": 659,
+							"mindBinds": 500,
+							"byLimit": {
+								"food: built capacity": 449,
+								"water: MIND": 331,
+								"energy: MIND": 331,
+								"bed: built capacity": 659
+							},
+							"top": {
+								"food": "need met 96 %",
+								"water": "need met 97 %",
+								"energy": "need met 97 %",
+								"bed": "need met 94 %",
+								"wood": "demand 94 %",
+								"steel": "demand 99 %",
+								"glass": "demand 100 %",
+								"panel": "demand 100 %",
+								"goods": "built capacity 60 %",
+								"spring": "demand 98 %",
+								"compute": "built capacity 52 %"
+							},
+							"Lmean": 0.1324
+						},
+						{
+							"label": "100 people, no geothermal",
+							"shortPD": 0,
+							"shortPP": 0,
+							"mindBinds": 0,
+							"byLimit": {},
+							"top": {
+								"food": "need met 100 %",
+								"water": "need met 100 %",
+								"energy": "need met 100 %",
+								"bed": "need met 100 %",
+								"wood": "demand 66 %",
+								"steel": "demand 86 %",
+								"glass": "demand 91 %",
+								"panel": "demand 96 %",
+								"goods": "demand 82 %",
+								"spring": "demand 100 %",
+								"compute": "MIND 100 %"
+							},
+							"Lmean": 42.03
+						},
+						{
+							"label": "100 people, geothermal",
+							"shortPD": 0,
+							"shortPP": 0,
+							"mindBinds": 0,
+							"byLimit": {},
+							"top": {
+								"food": "need met 100 %",
+								"water": "need met 100 %",
+								"energy": "need met 100 %",
+								"bed": "need met 100 %",
+								"wood": "demand 99 %",
+								"steel": "demand 99 %",
+								"glass": "demand 100 %",
+								"panel": "demand 100 %",
+								"goods": "demand 100 %",
+								"spring": "demand 100 %",
+								"compute": "MIND 100 %"
+							},
+							"Lmean": 59.86
+						},
+						{
+							"label": "250 people, no geothermal",
+							"shortPD": 1965000,
+							"shortPP": 7860,
+							"mindBinds": 0,
+							"byLimit": {
+								"water: energy": 1391,
+								"energy: energy": 2759,
+								"bed: energy": 2759,
+								"bed: built capacity": 5101
+							},
+							"top": {
+								"food": "need met 100 %",
+								"water": "need met 87 %",
+								"energy": "need met 75 %",
+								"bed": "built capacity 47 %",
+								"wood": "energy 86 %",
+								"steel": "demand 67 %",
+								"glass": "demand 71 %",
+								"panel": "demand 81 %",
+								"goods": "energy 65 %",
+								"spring": "nature (sun, rain, spring) 100 %",
+								"compute": "built capacity 60 %"
+							},
+							"Lmean": 3.336
+						},
+						{
+							"label": "base (seed 20261012)",
+							"shortPD": 0,
+							"shortPP": 0,
+							"mindBinds": 0,
+							"byLimit": {},
+							"top": {
+								"food": "need met 100 %",
+								"water": "need met 100 %",
+								"energy": "need met 100 %",
+								"bed": "need met 100 %",
+								"wood": "demand 95 %",
+								"steel": "demand 100 %",
+								"glass": "demand 100 %",
+								"panel": "demand 100 %",
+								"goods": "demand 98 %",
+								"spring": "nature (sun, rain, spring) 100 %",
+								"compute": "MIND 97 %"
+							},
+							"Lmean": 60.35
+						}
+					]
+				},
+				"seconds": 96.53
+			},
+			{
+				"id": "B30",
+				"name": "price-rule-baseline",
+				"paper": "Primer article",
+				"claim": "The forward-margin price beats Primer’s adaptive baseline and Mark-0 per person: no more person-days short and smaller price swings. Where it does not, the report says so.",
+				"pass": false,
+				"takeaway": "forward: 0 person-days short, basics swing 0.09 % a day, poorest decile 33.11. mark0: 0 person-days short, basics swing 0.63 % a day, poorest decile 36.37. primer: 0 person-days short, basics swing 0.01 % a day, poorest decile 35.48.",
+				"evidence": "vs mark0: no more shortage, smaller swings, but a poorer bottom decile; vs primer: no more shortage, larger swings, but a poorer bottom decile",
+				"runs": [
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "mark0 price",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "primer price",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"rule": "forward",
+							"shortPD": 0,
+							"swing": 0.0008845,
+							"poorA": 33.11,
+							"Lmean": 60.35,
+							"P3": true,
+							"receiverships": 5
+						},
+						{
+							"rule": "mark0",
+							"shortPD": 0,
+							"swing": 0.006299,
+							"poorA": 36.37,
+							"Lmean": 61.87,
+							"P3": false,
+							"receiverships": 15
+						},
+						{
+							"rule": "primer",
+							"shortPD": 0,
+							"swing": 0.0001178,
+							"poorA": 35.48,
+							"Lmean": 54.85,
+							"P3": false,
+							"receiverships": 11
+						}
+					],
+					"beats": [
+						{
+							"rule": "mark0",
+							"shorter": true,
+							"calmer": true,
+							"poorer": true
+						},
+						{
+							"rule": "primer",
+							"shorter": true,
+							"calmer": false,
+							"poorer": true
+						}
+					]
+				},
+				"seconds": 58.58
+			},
+			{
+				"id": "B31",
+				"name": "competition-surplus",
+				"paper": "Primer article, §9",
+				"claim": "With more sellers per good, buyers keep more of the surplus: basics sell closer to cost and sellers keep less of the revenue (1, 2, 4 COOPs per good). With one seller the four market conditions fail.",
+				"pass": false,
+				"takeaway": "1 per good: basics at 0.91× full cost, sellers keep 36.7 % above variable cost, poorest decile 32.37. 2 per good: basics at 0.96× full cost, sellers keep 39.6 % above variable cost, poorest decile 33.11. 4 per good: basics at 1.04× full cost, sellers keep 45.6 % above variable cost, poorest decile 33.20.",
+				"evidence": "1: 0 person-days short, P3 pass; 2: 0 person-days short, P3 pass; 4: 58,000 person-days short, P3 fail",
+				"runs": [
+					{
+						"label": "one COOP per good",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "base (seed 20261012)",
+						"people": 250,
+						"years": 30
+					},
+					{
+						"label": "four COOPs per good",
+						"people": 250,
+						"years": 30
+					}
+				],
+				"numbers": {
+					"rows": [
+						{
+							"per": 1,
+							"markup": 0.9088,
+							"sellerShare": 0.3666,
+							"shortPD": 0,
+							"poorA": 32.37,
+							"P3": true
+						},
+						{
+							"per": 2,
+							"markup": 0.9629,
+							"sellerShare": 0.3961,
+							"shortPD": 0,
+							"poorA": 33.11,
+							"P3": true
+						},
+						{
+							"per": 4,
+							"markup": 1.037,
+							"sellerShare": 0.4559,
+							"shortPD": 58000,
+							"poorA": 33.2,
+							"P3": false
+						}
+					]
+				},
+				"seconds": 74.89
+			},
+			{
+				"id": "B32",
+				"name": "world-1",
+				"paper": "plan: World 1",
+				"claim": "Ten citizens on a hex sized for them, 3 years: Proposition 3 holds and both ledgers close.",
+				"pass": false,
+				"takeaway": "With 10 people, P1 holds, P2 holds (1 owner-only), P3 fails. The ledgers had 0 leaks.",
+				"evidence": "P3 failing: holdings decile 1, holdings decile 2, aven decile 1",
+				"runs": [
+					{
+						"label": "10 people",
+						"people": 10,
+						"years": 3
+					}
+				],
+				"numbers": {
+					"P1": true,
+					"P2": true,
+					"P3": false,
+					"failed": [
+						"holdings decile 1",
+						"holdings decile 2",
+						"aven decile 1"
+					],
+					"leaks": 0,
+					"owners": 1
+				},
+				"seconds": 2.015
+			},
+			{
+				"id": "S01",
+				"name": "prop3-phase",
+				"paper": "Mark-0’s method",
+				"claim": "A grid of melt (3, 7, 12 %) and Law 5 share (0, 10, 20, 40 %), 100 people, 10 years: the paper’s point (7 %, 20 %) and its four neighbours (3 % and 12 % melt; 10 % and 40 % share) keep Proposition 3. A share of 0 pays no dividends, so it cannot pass the strict test; it marks the edge.",
+				"pass": false,
+				"takeaway": "Parts that hold at each point (1, 2, 3; · fails), melt down, Law 5 across: 3 %: ··· 12· 123 123; 7 %: ··· 12· 123 123; 12 %: ··· 12· 123 123.",
+				"evidence": "melt 3 %, Law 5 0 %: P1 fail, P2 fail (strict from day -1), P3 fail; melt 3 %, Law 5 10 %: P1 pass, P2 pass, P3 fail; melt 7 %, Law 5 0 %: P1 fail, P2 fail (strict from day -1), P3 fail; melt 7 %, Law 5 10 %: P1 pass, P2 pass, P3 fail; melt 12 %, Law 5 0 %: P1 fail, P2 fail (strict from day -1), P3 fail; melt 12 %, Law 5 10 %: P1 pass, P2 pass, P3 fail",
+				"runs": [
+					{
+						"label": "melt 3 %, Law 5 0 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 3 %, Law 5 10 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 3 %, Law 5 20 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 3 %, Law 5 40 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 7 %, Law 5 0 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 7 %, Law 5 10 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 7 %, Law 5 20 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 7 %, Law 5 40 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 12 %, Law 5 0 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 12 %, Law 5 10 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 12 %, Law 5 20 %",
+						"people": 100,
+						"years": 10
+					},
+					{
+						"label": "melt 12 %, Law 5 40 %",
+						"people": 100,
+						"years": 10
+					}
+				],
+				"numbers": {
+					"grid": [
+						{
+							"melt": 0.03,
+							"law5": 0,
+							"pass": false,
+							"P1": false,
+							"P2": false,
+							"P3": false,
+							"strictFrom": -1
+						},
+						{
+							"melt": 0.03,
+							"law5": 0.1,
+							"pass": false,
+							"P1": true,
+							"P2": true,
+							"P3": false,
+							"strictFrom": 71
+						},
+						{
+							"melt": 0.03,
+							"law5": 0.2,
+							"pass": true,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"strictFrom": 10
+						},
+						{
+							"melt": 0.03,
+							"law5": 0.4,
+							"pass": true,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"strictFrom": 10
+						},
+						{
+							"melt": 0.07,
+							"law5": 0,
+							"pass": false,
+							"P1": false,
+							"P2": false,
+							"P3": false,
+							"strictFrom": -1
+						},
+						{
+							"melt": 0.07,
+							"law5": 0.1,
+							"pass": false,
+							"P1": true,
+							"P2": true,
+							"P3": false,
+							"strictFrom": 71
+						},
+						{
+							"melt": 0.07,
+							"law5": 0.2,
+							"pass": true,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"strictFrom": 10
+						},
+						{
+							"melt": 0.07,
+							"law5": 0.4,
+							"pass": true,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"strictFrom": 10
+						},
+						{
+							"melt": 0.12,
+							"law5": 0,
+							"pass": false,
+							"P1": false,
+							"P2": false,
+							"P3": false,
+							"strictFrom": -1
+						},
+						{
+							"melt": 0.12,
+							"law5": 0.1,
+							"pass": false,
+							"P1": true,
+							"P2": true,
+							"P3": false,
+							"strictFrom": 71
+						},
+						{
+							"melt": 0.12,
+							"law5": 0.2,
+							"pass": true,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"strictFrom": 10
+						},
+						{
+							"melt": 0.12,
+							"law5": 0.4,
+							"pass": true,
+							"P1": true,
+							"P2": true,
+							"P3": true,
+							"strictFrom": 11
+						}
+					]
+				},
+				"seconds": 82.49
+			}
+		],
+		"notCovered": [
+			{
+				"id": "A01",
+				"name": "anna-lamp",
+				"why": "a 3-person, 4-COOP unit world with named people is not built; the same laws run in every world and the money ledger checks them every day"
+			},
+			{
+				"id": "A02",
+				"name": "mia-proposal",
+				"why": "needs named work items and proposals for one person; the engine pays running items and proposals to Avens in bulk"
+			},
+			{
+				"id": "A03",
+				"name": "panel-via-pools",
+				"why": "circular sales between related COOPs are not modelled (no related-party flag in use)"
+			},
+			{
+				"id": "A06",
+				"name": "own-level and growth",
+				"why": "the closed-form own level needs a person who keeps everything; the engine’s Avens spend"
+			},
+			{
+				"id": "A07",
+				"name": "laborde",
+				"why": "needs a settled city of 100 and one newcomer with relative-position tracking"
+			},
+			{
+				"id": "A08",
+				"name": "young-city prices",
+				"why": "prices are kept in R anchored to HEARTS (rIndex \"hearts\"), not in MIND counts; the 13-fold rise is not measured"
+			},
+			{
+				"id": "A09",
+				"name": "pool-g3m-lvr",
+				"why": "random-walk paths with an arbitrageur are a pool unit test, not an economy run"
+			},
+			{
+				"id": "A10",
+				"name": "routing",
+				"why": "route costs and hop counts are recorded (getFlows) but not judged against the paper’s 0.38 %"
+			},
+			{
+				"id": "A11",
+				"name": "dying-mind",
+				"why": "no breaker that stops pools buying a failing MIND"
+			},
+			{
+				"id": "A12",
+				"name": "holder-rule",
+				"why": "votes are not modelled"
+			},
+			{
+				"id": "B06",
+				"name": "prop2-dial",
+				"why": "the analytic process of 1,500 holders over 300 years is not part of the engine"
+			},
+			{
+				"id": "B07",
+				"name": "levelling",
+				"why": "no births of children or one-fortune start"
+			},
+			{
+				"id": "B08",
+				"name": "geo-plant",
+				"why": "a new geothermal plant built from pledged HEARTS is not modelled (geothermal stages are set at genesis)"
+			},
+			{
+				"id": "B12",
+				"name": "circular-sales",
+				"why": "related-party sales are not modelled"
+			},
+			{
+				"id": "B13",
+				"name": "empty-work",
+				"why": "no audit of undelivered work items (the ring of B11 shows what happens without it)"
+			},
+			{
+				"id": "B16",
+				"name": "selection",
+				"why": "three COOPs with the paper’s efficiency paths are not set up"
+			},
+			{
+				"id": "B18",
+				"name": "front-running",
+				"why": "no sandwich bot or batch clearing"
+			},
+			{
+				"id": "B19",
+				"name": "price-pump",
+				"why": "an attacker on one pool is not modelled (the B11 ring pushes its own price)"
+			},
+			{
+				"id": "B20",
+				"name": "sybil-farm",
+				"why": "no fake identities"
+			},
+			{
+				"id": "B21",
+				"name": "estates",
+				"why": "no deaths or heirs"
+			},
+			{
+				"id": "B23",
+				"name": "euro-border",
+				"why": "the city is closed: no imports, exports or euro reserve"
+			},
+			{
+				"id": "B24",
+				"name": "care-underfunding",
+				"why": "care is not a good in the engine"
+			},
+			{
+				"id": "B25",
+				"name": "two-choices and faithful Avens",
+				"why": "no random human choices or Aven mistakes"
+			},
+			{
+				"id": "S00 (60 years)",
+				"name": "prop3-headline",
+				"why": "run for 30 years, not 60, to keep the suite near two minutes"
+			}
+		]
+	}
+}

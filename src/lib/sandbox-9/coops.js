@@ -1,0 +1,1215 @@
+// @ts-nocheck — plain JS
+/**
+ * SANDBOX 8 · THE COOPs — what each plant makes from what, how it wears and is kept up, how a COOP builds, pays its
+ * Avens, keeps its reserve, pays out, funds R&D, pays ground rent, and how COOPs are founded and fail.
+ *
+ * Nothing grows by decree here. A plant makes what its capacity, its inputs, its land, its deposit and the energy it
+ * was dispatched allow. Capacity wears at 1 ÷ life a year and comes back only when the plant's own materials are
+ * bought and built in again. New capacity is built from tonnes and MWh bought from other COOPs, on land leased from
+ * the City COOP, when the COOP is short and the build pays back within 40 % of its life. Innovation moves a
+ * technology's coefficients down its two-factor learning curve only with R&D energy, and R&D only gets the energy
+ * left after basics, running and building (./energy.js).
+ *
+ * No human labour is paid: COOPs pay Aven work items. Running items keep a plant going (a rate card in R per Aven
+ * hour, set in HEARTS by default so it scales with HEARTS a day: ./genesis.js rateIndexed), work proposals are paid from the treasury's surplus above its reserve, and both go
+ * to people in proportion to what their Aven delivers.
+ */
+import { log2, pow } from './dmath.js';
+import { DAYS_IN_MONTH, GOODS, MONTHLY, YEAR_DAYS } from './primitives.js';
+import { BASICS, BED, CLASS, COMPUTE, ENERGY, FOOD, G, GLASS, GOOD_INDEX, GOODS_, IN_HAND, LIMIT, LIMIT_OF_GOOD, MATERIALS, MAX_COOPS, PANEL, SPRING, STEEL, WATER, WOOD } from './consts.js';
+import { monthOf, shockFactor } from './energy.js';
+import { capDayOf, newCoop, newPlant, plantCapDay, solarGain, vcOf } from './genesis.js';
+import { newPool, indexPools, buildCycles } from './pools.js';
+import { rnd } from './rng.js';
+
+const M = MAX_COOPS;
+
+/** how far ahead each technology's seller looks when it prices (its growing or building time, in days) */
+export const HORIZON = { forest: 365, greenhouse: 60, rain: 120, well: 30, solar: 30, geo: 30, home: 180, timber: 90, steel: 120, glass: 120, panel: 120, goods: 90, spring: 30, compute: 60 };
+export const horizonOf = (co) => co.plants.reduce((h, p) => Math.max(h, HORIZON[p.tech] ?? 30), 7);
+
+/** a forest's share of its people's food by age (src/lib/sandbox-6/food.js forestShare) */
+export const forestShare = (ageYears) => Math.min(1.5, 0.1 * (Math.floor(Math.max(0, ageYears)) + 1));
+
+/** what a forest plant gives on a day: kg */
+function forestHarvest(w, pl, day) {
+	const m = monthOf(day);
+	const share = MONTHLY.harvest.v[m] / DAYS_IN_MONTH[m];
+	// each plot keeps the yield of the year it was planted (a perennial forest is not replanted)
+	let kgYear = 0;
+	for (const p of pl.plots) kgYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * forestShare((day - p.born) / 365);
+	return kgYear * share;
+}
+
+/** rain into a tank plant on a day, L: its share of all roofs (domes and the growing dome) */
+function rainInflow(w, pl, day, rainF) {
+	const m = monthOf(day);
+	let roof = 0, tanks = 0;
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		for (const p of co.plants) {
+			if (p.tech === 'home') roof += Math.max(0, p.cap) * w.c.roofPerBed;
+			else if (p.tech === 'greenhouse') roof += Math.max(0, p.cap);
+			if (p.tech === 'rain') tanks += Math.max(1e-9, p.cap);
+		}
+	}
+	const mmDay = (w.c.rainMm / YEAR_DAYS) * (rainF ?? MONTHLY.rain.v[m]);
+	return (roof * mmDay * w.c.caught * Math.max(0, pl.cap)) / tanks;
+}
+
+/** logs a timber plant's land grows a day, t */
+function logsGrowth(w, pl, day) {
+	// each plot grows at the yield it was last replanted with (./coops.js nature replants a share a year)
+	let t = 0;
+	for (const p of pl.plots) {
+		const age = Math.floor((day - p.born) / 365);
+		const ramp = w.c.timberRamp[Math.min(w.c.timberRamp.length - 1, Math.max(0, age))];
+		t += (p.m2 * (w.c.timberT / (p.yc ?? 1)) * ramp) / 365;
+	}
+	return t;
+}
+
+// ── nature ───────────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * What nature gives today, before anyone trades: the forest's harvest (into its store; the energy to process it is
+ * asked for in the basics class, and what cannot be processed rots), rain into the tanks (what overflows is spilled),
+ * logs on the timber land, ore and sand from the pits, and the food store's slow rot.
+ */
+export function nature(w) {
+	const t = w.today;
+	for (const co of w.coops) {
+		co.harvestToday = 0;
+		if (!co.alive) continue;
+		const f = shockFactor(w, co);
+		for (const pl of co.plants) {
+			if (pl.tech === 'forest') {
+				// the Avens pick what the store will need (co.pickShare, set by the forward margin); the rest falls and
+				// feeds the soil (it never enters a store, so it is not counted as made)
+				const pot = forestHarvest(w, pl, w.day) * f;
+				const h = pot * (co.pickShare ?? 1);
+				co.harvestToday += h;
+				t.unpicked += pot - h;
+				co.stock += h;
+				t.made[FOOD] += h;
+			} else if (pl.tech === 'rain') {
+				const inflow = rainInflow(w, pl, w.day, t.rain) * f;
+				const room = Math.max(0, pl.cap * 1000 - co.stock);
+				const kept = Math.min(room, inflow);
+				co.stock += kept;
+				t.made[WATER] += inflow;
+				t.rotted[WATER] += inflow - kept;
+			} else if (pl.tech === 'timber') {
+				// a share of the timber land is cut and replanted each year: that share takes today's yield
+				const cur = w.learn.timber.coef.yield ?? 1;
+				for (const p of pl.plots) p.yc = (p.yc ?? 1) + (cur - (p.yc ?? 1)) * (w.c.replant / YEAR_DAYS);
+				const g = logsGrowth(w, pl, w.day);
+				const cap = w.c.standYears * 365 * g;
+				const kept = Math.max(0, Math.min(g, cap - pl.raw));
+				pl.raw += kept;
+				t.raw.grown.logs += g;
+				t.raw.lost.logs += g - kept;
+			} else if (pl.def.deposit) {
+				const rate = (pl.pits * (pl.def.deposit === 'ore' ? w.c.oreT : w.c.sandT)) / 365;
+				const yard = rate * 60;
+				const x = Math.max(0, Math.min(rate, yard - pl.raw));
+				pl.raw += x;
+				t.raw.grown[pl.def.deposit] += x;
+			}
+		}
+		if (co.good === FOOD && co.stock > 0) {
+			const r = co.stock * w.c.forestRot;
+			co.stock -= r;
+			t.rotted[FOOD] += r;
+		}
+	}
+}
+
+// ── forward margin ───────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * What a COOP expects to make over the next H days, besides its store: cumulative, in 5-day steps (out[j] is the
+ * supply of the first 5·(j+1) days), so a seasonal seller can see the tightest point of its pipeline.
+ */
+export function supplyAhead(w, co, H, only = null) {
+	const steps = Math.max(1, Math.ceil(H / 5));
+	const out = new Float64Array(steps);
+	for (const pl of co.plants) {
+		if (only && pl.tech !== only) continue;
+		const d = pl.def;
+		let acc = 0;
+		const f = shockFactor(w, co);
+		let flat = -1;
+		switch (d.kind) {
+			case 'forest':
+			case 'rain':
+			case 'solar':
+				break;
+			case 'geo':
+				flat = pl.out;
+				break;
+			case 'timber':
+			case 'works': {
+				let day = plantCapDay(w, pl, w.day);
+				if (pl.tech === 'timber') day = Math.min(day, pl.raw / Math.max(1, H) + logsGrowth(w, pl, w.day));
+				else if (d.deposit) {
+					const ratio = d.inputs.find((x) => x[0] === d.deposit)?.[1] ?? 1;
+					day = Math.min(day, (pl.pits * (d.deposit === 'ore' ? w.c.oreT : w.c.sandT)) / 365 / ratio + pl.raw / ratio / H);
+				}
+				flat = day * f;
+				break;
+			}
+			default:
+				flat = plantCapDay(w, pl, w.day) * f;
+		}
+		const live = Math.max(0, pl.cap - pl.worn);
+		const gh = d.kind === 'greenhouse' ? flat : -1;
+		if (gh >= 0) flat = -1;
+		for (let j = 0; j < steps; j++) {
+			const x = j * 5;
+			let v;
+			// the growing dome follows the month's sun (no grow lights)
+			if (gh >= 0) {
+				const m = monthOf(w.day + x);
+				v = ((5 * gh * MONTHLY.sun.v[m] * YEAR_DAYS) / DAYS_IN_MONTH[m]) * (w.sunSeen ?? 1);
+			} else if (flat >= 0) v = 5 * flat;
+			else if (d.kind === 'forest') v = 5 * forestHarvest(w, pl, w.day + x) * f;
+			else if (d.kind === 'rain') v = 5 * rainInflow(w, pl, w.day + x) * f * (w.rainSeen ?? 1);
+			else {
+				const m = monthOf(w.day + x);
+				v = ((5 * live * w.c.kwhPerKwp * MONTHLY.sun.v[m]) / DAYS_IN_MONTH[m]) * solarGain(pl) * (w.sunSeen ?? 1);
+			}
+			acc += v;
+			out[j] += acc;
+		}
+	}
+	return out;
+}
+
+/**
+ * Each seller's forward margin: what it holds plus what it will make, against need plus 5 days in hand, at the
+ * tightest point of its horizon (a food forest in April sees the months before the harvest, not the harvest
+ * itself); and each good's margin over all its sellers.
+ */
+export function margins(w) {
+	const haveG = new Float64Array(G), needG = new Float64Array(G);
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		const H = horizonOf(co);
+		const need = Math.max(co.demandEma, 1e-9);
+		const held = co.good === ENERGY ? batteryKwh(co) : co.stock;
+		const ahead = supplyAhead(w, co, H);
+		// a good that keeps (food, water, materials, goods) is judged at its tightest point; one that does not (energy,
+		// a bed-day, spring time) over its whole horizon
+		let m = Infinity;
+		const from = GOODS[co.good].store ? 0 : ahead.length - 1;
+		for (let j = from; j < ahead.length; j++) m = Math.min(m, (held + ahead[j]) / ((5 * (j + 1) + IN_HAND) * need));
+		co.margin = m;
+		// a seller of a basic that keeps (food, water) sells no faster than the rate its store and what it will make
+		// can hold to the tightest point ahead, with 5 days in hand: what it offers above the basic orders is rationed
+		if (co.good === FOOD || co.good === WATER) {
+			let r = Infinity;
+			for (let j = 0; j < ahead.length; j++) r = Math.min(r, (held + ahead[j]) / (5 * (j + 1) + IN_HAND));
+			co.sustain = r;
+		}
+		co.marginEma += (co.margin - co.marginEma) / 14;
+		// how often it has been short lately (a 90-day average of short days): building answers a lasting shortage
+		co.shortEma = (co.shortEma ?? 0) + ((m < 1 ? 1 : 0) - (co.shortEma ?? 0)) / 90;
+		// a food forest picks only what keeps its store PICK_HEAD above need at the tightest point ahead
+		if (co.plants.some((p) => p.tech === 'forest')) {
+			const aF = supplyAhead(w, co, H, 'forest');
+			let s = PICK_MIN;
+			for (let j = 0; j < ahead.length; j++) {
+				if (!(aF[j] > 0)) continue;
+				const want = PICK_HEAD * (5 * (j + 1) + IN_HAND) * need - held - (ahead[j] - aF[j]);
+				s = Math.max(s, want / aF[j]);
+			}
+			co.pickShare = Math.min(1, s);
+		}
+		haveG[co.good] += m * need;
+		needG[co.good] += need;
+	}
+	w.goodMargin = Float64Array.from(haveG, (h, g) => (needG[g] > 0 ? h / needG[g] : Infinity));
+}
+/** a food forest keeps its store this far above need at the tightest point ahead, and always picks this share */
+const PICK_HEAD = 1.3, PICK_MIN = 0.15;
+const batteryKwh = (co) => co.plants.reduce((a, p) => a + (p.batt ?? 0), 0);
+
+// ── costs ────────────────────────────────────────────────────────────────────────────────────────────────────────
+/** a plant's inputs per unit of output, with its own recipe (the coefficients of its vintage) */
+export function inputsOf(w, pl) {
+	const d = pl.def;
+	const scrap = vcOf(pl, 'scrap'), glassC = vcOf(pl, 'glass');
+	return d.inputs.map(([g, a]) => [g, a * (pl.tech === 'goods' ? scrap : 1) * (pl.tech === 'panel' && g === GLASS ? glassC : 1)]);
+}
+/** a plant's electricity per unit of output (kWh), with its own recipe */
+export function kwhOf(w, pl) {
+	return pl.def.kwh * vcOf(pl, 'kwh');
+}
+/**
+ * Bring today's recipe into a plant for `units` of its capacity rebuilt or added (upkeep, a finished project): its
+ * coefficients become the capacity-weighted mix of its old recipe and today's.
+ */
+export function refit(w, pl, units, capBefore) {
+	const cur = w.learn[pl.tech]?.coef;
+	if (!cur || !(units > 0)) return;
+	const tot = Math.max(1e-12, capBefore + units);
+	const a = Math.max(0, capBefore) / tot;
+	pl.vc = pl.vc ?? {};
+	for (const c of Object.keys(cur)) pl.vc[c] = (pl.vc[c] ?? 1) * a + cur[c] * (1 - a);
+}
+/** tonnes a plant is built of (for its standing energy) */
+function tonnesOf(w, pl) {
+	const b = pl.def.build;
+	return Math.max(0, pl.cap) * ((b.wood ?? 0) + (b.steel ?? 0) + (b.glass ?? 0));
+}
+/** a plant's standing electricity a day (light, ventilation, controls of the hall it stands in), kWh */
+export function standingKwh(w, pl) {
+	const k = pl.def.kind;
+	if (w.cfg._noStanding) return 0;
+	return k === 'works' || k === 'service' || k === 'timber' ? tonnesOf(w, pl) * w.c.standingKwhT : 0;
+}
+/** a plant's build materials per capacity unit today: { wood, steel, glass, panel } t (or kWp), and kWh */
+export function buildOf(w, pl) {
+	// the same for every plant of a technology until the next learning step (./coops.js learn clears the cache)
+	const cache = (w.buildCache ??= {});
+	const hit = cache[pl.tech];
+	if (hit) return hit;
+	return (cache[pl.tech] = buildOfNow(w, pl));
+}
+function buildOfNow(w, pl) {
+	const b = pl.def.build, L = w.learn[pl.tech].coef;
+	const mat = pl.tech === 'home' ? L.wood ?? 1 : 1;
+	const out = { [WOOD]: (b.wood ?? 0) * mat, [STEEL]: (b.steel ?? 0) * mat, [GLASS]: (b.glass ?? 0) * mat, [PANEL]: b.panel ?? 0 };
+	// field solar: better cells need less glass and steel a kWp (the panel's own glass is in the panel works' recipe)
+	if (pl.tech === 'solar') for (const g of [STEEL, GLASS]) out[g] *= L.cells ?? 1;
+	let t = 0;
+	for (const g of MATERIALS) if (g !== PANEL) t += out[g];
+	out.kwh = ((b.mwh ?? 0) + (b.mwhPerT ?? 0) * t) * 1000;
+	// accelerators: made outside, brought in through the border (./coops.js chipImports)
+	out.chips = w.cfg._freeChips ? 0 : b.chips ?? 0;
+	return out;
+}
+
+/**
+ * Each COOP's costs in R: variable cost a unit (inputs and energy at expected prices), its floor (variable cost ÷
+ * (1 − Law 5 share): the seller's own reservation price), and full cost (adding running items, ground rent and the
+ * wear of its capital at replacement cost, over what it sells).
+ */
+export function costs(w, full) {
+	const pb = w.pbar, pE = pb[ENERGY], lam = w.cfg.law5;
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		let varR = 0, n = 0, runR = 0, capR = 0, landM2 = 0;
+		for (const pl of co.plants) {
+			let v = 0;
+			for (const [g, a] of inputsOf(w, pl)) if (typeof g === 'number') v += a * pb[g];
+			v += kwhOf(w, pl) * pE;
+			if (pl.def.heat) v += (pl.def.heat * vcOf(pl, 'heat') * pE) / w.c.cop;
+			v += runHPerUnit(w, pl) * w.c.rateR;
+			varR += v;
+			n++;
+			if (full) {
+				runR += standbyHours(w, pl) * w.c.rateR; // the running hours in step with use are in varR
+				runR += standingKwh(w, pl) * pE;
+				if (pl.def.life > 0) {
+					const b = buildOf(w, pl);
+					// an accelerator costs the electricity exported for it
+					let unitR = (b.kwh + b.chips * w.c.chipKwh) * pE;
+					// capital is valued at the materials' prices over the last year (a slow average), so a passing spike in
+					// a material's price does not feed back into the cost of the plants made of it
+					for (const g of MATERIALS) unitR += b[g] * (w.pbarSlow?.[g] ?? pb[g]);
+					capR += (Math.max(0, pl.cap) * unitR) / (pl.def.life * 365);
+				}
+				landM2 += pl.landM2 * (pl.rentRate ?? w.land.rent);
+			}
+		}
+		co.varR = n ? varR / n : 0;
+		co.floorR = co.varR / (1 - lam);
+		if (full) {
+			const sold = Math.max(co.soldEma, 0.25 * Math.max(co.capDay, co.soldEma), 1e-9);
+			const rentR = co.city ? 0 : landM2;
+			// the price at which the treasury breaks even: it keeps only 1 − λ of each sale. Ground rent is left out of the
+			// price reference (Ricardo: the price of a good sets the rent of its land, not the other way round; with rent in
+			// it, rent and prices chase each other up); it is paid from the margin, and shown with it (fullRentR)
+			co.fullR = (co.varR + (runR + capR) / sold) / (1 - lam);
+			co.fullRentR = co.fullR + rentR / sold / (1 - lam);
+		}
+	}
+}
+
+/**
+ * A plant on standby needs this share of its running hours; the rest are delivered in step with what it makes or
+ * sells (a works that stands still, a forest left unpicked, a curtailed solar field, an empty bed need little Aven
+ * work). Estimate.
+ */
+export const STANDBY = 0.2;
+
+/** Aven running hours a plant needs a day at full use */
+export function fullHours(w, pl) {
+	const d = pl.def;
+	if (!(pl.cap > 0) && !pl.plots.length) return 0;
+	// an Aven service learns to need fewer Aven hours for an hour it delivers (coefficient 'aven')
+	// a worn-out part of a plant needs no running (only what still stands is run)
+	let h = d.runH * Math.max(0, pl.cap - pl.worn) * vcOf(pl, 'aven') + (d.runFixH ?? 0);
+	if (pl.tech === 'timber') for (const p of pl.plots) h += d.runLandH * p.m2;
+	return h;
+}
+
+/** Aven hours a plant needs per unit it makes, beyond standby */
+function runHPerUnit(w, pl) {
+	const capD = plantCapDay(w, pl, w.day);
+	return capD > 0 ? ((1 - STANDBY) * fullHours(w, pl)) / capD : 0;
+}
+
+/**
+ * Aven running hours a plant needs today: the rest in step with its use (utilEma, 0 to 1), and standby for the part
+ * of the plant kept ready (half again what is in use, at least a twentieth); the rest is mothballed and needs none.
+ */
+export function runHours(w, pl) {
+	const u = Math.min(1, Math.max(0, pl.utilEma ?? 0.8));
+	return standbyHours(w, pl) + fullHours(w, pl) * (1 - STANDBY) * u;
+}
+/** the standby part of a plant's running hours today */
+export function standbyHours(w, pl) {
+	const u = Math.min(1, Math.max(0, pl.utilEma ?? 0.8));
+	return fullHours(w, pl) * STANDBY * Math.min(1, 0.05 + 1.5 * u);
+}
+
+/** does a COOP keep its plant up? Only while it will need the capacity */
+const keepUp = (co) => co.marginEma < (co.good <= BED ? 3 : 2);
+/** days of wear the upkeep store holds at most */
+const UPKEEP_STORE_DAYS = 30;
+
+// ── production plans and orders ──────────────────────────────────────────────────────────────────────────────────
+/**
+ * Each COOP plans today's output and asks for what it needs: electricity and heat for the dispatch, and materials
+ * from the other COOPs (for its works, its upkeep and its building project).
+ */
+export function plan(w, req, heatReq) {
+	const t = w.today;
+	if (!w.b2b || w.b2b.length !== G * M) w.b2b = new Float64Array(G * M);
+	w.b2b.fill(0);
+	if (!w.b2bProd || w.b2bProd.length !== G * M) w.b2bProd = new Float64Array(G * M);
+	w.b2bProd.fill(0);
+	if (!w.b2bRun || w.b2bRun.length !== G * M) w.b2bRun = new Float64Array(G * M);
+	w.b2bRun.fill(0);
+	if (!w.b2bProj || w.b2bProj.length !== G * M) w.b2bProj = new Float64Array(G * M);
+	w.b2bProj.fill(0);
+	for (const co of w.coops) {
+		co.planned = 0;
+		co.eReq = [0, 0, 0, 0];
+		co.heatReq = 0;
+		co.upkeepPlan = 0;
+		if (!co.alive) continue;
+		const f = shockFactor(w, co);
+		// what its plants are rated for (the auditors' figure) and what it can make today
+		co.ratedDay = capDayOf(w, co, w.day);
+		co.capDay = co.ratedDay * f;
+		// the forest's harvest needs processing energy; the store, rain, beds, wells and springs are cleared later
+		if (co.harvestToday > 0) co.eReq[CLASS.basics] += co.harvestToday * kwhOf(w, co.plants.find((p) => p.tech === 'forest'));
+		const H = horizonOf(co);
+		const target = (H > 180 ? 30 : Math.min(H, 60) + 5) * co.demandEma;
+		const want = Math.max(0, co.demandEma + (target - co.stock) / 10);
+		const matUse = new Float64Array(G), flowUse = new Float64Array(G);
+		co.exportReq = 0;
+		let chipsLeft = co.chips ?? 0;
+		for (const pl of co.plants) {
+			const d = pl.def;
+			pl.plan = 0;
+			// the halls' standing electricity (light, air, controls), in the running class
+			co.eReq[CLASS.running] += standingKwh(w, pl);
+			if (d.kind === 'works' || d.kind === 'timber' || d.kind === 'greenhouse') {
+				// the growing dome grows by the month's sun (an average day of the year = 1; no grow lights)
+				const cap = plantCapDay(w, pl, w.day) * f * (d.kind === 'greenhouse' && !w.cfg._flatGh ? t.sun : 1);
+				let p = Math.min(cap, want * (cap / Math.max(1e-12, co.capDay)));
+				// raw stock and input stores bound the plan
+				for (const [g, a] of inputsOf(w, pl)) {
+					if (typeof g === 'number') p = Math.min(p, co.inStock[g] / a);
+					else p = Math.min(p, pl.raw / a);
+				}
+				pl.plan = Math.max(0, p);
+				co.planned += pl.plan;
+				const cls = d.kind === 'greenhouse' ? CLASS.basics : CLASS.running;
+				co.eReq[cls] += pl.plan * kwhOf(w, pl);
+				if (d.kind === 'greenhouse') co.heatReq += (Math.max(0, pl.cap - pl.worn) * w.c.ghHeatM2 * t.heatShare) * (w.learn.greenhouse.coef.heat ?? 1);
+				for (const [g, a] of inputsOf(w, pl)) if (typeof g === 'number') (matUse[g] += a * cap * 0.8), (flowUse[g] += a * pl.plan);
+			}
+			// upkeep: rebuild what wore, from the plant's own materials, while the COOP will need the capacity (a COOP
+			// with more than twice what it can sell lets its plant wear down; a basic, more than three times)
+			const keep = keepUp(co);
+			if (pl.worn > 1e-12 && d.life > 0 && keep) {
+				const b = buildOf(w, pl);
+				let r = pl.worn;
+				for (const g of MATERIALS) if (b[g] > 0) r = Math.min(r, co.inStock[g] / b[g]);
+				if (b.chips > 0) {
+					r = Math.min(r, Math.max(0, chipsLeft) / b.chips);
+					chipsLeft -= r * b.chips;
+				}
+				pl.upkeepPlan = Math.max(0, r);
+				co.eReq[CLASS.running] += pl.upkeepPlan * b.kwh;
+			} else pl.upkeepPlan = 0;
+		}
+		// materials to order: two weeks of the works' use and what upkeep needs (a quarter of the gap a day); the
+		// project's materials spread over its building time, and a project only takes what the works do not need
+		co.matDaily = matUse;
+		const wantMat = new Float64Array(G);
+		for (const g of MATERIALS) wantMat[g] = matUse[g] * 14;
+		// upkeep's store holds at most a month of wear: a plant let wear down for years catches up at a few times its
+		// wear a day, not with one order for all of it (which would empty every seller's store at once)
+		for (const pl of co.plants)
+			if (pl.worn > 0 && pl.def.life > 0 && keepUp(co)) {
+				const b = buildOf(w, pl);
+				const gap = Math.min(pl.worn, (UPKEEP_STORE_DAYS * pl.cap) / (pl.def.life * 365));
+				for (const g of MATERIALS) wantMat[g] += b[g] * gap;
+			}
+		const pr = co.project;
+		if (pr) {
+			// a project draws its energy at its planned pace (at most twice it when behind), not all that is left at once
+			const daysLeft = Math.max(1, pr.minDays - (w.day - pr.start));
+			const pace = (pr.kwh0 ?? pr.kwh) / Math.max(1, pr.minDays);
+			co.eReq[CLASS.building] += Math.min(pr.kwh, Math.max(Math.min(pr.kwh / daysLeft, 2 * pace), pace));
+		}
+		// accelerators come in through the border for exported electricity (building class), up to the line's room,
+		// spread over two months, and only while an accelerator earns back the electricity it costs within 40 % of its
+		// life at today's prices (the same test as any build): an export, like any purchase, stops when it is too dear
+		if (co.good === COMPUTE && w.cfg.chipImport !== false) {
+			const want = chipsWanted(w, co);
+			const pc = co.plants.find((p) => p.tech === 'compute');
+			const b = pc ? buildOf(w, pc) : null;
+			const marginR = Math.min(co.priceR, w.pbar[COMPUTE] > 0 ? w.pbar[COMPUTE] : co.priceR) - co.varR;
+			const earns = b && b.chips > 0 ? (marginR * 365 * 0.4 * pc.def.life) / b.chips : 0;
+			const worth = earns > w.c.chipKwh * w.pbar[ENERGY];
+			if (want > 0 && worth) {
+				const kwh = Math.max(0, want * w.c.chipKwh - (co.chipKwh ?? 0));
+				co.exportReq = Math.min(kwh / 60, Math.max(0, w.c.lineKwhDay - (w.exportToday ?? 0)));
+				w.exportToday = (w.exportToday ?? 0) + co.exportReq;
+				co.eReq[CLASS.building] += co.exportReq;
+			} else if (want > 0) co.buildLimit = LIMIT.chips;
+		}
+		for (const g of MATERIALS) {
+			// today's use, and a seventh of what the store lacks
+			const o = (flowUse[g] ?? 0) + Math.max(0, wantMat[g] - co.inStock[g]) / 7;
+			if (o > 0) w.b2bProd[g * M + co.k] = o;
+			if (pr && pr.mat[g] > 1e-12) {
+				const daysLeft = Math.max(1, pr.minDays - (w.day - pr.start) - 7);
+				const spare = Math.max(0, co.inStock[g] - wantMat[g]);
+				w.b2bProj[g * M + co.k] = Math.max(0, Math.max(pr.mat[g] / daysLeft, 0.05 * pr.mat[g]) - spare);
+			}
+			w.b2b[g * M + co.k] = w.b2bProd[g * M + co.k] + w.b2bProj[g * M + co.k];
+		}
+		// R&D: buy surplus energy with this week's R&D budget, at today's price
+		if (co.rdBudgetR > 0 && w.cfg.rd) co.eReq[CLASS.rd] += co.rdBudgetR / 7 / Math.max(1e-9, w.pbar[ENERGY]);
+		for (let cl = 0; cl < 4; cl++) req[cl] += co.eReq[cl];
+		heatReq.basics += co.heatReq;
+	}
+}
+
+/**
+ * Accelerators a COMPUTE COOP wants in its store: what its building project still needs, a year of its wear, and
+ * its spares; less what it holds.
+ */
+function chipsWanted(w, co) {
+	let wantC = co.project?.chips ?? 0;
+	for (const pl of co.plants) {
+		const b = buildOf(w, pl);
+		// what has worn, and three months of wear ahead
+		if (b.chips > 0 && pl.def.life > 0 && keepUp(co)) wantC += b.chips * (pl.worn + (0.25 * Math.max(0, pl.cap)) / pl.def.life);
+	}
+	return Math.max(0, wantC + w.c.chipsSpare * Math.max(w.c.scale, 0.2) - (co.chips ?? 0));
+}
+
+/**
+ * After the dispatch: the works make what their energy allows (into tomorrow's store), the forest's unprocessed
+ * harvest rots, upkeep rebuilds worn capacity, and building projects take their materials and energy.
+ */
+export function produce(w, fill) {
+	const t = w.today;
+	const fa = t.fillA ?? fill[CLASS.basics];
+	w.exportToday = 0;
+	for (const co of w.coops) {
+		co.made = 0;
+		co.limiter = LIMIT.none;
+		co.rdKwhToday = 0;
+		if (!co.alive) continue;
+		// accelerators: the electricity exported today buys them at the border
+		if (co.exportReq > 0) {
+			const out = co.exportReq * fill[CLASS.building];
+			co.chipKwh = (co.chipKwh ?? 0) + out;
+			t.exportKwh = (t.exportKwh ?? 0) + out;
+			const n = Math.floor(co.chipKwh / w.c.chipKwh + 1e-9);
+			if (n > 0) {
+				co.chipKwh = Math.max(0, co.chipKwh - n * w.c.chipKwh);
+				co.chips = (co.chips ?? 0) + n;
+				t.chipsIn = (t.chipsIn ?? 0) + n;
+				w.events.push({ day: w.day, kind: 'chips', coop: co.id, n });
+			}
+		}
+		// forest: what the first part of the basics class could not process is lost
+		if (co.harvestToday > 0) {
+			const lost = fa < 1 ? Math.min(co.stock, co.harvestToday * (1 - fa)) : 0;
+			co.stock -= lost;
+			t.rotted[FOOD] += lost;
+			co.made += co.harvestToday - lost;
+		}
+		for (const pl of co.plants) {
+			const d = pl.def;
+			if (pl.plan > 0) {
+				const fe = d.kind === 'greenhouse' ? fa : fill[CLASS.running];
+				const x = pl.plan * fe;
+				for (const [g, a] of inputsOf(w, pl)) {
+					if (typeof g === 'number') {
+						co.inStock[g] -= a * x;
+						t.input[g] += a * x;
+					} else {
+						pl.raw -= a * x;
+						t.raw.used[g] += a * x;
+					}
+				}
+				co.stock += x;
+				co.made += x;
+				t.made[co.good] += x;
+				pl.out = x;
+				if (w.learn[pl.tech].rdOn) w.learn[pl.tech].Q += x;
+				if (fe < 0.999) co.limiter = LIMIT.energy;
+			}
+			if (pl.upkeepPlan > 0) {
+				const b = buildOf(w, pl);
+				const r = pl.upkeepPlan * fill[CLASS.running];
+				for (const g of MATERIALS)
+					if (b[g] > 0) {
+						co.inStock[g] -= b[g] * r;
+						t.built[g] += b[g] * r;
+					}
+				if (b.chips > 0) {
+					co.chips -= b.chips * r;
+					t.chipsUsed = (t.chipsUsed ?? 0) + b.chips * r;
+				}
+				pl.worn -= r;
+				// what is rebuilt is rebuilt to today's recipe
+				refit(w, pl, r, pl.cap - r);
+			}
+		}
+		// the building project: materials from the input store, energy from the building class
+		const pr = co.project;
+		if (pr) {
+			for (const g of MATERIALS) {
+				const x = Math.min(pr.mat[g], Math.max(0, co.inStock[g] - 7 * (co.matDaily?.[g] ?? 0)));
+				if (x > 0) {
+					pr.mat[g] -= x;
+					co.inStock[g] -= x;
+					t.built[g] += x;
+				}
+			}
+			// a project takes only the accelerators that upkeep does not need (what has worn is replaced first)
+			let keepChips = 0;
+			for (const p2 of co.plants) {
+				const b2 = buildOf(w, p2);
+				if (b2.chips > 0) keepChips += b2.chips * Math.max(0, p2.worn);
+			}
+			if (pr.chips > 0 && co.chips > keepChips) {
+				const x = Math.min(pr.chips, co.chips - keepChips);
+				pr.chips -= x;
+				co.chips -= x;
+				t.chipsUsed = (t.chipsUsed ?? 0) + x;
+			}
+			pr.kwh -= (co.eReq[CLASS.building] - (co.exportReq ?? 0)) * fill[CLASS.building];
+			if (pr.kwh < 1e-6) pr.kwh = 0;
+			if (pr.kwh === 0 && MATERIALS.every((g) => pr.mat[g] <= 1e-9) && !(pr.chips > 1e-9) && w.day - pr.start >= pr.minDays) finishProject(w, co);
+		}
+		// R&D energy delivered goes into the technology's knowledge
+		const rd = co.eReq[CLASS.rd] * fill[CLASS.rd];
+		if (rd > 0) {
+			co.rdKwhToday = rd;
+			co.rdKwhWeek += rd;
+			const tech = co.plants.find((p) => w.learn[p.tech] && Object.keys(w.learn[p.tech].coef).length)?.tech;
+			if (tech) w.learn[tech].K += rd / 1000;
+		}
+	}
+}
+
+// ── running items, wear ──────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Pay `R` (in R) of Aven work items to people, in proportion to what their Aven delivers: in the paying COOP's own
+ * MIND first, then in the other MINDs its treasury holds (largest first). Returns what was paid, in R.
+ */
+export function payAvens(w, k, R) {
+	if (!(R > 0)) return 0;
+	const N = w.N, P = w.P, row = k * M;
+	let tot = 0;
+	for (let i = 0; i < N; i++) tot += w.aven[i];
+	if (!(tot > 0)) return 0;
+	const order = [k];
+	const others = [];
+	for (let j = 0; j < M; j++) if (j !== k && w.tre[row + j] > 0 && w.liquid[j] && P[j] > 0) others.push(j);
+	others.sort((a, b) => w.tre[row + b] * P[b] - w.tre[row + a] * P[a] || a - b);
+	order.push(...others);
+	let paid = 0;
+	for (const j of order) {
+		const left = R - paid;
+		if (!(left > R * 1e-12)) break;
+		const h = w.tre[row + j];
+		if (!(h > 0) || !(P[j] > 0)) continue;
+		const x = Math.min(h, left / P[j]);
+		w.tre[row + j] -= x;
+		const f = x / tot;
+		let given = 0;
+		for (let i = 0; i < N; i++) {
+			const a = w.aven[i];
+			if (a > 0) {
+				const y = a * f;
+				w.hold[i * M + j] += y;
+				given += y;
+			}
+		}
+		w.tre[row + j] += x - given; // rounding stays home
+		paid += given * P[j];
+	}
+	if (paid > 0) for (let i = 0; i < N; i++) if (w.aven[i] > 0) w.income[i] += (w.aven[i] * paid) / tot;
+	return paid;
+}
+
+/** running items: every plant's Aven hours of the day, at the rate card, paid in the COOP's own MIND */
+export function runningItems(w) {
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		let h = 0;
+		for (const pl of co.plants) h += runHours(w, pl);
+		const R = h * w.c.rateR;
+		const paid = payAvens(w, co.k, R);
+		co.runToday = paid;
+		co.unpaidH = R > 0 ? Math.max(0, 1 - paid / R) * h : 0;
+		co.costR += paid;
+		w.today.runningR += paid;
+	}
+}
+
+/** capital wears at 1 ÷ life a year; upkeep (in produce) rebuilds it */
+export function wear(w) {
+	const wearOne = (pl) => {
+		if (pl.def.life > 0 && pl.cap > 0) pl.worn = Math.min(pl.cap, pl.worn + pl.cap / (pl.def.life * 365));
+	};
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		for (const pl of co.plants) {
+			wearOne(pl);
+			// the battery fades a share of its first capacity a year (cells cannot be made in the city)
+			if (pl.battCap0 > 0) {
+				pl.battCap = Math.max(0, pl.battCap - (pl.battCap0 * w.c.battFade) / YEAR_DAYS);
+				if (pl.batt > pl.battCap) pl.batt = pl.battCap;
+			}
+		}
+	}
+	// plants the City COOP holds idle wear too (nobody keeps them up)
+	for (const pl of w.coops[w.cityK].idle ?? []) wearOne(pl);
+}
+
+// ── building ─────────────────────────────────────────────────────────────────────────────────────────────────────
+/** land the City COOP has not leased */
+export function freeLand(w) {
+	let used = w.land.cityM2;
+	for (const co of w.coops) if (co.alive || co.plants.length) for (const pl of co.plants) used += pl.landM2;
+	return w.land.totalM2 - used;
+}
+
+/** what limits building more of this COOP's good: the plan it can make, or the physical reason it cannot */
+function buildPlan(w, co) {
+	const gap = Math.max(0, co.demandEma * 1.15 - co.capDay);
+	const pl = co.plants[0];
+	if (!pl) return null;
+	const d = pl.def;
+	const s = w.c.scale;
+	let tech = pl.tech, units = 0, land = 0, pits = 0, why = LIMIT.capacity;
+	switch (d.kind) {
+		case 'spring':
+			return { why: LIMIT.nature };
+		case 'service':
+			units = Math.max(100 * s, gap * 1.25);
+			land = units * d.land;
+			break;
+		case 'forest': {
+			// plant more forest: it gives 10 % in its first year, all of it in its tenth (ramp)
+			const kgM2 = w.c.forest100 / (w.learn.forest.coef.yield ?? 1);
+			units = Math.max(2000 * s, (gap * 365) / kgM2);
+			land = units;
+			why = LIMIT.ramp;
+			break;
+		}
+		case 'greenhouse':
+			units = Math.max(500 * s, (gap * 365 * (w.learn.greenhouse.coef.yield ?? 1)) / w.c.ghYield);
+			land = units;
+			break;
+		case 'rain':
+			units = Math.max(50 * s, 0.25 * pl.cap);
+			break;
+		case 'well': {
+			const room = w.c.rechargeL / 1000 - pl.cap;
+			if (room <= 0.5) return { why: LIMIT.water };
+			units = Math.min(room, Math.max(5 * s, gap / 1000));
+			break;
+		}
+		case 'solar':
+			units = Math.max(50 * s, (co.demandEma * 1.15 * 365) / w.c.kwhPerKwp - pl.cap * 0.25);
+			land = units * d.land * (w.learn.solar.coef.cells ?? 1);
+			break;
+		case 'geo':
+			if (pl.cap >= w.c.geoMax * s - 1e-9) return { why: LIMIT.energy };
+			units = s;
+			break;
+		case 'home':
+			units = Math.max(8 * s, Math.ceil(Math.max(gap, w.N * 1.05 - capDayOf(w, co, w.day))));
+			land = units * d.land;
+			break;
+		case 'timber': {
+			// wood: if the logs pile up the works binds; if not, the land does
+			const logsDay = logsGrowth(w, pl, w.day);
+			// the works binds when the land grows more logs than it can saw (or there is no works yet)
+			if (pl.cap / 365 < 0.9 * logsDay || pl.cap <= 0) {
+				units = Math.max(20 * s, gap * 365 * 1.25);
+				land = units * d.land;
+			} else {
+				tech = 'timberLand';
+				const tHa = (w.c.timberT * 1e4) / (w.learn.timber.coef.yield ?? 1);
+				land = Math.max(5000 * s, ((Math.max(gap, co.capDay - logsDay) * 365) / tHa) * 1e4);
+				units = land;
+				why = LIMIT.land;
+			}
+			break;
+		}
+		case 'works': {
+			if (d.deposit) {
+				const ratio = d.inputs.find((x) => x[0] === d.deposit)[1];
+				const perPit = (d.deposit === 'ore' ? w.c.oreT : w.c.sandT) / ratio;
+				const pitCapYear = pl.pits * perPit;
+				if (pl.cap >= pitCapYear * 0.98) {
+					const used = w.coops.reduce((a, c) => a + (c.alive || c.plants.length ? c.plants.reduce((b, p) => b + (p.def.deposit === d.deposit ? p.pits : 0), 0) : 0), 0);
+					const max = d.deposit === 'ore' ? w.c.oreMax : w.c.sandMax;
+					if (used >= max - 1e-9) return { why: d.deposit === 'ore' ? LIMIT.ore : LIMIT.sand };
+					tech = 'pit';
+					pits = Math.min(max - used, s);
+					units = 0;
+					break;
+				}
+				units = Math.min(pitCapYear - pl.cap, Math.max(20 * s, gap * 365 * 1.25));
+			} else units = Math.max(d.key === 'goods' ? 25 * s : 20 * s, (d.key === 'goods' ? gap : gap * 365) * 1.25);
+			land = units * d.land;
+			break;
+		}
+	}
+	return { tech, units, land, pits, why };
+}
+
+/**
+ * The weekly build rule (world model 4.3 step 13): a COOP that has been short (forward margin under 1) or sells
+ * near its capacity orders capital, if the build pays back within 40 % of its life at today's prices, if land (or a
+ * deposit) is free, and if its treasury can carry it. Basics also build ahead of people who will need a bed.
+ */
+export function buildDecisions(w) {
+	const pb = w.pbar, pE = pb[ENERGY];
+	w.land.unmetWeek = 0;
+	if (w.day % 7 === 0) w.land.bestBid = 0;
+	// the basics' COOPs decide first, so a short basic gets free land before a build for extras
+	const order = w.coops.filter((c) => c.alive).sort((a, b) => (a.good <= BED ? 0 : 1) - (b.good <= BED ? 0 : 1) || a.k - b.k);
+	for (const co of order) {
+		if (!co.alive || co.project || !co.plants.length) continue;
+		const isBed = co.good === BED;
+		// a basic people have gone short of (on more than a tenth of the last 30 days): its builds skip the payback test
+		// (a COOP that sells a basic builds to serve the need; the treasury still has to carry the build)
+		const basicShort = !w.cfg._noSkip && BASICS.includes(co.good) && (w.peopleShortEma?.[co.good] ?? 0) > 0.1;
+		// a COOP founded under Law 3 has no capacity yet: it builds its first plant. Others build when they are short and
+		// the good as a whole is short too (no COOP builds into a glut its competitors can serve)
+		const founding = co.plants.every((p) => p.cap <= 0 && !p.plots.length);
+		const short = founding || ((co.shortEma ?? 0) > 0.5 && (co.marginEma < 0.97 || co.demandEma > 0.92 * co.capDay) && (w.goodMargin?.[co.good] ?? 0) < 1.05);
+		const bedsNeeded = isBed && w.N * 1.05 > totalBeds(w);
+		if (!short && !bedsNeeded) continue;
+		const bp = buildPlan(w, co);
+		if (!bp || bp.why === LIMIT.nature || (!bp.units && !bp.pits)) {
+			if (bp) co.buildLimit = bp.why;
+			continue;
+		}
+		const pl = co.plants[0];
+		// more works do not help while one of their inputs is short: that input is the limit
+		const shortIn = inputShort(w, pl);
+		if (shortIn >= 0 && !founding && bp.tech !== 'timberLand' && bp.tech !== 'pit') {
+			co.buildLimit = LIMIT_OF_GOOD[shortIn];
+			continue;
+		}
+		// without enough free land for the whole build, a COOP builds in steps: half of the free land at a time, while a
+		// step is still a useful part of the build (the basics' COOPs decide first, so they step first)
+		if (bp.land > 0 && !w.cfg._noStep) {
+			const free = freeLand(w), step = 0.5 * free;
+			if (bp.land > free + 1e-6 && step >= 0.1 * bp.land && step > firstPlotM2(w, pl.tech) * 0.5) {
+				const f = step / bp.land;
+				bp.units *= f;
+				bp.land = step;
+			}
+		}
+		const b = bp.tech === 'timberLand' || bp.tech === 'pit' ? { [WOOD]: 0, [STEEL]: 0, [GLASS]: 0, [PANEL]: 0, kwh: 0, chips: 0 } : buildOf(w, pl);
+		// accelerators: without the border (chipImport false) the city has only the ones it holds
+		const chipsNeed = (b.chips ?? 0) * bp.units;
+		if (chipsNeed > 0 && w.cfg.chipImport === false && (co.chips ?? 0) < chipsNeed) {
+			co.buildLimit = LIMIT.chips;
+			continue;
+		}
+		const mat = new Float64Array(G);
+		for (const g of MATERIALS) mat[g] = b[g] * bp.units;
+		let kwh = b.kwh * bp.units;
+		if (pl.tech === 'forest') kwh = (bp.units / 1e4) * 500; // planting energy: 0.5 MWh a ha
+		let costR = kwh * pE;
+		for (const g of MATERIALS) costR += mat[g] * pb[g];
+		// pays back within 40 % of its life? (what one unit more sells for above its variable cost, a year, at the
+		// price buyers pay for the good today)
+		const marginR = Math.min(co.priceR, w.pbar[co.good] > 0 ? w.pbar[co.good] : co.priceR) - co.varR;
+		const unitsDay = bp.tech === 'timberLand' ? (bp.units * w.c.timberT) / 365 : bp.tech === 'pit' ? 0 : unitsToDay(w, pl, bp.units);
+		const life = pl.def.life > 0 ? pl.def.life : 40;
+		// a year's earnings of the new capacity, after the ground rent of its plot
+		const netYear = unitsDay * 365 * marginR - bp.land * w.land.rent * 365;
+		costR += chipsNeed * w.c.chipKwh * pE;
+		if ((costR > 0 || bp.land > 0) && !(isBed && bedsNeeded) && !basicShort) {
+			if (!(netYear > 0)) {
+				co.buildLimit = LIMIT.demand;
+				continue;
+			}
+			const payback = costR / netYear;
+			if (payback > 0.4 * life) {
+				co.buildLimit = LIMIT.demand;
+				continue;
+			}
+		}
+		// land from the City COOP; a request that finds none is a bid: what the plot would earn a m² a day
+		if (bp.land > 0 && bp.land > freeLand(w) + 1e-6) {
+			w.land.unmetWeek += bp.land;
+			const bid = (unitsDay * marginR - costR / (0.4 * life * 365)) / bp.land;
+			w.land.bestBid = Math.max(w.land.bestBid ?? 0, bid);
+			co.buildLimit = LIMIT.land;
+			continue;
+		}
+		// the treasury must be able to carry a good part of it (the reserve then holds the rest back from payouts)
+		const treR = treasuryR(w, co.k);
+		if (costR > 0 && treR < 0.3 * costR) {
+			co.buildLimit = LIMIT.mind;
+			continue;
+		}
+		co.project = { tech: bp.tech, units: bp.units, land: bp.land, pits: bp.pits, mat, kwh, kwh0: kwh, chips: chipsNeed, costR, start: w.day, minDays: bp.tech === 'pit' || bp.tech === 'timberLand' ? 14 : pl.def.buildDays };
+		co.plannedR = costR;
+		// the plot is leased at once, at today's ground rent
+		if (bp.land > 0) signLease(w, pl, bp.land);
+		w.events.push({ day: w.day, kind: 'build', coop: co.id, what: bp.tech, units: bp.units });
+	}
+}
+/** an input good of a plant that is short across all its sellers (-1: none) */
+function inputShort(w, pl) {
+	for (const [g] of pl.def.inputs) if (typeof g === 'number' && (w.goodMargin?.[g] ?? Infinity) < 1) return g;
+	return -1;
+}
+const totalBeds = (w) => w.coops.reduce((a, c) => a + (c.alive && c.good === BED ? capDayOf(w, c, w.day) : 0), 0);
+
+/** capacity units to output a day */
+function unitsToDay(w, pl, units) {
+	const d = pl.def;
+	switch (d.kind) {
+		case 'greenhouse':
+			return (units * w.c.ghYield) / 365;
+		case 'well':
+			return units * 1000;
+		case 'home':
+		case 'spring':
+		case 'service':
+			return units;
+		case 'solar':
+			return (units * w.c.kwhPerKwp) / 365;
+		case 'geo':
+			return units * w.c.geoKw * 24 * w.c.geoUptime;
+		case 'forest':
+			return (units * w.c.forest100) / 365;
+		case 'rain':
+			return 0;
+		default:
+			return d.key === 'goods' ? units : units / 365;
+	}
+}
+
+/** a project is done: the capacity joins the plant (a new forest or timber plot ages from today) */
+function finishProject(w, co) {
+	const pr = co.project, pl = co.plants[0];
+	// new land is planted with today's yield; new capacity is built to today's recipe (field solar's cells change only
+	// its land and steel, which the build already used, so the dome cells keep theirs)
+	if (pr.tech === 'timberLand') pl.plots.push({ m2: pr.units, born: w.day, yc: w.learn.timber.coef.yield ?? 1 });
+	else if (pr.tech === 'pit') pl.pits += pr.pits;
+	else if (pl.tech === 'forest') {
+		pl.plots.push({ m2: pr.units, born: w.day, yc: w.learn.forest.coef.yield ?? 1 });
+		pl.cap += pr.units;
+	} else if (pl.tech === 'solar') {
+		pl.fieldKwp += pr.units;
+		pl.cap += pr.units;
+	} else {
+		refit(w, pl, pr.units, pl.cap);
+		pl.cap += pr.units;
+	}
+	w.events.push({ day: w.day, kind: 'built', coop: co.id, what: pr.tech, units: pr.units });
+	co.project = null;
+	co.plannedR = 0;
+}
+
+// ── treasury: reserve, payout, R&D ───────────────────────────────────────────────────────────────────────────────
+/** what a treasury holds, in R */
+export function treasuryR(w, k) {
+	let s = 0;
+	for (let j = 0; j < M; j++) s += w.tre[k * M + j] * w.P[j];
+	return s;
+}
+
+/**
+ * The payout rule (weekly): a treasury keeps a reserve of `reserveDays` of its running costs plus its planned
+ * building; of what it holds above that, it pays a share each week for accepted work proposals, which go to people in
+ * proportion to what their Aven delivers. A share of every payout funds R&D proposals: half Aven work, half a budget
+ * for surplus energy over the next week.
+ */
+export function payout(w, rate) {
+	const cfg = w.cfg;
+	rate = rate ?? cfg.payoutRate;
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		const reserve = cfg.reserveDays * co.costREma + co.plannedR + co.rdBudgetR;
+		const surplus = treasuryR(w, co.k) - reserve;
+		co.reserveR = reserve;
+		// a COOP still without a plant (founded under Law 3) keeps what its founders put in for its first build
+		const founding = co.plants.every((p) => p.cap <= 0 && !p.plots.length);
+		if (!cfg.payout || !(surplus > 0) || founding) continue;
+		const pay = surplus * rate;
+		const learnable = cfg.rd && co.plants.some((p) => Object.keys(w.learn[p.tech].coef).length);
+		const rd = learnable ? pay * cfg.rdShare : 0;
+		const paid = payAvens(w, co.k, pay - rd / 2);
+		co.payoutToday = paid + rd / 2;
+		w.today.proposalsR += paid;
+		co.rdBudgetR += rd / 2;
+		w.today.rdR += rd / 2;
+	}
+}
+
+/** R&D energy budgets are spent over a week; the learning curves move with the energy that arrived */
+export function learn(w) {
+	const rates = w.c.learnRates;
+	w.buildCache = {};
+	// is R&D running on a technology this week?
+	for (const k of Object.keys(w.learn)) w.learn[k].rdOn = false;
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		if (co.rdKwhWeek > 0) for (const pl of co.plants) w.learn[pl.tech].rdOn = true;
+		// half of an unspent R&D budget goes back to the treasury's free money each week (the budget is only an
+		// earmark: what was spent left with the energy bought)
+		co.rdBudgetR *= 0.5;
+		co.rdKwhWeek = 0;
+	}
+	for (const [key, L] of Object.entries(w.learn)) {
+		const def = w.tech[key];
+		if (!def.learnGroup) continue;
+		const r = rates[def.learnGroup];
+		const d = -log2(1 - r.search), b = -log2(1 - r.doing);
+		if (!L.Q0) {
+			let q = 0;
+			for (const co of w.coops) if (co.alive) for (const pl of co.plants) if (pl.tech === key) q += Math.max(1e-9, unitsToDay(w, pl, pl.cap)) * 365;
+			L.Q0 = Math.max(1e-9, q);
+			L.Q = L.Q0;
+		}
+		// knowledge added by R&D is slowly forgotten (world model 5.4): a share of it a year
+		L.K = w.c.K0 + (L.K - w.c.K0) * pow(1 - w.c.kDecay, 7 / YEAR_DAYS);
+		const e = pow(L.K / w.c.K0, -d) * pow(Math.max(1, L.Q / L.Q0), -b);
+		for (const c of Object.keys(L.coef)) L.coef[c] = def.floors[c] + (1 - def.floors[c]) * Math.min(1, e);
+	}
+}
+
+// ── ground rent ──────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Ground rent (weekly): every COOP pays the City COOP for its plots, in MIND that the pools turn into CITYmind
+ * (under the private-land rule, to the landowners instead). The rent rises when land is asked for and none is free,
+ * and falls when land lies empty. Land is never sold.
+ */
+export function rentDue(w) {
+	const out = [];
+	for (const co of w.coops) {
+		if (!co.alive || co.city) continue;
+		let R = 0;
+		for (const pl of co.plants) if (!(pl.rentGrace > w.day)) R += pl.landM2 * (pl.rentRate ?? w.land.rent);
+		if (R > 0) out.push([co, R * 7]);
+	}
+	return out;
+}
+/**
+ * A lease is signed at the day's ground rent and keeps it (an Erbbaurecht: long leases at a fixed ground rent);
+ * a plant that leases more plots pays the average of its leases.
+ */
+export function signLease(w, pl, m2) {
+	const old = Math.max(0, pl.landM2);
+	pl.rentRate = old + m2 > 0 ? ((pl.rentRate ?? w.land.rent) * old + w.land.rent * m2) / (old + m2) : w.land.rent;
+	pl.landM2 = old + m2;
+}
+export function adjustRent(w) {
+	// an auction in small steps: the rent rises while someone bids more than it for land that is not there, up to
+	// the best bid, and falls while land lies empty
+	const free = freeLand(w) / w.land.totalM2;
+	const bid = w.land.bestBid ?? 0;
+	if (w.land.unmetWeek > 0 && bid > w.land.rent) w.land.rent = Math.min(bid, w.land.rent * 1.03);
+	else if (free > 0.05) w.land.rent *= 0.99;
+	w.land.bestBid = 0;
+}
+
+// ── founding and receivership ────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Open a new COOP in the next free MIND slot (a failed COOP's slot is never reused: its MIND still exists, held by its
+ * holders, and melts away). Its basket is itself, the CITYmind and the two MINDs with the deepest pools; three
+ * founders whose Avens deliver put all their HEARTS into it for its first 90 days.
+ */
+export function openCoop(w, g, idBase, plants, priceR) {
+	const slot = w.coops.length;
+	if (slot >= M) return null;
+	const n = w.coops.filter((c) => c.good === g).length;
+	const co = newCoop(w, slot, idBase + '-' + String.fromCharCode(65 + n), g, w.day);
+	co.priceR = priceR;
+	co.ref = priceR;
+	co.price = priceR / (w.P[slot] > 0 ? w.P[slot] : 1);
+	co.plants = plants;
+	co.demandEma = 0;
+	w.coops.push(co);
+	const depth = new Float64Array(M);
+	for (const p of w.pools) for (let i = 0; i < p.members.length; i++) depth[p.members[i]] += p.x[i] * w.P[p.members[i]];
+	const partners = [...depth.keys()].filter((j) => j !== w.cityK && j !== slot && w.coops[j]?.alive).sort((a, b) => depth[b] - depth[a]).slice(0, 2);
+	w.pools.push(newPool([slot, w.cityK, ...partners]));
+	indexPools(w);
+	buildCycles(w);
+	w.founders = w.founders ?? [];
+	for (let x = 0; x < 3; x++) {
+		const i = Math.floor(rnd(w) * w.N);
+		if (!w.owner[i]) w.founders.push({ i, k: slot, until: w.day + 90 });
+	}
+	return co;
+}
+
+/**
+ * Law 3 (monthly): where a good has been short for two months running (every seller's forward margin under 0.9) or
+ * its price sits above 1.5 × full cost, an Aven founds a COOP that copies an incumbent's technology and builds its
+ * first plant. Plants the City COOP holds idle (from a failure with no heir) are leased to a new COOP at once.
+ */
+export function foundings(w) {
+	const city = w.coops[w.cityK];
+	if (city.idle && city.idle.length) {
+		const byGood = new Map();
+		for (const pl of city.idle) byGood.set(pl.def.good, [...(byGood.get(pl.def.good) ?? []), pl]);
+		city.idle = [];
+		for (const [g, plants] of byGood) {
+			// idle plants are leased on when their good is wanted: it has no seller and buyers ask for it, or every
+			// seller has been short for two months
+			const sellers = w.coops.filter((c) => c.alive && c.good === g);
+			const wanted = sellers.length ? (w.shortDaysGood[g] ?? 0) >= 60 : (w.orderEma?.[g] ?? 0) > 0 || BASICS.includes(g);
+			if (!wanted) {
+				city.idle.push(...plants);
+				continue;
+			}
+			const co = openCoop(w, g, GOOD_ID_BASE[plants[0].tech] ?? plants[0].tech.toUpperCase(), plants, w.pbar[g]);
+			if (!co) {
+				city.idle.push(...plants);
+				continue;
+			}
+			co.stock = w.cityStore[g];
+			w.cityStore[g] = 0;
+			if (g === COMPUTE) (co.chips += w.cityChips ?? 0), (w.cityChips = 0);
+			for (const pl of plants) pl.rentGrace = w.day + 180;
+			w.events.push({ day: w.day, kind: 'found', coop: co.id, good: g, from: 'idle plants' });
+		}
+	}
+	if (w.day < 180) return;
+	for (let g = 0; g < G; g++) {
+		if (g === SPRING) continue;
+		const sellers = w.coops.filter((c) => c.alive && c.good === g);
+		if (!sellers.length) continue;
+		const short = sellers.every((c) => c.marginEma < 0.9);
+		const dear = sellers.every((c) => c.priceR > 1.5 * c.fullR && c.fullR > 0);
+		w.shortDaysGood[g] = short || dear ? w.shortDaysGood[g] + 30 : 0;
+		if (w.shortDaysGood[g] < 60 || w.day - w.lastEntry[g] < 365) continue;
+		const model = sellers[Math.floor(rnd(w) * sellers.length)];
+		if (!model.plants.length) continue;
+		const tech = model.plants[0].tech;
+		if (inputShort(w, model.plants[0]) >= 0) continue; // a new works would wait for the same short input
+		if (freeLand(w) < firstPlotM2(w, tech)) continue; // nor can it start without a plot
+		if (tech === 'forest' || tech === 'geo') continue; // a forest needs ten years, a geothermal stage a village: incumbents build those
+		const co = openCoop(w, g, model.id.replace(/-.*$/, ''), [newPlant(w, tech, 0)], model.priceR);
+		if (!co) continue;
+		w.lastEntry[g] = w.day;
+		w.events.push({ day: w.day, kind: 'found', coop: co.id, good: g });
+	}
+}
+/** the land a first plant of a technology needs (a timber COOP also needs land for its logs) */
+function firstPlotM2(w, tech) {
+	const d = w.tech[tech], s = w.c.scale;
+	if (tech === 'timber') return 5000 * s + 20 * s * d.land;
+	if (tech === 'goods') return 25 * s * d.land;
+	if (tech === 'solar') return 50 * s * d.land;
+	if (tech === 'home') return 8 * s * d.land;
+	return 20 * s * (d.land ?? 0);
+}
+const GOOD_ID_BASE = { forest: 'AGRI', greenhouse: 'GREEN', rain: 'RAIN', well: 'WELL', solar: 'SOLAR', geo: 'GEO', home: 'HOME', timber: 'TIMBER', steel: 'STEEL', glass: 'GLASS', panel: 'PANEL', goods: 'GOODS', spring: 'SPRING', compute: 'COMPUTE' };
+
+/** is a failing COOP's good still wanted: its other sellers are short, or it has none and buyers still ask for it */
+function stillWanted(w, co) {
+	const others = w.coops.filter((c) => c.alive && c !== co && c.good === co.good);
+	if (others.length) return others.every((c) => c.marginEma < 1);
+	return co.demandEma > 0.2 * Math.max(1e-12, co.capDay);
+}
+
+/**
+ * Receivership (monthly): a COOP that has held less than a day of running costs (or could not pay its running items)
+ * on each of 30 days, or has had neither sales nor HEARTS for 60 days, or (setting auditExit) has failed its audit
+ * (for 30 days its output stayed under a quarter of what its plants are rated for), fails. Its treasury is frozen (it melts away), its MIND stays with its holders, and
+ * its plants and stores go to the City COOP, which leases them on: to the strongest healthy COOP of the same good
+ * with 180 days' grace on rent, or, if there is none, to a new COOP founded on them at once.
+ */
+export function receiverships(w) {
+	for (const co of [...w.coops]) {
+		if (!co.alive || co.city) continue;
+		const founding = co.plants.every((p) => p.cap <= 0 && !p.plots.length);
+		const stillborn = founding && !co.project && w.day - co.born >= 365;
+		// a failed audit (world model 4.5): its output has stayed under a quarter of what its plants are rated for
+		const audit = !!w.cfg.auditExit && (co.auditLow ?? 0) >= 30;
+		const fail = co.lowDays >= 30 || co.idleDays >= 60 || stillborn || audit;
+		if (!fail) continue;
+		const heir = w.coops.filter((c) => c.alive && c !== co && c.good === co.good && c.lowDays < 7 && c.plants.length).sort((a, b) => capDayOf(w, b, w.day) - capDayOf(w, a, w.day))[0];
+		co.alive = false;
+		co.died = w.day;
+		co.why = stillborn ? 'never built its first plant' : co.lowDays >= 30 ? 'could not pay its running items or bills for 30 days' : audit ? 'failed audit: output under a quarter of its rated plants for 30 days' : 'no sales and no HEARTS for 60 days';
+		co.diag = { treR: treasuryR(w, co.k), ownR: w.tre[co.k * M + co.k] * w.P[co.k], unpaidH: co.unpaidH, unpaidBillR: co.unpaidBillR, lowDays: co.lowDays, idle: co.idleDays, costREma: co.costREma, salesREma: co.salesREma, priceR: co.priceR, fullR: co.fullR, fullRentR: co.fullRentR, margin: co.marginEma, goodMargin: w.goodMargin?.[co.good], heartsEma: co.heartsEma, P: w.P[co.k], soldEma: co.soldEma, capDay: co.capDay };
+		for (let i = 0; i < w.N; i++) w.alloc[i * M + co.k] = 0;
+		// no healthy COOP of the good: a basic, or a good still wanted, gets a new COOP founded on the plant at once;
+		// otherwise the City COOP keeps the plant idle until the good is short again
+		// (only plants that still stand: a plant worn to nothing is no reason to found a COOP)
+		let to = heir;
+		const standing = co.plants.some((p) => p.cap - p.worn > 1e-9 || p.plots.length);
+		if (!heir && !stillborn && standing && (BASICS.includes(co.good) || stillWanted(w, co))) to = openCoop(w, co.good, co.id.replace(/-.*$/, ''), [], co.priceR);
+		if (to) {
+			for (const pl of co.plants) {
+				pl.rentGrace = w.day + 180;
+				to.plants.push(pl);
+			}
+			to.stock += co.stock;
+			for (let g = 0; g < G; g++) to.inStock[g] += co.inStock[g];
+			to.chips = (to.chips ?? 0) + (co.chips ?? 0);
+			if (to !== heir) w.events.push({ day: w.day, kind: 'found', coop: to.id, good: co.good, from: 'receivership of ' + co.id });
+		} else {
+			// no slot left: the City COOP keeps the plants idle, and holds the stores
+			w.coops[w.cityK].idle = (w.coops[w.cityK].idle ?? []).concat(co.plants);
+			w.cityStore[co.good] += co.stock;
+			for (let g = 0; g < G; g++) w.cityStore[g] += co.inStock[g];
+			w.cityChips = (w.cityChips ?? 0) + (co.chips ?? 0);
+		}
+		// a reference MIND of R hands its place to the COOP that took its plants
+		const ri = w.refMinds.indexOf(co.k);
+		if (ri >= 0) {
+			const alt = to ?? w.coops.filter((c) => c.alive && c.good === co.good).sort((a, b) => capDayOf(w, b, w.day) - capDayOf(w, a, w.day))[0];
+			if (alt) w.refMinds[ri] = alt.k;
+			w.refMinds = [...new Set(w.refMinds)];
+		}
+		co.plants = [];
+		co.stock = 0;
+		co.chips = 0;
+		co.inStock = new Float64Array(G);
+		co.project = null;
+		w.events.push({ day: w.day, kind: 'receivership', coop: co.id, heir: to?.id ?? null, why: co.why, diag: co.diag });
+	}
+}
