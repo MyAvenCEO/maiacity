@@ -54,7 +54,7 @@
 			['dividend', '3 · Who should create money']
 		] },
 		{ title: 'Part II · The operating system', sections: [
-			['laws', '4 · The four laws'],
+			['laws', '4 · The five laws'],
 			['entropy', '5 · Melting money, in numbers'],
 			['pol', '6 · Keeping every MIND tradeable'],
 			['avens', '7 · Avens: an agent for every person'],
@@ -103,7 +103,7 @@
 			machines do most of the work, that answer stops working.
 		</p>
 		<p>
-			This paper proposes a different answer: an economic operating system that we call theOS. It rests on three simple
+			This paper proposes a different answer: an economic operating system that we call theOS. It rests on four simple
 			ideas. First, every person gets a personal currency every day, simply for being alive: {UIA_DAY} HEARTS, one for
 			each hour. Samuel's are SamuelHEARTS, Anna's are AnnaHEARTS. HEARTS are not money to spend; they are a voice.
 			People can only invest them into cooperatives, or COOPs: shared enterprises that make what a city needs, such as
@@ -119,12 +119,12 @@
 			agents propose. So MIND keeps moving through the economy.
 		</p>
 		<p>
-			Every sale also pays the COOP's owners. A fixed share of every sale, by default 20 %, goes at once to everyone who
-			holds the COOP's MIND. So owners gain exactly when their COOP is useful, and a COOP pays its owners best by
+			Third, every sale pays the COOP's owners. A fixed share of every sale, by default 20 %, goes at once to everyone
+			who holds the COOP's MIND. So owners gain exactly when their COOP is useful, and a COOP pays its owners best by
 			selling a lot to many people.
 		</p>
 		<p>
-			Third, all money melts slowly, just as food spoils and machines wear out. It melts at a continuous rate of
+			Fourth, all money melts slowly, just as food spoils and machines wear out. It melts at a continuous rate of
 			{pct(RATE * 100)} a year, which takes {pct(yearlyLoss() * 100, 1)} of an idle balance in a year. So wealth keeps
 			moving and does not sit idle.
 		</p>
@@ -342,9 +342,9 @@
 	<p class="partline" id="part-2">Part II · The operating system</p>
 
 	<section id="laws">
-		<h2><span>4</span>The four laws</h2>
+		<h2><span>4</span>The five laws</h2>
 		<p>
-			theOS rests on four laws. The protocol, the shared software at the base of theOS, fixes them the way a physics
+			theOS rests on five laws. The protocol, the shared software at the base of theOS, fixes them the way a physics
 			engine fixes gravity. Everything else grows on top of the laws and can change: prices, cooperatives and the way
 			each cooperative decides. The laws cannot change: nobody holds a key that changes them. Appendix F says what can
 			change in the code, and who decides. The laws are short. Together they say where money comes from, where it can
@@ -430,11 +430,6 @@
 				Each invested HEART converts into one new MIND of its COOP: half goes to the investor and half to the COOP's
 				treasury. Both halves are the same MIND; there is only one kind.
 			</p>
-			<p>
-				<strong>Every sale pays its owners.</strong> A fixed share of every sale, by default 20 %, goes to the COOP's
-				owners at the moment of sale. It is paid in the COOP's own MIND, to everyone who holds that MIND, in proportion
-				to what each one holds. A COOP can change its share by proposal, within a limit that the protocol sets.
-			</p>
 		</div>
 		<p>
 			Follow one HEART. Anna invests one AnnaHEART into the solar COOP. The HEART converts and is gone for good. Nobody
@@ -458,29 +453,40 @@
 			only melt. It flows back out to people and to other COOPs, and the COOP grows what it can make.
 		</p>
 		<p>
-			Law 4 also says who gains when a COOP sells: every sale pays its owners. This payment is the <em>dividend</em>.
-			When Anna pays for her light, 20 % of her payment goes at once to everyone who holds SOLARmind. Anna holds
-			SOLARmind too, so she gets a little of it back. The holders are people and other COOPs' treasuries. The solar
-			COOP's own treasury and the pools get no share (Section 9). The other 80 % goes to the treasury. It pays for
-			inputs, services, building, ground rent and accepted work proposals. Nobody has to vote on each dividend.
+			The fifth law says who gains when a COOP sells.
+		</p>
+		<div class="law">
+			<p class="lawname">Law 5 · Every sale pays its owners</p>
+			<p>
+				A fixed share of every sale goes to the COOP's owners at the moment of sale. By default it is 20 %. It is paid
+				in the COOP's own MIND, to everyone who holds that MIND, in proportion to what each one holds. A COOP can change
+				its share by proposal, within a limit that the protocol sets.
+			</p>
+		</div>
+		<p>
+			This payment is the <em>dividend</em>. When Anna pays for her light, 20 % of her payment goes at once to everyone
+			who holds SOLARmind. Anna holds SOLARmind too, so she gets a little of it back. The holders are people and other
+			COOPs' treasuries. The solar COOP's own treasury and the pools get no share (Section 9). The other 80 % goes to
+			the treasury. It pays for inputs, services, building, ground rent and accepted work proposals. Nobody has to vote
+			on each dividend.
 		</p>
 		<p>
-			This rule ties what owners gain to what the COOP does for others. A COOP pays its owners best when it sells a lot,
-			and it sells a lot when many people find it useful. So each COOP works for good turnover: the total of its sales.
-			Two guards keep this honest. First, only real deliveries count as sales. Otherwise two COOPs could sell to each
-			other in a circle, and every round would move MIND from their treasuries to their holders. Second, a sale brings
-			the treasury only what is left after the dividend. If that does not cover the cost of the delivery, the treasury
-			loses on every sale. So more turnover pays only while prices cover costs (Section 11.2).
+			Law 5 ties what owners gain to what the COOP does for others. A COOP pays its owners best when it sells a lot, and
+			it sells a lot when many people find it useful. So each COOP works for good turnover: the total of its sales. Two
+			guards keep this honest. First, only real deliveries count as sales. Otherwise two COOPs could sell to each other
+			in a circle, and every round would move MIND from their treasuries to their holders. Second, a sale brings the
+			treasury only what is left after the dividend. If that does not cover the cost of the delivery, the treasury loses
+			on every sale. So more turnover pays only while prices cover costs (Section 11.2).
 		</p>
 		<figure>
 			<FollowOneHeart />
 			<figcaption>
-				<strong>Figure 3.</strong> Law 4, step by step. One HEART converts into one SOLARmind. Half goes to Anna's
-				wallet as her ownership, and half to the treasury as working capital. Anna pays for her light in SOLARmind, and
-				most of it goes back to the treasury. The treasury pays it out again: a tenth of its half into the pool, the
-				panel COOP through the pool in its own PANELmind, and Mia for her Aven's work proposal. A share of every sale
-				goes at once to everyone who holds SOLARmind; Anna gets some back as a holder. The areas of the coins are to
-				scale. Tap a number to go to a step.
+				<strong>Figure 3.</strong> Laws 4 and 5, step by step. One HEART converts into one SOLARmind. Half goes to
+				Anna's wallet as her ownership, and half to the treasury as working capital. Anna pays for her light in
+				SOLARmind, and most of it goes back to the treasury. The treasury pays it out again: a tenth of its half into
+				the pool, the panel COOP through the pool in its own PANELmind, and Mia for her Aven's work proposal. A share of
+				every sale goes at once to everyone who holds SOLARmind; Anna gets some back as a holder. The areas of the coins
+				are to scale. Tap a number to go to a step.
 			</figcaption>
 		</figure>
 		<p>
@@ -590,7 +596,7 @@
 		</p>
 		<p>
 			There is no central bank, no interest rate to set and no inflation target. With a constant population, the money
-			supply moves to <Tex tex={String.raw`N u / r`} /> from any start. The whole policy is the four laws and one rate.
+			supply moves to <Tex tex={String.raw`N u / r`} /> from any start. The whole policy is the five laws and one rate.
 			Appendix F says who may change the code that runs them.
 		</p>
 		<p>
@@ -866,7 +872,7 @@
 				the City COOP. This is how MIND flows from the treasuries back to people, and how COOPs grow what they can make.
 			</li>
 			<li>
-				<strong>Collecting dividends.</strong> Under Law 4, a share of every sale goes at once to everyone who holds the
+				<strong>Collecting dividends.</strong> Under Law 5, a share of every sale goes at once to everyone who holds the
 				seller's MIND. The Aven collects these dividends and can reinvest them. It keeps them as ownership, or it trades
 				them through the pools into the MINDs that its human wants to own. Spreading its human's MIND over many COOPs
 				also keeps the risk small (Section 9.2).
@@ -1044,13 +1050,14 @@
 		</figure>
 		<h3>9.1 The whole machine</h3>
 		<p>
-			All the pieces are now in place. Here are the four laws of Section 4 once more:
+			All the pieces are now in place. Here are the five laws of Section 4 once more:
 		</p>
 		<ol class="laws">
 			<li><strong>Universal Intent Allocation.</strong> Every human gets 24 personal HEARTS a day, one per hour, from birth to death: one stream per human.</li>
 			<li><strong>Pure investment.</strong> HEARTS earn no interest and buy nothing. Their owner can only invest them.</li>
 			<li><strong>Open cooperative creation.</strong> Anyone can found a COOP, at any time, without permission, from HEARTS and at least three partner COOPs.</li>
-			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> One HEART converts into one MIND, half to the investor, half to the COOP's treasury as working capital. Every sale pays its owners: a fixed share, by default 20 %, goes at once to everyone who holds the COOP's MIND.</li>
+			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> One HEART converts into one MIND, half to the investor, half to the COOP's treasury as working capital.</li>
+			<li><strong>Every sale pays its owners.</strong> A fixed share of every sale, by default 20 %, goes at once to everyone who holds the COOP's MIND, in proportion to what each one holds.</li>
 		</ol>
 		<p>
 			On top of the laws, each part of the machine has a clear job. Table 2 lists the parts. MIND is the one part that
@@ -1065,7 +1072,7 @@
 				<tbody>
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, 24 a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
 					<tr><td>MIND</td><td>Ownership of a COOP and the means to use what it makes; people hold it as ownership and spend it to use, the COOP holds it as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Spent on what the COOP makes, and the seller always receives its own MIND; paid out again by COOPs, through proposals, for resources, services and work; 5 % of every HEART into the pools; or melted</td></tr>
-					<tr><td>Dividends</td><td>Pay the owners of a COOP when it is useful (Law 4)</td><td>A fixed share of every sale, by default 20 %, at the moment of sale</td><td>Everyone who holds the seller's MIND, people and other COOPs' treasuries, in proportion to what each one holds</td></tr>
+					<tr><td>Dividends</td><td>Pay the owners of a COOP when it is useful (Law 5)</td><td>A fixed share of every sale, by default 20 %, at the moment of sale</td><td>Everyone who holds the seller's MIND, people and other COOPs' treasuries, in proportion to what each one holds</td></tr>
 					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; owned by the protocol, not by a COOP</td><td>A tenth of every treasury half (5 % of every HEART), automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades, or by melting</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
 					<tr><td>Avens</td><td>One person's arithmetic: invest, trade, pay, propose work, collect dividends, leave</td><td>One per person</td><td>Work only for their human</td></tr>
@@ -1145,15 +1152,15 @@
 			adds its own spread on top.
 		</p>
 		<p>
-			Dividends are such a return. Under Law 4, a COOP's dividend yield is its share of every sale, times its yearly
+			Dividends are such a return. Under Law 5, a COOP's dividend yield is its share of every sale, times its yearly
 			sales, divided by the MIND that others hold. Dividends make holding pay, and with the same yield
 			<Tex tex={String.raw`\mu`} /> for everyone, the resting level rises to <Tex tex={String.raw`a/(r - \mu)`} />. But
 			they slow the levelling: an inherited fortune fades at the net rate <Tex tex={String.raw`r - \mu`} />, not at
 			<Tex tex="r" />. And they widen the spread. At a spread of returns of 20 %, a yield of {pct((RATE / 2) * 100, 1)}
 			a year would raise the resting Gini index of (10) from {fmt(giniRest(0.2), 2)} to
-			{fmt(giniRest(0.2, RATE, RATE / 2), 2)}. So dividends are safe only while every COOP's yield, plus any lasting
-			rise of its price, stays below the melt. The protocol's limit on the share must keep it there. At the default
-			share of {pct(DIVIDEND_SHARE * 100)}, the yield stays below the melt while yearly sales stay below
+			{fmt(giniRest(0.2, RATE, RATE / 2), 2)}. So Law 5 is safe only while every COOP's yield, plus any lasting rise of
+			its price, stays below the melt. The protocol's limit on the share must keep it there. At the default share of
+			{pct(DIVIDEND_SHARE * 100)}, the yield stays below the melt while yearly sales stay below
 			{pct(salesBound() * 100)} of the MIND that others hold.
 		</p>
 		<p>
@@ -1164,7 +1171,7 @@
 			in year 1, 3 % in year 5 and 1.2 % in year 10. Early holders gain more, and the melt removes that edge.
 		</p>
 		<p>
-			Dividends alone do not bring the MIND to people. The rest of every sale lands in the treasury. If treasuries keep
+			Law 5 alone does not bring the MIND to people. The rest of every sale lands in the treasury. If treasuries keep
 			their surplus, most MIND sits there and melts. People then hold only 26 % of all MIND, even with the dividend at
 			20 %. If treasuries pay their surplus out for work proposals, people hold 94 %. At rest, treasuries then pay 80 %
 			of what they take in for work proposals and 9 % as dividends. About a tenth goes to operating wages, inputs and
@@ -1283,7 +1290,7 @@
 		<h2><span>11</span>Limitations and open problems</h2>
 		<p>
 			A blueprint is only scientific if it says where it could fail. Each item below names an open problem, a rule that
-			we propose for it, and how the game tests it. Every proposed rule works inside the four laws. Appendix E collects
+			we propose for it, and how the game tests it. Every proposed rule works inside the five laws. Appendix E collects
 			the attacks in one threat model.
 		</p>
 		<h3>11.1 People and identity</h3>
@@ -1321,11 +1328,11 @@
 				COOP. He then controls {fmt(selfDealDay(), 1)} MIND a day instead of {fmt(honestDay())}: both halves, less the
 				tenth that drips into the pools. Four friends can act as each other's three basket partners, and trade MINDs
 				that make nothing for real ones. Two COOPs could also sell to each other in a circle. Every round would move
-				MIND from their treasuries to their holders as dividends (Law 4). We propose a related-party rule. When a COOP's
+				MIND from their treasuries to their holders as dividends (Law 5). We propose a related-party rule. When a COOP's
 				founders, officers or their relatives invest, the treasury half waits in a locked account (escrow) until an
 				audit confirms real output. A treasury pays nobody who invested in recent months, except for audited work. Every
 				treasury flow is public, and the share of inflow from a COOP's own controllers is capped. Only real deliveries
-				count as sales under Law 4: a meter or a buyer outside the COOP's related parties must confirm each one. Sales
+				count as sales under Law 5: a meter or a buyer outside the COOP's related parties must confirm each one. Sales
 				between related COOPs pay no dividend. Selling below cost cannot buy turnover for long. The treasury keeps only
 				what is left after the dividend, so it loses on every such sale until it is empty. <em>Test:</em> kickback
 				COOPs, investment rings and circular sales as attackers in the game.
@@ -1447,18 +1454,18 @@
 				<strong>The conditions of fairness.</strong> The fairness of Section 9.2 holds only under seven rules. First, no
 				holder may earn more than the rate of demurrage, year after year, on any holding. Arbitrage profits from the
 				protocol pools are such a return, so they must flow back to all Avens, or batch trading must remove them.
-				Dividends under Law 4 are such a return too. A COOP's dividend yield, plus any lasting rise of its price, must
+				Dividends under Law 5 are such a return too. A COOP's dividend yield, plus any lasting rise of its price, must
 				stay below the 7 % melt. In the simulation, the default share of 20 % meets this by a wide margin (Section 9.2).
 				Second, every COOP must accept HEARTS from anyone, one for one. A COOP that closes its doors creates scarcity
 				for its first owners. Third, theOS must decide how euros can buy MIND, because those purchases bring outside
 				inequality in. Fourth, the MIND of people who die goes to the City COOP or to named heirs, and theOS must choose
-				(Section 11.1). Fifth, COOPs pay out what they take in. Dividends alone are not enough: a COOP that keeps the
-				rest of its sales in its treasury slowly becomes its own owner. In the simulation, if treasuries keep their
-				surplus, people hold 26 % of all MIND, even with the dividend at 20 %. With the payout rule of Section 9.2, they
-				hold 94 %. Sixth, land stays with the City COOP. In an earlier end-to-end model, private land kept the Gini
-				index near 0.5; with all land in the City COOP, it settled at 0.29. Seventh, work proposals stay open to
-				everyone, because unequal work income adds its own spread (Section 9.2). <em>Test:</em> the game measures the
-				spread of returns, the dividend yields, the spread of work income and the Gini index of ownership.
+				(Section 11.1). Fifth, COOPs pay out what they take in. Law 5 alone is not enough: a COOP that keeps the rest of
+				its sales in its treasury slowly becomes its own owner. In the simulation, if treasuries keep their surplus,
+				people hold 26 % of all MIND, even with the dividend at 20 %. With the payout rule of Section 9.2, they hold 94
+				%. Sixth, land stays with the City COOP. In an earlier end-to-end model, private land kept the Gini index near
+				0.5; with all land in the City COOP, it settled at 0.29. Seventh, work proposals stay open to everyone, because
+				unequal work income adds its own spread (Section 9.2). <em>Test:</em> the game measures the spread of returns,
+				the dividend yields, the spread of work income and the Gini index of ownership.
 			</li>
 		</ul>
 	</section>
@@ -1500,7 +1507,7 @@
 			<li><strong>Prompt investment.</strong> Avens invest HEARTS as they arrive, so few HEARTS sit unused.</li>
 			<li><strong>One human, one stream.</strong> Identity works, and nobody directs the HEARTS of fake people (Section 11.1).</li>
 			<li><strong>Faithful Avens.</strong> Each Aven serves only its human, follows its human's choices and makes no costly mistakes.</li>
-			<li><strong>Treasuries pay out.</strong> Law 4 sends 20 % of every sale to the holders. For the rest, COOPs follow the payout rule of Section 9.2. They keep about 60 days of costs and pay out the surplus for work proposals.</li>
+			<li><strong>Treasuries pay out.</strong> Law 5 sends 20 % of every sale to the holders. For the rest, COOPs follow the payout rule of Section 9.2. They keep about 60 days of costs and pay out the surplus for work proposals.</li>
 			<li><strong>Honest prices.</strong> Time-averaged pool prices reflect the use that each MIND buys.</li>
 			<li><strong>Connected baskets.</strong> Every MIND in a basket can reach every other MIND through the pools.</li>
 			<li>
@@ -1570,7 +1577,7 @@
 			<dt>Conversion</dt>
 			<dd>The moment an invested HEART becomes one MIND: half to the investor, half to the COOP's treasury.</dd>
 			<dt>Dividend</dt>
-			<dd>Under Law 4, a fixed share of every sale, by default 20 %. It goes at once to everyone who holds the seller's MIND, in proportion to their holding. It is not Laborde's universal dividend of Section 3, which is new money.</dd>
+			<dd>Law 5: a fixed share of every sale, by default 20 %. It goes at once to everyone who holds the seller's MIND, in proportion to their holding. It is not Laborde's universal dividend of Section 3, which is new money.</dd>
 			<dt>Work proposal</dt>
 			<dd>An offer of work that creates value for a COOP, made by a person's Aven. If the members accept it, the COOP pays in its own MIND.</dd>
 			<dt>Payout rule</dt>
@@ -1677,7 +1684,7 @@
 			theOS has three layers of rules, and each one changes in a different way. This appendix proposes how.
 		</p>
 		<p>
-			<strong>The laws.</strong> The four laws and the rate are fixed. Nobody holds a key that changes them. A change to
+			<strong>The laws.</strong> The five laws and the rate are fixed. Nobody holds a key that changes them. A change to
 			a law would be a new protocol, and each person would choose whether to move to it. In the game it is different:
 			every rule is a parameter, anyone can propose a change, and the change runs in a new world.
 		</p>
