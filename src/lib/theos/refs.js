@@ -10,7 +10,6 @@ export const REFS = [
 	{ key: 'qf', text: 'Buterin, V., Hitzig, Z. & Weyl, E. G. (2019). A Flexible Design for Funding Public Goods. Management Science, 65(11), 5171–5187.', url: 'https://doi.org/10.1287/mnsc.2019.3337' },
 	{ key: 'fmamm', text: 'Canidio, A. & Fritsch, R. (2023). Arbitrageurs\' Profits, LVR, and Sandwich Attacks: Batch Trading as an AMM Design Response. arXiv:2307.02074; short version at AFT 2023.', url: 'https://arxiv.org/abs/2307.02074' },
 	{ key: 'circles', text: 'Circles contributors (2020–). Circles: a universal basic income built on personal currencies and a web of trust. Whitepaper and documentation.', url: 'https://aboutcircles.com/' },
-	{ key: 'cowamm', text: 'CoW DAO (2024). CoW AMM: a batch-auction AMM live on Balancer since 2024. Documentation.', url: 'https://docs.cow.fi/cow-amm' },
 	{ key: 'duniter', text: 'Duniter contributors (2017–). Ğ1 (June): the first libre currency built on the Relative Theory of Money. Protocol documentation.', url: 'https://duniter.org/' },
 	{ key: 'evans', text: 'Evans, A. (2020). Liquidity Provider Returns in Geometric Mean Markets. arXiv:2006.08806.', url: 'https://arxiv.org/abs/2006.08806' },
 	{ key: 'fisher11', text: 'Fisher, I. (1911). The Purchasing Power of Money. Macmillan.' },
@@ -32,6 +31,7 @@ export const REFS = [
 	{ key: 'lietaer', text: 'Lietaer, B. (2001). The Future of Money: Creating New Wealth, Work and a Wiser World. Century.' },
 	{ key: 'balancer', text: 'Martinelli, F. & Mushegian, N. (2019). Balancer: A Non-Custodial Portfolio Manager, Liquidity Provider, and Price Sensor. Whitepaper; weighted pools of up to 8 tokens in Balancer v3 (2024).', url: 'https://docs.balancer.fi/concepts/explore-available-balancer-pools/weighted-pool/weighted-pool.html' },
 	{ key: 'lvr', text: 'Milionis, J., Moallemi, C. C., Roughgarden, T. & Zhang, A. L. (2022). Automated Market Making and Loss-Versus-Rebalancing. arXiv:2208.06046.', url: 'https://arxiv.org/abs/2208.06046' },
+	{ key: 'lvrfees', text: 'Milionis, J., Moallemi, C. C. & Roughgarden, T. (2023). Automated Market Making and Arbitrage Profits in the Presence of Fees. arXiv:2305.14604.', url: 'https://arxiv.org/abs/2305.14604' },
 	{ key: 'ostrom', text: 'Ostrom, E. (1990). Governing the Commons: The Evolution of Institutions for Collective Action. Cambridge University Press.' },
 	{ key: 'piketty', text: 'Piketty, T. (2014). Capital in the Twenty-First Century. Belknap Press of Harvard University Press.' },
 	{ key: 'radical', text: 'Posner, E. A. & Weyl, E. G. (2018). Radical Markets: Uprooting Capitalism and Democracy for a Just Society. Princeton University Press.' },
@@ -41,7 +41,8 @@ export const REFS = [
 	{ key: 'simon', text: 'Simon, H. A. (1955). A Behavioral Model of Rational Choice. Quarterly Journal of Economics, 69(1), 99–118.', url: 'https://doi.org/10.2307/1884852' },
 	{ key: 'soddy', text: 'Soddy, F. (1926). Wealth, Virtual Wealth and Debt: The Solution of the Economic Paradox. George Allen & Unwin.' },
 	{ key: 'parijs', text: 'Van Parijs, P. & Vanderborght, Y. (2017). Basic Income: A Radical Proposal for a Free Society and a Sane Economy. Harvard University Press.' },
-	{ key: 'soul', text: 'Weyl, E. G., Ohlhaver, P. & Buterin, V. (2022). Decentralized Society: Finding Web3’s Soul. SSRN Working Paper 4105763.', url: 'https://doi.org/10.2139/ssrn.4105763' }
+	{ key: 'soul', text: 'Weyl, E. G., Ohlhaver, P. & Buterin, V. (2022). Decentralized Society: Finding Web3’s Soul. SSRN Working Paper 4105763.', url: 'https://doi.org/10.2139/ssrn.4105763' },
+	{ key: 'twamm', text: 'White, D., Robinson, D. & Adams, H. (2021). TWAMM: Time-Weighted Average Market Maker. Paradigm research.', url: 'https://www.paradigm.xyz/2021/07/twamm' },
 ];
 
 const index = new Map(REFS.map((r, i) => [r.key, i + 1]));

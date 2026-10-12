@@ -73,7 +73,7 @@ export const lvrSeries = () =>
 		{ id: 'calm', label: 'σ 20 %, independent', sigma: 0.2, rho: 0 },
 		{ id: 'wild', label: 'σ 40 %, independent', sigma: 0.4, rho: 0 },
 		{ id: 'linked', label: 'σ 40 %, correlated 0.6', sigma: 0.4, rho: 0.6 }
-	].map((s) => ({ ...s, points: range(2, 12, 10).map((n) => [n, basketLvr(n, s.sigma, s.rho) * 100]) }));
+	].map((s) => ({ ...s, points: range(2, 8, 6).map((n) => [n, basketLvr(n, s.sigma, s.rho) * 100]) }));
 
 /**
  * Figure 8: three cooperatives in one sector, replicator dynamics. Each COOP turns a HEART into f units of utility;
