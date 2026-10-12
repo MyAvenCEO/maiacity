@@ -41,7 +41,7 @@
 		['infra', '6 · The infrastructure paradox'],
 		['pol', '7 · Protocol-owned liquidity'],
 		['governance', '8 · Open market governance'],
-		['city', '9 · What: from game to city'],
+		['city', '9 · What: first a game, then for real'],
 		['limits', '10 · Limitations and open problems'],
 		['synthesis', '11 · The Abundism synthesis'],
 		['references', 'References']
@@ -66,21 +66,34 @@
 	<section class="abstract" aria-label="Abstract">
 		<h2>Abstract</h2>
 		<p>
-			When machines do most of the work, wages stop being a way to share what is made. This paper describes theOS, a
-			monetary and organisational protocol designed for that world. Every person receives {UIA_DAY} HEARTS a day, a
-			universal <em>intent</em> allocation that can only be invested into open cooperatives (COOPs). Each investment
-			mints the cooperative's own utility currency, its MIND, split equally between the investor and the cooperative's
-			treasury, which uses it as protocol-owned liquidity. All balances decay continuously at {pct(RATE * 100)} a year.
-			We show that this demurrage turns the money supply into a self-levelling system in which every balance converges
-			to the same steady state of {fmt(steadyState())} HEARTS with a half-life of {fmt(halfLife(), 1)} years, that it is
-			formally equivalent to Laborie's Relative Theory of Money with a rate <Tex tex="c = r" />, that it inverts the
-			discounting problem of long-lived infrastructure, and that it lets cooperatives compete as an evolutionary
-			market of governance designs. Personal AI agents (Avens) hide the resulting complexity behind two human
-			choices a day. theOS is specified as an upgrade to maiaCITY's own game economy (Sandbox 7), where it can be
-			tested with AI agents before it becomes the economy of a real city.
+			Picture a city where machines grow the food, run the power plants and build the homes. Two questions decide
+			whether such a city is a good place to live: who gets a fair share of what the machines make, and who decides what
+			they build next? For two centuries the answer to both was the wage. People worked, were paid and spent. When
+			machines do the work, that answer stops working.
+		</p>
+		<p>
+			This paper proposes another answer, an economic operating system we call theOS. It rests on three simple ideas.
+			First, every person receives their own personal currency every day, simply for being alive: {UIA_DAY} HEARTS, one
+			for every hour. Samuel's are SamuelHEARTS, Anna's are AnnaHEARTS. HEARTS are not spending money but a voice: they
+			can only be invested into cooperatives, shared enterprises that make what a city needs, such as energy, food or
+			housing. Second, each investment becomes that cooperative's own currency, its MIND, which is what one spends to use
+			what the cooperative makes. Half of it goes to the investor and half stays with the cooperative, so that its
+			currency can always be traded. Third, all money slowly melts, losing {pct(RATE * 100)} of its value a year, just as
+			food spoils and machines wear out, so wealth keeps moving instead of being hoarded.
+		</p>
+		<p>
+			We then show what follows from these rules. Over time every balance is drawn toward the same level, so nobody stays
+			rich by sitting still and nobody starts with nothing for long. The rule turns out to be mathematically the same as
+			Stéphane Laborie's Relative Theory of Money. Long-lasting infrastructure becomes the best place to put money, and
+			cooperatives compete on how well they are run. A personal AI agent, an Aven, does the arithmetic for each person,
+			so that taking part takes two simple choices a day.
+		</p>
+		<p>
+			We will prove theOS in two steps: first in a game, where AI agents live under its rules and every rule can be
+			measured and changed, and then for real, as the economy of maiaCITY, the city we are building.
 		</p>
 		<p class="keywords">
-			<strong>Keywords:</strong> demurrage · universal dividend · Relative Theory of Money · post-labour economics ·
+			<strong>Keywords:</strong> demurrage · personal currencies · universal dividend · Relative Theory of Money · post-labour economics ·
 			cooperatives · automated market makers · protocol-owned liquidity · mechanism design
 		</p>
 		<p class="keywords"><strong>JEL:</strong> E42 · E51 · H41 · O33 · P13</p>
@@ -182,6 +195,16 @@
 				<Cite k="laborie" />. The Ğ1 currency has run on it since 2017 <Cite k="duniter" />. Section 4 shows that theOS is
 				the same rule written in a fixed unit.
 			</dd>
+			<dt>Circles UBI, 2020</dt>
+			<dd>
+				Circles gives every person their own personal currency, minted at one token an hour, so that money starts with
+				people rather than with banks <Cite k="circles" />. Its second version lets balances decay at 7 % a year. Because
+				every person's coin is different, Circles moves value between people through a web of trust: I accept your
+				currency because I trust you, and payments travel along chains of such trust. theOS keeps the personal currency
+				(SamuelHEARTS, AnnaHEARTS), the hourly rhythm and the decay, but drops the trust network. Personal HEARTS are
+				never traded between people at all; they are converted straight into investments in cooperatives, so nobody has
+				to judge whom to trust.
+			</dd>
 			<dt>Ostrom, Hirschman, Weyl, 1970–2022</dt>
 			<dd>
 				Elinor Ostrom showed that commons are governed well by the people who use them when the rules fit their place
@@ -208,15 +231,16 @@
 		<ol class="laws">
 			<li>
 				<strong>Universal Intent Allocation (UIA).</strong> Every human receives {UIA_DAY} HEARTS a day,
-				unconditionally, one per hour lived. It is not a survival handout: it is an inalienable share in steering where
-				the automated economy puts its effort.
+				unconditionally, one per hour lived, in a currency of their own: Samuel's are SamuelHEARTS, Anna's are
+				AnnaHEARTS. Only their owner can invest them. It is not a survival handout: it is an inalienable share in
+				steering where the automated economy puts its effort.
 			</li>
 			<li>
 				<strong>Pure investment.</strong> HEARTS cannot earn interest and cannot buy goods directly. They enter the
 				economy only by being invested into cooperatives.
 			</li>
 			<li>
-				<strong>The 50/50 commons split.</strong> Investing one HEART into a COOP mints that COOP's own currency, its
+				<strong>The 50/50 commons split.</strong> Investing one of one's personal HEARTS into a COOP converts it directly into that COOP's own currency, its
 				MIND (SOLARmind, AGRImind and so on). Half goes to the investor as INVESTORmind, personal equity and the right
 				to use what the COOP produces; half goes to the COOP's treasury as TREASURYmind, protocol-owned liquidity.
 			</li>
@@ -508,36 +532,37 @@
 	</section>
 
 	<section id="city">
-		<h2><span>9</span>What: from game to city</h2>
+		<h2><span>9</span>What: proving it, first in a game, then for real</h2>
 		<p>
-			theOS is not only a proposal on paper. maiaCITY's own economy game, Sandbox 7, already runs its first
-			layer: AI Avens with their own minds trade food and water for HEARTS in a valley, every Aven mints 24 HEARTS a
-			night, every HEART decays at 7 % a year, field investments flow into a Maia City COOP that pays a dividend, and
-			every rule change is a Maia Improvement Proposal (MIP) that is accepted or rejected before a new world starts. More than thirty worlds
-			have been played and analysed. theOS is the upgrade path for that game, and the game is the laboratory for the
-			city.
+			A theory of a whole economy cannot be tested in a laboratory, and it should not be tested on people's lives first.
+			maiaCITY therefore proves theOS in two steps. The first is a game: a world in which AI agents with their own needs
+			and goals live, trade and invest under exactly the rules of this paper. Every rule is a parameter that can be
+			measured, changed through an open proposal and played again, so the claims of Sections 4 to 8 become experiments
+			instead of hopes. The early worlds already run the first layer, 24 HEARTS a day that melt at 7 % a year and
+			cooperatives that collect what is invested in them. The second step is the real city: the rules that survive the
+			game become the economy of maiaCITY as it is built.
 		</p>
 		<div class="table-wrap">
 			<table>
-				<caption><strong>Table 1.</strong> From Sandbox 7 today to theOS in the game, and then in the city.</caption>
+				<caption><strong>Table 1.</strong> Each part of theOS, first in the game, then in the city.</caption>
 				<thead>
-					<tr><th>Element</th><th>Sandbox 7 today</th><th>theOS in the game</th><th>theOS in the city</th></tr>
+					<tr><th>Element</th><th>In the game</th><th>In the city</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>Allocation</td><td>24 HEARTS minted per Aven per night</td><td>24 HEARTS a day, only investable</td><td>UIA for every resident, one identity per person</td></tr>
-					<tr><td>Demurrage</td><td>7 % a year, charged nightly</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>Same rule, set in the protocol</td></tr>
-					<tr><td>Cooperatives</td><td>One Maia City COOP ledger (field CAPEX and OPEX, dividend)</td><td>Open COOP founding, one MIND each, 50/50 split</td><td>ENERGYcoop (a village's geothermal plant), AGRIcoop (the food forest), HABITATcoop (domes)</td></tr>
-					<tr><td>Markets</td><td>Hourly order book per good</td><td>AMM pools owned by each COOP</td><td>Avens route every purchase through the pools</td></tr>
-					<tr><td>Agents</td><td>10 AI Avens with memory and goals</td><td>Avens with a human's two intents</td><td>One Aven per resident, on their own device</td></tr>
-					<tr><td>Governance</td><td>MIPs adopted by the world's admin</td><td>Per-COOP governance of its own choosing</td><td>The evolutionary matrix of Section 8</td></tr>
+					<tr><td>Allocation</td><td>Every agent receives 24 personal HEARTS a day, only investable</td><td>Every resident receives 24 personal HEARTS a day, one identity per person</td></tr>
+					<tr><td>Demurrage</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>The same rule, fixed in the protocol</td></tr>
+					<tr><td>Cooperatives</td><td>Agents found COOPs, one MIND each, with the 50/50 split</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
+					<tr><td>Markets</td><td>AMM pools owned by each COOP</td><td>Avens route every purchase through the pools</td></tr>
+					<tr><td>Agents</td><td>AI agents with memory and goals, later joined by human players</td><td>One Aven per resident, on their own device</td></tr>
+					<tr><td>Governance</td><td>Rule changes as open proposals, measured world by world</td><td>The evolutionary matrix of Section 8</td></tr>
 				</tbody>
 			</table>
 		</div>
 		<h3>9.1 A roadmap in four steps</h3>
 		<ol>
-			<li><strong>Continuous decay in the game.</strong> Replace the nightly charge with Eq. (1) and measure whether Avens' behaviour changes.</li>
-			<li><strong>MINDs and the 50/50 split.</strong> Turn the Maia City COOP into the first of several cooperatives, each with its own MIND and pool, and let Avens found new ones.</li>
-			<li><strong>Human intents.</strong> Let players set the two daily choices of Section 5 and leave the rest to their Aven, so humans and AI agents play in the same economy.</li>
+			<li><strong>Continuous decay.</strong> Run Eq. (1) in the game and measure how agents' behaviour changes with the rate.</li>
+			<li><strong>MINDs and the 50/50 split.</strong> Let agents found several cooperatives, each with its own MIND and pool, and watch which ones survive.</li>
+			<li><strong>Human intents.</strong> Let people set the two daily choices of Section 5 and leave the rest to their Aven, so humans and AI agents share one economy.</li>
 			<li><strong>The first real village.</strong> One village centre with its energy, food and housing cooperatives, run on the rules that survived the game.</li>
 		</ol>
 	</section>

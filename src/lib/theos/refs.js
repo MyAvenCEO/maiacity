@@ -7,6 +7,7 @@ export const REFS = [
 	{ key: 'angeris', text: 'Angeris, G. & Chitra, T. (2020). Improved Price Oracles: Constant Function Market Makers. Proceedings of the 2nd ACM Conference on Advances in Financial Technologies, 80–91.' },
 	{ key: 'burnheim', text: 'Burnheim, J. (1985). Is Democracy Possible? The Alternative to Electoral Politics. Polity Press.' },
 	{ key: 'qf', text: 'Buterin, V., Hitzig, Z. & Weyl, E. G. (2019). A Flexible Design for Funding Public Goods. Management Science, 65(11), 5171–5187.', url: 'https://doi.org/10.1287/mnsc.2019.3337' },
+	{ key: 'circles', text: 'Circles contributors (2020–). Circles: a universal basic income built on personal currencies and a web of trust. Whitepaper and documentation.', url: 'https://aboutcircles.com/' },
 	{ key: 'duniter', text: 'Duniter contributors (2017–). Ğ1 (June): the first libre currency built on the Relative Theory of Money. Protocol documentation.', url: 'https://duniter.org/' },
 	{ key: 'fisher11', text: 'Fisher, I. (1911). The Purchasing Power of Money. Macmillan.' },
 	{ key: 'fisher33', text: 'Fisher, I., with Cohrssen, H. R. L. & Fisher, H. W. (1933). Stamp Scrip. Adelphi.' },
