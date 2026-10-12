@@ -37,8 +37,11 @@ export function lifeForRate(r = RATE) {
 	return 2 * lo;
 }
 
-/** impermanent loss of a constant-product pool when the price moves by a factor p */
-export const impermanentLoss = (p) => (2 * Math.sqrt(p)) / (1 + p) - 1;
+/**
+ * loss-versus-rebalancing of an equal-weight basket of n MINDs, a share of the pool a year: ½(Σ wᵢσᵢ² − wᵀΣw) with
+ * wᵢ = 1/n, every MIND at volatility sigma and pairwise correlation rho, so ½σ²(1 − ρ)(1 − 1/n)
+ */
+export const basketLvr = (n, sigma, rho = 0) => 0.5 * sigma * sigma * (1 - rho) * (1 - 1 / n);
 
 const range = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
 
@@ -64,8 +67,13 @@ export const infraSeries = (years = 50) =>
 		{ id: 'flat', label: 'Project at 0 % real', r: 0 }
 	].map((s) => ({ ...s, points: range(0, years, 200).map((t) => [t, decay(1000, s.r, t)]) }));
 
-/** Figure 7: impermanent loss across a hundredfold price range (log-spaced) */
-export const ilSeries = () => range(Math.log10(0.1), Math.log10(10), 200).map((l) => [10 ** l, impermanentLoss(10 ** l) * 100]);
+/** Figure 5: a basket's yearly LVR against how many MINDs it holds, for three kinds of MIND */
+export const lvrSeries = () =>
+	[
+		{ id: 'calm', label: 'σ 20 %, independent', sigma: 0.2, rho: 0 },
+		{ id: 'wild', label: 'σ 40 %, independent', sigma: 0.4, rho: 0 },
+		{ id: 'linked', label: 'σ 40 %, correlated 0.6', sigma: 0.4, rho: 0.6 }
+	].map((s) => ({ ...s, points: range(2, 12, 10).map((n) => [n, basketLvr(n, s.sigma, s.rho) * 100]) }));
 
 /**
  * Figure 8: three cooperatives in one sector, replicator dynamics. Each COOP turns a HEART into f units of utility;

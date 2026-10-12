@@ -4,7 +4,7 @@
 </script>
 
 <div class="scroll">
-<svg viewBox="0 0 680 300" role="img" aria-label="One HEART invested in a COOP is converted into MIND and is gone: half to the investor's wallet, half to the COOP treasury as working capital; a small portion of the treasury goes into AMM pools against other COOPs' MINDs.">
+<svg viewBox="0 0 680 300" role="img" aria-label="One HEART invested in a COOP is converted into MIND and is gone: half to the investor's wallet, half to the COOP treasury as working capital; a tenth of the treasury flows into the protocol's pools, baskets of 4 to 12 MINDs.">
 	<defs>
 		<linearGradient id="split-heart" x1="0" x2="1">
 			<stop offset="0" stop-color="#c8744f" stop-opacity="0.85" />
@@ -26,8 +26,8 @@
 
 	<rect x="512" y="196" width="160" height="80" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5" />
 	<text x="592" y="222" text-anchor="middle" class="node">COOP treasury</text>
-	<text x="592" y="240" text-anchor="middle" class="sub">working capital; a small part</text>
-	<text x="592" y="256" text-anchor="middle" class="sub">in pools against other MINDs</text>
+	<text x="592" y="240" text-anchor="middle" class="sub">working capital; 10 % flows</text>
+	<text x="592" y="256" text-anchor="middle" class="sub">into the protocol pools</text>
 
 	<rect x="512" y="22" width="160" height="76" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5" />
 	<text x="592" y="52" text-anchor="middle" class="node">Your wallet</text>
