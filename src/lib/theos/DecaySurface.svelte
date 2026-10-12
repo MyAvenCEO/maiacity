@@ -81,6 +81,8 @@
 			controls.minPolarAngle = 0.3;
 			controls.maxPolarAngle = Math.PI / 2.05;
 			controls.addEventListener('change', () => stage.redraw());
+			// OrbitControls claims every touch; give vertical swipes back to the page so it still scrolls over the figure
+			renderer.domElement.style.touchAction = 'pan-y';
 
 			const marks = [
 				...[0, 10, 20, 30, 40, 50].map((t) => ({ id: `t${t}`, p: new THREE.Vector3((t / T) * SX - SX / 2, 0, SZ / 2 + 0.5), text: `${t} y` })),
@@ -104,7 +106,7 @@
 
 <div class="scene" bind:this={box}>
 	{#each ticks as t (t.id)}
-		{#if !t.behind}<span class:axis={t.axis} style:left="{t.x}px" style:top="{t.y}px">{t.text}</span>{/if}
+		{#if !t.behind}<span class:axis={t.axis} style:transform="translate({t.x.toFixed(1)}px, {t.y.toFixed(1)}px) translate(-50%, -50%)">{t.text}</span>{/if}
 	{/each}
 </div>
 
@@ -126,9 +128,11 @@
 		touch-action: pan-y;
 	}
 
+	/* moved by transform, not left/top, so a label moving every frame never re-lays out the page */
 	span {
 		position: absolute;
-		transform: translate(-50%, -50%);
+		left: 0;
+		top: 0;
 		font-size: 0.68rem;
 		color: var(--muted);
 		pointer-events: none;

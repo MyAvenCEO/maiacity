@@ -14,8 +14,11 @@
 	import {
 		RATE, UIA_DAY, dailyLoss, halfLife, steadyState, lifeForRate, rtmRate,
 		idleSeries, convergenceSeries, infraSeries, lvrSeries, selectionSeries, fmt,
-		GINI_DE, ownLevel, giniAt, levelYears, reachedBy, giniRest, giniSeries, dialSeries
+		GINI_DE, ownLevel, giniAt, levelYears, reachedBy, giniRest, dialSeries
 	} from '$lib/theos/model.js';
+
+	// Figure 12's simulation, run at build time (+page.server.js)
+	let { data } = $props();
 
 	// the four series colours, validated together for colour-blind separation on the paper's surface
 	const C = ['#c8744f', '#2f6fbf', '#1f7a52', '#8a5fb0'];
@@ -29,7 +32,7 @@
 	const infra = infraSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
 	const lvr = lvrSeries().map((s, i) => ({ ...s, color: [C[2], C[0], C[1]][i] }));
 	const sel = selectionSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
-	const gin = giniSeries().map((s, i) => ({ ...s, color: ['#8a8578', C[0], C[2], C[1]][i] }));
+	const gin = $derived(data.gini.map((s, i) => ({ ...s, color: ['#8a8578', C[0], C[2], C[1]][i] })));
 	const dial = dialSeries().map((s, i) => ({ ...s, color: [C[1], C[0], C[3]][i] }));
 
 	const pct = (v, d = 0) => `${fmt(v, d)} %`;
