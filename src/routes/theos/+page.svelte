@@ -746,8 +746,8 @@
 		<p>
 			So the value that the city creates returns to the city. The land COOP uses the rent for what every citizen shares:
 			streets, parks, water and the other commons. Every citizen's share is equal, comes with citizenship and ends with
-			it, so nobody can collect land the way that people collect money. Land is now inside the melt: it earns nothing for
-			anyone who only holds it.
+			it, so nobody can collect land the way that people collect money. So land can no longer store
+			private wealth, and the melt has no way around it.
 		</p>
 		<p>
 			Long-lived COOPs need good management for decades. The last part of the machine is how they govern themselves.
