@@ -1,9 +1,9 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Law 4, told as a story in five steps: Anna invests one HEART into the solar COOP; it converts and is gone;
+	// Laws 4 and 5, told as a story in five steps: Anna invests one HEART into the solar COOP; it converts and is gone;
 	// one new SOLARmind appears, half in Anna's wallet (her ownership) and half in the treasury (working capital); Anna
 	// pays for her lamp's power in SOLARmind, and at that moment a fifth of the sale goes to every SOLARmind holder as a
-	// dividend, the rest to the treasury; the treasury pays it out again, through proposals: a tenth of its half
+	// dividend (Law 5), the rest to the treasury; the treasury pays it out again, through proposals: a tenth of its half
 	// drips into the pool, the panel COOP gets its own PANELmind through the pool, and Mia gets SOLARmind for her Aven's
 	// work proposal. Coin areas are to scale.
 	import { onMount } from 'svelte';
@@ -21,7 +21,7 @@
 		'Anna invests one AnnaHEART into the solar COOP.',
 		'The HEART converts and is gone for good. One new SOLARmind appears.',
 		'Half goes to Anna’s wallet: she now owns part of the COOP. Half goes to the treasury: the COOP’s working capital. It is the same SOLARmind.',
-		'Anna switches on her lamp and pays 0.10 SOLARmind for the power. At that moment a fifth of it, 0.02, goes to everyone who holds SOLARmind, as a dividend. Anna holds some too, so a little comes back to her. The other 0.08 goes to the treasury.',
+		'Anna switches on her lamp and pays 0.10 SOLARmind for the power. At that moment a fifth of it, 0.02, goes to everyone who holds SOLARmind, as a dividend (Law 5). Anna holds some too, so a little comes back to her. The other 0.08 goes to the treasury.',
 		'The treasury pays it out again. A tenth of its half drips into the pool. The panel COOP gets 0.20 through the pool, as its own PANELmind. Mia gets 0.15 for her Aven’s work proposal.'
 	];
 	const USE = 0.1, DIV = 0.02, DRIP = 0.05, PAY = 0.2, WORK = 0.15;
