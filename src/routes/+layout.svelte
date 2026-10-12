@@ -16,7 +16,9 @@
 
 	const links = [
 		{ href: base || '/', label: 'Home' },
-		{ href: `${base}/blog`, label: 'Blog' }
+		{ href: `${base}/blog`, label: 'Blog' },
+		// the theOS paper keeps its own spelling, not the nav's capitals
+		{ href: `${base}/theos`, label: 'theOS', asIs: true }
 	];
 
 	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public
@@ -80,7 +82,7 @@
 			<ul class="pages" id="site-pages" class:open={menuOpen}>
 				{#each links as link (link.href)}
 					<li>
-						<a href={link.href} aria-current={isActive(link.href) ? 'page' : undefined}>{link.label}</a>
+						<a href={link.href} class:as-is={link.asIs} aria-current={isActive(link.href) ? 'page' : undefined}>{link.label}</a>
 					</li>
 				{/each}
 				<li>
@@ -176,6 +178,12 @@
 		text-transform: uppercase;
 		text-decoration: none;
 		color: var(--ink-soft);
+	}
+
+	.pages a.as-is {
+		text-transform: none;
+		letter-spacing: 0.04em;
+		font-size: 0.82rem;
 	}
 
 	.pages a:hover {
