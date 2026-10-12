@@ -35,7 +35,7 @@
 	const sections = [
 		['why', '1 · Why: the distribution crisis'],
 		['lineage', '2 · A century of melting money'],
-		['laws', '3 · How: five laws of the protocol'],
+		['laws', '3 · How: four laws of the protocol'],
 		['entropy', '4 · Demurrage as economic entropy'],
 		['avens', '5 · The Aven layer'],
 		['infra', '6 · The infrastructure paradox'],
@@ -223,9 +223,9 @@
 	</section>
 
 	<section id="laws">
-		<h2><span>3</span>How: five laws of the protocol</h2>
+		<h2><span>3</span>How: four laws of the protocol</h2>
 		<p>
-			theOS fixes five rules in its base protocol, the way a physics engine fixes gravity. Everything else (prices,
+			theOS fixes four rules in its base protocol, the way a physics engine fixes gravity. Everything else (prices,
 			cooperatives, governance) emerges on top of them and can change; these cannot.
 		</p>
 		<ol class="laws">
@@ -240,17 +240,15 @@
 				economy only by being invested into cooperatives.
 			</li>
 			<li>
+				<strong>Open cooperatives, each with its own MIND.</strong> Anyone, alone or together, can found a COOP at
+				any time without permission, for energy, food, compute, housing, art, or any need not yet met. A COOP and its
+				MIND are one thing: founding a COOP creates its currency, and to use what it produces (drawing electricity,
+				eating from its food network) one spends that MIND. A COOP's currency is a claim on its output, not on its profit.
+			</li>
+			<li>
 				<strong>The 50/50 commons split.</strong> Investing one of one's personal HEARTS into a COOP converts it directly into that COOP's own currency, its
 				MIND (SOLARmind, AGRImind and so on). Half goes to the investor as INVESTORmind, personal equity and the right
 				to use what the COOP produces; half goes to the COOP's treasury as TREASURYmind, protocol-owned liquidity.
-			</li>
-			<li>
-				<strong>Open cooperative creation.</strong> Anyone, alone or together, can found a COOP at any time without
-				permission, for energy, food, compute, housing, art, or any need not yet met.
-			</li>
-			<li>
-				<strong>MINDs as utility currencies.</strong> To use what a COOP produces (drawing electricity, eating from its
-				food network) one spends that COOP's MIND. A COOP's currency is a claim on its output, not on its profit.
 			</li>
 		</ol>
 		<p>
