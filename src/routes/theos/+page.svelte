@@ -58,7 +58,7 @@
 </script>
 
 <svelte:head>
-	<title>theOS · The civilizational operating system of Abundism · maiaCITY</title>
+	<title>theOS · The civilization scale operating system of Abundism · maiaCITY</title>
 	<meta name="description" content="theOS: a macroeconomic and system-engineering framework for a post-labour economy. Universal intent allocation, continuous demurrage, protocol-owned liquidity and open market governance, by Samuel Andert." />
 </svelte:head>
 
@@ -66,7 +66,7 @@
 	<header class="masthead">
 		<p class="brand">theOS</p>
 		<p class="kind">Working paper · v5 · October 2026 · maiaCITY</p>
-		<h1>The civilizational operating system of Abundism</h1>
+		<h1>The civilization scale operating system of Abundism</h1>
 		<p class="subtitle">A macroeconomic and system-engineering framework for a post-labour economy</p>
 		<p class="author">Samuel Andert</p>
 		<p class="affil">maiaCITY · Munich</p>
@@ -778,7 +778,7 @@
 			{/each}
 		</ol>
 		<p class="cite-as">
-			<strong>Cite as:</strong> Andert, S. (2026). theOS: The civilizational operating system of Abundism. A macroeconomic and
+			<strong>Cite as:</strong> Andert, S. (2026). theOS: The civilization scale operating system of Abundism. A macroeconomic and
 			system-engineering framework for a post-labour economy, v5. maiaCITY working paper.
 		</p>
 	</section>
