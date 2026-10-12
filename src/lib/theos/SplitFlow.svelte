@@ -37,8 +37,8 @@
 
 	<text x="12" y="146" class="node">1 HEART</text>
 	<text x="12" y="164" class="sub">your daily intent</text>
-	<text x="420" y="32" class="lab">½ INVESTORmind</text>
-	<text x="420" y="192" class="lab">½ TREASURYmind</text>
+	<text x="420" y="32" class="lab">½ MIND</text>
+	<text x="420" y="192" class="lab">½ MIND</text>
 	<text x="236" y="222" text-anchor="middle" class="sub">the HEART is gone</text>
 </svg>
 </div>
