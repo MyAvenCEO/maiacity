@@ -13,7 +13,8 @@
 	import { REFS } from '$lib/theos/refs.js';
 	import {
 		RATE, UIA_DAY, dailyLoss, halfLife, steadyState, lifeForRate, rtmRate,
-		idleSeries, convergenceSeries, infraSeries, lvrSeries, selectionSeries, fmt
+		idleSeries, convergenceSeries, infraSeries, lvrSeries, selectionSeries, fmt,
+		GINI_DE, ownLevel, giniAt, levelYears, reachedBy, giniRest, giniSeries, dialSeries
 	} from '$lib/theos/model.js';
 
 	// the four series colours, validated together for colour-blind separation on the paper's surface
@@ -28,6 +29,8 @@
 	const infra = infraSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
 	const lvr = lvrSeries().map((s, i) => ({ ...s, color: [C[2], C[0], C[1]][i] }));
 	const sel = selectionSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
+	const gin = giniSeries().map((s, i) => ({ ...s, color: ['#8a8578', C[0], C[2], C[1]][i] }));
+	const dial = dialSeries().map((s, i) => ({ ...s, color: [C[1], C[0], C[3]][i] }));
 
 	const pct = (v, d = 0) => `${fmt(v, d)} %`;
 	// a number inside TeX: its thousands comma must not read as punctuation
@@ -163,6 +166,25 @@
 			<Tex tex="g" />, existing owners take a growing share of everything <Cite k="piketty" />.
 		</p>
 		<p>
+			Today's data show where this leads. Since 2004, the share of world income that goes to work fell by 1.6 points.
+			That is about 2.4 trillion dollars a year, and AI can push the share lower <Cite k="ilo" />. In the United States,
+			the richest 1 % own half of all company shares <Cite k="fed" />. So about half of each gain that AI adds to share
+			prices goes to them. In Germany, the richest tenth own more than half of all net wealth, and the Gini index of
+			wealth is {fmt(GINI_DE, 2)} <Cite k="bundesbank" />. The Gini index measures inequality: 0 means that everyone owns
+			the same, 1 means that one person owns everything. Korinek and Suh show that wages can fall even before machines
+			can do every task <Cite k="korinek" />.
+		</p>
+		<p>
+			This is the distribution problem of capitalism in its sharpest form. Income reaches people through two channels:
+			wages and ownership. Automation closes the first channel and widens the second. So a fair answer must work
+			through ownership. And new ownership must go to every person directly. People cannot earn it through wages that
+			disappear, and they must not inherit it, because inheritance repeats the past. Rawls called an economy that
+			spreads ownership "at the beginning of each period" a property-owning democracy <Cite k="rawls" />. Meade
+			proposed such an economy for an age of automation in 1964 <Cite k="meade" />, and Roemer designed shares that
+			every citizen gets in equal number <Cite k="roemer" />. None of these proposals gives every person an equal flow
+			of new ownership, every day, that the person directs and that cannot pile up without limit.
+		</p>
+		<p>
 			The usual answer is a universal basic income: a fixed sum that everyone gets without conditions
 			<Cite k="parijs" />. It would feed people, but it keeps the structure as it is. People would get consumption,
 			never direction: they could spend, but they could not decide what the automated economy builds next.
@@ -170,7 +192,8 @@
 		<p class="thesis">
 			This paper describes a way out. It keeps what markets do well and changes the base they stand on. We call the
 			destination <em>Abundism</em>: an economy in which automation makes the basics plentiful, and every person helps to
-			decide what the economy builds. To get there, we must first look at the tool that both questions pass through:
+			decide what the economy builds. In Abundism, distribution is always a question of fair participation through fair
+			ownership. To get there, we must first look at the tool that both questions pass through:
 			money. What is it, who creates it, and why does it behave the way it does?
 		</p>
 	</section>
@@ -795,7 +818,97 @@
 				any vote. The animation runs the rates faster, so you can see the melting.
 			</figcaption>
 		</figure>
+
+		<h3>9.2 Who owns the machine: fair ownership, in numbers</h3>
+		<p>
+			Section 1 asked who gets what the machines make. Now we can answer with numbers. Let <Tex tex="W_i" /> be the MIND
+			that person <Tex tex="i" /> owns, valued in a common basket of MINDs. Each year, the person gets half of what
+			their own HEARTS convert into: <Tex tex="a = u/2" />. Demurrage takes <Tex tex={String.raw`r\,W_i`} />. So every
+			holding moves toward the same resting level <Tex tex={String.raw`W^{*} = a/r \approx ${tn(ownLevel())}`} /> MIND.
+			Start with holdings as unequal as Germany's today, with a Gini index <Tex tex="G_0" /> and a mean
+			<Tex tex="m_0" />. Then the Gini index after <Tex tex="t" /> years is
+		</p>
+		<Tex display tex={String.raw`\begin{gathered} G(t) = \frac{G_0\, e^{-rt}\, m_0}{e^{-rt}\, m_0 + W^{*}\left(1 - e^{-rt}\right)} \\ m_0 = W^{*} \;\Rightarrow\; G(t) = G_0\, e^{-rt} \end{gathered} \tag{9}`} />
+		<p>
+			So inequality halves every {fmt(halfLife(), 1)} years, the same half-life as an idle balance. From Germany's
+			{fmt(GINI_DE, 2)}, the Gini index falls to {fmt(giniAt(GINI_DE, 10), 2)} after 10 years and to
+			{fmt(giniAt(GINI_DE, 30), 2)} after 30. Large fortunes level more slowly. A fortune 100 times the resting level
+			needs about {fmt(levelYears(100))} years to fall to twice that level: one lifetime. A child who gets HEARTS from
+			birth owns {pct(reachedBy(18) * 100)} of the resting level at 18. That is a start in life for everyone, without a
+			separate fund.
+		</p>
+		<p>
+			But people choose different COOPs, so their returns differ. Let <Tex tex={String.raw`\sigma`} /> be the spread
+			of returns between people's holdings, and <Tex tex={String.raw`\mu`} /> the best extra return that a holder can
+			keep year after year. Then each holding follows
+			<Tex tex={String.raw`dW = \big(a - (r - \mu)\,W\big)\,dt + \sigma W\, dZ`} />, where <Tex tex="dZ" /> is
+			random noise. This is the model of Bouchaud and Mézard for wealth <Cite k="bouchaud" />, with equal issuance in
+			place of trade.
+		</p>
+		<p>
+			<strong>Proposition 2.</strong> <em>If <Tex tex={String.raw`\mu < r`} />, the holdings settle into an
+			inverse-gamma spread with shape <Tex tex={String.raw`\alpha = 1 + 2(r - \mu)/\sigma^2`} /> and mean
+			<Tex tex={String.raw`a/(r - \mu)`} />. Its Gini index is (10). If any holder keeps
+			<Tex tex={String.raw`\mu \ge r`} />, that holding grows without limit.</em>
+		</p>
+		<Tex display tex={String.raw`G_{\infty} = \frac{\Gamma\!\left(\alpha - \tfrac12\right)}{\sqrt{\pi}\;\Gamma(\alpha)} \tag{10}`} />
+		<p>
+			The stationary Fokker–Planck equation of this process has the inverse-gamma solution <Cite k="bouchaud" />, and
+			its Lorenz curve gives (10). A simulation of the process agrees with (10) to within 0.003. ∎ So inequality
+			stays bounded if, and only if, demurrage is larger than the best lasting return on holdings. This is theOS's own
+			form of Piketty's <Tex tex="r > g" />.
+		</p>
+		<figure>
+			<LineChart
+				title="Ownership inequality over 100 years, from Germany's spread today"
+				series={gin}
+				x={{ min: 0, max: 100, ticks: [0, 20, 40, 60, 80, 100], fmt: (v, tip) => (tip ? `Year ${fmt(v)}` : `${v}`), label: 'Years under theOS' }}
+				y={{ min: 0, max: 0.8, ticks: [0, 0.2, 0.4, 0.6, 0.8], fmt: (v) => fmt(v, 2), label: 'Gini index of ownership' }}
+			/>
+			<figcaption>
+				<strong>Figure 12.</strong> An illustration of (9) and (10), not a forecast. Everyone starts as unequal as
+				Germany today. If all holdings earn the same return, inequality halves every {fmt(halfLife(), 1)} years and
+				goes to zero. If returns spread by 10 % or 20 % between people, it settles at {fmt(giniRest(0.1), 2)} or
+				{fmt(giniRest(0.2), 2)}. Under capitalism it stays where it is.
+			</figcaption>
+		</figure>
+		<p>
+			So the level of fairness depends on two dials: the rate of demurrage, and how much people's returns spread. Avens
+			that spread each person's MIND over many COOPs keep <Tex tex={String.raw`\sigma`} /> small. A basket of 8
+			independent MINDs has about a third of the spread of one MIND. So diversification is part of fairness, not only a
+			convenience.
+		</p>
+		<figure>
+			<LineChart
+				title="Resting Gini index of ownership against the spread of returns, for three rates"
+				series={dial}
+				x={{ min: 0.05, max: 0.5, ticks: [0.1, 0.2, 0.3, 0.4, 0.5], fmt: (v, tip) => (tip ? `Spread ${fmt(v * 100)} %` : `${fmt(v * 100)} %`), label: 'Spread of returns between people (σ)' }}
+				y={{ min: 0, max: 0.8, ticks: [0, 0.2, 0.4, 0.6, 0.8], fmt: (v) => fmt(v, 2), label: 'Resting Gini index' }}
+				refs={[{ axis: 'y', at: GINI_DE, label: `Germany today: ${fmt(GINI_DE, 2)}` }]}
+			/>
+			<figcaption>
+				<strong>Figure 13.</strong> The fairness dial, from (10). A higher rate of demurrage or a smaller spread of
+				returns gives a fairer resting state. At 7 % and a spread of 20 %, the Gini index is {fmt(giniRest(0.2), 2)}.
+				If people hold one COOP each (a spread of about 40 %), it is {fmt(giniRest(0.4), 2)}, still below Germany's
+				{fmt(GINI_DE, 2)} today.
+			</figcaption>
+		</figure>
+		<p>
+			Now we can say what <em>fair</em> means in theOS. It means three things. <strong>Equal issuance:</strong> every
+			person gets the same flow of new ownership, {UIA_DAY} HEARTS a day, whatever their wealth, work or birth.
+			<strong>Self-direction:</strong> each person decides what their share builds. <strong>Bounded advantage:</strong>
+			every holding melts, so any advantage from luck, skill, work or inheritance halves in {fmt(halfLife(), 1)} years
+			unless the holder earns it again. Fair participation follows from fair ownership: every person owns and steers the
+			automated economy in equal measure of issuance.
+		</p>
+		<p>
+			theOS does not promise equal outcomes. People who use more own less. People whose work serves others get more.
+			People who choose better COOPs hold more. theOS promises that no difference grows without limit, and that nobody
+			inherits a difference for long. In Rawls's terms, theOS is a property-owning democracy whose "beginning of each
+			period" is every day <Cite k="rawls" />.
+		</p>
 	</section>
+
 
 	<p class="partline" id="part-3">Part III · Toward Abundism</p>
 
@@ -874,6 +987,15 @@
 				a small group.
 			</li>
 			<li>
+				<strong>The conditions of fairness.</strong> Proposition 2 holds only under four rules. First, no holder may
+				earn more than the rate of demurrage, year after year. Arbitrage profits from the protocol pools are such a
+				return, so they must flow back to all Avens, or batch trading must remove them. Second, every COOP must accept
+				HEARTS from anyone, one for one. A COOP that closes its doors creates scarcity for its first owners. Third,
+				theOS must decide how euros can buy MIND, because those purchases bring outside inequality in. Fourth, theOS
+				must say what happens to MIND when a person dies. Demurrage leaves only {pct(Math.exp(-RATE * 30) * 100)} of a
+				holding after a 30-year generation, so this rule matters less than it seems.
+			</li>
+			<li>
 				<strong>Exchange between people.</strong> People can only invest HEARTS. So two questions need their own
 				design: how people earn MINDs for creative work or care work, and how MINDs pass between people.
 			</li>
@@ -885,11 +1007,11 @@
 		<p>
 			We started with two questions: who gets what is made, and who decides what is made next. Capitalism answered both
 			with wages and ownership, and automation now removes that answer. theOS answers them differently: everyone gets an
-			equal, daily share of direction. That share can only build things, and what it builds belongs to those who built
+			equal, daily share of direction and of ownership. That share can only build things, and what it builds belongs to those who built
 			it. All money melts like the world it measures, so nobody can keep wealth idle and out of reach. The whole
 			architecture fits in one line:
 		</p>
-		<Tex display tex={String.raw`\left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} = \mathrm{ABUNDANCE} \tag{9}`} />
+		<Tex display tex={String.raw`\left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} = \mathrm{ABUNDANCE} \tag{11}`} />
 		<p>
 			<strong>HEARTS</strong> are human intent, issued equally to everyone, every day. <strong>MINDS</strong> are what
 			that intent becomes: the shared intelligence of the COOPs, ownership and utility in one. <strong>ACTION</strong>
