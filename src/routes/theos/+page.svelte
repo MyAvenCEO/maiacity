@@ -733,19 +733,20 @@
 		<div class="law">
 			<p class="lawname">The land rule</p>
 			<p>
-				All land belongs to the city's land COOP. Every citizen holds one equal share in it. Nobody can sell or buy
+				All land belongs to the City COOP. Every citizen holds one equal share in it. Nobody can sell or buy
 				land or a share. Whoever wants to build, a person or a COOP, leases a plot and pays a yearly ground rent in MIND.
 			</p>
 		</div>
 		<p>
 			A lease works like the German <em>Erbbaurecht</em>, a heritable building right. It runs for a long, fixed term,
-			and what the builder builds belongs to the builder for that term. When the term ends, the plot returns to the land
+			and what the builder builds belongs to the builder for that term. When the term ends, the plot returns to the City
 			COOP, and the lease can start again. The ground rent follows the value of the location. A plot near the tram and
 			the market costs more than a plot at the edge, because the city around it makes it worth more.
 		</p>
 		<p>
-			So the value that the city creates returns to the city. The land COOP uses the rent for what every citizen shares:
-			streets, parks, water and the other commons. Every citizen's share is equal, comes with citizenship and ends with
+			So the value that the city creates returns to the city. There is no separate commons beside the City COOP: what
+			all citizens share, such as streets, parks and water, the City COOP holds and runs, and the ground rent pays for
+			it. Every citizen's share is equal, comes with citizenship and ends with
 			it, so nobody can collect land the way that people collect money. So land can no longer store
 			private wealth, and the melt has no way around it.
 		</p>
@@ -761,8 +762,8 @@
 			the same need compete on one open field.
 		</p>
 		<p>
-			Elinor Ostrom showed that the people who use a commons can govern it well when the rules fit their place
-			<Cite k="ostrom" />. A commons is a resource that a community shares, such as a pasture or a fishery. In theOS, her
+			Elinor Ostrom showed that the people who share a resource, such as a pasture or a fishery, can govern it well when
+			the rules fit their place <Cite k="ostrom" />. In theOS, her
 			design principles become hypotheses that the market tests. Three designs might share a sector:
 		</p>
 		<ul>
@@ -785,8 +786,8 @@
 		<p>
 			In 1950, Alchian proposed this mechanism to explain why markets select efficient firms, even when no firm
 			optimises <Cite k="alchian" />. Demurrage makes it stronger: a COOP that stops attracting investment watches its
-			treasury melt. Below the level that its service needs, the COOP closes. Its physical assets return to the commons,
-			and a COOP that runs them better can take them. Ideas about markets that are designed on purpose, not inherited
+			treasury melt. Below the level that its service needs, the COOP closes. Its physical assets go to the City COOP,
+			which leases them to a COOP that runs them better. Ideas about markets that are designed on purpose, not inherited
 			<Cite k="radical" />, become experiments here.
 		</p>
 		<figure>
@@ -830,7 +831,7 @@
 					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; owned by the protocol, not by a COOP</td><td>10 % of every treasury, automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
 					<tr><td>Avens</td><td>One person's arithmetic: invest, trade, pay, leave</td><td>One per person</td><td>Work only for their human</td></tr>
-					<tr><td>Land COOP</td><td>Holds all land for all citizens and leases it; never sells it</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder, spent on the commons</td></tr>
+					<tr><td>City COOP</td><td>Holds all land and what all citizens share, and leases land; never sells it</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder; pays for streets, parks and water</td></tr>
 					<tr><td>COOP governance</td><td>How each COOP decides; improved by selection</td><td>Chosen by each COOP</td><td>Tested by where people invest</td></tr>
 				</tbody>
 			</table>
@@ -968,7 +969,7 @@
 					<tr><td>Demurrage</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>The same rule, fixed in the protocol</td></tr>
 					<tr><td>COOPs</td><td>Agents found COOPs and invest HEARTS, which convert into MIND</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
 					<tr><td>Markets</td><td>Protocol-owned baskets of 4 to 8 MINDs, fed with 10 % of every treasury</td><td>Avens route every purchase through the pools; the seller gets its own MIND</td></tr>
-					<tr><td>Land</td><td>One land COOP holds the map; agents lease plots and pay ground rent</td><td>The city's land COOP holds all land; every citizen holds one equal share; builders lease plots like an Erbbaurecht</td></tr>
+					<tr><td>Land</td><td>One City COOP holds the map; agents lease plots and pay ground rent</td><td>The City COOP holds all land; every citizen holds one equal share; builders lease plots like an Erbbaurecht</td></tr>
 					<tr><td>Agents</td><td>AI agents with memory and goals; later, human players join them</td><td>One Aven per resident, on their own device</td></tr>
 					<tr><td>Governance</td><td>Rule changes as open proposals, measured world by world</td><td>COOPs choose their own governance and compete (Section 9)</td></tr>
 				</tbody>
@@ -998,7 +999,7 @@
 			<li>
 				<strong>Escape into assets.</strong> Melting money pushes wealth into anything that does not decay
 				<Cite k="gesell keynes36" />. The land rule of Section 8.1 closes the largest door. Other stores of value remain,
-				such as euros, art or rare objects. theOS must also decide how the land COOP sets the ground rent, and how
+				such as euros, art or rare objects. theOS must also decide how the City COOP sets the ground rent, and how
 				citizens decide what it builds with it.
 			</li>
 			<li>
@@ -1016,7 +1017,7 @@
 				no withdrawals and melting currencies. The game must test this mix first.
 			</li>
 			<li>
-				<strong>Capture and graceful failure.</strong> A failing COOP must return its assets to the commons without a
+				<strong>Capture and graceful failure.</strong> A failing COOP must hand its assets to the City COOP without a
 				forced sale at low prices. The rule that decides who gets the assets next must itself resist capture: control by
 				a small group.
 			</li>
