@@ -96,9 +96,10 @@
 		</p>
 		<p>
 			Second, each HEART that a person invests converts into one unit of that COOP's MIND. A MIND is the COOP's shared
-			intelligence, carried as one currency of ownership and utility. To hold it is to own part of the COOP and to draw a
-			share of what it makes; to spend it is to buy more. Half of the new MIND goes to the investor and half to the COOP's
-			treasury, the money that the COOP works with. A tenth of that treasury half flows into liquidity pools, and with these pools anyone can
+			intelligence, carried as one currency of ownership and utility. To hold it is to own part of the COOP; to spend it is
+			to use what the COOP makes. Half of the new MIND goes to the investor and half to the COOP's treasury, the money
+			that the COOP works with. COOPs pay their MIND out again, for resources, services and the work that people's agents
+			propose, so MIND keeps moving through the economy. A tenth of that treasury half flows into liquidity pools, and with these pools anyone can
 			trade any MIND for any other. The pools belong to the protocol itself: the base layer of theOS, which no person or
 			COOP owns.
 		</p>
@@ -348,8 +349,7 @@
 			<p>
 				Every COOP has its own MIND: SOLARmind for a solar COOP, AGRImind for a farming COOP. A MIND is the COOP's
 				shared intelligence, its automated capacity to make something. It is one currency of ownership and utility. To
-				hold it is to own part of the COOP and to draw a share of what the COOP makes. To spend it is to buy more. Only
-				investment creates MIND.
+				hold it is to own part of the COOP, and to spend it is to use what the COOP makes. Only investment creates MIND.
 				Each invested HEART converts into one new MIND of its COOP: half goes to the investor and half to the COOP's
 				treasury. Both halves are the same MIND; there is only one kind.
 			</p>
@@ -360,28 +360,27 @@
 			the COOP's treasury. It is the same SOLARmind in both places, and it does every job.
 		</p>
 		<p>
-			In Anna's wallet, the SOLARmind is her share of the solar COOP. It makes her a part-owner, and it gives her a share
-			of the power that the COOP sets aside for the people who hold its MIND. When Anna switches on her lamp, no
-			SOLARmind moves: the lamp draws on her share. The share costs her only the melt, 7 % a year, and her daily HEARTS
-			refill it. A share that she does not use is lost; she cannot sell it back. If she needs more power than her share
-			gives, her Aven buys the extra. It pays with any MIND she holds, the pools convert it, and the solar COOP receives
-			SOLARmind.
+			In Anna's wallet, the SOLARmind is her ownership: she is now a part-owner of the solar COOP. While she holds it,
+			its value follows the COOP's success. When Anna switches on her lamp, she pays for the power in SOLARmind. She can
+			pay with any MIND that she holds: the pools convert it, and the solar COOP always receives SOLARmind. What she
+			spends goes back into the treasury. What she keeps stays her ownership.
 		</p>
 		<p>
-			In the treasury, the SOLARmind is the COOP's working capital: the money that the COOP uses for its daily work. A
-			tenth of this half drips into the pools. With the rest, the COOP <em>makes</em> its services: it pays for panels, steel and
-			upkeep. When it <em>buys</em> panels, it pays in SOLARmind, the pools convert it, and the panel COOP receives
-			PANELmind. The COOP <em>sells</em> the power that its holders do not draw, and every buyer pays it in SOLARmind.
-			Every COOP is paid only in its own MIND.
+			In the treasury, the SOLARmind is the COOP's working capital. A tenth of this half drips into the pools. The COOP
+			spends the rest through proposals that its members accept. It <em>buys</em> panels: it pays in SOLARmind, the pools
+			convert it, and the panel COOP receives PANELmind. And it <em>pays for work</em>. Mia's Aven proposes to clean the
+			panels and to plan their repairs, the COOP accepts, and it pays Mia in SOLARmind. So the MIND that Anna paid for
+			her light does not stay in the treasury. It flows back out to people and to other COOPs, and the COOP grows what it
+			can make.
 		</p>
 		<figure>
 			<FollowOneHeart />
 			<figcaption>
 				<strong>Figure 3.</strong> Law 4, step by step. One HEART converts into one SOLARmind. Half goes to Anna's
-				wallet as her share, and half to the treasury as working capital. A tenth of the treasury half drips into the
-				pool, and the treasury pays the panel COOP through the pool, so the panel COOP receives its own PANELmind. Anna's
-				lamp draws on her share, and no SOLARmind moves. The areas of the coins are to scale. Tap a number to go to a
-				step.
+				wallet as her ownership, and half to the treasury as working capital. Anna pays for her light in SOLARmind, and it
+				goes back to the treasury. The treasury pays it out again: a tenth of its half into the pool, the panel COOP
+				through the pool in its own PANELmind, and Mia for her Aven's work proposal. The areas of the coins are to scale.
+				Tap a number to go to a step.
 			</figcaption>
 		</figure>
 		<p>
@@ -503,9 +502,7 @@
 			<Tex tex={String.raw`x = B / (M/N)`} />. Because the average grows at the rate <Tex tex="c" />,
 			<Tex tex={String.raw`\dot x = c - c\,x = c\,(1 - x)`} />. In theOS, measure money per person relative to the
 			steady state, <Tex tex={String.raw`b = m/m^{*}`} />. From (3), <Tex tex={String.raw`\dot b = r - r\,b = r\,(1 - b)`} />.
-			The two are the same equation. ∎ It also holds for each person: because using a share does not use up the MIND
-			(Section 4), a holder's MIND relative to the average follows <Tex tex={String.raw`\dot x = r\,(1 - x)`} /> once
-			the money has settled.
+			The two are the same equation. ∎
 		</p>
 		<p>
 			Laborde keeps the dividend relative and lets the amount of money grow. theOS keeps the dividend fixed and lets the
@@ -683,8 +680,14 @@
 		<ul>
 			<li>
 				<strong>Keeping money at work.</strong> Every currency melts at the same rate, so a trade from one into another
-				cannot escape demurrage. But the Aven can keep idle balances small. It invests HEARTS as they arrive. It keeps the
-				shares that its human uses, and only a small float of MIND for buying.
+				cannot escape demurrage. But the Aven can keep idle balances small. It invests HEARTS as they arrive. It keeps
+				as MIND what its human wants to own, and pays for daily life from a small float.
+			</li>
+			<li>
+				<strong>Earning by work.</strong> An Aven can make a work proposal to a COOP: a service that creates value for
+				the COOP, such as cleaning panels, planning a route or checking a design. If the COOP accepts, it pays the
+				Aven's human in its own MIND. This is how MIND flows from the treasuries back to people, and how COOPs grow what
+				they can make.
 			</li>
 			<li>
 				<strong>Paying without thinking.</strong> When Anna takes a tram, her Aven finds the cheapest route through the
@@ -853,10 +856,10 @@
 				</thead>
 				<tbody>
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, 24 a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
-					<tr><td>MIND</td><td>Ownership of a COOP and a share of what it makes; people hold it as their share, the COOP holds it as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Held for its share of output; spent to buy more, and the seller always receives its own MIND; 5 % of every HEART into the pools; or melted</td></tr>
+					<tr><td>MIND</td><td>Ownership of a COOP and the means to use what it makes; people hold it as ownership and spend it to use, the COOP holds it as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Spent on what the COOP makes, and the seller always receives its own MIND; paid out again by COOPs, through proposals, for resources, services and work; 5 % of every HEART into the pools; or melted</td></tr>
 					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; owned by the protocol, not by a COOP</td><td>A tenth of every treasury half (5 % of every HEART), automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
-					<tr><td>Avens</td><td>One person's arithmetic: invest, trade, pay, leave</td><td>One per person</td><td>Work only for their human</td></tr>
+					<tr><td>Avens</td><td>One person's arithmetic: invest, trade, pay, propose work, leave</td><td>One per person</td><td>Work only for their human</td></tr>
 					<tr><td>City COOP</td><td>Holds all land and what all citizens share, and leases land; never sells it</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder; pays for streets, parks and water</td></tr>
 					<tr><td>COOP governance</td><td>How each COOP decides; improved by selection</td><td>Chosen by each COOP</td><td>Tested by where people invest</td></tr>
 				</tbody>
@@ -881,12 +884,12 @@
 		<h3>9.2 Who owns the machine: fair ownership, in numbers</h3>
 		<p>
 			Section 1 asked who gets what the machines make. Now we can answer with numbers. Let <Tex tex="W_i" /> be the MIND
-			that person <Tex tex="i" /> owns, valued in a common basket of MINDs. Each year, the person gets half of what
-			their own HEARTS convert into: <Tex tex="a = u/2" />. Demurrage takes <Tex tex={String.raw`r\,W_i`} />. So every
-			holding moves toward the same resting level <Tex tex={String.raw`W^{*} = a/r \approx ${tn(ownLevel())}`} /> MIND.
-			This works because using a share does not use up the MIND: Anna's lamp draws on her SOLARmind without spending
-			it (Section 4).
-			Start with holdings as unequal as Germany's today, with a Gini index <Tex tex="G_0" /> and a mean
+			that person <Tex tex="i" /> owns, valued in a common basket of MINDs. Let <Tex tex="a" /> be what the person
+			keeps each year: half of what their own HEARTS convert into, plus what their Aven earns by work, minus what they
+			spend. Demurrage takes <Tex tex={String.raw`r\,W_i`} />, so a holding moves toward <Tex tex="a/r" />. A person
+			who keeps the MIND from their HEARTS and pays for daily life from work income keeps <Tex tex="a = u/2" />. Then
+			every such holding moves toward the same resting level
+			<Tex tex={String.raw`W^{*} = u/(2r) \approx ${tn(ownLevel())}`} /> MIND. Start with holdings as unequal as Germany's today, with a Gini index <Tex tex="G_0" /> and a mean
 			<Tex tex="m_0" />. Then the Gini index after <Tex tex="t" /> years is
 		</p>
 		<Tex display tex={String.raw`\begin{gathered} G(t) = \frac{G_0\, e^{-rt}\, m_0}{e^{-rt}\, m_0 + W^{*}\left(1 - e^{-rt}\right)} \\ m_0 = W^{*} \;\Rightarrow\; G(t) = G_0\, e^{-rt} \end{gathered} \tag{9}`} />
@@ -963,7 +966,7 @@
 			automated economy in equal measure of issuance.
 		</p>
 		<p>
-			theOS does not promise equal outcomes. People who buy more than their shares give them own less. People whose work serves others get more.
+			theOS does not promise equal outcomes. People who use more own less. People whose work serves others earn more.
 			People who choose better COOPs hold more. theOS promises that no difference grows without limit, and that nobody
 			inherits a difference for long. In Rawls's terms, theOS is a property-owning democracy whose "beginning of each
 			period" is every day <Cite k="rawls" />.
@@ -1056,8 +1059,9 @@
 				HEARTS from anyone, one for one. A COOP that closes its doors creates scarcity for its first owners. Third,
 				theOS must decide how euros can buy MIND, because those purchases bring outside inequality in. Fourth, theOS
 				must say what happens to MIND when a person dies. People hold half of all MIND, so this is a real flow. The
-				simplest rule sends it to the City COOP. Fifth, shares are used or lost. If a holder could sell unused shares
-				back, holding would earn more than the melt, and the largest holdings would grow without limit. Sixth, land
+				simplest rule sends it to the City COOP. Fifth, COOPs must pay out what they take in. A COOP that keeps its sales in
+				its treasury slowly becomes its own owner. In the end-to-end model, if COOPs pay nothing out, people hold only
+				0.3 % of all MIND. If COOPs pay out for work and services as much as people spend, people hold half. Sixth, land
 				stays with the City COOP. In the end-to-end simulation, private land keeps the Gini index near 0.5; with all land
 				in the City COOP, it settles at 0.29.
 			</li>

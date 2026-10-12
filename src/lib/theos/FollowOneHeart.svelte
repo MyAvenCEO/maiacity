@@ -1,28 +1,29 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Law 4, told as a story in five steps: Anna invests one HEART into the solar COOP; it converts and is gone; one new
-	// SOLARmind appears, half in Anna's wallet (her share) and half in the treasury (working capital); the treasury drips
-	// a tenth of its half into the pool and pays the panel COOP through the pool, which receives only its own PANELmind;
-	// Anna's lamp draws on her share, and no SOLARmind moves. Coin areas are to scale.
+	// SOLARmind appears, half in Anna's wallet (her ownership) and half in the treasury (working capital); Anna pays for
+	// her lamp's power in SOLARmind, back to the treasury; the treasury pays it out again, through proposals: a tenth of
+	// its half drips into the pool, the panel COOP gets its own PANELmind through the pool, and Mia gets SOLARmind for her
+	// Aven's work proposal. Coin areas are to scale.
 	import { onMount } from 'svelte';
 	import { runClock, watchNarrow, HEART, ease, arc } from './anim.js';
 
 	const STEP = 3.8, REST = 1.6, N = 5, CYCLE = N * STEP + REST;
-	// wide: Anna, the COOP and the lamp above; the wallet, the treasury, the pool and the panel COOP below.
-	// narrow: two columns, Anna's side on the left, the COOP's money on the right
+	// wide: Anna, the COOP, the lamp and Mia above; the wallet, the treasury, the pool and the panel COOP below.
+	// narrow: two columns, the people on the left, the COOP's side on the right
 	const LAYOUT = {
-		wide: { w: 680, h: 330, ANNA: [80, 84], COOP: [300, 84], LAMP: [600, 84], WALLET: [80, 246], TREASURY: [300, 246], POOL: [458, 246], PANEL: [600, 246], box: 132 },
-		narrow: { w: 360, h: 560, ANNA: [90, 64], COOP: [270, 64], LAMP: [90, 352], WALLET: [90, 206], TREASURY: [270, 206], POOL: [270, 352], PANEL: [270, 490], box: 150 }
+		wide: { w: 680, h: 336, ANNA: [70, 84], COOP: [290, 84], LAMP: [430, 84], MIA: [568, 84], WALLET: [80, 250], TREASURY: [290, 250], POOL: [450, 250], PANEL: [600, 250], box: 132 },
+		narrow: { w: 360, h: 600, ANNA: [90, 64], COOP: [270, 64], WALLET: [90, 206], TREASURY: [270, 206], LAMP: [90, 352], POOL: [270, 352], MIA: [80, 500], PANEL: [270, 500], box: 150 }
 	};
 	const SPOT = (p) => [p[0] - 40, p[1]];
 	const STEPS = [
 		'Anna invests one AnnaHEART into the solar COOP.',
 		'The HEART converts and is gone for good. One new SOLARmind appears.',
-		'Half goes to Anna’s wallet: her share of the COOP. Half goes to the treasury: the COOP’s working capital. It is the same SOLARmind.',
-		'The treasury works. A tenth of its half drips into the pool. Then it pays the panel COOP 0.20 through the pool, and the panel COOP receives its own PANELmind.',
-		'Anna switches on her lamp. It draws on her share, and no SOLARmind moves. Her share costs her only the melt, 7 % a year.'
+		'Half goes to Anna’s wallet: she now owns part of the COOP. Half goes to the treasury: the COOP’s working capital. It is the same SOLARmind.',
+		'Anna switches on her lamp and pays for the power: 0.10 SOLARmind goes back to the treasury.',
+		'The treasury pays it out again. A tenth of its half drips into the pool. The panel COOP gets 0.20 through the pool, as its own PANELmind. Mia gets 0.15 for her Aven’s work proposal.'
 	];
-	const DRIP = 0.05, PAY = 0.2;
+	const USE = 0.1, DRIP = 0.05, PAY = 0.2, WORK = 0.15;
 	const GOLD = '#d9a520', STEEL = '#7d97ad';
 
 	let box, still = false;
@@ -35,16 +36,17 @@
 	const raw = $derived(Math.min(1, (c - step * STEP) / (STEP * 0.75)));
 	const k = $derived(ease(raw));
 	const done = (i) => (step > i || (step === i && raw >= 1) ? 1 : 0);
-	// step 4 has two moves: SOLARmind into the pool, then PANELmind out of it
+	// step 5 has two moves: SOLARmind out of the treasury (into the pool and to Mia), then PANELmind out of the pool
 	const k1 = $derived(ease(Math.min(1, raw * 2)));
 	const k2 = $derived(ease(Math.max(0, raw * 2 - 1)));
-	const into = $derived(step > 3 ? 1 : step === 3 ? k1 : 0);
-	const out = $derived(step > 3 ? 1 : step === 3 ? k2 : 0);
-	const lit = $derived(step === 4 ? k : 0);
+	const into = $derived(step > 4 ? 1 : step === 4 ? k1 : 0);
+	const out = $derived(step === 4 ? k2 : 0);
+	const lit = $derived(step >= 3 ? (step === 3 ? k : 1) : 0);
 
-	const wallet = $derived(0.5 * done(2));
-	const treasury = $derived(0.5 * done(2) - (DRIP + PAY) * (into >= 1 ? 1 : 0));
-	const panel = $derived(PAY * (out >= 1 ? 1 : 0));
+	const wallet = $derived(0.5 * done(2) - USE * done(3));
+	const treasury = $derived(0.5 * done(2) + USE * done(3) - (DRIP + PAY + WORK) * (into >= 1 ? 1 : 0));
+	const panel = $derived(step === 4 && raw >= 1 ? PAY : 0);
+	const mia = $derived(WORK * (into >= 1 ? 1 : 0));
 	const r = (a) => 21 * Math.sqrt(Math.max(0, a));
 	const lerp = (a, b, p) => [a[0] + (b[0] - a[0]) * p, a[1] + (b[1] - a[1]) * p];
 
@@ -63,21 +65,26 @@
 
 <div bind:this={box}>
 <div class="scroll">
-<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Follow one HEART in five steps. Anna invests one AnnaHEART into the solar COOP. It converts and is gone, and one new SOLARmind appears. Half goes to Anna's wallet as her share, and half to the COOP's treasury as working capital. The treasury drips a tenth of its half into the pool and pays the panel COOP through the pool; the panel COOP receives its own PANELmind. Anna's lamp draws on her share, and no SOLARmind moves.">
-	<!-- step 5: the power that Anna's share draws, from the COOP to her lamp -->
+<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Follow one HEART in five steps. Anna invests one AnnaHEART into the solar COOP. It converts and is gone, and one new SOLARmind appears. Half goes to Anna's wallet as her ownership, and half to the COOP's treasury as working capital. Anna pays for her lamp's power with a little SOLARmind, which goes back to the treasury. The treasury pays it out again: a tenth of its half drips into the pool, the panel COOP receives its own PANELmind through the pool, and Mia receives SOLARmind for her Aven's work proposal.">
+	<!-- steps 4 and 5: the power that Anna pays for, from the COOP to her lamp -->
 	{#if lit > 0}
 		<line x1={L.COOP[0]} y1={L.COOP[1]} x2={L.LAMP[0]} y2={L.LAMP[1]} stroke="#e0b030" stroke-width="3" stroke-dasharray="7 6" stroke-dashoffset={-t * 24} opacity={lit * 0.9} />
-		{#if !narrow}
-			<line x1={L.WALLET[0] + L.box / 2 - 8} y1={L.WALLET[1] - 28} x2={L.LAMP[0] - 24} y2={L.LAMP[1] + 18} stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="2 4" opacity={lit} />
-		{/if}
 	{/if}
 
-	<!-- Anna -->
-	<g transform="translate({L.ANNA[0]} {L.ANNA[1]})">
-		<circle cy="-14" r="11" fill="#26382c" />
-		<path d="M-17 22 C-17 0 17 0 17 22 Z" fill="#26382c" />
-		<text y="44" text-anchor="middle" class="node">Anna</text>
-	</g>
+	<!-- Anna and Mia -->
+	{#each [[L.ANNA, 'Anna', '', '#26382c', 0], [L.MIA, 'Mia', 'her Aven proposed work', '#4f6f5c', mia]] as [p, name, sub, col, a]}
+		<g transform="translate({p[0]} {p[1]})">
+			<circle cy="-14" r="11" fill={col} />
+			<path d="M-17 22 C-17 0 17 0 17 22 Z" fill={col} />
+			<text y="44" text-anchor="middle" class="node">{name}</text>
+			{#if sub}<text y="59" text-anchor="middle" class="sub">{sub}</text>{/if}
+			{#if a > 0.001}
+				<circle cx="34" cy="2" r={r(a)} fill={GOLD} opacity="0.88" />
+				<text x="46" y="0" class="amt">{a.toFixed(2)}</text>
+				<text x="46" y="13" class="unit">SOLARmind</text>
+			{/if}
+		</g>
+	{/each}
 
 	<!-- the solar COOP -->
 	<g transform="translate({L.COOP[0]} {L.COOP[1]})">
@@ -95,7 +102,7 @@
 		<path d="M-10 4 A13 13 0 1 1 10 4 L7 14 H-7 Z" fill={lit > 0.5 ? '#f2c94c' : 'var(--paper)'} stroke="var(--ink)" stroke-width="1.4" />
 		<rect x="-6" y="16" width="12" height="5" rx="1.5" fill="var(--ink)" />
 		<text y="44" text-anchor="middle" class="node">Anna’s lamp</text>
-		<text y="59" text-anchor="middle" class="sub" opacity={lit}>lit by her share</text>
+		<text y="59" text-anchor="middle" class="sub" opacity={lit}>paid in SOLARmind</text>
 	</g>
 
 	<!-- the pool: a basket of MINDs that belongs to the protocol -->
@@ -103,12 +110,12 @@
 		<circle r="30" fill="var(--paper)" stroke="#5b8fa8" stroke-width="1.6" />
 		<path d="M-18 -2 q6 -6 12 0 t12 0 t12 0 M-18 8 q6 -6 12 0 t12 0 t12 0" fill="none" stroke="#5b8fa8" stroke-width="1.6" stroke-linecap="round" />
 		<text y="48" text-anchor="middle" class="node">pool</text>
-		<text y="63" text-anchor="middle" class="sub">{out >= 1 ? 'SOLARmind in,' : 'a basket of MINDs'}</text>
-		{#if out >= 1}<text y="77" text-anchor="middle" class="sub">PANELmind out</text>{/if}
+		<text y="63" text-anchor="middle" class="sub">{panel > 0 ? 'SOLARmind in,' : 'a basket of MINDs'}</text>
+		{#if panel > 0}<text y="77" text-anchor="middle" class="sub">PANELmind out</text>{/if}
 	</g>
 
 	<!-- the three holdings -->
-	{#each [[L.WALLET, wallet, GOLD, 'SOLARmind', 'Anna’s wallet', 'her share of the COOP'], [L.TREASURY, treasury, GOLD, 'SOLARmind', 'COOP treasury', 'working capital'], [L.PANEL, panel, STEEL, 'PANELmind', 'panel COOP', 'paid in its own MIND']] as [p, a, col, unit, name, sub]}
+	{#each [[L.WALLET, wallet, GOLD, 'SOLARmind', 'Anna’s wallet', 'her ownership'], [L.TREASURY, treasury, GOLD, 'SOLARmind', 'COOP treasury', 'working capital'], [L.PANEL, panel, STEEL, 'PANELmind', 'panel COOP', 'paid in its own MIND']] as [p, a, col, unit, name, sub]}
 		<g transform="translate({p[0]} {p[1]})">
 			<rect x={-L.box / 2} y="-28" width={L.box} height="56" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2" />
 			{#if a > 0.001}
@@ -120,9 +127,6 @@
 			<text y="61" text-anchor="middle" class="sub">{sub}</text>
 		</g>
 	{/each}
-	{#if lit > 0.5}
-		<text x={L.WALLET[0]} y={L.WALLET[1] - 36} text-anchor="middle" class="note">no SOLARmind moves</text>
-	{/if}
 
 	<!-- what moves in this step -->
 	{#if step === 0}
@@ -138,11 +142,16 @@
 		<circle cx={ax} cy={ay} r={r(0.5)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
 		<circle cx={bx} cy={by} r={r(0.5)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
 	{:else if step === 3 && raw < 1}
+		{@const [x, y] = arc(SPOT(L.WALLET), SPOT(L.TREASURY), k, 40)}
+		<circle cx={x} cy={y} r={r(USE)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
+	{:else if step === 4 && raw < 1}
 		{#if into < 1}
 			{@const [dx, dy] = lerp(SPOT(L.TREASURY), L.POOL, into)}
 			{@const [px, py] = arc(SPOT(L.TREASURY), L.POOL, into, narrow ? 30 : -30)}
+			{@const [mx, my] = arc(L.TREASURY, [L.MIA[0] + 34, L.MIA[1]], into, narrow ? -40 : -30)}
 			<circle cx={dx} cy={dy} r={r(DRIP)} fill={GOLD} stroke="var(--paper)" stroke-width="1.5" />
 			<circle cx={px} cy={py} r={r(PAY)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
+			<circle cx={mx} cy={my} r={r(WORK)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
 		{:else}
 			{@const [x, y] = lerp(L.POOL, SPOT(L.PANEL), out)}
 			<circle cx={x} cy={y} r={r(PAY)} fill={STEEL} stroke="var(--paper)" stroke-width="2" />
@@ -187,12 +196,6 @@
 	.sub {
 		font-size: 11.5px;
 		fill: var(--ink-soft);
-	}
-
-	.note {
-		font-size: 11.5px;
-		font-weight: 600;
-		fill: #9a6a10;
 	}
 
 	.amt {
