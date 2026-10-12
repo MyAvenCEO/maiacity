@@ -6,6 +6,8 @@
 export const UIA_DAY = 24;
 /** the hardcoded demurrage rate, a year */
 export const RATE = 0.07;
+/** Law 5: the default share of every sale that goes at once to the seller's holders */
+export const DIVIDEND_SHARE = 0.2;
 export const SECONDS_YEAR = 31_536_000;
 
 /** a balance after t years of continuous demurrage at rate r */
@@ -25,6 +27,10 @@ export const balanceAt = (b0, t, r = RATE, u = UIA_DAY * 365) => steadyState(r, 
 
 /** the share of an idle balance that a continuous rate r takes in one year: 1 − e^(−r) */
 export const yearlyLoss = (r = RATE) => 1 - Math.exp(-r);
+
+/** Law 5: a COOP's dividend yield is share × yearly sales ÷ the MIND that others hold. It stays below the melt r
+ *  while yearly sales stay below this fraction of the MIND that others hold: r / share */
+export const salesBound = (share = DIVIDEND_SHARE, r = RATE) => r / share;
 
 /** the steady state when the population grows at the rate nu a year: u / (r + ν) */
 export const steadyStateGrowth = (nu, r = RATE, u = UIA_DAY * 365) => u / (r + nu);
