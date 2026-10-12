@@ -9,8 +9,8 @@
 	import SplitFlow from '$lib/theos/SplitFlow.svelte';
 	import { REFS } from '$lib/theos/refs.js';
 	import {
-		RATE, UIA_DAY, dailyLoss, halfLife, steadyState, lifeForRate, rtmRate, impermanentLoss,
-		idleSeries, convergenceSeries, infraSeries, ilSeries, selectionSeries, fmt
+		RATE, UIA_DAY, dailyLoss, halfLife, steadyState, lifeForRate, rtmRate,
+		idleSeries, convergenceSeries, infraSeries, lvrSeries, selectionSeries, fmt
 	} from '$lib/theos/model.js';
 
 	// the four series colours, validated together for colour-blind separation on the paper's surface
@@ -23,7 +23,7 @@
 	const conv = $derived(convergenceSeries(rate).map((s, i) => ({ ...s, color: [C[3], C[1], C[0]][i] })));
 	const star = $derived(steadyState(rate));
 	const infra = infraSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
-	const il = [{ id: 'il', label: 'Impermanent loss', color: C[1], points: ilSeries() }];
+	const lvr = lvrSeries().map((s, i) => ({ ...s, color: [C[2], C[0], C[1]][i] }));
 	const sel = selectionSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
 
 	const pct = (v, d = 0) => `${fmt(v, d)} %`;
@@ -85,9 +85,10 @@
 			for every hour. Samuel's are SamuelHEARTS, Anna's are AnnaHEARTS. HEARTS are not spending money but a voice: they
 			can only be invested into cooperatives, shared enterprises that make what a city needs, such as energy, food or
 			housing. Second, each invested HEART is converted into one unit of that cooperative's MIND: its shared intelligence,
-			carried as one currency that is its protocol, its ownership and its utility at once. Half goes to the investor
-			and half to the cooperative, and the same MIND is what the cooperative creates, sells and buys its services
-			with. Third, all money slowly melts, losing {pct(RATE * 100)} of its value a year, just as
+			carried as one currency of ownership and utility: holding it is a share in the cooperative, spending it uses
+			what the cooperative makes. Half goes to the investor and half to the cooperative's treasury, and a tenth of
+			every treasury flows into liquidity pools that belong to the protocol itself, so that every MIND can always be
+			traded for every other. Third, all money slowly melts, losing {pct(RATE * 100)} of its value a year, just as
 			food spoils and machines wear out, so wealth keeps moving instead of being hoarded.
 		</p>
 		<p>
@@ -284,8 +285,9 @@
 			<p class="lawname">Law 4 · Every COOP has its own MIND, created by investing HEARTS</p>
 			<p>
 				Every COOP has its own MIND: SOLARmind for a solar COOP, AGRImind for a farming COOP. A MIND is the COOP's
-				shared intelligence, its automated capacity to make something, carried as one currency that is three things
-				at once: the COOP's protocol, ownership of it, and the right to use it. MIND comes into being only through
+				shared intelligence, its automated capacity to make something, carried as one currency of ownership and
+				utility: holding it is a share in the COOP, spending it is how one uses what the COOP makes. MIND comes into
+				being only through
 				investment: every HEART invested into a COOP is converted into one new MIND of that COOP, half to the
 				investor and half to the COOP's treasury. Both halves are the same MIND; there is only one kind.
 			</p>
@@ -422,7 +424,7 @@
 		<p>
 			Money now has a source, a form and a limit. One practical question is left. If every COOP has its own MIND, how
 			does Anna pay for a tram ride with SOLARmind, and how does the solar COOP pay the steel COOP in STEELmind for a
-			new turbine? A small part of each treasury is the answer.
+			new turbine? The liquidity pools are the answer.
 		</p>
 	</section>
 
@@ -430,54 +432,84 @@
 		<h2><span>6</span>Keeping every MIND tradeable</h2>
 		<p>
 			With thousands of COOPs there are thousands of MINDs, and each must be exchangeable at any moment, or
-			<em>liquid</em>. theOS uses automated market makers (AMMs) for this. An AMM is a pool holding two currencies
-			that sets their exchange rate from the ratio of its reserves, so anyone can trade at any time against a formula
-			instead of waiting for a buyer or seller <Cite k="uniswap" />. Such pools have been shown to give reliable public
-			prices <Cite k="angeris" />. In theOS every pool pairs two MINDs, for example SOLARmind and TRAMmind. A pool holding <Tex tex="x" /> of one
-			MIND and <Tex tex="y" /> of the other keeps
+			<em>liquid</em>. theOS uses automated market makers (AMMs) for this. An AMM is a pool of currencies that sets
+			their exchange rates from the ratios of its reserves, so anyone can trade at any time against a formula instead
+			of waiting for a buyer or seller <Cite k="uniswap" />; such pools give reliable public prices
+			<Cite k="angeris" />. The best-known AMMs pair two currencies and are filled by outside investors who can take
+			their money out again. theOS does neither. Its pools hold baskets of many MINDs, and they belong to the protocol
+			itself.
 		</p>
-		<Tex display tex={String.raw`x \cdot y = k, \qquad p = \frac{x}{y} \tag{5}`} />
+		<div class="law">
+			<p class="lawname">The liquidity rule</p>
+			<p>
+				A tenth of every COOP's treasury flows automatically into liquidity pools. Each pool is a basket of 4 to 12
+				different MINDs, and the COOP chooses which baskets its MIND joins. The pools belong to the protocol, not to
+				any COOP. What enters a pool can never be withdrawn; it leaves only by being traded out.
+			</p>
+		</div>
 		<p>
-			Whatever the trades, the product of the two reserves stays constant, and the price follows from their ratio. In
-			ordinary decentralised finance, outside <em>liquidity providers</em> deposit the two currencies into these pools
-			and carry <em>impermanent loss</em>: when the price moves by a factor <Tex tex="p" />, their deposit is worth less
-			than if they had simply kept the two currencies,
-		</p>
-		<Tex display tex={String.raw`\mathrm{IL}(p) = \frac{2\sqrt{p}}{1 + p} - 1. \tag{6}`} />
-		<p>
-			In theOS nobody outside the COOPs provides this reserve. Law 4 already gave every COOP a treasury of its own MIND.
-			Most of it stays working capital; the COOP puts only a small portion into pools, paired against the MINDs of
-			other COOPs, so that its currency can be swapped for theirs. No HEARTS ever sit in a pool, because every HEART was
-			converted into MIND the moment it was invested. Because the COOPs themselves, not outside traders, own these
-			reserves, this is called <em>protocol-owned liquidity</em>.
+			So a COOP is born in two parts. People invest HEARTS, which creates its MIND and fills its treasury. And it
+			partners with at least three other COOPs, whose MINDs join its own in its first basket. Only then is its MIND
+			tradeable: the solar COOP's SOLARmind might sit in one basket with TRAMmind, AGRImind and STEELmind, and in
+			another with WATERmind, COMPUTEmind, HABITATmind and ARTmind. No HEARTS ever sit in a pool, because every HEART
+			was converted into MIND the moment it was invested.
 		</p>
 		<figure>
 			<SplitFlow />
 			<figcaption>
 				<strong>Figure 4.</strong> One HEART invested into a COOP is converted into one MIND and is gone. Half of
-				that MIND goes to the investor, half to the COOP's treasury, its working capital; both are the same MIND.
-				Only a small portion of the treasury goes into pools against other COOPs' MINDs.
+				that MIND goes to the investor, half to the COOP's treasury, its working capital; both are the same MIND. A
+				tenth of the treasury flows on into the protocol's pools, baskets of 4 to 12 MINDs, and never comes back out.
 			</figcaption>
 		</figure>
+		<h3>6.1 The basket: a weighted geometric mean</h3>
 		<p>
-			Impermanent loss does not disappear; it moves onto the COOP's books, where it is an operating cost of keeping its
-			currency liquid, like wear on a machine. Because only a small portion of the treasury sits in pools, a price swing
-			touches only that portion. The MIND in Anna's wallet is never part of a pool, and a speculative attack thins a pool
-			while the COOP's working capital and its turbines keep going.
+			A basket of many currencies needs a formula that works for any number of them. The proven one is the
+			<em>geometric mean market maker</em>, run in production by Balancer's weighted pools since 2020
+			<Cite k="balancer evans" />. A pool holding <Tex tex={String.raw`x_i`} /> of MIND <Tex tex="i" />, each with a
+			weight <Tex tex={String.raw`w_i`} />, keeps
+		</p>
+		<Tex display tex={String.raw`\begin{gathered} \prod_{i=1}^{n} x_i^{\,w_i} = k, \qquad \sum_i w_i = 1 \\ p_{ij} = \frac{x_i / w_i}{x_j / w_j} \end{gathered} \tag{5}`} />
+		<p>
+			Every trade keeps the weighted product constant, and the price of MIND <Tex tex="j" /> in MIND
+			<Tex tex="i" /> follows from their reserves and weights. Such a pool behaves like an index that rebalances
+			itself: at fair prices each MIND makes up exactly its weight of the pool's value. Trades between any two MINDs
+			can be routed through many pools at once, a problem that is convex and solved exactly
+			<Cite k="angerisMulti routing" />. One property fits theOS especially well. Every MIND in a basket melts at the
+			same 7 % a year, so demurrage shrinks every reserve by the same factor and leaves every price in (5) unchanged:
+			melting creates no trading opportunity inside a basket.
+		</p>
+		<h3>6.2 The cost of liquidity, and who carries it</h3>
+		<p>
+			A pool is not free. When prices move elsewhere, arbitrageurs trade against the pool until its prices catch up,
+			and the pool loses what a perfect rebalancer would not. This is called <em>loss-versus-rebalancing</em> (LVR),
+			and for a geometric mean pool it is a steady share of the pool's value a year <Cite k="lvr" />. With the
+			volatilities <Tex tex={String.raw`\sigma_i`} /> of the MINDs and the covariance <Tex tex={String.raw`\Sigma`} />
+			of their price moves,
+		</p>
+		<Tex display tex={String.raw`\begin{gathered} \frac{\ell}{V} = \tfrac12\Big(\sum_i w_i \sigma_i^2 - w^{\top}\Sigma\,w\Big) \\ \overset{w_i = 1/n}{=}\; \tfrac12\,\sigma^2 (1-\rho)\Big(1 - \frac1n\Big) \end{gathered} \tag{6}`} />
+		<p>
+			The right-hand side holds for <Tex tex="n" /> equal weights, a common volatility <Tex tex={String.raw`\sigma`} />
+			and a common correlation <Tex tex={String.raw`\rho`} />. The cost grows with how much MINDs move against one
+			another and only a little with the size of the basket. In theOS it is carried by the protocol's pools, never by a
+			person: the MIND in Anna's wallet is never part of a pool, and a speculative attack thins a pool while every
+			COOP's working capital and its turbines keep going. The cost can also be cut. If trades against a pool are
+			collected and cleared together at one price, arbitrageurs compete the gain away; this batch design, the
+			function-maximising AMM, removes LVR and sandwich attacks in theory <Cite k="fmamm" /> and has run for two-MIND
+			pairs as CoW AMM since 2024 <Cite k="cowamm" />.
 		</p>
 		<figure>
 			<LineChart
-				title="Impermanent loss of a constant-product pool against the price move"
-				series={il}
-				endLabels={false}
-				x={{ min: 0.1, max: 10, log: true, ticks: [0.1, 0.25, 0.5, 1, 2, 4, 10], fmt: (v, tip) => `${tip ? 'Price ×' : '×'}${fmt(v, v < 1 ? 2 : tip ? 2 : 0)}`, label: 'Price change between the two MINDs (log scale)' }}
-				y={{ min: -45, max: 0, ticks: [0, -10, -20, -30, -40], fmt: (v, tip) => `${fmt(v, tip ? 1 : 0)} %`, label: 'Loss against holding' }}
-				refs={[{ axis: 'y', at: impermanentLoss(2) * 100, label: `price ×2 or ÷2: ${fmt(impermanentLoss(2) * 100, 1)} %`, end: true, below: true }]}
+				title="Yearly loss-versus-rebalancing of an equal-weight basket against its number of MINDs"
+				series={lvr}
+				x={{ min: 2, max: 12, ticks: [2, 4, 6, 8, 10, 12], fmt: (v, tip) => (tip ? `${fmt(v)} MINDs` : `${v}`), label: 'MINDs in the basket' }}
+				y={{ min: 0, max: 8, ticks: [0, 2, 4, 6, 8], fmt: (v, tip) => `${fmt(v, tip ? 2 : Number.isInteger(v) ? 0 : 1)} %`, label: 'LVR a year, share of the pool' }}
+				refs={[{ axis: 'x', at: 4, label: 'minimum basket' }]}
 			/>
 			<figcaption>
-				<strong>Figure 5.</strong> Impermanent loss from (6). A doubling or halving of one MIND's price against the other costs the pool
-				5.7 % against simply holding; a tenfold move costs 42.5 %. In theOS this is a cost the COOP carries, never
-				the individual.
+				<strong>Figure 5.</strong> The cost (6) of keeping a basket liquid, before any batch trading. Calm MINDs
+				(20 % volatility) cost 1.5 % of the pool a year in a basket of four; wild ones (40 %) cost 6 %; when MINDs move
+				together (correlation 0.6) the cost falls to 2.4 %. Going from 4 to 12 MINDs adds only about a fifth.
 			</figcaption>
 		</figure>
 		<p>
@@ -638,8 +670,8 @@
 				</thead>
 				<tbody>
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, 24 a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
-					<tr><td>MIND</td><td>A COOP's intelligence: its protocol, ownership and utility in one; held by people as their share and access, by the COOP as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Used to create, sell and buy the COOP's services, a small part held in pools, or melted</td></tr>
-					<tr><td>AMM pools</td><td>Price and exchange between MINDs</td><td>A small part of COOP treasuries, MIND against MIND</td><td>Never holds HEARTS</td></tr>
+					<tr><td>MIND</td><td>Ownership of a COOP and use of what it makes; held by people as their share and access, by the COOP as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Used to create, sell and buy the COOP's services, a tenth of every treasury into the pools, or melted</td></tr>
+					<tr><td>Liquidity pools</td><td>Price and exchange between MINDs; owned by the protocol, by no COOP</td><td>10 % of every treasury, automatically, in baskets of 4 to 12 MINDs</td><td>Never withdrawn; MIND leaves a pool only by being traded out</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: 7 % a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
 					<tr><td>Avens</td><td>One person's arithmetic: invest, swap, pay, leave</td><td>One per person</td><td>Work only for their human</td></tr>
 					<tr><td>COOP governance</td><td>How each COOP decides; improved by selection</td><td>Chosen by each COOP</td><td>Tested by where HEARTS flow</td></tr>
@@ -685,7 +717,7 @@
 					<tr><td>Allocation</td><td>Every agent receives 24 personal HEARTS a day, only investable</td><td>Every resident receives 24 personal HEARTS a day, one identity per person</td></tr>
 					<tr><td>Demurrage</td><td>Continuous, Eq. (1), on HEARTS and MINDs</td><td>The same rule, fixed in the protocol</td></tr>
 					<tr><td>Cooperatives</td><td>Agents found COOPs and invest HEARTS into their MINDs</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
-					<tr><td>Markets</td><td>Small AMM pools of MIND against MIND, owned by the COOPs</td><td>Avens route every purchase through the pools</td></tr>
+					<tr><td>Markets</td><td>Protocol-owned baskets of 4 to 12 MINDs, fed with 10 % of every treasury</td><td>Avens route every purchase through the pools</td></tr>
 					<tr><td>Agents</td><td>AI agents with memory and goals, later joined by human players</td><td>One Aven per resident, on their own device</td></tr>
 					<tr><td>Governance</td><td>Rule changes as open proposals, measured world by world</td><td>COOPs choose their own governance and compete (Section 9)</td></tr>
 				</tbody>
@@ -722,8 +754,14 @@
 				generational fairness; the game should test how behaviour changes across that range.
 			</li>
 			<li>
-				<strong>Pool attacks.</strong> AMM prices can be pushed for a moment by anyone with enough money. COOPs need
-				time-averaged prices and limits on how fast an Aven follows a price.
+				<strong>Pool attacks.</strong> AMM prices can be pushed for a moment by anyone with enough money. The pools
+				need time-averaged prices and limits on how fast an Aven follows a price.
+			</li>
+			<li>
+				<strong>Liquidity that never leaves.</strong> Pools nobody can withdraw from cannot be fixed by moving money
+				out, so their code must be right from the start: audited rounding, a guarded pause, and an upgrade path
+				decided before launch. Batch trading is proven for two-currency pools; clearing baskets of 4 to 12 MINDs in
+				batches still has to be shown, first in the game.
 			</li>
 			<li>
 				<strong>Capture and graceful failure.</strong> A failing COOP must return its assets to the commons without a
@@ -748,8 +786,7 @@
 		<Tex display tex={String.raw`\left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} = \mathrm{ABUNDANCE} \tag{9}`} />
 		<p>
 			<strong>HEARTS</strong> are human intention, issued equally to everyone, every day. <strong>MINDS</strong> are
-			what that intention becomes: the shared intelligence of the cooperatives, their protocol, ownership and utility
-			in one.
+			what that intention becomes: the shared intelligence of the cooperatives, ownership and utility in one.
 			<strong>ACTION</strong> is the conscious act of turning the one into the other. Neither intention without capacity nor capacity without intention builds
 			anything; only the product does, within the limits of one planet <Cite k="raworth" />.
 		</p>
