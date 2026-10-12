@@ -120,6 +120,13 @@ await Promise.all(
 		while (next < jobs.length) await play(jobs[next++]);
 	})
 );
+// a card's hook that runs past its time limit on a busy machine stops for the rest of the run (sandbox.js LIMITS): such
+// a run is played again, alone, once
+const timedOut = (j) => /ran longer than/.test(fs.readFileSync(j.log, 'utf8').split('\n').find((l) => l.startsWith('errors ')) ?? '');
+for (const j of jobs.filter(timedOut)) {
+	console.log(`the ${j.arm} arm, seed ${j.seed}: a card ran past its time limit, playing it again alone`);
+	await play(j);
+}
 
 /** one run's numbers, from the stand-in's daily rows and its totals */
 function measure(j) {
