@@ -74,8 +74,8 @@
 				for (const c of coops) if ((r -= c.weight) <= 0) return c;
 				return coops[0];
 			};
-			const send = (kind, from, to, coop, t0 = 0) => {
-				if (live.length < MAX) live.push({ kind, from: from.clone(), to: to.clone(), coop, t: t0, speed: 0.55 + Math.random() * 0.35, size: 1 });
+			const send = (kind, from, to, coop, t0 = 0, size = 1) => {
+				if (live.length < MAX) live.push({ kind, from: from.clone(), to: to.clone(), coop, t: t0, speed: 0.55 + Math.random() * 0.35, size });
 			};
 			const spawnHeart = (t0 = 0) => {
 				const p = people[(Math.random() * N_PEOPLE) | 0].position;
@@ -93,7 +93,7 @@
 				stage.camera.position.set(Math.sin(angle) * 21, 12, Math.cos(angle) * 21);
 				stage.camera.lookAt(0, 0.4, 0);
 
-				// every 9 s one COOP turns extractive for a while: what it gives back for a HEART drops
+				// every 9 s one COOP turns extractive for a while: its MIND buys less utility, so each MIND it mints is worth less
 				regime += dt;
 				if (regime > 9) {
 					regime = 0;
@@ -117,9 +117,9 @@
 					if (d.t >= 1) {
 						live.splice(i, 1);
 						if (d.kind === 'heart') {
-							// invested: creates MIND, half to the investor, half to the treasury
-							const home = people[(Math.random() * N_PEOPLE) | 0].position;
-							if (Math.random() < d.coop.efficiency) send('mind', d.to, home.clone().setY(0.25), d.coop);
+							// invested: creates one MIND, half back to the investor who sent the HEART, half to the treasury (Law 4);
+							// an extractive COOP's MIND is worth less, so its dot is smaller
+							send('mind', d.to, d.from.clone().setY(0.25), d.coop, 0, 0.45 + 0.55 * d.coop.efficiency);
 							send('sink', d.to, d.coop.g.position.clone().setY(0.08), d.coop);
 						} else if (d.kind === 'sink') d.coop.pool += 0.06;
 						continue;
