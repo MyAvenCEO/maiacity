@@ -239,4 +239,27 @@ export const dialSeries = (rates = [0.03, RATE, 0.1]) =>
 		})
 	}));
 
+// ── The whole round trip (Section 9.3) ───────────────────────────────────────────────────────────────────────────────
+
+/** The agent-based simulation's flows at rest (main scenario, years 51–60), in R a person a day, as printed by
+ *  scripts/theos-e2e-sim.mjs (seed 20261012). No human labour is paid: every human's Aven does the work items and the
+ *  work proposals. These are measured, not derived; the sums and shares that the paper prints are computed below. */
+export const ROUND_TRIP = {
+	people: { in: { hearts: 12.31, items: 3.95, proposals: 16.52, dividends: 2.46 }, out: { buying: 12.09, melt: 22.65 } },
+	treasuries: { in: { hearts: 11.08, sales: 12.09 }, out: { dividends: 2.46, items: 3.95, proposals: 16.52, melt: 0.22 } },
+	pools: { in: { tenth: 1.23 }, out: { melt: 1.21 } },
+	issued: 24.62,
+	melted: 24.08,
+	money: 122_603
+};
+
+/** the total of a set of flows */
+export const flowSum = (flows) => Object.values(flows).reduce((s, v) => s + v, 0);
+
+/** what flows in, less what flows out, of one place in the round trip */
+export const flowNet = (place) => flowSum(place.in) - flowSum(place.out);
+
+/** one source of a person's income, as a share of all that flows into people's wallets */
+export const incomeShare = (k, rt = ROUND_TRIP) => rt.people.in[k] / flowSum(rt.people.in);
+
 export const fmt = (n, d = 0) => n.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
