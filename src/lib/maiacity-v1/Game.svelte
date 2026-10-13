@@ -211,6 +211,35 @@
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
 	/** the rent the Settlement COOP pays for an asset, if it rents it */
 	const rentOf = (id) => RENTED.find((r) => r.asset === id);
+	/** the first-run tour, for each player at their own seat: mint the starter pack, then invest it into the three
+	 *  COOPs, 5,000 HEARTS into the MaiaCity COOP, 2,000 into the Village COOP and 1,000 into its Settlement COOP.
+	 *  Each step reads off the game itself (the first mint, the HEARTS each COOP was paid by this seat), so it picks up
+	 *  wherever the player is; skipping it is remembered in this browser only. */
+	const TOUR = [
+		['maia', 5000, 'The MaiaCity COOP holds the land and runs the AMM pool: the city everyone stands on.'],
+		['village', 2000, 'The Village COOP owns the pickup, the powercube, the battery and the solar row.'],
+		['settlement', 1000, 'The Settlement COOP owns the tent and rents the machines: your home on this hex.']
+	];
+	let tourOff = $state({});
+	const invested = (s, id) => (view ? view.ledger.filter((e) => e.kind === 'invest' && e.from === `player:${s}` && e.to === `coop:${id}`).reduce((a, e) => a + e.amount, 0) : 0);
+	const tour = $derived.by(() => {
+		if (!view || !player || !mine || tourOff[seat]) return null;
+		const steps = TOUR.length + 1;
+		if (!player.lastMint) return { n: 1, steps, kind: 'mint', title: 'Mint your starter pack', text: `Welcome, ${player.name}. Your first mint brings ${f(view.settings.starterPack ?? 8736, 0)} HEARTS, a year of them. Tap the Mint button below.` };
+		for (let i = 0; i < TOUR.length; i++) {
+			const [id, goal, why] = TOUR[i];
+			const left = goal - invested(seat, id);
+			if (left > 0.5) return { n: i + 2, steps, kind: 'invest', coop: id, amount: Math.min(Math.round(left), Math.floor(player.wallet.HEARTS)), title: `Invest ${f(goal, 0)} ❤︎ into the ${view.coops[id].name}`, text: `${why} Each HEART makes 1 ${TOKEN_LABEL[view.coops[id].mind]}: half yours, half its treasury.` };
+		}
+		return { n: steps + 1, steps, kind: 'done', title: 'You are set up', text: 'You own a share of all three COOPs now. Their rents pay you a dividend every weekly pay day: watch it in your cash flow.' };
+	});
+	const skipTour = () => {
+		tourOff = { ...tourOff, [seat]: true };
+		try { localStorage.setItem(`v1-tour-off-${seat}`, '1'); } catch {}
+	};
+	$effect(() => {
+		try { tourOff = Object.fromEntries(SEATS.map((s) => [s, localStorage.getItem(`v1-tour-off-${s}`) === '1'])); } catch {}
+	});
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
 
@@ -249,15 +278,34 @@
 
 		<nav class="tools" class:open={tools}>
 			{#each allTools as [id, ic, label] (id)}
-				<button class:on={panel === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
+				<button class:on={panel === id} class:hint={tour?.kind === 'invest' && id === 'invest'} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
 			{/each}
 			<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>
 		</nav>
 		{#if canMove}
 			<!-- the universal mint button: always at hand, over the nav pill -->
-			<button class="mintbar" disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
+			<button class="mintbar" class:hint={tour?.kind === 'mint'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
+		{/if}
+				{#if tour}
+			<!-- the first-run tour: a tip over the Mint button that walks each player through their first moves -->
+			<div class="tour panel" class:down={tour.kind === 'mint'} role="dialog" aria-label="Getting started">
+				<p class="eyebrow">{tour.kind === 'done' ? 'Getting started · done' : `Getting started · step ${tour.n} of ${tour.steps}`}</p>
+				<b>{tour.title}</b>
+				<p>{tour.text}</p>
+				<div class="dots">{#each Array(tour.steps) as _, i (i)}<i class:on={i < tour.n - 1} class:now={i === tour.n - 1}></i>{/each}</div>
+				<div class="buttons">
+					{#if tour.kind === 'invest'}
+						<button class="primary" disabled={busy || tour.amount < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: tour.amount })}>Invest {f(tour.amount, 0)} ❤︎</button>
+						<button class="link" onclick={skipTour}>Skip the tour</button>
+					{:else if tour.kind === 'done'}
+						<button class="primary" onclick={skipTour}>Done</button>
+					{:else}
+						<button class="link" onclick={skipTour}>Skip the tour</button>
+					{/if}
+				</div>
+			</div>
 		{/if}
 		<button class="fab" class:on={tools} aria-label="Tools" onclick={() => (tools = !tools)}>
 			<svg viewBox="0 0 24 24"><path d={tools ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} /></svg>
@@ -668,6 +716,68 @@
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
+	}
+	.tour {
+		position: absolute;
+		z-index: 8;
+		left: 50%;
+		bottom: calc(var(--nav-room, 4rem) + 4.4rem);
+		transform: translateX(-50%);
+		width: min(22rem, calc(100vw - 32px));
+		padding: 0.9rem 1rem 0.8rem;
+		border-radius: 18px;
+		font-size: 0.85rem;
+		box-shadow: 0 14px 40px rgb(38 56 44 / 0.25);
+	}
+	.tour b {
+		display: block;
+		margin: 0.15rem 0 0.25rem;
+		font-size: 1rem;
+	}
+	.tour p {
+		margin: 0 0 0.5rem;
+		line-height: 1.4;
+	}
+	.tour .eyebrow {
+		margin: 0;
+	}
+	.tour.down::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		bottom: -7px;
+		width: 14px;
+		height: 14px;
+		background: inherit;
+		transform: translateX(-50%) rotate(45deg);
+	}
+	.tour .dots {
+		display: flex;
+		gap: 0.3rem;
+		margin-bottom: 0.6rem;
+	}
+	.tour .dots i {
+		width: 1.4rem;
+		height: 0.25rem;
+		border-radius: 999px;
+		background: rgb(31 42 35 / 0.15);
+	}
+	.tour .dots i.on {
+		background: #3d7a4a;
+	}
+	.tour .dots i.now {
+		background: #24452f;
+	}
+	.tour .buttons {
+		margin: 0;
+		align-items: center;
+	}
+	.hint {
+		animation: hint 1.6s ease-in-out infinite;
+	}
+	@keyframes hint {
+		0%, 100% { box-shadow: 0 0 0 0 rgb(61 122 74 / 0.55); }
+		50% { box-shadow: 0 0 0 8px rgb(61 122 74 / 0); }
 	}
 	.mintbar {
 		position: absolute;
