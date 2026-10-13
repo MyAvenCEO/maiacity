@@ -505,6 +505,8 @@ function packedVan() {
 /** where the newcomer sits in the van, and where they look */
 const VAN_SEAT = V(0.12, 1.6, 0.2);
 const VAN_LOOK = V(0.0, 1.45, 14);
+/** where the player sits in the van when a shot shows them: the back seat by the door, on its cushion */
+const ME_SEAT = V(0.45, 0.3, 0.15);
 
 export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {} } = {}) {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -682,9 +684,32 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		faces: { inside: true, cam: () => van.localToWorld(V(-0.2, 1.75, 1.75)), at: (t, k) => van.localToWorld(V(0.3 * k - 0.15, 1.35, -1.6)) },
 		along: { cam: (t, k) => van.localToWorld(V(8 - 2 * k, 1.5 + 0.5 * k, 6 - 8 * k)), at: () => van.localToWorld(V(0, 1.4, 0.5)) },
 		aerial: { cam: (t, k) => van.localToWorld(V(-40 + 20 * k, 34 - 8 * k, -55 + 25 * k)), at: () => van.localToWorld(V(0, 0, 18)) },
-		pass: { fixed: true, cam: () => van.localToWorld(V(4.2, 0.7, 75)), at: () => van.localToWorld(V(0, 1.2, 0)) }
+		pass: { fixed: true, cam: () => van.localToWorld(V(4.2, 0.7, 75)), at: () => van.localToWorld(V(0, 1.2, 0)) },
+		// the player themself in the back seat, gazing out of the side window (Samuel 2026-10-13): from the front at the
+		// side, then close on their face
+		profile: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.05 + 0.08 * k, 1.58, 1.35)), at: () => van.localToWorld(V(ME_SEAT.x + 0.1, 1.38, ME_SEAT.z)) },
+		close: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.7, 1.66, 0.62 - 0.08 * k)), at: () => van.localToWorld(V(ME_SEAT.x, 1.52, ME_SEAT.z)) }
 	};
-	const RIDE_ORDER = ['seat', 'aerial', 'window', 'along', 'faces', 'pass'];
+	// every line of the ride a new view, the back seat's own once (Samuel 2026-10-13: it came round three times)
+	const RIDE_ORDER = ['seat', 'aerial', 'profile', 'window', 'along', 'close', 'faces', 'pass'];
+	/** the player sitting in the van's back seat for the shots that show them, or back in the world */
+	function seatMe(on) {
+		const me = people[stage.me];
+		if (!me) return;
+		if (on) {
+			van.add(me);
+			me.position.copy(ME_SEAT);
+			me.rotation.set(0, 0.45, 0); // the head and shoulders turned to the window
+			me.userData.glow.visible = false;
+			act(me, 'sit');
+			me.visible = true;
+		} else if (me.parent === van) {
+			world.attach(me);
+			me.userData.glow.visible = true;
+			me.visible = false;
+			act(me, 'idle');
+		}
+	}
 	let rideCut = 0;
 	/** the jerrycans: waiting on the forecourt beside the pickup, in its bed, or at home beside the Power Cube */
 	function placeFuel(where) {
@@ -1436,6 +1461,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 					camera.lookAt(kind.at(t, k));
 				}, () => {
 					rollVan(0);
+					seatMe(!!kind.me);
 					kind.inside ? lensIn() : ((camera.near = 0.5), (camera.fov = camera.aspect < 0.8 ? 60 : 38), camera.updateProjectionMatrix());
 					fixed = kind.fixed ? kind.cam(0, 0) : null;
 				}));
