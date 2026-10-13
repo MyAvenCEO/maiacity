@@ -36,19 +36,22 @@ test("a virtual year melts every balance by 7 %", () => {
   expect(supply(s).MAIA).toBeCloseTo(24 * 0.93, 6);
 });
 
-test("rent: the players pay the tent in VillageMIND, the Settlement COOP pays the hex in MaiaMIND through the pool", () => {
+test("rent: the players pay the tent in SettlementMIND, the Settlement COOP pays the hex in MaiaMIND through the pool", () => {
   let s = grown(newGame(T0, { demurrage: 0 }));
   for (const seat of ["A", "B"]) s = act(s, seat, { type: "mint" }, T0);
-  s = act(s, "A", { type: "invest", coop: "village", amount: 24 }, T0);
-  s = act(s, "B", { type: "invest", coop: "maia", amount: 24 }, T0);
-  s = act(s, "B", { type: "swap", token: "MAIA", amount: 0.01 }, T0);
+  s = act(s, "A", { type: "invest", coop: "settlement", amount: 24 }, T0);
+  s = act(s, "B", { type: "invest", coop: "maia", amount: 20 }, T0);
+  s = act(s, "B", { type: "invest", coop: "village", amount: 4 }, T0);
+  s = act(s, "B", { type: "swap", token: "MAIA", to: "VILLAGE", amount: 0.01 }, T0);
   s = advance(s, T0 + DAY_MS);
-  // A paid 10 of 12 VillageMIND; B had none and swapped MaiaMIND, then owes the rest
-  expect(s.players.A.wallet.VILLAGE).toBeCloseTo(2, 6);
+  // A paid 10 of 12 SettlementMIND; B had none and swapped other MINDs, then owes the rest
+  expect(s.players.A.wallet.SETTLEMENT).toBeCloseTo(2, 6);
   expect(s.players.B.arrears).toBeGreaterThan(0);
-  expect(ledgerOf(s, "coop:village").some((e) => e.kind === "rent" && e.to === "coop:maia")).toBe(true);
+  expect(ledgerOf(s, "player:B").some((e) => e.kind === "swap" && e.out.token === "SETTLEMENT")).toBe(true);
+  expect(ledgerOf(s, "coop:settlement").some((e) => e.kind === "rent" && e.to === "coop:maia")).toBe(true);
   // nothing is made or lost by rent and swaps: supply is unchanged without the melt
-  expect(supply(s).MAIA + supply(s).VILLAGE).toBeCloseTo(48, 6);
+  const all = supply(s);
+  expect(all.MAIA + all.SETTLEMENT + all.VILLAGE).toBeCloseTo(48, 6);
 });
 
 test("a MIP needs two signatures and applies at once in the same game: settings and payouts to any wallet", () => {

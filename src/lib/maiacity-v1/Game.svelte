@@ -1,6 +1,7 @@
 <!--
 	MaiaCity V1: the one shared game, as both players see it, as a game screen like Sandbox 1 and Sandbox 5 — the hex in
-	3D under everything ($lib/maiacity-v1/world.js), the numbers in pills across the top, the tools down the left, and
+	3D under everything ($lib/maiacity-v1/world.js: the tent and the two players, nothing else), the COOPs and what
+	they own (the MaiaCity COOP the hex and the AMM pool) as a list in a card, the numbers in pills across the top, the tools down the left, and
 	a card on the right for whatever is open (a sheet from the foot on a phone, an aside down the right on its side).
 	The server holds the game (api/src/maiacity-v1.js); the page reads it every few seconds and, in between, runs the
 	same rules (game/maiacity-v1/engine.js) forward to the second, so the clock, the melt and the HEARTS growing count
@@ -9,7 +10,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { COOPS, DAY_MS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, SIGNATURES, TOKEN_LABEL, advance, calendar, describe, ledgerOf, mintState, nameOf, price, quote, supply } from '../../../game/maiacity-v1/engine.js';
+	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, SIGNATURES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, describe, ledgerOf, mintState, nameOf, price, quote, supply } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 
@@ -26,6 +27,7 @@
 	let tools = $state(false); // the phone's tools, behind the action button
 	let amount = $state(12);
 	let swapToken = $state('MAIA');
+	let swapTo = $state('SETTLEMENT');
 	let swapAmount = $state(1);
 	let ledgerOfWho = $state('');
 	let draft = $state(null);
@@ -44,9 +46,8 @@
 	const mint = $derived(view ? mintState(view, seat, now) : null);
 	const who = $derived(ledgerOfWho || `player:${seat}`);
 	const lines = $derived(view ? ledgerOf(view, who).slice(0, 200) : []);
-	const p = $derived(view ? price(view) : null);
 	const total = $derived(view ? supply(view) : null);
-	const swapOut = $derived(view ? quote(view, swapToken, Number(swapAmount) || 0) : 0);
+	const swapOut = $derived(view ? quote(view, swapToken, swapTo, Number(swapAmount) || 0) : 0);
 	const nextMonth = $derived(view ? view.started + (view.month + 1) * DAY_MS : 0);
 	const mips = $derived(view?.mips ?? []);
 	const openMips = $derived(mips.filter((m) => m.status === 'open'));
@@ -91,11 +92,9 @@
 	onMount(() => {
 		world = createWorld(canvas, {
 			onPick: (name) => {
-				if (!name) return;
-				if (name.startsWith('player:')) {
-					seat = name.slice(7);
-					open('you');
-				} else open(name);
+				if (!name?.startsWith('player:')) return;
+				seat = name.slice(7);
+				open('you');
 			},
 			onLabels: (l) => (labels = l)
 		});
@@ -139,30 +138,30 @@
 	};
 	const sign = (e) => (e.kind === 'arrears' ? '' : e.to === who ? '+' : e.from === who ? '−' : '');
 	const LABELS = { mint: 'Minted', invest: 'Invested', pool: 'To the pool', swap: 'Swap', rent: 'Rent', arrears: 'Owed', demurrage: 'Melt', expired: 'Expired', settings: 'Settings', proposal: 'MIP', payout: 'Payout' };
-	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ['coop:maia', 'MaiaCity COOP'], ['coop:village', 'Settlement COOP'], ['pool', 'AMM pool']] : []);
+	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, COOPS[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
 	const TOOLS = [
 		['you', '◉', 'You'],
 		['mint', '♥', 'Mint'],
 		['invest', '↗', 'Invest'],
 		['swap', '⇄', 'Swap'],
+		['coops', '◇', 'COOPs'],
 		['mips', '✎', 'Proposals'],
 		['ledger', '≡', 'Ledger'],
 		['rules', '⚙', 'Rules']
 	];
-	const labelOf = (k) => (k === 'pool' ? 'AMM pool' : k.startsWith('coop:') ? COOPS[k.slice(5)].name : view?.players[k.slice(7)]?.name);
-	const mindOf = (k) => COOPS[k.slice(5)].mind;
+	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
 </script>
 
 <div class="v1">
 	<canvas class="stage" bind:this={canvas}></canvas>
 
 	{#if view}
-		<!-- the names over the things in the world: tap one to open it -->
+		<!-- the players' names over them in the world: tap one to see them -->
 		{#each Object.entries(labels) as [k, l] (k)}
 			{#if l.on}
-				<button class="tag" class:me={k === `player:${seat}`} style="left:{l.x}px;top:{l.y}px" onclick={() => (k.startsWith('player:') ? ((seat = k.slice(7)), open('you')) : open(k))}>
-					{labelOf(k)}
-					{#if k.startsWith('player:')}<small>♥ {f(view.players[k.slice(7)].wallet.HEARTS, 1)}</small>{:else if k === 'pool'}<small>{p == null ? 'empty' : `1 Maia = ${f(p, 3)} Village`}</small>{:else}<small>{f(view.coops[k.slice(5)].treasury[mindOf(k)], 1)} {TOKEN_LABEL[mindOf(k)]}</small>{/if}
+				<button class="tag" class:me={k === `player:${seat}`} style="left:{l.x}px;top:{l.y}px" onclick={() => ((seat = k.slice(7)), open('you'))}>
+					{view.players[k.slice(7)].name}
+					<small>♥ {f(view.players[k.slice(7)].wallet.HEARTS, 1)}</small>
 				</button>
 			{/if}
 		{/each}
@@ -173,8 +172,7 @@
 	{#if view && player}
 		<div class="topstats">
 			<span class="stat panel" title="HEARTS held, and ready to mint"><span class="heart">♥</span> <b>{f(player.wallet.HEARTS, 1)}</b>{#if mint.amount > 0.05}<em>+{f(mint.amount, 1)}</em>{/if}</span>
-			<span class="stat panel" title="MaiaMIND"><i style="background:#5f8f6e"></i> <b>{f(player.wallet.MAIA, 1)}</b></span>
-			<span class="stat panel" title="VillageMIND"><i style="background:#c87a4f"></i> <b>{f(player.wallet.VILLAGE, 1)}</b></span>
+			{#each MINDS as t (t)}<span class="stat panel" title={TOKEN_LABEL[t]}><i style="background:{TOKEN_COLOUR[t]}"></i> <b>{f(player.wallet[t], 1)}</b></span>{/each}
 		</div>
 
 		<div class="topright">
@@ -210,14 +208,12 @@
 				<div class="wares">
 					<div><span>HEARTS</span><b>{f(player.wallet.HEARTS)}</b></div>
 					<div><span>Ready to mint</span><b>{f(mint.amount)}</b></div>
-					<div><span>MaiaMIND</span><b>{f(player.wallet.MAIA)}</b></div>
-					<div><span>VillageMIND</span><b>{f(player.wallet.VILLAGE)}</b></div>
+					{#each MINDS as t (t)}<div><span>{TOKEN_LABEL[t]}</span><b>{f(player.wallet[t])}</b></div>{/each}
 				</div>
 				<dl>
-					<dt>Share of all MaiaMIND</dt><dd>{total?.MAIA ? `${f((player.wallet.MAIA / total.MAIA) * 100, 1)} %` : '—'}</dd>
-					<dt>Share of all VillageMIND</dt><dd>{total?.VILLAGE ? `${f((player.wallet.VILLAGE / total.VILLAGE) * 100, 1)} %` : '—'}</dd>
-					<dt>Tent rent</dt><dd>{f(view.settings.tentRent)} VillageMIND a month</dd>
-					{#if player.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(player.arrears)} VillageMIND</dd>{/if}
+					{#each MINDS as t (t)}<dt>Share of all {TOKEN_LABEL[t]}</dt><dd>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} %` : '—'}</dd>{/each}
+					<dt>Tent rent</dt><dd>{f(view.settings.tentRent)} SettlementMIND a month</dd>
+					{#if player.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(player.arrears)} SettlementMIND</dd>{/if}
 				</dl>
 				{#if canMove}
 					<div class="buttons">
@@ -252,36 +248,64 @@
 					</div>
 				{/if}
 			{:else if panel === 'swap'}
-				<p class="eyebrow">AMM pool</p>
+				<p class="eyebrow">The MaiaCity COOP’s AMM pool</p>
 				<h2>Swap</h2>
 				<p class="about">Constant product, owned by no one. A {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
 				{#if canMove}
 					<div class="row">
 						<input type="number" min="0" step="0.1" bind:value={swapAmount} />
-						<select bind:value={swapToken}>
-							<option value="MAIA">MaiaMIND → VillageMIND</option>
-							<option value="VILLAGE">VillageMIND → MaiaMIND</option>
-						</select>
+						<select bind:value={swapToken}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select>
 					</div>
-					<div class="buttons"><button class="primary" disabled={busy || !(swapOut > 0)} onclick={() => doMove({ type: 'swap', token: swapToken, amount: swapAmount })}>Swap for {f(swapOut, 3)} {TOKEN_LABEL[swapToken === 'MAIA' ? 'VILLAGE' : 'MAIA']}</button></div>
+					<div class="row"><span class="arrow">→</span><select bind:value={swapTo}>{#each MINDS.filter((t) => t !== swapToken) as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></div>
+					<div class="buttons"><button class="primary" disabled={busy || !(swapOut > 0)} onclick={() => doMove({ type: 'swap', token: swapToken, to: swapTo, amount: swapAmount })}>Swap for {f(swapOut, 3)} {TOKEN_LABEL[swapTo]}</button></div>
 				{/if}
 				<dl>
-					<dt>Pool MaiaMIND</dt><dd>{f(view.pool.MAIA, 3)}</dd>
-					<dt>Pool VillageMIND</dt><dd>{f(view.pool.VILLAGE, 3)}</dd>
-					<dt>1 MaiaMIND</dt><dd>{p == null ? 'needs both sides' : `${f(p, 4)} VillageMIND`}</dd>
+					{#each MINDS as t (t)}<dt>Pool {TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
+					{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} MaiaMIND`}</dd>{/each}
 				</dl>
-			{:else if panel?.startsWith('coop:')}
+			{:else if panel === 'coops'}
+				<p class="eyebrow">Who owns what</p>
+				<h2>COOPs</h2>
+				<p class="about">Invest your HEARTS into a COOP to own a share of it: its MIND.</p>
+				{#each Object.keys(COOPS) as id (id)}
+					{@const c = view.coops[id]}
+					<button class="coop" onclick={() => (panel = `coop:${id}`)}>
+						<span class="coop-head"><b>{COOPS[id].name}</b><span class="mind"><i style="background:{TOKEN_COLOUR[COOPS[id].mind]}"></i>{TOKEN_LABEL[COOPS[id].mind]}</span></span>
+						<span class="assets">{#each COOPS[id].assets as a (a.id)}<span class="asset">{a.name}</span>{/each}</span>
+						<span class="treasury">Treasury {MINDS.filter((t) => t === COOPS[id].mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`).join(' · ')}</span>
+					</button>
+				{/each}
+			{:else if isCoopPanel(panel)}
 				{@const c = view.coops[panel.slice(5)]}
+				<button class="link back" onclick={() => (panel = 'coops')}>← All COOPs</button>
 				<p class="eyebrow">COOP · mints {TOKEN_LABEL[c.mind]}</p>
 				<h2>{c.name}</h2>
-				<p class="about">Owns {c.owns}.</p>
+				<p class="eyebrow">Assets it owns</p>
+				<ul class="asset-list">
+					{#each COOPS[c.id].assets as a (a.id)}
+						<li>
+							<b>{a.name}</b><span>{a.kind}</span>
+							{#if a.id === 'pool'}
+								<dl>
+									{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
+									{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} MaiaMIND`}</dd>{/each}
+								</dl>
+								<small>{f(view.settings.poolShare * 100, 0)} % of every treasury half flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
+							{:else if a.id === 'hex'}
+								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} MaiaMIND a month.</small>
+							{:else if a.id === 'tent'}
+								<small>Rented to both players for {f(view.settings.tentRent)} SettlementMIND a month each.</small>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				<p class="eyebrow">Treasury</p>
 				<dl>
-					<dt>Treasury MaiaMIND</dt><dd>{f(c.treasury.MAIA)}</dd>
-					<dt>Treasury VillageMIND</dt><dd>{f(c.treasury.VILLAGE)}</dd>
-					{#if c.id === 'village'}
-						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 VillageMIND</dd>
+					{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
+					{#if c.id === 'settlement'}
+						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 SettlementMIND</dd>
 						<dt>Pays hex rent</dt><dd>{f(view.settings.hexRent)} MaiaMIND</dd>
-					{:else}
+					{:else if c.id === 'maia'}
 						<dt>Gets hex rent</dt><dd>{f(view.settings.hexRent)} MaiaMIND</dd>
 					{/if}
 					{#if c.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(c.arrears)} MaiaMIND</dd>{/if}
@@ -290,17 +314,8 @@
 					{#if canMove}<button class="primary" onclick={() => open('invest')}>Invest</button>{/if}
 					{#if canMove}<button onclick={() => newMip({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</button>{/if}
 					<button onclick={() => { const k = panel; panel = 'ledger'; ledgerOfWho = k; }}>Its ledger</button>
+					{#if c.id === 'maia'}<button onclick={() => open('swap')}>Swap in the pool</button><button onclick={() => { panel = 'ledger'; ledgerOfWho = 'pool'; }}>The pool’s ledger</button>{/if}
 				</div>
-			{:else if panel === 'pool'}
-				<p class="eyebrow">Never withdrawn</p>
-				<h2>AMM pool</h2>
-				<p class="about">{f(view.settings.poolShare * 100, 0)} % of every treasury half flows in. Rent payers swap through it when they lack a MIND.</p>
-				<dl>
-					<dt>MaiaMIND</dt><dd>{f(view.pool.MAIA, 3)}</dd>
-					<dt>VillageMIND</dt><dd>{f(view.pool.VILLAGE, 3)}</dd>
-					<dt>1 MaiaMIND</dt><dd>{p == null ? 'needs both sides' : `${f(p, 4)} VillageMIND`}</dd>
-				</dl>
-				<div class="buttons"><button class="primary" onclick={() => open('swap')}>Swap</button><button onclick={() => { panel = 'ledger'; ledgerOfWho = 'pool'; }}>Its ledger</button></div>
 			{:else if panel === 'ledger'}
 				<p class="eyebrow">Every transaction</p>
 				<h2>Ledger</h2>
@@ -348,7 +363,7 @@
 								<span>→</span>
 								<select bind:value={x.to}>{#each PAYEES as id (id)}<option value={id}>{nameOf(view, id)}</option>{/each}</select>
 								<input type="number" min="0" step="0.1" bind:value={x.amount} />
-								<select bind:value={x.token}><option value="MAIA">MaiaMIND</option><option value="VILLAGE">VillageMIND</option></select>
+								<select bind:value={x.token}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select>
 								<button class="link" onclick={() => draft.payouts.splice(i, 1)}>Remove</button>
 							</div>
 						{/each}
@@ -846,6 +861,82 @@
 	}
 	.fab {
 		display: none;
+	}
+	.arrow {
+		align-self: center;
+		padding: 0 0.3rem;
+		opacity: 0.6;
+	}
+	.coop {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		width: 100%;
+		margin-top: 0.45rem;
+		padding: 0.6rem 0.7rem;
+		border: 1px solid rgb(31 42 35 / 0.1);
+		border-radius: 12px;
+		background: #fff;
+		text-align: left;
+	}
+	.coop:hover {
+		border-color: #24452f;
+	}
+	.coop-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.mind {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.72rem;
+		opacity: 0.8;
+	}
+	.assets {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+	.asset {
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		background: rgb(31 42 35 / 0.07);
+		font-size: 0.72rem;
+	}
+	.treasury {
+		font-size: 0.72rem;
+		opacity: 0.65;
+	}
+	.back {
+		display: block;
+		margin-bottom: 0.3rem;
+	}
+	.asset-list {
+		margin: 0.3rem 0 0.6rem;
+		padding: 0;
+		list-style: none;
+	}
+	.asset-list li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		margin-bottom: 0.35rem;
+		padding: 0.5rem 0.6rem;
+		border-radius: 10px;
+		background: rgb(31 42 35 / 0.05);
+	}
+	.asset-list li > span {
+		font-size: 0.7rem;
+		opacity: 0.6;
+	}
+	.asset-list small {
+		font-size: 0.72rem;
+		opacity: 0.75;
+	}
+	.asset-list dl {
+		margin: 0.3rem 0;
 	}
 	.toast {
 		position: absolute;
