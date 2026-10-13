@@ -38,7 +38,7 @@ test("a virtual year melts every balance by 7 %", () => {
 });
 
 test("rent: the players pay the tent in SettlementMIND, the Settlement COOP pays the hex in MaiaMIND through the pool", () => {
-  let s = grown(newGame(T0, { demurrage: 0 }));
+  let s = grown(newGame(T0, { demurrage: 0, dividendShare: 0 }));
   for (const seat of ["A", "B"]) s = act(s, seat, { type: "mint" }, T0);
   s = act(s, "A", { type: "invest", coop: "settlement", amount: 24 }, T0);
   s = act(s, "B", { type: "invest", coop: "maia", amount: 20 }, T0);
@@ -118,6 +118,39 @@ test("the pool is a Balancer weighted basket of all three MINDs: equal weights, 
   const out = quote(s, "SETTLEMENT", "MAIA", 1);
   const bi = s.pool.SETTLEMENT, bo = s.pool.MAIA;
   expect(out).toBeCloseTo(bo * (1 - Math.pow(bi / (bi + 0.997), 0.25 / 0.5)), 9);
+});
+
+test("rent is paid on every weekly pay day, a quarter of the month's each time, swapping on its own", () => {
+  let s = grown(newGame(T0, { demurrage: 0, dividendShare: 0 }));
+  s = act(s, "A", { type: "mint" }, T0);
+  s = act(s, "A", { type: "invest", coop: "settlement", amount: 24 }, T0);
+  // one game week (a quarter of a real day): one pay day, 2.5 of the 10 a month
+  s = advance(s, T0 + DAY_MS / 4);
+  expect(s.week).toBe(1);
+  expect(s.month).toBe(0);
+  expect(s.players.A.wallet.SETTLEMENT).toBeCloseTo(12 - 2.5, 6);
+  const days = ledgerOf(s, "player:A").filter((e) => e.kind === "rent");
+  expect(days.length).toBe(1);
+  expect(days[0].note).toContain("week 1");
+  s = advance(s, T0 + DAY_MS);
+  expect(s.week).toBe(4);
+  expect(s.month).toBe(1);
+  expect(s.players.A.wallet.SETTLEMENT).toBeCloseTo(2, 6);
+});
+
+test("Law 5: 20 % of every sale goes at once to the COOP's MIND holders, pro rata, in its own MIND", () => {
+  let s = grown(newGame(T0, { demurrage: 0, hexRent: 0, poolShare: 0 }));
+  for (const seat of ["A", "B"]) s = act(s, seat, { type: "mint" }, T0);
+  s = act(s, "A", { type: "invest", coop: "settlement", amount: 24 }, T0);
+  s = act(s, "B", { type: "invest", coop: "settlement", amount: 8 }, T0);
+  // A holds 12 and B 4 SettlementMIND; one pay day: each pays 2.5, the COOP passes 20 % of each on
+  s = advance(s, T0 + DAY_MS / 4);
+  const pot = 0.2 * 5;
+  // before the dividends A held 9.5 and B 1.5 (A pays first, then the first dividend lands, then B pays)
+  expect(s.players.A.wallet.SETTLEMENT + s.players.B.wallet.SETTLEMENT).toBeCloseTo(16 - 5 + pot, 6);
+  expect(s.coops.settlement.treasury.SETTLEMENT).toBeCloseTo(16 + 5 - pot, 6);
+  expect(ledgerOf(s, "player:A").filter((e) => e.kind === "dividend").length).toBe(2);
+  expect(supply(s).SETTLEMENT).toBeCloseTo(32, 6);
 });
 
 // the shared game in the database (PGlite): seats, moves, locks

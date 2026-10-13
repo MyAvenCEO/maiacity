@@ -10,7 +10,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, invariant, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 
@@ -48,7 +48,7 @@
 	const lines = $derived(view ? ledgerOf(view, who).slice(0, 200) : []);
 	const total = $derived(view ? supply(view) : null);
 	const swapOut = $derived(view ? quote(view, swapToken, swapTo, Number(swapAmount) || 0) : 0);
-	const nextMonth = $derived(view ? timeOfMonth(view, view.month + 1) : 0);
+	const nextMonth = $derived(view ? nextPayDay(view) : 0);
 	// how fast the game runs and how far minting reaches, in words (both are settings a MIP may change)
 	const hrs = (h) => (h === 24 ? 'a real day' : h % 24 === 0 ? `${h / 24} real days` : `${h} real hours`);
 	const speed = $derived(view ? `a month ${view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}` : '');
@@ -152,7 +152,7 @@
 	const pad = (n) => String(n).padStart(2, '0');
 	const vdate = (vm) => dateText(dateOf(vm));
 	const sign = (e) => (e.kind === 'arrears' ? '' : e.to === who ? '+' : e.from === who ? '−' : '');
-	const LABELS = { mint: 'Minted', invest: 'Invested', pool: 'To the pool', swap: 'Swap', rent: 'Rent', arrears: 'Owed', demurrage: 'Melt', expired: 'Expired', settings: 'Settings', proposal: 'MIP', payout: 'Payout' };
+	const LABELS = { mint: 'Minted', invest: 'Invested', pool: 'To the pool', swap: 'Swap', rent: 'Rent', arrears: 'Owed', demurrage: 'Melt', expired: 'Expired', settings: 'Settings', proposal: 'MIP', payout: 'Payout', dividend: 'Dividend' };
 	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, view.coops[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
 	const TOOLS = [
 		['you', '◉', 'You'],
@@ -204,7 +204,7 @@
 			{#each TOOLS as [id, ic, label] (id)}
 				<button class:on={panel === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
 			{/each}
-			<p class="speednote">{speed} · rent in {dur(nextMonth - now)}</p>
+			<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>
 		</nav>
 		{#if canMove}
 			<!-- the universal mint button: always at hand, over the nav pill -->
@@ -234,7 +234,7 @@
 				</div>
 				<dl>
 					{#each MINDS as t (t)}<dt>Share of all {TOKEN_LABEL[t]}</dt><dd>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} %` : '—'}</dd>{/each}
-					<dt>Tent rent</dt><dd>{f(view.settings.tentRent)} SettlementMIND a month</dd>
+					<dt>Tent rent</dt><dd>{f(view.settings.tentRent)} SettlementMIND a month, {f(view.settings.tentRent / 4)} each weekly pay day</dd>
 					{#if player.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(player.arrears)} SettlementMIND</dd>{/if}
 				</dl>
 				{#if canMove}
@@ -315,9 +315,9 @@
 								</dl>
 								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every treasury half flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
 							{:else if a.id === 'hex'}
-								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} MaiaMIND a month.</small>
+								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} MaiaMIND a month, paid a quarter each weekly pay day.</small>
 							{:else if a.id === 'tent'}
-								<small>Rented to both players for {f(view.settings.tentRent)} SettlementMIND a month each.</small>
+								<small>Rented to both players for {f(view.settings.tentRent)} SettlementMIND a month each, paid a quarter each weekly pay day.</small>
 							{/if}
 						</li>
 					{/each}
@@ -437,7 +437,7 @@
 				<dl class="settings">
 					{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
 				</dl>
-				<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts {f(view.settings.demurrage * 100, 0)} % a year. Rent is due at each month’s end. Every setting and every COOP changes only through a MIP with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}.</p>
+				<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a MIP with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}.</p>
 				<div class="buttons">
 					{#if canMove}<button class="primary" onclick={() => newMip()}>Propose a change</button>{/if}
 					{#if admin}<button class="danger" disabled={busy} onclick={() => confirm('Start the game again from year 0? Every balance, MIP and the ledger go.') && run(resetGame)}>Start again from year 0</button>{/if}
