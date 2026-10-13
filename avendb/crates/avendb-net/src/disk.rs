@@ -26,11 +26,14 @@ use avendb::wire::Wire;
 
 /// The file of edits, under the name it had when an edit was called an op, so every store on disk opens as it is.
 const EDITS: &str = "ops";
-const KEYS: &str = "keys";
+pub(crate) const KEYS: &str = "keys";
 /// A key on its way to disk, before it is renamed into place.
 const PART: &str = "part";
 /// Where a store of another format is put, under when, in seconds since 1970.
 const ASIDE: &str = "aside";
+
+/// What a store holds: signed edits, in the order they were saved, and McEliece keys.
+pub(crate) type Saved = (Vec<Signed>, Vec<Arc<[u8]>>);
 
 /// A node's store in a folder of its own.
 pub struct Disk {
@@ -46,6 +49,12 @@ impl Disk {
     /// The store in folder `dir`, made if there is none, and what it holds: the edits in the order they were saved,
     /// every record that decodes whole, and every key that hashes to its name.
     pub fn open(dir: &Path) -> Result<(Disk, Backup)> {
+        let (disk, (signed, keys)) = Disk::read(dir)?;
+        Ok((disk, Backup::new(signed, keys)))
+    }
+
+    /// As `open`, what the store holds as it is: its edits and its keys.
+    pub(crate) fn read(dir: &Path) -> Result<(Disk, Saved)> {
         fs::create_dir_all(dir).with_context(|| format!("the store at {}", dir.display()))?;
         let path = dir.join(EDITS);
         let mut bytes = match fs::read(&path) {
@@ -78,7 +87,7 @@ impl Disk {
             }
         }
         let disk = Disk { dir: dir.to_path_buf(), edits, written: signed.len(), keys: held };
-        Ok((disk, Backup::new(signed, keys)))
+        Ok((disk, (signed, keys)))
     }
 
     /// Takes on device `d` of `lab`, restored from this store (`Lab::restore_backup`) or holding edits the store
@@ -126,8 +135,13 @@ impl Disk {
         self.written == 0
     }
 
+    /// The store holds McEliece key `b`.
+    pub fn holds_key(&self, b: &BlobId) -> bool {
+        self.keys.contains(b)
+    }
+
     /// Writes `edits` anew from what device `d` holds, beside it first, then in its place.
-    fn rewrite(&mut self, lab: &Lab, d: SignerId) -> Result<()> {
+    pub(crate) fn rewrite(&mut self, lab: &Lab, d: SignerId) -> Result<()> {
         let ids = lab.log(d).ids();
         let mut out = Vec::new();
         for id in ids {
@@ -173,14 +187,14 @@ fn aside(dir: &Path) -> Result<()> {
 }
 
 /// One record: the edit's length, then its bytes.
-fn record(out: &mut Vec<u8>, signed: &Signed) {
+pub(crate) fn record(out: &mut Vec<u8>, signed: &Signed) {
     let bytes = signed.to_wire();
     out.extend((bytes.len() as u32).to_be_bytes());
     out.extend(bytes);
 }
 
 /// The edits of every record of `bytes` that decodes whole, up to the first that doesn't, and how many bytes they take.
-fn records(bytes: &[u8]) -> (Vec<Signed>, usize) {
+pub(crate) fn records(bytes: &[u8]) -> (Vec<Signed>, usize) {
     let (mut signed, mut at) = (Vec::new(), 0);
     while let Some(len) = bytes.get(at..at + 4) {
         let len = u32::from_be_bytes(len.try_into().expect("4 bytes")) as usize;

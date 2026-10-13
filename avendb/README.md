@@ -475,9 +475,13 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    as its folder on the Hetzner volume keeps the server's device secret.
 5. **The claim**: the first person to found their vault on **Your account** claims the server as avenCEO's device,
    so whoever runs a new server founds their vault there first. Both workflows log whether it is claimed yet.
+6. **Its bucket** (blobs B3a, `docs/BLOBS.md`): with `AVENDB_BUCKET`, `AVENDB_BUCKET_ENDPOINT`, `AVENDB_BUCKET_REGION`,
+   `AVENDB_BUCKET_ACCESS_KEY`, `AVENDB_BUCKET_SECRET_KEY` and `AVENDB_BUCKET_SEAL` (64 hex digits) in its environment,
+   its store and its device's secret live in that bucket, every object sealed under the seal, and its folder is only a
+   cache: it logs at its start whether it keeps one.
 
-Its store and its device's secret live on the Hetzner volume, so a rebuilt server is still the same device; the
-database backups don't hold them. Losing them makes a new server, a device of nobody: avenCEO's owners remove the lost
+Its store and its device's secret live on the Hetzner volume, and in its bucket if it keeps one, so a rebuilt server is
+still the same device, even with its folder lost; the database backups don't hold them. Losing them makes a new server, a device of nobody: avenCEO's owners remove the lost
 device from avenCEO, then claim the new server (`Node::claim`), which adds it to the same avenCEO, so every vault
 avenCEO relays keeps its cap.
 

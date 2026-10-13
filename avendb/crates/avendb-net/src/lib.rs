@@ -26,6 +26,9 @@
 //!   of reach, up to a minute, or at once when the peer connects to it.
 //! - **Store** (P8b): with `Options::store`, a node keeps what its device holds in a folder (`Disk`), saved as it
 //!   changes, and starts again from it.
+//! - **Bucket** (blobs B3a, `bucket`): with `Options::bucket` as well, the server's, its store lives in an S3 bucket,
+//!   every object sealed, and the folder is only a cache of it: the node puts there what it saved on disk, tells its
+//!   peers what changed only once the bucket has it, and starts again from the bucket when its folder is lost.
 //! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, on a machine on disk beside its store. It brings
 //!   a file sealed as it reads it (`Node::store_file`), reads any range of a file its device opens, fetching only the
 //!   sealed segments that hold it (`Node::read_file`), and keeps whole the files its device's sync rules say to keep,
@@ -72,6 +75,8 @@
 //!   nobody has claimed yet, for its first device to claim it.
 
 mod blobs;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod bucket;
 mod disk;
 mod files;
 pub mod kx;
@@ -90,7 +95,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::keys::PublicKey;
-use avendb::lab::{Drafting, Lab, Unsigned};
+use avendb::lab::{Backup, Drafting, Lab, Unsigned};
 use avendb::id::EditId;
 use avendb::policy::{Action, Kind, Principal, Refusal};
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
@@ -203,6 +208,10 @@ pub struct Options {
     /// Where it marks the steps of its start, its own (`node`, once its store is replayed) and those of founding its
     /// person's vault or linking to it (`Node::found_with`, `Node::link_with`), for its person to watch.
     pub progress: Progress,
+    /// The bucket its store lives in, beside its folder (`store`), which is then only a cache of it: the server's
+    /// (blobs B3a, `bucket`).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub bucket: Option<bucket::Sealed>,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -224,6 +233,8 @@ impl Options {
             relay_pass: None,
             page: PAGE,
             progress: Progress::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            bucket: None,
         }
     }
 }
@@ -364,11 +375,25 @@ impl Node {
     pub async fn spawn(lab: Lab, me: SignerId, opts: Options) -> Result<Node> {
         let secret = lab.endpoint_secret(me).context("a device of this Lab, unlocked")?;
         let store = opts.store.clone();
+        // what the bucket holds and the folder doesn't, taken back first
         #[cfg(not(target_arch = "wasm32"))]
-        let (lab, disk) = tokio::task::spawn_blocking(move || reopen(lab, me, store)).await??;
+        let mut rebuilt = match (&opts.bucket, &store) {
+            (Some(bucket), Some(dir)) => Some(bucket::rebuild(bucket, dir).await?),
+            (Some(_), None) => bail!("a node keeps a bucket only beside a store"),
+            (None, _) => None,
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let more = rebuilt.as_mut().map(|r| (std::mem::take(&mut r.edits), std::mem::take(&mut r.keys)));
+        #[cfg(not(target_arch = "wasm32"))]
+        let (lab, disk) = tokio::task::spawn_blocking(move || reopen(lab, me, store, more.unwrap_or_default())).await??;
         // a page has no folders, nor threads to spare
         #[cfg(target_arch = "wasm32")]
-        let (lab, disk) = reopen(lab, me, store)?;
+        let (lab, disk) = reopen(lab, me, store, Default::default())?;
+        #[cfg(not(target_arch = "wasm32"))]
+        let backed = match (opts.bucket.clone(), rebuilt, &opts.store) {
+            (Some(bucket), Some(rebuilt), Some(dir)) => Some(bucket::Backed::new(bucket, dir, rebuilt)?),
+            _ => None,
+        };
         opts.progress.step("node");
         if let Some(admission) = &opts.admission {
             let own = SecretKey::from_bytes(&secret).public();
@@ -416,6 +441,8 @@ impl Node {
             me,
             lab: Mutex::new(lab),
             disk: disk.map(Mutex::new),
+            #[cfg(not(target_arch = "wasm32"))]
+            bucket: backed,
             endpoint: endpoint.clone(),
             lookup,
             store: store.clone(),
@@ -440,11 +467,14 @@ impl Node {
             .accept(ALPN, session::Protocol(shared.clone()))
             .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, Some(events)))
             .spawn();
-        let tasks = vec![
+        #[allow(unused_mut)]
+        let mut tasks = vec![
             task::spawn(blobs::gate(shared.clone(), gate)),
             task::spawn(shared.clone().announcer()),
             task::spawn(shared.clone().keeper()),
         ];
+        #[cfg(not(target_arch = "wasm32"))]
+        tasks.push(task::spawn(shared.clone().flusher()));
         Ok(Node { shared, router, tasks })
     }
 
@@ -848,9 +878,25 @@ impl Node {
         self.shared.sent.dials.load(Ordering::Relaxed)
     }
 
-    /// Close its connections, its endpoint and its blob store, which the router closes with the blob protocol.
+    /// Its bucket lacks something its device holds (blobs B3a): until the bucket has it, the node tells its peers
+    /// nothing new. Never, for a node with no bucket.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn behind(&self) -> bool {
+        let shared = self.shared.clone();
+        let behind = move || shared.behind(&shared.lab.lock().expect("the Lab"));
+        tokio::task::spawn_blocking(behind).await.expect("the Lab's task")
+    }
+
+    /// Close its connections, its endpoint and its blob store, which the router closes with the blob protocol; with a
+    /// bucket, first put there what it lacks, if it can.
     pub async fn shutdown(&self) -> Result<()> {
         self.tasks.iter().for_each(JoinHandle::abort);
+        #[cfg(not(target_arch = "wasm32"))]
+        match time::timeout(WAIT, self.shared.flush()).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!("avendb: stopping with the bucket behind: {e:#}"),
+            Err(_) => tracing::warn!("avendb: stopping with the bucket behind: it took too long"),
+        }
         self.router.shutdown().await?;
         Ok(())
     }
@@ -863,15 +909,23 @@ impl Drop for Node {
 }
 
 /// Device `me` of `lab` with its store in folder `store`, if it keeps one: trusting no curve (`Lab::set_pq_only`),
-/// what the store holds taken back, if it holds anything, a checkpoint for the writes of its own that none covers yet,
-/// and whatever else the device holds saved.
-fn reopen(mut lab: Lab, me: SignerId, store: Option<PathBuf>) -> Result<(Lab, Option<Disk>)> {
+/// what the store holds taken back, if it holds anything, with the edits and keys its bucket held that the store didn't
+/// (`more`, `bucket::rebuild`), a checkpoint for the writes of its own that none covers yet, and whatever else the
+/// device holds saved: with edits from the bucket, the store is written anew.
+fn reopen(mut lab: Lab, me: SignerId, store: Option<PathBuf>, more: disk::Saved) -> Result<(Lab, Option<Disk>)> {
     lab.set_pq_only(true);
     let mut disk = match store {
         Some(dir) => {
-            let (disk, saved) = Disk::open(&dir)?;
-            if !disk.is_empty() {
-                lab.restore_backup(me, &saved);
+            let (mut disk, (mut signed, mut keys)) = Disk::read(&dir)?;
+            let (edits, blobs) = more;
+            let rebuilt = !edits.is_empty();
+            signed.extend(edits);
+            keys.extend(blobs);
+            if !signed.is_empty() {
+                lab.restore_backup(me, &Backup::new(signed, keys));
+            }
+            if rebuilt {
+                disk.rewrite(&lab, me)?;
             }
             Some(disk)
         }
@@ -994,6 +1048,9 @@ struct Shared {
     lab: Mutex<Lab>,
     /// Its store on disk, if it keeps one.
     disk: Option<Mutex<Disk>>,
+    /// The bucket its store lives in, if it keeps one (blobs B3a).
+    #[cfg(not(target_arch = "wasm32"))]
+    bucket: Option<bucket::Backed>,
     endpoint: Endpoint,
     lookup: MemoryLookup,
     /// Its blob store: the McEliece keys it offers, and the sealed pieces of files (`files`).
@@ -1105,13 +1162,31 @@ impl Shared {
         work()
     }
 
-    /// Saves what the device took since the last save, if the node keeps a store. A store that can't be written is
-    /// said so in the log, and tried again at the next change.
+    /// Saves what the device took since the last save, if the node keeps a store, and then puts it in the bucket,
+    /// if it keeps one. A store that can't be written is said so in the log, and tried again at the next change.
     fn save(&self, lab: &Lab) {
         let Some(disk) = &self.disk else { return };
-        if let Err(e) = disk.lock().expect("the store").save(lab, self.me) {
-            tracing::warn!("avendb: the store can't be written: {e:#}");
+        match disk.lock().expect("the store").save(lab, self.me) {
+            #[cfg(not(target_arch = "wasm32"))]
+            Ok(true) => {
+                if let Some(bucket) = &self.bucket {
+                    bucket.due.notify_one();
+                }
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("avendb: the store can't be written: {e:#}"),
         }
+    }
+
+    /// The node keeps a bucket that lacks something its device holds (blobs B3a): it tells its peers nothing new until
+    /// the bucket has it.
+    fn behind(&self, lab: &Lab) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(bucket) = &self.bucket {
+            return bucket.behind(lab, self.me);
+        }
+        let _ = lab;
+        false
     }
 
     /// Where to reach `endpoint`: through the node's relay, if it has one, and wherever the lookup knows of.
@@ -1274,10 +1349,11 @@ impl Shared {
     }
 
     /// What to tell each peer, worked out again if the device's edits changed since `size`; then whom the relay lets
-    /// in, if the node keeps that. `None` if nothing changed.
+    /// in, if the node keeps that. `None` if nothing changed, or if its bucket lacks something its device holds: until
+    /// the bucket has it, the peers are told nothing new.
     async fn news(self: &Arc<Self>, size: (usize, usize)) -> Option<News> {
-        let server = self.opts.card;
-        let news = self
+        let (server, shared) = (self.opts.card, self.clone());
+        let (news, behind) = self
             .lab(move |lab, me| {
                 let now = lab.size(me);
                 if now == size {
@@ -1288,7 +1364,8 @@ impl Shared {
                     let Ok(endpoint) = EndpointId::from_bytes(&key) else { continue };
                     peers.push((device, endpoint, lab.announce(me, device).into_iter().collect()));
                 }
-                Some(News { size: now, peers, roots: lab.roots(me), claimable: server && lab.vault_of(me).is_none() })
+                let claimable = server && lab.vault_of(me).is_none();
+                Some((News { size: now, peers, roots: lab.roots(me), claimable }, shared.behind(lab)))
             })
             .await?;
         if let Some(admission) = &self.opts.admission {
@@ -1296,7 +1373,7 @@ impl Shared {
             let passkeys = news.roots.iter().copied().collect();
             admission.set(Admitted { endpoints, passkeys, claimable: news.claimable });
         }
-        Some(news)
+        (!behind).then_some(news)
     }
 
     /// Tells each peer the digests of the logs it may hold by the node's view, if they changed since it was last told,

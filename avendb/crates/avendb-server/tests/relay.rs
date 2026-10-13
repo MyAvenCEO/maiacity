@@ -29,6 +29,9 @@ use iroh::{EndpointId, RelayUrl, SecretKey};
 /// A socket of the system's choosing on this machine.
 const LOOPBACK: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
 
+/// A bucket's seal, as its environment says it: 64 hex digits.
+const SEAL: &str = "abababababababababababababababababababababababababababababababab";
+
 /// How a device with no UDP of its own runs: it reaches every peer through `relay`.
 fn relay_only(relay: &RelayUrl) -> Options {
     Options { bind: None, relay: Some(relay.clone()), ..Options::local() }
@@ -127,7 +130,8 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     let dir = Folder::new("relay");
     let data = dir.path().to_path_buf();
     let (relay_url, public_addr) = (None, None);
-    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false };
+    let config =
+        Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false, bucket: None };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
@@ -238,6 +242,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         relay_url: Some(relay_url.clone()),
         public_addr: Some(public),
         signup: true,
+        bucket: None,
     };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");
@@ -257,6 +262,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(defaults.relay_url, None, "the relay's own socket, unless it is said where devices reach it");
     assert_eq!(defaults.public_addr, None, "its own interfaces' addresses, unless it is said where it is reached");
     assert!(defaults.signup, "sign-up is open, unless it is said closed");
+    assert!(defaults.bucket.is_none(), "no bucket, unless one is said");
     let vars = HashMap::from([
         ("AVENDB_DATA", "/srv/avendb"),
         ("AVENDB_BIND", "[::]:7402"),
@@ -264,6 +270,12 @@ fn the_server_is_configured_by_its_environment() {
         ("AVENDB_RELAY_URL", "https://avendb.maia.city"),
         ("AVENDB_PUBLIC_ADDR", "203.0.113.7:7401"),
         ("AVENDB_SIGNUP", "closed"),
+        ("AVENDB_BUCKET", "maiacity-avendb"),
+        ("AVENDB_BUCKET_ENDPOINT", "https://hel1.your-objectstorage.com"),
+        ("AVENDB_BUCKET_REGION", "hel1"),
+        ("AVENDB_BUCKET_ACCESS_KEY", "an access key"),
+        ("AVENDB_BUCKET_SECRET_KEY", "a secret key"),
+        ("AVENDB_BUCKET_SEAL", SEAL),
     ]);
     let set = Config::from_vars(|k| vars.get(k).map(|v| v.to_string())).expect("what the environment says");
     assert_eq!(set.data, PathBuf::from("/srv/avendb"));
@@ -272,6 +284,17 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(set.relay_url, Some("https://avendb.maia.city".parse().expect("a URL")));
     assert_eq!(set.public_addr, Some("203.0.113.7:7401".parse().expect("a socket")));
     assert!(!set.signup);
+    let bucket = set.bucket.expect("a bucket");
+    assert_eq!((bucket.name.as_str(), bucket.region.as_str()), ("maiacity-avendb", "hel1"));
+    assert_eq!(*bucket.seal, [0xab; 32], "its seal, from 64 hex digits");
+    assert!(!format!("{bucket:?}").contains("secret key"), "its keys never in a log line");
+    for (unsaid, seal) in [("AVENDB_BUCKET_REGION", SEAL), ("", &SEAL[2..])] {
+        let var = |k: &str| {
+            let v = if k == "AVENDB_BUCKET_SEAL" { Some(seal) } else { vars.get(k).copied() };
+            v.filter(|_| k != unsaid).map(str::to_string)
+        };
+        assert!(Config::from_vars(var).is_err(), "a bucket with {unsaid} unsaid, or a seal short of 32 bytes: said so");
+    }
     assert!(Config::from_vars(|k| (k == "AVENDB_SIGNUP").then(|| "maybe".to_string())).is_err());
     let wrong = Config::from_vars(|k| (k == "AVENDB_BIND").then(|| "the server's port".to_string()));
     assert!(wrong.is_err(), "a socket that isn't one is said so, not taken for the default");
@@ -385,7 +408,8 @@ async fn a_persons_first_browser_founds_their_vault_through_a_relay_open_to_sign
 async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_strangers() {
     let dir = Folder::new("claim");
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
-    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false };
+    let config =
+        Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false, bucket: None };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
