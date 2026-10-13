@@ -11,7 +11,7 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
-	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 
@@ -170,6 +170,8 @@
 	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
 	const isAssetPanel = (x) => typeof x === 'string' && x.startsWith('asset:');
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
+	/** the rent the Settlement COOP pays for an asset, if it rents it */
+	const rentOf = (id) => RENTED.find((r) => r.asset === id);
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
 
@@ -314,6 +316,7 @@
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
 				<dl>
 					{#if owner}<dt>Owner</dt><dd>{owner[1].name}</dd><dt>Ownership</dt><dd>{TOKEN_LABEL[owner[1].mind]} holders</dd>{/if}
+					{#if owner && rentOf(id) && owner[0] !== 'settlement'}<dt>Rented to</dt><dd>Settlement COOP</dd><dt>Rent</dt><dd>{f(view.settings[rentOf(id).setting] ?? 0)} {TOKEN_LABEL[owner[1].mind]} a month</dd>{/if}
 					{#each info?.specs ?? [] as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 				</dl>
 				{#if owner}<div class="buttons"><button onclick={() => (panel = `coop:${owner[0]}`)}>Open the {owner[1].name}</button></div>{/if}
@@ -337,6 +340,8 @@
 								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} MaiaMIND a month, paid a quarter each weekly pay day.</small>
 							{:else if a.id === 'tent'}
 								<small>Rented to both players for {f(view.settings.tentRent)} SettlementMIND a month each, paid a quarter each weekly pay day.</small>
+							{:else if rentOf(a.id) && c.id !== 'settlement'}
+								<small>Rented to the Settlement COOP for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a month, paid a quarter each weekly pay day.</small>
 							{/if}
 						</li>
 					{/each}
@@ -347,10 +352,13 @@
 					{#if c.id === 'settlement'}
 						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 SettlementMIND</dd>
 						<dt>Pays hex rent</dt><dd>{f(view.settings.hexRent)} MaiaMIND</dd>
+						{#each RENTED.filter((r) => ownerOf(r.asset) && ownerOf(r.asset)[0] !== 'settlement') as r (r.asset)}<dt>Pays {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
 					{:else if c.id === 'maia'}
 						<dt>Gets hex rent</dt><dd>{f(view.settings.hexRent)} MaiaMIND</dd>
 					{/if}
-					{#if c.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(c.arrears)} MaiaMIND</dd>{/if}
+					{#if c.id !== 'settlement'}{#each RENTED.filter((r) => c.assets.some((a) => a.id === r.asset)) as r (r.asset)}<dt>Gets {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}{/if}
+					{#if c.id === 'settlement'}{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}{/if}
+					{#if c.arrears > 0.001}<dt>Owed for the hex</dt><dd class="bad">{f(c.arrears)} MaiaMIND</dd>{/if}
 				</dl>
 				<div class="buttons">
 					{#if canMove}<button class="primary" onclick={() => open('invest')}>Invest</button>{/if}

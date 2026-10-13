@@ -158,6 +158,20 @@ test("Law 5: 20 % of every sale goes at once to the COOP's MIND holders, pro rat
   expect(supply(s).SETTLEMENT).toBeCloseTo(32, 6);
 });
 
+test("the Settlement COOP rents the pickup, powercube and battery pack from the Village COOP in VillageMIND", () => {
+  let s = grown(newGame(T0, { demurrage: 0, tentRent: 0, hexRent: 0, poolShare: 0 }));
+  s.coops.settlement.treasury.VILLAGE = 10;
+  // one pay day: a quarter of 4 + 3 + 3; the Settlement COOP is the only VillageMIND holder, so the 20 % comes back to it
+  s = advance(s, T0 + DAY_MS / 4);
+  expect(s.coops.village.treasury.VILLAGE).toBeCloseTo(2.5 * 0.8, 6);
+  expect(s.coops.settlement.treasury.VILLAGE).toBeCloseTo(10 - 2.5 * 0.8, 6);
+  expect(ledgerOf(s, "coop:village").filter((e) => e.kind === "rent").map((e) => e.note.split(",")[0]).sort()).toEqual(["battery pack rent", "pickup rent", "powercube rent"]);
+  // with nothing to pay with, each machine's rent is owed on its own
+  let t = grown(newGame(T0, { demurrage: 0, tentRent: 0, hexRent: 0 }));
+  t = advance(t, T0 + DAY_MS / 4);
+  expect(t.coops.settlement.owed).toEqual({ pickup: 1, powercube: 0.75, battery: 0.75 });
+});
+
 // the shared game in the database (PGlite): seats, moves, locks
 import { PGlite } from "@electric-sql/pglite";
 import { useDb } from "../src/pg";

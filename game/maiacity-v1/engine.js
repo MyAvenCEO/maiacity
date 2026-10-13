@@ -15,7 +15,8 @@
  *   so V never falls. It is never paid out; anyone can swap through it (the 0.3 % fee stays in the pool).
  * - Rent, on the pay day that ends every game week (4 a month, each a quarter of the month's rent): each player pays
  *   the Settlement COOP for the tent in SettlementMIND; the Settlement COOP pays the MaiaCity COOP for the hex in
- *   MaiaMIND. A payer who lacks the MIND swaps its others through the pool on its own; what is still missing is owed
+ *   MaiaMIND; the Settlement COOP rents the Village COOP's pickup, powercube and battery pack, paid to whichever COOP
+ *   owns each in that COOP's MIND (VillageMIND). A payer who lacks the MIND swaps its others through the pool on its own; what is still missing is owed
  *   (arrears) and paid first next pay day.
  * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
  *   year begins with Sol (from 21 March, the new year) and ends with March; every month starts on a Sunday. Every balance (HEARTS, wallets, treasuries, the pool)
@@ -74,11 +75,22 @@ export const DEFAULT_SETTINGS = {
 	/** each player, each virtual month, to the Settlement COOP, in SettlementMIND */
 	tentRent: 10,
 	/** the Settlement COOP, each virtual month, to the MaiaCity COOP, in MaiaMIND */
-	hexRent: 10
+	hexRent: 10,
+	/** the Settlement COOP, each virtual month, for the Village COOP's machines it uses, in the owner's MIND (VillageMIND) */
+	pickupRent: 4,
+	powercubeRent: 3,
+	batteryRent: 3
 };
 
+/** the machines the Settlement COOP rents, each with the setting of its monthly rent; paid to the COOP that owns it */
+export const RENTED = [
+	{ asset: 'pickup', setting: 'pickupRent', label: 'pickup' },
+	{ asset: 'powercube', setting: 'powercubeRent', label: 'powercube' },
+	{ asset: 'battery', setting: 'batteryRent', label: 'battery pack' }
+];
+
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)', pickupRent: 'Pickup rent, Settlement COOP a month (VillageMIND)', powercubeRent: 'Powercube rent, Settlement COOP a month (VillageMIND)', batteryRent: 'Battery pack rent, Settlement COOP a month (VillageMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -95,7 +107,10 @@ export const SETTING_LIMITS = {
 	weightVILLAGE: [0.1, 10],
 	swapFee: [0, 0.1],
 	tentRent: [0, 10000],
-	hexRent: [0, 10000]
+	hexRent: [0, 10000],
+	pickupRent: [0, 10000],
+	powercubeRent: [0, 10000],
+	batteryRent: [0, 10000]
 };
 
 const wallet = () => ({ HEARTS: 0, MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 });
@@ -326,6 +341,17 @@ function payDay(s, at) {
 	if (due > DUST) {
 		st.arrears = payRent(s, at, 'coop:settlement', st.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
 		if (st.arrears > DUST) log(s, at, { kind: 'arrears', from: 'coop:settlement', to: 'coop:maia', token: 'MAIA', amount: st.arrears, note: 'hex rent still owed' });
+	}
+	// the machines it rents, each to the COOP that owns it now (a MIP may move an asset), in that COOP's MIND
+	st.owed ??= {};
+	for (const r of RENTED) {
+		const owner = Object.values(s.coops).find((c) => c.assets.some((a) => a.id === r.asset));
+		if (!owner || owner.id === 'settlement') continue;
+		const had = (st.owed[r.asset] ?? 0) > DUST;
+		const due = (s.settings[r.setting] ?? 0) / WEEKS_A_MONTH + (st.owed[r.asset] ?? 0);
+		if (due <= DUST) continue;
+		st.owed[r.asset] = payRent(s, at, 'coop:settlement', st.treasury, `coop:${owner.id}`, owner.treasury, owner.mind, due, `${r.label} rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
+		if (st.owed[r.asset] > DUST) log(s, at, { kind: 'arrears', from: 'coop:settlement', to: `coop:${owner.id}`, token: owner.mind, amount: st.owed[r.asset], note: `${r.label} rent still owed` });
 	}
 }
 
