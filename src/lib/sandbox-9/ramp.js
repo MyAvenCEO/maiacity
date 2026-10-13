@@ -24,7 +24,7 @@
  * until the plan is done (their usual rules apply from then on).
  */
 import { buildPlan } from '../sandbox-7/buildout.js';
-import { KINDS } from '../sandbox-7/specs.js';
+import { KINDS, BATTERY_KWH, siteHall } from '../sandbox-7/specs.js';
 import { FACTORY_RUN } from '../sandbox-7/stats.js';
 import { initPerson, firstAlloc, newPlant, SETTLEMENTS } from './genesis.js';
 import { payEur } from './border.js';
@@ -57,7 +57,10 @@ export function rampSchedule(cfg) {
 	const finalSolar = Math.max(1, last.solarKwhYear);
 	const finalForest = Math.max(1e-9, last.forestHa);
 	const indoorTotal = 2 * 6 * FOOD_DOME_M2 + 6 * UTIL_GARDEN_M2;
-	const finalBatt = 6 * 10000 + 40000;
+	// the batteries (sandbox-7 specs.js BATTERY_KWH, by the design package): each utilities dome's and the centre's
+	const finalBatt = 6 * BATTERY_KWH.util + BATTERY_KWH.centre;
+	// the centre's buildings by floor (a works hall is far smaller than a Dome120: sandbox-7 hallOf)
+	const floorOf = (x) => (x.kind === 'factory120' ? siteHall({ kind: x.kind, factory: x.factory })?.floor ?? FLOOR120 : FLOOR120);
 	const worksT = { timber: FACTORY_RUN.timber.t, bamboo: FACTORY_RUN.bamboo.t };
 	const months = [];
 	// one month more than the plan's: the month after its last, when everything it finished stands
@@ -75,8 +78,9 @@ export function rampSchedule(cfg) {
 		if (bedsAll < people) campBeds += people - bedsAll;
 		const of = (h, kinds) => done.filter((x) => x.hex === h && kinds.includes(x.kind)).length;
 		const hallHex = hexes.map((h) => (of(h, ['food120']) + of(h, ['util120'])) * FLOOR120);
-		const centreDone = done.filter((x) => x.hex === 'tower' && (x.kind === 'centre' || x.kind === 'tower' || (x.kind === 'factory120' && !['timber', 'bamboo', 'steel', 'glass'].includes(x.factory)))).length;
-		const worksDomes = done.filter((x) => x.hex === 'tower' && x.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(x.factory)).length;
+		const centreB = done.filter((x) => x.hex === 'tower' && (x.kind === 'centre' || x.kind === 'tower' || (x.kind === 'factory120' && !['timber', 'bamboo', 'steel', 'glass'].includes(x.factory))));
+		const worksB = done.filter((x) => x.hex === 'tower' && x.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(x.factory));
+		const centreDone = centreB.length, worksDomes = worksB.length;
 		const utilDone = done.filter((x) => x.kind === 'util120').length;
 		const foodDone = done.filter((x) => x.kind === 'food120').length;
 		const works = new Set(s < 0 ? [] : mo.works ?? []);
@@ -90,13 +94,14 @@ export function rampSchedule(cfg) {
 			camp: s < 0 ? 'living-e' : mo.camp,
 			hallHex,
 			hallVillageDomes: centreDone + worksDomes,
+			hallVillageFloor: [...centreB, ...worksB].reduce((a, x) => a + floorOf(x), 0),
 			centreDone,
 			worksDomes,
 			indoor: (foodDone * FOOD_DOME_M2 + utilDone * UTIL_GARDEN_M2) / indoorTotal,
 			forest: (s < 0 ? 0 : mo.forestHa) / finalForest,
 			// the kit's solar containers stand from day 0
 			solar: Math.min(1, Math.max(kitKwp * 980, s < 0 ? 0 : mo.solarKwhYear) / finalSolar),
-			batt: Math.min(1, (kitKwh + 10000 * utilDone + 40000 * Math.min(1, done.filter((x) => x.kind === 'centre' || x.kind === 'tower').length)) / finalBatt),
+			batt: Math.min(1, (kitKwh + BATTERY_KWH.util * utilDone + BATTERY_KWH.centre * Math.min(1, done.filter((x) => x.kind === 'centre' || x.kind === 'tower').length)) / finalBatt),
 			geo: s >= 0 && !!mo.geothermal,
 			works,
 			timber: ((works.has('timber') ? worksT.timber : 0) + (works.has('bamboo') ? worksT.bamboo : 0)) / (worksT.timber + worksT.bamboo),
@@ -139,7 +144,7 @@ function shareOf(w, pl, mo) {
 			if (pl.camp) return mo.campBeds / S.campFull;
 			return pl.hex != null ? mo.bedsHex[pl.hex] / Math.max(1e-9, S.bedsHexFull[pl.hex]) : 1;
 		case 'hall':
-			return pl.hex === 'centre' ? mo.hallVillageDomes / Math.max(1, S.villageDomesFull) : mo.hallHex[pl.hex] / Math.max(1e-9, S.hallHexFull[pl.hex]);
+			return pl.hex === 'centre' ? mo.hallVillageFloor / Math.max(1, S.villageFloorFull) : mo.hallHex[pl.hex] / Math.max(1e-9, S.hallHexFull[pl.hex]);
 		case 'greenhouse':
 			return mo.indoor;
 		case 'forest':
@@ -196,6 +201,7 @@ export function initRamp(w, S) {
 	}
 	S.hallHexFull = S.months[S.months.length - 1].hallHex.map((x, h) => x || 1);
 	S.villageDomesFull = S.months[S.months.length - 1].hallVillageDomes || 1;
+	S.villageFloorFull = S.months[S.months.length - 1].hallVillageFloor || 1;
 	S.monthNow = -1;
 	S.plants = [];
 	for (const co of w.coops)

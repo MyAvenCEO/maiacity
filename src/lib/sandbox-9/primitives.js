@@ -19,7 +19,7 @@
  * household goods in kg, hot-spring time in hours. Money inside the village is never in here: prices are found by
  * the COOPs each day. Euro prices appear only at the border (BORDER), where COOPs buy what the village cannot make.
  */
-import { DAY, DIET } from '../sandbox-7/specs.js';
+import { DAY, DIET, PRICES, DENSITY, DESIGN } from '../sandbox-7/specs.js';
 
 /** a number with its unit and source; est marks an estimate nobody has checked yet */
 const n = (v, u, src, est = false) => ({ v, u, src, est });
@@ -528,9 +528,11 @@ export const BORDER = {
 	scrapEur: n(300, '€ a t of steel scrap', 'sandbox-7 SOURCES.steel: scrap ~300 €/t (EU 2025)'),
 	floatEur: n(650, '€ a t of float glass', 'float glass ~USD 680 a t in Germany (IMARC price trend, 2026 edition); EU import unit values ~€2,000 a t include worked glass (estimate)', true),
 	cellsEur: n(60, '€ per kWp of solar cells', 'TOPCon cells $0.036–0.040 a W (pv magazine, 9 May 2025) at $1.13 a € (Bank of Finland, 2025 average): ~€0.035 a W, €60 a kWp with the see-through cells’ premium (range 40–100; cost audit 2026-10-13, was 300)', true),
-	glulamEur: n(950 / 0.55, '€ a t of glulam, bought when the timber works cannot keep up', 'larch/Douglas glulam blanks for the struts ~800–1,200 €/m³, 950 used (sandbox-7 PRICES.glulam: spruce glulam 555–575 €/m³, Holzkurier Nov 2025, larch value logs ~1.7× spruce’s, BaySF 2019) at 0.55 t a m³ (cost audit 2026-10-13, was 1,027 for spruce)', true),
-	steelEur: n(6000, '€ a t of steel, bought when the steelworks cannot keep up', 'what the village’s steelworks makes is the domes’ cast hubs, ring and connectors, so what it buys stands for finished hubs: EU import unit values for cast steel parts €4.2–6.0 a kg (thetradehub.eu, 84879051), sandbox-7 PRICES.hubs €6,000 a t (range 4,500–9,000; cost audit 2026-10-13, was 770 for plate)', true),
-	glazingEur: n(3800, '€ a t of laminated glazing, bought when the glassworks cannot keep up', 'insulating glass €100–150 a m² (aroundhome.de) plus €35–80 a m² for laminated safety glass (clean-invoice.com): ~€190 a m² at ~0.05 t a m² (range 2,800–5,000 a t; cost audit 2026-10-13, was 2,000)', true),
+	// the materials bought when the village's works cannot keep up are Sandbox 6's own, at its design package's prices
+	// (sandbox-7 specs.js DESIGN, PRICES, DENSITY): read from there, never copied
+	glulamEur: n(PRICES.glulam.eur / DENSITY.glulam, '€ a t of glulam, bought when the timber works cannot keep up', `sandbox-7 PRICES.glulam (design package ${DESIGN}): ${PRICES.glulam.label}, €${PRICES.glulam.eur} a m³ (range ${PRICES.glulam.range}) at ${DENSITY.glulam} t a m³ (cost audit 2026-10-13)`, true),
+	steelEur: n(PRICES.hubs.eur, '€ a t of steel, bought when the steelworks cannot keep up', `what the village’s steelworks makes is the domes’ hubs, ring and connectors, so what it buys stands for finished hubs: sandbox-7 PRICES.hubs (design package ${DESIGN}): ${PRICES.hubs.label}, €${PRICES.hubs.eur} a t (range ${PRICES.hubs.range}; cost audit 2026-10-13)`, true),
+	glazingEur: n(PRICES.glass.eur / DENSITY.glass, '€ a t of laminated glazing, bought when the glassworks cannot keep up', `sandbox-7 PRICES.glass: ${PRICES.glass.label}, €${PRICES.glass.eur} a m² (range ${PRICES.glass.range}) at ~${DENSITY.glass} t a m² (cost audit 2026-10-13)`, true),
 	panelsEur: n(440, '€ per kWp of see-through solar glass, bought when the panel works cannot keep up', 'glass-glass modules €0.16–0.22 a Wp (ema-energiewelt.de, 2026); cells laid into a pane at ~€100 a m² and ~1,000 kWh a kWp: €440 a kWp (range 200–700; cost audit 2026-10-13, was 1,000)', true),
 	accountDays: n(60, 'days of its imports a COOP keeps in its euro account', 'what a COOP exports ahead, so a dark week does not stop its imports (estimate)', true),
 	importAhead: n(30, 'days of supply a COOP looks ahead when it buys at the border', 'estimate', true),

@@ -5,8 +5,9 @@
  *
  * A living hex: 5 Dome80 homes of 40 and 9 Dome40 homes of 10 (290 beds), two Dome120 food domes (the food forest
  * under glass), one Dome120 utilities dome (data centre, batteries, water works, workshops, workspaces), its outdoor
- * food forest, nature and roads. The centre hex: eight Dome120 factories (timber, bamboo, hemp, recycling, glass,
- * clay, lime, steel), the fields, woods and pits, and the village's geothermal plant. Without the tower (the default,
+ * food forest, nature and roads. The centre hex: eight works (timber, bamboo, hemp, recycling, glass, clay, lime,
+ * steel; Dome120 factories, or in Sandbox 6's design packages 3–4 plain portal-frame halls: sandbox-7 specs.js DESIGN,
+ * hallOf), the fields, woods and pits, and the village's geothermal plant. Without the tower (the default,
  * Samuel 2026-10-13: the tower is too expensive to take for granted) the middle of the centre hex holds one more
  * Dome120 of utilities and community halls; with it, the Tower180 stands there at its real cost.
  *
@@ -22,7 +23,8 @@
  */
 import { LIVING, TOWER_HEX, HEX_AREA } from '../sandbox-7/layout.js';
 import { hexStats, FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from '../sandbox-7/stats.js';
-import { KINDS, shellOf, towerShell, towerFloors, DENSITY, PRICES, EQUIPMENT, ENERGY as E7, DAY, LAND_PERSON, SOURCES, FLOOR_MATERIALS, ASSEMBLY } from '../sandbox-7/specs.js';
+import { KINDS, shellOf, towerShell, towerFloors, DENSITY, PRICES, EQUIPMENT, ENERGY as E7, DAY, LAND_PERSON, SOURCES, FLOOR_MATERIALS, ASSEMBLY, BATTERY_KWH, DESIGN, PACKAGE, siteHall } from '../sandbox-7/specs.js';
+import { buildPlan } from '../sandbox-7/buildout.js';
 
 const cache = new Map();
 
@@ -46,14 +48,20 @@ function siteParts(site, plan) {
 		}
 		return out;
 	}
+	// a works in a plain hall (Sandbox 6's design packages 3–4, ../sandbox-7/specs.js hallOf): its glulam frames and
+	// purlins, its connectors, mesh and the steel-skinned sandwich panels, its glass-glass modules on the south roof,
+	// its slab and footings; the solar the roof makes, the heat and fan power the hall needs
+	const hall = siteHall(site);
+	if (hall) return { n: 1, wood: hall.t.glulam, steel: hall.t.steel + hall.t.panels, glass: hall.t.modules, hemp: 0, lime: 0, concrete: hall.t.concrete, pvM2: hall.m.modules, climate: hall.climate, heat: hall.heat, solar: hall.solar, gfa: 0, floor: hall.floor };
 	const K = KINDS[site.kind];
 	const sh = shellOf(K.D);
-	const out = { n: 1, wood: sh.t.timber, steel: sh.t.steel, glass: sh.t.glass, hemp: sh.t.hemp, lime: sh.t.lime, concrete: 0, pvM2: sh.m.pv, climate: sh.climate, heat: sh.heat, solar: sh.solar, gfa: K.gfa ?? 0 };
+	const out = { n: 1, wood: sh.t.timber, steel: sh.t.steel, glass: sh.t.glass, hemp: sh.t.hemp, lime: sh.t.lime, concrete: 0, pvM2: sh.m.pv, climate: sh.climate, heat: sh.heat, solar: sh.solar, gfa: K.gfa ?? 0, floor: K.D === 120 ? Math.PI * 60 * 60 : 0 };
 	if (K.gfa) out.wood += K.gfa * 0.28 * DENSITY.clt;
 	if (site.kind === 'util120') out.wood += K.zones.filter((z) => z.block && z.block !== 'water').reduce((a, z) => a + z.m2, 0) * 0.25 * DENSITY.clt;
 	return out;
 }
-const PARTS = ['n', 'wood', 'steel', 'glass', 'hemp', 'lime', 'concrete', 'pvM2', 'climate', 'heat', 'solar', 'gfa'];
+const PARTS = ['n', 'wood', 'steel', 'glass', 'hemp', 'lime', 'concrete', 'pvM2', 'climate', 'heat', 'solar', 'gfa', 'floor'];
+const TRADED = ['timber', 'bamboo', 'steel', 'glass'];
 const addParts = (a, b, k = 1) => {
 	for (const p of PARTS) a[p] = (a[p] ?? 0) + (b[p] ?? 0) * k;
 	return a;
@@ -88,13 +96,16 @@ export function villageFacts(livingHexes = 6, tower = false) {
 	}
 	for (const s of cPlan.sites) {
 		const p = siteParts(s, cPlan);
-		if (s.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(s.factory)) works[s.factory] = addParts(zero(), p);
+		if (s.kind === 'factory120' && TRADED.includes(s.factory)) works[s.factory] = addParts(zero(), p);
 		else addParts(halls, p), addParts(centre, p);
 	}
-	// floor m² of the domes the settlement COOPs rent out: a Dome120's floor is its footprint (sandbox-7 capOf); the
-	// tower's, its floors
+	// floor m² of the buildings the settlement COOPs rent out: a Dome120's floor is its footprint (sandbox-7 capOf), a
+	// works hall's its own (sandbox-7 hallOf); the tower's, its floors
 	const floor120 = Math.PI * 60 * 60;
-	const centreFloor = tower && cPlan.tower ? towerFloors(cPlan.tower).reduce((a, f) => a + f.m2, 0) + floor120 * (cPlan.sites.filter((s) => s.kind !== 'tower' && s.kind !== 'factory120').length + cPlan.sites.filter((s) => s.kind === 'factory120' && !['timber', 'bamboo', 'steel', 'glass'].includes(s.factory)).length) : floor120 * cPlan.sites.filter((s) => !(s.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(s.factory))).length;
+	const floorOf = (s) => (s.kind === 'tower' && cPlan.tower ? towerFloors(cPlan.tower).reduce((a, f) => a + f.m2, 0) : siteHall(s)?.floor ?? floor120);
+	const traded = (s) => s.kind === 'factory120' && TRADED.includes(s.factory);
+	const centreFloor = cPlan.sites.filter((s) => !traded(s)).reduce((a, s) => a + floorOf(s), 0);
+	const worksFloor = Object.fromEntries(TRADED.map((k) => [k, cPlan.sites.filter((s) => traded(s) && s.factory === k).reduce((a, s) => a + floorOf(s), 0)]));
 	const utilZones = Object.fromEntries(KINDS.util120.zones.filter((z) => z.block).map((z) => [z.block, z.m2]));
 	const utilGardenM2 = KINDS.util120.zones.find((z) => z.use === 'indoorFood')?.m2 ?? 0;
 	const foodPerHex = LIVING.sites.filter((s) => s.kind === 'food120').length;
@@ -117,7 +128,8 @@ export function villageFacts(livingHexes = 6, tower = false) {
 	// ── energy ──
 	let solarKwh = 0;
 	for (const b of [homes, food, halls, ...Object.values(works)]) solarKwh += b.solar;
-	const batteryKwh = nL * 10000 + 40000;
+	// the batteries: each utilities dome's and the centre's (sandbox-7 specs.js BATTERY_KWH, by the design package)
+	const batteryKwh = nL * BATTERY_KWH.util + BATTERY_KWH.centre;
 	const geoKw = 3400;
 
 	// ── the founding bill: what Sandbox 6 prices the village at (its five rows), without the tower's own machines ──
@@ -125,13 +137,18 @@ export function villageFacts(livingHexes = 6, tower = false) {
 	const rows = costRows(liv, nL);
 	const centreRows = costRows(cen, 1);
 	// Sandbox 6 gives the centre hex the tower's machines; without the tower, its 1 MW data centre and its water works
-	// for 2,500 guests go (the village keeps its 40 MWh of batteries and the geothermal plant)
+	// for 2,500 guests go (the village keeps the centre's batteries and the geothermal plant)
 	let dropped = 0;
 	if (!tower) dropped = TOWER_EQUIPMENT.filter((e) => /data center|Water works/i.test(e.label)).reduce((a, e) => a + e.eur, 0);
 	centreRows[3].eur -= dropped;
 	const cost = rows.map((r, k) => ({ label: r.label.replace(/data center,/, 'data centers,') + (k === 3 ? ', geothermal' : ''), eur: r.eur + centreRows[k].eur }));
 	cost[4].label = `The land, ${((landM2 / 1e4)).toFixed(1)} ha of farmland`;
-	const totalEur = cost.reduce((a, c) => a + c.eur, 0);
+	// Sandbox 6's hex cards price the village at their five rows (paid assembly at half the shells' materials, the
+	// fit-out by the m²); the engine builds it by the build-out plan (sandbox-7 buildout.js: the village's own crews,
+	// the starter kit, the materials, machines and services bought in, the land), which is the founding bill
+	const hexCardEur = cost.reduce((a, c) => a + c.eur, 0);
+	const plan = buildPlan({ tower: !!tower, startMonth: 1, ladder: false });
+	const totalEur = plan.totals.total;
 	const matT = {};
 	for (const [s, n] of [[liv, nL], [cen, 1]]) for (const m of s.materials) {
 		const r = (matT[m.id] ??= { id: m.id, label: m.label, unit: m.unit, qty: 0, t: 0, eur: 0 });
@@ -160,8 +177,9 @@ export function villageFacts(livingHexes = 6, tower = false) {
 			utilZones,
 			utilGardenM2,
 			centreFloor,
-			centreFootM2: cPlan.sites.filter((s) => !(s.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(s.factory))).reduce((a, s) => a + (s.kind === 'tower' && cPlan.tower ? Math.PI * (cPlan.tower.D / 2) ** 2 : floor120), 0),
-			works: Object.fromEntries(['timber', 'bamboo', 'steel', 'glass'].map((k) => [k, cPlan.sites.filter((s) => s.kind === 'factory120' && s.factory === k).length]))
+			centreFootM2: cPlan.sites.filter((s) => !traded(s)).reduce((a, s) => a + (s.kind === 'tower' && cPlan.tower ? Math.PI * (cPlan.tower.D / 2) ** 2 : siteHall(s)?.floor ?? floor120), 0),
+			works: Object.fromEntries(TRADED.map((k) => [k, cPlan.sites.filter((s) => traded(s) && s.factory === k).length])),
+			worksFloor
 		},
 		works,
 		indoorFoodM2,
@@ -178,9 +196,13 @@ export function villageFacts(livingHexes = 6, tower = false) {
 		geoKwh: GEOTHERMAL,
 		geoHeatKw: 12600,
 		batteryKwh,
+		batteryUtil: BATTERY_KWH.util,
+		batteryCentre: BATTERY_KWH.centre,
 		factoryRun: FACTORY_RUN,
 		cost,
 		totalEur,
+		hexCardEur,
+		design: { id: DESIGN, label: PACKAGE.label, halls: !!PACKAGE.halls },
 		droppedEur: dropped,
 		materials: Object.values(matT),
 		day: DAY,
@@ -227,18 +249,19 @@ export function villageRecords(f) {
 			homesT: r({ glulam: Math.round(f.homes.wood), steel: Math.round(f.homes.steel), glass: Math.round(f.homes.glass) }, 't', `${S7} shellOf: the home domes’ shells and their CLT floors`),
 			foodDomesT: r({ glulam: Math.round(f.foodDomes.wood), steel: Math.round(f.foodDomes.steel), glass: Math.round(f.foodDomes.glass) }, 't', `${S7} shellOf(120) × ${f.foodDomes.n}`),
 			hallsT: r({ glulam: Math.round(f.halls.wood), steel: Math.round(f.halls.steel), glass: Math.round(f.halls.glass) }, 't', `${S7}: utilities domes, the hemp, recycling, clay and lime factories, ${f.tower ? 'the tower' : 'the centre’s Dome120'}: kept up with the homes`),
-			worksT: r(Object.fromEntries(Object.entries(f.works).map(([k, w]) => [k, { glulam: Math.round(w.wood), steel: Math.round(w.steel), glass: Math.round(w.glass) }])), 't', `${S7}: one Dome120 factory each`)
+			worksT: r(Object.fromEntries(Object.entries(f.works).map(([k, w]) => [k, { glulam: Math.round(w.wood), steel: Math.round(w.steel), glass: Math.round(w.glass) }])), 't', f.design.halls ? `${S7} hallOf: one plain portal-frame hall each (design package ${f.design.id}); glass = its solar modules, steel with its sandwich panels` : `${S7}: one Dome120 factory each`)
 		},
 		energy: {
-			solarGWh: r(f.solarKwh / 1e6, 'GWh a year', `${S7} shellOf: see-through cells in every second glass panel, 227 kWh a m² a year`),
+			solarGWh: r(f.solarKwh / 1e6, 'GWh a year', `${S7} shellOf: see-through cells in every second glass panel, 227 kWh a m² a year${f.design.halls ? '; the works halls’ south roofs (hallOf)' : ''}`),
 			geothermalMW: r(f.geoKw / 1000, 'MW net electric', `${S7} stats.js: the village’s geothermal plant, 3.4 MW net, 94 % of the year`),
 			geothermalHeatMW: r(f.geoHeatKw / 1000, 'MW heat at 90→60 °C', `${S7} stats.js: the geothermal heat loop`),
-			batteryMWh: r(f.batteryKwh / 1000, 'MWh', `${S7}: 10 MWh LFP in each utilities dome, 40 MWh in the centre`),
+			batteryMWh: r(f.batteryKwh / 1000, 'MWh', `${S7} specs.js BATTERY_KWH (design package ${f.design.id}): LFP, ${f.batteryUtil / 1000} MWh in each utilities dome, ${f.batteryCentre / 1000} MWh in the centre`),
 			climateGWh: r((f.homes.climate + f.foodDomes.climate + f.halls.climate) / 1e6, 'GWh a year', `${S7}: the domes’ climate (fans, pumps, vents)`),
 			heatGWh: r((f.homes.heat + f.foodDomes.heat + f.halls.heat) / 1e6, 'GWh heat a year', `${S7}: the domes’ heat beyond their ponds`)
 		},
 		founding: {
-			totalEur: r(Math.round(f.totalEur), '€', `${S7} stats.js: shells, putting them up, fit-out, machines and land${f.droppedEur ? `; without the tower’s 1 MW data centre and water works (−€${(f.droppedEur / 1e6).toFixed(1)}M)` : ''}`),
+			totalEur: r(Math.round(f.totalEur), '€', `${S7} buildout.js buildPlan (design package ${f.design.id}): the starter kit and running it, the materials, machines and services bought in, the land; the village's own crews build it`),
+			hexCardEur: r(Math.round(f.hexCardEur), '€', `${S7} stats.js hex cards: shells, putting them up (paid, at half the shells' materials), fit-out by the m², machines and land${f.droppedEur ? `; without the tower’s 1 MW data centre and water works (−€${(f.droppedEur / 1e6).toFixed(1)}M)` : ''}. Not the engine's bill: the build-out plan above is`),
 			...Object.fromEntries(f.cost.map((c, k) => [`row${k + 1}`, r(Math.round(c.eur), '€', c.label)]))
 		},
 		works: {

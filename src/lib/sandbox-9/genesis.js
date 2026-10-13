@@ -600,7 +600,10 @@ function attachHalls(w) {
 	const V = w.c.village, D = V.domes, vf = w.c.vf, nL = V.livingHexes, T = w.tech;
 	const f120 = D.floor120;
 	const livingFloor = (D.foodPerHex + D.utilPerHex) * f120;
-	const worksFloor = Object.values(D.works).reduce((a, n) => a + n, 0) * f120;
+	// the four works the engine trades stand in Dome120s or, in Sandbox 6's design packages 3–4, in plain halls
+	// (./village.js domes.worksFloor: each one's own floor)
+	const WF = D.worksFloor ?? Object.fromEntries(Object.entries(D.works).map(([k, n]) => [k, n * f120]));
+	const worksFloor = Object.values(WF).reduce((a, m2) => a + m2, 0);
 	const villageFloor = D.centreFloor + worksFloor;
 	const recipe = (parts, m2) => ({ ...T.hall.build, wood: parts.wood / m2, steel: parts.steel / m2, glass: parts.glass / m2 });
 	const livingParts = { wood: V.foodDomes.wood + V.util.wood, steel: V.foodDomes.steel + V.util.steel, glass: V.foodDomes.glass + V.util.glass };
@@ -658,10 +661,10 @@ function attachHalls(w) {
 		well: { hosts: living(D.utilPerHex * Z.water), hosted: 0 },
 		solar: { hosts: living(D.utilPerHex * (Z.battery + Z.hydrogen)), hosted: 0 },
 		goods: { hosts: living(D.utilPerHex * Z.workshop), hosted: 0 },
-		timber: { hosts: vHosts((D.works.timber + D.works.bamboo) * f120 * vf), hosted: 1 },
-		steel: { hosts: vHosts(D.works.steel * f120 * vf), hosted: 1 },
-		glass: { hosts: vHosts(0.7 * D.works.glass * f120 * vf), hosted: 1 },
-		panel: { hosts: vHosts(0.3 * D.works.glass * f120 * vf), hosted: 1 },
+		timber: { hosts: vHosts((WF.timber + WF.bamboo) * vf), hosted: 1 },
+		steel: { hosts: vHosts(WF.steel * vf), hosted: 1 },
+		glass: { hosts: vHosts(0.7 * WF.glass * vf), hosted: 1 },
+		panel: { hosts: vHosts(0.3 * WF.glass * vf), hosted: 1 },
 		// the settlement COOPs rent the centre's halls (and the four works domes the engine does not trade) for their
 		// residents, by their beds
 		home: { hosts: vHosts(D.centreFloor * vf), hosted: 0 }
