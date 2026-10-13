@@ -412,11 +412,11 @@ fn profile(w: &Seen, v: VaultId) -> EntryId {
 }
 
 /// How device `d` takes the edits of the cell entry `e` is in, as the world `w` a device shows: through which of its
-/// vaults, and whether it opens them.
-fn syncs(w: &Seen, e: EntryId, d: SignerId) -> Option<(VaultId, bool)> {
+/// vaults, with what role, and whether it opens them.
+fn syncs(w: &Seen, e: EntryId, d: SignerId) -> Option<(VaultId, Role, bool)> {
     let x = item(w, e).cell;
     let cell = w.cells.iter().find(|c| c.id == x).expect("its cell");
-    cell.syncs.iter().find(|s| s.device == d).map(|s| (s.through, s.opens))
+    cell.syncs.iter().find(|s| s.device == d).map(|s| (s.through, s.role, s.opens))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -452,9 +452,9 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     assert_eq!((named(&w, eve_v).as_deref(), named(&w, avenceo).as_deref()), (Some("Eve"), Some("avenCEO")));
     let (eve_p, ceo_p) = (profile(&w, eve_v), profile(&w, avenceo));
     let (mine, srv) = (first.node().device(), server.device());
-    assert_eq!(syncs(&w, eve_p, srv), Some((avenceo, false)), "the server relays her entries' ciphertext");
-    assert_eq!(syncs(&w, eve_p, mine), Some((eve_v, true)));
-    assert_eq!(syncs(&w, ceo_p, srv), Some((avenceo, true)), "avenCEO's own entries its server opens");
+    assert_eq!(syncs(&w, eve_p, srv), Some((avenceo, Role::Backup, false)), "the server keeps her entries' ciphertext");
+    assert_eq!(syncs(&w, eve_p, mine), Some((eve_v, Role::Owner, true)));
+    assert_eq!(syncs(&w, ceo_p, srv), Some((avenceo, Role::Owner, true)), "avenCEO's own entries its server opens");
     // four vaults her vault owns, in one ceremony, each of which gives avenCEO relay on the whole of it
     let avens = ["avenALICE", "avenBOB", "avenCHARLY"].map(|n| (Kind::Aven, n.to_string()));
     let new = avens.into_iter().chain([(Kind::Coop, "Maia City COOP".to_string())]).collect();
@@ -469,8 +469,9 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
         assert_eq!((x.vault.kind, x.name.as_deref()), (kind, Some(name)));
         assert_eq!((&x.vault.owners[..], x.vault.root), (&[Principal::Vault(eve_v)][..], None), "her vault owns it");
         assert_eq!(x.via, Some(vec![eve_v]), "her browser acts for it through her vault");
-        assert_eq!(syncs(&w, profile(&w, v), srv), Some((avenceo, false)), "the server relays its entries");
-        assert_eq!(syncs(&w, profile(&w, v), mine), Some((v, true)), "her browser opens them, acting for it");
+        let (srv_sees, mine_sees) = (syncs(&w, profile(&w, v), srv), syncs(&w, profile(&w, v), mine));
+        assert_eq!(srv_sees, Some((avenceo, Role::Backup, false)), "the server keeps its entries' ciphertext");
+        assert_eq!(mine_sees, Some((v, Role::Owner, true)), "her browser opens them, acting for it");
     }
     // avenALICE writes a note into her vault; avenBOB may not write there, nor read it
     let plan = titled("Plan", "Plant beans.");

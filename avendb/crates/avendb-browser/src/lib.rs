@@ -834,11 +834,12 @@ pub struct CellView {
 }
 
 /// A device that receives a cell's edits: the vault it receives them through, the one of those it acts for that holds
-/// the strongest role on the cell, and whether it opens any of what they hold, or only relays their ciphertext, as the
-/// server for avenCEO.
+/// the strongest role on the cell, that role, and whether it opens any of what they hold, or only keeps their
+/// ciphertext, as the server for avenCEO.
 pub struct Syncing {
     pub device: SignerId,
     pub through: VaultId,
+    pub role: Role,
     pub opens: bool,
 }
 
@@ -918,7 +919,8 @@ impl World {
             })
         };
         let syncing = |x: &Syncing| {
-            json!({ "device": hex(&x.device.0), "through": hex(&x.through.0), "opens": x.opens })
+            let (device, through) = (hex(&x.device.0), hex(&x.through.0));
+            json!({ "device": device, "through": through, "role": role_name(x.role), "opens": x.opens })
         };
         let cell = |c: &CellView| {
             json!({
@@ -1119,8 +1121,8 @@ fn roles(st: &State, v: VaultId, x: CellId) -> Vec<(VaultId, Role)> {
 }
 
 /// The devices `devices` (each with its own vault) that receive the edits of cell `x` of vault `v`, as a peer sends
-/// them (`avendb::sync`): those acting for the vault, or for a vault a cap that reaches the cell names, or every
-/// device, through its own vault, if a cap to everyone reaches it.
+/// them (`avendb::sync`): those acting for the vault, or for a vault a cap with backup or more that reaches the cell
+/// names (a relay cap receives none of them), or every device, through its own vault, if a cap to everyone reaches it.
 fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: CellId) -> Vec<Syncing> {
     let caps: Vec<&Issued> = reaching(st, v, x).collect();
     let public = caps.iter().any(|cp| cp.cap.grantee == Grantee::Public);
@@ -1128,15 +1130,16 @@ fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: CellId) -
         let mut best: Option<(Role, VaultId)> = st.acts_for(d, v).then_some((Role::Owner, v));
         for cp in &caps {
             let Grantee::Principal(Principal::Vault(g)) = cp.cap.grantee else { continue };
-            if st.acts_for(d, g) && best.is_none_or(|(r, _)| cp.cap.role > r) {
+            if cp.cap.role >= Role::Backup && st.acts_for(d, g) && best.is_none_or(|(r, _)| cp.cap.role > r) {
                 best = Some((cp.cap.role, g));
             }
         }
-        best.map(|(_, g)| g).or(public.then_some(own))
+        best.or(public.then_some((Role::Read, own)))
     };
     let k = KeyFam::Cell(v, x);
     let sync = |&(d, own): &(SignerId, VaultId)| {
-        Some(Syncing { device: d, through: through(d, own)?, opens: st.entitled(d, k) })
+        let (role, through) = through(d, own)?;
+        Some(Syncing { device: d, through, role, opens: st.entitled(d, k) })
     };
     devices.iter().filter_map(sync).collect()
 }
