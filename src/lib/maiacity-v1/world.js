@@ -417,29 +417,44 @@ export function person(seat) {
 		chest.updateWorldMatrix(true, false);
 		pack.position.copy(chest.worldToLocal(V(0, 1.12, -0.24)));
 	} else (pack.position.set(0, 1.12, -0.24), g.add(pack));
-	// joy, on the head bone: a wide open smile over the lips (its teeth showing), a sparkle in each eye and two
-	// twinkles beside them, shown when they beam (after the first mint)
+	// joy, on the head bone: a broad open smile on the lips (a crescent laid on the skin, its upper teeth showing) and
+	// a bright catchlight in each eye, shown when they beam (after the first mint)
 	const joyFace = new THREE.Group();
 	const head = cast.rig.bones.head;
 	if (head) {
 		cast.rig.object.updateMatrixWorld(true);
 		const k = 1.8 / 1.823; // the stand-in's measure (./actors/human.ts) to 1.8 m
 		const at = (x, y, z) => head.worldToLocal(V(x * k, y * k, z * k));
+		/** a band between two edges of the smile (x, y about the mouth's middle, `mid` m at the middle, `end` at the
+		 * corners), laid onto the face `lift` m off the skin, in short strips that follow its curve */
+		const W = 0.022; // half the smile's width
+		const band = (top, bottom, lift, w = W, n = 16) => {
+			const pts = [], idx = [];
+			for (let i = 0; i <= n; i++) {
+				const x = -w + (2 * w * i) / n, u = (x / W) ** 2;
+				for (const [mid, end] of [top, bottom]) {
+					const y = 1.6585 + mid + (end - mid) * u;
+					pts.push(...at(x, y, skinAt(x, y) + lift).toArray());
+				}
+				if (i) idx.push(2 * i - 2, 2 * i, 2 * i - 1, 2 * i - 1, 2 * i, 2 * i + 1);
+			}
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+			geo.setIndex(idx);
+			geo.computeVertexNormals();
+			return geo;
+		};
+		const red = new THREE.MeshStandardMaterial({ color: 0x5a2226, roughness: 0.8, side: THREE.DoubleSide });
+		const white = new THREE.MeshStandardMaterial({ color: 0xf3eee6, roughness: 0.45, side: THREE.DoubleSide });
+		const mouth = new THREE.Mesh(band([0.0005, 0.004], [-0.0095, 0.004], 0.0036), red);
+		const teeth = new THREE.Mesh(band([0.0002, 0.0034], [-0.0045, 0.0018], 0.0062, W * 0.72), white);
 		const smile = new THREE.Group();
-		const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.024, 20, Math.PI, Math.PI).scale(1, 0.62, 1), new THREE.MeshStandardMaterial({ color: 0x4a1a1c, roughness: 0.7 }));
-		const teeth = new THREE.Mesh(new THREE.PlaneGeometry(0.036, 0.0055), new THREE.MeshStandardMaterial({ color: 0xf6f1e8, roughness: 0.4 }));
-		teeth.position.set(0, -0.0028, 0.0004);
-		const lip = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0026, 6, 20, Math.PI).rotateZ(Math.PI).scale(1, 0.62, 1), new THREE.MeshStandardMaterial({ color: 0xa8665a, roughness: 0.6 }));
-		smile.add(mouth, teeth, lip);
-		smile.position.copy(at(0, 1.6585, skinAt(0, 1.6585) + 0.003));
-		const shine = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3c4, emissiveIntensity: 1.2 });
+		smile.add(mouth, teeth);
+		const shine = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.9 });
 		for (const x of [-1, 1]) {
-			const glint = new THREE.Mesh(new THREE.OctahedronGeometry(0.0035, 0), shine);
-			glint.position.copy(at(x * 0.032, 1.7145, skinAt(x * 0.032, 1.7145) + 0.0045));
-			const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.011, 0).scale(0.35, 1, 0.2), shine);
-			star.position.copy(at(x * 0.066, 1.744, skinAt(x * 0.066, 1.744) + 0.017));
-			star.userData.twinkle = glint.userData.twinkle = true;
-			joyFace.add(glint, star);
+			const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0013, 8, 6), shine);
+			glint.position.copy(at(x * 0.032 - 0.002, 1.7155, skinAt(x * 0.032, 1.7145) + 0.0045));
+			joyFace.add(glint);
 		}
 		joyFace.add(smile);
 		joyFace.visible = false;
@@ -464,9 +479,9 @@ function acting(p, t) {
 	const glad = p.userData.joyFace;
 	if (glad) {
 		glad.visible = !!p.userData.joy;
-		if (glad.visible) glad.children.forEach((c, i) => c.userData.twinkle && c.scale.setScalar(0.5 + 0.7 * Math.abs(Math.sin(t * 5 + i * 1.7))));
+		if (glad.visible) glad.children.forEach((c, i) => c.userData.twinkle && c.scale.setScalar(0.8 + 0.3 * Math.abs(Math.sin(t * 3 + i * 1.7))));
 	}
-	const lift = p.userData.joy ? { neck: [-0.04, 0, 0], head: [-0.12, 0, 0] } : p.userData.extra ?? {}; // the chin up, beaming
+	const lift = p.userData.joy ? { neck: [-0.02, 0, 0], head: [-0.06, 0, 0] } : p.userData.extra ?? {}; // the chin up, beaming
 	if (cast.clips[what]) return cast.rig.pose({ ...cast.clips[what](t), ...lift });
 	cast.rig.pose({ ...(cast.poses[what] ?? cast.poses.stand), ...lift });
 }
