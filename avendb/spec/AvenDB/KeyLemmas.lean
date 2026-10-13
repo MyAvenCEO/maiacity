@@ -162,6 +162,8 @@ inductive Change (st : State) : State → Prop where
   | move (en : Entry) (σ : Option EditId) (x : Cell) : st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
       Change st (setEntry st { en with stays := (σ, x) :: en.stays })
   | lane (l : List (VaultId × BlobId)) : Change st { st with lane := l }
+  | sync (rs : List SyncRule) (en : List CapId) (ps : List (EntryId × List CapId)) :
+      Change st { st with rules := rs, ended := en, picks := ps }
 
 /-- An accepted edit: a change, then some of the entries and writes dropped. -/
 def Applied (st post : State) : Prop :=
@@ -287,6 +289,15 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   · -- checkpoint
     cases h
     exact Change.applied .same
+  · -- a sync rule
+    cases h
+    exact Change.applied (.sync _ _ _)
+  · -- a sync rule ends
+    cases h
+    exact Change.applied (.sync _ _ _)
+  · -- a steward marks an entry
+    cases h
+    exact Change.applied (.sync _ _ _)
 
 /-! ## What exists
 
@@ -602,6 +613,7 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
     rw [List.map_cons, List.nodup_cons]
     exact ⟨hσ, hs.staysNodup en hen⟩
   | lane l => exact hs.congr rfl rfl rfl rfl rfl
+  | sync _ _ _ => exact hs.congr rfl rfl rfl rfl rfl
 
 /-- An accepted edit keeps the state sane. -/
 theorem Sane.of_apply {st post : State} {edit : Edit} (hs : Sane st) (h : apply st edit = some post) : Sane post := by
@@ -1903,6 +1915,7 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
   | same => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | revoke rs => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | lane l => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
+  | sync _ _ _ => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
 
 /-- An accepted edit keeps every cap, adding caps only at the end, every entry id ever created and every vault. -/
 theorem apply_grows {st post : State} {edit : Edit} (h : apply st edit = some post) :
@@ -1937,6 +1950,7 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
   | cap _ _ _ _ => exact hsame
   | revoke _ => exact hsame
   | lane _ => exact hsame
+  | sync _ _ _ => exact hsame
   | create en w x _ _ hnew _ _ _ _ =>
     intro y hy
     rcases List.mem_append.1 hy with hy | hy

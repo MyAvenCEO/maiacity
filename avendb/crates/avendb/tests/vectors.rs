@@ -36,7 +36,7 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
     checkpointed, history, mk_cell, replay, tips, Action, Cap, Edit, Grantee, Kind, Line, Principal, Proposal, Readings,
-    Role, State, Vault,
+    Role, State, SyncRule, Vault,
 };
 use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
 use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta};
@@ -194,6 +194,18 @@ impl Names {
         list(v).iter().map(|c| self.cap(c)).collect()
     }
 
+    /// A steward's marks: in the core's canonical order where the model's are in its own, and out of it where they
+    /// aren't.
+    fn picks(&self, v: &Value) -> Vec<CapId> {
+        let ns: Vec<u64> = list(v).iter().map(num).collect();
+        let mut ids: Vec<CapId> = list(v).iter().map(|r| self.cap(r)).collect();
+        ids.sort();
+        if !ns.windows(2).all(|w| w[0] < w[1]) {
+            ids.reverse();
+        }
+        ids
+    }
+
     fn principal(&self, v: &Value) -> Principal {
         match (v.get("signer"), v.get("vault")) {
             (Some(s), None) => Principal::Signer(signer(s)),
@@ -253,6 +265,22 @@ impl Names {
             select,
             parent: (!v["parent"].is_null()).then(|| self.cap(&v["parent"])),
             issuer: self.vault(&v["issuer"]),
+            nonce: num(&v["id"]),
+        }
+    }
+
+    /// A sync rule as the core sets it: its selector where its sealed slice goes, beside the commitment to no op, its
+    /// number as its nonce.
+    fn rule_of(&self, v: &Value) -> SyncRule {
+        let slice = serde_json::to_vec(&v["select"]).unwrap();
+        let commitment = Grant { ops: vec![], salt: [0; 32] }.commitment();
+        SyncRule {
+            issuer: self.vault(&v["issuer"]),
+            device: signer(&v["device"]),
+            over: self.vault(&v["over"]),
+            wide: v["wide"].as_bool().unwrap(),
+            select: Select::Sealed { boxes: vec![], slice, commitment }.to_wire(),
+            keep: v["keep"].as_bool().unwrap(),
             nonce: num(&v["id"]),
         }
     }
@@ -365,6 +393,18 @@ impl Names {
                 blob: blob(&x["blob"]),
             },
             "checkpoint" => Action::Checkpoint { entry: entry(&x["entry"]), covers: self.edits(&x["covers"]) },
+            "syncRule" => Action::SyncRule(self.rule_of(&x["rule"]), self.via(&x["via"])),
+            "endRule" => Action::EndSyncRule {
+                rule: self.cap(&x["rule"]),
+                issuer: self.vault(&x["issuer"]),
+                via: self.via(&x["via"]),
+            },
+            "pick" => Action::Pick {
+                vault: vault(),
+                entry: entry(&x["entry"]),
+                rules: self.picks(&x["rules"]),
+                via: self.via(&x["via"]),
+            },
             other => panic!("no action {other}"),
         }
     }
@@ -395,6 +435,11 @@ impl Names {
                 self.parents.insert(cap, (!parent.is_null()).then(|| self.cap(parent)));
                 self.grants.insert(cap, grant(&x["cap"]));
                 self.caps.insert(num(&x["cap"]["id"]), cap);
+            }
+            ("syncRule", x) => {
+                let rule = CapId::from(id);
+                self.readings.selectors.insert(rule, self.selector(&x["rule"]["select"]));
+                self.caps.insert(num(&x["rule"]["id"]), rule);
             }
             ("write", x) => {
                 if !x["create"].is_null() {
@@ -492,7 +537,22 @@ impl Names {
             let desired = m.desired.map(|x| x.into_iter().collect::<BTreeSet<CapId>>());
             let want = (!v["desired"].is_null()).then(|| self.cell_set(&v["desired"]));
             assert_eq!(desired, want, "{what}: where a steward moves it");
+            let marks: BTreeSet<CapId> = st.picks_of(en.id).iter().copied().collect();
+            assert_eq!(marks, self.cell_set(&v["picks"]), "{what}: the rules it is marked with");
+            let picks: BTreeSet<CapId> = m.picks.into_iter().collect();
+            assert_eq!(picks, self.cell_set(&v["semPicks"]), "{what}: the rules that pick it");
+            let pick = m.pick.map(|x| x.into_iter().collect::<BTreeSet<CapId>>());
+            let want = (!v["desiredPicks"].is_null()).then(|| self.cell_set(&v["desiredPicks"]));
+            assert_eq!(pick, want, "{what}: what a steward marks it with");
         }
+        // every sync rule set, live or ended, in the order set, and the rules that ended
+        type RuleRow = (CapId, VaultId, SignerId, VaultId, bool, bool);
+        let row = |id: CapId, r: &SyncRule| (id, r.issuer, r.device, r.over, r.wide, r.keep);
+        let rules: Vec<RuleRow> = list(&case["rules"]).iter().map(|v| row(self.cap(&v["id"]), &self.rule_of(v))).collect();
+        let ours: Vec<RuleRow> = st.rules().iter().map(|(id, r)| row(*id, r)).collect();
+        assert_eq!(ours, rules, "{name}: sync rules");
+        let ended: Vec<CapId> = list(&case["ended"]).iter().map(|r| self.cap(r)).collect();
+        assert_eq!(st.ended(), &ended[..], "{name}: ended sync rules");
         same_set(st.all_born().iter().copied(), list(&case["born"]).iter().map(entry), &format!("{name}: born"));
         // the writes, each with the cell its entry was in when it was accepted
         type WriteRow = (EditId, SignerId, VaultId, EntryId, Option<EditId>, u64, Vec<EditId>, Proposal);

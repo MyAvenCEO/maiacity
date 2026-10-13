@@ -28,9 +28,11 @@
 //!   changes, and starts again from it.
 //! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, on a machine on disk beside its store. It brings
 //!   a file sealed as it reads it (`Node::store_file`), reads any range of a file its device opens, fetching only the
-//!   sealed segments that hold it (`Node::read_file`), and, if it keeps files (`Options::keep`), as the server does,
-//!   keeps whole every file the edits it holds bring. Its blob gate hands a file's root or pieces only to a device
-//!   that may fetch the file (T27).
+//!   sealed segments that hold it (`Node::read_file`), and keeps whole the files its device's sync rules say to keep,
+//!   or with no rule over a vault, if it keeps files (`Options::keep`), as the server does, every file of the vault.
+//!   Its blob gate hands a file's root or pieces only to a device that may fetch the file (T27).
+//! - **Sync rules** (blobs B2c): a node sends a peer's device only the entries it may receive and its rules want, by
+//!   the stewards' marks (T28).
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
 //!   how long it took, for its person to watch while they wait (`Progress`).
 //! - **The server** (P8b, `server`): a node whose device keeps a secret of its own beside its store, and which hands
@@ -184,7 +186,8 @@ pub struct Options {
     /// in that folder's `blobs/` too, on a machine; else, and in a browser, in memory.
     pub store: Option<PathBuf>,
     /// It keeps whole every file the edits its device holds bring, fetched from its peers as soon as it learns of them
-    /// (`files`): the server's backup.
+    /// (`files`): the server's backup. Its device's sync rules over a vault say otherwise for that vault's files
+    /// (`avendb::lab::Lab::kept_files`).
     pub keep: bool,
     /// It is a server: it hands its contact card to whoever asks (`Node::contact`), and, while its device belongs to no
     /// vault, its key to seal to, for the first human vault to claim it (`Node::claim`).

@@ -3,8 +3,9 @@
 //! when there are several. A node brings a file by sealing it as it reads it, a piece at a time, under a key of its own
 //! (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its device opens, from its own
 //! store or else from a peer that may hand it over, fetching only the sealed segments that hold the range, which it
-//! keeps (`Node::read_file`); and, as the server does (`Options::keep`), keeps whole every file the edits it holds
-//! bring, fetched from its peers as soon as it learns of them.
+//! keeps (`Node::read_file`); and keeps whole every file its device's sync rules say to keep, fetched from its peers as
+//! soon as it learns of them: where its device has no rule over a vault, every file of the vault if the node keeps
+//! files (`Options::keep`), as the server does, and none otherwise (`Lab::kept_files`). It drops no file it kept.
 //!
 //! The blob gate (`blobs::gate`) hands a peer a blob only if the peer may fetch it: a McEliece key by `Lab::may_fetch`,
 //! a file's root or one of its pieces by `Lab::may_fetch_file` (T27). Every request names one blob, never a HashSeq
@@ -243,19 +244,22 @@ impl Shared {
         Ok(conn)
     }
 
-    /// Keeps the files the edits its device holds bring: whole, fetched from its peers, if the node keeps them
-    /// (`Options::keep`), as the server does; else it marks for the gate the pieces of those whose HashSeq it holds.
-    /// A file no peer hands over is tried again after `retry`, then twice as long each time, up to a minute.
+    /// Keeps the files the edits its device holds bring: whole, fetched from its peers, those its device's sync rules
+    /// say to keep, or with no rule, if the node keeps files (`Options::keep`), as the server does (`Lab::kept_files`);
+    /// of the rest it marks for the gate the pieces of those whose HashSeq it holds. A file no peer hands over is tried
+    /// again after `retry`, then twice as long each time, up to a minute.
     pub(crate) async fn keeper(self: Arc<Self>) {
         let mut size = self.size.subscribe();
         let (mut kept, mut failing) = (HashSet::new(), Backoff::default());
+        let keep = self.opts.keep;
         loop {
-            let mut files = self.lab(|lab, me| lab.files(me)).await;
-            files.retain(|f| !kept.contains(f) && failing.due(f));
-            for root in files {
-                match self.keep(root).await {
+            let (files, whole) = self.lab(move |lab, me| (lab.files(me), lab.kept_files(me, keep))).await;
+            let whole: HashSet<FileRoot> = whole.into_iter().collect();
+            let files = files.into_iter().map(|f| (f, whole.contains(&f)));
+            for (root, whole) in files.filter(|f| !kept.contains(f) && failing.due(&f.0)).collect::<Vec<_>>() {
+                match self.keep(root, whole).await {
                     Ok(()) => {
-                        kept.insert(root);
+                        kept.insert((root, whole));
                         failing.reached(&root);
                     }
                     Err(e) => {
@@ -268,9 +272,9 @@ impl Shared {
         }
     }
 
-    /// Keeps file `root`, as `keeper` says.
-    async fn keep(self: &Arc<Self>, root: FileRoot) -> Result<()> {
-        if !self.opts.keep {
+    /// Keeps file `root`, whole if `whole` says, as `keeper` says.
+    async fn keep(self: &Arc<Self>, root: FileRoot, whole: bool) -> Result<()> {
+        if !whole {
             if root.pieced() && self.store.has(Hash::from_bytes(root.hash)).await? {
                 self.pieces_of(root).await?;
             }

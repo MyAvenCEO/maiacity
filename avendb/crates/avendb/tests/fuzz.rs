@@ -1,20 +1,21 @@
 //! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted writes, signed edits, schemas, lenses,
 //! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced; from P8 every message on the wire
 //! (signed edits, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins); and with
-//! flat vaults what only readers read: a cap's slice, its selector in the clear or sealed, and a write's body. Nothing
-//! panics; a changed box, write, signed edit or sealed selector is refused, a changed message reads as nothing or as
-//! another message whose own bytes these are, and a changed Loro update that is refused leaves the item as it was.
+//! flat vaults what only readers read: a cap's slice, its selector in the clear or sealed (from B2c a sync rule's too),
+//! and a write's body. Nothing panics; a changed box, write, signed edit or sealed selector is refused, a changed
+//! message reads as nothing or as another message whose own bytes these are, and a changed Loro update that is refused
+//! leaves the item as it was.
 //! Every mutation is drawn from a fixed seed, so a failure replays exactly.
 
 use std::fmt::Debug;
 
 use serde_json::{json, Map, Value};
 use avendb::doc::{Item, Version};
-use avendb::encode::{cap_context, select_info, write_context};
+use avendb::encode::{cap_context, rule_context, rule_select_info, select_info, write_context};
 use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
-use avendb::keys::{self, KeyBox, KeyFam, KeyName, Recipient, SeededRng, Secret};
+use avendb::keys::{self, KeyBox, KeyFam, KeyId, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
-use avendb::policy::{Action, Cap, Edit, Grantee, Principal, Proposal, Role};
+use avendb::policy::{Action, Cap, Edit, Grantee, Principal, Proposal, Role, SyncRule};
 use avendb::rules::{Grant, On, Proof, Rule, Scalar, Step};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -138,6 +139,12 @@ fn work_todos() -> Slice {
     Slice { name: "Work todos".into(), select, grant: Grant { ops, salt: [4; 32] }, above: vec![] }
 }
 
+/// What the sync rule of `signed_edits` picks: Bob's entries tagged `proxy`, granting no op.
+fn proxies() -> Slice {
+    let select = Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new("proxy"))]]);
+    Slice { name: "Proxies".into(), select, grant: Grant { ops: vec![], salt: [6; 32] }, above: vec![] }
+}
+
 /// The body of the write that creates the door: its header, its first tags and its content.
 fn door_created() -> Body {
     let header = Some(Header { ty: Sym::new("todo"), created: 1_791_500_000 });
@@ -192,30 +199,60 @@ fn to_seed(v: VaultId, seed: &Secret) -> Recipient {
     Recipient::Key { name: KeyName::Scoped(KeyFam::Seed(v), 0), id: seed.id() }
 }
 
-/// The `select` of `cap`, holding `slice`, sealed under a key of its own, which is wrapped under the seeds of Alice's
-/// vault, which the cap is over and which issues it, and of Bob's, its grantee, with the commitment to the slice's ops
-/// (`slice::Select`).
-fn seal_select(cap: &Cap, slice: &Slice, k: &Keys, rng: &mut SeededRng) -> Vec<u8> {
+/// What a sealed selector belongs to: a cap, or a sync rule, whose selector is sealed as a cap's is, bound to the rule.
+#[derive(Clone, Copy)]
+enum Of<'a> {
+    Cap(&'a Cap),
+    Rule(&'a SyncRule),
+}
+
+impl Of<'_> {
+    fn select(&self) -> &[u8] {
+        match self {
+            Of::Cap(c) => &c.select,
+            Of::Rule(r) => &r.select,
+        }
+    }
+
+    fn context(&self) -> Vec<u8> {
+        match self {
+            Of::Cap(c) => cap_context(c),
+            Of::Rule(r) => rule_context(r),
+        }
+    }
+
+    fn info(&self, id: KeyId, to: &Recipient) -> Vec<u8> {
+        match self {
+            Of::Cap(c) => select_info(c, id, to),
+            Of::Rule(r) => rule_select_info(r, id, to),
+        }
+    }
+}
+
+/// The `select` of `of`, holding `slice`, sealed under a key of its own, which is wrapped under the seeds of Alice's
+/// vault and of Bob's (the cap's issuer and grantee, or the rule's issuer and the vault it is over), with the
+/// commitment to the slice's ops (`slice::Select`).
+fn seal_select(of: Of<'_>, slice: &Slice, k: &Keys, rng: &mut SeededRng) -> Vec<u8> {
     let key = Secret::generate(rng);
-    let sealed = keys::seal_edit(&key, &slice.to_wire(), &cap_context(cap), rng);
+    let sealed = keys::seal_edit(&key, &slice.to_wire(), &of.context(), rng);
     let boxes = [(ALICE, &k.alice), (BOB, &k.bob)].map(|(v, seed)| {
         let to = to_seed(v, seed);
-        KeyBox { to, bytes: keys::wrap(&key, seed, &select_info(cap, key.id(), &to), rng) }
+        KeyBox { to, bytes: keys::wrap(&key, seed, &of.info(key.id(), &to), rng) }
     });
     Select::Sealed { boxes: boxes.to_vec(), slice: sealed, commitment: slice.grant.commitment() }.to_wire()
 }
 
-/// The slice the selector of `cap` holds, opened with vault `v`'s seed `seed` as a reader opens it: in the clear, or
+/// The slice the selector of `of` holds, opened with vault `v`'s seed `seed` as a reader opens it: in the clear, or
 /// through the box for that seed; `None` if it never opens.
-fn open_select(cap: &Cap, v: VaultId, seed: &Secret) -> Option<Slice> {
-    let (boxes, sealed) = match Select::from_wire(&cap.select).ok()? {
+fn open_select(of: Of<'_>, v: VaultId, seed: &Secret) -> Option<Slice> {
+    let (boxes, sealed) = match Select::from_wire(of.select()).ok()? {
         Select::Clear(slice) => return Some(slice),
         Select::Sealed { boxes, slice, .. } => (boxes, slice),
     };
     let id = keys::edit_key(&sealed)?;
     let b = boxes.iter().find(|b| b.to == to_seed(v, seed))?;
-    let key = keys::open(&b.bytes, seed, &select_info(cap, id, &b.to)).filter(|k| k.id() == id)?;
-    Slice::from_wire(&keys::open_edit(&key, &sealed, &cap_context(cap))?).ok()
+    let key = keys::open(&b.bytes, seed, &of.info(id, &b.to)).filter(|k| k.id() == id)?;
+    Slice::from_wire(&keys::open_edit(&key, &sealed, &of.context())?).ok()
 }
 
 /// The write `edit`, with `body` encrypted under `key` and bound to the edit (`encode::write_context`).
@@ -229,19 +266,23 @@ fn seal_body(mut edit: Edit, body: &Body, key: &Secret, rng: &mut SeededRng) -> 
 
 /// A signed edit of each kind: governance, which both halves sign, by a passkey with the new device consenting; a
 /// write creating the door in the cell of two caps, and a write of its tags on a proposal, through the owners it names,
-/// which only the classical half signs; a cap for Bob to write Alice's work todos, its selector sealed; and a steward's
-/// move of the door to another cell, keeping the writes it had seen.
+/// which only the classical half signs; a cap for Bob to write Alice's work todos, its selector sealed; a steward's
+/// move of the door to another cell, keeping the writes it had seen; a sync rule of Alice's for her device to sync
+/// Bob's proxies, its selector sealed, and its end; and a steward's marks on the door, of the rules that pick it.
 struct Edits {
     add: Signed,
     create: Signed,
     write: Signed,
     cap: Signed,
     moved: Signed,
+    rule: Signed,
+    ended: Signed,
+    pick: Signed,
 }
 
 impl Edits {
-    fn all(&self) -> [&Signed; 5] {
-        [&self.add, &self.create, &self.write, &self.cap, &self.moved]
+    fn all(&self) -> [&Signed; 8] {
+        [&self.add, &self.create, &self.write, &self.cap, &self.moved, &self.rule, &self.ended, &self.pick]
     }
 }
 
@@ -295,12 +336,20 @@ fn signed_edits() -> Edits {
     let write = by_device(seal_body(edit(3, write), &door_retagged(), &k.door, &mut rng));
     let (grantee, role, issuer) = (Grantee::Principal(Principal::Vault(BOB)), Role::Write, ALICE);
     let mut cap = Cap { over: ALICE, grantee, role, wide: false, select: vec![], parent: None, issuer, nonce: 7 };
-    cap.select = seal_select(&cap, &work_todos(), &k, &mut rng);
+    cap.select = seal_select(Of::Cap(&cap), &work_todos(), &k, &mut rng);
     let cap = by_device(edit(4, Action::Cap(cap, vec![])));
     let keep = vec![create.edit.id(), write.edit.id()];
     let moved = Action::Move { vault: ALICE, entry: DOOR, to: vec![CapId::from_u64(9)], keep, via: vec![] };
     let moved = by_device(edit(5, moved));
-    Edits { add, create, write, cap, moved }
+    let (device, over) = (device.id(), BOB);
+    let mut rule = SyncRule { issuer: ALICE, device, over, wide: false, select: vec![], keep: true, nonce: 3 };
+    rule.select = seal_select(Of::Rule(&rule), &proxies(), &k, &mut rng);
+    let rule = by_device(edit(6, Action::SyncRule(rule, vec![])));
+    let ended = Action::EndSyncRule { rule: CapId::from(rule.edit.id()), issuer: ALICE, via: vec![] };
+    let ended = by_device(edit(7, ended));
+    let rules = vec![CapId::from_u64(5), CapId::from_u64(6)];
+    let pick = by_device(edit(8, Action::Pick { vault: ALICE, entry: DOOR, rules, via: vec![] }));
+    Edits { add, create, write, cap, moved, rule, ended, pick }
 }
 
 /// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another edit drafted with it.
@@ -394,7 +443,8 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     s
 }
 
-/// `edit` with one field changed: of the edit, or of its action, a write's, a cap's, a move's or a device's.
+/// `edit` with one field changed: of the edit, or of its action, a write's, a cap's, a move's, a device's, a sync
+/// rule's, its end's or a pick's.
 fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
     let mut o = edit.clone();
     let id = |g: &mut Gen| EditId::from_u64(g.next());
@@ -455,6 +505,28 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                 2 => keep.push(id(g)),
                 _ => via.push(vault(g)),
             },
+            Action::SyncRule(r, via) => match g.below(8) {
+                0 => r.select = mutate(g, &r.select),
+                1 => r.issuer = vault(g),
+                2 => r.device = SignerId::from_u64(g.next()),
+                3 => r.over = vault(g),
+                4 => r.wide = !r.wide,
+                5 => r.keep = !r.keep,
+                6 => r.nonce ^= 1 << g.below(64),
+                _ => via.push(vault(g)),
+            },
+            Action::EndSyncRule { rule, issuer, via } => match g.below(3) {
+                0 => *rule = cap(g),
+                1 => *issuer = vault(g),
+                _ => via.push(vault(g)),
+            },
+            Action::Pick { vault: v, entry, rules, via } => match g.below(4) {
+                0 => *v = vault(g),
+                1 => *entry = EntryId::from_u64(g.next()),
+                2 if !rules.is_empty() && g.below(2) == 0 => drop(rules.pop()),
+                2 => rules.push(cap(g)),
+                _ => via.push(vault(g)),
+            },
             other => unreachable!("{other:?}"),
         },
     }
@@ -484,8 +556,8 @@ fn a_changed_signed_edit_is_refused() {
             }
         }
     }
-    // the classical half alone signs nothing but a write: no governance, no cap, no move
-    for signed in [&edits.add, &edits.cap, &edits.moved] {
+    // the classical half alone signs nothing but a write: no governance, no cap, no move, no sync rule, no pick
+    for signed in [&edits.add, &edits.cap, &edits.moved, &edits.rule, &edits.ended, &edits.pick] {
         let mut classical = signed.clone();
         classical.sigs.iter_mut().for_each(|s| s.pq = None);
         assert!(classical.verify().is_err(), "{classical:?}");
@@ -500,45 +572,57 @@ fn a_changed_signed_edit_is_refused() {
 fn a_changed_selector_opens_to_nothing_or_to_its_own_slice() {
     let (edits, k) = (signed_edits(), keys());
     let Action::Cap(cap, _) = &edits.cap.edit.action else { unreachable!("a cap") };
-    // the vault the cap is over and its grantee open the slice; another vault's seed, or the wrong one, opens nothing
-    let readers = [(ALICE, &k.alice), (BOB, &k.bob)];
-    for (v, seed) in readers {
-        assert_eq!(open_select(cap, v, seed), Some(work_todos()));
-    }
-    assert_eq!(open_select(cap, VaultId::from_u64(102), &k.door), None);
-    assert_eq!(open_select(cap, ALICE, &k.bob), None);
+    let Action::SyncRule(rule, _) = &edits.rule.edit.action else { unreachable!("a sync rule") };
     let mut g = Gen::new(6);
-    // the selector's bytes changed: what still reads as a sealed selector opens to nothing, or to the slice it held
-    // where the box opened and the sealed slice are as they were
-    let (mut sealed, mut same) = (0, 0);
-    for _ in 0..3000 {
-        let bad = Cap { select: mutate(&mut g, &cap.select), ..cap.clone() };
-        if !matches!(Select::from_wire(&bad.select), Ok(Select::Sealed { .. })) {
-            continue;
-        }
-        sealed += 1;
+    for (signed, of, held) in [(&edits.cap, Of::Cap(cap), work_todos()), (&edits.rule, Of::Rule(rule), proxies())] {
+        // Alice's vault and Bob's open the slice; another vault's seed, or the wrong one, opens nothing
+        let readers = [(ALICE, &k.alice), (BOB, &k.bob)];
         for (v, seed) in readers {
-            if let Some(slice) = open_select(&bad, v, seed) {
-                assert_eq!(slice, work_todos(), "{bad:?}");
-                same += 1;
+            assert_eq!(open_select(of, v, seed).as_ref(), Some(&held));
+        }
+        assert_eq!(open_select(of, VaultId::from_u64(102), &k.door), None);
+        assert_eq!(open_select(of, ALICE, &k.bob), None);
+        // the selector's bytes changed: what still reads as a sealed selector opens to nothing, or to the slice it
+        // held where the box opened and the sealed slice are as they were
+        let (mut sealed, mut same) = (0, 0);
+        for _ in 0..3000 {
+            let select = mutate(&mut g, of.select());
+            if !matches!(Select::from_wire(&select), Ok(Select::Sealed { .. })) {
+                continue;
+            }
+            sealed += 1;
+            let bad_cap = Cap { select: select.clone(), ..cap.clone() };
+            let bad_rule = SyncRule { select, ..rule.clone() };
+            let bad = match of {
+                Of::Cap(_) => Of::Cap(&bad_cap),
+                Of::Rule(_) => Of::Rule(&bad_rule),
+            };
+            for (v, seed) in readers {
+                if let Some(slice) = open_select(bad, v, seed) {
+                    assert_eq!(slice, held, "{slice:?}");
+                    same += 1;
+                }
             }
         }
-    }
-    assert!(sealed > 100 && same > 0, "{sealed} still sealed, {same} opened");
-    // the same selector in a cap that says anything else opens to nothing: it is bound to the vault the cap is over,
-    // its grantee, role, width, parent, issuer and nonce
-    let mut bound = 0;
-    for _ in 0..1000 {
-        let o = mutate_edit(&mut g, &edits.cap.edit);
-        let Action::Cap(other, _) = &o.action else { unreachable!("a cap") };
-        if other.select == cap.select && other != cap {
+        assert!(sealed > 100 && same > 0, "{sealed} still sealed, {same} opened");
+        // the same selector in a cap or rule that says anything else opens to nothing: a cap's is bound to the vault
+        // it is over, its grantee, role, width, parent, issuer and nonce; a rule's to its issuer, device, the vault it
+        // is over, its width, keep and nonce
+        let mut bound = 0;
+        for _ in 0..1000 {
+            let o = mutate_edit(&mut g, &signed.edit);
+            let other = match (&o.action, of) {
+                (Action::Cap(other, _), Of::Cap(c)) if other.select == c.select && other != c => Of::Cap(other),
+                (Action::SyncRule(other, _), Of::Rule(r)) if other.select == r.select && other != r => Of::Rule(other),
+                _ => continue,
+            };
             for (v, seed) in readers {
-                assert_eq!(open_select(other, v, seed), None, "{other:?}");
+                assert_eq!(open_select(other, v, seed), None, "{o:?}");
             }
             bound += 1;
         }
+        assert!(bound > 100, "{bound}");
     }
-    assert!(bound > 100, "{bound}");
 }
 
 /// Mutate the bytes of `value` `n` times: each changed message reads as nothing, or as another value whose own

@@ -11,7 +11,7 @@ import AvenDB.Schemas
 # The theorems
 
 What must always hold, stated over the executable model. T9 (lenses) and T10 (proposals) are proven in their own files.
-The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (caps, cells, removals and replay),
+The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (caps, cells, sync rules, removals and replay),
 `RuleLemmas.lean` (caps that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean` (blind
 relays), `KeyLemmas.lean` (keys) and `SyncLemmas.lean` (convergence and sync); the predicates the statements use are in
 `Props.lean`.
@@ -452,6 +452,31 @@ theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : Fil
   · simpa [mayReceiveLog] using hmay
   · cases hv
 
+/-- T28 (a device syncs what it may and wants): every edit of an entry a peer sends a device is of an entry the device
+    may receive by the peer's view and that its sync rules want: it has no rule over the entry's vault, or one there is
+    wide or picks the entry. A rule only narrows: it hands nobody anything. -/
+theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
+    (hl : o.log? = some (.entry e)) :
+    ∃ en, (view edits).entry? e = some en ∧ mayReceiveCell (view edits) d en.vault en.cell = true ∧
+      wants (view edits) d en = true :=
+  Syncing.T28_sync_follows_rules edits d h hl
+
+/-- T28, with no rule: a device with no sync rule over a vault wants all of it, so it syncs every entry of it it may
+    receive, as before rules. -/
+theorem T28_no_rule_wants_all (st : State) (d : SignerId) (en : Entry) (h : rulesOf st d en.vault = []) :
+    wants st d en = true :=
+  Syncing.T28_no_rule_wants_all st d en h
+
+/-- T29 (marks mean what the rules say): where the live marks on an entry are the rules that pick it (`semPicks`), as
+    the vault's stewards keep them, a device wants the entry exactly when it has no rule over the entry's vault, or one
+    of its rules there is wide or its selector matches the entry. So a relay, which reads only the marks, sends each
+    device what its rules' selectors pick. -/
+theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
+    (hpicks : livePicks st en = semPicks st en) :
+    wants st d en = ((rulesOf st d en.vault).isEmpty ||
+      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs) :=
+  Caps.T29_marks_mean_rules hr d en hpicks
+
 /-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few edits
     further back, and the edits it holds outside them (`asks`), is sent every edit of the peer's answer that it lacks.
     Assumes ids don't collide: an id the device and the peer both hold names one edit. -/
@@ -474,12 +499,12 @@ theorem T19_same_frontier (lgA lgR : Edit → Option LogId) (A R : List Edit) (l
     x ∈ closedPart lgA A l ↔ x ∈ closedPart lgR R l :=
   Syncing.T19_same_frontier lgA lgR A R l hid huA huR hf x
 
-/-- T13 (sync converges per entry): if each of two devices may receive an entry by the other peer's view, then after
-    each asked the other once (`asks`), both hold the same edits of that entry's log: those either held before.
-    Assumes ids don't collide. -/
+/-- T13 (sync converges per entry): if each of two devices syncs an entry by the other peer's view (it may receive it,
+    and its sync rules want it), then after each asked the other once (`asks`), both hold the same edits of that
+    entry's log: those either held before. Assumes ids don't collide. -/
 theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (e : EntryId)
     (hid : ∀ a ∈ editsP, ∀ b ∈ editsQ, a.id = b.id → a = b)
-    (hp : mayReceive (view editsQ) dp e = true) (hq : mayReceive (view editsP) dq e = true)
+    (hp : syncs (view editsQ) dp e = true) (hq : syncs (view editsP) dq e = true)
     (o : Edit) (hop : o.log? = some (.entry e)) :
     o ∈ receive editsP (respondSince editsQ dp (asks editsP)) ↔
       o ∈ receive editsQ (respondSince editsP dq (asks editsQ)) :=

@@ -17,6 +17,13 @@
 //! and of its issuer; a write's header, tags and content travel in its encrypted body (`slice::Body`). A device keeps
 //! what it opened of both, as no edit changes them, and what it reads in them (`policy::Readings`).
 //!
+//! A sync rule says which entries of a vault one device syncs, by a selector as a cap's, and whether it keeps whole the
+//! files they bring (`policy::SyncRule`, `set_rule`): any data, by type, tag, author, entry or creation. It grants
+//! nothing. Its selector travels sealed as a cap's, to the seeds of the vault it is over and of its issuer; the
+//! stewards read it and mark each entry with the rules that pick it (`policy::Action::Pick`), as they move entries to
+//! their cells, and every peer then sends a device only the entries it may receive and its rules want (T28), reading
+//! the marks and never a selector (T29). A device with no rule over a vault syncs all of it that it may.
+//!
 //! Every unlocked device keeps its keys up to date as an honest app would, each time its edits change. It opens every
 //! box its standing `Keys` edits hold for a key it has and every key published in the clear, and derives the key of
 //! each entry in each cell whose key it holds, for each stay the entry had there (`keys::entry_key`). For each family
@@ -63,7 +70,7 @@ use serde_json::Value;
 use zeroize::Zeroizing;
 
 use crate::doc::{Item, Version};
-use crate::encode::{self, box_info, cap_context, select_info, write_context};
+use crate::encode::{self, box_info, cap_context, rule_context, rule_select_info, select_info, write_context};
 use crate::hash::{Hasher, Reader};
 use crate::history::{Change, Draft, History, MAIN};
 use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
@@ -71,7 +78,7 @@ use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, Se
 use crate::lens::{Lane, Schema};
 use crate::policy::{
     checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Issued, Kind, Line, Log, Meaning, Principal, Proposal,
-    Readings, Refusal, Replay, Role, State, Write,
+    Readings, Refusal, Replay, Role, State, SyncRule, Write,
 };
 use crate::rules::{self, Grant, Proof, Rule, Touch};
 use crate::sealed::{Brought, FileRoot};
@@ -312,8 +319,9 @@ struct Store {
     keys: Keyring,
     /// The entry keys it derived: by the key of the cell it derived each from, the entry and the stay.
     derived: HashSet<(KeyId, EntryId, Option<EditId>)>,
-    /// The slices of the caps whose selectors it opened, and the caps whose selectors never open for it: garbled, or
-    /// with no box for a key it holds that opens, or, where it is a steward, for no seed of the vault the cap is over.
+    /// The slices of the caps and sync rules whose selectors it opened, and those whose selectors never open for it:
+    /// garbled, or with no box for a key it holds that opens, or, where it is a steward, for no seed of the vault the
+    /// cap or rule is over.
     slices: HashMap<CapId, Slice>,
     unreadable: HashSet<CapId>,
     /// The bodies of the writes it opened, and the writes whose bodies never open: garbled under the key they name.
@@ -371,6 +379,13 @@ impl Store {
     fn reads_caps(&self, st: &State, v: VaultId) -> bool {
         let read = |c: &CapId| self.slices.contains_key(c) || self.unreadable.contains(c);
         st.caps_over(v).filter(|cp| st.live(cp.id)).all(|cp| cp.chain.iter().all(read))
+    }
+
+    /// It read the selector of every live sync rule over vault `v`, or knows it never will: what a steward waits for
+    /// before it marks any entry with the rules that pick it.
+    fn reads_rules(&self, st: &State, v: VaultId) -> bool {
+        let read = |r: &CapId| self.slices.contains_key(r) || self.unreadable.contains(r);
+        st.rules().iter().filter(|(id, r)| r.over == v && st.rule_live(*id)).all(|(id, _)| read(id))
     }
 }
 
@@ -506,10 +521,23 @@ pub struct NewCap {
     pub issuer: VaultId,
 }
 
+/// A sync rule to set (`set_rule`): device `device` of vault `issuer` syncs the entries of vault `over` that `select`
+/// picks, and keeps whole the files they bring (`keep`). A selector that picks all makes a wide rule. The Lab seals its
+/// name and selector as a cap's (`slice::Select`), in a slice that grants no op.
+#[derive(Clone, Debug)]
+pub struct NewRule {
+    pub issuer: VaultId,
+    pub device: SignerId,
+    pub over: VaultId,
+    pub name: String,
+    pub select: Selector,
+    pub keep: bool,
+}
+
 /// One edit a device's upkeep calls for.
 #[derive(Debug)]
 enum Work {
-    /// An edit signed as it is: a `Keys` edit, or a steward's move.
+    /// An edit signed as it is: a `Keys` edit, or a steward's move or marks.
     Edit(Action),
     /// A steward's write acting for vault `vault` on entry `entry`, carrying `body`: its answer to asks for tags.
     Retag { vault: VaultId, entry: EntryId, body: Body },
@@ -1176,24 +1204,72 @@ impl Lab {
             Grantee::Principal(Principal::Vault(g)) if cap.role.allows(Role::Read) => Some(g),
             _ => None,
         };
-        let mut readers: Vec<VaultId> = [Some(cap.over), grantee, Some(cap.issuer)].into_iter().flatten().collect();
+        let readers: Vec<VaultId> = [Some(cap.over), grantee, Some(cap.issuer)].into_iter().flatten().collect();
+        let needed: Vec<VaultId> = [Some(cap.over), grantee].into_iter().flatten().collect();
+        self.seal_slice(on, Picker::Cap(cap), slice, &readers, &needed)
+    }
+
+    /// `slice`, the slice of a cap's or a sync rule's selector `of`, sealed under a key of its own, which is boxed to
+    /// the seed of each vault of `readers` that `on` holds or knows the seed of (`slice::Select`). `UnknownKey` if it
+    /// can't box it for one of `needed`.
+    fn seal_slice(
+        &mut self,
+        on: SignerId,
+        of: Picker<'_>,
+        slice: &Slice,
+        readers: &[VaultId],
+        needed: &[VaultId],
+    ) -> Result<Vec<u8>, Refusal> {
         let mut seen = HashSet::new();
-        readers.retain(|v| seen.insert(*v));
+        let readers = readers.iter().copied().filter(|v| seen.insert(*v));
         let Lab { stores, rng, .. } = self;
         let store = stores.get(&on).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
         let (st, ix) = (store.view(), KeyIndex::of(&store.replay));
         let key = Secret::generate(rng);
-        let sealed = keys::seal_edit(&key, &slice.to_wire(), &cap_context(cap), rng);
-        let info = |to: &Recipient| select_info(cap, key.id(), to);
+        let sealed = keys::seal_edit(&key, &slice.to_wire(), &of.context(), rng);
+        let bound = |to: &Recipient| of.info(key.id(), to);
         let mut boxes = vec![];
         for v in readers {
-            match key_box(&key, st.current(KeyFam::Seed(v)), &info, st, store, &ix, &[], rng) {
+            match key_box(&key, st.current(KeyFam::Seed(v)), &bound, st, store, &ix, &[], rng) {
                 Some(b) => boxes.push(b),
-                None if v == cap.over || Some(v) == grantee => return Err(Refusal::UnknownKey),
+                None if needed.contains(&v) => return Err(Refusal::UnknownKey),
                 None => {}
             }
         }
         Ok(Select::Sealed { boxes, slice: sealed, commitment: slice.grant.commitment() }.to_wire())
+    }
+
+    /// Set a sync rule on device `on`, signed by `signers`, if `on`'s view accepts it: its id. Its selector is sealed
+    /// as a cap's, to the vault it is over and to its issuer. `BadCap` for a rule of no name or a selector beyond the
+    /// bounds a peer accepts; `UnknownKey` if `on` can't seal a rule that isn't wide to the vault it is over, as it
+    /// holds no seed of the vault nor its announced public half.
+    pub fn set_rule(&mut self, on: SignerId, signers: &[SignerId], rule: NewRule) -> Result<CapId, Refusal> {
+        let draft = self.draft_rule(on, signers, rule)?;
+        self.complete(on, draft, &[]).map(CapId::from)
+    }
+
+    /// The rule `set_rule` sets, drafted for the passkeys among its signers to sign in their ceremonies (`draft`).
+    pub fn draft_rule(&mut self, on: SignerId, signers: &[SignerId], new: NewRule) -> Result<Unsigned, Refusal> {
+        self.unlocked(on)?;
+        let NewRule { issuer, device, over, name, select, keep } = new;
+        if rules::name_ok(&name).is_err() || !select.bounded() {
+            return Err(Refusal::BadCap);
+        }
+        let mut salt = [0u8; 32];
+        self.rng.fill_bytes(&mut salt);
+        let wide = select == Selector::All;
+        let slice = Slice { name, select, grant: Grant { ops: vec![], salt }, above: vec![] };
+        let mut rule = SyncRule { issuer, device, over, wide, select: vec![], keep, nonce: self.rng.next_u64() };
+        // the stewards of the vault it is over read it to mark what it picks: a wide rule they never mark by
+        let needed = if wide { vec![] } else { vec![over] };
+        rule.select = self.seal_slice(on, Picker::Rule(&rule), &slice, &[over, issuer], &needed)?;
+        self.draft(on, signers, Action::SyncRule(rule, vec![]))
+    }
+
+    /// End sync rule `rule` on device `on`, signed by `signers`, acting for the vault that set it.
+    pub fn end_rule(&mut self, on: SignerId, signers: &[SignerId], rule: CapId) -> Result<EditId, Refusal> {
+        let issuer = self.full_view(on).rule(rule).map(|r| r.issuer).ok_or(Refusal::UnknownRule)?;
+        self.submit(on, signers, Action::EndSyncRule { rule, issuer, via: vec![] })
     }
 
     /// Bring device `d`'s keys, cells and items up to date with its edits, `lent` holding the keys of owners signing on
@@ -1846,8 +1922,8 @@ impl Lab {
         store.view().meaning(entry, &store.readings)
     }
 
-    /// The slice of cap `cap` as device `d` reads it: `None` unless its selector is sealed to a vault `d` acts for
-    /// (or is public), and `d` opened it.
+    /// The slice of cap or sync rule `cap` as device `d` reads it: `None` unless its selector is sealed to a vault `d`
+    /// acts for (or is public), and `d` opened it.
     pub fn slice(&self, d: SignerId, cap: CapId) -> Option<&Slice> {
         self.held(d).slices.get(&cap)
     }
@@ -2269,6 +2345,19 @@ impl Lab {
         files.into_iter().collect()
     }
 
+    /// The files device `d` keeps whole, smallest first: those the entries it holds bring where its sync rules over the
+    /// entry's vault say to keep them (`State::keeps`), or, with no rule there, where its own setting `keep` says. It
+    /// fetches the rest a piece at a time as it reads them.
+    pub fn kept_files(&self, d: SignerId, keep: bool) -> Vec<FileRoot> {
+        let (store, st) = (self.held(d), self.full_view(d));
+        let kept = |edit: &&Edit| {
+            edit.entry().and_then(|e| st.entry(e)).is_some_and(|en| st.keeps(d, en).unwrap_or(keep))
+        };
+        let files: BTreeSet<FileRoot> =
+            store.log.edits().iter().filter(kept).flat_map(|e| e.files().iter().copied()).collect();
+        files.into_iter().collect()
+    }
+
     /// The key and length of file `root`, from a write device `d` opened that brings it, if any: what it opens the file
     /// with. Only a write that names the file in the clear counts, and only with the length its sealed size says.
     pub fn file(&self, d: SignerId, root: &FileRoot) -> Option<Brought> {
@@ -2525,21 +2614,23 @@ fn entry_key_for(
     key
 }
 
-/// Open what the device's keys open of its edits and keep it: the selector of each cap (`open_select`), and the body of
-/// each write its view counts, or whose tags count (`policy::Entry::retags`); then what it reads in them.
+/// Open what the device's keys open of its edits and keep it: the selector of each cap and each sync rule
+/// (`open_select`), and the body of each write its view counts, or whose tags count (`policy::Entry::retags`); then
+/// what it reads in them.
 fn read(d: SignerId, store: &mut Store) {
     let st = &store.replay.state;
-    for cp in st.caps() {
-        if store.slices.contains_key(&cp.id) || store.unreadable.contains(&cp.id) {
+    let caps = st.caps().iter().map(|cp| (cp.id, Picker::Cap(&cp.cap)));
+    for (id, of) in caps.chain(st.rules().iter().map(|(id, r)| (*id, Picker::Rule(r)))) {
+        if store.slices.contains_key(&id) || store.unreadable.contains(&id) {
             continue;
         }
-        match open_select(&cp.cap, &store.keys, st.acts_for(d, cp.cap.over)) {
+        match open_select(of, &store.keys, st.acts_for(d, of.over())) {
             Ok(Some(slice)) => {
-                store.slices.insert(cp.id, slice);
+                store.slices.insert(id, slice);
             }
             Ok(None) => {}
             Err(()) => {
-                store.unreadable.insert(cp.id);
+                store.unreadable.insert(id);
             }
         }
     }
@@ -2583,24 +2674,65 @@ fn read(d: SignerId, store: &mut Store) {
     store.readings = r;
 }
 
-/// The slice cap `cap`'s selector holds (`slice::Select`), opened with the keys `keys`: `Ok(None)` while none of its
-/// boxes goes to a key held, `Err` if it never opens: it is garbled, a box for a key held doesn't open, or what that
-/// opens doesn't, or, for a steward of the vault the cap is over (`steward`), no box goes to any seed of that vault.
-fn open_select(cap: &Cap, keys: &Keyring, steward: bool) -> Result<Option<Slice>, ()> {
-    let (boxes, sealed) = match Select::from_wire(&cap.select).map_err(drop)? {
+/// What carries a sealed selector (`slice::Select`): a cap, or a sync rule.
+#[derive(Clone, Copy)]
+enum Picker<'a> {
+    Cap(&'a Cap),
+    Rule(&'a SyncRule),
+}
+
+impl Picker<'_> {
+    fn select(&self) -> &[u8] {
+        match self {
+            Picker::Cap(c) => &c.select,
+            Picker::Rule(r) => &r.select,
+        }
+    }
+
+    /// The vault it is over, whose stewards read it.
+    fn over(&self) -> VaultId {
+        match self {
+            Picker::Cap(c) => c.over,
+            Picker::Rule(r) => r.over,
+        }
+    }
+
+    /// What its sealed slice is bound to.
+    fn context(&self) -> Vec<u8> {
+        match self {
+            Picker::Cap(c) => cap_context(c),
+            Picker::Rule(r) => rule_context(r),
+        }
+    }
+
+    /// What a box of its selector key `id` for `to` is bound to.
+    fn info(&self, id: KeyId, to: &Recipient) -> Vec<u8> {
+        match self {
+            Picker::Cap(c) => select_info(c, id, to),
+            Picker::Rule(r) => rule_select_info(r, id, to),
+        }
+    }
+}
+
+/// The slice a cap's or a sync rule's selector holds (`slice::Select`), opened with the keys `keys`: `Ok(None)` while
+/// none of its boxes goes to a key held, `Err` if it never opens: it is garbled, a box for a key held doesn't open, or
+/// what that opens doesn't, or, for a steward of the vault it is over (`steward`), no box goes to any seed of that
+/// vault.
+fn open_select(of: Picker<'_>, keys: &Keyring, steward: bool) -> Result<Option<Slice>, ()> {
+    let (boxes, sealed) = match Select::from_wire(of.select()).map_err(drop)? {
         Select::Clear(slice) => return Ok(Some(slice)),
         Select::Sealed { boxes, slice, .. } => (boxes, slice),
     };
     let id = keys::edit_key(&sealed).ok_or(())?;
-    let to_over = |b: &&KeyBox| matches!(b.to.name(), KeyName::Scoped(KeyFam::Seed(v), _) if v == cap.over);
+    let to_over = |b: &&KeyBox| matches!(b.to.name(), KeyName::Scoped(KeyFam::Seed(v), _) if v == of.over());
     if steward && !boxes.iter().any(|b| to_over(&b)) {
         return Err(());
     }
     for b in &boxes {
         let Recipient::Key { name, id: under } = b.to else { continue };
         let Some(with) = keys.get(&under, name) else { continue };
-        let key = keys::open(&b.bytes, with, &select_info(cap, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
-        let plain = keys::open_edit(&key, &sealed, &cap_context(cap)).ok_or(())?;
+        let key = keys::open(&b.bytes, with, &of.info(id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
+        let plain = keys::open_edit(&key, &sealed, &of.context()).ok_or(())?;
         return Slice::from_wire(&plain).map(Some).map_err(drop);
     }
     Ok(None)
@@ -2718,11 +2850,13 @@ fn upkeep(
 /// each entry whose creation and tags it reads, it answers the asks for tags no write acting for the vault answered
 /// yet, granting each its entry's readers count (`show_items`) where the asker may (`granted`), in one write acting
 /// for the vault; and moves an entry no ask waits on to the cell its meaning asks for, if it isn't there
-/// (`policy::Meaning::desired`).
+/// (`policy::Meaning::desired`), and, once it reads the selector of every sync rule over the vault too
+/// (`Store::reads_rules`), marks it with the rules that pick it, if it isn't marked so (`policy::Meaning::pick`).
 fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
     if !store.reads_caps(st, v) {
         return vec![];
     }
+    let marks = store.reads_rules(st, v);
     let r = &store.readings;
     let mut out = vec![];
     for en in st.entries().iter().filter(|en| en.vault == v) {
@@ -2741,6 +2875,9 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         if asks.is_empty() {
             if let Some(to) = m.desired {
                 out.push(Work::Edit(Action::Move { vault: v, entry: en.id, to, keep: vec![], via: vec![] }));
+            }
+            if let Some(rules) = m.pick.filter(|_| marks) {
+                out.push(Work::Edit(Action::Pick { vault: v, entry: en.id, rules, via: vec![] }));
             }
             continue;
         }

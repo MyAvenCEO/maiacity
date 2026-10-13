@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use crate::encode::{Encode, VERSION};
 use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
+use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role, SyncRule};
 use crate::rules::{Grant, On, Proof, Rule, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_RULES, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
 use crate::sign::{Assertion, Classical, Hello, RelayPass, Signature, SignerKeys, Signed};
@@ -580,6 +580,20 @@ impl Decode for Cap {
     }
 }
 
+impl Decode for SyncRule {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(SyncRule {
+            issuer: VaultId::decode(r)?,
+            device: SignerId::decode(r)?,
+            over: VaultId::decode(r)?,
+            wide: bool::decode(r)?,
+            select: r.bytes()?,
+            keep: bool::decode(r)?,
+            nonce: u64::decode(r)?,
+        })
+    }
+}
+
 impl Decode for Proposal {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
@@ -657,6 +671,14 @@ impl Decode for Action {
                 blob: r.bytes()?,
             },
             13 => Action::Checkpoint { entry: EntryId::decode(r)?, covers: r.seq(32)? },
+            15 => Action::SyncRule(SyncRule::decode(r)?, r.seq(32)?),
+            16 => Action::EndSyncRule { rule: CapId::decode(r)?, issuer: VaultId::decode(r)?, via: r.seq(32)? },
+            17 => Action::Pick {
+                vault: VaultId::decode(r)?,
+                entry: EntryId::decode(r)?,
+                rules: r.seq(32)?,
+                via: r.seq(32)?,
+            },
             _ => return Err(WireError::Unknown),
         })
     }

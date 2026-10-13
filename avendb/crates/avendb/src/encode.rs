@@ -4,7 +4,7 @@
 //! byte is the format's version, so a later format can live beside this one.
 
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
+use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role, SyncRule};
 use crate::rules::{Grant, On, Proof, Rule, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -50,6 +50,25 @@ pub fn cap_context(cap: &Cap) -> Vec<u8> {
 /// and for whom. It opens as no other box, and for no other cap.
 pub fn select_info(cap: &Cap, id: KeyId, to: &Recipient) -> Vec<u8> {
     let mut out = cap_context(cap);
+    out.extend_from_slice(b"selector key");
+    id.encode(&mut out);
+    to.encode(&mut out);
+    out
+}
+
+/// What a sync rule's sealed selector is bound to: the rule with an empty `select`, so the selector can't be moved to
+/// another rule, device or vault.
+pub fn rule_context(rule: &SyncRule) -> Vec<u8> {
+    let mut out = vec![VERSION];
+    out.extend_from_slice(b"sync rule");
+    SyncRule { select: vec![], ..rule.clone() }.encode(&mut out);
+    out
+}
+
+/// What a box of a sync rule's selector key is bound to: the rule with an empty `select`, the key it holds, and for
+/// whom.
+pub fn rule_select_info(rule: &SyncRule, id: KeyId, to: &Recipient) -> Vec<u8> {
+    let mut out = rule_context(rule);
     out.extend_from_slice(b"selector key");
     id.encode(&mut out);
     to.encode(&mut out);
@@ -531,6 +550,18 @@ impl Encode for Cap {
     }
 }
 
+impl Encode for SyncRule {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.issuer.encode(out);
+        self.device.encode(out);
+        self.over.encode(out);
+        self.wide.encode(out);
+        self.select.encode(out);
+        self.keep.encode(out);
+        self.nonce.encode(out);
+    }
+}
+
 impl Encode for Proposal {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -647,6 +678,24 @@ impl Encode for Action {
                 out.push(13);
                 entry.encode(out);
                 covers.encode(out);
+            }
+            Action::SyncRule(r, via) => {
+                out.push(15);
+                r.encode(out);
+                via.encode(out);
+            }
+            Action::EndSyncRule { rule, issuer, via } => {
+                out.push(16);
+                rule.encode(out);
+                issuer.encode(out);
+                via.encode(out);
+            }
+            Action::Pick { vault, entry, rules, via } => {
+                out.push(17);
+                vault.encode(out);
+                entry.encode(out);
+                rules.encode(out);
+                via.encode(out);
             }
         }
     }

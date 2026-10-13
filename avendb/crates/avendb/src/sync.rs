@@ -7,8 +7,10 @@
 //! vaults hold or are over, and every cap those rest on), and the logs of every vault all that names, up their chains
 //! of owners. A revocation sits in the log of the cap it ends, so a device whose cap was revoked hears of it, and knows
 //! what it may no longer do. Nothing about any other entry or cell leaves the peer (T12): not its writes, not even its
-//! cell. Two devices that answered each other hold the same writes for every entry they share (T13). Receiving is not
-//! reading: a relay cap gets the ciphertext and no key.
+//! cell. Of the entries a device may receive, it is sent those its sync rules want (`State::wants`, T28): all of a
+//! vault it has no rule over, else those one of its rules there is wide over or marks; the peer reads the stewards'
+//! marks, never a selector (T29). Two devices that answered each other hold the same writes for every entry both sync
+//! (T13). Receiving is not reading: a relay cap gets the ciphertext and no key.
 //!
 //! Every edit belongs to one log (`log_of`): a vault's (its governance, its seed's keys, its schema lane), a cap's (the
 //! cap, its revocation, its keys), a cell's (its keys), or an entry's (its writes, moves, checkpoints and keys). It
@@ -60,9 +62,12 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
         | Action::Publish { vault, .. } => LogId::Vault(*vault),
         Action::Cap(..) => LogId::Cap(CapId::from(id)),
         Action::Revoke { cap, .. } => LogId::Cap(*cap),
-        Action::Write { entry, .. } | Action::Move { entry, .. } | Action::Checkpoint { entry, .. } => {
-            LogId::Entry(*entry)
-        }
+        Action::Write { entry, .. }
+        | Action::Move { entry, .. }
+        | Action::Checkpoint { entry, .. }
+        | Action::Pick { entry, .. } => LogId::Entry(*entry),
+        Action::SyncRule(r, _) => LogId::Vault(r.issuer),
+        Action::EndSyncRule { issuer, .. } => LogId::Vault(*issuer),
         Action::Keys { name, .. } => match *name {
             KeyName::Signer(_) => return None,
             KeyName::Scoped(KeyFam::Seed(v), _) => LogId::Vault(v),
@@ -90,7 +95,11 @@ fn vaults_named(edit: &Edit) -> Vec<VaultId> {
         }
         Action::Revoke { actor, via, .. } => std::iter::once(*actor).chain(via.iter().copied()).collect(),
         Action::Write { vault, actor, via, .. } => [*vault, *actor].into_iter().chain(via.iter().copied()).collect(),
-        Action::Move { vault, via, .. } => std::iter::once(*vault).chain(via.iter().copied()).collect(),
+        Action::Move { vault, via, .. } | Action::Pick { vault, via, .. } => {
+            std::iter::once(*vault).chain(via.iter().copied()).collect()
+        }
+        Action::SyncRule(r, via) => [r.issuer, r.over].into_iter().chain(via.iter().copied()).collect(),
+        Action::EndSyncRule { issuer, via, .. } => std::iter::once(*issuer).chain(via.iter().copied()).collect(),
         _ => vec![],
     }
 }
@@ -98,6 +107,7 @@ fn vaults_named(edit: &Edit) -> Vec<VaultId> {
 /// What one device may receive by a view, worked out once for the whole of a reply.
 struct Reach<'a> {
     st: &'a State,
+    d: SignerId,
     /// The vaults the device acts for.
     acts: HashSet<VaultId>,
     /// The vaults whose every cell it may receive: it acts for them, or a live wide cap over them (backup or more)
@@ -129,7 +139,7 @@ impl<'a> Reach<'a> {
                 granting.insert(cp.id, cp.cap.over);
             }
         }
-        let mut reach = Reach { st, acts, whole, granting, caps: HashSet::new() };
+        let mut reach = Reach { st, d, acts, whole, granting, caps: HashSet::new() };
         // the caps of every cell an entry it may receive was ever in, and the vaults of those entries, for their wide
         // caps
         let (mut stayed, mut vaults) = (HashSet::new(), HashSet::new());
@@ -157,10 +167,13 @@ impl<'a> Reach<'a> {
             || self.st.cell_caps(x).unwrap_or_default().iter().any(|c| self.granting.get(c) == Some(&v))
     }
 
-    /// It may receive log `l` (`mayReceiveLog`). Vault logs come as the vaults the rest names.
+    /// It syncs log `l` (`syncsLog`): an entry's it may receive and its sync rules want (T28), any other it may
+    /// receive (`mayReceiveLog`). Vault logs come as the vaults the rest names.
     fn log(&self, l: LogId) -> bool {
         match l {
-            LogId::Entry(e) => self.st.entry(e).is_some_and(|en| self.cell(en.vault, en.cell())),
+            LogId::Entry(e) => {
+                self.st.entry(e).is_some_and(|en| self.cell(en.vault, en.cell()) && self.st.wants(self.d, en))
+            }
             LogId::Cell(v, x) => self.cell(v, x),
             LogId::Cap(c) => self.caps.contains(&c),
             LogId::Vault(_) => false,
