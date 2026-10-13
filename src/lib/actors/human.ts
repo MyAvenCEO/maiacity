@@ -2,7 +2,8 @@
  * THE STAND-IN — a person of 1.70 m, to block a shot with before its actor is in it (a film's second team): never
  * a likeness of anyone, but a person — a head with a face that shows where it looks and feels (v2, 2026-10-13: eyes
  * with whites and irises, a nose, lips, and hair: short, long, a bun or none; v3: the head one sculpted surface on a
- * real skull's proportions — cranium, brow ridge, eye sockets, cheekbones, jaw and chin), a T-shirt, jeans, trainers —
+ * real skull's proportions — cranium, brow ridge, eye sockets, cheekbones, jaw and chin; v4: friendly — a soft smile,
+ * open eyes, brows raised a little, the cheeks lifted), a T-shirt, jeans, trainers —
  * rigged head to toe so it takes any pose and any move: 17 bones (the hips, the spine, the chest, the neck, the head;
  * each arm's upper arm, forearm and hand; each leg's thigh, shin and foot), one skinned mesh over them, every joint
  * bending smoothly.
@@ -94,8 +95,12 @@ const BUMPS: [number, number, number, number, number][] = [
 	[0.052, 1.692, 0.012, 0.012, 0.005], // the cheekbones
 	[0.05, 1.655, 0.012, 0.012, -0.002], // the hollows under them
 	[0, 1.606, 0.014, 0.008, 0.004], // the chin
-	[0, 1.658, 0.02, 0.012, 0.002] // the mouth's curve over the teeth
+	[0, 1.658, 0.02, 0.012, 0.002], // the mouth's curve over the teeth
+	[0.032, 1.679, 0.013, 0.01, 0.0042], // the cheeks, lifted by the smile
+	[0.025, 1.6625, 0.004, 0.006, -0.0016] // the smile's dimples at the mouth's corners
 ];
+/** how far up the mouth turns at x (as built for 1.80 m): its corners lifted into a soft smile */
+const SMILE = (x: number) => 0.0055 * Math.min(1.1, (x / 0.021) ** 2);
 /** the nose, part of the surface: a ridge from the root between the eyes to its tip, falling back under the tip to the
  *  lip; its wings either side of the tip */
 function nose(x: number, y: number): number {
@@ -107,12 +112,12 @@ function nose(x: number, y: number): number {
 }
 /** the lips, part of the surface: the upper, the lower and the line between them */
 const LIPS: [number, number, number, number, number][] = [
-	[0, 1.6588, 0.019, 0.0032, 0.0032],
-	[0, 1.6508, 0.0165, 0.0038, 0.0038],
-	[0, 1.6549, 0.021, 0.0011, -0.0018]
+	[0, 1.6588, 0.021, 0.0032, 0.0032],
+	[0, 1.6506, 0.018, 0.0042, 0.0042],
+	[0, 1.6549, 0.023, 0.0011, -0.0018]
 ];
 /** how much of the lips' colour a point of the face takes (as built for 1.80 m): 1 on them, fading out at their edge */
-const onLips = (x: number, y: number) => Math.min(1, Math.max(0, (1 - Math.sqrt((x / 0.0205) ** 2 + ((y - 1.6551) / 0.0074) ** 2)) / 0.18));
+const onLips = (x: number, y: number) => Math.min(1, Math.max(0, (1 - Math.sqrt((x / 0.0225) ** 2 + ((y - SMILE(x) - 1.6549) / 0.0078) ** 2)) / 0.18));
 /** the skin's colour, or the lips' where the lips are */
 const lipsOr = (skinC: string, lipsC: string) => {
 	const a = new THREE.Color(skinC), b = new THREE.Color(lipsC), c = new THREE.Color();
@@ -120,7 +125,8 @@ const lipsOr = (skinC: string, lipsC: string) => {
 };
 const bump = (x: number, y: number) =>
 	nose(x, y) +
-	[...BUMPS, ...LIPS, [0.0125, 1.6735, 0.0068, 0.0058, 0.0062] as [number, number, number, number, number]].reduce((sum, [bx, by, rx, ry, dz]) => sum + dz * (Math.exp(-(((x - bx) / rx) ** 2) - ((y - by) / ry) ** 2) + (bx ? Math.exp(-(((x + bx) / rx) ** 2) - ((y - by) / ry) ** 2) : 0)), 0);
+	LIPS.reduce((sum, [, by, rx, ry, dz]) => sum + dz * Math.exp(-((x / rx) ** 2) - ((y - SMILE(x) - by) / ry) ** 2), 0) +
+	[...BUMPS, [0.0125, 1.6735, 0.0068, 0.0058, 0.0062] as [number, number, number, number, number]].reduce((sum, [bx, by, rx, ry, dz]) => sum + dz * (Math.exp(-(((x - bx) / rx) ** 2) - ((y - by) / ry) ** 2) + (bx ? Math.exp(-(((x + bx) / rx) ** 2) - ((y - by) / ry) ** 2) : 0)), 0);
 
 /** how far forward the face's skin is at (x, y), as built for 1.80 m; behind its sides, the sides' z */
 export function skinAt(x: number, y: number): number {
@@ -244,16 +250,41 @@ function face(k: Look): Piece[] {
 			on(ex - x * 0.001, ey - 0.0004, 0.0019, [0.0058, 0.0058, 0.0016], turn, k.iris, [14, 10]),
 			on(ex - x * 0.001, ey - 0.0004, 0.0029, [0.0029, 0.0029, 0.001], turn, '#141110', [10, 8]),
 			on(ex + 0.0016, ey + 0.002, 0.0036, [0.0012, 0.0012, 0.0005], turn, '#ffffff', [8, 6]),
-			on(ex, ey + 0.0062, -0.0018, [0.0142, 0.0048, 0.0062], [0, x * 0.42, x * -0.05], k.skin),
-			on(ex, ey + 0.0026, 0.0026, [0.0134, 0.0011, 0.0022], [0, x * 0.42, x * -0.05], '#2a1d17', [14, 6]),
-			on(ex, ey - 0.0072, -0.0016, [0.0125, 0.0028, 0.0045], [0, x * 0.42, 0], k.skin, [14, 8]),
-			on(x * 0.036, 1.737, -0.0012, [0.02, 0.0042, 0.006], [0, x * 0.4, x * -0.12], k.brows, [14, 8]),
+			// the lids open, the upper one over the iris's top only, the lower one lifted by the smile
+			on(ex, ey + 0.0086, -0.0022, [0.0142, 0.0044, 0.0058], [0, x * 0.42, x * 0.04], k.skin),
+			on(ex, ey + 0.0049, 0.0021, [0.0134, 0.001, 0.0022], [0, x * 0.42, x * 0.04], '#2a1d17', [14, 6]),
+			on(ex, ey - 0.0064, -0.0014, [0.0128, 0.0026, 0.0046], [0, x * 0.42, x * 0.05], k.skin, [14, 8]),
+
 			on(x * 0.0058, 1.6696, -0.0012, [0.003, 0.0012, 0.0034], [0.35, 0, 0], '#4a2e25', [10, 6]) // a nostril
 		);
 	}
 	out.push(
-		on(0, 1.6549, -0.0006, [0.0175, 0.0007, 0.0012], [0, 0, 0], '#6a3a34', [14, 6]) // the line between the lips
 	);
+	// the brows: raised a little, each a soft arch, thick at the inner end and thinning out
+	for (const [, sx] of sides) {
+		const pts = Array.from({ length: 9 }, (_, i) => {
+			const u = i / 8, x = sx * (0.016 + 0.036 * u), y = 1.7385 + 0.0045 * Math.sin(Math.PI * (0.15 + 0.8 * u));
+			return new THREE.Vector3(x, y, skinAt(x, y) + 0.0006);
+		});
+		const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 1, 6, false);
+		// thinner towards the outer end: each ring scaled about its own point on the curve
+		const pos = g.attributes.position!, c = new THREE.CatmullRomCurve3(pts), q = new THREE.Vector3(), m = new THREE.Vector3();
+		for (let v = 0; v < pos.count; v++) {
+			const t = Math.floor(v / 7) / 20;
+			c.getPointAt(Math.min(1, t), m);
+			q.fromBufferAttribute(pos, v).sub(m).multiplyScalar(0.0024 * (1 - 0.55 * t));
+			q.y *= 0.8;
+			pos.setXYZ(v, m.x + q.x, m.y + q.y, m.z + q.z);
+		}
+		g.computeVertexNormals();
+		out.push({ geo: g, color: k.brows, bone: 'head' });
+	}
+	// the line between the lips, curved up at its corners with the smile
+	const line = new THREE.CatmullRomCurve3(Array.from({ length: 13 }, (_, i) => {
+		const x = -0.0205 + (i * 0.041) / 12, y = 1.6549 + SMILE(x);
+		return new THREE.Vector3(x, y, skinAt(x, y) - 0.0002);
+	}));
+	out.push({ geo: new THREE.TubeGeometry(line, 24, 0.0007, 6, false), color: '#6a3a34', bone: 'head' });
 	return out;
 }
 
