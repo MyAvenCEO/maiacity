@@ -2,7 +2,7 @@
 /**
  * MaiaCity V1's world, in three.js, and nothing but it: the one settlement hex, standing alone in the sky, with the
  * 2-person dome tent in the middle and the two players beside it, a glow of HEARTS over each. The COOPs and the pool
- * are not drawn: the page lists them. The sun follows the virtual day (a real day is a month of 30 days). It only draws
+ * are not drawn: the page lists them. The sun follows the virtual day (a real day is a month of 28 days). It only draws
  * the game; tapping a player names them (onPick), and every frame the players' labels' places go to onLabels.
  */
 import * as THREE from 'three';

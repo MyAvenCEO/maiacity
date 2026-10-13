@@ -15,7 +15,8 @@
  * - Rent, every virtual month: each player pays the Settlement COOP for the tent in SettlementMIND; the Settlement COOP
  *   pays the MaiaCity COOP for the hex in MaiaMIND. A payer who lacks the MIND swaps others through the pool; what is
  *   still missing is owed (arrears) and paid first next month.
- * - Time: one virtual month per real day, from virtual year 0. Every balance (HEARTS, wallets, treasuries, the pool)
+ * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
+ *   year begins with Sol (from 21 March, the new year) and ends with March; every month starts on a Sunday. Every balance (HEARTS, wallets, treasuries, the pool)
  *   melts by 7 % a year of virtual time, continuously.
  * - Every decision (the settings, and payouts of MIND from a COOP's treasury to any wallet) is a MIP, as in Sandbox 7.
  *   It needs two signatures, and applies at once in this same game (no new world).
@@ -46,6 +47,8 @@ const DUST = 1e-9;
 const SLACK = 0.005;
 
 export const DEFAULT_SETTINGS = {
+	/** each player's first mint brings this starter pack on top of what grew */
+	starterPack: 720,
 	heartsPerDay: 24,
 	/** a year of virtual time melts every balance by this much */
 	demurrage: 0.07,
@@ -60,10 +63,11 @@ export const DEFAULT_SETTINGS = {
 };
 
 /** the settings, in words */
-export const SETTING_NAMES = { heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+export const SETTING_NAMES = { starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
+	starterPack: [0, 10000],
 	heartsPerDay: [1, 1000],
 	demurrage: [0, 0.5],
 	poolShare: [0, 0.5],
@@ -99,12 +103,28 @@ export const monthsAt = (s, now) => Math.max(0, now - s.started) / MONTH_MS;
 /** the real-day number since the start: one mint per day */
 export const dayAt = (s, now) => Math.floor(Math.max(0, now - s.started) / DAY_MS);
 
-/** the virtual calendar: year from 0, month 1-12, day 1-30 */
-export function calendar(s, now) {
-	const m = monthsAt(s, now);
+/** the 13-month calendar: Sol first (it begins on 21 March), March last; 28 days a month, so a year has 364 */
+export const MONTHS = ['Sol', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+export const MONTHS_A_YEAR = MONTHS.length;
+export const DAYS_A_MONTH = 28;
+/** every month starts on a Sunday, so the 1st, 8th, 15th and 22nd are Sundays */
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** a calendar date from months since year 0: { year, month 1-13, name, day 1-28, weekday, hour 0-24, months } */
+export function dateOf(m) {
 	const whole = Math.floor(m);
-	return { year: Math.floor(whole / 12), month: (whole % 12) + 1, day: Math.floor((m - whole) * 30) + 1, months: m };
+	const dayF = (m - whole) * DAYS_A_MONTH;
+	const day = Math.floor(dayF) + 1;
+	const month = (whole % MONTHS_A_YEAR) + 1;
+	return { year: Math.floor(whole / MONTHS_A_YEAR), month, name: MONTHS[month - 1], day, weekday: WEEKDAYS[(day - 1) % 7], hour: (dayF % 1) * 24, months: m };
 }
+
+/** the virtual calendar now */
+export const calendar = (s, now) => dateOf(monthsAt(s, now));
+
+const two = (n) => String(n).padStart(2, '0');
+/** a date written the new way, day.month.year: 01.01.00 is 1 Sol of year 0 */
+export const dateText = (d) => `${two(d.day)}.${two(d.month)}.${two(d.year)}`;
 
 /** who holds what: [holder id, balances object] for every balance in the game */
 function holders(s) {
@@ -134,7 +154,7 @@ function log(s, at, entry) {
 /** melt every balance over `ms` of real time (that many virtual months), counting what melted per holder */
 function melt(s, ms) {
 	if (ms <= 0 || !s.settings.demurrage) return;
-	const f = Math.pow(1 - s.settings.demurrage, ms / MONTH_MS / 12);
+	const f = Math.pow(1 - s.settings.demurrage, ms / MONTH_MS / MONTHS_A_YEAR);
 	for (const [who, bal] of holders(s)) {
 		for (const k of Object.keys(bal)) {
 			if (!bal[k]) continue;
@@ -233,6 +253,8 @@ function monthEnd(s, at) {
 /** bring the game forward to `now`: the melt, and each month's end with its rent, at its own moment */
 export function advance(state, now = Date.now()) {
 	const s = clone(state);
+	// a setting added later (the starter pack) takes its default in a game started before it
+	s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
 	if (now <= s.t) return s;
 	for (let guard = 0; guard < 100_000; guard++) {
 		const nextMonth = s.started + (s.month + 1) * MONTH_MS;
@@ -261,8 +283,9 @@ const num = (v) => {
 /**
  * what a seat may mint now: HEARTS grow all the time (24 a day, one an hour) and are minted whenever the player likes,
  * all that grew since the last mint. The right to mint reaches back 24 hours only: what grew before that is lost, so a
- * player who never mints for a day mints 24 at most. Minted HEARTS stay (they only melt).
- * { amount, since, full: when the 24 h are full and growth starts being lost, lost: what was lost already }
+ * player who never mints for a day mints 24 at most. Minted HEARTS stay (they only melt). A player's first mint also
+ * brings the starter pack (720 HEARTS, a month's worth) once.
+ * { amount (starter included), starter, grown, since, full: when the 24 h are full and growth starts being lost, lost: what was lost already }
  */
 export function mintState(s, seat, now) {
 	const p = s.players[seat];
@@ -270,7 +293,8 @@ export function mintState(s, seat, now) {
 	const grown = Math.max(0, now - since);
 	const window = Math.min(grown, DAY_MS);
 	const perMs = s.settings.heartsPerDay / DAY_MS;
-	return { amount: window * perMs, since, full: since + DAY_MS, lost: Math.max(0, grown - DAY_MS) * perMs };
+	const starter = p.starter ? 0 : (s.settings.starterPack ?? DEFAULT_SETTINGS.starterPack);
+	return { amount: starter + window * perMs, starter, grown: window * perMs, since, full: since + DAY_MS, lost: Math.max(0, grown - DAY_MS) * perMs };
 }
 
 /** signatures a MIP needs before it is accepted */
@@ -367,7 +391,11 @@ export function act(state, seat, action, now = Date.now()) {
 			if (m.amount < 0.001) throw new GameError('Nothing has grown since your last mint.');
 			p.wallet.HEARTS += m.amount;
 			p.lastMint = now;
-			log(s, now, { kind: 'mint', from: 'mint', to: me, token: 'HEARTS', amount: m.amount, note: m.lost > 0.001 ? `grew since the last mint (${m.lost.toFixed(2)} older than 24 h lost)` : 'grew since the last mint' });
+			if (m.starter) {
+				p.starter = true;
+				log(s, now, { kind: 'mint', from: 'mint', to: me, token: 'HEARTS', amount: m.starter, note: 'the starter pack' });
+			}
+			if (m.grown > 1e-6) log(s, now, { kind: 'mint', from: 'mint', to: me, token: 'HEARTS', amount: m.grown, note: m.lost > 0.001 ? `grew since the last mint (${m.lost.toFixed(2)} older than 24 h lost)` : 'grew since the last mint' });
 			break;
 		}
 		case 'invest': {

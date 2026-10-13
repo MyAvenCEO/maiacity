@@ -10,7 +10,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, SIGNATURES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, describe, ledgerOf, mintState, nameOf, price, quote, supply } from '../../../game/maiacity-v1/engine.js';
+	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, SIGNATURES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, price, quote, supply } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 
@@ -42,7 +42,7 @@
 	const canMove = $derived(!!player && (mine || admin));
 	const mySeat = $derived(view ? SEATS.find((s) => view.players[s].founder === me) : null);
 	const cal = $derived(view ? calendar(view, now) : null);
-	const hour = $derived(cal ? ((cal.months * 30) % 1) * 24 : 11);
+	const hour = $derived(cal ? cal.hour : 11);
 	const mint = $derived(view ? mintState(view, seat, now) : null);
 	const who = $derived(ledgerOfWho || `player:${seat}`);
 	const lines = $derived(view ? ledgerOf(view, who).slice(0, 200) : []);
@@ -132,10 +132,7 @@
 		return h ? `${h} h ${m} min` : `${m} min ${s % 60} s`;
 	};
 	const pad = (n) => String(n).padStart(2, '0');
-	const vdate = (vm) => {
-		const whole = Math.floor(vm);
-		return `Y${Math.floor(whole / 12)} M${(whole % 12) + 1} D${Math.floor((vm - whole) * 30) + 1}`;
-	};
+	const vdate = (vm) => dateText(dateOf(vm));
 	const sign = (e) => (e.kind === 'arrears' ? '' : e.to === who ? '+' : e.from === who ? '−' : '');
 	const LABELS = { mint: 'Minted', invest: 'Invested', pool: 'To the pool', swap: 'Swap', rent: 'Rent', arrears: 'Owed', demurrage: 'Melt', expired: 'Expired', settings: 'Settings', proposal: 'MIP', payout: 'Payout' };
 	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, COOPS[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
@@ -173,6 +170,7 @@
 		<div class="topstats">
 			<span class="stat panel" title="HEARTS held, and ready to mint"><span class="heart">♥</span> <b>{f(player.wallet.HEARTS, 1)}</b>{#if mint.amount > 0.05}<em>+{f(mint.amount, 1)}</em>{/if}</span>
 			{#each MINDS as t (t)}<span class="stat panel" title={TOKEN_LABEL[t]}><i style="background:{TOKEN_COLOUR[t]}"></i> <b>{f(player.wallet[t], 1)}</b></span>{/each}
+			<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). A month a real day, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
 		</div>
 
 		<div class="topright">
@@ -181,7 +179,7 @@
 					<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
 				{/each}
 			</div>
-			<span class="clock panel">Y{cal.year} · M{cal.month} · D{cal.day} {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
+			<span class="clock panel" title="The game clock: a month a real day, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
 		</div>
 
 		<nav class="tools" class:open={tools}>
@@ -202,7 +200,7 @@
 				<p class="eyebrow">{mine ? 'You' : player.founder ? 'The other player' : 'A free seat'}</p>
 				<h2>{player.name}</h2>
 				{#if !player.founder && !mySeat}
-					<p class="about">Take this seat to play. Your HEARTS grow 24 a day.</p>
+					<p class="about">Take this seat to play. Your first mint brings {f(view.settings.starterPack ?? 720, 0)} HEARTS, then they grow 24 a day.</p>
 					<div class="buttons"><button class="primary" disabled={busy} onclick={() => run(() => takeSeat(seat))}>Play as {player.name}</button></div>
 				{/if}
 				<div class="wares">
@@ -225,12 +223,13 @@
 			{:else if panel === 'mint'}
 				<p class="eyebrow">Your HEARTS</p>
 				<h2>Mint</h2>
-				<p class="about">Your HEARTS grow 24 a day, one an hour. Mint whenever you like: you get all that grew since your last mint. The right to mint reaches back 24 h only, so growth older than that is lost. HEARTS you hold stay.</p>
+				<p class="about">Your first mint brings a starter pack of {f(view.settings.starterPack ?? 720, 0)} HEARTS. After that your HEARTS grow 24 a day, one an hour. Mint whenever you like: you get all that grew since your last mint. The right to mint reaches back one game month (one real day, 24 h) only, so check in at least once a game month: growth older than that is lost. HEARTS you hold stay.</p>
 				<div class="wares">
 					<div><span>Ready to mint</span><b>{f(mint.amount)}</b></div>
+					{#if mint.starter}<div><span>Starter pack</span><b>{f(mint.starter)}</b></div>{/if}
 					<div><span>Last mint</span><b class="small">{player.lastMint ? `${dur(now - player.lastMint)} ago` : 'never'}</b></div>
 				</div>
-				{#if mint.lost > 0.001}<p class="bad small">{f(mint.lost)} HEARTS grew more than 24 h ago and are lost.</p>{:else if mint.full > now}<p class="small">Full 24 HEARTS in {dur(mint.full - now)}: mint before then so none are lost.</p>{/if}
+				{#if mint.lost > 0.001}<p class="bad small">{f(mint.lost)} HEARTS grew more than 24 h ago and are lost.</p>{:else if mint.full > now}<p class="small">A full game month of HEARTS in {dur(mint.full - now)}: mint before then so none are lost.</p>{/if}
 				{#if canMove}<div class="buttons"><button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount)} HEARTS</button></div>{/if}
 			{:else if panel === 'invest'}
 				<p class="eyebrow">{f(player.wallet.HEARTS)} HEARTS held</p>
@@ -406,7 +405,7 @@
 				<dl class="settings">
 					{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
 				</dl>
-				<p class="about">One virtual month a real day, from year 0. Every balance melts {f(view.settings.demurrage * 100, 0)} % a year. Rent is due at each month’s end. A setting changes only through a MIP with {SIGNATURES} signatures.</p>
+				<p class="about">One virtual month a real day, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts {f(view.settings.demurrage * 100, 0)} % a year. Rent is due at each month’s end. A setting changes only through a MIP with {SIGNATURES} signatures.</p>
 				<div class="buttons">
 					{#if canMove}<button class="primary" onclick={() => newMip()}>Propose a change</button>{/if}
 					{#if admin}<button class="danger" disabled={busy} onclick={() => confirm('Start the game again from year 0? Every balance, MIP and the ledger go.') && run(resetGame)}>Start again from year 0</button>{/if}
@@ -480,6 +479,8 @@
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
 		gap: 0.3rem;
 	}
 	.stat {
@@ -523,6 +524,9 @@
 	.seg button.on {
 		background: #fff;
 		box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+	}
+	.clock.m {
+		display: none;
 	}
 	.clock {
 		padding: 0.5rem 0.8rem;
@@ -1013,8 +1017,14 @@
 			width: 10rem;
 		}
 		.speednote,
-		.clock {
+		.clock:not(.m) {
 			display: none;
+		}
+		.clock.m {
+			display: inline-flex;
+			align-items: center;
+			padding: 0.35rem 0.7rem;
+			font-size: 0.85rem;
 		}
 		.brand {
 			padding: 0.4rem 0.7rem;

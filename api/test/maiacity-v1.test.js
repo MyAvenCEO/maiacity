@@ -4,18 +4,19 @@ import { DAY_MS, act, advance, ledgerOf, newGame, price, supply } from "../../ga
 
 const T0 = Date.UTC(2026, 9, 13);
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
-const grown = (s) => { for (const p of Object.values(s.players)) p.lastMint = T0 - DAY_MS; return s; };
+const grown = (s) => { for (const p of Object.values(s.players)) { p.lastMint = T0 - DAY_MS; p.starter = true; } return s; };
 
-test("HEARTS grow 24 a day and are minted any moment, at most the last 24 h of growth", () => {
+test("the first mint brings the 720 HEARTS starter pack; then HEARTS grow 24 a day, at most the last 24 h of growth", () => {
   let s = newGame(T0, { demurrage: 0 });
   s = act(s, "A", { type: "mint" }, T0 + 6 * 3600e3);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(6, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(726, 6);
+  expect(s.players.A.starter).toBe(true);
   expect(() => act(s, "A", { type: "mint" }, T0 + 6 * 3600e3)).toThrow();
   s = act(s, "A", { type: "mint" }, T0 + 7 * 3600e3);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(7, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(727, 6);
   // three days away: only the last 24 h count, and the HEARTS held stay
   s = act(s, "A", { type: "mint" }, T0 + 7 * 3600e3 + 3 * DAY_MS);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(31, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(751, 6);
 });
 
 test("investing splits 50/50, and 5 % of the treasury half goes to the pool", () => {
@@ -24,14 +25,14 @@ test("investing splits 50/50, and 5 % of the treasury half goes to the pool", ()
   expect(s.players.A.wallet.MAIA).toBeCloseTo(5, 6);
   expect(s.coops.maia.treasury.MAIA).toBeCloseTo(4.75, 6);
   expect(s.pool.MAIA).toBeCloseTo(0.25, 6);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(14, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(734, 6);
   expect(price(s)).toBe(null);
 });
 
 test("a virtual year melts every balance by 7 %", () => {
   let s = act(grown(newGame(T0, { tentRent: 0, hexRent: 0 })), "A", { type: "mint" }, T0);
   s = act(s, "A", { type: "invest", coop: "maia", amount: 24 }, T0);
-  s = advance(s, T0 + 12 * DAY_MS);
+  s = advance(s, T0 + 13 * DAY_MS);
   expect(s.players.A.wallet.MAIA).toBeCloseTo(12 * 0.93, 6);
   expect(supply(s).MAIA).toBeCloseTo(24 * 0.93, 6);
 });
@@ -97,7 +98,7 @@ test("two founders take the two seats and only move their own", async () => {
   expect(s.players.A.name).toBe("Samuel");
   await expect(move({ id: "sam" }, false, "B", { type: "mint" }, T0 + 3600e3)).rejects.toThrow();
   s = await move({ id: "sam" }, true, "B", { type: "mint" }, T0 + 3600e3);
-  expect(s.players.B.wallet.HEARTS).toBeCloseTo(1, 4);
+  expect(s.players.B.wallet.HEARTS).toBeCloseTo(721, 4);
   s = await getGame(T0 + 3 * DAY_MS);
   expect(s.month).toBe(3);
   s = await resetGame(T0 + 3 * DAY_MS);
