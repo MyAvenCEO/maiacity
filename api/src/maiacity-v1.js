@@ -2,7 +2,8 @@
 /**
  * MaiaCity V1 in the database: the one shared game both players see (game/maiacity-v1/engine.js holds the rules).
  * Every read brings the game forward to now and every move runs on the row locked, so two players acting at once
- * never lose each other's moves. A seat is taken by a signed-in founder; only they (or an admin) move for it.
+ * never lose each other's moves. Seats go to signed-in founders in the order they arrive: the first is Player A, the
+ * second Player B, each named after the founder. Only the founder in a seat moves for it; nobody plays another's seat.
  */
 import { db } from "./pg";
 import { GameError, SEATS, VERSION, act, advance, newGame } from "../../game/maiacity-v1/engine.js";
@@ -17,10 +18,8 @@ async function load(tx, now) {
   const old = rows[0]?.state;
   if (old && (old.version ?? 1) === VERSION) return old;
   if (old) {
-    // a game of an older shape (V1 had two COOPs) starts again from year 0; its seats stay with their founders
-    const state = newGame(now);
-    for (const s of SEATS) Object.assign(state.players[s], { founder: old.players?.[s]?.founder ?? null, name: old.players?.[s]?.name ?? `Player ${s}` });
-    return state;
+    // a game of an older shape starts again from year 0 with both seats free: the next founders to sign in take them
+    return newGame(now);
   }
   const state = newGame(now);
   await tx.query("INSERT INTO v1_games (id, state) VALUES ($1, ($2::text)::jsonb) ON CONFLICT (id) DO NOTHING", [GAME, json(state)]);
@@ -29,48 +28,52 @@ async function load(tx, now) {
 
 const save = (tx, state) => tx.query("UPDATE v1_games SET state = ($2::text)::jsonb, updated = now() WHERE id = $1", [GAME, json(state)]);
 
-/** the game as it stands now (advanced and kept, so month ends are booked once) */
-export function getGame(now = Date.now()) {
+/** a founder without a seat takes the first free one (A, then B), named after them; a founder with one keeps it */
+function join(state, founder) {
+  if (!founder?.id || SEATS.some((s) => state.players[s].founder === founder.id)) return;
+  const seat = SEATS.find((s) => !state.players[s].founder);
+  if (!seat) return;
+  state.players[seat].founder = founder.id;
+  if (founder.name) state.players[seat].name = `${founder.name}`.slice(0, 40);
+}
+
+/** the game as it stands now (advanced and kept, so month ends are booked once); a founder signing in (not an app
+ * key) joins it on the first free seat */
+export function getGame(founder = null, now = Date.now()) {
   return db.transaction(async (tx) => {
     const state = advance(await load(tx, now), now);
+    join(state, founder);
     await save(tx, state);
     return state;
   });
 }
 
-/** a founder takes an empty seat (or the one they hold) */
-export function takeSeat(founder, seat, now = Date.now()) {
-  if (!SEATS.includes(seat)) throw new GameError("No such player.");
+/** a founder takes the first free seat (the seat asked for does not matter: seats go in the order founders arrive) */
+export function takeSeat(founder, _seat, now = Date.now()) {
   return db.transaction(async (tx) => {
     const state = advance(await load(tx, now), now);
-    const p = state.players[seat];
-    if (p.founder && p.founder !== founder.id) throw new GameError(`${p.name} is taken.`, 409);
-    const other = SEATS.find((s) => s !== seat && state.players[s].founder === founder.id);
-    if (other) throw new GameError(`You play ${state.players[other].name} already.`, 409);
-    p.founder = founder.id;
-    if (p.name === `Player ${seat}` && founder.name) p.name = `${founder.name}`.slice(0, 40);
+    join(state, founder);
+    if (!SEATS.some((s) => state.players[s].founder === founder.id)) throw new GameError("Both seats are taken.", 409);
     await save(tx, state);
     return state;
   });
 }
 
-/** one move for a seat: by the founder in it, or by an admin (who may play both seats to test). No seat named: the one
- * the founder holds (an admin holding none moves for A). */
-export function move(founder, admin, seat, action, now = Date.now()) {
-  if (seat && !SEATS.includes(seat)) throw new GameError("No such player.");
+/** one move, always for the seat the founder holds: nobody moves for the other player. The one exception is an
+ * admin's MIP proposed over the MCP (unsigned, both players sign it on the page), which needs no seat. */
+export function move(founder, admin, _seat, action, now = Date.now()) {
   return db.transaction(async (tx) => {
     const before = await load(tx, now);
-    seat ||= SEATS.find((s) => before.players[s].founder === founder.id) ?? (admin ? "A" : "");
-    if (!seat) throw new GameError("Take a seat first.", 403);
-    const p = before.players[seat];
-    if (p.founder !== founder.id && !admin) throw new GameError(p.founder ? `Only ${p.name} moves for this seat.` : "Take this seat first.", 403);
+    let seat = SEATS.find((s) => before.players[s].founder === founder.id);
+    if (!seat && admin && action?.type === "propose" && action?.mip?.via === "mcp") seat = "A";
+    if (!seat) throw new GameError("You have no seat in this game.", 403);
     const state = act(before, seat, action, now);
     await save(tx, state);
     return state;
   });
 }
 
-/** start again from virtual year 0 (an admin's): the seats stay with their founders and names */
+/** start again from virtual year 0 (an admin's): the seats stay with their founders and names (VERSION frees them) */
 export function resetGame(now = Date.now()) {
   return db.transaction(async (tx) => {
     const old = await load(tx, now);

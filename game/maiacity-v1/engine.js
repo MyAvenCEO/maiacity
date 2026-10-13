@@ -40,7 +40,7 @@ export const MINDS = ['MAIA', 'SETTLEMENT', 'VILLAGE'];
 export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', SETTLEMENT: 'settlementMIND', VILLAGE: 'villageMIND' };
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', SETTLEMENT: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 4;
+export const VERSION = 5;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The settlement hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, settlementMIND, villageMIND' }] },

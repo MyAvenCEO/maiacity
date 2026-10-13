@@ -194,24 +194,29 @@ import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { getGame, move, resetGame, takeSeat } from "../src/maiacity-v1.js";
 
-test("two founders take the two seats and only move their own", async () => {
+test("the first two founders to sign in take seat A and seat B; each moves only their own, an admin too", async () => {
   const pg = new PGlite();
   for (const m of MIGRATIONS) await pg.exec(m.sql);
   const wrap = (q) => ({ query: async (text, params = []) => { const r = await q.query(text, params); return { rows: r.rows, affectedRows: r.affectedRows ?? 0 }; } });
   useDb({ ...wrap(pg), exec: async (t) => void (await pg.exec(t)), transaction: (fn) => pg.transaction((tx) => fn(wrap(tx))) });
-  const g = await getGame(T0);
+  let g = await getGame(null, T0);
   expect(g.players.A.founder).toBe(null);
-  await takeSeat({ id: "sam", name: "Samuel" }, "A", T0);
-  await expect(takeSeat({ id: "bob", name: "Bob" }, "A", T0)).rejects.toThrow();
-  await expect(takeSeat({ id: "sam", name: "Samuel" }, "B", T0)).rejects.toThrow();
-  await takeSeat({ id: "bob", name: "Bob" }, "B", T0);
-  let s = await move({ id: "sam" }, false, "A", { type: "mint" }, T0 + 3600e3);
-  expect(s.players.A.name).toBe("Samuel");
-  await expect(move({ id: "sam" }, false, "B", { type: "mint" }, T0 + 3600e3)).rejects.toThrow();
-  s = await move({ id: "sam" }, true, "B", { type: "mint" }, T0 + 3600e3);
+  g = await getGame({ id: "sam", name: "Samuel" }, T0);
+  expect([g.players.A.founder, g.players.A.name]).toEqual(["sam", "Samuel"]);
+  g = await getGame({ id: "sam", name: "Samuel" }, T0);
+  expect(g.players.B.founder).toBe(null);
+  g = await getGame({ id: "bob", name: "Bob" }, T0);
+  expect([g.players.B.founder, g.players.B.name]).toEqual(["bob", "Bob"]);
+  await expect(takeSeat({ id: "eve", name: "Eve" }, "A", T0)).rejects.toThrow(/taken/);
+  let s = await move({ id: "sam" }, false, "B", { type: "mint" }, T0 + 3600e3);
+  // the seat asked for does not matter: a founder always moves for their own
+  expect(s.players.A.wallet.HEARTS).toBeGreaterThan(0);
+  expect(s.players.B.wallet.HEARTS).toBe(0);
+  await expect(move({ id: "eve" }, true, "B", { type: "mint" }, T0 + 3600e3)).rejects.toThrow(/no seat/);
+  s = await move({ id: "bob" }, false, "", { type: "mint" }, T0 + 3600e3);
   // a real hour is 28/24 game days: 28 HEARTS
   expect(s.players.B.wallet.HEARTS).toBeCloseTo(8736 + 28, 4);
-  s = await getGame(T0 + 3 * DAY_MS);
+  s = await getGame(null, T0 + 3 * DAY_MS);
   expect(s.month).toBe(3);
   s = await resetGame(T0 + 3 * DAY_MS);
   expect(s.month).toBe(0);
