@@ -12,7 +12,7 @@
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
-	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, COOPS, DAY_MS, act, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
@@ -67,12 +67,13 @@
 	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
 	$effect(() => void (view && world?.reveal(tour ? Math.max(0, ...steps.slice(0, tourAt + 1).map((x) => x.reveal ?? 0)) : 2)));
 	// where the story stands in the world: the pickup, the powercube and the players, and what the camera looks at
-	const where = $derived(tour ?? AT_HOME);
+	// once a second player is in, the BatteryCube and the solar panel stand at home beside the tent
+	const where = $derived(tour ?? { ...AT_HOME, battery: view?.players.B.founder ? 'home' : 'store' });
 	const otherSeat = $derived(seat === 'A' ? 'B' : 'A');
 	$effect(() => {
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village' });
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village' });
 		world.touring(!!tour);
 		if (where.place) world.focus(where.place);
 	});
@@ -111,7 +112,7 @@
 			playing = step.kind;
 			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
 			const lines = step.lines;
-			const moment = step.kind === 'load' ? world.load({ lines }) : step.kind === 'build' ? world.pitch({ lines }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
+			const moment = step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
 			moment.then(() => ((playing = ''), mark(step.id)));
 		} else if ((step.kind === 'invest' || step.kind === 'mint') && !told[step.id]) {
 			playing = 'scene';
@@ -131,6 +132,7 @@
 	}
 
 	async function refresh() {
+		if (demo) return; // a demo plays on its own copy of the game
 		try {
 			take(await loadGame());
 			error = '';
@@ -154,7 +156,40 @@
 		}
 	}
 
-	const doMove = (action) => run(() => sendMove(seat, action));
+	const doMove = (action) => (demo ? demoMove(action) : run(() => sendMove(seat, action)));
+
+	// a test run of the second player's journey while that seat is free (Samuel 2026-10-13): the story plays for seat B
+	// on a copy of the game in this browser, its moves made here and never sent; ending it brings the real game back
+	let demo = $state(false);
+	let realGame = null;
+	function startDemo() {
+		realGame = game;
+		const g = structuredClone(game);
+		g.players.B.founder = me;
+		g.players.B.name = 'Player B';
+		game = g;
+		seen = { ...seen, B: {} };
+		told = {};
+		seat = 'B';
+		panel = null;
+		demo = true;
+	}
+	function demoMove(action) {
+		try {
+			game = act(game, seat, action, now);
+			error = '';
+		} catch (e) {
+			error = e?.message ?? String(e);
+		}
+	}
+	function endDemo() {
+		skipShot();
+		demo = false;
+		game = realGame;
+		try { seen = { ...seen, B: JSON.parse(localStorage.getItem(storyKey('B')) ?? '{}') }; } catch {}
+		seat = mySeat ?? 'A';
+		refresh();
+	}
 
 	onMount(() => {
 		world = createWorld(canvas, {
@@ -298,7 +333,7 @@
 	const shows = (what) => !unlocked || unlocked.has('all') || unlocked.has(what) || (what.startsWith('view:') && unlocked.has('mips'));
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
-		try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
+		if (!demo) try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
 		if (id === 'payday') panel = 'you';
 	};
 	// remembered per game: a fresh game (a reset) starts every story from its first step again
@@ -314,6 +349,7 @@
 
 <div class="v1" class:cinema={!!playing}>
 	<canvas class="stage" bind:this={canvas}></canvas>
+	{#if demo}<div class="demo panel" role="status">Test run · {view?.players.B.name}’s journey, nothing is saved <button class="link" onclick={endDemo}>End</button></div>{/if}
 
 	{#if view}
 		<!-- the players' names over them in the world: tap one to see them -->
@@ -339,7 +375,11 @@
 		<div class="topright">
 			{#if shows('seats')}<div class="seg panel">
 				{#each SEATS as s (s)}
-					<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
+					{#if !view.players[s].founder && mySeat && !demo}
+						<button title="Test run this seat's journey in this browser, as long as no one has taken it" onclick={startDemo}>{view.players[s].name} · try</button>
+					{:else}
+						<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
+					{/if}
 				{/each}
 			</div>{/if}
 			{#if shows('clock')}<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
@@ -415,6 +455,7 @@
 				<h2>{player.name}</h2>
 				{#if !player.founder}
 					<p class="about">This seat is waiting: the next person to sign in becomes {player.name}.</p>
+					{#if mySeat}<button class="primary" onclick={startDemo}>Test run {player.name}’s journey</button>{/if}
 				{:else if !mySeat}
 					<p class="about">Both seats are taken, so you are watching this game.</p>
 				{/if}
@@ -490,7 +531,7 @@
 				{@const id = panel.slice(6)}
 				{@const owner = ownerOf(id)}
 				{@const a = owner?.[1].assets.find((x) => x.id === id)}
-				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the Power Cube Electric’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
+				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the ElectroCube’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
 				<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
 				<h2>{a?.name ?? info?.name ?? info?.model}</h2>
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
@@ -968,6 +1009,20 @@
 	.skip.all {
 		right: auto;
 		left: 1rem;
+	}
+	.demo {
+		position: absolute;
+		z-index: 12;
+		left: 50%;
+		transform: translateX(-50%);
+		top: calc(0.6rem + env(safe-area-inset-top, 0px));
+		padding: 0.35rem 0.9rem;
+		border-radius: 999px;
+		font-size: 0.8rem;
+		white-space: nowrap;
+		max-width: calc(100vw - 2rem);
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.hint {
 		animation: hint 1.6s ease-in-out infinite;

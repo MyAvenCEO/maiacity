@@ -22,6 +22,9 @@ import { pod as podV4 } from './pod.v4.js';
 import { forklift } from './forklift.js';
 import { lifetrac } from './lifetrac.js';
 import { powerCube } from './powercube.js';
+import { electroCube } from './electrocube.js';
+import { batteryCube } from './batterycube.js';
+import { batteryPack } from './batterypack.js';
 import type { Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
@@ -91,7 +94,10 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 	],
 	forklift: [{ ...FIRST, date: '2026-10-07' }],
 	lifetrac: [{ ...FIRST, date: '2026-10-13' }],
-	powercube: [{ ...FIRST, date: '2026-10-13' }],
+	powercube: [{ ...FIRST, date: '2026-10-13' }, { v: 2, date: '2026-10-13', note: 'The Electric variant is its own actor now: the ElectroCube' }],
+	electrocube: [{ ...FIRST, date: '2026-10-13' }],
+	batterycube: [{ ...FIRST, date: '2026-10-13' }],
+	batterypack: [{ ...FIRST, date: '2026-10-13' }],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
 		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
@@ -275,9 +281,29 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		note: 'Open Source Ecology’s hydraulic power unit, the heart of every machine of their set: an engine on a pump in a steel cube with its own tanks, cooler and couplers, lifted from one machine to the next — every part its own, as in the LifeTrac that carries one',
 		from: 'Open Source Ecology: the Global Village Construction Set',
 		variants: [
-			{ id: 'powercube-7s', label: 'VII / 7s', note: 'Power Cube VII / 7s (v15.6, 2014–15): 28 hp Briggs & Stratton V-twin, 15.2 gpm at 3,000 psi, 27" cube, ~181 kg', make: () => powerCube() },
-			{ id: 'powercube-electric', label: 'Electric', note: 'Power Cube Electric (our variant, not an OSE design): the same frame, engine, tank and battery, a brushless ~15 kVA alternator on its shaft in place of the hydraulics, its regulator, breakers and sockets on the back; 27" wide and high, 35" long', make: () => powerCube({ electric: true }) }
+			{ id: 'powercube-7s', label: 'VII / 7s', note: 'Power Cube VII / 7s (v15.6, 2014–15): 28 hp Briggs & Stratton V-twin, 15.2 gpm at 3,000 psi, 27" cube, ~181 kg', make: () => powerCube() }
 		]
+	},
+	{
+		id: 'electrocube',
+		label: 'ElectroCube',
+		note: 'Our own cube on Open Source Ecology’s Power Cube frame: the same 28 hp V-twin, tank and battery, a brushless ~15 kVA alternator on its shaft where the hydraulics were, its regulator, breakers and sockets on the back; 27" wide and high, 35" long. Every part its own',
+		from: 'Our design, on the Power Cube of Open Source Ecology',
+		variants: [{ id: 'electrocube', label: 'ElectroCube', note: 'about 15 kVA at 400 V three-phase and 230 V, a 28 hp petrol V-twin, 0.69 × 0.69 × 0.9 m', make: () => electroCube() }]
+	},
+	{
+		id: 'batterycube',
+		label: 'BatteryCube',
+		note: 'Our own cube on the Power Cube’s 27" frame, no engine: four BatteryPacks stacked to its top (~20.7 kWh) and a 6 kW hybrid inverter on its back that turns their 52 V into 230 V and takes a solar panel straight in. Every part its own',
+		from: 'Our design, on the Power Cube of Open Source Ecology',
+		variants: [{ id: 'batterycube', label: 'BatteryCube', note: '~20.7 kWh, 6 kW at 230 V, an MPPT solar input, 686 × 660 × 686 mm, ~140 kg', make: () => batteryCube() }]
+	},
+	{
+		id: 'batterypack',
+		label: 'BatteryPack',
+		note: 'Our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holder plates, copper contact plates pressed on by its lid, no welds and no glue, so every cell, plate and the BMS comes out again. Four fill a BatteryCube',
+		from: 'Our design',
+		variants: [{ id: 'batterypack', label: 'BatteryPack', note: '460 × 480 × 125 mm, ~26 kg, 280 cells', make: () => batteryPack() }]
 	}
 ];
 

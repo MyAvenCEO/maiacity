@@ -12,11 +12,15 @@ import { batteryPack, pickup, powercube, solarPanel } from './village.js';
 import { busStop, gasStation, oldShed, travelVan } from './wayside.js';
 import { person, tent } from '../maiacity-v1/world.js';
 import { powerCube } from '../actors/powercube.js';
+import { electroCube } from '../actors/electrocube.js';
+import { batteryCube } from '../actors/batterycube.js';
+import { batteryPack as packModule } from '../actors/batterypack.js';
 
 // a player is measured without the heart that floats over them
 const bare = (o) => (o.remove(o.userData.glow), o);
-const ose = (o) => { const c = powerCube(o); c.rig.pose(c.clips.off(0)); return c.rig.object; };
-const BUILD = { pickup, powerCube: () => ose(), powerCubeElectric: () => ose({ electric: true }), genset: powercube, solarPanel, batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent };
+const still = (c) => (c.rig.pose(c.clips.off(0)), c.rig.object);
+const ose = () => still(powerCube());
+const BUILD = { pickup, powerCube: () => ose(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {
