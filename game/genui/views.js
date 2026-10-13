@@ -8,11 +8,13 @@
  *   Nothing the agent wrote runs in the page. Its logic (`logic`, a JS module exporting `init(data)` and
  *   `on(event, data)`) runs in a QuickJS engine (src/lib/genui/logic.js, the same box as Sandbox 7's card code):
  *   no page, no network, no clock, 8 MB, a few ms a call. It only ever hands back a new data model.
- * - `html`: OPEN CODE. HTML, CSS and JS for what no catalog can hold (a three.js scene, a d3 chart). The page runs it
- *   in an iframe sandboxed WITHOUT allow-same-origin (a throwaway "null" origin: no cookies, no storage, no passkeys,
- *   no reach into the page or our API) with a CSP that forbids every connection and loads scripts only inline or
- *   from the pinned library files in LIBS (src/lib/genui/Frame.svelte). Its only way out is postMessage, of the
- *   few shapes MESSAGES allows.
+ * - `html`: OPEN CODE, an MCP App (the MCP Apps standard, spec 2026-01-26: text/html;profile=mcp-app). HTML, CSS and
+ *   JS for what no catalog can hold (a three.js scene, a d3 chart). The page runs it in an iframe sandboxed WITHOUT
+ *   allow-same-origin (a throwaway "null" origin: no cookies, no storage, no passkeys, no reach into the page or our
+ *   API) with a CSP that forbids every connection and loads scripts only inline or from the pinned library files in
+ *   LIBS (src/lib/genui/Frame.svelte). It speaks to the page only as an MCP App speaks to its host: JSON-RPC over
+ *   postMessage (ui/initialize, then the view's `data` as its tool result), and of those only the METHODS below.
+ *   A view built with the official SDK (libs: ['mcp-apps']) runs here unchanged.
  *
  * The API (api/src/genui.js) and the page both check a view with `check` before keeping or drawing it.
  */
@@ -49,11 +51,25 @@ export const LIBS = {
 		allow: 'https://cdn.jsdelivr.net/npm/three@0.186.0/',
 		imports: { three: 'https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js', 'three/addons/': 'https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/' }
 	},
-	d3: { version: '7.9.0', allow: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js', script: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js' }
+	d3: { version: '7.9.0', allow: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js', script: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js' },
+	// the MCP Apps SDK, its dependencies bundled: import { App } from '@modelcontextprotocol/ext-apps'
+	'mcp-apps': {
+		version: '2.0.3',
+		allow: 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/dist/src/app-with-deps.js',
+		imports: { '@modelcontextprotocol/ext-apps': 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/dist/src/app-with-deps.js' }
+	}
 };
 
-/** what a code view may say to the page (postMessage), and nothing else */
-export const MESSAGES = ['genui:event', 'genui:error'];
+/** the MCP Apps version this page speaks as a host */
+export const PROTOCOL = '2026-01-26';
+
+/**
+ * What a code view may ask of the page (MCP Apps methods, View -> Host), and nothing else. ui/initialize is answered,
+ * size-changed resizes the frame (within LIMITS.height), notifications/message, ui/update-model-context and ui/message
+ * land in the page's feed as plain data. ui/open-link, tools/call and resources/read are refused: a generated view
+ * never leaves its box, calls a tool or reads anything we did not hand it.
+ */
+export const METHODS = ['ui/initialize', 'ui/notifications/initialized', 'ui/notifications/size-changed', 'notifications/message', 'ui/update-model-context', 'ui/message', 'ui/request-display-mode', 'ping'];
 
 export const LIMITS = { title: 80, note: 400, html: 200_000, components: 300, json: 100_000, logic: 20_000, height: [160, 1200] };
 
@@ -114,7 +130,11 @@ function checkHtml(spec) {
 	const bad = libs.find((l) => !LIBS[l]);
 	if (bad) throw new ViewError(`No library "${bad.slice(0, 30)}": only ${Object.keys(LIBS).join(', ')}.`);
 	const h = Math.round(Number(spec.height) || 420);
-	return { html, libs: [...new Set(libs)], height: Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], h)) };
+	// what the view is handed as its tool's input and result (ui/notifications/tool-input, tool-result): plain JSON
+	const input = plain(spec.input ?? {});
+	const data = plain(spec.data ?? {});
+	if (JSON.stringify({ input, data }).length > LIMITS.json) throw new ViewError('Its data is too big.');
+	return { html, libs: [...new Set(libs)], height: Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], h)), input, data };
 }
 
 /** a whole view, as an agent sends it: { id, title, note?, kind, spec } -> the clean one, or a ViewError */

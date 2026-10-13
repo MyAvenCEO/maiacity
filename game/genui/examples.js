@@ -6,6 +6,7 @@
  */
 
 const scene = `<style>
+  canvas { display: block; }
   html, body { margin: 0; height: 100%; background: #0d1512; overflow: hidden; font: 13px system-ui, sans-serif; color: #e8efe9; }
   #tip { position: absolute; left: 12px; bottom: 10px; opacity: .75; }
 </style>
@@ -79,7 +80,8 @@ const scene = `<style>
     const d = domes.find((d) => d.mesh === hit.object);
     hit.object.material.color.setHex(0xffd27a);
     setTimeout(() => hit.object.material.color.setHex(0xbfe3ff), 600);
-    parent.postMessage({ type: 'genui:event', name: 'dome', value: d.name }, '*');
+    // tell the host, as an MCP App does: JSON-RPC over postMessage
+    parent.postMessage({ jsonrpc: '2.0', id: Date.now(), method: 'ui/update-model-context', params: { structuredContent: { clicked: d.name } } }, '*');
   });
 
   const fit = () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
@@ -88,7 +90,8 @@ const scene = `<style>
 </script>`;
 
 const chart = `<style>
-  html, body { margin: 0; background: #fbfaf6; font: 12px system-ui, sans-serif; color: #24302a; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #fbfaf6; font: 12px system-ui, sans-serif; color: #24302a; }
+  svg { display: block; }
   .legend { display: flex; gap: 14px; padding: 10px 14px 0; flex-wrap: wrap; }
   .legend button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 6px; }
   .legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
@@ -99,21 +102,13 @@ const chart = `<style>
 <div class="legend" id="legend"></div>
 <svg id="c"></svg>
 <div id="tip"></div>
-<script>
-  // a year of MaiaCity V1 on its 13-month calendar: MIND in each COOP's treasury (stacked) and HEARTS minted (line)
-  const coops = [
-    { key: 'maia', name: 'MaiaCity COOP', color: '#2f6f5e' },
-    { key: 'village', name: 'Village COOP', color: '#c98a2b' },
-    { key: 'settlement', name: 'Settlement COOP', color: '#7b5ea7' }
-  ];
-  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const months = d3.range(1, 14);
-  const rows = []; let a = 900, b = 600, c = 400;
-  for (const m of months) {
-    a *= 1 + 0.05 + rnd() * 0.06; b *= 1 + 0.03 + rnd() * 0.1; c *= 1 + 0.08 + rnd() * 0.05;
-    rows.push({ month: m, maia: a, village: b, settlement: c, hearts: 1344 + rnd() * 300 + m * 40 });
-  }
-  const on = new Set(coops.map((c) => c.key));
+<script type="module">
+  // an MCP App built with the official SDK: the host hands it its data as the tool result
+  import { App } from '@modelcontextprotocol/ext-apps';
+  const app = new App({ name: 'COOP chart', version: '1.0.0' }, {}, { autoResize: false }); // it fills its frame, so it asks for no size
+  let coops = [], rows = [];
+  app.ontoolresult = (r) => { ({ coops, rows } = r.structuredContent); for (const c of coops) on.add(c.key); drawLegend(); draw(); };
+  const on = new Set();
   const svg = d3.select('#c'), tip = d3.select('#tip');
   const M = { t: 16, r: 54, b: 30, l: 54 };
 
@@ -143,10 +138,12 @@ const chart = `<style>
           .html('<b>Month ' + m + '</b><br>' + coops.filter((c) => on.has(c.key)).map((c) => '<span style="color:' + c.color + '">■</span> ' + c.name + ': ' + d3.format(',.0f')(r[c.key])).join('<br>') + '<br><span style="color:#d2453b">- -</span> HEARTS minted: ' + d3.format(',.0f')(r.hearts));
       })
       .on('mouseleave', () => { cross.style('display', 'none'); tip.style('display', 'none'); })
-      .on('click', (e) => parent.postMessage({ type: 'genui:event', name: 'month', value: Math.round(x.invert(d3.pointer(e)[0])) }, '*'));
+      .on('click', (e) => app.updateModelContext({ structuredContent: { month: Math.round(x.invert(d3.pointer(e)[0])) } }));
   }
 
+  function drawLegend() {
   const legend = d3.select('#legend');
+  legend.selectAll('*').remove();
   for (const c of coops)
     legend.append('button').html('<i style="background:' + c.color + '"></i>' + c.name).on('click', function () {
       on.has(c.key) ? on.delete(c.key) : on.add(c.key);
@@ -154,8 +151,32 @@ const chart = `<style>
       draw();
     });
   legend.append('span').html('<i style="background:#d2453b"></i> HEARTS minted (right axis)');
-  addEventListener('resize', draw); draw();
+  }
+  addEventListener('resize', () => rows.length && draw());
+  await app.connect();
 </script>`;
+
+// a year of MaiaCity V1 on its 13-month calendar: MIND in each COOP's treasury (stacked) and HEARTS minted (line)
+function year() {
+	let seed = 7;
+	const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+	const rows = [];
+	let a = 900, b = 600, c = 400;
+	for (let m = 1; m <= 13; m++) {
+		a *= 1 + 0.05 + rnd() * 0.06;
+		b *= 1 + 0.03 + rnd() * 0.1;
+		c *= 1 + 0.08 + rnd() * 0.05;
+		rows.push({ month: m, maia: Math.round(a), village: Math.round(b), settlement: Math.round(c), hearts: Math.round(1344 + rnd() * 300 + m * 40) });
+	}
+	return {
+		coops: [
+			{ key: 'maia', name: 'MaiaCity COOP', color: '#2f6f5e' },
+			{ key: 'village', name: 'Village COOP', color: '#c98a2b' },
+			{ key: 'settlement', name: 'Settlement COOP', color: '#7b5ea7' }
+		],
+		rows
+	};
+}
 
 const planner = {
 	root: 'page',
@@ -199,7 +220,7 @@ function figure(d) {
 };
 
 export const EXAMPLES = [
-	{ id: 'village-scene', title: 'A village in three.js', note: 'Seven hexes, a dome on each, trees round them. Click a dome: it tells the page.', kind: 'html', spec: { libs: ['three'], height: 460, html: scene } },
-	{ id: 'coop-chart', title: 'COOP treasuries over a year', note: 'A d3 stacked area of MIND per COOP and HEARTS minted, with a tooltip and legend toggles.', kind: 'html', spec: { libs: ['d3'], height: 400, html: chart } },
+	{ id: 'village-scene', title: 'A village in three.js', note: 'An MCP App in plain JS: seven hexes, a dome on each. Click a dome: it tells the page over JSON-RPC.', kind: 'html', spec: { libs: ['three'], height: 460, html: scene } },
+	{ id: 'coop-chart', title: 'COOP treasuries over a year', note: 'An MCP App (built with the official SDK): a d3 stacked area of MIND per COOP and HEARTS minted, its numbers handed in as the tool result.', kind: 'html', spec: { libs: ['d3', 'mcp-apps'], height: 400, html: chart, data: year() } },
 	{ id: 'dome-planner', title: 'Dome planner', note: 'Declarative JSON drawn by our components; its logic runs in QuickJS.', kind: 'a2ui', spec: planner }
 ];
