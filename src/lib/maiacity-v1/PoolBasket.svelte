@@ -13,7 +13,7 @@
 	const hv = $derived(heartsValue(view));
 	const worth = $derived(Object.fromEntries(MINDS.map((t) => [t, view.pool[t] * hv[t]])));
 	const total = $derived(MINDS.reduce((a, t) => a + worth[t], 0));
-	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
+	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: Math.min(d, 2) }));
 	const pct = (x) => `${f(x * 100, 1)} %`;
 </script>
 
@@ -21,18 +21,18 @@
 	{#each MINDS as t (t)}
 		<li>
 			<span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>weight {pct(w[t])} · {pct(total ? worth[t] / total : 0)} of its value</small></span>
-			<strong>{f(worth[t])} HEARTS<small>{f(view.pool[t])} {TOKEN_LABEL[t]}</small></strong>
+			<strong>{f(worth[t])} ❤︎<small>{f(view.pool[t])} {TOKEN_LABEL[t]}</small></strong>
 		</li>
 	{/each}
-	<li class="sum"><span>Basket value</span><strong>{f(total)} <small class="inline">HEARTS</small></strong></li>
+	<li class="sum"><span>Basket value</span><strong>{f(total)} <small class="inline">❤︎</small></strong></li>
 </ul>
 {#if treasury}
 	<p class="label">Treasury and basket together</p>
 	<ul class="basket">
 		{#each MINDS as t (t)}
-			<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f((treasury[t] + view.pool[t]) * hv[t])} HEARTS<small>{f(treasury[t] + view.pool[t])} {TOKEN_LABEL[t]}</small></strong></li>
+			<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f((treasury[t] + view.pool[t]) * hv[t])} ❤︎<small>{f(treasury[t] + view.pool[t])} {TOKEN_LABEL[t]}</small></strong></li>
 		{/each}
-		<li class="sum"><span>All of it</span><strong>{f(MINDS.reduce((a, t) => a + (treasury[t] + view.pool[t]) * hv[t], 0))} <small class="inline">HEARTS</small></strong></li>
+		<li class="sum"><span>All of it</span><strong>{f(MINDS.reduce((a, t) => a + (treasury[t] + view.pool[t]) * hv[t], 0))} <small class="inline">❤︎</small></strong></li>
 	</ul>
 {/if}
 
