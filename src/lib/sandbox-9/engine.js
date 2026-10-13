@@ -28,6 +28,7 @@ import { postPrices, peopleOrders, openPayments, payDirect, payRest, settleSwaps
 import { nature, margins, costs, plan, produce, runningItems, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
 import { initRecords, recordDay, physicsCeiling, foundingStores } from './records.js';
 import { newBorder, importsDay, shareLine, repayAdvances } from './border.js';
+import { rampDay, rampOn, notFounded } from './ramp.js';
 import { villageRecords } from './village.js';
 import { catalogList } from './primitives.js';
 import { OUTDOOR, INDOOR } from './food.js';
@@ -59,7 +60,11 @@ export function createWorld(config = {}) {
 	// the MaiaCity COOP's bank at the border (paper §11.4), in €: the founding euros (foundingEur; or reserveYears of the
 	// village's food at wholesale; by default drawn from the founders outside as far as the village needs) and each
 	// COOP's deposit, and what came in and went out (./border.js)
-	w.border = newBorder(w, w.cfg.foundingEur != null ? w.cfg.foundingEur : w.cfg.reserveYears != null ? w.cfg.reserveYears * w.cfg.people * w.c.need[0] * 365 * w.c.eur.food : Infinity);
+	// (foundingEur 'buildout' is the build-out plan's bill, 'buildout+20' that and €20M more: scenario F01)
+	const fe = w.cfg.foundingEur;
+	const bill = w.ramp ? w.ramp.plan.totals.total : 0;
+	const founding = typeof fe === 'string' ? bill + (Number(fe.split('+')[1] ?? 0) || 0) * 1e6 : fe;
+	w.border = newBorder(w, founding != null ? founding : w.cfg.reserveYears != null ? w.cfg.reserveYears * w.cfg.people * w.c.need[0] * 365 * w.c.eur.food : Infinity);
 	// what was bought outside before day 0 to found the village (./records.js foundingBill)
 	w.founding = foundingStores(w);
 	// the catalog's day-0 guesses, in R, indexed like the rate card to the HEARTS issued a day; genesisPrices below
@@ -189,6 +194,8 @@ export function step(w) {
 	nature(w);
 	// the border: food and raw inputs bought outside today (./border.js)
 	importsDay(w);
+	// the ramp: what the build-out plan finished stands, the month's people arrive, its euros are advanced (./ramp.js)
+	if (w.ramp) rampDay(w);
 	const slow = cfg.dailySlow || w.day < YEAR_DAYS || w.day < w.slowUntil || w.day % 7 === 0;
 	costs(w, slow || w.day === 0);
 	margins(w);
@@ -1237,6 +1244,7 @@ function slowLoop(w) {
 	w.lastSlow = w.day;
 	arbitrage(w);
 	payRent(w, dt);
+	payDomeRent(w, dt);
 	// the COOPs pay their euro advances back to the City COOP's bank in their own MIND (./border.js)
 	if (w.border) w.today.repaidR = (w.today.repaidR ?? 0) + repayAdvances(w, dt);
 	if (w.day % 7 === 0) adjustRent(w);
@@ -1352,6 +1360,57 @@ function payRent(w, dt) {
 	settleSwaps(w);
 	w.tre[city * M + city] += w.recv[city];
 	w.recv[city] = 0;
+}
+
+/**
+ * Dome rent (on the slow loop, with the ground rent): each tenant pays the settlement COOPs whose domes it works in, in
+ * their own MIND, for the m² it rents at the landlord's rate (./coops.js hallRents). It is a sale for the landlord, so
+ * Law 5 pays the landlord's holders λ of it. Like the ground rent, a tenant pays at most half its treasury at a time;
+ * what it cannot pay is owed (arrears) and paid first next time. What each landlord received is kept as a 30-day
+ * average: its own price counts on it (./coops.js costs).
+ */
+function payDomeRent(w, dt) {
+	if (!w.halls) return;
+	const P = w.P, t = w.today;
+	const inR = new Float64Array(M);
+	openPayments(w);
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		const due = new Map();
+		for (const pl of co.plants)
+			if (pl.hosts)
+				for (const x of pl.hosts) {
+					const o = x.hall.ownerK;
+					if (!(o >= 0) || o === co.k || !w.coops[o].alive || !(x.hall.rateR > 0)) continue;
+					due.set(o, (due.get(o) ?? 0) + x.m2 * x.hall.rateR * dt);
+				}
+		if (co.rentOwed) for (const [o, R] of Object.entries(co.rentOwed)) if (w.coops[+o]?.alive) due.set(+o, (due.get(+o) ?? 0) + R);
+		co.rentOwed = null;
+		let total = 0;
+		for (const R of due.values()) total += R;
+		if (!(total > 0)) continue;
+		const can = Math.min(1, (0.5 * treasuryR(w, co.k)) / total);
+		const row = co.k * M;
+		for (const [o, R] of due) {
+			const pay = R * can;
+			if (pay > 0) {
+				const rest = payDirect(w, w.tre, row, o, pay / P[o]);
+				const paid = rest > 0 ? pay - rest * P[o] + payRest(w, w.tre, row, rest * P[o], co.k) : pay;
+				inR[o] += paid;
+				co.costR += paid;
+				t.domeRentR = (t.domeRentR ?? 0) + paid;
+				if (pay - paid > 1e-12) (co.rentOwed ??= {})[o] = (co.rentOwed?.[o] ?? 0) + pay - paid;
+			}
+			if (R - pay > 1e-12) (co.rentOwed ??= {})[o] = (co.rentOwed?.[o] ?? 0) + R - pay;
+		}
+		co.rentOwedR = co.rentOwed ? Object.values(co.rentOwed).reduce((a, b) => a + b, 0) : 0;
+	}
+	settleSwaps(w);
+	law5(w);
+	// a day's rent received, averaged over 30 days (dt days at a time)
+	const a = 1 - Math.pow(1 - 1 / 30, dt);
+	for (const co of w.coops) if (co.alive && co.rentInEma != null) co.rentInEma += (inR[co.k] / dt - co.rentInEma) * a;
+	t.rentInR = inR;
 }
 
 /**
@@ -1556,7 +1615,7 @@ function checkLedgers(w) {
 	B.outEur += t.eurOut ?? 0;
 	// energy
 	const h = t.harvest;
-	const supply = h.solar + h.geo + h.battery;
+	const supply = h.solar + h.geo + h.battery + (h.grid ?? 0);
 	let used = t.exportKwh ?? 0;
 	for (let cl = 0; cl < 4; cl++) used += t.use[cl];
 	const out = used + t.use[CLASS.storage] + t.curtailed;

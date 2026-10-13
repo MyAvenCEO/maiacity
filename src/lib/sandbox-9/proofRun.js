@@ -86,6 +86,9 @@ export function runJob(job) {
 		P3: {
 			pass: p.P3.pass,
 			failed: p.P3.failed,
+			// the verdict in real units per tenth (Samuel, 06:48) and its failing items; the old money index beside it
+			real: { pass: p.P3.real.pass, failedTenths: p.P3.real.failedTenths, failures: p.P3.real.failures.slice(0, 40), basicsFail: p.P3.real.basicsFail.slice(0, 40), riseFail: p.P3.real.riseFail, excused: p.P3.real.excused.length, years: p.P3.real.years, rule: p.P3.real.rule, newcomers: p.P3.real.newcomers },
+			oldIndex: p.P3.oldIndex,
 			deciles: dec.map((d) => ({ by: d.by, decile: d.decile, pass: d.pass, first: d.first, last: d.last, ceiling: d.ceiling, rises: d.rises, nearCeiling: d.nearCeiling, fall: d.fall ?? 0, windowsFailed: d.windowsFailed ?? 0, net: d.worstNet?.change ?? 0 })),
 			worst,
 			withoutCompute: { pass: p.P3.withoutCompute.pass, failed: p.P3.withoutCompute.failed.length },
@@ -152,14 +155,16 @@ export function assemble(results, meta = {}) {
 		{
 			id: 'P3',
 			title: 'Living standards rise for everyone',
-			claim: 'Every tenth, by holdings and by Aven output, never falls more than 2 % in any 5 years (2 years of recovery after a scheduled shock), and in every 5 years rises or ends within 5 % of the capacity per person; COOPs stay solvent or leave through receivership with no basic short.',
+			claim: 'In real units, every tenth by holdings and by Aven output: the basics (kcal, protein, water, home kWh, a bed) at or above need every year; the extras (home m², goods, Aven hours, pond hours) never down more than 2 % in any 5 years unless at satiation or a physical limit binds; each tenth’s basket rises over the run; COOPs stay solvent or leave through receivership with no basic short.',
 			pass: all(bases, (b) => b.P3.pass),
 			evidence: bases.map(
 				(b) => [
-					`${seed(b)}: ${20 - b.P3.failed.length}/20 tenths pass${b.P3.failed.length ? ` (failing: ${b.P3.failed.length === 20 ? 'all' : b.P3.failed.join(', ')})` : ''}; worst fall ${pc(b.P3.worst.fall, 1)}${b.P3.worst.by ? ` (${b.P3.worst.by} tenth ${b.P3.worst.decile})` : ''}; poorest tenth by holdings ${f(b.P3.bottom?.first, 1)} → ${f(b.P3.bottom?.last, 1)}; Aven services are ${pc(b.P3.computeShare?.all, 0)} of the index in the last year, and without them ${b.P3.withoutCompute?.pass ? 'every tenth passes' : `${b.P3.withoutCompute?.failed} tenths fail`}; ${b.P3.coops.receiverships.length} receiverships, ${b.P3.coops.receiverships.reduce((a, r) => a + r.short, 0)} basic person-days short around them.`,
+					`${seed(b)}: ${20 - b.P3.failed.length}/20 tenths pass in real units${b.P3.failed.length ? ` (failing: ${b.P3.failed.length === 20 ? 'all' : b.P3.failed.join(', ')})` : ''}${b.P3.real?.basicsFail?.length ? `; basics below need: ${b.P3.real.basicsFail.slice(0, 4).map((x) => `${x.by} tenth ${x.tenth} ${x.item} year ${x.year} (${f(x.value, 1)} of ${f(x.need, 1)})`).join(', ')}${b.P3.real.basicsFail.length > 4 ? ` and ${b.P3.real.basicsFail.length - 4} more` : ''}` : ''}${b.P3.real?.failures?.length ? `; extras down: ${b.P3.real.failures.slice(0, 4).map((x) => `${x.by} tenth ${x.tenth} ${x.item} years ${x.from}→${x.to} ${pc(-x.fall, 1)}`).join(', ')}${b.P3.real.failures.length > 4 ? ` and ${b.P3.real.failures.length - 4} more` : ''}` : ''}${b.P3.real?.riseFail?.length ? `; baskets not rising: ${b.P3.real.riseFail.map((x) => `${x.by} tenth ${x.tenth}`).join(', ')}` : ''}; ${b.P3.real?.excused ?? 0} falls excused (at satiation or a physical limit); ${b.P3.coops.receiverships.length} receiverships, ${b.P3.coops.receiverships.reduce((a, r) => a + r.short, 0)} basic person-days short around them.`,
 					b.P3.pass
 				]
 			)
+				// the old money index, as a comparison line (not the verdict)
+				.concat(bases.map((b) => [`${seed(b)}, old money index (comparison): ${b.P3.oldIndex?.pass ? 'holds' : 'fails'}, ${20 - (b.P3.oldIndex?.failed?.length ?? 0)}/20 tenths; worst fall ${pc(b.P3.worst.fall, 1)}${b.P3.worst.by ? ` (${b.P3.worst.by} tenth ${b.P3.worst.decile})` : ''}; poorest tenth by holdings ${f(b.P3.bottom?.first, 1)} → ${f(b.P3.bottom?.last, 1)}.`, true]))
 				.concat(fromSuite(['S00', 'S03']).map((s) => [`Proof suite ${s.id}: ${s.pass ? 'pass' : 'FAIL'}. ${s.takeaway}`, s.pass]))
 				// B23 for its P3 verdicts in each world (open, closed, accelerators 3× dearer), never as a pass of P3
 				.concat(fromSuite(['B23']).map((s) => [`Proof suite ${s.id}, P3 in each world: ${(s.numbers?.rows ?? []).map((r) => `${r.label} ${r.P3 ? 'holds' : 'fails'} (mean living standard ${f(r.Lmean, 2)} in the last year)`).join('; ')}.`, (s.numbers?.rows ?? []).every((r) => r.P3)]))

@@ -16,6 +16,7 @@ import { exp, pow } from './dmath.js';
 import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, DAYS_IN_MONTH, FOOD as FOODCAT } from './primitives.js';
 import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor, skillRamp, skillOf } from './food.js';
 import { villageFacts } from './village.js';
+import { rampSchedule, initRamp } from './ramp.js';
 import { BED, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOOD_INDEX, GOODS_, MAX_COOPS, NX, SPRING, WATER, LIMIT } from './consts.js';
 import { gauss, rnd } from './rng.js';
 import { indexPools, newPool } from './pools.js';
@@ -29,6 +30,14 @@ export const DEFAULTS = {
 	/** the people the village is built for; null = 250 a living hex. Set it to build the village for more or fewer
 	 * people than live in it (every plant, plot and store scaled by fieldPeople ÷ (250 × livingHexes)) */
 	fieldPeople: null,
+	/** the ramp (Samuel, 2026-10-13 06:42): true (default) builds the village from day 0 by the build-out plan
+	 * (src/lib/sandbox-7/buildout.js, through ./ramp.js): two settlers and the starter kit on day 0, people arriving as
+	 * beds are finished, each settlement COOP founded when its settlement launches, the build-out's euros advanced by the
+	 * MaiaCity COOP's bank. false: round 2's start, the whole village standing on day 0 and bought before it (a
+	 * comparison). Only for the default village (six living hexes, built for the people who live in it) */
+	ramp: true,
+	/** options passed to the build-out plan (buildPlan), e.g. { kit: 'starter' } (null: the plan's own choice) */
+	buildout: null,
 	/** living hexes round the centre hex (Sandbox 6's village: six alike) */
 	livingHexes: 6,
 	/** the Tower180 in the centre hex (false, default: one more Dome120 of utilities and community halls instead) */
@@ -374,6 +383,7 @@ function constants(cfg) {
 		solarEurKwh: CHIPS.solarEurMwh.v.map((x) => x / 1000),
 		eurMwh,
 		lineKwhDay: CHIPS.lineKw.v * s * 24,
+		gridEurKwh: BORDER.gridEurKwh.v,
 		chipsSpare: CHIPS.spare.v,
 		// the border's prices, € (BORDER): food a unit, logs, scrap and float glass a t, cells a kWp
 		eur: { food: diet.eurPer1000 * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatEur.v * ip, cells: BORDER.cellsEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip },
@@ -403,7 +413,9 @@ function villageTech(w) {
 	const V = w.c.village, T = w.tech;
 	const bedsHome = V.beds.dome80 + V.beds.dome40;
 	const per = (parts, units) => ({ wood: parts.wood / units, steel: parts.steel / units, glass: parts.glass / units });
-	const homeParts = { wood: V.homes.wood + V.halls.wood, steel: V.homes.steel + V.halls.steel, glass: V.homes.glass + V.halls.glass };
+	// the homes' own shells and floors a bed; the halls (utilities, food, factory and centre domes) are the settlement
+	// COOPs' hall plants (attachHalls), rented out by the m²
+	const homeParts = { wood: V.homes.wood, steel: V.homes.steel, glass: V.homes.glass };
 	Object.assign(T.home.build, per(homeParts, V.beds.total));
 	T.home.kwh = (V.homes.climate + V.halls.climate) / V.beds.total / 365;
 	T.home.heat = (V.homes.heat + V.halls.heat) / V.beds.total / 365;
@@ -415,7 +427,7 @@ function villageTech(w) {
 	Object.assign(T.steel.build, per(V.works.steel, fr.steel.t));
 	Object.assign(T.glass.build, per(V.works.glass, fr.glass.t));
 	// the glazing wears faster than the frame: upkeep replaces glass at life ÷ glassLife times the frame's rate
-	for (const k of ['home', 'greenhouse', 'timber', 'steel', 'glass']) T[k].glassX = T[k].life > 0 ? T[k].life / (TECH[k].glassLife?.v ?? 30) : 1;
+	for (const k of ['home', 'hall', 'greenhouse', 'timber', 'steel', 'glass']) T[k].glassX = T[k].life > 0 ? T[k].life / (TECH[k].glassLife?.v ?? 30) : 1;
 }
 
 /** a food forest's share of its mature harvest by age in years (./food.js) */
@@ -550,6 +562,108 @@ function seedPlants(w) {
 	return sets;
 }
 
+/**
+ * The settlement COOPs' domes (Samuel, 2026-10-13): each living hex's settlement COOP gets a hall plant holding its two
+ * food domes and its utilities dome; the Village COOP one holding the centre dome (or the tower), the eight factory
+ * domes. A hall plant makes nothing; it wears and is kept up like any plant, and its owner rents its floor out by the m²
+ * (./coops.js costs: the rent a m² covers the shells' wear at replacement cost and their ground rent, over 1 − λ so that
+ * what the landlord keeps after Law 5 pays for them). The business COOPs in them get `hosts` (the m² they rent in each
+ * hall) and `hostedCap` (the part of their capacity whose building is the landlord's: all of it for the food domes and
+ * the works in the factory domes, none for the water works, batteries, data centres and workshops, whose own recipes
+ * are their machines). The land under a hall is on its owner's lease; the tenants lease only the outdoor land they use.
+ */
+function attachHalls(w) {
+	const V = w.c.village, D = V.domes, vf = w.c.vf, nL = V.livingHexes, T = w.tech;
+	const f120 = D.floor120;
+	const livingFloor = (D.foodPerHex + D.utilPerHex) * f120;
+	const worksFloor = Object.values(D.works).reduce((a, n) => a + n, 0) * f120;
+	const villageFloor = D.centreFloor + worksFloor;
+	const recipe = (parts, m2) => ({ ...T.hall.build, wood: parts.wood / m2, steel: parts.steel / m2, glass: parts.glass / m2 });
+	const livingParts = { wood: V.foodDomes.wood + V.util.wood, steel: V.foodDomes.steel + V.util.steel, glass: V.foodDomes.glass + V.util.glass };
+	const villageParts = { wood: V.centre.wood, steel: V.centre.steel, glass: V.centre.glass };
+	for (const x of Object.values(V.works)) (villageParts.wood += x.wood), (villageParts.steel += x.steel), (villageParts.glass += x.glass);
+	const livingDef = { ...T.hall, build: recipe(livingParts, nL * livingFloor) };
+	const villageDef = { ...T.hall, build: recipe(villageParts, villageFloor) };
+	const hallOf = (def, m2, foot, hex, good) => {
+		const pl = newPlant(w, 'hall', m2);
+		pl.def = def;
+		pl.born = 0;
+		pl.landM2 = foot;
+		pl.hex = hex;
+		pl.good = good;
+		pl.hosted = [];
+		return pl;
+	};
+	// the living halls, one per settlement COOP and hex (split as the beds are when a hex's homes are split)
+	const hexBeds = new Float64Array(nL);
+	for (const co of w.coops) for (const pl of co.plants) if (pl.tech === 'home' && pl.hex != null) hexBeds[pl.hex] += pl.cap;
+	const halls = [], byHex = Array.from({ length: nL }, () => []);
+	for (const co of w.coops)
+		for (const pl of [...co.plants])
+			if (pl.tech === 'home' && pl.hex != null && hexBeds[pl.hex] > 0) {
+				const a = pl.cap / hexBeds[pl.hex];
+				const h = hallOf(livingDef, livingFloor * vf * a, livingFloor * vf * a, pl.hex, BED);
+				co.plants.push(h);
+				halls.push(h);
+				byHex[pl.hex].push(h);
+			}
+	// the Village COOP's hall (split as its geothermal plant is when the COOPs of a good are split)
+	let vh = null;
+	const vPlants = [];
+	for (const co of w.coops) for (const pl of co.plants) if (pl.village) vPlants.push([co, pl]);
+	for (const [co] of vPlants) {
+		const a = 1 / vPlants.length;
+		const h = hallOf(villageDef, villageFloor * vf * a, (D.centreFootM2 + worksFloor) * vf * a, 'centre', co.good);
+		co.plants.push(h);
+		halls.push(h);
+		vh = vh ?? h;
+		if (vPlants.length > 1) h.share = a;
+		if (co.good === ENERGY && co.plants.every((p) => p.tech !== 'solar')) co.label = co.label ?? VILLAGE_COOP.label + (vPlants.length > 1 ? ` (${co.id})` : '');
+	}
+	// with the Village COOP split in two, its tenants rent from both halls by their floor
+	const vHosts = (m2) => vPlants.length > 1 ? halls.filter((h) => h.hex === 'centre').map((h) => [h, m2 * h.share]) : vh ? [[vh, m2]] : [];
+	w.halls = halls;
+	// the tenants: what each technology rents, in which halls (a technology's m² split over its plants by capacity)
+	const Z = D.utilZones;
+	const living = (m2) => byHex.flatMap((hs) => {
+		const tot = hs.reduce((a, h) => a + h.cap, 0);
+		return hs.map((h) => [h, (m2 * vf * h.cap) / Math.max(1e-12, tot)]);
+	});
+	const rent = {
+		greenhouse: { hosts: living(D.foodPerHex * f120 + D.utilPerHex * D.utilGardenM2), hosted: 1 },
+		well: { hosts: living(D.utilPerHex * Z.water), hosted: 0 },
+		solar: { hosts: living(D.utilPerHex * (Z.battery + Z.hydrogen)), hosted: 0 },
+		compute: { hosts: living(D.utilPerHex * Z.datacenter), hosted: 0 },
+		goods: { hosts: living(D.utilPerHex * Z.workshop), hosted: 0 },
+		timber: { hosts: vHosts((D.works.timber + D.works.bamboo) * f120 * vf), hosted: 1 },
+		steel: { hosts: vHosts(D.works.steel * f120 * vf), hosted: 1 },
+		glass: { hosts: vHosts(0.7 * D.works.glass * f120 * vf), hosted: 1 },
+		panel: { hosts: vHosts(0.3 * D.works.glass * f120 * vf), hosted: 1 },
+		// the settlement COOPs rent the centre's halls (and the four works domes the engine does not trade) for their
+		// residents, by their beds
+		home: { hosts: vHosts(D.centreFloor * vf), hosted: 0 }
+	};
+	const capOf = {};
+	for (const co of w.coops) for (const pl of co.plants) if (rent[pl.tech]) capOf[pl.tech] = (capOf[pl.tech] ?? 0) + Math.max(0, pl.cap);
+	for (const co of w.coops)
+		for (const pl of co.plants) {
+			const r = rent[pl.tech];
+			if (!r || !(capOf[pl.tech] > 0)) continue;
+			const a = Math.max(0, pl.cap) / capOf[pl.tech];
+			pl.hosts = r.hosts.map(([h, m2]) => ({ hall: h, m2: m2 * a })).filter((x) => x.m2 > 0);
+			for (const x of pl.hosts) x.hall.hosted.push(x);
+			pl.hostedCap = r.hosted * Math.max(0, pl.cap);
+			// the land under the landlord's dome is on the landlord's lease
+			if (r.hosted) pl.landM2 = Math.max(0, pl.landM2 - (pl.tech === 'greenhouse' ? pl.cap : pl.cap * pl.def.land));
+		}
+	for (const co of w.coops) {
+		const hexes = new Set(co.plants.filter((p) => p.tech === 'home').map((p) => p.hex));
+		if (hexes.size > 1) co.label = 'Settlement COOP of all the living hexes';
+		else if (!co.label && COOP_LABELS[co.id]) co.label = COOP_LABELS[co.id];
+		else if (!co.label && COOP_LABELS[co.id.replace(/[12]$/, '')]) co.label = `${COOP_LABELS[co.id.replace(/[12]$/, '')]} ${co.id.slice(-1)}`;
+	}
+}
+
 /** the City COOP keeps streets, paths, parks and the mains: about 3 ha of the hex (estimate) */
 const CITY_LAND_M2 = 30000;
 
@@ -564,9 +678,12 @@ export function createWorld(config = {}) {
 	w.learn = {};
 	for (const [k, d] of Object.entries(w.tech)) w.learn[k] = { K: w.c.K0, Q: 0, Q0: 0, coef: Object.fromEntries(Object.keys(d.floors).map((c) => [c, 1])), rdMwh: 0 };
 
+	// ── the ramp: the build-out plan's months (./ramp.js) ──
+	const rampS = cfg.ramp && (cfg.livingHexes ?? 6) === 6 && cfg.fieldPeople == null ? rampSchedule(cfg) : null;
 	// ── people ──
-	const N0 = cfg.people;
-	const Nmax = (cfg.popGrowth > 0 ? Math.ceil(N0 * exp(cfg.popGrowth * (cfg.maxYears ?? 60)) * 1.05) + 4 : N0) + (cfg.newcomers?.n ?? 0);
+	const N0 = rampS ? rampS.months[0].people : cfg.people;
+	const Nfull = rampS ? cfg.people : N0;
+	const Nmax = (cfg.popGrowth > 0 ? Math.ceil(Nfull * exp(cfg.popGrowth * (cfg.maxYears ?? 60)) * 1.05) + 4 : Nfull) + (cfg.newcomers?.n ?? 0);
 	w.N = N0;
 	w.Nmax = Nmax;
 	const M = MAX_COOPS;
@@ -667,6 +784,7 @@ export function createWorld(config = {}) {
 		w.cityK = 0;
 	}
 	w.tre = new Float64Array(M * M);
+	attachHalls(w);
 	// the land: the City COOP keeps roads, yards, utilities, the halls and the pits; the plants stand on their plots;
 	// what Sandbox 6 leaves as nature (hedges, meadow, wild wood) is free land the City COOP can lease for more building
 	{
@@ -676,16 +794,20 @@ export function createWorld(config = {}) {
 		w.land = { totalM2: w.c.landM2, rent: 1e-4 * w.c.rentIdx, unmet: 0, cityM2: Math.max(0, w.c.landM2 - plantsM2 - free) };
 	}
 	for (const co of w.coops) for (const pl of co.plants) pl.rentRate = w.land.rent;
+	// the ramp: every plant at the share the plan has finished on day 0, every COOP its founding day
+	if (rampS) initRamp(w, rampS);
 	// stores at founding, bought outside before day 0 (the founding bill): food for foodStoreDays, split between the food
 	// COOPs by the land they grow on; materials for storesDays of their works; goods for two weeks
 	const S = STARTING_CAPITAL.v;
 	let foodM2 = 0;
 	for (const co of w.coops) if (co.good === FOOD) for (const p of co.plants) foodM2 += p.cap;
-	const foodStore = w.c.foodStoreDays * w.c.need[0] * cfg.people;
+	const foodStore = w.c.foodStoreDays * w.c.need[0] * N0;
+	const food0 = w.coops.find((c) => c.good === FOOD);
 	for (const co of w.coops) {
 		const cap = capDayOf(w, co, 0);
 		if (co.good === FOOD) {
-			co.stock = foodStore * co.plants.reduce((a, p) => a + p.cap, 0) / Math.max(1e-9, foodM2);
+			// (on the ramp nothing grows on day 0: the settlers' store is the first food COOP's)
+			co.stock = foodM2 > 1e-9 ? (foodStore * co.plants.reduce((a, p) => a + p.cap, 0)) / foodM2 : co === food0 ? foodStore : 0;
 			co.protD = w.c.protImp;
 		} else if (co.good === WATER && co.plants.some((p) => p.tech === 'rain')) co.stock = co.plants.reduce((a, p) => a + (p.tech === 'rain' ? p.cap * 1000 * S.tankFill : 0), 0);
 		else if ([4, 5, 6, 7].includes(co.good)) co.stock = cap * w.c.storesDays;
@@ -820,11 +942,27 @@ export function geoNetKw(w, pl) {
 	return geoGrossKw(w, pl) - w.c.geoPumps;
 }
 
+/** what still stands of the landlords' domes a tenant plant rents (1: all of it), worked out once a day */
+export function hostCond(w, pl) {
+	if (pl.condDay === w.day) return pl.cond;
+	let a = 0, m = 0;
+	for (const x of pl.hosts ?? []) {
+		const h = x.hall;
+		a += x.m2 * (h.cap > 0 ? Math.max(0, h.cap - h.worn) / h.cap : 1);
+		m += x.m2;
+	}
+	pl.condDay = w.day;
+	return (pl.cond = m > 0 ? a / m : 1);
+}
+
 /** a plant's output at capacity today */
 export function plantCapDay(w, pl, day) {
 	const d = pl.def;
-	const eff = Math.max(0, pl.cap - pl.worn);
+	// the part of a tenant's capacity that stands in a landlord's dome works only as far as the dome stands
+	const eff = pl.hostedCap > 0 ? Math.max(0, pl.cap - pl.worn - pl.hostedCap * (1 - hostCond(w, pl))) : Math.max(0, pl.cap - pl.worn);
 	switch (d.kind) {
+		case 'hall':
+			return 0;
 		case 'forest': {
 			// the forest gives what nature gives (./coops.js nature); its capacity is the year's harvest at its age, a day;
 			// each plot keeps the yield of the year it was planted

@@ -523,6 +523,7 @@ export const BORDER = {
 	importAhead: n(30, 'days of supply a COOP looks ahead when it buys at the border', 'estimate', true),
 	foodStoreDays: n(90, 'days of food in the stores at founding (bought before day 0)', 'round 3 brief: "a few months of imported food" (estimate)', true),
 	storesDays: n(30, 'days of materials and goods in the stores at founding', 'estimate', true),
+	gridEurKwh: n(0.18, '€ a kWh of grid electricity bought through the line during the build-out', 'BDEW Strompreisanalyse 2025: German industrial customers pay about 17–18 ct a kWh with network charges, levies and taxes (no VAT); the village buys only while its own solar, batteries and (later) geothermal fall short of its basics and its works, and only until the build-out is done (estimate)', true),
 	bankPaybackYears: n(30, 'years over which the MaiaCity COOP’s bank exports to pay its founders back the euros the village drew', 'a policy, not physics (estimate): the line and the bank’s treasury bound it', true),
 	reserveYears: n(1, 'years of the village’s food at wholesale left in the euro reserve at founding', 'round 3 brief: the founding euros left over (estimate; scenario F01 tests none and three years)', true)
 };

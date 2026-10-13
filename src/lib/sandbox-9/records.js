@@ -69,7 +69,7 @@ export function initRecords(w) {
 }
 
 /** the living-standard measures of the yearly table, a person: their sums over the year's person-days */
-const LIV = ['kcal', 'protein', 'homeM2', 'waterL', 'homeKwh', 'avenH', 'goodsKg', 'pondH'];
+const LIV = ['kcal', 'protein', 'homeM2', 'waterL', 'homeKwh', 'avenH', 'goodsKg', 'pondH', 'bed'];
 const TENTHS = { poorest: 0, middle: 4, richest: 9 };
 
 function newYear(w, y) {
@@ -79,6 +79,9 @@ function newYear(w, y) {
 		// [tenth 0..9, everyone 10] × measures: sums over person-days, and person-days
 		liv: new Float64Array(11 * LIV.length),
 		pd: new Float64Array(11),
+		// the same by tenth of Aven output
+		livA: new Float64Array(10 * LIV.length),
+		pdA: new Float64Array(10),
 		short: new Float64Array(11), // people short of a basic on at least one day this year, by their tenth that day
 		shortAll: 0,
 		food: { outdoors: 0, indoors: 0, imported: 0, eaten: 0, led: 0, unpicked: 0, lost: 0, rotted: 0, irrigM3: 0 },
@@ -90,6 +93,9 @@ function newYear(w, y) {
 		badges: new Float64Array(G * 32),
 		imp: Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])),
 		impEur: Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])),
+		// the settlement COOPs' rents: beds sold and their price (R), dome floor rented and its rate, rent paid (R), and
+		// what a euro was worth in R (the bank's rate) summed over the days
+		rent: { bedR: 0, beds: 0, m2R: 0, m2: 0, paidR: 0, eurR: 0, days: 0, byCoop: {} },
 		exportKwh: 0,
 		exportEur: 0,
 		exportBy: new Float64Array(G),
@@ -122,12 +128,13 @@ function yearDay(w, protD) {
 	Y.peopleDays += N;
 	const homeM2 = c.homeM2PerBed;
 	for (let i = 0; i < N; i++) {
-		const o = i * G, d = w.decH[i];
+		const o = i * G, d = w.decH[i], da = w.decA[i];
 		const f = w.q[o + FOOD];
-		const v = [f * 1000, f * protD, w.q[o + BED] * homeM2, w.q[o + WATER], w.q[o + ENERGY], w.q[o + COMPUTE], w.q[o + GOODS_], w.q[o + SPRING]];
-		for (let m = 0; m < nL; m++) (Y.liv[d * nL + m] += v[m]), (Y.liv[10 * nL + m] += v[m]);
+		const v = [f * 1000, f * protD, w.q[o + BED] * homeM2, w.q[o + WATER], w.q[o + ENERGY], w.q[o + COMPUTE], w.q[o + GOODS_], w.q[o + SPRING], w.q[o + BED]];
+		for (let m = 0; m < nL; m++) (Y.liv[d * nL + m] += v[m]), (Y.liv[10 * nL + m] += v[m]), (Y.livA[da * nL + m] += v[m]);
 		Y.pd[d]++;
 		Y.pd[10]++;
+		Y.pdA[da]++;
 		let short = false;
 		for (let b = 0; b < 4; b++) if (w.q[o + b] / c.need[b] < 0.98) short = true;
 		if (short && w.day > 0 && rec.shortYear[i] !== y) {
@@ -168,6 +175,25 @@ function yearDay(w, protD) {
 	if (t.imp) for (const k of IMPORT_KINDS) (Y.imp[k] += t.imp[k] ?? 0), (Y.impEur[k] += t.impEur[k] ?? 0);
 	Y.exportKwh += t.exportKwh ?? 0;
 	Y.exportEur += t.eurIn ?? 0;
+	{
+		const Rt = Y.rent;
+		for (const co of w.coops) {
+			if (!co.alive) continue;
+			if (co.good === BED && co.sold > 0) (Rt.bedR += co.sold * co.priceR), (Rt.beds += co.sold);
+			for (const pl of co.plants)
+				if (pl.def.kind === 'hall' && pl.rentedM2 > 0) {
+					const m2 = pl.hosted.reduce((a, x) => a + x.m2, 0);
+					Rt.m2R += m2 * (pl.rateR ?? 0);
+					Rt.m2 += m2;
+					const b = (Rt.byCoop[co.id] ??= { m2R: 0, m2: 0, label: co.label ?? co.id });
+					b.m2R += m2 * (pl.rateR ?? 0);
+					b.m2 += m2;
+				}
+		}
+		Rt.paidR += t.domeRentR ?? 0;
+		Rt.eurR += w.c.eurPerKwh > 0 ? w.pbar[ENERGY] / w.c.eurPerKwh : 0;
+		Rt.days++;
+	}
 	if (t.exportBy) for (let g = 0; g < G; g++) Y.exportBy[g] += t.exportBy[g];
 	if (t.exportEurBy) for (let g = 0; g < G; g++) Y.exportEurBy[g] += t.exportEurBy[g];
 	if ((t.impShort ?? 0) > 1e-9) Y.impShortDays++;
@@ -424,21 +450,44 @@ export function livingYears(w) {
 	const out = [], nL = LIV.length;
 	for (const Y of w.rec?.years ?? []) {
 		if (!Y) continue;
-		const row = (d) => {
-			const pd = Math.max(1, Y.pd[d]);
-			const v = (m) => Y.liv[d * nL + LIV.indexOf(m)] / pd;
-			return { kcal: v('kcal'), protein: v('protein'), homeM2: v('homeM2'), waterL: v('waterL'), homeKwh: v('homeKwh'), avenH: v('avenH'), goodsKgYear: v('goodsKg') * 365, pondHWeek: v('pondH') * 7, shortPeople: Y.short[d] };
+		const rowOf = (liv, pdA, d, short) => {
+			const pd = Math.max(1, pdA[d]);
+			const v = (m) => liv[d * nL + LIV.indexOf(m)] / pd;
+			return { kcal: v('kcal'), protein: v('protein'), homeM2: v('homeM2'), waterL: v('waterL'), homeKwh: v('homeKwh'), bed: v('bed'), avenH: v('avenH'), goodsKgYear: v('goodsKg') * 365, pondHWeek: v('pondH') * 7, shortPeople: short, personDays: pdA[d] };
 		};
+		const row = (d) => rowOf(Y.liv, Y.pd, d, Y.short[d]);
 		const tenths = {};
 		for (const [k, d] of Object.entries(TENTHS)) tenths[k] = row(d);
 		const all = row(10);
 		all.shortPeople = Y.shortAll;
-		out.push({ year: Y.year, days: Y.days, people: Y.people, tenths, all, shortPeople: Y.shortAll });
+		// all ten tenths, by MIND holdings and by Aven output (Proposition 3 in real units: ./prop3.js)
+		const byHoldings = Array.from({ length: 10 }, (_, d) => row(d));
+		const byAven = Array.from({ length: 10 }, (_, d) => rowOf(Y.livA, Y.pdA, d, null));
+		out.push({ year: Y.year, days: Y.days, people: Y.people, peopleMean: Y.days > 0 ? Y.peopleDays / Y.days : Y.people, tenths, all, shortPeople: Y.shortAll, byHoldings, byAven });
 	}
 	return out;
 }
 
 /** the year's most frequent limit of a good, in plain words (and its share of the days) */
+function rentOf(Y, w) {
+	const R = Y.rent;
+	if (!R || !R.days) return null;
+	const bedR = R.beds > 0 ? R.bedR / R.beds : null;
+	const m2Day = R.m2 > 0 ? R.m2R / R.m2 : null;
+	const eurR = R.eurR / R.days;
+	const H = w.cfg.heartsPerDay ?? 24;
+	return {
+		bedRDay: bedR,
+		bedShareOfHearts: bedR != null ? bedR / H : null,
+		bedEurMonth: bedR != null && eurR > 0 ? (bedR / eurR) * (365 / 12) : null,
+		domeRM2Month: m2Day != null ? m2Day * (365 / 12) : null,
+		domeEurM2Month: m2Day != null && eurR > 0 ? (m2Day / eurR) * (365 / 12) : null,
+		domeM2Rented: R.days > 0 ? R.m2 / R.days : 0,
+		domeRentPaidR: R.paidR,
+		byLandlord: Object.fromEntries(Object.entries(R.byCoop).map(([id, b]) => [id, { label: b.label, m2: b.m2 / R.days, rM2Month: b.m2 > 0 ? (b.m2R / b.m2) * (365 / 12) : null }]))
+	};
+}
+
 function bindOf(Y, g) {
 	let best = 0, n = -1;
 	for (let x = 0; x < 32; x++) if (Y.badges[g * 32 + x] > n) (n = Y.badges[g * 32 + x]), (best = x);
@@ -470,6 +519,9 @@ export function villageYears(w) {
 				heatPumps: per(E.heatPump, Y)
 			},
 			solarKwp: Y.solarKwp,
+			// the settlement COOPs' rents (Samuel, 2026-10-13): a bed a day (R, and its share of a person's 24 HEARTS a
+			// day, and in euros at the bank's rate), the dome floor a m² a month, the dome rent paid that year
+			rent: rentOf(Y, w),
 			binds: Object.fromEntries(Object.entries(binds).map(([id, b]) => [id, b.words])),
 			bindShare: Object.fromEntries(Object.entries(binds).map(([id, b]) => [id, b.share]))
 		});
@@ -560,14 +612,27 @@ export function borderYears(w) {
 			steel: { t: Y.imp.steel, eur: Y.impEur.steel },
 			glazing: { t: Y.imp.glazing, eur: Y.impEur.glazing },
 			panels: { kwp: Y.imp.panels, eur: Y.impEur.panels },
-			accelerators: { n: Y.imp.chips, eur: Y.impEur.chips }
+			accelerators: { n: Y.imp.chips, eur: Y.impEur.chips },
+			// the build-out (./ramp.js): grid electricity while the village's own falls short, and the plan's bill by kind
+			grid: { kwh: Y.imp.grid, eur: Y.impEur.grid },
+			buildKit: { eur: Y.impEur.buildKit },
+			buildRunning: { eur: Y.impEur.buildRunning },
+			buildMaterials: { eur: Y.impEur.buildMaterials },
+			buildMachines: { eur: Y.impEur.buildMachines },
+			buildServices: { eur: Y.impEur.buildServices },
+			land: { eur: Y.impEur.land }
 		};
+		const buildEur = ['buildKit', 'buildRunning', 'buildMaterials', 'buildMachines', 'buildServices', 'land'].reduce((a, k) => a + (Y.impEur[k] ?? 0), 0);
 		const importEur = IMPORT_KINDS.reduce((a, k) => a + Y.impEur[k], 0);
 		out.push({
 			year: Y.year,
 			days: Y.days,
 			imports,
 			importEur,
+			// of it, the build-out's bill (kit, materials, machines, services, land) and the rest (running the village)
+			buildEur,
+			runEur: importEur - buildEur,
+			people: Y.people,
 			exportKwh: Y.exportKwh,
 			exportEur: Y.exportEur,
 			exportByGood: Object.fromEntries(GOOD_IDS.map((id, g) => [id, Y.exportEurBy[g]]).filter(([, v]) => v > 0)),
@@ -620,6 +685,7 @@ export function foundingStores(w) {
  * reserve. Rows not in tonnes carry kwp, n, kcal or m2.
  */
 export function foundingBill(w) {
+	if (w.ramp) return buildoutBill(w);
 	const V = w.c.village, vf = w.c.vf, F = w.founding, E = w.c.eur, P = V.prices;
 	const rows = [];
 	const mat = Object.fromEntries(V.materials.map((m) => [m.id, m]));
@@ -655,5 +721,38 @@ export function foundingBill(w) {
 		foodStoreDays: w.c.foodStoreDays,
 		tonnes: rows.reduce((a, r) => a + (typeof r.t === 'number' ? r.t : 0), 0),
 		sources: { village: 'src/lib/sandbox-7 stats.js (Sandbox 6’s village): shells, putting them up, fit-out, machines, land', prices: 'src/lib/sandbox-7 specs.js PRICES and SOURCES; ./primitives.js BORDER and CHIPS', tower: V.tower ? 'with the Tower180' : `without the tower: the centre hex’s middle holds one more Dome120; the tower’s 1 MW data centre and water works dropped (−€${(V.droppedEur / 1e6).toFixed(1)}M)` }
+	};
+}
+
+/**
+ * On the ramp (./ramp.js) the founding bill is the build-out's: the starter kit, running it, the materials, machines
+ * and services (the geothermal drilling among them) and the land, as the build-out plan prices them
+ * (src/lib/sandbox-7/buildout.js), by kind, by settlement (each settlement COOP's advances; the Village COOP's for the
+ * centre) and by year. Same shape as the round-2 bill (rows, builtEur, totalEur …) plus the plan's own tables.
+ */
+function buildoutBill(w) {
+	const S = w.ramp, plan = S.plan, T = plan.totals;
+	const label = { kit: 'The starter kit (camp, power, water, machines, site gear, workshop), bought once and reused', running: 'Running the kit (fuel, upkeep, insurance)', materials: 'Materials bought at the border (finished, or raw inputs for the village’s own works once they run)', machines: 'Machines for the works, the utilities and the geothermal plant', services: 'Services bought in (design and permits, the geothermal drilling and plant)', land: 'The land (farmland at Sandbox 6’s price)' };
+	const group = { kit: 'kit', running: 'kit', materials: 'shells', machines: 'machines', services: 'services', land: 'land' };
+	const rows = Object.entries(T.eur).map(([k, eur]) => ({ id: k, label: label[k] ?? k, t: k === 'materials' ? Object.values(T.t ?? {}).reduce((a, x) => a + (x ?? 0), 0) : null, eur, group: group[k] ?? k }));
+	const geo = plan.steps.find((x) => x.kind === 'geothermal');
+	const builtEur = rows.reduce((a, r) => a + r.eur, 0);
+	return {
+		rows,
+		builtEur,
+		totalEur: builtEur,
+		reserveEur: 0,
+		foodStoreDays: w.c.foodStoreDays,
+		tonnes: rows.reduce((a, r) => a + (typeof r.t === 'number' ? r.t : 0), 0),
+		ramp: true,
+		kit: { eur: plan.kit.eur, byGroup: plan.kit.byGroup, items: plan.kit.items.map((k) => ({ id: k.id, label: k.label, n: k.n, eur: k.eur, total: k.total })) },
+		geothermal: geo ? { label: geo.label, eur: geo.eur.total, start: geo.start, end: geo.end, coop: 'Village COOP' } : null,
+		bySettlement: plan.settlements.map((x) => ({ key: x.key, label: x.label, coop: x.coop, founded: x.founded, done: x.done, beds: x.beds, domes: x.domes, eur: x.eur })),
+		byYear: T.byYear,
+		doneMonth: T.doneMonth,
+		peopleMonth: T.peopleMonth,
+		feasibility: plan.feasibility.statement,
+		kitChoice: plan.feasibility.kit ?? null,
+		sources: { buildout: 'src/lib/sandbox-7/buildout.js buildPlan (the build-out plan): kit, work rates, schedule and euros', prices: 'src/lib/sandbox-7 specs.js PRICES; buildout.js BUILD_SOURCES', start: 'launched in January (the engine’s year starts in January)' }
 	};
 }

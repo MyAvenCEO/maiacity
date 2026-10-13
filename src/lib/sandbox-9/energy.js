@@ -19,6 +19,7 @@ import { exp } from './dmath.js';
 import { polar } from './rng.js';
 import { geoGrossKw, solarGain } from './genesis.js';
 import { foodSeason, indoorIndex } from './food.js';
+import { payEur } from './border.js';
 
 const MONTH_START = DAYS_IN_MONTH.reduce((a, d, i) => (a.push((a[i - 1] ?? 0) + (i ? DAYS_IN_MONTH[i - 1] : 0)), a), []);
 /** the month (0 = January) of a day of the world */
@@ -184,6 +185,23 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 		supply += battOut;
 	}
 	h.battery = battOut;
+	// the grid, during the build-out only (./ramp.js): what the camp and the young village's basics and works need beyond
+	// their own sun and batteries is bought through the line (its capacity) by the first energy COOP, which sells it on;
+	// the euros go through the bank (./border.js payEur), counted as an import
+	let gridIn = 0;
+	if (w.ramp && !w.ramp.over && needFirst > supply && c.gridEurKwh > 0) {
+		const seller = w.coops.find((co) => co.alive && co.good === ENERGY && co.plants.some((p) => p.tech === 'solar')) ?? w.coops.find((co) => co.alive && co.good === ENERGY);
+		if (seller) {
+			gridIn = Math.min(needFirst - supply, c.lineKwhDay ?? Infinity);
+			supply += gridIn;
+			w.eAvail[seller.k] += gridIn;
+			const eur = gridIn * c.gridEurKwh;
+			payEur(w, seller, eur);
+			t.imp.grid = (t.imp.grid ?? 0) + gridIn;
+			t.impEur.grid = (t.impEur.grid ?? 0) + eur;
+		}
+	}
+	h.grid = gridIn;
 	const fill = new Float64Array(5);
 	let left = supply, exp = 0;
 	const exUp = Math.max(0, exportAsk?.up ?? 0), exBuild = Math.max(0, exportAsk?.build ?? 0);

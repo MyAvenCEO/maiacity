@@ -7,12 +7,14 @@
  *   focus    the page flies over the whole village, the tower hex or one living hex
  *   labels   from afar one label a hex; closer, the buildings round where the camera looks, and with the land-use map on
  *            each patch of outdoor land, its use and size
+ *   time     the build-out (./buildout.js) at a month: only what is begun stands, its labels and picks with it
  */
 import * as THREE from 'three';
 import { createOrbitRig, createSky, createStage, skyTime } from '$lib/sandbox-kit';
 import { buildWorld } from './scene.js';
 import { VILLAGE, USES, landPatches } from './layout.js';
 import { KINDS, capOf } from './specs.js';
+import { phaseAt } from './buildout.js';
 
 /** the hour the sky shows on Auto */
 export const MORNING = 11.5;
@@ -20,6 +22,83 @@ export const MORNING = 11.5;
 /** where the camera looks from: over the village, or over a hex (from the south-east, as high as it is far) */
 const VILLAGE_VIEW = { target: [0, 0, 60], from: [700, 1350, 1750] };
 const hexView = (/** @type {number} */ x, /** @type {number} */ z, tower = false) => ({ target: [x, tower ? 50 : 0, z + 20], from: [x + 280, tower ? 400 : 420, z + 620] });
+
+/**
+ * The scene's timeline at month t of a build-out plan: each dome's phase and how far through it, the camp, how grown
+ * the planted land is (drawn reaching its full size in ~10 years for the food forest, ~15 for the timber woods, ~4 for
+ * bamboo), the geothermal works, and a line for each hex's label.
+ * @param {any} plan @param {number} t
+ */
+export function timelineAt(plan, t) {
+	/** @type {Record<string, Record<string, { phase: string, f: number }>>} */
+	const sites = {};
+	/** @type {Record<string, { done: number, of: number, up: number, beds: number }>} */
+	const count = {};
+	/** @type {Record<string, any>} */
+	const byId = {};
+	for (const s of plan.steps) {
+		byId[s.id] = s;
+		if (!s.phases.some((/** @type {any} */ p) => p.id === 'shell')) continue;
+		const a = phaseAt(s, t);
+		const i = s.phases.findIndex((/** @type {any} */ p) => p.id === a.phase);
+		const from = i > 0 ? s.phases[i - 1].to : 0, to = i >= 0 ? s.phases[i].to : 1;
+		const f = a.phase === 'none' ? 0 : a.phase === 'done' ? 1 : Math.min(1, Math.max(0, (a.p - from) / Math.max(1e-6, to - from)));
+		(sites[s.hex] ??= {})[s.site] = { phase: a.phase, f };
+		const c = (count[s.hex] ??= { done: 0, of: 0, up: 0, beds: 0 });
+		c.of++;
+		if (a.phase === 'done') {
+			c.done++;
+			c.beds += s.beds ?? 0;
+		} else if (a.phase !== 'none') c.up++;
+	}
+	const mo = plan.months[Math.max(0, Math.min(plan.months.length - 1, Math.floor(t)))];
+	// the camp: its containers set as the starter camp (or a move) goes on
+	/** @type {{ hex: string, n: Record<string, number> } | null} */
+	let camp = null;
+	// the camp stands from the day its first container is set until every home is built
+	const first = plan.steps.find((/** @type {any} */ s) => s.kind === 'camp');
+	const gone = plan.totals.campGone;
+	const campHex = mo.camp ?? (first && first.start !== null && t >= first.start && (gone === null || t < gone) ? first.hex : null);
+	if (campHex) {
+		const step = byId[`${campHex}/camp`];
+		const p = step ? Math.max(0.12, phaseAt(step, t).p) : 1;
+		/** @type {Record<string, number>} */
+		const n = {};
+		for (const k of plan.kit.items) if (['live', 'sanitary', 'kitchen', 'workshop', 'office'].includes(k.id)) n[k.id] = Math.max(k.id === 'live' ? 1 : 0, Math.round(k.n * p));
+		camp = { hex: campHex, n };
+	}
+	const age = (/** @type {string} */ id) => {
+		const s = byId[id];
+		return !s || s.start === null || t < s.start ? null : t - s.start;
+	};
+	const grown = (/** @type {number | null} */ a, /** @type {number} */ first, /** @type {number} */ months) => (a === null ? 0 : Math.min(1, first + ((1 - first) * a) / months));
+	/** @type {Record<string, Record<string, number>>} */
+	const grow = {};
+	for (const h of VILLAGE) {
+		if (h.plan.tower) {
+			const a = age(`${h.key}/fields`);
+			grow[h.key] = { woods: grown(a, 0.12, 180), bamboo: grown(a, 0.2, 48), forest: grown(a, 0.15, 120) };
+		} else grow[h.key] = { forest: grown(age(`${h.key}/forest`), 0.15, 120), woods: 1, bamboo: 1 };
+	}
+	const geoStep = plan.steps.find((/** @type {any} */ s) => s.kind === 'geothermal');
+	const geothermal = geoStep ? phaseAt(geoStep, t).phase : 'none';
+	/** @type {Record<string, string>} */
+	const hexText = {};
+	/** @type {Record<string, string>} */
+	const hexHead = {};
+	for (const h of VILLAGE) {
+		const c = count[h.key];
+		const st = plan.settlements?.find((/** @type {any} */ x) => x.key === h.key);
+		const coop = st?.coop ?? '';
+		hexHead[h.key] = st?.label ?? h.label;
+		if (!c || (c.done === 0 && c.up === 0)) hexText[h.key] = st?.founded !== null && st?.founded !== undefined && t >= st.founded ? `${coop} · land and roads` : `Not begun${st?.founded !== null && st?.founded !== undefined ? ` · starts ${plan.months[Math.min(st.founded, plan.months.length - 1)]?.label ?? ''}` : ''}`;
+		else hexText[h.key] = `${coop} · ${c.done} of ${c.of} domes standing${c.up ? `, ${c.up} going up` : ''}${c.beds ? ` · ${c.beds.toLocaleString('en-US')} beds` : ''}${campHex === h.key ? ` · camp of ${plan.kit.campBeds} beds` : ''}`;
+	}
+	/** @type {Record<string, boolean>} */
+	const begun = {};
+	for (const st of plan.settlements ?? []) begun[st.key] = st.founded !== null && t >= st.founded;
+	return { sites, camp, grow, geothermal, hexText, hexHead, begun, cranes: true };
+}
 
 /**
  * @param {HTMLElement} container
@@ -39,7 +118,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 	const rig = createOrbitRig(camera, renderer.domElement, { minDistance: 15, maxDistance: 5200, target: new THREE.Vector3(...v.target), floorY: 3, moveSpeed: 320 });
 
 	// ── labels ──
-	/** @type {{ el: HTMLElement, at: THREE.Vector3, hex: string, small: boolean, whole: boolean, dims: HTMLElement | null, land?: boolean }[]} */
+	/** @type {{ el: HTMLElement, at: THREE.Vector3, hex: string, small: boolean, whole: boolean, dims: HTMLElement | null, land?: boolean, site?: string, only?: string, sub?: HTMLElement | null, head?: HTMLElement | null, title?: string }[]} */
 	const labels = [];
 	for (const [key, h] of Object.entries(world.hexes)) {
 		// the hex's own label, for the view from afar
@@ -48,13 +127,13 @@ export function mountWorld(container, labelLayer, o = {}) {
 		el.innerHTML = `<b>${h.label}</b><span>${o.people?.(key) ?? ''}</span>`;
 		el.addEventListener('click', () => focusHex(key));
 		labelLayer.appendChild(el);
-		labels.push({ el, at: new THREE.Vector3(h.x, h.plan.tower ? h.plan.tower.H + 20 : 60, h.z), hex: key, small: false, whole: true, dims: null });
+		labels.push({ el, at: new THREE.Vector3(h.x, h.plan.tower ? h.plan.tower.H + 20 : 60, h.z), hex: key, small: false, whole: true, dims: null, sub: el.querySelector('span'), head: el.querySelector('b'), title: h.label });
 		for (const b of h.built) {
 			const el = document.createElement('div');
 			el.className = 'lbl';
 			const K = KINDS[b.site.kind];
 			const title = b.site.kind === 'tower' ? (h.plan.tower?.label ?? 'Tower') : b.site.kind === 'factory120' ? b.site.name : K.label;
-			const sub = b.site.kind === 'factory120' ? 'Dome120 factory' : b.site.kind === 'dome40' || b.site.kind === 'dome80' ? `${K.people} people, ${K.storeys} storeys` : b.site.kind === 'food120' ? 'Food forest under glass' : b.site.kind === 'util120' ? 'Utilities' : 'Factory, utilities, offices, homes';
+			const sub = b.site.kind === 'factory120' ? 'Dome120 factory' : b.site.kind === 'dome40' || b.site.kind === 'dome80' ? `${K.people} people, ${K.storeys} storeys` : b.site.kind === 'food120' ? 'Food forest under glass' : b.id === 'centre' ? 'Utilities and community halls' : b.site.kind === 'util120' ? 'Utilities' : 'Factory, utilities, offices, homes';
 			el.innerHTML = `<b>${title}</b><span>${sub}</span>`;
 			const dims = document.createElement('em');
 			if (b.site.kind === 'tower' && h.plan.tower) dims.textContent = `Ø${h.plan.tower.D} m · ${h.plan.tower.H} m high`;
@@ -67,7 +146,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 			el.dataset.hex = key;
 			el.addEventListener('click', () => pick(b.id, key));
 			labelLayer.appendChild(el);
-			labels.push({ el, at: new THREE.Vector3(b.x, b.height + 6, b.z), hex: key, small: b.small, whole: false, dims });
+			labels.push({ el, at: new THREE.Vector3(b.x, b.height + 6, b.z), hex: key, small: b.small, whole: false, dims, site: b.id, only: b.only });
 		}
 	}
 	// the land's patches, worked out once a plan (the living hexes share two)
@@ -85,6 +164,14 @@ export function mountWorld(container, labelLayer, o = {}) {
 		}
 	}
 	let showLabels = true, showDims = false, showLand = false;
+	/** on the timeline: what stands at the moment shown, by hex and site (null: the finished village) @type {Record<string, Record<string, { phase: string, f?: number }>> | null} */
+	let at = null;
+	/** whether a building is there to label and pick: the finished village has the tower, the timeline the centre's Dome120 and what is begun */
+	const there = (/** @type {string} */ hex, /** @type {string | undefined} */ site, /** @type {string | undefined} */ only) => {
+		if (!site) return true;
+		if (only && only !== (at ? 'timeline' : 'finished')) return false;
+		return !at || (at[hex]?.[site]?.phase ?? 'done') !== 'none';
+	};
 	const p = new THREE.Vector3();
 	function placeLabels() {
 		const w = container.clientWidth, hgt = container.clientHeight;
@@ -94,7 +181,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 		const far = dist > 1600;
 		const reach = Math.max(420, dist * 0.75);
 		for (const l of labels) {
-			const live = showLabels && (!l.land || showLand) && (far ? l.whole : !l.whole && Math.hypot(l.at.x - t.x, l.at.z - t.z) < reach && !(l.small && dist > 1100));
+			const live = showLabels && (!l.land || showLand) && there(l.hex, l.site, l.only) && (far ? l.whole : !l.whole && Math.hypot(l.at.x - t.x, l.at.z - t.z) < reach && !(l.small && dist > 1100));
 			if (!live) {
 				l.el.style.display = 'none';
 				continue;
@@ -129,7 +216,7 @@ export function mountWorld(container, labelLayer, o = {}) {
 		ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
 		ray.setFromCamera(ndc, camera);
 		const keys = Object.keys(world.hexes);
-		const hits = keys.flatMap((k) => world.hexes[k].built.map((b) => ({ b, k }))).map(({ b, k }) => ({ b, k, hit: ray.intersectObject(b.hit, false)[0] })).filter((x) => x.hit).sort((a, c) => a.hit.distance - c.hit.distance);
+		const hits = keys.flatMap((k) => world.hexes[k].built.filter((b) => there(k, b.id, b.only)).map((b) => ({ b, k }))).map(({ b, k }) => ({ b, k, hit: ray.intersectObject(b.hit, false)[0] })).filter((x) => x.hit).sort((a, c) => a.hit.distance - c.hit.distance);
 		if (hits[0]) pick(hits[0].b.id, hits[0].k);
 		else pick(null, null);
 	};
@@ -186,6 +273,33 @@ export function mountWorld(container, labelLayer, o = {}) {
 			renderer.shadowMap.needsUpdate = true;
 		},
 		focusHex,
+		/**
+		 * Show the build-out plan at month t (a fraction runs within the month), or the finished village (plan null).
+		 * @param {any} plan buildPlan()'s plan
+		 * @param {number} t
+		 */
+		setTime(plan, t) {
+			if (!plan) {
+				at = null;
+				world.timeline(null);
+				for (const l of labels)
+					if (l.whole) {
+						if (l.sub) l.sub.textContent = o.people?.(l.hex) ?? '';
+						if (l.head) l.head.textContent = l.title ?? '';
+					}
+				renderer.shadowMap.needsUpdate = true;
+				return;
+			}
+			const T = timelineAt(plan, t);
+			at = T.sites;
+			world.timeline(T);
+			for (const l of labels)
+				if (l.whole) {
+					if (l.sub) l.sub.textContent = T.hexText[l.hex] ?? '';
+					if (l.head) l.head.textContent = T.hexHead[l.hex] ?? l.title ?? '';
+				}
+			renderer.shadowMap.needsUpdate = true;
+		},
 		/** fly to a building */
 		focusSite(/** @type {string} */ id, /** @type {string} */ hex) {
 			const b = world.hexes[hex]?.built.find((x) => x.id === id);

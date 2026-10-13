@@ -10,10 +10,12 @@
  * Samuel 2026-10-13: the tower is too expensive to take for granted) the middle of the centre hex holds one more
  * Dome120 of utilities and community halls; with it, the Tower180 stands there at its real cost.
  *
- * The engine models the village as plants (./genesis.js seedPlants): the home domes are the HOME COOPs' beds, the
- * food domes the GREEN COOP's growing dome, the dome cells the SOLAR COOP's, the factory domes the works'. The halls
- * that make nothing the engine sells (the utilities domes, the hemp, recycling, clay and lime factories, the centre
- * dome or the tower) are kept up with the homes: their glulam, steel and glass and their climate are counted a bed.
+ * The engine models the village as plants (./genesis.js seedPlants): a settlement COOP a hex (Samuel, 2026-10-13)
+ * owns the hex's domes. A living hex's owns its home domes (its beds), its food domes and its utilities dome; the centre
+ * hex's, the Village COOP, owns the centre dome (or the tower), the eight factory domes and the geothermal plant. The
+ * domes that are not homes are the owners' hall plants (./genesis.js attachHalls), rented by the m² to the food COOPs,
+ * the works and the COOPs in the utilities domes. The dome cells are the SOLAR COOP's. The climate of the halls that
+ * make nothing the engine sells is counted a bed.
  * Hemp insulation and lime footings are in the founding bill only (the engine has no hemp or lime good).
  *
  * Pure functions, cached: the same settings give the same numbers in the browser and in node.

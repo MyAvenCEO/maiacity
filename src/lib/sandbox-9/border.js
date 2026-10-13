@@ -29,7 +29,7 @@ import { supplyAhead, logsGrowth, foodIn, unitEurOf } from './coops.js';
 
 const M = MAX_COOPS;
 /** the import kinds of the ledger, in order */
-export const IMPORT_KINDS = ['food', 'logs', 'scrap', 'float', 'cells', 'glulam', 'steel', 'glazing', 'panels', 'chips'];
+export const IMPORT_KINDS = ['food', 'logs', 'scrap', 'float', 'cells', 'glulam', 'steel', 'glazing', 'panels', 'chips', 'grid', 'buildKit', 'buildRunning', 'buildMaterials', 'buildMachines', 'buildServices', 'land'];
 /** the finished goods a works COOP buys when its works cannot keep up (by good index: glulam, steel, glass, panels) */
 const FINISHED = { [WOOD]: 'glulam', [STEEL]: 'steel', [GLASS]: 'glazing', [PANEL]: 'panels' };
 

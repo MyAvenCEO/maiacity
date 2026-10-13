@@ -5,6 +5,11 @@
 	food forests under glass and a Dome120 of utilities each), with the sun on every dome (./light.js). The numbers for
 	the whole village, the tower hex or a living hex; every overlay on the world and every panel of numbers can be switched on and off; a click
 	on a building opens its card. The numbers: ./specs.js, ./layout.js, ./stats.js.
+
+	The build-out (Samuel, 2026-10-13): a month slider with a play button shows the village growing from its first two
+	settlers to 1,500 people, dome by dome, as ./buildout.js plans it, in the village without the tower (the centre's
+	middle one more Dome120 of utilities and community halls). Closed, the world is the finished village as before.
+	?month=18 opens it at a month, &kit=starter with the starter kit.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -15,6 +20,7 @@
 	import { DAYS, placeAll, sunShares } from './light.js';
 	import { DAY, DIET, ENERGY, GROWN, KINDS, LAND_PERSON, NORTH, PRICES, SOURCES, TOWER } from './specs.js';
 	import { FLOOR_COLOURS } from './scene.js';
+	import { BUILD_SOURCES, EUR_KINDS, KIT_GROUPS, LABOUR, RATES, buildPlan, monthAt, nowLine, phaseAt } from './buildout.js';
 
 	/** @type {HTMLDivElement | undefined} */
 	let stage = $state();
@@ -64,10 +70,11 @@
 		{ id: 'hexes', label: 'Hexes', village: true },
 		{ id: 'floors', label: 'Tower floors', tower: true },
 		{ id: 'raw', label: 'Raw materials', tower: true },
-		{ id: 'sources', label: 'Sources' }
+		{ id: 'sources', label: 'Sources' },
+		{ id: 'buildout', label: 'Build-out', tl: true }
 	];
-	let panel = $state(/** @type {Record<string, boolean>} */ ({ hexes: true, land: true, buildings: false, cost: true, people: false, food: false, energy: false, floors: true, raw: false, sources: false }));
-	const panels = $derived(PANELS.filter((p) => (!p.tower || hex === 'village' || hex === 'tower') && (!p.village || hex === 'village')));
+	let panel = $state(/** @type {Record<string, boolean>} */ ({ buildout: true, hexes: true, land: true, buildings: false, cost: true, people: false, food: false, energy: false, floors: true, raw: false, sources: false }));
+	const panels = $derived(PANELS.filter((p) => (!p.tower || hex === 'village' || hex === 'tower') && (!p.village || hex === 'village') && (!p.tl || tl)));
 
 	/** the building picked, and its card */
 	let picked = $state(/** @type {{ id: string, hex: string } | null} */ (null));
@@ -76,6 +83,64 @@
 
 	let narrow = $state(false);
 	let sheetOpen = $state(false);
+
+	// ── the build-out timeline ──
+	/** open: the village at a month of its build-out; closed: the finished village */
+	let tl = $state(false);
+	/** the kit: 'auto' (the cheapest that builds the village in six years) or 'starter' */
+	let kitId = $state('auto');
+	/** the month shown; a fraction runs within the month */
+	let month = $state(0);
+	let playing = $state(false);
+	let worldReady = $state(false);
+	/** @type {any} */
+	const plan = $derived(tl ? buildPlan({ kit: kitId }) : null);
+	/** the slider runs to the six years, or to the month the last dome stands if later */
+	const maxMonth = $derived(plan ? Math.max(plan.options.months, plan.months.length) : 72);
+	/** @type {any} */
+	const mo = $derived(plan ? monthAt(plan, month) : null);
+	const now = $derived(plan ? nowLine(plan, Math.min(month, plan.months.length - 1)) : '');
+	const CAL = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	/** the calendar month of month m from day 0 */
+	const calOf = (/** @type {number} */ m) => {
+		const o = plan?.options ?? { startYear: 2027, startMonth: 3 };
+		const k = o.startMonth - 1 + Math.floor(m);
+		return `${CAL[k % 12]} ${o.startYear + Math.floor(k / 12)}`;
+	};
+	/** the step that builds the picked building */
+	const pickedStep = $derived(plan && picked ? plan.steps.find((/** @type {any} */ s) => s.hex === picked?.hex && s.site === picked?.id) : null);
+	$effect(() => {
+		if (worldReady) world?.setTime(plan, Math.min(month, maxMonth));
+	});
+	let raf = 0;
+	function play() {
+		if (playing) {
+			playing = false;
+			cancelAnimationFrame(raf);
+			return;
+		}
+		if (month >= maxMonth - 0.01) month = 0;
+		playing = true;
+		// the whole build-out in about half a minute
+		const speed = maxMonth / 30;
+		let last = performance.now();
+		const step = (/** @type {number} */ t) => {
+			if (!playing) return;
+			month = Math.min(maxMonth, month + Math.min(0.1, (t - last) / 1000) * speed);
+			last = t;
+			if (month >= maxMonth) playing = false;
+			else raf = requestAnimationFrame(step);
+		};
+		raf = requestAnimationFrame(step);
+	}
+	function openTimeline(/** @type {boolean} */ on) {
+		tl = on;
+		if (!on) {
+			playing = false;
+			cancelAnimationFrame(raf);
+		}
+		sheetOpen = false;
+	}
 
 	// ── numbers on the page ──
 	const n0 = (/** @type {number} */ n) => Math.round(n).toLocaleString('en-US');
@@ -136,13 +201,29 @@
 			});
 			for (const [k, on] of Object.entries(overlay)) world.set(k, on);
 			loading = '';
+			worldReady = true;
 		});
+		// ?month=18 opens the build-out at that month; &kit=starter takes the starter kit
+		const q = new URLSearchParams(location.search);
+		const k = q.get('kit');
+		if (k) kitId = k;
+		if (q.has('month')) {
+			tl = true;
+			month = Math.max(0, Number(q.get('month')) || 0);
+		}
 		return () => mq.removeEventListener('change', fit);
 	});
-	onDestroy(() => world?.dispose());
+	onDestroy(() => {
+		cancelAnimationFrame(raf);
+		world?.dispose();
+	});
 </script>
 
 {#snippet toggles()}
+	<div class="group">
+		<p class="head">Build-out</p>
+		<button class="grow" class:on={tl} onclick={() => openTimeline(!tl)}>{tl ? 'Back to the finished village' : '▶ From 2 settlers to 1,500, month by month'}</button>
+	</div>
 	<div class="group">
 		<p class="head">Numbers for</p>
 		<div class="seg">
@@ -175,7 +256,99 @@
 	</div>
 {/snippet}
 
+{#snippet buildCard()}
+	{#if tl && picked && pickedStep}
+		{@const s = pickedStep}
+		{@const ph = phaseAt(s, Math.min(month, plan.months.length - 1))}
+		<section class="panel card">
+			<button class="x" aria-label="Close" onclick={() => { picked = null; world?.pick(null, null); }}>×</button>
+			<h2>{s.label} <span class="sub">{s.hexLabel}</span></h2>
+			<dl>
+				<dt>Builder and owner</dt><dd>{s.coop}</dd>
+				<dt>Built</dt><dd>{s.start === null ? 'not in the plan' : `${calOf(s.start)} to ${calOf(s.end)} (${s.months} months)`}</dd>
+				<dt>At {calOf(month)}</dt><dd>{ph.phase === 'none' ? 'not begun' : ph.phase === 'done' ? 'standing' : `${s.phases.find((/** @type {any} */ p) => p.id === ph.phase)?.label ?? ph.phase}, ${n0(100 * ph.p)}% of its work done`}</dd>
+				<dt>Crew</dt><dd>{n1(s.crew)} full-time on average, up to {s.crewMax}; {n0(s.hours)} crew-hours</dd>
+				<dt>Lifting</dt><dd>{n1(s.craneDays)} crane-days{s.handlerDays ? `, ${n1(s.handlerDays)} telehandler-days` : ''}</dd>
+				<dt>Materials</dt><dd>{Object.entries(s.t).filter(([, v]) => /** @type {number} */ (v) > 0).map(([k, v]) => `${k} ${tonnes(/** @type {number} */ (v))} t`).join(' · ')}{s.pvM2 ? ` · solar glass ${n0(s.pvM2)} m²` : ''}</dd>
+				<dt>Bought</dt><dd>{eur(s.eur.total)}: materials {eur(s.eur.materials)}{s.eur.worksSaved ? ` (${eur(s.eur.worksSaved)} saved by the village’s own works)` : ''}{s.eur.machines ? `, machines ${eur(s.eur.machines)}` : ''}{s.eur.services ? `, services ${eur(s.eur.services)}` : ''}</dd>
+				{#if s.beds}<dt>Beds</dt><dd>{s.beds}</dd>{/if}
+			</dl>
+		</section>
+	{/if}
+{/snippet}
+
+{#snippet buildPanel()}
+	{#if tl && plan && panel.buildout}
+		{@const F = plan.feasibility}
+		{@const T = plan.totals}
+		<section class="panel">
+			<h2>Build-out <span class="sub">from 2 settlers to {n0(plan.options.targetPeople)} people, built by themselves</span></h2>
+			<div class="seg">
+				<button class:on={kitId === 'auto'} onclick={() => (kitId = 'auto')}>Six-year kit</button>
+				<button class:on={kitId === 'starter'} onclick={() => (kitId = 'starter')}>Starter kit</button>
+			</div>
+			<p class="small"><b>Six years?</b> {F.statement}</p>
+			<h3>What it costs <span class="sub">{plan.feasibility.kit.short}</span></h3>
+			<table>
+				<thead><tr><th></th><th class="num">by {calOf(month)}</th><th class="num">all told</th></tr></thead>
+				<tbody>
+					{#each Object.entries(EUR_KINDS) as [k, label] (k)}<tr><td>{label}</td><td class="num">{eur(mo?.cum[k] ?? 0)}</td><td class="num">{eur(T.eur[k])}</td></tr>{/each}
+					<tr class="total"><td>Bootstrap bill</td><td class="num">{eur(mo?.cumTotal ?? 0)}</td><td class="num">{eur(T.total)}</td></tr>
+					<tr><td>A resident’s share</td><td></td><td class="num">{eur(T.perPerson)}</td></tr>
+				</tbody>
+			</table>
+			<p class="small">Materials are bought finished at Sandbox 6’s prices until the village’s own works make them ({eur(T.worksSaved)} saved); the kit is bought once and moves on to each settlement; running it is {eur(plan.kit.running.eurYear)} a year (estimate).</p>
+			<table>
+				<thead><tr><th>Year</th><th class="num">materials</th><th class="num">machines</th><th class="num">all</th></tr></thead>
+				<tbody>
+					{#each T.byYear as y (y.year)}<tr><td>{y.year} <small>{calOf((y.year - 1) * 12)}–{calOf(Math.min(y.year * 12 - 1, plan.months.length - 1))}</small></td><td class="num">{eur(y.materials)}</td><td class="num">{eur(y.machines)}</td><td class="num">{eur(y.total)}</td></tr>{/each}
+				</tbody>
+			</table>
+			<h3>The settlements and their COOPs</h3>
+			<table>
+				<thead><tr><th></th><th class="num">founded</th><th class="num">built</th><th class="num">bill</th></tr></thead>
+				<tbody>
+					{#each plan.settlements as st (st.key)}<tr><td>{st.coop}<small>{st.domes} domes{st.beds ? `, ${n0(st.beds)} beds` : ''}{st.key === 'tower' ? ', the works and the geothermal plant' : ''}{st.eur.kit ? `; the kit ${eur(st.eur.kit)}` : ''}</small></td><td class="num">{st.founded === null ? '' : calOf(st.founded)}</td><td class="num">{st.done < 0 ? '' : calOf(st.done)}</td><td class="num">{eur(st.eur.total)}</td></tr>{/each}
+				</tbody>
+			</table>
+			<p class="small">One COOP a settlement builds and owns its domes, rents beds to its residents and dome space to the business COOPs; the centre’s is the Village COOP, which owns the works and the geothermal plant. Each is founded in the month its settlement starts.</p>
+			<h3>What makes six years</h3>
+			<table>
+				<thead><tr><th>Kit</th><th class="num">kit</th><th class="num">all built</th><th class="num">bill</th></tr></thead>
+				<tbody>
+					{#each F.ladder as r (r.id)}<tr class:pickedrow={r.id === plan.kitChoice}><td>{r.short}</td><td class="num">{eur(r.kitEur)}</td><td class="num">{r.doneMonth === null ? 'never' : `${n1(r.doneMonth / 12)} yrs`}</td><td class="num">{eur(r.total)}</td></tr>{/each}
+				</tbody>
+			</table>
+			<details>
+				<summary>One change at a time, from the starter kit</summary>
+				<ul class="plain">{#each F.levers as l (l.label)}<li><b>{l.label}</b>: all built in {l.doneMonth === null ? 'never' : `${n1(l.doneMonth / 12)} years`}, {l.extraEur >= 0 ? '+' : '−'}{eur(Math.abs(l.extraEur))} <small>{l.change}</small></li>{/each}</ul>
+			</details>
+			<details>
+				<summary>The kit, {eur(plan.kit.eur)}</summary>
+				<table>
+					<tbody>
+						{#each plan.kit.items as k (k.id)}<tr><td>{k.n} × {k.label}<small>{KIT_GROUPS[/** @type {keyof typeof KIT_GROUPS} */ (k.group)]} · {n0(k.eur)} € each{k.est ? ' (estimate)' : ''}{k.note ? ` · ${k.note}` : ''}</small></td><td class="num">{eur(k.total)}</td></tr>{/each}
+					</tbody>
+				</table>
+			</details>
+			<details>
+				<summary>How fast the work goes</summary>
+				<ul class="plain">
+					{#each Object.entries(/** @type {Record<string, any>} */ (RATES)) as [k, r] (k)}<li>{k}: <b>{r.v}</b> {r.unit}{r.est ? ' (estimate)' : ''}</li>{/each}
+					{#each Object.entries(LABOUR) as [k, r] (k)}<li>{k}: <b>{r.v}</b> <small>{r.note}</small></li>{/each}
+				</ul>
+			</details>
+			<details>
+				<summary>Sources</summary>
+				<ul class="plain">{#each Object.values(/** @type {Record<string, any>} */ (BUILD_SOURCES)) as src (src.label)}<li><b>{#if src.url}<a href={src.url} target="_blank" rel="noreferrer">{src.label}</a>{:else}{src.label}{/if}</b>: {src.note}</li>{/each}</ul>
+			</details>
+		</section>
+	{/if}
+{/snippet}
+
 {#snippet panelsView()}
+	{@render buildCard()}
+	{@render buildPanel()}
 	{#if card && picked}
 		<section class="panel card">
 			<button class="x" aria-label="Close" onclick={() => { picked = null; world?.pick(null, null); }}>×</button>
@@ -459,12 +632,44 @@
 	const radiusAt = (/** @type {import('./specs.js').Tower} */ T, /** @type {number} */ y) => towerRadius(T, y);
 </script>
 
-<div class="hexplan">
+<div class="hexplan" class:tl>
 	<div class="stage" bind:this={stage}></div>
 	<div class="labels" bind:this={labelLayer}></div>
 	<WorldBar title="avenCITY #S6" subtitle="One village at its real size" clock={{ day: 'A day in June', hour: '11:30', about: 'On Auto the sky stands at late morning; Manual sets the hour' }} />
 
 	{#if loading}<div class="loading">{loading}…</div>{/if}
+
+	{#if tl && plan && mo && !(narrow && (sheetOpen || picked))}
+		<div class="timeline panel" aria-label="The build-out, month by month">
+			<div class="row">
+				<button class="play" onclick={play} aria-label={playing ? 'Pause' : 'Play'}>{playing ? '❚❚' : '▶'}</button>
+				<input type="range" min="0" max={maxMonth} step="0.05" bind:value={month} aria-label="Month" oninput={() => { playing = false; }} />
+				<button class="x2" aria-label="Back to the finished village" onclick={() => openTimeline(false)}>×</button>
+			</div>
+			<div class="row when">
+				<b>Month {Math.floor(month)} · {calOf(month)}</b><span class="sub">year {Math.floor(month / 12) + 1}{month >= (plan.totals.doneMonth ?? Infinity) + 1 ? ' · every dome built' : ''}</span>
+				{#if !narrow}
+					<div class="seg kits">
+						<button class:on={kitId === 'auto'} onclick={() => (kitId = 'auto')}>Six-year kit</button>
+						<button class:on={kitId === 'starter'} onclick={() => (kitId = 'starter')}>Starter kit</button>
+					</div>
+				{/if}
+			</div>
+			<div class="counts">
+				<span><b>{n0(mo.people)}</b> people</span>
+				<span><b>{n0(mo.beds)}</b> beds{mo.campBeds ? ` (${mo.campBeds} in the camp)` : ''}</span>
+				<span><b>{mo.domes}</b> of {plan.totals.domes} domes{mo.framing ? `, ${mo.framing} going up` : ''}</span>
+				<span><b>{eur(mo.cumTotal)}</b> spent</span>
+			</div>
+			<div class="kinds">
+				{#each Object.entries(EUR_KINDS) as [k, label] (k)}<span>{label} <b>{eur(mo.cum[k])}</b></span>{/each}
+			</div>
+			<p class="now"><b>Now:</b> {now}</p>
+		</div>
+	{/if}
+	{#if narrow && !tl && !sheetOpen && !picked}
+		<button class="opener" onclick={() => openTimeline(true)}>▶ Build-out</button>
+	{/if}
 
 	{#if !narrow}
 		<aside class="left panel">{@render toggles()}</aside>
@@ -479,7 +684,7 @@
 		{/if}
 	{/if}
 	<!-- the joystick steps aside while a sheet is open over it -->
-	{#if !(narrow && (sheetOpen || picked))}<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} {stage} taps=".panel button, .fab, .lbl" />{/if}
+	{#if !(narrow && (sheetOpen || picked || tl))}<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} {stage} taps=".panel button, .fab, .lbl" />{/if}
 </div>
 
 <style>
@@ -792,6 +997,136 @@
 		padding: 0.6rem 1rem;
 		border-radius: 999px;
 		background: rgb(250 248 242 / 0.9);
+	}
+	/* the build-out timeline: a bar over the world's foot, clear of the nav pill */
+	.timeline {
+		position: absolute;
+		z-index: 3;
+		left: 50%;
+		transform: translateX(-50%);
+		bottom: var(--nav-room, 5rem);
+		width: min(44rem, calc(100vw - 2rem));
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		padding: 0.5rem 0.7rem;
+	}
+	.timeline .row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.timeline input[type='range'] {
+		flex: 1;
+		min-width: 0;
+		accent-color: #24452f;
+	}
+	.timeline .play {
+		flex: none;
+		width: 2.2rem;
+		height: 2.2rem;
+		border: 0;
+		border-radius: 999px;
+		background: #24452f;
+		color: #f4f1e8;
+		font-size: 0.8rem;
+	}
+	.timeline .x2 {
+		flex: none;
+		border: 0;
+		background: none;
+		font-size: 1.3rem;
+		opacity: 0.6;
+		padding: 0 0.2rem;
+	}
+	.timeline .when {
+		flex-wrap: wrap;
+		gap: 0.2rem 0.6rem;
+		font-size: 0.85rem;
+	}
+	.timeline .kits {
+		margin-left: auto;
+		flex-wrap: nowrap;
+	}
+	.timeline .kits button {
+		flex: none;
+		padding: 0.2rem 0.6rem;
+		font-size: 0.72rem;
+	}
+	.counts,
+	.kinds {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.1rem 0.9rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.kinds {
+		font-size: 0.68rem;
+		opacity: 0.75;
+		gap: 0.1rem 0.7rem;
+	}
+	.now {
+		margin: 0;
+		font-size: 0.72rem;
+		line-height: 1.3;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.hexplan.tl .left {
+		max-height: calc(100vh - 17rem - var(--nav-room, 4rem));
+	}
+	.hexplan.tl .right {
+		max-height: calc(100vh - 15rem - var(--nav-room, 4rem));
+	}
+	button.grow {
+		width: 100%;
+		padding: 0.45rem 0.6rem;
+		border: 1px solid rgb(31 42 35 / 0.15);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.7);
+		text-align: left;
+		font-size: 0.75rem;
+	}
+	button.grow.on {
+		background: #24452f;
+		color: #f4f1e8;
+	}
+	tr.pickedrow td {
+		font-weight: 650;
+	}
+	.opener {
+		position: absolute;
+		z-index: 3;
+		left: calc(0.8rem + env(safe-area-inset-left, 0px));
+		top: calc(4.4rem + env(safe-area-inset-top, 0px));
+		padding: 0.45rem 0.8rem;
+		border: 0;
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.92);
+		box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+		font-size: 0.78rem;
+	}
+	@media (max-width: 720px) {
+		.timeline {
+			left: 0.5rem;
+			right: 0.5rem;
+			width: auto;
+			transform: none;
+			padding: 0.45rem 0.6rem;
+		}
+		.now {
+			-webkit-line-clamp: 1;
+			line-clamp: 1;
+		}
+		.counts {
+			gap: 0.05rem 0.7rem;
+			font-size: 0.75rem;
+		}
 	}
 	/* the menu button: in the bottom right corner, level with the nav pill, over the sheet when it is open */
 	.fab {

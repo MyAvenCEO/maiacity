@@ -100,6 +100,7 @@ function foodRow(s) {
 		exportEurMean: mean(full.map((b) => b.exportEur)),
 		coverYear: full.find((b) => b.exportsCover)?.year ?? null,
 		impShortDays: B.reduce((a, b) => a + (b.importShortDays ?? 0), 0),
+		lowEur: B.length ? Math.min(...B.map((b) => b.bank?.lowestEur ?? 0)) : NaN,
 		reserve0: s.founding?.reserveEur,
 		shortPD: s.shortPD,
 		Lmean: s.Lmean,
@@ -141,18 +142,18 @@ export const SCENARIOS = [
 	},
 	{
 		id: 'F01',
-		name: 'founding-reserve',
-		paper: 'round 3 brief: the founding euros left over',
-		stress: 'P1 when the euros run out before exports pay for the imports',
-		claim: 'A comparison, not a test: the village founded with no euros left over, with a year of its food at wholesale (the base), and with three years. If the founding euros run out before exports pay for all imports, people go short: this shows whether they do.',
-		runs: [run({}, 10, 'base (a year of food in euros), 10 years'), run({ reserveYears: 0 }, 10, 'no founding euros left over'), run({ reserveYears: 3 }, 10, 'three years of food in euros')],
+		name: 'founding-euros',
+		paper: 'Samuel 2026-10-13 06:42: the founding euros are the MaiaCity COOP’s starting balance from outside',
+		stress: 'P1 when the bank’s founding euros are fixed instead of open',
+		claim: 'A comparison, not a test: the bank open (the base: the founders lend whatever the village draws, and the lowest cumulative balance is the bootstrap number) against founding euros fixed at the build-out’s bill, and at that bill and €20M more. With a fixed sum, the euros can run out before exports pay for the imports: this shows whether people go short.',
+		runs: [run({}, 10, 'base (the bank open), 10 years'), run({ foundingEur: 'buildout' }, 10, 'founding euros = the build-out’s bill'), run({ foundingEur: 'buildout+20' }, 10, 'the build-out’s bill and €20M more')],
 		judge(R, runs) {
 			const rows = runs.map((r) => ({ label: r.label, ...foodRow(R[r.key]) }));
 			return {
 				pass: null,
 				comparison: true,
 				numbers: { rows },
-				takeaway: rows.map((r) => `${r.label}: reserve €${f0(r.reserve0)} at day 0, ${f0(r.impShortDays)} days a COOP could not pay for all its imports, ${f0(r.shortPD)} person-days short of a basic`).join('; ') + '.',
+				takeaway: rows.map((r) => `${r.label}: lowest cumulative balance €${f0(r.lowEur)}, ${f0(r.impShortDays)} days a COOP could not pay for all its imports, ${f0(r.shortPD)} person-days short of a basic`).join('; ') + '.',
 				evidence: rows.map((r) => `${r.label}: exports first paid all imports in year ${r.coverYear ?? 'never'}; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1`).join('; ')
 			};
 		}
@@ -172,6 +173,42 @@ export const SCENARIOS = [
 				numbers: { rows },
 				takeaway: rows.map((r) => `${r.label}: ${f0(r.landOut)} m² a person outdoors and ${f0(r.landIn)} under glass; the 177 ha feed ${f0(r.fed)} people at maturity; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1, ${pct(r.impShare10, 0)} in year 10 and ${pct(r.impShareLast, 0)} in the last year; first grew all it needs (2,240 kcal a person a day) in year ${r.firstFed ?? 'never'}`).join('. ') + '.',
 				evidence: rows.map((r) => `${r.label}: ${f0(r.kcalDay)} kcal and ${f2(r.proteinDay)} g protein a day as planned; ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average; mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'F03',
+		name: 'yield-settings',
+		paper: 'Samuel 2026-10-13 06:21 (food-best.md)',
+		stress: 'P1 and the border at each yield setting',
+		claim: 'A comparison, not a test: the base (the growers’ skill rising from the measured averages in years 1–5 to the best practice by year 10) against the measured averages only and the best practice only, on the same village, diet and seed, 30 years each.',
+		runs: [base30, run({ foodYields: 'average' }, 30, 'Measured averages only'), run({ foodYields: 'best' }, 30, 'Best practice only')],
+		judge(R, runs) {
+			const rows = runs.map((r) => ({ label: r.label, ...foodRow(R[r.key]) }));
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: ${f0(r.landOut)} m² a person outdoors and ${f0(r.landIn)} under glass (net of tracks, sheds and the ley); the food land feeds ${f0(r.fed)} people at maturity; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1, ${pct(r.impShare10, 0)} in year 10 and ${pct(r.impShareLast, 0)} in the last year; first grew all it needs (2,240 kcal a person a day) in year ${r.firstFed ?? 'never'}; last bought food in year ${r.lastImport ?? '–'}`).join('. ') + '.',
+				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average; mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'R01',
+		name: 'ramp-or-built',
+		paper: 'Samuel 2026-10-13 06:42: the ramp replaces “everything built before day 0”',
+		stress: 'P1–P3 and the border on the ramp and on round 2’s start',
+		claim: 'A comparison, not a test: the base (the village built from day 0 by the build-out plan, people arriving as beds are finished) against round 2’s start (the whole village standing on day 0, bought before it, 1,500 people from the first day), 30 years each.',
+		runs: [base30, run({ ramp: false }, 30, 'Everything built before day 0 (round 2)')],
+		judge(R, runs) {
+			const rows = runs.map((r) => ({ label: r.label, P1: R[r.key].prop3.P1.pass, P3: R[r.key].prop3.P3.pass, ...foodRow(R[r.key]) }));
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short; P3 ${r.P3 ? 'holds' : 'fails'}; lowest cumulative balance at the bank €${f0(r.lowEur)} (round 2’s founding bill is paid before day 0 and not in it); exports first paid all imports in year ${r.coverYear ?? 'never'}; mean living standard ${f2(r.Lmean)} in the last year, the poorest tenth ${f2(r.poorH)}`).join('; ') + '.',
+				evidence: rows.map((r) => `${r.label}: food bought ${pct(r.impShare1, 0)} of what was eaten in year 1 and ${pct(r.impShare10, 0)} in year 10; first grew all it needs in year ${r.firstFed ?? 'never'}`).join('; ')
 			};
 		}
 	},

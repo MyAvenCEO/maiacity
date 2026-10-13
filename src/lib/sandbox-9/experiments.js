@@ -1116,7 +1116,7 @@ export const EXPERIMENTS = {
 	SH: {
 		id: 'SH',
 		question: 'Through a drought, a dark winter, two failing COOPs and a failing well, does everyone keep the basics, and does every decile recover within two years?',
-		ruleChanged: 'No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (HOME-B, a bed COOP, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).',
+		ruleChanged: 'No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (WEST, the West settlement COOP selling beds, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).',
 		guesses: ['Nobody goes short in any shock; prices rise and fall back.', 'The dark winter and the failed well cut energy for R&D and extras first; the basics are served first.', 'Living standards dip in each shock and recover within two years.'],
 		people: PAGE_PEOPLE,
 		years: 9,
@@ -1125,7 +1125,7 @@ export const EXPERIMENTS = {
 			shocks: [
 				{ kind: 'drought', day: Y + 152, days: 92, factor: 0.5 },
 				{ kind: 'darkWinter', day: 2 * Y + 334, days: 90, factor: 0.4 },
-				{ kind: 'coopFail', coop: 'HOME-B', day: 4 * Y + 100, days: 365, factor: 0.1 },
+				{ kind: 'coopFail', coop: 'WEST', day: 4 * Y + 100, days: 365, factor: 0.1 },
 				{ kind: 'coopFail', coop: 'GOODS-A', day: 4 * Y + 100, days: 365, factor: 0.1 },
 				{ kind: 'wellFail', day: 5 * Y + 334, days: 90 }
 			]

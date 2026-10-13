@@ -7,6 +7,11 @@
  * Everything an overlay can hide sits in its own group (`layers`), so the page toggles them: the land-use colours,
  * the glass shells, what is inside, the plants, the hex outlines, the dimension lines. Labels are anchors the page
  * draws in HTML (./world.js).
+ *
+ * The build-out timeline (./buildout.js) shows the village month by month: `timeline(state)` hides the domes not yet
+ * begun, shows those going up as their plinth (the footing), their struts (the frame) or their shell, grows the
+ * planted land, sets the camp's containers, a tower crane in each big dome being framed or glazed, and the geothermal
+ * rig in the centre. `timeline(null)` brings back the finished village.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -129,7 +134,9 @@ function domeShell(D) {
 	const c = capOf(D);
 	const g = siteGroups();
 	g.root.add(g.shell, g.inside, g.dims);
-	g.root.add(part(new THREE.CylinderGeometry(c.a + 0.5, c.a + 0.9, 1.2, 64, 1, true), mat(STONE), 0, 0.6, 0));
+	const plinth = part(new THREE.CylinderGeometry(c.a + 0.5, c.a + 0.9, 1.2, 64, 1, true), mat(STONE), 0, 0.6, 0);
+	plinth.userData.part = 'plinth';
+	g.root.add(plinth);
 	let pp = domeParts.get(D);
 	if (!pp) domeParts.set(D, (pp = panelParts(geodesicOf(D).panels)));
 	g.shell.add(...shellMeshes(pp));
@@ -316,13 +323,21 @@ const PLANTS = {
 	hedge: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: false, h: 3.5, w: 2.4, colors: ['#4f7f3a', '#5d8a40'] }
 };
 
+/**
+ * What each plant instance is, for the timeline: its tag ('' always there, 'site:<id>' under a dome's glass, 'forest',
+ * 'woods' or 'bamboo' planted land), its first matrices and where it stands; by its instanced mesh's geometry, which a
+ * hex's copies share
+ * @type {WeakMap<THREE.BufferGeometry, { tags: string[], base: Float32Array, at: Float32Array }>}
+ */
+const PLANT_META = new WeakMap();
+
 /** every plant of the world, as instanced meshes, one per kind */
 function createPlants() {
-	/** @type {Record<string, { x: number, y: number, z: number, s: number }[]>} */
+	/** @type {Record<string, { x: number, y: number, z: number, s: number, tag: string }[]>} */
 	const list = Object.fromEntries(Object.keys(PLANTS).map((k) => [k, []]));
 	return {
-		add(/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z, /** @type {string} */ kind, s = 1) {
-			list[kind].push({ x, y, z, s });
+		add(/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z, /** @type {string} */ kind, s = 1, tag = '') {
+			list[kind].push({ x, y, z, s, tag });
 		},
 		build() {
 			const group = new THREE.Group();
@@ -355,6 +370,9 @@ function createPlants() {
 						trunk.setMatrixAt(k, m);
 					}
 				});
+				const tags = items.map((it) => it.tag), at = new Float32Array(items.flatMap((it) => [it.x, it.y, it.z]));
+				PLANT_META.set(crown.geometry, { tags, base: new Float32Array(crown.instanceMatrix.array), at });
+				if (trunk) PLANT_META.set(trunk.geometry, { tags, base: new Float32Array(trunk.instanceMatrix.array), at });
 				crown.castShadow = true;
 				crown.receiveShadow = true;
 				group.add(crown);
@@ -445,13 +463,22 @@ function outline(/** @type {number} */ cx, /** @type {number} */ cz, /** @type {
 	return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
 }
 
-/** plants on a hex's land, by what it is used for @param {ReturnType<typeof landOf>} land @param {ReturnType<typeof createPlants>} plants */
-function sow(land, plants, /** @type {number} */ seed) {
+/** plants on a hex's land, by what it is used for @param {ReturnType<typeof landOf>} land @param {ReturnType<typeof createPlants>} plants @param {import('./layout.js').HexPlan} plan */
+function sow(land, plants, /** @type {number} */ seed, plan) {
 	const r = rng(seed);
 	/** @type {Record<string, [number, string, number][]>} spacing, kind, chance */
 	const SOW = { foodForest: [[8, 'broad', 0.75], [5, 'shrub', 0.3]], woodland: [[5.5, 'conifer', 0.95]], bamboo: [[4, 'bamboo', 0.9]], nature: [[14, 'broad', 0.35], [9, 'shrub', 0.2]], yard: [[30, 'broad', 0.3]], indoorFood: [[5, 'shrub', 0.7], [8, 'broad', 0.3], [9, 'palm', 0.3]] };
 	const id = Object.fromEntries(USE_IDS.map((u, k) => [k, u]));
 	const W = land.nx * CELL, H = land.nz * CELL;
+	// for the timeline: which dome a plant under the glass grows in, and what planting the outdoor ones wait for
+	const domes = plan.sites.filter((s) => s.kind !== 'tower').map((s) => ({ id: s.id, x: s.x, z: s.z, r: capOf(KINDS[s.kind].D).a }));
+	/** @type {Record<string, string>} */
+	const OUT = { foodForest: 'forest', woodland: 'woods', bamboo: 'bamboo' };
+	const tagOf = (/** @type {string} */ use, /** @type {number} */ x, /** @type {number} */ z) => {
+		if (use !== 'indoorFood') return OUT[use] ?? '';
+		const d = domes.find((q) => Math.hypot(x - q.x, z - q.z) < q.r);
+		return d ? `site:${d.id}` : '';
+	};
 	for (const [use, list] of Object.entries(SOW))
 		for (const [sp, kind, chance] of list) {
 			for (let z = land.z0; z < land.z0 + H; z += sp)
@@ -463,12 +490,130 @@ function sow(land, plants, /** @type {number} */ seed) {
 					if (c === 255 || id[c] !== use || r() > chance) continue;
 					// under the glass the plants stay small enough for the dome
 					const inside = use === 'indoorFood';
-					plants.add(px, 0, pz, kind, inside && kind === 'broad' ? 0.7 : 1);
+					plants.add(px, 0, pz, kind, inside && kind === 'broad' ? 0.7 : 1, tagOf(use, px, pz));
 				}
 		}
 	// a hedge along the hex's edge
 	return r;
 }
+
+
+// ── the build-out: the camp, the cranes, the drill rig ──────────────────────────────────────────────────────────
+
+/** what a 20 ft container is, m: 6.06 long, 2.44 wide, 2.59 high */
+const BOX20 = { l: 6.06, w: 2.44, h: 2.59 };
+/** the containers' colours by what they hold */
+const CONTAINER = { live: '#ece6d6', sanitary: '#7fb0c8', kitchen: '#d98b4a', workshop: '#8a8f7a', office: '#c94f3d' };
+
+/**
+ * The camp: up to `max` containers in back-to-back rows twelve long round its middle (the living hex's green between
+ * the utilities dome and the homes), the solar containers' fold-out panels and the battery beside them.
+ */
+function campModel(max = 320) {
+	const group = new THREE.Group();
+	const boxes = new THREE.InstancedMesh(new THREE.BoxGeometry(BOX20.l, BOX20.h, BOX20.w), new THREE.MeshStandardMaterial({ roughness: 0.7 }), max);
+	boxes.castShadow = boxes.receiveShadow = true;
+	boxes.count = 0;
+	group.add(boxes);
+	// the slots, middle out: rows along x, pairs of rows back to back with a 4 m lane between pairs
+	/** @type {[number, number][]} */
+	const slots = [];
+	const perRow = 12, pitchX = BOX20.l + 1.2, pair = 2 * BOX20.w + 4.5;
+	for (let r = 0; slots.length < max; r++) {
+		const zr = (r >> 1) * pair + (r & 1 ? BOX20.w : 0);
+		for (let k = 0; k < perRow && slots.length < max; k++) slots.push([(k - (perRow - 1) / 2) * pitchX, zr]);
+	}
+	// the power: the solar containers with their panels folded out to the south, the battery container
+	const power = new THREE.Group();
+	for (let k = 0; k < 2; k++) {
+		power.add(part(new THREE.BoxGeometry(BOX20.l * 2, BOX20.h, BOX20.w), mat('#d9dcd6'), -14 + k * 28, BOX20.h / 2, 0));
+		const panels = part(new THREE.BoxGeometry(BOX20.l * 2 + 4, 0.15, 20), SOLAR, -14 + k * 28, 1.6, 12);
+		panels.rotation.x = 0.2;
+		power.add(panels);
+	}
+	power.add(part(new THREE.BoxGeometry(BOX20.l * 2, BOX20.h, BOX20.w), mat('#f2f2ee', 0.5), 0, BOX20.h / 2, -6));
+	group.add(power);
+	const m = new THREE.Matrix4(), c = new THREE.Color();
+	return {
+		group,
+		/** set the camp's containers: how many of each, by kind, in that order from the north row */
+		set(/** @type {Record<string, number>} */ n) {
+			const all = Math.min(max, Object.keys(CONTAINER).reduce((a, k) => a + (n[k] ?? 0), 0));
+			const z0 = -(Math.ceil(Math.ceil(all / perRow) / 2) * pair) / 2;
+			let i = 0;
+			for (const [kind, col] of Object.entries(CONTAINER))
+				for (let k = 0; k < (n[kind] ?? 0) && i < max; k++, i++) {
+					const [x, z] = slots[i];
+					boxes.setMatrixAt(i, m.makeTranslation(x, BOX20.h / 2, z0 + z));
+					boxes.setColorAt(i, c.set(col));
+				}
+			boxes.count = i;
+			boxes.instanceMatrix.needsUpdate = true;
+			if (boxes.instanceColor) boxes.instanceColor.needsUpdate = true;
+			boxes.computeBoundingSphere();
+			power.position.z = z0 - 30;
+		}
+	};
+}
+
+/** a tower crane: a lattice mast as a slim box, the jib and counter-jib, the counterweight, the cab; `h` its hook height, `L` its jib */
+function towerCrane() {
+	const g = new THREE.Group();
+	const yellow = mat('#e3b23c', 0.6);
+	const mast = part(new THREE.BoxGeometry(1.8, 1, 1.8), yellow);
+	const jib = part(new THREE.BoxGeometry(1, 1.4, 1.4), yellow);
+	const counter = part(new THREE.BoxGeometry(1, 1.2, 1.6), yellow);
+	const weight = part(new THREE.BoxGeometry(4, 3, 2.2), mat('#8d8a82'));
+	const cab = part(new THREE.BoxGeometry(2.6, 2.6, 2.6), mat('#f2f2ee', 0.5));
+	const line = part(new THREE.BoxGeometry(0.15, 1, 0.15), mat('#333333'));
+	g.add(mast, jib, counter, weight, cab, line);
+	return {
+		g,
+		set(/** @type {number} */ h, /** @type {number} */ L, /** @type {number} */ turn) {
+			mast.scale.y = h;
+			mast.position.y = h / 2;
+			jib.scale.x = L;
+			jib.position.set(L / 2, h + 0.7, 0);
+			counter.scale.x = L * 0.3;
+			counter.position.set(-L * 0.15, h + 0.6, 0);
+			weight.position.set(-L * 0.28, h - 0.5, 0);
+			cab.position.set(0, h + 2.6, 0);
+			// the hook hangs two thirds out, down to about the dome's crown
+			line.scale.y = h * 0.45;
+			line.position.set(L * 0.66, h - h * 0.225, 0);
+			g.rotation.y = turn;
+		}
+	};
+}
+
+/** the geothermal works: the drill pad and its rig while the wells are drilled, the ORC plant and the wellheads after */
+function geoModel() {
+	const g = new THREE.Group();
+	g.add(part(new THREE.BoxGeometry(46, 0.4, 34), mat('#a9a397', 1), 0, 0.2, 0, false));
+	const rig = new THREE.Group();
+	// a land rig for wells ~7 km deep: its mast ~45 m over a substructure, the pipe rack, the mud tanks
+	rig.add(part(new THREE.BoxGeometry(12, 8, 10), mat('#c9452e', 0.6), -8, 4, 0));
+	rig.add(part(new THREE.CylinderGeometry(1.2, 3.6, 46, 4), mat('#c9452e', 0.6), -8, 8 + 23, 0));
+	rig.add(part(new THREE.BoxGeometry(18, 2, 4), mat('#6d7782', 0.5), 10, 1, -10));
+	for (let k = 0; k < 3; k++) rig.add(part(new THREE.BoxGeometry(12, 3, 2.6), mat('#d8d2c6'), 10, 1.5, 4 + k * 3.4));
+	const plant = new THREE.Group();
+	// the ORC plant: its turbine hall and the air coolers' row of fans on legs
+	plant.add(part(new THREE.BoxGeometry(22, 9, 12), mat('#d9d9d2'), 8, 4.5, 6));
+	plant.add(part(new THREE.BoxGeometry(34, 2.5, 9), mat('#9aa3ad', 0.5), 4, 9, -9));
+	for (let k = 0; k < 4; k++) plant.add(part(new THREE.BoxGeometry(0.6, 8, 0.6), mat('#6d7782'), -12 + k * 10.6, 4, -9));
+	const heads = new THREE.Group();
+	for (let k = 0; k < 3; k++) heads.add(part(new THREE.CylinderGeometry(0.8, 1, 3, 10), mat('#5a7a8c', 0.4), -16 + k * 7, 1.9, -2));
+	g.add(rig, plant, heads);
+	return { g, rig, plant, heads };
+}
+
+/**
+ * @typedef {{ phase: string, f?: number }} SiteAt the phase a dome is in ('none', 'footing', 'frame', 'shell', 'inside',
+ *   'done') and how far through that phase (0..1)
+ * @typedef {{ sites: Record<string, Record<string, SiteAt>>, camp: { hex: string, n: Record<string, number> } | null,
+ *   grow: Record<string, Record<string, number>>, geothermal: string, cranes?: boolean, begun?: Record<string, boolean> }} Timeline
+ *   begun: whether a hex's settlement has started; before, its land is the valley's meadow
+ */
 
 // ── the world ───────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -503,7 +648,8 @@ function bake(/** @type {THREE.Group} */ group) {
 }
 
 /**
- * @typedef {{ id: string, plan: import('./layout.js').HexPlan, site: import('./layout.js').Site, x: number, z: number, height: number, r: number, hit: THREE.Object3D, small: boolean }} Built
+ * @typedef {{ id: string, plan: import('./layout.js').HexPlan, site: import('./layout.js').Site, x: number, z: number, height: number, r: number, hit: THREE.Object3D, small: boolean, only?: 'timeline' | 'finished' }} Built
+ *   only: the centre's Dome120 shows on the timeline only (the village without the tower), the tower on the finished village only
  */
 
 /**
@@ -523,8 +669,9 @@ function buildHex(plan, /** @type {number} */ seed) {
 	const built = [];
 	for (const site of plan.sites) {
 		const K = KINDS[site.kind];
-		const b = site.kind === 'tower' && plan.tower ? towerModel(plan.tower, (x, y, z, kind, s) => plants.add(x + site.x, y, z + site.z, kind, s)) : domeShell(K.D);
+		const b = site.kind === 'tower' && plan.tower ? towerModel(plan.tower, (x, y, z, kind, s) => plants.add(x + site.x, y, z + site.z, kind, s, `site:${site.id}`)) : domeShell(K.D);
 		b.root.position.set(site.x, 0, site.z);
+		b.root.userData.siteRoot = site.id;
 		if (site.kind === 'dome40' || site.kind === 'dome80') homeInside(K, b.inside);
 		else if (site.kind === 'util120') utilInside(b.inside);
 		else if (site.kind === 'food120') foodInside(b.inside);
@@ -537,7 +684,7 @@ function buildHex(plan, /** @type {number} */ seed) {
 		b.dims.userData.layer = 'dims';
 		built.push({ id: site.id, plan, site, x: site.x, z: site.z, height: b.height, r: b.r, hit: b.hit, small: site.kind === 'dome40' });
 	}
-	sow(land, plants, seed);
+	sow(land, plants, seed, plan);
 	const pg = plants.build();
 	pg.userData.layer = 'plants';
 	group.add(pg);
@@ -593,8 +740,159 @@ export function buildWorld(scene, village, progress) {
 		hexes[h.key] = { group, land: base.land, ground: base.ground, plan: h.plan, label: h.label, x: h.x, z: h.z, built: base.built.map((b) => ({ ...b, x: b.x + h.x, z: b.z + h.z, hit: hits.get(b.id) ?? b.hit })) };
 	}
 
+	// ── the timeline's parts, per hex: each site's root, shell and inside, the plants, and in the centre the Dome120
+	// that stands in the tower's place in the village without the tower (sandbox-9's village.js) ──
+	/** @type {Record<string, { sites: Map<string, { root: THREE.Object3D, shell: THREE.Object3D | undefined, inside: THREE.Object3D | undefined }>, plants: THREE.InstancedMesh[], sig: string, ground: THREE.Object3D | undefined }>} */
+	const parts = {};
+	for (const [key, h] of Object.entries(hexes)) {
+		/** @type {Map<string, { root: THREE.Object3D, shell: THREE.Object3D | undefined, inside: THREE.Object3D | undefined }>} */
+		const sites = new Map();
+		/** @type {THREE.InstancedMesh[]} */
+		const plants = [];
+		h.group.traverse((o) => {
+			if (o.userData.siteRoot) sites.set(o.userData.siteRoot, { root: o, shell: o.children.find((c) => c.userData.layer === 'shell'), inside: o.children.find((c) => c.userData.layer === 'inside') });
+			if (o instanceof THREE.InstancedMesh && PLANT_META.has(o.geometry)) plants.push(o);
+		});
+		// the hex's painted ground: the first thing buildHex adds, in a copy too
+		parts[key] = { sites, plants, sig: '', ground: h.group.children[0] };
+		const t = h.plan.sites.find((x) => x.kind === 'tower');
+		if (t && h.plan.tower) {
+			const c = domeShell(120);
+			utilInside(c.inside);
+			bake(c.inside);
+			c.root.position.set(t.x, 0, t.z);
+			c.root.userData.siteRoot = 'centre';
+			c.shell.userData.layer = 'shell';
+			c.inside.userData.layer = 'inside';
+			c.dims.userData.layer = 'dims';
+			layers.shell.push(c.shell);
+			layers.inside.push(c.inside);
+			layers.dims.push(c.dims);
+			c.hit.userData.site = 'centre';
+			c.root.visible = false;
+			h.group.add(c.root);
+			sites.set('centre', { root: c.root, shell: c.shell, inside: c.inside });
+			h.built.push({ id: 'centre', plan: h.plan, site: /** @type {import('./layout.js').Site} */ ({ ...t, id: 'centre', kind: 'util120', name: 'Centre: utilities and community halls' }), x: t.x + h.x, z: t.z + h.z, height: c.height, r: c.r, hit: c.hit, small: false, only: 'timeline' });
+			const tb = h.built.find((b) => b.id === t.id);
+			if (tb) tb.only = 'finished';
+		}
+	}
+	// the camp, the cranes and the geothermal works, hidden until the timeline sets them
+	const camp = campModel();
+	camp.group.visible = false;
+	scene.add(camp.group);
+	/** @type {ReturnType<typeof towerCrane>[]} */
+	const cranes = [];
+	const geo = geoModel();
+	geo.g.visible = false;
+	const centreKey = Object.keys(hexes).find((k) => hexes[k].plan.tower) ?? 'tower';
+	if (hexes[centreKey]) {
+		// on the yard north of the works, between the steelworks and the timber works
+		geo.g.position.set(0, 0, -232);
+		hexes[centreKey].group.add(geo.g);
+	}
+	/** scale a plant's matrix by k about where it stands */
+	const scaleAt = (/** @type {Float32Array} */ base, /** @type {Float32Array} */ out, /** @type {number} */ i, /** @type {number} */ k, /** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => {
+		const o = i * 16;
+		for (let j = 0; j < 12; j++) if (j % 4 !== 3) out[o + j] = base[o + j] * k;
+		out[o + 3] = base[o + 3];
+		out[o + 7] = base[o + 7];
+		out[o + 11] = base[o + 11];
+		out[o + 12] = x + (base[o + 12] - x) * k;
+		out[o + 13] = y + (base[o + 13] - y) * k;
+		out[o + 14] = z + (base[o + 14] - z) * k;
+		out[o + 15] = 1;
+	};
+
+	/** @param {Timeline | null} T */
+	function timeline(T) {
+		for (const [key, h] of Object.entries(hexes)) {
+			const P = parts[key];
+			const at = T?.sites[key] ?? {};
+			if (P.ground) P.ground.visible = !T || T.begun?.[key] !== false;
+			for (const [id, s] of P.sites) {
+				// the finished village: every site but the centre's stand-in; the timeline: the tower gives way to it
+				const isTower = h.plan.tower && h.plan.sites.some((x) => x.id === id && x.kind === 'tower');
+				const st = !T ? (id === 'centre' ? 'none' : 'done') : isTower ? 'none' : (at[id]?.phase ?? 'done');
+				const f = at[id]?.f ?? 1;
+				s.root.visible = st !== 'none';
+				if (st === 'none') continue;
+				const shellKids = s.shell?.children ?? [];
+				// the shell's parts: glass, solar, hemp, struts (shellMeshes' order); a tower's the same
+				const [glass, solar, hemp, struts] = shellKids;
+				const up = st === 'inside' || st === 'done';
+				if (struts) struts.visible = st !== 'footing';
+				if (hemp) hemp.visible = up || (st === 'shell' && f > 0.15);
+				if (glass) glass.visible = up || (st === 'shell' && f > 0.55);
+				if (solar) solar.visible = up || (st === 'shell' && f > 0.55);
+				for (const c of s.inside?.children ?? []) c.visible = st === 'done' || (st === 'inside' && f > 0.35);
+			}
+			// the plants: under a dome's glass once its garden is in, outdoors as the planted land grows
+			const grow = T?.grow[key] ?? {};
+			/** @type {Record<string, number>} */
+			const k = {};
+			const factor = (/** @type {string} */ tag) => {
+				if (k[tag] !== undefined) return k[tag];
+				let v = 1;
+				if (T && tag.startsWith('site:')) {
+					const id = tag.slice(5);
+					const isTower = h.plan.sites.some((x) => x.id === id && x.kind === 'tower');
+					const st = at[id];
+					v = isTower ? 0 : !st || st.phase === 'done' ? 1 : st.phase === 'inside' ? Math.max(0, ((st.f ?? 0) - 0.5) * 2) : 0;
+				} else if (T && tag) v = grow[tag] ?? 1;
+				return (k[tag] = Math.round(v * 20) / 20);
+			};
+			const tags = ['forest', 'woods', 'bamboo', ...[...P.sites.keys()].map((id) => `site:${id}`)];
+			const sig = T ? tags.map(factor).join(',') : 'all';
+			if (sig === P.sig) continue;
+			P.sig = sig;
+			for (const im of P.plants) {
+				const meta = PLANT_META.get(im.geometry);
+				if (!meta) continue;
+				const out = /** @type {Float32Array} */ (im.instanceMatrix.array);
+				if (!T) out.set(meta.base);
+				else for (let i = 0; i < meta.tags.length; i++) scaleAt(meta.base, out, i, factor(meta.tags[i]), meta.at[i * 3], meta.at[i * 3 + 1], meta.at[i * 3 + 2]);
+				im.instanceMatrix.needsUpdate = true;
+			}
+		}
+		// the camp
+		const c = T?.camp;
+		camp.group.visible = !!c && !!hexes[c.hex];
+		if (c && hexes[c.hex]) {
+			const h = hexes[c.hex];
+			camp.group.position.set(h.x, 0, h.z - 120);
+			camp.set(c.n);
+		}
+		// a tower crane in each big dome being framed or glazed
+		let n = 0;
+		if (T && T.cranes !== false)
+			for (const [key, h] of Object.entries(hexes))
+				for (const b of h.built) {
+					const st = T.sites[key]?.[b.id];
+					if (!st || (st.phase !== 'frame' && st.phase !== 'shell') || b.small) continue;
+					if (!cranes[n]) {
+						cranes[n] = towerCrane();
+						scene.add(cranes[n].g);
+					}
+					const cr = cranes[n++];
+					cr.g.visible = true;
+					// to one side of the middle, its jib over the dome and beyond its rim
+					cr.g.position.set(b.x + 4, 0, b.z + 4);
+					cr.set(b.height + 14, b.r + 12, ((b.x * 7 + b.z * 13) % 360) * (Math.PI / 180));
+				}
+		for (let i = n; i < cranes.length; i++) cranes[i].g.visible = false;
+		// the geothermal works
+		const g = T?.geothermal ?? 'none';
+		geo.g.visible = !!T && g !== 'none';
+		geo.rig.visible = g === 'drill';
+		geo.plant.visible = g === 'plant' || g === 'done';
+		geo.heads.visible = g === 'plant' || g === 'done';
+	}
+
 	return {
 		hexes,
+		/** show the village at a moment of its build-out, or (null) finished */
+		timeline,
 		/** switch an overlay */
 		set(/** @type {string} */ name, /** @type {boolean} */ on) {
 			if (name === 'landuse')

@@ -23,6 +23,7 @@ import { outdoorShare, indoorShare, INDOOR_INDEX, skillOf } from './food.js';
 import { exportPlan, bankExport, exportEurKwh } from './border.js';
 import { newPool, indexPools, buildCycles } from './pools.js';
 import { rnd } from './rng.js';
+import { rampOn } from './ramp.js';
 
 const M = MAX_COOPS;
 
@@ -354,6 +355,8 @@ export function standingKwh(w, pl) {
 }
 /** a plant's build materials per capacity unit today: { wood, steel, glass, panel } t (or kWp), and kWh */
 export function buildOf(w, pl) {
+	// a hall plant carries its own domes' recipe
+	if (pl.def.kind === 'hall') return (pl.recipe ??= buildOfNow(w, pl));
 	// the same for every plant of a technology until the next learning step (./coops.js learn clears the cache)
 	const cache = (w.buildCache ??= {});
 	const hit = cache[pl.tech];
@@ -374,6 +377,30 @@ function buildOfNow(w, pl) {
 	return out;
 }
 
+/** the share of a plant whose building is its own (a tenant's plant in a landlord's dome: the part outside it) */
+export const ownShare = (pl) => (pl.hostedCap > 0 ? Math.max(0, 1 - pl.hostedCap / Math.max(1e-12, pl.cap)) : 1);
+
+/**
+ * The settlement COOPs' dome rents (Samuel, 2026-10-13), worked out on the slow days: a hall's rent a m² of floor a day
+ * covers what its shells wear at replacement cost (the year's traded prices, as every plant's wear) and the ground rent
+ * of the land under them, over 1 − λ: the landlord sells the space, Law 5 pays its holders λ of each rent, and what it
+ * keeps pays for the domes. Every m² is rented at the same rate (a dome stands where it stands: the settlement COOPs
+ * compete for residents, not for tenants). The part of a dome nobody rents (paths, ponds, offices, stores) stays in the
+ * landlord's own price.
+ */
+export function hallRents(w) {
+	const lam = w.cfg.law5;
+	for (const h of w.halls) h.ownerK = -1;
+	for (const co of w.coops) if (co.alive) for (const pl of co.plants) if (pl.def.kind === 'hall') pl.ownerK = co.k;
+	for (const h of w.halls) {
+		const live = Math.max(0, h.cap - h.worn);
+		const capR = h.def.life > 0 ? (live * unitSlowR(w, h)) / (h.def.life * 365) : 0;
+		h.fixR = capR + h.landM2 * (h.rentRate ?? w.land.rent);
+		h.rateR = h.cap > 0 ? h.fixR / (1 - lam) / h.cap : 0;
+		h.rentedM2 = h.hosted.reduce((a, x) => a + x.m2, 0);
+	}
+}
+
 /**
  * Each COOP's costs in R: variable cost a unit (inputs and energy at expected prices), its floor (variable cost ÷
  * (1 − Law 5 share): the seller's own reservation price), and full cost (adding running items, ground rent and the
@@ -387,9 +414,10 @@ export function costs(w, full) {
 	const cop = t.cop ?? w.c.cop;
 	const heatF = t.heatShare != null ? t.heatShare * YEAR_DAYS : 1;
 	const springH = t.springHeat ?? w.c.springHeat.reduce((a, x) => a + x, 0) / 12;
+	if (full && w.halls) hallRents(w);
 	for (const co of w.coops) {
 		if (!co.alive) continue;
-		let varR = 0, n = 0, runR = 0, capR = 0, landM2 = 0;
+		let varR = 0, n = 0, runR = 0, capR = 0, landM2 = 0, domeR = 0, keptR = 0;
 		for (const pl of co.plants) {
 			let v = 0;
 			for (const [g, a] of inputsOf(w, pl)) {
@@ -428,9 +456,11 @@ export function costs(w, full) {
 					if (pl.bookR == null) pl.bookR = unitNowR(w, pl);
 					// what wears is what still stands (./coops.js wear)
 					const live = Math.max(0, pl.cap - pl.worn);
-					capR += (live * unitSlowR(w, pl)) / (pl.def.life * 365);
+					capR += (ownShare(pl) * live * unitSlowR(w, pl)) / (pl.def.life * 365);
 				}
 				landM2 += pl.landM2 * (pl.rentRate ?? w.land.rent);
+				// dome rent: the m² it rents in a settlement COOP's domes, at the landlord's rate
+				if (pl.hosts) for (const x of pl.hosts) if (x.hall.ownerK >= 0 && x.hall.ownerK !== co.k) domeR += x.m2 * x.hall.rateR;
 			}
 		}
 		// food (or a finished material) bought at the border: what it costs in exported electricity, with what its packing
@@ -463,9 +493,17 @@ export function costs(w, full) {
 			// the plant's wear is paid either way: at its replacement cost at the year's prices, or at what its upkeep has
 			// actually cost (rebuilding worn units with materials bought at today's prices), whichever is more
 			capR = Math.max(capR, co.upkeepREma ?? 0);
+			// a landlord: what it keeps of its dome rents after Law 5 pays for the rented part of its domes, so its own
+			// price (the beds, the geothermal electricity) carries only the part of its domes nobody rents
+			if (co.plants.some((p) => p.def.kind === 'hall')) {
+				if (co.rentInEma == null) co.rentInEma = co.plants.reduce((a, p) => a + (p.def.kind === 'hall' ? (p.rentedM2 ?? 0) * (p.rateR ?? 0) : 0), 0);
+				keptR = (1 - lam) * co.rentInEma;
+			}
+			co.domeRentR = domeR;
+			co.rentKeptR = keptR;
 			// a COOP that can make nothing yet (a founding still building) has no unit cost: its fixed bills are not
 			// spread over zero units (it quotes the others' price meanwhile: ./market.js postPrices)
-			co.fullR = sold > 1e-9 ? (co.varR + (runR + capR + rentR) / sold) / (1 - lam) : co.floorR;
+			co.fullR = sold > 1e-9 ? (co.varR + Math.max(0, runR + capR + rentR + domeR - keptR) / sold) / (1 - lam) : co.floorR;
 		}
 	}
 }
@@ -657,7 +695,7 @@ export function plan(w, req, heatReq) {
 				const b = buildOf(w, pl);
 				let r = pl.worn;
 				// kept up only to the floor: the units that bring its output back to 1.5 times what it sells
-				if (floorOnly) {
+				if (floorOnly && d.kind !== 'hall') {
 					const perUnit = plantCapDay(w, { ...pl, worn: 0 }, w.day) / Math.max(1e-12, pl.cap);
 					r = Math.min(r, perUnit > 0 ? (1.5 * co.demandEma - co.capDay) / perUnit : 0);
 				}
@@ -1001,7 +1039,8 @@ export function wear(w) {
 		// what still stands wears (a share of it, 1 ÷ life a year): a plant kept up loses its capacity ÷ life a year, as
 		// before; one left alone fades (to a third in a life) rather than vanishing on a fixed day, so a works nobody
 		// keeps up still has something to restart from
-		if (pl.def.life > 0 && pl.cap > 0) pl.worn = Math.min(pl.cap, pl.worn + Math.max(0, pl.cap - pl.worn) / (pl.def.life * 365));
+		// (the part of a tenant's plant that is the landlord's dome does not wear here: the landlord's hall plant does)
+		if (pl.def.life > 0 && pl.cap > 0) pl.worn = Math.min(pl.cap, pl.worn + (ownShare(pl) * Math.max(0, pl.cap - pl.worn)) / (pl.def.life * 365));
 	};
 	for (const co of w.coops) {
 		if (!co.alive) continue;
@@ -1040,6 +1079,7 @@ const MOTHBALL_KINDS = ['home', 'works', 'service'];
  * COOP leases the idle units on as soon as the good is short (./coops.js foundings).
  */
 function mothball(w) {
+	if (rampOn(w)) return;
 	const city = w.coops[w.cityK];
 	for (const co of w.coops) {
 		if (!co.alive || co.city || co.project || co.good === ENERGY || w.day < (co.mothballFrom ?? 0)) continue;
@@ -1060,7 +1100,7 @@ function mothball(w) {
 			if (!(x > 0) || x >= live) continue;
 			// the idle part takes standing units, their share of the land, cells and battery, at the plant's book value
 			const f = x / live;
-			const part = { cap: x, landM2: pl.landM2 * (x / pl.cap), domeKwp: pl.domeKwp * f, fieldKwp: pl.fieldKwp * f, batt: pl.batt * f, battCap: pl.battCap * f, battCap0: pl.battCap0 * f };
+			const part = { cap: x, landM2: pl.landM2 * (x / pl.cap), domeKwp: pl.domeKwp * f, fieldKwp: pl.fieldKwp * f, batt: pl.batt * f, battCap: pl.battCap * f, battCap0: pl.battCap0 * f, hostedCap: (pl.hostedCap ?? 0) * (x / pl.cap) };
 			for (const key of Object.keys(part)) pl[key] -= part[key];
 			// units of the same technology stood down earlier make one idle plant (book value: the average of both)
 			city.idle = city.idle ?? [];
@@ -1068,7 +1108,8 @@ function mothball(w) {
 			if (same) {
 				same.bookR = ((same.bookR ?? pl.bookR ?? 0) * same.cap + (pl.bookR ?? same.bookR ?? 0) * x) / (same.cap + x);
 				for (const key of Object.keys(part)) same[key] += part[key];
-			} else city.idle.push({ ...pl, vc: { ...pl.vc }, plots: [], worn: 0, raw: 0, pits: 0, out: 0, plan: 0, upkeepPlan: 0, mothballed: true, ...part });
+			// (the tenant keeps renting its dome space: the idle part pays no rent of its own)
+			} else city.idle.push({ ...pl, vc: { ...pl.vc }, plots: [], worn: 0, raw: 0, pits: 0, out: 0, plan: 0, upkeepPlan: 0, mothballed: true, hosts: [], ...part });
 			excess -= x * perUnit;
 			w.events.push({ day: w.day, kind: 'mothball', coop: co.id, what: pl.tech, units: x });
 		}
@@ -1177,6 +1218,8 @@ export function buildDecisions(w) {
 		w.land.bestBid = 0;
 		mothball(w);
 	}
+	// during the build-out the plan decides what is built (./ramp.js)
+	if (rampOn(w)) return;
 	// the basics' COOPs decide first, so a short basic gets free land before a build for extras
 	const order = w.coops.filter((c) => c.alive).sort((a, b) => (a.good <= BED ? 0 : 1) - (b.good <= BED ? 0 : 1) || a.k - b.k);
 	for (const co of order) {
@@ -1503,12 +1546,14 @@ export function openCoop(w, g, idBase, plants, priceR) {
  * founder too), or within a year of the last one.
  */
 export function foundings(w) {
+	// during the build-out the plan decides what is built (./ramp.js)
+	if (rampOn(w)) return;
 	const city = w.coops[w.cityK];
 	w.oneSellerDays = w.oneSellerDays ?? new Float64Array(G);
 	const sellersOfGood = (g) => w.coops.filter((c) => c.alive && c.good === g && c.plants.some((p) => p.cap - p.worn > 1e-9 || p.plots.length));
 	if (city.idle && city.idle.length) {
 		const byGood = new Map();
-		for (const pl of city.idle) byGood.set(pl.def.good, [...(byGood.get(pl.def.good) ?? []), pl]);
+		for (const pl of city.idle) byGood.set(pl.good ?? pl.def.good, [...(byGood.get(pl.good ?? pl.def.good) ?? []), pl]);
 		city.idle = [];
 		for (const [g, plants] of byGood) {
 			const standing = plants.some((pl) => pl.cap - pl.worn > 1e-9 || pl.plots.length);
@@ -1645,8 +1690,11 @@ function stillWanted(w, co) {
 export function receiverships(w) {
 	for (const co of [...w.coops]) {
 		if (!co.alive || co.city) continue;
+		// on the ramp, a COOP is not judged before it is founded, nor in its first 90 days
+		if (w.ramp && !(w.day >= (co.foundDay ?? 0) + 90)) continue;
 		const founding = co.plants.every((p) => p.cap <= 0 && !p.plots.length);
-		const stillborn = founding && !co.project && w.day - co.born >= 365;
+		// (on the ramp a genesis COOP's plants come from the build-out plan, not from its own first build)
+		const stillborn = founding && !co.project && w.day - co.born >= 365 && !(w.ramp && co.foundDay != null && !(w.ramp.over && w.day >= w.ramp.overDay + 365));
 		// a failed audit (world model 4.5): its output has stayed under a quarter of what its plants are rated for
 		const audit = !!w.cfg.auditExit && (co.auditLow ?? 0) >= 30;
 		const fail = co.lowDays >= 30 || co.idleDays >= 60 || stillborn || audit;
