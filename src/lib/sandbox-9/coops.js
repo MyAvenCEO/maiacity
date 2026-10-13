@@ -20,7 +20,7 @@ import { BASICS, BED, CLASS, COMPUTE, ENERGY, FOOD, G, GLASS, GOOD_INDEX, GOODS_
 import { monthOf, shockFactor } from './energy.js';
 import { capDayOf, newCoop, newPlant, plantCapDay, solarGain, vcOf, rawOf } from './genesis.js';
 import { outdoorShare, indoorShare, INDOOR_INDEX, skillOf } from './food.js';
-import { exportPlan } from './border.js';
+import { exportPlan, bankExport } from './border.js';
 import { newPool, indexPools, buildCycles } from './pools.js';
 import { rnd } from './rng.js';
 
@@ -703,6 +703,8 @@ export function plan(w, req, heatReq) {
 		// purchase, stops when it is too dear. That is a price, not physics: its limit reads 'the import does not pay
 		// back', never 'none can be made or imported' (that is the closed city's, ./coops.js buildDecisions)
 		if (co.good !== COMPUTE && (co.eurSpentEma > 0 || co.eurToday > 0 || co.deficitAhead > 0)) exportPlan(w, co);
+		// the MaiaCity COOP's bank exports for what it advanced and to pay its founders back (./border.js bankExport)
+		if (co.city && w.border) bankExport(w, co);
 		if (co.good === COMPUTE && w.cfg.chipImport !== false) {
 			const want = chipsWanted(w, co);
 			co.chipsWant = want.up + want.build;
@@ -812,7 +814,9 @@ export function produce(w, fill) {
 		co.exportEurEma = (co.exportEurEma ?? 0) + (exKwh * w.c.eurPerKwh - (co.exportEurEma ?? 0)) / 30;
 		if (exKwh > 0) {
 			const B = w.border, eur = exKwh * w.c.eurPerKwh;
-			B.eur[co.k] += eur;
+			// a COOP's export into its deposit at the bank; the bank's own export into its own euros
+			if (co.city) B.shared += eur;
+			else B.eur[co.k] += eur;
 			t.eurIn = (t.eurIn ?? 0) + eur;
 			t.exportBy = t.exportBy ?? new Float64Array(G);
 			t.exportBy[co.good] += exKwh;

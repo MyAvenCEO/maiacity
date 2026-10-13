@@ -460,7 +460,10 @@ export const TECH = {
 const CHIP_EUR = 35000, MWH_EUR = 87.5;
 export const CHIPS = {
 	eurPerChip: n(CHIP_EUR, '€ per accelerator', 'an H100-class accelerator ~€30,000–40,000 (2024–25 list prices); the middle (estimate)', true),
-	eurPerMwh: n(MWH_EUR, '€ per MWh of exported electricity', 'EU wholesale power ~€80–100 per MWh (2024–25 day-ahead averages); the middle (estimate)', true),
+	eurPerMwh: n(MWH_EUR, '€ per MWh of exported electricity (the old flat price; kept for the accelerators’ kWh and the setting exportEurMwh)', 'EU wholesale power ~€80–100 per MWh (2024–25 day-ahead averages); the middle (estimate)', true),
+	// what the line really earns: the German day-ahead price, and far less for what the sun makes at noon
+	spotEurMwh: n(89.32, '€ per MWh, the German day-ahead average (baseload: what the geothermal plant and the battery sell)', 'Netztransparenz (the transmission operators) via Rödl & Partner, Feb 2026: spot average 8.932 ct/kWh in 2025 (7.946 in 2024)'),
+	solarEurMwh: n([115.1, 91.8, 59.4, 37.8, 27.0, 18.4, 32.4, 37.8, 48.6, 75.6, 91.0, 93.7], '€ per MWh of solar electricity by month (Jan first): the market value of solar power, what a MWh sold when the sun shines fetches', 'Netztransparenz Marktwert Solar 2025: January 11.511 and June 1.843 ct/kWh (logicenergy.de), November 9.102 and December 9.373 (pv-magazine.de, 2026-01-08), the year 4.508 (Rödl & Partner, Feb 2026); the other months shaped like 2024 (April 3.795, May 3.161, August 4.263, September 4.512: solarserver.de) and scaled so the year comes to 4.508 (estimate)', true),
 	// derived from the two above, never typed in (./genesis.js computes the engine's chipKwh the same way)
 	kwhPerChip: n((CHIP_EUR / MWH_EUR) * 1000, 'kWh of exported electricity per accelerator (derived: eurPerChip ÷ eurPerMwh)', 'eurPerChip ÷ eurPerMwh (derived)', true),
 	lineKw: n(10000 / 6, 'kW export line, a living hex’s share', 'a 20 kV line from the village to the grid carries ~10 MW (estimate)', true),
@@ -502,6 +505,7 @@ export const BORDER = {
 	importAhead: n(30, 'days of supply a COOP looks ahead when it buys at the border', 'estimate', true),
 	foodStoreDays: n(90, 'days of food in the stores at founding (bought before day 0)', 'round 3 brief: "a few months of imported food" (estimate)', true),
 	storesDays: n(30, 'days of materials and goods in the stores at founding', 'estimate', true),
+	bankPaybackYears: n(30, 'years over which the MaiaCity COOP’s bank exports to pay its founders back the euros the village drew', 'a policy, not physics (estimate): the line and the bank’s treasury bound it', true),
 	reserveYears: n(1, 'years of the village’s food at wholesale left in the euro reserve at founding', 'round 3 brief: the founding euros left over (estimate; scenario F01 tests none and three years)', true)
 };
 

@@ -13,7 +13,7 @@
  * 1,500); `people` below it leaves beds empty.
  */
 import { exp, pow } from './dmath.js';
-import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, FOOD as FOODCAT } from './primitives.js';
+import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, DAYS_IN_MONTH, FOOD as FOODCAT } from './primitives.js';
 import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor, skillRamp, skillOf } from './food.js';
 import { villageFacts } from './village.js';
 import { BED, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOOD_INDEX, GOODS_, MAX_COOPS, NX, SPRING, WATER, LIMIT } from './consts.js';
@@ -238,7 +238,14 @@ function constants(cfg) {
 	const diet = dietFacts(cfg.diet ?? 'samuel', cfg.foodYields ?? 'ramp');
 	// the outdoor food land that grows food: less tracks, sheds and hedges, and the compost ley (food-best.md §3)
 	const outNet = OUTDOOR.netShare.v - OUTDOOR.leyShare.v;
-	const eurMwh = cfg.exportEurMwh ?? CHIPS.eurPerMwh.v;
+	// the line's price for planning: the German day-ahead price for what the geothermal plant makes and the market value of
+	// solar power for what the sun makes, weighted by the village's solar and geothermal electricity a year (the day's
+	// own price follows the day's sun: ./energy.js; the setting exportEurMwh gives one flat price)
+	const solarYear = V.solarKwh * vf, geoYear = (cfg.geothermal ? cfg.geoStages * s : 0) * ENERGY_SOURCES.egs.netKwElectric.v * 8760;
+	const sunW = MONTHLY.sun.v.map((x, i) => x * DAYS_IN_MONTH[i]);
+	const solarAvg = CHIPS.solarEurMwh.v.reduce((a, x, i) => a + x * sunW[i], 0) / sunW.reduce((a, b) => a + b, 0);
+	const sShare = solarYear + geoYear > 0 ? solarYear / (solarYear + geoYear) : 1;
+	const eurMwh = cfg.exportEurMwh ?? sShare * solarAvg + (1 - sShare) * CHIPS.spotEurMwh.v;
 	return {
 		scale: s,
 		vf,
@@ -340,6 +347,9 @@ function constants(cfg) {
 		chipKwh: ((CHIPS.eurPerChip.v * ip) / eurMwh) * 1000,
 		chipEur: CHIPS.eurPerChip.v * ip,
 		eurPerKwh: eurMwh / 1000,
+		exportFlat: cfg.exportEurMwh != null,
+		spotEurKwh: CHIPS.spotEurMwh.v / 1000,
+		solarEurKwh: CHIPS.solarEurMwh.v.map((x) => x / 1000),
 		eurMwh,
 		lineKwhDay: CHIPS.lineKw.v * s * 24,
 		chipsSpare: CHIPS.spare.v,
@@ -350,6 +360,7 @@ function constants(cfg) {
 		foodStoreDays: BORDER.foodStoreDays.v,
 		storesDays: BORDER.storesDays.v,
 		reserveYears: cfg.reserveYears ?? BORDER.reserveYears.v,
+		bankPaybackYears: cfg.bankPaybackYears ?? BORDER.bankPaybackYears.v,
 		scrapBack: 0.9,
 		standingKwhT: (STANDING_MWH_T.v * 1000) / 365,
 		K0: LEARNING.searchRef.v,

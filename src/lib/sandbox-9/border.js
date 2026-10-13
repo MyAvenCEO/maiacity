@@ -177,6 +177,25 @@ export function exportPlan(w, co) {
 }
 
 /**
+ * The MaiaCity COOP's own export (in ./coops.js plan): the bank sells electricity at the border, bought from the
+ * energy COOPs with its treasury (it holds the COOPs' MIND they paid their advances back with, and its ground rent),
+ * for what it advanced lately (a 60-day average, in the running class with the village's upkeep) and to pay its
+ * founders back the euros the village drew from them over bankPaybackYears (after the city's building class, before
+ * R&D). Its euros go into the bank's own.
+ */
+export function bankExport(w, co) {
+	const B = w.border, t = w.today;
+	if (!B) return;
+	B.advEma = (B.advEma ?? 0) + ((t.advEur ?? 0) - (B.advEma ?? 0)) / 60;
+	const cum = reserveEur(w) - B.shared0;
+	const payback = Math.max(0, -cum) / (Math.max(1, w.c.bankPaybackYears) * 365);
+	const up = Math.min(B.advEma / w.c.eurPerKwh, w.c.lineKwhDay);
+	co.exportUp += up;
+	co.exportBuild += Math.min(payback / w.c.eurPerKwh, Math.max(0, w.c.lineKwhDay - up));
+	w.exportToday = (w.exportToday ?? 0) + co.exportUp + co.exportBuild;
+}
+
+/**
  * The line's room shared out (./engine.js, before the dispatch): when the COOPs together ask the line for more than it
  * carries, every upkeep export (food, the works' inputs, worn accelerators) is cut in the same proportion, and the
  * building exports (new accelerators) share what is left.
