@@ -63,6 +63,8 @@
 	const decidedMips = $derived(mips.filter((m) => m.status !== 'open').reverse());
 
 	$effect(() => world?.update(view, hour));
+	// the land still to unlock shows as the welcome story reaches it (all of it once the story is done or skipped)
+	$effect(() => void (view && world?.reveal(tour ? Math.max(0, ...steps.slice(0, tourAt + 1).map((x) => x.reveal ?? 0)) : 2)));
 
 	function take(res) {
 		game = res.game;
