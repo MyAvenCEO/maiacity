@@ -15,6 +15,8 @@
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
+	import Frame from '$lib/genui/Frame.svelte';
+	import { viewsOf } from '../../../game/maiacity-v1/views.js';
 
 	let game = $state.raw(null);
 	let me = $state('');
@@ -165,6 +167,33 @@
 		['ledger', '≡', 'Ledger'],
 		['rules', '⚙', 'Rules']
 	];
+	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
+	const screens = $derived(view ? viewsOf(view) : []);
+	const allTools = $derived([...TOOLS, ...screens.map((v) => [`view:${v.id}`, '▦', v.name])]);
+	const isViewPanel = (x) => typeof x === 'string' && x.startsWith('view:');
+	// what a screen is handed: the game as it stands (never a seat's secrets: there are none in the state)
+	const screenData = $derived(
+		view
+			? {
+					date: dateText(cal),
+					month: view.month,
+					minds: MINDS.map((t) => ({ id: t, label: TOKEN_LABEL[t], colour: TOKEN_COLOUR[t] })),
+					players: SEATS.map((k) => ({ seat: k, name: view.players[k].name, wallet: { ...view.players[k].wallet } })),
+					coops: Object.values(view.coops).map((c) => ({ id: c.id, name: c.name, mind: c.mind, treasury: { ...c.treasury }, assets: c.assets.map((a) => ({ ...a })) })),
+					pool: { ...view.pool },
+					settings: { ...view.settings }
+				}
+			: null
+	);
+	// a view card as the sandboxed frame takes it: the same object while its code is (the game is copied every second,
+	// its cards with it), so its frame never reloads until a MIP changes it
+	const frames = new Map();
+	const frameOf = (c) => {
+		const k = `${c.id}\n${c.code}`;
+		if (!frames.has(k)) frames.set(k, { id: c.id, title: c.name, kind: 'html', spec: { html: c.code, libs: c.data?.libs ?? [], height: c.data?.height ?? 400, data: {} } });
+		return frames.get(k);
+	};
+	let preview = $state(''); // a proposal's screen being looked at before signing: `${number}:${id}`
 	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
 	const isAssetPanel = (x) => typeof x === 'string' && x.startsWith('asset:');
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
@@ -207,7 +236,7 @@
 		</div>
 
 		<nav class="tools" class:open={tools}>
-			{#each TOOLS as [id, ic, label] (id)}
+			{#each allTools as [id, ic, label] (id)}
 				<button class:on={panel === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
 			{/each}
 			<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>
@@ -223,7 +252,7 @@
 		</button>
 
 		{#if panel}
-		<aside class="card panel" class:wide={panel === 'ledger' || panel === 'mips'}>
+		<aside class="card panel" class:wide={panel === 'ledger' || panel === 'mips' || isViewPanel(panel)}>
 			<button class="close" aria-label="Close" onclick={() => (panel = null)}>×</button>
 
 			{#if panel === 'you'}
@@ -375,7 +404,7 @@
 			{:else if panel === 'mips'}
 				<p class="eyebrow">MaiaCity improvement proposals</p>
 				<h2>Proposals</h2>
-				<p class="about">Every decision is a MIP: any setting, a COOP's name and the assets it owns, and payouts from a COOP treasury to any wallet. It needs {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'} and applies at once, in this same game.</p>
+				<p class="about">Every decision is a MIP: any setting, a COOP's name and the assets it owns, payouts from a COOP treasury to any wallet, and the game's screens (look at a new one before you sign). It needs {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'} and applies at once, in this same game.</p>
 				{#if draft}
 					<div class="draft">
 						<input class="full" placeholder="Title" bind:value={draft.title} />
@@ -421,6 +450,11 @@
 						<h3>{m.title}</h3>
 						{#if m.description}<p>{m.description}</p>{/if}
 						<p class="changes">{describe(view, m)}</p>
+						{#each m.views ?? [] as v (v.id)}
+							{@const key = `${m.number}:${v.id}`}
+							<div class="buttons"><button onclick={() => (preview = preview === key ? '' : key)}>{preview === key ? 'Close the screen' : `Look at the screen “${v.name}”`}</button></div>
+							{#if preview === key}<Frame view={frameOf(v)} data={screenData} />{/if}
+						{/each}
 						<p class="sigs">
 							{#each SEATS as s (s)}<span class:ok={m.signatures.includes(s)}>{m.signatures.includes(s) ? '✓' : '○'} {view.players[s].name}</span>{/each}
 						</p>
@@ -439,6 +473,17 @@
 						<p class="changes">{describe(view, m)}</p>
 					</article>
 				{/each}
+			{:else if isViewPanel(panel)}
+				{@const card = screens.find((v) => panel === `view:${v.id}`)}
+				<p class="eyebrow">A screen · an MCP App</p>
+				<h2>{card?.name ?? 'Gone'}</h2>
+				{#if card}
+					{#if card.description}<p class="about">{card.description}</p>{/if}
+					{#key card.id}<Frame view={frameOf(card)} data={screenData} />{/key}
+					<p class="small">It runs in a sealed frame: it sees only the game as shown here and can't move for anyone. A MIP changes it.</p>
+				{:else}
+					<p class="about">A MIP took this screen out.</p>
+				{/if}
 			{:else if panel === 'rules'}
 				<p class="eyebrow">The game’s settings</p>
 				<h2>Rules</h2>

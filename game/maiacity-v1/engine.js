@@ -28,6 +28,8 @@
  * reloads). Every function here is pure: it takes a state and returns a new one.
  */
 
+import { checkViewCard } from '../genui/views.js';
+
 export const DAY_MS = 86_400_000;
 /** one virtual month per real day */
 export const MONTH_MS = DAY_MS;
@@ -468,8 +470,16 @@ function checkMip(s, mip) {
 		}
 		if (Object.keys(change).length) coops[id] = change;
 	}
-	if (!Object.keys(settings).length && !payouts.length && !Object.keys(coops).length) throw new GameError('A proposal changes a setting or a COOP, or pays out.');
-	return { title, description, settings, coops, payouts };
+	// the game's screens (Samuel, 2026-10-13): view cards, MCP Apps the page runs sandboxed (game/genui/views.js); a MIP
+	// puts them in (a card with an id already there replaces it) or takes them out, beside the rules it changes
+	const views = (Array.isArray(mip.views) ? mip.views : []).slice(0, 10).map((v) => {
+		const r = checkViewCard(v);
+		if (r.error) throw new GameError(r.error);
+		return r.card;
+	});
+	const removeViews = (Array.isArray(mip.removeViews) ? mip.removeViews : []).map(String).filter((id) => (s.views ?? []).some((v) => v.id === id) && !views.some((v) => v.id === id));
+	if (!Object.keys(settings).length && !payouts.length && !Object.keys(coops).length && !views.length && !removeViews.length) throw new GameError('A proposal changes a setting, a COOP or a screen, or pays out.');
+	return { title, description, settings, coops, payouts, ...(views.length ? { views } : {}), ...(removeViews.length ? { removeViews } : {}) };
 }
 
 /** what a MIP changes, in words */
@@ -480,6 +490,8 @@ export function describe(s, mip) {
 		if (c.assets) parts.push(`${c.name ?? nameOf(s, `coop:${id}`)} owns ${c.assets.map((x) => x.name).join(', ') || 'nothing'}`);
 	}
 	for (const x of mip.payouts ?? []) parts.push(`pay ${x.amount.toFixed(2)} ${TOKEN_LABEL[x.token]} from ${nameOf(s, x.from)} to ${nameOf(s, x.to)}`);
+	for (const v of mip.views ?? []) parts.push(`${(s.views ?? []).some((x) => x.id === v.id) ? 'new version of the screen' : 'new screen'} ${v.name}`);
+	for (const id of mip.removeViews ?? []) parts.push(`remove the screen ${(s.views ?? []).find((x) => x.id === id)?.name ?? id}`);
 	return parts.join('; ');
 }
 
@@ -515,9 +527,15 @@ function settle(s, mip, now) {
 		balanceOf(s, x.to)[x.token] += amount;
 		log(s, now, { kind: 'payout', from: x.from, to: x.to, token: x.token, amount, note: `MIP #${mip.number}: ${mip.title}` });
 	}
+	const viewsBefore = (s.views ?? []).map((v) => ({ id: v.id, name: v.name }));
+	if (mip.views?.length || mip.removeViews?.length) {
+		const put = mip.views ?? [];
+		s.views = (s.views ?? []).filter((v) => !(mip.removeViews ?? []).includes(v.id)).map((v) => put.find((p) => p.id === v.id) ?? v);
+		for (const p of put) if (!s.views.some((v) => v.id === p.id)) s.views.push(p);
+	}
 	mip.status = 'accepted';
 	mip.decided = now;
-	mip.result = { before, coops: coopsBefore };
+	mip.result = { before, coops: coopsBefore, views: viewsBefore };
 	log(s, now, { kind: 'proposal', from: '', to: '', token: '', amount: 0, note: `MIP #${mip.number} accepted: ${mip.title} (${describe(s, mip)})` });
 }
 
@@ -527,7 +545,7 @@ function settle(s, mip, now) {
  *   invest { coop, amount }      HEARTS into a COOP
  *   swap { token, to, amount }   a MIND through the pool for another
  *   name { name }                the player's name
- *   propose { mip }              a MIP: title, description, settings, coops and payouts; the proposer signs it (not
+ *   propose { mip }              a MIP: title, description, settings, coops, payouts and screens (views, removeViews); the proposer signs it (not
  *                                one made over the MCP, via 'mcp': both players sign that on the page)
  *   sign { number }              sign a MIP: with two signatures it is accepted and applies at once
  *   reject { number, note }      reject a MIP (the proposer withdraws it)
