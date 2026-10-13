@@ -40,6 +40,7 @@ use std::sync::Arc;
 use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Seal};
 use crate::rules::{self, Grant, Proof};
+use crate::sealed::FileRoot;
 use crate::slice::{Attrs, Header, Select, Selector, TagDelta};
 use crate::wire::Wire;
 
@@ -174,7 +175,8 @@ pub enum Action {
     /// the heads of the line it brings in. A write that creates its entry names the cell it goes in (`create`, its caps
     /// in canonical order), and its stay is the one its creation begins (`None`). Its `body` is the update, the
     /// header of a new entry and the tags it adds and removes, encrypted: the tags count only when it acts for the
-    /// vault, except that a new entry's added tags are its first tags.
+    /// vault, except that a new entry's added tags are its first tags. The files it brings (`sealed`) are named in the
+    /// clear by their roots, smallest first, so whoever may receive it keeps them; their keys are in its body.
     Write {
         vault: VaultId,
         entry: EntryId,
@@ -185,6 +187,7 @@ pub enum Action {
         proposal: Proposal,
         via: Vec<VaultId>,
         create: Option<Vec<CapId>>,
+        files: Vec<FileRoot>,
         body: Vec<u8>,
     },
     /// A steward, acting for vault `vault`, moves its entry `entry` to the cell of the caps `to` (canonical order),
@@ -308,6 +311,14 @@ impl Edit {
             }
             Action::Keys { public, .. } => public.iter().map(|k| k.mceliece).collect(),
             _ => vec![],
+        }
+    }
+
+    /// The files the edit brings: a write's, and no other edit's.
+    pub fn files(&self) -> &[FileRoot] {
+        match &self.action {
+            Action::Write { files, .. } => files,
+            _ => &[],
         }
     }
 

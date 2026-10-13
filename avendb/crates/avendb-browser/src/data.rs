@@ -261,7 +261,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
             "revoke",
             json!({ "cap": hex(&cap.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
         ),
-        Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body } => {
+        Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body } => {
             let line = match proposal {
                 Proposal::Main => None,
                 Proposal::New => Some(id),
@@ -280,6 +280,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                     "starts": *proposal == Proposal::New,
                     "via": vias(via),
                     "create": create.as_deref().map(caps),
+                    "files": files.iter().map(|f| json!({ "root": hex(&f.hash), "size": f.size })).collect::<Vec<_>>(),
                     "sealed": body.len(),
                 }),
             )

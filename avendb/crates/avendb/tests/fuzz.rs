@@ -142,13 +142,14 @@ fn work_todos() -> Slice {
 fn door_created() -> Body {
     let header = Some(Header { ty: Sym::new("todo"), created: 1_791_500_000 });
     let tags = TagDelta { add: vec![Sym::new("work")], remove: vec![] };
-    Body { header, tags, answers: vec![], content: b"Fix the door".to_vec(), proof: None }
+    Body { header, tags, answers: vec![], content: b"Fix the door".to_vec(), proof: None, files: vec![] }
 }
 
 /// The body of a write of tags alone, by a steward answering what two writes asked for.
 fn door_retagged() -> Body {
     let tags = TagDelta { add: vec![Sym::new("done")], remove: vec![Sym::new("work")] };
-    Body { header: None, tags, answers: vec![EditId::from_u64(4), EditId::from_u64(6)], content: vec![], proof: None }
+    let answers = vec![EditId::from_u64(4), EditId::from_u64(6)];
+    Body { header: None, tags, answers, content: vec![], proof: None, files: vec![] }
 }
 
 /// Alice's work todos as a narrower cap shares them (`rules`): its own ops, to tick a todo done on the main line, add
@@ -274,6 +275,7 @@ fn signed_edits() -> Edits {
         proposal: main,
         via: vec![],
         create: Some(cell),
+        files: vec![],
         body: vec![],
     };
     let create = by_device(seal_body(edit(2, create), &door_created(), &k.door, &mut rng));
@@ -287,6 +289,7 @@ fn signed_edits() -> Edits {
         proposal: Proposal::On(create.edit.id()),
         via: vec![VaultId::from_u64(3), VaultId::from_u64(4)],
         create: None,
+        files: vec![],
         body: vec![],
     };
     let write = by_device(seal_body(edit(3, write), &door_retagged(), &k.door, &mut rng));

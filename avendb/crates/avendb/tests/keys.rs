@@ -14,6 +14,7 @@ use avendb::id::{CapId, CellId, EntryId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyId, KeyName, Secret};
 use avendb::lab::{Lab, Tamper};
 use avendb::policy::{mk_cell, view, Action, Edit, Grantee, Principal, Refusal, Role, State};
+use avendb::sealed::{open, seal, Brought, FileKey};
 use avendb::slice::Selector;
 
 /// The key family of the cell entry `e` is in now, by device `d`'s view.
@@ -116,6 +117,54 @@ fn server_holds_only_ciphertext() {
     for s in w.lab.secrets(w.mac_a).iter().filter(|s| !own.contains(&s.id())) {
         assert!(!store.windows(32).any(|b| b == s.bytes().as_slice()), "{s:?} in the server's store");
     }
+}
+
+/// Files follow their edits (T27): Alice brings a photo into Welcome, which Carol reads, and a scan into Onboarding,
+/// which she doesn't. Whoever may receive a write may fetch the files it brings, as sealed bytes: Carol the photo and
+/// the server both, as it keeps the coop's ciphertext; only who opens the write's key opens the file.
+#[test]
+fn t27_files_follow_their_edits() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let read = cap(h.coop, vault(w.carol), Role::Read, by_id(h.welcome));
+    w.lab.issue(w.mac_a, &[w.mac_a], read).unwrap();
+    w.lab.sync_all(1);
+    // each file sealed under a key of its own; its root here stands for the BLAKE3 hash iroh names its pieces by
+    let file = |text: &[u8], k: u8| {
+        let (key, plain) = (FileKey::from_bytes([k; 32]), text.repeat(9_000));
+        let sealed = seal(&key, &plain);
+        let root = avendb::hash::hash("a test file's root", &sealed);
+        (Brought::new(root, key, plain.len() as u64), plain, sealed)
+    };
+    let (photo, photo_text, photo_sealed) = file(b"the greenhouse at dawn ", 1);
+    let (scan, _, _) = file(b"the onboarding form, signed ", 2);
+    let (photo_root, scan_root) = (photo.root, scan.root);
+    assert!(photo_root.size > 3 * 65_536, "a photo of a few segments");
+    w.lab.bring(w.mac_a, h.coop, h.welcome, vec![photo.clone()], |_| {}).unwrap();
+    w.lab.bring(w.mac_a, h.coop, h.onboarding, vec![scan], |_| {}).unwrap();
+    w.lab.sync_all(2);
+    // Carol may fetch the photo and not the scan; the server both; Dave and the stranger neither
+    let may = |asker, root| w.lab.may_fetch_file(w.mac_a, asker, root);
+    assert!(may(w.mac_c, &photo_root) && !may(w.mac_c, &scan_root));
+    assert!(may(w.server, &photo_root) && may(w.server, &scan_root));
+    for nobody in [w.mac_d, w.stranger] {
+        assert!(!may(nobody, &photo_root) && !may(nobody, &scan_root));
+    }
+    assert_eq!(w.lab.files(w.mac_c), vec![photo_root]);
+    // Carol opens the photo: its key from the write that brings it, its bytes from the root, any range on its own
+    let got = w.lab.file(w.mac_c, &photo_root).expect("the photo's key, from the write Carol opens");
+    assert_eq!(got, photo);
+    assert_eq!(open(&got.key, got.shape(), 0, &photo_sealed), Some(photo_text.clone()));
+    let (_, at) = got.shape().sealed_ranges(70_000..70_010)[0].clone();
+    let segment = open(&got.key, got.shape(), 1, &photo_sealed[at.start as usize..at.end as usize]).unwrap();
+    assert_eq!(&segment[70_000 - 65_520..70_010 - 65_520], &photo_text[70_000..70_010]);
+    // the server keeps both files and opens neither, and neither key is in its store
+    let mut both = vec![photo_root, scan_root];
+    both.sort();
+    assert_eq!(w.lab.files(w.server), both);
+    assert!(w.lab.file(w.server, &photo_root).is_none() && w.lab.file(w.server, &scan_root).is_none());
+    let store = w.lab.store(w.server);
+    assert!(!store.windows(32).any(|b| b == photo.key.bytes() || b == [2; 32]));
 }
 
 #[test]

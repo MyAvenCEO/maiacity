@@ -112,6 +112,17 @@ def respond (edits : List Edit) (d : SignerId) : List Edit :=
     | some (.vault v) => vaults.contains v
     | _ => false
 
+/-- The files an edit brings: a write's, and no other edit's. -/
+def Edit.filesOf (edit : Edit) : List FileId :=
+  match edit.action with
+  | .write .. => edit.files
+  | _ => []
+
+/-- A peer holding `edits` may hand device `d` the bytes of file `f`: it sends `d` an edit that brings `f`. The bytes
+    are ciphertext all the same: whoever may fetch a file keeps it, and only who opens the write's key opens it. -/
+def mayFetch (edits : List Edit) (d : SignerId) (f : FileId) : Bool :=
+  (respond edits d).any fun o => o.filesOf.contains f
+
 /-- The vaults passkey `p` owns in `st`: those it is an owner or the root of. -/
 def ownedBy (st : State) (p : SignerId) : List VaultId :=
   st.vaults.filterMap fun x => if x.owners.contains (.signer p) || x.root == some p then some x.id else none

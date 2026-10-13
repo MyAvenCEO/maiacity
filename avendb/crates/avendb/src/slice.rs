@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use crate::id::{EditId, EntryId, VaultId};
 use crate::keys::KeyBox;
 use crate::rules::{self, Grant, Proof, Rule};
+use crate::sealed::Brought;
 
 /// A type (`note`, `todo`, …) or a tag: a short name.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -316,6 +317,9 @@ pub struct Body {
     pub answers: Vec<EditId>,
     pub content: Vec<u8>,
     pub proof: Option<Proof>,
+    /// The keys and lengths of the files it brings, which it names in the clear (`Action::Write`): smallest root
+    /// first, no repeats.
+    pub files: Vec<Brought>,
 }
 
 #[cfg(test)]

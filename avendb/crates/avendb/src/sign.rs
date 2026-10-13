@@ -835,6 +835,7 @@ mod tests {
             proposal: crate::policy::Proposal::Main,
             via: vec![],
             create: None,
+            files: vec![],
             body: vec![1, 2, 3],
         };
         Edit { parents: vec![], depth: 0, author, cosigners: vec![], action }
