@@ -11,7 +11,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.js';
 
 /** the hex's radius in metres: 51, one and a half times the first 34 (Samuel 2026-10-13) */
-const HEX_R = 51;
+const HEX_R = 76.5;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
 /** the Village COOP's assets (engine COOPS.village, by id) and where each stands on the hex: x, z, turned; the panel faces the sun at −z.
  *  The pickup stands at twice its size, beside the players, the solar panel twice as high and six times as wide, a long
@@ -46,6 +46,27 @@ function hexGround() {
 	const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.CylinderGeometry(HEX_R, HEX_R, 0.05, 6)), new THREE.LineBasicMaterial({ color: 0xf4f1e8, transparent: true, opacity: 0.7 }));
 	edge.position.y = 0.04;
 	g.add(edge);
+	return g;
+}
+
+/** the pickup's gravel: a parking lot beside the tent, and a road from it to the hex's west side */
+const LOT = { x: -16, z: 10, w: 15, d: 10 };
+const ROAD = { z: 10, w: 4, from: -HEX_R * 0.866, to: LOT.x - LOT.w / 2 };
+const onGravel = (x, z, pad = 0) =>
+	(Math.abs(x - LOT.x) < LOT.w / 2 + pad && Math.abs(z - LOT.z) < LOT.d / 2 + pad) || (x > ROAD.from - 1 && x < ROAD.to + pad && Math.abs(z - ROAD.z) < ROAD.w / 2 + pad);
+
+function gravel() {
+	const g = new THREE.Group();
+	const stone = mat(0xbdb29c);
+	const lot = new THREE.Mesh(new THREE.PlaneGeometry(LOT.w, LOT.d), stone);
+	lot.rotation.x = -Math.PI / 2;
+	lot.position.set(LOT.x, 0.03, LOT.z);
+	const len = ROAD.to - ROAD.from;
+	const road = new THREE.Mesh(new THREE.PlaneGeometry(len, ROAD.w), stone);
+	road.rotation.x = -Math.PI / 2;
+	road.position.set(ROAD.from + len / 2, 0.025, ROAD.z);
+	lot.receiveShadow = road.receiveShadow = true;
+	g.add(lot, road);
 	return g;
 }
 
@@ -105,6 +126,7 @@ function trees(group) {
 		// on the hex, not over its flat sides (its corners point to ±z, as the cylinder's do)
 		if ([0, 1, 2, 3, 4, 5].some((k) => x * Math.sin(Math.PI / 6 + (k * Math.PI) / 3) + z * Math.cos(Math.PI / 6 + (k * Math.PI) / 3) > HEX_R * 0.866 - 2.5)) continue;
 		if (ASSETS.some(({ at, clear }) => Math.hypot(x - at[0], z - at[1]) < clear)) continue;
+		if (onGravel(x, z, 2)) continue;
 		const t = new THREE.Group();
 		const h = 1.5 + r() * 2.5;
 		const s = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, h, 6), trunk);
@@ -126,14 +148,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	const scene = new THREE.Scene();
 	const sky = new THREE.Color(0xcfe0e6);
 	scene.background = sky;
-	scene.fog = new THREE.Fog(sky, 210, 480);
-	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 600);
-	camera.position.set(78, 66, 96);
+	scene.fog = new THREE.Fog(sky, 315, 720);
+	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 900);
+	camera.position.set(117, 99, 144);
 	const controls = new OrbitControls(camera, canvas);
 	controls.target.set(2, 1, 3);
 	controls.enableDamping = true;
 	controls.minDistance = 18;
-	controls.maxDistance = 180;
+	controls.maxDistance = 270;
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotate = true;
 	controls.autoRotateSpeed = 0.25;
@@ -144,12 +166,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
 	sun.castShadow = true;
 	sun.shadow.mapSize.set(2048, 2048);
-	Object.assign(sun.shadow.camera, { left: -68, right: 68, top: 68, bottom: -68, near: 1, far: 330 });
+	Object.assign(sun.shadow.camera, { left: -102, right: 102, top: 102, bottom: -102, near: 1, far: 500 });
 	scene.add(sun, sun.target);
 
 	const world = new THREE.Group();
 	scene.add(world);
 	world.add(hexGround());
+	world.add(gravel());
 	const theTent = tent();
 	world.add(theTent);
 	const people = { A: person('A'), B: person('B') };
@@ -224,7 +247,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	ro.observe(canvas);
 	resize();
 	// upright, the whole hex needs the camera further out
-	if (camera.aspect < 0.8) camera.position.set(129, 111, 159);
+	if (camera.aspect < 0.8) camera.position.set(194, 167, 239);
 
 	// a tap (not a drag) names the thing under it
 	const ray = new THREE.Raycaster();
