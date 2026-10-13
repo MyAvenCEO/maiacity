@@ -10,7 +10,7 @@
 //! "groups"}`, `avendb::rules::groups`).
 
 use anyhow::{Result, anyhow, bail};
-use avendb::id::{BlobId, VaultId};
+use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::lens::Status;
 use avendb::policy::{Grantee, Kind, Principal, Role};
 use avendb::rules::Rule;
@@ -78,6 +78,16 @@ pub fn grantee_of(name: &str) -> Result<Grantee> {
         "everyone" => Grantee::Public,
         v => Grantee::Principal(Principal::Vault(VaultId(id_of(v)?))),
     })
+}
+
+/// An owner as the page names it, as the world shows a vault's owners: `{"signer": id}` or `{"vault": id}`.
+pub fn owner_of(v: &Value) -> Result<Principal> {
+    let id = |k| v.get(k).and_then(Value::as_str).map(id_of).transpose();
+    match (id("signer")?, id("vault")?) {
+        (Some(s), None) => Ok(Principal::Signer(SignerId(s))),
+        (None, Some(x)) => Ok(Principal::Vault(VaultId(x))),
+        _ => bail!("an owner is a signer or a vault"),
+    }
 }
 
 /// A new cap's name, selector and ops from what the page wrote (`avendb::slice::spec_of_json`).

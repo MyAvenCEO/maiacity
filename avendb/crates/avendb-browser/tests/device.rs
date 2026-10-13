@@ -12,7 +12,7 @@
 
 use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
@@ -21,6 +21,7 @@ use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::lens::Status;
 use avendb::policy::{Grantee, Kind, Principal, Role};
+use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
 use avendb::sign::{Ceremony, Passkey, device_salt};
 use avendb_browser::{Device, EntryView, Fresh, PROFILE, Start, Unlock, What, World as Seen, backup};
@@ -73,7 +74,8 @@ impl Browser {
 /// Where a browser's device named `name` starts, through the relay at `url`, its randomness drawn from `seed`.
 fn start(name: &str, url: &RelayUrl, seed: u8) -> Start {
     let (name, progress) = (name.into(), Progress::new());
-    Start { name, relay: url.clone(), entropy: [seed; 32], now: now(), direct: false, store: None, progress }
+    let (relay, recovery) = (url.clone(), None);
+    Start { name, relay, entropy: [seed; 32], now: now(), direct: false, store: None, progress, recovery }
 }
 
 /// The steps a start marked, by name, once it is over: each with how long it took.
@@ -337,10 +339,13 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let opts = Options { relay, admission: admits, card: true, ..Options::local() };
     let server = Node::spawn(lab, me, opts).await.expect("the server's node");
     // Eve comes first: her first browser makes her passkey, whose public key info shows its P-256 key, then founds her
-    // vault, adds itself to it and claims the server, all in one ceremony after the unlock
+    // vault, adds itself to it and claims the server, all in one ceremony after the unlock; and her vault has the
+    // master recovery key her browser adds among its owners, by the key's standing consent
     let eve = Browser::new(Passkey::from_seed([5; 32]));
     let p256 = eve.0.lock().expect("the authenticator").0.public();
-    let first = start("Eve's browser", &url, 7);
+    let master = Arc::new(RecoveryKey::of([11; 32]));
+    let mut first = start("Eve's browser", &url, 7);
+    first.recovery = Some(master.clone());
     let shown = first.progress.clone();
     let first = found(first, &server.offer(), Some(p256), &eve, [1; 32]).await.expect("her vault claims the server");
     assert_eq!(eve.steps(), [Step::Found], "one ceremony for her vault, her browser and the claim");
@@ -351,6 +356,21 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let shape = move |lab: &Lab, _| lab.state(me).vault(avenceo).map(|v| (v.kind, v.owners.clone()));
     assert_eq!(server.read(shape).await, Some((Kind::Aven, vec![Principal::Vault(vault)])), "owned by her vault");
     assert!(first.owns_aven().await, "as her browser shows");
+    let (hers, masters) = (Principal::Signer(Passkey::from_seed([5; 32]).id()), Principal::Signer(master.id()));
+    let owners = move |lab: &Lab, _| lab.state(me).vault(vault).map(|v| v.owners.clone()).unwrap_or_default();
+    assert_eq!(server.read(owners).await, [hers, masters], "the master key among her vault's owners");
+    let seen = first.world().await.expect("her world").to_json(first.node().device());
+    let shown = seen["vaults"].as_array().and_then(|vs| vs.iter().find(|v| v["id"] == hex_of(&vault.0)));
+    let shown = shown.expect("her vault")["owners"].as_array().cloned().unwrap_or_default();
+    let marks: Vec<Value> = shown.iter().map(|o| o["recovery"].clone()).collect();
+    assert_eq!((seen["recovery"].clone(), marks), (json!(hex_of(&master.id().0)), vec![json!(false), json!(true)]));
+    // she removes it like any owner, and adds it again, a ceremony each; it is an owner once
+    first.remove_owner(vault, masters, &eve).await.expect("the master key removed");
+    until("the server sees it removed", || async { server.read(owners).await == [hers] }).await;
+    first.add_recovery(&eve).await.expect("the master key added again");
+    assert!(first.add_recovery(&eve).await.is_err(), "it is an owner already");
+    assert_eq!(eve.steps(), [Step::Approve, Step::Approve], "no ceremony for what the vault refuses");
+    until("the server sees it back", || async { server.read(owners).await == [hers, masters] }).await;
     // her vault gives avenCEO relay on the whole of it: the server keeps her note and knows her browser for good
     let note = write_note(&first, vault, vault, titled("Seeds", "Tomatoes in March."), &[]).await.expect("a note");
     let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;

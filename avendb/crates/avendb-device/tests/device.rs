@@ -376,6 +376,7 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
         direct: false,
         store: None,
         progress: Progress::new(),
+        recovery: None,
     };
     let unlock = browser.unlock(nonce, old.challenge(start.now));
     let page = Device::found(start, &server.offer(), None, old, unlock, &browser, true).await.expect("her vault");

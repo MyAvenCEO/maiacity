@@ -82,6 +82,7 @@ use avendb::keys::{self, KeyFam};
 use avendb::lab::{Backup, Lab, NewCap};
 use avendb::lens::{DocV2, Status};
 use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Principal, Refusal, Role, State, Vault};
+use avendb::recovery::{self, RecoveryKey};
 use avendb::rules;
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
@@ -181,7 +182,8 @@ fn xor(a: &[u8; 32], b: &[u8; 32]) -> Zeroizing<[u8; 32]> {
 /// machine, the Mac app's, binds sockets of its own (`direct`, `avendb_net::Options::direct`), so it reaches its peers
 /// directly and through the relay only where it must, and keeps its store in a folder (`store`, `avendb_net::Disk`).
 /// It marks each step of its start in `progress`, for its person to watch (`avendb_net::Progress`); whoever started it
-/// marks the start over.
+/// marks the start over. Every human vault it founds adds the master recovery key `recovery` as an owner, avenDB's own
+/// (`Start::recovery`) while avenDB is bootstrapped (`avendb::recovery`), and so its person may add it to their vault.
 pub struct Start {
     pub name: String,
     pub relay: RelayUrl,
@@ -190,6 +192,14 @@ pub struct Start {
     pub direct: bool,
     pub store: Option<PathBuf>,
     pub progress: Progress,
+    pub recovery: Option<Arc<RecoveryKey>>,
+}
+
+impl Start {
+    /// The master recovery key a device adds: avenDB's own, built in (`avendb::recovery::master`), if any.
+    pub fn recovery() -> Option<Arc<RecoveryKey>> {
+        recovery::master()
+    }
 }
 
 /// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, the mask its
@@ -554,6 +564,36 @@ impl Device {
         Ok(())
     }
 
+    /// Adds the master recovery key this device adds (`Start::recovery`) as an owner of its person's vault, by the
+    /// key's standing consent (`avendb::sign::standing`), which the passkey approves in a ceremony: as a vault founded
+    /// before the key was built in, or that removed it, does. Fails if the device adds no such key, or the vault has
+    /// it.
+    pub async fn add_recovery(&self, authenticator: &impl Authenticator) -> Result<()> {
+        let master = self.node.read(|lab, _| lab.recovery()).await.context("no master recovery key is built in")?;
+        let vault = self.vault().await.context("this device belongs to no vault")?;
+        let (passkey, owner) = (self.passkey, Principal::Signer(master));
+        let add = Action::AddOwner { vault, owner, seal_to: None };
+        let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey, master], add);
+        self.node.approve_with(passkey, draft, authenticator).await.context("the master recovery key")?;
+        Ok(())
+    }
+
+    /// Removes owner `owner` from vault `vault`, which the passkey approves in a ceremony: a passkey or the master
+    /// recovery key from its person's vault, or a vault from a vault their vault owns. Fails if the vault's view
+    /// refuses it, as for its last owner.
+    pub async fn remove_owner(
+        &self,
+        vault: VaultId,
+        owner: Principal,
+        authenticator: &impl Authenticator,
+    ) -> Result<()> {
+        let passkey = self.passkey;
+        let remove = Action::RemoveOwner { vault, owner, keep: vec![] };
+        let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey], remove);
+        self.node.approve_with(passkey, draft, authenticator).await.context("the owner's removal")?;
+        Ok(())
+    }
+
     /// Runs op `op` of the ops engine (`avendb::engine`, `avendb/docs/OPS.md`): any read or change of the entries it
     /// holds, whatever their schema, as JSON. Its answer: `{"ok": ...}`, or `{"refused": ..., "why": ...}`. A read
     /// runs on what the device holds; a change is a write of the vault it acts for (`"as"`), and its peers are told;
@@ -655,6 +695,8 @@ fn typed(lab: &Lab, me: SignerId, e: EntryId, ty: &str) -> bool {
 pub struct World {
     /// Its own vault, its person's.
     pub mine: VaultId,
+    /// The master recovery key it adds (`Start::recovery`), if any.
+    pub recovery: Option<SignerId>,
     /// It trusts no curve (`Lab::set_pq_only`): only the writes a checkpoint by their author covers count.
     pub pq_only: bool,
     pub vaults: Vec<VaultView>,
@@ -753,13 +795,14 @@ impl World {
     /// by their lowercase names, a cap's slice as the core writes it (`{name, where, ops, above}`,
     /// `avendb::slice::Slice::to_json`), `null` where the device doesn't read it, a vault's `via` `null` where the
     /// device doesn't act for it, a cap's `grantee` `"everyone"` for Public (`words::grantee_name`), an entry's `type`,
-    /// `tags` and `created` `null` where the device doesn't read them and its `roles` by vault; and the built-in groups
-    /// of ops the page offers when it shares (`avendb::rules::groups`).
+    /// `tags` and `created` `null` where the device doesn't read them and its `roles` by vault; the built-in groups of
+    /// ops the page offers when it shares (`avendb::rules::groups`); and the master recovery key it adds, `recovery`,
+    /// `null` for none, which a vault's owners mark as such.
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
-            Principal::Signer(s) => json!({ "signer": hex(&s.0) }),
+            Principal::Signer(s) => json!({ "signer": hex(&s.0), "recovery": Some(*s) == self.recovery }),
         };
         let vault = |v: &VaultView| {
             let device = |d: &SignerId| json!({ "id": hex(&d.0), "name": v.names.get(d), "me": *d == me });
@@ -838,6 +881,7 @@ impl World {
         json!({
             "me": hex(&me.0),
             "mine": hex(&self.mine.0),
+            "recovery": self.recovery.map(|r| hex(&r.0)),
             "pqOnly": self.pq_only,
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
             "caps": self.caps.iter().map(cap).collect::<Vec<_>>(),
@@ -893,7 +937,7 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
         });
     }
     let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
-    Some(World { mine, pq_only: lab.pq_only(), vaults, caps, cells, entries })
+    Some(World { mine, recovery: lab.recovery(), pq_only: lab.pq_only(), vaults, caps, cells, entries })
 }
 
 /// Entry `en` as device `me` shows it.
@@ -1076,6 +1120,7 @@ pub fn backup(edits: &[Vec<u8>], keys: Vec<Arc<[u8]>>) -> Backup {
 /// (`Fresh::mask`), or, for a device made before 2026-10-10, with no mask, is.
 fn lab(start: &Start, p256: [u8; 33], mask: Option<[u8; 32]>, unlock: &Unlock) -> Result<(Lab, SignerId, SignerId)> {
     let mut lab = Lab::with_entropy(start.entropy);
+    start.recovery.clone().map(|key| lab.set_recovery(key));
     let passkey = lab.web_passkey("the person", p256, &unlock.ceremony);
     let passkey = passkey.context("the unlock's ceremony isn't of the passkey with this P-256 key")?;
     let secret = mask.map_or_else(|| unlock.device.clone(), |mask| xor(&mask, &unlock.device));
@@ -1097,6 +1142,7 @@ fn passed(
     let pass = unlock.ceremony.pass(fresh.keys(), start.now);
     let pass = pass.context("the unlock's ceremony isn't over this new device's challenge")?;
     let mut lab = Lab::with_entropy(start.entropy);
+    start.recovery.clone().map(|key| lab.set_recovery(key));
     let me = lab.device_with(&start.name, *fresh.secret);
     let keys = p256.map_or_else(|| unlock.ceremony.assertion.recover(), |p256| vec![p256]);
     let passkey = |p256| lab.web_passkey("the person", p256, &unlock.ceremony);
@@ -1393,6 +1439,32 @@ impl PageDevice {
         })
     }
 
+    /// Adds the master recovery key it adds as an owner of its person's vault (`Device::add_recovery`): a promise,
+    /// after one ceremony.
+    #[wasm_bindgen(js_name = addRecovery)]
+    pub fn add_recovery(&self, ceremony: Function) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            device.add_recovery(&Js(ceremony)).await.map_err(js_value)?;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
+    /// Removes owner `owner`, `{signer}` or `{vault}` as the world shows owners, from vault `vault`, in hex
+    /// (`Device::remove_owner`): a promise, after one ceremony.
+    #[wasm_bindgen(js_name = removeOwner)]
+    pub fn remove_owner(&self, vault: String, owner: JsValue, ceremony: Function) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let vault = VaultId(id(&vault)?);
+            let owner = String::from(js_sys::JSON::stringify(&owner)?);
+            let owner: Value = serde_json::from_str(&owner).map_err(|e| JsError::new(&format!("no owner: {e}")))?;
+            let owner = words::owner_of(&owner).map_err(js_value)?;
+            device.remove_owner(vault, owner, &Js(ceremony)).await.map_err(js_value)?;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
     /// How many edits and McEliece keys it holds: a pair.
     pub fn size(&self) -> Promise {
         let device = self.0.clone();
@@ -1648,7 +1720,8 @@ fn starting(name: String, relay: &str, steps: Option<Function>) -> Result<Start,
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
     let progress = shown(steps);
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None, progress })
+    let recovery = Start::recovery();
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None, progress, recovery })
 }
 
 /// A start's steps, shown to the page by `steps(json)` each time they change (`steps_json`), until the start is over,
@@ -1717,7 +1790,8 @@ mod tests {
         let unlock = Unlock { ceremony: passkey.ceremony([0xaa; 32]), device: device.clone() };
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
-        let start = Start { name, relay, entropy: [7; 32], now: 0, direct: false, store: None, progress };
+        let (entropy, recovery) = ([7; 32], None);
+        let start = Start { name, relay, entropy, now: 0, direct: false, store: None, progress, recovery };
         // a device made since 2026-10-10: its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);
