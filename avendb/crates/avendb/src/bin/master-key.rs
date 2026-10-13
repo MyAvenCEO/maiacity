@@ -3,16 +3,20 @@
 //!
 //! ```text
 //! cargo run --release -p avendb --bin master-key -- new ~/Desktop/master-recovery
-//! cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.secret
+//! cargo run --release -p avendb --bin master-key -- pub ~/Desktop/master-recovery
+//! cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.pub
+//! cargo run --release -p avendb --bin master-key -- id
 //! ```
 //!
-//! `new` writes `<path>.secret`, the 32 bytes in 64 hex digits, readable by its owner alone, and `<path>.pub`, the
-//! public half, a megabyte; it never writes over a file. `id` says which key a `.secret` or `.pub` file holds, to check
-//! a copy against the other. Whoever holds the secret owns every vault that added the key: keep it offline, on paper or
-//! a stick in a safe, and hand on the `.pub` file alone.
+//! `new` prints the secret in the terminal, 64 hex digits to copy and keep, and writes it nowhere: its one file is
+//! `<path>.pub`, the public half, a megabyte, nearly all of it the McEliece key, with the key's standing consent to be
+//! added as an owner; it never writes over a file. `pub` asks for the secret and writes `<path>.pub` again from it,
+//! over a `.pub` file of an older format. `id` says which key a `.pub` file holds, or, with no file, the secret it asks
+//! for, to check one against the other. Whoever holds the secret owns every vault that added the key: keep it offline,
+//! on paper or in a safe, and hand on the `.pub` file alone.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read as _, Write as _};
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead as _, IsTerminal as _, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -23,8 +27,10 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let done = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["new", path] => new(Path::new(path)),
-        ["id", file] => id(Path::new(file)),
-        _ => Err("usage: master-key new <path> | master-key id <file.secret or file.pub>".into()),
+        ["pub", path] => public(Path::new(path)),
+        ["id", file] => id(Some(Path::new(file))),
+        ["id"] => id(None),
+        _ => Err("usage: master-key new <path> | pub <path> | id [file.pub]".into()),
     };
     match done {
         Ok(()) => ExitCode::SUCCESS,
@@ -35,40 +41,77 @@ fn main() -> ExitCode {
     }
 }
 
-/// Makes a key: its secret in `<path>.secret`, its public half in `<path>.pub`.
+/// Makes a key: its public half in `<path>.pub`, its secret in the terminal alone.
 fn new(path: &Path) -> Result<(), String> {
-    let (secret_file, public_file) = (with_suffix(path, "secret"), with_suffix(path, "pub"));
-    for file in [&secret_file, &public_file] {
-        if file.exists() {
-            return Err(format!("{} is there already, and is never written over", file.display()));
-        }
+    let public_file = with_suffix(path, "pub");
+    if public_file.exists() {
+        return Err(format!("{} is there already, and is never written over", public_file.display()));
     }
     let secret = random()?;
     eprintln!("making the key's McEliece pair, which takes a second or two");
     let key = RecoveryKey::of(*secret);
-    let hex = Zeroizing::new(format!("{}\n", to_hex(&*secret)));
-    write_new(&secret_file, hex.as_bytes(), true)?;
-    write_new(&public_file, &key.to_bytes(), false)?;
+    write_new(&public_file, &key.to_bytes())?;
     println!("The master recovery key {}", key.id().to_hex());
-    println!("  secret: {}", secret_file.display());
-    println!("          keep it offline (paper, or a stick in a safe), and never paste it anywhere");
-    println!("  public: {} ({} bytes)", public_file.display(), key.to_bytes().len());
-    println!("          hand on this file alone");
+    println!();
+    println!("  secret: {}", Zeroizing::new(to_hex(&*secret)).as_str());
+    println!();
+    println!("          copy it now and keep it offline (paper, or a safe): it is written nowhere else.");
+    println!("          Never paste it into a chat or a file, and clear this terminal after (Cmd+K).");
+    told(&public_file, &key);
     Ok(())
 }
 
-/// Says which key `file` holds: its secret, in hex, or its public half.
-fn id(file: &Path) -> Result<(), String> {
-    let bytes = Zeroizing::new(fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?);
-    let key = match RecoveryKey::from_bytes(&bytes) {
-        Some(key) => key,
-        None => {
-            let text = std::str::from_utf8(&bytes).map_err(|_| "neither a .secret nor a .pub file")?;
-            RecoveryKey::of(*from_hex(text.trim()).ok_or("neither a .secret nor a .pub file")?)
+/// Writes the public half of the key whose secret it asks for as `<path>.pub` again: over a file of an older format,
+/// never over one that holds the key already, nor another key.
+fn public(path: &Path) -> Result<(), String> {
+    let public_file = with_suffix(path, "pub");
+    let secret = asked()?;
+    eprintln!("making the key's McEliece pair, which takes a second or two");
+    let key = RecoveryKey::of(*secret);
+    if let Some(there) = fs::read(&public_file).ok().and_then(|bytes| RecoveryKey::from_bytes(&bytes)) {
+        return Err(match there.id() == key.id() {
+            true => format!("{} holds this key already", public_file.display()),
+            false => format!("{} holds another key, and is never written over", public_file.display()),
+        });
+    }
+    let new = with_suffix(path, "pub.new");
+    _ = fs::remove_file(&new);
+    write_new(&new, &key.to_bytes())?;
+    fs::rename(&new, &public_file).map_err(|e| format!("{}: {e}", public_file.display()))?;
+    println!("The master recovery key {}", key.id().to_hex());
+    told(&public_file, &key);
+    Ok(())
+}
+
+/// Says which key the `.pub` file `file` holds, or, with none, the secret it asks for.
+fn id(file: Option<&Path>) -> Result<(), String> {
+    let key = match file {
+        Some(file) => {
+            let bytes = fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?;
+            RecoveryKey::from_bytes(&bytes).ok_or("no .pub file of this format: make it again with `pub`")?
         }
+        None => RecoveryKey::of(*asked()?),
     };
     println!("The master recovery key {}", key.id().to_hex());
     Ok(())
+}
+
+/// Tells where the public half is.
+fn told(public_file: &Path, key: &RecoveryKey) {
+    println!("  public: {} ({} bytes)", public_file.display(), key.to_bytes().len());
+    println!("          hand on this file alone");
+}
+
+/// The secret, 64 hex digits, as its person pastes it on a line of its own.
+fn asked() -> Result<Zeroizing<[u8; 32]>, String> {
+    let stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        eprint!("the secret (64 hex digits), then Enter: ");
+        _ = std::io::stderr().flush();
+    }
+    let mut line = Zeroizing::new(String::new());
+    stdin.lock().read_line(&mut line).map_err(|e| format!("no secret: {e}"))?;
+    from_hex(line.trim()).ok_or_else(|| "that is no secret: 64 hex digits".into())
 }
 
 /// `path` with `.suffix` added to its name.
@@ -81,20 +124,15 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
 /// 32 bytes of the machine's own randomness.
 fn random() -> Result<Zeroizing<[u8; 32]>, String> {
     let mut bytes = Zeroizing::new([0; 32]);
-    let mut source = File::open("/dev/urandom").map_err(|e| format!("no randomness from the machine: {e}"))?;
+    let mut source = fs::File::open("/dev/urandom").map_err(|e| format!("no randomness from the machine: {e}"))?;
     source.read_exact(&mut *bytes).map_err(|e| format!("no randomness from the machine: {e}"))?;
     Ok(bytes)
 }
 
-/// Writes `bytes` as file `path`, which must not be there yet; readable by its owner alone if `private`.
-fn write_new(path: &Path, bytes: &[u8], private: bool) -> Result<(), String> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    if private {
-        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    }
-    let mut file = options.open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+/// Writes `bytes` as file `path`, which must not be there yet.
+fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let open = OpenOptions::new().write(true).create_new(true).open(path);
+    let mut file = open.map_err(|e| format!("{}: {e}", path.display()))?;
     file.write_all(bytes).and_then(|()| file.sync_all()).map_err(|e| format!("{}: {e}", path.display()))
 }
 
