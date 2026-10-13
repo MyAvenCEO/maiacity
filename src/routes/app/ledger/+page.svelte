@@ -12,6 +12,7 @@
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
 	import LedgerView from '$lib/maiacity-v1/LedgerView.svelte';
 	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
+	import Mark from '$lib/maiacity-v1/Mark.svelte';
 
 	const g = liveGame();
 	let chosen = $state(typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('who') ?? '') : '');
@@ -30,14 +31,6 @@
 	});
 	let tab = $state('tx');
 	const TABS = [['tx', 'Transactions'], ['cash', 'Cash flow'], ['assets', 'Assets']];
-	/** a wallet's mark in the bar, like a vault's in avenDB: initials on a colour, a circle for a player, a rounded square
-	 * for a COOP, a hexagon for the pool */
-	const markOf = (id) => {
-		const [kind, k] = id.split(':');
-		if (kind === 'player') return { shape: 'human', text: (view.players[k].name || k).slice(0, 2), hue: k === 'A' ? 28 : 205 };
-		if (kind === 'coop') return { shape: 'coop', text: view.coops[k].name.replace(/ COOP$/, '').slice(0, 2), colour: TOKEN_COLOUR[view.coops[k].mind] };
-		return { shape: 'aven', text: 'AMM', colour: '#8a7a55' };
-	};
 	const heartsLabel = $derived(who.startsWith('player:') ? `${((n) => n.charAt(0).toLowerCase() + n.slice(1))(view.players[who.slice(7)].name.replace(/\s+/g, ''))}HEARTS` : 'HEARTS');
 	const hv = $derived(view ? heartsValue(view) : null);
 	/** the chosen wallet's whole worth in HEARTS; the MaiaCity COOP's counts the pool basket it owns */
@@ -80,10 +73,9 @@
 		<div class="body">
 			<nav class="bar" aria-label="Whose ledger">
 				{#each wallets as [id, label], i (id)}
-					{@const m = markOf(id)}
 					{#if i === SEATS.length || i === wallets.length - 1}<hr />{/if}
 					<button class="slot" class:on={who === id} title={label} aria-label={label} aria-current={who === id ? 'true' : undefined} onclick={() => (chosen = id)}>
-						<span class="mark {m.shape}" style={m.colour ? `background:${m.colour}` : `background:hsl(${m.hue} 38% 42%)`}>{m.text}</span>
+						<Mark {view} {id} />
 					</button>
 				{/each}
 			</nav>
@@ -269,28 +261,11 @@
 	.slot.on::before {
 		height: 36px;
 	}
-	.mark {
-		display: grid;
-		place-items: center;
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		color: #fff;
-		font-size: 0.85rem;
-		font-weight: 600;
+	.slot :global(.mark) {
 		transition: transform 0.15s ease;
-		user-select: none;
 	}
-	.slot:hover .mark {
+	.slot:hover :global(.mark) {
 		transform: scale(1.06);
-	}
-	.mark.coop {
-		border-radius: 28%;
-	}
-	.mark.aven {
-		border-radius: 0;
-		font-size: 0.7rem;
-		clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
 	}
 	.whose small {
 		font-size: 0.72rem;
@@ -398,7 +373,7 @@
 		.slot::before {
 			display: none;
 		}
-		.slot.on .mark {
+		.slot.on :global(.mark) {
 			outline: 3px solid var(--ink);
 			outline-offset: 2px;
 		}

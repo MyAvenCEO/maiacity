@@ -6,6 +6,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import Mark from './Mark.svelte';
 	import { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, heartsValue, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
 
 	/** show: 'all', or only the 'cash' flow (rents, dividends, pay days) or only the 'tx' (every transaction) */
@@ -69,11 +70,12 @@
 		{#if lines.length}
 			<div class="ledger" class:tall>
 				{#each lines as e (e.id)}
-					<div class="line">
-						<span class="when">{vdate(e.vm)}<small>{LABELS[e.kind] ?? e.kind}</small></span>
+					{@const other = e.kind === 'settings' || e.kind === 'proposal' ? 'mip' : e.from === who ? e.to : e.from}
+					<div class="tx" title={e.note}>
+						<Mark {view} id={other} size={34} />
 						<span class="what">
-							{#if e.kind === 'settings' || e.kind === 'proposal'}{e.note}
-							{:else}{e.from === who ? `to ${nameOf(view, e.to)}` : `from ${nameOf(view, e.from)}`}<small>{e.note}</small>{/if}
+							<b>{LABELS[e.kind] ?? e.kind}</b>
+							<small>{#if e.kind === 'settings' || e.kind === 'proposal'}{e.note}{:else}{e.from === who ? 'to' : 'from'} {nameOf(view, other)}{/if} · {vdate(e.vm)}</small>
 						</span>
 						{#if e.amount}
 							<span class="amt" class:plus={sign(e) === '+'} class:minus={sign(e) === '−'}>{#if MINDS.includes(e.token)}{sign(e)}{f(e.amount * hv[e.token], 3)} ❤︎<small>{f(e.amount, 3)} {TOKEN_LABEL[e.token]}</small>{:else}{sign(e)}{f(e.amount, 3)} {e.token === 'HEARTS' ? '❤︎' : (TOKEN_LABEL[e.token] ?? e.token)}{/if}{#if e.out}<small>for {f(e.out.amount, 3)} {TOKEN_LABEL[e.out.token]} · {f(e.out.amount * (hv[e.out.token] ?? 1), 3)} ❤︎</small>{/if}</span>
@@ -106,6 +108,24 @@
 	}
 	.ledger.tall {
 		max-height: none;
+	}
+	.tx {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		gap: 0.65rem;
+		align-items: center;
+		padding: 0.45rem 0;
+		border-top: 1px solid rgb(31 42 35 / 0.08);
+		font-size: 0.8rem;
+	}
+	.tx .what b {
+		display: block;
+		font-weight: 600;
+	}
+	.tx small {
+		display: block;
+		font-size: 0.68rem;
+		opacity: 0.6;
 	}
 	.flow {
 		margin-bottom: 0.8rem;
