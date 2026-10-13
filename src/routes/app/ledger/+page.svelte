@@ -59,14 +59,13 @@
 				{/if}
 				<p class="dim">{cal ? `${cal.weekday} ${cal.day} ${cal.name} · year ${cal.year} (${dateText(cal)})` : ''}</p>
 			</div>
-			{#if me && mint}
-				<div class="mint">
-					<p class="eyebrow">Ready to mint</p>
-					<p class="ready">+{f(mint.amount)} <small>❤︎</small></p>
-					<button class="pill-btn" disabled={g.busy || !(mint.amount > 0.005)} onclick={() => g.move(seat, { type: 'mint' })}>{g.busy ? 'Minting…' : 'Mint'}</button>
-				</div>
-			{/if}
 		</section>
+		{#if me && mint}
+			<!-- the universal mint button, as in the game: always at hand, over the nav pill -->
+			<button class="mintbar" disabled={g.busy || !(mint.amount > 0.005)} onclick={() => g.move(seat, { type: 'mint' })}>
+				<span class="heart">❤︎</span> {g.busy ? 'Minting…' : 'Mint'} <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
+			</button>
+		{/if}
 		{#if g.error}<p class="bad">{g.error}</p>{/if}
 
 		<div class="body">
@@ -127,7 +126,7 @@
 	.app-page {
 		max-width: 60rem;
 		margin: 0 auto;
-		padding: 1.6rem clamp(1rem, 4vw, 2rem) 6rem;
+		padding: 1.6rem clamp(1rem, 4vw, 2rem) 10rem;
 	}
 	.dim {
 		color: var(--muted);
@@ -177,8 +176,7 @@
 	.balance.small {
 		font-size: 2rem;
 	}
-	.balance small,
-	.ready small {
+	.balance small {
 		font-family: var(--font-body);
 		font-size: 0.9rem;
 		opacity: 0.75;
@@ -186,20 +184,40 @@
 	.wallet > div:first-child {
 		flex: 1 1 20rem;
 		min-width: 0;
+		text-align: center;
 	}
-	.mint {
-		text-align: right;
+	.mintbar {
+		position: fixed;
+		z-index: 25;
+		left: 50%;
+		bottom: calc(var(--nav-room, 4rem) + 0.4rem);
+		transform: translateX(-50%);
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.7rem 1.3rem;
+		border: 0;
+		border-radius: 999px;
+		background: #24452f;
+		color: #fff;
+		font: inherit;
+		font-weight: 600;
+		white-space: nowrap;
+		box-shadow: 0 10px 30px rgb(38 56 44 / 0.28);
+		cursor: pointer;
 	}
-	.ready {
-		margin: 0.2rem 0 0.7rem;
-		font-family: var(--font-display);
-		font-size: 1.6rem;
-		font-variant-numeric: tabular-nums;
-		color: var(--mustard);
+	.mintbar .heart {
+		color: #ff8a9b;
 	}
-	.mint .pill-btn {
-		background: var(--mustard);
-		color: var(--ink);
+	.mintbar small {
+		margin-left: 0.3rem;
+		font-weight: 400;
+		opacity: 0.8;
+	}
+	.mintbar:disabled {
+		background: rgb(250 248 242 / 0.94);
+		color: #6b7a6f;
+		cursor: default;
 	}
 	/* room for the wallet bar, which stands at the browser's left edge on its full height, as avenDB's vault bar */
 	.app-page:has(.bar) {
@@ -344,10 +362,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 	@media (max-width: 720px) {
-		.mint {
-			text-align: left;
-		}
-		.body {
+			.body {
 			grid-template-columns: minmax(0, 1fr);
 			gap: 1rem;
 			margin-top: 1.2rem;
