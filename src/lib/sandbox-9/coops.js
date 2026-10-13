@@ -365,12 +365,6 @@ export function costs(w, full) {
 			// a COOP that can make nothing yet (a founding still building) has no unit cost: its fixed bills are not
 			// spread over zero units (it quotes the others' price meanwhile: ./market.js postPrices)
 			co.fullR = sold > 1e-9 ? (co.varR + (runR + capR + rentR) / sold) / (1 - lam) : co.floorR;
-			// the seller's own floor covers its full cost over time: a COOP may sell below its full cost (the forward
-			// margin prices a glut below it) only while its treasury holds its reserve (./coops.js payout). Under it,
-			// it asks at least its full cost: a dearer technology that sells only what a cheaper rival cannot make (the
-			// solar field beside the geothermal plant, the growing dome beside the forest) otherwise sold below its
-			// costs year after year, emptied its treasury and failed, and its heir did the same on the same plants
-			if (!co.city && co.reserveR > 0 && treasuryR(w, co.k) < co.reserveR && co.fullR > co.floorR) co.floorR = co.fullR;
 		}
 	}
 }
@@ -1351,8 +1345,11 @@ export function foundings(w) {
 				continue;
 			}
 			const enough = sellers.length >= (BASICS.includes(g) ? 2 : 1);
-			let to = enough ? null : openCoop(w, g, nameBase(g, plants[0].tech), plants, w.pbar[g]);
-			if (to) w.events.push({ day: w.day, kind: 'found', coop: to.id, good: g, from: 'idle plants' });
+			// (a COOP founded on these plants failed within a year: none is founded on them again before refoundAt; the
+			// good's strongest seller leases them instead, unless it has no seller at all)
+			const wait = w.day < (w.refoundAt[g] ?? -Infinity) && sellers.length > 0;
+			let to = enough || wait ? null : openCoop(w, g, nameBase(g, plants[0].tech), plants, w.pbar[g]);
+			if (to) (to.onPlants = true), w.events.push({ day: w.day, kind: 'found', coop: to.id, good: g, from: 'idle plants' });
 			else if (sellers.length) {
 				to = sellers.sort((a, b) => capDayOf(w, b, w.day) - capDayOf(w, a, w.day))[0];
 				for (const pl of plants) {
@@ -1420,6 +1417,8 @@ export function foundings(w) {
 		w.events.push({ day: w.day, kind: 'found', coop: co.id, good: g, why: alone ? 'a single seller for 90 days' : short ? 'short for two months' : 'dear for two months' });
 	}
 }
+/** days no COOP is founded on plants whose last COOP, itself founded on them, failed within a year */
+const REFOUND_WAIT = 365;
 /** technologies no founder can start on its own */
 const NO_FOUNDING = ['forest', 'geo', 'spring', 'well'];
 /** build limits that are physics (or the closed border), not a choice */
@@ -1482,7 +1481,16 @@ export function receiverships(w) {
 		// (not when a young entrant of the good just failed: its plants then go to the heir, see lastEntry below)
 		const keepTwo = BASICS.includes(co.good) && othersSelling < 2 && standing && !stillborn && w.day - (w.lastEntry[co.good] ?? -Infinity) >= 365;
 		if (stillborn || (co.born > 0 && w.day - co.born < 3 * 365)) w.lastEntry[co.good] = Math.max(w.lastEntry[co.good] ?? -Infinity, w.day + 4 * 365);
-		if ((keepTwo || !heir) && !stillborn && standing && (BASICS.includes(co.good) || stillWanted(w, co))) to = openCoop(w, co.good, nameBase(co.good), [], co.priceR) ?? heir;
+		// a COOP founded on a failed COOP's plants that fails within a year shows the plants cannot pay on those terms:
+		// no third COOP is founded on them at once (each new one starts with an empty treasury and failed 30 days later,
+		// until every MIND slot was used). They go to the healthy heir, which can stand them down, or the City COOP keeps
+		// them idle, and no COOP is founded on them for REFOUND_WAIT days (./coops.js foundings)
+		const again = co.onPlants && w.day - co.born < 365;
+		if (again) w.refoundAt[co.good] = Math.max(w.refoundAt[co.good] ?? -Infinity, w.day + REFOUND_WAIT);
+		if ((keepTwo || !heir) && !again && !stillborn && standing && (BASICS.includes(co.good) || stillWanted(w, co))) {
+			to = openCoop(w, co.good, nameBase(co.good), [], co.priceR) ?? heir;
+			if (to && to !== heir) to.onPlants = true;
+		}
 		if (to) {
 			for (const pl of co.plants) {
 				pl.rentGrace = w.day + 180;

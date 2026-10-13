@@ -649,6 +649,28 @@ export const SCENARIOS = [
 		}
 	},
 	{
+		id: 'S04',
+		name: 'seed-ensemble',
+		paper: 'Proposition 3, P1 and P2, beyond the five base seeds',
+		stress: 'P1 and P2 on seeds chosen before the run, at the page’s size and the base size',
+		claim: 'P1 and P2 (strict and normal) hold on every world of an ensemble fixed before the run: seeds 1 to 9 with 100 people, and seeds 5 to 9 with 250 people (seeds 1 to 4 are in S00), each over 60 years. P3 is reported for each world, not judged here (S00 judges it).',
+		runs: [...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((seed) => run({ people: 100, seed }, 60, `100 people, seed ${seed}`)), ...[5, 6, 7, 8, 9].map((seed) => run({ seed }, 60, `250 people, seed ${seed}`))],
+		judge(R, runs) {
+			const rows = runs.map((r) => {
+				const s = R[r.key], p = s.prop3;
+				return { label: r.label, P1: p.P1.pass, shortPD: s.shortPD, strictFrom: p.P2.strict.holdsEveryDayFrom, strict: p.P2.strict.pass, normal: p.P2.normal.pass, runsOut: p.P2.normal.runsOutInYears, P3: p.P3.pass, P3failed: p.P3.failed.length, worstFall: Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)), mindBinds: p.abundance.mindBindsBasics, receiverships: s.receiverships.length, pass: p.P1.pass && p.P2.pass };
+			});
+			const n = (f) => rows.filter(f).length;
+			const failing = rows.filter((r) => !r.pass).map((r) => r.label);
+			return {
+				pass: failing.length === 0,
+				numbers: { rows },
+				takeaway: `Of ${rows.length} worlds, P1 holds on ${n((r) => r.P1)}, P2 strict on ${n((r) => r.strict)}, P2 normal on ${n((r) => r.normal)}, P3 on ${n((r) => r.P3)}${failing.length ? `; P1 or P2 fails on ${failing.join(', ')}` : ''}.`,
+				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short, strict ${r.strictFrom >= 0 ? `from day ${f0(r.strictFrom)}` : 'never held to the end'}${r.strict ? '' : ' (fail)'}, normal ${r.normal ? 'pass' : 'fail'} (lowest holding runs out in ${Number.isFinite(r.runsOut) ? `${f0(r.runsOut)} years` : 'never'}), P3 ${r.P3 ? 'pass' : `fail (${r.P3failed} deciles, worst fall ${pct(r.worstFall, 1)})`}, MIND binds a basic on ${r.mindBinds} day-goods, ${r.receiverships} receiverships`).join('; ')
+			};
+		}
+	},
+	{
 		id: 'B33',
 		name: 'rationing',
 		paper: 'world model 4.3 step 7',

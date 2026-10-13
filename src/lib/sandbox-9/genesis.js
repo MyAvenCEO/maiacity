@@ -525,6 +525,7 @@ export function createWorld(config = {}) {
 	w.slowUntil = 365;
 	w.today = blankToday(w);
 	w.lastEntry = new Float64Array(G).fill(-1e9);
+	w.refoundAt = new Float64Array(G).fill(-1e9); // no COOP is founded on failed plants before this day (./coops.js receiverships)
 	w.cityStore = new Float64Array(G); // stores of a failed COOP with no heir, held by the City COOP until a founding
 	w.heatAvail = new Float64Array(M);
 	w.shortDaysGood = new Float64Array(G);

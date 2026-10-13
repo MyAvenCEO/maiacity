@@ -214,24 +214,26 @@ function headline(exps, scen, bases) {
 	const rows = [];
 	const fails = (list) => list.filter((x) => x && x.pass === false).map((x) => x.id);
 	const failE = (list) => list.map(E).filter((x) => x && !x.verdict.pass).map((x) => x.id);
+	// the seed ensemble (S04) breaks a part when that part fails on any of its worlds
+	const ens = (key) => (S('S04')?.numbers?.rows ?? []).some((r) => r[key] === false) ? ['S04'] : [];
 	rows.push({
 		part: 'P1 — no one starves',
 		holds: allB((b) => b.p.P1.pass),
 		base: bases.map((b) => b.p.P1.personDaysShortAny).join(', ') + ' person-days short (seeds ' + bases.map((b) => b.seed).join(', ') + ')',
-		breaks: [...failE(['X5', 'X12', 'X14', 'SH']), ...fails(['B10', 'B15', 'B26', 'B29', 'S02', 'S03'].map(S))]
+		breaks: [...failE(['X5', 'X12', 'X14', 'SH']), ...fails(['B10', 'B15', 'B26', 'B29', 'S02', 'S03'].map(S)), ...ens('P1')]
 	});
 	rows.push({
 		part: 'P2 strict — dividends alone pay the basic bundle',
 		holds: allB((b) => b.p.P2.strict.pass),
 		// -1: dividends alone never paid every member's bundle on every day to the end of the run
 		base: 'holds every day from ' + bases.map((b) => (b.p.P2.strict.holdsEveryDayFrom >= 0 ? 'day ' + b.p.P2.strict.holdsEveryDayFrom : 'never')).join(', ') + ' (target: from day 120 at the latest); lowest dividends ÷ bundle in the last year ' + bases.map((b) => f(b.p.P2.strict.lowestRatioByYear?.at(-1))).join(', '),
-		breaks: [...failE(['X2']), ...fails(['B03', 'A07', 'S03'].map(S))]
+		breaks: [...failE(['X2']), ...fails(['B03', 'A07', 'S03'].map(S)), ...ens('strict')]
 	});
 	rows.push({
 		part: 'P2 normal — no one has to work to survive',
 		holds: allB((b) => b.p.P2.normal.pass),
 		base: bases.map((b) => b.p.P2.normal.failures).join(', ') + ' person-days failing; the lowest holding runs out in ' + bases.map((b) => (Number.isFinite(b.p.P2.normal.runsOutInYears) ? Math.round(b.p.P2.normal.runsOutInYears) + ' years' : 'never')).join(', ') + ' at its last-10-year trend (pass: over 100)',
-		breaks: [...failE(['X2']), ...fails(['B05'].map(S))]
+		breaks: [...failE(['X2']), ...fails(['B05'].map(S)), ...ens('normal')]
 	});
 	rows.push({
 		part: 'P3 — living standards rise for every decile',
@@ -337,7 +339,7 @@ function borderLine(b0, scen) {
 	const lm = (r) => `a mean living standard of ${r.Lmean.toFixed(2)} in the last year (P3 ${yes(r.P3)})`;
 	const nums = rows.length >= 3 ? ` In B23 (seed ${rows[0].seed}, ${rows[0].years} years) the ${open ? 'open base' : 'closed base'} had ${rows[0].computeRun.toFixed(2)} h of Aven services a person a day over the run (${rows[0].computeLast.toFixed(2)} in the last year) and ${lm(rows[0])}; the ${open ? 'closed' : 'open'} city ${rows[1].computeRun.toFixed(2)} h (${rows[1].computeLast.toFixed(2)}) and ${lm(rows[1])}; with accelerators three times dearer from year 10, ${rows[2].computeRun.toFixed(2)} h (${rows[2].computeLast.toFixed(2)}) and ${lm(rows[2])}. Accelerators three times dearer changed the mean living standard in the last year by ${pc(rows[2].Lmean / rows[0].Lmean - 1, 1)} and Aven services by ${pc(rows[2].computeLast / Math.max(1e-12, rows[0].computeLast) - 1, 1)}; Aven services are ${pc(b0.p.P3.share.at(-1)?.all, 0)} of the base index in the last year.` : '';
 	return open
-		? `**The border (base setting: open for accelerators only).** A hex cannot make accelerators: a chip fab costs billions of euros and hundreds of megawatts, and no real town has one, so the base city buys them from outside, as a real city does. It does so only as COOPs trading through the euro reserve (paper §11.4): a COMPUTE COOP buys electricity from the energy COOPs (a real sale in MIND, with Law 5), the line exports it, the euros go into that COOP’s own account in the reserve, and the reserve buys accelerators with them. The export is served after the city’s own building class and before R&D, so it never takes electricity from the city’s basics, works or building. No person redeems MIND, no MIND is made from euros, and nothing else crosses the border. The closed city is B23's counter-case.${nums}`
+		? `**The border (base setting: open for accelerators only).** A hex cannot make accelerators: a chip fab costs billions of euros and hundreds of megawatts, and no real town has one, so the base city buys them from outside, as a real city does. It does so only as COOPs trading through the euro reserve (paper §11.4): a COMPUTE COOP buys electricity from the energy COOPs (a real sale in MIND, with Law 5), the line exports it, the euros go into that COOP’s own account in the reserve, and the reserve buys accelerators with them. What replaces worn accelerators is upkeep and is served with the running class (world model 4.3), after the city’s basics and works and before any building; what a new hall’s accelerators need is served after the city’s own building class and before R&D. Neither takes electricity from the city’s basics or works. No person redeems MIND, no MIND is made from euros, and nothing else crosses the border. The closed city is B23's counter-case.${nums}`
 		: `**The border (base setting: closed).** The base city neither imports nor exports; the open border for accelerators (paper §11.4) is B23's alternative.${nums}`;
 }
 const p3s = (p) => `P1 ${yes(p.P1.pass)}, P2 ${yes(p.P2.pass)}, P3 ${yes(p.P3.pass)}, MIND never binds a basic ${yes(p.abundance.pass)}`;
@@ -391,7 +393,7 @@ function baseEvidence(L, bases, exps, meta) {
 	for (const l of b0.p.limits) L.push(`| ${l.good} | ${l.periods.map((p) => p.shares.slice(0, 3).map((s) => `${s.limit} ${pc(s.share, 0)}`).join(', ')).join(' | ')} | ${f(l.periods[l.periods.length - 1].ceilingPerPerson, 4)} |`);
 	L.push('');
 	L.push('### Energy a person against living standard, by decile (seed 20261012)', '');
-	L.push('Each cell: living standard / the person’s own electricity use (kWh a day), yearly mean. Then all electricity the city used (basics, running, building, R&D), what the line exported for accelerators (not the city’s use; it is served after building and before R&D), and the surplus (R&D, storage, curtailed), a person a day.', '');
+	L.push('Each cell: living standard / the person’s own electricity use (kWh a day), yearly mean. Then all electricity the city used (basics, running, building, R&D), what the line exported for accelerators (not the city’s use; upkeep’s part is served with running, a project’s after building and before R&D), and the surplus (R&D, storage, curtailed), a person a day.', '');
 	const E = b0.p.energy;
 	L.push('| year | H1 | H3 | H5 | H7 | H10 | A1 | A5 | A10 | used kWh/p/d | exported kWh/p/d | surplus kWh/p/d |', '|---|---|---|---|---|---|---|---|---|---|---|---|');
 	for (let y = 0; y < E.ePP.length; y += y < 5 ? 1 : 5) {
