@@ -484,7 +484,7 @@ export const CHIPS = {
 	solarEurMwh: n([115.1, 91.8, 59.4, 37.8, 27.0, 18.4, 32.4, 37.8, 48.6, 75.6, 91.0, 93.7], '€ per MWh of solar electricity by month (Jan first): the market value of solar power, what a MWh sold when the sun shines fetches', 'Netztransparenz Marktwert Solar 2025: January 11.511 and June 1.843 ct/kWh (logicenergy.de), November 9.102 and December 9.373 (pv-magazine.de, 2026-01-08), the year 4.508 (Rödl & Partner, Feb 2026); the other months shaped like 2024 (April 3.795, May 3.161, August 4.263, September 4.512: solarserver.de) and scaled so the year comes to 4.508 (estimate)', true),
 	// derived from the two above, never typed in (./genesis.js computes the engine's chipKwh the same way)
 	kwhPerChip: n((CHIP_EUR / MWH_EUR) * 1000, 'kWh of exported electricity per accelerator (derived: eurPerChip ÷ eurPerMwh)', 'eurPerChip ÷ eurPerMwh (derived)', true),
-	lineKw: n(10000 / 6, 'kW export line, a living hex’s share', 'a 20 kV line from the village to the grid carries ~10 MW (estimate)', true),
+	lineKw: n(10000 / 6, 'kW export line, a living hex’s share (the village: 10 MW)', 'the village’s connection: a 20 kV medium-voltage line, the usual connection for a village and for plants up to about 10–20 MW (VDE-AR-N 4110, the German technical rules for medium-voltage connections); larger parks connect at 110 kV (VDE-AR-N 4120), which needs a substation. One 20 kV feeder carries about 10 MVA (estimate). The engine holds it at the quarter hour: the line carries at most 10 MW at any moment (./energy.js lineRoom)', true),
 	spare: n(2, 'accelerators in each COMPUTE COOP’s store at genesis', 'a spare or two per hall (estimate)', true)
 };
 

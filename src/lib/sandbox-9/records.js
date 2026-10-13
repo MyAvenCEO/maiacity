@@ -15,7 +15,7 @@ import { capDayOf, plantCapDay } from './genesis.js';
 import { DAYS_IN_MONTH, CHIPS, BORDER, FOOD as FOOD_R } from './primitives.js';
 import { monthOf } from './energy.js';
 import { reserveEur, IMPORT_KINDS, advancesOwed } from './border.js';
-import { indoorMonths, dietFacts, peopleFed, DIETS, YIELDS } from './food.js';
+import { indoorMonths, dietFacts, peopleFed, peopleFedByGroup, splitYields, DIETS, YIELDS } from './food.js';
 
 const SERIES = {
 	minMet: 4, // the lowest share of need met by anyone, per basic
@@ -549,7 +549,7 @@ export function foodLand(w) {
 	const grossOut = V.outdoorFoodM2 * c.vf, outM2 = grossOut * (c.outNet ?? 1), inM2 = V.indoorFoodM2 * c.vf;
 	const fy = w.cfg.forestYield ?? 1;
 	const fed = peopleFed(f, outM2 * fy, inM2 * fy);
-	const fedBy = Object.fromEntries(['average', 'best'].map((k) => { const g = dietFacts(c.diet, k), x = peopleFed(g, outM2 * fy, inM2 * fy); return [k, { out: x.out, in: x.in, all: x.all, kcalM2Year: { out: g.out.kcalM2Year, in: g.in.kcalM2Year }, proteinM2Year: { out: (g.out.kcalM2Year * g.out.proteinPer1000) / 1000, in: (g.in.kcalM2Year * g.in.proteinPer1000) / 1000 }, landM2: { out: g.out.total, in: g.in.total } }]; }));
+	const fedBy = Object.fromEntries(['average', 'best'].map((k) => { const g = dietFacts(c.diet, k), x = peopleFed(g, outM2 * fy, inM2 * fy), d = peopleFedByGroup(g, outM2 * fy, inM2 * fy), sy = splitYields(g, outM2, inM2); return [k, { out: x.out, in: x.in, all: x.all, byGroup: d, village: { kcalM2Year: { out: sy.out, in: sy.in }, proteinM2Year: { out: (sy.out * sy.protOut) / 1000, in: (sy.in * sy.protIn) / 1000 } }, kcalM2Year: { out: g.out.kcalM2Year, in: g.in.kcalM2Year }, proteinM2Year: { out: (g.out.kcalM2Year * g.out.proteinPer1000) / 1000, in: (g.in.kcalM2Year * g.in.proteinPer1000) / 1000 }, landM2: { out: g.out.total, in: g.in.total } }]; }));
 	const D = DIETS[f.diet];
 	let firstFed = null, lastImport = null;
 	for (const Y of w.rec?.years ?? []) {
@@ -566,10 +566,15 @@ export function foodLand(w) {
 		kcalDay: f.kcalDay,
 		proteinDay: f.proteinDay,
 		landM2: { out: f.out.total, in: f.in.total, outByGroup: f.out.m2, inByGroup: f.in.m2 },
+		// the diet grown all outdoors or all under glass (kcal a m² a year before losses), and as the village grows it with
+		// its land split by the diet's groups (the engine's yields, ./food.js splitYields)
 		kcalM2Year: { out: f.out.kcalM2Year, in: f.in.kcalM2Year },
+		kcalM2Village: (() => { const sy = splitYields(f, outM2, inM2); return { out: sy.out, in: sy.in, proteinOut: (sy.out * sy.protOut) / 1000, proteinIn: (sy.in * sy.protIn) / 1000 }; })(),
 		proteinM2Year: { out: (f.out.kcalM2Year * f.out.proteinPer1000) / 1000, in: (f.in.kcalM2Year * f.in.proteinPer1000) / 1000 },
 		foodHa: { out: outM2 / 1e4, outGross: grossOut / 1e4, in: inM2 / 1e4 },
 		peopleFed: { out: fed.out, in: fed.in, all: fed.all },
+		// by the diet's groups, food-best.md's way (the engine counts calories: see ./food.js peopleFedByGroup)
+		peopleFedByGroup: peopleFedByGroup(f, outM2 * fy, inM2 * fy),
 		// at maturity, for each yield setting ('ramp' reaches 'best' from year 10)
 		peopleFedBy: fedBy,
 		skill: c.skill,

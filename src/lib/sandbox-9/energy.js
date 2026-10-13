@@ -203,7 +203,7 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 	}
 	h.grid = gridIn;
 	const fill = new Float64Array(5);
-	let left = supply, exp = 0;
+	let left = supply, exp = 0, lineLeft = Infinity;
 	const exUp = Math.max(0, exportAsk?.up ?? 0), exBuild = Math.max(0, exportAsk?.build ?? 0);
 	t.fillExportUp = t.fillExportBuild = 1;
 	for (const cl of [CLASS.basics, CLASS.running, CLASS.building, CLASS.rd]) {
@@ -221,9 +221,13 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 			t.fillB = B > 0 ? Math.max(0, served - sA) / B : 1;
 		}
 		if (cl === CLASS.running) {
+			// what the line can carry today, hour by hour (./energy.js lineRoom): at noon the sun can make more than it
+			lineLeft = lineRoom(w, h, t.use[CLASS.basics] + t.use[CLASS.running]);
+			t.lineRoomKwh = lineLeft;
 			// the border's export that replaces worn accelerators is upkeep (world model 4.3: upkeep is in the running
 			// class), so it is served with the running class, after the city's basics and works and before any building
-			const x = Math.min(exUp, left);
+			const x = Math.min(exUp, left, lineLeft);
+			lineLeft -= x;
 			t.fillExportUp = exUp > 0 ? x / exUp : 1;
 			left -= x;
 			exp += x;
@@ -231,7 +235,8 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 		if (cl === CLASS.building) {
 			// what a project's accelerators need: after the city's own building (its energy plants, its basics, every
 			// other project), before R&D
-			const y = Math.min(exBuild, left);
+			const y = Math.min(exBuild, left, lineLeft);
+			lineLeft -= y;
 			t.fillExportBuild = exBuild > 0 ? y / exBuild : 1;
 			left -= y;
 			exp += y;
@@ -261,6 +266,30 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 	// curtailment
 	t.surplusKwh = t.use[CLASS.rd] + charge + left;
 	return fill;
+}
+
+/** hours of daylight in Munich (48° N) by month, Jan first (sunrise to sunset, mid-month) */
+const DAYLIGHT_H = [8.6, 10.1, 11.9, 13.7, 15.3, 16.1, 15.6, 14.2, 12.5, 10.7, 9.0, 8.2];
+/**
+ * What the line can export today, hour by hour (kWh): each quarter hour it carries at most its rating, and only what
+ * the village makes beyond its own use in that quarter hour. The sun's day is a half sine over the daylight hours
+ * (its peak π/2 times the day's mean over them), the geothermal plant runs flat, the village's basics and running use
+ * is spread evenly over the day; the battery serves the village and is not exported. So a sunny June noon makes more
+ * than the line can carry, and what the line cannot carry is curtailed or stored.
+ */
+export function lineRoom(w, h, ownUse) {
+	const L = (w.c.lineKwhDay ?? Infinity) / 24;
+	if (!Number.isFinite(L)) return Infinity;
+	const D = DAYLIGHT_H[monthOf(w.day)];
+	const peak = ((h.solar ?? 0) * Math.PI) / (2 * D);
+	const geo = (h.geo ?? 0) / 24, load = ownUse / 24;
+	let room = 0;
+	for (let q = 0; q < 96; q++) {
+		const hr = (q + 0.5) / 4, t0 = 12 - D / 2;
+		const sun = hr > t0 && hr < t0 + D ? peak * Math.sin((Math.PI * (hr - t0)) / D) : 0;
+		room += Math.min(L, Math.max(0, geo + sun - load)) / 4;
+	}
+	return room;
 }
 
 /** the plant that holds the battery, if any */

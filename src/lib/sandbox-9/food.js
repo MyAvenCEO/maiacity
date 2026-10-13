@@ -367,10 +367,54 @@ export function dietFacts(dietKey = 'samuel', yieldKey = 'average') {
 
 /** people a village's food land feeds at maturity in an average year, after the harvest's losses */
 export function peopleFed(f, outM2, inM2) {
-	// by calories: the glass grows only part of the diet (sweet potato, vegetables, fruit), so its people are the
-	// calories it gives over a person's year
-	const year = f.kcalDay * 365;
-	return { out: (outM2 * (1 - OUTDOOR.loss.v) * f.out.kcalM2Year) / year, in: (inM2 * (1 - INDOOR.loss.v) * f.in.kcalM2Year) / year, get all() { return this.out + this.in; } };
+	// by calories, at the yields of the land split by the diet's groups (./food.js splitYields): the glass grows only
+	// part of the diet (sweet potato, vegetables, fruit), so its people are the calories it gives over a person's year,
+	// and the outdoor land's are what it grows of the rest (the sum is the people the land feeds by group)
+	const year = f.kcalDay * 365, y = splitYields(f, outM2, inM2);
+	return { out: (outM2 * (1 - OUTDOOR.loss.v) * y.out) / year, in: (inM2 * (1 - INDOOR.loss.v) * y.in) / year, get all() { return this.out + this.in; } };
+}
+
+/**
+ * People a village's food land feeds by the diet's groups (food-best.md's way): the glass grows its groups (sweet
+ * potato, vegetables, fruit) for as many people as the outdoor land grows the rest for (legumes, nuts and seeds, the
+ * hens' feed); glass beyond that cannot grow the outdoor groups and feeds no one more, and outdoor land beyond it
+ * grows the whole diet. After the harvest's losses, at maturity, an average year. (The engine itself counts food as
+ * calories: a dome's sweet potato counts in full against a person's need, as if people ate more of it in place of
+ * beans, so its calories feed more people than this count does.)
+ */
+export function peopleFedByGroup(f, outM2, inM2) {
+	const glass = new Set(Object.keys(f.in.kg));
+	const lIn = f.in.total / (1 - INDOOR.loss.v);
+	const lRest = Object.entries(f.out.m2).reduce((a, [k, m2]) => a + (glass.has(k) ? 0 : m2), 0) / (1 - OUTDOOR.loss.v);
+	const lAll = f.out.total / (1 - OUTDOOR.loss.v);
+	const nOut = lRest > 0 ? outM2 / lRest : Infinity, nIn = lIn > 0 ? inM2 / lIn : 0;
+	const pair = Math.min(nOut, nIn);
+	const more = nIn < nOut ? Math.max(0, outM2 - pair * lRest) / lAll : 0;
+	return { all: pair + more, paired: pair, bind: nIn < nOut ? 'the glass' : 'the outdoor land', landOutRest: lRest, landIn: lIn };
+}
+
+/**
+ * What a m² of the village's food land grows when the land is split by the diet's groups (./food.js
+ * peopleFedByGroup): outdoors the groups the glass does not grow (legumes, nuts and seeds, the hens' feed) for the
+ * people the glass grows for, and the whole diet on the land left; under glass its groups for those people. kcal a
+ * year before the harvest's losses, a net m² outdoors and a m² under glass, and protein (g) a 1,000 kcal of each. The
+ * engine grows its food at these yields, so its calories feed the people this count feeds.
+ */
+export function splitYields(f, outM2, inM2) {
+	const d = peopleFedByGroup(f, outM2, inM2);
+	if (!(outM2 > 0) || !(inM2 > 0)) return { out: f.out.kcalM2Year, in: f.in.kcalM2Year, protOut: f.out.proteinPer1000, protIn: f.in.proteinPer1000, byGroup: d };
+	// a person's day of the glass's groups (kcal and protein, as eaten), and of the rest
+	const inKcal = (f.in.kcalM2Year * f.in.total) / 365, inProt = (inKcal * f.in.proteinPer1000) / 1000;
+	const restKcal = f.kcalDay - inKcal, restProt = f.proteinDay - inProt;
+	const more = d.all - d.paired;
+	const outKcal = d.paired * restKcal + more * f.kcalDay, outProt = d.paired * restProt + more * f.proteinDay;
+	return {
+		out: (outKcal * 365) / (1 - OUTDOOR.loss.v) / outM2,
+		in: (d.paired * inKcal * 365) / (1 - INDOOR.loss.v) / inM2,
+		protOut: outKcal > 0 ? (outProt / outKcal) * 1000 : f.out.proteinPer1000,
+		protIn: f.in.proteinPer1000,
+		byGroup: d
+	};
 }
 
 /**
@@ -378,11 +422,13 @@ export function peopleFed(f, outM2, inM2) {
  * and 'best'; for 'ramp' the average's kcal a m² over the best practice's to year 5, a straight line to 1 at year 10
  * (outdoors and under glass apart).
  */
-export function skillRamp(dietKey, yieldKey) {
+export function skillRamp(dietKey, yieldKey, outM2, inM2) {
 	if (yieldKey !== 'ramp') return { out: [1], in: [1] };
 	const a = dietFacts(dietKey, 'average'), b = dietFacts(dietKey, 'best');
+	// the village's own yields when its land is split by the diet's groups (./food.js splitYields)
+	const sa = splitYields(a, outM2, inM2), sb = splitYields(b, outM2, inM2);
 	const ramp = (r) => Array.from({ length: SKILL_YEARS.to }, (_, i) => (i + 1 <= SKILL_YEARS.from ? r : r + ((1 - r) * (i + 1 - SKILL_YEARS.from)) / (SKILL_YEARS.to - SKILL_YEARS.from)));
-	return { out: ramp(a.out.kcalM2Year / b.out.kcalM2Year), in: ramp(a.in.kcalM2Year / b.in.kcalM2Year) };
+	return { out: ramp(sa.out / sb.out), in: ramp(sa.in / sb.in) };
 }
 /** this year's skill factor of a world, outdoors ('out') or under glass ('in') */
 export const skillOf = (w, where, day = w.day) => {

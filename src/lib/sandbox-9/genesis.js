@@ -14,7 +14,7 @@
  */
 import { exp, pow } from './dmath.js';
 import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, DAYS_IN_MONTH, FOOD as FOODCAT } from './primitives.js';
-import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor, skillRamp, skillOf } from './food.js';
+import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor, skillRamp, skillOf, splitYields } from './food.js';
 import { villageFacts } from './village.js';
 import { rampSchedule, initRamp } from './ramp.js';
 import { BED, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOOD_INDEX, GOODS_, MAX_COOPS, NX, SPRING, WATER, LIMIT } from './consts.js';
@@ -269,6 +269,10 @@ function constants(cfg) {
 	const diet = dietFacts(cfg.diet ?? 'samuel', cfg.foodYields ?? 'ramp');
 	// the outdoor food land that grows food: less tracks, sheds and hedges, and the compost ley (food-best.md §3)
 	const outNet = OUTDOOR.netShare.v - OUTDOOR.leyShare.v;
+	// the land split by the diet's groups: the glass grows sweet potato, vegetables and fruit, the outdoor land the rest
+	// for the same people and the whole diet on what is left (./food.js splitYields, food-best.md §3)
+	const outFoodM2 = V.outdoorFoodM2 * vf * outNet, inFoodM2 = V.indoorFoodM2 * vf;
+	const split = splitYields(diet, outFoodM2, inFoodM2);
 	// the line's price for planning: the German day-ahead price for what the geothermal plant makes and the market value of
 	// solar power for what the sun makes, weighted by the village's solar and geothermal electricity a year (the day's
 	// own price follows the day's sun: ./energy.js; the setting exportEurMwh gives one flat price)
@@ -334,12 +338,15 @@ function constants(cfg) {
 		// the food forests, in units of 1,000 kcal that reach a store (after the harvest's losses in storage, processing
 		// and the kitchen): outdoors a m² a year at maturity, under glass at maturity
 		// (a m² of the outdoor food land, of which outNet grows food)
-		forest100: ((diet.out.kcalM2Year * (1 - OUTDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1) * outNet,
-		forestGrown: (diet.out.kcalM2Year / 1000) * (cfg.forestYield ?? 1) * outNet,
+		forest100: ((split.out * (1 - OUTDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1) * outNet,
+		forestGrown: (split.out / 1000) * (cfg.forestYield ?? 1) * outNet,
+		// kcal a year a m² (before losses) the village grows when its land is split by the diet's groups, outdoors (a net
+		// m²) and under glass; and the diet grown all outdoors or all under glass (dietFacts)
+		kcalM2Village: { out: split.out, in: split.in },
 		outNet,
 		outNetM2: V.outdoorFoodM2 * vf * outNet,
 		// the growers' skill by year as a share of the mature yields (foodYields 'ramp'), outdoors and under glass
-		skill: skillRamp(diet.diet, diet.yields),
+		skill: skillRamp(diet.diet, diet.yields, outFoodM2, inFoodM2),
 		irrigation: cfg.irrigation !== false,
 		irrigKwhM3: OUTDOOR.irrigKwhM3.v,
 		forestLoss: OUTDOOR.loss.v,
@@ -349,15 +356,15 @@ function constants(cfg) {
 		treeShare: diet.out.treeShare,
 		nutShare: diet.out.nutShare,
 		forestRot: R.foodForest.rotPerDay.v,
-		ghYield: ((diet.in.kcalM2Year * (1 - INDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
-		ghGrown: (diet.in.kcalM2Year / 1000) * (cfg.forestYield ?? 1),
+		ghYield: ((split.in * (1 - INDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
+		ghGrown: (split.in / 1000) * (cfg.forestYield ?? 1),
 		ghLoss: INDOOR.loss.v,
 		ghLight: INDOOR.light.v,
 		// LED light (setting led): kWh a unit that reaches the store (400 kWh a unit grown)
 		led: !!cfg.led,
 		ledKwh: cfg.led ? INDOOR.ledKwhPer1000.v / (1 - INDOOR.loss.v) : null,
-		protOut: diet.out.proteinPer1000,
-		protIn: diet.in.proteinPer1000,
+		protOut: split.protOut,
+		protIn: split.protIn,
 		// food bought at the border comes in the diet's own mix
 		protImp: (diet.proteinDay / diet.kcalDay) * 1000,
 		// the food domes' heat a m² a year at 24 °C with a planted canopy (food-research.md §4; our dome model gives
