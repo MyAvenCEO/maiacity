@@ -30,6 +30,7 @@
 //! | O ops | `ops`: one JSON language to read and change any record, whatever its schema: records flat, the diff of two records, ops on a record and the place each names, `where` with its labels' selector; `engine`: every op run on a device's Lab, a query, a read or a write | O1 to O3 |
 //! | C caps that name ops | `rules`: a cap is a name and a group of ops, its role their class, the built-in groups (Owner, Editor, Suggester, Viewer, Public, Backup, Relay); its slice carries the ops sealed with their commitment in the clear, a write's touches and the proof it always carries; `policy`: the writes an entry's readers count, by the ops of the chain of the cap they rely on, tags asked for included; `doc`, `history`: a write's touches read off its Loro update, each line's history of counted writes; `lab`: caps issued as named groups of ops, writes refused that their ops don't allow, the stewards granting counted tag asks, a dry run; `engine`: `may`, `groups` | C1 to C4 |
 //! | B blobs | `sealed`: files of any size sealed as iroh blobs, each under a key of its own, in 64 KiB segments that open one by one, so any range of a film opens from its own segments alone, and in pieces of 1 GiB; `policy`, `wire`: writes that name the files they bring, their keys in the body; `sync`, `lab`: files fetched by whoever may receive such a write, opened by its readers | T27 |
+//! | Bootstrap | `recovery`: the master recovery key, a passkey kept in software that every human vault adds as an owner while avenDB is bootstrapped, for emergencies; its public half as a file; `bin/master-key`, which makes it | |
 
 pub mod cast;
 pub mod doc;
@@ -43,6 +44,7 @@ pub mod lab;
 pub mod lens;
 pub mod ops;
 pub mod policy;
+pub mod recovery;
 pub mod rules;
 pub mod scenarios;
 pub mod sealed;
