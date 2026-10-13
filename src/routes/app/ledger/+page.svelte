@@ -201,22 +201,31 @@
 		background: var(--mustard);
 		color: var(--ink);
 	}
+	/* room for the wallet bar, which stands at the browser's left edge on its full height, as avenDB's vault bar */
+	.app-page:has(.bar) {
+		padding-left: calc(72px + clamp(1rem, 4vw, 2rem));
+	}
 	.body {
 		display: grid;
-		grid-template-columns: 64px minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1.5rem;
 		margin-top: 1.8rem;
 		align-items: start;
 	}
 	.bar {
-		position: sticky;
-		top: 1rem;
+		position: fixed;
+		z-index: 20;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		width: 72px;
+		box-sizing: border-box;
+		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 0.55rem;
-		padding: 0.9rem 0;
-		border-radius: 20px;
+		padding: calc(0.9rem + env(safe-area-inset-top, 0px)) 0 7rem;
 		background: #e6e0d4;
 	}
 	.bar hr {
@@ -237,7 +246,7 @@
 	/* the picked wallet's marker at the bar's edge, as avenDB marks the vault open */
 	.slot::before {
 		position: absolute;
-		left: -10px;
+		left: -14px;
 		width: 5px;
 		height: 0;
 		border-radius: 0 4px 4px 0;
@@ -341,8 +350,12 @@
 			gap: 1rem;
 			margin-top: 1.2rem;
 		}
+		.app-page:has(.bar) {
+			padding-left: clamp(1rem, 4vw, 2rem);
+		}
 		.bar {
 			position: static;
+			width: auto;
 			flex-direction: row;
 			overflow-x: auto;
 			padding: 0.6rem 0.8rem;
@@ -386,6 +399,7 @@
 		}
 		.split {
 			grid-template-columns: minmax(0, 1fr);
+			gap: 0;
 		}
 		.left .pane + .pane {
 			margin-top: 0;
