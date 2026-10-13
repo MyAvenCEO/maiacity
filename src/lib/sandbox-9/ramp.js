@@ -24,9 +24,11 @@
  * until the plan is done (their usual rules apply from then on).
  */
 import { buildPlan } from '../sandbox-7/buildout.js';
-import { KINDS, BATTERY_KWH, siteHall } from '../sandbox-7/specs.js';
+import { KINDS, BATTERY_KWH, siteHall, DF_LINES } from '../sandbox-7/specs.js';
 import { FACTORY_RUN } from '../sandbox-7/stats.js';
 import { initPerson, firstAlloc, newPlant, SETTLEMENTS } from './genesis.js';
+import { TRADED } from './village.js';
+import { DF_ENGINE } from './primitives.js';
 import { payEur } from './border.js';
 import { MAX_COOPS } from './consts.js';
 
@@ -37,6 +39,28 @@ export const BUILD_KINDS = { kit: 'buildKit', running: 'buildRunning', materials
 const FOOD_DOME_M2 = KINDS.food120.zones.find((z) => z.use === 'indoorFood').m2;
 const UTIL_GARDEN_M2 = KINDS.util120.zones.find((z) => z.use === 'indoorFood').m2;
 const FLOOR120 = Math.PI * 60 * 60;
+
+/**
+ * The dome factory's lines the engine's COOPs have in a plan month (./primitives.js DF_ENGINE): none before it runs;
+ * while the build-out runs, what each line can make that month (its ramp, `age`) less what the plan's domes took of it
+ * (`made`), as a share of the line's full output; all of it once the plan is done. In engine units: the struts line's
+ * struts and cassette frames together in t.
+ */
+function dfFree(dfm, done) {
+	const X = DF_ENGINE;
+	if (!X) return null;
+	if (done) return { struts: 1, steel: 1, glass: 1, panel: 1 };
+	if (!dfm?.runs) return { struts: 0, steel: 0, glass: 0, panel: 0 };
+	const capM = Object.fromEntries(DF_LINES.filter((l) => l.part).map((l) => [l.part, l.cap / 12]));
+	const age = dfm.age ?? 0, made = dfm.made ?? {};
+	const free = (used, cap) => Math.max(0, Math.min(1, age - used / Math.max(1e-12, cap)));
+	return {
+		struts: free((made.strut ?? 0) + (made.cassette ?? 0) * X.cassM, capM.strut + capM.cassette * X.cassM),
+		steel: free(made.hub ?? 0, capM.hub),
+		glass: free(made.glazing ?? 0, capM.glazing),
+		panel: free(made.solar ?? 0, capM.solar)
+	};
+}
 
 /** the plan the engine runs, for a world's settings (cached by buildPlan) */
 export function planOf(cfg) {
@@ -78,8 +102,8 @@ export function rampSchedule(cfg) {
 		if (bedsAll < people) campBeds += people - bedsAll;
 		const of = (h, kinds) => done.filter((x) => x.hex === h && kinds.includes(x.kind)).length;
 		const hallHex = hexes.map((h) => (of(h, ['food120']) + of(h, ['util120'])) * FLOOR120);
-		const centreB = done.filter((x) => x.hex === 'tower' && (x.kind === 'centre' || x.kind === 'tower' || (x.kind === 'factory120' && !['timber', 'bamboo', 'steel', 'glass'].includes(x.factory))));
-		const worksB = done.filter((x) => x.hex === 'tower' && x.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(x.factory));
+		const centreB = done.filter((x) => x.hex === 'tower' && (x.kind === 'centre' || x.kind === 'tower' || (x.kind === 'factory120' && !TRADED.includes(x.factory))));
+		const worksB = done.filter((x) => x.hex === 'tower' && x.kind === 'factory120' && TRADED.includes(x.factory));
 		const centreDone = centreB.length, worksDomes = worksB.length;
 		const utilDone = done.filter((x) => x.kind === 'util120').length;
 		const foodDone = done.filter((x) => x.kind === 'food120').length;
@@ -105,6 +129,8 @@ export function rampSchedule(cfg) {
 			geo: s >= 0 && !!mo.geothermal,
 			works,
 			timber: ((works.has('timber') ? worksT.timber : 0) + (works.has('bamboo') ? worksT.bamboo : 0)) / (worksT.timber + worksT.bamboo),
+			// the dome factory's lines the engine has this month (the plan's own month: what its domes took of them)
+			df: dfFree(m < n ? plan.months[m].domeFactory : null, m >= n),
 			fields: done.some((x) => x.kind === 'fields'),
 			util: utilDone / 6,
 			domes: domesDone / Math.max(1, domesAll)
@@ -115,16 +141,20 @@ export function rampSchedule(cfg) {
 	const eur = [];
 	const landAt = new Map();
 	for (const x of plan.steps) if (x.kind === 'land' && x.start != null) landAt.set(`${x.hex}@${x.start}`, (landAt.get(`${x.hex}@${x.start}`) ?? 0) + (x.eur.land ?? 0));
+	// (a hex's month can be negative: the dome factory's store is drawn down when the domes take more of its parts than it
+	// makes, and those parts are on the domes' hexes at its cost. Each hex pays what its cumulative bill, less its land,
+	// has grown beyond what it has paid, so the months add up to the plan's bill)
+	const paidHex = {};
 	for (let m = 0; m < n; m++) {
-		const mo = plan.months[m], prev = plan.months[m - 1];
+		const mo = plan.months[m];
 		const byHex = {};
 		let land = 0;
 		for (const h of [...hexes, 'tower']) {
-			let e = (mo.hexCum[h] ?? 0) - (prev?.hexCum[h] ?? 0);
 			const l = landAt.get(`${h}@${m}`) ?? 0;
 			land += l;
-			e -= l;
-			if (e > 1e-6) byHex[h] = e;
+			const landCum = [...landAt].filter(([key, v]) => key.startsWith(`${h}@`) && +key.slice(h.length + 1) <= m).reduce((a, [, v]) => a + v, 0);
+			const e = (mo.hexCum[h] ?? 0) - landCum - (paidHex[h] ?? 0);
+			if (e > 1e-6) (byHex[h] = e), (paidHex[h] = (paidHex[h] ?? 0) + e);
 		}
 		const k = { ...mo.eur };
 		const nonLand = Object.entries(k).filter(([kk]) => kk !== 'land').reduce((a, [, v]) => a + v, 0);
@@ -155,11 +185,13 @@ function shareOf(w, pl, mo) {
 			return mo.geo ? 1 : 0;
 		case 'timber':
 			return mo.timber;
+		case 'struts':
 		case 'steel':
-			return mo.works.has('steel') ? 1 : 0;
 		case 'glass':
 		case 'panel':
-			return mo.works.has('glass') ? 1 : 0;
+			// the dome factory's lines: what the plan's domes leave of them (dfFree)
+			if (mo.df) return mo.df[pl.tech] ?? 0;
+			return pl.tech === 'steel' ? (mo.works.has('steel') ? 1 : 0) : mo.works.has('glass') ? 1 : 0;
 		case 'goods':
 			return mo.util;
 		case 'harness':
@@ -319,6 +351,8 @@ function applyMonth(w, m) {
 	S.monthNow = m;
 	for (const pl of S.plants) {
 		const sh = Math.max(0, Math.min(1, shareOf(w, pl, mo)));
+		// a dome-factory line's COOP rents the share of the line's floor it has (the plan's domes use the rest)
+		if (pl.dfLine && pl.hosts) for (const x of pl.hosts) x.share = sh;
 		const d = sh - pl.applied;
 		if (Math.abs(d) < 1e-12) continue;
 		const dCap = pl.capFull * d;
@@ -364,7 +398,7 @@ function applyMonth(w, m) {
 	// the m² a tenant rents grows with the halls that stand
 	for (const h of w.halls ?? []) {
 		const f = h.capFull > 0 ? Math.max(0, h.cap) / h.capFull : 0;
-		for (const x of h.hosted) x.m2 = x.m2Full * f;
+		for (const x of h.hosted) x.m2 = x.m2Full * f * (x.df ? x.share ?? 0 : 1);
 	}
 	w.buildCache = {};
 }

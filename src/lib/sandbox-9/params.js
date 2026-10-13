@@ -440,6 +440,9 @@ export const BORDER_ITEMS = {
 	soda: { label: 'Soda ash', unit: 't', q: 't' },
 	panels: { label: 'Solar panels', unit: 'kWp', q: 'kwp' },
 	cells: { label: 'Solar cells for the glass', unit: 'kWp', q: 'kwp' },
+	// the dome factory's struts and hub lines (./primitives.js DF_ENGINE)
+	lamellas: { label: 'Lamellas, glue and C24 (struts and frames)', unit: 'm³', q: 'm3' },
+	plate: { label: 'Steel plate (hubs)', unit: 't', q: 't' },
 	accelerators: { label: 'Accelerators', unit: '', q: 'n' }
 };
 /**

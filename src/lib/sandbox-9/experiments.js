@@ -27,7 +27,7 @@
 import { exp, log } from './dmath.js';
 import { polar } from './rng.js';
 import { createWorld, step, DEFAULTS, getLedger, paramSet } from './engine.js';
-import { livingYears, villageYears, borderYears, foundingBill, foodLand, indoorMonthsOf, aiYears } from './records.js';
+import { livingYears, villageYears, borderYears, materialYears, foundingBill, foodLand, indoorMonthsOf, aiYears } from './records.js';
 import { prop3 } from './prop3.js';
 import { guessText } from './guesses.js';
 import { openCoop } from './coops.js';
@@ -499,14 +499,16 @@ export const EXPERIMENTS = {
 		],
 		takeaway(rb, rc) {
 			const b = rb.values, c = rc.values;
-			return c.ownerShort > 0 ? `Living on dividends alone, the owner-only blobs went short until day ${c.lastShortDay}; spending some of what they hold as well, they were ${b.ownerShort > 0 ? `short on ${f0(b.ownerShort)} person-days` : 'never short'}.` : `The owner-only blobs were never short, even on dividends alone, which paid their basics every day from day ${b.strictFrom}.`;
+			// (the strict test is −1 when dividends alone never paid every member's bundle on every day to the end)
+			const strict = b.strictFrom >= 0 ? `dividends alone paid every member’s bundle every day from day ${b.strictFrom}` : 'dividends alone never paid every member’s bundle on every day to the end (the strict test)';
+			return c.ownerShort > 0 ? `Living on dividends alone, the owner-only blobs went short until day ${c.lastShortDay}; spending some of what they hold as well, they were ${b.ownerShort > 0 ? `short on ${f0(b.ownerShort)} person-days` : 'never short'}.` : `The owner-only blobs were never short, even on dividends alone; in the base run ${strict}.`;
 		},
 		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				(c.ownerShort > 0 ? `On dividends only, the owner-only blobs were short ${c.ownerShort} person-days, the last on day ${c.lastShortDay}. ` : `On dividends only, the owner-only blobs were never short of a basic. `) +
 				`Spending some of what they hold as well, they were short ${b.ownerShort} person-days. ` +
-				`Dividends alone paid every member’s bundle every day from day ${b.strictFrom}. ` +
+				(b.strictFrom >= 0 ? `Dividends alone paid every member’s bundle every day from day ${b.strictFrom}. ` : 'Dividends alone never paid every member’s bundle on every day to the end of the run (the strict test). ') +
 				`Their living standard in the last year: ${f2(c.ownerL)} on dividends only, ${f2(b.ownerL)} normally.`
 			);
 		},
@@ -515,7 +517,7 @@ export const EXPERIMENTS = {
 			return {
 				pass: b.ownerShort === 0 && c.ownerShortAfter120 === 0 && b.strictFrom > 0 && b.strictFrom <= 120,
 				claim: 'Normal: never short from day 1. Strict: dividends alone pay the basic bundle by day 120, and the dividends-only cohort is never short after it.',
-				evidence: `normal short ${b.ownerShort}; dividends-only short ${c.ownerShort} (after day 120: ${c.ownerShortAfter120}, last day ${c.lastShortDay}); strict test from day ${b.strictFrom}`
+				evidence: `normal short ${b.ownerShort}; dividends-only short ${c.ownerShort} (after day 120: ${c.ownerShortAfter120}, last day ${c.lastShortDay}); strict test ${b.strictFrom >= 0 ? `from day ${b.strictFrom}` : 'never held to the end'}`
 			};
 		}
 	},
@@ -1417,12 +1419,24 @@ export function summarize(w) {
 		living: livingYears(w),
 		village: villageYears(w),
 		border: borderYears(w),
+		// the building materials by year (made, bought finished, upkeep, built, the dome factory's lines) and what the
+		// plan's dome factory made over the build-out (sandbox-7 buildout.js dfTotals, its parts in their own units)
+		materials: materialYears(w),
+		domeFactory: dfPlanTotals(w),
 		founding: foundingBill(w),
 		food: foodLand(w),
 		indoorMonths: indoorMonthsOf(w),
 		// the AI market by year: who owns the accelerators, inference, Aven hours and income by tenth (./records.js)
 		ai: aiYears(w)
 	};
+}
+
+/** the plan's dome factory over the build-out, slimmed (no months): null when the design has none */
+function dfPlanTotals(w) {
+	const T = w.ramp?.plan?.totals?.domeFactory;
+	if (!T) return null;
+	const { label, stands, runsFrom, made, used, bought, leftover, leftoverEur, importsEur, boughtEur, imports, boughtFinished, savedParts, hours, kwh, eurPower, eurUpkeep, peak, months, domes, domesFromDF, domesPartly } = T;
+	return { label, stands, runsFrom, made, used, bought, leftover, leftoverEur, importsEur, boughtEur, imports, boughtFinished, savedParts, hours, kwh, eurPower, eurUpkeep, peak, months, domes, domesFromDF, domesPartly };
 }
 
 /**

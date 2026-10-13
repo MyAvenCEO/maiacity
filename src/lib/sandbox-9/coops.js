@@ -627,6 +627,12 @@ export function unitSlowR(w, pl) {
 export const chipKwhNow = (w) => w.c.chipKwh * importFactor(w);
 /** days of wear the upkeep store holds at most */
 const UPKEEP_STORE_DAYS = 30;
+/**
+ * plants that make only what their COOP's other plants cannot: the dome factory's struts line (./primitives.js
+ * DF_ENGINE) beside a timber COOP's timber works, which runs first on the village's own logs (in the dome factory's
+ * plan, the timber works' spare lamellas go to the dome factory). Its lamellas are bought at the border for the rest
+ */
+export const TOP_UP = new Set(['struts']);
 
 // ── production plans and orders ──────────────────────────────────────────────────────────────────────────────────
 /**
@@ -668,7 +674,13 @@ export function plan(w, req, heatReq) {
 		// the input store is shared by every plant's production and upkeep: what one plans takes it from the next, so
 		// together they never draw more than the store holds
 		const avail = Float64Array.from(co.inStock);
-		for (const pl of co.plants) {
+		// a top-up plant (TOP_UP) makes what the COOP's other plants leave of `want`: they plan first, by their share
+		let capBase = 0, hasTop = false;
+		for (const pl of co.plants)
+			if (TOP_UP.has(pl.tech)) hasTop = true;
+			else if (pl.def.kind === 'works' || pl.def.kind === 'timber') capBase += plantCapDay(w, pl, w.day) * f;
+		const order = hasTop ? [...co.plants.filter((p) => !TOP_UP.has(p.tech)), ...co.plants.filter((p) => TOP_UP.has(p.tech))] : co.plants;
+		for (const pl of order) {
 			const d = pl.def;
 			pl.plan = 0;
 			// the halls' standing electricity (light, air, controls), in the running class; the food domes' climate with the
@@ -690,7 +702,7 @@ export function plan(w, req, heatReq) {
 				// they would have to buy at the border (the dark months): what they grow in the bright months keeps in the
 				// store for winter (a fuller store lowers the price: ./market.js)
 				const growAll = d.kind === 'greenhouse' && (w.goodDeficit?.[co.good] ?? 0) > IN_HAND;
-				let p = growAll ? cap : Math.min(cap, want * (cap / Math.max(1e-12, co.capDay)));
+				let p = growAll ? cap : !hasTop ? Math.min(cap, want * (cap / Math.max(1e-12, co.capDay))) : TOP_UP.has(pl.tech) ? Math.min(cap, Math.max(0, want - co.planned)) : Math.min(cap, want * (cap / Math.max(1e-12, capBase)));
 				// raw stock and input stores bound the plan
 				for (const [g, a] of inputsOf(w, pl)) {
 					if (typeof g === 'number') p = Math.min(p, Math.max(0, avail[g]) / a);
@@ -746,12 +758,19 @@ export function plan(w, req, heatReq) {
 		for (const g of MATERIALS) wantMat[g] = matUse[g] * 14;
 		// upkeep's store holds at most a month of wear: a plant let wear down for years catches up at a few times its
 		// wear a day, not with one order for all of it (which would empty every seller's store at once)
+		const upWant = new Float64Array(G), upFlow = new Float64Array(G);
 		for (const pl of co.plants)
 			if (pl.worn > 0 && pl.def.life > 0 && (keepUp(co) || keepFloor(co)) && !spiked(w, pl)) {
 				const b = upkeepOf(w, pl);
 				const gap = Math.min(pl.worn, (UPKEEP_STORE_DAYS * pl.cap) / (pl.def.life * 365));
-				for (const g of MATERIALS) wantMat[g] += b[g] * gap;
+				// (round 5) and what it wears a day, ordered as it goes like the works' inputs: with only a seventh of the
+				// store's gap ordered a day, a COOP that keeps up two plants (the Village COOP's geothermal stages and its
+				// hall) ordered less than both wear, the first plant in its list took it all, and the second wore down
+				const day = (ownShare(pl) * Math.max(0, pl.cap - pl.worn)) / (pl.def.life * 365);
+				for (const g of MATERIALS) (wantMat[g] += b[g] * gap), (upWant[g] += b[g] * gap), (upFlow[g] += b[g] * day);
 			}
+		// (round 5) what upkeep keeps in the store: a building project takes only what is left beyond it (produce)
+		co.upkeepWant = upWant;
 		const pr = co.project;
 		if (pr) {
 			// a project draws its energy at its planned pace (at most twice it when behind), not all that is left at once
@@ -766,7 +785,7 @@ export function plan(w, req, heatReq) {
 		if (co.city && w.border) bankExport(w, co);
 		for (const g of MATERIALS) {
 			// today's use, and a seventh of what the store lacks
-			const o = (flowUse[g] ?? 0) + Math.max(0, wantMat[g] - co.inStock[g]) / 7;
+			const o = (flowUse[g] ?? 0) + upFlow[g] + Math.max(0, wantMat[g] - co.inStock[g]) / 7;
 			if (o > 0) w.b2bProd[g * M + co.k] = o;
 			if (pr && pr.mat[g] > 1e-12) {
 				const daysLeft = Math.max(1, pr.minDays - (w.day - pr.start) - 7);
@@ -869,6 +888,7 @@ export function produce(w, fill) {
 				} else co.stock += x;
 				co.made += x;
 				t.made[co.good] += x;
+				if (pl.dfLine) t.dfMade[pl.tech] = (t.dfMade[pl.tech] ?? 0) + x;
 				pl.out = x;
 				if (w.learn[pl.tech].rdOn) w.learn[pl.tech].Q += x;
 				if (fe < 0.999) co.limiter = LIMIT.energy;
@@ -880,6 +900,7 @@ export function produce(w, fill) {
 					if (bu[g] > 0) {
 						co.inStock[g] -= bu[g] * r;
 						t.built[g] += bu[g] * r;
+						t.upkeep[g] += bu[g] * r;
 						co.upkeepRToday = (co.upkeepRToday ?? 0) + bu[g] * r * (co.inCostR?.[g] ?? w.pbar[g]);
 					}
 				// the worn steel it takes out goes back to the steelworks as scrap (nine tenths of it)
@@ -893,11 +914,23 @@ export function produce(w, fill) {
 				refit(w, pl, r, pl.cap - r);
 			}
 		}
+		// what its plants besides a top-up line made lately (a 30-day average): the line buys its raw inputs for the rest
+		// (./border.js importsDay)
+		if (co.plants.some((p) => TOP_UP.has(p.tech))) {
+			let base = 0;
+			for (const pl of co.plants) if (!TOP_UP.has(pl.tech) && pl.plan > 0) base += pl.out;
+			co.baseOutEma = (co.baseOutEma ?? 0) + (base - (co.baseOutEma ?? 0)) / 30;
+		}
 		// the building project: materials from the input store, energy from the building class
 		const pr = co.project;
 		if (pr) {
+			// (round 5) a project takes what came for it today, and from the store only what the works' inputs (a week of
+			// them) and upkeep's store leave: the Village COOP's geothermal projects took every t of steel it was sent, day
+			// after day, so its plan for tomorrow's upkeep found no steel, and the hall that houses the works wore down for
+			// decades (their output with it)
 			for (const g of MATERIALS) {
-				const x = Math.min(pr.mat[g], Math.max(0, co.inStock[g] - 7 * (co.matDaily?.[g] ?? 0)));
+				const own = Math.min(co.projIn?.[g] ?? 0, Math.max(0, co.inStock[g]));
+				const x = Math.min(pr.mat[g], own + Math.max(0, co.inStock[g] - own - 7 * (co.matDaily?.[g] ?? 0) - (co.upkeepWant?.[g] ?? 0)));
 				if (x > 0) {
 					pr.mat[g] -= x;
 					co.inStock[g] -= x;
@@ -1131,7 +1164,8 @@ const MOTHBALL_KINDS = ['home', 'works', 'service'];
  * An idle unit needs no running hours, no standing electricity and no ground rent, so what the COOP still runs can
  * earn its keep at the price the glut allows; while it carried the empty units it sold at its floor, covered only
  * its variable cost, ran its treasury dry and could no longer pay for the energy of the basics it delivers. The City
- * COOP leases the idle units on as soon as the good is short (./coops.js foundings).
+ * COOP leases the idle units on as soon as the good is short (./coops.js foundings). The dome factory's lines are
+ * never stood down (round 5).
  */
 function mothball(w) {
 	if (rampOn(w)) return;
@@ -1146,7 +1180,10 @@ function mothball(w) {
 		if (!(capNow > want) || !(want > 0)) continue;
 		let excess = capNow - want;
 		for (const pl of co.plants) {
-			if (!MOTHBALL_KINDS.includes(pl.def.kind) || !(pl.cap > 0) || excess <= 0) continue;
+			// (round 5) the dome factory's lines are not stood down: they are the village's one factory, its machines stay
+			// where they are and run below their capacity (a line stood down unit by unit and leased to the other half ran
+			// the village's whole demand on a line cut to its own share of the buyers, and the rest was bought finished)
+			if (!MOTHBALL_KINDS.includes(pl.def.kind) || pl.dfLine || !(pl.cap > 0) || excess <= 0) continue;
 			const live = Math.max(0, pl.cap - pl.worn);
 			const perUnit = live > 0 ? plantCapDay(w, pl, w.day) / live : 0;
 			if (!(perUnit > 0)) continue;
@@ -1655,9 +1692,14 @@ export function foundings(w) {
 			const stoodDown = plants.every((pl) => pl.mothballed);
 			const shortNow = sellers.length && sellers.every((c) => c.marginEma < 1);
 			const askedFor = (w.orderEma?.[g] ?? 0) > 0.05 * capIdle;
+			// (round 5) or its sellers buy it finished at the border (a month's average over a twentieth of what the idle
+			// units could make): a works that stood its line down in a glut and then bought finished hubs at twice the
+			// line's cost, month after month, never looked short by its margin, so the line never came back
+			// (a twentieth of what its buyers order, when that is less: a large idle plant hid imports of a sixth of the demand)
+			const buyingAbroad = !BASICS.includes(g) && sellers.reduce((a, c) => a + (c.importEma ?? 0), 0) > 0.05 * Math.min(capIdle, w.orderEma?.[g] ?? capIdle);
 			const wanted = stoodDown
 				? sellers.length
-					? shortNow || (BASICS.includes(g) && (sellers.length < 2 || (w.peopleShortEma?.[g] ?? 0) > 0))
+					? shortNow || buyingAbroad || (BASICS.includes(g) && (sellers.length < 2 || (w.peopleShortEma?.[g] ?? 0) > 0))
 					: BASICS.includes(g) || askedFor
 				: BASICS.includes(g) || (sellers.length ? (w.shortDaysGood[g] ?? 0) >= 60 : askedFor);
 			if (!wanted || !standing) {
@@ -1677,7 +1719,8 @@ export function foundings(w) {
 					const own = pl.mothballed && to.plants.find((q) => q.tech === pl.tech && !q.plots.length);
 					if (own) {
 						own.bookR = ((own.bookR ?? pl.bookR ?? 0) * own.cap + (pl.bookR ?? own.bookR ?? 0) * pl.cap) / Math.max(1e-12, own.cap + pl.cap);
-						for (const key of ['cap', 'worn', 'landM2', 'domeKwp', 'fieldKwp', 'batt', 'battCap', 'battCap0']) own[key] += pl[key];
+						// (round 5: with the part of it that stands in its landlord's dome, so the units come back hosted as they left)
+						for (const key of ['cap', 'worn', 'landM2', 'domeKwp', 'fieldKwp', 'batt', 'battCap', 'battCap0', 'hostedCap']) own[key] = (own[key] ?? 0) + (pl[key] ?? 0);
 					} else to.plants.push(pl);
 				}
 				to.mothballFrom = w.day + 180;
