@@ -30,7 +30,7 @@
  * Pure and deterministic: the same options give the same plan, in node or the browser. `buildPlan()` is cached.
  */
 import { LIVING, TOWER_HEX, VILLAGE, HEX_AREA, landOf } from './layout.js';
-import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, shellOf, towerShell, towerFloors, geodesicOf } from './specs.js';
+import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, WORKS_MACHINES, shellOf, towerShell, towerFloors, geodesicOf } from './specs.js';
 import { FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from './stats.js';
 
 // ── sources ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -39,7 +39,9 @@ import { FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from './stats.js';
 export const BUILD_SOURCES = {
 	containers: { label: 'Site containers (dealer listings, 2025/26)', url: 'https://www.maschinensucher.de/mss/sanit%C3%A4rcontainer', note: 'A new 20 ft office/living container with heating and air conditioning 5,750 € net (Cologne maker, fixed price); a new 20 ft container with shower cabin, sink and hot-water tank 12,900 € net (dealer near Sittensen); small new WC/shower units 3,130–3,730 € net. Asking prices, not a market survey.' },
 	solarContainer: { label: 'Solar containers', url: 'https://www.qualenergia.it/articoli/fotovoltaico-mobile-cresce-potenza-container-140-kw/', note: 'SolarCont: a ~140 kWp fold-out container 135,000–145,000 €, "about 1,000 € a kWp" (QualEnergia); AEP Solar-Box, a 20 ft container with modules and storage, ~125,000 € (pv magazine 2023); a used 130 kWp Solarfold 95,000 € (listing).' },
-	battery: { label: 'Battery storage (BNEF 2025)', url: 'https://www.energy-storage.news/battery-storage-system-prices-continue-to-fall-sharply-bnef-and-ember-reports-find/', note: 'BNEF Energy Storage Systems Cost Survey 2025: turnkey systems average US$177/kWh in Europe (US$117 worldwide, US$73 in China). A single small container costs more a kWh: 250 €/kWh used here (estimate).' },
+	battery: { label: 'Battery storage (BNEF 2025)', url: 'https://www.energy-storage.news/battery-storage-system-prices-continue-to-fall-sharply-bnef-and-ember-reports-find/', note: 'BNEF Energy Storage Systems Cost Survey 2025: turnkey systems average US$177/kWh in Europe (US$117 worldwide, US$73 in China), ≈ 155 €/kWh at 1.13 $/€. A single small container costs more a kWh: 200 €/kWh used here (estimate; 250 before the cost audit, 2026-10-13).' },
+	joinery: { label: 'Beam joinery centre (used)', url: 'https://www.maschinensucher.de/mss/hundegger+abbundanlage', note: 'Used Hundegger beam processing centres (K2 and similar) listed at ~55,000–255,000 € (maschinensucher.de, 2025/26). One at ~150,000 € with ~50,000 € to move, set and wire it (estimate) lets the village cut its own struts from blank glulam instead of buying them CNC-cut (cost audit, 2026-10-13).' },
+	design: { label: 'Engineering, permits and the village plan', url: 'https://www.ftimmobilien24.com/immobilienmakler-m%C3%BCnchen/baunebenkosten-muenchen-2026-hoai-lbk-statik/', note: 'Building side costs (KG 700) run 15–20 % of a build, the architect 8–12 %, the structural engineer 1.5–2.5 % (Munich 2026); a development plan (Bebauungsplan) 20,000–100,000 € and more (bau.de). Three dome types designed once and repeated, a village plan, a development plan, soil and environmental reports, a checking engineer for each dome type and the fire concept: ~3 M€ (1.5–6, estimate; 0.75 M€ before the cost audit, 2026-10-13).' },
 	excavator: { label: 'Excavators (Bagger)', url: 'https://equipbook.ai/value/year/2025-caterpillar-320', note: 'A 2025 Cat 320 (22 t) MSRP ~US$265,000 (valuation model, equipbook); a new JCB 145XR (17 t) 150,000 € net (dealer listing, Eltmann). A 20–22 t crawler excavator at ~230,000 € and an 8 t one at ~95,000 € are estimates from these.' },
 	towerCrane: { label: 'Tower cranes (used, dealer listings 2026)', url: 'https://www.truckscout24.com/tsp/ts-204-89-430', note: 'Potain MDT 109 (2019, 55 m jib, ~2,000 h) 283,827 € net; Potain MDT 259 (2018, 65 m jib) 374,850 € net. A 65 m jib reaches the middle of a Dome120 (60 m in radius) from a mast inside it.' },
 	mobileCrane: { label: 'All-terrain mobile crane (used)', url: 'https://www.cranetrader.com/listings/for-sale/liebherr/ltm1060/all-terrain-cranes/1016', note: 'Liebherr LTM 1060-3.1 (2019, 60 t) listed at 485,000 €; LTM 1060s range from US$75,000 to 729,000 by age and hours (CraneTrader).' },
@@ -47,7 +49,7 @@ export const BUILD_SOURCES = {
 	telehandler: { label: 'Telehandlers', url: 'https://www.maschinensucher.de/manitou-mt+1840/i-21793858', note: 'A new Manitou MT 1840 (17.5 m) 99,500 € net EXW (2025 listing); a 2025 one with 416 h 95,000 €.' },
 	scaffold: { label: 'System scaffolding', url: 'https://www.maschinensucher.de/layher-ger%C3%BCst/i-22318012', note: 'Used Layher scaffold ~28–30 €/m² (a 45,000 m² lot at 1.25 M€ net; 58.9 m² at 1,750 € on eBay); new ~110 €/m² (the seller’s figure).' },
 	trucks: { label: 'Trucks and trailers', url: 'https://www.truckscout24.de', note: 'New 3-axle tipper semi-trailers 34,900–56,900 € net (listings 2025/26); a 3-axle tipper truck (~160,000 €) and a truck with a loader crane (~220,000 €) are estimates.' },
-	geothermal: { label: 'Geothermal wells and plant', url: 'https://www.bund-naturschutz.de/fileadmin/Bilder_und_Dokumente/Themen/Energiewende/230615_BN_Informiert_Geothermie-final.pdf', note: 'Our village energy research (energy/village-energy.md): an EGS triplet (1 injector, 2 producers) ~5.5 km deep and ~1.5 km sideways, a 4.3 MW gross / 3.4 MW net ORC, 30–45 M€ today. A Bavarian deep well “quickly costs over 10 M€” (BUND Naturschutz 2023); a doublet’s wells 12–25 M€ (GGSC 2009); Holzkirchen spent over 30 M€ on preparation and drilling (2016–17); a drilling day costs ~80,000 € (Schwäbische Zeitung); Fervo drilled a 5,927 m well in 21 days (ThinkGeoEnergy 2026). Priced here per well and metre: ~7,000 m measured a well at ~1,400 €/m (estimate), the ORC, coolers and exchangers at ~1,750 €/kW (estimate) — 37.5 M€ together, as Sandbox 6 puts the plant.' },
+	geothermal: { label: 'Geothermal wells and plant', url: 'https://www.bund-naturschutz.de/fileadmin/Bilder_und_Dokumente/Themen/Energiewende/230615_BN_Informiert_Geothermie-final.pdf', note: 'Our village energy research (energy/village-energy.md): an EGS triplet (1 injector, 2 producers) ~5.5 km deep and ~1.5 km sideways, a 4.3 MW gross / 3.4 MW net ORC, 30–45 M€ today. A Bavarian deep well “quickly costs over 10 M€” (BUND Naturschutz 2023); a doublet’s wells 12–25 M€ (GGSC 2009); Holzkirchen spent over 30 M€ on preparation and drilling (2016–17); a drilling day costs ~80,000 € (Schwäbische Zeitung); Fervo drilled a 5,927 m well in 21 days (ThinkGeoEnergy 2026). Priced here per well and metre (GEO): ~7,000 m measured a well at ~2,400 €/m (1,400–3,500, estimate: Bavarian deep wells cost 10–15 M€ each, kommunal.de), the ORC, coolers, exchangers and the stimulation at ~3,500 €/kW gross (2,000–5,000, estimate: small binary plants 3,700–7,200 $/kW, ESMAP) — ~65.5 M€, 66.5 M€ with the grid link. That is 19,500 € a kW net, inside NREL’s ATB 2024 range for deep EGS (13,400–33,500 $/kW, mean 22,100: atb.nrel.gov/electricity/2024/geothermal). Before the cost audit (2026-10-13) the plant was 37.9 M€ at 1,400 €/m and 1,750 €/kW, about half of what EGS costs today; Fervo aims at 3,000–5,500 $/kW later (fervoenergy.com, Q2 2026).' },
 	eden: { label: 'Eden Project biomes (1998–2001)', url: 'https://www.constructionnews.co.uk/sections/news/the-genesis-of-the-new-eden-28-09-2000/', note: 'A kit of unique steel tubes cut by machine (MERO), erected by SGB from a 12-level birdcage scaffold 25 m across (230 miles of poles), the tower crane lifting the scaffold and then the steel; 625 hexagons, 16 pentagons and 190 triangles of ETFE; 2½ years to build, opened March 2001. The method our big domes follow: a crane at the middle, a scaffold under the crown.' },
 	domerama: { label: 'Geodesic dome kits', url: 'https://www.domerama.com/raising-a-dome/geodesic-domes-and-assembly-times/', note: 'A 30 ft (9 m) 3V kit: 20 h for 3 people; a 36 ft: 30 h for 3–4 (Domerama); Pacific Domes 30 ft: 6–14 h with 3–4; a 42 ft growing dome ~5 days (Growing Spaces). Light struts by hand: ~0.3–0.4 crew-hours a strut.' },
 	gridshell: { label: 'Timber gridshells', url: 'https://www.woodsolutions.com.au/blog/uk-field-tour-day-four', note: 'Savill Building (Windsor, 2006): the larch gridshell by 20 carpenters (Green Oak Carpentry), the building ~12 months; Weald & Downland (2002): the laths bent by lowering the edges a few centimetres a day from a scaffold (Buro Happold, Structural Engineer 2001). Bent-lath gridshells are slower than a geodesic of cut struts: an upper bound.' },
@@ -56,7 +58,7 @@ export const BUILD_SOURCES = {
 	learning: { label: 'Learning on repeated work', url: 'https://www.construction-physics.com/p/where-are-my-damn-learning-curves', note: 'The UN’s “Effect of Repetition on Building Operations and Processes on Site” (1965) and site studies: formwork 83.5 %, rebar 87.9 % a doubling (ECAM 2017); most production 60–90 %. Used here: 90 % a doubling of the same dome, the first at 1.3× and never under 0.7× (estimate).' },
 	cranes: { label: 'Crane lifts', url: 'https://www.iaarc.org/publications/fulltext/An_integrated_approach_to_the_development_of_construction_site_crane_operations.PDF', note: 'More than half of tower-crane lifts take under 4 minutes; 5–15 % over 15 minutes, precast up to 15 % (IAARC). A panel or a strut triangle held while it is bolted: ~20 minutes a lift, 24 lifts a crane-day (estimate).' },
 	steelErection: { label: 'Steel erection', url: 'https://www.planningplanet.com/index.php/comment/97943', note: 'Practitioners quote 20–120 man-hours a tonne for steelwork, erection with alignment and bolting at the top (forum figures: a wide spread). Our hubs go up bolted to their struts, so the frame is counted by the piece and the lift instead.' },
-	raw: { label: 'Raw inputs once the works stand', url: 'https://www.lwk-niedersachsen.de', note: 'Spruce sawlogs 84–120 €/m³ (LWK Niedersachsen, May 2025), larch and Douglas about twice; steel scrap ~300 €/t (EU 2025); float glass ~US$680 a t in Germany (IMARC 2026); TOPCon modules 0.10 €/Wp delivered (pv magazine, May 2025), see-through cells for glass ~0.3 €/Wp (estimate). The same figures as Sandbox 8’s border prices.' },
+	raw: { label: 'Raw inputs once the works stand', url: 'https://www.lwk-niedersachsen.de', note: 'Spruce sawlogs 84–120 €/m³ (LWK Niedersachsen, May 2025), larch and Douglas about twice; steel scrap ~300 €/t (EU 2025); float glass ~US$680 a t in Germany (IMARC 2026); TOPCon modules 0.10 €/Wp delivered (pv magazine, May 2025), TOPCon cells 0.036–0.040 $/W (pv magazine, May 2025), ~0.045 €/Wp delivered at ~200 Wp a m² (estimate; see-through cells at ~0.3 €/Wp and 80 Wp before the cost audit, 2026-10-13). Sandbox 8’s border prices used the same figures before the audit.' },
 	sandbox6: { label: 'Sandbox 6 (./specs.js, ./stats.js)', note: 'Every dome’s tonnes, panels and prices, the fit-out per m² (BKI 2025), the utilities’ machines, the works’ yearly output (FACTORY_RUN), the land at 78,000 €/ha.' }
 };
 
@@ -77,7 +79,7 @@ export const KIT = [
 	{ id: 'delivery', group: 'camp', label: 'Delivering and setting down a container', n: 44, eur: 800, src: 'containers', est: true, note: 'the dealer’s truck crane sets them' },
 	// power
 	{ id: 'solar', group: 'power', label: 'Solar containers, ~140 kWp each, fold-out', n: 2, eur: 140000, kwp: 140, src: 'solarContainer' },
-	{ id: 'battery', group: 'power', label: 'Battery container, 500 kWh LFP', n: 1, eur: 500 * 250, kwh: 500, src: 'battery', est: true },
+	{ id: 'battery', group: 'power', label: 'Battery container, 500 kWh LFP', n: 1, eur: 500 * 200, kwh: 500, src: 'battery', est: true, was: 500 * 250 },
 	{ id: 'genset', group: 'power', label: 'Generator, 150 kVA, on HVO (winter and crane peaks)', n: 1, eur: 35000, src: 'sandbox6', est: true },
 	{ id: 'power', group: 'power', label: 'Site power: distribution boards and cables', n: 1, eur: 25000, src: 'sandbox6', est: true },
 	// water
@@ -100,13 +102,23 @@ export const KIT = [
 	{ id: 'shoring', group: 'site', label: 'Shoring towers and props for the crowns', n: 1, eur: 60000, src: 'sandbox6', est: true },
 	{ id: 'survey', group: 'site', label: 'Survey kit: GNSS rover and total station', n: 1, eur: 30000, src: 'sandbox6', est: true },
 	// workshop
-	{ id: 'cnc', group: 'workshop', label: 'Timber workshop: 3 × 2 m CNC router, panel saw, planer, dust extraction', n: 1, eur: 160000, src: 'sandbox6', est: true, note: 'for the north cassettes and the fit-out joinery; the struts come CNC-cut' },
+	{ id: 'cnc', group: 'workshop', label: 'Timber workshop: 3 × 2 m CNC router, panel saw, planer, dust extraction', n: 1, eur: 160000, src: 'sandbox6', est: true, note: 'for the north cassettes and the fit-out joinery' },
+	{ id: 'joinery', group: 'workshop', label: 'Beam joinery centre (used), to cut the struts from blank glulam', n: 1, eur: 200000, src: 'joinery', est: true, note: '~150,000 € used and ~50,000 € to move, set and wire it; it replaces buying the struts CNC-cut (cost audit, 2026-10-13)' },
 	{ id: 'tools', group: 'workshop', label: 'Tools: power tools, welding, lifting gear, safety', n: 1, eur: 90000, src: 'sandbox6', est: true }
 ];
 /** the kit's groups, for the page */
 export const KIT_GROUPS = { camp: 'The camp', power: 'Power', water: 'Water', machines: 'Machines', site: 'Site gear', workshop: 'Workshop' };
-/** running the kit: fuel, upkeep, insurance and tyres, a share of the machines' and the power kit's price a year (estimate) */
+/** running the kit: fuel, upkeep, insurance and tyres, a share of the machines' and the power kit's price a year
+ * (estimate; fleets budget 10–15 % of a machine's value a year for maintenance alone, getclue.com 2025; the tower
+ * cranes run on the site's power, so 15 % in all is about right, checked in the cost audit, 2026-10-13) */
 const RUNNING_SHARE = 0.15;
+/** the geothermal plant, bought as services (BUILD_SOURCES.geothermal; estimates, cost audit 2026-10-13): `wells` ×
+ * `mWell` measured metres at `eurM`, the ORC, coolers, exchangers and the rock's stimulation at `eurKw` a kW gross,
+ * and the grid link (a medium-voltage connection fee of 88–131 €/kW, Stadtwerke price sheets, and the line). Low–high:
+ * 1,400–3,500 €/m and 2,000–5,000 €/kW. */
+export const GEO = { wells: 3, mWell: 7000, eurM: 2400, kwGross: 4300, eurKw: 3500, grid: 1e6, est: true };
+/** engineering, permits and the village plan, € (BUILD_SOURCES.design; estimate, 1.5–6 M€) */
+export const DESIGN_EUR = 3e6;
 
 // ── how fast the work goes ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -154,8 +166,10 @@ const OWN = {
 	steelT: 300 * 1.1 + 150,
 	/** float glass ~650 €/t at 0.05 t a m², interlayer, spacers and low-E ~25: € a m² of laminated double glazing */
 	glassM2: 650 * 0.05 + 25,
-	/** see-through cells ~0.3 €/Wp at ~80 Wp a m², ribbons and junctions ~6: € a m² of solar panel on top of its glass */
-	pvM2: 0.3 * 80 + 6
+	/** TOPCon cells 0.036–0.040 $/W FOB (pv magazine, May 2025), ~0.045 €/Wp delivered in small lots, at the ~200 Wp a
+	 * m² that the model's 227 kWh/m² a year needs; encapsulant, ribbons and junctions ~6: € a m² of solar panel on top of
+	 * its glass (estimate; 0.3 €/Wp × 80 Wp = 30 € before the cost audit, 2026-10-13) */
+	pvM2: 0.045 * 200 + 6
 };
 /** what one works makes a month at full output (Sandbox 6 FACTORY_RUN), and how long it takes to get there */
 const WORKS_OUT = { steel: { t: FACTORY_RUN.steel.t / 12 }, glass: { m2: 20000 / 12 }, timber: { t: FACTORY_RUN.timber.t / 12 } };
@@ -218,8 +232,8 @@ function domeWork(kind, factory) {
 		},
 		{
 			id: 'shell', label: 'glass and hemp', h: (glazedPanels + g.count.hemp) * R.lift.v + sh.glazed * R.glazing.v + sh.north * R.hemp.v, lifts: glazedPanels + g.count.hemp, pool, outdoor: true,
-			eur: sh.eur.glass + sh.eur.pv + sh.eur.hemp + cassette * PRICES.glulam.eur, t: { glass: sh.t.glass, hemp: sh.t.hemp, glulam: cassette * DENSITY.glulam }, pvM2: sh.m.pv,
-			own: { glassM2: sh.glazed, pvM2: sh.m.pv, timberM3: cassette, timberEur: cassette * PRICES.glulam.eur }
+			eur: sh.eur.glass + sh.eur.pv + sh.eur.hemp + cassette * PRICES.cassette.eur, t: { glass: sh.t.glass, hemp: sh.t.hemp, glulam: cassette * DENSITY.glulam }, pvM2: sh.m.pv,
+			own: { glassM2: sh.glazed, pvM2: sh.m.pv, timberM3: cassette, timberEur: cassette * PRICES.cassette.eur }
 		}
 	];
 	// inside: what each kind of dome holds
@@ -246,10 +260,11 @@ function domeWork(kind, factory) {
 		use += kind === 'centre' ? 0 : ENERGY.datacenter + UTIL_BUILT * ENERGY.workshop;
 		label = kind === 'centre' ? 'Dome120 centre: utilities and community halls' : 'Dome120 utilities';
 	} else {
-		// a works: its hall and machines are bought (Sandbox 6's 1,500 €/m² fit-out less the villagers' labour, ~60 %)
+		// a works: its machines are bought (specs.js WORKS_MACHINES, listings and estimates); the hall is the dome. Before
+		// the cost audit (2026-10-13) each works was 60 % of a factory's 1,500 €/m² fit-out: 10.2 M€ each.
 		const floor = sh.cap.floor;
 		inside = { id: 'inside', label: 'the works’ machines', h: floor * R.works.v, lifts: 20 * R.liftsPerDay.v, pool: 'mobile', eur: 0, t: {} };
-		machines = floor * FITOUT.factory * 0.6;
+		machines = WORKS_MACHINES[factory]?.eur ?? 2e6;
 		check = 30000;
 		const run = FACTORY_RUN[factory];
 		use += run ? run.t * run.kwh : 0;
@@ -319,7 +334,7 @@ function makeSteps(o) {
 	const settled = (key) => (st) => st.hexDone[key];
 
 	// the engineering of the three dome types and the village plan, at day 0 (designs reused for every dome)
-	add({ id: 'design', hex: LIVING_ORDER[0], site: 'design', kind: 'design', label: 'Engineering of the three dome types, the village plan and its permits', phases: [{ id: 'paper', h: 0, fixed: 1 }], services: 750000, maxCrew: 1 });
+	add({ id: 'design', hex: LIVING_ORDER[0], site: 'design', kind: 'design', label: 'Engineering of the three dome types, the village plan and its permits', phases: [{ id: 'paper', h: 0, fixed: 1 }], services: DESIGN_EUR, maxCrew: 1 });
 
 	LIVING_ORDER.forEach((key, i) => {
 		const prev = LIVING_ORDER[i - 1];
@@ -348,7 +363,7 @@ function makeSteps(o) {
 			add({
 				id: 'tower/geothermal', hex: 'tower', site: 'geothermal', kind: 'geothermal', label: 'Geothermal: three wells ~7 km each, the ORC plant and the heat loop',
 				phases: [{ id: 'drill', label: 'drilling the wells', h: 2000, fixed: 12, outdoor: true }, { id: 'plant', label: 'stimulating the rock, building the ORC', h: 1500, fixed: 6 }],
-				services: 3 * 7000 * 1400 + 4300 * 1750, grid: 1e6, maxCrew: 6, gate: after1,
+				services: GEO.wells * GEO.mWell * GEO.eurM + GEO.kwGross * GEO.eurKw, grid: GEO.grid, maxCrew: 6, gate: after1,
 				energy: { solarKwhYear: 0, useKwhYear: 0, geoKwhYear: GEOTHERMAL, heatKwhYear: 104e6 }
 			});
 			const cl = landM2(TOWER_HEX);

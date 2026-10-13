@@ -43,20 +43,26 @@ export const capHeight = (/** @type {Cap} */ c, /** @type {number} */ r) => Math
 // ── what things cost and weigh ──────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Prices, € a unit. `src` names the source (./SOURCES), `range` what the sources span.
- * @type {Record<string, { label: string, unit: string, eur: number, range: string, src: string }>}
+ * Prices, € a unit, net of VAT, the material only: the villagers build it themselves, so no trade's labour, erection or
+ * CNC service is in a price (the cost audit, theos/sandbox-8/cost-audit.md, 2026-10-13). `src` names the source
+ * (./SOURCES), `range` what the sources span, `est` marks a price worked out from the sources rather than read off one.
+ * @type {Record<string, { label: string, unit: string, eur: number, range: string, src: string, est?: boolean, was?: number }>}
  */
 export const PRICES = {
-	glulam: { label: 'Larch/Douglas glulam struts, CNC-cut, supplied', unit: 'm³', eur: 1600, range: '1,100–2,200', src: 'glulam' },
-	clt: { label: 'CLT and glulam for floors and galleries', unit: 'm³', eur: 900, range: '700–1,200', src: 'glulam' },
-	hubs: { label: 'Cast-steel hubs, ring and connectors (galvanised)', unit: 't', eur: 9000, range: '5,000–15,000', src: 'steel' },
-	steel: { label: 'Structural steel, fabricated and erected', unit: 't', eur: 3000, range: '2,500–4,500', src: 'steel' },
-	glass: { label: 'Laminated low-iron double glazing, low-E', unit: 'm²', eur: 200, range: '150–300', src: 'glass' },
-	pv: { label: 'See-through solar cells laid in the glass', unit: 'm²', eur: 150, range: '100–250', src: 'pv' },
-	hemp: { label: 'Hemp-fibre insulation', unit: 'm³', eur: 140, range: '113–166', src: 'hemp' },
-	lime: { label: 'Lime-pozzolan concrete (footings)', unit: 'm³', eur: 220, range: '150–300', src: 'lime' },
-	concrete: { label: 'Screed and slabs (lime/LC3 concrete)', unit: 'm³', eur: 180, range: '130–250', src: 'lime' },
-	land: { label: 'Farmland in Bavaria', unit: 'ha', eur: 78000, range: '77,700 (2024)–79,000', src: 'land' }
+	// larch/Douglas glulam blanks: spruce glulam 555–575 €/m³ wholesale (Holzkurier 11/2025), larch logs ~1.7× spruce's;
+	// the village cuts the struts on its own used beam centre (buildout.js KIT 'joinery'), so no CNC service is bought
+	glulam: { label: 'Larch/Douglas glulam blanks for the struts (the village cuts them)', unit: 'm³', eur: 950, range: '800–1,200', src: 'glulam', est: true, was: 1600 },
+	// the north shell's cassettes are plain spruce structural timber (KVH 410–430 €/m³ wholesale, Holzkurier 11/2025)
+	cassette: { label: 'Spruce structural timber (KVH) for the north cassettes', unit: 'm³', eur: 500, range: '420–650', src: 'glulam', est: true },
+	clt: { label: 'CLT and glulam for floors and galleries', unit: 'm³', eur: 550, range: '500–700', src: 'glulam', est: true, was: 900 },
+	hubs: { label: 'Cast-steel hubs, ring and connectors (galvanised, machined, not erected)', unit: 't', eur: 6000, range: '4,500–9,000', src: 'steel', est: true, was: 9000 },
+	steel: { label: 'Structural steel, fabricated, not erected', unit: 't', eur: 2300, range: '1,800–3,000', src: 'steel', est: true, was: 3000 },
+	glass: { label: 'Laminated low-iron double glazing, low-E, with its gaskets and caps', unit: 'm²', eur: 190, range: '140–250', src: 'glass', est: true, was: 200 },
+	pv: { label: 'Solar cells laid in the glass (on top of the glazing’s price)', unit: 'm²', eur: 100, range: '50–150', src: 'pv', est: true, was: 150 },
+	hemp: { label: 'Hemp-fibre insulation', unit: 'm³', eur: 115, range: '90–140', src: 'hemp', est: true, was: 140 },
+	lime: { label: 'Lime-pozzolan concrete (footings)', unit: 'm³', eur: 180, range: '140–250', src: 'lime', est: true, was: 220 },
+	concrete: { label: 'Screed and slabs (lime/LC3 concrete)', unit: 'm³', eur: 150, range: '120–200', src: 'lime', est: true, was: 180 },
+	land: { label: 'Farmland in Bavaria', unit: 'ha', eur: 78000, range: '77,700 (Bavaria 2024)–150,000 (Upper Bavaria)', src: 'land' }
 };
 
 /** densities, t a m³ (glass: t a m² of laminated double glazing) */
@@ -202,7 +208,8 @@ export function shellOf(D) {
 		climate: z.climate,
 		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: footing * DENSITY.lime },
 		eur: {
-			timber: m.timber * PRICES.glulam.eur,
+			// the struts in glulam, the cassettes in plain structural timber
+			timber: z.timber * PRICES.glulam.eur + north * CASSETTE_M * PRICES.cassette.eur,
 			steel: m.steel * PRICES.hubs.eur,
 			glass: glazed * PRICES.glass.eur,
 			pv: m.pv * PRICES.pv.eur,
@@ -218,9 +225,11 @@ export function shellOf(D) {
 export const GFA_PERSON = 62;
 /** timber in a gallery of homes, m³ a m² of floor (CLT floors and walls, glulam posts; mass timber runs 0.2–0.4) */
 const TIMBER_GFA = 0.28;
-/** fitting out homes inside a dome, € a m²: timber multi-family homes cost 1,635–2,580 €/m² (BKI 2025, KG 300+400, gross
- * floor), their roof and façade a good share of it; inside a dome there is neither, so about 1,800 */
-export const FITOUT_HOME = 1800;
+/** fitting out homes inside a dome, € a m², trades and materials as a builder would charge: timber multi-family homes
+ * cost 1,635–2,580 €/m² (BKI 2025, KG 300+400, gross floor, mean 2,190), with 19 % VAT, roof and façade in it; net of
+ * VAT that is ~1,840, and inside a dome there is no roof and no weather façade, so about 1,600 (range 1,300–1,900,
+ * estimate; was 1,800). The build-out (./buildout.js) buys half of it: the materials, not the trades. */
+export const FITOUT_HOME = 1600;
 
 /**
  * A home dome (Samuel, 2026-10-08): the homes are one straight block across the north of the dome, east to west, its
@@ -468,7 +477,7 @@ export function towerShell(T) {
 		climate: T.climate,
 		t: { timber: m.timber * DENSITY.glulam, steel: m.steel, glass: glazed * DENSITY.glass, hemp: m.hemp * DENSITY.hemp, lime: m.lime * DENSITY.lime },
 		eur: {
-			timber: m.timber * PRICES.glulam.eur,
+			timber: T.timber * PRICES.glulam.eur + north * CASSETTE_M * PRICES.cassette.eur,
 			steel: m.steel * PRICES.steel.eur,
 			glass: glazed * PRICES.glass.eur,
 			pv: m.pv * PRICES.pv.eur,
@@ -478,8 +487,10 @@ export function towerShell(T) {
 	};
 }
 /** fitting out a m² of the tower's floors, € (assumed, inside a shell already glazed): structure in timber and
- * screed, services and finishes; the factory floor and the deck carry more (the deck a metre of soil) */
-export const FITOUT = { utilities: 3000, factory: 1500, park: 900, community: 2800, offices: 2800, hotel: 3000, apartments: 3200, sky: 3500 };
+ * screed, services and finishes; the factory floor and the deck carry more (the deck a metre of soil). `utilities`:
+ * workshops, halls and co-working inside a dome, net of VAT and with no roof or façade: BKI offices 3,300–5,800 €/m²
+ * gross with VAT and envelope less ~45 %, workshops less, so ~2,000 (range 1,400–2,800, estimate; was 3,000). */
+export const FITOUT = { utilities: 2000, factory: 1500, park: 900, community: 2800, offices: 2800, hotel: 3000, apartments: 3200, sky: 3500 };
 /** timber (m³) and screed (m³) a m² of floor: mass-timber floors ~0.25 m³ (the deck and factory long spans 0.4), 6 cm of screed */
 export const FLOOR_MATERIALS = { timber: 0.25, longSpan: 0.4, screed: 0.06 };
 
@@ -561,13 +572,31 @@ export const RAW = {
 	woodland: { label: 'Douglas fir and larch', unit: 'm³ wood', per: 15, note: 'Douglas fir grows 18.9 m³/ha a year in Germany (national forest inventory), larch 8–13: a mix about 15', src: 'yields' },
 	mine: { label: 'Clay, lime and gravel pits', unit: 't dug', per: 0, note: 'Open pits, no dome over them: only the works that fire and burn what they dig are under glass', src: 'numbers' }
 };
-/** the utilities' machines, € (sources in SOURCES.equipment) */
+/** the utilities' machines, € (sources in SOURCES.equipment). `range` low–high €, `est` an estimate, `was` the price
+ * before the cost audit (2026-10-13). The data center is the room's power, cooling and racks, not its accelerators
+ * (those are bought one by one: sandbox-9 CHIPS); the shell is the dome's, so a modular fit-out, not a Frankfurt building. */
 export const EQUIPMENT = [
-	{ label: 'AI data center, 300 kW of IT', eur: 0.3 * 10.5e6, note: 'Frankfurt data centers cost ~10.5 M€ a MW of IT (Turner & Townsend 2025–26)' },
-	{ label: 'Batteries, 10 MWh LFP', eur: 10000 * 250, note: '160 €/kWh utility-scale, 250–400 commercial (BNEF 2025)' },
-	{ label: 'Fuel cell 500 kW and electrolyser', eur: 500 * 3000 * 2, note: 'PEM fuel cells 1,500–5,500 €/kW; an electrolyser of the same size about as much (estimate)' },
-	{ label: 'Water works for 400 people', eur: 400 * 1500, note: 'Small membrane bioreactors 800–3,000 €/person, planted wetlands 150–1,000' }
+	{ label: 'AI data center, 300 kW of IT', eur: 0.3 * 4.0e6, range: [0.3 * 3.0e6, 0.3 * 6.5e6], est: true, was: 0.3 * 10.5e6, note: 'Modular/containerised data centers 4.4–4.6 M$ a MW of IT (AM Compute 2025) ≈ 4 M€ in a shell already built; a hyperscale building in Frankfurt costs 11.6 $/W (Turner & Townsend 2025)' },
+	{ label: 'Batteries, 10 MWh LFP', eur: 10000 * 155, range: [10000 * 110, 10000 * 200], est: true, was: 10000 * 250, note: 'Turnkey storage systems averaged 177 $/kWh in Europe in 2025 (BNEF), ≈ 155 €/kWh at 1.13 $/€' },
+	{ label: 'Fuel cell 500 kW and electrolyser', eur: 2.4e6, range: [1.8e6, 3.2e6], est: true, was: 500 * 3000 * 2, note: 'Electrolysers outside China 1,900–2,500 $/kW installed (IEA 2025 via Argus), PEM ~2,365 €/kW (ACER 2025); a 500 kW electrolyser ~1.1 M€ and a 500 kW stationary fuel cell 1,000–2,000 $/kW ≈ 0.7 M€, tanks and controls ~0.6 M€' },
+	{ label: 'Water works for 400 people', eur: 400 * 1500, range: [400 * 750, 400 * 2250], note: 'Small membrane bioreactors 800–3,000 €/person, planted wetlands 150–1,000' }
 ];
+/**
+ * The machines of each works (Dome120 works), € (estimates from used and new listings, cost audit 2026-10-13): the
+ * line, its power hook-ups and the moving kit; the hall is the dome's own. `range` low–high €. Before the audit the
+ * build-out bought each works at 60 % of a factory's 1,500 €/m² fit-out: 10.2 M€ each, 81.4 M€ for eight.
+ * @type {Record<string, { eur: number, range: [number, number], est: boolean, note: string }>}
+ */
+export const WORKS_MACHINES = {
+	steel: { eur: 1.5e6, range: [0.8e6, 3.0e6], est: true, note: 'a 1–2 t induction furnace (30–80 k$ FOB), sand moulding, a CNC machining centre, a galvanising bath and a press brake, used where it can be' },
+	glass: { eur: 2.5e6, range: [1.2e6, 4.0e6], est: true, note: 'a used insulating-glass line 315–325 k€ (machineseeker), a laminating oven (~60 k$) or autoclave (to 3 M$), cutting tables and a cell stringer' },
+	timber: { eur: 3.0e6, range: [1.5e6, 5.0e6], est: true, note: 'a sawmill line, a drying kiln on the geothermal heat, a finger-jointing line and a glulam press' },
+	hemp: { eur: 2.0e6, range: [1.0e6, 3.5e6], est: true, note: 'a 1 t/h decortication line 1.5–2 M€ (Messe Frankfurt exhibitor, 2024), a 2 t/h decorticator ~330 k$ (HempToday), and a batt line' },
+	lime: { eur: 2.0e6, range: [1.0e6, 4.0e6], est: true, note: 'a small electric shaft kiln for ~2,000 t a year, a crusher, a slaker and a mixing plant' },
+	clay: { eur: 2.5e6, range: [1.5e6, 5.0e6], est: true, note: 'a block press and extruder, dryers and an electric tunnel kiln for ~3,000 t a year' },
+	bamboo: { eur: 1.5e6, range: [0.8e6, 3.0e6], est: true, note: 'crushers, a dryer, resin dosing and a hot press for ~500 t of scrimber a year' },
+	recycling: { eur: 1.5e6, range: [0.8e6, 3.0e6], est: true, note: 'a sorting line, a shredder, a composting hall and a small biogas digester' }
+};
 /** energy, kWh a year (our research unless noted) */
 export const ENERGY = {
 	/** a person at home in a shared dome */
@@ -594,15 +623,15 @@ export const SOURCES = {
 	climate: { label: 'The engineering thread’s per-size model (dome-research/dome-sizes.md, 2026-10-08)', note: 'Hourly Munich year at 24 °C. Frame, hubs and ring for Dome50/100/150 and Tower200/250; version 2 (the north band, 2026-10-08 evening): heat beyond the pond 0.02/0.12/0.41 GWh and 3.01/5.51 GWh, climate power 0.014/0.062/0.16 and 0.67/1.2 GWh. Cells in every second pane of glass tilted under 45° (towers: all glass), 227 kWh/m² a year on caps, 194 on towers. People, factories and offices are not counted as heat sources. Our Dome40, Dome80, Dome120 and Tower180 take each figure along the power law between the two sizes either side (or the nearest two).' },
 	energy: { label: 'Our village energy research (energy/village-energy.md)', note: 'Geothermal 3.4 MW net a village center.' },
 	numbers: { label: 'The settlers game’s numbers (sandbox-6/numbers.md)', note: 'Diet 508 kg a person a year (Germany eats ~450–650 kg); 900 kWh a person at home.' },
-	glulam: { label: 'Glulam', url: 'https://www.holzkurier.com', note: 'Spruce glulam 555–575 €/m³ wholesale, 700–900 from a merchant (Holzkurier, Nov 2025). Larch and Douglas glulam only on request: ~750–1,200 (their logs cost about twice spruce’s). CNC-cut struts with their steel parts ~1,100–2,200 supplied, ~1,800–4,500 put up (estimate).' },
-	steel: { label: 'Steel', url: 'https://gmk.center', note: 'Fabricated and erected structural steel 2,500–4,500 €/t (estimate; plate itself ~770 €/t). Cast nodes 10–25 €/kg, galvanised machined hubs 5–12 (no public lists: estimate). Scrap ~300 €/t (EU 2025).' },
-	glass: { label: 'Glazing', url: 'https://www.aroundhome.de', note: 'Double glazing 95–140 €/m², laminated safety glass 55–320; laminated low-iron low-E double ~150–300 (estimate from these).' },
-	pv: { label: 'See-through solar glass', url: 'https://www.42watt.de/magazin/transparente-solarmodule', note: 'Semi-transparent BIPV glass 170–280 €/m² as a module (1.0–1.6 €/Wp); counted here as ~150 €/m² on top of the glazing.' },
-	hemp: { label: 'Hemp', url: 'https://www.baustoffshop.de', note: 'Hemp fibre mats 113–166 €/m³. Straw at the farm 100–180 €/t, fibre ~500–1,000 €/t, hurds ~250–450 €/t (older European figures).' },
-	lime: { label: 'Lime and concrete', note: 'Lime-pozzolan and LC3 concretes ~150–300 €/m³ placed; quicklime 120–220 €/t; gravel 10–22 €/t ex works (estimates and quarry price lists).' },
-	land: { label: 'Farmland', url: 'https://www.statistik.bayern.de', note: 'Bavaria: 79,000 €/ha in 2023, 78,170 in 2025.' },
-	buildings: { label: 'Building costs', url: 'https://www.bki.de', note: 'Timber multi-family homes 1,635–2,580 €/m² gross floor (BKI 2025, KG 300+400); offices 3,300–5,800. Living space in Germany 49.2 m² a person (Destatis 2024). Offices 14 m² a desk, co-working 12–14.' },
-	equipment: { label: 'Machines', note: 'Data centers ~10.5 M€ a MW of IT (Frankfurt, Turner & Townsend 2025–26); LFP storage 160 €/kWh utility, 250–400 commercial (BNEF 2025); PEM fuel cells 1,500–5,500 €/kW; small water works 150–3,000 € a person.' },
+	glulam: { label: 'Glulam and timber', url: 'https://www.holzkurier.com/content/dam/holz/holzkurier/de/web/2025/49/Holzkurier-Preisbilder_11-2025.pdf', note: 'Spruce glulam (BSH) 555–575 €/m³ and KVH 410–430 €/m³ wholesale (Holzkurier price board, Nov 2025); visible-grade glulam ~600+ (timber-online.net 2025/03). CLT ~500 €/m³ and up 50 € in 2025 (timber-online.net 2025/04). Larch value logs fetched 336 €/fm against spruce 200 at a BaySF auction (baysf.de 2019), Douglas 266 €/fm (Niedersachsen 2025): larch/Douglas glulam blanks ~800–1,200 €/m³, 950 used (estimate). Before the cost audit (2026-10-13) the struts were 1,600 €/m³ CNC-cut and supplied; the village now cuts them on a used beam centre (Hundegger K2 listings 55–255 k€, maschinensucher.de).' },
+	steel: { label: 'Steel', url: 'https://www.thetradehub.eu/en/customs/trade/84879051', note: 'EU import unit values for cast-steel parts 4.2–6.0 €/kg (thetradehub.eu, CN 8487); S355 plate 750–850 €/t (eurometal.net 2025); hot-dip galvanising 200–500 €/t (feuerverzinken.com 2021). A steel frame’s cost is 30–40 % material, 30–40 % fabrication, 10–15 % erection (steelconstruction.info): erection taken out. Hubs 6,000 €/t (4,500–9,000, estimate; was 9,000); structural steel fabricated, not erected, 2,300 €/t (estimate; was 3,000 erected). Scrap 292–319 €/t (produktion.de 2026).' },
+	glass: { label: 'Glazing', url: 'https://www.aroundhome.de/fenster/preislisten-isolierglas/', note: 'Insulating glass 100–150 €/m² (aroundhome 2025); laminated safety glass adds 35–80 €/m² (clean-invoice.com Glaser price template). Laminated low-iron low-E double ~145 €/m², gaskets, caps and the extra cuts ~45: 190 €/m² (140–250, estimate; was 200). Float comes in jumbo sheets 6.0 × 3.21 m (DIN EN 572-2, baunetzwissen.de): the Dome80 and Dome120 triangles, 3.9–6.1 m high, are each cut into two panes or more.' },
+	pv: { label: 'Solar cells in the glass', url: 'https://www.pv-magazine.com/2025/05/09/solar-cell-prices-decline-production-regions-continue-to-diversify/', note: 'TOPCon cells 0.036–0.040 $/W (pv magazine, May 2025); modules ~0.10 €/W (OPIS via pv magazine, March 2025), glass-glass 0.16–0.22 €/Wp (ema-energiewelt.de 2026); glazed BIPV 295–315 €/m² to the end user in 2017 (pvsites.eu). The cells, encapsulant and wiring laid into glazing already paid for: ~100 €/m² from a BIPV maker (50–150, estimate; was 150). The 227 kWh/m² a year the model counts takes ~210 Wp/m² at 1,000–1,150 kWh/kWp in Munich (reduco.ai; PVGIS): full-cover cells, not see-through ones.' },
+	hemp: { label: 'Hemp', url: 'https://www.baustoffshop.de/thermo-hanf-combi-jute-dammplatte-1200x625-mm-trockenbau-universaldammplatte.html', note: 'Thermo Hanf batts 13.44 €/m² for 100 mm with VAT (134 €/m³), 166 €/m³ at 40 mm (baustoffshop.de, retail); net of VAT and by the truck ~115 €/m³ (90–140, estimate; was 140). Straw at the farm 100–180 €/t, fibre ~500–1,000 €/t, hurds ~250–450 €/t (older European figures).' },
+	lime: { label: 'Lime and concrete', url: 'https://kies-krieger.de/wp-content/uploads/2025/03/TBS-Preisliste-Beton_Stand-01.02.2025.pdf', note: 'Ready-mix C25/30 117–172 €/m³ net delivered (Kies Krieger 02/2025; Heidelberg Materials Pinzl 2026 list). Lime-pozzolan footings 180 €/m³ (140–250, estimate; was 220), LC3 screed 150 €/m³ (120–200, estimate; was 180). Quicklime 120–220 €/t; gravel 10–22 €/t ex works (quarry lists).' },
+	land: { label: 'Farmland', url: 'https://statistik.bayern.de/mam/statistik/preise_verdienste/preise/sg35_ab_2021_kaufwerte_für_landwirtschaftliche_grundstücke_langfristige_entwicklung.pdf', note: 'Bavaria: 77,721 €/ha in 2024 (Bavarian statistics office), ~79,000 in 2023; Upper Bavaria ~150,000 €/ha (reduco.ai 2025).' },
+	buildings: { label: 'Building costs', url: 'https://www.aksachsen.org/fileadmin/Image_Archive/Berufspolitik/BKI/BKI_Flyer_2025.pdf', note: 'Timber multi-family homes 1,635–2,580 €/m² gross floor, mean 2,190 (BKI 2025, KG 300+400, with 19 % VAT); offices 3,300–5,800. A self-builder’s finishing materials 400–700 €/m² (fertighaus.de, Ausbauhaus). Living space in Germany 49.2 m² a person (Destatis 2024). Offices 14 m² a desk, co-working 12–14.' },
+	equipment: { label: 'Machines', url: 'https://www.energy-storage.news/battery-storage-system-prices-continue-to-fall-sharply-bnef-and-ember-reports-find/', note: 'LFP storage turnkey 177 $/kWh in Europe (BNEF 2025) ≈ 155 €/kWh. Modular data centers 4.4–4.6 M$ a MW of IT (amcompute.com 2025); a hyperscale building in Frankfurt 11.6 $/W (Turner & Townsend 2025). Electrolysers outside China 1,900–2,500 $/kW (IEA via Argus 2025), PEM ~2,365 €/kW (ACER); fuel cells 1,000–2,000 $/kW. Small water works 150–3,000 € a person. Works machines: used IG lines 315–325 k€ (machineseeker.com), 1 t/h hemp lines 1.5–2 M€ (Messe Frankfurt 2024), 1–2 t induction furnaces 30–80 k$ (made-in-china.com). EUR/USD 1.13 (2025 average, Bank of Finland).' },
 	yields: { label: 'Yields', url: 'https://www.tfz.bayern.de', note: 'Hemp straw 5–12 t/ha (TFZ trial 11.2); Douglas fir 18.9 m³/ha a year (BWI); poplar coppice 8–15 t/ha; apples 26–35 t/ha (Destatis); bananas under cover 35–72 t/ha, papaya 30–80; food forests: see FOREST in specs.js (crop yields from orchards and fields, the layers stacked 1.3×: an estimate); bamboo in central Europe is an estimate. Diet: EAT-Lancet Commission 2019, DGE 2024.' },
 	power: { label: 'Power price', url: 'https://euenergy.live', note: 'German day-ahead wholesale averaged ~90 €/MWh in 2025; small and mid industry paid ~183 €/MWh (BDEW 2025).' }
 };

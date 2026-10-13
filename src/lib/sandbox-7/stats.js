@@ -22,12 +22,13 @@ export const FACTORY_RUN = {
 };
 /** the village center's geothermal plant stands in the tower hex: 3.4 MW net, running 94% of the year */
 export const GEOTHERMAL = 3.4e3 * 8760 * 0.94;
-/** the tower's own utilities, for the whole village (estimates in the same terms as the utilities dome's) */
+/** the tower's own utilities, for the whole village (estimates in the same terms as the utilities dome's; `was` the
+ * price before the cost audit, 2026-10-13; the geothermal plant as ./buildout.js GEO prices it) */
 export const TOWER_EQUIPMENT = [
-	{ label: 'AI data center, 1 MW of IT', eur: 10.5e6, note: '~10.5 M€ a MW of IT (Frankfurt, Turner & Townsend 2025–26)' },
-	{ label: 'Batteries, 40 MWh LFP', eur: 40000 * 160, note: 'utility-scale 160 €/kWh (BNEF 2025)' },
+	{ label: 'AI data center, 1 MW of IT', eur: 4.0e6, est: true, was: 10.5e6, note: 'modular data centers 4.4–4.6 M$ a MW of IT (AM Compute 2025) in a shell already built; a Frankfurt hyperscale building 11.6 $/W (Turner & Townsend 2025)' },
+	{ label: 'Batteries, 40 MWh LFP', eur: 40000 * 155, est: true, was: 40000 * 160, note: 'turnkey 177 $/kWh in Europe (BNEF 2025) ≈ 155 €/kWh' },
 	{ label: 'Water works for the tower’s 2,500 guests, workers and residents', eur: 2500 * 1000, note: 'membrane bioreactor and planted wetland, 150–3,000 € a person' },
-	{ label: 'Geothermal plant: a well triplet and a 4 MW ORC', eur: 37.5e6, note: '30–45 M€ today (our village energy research)' }
+	{ label: 'Geothermal plant: a well triplet and a 4 MW ORC', eur: 3 * 7000 * 2400 + 4300 * 3500, est: true, was: 37.5e6, note: '~65.5 M€ (40–100): three 7 km wells at ~2,400 €/m and the ORC with stimulation at ~3,500 €/kW gross; deep EGS 13,400–33,500 $/kW net (NREL ATB 2024), Holzkirchen over 30 M€ to drill (GGSC)' }
 ];
 
 /** crops added up, t a year @param {[Record<string, number>, number][]} list each with how many times it counts */
