@@ -3,7 +3,9 @@
  * a likeness of anyone, but a person — a head with a face that shows where it looks and feels (v2, 2026-10-13: eyes
  * with whites and irises, a nose, lips, and hair: short, long, a bun or none; v3: the head one sculpted surface on a
  * real skull's proportions — cranium, brow ridge, eye sockets, cheekbones, jaw and chin; v4: friendly — a soft smile,
- * open eyes, brows raised a little, the cheeks lifted), a T-shirt, jeans, trainers —
+ * open eyes, brows raised a little, the cheeks lifted; v5: real eyes — glossy eyeballs under curved lids with a lash
+ * line, a catchlight in each — a toned skin (warm cheeks, lips, the nose's tip), a warm smile, a shorter chin, fuller
+ * hair), a T-shirt, jeans, trainers —
  * rigged head to toe so it takes any pose and any move: 17 bones (the hips, the spine, the chest, the neck, the head;
  * each arm's upper arm, forearm and hand; each leg's thigh, shin and foot), one skinned mesh over them, every joint
  * bending smoothly.
@@ -60,9 +62,9 @@ const BONES: BoneSpec[] = [
 const HEAD: [y: number, w: number, zf: number, zs: number, zb: number, n: number][] = [
 	[1.594, 0.012, 0.062, 0.045, 0.03, 2],
 	[1.598, 0.03, 0.074, 0.03, 0, 2.3],
-	[1.606, 0.045, 0.08, 0.02, -0.015, 2.6],
-	[1.618, 0.053, 0.082, 0.015, -0.025, 2.8],
-	[1.632, 0.058, 0.084, 0.01, -0.035, 2.7],
+	[1.606, 0.044, 0.08, 0.02, -0.015, 2.4],
+	[1.618, 0.051, 0.082, 0.015, -0.025, 2.5],
+	[1.632, 0.0565, 0.084, 0.01, -0.035, 2.5],
 	[1.645, 0.061, 0.087, 0.006, -0.045, 2.5],
 	[1.66, 0.065, 0.09, 0.002, -0.058, 2.4],
 	[1.675, 0.068, 0.093, 0, -0.075, 2.3],
@@ -75,9 +77,15 @@ const HEAD: [y: number, w: number, zf: number, zs: number, zb: number, n: number
 	[1.815, 0.035, 0.042, -0.01, -0.058, 2],
 	[1.823, 0.003, 0.004, -0.01, -0.016, 2]
 ];
+/** the lower face (under the nose's base) shorter than its first measure (v5): the chin less long */
+// eased in from the nose's base down, so no crease shows where it starts
+for (const r of HEAD) if (r[0] < 1.668) {
+	const d = 1.668 - r[0];
+	r[0] = 1.668 - d + (0.13 * d * d) / (d + 0.02);
+}
 const CHIN = HEAD[0]![0], CROWN = HEAD[HEAD.length - 1]![0];
 /** the head's section at height y, smoothly between those given (Catmull-Rom) */
-function section(y: number): { w: number; zf: number; zs: number; zb: number; n: number } {
+function sectionAt(y: number): { w: number; zf: number; zs: number; zb: number; n: number } {
 	let i = 0;
 	while (i < HEAD.length - 2 && y > HEAD[i + 1]![0]) i++;
 	const at = (k: number) => HEAD[Math.max(0, Math.min(HEAD.length - 1, k))]!;
@@ -88,45 +96,83 @@ function section(y: number): { w: number; zf: number; zs: number; zb: number; n:
 	};
 	return { w: Math.max(0.0005, cr(1)), zf: cr(2), zs: cr(3), zb: cr(4), n: cr(5) };
 }
+/** the same, softened over a few millimetres up and down (from v5), so no row of the table shows as a crease */
+function section(y: number): { w: number; zf: number; zs: number; zb: number; n: number } {
+	const o = { w: 0, zf: 0, zs: 0, zb: 0, n: 0 };
+	for (const [dy, f] of [[-0.006, 1], [-0.003, 4], [0, 6], [0.003, 4], [0.006, 1]] as const) {
+		const t = sectionAt(Math.min(CROWN, Math.max(CHIN, y + dy)));
+		o.w += (t.w * f) / 16;
+		o.zf += (t.zf * f) / 16;
+		o.zs += (t.zs * f) / 16;
+		o.zb += (t.zb * f) / 16;
+		o.n += (t.n * f) / 16;
+	}
+	if (y < CHIN + 0.006 || y > CROWN - 0.006) o.w = Math.min(o.w, sectionAt(y).w); // the ends stay closed
+	return o;
+}
+/** where the lips meet (as built for 1.80 m) and half the mouth's width */
+export const MOUTH = { y: 1.6505, w: 0.024 };
+/** the eyes' middles (as built for 1.80 m), left and right of the face's middle by x */
+export const EYE = { x: 0.0325, y: 1.712, r: 0.0124 };
 /** the bumps of the face under the skin: [x, y, reach across, reach up, how far forward] (mirrored left and right) */
 const BUMPS: [number, number, number, number, number][] = [
-	[0.033, 1.712, 0.013, 0.009, -0.007], // the eye sockets
+	[0.034, 1.712, 0.015, 0.0095, -0.0085], // the eye sockets
 	[0.03, 1.737, 0.02, 0.006, 0.002], // the brow ridge
 	[0.052, 1.692, 0.012, 0.012, 0.005], // the cheekbones
-	[0.05, 1.655, 0.012, 0.012, -0.002], // the hollows under them
-	[0, 1.606, 0.014, 0.008, 0.004], // the chin
-	[0, 1.658, 0.02, 0.012, 0.002], // the mouth's curve over the teeth
-	[0.032, 1.679, 0.013, 0.01, 0.0042], // the cheeks, lifted by the smile
-	[0.025, 1.6625, 0.004, 0.006, -0.0016] // the smile's dimples at the mouth's corners
+	[0.05, 1.655, 0.012, 0.012, -0.0015], // the hollows under them
+	[0, 1.613, 0.015, 0.009, 0.0045], // the chin
+	[0, MOUTH.y + 0.002, 0.026, 0.016, 0.004], // the mouth's curve over the teeth
+	[0, MOUTH.y + 0.0135, 0.017, 0.0075, 0.0042], // the upper lip's roll up to the nose
+	[0.035, 1.68, 0.015, 0.011, 0.0055], // the cheeks, lifted by the smile
+	[0.0275, MOUTH.y + 0.0068, 0.004, 0.005, -0.0016] // the smile's dimples at the mouth's corners
 ];
-/** how far up the mouth turns at x (as built for 1.80 m): its corners lifted into a soft smile */
-const SMILE = (x: number) => 0.0055 * Math.min(1.1, (x / 0.021) ** 2);
-/** the nose, part of the surface: a ridge from the root between the eyes to its tip, falling back under the tip to the
+/** how far up the mouth turns at x (as built for 1.80 m): flat in its middle, its corners lifted into a smile */
+const SMILE = (x: number) => {
+	const q = (x / 0.022) ** 2;
+	return 0.0062 * Math.min(1.15, 0.4 * q + 0.6 * q * q);
+};
+/** the nose, part of the surface: a ridge from the root between the eyes to its tip, rounding under the tip to the
  *  lip; its wings either side of the tip */
 function nose(x: number, y: number): number {
-	const ROOT = 1.722, TIP = 1.68, BASE = 1.668;
+	const ROOT = 1.722, TIP = 1.679;
+	// its base lowest under the tip and curving up to where the wings meet the cheeks (v5): a round nose, not a ledge
+	const BASE = 1.6675 + 0.0045 * Math.min(1, (x / 0.013) ** 2);
 	if (y <= BASE || y >= ROOT) return 0;
-	const p = y >= TIP ? 0.02 * ((ROOT - y) / (ROOT - TIP)) ** 1.35 : 0.02 * ((y - BASE) / (TIP - BASE)) ** 0.55;
-	const wx = 0.0048 + 0.0058 * (ROOT - Math.max(y, TIP)) / (ROOT - TIP);
+	const p = y >= TIP ? 0.0195 * ((ROOT - y) / (ROOT - TIP)) ** 1.35 : 0.0195 * ((y - BASE) / (TIP - BASE)) ** 0.9;
+	const wx = 0.0052 + 0.0055 * (ROOT - Math.max(y, TIP)) / (ROOT - TIP);
 	return p * Math.exp(-((x / wx) ** 2));
 }
 /** the lips, part of the surface: the upper, the lower and the line between them */
 const LIPS: [number, number, number, number, number][] = [
-	[0, 1.6588, 0.021, 0.0032, 0.0032],
-	[0, 1.6506, 0.018, 0.0042, 0.0042],
-	[0, 1.6549, 0.023, 0.0011, -0.0018]
+	[0, MOUTH.y + 0.0042, 0.022, 0.0036, 0.0034],
+	[0, MOUTH.y - 0.0048, 0.019, 0.0048, 0.0045],
+	[0, MOUTH.y, 0.024, 0.0011, -0.0019]
 ];
 /** how much of the lips' colour a point of the face takes (as built for 1.80 m): 1 on them, fading out at their edge */
-const onLips = (x: number, y: number) => Math.min(1, Math.max(0, (1 - Math.sqrt((x / 0.0225) ** 2 + ((y - SMILE(x) - 1.6549) / 0.0078) ** 2)) / 0.18));
-/** the skin's colour, or the lips' where the lips are */
-const lipsOr = (skinC: string, lipsC: string) => {
-	const a = new THREE.Color(skinC), b = new THREE.Color(lipsC), c = new THREE.Color();
-	return (p: THREE.Vector3) => (p.z > 0.06 ? `#${c.copy(a).lerp(b, onLips(p.x, p.y)).getHexString()}` : skinC);
+const onLips = (x: number, y: number) => Math.min(1, Math.max(0, (1 - Math.sqrt((x / (MOUTH.w - 0.0005)) ** 2 + ((y - SMILE(x) - MOUTH.y) / 0.0088) ** 2)) / 0.18));
+/** a soft spot of the face, 0…1: 1 at (x, y) (mirrored when x is not 0), fading over rx, ry */
+const spot = (p: THREE.Vector3, x: number, y: number, rx: number, ry: number) =>
+	Math.exp(-(((Math.abs(p.x) - x) / rx) ** 2) - ((p.y - y) / ry) ** 2);
+/** the skin's colour over the face: warmer on the cheeks and the nose's tip, a little shadow in the lids' crease, the
+ *  lips' colour on the lips */
+const skinTone = (k: Look) => {
+	const base = new THREE.Color(k.skin), lips = new THREE.Color(k.lips), warm = new THREE.Color(k.skin).lerp(new THREE.Color('#d4655a'), 0.55);
+	const shade = new THREE.Color(k.skin).multiplyScalar(0.8), light = new THREE.Color(k.skin).lerp(new THREE.Color('#ffffff'), 0.25), c = new THREE.Color();
+	return (p: THREE.Vector3) => {
+		if (p.z < 0.03) return k.skin;
+		c.copy(base);
+		c.lerp(warm, 0.32 * spot(p, 0.043, 1.68, 0.015, 0.012) + 0.22 * spot(p, 0, 1.676, 0.008, 0.007));
+		c.lerp(shade, 0.35 * spot(p, 0.034, 1.7235, 0.012, 0.0035) + 0.18 * spot(p, 0.017, 1.715, 0.004, 0.006));
+		// light bounced up under the nose and onto the upper lip, as a face's own skin gives it
+		c.lerp(light, 0.4 * spot(p, 0, MOUTH.y + 0.0135, 0.014, 0.0045) + 0.45 * spot(p, 0, 1.6685, 0.015, 0.0028));
+		c.lerp(lips, 0.85 * onLips(p.x, p.y));
+		return `#${c.getHexString()}`;
+	};
 };
 const bump = (x: number, y: number) =>
 	nose(x, y) +
 	LIPS.reduce((sum, [, by, rx, ry, dz]) => sum + dz * Math.exp(-((x / rx) ** 2) - ((y - SMILE(x) - by) / ry) ** 2), 0) +
-	[...BUMPS, [0.0125, 1.6735, 0.0068, 0.0058, 0.0062] as [number, number, number, number, number]].reduce((sum, [bx, by, rx, ry, dz]) => sum + dz * (Math.exp(-(((x - bx) / rx) ** 2) - ((y - by) / ry) ** 2) + (bx ? Math.exp(-(((x + bx) / rx) ** 2) - ((y - by) / ry) ** 2) : 0)), 0);
+	[...BUMPS, [0.0112, 1.6745, 0.0062, 0.0046, 0.0048] as [number, number, number, number, number], [0, 1.677, 0.0068, 0.0058, 0.0026] as [number, number, number, number, number]].reduce((sum, [bx, by, rx, ry, dz]) => sum + dz * (Math.exp(-(((x - bx) / rx) ** 2) - ((y - by) / ry) ** 2) + (bx ? Math.exp(-(((x + bx) / rx) ** 2) - ((y - by) / ry) ** 2) : 0)), 0);
 
 /** how far forward the face's skin is at (x, y), as built for 1.80 m; behind its sides, the sides' z */
 export function skinAt(x: number, y: number): number {
@@ -139,7 +185,7 @@ export function skinAt(x: number, y: number): number {
 /** the heights of the head's rows, `u` 0…1 chin to crown: closest round the eyes, nose and mouth, and at the two ends */
 const ROW_Y = (() => {
 	const n = 2000, ys: number[] = [], cum: number[] = [0];
-	const dense = (y: number) => 1 + 3.2 * Math.exp(-(((y - 1.684) / 0.042) ** 2)) + 1.2 * Math.exp(-(((y - CHIN) / 0.01) ** 2)) + 1.2 * Math.exp(-(((y - CROWN) / 0.012) ** 2));
+	const dense = (y: number) => 1 + 3.2 * Math.exp(-(((y - 1.684) / 0.042) ** 2)) + 2 * Math.exp(-(((y - MOUTH.y) / 0.008) ** 2)) + 1.2 * Math.exp(-(((y - CHIN) / 0.01) ** 2)) + 1.2 * Math.exp(-(((y - CROWN) / 0.012) ** 2));
 	for (let i = 0; i <= n; i++) {
 		ys.push(CHIN + ((CROWN - CHIN) * i) / n);
 		if (i) cum.push(cum[i - 1]! + dense(ys[i]!));
@@ -208,7 +254,7 @@ function headGrid(rows: number, cols: number, out: (p: V3) => number = () => 0, 
 
 /** the hairline's height round the head: by how far round from the front (radians), front, temples, over the ears,
  *  behind them, the nape */
-const HAIRLINE: [number, number][] = [[0, 1.79], [0.7, 1.777], [1.12, 1.748], [1.42, 1.726], [1.75, 1.718], [2.2, 1.7], [Math.PI, 1.668]];
+const HAIRLINE: [number, number][] = [[0, 1.784], [0.7, 1.773], [1.12, 1.746], [1.42, 1.726], [1.75, 1.718], [2.2, 1.7], [Math.PI, 1.668]];
 function hairline(p: V3): number {
 	const th = Math.abs(Math.atan2(p[0], p[2] + 0.005));
 	let i = 0;
@@ -223,7 +269,9 @@ function hair(k: Look): Piece[] {
 	if (k.hair === 'none') return [];
 	const thick = (p: V3) => {
 		const t = Math.min(1, Math.max(0, (p[1] - hairline(p)) / 0.028));
-		return -0.002 + 0.0105 * t * t * (3 - 2 * t);
+		// fuller on top and towards the front (v5), short at the back and sides
+		const top = Math.min(1, Math.max(0, (p[1] - 1.75) / 0.05)), fore = Math.min(1, Math.max(0, 0.5 + p[2] / 0.12));
+		return -0.002 + (0.0105 + 0.008 * top * (0.4 + 0.6 * fore)) * t * t * (3 - 2 * t);
 	};
 	// grown from under the skin, so where it comes out is a smooth line, not the grid's steps
 	const cap = headGrid(84, 112, thick, (p) => p[1] > hairline(p) - 0.012);
@@ -236,55 +284,85 @@ function hair(k: Look): Piece[] {
 	return out;
 }
 
-/** the face, every feature set on the skin where it is (so none sinks into the head, none floats off it): eyes with
- *  their whites, irises, pupils and a glint, turned with the face's curve; lids with a lash line; brows; a nose with a
- *  bridge, a tip, its wings and nostrils; two lips with the line between them (from v3 the nose and lips are part of the
- *  head's surface, only the nostrils and the lips' line on it) */
+/** a cap of a sphere of radius r round c, its middle towards `pole`, reaching `half` (radians) from it, turned by q */
+function cap(c: V3, r: number, pole: THREE.Vector3, half: number, q: THREE.Quaternion, seg = 36): THREE.BufferGeometry {
+	const g = new THREE.SphereGeometry(r, seg, Math.max(4, Math.round((seg * half) / Math.PI)), 0, Math.PI * 2, 0, half);
+	g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), pole.clone().normalize()));
+	g.applyQuaternion(q);
+	g.translate(...c);
+	return g;
+}
+/** the front of a cap's edge (as `cap` lays it), as a line of points */
+function capEdge(c: V3, r: number, pole: THREE.Vector3, half: number, q: THREE.Quaternion): THREE.Vector3[] {
+	const u = pole.clone().normalize(), e1 = new THREE.Vector3(1, 0, 0), e2 = new THREE.Vector3().crossVectors(u, e1).normalize();
+	const pts: THREE.Vector3[] = [];
+	for (let i = 0; i <= 48; i++) {
+		const f = -Math.PI + (Math.PI * i) / 48;
+		const v = u.clone().multiplyScalar(Math.cos(half)).add(e1.clone().multiplyScalar(Math.cos(f) * Math.sin(half))).add(e2.clone().multiplyScalar(Math.sin(f) * Math.sin(half))).multiplyScalar(r);
+		if (v.z > 0.3 * r) pts.push(v.applyQuaternion(q).add(new THREE.Vector3(...c)));
+	}
+	return pts;
+}
+/** a lid: the direction of its cap's middle (up or down, leaning back by `lean`) and how far the cap reaches, so its
+ *  edge crosses the eye's front `front` (a share of its radius) above or below its middle */
+function lid(front: number, lean: number, up: boolean): { pole: THREE.Vector3; half: number } {
+	const sy = up ? 1 : -1;
+	return { pole: new THREE.Vector3(0, sy * Math.cos(lean), -Math.sin(lean)), half: Math.acos(Math.abs(front) * Math.cos(lean) - Math.sqrt(1 - front * front) * Math.sin(lean)) };
+}
+
+/** the face, every feature set on the skin where it is (so none sinks into the head, none floats off it): from v5 each
+ *  eye a glossy ball in its socket — its white, an iris with a darker rim, a pupil, a catchlight — under two lids, curved
+ *  caps of skin round it, the upper one with its lash line; brows; nostrils; the line between the lips (the nose and
+ *  lips are part of the head's surface) */
 function face(k: Look): Piece[] {
 	const on = (x: number, y: number, out: number, s: V3, rot: V3, color: string, detail: [number, number] = [16, 12]): Piece => ({ geo: egg([x, y, skinAt(x, y) + out], s, rot, detail), color, bone: 'head' });
 	const out: Piece[] = [];
+	const R = EYE.r, front = new THREE.Vector3(0, 0, 1), still = new THREE.Quaternion();
+	const lidC = new THREE.Color(k.skin).multiplyScalar(0.94).getHexString(), rim = new THREE.Color(k.iris).multiplyScalar(0.45).getHexString();
+	const upper = lid(0.47, 0.78, true), lower = lid(-0.34, 1.08, false);
 	for (const [, x] of sides) {
-		const ex = x * 0.033, ey = 1.712, turn: V3 = [0, x * 0.42, 0];
+		const ex = x * EYE.x, ey = EYE.y;
+		const c: V3 = [ex, ey, skinAt(ex, ey) + 0.005 - R];
+		// the lids follow the face's curve: their outer corners back and a little up
+		const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, x * 0.18, x * 0.07));
 		out.push(
-			on(ex, ey, -0.0022, [0.0125, 0.0085, 0.0045], turn, '#f3efe7'),
-			on(ex - x * 0.001, ey - 0.0004, 0.0019, [0.0058, 0.0058, 0.0016], turn, k.iris, [14, 10]),
-			on(ex - x * 0.001, ey - 0.0004, 0.0029, [0.0029, 0.0029, 0.001], turn, '#141110', [10, 8]),
-			on(ex + 0.0016, ey + 0.002, 0.0036, [0.0012, 0.0012, 0.0005], turn, '#ffffff', [8, 6]),
-			// the lids open, the upper one over the iris's top only, the lower one lifted by the smile
-			on(ex, ey + 0.0086, -0.0022, [0.0142, 0.0044, 0.0058], [0, x * 0.42, x * 0.04], k.skin),
-			on(ex, ey + 0.0049, 0.0021, [0.0134, 0.001, 0.0022], [0, x * 0.42, x * 0.04], '#2a1d17', [14, 6]),
-			on(ex, ey - 0.0064, -0.0014, [0.0128, 0.0026, 0.0046], [0, x * 0.42, x * 0.05], k.skin, [14, 8]),
-
-			on(x * 0.0058, 1.6696, -0.0012, [0.003, 0.0012, 0.0034], [0.35, 0, 0], '#4a2e25', [10, 6]) // a nostril
+			{ geo: cap(c, R, front, Math.PI, still, 32), color: '#f4f0ea', bone: 'head', mat: 1 },
+			{ geo: cap(c, R + 0.00008, front, 0.56, still), color: `#${rim}`, bone: 'head', mat: 1 },
+			{ geo: cap(c, R + 0.00016, front, 0.5, still), color: k.iris, bone: 'head', mat: 1 },
+			{ geo: cap(c, R + 0.00024, front, 0.2, still, 24), color: '#0d0b0a', bone: 'head', mat: 1 },
+			{ geo: egg(new THREE.Vector3(-0.3, 0.36, 0.88).normalize().multiplyScalar(R + 0.0004).add(new THREE.Vector3(...c)).toArray() as V3, [0.0009, 0.0009, 0.0004], [0, 0, 0], [8, 6]), color: '#ffffff', bone: 'head', mat: 1 },
+			{ geo: cap(c, R + 0.0009, upper.pole, upper.half, q), color: `#${lidC}`, bone: 'head' },
+			{ geo: cap(c, R + 0.0004, lower.pole, lower.half, q), color: k.skin, bone: 'head' },
+			{ geo: new THREE.TubeGeometry(new THREE.CatmullRomCurve3(capEdge(c, R + 0.0011, upper.pole, upper.half, q)), 28, 0.00065, 6, false), color: '#231915', bone: 'head' },
+			{ geo: new THREE.TubeGeometry(new THREE.CatmullRomCurve3(capEdge(c, R + 0.0005, lower.pole, lower.half, q)), 28, 0.0003, 5, false), color: '#9a6a5e', bone: 'head' },
+			on(x * 0.0062, 1.6686, -0.0012, [0.0027, 0.0011, 0.003], [0.45, 0, x * 0.3], `#${new THREE.Color(k.skin).multiplyScalar(0.42).getHexString()}`, [10, 6]) // a nostril
 		);
 	}
-	out.push(
-	);
-	// the brows: raised a little, each a soft arch, thick at the inner end and thinning out
+	// the brows: relaxed, each a soft low arch lying on the skin, full at the inner end and thinning out
 	for (const [, sx] of sides) {
 		const pts = Array.from({ length: 9 }, (_, i) => {
-			const u = i / 8, x = sx * (0.016 + 0.036 * u), y = 1.7385 + 0.0045 * Math.sin(Math.PI * (0.15 + 0.8 * u));
-			return new THREE.Vector3(x, y, skinAt(x, y) + 0.0006);
+			const u = i / 8, x = sx * (0.015 + 0.036 * u), y = 1.7355 + 0.0038 * Math.sin(Math.PI * (0.1 + 0.85 * u)) - 0.001 * u;
+			return new THREE.Vector3(x, y, skinAt(x, y) + 0.0002);
 		});
-		const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 1, 6, false);
-		// thinner towards the outer end: each ring scaled about its own point on the curve
-		const pos = g.attributes.position!, c = new THREE.CatmullRomCurve3(pts), q = new THREE.Vector3(), m = new THREE.Vector3();
+		const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 1, 8, false);
+		// thinner towards the outer end: each ring scaled about its own point on the curve, flat on the skin
+		const pos = g.attributes.position!, cv = new THREE.CatmullRomCurve3(pts), v3 = new THREE.Vector3(), m = new THREE.Vector3();
 		for (let v = 0; v < pos.count; v++) {
-			const t = Math.floor(v / 7) / 20;
-			c.getPointAt(Math.min(1, t), m);
-			q.fromBufferAttribute(pos, v).sub(m).multiplyScalar(0.0024 * (1 - 0.55 * t));
-			q.y *= 0.8;
-			pos.setXYZ(v, m.x + q.x, m.y + q.y, m.z + q.z);
+			const t = Math.floor(v / 9) / 20;
+			cv.getPointAt(Math.min(1, t), m);
+			v3.fromBufferAttribute(pos, v).sub(m).multiplyScalar(0.0025 * (1 - 0.5 * t) * Math.min(1, 0.55 + 4 * t));
+			v3.z *= 0.4;
+			pos.setXYZ(v, m.x + v3.x, m.y + v3.y, m.z + v3.z);
 		}
 		g.computeVertexNormals();
-		out.push({ geo: g, color: k.brows, bone: 'head' });
+		out.push({ geo: g, color: `#${new THREE.Color(k.brows).lerp(new THREE.Color(k.skin), 0.08).getHexString()}`, bone: 'head' });
 	}
 	// the line between the lips, curved up at its corners with the smile
-	const line = new THREE.CatmullRomCurve3(Array.from({ length: 13 }, (_, i) => {
-		const x = -0.0205 + (i * 0.041) / 12, y = 1.6549 + SMILE(x);
+	const line = new THREE.CatmullRomCurve3(Array.from({ length: 15 }, (_, i) => {
+		const x = -(MOUTH.w - 0.0008) + (i * 2 * (MOUTH.w - 0.0008)) / 14, y = MOUTH.y + SMILE(x);
 		return new THREE.Vector3(x, y, skinAt(x, y) - 0.0002);
 	}));
-	out.push({ geo: new THREE.TubeGeometry(line, 24, 0.0007, 6, false), color: '#6a3a34', bone: 'head' });
+	out.push({ geo: new THREE.TubeGeometry(line, 28, 0.00075, 6, false), color: `#${new THREE.Color(k.lips).multiplyScalar(0.5).getHexString()}`, bone: 'head' });
 	return out;
 }
 
@@ -308,18 +386,18 @@ function parts(k: Look): Piece[] {
 				{ y: 1.28, w: 0.36, d: 0.235, z: 0.015 },
 				{ y: 1.37, w: 0.39, d: 0.225, z: 0.005 },
 				{ y: 1.43, w: 0.42, d: 0.2, z: -0.008 },
-				{ y: 1.465, w: 0.36, d: 0.17, z: -0.012 },
-				{ y: 1.495, w: 0.26, d: 0.14, z: -0.015 },
-				{ y: 1.53, w: 0.14, d: 0.12, z: -0.015 },
+				{ y: 1.465, w: 0.375, d: 0.175, z: -0.012 },
+				{ y: 1.495, w: 0.3, d: 0.15, z: -0.015 },
+				{ y: 1.53, w: 0.165, d: 0.13, z: -0.016 },
 				{ y: 1.545, w: 0.02, d: 0.02, z: -0.015 }
 			], 44),
 			color: (p) => (p.y < 0.985 ? k.trousers : p.y < 1.012 ? k.belt : k.shirt),
 			chain: { bones: ['hips', 'spine', 'chest', 'neck'], soft: 0.07 }
 		},
-		{ geo: limb([0, 1.64, -0.012], [0, 1.47, -0.018], 0.056, 0.062), color: k.skin, chain: { bones: ['chest', 'neck', 'head'], soft: 0.04 } },
+		{ geo: limb([0, 1.64, -0.012], [0, 1.47, -0.018], 0.061, 0.072), color: k.skin, chain: { bones: ['chest', 'neck', 'head'], soft: 0.04 } },
 		// the head: one surface on a skull's proportions, ears from the brow to the base of the nose; the face — eyes with
 		// their whites, irises and a glint, lids, brows, a nose, lips — so it shows where it looks and how it feels
-		{ geo: headGrid(150, 128), color: lipsOr(k.skin, k.lips), bone: 'head' },
+		{ geo: headGrid(160, 136), color: skinTone(k), bone: 'head' },
 		...sides.map(([, x]): Piece => ({ geo: egg([x * (section(1.703).w - 0.001), 1.703, -0.012], [0.006, 0.029, 0.019], [-0.15, -x * 0.3, 0], [16, 12]), color: k.skin, bone: 'head' })),
 		...face(k),
 		...hair(k),
@@ -440,7 +518,7 @@ function clipsFor(s: number, poses: Record<string, Pose>): Record<string, Clip> 
 export function human(look: Partial<Look> = {}, height = HEIGHT): Cast {
 	const s = height / MEASURED;
 	const { bones, parts: body } = scaled(s, { ...LOOK, ...look });
-	const r = rig(bones, body, [skin(0.78)]);
+	const r = rig(bones, body, [skin(0.74), skin(0.12)]);
 	r.object.name = 'stand-in';
 	r.pose(relaxed);
 	const poses = s === HEIGHT / MEASURED ? POSES : posesFor(s);
