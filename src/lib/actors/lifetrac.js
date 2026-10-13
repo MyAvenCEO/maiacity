@@ -10,20 +10,24 @@
  * Units, each a 100 cc hydraulic motor straight on its wheel shaft (no chains, skid-steered: the left pair on one
  * valve, the right pair on another); L-shaped loader arms pivoting in the sandwiches' gaps on 1½" pins, raised by two
  * 2.5" cylinders, the bucket tipped by two 3" cylinders from the cross beam; a folding deck at the back to stand on.
- * What the CAD does not draw yet — the power unit (an 18 hp Vanguard V-twin on a 1.4 in³ gear pump), the tank, the
- * valve block, the controller's box — is placed here where it fits, sized from OSE's hydraulic and controller bills.
+ * Its power is a Power Cube (./powercube.js), OSE's own hydraulic power unit, the one that drives every machine of the
+ * Global Village Construction Set: set whole on a cradle between the sandwiches, its couplers feeding the valves, its
+ * every part as its own as on the cube alone. (v25's bills name an 18 hp Vanguard power unit built into the frame
+ * instead, and its CAD does not draw it.) What the CAD does not draw yet — the valve block, the controller's box — is
+ * placed here where it fits, on top of the cube, sized from OSE's hydraulic and controller bills.
  * The tyres are drawn as the CAD draws them (617.5 mm, touching the ground); the real 12-16.5 tyre is 851 mm.
  *
  * Built facing +z, on y 0; OSE's coordinates (X across, Y forward from the frame's back, Z up, mm) through `P`.
  * Moves: work (a loader cycle: in, scoop, lift, back, dump, lower), drive, turn (a skid turn on the spot), lift,
  * curl, platform (the deck folded down and up), assemble (built step by step), explode (drawn apart and back), idle.
- * The engine runs in every move (its flywheel, coupling and the cooler's fan turning, slowed to be seen), the valves'
+ * The cube's engine runs in every move (its flywheel, coupling and cooler fan turning, slowed to be seen), the valves'
  * coils light as they are switched, and the handheld's sticks move as the machine does.
  */
 import * as THREE from 'three';
 import { loop, rig, skin } from './rig';
 import { block, beam, ease } from './excavator-rig.js';
 import { machineKit } from './parts.js';
+import { CUBE, powerCubeJoints, powerCubeParts, powerCubeTurns, POWERCUBE_SOURCES } from './powercube.js';
 
 /** @typedef {import('./rig').V3} V3 */
 /** @typedef {import('./rig').Pose} Pose */
@@ -109,8 +113,9 @@ const BCYL_A = armAt(T3_U, T3_V - 25.4 - 50);
 const BCYL_B = /** @type {[number, number]} */ ([TY, TZ + 300]);
 /** the axles: Y of the rear and the front, their height, the wheels' X */
 const AX = { rear: 400, front: 1150, z: 308.75, x: 707, r: 308.75 };
-/** the engine's crank (and the pump's shaft) height, the flywheel's Y, the coupling's, the cooler fan's place */
-const CRANK = 330, FLY_Y = 1000, CPL_Y = 602, FAN = /** @type {MM} */ ([0, 1288, 560]);
+/** the Power Cube's foot (the middle under it): on its cradle, high enough that its quick-attach clears the platform
+ *  folded up behind it, and short of the arms' cross beam in front; its top */
+const CUBE_AT = /** @type {MM} */ ([0, 425, 550]), CUBE_TOP = CUBE_AT[2] + CUBE.H;
 /** the deck's pivot (Y, Z) */
 const DECK = /** @type {[number, number]} */ ([75.4, 330]);
 /** where the handheld sits (a holster on the back plate), tilted to the one standing behind */
@@ -130,7 +135,8 @@ const STATIONS = /** @type {const} */ ([
 	{ id: 'bucket', x: -55, a: 'D7', b: 'D8', what: 'the bucket', ya: 'curl', yb: 'dump' },
 	{ id: 'right', x: -165, a: 'D3', b: 'D4', what: 'the right wheels', ya: 'forward', yb: 'back' }
 ]);
-const MAN_Y = 410, MAN_Z = 905;
+/** the valve manifold, on top of the cube */
+const MAN_Y = 330, MAN_Z = CUBE_TOP + 74;
 
 const SRC = {
 	repo: 'OSE LifeTrac v25 (GitHub)',
@@ -147,25 +153,25 @@ const SRC = {
 const ASSEMBLIES = [
 	{ id: 'frame', label: 'Frame', note: 'Two sandwiches of 1/2" plate, one each side, 120 mm apart for the arms and lift cylinders to work in, bolted to a floor plate, two 6×2 cross tubes and stiffeners with grade-8 bolts. Welding only at the arm pivots and the wheel hubs.', out: [0, -0.25, 0] },
 	...CORNERS.map((c) => ({ id: `uwu-${c.id}`, label: `Wheel unit, ${c.label}`, note: `A Universal Wheel Unit: a 100 cc/rev hydraulic motor bolted to the motor plate, coupled straight to a 1¼" shaft in two flange bearings, a welded hub and a Bobcat wheel. No chain, no gearbox.`, out: /** @type {V3} */ ([c.sx * 0.95, -0.1, c.y === AX.front ? 0.45 : -0.45]) })),
-	{ id: 'power', label: 'Power unit', note: 'The prime mover: an 18 hp Briggs & Stratton Vanguard V-twin turning a 1.4 in³ gear pump through an SAE-A bell housing and a jaw coupling, about 11 gpm at up to 3,000 psi. Not drawn in OSE’s CAD yet; placed here where it fits.', out: [0, 1.35, 0.1] },
-	{ id: 'hydraulics', label: 'Hydraulic circuit', note: 'Tank, pump line, relief, the proportional flow valve that sets every speed, a four-station manifold of 12 V directional valves (left wheels, right wheels, arms, bucket), the cooler, the return filter and the hoses.', out: [0, 1.9, -0.75] },
+	{ id: 'powercube', label: 'Power Cube', note: 'OSE’s Power Cube VII/7s, the same cube that drives the CEB press and the other machines of the Global Village Construction Set: a 28 hp V-twin on a gear pump with its own tanks, relief, cooler, filter and battery, set whole on the LifeTrac’s cradle and coupled by two hoses. (v25’s own bills build an 18 hp Vanguard unit into the frame instead.) It is its own asset and actor too: every part is the same there.', out: [0, 0.45, -0.95] },
+	{ id: 'hydraulics', label: 'Hydraulic circuit', note: 'From the cube’s pressure coupler: the proportional flow valve that sets every speed, a four-station manifold of 12 V directional valves (left wheels, right wheels, arms, bucket) on top of the cube, the hoses out to every motor and cylinder, and the return line back to the cube’s cooler and filter.', out: [0, 1.0, 0.25] },
 	{ id: 'arms', label: 'Loader arms', note: 'Two L-shaped arms, each a 6×2 tube between two 1/4" side plates, pivoting on 1½" pins in the frame’s sandwiches and tied together by the cross beam that carries the bucket cylinders.', out: [0, 0.75, 0.25] },
 	{ id: 'cylinders', label: 'Cylinders', note: 'Four double-acting hydraulic cylinders: two 2.5" lift cylinders raise the arms, two 3" bucket cylinders curl and dump the bucket. Each is a barrel on one pin and a rod on the other.', out: [0, 0.35, 0.55] },
 	{ id: 'bucket', label: 'Bucket', note: 'A 1,100 mm bucket of 1/4" plate with a 3/4" cutting edge, pinned at the arms’ tips and tipped by the bucket cylinders.', out: [0, 0.15, 0.95] },
 	{ id: 'platform', label: 'Standing platform', note: 'A folding deck at the back for an operator to ride on; folded up when the machine is driven by radio, as it is meant to be.', out: [0, -0.1, -0.9] },
-	{ id: 'electronics', label: 'Controller and radio', note: 'The tractor node: a Portenta X8 on its Max Carrier (Linux, the LoRa radio, the arbiter) driving an Arduino Opta over Modbus, whose solid-state outputs switch the eight valve coils; a safety relay, the battery, the mast with its antennas, cameras and beacon, and the handheld it obeys.', out: [0, 2.6, -0.35] }
+	{ id: 'electronics', label: 'Controller and radio', note: 'The tractor node: a Portenta X8 on its Max Carrier (Linux, the LoRa radio, the arbiter) driving an Arduino Opta over Modbus, whose solid-state outputs switch the eight valve coils; a safety relay and the master switch on the Power Cube’s battery, the mast with its antennas, cameras and beacon, and the handheld it obeys.', out: [0, 1.6, -0.3] }
 ];
 
 const STEPS = [
 	'Bolt the frame: floor plate and its angle runs, back and front walls, motor plates, inner and outer side panels, cross tubes',
 	'Mount the four wheel units: motors on the motor plates, shafts through the bearings, hubs, wheels',
-	'Set in the power unit: engine, bell housing, jaw coupling, pump, fuel tank',
-	'Plumb the hydraulics: tank, suction and pressure lines, relief, flow valve, valve manifold, cooler, filter, hoses',
+	'Lift the Power Cube onto its cradle and pin it: engine, pump, tanks, cooler and battery come in one piece',
+	'Plumb the hydraulics: the flow valve and the valve manifold on the cube, the pressure and return lines to its couplers, hoses out to the motors',
 	'Hang the loader arms on their pivot pins and bolt in the cross beam',
 	'Pin in the lift and bucket cylinders',
 	'Pin on the bucket',
 	'Bolt on the folding platform',
-	'Wire the controller: node box, boards, safety relay, battery, mast, antennas, cameras, beacon, E-stop; pair the handheld'
+	'Wire the controller: node box, boards, safety relay, master switch, mast, antennas, cameras, beacon, E-stop; pair the handheld'
 ];
 
 /**
@@ -248,6 +254,19 @@ export function lifetrac() {
 			for (const y of [130, 1290]) {
 				put(box(0, y, 309, 1070.8, 50.8, 152.4, 3), STEEL);
 				for (const x of [383, 516, 237, -237, -383, -516]) put(box(x + (x > 0 ? -10 : 10), y + 40, 309, 6.35, 50.8, 146, 1), STEEL);
+			}
+		}
+	);
+	part(
+		{ id: 'cube-cradle', label: 'Power Cube cradle', assembly: 'frame', step: 1, count: 2, what: 'Two 4×4 tubes across between the inner panels, bolted to them through angle clips: the Power Cube’s skids stand on them and are pinned down, so the cube comes off again with four pins and two hoses. Not in OSE’s v25 CAD, which builds its engine into the frame instead; sized here to carry the cube clear of the wheel motors and the shafts.', specs: [['Stock', '4" × 4" × 1/4" square tube'], ['Length', '754 mm (between the inner panels)'], ['Top', `${CUBE_AT[2]} mm above the ground`], ['Pins', '4 × Ø5/8" through skid and tube']] },
+		'base',
+		(put) => {
+			for (const y of [CUBE_AT[1] - 275, CUBE_AT[1] + 275]) {
+				put(box(0, y, CUBE_AT[2] - 50.8, 754, 101.6, 101.6, 4), STEEL);
+				for (const sx of [-1, 1]) {
+					put(box(sx * 372, y, CUBE_AT[2] - 50.8, 6.35, 101.6, 101.6, 1), STEEL);
+					put(cyl([sx * 292.2, y, CUBE_AT[2] - 110], [sx * 292.2, y, CUBE_AT[2] + 115], 8, 10), CHROME);
+				}
 			}
 		}
 	);
@@ -360,188 +379,35 @@ export function lifetrac() {
 				const vx = /** @type {number} */ (st?.x);
 				for (const [k, dy] of [[0, -28], [1, 28]]) {
 					const end = /** @type {MM} */ ([X(155), y + dy, z + 92]);
-					put(hose(front ? [end, [X(170), y + dy - 40, 470], [X(320), y - 300, 480], [X(320), 520, 520], [vx + (k ? 10 : -10), MAN_Y - 60, MAN_Z - 60]] : [end, [X(170), y + dy, 470], [X(220), MAN_Y - 50, 760], [vx + (k ? 10 : -10), MAN_Y - 50, MAN_Z - 60]]), HOSE);
+					// the front pair runs back under the cube to its tee at the rear motor; the rear pair climbs past the cube's
+					// side, in the gap to the inner panel, and over its top to the valve
+					put(hose(front
+						? [end, [X(175), y + dy - 60, 402], [X(185 + k * 22), 760, 398], [X(185 + k * 22), 520, 398], [X(165), AX.rear + dy + 60, 404]]
+						: [end, [X(210), y + dy, 425], [X(360), 240 + dy * 0.5, 425], [X(360), 240 + dy * 0.5, CUBE_TOP - 80], [X(320), 250 + dy, CUBE_TOP + 25], [vx + (k ? 10 : -10), MAN_Y - 60, MAN_Z - 60]]), HOSE);
 				}
 			}
 		);
 	}
 
-	/* ── 3. the power unit ────────────────────────────────────────────────── */
-	part(
-		{ id: 'engine-block', label: 'Engine crankcase', assembly: 'power', step: 3, source: SRC.hyd, what: 'The Vanguard’s crankcase: the crankshaft, cam and oil sump of a 570 cc V-twin petrol engine, governed at 3,600 rpm. Its shaft runs fore and aft: the flywheel and blower in front, the pump at the back.', moves: 'The crankshaft inside turns at engine speed.', drive: 'Petrol; electric start from the 12 V battery', specs: [['Engine', 'Briggs & Stratton Vanguard 18 HP V-twin'], ['Displacement', '570 cc'], ['Power', '18 hp gross, ~16 net at 3,600 rpm'], ['Shaft', '1-1/8" × 2.96" keyed'], ['Mass', '~39 kg (85 lb)'], ['Upgrades named', 'Vanguard 23 hp, Honda GX630, Kohler CH640/730'], ['CAD placeholder', '25 hp (OSE target: 60 hp total)']] },
-		'base',
-		(put) => {
-			put(box(0, 800, 160, 460, 330, 10, 1), STEEL); // the mount plate
-			put(box(0, 790, 290, 250, 290, 250, 26), ENGINE);
-			put(box(0, 790, 168, 300, 300, 18, 6), DARK); // the sump
-			for (const sx of [-1, 1]) for (const yy of [670, 910]) put(hex([sx * 190, yy, 168], 'z', 19, 10), STEEL);
-		}
-	);
-	for (const [sx, P_] of /** @type {const} */ ([[1, 'left'], [-1, 'right']])) {
-		part(
-			{ id: `engine-cyl-${P_}`, label: `Engine cylinder and head, ${P_}`, assembly: 'power', step: 3, source: SRC.hyd, what: 'One bank of the 90° V-twin: a finned, air-cooled cylinder and its overhead-valve head. The fins carry the heat out into the air the flywheel’s blower pushes over them.', moves: 'Its piston goes up and down inside, two strokes for every turn of the crank.', drive: 'Burning petrol and air, fired by the ignition', specs: [['Layout', '90° V-twin, OHV'], ['Cooling', 'Air, forced by the flywheel fan'], ['Bore × stroke', '~72 × 70 mm (each)']] },
-			'base',
-			(put) => {
-				const dir = new THREE.Vector3(sx * Math.SQRT1_2, Math.SQRT1_2, 0);
-				const base = new THREE.Vector3(...P(0, 790, CRANK));
-				const at = (/** @type {number} */ d) => /** @type {MM} */ ([(base.x + dir.x * d * S) / S, 790, (base.y + dir.y * d * S) / S]);
-				put(cyl(at(110), at(270), 50, 20), DARK);
-				for (let d = 125; d < 270; d += 13) put(cyl(at(d), at(d + 4), 72, 20), ENGINE);
-				put(cyl(at(270), at(330), 70, 16), ENGINE);
-				const vc = at(345);
-				const g = block(0.13, 0.04, 0.16, [0, 0, 0], 0.012);
-				g.rotateZ(-sx * Math.PI / 4);
-				g.translate(...P(...vc));
-				put(g, BLACK);
-				put(cyl(at(300), [sx * 120, 700, 640], 9, 8), DARK); // the exhaust pipe to the muffler
-			}
-		);
-	}
-	part(
-		{ id: 'blower', label: 'Blower housing', assembly: 'power', step: 3, source: SRC.hyd, what: 'The sheet-steel shroud over the flywheel at the engine’s front, ducting the flywheel fan’s air back over both cylinders’ fins.', specs: [['Material', 'Pressed steel'], ['Holds', 'The flywheel screen and the recoil-free electric-start ring']] },
-		'base',
-		(put) => {
-			put(box(0, 955, 330, 430, 70, 360, 30), '#3a3d40');
-		}
-	);
-	part(
-		{ id: 'flywheel', label: 'Flywheel and fan screen', assembly: 'power', step: 3, source: SRC.hyd, what: 'The flywheel at the crank’s front end: its mass smooths the twin’s firing pulses, its magnets fire the ignition and charge the 16 A alternator, its vanes are the cooling fan.', moves: 'Turns with the crankshaft (shown slowed down: really 60 turns a second).', drive: 'The crankshaft', specs: [['Speed', '3,600 rpm governed'], ['Alternator', '16 A regulated'], ['Screen', 'Rotating grass screen']] },
-		'flywheel',
-		(put) => {
-			put(cyl([0, FLY_Y - 12, CRANK], [0, FLY_Y + 6, CRANK], 120, 32), DARK);
-			for (let k = 0; k < 6; k++) {
-				const t = (k / 6) * Math.PI;
-				put(box(0, FLY_Y + 9, CRANK, 230, 6, 14, 1).rotateZ(0).applyMatrix4(new THREE.Matrix4().makeTranslation(-0, -CRANK * S, -(FLY_Y - BACK) * S)).applyMatrix4(new THREE.Matrix4().makeRotationZ(t)).applyMatrix4(new THREE.Matrix4().makeTranslation(0, CRANK * S, (FLY_Y - BACK) * S)), STEEL);
-			}
-			put(cyl([0, FLY_Y + 6, CRANK], [0, FLY_Y + 14, CRANK], 30, 16), STEEL);
-		}
-	);
-	part(
-		{ id: 'air-cleaner', label: 'Air cleaner', assembly: 'power', step: 3, source: SRC.hyd, what: 'The dry paper element and its housing in the V between the cylinders: every litre of air the engine breathes is filtered here first — a loader works in dust.', specs: [['Element', 'Paper with foam pre-cleaner']] },
-		'base',
-		(put) => {
-			put(box(0, 800, 600, 220, 200, 60, 14), BLACK);
-			put(cyl([0, 800, 630], [0, 800, 660], 80, 24), '#3a3d40');
-			put(hex([0, 800, 664], 'z', 22, 10), STEEL);
-		}
-	);
-	part(
-		{ id: 'muffler', label: 'Muffler', assembly: 'power', step: 3, source: SRC.hyd, what: 'The silencer behind the cylinders, joining both heads’ exhaust into one can and blowing it out sideways, away from the operator’s deck.', specs: [['Type', 'Twin-inlet canister']] },
-		'base',
-		(put) => {
-			put(xcyl(-150, 150, 690, 650, 55, 20), '#505457');
-			put(xcyl(-195, -150, 690, 650, 16, 10), DARK);
-		}
-	);
-	part(
-		{ id: 'starter', label: 'Electric starter', assembly: 'power', step: 3, source: SRC.hyd, what: 'A 12 V starter motor whose pinion meshes with the flywheel’s ring gear to crank the engine; the key on the controller box’s sense input (I1) tells the controller the engine is meant to run.', moves: 'Spins only while starting.', drive: 'The 12 V battery through its solenoid', specs: [['Voltage', '12 V'], ['Start', 'Electric, key']] },
-		'base',
-		(put) => {
-			put(cyl([-150, 830, 230], [-150, 940, 230], 38, 18), DARK);
-			put(cyl([-150, 940, 230], [-150, 960, 230], 22, 12), STEEL);
-			put(cyl([-150, 850, 280], [-150, 920, 280], 18, 10), BLACK);
-		}
-	);
-	part(
-		{ id: 'oil-filter', label: 'Engine oil filter', assembly: 'power', step: 3, source: SRC.hyd, what: 'The spin-on filter of the engine’s pressure lubrication (not the hydraulic oil’s: that has its own filter on the tank).', specs: [['Type', 'Spin-on, full flow']] },
-		'base',
-		(put) => put(cyl([150, 870, 220], [215, 870, 220], 38, 18), BLUE)
-	);
-	part(
-		{ id: 'fuel-tank', label: 'Fuel tank', assembly: 'power', step: 3, source: SRC.hyd, what: 'A small petrol tank in front of the engine, feeding it by gravity and its fuel pump. (One of OSE’s BOM lines calls the engine-kill relay a “diesel fuel-cut”; the named engine is petrol.)', specs: [['Fuel', 'Petrol (gasoline)'], ['As drawn', '~5 L']] },
-		'base',
-		(put) => {
-			put(box(0, 1065, 490, 300, 110, 140, 18), RED);
-			put(cyl([90, 1065, 560], [90, 1065, 590], 22, 14), BLACK);
-			put(hose([[0, 1010, 430], [0, 990, 400], [-60, 960, 380]], 4), BLACK);
-		}
-	);
-	part(
-		{ id: 'bell-housing', label: 'SAE-A bell housing', assembly: 'power', step: 3, source: SRC.hyd, what: 'The cast adapter bolting the pump’s SAE-A flange to the engine’s face, holding the two shafts in line; its windows show the coupling inside.', specs: [['Standard', 'SAE-A 2-bolt'], ['Joins', 'Engine 1-1/8" shaft to pump shaft']] },
-		'base',
-		(put) => {
-			put(cyl([0, 625, CRANK], [0, 640, CRANK], 95, 28), ALU);
-			put(cyl([0, 565, CRANK], [0, 578, CRANK], 70, 24), ALU);
-			for (let k = 0; k < 3; k++) {
-				const t = (k / 3) * Math.PI * 2 + 0.5;
-				put(cyl([Math.cos(t) * 74, 578, CRANK + Math.sin(t) * 74], [Math.cos(t) * 86, 625, CRANK + Math.sin(t) * 86], 9, 8), ALU);
-			}
-		}
-	);
-	part(
-		{ id: 'coupling', label: 'Jaw coupling', assembly: 'power', step: 3, source: SRC.hyd, what: 'An L-jaw coupling: two cast-iron hubs, one on each shaft, their jaws meshing through a rubber spider that soaks up the engine’s pulses and a little misalignment.', moves: 'Turns with the engine (shown slowed).', drive: 'The crankshaft; it drives the pump', specs: [['Type', 'L-jaw (Lovejoy class)'], ['Insert', 'Rubber spider']] },
-		'coupling',
-		(put) => {
-			put(cyl([0, 580, CRANK], [0, 598, CRANK], 40, 18), STEEL);
-			put(cyl([0, 606, CRANK], [0, 624, CRANK], 40, 18), STEEL);
-			for (let k = 0; k < 3; k++) {
-				const t = (k / 3) * Math.PI * 2;
-				put(box(Math.cos(t) * 28, CPL_Y, CRANK + Math.sin(t) * 28, 22, 22, 22, 3), k % 2 ? DARK : STEEL);
-			}
-			put(cyl([0, 597, CRANK], [0, 607, CRANK], 36, 18), '#e2b02a');
-		}
-	);
-	part(
-		{ id: 'pump', label: 'Hydraulic gear pump', assembly: 'power', step: 3, source: SRC.hyd, what: 'A fixed-displacement gear pump: two meshing gears carry oil from the suction side round to the pressure side, about 41 litres a minute at engine speed. Every motion of the machine starts here.', moves: 'Its gears turn with the engine.', drive: 'The engine, through the jaw coupling', specs: [['Displacement', '1.4 in³/rev (22.9 cc)'], ['Flow', '~11 gpm (41.6 L/min) at 3,600 rpm'], ['Pressure', '3,000 psi continuous, 3,500 peak'], ['Mount', 'SAE-A'], ['Candidates', 'Haldex 1001601, Parker PGP315, Casappa PLP10'], ['Later option', '6+6 gpm tandem pump']] },
-		'base',
-		(put) => {
-			put(box(0, 515, CRANK, 110, 100, 120, 10), '#3b4a5a');
-			put(cyl([-55, 515, CRANK], [-80, 515, CRANK], 20, 12), STEEL);
-			put(cyl([55, 515, CRANK], [75, 515, CRANK], 14, 12), STEEL);
-			put(box(0, 568, CRANK, 120, 10, 90, 3), STEEL);
-		}
-	);
+	/* ── 3. the Power Cube ────────────────────────────────────────────────── */
+	powerCubeParts(kit, { at: P(...CUBE_AT), base: 'base', joints: { flywheel: 'flywheel', coupling: 'coupling', fan: 'coolerFan' }, assembly: () => 'powercube', step: () => 3 });
 
 	/* ── 4. the hydraulic circuit ─────────────────────────────────────────── */
+	// the cube's couplers, on its back: pressure and return
+	const COUPLER = /** @type {(x: number) => MM} */ ((x) => [x, CUBE_AT[1] - CUBE.L / 2 - 46, CUBE_AT[2] + CUBE.base + 150]);
 	part(
-		{ id: 'tank', label: 'Hydraulic reservoir', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'The oil tank behind the engine: the pump draws from its bottom, every return comes back through its top. Its volume lets the oil settle, lose its air and cool between trips round the circuit.', specs: [['Volume', '~30 gal (114 L) planned; ~110 L drawn'], ['Fluid', 'ISO VG 46 anti-wear oil'], ['Fittings', 'Suction -16, returns -10']] },
+		{ id: 'pressure-line', label: 'Pressure line', assembly: 'hydraulics', step: 4, what: 'The hose that brings the machine its power: from the Power Cube’s pressure coupler up behind the cube to the flow valve on its top. Pulled off, with the return line, the cube is free to go to another machine.', specs: [['Hose', 'SAE 100R2, 3/4"'], ['From', 'The cube’s pressure coupler'], ['To', 'The flow valve’s inlet']] },
 		'base',
-		(put) => {
-			put(box(0, 280, 660, 720, 320, 480, 10), '#3d4447');
-			put(box(250, 441, 640, 30, 4, 220, 3), '#9fd7ff'); // the sight gauge
-			put(box(250, 443, 640, 40, 4, 240, 3).translate(0, 0, -0.001), DARK);
-		}
+		(put) => put(hose([COUPLER(230), [240, 34, 1000], [250, 60, CUBE_TOP + 40], [250, 160, CUBE_TOP + 10]], 11), HOSE)
 	);
 	part(
-		{ id: 'breather', label: 'Filler and breather cap', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'Where the tank is filled, and how it breathes: as the cylinders extend the oil level drops and air must come in, filtered, as they retract it goes out.', specs: [['Filter', 'Air breather element']] },
+		{ id: 'efc', label: 'Electronic flow control valve (EFC)', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'The machine’s throttle, on the Power Cube’s top behind the valves: a proportional valve that sends only the flow the joystick asks for on to the manifold and bypasses the rest back to the cube. Before any spool centres, the firmware ramps it down, so every stop is soft.', moves: 'Its orifice opens in proportion to the signal.', drive: 'The Burkert driver in the node box, 0–10 V from the Opta’s A0602', specs: [['Valve', 'Brand EFC, 10 gpm (README: PEFC12-20, 0–20 gpm)'], ['Modes', 'One valve, or two at 6 gpm each (one per side)'], ['Soft stop', '250–2,000 ms ramp']] },
 		'base',
 		(put) => {
-			put(cyl([-280, 180, 900], [-280, 180, 930], 22, 14), STEEL);
-			put(cyl([-280, 180, 930], [-280, 180, 965], 40, 18), BLACK);
-		}
-	);
-	part(
-		{ id: 'return-filter', label: 'Return filter', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'A 10-micron spin-on filter on the tank’s top: every drop coming back from the valves and cooler passes through it before it goes back to the pump.', specs: [['Rating', '10 µm'], ['Flow', '25 gpm'], ['Place', 'Return line, after the cooler']] },
-		'base',
-		(put) => {
-			put(cyl([280, 180, 900], [280, 180, 925], 45, 18), STEEL);
-			put(cyl([280, 180, 925], [280, 180, 1060], 48, 20), '#c33b2e');
-		}
-	);
-	part(
-		{ id: 'suction', label: 'Suction line', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'The big, soft line from the tank’s bottom to the pump’s inlet: wide (-16) so the oil is never pulled hard enough to boil off air and wreck the pump (cavitation).', specs: [['Hose', '-16 (1") suction hose']] },
-		'base',
-		(put) => put(hose([[-150, 440, 450], [-140, 470, 380], [-110, 500, CRANK], [-82, 515, CRANK]], 16), HOSE)
-	);
-	part(
-		{ id: 'relief', label: 'Relief valve', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'The circuit’s safety: a spring-loaded valve that opens to the tank when the pressure reaches 3,000 psi, so a stalled cylinder or a wheel against a wall never bursts a hose.', moves: 'Its poppet lifts only at its setting.', specs: [['Setting', '3,000 psi (207 bar)'], ['Working pressure', '2,000–2,500 psi']] },
-		'base',
-		(put) => {
-			put(box(150, 460, 600, 60, 40, 60, 4), ALU);
-			put(cyl([150, 460, 630], [150, 460, 690], 14, 12), STEEL);
-			put(hex([150, 460, 694], 'z', 22, 8), BLACK);
-			put(hose([[75, 515, CRANK], [120, 500, 420], [150, 470, 570]], 8), HOSE);
-		}
-	);
-	part(
-		{ id: 'efc', label: 'Electronic flow control valve (EFC)', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'The machine’s throttle: a proportional valve that sends only the flow the joystick asks for on to the manifold and bypasses the rest to the tank. Before any spool centres, the firmware ramps it down, so every stop is soft.', moves: 'Its orifice opens in proportion to the signal.', drive: 'The Burkert driver in the node box, 0–10 V from the Opta’s A0602', specs: [['Valve', 'Brand EFC, 10 gpm (README: PEFC12-20, 0–20 gpm)'], ['Modes', 'One valve, or two at 6 gpm each (one per side)'], ['Soft stop', '250–2,000 ms ramp']] },
-		'base',
-		(put) => {
-			put(box(150, 460, 740, 70, 50, 90, 5), '#c4c8ca');
-			put(cyl([150, 460, 785], [150, 460, 840], 22, 16), BLACK);
-			put(box(150, 460, 850, 40, 30, 20, 3), '#3a3a3a');
-			put(hose([[150, 470, 630], [170, 470, 680], [150, 470, 700]], 8), HOSE);
-			put(hose([[150, 450, 790], [140, 440, 870], [80, MAN_Y, MAN_Z - 30]], 8), HOSE);
+			put(box(250, 160, CUBE_TOP + 54, 70, 50, 90, 5), '#c4c8ca');
+			put(cyl([250, 160, CUBE_TOP + 99], [250, 160, CUBE_TOP + 154], 22, 16), BLACK);
+			put(box(250, 160, CUBE_TOP + 164, 40, 30, 20, 3), '#3a3a3a');
+			put(hose([[250, 186, CUBE_TOP + 60], [200, 230, MAN_Z - 40], [80, MAN_Y - 30, MAN_Z - 30]], 8), HOSE);
 		}
 	);
 	part(
@@ -584,53 +450,27 @@ export function lifetrac() {
 		}
 	);
 	part(
-		{ id: 'cooler', label: 'Oil cooler', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'An aluminium core at the front: every relief valve and every orifice turns pressure into heat, so the returning oil passes through it to lose about 6,500 BTU an hour before the filter.', specs: [['Rating', '~6,500 BTU/h (1.9 kW)'], ['Type', 'Fan-cooled, 12 V fan']] },
+		{ id: 'return-line', label: 'Return line', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'From the manifold’s tank gallery back over the cube to its return coupler: inside the cube the oil runs through its six-tube cooler and its return filter into its reservoir, the oil’s way home after doing its work.', specs: [['Hose', '-10 (5/8")'], ['Path', 'Manifold T → the cube’s return coupler → cooler → filter → reservoir']] },
 		'base',
-		(put) => {
-			put(box(0, 1335, 560, 400, 40, 280, 4), ALU);
-			for (let x = -180; x <= 180; x += 20) put(box(x, 1357, 560, 3, 4, 260, 0.5), '#8e9496');
-			put(box(0, 1305, 560, 300, 30, 270, 6), DARK); // the fan's shroud
-		}
-	);
-	part(
-		{ id: 'cooler-fan', label: 'Cooler fan', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'The 12 V fan pulling air through the cooler’s core.', moves: 'Turns whenever the machine runs (shown slowed).', drive: '12 V from the battery', specs: [['Diameter', '~250 mm'], ['Voltage', '12 V']] },
-		'coolerFan',
-		(put) => {
-			for (let k = 0; k < 5; k++) {
-				const t = (k / 5) * Math.PI * 2;
-				const g = block(0.11, 0.035, 0.006, [0.06, 0, 0], 0.004);
-				g.rotateY(0.35);
-				g.rotateZ(t);
-				g.translate(...P(...FAN));
-				put(g, BLACK);
-			}
-			put(cyl([0, FAN[1] - 12, FAN[2]], [0, FAN[1] + 12, FAN[2]], 26, 16), DARK);
-		}
-	);
-	part(
-		{ id: 'return-line', label: 'Return line', assembly: 'hydraulics', step: 4, source: SRC.hyd, what: 'From the manifold’s tank gallery forward to the cooler and back to the filter on the tank: the oil’s way home after doing its work.', specs: [['Hose', '-10 (5/8")'], ['Path', 'Manifold T → cooler → 10 µm filter → tank']] },
-		'base',
-		(put) => {
-			put(hose([[-220, MAN_Y + 20, MAN_Z - 30], [-330, 600, 700], [-330, 1100, 520], [-150, 1320, 520]], 11), HOSE);
-			put(hose([[150, 1320, 600], [330, 1100, 560], [330, 600, 760], [280, 190, 1020]], 11), HOSE);
-		}
+		(put) => put(hose([[-220, MAN_Y + 20, MAN_Z - 30], [-280, 200, CUBE_TOP + 30], [-150, 45, CUBE_TOP - 150], [200, 38, 900], COUPLER(290)], 11), HOSE)
 	);
 	for (const [sx, P_] of /** @type {const} */ ([[1, 'left'], [-1, 'right']])) {
 		part(
 			{ id: `lift-hoses-${P_}`, label: `Lift cylinder hoses, ${P_}`, assembly: 'hydraulics', step: 4, count: 2, source: SRC.hyd, what: 'The two lines from the arms’ valve to the lift cylinder: oil into the cap end raises the arm, into the rod end lowers it. Both lift cylinders are fed in parallel.', specs: [['Hose', 'SAE 100R2 -8'], ['Valve', 'D5 up / D6 down']] },
 			'base',
 			(put) => {
-				for (const dz of [-14, 14]) put(hose([[55 + dz, MAN_Y - 40, MAN_Z - 60], [sx * 300, 200, 860 + dz], [sx * 440, 110, 720 + dz], [sx * 450, LIFT_A[0] + 55, LIFT_A[1] + 30 + dz]], 8), HOSE);
+				for (const dz of [-14, 14]) put(hose([[55 + dz, MAN_Y - 40, MAN_Z - 60], [sx * 300, 200, MAN_Z - 40 + dz], [sx * 400, 150, 1160 + dz], [sx * 440, 110, 720 + dz], [sx * 450, LIFT_A[0] + 55, LIFT_A[1] + 30 + dz]], 8), HOSE);
 			}
 		);
 	}
 	part(
-		{ id: 'bucket-hoses', label: 'Bucket cylinder hoses', assembly: 'hydraulics', step: 4, count: 4, source: SRC.hyd, what: 'From the bucket valve up to the arm pivots and along the arms to the bucket cylinders on the cross beam. Where they cross the pivot they hang in loose loops, so the arms can rise without stretching them.', specs: [['Hose', 'SAE 100R2 -8'], ['Valve', 'D7 curl / D8 dump']] },
+		{ id: 'bucket-hoses', label: 'Bucket cylinder hoses', assembly: 'hydraulics', step: 4, count: 4, source: SRC.hyd, what: 'From the bucket valve over to the arm pivots and along the arms to the bucket cylinders on the cross beam. Where they cross the pivot they hang in loose loops, so the arms can rise without stretching them.', specs: [['Hose', 'SAE 100R2 -8'], ['Valve', 'D7 curl / D8 dump']] },
 		'base',
 		(put) => {
-			for (const sx of [-1, 1]) for (const dz of [-12, 12]) put(hose([[-55 + dz, MAN_Y - 40, MAN_Z - 60], [sx * 200, 300, 1020], [sx * 360, PIV[0] + 40, PIV[1] - 20 + dz]], 8), HOSE);
+			for (const sx of [-1, 1]) for (const dz of [-12, 12]) put(hose([[-55 + dz, MAN_Y - 40, MAN_Z - 60], [sx * 200, 300, MAN_Z - 20], [sx * 360, PIV[0] + 40, PIV[1] - 20 + dz]], 8), HOSE);
 		}
 	);
+
 
 	/* ── 5. the loader arms ───────────────────────────────────────────────── */
 	// an arm's outline in its own frame, a band 152 mm deep round its main tube and its drop leg, round at both ends
@@ -812,17 +652,17 @@ export function lifetrac() {
 	);
 
 	/* ── 9. the controller and radio ──────────────────────────────────────── */
-	const NB = /** @type {MM} */ ([0, 165, 952]); // the node box's middle
+	const NB = /** @type {MM} */ ([0, 600, CUBE_TOP + 64]); // the node box's middle, on the cube in front of the valves
 	part(
-		{ id: 'node-box', label: 'Tractor node enclosure', assembly: 'electronics', step: 9, source: SRC.ctl, what: 'An IP65 box with a clear lid holding the machine’s brain, mounted on the tank behind the valves. Its harness leaves through Deutsch DT connectors.', specs: [['Rating', 'IP65'], ['Size', '~250 × 200 × 100 mm'], ['Connectors', 'Deutsch DT'], ['Electronics draw', '~3.4 W (valves 60–240 W)']] },
+		{ id: 'node-box', label: 'Tractor node enclosure', assembly: 'electronics', step: 9, source: SRC.ctl, what: 'An IP65 box with a clear lid holding the machine’s brain, mounted on the Power Cube’s top in front of the valves. Its harness leaves through Deutsch DT connectors.', specs: [['Rating', 'IP65'], ['Size', '~250 × 200 × 100 mm'], ['Connectors', 'Deutsch DT'], ['Electronics draw', '~3.4 W (valves 60–240 W)']] },
 		'base',
 		(put) => {
 			put(box(NB[0], NB[1], NB[2] - 40, 200, 250, 20, 6), '#dcdcd6');
 			for (const sx of [-1, 1]) put(box(sx * 98, NB[1], NB[2], 4, 250, 100, 2), '#dcdcd6', 1);
 			for (const sy of [-1, 1]) put(box(0, NB[1] + sy * 123, NB[2], 200, 4, 100, 2), '#dcdcd6', 1);
 			put(box(0, NB[1], NB[2] + 52, 204, 254, 4, 6), '#e8f4ff', 1);
-			for (const x of [-60, 0, 60]) put(cyl([x, NB[1] + 127, NB[2] - 20], [x, NB[1] + 150, NB[2] - 20], 9, 10), '#2b2b2b');
-			put(box(0, NB[1] - 30, 893, 230, 100, 6, 1), STEEL); // its bracket
+			for (const x of [-60, 0, 60]) put(cyl([x, NB[1] - 127, NB[2] - 20], [x, NB[1] - 150, NB[2] - 20], 9, 10), '#2b2b2b');
+			put(box(0, NB[1] - 30, NB[2] - 59, 230, 100, 6, 1), STEEL); // its bracket
 		}
 	);
 	part(
@@ -884,26 +724,17 @@ export function lifetrac() {
 		{ id: 'harness', label: 'Valve and sensor harness', assembly: 'electronics', step: 9, source: SRC.ctl, what: 'The wiring from the node box to the eight valve coils (DIN plugs), the flow valve, the pressure sensors, the engine’s kill and ignition sense, and up the mast.', specs: [['Connectors', 'Deutsch DT at the box, DIN 43650-A at the coils'], ['Coil feed', '12 V, fused 5 A each']] },
 		'base',
 		(put) => {
-			for (const st of STATIONS) for (const sy of [-1, 1]) put(hose([[st.x * 0.3, NB[1] + 127, NB[2] - 20], [st.x, MAN_Y + sy * 60, MAN_Z + 110], [st.x, MAN_Y + sy * 85, MAN_Z + 78]], 3), sy < 0 ? '#2f2f2f' : '#3a3a3a');
-			put(hose([[-100, NB[1], NB[2]], [-260, 60, 1040], [-330, 20, 1150]], 5), '#2f2f2f');
+			for (const st of STATIONS) for (const sy of [-1, 1]) put(hose([[st.x * 0.3, NB[1] - 140, NB[2] - 20], [st.x, MAN_Y + sy * 60, MAN_Z + 110], [st.x, MAN_Y + sy * 85, MAN_Z + 78]], 3), sy < 0 ? '#2f2f2f' : '#3a3a3a');
+			put(hose([[-60, NB[1] - 140, NB[2] - 20], [-290, 300, CUBE_TOP + 40], [-330, 20, 1150]], 5), '#2f2f2f');
 		}
 	);
 	part(
-		{ id: 'battery', label: '12 V battery', assembly: 'electronics', step: 9, source: SRC.ctl, what: 'The machine’s 12 V store, beside the engine: it cranks the starter and feeds the valves, fan and computers; the engine’s 16 A alternator charges it while it runs.', specs: [['Voltage', '12 V'], ['Charged by', 'Vanguard 16 A alternator'], ['Watched by', 'A0602 input AI1']] },
+		{ id: 'master-switch', label: 'Master cut-off switch', assembly: 'electronics', step: 9, source: SRC.ctl, what: 'A red key on the Power Cube battery’s positive lead, its key through the back wall: turned off, nothing on the machine is live — for servicing and for leaving it.', moves: 'Turned by hand.', specs: [['Rating', '175 A'], ['Battery', 'The Power Cube’s 12 V battery']] },
 		'base',
 		(put) => {
-			put(box(312, 780, 505, 130, 250, 190, 6), '#1e1f22');
-			for (const [y, c] of /** @type {const} */ ([[700, RED], [860, BLACK]])) put(cyl([312, y, 600], [312, y, 618], 10, 10), c);
-			put(box(312, 780, 400, 140, 260, 10, 1), STEEL);
-		}
-	);
-	part(
-		{ id: 'master-switch', label: 'Master cut-off switch', assembly: 'electronics', step: 9, source: SRC.ctl, what: 'A red key on the battery’s positive lead: turned off, nothing on the machine is live — for servicing and for leaving it.', moves: 'Turned by hand.', specs: [['Rating', '175 A']] },
-		'base',
-		(put) => {
-			put(cyl([372, 960, 520], [377, 960, 520], 40, 18), BLACK);
-			put(cyl([340, 960, 520], [372, 960, 520], 20, 16), RED);
-			put(hose([[312, 700, 620], [340, 900, 600], [360, 960, 540]], 6), RED);
+			put(cyl([-200, 7, 1060], [-200, 40, 1060], 30, 18), BLACK);
+			put(cyl([-200, 7, 1060], [-200, -25, 1060], 16, 16), RED);
+			put(hose([[-260, CUBE_AT[1] - 10, CUBE_AT[2] + 316], [-360, 330, CUBE_AT[2] + 330], [-360, 70, 1000], [-200, 40, 1060]], 6), RED);
 		}
 	);
 	part(
@@ -990,14 +821,15 @@ export function lifetrac() {
 	/* ── the skeleton ─────────────────────────────────────────────────────── */
 	const built = kit.build();
 	const hm = handMatrix();
+	const cube = powerCubeJoints(P(...CUBE_AT));
 	const stickAt = (/** @type {number} */ sx) => /** @type {V3} */ (new THREE.Vector3(sx * 0.038, 0, 0).applyMatrix4(hm).toArray());
 	/** @type {BoneSpec[]} */
 	const bones = [
 		{ name: 'base', at: [0, 0, 0] },
 		...CORNERS.map((c) => ({ name: `wheel_${c.id}`, parent: 'base', at: P(c.sx * AX.x, c.y, AX.z) })),
-		{ name: 'flywheel', parent: 'base', at: P(0, FLY_Y, CRANK) },
-		{ name: 'coupling', parent: 'base', at: P(0, CPL_Y, CRANK) },
-		{ name: 'coolerFan', parent: 'base', at: P(...FAN) },
+		{ name: 'flywheel', parent: 'base', at: cube.flywheel },
+		{ name: 'coupling', parent: 'base', at: cube.coupling },
+		{ name: 'coolerFan', parent: 'base', at: cube.fan },
 		{ name: 'arms', parent: 'base', at: P(0, ...PIV) },
 		{ name: 'bucket', parent: 'arms', at: P(0, TY, TZ) },
 		{ name: 'platform', parent: 'base', at: P(0, ...DECK) },
@@ -1033,10 +865,10 @@ export function lifetrac() {
 		const p = { base: [0, yaw, 0], root: [Math.sin(yaw) * 0, 0, dist] };
 		const roll = (dist * 1000) / AX.r, spin = (yaw * AX.x) / AX.r;
 		for (const c of CORNERS) p[`wheel_${c.id}`] = [roll - c.sx * spin, 0, 0];
-		const eng = t * 2 * Math.PI * 2.2;
-		p.flywheel = [0, 0, eng];
-		p.coupling = [0, 0, eng];
-		p.coolerFan = [0, 0, t * 2 * Math.PI * 1.6];
+		const { engine, fan } = powerCubeTurns(t);
+		p.flywheel = [0, 0, engine];
+		p.coupling = [0, 0, engine];
+		p.coolerFan = [fan, 0, 0];
 		p.arms = [-arm, 0, 0];
 		p.bucket = [-bucket, 0, 0];
 		p.platform = [deck * (Math.PI / 2), 0, 0];
@@ -1159,7 +991,8 @@ export function lifetrac() {
 				{ label: SRC.ctl, url: 'https://github.com/OpenSourceEcology/LifeTrac/blob/main/LifeTrac-v25/DESIGN-CONTROLLER/HARDWARE_BOM.md' },
 				{ label: SRC.sa, url: 'https://github.com/OpenSourceEcology/LifeTrac/blob/main/LifeTrac-v25/DESIGN-STRUCTURAL/STRUCTURAL_ANALYSIS_LOG.md' },
 				{ label: SRC.uwu, url: 'https://github.com/OpenSourceEcology/LifeTrac/tree/main/UWU' },
-				{ label: SRC.lt6, url: 'https://wiki.opensourceecology.org/wiki/LifeTrac_6' }
+				{ label: SRC.lt6, url: 'https://wiki.opensourceecology.org/wiki/LifeTrac_6' },
+				...POWERCUBE_SOURCES
 			]
 		}
 	};

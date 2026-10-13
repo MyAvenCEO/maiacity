@@ -250,6 +250,7 @@
 			sh.near = 0.01;
 			sh.far = reach * 10;
 			sh.updateProjectionMatrix();
+			key.shadow.normalBias = reach * 0.004; // a texel or two: no shadow acne on big flat faces
 		};
 		/** the ground under it: the round ground (the Buildings), or a square grid of 10 cm squares as large as the model @param {InstanceType<typeof THREE.Box3>} b */
 		const placeGround = (b) => {

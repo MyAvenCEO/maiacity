@@ -181,6 +181,7 @@
 			sh.near = reach * 0.05;
 			sh.far = reach * 10;
 			sh.updateProjectionMatrix();
+			key.shadow.normalBias = reach * 0.004; // a texel or two: no shadow acne on big flat faces (a machine's plates)
 		};
 		const resize = () => {
 			const w = box.clientWidth, h = box.clientHeight;
