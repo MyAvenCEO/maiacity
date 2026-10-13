@@ -11,6 +11,7 @@
 	import { COOPS, MINDS, SEATS, TOKEN_COLOUR, TOKEN_LABEL, calendar, dateText, mintState, nameOf } from '../../../../game/maiacity-v1/engine.js';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
 	import LedgerView from '$lib/maiacity-v1/LedgerView.svelte';
+	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
 
 	const g = liveGame();
 	let chosen = $state(typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('who') ?? '') : '');
@@ -70,11 +71,19 @@
 						<li><button class:on={who === id} onclick={() => (chosen = id)}>{label}</button></li>
 					{/each}
 				</ul>
-				<h2 class="hold">What {nameOf(view, who)} holds</h2>
+				<h2 class="hold">What {nameOf(view, who)} holds{who === 'coop:maia' ? ' in its treasury' : ''}</h2>
 				<ul class="holdings">
 					{#if who.startsWith('player:')}<li><span>HEARTS</span><strong>{f(balance.HEARTS)}</strong></li>{/if}
 					{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(balance[t])}</strong></li>{/each}
 				</ul>
+				{#if who === 'coop:maia'}
+					<h2 class="hold">The pool basket it owns</h2>
+					<p class="dim small">The AMM pool belongs wholly to the MaiaCity COOP, so its basket is part of what the COOP holds.</p>
+					<PoolBasket {view} treasury={balance} />
+				{:else if who === 'pool'}
+					<h2 class="hold">Inside the basket</h2>
+					<PoolBasket {view} />
+				{/if}
 				<p class="dim small">The one game is the source of every number here: <a href="{base}/app/maiacity-v1/">MaiaCity V1</a>.</p>
 			</section>
 			<section class="book">

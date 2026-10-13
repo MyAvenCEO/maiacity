@@ -10,6 +10,7 @@
 	import { COOPS, MINDS, RENTED, SEATS, TOKEN_COLOUR, TOKEN_LABEL, nameOf, rents, supply } from '../../../../game/maiacity-v1/engine.js';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
+	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
 
 	const g = liveGame();
 	let chosen = $state(typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('coop') ?? 'settlement') : 'settlement');
@@ -78,6 +79,10 @@
 					<ul class="rows">
 						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t])}</strong></li>{/each}
 					</ul>
+					{#if chosen === 'maia'}
+						<h3>The pool basket it owns <small>the AMM pool is wholly the MaiaCity COOP's</small></h3>
+						<PoolBasket {view} treasury={c.treasury} />
+					{/if}
 
 					<h3>Who holds {TOKEN_LABEL[c.mind]} <small>{f(minted)} in all</small></h3>
 					<ul class="rows">
