@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { loop, rig, skin } from './rig';
 import { block, ease } from './excavator-rig.js';
 import { machineKit } from './parts.js';
-import { CLICKLOCK, clickLatch } from './clicklock.js';
+import { CLICKLOCK, clickLatch, clickLockPieces } from './clicklock.js';
 
 /** @typedef {import('./rig').V3} V3 */
 /** @typedef {import('./rig').Cast} Cast */
@@ -33,21 +33,23 @@ const ASSEMBLIES = /** @type {import('./parts.js').Assembly[]} */ ([
 	{ id: 'cells', label: 'Cells', note: '280 cylindrical 21700 cells standing in two holder plates, 14 rows in series of 20 side by side.', out: [0, 0.12, 0] },
 	{ id: 'contacts', label: 'Contact plates', note: 'Copper plates top and bottom that join each row to the next: pressed on, not welded, so every cell comes out again.', out: [0, 0.3, 0] },
 	{ id: 'electronics', label: 'BMS and plug', note: 'The battery management system that watches every row, the plug in its back and the charge strip.', out: [0, 0.15, 0.3] },
+	{ id: 'lock', label: 'ClickLock', note: 'The snap-in latch in all its pieces: two spring pawls whose teeth click into the rails’ keepers, their pivots, and the cables that let the grip’s trigger pull both back at once.', out: [0, 0.04, 0.32] },
 	{ id: 'lid', label: 'Lid', note: 'The lid with its spring pad that presses the contacts home, held by four latches: open them and the pack is open.', out: [0, 0.5, 0] }
 ]);
 const STEPS = ['Lay out the tray, its front panel, handles and ClickLock', 'Set the bottom contact plates and holder, and stand the 280 cells in it', 'Press on the top holder and the top contact plates', 'Fit the BMS, its sense leads and the back plug', 'Close the lid on its spring pad and snap the four latches'];
-const STEP = /** @type {Record<string, number>} */ ({ tray: 1, front: 1, charge: 1, handles: 1, clicklock: 1, 'plates-bottom': 2, 'holder-bottom': 2, cells: 2, 'holder-top': 3, 'plates-top': 3, bms: 4, terminals: 4, lid: 5, latches: 5 });
-const GROUP = /** @type {Record<string, string>} */ ({ tray: 'case', front: 'case', charge: 'case', handles: 'case', clicklock: 'case', 'plates-bottom': 'contacts', 'holder-bottom': 'cells', cells: 'cells', 'holder-top': 'cells', 'plates-top': 'contacts', bms: 'electronics', terminals: 'electronics', lid: 'lid', latches: 'lid' });
+const STEP = /** @type {Record<string, number>} */ ({ tray: 1, front: 1, charge: 1, handles: 1, clicklock: 1, 'lock-pawls': 1, 'lock-springs': 1, 'lock-pivots': 1, 'lock-cables': 1, 'lock-trigger': 1, 'plates-bottom': 2, 'holder-bottom': 2, cells: 2, 'holder-top': 3, 'plates-top': 3, bms: 4, terminals: 4, lid: 5, latches: 5 });
+const GROUP = /** @type {Record<string, string>} */ ({ tray: 'case', front: 'case', charge: 'case', handles: 'case', clicklock: 'case', 'lock-pawls': 'lock', 'lock-springs': 'lock', 'lock-pivots': 'lock', 'lock-cables': 'lock', 'lock-trigger': 'lock', 'plates-bottom': 'contacts', 'holder-bottom': 'cells', cells: 'cells', 'holder-top': 'cells', 'plates-top': 'contacts', bms: 'electronics', terminals: 'electronics', lid: 'lid', latches: 'lid' });
 
 /**
  * Add a BatteryPack's parts to a machine's kit, its foot's middle at `at` (actor metres), its front towards +z.
  * `assembly` and `step` say where each part goes in the machine's catalog; with `unit`, the pack arrives whole.
  * `seg`: the sides of a cell (fewer where many packs stand closed). `v`: the version to build (2: its plug still on the
- * face, no ClickLock; 3: the back plug and the ClickLock).
+ * face, no ClickLock; 3: the back plug and the ClickLock; 4: one centre grip whose
+ * trigger releases the ClickLock).
  * @param {ReturnType<typeof machineKit>} kit
  * @param {{ at: V3, base: string, assembly?: (g: string) => string, step?: (p: string) => number, prefix?: string, unit?: string, seg?: number, v?: number }} o
  */
-export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p) => STEP[p], prefix = '', unit, seg = 10, v = 3 }) {
+export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p) => STEP[p], prefix = '', unit, seg = 10, v = 4 }) {
 	const m = new THREE.Matrix4().makeTranslation(...at);
 	/** @param {number} x @param {number} y @param {number} z @returns {V3} */
 	const L = (x, y, z) => [x * S, z * S, y * S];
@@ -111,6 +113,13 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 		put(box(0, Lh + 0.5, 104, 386, 2, 7, 1), BLACK);
 		for (let k = 0; k < 10; k++) put(box(-171 + k * 38, Lh + 1.5, 104, 34, 1.5, 4), k < CHARGE ? LED : LED_OFF);
 	});
+	if (v >= 4)
+		part('handles', { label: 'Grip', what: 'One grip in the middle of its face, for one hand: close your fingers round it and its trigger pulls the ClickLock’s pawls back, so the pack slides out in the same move; let go and it clicks home again. The pack hangs balanced under it.', specs: [['Width', '150 mm, for a gloved hand'], ['Release', 'Trigger in the grip, ~20 N'], ['Carries', '~26 kg [inferred]']] }, (put) => {
+			for (const sx of [-1, 1]) put(box(sx * 82, Lh + 14, 62, 16, 28, 34, 6), DARK); // its two feet
+			put(box(0, Lh + 30, 62, 180, 16, 30, 8), DARK); // the bar
+			put(box(0, Lh + 38.5, 66, 120, 1, 2, 0.4), '#d9dcde'); // its light line
+		});
+	else
 	part('handles', { label: 'Handles', count: 2, what: 'Two handles on its face to slide it in and out: at ~26 kg one person lifts it.', specs: [['Mass', '~26 kg [inferred]']] }, (put) => {
 		for (const sx of [-1, 1]) {
 			for (const z of [38, 90]) put(cyl([sx * 175, Lh, z], [sx * 175, Lh + 28, z], 6, 10), DARK);
@@ -153,8 +162,10 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 		put(box(0, -Lh - 7, 58, 22, 3, 10), CAP);
 		for (const sx of [-1, 1]) put(cyl([sx * 150, -Lh, 58], [sx * 150, -Lh - 12, 58], 5, 10), STEEL);
 	});
-	if (v >= 3)
+	if (v === 3)
 		part('clicklock', { ...CLICKLOCK, what: `${CLICKLOCK.what} In a BatteryCube the pawls click in just as its back plug meets the backplane.` }, (put) => clickLatch(box, put, { half: Wh, face: Lh, z: 10, tabZ: 24 }));
+	// from v4 the ClickLock shows every piece: pawls, springs, pivots, cables and the grip's trigger
+	if (v >= 4) for (const [id, info, draw] of clickLockPieces(box, cyl, { half: Wh, face: Lh, z: 10, grip: [0, Lh + 22, 52] })) part(id, info, draw);
 	part('lid', { label: 'Lid', what: 'The lid, its round corners and soft edge flush with the case, and the spring pad under it: closing it presses every contact plate onto its poles, the whole pack’s only joining force.', specs: [['Pad', 'Silicone foam, ~0.2 MPa [inferred]'], ['Corners', 'R 30 mm']] }, (put) => {
 		put(slab(W, LEN, RC, H - 13, 13, 0, 5), LID);
 		put(box(0, CELLS.y, H - 19, zone.w - 10, zone.l - 10, 10, 2), '#d8d1bf');
@@ -165,7 +176,7 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 }
 
 /** The BatteryPack on its own (version `v`), every part its own: drawn apart, built step by step. @returns {Cast} */
-export function batteryPack(v = 3) {
+export function batteryPack(v = 4) {
 	const kit = machineKit(ASSEMBLIES);
 	batteryPackParts(kit, { at: [0, 0, 0], base: 'base', v });
 	const built = kit.build();

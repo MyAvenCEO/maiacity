@@ -23,11 +23,12 @@ const ASSEMBLIES = /** @type {import('./parts.js').Assembly[]} */ ([
 ]);
 const STEPS = ['Cut, drill and bolt the frame: skids, posts, top rails, quick-attach plate', 'Fit the backplane; slide in the four BatteryPacks, each plugs itself in', 'Mount the inverter on the back; wire the solar input, the AC inlet, the breakers and the sockets'];
 
-/** a BatteryCube's insides at version `v` (2: one-way inverter, no AC inlet; 3: bidirectional, its AC inlet)
+/** a BatteryCube's insides at version `v` (2: one-way inverter, no AC inlet; 3: bidirectional, its AC inlet;
+ * 4: its packs at v4, a centre grip each)
  * @param {Parameters<import('./powercube.js').Insides>[0]} part @param {Parameters<import('./powercube.js').Insides>[1]} tools */
-function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 3) {
+function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 4) {
 		// four BatteryPacks (./batterypack.js) stacked on the skids, their fronts to the cube's front: each arrives whole
-	for (let k = 0; k < 4; k++) batteryPackParts(kit, { at: P(0, MOD.y, B + 10 + k * MOD.gap), base, assembly: () => 'battery', step: () => 2, prefix: `pack-${k + 1}-`, unit: `pack-${k + 1}`, seg: 6 });
+	for (let k = 0; k < 4; k++) batteryPackParts(kit, { at: P(0, MOD.y, B + 10 + k * MOD.gap), base, assembly: () => 'battery', step: () => 2, prefix: `pack-${k + 1}-`, unit: `pack-${k + 1}`, seg: 6, v: v >= 4 ? 4 : 3 });
 	const back = MOD.y - MOD.l / 2, top = B + 10 + 4 * MOD.gap;
 	part('battery', { id: 'backplane', label: 'Backplane', source: SRC_B, what: 'A board behind the stack with a socket for each BatteryPack: slide a pack in and its back plug finds its socket on the guide pins; pull it out and it lets go. Copper bars inside it join the four side by side and carry their 52 V to the inverter.', specs: [['Sockets', '4, blind-mate'], ['Bus', 'Tinned copper, 30 × 5 mm, 125 A'], ['Data', 'CAN from every pack to the inverter']] }, base, (put) => {
 		put(box(0, back - 15, (B + top) / 2, 420, 10, top - B, 2), DARK);
@@ -65,4 +66,4 @@ function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 3) {
 }
 
 /** The BatteryCube on its own (version `v`), every part its own: drawn apart, built. Its size is the Power Cube's. @returns {import('./rig').Cast} */
-export const batteryCube = (v = 3) => cubeCast({ name: 'BatteryCube', assemblies: ASSEMBLIES, steps: STEPS, stepOf: { frame: 1, battery: 2, power: 3 }, sources: POWERCUBE_SOURCES, hums: false, len: CUBE.L, engine: false, controls: false, insides: (part, tools) => cells(part, tools, v) });
+export const batteryCube = (v = 4) => cubeCast({ name: 'BatteryCube', assemblies: ASSEMBLIES, steps: STEPS, stepOf: { frame: 1, battery: 2, power: 3 }, sources: POWERCUBE_SOURCES, hums: false, len: CUBE.L, engine: false, controls: false, insides: (part, tools) => cells(part, tools, v) });
