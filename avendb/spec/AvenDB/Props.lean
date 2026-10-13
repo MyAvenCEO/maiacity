@@ -89,15 +89,19 @@ def KeyFam.vault : KeyFam → VaultId
 /-! ## Relays
 
 A relay reads no selector, no type, no tag, no op and no record: it sees a cap without its selector and ops (only
-its role, their class), and a write without its header, tags, proof, touches and whether it fits its schemas. What it
+its role, their class), a sync rule without its selector, and a write without its header, tags, proof, touches and whether it fits its schemas. What it
 then works out of the edits is the operational part of the state. -/
 
 /-- A cap as a relay sees it. -/
 def Cap.blind (c : Cap) : Cap := { c with select := .all, ops := [] }
 
+/-- A sync rule as a relay sees it. -/
+def SyncRule.blind (r : SyncRule) : SyncRule := { r with select := .all }
+
 /-- An action as a relay sees it. -/
 def Action.blind : Action → Action
   | .cap c via => .cap c.blind via
+  | .syncRule r via => .syncRule r.blind via
   | .write v e a s g deps p via create _ _ _ _ =>
     .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none [] true
   | a => a
@@ -108,6 +112,6 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 def State.ops (st : State) : State :=
   { st with caps := st.caps.map Cap.blind,
             entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false },
-            uncounted := [] }
+            uncounted := [], rules := st.rules.map SyncRule.blind }
 
 end AvenDB

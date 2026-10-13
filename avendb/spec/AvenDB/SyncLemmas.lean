@@ -91,10 +91,25 @@ theorem T11_same_standing {edits₁ edits₂ : List Edit} (hperm : edits₁.Perm
 
 /-! ## What a peer sends -/
 
-/-- An edit a peer sends a device is one it holds, of an entry, a cell or a cap log the device may receive, or of a
-    vault's log. -/
-theorem mem_respond {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) :
-    o ∈ edits ∧ ((∃ l, o.log? = some l ∧ mayReceiveLog (view edits) d l = true) ∨ ∃ v, o.log? = some (.vault v)) := by
+/-- A device syncs an entry only if it may receive it. -/
+theorem syncs_may {st : State} {d : SignerId} {e : EntryId} (h : syncs st d e = true) : mayReceive st d e = true := by
+  unfold syncs at h
+  unfold mayReceive
+  cases hen : st.entry? e with
+  | none => rw [hen] at h; cases h
+  | some en => rw [hen] at h; simp only [Bool.and_eq_true] at h; exact h.1
+
+/-- A device syncs a log only if it may receive it. -/
+theorem syncsLog_may {st : State} {d : SignerId} {l : LogId} (h : syncsLog st d l = true) :
+    mayReceiveLog st d l = true := by
+  cases l with
+  | entry e => exact syncs_may h
+  | _ => exact h
+
+/-- An edit a peer sends a device is one it holds, of an entry log the device syncs or a cell or a cap log it may
+    receive, or of a vault's log. -/
+theorem mem_respond_syncs {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) :
+    o ∈ edits ∧ ((∃ l, o.log? = some l ∧ syncsLog (view edits) d l = true) ∨ ∃ v, o.log? = some (.vault v)) := by
   simp only [respond, List.mem_append, List.mem_filter] at h
   rcases h with ⟨hm, hl⟩ | ⟨hm, hv⟩
   · refine ⟨hm, .inl ?_⟩
@@ -106,6 +121,14 @@ theorem mem_respond {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ res
     · next v hv' => exact ⟨v, hv'⟩
     · simp at hv
 
+/-- An edit a peer sends a device is one it holds, of an entry, a cell or a cap log the device may receive, or of a
+    vault's log. -/
+theorem mem_respond {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) :
+    o ∈ edits ∧ ((∃ l, o.log? = some l ∧ mayReceiveLog (view edits) d l = true) ∨ ∃ v, o.log? = some (.vault v)) := by
+  obtain ⟨hm, ⟨l, hl, hs⟩ | hv⟩ := mem_respond_syncs h
+  · exact ⟨hm, .inl ⟨l, hl, syncsLog_may hs⟩⟩
+  · exact ⟨hm, .inr hv⟩
+
 /-- An edit a peer sends is one it holds. -/
 theorem respond_sub {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) : o ∈ edits :=
   (mem_respond h).1
@@ -115,12 +138,12 @@ theorem respondSince_sub {edits : List Edit} {d : SignerId} {fr : Ask} {o : Edit
     (h : o ∈ respondSince edits d fr) : o ∈ respond edits d :=
   (List.mem_filter.mp h).1
 
-/-- A peer sends every edit it holds of an entry the device may receive. -/
+/-- A peer sends every edit it holds of an entry the device syncs. -/
 theorem entry_in_respond {edits : List Edit} {d : SignerId} {o : Edit} {e : EntryId}
-    (hm : o ∈ edits) (hl : o.log? = some (.entry e)) (hr : mayReceive (view edits) d e = true) :
+    (hm : o ∈ edits) (hl : o.log? = some (.entry e)) (hr : syncs (view edits) d e = true) :
     o ∈ respond edits d := by
   simp only [respond, List.mem_append, List.mem_filter]
-  -- an entry's log is one `mayReceiveLog` allows exactly when `mayReceive` allows the entry
+  -- an entry's log is one `syncsLog` allows exactly when `syncs` allows the entry
   exact .inl ⟨hm, by rw [hl]; exact hr⟩
 
 theorem T12_sync_shares_only_caps (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) :
@@ -128,6 +151,27 @@ theorem T12_sync_shares_only_caps (edits : List Edit) (d : SignerId) {o : Edit} 
   obtain ⟨hm, ⟨l, hl, hr⟩ | ⟨v, hv⟩⟩ := mem_respond h
   · exact ⟨hm, l, hl, .inl hr⟩
   · exact ⟨hm, .vault v, hv, .inr ⟨v, rfl⟩⟩
+
+theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
+    (hl : o.log? = some (.entry e)) :
+    ∃ en, (view edits).entry? e = some en ∧ mayReceiveCell (view edits) d en.vault en.cell = true ∧
+      wants (view edits) d en = true := by
+  obtain ⟨-, ⟨l, hl', hs⟩ | ⟨v, hv⟩⟩ := mem_respond_syncs h
+  · rw [hl] at hl'
+    cases hl'
+    simp only [syncsLog, syncs] at hs
+    cases hen : (view edits).entry? e with
+    | none => rw [hen] at hs; cases hs
+    | some en =>
+      rw [hen] at hs
+      simp only [Bool.and_eq_true] at hs
+      exact ⟨en, rfl, hs.1, hs.2⟩
+  · rw [hl] at hv
+    cases hv
+
+theorem T28_no_rule_wants_all (st : State) (d : SignerId) (en : Entry) (h : rulesOf st d en.vault = []) :
+    wants st d en = true := by
+  simp [wants, h]
 
 theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {o : Edit} (h : o ∈ respondSince edits d fr) :
     o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) :=
@@ -424,7 +468,7 @@ theorem mem_receive {edits incoming : List Edit} {o : Edit} :
 /-- After a device holding `A` asked a peer holding `R` (`asks`), it holds an edit of an entry it may receive by the
     peer's view exactly when one of them held it. -/
 theorem entry_after_sync {A R : List Edit} {d : SignerId} {e : EntryId}
-    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) (hr : mayReceive (view R) d e = true) {o : Edit}
+    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) (hr : syncs (view R) d e = true) {o : Edit}
     (hop : o.log? = some (.entry e)) : o ∈ receive A (respondSince R d (asks A)) ↔ o ∈ A ∨ o ∈ R := by
   rw [mem_receive]
   constructor
@@ -437,7 +481,7 @@ theorem entry_after_sync {A R : List Edit} {d : SignerId} {e : EntryId}
 
 theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (e : EntryId)
     (hid : ∀ a ∈ editsP, ∀ b ∈ editsQ, a.id = b.id → a = b)
-    (hp : mayReceive (view editsQ) dp e = true) (hq : mayReceive (view editsP) dq e = true)
+    (hp : syncs (view editsQ) dp e = true) (hq : syncs (view editsP) dq e = true)
     (o : Edit) (hop : o.log? = some (.entry e)) :
     o ∈ receive editsP (respondSince editsQ dp (asks editsP)) ↔
       o ∈ receive editsQ (respondSince editsP dq (asks editsQ)) := by

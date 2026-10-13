@@ -118,6 +118,26 @@ pub struct Cap {
     pub nonce: u64,
 }
 
+/// A sync rule (`State.lean`): device `device` of vault `issuer` syncs the entries of vault `over` its selector picks,
+/// or all of them (`wide`), and keeps whole the files they bring (`keep`) rather than fetching a file's pieces as it
+/// reads them. It grants nothing: a device syncs what it may receive and its rules want (`State::wants`, T28). Its id
+/// is the id of the edit that set it, from the same hashes as a cap's, and the stewards mark entries with it (`Pick`)
+/// as they place them in the cells of caps, so a peer that reads no selector applies it too (T29).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SyncRule {
+    pub issuer: VaultId,
+    pub device: SignerId,
+    pub over: VaultId,
+    /// It picks every entry of `over`, in the clear, as a wide cap selects them all.
+    pub wide: bool,
+    /// Its name and selector (`slice::Slice`, granting no op), sealed as a cap's are, to `over`'s vault key and
+    /// `issuer`'s (`slice::Select`): no rule here reads it; the vault's stewards and the issuer's devices do.
+    pub select: Vec<u8>,
+    pub keep: bool,
+    /// Keeps two rules that say the same apart.
+    pub nonce: u64,
+}
+
 /// The line of an entry's history a write extends (`Proposals.lean`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Proposal {
@@ -205,6 +225,13 @@ pub enum Action {
     /// where the writes carry only the classical half (`sign`). It changes nothing; a peer that no longer trusts the
     /// curves counts only the writes a checkpoint covers (`checkpointed`).
     Checkpoint { entry: EntryId, covers: Vec<EditId> },
+    /// A sync rule, set by its issuer for one of its own devices through the owners `via`; its id is this edit's id.
+    SyncRule(SyncRule, Vec<VaultId>),
+    /// Sync rule `rule` of vault `issuer` ends.
+    EndSyncRule { rule: CapId, issuer: VaultId, via: Vec<VaultId> },
+    /// A steward, acting for vault `vault`, marks its entry `entry` with the sync rules that pick it (`rules`, in
+    /// canonical order): so a peer that reads no selector knows which devices want it.
+    Pick { vault: VaultId, entry: EntryId, rules: Vec<CapId>, via: Vec<VaultId> },
 }
 
 impl Action {
@@ -238,7 +265,10 @@ impl Action {
             | Action::Revoke { via, .. }
             | Action::Write { via, .. }
             | Action::Move { via, .. }
-            | Action::Publish { via, .. } => Some(via),
+            | Action::Publish { via, .. }
+            | Action::SyncRule(_, via)
+            | Action::EndSyncRule { via, .. }
+            | Action::Pick { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -249,7 +279,10 @@ impl Action {
             | Action::Revoke { via, .. }
             | Action::Write { via, .. }
             | Action::Move { via, .. }
-            | Action::Publish { via, .. } => Some(via),
+            | Action::Publish { via, .. }
+            | Action::SyncRule(_, via)
+            | Action::EndSyncRule { via, .. }
+            | Action::Pick { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -288,15 +321,20 @@ impl Edit {
         match &self.action {
             Action::Cap(c, _) => Some(c.issuer),
             Action::Revoke { actor, .. } | Action::Write { actor, .. } | Action::Publish { actor, .. } => Some(*actor),
-            Action::Move { vault, .. } => Some(*vault),
+            Action::Move { vault, .. } | Action::Pick { vault, .. } => Some(*vault),
+            Action::SyncRule(r, _) => Some(r.issuer),
+            Action::EndSyncRule { issuer, .. } => Some(*issuer),
             _ => None,
         }
     }
 
-    /// The entry a write or a move changes, or a checkpoint vouches for.
+    /// The entry a write or a move changes, a checkpoint vouches for, or a steward marks.
     pub fn entry(&self) -> Option<EntryId> {
         match self.action {
-            Action::Write { entry, .. } | Action::Move { entry, .. } | Action::Checkpoint { entry, .. } => Some(entry),
+            Action::Write { entry, .. }
+            | Action::Move { entry, .. }
+            | Action::Checkpoint { entry, .. }
+            | Action::Pick { entry, .. } => Some(entry),
             _ => None,
         }
     }
@@ -533,6 +571,15 @@ pub enum Refusal {
     AlreadyPublished,
     /// A checkpoint covers nothing, or something other than its own author's accepted writes of its entry.
     NotOwnWrite,
+    /// A sync rule names a signer that isn't a device of the vault that sets it.
+    NotDevice,
+    UnknownRule,
+    /// The sync rule ended already.
+    Ended,
+    /// A steward's marks aren't in canonical order, or one isn't a live sync rule over the vault, or is wide.
+    BadPicks,
+    /// Marks an entry with the rules it is marked with already.
+    SamePicks,
     /// Not a rule of the edits but of a device: a signer's key isn't at hand, as the device is locked or the key is
     /// lost, so nothing is signed.
     Locked,
@@ -700,6 +747,12 @@ pub struct State {
     /// Only while checking an edit that a move after it hadn't seen (`hide`): each entry such a move took to a cell,
     /// and that cell's caps. A write must be allowed there too.
     narrow: Vec<(EntryId, Arc<[CapId]>)>,
+    /// Every sync rule set, live or ended, in the order set, with its id and each one's place; the rules that ended, in
+    /// the order they did; and the rules the stewards last marked each entry with.
+    rules: Arc<Vec<(CapId, SyncRule)>>,
+    rule_at: Arc<HashMap<CapId, usize>>,
+    ended: Arc<Listed<CapId>>,
+    picks: Arc<HashMap<EntryId, Arc<[CapId]>>>,
 }
 
 /// What an accepted edit changes, worked out before anything changes (`State::check`).
@@ -722,6 +775,9 @@ enum Change {
     Write(Write, bool),
     Move { at: usize, stay: EditId, to: CellId, caps: Arc<[CapId]> },
     Publish(Published),
+    SyncRule(CapId, SyncRule),
+    EndSyncRule(CapId),
+    Pick(EntryId, Arc<[CapId]>),
 }
 
 impl Change {
@@ -1083,6 +1139,68 @@ impl State {
         })
     }
 
+    /// Sync rule `r`, live or ended.
+    pub fn rule(&self, r: CapId) -> Option<&SyncRule> {
+        self.rule_at.get(&r).map(|&i| &self.rules[i].1)
+    }
+
+    /// Every sync rule set, live or ended, in the order set, with its id.
+    pub fn rules(&self) -> &[(CapId, SyncRule)] {
+        &self.rules
+    }
+
+    /// The sync rules that ended, in the order they did.
+    pub fn ended(&self) -> &[CapId] {
+        self.ended.as_slice()
+    }
+
+    /// Sync rule `r` was set and hasn't ended.
+    pub fn rule_live(&self, r: CapId) -> bool {
+        self.rule_at.contains_key(&r) && !self.ended.contains(&r)
+    }
+
+    /// The sync rules the stewards last marked entry `e` with.
+    pub fn picks_of(&self, e: EntryId) -> &[CapId] {
+        self.picks.get(&e).map(|p| &p[..]).unwrap_or_default()
+    }
+
+    /// Signer `d` is a device of vault `v`.
+    pub fn is_device(&self, d: SignerId, v: VaultId) -> bool {
+        self.vault(v).is_some_and(|vt| vt.devices.contains(&d))
+    }
+
+    /// Vault `a` may hold entries of vault `v`: it is `v`, or holds a cap over it, backup or more. A vault sets sync
+    /// rules only over such a vault, so no stranger has a vault's stewards mark entries for it.
+    pub fn may_hold(&self, a: VaultId, v: VaultId) -> bool {
+        a == v || self.caps_over(v).any(|cp| self.holds(a, cp, Role::Backup))
+    }
+
+    /// The live sync rules device `d` syncs vault `v` by, with their ids: those over `v` naming `d`, set by a vault `d`
+    /// is still a device of.
+    pub fn rules_of(&self, d: SignerId, v: VaultId) -> impl Iterator<Item = (CapId, &SyncRule)> {
+        let live = move |(id, r): &&(CapId, SyncRule)| {
+            r.device == d && r.over == v && self.rule_live(*id) && self.is_device(d, r.issuer)
+        };
+        self.rules.iter().filter(live).map(|(id, r)| (*id, r))
+    }
+
+    /// Device `d` wants entry `en`: it has no rule over the entry's vault, and so wants all of it, or one of its rules
+    /// there is wide or marks the entry (T28).
+    pub fn wants(&self, d: SignerId, en: &Entry) -> bool {
+        let picks = self.picks_of(en.id);
+        let mut rules = self.rules_of(d, en.vault).peekable();
+        rules.peek().is_none() || rules.any(|(id, r)| r.wide || picks.contains(&id))
+    }
+
+    /// Whether device `d` keeps whole the files entry `en` brings, by its rules: one of them that wants the entry says
+    /// so. `None` with no rule over the entry's vault, where the device's own setting says.
+    pub fn keeps(&self, d: SignerId, en: &Entry) -> Option<bool> {
+        let picks = self.picks_of(en.id);
+        let mut rules = self.rules_of(d, en.vault).peekable();
+        rules.peek()?;
+        Some(rules.any(|(id, r)| r.keep && (r.wide || picks.contains(&id))))
+    }
+
     /// Cell `x` is a cell of vault `v`: in canonical form, each of its caps one over `v` that isn't wide.
     pub fn cell_ok(&self, v: VaultId, x: &[CapId]) -> bool {
         canonical(x) && x.iter().all(|&c| self.cap(c).is_some_and(|cp| cp.cap.over == v && !cp.cap.wide))
@@ -1153,7 +1271,18 @@ impl State {
         };
         let live: Vec<CapId> = self.caps_of(en.cell()).iter().copied().filter(|&c| self.live(c)).collect();
         let desired = (live != cell).then(|| cell.clone());
-        Some(Meaning { attrs, admitted, cell, desired })
+        // the sync rules that pick it, read as its caps are, and the marks a steward puts on it
+        let picks: Vec<CapId> = self
+            .rules
+            .iter()
+            .filter(|(id, x)| x.over == en.vault && !x.wide && self.rule_live(*id))
+            .filter(|(id, _)| r.selectors.get(id).is_some_and(|s| s.matches(&attrs)))
+            .map(|(id, _)| *id)
+            .collect();
+        let picks = mk_cell(&picks);
+        let marked: Vec<CapId> = self.picks_of(e).iter().copied().filter(|&x| self.rule_live(x)).collect();
+        let pick = (marked != picks).then(|| picks.clone());
+        Some(Meaning { attrs, admitted, cell, desired, picks, pick })
     }
 
     /// Every cap of `cp`'s chain, root first, is opened by one of `grants` in turn (`State.lean`'s `chainAllows`): each
@@ -1868,6 +1997,59 @@ impl State {
                 }
                 Ok(Change::Nothing)
             }
+            Action::SyncRule(r, via) => {
+                let rid = CapId::from(id);
+                if self.rule(rid).is_some() {
+                    return Err(Refusal::Duplicate);
+                }
+                if self.vault(r.over).is_none() {
+                    return Err(Refusal::UnknownVault);
+                }
+                // a vault sets the rules of its own devices, over a vault whose entries it may hold
+                if !self.is_device(r.device, r.issuer) {
+                    return Err(Refusal::NotDevice);
+                }
+                if !self.acts_via(edit.author, via, r.issuer) {
+                    return Err(Refusal::NotActing);
+                }
+                if !self.may_hold(r.issuer, r.over) {
+                    return Err(Refusal::NoCap);
+                }
+                Ok(Change::SyncRule(rid, r.clone()))
+            }
+            &Action::EndSyncRule { rule, issuer, ref via } => {
+                let r = self.rule(rule).ok_or(Refusal::UnknownRule)?;
+                if r.issuer != issuer {
+                    return Err(Refusal::WrongVault);
+                }
+                if !self.rule_live(rule) {
+                    return Err(Refusal::Ended);
+                }
+                if !self.acts_via(edit.author, via, issuer) {
+                    return Err(Refusal::NotActing);
+                }
+                Ok(Change::EndSyncRule(rule))
+            }
+            Action::Pick { vault, entry, rules, via } => {
+                let (v, e) = (*vault, *entry);
+                let en = self.entry(e).ok_or(Refusal::UnknownEntry)?;
+                // only a steward marks an entry, with live rules over its vault that aren't wide, each once, smallest
+                // first
+                if en.vault != v {
+                    return Err(Refusal::WrongVault);
+                }
+                if !self.acts_via(edit.author, via, v) {
+                    return Err(Refusal::NotActing);
+                }
+                let fits = |&r: &CapId| self.rule(r).is_some_and(|x| x.over == v && !x.wide) && self.rule_live(r);
+                if !canonical(rules) || !rules.iter().all(fits) {
+                    return Err(Refusal::BadPicks);
+                }
+                if rules[..] == *self.picks_of(e) {
+                    return Err(Refusal::SamePicks);
+                }
+                Ok(Change::Pick(e, rules.as_slice().into()))
+            }
         }
     }
 
@@ -1978,6 +2160,19 @@ impl State {
             }
             Change::Publish(p) => {
                 Arc::make_mut(&mut self.lane).push(p);
+                Touch::Nothing
+            }
+            Change::SyncRule(id, r) => {
+                Arc::make_mut(&mut self.rule_at).insert(id, self.rules.len());
+                Arc::make_mut(&mut self.rules).push((id, r));
+                Touch::Nothing
+            }
+            Change::EndSyncRule(id) => {
+                Arc::make_mut(&mut self.ended).push(id);
+                Touch::Nothing
+            }
+            Change::Pick(e, rules) => {
+                Arc::make_mut(&mut self.picks).insert(e, rules);
                 Touch::Nothing
             }
         }
@@ -2251,10 +2446,11 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
     }
 }
 
-/// What an entry's readers and its vault's stewards read where no relay can: each cap's selector, opened from its
-/// sealed `select`; each entry's header and each write's tags and proof, from inside the writes' bodies; and what each
-/// write touches, and whether it fits the schemas its entry was written under, read off its update on the version it
-/// builds on (`history::History::reading`).
+/// What an entry's readers and its vault's stewards read where no relay can: each cap's and each sync rule's selector,
+/// opened from its sealed `select` (a rule's id is an edit's id, as a cap's is, so the two never meet); each entry's
+/// header and each write's tags and proof, from inside the writes' bodies; and what each write touches, and whether it
+/// fits the schemas its entry was written under, read off its update on the version it builds on
+/// (`history::History::reading`).
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
     pub selectors: HashMap<CapId, Selector>,
@@ -2282,6 +2478,12 @@ pub struct Meaning {
     /// Where a steward moves it: nowhere while the live part of its cell is its semantic cell (a revoked cap left in it
     /// is ignored, so a revocation moves no entry), else to its semantic cell.
     pub desired: Option<Vec<CapId>>,
+    /// The sync rules that pick it: the live ones over its vault that aren't wide and whose selector holds it, in
+    /// canonical order (`semPicks`), whether or not its creation was let in.
+    pub picks: Vec<CapId>,
+    /// What a steward marks it with: nothing while the live part of its marks is what the rules pick (an ended rule
+    /// left in them is ignored, so ending a rule marks no entry), else what they pick (`desiredPicks`).
+    pub pick: Option<Vec<CapId>>,
 }
 
 /// The edits a peer counts once it no longer trusts the curves, so neither ed25519 nor P-256: every edit but a write,

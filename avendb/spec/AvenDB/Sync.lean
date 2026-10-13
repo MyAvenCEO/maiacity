@@ -12,6 +12,10 @@ the caps of its own vaults and over them, and every cap those rest on), and the 
 chains of owners. Nothing else leaves the peer (T12): no other entry, no other cell. Receiving is not reading: relay
 gets no key. The connection proves which device is asking (iroh's endpoint key is the device key), so the request names
 the device.
+
+Of the entries a device may receive, it syncs those its sync rules want (`wants`, `State.lean`; T28): all of a vault
+it has no rule over, else those a rule of its picks. A rule only narrows what a device syncs, and the peer reads only
+the stewards' marks to apply it, never a selector (T29).
 -/
 
 namespace AvenDB
@@ -33,7 +37,9 @@ def Edit.log? (edit : Edit) : Option LogId :=
   | .setRoot v .. | .publish v .. => some (.vault v)
   | .cap c _ => some (.cap c.id)
   | .revoke c .. => some (.cap c)
-  | .write _ e .. | .move _ e .. | .checkpoint e _ => some (.entry e)
+  | .write _ e .. | .move _ e .. | .checkpoint e _ | .pick _ e .. => some (.entry e)
+  | .syncRule r _ => some (.vault r.issuer)
+  | .endRule _ i _ => some (.vault i)
   | .keys k .. =>
     match k with
     | .signer _ => none
@@ -79,6 +85,18 @@ def mayReceiveLog (st : State) (d : SignerId) : LogId → Bool
   | .cap c      => reachesCap st d c
   | .vault _    => false
 
+/-- Device `d` syncs entry `e`: it may receive it, and its sync rules want it (`wants`). -/
+def syncs (st : State) (d : SignerId) (e : EntryId) : Bool :=
+  match st.entry? e with
+  | some en => mayReceiveCell st d en.vault en.cell && wants st d en
+  | none    => false
+
+/-- Device `d` syncs log `l`: an entry's it syncs; any other it may receive. A device's rules choose among entries; the
+    caps and cells it may receive are few and small, and come whole. -/
+def syncsLog (st : State) (d : SignerId) : LogId → Bool
+  | .entry e => syncs st d e
+  | l        => mayReceiveLog st d l
+
 /-- The vaults an edit names: what it acts for, through, or about. -/
 def Edit.vaultsNamed (edit : Edit) : List VaultId :=
   match edit.action with
@@ -88,6 +106,9 @@ def Edit.vaultsNamed (edit : Edit) : List VaultId :=
   | .revoke _ a _ via => a :: via
   | .write v _ a _ _ _ _ via _ _ => [v, a] ++ via
   | .move v _ _ _ via => v :: via
+  | .syncRule r via => [r.issuer, r.over] ++ via
+  | .endRule _ i via => i :: via
+  | .pick v _ _ via => v :: via
   | _ => []
 
 /-- `vs` and every vault that owns one of them, directly or further up. -/
@@ -99,12 +120,12 @@ def closeVaults (st : State) : Nat → List VaultId → List VaultId
       | .signer _ => none
     | none => [])
 
-/-- What a peer holding `edits` sends device `d`: the edits of every entry, cell and cap log `d` may receive, and of
-    the logs of the vaults `d` acts for and that those edits name, up their owners. -/
+/-- What a peer holding `edits` sends device `d`: the edits of every entry log `d` syncs and every cell and cap log it
+    may receive, and of the logs of the vaults `d` acts for and that those edits name, up their owners. -/
 def respond (edits : List Edit) (d : SignerId) : List Edit :=
   let st := view edits
   let items := edits.filter fun o => match o.log? with
-    | some l => mayReceiveLog st d l
+    | some l => syncsLog st d l
     | none   => false
   let mine := st.vaults.filterMap fun x => if actsFor st d x.id then some x.id else none
   let vaults := closeVaults st st.depth (mine ++ items.flatMap Edit.vaultsNamed)

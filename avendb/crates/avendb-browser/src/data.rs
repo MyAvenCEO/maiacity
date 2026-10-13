@@ -207,8 +207,8 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
 }
 
 /// What edit `id` does, as the History view shows it: its kind, and its fields, ids in hex. What is sealed, a write's
-/// body, a cap's slice, keys' boxes, shows by its size or its recipient alone, and a public key by whether there is
-/// one. A write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one; a
+/// body, a cap's or a sync rule's slice, keys' boxes, shows by its size or its recipient alone, and a public key by
+/// whether there is one. A write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one; a
 /// write that creates its entry names the cell it goes in (`create`), and its `stay` the move that put the entry where
 /// it is now (`null` for where it was created).
 fn action(id: EditId, a: &Action) -> (&'static str, Value) {
@@ -324,6 +324,25 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         Action::Checkpoint { entry, covers } => {
             ("checkpoint", json!({ "entry": hex(&entry.0), "covers": ids(covers) }))
         }
+        Action::SyncRule(r, via) => (
+            "syncRule",
+            json!({
+                "issuer": hex(&r.issuer.0),
+                "device": hex(&r.device.0),
+                "over": hex(&r.over.0),
+                "wide": r.wide,
+                "keep": r.keep,
+                "via": vias(via),
+                "sealed": r.select.len(),
+            }),
+        ),
+        Action::EndSyncRule { rule, issuer, via } => {
+            ("endSyncRule", json!({ "rule": hex(&rule.0), "issuer": hex(&issuer.0), "via": vias(via) }))
+        }
+        Action::Pick { vault, entry, rules, via } => (
+            "pick",
+            json!({ "vault": hex(&vault.0), "entry": hex(&entry.0), "rules": caps(rules), "via": vias(via) }),
+        ),
     }
 }
 
@@ -362,7 +381,10 @@ fn concerns(st: &State, id: EditId, a: &Action, caps: &HashMap<CapId, VaultId>) 
         | Action::AddDevice { vault, .. }
         | Action::RemoveDevice { vault, .. }
         | Action::SetRoot { vault, .. }
-        | Action::Move { vault, .. } => vec![*vault],
+        | Action::Move { vault, .. }
+        | Action::Pick { vault, .. } => vec![*vault],
+        Action::SyncRule(r, _) => vec![r.issuer, r.over],
+        Action::EndSyncRule { issuer, .. } => vec![*issuer],
         Action::Cap(c, _) => {
             let to = match c.grantee {
                 Grantee::Principal(Principal::Vault(v)) => Some(v),

@@ -51,6 +51,23 @@ structure Cap where
   issuer  : VaultId
   deriving DecidableEq, Repr
 
+/-- A sync rule: device `device` of vault `issuer` syncs the entries of vault `over` that `select` picks, or all of them
+    (`wide`), and keeps the files they bring whole (`keep`) rather than fetching a file's pieces as it reads them. It
+    grants nothing: a device syncs what it may receive and its rules want (`wants`, T28). Its id comes from the same
+    hashes as a cap's. -/
+structure SyncRule where
+  id     : CapId
+  issuer : VaultId
+  device : SignerId
+  over   : VaultId
+  /-- It picks every entry of `over`, in the clear, as a wide cap selects them all. -/
+  wide   : Bool
+  /-- Sealed to `over`'s and `issuer`'s vault keys, as a cap's selector is: no relay reads it, nor does any operational
+      rule. -/
+  select : Selector
+  keep   : Bool
+  deriving DecidableEq, Repr
+
 /-- An entry of a vault: a note, a todo, a profile. -/
 structure Entry where
   id       : EntryId
@@ -134,6 +151,11 @@ structure State where
       the ops of its actor's caps don't allow it, or it builds on one they don't count (`counts`). Known to the entry's
       readers only. -/
   uncounted : List EditId := []
+  /-- Every sync rule issued, live or ended. -/
+  rules     : List SyncRule := []
+  ended     : List CapId := []
+  /-- The sync rules that pick each entry, as its vault's stewards last marked them (`pick`). -/
+  picks     : List (EntryId × List CapId) := []
   deriving Repr
 
 namespace State
@@ -141,9 +163,16 @@ namespace State
 def vault? (st : State) (v : VaultId) : Option Vault := st.vaults.find? (·.id == v)
 def cap? (st : State) (c : CapId) : Option Cap := st.caps.find? (·.id == c)
 def entry? (st : State) (e : EntryId) : Option Entry := st.entries.find? (·.id == e)
+def rule? (st : State) (r : CapId) : Option SyncRule := st.rules.find? (·.id == r)
 
 /-- Cap `c` was issued and hasn't been revoked. -/
 def live (st : State) (c : CapId) : Bool := st.caps.any (·.id == c) && !st.revoked.contains c
+
+/-- Sync rule `r` was issued and hasn't ended. -/
+def ruleLive (st : State) (r : CapId) : Bool := st.rules.any (·.id == r) && !st.ended.contains r
+
+/-- The sync rules that pick entry `e`, as its vault's stewards last marked them. -/
+def picksOf (st : State) (e : EntryId) : List CapId := ((st.picks.find? (·.1 == e)).map (·.2)).getD []
 
 def epochOf (st : State) (k : KeyFam) : Nat :=
   match st.epochs.find? (·.1 == k) with
@@ -353,6 +382,51 @@ def desired (st : State) (en : Entry) : Option Cell :=
 def semWrite (st : State) (a : VaultId) (en : Entry) : Bool :=
   a == en.vault || st.caps.any fun cp => cp.over == en.vault && holdsCap st a cp .write &&
     (cp.wide || (en.admitted && effSelects st cp en.attrs))
+
+/-! ## Sync rules
+
+Which entries a device syncs: of those it may receive (`mayReceive`, `Sync.lean`), the ones its rules want. A sync rule
+selects entries as a cap does, by what their first write says and their tags now, and its selector is sealed as a cap's
+is. The vault's stewards read it and mark which rules pick each entry (`pick`), as they move entries to the cells their
+caps pick, so a peer that reads no selector, a relay, knows what a device wants from the marks alone. -/
+
+/-- Signer `d` is a device of vault `v`. -/
+def isDevice (st : State) (d : SignerId) (v : VaultId) : Bool := (st.vault? v).any (·.devices.contains d)
+
+/-- Vault `a` may hold entries of vault `v`: it is `v`, or holds a cap over it, backup or more. A vault issues sync rules
+    only over such a vault, so no stranger has a vault's stewards mark entries for it. -/
+def mayHold (st : State) (a v : VaultId) : Bool :=
+  a == v || st.caps.any fun cp => cp.over == v && holdsCap st a cp .backup
+
+/-- The live sync rules device `d` syncs vault `v` by: those over `v` naming `d`, issued by a vault `d` is still a device
+    of. -/
+def rulesOf (st : State) (d : SignerId) (v : VaultId) : List SyncRule :=
+  st.rules.filter fun r => r.device == d && r.over == v && st.ruleLive r.id && isDevice st d r.issuer
+
+/-- Device `d` wants entry `en`: it has no rule over the entry's vault, and so wants all of it, or one of its rules there
+    is wide or picks the entry. -/
+def wants (st : State) (d : SignerId) (en : Entry) : Bool :=
+  let rs := rulesOf st d en.vault
+  rs.isEmpty || rs.any fun r => r.wide || (st.picksOf en.id).contains r.id
+
+/-- Device `d` keeps whole the files entry `en` brings: one of its rules that wants the entry says so. With no rule over
+    the entry's vault, the device's own setting says. -/
+def keeps (st : State) (d : SignerId) (en : Entry) : Bool :=
+  (rulesOf st d en.vault).any fun r => r.keep && (r.wide || (st.picksOf en.id).contains r.id)
+
+/-- The sync rules that pick entry `en`: the live rules over its vault that aren't wide and whose selector matches it,
+    each once, smallest first. -/
+def semPicks (st : State) (en : Entry) : List CapId :=
+  mkCell ((st.rules.filter fun r => r.over == en.vault && st.ruleLive r.id && !r.wide && r.select.matches en.attrs).map
+    (·.id))
+
+/-- The live part of the marks on entry `en`. -/
+def livePicks (st : State) (en : Entry) : List CapId := (st.picksOf en.id).filter st.ruleLive
+
+/-- What a steward marks entry `en` with: nothing while the live part of its marks is what the rules pick (an ended rule
+    left in them is ignored, so ending a rule marks no entry), else what they pick. -/
+def desiredPicks (st : State) (en : Entry) : Option (List CapId) :=
+  if livePicks st en == semPicks st en then none else some (semPicks st en)
 
 /-! ## Keys -/
 

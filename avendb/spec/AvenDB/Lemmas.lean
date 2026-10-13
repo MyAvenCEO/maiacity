@@ -1224,6 +1224,22 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, rfl⟩ := h
     exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
+  · -- a sync rule: only the rules
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, rfl⟩ := h
+    exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
+  · -- a sync rule ends: only the rules that ended
+    split at h
+    · simp at h
+    · simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+      obtain ⟨-, rfl⟩ := h
+      exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
+  · -- a steward marks an entry: only the marks
+    split at h
+    · simp at h
+    · simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+      obtain ⟨-, -, rfl⟩ := h
+      exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
 
 /-- Every write's entry exists, and every entry's first write is accepted. -/
 def EntriesWhole (st : State) : Prop :=

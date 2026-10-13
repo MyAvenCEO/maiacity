@@ -27,7 +27,7 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{
     checkpointed, mk_cell, order, removes, replay, trace, view, Action, Cap, Edit, Entry, Fact, Grantee, Holder, Issued,
-    Kind, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Role, State, Vault, Write,
+    Kind, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Role, State, SyncRule, Vault, Write,
 };
 use avendb::rules::Grant;
 use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -238,11 +238,11 @@ fn keep(h: &mut History, st: &State, a: Attempt, depth: Option<u64>) -> bool {
     true
 }
 
-/// One random attempt: a write, a new entry, a cap, a revocation, a move, a vault edit, a key or a schema. An act for a
-/// vault names, a time in eight, a random chain of one or two vaults to go through; otherwise the chain its author acts
-/// through, as the log drafts it.
+/// One random attempt: a write, a new entry, a cap, a revocation, a move, a vault edit, a key, a schema, a sync rule,
+/// its end or a steward's marks. An act for a vault names, a time in eight, a random chain of one or two vaults to go
+/// through; otherwise the chain its author acts through, as the log drafts it.
 fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
-    let mut a = match rng.below(20) {
+    let mut a = match rng.below(24) {
         0..=3 => a_write(rng, h, st),
         4..=6 => Some(a_creation(rng, h, st)),
         7..=9 => Some(a_cap(rng, h, st)),
@@ -253,7 +253,10 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
             Some(Attempt { author, cosigners, action: vault_action(rng, &h.vaults), said: Said::Nothing })
         }
         17 => some_keys(rng, st),
-        _ => Some(a_publish(rng, h, st)),
+        18 | 19 => Some(a_publish(rng, h, st)),
+        20 | 21 => Some(a_rule(rng, h, st)),
+        22 => a_rule_end(rng, h, st),
+        _ => a_pick(rng, h, st),
     }?;
     if rng.below(8) == 0 {
         let chain: Vec<VaultId> = (0..1 + rng.below(2)).map(|_| rng.pick(&h.vaults)).collect();
@@ -262,7 +265,10 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
             | Action::Revoke { via, .. }
             | Action::Write { via, .. }
             | Action::Move { via, .. }
-            | Action::Publish { via, .. } => *via = chain,
+            | Action::Publish { via, .. }
+            | Action::SyncRule(_, via)
+            | Action::EndSyncRule { via, .. }
+            | Action::Pick { via, .. } => *via = chain,
             _ => {}
         }
     }
@@ -571,6 +577,50 @@ fn a_move(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     };
     let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
     let action = Action::Move { vault, entry: en.id, to, keep: vec![], via: vec![] };
+    Some(Attempt { author: author_for(rng, st, en.vault), cosigners: vec![], action, said: Said::Nothing })
+}
+
+/// A sync rule for a device of a random vault, now and then another signer, over that vault, now and then another, on a
+/// random slice or every entry, keeping files half the time. Its selector travels in the clear.
+fn a_rule(rng: &mut Rng, h: &History, st: &State) -> Attempt {
+    let issuer = rng.pick(&h.vaults);
+    let devices = st.vault(issuer).map(|v| v.devices.clone()).unwrap_or_default();
+    let device = match pick_from(rng, &devices) {
+        Some(&d) if rng.below(6) > 0 => d,
+        _ => rng.pick(&SIGNERS),
+    };
+    let over = if rng.below(3) > 0 { issuer } else { rng.pick(&h.vaults) };
+    let select = if rng.below(4) == 0 { Selector::All } else { a_selector(rng, h) };
+    let grant = Grant { ops: vec![], salt: [0; 32] };
+    let bytes = Select::Clear(Slice { name: "rule".into(), select: select.clone(), grant, above: vec![] }).to_wire();
+    let (wide, keep, nonce) = (select == Selector::All, rng.below(2) == 0, rng.next());
+    let rule = SyncRule { issuer, device, over, wide, select: bytes, keep, nonce };
+    let action = Action::SyncRule(rule, vec![]);
+    Attempt { author: author_for(rng, st, issuer), cosigners: vec![], action, said: Said::Selector(select) }
+}
+
+/// The end of a random sync rule, live or not, by the vault that set it, now and then by any vault.
+fn a_rule_end(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
+    let (rule, r) = pick_from(rng, st.rules())?;
+    let issuer = if rng.below(6) > 0 { r.issuer } else { rng.pick(&h.vaults) };
+    let action = Action::EndSyncRule { rule: *rule, issuer, via: vec![] };
+    Some(Attempt { author: author_for(rng, st, issuer), cosigners: vec![], action, said: Said::Nothing })
+}
+
+/// A steward of an entry's vault marks it with the sync rules that pick it, if that changed, two times in three;
+/// otherwise with up to two random rules, in canonical order or not; now and then for another vault than the entry's.
+fn a_pick(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
+    let en = pick_from(rng, st.entries())?;
+    let rules = match st.meaning(en.id, &h.readings).and_then(|m| m.pick) {
+        Some(rules) if rng.below(3) > 0 => rules,
+        _ => {
+            let n = rng.below(3);
+            let rules: Vec<CapId> = (0..n).filter_map(|_| pick_from(rng, st.rules()).map(|r| r.0)).collect();
+            if rng.below(2) == 0 { mk_cell(&rules) } else { rules }
+        }
+    };
+    let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
+    let action = Action::Pick { vault, entry: en.id, rules, via: vec![] };
     Some(Attempt { author: author_for(rng, st, en.vault), cosigners: vec![], action, said: Said::Nothing })
 }
 
@@ -1194,6 +1244,11 @@ fn may_receive_log(st: &State, d: SignerId, l: LogId) -> bool {
     }
 }
 
+/// Device `d` syncs entry `e` by `st` (`syncs`): it may receive it, and its sync rules want it.
+fn syncs(st: &State, d: SignerId, e: EntryId) -> bool {
+    may_receive(st, d, e) && st.entry(e).is_some_and(|en| st.wants(d, en))
+}
+
 #[test]
 fn t12_sync_shares_only_caps() {
     // a peer sends a device only edits it holds, of the entries, cells and caps the device may receive by the peer's
@@ -1210,6 +1265,8 @@ fn t12_sync_shares_only_caps() {
                 assert!(held.contains(&edit.id()), "seed {seed}: {d:?} was sent an edit the peer doesn't hold");
                 let l = log_of(edit, edit.id()).expect("an edit of a log");
                 let ok = matches!(l, LogId::Vault(_)) || *may.entry(l).or_insert_with(|| may_receive_log(&st, d, l));
+                let wanted = |e| st.entry(e).is_some_and(|en| st.wants(d, en));
+                assert!(!matches!(l, LogId::Entry(e) if !wanted(e)), "seed {seed}: {d:?} was sent {edit:?} unwanted");
                 assert!(ok, "seed {seed}: {d:?} was sent {edit:?} of {l:?}");
                 match l {
                     LogId::Entry(_) => entries += 1,
@@ -1280,8 +1337,8 @@ fn t19_partial_delivery() {
 
 #[test]
 fn t13_sync_converges() {
-    // two devices holding parts of the edits each ask the other once: for every entry each may receive by the other's
-    // view, both then hold the same edits of its log
+    // two devices holding parts of the edits each ask the other once: for every entry each syncs by the other's view,
+    // both then hold the same edits of its log
     let mut checked = 0;
     let devices = [MAC_A, PHONE_A, MAC_B, MAC_C];
     for (seed, h) in forked_histories() {
@@ -1303,7 +1360,7 @@ fn t13_sync_converges() {
             for (i, &dp) in devices.iter().enumerate() {
                 for (j, &dq) in devices.iter().enumerate().filter(|&(j, _)| j != i) {
                     for &(e, id) in &entry_logs {
-                        if may_receive(&vq, dp, e) && may_receive(&vp, dq, e) {
+                        if syncs(&vq, dp, e) && syncs(&vp, dq, e) {
                             let (a, b) = (got_p[i].contains(&id), got_q[j].contains(&id));
                             assert_eq!(a, b, "seed {seed}: {dp:?} and {dq:?} on {e:?}");
                             checked += 1;
@@ -1314,6 +1371,56 @@ fn t13_sync_converges() {
         }
     }
     assert!(checked > 100, "only {checked} edits checked");
+}
+
+#[test]
+fn t28_sync_follows_rules() {
+    // a peer sends a device every edit it holds of each entry the device may receive and its sync rules want, and none
+    // of any other entry; a device with no rule over a vault wants all of it
+    let (mut wanted, mut unwanted, mut ruled) = (0, 0, 0);
+    for (seed, h) in every_history() {
+        let (edits, st) = (h.log.edits(), h.log.view());
+        for d in SIGNERS {
+            let sent = ids(&respond(edits, d));
+            for edit in edits {
+                let Some(LogId::Entry(e)) = log_of(edit, edit.id()) else { continue };
+                let Some(en) = st.entry(e) else { continue };
+                let want = syncs(&st, d, e);
+                assert_eq!(sent.contains(&edit.id()), want, "seed {seed}: {d:?} and {edit:?}");
+                if may_receive(&st, d, e) {
+                    *(if want { &mut wanted } else { &mut unwanted }) += 1;
+                }
+                if st.rules_of(d, en.vault).next().is_none() {
+                    assert!(st.wants(d, en), "seed {seed}: {d:?} has no rule over {:?}", en.vault);
+                } else {
+                    ruled += 1;
+                }
+            }
+        }
+    }
+    // and rules do leave out entries a device may receive
+    assert!(wanted > 0 && unwanted > 0 && ruled > 0, "{wanted} wanted, {unwanted} left out, {ruled} under rules");
+}
+
+#[test]
+fn t29_marks_mean_rules() {
+    // where an entry's live marks are what its vault's rules pick (`Meaning::pick` is none), a device wants it exactly
+    // when it has no rule over the vault, or one is wide or picks it by its selector: the peer reads only the marks
+    let mut checked = 0;
+    for (seed, h) in every_history() {
+        let st = h.log.view();
+        for en in st.entries() {
+            let Some(m) = st.meaning(en.id, &h.readings).filter(|m| m.pick.is_none()) else { continue };
+            let picks = |id: &CapId| h.readings.selectors.get(id).is_some_and(|s| s.matches(&m.attrs));
+            for d in SIGNERS {
+                let rules: Vec<(CapId, &SyncRule)> = st.rules_of(d, en.vault).collect();
+                let by_rules = rules.is_empty() || rules.iter().any(|(id, r)| r.wide || picks(id));
+                assert_eq!(st.wants(d, en), by_rules, "seed {seed}: {d:?} and {:?}", en.id);
+                checked += usize::from(!rules.is_empty());
+            }
+        }
+    }
+    assert!(checked > 0);
 }
 
 #[test]
@@ -1765,12 +1872,30 @@ impl Twin {
                 Action::Publish { vault: self.vault(vault), actor: self.vault(actor), via: self.vaults(&via), blob }
             }
             Action::Checkpoint { entry, covers } => Action::Checkpoint { entry, covers: self.edits(&covers) },
+            Action::SyncRule(r, via) => {
+                // of the selector, a relay reads nothing
+                let rule = SyncRule { issuer: self.vault(r.issuer), over: self.vault(r.over), select: vec![], ..r };
+                Action::SyncRule(rule, self.vaults(&via))
+            }
+            Action::EndSyncRule { rule, issuer, via } => {
+                Action::EndSyncRule { rule: self.cap(rule), issuer: self.vault(issuer), via: self.vaults(&via) }
+            }
+            Action::Pick { vault, entry, rules, via } => {
+                // in canonical order again where they were, and out of it where they weren't
+                let mut renamed: Vec<CapId> = rules.iter().map(|&r| self.cap(r)).collect();
+                if rules == mk_cell(&rules) {
+                    renamed = mk_cell(&renamed);
+                } else if renamed == mk_cell(&renamed) {
+                    renamed.reverse();
+                }
+                Action::Pick { vault: self.vault(vault), entry, rules: renamed, via: self.vaults(&via) }
+            }
         }
     }
 }
 
-/// What a peer knows of the operational part of a state (`State.ops`): all of it but what only readers read, the caps'
-/// selectors, every id renamed by `t`.
+/// What a peer knows of the operational part of a state (`State.ops`): all of it but what only readers read, the
+/// selectors of caps and sync rules, every id renamed by `t`.
 #[derive(Debug, PartialEq)]
 struct Ops {
     vaults: Vec<Vault>,
@@ -1784,9 +1909,13 @@ struct Ops {
     seals: BTreeSet<(KeyName, KeyName)>,
     published: Vec<KeyName>,
     lane: Vec<(VaultId, BlobId)>,
+    rules: Vec<(CapId, SyncRule)>,
+    ended: Vec<CapId>,
+    picks: Vec<(EntryId, Vec<CapId>)>,
 }
 
 fn ops(st: &State, t: &Twin) -> Ops {
+    let rule = |r: &SyncRule| SyncRule { issuer: t.vault(r.issuer), over: t.vault(r.over), select: vec![], ..r.clone() };
     let vault = |v: &Vault| {
         let owners = v.owners.iter().map(|&p| t.principal(p)).collect();
         Vault { id: t.vault(v.id), owners, ..v.clone() }
@@ -1838,6 +1967,9 @@ fn ops(st: &State, t: &Twin) -> Ops {
         seals: st.seals().iter().map(|s| (t.key(s.secret), t.key(s.to))).collect(),
         published: st.published().iter().map(|&n| t.key(n)).collect(),
         lane: st.lane().iter().map(|p| (t.vault(p.vault), p.blob)).collect(),
+        rules: st.rules().iter().map(|(id, r)| (t.cap(*id), rule(r))).collect(),
+        ended: st.ended().iter().map(|&r| t.cap(r)).collect(),
+        picks: st.entries().iter().map(|en| (en.id, t.caps(st.picks_of(en.id)))).collect(),
     }
 }
 

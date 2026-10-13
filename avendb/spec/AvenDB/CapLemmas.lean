@@ -89,6 +89,11 @@ theorem settle_caps (pre post : State) : (settle pre post).caps = post.caps := b
   obtain ⟨_, _, _, h⟩ := keysOnly_settle pre post
   rw [h]
 
+/-- Settling keeps the sync rules. -/
+theorem settle_rules (pre post : State) : (settle pre post).rules = post.rules := by
+  obtain ⟨_, _, _, h⟩ := keysOnly_settle pre post
+  rw [h]
+
 /-- Settling keeps the writes. -/
 theorem settle_writes (pre post : State) : (settle pre post).writes = post.writes := by
   obtain ⟨_, _, _, h⟩ := keysOnly_settle pre post
@@ -222,6 +227,21 @@ theorem apply_caps {st post : State} {edit : Edit} (h : apply st edit = some pos
     · cases hp : capParentOk st c with
       | true => rfl
       | false => simp [hp] at h3
+  all_goals (repeat' split at h) <;> (try cases h) <;> exact .inl rfl
+
+/-- An accepted edit leaves the sync rules alone, or adds one rule with a new id. -/
+theorem apply_rules {st post : State} {edit : Edit} (h : apply st edit = some post) :
+    post.rules = st.rules ∨ ∃ r, post.rules = st.rules ++ [r] ∧ st.rule? r.id = none := by
+  unfold apply at h
+  dsimp only at h
+  split at h
+  case h_15 r via _ =>
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨h1, -, rfl⟩ := h
+    refine .inr ⟨r, rfl, ?_⟩
+    cases hc : st.rule? r.id with
+    | none => rfl
+    | some _ => simp [hc] at h1
   all_goals (repeat' split at h) <;> (try cases h) <;> exact .inl rfl
 
 /-- An accepted edit leaves the writes alone, or is a write edit adding one write with its new id and its author that
@@ -465,6 +485,69 @@ theorem T23_cells_mean_slices {st : State} (hr : Reachable st) (en : Entry) (hce
         exact hcond.2
       · intro he
         exact ⟨cp, ⟨hcp, by simp [beq_iff_eq.1 ho, hlive, hwd, he]⟩, rfl⟩
+  · simp
+
+/-! ## Sync rules -/
+
+/-- Two sync rules with one id are one, where ids come once. -/
+theorem rule_eq_of_id {rs : List SyncRule} (hnd : (rs.map (·.id)).Nodup) {a b : SyncRule} (ha : a ∈ rs)
+    (hb : b ∈ rs) (h : a.id = b.id) : a = b := by
+  induction rs with
+  | nil => simp at ha
+  | cons c rs ih =>
+    rw [List.map_cons, List.nodup_cons] at hnd
+    rw [List.mem_cons] at ha hb
+    rcases ha with ha | ha <;> rcases hb with hb | hb
+    · exact ha.trans hb.symm
+    · exact absurd (by rw [← ha, h]; exact List.mem_map_of_mem hb) hnd.1
+    · exact absurd (by rw [← hb, ← h]; exact List.mem_map_of_mem ha) hnd.1
+    · exact ih hnd.2 ha hb
+
+/-- In every reachable state no two sync rules share an id. -/
+theorem rules_nodup_reachable {st : State} (hr : Reachable st) : (st.rules.map (·.id)).Nodup := by
+  obtain ⟨edits, rfl⟩ := hr
+  refine replay_inv (fun st => (st.rules.map (·.id)).Nodup) (fun st st' edit hnd h => ?_) edits {} List.nodup_nil
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  simp only [settle_rules]
+  rcases apply_rules hpost with hrs | ⟨r, hrs, hnew⟩
+  · rw [hrs]; exact hnd
+  · rw [hrs, List.map_append, List.nodup_append]
+    refine ⟨hnd, by simp, fun a ha b hb hab => ?_⟩
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.1 ha
+    rw [List.map_singleton, List.mem_singleton] at hb
+    have := List.find?_eq_none.1 hnew x hx
+    simp [hab.trans hb] at this
+
+theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
+    (hpicks : livePicks st en = semPicks st en) :
+    wants st d en = ((rulesOf st d en.vault).isEmpty ||
+      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs) := by
+  have hnd := rules_nodup_reachable hr
+  unfold wants
+  dsimp only
+  congr 1
+  refine any_congr_mem fun r hr' => ?_
+  have hrm : r ∈ st.rules := (List.mem_filter.1 hr').1
+  have hcond := (List.mem_filter.1 hr').2
+  simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+  obtain ⟨⟨⟨_, hover⟩, hlive⟩, _⟩ := hcond
+  cases hw : r.wide
+  · -- a rule that isn't wide: in the marks, live, exactly when its selector matches the entry
+    simp only [Bool.false_or]
+    rw [Bool.eq_iff_iff]
+    have hmem : (st.picksOf en.id).contains r.id = true ↔ r.id ∈ semPicks st en := by
+      rw [← hpicks, livePicks, List.mem_filter, List.contains_iff_mem]
+      exact ⟨fun h => ⟨h, hlive⟩, fun h => h.1⟩
+    rw [hmem]
+    simp only [semPicks, mkCell, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter]
+    constructor
+    · rintro ⟨r', ⟨hr'm, hc⟩, hid⟩
+      obtain rfl := rule_eq_of_id hnd hr'm hrm hid
+      simp only [Bool.and_eq_true] at hc
+      exact hc.2
+    · intro hm
+      exact ⟨r, ⟨hrm, by simp [hover, hlive, hw, hm]⟩, rfl⟩
   · simp
 
 theorem T23_creations (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) {proof : Option CapId}

@@ -2,15 +2,20 @@
 //! other with what they hold of each log, gossip one digest per log and ask only where one differs, go offline and come
 //! back, and come back from old backups, which forks what they sign next. A peer sends a device the logs of the entries
 //! and cells it reaches, and nothing about the others (T12): an entry a steward moves out of a device's reach stops
-//! syncing to it, and the device never hears of the move.
+//! syncing to it, and the device never hears of the move. Since blobs B2c, of those a device syncs the entries its
+//! sync rules want (T28), by the stewards' marks, which a relay applies without reading a selector (T29).
 
 mod common;
 
+use std::collections::BTreeSet;
+
 use avendb::doc::Item;
-use avendb::id::{CellId, SignerId};
-use avendb::lab::Lab;
+use avendb::id::{CellId, EntryId, SignerId, VaultId};
+use avendb::lab::{Lab, NewRule};
 use avendb::lens::Status;
-use avendb::policy::Role;
+use avendb::policy::{Refusal, Role};
+use avendb::sealed::{seal, Brought, FileKey, FileRoot};
+use avendb::slice::{Atom, Selector, Sym};
 use avendb::sync::{log_of, LogId};
 use common::*;
 
@@ -225,3 +230,129 @@ fn an_entry_that_leaves_a_devices_reach_stops_syncing_to_it() {
         assert_eq!(w.lab.size(to), before, "{from:?} to {to:?}");
     }
 }
+
+/// The entries tagged `tag`, of any type.
+fn tagged_with(tag: &str) -> Selector {
+    Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new(tag))]])
+}
+
+/// A sync rule of vault `issuer` for its device `device` over vault `over`.
+fn rule(issuer: VaultId, device: SignerId, over: VaultId, select: Selector, keep: bool) -> NewRule {
+    NewRule { issuer, device, over, name: "Films".into(), select, keep }
+}
+
+/// A file sealed under a key of its own, its root standing for the hash iroh names its pieces by.
+fn film(text: &str, k: u8) -> Brought {
+    let (key, plain) = (FileKey::from_bytes([k; 32]), text.repeat(500).into_bytes());
+    let root = avendb::hash::hash("a test file's root", &seal(&key, &plain));
+    Brought::new(root, key, plain.len() as u64)
+}
+
+/// Alice's Mac makes a clip in her vault, tagged `tag`, and brings its film.
+fn clip(w: &mut World, title: &str, tag: &str, k: u8) -> EntryId {
+    let (alice, mac) = (w.alice, w.mac_a);
+    let e = w.lab.create(mac, alice, alice, "clip", &[tag], document(title, "A clip.", mac)).unwrap();
+    w.lab.bring(mac, alice, e, vec![film(title, k)], |_| {}).unwrap();
+    e
+}
+
+/// The files the edits of entry `e` that device `d` holds bring.
+fn files_of(lab: &Lab, d: SignerId, e: EntryId) -> BTreeSet<FileRoot> {
+    lab.log(d).edits().iter().filter(|o| o.entry() == Some(e)).flat_map(|o| o.files().iter().copied()).collect()
+}
+
+fn set(xs: impl IntoIterator<Item = EntryId>) -> BTreeSet<EntryId> {
+    xs.into_iter().collect()
+}
+
+fn roots(xs: impl IntoIterator<Item = FileRoot>) -> BTreeSet<FileRoot> {
+    xs.into_iter().collect()
+}
+
+/// Alice's films (blobs B2c): two clips, each a proxy and its original, every one bringing its file, and a note, all in
+/// her vault, which gives the server relay. Her iPhone syncs only the proxies and keeps their files whole; the server
+/// syncs every entry of hers and keeps every file whole, by a rule of avenCEO's own; her Mac has no rule and syncs all
+/// of it, fetching files as it reads them. Nothing in the rules names a proxy: they are any slice of any data, by the
+/// same selectors as caps, and the stewards mark which rules pick each entry.
+#[test]
+fn t28_each_device_syncs_what_its_rules_pick() {
+    let mut w = world();
+    let (alice, mac, phone, server) = (w.alice, w.mac_a, w.phone_a, w.server);
+    relay_on(&mut w, alice);
+    w.lab.sync_all(0);
+    let phone_rule = w.lab.set_rule(mac, &[mac], rule(alice, phone, alice, tagged_with("proxy"), true)).unwrap();
+    w.lab.set_rule(server, &[server], rule(w.avenceo, server, alice, Selector::All, true)).unwrap();
+    let proxies = [clip(&mut w, "Dawn, proxy", "proxy", 1), clip(&mut w, "Dusk, proxy", "proxy", 2)];
+    let originals = [clip(&mut w, "Dawn", "original", 3), clip(&mut w, "Dusk", "original", 4)];
+    let note = w.lab.create(mac, alice, alice, "note", &[], document("Shot list", "Dawn, then dusk.", mac)).unwrap();
+    w.lab.sync_all(1);
+    let all = set(proxies.into_iter().chain(originals).chain([note]));
+    assert_eq!(set(w.lab.entries(phone)), set(proxies), "the iPhone syncs the proxies alone");
+    assert_eq!(set(w.lab.entries(mac)), all, "the Mac, with no rule, syncs everything");
+    assert_eq!(set(w.lab.entries(server)), all, "the server syncs everything by its own rule");
+    // each keeps whole the files its rules say: the iPhone the proxies', the server all, the Mac none by default
+    let proxy_files: BTreeSet<FileRoot> = proxies.iter().flat_map(|&e| files_of(&w.lab, mac, e)).collect();
+    let every_file = roots(w.lab.files(mac));
+    assert_eq!(every_file.len(), 4);
+    assert_eq!(roots(w.lab.kept_files(phone, false)), proxy_files);
+    assert_eq!(roots(w.lab.kept_files(server, false)), every_file);
+    assert!(w.lab.kept_files(mac, false).is_empty());
+    assert_eq!(roots(w.lab.kept_files(mac, true)), every_file);
+    // files follow their edits (T27): the iPhone may fetch a proxy's file and not an original's
+    let original_files: BTreeSet<FileRoot> = originals.iter().flat_map(|&e| files_of(&w.lab, mac, e)).collect();
+    assert!(proxy_files.iter().all(|f| w.lab.may_fetch_file(mac, phone, f)));
+    assert!(original_files.iter().all(|f| !w.lab.may_fetch_file(mac, phone, f)));
+    // the server reads no selector of Alice's, and still sends the iPhone only what its rule picks, by the marks (T29):
+    // a new proxy reaches the iPhone through the server alone, while the Mac is away
+    assert!(w.lab.slice(server, phone_rule).is_none());
+    let late = clip(&mut w, "Noon, proxy", "proxy", 5);
+    w.lab.sync(mac, server);
+    w.lab.set_online(mac, false);
+    w.lab.sync_all(2);
+    assert_eq!(set(w.lab.entries(phone)), set(proxies.into_iter().chain([late])));
+    w.lab.set_online(mac, true);
+    // the rule follows the data: an original retagged a proxy reaches the iPhone
+    w.lab.tag(mac, alice, originals[0], &["proxy"], &["original"]).unwrap();
+    w.lab.sync_all(3);
+    assert!(w.lab.entries(phone).contains(&originals[0]));
+    assert!(!w.lab.entries(phone).contains(&originals[1]));
+    // and once the rule ends, the iPhone syncs all of Alice's vault again
+    w.lab.end_rule(mac, &[mac], phone_rule).unwrap();
+    w.lab.sync_all(4);
+    assert_eq!(set(w.lab.entries(phone)), set(w.lab.entries(mac)));
+}
+
+/// A sync rule grants nothing (blobs B2c): only a vault sets the rules of its own devices, over a vault whose entries
+/// it may hold; a device under a rule syncs only what it may receive and its rule picks; and a rule drops nothing a
+/// device already holds.
+#[test]
+fn sync_rules_grant_nothing() {
+    let mut w = world();
+    let (alice, carol, mac, mac_c) = (w.alice, w.carol, w.mac_a, w.mac_c);
+    let l = library(&mut w);
+    w.lab.sync_all(0);
+    // a rule for a device of another vault, or over a vault the issuer holds no cap over, is refused
+    let not_hers = w.lab.set_rule(mac, &[mac], rule(alice, mac_c, alice, Selector::All, false));
+    assert_eq!(not_hers, Err(Refusal::NotDevice));
+    let no_cap = w.lab.set_rule(mac_c, &[mac_c], rule(carol, mac_c, alice, Selector::All, false));
+    assert_eq!(no_cap.map(drop), Err(Refusal::NoCap));
+    // with a cap to read Alice's notes, Carol's Mac may set a rule over her vault: one that picks the todos brings her
+    // none of them, and no new note either; once it ends, the new note comes
+    w.lab.issue(mac, &[mac], cap(alice, vault(carol), Role::Read, of_type("note"))).unwrap();
+    w.lab.sync_all(1);
+    assert_eq!(set(w.lab.entries(mac_c)), set([l.plan, l.diary]));
+    let todos = w.lab.set_rule(mac_c, &[mac_c], rule(carol, mac_c, alice, of_type("todo"), true)).unwrap();
+    w.lab.sync_all(2);
+    let ideas = w.lab.create(mac, alice, alice, "note", &[], document("Ideas", "A pond.", mac)).unwrap();
+    w.lab.sync_all(3);
+    assert_eq!(set(w.lab.entries(mac_c)), set([l.plan, l.diary]), "no todo, and no new note");
+    w.lab.end_rule(mac_c, &[mac_c], todos).unwrap();
+    w.lab.sync_all(4);
+    assert_eq!(set(w.lab.entries(mac_c)), set([l.plan, l.diary, ideas]));
+    // only Alice's vault ends her rules
+    let phone_rule = w.lab.set_rule(mac, &[mac], rule(alice, w.phone_a, alice, of_type("note"), false)).unwrap();
+    w.lab.sync_all(4);
+    assert_eq!(w.lab.end_rule(mac_c, &[mac_c], phone_rule), Err(Refusal::NotActing));
+    assert!(w.lab.state(mac).rule_live(phone_rule));
+}
+

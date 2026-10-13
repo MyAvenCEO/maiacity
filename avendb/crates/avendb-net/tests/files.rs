@@ -2,7 +2,8 @@
 //! keeps both whole on disk, opening neither, and still holds them once started again; Carol, who may read Welcome
 //! alone, reads ranges of the photo through the server with Alice's Mac gone, fetching only the segments that hold
 //! them; and nobody fetches a file that no edit they may receive brings: not Carol the scan, not Dave nor a stranger
-//! either file, and nobody a HashSeq with its children.
+//! either file, and nobody a HashSeq with its children. And sync rules (blobs B2c): Alice's iPhone syncs only her
+//! proxies and keeps their films whole, while the server keeps every film.
 
 mod common;
 
@@ -12,8 +13,10 @@ use std::time::{Duration, Instant};
 
 use avendb::cast::*;
 use avendb::id::SignerId;
+use avendb::lab::NewRule;
 use avendb::policy::Role;
 use avendb::sealed::{FileRoot, PIECE, PIECE_SEGMENTS, SEGMENT};
+use avendb::slice::{Atom, Selector, Sym};
 use avendb_net::{Node, Options};
 use bytes::Bytes;
 use common::Folder;
@@ -149,6 +152,58 @@ async fn files_follow_their_edits_over_iroh() {
     assert_eq!(all, bytes(1, 0, photo_len), "every byte");
     assert!(carol.holds_file(photo_root).await, "and holds it whole now");
     for n in [carol, dave, stranger, server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// Alice's iPhone syncs only the entries tagged proxy and keeps their films whole, by a rule her Mac sets; the server,
+/// with no rule, keeps every film. The iPhone never hears of the original, nor may it fetch the original's film.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_iphone_keeps_the_proxies_its_rule_picks() {
+    let mut w = world();
+    let (alice, mac_a, passkey_a, phone_a, server_d) = (w.alice, w.mac_a, w.passkey_a, w.phone_a, w.server);
+    relay_on(&mut w, alice);
+    let proxies = Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new("proxy"))]]);
+    let (name, keep) = ("Proxies".into(), true);
+    let rule = NewRule { issuer: alice, device: phone_a, over: alice, name, select: proxies, keep };
+    w.lab.set_rule(mac_a, &[mac_a], rule).expect("Alice's Mac sets her iPhone's rule");
+    w.lab.sync_all(0);
+    let keeps = Options { keep: true, ..Options::local() };
+    let mac = node(&mut w, mac_a, &[passkey_a], 1, Options::local()).await;
+    let server = node(&mut w, server_d, &[], 2, keeps).await;
+    let phone = node(&mut w, phone_a, &[], 3, Options::local()).await;
+    for n in [&mac, &phone] {
+        n.know(server.addr());
+        server.know(n.addr());
+    }
+    let (proxy_len, original_len) = (100_000, 300_000);
+    let proxy = mac.store_file(proxy_len, reading(4, proxy_len)).await.expect("Alice's Mac seals the proxy");
+    let original = mac.store_file(original_len, reading(5, original_len)).await.expect("and the original");
+    let (proxy_root, original_root) = (proxy.root, original.root);
+    let make = move |lab: &mut avendb::lab::Lab, me| {
+        let p = lab.create(me, alice, alice, "clip", &["proxy"], document("Dawn, proxy", "A clip.", me))?;
+        lab.bring(me, alice, p, vec![proxy], |_| {})?;
+        let o = lab.create(me, alice, alice, "clip", &["original"], document("Dawn", "A clip.", me))?;
+        lab.bring(me, alice, o, vec![original], |_| {})?;
+        Ok::<_, avendb::policy::Refusal>((p, o))
+    };
+    let (p, o) = mac.act(make).await.expect("Alice's Mac makes a proxy and its original");
+    until("the server keeps both films whole", || async {
+        server.holds_file(proxy_root).await && server.holds_file(original_root).await
+    })
+    .await;
+    until("the iPhone keeps the proxy's film whole", || async {
+        phone.sync_with(server.id()).await.ok();
+        phone.holds_file(proxy_root).await
+    })
+    .await;
+    let entries = phone.read(|lab, me| lab.entries(me)).await;
+    assert!(entries.contains(&p) && !entries.contains(&o), "the iPhone syncs the proxy alone");
+    assert_eq!(phone.read(|lab, me| lab.files(me)).await, vec![proxy_root], "and knows of no other film");
+    assert!(!phone.holds_file(original_root).await);
+    let raw = GetRequest::blob(Hash::from_bytes(original_root.hash));
+    assert!(by_hand(phone.endpoint(), &server, raw).await.is_none(), "nor may it fetch the original's film");
+    for n in [mac, phone, server] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

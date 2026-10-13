@@ -56,6 +56,12 @@ inductive Action where
       the writes carry only the classical half. It changes nothing; a peer that no longer trusts the curves counts
       only the writes a checkpoint covers (`checkpointed`). -/
   | checkpoint   (e : EntryId) (covers : List EditId)
+  /-- A sync rule (`State.lean`), set by vault `r.issuer` for one of its devices. -/
+  | syncRule     (r : SyncRule) (via : List VaultId := [])
+  /-- Sync rule `r` of vault `issuer` ends. -/
+  | endRule      (r : CapId) (issuer : VaultId) (via : List VaultId := [])
+  /-- A steward, acting for vault `v`, marks the sync rules that pick its entry `e` (`desiredPicks`). -/
+  | pick         (v : VaultId) (e : EntryId) (rules : List CapId) (via : List VaultId := [])
   deriving DecidableEq, Repr
 
 /-- The edits a removal had seen and keeps; every removal names them. -/
@@ -332,6 +338,27 @@ def apply (st : State) (edit : Edit) : Option State :=
     if covers.isEmpty || !covers.all (fun c => st.writes.any fun w =>
         w.edit == c && w.author == edit.author && w.entry == e) then none
     else some st
+  | .syncRule r via =>
+    if (st.rule? r.id).isSome || (st.vault? r.over).isNone then none
+    -- a vault sets the rules of its own devices, over a vault whose entries it may hold
+    else if !isDevice st r.device r.issuer || !actsVia st edit.author via r.issuer || !mayHold st r.issuer r.over then
+      none
+    else some { st with rules := st.rules ++ [r] }
+  | .endRule r issuer via =>
+    match st.rule? r with
+    | none => none
+    | some x =>
+      if x.issuer != issuer || !st.ruleLive r || !actsVia st edit.author via issuer then none
+      else some { st with ended := st.ended ++ [r] }
+  | .pick v e rs via =>
+    match st.entry? e with
+    | none => none
+    | some en =>
+      -- only a steward marks an entry, with live rules over its vault that aren't wide, each once, smallest first
+      if en.vault != v || !actsVia st edit.author via v then none
+      else if rs != mkCell rs || rs == st.picksOf e ||
+          !rs.all (fun r => st.rules.any fun x => x.id == r && x.over == v && !x.wide && st.ruleLive r) then none
+      else some { st with picks := st.picks.filter (·.1 != e) ++ [(e, rs)] }
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)

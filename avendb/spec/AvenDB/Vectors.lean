@@ -634,7 +634,41 @@ def cases : List Case := [
     (2, [], newEntry 100 22 100 [] todo (fits := false)),
     (2, [], wr 100 22 100 [14]),
     -- fitting is no cap: Carol holds none, and writes nothing
-    (6, [], wr 100 21 102 [9] (stay := some 8))] }]
+    (6, [], wr 100 21 102 [9] (stay := some 8))] },
+  { name := "sync rules: each device syncs what its rules pick", edits := humans ++ [
+    (1, [3], .addDevice 100 3),
+    (6, [7], .addDevice 102 7),
+    -- Alice's note and her work todo; Carol reads her notes
+    (2, [], newEntry 100 1 100 [] note),
+    (2, [], newEntry 100 21 100 [] todo (tags := [work])),
+    (2, [], newCap 30 100 (toVault 102) .read 100 notes),
+    -- Alice's iPhone syncs her notes and keeps their files, her Mac all of her vault
+    (2, [], .syncRule ⟨40, 100, 3, 100, false, notes, true⟩),
+    (2, [], .syncRule ⟨41, 100, 2, 100, true, .all, false⟩),
+    -- a vault sets rules for its own devices only, over a vault whose entries it may hold
+    (2, [], .syncRule ⟨42, 100, 5, 100, true, .all, false⟩),
+    (5, [], .syncRule ⟨44, 100, 3, 100, true, .all, false⟩),
+    (2, [], .syncRule ⟨45, 100, 3, 101, true, .all, false⟩),
+    -- Carol, who holds a cap over Alice's vault, sets one for her Mac over it
+    (7, [], .syncRule ⟨43, 102, 7, 100, false, .anyOf [[.typeIn [note]], [.tagHas work]], false⟩),
+    -- Alice's Mac marks what the rules pick; a wide rule picks without marks
+    (2, [], .pick 100 1 [40, 43]),
+    (2, [], .pick 100 21 [43]),
+    (2, [], .pick 100 21 [41]),
+    (2, [], .pick 100 1 [43, 40]),
+    (2, [], .pick 100 1 [40, 43]),
+    -- only a steward marks
+    (5, [], .pick 100 1 [40]),
+    (7, [], .pick 100 1 [43]),
+    -- only the vault that set a rule ends it, once
+    (7, [], .endRule 40 100),
+    (2, [], .endRule 40 100),
+    (2, [], .endRule 40 100),
+    (2, [], .endRule 43 102),
+    -- an ended rule marks nothing; marks drop it
+    (2, [], .pick 100 1 [40]),
+    (2, [], .pick 100 1 [43]),
+    (2, [], .pick 100 999 [43])] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -951,7 +985,25 @@ def syncs : List SyncCase := [
     -- Carol's Mac, avenCEO's server, Alice's Mac, Bob's Mac and Dan's passkey, each holding nothing yet; then Carol's
     -- Mac from a peer that lacks the film's write
     asks := [(7, [], none), (600, [], none), (2, [], none), (5, [], none), (8, [], none),
-      (7, [], some (List.range 15))] }]
+      (7, [], some (List.range 15))] },
+  { name := "sync rules choose what a device syncs", edits := plain (humans ++ [
+      (1, [3], .addDevice 100 3),
+      (6, [7], .addDevice 102 7),
+      (1, [], .genesis 300 .aven [.vault 100] 1),
+      (1, [600], .addDevice 300 600)]) ++ [
+      -- Alice's note brings a photo, her todo a scan
+      { author := 2, action := newEntry 100 1 100 [] note, files := [1] },
+      { author := 2, action := newEntry 100 21 100 [] todo, files := [2] }] ++ plain [
+      -- avenCEO backs up all of her vault, Carol reads all of it
+      (2, [], newCap 30 100 (toVault 300) .backup 100 (wide := true)),
+      (2, [], newCap 31 100 (toVault 102) .read 100 (wide := true)),
+      -- her iPhone syncs her notes and keeps their files; Carol's Mac syncs nothing of hers
+      (2, [], .syncRule ⟨40, 100, 3, 100, false, notes, true⟩),
+      (7, [], .syncRule ⟨41, 102, 7, 100, false, .anyOf [], false⟩),
+      (2, [], .pick 100 1 [40])],
+    -- Alice's iPhone, her Mac, avenCEO's server (no rule: all it may) and Carol's Mac, each holding nothing yet; then
+    -- the iPhone from a peer that hasn't seen the mark
+    asks := [(3, [], none), (2, [], none), (600, [], none), (7, [], none), (3, [], some (List.range 15))] }]
 
 /-! ## JSON -/
 
@@ -1056,6 +1108,11 @@ def capJson (c : Cap) : String :=
        ("wide", bool c.wide), ("select", selector c.select), ("ops", arr (c.ops.map rule)),
        ("parent", opt nat c.parent), ("issuer", nat c.issuer)]
 
+/-- A sync rule. -/
+def syncRuleJson (r : SyncRule) : String :=
+  obj [("id", nat r.id), ("issuer", nat r.issuer), ("device", nat r.device), ("over", nat r.over),
+       ("wide", bool r.wide), ("select", selector r.select), ("keep", bool r.keep)]
+
 /-- A built-in group. -/
 def group (g : Group) : String :=
   obj [("name", str g.name), ("ops", arr (g.ops.map rule)), ("everyone", bool g.everyone)]
@@ -1105,6 +1162,9 @@ def action : Action → String
   | .publish v a b via => obj [("publish", obj [("vault", nat v), ("actor", nat a), ("blob", nat b),
       ("via", ids via)])]
   | .checkpoint e covers => obj [("checkpoint", obj [("entry", nat e), ("covers", ids covers)])]
+  | .syncRule r via => obj [("syncRule", obj [("rule", syncRuleJson r), ("via", ids via)])]
+  | .endRule r i via => obj [("endRule", obj [("rule", nat r), ("issuer", nat i), ("via", ids via)])]
+  | .pick v e rs via => obj [("pick", obj [("vault", nat v), ("entry", nat e), ("rules", ids rs), ("via", ids via)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -1119,7 +1179,8 @@ def entryJson (st : State) (en : Entry) : String :=
   obj [("id", nat en.id), ("vault", nat en.vault),
        ("stays", arr (en.stays.map fun (s, x) => obj [("stay", opt nat s), ("cell", ids x)])),
        ("attrs", attrs en.attrs), ("admitted", bool en.admitted), ("semCell", ids (semCell st en)),
-       ("desired", opt ids (desired st en))]
+       ("desired", opt ids (desired st en)), ("picks", ids (st.picksOf en.id)), ("semPicks", ids (semPicks st en)),
+       ("desiredPicks", opt ids (desiredPicks st en))]
 
 def write (w : Write) : String :=
   obj [("edit", nat w.edit), ("author", nat w.author), ("actor", nat w.actor), ("entry", nat w.entry),
@@ -1151,6 +1212,8 @@ def state (st : State) : String :=
     str "published" ++ ": " ++ arr (st.published.map keyName),
     str "lane" ++ ": " ++ arr (st.lane.map fun (v, b) => obj [("vault", nat v), ("blob", nat b)]),
     str "uncounted" ++ ": " ++ ids st.uncounted,
+    str "rules" ++ ": " ++ arr (st.rules.map syncRuleJson),
+    str "ended" ++ ": " ++ ids st.ended,
     str "lines" ++ ": " ++ lines st]
 
 def case (c : Case) : String :=

@@ -32,6 +32,9 @@ This file is the design as it is built, phase by phase. The research behind it i
    has taken and not yet uploaded are neither counted nor announced, so no device can think the server keeps what it
    could still lose: the device that wrote them sees the server's frontier lack them, marks them not backed up yet,
    keeps the file's pieces, and announces them again until the server's frontier covers them.
+8. **Caps say who may have what; sync rules say what each device wants of it** (Samuel, 2026-10-13). A rule is a
+   signed edit with the same selector a cap has, for any data; the stewards mark the entries it picks, and every peer,
+   the server too, sends a device only what it may have and wants, from the marks alone (below).
 
 ## Sealed blob, version 1
 
@@ -128,10 +131,11 @@ them until B2b. The McEliece keys a node offers and the sealed pieces of files l
   node takes the sealed segments that hold the range from its own store, or else fetches just those, verified, from
   the first peer it is connected to that hands them over, keeps them, and opens them. A second read of them stays
   local.
-- **Keeping files** (`Options::keep`): a node that keeps files, the server, fetches whole every file the edits it holds
-  bring, its HashSeq first and then each piece, as soon as it learns of it, and tries a file no peer hands over again
-  after `retry`, then twice as long each time, up to a minute. For now that is every file; with sync rules (B2c) it
-  is what the node's rule wants.
+- **Keeping files** (`Options::keep`, `Lab::kept_files`): a node fetches whole the files its device's sync rules say
+  to keep (below), and where its device has no rule over a vault, every file of that vault if it keeps files, as the
+  server does: its HashSeq first and then each piece, as soon as it learns of it. It tries a file no peer hands over
+  again after `retry`, then twice as long each time, up to a minute. It drops no file it kept; that comes with the
+  bucket (B3), once nothing counts until the bucket holds it.
 - **The gate** (`blobs::gate`): every request names one blob, never a HashSeq with its children, and the gate weighs
   each hash a peer asks for: a McEliece key the device may fetch (`Lab::may_fetch`), or a file's root or one of its
   pieces, which the device may fetch if it may fetch the file (`Lab::may_fetch_file`, T27). A blob that merely holds
@@ -144,19 +148,47 @@ fetches a file no edit they may receive brings, nor a HashSeq with its children.
 two pieces, a gigabyte and a megabyte: Alice's Mac sealed and stored it in 5 s, the server kept it whole 6 s later,
 and Carol read across the two pieces.
 
-## Sync rules (B2c, next)
+## Sync rules (B2c)
 
-Samuel, 2026-10-13: caps and sync rules are one concept, generic for any data, and peer to peer.
+Samuel, 2026-10-13: caps and sync rules are one concept, generic for any data, and peer to peer; nothing about proxies
+or any other kind of data is in the protocol.
 
-- A cap says which vault **may** have what. A sync rule says what a device or a backend **wants** of that, by the
-  same selector a cap uses (types, tags, entries), and how: whole, or on demand when it is read. A peer syncs what it
-  may have and wants, no more; each peer's frontier covers just that.
-- Rules are signed edits in the vault that owns the data, so every peer applies the same rules the same way. The
-  server is one more peer with a rule of its own (everything, kept in the bucket), not a special role.
-- Nothing about a kind of data is in the protocol. A film's original and its proxy are entries of whatever types or
-  tags the app gives them, and the files they bring follow them: Samuel's Macs and browsers keep the proxies and read
-  originals on demand, the Mac with the SSD keeps the originals (where it puts them is its own setting), and the
-  server keeps everything.
+- **A cap says who may have what; a sync rule says what one device wants of it.** A rule (`policy::SyncRule`) names a
+  device of the vault that sets it, the vault whose entries it is about, and a selector, the very selector a cap
+  carries: types, tags, entries, authors, creation times, any AND/OR of those, or every entry (a wide rule). It says
+  too whether the device keeps whole the files those entries bring (`keep`), or fetches a file's pieces as it reads
+  them. It grants nothing: a device syncs what it may receive by the caps and its rules want (T28).
+- **Rules are signed edits** (`Action::SyncRule`, `Action::EndSyncRule`), in the log of the vault that sets them, so
+  every peer applies the same rules the same way. A vault sets rules only for its own devices, through its owners as
+  for any act, and only over a vault whose entries it may hold: itself, or one it holds a cap over, backup or more. The
+  server is one more peer: avenCEO sets a rule for the server's device like any vault does for its own.
+- **A device with no rule over a vault wants all of it**, as before. One with rules wants an entry that a rule of its
+  over that vault picks, or every entry if one is wide. Several rules make any mix: proxies kept whole and originals
+  fetched as they are read, two rules; originals not synced at all, one rule that picks the proxies alone.
+- **The stewards mark entries, as they place them in cells.** A rule's selector is sealed as a cap's, to the vault it
+  is over and to its issuer. The vault's stewards read it, and mark each entry with the live rules that pick it, in
+  canonical order (`Action::Pick`, in the entry's log), whenever that changes: a new rule, a retag, a new entry. A
+  rule that ends leaves its marks, which are ignored, so ending a rule marks nothing. So a peer that reads no selector,
+  the server, applies every rule from the marks alone (T29), as it applies caps from the cells.
+- **Every peer filters the same way.** A peer sends a device an entry's edits only if the device may receive the
+  entry and wants it (`sync::respond`), and a file only if it sends the write that brings it (T27), so the gate hands
+  the iPhone no original. Frontiers cover just that: a log a device doesn't sync is a log it isn't sent.
+- **What a rule shows, and to whom.** The rule edit names in the clear the device, the two vaults, whether it is wide
+  and whether it keeps; whoever receives the issuer's vault log (its devices, and peers holding caps from or to it)
+  learns a device has a rule, never what it picks. An entry's marks name rule ids, seen by whoever may receive the
+  entry, the server included: that is what lets it apply the rule.
+- **A rule drops nothing a device holds.** It narrows what comes next. A wide rule needs no steward to read it, so a
+  device that can't seal to the vault it is over (the server, which holds no McEliece key of Alice's) can still set
+  one; any other rule must reach the vault's stewards.
+
+`tests/sync.rs` runs Samuel's example on the Lab: Alice's iPhone syncs the clips tagged proxy and keeps their films
+whole, the server syncs and keeps everything by avenCEO's own wide rule, her Mac, with no rule, syncs everything and
+fetches films as it reads them; a new proxy reaches the iPhone through the server alone while the Mac is away, an
+original retagged a proxy follows, and once the rule ends the iPhone syncs the whole vault. A rule never widens what a
+device may receive, and only its vault sets or ends it. `avendb-net`'s `tests/files.rs` runs it over iroh: the iPhone
+keeps the proxy's film whole, never hears of the original, and may not fetch its film. The properties check T28 and
+T29 on random histories with random rules, ends and marks, and T25 with them: the server still decides every edit as
+an owner does.
 
 ## Phases
 
@@ -165,8 +197,8 @@ Samuel, 2026-10-13: caps and sync rules are one concept, generic for any data, a
 | B1a | `sealed`: the format above, its shape arithmetic, a sealer that seals as it reads, ranges opened alone, vectors | built |
 | B1b | Edits name the files they bring (Lean model and theorem, wire, the Lab's fetch gate) | built |
 | B2a | One iroh-blobs store per node, on disk natively; files sealed as they are read, read in ranges through the cap gate, kept whole by the server | built |
-| B2c | Sync rules: per peer, by the cap selector, for any data; the server's keeping becomes its rule | next |
-| B2b | The page's store in OPFS in its worker, keeping what its rule wants (IndexedDB moved over and gone) | |
+| B2c | Sync rules: per device, by the cap selector, for any data, marked by the stewards and applied by every peer (T28, T29); the keeper keeps what the rules say | built |
+| B2b | The page's store in OPFS in its worker, keeping what its rule wants (IndexedDB moved over and gone) | next |
 | B3 | The server's bucket as its source of truth: packs of small blobs, one object per piece, outboards and roots, read-ahead in ranges; its disk a cache it can lose | |
 | B4 | Streaming: the Mac reads a range as a file, a page through a service worker; a Files page | |
 | B5 | Studio's media on avenDB, beside the legacy vault, which stays as it is | |
