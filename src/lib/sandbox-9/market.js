@@ -63,7 +63,7 @@ export function postPrices(w) {
 				// nearly empty asks a very high price (the margin is only kept above 1e-9, so an empty store asks a
 				// finite one); the square-root step below limits only how fast the price moves toward it. Mark-0's
 				// guard keeps a seller from outrunning the others' average.
-				const lm = w.cfg._clamp ? Math.max(-2.0794415416798357, Math.min(2.0794415416798357, log(Math.max(1e-9, m)))) : log(Math.max(1e-9, m));
+				const lm = log(Math.max(1e-9, m));
 				if (co.fullR > 0) co.ref *= exp(log(co.fullR / co.ref) / 60);
 				let target = co.ref * exp(-lm);
 				if (avg.n[co.good] > 1) {
@@ -111,12 +111,15 @@ export function computeShares(w) {
 	else w.shares.fill(0);
 	w.pbar = w.pbar ?? new Float64Array(G);
 	const beta = w.cfg.logitBeta;
+	// a seller whose MIND no live pool can reach cannot be paid in other MINDs: buyers do not order from it while
+	// another seller can be paid (every sale is paid; a delivery nobody could pay for would be a gift)
+	const routable = (k) => (w.poolsOf?.[k] ?? []).some((pi) => w.pools[pi].live);
 	for (let g = 0; g < G; g++) {
-		let lo = Infinity;
-		for (const co of w.coops) if (co.alive && co.good === g) lo = Math.min(lo, co.price * w.P[co.k]);
+		let lo = Infinity, anyR = false;
+		for (const co of w.coops) if (co.alive && co.good === g) (lo = Math.min(lo, co.price * w.P[co.k])), (anyR ||= routable(co.k));
 		if (!isFinite(lo)) continue;
 		let sum = 0;
-		for (const co of w.coops) if (co.alive && co.good === g) (w.shares[g * M + co.k] = pow((co.price * w.P[co.k]) / lo, -beta)), (sum += w.shares[g * M + co.k]);
+		for (const co of w.coops) if (co.alive && co.good === g) (w.shares[g * M + co.k] = anyR && !routable(co.k) ? 0 : pow((co.price * w.P[co.k]) / lo, -beta)), (sum += w.shares[g * M + co.k]);
 		let pb = 0;
 		for (const co of w.coops)
 			if (co.alive && co.good === g) {

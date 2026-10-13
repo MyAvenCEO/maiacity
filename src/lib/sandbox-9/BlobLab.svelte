@@ -260,7 +260,7 @@
 						living: f.living[i],
 						met: f.met[i],
 						basic: f.basicCostR,
-						lim: [0, 1, 2, 3].map((b) => ({ lim: f.lim[i * 4 + b], price: f.price[b] }))
+						lim: [0, 1, 2, 3].map((b) => ({ lim: f.lim[i * 4 + b], price: f.price[b], pos: barScale(f, b) }))
 					}
 				: null;
 		return { i, base: one(latest.base), changed: one(latest.changed) };
@@ -274,8 +274,16 @@
 		};
 		return { id: selected.id, base: one(latest.base), changed: one(latest.changed) };
 	});
-	/** where a limit bar ends: a log scale from a tenth of the price to a thousand times it */
-	const barPos = (/** @type {number} */ x) => (x > 0 ? Math.max(0, Math.min(100, ((Math.log10(x) + 1) / 4) * 100)) : 0);
+	/** the cost floor in words for a Law 5 share λ: variable cost ÷ (1 − λ), as the seller keeps 1 − λ of a sale */
+	const floorText = (/** @type {number} */ l) => (Number.isFinite(l) ? (l > 0 ? `variable cost ÷ ${fmt(1 - l)}: it keeps ${Math.round(100 * (1 - l))} % of a sale` : 'its variable cost: with Law 5 at 0 % it keeps all of a sale') : 'variable cost ÷ (1 − the Law 5 share)');
+	/**
+	 * where a limit bar ends: a log scale over today's spread of everyone's limit ÷ price for that basic (from half the
+	 * lowest, or half the price if anyone is below it, to twice the highest), so the bars show how people differ
+	 */
+	const barScale = (/** @type {any} */ f, /** @type {number} */ b) => {
+		const lo = Math.log10(Math.min(0.5, (f?.limLo?.[b] ?? 0.1) / 2) || 0.05), hi = Math.log10(Math.max(2, (f?.limHi?.[b] ?? 1000) * 2));
+		return (/** @type {number} */ x) => (x > 0 ? Math.max(0, Math.min(100, ((Math.log10(x) - lo) / (hi - lo)) * 100)) : 0);
+	};
 </script>
 
 {#snippet guessBlock()}
@@ -310,7 +318,7 @@
 					{#if j !== guess}<li><span class={g.right === true ? 'yes' : g.right === false ? 'no' : ''}>{g.right === true ? '✓ came true' : g.right === false ? '✕ did not' : '· not judged'}</span> {g.text}</li>{/if}
 				{/each}
 			</ul>
-			<p class="verdict {result.verdict.pass ? 'yes' : 'no'}"><b>{result.verdict.pass ? '✓ The claim holds' : '✕ The claim fails'}.</b> {result.verdict.claim}</p>
+			<p class="verdict {result.verdict.pass ? 'yes' : 'no'}">{#if result.verdict.pass}<b>✓ This claim held in this run:</b> “{result.verdict.claim}”{:else}<b>✕ This claim failed in this run:</b> “{result.verdict.claim}”{/if}</p>
 			<details>
 				<summary>Evidence and every number</summary>
 				<p class="fine">{result.verdict.evidence}</p>
@@ -374,14 +382,14 @@
 						{#each p.lim as l, b}
 							<div class="lim" title="Can pay up to {fmt(l.lim)} R a {BASIC[b].unit}; the price is {fmt(l.price)} R">
 								<span>{BASIC[b].label}</span>
-								<div class="track"><i class:low={l.lim < l.price} style:width="{barPos(l.price > 0 ? l.lim / l.price : 0)}%"></i><em style:left="{barPos(1)}%"></em></div>
+								<div class="track"><i class:low={l.lim < l.price} style:width="{l.pos(l.price > 0 ? l.lim / l.price : 0)}%"></i><em style:left="{l.pos(1)}%"></em></div>
 								<span class="r">{l.price > 0 ? ratio(l.lim / l.price) : '–'}</span>
 							</div>
 						{/each}
 					</div>
 				{/if}
 			{/each}
-			<p class="fine">Bar: the most this person can pay for a unit today without running down what they own; the mark is today’s price. Green above the mark: they can pay. Log scale, 0.1× to 1,000×.</p>
+			<p class="fine">Bar: the most this person can pay for a unit today while spending at most a 30th of what they hold plus today’s dividends (after the other basics); the mark is today’s price. Green above the mark: they can pay. Log scale over today’s spread between people.</p>
 		</section>
 	{:else if coop}
 		<section class="picked">
@@ -397,14 +405,14 @@
 					<p class="who {w}"><b>{label}:</b> not in this world.</p>
 				{/if}
 			{/each}
-			<p class="fine">The bar under a COOP is its price; the tick is its cost floor (variable cost ÷ 0.8: it keeps 80 % of a sale). The ring is its treasury against its reserve of 9 months of costs.</p>
+			<p class="fine">The bar under a COOP is its price; the tick is its cost floor ({floorText(latest?.base?.law5)}{latest?.changed && latest.changed.law5 !== latest.base?.law5 ? `; in the changed world, ${floorText(latest.changed.law5)}` : ''}). The ring is its treasury against its reserve of 9 months of costs.</p>
 		</section>
 	{/if}
 {/snippet}
 
 {#snippet panelBody()}
 	{#if error}<p class="bad">{error}</p>{/if}
-	{#if stage === 'guess'}{@render guessBlock()}{/if}
+	{#if stage === 'guess' && mode !== 'wide'}{@render guessBlock()}{/if}
 	{#if stage === 'end'}{@render endBlock()}{/if}
 	{@render pickedBlock()}
 	{#if mode !== 'wide'}{@render controls()}{/if}
@@ -413,7 +421,7 @@
 	<p class="fine perf">This browser: {perf.msPerYear ? `${(perf.msPerYear / 1000).toFixed(2)} s a simulated year for both worlds` : '…'} · {perf.fps} frames a second.</p>
 {/snippet}
 
-<div class="lab-root mode-{mode}" class:open={!!expId}>
+<div class="lab-root mode-{mode}" class:open={!!expId} class:aside={sheetOpen}>
 	{#if !exp}
 		<div class="home">
 			<header class="top">
@@ -433,7 +441,7 @@
 						<button class="card" onclick={() => open(e.id)}>
 							<span class="id">{e.id}</span>
 							<b>{e.question}</b>
-							<span class="vs"><i class="b"></i>{s.base}<i class="c"></i>{s.changed}</span>
+							<span class="vs"><span class="pair"><i class="b"></i>{s.base}</span><span class="pair"><i class="c"></i>{s.changed}</span></span>
 							<span class="yrs">{e.people ?? 250} people · {e.years} years · same seed, side by side</span>
 						</button>
 					{/each}
@@ -451,6 +459,10 @@
 				<span class="count">Year {counter.year} of {counter.of} · {counter.month}{#each counter.shocks as s}<em>{shockLabel({ kind: s })}</em>{/each}</span>
 				<i class="prog" style:width="{(100 * day) / Math.max(1, days)}%"></i>
 			</header>
+			{#if mode === 'wide' && stage === 'guess'}
+				<!-- on a wide screen the guess comes first, above the fields and the Run button -->
+				<div class="wide-guess">{@render guessBlock()}</div>
+			{/if}
 			{#if mode === 'wide'}
 				<div class="wide-controls">
 					<button class="act inline" onclick={action}>{actionLabel}</button>
@@ -593,7 +605,14 @@
 	}
 	.vs i.c {
 		background: #eb6834;
-		margin-left: 0.4rem;
+	}
+	/* a dot stays with its label */
+	.vs .pair {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		white-space: nowrap;
+		margin-right: 0.4rem;
 	}
 	.yrs {
 		font-size: 0.72rem;
@@ -712,6 +731,10 @@
 		border-radius: 999px;
 		font-size: 0.95rem;
 	}
+	.wide-guess {
+		padding: 0.6rem 0.8rem 0;
+		max-width: 1500px;
+	}
 	.panel {
 		padding: 0.5rem 0.8rem calc(var(--nav-room) + 1rem);
 		display: flex;
@@ -816,19 +839,25 @@
 	.mode-side .bar {
 		padding-right: 7.5rem;
 	}
+	/* with the aside open, the bar (and its year counter) ends left of it and of its Hide tab */
+	.mode-side.aside .bar {
+		padding-right: calc(min(400px, 46vw) + 5.5rem);
+	}
 	.mode-side .act.float {
 		right: auto;
 		left: max(12px, env(safe-area-inset-left, 0px));
 	}
 	.mode-side .sheet {
 		top: 0;
-		bottom: 0;
+		/* the aside ends above the navigation pill, so the pill covers none of it */
+		bottom: calc(var(--nav-room) - 0.2rem);
 		left: auto;
 		right: 0;
 		width: min(400px, 46vw);
 		max-height: none;
 		border-radius: 18px 0 0 18px;
 		border-top: 0;
+		border-bottom: 1px solid var(--line);
 		border-left: 1px solid var(--line);
 		transform: translateX(100%);
 		transition: transform 0.25s ease;
@@ -840,7 +869,7 @@
 	}
 	.mode-side .sheet .body {
 		display: flex;
-		padding-bottom: calc(var(--nav-room) + 0.5rem);
+		padding-bottom: 0.9rem;
 		padding-right: max(0.8rem, env(safe-area-inset-right, 0px));
 	}
 	.mode-side .handle {

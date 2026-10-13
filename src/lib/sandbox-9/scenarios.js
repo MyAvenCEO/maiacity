@@ -50,6 +50,27 @@ const giniAt = (s, day) => {
 const fDay = (r) => exp(-r / Y);
 const mindExact = (r, n, H = 24) => (H * (1 - pow(fDay(r), n))) / (1 - fDay(r));
 
+/**
+ * Why a world failed, computed from its summary: for P1 the basic short on most person-days, its most frequent limit
+ * badge and the lowest share of it met; for P2 the strict day and the owner-only cohort's lowest holding; for P3 the
+ * deciles that fail and the worst fall.
+ */
+function causeOf(s) {
+	const p = s.prop3, out = [];
+	if (!p.P1.pass) {
+		const [g, pd] = Object.entries(s.shortBy).sort((a, b) => b[1] - a[1])[0];
+		const low = p.P1.lowestShareMet?.[g];
+		out.push(`P1 fails: ${f0(pd)} person-days short of ${g}, its most frequent limit ${s.badges[g]?.limit} (${pct(s.badges[g]?.share ?? NaN, 0)} of days), lowest share met ${pct(low?.share ?? NaN)} on day ${low?.day}`);
+	}
+	if (!p.P2.pass) {
+		const hold = p.P2.normal.lowestHoldingDaysByYear ?? [];
+		out.push(`P2 fails: strict ${p.P2.strict.holdsEveryDayFrom > 0 ? `from day ${p.P2.strict.holdsEveryDayFrom}` : 'never held to the end'}, normal ${p.P2.normal.pass ? 'pass' : `fail (${p.P2.normal.failures} person-days)`}, the owner-only cohort’s lowest holding ${f2(Math.min(...hold))} days of the bundle`);
+	}
+	if (!p.P3.pass) out.push(`P3 fails: ${p.P3.failed.length} deciles (worst fall ${pct(Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)))}), without Aven services ${p.P3.withoutCompute.pass ? 'pass' : `${p.P3.withoutCompute.failed.length} fail`}${p.P3.coops.pass ? '' : ', COOP part fails'}`);
+	if (!p.abundance.pass) out.push(`MIND bound a basic on ${p.abundance.mindBindsBasics} day-goods (a day and a basic)`);
+	return out.join('; ') || 'passes';
+}
+
 // ── the scenarios ────────────────────────────────────────────────────────────────────────────────────────────────
 const DROUGHT = { kind: 'drought', day: 3 * Y + 152, days: 92, factor: 0.5 };
 const FAIL10 = { kind: 'coopFail', coop: 'AGRI', day: 9 * Y + 300, days: 365, factor: 0.1 };
@@ -64,17 +85,21 @@ export const SCENARIOS = [
 		name: 'prop3-headline',
 		paper: 'abstract, §9.3, Samuel 16:47',
 		stress: 'P1, P2, P3 with no shock: the base line',
-		claim: 'On every seed: nobody below 98 % of a basic after day 0; the owner-only cohort passes the strict test by day 120 and the normal test every day; every decile (by holdings and by Aven output) never falls more than 2 % in a 5-year window and rises or sits near the physics ceiling; MIND never binds a basic.',
-		runs: SEEDS.map((seed) => run({ seed }, 30, `base, seed ${seed}`)),
+		claim: 'On every seed, over the world model’s 60 years: nobody below 98 % of a basic after day 0; the owner-only cohort passes the strict test by day 120 and the normal test every day; every decile (by holdings and by Aven output) never falls more than 2 % in a 5-year window and, in every 5-year window, rises or ends within 5 % of the capacity per person; COOPs stay solvent; MIND never binds a basic.',
+		runs: SEEDS.map((seed) => run({ seed }, 60, `base, seed ${seed}, 60 years`)),
 		judge(R, runs) {
 			const rows = runs.map((r) => R[r.key]);
-			const seeds = rows.map((s) => ({ seed: s.seed, P1: s.prop3.P1.pass, shortPD: s.shortPD, strictFrom: s.prop3.P2.strict.holdsEveryDayFrom, P2n: s.prop3.P2.normal.pass, P3: s.prop3.P3.pass, P3failed: s.prop3.P3.failed.length, worstFall: Math.max(...s.prop3.P3.deciles.map((d) => d.fall ?? 0)), mindBinds: s.prop3.abundance.mindBindsBasics, receiverships: s.receiverships.length, poor1: yearOf(s, 1).poorH, poor30: s.poorH }));
+			const share = (s, y, k) => s.prop3.P3.computeShare?.[y - 1]?.[k] ?? NaN;
+			const seeds = rows.map((s) => ({ seed: s.seed, P1: s.prop3.P1.pass, shortPD: s.shortPD, strictFrom: s.prop3.P2.strict.holdsEveryDayFrom, P2: s.prop3.P2.pass, P2n: s.prop3.P2.normal.pass, P3: s.prop3.P3.pass, P3failed: s.prop3.P3.failed.length, P3noCompute: s.prop3.P3.withoutCompute.pass, P3noComputeFailed: s.prop3.P3.withoutCompute.failed.length, coops: s.prop3.P3.coops.pass, unpaidShare: s.prop3.P3.coops.unpaidShare, worstFall: Math.max(...s.prop3.P3.deciles.map((d) => d.fall ?? 0)), windowsFailed: s.prop3.P3.deciles.reduce((a, d) => a + (d.windowsFailed ?? 0), 0), computeShare30: share(s, 30, 'all'), computeShareEnd: share(s, s.years.length, 'all'), computeSharePoorEnd: share(s, s.years.length, 'poorest'), mindBinds: s.prop3.abundance.mindBindsBasics, receiverships: s.receiverships.length, poor1: yearOf(s, 1).poorH, poor30: yearOf(s, 30).poorH, poorEnd: s.poorH }));
 			const pass = rows.every((s) => s.prop3.pass);
+			const n = (f) => seeds.filter(f).length;
 			return {
 				pass,
 				numbers: { seeds },
-				takeaway: `Proposition 3 ${pass ? 'holds' : 'does not hold'} on ${rows.filter((s) => s.prop3.pass).length} of ${rows.length} seeds over 30 years. The strict test holds from day ${Math.max(...seeds.map((x) => x.strictFrom))} at the latest. The worst 5-year fall of any decile is ${pct(Math.max(...seeds.map((x) => x.worstFall)), 2)}.`,
-				evidence: seeds.map((x) => `seed ${x.seed}: P1 ${x.shortPD} person-days short, strict from day ${x.strictFrom}, normal ${x.P2n ? 'pass' : 'fail'}, P3 ${x.P3 ? 'pass' : `fail (${x.P3failed} deciles)`}, worst fall ${pct(x.worstFall, 2)}, MIND binds a basic on ${x.mindBinds} days`).join('; ') + '. The world model asks for 60 years; this suite runs 30.'
+				takeaway: `Over ${Math.round(rows[0].days / Y)} years Proposition 3 holds on ${n((x) => x.P1 && x.P2 && x.P3)} of ${seeds.length} seeds: P1 on ${n((x) => x.P1)}, P2 on ${n((x) => x.P2)}, P3 on ${n((x) => x.P3)}; without Aven services in the index, P3 holds on ${n((x) => x.P3noCompute)}.`,
+				evidence:
+					seeds.map((x) => `seed ${x.seed}: P1 ${f0(x.shortPD)} person-days short, strict ${x.strictFrom >= 0 ? `from day ${x.strictFrom}` : 'never held to the end'}, normal ${x.P2n ? 'pass' : 'fail'}, P3 ${x.P3 ? 'pass' : `fail (${x.P3failed} deciles, ${f0(x.windowsFailed)} decile-days in falling windows)`}, P3 without Aven services ${x.P3noCompute ? 'pass' : `fail (${x.P3noComputeFailed})`}, COOPs ${x.coops ? 'pass' : 'fail'}, worst fall ${pct(x.worstFall, 1)}, Aven services ${pct(x.computeShare30, 0)} of the index in year 30 and ${pct(x.computeShareEnd, 0)} in year 60 (${pct(x.computeSharePoorEnd, 0)} for the poorest tenth), MIND binds a basic on ${x.mindBinds} day-goods`).join('; ') +
+					'. The strict test is measured from a cold start, where everyone begins with nothing; A07 tests owner-only newcomers joining a settled city.'
 			};
 		}
 	},
@@ -114,6 +139,25 @@ export const SCENARIOS = [
 				numbers: { mindPerPerson: s.mindPP, formula: exact, relError: err, mStar, shareOfRest: s.mindPP / mStar, year1: s.monthly.find((m) => m.day >= Y - 30)?.mindPP, year10: s.monthly.find((m) => m.day >= 10 * Y - 30)?.mindPP },
 				takeaway: `After 30 years a person’s share of all MIND is ${f0(s.mindPP)}, ${pct(s.mindPP / mStar)} of the resting level ${f0(mStar)}. It matches the closed form to ${err.toExponential(1)}.`,
 				evidence: `count ${f0(s.mindPP)} vs formula ${f0(exact)}; m* ${f0(mStar)} vs the paper’s 125,143`
+			};
+		}
+	},
+	{
+		id: 'A07',
+		name: 'newcomers (laborde)',
+		paper: '§9.3; P2 for people who arrive later',
+		stress: 'P2 strict for an owner-only newcomer',
+		claim: 'Five owner-only people (no Aven output, nothing held) join a settled city of 100 in year 11: they are never short, and their dividends alone pay their basic bundle within 120 days of joining, as the genesis cohort’s do.',
+		runs: [run({ people: 100, newcomers: { day: 10 * Y, n: 5 } }, 20, '100 people, 5 owner-only newcomers in year 11')],
+		judge(R, runs) {
+			const s = R[runs[0].key], nc = s.newcomers;
+			if (!nc.ratioByYear) return { pass: false, numbers: { newcomers: nc }, takeaway: 'The run ended before the newcomers joined.', evidence: `the run is ${f0(s.days)} days long; the newcomers join on day ${10 * Y}` };
+			const pass = nc.short === 0 && nc.strictFrom >= 0 && nc.strictFrom <= 120;
+			return {
+				pass,
+				numbers: { newcomers: nc, cohortStrictFrom: s.prop3.P2.strict.holdsEveryDayFrom },
+				takeaway: nc.strictFrom >= 0 ? `Owner-only newcomers to a settled city lived on dividends alone from day ${f0(nc.strictFrom)} after joining, and were short on ${f0(nc.short)} person-days.` : `Owner-only newcomers to a settled city never lived on dividends alone in their ${nc.ratioByYear.length} years here; they were short on ${f0(nc.short)} person-days.`,
+				evidence: `the newcomers’ lowest dividends ÷ basic bundle, by year after joining: ${nc.ratioByYear.map((r) => f2(r)).join(', ')}; the genesis cohort (a cold start) held the strict test from day ${s.prop3.P2.strict.holdsEveryDayFrom}. A newcomer’s dividends grow only as its own HEARTS half builds a holding; the laws give it nothing else, so the strict test is a test of a cold start, not of a newcomer.`
 			};
 		}
 	},
@@ -286,7 +330,7 @@ export const SCENARIOS = [
 			return {
 				pass: a.short0 === 0 && a.prop3.P1.pass && c.prop3.abundance.pass,
 				numbers: { bootstrapDay0: a.short0, noBootstrapDay0: b.short0, noBootstrapDay1: b.short1, noBootstrapYear1: b.years[0].short, emptyCityShortPD: c.shortPD, emptyCityMindBinds: c.prop3.abundance.mindBindsBasics, emptyCityLimits: c.shortByLimit },
-				takeaway: `With the bootstrap, ${pct(a.short0)} of people are short on day 0. Without it, ${pct(b.short0)} on day 0 and ${pct(b.short1)} on day 1. In an empty city, MIND bound a basic on ${c.prop3.abundance.mindBindsBasics} days; ${f0(c.shortPD)} person-days were short, all for physical limits.`,
+				takeaway: `With the bootstrap, ${pct(a.short0)} of people are short on day 0. Without it, ${pct(b.short0)} on day 0 and ${pct(b.short1)} on day 1. In an empty city, MIND bound a basic on ${c.prop3.abundance.mindBindsBasics} day-goods (a day and a basic); ${f0(c.shortPD)} person-days were short, all for physical limits.`,
 				evidence: `empty city short days by limit: ${JSON.stringify(c.shortByLimit)}`
 			};
 		}
@@ -369,7 +413,7 @@ export const SCENARIOS = [
 			return {
 				pass: f.shortPD === 0 && f.bar > 1 && f.mindBinds === 0,
 				numbers: { rows },
-				takeaway: rows.map((r) => `${r.rule}: ${f0(r.shortPD)} person-days short, lowest water bar ${f2(r.bar)}× the price, MIND bound a basic on ${r.mindBinds} days.`).join(' '),
+				takeaway: rows.map((r) => `${r.rule}: ${f0(r.shortPD)} person-days short, lowest water bar ${f2(r.bar)}× the price, MIND bound a basic on ${r.mindBinds} day-goods.`).join(' '),
 				evidence: rows.map((r) => `${r.rule}: water price swing ${pct(r.swingWater, 2)} a day`).join('; ')
 			};
 		}
@@ -400,8 +444,8 @@ export const SCENARIOS = [
 		name: 'physics-only',
 		paper: 'Samuel 16:52',
 		stress: 'P3: only physics raises it',
-		claim: 'Doubling HEARTS changes only prices (real consumption of every good within ±1 %). Doubling a binding physical limit raises living standards; doubling a limit that does not bind changes little.',
-		runs: [base30, run({ heartsPerDay: 48 }, 30), run({ springSites: 4 }, 30), run({ geoStages: 2 }, 30), run({ landHa: 90 }, 30)],
+		claim: 'Doubling HEARTS changes only prices (real consumption of every good within ±1 %), with the Aven rate card in R indexed to the HEARTS issued a day (the default: the card doubles with HEARTS a day, as every nominal anchor indexed to them does; the run with the card fixed in R is reported beside it). Doubling a binding physical limit raises living standards; doubling a limit that does not bind changes little.',
+		runs: [base30, run({ heartsPerDay: 48 }, 30), run({ springSites: 4 }, 30), run({ geoStages: 2 }, 30), run({ landHa: 90 }, 30), run({ heartsPerDay: 48, rateIndexed: false }, 30, '48 HEARTS, rate card fixed in R')],
 		judge(R, runs) {
 			const b = R[runs[0].key], h = R[runs[1].key];
 			const cons = Object.keys(b.consRun).map((g) => [g, rel(h.consRun[g], b.consRun[g])]);
@@ -410,18 +454,46 @@ export const SCENARIOS = [
 			const heartsOk = cons.every((r) => Math.abs(r[1]) <= 0.01);
 			// which limits bound in the base world (share of days, all goods)
 			// a limit binds when it is a good's badge on at least a tenth of the days
-			const lim = (name) => Object.entries(b.badgeShares).flatMap(([g, sh]) => Object.entries(sh).filter(([l, x]) => l.startsWith(name) && x >= 0.1).map(([, x]) => `${g} ${pct(x, 0)}`));
+			// a limit is read as binding only on the goods it can lift: the spring sites lift spring time (nature),
+			// geothermal stages lift whatever energy binds, land lifts whatever land or timber land (logs) binds. Rain
+			// reads 'nature' too, but more ponds bring no rain
+			const lim = (names, goods) => Object.entries(b.badgeShares).filter(([g]) => !goods || goods.includes(g)).flatMap(([g, sh]) => Object.entries(sh).filter(([l, x]) => names.some((n) => l.startsWith(n)) && x >= 0.1).map(([l, x]) => `${g} (${l}) ${pct(x, 0)}`));
 			const dbl = [
-				{ what: 'hot-spring sites ×2', s: R[runs[2].key], binding: lim('nature').length > 0, bindsWhere: lim('nature') },
-				{ what: 'geothermal stages ×2', s: R[runs[3].key], binding: lim('energy').length > 0, bindsWhere: lim('energy') },
-				{ what: 'land ×2', s: R[runs[4].key], binding: lim('land').length > 0, bindsWhere: lim('land') }
-			].map((d) => ({ what: d.what, binding: d.binding, bindsWhere: d.bindsWhere, Lmean: d.s.Lmean, change: rel(d.s.Lmean, b.Lmean), poorChange: rel(d.s.poorA, b.poorA), P1: d.s.prop3.P1.pass }));
+				{ what: 'hot-spring sites ×2', s: R[runs[2].key], where: lim(['nature'], ['spring']) },
+				{ what: 'geothermal stages ×2', s: R[runs[3].key], where: lim(['energy']) },
+				{ what: 'land ×2', s: R[runs[4].key], where: lim(['land', 'material: logs']) }
+			].map((d) => ({ ...d, binding: d.where.length > 0, bindsWhere: d.where })).map((d) => ({ what: d.what, binding: d.binding, bindsWhere: d.bindsWhere, Lmean: d.s.Lmean, change: rel(d.s.Lmean, b.Lmean), poorChange: rel(d.s.poorA, b.poorA), P1: d.s.prop3.P1.pass }));
 			const physOk = dbl.filter((d) => d.binding).every((d) => d.change > 0);
+			// sensitivity: the rate card not doubled with HEARTS
+			const fx = R[runs[5].key];
+			const consFx = Object.keys(b.consRun).map((g) => [g, rel(fx.consRun[g], b.consRun[g])]);
+			const worstFx = consFx.reduce((m, r) => (Math.abs(r[1]) > Math.abs(m[1]) ? r : m), ['', 0]);
 			return {
 				pass: heartsOk && physOk && dbl.some((d) => d.binding),
-				numbers: { worstConsChange: worst, prices, doublings: dbl },
+				numbers: { worstConsChange: worst, prices, doublings: dbl, fixedCard: { worstConsChange: worstFx, LmeanChange: rel(fx.Lmean, b.Lmean), P1: fx.prop3.P1.pass } },
 				takeaway: `With 48 HEARTS a day, prices in R rose about ×${f2(prices.find((p) => p[0] === 'water')[1])} and real consumption changed by at most ${pct(worst[1], 2)} (${worst[0]}). ` + dbl.map((d) => `${d.what} (${d.binding ? 'binding' : 'not binding'}): mean living standard ${pct(d.change, 2)}.`).join(' '),
-				evidence: `base badges: ${dbl.map((d) => `${d.what}: ${d.bindsWhere.join(', ') || 'none'}`).join('; ')}; consumption changes with 48 HEARTS: ${cons.map((r) => `${r[0]} ${pct(r[1], 2)}`).join(', ')}`
+				evidence: `base badges: ${dbl.map((d) => `${d.what}: ${d.bindsWhere.join(', ') || 'none'}`).join('; ')}; consumption changes with 48 HEARTS: ${cons.map((r) => `${r[0]} ${pct(r[1], 2)}`).join(', ')}. With the rate card fixed in R instead, 48 HEARTS change real consumption by up to ${pct(worstFx[1], 1)} (${worstFx[0]}) and the mean living standard by ${pct(rel(fx.Lmean, b.Lmean), 1)}: neutrality holds because every nominal anchor is indexed to the HEARTS issued a day.`
+			};
+		}
+	},
+	{
+		id: 'B23',
+		name: 'euro-border',
+		paper: 'world model 9 (the border)',
+		stress: 'P3: Aven services without a chip fab',
+		claim: 'The closed city (the default) cannot make or import accelerators, so its Aven services wear away with them. Opening the border for accelerators only (bought with electricity exported from what would otherwise be curtailed; no euro reserve, no other trade) keeps more Aven services, nobody is short of a basic in any of the three worlds, and when accelerators cost three times as much from year 10 the city imports fewer.',
+		runs: [base30, run({ chipImport: true }, 30, 'border open for accelerators'), run({ chipImport: true, shocks: [{ kind: 'importPrice', day: 3650, days: 7300, factor: 3 }] }, 30, 'border open, accelerators 3× dearer from year 10')],
+		judge(R, runs) {
+			const [c, o, d] = runs.map((r) => R[r.key]);
+			const rows = [c, o, d].map((s, i) => ({ label: runs[i].label, computeRun: s.consRun.compute, computeLast: s.consLast.compute, exportMwh: s.exportMwh ?? 0, shortPD: s.shortPD, Lmean: s.Lmean, P3: s.prop3.P3.pass }));
+			const more = o.consRun.compute > c.consRun.compute;
+			const fewer = (d.exportMwh ?? 0) <= (o.exportMwh ?? 0);
+			const noShort = [c, o, d].every((s) => s.shortPD === 0);
+			return {
+				pass: more && fewer && noShort,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: Aven services ${f2(r.computeRun)} h a person a day over the run (${f2(r.computeLast)} in the last year), ${f0(r.exportMwh)} MWh exported, ${f0(r.shortPD)} person-days short of a basic.`).join(' '),
+				evidence: `${more ? 'the open border kept more Aven services' : 'the open border did not keep more Aven services: the accelerators are bought only with electricity that would be curtailed, and the geothermal build and R&D take that electricity first'}; ${fewer ? 'dearer accelerators cut the export' : 'dearer accelerators did not cut the export'}; ${noShort ? 'no basic short in any world' : 'a basic was short'}.`
 			};
 		}
 	},
@@ -442,7 +514,7 @@ export const SCENARIOS = [
 			return {
 				pass: rows.every((r) => r.mindBinds === 0) && noPad[0].shortPP <= noPad[1].shortPP && noPad[1].shortPP <= noPad[2].shortPP,
 				numbers: { rows },
-				takeaway: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short (${JSON.stringify(r.byLimit)}), MIND bound a basic on ${r.mindBinds} days.`).join(' '),
+				takeaway: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short (${JSON.stringify(r.byLimit)}), MIND bound a basic on ${r.mindBinds} day-goods.`).join(' '),
 				evidence: rows.map((r) => `${r.label}: most frequent limits ${Object.entries(r.top).filter(([g]) => !['food', 'water', 'energy', 'bed'].includes(g)).map(([g, x]) => `${g} ${x}`).join(', ')}`).join('; ')
 			};
 		}
@@ -520,7 +592,7 @@ export const SCENARIOS = [
 		claim: 'A grid of melt (3, 7, 12 %) and Law 5 share (0, 10, 20, 40 %), 100 people, 10 years: the paper’s point (7 %, 20 %) and its four neighbours (3 % and 12 % melt; 10 % and 40 % share) keep Proposition 3. A share of 0 pays no dividends, so it cannot pass the strict test; it marks the edge.',
 		runs: PHASE.melt.flatMap((m) => PHASE.law5.map((l) => run({ people: 100, melt: m, law5: l }, 10, `melt ${pct(m, 0)}, Law 5 ${pct(l, 0)}`))),
 		judge(R, runs) {
-			const grid = runs.map((r) => ({ melt: r.config.melt, law5: r.config.law5, pass: R[r.key].prop3.pass, P1: R[r.key].prop3.P1.pass, P2: R[r.key].prop3.P2.pass, P3: R[r.key].prop3.P3.pass, strictFrom: R[r.key].prop3.P2.strict.holdsEveryDayFrom }));
+			const grid = runs.map((r) => ({ melt: r.config.melt, law5: r.config.law5, pass: R[r.key].prop3.pass, P1: R[r.key].prop3.P1.pass, P2: R[r.key].prop3.P2.pass, P3: R[r.key].prop3.P3.pass, strictFrom: R[r.key].prop3.P2.strict.holdsEveryDayFrom, cause: causeOf(R[r.key]) }));
 			const at = (m, l) => grid.find((g) => g.melt === m && g.law5 === l);
 			const centre = at(0.07, 0.2), nb = [at(0.03, 0.2), at(0.12, 0.2), at(0.07, 0.1), at(0.07, 0.4)];
 			const cell = (g) => `${g.P1 ? '1' : '·'}${g.P2 ? '2' : '·'}${g.P3 ? '3' : '·'}`;
@@ -528,7 +600,66 @@ export const SCENARIOS = [
 				pass: centre.pass && nb.every((g) => g.pass),
 				numbers: { grid },
 				takeaway: `Parts that hold at each point (1, 2, 3; · fails), melt down, Law 5 across: ` + PHASE.melt.map((m) => `${pct(m, 0)}: ${PHASE.law5.map((l) => cell(at(m, l))).join(' ')}`).join('; ') + '.',
-				evidence: grid.filter((g) => !g.pass).map((g) => `melt ${pct(g.melt, 0)}, Law 5 ${pct(g.law5, 0)}: P1 ${g.P1 ? 'pass' : 'fail'}, P2 ${g.P2 ? 'pass' : `fail (strict from day ${g.strictFrom})`}, P3 ${g.P3 ? 'pass' : 'fail'}`).join('; ') || 'every point passes'
+				evidence: grid.filter((g) => !g.pass).map((g) => `melt ${pct(g.melt, 0)}, Law 5 ${pct(g.law5, 0)}: ${g.cause}`).join('; ') || 'every point passes'
+			};
+		}
+	},
+	{
+		id: 'S02',
+		name: 'forest-yield',
+		paper: 'catalog: the food forest’s yield (the riskiest estimate)',
+		stress: 'P1 for food when the forest gives half or one and a half times the catalog’s figure',
+		claim: 'With the food forest’s yield at half and at one and a half times the catalog’s figure, nobody is ever below 98 % of a basic after day 0 (30 years).',
+		runs: [run({ forestYield: 0.5 }, 30, 'forest yield ×0.5'), base30, run({ forestYield: 1.5 }, 30, 'forest yield ×1.5')],
+		judge(R, runs) {
+			const rows = runs.map((r, i) => {
+				const s = R[r.key];
+				return { yield: [0.5, 1, 1.5][i], byLimit: s.shortByLimit, P1: s.prop3.P1.pass, shortPD: s.shortPD, shortPP: s.shortPD / s.N, food: s.shortBy.food, foodBadge: s.badges.food, lowestFood: s.prop3.P1.lowestShareMet?.food, P3: s.prop3.P3.pass, P3noCompute: s.prop3.P3.withoutCompute.pass, Lmean: s.Lmean };
+			});
+			return {
+				pass: rows.every((r) => r.P1),
+				numbers: { rows },
+				takeaway: rows.map((r) => `At ×${r.yield}, ${f0(r.shortPD)} person-days short (${f0(r.food)} of food).`).join(' '),
+				evidence: rows.map((r) => `×${r.yield}: P1 ${r.P1 ? 'pass' : 'fail'}, ${f2(r.shortPP)} short days a person, short days by limit ${JSON.stringify(r.byLimit)}, food’s most frequent limit ${r.foodBadge.limit} (${pct(r.foodBadge.share, 0)} of days), lowest share of food met ${pct(r.lowestFood?.share ?? NaN)} on day ${r.lowestFood?.day}, P3 ${r.P3 ? 'pass' : 'fail'} (without Aven services ${r.P3noCompute ? 'pass' : 'fail'})`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'S03',
+		name: 'small-cities',
+		paper: 'Proposition 3 at the page’s size',
+		stress: 'P1–P3 with 50 and 100 people, and 100 people through a year 30 % drier',
+		claim: 'Proposition 3 holds for 50 and 100 people on a hex sized for them, and for 100 people through a year with 30 % less rain (year 4), over 30 years.',
+		runs: [run({ people: 50 }, 30, '50 people'), run({ people: 100 }, 30, '100 people'), run({ people: 100, shocks: [{ kind: 'drought', day: 3 * Y, days: Y, factor: 0.7 }] }, 30, '100 people, a year 30 % drier')],
+		judge(R, runs) {
+			const rows = runs.map((r) => {
+				const s = R[r.key], p = s.prop3;
+				return { label: r.label, P1: p.P1.pass, shortPD: s.shortPD, strictFrom: p.P2.strict.holdsEveryDayFrom, P2: p.P2.pass, P3: p.P3.pass, P3failed: p.P3.failed.length, P3noCompute: p.P3.withoutCompute.pass, coops: p.P3.coops.pass, worstFall: Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)), pass: p.pass };
+			});
+			return {
+				pass: rows.every((r) => r.pass),
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: Proposition 3 ${r.pass ? 'holds' : 'fails'} (P1 ${r.P1 ? 'pass' : 'fail'}, P2 ${r.P2 ? 'pass' : 'fail'}, P3 ${r.P3 ? 'pass' : 'fail'}).`).join(' '),
+				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short, strict ${r.strictFrom >= 0 ? `from day ${r.strictFrom}` : 'never held to the end'}, ${r.P3failed} deciles fail P3, P3 without Aven services ${r.P3noCompute ? 'pass' : 'fail'}, COOPs ${r.coops ? 'pass' : 'fail'}, worst fall ${pct(r.worstFall, 1)}`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'B33',
+		name: 'rationing',
+		paper: 'world model 4.3 step 7',
+		stress: 'P1 when a basic is short',
+		claim: 'When a basic is physically short (the food forest at half its yield), the engine’s rationing (each person gets at most an equal cap, filled up from the smallest order) leaves no more person-days short than the world model’s rule (each order cut in proportion).',
+		runs: [run({ forestYield: 0.5 }, 30, 'forest yield ×0.5, equal caps'), run({ forestYield: 0.5, basicRation: 'proportion' }, 30, 'forest yield ×0.5, proportional')],
+		judge(R, runs) {
+			const [a, b] = runs.map((r) => R[r.key]);
+			const row = (s) => ({ shortPD: s.shortPD, food: s.shortBy.food, lowestFood: s.prop3.P1.lowestShareMet?.food?.share, poorA: s.poorA, Lmean: s.Lmean });
+			const e = row(a), p = row(b);
+			return {
+				pass: e.shortPD <= p.shortPD,
+				numbers: { equal: e, proportion: p },
+				takeaway: `With the forest at half its yield, ${f0(e.shortPD)} person-days were short under equal caps and ${f0(p.shortPD)} under proportional cuts.`,
+				evidence: `lowest share of food met: ${pct(e.lowestFood)} (equal) vs ${pct(p.lowestFood)} (proportional); poorest Aven decile ${f2(e.poorA)} vs ${f2(p.poorA)}. The engine keeps equal caps: a proportional cut gives the largest orders (the richest) the most of a short basic.`
 			};
 		}
 	}
@@ -536,11 +667,10 @@ export const SCENARIOS = [
 
 /** section 6 scenarios this suite does not run, and why (none is skipped silently) */
 export const NOT_COVERED = [
-	['A01', 'anna-lamp', 'a 3-person, 4-COOP unit world with named people is not built; the same laws run in every world and the money ledger checks them every day'],
+	['A01', 'anna-lamp', 'a 3-person, 4-COOP unit world with named people is not built. Every world checks the laws themselves every day instead (each HEART’s halves and the pools’ tenth, Law 5’s fifth against what was paid, pools untouched by Law 5: ./engine.js lawCheck), and the money ledger closes every day'],
 	['A02', 'mia-proposal', 'needs named work items and proposals for one person; the engine pays running items and proposals to Avens in bulk'],
 	['A03', 'panel-via-pools', 'circular sales between related COOPs are not modelled (no related-party flag in use)'],
 	['A06', 'own-level and growth', 'the closed-form own level needs a person who keeps everything; the engine’s Avens spend'],
-	['A07', 'laborde', 'needs a settled city of 100 and one newcomer with relative-position tracking'],
 	['A08', 'young-city prices', 'prices are kept in R anchored to HEARTS (rIndex "hearts"), not in MIND counts; the 13-fold rise is not measured'],
 	['A09', 'pool-g3m-lvr', 'random-walk paths with an arbitrageur are a pool unit test, not an economy run'],
 	['A10', 'routing', 'route costs and hop counts are recorded (getFlows) but not judged against the paper’s 0.38 %'],
@@ -556,10 +686,9 @@ export const NOT_COVERED = [
 	['B19', 'price-pump', 'an attacker on one pool is not modelled (the B11 ring pushes its own price)'],
 	['B20', 'sybil-farm', 'no fake identities'],
 	['B21', 'estates', 'no deaths or heirs'],
-	['B23', 'euro-border', 'the city is closed: no imports, exports or euro reserve'],
+	['B23 (part)', 'euro-border', 'B23 runs the border for accelerators only (bought with exported electricity); a euro reserve and any other trade are not modelled'],
 	['B24', 'care-underfunding', 'care is not a good in the engine'],
-	['B25', 'two-choices and faithful Avens', 'no random human choices or Aven mistakes'],
-	['S00 (60 years)', 'prop3-headline', 'run for 30 years, not 60, to keep the suite near two minutes']
+	['B25', 'two-choices and faithful Avens', 'no random human choices or Aven mistakes']
 ];
 
 /** every distinct run of the suite (shared runs once), longest first */

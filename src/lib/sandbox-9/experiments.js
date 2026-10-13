@@ -28,6 +28,7 @@ import { exp, log } from './dmath.js';
 import { polar } from './rng.js';
 import { createWorld, step, DEFAULTS, getLedger } from './engine.js';
 import { prop3 } from './prop3.js';
+import { guessText } from './guesses.js';
 import { openCoop } from './coops.js';
 import { swap } from './pools.js';
 import { BASICS, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOODS_, LIMIT, LIMIT_NAMES, MAX_COOPS, SPRING, WATER, BED, COMPUTE } from './consts.js';
@@ -77,6 +78,21 @@ export function sumOf(w, key, a = 1, b = w.rec.n, col = 0) {
 	return s;
 }
 const lastYear = (w) => [Math.max(0, w.rec.n - Y), w.rec.n];
+/**
+ * The lowest room to pay of anyone over [a, b), in days of the basic bundle: what a person may spend on the basics a
+ * day (a 30th of what they hold plus today's dividends, ./market.js peopleOrders) ÷ what the bundle costs. Read back
+ * from the lowest water limit bar of the day (limit = (room − the other basics) ÷ the water need).
+ */
+function roomDays(w, a, b) {
+	const rec = w.rec, nw = w.c.need[1];
+	let m = Infinity;
+	for (let d = Math.max(1, a); d < Math.min(rec.n, b); d++) {
+		const pw = rec.pbar[d * G + WATER], Cb = rec.basicCostR[d], lr = rec.limitMin[d * 4 + 1];
+		if (!(Cb > 0) || !Number.isFinite(lr)) continue;
+		m = Math.min(m, 1 + (nw * pw * (lr - 1)) / Cb);
+	}
+	return m;
+}
 /** person-days short of any basic after day 0, in [a, b) */
 export const shortPD = (w, a = 1, b = w.rec.n) => sumOf(w, 'shortAny', Math.max(1, a), b);
 /** how far innovation has come: the mean share of the way from each coefficient's start (1) to its physical floor */
@@ -186,6 +202,9 @@ const pct = (x) => (Number.isFinite(x) ? `${(100 * x).toFixed(1)} %` : String(x)
 const f2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : String(x));
 const f0 = (x) => (Number.isFinite(x) ? Math.round(x).toLocaleString('en-US') : String(x));
 const rel = (a, b) => (b !== 0 ? a / b - 1 : NaN);
+/** three significant figures at most, for the one-sentence takeaways */
+const sig = (x) => (Number.isFinite(x) ? (Math.abs(x) >= 100 ? Math.round(x).toLocaleString('en-US') : String(Number(x.toPrecision(3)))) : String(x));
+const pc0 = (x) => (Number.isFinite(x) ? `${Math.round(100 * x)} %` : String(x));
 
 // ── scheduled test events (not rules of the economy) ─────────────────────────────────────────────────────────────
 /** a small seeded random source of its own, so both worlds of an experiment draw the same numbers */
@@ -331,6 +350,13 @@ export function track(w) {
 			x.newcomerPD++;
 			if (w.met[i] < 0.98) x.newcomerShortPD++;
 		}
+	// owner-only newcomers (cfg.newcomers): the lowest of their dividends ÷ basic bundle, each day since they joined
+	if (w.newIds?.length) {
+		const nr = x.newStrict ?? (x.newStrict = []);
+		let r = Infinity;
+		for (const i of w.newIds) r = Math.min(r, w.basicCost[i] > 0 ? w.div[i] / w.basicCost[i] : 0);
+		nr.push(r);
+	}
 	if (d % 30 === 0) {
 		const o = ownership(w);
 		x.monthly.push({ day: d, gini: holdingsGini(w), people: o.people, treasuries: o.treasuries, pools: o.pools, mindPP: mindCountPerPerson(w), rent: w.land.rent, N: w.N });
@@ -380,30 +406,37 @@ export const EXPERIMENTS = {
 		question: 'Do the poor eat when water gets dear?',
 		ruleChanged: 'Law 5 share 20 % (base) vs 0 % (changed). Both worlds have a drought: rain −70 % for 120 days from June of year 4. Prices are fully dynamic.',
 		guesses: [
-			'With 20 %, the owner-only blobs’ dividends keep paying their basic bundle through the drought. With 0 %, they get no dividends at all.',
-			'Water gets dearer in both worlds. Nobody goes short in either, because each person’s HEARTS half pays the basic bundle many times over.',
-			'With 0 %, the sellers keep the fifth of every sale. So they build more, and water stays cheaper.'
+			{ text: 'With 20 %, the owner-only blobs’ dividends keep paying their basic bundle through the drought. With 0 %, they get no dividends at all.', check: (rb, rc) => rb.values.strictInDrought >= 1 && !(rc.values.strictInDrought > 0.001) },
+			{ text: 'Water gets dearer in both worlds. Nobody goes short in either, because the MIND each person gets from investing their HEARTS (their half) pays the basic bundle many times over.', check: (rb, rc) => rb.values.waterPeak > 1 && rc.values.waterPeak > 1 && rb.values.shortPD === 0 && rc.values.shortPD === 0 },
+			{ text: 'With 0 %, the sellers keep the fifth of every sale. So they build more, and water stays cheaper.', check: (rb, rc) => rc.values.waterPeak < rb.values.waterPeak }
 		],
 		people: PAGE_PEOPLE,
 		years: 5,
 		base: { law5: 0.2, shocks: [DROUGHT] },
 		changed: { law5: 0, shocks: [DROUGHT] },
-		charts: ['water price and the poorest limit bar', 'owner-only dividends ÷ basic bundle', 'person-days short'],
+		charts: ['water price and the lowest room to pay', 'owner-only dividends ÷ basic bundle', 'person-days short'],
 		metrics: [
 			{ id: 'shortPD', label: 'person-days short of a basic (after day 0)', of: (w) => shortPD(w) },
 			{ id: 'shortInDrought', label: 'person-days short in the drought and 90 days after', of: (w) => shortPD(w, inDrought[0], inDrought[1] + 90) },
 			{ id: 'waterPeak', label: 'water price at its drought peak ÷ the 90 days before', of: (w) => maxOf(w, 'pbar', inDrought[0], inDrought[1] + 90, WATER) / meanOf(w, 'pbar', inDrought[0] - 90, inDrought[0], WATER) },
-			{ id: 'poorWaterBar', label: 'lowest limit bar ÷ water price in the drought (anyone)', of: (w) => minOf(w, 'limitMin', inDrought[0], inDrought[1] + 90, WATER) },
+			{ id: 'poorRoomDays', label: 'lowest room to pay of anyone in the drought (a 30th of the holding plus dividends, a day), in days of the basic bundle', of: (w) => roomDays(w, inDrought[0], inDrought[1] + 90) },
 			{ id: 'strictInDrought', label: 'owner-only: lowest dividends ÷ basic bundle in the drought', of: (w) => minOf(w, 'strict', inDrought[0], inDrought[1] + 90) },
 			{ id: 'ownerShort', label: 'owner-only person-days short (after day 0)', of: (w) => sumOf(w, 'ownerShort', 1) },
 			{ id: 'poorL', label: 'poorest Aven decile, living standard in the drought', of: (w) => meanOf(w, 'decA', inDrought[0], inDrought[1], 0) },
+			{ id: 'poorH', label: 'poorest holdings decile, living standard in the drought', of: (w) => meanOf(w, 'decH', inDrought[0], inDrought[1], 0) },
 			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) }
 		],
 		takeaway(rb, rc) {
 			const b = rb.values, c = rc.values;
+			const none = b.shortPD === 0 && c.shortPD === 0;
+			return `In the drought, dividends paid the owner-only blobs’ basics ${sig(b.strictInDrought)}× over with Law 5 and ${c.strictInDrought > 0.001 ? `${sig(c.strictInDrought)}× over` : 'not at all'} without it${none ? ', and nobody went short in either world.' : `; ${f0(b.shortPD)} and ${f0(c.shortPD)} person-days were short.`}`;
+		},
+		numbers(rb, rc) {
+			const b = rb.values, c = rc.values;
 			return (
 				`In the drought, water cost ${f2(b.waterPeak)}× its earlier price with Law 5 and ${f2(c.waterPeak)}× without. ` +
-				`The lowest limit bar stood at ${f2(b.poorWaterBar)}× the water price with Law 5 and ${f2(c.poorWaterBar)}× without. ` +
+				`The lowest room to pay of anyone was ${f2(b.poorRoomDays)} days of the basic bundle a day with Law 5 and ${f2(c.poorRoomDays)} without. ` +
+				`The poorest tenth by holdings lived at ${f2(b.poorH)} R a day in the drought with Law 5 and ${f2(c.poorH)} without; by Aven output, ${f2(b.poorL)} and ${f2(c.poorL)}. ` +
 				`Owner-only dividends paid ${f2(b.strictInDrought)}× their basic bundle at worst with Law 5, and ${f2(c.strictInDrought)}× without. ` +
 				`Person-days short: ${b.shortPD} with Law 5, ${c.shortPD} without.`
 			);
@@ -411,9 +444,9 @@ export const EXPERIMENTS = {
 		pass(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return {
-				pass: b.shortPD === 0 && b.poorWaterBar > 1 && b.strictInDrought >= 1,
-				claim: 'With Law 5 at 20 %, nobody is short, the poorest limit bar stays above the water price, and dividends alone pay the owner-only cohort’s basics through the drought.',
-				evidence: `20 %: short ${b.shortPD} person-days, lowest bar ${f2(b.poorWaterBar)}× the price, owner-only dividends ≥ ${f2(b.strictInDrought)}× the bundle. 0 %: short ${c.shortPD}, bar ${f2(c.poorWaterBar)}×, dividends ${f2(c.strictInDrought)}×.`
+				pass: b.shortPD === 0 && b.poorRoomDays >= 1 && b.strictInDrought >= 1 && b.strictInDrought > c.strictInDrought,
+				claim: 'With Law 5 at 20 %, nobody is short, everyone can still pay at least a day of basics each day, and dividends alone pay the owner-only cohort’s basics through the drought, which they do not at 0 %. (Law 5’s work here is the owner-only cohort’s income; the poorest tenth’s levels in both worlds are in the numbers.)',
+				evidence: `20 %: short ${b.shortPD} person-days, lowest room ${f2(b.poorRoomDays)} days of the bundle, owner-only dividends ≥ ${f2(b.strictInDrought)}× the bundle. 0 %: short ${c.shortPD}, room ${f2(c.poorRoomDays)} days, dividends ${f2(c.strictInDrought)}×.`
 			};
 		}
 	},
@@ -442,6 +475,10 @@ export const EXPERIMENTS = {
 		],
 		takeaway(rb, rc) {
 			const b = rb.values, c = rc.values;
+			return c.ownerShort > 0 ? `Living on dividends alone, the owner-only blobs went short until day ${c.lastShortDay}; spending some of what they hold as well, they were ${b.ownerShort > 0 ? `short on ${f0(b.ownerShort)} person-days` : 'never short'}.` : `The owner-only blobs were never short, even on dividends alone, which paid their basics every day from day ${b.strictFrom}.`;
+		},
+		numbers(rb, rc) {
+			const b = rb.values, c = rc.values;
 			return (
 				(c.ownerShort > 0 ? `On dividends only, the owner-only blobs were short ${c.ownerShort} person-days, the last on day ${c.lastShortDay}. ` : `On dividends only, the owner-only blobs were never short of a basic. `) +
 				`Spending some of what they hold as well, they were short ${b.ownerShort} person-days. ` +
@@ -463,7 +500,11 @@ export const EXPERIMENTS = {
 		id: 'X3',
 		question: 'Where does the MIND end up?',
 		ruleChanged: 'Treasuries pay their surplus above the 270-day reserve out for Aven work proposals (base) vs keep it (changed).',
-		guesses: ['With payout, people hold most of all MIND (the paper: 94 %). Without it, the treasuries hold most (the paper: 30 % for people).', 'Law 5 still pays people a fifth of every sale, so the gap is small.', 'Without payout, the owner-only cohort gets smaller dividends, because people own less.'],
+		guesses: [
+			{ text: 'With payout, people hold most of all MIND. Without it, the treasuries hold most.', check: (rb, rc) => rb.values.peopleShare > 0.5 && rc.values.treShare > 0.5 },
+			{ text: 'Law 5 still pays people a fifth of every sale, so the gap is small.', check: (rb, rc) => rb.values.peopleShare - rc.values.peopleShare < 0.1 },
+			{ text: 'Without payout, the owner-only cohort gets smaller dividends, because people own less.', check: (rb, rc) => rc.values.strictMed < rb.values.strictMed }
+		],
 		people: PAGE_PEOPLE,
 		years: 8,
 		base: { payout: true },
@@ -480,6 +521,10 @@ export const EXPERIMENTS = {
 			{ id: 'p3', label: 'Proposition 3 holds (1 = yes)', of: (w, p) => (p.pass ? 1 : 0) }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `With payout, people ended up holding ${pc0(b.peopleShare)} of all MIND; when treasuries kept their surplus, only ${pc0(c.peopleShare)}.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`With payout, people held ${pct(b.peopleShare)} of all MIND at the end; when treasuries kept their surplus, ${pct(c.peopleShare)}. ` +
@@ -501,7 +546,10 @@ export const EXPERIMENTS = {
 		id: 'X4',
 		question: 'Does inequality fade?',
 		ruleChanged: 'Melt 7 % a year (base) vs 0 % (changed). In both worlds, holdings are made as unequal as Germany’s (Gini 0.72) at the start of year 9.',
-		guesses: ['With the melt, the Gini falls from about 0.7 to below 0.5 within seven years. Without it, it barely moves.', 'Without the melt, the equal HEARTS still dilute the old fortunes, only more slowly.'],
+		guesses: [
+			{ text: 'With the melt, the Gini falls from about 0.7 to below 0.5 within seven years. Without it, it barely moves.', check: (rb, rc) => rb.values.giniEnd < 0.5 && rc.values.giniAfter - rc.values.giniEnd < 0.05 },
+			{ text: 'Without the melt, the equal HEARTS still dilute the old fortunes, only more slowly.', check: (rb, rc) => rc.values.giniEnd < rc.values.giniAfter - 0.02 && rc.values.giniEnd > rb.values.giniEnd }
+		],
 		people: PAGE_PEOPLE,
 		years: 15,
 		base: { melt: 0.07, shocks: [{ kind: 'germany', day: GERMANY_DAY, days: 1 }] },
@@ -516,6 +564,10 @@ export const EXPERIMENTS = {
 			{ id: 'Lpoor', label: 'poorest holdings decile, last year', of: (w) => meanOf(w, 'decH', ...lastYear(w), 0) }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `After the shock the holdings Gini fell from ${f2(b.giniAfter)} to ${f2(b.giniEnd)} with the melt, and only to ${f2(c.giniEnd)} without it.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`The shock raised the Gini of holdings to ${f2(b.giniAfter)}. ` +
@@ -536,7 +588,11 @@ export const EXPERIMENTS = {
 		id: 'X5',
 		question: 'What if a food COOP fails?',
 		ruleChanged: 'Two food COOPs at genesis (base) vs one (changed). In both worlds the food COOP AGRI fails on day 300: its output drops to 10 % for a year.',
-		guesses: ['With one food COOP, people go short until the plants find a new COOP. With two, the other seller covers.', 'The other seller is too small to cover a whole forest, so both worlds go short for a while.', 'The audit sends the failing COOP into receivership within two months; its plants go on making food.'],
+		guesses: [
+			{ text: 'With one food COOP, people go short until the plants find a new COOP. With two, the other seller covers.', check: (rb, rc) => rc.values.foodShort > 0 && rb.values.foodShort === 0 },
+			{ text: 'The other seller is too small to cover a whole forest, so both worlds go short for a while.', check: (rb, rc) => rb.values.foodShort > 0 && rc.values.foodShort > 0 },
+			{ text: 'The audit sends the failing COOP into receivership within two months; its plants go on making food.', check: (rb) => rb.values.exitDay >= 0 && rb.values.exitDay <= 61 }
+		],
 		people: PAGE_PEOPLE,
 		years: 3,
 		base: { shocks: [{ kind: 'coopFail', coop: 'AGRI', day: FAIL_DAY, days: 365, factor: 0.1 }] },
@@ -551,6 +607,10 @@ export const EXPERIMENTS = {
 			{ id: 'foodPeak', label: 'food price peak ÷ before the failure', of: (w) => maxOf(w, 'pbar', FAIL_DAY, FAIL_DAY + 180, FOOD) / meanOf(w, 'pbar', FAIL_DAY - 60, FAIL_DAY, FOOD) }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `When a food COOP failed, people were short of food on ${f0(b.foodShort)} person-days with two food COOPs and on ${f0(c.foodShort)} with one.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`With two food COOPs, people were short of food ${f0(b.foodShort)} person-days; with one, ${f0(c.foodShort)}. ` +
@@ -572,7 +632,10 @@ export const EXPERIMENTS = {
 		id: 'X6',
 		question: 'Can four friends cheat?',
 		ruleChanged: 'Avens send HEARTS by delivered output per HEART (base) vs by the MIND’s pool price (changed). In both worlds, four friends open a COOP that makes nothing on day 365. They pay themselves 90 % of its treasury and buy its MIND to push its price.',
-		guesses: ['Following delivered output, the Avens send the ring almost nothing. Following the pool price, the ring draws a few percent of all HEARTS (the paper: 3.8 % vs 1.6 %).', 'The ring’s COOP never builds a plant, so receivership closes it within a year either way.'],
+		guesses: [
+			{ text: 'Following delivered output, the Avens send the ring almost nothing. Following the pool price, the ring draws a few percent of all HEARTS.', check: (rb, rc) => rb.values.ringShare < 0.01 && rc.values.ringShare >= 0.02 },
+			{ text: 'The ring’s COOP never builds a plant, so receivership closes it within a year either way.', check: (rb, rc) => [rb, rc].every((r) => r.values.ringDied > 0 && r.values.ringDied - RING_DAY <= Y) }
+		],
 		people: PAGE_PEOPLE,
 		years: 2,
 		base: { allocBy: 'output', shocks: [{ kind: 'ring', day: RING_DAY, days: RING_DAYS, size: 4 }] },
@@ -587,6 +650,10 @@ export const EXPERIMENTS = {
 			{ id: 'shortPD', label: 'person-days short of a basic', of: (w) => shortPD(w) }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `Avens that follow delivered output sent the ring ${pct(b.ringShare)} of other people’s HEARTS; Avens that follow the pool price sent it ${pct(c.ringShare)}.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`Following delivered output, Avens sent the ring ${pct(b.ringShare)} of others’ HEARTS; following the pool price, ${pct(c.ringShare)}. ` +
@@ -608,7 +675,10 @@ export const EXPERIMENTS = {
 		id: 'X7',
 		question: 'Who keeps the surplus?',
 		ruleChanged: 'Two competing COOPs per good at genesis (base) vs one (changed).',
-		guesses: ['With one seller, basics sell well above full cost and the COOP keeps the surplus. With two, the price falls toward cost and buyers keep it.', 'Law 3 founds a second seller where one is dear, so the gap closes within a few years.'],
+		guesses: [
+			{ text: 'With one seller, basics sell well above full cost and the COOP keeps the surplus. With two, the price falls toward cost and buyers keep it.', check: (rb, rc) => rc.values.markup > 1.2 && rb.values.markup < rc.values.markup && rc.values.sellerShare > rb.values.sellerShare },
+			{ text: 'Law 3 founds a second seller where one is dear, so the gap closes within a few years.', check: (rb, rc) => rc.values.founded > 0 && rc.values.markupLast <= 1.1 * rb.values.markupLast }
+		],
 		people: PAGE_PEOPLE,
 		years: 6,
 		base: { coopsPerGood: 2 },
@@ -625,6 +695,10 @@ export const EXPERIMENTS = {
 			{ id: 'founded', label: 'COOPs founded (Law 3)', of: (w) => w.events.filter((e) => e.kind === 'found').length }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `With two sellers per good, basics sold at ${sig(b.markup)}× their full cost; with one seller, at ${sig(c.markup)}×.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`With two sellers per good, basics sold at ${f2(b.markup)}× their full cost; with one, at ${f2(c.markup)}×. ` +
@@ -646,7 +720,10 @@ export const EXPERIMENTS = {
 		id: 'X8',
 		question: 'Which price rule feeds everyone?',
 		ruleChanged: 'Forward-margin price with Mark-0’s guard (base) vs Primer’s adaptive price (changed): each seller asks 3 % more after a day it sold out, and 3 % less after a day with stock left.',
-		guesses: ['The forward margin reads need and the harvest ahead, so nobody goes short. Primer’s price lags behind the seasons.', 'Primer’s price swings more from day to day.'],
+		guesses: [
+			{ text: 'The forward margin reads need and the harvest ahead, so nobody goes short. Primer’s price lags behind the seasons.', check: (rb, rc) => rb.values.shortPD === 0 && rc.values.shortPD > 0 },
+			{ text: 'Primer’s price swings more from day to day.', check: (rb, rc) => rc.values.swing > rb.values.swing }
+		],
 		people: PAGE_PEOPLE,
 		years: 6,
 		base: { priceRule: 'forward' },
@@ -661,6 +738,10 @@ export const EXPERIMENTS = {
 			{ id: 'exits', label: 'receiverships', of: (w) => w.events.filter((e) => e.kind === 'receivership').length }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `People were short on ${f0(b.shortPD)} person-days with the forward margin and ${f0(c.shortPD)} with Primer’s adaptive price, whose basics’ prices swung ${c.swing > b.swing ? 'more' : 'less'} from day to day.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`With the forward margin, ${f0(b.shortPD)} person-days were short; with Primer’s adaptive price, ${f0(c.shortPD)}. ` +
@@ -681,7 +762,7 @@ export const EXPERIMENTS = {
 	X9: {
 		id: 'X9',
 		question: 'Does more money make us richer?',
-		ruleChanged: '24 (base) vs 48 (changed) HEARTS a day for every person.',
+		ruleChanged: '24 (base) vs 48 (changed) HEARTS a day for every person. The Aven rate card is a number in R indexed to the HEARTS issued a day (HEARTS a day ÷ 24), so it doubles too. HEARTS never pay for goods.',
 		guesses: ['Prices in R double; what people get stays the same within 1 %.', 'People get a little more, because more MIND flows into the COOPs and they build sooner.'],
 		people: PAGE_PEOPLE,
 		years: 6,
@@ -697,6 +778,11 @@ export const EXPERIMENTS = {
 		],
 		takeaway(rb, rc) {
 			const b = rb.values, c = rc.values;
+			const worst = Math.max(...CONSUMER.map((g) => Math.abs(rel(c['cons_' + GOOD_IDS[g]], b['cons_' + GOOD_IDS[g]]))).filter(Number.isFinite));
+			return `With twice the HEARTS, food’s price in R went ×${sig(c.price_food / b.price_food)} while what people got of any good changed by at most ${pct(worst)}.`;
+		},
+		numbers(rb, rc) {
+			const b = rb.values, c = rc.values;
 			const dev = CONSUMER.map((g) => Math.abs(rel(c['cons_' + GOOD_IDS[g]], b['cons_' + GOOD_IDS[g]])));
 			const worst = Math.max(...dev.filter(Number.isFinite));
 			return (
@@ -710,7 +796,7 @@ export const EXPERIMENTS = {
 			const worst = rows.reduce((m, r) => (Math.abs(r[1]) > Math.abs(m[1]) ? r : m), ['', 0]);
 			return {
 				pass: rows.every((r) => Math.abs(r[1]) <= 0.01) && Math.abs(rel(c.Lmean, b.Lmean)) <= 0.01,
-				claim: 'Doubling HEARTS changes only prices: real consumption of every good, and the mean living standard, within ±1 %.',
+				claim: 'Doubling HEARTS changes only prices: real consumption of every good, and the mean living standard, within ±1 %. This holds because the Aven rate card (in R) is indexed to the HEARTS issued a day; with the card fixed in R it does not (the proof suite’s B28 reports that world).',
 				evidence: `largest change: ${worst[0]} ${pct(worst[1])}; living standard ${pct(rel(c.Lmean, b.Lmean))}; ${rows.map((r) => `${r[0]} ${pct(r[1])}`).join(', ')}`
 			};
 		}
@@ -725,22 +811,26 @@ export const EXPERIMENTS = {
 		years: 10,
 		base: { geothermal: true, rd: true },
 		changed: { geothermal: false, rd: false },
-		charts: ['energy a person next to each decile’s living standard', 'where the energy goes', 'innovation: share of the way to the physical floors'],
+		charts: ['energy a person next to each decile’s living standard', 'where the energy goes', 'how far recipes have come toward their physical best'],
 		metrics: [
 			{ id: 'ePP', label: 'electricity used a person a day (kWh), last year', of: (w) => meanOf(w, 'ePP', ...lastYear(w)) },
 			{ id: 'surplusPP', label: 'surplus energy a person a day (kWh), last year', of: (w) => meanOf(w, 'surplusPP', ...lastYear(w)) },
 			{ id: 'rdMwh', label: 'R&D energy, all years (MWh)', of: (w) => sumOf(w, 'rdKwh', 0) / 1000 },
-			{ id: 'learn', label: 'innovation: share of the way to the physical floors', of: (w) => learnProgress(w) },
+			{ id: 'learn', label: 'how far recipes have come toward their physical best', of: (w) => learnProgress(w) },
 			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) },
 			{ id: 'Lpoor', label: 'poorest Aven decile, last year', of: (w) => meanOf(w, 'decA', ...lastYear(w), 0) },
 			{ id: 'Lpoor2', label: 'poorest Aven decile, year 2', of: (w) => meanOf(w, 'decA', Y, 2 * Y, 0) },
-			{ id: 'Lceil', label: 'physics ceiling of the living standard, last year', of: (w) => meanOf(w, 'Lceil', ...lastYear(w)) },
+			{ id: 'Lceil', label: 'capacity per person (mean) of the living standard, last year', of: (w) => meanOf(w, 'Lceil', ...lastYear(w)) },
 			{ id: 'shortPD', label: 'person-days short of a basic', of: (w) => shortPD(w) }
 		],
 		takeaway(rb, rc) {
 			const b = rb.values, c = rc.values;
+			return `With geothermal and R&D the poorest tenth went from ${sig(b.Lpoor2)} to ${sig(b.Lpoor)} R a day; without them, from ${sig(c.Lpoor2)} to ${sig(c.Lpoor)}.`;
+		},
+		numbers(rb, rc) {
+			const b = rb.values, c = rc.values;
 			return (
-				`With geothermal and R&D, a person used ${f2(b.ePP)} kWh a day, and ${f2(b.surplusPP)} kWh of surplus fed innovation (${pct(b.learn)} of the way to the floors). ` +
+				`With geothermal and R&D, a person used ${f2(b.ePP)} kWh a day, and ${f2(b.surplusPP)} kWh of surplus fed R&D (recipes ${pct(b.learn)} of the way to their physical best). ` +
 				`Without, ${f2(c.ePP)} kWh and ${pct(c.learn)}. ` +
 				`The poorest decile went from ${f2(b.Lpoor2)} to ${f2(b.Lpoor)} with surplus energy, and from ${f2(c.Lpoor2)} to ${f2(c.Lpoor)} without. ` +
 				`Person-days short: ${f0(b.shortPD)} vs ${f0(c.shortPD)}.`
@@ -750,8 +840,8 @@ export const EXPERIMENTS = {
 			const b = rb.values, c = rc.values;
 			return {
 				pass: b.Lmean > c.Lmean && b.Lpoor > c.Lpoor && b.learn > c.learn,
-				claim: 'Living standards (mean and poorest decile) end higher with surplus energy and R&D than without, and innovation advances only with it.',
-				evidence: `mean ${f2(b.Lmean)} vs ${f2(c.Lmean)}; poorest decile ${f2(b.Lpoor)} vs ${f2(c.Lpoor)}; innovation ${pct(b.learn)} vs ${pct(c.learn)}`
+				claim: 'Living standards (mean and poorest decile) end higher with surplus energy and R&D than without, and recipes get better only with it.',
+				evidence: `mean ${f2(b.Lmean)} vs ${f2(c.Lmean)}; poorest decile ${f2(b.Lpoor)} vs ${f2(c.Lpoor)}; recipes ${pct(b.learn)} vs ${pct(c.learn)} of the way to their physical best`
 			};
 		}
 	},
@@ -760,16 +850,20 @@ export const EXPERIMENTS = {
 		id: 'X11',
 		question: 'What stops a small village first?',
 		ruleChanged: '250 blobs (base) vs 100 blobs (changed) on the same hex, built for 250, with dome solar and no geothermal stage yet (world model 5.5).',
-		guesses: ['With 250, energy binds first (winter), then wood for building; water binds only in a dry year.', 'With 100, the same hex is roomy: fewer limits bind, and nobody is short.', 'MIND never binds a basic in either world.'],
+		guesses: [
+			{ text: 'With 250, energy binds first (in winter): someone is short of energy on more days than of water.', check: (rb) => rb.values.energyShortDays > 0 && rb.values.energyShortDays >= rb.values.waterShortDays },
+			{ text: 'With 100, the same hex is roomy: fewer limits bind, and nobody is short.', check: (rb, rc) => rc.values.shortPD === 0 },
+			{ text: 'MIND never binds a basic in either world.', check: (rb, rc) => rb.values.mindBinds === 0 && rc.values.mindBinds === 0 }
+		],
 		people: 250,
 		years: 6,
 		base: { people: 250, fieldPeople: 250, geothermal: false },
 		changed: { people: 100, fieldPeople: 250, geothermal: false },
-		charts: ['binding-limit badge of each good', 'energy a person and the physics ceiling', 'person-days short'],
+		charts: ['binding-limit badge of each good', 'energy a person and the capacity per person', 'person-days short'],
 		metrics: [
 			{ id: 'shortPD', label: 'person-days short of a basic', of: (w) => shortPD(w) },
 			{ id: 'shortPP', label: 'days short a person (person-days ÷ people)', of: (w) => shortPD(w) / w.N },
-			{ id: 'mindBinds', label: 'days MIND bound a basic while physics allowed need', of: (w, p) => p.abundance.mindBindsBasics },
+			{ id: 'mindBinds', label: 'day-goods (a day and a basic) MIND bound a basic while physics allowed need', of: (w, p) => p.abundance.mindBindsBasics },
 			{ id: 'energyBadge', label: 'share of days energy’s badge read “energy”', of: (w) => badgeShare(w, ENERGY, LIMIT.energy) },
 			{ id: 'energyShortDays', label: 'days someone was short of energy', of: (w) => { let n = 0; for (let d = 1; d < w.rec.n; d++) if (w.rec.shortN[d * 4 + ENERGY] > 0) n++; return n; } },
 			{ id: 'waterShortDays', label: 'days someone was short of water', of: (w) => { let n = 0; for (let d = 1; d < w.rec.n; d++) if (w.rec.shortN[d * 4 + WATER] > 0) n++; return n; } },
@@ -779,9 +873,14 @@ export const EXPERIMENTS = {
 		],
 		takeaway(rb, rc) {
 			const b = rb.values, c = rc.values;
+			// person-days short of any basic in both worlds first (energy days alone hid the beds and the water)
+			return `With 250 blobs, ${f0(b.shortPD)} person-days were short of a basic (${f2(b.shortPP)} days a person; someone short of energy on ${f0(b.energyShortDays)} days); with 100 on the same hex, ${f0(c.shortPD)} person-days (${f2(c.shortPP)} a person; energy on ${f0(c.energyShortDays)} days). MIND ${b.mindBinds + c.mindBinds === 0 ? 'never bound a basic' : `bound a basic on ${b.mindBinds} and ${c.mindBinds} day-goods`}.`;
+		},
+		numbers(rb, rc) {
+			const b = rb.values, c = rc.values;
 			return (
 				`With 250 blobs, someone was short of energy on ${b.energyShortDays} days and of water on ${b.waterShortDays}. With 100, on ${c.energyShortDays} and ${c.waterShortDays} days. ` +
-				`MIND bound a basic on ${b.mindBinds} days with 250 and ${c.mindBinds} with 100. ` +
+				`MIND bound a basic on ${b.mindBinds} day-goods with 250 and ${c.mindBinds} with 100. ` +
 				`Wood was bound by ${b.woodTop} (250) and ${c.woodTop} (100).`
 			);
 		},
@@ -790,7 +889,7 @@ export const EXPERIMENTS = {
 			return {
 				pass: b.mindBinds === 0 && c.mindBinds === 0 && c.shortPP <= b.shortPP,
 				claim: 'Physics, not money, sets the limit: MIND never binds a basic while physics allows need, and fewer people on the same hex are short less.',
-				evidence: `MIND-bound basic days ${b.mindBinds} (250) and ${c.mindBinds} (100); days short a person ${f2(b.shortPP)} vs ${f2(c.shortPP)}; short days by limit (250): ${JSON.stringify(shortDaysByLimit(rb.world ?? { rec: { n: 0 } }))}`
+				evidence: `MIND-bound basic day-goods ${b.mindBinds} (250) and ${c.mindBinds} (100); person-days short of a basic ${f0(b.shortPD)} (250) and ${f0(c.shortPD)} (100); days short a person ${f2(b.shortPP)} vs ${f2(c.shortPP)}; short days by limit (250): ${JSON.stringify(shortDaysByLimit(rb.world ?? { rec: { n: 0 } }))}`
 			};
 		}
 	},
@@ -799,7 +898,10 @@ export const EXPERIMENTS = {
 		id: 'X12',
 		question: 'Do newcomers eat?',
 		ruleChanged: 'A constant population (base) vs +2 % a year (changed), on the same fixed land. Newcomers arrive with an Aven and nothing held.',
-		guesses: ['Ground rent rises as land fills up. Newcomers are never short: their first HEARTS pay the basic bundle on day 1.', 'Living standards a person grow more slowly with growth, because capital must be built for the newcomers.'],
+		guesses: [
+			{ text: 'Ground rent rises as land fills up. Newcomers are never short: the MIND from their first HEARTS pays the basic bundle on day 1.', check: (rb, rc) => rc.values.rentEnd > rb.values.rentEnd && rc.values.newcomerShort === 0 },
+			{ text: 'Each person’s living standard grows more slowly with growth, because capital must be built for the newcomers.', check: (rb, rc) => rc.values.Lmean < rb.values.Lmean }
+		],
 		people: PAGE_PEOPLE,
 		years: 8,
 		base: { popGrowth: 0 },
@@ -816,6 +918,10 @@ export const EXPERIMENTS = {
 			{ id: 'Lpoor', label: 'poorest holdings decile, last year', of: (w) => meanOf(w, 'decH', ...lastYear(w), 0) }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `The village grew to ${c.N} people; newcomers were ${c.newcomerShort > 0 ? `short on ${f0(c.newcomerShort)} person-days` : 'never short'}, and ground rent ended ${sig(c.rentEnd / b.rentEnd)}× the rent with a constant population.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`With growth the village went from ${PAGE_PEOPLE} to ${c.N} people. Newcomers lived ${f0(c.newcomerPD)} person-days in their first three years and were short on ${f0(c.newcomerShort)}. ` +
@@ -837,7 +943,10 @@ export const EXPERIMENTS = {
 		id: 'X13',
 		question: 'Private land or City land?',
 		ruleChanged: 'All land belongs to the City COOP and is leased for ground rent (base) vs land owned by people, unequally (a Pareto draw), with the rent paid to them (changed).',
-		guesses: ['With private land the holdings Gini rises toward 0.5; with City land it stays near 0.3.', 'Private landowners live better, renters are not short.'],
+		guesses: [
+			{ text: 'With private land the holdings Gini rises toward 0.5; with City land it stays near 0.3.', check: (rb, rc) => rc.values.giniEnd >= 0.45 && Math.abs(rb.values.giniEnd - 0.3) <= 0.1 },
+			{ text: 'Private landowners live better, renters are not short.', check: (rb, rc) => rc.values.Ltop > rb.values.Ltop && rc.values.shortPD === 0 }
+		],
 		people: PAGE_PEOPLE,
 		years: 8,
 		base: { landRule: 'city' },
@@ -852,6 +961,10 @@ export const EXPERIMENTS = {
 			{ id: 'rentR', label: 'ground rent paid, R a person a day, last year', of: (w) => { const Yr = w.xt.years[w.xt.years.length - 1]; return Yr.rentR / Yr.days / w.N; } }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `The holdings Gini ended at ${f2(b.giniEnd)} with City land and at ${f2(c.giniEnd)} with private land.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`With City land the holdings Gini ended at ${f2(b.giniEnd)}; with private land, at ${f2(c.giniEnd)}. ` +
@@ -871,8 +984,11 @@ export const EXPERIMENTS = {
 	X14: {
 		id: 'X14',
 		question: 'What happens on day 1?',
-		ruleChanged: 'The bootstrap of §11.4 on (base: each Aven’s first HEARTS go to the basics COOPs it buys from, and pools fill on day 0) vs off (changed: first HEARTS into three COOPs of the Aven’s taste).',
-		guesses: ['Without the bootstrap, most people go short on day 1, because they hold no MIND the sellers take and the pools are empty (the paper: 94 %).', 'With it, nobody is short from day 1.'],
+		ruleChanged: 'The bootstrap on (base: each Aven’s first HEARTS go to the basics COOPs it buys from, and pools fill on day 0) vs off (changed: first HEARTS into three COOPs of the Aven’s taste).',
+		guesses: [
+			{ text: 'Without the bootstrap, most people go short on the first days, because they hold no MIND the sellers take and the pools are empty.', check: (rb, rc) => Math.max(rc.values.short0, rc.values.short1) > 0.5 },
+			{ text: 'With it, nobody is short from day 1.', check: (rb) => rb.values.shortPD === 0 }
+		],
 		people: PAGE_PEOPLE,
 		years: 1,
 		base: { bootstrap: true },
@@ -886,6 +1002,10 @@ export const EXPERIMENTS = {
 			{ id: 'minMet30', label: 'lowest share of any basic met in days 1–30', of: (w) => Math.min(...[0, 1, 2, 3].map((b) => minOf(w, 'minMet', 1, 31, b))) }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `${b.short0 > 0 ? `With the bootstrap ${pc0(b.short0)} of people` : 'With the bootstrap nobody'} went short on day 0; without it, ${pc0(c.short0)} did.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`With the bootstrap, ${pct(b.short0)} of people were short on day 0 and ${pct(b.short1)} on day 1. Without it, ${pct(c.short0)} and ${pct(c.short1)}. ` +
@@ -911,16 +1031,20 @@ export const EXPERIMENTS = {
 		years: 6,
 		base: { springSites: 2 },
 		changed: { springSites: 4 },
-		charts: ['spring hours a person', 'spring price', 'decile living standards and the physics ceiling'],
+		charts: ['spring hours a person', 'spring price', 'decile living standards and the capacity per person'],
 		metrics: [
 			{ id: 'spring', label: 'spring hours a person a day, last year', of: (w) => meanOf(w, 'cons', ...lastYear(w), SPRING) },
 			{ id: 'springPrice', label: 'spring price (R an hour), last year', of: (w) => meanOf(w, 'pbar', ...lastYear(w), SPRING) },
 			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) },
-			{ id: 'Lceil', label: 'physics ceiling of the living standard, last year', of: (w) => meanOf(w, 'Lceil', ...lastYear(w)) },
+			{ id: 'Lceil', label: 'capacity per person (mean) of the living standard, last year', of: (w) => meanOf(w, 'Lceil', ...lastYear(w)) },
 			{ id: 'Lpoor', label: 'poorest Aven decile, last year', of: (w) => meanOf(w, 'decA', ...lastYear(w), 0) },
 			{ id: 'badge', label: 'share of days the spring’s badge read “nature”', of: (w) => badgeShare(w, SPRING, LIMIT.nature) }
 		],
 		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `Doubling the warm ponds took spring time from ${sig(b.spring)} to ${sig(c.spring)} hours a person a day and changed the mean living standard by ${pct(rel(c.Lmean, b.Lmean))}.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`Doubling the warm ponds took spring time from ${f2(b.spring)} to ${f2(c.spring)} hours a person a day, and its price from ${f2(b.springPrice)} to ${f2(c.springPrice)} R. ` +
@@ -932,7 +1056,7 @@ export const EXPERIMENTS = {
 			return {
 				pass: c.spring > b.spring && c.Lmean > b.Lmean && c.Lpoor > b.Lpoor,
 				claim: 'Doubling the binding physical limit raises living standards: more of the good, a higher mean living standard and a higher one for the poorest decile.',
-				evidence: `spring ${f2(b.spring)} → ${f2(c.spring)} h a person a day (badge “nature” on ${pct(b.badge)} of base days), mean ${f2(b.Lmean)} → ${f2(c.Lmean)}, poorest decile ${f2(b.Lpoor)} → ${f2(c.Lpoor)}; physics ceiling ${f2(b.Lceil)} → ${f2(c.Lceil)}`
+				evidence: `spring ${f2(b.spring)} → ${f2(c.spring)} h a person a day (badge “nature” on ${pct(b.badge)} of base days), mean ${f2(b.Lmean)} → ${f2(c.Lmean)}, poorest decile ${f2(b.Lpoor)} → ${f2(c.Lpoor)}; capacity per person ${f2(b.Lceil)} → ${f2(c.Lceil)}`
 			};
 		}
 	},
@@ -959,12 +1083,16 @@ export const EXPERIMENTS = {
 			{ id: 'shortPD', label: 'person-days short of a basic (after day 0)', of: (w) => shortPD(w) },
 			{ id: 'shortByLimit', label: 'short days by basic and binding limit', of: (w) => JSON.stringify(shortDaysByLimit(w)) },
 			{ id: 'p3', label: 'P3 (deciles, with the shocks’ two-year recovery excused)', of: (w, p) => (p.P3.pass ? 1 : 0) },
-			{ id: 'worstFall', label: 'largest fall of any decile (trailing year) outside the excused windows', of: (w, p) => Math.max(...p.P3.deciles.map((d) => d.worstDrawdown?.fall ?? 0)) },
+			{ id: 'worstFall', label: 'largest fall of any decile (trailing year or season against season) outside the excused windows', of: (w, p) => Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)) },
 			{ id: 'Lmin', label: 'lowest living standard of anyone, any day', of: (w) => minOf(w, 'Lmin', 1) },
 			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) },
 			{ id: 'exits', label: 'receiverships', of: (w) => w.events.filter((e) => e.kind === 'receivership').length }
 		],
 		takeaway(rb, rc) {
+			const c = rc.values;
+			return `Through the five shocks ${c.shortPD > 0 ? `people were short on ${f0(c.shortPD)} person-days` : 'nobody went short of a basic'}, and ${c.p3 ? 'every tenth was back within two years' : 'not every tenth was back within two years'}.`;
+		},
+		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
 				`Through the shocks, ${f0(c.shortPD)} person-days were short of a basic (${f0(b.shortPD)} without shocks). ` +
@@ -982,6 +1110,9 @@ export const EXPERIMENTS = {
 		}
 	}
 };
+
+/** the verdict with the run's numbers (each experiment's `numbers` sentences) added to its evidence */
+const withNumbers = (v, more) => (more ? { ...v, evidence: `${String(v.evidence).replace(/[.\s]+$/, '')}. ${more}` } : v);
 
 /** the basics' price over full cost and the sellers' share, over the whole run */
 function markupAll(w) {
@@ -1035,7 +1166,7 @@ export function startExperiment(exp, opts = {}) {
 				id: exp.id,
 				question: exp.question,
 				ruleChanged: exp.ruleChanged,
-				guesses: exp.guesses,
+				guesses: (exp.guesses ?? []).map(guessText),
 				charts: exp.charts ?? [],
 				years,
 				people: { base: base.cfg.people, changed: changed.cfg.people },
@@ -1043,8 +1174,9 @@ export function startExperiment(exp, opts = {}) {
 				metrics: exp.metrics.map((m) => ({ id: m.id, label: m.label, base: rb.values[m.id], changed: rc.values[m.id] })),
 				base: rb,
 				changed: rc,
+				// one plain sentence; every other number goes with the evidence
 				takeaway: exp.takeaway(rb, rc),
-				verdict: exp.pass(rb, rc),
+				verdict: withNumbers(exp.pass(rb, rc), exp.numbers?.(rb, rc)),
 				ms: Date.now() - t0
 			};
 			// the worlds themselves are not part of the result (they are large); the page holds them in the runner
@@ -1127,9 +1259,15 @@ export function summarize(w) {
 		learn: learnProgress(w),
 		floorMargin: floorMargin(w),
 		rdMwh: sumOf(w, 'rdKwh', 0) / 1000,
+		// electricity exported across the border for accelerators (B23), MWh over the run
+		exportMwh: (() => {
+			let s = 0;
+			for (let d = 0; d < rec.n; d++) s += (rec.exportPP?.[d] ?? 0) * (rec.N?.[d] ?? w.N);
+			return s / 1000;
+		})(),
 		receiverships: w.events.filter((e) => e.kind === 'receivership').map((e) => ({ day: e.day, coop: e.coop, heir: e.heir, why: e.why })),
 		founded: w.events.filter((e) => e.kind === 'found').length,
-		newcomers: { pd: xt.newcomerPD, short: xt.newcomerShortPD },
+		newcomers: { pd: xt.newcomerPD, short: xt.newcomerShortPD, ...newcomerStrict(w, xt.newStrict) },
 		coopHearts: xt.coopHearts,
 		ring: w.ring ? { share: w.ring.heartsAll ? w.ring.heartsIn / w.ring.heartsAll : NaN, people: w.ring.members.length / w.N, wealth0: w.ring.wealth0, wealth1: w.ring.wealth1 ?? NaN, died: w.coops[w.ring.k].died } : null,
 		badges: Object.fromEntries(GOOD_IDS.map((id, g) => [id, topBadge(w, g)])),
@@ -1139,6 +1277,23 @@ export function summarize(w) {
 	};
 }
 
+/**
+ * The owner-only newcomers' strict test (cfg.newcomers): from how many days after joining their dividends alone paid
+ * the basic bundle every day to the end (−1: never), and the lowest ratio in each year after they joined.
+ */
+function newcomerStrict(w, r) {
+	if (!r?.length) return {};
+	let from = -1;
+	if (r[r.length - 1] >= 1) {
+		from = r.length - 1;
+		while (from > 0 && r[from - 1] >= 1) from--;
+	}
+	const byYear = [];
+	for (let y = 0; y * Y < r.length; y++) byYear.push(Math.min(...r.slice(y * Y, (y + 1) * Y)));
+	return { joined: w.cfg.newcomers.day, n: w.newIds.length, strictFrom: from, ratioByYear: byYear };
+}
+
+const slimDecile = (d) => ({ by: d.by, decile: d.decile, pass: d.pass, first: d.first, last: d.last, ceiling: d.ceiling, rises: d.rises, nearCeiling: d.nearCeiling, fall: d.fall, trailingFall: d.worstDrawdown?.fall, seasonalFall: d.seasonalFall?.fall ?? d.seasonalFall, windowsFailed: d.windowsFailed, fallFrom: d.worstDrawdown?.peakDay, fallTo: d.worstDrawdown?.day, net: d.worstNet?.change });
 /** Proposition 3's result without the long per-day lists (small enough to send between threads and write as JSON) */
 export function slimProp3(p) {
 	return {
@@ -1146,7 +1301,15 @@ export function slimProp3(p) {
 		days: p.days,
 		P1: p.P1,
 		P2: { pass: p.P2.pass, cohort: p.P2.cohort, strict: { ...p.P2.strict, lowestRatioByYear: undefined, medianRatioByYear: undefined }, normal: { pass: p.P2.normal.pass, failures: p.P2.normal.failures, firstFailures: p.P2.normal.firstFailures, lowestShareMet: p.P2.normal.lowestShareMet, holdingTrendDaysPerYear: p.P2.normal.holdingTrendDaysPerYear, lowestHoldingDaysByYear: p.P2.normal.lowestHoldingDaysByYear } },
-		P3: { pass: p.P3.pass, failed: p.P3.failed, netPass: p.P3.netPass, deciles: p.P3.deciles.map((d) => ({ by: d.by, decile: d.decile, pass: d.pass, first: d.first, last: d.last, ceiling: d.ceiling, rises: d.rises, nearCeiling: d.nearCeiling, fall: d.worstDrawdown?.fall, fallFrom: d.worstDrawdown?.peakDay, fallTo: d.worstDrawdown?.day, net: d.worstNet?.change })), coops: { pass: p.P3.coops.pass, alive: p.P3.coops.alive, founded: p.P3.coops.founded, receiverships: p.P3.coops.receiverships.length, shortAround: p.P3.coops.receiverships.reduce((a, r) => a + r.basicShortPersonDaysAround, 0), insolvent: p.P3.coops.insolventNow.length } },
+		P3: {
+			pass: p.P3.pass,
+			failed: p.P3.failed,
+			netPass: p.P3.netPass,
+			deciles: p.P3.deciles.map(slimDecile),
+			withoutCompute: { pass: p.P3.withoutCompute.pass, failed: p.P3.withoutCompute.failed, deciles: p.P3.withoutCompute.deciles.map(slimDecile) },
+			computeShare: p.P3.share,
+			coops: { pass: p.P3.coops.pass, alive: p.P3.coops.alive, founded: p.P3.coops.founded, receiverships: p.P3.coops.receiverships.length, shortAround: p.P3.coops.receiverships.reduce((a, r) => a + r.basicShortPersonDaysAround, 0), insolvent: p.P3.coops.insolventNow.length, coopDaysUnableToPay30: p.P3.coops.coopDaysUnableToPay30, unpaidR: p.P3.coops.unpaidR, unpaidShare: p.P3.coops.unpaidShare }
+		},
 		abundance: p.abundance
 	};
 }

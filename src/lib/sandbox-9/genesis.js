@@ -31,9 +31,10 @@ export const DEFAULTS = {
 	forestYield: 1,
 	/** each month's sun and rain drawn from the seed around the normals (true), or the normals every year (false) */
 	weather: true,
-	/** accelerators come in through the border for exported electricity (true), or the city is strictly closed and its
-	 * accelerators wear out (false) */
-	chipImport: true,
+	/** the euro border (world model call 12: closed in the proofs; only scenario B23 opens it): accelerators come in
+	 * through the border for exported electricity that would otherwise be curtailed (true), or the city is strictly
+	 * closed and the accelerators it holds are all it has (false, default) */
+	chipImport: false,
 	/** this hex's share of the village geothermal plant: on or off, and its stages */
 	geothermal: true,
 	geoStages: 1,
@@ -45,12 +46,15 @@ export const DEFAULTS = {
 	melt: 0.07,
 	/** HEARTS each person gets a day */
 	heartsPerDay: 24,
-	/** the Aven rate card and the starting ground rent are set in HEARTS (true: they scale with HEARTS a day ÷ 24), or
-	 * fixed in R (false: B28's sensitivity run) */
+	/** the Aven rate card and the starting ground rent are numbers in R indexed to the HEARTS issued a day (true: they
+	 * scale with HEARTS a day ÷ 24), or fixed in R (false: B28's sensitivity run). HEARTS never pay for anything */
 	rateIndexed: true,
 	/** a basic in short supply is shared by 'equal' caps (everyone's need before anyone's extras; the default) or in
 	 * 'proportion' to the orders (world model 4.3 step 7; B33 compares them) */
 	basicRation: 'equal',
+	/** with two food COOPs, the share of the food forest GREEN holds beside its growing dome (0: GREEN holds only the
+	 * growing dome, as world model 4.2 lists it) */
+	foodSplit: 0.4,
 	/** competing COOPs per good at genesis: 1, 2 or 4 */
 	coopsPerGood: 2,
 	/** per-good exceptions to coopsPerGood, by good id, e.g. { food: 1 } (null: none) */
@@ -184,7 +188,7 @@ function constants(cfg) {
 		need: [PERSON.food.v, PERSON.water.v, PERSON.energy.v, PERSON.bed.v],
 		sat: { [FOOD]: PERSON.satiation.food.v, [WATER]: PERSON.satiation.water.v, [ENERGY]: PERSON.satiation.energy.v, [BED]: 1, [GOODS_]: PERSON.satiation.goods.v, [SPRING]: PERSON.satiation.spring.v, [COMPUTE]: PERSON.satiation.compute.v },
 		extras: PERSON.extrasShare.v,
-		// the Aven rate card: set in HEARTS by default (rateIndexed), so it doubles when HEARTS double
+		// the Aven rate card: in R, indexed to the HEARTS issued a day by default (rateIndexed), so it doubles when HEARTS double
 		rateR: AVEN_RATE_R.v * idx,
 		rentIdx: idx,
 		// the first guesses for the day-0 prices (the fixed point in ../engine.js genesisPrices finds the real ones from
@@ -222,6 +226,8 @@ function constants(cfg) {
 		oreT: R.ore.tYearPerPit.v,
 		oreMax: R.ore.pitsMax.v * s,
 		sandT: R.sand.tYearPerPit.v,
+		oreTPit: R.ore.tPerPit.v,
+		sandTPit: R.sand.tPerPit.v,
 		sandMax: R.sand.pitsMax.v * s,
 		springHeat: R.spring.heatKwhPerHour.v,
 		chipKwh: CHIPS.kwhPerChip.v,
@@ -248,7 +254,7 @@ export function newPlant(w, key, cap) {
 	return { tech: key, def, cap, worn: 0, landM2: 0, plots: [], raw: 0, pits: 0, domeKwp: 0, fieldKwp: 0, batt: 0, battCap: 0, battCap0: 0, rentGrace: 0, out: 0, vc: { ...(w.learn[key]?.coef ?? {}) } };
 }
 /** a plant's own coefficient c (its vintage), 1 where the technology has none */
-export const vcOf = (pl, c) => (globalThis.__noVintage && pl.def ? globalThis.__learn?.[pl.tech]?.coef?.[c] ?? 1 : pl.vc?.[c] ?? 1);
+export const vcOf = (pl, c) => pl.vc?.[c] ?? 1;
 
 /** a new COOP in slot k */
 export function newCoop(w, k, id, good, day) {
@@ -360,7 +366,7 @@ export function createWorld(config = {}) {
 
 	// ── people ──
 	const N0 = cfg.people;
-	const Nmax = cfg.popGrowth > 0 ? Math.ceil(N0 * exp(cfg.popGrowth * (cfg.maxYears ?? 60)) * 1.05) + 4 : N0;
+	const Nmax = (cfg.popGrowth > 0 ? Math.ceil(N0 * exp(cfg.popGrowth * (cfg.maxYears ?? 60)) * 1.05) + 4 : N0) + (cfg.newcomers?.n ?? 0);
 	w.N = N0;
 	w.Nmax = Nmax;
 	const M = MAX_COOPS;
@@ -424,10 +430,19 @@ export function createWorld(config = {}) {
 		else if (per >= 4)
 			for (const x of list)
 				for (const half of [0, 1]) {
-					const pl = { ...x.pl, cap: x.pl.cap / 2, landM2: x.pl.landM2 / 2, raw: x.pl.raw / 2, pits: x.pl.pits / 2, domeKwp: x.pl.domeKwp / 2, battCap: x.pl.battCap / 2, batt: x.pl.batt / 2, plots: x.pl.plots.map((p) => ({ ...p, m2: p.m2 / 2 })) };
+					const pl = { ...x.pl, vc: { ...x.pl.vc }, cap: x.pl.cap / 2, landM2: x.pl.landM2 / 2, raw: x.pl.raw / 2, pits: x.pl.pits / 2, domeKwp: x.pl.domeKwp / 2, battCap: x.pl.battCap / 2, batt: x.pl.batt / 2, plots: x.pl.plots.map((p) => ({ ...p, m2: p.m2 / 2 })) };
 					plan.push({ ids: [x.g.id + (half ? '2' : '1')], plants: [[pl]], city: x.g.city && !half });
 				}
-		else for (const x of list) plan.push({ ids: [x.g.id], plants: [[x.pl]], city: !!x.g.city });
+		else if (gi === FOOD && list.length === 2 && cfg.foodSplit > 0) {
+			// food: the growing dome cannot sell at the food forest's cost, so on its own it would leave food with a single
+			// seller within a year or two. The forest is the hex's main food plant; GREEN holds the growing dome and a
+			// share of the forest (cfg.foodSplit), AGRI the rest: two sellers with the same kind of costs
+			const forest = list.find((x) => x.pl.tech === 'forest'), gh = list.find((x) => x.pl.tech === 'greenhouse');
+			const f = cfg.foodSplit;
+			const part = (pl, a) => ({ ...pl, vc: { ...pl.vc }, cap: pl.cap * a, landM2: pl.landM2 * a, plots: pl.plots.map((p) => ({ ...p, m2: p.m2 * a })) });
+			plan.push({ ids: [forest.g.id], plants: [[part(forest.pl, 1 - f)]], city: false });
+			plan.push({ ids: [gh.g.id], plants: [[gh.pl, part(forest.pl, f)]], city: false });
+		} else for (const x of list) plan.push({ ids: [x.g.id], plants: [[x.pl]], city: !!x.g.city });
 	}
 	// the City COOP first (its MIND is the hub of every basket)
 	plan.sort((a, b) => (b.city ? 1 : 0) - (a.city ? 1 : 0));
@@ -459,7 +474,7 @@ export function createWorld(config = {}) {
 	for (const co of w.coops) {
 		const cap = capDayOf(w, co, 0);
 		// the food store: nine tenths with the forest, a tenth with the growing dome (a COOP holding both holds both)
-		if (co.good === FOOD) co.stock = S.foodStoreKg * w.c.scale * co.plants.reduce((a, p) => a + (p.tech === 'forest' ? 0.9 : p.tech === 'greenhouse' ? 0.1 : 0), 0) * (perOf(FOOD) >= 4 ? 0.5 : 1);
+		if (co.good === FOOD) co.stock = S.foodStoreKg * w.c.scale * co.plants.reduce((a, p) => a + (p.tech === 'forest' ? (0.9 * p.cap) / (S.forestM2 * w.c.scale) : p.tech === 'greenhouse' ? (0.1 * p.cap) / (S.greenhouseM2 * w.c.scale) : 0), 0);
 		else if (co.good === WATER && co.plants.some((p) => p.tech === 'rain')) co.stock = co.plants.reduce((a, p) => a + (p.tech === 'rain' ? p.cap * 1000 * S.tankFill : 0), 0);
 		else if ([4, 5, 6, 7].includes(co.good)) co.stock = cap * S.storesDays;
 		else if (co.good === GOODS_) co.stock = cap * 14;

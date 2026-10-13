@@ -20,12 +20,12 @@
  */
 import { exp, log, pow } from './dmath.js';
 import { DEFAULTS, createWorld as genesisWorld, blankToday, initPerson, firstAlloc, capDayOf, plantCapDay, vcOf } from './genesis.js';
-import { BASICS, BED, CLASS, CLASS_NAMES, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOODS_, LIMIT, LIMIT_NAMES, MATERIALS, MAX_COOPS, POOL_SHARE, SPRING, WATER } from './consts.js';
+import { BASICS, BED, CLASS, CLASS_NAMES, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOODS_, LIMIT, LIMIT_NAMES, MATERIALS, MAX_COOPS, PHYSICAL, POOL_SHARE, SPRING, WATER } from './consts.js';
 import { GOODS, MONTH_NAMES, YEAR_DAYS } from './primitives.js';
 import { calendar, harvest, dispatch, shockFactor } from './energy.js';
 import { updatePrices, poolInflow, arbitrage, swap } from './pools.js';
 import { postPrices, peopleOrders, openPayments, payDirect, payRest, settleSwaps, law5, sellerOutcome } from './market.js';
-import { nature, margins, costs, plan, produce, runningItems, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand } from './coops.js';
+import { nature, margins, costs, plan, produce, runningItems, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
 import { initRecords, recordDay, physicsCeiling } from './records.js';
 
 const M = MAX_COOPS;
@@ -52,9 +52,11 @@ export function createWorld(config = {}) {
 	w.matter.prevRaw = rawTotal(w);
 	w.liquid = new Uint8Array(M);
 	w.poolQueue = new Float64Array(M); // pool inflow waiting for the weekly slice (bootstrap off only)
-	// the catalog's day-0 guesses, in R; genesisPrices below finds the real day-0 prices from costs (nothing here is
-	// scaled by HEARTS a day: the costs carry whatever is set in HEARTS, and the dynamics find the level)
-	w.pbar = Float64Array.from(w.c.p0g);
+	// the catalog's day-0 guesses, in R, indexed like the rate card to the HEARTS issued a day; genesisPrices below
+	// finds the real day-0 prices from costs. A few rounds of that fixed point do not converge, so a guess left at
+	// 24 HEARTS a day would leave day-0 prices in a 48-HEARTS world only part of the way to double (energy came out
+	// ×1.67), and the two worlds would differ from day 0 for a reason that is not money
+	w.pbar = Float64Array.from(w.c.p0g, (x) => x * (w.c.rentIdx ?? 1));
 	w.laws = { checks: 0, maxRel: 0, breaches: [], poolMissed: 0 };
 	w.peopleShortEma = new Float64Array(4);
 	w.coopLowDays = 0;
@@ -132,6 +134,8 @@ function initDemand(w) {
 function genesisPrices(w) {
 	for (const co of w.coops) co.capDay = capDayOf(w, co, 0);
 	for (let it = 0; it < 6; it++) {
+		// the starting plants are booked at this round's day-0 prices (a plant's book value is fixed once the prices are)
+		for (const co of w.coops) for (const pl of co.plants) pl.bookR = undefined;
 		costs(w, true);
 		const s = new Float64Array(G), n = new Float64Array(G);
 		for (const co of w.coops) {
@@ -157,7 +161,6 @@ function genesisPrices(w) {
 // ── one day ──────────────────────────────────────────────────────────────────────────────────────────────────────
 /** run the world one day */
 export function step(w) {
-	if (w.cfg._noVintage) (globalThis.__noVintage = true), (globalThis.__learn = w.learn);
 	const cfg = w.cfg;
 	// the MIND slots in use (a slot is never reused, so this only grows)
 	if (!w.ks || w.ks.length !== w.coops.length) w.ks = w.coops.map((co) => co.k);
@@ -199,6 +202,7 @@ export function step(w) {
 	let pBasic = 0, pExtra = 0;
 	for (let i = 0; i < w.N; i++) (pBasic += w.basicEnergy[i]), (pExtra += w.extraEnergy[i]);
 	req[CLASS.basics] += pBasic;
+	w.today.pBasic = pBasic;
 	req[CLASS.running] += pExtra;
 	// what buyers ask of the energy sellers: basics and running in full, and what building (projects, the border's
 	// exports) and R&D took. Building and R&D come after basics and running in the dispatch and are scheduled into what
@@ -208,7 +212,9 @@ export function step(w) {
 	const cop = w.today.cop;
 	w.energyAsked = req[0] + req[1] + Math.max(0, heatReq.basics - w.today.harvest.geoHeat) / cop;
 	const reqCopy = Float64Array.from(req);
-	const fill = dispatch(w, req, heatReq, basicsB);
+	let exportAsk = 0;
+	for (const co of w.coops) if (co.alive) exportAsk += co.exportReq ?? 0;
+	const fill = dispatch(w, req, heatReq, basicsB, exportAsk);
 	w.energyAsked += w.today.use[CLASS.building];
 	if (!cfg.rdAsks) w.energyAsked += w.today.use[CLASS.rd];
 	else w.energyAsked += reqCopy[CLASS.rd];
@@ -269,9 +275,8 @@ function resetDay(w) {
 /** population growth (a setting): newcomers arrive with an Aven and nothing held */
 function growPopulation(w) {
 	const r = w.cfg.popGrowth;
-	if (!(r > 0)) return;
-	w.births += w.N * (exp(r / YEAR_DAYS) - 1);
-	while (w.births >= 1 && w.N < w.Nmax) {
+	if (r > 0) w.births += w.N * (exp(r / YEAR_DAYS) - 1);
+	while (r > 0 && w.births >= 1 && w.N < w.Nmax) {
 		const i = w.N++;
 		initPerson(w, i, w.day);
 		firstAlloc(w, i);
@@ -279,6 +284,22 @@ function growPopulation(w) {
 		w.decA[i] = 0;
 		w.births -= 1;
 		w.events.push({ day: w.day, kind: 'born', person: i });
+	}
+	// newcomers (a setting, the A07 test): on one day, n owner-only people (no Aven output, nothing held) join a
+	// settled city. They get their 24 HEARTS a day like everyone; they are tracked apart from the genesis cohort
+	const nc = w.cfg.newcomers;
+	if (nc && w.day === nc.day) {
+		w.newIds = w.newIds ?? [];
+		for (let j = 0; j < nc.n && w.N < w.Nmax; j++) {
+			const i = w.N++;
+			initPerson(w, i, w.day);
+			w.aven[i] = 0;
+			firstAlloc(w, i);
+			w.decH[i] = 0;
+			w.decA[i] = 0;
+			w.newIds.push(i);
+			w.events.push({ day: w.day, kind: 'born', person: i });
+		}
 	}
 }
 
@@ -459,9 +480,14 @@ function clearPeople(w) {
 		for (let i = 0; i < N; i++) Tb += w.c.need[g] * w.fB[i];
 		const T = w.peopleOrderTot[g];
 		if (!(T > Tb)) continue;
+		// a seller's basic part: its share of the basic orders, or all of them the other sellers cannot cover from
+		// their stores today (a seller that runs dry passes its people's need to the one with food left)
+		const raw = Float64Array.from(w.supply);
+		let all = 0;
+		for (const co of w.sellers[g]) all += raw[g * M + co.k];
 		for (const co of w.sellers[g]) {
 			const j = g * M + co.k;
-			const basicPart = Tb * w.shares[j] * 1.02;
+			const basicPart = Math.max(Tb * w.shares[j], Tb - (all - raw[j])) * 1.02;
 			if (co.sustain >= 0) w.supply[j] = Math.min(w.supply[j], Math.max(co.sustain, basicPart));
 		}
 	}
@@ -620,7 +646,7 @@ function basicsLoads(w) {
 			co.heatReq += x * home.def.heat * YEAR_DAYS * t.heatShare * vcOf(home, 'heat');
 		} else if (g === SPRING) {
 			// an open warm pond loses this month's heat for each bather-hour it is open (./primitives.js spring)
-			if (co.plants.some((p) => p.tech === 'spring')) co.heatRun += x * (w.cfg._flatSpring ? 2 : t.springHeat);
+			if (co.plants.some((p) => p.tech === 'spring')) co.heatRun += x * t.springHeat;
 		} else if (g === COMPUTE) {
 			// the accelerators run on electricity in the running class
 			const pl = co.plants.find((p) => p.tech === 'compute');
@@ -634,15 +660,32 @@ function basicsLoads(w) {
  * delivering), then the energy for its works and upkeep, then materials, then its building project, then R&D.
  */
 function affordCoops(w) {
-	const pE = w.pbar[ENERGY], cop = w.today.cop;
+	const cop = w.today.cop;
+	// a COOP budgets its energy at the dearest energy seller's price today (what it pays depends on who delivers), so
+	// what it draws it can always pay
+	const pE = 1.1 * expectedEnergyPriceR(w);
+	const pMat = Float64Array.from(w.pbar);
+	for (const g of MATERIALS) for (const s of w.sellers[g]) pMat[g] = Math.max(pMat[g], s.price * w.P[s.k]);
 	for (const co of w.coops) {
+		co.own = 1;
 		if (!co.alive) continue;
-		let budget = 0.9 * treasuryR(w, co.k);
-		// today's running items come first (they are paid at the end of the day)
+		// what it can pay with today: the MINDs its treasury holds that the pools can turn into a seller's MIND
+		let budget = 0.9 * payableR(w, co.k);
+		// the energy and heat of the basics it delivers come first: a COOP draws only what it can pay for; if its
+		// treasury cannot pay for all of it, it delivers that much less today (and goes into receivership tonight)
+		const billB = (co.eReq[CLASS.basics] + co.heatReq / cop + co.heatRun / cop) * pE;
+		if (billB > budget) {
+			const f = Math.max(0, budget / billB);
+			co.own = f;
+			co.eReq[CLASS.basics] *= f;
+			co.heatReq *= f;
+			co.heatRun *= f;
+		}
+		budget -= billB * co.own;
+		// today's running items next (they are paid at the end of the day)
 		let runH = 0;
 		for (const pl of co.plants) runH += runHours(w, pl);
 		budget -= runH * w.c.rateR;
-		budget -= (co.eReq[CLASS.basics] + co.heatReq / cop) * pE + (co.heatRun / cop) * pE;
 		const run = co.eReq[CLASS.running] * pE;
 		const fr = run > 0 ? Math.max(0, Math.min(1, budget / run)) : 1;
 		budget -= run * fr;
@@ -655,7 +698,7 @@ function affordCoops(w) {
 		}
 		// materials: the works' inputs and upkeep first, then the building project
 		let matP = 0, matJ = 0;
-		for (const g of MATERIALS) (matP += w.b2bProd[g * M + co.k] * w.pbar[g]), (matJ += w.b2bProj[g * M + co.k] * w.pbar[g]);
+		for (const g of MATERIALS) (matP += w.b2bProd[g * M + co.k] * pMat[g]), (matJ += w.b2bProj[g * M + co.k] * pMat[g]);
 		const fp = matP > 0 ? Math.max(0, Math.min(1, budget / matP)) : 1;
 		budget -= matP * fp;
 		// a building project never takes the last month of running costs (a COOP that builds stays able to pay its
@@ -674,7 +717,50 @@ function affordCoops(w) {
 		const rd = co.eReq[CLASS.rd] * pE;
 		const fd = rd > 0 ? Math.max(0, Math.min(1, budget / rd)) : 1;
 		co.eReq[CLASS.rd] *= fd;
+		budget -= rd * fd;
+		// the border's export last (B23): what an accelerator costs in exported electricity
+		const ex = (co.exportReq ?? 0) * pE;
+		if (ex > 0) co.exportReq *= Math.max(0, Math.min(1, budget / ex));
 	}
+}
+
+/**
+ * The price a COOP should expect to pay for a kWh today, in R: the energy sellers' prices weighted by what each will
+ * deliver if all the electricity harvested today were sold (the buyers' logit shares, each seller capped by its harvest
+ * and battery, the rest from the sellers with room, as ./energy.js splitSellers does). A seller with a high price and
+ * little to give weighs little; one that has to fill in for a sold-out rival weighs what it fills.
+ */
+function expectedEnergyPriceR(w) {
+	const sellers = w.sellers[ENERGY];
+	let tot = 0;
+	const avail = new Float64Array(M);
+	for (const s of sellers) {
+		avail[s.k] = (w.eAvail?.[s.k] ?? 0) + s.plants.reduce((a, p) => a + (p.batt ?? 0), 0);
+		tot += avail[s.k];
+	}
+	if (!(tot > 0)) return w.pbar[ENERGY];
+	const got = new Float64Array(M);
+	let left = tot;
+	for (const s of sellers) {
+		const x = Math.min(avail[s.k], tot * w.shares[ENERGY * M + s.k]);
+		got[s.k] = x;
+		left -= x;
+	}
+	let room = 0;
+	for (const s of sellers) room += Math.max(0, avail[s.k] - got[s.k]);
+	if (left > 0 && room > 0) for (const s of sellers) got[s.k] += (Math.min(left, room) * Math.max(0, avail[s.k] - got[s.k])) / room;
+	let pR = 0, sum = 0;
+	for (const s of sellers) (pR += got[s.k] * s.price * w.P[s.k]), (sum += got[s.k]);
+	return sum > 0 ? Math.max(w.pbar[ENERGY], pR / sum) : w.pbar[ENERGY];
+}
+
+/** what a treasury can pay with today, in R: the MINDs it holds that have a live pool (any seller's MIND can be reached
+ * from them), at today's prices */
+export function payableR(w, k) {
+	let s = 0;
+	const row = k * M;
+	for (let j = 0; j < M; j++) if (w.tre[row + j] > 0 && w.liquid[j]) s += w.tre[row + j] * w.P[j];
+	return s;
 }
 
 /** after the dispatch: water and beds need their basics energy, the spring its heat; people get their energy */
@@ -688,6 +774,53 @@ function deliver(w, fill) {
 	const springHeat = w.coops.reduce((a, c) => a + (c.alive ? c.heatRun : 0), 0);
 	const fs = springHeat > 0 ? Math.min(1, (t.heatFromGeo.running + (springHeat - t.heatFromGeo.running) * fr) / springHeat) : 1;
 	w.fillSpring = fs;
+	// a seller that could not pay for all of its basics energy or heat today (./engine.js affordCoops) delivers that
+	// much less: each buyer's share from it is cut, and the shares are renormalized over what was delivered
+	const ownF = {};
+	for (const g of [WATER, BED, SPRING]) {
+		let F = 0, cut = false;
+		for (const co of w.sellers[g]) {
+			const s = w.sh[g * M + co.k];
+			F += s * (co.own ?? 1);
+			if ((co.own ?? 1) < 1 && s > 0) cut = true;
+		}
+		if (!cut) continue;
+		ownF[g] = F;
+		for (const co of w.sellers[g]) w.sh[g * M + co.k] = F > 0 ? (w.sh[g * M + co.k] * (co.own ?? 1)) / F : 0;
+	}
+	for (let i = 0; i < N; i++) {
+		const o = i * G;
+		for (const g in ownF) w.q[o + Number(g)] *= ownF[g];
+	}
+	// food: the part of today's harvest a forest COOP cannot process (energy cut, or it could not pay for the energy)
+	// is lost tonight (./coops.js produce), so it cannot be delivered either. Each seller delivers at most what its
+	// store keeps; what one cannot deliver goes to sellers with food to spare, and only the rest is short
+	{
+		const sel = w.sellers[FOOD];
+		let Df = 0;
+		for (let i = 0; i < N; i++) Df += w.q[i * G + FOOD];
+		if (Df > 0 && sel.length) {
+			const cap = new Float64Array(M), got = new Float64Array(M);
+			let unmet = 0, any = false;
+			for (const co of sel) {
+				const fo = fa * (co.own ?? 1);
+				const lost = co.harvestToday > 0 && fo < 1 ? Math.min(Math.max(0, co.stock), co.harvestToday * (1 - fo)) : 0;
+				cap[co.k] = Math.max(0, co.stock - lost);
+				const want = w.sh[FOOD * M + co.k] * Df;
+				got[co.k] = Math.min(want, cap[co.k]);
+				if (got[co.k] < want - 1e-12) (unmet += want - got[co.k]), (any = true);
+			}
+			if (any) {
+				let room = 0;
+				for (const co of sel) room += cap[co.k] - got[co.k];
+				if (room > 0) for (const co of sel) got[co.k] += (Math.min(unmet, room) * (cap[co.k] - got[co.k])) / room;
+				let F = 0;
+				for (const co of sel) F += got[co.k];
+				for (const co of sel) w.sh[FOOD * M + co.k] = F > 0 ? got[co.k] / F : 0;
+				if (F < Df) for (let i = 0; i < N; i++) w.q[i * G + FOOD] *= F / Df;
+			}
+		}
+	}
 	for (let i = 0; i < N; i++) {
 		const o = i * G;
 		if (fa < 1) w.q[o + WATER] *= fa;
@@ -764,12 +897,20 @@ function clearMaterials(w) {
 		for (let k = 0; k < M; k++) Tr += w.b2bRun[base + k];
 		const fr = Tr > 0 ? Math.min(1, all / Tr) : 1;
 		const fj = T - Tr > 1e-12 ? Math.max(0, Math.min(1, (all - Tr * fr) / (T - Tr))) : 1;
+		// the price a buyer pays a unit today (the sellers' posted prices by what each sold); each input store keeps the
+		// average price its units were bought at, so what upkeep uses from it is costed at what was paid
+		let pg = 0;
+		for (const co of sellers) pg += w.mSh[base + co.k] * co.priceR;
 		for (let k = 0; k < M; k++) {
 			const run = w.b2bRun[base + k];
 			const x = run * fr + (w.b2b[base + k] - run) * fj;
 			if (x > 0) {
 				w.mGot[base + k] = x;
-				w.coops[k].inStock[g] += x;
+				const b = w.coops[k];
+				const had = Math.max(0, b.inStock[g]);
+				b.inCostR = b.inCostR ?? Float64Array.from(w.pbar);
+				b.inCostR[g] = (b.inCostR[g] * had + pg * x) / (had + x);
+				b.inStock[g] += x;
 			}
 		}
 	}
@@ -878,6 +1019,7 @@ function settle(w, fill) {
 		// (the basics class in its two parts: the domes' climate and the heat pumps second, the rest first)
 		let kwh = co.eReq[CLASS.basics] * (co.good === BED ? t.fillB : t.fillA);
 		for (let cl = 1; cl < 4; cl++) kwh += co.eReq[cl] * fill[cl];
+		kwh += (co.exportReq ?? 0) * (t.fillExport ?? 0);
 		const geoB = heatB > 0 ? (co.heatReq / heatB) * hb : 0;
 		const geoR = heatR > 0 ? (co.heatRun / heatR) * hr : 0;
 		kwh += ((co.heatReq - geoB) / cop) * t.fillB + ((co.heatRun - geoR) / cop) * fill[CLASS.running];
@@ -921,6 +1063,9 @@ function settle(w, fill) {
 			if (paid < restR * (1 - 1e-9)) {
 				w.unpaidR += restR - paid;
 				co.unpaidBillR = restR - paid;
+				// every unpaid bill is kept by COOP, for the proof (a rule breach: every delivery is paid)
+				w.unpaidBy = w.unpaidBy ?? {};
+				w.unpaidBy[co.id] = (w.unpaidBy[co.id] ?? 0) + restR - paid;
 			}
 		}
 		co.costR += costR;
@@ -935,6 +1080,12 @@ function settle(w, fill) {
 	for (const p of w.pools) for (let i = 0; i < p.x.length; i++) pools1 += p.x[i];
 	lawCheck(w, 'Law 5: pools untouched', pools1, pools0, 1);
 	t.unroutedR = w.unroutedR;
+	// a payment no pool could route went back to its payer: the seller was not paid for that delivery
+	if (w.unroutedR > 0) {
+		w.unpaidR += w.unroutedR;
+		w.unpaidBy = w.unpaidBy ?? {};
+		w.unpaidBy['(no route)'] = (w.unpaidBy['(no route)'] ?? 0) + w.unroutedR;
+	}
 	// owner-only in the strict test: today's dividends are what they may spend tomorrow
 	if (w.spendCap) for (const i of w.ownerIds) w.spendCap[i] += w.div[i];
 	// goods leave the sellers' stores
@@ -1023,17 +1174,26 @@ function badges(w, fill) {
  */
 function physicalLimit(w, g) {
 	const city = w.coops[w.cityK];
-	if ((city?.idle ?? []).some((pl) => pl.def.good === g && pl.cap - pl.worn > 0)) return LIMIT.noSeller;
+	// plants of the good stand idle with the City COOP: no COOP took them (no MIND slot was free, or none yet)
+	if ((city?.idle ?? []).some((pl) => pl.def.good === g && pl.cap - pl.worn > 0)) return w.coops.length >= M ? LIMIT.noSlot : LIMIT.noSeller;
 	let best = null, bs = -1;
 	for (const co of w.sellers[g]) if (w.supply[g * M + co.k] > bs) (bs = w.supply[g * M + co.k]), (best = co);
 	if (!best) return LIMIT.noSeller;
 	if (best.limiter && best.limiter !== LIMIT.none) return best.limiter;
 	const pl = best.plants[0];
 	if (!pl) return LIMIT.capacity;
+	// built capacity binds, and what stops the sellers building more is physics (land, a deposit, energy, accelerators,
+	// nature) or an institution (a treasury that cannot carry the build): that is the limit to read. Aven services sold
+	// out with no accelerators to install read 'accelerators'; with them but no electricity for them, 'energy'
+	const why = w.sellers[g].map((co) => co.buildLimit).find((x) => PHYSICAL.includes(x) || x === LIMIT.treasury);
+	if (why) return why;
+	if (g === COMPUTE && !(best.chips > 0) && w.cfg.chipImport === false) return LIMIT.chips;
 	// built capacity binds, yet no seller of the good is building and land is free: nobody chose to build
 	const building = w.sellers[g].some((co) => co.project);
 	const landTech = pl.def.land > 0 && pl.tech !== 'spring' && pl.tech !== 'geo' && pl.tech !== 'well' && pl.tech !== 'rain';
-	const notBuilt = !building && landTech && freeLand(w) > 1000 * w.c.scale && best.buildLimit !== LIMIT.land;
+	// (free land counts only when it is at least the smallest plot the technology builds on: a scrap of land too small
+	// for a timber plot leaves wood bound by land, not by a choice)
+	const notBuilt = !building && landTech && freeLand(w) >= Math.max(1000 * w.c.scale, firstPlotM2(w, pl.tech)) && best.buildLimit !== LIMIT.land;
 	switch (pl.tech) {
 		case 'forest':
 			return pl.plots.some((p) => w.day - p.born < 3650) ? LIMIT.ramp : notBuilt ? LIMIT.notBuilt : LIMIT.nature;
@@ -1256,19 +1416,31 @@ function endOfDay(w) {
 	}
 	w.Pslow = w.Pslow ?? Float64Array.from(w.P);
 	for (let k = 0; k < M; k++) w.Pslow[k] += (w.P[k] - w.Pslow[k]) / 90;
+	// the slow price of each good (a year's average) follows the prices it actually traded at today, weighted by what
+	// was sold: a price quoted by sellers who sold nothing (an empty works asking a fortune) moves nothing. Plants are
+	// valued at it (./coops.js costs), so a good nobody trades cannot inflate the capital cost of what is made of it
 	w.pbarSlow = w.pbarSlow ?? Float64Array.from(w.pbar);
-	for (let g = 0; g < G; g++) if (w.pbar[g] > 0) w.pbarSlow[g] += (w.pbar[g] - w.pbarSlow[g]) / 365;
+	const soldU = new Float64Array(G), soldR = new Float64Array(G);
+	for (const co of w.coops) if (co.alive && co.sold > 0 && co.priceR > 0) (soldU[co.good] += co.sold), (soldR[co.good] += co.sold * co.priceR);
+	for (let g = 0; g < G; g++) if (soldU[g] > 0) w.pbarSlow[g] += (soldR[g] / soldU[g] - w.pbarSlow[g]) / 365;
 	for (const co of w.coops) {
 		if (!co.alive) continue;
 		co.costREma += (co.costR - co.costREma) / 30;
+		// what rebuilding its worn plant cost today, at the prices its input store was bought at (a 90-day average)
+		co.upkeepREma = (co.upkeepREma ?? 0) + ((co.upkeepRToday ?? 0) - (co.upkeepREma ?? 0)) / 90;
+		co.upkeepRToday = 0;
 		co.heartsEma += (co.heartsToday - co.heartsEma) / 30;
 		co.salesREma += (co.salesR - co.salesREma) / 30;
 		co.soldEma += (co.sold - co.soldEma) * EMA_DEMAND;
 		co.madeEma += (co.made - co.madeEma) * EMA_DEMAND;
 		co.demandEma += (co.orders - co.demandEma) * EMA_DEMAND;
 		const tr = treasuryR(w, co.k);
-		// insolvent today: it could not pay all its running items or its bills
-		co.lowDays = co.unpaidH > 1e-9 || co.unpaidBillR > 1e-9 * Math.max(1, co.costREma) ? co.lowDays + 1 : 0;
+		// a COOP that could not pay for all the energy and materials it needed today (it made and delivered only what
+		// it paid for: co.own < 1) or left a bill unpaid. Nobody delivers to it unpaid; it simply makes less that day
+		co.billFail = (co.own ?? 1) < 1 - 1e-9 || co.unpaidBillR > 0;
+		// insolvent today: it could not pay all its running items, its bills or its inputs. 30 such days in a row
+		// and it goes into receivership (./coops.js receiverships)
+		co.lowDays = co.unpaidH > 1e-9 || co.unpaidBillR > 1e-9 * Math.max(1, co.costREma) || co.billFail ? co.lowDays + 1 : 0;
 		// what it delivered today at base-year prices (to people and to other COOPs): the real output the Avens'
 		// replicator reads (audited meters), not its sales in R, which move with every price
 		co.salesShareR += (co.sold * w.c.p0g[co.good] - co.salesShareR) / 30;
@@ -1327,6 +1499,12 @@ function checkLedgers(w) {
 		if (rel > 1e-7) leak(w, w.matter.leaks, `${GOOD_IDS[g]}: store ${now[g]} vs ${expect} (diff ${diff})`);
 	}
 	w.matter.prevStock = now;
+	// no store may go below zero: a negative store is stock taken from nowhere
+	for (const co of w.coops) {
+		if (co.stock < -1e-9 && !ON_DEMAND.includes(co.good) && co.good !== ENERGY) leak(w, w.matter.leaks, `${co.id}: store below zero (${co.stock})`);
+		for (let g = 0; g < G; g++) if (co.inStock[g] < -1e-9) leak(w, w.matter.leaks, `${co.id}: input store of ${GOOD_IDS[g]} below zero (${co.inStock[g]})`);
+	}
+	for (let g = 0; g < G; g++) if (w.cityStore[g] < -1e-9) leak(w, w.matter.leaks, `City COOP store of ${GOOD_IDS[g]} below zero (${w.cityStore[g]})`);
 	const raw = rawTotal(w), rprev = w.matter.prevRaw;
 	const rg = t.raw.grown, ru = t.raw.used, rl = t.raw.lost;
 	const rexp = rprev + rg.logs + rg.ore + rg.sand - ru.logs - ru.ore - ru.sand - rl.logs - rl.ore - rl.sand;
@@ -1342,7 +1520,7 @@ function checkLedgers(w) {
 	// energy
 	const h = t.harvest;
 	const supply = h.solar + h.geo + h.battery;
-	let used = 0;
+	let used = t.exportKwh ?? 0;
 	for (let cl = 0; cl < 4; cl++) used += t.use[cl];
 	const out = used + t.use[CLASS.storage] + t.curtailed;
 	let paidFor = w.D[ENERGY];

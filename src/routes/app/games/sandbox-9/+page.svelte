@@ -9,7 +9,7 @@
 
 <svelte:head>
 	<title>avenCITY Sandbox 8 · Blob economy · maiaCITY</title>
-	<meta name="description" content="250 blobs own the COOPs that feed them: one rule changed per experiment, the same seed side by side, and a per-person proof that only physics limits abundance." />
+	<meta name="description" content="A hundred blobs own the COOPs that feed them: one rule changed per experiment, the same seed side by side, and a per-person proof that only physics limits abundance." />
 </svelte:head>
 
 <BlobLab />

@@ -103,8 +103,9 @@ function checkP2(w, opts) {
 		medianRatioByYear: strictMedByYear
 	};
 	const normal = {
-		pass: rec.normalFail.length === 0 && runsOutInYears > 100,
-		failures: rec.normalFail.length,
+		pass: rec.normalFailPD === 0 && runsOutInYears > 100,
+		// person-days an owner-only person was short of a basic or held nothing (exact; firstFailures lists examples)
+		failures: rec.normalFailPD,
 		firstFailures: rec.normalFail.slice(0, 5),
 		lowestShareMet: { share: ownerMetMin, day: ownerMetDay },
 		lowestHoldingDaysByYear: byYear,
@@ -239,9 +240,20 @@ function decileCheck(rec, key, x, ceil, W, exempt, n) {
 	return { pass: fall <= 0.02 && riseOk, fall, first, last, ceiling, rises, nearCeiling, worstDrawdown: worstDD, seasonalFall: seasonal, windowsFailed, worstWindow, worstNet, byYear };
 }
 
-/** the scheduled shocks' windows in which a fall is excused: from the shock's first day to 2 years after its end */
+/**
+ * The scheduled shocks' windows in which a fall is excused: the shock itself, up to 90 days of it, and then 2 years
+ * of recovery. A longer shock is not a shock but a new climate: from its 91st day on the falls count again until it
+ * ends, and its 2 years of recovery start only when it ends.
+ */
+const SHOCK_EXCUSED_DAYS = 90;
 function shockWindows(w) {
-	return (w.cfg.shocks ?? []).map((s) => ({ kind: s.kind, from: s.day, to: s.day + (s.days ?? (s.kind === 'coopFail' ? 365 : 90)) + 2 * YEAR }));
+	const out = [];
+	for (const s of w.cfg.shocks ?? []) {
+		const len = s.days ?? (s.kind === 'coopFail' ? 365 : 90);
+		out.push({ kind: s.kind, from: s.day, to: s.day + Math.min(len, SHOCK_EXCUSED_DAYS) - 1, part: 'shock' });
+		out.push({ kind: s.kind, from: s.day + len, to: s.day + len + 2 * YEAR, part: 'recovery' });
+	}
+	return out;
 }
 const isExempt = (d, ex) => ex.some((e) => d >= e.from && d <= e.to);
 
@@ -250,7 +262,9 @@ function coopCheck(w) {
 	const exits = w.events.filter((e) => e.kind === 'receivership');
 	const list = exits.map((e) => {
 		let pd = 0;
-		for (let d = Math.max(1, e.day - 30); d < Math.min(n, e.day + 90); d++) for (let b = 0; b < 4; b++) pd += rec.shortN[d * 4 + b];
+		// a basic short from a month before the exit to a year after it is laid at the receivership's door (a failing
+		// COOP's plants change hands, wear and are rebuilt over months, not weeks)
+		for (let d = Math.max(1, e.day - 30); d < Math.min(n, e.day + YEAR); d++) for (let b = 0; b < 4; b++) pd += rec.shortN[d * 4 + b];
 		const co = w.coops.find((c) => c.id === e.coop);
 		return { day: e.day, coop: e.coop, good: co ? GOOD_IDS[co.good] : '?', heir: e.heir, why: e.why, basicShortPersonDaysAround: pd };
 	});
@@ -260,9 +274,10 @@ function coopCheck(w) {
 	for (let d = 0; d < n; d++) unpaidR += rec.unpaidR[d];
 	for (let d = 0; d < n; d++) salesR += rec.basicCostR[d] * w.N;
 	return {
-		// unpaid deliveries fail the part above a hundredth of a percent of what the basic bundles cost (rounding in
-		// the pools stays far below it)
-		pass: list.every((x) => x.basicShortPersonDaysAround === 0) && insolvent.every((c) => c.lowDays < 30) && (w.coopLowDays ?? 0) === 0 && unpaidR <= 1e-4 * salesR,
+		// unpaid deliveries fail the part: every sale is paid. The tolerance is floating-point rounding only (a
+		// billionth of what the basic bundles cost), not a share of sales
+		pass: list.every((x) => x.basicShortPersonDaysAround === 0) && insolvent.every((c) => c.lowDays < 30) && (w.coopLowDays ?? 0) === 0 && unpaidR <= 1e-9 * salesR,
+		unpaidBy: Object.fromEntries(Object.entries(w.unpaidBy ?? {}).filter(([, v]) => v > 0)),
 		coopDaysUnableToPay30: w.coopLowDays ?? 0,
 		unpaidR,
 		unpaidShare: salesR > 0 ? unpaidR / salesR : 0,
@@ -275,10 +290,13 @@ function coopCheck(w) {
 
 // ── abundance ────────────────────────────────────────────────────────────────────────────────────────────────────
 function checkAbundance(w) {
-	const v = w.rec.mindViolations;
+	const rec = w.rec, v = rec.mindViolations;
 	return {
-		pass: v.length === 0,
-		mindBindsBasics: v.length,
+		pass: rec.mindDayGoods === 0,
+		// day-goods (a day and a basic) on which MIND bound a basic while the physics ceiling was at or above need: exact
+		mindBindsBasics: rec.mindDayGoods,
+		mindDays: rec.mindDays,
+		mindBy: Object.fromEntries(BASIC_NAMES.map((g, b) => [g, rec.mindDayGoodsBy[b]])),
 		examples: v.slice(0, 5).map((x) => ({ day: x.day, good: GOOD_IDS[x.good], minMet: x.minMet }))
 	};
 }

@@ -36,13 +36,21 @@
 			(lo -= r), (hi += r);
 		}
 		const pad = (hi - lo) * 0.08;
-		return { lo: yMin !== undefined ? lo : lo - pad, hi: flat ? hi : hi + pad };
+		lo = yMin !== undefined ? lo : lo - pad;
+		hi = flat ? hi : hi + pad;
+		// round ticks: a step of 1, 2 or 5 × 10^k, the axis widened to whole steps (never below its floor)
+		const raw = (hi - lo) / 3, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+		const step = [1, 2, 5, 10].map((m) => m * mag).find((x) => x >= raw * 0.999) ?? 10 * mag;
+		let a = Math.floor(lo / step + 1e-9) * step;
+		if (yMin !== undefined) a = Math.max(a, yMin);
+		const b = Math.ceil(hi / step - 1e-9) * step;
+		return { lo: a, hi: b, step };
 	});
 	const sx = (/** @type {number} */ d) => PADL + (d / Math.max(1, xMax)) * (W - PADL - PADR);
 	const sy = (/** @type {number} */ v) => PADT + (1 - (v - ext.lo) / (ext.hi - ext.lo)) * (height - PADT - PADB);
 	const ticks = $derived.by(() => {
 		const out = [];
-		for (let i = 0; i <= 3; i++) out.push(ext.lo + ((ext.hi - ext.lo) * i) / 3);
+		for (let v = ext.lo; v <= ext.hi + ext.step * 1e-6 && out.length < 8; v += ext.step) out.push(Math.round(v / ext.step) * ext.step);
 		return out;
 	});
 	const years = $derived.by(() => {

@@ -43,7 +43,7 @@ export function calendar(w) {
 	t.wxSun = wx.sun;
 	t.wxRain = wx.rain;
 	// a heat pump's COP and the warm pond's heat loss follow the month
-	t.cop = w.cfg._flatCop ? w.c.cop : w.c.copMonth[m];
+	t.cop = w.c.copMonth[m];
 	t.springHeat = w.c.springHeat[m];
 	t.geoUp = 1;
 	t.shocks = [];
@@ -149,7 +149,7 @@ export function shockFactor(w, co) {
  * electricity in the class of what they heat. Returns the share served of each class; the basics' two parts are in
  * today.fillA and today.fillB.
  */
-export function dispatch(w, req, heatReq, basicsB = 0) {
+export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = 0) {
 	const t = w.today, h = t.harvest, c = w.c;
 	const cop = t.cop ?? c.cop;
 	// heat: direct geothermal heat for the domes and the growing dome, condenser heat for the spring
@@ -202,12 +202,19 @@ export function dispatch(w, req, heatReq, basicsB = 0) {
 	t.use[CLASS.storage] = charge;
 	t.battIn = charge;
 	t.battLoss = charge * (1 - c.battRT);
+	// the border (setting chipImport, scenario B23): the export line takes only what is left after R&D and storage,
+	// electricity that would otherwise be curtailed; it is never energy the city uses
+	const exp = Math.min(left, Math.max(0, exportAsk));
+	t.exportKwh = exp;
+	t.exportAsk = exportAsk;
+	t.fillExport = exportAsk > 0 ? exp / exportAsk : 1;
+	left -= exp;
 	t.curtailed = left;
 	fill[CLASS.storage] = 1;
 	// who sold it: the buyers' logit on price, each seller capped by what it has (the battery is the solar COOP's)
-	const sold = supply - left - charge;
+	const sold = supply - left - charge; // (the export included: it is electricity the energy COOPs sell)
 	splitSellers(w, sold, battOut, battery);
-	t.surplusKwh = t.use[CLASS.rd] + charge + left;
+	t.surplusKwh = t.use[CLASS.rd] + charge + exp + left;
 	return fill;
 }
 

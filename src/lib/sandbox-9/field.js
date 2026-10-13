@@ -606,19 +606,22 @@ export function createField(canvas) {
 			ctx.fillStyle = `rgba(24,34,64,${dim})`;
 			ctx.fill();
 		}
-		// events of the last seconds, by their COOP
+		// events of the last seconds: one column at the top of the hex, under the field's tag, the newest three, one
+		// line apart (a toast never covers another)
 		toasts = toasts.filter((x) => now - x.t0 < 3500);
-		ctx.font = `600 ${Math.max(10, Math.round(0.034 * S))}px system-ui, sans-serif`;
+		const fs = Math.max(10, Math.round(0.034 * S)), lh = Math.max(18, fs + 8);
+		ctx.font = `600 ${fs}px system-ui, sans-serif`;
 		ctx.textAlign = 'center';
-		toasts.forEach((x, j) => {
-			const p = x.id ? coopPos(x.id, now) : { x: 0, y: -0.25 };
-			const tx = X(p.x), ty = Y(p.y) - 0.08 * S - j * 14;
-			const w = ctx.measureText(x.text).width + 10;
+		let top = Infinity;
+		for (const [, y] of HEX) top = Math.min(top, Y(y));
+		toasts.slice(-3).forEach((x, j) => {
+			const tx = X(0), ty = top + 0.1 * S + j * lh;
+			const w = Math.min(ctx.measureText(x.text).width + 12, 0.9 * S);
 			ctx.fillStyle = 'rgba(38,56,44,0.85)';
-			roundRect(tx - w / 2, ty - 10, w, 16, 8);
+			roundRect(tx - w / 2, ty - fs * 0.5 - 3, w, fs + 6, (fs + 6) / 2);
 			ctx.fill();
 			ctx.fillStyle = '#fff';
-			ctx.fillText(x.text, tx, ty + 2);
+			ctx.fillText(x.text, tx, ty + fs * 0.35, 0.9 * S - 8);
 		});
 	}
 
@@ -671,8 +674,11 @@ export function createField(canvas) {
 	function limitBar(i, x, y, r, b = bars) {
 		const lim = frame.lim[i * 4 + b], p = frame.price[b];
 		const ratio = p > 0 ? lim / p : 0;
-		const h0 = r * 1.3; // the price mark
-		const h = ratio > 0 ? Math.max(0.5, Math.min(r * 4, h0 * (1 + Math.log10(ratio) / 2))) : 0.5;
+		// a log scale over today's spread between people (./view.js limLo, limHi), so the bars show who can pay more
+		const lo = Math.log10(Math.min(0.5, (frame.limLo?.[b] ?? 0.1) / 2) || 0.05), hi = Math.log10(Math.max(2, (frame.limHi?.[b] ?? 1000) * 2));
+		const at = (x) => (r * 4 * (x - lo)) / (hi - lo);
+		const h0 = Math.max(0.5, at(0)); // the price mark
+		const h = ratio > 0 ? Math.max(0.5, Math.min(r * 4, at(Math.log10(ratio)))) : 0.5;
 		ctx.fillStyle = ratio >= 1 ? '#2f9e5a' : '#d03b3b';
 		ctx.fillRect(x, y - h, Math.max(1.5, r * 0.35), h);
 		ctx.fillStyle = '#26382c';

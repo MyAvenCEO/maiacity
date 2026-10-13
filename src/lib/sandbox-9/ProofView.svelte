@@ -9,7 +9,11 @@
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
 	import { onMount, onDestroy } from 'svelte';
-	import { proofJobs, assemble } from './proofRun.js';
+	import { proofJobs, assemble, engineHash, ENGINE_FILES } from './proofRun.js';
+
+	// the engine's own source files, loaded only for their hash (to tell a saved proof older than this engine)
+	const sources = import.meta.glob('./*.js', { query: '?raw', import: 'default' });
+	let hashNow = $state(/** @type {string | null} */ (null));
 
 	let saved = $state(/** @type {any} */ (null));
 	let live = $state(/** @type {any} */ (null));
@@ -29,10 +33,20 @@
 		} catch {
 			missing = true;
 		}
+		try {
+			const texts = {};
+			for (const f of ENGINE_FILES) texts[f] = await sources['./' + f]();
+			hashNow = engineHash(texts);
+		} catch {
+			hashNow = null;
+		}
 	});
 	onDestroy(stop);
 
 	const shown = $derived(live ?? saved);
+	/** the saved proof (or its suite summary) was computed by another version of the engine than this page runs */
+	const stale = $derived(!live && !!saved && !!hashNow && saved.engineHash !== hashNow);
+	const suiteNow = $derived(saved?.suite && hashNow && saved.suite.engineHash === hashNow ? saved.suite : null);
 
 	function stop() {
 		for (const w of workers) w.terminate();
@@ -65,7 +79,7 @@
 					jobs[j].ms = e.data.result.ms;
 				}
 				if (results.length + jobs.filter((x) => x.state === 'error').length === list.length) {
-					live = assemble(results, { quick: true, where: 'browser', wallMs: performance.now() - t0 });
+					live = assemble(results, { quick: true, where: 'browser', wallMs: performance.now() - t0, engineHash: hashNow, suite: suiteNow });
 					stop();
 				} else feed(w);
 			};
@@ -96,6 +110,13 @@
 				{shown.mode === 'full' ? 'Full run' : 'Quick run'}{shown.where === 'browser' ? ' in this browser' : ''}: {shown.seeds.length} seeds × {shown.baseYears} years, {shown.people} people{shown.wallMs ? `, ${(shown.wallMs / 1000).toFixed(0)} s` : ''} · {when(shown.generated)}
 			</span>
 		</div>
+
+		{#if stale}
+			<p class="bad">This saved proof was computed by an older version of the engine than this page runs (engine {saved.engineHash ?? 'unknown'}, page {hashNow}). Its numbers can differ from what the page shows; run it again below.</p>
+		{/if}
+		{#if !shown.suiteUsed}
+			<p class="fine">The parts below read the base worlds and the experiments only{saved?.suite ? '; the full proof suite’s scenarios were run with another engine, so their verdicts are left out' : ''}. The full suite (node scripts/sandbox-9-proof.mjs) adds the longer scenarios.</p>
+		{/if}
 
 		<div class="parts">
 			{#each shown.parts as p}

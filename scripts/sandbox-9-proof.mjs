@@ -14,8 +14,11 @@
  *                                                  date (the file's other keys belong to scripts/sandbox-9-proof-json.mjs
  *                                                  and stay as they are)
  *
- *   node scripts/sandbox-9-proof.mjs              everything, in worker threads (about three minutes on 4 cores)
- *   node scripts/sandbox-9-proof.mjs --only X1,B28 some experiments or scenarios (S00 = the five base seeds)
+ *   node scripts/sandbox-9-proof.mjs              everything, in worker threads (about eight minutes on 4 cores)
+ *   node scripts/sandbox-9-proof.mjs --only X1,B28 some experiments or scenarios (S00 = the five base seeds, 60 years)
+ *   --quick                                       a smoke test: every scenario world cut to at most 10 years (verdicts
+ *                                                  that need longer runs then read short ones); prints the table and
+ *                                                  writes nothing unless --out is given
  *   --set key=value                               change a setting in every world (exploring; the report says so)
  *   --out <dir>                                   write proof.md and proof.csv elsewhere (proof.json only on a full run)
  *
@@ -71,10 +74,11 @@ if (!isMainThread) {
 // ── the main thread: schedule, collect, judge, write ─────────────────────────────────────────────────────────────
 async function main() {
 	const args = process.argv.slice(2);
+	const quick = args.includes('--quick');
 	const oi = args.indexOf('--only');
 	const only = oi >= 0 ? args[oi + 1].split(',') : null;
 	const di = args.indexOf('--out');
-	const OUT = di >= 0 ? args[di + 1] : '/mnt/project-files/theos/sandbox-8';
+	const OUT = di >= 0 ? args[di + 1] : quick ? null : '/mnt/project-files/theos/sandbox-8';
 	const set = {};
 	args.forEach((a, i) => {
 		if (a !== '--set') return;
@@ -85,8 +89,10 @@ async function main() {
 	const { SCENARIOS, NOT_COVERED, runSpecs, judge } = await import(join(LIB, 'scenarios.js'));
 	const expIds = Object.keys(EXPERIMENTS).filter((id) => !only || only.includes(id));
 	const scenIds = SCENARIOS.map((s) => s.id).filter((id) => !only || only.includes(id));
-	const specs = scenIds.length ? runSpecs(scenIds) : [];
-	const isBase = (sp) => sp.years === 30 && Object.keys(sp.config).every((k) => k === 'seed' || k === 'people') && sp.config.people === 250;
+	const specs = (scenIds.length ? runSpecs(scenIds) : []).map((sp) => (quick ? { ...sp, years: Math.min(sp.years, 10) } : sp));
+	// the base worlds whose evidence the appendix prints: S00's (every seed, the world model's 60 years)
+	const s00 = SCENARIOS.find((x) => x.id === 'S00');
+	const isBase = (sp) => s00.runs.some((r) => r.key === sp.key);
 	const jobs = [
 		...specs.map((spec) => ({ kind: 'run', spec, set, detail: isBase(spec), cost: spec.years * Math.pow(spec.config.people ?? 250, 0.3) * (spec.config.coopsPerGood === 4 ? 1.6 : 1) })),
 		...expIds.map((id) => {
@@ -115,13 +121,19 @@ async function main() {
 	const now = new Date().toISOString();
 	printTable(exps, scen, wall);
 	const { catalogList, STARTING_CAPITAL } = await import(join(LIB, 'primitives.js'));
-	const meta = { wall, set, now, only, threads: par, totalCpu: results.reduce((a, r) => a + r.ms, 0), catalog: catalogList(), start: STARTING_CAPITAL };
+	const { ENGINE_FILES, engineHash } = await import(join(LIB, 'proofRun.js'));
+	const hash = engineHash(Object.fromEntries(ENGINE_FILES.map((fl) => [fl, readFileSync(join(LIB, fl), 'utf8')])));
+	const meta = { wall, set, now, only, quick, hash, threads: par, totalCpu: results.reduce((a, r) => a + r.ms, 0), catalog: catalogList(), start: STARTING_CAPITAL };
+	if (!OUT) {
+		console.log('--quick without --out: nothing written');
+		return;
+	}
 	const md = report(exps, scen, bases, NOT_COVERED, meta);
 	mkdirSync(OUT, { recursive: true });
-	const suffix = (only ? '-' + only.join('-') : '') + (Object.keys(set).length ? '-set' : '');
+	const suffix = (only ? '-' + only.join('-') : '') + (Object.keys(set).length ? '-set' : '') + (quick ? '-quick' : '');
 	writeFileSync(join(OUT, `proof${suffix}.md`), md);
 	writeFileSync(join(OUT, `proof${suffix}.csv`), toCsv(exps, scen, bases, R));
-	if (!only && !Object.keys(set).length) {
+	if (!only && !Object.keys(set).length && !quick) {
 		const dir = join(ROOT, 'static', 'sandbox-9');
 		mkdirSync(dir, { recursive: true });
 		// The page's Proof view reads the top-level keys of this file (scripts/sandbox-9-proof-json.mjs writes them).
@@ -189,71 +201,49 @@ function headline(exps, scen, bases) {
 		part: 'P1 — no one starves',
 		holds: allB((b) => b.p.P1.pass),
 		base: bases.map((b) => b.p.P1.personDaysShortAny).join(', ') + ' person-days short (seeds ' + bases.map((b) => b.seed).join(', ') + ')',
-		breaks: [...failE(['X5', 'X12', 'X14', 'SH']), ...fails(['B10', 'B15', 'B26', 'B29'].map(S))]
+		breaks: [...failE(['X5', 'X12', 'X14', 'SH']), ...fails(['B10', 'B15', 'B26', 'B29', 'S02', 'S03'].map(S))]
 	});
 	rows.push({
 		part: 'P2 strict — dividends alone pay the basic bundle',
 		holds: allB((b) => b.p.P2.strict.pass),
-		base: 'holds every day from day ' + bases.map((b) => b.p.P2.strict.holdsEveryDayFrom).join(', ') + ' (target ≤ 120)',
-		breaks: [...failE(['X2']), ...fails(['B03'].map(S))]
+		// -1: dividends alone never paid every member's bundle on every day to the end of the run
+		base: 'holds every day from ' + bases.map((b) => (b.p.P2.strict.holdsEveryDayFrom >= 0 ? 'day ' + b.p.P2.strict.holdsEveryDayFrom : 'never')).join(', ') + ' (target: from day 120 at the latest); lowest dividends ÷ bundle in the last year ' + bases.map((b) => f(b.p.P2.strict.lowestRatioByYear?.at(-1))).join(', '),
+		breaks: [...failE(['X2']), ...fails(['B03', 'A07', 'S03'].map(S))]
 	});
 	rows.push({
 		part: 'P2 normal — no one has to work to survive',
 		holds: allB((b) => b.p.P2.normal.pass),
-		base: bases.map((b) => b.p.P2.normal.failures).join(', ') + ' failures',
+		base: bases.map((b) => b.p.P2.normal.failures).join(', ') + ' person-days failing; the lowest holding runs out in ' + bases.map((b) => (Number.isFinite(b.p.P2.normal.runsOutInYears) ? Math.round(b.p.P2.normal.runsOutInYears) + ' years' : 'never')).join(', ') + ' at its last-10-year trend (pass: over 100)',
 		breaks: [...failE(['X2']), ...fails(['B05'].map(S))]
 	});
 	rows.push({
 		part: 'P3 — living standards rise for every decile',
 		holds: allB((b) => b.p.P3.pass),
-		base: 'worst 5-year fall ' + bases.map((b) => pc(Math.max(...b.p.P3.deciles.map((d) => d.worstDrawdown?.fall ?? 0)), 2)).join(', ') + '; deciles failing ' + bases.map((b) => b.p.P3.failed.length).join(', '),
-		breaks: [...failE(['X10', 'SH']), ...fails(['B27', 'S01'].map(S))]
+		base: 'worst 5-year fall ' + bases.map((b) => pc(Math.max(...b.p.P3.deciles.map((d) => d.fall ?? 0)), 1)).join(', ') + '; deciles failing ' + bases.map((b) => b.p.P3.failed.length).join(', ') + '; without Aven services in the index, deciles failing ' + bases.map((b) => b.p.P3.withoutCompute.failed.length).join(', ') + '; Aven services’ share of the index in the last year ' + bases.map((b) => pc(b.p.P3.share.at(-1)?.all, 0)).join(', ') + '; COOP part ' + bases.map((b) => yes(b.p.P3.coops.pass)).join(', '),
+		breaks: [...failE(['X10', 'SH']), ...fails(['B22', 'B27', 'S01', 'S03'].map(S))]
 	});
 	rows.push({
 		part: 'Abundance limited only by physics',
-		holds: allB((b) => b.p.abundance.pass) && [E('X9'), E('AB1')].every((x) => !x || x.verdict.pass) && [S('B28'), S('B29')].every((x) => !x || x.pass),
-		base: 'MIND bound a basic on ' + bases.map((b) => b.p.abundance.mindBindsBasics).join(', ') + ' days; X9 ' + (E('X9') ? yes(E('X9').verdict.pass) : '–') + ', AB1 ' + (E('AB1') ? yes(E('AB1').verdict.pass) : '–') + ', B28 ' + (S('B28') ? yes(S('B28').pass) : '–') + ', B29 ' + (S('B29') ? yes(S('B29').pass) : '–'),
-		breaks: [...failE(['X9', 'X11', 'AB1']), ...fails(['B28', 'B29'].map(S))]
+		holds: allB((b) => b.p.abundance.pass) && [E('X9'), E('AB1'), E('X11')].every((x) => !x || x.verdict.pass) && [S('B14'), S('B28'), S('B29')].every((x) => !x || x.pass),
+		base: 'MIND bound a basic on ' + bases.map((b) => b.p.abundance.mindBindsBasics).join(', ') + ' day-goods (a day and a basic); ' + [['X9', E('X9')?.verdict], ['AB1', E('AB1')?.verdict], ['X11', E('X11')?.verdict], ['B14', S('B14')], ['B28', S('B28')], ['B29', S('B29')]].map(([id, v]) => `${id} ${v ? yes(v.pass) : '–'}`).join(', '),
+		breaks: [...failE(['X9', 'X11', 'AB1']), ...fails(['B14', 'B28', 'B29'].map(S))]
 	});
 	return rows;
 }
-
-/**
- * Why each known failure fails, and which mechanism inside the rules would fix it. These are notes, written by
- * reading the runs; they hold no numbers, and the report prints one only while its item fails in the run.
- */
-const DIAGNOSIS = {
-	X5: ['The second food seller holds only the greenhouse, a small part of the food. It cannot replace the failing forest in winter. The receiver hands the forest on, but the autumn harvest is already lost.', 'On the first day of the audit, the receiver moves the stored food with the plants. Then the harvest is not lost.'],
-	X7: ['The forward-margin rule sets each price from the seller’s own costs and forecast. It does not read rival prices, so a second seller does not push the margin down.', 'A price rule that lowers the margin when buyers move to a cheaper rival (the logit share it already sees).'],
-	X8: ['Primer’s adaptive price swings less and leaves the poorest decile better off than the forward margin. The claim that the forward rule is better is false here.', 'Use Primer’s adaptive baseline as the default price rule, or damp the forward margin to the same speed.'],
-	X12: ['All land is on fixed leases that never return. New beds and greenhouses need land, so newcomers wait for capacity that cannot be built.', 'Leases that renew at the auction rent, or unused plots that go back to the City COOP. Then the HOME and food COOPs can bid for them.'],
-	B15: ['All land is on fixed leases that never return. New beds and greenhouses need land, so newcomers and then everyone fall short.', 'Leases that renew at the auction rent, or unused plots that go back to the City COOP. Then the HOME and food COOPs can bid for them.'],
-	X13: ['Private ground rent is small beside the HEARTS a person sends each day. It does not move the holdings Gini.', 'None needed for the rule itself: all land stays with the City COOP. The test needs a world where land is scarce (growth) to show the difference.'],
-	B09: ['Private ground rent is small beside the HEARTS a person sends each day. It does not move the holdings Gini, but the private-land world fails P3.', 'None needed for the rule itself: all land stays with the City COOP. The claim about the Gini needs a world where land is scarce.'],
-	SH: ['The well failure stops geothermal power in winter. Solar power cannot cover the gap, so energy and beds fall short. The lower deciles recover more slowly than two years.', 'A second geothermal well or a seasonal energy store, built by the GEO COOP from its own reserve.'],
-	B02: ['The direction holds: payout gives people a much larger share. The gap is smaller than the paper says, because the keep world still pays the Law 5 dividend to holders.', 'None needed: the rule works. The 50-point threshold in the claim is too high for a world that keeps Law 5.'],
-	B03: ['Early in the city, holdings are small and the Law 5 dividend is a fixed share of revenue. So the yield is far above the melt. It falls under 7 % only when holdings near their resting level, later for a larger share.', 'A smaller Law 5 share keeps the yield under the melt sooner. A rule that pays the share into the pools until holdings settle would also work; it is a rule change for the authors.'],
-	B17: ['Avens move HEARTS by a replicator on delivered output per HEART. Its step is slow, so a failing COOP keeps most of its HEARTS for months.', 'A faster replicator step or a shorter average of delivered output in each Aven’s policy.'],
-	B22: ['At melts under 7 % the lower deciles fall more than 2 % in a five-year window. The Gini does not fall with the rate, because the Aven spread sets it.', 'None: the melt stays at 7 %. The sweep shows that a lower melt breaks P3.'],
-	B29: ['Take 50 people with geothermal on a hex built for 250. The material chain (timber, steel, glass, panels, goods) sells almost nothing and goes into receivership. Nobody rebuilds it, homes and plants wear out, and MIND binds water and energy at the end.', 'A Law 3 founding when a good has no seller and orders go unfilled, so a small village restarts its material chain.'],
-	B30: ['The forward margin is not calmer than Primer’s adaptive price, and Mark-0 and Primer leave the poorest decile better off.', 'Use Primer’s adaptive baseline as the default price rule, or damp the forward margin.'],
-	B31: ['More sellers per good do not lower the price over full cost: the forward margin does not read rival prices. With four sellers each is too small, and food falls short.', 'A price rule that reads the share it loses to rivals. Also, a Law 3 rule that does not split a good below a working plant size.'],
-	B32: ['With 10 people, each decile is one person. One person’s bad year breaks P3.', 'None: P3 is a statement about deciles, so it needs at least 100 people.'],
-	S01: ['With no Law 5 dividend, owner-only people have no income: P1 and P2 fail at every melt. With a 10 % share, P3 fails at every melt.', 'None: Law 5 stays at 20 %. The grid shows that the result needs a Law 5 share of 20 % or more.']
-};
 
 function report(exps, scen, bases, notCovered, meta) {
 	const L = [];
 	const nPass = exps.filter((e) => e.r.verdict.pass).length + scen.filter((s) => s.pass).length;
 	L.push('# Sandbox 8 — the proof of Proposition 3', '');
-	L.push(`Run ${meta.now.slice(0, 16).replace('T', ' ')} UTC by \`node scripts/sandbox-9-proof.mjs${meta.only ? ' --only ' + meta.only.join(',') : ''}\`. Engine: \`src/lib/sandbox-9/\`. Wall time ${(meta.wall / 1000).toFixed(0)} s on ${meta.threads} threads (${(meta.totalCpu / 1000).toFixed(0)} s of runs). Every number below comes from the run.`, '');
+	L.push(`Run ${meta.now.slice(0, 16).replace('T', ' ')} UTC by \`node scripts/sandbox-9-proof.mjs${meta.quick ? ' --quick' : ''}${meta.only ? ' --only ' + meta.only.join(',') : ''}\`. Engine: \`src/lib/sandbox-9/\` (hash ${meta.hash}). Wall time ${(meta.wall / 1000).toFixed(0)} s on ${meta.threads} threads (${(meta.totalCpu / 1000).toFixed(0)} s of runs). Every number below comes from the run.`, '');
+	if (meta.quick) L.push('**Quick run:** every scenario world was cut to at most 10 years. Verdicts below that need longer worlds read short ones; this is a smoke test, not the proof.', '');
 	if (Object.keys(meta.set).length) L.push(`**Settings changed from the defaults in every world:** \`${JSON.stringify(meta.set)}\`.`, '');
 	L.push(`${exps.length} experiments and ${scen.length} scenarios ran. ${nPass} pass and ${exps.length + scen.length - nPass} fail.`, '');
 
 	// headline
 	if (bases.length) {
 		L.push('## Headline: does Proposition 3 hold?', '');
-		L.push(`The base world: ${bases[0].N} people, 30 years, seeds ${bases.map((b) => b.seed).join(', ')}. Each part is checked per person, every day.`, '');
+		L.push(`The base world: ${bases[0].N} people, ${Math.round(bases[0].s.days / 365)} years, seeds ${bases.map((b) => b.seed).join(', ')}. Each part is checked per person, every day. The strict test starts from a cold start, where everyone holds nothing; A07 tests owner-only newcomers who join a settled city.`, '');
 		L.push('| part | base world, every seed | what it shows | where it breaks |', '|---|---|---|---|');
 		for (const r of headline(exps, scen, bases)) L.push(`| ${r.part} | **${r.holds ? 'holds' : 'fails'}** | ${r.base} | ${r.breaks.length ? r.breaks.join(', ') : 'nowhere in this suite'} |`);
 		L.push('');
@@ -304,12 +294,8 @@ function report(exps, scen, bases, notCovered, meta) {
 	const failing = [...exps.filter((e) => !e.r.verdict.pass).map((e) => [e.r.id, e.r.verdict.evidence]), ...scen.filter((s) => !s.pass).map((s) => [s.id, s.evidence])];
 	if (failing.length) {
 		L.push('## What fails', '');
-		L.push('Each item fails in this run. The evidence line is computed. The cause and the in-rules fix are notes written after reading the runs of 2026-10-12. They print only while the item fails. No fix below is tested yet.', '');
-		for (const [id, ev] of failing) {
-			L.push(`- **${id}:** ${ev}`);
-			const d = DIAGNOSIS[id];
-			if (d) L.push(`  - *Cause:* ${d[0]}`, `  - *In-rules fix:* ${d[1]}`);
-		}
+		L.push('Each item fails in this run; the line under it is the run’s own evidence (scenario evidence names the short good, its binding limit and the parts that fail, computed from the worlds). No cause or fix is typed in here: a note written by hand can outlive the run it was true of.', '');
+		for (const [id, ev] of failing) L.push(`- **${id}:** ${ev}`);
 		L.push('');
 	}
 
@@ -347,20 +333,24 @@ function baseEvidence(L, bases, exps, meta) {
 	}
 	L.push('');
 	L.push('### P3 — every decile, by holdings and by Aven output', '');
-	L.push('Each decile’s living standard is what its people consumed, at base-year prices, as a 365-day trailing mean. **Fall** is the largest drop from any earlier point within 5 years. **Net** is the worst change over a full 5-year window. Pass: fall ≤ 2 %, and the decile rises or ends within 5 % of the physics ceiling.', '');
+	L.push('Each decile’s living standard is what its people consumed, at base-year prices. **Fall** is the larger of two readings: the largest drop of the 365-day trailing mean from any earlier point within 5 years, and the largest drop of a 30-day block against the same block of the year in any of the 5 years before (season against season). **Windows failing** counts the days on which the 5 years just ended neither rose nor ended within 5 % of the capacity per person (mean: what the built plants, the City COOP’s idle ones included, could give each person at satiation). Pass: fall ≤ 2 % and no window failing. The same test runs on the index without Aven services, which are reported apart because the accelerators that make them come from outside the city.', '');
 	for (const b of bases) {
 		const P3 = b.p.P3;
 		L.push(`#### Seed ${b.seed}: ${yes(P3.pass)}${P3.failed.length ? ` (failing: ${P3.failed.join(', ')})` : ''}`, '');
-		L.push('| decile | first full year | last year | ceiling | rises | near ceiling | largest fall (peak day → day) | worst net 5-year change | pass |', '|---|---|---|---|---|---|---|---|---|');
-		for (const d of P3.deciles) L.push(`| ${d.by} ${d.decile} | ${f(d.first)} | ${f(d.last)} | ${f(d.ceiling)} | ${d.rises ? 'yes' : 'no'} | ${d.nearCeiling ? 'yes' : 'no'} | ${pc(d.worstDrawdown?.fall, 2)} (${d.worstDrawdown?.peakDay} → ${d.worstDrawdown?.day}) | ${pc(d.worstNet?.change, 2)} | ${yes(d.pass)} |`);
+		L.push('| decile | first full year | last year | capacity per person | trailing fall (peak day → day) | season-against-season fall (from → day) | windows failing | worst net 5-year change | pass | without Aven services: last year, fall, pass |', '|---|---|---|---|---|---|---|---|---|---|');
+		P3.deciles.forEach((d, x) => {
+			const dx = P3.withoutCompute.deciles[x];
+			L.push(`| ${d.by} ${d.decile} | ${f(d.first)} | ${f(d.last)} | ${f(d.ceiling)} | ${pc(d.worstDrawdown?.fall, 1)} (${d.worstDrawdown?.peakDay} → ${d.worstDrawdown?.day}) | ${pc(d.seasonalFall?.fall, 1)} (${d.seasonalFall?.from} → ${d.seasonalFall?.day}) | ${d.windowsFailed ?? '–'} | ${pc(d.worstNet?.change, 1)} | ${yes(d.pass)} | ${f(dx.last)}, ${pc(dx.fall, 1)}, ${yes(dx.pass)} |`);
+		});
 		L.push('');
+		L.push(`Aven services’ share of the living-standard index, by year (all / poorest tenth by holdings): ${P3.share.filter((_, y) => y % 5 === 4 || y === 0).map((r) => `year ${r.year} ${pc(r.all, 0)} / ${pc(r.poorest, 0)}`).join(', ')}.`, '');
 		const c = P3.coops;
-		L.push(`COOPs: ${c.alive} alive at the end, ${c.founded} founded (Law 3), ${c.receiverships.length} receiverships. Basic shortfall around any receivership (30 days before to 90 after): ${c.receiverships.reduce((a, r) => a + r.basicShortPersonDaysAround, 0)} person-days. Insolvent at the end: ${c.insolventNow.length ? c.insolventNow.map((x) => `${x.coop} (${x.lowDays} d)`).join(', ') : 'none'}. ${yes(c.pass)}.`, '');
+		L.push(`COOPs: ${c.alive} alive at the end, ${c.founded} founded (Law 3), ${c.receiverships.length} receiverships. Basic shortfall around any receivership (30 days before to 90 after): ${c.receiverships.reduce((a, r) => a + r.basicShortPersonDaysAround, 0)} person-days. COOP-days unable to pay for 30 days or more: ${c.coopDaysUnableToPay30}. Delivered but not paid for: ${f(c.unpaidR, 0)} R (${pc(c.unpaidShare, 4)} of what the basic bundles cost). Insolvent at the end: ${c.insolventNow.length ? c.insolventNow.map((x) => `${x.coop} (${x.lowDays} d)`).join(', ') : 'none'}. ${yes(c.pass)}.`, '');
 		if (c.receiverships.length) L.push('Receiverships: ' + c.receiverships.map((r) => `${r.coop} (${r.good}) day ${r.day} → ${r.heir ?? 'City COOP'}: ${r.why}`).join('; ') + '.', '');
 	}
 	L.push('### Decile series (seed 20261012, yearly mean living standard)', '');
 	const yrs = b0.p.P3.deciles[0].byYear.length;
-	L.push('| year | ' + Array.from({ length: 10 }, (_, x) => `H${x + 1}`).join(' | ') + ' | ' + Array.from({ length: 10 }, (_, x) => `A${x + 1}`).join(' | ') + ' | ceiling |', '|---|' + '---|'.repeat(21));
+	L.push('| year | ' + Array.from({ length: 10 }, (_, x) => `H${x + 1}`).join(' | ') + ' | ' + Array.from({ length: 10 }, (_, x) => `A${x + 1}`).join(' | ') + ' | capacity per person (mean) |', '|---|' + '---|'.repeat(21));
 	for (let y = 0; y < yrs; y++) L.push(`| ${y + 1} | ${b0.p.P3.deciles.map((d) => f(d.byYear[y], 1)).join(' | ')} | ${f(b0.s.years[y]?.Lceil, 1)} |`);
 	L.push('', 'H = by holdings, A = by Aven output; decile 1 is the lowest.', '');
 	L.push('### Binding limits over time (seed 20261012)', '');
@@ -379,11 +369,11 @@ function baseEvidence(L, bases, exps, meta) {
 	}
 	L.push('');
 	L.push('### The two ledgers', '');
-	L.push('Checked every day; a leak throws (the proof runs with testMode off, so a finished run had none).', '');
-	L.push('| seed | checks | MIND: largest relative error | MIND leaks | matter: largest relative error | matter leaks | energy: largest relative error | energy leaks | melt index at the end | run time |', '|---|---|---|---|---|---|---|---|---|---|');
+	L.push('Checked every day; a leak throws (the proof runs with testMode off, so a finished run had none). The laws are checked every day too: each HEART’s two halves and the pools’ tenth, Law 5’s fifth against what was paid, and the pools untouched by Law 5.', '');
+	L.push('| seed | checks | MIND: largest relative error | MIND leaks | matter: largest relative error | matter leaks | energy: largest relative error | energy leaks | law checks | law: largest relative error | law breaches | delivered unpaid (R) | COOP-days unable to pay ≥ 30 days | melt index at the end | run time |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
 	for (const b of bases) {
 		const g = b.s.ledger;
-		L.push(`| ${b.seed} | ${g.checks} | ${g.mindMaxRel.toExponential(2)} | ${g.mindLeaks.length} | ${g.matterMaxRel.toExponential(2)} | ${g.matterLeaks.length} | ${g.energyMaxRel.toExponential(2)} | ${g.energyLeaks.length} | ${f(g.meltIndex, 4)} | ${(b.ms / 1000).toFixed(1)} s |`);
+		L.push(`| ${b.seed} | ${g.checks} | ${g.mindMaxRel.toExponential(2)} | ${g.mindLeaks.length} | ${g.matterMaxRel.toExponential(2)} | ${g.matterLeaks.length} | ${g.energyMaxRel.toExponential(2)} | ${g.energyLeaks.length} | ${g.lawChecks} | ${Number(g.lawMaxRel).toExponential(2)} | ${g.lawBreaches?.length ?? g.lawBreaches} | ${f(g.unpaidR, 1)} | ${g.coopLowDays} | ${f(g.meltIndex, 4)} | ${(b.ms / 1000).toFixed(1)} s |`);
 	}
 	L.push('');
 	L.push('### Starting capital (day 0)', '');
@@ -442,9 +432,10 @@ function toJson(exps, scen, bases, notCovered, meta) {
 	return {
 		generated: meta.now,
 		command: 'node scripts/sandbox-9-proof.mjs',
+		engineHash: meta.hash,
 		wallSeconds: Math.round(meta.wall / 1000),
 		headline: bases.length ? headline(exps, scen, bases).map((r) => ({ part: r.part, holds: r.holds, base: r.base, breaks: r.breaks })) : [],
-		seeds: bases.map((b) => ({ seed: b.seed, pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
+		seeds: bases.map((b) => ({ seed: b.seed, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
 		experiments: exps.map((e) => ({ id: e.r.id, question: e.r.question, ruleChanged: e.r.ruleChanged, people: e.r.people, years: e.r.years, seed: e.r.seed, pass: e.r.verdict.pass, claim: e.r.verdict.claim, evidence: e.r.verdict.evidence, takeaway: e.r.takeaway, metrics: e.r.metrics.map((m) => ({ id: m.id, label: m.label, base: round(m.base), changed: round(m.changed) })), seconds: round(e.ms / 1000) })),
 		scenarios: scen.map((s) => ({ id: s.id, name: s.name, paper: s.paper, claim: s.claim, pass: s.pass, takeaway: s.takeaway, evidence: s.evidence, runs: s.runs.map((r) => ({ label: r.label, people: r.people ?? 250, years: r.years })), numbers: round(s.numbers), seconds: round(s.ms / 1000) })),
 		notCovered: notCovered.map(([id, name, why]) => ({ id, name, why }))

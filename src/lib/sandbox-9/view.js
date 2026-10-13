@@ -44,13 +44,18 @@ export function makeViewer(w) {
 		const t = w.today, h = t.harvest, slot = ring.at;
 		const e = [h.solar, h.geo, h.battery, ...Array.from(t.use), t.curtailed, t.battLoss];
 		for (let j = 0; j < E_KEYS.length; j++) ring.e[slot * E_KEYS.length + j] = e[j] || 0;
-		// who keeps the surplus of each basic: buyers (each person's limit less the price, on what they got) and
-		// sellers (the price less the variable cost, on what they sold)
+		// who keeps the surplus of each basic: buyers (what each person would pay for a unit less the price, on what
+		// they got) and sellers (the price less the variable cost, on what they sold). What a person would pay is their
+		// limit, but never more than their whole HEARTS half of a day for a day's need of that basic: a limit far above
+		// that is what they hold, not what the basic is worth to them, and would make the buyers keep all of it at any
+		// price
+		const need = w.c.need;
 		for (let b = 0; b < 4; b++) {
 			const p = w.pbar[BASICS[b]];
+			const worth = w.cfg.heartsPerDay / 2 / need[b];
 			let buy = 0;
 			for (let i = 0; i < w.N; i++) {
-				const room = w.limit[i * 4 + b] - p;
+				const room = Math.min(w.limit[i * 4 + b], worth) - p;
 				if (room > 0) buy += room * w.q[i * G + BASICS[b]];
 			}
 			let sell = 0;
@@ -82,6 +87,15 @@ export function makeViewer(w) {
 			for (let b = 0; b < 4; b++) lim[i * 4 + b] = w.limit[i * 4 + b];
 		}
 		const price = Float32Array.from(BASICS, (b) => w.pbar[b]);
+		// the spread of the limit bars today (each person's limit ÷ the price, lowest and highest), so the page scales
+		// the bars to what people differ by rather than to a fixed range every bar overflows
+		const limLo = new Float32Array(4).fill(Infinity), limHi = new Float32Array(4);
+		for (let i = 0; i < N; i++)
+			for (let b = 0; b < 4; b++) {
+				const r = price[b] > 0 ? lim[i * 4 + b] / price[b] : 0;
+				if (r > 0 && r < limLo[b]) limLo[b] = r;
+				if (r > limHi[b]) limHi[b] = r;
+			}
 		const coops = w.coops.map((co) => ({
 			id: co.id,
 			k: co.k,
@@ -133,10 +147,12 @@ export function makeViewer(w) {
 			});
 			const coopBuyers = [];
 			if (w.b2b) for (const j of w.ks) if (j !== k && w.b2b[g * M + j] > 0 && w.coops[j]?.alive && coopBuyers.length < 2) coopBuyers.push(j);
+			// (with Law 5 at 0 % there is no fifth, so no holder coins)
 			const holders = [];
+			const law5 = w.cfg.law5 > 0;
 			let tot = 0;
 			for (let i = 0; i < N; i++) tot += w.hold[i * M + k];
-			for (let n = 0; n < 2 && tot > 0; n++) {
+			for (let n = 0; n < 2 && tot > 0 && law5; n++) {
 				let x = rnd() * tot;
 				for (let i = 0; i < N; i++) {
 					x -= w.hold[i * M + k];
@@ -147,7 +163,7 @@ export function makeViewer(w) {
 				}
 			}
 			let tre = -1, tb = 0;
-			for (const j of w.ks) if (j !== k && w.tre[j * M + k] > tb) (tb = w.tre[j * M + k]), (tre = j);
+			if (law5) for (const j of w.ks) if (j !== k && w.tre[j * M + k] > tb) (tb = w.tre[j * M + k]), (tre = j);
 			coins.push({ k, buyers, pays, coopBuyers, holders, tre, pool: w.poolsOf?.[k]?.[0] ?? 0 });
 		}
 		const events = [];
@@ -165,7 +181,8 @@ export function makeViewer(w) {
 			rain: d.rain,
 			shocks: d.shocks,
 			N,
-			dec, adec, owner, met, hold, living, div, aven, spent, lim, price,
+			dec, adec, owner, met, hold, living, div, aven, spent, lim, price, limLo, limHi,
+			law5: w.cfg.law5,
 			coops,
 			pools: w.pools.map((p) => Array.from(p.members)),
 			coins,

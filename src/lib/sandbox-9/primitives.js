@@ -166,11 +166,13 @@ export const RESOURCES = {
 	},
 	ore: {
 		tYearPerPit: n(250, 't of iron ore a year per pit', 'src/lib/sandbox-6/rules.js ironmine: 10 rounds of 25 t a year'),
-		pitsMax: n(2, 'pits', "the hex's share of the village's iron ground (estimate)", true)
+		pitsMax: n(2, 'pits', "the hex's share of the village's iron ground (estimate)", true),
+		tPerPit: n(20000, 't of ore in a pit', 'a small bog-iron or ironstone working: about 80 years at 250 t a year (estimate); a pit worked out gives nothing more', true)
 	},
 	sand: {
 		tYearPerPit: n(600, 't of glass sand a year per pit', 'src/lib/sandbox-6/rules.js glassworks: 100 rounds of 12 t a sand hex, halved for a pit (estimate)', true),
-		pitsMax: n(2, 'pits', "the hex's share of the village's sand ground (estimate)", true)
+		pitsMax: n(2, 'pits', "the hex's share of the village's sand ground (estimate)", true),
+		tPerPit: n(50000, 't of glass sand in a pit', 'about 80 years at 600 t a year (estimate); a pit worked out gives nothing more', true)
 	},
 	spring: {
 		hoursPerSite: n(150, 'bather-hours a day per site', 'a warm pond of ~300 m² at 10 m² a bather over 5 h of a crowded day (estimate)', true),
@@ -332,7 +334,7 @@ export const TECH = {
 		good: 'wood',
 		kind: 'timber',
 		capUnit: 't of glulam a year (works)',
-		inputs: { logs: n(1, 't of logs per t of glulam', 'rules.js timber works: 15 t of logs → 15 t of planks') },
+		inputs: { logs: n(2, 't of logs per t of glulam', 'sawmill and glulam recovery is about 30–60 % of the log (bark, slabs, kerf, drying shrinkage, planing): 50 % (estimate). The residue goes to heat or compost. rules.js (15 t of logs → 15 t of planks, 100 %) is generous', true) },
 		kwh: n(500, 'kWh per t', 'rules.js timber works: 7.5 MWh per 15 t (0.5 MWh/t)'),
 		runH: n(4 / 100, 'Aven hours a day per t/yr of works', 'estimate', true),
 		runLandH: n(0.5 / 1e4, 'Aven hours a day per m² of timber land', 'estimate', true),
@@ -490,7 +492,7 @@ export const GENESIS_PRICE_R = n(
 );
 
 /** the Aven rate card: R per Aven work hour, scaled with the HEARTS a day setting so that money stays a veil */
-export const AVEN_RATE_R = n(2, 'R per Aven hour at 24 HEARTS a day', 'the Aven rate anchor of scripts/theos-e2e-sim.mjs (2 R an Aven hour). It is a rate card, not a wage: it prices Aven work items, and no human is paid. By default it is set in HEARTS (scaled by HEARTS a day ÷ 24, setting rateIndexed), so doubling HEARTS doubles it: X9 and B28 show neutrality under that rule, and B28 reports the world with the card fixed in R (estimate)', true);
+export const AVEN_RATE_R = n(2, 'R per Aven hour at 24 HEARTS a day', 'the Aven rate anchor of scripts/theos-e2e-sim.mjs (2 R an Aven hour). It is a rate card, not a wage: it prices Aven work items, and no human is paid. By default it is indexed to the HEARTS issued a day (scaled by HEARTS a day ÷ 24, setting rateIndexed), so doubling HEARTS doubles it: X9 and B28 show neutrality under that rule, and B28 reports the world with the card fixed in R (estimate)', true);
 
 /** the starting state of the base world: a village settled ten years before day 0 (see genesis.js) */
 export const STARTING_CAPITAL = n(

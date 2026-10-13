@@ -2,7 +2,7 @@
 	Sandbox 8 · the clean live charts under the two fields (world model 7.2), the base world in blue and the world with
 	the one rule changed in orange, every number read from the running worlds (./view.js):
 	  - population, and people short of a basic;
-	  - the poorest tenth's living standard, with the dashed physics ceiling;
+	  - the poorest tenth's living standard, with the dashed capacity per person (mean);
 	  - who owns the MIND: people, COOP treasuries, the pools;
 	  - energy a person next to the living standard of each tenth;
 	  - where the energy goes: from the harvest to the basics, the works, building, R&D, storage, curtailment, losses;
@@ -51,8 +51,8 @@
 			poor: [
 				{ name: `${names.base}: poorest tenth`, color: BASE, points: map(pts.base, 'poorL') },
 				{ name: `${names.changed}: poorest tenth`, color: CHANGED, points: map(pts.changed, 'poorL') },
-				{ name: `${names.base}: physics ceiling`, color: BASE, dash: true, points: map(pts.base, 'ceil') },
-				{ name: `${names.changed}: physics ceiling`, color: CHANGED, dash: true, points: map(pts.changed, 'ceil') }
+				{ name: `${names.base}: capacity per person`, color: BASE, dash: true, points: map(pts.base, 'ceil') },
+				{ name: `${names.changed}: capacity per person`, color: CHANGED, dash: true, points: map(pts.changed, 'ceil') }
 			],
 			own: [
 				{ name: names.base, color: BASE, points: map(pts.base, 'people').map(([d, v]) => [d, 100 * v]) },
@@ -60,7 +60,11 @@
 			]
 		};
 	});
-	const lastShort = $derived({ base: pts.base.at(-1)?.short ?? 0, changed: pts.changed.at(-1)?.short ?? 0 });
+	// the points arrays grow in place, so read them again whenever a batch arrives (version), like the series above
+	const lastShort = $derived.by(() => {
+		void version;
+		return { base: pts.base.at(-1)?.short ?? 0, changed: pts.changed.at(-1)?.short ?? 0 };
+	});
 	const decMax = $derived(panel ? Math.max(1e-9, ...panel.base.deciles.L, ...panel.changed.deciles.L) : 1);
 	const kwhMax = $derived(panel ? Math.max(1e-9, ...panel.base.deciles.kwh, ...panel.changed.deciles.kwh) : 1);
 	const pct = (/** @type {number} */ x) => `${(100 * x).toFixed(0)} %`;
@@ -73,12 +77,12 @@
 	<section class="card">
 		<LineChart title="Population" unit="people" series={series.N} {xMax} {bands} fmt={(v) => v.toFixed(0)} height={90} />
 		<LineChart title="People short of a basic (below 98 % of food, water, energy or a bed)" unit="people on the worst day" series={series.short} {xMax} {bands} yMin={0} fmt={(v) => v.toFixed(0)} height={90} />
-		<p class="note">Nobody dies in this world unless they go short; today {lastShort.base} short in {names.base}, {lastShort.changed} in {names.changed}.</p>
+		<p class="note">Deaths are not modelled; this counts people below 98 % of a basic. Today {lastShort.base} short in {names.base}, {lastShort.changed} in {names.changed}.</p>
 	</section>
 
 	<section class="card">
-		<LineChart title="The poorest tenth’s living standard" unit="R a day at day-0 prices" series={series.poor} {xMax} {bands} />
-		<p class="note">What the tenth holding least consumed, valued at day-0 prices. Dashed: the physics ceiling, the most a person could get from today’s plants, land, energy and recipes.</p>
+		<LineChart title="The poorest tenth’s living standard" unit="R a day at day-0 prices" series={series.poor} {xMax} {bands} yMin={0} />
+		<p class="note">What the tenth holding least consumed, valued at day-0 prices. Dashed: the capacity per person, the mean of what today’s plants (idle ones included), land, energy and recipes could give each person.</p>
 	</section>
 
 	<section class="card">

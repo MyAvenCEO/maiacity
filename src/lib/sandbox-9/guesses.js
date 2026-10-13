@@ -16,29 +16,27 @@
  * rb, rc: the base and changed results (`values` holds each metric); wb, wc: the two worlds, for what a metric does
  * not hold.
  */
-import { ENERGY } from './consts.js';
 import { PERSON } from './primitives.js';
 
 const rel = (a, b) => (b !== 0 ? a / b - 1 : NaN);
 
-/** the lowest share of the energy basic anyone got on the days of the given shocks (from the daily records) */
-function energyMetInShocks(w, kinds) {
+/**
+ * The lowest share of any basic (food, water, energy, a bed) anyone got on the days of the given shocks (from the
+ * daily records). "The basics are served first" holds only if every basic was, not energy alone: a cut in energy can
+ * leave the domes' climate or the pumps short too.
+ */
+function basicsMetInShocks(w, kinds) {
 	const rec = w.rec;
 	let m = Infinity;
 	for (const s of w.cfg.shocks ?? []) {
 		if (!kinds.includes(s.kind)) continue;
-		for (let d = s.day; d < Math.min(rec.n, s.day + (s.days ?? 90)); d++) m = Math.min(m, rec.minMet[d * 4 + ENERGY]);
+		for (let d = s.day; d < Math.min(rec.n, s.day + (s.days ?? 90)); d++) for (let b = 0; b < 4; b++) m = Math.min(m, rec.minMet[d * 4 + b]);
 	}
 	return m;
 }
 
 /** id → { guess text → check(rb, rc, wb, wc) → true | false | null } */
 const CHECKS = {
-	X1: {
-		'With 20 %, the owner-only cohort’s dividends keep paying their basic bundle through the drought; with 0 % they get no dividends at all.': (rb, rc) => rb.values.strictInDrought >= 1 && !(rc.values.strictInDrought > 0.001),
-		'Water gets dearer in both worlds, but nobody goes short of water in either, because every person’s HEARTS half pays the basic bundle many times over.': (rb, rc) => rb.values.waterPeak > 1 && rc.values.waterPeak > 1 && rb.values.shortPD === 0 && rc.values.shortPD === 0,
-		'With 0 % the sellers’ treasuries keep the fifth of every sale, so they build more and water stays cheaper.': (rb, rc) => rc.values.waterPeak < rb.values.waterPeak
-	},
 	X2: {
 		'Dividends alone pay the basic bundle after about four months; before that the dividends-only cohort goes short.': (rb, rc) => rb.values.strictFrom >= 60 && rb.values.strictFrom <= 180 && rc.values.ownerShort > 0,
 		'Spending some of what it holds, the cohort is never short, from day 1.': (rb) => rb.values.ownerShort === 0,
@@ -61,7 +59,7 @@ const CHECKS = {
 	},
 	SH: {
 		'Nobody goes short in any shock; prices rise and fall back.': (rb, rc) => rc.values.shortPD === 0,
-		'The dark winter and the failed well cut energy for R&D and extras first; the basics are served first.': (rb, rc, wb, wc) => (wc ? energyMetInShocks(wc, ['darkWinter', 'wellFail']) >= 0.98 : null),
+		'The dark winter and the failed well cut energy for R&D and extras first; the basics are served first.': (rb, rc, wb, wc) => (wc ? basicsMetInShocks(wc, ['darkWinter', 'wellFail']) >= 0.98 : null),
 		'Living standards dip in each shock and recover within two years.': (rb, rc) => rc.values.p3 === 1
 	}
 };

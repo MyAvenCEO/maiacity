@@ -10,7 +10,7 @@
  *
  * Arrays grow by doubling, so a world can run as long as it likes; ./prop3.js reads them.
  */
-import { BASICS, CONSUMER, COMPUTE, ENERGY, G, LIMIT, BED } from './consts.js';
+import { BASICS, CONSUMER, COMPUTE, ENERGY, G, LIMIT, BED, PHYSICAL } from './consts.js';
 import { capDayOf, plantCapDay } from './genesis.js';
 
 const SERIES = {
@@ -37,7 +37,8 @@ const SERIES = {
 	badge: G, // binding limit per good (LIMIT codes)
 	pbar: G, // expected price per good, R
 	ePP: 1, // all electricity used, a person a day (kWh)
-	surplusPP: 1, // surplus energy (R&D, storage, curtailed), a person a day
+	surplusPP: 1, // surplus energy (R&D, storage, export, curtailed), a person a day
+	exportPP: 1, // electricity exported across the border for accelerators (B23 only), a person a day
 	rdKwh: 1, // R&D energy delivered
 	N: 1,
 	basicCostR: 1,
@@ -52,7 +53,8 @@ const SERIES = {
 /** start the records of a world */
 export function initRecords(w) {
 	const cap = 512;
-	const rec = { n: 0, cap, shortPD: new Float64Array(4), shortAnyPD: 0, personShort: new Int32Array(w.Nmax), worst: { met: Infinity, i: -1, day: -1, g: -1 }, mindViolations: [], strictDays: 0, normalFail: [] };
+	// counters are exact and never capped; the lists beside them keep only the first examples
+	const rec = { n: 0, cap, shortPD: new Float64Array(4), shortAnyPD: 0, personShort: new Int32Array(w.Nmax), worst: { met: Infinity, i: -1, day: -1, g: -1 }, mindViolations: [], mindDayGoods: 0, mindDayGoodsBy: new Float64Array(4), mindDays: 0, strictDays: 0, normalFail: [], normalFailPD: 0 };
 	for (const [k, width] of Object.entries(SERIES)) rec[k] = new Float32Array(cap * width);
 	rec.width = SERIES;
 	w.rec = rec;
@@ -107,6 +109,10 @@ export function recordDay(w) {
 			rec.shortAnyPD++;
 			rec.personShort[i]++;
 		}
+		// the living-standard index L = Σ q_g · p0_g · Q_g (world model 1). The quality index Q_g is held at 1 for every
+		// good: this engine's innovation (./coops.js learn) lowers what a unit takes to make (inputs, energy, land), it
+		// does not make a better unit, so there is no quality ladder to read Q_g from. The index is therefore read with
+		// and without Aven services (Lx), which are most of it
 		let L = 0;
 		for (const g of CONSUMER) L += w.q[o + g] * p0[g];
 		const Lx = L - w.q[o + COMPUTE] * p0[COMPUTE];
@@ -132,7 +138,10 @@ export function recordDay(w) {
 			if (m < ownerMet) ownerMet = m;
 			const hd = w.basicCost[i] > 0 ? w.wealth[i] / w.basicCost[i] : 0;
 			if (hd < ownerHold) ownerHold = hd;
-			if (w.day > 0 && (m < 0.98 || !(w.wealth[i] > 0)) && rec.normalFail.length < 200) rec.normalFail.push({ day: w.day, i, met: m, hold: w.wealth[i] });
+			if (w.day > 0 && (m < 0.98 || !(w.wealth[i] > 0))) {
+				rec.normalFailPD++;
+				if (rec.normalFail.length < 200) rec.normalFail.push({ day: w.day, i, met: m, hold: w.wealth[i] });
+			}
 			if (m < 0.98) ownerShort++;
 			ownerL += L;
 			ownerN++;
@@ -164,11 +173,20 @@ export function recordDay(w) {
 	rec.Lmin[d] = Lmin;
 	rec.Lmean[d] = Lsum / N;
 	// the physics ceiling and the badges
+	// a good's ceiling is the capacity standing today only while physics (or the closed border) stops it from growing
+	// (its binding limit is land, water, energy, a material, ore, sand, nature, accelerators …); a good held back by
+	// built capacity, demand, a treasury or an empty slot could be built up, so its ceiling is satiation. Otherwise a
+	// city that let its plants wear down would lower its own ceiling and pass "within 5 % of the ceiling"
 	const ceil = physicsCeiling(w);
-	let Lc = 0;
-	for (const g of CONSUMER) Lc += Math.min(g === BED ? 1 : c.sat[g], ceil[g]) * p0[g];
+	let Lc = 0, cComp = 0;
+	for (const g of CONSUMER) {
+		const sat = g === BED ? 1 : c.sat[g];
+		const x = (PHYSICAL.includes(w.badge[g]) ? Math.min(sat, ceil[g]) : sat) * p0[g];
+		Lc += x;
+		if (g === COMPUTE) cComp = x;
+	}
 	rec.Lceil[d] = Lc;
-	rec.LceilX[d] = Lc - Math.min(c.sat[COMPUTE], ceil[COMPUTE]) * p0[COMPUTE];
+	rec.LceilX[d] = Lc - cComp;
 	rec.unpaidR[d] = w.unpaidR - (w.unpaidPrev ?? 0);
 	w.unpaidPrev = w.unpaidR;
 	for (let g = 0; g < G; g++) {
@@ -176,17 +194,26 @@ export function recordDay(w) {
 		rec.badge[d * G + g] = w.badge[g];
 		rec.pbar[d * G + g] = w.pbar[g];
 	}
+	let mindToday = false;
 	for (const b of BASICS)
-		if (w.badge[b] === LIMIT.mind && ceil[b] >= need[b] && w.day > 0 && rec.mindViolations.length < 500) rec.mindViolations.push({ day: w.day, good: b, minMet: minMet[b] });
+		if (w.badge[b] === LIMIT.mind && ceil[b] >= need[b] && w.day > 0) {
+			rec.mindDayGoods++;
+			rec.mindDayGoodsBy[b]++;
+			mindToday = true;
+			if (rec.mindViolations.length < 500) rec.mindViolations.push({ day: w.day, good: b, minMet: minMet[b] });
+		}
+	if (mindToday) rec.mindDays++;
 	if (w.day > 0) {
 		let ok = ratios.length > 0;
 		for (const r of ratios) if (!(r >= 1)) ok = false;
 		if (ok) rec.strictDays++;
 	}
 	const t = w.today;
+	// the electricity the city used (the export across the border, B23 only, is not use: it is its own series)
 	let used = 0;
 	for (let cl = 0; cl < 4; cl++) used += t.use[cl];
 	rec.ePP[d] = used / N;
+	rec.exportPP[d] = (t.exportKwh ?? 0) / N;
 	rec.surplusPP[d] = t.surplusKwh / N;
 	rec.rdKwh[d] = t.use[3];
 	rec.N[d] = N;
@@ -210,8 +237,11 @@ export function physicsCeiling(w) {
 	for (const co of w.coops) if (co.alive) out[co.good] += co.capDay >= 0 ? co.capDay : capDayOf(w, co, w.day);
 	const city = w.coops[w.cityK];
 	for (const pl of city?.idle ?? []) out[pl.def.good] += plantCapDay(w, pl, w.day);
-	const h = w.today.harvest;
-	out[ENERGY] = h.solar + h.geo + h.battery;
+	// energy: what the harvest leaves for people's own use once the other basics have theirs (water pumping, food
+	// processing, the domes' climate and the heat pumps for their heat, at today's deliveries)
+	const t = w.today, h = t.harvest;
+	const other = Math.max(0, (t.req?.[0] ?? 0) - (t.pBasic ?? 0)) + (t.heatPump?.basics ?? 0);
+	out[ENERGY] = Math.max(0, h.solar + h.geo + h.battery - other);
 	for (let g = 0; g < G; g++) out[g] /= Math.max(1, w.N);
 	return out;
 }
