@@ -106,6 +106,13 @@ services:
     environment:
       AVENDB_RELAY_URL: ${AVENDB_RELAY_URL:-http://localhost:3350}
       AVENDB_PUBLIC_ADDR: ${AVENDB_PUBLIC_ADDR:-}
+      # its bucket (blobs B3a), if the server's .env names one: its store lives there, sealed under the seal
+      AVENDB_BUCKET: ${AVENDB_BUCKET:-}
+      AVENDB_BUCKET_ENDPOINT: ${AVENDB_BUCKET_ENDPOINT:-}
+      AVENDB_BUCKET_REGION: ${AVENDB_BUCKET_REGION:-}
+      AVENDB_BUCKET_ACCESS_KEY: ${AVENDB_BUCKET_ACCESS_KEY:-}
+      AVENDB_BUCKET_SECRET_KEY: ${AVENDB_BUCKET_SECRET_KEY:-}
+      AVENDB_BUCKET_SEAL: ${AVENDB_BUCKET_SEAL:-}
       RUST_LOG: ${AVENDB_LOG:-info}
       # plain log lines: the deploy reads its offer from them
       NO_COLOR: "1"

@@ -478,7 +478,9 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
 6. **Its bucket** (blobs B3a, `docs/BLOBS.md`): with `AVENDB_BUCKET`, `AVENDB_BUCKET_ENDPOINT`, `AVENDB_BUCKET_REGION`,
    `AVENDB_BUCKET_ACCESS_KEY`, `AVENDB_BUCKET_SECRET_KEY` and `AVENDB_BUCKET_SEAL` (64 hex digits) in its environment,
    its store and its device's secret live in that bucket, every object sealed under the seal, and its folder is only a
-   cache: it logs at its start whether it keeps one.
+   cache: it logs at its start whether it keeps one. `avendb.yml` writes them into the server's `.env` at each deploy,
+   from the project's S3 keys (`HETZNER_S3_ACCESS_KEY`, `HETZNER_S3_SECRET_KEY`) and the GitHub secret
+   `AVENDB_BUCKET_SEAL`, and the compose files pass them on; with one of those secrets unset, it writes none.
 
 Its store and its device's secret live on the Hetzner volume, and in its bucket if it keeps one, so a rebuilt server is
 still the same device, even with its folder lost; the database backups don't hold them. Losing them makes a new server, a device of nobody: avenCEO's owners remove the lost

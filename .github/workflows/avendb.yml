@@ -4,7 +4,8 @@ name: avenDB server
 # so a change to avenDB never restarts the API or the media vault, and a failed avenDB build never holds up theirs.
 #
 #   image  – build the server's image (avendb/Dockerfile.server), push to GHCR tagged with the commit
-#   deploy – over SSH: AVENDB_IMAGE into the server's .env, then pull and restart this one container
+#   deploy – over SSH: AVENDB_IMAGE and its bucket's settings into the server's .env, then pull and restart this one
+#            container
 #   bucket – make sure avenDB's own bucket is there (BUCKET in hel1, beside the media vault's), with Object Lock
 #
 # The bucket gets Object Lock as it is made, as no bucket can get it later, and so keeps versioning on for good. Every
@@ -90,9 +91,22 @@ jobs:
         env:
           IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # the server's bucket (blobs B3a): its store lives there, every object sealed under AVENDB_BUCKET_SEAL
+          BUCKET_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          BUCKET_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          BUCKET_SEAL: ${{ secrets.AVENDB_BUCKET_SEAL }}
         run: |
           # The token goes to the server over stdin, never as a process argument.
           printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
+          # The bucket's settings, if every secret is set: with one missing, the server keeps its store on its volume.
+          # They go to the server over stdin too, and never into the log.
+          if [ -n "$BUCKET_ACCESS_KEY" ] && [ -n "$BUCKET_SECRET_KEY" ] && [ -n "$BUCKET_SEAL" ]; then
+            BUCKET_ENV=$(printf 'AVENDB_BUCKET=%s\nAVENDB_BUCKET_ENDPOINT=%s\nAVENDB_BUCKET_REGION=%s\nAVENDB_BUCKET_ACCESS_KEY=%s\nAVENDB_BUCKET_SECRET_KEY=%s\nAVENDB_BUCKET_SEAL=%s' \
+              "$BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$BUCKET_ACCESS_KEY" "$BUCKET_SECRET_KEY" "$BUCKET_SEAL")
+          else
+            BUCKET_ENV=
+            echo "::warning::No bucket for avenDB's server: set HETZNER_S3_ACCESS_KEY, HETZNER_S3_SECRET_KEY and AVENDB_BUCKET_SEAL."
+          fi
           ssh prod "cd $APP_DIR && bash -s" <<EOS
           set -e
           # api.yml rewrites this .env too: one writer at a time
@@ -100,6 +114,10 @@ jobs:
           grep -q '^AVENDB_DATA_PATH=' .env 2>/dev/null \
             || { echo "::error::$APP_DIR/.env has no avenDB settings yet: run the API workflow (api.yml) first."; exit 1; }
           sed -i '/^AVENDB_IMAGE=/d' .env && echo "AVENDB_IMAGE=$IMAGE" >> .env
+          sed -i '/^AVENDB_BUCKET/d' .env
+          cat >> .env <<'BUCKET'
+          $BUCKET_ENV
+          BUCKET
           P=\$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2- || true)
           case ",\$P," in
             *,avendb,*) ;;
@@ -125,6 +143,13 @@ jobs:
             fi
             sleep 5
           done
+          # where its store lives (blobs B3a), and whether its bucket takes what it puts there
+          sleep 10
+          SAID=$(ssh prod "docker logs maia-city-avendb 2>&1" | grep -E 'avenDB server: (its store|no bucket)|bucket' || true)
+          printf '%s\n' "$SAID" | tail -6
+          if printf '%s\n' "$SAID" | grep -q "the bucket can't be written"; then
+            echo "::warning::avenDB's server can't write its bucket: it announces nothing new until it can"
+          fi
           ssh prod "docker exec maia-city-caddy wget -qO- http://avendb:3350/healthz" && echo " ← its relay answers inside" \
             || echo "::warning::avenDB's relay does not answer inside"
           if ! curl -fsS "https://$AVENDB_HOST/healthz"; then
