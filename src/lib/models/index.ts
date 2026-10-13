@@ -71,7 +71,8 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	],
 	batterypack: [
 		{ ...FIRST, date: '2026-10-13', build: () => working(batteryModule(5), 'explode') },
-		{ v: 2, date: '2026-10-13', note: 'Serviceable from the front: a closed shell and one L-shaped service drawer carrying every inner part; it plays its service move, the two side buttons pressed and the drawer pulled out and pushed home' }
+		{ v: 2, date: '2026-10-13', note: 'Serviceable from the front: a closed shell and one L-shaped service drawer carrying every inner part; it plays its service move, the two side buttons pressed and the drawer pulled out and pushed home', build: () => working(batteryModule(6), 'service') },
+		{ v: 3, date: '2026-10-13', note: 'Everything from the front and low: the grip, the lock and the two release buttons (on the face’s left and right ends) at the base plate’s level' }
 	],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
