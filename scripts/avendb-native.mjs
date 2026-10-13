@@ -5,9 +5,9 @@
  * asks for is answered by a passkey of maia.city's, sealed as the sheet's page seals it (avendb-browser's
  * `sealCeremony`, from the page's own module), against an avenDB server on this machine. Signing in before they have an
  * account, as on a server that started fresh, the page names the button that sets one up; the person founds their vault
- * from the "Mac" in two sheets; the page shows the device native, on its own UDP sockets; reloaded, it opens with no
- * sheet, as the device runs on; the app quits and starts again, and the device opens from its folder in one sheet; it
- * is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
+ * from the "Mac" in two sheets, the page's own sheet showing every step of it done, with its seconds; the page shows
+ * the device native, on its own UDP sockets; reloaded, it opens with no sheet, as the device runs on; the app quits
+ * and starts again, and the device opens from its folder in one sheet; it is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
  * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
  * each in turn: avenALICE writes a note and three todos, one tagged “work”, adds a fourth from her studio’s query
  * console and queries those she has left there, and shares the note alone with avenBOB, and every todo tagged “work”, a
@@ -238,7 +238,10 @@ const shown = (selector) => page.$$eval(selector, (els) => els.map((e) => e.text
 const problem = () => page.evaluate(() => document.querySelector('[role=alert]')?.textContent?.trim() ?? '');
 /** the vaults in the bar, by name, the person's own first */
 const bar = () => page.$$eval('.bar .slot[aria-label]:not(.add)', (els) => els.map((e) => e.getAttribute('aria-label')));
-const opened = () => page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
+/** the sheet that shows a start's steps closed, as it does by itself a little after one that went through */
+const settled = () => page.waitForSelector('.signing', { hidden: true, timeout: 15000 }).then(() => true, () => false);
+/** the device opened, and the sheet of its start closed */
+const opened = () => page.waitForSelector('.shell', { timeout: 180000 }).then(settled, () => false);
 const devices = () => shown('.main .list li b');
 const at = `${base}/app/avendb/?${new URLSearchParams({ relay, server })}`;
 
@@ -415,6 +418,21 @@ try {
 	await shot('1b-no-account');
 
 	await click('Use my maiaCITY passkey');
+	// the page's own sheet shows every step of the start as the device takes it, each with its seconds
+	const allDone = () => text('.signing header').then((t) => t.includes('All done'));
+	check('the sheet says it is all done', await until(allDone, 180000), await text('.signing header'));
+	const took = await page.$$eval('.signing .steps li', (els) =>
+		els.map((e) => {
+			const [state, title, time] = [e.classList[0], e.querySelector('b'), e.querySelector('.time')];
+			return `${state} ${title?.textContent} ${time?.textContent?.trim()}`;
+		})
+	);
+	check(
+		'it shows the eight steps of the start, each done with its seconds, the claim among them',
+		took.length === 8 && took.every((s) => /^done .+ \d+\.\d s$/.test(s)) && took.some((s) => s.includes('claim')),
+		took.join(' | ')
+	);
+	await shot('2a-sheet');
 	check('the vault is founded natively', await opened(), await problem());
 	check('in two sheets: unlock, found', app.sheets().join(',') === 'unlock,found');
 	check('its vault and avenCEO in the bar', await until(async () => (await bar()).includes('avenCEO')), (await bar()).join(', '));

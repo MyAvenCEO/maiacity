@@ -13,6 +13,9 @@
 //!   passkey, and the app answers `{"sheet": n, "back": url}`, the URL the sheet's page sent back, or
 //!   `{"sheet": n, "error": why}`.
 //!
+//! While the device starts (`found`, `link`, `open`, `adopt`), the page asks `steps` for each step of its start so far,
+//! with how long it took (`avendb_browser::steps_json`), and shows them as they happen.
+//!
 //! The passkey's ceremonies run in the sign-in sheet as the page's do (vault/app/src/passkey.rs,
 //! src/routes/app/avendb/sheet/): for each, the device makes an X-Wing key of its own (`keys::Secret`), names it in the
 //! sheet's URL, and opens what the sheet's page sealed to it (`keys::open_once`), so nothing crosses the app open.
@@ -37,8 +40,8 @@ use avendb::id::{BlobId, CapId, EntryId, VaultId};
 use avendb::keys;
 use avendb::policy::Kind;
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Fresh, Start, Unlock, backup, words};
-use avendb_net::{Authenticator, Offer, Step};
+use avendb_browser::{Device, Fresh, Start, Unlock, backup, steps_json, words};
+use avendb_net::{Authenticator, Ending, Offer, Progress, Step};
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
 use serde_json::{Value, json};
@@ -92,6 +95,7 @@ pub async fn serve(
         next: AtomicU64::new(1),
         device: Mutex::default(),
         life: tokio::sync::Mutex::default(),
+        progress: Mutex::default(),
     });
     let mut lines = BufReader::new(input).lines();
     while let Some(line) = lines.next_line().await? {
@@ -123,6 +127,8 @@ struct Service {
     device: Mutex<Option<Arc<Device>>>,
     /// One start at a time: founding, linking, opening, adopting or forgetting the device.
     life: tokio::sync::Mutex<()>,
+    /// The steps of the start under way, or of the last, for the page to show (`steps`).
+    progress: Mutex<Option<Progress>>,
 }
 
 impl Service {
@@ -146,6 +152,7 @@ impl Service {
         tracing::debug!("call {call}");
         match call {
             "status" => Ok(self.status()),
+            "steps" => Ok(self.steps()),
             "found" => self.found(a.text(0)?, a.text(1)?, a.text(2)?, a.get(3).as_bool().unwrap_or(true)).await,
             "link" => self.link(a.text(0)?, a.text(1)?, a.text(2)?).await,
             "open" => self.open().await,
@@ -216,10 +223,11 @@ impl Service {
     /// `server` if nobody has; the server backs the vault up unless `backup` is false, and then only relays.
     async fn found(self: &Arc<Self>, name: String, relay: String, server: String, backup: bool) -> Result<Value> {
         let _life = self.life.lock().await;
+        let (start, _ending) = self.start(&name, &relay)?;
         self.fresh()?;
         let server = Offer::from_text(server.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
-        let start = self.start(&name, &relay)?;
+        start.progress.step("unlock");
         let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
         let d = Device::found(start, &server, None, new, unlock, &sheets, backup).await?;
         self.started(d, (name, relay, nonce, sheets.credential()?))
@@ -230,10 +238,11 @@ impl Service {
     /// edit that adds it too.
     async fn link(self: &Arc<Self>, name: String, relay: String, through: String) -> Result<Value> {
         let _life = self.life.lock().await;
+        let (start, _ending) = self.start(&name, &relay)?;
         self.fresh()?;
         let through = Offer::from_text(through.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
-        let start = self.start(&name, &relay)?;
+        start.progress.step("unlock");
         let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
         let d = Device::link(start, &through, new, unlock).await?;
         self.started(d, (name, relay, nonce, sheets.credential()?))
@@ -247,9 +256,10 @@ impl Service {
             return Ok(info(&d));
         }
         let meta = self.meta()?.context("this Mac holds no avenDB account yet")?;
+        let (start, _ending) = self.start(&meta.name, &meta.relay)?;
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
+        start.progress.step("unlock");
         let unlock = sheets.unlock(meta.nonce, random()?).await?;
-        let start = self.start(&meta.name, &meta.relay)?;
         let d = Device::open(start, meta.p256, meta.mask, unlock, &backup(&[], vec![])).await?;
         self.opened(d, &meta)
     }
@@ -264,9 +274,10 @@ impl Service {
         let bytes = |v: &Value| v.as_str().and_then(|b| BASE64.decode(b.as_bytes()).ok()).context("bytes in base64");
         let edits = edits.iter().map(bytes).collect::<Result<Vec<_>>>()?;
         let keys = keys.iter().map(|k| bytes(k).map(Arc::from)).collect::<Result<Vec<Arc<[u8]>>>>()?;
+        let (start, _ending) = self.start(&meta.name, &meta.relay)?;
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
+        start.progress.step("unlock");
         let unlock = sheets.unlock(meta.nonce, random()?).await?;
-        let start = self.start(&meta.name, &meta.relay)?;
         let d = Device::open(start, meta.p256, meta.mask, unlock, &backup(&edits, keys)).await?;
         self.opened(d, &meta)
     }
@@ -309,13 +320,22 @@ impl Service {
     }
 
     /// Where a device starts here: named `name`, through the relay at `relay`, with the machine's randomness, now; its
-    /// store in the folder.
-    fn start(&self, name: &str, relay: &str) -> Result<Start> {
+    /// store in the folder; its steps for the page to show (`steps`), the start marked over as the guard drops.
+    fn start(&self, name: &str, relay: &str) -> Result<(Start, Ending)> {
+        let progress = Progress::new();
+        let ending = progress.ending();
+        *self.progress.lock().expect("the steps") = Some(progress.clone());
         let relay: RelayUrl = relay.trim().parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
         let mut entropy = Zeroizing::new([0; 32]);
         getrandom::fill(&mut *entropy).map_err(|e| anyhow!("no randomness: {e}"))?;
-        let (name, store) = (name.trim().to_string(), Some(self.config.dir.join(STORE)));
-        Ok(Start { name, relay, entropy: *entropy, now: now(), direct: self.config.direct, store })
+        let (name, store, direct) = (name.trim().to_string(), Some(self.config.dir.join(STORE)), self.config.direct);
+        Ok((Start { name, relay, entropy: *entropy, now: now(), direct, store, progress }, ending))
+    }
+
+    /// The steps of the start under way, or of the last (`avendb_browser::steps_json`): null before the first.
+    fn steps(&self) -> Value {
+        let progress = self.progress.lock().expect("the steps");
+        progress.as_ref().map_or(Value::Null, |p| steps_json(&p.steps()))
     }
 
     /// Ready for a new device: none open and none to open in the folder; a store left there without what opens it is

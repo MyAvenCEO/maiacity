@@ -177,6 +177,11 @@ once for each edit.
 - **Open** (`Device::open`): what the device holds is kept in IndexedDB (`js/store.js`), its edits in the order it took
   them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
   one ceremony, the unlock; the relay knows it, so it needs no pass.
+- **Steps** (`avendb_net::Progress`): each start marks its steps as it takes them, by name, with when each began and how
+  long it took: the unlock, the keys, the node, the server, the draft, the ceremony that signs it, the claim, and so
+  on (`progress.rs` lists them). The page watches them through the function it hands `found`, `link` or `open`, the
+  Mac app through its device's `steps` call, and shows them as they happen in a sheet that slides up from the bottom
+  (`src/lib/avendb/Signing.svelte`): every step with its seconds, the passkey's prompts marked as the person's turn.
 
 The page opens on **Your account**, this browser as a device of its person. A new person founds their vault there, with
 the maiaCITY passkey or a new one, and claims the server if nobody has yet, so their vault owns avenCEO. A person with

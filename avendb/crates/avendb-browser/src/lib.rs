@@ -84,7 +84,7 @@ use avendb::rules;
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
 use avendb::wire::Wire as _;
-use avendb_net::{Authenticator, Node, Offer, Options, Step};
+use avendb_net::{Authenticator, Node, Offer, Options, Progress, Stage, Step, Steps};
 use iroh::RelayUrl;
 use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
 use n0_future::future::or;
@@ -178,6 +178,8 @@ fn xor(a: &[u8; 32], b: &[u8; 32]) -> Zeroizing<[u8; 32]> {
 /// the time, seconds since 1970. In a page that is all: it binds no socket, and the page keeps its store. A device on a
 /// machine, the Mac app's, binds sockets of its own (`direct`, `avendb_net::Options::direct`), so it reaches its peers
 /// directly and through the relay only where it must, and keeps its store in a folder (`store`, `avendb_net::Disk`).
+/// It marks each step of its start in `progress`, for its person to watch (`avendb_net::Progress`); whoever started it
+/// marks the start over.
 pub struct Start {
     pub name: String,
     pub relay: RelayUrl,
@@ -185,6 +187,7 @@ pub struct Start {
     pub now: u64,
     pub direct: bool,
     pub store: Option<PathBuf>,
+    pub progress: Progress,
 }
 
 /// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, the mask its
@@ -220,8 +223,11 @@ impl Device {
         authenticator: &impl Authenticator,
         backup: bool,
     ) -> Result<Device> {
+        let progress = &start.progress;
+        progress.step("keys");
         let (lab, me, passkeys, pass) = passed(&start, p256, &fresh, &unlock)?;
         let node = Device::spawn(lab, me, &start, Some(pass)).await?;
+        progress.step("server");
         node.know(server.addr.clone());
         let mut tries = 0;
         while let Err(e) = node.contact(server.addr.id).await {
@@ -232,6 +238,7 @@ impl Device {
             sleep(Duration::from_millis(500)).await;
         }
         let (passkey, vault, avenceo) = node.found_with(server, &passkeys, authenticator).await?;
+        progress.step("settle");
         let device = Device::of(node, passkey, &passkeys, Some(fresh.mask(&unlock))).await?;
         let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
@@ -253,6 +260,7 @@ impl Device {
     /// ceremony in all. Its passkey is the key, of those the unlock's assertion recovers to, whose vault the peer
     /// handed over.
     pub async fn link(start: Start, offer: &Offer, fresh: Fresh, unlock: Unlock) -> Result<Device> {
+        start.progress.step("keys");
         let (lab, me, passkeys, pass) = passed(&start, None, &fresh, &unlock)?;
         let mask = fresh.mask(&unlock);
         let node = Device::spawn(lab, me, &start, Some(pass.clone())).await?;
@@ -272,13 +280,17 @@ impl Device {
         unlock: Unlock,
         backup: &Backup,
     ) -> Result<Device> {
+        let progress = &start.progress;
+        progress.step("keys");
         let (mut lab, passkey, me) = lab(&start, p256, mask, &unlock)?;
+        progress.step("restore");
         lab.restore_backup(me, backup);
         if start.store.is_none() && lab.vault_of(me).is_none() {
             bail!("the store holds no vault this device belongs to");
         }
         let node = Device::spawn(lab, me, &start, None).await?;
         let device = Device { node, passkey, p256, mask, closed: watch::Sender::new(false) };
+        progress.step("check");
         if device.vault().await.is_none() {
             device.close().await.ok();
             bail!("the store holds no vault this device belongs to");
@@ -289,8 +301,9 @@ impl Device {
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by `pass` if the relay
     /// doesn't know it yet, and directly too if it binds a socket; with its store in a folder, if it has one.
     async fn spawn(lab: Lab, me: SignerId, start: &Start, pass: Option<RelayPass>) -> Result<Node> {
-        let (direct, relay, store) = (start.direct, Some(start.relay.clone()), start.store.clone());
-        let opts = Options { bind: None, direct, relay, relay_pass: pass, store, ..Options::local() };
+        let (direct, relay, store, progress) =
+            (start.direct, Some(start.relay.clone()), start.store.clone(), start.progress.clone());
+        let opts = Options { bind: None, direct, relay, relay_pass: pass, store, progress, ..Options::local() };
         Node::spawn(lab, me, opts).await
     }
 
@@ -1041,6 +1054,14 @@ fn nonce() -> Result<u64> {
     Ok(u64::from_le_bytes(bytes))
 }
 
+/// A start's steps as the page and the app show them (`avendb_net::Progress`): `{"steps": [{"step", "at", "took"}],
+/// "over"}`, each step by its name, when it began and how long it took, in milliseconds since the start began; `took`
+/// is null for the step under way.
+pub fn steps_json(steps: &Steps) -> Value {
+    let stage = |s: &Stage| json!({ "step": s.step, "at": s.at, "took": s.took });
+    json!({ "steps": steps.steps.iter().map(stage).collect::<Vec<_>>(), "over": steps.over })
+}
+
 /// What a store kept, read back (`js/store.js`): the signed edits, each as its bytes on the wire, in the order the
 /// device took them, and its McEliece keys. Reading stops at the first edit that doesn't decode, as a store on disk
 /// does.
@@ -1104,6 +1125,9 @@ pub fn start() {
 /// is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, `nonce` the 32 bytes the
 /// page keeps for the device. A new device asks for it as `unlock(challenge)`, a function that resolves to it, over the
 /// challenge that makes it the passkey's pass for the device (`Fresh`).
+///
+/// A device starting shows the page each step of its start as it begins and ends, if the page passes `steps`: a
+/// function it calls with them all so far, each time they change (`steps_json`), until the start is over.
 #[wasm_bindgen(js_name = Device)]
 pub struct PageDevice(Rc<Device>);
 
@@ -1113,6 +1137,7 @@ impl PageDevice {
     /// passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`, or `undefined` for a passkey made
     /// before, as at maiaCITY's sign-up: unlocked by `unlock(challenge)`, it founds their human vault and makes it
     /// known to the server whose code reads `server`, which it claims if nobody has yet (`Device::found`).
+    #[allow(clippy::too_many_arguments)]
     pub async fn found(
         name: String,
         relay: String,
@@ -1121,11 +1146,14 @@ impl PageDevice {
         unlock: Function,
         ceremony: Function,
         backup: Option<bool>,
+        steps: Option<Function>,
     ) -> Result<PageDevice, JsError> {
         let not_p256 = || JsError::new("not a P-256 passkey's public key info");
         let p256 = spki.map(|spki| sign::spki_p256(&spki).ok_or_else(not_p256)).transpose()?;
         let server = Offer::from_text(&server).map_err(js_error)?;
-        let (start, fresh) = (starting(name, &relay)?, Fresh::new().map_err(js_error)?);
+        let (start, fresh) = (starting(name, &relay, steps)?, Fresh::new().map_err(js_error)?);
+        let _ending = start.progress.ending();
+        start.progress.step("unlock");
         let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
         let device = Device::found(start, &server, p256, fresh, unlock, &ceremonies, backup.unwrap_or(true));
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
@@ -1133,9 +1161,17 @@ impl PageDevice {
 
     /// A new device named `name` of a person who has one already, unlocked by `unlock(challenge)`, linked through the
     /// device whose code reads `offer` (`Device::link`).
-    pub async fn link(name: String, relay: String, offer: String, unlock: Function) -> Result<PageDevice, JsError> {
+    pub async fn link(
+        name: String,
+        relay: String,
+        offer: String,
+        unlock: Function,
+        steps: Option<Function>,
+    ) -> Result<PageDevice, JsError> {
         let offer = Offer::from_text(&offer).map_err(js_error)?;
-        let (start, fresh) = (starting(name, &relay)?, Fresh::new().map_err(js_error)?);
+        let (start, fresh) = (starting(name, &relay, steps)?, Fresh::new().map_err(js_error)?);
+        let _ending = start.progress.ending();
+        start.progress.step("unlock");
         let unlock = unlocking(&unlock, fresh.challenge(start.now)).await?;
         let device = Device::link(start, &offer, fresh, unlock);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
@@ -1144,6 +1180,8 @@ impl PageDevice {
     /// The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
     /// `passkey()`), the mask its secret is kept under (in hex, `mask()`), `undefined` for a device made before
     /// 2026-10-10, and what its store kept, its `edits` in order and its McEliece `keys`, each bytes (`Device::open`).
+    /// The page made the unlock's ceremony itself, so the steps it is shown begin after it.
+    #[allow(clippy::too_many_arguments)]
     pub async fn open(
         name: String,
         relay: String,
@@ -1152,6 +1190,7 @@ impl PageDevice {
         unlock: JsValue,
         edits: Array,
         keys: Array,
+        steps: Option<Function>,
     ) -> Result<PageDevice, JsError> {
         let p256 = hex_bytes(&p256).and_then(|b| <[u8; 33]>::try_from(b).ok());
         let p256 = p256.ok_or_else(|| JsError::new("a passkey's P-256 key is 33 bytes in hex"))?;
@@ -1161,7 +1200,9 @@ impl PageDevice {
         let edits: Vec<Vec<u8>> = edits.iter().map(|edit| Uint8Array::new(&edit).to_vec()).collect();
         let keys = keys.iter().map(|key| Arc::from(Uint8Array::new(&key).to_vec())).collect();
         let backup = backup(&edits, keys);
-        let device = Device::open(starting(name, &relay)?, p256, mask, unlocked(&unlock)?, &backup);
+        let start = starting(name, &relay, steps)?;
+        let _ending = start.progress.ending();
+        let device = Device::open(start, p256, mask, unlocked(&unlock)?, &backup);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
     }
 
@@ -1598,13 +1639,36 @@ fn object(fields: &[(&str, JsValue)]) -> JsValue {
     object.into()
 }
 
-/// Where a device starts: named `name`, through the relay at `relay`, with the browser's randomness, now.
-fn starting(name: String, relay: &str) -> Result<Start, JsError> {
+/// Where a device starts: named `name`, through the relay at `relay`, with the browser's randomness, now; showing the
+/// page each step of its start by `steps`, if it watches them.
+fn starting(name: String, relay: &str, steps: Option<Function>) -> Result<Start, JsError> {
     let relay: RelayUrl = relay.parse().map_err(|_| JsError::new("the relay's URL isn't one"))?;
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None })
+    let progress = shown(steps);
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None, progress })
 }
+
+/// A start's steps, shown to the page by `steps(json)` each time they change (`steps_json`), until the start is over,
+/// if the page watches them.
+fn shown(steps: Option<Function>) -> Progress {
+    let progress = Progress::new();
+    let Some(steps) = steps else { return progress };
+    let mut changes = progress.watch();
+    wasm_bindgen_futures::spawn_local(async move {
+        loop {
+            let now = changes.borrow_and_update().clone();
+            let json = js_sys::JSON::parse(&steps_json(&now).to_string()).unwrap_or(JsValue::NULL);
+            // the page's own trouble showing them is no trouble of the start's
+            steps.call1(&JsValue::NULL, &json).ok();
+            if now.over || changes.changed().await.is_err() {
+                break;
+            }
+        }
+    });
+    progress
+}
+
 
 /// The time by the browser's clock, or the machine's: seconds since 1970.
 fn now() -> u64 {
@@ -1650,7 +1714,8 @@ mod tests {
         let device = passkey.prf(&device_salt(&[1; 32]));
         let unlock = Unlock { ceremony: passkey.ceremony([0xaa; 32]), device: device.clone() };
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
-        let start = Start { name: "Eve's browser".into(), relay, entropy: [7; 32], now: 0, direct: false, store: None };
+        let (name, progress) = ("Eve's browser".into(), Progress::new());
+        let start = Start { name, relay, entropy: [7; 32], now: 0, direct: false, store: None, progress };
         // a device made since 2026-10-10: its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);
