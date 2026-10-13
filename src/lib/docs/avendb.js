@@ -1,8 +1,8 @@
 // The roundtrips of the avenDB architecture page (/docs/avendb/), each a sequence diagram ($lib/docs/Sequence.svelte).
 
 const you = { id: 'you', label: 'You', person: true };
-const mac = { id: 'M', label: 'Mac device' };
-const phone = { id: 'P', label: 'Phone device' };
+const desktop = { id: 'M', label: 'Desktop' };
+const phone = { id: 'P', label: 'Phone' };
 const server = { id: 'S', label: 'avenDB server' };
 const bucket = { id: 'B', label: 'Bucket' };
 
@@ -10,9 +10,9 @@ export const TRIPS = [
 	{
 		title: 'You write a note',
 		caption:
-			'If the Mac and the phone see each other directly, they sync directly too, and the server only catches up. The server takes the edit only once the bucket holds it, so its announcement is the receipt: until then the Mac keeps the edit marked as not backed up yet, and announces it again.',
+			'If the desktop and the phone see each other directly, they sync directly too, and the server only catches up. The server announces an edit only once the bucket holds it, so its announcement is the receipt: until then the desktop keeps the edit marked as not backed up yet, and announces it again.',
 		spec: {
-			actors: [you, mac, server, bucket, phone],
+			actors: [you, desktop, server, bucket, phone],
 			steps: [
 				{ from: 'you', to: 'M', text: 'type in the note' },
 				{ from: 'M', to: 'M', text: 'sign the edit, encrypt its body, keep it' },
@@ -20,9 +20,9 @@ export const TRIPS = [
 				{ from: 'M', to: 'S', text: 'announce the new frontier' },
 				{ from: 'S', to: 'M', text: 'ask for what it lacks' },
 				{ from: 'M', to: 'S', text: 'the edit, ciphertext', reply: true },
+				{ from: 'S', to: 'S', text: 'check signatures and caps, keep it' },
 				{ from: 'S', to: 'B', text: 'seal it, write it in a pack' },
 				{ from: 'B', to: 'S', text: 'held, locked for 7 days', reply: true },
-				{ from: 'S', to: 'S', text: 'check signatures and caps, take it' },
 				{ from: 'S', to: 'M', text: 'announce: the server holds it' },
 				{ note: ['M'], text: 'backed up' },
 				{ from: 'S', to: 'P', text: 'announce' },
@@ -33,11 +33,11 @@ export const TRIPS = [
 		}
 	},
 	{
-		title: 'You add a 2 TB film on the Mac',
+		title: 'You add a 2 TB film on your desktop',
 		caption:
-			'Your uplink sets the pace: at 54 Mbit/s a terabyte takes about 41 hours, at 1 Gbit/s about 2.2 hours. The Mac keeps working the whole time, and the film is readable on the Mac from the first second.',
+			'Your uplink sets the pace: at 54 Mbit/s a terabyte takes about 41 hours, at 1 Gbit/s about 2.2 hours. The desktop keeps working the whole time, and the film is readable on it from the first second.',
 		spec: {
-			actors: [you, mac, server, bucket],
+			actors: [you, desktop, server, bucket],
 			steps: [
 				{ from: 'you', to: 'M', text: 'drop the film into a vault' },
 				{
@@ -67,13 +67,13 @@ export const TRIPS = [
 		caption:
 			'The server reads whole windows, never single 16 KiB groups and never whole files, so seeking stays fast on a 50 GB file and the bucket’s 750 requests a second are never the limit.',
 		spec: {
-			actors: [you, phone, mac, server, bucket],
+			actors: [you, phone, desktop, server, bucket],
 			steps: [
 				{ from: 'you', to: 'P', text: 'play, then seek to minute 93' },
 				{ from: 'P', to: 'P', text: 'byte offset to segment, piece and range' },
 				{
 					group: 'alt',
-					label: 'the Mac is reachable',
+					label: 'the desktop is reachable',
 					steps: [
 						{ from: 'P', to: 'M', text: 'get piece 1,412, that range' },
 						{ from: 'M', to: 'P', text: 'verified bytes from its disk', reply: true }
@@ -99,7 +99,7 @@ export const TRIPS = [
 			'Every pair of devices runs the same exchange. Order never matters: each log is a chain of hashes, and Loro merges concurrent edits to the same note deterministically. File pieces are not copied by sync: each device fetches them when it plays them or when its sync rules say so.',
 		spec: {
 			actors: [
-				{ id: 'M', label: 'Mac' },
+				{ id: 'M', label: 'Desktop' },
 				{ id: 'P', label: 'Phone' },
 				{ id: 'W', label: 'Browser' },
 				{ id: 'S', label: 'avenDB server' }
@@ -112,7 +112,7 @@ export const TRIPS = [
 				{ from: 'P', to: 'P', text: 'edits pile up, each one valid' },
 				{ note: ['P', 'S'], text: 'back online, only the server is reachable' },
 				{ from: 'P', to: 'S', text: 'announce frontiers' },
-				{ from: 'S', to: 'P', text: 'everything the Mac wrote meanwhile', reply: true },
+				{ from: 'S', to: 'P', text: 'everything the desktop wrote meanwhile', reply: true },
 				{ from: 'P', to: 'S', text: 'everything the phone wrote' },
 				{ from: 'S', to: 'M', text: 'announce' },
 				{ from: 'M', to: 'S', text: "ask, and get the phone's edits" },
@@ -141,58 +141,20 @@ export const TRIPS = [
 	{
 		title: 'The server is lost and rebuilt',
 		caption:
-			"The bucket holds every edit and key the server took, sealed. The server's identity key and the seal key sit apart from it: the seal key in the deploy's secrets, with a copy in its owner's password manager. Without the identity key a new server starts as a new device, and your vault adds it with one owner edit.",
+			"The bucket holds every edit and key the server took, and the server's own device secret, all sealed. Only the seal key sits apart, in the deploy's secrets with a copy kept offline. So a new server on an empty disk is the same device again, and nothing changes for your vaults.",
 		spec: {
 			actors: [{ id: 'S', label: 'New server' }, bucket, { id: 'D', label: 'Any of your devices' }],
 			steps: [
-				{ from: 'S', to: 'B', text: 'list edits/ and keys/' },
-				{ from: 'B', to: 'S', text: 'the names of every pack and key', reply: true },
-				{ from: 'S', to: 'B', text: 'fetch what its disk lacks' },
+				{ from: 'S', to: 'B', text: 'get its device secret' },
+				{ from: 'B', to: 'S', text: 'sealed', reply: true },
+				{ from: 'S', to: 'S', text: 'open it with the seal key: the same device again' },
+				{ from: 'S', to: 'B', text: 'list edits/ and keys/, fetch what its disk lacks' },
 				{ from: 'B', to: 'S', text: 'sealed packs and keys', reply: true },
-				{ from: 'S', to: 'S', text: 'open each with the seal key, check every edit again' },
+				{ from: 'S', to: 'S', text: 'open each, check every edit again' },
 				{ note: ['S'], text: 'it announces only what the bucket holds' },
 				{ from: 'D', to: 'S', text: 'sync as usual' },
 				{ note: ['S', 'D'], text: 'anything newer comes back from your devices' }
 			]
 		}
-	}
-];
-
-// What changed lately, newest first: each line one shipped step, with its pull requests.
-export const CHANGES = [
-	{
-		when: '13 Oct',
-		what: 'The bucket is made: maiacity-avendb in Helsinki, every object locked for 7 days in compliance mode. Hetzner offers no post-quantum key exchange, so the server seals every object with a key of its own before it leaves.',
-		prs: [557]
-	},
-	{
-		when: '13 Oct',
-		what: 'No more acting-as switcher: in a vault you own, directly or through your COOPs, you act as that vault; elsewhere, as whichever of your vaults holds the strongest cap there.',
-		prs: [554]
-	},
-	{
-		when: '13 Oct',
-		what: 'A master recovery key, built in: every human vault is founded with it among its owners, and it is added and removed like any owner. avenDB started afresh with it (edit format 7).',
-		prs: [543, 547, 549, 552]
-	},
-	{
-		when: '13 Oct',
-		what: "The browser's store moved into OPFS, in a worker of its own: its edits, its McEliece keys and what opens it again. IndexedDB moved over once and is gone.",
-		prs: [541]
-	},
-	{
-		when: '13 Oct',
-		what: 'Sync rules: what each device wants of a vault, by the same selector as caps, for any data. Sealed, marked on each entry by the vault’s stewards and applied by every peer alike (T28, T29).',
-		prs: [539]
-	},
-	{
-		when: '13 Oct',
-		what: 'One iroh blob store per node, on disk on the Mac and the server: a file is sealed as it is read, any byte range is fetched through the cap gate, and the server keeps every file whole.',
-		prs: [537]
-	},
-	{
-		when: '13 Oct',
-		what: 'Sealed blob v1, the seekable file format, and edits that name the files they bring (T27: files follow their edits).',
-		prs: [530, 532]
 	}
 ];
