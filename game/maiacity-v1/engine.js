@@ -13,9 +13,10 @@
  *   basket of all three MINDs with equal weights (1/3 each, settings a MIP may change). Its invariant is
  *   V = Π Bᵢ^wᵢ; any MIND swaps for any other by Balancer's maths (out = Bₒ·(1 − (Bᵢ/(Bᵢ + Aᵢ·(1 − fee)))^(wᵢ/wₒ))),
  *   so V never falls. It is never paid out; anyone can swap through it (the 0.3 % fee stays in the pool).
- * - Rent, every virtual month: each player pays the Settlement COOP for the tent in SettlementMIND; the Settlement COOP
- *   pays the MaiaCity COOP for the hex in MaiaMIND. A payer who lacks the MIND swaps others through the pool; what is
- *   still missing is owed (arrears) and paid first next month.
+ * - Rent, on the pay day that ends every game week (4 a month, each a quarter of the month's rent): each player pays
+ *   the Settlement COOP for the tent in SettlementMIND; the Settlement COOP pays the MaiaCity COOP for the hex in
+ *   MaiaMIND. A payer who lacks the MIND swaps its others through the pool on its own; what is still missing is owed
+ *   (arrears) and paid first next pay day.
  * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
  *   year begins with Sol (from 21 March, the new year) and ends with March; every month starts on a Sunday. Every balance (HEARTS, wallets, treasuries, the pool)
  *   melts by 7 % a year of virtual time, continuously.
@@ -61,6 +62,9 @@ export const DEFAULT_SETTINGS = {
 	demurrage: 0.07,
 	/** of every MIND into a treasury, this share goes to the pool */
 	poolShare: 0.05,
+	/** Law 5, every sale pays its owners: this share of every sale (each rent a COOP is paid) goes at once to the
+	 * holders of the COOP's MIND, pro rata, in that MIND (its own treasury and the pool get none) */
+	dividendShare: 0.2,
 	/** the pool's weights, one per MIND (taken as shares of their sum: 1, 1, 1 is 1/3 each) */
 	weightMAIA: 1,
 	weightSETTLEMENT: 1,
@@ -74,7 +78,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -85,6 +89,7 @@ export const SETTING_LIMITS = {
 	heartsPerDay: [1, 1000],
 	demurrage: [0, 0.5],
 	poolShare: [0, 0.5],
+	dividendShare: [0, 1],
 	weightMAIA: [0.1, 10],
 	weightSETTLEMENT: [0.1, 10],
 	weightVILLAGE: [0.1, 10],
@@ -102,6 +107,7 @@ export function newGame(now = Date.now(), settings = {}) {
 		started: now,
 		t: now,
 		month: 0,
+		week: 0,
 		settings: { ...DEFAULT_SETTINGS, ...settings },
 		players: Object.fromEntries(SEATS.map((s) => [s, { seat: s, name: `Player ${s}`, founder: null, wallet: wallet(), lastMint: null, arrears: 0 }])),
 		coops: Object.fromEntries(Object.entries(COOPS).map(([id, c]) => [id, { id, ...c, treasury: wallet(), arrears: 0 }])),
@@ -198,7 +204,7 @@ function bookMelt(s, at) {
 	for (const [key, amount] of Object.entries(s.melt)) {
 		if (amount < 1e-6) continue;
 		const [who, token] = key.split('|');
-		log(s, at, { kind: 'demurrage', from: who, to: 'melt', token, amount, note: '7 %/yr demurrage this month' });
+		log(s, at, { kind: 'demurrage', from: who, to: 'melt', token, amount, note: `${(s.settings.demurrage * 100).toFixed(0)} %/yr demurrage this week` });
 	}
 	s.melt = {};
 }
@@ -271,44 +277,75 @@ function payRent(s, at, from, bal, to, toBal, token, amount, note) {
 		bal[token] -= paid;
 		toBal[token] += paid;
 		log(s, at, { kind: 'rent', from, to, token, amount: paid, note });
+		if (to.startsWith('coop:')) dividend(s, at, s.coops[to.slice(5)], token, paid, note);
 	}
 	return amount - paid;
 }
 
-/** the rent of one virtual month, at its end */
-function monthEnd(s, at) {
-	s.month += 1;
+/**
+ * Law 5, every sale pays its owners: a COOP paid `amount` in its own MIND for a sale passes `dividendShare` of it on at
+ * once, pro rata, to everyone holding that MIND: the players and the other COOPs' treasuries. Its own treasury and the
+ * pool get none. Paid in a MIND not its own, it keeps it all (it has no holders of that MIND to pay).
+ */
+function dividend(s, at, coop, token, amount, why) {
+	if (!coop || token !== coop.mind || !(s.settings.dividendShare > 0)) return;
+	const holders = [...SEATS.map((seat) => [`player:${seat}`, s.players[seat].wallet]), ...Object.values(s.coops).filter((c) => c.id !== coop.id).map((c) => [`coop:${c.id}`, c.treasury])].filter(([, b]) => b[token] > DUST);
+	const held = holders.reduce((a, [, b]) => a + b[token], 0);
+	if (!(held > DUST)) return;
+	const pot = Math.min(coop.treasury[token], amount * s.settings.dividendShare);
+	coop.treasury[token] -= pot;
+	for (const [who, b] of holders) {
+		const share = (pot * b[token]) / held;
+		b[token] += share;
+		log(s, at, { kind: 'dividend', from: `coop:${coop.id}`, to: who, token, amount: share, note: `${(s.settings.dividendShare * 100).toFixed(0)} % of a sale (${why}), for holding ${((b[token] - share) / held * 100).toFixed(1)} % of it` });
+	}
+}
+
+/** a game month has 4 weeks of 7 days; every week ends in a pay day */
+export const WEEKS_A_MONTH = DAYS_A_MONTH / 7;
+
+/** pay day, at the end of every game week (so on the 8th, 15th, 22nd and the next 1st, each a Sunday): a quarter of each
+ * month's rent, and what is still owed. A payer short of the MIND swaps its others through the pool on its own. */
+function payDay(s, at) {
+	s.week += 1;
+	s.month = Math.floor(s.week / WEEKS_A_MONTH);
+	const when = `week ${s.week}`;
 	bookMelt(s, at);
 	const st = s.coops.settlement;
 	const m = s.coops.maia;
 	for (const seat of SEATS) {
 		const p = s.players[seat];
 		const had = p.arrears > DUST;
-		const due = s.settings.tentRent + p.arrears;
+		const due = s.settings.tentRent / WEEKS_A_MONTH + p.arrears;
 		if (due <= DUST) continue;
-		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:settlement', st.treasury, 'SETTLEMENT', due, `tent rent, month ${s.month}${had ? ' (with arrears)' : ''}`);
+		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:settlement', st.treasury, 'SETTLEMENT', due, `tent rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
 		if (p.arrears > DUST) log(s, at, { kind: 'arrears', from: `player:${seat}`, to: 'coop:settlement', token: 'SETTLEMENT', amount: p.arrears, note: 'tent rent still owed' });
 	}
 	const had = st.arrears > DUST;
-	const due = s.settings.hexRent + st.arrears;
+	const due = s.settings.hexRent / WEEKS_A_MONTH + st.arrears;
 	if (due > DUST) {
-		st.arrears = payRent(s, at, 'coop:settlement', st.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, month ${s.month}${had ? ' (with arrears)' : ''}`);
+		st.arrears = payRent(s, at, 'coop:settlement', st.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
 		if (st.arrears > DUST) log(s, at, { kind: 'arrears', from: 'coop:settlement', to: 'coop:maia', token: 'MAIA', amount: st.arrears, note: 'hex rent still owed' });
 	}
 }
 
-/** bring the game forward to `now`: the melt, and each month's end with its rent, at its own moment */
+/** the real time the next pay day comes */
+export const nextPayDay = (s) => timeOfMonth(s, ((s.week ?? s.month * WEEKS_A_MONTH) + 1) / WEEKS_A_MONTH);
+
+/** bring the game forward to `now`: the melt, and every pay day with its rent, at its own moment */
 export function advance(state, now = Date.now()) {
 	const s = clone(state);
 	// a setting added later (the starter pack) takes its default in a game started before it
 	s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
+	// a game from before weekly pay days counts its weeks from its months
+	s.week ??= s.month * WEEKS_A_MONTH;
 	if (now <= s.t) return s;
-	for (let guard = 0; guard < 100_000; guard++) {
-		const nextMonth = timeOfMonth(s, s.month + 1);
-		const next = Math.min(nextMonth, now);
+	for (let guard = 0; guard < 400_000; guard++) {
+		const pay = nextPayDay(s);
+		const next = Math.min(pay, now);
 		melt(s, next - s.t);
 		s.t = next;
-		if (next === nextMonth) monthEnd(s, next);
+		if (next === pay) payDay(s, next);
 		if (next === now) break;
 	}
 	return s;
