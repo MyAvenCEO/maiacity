@@ -657,15 +657,35 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const lensIn = () => ((camera.fov = camera.aspect < 0.8 ? 80 : 72), (camera.near = 0.05), camera.updateProjectionMatrix());
 	const lensOut = () => ((camera.near = 0.5), (camera.fov = camera.aspect < 0.8 ? 58 : 42), camera.updateProjectionMatrix());
 	function ride(step) {
+		rollVan(step);
+		const t = performance.now() / 1000;
+		camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
+		camera.lookAt(van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))));
+	}
+	/** the van rolling on at its real speed, its people nodding to the road */
+	function rollVan(step) {
 		rideT = (rideT + step) % 50;
 		van.position.set(VAN_HALT.x - 2200 + SPEED.highway * rideT, 0, VAN_HALT.z);
 		van.rotation.y = Math.PI / 2;
 		van.updateMatrixWorld(true);
+		dust(van, -2.6);
 		const t = performance.now() / 1000;
-		camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
-		camera.lookAt(van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))));
 		for (const [i, p] of van.userData.people.entries()) p.userData.head.position.y = 1.62 + Math.sin(t * 9 + i) * 0.015;
 	}
+	/** the shots of the ride, one a line of the story, so every sentence cuts to a new view (Samuel 2026-10-13): the
+	 *  back seat looking ahead, out of the side window at the steppe going by, alongside the van, from high above it,
+	 *  from the front seats back at the faces, and from the roadside as it passes. In the van's own frame (+z ahead,
+	 *  +x the door's side) */
+	const RIDE_SHOTS = {
+		seat: { inside: true, cam: () => van.localToWorld(VAN_SEAT.clone()), at: (t) => van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))) },
+		window: { inside: true, cam: () => van.localToWorld(V(0.45, 1.55, -0.6)), at: (t, k) => van.localToWorld(V(30, 1.2 - 0.4 * k, 6 - 10 * k)) },
+		faces: { inside: true, cam: () => van.localToWorld(V(-0.2, 1.75, 1.75)), at: (t, k) => van.localToWorld(V(0.3 * k - 0.15, 1.35, -1.6)) },
+		along: { cam: (t, k) => van.localToWorld(V(8 - 2 * k, 1.5 + 0.5 * k, 6 - 8 * k)), at: () => van.localToWorld(V(0, 1.4, 0.5)) },
+		aerial: { cam: (t, k) => van.localToWorld(V(-40 + 20 * k, 34 - 8 * k, -55 + 25 * k)), at: () => van.localToWorld(V(0, 0, 18)) },
+		pass: { fixed: true, cam: () => van.localToWorld(V(4.2, 0.7, 75)), at: () => van.localToWorld(V(0, 1.2, 0)) }
+	};
+	const RIDE_ORDER = ['seat', 'aerial', 'window', 'along', 'faces', 'pass'];
+	let rideCut = 0;
 	/** the jerrycans: waiting on the forecourt beside the pickup, in its bed, or at home beside the Power Cube */
 	function placeFuel(where) {
 		fuel.forEach((c, i) => {
@@ -908,7 +928,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  below; inside the packed van; alongside it past the telegraph poles; the road ending at the abandoned gas station;
 	 *  the van pulling up and the newcomer stepping out; looking east, over their shoulder, to the green land; and up,
 	 *  over the whole city plot. Each shot carries its line of the story (onCaption). */
-	function intro(part = 'road') {
+	function intro(part = 'road', { lines } = {}) {
 		placed = true;
 		const me = people[stage.me];
 		// where the van is at the trailer's second T: far out on the steppe in the first two shots (a cut may jump), then
@@ -1031,7 +1051,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			];
 		// the road (three shots, then the ride goes on inside the van while the story tells of what lies ahead), or
 		// the arrival at the end of the road (four shots)
-		return play(part === 'road' ? shots.slice(0, 3) : shots.slice(3), { hour: 8.6 });
+		const cut = part === 'road' ? shots.slice(0, 3) : shots.slice(3);
+		// the story's own lines, one a shot, in place of the trailer's titles; the last of the arrival stays big, the city's name
+		if (lines?.length) {
+			cut.forEach((st) => ((st.shot = true), (st.caption = undefined)));
+			told(cut, lines);
+			if (part !== 'road' && cut[cut.length - 1].caption) cut[cut.length - 1].caption.big = true;
+		}
+		return play(cut, { hour: 8.6 });
 	}
 
 	/** a drive in the pickup along the track, cut in three shots: from the roadside as it sets off, from the air
@@ -1391,31 +1418,54 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** jump to the end of what is playing */
 	/** a shot of the story told over the world (a voice-over's length, dur s): still riding in the van, the ride rolls
 	 *  on; anywhere else the camera glides slowly round the place the story is at, closing in a little, like a crane */
-	function shotAt(name, dur, { act: doing, close = false } = {}) {
+	function shotAt(name, { lines = [], act: doing, close = false } = {}) {
 		const p = PLACES[name];
 		const me = people[stage.me];
-		if (riding || !p) return play([{ dur, run: () => riding && ride(dt) }]);
-		// close: on the player themself, the camera easing in to them as they act the line (point, look up, think)
-		if (close && me.visible) {
-			const from = me.localToWorld(V(1.5, 1.8, 3.6)), to = me.localToWorld(V(0.75, 1.62, 2.2));
-			const at = head(me, 1.45);
-			return play([{ dur, start: () => (lensOut(), doing && act(me, doing)), run: (k) => (camera.position.lerpVectors(from, to, ease(k)), camera.lookAt(at)) }]);
+		const n = Math.max(1, lines.length);
+		const steps = [];
+		if (riding) {
+			// on the road: each line cuts to the next view of the ride
+			for (let i = 0; i < n; i++) {
+				const kind = RIDE_SHOTS[RIDE_ORDER[rideCut++ % RIDE_ORDER.length]];
+				let fixed = null;
+				steps.push(beat(3, (sec, k) => {
+					rollVan(dt);
+					const t = performance.now() / 1000;
+					const bump = kind.inside ? V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0) : V(0, 0, 0);
+					camera.position.copy(fixed ?? kind.cam(t, k)).add(bump);
+					camera.lookAt(kind.at(t, k));
+				}, () => {
+					rollVan(0);
+					kind.inside ? lensIn() : ((camera.near = 0.5), (camera.fov = camera.aspect < 0.8 ? 60 : 38), camera.updateProjectionMatrix());
+					fixed = kind.fixed ? kind.cam(0, 0) : null;
+				}));
+			}
+			return play(told(steps, lines));
 		}
+		if (!p) return play(told([beat(3, () => {})], lines));
 		const offset = p.offset.clone().multiplyScalar(camera.aspect < 0.8 ? 1.65 : 1);
 		const r0 = Math.hypot(offset.x, offset.z), a0 = Math.atan2(offset.z, offset.x);
-		const spin = dur * 0.012 + 0.12;
-		return play([
-			{
-				dur,
-				start: () => (lensOut(), doing && me.visible && act(me, doing)),
-				run: (k) => {
-					const e = ease(k);
-					const a = a0 + spin * e, r = r0 * (1.08 - 0.16 * e), y = offset.y * (1.06 - 0.12 * e);
-					camera.position.set(p.target.x + Math.cos(a) * r, p.target.y + y, p.target.z + Math.sin(a) * r);
-					camera.lookAt(p.target);
+		const near = name !== 'city' && me.visible; // the player is in the picture
+		// anywhere else: each line a new shot of the place: a crane drifting round it, low on the ground looking up at it,
+		// high over it, and close on the player as they act the line
+		const kinds = name === 'city' ? ['crane', 'high'] : near ? ['crane', 'close', 'low', 'high'] : ['crane', 'low', 'high'];
+		for (let i = 0; i < n; i++) {
+			const kind = close && i === 0 ? 'close' : kinds[(i + (close ? 1 : 0)) % kinds.length];
+			const turn = a0 + i * 0.85;
+			steps.push(beat(3, (sec, k) => {
+				const e = ease(k);
+				if (kind === 'close') {
+					const from = me.localToWorld(V(1.5, 1.8, 3.6)), to = me.localToWorld(V(0.75, 1.62, 2.2));
+					camera.position.lerpVectors(from, to, e);
+					return camera.lookAt(head(me, 1.45));
 				}
-			}
-		]);
+				const a = turn + (0.1 + sec * 0.012) * e;
+				const [r, y] = kind === 'low' ? [r0 * (0.42 - 0.06 * e), 1.3 + e * 0.6] : kind === 'high' ? [r0 * (0.35 + 0.1 * e), offset.y * (1.9 - 0.2 * e)] : [r0 * (1.08 - 0.16 * e), offset.y * (1.06 - 0.12 * e)];
+				camera.position.set(p.target.x + Math.cos(a) * r, p.target.y + y, p.target.z + Math.sin(a) * r);
+				camera.lookAt(kind === 'low' ? p.target.clone().add(V(0, 2.5, 0)) : p.target);
+			}, () => (lensOut(), i === 0 && doing && me.visible && act(me, doing))));
+		}
+		return play(told(steps, lines));
 	}
 	const skip = () => {
 		if (!moment) return;
