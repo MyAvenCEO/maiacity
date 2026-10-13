@@ -2,8 +2,9 @@
 /**
  * MaiaCity V1: the simplest game of the city. Two players, two COOPs, one hex, one tent, one pool.
  *
- * - Each player mints 24 personal HEARTS once a day. HEARTS buy nothing: they are only invested. A player who does
- *   not mint again within 24 hours of the last mint loses the HEARTS still held.
+ * - Each player's personal HEARTS grow 24 a day (one an hour), minted at any moment: all that grew since the last mint.
+ *   The right to mint expires after 24 h, not the HEARTS: growth older than 24 h is lost. HEARTS buy nothing: they are
+ *   only invested.
  * - Investing 1 HEART into a COOP makes 1 MIND of that COOP: half to the player's wallet, half to the COOP's treasury.
  * - The MaiaCity COOP (MaiaMIND) owns the shared hex. The Settlement COOP (VillageMIND) owns the 2-person dome tent.
  * - 5 % of every MIND that lands in a treasury goes into one protocol-owned constant-product pool, MaiaMIND/VillageMIND.
@@ -13,6 +14,8 @@
  *   still missing is owed (arrears) and paid first next month.
  * - Time: one virtual month per real day, from virtual year 0. Every balance (HEARTS, wallets, treasuries, the pool)
  *   melts by 7 % a year of virtual time, continuously.
+ * - Every decision (the settings, and payouts of MIND from a COOP's treasury to any wallet) is a MIP, as in Sandbox 7.
+ *   It needs two signatures, and applies at once in this same game (no new world).
  *
  * The same code runs on the server (which holds the one true game) and in the page (which ticks the numbers between
  * reloads). Every function here is pure: it takes a state and returns a new one.
@@ -47,7 +50,10 @@ export const DEFAULT_SETTINGS = {
 	hexRent: 10
 };
 
-/** the settings a player may change, with their limits */
+/** the settings, in words */
+export const SETTING_NAMES = { heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (VillageMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+
+/** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
 	heartsPerDay: [1, 1000],
 	demurrage: [0, 0.5],
@@ -67,11 +73,12 @@ export function newGame(now = Date.now(), settings = {}) {
 		t: now,
 		month: 0,
 		settings: { ...DEFAULT_SETTINGS, ...settings },
-		players: Object.fromEntries(SEATS.map((s) => [s, { seat: s, name: `Player ${s}`, founder: null, wallet: wallet(), lastMint: null, mintDay: -1, arrears: 0 }])),
+		players: Object.fromEntries(SEATS.map((s) => [s, { seat: s, name: `Player ${s}`, founder: null, wallet: wallet(), lastMint: null, arrears: 0 }])),
 		coops: Object.fromEntries(Object.entries(COOPS).map(([id, c]) => [id, { id, ...c, treasury: wallet(), arrears: 0 }])),
 		pool: { MAIA: 0, VILLAGE: 0 },
 		melt: {},
 		ledger: [],
+		mips: [],
 		seq: 0
 	};
 }
@@ -103,7 +110,6 @@ export const nameOf = (s, who) => {
 	if (who === 'pool') return 'AMM pool';
 	if (who === 'mint') return 'Mint';
 	if (who === 'melt') return 'Demurrage';
-	if (who === 'expired') return 'Expired';
 	const [kind, id] = who.split(':');
 	if (kind === 'player') return s.players[id]?.name ?? `Player ${id}`;
 	if (kind === 'coop') return s.coops[id]?.name ?? id;
@@ -215,27 +221,15 @@ function monthEnd(s, at) {
 	}
 }
 
-/** a player's HEARTS run out 24 h after their last mint */
-const expiryOf = (p) => (p.lastMint != null && p.wallet.HEARTS > DUST ? p.lastMint + DAY_MS : Infinity);
-
-/** bring the game forward to `now`: melt, month ends with their rent, and expired HEARTS, each at its own moment */
+/** bring the game forward to `now`: the melt, and each month's end with its rent, at its own moment */
 export function advance(state, now = Date.now()) {
 	const s = clone(state);
 	if (now <= s.t) return s;
 	for (let guard = 0; guard < 100_000; guard++) {
 		const nextMonth = s.started + (s.month + 1) * MONTH_MS;
-		const expiries = SEATS.map((seat) => [seat, expiryOf(s.players[seat])]);
-		const nextExpiry = Math.min(...expiries.map(([, t]) => t));
-		const next = Math.min(nextMonth, nextExpiry, now);
+		const next = Math.min(nextMonth, now);
 		melt(s, next - s.t);
 		s.t = next;
-		for (const [seat, t] of expiries) {
-			if (t === next) {
-				const p = s.players[seat];
-				log(s, next, { kind: 'expired', from: `player:${seat}`, to: 'expired', token: 'HEARTS', amount: p.wallet.HEARTS, note: 'not minted again within 24 h' });
-				p.wallet.HEARTS = 0;
-			}
-		}
 		if (next === nextMonth) monthEnd(s, next);
 		if (next === now) break;
 	}
@@ -255,21 +249,103 @@ const num = (v) => {
 	return n;
 };
 
-/** whether a seat may mint now, and if not, when */
+/**
+ * what a seat may mint now: HEARTS grow all the time (24 a day, one an hour) and are minted whenever the player likes,
+ * all that grew since the last mint. The right to mint reaches back 24 hours only: what grew before that is lost, so a
+ * player who never mints for a day mints 24 at most. Minted HEARTS stay (they only melt).
+ * { amount, since, full: when the 24 h are full and growth starts being lost, lost: what was lost already }
+ */
 export function mintState(s, seat, now) {
 	const p = s.players[seat];
-	const day = dayAt(s, now);
-	if (p.mintDay < day) return { can: true, next: now };
-	return { can: false, next: s.started + (day + 1) * DAY_MS };
+	const since = p.lastMint ?? s.started;
+	const grown = Math.max(0, now - since);
+	const window = Math.min(grown, DAY_MS);
+	const perMs = s.settings.heartsPerDay / DAY_MS;
+	return { amount: window * perMs, since, full: since + DAY_MS, lost: Math.max(0, grown - DAY_MS) * perMs };
+}
+
+/** signatures a MIP needs before it is accepted */
+export const SIGNATURES = 2;
+/** where a payout may come from: a COOP's treasury (the pool is never paid out) */
+export const PAYERS = Object.keys(COOPS).map((id) => `coop:${id}`);
+/** who a payout may go to: any wallet in the game but the pool */
+export const PAYEES = [...SEATS.map((s) => `player:${s}`), ...PAYERS];
+
+const balanceOf = (s, who) => (who.startsWith('player:') ? s.players[who.slice(7)]?.wallet : s.coops[who.slice(5)]?.treasury);
+
+/**
+ * A MIP (MaiaCity improvement proposal), as in Sandbox 7: a title, a description in prose, and what it changes — any of
+ * the game's settings, and payouts of MIND out of a COOP's treasury into any wallet. The proposer signs it; with two
+ * signatures it is accepted and applies at once, in this same game. Either player may reject it; the proposer withdraws.
+ */
+function checkMip(s, mip) {
+	const title = String(mip?.title ?? '').trim().slice(0, 120);
+	if (!title) throw new GameError('Give the proposal a title.');
+	const description = String(mip?.description ?? '').trim().slice(0, 4000);
+	const settings = {};
+	for (const [k, [lo, hi]] of Object.entries(SETTING_LIMITS)) {
+		if (mip.settings?.[k] == null || mip.settings[k] === '') continue;
+		const v = Number(mip.settings[k]);
+		if (!Number.isFinite(v) || v < lo || v > hi) throw new GameError(`${k} must be between ${lo} and ${hi}.`);
+		if (v !== s.settings[k]) settings[k] = v;
+	}
+	const payouts = (Array.isArray(mip.payouts) ? mip.payouts : []).slice(0, 20).map((x) => {
+		if (!PAYERS.includes(x?.from)) throw new GameError('A payout comes out of a COOP treasury.');
+		if (!PAYEES.includes(x.to) || x.to === x.from) throw new GameError('Pay out to another wallet.');
+		if (x.token !== 'MAIA' && x.token !== 'VILLAGE') throw new GameError('Pay out MaiaMIND or VillageMIND.');
+		return { from: x.from, to: x.to, token: x.token, amount: num(x.amount) };
+	});
+	if (!Object.keys(settings).length && !payouts.length) throw new GameError('A proposal changes a setting or pays out.');
+	return { title, description, settings, payouts };
+}
+
+/** what a MIP changes, in words */
+export function describe(s, mip) {
+	const parts = Object.entries(mip.settings ?? {}).map(([k, v]) => `${SETTING_NAMES[k] ?? k} → ${v}`);
+	for (const x of mip.payouts ?? []) parts.push(`pay ${x.amount.toFixed(2)} ${TOKEN_LABEL[x.token]} from ${nameOf(s, x.from)} to ${nameOf(s, x.to)}`);
+	return parts.join('; ');
+}
+
+/** what the treasuries lack to pay all of a MIP's payouts (all its payouts from one treasury together), if anything */
+function shortOf(s, mip) {
+	const need = {};
+	for (const x of mip.payouts) need[`${x.from}|${x.token}`] = (need[`${x.from}|${x.token}`] ?? 0) + x.amount;
+	for (const [key, amount] of Object.entries(need)) {
+		const [from, token] = key.split('|');
+		if (amount > balanceOf(s, from)[token] + SLACK) return `${nameOf(s, from)} holds only ${balanceOf(s, from)[token].toFixed(2)} ${TOKEN_LABEL[token]}.`;
+	}
+	return '';
+}
+
+/** a MIP with its signatures is accepted and applies at once, all of it */
+function settle(s, mip, now) {
+	if (mip.status !== 'open' || mip.signatures.length < SIGNATURES) return;
+	const short = shortOf(s, mip);
+	if (short) throw new GameError(`MIP #${mip.number} can’t apply yet: ${short}`);
+	const before = Object.fromEntries(Object.keys(mip.settings).map((k) => [k, s.settings[k]]));
+	Object.assign(s.settings, mip.settings);
+	for (const x of mip.payouts) {
+		const from = balanceOf(s, x.from);
+		const amount = Math.min(x.amount, from[x.token]);
+		from[x.token] -= amount;
+		balanceOf(s, x.to)[x.token] += amount;
+		log(s, now, { kind: 'payout', from: x.from, to: x.to, token: x.token, amount, note: `MIP #${mip.number}: ${mip.title}` });
+	}
+	mip.status = 'accepted';
+	mip.decided = now;
+	mip.result = { before };
+	log(s, now, { kind: 'proposal', from: '', to: '', token: '', amount: 0, note: `MIP #${mip.number} accepted: ${mip.title} (${describe(s, mip)})` });
 }
 
 /**
  * one move by a player: `{ type, ... }`. The state is advanced to `now` first.
- *   mint                         today's HEARTS
+ *   mint                         the HEARTS grown since the last mint (24 h of them at most)
  *   invest { coop, amount }      HEARTS into a COOP
  *   swap { token, amount }       a MIND through the pool for the other
  *   name { name }                the player's name
- *   settings { settings }        change the game's settings
+ *   propose { mip }              a MIP: title, description, settings and payouts; the proposer signs it
+ *   sign { number }              sign a MIP: with two signatures it is accepted and applies at once
+ *   reject { number, note }      reject a MIP (the proposer withdraws it)
  */
 export function act(state, seat, action, now = Date.now()) {
 	if (!SEATS.includes(seat)) throw new GameError('No such player.');
@@ -279,12 +355,10 @@ export function act(state, seat, action, now = Date.now()) {
 	switch (action?.type) {
 		case 'mint': {
 			const m = mintState(s, seat, now);
-			if (!m.can) throw new GameError('Today’s HEARTS are minted already. Come back tomorrow.');
-			const n = s.settings.heartsPerDay;
-			p.wallet.HEARTS += n;
+			if (m.amount < 0.001) throw new GameError('Nothing has grown since your last mint.');
+			p.wallet.HEARTS += m.amount;
 			p.lastMint = now;
-			p.mintDay = dayAt(s, now);
-			log(s, now, { kind: 'mint', from: 'mint', to: me, token: 'HEARTS', amount: n, note: 'daily HEARTS' });
+			log(s, now, { kind: 'mint', from: 'mint', to: me, token: 'HEARTS', amount: m.amount, note: m.lost > 0.001 ? `grew since the last mint (${m.lost.toFixed(2)} older than 24 h lost)` : 'grew since the last mint' });
 			break;
 		}
 		case 'invest': {
@@ -320,18 +394,34 @@ export function act(state, seat, action, now = Date.now()) {
 			p.name = name;
 			break;
 		}
-		case 'settings': {
-			const changed = [];
-			for (const [k, [lo, hi]] of Object.entries(SETTING_LIMITS)) {
-				if (action.settings?.[k] == null) continue;
-				const v = Number(action.settings[k]);
-				if (!Number.isFinite(v) || v < lo || v > hi) throw new GameError(`${k} must be between ${lo} and ${hi}.`);
-				if (v !== s.settings[k]) {
-					changed.push(`${k} ${s.settings[k]} → ${v}`);
-					s.settings[k] = v;
-				}
+		case 'propose': {
+			const mip = checkMip(s, action.mip);
+			s.mips ??= [];
+			const short = mip.payouts.length ? shortOf(s, mip) : '';
+			if (short) throw new GameError(short);
+			const number = s.mips.length + 1;
+			const made = { number, ...mip, by: seat, at: now, signatures: [seat], status: 'open', decided: null, note: '' };
+			s.mips.push(made);
+			log(s, now, { kind: 'proposal', from: me, to: '', token: '', amount: 0, note: `MIP #${number} proposed: ${mip.title}` });
+			settle(s, made, now);
+			break;
+		}
+		case 'sign':
+		case 'reject': {
+			const mip = (s.mips ?? []).find((x) => x.number === Number(action.number));
+			if (!mip) throw new GameError('No such MIP.');
+			if (mip.status !== 'open') throw new GameError(`MIP #${mip.number} is ${mip.status} already.`);
+			if (action.type === 'reject') {
+				mip.status = mip.by === seat ? 'withdrawn' : 'rejected';
+				mip.decided = now;
+				mip.note = String(action.note ?? '').slice(0, 300);
+				log(s, now, { kind: 'proposal', from: me, to: '', token: '', amount: 0, note: `MIP #${mip.number} ${mip.status}: ${mip.title}` });
+				break;
 			}
-			if (changed.length) log(s, now, { kind: 'settings', from: me, to: '', token: '', amount: 0, note: changed.join(', ') });
+			if (mip.signatures.includes(seat)) throw new GameError('You signed this MIP already.');
+			mip.signatures.push(seat);
+			log(s, now, { kind: 'proposal', from: me, to: '', token: '', amount: 0, note: `MIP #${mip.number} signed: ${mip.title}` });
+			settle(s, mip, now);
 			break;
 		}
 		default:
