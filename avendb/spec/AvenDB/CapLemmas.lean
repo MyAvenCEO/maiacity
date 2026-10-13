@@ -7,13 +7,14 @@ The proofs of the theorems about share chains and audiences (T22, T23), the repl
 view, the order of writes, the epochs along a replay for T15), stated as in `Theorems.lean`.
 
 Settling keys changes only the epochs, the seals and what is published, and never lowers an epoch. An accepted edit
-adds a share only with a new id and a parent that comes before it (`shareParentOk`), never takes a share away, and never
-sets `narrow`, which only `hide` does while an edit is checked. So in every reachable state the shares are well formed
-(`SharesWell`): a share's chain is its parent's chain and the share itself (T22), and with nothing narrowed the write
-rule reads exactly what the selectors say wherever an entry's live audience is its semantic audience, as the sync rules
-do wherever its live wants are the rules that want it (T23). A new write brings a new id and builds on accepted writes,
-and a removal keeps some of the writes with what they build on, so the writes stay ordered. A run with removals ends in
-the replay of the edits that stood in it.
+adds a share only with a new id and a parent that comes before it (`shareParentOk`), or none for a keep share, never
+takes a share away, and never sets `narrow`, which only `hide` does while an edit is checked. So in every reachable
+state the shares are well formed (`SharesWell`): a share's chain is its parent's chain and the share itself (T22), and
+with nothing narrowed the write rule reads exactly what the selectors say wherever an entry's live audience is its
+semantic audience, as the keep shares do wherever its live wants are the keep shares that pick it (T23). A new write
+brings a new id and builds on accepted writes, and a removal keeps some of the writes with what they build on, so the
+writes stay ordered; nothing rests on a keep share and no write relies on one, so revoking one cuts nothing. A run with
+removals ends in the replay of the edits that stood in it.
 -/
 
 namespace AvenDB.Shares
@@ -87,11 +88,6 @@ theorem keysOnly_settle (pre post : State) : KeysOnly post (settle pre post) := 
 
 /-- Settling keeps the shares. -/
 theorem settle_shares (pre post : State) : (settle pre post).shares = post.shares := by
-  obtain ⟨_, _, _, h⟩ := keysOnly_settle pre post
-  rw [h]
-
-/-- Settling keeps the sync rules. -/
-theorem settle_rules (pre post : State) : (settle pre post).rules = post.rules := by
   obtain ⟨_, _, _, h⟩ := keysOnly_settle pre post
   rw [h]
 
@@ -212,43 +208,29 @@ theorem apply_epochs {st post : State} {edit : Edit} (h : apply st edit = some p
   dsimp only at h
   split at h <;> (repeat' split at h) <;> (try cases h) <;> (try rfl)
 
-/-- An accepted edit leaves the shares alone, or adds one share with a new id that `shareParentOk` accepts, and that
-    is no owner share over a whole vault (WideOwner). -/
+/-- An accepted edit leaves the shares alone, or adds one share with a new id that rests where it may (`restsOk`: on
+    nothing for a keep share, else as `shareParentOk` says), and that is no owner share over a whole vault
+    (WideOwner). -/
 theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.shares = st.shares ∨
-      ∃ c, post.shares = st.shares ++ [c] ∧ st.share? c.id = none ∧ shareParentOk st c = true ∧
+      ∃ c, post.shares = st.shares ++ [c] ∧ st.share? c.id = none ∧ restsOk st c = true ∧
         (c.level = .owner → c.wide = false) := by
   unfold apply at h
   dsimp only at h
   split at h
   case h_8 c via _ =>
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-    obtain ⟨h1, -, h2, h3, -, rfl⟩ := h
+    obtain ⟨h1, -, -, h2, -, h3, -, rfl⟩ := h
     refine .inr ⟨c, rfl, ?_, ?_, fun ho => ?_⟩
     · cases hc : st.share? c.id with
       | none => rfl
       | some _ => simp [hc] at h1
-    · cases hp : shareParentOk st c with
+    · cases hp : restsOk st c with
       | true => rfl
       | false => simp [hp] at h3
     · cases hw : c.wide with
       | false => rfl
       | true => simp [ho, hw] at h2
-  all_goals (repeat' split at h) <;> (try cases h) <;> exact .inl rfl
-
-/-- An accepted edit leaves the sync rules alone, or adds one rule with a new id. -/
-theorem apply_rules {st post : State} {edit : Edit} (h : apply st edit = some post) :
-    post.rules = st.rules ∨ ∃ r, post.rules = st.rules ++ [r] ∧ st.rule? r.id = none := by
-  unfold apply at h
-  dsimp only at h
-  split at h
-  case h_15 r via _ =>
-    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-    obtain ⟨h1, -, rfl⟩ := h
-    refine .inr ⟨r, rfl, ?_⟩
-    cases hc : st.rule? r.id with
-    | none => rfl
-    | some _ => simp [hc] at h1
   all_goals (repeat' split at h) <;> (try cases h) <;> exact .inl rfl
 
 /-- An accepted edit leaves the writes alone, or is a write edit adding one write with its new id and its author that
@@ -335,10 +317,10 @@ theorem sharesWell_congr {st st' : State} (h : st'.shares = st.shares) : SharesW
   unfold SharesWell State.share?
   rw [h]
 
-/-- Adding a share with a new id that `shareParentOk` accepts keeps the shares well formed: its parent is an earlier
-    share. -/
+/-- Adding a share with a new id that rests where it may keeps the shares well formed: its parent, if it has one, is
+    an earlier share. -/
 theorem sharesWell_add {st st' : State} (hw : SharesWell st) {c : Share} (hshares : st'.shares = st.shares ++ [c])
-    (hnew : st.share? c.id = none) (hok : shareParentOk st c = true) : SharesWell st' := by
+    (hnew : st.share? c.id = none) (hok : restsOk st c = true) : SharesWell st' := by
   obtain ⟨hnd, hpar⟩ := hw
   have hids : ∀ x ∈ st.shares, x.id ≠ c.id := fun x hx hxc => by
     have := List.find?_eq_none.1 hnew x hx
@@ -361,7 +343,13 @@ theorem sharesWell_add {st st' : State} (hw : SharesWell st) {c : Share} (hshare
     rcases hx with hx | rfl
     · obtain ⟨pc, hpc, hlt, hrest⟩ := hpar x hx p hp
       exact ⟨pc, hlook p pc hpc, by rw [hidx pc (List.mem_of_find?_eq_some hpc), hidx x hx]; exact hlt, hrest⟩
-    · -- the new share: its parent passed `shareParentOk` and comes before it
+    · -- the new share: it isn't a keep share, which rests on nothing, so its parent passed `shareParentOk` and
+      -- comes before it
+      have hok : shareParentOk st x = true := by
+        unfold restsOk at hok
+        split at hok
+        · simp [hp] at hok
+        · exact hok
       unfold shareParentOk at hok
       rw [hp] at hok
       dsimp only at hok
@@ -451,13 +439,14 @@ theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : 
 
 /-- In every reachable state no owner share is wide, since owner of a whole vault is an owner of it, which no share
     makes (WideOwner); so a wide share rests on no share, as a share rests only on an owner share and is wide only if
-    that one is, and the vault it is over issued it. -/
+    that one is, and the vault it is over issued it, unless it is a keep share. -/
 theorem T22_wide_shares {st : State} (hr : Reachable st) :
-    ∀ c ∈ st.shares, (c.level = .owner → c.wide = false) ∧ (c.wide = true → c.parent = none ∧ c.issuer = c.over) := by
+    ∀ c ∈ st.shares, (c.level = .owner → c.wide = false) ∧
+      (c.wide = true → c.parent = none ∧ (c.level.isKeep = false → c.issuer = c.over)) := by
   obtain ⟨edits, rfl⟩ := hr
   refine replay_inv (fun st => ∀ c ∈ st.shares, (c.level = .owner → c.wide = false) ∧
-      (c.wide = true → c.parent = none ∧ c.issuer = c.over)) (fun st st' edit hinv h => ?_) edits {}
-    (fun _ h => by cases h)
+      (c.wide = true → c.parent = none ∧ (c.level.isKeep = false → c.issuer = c.over)))
+    (fun st st' edit hinv h => ?_) edits {} (fun _ h => by cases h)
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   intro x hx
@@ -469,11 +458,17 @@ theorem T22_wide_shares {st : State} (hr : Reachable st) :
     · exact hinv x hx
     · rw [hx]
       refine ⟨hwo, fun hw => ?_⟩
+      unfold restsOk at hok
+      split at hok
+      · -- a keep share rests on nothing
+        rename_i hk
+        simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hok
+        exact ⟨hok.1, fun h => by simp [h] at hk⟩
       unfold shareParentOk at hok
       cases hp : c.parent with
       | none =>
         rw [hp] at hok
-        exact ⟨rfl, by simpa using hok⟩
+        exact ⟨rfl, fun _ => by simpa using hok⟩
       | some p =>
         -- the share it rests on would be a wide owner share
         rw [hp] at hok
@@ -495,7 +490,7 @@ theorem any_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x �
     simp only [List.any_cons, h x List.mem_cons_self, ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
 
 /-- Marks mean what the selectors say, the one step both parts of T23 share. Where the live part of the marks `m` an
-    entry carries is the canonical list of the members of `xs` (shares, or sync rules) that test `p` picks, a live
+    entry carries is the canonical list of the members of `xs` (shares, or keep shares) that test `p` picks, a live
     member that `p` reads as `sel` (one over the entry's vault that isn't wide, `sel` asking whether its selector holds
     the entry) is among the marks exactly when `sel` holds of it. -/
 theorem mark_means {α : Type} {xs : List α} {id : α → ShareId} (hnd : (xs.map id).Nodup) {live : ShareId → Bool}
@@ -511,6 +506,11 @@ theorem mark_means {α : Type} {xs : List α} {id : α → ShareId} (hnd : (xs.m
     exact hp ▸ hpx
   · intro hs
     exact ⟨x, ⟨hx, hp ▸ hs⟩, rfl⟩
+
+/-- A level that allows anything but a keep share's is no keep level: a keep share allows nothing. -/
+theorem not_keep_of_allows {r need : Level} (h : r.allows need = true) (hn : need.isKeep = false) :
+    r.isKeep = false := by
+  cases r <;> cases need <;> simp_all [Level.allows, Level.rank, Level.isKeep]
 
 /-- An entry's audience means what the shares say: where its live part is the entry's semantic audience, the write rule
     allows exactly the vaults the shares' selectors allow. -/
@@ -529,6 +529,10 @@ theorem audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
   have hlive : st.live cp.id = true := by
     simp only [holdsShare, Bool.and_eq_true] at hh
     exact hh.1.1
+  -- a share held with write is no keep share
+  have hnk : cp.level.isKeep = false := by
+    simp only [holdsShare, Bool.and_eq_true] at hh
+    exact not_keep_of_allows hh.2 rfl
   cases ho : cp.over == en.vault
   · simp
   cases hwd : cp.wide
@@ -542,54 +546,57 @@ theorem audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
       simpa [haudience] using List.mem_filter.2 ⟨hm, hlive⟩
     · simp only [liveAudience, semAudience, had, ↓reduceIte] at haudience
       rw [Bool.true_and]
-      exact mark_means (sel := fun cp => effSelects st cp en.attrs) hw.1 haudience hcp hlive (by simp [ho, hlive, hwd])
+      exact mark_means (sel := fun cp => effSelects st cp en.attrs) hw.1 haudience hcp hlive
+        (by simp [ho, hlive, hwd, hnk])
   · simp
 
-/-! ## Sync rules -/
+/-! ## Keep shares -/
 
-/-- In every reachable state no two sync rules share an id. -/
-theorem rules_nodup_reachable {st : State} (hr : Reachable st) : (st.rules.map (·.id)).Nodup := by
-  obtain ⟨edits, rfl⟩ := hr
-  refine replay_inv (fun st => (st.rules.map (·.id)).Nodup) (fun st st' edit hnd h => ?_) edits {} List.nodup_nil
-  unfold step at h
-  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
-  simp only [settle_rules]
-  rcases apply_rules hpost with hrs | ⟨r, hrs, hnew⟩
-  · rw [hrs]; exact hnd
-  · rw [hrs, List.map_append, List.nodup_append]
-    refine ⟨hnd, by simp, fun a ha b hb hab => ?_⟩
-    obtain ⟨x, hx, rfl⟩ := List.mem_map.1 ha
-    rw [List.map_singleton, List.mem_singleton] at hb
-    have := List.find?_eq_none.1 hnew x hx
-    simp [hab.trans hb] at this
+/-- What a device's keep shares make of an entry reads, of each of them, only whether it picks the entry. -/
+theorem wantsWith_congr {ks : List Share} {f g : Share → Bool} (h : ∀ k ∈ ks, f k = g k) :
+    wantsWith ks f = wantsWith ks g := by
+  unfold wantsWith
+  have h1 : (ks.any fun k => !k.never && f k) = ks.any fun k => !k.never && g k :=
+    any_congr_mem fun k hk => by rw [h k hk]
+  have h2 : (ks.any fun k => k.never && f k) = ks.any fun k => k.never && g k :=
+    any_congr_mem fun k hk => by rw [h k hk]
+  rw [h1, h2]
 
-/-- An entry's wants mean what the sync rules say: where their live part is the rules that want the entry, a device
-    wants it exactly when it has no rule over the entry's vault, or one of its rules there is wide or matches it. -/
-theorem wants_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
+theorem keepsWith_congr {ks : List Share} {f g : Share → Bool} (h : ∀ k ∈ ks, f k = g k) :
+    keepsWith ks f = keepsWith ks g := by
+  unfold keepsWith
+  exact any_congr_mem fun k hk => by rw [h k hk]
+
+/-- An entry's wants mean what the keep shares say: where their live part is the keep shares that pick the entry, a
+    device wants the entry, and keeps its files whole, exactly as its keep shares over the entry's vault say when each
+    one picks it where it is wide or its selector, with the schema and lens types, picks the entry (`keepPicks`). -/
+theorem wants_mean_keeps {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
     (hwants : liveWants st en = semWants st en) :
-    wants st d en = ((rulesOf st d en.vault).isEmpty ||
-      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs) := by
-  unfold wants
-  dsimp only
-  congr 1
-  refine any_congr_mem fun r hr' => ?_
-  obtain ⟨hrm, hcond⟩ := List.mem_filter.1 hr'
-  simp only [Bool.and_eq_true, beq_iff_eq] at hcond
-  obtain ⟨⟨⟨_, hover⟩, hlive⟩, _⟩ := hcond
-  cases hw : r.wide
-  · -- a rule that isn't wide is among the marks exactly when its selector matches the entry
-    rw [Bool.false_or, Bool.false_or]
-    exact mark_means (sel := fun r => r.select.matches en.attrs) (rules_nodup_reachable hr) hwants hrm hlive
-      (by simp [hover, hlive, hw])
-  · simp
+    wants st d en = wantsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
+      keeps st d en = keepsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) := by
+  -- each of the device's keep shares there is marked on the entry exactly when it picks it
+  have hm : ∀ k ∈ keepsOf st d en.vault, marked st en k = (k.wide || keepPicks k en.attrs) := by
+    intro k hk
+    obtain ⟨hkm, hcond⟩ := List.mem_filter.1 hk
+    simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+    obtain ⟨⟨⟨⟨hkeep, -⟩, hover⟩, hlive⟩, -⟩ := hcond
+    unfold marked
+    cases hw : k.wide
+    · -- a keep share that isn't wide is among the marks exactly when it picks the entry
+      rw [Bool.false_or, Bool.false_or]
+      exact mark_means (sel := fun k => keepPicks k en.attrs) (sharesWell_reachable hr).1 hwants hkm hlive
+        (by simp [hover, hlive, hw, hkeep])
+    · rfl
+  exact ⟨wantsWith_congr hm, keepsWith_congr hm⟩
 
 /-! ## Marks mean what the shares say -/
 
 theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
     (liveAudience st en = semAudience st en → ∀ a, mayWrite st a en = semWrite st a en) ∧
-    (liveWants st en = semWants st en → ∀ d, wants st d en = ((rulesOf st d en.vault).isEmpty ||
-      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs)) :=
-  ⟨fun h a => audiences_mean_slices hr en h a, fun h d => wants_mean_rules hr d en h⟩
+    (liveWants st en = semWants st en → ∀ d,
+      wants st d en = wantsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
+      keeps st d en = keepsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs)) :=
+  ⟨fun h a => audiences_mean_slices hr en h a, fun h d => wants_mean_keeps hr d en h⟩
 
 theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}
     (h : admits st a v x attrs proof = true) :
@@ -745,6 +752,190 @@ theorem writes_ordered (edits : List Edit) : Ordered (view edits).writes := by
   have h := replay_inv (fun st => CausallyClosed st ∧ Ordered st.writes)
     (fun _ _ _ ⟨h₁, h₂⟩ h => writes_step h₁ h₂ h) (standing edits) {} (by simp [CausallyClosed, Ordered])
   exact h.2
+
+/-- In every reachable state the writes are causally closed and ordered. -/
+theorem writes_reachable {st : State} (hr : Reachable st) : CausallyClosed st ∧ Ordered st.writes := by
+  obtain ⟨edits, rfl⟩ := hr
+  exact replay_inv (fun st => CausallyClosed st ∧ Ordered st.writes) (fun _ _ _ ⟨h₁, h₂⟩ h => writes_step h₁ h₂ h)
+    edits {} (by simp [CausallyClosed, Ordered])
+
+/-! ## Revoking a keep share cuts nothing
+
+Nothing rests on a keep share, as a share rests only on an owner share; no audience holds one (`audienceOk`); and no
+write relies on one, as a keep share allows nothing. So revoking one takes no write's authorization away, and in a
+reachable state, whose writes are causally closed and ordered, it drops nothing: it only marks the share revoked. Nor
+does it hide anything from the edits it hadn't seen (`removes`). -/
+
+/-- `closeDeps` keeps every write of a list whose writes build only on writes of their entry before them. -/
+theorem closeDeps_eq {ws : List Write} (hc : ∀ w ∈ ws, ∀ d ∈ w.deps, ∃ x ∈ ws, x.edit = d ∧ x.entry = w.entry)
+    (ho : Ordered ws) : closeDeps ws = ws := by
+  unfold closeDeps
+  suffices h : ∀ l pre, pre ++ l = ws →
+      l.foldl (fun kept w => if depsIn kept w then kept ++ [w] else kept) pre = ws from h ws [] rfl
+  intro l
+  induction l with
+  | nil => intro pre h; simpa using h
+  | cons w l ih =>
+    intro pre h
+    rw [List.foldl_cons]
+    have hw : w ∈ ws := h ▸ List.mem_append_right _ List.mem_cons_self
+    -- what `w` builds on comes before it: neither `w` itself nor a write after it
+    have hdeps : depsIn pre w = true := by
+      rw [depsIn_iff]
+      intro d hd
+      obtain ⟨x, hx, hxd, hxe⟩ := hc w hw d hd
+      rw [← h] at hx
+      rcases List.mem_append.1 hx with hx | hx
+      · exact ⟨x, hx, hxd, hxe⟩
+      · rcases List.mem_cons.1 hx with hxw | hx
+        · rw [hxw] at hxd
+          exact absurd (hxd ▸ hd : w.edit ∈ w.deps) (ho.2.2 w hw)
+        · have hpw := ho.2.1
+          rw [← h, List.pairwise_append, List.pairwise_cons] at hpw
+          exact absurd (hxd ▸ hd : x.edit ∈ w.deps) (hpw.2.1.1 x hx)
+    simp only [hdeps, ↓reduceIte]
+    exact ih (pre ++ [w]) (by rw [← h]; simp)
+
+/-- A removal that takes no write's authorization away drops nothing, where the writes are causally closed and ordered,
+    every write's entry is there, and every entry's first write. -/
+theorem dropUnseen_none {pre mid : State} {keep : List EditId} (hauth : ∀ w, authorized mid w = authorized pre w)
+    (hc : CausallyClosed mid) (ho : Ordered mid.writes) (hwe : ∀ w ∈ mid.writes, ∃ en ∈ mid.entries, en.id = w.entry)
+    (hew : ∀ en ∈ mid.entries, ∃ w ∈ mid.writes, w.entry = en.id ∧ w.first = true) :
+    dropUnseen pre mid keep = mid := by
+  have hws : (mid.writes.filter fun w => keep.contains w.edit || !authorized pre w || authorized mid w) =
+      mid.writes := List.filter_eq_self.2 fun w _ => by rw [hauth w]; cases authorized pre w <;> simp
+  have hes : (mid.entries.filter fun en => mid.writes.any fun w => w.entry == en.id && w.first) = mid.entries :=
+    List.filter_eq_self.2 fun en hen => by
+      obtain ⟨w, hw, hwe', hwf⟩ := hew en hen
+      exact List.any_eq_true.2 ⟨w, hw, by simp [hwe', hwf]⟩
+  have hws' : (mid.writes.filter fun w => mid.entries.any (·.id == w.entry)) = mid.writes :=
+    List.filter_eq_self.2 fun w hw => by
+      obtain ⟨en, hen, hid⟩ := hwe w hw
+      exact List.any_eq_true.2 ⟨en, hen, by simp [hid]⟩
+  unfold dropUnseen
+  dsimp only
+  rw [hws, closeDeps_eq hc ho, hes, hws']
+
+/-- Who acts for which vault reads nothing of what is revoked. -/
+theorem actsVia_revoked (st : State) (r : List ShareId) (s : SignerId) :
+    ∀ via v, actsVia { st with revoked := r } s via v = actsVia st s via v
+  | [], _ => rfl
+  | o :: via, v => by simp only [actsVia, actsVia_revoked st r s via o]; rfl
+
+/-- Revoking a share nobody holds with write or more, such as a keep share, takes no write's authorization away. -/
+theorem authorized_revoke_unheld {st : State} {c : ShareId}
+    (hc : ∀ cp ∈ st.shares, cp.id = c → cp.level.allows .write = false) (w : Write) :
+    authorized { st with revoked := st.revoked ++ [c] } w = authorized st w := by
+  have hh : ∀ a, ∀ cp ∈ st.shares,
+      holdsShare { st with revoked := st.revoked ++ [c] } a cp .write = holdsShare st a cp .write := by
+    intro a cp hcp
+    by_cases hid : cp.id = c
+    · simp [holdsShare, hc cp hcp hid]
+    · simp [holdsShare, State.live, hid]
+  have hm : ∀ a en, mayWrite { st with revoked := st.revoked ++ [c] } a en = mayWrite st a en := fun a en => by
+    unfold mayWrite
+    congr 1
+    exact any_congr_mem fun cp hcp => by rw [hh a cp hcp]; rfl
+  unfold authorized
+  rw [actsVia_revoked]
+  show (_ && match st.entry? w.entry with
+    | some en => mayWrite { st with revoked := st.revoked ++ [c] } w.actor { en with stays := [(w.stay, w.audience)] }
+    | none => false) = _
+  cases st.entry? w.entry with
+  | none => rfl
+  | some en => exact congrArg _ (hm _ _)
+
+/-- Where no share rests directly on share `c`, a share rests on `c` only if it is `c`. -/
+theorem restsOnN_only {st : State} {c : ShareId} (hnp : ∀ y ∈ st.shares, y.parent ≠ some c) :
+    ∀ n x, restsOnN st c n x = true → x = c
+  | 0, _, h => by simp [restsOnN] at h
+  | n + 1, x, h => by
+    unfold restsOnN at h
+    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with h | h
+    · exact h
+    · split at h
+      · rename_i p hp
+        obtain rfl := restsOnN_only hnp n p h
+        obtain ⟨y, hy, hyp⟩ := Option.bind_eq_some_iff.1 hp
+        exact absurd hyp (hnp y (List.mem_of_find?_eq_some hy))
+      · cases h
+
+/-- A list without repeats whose members are all `a`, `a` among them, is `[a]`. -/
+theorem eq_singleton_of_nodup {α : Type} : ∀ {l : List α} {a : α}, l.Nodup → (∀ x ∈ l, x = a) → a ∈ l → l = [a]
+  | [], _, _, _, ha => by cases ha
+  | [x], _, _, hall, _ => by rw [hall x List.mem_cons_self]
+  | x :: y :: t, _, hnd, hall, _ => by
+    have hx := hall x List.mem_cons_self
+    have hy := hall y (List.mem_cons_of_mem _ List.mem_cons_self)
+    exact absurd (by rw [hx, ← hy]; exact List.mem_cons_self) (List.nodup_cons.1 hnd).1
+
+/-- Revoking a keep share cuts nothing (design 14.5): in a reachable state whose writes are all of entries that are
+    there and whose entries all have their first write (T14), an accepted revocation of a keep share only marks it
+    revoked. No share falls with it and no write or entry is dropped. -/
+theorem keep_revocation_cuts_nothing {st post : State} (hr : Reachable st)
+    (hwe : ∀ w ∈ st.writes, ∃ en ∈ st.entries, en.id = w.entry)
+    (hew : ∀ en ∈ st.entries, ∃ w ∈ st.writes, w.entry = en.id ∧ w.first = true)
+    {edit : Edit} {c : ShareId} {a : VaultId} {keep : List EditId} {via : List VaultId}
+    (ha : edit.action = .revoke (.grant c a keep via)) {k : Share} (hk : st.share? c = some k)
+    (hkeep : k.level.isKeep = true) (h : apply st edit = some post) :
+    post = { st with revoked := st.revoked ++ [c] } := by
+  have hw := sharesWell_reachable hr
+  obtain ⟨hcc, hord⟩ := writes_reachable hr
+  have hkm := List.mem_of_find?_eq_some hk
+  have hkid : k.id = c := by simpa using List.find?_some hk
+  -- the share with id `c` is `k`, and no share rests on it, as a share rests only on an owner share
+  have hone : ∀ x ∈ st.shares, x.id = c → x = k := fun x hx hxc => eq_of_id hw.1 hx hkm (hxc.trans hkid.symm)
+  have hnp : ∀ y ∈ st.shares, y.parent ≠ some c := fun y hy hyp => by
+    obtain ⟨pc, hpc, -, -, hlevel, -⟩ := hw.2 y hy c hyp
+    rw [hk] at hpc
+    cases hpc
+    rw [hlevel] at hkeep
+    cases hkeep
+  unfold apply at h
+  rw [ha] at h
+  dsimp only at h
+  rw [hk] at h
+  dsimp only at h
+  simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+  obtain ⟨hok, -, rfl⟩ := h
+  have hnot : c ∉ st.revoked := by
+    simp [State.live] at hok
+    exact hok.1.1.2
+  -- the shares that end are `k` alone
+  have hids : (st.shares.filter fun x => restsOn st c x.id && !st.revoked.contains x.id).map (·.id) = [c] := by
+    refine eq_singleton_of_nodup (hw.1.sublist (List.filter_sublist.map _)) (fun y hy => ?_) ?_
+    · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hy
+      obtain ⟨hxm, hxp⟩ := List.mem_filter.1 hx
+      simp only [Bool.and_eq_true] at hxp
+      exact restsOnN_only hnp _ _ hxp.1
+    · refine List.mem_map.2 ⟨k, List.mem_filter.2 ⟨hkm, ?_⟩, hkid⟩
+      simp [restsOn, restsOnN, hkid, hnot]
+  rw [hids]
+  -- no write loses its authorization: nobody holds a keep share with write
+  have hauth := authorized_revoke_unheld (st := st) (c := c) fun cp hcp hid => by
+    rw [hone cp hcp hid]
+    exact Bool.eq_false_iff.2 fun h => by
+      have := not_keep_of_allows h rfl
+      rw [hkeep] at this
+      cases this
+  exact dropUnseen_none hauth hcc hord hwe hew
+
+/-- Nor does revoking a keep share hide anything from the edits it hadn't seen: among edits that issue share `c` only
+    as a keep share, a revocation of `c` takes nothing away. -/
+theorem keep_revocation_hides_nothing (edits : List Edit) {r : Edit} {c : ShareId} {a : VaultId}
+    {keep : List EditId} {via : List VaultId} (hr : r.action = .revoke (.grant c a keep via))
+    (hk : ∀ x ∈ sharesIn edits, x.id = c → x.level.isKeep = true) (hex : ∃ x ∈ sharesIn edits, x.id = c) :
+    removes edits r = [] := by
+  obtain ⟨x, hx, hxc⟩ := hex
+  unfold removes
+  rw [hr]
+  dsimp only
+  cases hf : (sharesIn edits).find? (·.id == c) with
+  | none => exact absurd (List.find?_eq_none.1 hf x hx) (by simp [hxc])
+  | some y =>
+    have hy : y.id = c := by simpa using List.find?_some hf
+    simp [hk y (List.mem_of_find?_eq_some hf) hy]
 
 /-! ## Strong removal -/
 

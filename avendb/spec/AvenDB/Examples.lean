@@ -73,6 +73,12 @@ def shareOf (id : ShareId) (over who : VaultId) (level : Level) (sel : Selector)
   { id, over, who := .vault who, level, wide := sel == .all, select := sel, ops := level.ops, parent,
     issuer }
 
+/-- Keep share `id` over vault `over`: device `d` of vault `issuer` syncs what `sel` selects, all of `over` for `all`,
+    as mode `m` says. It grants nothing. -/
+def keepShare (id : ShareId) (over issuer : VaultId) (d : SignerId) (m : KeepMode) (sel : Selector) : Share :=
+  { id, over, who := .device d, level := .keep m, wide := sel == .all, select := sel, ops := [], parent := none,
+    issuer }
+
 /-- Share `id` over vault `over`: everyone reads what `sel` selects. -/
 def publicShare (id : ShareId) (over : VaultId) (sel : Selector) : Share :=
   { shareOf id over over .read sel with who := .everyone }
@@ -307,9 +313,13 @@ def s6 : List Edit := s5 ++ chain 50 [
 -- she can't edit it, and Bob's Mac still reads both documents
 #guard !accepted s6 (attempt macC [] (.write coop welcome carol (some 51) 0 [40]))
 #guard readable s6 macB == [welcome, onboarding]
--- a share naming a device is refused (T4)
+-- a share names a device only as a keep share, of a device of its issuer (T4): Carol keeps Welcome whole on her Mac,
+-- which lets her read nothing more; the coop has no device to keep its entries on, and Carol keeps nothing on Alice's
 #guard !accepted s6 (attempt macA [] (.share (.grant { shareOf 2 coop carol .read (byId welcome) with
                                                       who := .device macC } [alice])))
+#guard accepted s6 (attempt macC [] (.share (.grant (keepShare 2 coop carol macC .whole (byId welcome)))))
+#guard !accepted s6 (attempt macA [] (.share (.grant (keepShare 2 coop coop macC .whole (byId welcome)) [alice])))
+#guard !accepted s6 (attempt macC [] (.share (.grant (keepShare 2 coop carol macA .whole (byId welcome)))))
 
 def s7 : List Edit := s6 ++ chain 60 [
   (macA, [], .share (.grant (publicShare 3 coop (byId charter)) [alice])),

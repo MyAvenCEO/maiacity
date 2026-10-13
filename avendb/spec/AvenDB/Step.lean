@@ -19,17 +19,19 @@ inductive Setting where
   | root      (r : Option SignerId) (keep : List EditId)
   deriving DecidableEq, Repr
 
-/-- What a share edit gives: a grant, share `c`, issued by `c.issuer`; or a place in vault `v`, as an owner `p`, or as a
-    device `d` (a phone or a browser of a human vault, a server of an aven vault). Owner of the whole vault is an owner
-    of it: a grant never makes anyone that (WideOwner). -/
+/-- What a share edit gives: a grant, share `c`, issued by `c.issuer`, or a keep share, which grants nothing and names
+    one of its issuer's devices; or a place in vault `v`, as an owner `p`, or as a device `d` (a phone or a browser of a
+    human vault, a server of an aven vault). Owner of the whole vault is an owner of it: a grant never makes anyone
+    that (WideOwner). -/
 inductive Sharing where
   | grant  (c : Share) (via : List VaultId := [])
   | owner  (v : VaultId) (p : Principal)
   | device (v : VaultId) (d : SignerId)
   deriving DecidableEq, Repr
 
-/-- What a revocation ends: grant `c`, with every grant resting on it, revoked by vault `actor`; or the place of owner
-    `p` or of device `d` in vault `v`. Every revocation is a removal: it names the edits it had seen and keeps. -/
+/-- What a revocation ends: grant `c`, with every grant resting on it, revoked by vault `actor` (a keep share only by
+    its issuer); or the place of owner `p` or of device `d` in vault `v`. Every revocation is a removal: it names the
+    edits it had seen and keeps. -/
 inductive Revoking where
   | grant  (c : ShareId) (actor : VaultId) (keep : List EditId) (via : List VaultId := [])
   | owner  (v : VaultId) (p : Principal) (keep : List EditId)
@@ -67,7 +69,7 @@ inductive Action where
                (create : Option (Audience × Header) := none) (tags : TagDelta := {}) (proof : Option ShareId := none)
                (touches : List Touch := []) (fits : Bool := true)
   /-- A steward, acting for vault `v`, marks its entry `e`: with the audience its shares select (`caps`), which begins a
-      stay and keeps the writes it had seen (`keep`), with the sync rules that want it (`wants`), or with both. A part
+      stay and keeps the writes it had seen (`keep`), with the keep shares that pick it (`wants`), or with both. A part
       left out (`none`) stays as it is, so a mark of the wants alone never puts back an audience that another steward
       changed meanwhile. -/
   | mark       (v : VaultId) (e : EntryId) (caps : Option Audience) (wants : Option (List ShareId))
@@ -82,10 +84,6 @@ inductive Action where
       the writes carry only the classical half. It changes nothing; a peer that no longer trusts the curves counts
       only the writes a checkpoint covers (`checkpointed`). -/
   | checkpoint (e : EntryId) (covers : List EditId)
-  /-- A sync rule (`State.lean`), set by vault `r.issuer` for one of its devices. -/
-  | syncRule   (r : SyncRule) (via : List VaultId := [])
-  /-- Sync rule `r` of vault `issuer` ends. -/
-  | endRule    (r : ShareId) (issuer : VaultId) (via : List VaultId := [])
   deriving DecidableEq, Repr
 
 /-- A mark that takes entry `e` to audience `to` and leaves its wants as they are: what a move was. -/
@@ -93,7 +91,7 @@ inductive Action where
     (via : List VaultId := []) : Action :=
   .mark v e (some to) none keep via
 
-/-- A mark of the sync rules `rs` that want entry `e`, which leaves its audience as it is: what a pick was. -/
+/-- A mark of the keep shares `rs` that pick entry `e`, which leaves its audience as it is: what a pick was. -/
 @[match_pattern] abbrev Action.pick (v : VaultId) (e : EntryId) (rs : List ShareId) (via : List VaultId := []) :
     Action :=
   .mark v e none (some rs) [] via
@@ -206,6 +204,11 @@ def shareParentOk (st : State) (c : Share) : Bool :=
     | some pc => st.live p && pc.over == c.over && pc.level == Level.owner && pc.who == .vault c.issuer &&
         (!c.wide || pc.wide)
 
+/-- A share rests where it may: a keep share on nothing, over a vault whose entries its issuer may hold, so no stranger
+    has a vault's stewards mark entries for it; any other share as `shareParentOk` says. -/
+def restsOk (st : State) (c : Share) : Bool :=
+  if c.level.isKeep then c.parent.isNone && mayHold st c.issuer c.over else shareParentOk st c
+
 /-- Vault `a` may revoke share `c`: it issued it, the share is over it, it holds the share (and gives it up), or it may
     revoke the share `c` rests on. -/
 def mayRevokeN (st : State) (a : VaultId) : Nat → Share → Bool
@@ -215,7 +218,10 @@ def mayRevokeN (st : State) (a : VaultId) : Nat → Share → Bool
     | some p => mayRevokeN st a n p
     | none   => false
 
-def mayRevoke (st : State) (a : VaultId) (c : Share) : Bool := mayRevokeN st a (st.shares.length + 1) c
+/-- A keep share only its issuer revokes, through a device or an owner: the vault it is over could otherwise have a
+    device sync all of that vault, by revoking its last keep share that adds entries. -/
+def mayRevoke (st : State) (a : VaultId) (c : Share) : Bool :=
+  if c.level.isKeep then c.issuer == a else mayRevokeN st a (st.shares.length + 1) c
 
 /-- Signer `d` may box key `k`: the key of a family that exists, at an epoch it has reached, that `d` should be able to
     open; or the key of one of an entry's stays at an epoch that stay's audience has reached, when `d` should be able
@@ -298,15 +304,19 @@ def apply (st : State) (edit : Edit) : Option State :=
       else some (setVault st { vt with root := r })
   | .share (.grant c via) =>
     if (st.share? c.id).isSome || (st.vault? c.over).isNone then none
-    -- grants name vaults or everyone, never devices, nor the vault they are over; everyone only reads
+    -- a share names a device exactly when it is a keep share (KeepNeedsDevice, DeviceOnlyKeeps)
+    else if c.level.isKeep != c.who.isDevice then none
+    -- grants name vaults or everyone, nor the vault they are over; everyone only reads
     else if (match c.who with
-             | .device _ => true
+             | .device _ => false
              | .vault x  => (st.vault? x).isNone || x == c.over
              | .everyone => c.level != Level.read) then none
     -- owner of the whole vault is an owner of it, which only a vault's approval and the newcomer's consent make
     -- (WideOwner); owner of a slice is a grant
     else if c.level == Level.owner && c.wide then none
-    else if !actsVia st edit.author via c.issuer || !shareParentOk st c then none
+    -- a vault keeps entries on its own devices only
+    else if !c.who.device?.all (isDevice st · c.issuer) then none
+    else if !actsVia st edit.author via c.issuer || !restsOk st c then none
     -- making someone owner is governance
     else if c.level == Level.owner && !approves st sigs (.vault c.issuer) then none
     else some { st with shares := st.shares ++ [c] }
@@ -364,15 +374,15 @@ def apply (st : State) (edit : Edit) : Option State :=
     | some en =>
       -- only a steward marks an entry of its vault
       if en.vault != v || !actsVia st edit.author via v then none
-      -- it marks an audience, the sync rules that want the entry, or both; only a new audience is a removal, which
+      -- it marks an audience, the keep shares that pick the entry, or both; only a new audience is a removal, which
       -- keeps what it had seen
       else if (caps.isNone && wants.isNone) || (caps.isNone && !keep.isEmpty) then none
       -- another audience of the vault, and a mark begins one stay
       else if !caps.all (fun to => audienceOk st v to && to != en.audience && !en.stays.any (·.1 == some edit.id)) then
         none
       -- wants of the vault, other than the entry's, but where the mark takes it to a new audience. Neither list asks
-      -- whether what it names is live: a revocation or an ended rule that sorts before the mark mustn't refuse it, and
-      -- readers leave out what isn't live
+      -- whether what it names is live: a revocation that sorts before the mark, of a share or a keep share, mustn't
+      -- refuse it, and readers leave out what isn't live
       else if !wants.all (fun rs => wantsOk st v rs && (caps.isSome || rs != st.wantsOf e)) then none
       -- a new audience cuts what the mark hadn't seen that only the audience the entry leaves allowed
       else match caps, wants with
@@ -397,18 +407,6 @@ def apply (st : State) (edit : Edit) : Option State :=
     if covers.isEmpty || !covers.all (fun c => st.writes.any fun w =>
         w.edit == c && w.author == edit.author && w.entry == e) then none
     else some st
-  | .syncRule r via =>
-    if (st.rule? r.id).isSome || (st.vault? r.over).isNone then none
-    -- a vault sets the rules of its own devices, over a vault whose entries it may hold
-    else if !isDevice st r.device r.issuer || !actsVia st edit.author via r.issuer || !mayHold st r.issuer r.over then
-      none
-    else some { st with rules := st.rules ++ [r] }
-  | .endRule r issuer via =>
-    match st.rule? r with
-    | none => none
-    | some x =>
-      if x.issuer != issuer || !st.ruleLive r || !actsVia st edit.author via issuer then none
-      else some { st with ended := st.ended ++ [r] }
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)
@@ -452,7 +450,8 @@ removals clash, the senior one stands: a vault's removals (revoking an owner or 
 from the top down, a vault's before those of the coops it owns, and within a vault its root, then its owners in the
 order they joined, then removals no owner approved (a device leaving); revoked grants follow, the most senior revoker
 first; marks that change an audience come last (`priority`). A mark of the wants alone is no removal: it takes nothing
-away, so nothing it hadn't seen falls by it. -/
+away, so nothing it hadn't seen falls by it. Nor does revoking a keep share take anything away (`removes`): nothing
+rests on a keep share, no audience holds one, and no mark asks whether the keep shares it names are live. -/
 
 /-- What a removal takes away. -/
 inductive Fact where
@@ -497,7 +496,8 @@ def restsOnIn (cs : List Share) (c : ShareId) : Nat → ShareId → Bool
     | none   => false
 
 /-- What removal `r` takes away: the owner, the device, the root, among the grants `edits` issue the grant and every
-    grant resting on it, or for a mark that changes an audience the audiences the entry no longer is in. -/
+    grant resting on it (nothing for a keep share), or for a mark that changes an audience the audiences the entry no
+    longer is in. -/
 def removes (edits : List Edit) (r : Edit) : List Fact :=
   match r.action with
   | .revoke (.owner v p _)   => [.owner v p]
@@ -505,7 +505,8 @@ def removes (edits : List Edit) (r : Edit) : List Fact :=
   | .settings v (.root ..)   => [.root v]
   | .revoke (.grant c _ _ _) =>
     let cs := sharesIn edits
-    (cs.filter fun x => restsOnIn cs c (cs.length + 1) x.id).map fun x => .share x.id
+    if (cs.find? (·.id == c)).any (·.level.isKeep) then []
+    else (cs.filter fun x => restsOnIn cs c (cs.length + 1) x.id).map fun x => .share x.id
   | .mark _ e (some to) ..   => [.audience e to]
   | _ => []
 

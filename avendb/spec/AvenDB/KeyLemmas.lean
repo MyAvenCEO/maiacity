@@ -165,9 +165,8 @@ inductive Change (st : State) : State → Prop where
       st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
       Change st (setEntry { st with marks := ms } { en with stays := (σ, x) :: en.stays })
   | lane (l : List (VaultId × BlobId)) : Change st { st with lane := l }
-  /-- Sync rules set or ended, or the wants marked on an entry. -/
-  | sync (rs : List SyncRule) (en : List ShareId) (ms : List (EntryId × List ShareId)) :
-      Change st { st with rules := rs, ended := en, marks := ms }
+  /-- The wants marked on an entry. -/
+  | wants (ms : List (EntryId × List ShareId)) : Change st { st with marks := ms }
 
 /-- An accepted edit: a change, then some of the entries and writes dropped. -/
 def Applied (st post : State) : Prop :=
@@ -253,11 +252,16 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     rename_i hv _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- a grant naming a device is refused
-    rename_i hno _ _ _
-    exact absurd rfl hno
+  · -- a keep share, naming a device of its issuer
+    rename_i hfree _ _ _ hd _ _ _ _ _
+    cases h
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
+      Option.isNone_iff_eq_none] at hfree
+    refine Change.applied (.share _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
+    rw [hd] at hg'
+    cases hg'
   · -- a grant naming a vault
-    rename_i hfree _ g hg hgv _ _ _
+    rename_i hfree _ _ g hg hgv _ _ _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree hgv
@@ -266,7 +270,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     cases hg'
     exact Option.isSome_iff_ne_none.2 hgv.1
   · -- a public grant
-    rename_i hfree _ hg _ _ _ _
+    rename_i hfree _ _ hg _ _ _ _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree
@@ -299,7 +303,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     exact Change.applied_drop (.mark _ _ _ _ (entry?_self ‹_›) (mark_fresh ‹_›)) _
   · -- a mark of the wants alone
     cases h
-    exact Change.applied (.sync _ _ _)
+    exact Change.applied (.wants _)
   · -- keys
     cases h
     exact Change.applied .same
@@ -309,12 +313,6 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   · -- checkpoint
     cases h
     exact Change.applied .same
-  · -- a sync rule
-    cases h
-    exact Change.applied (.sync _ _ _)
-  · -- a sync rule ends
-    cases h
-    exact Change.applied (.sync _ _ _)
 
 /-! ## What exists
 
@@ -631,7 +629,7 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
     rw [List.map_cons, List.nodup_cons]
     exact ⟨hσ, hs.staysNodup en hen⟩
   | lane l => exact hs.congr rfl rfl rfl rfl rfl
-  | sync _ _ _ => exact hs.congr rfl rfl rfl rfl rfl
+  | wants _ => exact hs.congr rfl rfl rfl rfl rfl
 
 /-- An accepted edit keeps the state sane. -/
 theorem Sane.of_apply {st post : State} {edit : Edit} (hs : Sane st) (h : apply st edit = some post) : Sane post := by
@@ -1936,7 +1934,7 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
   | same => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | revoke rs => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | lane l => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
-  | sync _ _ _ => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
+  | wants _ => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
 
 /-- An accepted edit keeps every share, adding shares only at the end, every entry id ever created and every vault. -/
 theorem apply_grows {st post : State} {edit : Edit} (h : apply st edit = some post) :
@@ -1971,7 +1969,7 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
   | share _ _ _ _ => exact hsame
   | revoke _ => exact hsame
   | lane _ => exact hsame
-  | sync _ _ _ => exact hsame
+  | wants _ => exact hsame
   | create en w x _ _ hnew _ _ _ _ =>
     intro y hy
     rcases List.mem_append.1 hy with hy | hy

@@ -24,7 +24,8 @@ a case names is in the model's order (an audience in another order is refused by
 Rust core), and the Rust side compares the audiences of the state as sets. A blob is named by the hash of its bytes: the
 Rust side maps blob number `b` to the bytes `blob b`. The state includes each entry's stays and wants and, as its
 readers see it, its attributes, whether its creation was let in, its semantic audience and wants, and what a steward
-would mark it with; the key schedule (each family's epoch where it isn't 0, every seal and every published key, all
+would mark it with, and for each device a keep share over its vault names, whether the device wants the entry and keeps
+its files whole; the key schedule (each family's epoch where it isn't 0, every seal and every published key, all
 three compared as sets); the schema lane; the writes its readers don't count (`uncounted`); and each line of each
 entry's history, of the writes they count: its writes and its heads, the main line first and then each proposal in the
 order it started. A write carries its proof and its touches, as its readers read them off its body, and a share its ops.
@@ -73,11 +74,12 @@ def runView (c : ViewCase) : List Bool × State :=
 Signers: Alice's passkey 1, her Mac 2, her iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
 passkey 8, a second passkey 9 (Alice's backup) and a third 10, a new device 77, a stranger 555, the relay server 600.
 Vaults: Alice 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200, aven vaults from 300 (avenCEO 300).
-Shares from 30. Entries: Welcome 1, the Charter 2, notes from 3, todos from 21. Types: a note 1, a todo 2; tags: work 7,
-home 8. Blobs (schemas and lenses): from 1. An act for the coop names the human vault it goes through: Alice's Mac (2)
-and passkey (1) through `[100]`, Bob's Mac (5) through `[101]`. An entry's stays are named by the moves that began them:
-a write names the stay whose key it is encrypted under, `none` for the one its entry's creation began. A mark of the
-audience alone is written `.move`, and a mark of the wants alone `.pick`. -/
+Shares from 30, keep shares from 40. Entries: Welcome 1, the Charter 2, notes from 3, todos from 21. Types: a note 1, a
+todo 2, a schema 900 (`schemaType`); tags: work 7, home 8. Blobs (schemas and lenses): from 1. An act for the coop names
+the human vault it goes through: Alice's Mac (2) and passkey (1) through `[100]`, Bob's Mac (5) through `[101]`. An
+entry's stays are named by the moves that began them: a write names the stay whose key it is encrypted under, `none`
+for the one its entry's creation began. A mark of the audience alone is written `.move`, and a mark of the wants alone
+`.pick`. -/
 
 def note : Sym := 1
 def todo : Sym := 2
@@ -105,6 +107,12 @@ def newShare (id over : Nat) (to : Who) (r : Level) (issuer : VaultId) (select :
     (wide : Bool := false) (parent : Option ShareId := none) (via : List VaultId := [])
     (ops : Option (List Op) := none) : Action :=
   .share (.grant { id, over, who := to, level := r, wide, select, ops := ops.getD r.ops, parent, issuer } via)
+
+/-- Keep share `id` over vault `over`: device `d` of vault `issuer` syncs what `select` picks, or all of `over`
+    (`wide`), as mode `m` says. -/
+def keepShare (id over : Nat) (d : SignerId) (m : KeepMode) (issuer : VaultId) (select : Selector := .all)
+    (wide : Bool := false) (via : List VaultId := []) : Action :=
+  newShare id over (.device d) (.keep m) issuer select wide (via := via)
 
 /-- A write that creates entry `e` of vault `v` in audience `x`, with the proof `proof`, whose record fits its schemas
     or not (`fits`). -/
@@ -271,7 +279,7 @@ def cases : List Case := [
     -- can't create for Alice
     (2, [], newEntry 200 1 200 [] note (via := [100])),
     (6, [], newEntry 100 3 100 [] note),
-    -- read for Carol's vault, never for a device or for the vault itself; everyone only reads
+    -- read for Carol's vault, never for a device (DeviceOnlyKeeps) or for the vault itself; everyone only reads
     (2, [], newShare 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
     (2, [], newShare 31 200 (.device 6) .read 200 (only 1) (via := [100])),
     (2, [], newShare 32 200 (toVault 200) .read 200 (only 1) (via := [100])),
@@ -323,8 +331,8 @@ def cases : List Case := [
     (1, [], .revoke (.owner 100 (.signer 1) [])),
     -- Alice's vault has no root, so nobody hands one on
     (1, [], .settings 100 (.root (some 1) [])),
-    -- grants: to a vault, not to a device; owner of a slice is governance; owner of the whole vault is an owner of
-    -- it, which no grant makes, even with the vault's approval (WideOwner); a wide read is a grant
+    -- grants: to a vault, not to a device (DeviceOnlyKeeps); owner of a slice is governance; owner of the whole vault
+    -- is an owner of it, which no grant makes, even with the vault's approval (WideOwner); a wide read is a grant
     (2, [], newShare 30 100 (toVault 102) .read 100 notes),
     (2, [], newShare 31 100 (.device 7) .read 100 notes),
     (2, [], newShare 32 100 (toVault 103) .owner 100 notes),
@@ -675,23 +683,24 @@ def cases : List Case := [
     (2, [], wr 100 22 100 [14]),
     -- fitting is no share: Carol holds none, and writes nothing
     (6, [], wr 100 21 102 [9] (stay := some 8))] },
-  { name := "sync rules: each device syncs what its rules pick", edits := humans ++ [
+  { name := "keep shares: each device syncs what its keep shares pick", edits := humans ++ [
     (1, [3], .share (.device 100 3)),
     (6, [7], .share (.device 102 7)),
     -- Alice's note and her work todo; Carol reads her notes
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
     (2, [], newShare 30 100 (toVault 102) .read 100 notes),
-    -- Alice's iPhone syncs her notes and keeps their files, her Mac all of her vault
-    (2, [], .syncRule ⟨40, 100, 3, 100, false, notes, true⟩),
-    (2, [], .syncRule ⟨41, 100, 2, 100, true, .all, false⟩),
-    -- a vault sets rules for its own devices only, over a vault whose entries it may hold
-    (2, [], .syncRule ⟨42, 100, 5, 100, true, .all, false⟩),
-    (5, [], .syncRule ⟨44, 100, 3, 100, true, .all, false⟩),
-    (2, [], .syncRule ⟨45, 100, 3, 101, true, .all, false⟩),
-    -- Carol, who holds a share over Alice's vault, sets one for her Mac over it
-    (7, [], .syncRule ⟨43, 102, 7, 100, false, .anyOf [[.typeIn [note]], [.tagHas work]], false⟩),
-    -- Alice's Mac marks the rules that want each entry; a wide rule wants it without marks
+    -- Alice's iPhone syncs her notes and keeps their files whole, her Mac all of her vault, fetching what it opens
+    (2, [], keepShare 40 100 3 .whole 100 notes),
+    (2, [], keepShare 41 100 2 .opened 100 (wide := true)),
+    -- a vault keeps entries on its own devices only (NotDevice), acting for itself (NotActing), over a vault whose
+    -- entries it may hold (NoCap)
+    (2, [], keepShare 42 100 5 .opened 100 (wide := true)),
+    (5, [], keepShare 44 100 3 .opened 100 (wide := true)),
+    (2, [], keepShare 45 101 3 .opened 100 (wide := true)),
+    -- Carol, who holds a share over Alice's vault, keeps some of it on her Mac
+    (7, [], keepShare 43 100 7 .opened 102 (.anyOf [[.typeIn [note]], [.tagHas work]])),
+    -- Alice's Mac marks the keep shares that pick each entry; a wide one picks it without marks
     (2, [], .pick 100 1 [40, 43]),
     (2, [], .pick 100 21 [43]),
     (2, [], .pick 100 21 [41]),
@@ -700,12 +709,14 @@ def cases : List Case := [
     -- only a steward marks
     (5, [], .pick 100 1 [40]),
     (7, [], .pick 100 1 [43]),
-    -- only the vault that set a rule ends it, once
-    (7, [], .endRule 40 100),
-    (2, [], .endRule 40 100),
-    (2, [], .endRule 40 100),
-    (2, [], .endRule 43 102),
-    -- a mark may name an ended rule, which readers leave out: no rule that ends refuses a mark that sorts after it
+    -- only the vault that issued a keep share revokes it, once: Carol can't revoke Alice's, nor can Alice's vault,
+    -- which Carol's is over, revoke Carol's
+    (7, [], .revoke (.grant 40 102 [])),
+    (2, [], .revoke (.grant 40 100 [])),
+    (2, [], .revoke (.grant 40 100 [])),
+    (2, [], .revoke (.grant 43 102 [])),
+    (2, [], .revoke (.grant 43 100 [])),
+    -- a mark may name a revoked keep share, which readers leave out: no revocation refuses a mark that sorts after it
     (2, [], .pick 100 1 [40]),
     (2, [], .pick 100 1 [43]),
     (2, [], .pick 100 999 [43])] },
@@ -715,19 +726,19 @@ def cases : List Case := [
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
     (2, [], newShare 30 100 (toVault 101) .write 100 todos),
     (2, [], newShare 31 100 (toVault 102) .read 100 workTodos),
-    (2, [], .syncRule ⟨40, 100, 3, 100, false, todos, true⟩),
-    (2, [], .syncRule ⟨41, 100, 2, 100, true, .all, false⟩),
-    -- a mark names an audience, the rules that want the entry, or both; and keeps what it had seen only where it takes
-    -- the entry to a new audience (BadMark)
+    (2, [], keepShare 40 100 3 .whole 100 todos),
+    (2, [], keepShare 41 100 2 .opened 100 (wide := true)),
+    -- a mark names an audience, the keep shares that pick the entry, or both; and keeps what it had seen only where it
+    -- takes the entry to a new audience (BadMark)
     (2, [], .mark 100 21 none none [] []),
     (2, [], .mark 100 21 none (some [40]) [7] []),
-    -- one mark takes the todo to the audience of the shares that select it, and marks the rule that wants it
+    -- one mark takes the todo to the audience of the shares that select it, and marks the keep share that picks it
     (2, [], .mark 100 21 (some [30, 31]) (some [40]) [7] []),
     -- the same audience again (SameAudience), the same wants alone (SameWants)
     (2, [], .move 100 21 [30, 31] []),
     (2, [], .pick 100 21 [40]),
-    -- an audience naming a share that isn't one of the vault's (BadAudience), a wide rule among the wants, an entry of
-    -- another vault (WrongVault), and a mark by a device that doesn't act for the vault (NotActing)
+    -- an audience naming a share that isn't one of the vault's (BadAudience), a wide keep share among the wants, an
+    -- entry of another vault (WrongVault), and a mark by a device that doesn't act for the vault (NotActing)
     (2, [], .move 100 21 [30, 77] []),
     (2, [], .pick 100 21 [41]),
     (5, [], .pick 101 21 []),
@@ -735,14 +746,52 @@ def cases : List Case := [
     -- Carol's share ends: a new audience with the same wants takes the todo out of it, and leaves the wants as they are
     (2, [], .revoke (.grant 31 100 [])),
     (2, [], .mark 100 21 (some [30]) (some [40]) [7] []),
-    -- the iPhone's rule ends; a mark may still name the revoked share and the ended rule, which readers leave out
-    (2, [], .endRule 40 100),
+    -- the iPhone's keep share is revoked; a mark may still name both revoked shares, which readers leave out
+    (2, [], .revoke (.grant 40 100 [])),
     (2, [], .mark 100 21 (some [30, 31]) (some [40]) [7] []),
     -- the wants alone, which leave the audience as it is
     (2, [], .pick 100 21 []),
-    -- Dave's share and a new rule of the iPhone select the todo: a steward has one mark to make, with both
+    -- Dave's share and a new keep share of the iPhone select the todo: a steward has one mark to make, with both
     (2, [], newShare 32 100 (toVault 103) .read 100 todos),
-    (2, [], .syncRule ⟨42, 100, 3, 100, false, workTodos, false⟩)] }]
+    (2, [], keepShare 42 100 3 .opened 100 workTodos)] },
+  { name := "keep shares: modes, refusals and a device that leaves", edits := humans ++ [
+    (1, [3], .share (.device 100 3)),
+    (1, [77], .share (.device 100 77)),
+    (6, [7], .share (.device 102 7)),
+    -- Alice's note, her todo, her work todo and her vault's schema; Carol reads her notes
+    (2, [], newEntry 100 1 100 [] note),
+    (2, [], newEntry 100 21 100 [] todo),
+    (2, [], newEntry 100 22 100 [] todo (tags := [work])),
+    (2, [], newEntry 100 2 100 [] schemaType),
+    (2, [], newShare 30 100 (toVault 102) .read 100 notes),
+    -- a keep share names a device (KeepNeedsDevice), a share naming a device is a keep share (DeviceOnlyKeeps), and a
+    -- keep share rests on no share
+    (2, [], newShare 46 100 (toVault 102) (.keep .whole) 100 notes),
+    (2, [], newShare 47 100 .everyone (.keep .whole) 100 notes),
+    (2, [], newShare 48 100 (.device 3) .backup 100 notes),
+    (2, [], newShare 49 100 (.device 3) (.keep .whole) 100 notes (parent := some 30)),
+    -- the iPhone keeps notes whole, fetches todos as it opens them, and never syncs work todos
+    (2, [], keepShare 40 100 3 .whole 100 notes),
+    (2, [], keepShare 41 100 3 .opened 100 todos),
+    (2, [], keepShare 42 100 3 .never 100 workTodos),
+    -- the tablet never syncs notes, and so syncs the rest
+    (2, [], keepShare 43 100 77 .never 100 notes),
+    -- Carol keeps on her Mac all of Alice's vault she may receive
+    (7, [], keepShare 44 100 7 .opened 102 (wide := true)),
+    -- the Mac marks each entry with the keep shares that pick it: a whole or opened one picks the schema too, a never
+    -- one never does
+    (2, [], .pick 100 1 [40, 43]),
+    (2, [], .pick 100 21 [41]),
+    (2, [], .pick 100 22 [41, 42]),
+    (2, [], .pick 100 2 [40, 41]),
+    -- the wants name no wide keep share (BadWants)
+    (2, [], .pick 100 1 [40, 43, 44]),
+    -- the vault Carol's keep share is over can't revoke it; her Mac can
+    (2, [], .revoke (.grant 44 100 [])),
+    (7, [], .revoke (.grant 44 102 [])),
+    -- the tablet leaves Alice's vault: its keep share, still live, no longer applies, and it gets no new one
+    (77, [], .revoke (.device 100 77 [])),
+    (2, [], keepShare 45 100 77 .whole 100 todos)] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -928,7 +977,7 @@ def views : List ViewCase := [
     (7, 2, [], newEntry 100 1 100 [] note),
     (8, 2, [], newEntry 100 21 100 [] todo),
     (9, 2, [], newShare 30 100 (toVault 102) .read 100 (.anyOf [[.typeIn [note]], [.typeIn [todo]]])),
-    (10, 2, [], .syncRule ⟨40, 100, 3, 100, false, .anyOf [[.typeIn [note]], [.typeIn [todo]]], true⟩),
+    (10, 2, [], keepShare 40 100 3 .whole 100 (.anyOf [[.typeIn [note]], [.typeIn [todo]]])),
     -- the Mac marks the note with Carol's audience while the iPhone, which hasn't seen it, marks only the note's wants:
     -- the wants come after and leave the audience the Mac set
     (11, 2, [], .move 100 1 [30] [7]),
@@ -939,19 +988,34 @@ def views : List ViewCase := [
     (13, 2, [], .move 100 21 [30] [8]),
     -- the same wants again are refused
     (14, 3, [], .pick 100 1 [40])] },
-  { name := "a mark stands after what it names is revoked or ended", edits := humansV ++ [
+  { name := "a mark stands after what it names is revoked", edits := humansV ++ [
     (6, 1, [3], .share (.device 100 3)),
     (7, 2, [], newEntry 100 21 100 [] todo (tags := [work])),
     (8, 2, [], newShare 30 100 (toVault 101) .write 100 todos),
     (9, 2, [], newShare 31 100 (toVault 102) .read 100 workTodos),
-    (10, 2, [], .syncRule ⟨40, 100, 3, 100, false, todos, true⟩),
-    -- Alice's passkey revokes Carol's share and ends the iPhone's rule while her Mac, which has seen neither, marks the
-    -- todo with both: the mark sorts after them and stands, and readers leave out what isn't live
+    (10, 2, [], keepShare 40 100 3 .whole 100 todos),
+    -- Alice's passkey revokes Carol's share and the iPhone's keep share while her Mac, which has seen neither, marks
+    -- the todo with both: the mark sorts after them and stands, and readers leave out what isn't live
     (11, 1, [], .revoke (.grant 31 100 [])),
-    (11, 1, [], .endRule 40 100),
-    (12, 2, [], .mark 100 21 (some [30, 31]) (some [40]) [7] []),
+    (12, 1, [], .revoke (.grant 40 100 [])),
+    (13, 2, [], .mark 100 21 (some [30, 31]) (some [40]) [7] []),
     -- only a steward marks
-    (13, 555, [], .pick 100 21 [])] }]
+    (14, 555, [], .pick 100 21 [])] },
+  { name := "revoking a keep share cuts nothing", edits := humansV ++ [
+    (6, 1, [3], .share (.device 100 3)),
+    (7, 2, [], newEntry 100 21 100 [] todo),
+    (8, 2, [], newShare 30 100 (toVault 101) .write 100 todos),
+    (9, 2, [], keepShare 40 100 3 .whole 100 todos),
+    -- on copies that haven't seen the revocation below: the Mac marks the todo with Bob's audience and the iPhone's
+    -- keep share, the iPhone and Bob write it, and the iPhone gets a second keep share
+    (10, 2, [], .mark 100 21 (some [30]) (some [40]) [7] []),
+    (11, 3, [], wr 100 21 100 [7] (stay := some 10)),
+    (12, 5, [], wr 100 21 101 [11] (stay := some 10) (proof := some 30)),
+    (13, 2, [], keepShare 41 100 3 .opened 100 (wide := true)),
+    -- the passkey revokes the iPhone's first keep share, having seen none of that: it takes nothing away, so all of it
+    -- stands; revoking it again falls
+    (14, 1, [], .revoke (.grant 40 100 [])),
+    (15, 1, [], .revoke (.grant 40 100 []))] }]
 
 /-! ## Sync cases
 
@@ -1111,7 +1175,7 @@ def syncs : List SyncCase := [
     -- Mac from a peer that lacks the film's write
     asks := [(7, [], none), (600, [], none), (2, [], none), (5, [], none), (8, [], none),
       (7, [], some (List.range 15))] },
-  { name := "sync rules choose what a device syncs", edits := plain (humans ++ [
+  { name := "keep shares choose what a device syncs", edits := plain (humans ++ [
       (1, [3], .share (.device 100 3)),
       (6, [7], .share (.device 102 7)),
       (1, [], .genesis 300 .aven [.vault 100] 1),
@@ -1122,12 +1186,12 @@ def syncs : List SyncCase := [
       -- avenCEO backs up all of her vault, Carol reads all of it
       (2, [], newShare 30 100 (toVault 300) .backup 100 (wide := true)),
       (2, [], newShare 31 100 (toVault 102) .read 100 (wide := true)),
-      -- her iPhone syncs her notes and keeps their files; Carol's Mac syncs nothing of hers
-      (2, [], .syncRule ⟨40, 100, 3, 100, false, notes, true⟩),
-      (7, [], .syncRule ⟨41, 102, 7, 100, false, .anyOf [], false⟩),
+      -- her iPhone syncs her notes and keeps their files whole; Carol's Mac never syncs her vault
+      (2, [], keepShare 40 100 3 .whole 100 notes),
+      (7, [], keepShare 41 100 7 .never 102 (wide := true)),
       (2, [], .pick 100 1 [40])],
-    -- Alice's iPhone, her Mac, avenCEO's server (no rule: all it may) and Carol's Mac, each holding nothing yet; then
-    -- the iPhone from a peer that hasn't seen the mark
+    -- Alice's iPhone, her Mac, avenCEO's server (no keep share: all it may) and Carol's Mac, each holding nothing yet;
+    -- then the iPhone from a peer that hasn't seen the mark
     asks := [(3, [], none), (2, [], none), (600, [], none), (7, [], none), (3, [], some (List.range 15))] }]
 
 /-! ## JSON -/
@@ -1153,7 +1217,14 @@ def kind : Kind → String
   | .coop  => str "coop"
   | .aven  => str "aven"
 
+def keepMode : KeepMode → String
+  | .whole  => str "whole"
+  | .opened => str "opened"
+  | .never  => str "never"
+
+/-- A level: its name, or for a keep share `{"keep": mode}`. -/
 def level : Level → String
+  | .keep m => obj [("keep", keepMode m)]
   | .relay => str "relay"
   | .backup => str "backup"
   | .read  => str "read"
@@ -1234,11 +1305,6 @@ def shareJson (c : Share) : String :=
        ("wide", bool c.wide), ("select", selector c.select), ("ops", arr (c.ops.map opJson)),
        ("parent", opt nat c.parent), ("issuer", nat c.issuer)]
 
-/-- A sync rule. -/
-def syncRuleJson (r : SyncRule) : String :=
-  obj [("id", nat r.id), ("issuer", nat r.issuer), ("device", nat r.device), ("over", nat r.over),
-       ("wide", bool r.wide), ("select", selector r.select), ("keep", bool r.keep)]
-
 /-- A built-in group. -/
 def group (g : Group) : String :=
   obj [("name", str g.name), ("ops", arr (g.ops.map opJson)), ("everyone", bool g.everyone)]
@@ -1295,8 +1361,6 @@ def action : Action → String
   | .publish v a b via => obj [("publish", obj [("vault", nat v), ("actor", nat a), ("blob", nat b),
       ("via", ids via)])]
   | .checkpoint e covers => obj [("checkpoint", obj [("entry", nat e), ("covers", ids covers)])]
-  | .syncRule r via => obj [("syncRule", obj [("rule", syncRuleJson r), ("via", ids via)])]
-  | .endRule r i via => obj [("endRule", obj [("rule", nat r), ("issuer", nat i), ("via", ids via)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -1306,13 +1370,20 @@ def attrs (a : Attrs) : String :=
   obj [("type", nat a.type), ("author", nat a.author), ("entry", nat a.entry), ("created", nat a.created),
        ("tags", ids a.tags)]
 
-/-- An entry: its stays, the current one first, and its wants; and what only its readers see. -/
+/-- The devices some keep share over vault `v` names, live or not, each once, in the order of their first. -/
+def keepDevices (st : State) (v : VaultId) : List SignerId :=
+  (st.shares.filterMap fun k => if k.level.isKeep && k.over == v then k.who.device? else none).eraseDups
+
+/-- An entry: its stays, the current one first, and its wants; what only its readers see; and whether each device a
+    keep share over its vault names wants it and keeps its files whole. -/
 def entryJson (st : State) (en : Entry) : String :=
   obj [("id", nat en.id), ("vault", nat en.vault),
        ("stays", arr (en.stays.map fun (s, x) => obj [("stay", opt nat s), ("audience", ids x)])),
        ("wants", ids (st.wantsOf en.id)), ("attrs", attrs en.attrs), ("admitted", bool en.admitted),
        ("semAudience", ids (semAudience st en)), ("semWants", ids (semWants st en)),
-       ("desiredMark", opt (fun (caps, wants) => obj (markJson caps wants)) (desiredMark st en))]
+       ("desiredMark", opt (fun (caps, wants) => obj (markJson caps wants)) (desiredMark st en)),
+       ("devices", arr ((keepDevices st en.vault).map fun d =>
+         obj [("device", nat d), ("wants", bool (wants st d en)), ("keeps", bool (keeps st d en))]))]
 
 def write (w : Write) : String :=
   obj [("edit", nat w.edit), ("author", nat w.author), ("actor", nat w.actor), ("entry", nat w.entry),
@@ -1344,8 +1415,6 @@ def state (st : State) : String :=
     str "published" ++ ": " ++ arr (st.published.map keyName),
     str "lane" ++ ": " ++ arr (st.lane.map fun (v, b) => obj [("vault", nat v), ("blob", nat b)]),
     str "uncounted" ++ ": " ++ ids st.uncounted,
-    str "rules" ++ ": " ++ arr (st.rules.map syncRuleJson),
-    str "ended" ++ ": " ++ ids st.ended,
     str "lines" ++ ": " ++ lines st]
 
 def case (c : Case) : String :=
@@ -1454,12 +1523,30 @@ def allActions : List Action :=
   let (stood, st) := runView c
   stood.drop humansV.length == [true, true, true, true, true, true, true, true, true, false] &&
     [1, 21].all fun e => (st.entry? e).any fun en => en.audience == [30] && st.wantsOf e == [40]
--- a mark naming a share revoked, and a rule ended, before it stands; readers leave both out, so a steward has nothing
+-- a mark naming a share and a keep share revoked before it stands; readers leave both out, so a steward has nothing
 -- left to do
-#guard (views.find? (·.name == "a mark stands after what it names is revoked or ended")).all fun c =>
+#guard (views.find? (·.name == "a mark stands after what it names is revoked")).all fun c =>
   let (stood, st) := runView c
   stood.drop humansV.length == [true, true, true, true, true, true, true, true, false] &&
     (st.entry? 21).any fun en => en.audience == [30, 31] && st.wantsOf 21 == [40] && desiredMark st en == none
+-- only the vault that issued a keep share revokes it, and a mark may name it revoked
+#guard (cases.find? (·.name == "keep shares: each device syncs what its keep shares pick")).all fun c =>
+  (run c.edits).1.drop humans.length == [true, true, true, true, true, true, true, false, false, false, true, true,
+    true, false, false, false, false, false, false, true, false, false, false, true, true, false]
+-- each mode, each refusal, and a device that left: its keep share, still live, no longer applies
+#guard (cases.find? (·.name == "keep shares: modes, refusals and a device that leaves")).all fun c =>
+  let (acc, st) := run c.edits
+  let wk (d : SignerId) (e : EntryId) := (st.entry? e).map fun en => (wants st d en, keeps st d en)
+  acc.drop humans.length == [true, true, true, true, true, true, true, true, false, false, false, false, true, true,
+    true, true, true, true, true, true, true, false, false, true, true, false] &&
+    [1, 21, 22, 2].map (wk 3) == [some (true, true), some (true, false), some (false, false), some (true, true)] &&
+    [1, 21, 2].map (wk 77) == [some (true, false), some (true, false), some (true, false)] &&
+    st.live 43 && (st.entry? 1).any fun en => semWants st en == [40, 43] && st.wantsOf 1 == [40, 43]
+-- revoking a keep share cuts nothing it hadn't seen: no write, no mark and no share falls with it
+#guard (views.find? (·.name == "revoking a keep share cuts nothing")).all fun c =>
+  let (stood, st) := runView c
+  stood.drop humansV.length == [true, true, true, true, true, true, true, true, true, false] &&
+    st.revoked == [40] && st.writes.length == 3 && st.wantsOf 21 == [40]
 -- some entry's creation is let in and another's isn't, some entry is where its readers say it belongs and another
 -- isn't yet, some write is on an earlier stay, and some entry fell: the Rust core must say the same of each
 #guard cases.any fun c => (run c.edits).2.entries.any (·.admitted) && (run c.edits).2.entries.any (!·.admitted)

@@ -36,7 +36,8 @@ def OwnersExist (st : State) : Prop :=
 
 /-! ## Shares -/
 
-def SharesNameVaults (st : State) : Prop := ∀ c ∈ st.shares, ∀ d, c.who ≠ .device d
+/-- Shares name vaults or everyone, but keep shares, which name devices (T4). -/
+def SharesNameVaults (st : State) : Prop := ∀ c ∈ st.shares, c.who.isDevice = c.level.isKeep
 
 def EveryoneReadOnly (st : State) : Prop := ∀ c ∈ st.shares, c.who = .everyone → c.level = .read
 
@@ -88,20 +89,16 @@ def KeyFam.vault : KeyFam → VaultId
 
 /-! ## Relays
 
-A relay reads no selector, no type, no tag, no op and no record: it sees a share without its selector and ops (only
-its level, their class), a sync rule without its selector, and a write without its header, tags, proof, touches and
-whether it fits its schemas. What it then works out of the edits is the operational part of the state. -/
+A relay reads no selector, no type, no tag, no op and no record: it sees a share, a keep share too, without its
+selector and ops (only its level, their class, and a keep share's mode), and a write without its header, tags, proof,
+touches and whether it fits its schemas. What it then works out of the edits is the operational part of the state. -/
 
 /-- A share as a relay sees it. -/
 def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
 
-/-- A sync rule as a relay sees it. -/
-def SyncRule.blind (r : SyncRule) : SyncRule := { r with select := .all }
-
 /-- An action as a relay sees it. A mark is in the clear: a relay reads its audience and its wants as they are. -/
 def Action.blind : Action → Action
   | .share (.grant c via) => .share (.grant c.blind via)
-  | .syncRule r via => .syncRule r.blind via
   | .write v e a s g deps p via create _ _ _ _ =>
     .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none [] true
   | a => a
@@ -112,6 +109,6 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 def State.ops (st : State) : State :=
   { st with shares := st.shares.map Share.blind,
             entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false },
-            uncounted := [], rules := st.rules.map SyncRule.blind }
+            uncounted := [] }
 
 end AvenDB

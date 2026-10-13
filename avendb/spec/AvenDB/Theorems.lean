@@ -11,7 +11,7 @@ import AvenDB.Schemas
 # The theorems
 
 What must always hold, stated over the executable model. T9 (lenses) and T10 (proposals) are proven in their own files.
-The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, audiences, sync rules, removals and
+The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, audiences, keep shares, removals and
 replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean`
 (blind relays), `KeyLemmas.lean` (keys) and `SyncLemmas.lean` (convergence and sync); the predicates the statements use
 are in `Props.lean`.
@@ -98,9 +98,13 @@ theorem T3_no_cycles (edits : List Edit) : Acyclic (replay {} edits) :=
 
 /-! ## Shares -/
 
-/-- T4 (shares name vaults): no step adds a share that names a device. -/
+/-- T4 (shares name a vault or everyone; a share names a device only as a keep share of a device of its issuer): no
+    step adds a share that names a device unless it is a keep share, nor a keep share that names anything but a device,
+    and the device a new keep share names is one of its issuer's then. -/
 theorem T4_shares_name_vaults {st st' : State} {edit : Edit} (hinv : SharesNameVaults st)
-    (h : step st edit = some st') : SharesNameVaults st' :=
+    (h : step st edit = some st') :
+    SharesNameVaults st' ∧
+      ∀ c ∈ st'.shares, c ∉ st.shares → ∀ d, c.who = .device d → isDevice st d c.issuer = true :=
   Core.T4_shares_name_vaults hinv h
 
 /-- T8 (Everyone only reads): everyone only ever gets read. It can't write or share either, since writes and shares act
@@ -121,21 +125,26 @@ theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : 
 
 /-- T22, wide shares: in every reachable state no owner share is wide, since owner of a whole vault is an owner of it,
     which only an owner edit makes, with the vault's approval and the newcomer's consent (T2), and never a share
-    (WideOwner). So a wide share rests on no share, and the vault it is over issued it. -/
+    (WideOwner). So a wide share rests on no share, and the vault it is over issued it, unless it is a keep share, which
+    grants nothing. -/
 theorem T22_wide_shares {st : State} (hr : Reachable st) {c : Share} (hc : c ∈ st.shares) :
-    (c.level = .owner → c.wide = false) ∧ (c.wide = true → c.parent = none ∧ c.issuer = c.over) :=
+    (c.level = .owner → c.wide = false) ∧
+      (c.wide = true → c.parent = none ∧ (c.level.isKeep = false → c.issuer = c.over)) :=
   Shares.T22_wide_shares hr c hc
 
 /-- T23 (marks mean what the shares say): where an entry's marks, what isn't live left aside, are what its vault's
     stewards mark it with (`desiredMark`), the rules every peer checks without reading a selector, a type or a tag mean
     what the selectors say. Its audience: where it is the entry's semantic audience, the write rule allows exactly the
-    vaults the shares' selectors allow. Its wants: where they are the sync rules that want the entry (`semWants`), a
-    device wants it exactly when it has no rule over the entry's vault, or one of its rules there is wide or its
-    selector matches the entry. So a relay, which reads only the marks, writes and sends as the selectors say. -/
+    vaults the shares' selectors allow. Its wants: where they are the keep shares that pick the entry (`semWants`), a
+    device wants it, and keeps its files whole, exactly as its keep shares over the entry's vault say (`wantsWith`,
+    `keepsWith`) when each of them picks the entry where it is wide or its selector picks it, a whole or opened share
+    picking every schema and lens entry too and a never share none (`keepPicks`). So a relay, which reads only the
+    marks, writes and sends as the selectors say. -/
 theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
     (liveAudience st en = semAudience st en → ∀ a, mayWrite st a en = semWrite st a en) ∧
-    (liveWants st en = semWants st en → ∀ d, wants st d en = ((rulesOf st d en.vault).isEmpty ||
-      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs)) :=
+    (liveWants st en = semWants st en → ∀ d,
+      wants st d en = wantsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
+      keeps st d en = keepsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs)) :=
   Shares.T23_marks_mean_shares hr en
 
 /-- T23, new entries: the rule every peer checks never refuses a creation that stays inside its creator's slice. -/
@@ -331,6 +340,23 @@ theorem T16_resolved_removals_stand (edits : List Edit) :
     ∀ r ∈ resolve (order edits), (standing edits).any (·.id == r.id) :=
   Shares.T16_resolved_removals_stand edits
 
+/-- K1 (a keep share's revocation cuts nothing, design 14.5): in every reachable state an accepted revocation of a keep
+    share only marks it revoked. No share falls with it and no write or entry is dropped: nothing rests on a keep share,
+    no audience holds one, and no write relies on one, as a keep share allows nothing. -/
+theorem K1_keep_revocation_cuts_nothing {st post : State} (hr : Reachable st) {edit : Edit} {c : ShareId}
+    {a : VaultId} {keep : List EditId} {via : List VaultId} (ha : edit.action = .revoke (.grant c a keep via))
+    {k : Share} (hk : st.share? c = some k) (hkeep : k.level.isKeep = true) (h : apply st edit = some post) :
+    post = { st with revoked := st.revoked ++ [c] } :=
+  Shares.keep_revocation_cuts_nothing hr (Core.T14_entries_whole hr).1 (Core.T14_entries_whole hr).2 ha hk hkeep h
+
+/-- K1, strong removal: nor does a keep share's revocation hide anything from the edits it hadn't seen. Among edits
+    that issue share `c` only as a keep share, revoking it takes nothing away (`removes`), so no edit falls by it. -/
+theorem K1_keep_revocation_hides_nothing (edits : List Edit) {r : Edit} {c : ShareId} {a : VaultId}
+    {keep : List EditId} {via : List VaultId} (hr : r.action = .revoke (.grant c a keep via))
+    (hk : ∀ x ∈ sharesIn edits, x.id = c → x.level.isKeep = true) (hex : ∃ x ∈ sharesIn edits, x.id = c) :
+    removes edits r = [] :=
+  Shares.keep_revocation_hides_nothing edits hr hk hex
+
 /-! ## Once the curves fall -/
 
 /-- T18 (post-quantum writes): a peer that no longer trusts the curves (`checkpointed`) counts a write only if its
@@ -468,20 +494,29 @@ theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : Fil
   · simpa [mayReceiveLog] using hmay
   · cases hv
 
-/-- T28 (a device syncs what it may and wants): every edit of an entry a peer sends a device is of an entry the device
-    may receive by the peer's view and that its sync rules want: it has no rule over the entry's vault, or one there is
-    wide or among the entry's wants. A rule only narrows: it hands nobody anything. -/
-theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
+/-- T28 (a device syncs what it may and its keep shares want): every edit of an entry a peer sends a device is of an
+    entry the device may receive by the peer's view and that its keep shares want (`wants`). A keep share only narrows:
+    it hands nobody anything. -/
+theorem T28_sync_follows_keeps (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
     (hl : o.log? = some (.entry e)) :
     ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience = true ∧
       wants (view edits) d en = true :=
-  Syncing.T28_sync_follows_rules edits d h hl
+  Syncing.T28_sync_follows_keeps edits d h hl
 
-/-- T28, with no rule: a device with no sync rule over a vault wants all of it, so it syncs every entry of it it may
-    receive, as before rules. -/
-theorem T28_no_rule_wants_all (st : State) (d : SignerId) (en : Entry) (h : rulesOf st d en.vault = []) :
-    wants st d en = true :=
-  Syncing.T28_no_rule_wants_all st d en h
+/-- T28, the modes: a device with no keep share over a vault wants all of it. The keep shares it syncs by are live
+    keep shares naming it over the entry's vault, issued by a vault it is still a device of, so a device that leaves its
+    vault drops them with no revocation. A never share that picks an entry (it is wide or among the entry's wants)
+    keeps the entry out; a whole or opened share that picks it brings it in, unless a never share picks it too; and the
+    device keeps its files whole exactly when a whole share picks it. -/
+theorem T28_keep_modes (st : State) (d : SignerId) (en : Entry) :
+    (keepsOf st d en.vault = [] → wants st d en = true) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.level.isKeep = true ∧ k.who = .device d ∧ k.over = en.vault ∧
+      st.live k.id = true ∧ isDevice st d k.issuer = true) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.never = true → marked st en k = true → wants st d en = false) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.never = false → marked st en k = true →
+      (∀ k' ∈ keepsOf st d en.vault, k'.never = true → marked st en k' = false) → wants st d en = true) ∧
+    (keeps st d en = true ↔ ∃ k ∈ keepsOf st d en.vault, k.level = .keep .whole ∧ marked st en k = true) :=
+  Syncing.T28_keep_modes st d en
 
 /-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few edits
     further back, and the edits it holds outside them (`asks`), is sent every edit of the peer's answer that it lacks.
@@ -506,7 +541,7 @@ theorem T19_same_frontier (lgA lgR : Edit → Option LogId) (A R : List Edit) (l
   Syncing.T19_same_frontier lgA lgR A R l hid huA huR hf x
 
 /-- T13 (sync converges per entry): if each of two devices syncs an entry by the other peer's view (it may receive it,
-    and its sync rules want it), then after each asked the other once (`asks`), both hold the same edits of that
+    and its keep shares want it), then after each asked the other once (`asks`), both hold the same edits of that
     entry's log: those either held before. Assumes ids don't collide. -/
 theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (e : EntryId)
     (hid : ∀ a ∈ editsP, ∀ b ∈ editsQ, a.id = b.id → a = b)

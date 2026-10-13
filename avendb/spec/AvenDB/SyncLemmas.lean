@@ -152,7 +152,7 @@ theorem T12_sync_sends_only_what_shares_reach (edits : List Edit) (d : SignerId)
   · exact ⟨hm, l, hl, .inl hr⟩
   · exact ⟨hm, .vault v, hv, .inr ⟨v, rfl⟩⟩
 
-theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
+theorem T28_sync_follows_keeps (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
     (hl : o.log? = some (.entry e)) :
     ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience = true ∧
       wants (view edits) d en = true := by
@@ -169,9 +169,34 @@ theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h 
   · rw [hl] at hv
     cases hv
 
-theorem T28_no_rule_wants_all (st : State) (d : SignerId) (en : Entry) (h : rulesOf st d en.vault = []) :
-    wants st d en = true := by
-  simp [wants, h]
+theorem T28_keep_modes (st : State) (d : SignerId) (en : Entry) :
+    (keepsOf st d en.vault = [] → wants st d en = true) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.level.isKeep = true ∧ k.who = .device d ∧ k.over = en.vault ∧
+      st.live k.id = true ∧ isDevice st d k.issuer = true) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.never = true → marked st en k = true → wants st d en = false) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.never = false → marked st en k = true →
+      (∀ k' ∈ keepsOf st d en.vault, k'.never = true → marked st en k' = false) → wants st d en = true) ∧
+    (keeps st d en = true ↔ ∃ k ∈ keepsOf st d en.vault, k.level = .keep .whole ∧ marked st en k = true) := by
+  refine ⟨fun h => by simp [wants, wantsWith, h], fun k hk => ?_, fun k hk hn hm => ?_, fun k hk hn hm hno => ?_,
+    by simp [keeps, keepsWith]⟩
+  · -- what `keepsOf` keeps
+    have h := (List.mem_filter.1 hk).2
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+  · -- a never share that picks the entry keeps it out
+    have h : ((keepsOf st d en.vault).any fun k => k.never && marked st en k) = true :=
+      List.any_eq_true.2 ⟨k, hk, by simp [hn, hm]⟩
+    simp [wants, wantsWith, h]
+  · -- a whole or opened share picks it, and no never share does
+    have h1 : ((keepsOf st d en.vault).any fun k => !k.never && marked st en k) = true :=
+      List.any_eq_true.2 ⟨k, hk, by simp [hn, hm]⟩
+    have h2 : ((keepsOf st d en.vault).any fun k => k.never && marked st en k) = false := by
+      rw [Bool.eq_false_iff, ne_eq, List.any_eq_true]
+      rintro ⟨k', hk', h'⟩
+      simp only [Bool.and_eq_true] at h'
+      rw [hno k' hk' h'.1] at h'
+      cases h'.2
+    simp [wants, wantsWith, h1, h2]
 
 theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {o : Edit} (h : o ∈ respondSince edits d fr) :
     o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) :=

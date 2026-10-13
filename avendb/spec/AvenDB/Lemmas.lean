@@ -1154,8 +1154,8 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       obtain ⟨-, rfl⟩ := h
       exact .inl ⟨rfl, .setVault hv rfl (fun _ hp => hp) (fun _ hd => hd), same st⟩
   · -- a grant
-    simp at h
-    obtain ⟨-, -, -, -, -, rfl⟩ := h
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, -, -, -, -, -, -, rfl⟩ := h
     exact .inl ⟨rfl, .addShare _ _, same st⟩
   · -- revoke
     split at h
@@ -1240,16 +1240,6 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, rfl⟩ := h
     exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
-  · -- a sync rule: only the rules
-    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-    obtain ⟨-, -, rfl⟩ := h
-    exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
-  · -- a sync rule ends: only the rules that ended
-    split at h
-    · simp at h
-    · simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-      obtain ⟨-, rfl⟩ := h
-      exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
 
 /-- Every write's entry exists, and every entry's first write is accepted. -/
 def EntriesWhole (st : State) : Prop :=
@@ -1314,19 +1304,19 @@ theorem entriesWhole_step {st st' : State} {edit : Edit} (hinv : EntriesWhole st
 /-! ## What one step does to the shares and the schema lane -/
 
 /-- An accepted edit leaves the shares alone (a revocation only marks shares revoked), or adds one share that names a
-    vault or everyone, everyone only with read. -/
+    vault or everyone, or is a keep share and names a device of its issuer; everyone only with read. -/
 theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.shares = st.shares ∨
-    (∃ c, post.shares = st.shares ++ [c] ∧ (∀ s, c.who ≠ .device s) ∧
-      (c.who = .everyone → c.level = .read)) := by
+    (∃ c, post.shares = st.shares ++ [c] ∧ c.who.isDevice = c.level.isKeep ∧
+      (∀ d, c.who = .device d → isDevice st d c.issuer = true) ∧ (c.who = .everyone → c.level = .read)) := by
   unfold apply at h
   split at h
   case h_8 c via _ =>
-    simp at h
-    obtain ⟨-, hname, -, -, -, rfl⟩ := h
-    refine .inr ⟨c, rfl, fun s hs => ?_, fun hp => ?_⟩
-    · rw [hs] at hname
-      cases hname
+    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+    obtain ⟨-, hkd, hname, -, hdev, -, -, rfl⟩ := h
+    refine .inr ⟨c, rfl, (by simpa using hkd : c.level.isKeep = c.who.isDevice).symm, fun d hd => ?_, fun hp => ?_⟩
+    · rw [hd] at hdev
+      simpa [Who.device?] using hdev
     · rw [hp] at hname
       simpa using hname
   -- every other edit leaves the shares alone
@@ -1547,19 +1537,28 @@ theorem T3_no_cycles (edits : List Edit) : Acyclic (replay {} edits) := by
       exact ih st' h₁' h₂'
 
 theorem T4_shares_name_vaults {st st' : State} {edit : Edit} (hinv : SharesNameVaults st)
-    (h : step st edit = some st') : SharesNameVaults st' := by
+    (h : step st edit = some st') :
+    SharesNameVaults st' ∧
+      ∀ c ∈ st'.shares, c ∉ st.shares → ∀ d, c.who = .device d → isDevice st d c.issuer = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
-  intro c hc
-  rw [settle_shares] at hc
-  rcases apply_shares hpost with hcs | ⟨c', hcs, hname, -⟩
-  · exact hinv c (hcs ▸ hc)
-  · rw [hcs] at hc
-    rcases List.mem_append.1 hc with hc | hc
-    · exact hinv c hc
-    · rw [List.mem_singleton] at hc
-      subst hc
-      exact hname
+  unfold SharesNameVaults
+  simp only [settle_shares]
+  rcases apply_shares hpost with hcs | ⟨c', hcs, hname, hdev, -⟩
+  · rw [hcs]
+    exact ⟨hinv, fun c hc hn => absurd hc hn⟩
+  · rw [hcs]
+    refine ⟨fun c hc => ?_, fun c hc hn => ?_⟩
+    · rcases List.mem_append.1 hc with hc | hc
+      · exact hinv c hc
+      · rw [List.mem_singleton] at hc
+        subst hc
+        exact hname
+    · rcases List.mem_append.1 hc with hc | hc
+      · exact absurd hc hn
+      · rw [List.mem_singleton] at hc
+        subst hc
+        exact hdev
 
 theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneReadOnly st)
     (h : step st edit = some st') : EveryoneReadOnly st' := by
@@ -1567,7 +1566,7 @@ theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneRea
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   intro c hc
   rw [settle_shares] at hc
-  rcases apply_shares hpost with hcs | ⟨c', hcs, -, hpub⟩
+  rcases apply_shares hpost with hcs | ⟨c', hcs, -, -, hpub⟩
   · exact hinv c (hcs ▸ hc)
   · rw [hcs] at hc
     rcases List.mem_append.1 hc with hc | hc

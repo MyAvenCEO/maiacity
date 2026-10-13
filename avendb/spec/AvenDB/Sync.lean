@@ -4,18 +4,20 @@ import AvenDB.Step
 # Sync by audiences
 
 Every edit belongs to one log (`Edit.log?`): a vault's (its governance, its seed's keys, its schema lane), a share's
-(the share, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks, checkpoints and entry
-keys). A device asks a peer for what it may receive, and the peer answers from its own view: the logs of the entries and
-audiences it may receive (it acts for their vault, or for the grantee of a live share reaching their audience, or a
-public share does), the logs of every share it needs to check those (the shares of every audience such an entry was ever
-in, the vault's wide shares, the shares of its own vaults and over them, and every share those rest on), and the logs of
-every vault those name, up their chains of owners. Nothing else leaves the peer (T12): no other entry, no other
-audience. Receiving is not reading: relay gets no key. The connection proves which device is asking (iroh's endpoint key
-is the device key), so the request names the device.
+(the share, a keep share too, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks,
+checkpoints and entry keys). A device asks a peer for what it may receive, and the peer answers from its own view: the
+logs of the entries and audiences it may receive (it acts for their vault, or for the grantee of a live share reaching
+their audience, or a public share does), the logs of every share it needs to check those or to know what it syncs (the
+shares of every audience such an entry was ever in or of its wants, the vault's wide shares, the shares its own vaults
+issued, are named in or are over, and every share those rest on), and the logs of every vault those name, up their
+chains of owners. Nothing else leaves the peer (T12): no other entry, no other audience. Receiving is not reading:
+relay gets no key. The connection proves which device is asking (iroh's endpoint key is the device key), so the request
+names the device.
 
-Of the entries a device may receive, it syncs those its sync rules want (`wants`, `State.lean`; T28): all of a vault
-it has no rule over, else those whose wants name one of its rules. A rule only narrows what a device syncs, and the
-peer reads only the stewards' marks to apply it, never a selector (T23).
+Of the entries a device may receive, it syncs those its keep shares want (`wants`, `State.lean`; T28): all of a vault it
+has no keep share over, else those whose wants name one of its whole or opened shares there (all of them when it has
+only never ones), but none whose wants name a never one. A keep share only narrows what a device syncs, and the peer
+reads only the stewards' marks to apply it, never a selector (T23).
 -/
 
 namespace AvenDB
@@ -29,8 +31,8 @@ inductive LogId where
   deriving DecidableEq, Repr
 
 /-- The log an edit belongs to: a vault's genesis and settings, its owners and devices given and revoked, a schema or
-    lens, and a seed's key to its vault's; a grant, its revocation and its key to the grant's; an audience's key to the
-    audience's; a write, a mark, a checkpoint and an entry's key to the entry's. -/
+    lens, and a seed's key to its vault's; a grant or a keep share, its revocation and its key to the share's; an
+    audience's key to the audience's; a write, a mark, a checkpoint and an entry's key to the entry's. -/
 def Edit.log? (edit : Edit) : Option LogId :=
   match edit.action with
   | .genesis v .. | .settings v _ | .share (.owner v _) | .share (.device v _) | .revoke (.owner v ..)
@@ -38,8 +40,6 @@ def Edit.log? (edit : Edit) : Option LogId :=
   | .share (.grant c _) => some (.share c.id)
   | .revoke (.grant c ..) => some (.share c)
   | .write _ e .. | .mark _ e .. | .checkpoint e _ => some (.entry e)
-  | .syncRule r _ => some (.vault r.issuer)
-  | .endRule _ i _ => some (.vault i)
   | .keys k .. =>
     match k with
     | .signer _ => none
@@ -65,14 +65,17 @@ def mayReceive (st : State) (d : SignerId) (e : EntryId) : Bool :=
   | some en => mayReceiveAudience st d en.vault en.audience
   | none    => false
 
-/-- Device `d` needs share `cp` itself: it acts for the vault the share is over or for the vault it names, or the share
-    is wide or was ever in the audience of an entry `d` may receive, so `d` checks the writes it authorized. -/
+/-- Device `d` needs share `cp` itself: it acts for the vault the share is over, for the vault it names or for its
+    issuer (whose keep shares say what `d` syncs), or the share is wide, or was ever in the audience of an entry `d` may
+    receive, so `d` checks the writes it authorized, or is among the entry's wants, so `d` knows what it syncs. -/
 def seesShare (st : State) (d : SignerId) (cp : Share) : Bool :=
   actsFor st d cp.over ||
   (match cp.who with
    | .vault g => actsFor st d g
    | _ => false) ||
-  st.entries.any fun en => en.vault == cp.over && mayReceive st d en.id && (cp.wide || en.stays.any (·.2.contains cp.id))
+  actsFor st d cp.issuer ||
+  st.entries.any fun en => en.vault == cp.over && mayReceive st d en.id &&
+    (cp.wide || en.stays.any (·.2.contains cp.id) || (st.wantsOf en.id).contains cp.id)
 
 /-- Device `d` may learn about share `c`: it needs `c`, or a share resting on it. -/
 def reachesShare (st : State) (d : SignerId) (c : ShareId) : Bool :=
@@ -85,14 +88,14 @@ def mayReceiveLog (st : State) (d : SignerId) : LogId → Bool
   | .share c      => reachesShare st d c
   | .vault _      => false
 
-/-- Device `d` syncs entry `e`: it may receive it, and its sync rules want it (`wants`). -/
+/-- Device `d` syncs entry `e`: it may receive it, and its keep shares want it (`wants`). -/
 def syncs (st : State) (d : SignerId) (e : EntryId) : Bool :=
   match st.entry? e with
   | some en => mayReceiveAudience st d en.vault en.audience && wants st d en
   | none    => false
 
-/-- Device `d` syncs log `l`: an entry's it syncs; any other it may receive. A device's rules choose among entries; the
-    shares and audiences it may receive are few and small, and come whole. -/
+/-- Device `d` syncs log `l`: an entry's it syncs; any other it may receive. A device's keep shares choose among
+    entries; the shares and audiences it may receive are few and small, and come whole. -/
 def syncsLog (st : State) (d : SignerId) : LogId → Bool
   | .entry e => syncs st d e
   | l        => mayReceiveLog st d l
@@ -106,8 +109,6 @@ def Edit.vaultsNamed (edit : Edit) : List VaultId :=
   | .revoke (.grant _ a _ via) => a :: via
   | .write v _ a _ _ _ _ via _ _ => [v, a] ++ via
   | .mark v _ _ _ _ via => v :: via
-  | .syncRule r via => [r.issuer, r.over] ++ via
-  | .endRule _ i via => i :: via
   | _ => []
 
 /-- `vs` and every vault that owns one of them, directly or further up. -/

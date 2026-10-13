@@ -82,8 +82,10 @@ def Level.max (a b : Level) : Level := if a.rank < b.rank then b else a
 /-- A share's level: the class of its strongest op, relay for none. -/
 def levelOf (ops : List Op) : Level := ops.foldl (fun r o => r.max o.level) .relay
 
-/-- The ops of a level's built-in group: what a share with that level and no narrower ops allows. -/
+/-- The ops of a level's built-in group: what a share with that level and no narrower ops allows. A keep share allows
+    none. -/
 def Level.ops : Level → List Op
+  | .keep _ => []
   | .relay  => [.relay]
   | .backup => [.backup]
   | .read   => [.read]
