@@ -365,6 +365,12 @@ export function costs(w, full) {
 			// a COOP that can make nothing yet (a founding still building) has no unit cost: its fixed bills are not
 			// spread over zero units (it quotes the others' price meanwhile: ./market.js postPrices)
 			co.fullR = sold > 1e-9 ? (co.varR + (runR + capR + rentR) / sold) / (1 - lam) : co.floorR;
+			// the seller's own floor covers its full cost over time: a COOP may sell below its full cost (the forward
+			// margin prices a glut below it) only while its treasury holds its reserve (./coops.js payout). Under it,
+			// it asks at least its full cost: a dearer technology that sells only what a cheaper rival cannot make (the
+			// solar field beside the geothermal plant, the growing dome beside the forest) otherwise sold below its
+			// costs year after year, emptied its treasury and failed, and its heir did the same on the same plants
+			if (!co.city && co.reserveR > 0 && treasuryR(w, co.k) < co.reserveR && co.fullR > co.floorR) co.floorR = co.fullR;
 		}
 	}
 }
@@ -421,6 +427,14 @@ const keepUp = (co) => co.marginEma < (co.good <= BED ? 3 : 2) && !(co.good !== 
  * while its store still looked full, and then ask a price nobody can pay for the next unit
  */
 const keepFloor = (co) => (co.capDay ?? 0) < 1.5 * (co.demandEma ?? 0);
+/**
+ * a plant's materials are in a price spike: rebuilding a unit at today's prices costs more than SPIKE times what it
+ * cost at the year's traded prices. Its COOP then waits the spike out instead of rebuilding worn units (no one
+ * replaces a solar panel at a thousand times its price because the only panel works stood down and asks a fortune for
+ * its next unit); its plant wears a little meanwhile, and upkeep starts again when the price comes back
+ */
+const SPIKE = 3;
+const spiked = (w, pl) => unitNowR(w, pl) > SPIKE * unitSlowR(w, pl);
 /** what a unit of a plant's capacity costs to build (or rebuild) at today's prices, in R */
 export function unitNowR(w, pl) {
 	const b = buildOf(w, pl), pb = w.pbar;
@@ -503,7 +517,7 @@ export function plan(w, req, heatReq) {
 			// with more than twice what it can sell lets its plant wear down; a basic, more than three times)
 			const keep = keepUp(co);
 			const floorOnly = !keep && keepFloor(co);
-			if (pl.worn > 1e-12 && d.life > 0 && (keep || floorOnly)) {
+			if (pl.worn > 1e-12 && d.life > 0 && (keep || floorOnly) && !spiked(w, pl)) {
 				const b = buildOf(w, pl);
 				let r = pl.worn;
 				// kept up only to the floor: the units that bring its output back to 1.5 times what it sells
@@ -530,7 +544,7 @@ export function plan(w, req, heatReq) {
 		// upkeep's store holds at most a month of wear: a plant let wear down for years catches up at a few times its
 		// wear a day, not with one order for all of it (which would empty every seller's store at once)
 		for (const pl of co.plants)
-			if (pl.worn > 0 && pl.def.life > 0 && (keepUp(co) || keepFloor(co))) {
+			if (pl.worn > 0 && pl.def.life > 0 && (keepUp(co) || keepFloor(co)) && !spiked(w, pl)) {
 				const b = buildOf(w, pl);
 				const gap = Math.min(pl.worn, (UPKEEP_STORE_DAYS * pl.cap) / (pl.def.life * 365));
 				for (const g of MATERIALS) wantMat[g] += b[g] * gap;
@@ -544,13 +558,13 @@ export function plan(w, req, heatReq) {
 		}
 		// accelerators come in through the border (paper §11.4, as COOPs only): the COMPUTE COOP buys electricity from
 		// the energy COOPs, the line exports it, and its euros go into its own account in the euro reserve; the reserve
-		// buys accelerators at their list price for it (./coops.js produce). The export is served after the city's own
-		// building class and before R&D (./energy.js dispatch): what replaces worn accelerators first (`exportUp`), then
-		// what its project and its spares need (`exportBuild`). The export is spread over two months, up to the line's
-		// room, and runs only while an accelerator earns back the electricity it costs within 40 % of its life at today's
-		// prices (the same test as any build): an export, like any purchase, stops when it is too dear. That is a price,
-		// not physics: its limit reads 'the import does not pay back', never 'none can be made or imported' (that is the
-		// closed city's, ./coops.js buildDecisions)
+		// buys accelerators at their list price for it (./coops.js produce). What replaces worn accelerators
+		// (`exportUp`) is upkeep and is served with the running class; what its project and its spares need
+		// (`exportBuild`) after the city's own building class and before R&D (./energy.js dispatch). The export is
+		// spread over two months, up to the line's room, and runs only while an accelerator earns back the electricity
+		// it costs within 40 % of its life at today's prices (the same test as any build): an export, like any
+		// purchase, stops when it is too dear. That is a price, not physics: its limit reads 'the import does not pay
+		// back', never 'none can be made or imported' (that is the closed city's, ./coops.js buildDecisions)
 		if (co.good === COMPUTE && w.cfg.chipImport !== false) {
 			const want = chipsWanted(w, co);
 			const pc = co.plants.find((p) => p.tech === 'compute');

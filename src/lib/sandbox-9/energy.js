@@ -8,8 +8,8 @@
  * condenser heat (30–40 °C) warms the hot spring; without it, heat pumps make heat from electricity (COP 3).
  *
  * The dispatch serves electricity in a fixed order (world model 4.3): basics (people's basic need, food, water, the
- * domes), running (the works, people's extra use, upkeep), building, the border's export for accelerators (what
- * replaces worn ones, then what a project needs), R&D, storage; what is left is curtailed. Only
+ * domes), running (the works, people's extra use, upkeep, and the border's export that replaces worn accelerators),
+ * building, then the export for what a project's accelerators need, R&D, storage; what is left is curtailed. Only
  * what reaches R&D is "surplus energy", the only thing innovation runs on. The two energy COOPs share what is sold by
  * the buyers' logit on their prices, each capped by what it harvested.
  */
@@ -148,10 +148,11 @@ export function shockFactor(w, co) {
  * pumping, each person's basic power and food processing; the heat pumps for the domes' heat join the second part).
  * Heat comes from the geothermal plant first; the rest is made by heat pumps (this month's COP), which ask for
  * electricity in the class of what they heat. `exportAsk` holds the electricity the border line asks for accelerators
- * (paper §11.4): it is served after the building class (the city's own energy plants, basics and every other project
- * come first) and before R&D: `up`, what replaces worn accelerators, then `build`, what a project needs. It is not the
- * city's own use. Returns the share served of each class; the basics' two parts are in today.fillA and today.fillB,
- * the export's two parts in today.fillExportUp and today.fillExportBuild.
+ * (paper §11.4) in two parts: `up`, what replaces worn accelerators (upkeep), is served with the running class, after
+ * the basics and the works and before any building; `build`, what a project needs, after the building class (the
+ * city's own energy plants, basics and every other project come first) and before R&D. It is not the city's own
+ * use. Returns the share served of each class; the basics' two parts are in today.fillA and today.fillB, the export's
+ * two parts in today.fillExportUp and today.fillExportBuild.
  */
 export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 	const t = w.today, h = t.harvest, c = w.c;
@@ -196,16 +197,21 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 			t.fillA = A > 0 ? sA / A : 1;
 			t.fillB = B > 0 ? Math.max(0, served - sA) / B : 1;
 		}
-		if (cl === CLASS.building) {
-			// the border's export for accelerators: after the city's own building (its energy plants, its basics, every
-			// project), before R&D. What replaces worn accelerators first, then what a project needs
+		if (cl === CLASS.running) {
+			// the border's export that replaces worn accelerators is upkeep (world model 4.3: upkeep is in the running
+			// class), so it is served with the running class, after the city's basics and works and before any building
 			const x = Math.min(exUp, left);
 			t.fillExportUp = exUp > 0 ? x / exUp : 1;
 			left -= x;
+			exp += x;
+		}
+		if (cl === CLASS.building) {
+			// what a project's accelerators need: after the city's own building (its energy plants, its basics, every
+			// other project), before R&D
 			const y = Math.min(exBuild, left);
 			t.fillExportBuild = exBuild > 0 ? y / exBuild : 1;
 			left -= y;
-			exp = x + y;
+			exp += y;
 		}
 	}
 	// storage: the battery takes what is left of the solar harvest
@@ -219,8 +225,8 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 	t.use[CLASS.storage] = charge;
 	t.battIn = charge;
 	t.battLoss = charge * (1 - c.battRT);
-	// the border (setting chipImport): what the line exported for accelerators, served after building above; it is
-	// electricity the energy COOPs sold, never energy the city used
+	// the border (setting chipImport): what the line exported for accelerators, served above (upkeep with running, a
+	// project's after building); it is electricity the energy COOPs sold, never energy the city used
 	t.exportKwh = exp;
 	t.exportAsk = exUp + exBuild;
 	t.curtailed = left;
