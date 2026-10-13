@@ -197,12 +197,13 @@
 		gap: 14px;
 	}
 
+	/* your apps: Ledger, Coops and Universe, wide and side by side */
 	.tiles.two {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 
 	.tiles.two .tile {
-		aspect-ratio: 2.4 / 1;
+		aspect-ratio: 1.6 / 1;
 	}
 
 	.tile {
@@ -253,6 +254,9 @@
 		}
 		.tiles {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+		.tiles.two .tile {
+			aspect-ratio: 0.9 / 1;
 		}
 	}
 </style>
