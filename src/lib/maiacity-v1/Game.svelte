@@ -469,7 +469,7 @@
 				{@const id = panel.slice(6)}
 				{@const owner = ownerOf(id)}
 				{@const a = owner?.[1].assets.find((x) => x.id === id)}
-				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : null)}
+				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the Power Cube Electric’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
 				<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
 				<h2>{a?.name ?? info?.name ?? info?.model}</h2>
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
