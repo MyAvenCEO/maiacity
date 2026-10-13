@@ -20,8 +20,10 @@ import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.
 import { maiaCentre, oldShed, travelVan } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 
-/** the hex's radius in metres: 76.5, one and a half times the second 51 (Samuel 2026-10-13) */
-const HEX_R = 76.5;
+/** the hex's radius in metres: 114.75, one and a half times 76.5 again (Samuel 2026-10-13, 17:49) */
+const HEX_R = 114.75;
+/** how much larger than the 76.5 m hexes the hand-drawn track and the far views were laid out for */
+const K = HEX_R / 76.5;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -79,8 +81,8 @@ const PATH_W = 4.2; // a narrow offroad track, two ruts in it (Samuel 2026-10-13
  *  the village's grass, past the old shed, and on into our tribe's lot (Samuel 2026-10-13) */
 const TRACK = new THREE.CatmullRomCurve3(
 	[
-		[CX + 2, CZ - 8], [CX + 5, CZ - 20], [CX + 24, CZ - 24], [CX + 48, CZ - 6], [-405, -70], [-360, -84], [-312, -48], [-262, -58], [-214, -20],
-		[-176, 2], [VX - 12, VZ + 4], [VX + 14, VZ], [-100, -6], [-74, 10], [-48, 18], [-30, 12], [LOT.x, LOT.z]
+		[CX + 2, CZ - 8], [CX + 5, CZ - 20], [CX + 24, CZ - 24], [CX + 48, CZ - 6], ...[[-405, -70], [-360, -84], [-312, -48], [-262, -58], [-214, -20]].map(([x, z]) => [x * K, z * K]),
+		[-176 * K, 2], [VX - 12, VZ + 4], [VX + 14, VZ], [-100 * K, -6], [-74 * K, 10], [-48 * K, 18], [-30, 12], [LOT.x, LOT.z]
 	].map(([x, z]) => V(x, 0, z)),
 	false,
 	'centripetal'
@@ -117,7 +119,7 @@ const flat = (color, lift) => mat(color, { polygonOffset: true, polygonOffsetFac
  *  villages, our tribe's own green; each locked hex has a dotted rim the story reveals (1 our village, 2 the city) */
 function land() {
 	const g = new THREE.Group();
-	const ground = new THREE.Mesh(new THREE.CircleGeometry(4200, 64), mat(0xd3bf90));
+	const ground = new THREE.Mesh(new THREE.CircleGeometry(6400, 64), mat(0xd3bf90));
 	ground.rotation.x = -Math.PI / 2;
 	ground.position.set(CX, -0.02, CZ);
 	ground.receiveShadow = true;
@@ -223,17 +225,17 @@ function steppe() {
 		m.castShadow = shadow;
 		g.add(m);
 	};
-	scatter(new THREE.ConeGeometry(0.45, 0.9, 5).translate(0, 0.4, 0), mat(0xb39a5c), 6000, 1500, [0.6, 1.8]);
-	scatter(new THREE.ConeGeometry(0.4, 0.7, 5).translate(0, 0.3, 0), mat(0xa48e55), 3000, 1500, [0.7, 1.6]);
-	scatter(new THREE.IcosahedronGeometry(1, 0).translate(0, 0.5, 0), mat(0x8c8f5a), 900, 1400, [0.6, 1.8], true);
-	scatter(new THREE.DodecahedronGeometry(0.7, 0).translate(0, 0.2, 0), mat(0x9d927d), 500, 1400, [0.4, 1.6], true);
+	scatter(new THREE.ConeGeometry(0.45, 0.9, 5).translate(0, 0.4, 0), mat(0xb39a5c), Math.round(6000 * K * K), 1500 * K, [0.6, 1.8]);
+	scatter(new THREE.ConeGeometry(0.4, 0.7, 5).translate(0, 0.3, 0), mat(0xa48e55), Math.round(3000 * K * K), 1500 * K, [0.7, 1.6]);
+	scatter(new THREE.IcosahedronGeometry(1, 0).translate(0, 0.5, 0), mat(0x8c8f5a), Math.round(900 * K * K), 1400 * K, [0.6, 1.8], true);
+	scatter(new THREE.DodecahedronGeometry(0.7, 0).translate(0, 0.2, 0), mat(0x9d927d), Math.round(500 * K * K), 1400 * K, [0.4, 1.6], true);
 	// thorn trees: a crooked trunk and a flat crown
 	const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.4, 5).translate(0, 1.7, 0);
 	const crown = new THREE.CylinderGeometry(3.4, 2.2, 1, 7).translate(0, 3.6, 0);
 	const tm = new THREE.InstancedMesh(trunk, mat(0x5f4a36), 70);
 	const cm = new THREE.InstancedMesh(crown, mat(0x6f7c45), 70);
 	for (let i = 0; i < 70; ) {
-		const p = spot(1300);
+		const p = spot(1300 * K);
 		if (!p) continue;
 		o.position.set(p[0], 0, p[1]);
 		o.rotation.set(0, r() * Math.PI * 2, (r() - 0.5) * 0.15);
@@ -291,7 +293,7 @@ function bushes() {
 	const g = new THREE.Group();
 	const r = rng(42);
 	const leaves = [mat(0x4f7f40), mat(0x5d8a45), mat(0x46733a)];
-	for (let i = 0, n = 0; i < 400 && n < 34; i++) {
+	for (let i = 0, n = 0; i < 900 && n < 76; i++) {
 		const a = r() * Math.PI * 2, d = 12 + r() * (HEX_R - 18);
 		const x = Math.cos(a) * d, z = Math.sin(a) * d;
 		if (hexKey(x, z) !== '0,0' || Math.hypot(x, z) > HEX_R * 0.8 || onGravel(x, z, 3)) continue;
@@ -456,13 +458,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const sky = new THREE.Color(0xd8e2e2);
 	scene.background = sky;
 	scene.fog = new THREE.Fog(sky, 380, 2200);
-	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 4200);
-	camera.position.set(117, 99, 144);
+	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 6400);
+	camera.position.set(138, 118, 170);
 	const controls = new OrbitControls(camera, canvas);
 	controls.target.set(2, 1, 3);
 	controls.enableDamping = true;
 	controls.minDistance = 12;
-	controls.maxDistance = 1800; // far enough out to see the whole city plot
+	controls.maxDistance = 2700; // far enough out to see the whole city plot
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotateSpeed = 0.25;
 	let goal = null; // where the camera eases to: { target, offset }
@@ -601,9 +603,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the camera's places: what it looks at, and from where; once there, it drifts slowly round, like a crane on a set */
 	const PLACES = {
 		centre: { target: V(STOP.x + 6, 2, STOP.z + 1), offset: V(-34, 26, -50) },
-		city: { target: V(CX + 120, 0, CZ + 80), offset: V(620, 900, 860) },
+		city: { target: V(CX + 120 * K, 0, CZ + 80 * K), offset: V(620 * K, 900 * K, 860 * K) },
 		village: { target: V(STORE.x, 2, VZ - 6), offset: V(52, 38, 58) },
-		tribe: { target: V(2, 1, 3), offset: V(115, 98, 141) }
+		tribe: { target: V(2, 1, 3), offset: V(138, 118, 170) }
 	};
 	let placeNow = '';
 	let placed = false; // the first place is taken at once, without easing
@@ -744,7 +746,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// where the van is at the trailer's second T: far out on the steppe in the first two shots (a cut may jump), then
 		// on, slowing, to the bus stop
 		const vx = (T) =>
-			T < 6 ? VAN_HALT.x - 1500 + 22 * T : T < 12 ? VAN_HALT.x - 1000 + 22 * (T - 6) : T <= 17 ? VAN_HALT.x - 55 - 22 * (17 - T) : T <= 22 ? VAN_HALT.x - 55 + 55 * (1 - (1 - (T - 17) / 5) ** 2) : VAN_HALT.x;
+			T < 6 ? VAN_HALT.x - 2200 + 22 * T : T < 12 ? VAN_HALT.x - 1400 + 22 * (T - 6) : T <= 17 ? VAN_HALT.x - 55 - 22 * (17 - T) : T <= 22 ? VAN_HALT.x - 55 + 55 * (1 - (1 - (T - 17) / 5) ** 2) : VAN_HALT.x;
 		const vanAt = (T) => {
 			van.position.set(vx(T), 0, VAN_HALT.z);
 			van.rotation.y = Math.PI / 2;
@@ -848,7 +850,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 						van.visible = false;
 						reveal(2);
 						const from = arr(camera.position);
-						rise = shot({ kind: 'move', from, to: [CX - 260, 560, CZ - 560], aimFrom: [CX + 240, 3, CZ - 70], aimTo: [CX + 160, 0, CZ + 80], curve: 'ease' });
+						rise = shot({ kind: 'move', from, to: [CX - 260 * K, 560 * K, CZ - 560 * K], aimFrom: [CX + 240, 3, CZ - 70], aimTo: [CX + 160 * K, 0, CZ + 80 * K], curve: 'ease' });
 					},
 					run: (k) => pose(rise(k))
 				}
@@ -1054,8 +1056,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		else {
 			if (goal) {
 				const at = goal.target.clone().add(goal.offset);
-				controls.target.lerp(goal.target, 0.06);
-				camera.position.lerp(at, 0.06);
+				const ease = 1 - Math.exp(-3.7 * step); // the same glide at any frame rate
+				controls.target.lerp(goal.target, ease);
+				camera.position.lerp(at, ease);
 				if (camera.position.distanceTo(at) < 0.5) goal = null;
 			}
 			controls.autoRotate = drift && !goal;
