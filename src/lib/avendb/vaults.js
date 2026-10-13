@@ -59,7 +59,8 @@
  * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
  *   created: number | null, cell: string, public: boolean, roles: Record<string, Role>,
  *   kind: 'note' | 'todo' | 'sealed', title: string | null, text: string | null,
- *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, edits: number, proposals: number }} EntryView
+ *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, deleted: boolean, edits: number,
+ *   proposals: number }} EntryView
  */
 /**
  * @typedef {{ me: string, mine: string, recovery: string | null, pqOnly: boolean, vaults: VaultView[], caps: CapView[],

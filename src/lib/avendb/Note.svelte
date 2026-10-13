@@ -5,7 +5,8 @@
 	middle the note on the line picked, as a page, to edit there, and what a proposal changes against main, to accept
 	it, make main match it or bring main's changes in; on the right its history, every edit of that line, newest first,
 	each with what it changed, word by word, who made it, and the version it made, to view, restore, undo or propose
-	from. A variant is a new note with what a line reads now, and none of its history. All of it acts for the acting
+	from. A variant is a new note with what a line reads now, and none of its history. Delete marks the note deleted, so
+	Notes lists it apart, and its page offers to bring it back; every edit of it stays. All of it acts for the acting
 	vault, whose caps the device checks as any peer does: a note it only reads, it reads, every version of it; and a
 	button offers what the ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a
 	vault that may only suggest changes proposes them, for one whose cap allows it to accept. An edit no rule allows,
@@ -16,7 +17,7 @@
 	import { diff } from './diff.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { blockText, may, variantMark } from './ops.js';
+	import { blockText, deleting, may, variantMark } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import { allows, count, creates, holders as rank, hue, nameOf, ROLES, short } from './vaults.js';
@@ -120,7 +121,8 @@
 	 * What the ops of the caps the acting vault writes through let it do on the line shown, as the device answers a
 	 * dry run of each (`may`): save its text (`write`), rename it (`title`, and `heading`, the heading it opens with),
 	 * propose, accept the proposal into main, make main match it, update it from main, restore or undo the version
-	 * shown, and make a variant in each vault it may add one to (`variant` and the vault). Only the ops' refusal
+	 * shown, make a variant in each vault it may add one to (`variant` and the vault), and delete the note or bring it
+	 * back (`delete`, `back`). Only the ops' refusal
 	 * (`NotAllowed`) holds a button back: what the person then does is the device's to refuse, as any op.
 	 */
 	let can = $state(/** @type {Record<string, boolean>} */ ({}));
@@ -145,6 +147,7 @@
 			asks.title = { op: 'set', entry, line: on, path: ['title'], value: title };
 			asks.heading = { op: 'set', entry, line: on, path: blockText(1), value: title };
 			asks.propose = { op: 'propose', entry, from: here.heads, name: 'a proposal' };
+			asks[item?.deleted ? 'back' : 'delete'] = deleting(entry, item?.deleted);
 		}
 		if (writes && on !== null) {
 			asks.accept = { op: 'merge', entry, from: on, into: null };
@@ -282,6 +285,15 @@
 		if (await api.run(promote ? 'Making it match' : 'Merging', op)) [line, viewing] = [to, ''];
 	}
 
+	/**
+	 * Delete the note, then go back to the notes; or with `back`, bring it back.
+	 * @param {boolean} back
+	 */
+	async function remove(back) {
+		const done = await api.run(back ? 'Bringing it back' : 'Deleting', { ...deleting(entry, back), as: actor });
+		if (done && !back) location.hash = '#notes';
+	}
+
 	/** Put version `id` back on the line. @param {string} id */
 	async function restore(id) {
 		if (!here) return;
@@ -403,8 +415,30 @@
 					<Icon name="share" size={15} /> Share
 				</button>
 			{/if}
+			{#if writes && item && !item.deleted}
+				<button
+					class="btn quiet danger"
+					disabled={busy || !lets('delete')}
+					title={barred('delete') ?? 'Delete the note: Notes lists it apart, and every edit stays'}
+					onclick={() => remove(false)}
+				>
+					<Icon name="trash" size={15} /> Delete
+				</button>
+			{/if}
 		</div>
 	</header>
+
+	{#if item?.deleted}
+		<div class="gone" role="status">
+			<Icon name="trash" size={16} />
+			<span>This note is deleted: Notes lists it under Deleted, and every edit of it stays.</span>
+			{#if writes}
+				<button class="btn primary" disabled={busy || !lets('back')} title={barred('back')} onclick={() => remove(true)}
+					>Bring it back</button
+				>
+			{/if}
+		</div>
+	{/if}
 
 	{#if sharing && item}
 		<div class="sharebar">
@@ -796,6 +830,18 @@
 		padding: 0.6rem 1rem;
 		border-bottom: 1px solid var(--edge);
 		background: #fff;
+	}
+
+	.gone {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem 0.8rem;
+		padding: 0.6rem 1rem;
+		border-bottom: 1px solid var(--edge);
+		background: #f6e7e1;
+		color: #7a3422;
+		font-size: 0.86rem;
 	}
 
 	.sharebar .who {

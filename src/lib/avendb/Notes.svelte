@@ -1,6 +1,6 @@
 <!--
 	A vault's notes, as a docs app lists its documents: a blank note to start, made at once and opened, then every note
-	of the vault the acting vault reads, one flat library, narrowed by a tag; each a page with its tags, its edits, its
+	of the vault the acting vault reads, one flat library, narrowed by a tag, the deleted ones apart; each a page with its tags, its edits, its
 	proposals, whether it is a variant of another, and who holds a role on it; a click opens it (Note). Everything else
 	stays out of sight, as on a device of the acting vault alone: the device's world says which vault holds which role
 	on each entry, by the caps whose slices hold it (avendb-browser's `World`), and every edit goes out acting for that
@@ -23,12 +23,19 @@
 	const as = $derived(byId.get(actor));
 	const entries = $derived(world.entries.filter((e) => e.vault === vault));
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
-	const docs = $derived(seen.filter((e) => e.kind === 'note'));
+	const docs = $derived(seen.filter((e) => e.kind === 'note' && !e.deleted));
+	/** the notes deleted: listed apart, each to open and bring back */
+	const deleted = $derived(seen.filter((e) => e.kind === 'note' && e.deleted));
 	const hidden = $derived(entries.length - seen.length);
 	const tags = $derived(tagsOf(docs));
 	/** the tag the notes are narrowed to: '' for all of them */
 	let only = $state('');
-	const shown = $derived(only && tags.some((t) => t.tag === only) ? docs.filter((e) => e.tags?.includes(only)) : docs);
+	/** the deleted notes shown instead of the others */
+	let bin = $state(false);
+	const binned = $derived(bin && deleted.length > 0);
+	const shown = $derived(
+		binned ? deleted : only && tags.some((t) => t.tag === only) ? docs.filter((e) => e.tags?.includes(only)) : docs
+	);
 	/** the new note's tags, as the person types them, and those the acting vault's cap asks for besides */
 	let tagging = $state('');
 	const typed = $derived(tagsIn(tagging));
@@ -92,15 +99,27 @@
 	</section>
 {/if}
 
-{#if tags.length}
+{#if tags.length || deleted.length}
 	<nav class="filter" aria-label="Narrow by tag">
-		<button class="chip" class:on={!only} aria-pressed={!only} onclick={() => (only = '')}>All {docs.length}</button>
+		<button class="chip" class:on={!only && !binned} aria-pressed={!only && !binned} onclick={() => ([only, bin] = ['', false])}
+			>All {docs.length}</button
+		>
 		{#each tags as t (t.tag)}
-			<button class="chip" class:on={only === t.tag} aria-pressed={only === t.tag} onclick={() => (only = only === t.tag ? '' : t.tag)}
+			{@const on = only === t.tag && !binned}
+			<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : t.tag, false])}
 				>#{t.tag} <small>{t.uses}</small></button
 			>
 		{/each}
+		{#if deleted.length}
+			<button class="chip bin" class:on={binned} aria-pressed={binned} onclick={() => (bin = !binned)}
+				><Icon name="trash" size={12} /> Deleted <small>{deleted.length}</small></button
+			>
+		{/if}
 	</nav>
+{/if}
+
+{#if binned}
+	<p class="soft binned">Deleted notes keep every edit. Open one to bring it back.</p>
 {/if}
 
 {#if !seen.length && vault !== actor}
@@ -115,7 +134,7 @@
 	<div class="docs">
 		{#each shown as it (it.entry)}
 			{@const origin = it.variantOf ? notes.get(it.variantOf) : undefined}
-			<a class="note" href="#notes/{it.entry}" aria-label={it.title}>
+			<a class="note" class:deleted={it.deleted} href="#notes/{it.entry}" aria-label={it.title}>
 				<span class="thumb" aria-hidden="true">
 					<span class="page"><b>{it.title}</b><span>{it.text}</span></span>
 				</span>
@@ -248,6 +267,21 @@
 	.tag {
 		background: #e4e9f3;
 		color: #2b3f63;
+	}
+
+	.filter .bin {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	.binned {
+		margin: -0.4rem 0 1rem;
+		font-size: 0.82rem;
+	}
+
+	.note.deleted .thumb {
+		opacity: 0.55;
 	}
 
 	/* the notes as a docs app's documents: a page's thumbnail over its title */

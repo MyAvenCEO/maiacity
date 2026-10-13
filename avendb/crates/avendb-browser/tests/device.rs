@@ -707,6 +707,20 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let what = |e: EntryId| world.entries.iter().find(|i| i.entry == e).map(|i| &i.what);
     assert!(matches!(what(variant), Some(What::Note { variant_of: Some(of), edits: 1, .. }) if *of == note));
     assert!(matches!(what(note), Some(What::Note { variant_of: None, proposals: 1, .. })), "one proposal");
+    assert!(matches!(what(variant), Some(What::Note { deleted: false, .. })), "not deleted");
+    // deleted: the mark among the document's own tags; and taken out again, back
+    let mark = |op: &str| json!({ "op": op, "entry": variant.to_hex(), "path": ["tags"], "value": "avendb:deleted" });
+    run(&first, mark("insert")).await.expect("deleted");
+    let world = first.world().await.expect("her world");
+    let gone = |w: &Seen, e: EntryId| {
+        w.entries.iter().find(|i| i.entry == e).map(|i| matches!(i.what, What::Note { deleted: true, .. }))
+    };
+    assert_eq!(gone(&world, variant), Some(true), "deleted");
+    let page = world.to_json(first.node().device());
+    let marked = |p: &Value| p["entries"].as_array().map(|es| es.iter().filter(|e| e["deleted"] == true).count());
+    assert_eq!(marked(&page), Some(1), "the page sees it deleted");
+    run(&first, mark("remove")).await.expect("brought back");
+    assert_eq!(gone(&first.world().await.expect("her world"), variant), Some(false), "back");
     // and a new title on the main line, which leaves the proposal's
     let retitle = json!({ "op": "batch", "ops": [
         { "op": "set", "entry": e, "path": ["title"], "value": "Garden plan" },
