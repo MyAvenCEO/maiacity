@@ -8,7 +8,7 @@
  * - Investing 1 HEART into a COOP makes 1 MIND of that COOP: half to the player's wallet, half to the COOP's treasury.
  * - Three COOPs, each with its own MIND: the MaiaCity COOP (maiaMIND) owns the tribe hex and the AMM pool; the
  *   Tribe COOP (tribeMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (villageMIND)
- *   owns the pickup, the powercube (Open Source Ecology's Power Cube, a hydraulic power unit), a solar panel and a
+ *   owns the pickup, the powercube (the Power Cube Electric: OSE's Power Cube with an alternator), a solar panel and a
  *   big battery pack.
  * - A tenth of every treasury half (5 % of each invested HEART's MIND) goes into the MaiaCity COOP's pool: a Balancer weighted pool, one
  *   basket of all three MINDs with equal weights (1/3 each, settings a MIP may change). Its invariant is
@@ -41,12 +41,12 @@ export const MINDS = ['MAIA', 'TRIBE', 'VILLAGE'];
 export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', TRIBE: 'tribeMIND', VILLAGE: 'villageMIND' };
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', TRIBE: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 10;
+export const VERSION = 11;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The tribe hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, tribeMIND, villageMIND' }] },
 	tribe: { name: 'Tribe COOP', mind: 'TRIBE', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
-	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The Power Cube', kind: 'Hydraulic power unit' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'A big battery pack', kind: 'Storage' }] }
+	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The Power Cube Electric', kind: 'Generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'A big battery pack', kind: 'Storage' }] }
 };
 const MAX_LEDGER = 3000;
 const DUST = 1e-9;
