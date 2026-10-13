@@ -5,7 +5,7 @@
  * lift the lid, and any cell, plate or the BMS comes out on its own and a new one goes in; nothing is thrown away
  * for one worn cell. Four of them fill a BatteryCube (./batterycube.js) to the top.
  *
- * Built in its own frame: its foot's middle at the origin, its front (the handles, terminals and state of charge)
+ * Built in its own frame: its foot's middle at the origin, its front (the handles and the charge strip)
  * towards +z; in mm through `L` (x across, y along to the front, z up). Its figures are inferred from common 21700
  * cells (5 Ah, 3.7 V) and rack modules; its cards say so. `batteryPackParts` adds one to any machine's kit.
  */
@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { loop, rig, skin } from './rig';
 import { block, ease } from './excavator-rig.js';
 import { machineKit } from './parts.js';
+import { CLICKLOCK, clickLatch } from './clicklock.js';
 
 /** @typedef {import('./rig').V3} V3 */
 /** @typedef {import('./rig').Cast} Cast */
@@ -24,28 +25,29 @@ export const PACK = { W: 460, L: 480, H: 125 };
 /** its cells: 14 rows in series (along y) of 20 in parallel (along x), 22 mm apart, standing; their zone's middle */
 const CELLS = { s: 14, p: 20, pitch: 22, r: 10.5, h: 70, z0: 16, y: -55 };
 const SRC = 'BatteryPack (our design)';
-const CASE = '#3a4046', LID = '#c5cacc', HOLDER = '#1b1d1f', WRAP = '#2f6fb5', CAP = '#c9ccce', COPPER = '#c27a43', PCB = '#2c7a4a', DARK = '#202326', RED = '#c8372d', BLACK = '#161718', LED = '#3ddc84', STEEL = '#8d9396';
+const CASE = '#1f2225', LID = '#232629', SEAM = '#d9dcde', FACE = '#2b2f33', HOLDER = '#1b1d1f', WRAP = '#2f6fb5', CAP = '#c9ccce', COPPER = '#c27a43', PCB = '#2c7a4a', DARK = '#202326', RED = '#c8372d', BLACK = '#161718', LED = '#59f0a0', LED_OFF = '#2c3a33', STEEL = '#8d9396';
 
 /** its assemblies, as the pack on its own shows them drawn apart */
 const ASSEMBLIES = /** @type {import('./parts.js').Assembly[]} */ ([
-	{ id: 'case', label: 'Case', note: 'An aluminium tray with its front panel and handles: the pack slides into a rack or a BatteryCube by them.', out: [0, -0.12, 0] },
+	{ id: 'case', label: 'Case', note: 'An aluminium tray with its front panel and handles: the pack slides into a rack or a BatteryCube by them.', out: [0, 0, 0] },
 	{ id: 'cells', label: 'Cells', note: '280 cylindrical 21700 cells standing in two holder plates, 14 rows in series of 20 side by side.', out: [0, 0.12, 0] },
 	{ id: 'contacts', label: 'Contact plates', note: 'Copper plates top and bottom that join each row to the next: pressed on, not welded, so every cell comes out again.', out: [0, 0.3, 0] },
-	{ id: 'electronics', label: 'BMS and terminals', note: 'The battery management system that watches every row, the main terminals and the state-of-charge lights.', out: [0, 0.15, 0.3] },
+	{ id: 'electronics', label: 'BMS and plug', note: 'The battery management system that watches every row, the plug in its back and the charge strip.', out: [0, 0.15, 0.3] },
 	{ id: 'lid', label: 'Lid', note: 'The lid with its spring pad that presses the contacts home, held by four latches: open them and the pack is open.', out: [0, 0.5, 0] }
 ]);
-const STEPS = ['Lay out the tray, its front panel and handles', 'Set the bottom contact plates and holder, and stand the 280 cells in it', 'Press on the top holder and the top contact plates', 'Fit the BMS, its sense leads and the terminals', 'Close the lid on its spring pad and snap the four latches'];
-const STEP = /** @type {Record<string, number>} */ ({ tray: 1, front: 1, handles: 1, 'plates-bottom': 2, 'holder-bottom': 2, cells: 2, 'holder-top': 3, 'plates-top': 3, bms: 4, terminals: 4, lid: 5, latches: 5 });
-const GROUP = /** @type {Record<string, string>} */ ({ tray: 'case', front: 'case', handles: 'case', 'plates-bottom': 'contacts', 'holder-bottom': 'cells', cells: 'cells', 'holder-top': 'cells', 'plates-top': 'contacts', bms: 'electronics', terminals: 'electronics', lid: 'lid', latches: 'lid' });
+const STEPS = ['Lay out the tray, its front panel, handles and ClickLock', 'Set the bottom contact plates and holder, and stand the 280 cells in it', 'Press on the top holder and the top contact plates', 'Fit the BMS, its sense leads and the back plug', 'Close the lid on its spring pad and snap the four latches'];
+const STEP = /** @type {Record<string, number>} */ ({ tray: 1, front: 1, charge: 1, handles: 1, clicklock: 1, 'plates-bottom': 2, 'holder-bottom': 2, cells: 2, 'holder-top': 3, 'plates-top': 3, bms: 4, terminals: 4, lid: 5, latches: 5 });
+const GROUP = /** @type {Record<string, string>} */ ({ tray: 'case', front: 'case', charge: 'case', handles: 'case', clicklock: 'case', 'plates-bottom': 'contacts', 'holder-bottom': 'cells', cells: 'cells', 'holder-top': 'cells', 'plates-top': 'contacts', bms: 'electronics', terminals: 'electronics', lid: 'lid', latches: 'lid' });
 
 /**
  * Add a BatteryPack's parts to a machine's kit, its foot's middle at `at` (actor metres), its front towards +z.
  * `assembly` and `step` say where each part goes in the machine's catalog; with `unit`, the pack arrives whole.
- * `seg`: the sides of a cell (fewer where many packs stand closed).
+ * `seg`: the sides of a cell (fewer where many packs stand closed). `v`: the version to build (2: its plug still on the
+ * face, no ClickLock; 3: the back plug and the ClickLock).
  * @param {ReturnType<typeof machineKit>} kit
- * @param {{ at: V3, base: string, assembly?: (g: string) => string, step?: (p: string) => number, prefix?: string, unit?: string, seg?: number }} o
+ * @param {{ at: V3, base: string, assembly?: (g: string) => string, step?: (p: string) => number, prefix?: string, unit?: string, seg?: number, v?: number }} o
  */
-export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p) => STEP[p], prefix = '', unit, seg = 10 }) {
+export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p) => STEP[p], prefix = '', unit, seg = 10, v = 3 }) {
 	const m = new THREE.Matrix4().makeTranslation(...at);
 	/** @param {number} x @param {number} y @param {number} z @returns {V3} */
 	const L = (x, y, z) => [x * S, z * S, y * S];
@@ -60,6 +62,32 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 		g.applyMatrix4(new THREE.Matrix4().compose(A.clone().add(B).multiplyScalar(0.5), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()), new THREE.Vector3(1, 1, 1)));
 		return T(g);
 	};
+	/** a rounded slab (mm): a w × l outline with corners of radius r, from z0 up h high, hollow to `wall` if given,
+	 *  its top edge eased by `bevel`; the case's smooth shell, lid and bands */
+	const slab = (/** @type {number} */ w, /** @type {number} */ l, /** @type {number} */ r, /** @type {number} */ z0, /** @type {number} */ h, wall = 0, bevel = 0) => {
+		const outline = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ c, hole = false) => {
+			const p = hole ? new THREE.Path() : new THREE.Shape();
+			const x = a / 2, y = b / 2;
+			p.moveTo(-x + c, -y);
+			p.lineTo(x - c, -y);
+			p.quadraticCurveTo(x, -y, x, -y + c);
+			p.lineTo(x, y - c);
+			p.quadraticCurveTo(x, y, x - c, y);
+			p.lineTo(-x + c, y);
+			p.quadraticCurveTo(-x, y, -x, y - c);
+			p.lineTo(-x, -y + c);
+			p.quadraticCurveTo(-x, -y, -x + c, -y);
+			return p;
+		};
+		const shape = /** @type {THREE.Shape} */ (outline(w * S, l * S, r * S));
+		if (wall) shape.holes.push(/** @type {THREE.Path} */ (outline((w - 2 * wall) * S, (l - 2 * wall) * S, Math.max(1, r - wall) * S, true)));
+		const g = new THREE.ExtrudeGeometry(shape, { depth: (h - bevel) * S, curveSegments: 8, bevelEnabled: bevel > 0, bevelThickness: bevel * S, bevelSize: bevel * S * 0.8, bevelOffset: -bevel * S * 0.8, bevelSegments: 3 });
+		g.rotateX(-Math.PI / 2).translate(0, z0 * S, 0);
+		g.clearGroups(); // one material per piece: the kit's merge sets its own groups
+		return T(g);
+	};
+	const RC = 30; // the case's corner radius
+	const CHARGE = 7; // the segments lit: ~70 % charged
 	const { W, L: LEN, H } = PACK;
 	const Wh = W / 2, Lh = LEN / 2;
 	const rowY = (/** @type {number} */ i) => CELLS.y + (i - (CELLS.s - 1) / 2) * CELLS.pitch;
@@ -69,20 +97,24 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 	/** @param {string} p @param {Omit<import('./parts.js').PartInfo, 'assembly' | 'step' | 'id'>} info @param {(put: (geo: THREE.BufferGeometry, color: string) => void) => void} make */
 	const part = (p, info, make) => kit.part({ ...info, id: `${prefix}${p}`, assembly: assembly(GROUP[p]), step: step(p), source: SRC, ...(unit ? { unit } : {}) }, base, make);
 
-	part('tray', { label: 'Tray', what: 'The pack’s aluminium tray: a floor and four walls the holders sit in, with ribs under it to slide on rails.', specs: [['Outside', '460 × 480 × 112 mm'], ['Material', 'Aluminium, 2 mm, anodised']] }, (put) => {
-		put(box(0, 0, 2.5, W, LEN, 5), CASE);
-		for (const sx of [-1, 1]) put(box(sx * (Wh - 2), 0, 58, 4, LEN, 106), CASE);
-		put(box(0, -Lh + 2, 58, W, 4, 106), CASE);
-		for (const sx of [-1, 1]) put(box(sx * (Wh - 30), 0, -1, 20, LEN - 20, 3), DARK);
+	part('tray', { label: 'Case', what: 'The pack’s case: one smooth aluminium shell with round corners, its floor and four walls, a darker foot band, and rails under it to slide on.', specs: [['Outside', '460 × 480 × 112 mm'], ['Material', 'Aluminium, 3 mm, black anodised'], ['Corners', 'R 30 mm']] }, (put) => {
+		put(slab(W, LEN, RC, 0, 5), CASE);
+		put(slab(W, LEN, RC, 0, 16, 4), FACE); // the foot band
+		put(slab(W, LEN, RC, 16, 94, 4), CASE);
+		put(slab(W, LEN, RC, 110, 2, 3), SEAM); // the light seam under the lid
+		for (const sx of [-1, 1]) put(box(sx * (Wh - 60), 0, -1, 20, LEN - 80, 3), DARK);
 	});
-	part('front', { label: 'Front panel', what: 'The pack’s face: it closes the tray’s front and carries the handles, the terminals and the state-of-charge lights.', specs: [['Size', '460 × 125 mm']] }, (put) => {
-		put(box(0, Lh - 3, H / 2, W, 6, H, 2), DARK);
-		for (let k = 0; k < 5; k++) put(box(-60 + k * 16, Lh + 1, 96, 10, 3, 6, 1), LED);
+	part('front', { label: 'Front panel', what: 'The pack’s face, set into the case’s front: it carries the handles, the charge strip along its top' + (v < 3 ? ' and the terminals.' : '; its power and data leave by the plug in its back.'), specs: [['Size', '380 × 80 mm']] }, (put) => {
+		put(box(0, Lh + 1, 62, 380, 3, 80, 1), FACE);
+	});
+	part('charge', { label: 'Charge strip', what: 'A slim LED strip along the top of its face, under the lid’s seam: ten segments light up with the pack’s state of charge.', specs: [['Length', '380 mm, 10 segments'], ['Shows', 'State of charge, 10 % a segment'], ['Fed by', 'The BMS']] }, (put) => {
+		put(box(0, Lh + 0.5, 104, 386, 2, 7, 1), BLACK);
+		for (let k = 0; k < 10; k++) put(box(-171 + k * 38, Lh + 1.5, 104, 34, 1.5, 4), k < CHARGE ? LED : LED_OFF);
 	});
 	part('handles', { label: 'Handles', count: 2, what: 'Two handles on its face to slide it in and out: at ~26 kg one person lifts it.', specs: [['Mass', '~26 kg [inferred]']] }, (put) => {
 		for (const sx of [-1, 1]) {
-			for (const z of [35, 95]) put(cyl([sx * 205, Lh, z], [sx * 205, Lh + 32, z], 6, 8), STEEL);
-			put(cyl([sx * 205, Lh + 32, 32], [sx * 205, Lh + 32, 98], 7, 8), STEEL);
+			for (const z of [38, 90]) put(cyl([sx * 175, Lh, z], [sx * 175, Lh + 28, z], 6, 10), DARK);
+			put(cyl([sx * 175, Lh + 28, 35], [sx * 175, Lh + 28, 93], 7, 10), DARK);
 		}
 	});
 	part('plates-bottom', { label: 'Bottom contact plates', count: 8, what: 'Copper plates under the cells, each joining a row’s minus poles to the next row’s, and the two end plates that go to the terminals.', specs: [['Material', 'Nickel-plated copper, 1.5 mm'], ['Joined by', 'Pressure, no welds']] }, (put) => {
@@ -108,24 +140,34 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 		put(box(170, y, 62, 50, 40, 22, 2), DARK); // the contactor
 		for (let i = 0; i < CELLS.s; i += 3) put(cyl([-180 + i * 6, y - 40, 52], [-180 + i * 6, rowY(i), top + 3], 1.2, 4), RED); // sense leads
 	});
-	part('terminals', { label: 'Terminals', count: 2, what: 'The pack’s plus and minus on its face, under their covers, and the data plug for the BMS beside them.', specs: [['Connectors', 'Anderson-type, 120 A [inferred]'], ['Data', 'CAN, RJ45']] }, (put) => {
-		put(cyl([90, Lh, 55], [90, Lh + 22, 55], 13, 12), RED);
-		put(cyl([140, Lh, 55], [140, Lh + 22, 55], 13, 12), BLACK);
-		put(box(-110, Lh + 2, 55, 26, 6, 20, 2), '#d9d9d9');
+	if (v < 3)
+		part('terminals', { label: 'Terminals', count: 2, what: 'The pack’s plus and minus on its face, under their covers, and the data plug for the BMS beside them.', specs: [['Connectors', 'Anderson-type, 120 A [inferred]'], ['Data', 'CAN, RJ45']] }, (put) => {
+			put(cyl([90, Lh, 55], [90, Lh + 16, 55], 13, 16), RED);
+			put(cyl([140, Lh, 55], [140, Lh + 16, 55], 13, 16), BLACK);
+			put(box(-110, Lh + 3, 55, 26, 4, 20, 2), '#d9d9d9');
+		});
+	else
+		part('terminals', { label: 'Back plug', what: 'The pack’s plus, minus and data in one blind-mate plug in its back, between two guide pins: slide the pack in and it plugs itself into the cube’s backplane; pull it out by its handles and it lets go. No cables, no bolts.', specs: [['Power', '2 × 120 A blade contacts [inferred]'], ['Data', 'CAN, 4 pins'], ['Guides', '2 pins, ⌀ 10 mm']] }, (put) => {
+		put(box(0, -Lh - 3, 58, 170, 6, 46, 1), BLACK);
+		for (const x of [-45, 45]) put(box(x, -Lh - 7, 58, 34, 3, 12), x < 0 ? RED : COPPER);
+		put(box(0, -Lh - 7, 58, 22, 3, 10), CAP);
+		for (const sx of [-1, 1]) put(cyl([sx * 150, -Lh, 58], [sx * 150, -Lh - 12, 58], 5, 10), STEEL);
 	});
-	part('lid', { label: 'Lid', what: 'The aluminium lid and the spring pad under it: closing it presses every contact plate onto its poles, the whole pack’s only joining force.', specs: [['Pad', 'Silicone foam, ~0.2 MPa [inferred]']] }, (put) => {
-		put(box(0, 0, H - 2, W, LEN, 4), LID);
-		put(box(0, CELLS.y, H - 9, zone.w - 10, zone.l - 10, 10, 2), '#d8d1bf');
+	if (v >= 3)
+		part('clicklock', { ...CLICKLOCK, what: `${CLICKLOCK.what} In a BatteryCube the pawls click in just as its back plug meets the backplane.` }, (put) => clickLatch(box, put, { half: Wh, face: Lh, z: 10, tabZ: 24 }));
+	part('lid', { label: 'Lid', what: 'The lid, its round corners and soft edge flush with the case, and the spring pad under it: closing it presses every contact plate onto its poles, the whole pack’s only joining force.', specs: [['Pad', 'Silicone foam, ~0.2 MPa [inferred]'], ['Corners', 'R 30 mm']] }, (put) => {
+		put(slab(W, LEN, RC, H - 13, 13, 0, 5), LID);
+		put(box(0, CELLS.y, H - 19, zone.w - 10, zone.l - 10, 10, 2), '#d8d1bf');
 	});
-	part('latches', { label: 'Latches', count: 4, what: 'Four over-centre latches, two a side: flip them and the lid lifts. No tool opens the pack.', specs: [['Type', 'Over-centre, stainless']] }, (put) => {
-		for (const sx of [-1, 1]) for (const y of [-120, 120]) put(box(sx * (Wh + 3), y, H - 18, 6, 40, 30, 2), STEEL);
+	part('latches', { label: 'Latches', count: 4, what: 'Four flush over-centre latches, two a side: flip them and the lid lifts. No tool opens the pack.', specs: [['Type', 'Over-centre, flush']] }, (put) => {
+		for (const sx of [-1, 1]) for (const y of [-120, 120]) put(box(sx * (Wh + 1.5), y, H - 16, 4, 36, 22, 1.5), FACE);
 	});
 }
 
-/** The BatteryPack on its own, every part its own: drawn apart, built step by step. @returns {Cast} */
-export function batteryPack() {
+/** The BatteryPack on its own (version `v`), every part its own: drawn apart, built step by step. @returns {Cast} */
+export function batteryPack(v = 3) {
 	const kit = machineKit(ASSEMBLIES);
-	batteryPackParts(kit, { at: [0, 0, 0], base: 'base' });
+	batteryPackParts(kit, { at: [0, 0, 0], base: 'base', v });
 	const built = kit.build();
 	const r = rig([{ name: 'base', at: [0, 0, 0] }, ...built.bones], built.pieces, [skin(0.55, { side: THREE.DoubleSide })]);
 	r.object.name = 'BatteryPack';

@@ -24,7 +24,9 @@ import { lifetrac } from './lifetrac.js';
 import { powerCube } from './powercube.js';
 import { electroCube } from './electrocube.js';
 import { batteryCube } from './batterycube.js';
+import { batteryCube as batteryCubeV1 } from './batterycube.v1.js';
 import { batteryPack } from './batterypack.js';
+import { batteryPack as batteryPackV1 } from './batterypack.v1.js';
 import type { Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
@@ -96,8 +98,16 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 	lifetrac: [{ ...FIRST, date: '2026-10-13' }],
 	powercube: [{ ...FIRST, date: '2026-10-13' }, { v: 2, date: '2026-10-13', note: 'The Electric variant is its own actor now: the ElectroCube' }],
 	electrocube: [{ ...FIRST, date: '2026-10-13' }],
-	batterycube: [{ ...FIRST, date: '2026-10-13' }],
-	batterypack: [{ ...FIRST, date: '2026-10-13' }],
+	batterycube: [
+		{ ...FIRST, date: '2026-10-13', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v1: busbars down the front, a one-way inverter', make: () => batteryCubeV1() }] },
+		{ v: 2, date: '2026-10-13', note: 'Plug in and pull out: a backplane behind the stack takes each BatteryPack’s (v3) back plug, and a ClickLock rail pair holds each pack; no busbars on the front', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v2: a one-way inverter', make: () => batteryCube(2) }] },
+		{ v: 3, date: '2026-10-13', note: 'A charger too: the inverter is bidirectional, and an AC inlet on its back charges the packs from the grid, an ElectroCube or a generator' }
+	],
+	batterypack: [
+		{ ...FIRST, date: '2026-10-13', build: [{ id: 'batterypack', label: 'BatteryPack', note: 'as at v1: a square case, five charge lights', make: () => batteryPackV1() }] },
+		{ v: 2, date: '2026-10-13', note: 'Smooth and modern: one matte black case with round corners (R 30 mm), a soft-edged lid, a light seam under it, a darker foot band, flush latches, and a slim LED strip along the top of its face that shows the state of charge in ten segments. Same 460 × 480 × 125 mm', build: [{ id: 'batterypack', label: 'BatteryPack', note: 'as at v2: its terminals still on its face', make: () => batteryPack(2) }] },
+		{ v: 3, date: '2026-10-13', note: 'Plug in, pull out: power and data leave by one blind-mate plug in its back, between two guide pins (no terminals on its face), and a ClickLock clicks it into its rails; press the tab on its face and it slides out' }
+	],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
 		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
@@ -294,16 +304,16 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	{
 		id: 'batterycube',
 		label: 'BatteryCube',
-		note: 'Our own cube on the Power Cube’s 27" frame, no engine: four BatteryPacks stacked to its top (~20.7 kWh) and a 6 kW hybrid inverter on its back that turns their 52 V into 230 V and takes a solar panel straight in. Every part its own',
+		note: 'Our own cube on the Power Cube’s 27" frame, no engine: four BatteryPacks stacked to its top (~20.7 kWh) and each plugged into a backplane and held by a ClickLock, and a 6 kW bidirectional inverter on its back that turns their 52 V into 230 V, takes a solar panel straight in and charges them from outside power at its AC inlet. Every part its own',
 		from: 'Our design, on the Power Cube of Open Source Ecology',
-		variants: [{ id: 'batterycube', label: 'BatteryCube', note: '~20.7 kWh, 6 kW at 230 V, an MPPT solar input, 686 × 660 × 686 mm, ~140 kg', make: () => batteryCube() }]
+		variants: [{ id: 'batterycube', label: 'BatteryCube', note: '~20.7 kWh, 6 kW at 230 V both ways, an MPPT solar input, an AC inlet, 686 × 660 × 686 mm, ~140 kg', make: () => batteryCube() }]
 	},
 	{
 		id: 'batterypack',
 		label: 'BatteryPack',
 		note: 'Our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holder plates, copper contact plates pressed on by its lid, no welds and no glue, so every cell, plate and the BMS comes out again. Four fill a BatteryCube',
 		from: 'Our design',
-		variants: [{ id: 'batterypack', label: 'BatteryPack', note: '460 × 480 × 125 mm, ~26 kg, 280 cells', make: () => batteryPack() }]
+		variants: [{ id: 'batterypack', label: 'BatteryPack', note: '460 × 480 × 125 mm, ~26 kg, 280 cells, a charge strip on its face', make: () => batteryPack() }]
 	}
 ];
 
