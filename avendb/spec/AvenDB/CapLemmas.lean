@@ -310,12 +310,12 @@ def SharesWell (st : State) : Prop :=
   ∀ c ∈ st.shares, ∀ p, c.parent = some p → ∃ pc, st.share? p = some pc ∧ st.shares.idxOf pc < st.shares.idxOf c ∧
     pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .principal (.vault c.issuer) ∧ (c.wide = true → pc.wide = true)
 
-/-- Two shares with one id are one, where ids come once. -/
-theorem share_eq_of_id {cs : List Share} (hnd : (cs.map (·.id)).Nodup) {a b : Share} (ha : a ∈ cs) (hb : b ∈ cs)
-    (h : a.id = b.id) : a = b := by
-  induction cs with
+/-- Two members of a list with one id are one, where ids come once: two shares, two sync rules. -/
+theorem eq_of_id {α β : Type} {xs : List α} {id : α → β} (hnd : (xs.map id).Nodup) {a b : α} (ha : a ∈ xs)
+    (hb : b ∈ xs) (h : id a = id b) : a = b := by
+  induction xs with
   | nil => simp at ha
-  | cons c cs ih =>
+  | cons c xs ih =>
     rw [List.map_cons, List.nodup_cons] at hnd
     rw [List.mem_cons] at ha hb
     rcases ha with ha | ha <;> rcases hb with hb | hb
@@ -437,7 +437,7 @@ theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : 
   obtain ⟨pc', hpc', -, hover, hlevel, hgr, hwide⟩ := hw.2 c hc pc.id hp
   -- ids come once, so the parent found is `pc`
   have hid : pc'.id = pc.id := by simpa using List.find?_some hpc'
-  obtain rfl := share_eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
+  obtain rfl := eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
   refine ⟨hover, hlevel, hgr, fun a ha => ?_, hwide⟩
   unfold effSelects at ha ⊢
   rw [chain_parent hw hp hpc', List.all_append, Bool.and_eq_true] at ha
@@ -449,6 +449,24 @@ theorem any_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x �
   | nil => rfl
   | cons x l ih =>
     simp only [List.any_cons, h x List.mem_cons_self, ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
+
+/-- Marks mean what the selectors say, the one step T23 and T29 share. Where the live part of the marks `m` an entry
+    carries is the canonical list of the members of `xs` (shares, or sync rules) that test `p` picks, a live member
+    that `p` reads as `sel` (one over the entry's vault that isn't wide, `sel` asking whether its selector holds the
+    entry) is among the marks exactly when `sel` holds of it. -/
+theorem mark_means {α : Type} {xs : List α} {id : α → ShareId} (hnd : (xs.map id).Nodup) {live : ShareId → Bool}
+    {p sel : α → Bool} {m : List ShareId} (h : m.filter live = mkAudience ((xs.filter p).map id)) {x : α}
+    (hx : x ∈ xs) (hl : live (id x) = true) (hp : p x = sel x) : m.contains (id x) = sel x := by
+  rw [Bool.eq_iff_iff, List.contains_iff_mem]
+  have hm : id x ∈ m ↔ id x ∈ m.filter live := by simp [List.mem_filter, hl]
+  rw [hm, h]
+  simp only [mkAudience, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter]
+  constructor
+  · rintro ⟨x', ⟨hx', hpx⟩, hid⟩
+    obtain rfl := eq_of_id hnd hx' hx hid
+    exact hp ▸ hpx
+  · intro hs
+    exact ⟨x, ⟨hx, hp ▸ hs⟩, rfl⟩
 
 theorem T23_audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
     (haudience : liveAudience st en = semAudience st en) (a : VaultId) : mayWrite st a en = semWrite st a en := by
@@ -468,43 +486,20 @@ theorem T23_audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
   cases ho : cp.over == en.vault
   · simp
   cases hwd : cp.wide
-  · -- a share that isn't wide: in the audience, live, exactly when its slice holds the entry and its creation
-    -- was let in
+  · -- a share that isn't wide is in the audience exactly when its slice holds the entry and its creation was let in
     simp only [Bool.true_and, Bool.false_or, Bool.and_true]
-    rw [Bool.eq_iff_iff]
-    have hmem : en.audience.contains cp.id = true ↔ cp.id ∈ semAudience st en := by
-      rw [← haudience, liveAudience, List.mem_filter, List.contains_iff_mem]
-      exact ⟨fun h => ⟨h, hlive⟩, fun h => h.1⟩
-    rw [hmem]
-    unfold semAudience
     cases had : en.admitted
-    · simp
-    · simp only [↓reduceIte, mkAudience, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter,
-        Bool.true_and]
-      constructor
-      · rintro ⟨cp', ⟨hcp', hcond⟩, hid⟩
-        obtain rfl := share_eq_of_id hw.1 hcp' hcp hid
-        simp only [Bool.and_eq_true] at hcond
-        exact hcond.2
-      · intro he
-        exact ⟨cp, ⟨hcp, by simp [beq_iff_eq.1 ho, hlive, hwd, he]⟩, rfl⟩
+    · -- the entry's creator made it outside its own slice: its semantic audience is empty
+      simp only [liveAudience, semAudience, had] at haudience
+      rw [Bool.false_and, Bool.eq_false_iff, ne_eq, List.contains_iff_mem]
+      intro hm
+      simpa [haudience] using List.mem_filter.2 ⟨hm, hlive⟩
+    · simp only [liveAudience, semAudience, had, ↓reduceIte] at haudience
+      rw [Bool.true_and]
+      exact mark_means (sel := fun cp => effSelects st cp en.attrs) hw.1 haudience hcp hlive (by simp [ho, hlive, hwd])
   · simp
 
 /-! ## Sync rules -/
-
-/-- Two sync rules with one id are one, where ids come once. -/
-theorem rule_eq_of_id {rs : List SyncRule} (hnd : (rs.map (·.id)).Nodup) {a b : SyncRule} (ha : a ∈ rs)
-    (hb : b ∈ rs) (h : a.id = b.id) : a = b := by
-  induction rs with
-  | nil => simp at ha
-  | cons c rs ih =>
-    rw [List.map_cons, List.nodup_cons] at hnd
-    rw [List.mem_cons] at ha hb
-    rcases ha with ha | ha <;> rcases hb with hb | hb
-    · exact ha.trans hb.symm
-    · exact absurd (by rw [← ha, h]; exact List.mem_map_of_mem hb) hnd.1
-    · exact absurd (by rw [← hb, ← h]; exact List.mem_map_of_mem ha) hnd.1
-    · exact ih hnd.2 ha hb
 
 /-- In every reachable state no two sync rules share an id. -/
 theorem rules_nodup_reachable {st : State} (hr : Reachable st) : (st.rules.map (·.id)).Nodup := by
@@ -526,31 +521,18 @@ theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en
     (hpicks : livePicks st en = semPicks st en) :
     wants st d en = ((rulesOf st d en.vault).isEmpty ||
       (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs) := by
-  have hnd := rules_nodup_reachable hr
   unfold wants
   dsimp only
   congr 1
   refine any_congr_mem fun r hr' => ?_
-  have hrm : r ∈ st.rules := (List.mem_filter.1 hr').1
-  have hcond := (List.mem_filter.1 hr').2
+  obtain ⟨hrm, hcond⟩ := List.mem_filter.1 hr'
   simp only [Bool.and_eq_true, beq_iff_eq] at hcond
   obtain ⟨⟨⟨_, hover⟩, hlive⟩, _⟩ := hcond
   cases hw : r.wide
-  · -- a rule that isn't wide: in the marks, live, exactly when its selector matches the entry
-    simp only [Bool.false_or]
-    rw [Bool.eq_iff_iff]
-    have hmem : (st.picksOf en.id).contains r.id = true ↔ r.id ∈ semPicks st en := by
-      rw [← hpicks, livePicks, List.mem_filter, List.contains_iff_mem]
-      exact ⟨fun h => ⟨h, hlive⟩, fun h => h.1⟩
-    rw [hmem]
-    simp only [semPicks, mkAudience, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter]
-    constructor
-    · rintro ⟨r', ⟨hr'm, hc⟩, hid⟩
-      obtain rfl := rule_eq_of_id hnd hr'm hrm hid
-      simp only [Bool.and_eq_true] at hc
-      exact hc.2
-    · intro hm
-      exact ⟨r, ⟨hrm, by simp [hover, hlive, hw, hm]⟩, rfl⟩
+  · -- a rule that isn't wide is among the marks exactly when its selector matches the entry
+    rw [Bool.false_or, Bool.false_or]
+    exact mark_means (sel := fun r => r.select.matches en.attrs) (rules_nodup_reachable hr) hpicks hrm hlive
+      (by simp [hover, hlive, hw])
   · simp
 
 theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}

@@ -328,7 +328,7 @@ export function opWords(r) {
 /** Ops in words: "read, set its status to “done” and add new entries". @param {Op[]} ops */
 export const opsWords = (ops) => list(ops.map(opWords)) || 'nothing';
 
-/** The class of each op that doesn't change entries: every other op writes (avendb's `rules::Rule::level`). */
+/** The class of each op that doesn't change entries: every other op writes (avendb's `rules::Op::level`). */
 const LEVEL = /** @type {Record<string, Role>} */ ({ relay: 'relay', backup: 'backup', read: 'read', share: 'owner' });
 
 /** A cap's role: the class of its strongest op (avendb's `rules::level_of`). @param {Op[]} ops @returns {Role} */

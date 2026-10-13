@@ -34,7 +34,7 @@ theorem child_narrows {st : State} (hr : Reachable st) {c pc : Share} (hc : c �
   obtain ⟨pc', hpc', -⟩ := hw.2 c hc pc.id hp
   -- ids come once, so the parent found is `pc`
   have hid : pc'.id = pc.id := by simpa using List.find?_some hpc'
-  obtain rfl := Shares.share_eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
+  obtain rfl := Shares.eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
   have hch := Shares.chain_parent hw hp hpc'
   intro main ts h
   unfold chainAllows at h ⊢
