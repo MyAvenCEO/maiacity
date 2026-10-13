@@ -240,8 +240,8 @@
 				</div>
 				<dl>
 					{#each MINDS as t (t)}<dt>Share of all {TOKEN_LABEL[t]}</dt><dd>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} %` : '—'}</dd>{/each}
-					<dt>Tent rent</dt><dd>{f(view.settings.tentRent)} SettlementMIND a month, {f(view.settings.tentRent / 4)} each weekly pay day</dd>
-					{#if player.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(player.arrears)} SettlementMIND</dd>{/if}
+					<dt>Tent rent</dt><dd>{f(view.settings.tentRent)} settlementMIND a month, {f(view.settings.tentRent / 4)} each weekly pay day</dd>
+					{#if player.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(player.arrears)} settlementMIND</dd>{/if}
 				</dl>
 				{#if canMove}
 					<div class="buttons">
@@ -290,7 +290,7 @@
 				{/if}
 				<dl>
 					{#each MINDS as t (t)}<dt>Pool {TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
-					{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} MaiaMIND`}</dd>{/each}
+					{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
 				</dl>
 			{:else if panel === 'coops'}
 				<p class="eyebrow">Who owns what</p>
@@ -331,13 +331,13 @@
 							{#if a.id === 'pool'}
 								<dl>
 									{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
-									{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} MaiaMIND`}</dd>{/each}
+									{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
 								</dl>
 								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every treasury half flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
 							{:else if a.id === 'hex'}
-								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} MaiaMIND a month, paid a quarter each weekly pay day.</small>
+								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} maiaMIND a month, paid a quarter each weekly pay day.</small>
 							{:else if a.id === 'tent'}
-								<small>Rented to both players for {f(view.settings.tentRent)} SettlementMIND a month each, paid a quarter each weekly pay day.</small>
+								<small>Rented to both players for {f(view.settings.tentRent)} settlementMIND a month each, paid a quarter each weekly pay day.</small>
 							{:else if rentOf(a.id) && c.id !== 'settlement'}
 								<small>Rented to the Settlement COOP for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a month, paid a quarter each weekly pay day.</small>
 							{/if}
@@ -348,15 +348,15 @@
 				<dl>
 					{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
 					{#if c.id === 'settlement'}
-						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 SettlementMIND</dd>
-						<dt>Pays hex rent</dt><dd>{f(view.settings.hexRent)} MaiaMIND</dd>
+						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 settlementMIND</dd>
+						<dt>Pays hex rent</dt><dd>{f(view.settings.hexRent)} maiaMIND</dd>
 						{#each RENTED.filter((r) => ownerOf(r.asset) && ownerOf(r.asset)[0] !== 'settlement') as r (r.asset)}<dt>Pays {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
 					{:else if c.id === 'maia'}
-						<dt>Gets hex rent</dt><dd>{f(view.settings.hexRent)} MaiaMIND</dd>
+						<dt>Gets hex rent</dt><dd>{f(view.settings.hexRent)} maiaMIND</dd>
 					{/if}
 					{#if c.id !== 'settlement'}{#each RENTED.filter((r) => c.assets.some((a) => a.id === r.asset)) as r (r.asset)}<dt>Gets {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}{/if}
 					{#if c.id === 'settlement'}{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}{/if}
-					{#if c.arrears > 0.001}<dt>Owed for the hex</dt><dd class="bad">{f(c.arrears)} MaiaMIND</dd>{/if}
+					{#if c.arrears > 0.001}<dt>Owed for the hex</dt><dd class="bad">{f(c.arrears)} maiaMIND</dd>{/if}
 				</dl>
 				<div class="buttons">
 					{#if canMove}<button class="primary" onclick={() => open('invest')}>Invest</button>{/if}

@@ -38,7 +38,7 @@
 		if (kind === 'coop') return { shape: 'coop', text: view.coops[k].name.replace(/ COOP$/, '').slice(0, 2), colour: TOKEN_COLOUR[view.coops[k].mind] };
 		return { shape: 'aven', text: 'AMM', colour: '#8a7a55' };
 	};
-	const heartsLabel = $derived(who.startsWith('player:') ? `${view.players[who.slice(7)].name.replace(/\s+/g, '')}HEARTS` : 'HEARTS');
+	const heartsLabel = $derived(who.startsWith('player:') ? `${((n) => n.charAt(0).toLowerCase() + n.slice(1))(view.players[who.slice(7)].name.replace(/\s+/g, ''))}HEARTS` : 'HEARTS');
 	const hv = $derived(view ? heartsValue(view) : null);
 	/** the chosen wallet's whole worth in HEARTS; the MaiaCity COOP's counts the pool basket it owns */
 	const total = $derived(view && balance ? inHearts(view, balance, hv) + (who === 'coop:maia' ? inHearts(view, view.pool, hv) : 0) : 0);
