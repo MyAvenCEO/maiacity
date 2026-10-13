@@ -62,11 +62,11 @@ to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit the
 
 ## Post-quantum only
 
-Every node, the server's and every browser's, trusts no elliptic curve alone (`Lab::set_pq_only`, set as a node starts
-in `avendb_net`): it counts a write only once a checkpoint by its author covers it, signed with SLH-DSA, and every other
-edit carries an SLH-DSA signature beside its classical one, both checked. A node checkpoints each write of its own as it
-makes it, and what it held before as it starts. Keys are sealed with X-Wing and Classic McEliece both, every connection
-agrees its keys with X25519MLKEM768 alone, and every hash is SHA-3.
+Every node, the server's and every browser's, trusts no elliptic curve alone: it counts a write only once a checkpoint
+by its author covers it, signed with SLH-DSA, and every other edit carries an SLH-DSA signature beside its classical
+one, both checked. A node checkpoints each write of its own as it makes it, and what it held before as it starts. Keys
+are sealed with X-Wing and Classic McEliece both, every connection agrees its keys with X25519MLKEM768 alone, and every
+hash is SHA-3.
 
 ## Flat vaults
 

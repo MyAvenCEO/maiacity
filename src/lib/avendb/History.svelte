@@ -15,9 +15,9 @@
 
 	/**
 	 * @type {{ s: import('./db.js').Studio, log: { edits: import('./db.js').SignedEdit[] } | null, failed: string,
-	 *   vault: string, pqOnly: boolean }}
+	 *   vault: string }}
 	 */
-	let { s, log, failed, vault, pqOnly } = $props();
+	let { s, log, failed, vault } = $props();
 
 	let scope = $state(/** @type {'vault' | 'all'} */ ('vault'));
 	let group = $state('all');
@@ -122,7 +122,7 @@
 						<td>{signers(e)}</td>
 						<td><span class="sigs">
 							{#each e.sigs as sig, i (i)}
-								<span class="chip classical" class:off={pqOnly} title={pqOnly ? 'Counts for nothing: only post-quantum counts' : ''}
+								<span class="chip classical off" title="Counts for nothing: only post-quantum counts"
 									>{classical(sig)}</span
 								>
 								{#if sig.pq}<span class="chip ok" title="SLH-DSA: post-quantum">SLH-DSA {size(sig.pq)}</span>{/if}
@@ -178,7 +178,7 @@
 			{#each picked.sigs as sig, i (i)}
 				<li>
 					<b>{s.signer(sig.signer)}</b>, its {sig.by}:
-					<span class="chip classical" class:off={pqOnly}>{classical(sig)}</span>
+					<span class="chip classical off">{classical(sig)}</span>
 					{#if sig.pq}<span class="chip ok">SLH-DSA, {size(sig.pq)}</span>{:else if picked.counted}<span class="chip ok"
 							>no post-quantum half: an SLH-DSA checkpoint covers it</span
 						>{:else}<span class="chip warn">no post-quantum half</span>{/if}

@@ -436,10 +436,8 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     eve.steps();
     let eve_v = first.vault().await.expect("her vault");
     let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
-    // every device trusts no curve, the server too
-    assert!(first.node().read(|lab, _| lab.pq_only()).await && server.read(|lab, _| lab.pq_only()).await);
     let w = first.world().await.expect("her world");
-    assert!(w.pq_only && w.mine == eve_v);
+    assert_eq!(w.mine, eve_v);
     let ids: Vec<VaultId> = w.vaults.iter().map(|v| v.vault.id).collect();
     assert_eq!(ids, [eve_v, avenceo], "her vault and avenCEO");
     assert_eq!(w.vaults[1].via, Some(vec![eve_v]), "her browser acts for avenCEO through her vault");
@@ -576,7 +574,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     let w = first.world().await.expect("her world");
     assert_eq!(level(&item(&w, note).levels, bob), Some(Level::Read), "{read:?} stands");
     let json = w.to_json(mine);
-    assert_eq!((json["pqOnly"].as_bool(), json["vaults"][2]["name"].as_str()), (Some(true), Some("avenALICE")));
+    assert_eq!(json["vaults"][2]["name"].as_str(), Some("avenALICE"));
     let shares = json["caps"].as_array().expect("its caps");
     let shared = shares.iter().find(|c| c["id"] == hex_of(&read.0)).expect("the read cap");
     assert_eq!((&shared["role"], &shared["slice"]["where"]), (&"read".into(), &the_note), "the note by its id");

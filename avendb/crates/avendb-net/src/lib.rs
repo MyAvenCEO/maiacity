@@ -8,10 +8,10 @@
 //!   dialer's hello before it sends its own and closes a connection without one; the dialer checks the listener's.
 //! - **Key exchange**: X25519MLKEM768 is the only group either end offers (`pq_provider`): ML-KEM-768 agrees the keys
 //!   of every connection along with X25519, and a peer that offers only classical groups doesn't connect.
-//! - **No curve trusted**: every node's Lab no longer trusts the curves (`Lab::set_pq_only`), so neither ed25519 nor
-//!   P-256 alone makes an edit count: it counts only the writes that a checkpoint by their author covers, which carries
-//!   an SLH-DSA signature, and vouches for each write of its own as it makes it, and at its start for those of its
-//!   own that no checkpoint covers yet. Every other edit carries the SLH-DSA half of its signatures anyway.
+//! - **No curve trusted**: no node's Lab trusts the curves, so neither ed25519 nor P-256 alone makes an edit count: it
+//!   counts only the writes that a checkpoint by their author covers, which carries an SLH-DSA signature, and vouches
+//!   for each write of its own as it makes it, and at its start for those of its own that no checkpoint covers yet.
+//!   Every other edit carries the SLH-DSA half of its signatures anyway.
 //! - **Sync**: either end asks the other on the connection (`wire::Request`) and is answered with the edits it may
 //!   receive by the other's view and the McEliece keys they name (`wire::Reply`), each key by its id and BLAKE3 hash
 //!   alone. The asker fetches the keys it lacks over iroh-blobs, where a node hands a key out only to a device a hello
@@ -384,9 +384,9 @@ pub struct Node {
 
 impl Node {
     /// Device `me` of `lab` on the network: it answers its peers, tells them when its logs change, and asks them when
-    /// theirs differ. It trusts no curve (`Lab::set_pq_only`), and vouches at once for the writes of its own that no
-    /// checkpoint covers yet. With a store, it first takes back what the store holds, if anything, and saves what it
-    /// holds from then on. Fails while the device is locked, as its endpoint key is its own ed25519 key.
+    /// theirs differ. It trusts no curve, and vouches at once for the writes of its own that no checkpoint covers yet.
+    /// With a store, it first takes back what the store holds, if anything, and saves what it holds from then on. Fails
+    /// while the device is locked, as its endpoint key is its own ed25519 key.
     pub async fn spawn(lab: Lab, me: SignerId, opts: Options) -> Result<Node> {
         let secret = lab.endpoint_secret(me).context("a device of this Lab, unlocked")?;
         let store = opts.store.clone();
@@ -938,12 +938,11 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab` with its store in folder `store`, if it keeps one: trusting no curve (`Lab::set_pq_only`),
-/// what the store holds taken back, if it holds anything, with the edits and keys its bucket held that the store didn't
-/// (`more`, `bucket::rebuild`), a checkpoint for the writes of its own that none covers yet, and whatever else the
-/// device holds saved: with edits from the bucket, the store is written anew.
+/// Device `me` of `lab` with its store in folder `store`, if it keeps one: what the store holds taken back, if it holds
+/// anything, with the edits and keys its bucket held that the store didn't (`more`, `bucket::rebuild`), a checkpoint
+/// for the writes of its own that none covers yet, and whatever else the device holds saved: with edits from the
+/// bucket, the store is written anew.
 fn reopen(mut lab: Lab, me: SignerId, store: Option<PathBuf>, more: disk::Saved) -> Result<(Lab, Option<Disk>)> {
-    lab.set_pq_only(true);
     let mut disk = match store {
         Some(dir) => {
             let (mut disk, (mut signed, mut keys)) = Disk::read(&dir)?;

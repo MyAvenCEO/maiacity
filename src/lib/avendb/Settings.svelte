@@ -196,7 +196,7 @@
 		</article>
 		<article class="card">
 			<h3>Quantum-proof</h3>
-			{#if world.pqOnly}<p><span class="chip ok">Post-quantum only</span></p>{/if}
+			<p><span class="chip ok">Post-quantum only</span></p>
 			<p class="soft">
 				No device trusts the elliptic curves alone: a write counts only once its author's SLH-DSA checkpoint covers it,
 				every other edit carries an SLH-DSA signature, keys are sealed with X-Wing and Classic McEliece, every connection

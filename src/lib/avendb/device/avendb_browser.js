@@ -398,17 +398,17 @@ export class Device {
         return ret;
     }
     /**
-     * Ends cap `cap`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for an
-     * owner cap.
+     * Ends share `share`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for
+     * an owner share.
      * @param {string} actor
-     * @param {string} cap
+     * @param {string} share
      * @param {Function} ceremony
      * @returns {Promise<any>}
      */
-    revoke(actor, cap, ceremony) {
+    revoke(actor, share, ceremony) {
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(cap, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(share, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ret = wasm.device_revoke(this.__wbg_ptr, ptr0, len0, ptr1, len1, ceremony);
         return ret;
@@ -424,22 +424,22 @@ export class Device {
         return ret;
     }
     /**
-     * Gives `grantee`, a vault's id or `"everyone"`, the cap `spec` describes on vault `over`, a named group of ops on
+     * Gives `who`, a vault's id or `"everyone"`, the share `spec` describes on vault `over`, a named group of ops on
      * a slice of it (`{name, where, ops}`, `words::spec_of`), acting for vault `issuer` (`Device::share`): a promise
-     * of the cap's id, after one ceremony for an owner's. Ids in hex.
+     * of the share's id, after one ceremony for an owner's. Ids in hex.
      * @param {string} issuer
      * @param {string} over
      * @param {any} spec
-     * @param {string} grantee
+     * @param {string} who
      * @param {Function} ceremony
      * @returns {Promise<any>}
      */
-    share(issuer, over, spec, grantee, ceremony) {
+    share(issuer, over, spec, who, ceremony) {
         const ptr0 = passStringToWasm0(issuer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(over, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(grantee, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr2 = passStringToWasm0(who, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
         const ret = wasm.device_share(this.__wbg_ptr, ptr0, len0, ptr1, len1, spec, ptr2, len2, ceremony);
         return ret;

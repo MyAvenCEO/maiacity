@@ -166,11 +166,9 @@
 				{/each}
 			{/each}
 		</nav>
-		{#if world.pqOnly}
-			<p class="pq">
-				<span class="chip ok" title="Only the post-quantum halves of every signature and key count">Post-quantum only</span>
-			</p>
-		{/if}
+		<p class="pq">
+			<span class="chip ok" title="Only the post-quantum halves of every signature and key count">Post-quantum only</span>
+		</p>
 	</aside>
 
 	<section class="main">

@@ -68,7 +68,7 @@
  *   proposals: number, media: string | null, files: import('./files.js').FileView[] }} EntryView
  */
 /**
- * @typedef {{ me: string, mine: string, recovery: string | null, pqOnly: boolean, vaults: VaultView[], caps: CapView[],
+ * @typedef {{ me: string, mine: string, recovery: string | null, vaults: VaultView[], caps: CapView[],
  *   cells: CellView[], entries: EntryView[], groups: Group[] }} WorldView
  */
 
