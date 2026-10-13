@@ -100,7 +100,7 @@ def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
 def Action.blind : Action → Action
   | .share (.grant c via) => .share (.grant c.blind via)
   | .write v e a s g deps p via create _ _ _ _ =>
-    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none [] true
+    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0, 0⟩)) {} none [] true
   | a => a
 
 def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
@@ -108,7 +108,7 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 /-- The operational part of a state: all of it but what only readers see. -/
 def State.ops (st : State) : State :=
   { st with shares := st.shares.map Share.blind,
-            entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false },
+            entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false, blob := 0 },
             uncounted := [] }
 
 end AvenDB

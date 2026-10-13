@@ -4,8 +4,9 @@ import AvenDB.Rules
 # State
 
 What a peer knows after replaying the edits it holds: vaults, shares, entries and the audiences they are in, accepted
-writes, the key schedule (current epochs, seals, published keys), and each vault's schema lane. Everything here is
-executable, so the same definitions that the theorems talk about also produce the test vectors the Rust core must match.
+writes, and the key schedule (current epochs, seals, published keys); and, read off them, each vault's schema lane.
+Everything here is executable, so the same definitions that the theorems talk about also produce the test vectors the
+Rust core must match.
 
 Two layers. The operational one (who acts, which shares are live, which audience an entry is in, who may write it, the
 keys) reads nothing a relay can't see: no selector, no type, no tag, of a share's ops only its level. The semantic one
@@ -63,6 +64,9 @@ structure Entry where
   /-- Its creator was the vault itself, or created it inside the slice of the share it created it through, whose ops
       let it: known to the vault's stewards only. -/
   admitted : Bool
+  /-- The hash of the content its first write holds (`Header.blob`): for a schema or a lens entry, the schema or lens
+      it puts in its vault's lane (`laneOf`). Known to its readers only. -/
+  blob     : BlobId
   deriving DecidableEq, Repr
 
 /-- The audience an entry is in now. -/
@@ -123,8 +127,6 @@ structure State where
   epochs    : List (KeyFam × Nat) := []
   seals     : List Seal := []
   published : List KeyName := []
-  /-- The schema lane: the schemas and lenses published into each vault, by their hash, in the order they came. -/
-  lane      : List (VaultId × BlobId) := []
   /-- Every entry id ever created, even of an entry that fell since: an id is created once, so an entry key's name (the
       entry, its stay, an epoch) names one key. -/
   born      : List EntryId := []
@@ -289,10 +291,6 @@ def authorized (st : State) (w : Write) : Bool :=
     | some en => mayWrite st w.actor { en with stays := [(w.stay, w.audience)] }
     | none    => false
 
-/-- Vault `a` publishes into vault `v`'s schema lane: it is `v`, or holds a wide owner share over it. -/
-def ownsLane (st : State) (a v : VaultId) : Bool :=
-  a == v || st.shares.any fun cp => cp.over == v && cp.wide && holdsShare st a cp .owner
-
 /-! ## What only readers see
 
 The stewards (the devices acting for a vault) read every selector of the vault's shares and every entry's attributes.
@@ -440,6 +438,25 @@ def liveWants (st : State) (en : Entry) : List ShareId := (st.wantsOf en.id).fil
 def desiredMark (st : State) (en : Entry) : Option (Option Audience × Option (List ShareId)) :=
   let ws := if liveWants st en == semWants st en then none else some (semWants st en)
   if (desired st en).isNone && ws.isNone then none else some (desired st en, ws)
+
+/-! ## The schema lane
+
+A vault's schemas and lenses are entries of the built-in types schema and lens (`schemaTypes`), which the vault shares
+with everyone through a share of its own that selects those types, so that every reader of anything of the vault
+receives them and opens them. Nothing checks them on the way in: a schema entry is created and written as any entry is.
+Its readers read the lane off the entries alone (T17), and the lane is all that `fits`, an input of every write here,
+stands for: what the schemas the write's entry was written under let it hold (`Schemas.lean`). -/
+
+/-- Entry `en` puts its blob in vault `v`'s lane: it is an entry of `v` of type schema or lens, whose creation acted for
+    `v` itself and counts. One that anyone else created, through a share, acts for its creator and puts nothing there;
+    what later writes make of the entry, and its tags, are never read. -/
+def inLane (st : State) (v : VaultId) (en : Entry) : Bool :=
+  en.vault == v && schemaTypes.contains en.attrs.type &&
+    st.counted.any fun w => w.entry == en.id && w.first && w.actor == v
+
+/-- Vault `v`'s schema lane, as its readers read it: the blob of each entry that puts one there, in the order the
+    entries were created, each blob once, so a blob created again adds nothing. -/
+def laneOf (st : State) (v : VaultId) : List BlobId := ((st.entries.filter (inLane st v)).map (·.blob)).eraseDups
 
 /-! ## Keys -/
 

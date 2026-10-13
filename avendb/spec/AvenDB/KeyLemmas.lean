@@ -164,7 +164,6 @@ inductive Change (st : State) : State → Prop where
   | mark (en : Entry) (σ : Option EditId) (x : Audience) (ms : List (EntryId × List ShareId)) :
       st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
       Change st (setEntry { st with marks := ms } { en with stays := (σ, x) :: en.stays })
-  | lane (l : List (VaultId × BlobId)) : Change st { st with lane := l }
   /-- The wants marked on an entry. -/
   | wants (ms : List (EntryId × List ShareId)) : Change st { st with marks := ms }
 
@@ -307,9 +306,6 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   · -- keys
     cases h
     exact Change.applied .same
-  · -- publish
-    cases h
-    exact Change.applied (.lane _)
   · -- checkpoint
     cases h
     exact Change.applied .same
@@ -628,7 +624,6 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
       fun s hs => List.mem_cons_of_mem _ hs
     rw [List.map_cons, List.nodup_cons]
     exact ⟨hσ, hs.staysNodup en hen⟩
-  | lane l => exact hs.congr rfl rfl rfl rfl rfl
   | wants _ => exact hs.congr rfl rfl rfl rfl rfl
 
 /-- An accepted edit keeps the state sane. -/
@@ -1933,7 +1928,6 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
   | mark en σ x _ _ _ => exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
   | same => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | revoke rs => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
-  | lane l => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | wants _ => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
 
 /-- An accepted edit keeps every share, adding shares only at the end, every entry id ever created and every vault. -/
@@ -1968,7 +1962,6 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
   | setVault _ _ _ _ _ _ => exact hsame
   | share _ _ _ _ => exact hsame
   | revoke _ => exact hsame
-  | lane _ => exact hsame
   | wants _ => exact hsame
   | create en w x _ _ hnew _ _ _ _ =>
     intro y hy

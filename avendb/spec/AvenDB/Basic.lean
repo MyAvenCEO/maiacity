@@ -154,11 +154,13 @@ def TagDelta.apply (d : TagDelta) (ts : List Sym) : List Sym :=
   let kept := ts.filter (!d.remove.contains ·)
   kept ++ (d.add.filter (!kept.contains ·)).eraseDups
 
-/-- What an entry's first write says of it, which never changes: its type and when it was created (as its creator
-    says). It travels inside the write's encrypted body, so no relay sees it. -/
+/-- What an entry's first write says of it, which never changes: its type, when it was created (as its creator says),
+    and the hash of the content it starts with (`blob`), which for a schema or a lens entry is the schema or lens it
+    holds (`laneOf`). It travels inside the write's encrypted body, so no relay sees it. -/
 structure Header where
   type    : Sym
   created : Nat
+  blob    : BlobId
   deriving DecidableEq, Repr
 
 /-! ## Audiences and keys -/

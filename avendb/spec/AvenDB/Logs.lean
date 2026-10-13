@@ -121,17 +121,21 @@ def loose (edits : List Edit) : List EditId :=
 /-- What a device sends a peer when it asks. -/
 structure Ask where
   /-- Of each log, edits of its closed part: the peer sends nothing at or below them (`haves`). -/
-  haves : LogId → List EditId
+  haves  : LogId → List EditId
   /-- The edits it holds outside every closed part (`loose`): the peer doesn't send them again. -/
-  loose : List EditId
+  loose  : List EditId
+  /-- The vaults it follows: it may name any, and receives of each what is public of it, as it would with an interest
+      in it, and nothing more (`mayReceiveAudience`). -/
+  follow : List VaultId := []
 
-/-- What a device holding `edits` sends when it asks a peer. -/
-def asks (edits : List Edit) : Ask := ⟨haves Edit.log? edits, loose edits⟩
+/-- What a device holding `edits` and following the vaults `follow` sends when it asks a peer. -/
+def asks (edits : List Edit) (follow : List VaultId := []) : Ask := ⟨haves Edit.log? edits, loose edits, follow⟩
 
-/-- What a peer holding `edits` sends device `d` that asked with `a` (`asks`): what `respond` would send, but none of
-    the device's loose edits, and of each log only what lies beyond the edits it sent of it. -/
+/-- What a peer holding `edits` sends device `d` that asked with `a` (`asks`): what `respond` would send, given the
+    vaults the device follows, but none of the device's loose edits, and of each log only what lies beyond the edits it
+    sent of it. -/
 def respondSince (edits : List Edit) (d : SignerId) (a : Ask) : List Edit :=
-  (respond edits d).filter fun edit => !a.loose.contains edit.id && match edit.log? with
+  (respond edits d a.follow).filter fun edit => !a.loose.contains edit.id && match edit.log? with
     | some l => !(ancestors Edit.log? edits l (a.haves l)).contains edit.id
     | none   => true
 

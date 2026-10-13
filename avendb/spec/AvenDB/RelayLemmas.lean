@@ -7,8 +7,9 @@ The proof of T25: a peer that reads no selector, no type and no tag, such as the
 as an owner does and knows the same of the operational part of the state. Stated as in `Theorems.lean`.
 
 A simulation. Every rule a peer checks or applies reads only the operational part of a state (`State.ops`): the shares
-without their selectors and ops, the entries without their attributes and whether they were let in
-(`admits` and `effSelects`, which read those, only ever feed `admitted`). So checking an edit on a state's operational
+without their selectors and ops, the entries without their attributes, whether they were let in and the blob their
+creation holds (`admits` and `effSelects`, which read those, only ever feed `admitted`; nothing a peer checks reads a
+vault's schema lane, which its readers read off the entries). So checking an edit on a state's operational
 part, as the relay's copy of it, accepts and refuses alike and changes the operational part alike (`apply_ops`), and
 so does settling keys. A relay's copy of an edit keeps its id, depth, author, signers, parents and kind, so it sorts in
 the same place, cuts the same, and has the same priority; replay, resolve, the view and the edits that stand follow.
@@ -21,8 +22,8 @@ namespace AvenDB.Relays
 
 /-! ## The operational part -/
 
-/-- An entry as a relay knows it: its id, vault and stays, without its attributes or whether it was let in. -/
-def eblind (en : Entry) : Entry := { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false }
+/-- An entry as a relay knows it: its id, vault and stays, without its attributes, whether it was let in or its blob. -/
+def eblind (en : Entry) : Entry := { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false, blob := 0 }
 
 /-- The operational part blinds the shares and the entries and keeps the rest. -/
 theorem ops_eq (st : State) :
@@ -45,8 +46,6 @@ theorem ops_epochs (st : State) : st.ops.epochs = st.epochs := by cases st; rfl
 theorem ops_seals (st : State) : st.ops.seals = st.seals := by cases st; rfl
 /-- The operational part keeps what is published. -/
 theorem ops_published (st : State) : st.ops.published = st.published := by cases st; rfl
-/-- The operational part keeps the schema lanes. -/
-theorem ops_lane (st : State) : st.ops.lane = st.lane := by cases st; rfl
 /-- The operational part keeps the entry ids ever created. -/
 theorem ops_born (st : State) : st.ops.born = st.born := by cases st; rfl
 /-- The operational part knows nothing of which writes readers count. -/
@@ -290,11 +289,6 @@ theorem authorized_ops (st : State) : authorized st.ops = authorized st := by
   | none => rfl
   | some en => simp only [Option.map_some, mayWrite_ops]; cases en; rfl
 
-/-- Who publishes into a schema lane reads no selector. -/
-theorem ownsLane_ops (st : State) : ownsLane st.ops = ownsLane st := by
-  funext a v; simp only [ownsLane, ops_shares, List.any_map, Function.comp_def, holdsShare_ops, holdsShare_blind,
-    blind_over, blind_wide]
-
 /-- Who may read a key family reads no selector. -/
 theorem readsV_ops (st : State) : readsV st.ops = readsV st := by
   funext y k
@@ -446,7 +440,7 @@ theorem dropUnseen_ops (pre post : State) (keep : List EditId) :
   simp only [dropUnseen]
   -- first what the drop reads, then the operational part of what it leaves
   simp only [authorized_ops, ops_writes, ops_entries, ops_vaults, ops_shares, ops_revoked, ops_epochs, ops_seals,
-    ops_published, ops_lane, ops_born, List.filter_map, List.any_map]
+    ops_published, ops_born, List.filter_map, List.any_map]
   simp only [ops_eq, Function.comp_def, eblind_id]
 
 /-- Adding a seal commutes with taking the operational part. -/
@@ -595,7 +589,7 @@ theorem apply_ops (st : State) (edit : Edit) :
       | none => rfl
       | some c =>
         simp only [Option.map_some, mayRevoke_ops, blind_level, ops_vaults, ops_shares, ops_revoked, ops_entries,
-          ops_writes, ops_epochs, ops_seals, ops_published, ops_lane, ops_born, restsOn_ops,
+          ops_writes, ops_epochs, ops_seals, ops_published, ops_born, restsOn_ops,
           List.filter_map, List.map_map, Function.comp_def, blind_id]
         simp only [map_ite_none, Option.map_some, dropUnseen_ops, ops_ops]
         simp only [ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind]
@@ -667,10 +661,6 @@ theorem apply_ops (st : State) (edit : Edit) :
     simp only [Edit.blind, Action.blind]
     simp only [apply, mayBox_ops, ops_seals, ops_published]
     simp only [map_ite_none, Option.map_some, ops_ops]
-  | publish v actor blob via =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, vault?_ops, ops_lane, actsVia_ops, ownsLane_ops]
-    simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind]
   | checkpoint e covers =>
     simp only [Edit.blind, Action.blind]
     simp only [apply, ops_writes]

@@ -298,7 +298,7 @@ def SharesWell (st : State) : Prop :=
   ∀ c ∈ st.shares, ∀ p, c.parent = some p → ∃ pc, st.share? p = some pc ∧ st.shares.idxOf pc < st.shares.idxOf c ∧
     pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .vault c.issuer ∧ (c.wide = true → pc.wide = true)
 
-/-- Two members of a list with one id are one, where ids come once: two shares, two sync rules. -/
+/-- Two members of a list with one id are one, where ids come once: two shares, keep shares among them. -/
 theorem eq_of_id {α β : Type} {xs : List α} {id : α → β} (hnd : (xs.map id).Nodup) {a b : α} (ha : a ∈ xs)
     (hb : b ∈ xs) (h : id a = id b) : a = b := by
   induction xs with

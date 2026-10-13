@@ -4,7 +4,7 @@ import AvenDB.Props
 # Vaults and writes
 
 The proofs of the theorems about vaults (T2, T3, T21 and that devices don't govern), about who writes (T1), the shares'
-grantees (T4, T8), the schema lane (T17) and causal closure (T14), stated as in `Theorems.lean`.
+grantees (T4, T8), causal closure (T14) and the schema lane, read off the entries (T17), stated as in `Theorems.lean`.
 
 Settling keys changes only the epochs, the seals and what is published, so a step changes everything else only through
 `apply`: it adds a vault or changes one (`VaultChange`), adds a share, an entry or a write, or drops writes and entries
@@ -12,7 +12,8 @@ Settling keys changes only the epochs, the seals and what is published, so a ste
 would close a cycle. Authorization reads only the vaults, the shares, which shares are revoked, `narrow` and the
 entries' vaults and audiences, so an edit that only adds to these keeps every write authorized (`Keeps`); every other
 edit is a removal, and `dropUnseen` keeps a write that lost its authorization only if the removal had seen it.
-`dropUnseen` keeps or drops all the entries of one id together, so no lemma here needs entry ids to be unique.
+`dropUnseen` keeps or drops all the entries of one id together, so no lemma here needs entry ids to be unique, but
+that a write leaves the lane alone (T17), which a write's change to the one entry of its id gives.
 -/
 
 namespace AvenDB.Core
@@ -85,9 +86,9 @@ theorem settle_entries (pre post : State) : (settle pre post).entries = post.ent
 theorem settle_writes (pre post : State) : (settle pre post).writes = post.writes :=
   settle_same State.writes (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
 
-/-- Settling keys leaves the schema lane alone. -/
-theorem settle_lane (pre post : State) : (settle pre post).lane = post.lane :=
-  settle_same State.lane (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
+/-- Settling keys leaves alone which writes readers don't count. -/
+theorem settle_uncounted (pre post : State) : (settle pre post).uncounted = post.uncounted :=
+  settle_same State.uncounted (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
 
 /-- Settling keys narrows nothing. -/
 theorem settle_narrow (pre post : State) : (settle pre post).narrow = post.narrow :=
@@ -1232,10 +1233,6 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, -, rfl⟩ := h
     exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
-  · -- publish: only the lane
-    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-    obtain ⟨-, -, rfl⟩ := h
-    exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
   · -- checkpoint: changes nothing
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, rfl⟩ := h
@@ -1301,7 +1298,7 @@ theorem entriesWhole_step {st st' : State} {edit : Edit} (hinv : EntriesWhole st
         exact ⟨en', entry?_mem he', entry?_id he'⟩
   · exact dropUnseen_whole _ _ _
 
-/-! ## What one step does to the shares and the schema lane -/
+/-! ## What one step does to the shares -/
 
 /-- An accepted edit leaves the shares alone (a revocation only marks shares revoked), or adds one share that names a
     vault or everyone, or is a keep share and names a device of its issuer; everyone only with read. -/
@@ -1326,25 +1323,245 @@ theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some p
     all_goals cases h
     all_goals exact .inl rfl
 
-/-- An accepted edit leaves the lane alone, or publishes one blob into a vault's lane: its author acts for that vault
-    or for a vault holding a wide owner share over it. -/
+/-! ## What one step does to the schema lane
+
+The lane reads, of the entries, their ids, vaults, types and blobs, and which of their first writes readers count
+(`inLane`). Only a creation sets a type or a blob, and readers never start counting a write they didn't. -/
+
+theorem mem_counted {st : State} {w : Write} : w ∈ st.counted ↔ w ∈ st.writes ∧ w.edit ∉ st.uncounted := by
+  simp [State.counted]
+
+/-- Readers keep not counting what they didn't count. -/
+theorem counting_sup (st : State) (ok : Bool) (i : EditId) {d : EditId} (hd : d ∈ st.uncounted) :
+    d ∈ st.counting ok i := by
+  unfold State.counting
+  split
+  · exact hd
+  · exact List.mem_append_left _ hd
+
+theorem mem_counting {st : State} {ok : Bool} {i d : EditId} (hd : d ≠ i) :
+    d ∈ st.counting ok i ↔ d ∈ st.uncounted := by
+  unfold State.counting
+  split
+  · exact Iff.rfl
+  · simp [hd]
+
+theorem inLane_iff {st : State} {v : VaultId} {en : Entry} :
+    inLane st v en = true ↔ en.vault = v ∧ en.attrs.type ∈ schemaTypes ∧
+      ∃ w ∈ st.counted, w.entry = en.id ∧ w.first = true ∧ w.actor = v := by
+  simp only [inLane, Bool.and_eq_true, beq_iff_eq, List.contains_eq_mem, decide_eq_true_eq, List.any_eq_true,
+    and_assoc]
+
+theorem mem_laneOf {st : State} {v : VaultId} {b : BlobId} :
+    b ∈ laneOf st v ↔ ∃ en ∈ st.entries, inLane st v en = true ∧ en.blob = b := by
+  simp only [laneOf, List.mem_eraseDups, List.mem_map, List.mem_filter, and_assoc]
+
+/-- The lane reads only the entries, the writes and which of them readers don't count. -/
+theorem laneOf_congr {st st' : State} (he : st'.entries = st.entries) (hw : st'.writes = st.writes)
+    (hu : st'.uncounted = st.uncounted) : laneOf st' = laneOf st := by
+  have hin : inLane st' = inLane st := by
+    funext v en
+    simp only [inLane, State.counted, hw, hu]
+  funext v
+  simp only [laneOf, hin, he]
+
+/-- Settling keys leaves every lane alone. -/
+theorem laneOf_settle (pre post : State) : laneOf (settle pre post) = laneOf post :=
+  laneOf_congr (settle_entries pre post) (settle_writes pre post) (settle_uncounted pre post)
+
+/-- A write that isn't a first write, with a new id, leaves every lane alone, whether its readers count it or not. -/
+theorem laneOf_addWrite {st : State} {w : Write} {ok : Bool} {i : EditId} (hf : w.first = false)
+    (hfresh : ∀ x ∈ st.writes, x.edit ≠ i) :
+    laneOf { st with writes := st.writes ++ [w], uncounted := st.counting ok i } = laneOf st := by
+  have hin : ∀ v, inLane { st with writes := st.writes ++ [w], uncounted := st.counting ok i } v = inLane st v := by
+    intro v
+    funext en
+    apply Bool.eq_iff_iff.2
+    simp only [inLane_iff, mem_counted, List.mem_append, List.mem_singleton]
+    refine and_congr_right fun _ => and_congr_right fun _ => ⟨?_, ?_⟩
+    · rintro ⟨x, ⟨hx | rfl, hxu⟩, hxe, hxf, hxa⟩
+      · exact ⟨x, ⟨hx, fun hu => hxu ((mem_counting (hfresh x hx)).2 hu)⟩, hxe, hxf, hxa⟩
+      · rw [hf] at hxf
+        cases hxf
+    · rintro ⟨x, ⟨hx, hxu⟩, hxe, hxf, hxa⟩
+      exact ⟨x, ⟨.inl hx, fun hu => hxu ((mem_counting (hfresh x hx)).1 hu)⟩, hxe, hxf, hxa⟩
+  funext v
+  simp only [laneOf, hin]
+
+/-- Mapping entries to ones a filter judges alike and with the same blobs keeps the blobs it lets through. -/
+theorem filter_map_blob {l : List Entry} {f : Entry → Entry} {p : Entry → Bool}
+    (h : ∀ x ∈ l, p (f x) = p x ∧ (f x).blob = x.blob) :
+    ((l.map f).filter p).map (·.blob) = (l.filter p).map (·.blob) := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+    obtain ⟨hp, hb⟩ := h x (List.mem_cons_self ..)
+    have ih := ih fun y hy => h y (List.mem_cons_of_mem _ hy)
+    simp only [List.map_cons, List.filter_cons, hp]
+    split
+    · simp only [List.map_cons, hb, ih]
+    · exact ih
+
+/-- Changing the one entry of its id leaves every lane alone when it keeps its id, vault, type and blob. -/
+theorem laneOf_setEntry {st : State} {en en' : Entry} (hone : ∀ x ∈ st.entries, x.id = en'.id → x = en)
+    (hid : en'.id = en.id) (hv : en'.vault = en.vault) (ht : en'.attrs.type = en.attrs.type)
+    (hb : en'.blob = en.blob) : laneOf (setEntry st en') = laneOf st := by
+  funext v
+  show ((((st.entries.map fun x => if x.id == en'.id then en' else x).filter (inLane st v)).map (·.blob))).eraseDups =
+    (((st.entries.filter (inLane st v)).map (·.blob))).eraseDups
+  rw [filter_map_blob fun x hx => ?_]
+  split
+  · rename_i hx'
+    obtain rfl := hone x hx (beq_iff_eq.1 hx')
+    refine ⟨?_, hb⟩
+    simp only [inLane, hid, hv, ht]
+  · exact ⟨rfl, rfl⟩
+
+/-- `post` keeps what the lane reads of `st`: each entry of `post` has one in `st` with its id, vault, type and blob,
+    and readers counted in `st` each first write they count in `post`. -/
+structure LaneKeeps (st post : State) : Prop where
+  entries : ∀ en ∈ post.entries, ∃ x ∈ st.entries, x.id = en.id ∧ x.vault = en.vault ∧ x.attrs.type = en.attrs.type ∧
+    x.blob = en.blob
+  counted : ∀ w ∈ post.counted, w.first = true → w ∈ st.counted
+
+/-- What is in a lane after is in it before. -/
+theorem LaneKeeps.mem_lane {st post : State} (hk : LaneKeeps st post) {v : VaultId} {b : BlobId}
+    (hb : b ∈ laneOf post v) : b ∈ laneOf st v := by
+  obtain ⟨en, hen, hin, rfl⟩ := mem_laneOf.1 hb
+  obtain ⟨hev, het, w, hw, hwe, hwf, hwa⟩ := inLane_iff.1 hin
+  obtain ⟨x, hx, hid, hv, ht, hbl⟩ := hk.entries en hen
+  exact mem_laneOf.2 ⟨x, hx, inLane_iff.2 ⟨hv.trans hev, ht ▸ het, w, hk.counted w hw hwf, hwe.trans hid.symm, hwf,
+    hwa⟩, hbl⟩
+
+theorem LaneKeeps.of_eq {st post : State} (he : post.entries = st.entries) (hw : post.writes = st.writes)
+    (hu : post.uncounted = st.uncounted) : LaneKeeps st post where
+  entries en hen := ⟨en, he ▸ hen, rfl, rfl, rfl, rfl⟩
+  counted w hw' _ := by
+    rw [mem_counted, hw, hu] at hw'
+    exact mem_counted.2 hw'
+
+theorem LaneKeeps.trans {a b c : State} (h₁ : LaneKeeps a b) (h₂ : LaneKeeps b c) : LaneKeeps a c where
+  entries en hen := by
+    obtain ⟨y, hy, hid, hv, ht, hb⟩ := h₂.entries en hen
+    obtain ⟨x, hx, hid', hv', ht', hb'⟩ := h₁.entries y hy
+    exact ⟨x, hx, hid'.trans hid, hv'.trans hv, ht'.trans ht, hb'.trans hb⟩
+  counted w hw hf := h₁.counted w (h₂.counted w hw hf) hf
+
+/-- A removal keeps what the lane reads: it only drops entries and writes. -/
+theorem LaneKeeps.drop (pre post : State) (keep : List EditId) : LaneKeeps post (dropUnseen pre post keep) where
+  entries en hen := ⟨en, dropUnseen_entries hen, rfl, rfl, rfl, rfl⟩
+  counted w hw _ := by
+    rw [mem_counted] at hw ⊢
+    exact ⟨(dropUnseen_writes hw.1).1, hw.2⟩
+
+/-- Changing an entry keeps what the lane reads when it keeps its vault, type and blob. -/
+theorem LaneKeeps.setEntry {st : State} {en en' : Entry} (hen : st.entry? en'.id = some en)
+    (hv : en'.vault = en.vault) (ht : en'.attrs.type = en.attrs.type) (hb : en'.blob = en.blob) :
+    LaneKeeps st (setEntry st en') where
+  entries y hy := by
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hy
+    split
+    · exact ⟨en, entry?_mem hen, entry?_id hen, hv.symm, ht.symm, hb.symm⟩
+    · exact ⟨x, hx, rfl, rfl, rfl, rfl⟩
+  counted _ hw _ := hw
+
+/-- A write that isn't a first write keeps what the lane reads, while readers keep not counting what they didn't. -/
+theorem LaneKeeps.addWrite {st : State} {w : Write} {u : List EditId} (hf : w.first = false)
+    (hu : ∀ d ∈ st.uncounted, d ∈ u) : LaneKeeps st { st with writes := st.writes ++ [w], uncounted := u } where
+  entries en hen := ⟨en, hen, rfl, rfl, rfl, rfl⟩
+  counted x hx hxf := by
+    rw [mem_counted] at hx
+    obtain ⟨hx, hxu⟩ := hx
+    rcases List.mem_append.1 hx with hx | hx
+    · exact mem_counted.2 ⟨hx, fun h => hxu (hu _ h)⟩
+    · rw [List.mem_singleton] at hx
+      subst hx
+      rw [hf] at hxf
+      cases hxf
+
+/-- An accepted edit keeps what the lane reads, or creates an entry with its first write, whose author acted for its
+    actor, while readers keep not counting what they didn't. -/
 theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some post) :
-    post.lane = st.lane ∨
-    ∃ v actor blob via, edit.action = .publish v actor blob via ∧ actsVia st edit.author via actor = true ∧
-      ownsLane st actor v = true ∧ post.lane = st.lane ++ [(v, blob)] := by
+    LaneKeeps st post ∨
+    ∃ v e actor epoch via x hdr tags proof touches fits,
+      edit.action = .write v e actor none epoch [] .main via (some (x, hdr)) tags proof touches fits ∧
+      actsVia st edit.author via actor = true ∧ st.entry? e = none ∧
+      (∃ en : Entry, en.id = e ∧ en.vault = v ∧ en.attrs.type = hdr.type ∧ en.blob = hdr.blob ∧
+        post.entries = st.entries ++ [en]) ∧
+      post.writes = st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], .main, via, true, x⟩] ∧
+      post.uncounted = st.counting (creates st actor v x proof fits) edit.id := by
   unfold apply at h
   split at h
-  case h_13 v actor blob via heq =>
-    simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-    obtain ⟨-, hok, rfl⟩ := h
-    have hok : actsVia st edit.author via actor = true ∧ ownsLane st actor v = true := by simpa using hok
-    exact .inr ⟨v, actor, blob, via, heq, hok.1, hok.2, rfl⟩
-  -- every other edit leaves the lane alone
+  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits heq =>
+    dsimp only at h
+    split at h
+    · cases h
+    rename_i hact
+    have hact := of_not_or_not hact
+    split at h
+    · -- a new entry, with its first write
+      rename_i x hdr
+      split at h
+      · cases h
+      rename_i hnew
+      split at h
+      · cases h
+      cases h
+      -- a creation of an entry there wasn't, on the main line, building on nothing
+      have hnone : st.entry? e = none := by
+        cases hx : st.entry? e
+        · rfl
+        · simp [hx] at hnew
+      have hstay : stay = none := by
+        cases stay
+        · rfl
+        · simp at hnew
+      have hdeps : deps = [] := by
+        cases deps
+        · rfl
+        · simp at hnew
+      have hprop : proposal = .main := by
+        cases proposal
+        all_goals first | rfl | simp at hnew
+      subst hstay hdeps hprop
+      exact .inr ⟨v, e, actor, epoch, via, x, hdr, tags, proof, touches, fits, heq, hact, hnone,
+        ⟨_, rfl, rfl, rfl, rfl, rfl⟩, rfl, rfl⟩
+    · -- a write to an existing entry: it sets no type nor blob, and isn't a first write
+      split at h
+      · cases h
+      rename_i en hen
+      have hen' : st.entry? en.id = some en := by rw [entry?_id hen]; exact hen
+      split at h
+      · cases h
+      split at h
+      · cases h
+      simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
+      obtain ⟨-, -, -, rfl⟩ := h
+      refine .inl (LaneKeeps.trans ?_ (.addWrite (by rfl) fun d hd => counting_sup _ _ _ hd))
+      split
+      · exact .setEntry hen' rfl rfl rfl
+      · exact .of_eq rfl rfl rfl
+  case h_11 =>
+    dsimp only at h
+    split at h
+    · cases h
+    rename_i en hen
+    have hen' : st.entry? en.id = some en := by rw [entry?_id hen]; exact hen
+    repeat' split at h
+    all_goals (try cases h)
+    all_goals first
+      | exact .inl (.of_eq rfl rfl rfl)
+      | (refine .inl (LaneKeeps.trans ?_ (.drop _ _ _)); exact .setEntry hen' rfl rfl rfl)
+      | (refine .inl (((LaneKeeps.trans ?_ (.setEntry (en := en) ?_ (by rfl) (by rfl) (by rfl)))).trans (.drop _ _ _)))
+          <;> first | exact .of_eq rfl rfl rfl | exact hen'
+  -- every other edit leaves the entries and the writes alone, or is a removal
   all_goals
     dsimp only at h
     repeat' split at h
-    all_goals cases h
-    all_goals exact .inl rfl
+    all_goals (try cases h)
+    all_goals first
+      | exact .inl (.of_eq rfl rfl rfl)
+      | (refine .inl (LaneKeeps.trans ?_ (.drop _ _ _)); exact .of_eq rfl rfl rfl)
 
 /-! ## The theorems -/
 
@@ -1575,22 +1792,6 @@ theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneRea
       subst hc
       exact hpub
 
-theorem T17_lane_by_owners {st st' : State} {edit : Edit} (h : step st edit = some st') {x : VaultId × BlobId}
-    (hx : x ∈ st'.lane) (hnew : x ∉ st.lane) :
-    ∃ actor via, edit.action = .publish x.1 actor x.2 via ∧ actsVia st edit.author via actor = true ∧
-      ownsLane st actor x.1 = true := by
-  unfold step at h
-  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
-  rw [settle_lane] at hx
-  rcases apply_lane hpost with hl | ⟨v, actor, blob, via, hact, hacts, hown, hl⟩
-  · exact absurd (hl ▸ hx) hnew
-  · rw [hl] at hx
-    rcases List.mem_append.1 hx with hx | hx
-    · exact absurd hx hnew
-    · rw [List.mem_singleton] at hx
-      subst hx
-      exact ⟨actor, via, hact, hacts, hown⟩
-
 theorem T14_causally_closed {st st' : State} {edit : Edit} (hinv : CausallyClosed st) (h : step st edit = some st') :
     CausallyClosed st' := by
   unfold step at h
@@ -1630,5 +1831,87 @@ theorem T14_entries_whole {st : State} (hr : Reachable st) :
     simp at hw
   · intro en hen
     simp at hen
+
+theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
+    {v : VaultId} {b : BlobId} (hb : b ∈ laneOf st' v) :
+    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches,
+      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true ∧
+      hdr.type ∈ schemaTypes ∧ hdr.blob = b ∧ actsVia st edit.author via v = true := by
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  rw [laneOf_settle] at hb
+  rcases apply_lane hpost with hk | ⟨v', e, actor, epoch, via, x, hdr, tags, proof, touches, fits, hact, hacts, hnone,
+      ⟨en, hid, hv, ht, hbl, hes⟩, hws, hus⟩
+  · exact .inl (hk.mem_lane hb)
+  -- a creation: the blob is of an entry whose first write readers count
+  obtain ⟨y, hy, hin, rfl⟩ := mem_laneOf.1 hb
+  obtain ⟨hyv, hyt, w, hw, hwe, hwf, hwa⟩ := inLane_iff.1 hin
+  rw [mem_counted, hws, List.mem_append, List.mem_singleton] at hw
+  rw [hes, List.mem_append, List.mem_singleton] at hy
+  obtain ⟨hw | rfl, hwu⟩ := hw
+  · -- an old write, which readers counted before too, and so of an old entry
+    have hwc : w ∈ st.counted := mem_counted.2 ⟨hw, fun hu => hwu (by rw [hus]; exact counting_sup _ _ _ hu)⟩
+    rcases hy with hy | rfl
+    · exact .inl (mem_laneOf.2 ⟨y, hy, inLane_iff.2 ⟨hyv, hyt, w, hwc, hwe, hwf, hwa⟩, rfl⟩)
+    · obtain ⟨z, hz, hzid⟩ := (T14_entries_whole hr).1 w hw
+      obtain ⟨z', hz'⟩ := entry?_of_mem hz
+      rw [hzid, hwe, hid, hnone] at hz'
+      cases hz'
+  · -- the creation's own write, of the new entry, by `v`
+    have hwe : e = y.id := hwe
+    have hwa : actor = v := hwa
+    rcases hy with hy | rfl
+    · obtain ⟨z, hz⟩ := entry?_of_mem hy
+      rw [← hwe, hnone] at hz
+      cases hz
+    · -- its readers count it, so it fits
+      have hc : creates st actor v' x proof fits = true := by
+        cases hcr : creates st actor v' x proof fits
+        · rw [hus, hcr] at hwu
+          exact absurd (by simp [State.counting]) hwu
+        · rfl
+      have hfits : fits = true := by
+        simp only [creates, Bool.and_eq_true] at hc
+        exact hc.1
+      have hvv : v' = v := hv.symm.trans hyv
+      subst hfits hvv hwa
+      exact .inr ⟨e, epoch, via, x, hdr, tags, proof, touches, hact, ht ▸ hyt, hbl.symm, hacts⟩
+
+theorem T17_writes_ignored {st st' : State} (hone : ∀ x ∈ st.entries, ∀ y ∈ st.entries, x.id = y.id → x = y)
+    {edit : Edit} (h : step st edit = some st') {v e actor stay epoch deps proposal via tags proof touches fits}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits) :
+    laneOf st' = laneOf st := by
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  rw [laneOf_settle]
+  unfold apply at hpost
+  rw [ha] at hpost
+  dsimp only at hpost
+  split at hpost
+  · cases hpost
+  rename_i hnew
+  -- the write's id is new
+  have hfresh : ∀ x ∈ st.writes, x.edit ≠ edit.id := by
+    intro x hx hxe
+    simp only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq] at hnew
+    exact hnew (.inl ⟨x, hx, hxe⟩)
+  split at hpost
+  · cases hpost
+  rename_i en hen
+  split at hpost
+  · cases hpost
+  split at hpost
+  · cases hpost
+  simp only [Option.ite_none_left_eq_some, Option.some.injEq] at hpost
+  obtain ⟨-, -, -, rfl⟩ := hpost
+  split
+  · -- only the tags change
+    refine (laneOf_addWrite ?_ ?_).trans (laneOf_setEntry (en := en) (fun z hz hzid => ?_) rfl rfl rfl rfl)
+    · rfl
+    · exact hfresh
+    · exact hone z hz en (entry?_mem hen) hzid
+  · refine laneOf_addWrite ?_ ?_
+    · rfl
+    · exact hfresh
 
 end AvenDB.Core

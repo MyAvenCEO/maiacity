@@ -281,16 +281,32 @@ theorem S4_fit_unread (st : State) (edit : Edit) {v e a s g deps p via create ta
     simp only [Edit.blind, Action.blind, ha]
   rw [← Relays.apply_sim (st := st) (st' := st) rfl edit, ← Relays.apply_sim (st := st) (st' := st) rfl, hb]
 
-/-! ## The schema lane -/
+/-! ## The schema lane
 
-/-- T17: only a vault, or a vault holding a wide owner share over it, publishes its schemas and lenses. A step adds to a
-    vault's lane only if it publishes that blob into that vault, and just before it, its author acted for such a vault
-    through the owners it names. -/
-theorem T17_lane_by_owners {st st' : State} {edit : Edit} (h : step st edit = some st') {x : VaultId × BlobId}
-    (hx : x ∈ st'.lane) (hnew : x ∉ st.lane) :
-    ∃ actor via, edit.action = .publish x.1 actor x.2 via ∧ actsVia st edit.author via actor = true ∧
-      ownsLane st actor x.1 = true :=
-  Core.T17_lane_by_owners h hx hnew
+A vault's schemas and lenses are entries of type schema or lens that it shares with everyone, and its lane is what their
+readers read off them (`laneOf`): no edit publishes into it, and no peer checks it. -/
+
+/-- T17 (the lane is read off the vault's own creations): a schema or a lens counts in vault `v`'s lane only if it is
+    the creation of an entry of `v` of type schema or lens, made by a device acting for `v` itself through the owners it
+    names, and one that fits, so that its readers count it. A step adds a blob to a lane only by such a creation: one
+    made by anyone else through a share, a write to an existing entry, or any other edit adds nothing. -/
+theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
+    {v : VaultId} {b : BlobId} (hb : b ∈ laneOf st' v) :
+    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches,
+      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true ∧
+      hdr.type ∈ schemaTypes ∧ hdr.blob = b ∧ actsVia st edit.author via v = true :=
+  Core.T17_lane_from_creations hr h hb
+
+/-- T17, later writes: in every reachable state a write to an existing entry leaves every lane as it was. A schema or a
+    lens entry holds what its creation put in it; the lane never reads what later writes, or the tags they set, make of
+    it. -/
+theorem T17_writes_ignored {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
+    {v e actor stay epoch deps proposal via tags proof touches fits}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits) :
+    laneOf st' = laneOf st := by
+  obtain ⟨edits, rfl⟩ := hr
+  exact Core.T17_writes_ignored
+    (fun x hx y hy hid => Keys.eq_of_nodup_map (Keys.keyInv_replay edits).sane.entryIds hx hy hid) h ha
 
 /-! ## Causal closure -/
 
@@ -439,10 +455,11 @@ theorem T25_blind_relays (edits : List Edit) :
   Relays.T25_blind_relays edits
 
 /-- T26 (relay alone): a device that acts for no vault an entry's audience belongs to, and holds over that vault nothing
-    but relay shares, receives none of the audience's edits: relay lets a server know a vault's devices, from its log,
-    and keep nothing of its entries. Backup is what keeps them. -/
-theorem T26_relay_keeps_nothing (st : State) (d : SignerId) (v : VaultId) (x : Audience) (hact : actsFor st d v = false)
-    (hrelay : ∀ cp ∈ st.shares, cp.over = v → cp.level = .relay) : mayReceiveAudience st d v x = false := by
+    but relay shares, receives none of the audience's edits, whatever it follows: relay lets a server know a vault's
+    devices, from its log, and keep nothing of its entries. Backup is what keeps them. -/
+theorem T26_relay_keeps_nothing (st : State) (d : SignerId) (v : VaultId) (x : Audience) (fl : List VaultId)
+    (hact : actsFor st d v = false) (hrelay : ∀ cp ∈ st.shares, cp.over = v → cp.level = .relay) :
+    mayReceiveAudience st d v x fl = false := by
   unfold mayReceiveAudience
   simp only [hact, Bool.false_or, List.any_eq_false]
   intro cp hcp
@@ -463,30 +480,51 @@ theorem T11_same_standing {edits₁ edits₂ : List Edit} (hperm : edits₁.Perm
     standing edits₁ = standing edits₂ :=
   Syncing.T11_same_standing hperm hids
 
-/-- T12 (sync shares only what shares allow): every edit a peer sends a device is one it holds, and of an entry, an
-    audience or a share that device may receive by the peer's view, or of a vault's log. -/
-theorem T12_sync_sends_only_what_shares_reach (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) :
-    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) :=
-  Syncing.T12_sync_sends_only_what_shares_reach edits d h
+/-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
+    device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive
+    by the peer's view, following `fl`, or of a vault's log. -/
+theorem T12_sync_sends_only_what_shares_reach (edits : List Edit) (d : SignerId) (fl : List VaultId) {o : Edit}
+    (h : o ∈ respond edits d fl) :
+    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l fl = true ∨ ∃ v, l = .vault v) :=
+  Syncing.T12_sync_sends_only_what_shares_reach edits d fl h
 
-/-- T12, by frontiers: a device that asks with what it holds of each log is sent part of what `respond` sends, so no
-    more than its shares allow, whatever it says it holds. -/
+/-- T12, interest (design §5, option a): a device may receive an audience of a vault only if it has an interest in the
+    vault (it acts for it, or for a vault holding a live share over it) or follows it. And following only narrows what
+    everyone may receive to whoever asks for it: what a device may receive following `fl` it may receive following
+    nothing, or it follows the vault and a live share over it to everyone reaches the audience. So what every vault
+    shares with everyone, its schema and lens entries, goes to nobody without an interest in the vault who doesn't ask
+    for it. -/
+theorem T12_interest (st : State) (d : SignerId) (v : VaultId) (x : Audience) (fl : List VaultId)
+    (h : mayReceiveAudience st d v x fl = true) :
+    (interested st d v = true ∨ v ∈ fl) ∧
+    (mayReceiveAudience st d v x = true ∨ v ∈ fl ∧ ∃ cp ∈ st.shares, cp.over = v ∧ st.live cp.id = true ∧
+      (cp.wide = true ∨ cp.id ∈ x) ∧ cp.who = .everyone) :=
+  Syncing.T12_interest st d v x fl h
+
+/-- T12, a stranger: a device that acts for no vault in the peer's view and follows none is sent nothing at all. -/
+theorem T12_stranger_gets_nothing (edits : List Edit) (d : SignerId) (h : ∀ v, actsFor (view edits) d v = false) :
+    respond edits d = [] :=
+  Syncing.T12_stranger_gets_nothing edits d h
+
+/-- T12, by frontiers: a device that asks with what it holds of each log, and the vaults it follows, is sent part of
+    what `respond` sends, so no more than its shares and its interests allow, whatever it says it holds. -/
 theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {o : Edit} (h : o ∈ respondSince edits d fr) :
-    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) :=
+    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l fr.follow = true ∨ ∃ v, l = .vault v) :=
   Syncing.T12_since edits d fr h
 
 /-- T27 (files follow their edits): a peer hands a device a file only if it holds a write that brings it, of an entry
     that device may receive by the peer's view. So a device acting through relay alone fetches no file of an audience
     (T26), backup fetches them as ciphertext, and a file named nowhere a device may look is never handed to it. -/
-theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : FileId) (h : mayFetch edits d f = true) :
-    ∃ o ∈ edits, f ∈ o.filesOf ∧ ∃ e, o.log? = some (.entry e) ∧ mayReceive (view edits) d e = true := by
+theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : FileId) (fl : List VaultId)
+    (h : mayFetch edits d f fl = true) :
+    ∃ o ∈ edits, f ∈ o.filesOf ∧ ∃ e, o.log? = some (.entry e) ∧ mayReceive (view edits) d e fl = true := by
   unfold mayFetch at h
   obtain ⟨o, hsent, hf⟩ := List.any_eq_true.mp h
   have hf : f ∈ o.filesOf := by simpa using hf
   have hlog : ∃ e, o.log? = some (.entry e) := by
     cases ha : o.action <;> simp [Edit.filesOf, Edit.log?, ha] at hf ⊢
   obtain ⟨e, he⟩ := hlog
-  obtain ⟨hin, l, hl, hmay⟩ := T12_sync_sends_only_what_shares_reach edits d hsent
+  obtain ⟨hin, l, hl, hmay⟩ := T12_sync_sends_only_what_shares_reach edits d fl hsent
   rw [he] at hl
   cases hl
   refine ⟨o, hin, hf, e, he, ?_⟩
@@ -497,11 +535,11 @@ theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : Fil
 /-- T28 (a device syncs what it may and its keep shares want): every edit of an entry a peer sends a device is of an
     entry the device may receive by the peer's view and that its keep shares want (`wants`). A keep share only narrows:
     it hands nobody anything. -/
-theorem T28_sync_follows_keeps (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
-    (hl : o.log? = some (.entry e)) :
-    ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience = true ∧
+theorem T28_sync_follows_keeps (edits : List Edit) (d : SignerId) (fl : List VaultId) {o : Edit}
+    (h : o ∈ respond edits d fl) {e : EntryId} (hl : o.log? = some (.entry e)) :
+    ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience fl = true ∧
       wants (view edits) d en = true :=
-  Syncing.T28_sync_follows_keeps edits d h hl
+  Syncing.T28_sync_follows_keeps edits d fl h hl
 
 /-- T28, the modes: a device with no keep share over a vault wants all of it. The keep shares it syncs by are live
     keep shares naming it over the entry's vault, issued by a vault it is still a device of, so a device that leaves its
@@ -519,17 +557,19 @@ theorem T28_keep_modes (st : State) (d : SignerId) (en : Entry) :
   Syncing.T28_keep_modes st d en
 
 /-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few edits
-    further back, and the edits it holds outside them (`asks`), is sent every edit of the peer's answer that it lacks.
-    Assumes ids don't collide: an id the device and the peer both hold names one edit. -/
-theorem T19_frontier_sync (A R : List Edit) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
-    ∀ o ∈ respond R d, o ∈ A ∨ o ∈ respondSince R d (asks A) :=
-  Syncing.T19_frontier_sync A R d hid
+    further back, the edits it holds outside them and the vaults it follows (`asks`), is sent every edit of the peer's
+    answer that it lacks. Assumes ids don't collide: an id the device and the peer both hold names one edit. -/
+theorem T19_frontier_sync (A R : List Edit) (d : SignerId) (fl : List VaultId)
+    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ o ∈ respond R d fl, o ∈ A ∨ o ∈ respondSince R d (asks A fl) :=
+  Syncing.T19_frontier_sync A R d fl hid
 
 /-- T19 by frontiers alone: sending only the frontiers loses nothing either, though a peer that lacks the latest edits
     then sends back what lies below them too. -/
-theorem T19_frontiers_alone (A R : List Edit) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
-    ∀ o ∈ respond R d, o ∈ A ∨ o ∈ respondSince R d ⟨frontiers A, []⟩ :=
-  Syncing.T19_frontiers_alone A R d hid
+theorem T19_frontiers_alone (A R : List Edit) (d : SignerId) (fl : List VaultId)
+    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ o ∈ respond R d fl, o ∈ A ∨ o ∈ respondSince R d ⟨frontiers A, [], fl⟩ :=
+  Syncing.T19_frontiers_alone A R d fl hid
 
 /-- T19, one hash per log: two peers whose frontiers of a log are equal hold the same closed part of it, so comparing
     one hash of each frontier tells whether there is anything to send. The two may place edits in logs differently
@@ -540,16 +580,18 @@ theorem T19_same_frontier (lgA lgR : Edit → Option LogId) (A R : List Edit) (l
     x ∈ closedPart lgA A l ↔ x ∈ closedPart lgR R l :=
   Syncing.T19_same_frontier lgA lgR A R l hid huA huR hf x
 
-/-- T13 (sync converges per entry): if each of two devices syncs an entry by the other peer's view (it may receive it,
-    and its keep shares want it), then after each asked the other once (`asks`), both hold the same edits of that
-    entry's log: those either held before. Assumes ids don't collide. -/
-theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (e : EntryId)
+/-- T13 (sync converges per entry): if each of two devices, following the vaults `flp` and `flq`, syncs an entry by
+    the other peer's view (it may receive it, by its interests and what it follows, and its keep shares want it), then
+    after each asked the other once (`asks`), both hold the same edits of that entry's log: those either held before.
+    So an entry everyone may receive converges between two devices that each have an interest in its vault or follow
+    it. Assumes ids don't collide. -/
+theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (flp flq : List VaultId) (e : EntryId)
     (hid : ∀ a ∈ editsP, ∀ b ∈ editsQ, a.id = b.id → a = b)
-    (hp : syncs (view editsQ) dp e = true) (hq : syncs (view editsP) dq e = true)
+    (hp : syncs (view editsQ) dp e flp = true) (hq : syncs (view editsP) dq e flq = true)
     (o : Edit) (hop : o.log? = some (.entry e)) :
-    o ∈ receive editsP (respondSince editsQ dp (asks editsP)) ↔
-      o ∈ receive editsQ (respondSince editsP dq (asks editsQ)) :=
-  Syncing.T13_sync_converges editsP editsQ dp dq e hid hp hq o hop
+    o ∈ receive editsP (respondSince editsQ dp (asks editsP flp)) ↔
+      o ∈ receive editsQ (respondSince editsP dq (asks editsQ flq)) :=
+  Syncing.T13_sync_converges editsP editsQ dp dq flp flq e hid hp hq o hop
 
 /-- T20 (linking hands out vault logs alone): every edit a peer hands a device whose passkey proved itself on their
     connection (`linkCard`) is an edit the peer holds of the log of a vault the passkey owns, or of one that owns such a

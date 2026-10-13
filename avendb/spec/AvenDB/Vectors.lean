@@ -25,8 +25,9 @@ Rust core), and the Rust side compares the audiences of the state as sets. A blo
 Rust side maps blob number `b` to the bytes `blob b`. The state includes each entry's stays and wants and, as its
 readers see it, its attributes, whether its creation was let in, its semantic audience and wants, and what a steward
 would mark it with, and for each device a keep share over its vault names, whether the device wants the entry and keeps
-its files whole; the key schedule (each family's epoch where it isn't 0, every seal and every published key, all
-three compared as sets); the schema lane; the writes its readers don't count (`uncounted`); and each line of each
+its files whole; the key schedule (each family's epoch where it isn't 0, every seal and every published key, all three
+compared as sets); each vault's schema lane, as its readers read it off the vault's schema and lens entries (`laneOf`),
+vault by vault in the order the vaults came; the writes its readers don't count (`uncounted`); and each line of each
 entry's history, of the writes they count: its writes and its heads, the main line first and then each proposal in the
 order it started. A write carries its proof and its touches, as its readers read them off its body, and a share its ops.
 The file starts with the built-in groups (`groups`), which the Rust core offers as they are.
@@ -75,7 +76,8 @@ Signers: Alice's passkey 1, her Mac 2, her iPhone 3, Bob's passkey 4 and Mac 5, 
 passkey 8, a second passkey 9 (Alice's backup) and a third 10, a new device 77, a stranger 555, the relay server 600.
 Vaults: Alice 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200, aven vaults from 300 (avenCEO 300).
 Shares from 30, keep shares from 40. Entries: Welcome 1, the Charter 2, notes from 3, todos from 21. Types: a note 1, a
-todo 2, a schema 900 (`schemaType`); tags: work 7, home 8. Blobs (schemas and lenses): from 1. An act for the coop names
+todo 2, a schema 900 (`schemaType`) and a lens 901 (`lensType`); tags: work 7, home 8. Blobs, the content a schema or a
+lens entry's creation holds (`Header.blob`): from 1, and 0 for every other entry. An act for the coop names
 the human vault it goes through: Alice's Mac (2) and passkey (1) through `[100]`, Bob's Mac (5) through `[101]`. An
 entry's stays are named by the moves that began them: a write names the stay whose key it is encrypted under, `none`
 for the one its entry's creation began. A mark of the audience alone is written `.move`, and a mark of the wants alone
@@ -90,6 +92,8 @@ def notes : Selector := .anyOf [[.typeIn [note]]]
 def todos : Selector := .anyOf [[.typeIn [todo]]]
 def workTodos : Selector := .anyOf [[.typeIn [todo], .tagHas work]]
 def only (e : EntryId) : Selector := .anyOf [[.entryIn [e]]]
+/-- What a vault's share to everyone of its schemas and lenses selects. -/
+def schemas : Selector := .anyOf [[.typeIn schemaTypes]]
 
 def humans : List (SignerId × List SignerId × Action) := [
   (1, [], .genesis 100 .human [.signer 1] 1),
@@ -114,11 +118,12 @@ def keepShare (id over : Nat) (d : SignerId) (m : KeepMode) (issuer : VaultId) (
     (wide : Bool := false) (via : List VaultId := []) : Action :=
   newShare id over (.device d) (.keep m) issuer select wide (via := via)
 
-/-- A write that creates entry `e` of vault `v` in audience `x`, with the proof `proof`, whose record fits its schemas
-    or not (`fits`). -/
+/-- A write that creates entry `e` of vault `v` in audience `x`, holding the content `blob`, with the proof `proof`,
+    whose record fits its schemas or not (`fits`). -/
 def newEntry (v e : Nat) (actor : VaultId) (x : Audience) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
-    (via : List VaultId := []) (epoch : Nat := 0) (proof : Option ShareId := none) (fits : Bool := true) : Action :=
-  .write v e actor none epoch (via := via) (create := some (x, ⟨type, created⟩)) (tags := { add := tags })
+    (via : List VaultId := []) (epoch : Nat := 0) (proof : Option ShareId := none) (fits : Bool := true)
+    (blob : BlobId := 0) : Action :=
+  .write v e actor none epoch (via := via) (create := some (x, ⟨type, created, blob⟩)) (tags := { add := tags })
     (proof := proof) (fits := fits)
 
 /-- A write of entry `e`, in its stay `stay` at epoch `epoch` of that stay's audience, with the proof `proof`, touching
@@ -534,26 +539,40 @@ def cases : List Case := [
     (6, [], .keys (audienceKey 100 [30] 0) [])] },
   { name := "the schema lane", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
+    -- Carol may write the whole coop; with its first schema, the coop shares its schemas and lenses with everyone
     (2, [], newShare 30 200 (toVault 102) .write 200 (wide := true) (via := [100])),
-    -- Alice's Mac, acting for the coop, publishes a schema and a lens into its lane
-    (2, [], .publish 200 200 1 [100]),
-    (2, [], .publish 200 200 2 [100]),
-    -- the same blob again is refused; in another vault's lane it is that vault's own
-    (5, [], .publish 200 200 1 [101]),
-    (2, [], .publish 100 100 1),
-    -- Carol may write the whole coop but not publish into its lane, for herself or for the coop, whose owner her vault
-    -- isn't; nor may a stranger, and nothing goes into the lane of a vault that doesn't exist
-    (6, [], .publish 200 102 3),
-    (6, [], .publish 200 200 3 [102]),
-    (555, [], .publish 200 200 3),
-    (2, [], .publish 299 200 3 [100]),
+    (2, [], newShare 31 200 .everyone .read 200 schemas (via := [100])),
+    -- a note, and a write to it that its readers can't tell fits, as before they hold the schema it was written under
+    (2, [], newEntry 200 1 200 [] note (via := [100])),
+    (2, [], wr 200 1 200 [9] (via := [100]) (fits := false)),
+    -- Alice's Mac, acting for the coop, creates a schema entry and a lens entry: their blobs are the coop's lane
+    (2, [], newEntry 200 2 200 [31] schemaType (via := [100]) (blob := 1)),
+    (2, [], newEntry 200 3 200 [31] lensType (via := [100]) (blob := 2)),
+    -- now its readers hold the schema, a write that fits it counts
+    (2, [], wr 200 1 200 [9] (via := [100])),
+    -- a later write to the schema entry, tags and all, changes nothing in the lane
+    (2, [], wr 200 2 200 [11] (via := [100]) (add := [work])),
+    -- Bob's Mac acts for the coop too: the same blob again adds nothing, a new lens adds itself
+    (5, [], newEntry 200 4 200 [31] schemaType (via := [101]) (blob := 1)),
+    (5, [], newEntry 200 5 200 [31] lensType (via := [101]) (blob := 3)),
+    -- Carol creates a schema entry through her share, which every peer accepts, but it acts for her and puts nothing in
+    -- the coop's lane; she may not act for the coop, whose owner her vault isn't; nor may a stranger, and no vault
+    -- that doesn't exist has an entry
+    (6, [], newEntry 200 6 102 [] schemaType (proof := some 30) (blob := 4)),
+    (6, [], newEntry 200 7 200 [31] schemaType (via := [102]) (blob := 4)),
+    (555, [], newEntry 200 7 200 [31] schemaType (blob := 4)),
+    (2, [], newEntry 299 7 200 [31] schemaType (via := [100]) (blob := 4)),
     -- owner of the whole coop is an owner of it, which no grant makes, even with both passkeys (WideOwner), so Dave
-    -- doesn't publish; nor does Carol, owner of the coop's notes
-    (1, [4], newShare 31 200 (toVault 103) .owner 200 (wide := true) (via := [100])),
-    (8, [], .publish 200 103 3),
-    (1, [4], newShare 32 200 (toVault 102) .owner 200 notes (via := [100])),
-    (6, [], .publish 200 102 4),
-    (5, [], .publish 200 200 4 [101])] },
+    -- creates nothing there; Carol, owner of the coop's notes, creates in her share's intake audience, for herself
+    (1, [4], newShare 32 200 (toVault 103) .owner 200 (wide := true) (via := [100])),
+    (8, [], newEntry 200 7 103 [] schemaType (blob := 4)),
+    (1, [4], newShare 33 200 (toVault 102) .owner 200 notes (via := [100])),
+    (6, [], newEntry 200 7 102 [33] schemaType (proof := some 33) (blob := 5)),
+    -- Alice's own vault, with its own share to everyone, holds the same blob as a schema of its own
+    (2, [], newShare 34 100 .everyone .read 100 schemas),
+    (2, [], newEntry 100 8 100 [34] schemaType (blob := 1)),
+    -- a schema entry its readers don't count puts nothing in the lane
+    (2, [], newEntry 200 9 200 [31] schemaType (via := [100]) (fits := false) (blob := 6))] },
   { name := "a device vouches only for its own writes", edits := humans ++ [
     (1, [3], .share (.device 100 3)),
     (2, [], newEntry 100 1 100 [] note),
@@ -899,15 +918,17 @@ def views : List ViewCase := [
     (10, 6, [], .keys (audienceKey 200 [30] 0) [shareKey 200 30 0]),
     (11, 6, [], .keys (audienceKey 200 [30] 0) [seedKey 200 0]),
     (12, 2, [], .revoke (.grant 30 200 [10] [100]))] },
-  { name := "a removed owner's back-dated publish is cut", edits := humansV ++ [
+  { name := "a removed owner's back-dated schema entry is cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    -- Bob's Mac publishes a schema for the coop, which Alice sees, and a lens on an old copy, which she doesn't
-    (7, 5, [], .publish 200 200 1 [101]),
-    (8, 5, [], .publish 200 200 2 [101]),
-    (9, 1, [], .revoke (.owner 200 (.vault 101) [7])),
-    -- Alice's Mac publishes the lens itself; Bob's Mac no longer can
-    (10, 2, [], .publish 200 200 2 [100]),
-    (11, 5, [], .publish 200 200 3 [101])] },
+    (7, 2, [], newShare 30 200 .everyone .read 200 schemas (via := [100])),
+    -- Bob's Mac creates a schema entry for the coop, which Alice sees, and a lens entry on an old copy, which she
+    -- doesn't
+    (8, 5, [], newEntry 200 1 200 [30] schemaType (via := [101]) (blob := 1)),
+    (9, 5, [], newEntry 200 2 200 [30] lensType (via := [101]) (blob := 2)),
+    (10, 1, [], .revoke (.owner 200 (.vault 101) [8])),
+    -- Alice's Mac creates the lens entry itself; Bob's Mac no longer can
+    (11, 2, [], newEntry 200 3 200 [30] lensType (via := [100]) (blob := 2)),
+    (12, 5, [], newEntry 200 4 200 [30] schemaType (via := [101]) (blob := 3))] },
   { name := "a removed owner's back-dated writes for the coop are cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], newEntry 200 1 200 [] note (via := [100])),
@@ -1022,9 +1043,10 @@ def views : List ViewCase := [
 A sync case is a list of edits a peer holds, each building on the frontier of its own log among the edits before it, as
 a device holding them all would build, unless it names other parents or claims another depth. The model's answers:
 which edits stand; each log's closed part and frontier; the forks; and for each device that asks, holding some of the
-edits, a peer holding all of them or some: the device's frontier of each log it holds, what it sends of it when it asks
-and its loose edits (`asks`), what the peer would send it whole (`respond`), and what it sends given what the device
-sent (`respondSince`). A parent no edit of the case has (999) stands for an edit nobody holds. -/
+edits and following some vaults, a peer holding all of them or some: the device's frontier of each log it holds, what
+it sends of it when it asks, the vaults it follows, and its loose edits (`asks`), what the peer would send it whole
+(`respond`), and what it sends given what the device sent (`respondSince`). A parent no edit of the case has (999)
+stands for an edit nobody holds. -/
 
 /-- An edit of a sync case. -/
 structure SyncEdit where
@@ -1041,8 +1063,9 @@ structure SyncEdit where
 structure SyncCase where
   name  : String
   edits : List SyncEdit
-  /-- Who asks: a device, the places of the edits it holds, and those of the edits the peer holds (`none`: all). -/
-  asks  : List (SignerId × List Nat × Option (List Nat))
+  /-- Who asks: a device, the places of the edits it holds, those of the edits the peer holds (`none`: all), and the
+      vaults it follows. -/
+  asks  : List (SignerId × List Nat × Option (List Nat) × List VaultId)
   /-- The passkeys that prove themselves to a peer holding every edit, to link a new device (`linkCard`). -/
   links : List SignerId := []
 
@@ -1083,18 +1106,22 @@ def syncs : List SyncCase := [
       (5, [], wr 200 1 200 [9] (stay := some 12) (via := [101])),
       (2, [], .checkpoint 1 [9]),
       (2, [], wr 200 2 200 [10] (via := [100])),
-      (2, [], .publish 200 200 1 [100]),
+      -- the coop's schema, which it shares with everyone
+      (2, [], newShare 31 200 .everyone .read 200 schemas (via := [100])),
+      (2, [], newEntry 200 4 200 [31] schemaType (via := [100]) (blob := 1)),
       -- Alice's own note
       (2, [], newEntry 100 3 100 [] note)]),
     asks := [
       -- Carol's Mac holding nothing yet, then after a sync before Bob's write, then holding Bob's write without its past
-      (7, [], none),
-      (7, [0, 1, 2, 3, 4, 6, 7, 8, 9, 11, 12], none),
-      (7, [4, 6, 13], none),
-      -- Bob's Mac before most of the coop's notes, a stranger, and Alice's iPhone holding everything
-      (5, [0, 1, 2, 3, 4, 5, 8, 9, 10], none),
-      (555, [], none),
-      (3, List.range 18, none)] },
+      (7, [], none, []),
+      (7, [0, 1, 2, 3, 4, 6, 7, 8, 9, 11, 12], none, []),
+      (7, [4, 6, 13], none, []),
+      -- Bob's Mac before most of the coop's notes, a stranger, the stranger following the coop, and Alice's iPhone
+      -- holding everything
+      (5, [0, 1, 2, 3, 4, 5, 8, 9, 10], none, []),
+      (555, [], none, []),
+      (555, [], none, [200]),
+      (3, List.range 19, none, [])] },
   { name := "forks", edits := plain (humans ++ [
       (1, [3], .share (.device 100 3)),
       (2, [], newEntry 100 1 100 [] note),
@@ -1110,7 +1137,7 @@ def syncs : List SyncCase := [
       { author := 2, action := wr 100 1 100 [7], parents := some [999] },
       -- the iPhone claiming to be no deeper than the edit it builds on: malformed, so it never stands
       { author := 3, action := wr 100 1 100 [10], parents := some [10], depth := some 10 }],
-    asks := [(3, [0, 1, 2, 3, 4, 5, 6, 7, 10], none), (2, [], none)] },
+    asks := [(3, [0, 1, 2, 3, 4, 5, 6, 7, 10], none, []), (2, [], none, [])] },
   { name := "a revocation joins its share's log", edits := plain (humans ++ [
       (6, [7], .share (.device 102 7)),
       (2, [], newEntry 100 21 100 [] todo),
@@ -1120,9 +1147,9 @@ def syncs : List SyncCase := [
       -- Alice revokes Carol's read: Carol hears of it, and of nothing else about the todo
       (2, [], .revoke (.grant 30 100 [7, 8, 9])),
       (2, [], wr 100 21 100 [7] (stay := some 9))]),
-    asks := [(7, [0, 1, 4, 6, 7, 8, 9], none), (7, [], none), (5, [2, 3], none),
+    asks := [(7, [0, 1, 4, 6, 7, 8, 9], none, []), (7, [], none, []), (5, [2, 3], none, []),
       -- Carol holding the revocation but not the share it revokes: it is loose, and isn't sent again
-      (7, [0, 1, 4, 6, 7, 9, 11], none)] },
+      (7, [0, 1, 4, 6, 7, 9, 11], none, [])] },
   { name := "a relay holds the audiences it may relay, and no key", edits := plain (humans ++ [
       (1, [], .genesis 300 .aven [.vault 100] 1),
       (1, [600], .share (.device 300 600)),
@@ -1133,7 +1160,7 @@ def syncs : List SyncCase := [
       (2, [], .move 100 1 [30] []),
       (2, [], wr 100 1 100 [8] (stay := some 11)),
       (2, [], .keys (audienceKey 100 [30] 0) [seedKey 100 0])]),
-    asks := [(600, [], none), (600, [0, 1, 6, 7, 10], none), (5, [], none)] },
+    asks := [(600, [], none, []), (600, [0, 1, 6, 7, 10], none, []), (5, [], none, [])] },
   { name := "a device ahead of its peer", edits := plain (humans ++ [
       (1, [3], .share (.device 100 3)),
       (2, [], newEntry 100 1 100 [] note)] ++
@@ -1143,10 +1170,10 @@ def syncs : List SyncCase := [
       { author := 3, action := wr 100 1 100, parents := some [19] }],
     asks := [
       -- the Mac asks the iPhone: each lacks some of the other's edits; then an iPhone holding none of its own
-      (2, List.range 25, some (List.range 20 ++ [25])),
-      (2, List.range 25, some (List.range 20)),
+      (2, List.range 25, some (List.range 20 ++ [25]), []),
+      (2, List.range 25, some (List.range 20), []),
       -- the iPhone, behind, asks a peer holding all of them
-      (3, List.range 13, none)] },
+      (3, List.range 13, none, [])] },
   { name := "linking a device by its passkey", edits := plain (humans ++ [
       (1, [3], .share (.device 100 3)),
       -- Alice's backup passkey, a second owner of her vault
@@ -1154,7 +1181,7 @@ def syncs : List SyncCase := [
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
       (2, [], newEntry 200 1 200 [] note (via := [100])),
       (2, [], newShare 30 200 (toVault 102) .read 200 (wide := true) (via := [100]))]),
-    asks := [(3, [], none)],
+    asks := [(3, [], none, [])],
     -- Alice's passkey, her backup passkey, Bob's and Carol's, Alice's Mac (a device, no passkey), and a stranger's
     links := [1, 9, 4, 6, 2, 555] },
   { name := "files follow their edits", edits := plain (humans ++ [
@@ -1173,8 +1200,8 @@ def syncs : List SyncCase := [
       { author := 2, action := wr 100 1 100 [9] (stay := some 14), files := [3] }],
     -- Carol's Mac, avenCEO's server, Alice's Mac, Bob's Mac and Dan's passkey, each holding nothing yet; then Carol's
     -- Mac from a peer that lacks the film's write
-    asks := [(7, [], none), (600, [], none), (2, [], none), (5, [], none), (8, [], none),
-      (7, [], some (List.range 15))] },
+    asks := [(7, [], none, []), (600, [], none, []), (2, [], none, []), (5, [], none, []), (8, [], none, []),
+      (7, [], some (List.range 15), [])] },
   { name := "keep shares choose what a device syncs", edits := plain (humans ++ [
       (1, [3], .share (.device 100 3)),
       (6, [7], .share (.device 102 7)),
@@ -1192,7 +1219,21 @@ def syncs : List SyncCase := [
       (2, [], .pick 100 1 [40])],
     -- Alice's iPhone, her Mac, avenCEO's server (no keep share: all it may) and Carol's Mac, each holding nothing yet;
     -- then the iPhone from a peer that hasn't seen the mark
-    asks := [(3, [], none), (2, [], none), (600, [], none), (7, [], none), (3, [], some (List.range 15))] }]
+    asks := [(3, [], none, []), (2, [], none, []), (600, [], none, []), (7, [], none, []),
+      (3, [], some (List.range 15), [])] },
+  { name := "what everyone may read goes to whoever has an interest", edits := plain (humans ++ [
+      (6, [7], .share (.device 102 7)),
+      -- Alice shares her schemas and lenses with everyone, with her first schema
+      (2, [], newShare 30 100 .everyone .read 100 schemas),
+      (2, [], newEntry 100 1 100 [30] schemaType (blob := 1)),
+      -- her note, which Bob reads
+      (2, [], newEntry 100 2 100 [] note),
+      (2, [], newShare 31 100 (toVault 101) .read 100 notes),
+      (2, [], .move 100 2 [31] [])]),
+    -- Bob's Mac, which has an interest in Alice's vault through his share; Carol's Mac, which has none, then following
+    -- Alice's vault; a stranger, then following Alice's vault and Bob's
+    asks := [(5, [], none, []), (7, [], none, []), (7, [], none, [100]), (555, [], none, []),
+      (555, [], none, [100, 101])] }]
 
 /-! ## JSON -/
 
@@ -1324,7 +1365,7 @@ def proposal : Proposal → String
   | .new  => str "new"
   | .on b => obj [("on", nat b)]
 
-def header (h : Header) : String := obj [("type", nat h.type), ("created", nat h.created)]
+def header (h : Header) : String := obj [("type", nat h.type), ("created", nat h.created), ("blob", nat h.blob)]
 
 def tagDelta (d : TagDelta) : String := obj [("add", ids d.add), ("remove", ids d.remove)]
 
@@ -1358,8 +1399,6 @@ def action : Action → String
       [("keep", ids keep), ("via", ids via)]))]
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),
       ("public", bool pub)])]
-  | .publish v a b via => obj [("publish", obj [("vault", nat v), ("actor", nat a), ("blob", nat b),
-      ("via", ids via)])]
   | .checkpoint e covers => obj [("checkpoint", obj [("entry", nat e), ("covers", ids covers)])]
 
 def vault (vt : Vault) : String :=
@@ -1413,7 +1452,8 @@ def state (st : State) : String :=
     str "epochs" ++ ": " ++ arr (st.epochs.map fun (k, ε) => obj [("key", keyFam k), ("epoch", nat ε)]),
     str "seals" ++ ": " ++ arr (st.seals.map sealed),
     str "published" ++ ": " ++ arr (st.published.map keyName),
-    str "lane" ++ ": " ++ arr (st.lane.map fun (v, b) => obj [("vault", nat v), ("blob", nat b)]),
+    str "lane" ++ ": " ++ arr (st.vaults.flatMap fun vt => (laneOf st vt.id).map fun b =>
+      obj [("vault", nat vt.id), ("blob", nat b)]),
     str "uncounted" ++ ": " ++ ids st.uncounted,
     str "lines" ++ ": " ++ lines st]
 
@@ -1446,13 +1486,14 @@ def syncCase (c : SyncCase) : String :=
     ("files", ids o.files)]
   let logs := (logsOf edits).map fun l => obj [("log", logId l),
     ("closed", ids ((closedPart Edit.log? edits l).map (·.id))), ("frontier", ids (frontiers edits l))]
-  let asks := c.asks.map fun (d, held, peer) =>
+  let asks := c.asks.map fun (d, held, peer, fl) =>
     let (h, p) := (heldEdits edits held, peerEdits edits peer)
     let sent := (logsOf h).map fun l => obj [("log", logId l), ("frontier", ids (frontiers h l)),
-      ("haves", ids ((asks h).haves l))]
-    obj [("device", nat d), ("held", ids held), ("peer", opt ids peer), ("logs", arr sent), ("loose", ids (loose h)),
-         ("respond", ids ((respond p d).map (·.id))), ("since", ids ((respondSince p d (asks h)).map (·.id))),
-         ("fetch", ids (c.files.filter (mayFetch p d ·)))]
+      ("haves", ids ((asks h fl).haves l))]
+    obj [("device", nat d), ("held", ids held), ("peer", opt ids peer), ("follow", ids fl), ("logs", arr sent),
+         ("loose", ids (loose h)), ("respond", ids ((respond p d fl).map (·.id))),
+         ("since", ids ((respondSince p d (asks h fl)).map (·.id))),
+         ("fetch", ids (c.files.filter (mayFetch p d · fl)))]
   let links := c.links.map fun p => obj [("passkey", nat p), ("card", ids ((linkCard edits p).map (·.id)))]
   "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "edits" ++ ": [\n  " ++ ",\n  ".intercalate editJson ++
     "],\n " ++ str "standing" ++ ": " ++ arr (edits.map fun o => bool (stood.any (·.id == o.id))) ++ ",\n " ++
@@ -1547,6 +1588,18 @@ def allActions : List Action :=
   let (stood, st) := runView c
   stood.drop humansV.length == [true, true, true, true, true, true, true, true, true, false] &&
     st.revoked == [40] && st.writes.length == 3 && st.wantsOf 21 == [40]
+-- a vault's lane holds what its own schema and lens entries that its readers count hold, each blob once: not what
+-- Carol creates through a share, nor what a later write makes of an entry, nor a schema its readers don't count; and a
+-- write its readers can't tell fits, as before they hold its schema, counts for none of them (T17)
+#guard (cases.find? (·.name == "the schema lane")).all fun c =>
+  let (acc, st) := run c.edits
+  acc.drop humans.length == [true, true, true, true, true, true, true, true, true, true, true, true, false, false,
+    false, false, false, true, true, true, true, true] &&
+    [100, 200, 102].map (laneOf st) == [[1], [1, 2, 3], []] && st.uncounted == [10, 27]
+-- a removed owner's back-dated schema entry falls, and what it held leaves the lane
+#guard (views.find? (·.name == "a removed owner's back-dated schema entry is cut")).all fun c =>
+  let (stood, st) := runView c
+  stood.drop humansV.length == [true, true, true, false, true, true, false] && laneOf st 200 == [1, 2]
 -- some entry's creation is let in and another's isn't, some entry is where its readers say it belongs and another
 -- isn't yet, some write is on an earlier stay, and some entry fell: the Rust core must say the same of each
 #guard cases.any fun c => (run c.edits).2.entries.any (·.admitted) && (run c.edits).2.entries.any (!·.admitted)
@@ -1563,49 +1616,57 @@ def allActions : List Action :=
 #guard syncs.all fun c => nodup ((order c.toEdits).map fun o => (o.depth, o.rank))
 -- what a device is sent when it asks is part of what it would be sent whole, and with what it held covers all of it
 -- (T12, T19)
-#guard syncs.all fun c => let edits := c.toEdits; c.asks.all fun (d, held, peer) =>
+#guard syncs.all fun c => let edits := c.toEdits; c.asks.all fun (d, held, peer, fl) =>
   let (h, p) := (heldEdits edits held, peerEdits edits peer)
-  let s := respondSince p d (asks h)
-  s.all (respond p d).contains && (respond p d).all fun o => h.contains o || s.contains o
+  let s := respondSince p d (asks h fl)
+  s.all (respond p d fl).contains && (respond p d fl).all fun o => h.contains o || s.contains o
 -- asking leaves something out, the edits further back leave out more than the frontiers alone and the loose edits more
 -- than without them, some device is sent nothing new, some edit is outside its log's closed part, some edit is
 -- malformed, and there is a fork
-#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer, fl) =>
   let p := peerEdits edits peer
-  (respondSince p d (asks (heldEdits edits held))).length < (respond p d).length
-#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+  (respondSince p d (asks (heldEdits edits held) fl)).length < (respond p d fl).length
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer, fl) =>
   let (h, p) := (heldEdits edits held, peerEdits edits peer)
-  (respondSince p d (asks h)).length < (respondSince p d ⟨frontiers h, loose h⟩).length
-#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+  (respondSince p d (asks h fl)).length < (respondSince p d ⟨frontiers h, loose h, fl⟩).length
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer, fl) =>
   let (h, p) := (heldEdits edits held, peerEdits edits peer)
-  (respondSince p d (asks h)).length < (respondSince p d ⟨(asks h).haves, []⟩).length
-#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer) =>
+  (respondSince p d (asks h fl)).length < (respondSince p d ⟨(asks h).haves, [], fl⟩).length
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, held, peer, fl) =>
   let p := peerEdits edits peer
-  (respondSince p d (asks (heldEdits edits held))).isEmpty && !(respond p d).isEmpty
+  (respondSince p d (asks (heldEdits edits held) fl)).isEmpty && !(respond p d fl).isEmpty
 #guard syncs.any fun c => let edits := c.toEdits; (logsOf edits).any fun l =>
   (closedPart Edit.log? edits l).length < (inLog Edit.log? edits l).length
 #guard syncs.any fun c => (order c.toEdits).length < c.edits.length
 -- only writes bring files; files follow their edits (T27): some device fetches every file it may, the one whose write
 -- its peer lacks it doesn't, and one that relays fetches none
 #guard syncs.all fun c => c.toEdits.all fun o => o.filesOf == o.files
-#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, _, peer) =>
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, _, peer, fl) =>
   let p := peerEdits edits peer
-  c.files.any (mayFetch p d ·) && c.files.any (!mayFetch p d ·)
+  c.files.any (mayFetch p d · fl) && c.files.any (!mayFetch p d · fl)
 #guard syncs.any fun c => c.files.all fun f => (c.toEdits.filter (·.files.contains f)).all fun o =>
   standing c.toEdits |>.contains o
 #guard syncs.any fun c => !(allForks c.toEdits).isEmpty
 -- a relay is sent an entry it may relay and not one it may not, and an audience's log
-#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, _, peer) =>
-  let sent := respond (peerEdits edits peer) d
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, _, peer, fl) =>
+  let sent := respond (peerEdits edits peer) d fl
   sent.any (fun o => o.log? == some (.entry 1)) && !sent.any (fun o => o.log? == some (.entry 21)) &&
     sent.any fun o => match o.log? with
       | some (.audience ..) => true
       | _ => false
 -- some device is sent the log of an audience whose key it can't open: a relay
-#guard syncs.any fun c => let edits := c.toEdits; let st := view edits; c.asks.any fun (d, _, peer) =>
-  (respond (peerEdits edits peer) d).any fun o => match o.log? with
+#guard syncs.any fun c => let edits := c.toEdits; let st := view edits; c.asks.any fun (d, _, peer, fl) =>
+  (respond (peerEdits edits peer) d fl).any fun o => match o.log? with
     | some (.audience v x) => !knows st [.signer d] (st.curKey (.audience v x))
     | _ => false
+-- what everyone may read goes only to whoever has an interest in its vault or follows it, and following brings
+-- nothing else (T12): Carol's Mac, with no interest in Alice's vault, is sent its own vault's log alone, and following
+-- it Alice's schema, the share it is in and her vault's log, but not her note; a stranger is sent nothing, and
+-- following Alice's vault and Bob's, what Carol's Mac is sent of Alice's and nothing of Bob's
+#guard (syncs.find? (·.name == "what everyone may read goes to whoever has an interest")).all fun c =>
+  let edits := c.toEdits
+  c.asks.map (fun (d, _, _, fl) => (respond edits d fl).map (·.id)) ==
+    [[7, 8, 9, 10, 11, 0, 1, 2, 3], [4, 6], [7, 8, 0, 1, 4, 6], [], [7, 8, 0, 1]]
 -- a passkey that owns a vault is handed its log, one that owns none nothing, and the card holds only vault logs (T20)
 #guard syncs.any fun c => c.links.any fun p => !(linkCard c.toEdits p).isEmpty
 #guard syncs.any fun c => c.links.any fun p => (linkCard c.toEdits p).isEmpty

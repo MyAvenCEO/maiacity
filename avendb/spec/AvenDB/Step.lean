@@ -42,10 +42,10 @@ inductive Revoking where
 def Revoking.keep : Revoking → List EditId
   | .grant _ _ k _ | .owner _ _ k | .device _ _ k => k
 
-/-- Every change. An edit that acts for a vault (issues or revokes a grant, writes, marks, publishes) names the owners
-    `via` its author acts through (`actsVia`): none when its author is a member of the vault, else from an owner of the
-    vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop through
-    `[bob]`. -/
+/-- Every change. An edit that acts for a vault (issues or revokes a grant, writes, marks) names the owners `via` its
+    author acts through (`actsVia`): none when its author is a member of the vault, else from an owner of the vault down
+    to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop through `[bob]`. A
+    vault's schemas and lenses are entries it writes (`laneOf`), so no edit of their own. -/
 inductive Action where
   /-- A new vault. A human vault may name a root, its passkey, which signs too. -/
   | genesis    (v : VaultId) (kind : Kind) (owners : List Principal) (threshold : Nat) (root : Option SignerId := none)
@@ -78,8 +78,6 @@ inductive Action where
       says who may open what, so this edit changes nothing here: a peer accepts it only from a signer that may open the
       key, and only if every box is one the schedule seals. -/
   | keys       (secret : KeyName) (to : List KeyName) (pub : Bool := false)
-  /-- A schema or a lens, published into vault `v`'s schema lane: blobs that hold no data, named by their hash. -/
-  | publish    (v : VaultId) (actor : VaultId) (blob : BlobId) (via : List VaultId := [])
   /-- A device vouches for its own accepted writes of one entry, `covers`, with both halves of its signature, where
       the writes carry only the classical half. It changes nothing; a peer that no longer trusts the curves counts
       only the writes a checkpoint covers (`checkpointed`). -/
@@ -341,7 +339,7 @@ def apply (st : State) (edit : Edit) : Option State :=
           epoch > st.epochOf (.audience v x) + (reenters st v x).toNat then none
       else
         let attrs : Attrs := ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩
-        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof⟩
+        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof, hdr.blob⟩
         -- its readers count it if it fits and the share it was created through lets a creation through
         some { st with entries := st.entries ++ [en], born := st.born ++ [e],
                        writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], .main, via, true, x⟩],
@@ -397,11 +395,6 @@ def apply (st : State) (edit : Edit) : Option State :=
     else if !to.all (fun t => st.seals.contains ⟨secret, t⟩) then none
     else if pub && !st.published.contains secret then none
     else some st
-  | .publish v actor blob via =>
-    if (st.vault? v).isNone || st.lane.contains (v, blob) then none
-    -- only the vault, or a vault holding a wide owner share over it, publishes into its lane
-    else if !actsVia st edit.author via actor || !ownsLane st actor v then none
-    else some { st with lane := st.lane ++ [(v, blob)] }
   | .checkpoint e covers =>
     -- a device vouches for its own accepted writes of the entry, and changes nothing
     if covers.isEmpty || !covers.all (fun c => st.writes.any fun w =>

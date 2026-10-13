@@ -84,10 +84,13 @@ def publicShare (id : ShareId) (over : VaultId) (sel : Selector) : Share :=
   { shareOf id over over .read sel with who := .everyone }
 
 /-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in audience `x`, through the share
-    `proof` names, if it isn't the vault. -/
+    `proof` names, if it isn't the vault, holding the content `blob` (for a schema or a lens entry, the schema or the
+    lens), whose record fits its schemas or not (`fits`). -/
 def create (v : VaultId) (e : EntryId) (actor : VaultId) (x : Audience) (t : Sym) (tags : List Sym := [])
-    (via : List VaultId := []) (proof : Option ShareId := none) : Action :=
-  .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0⟩)) (tags := { add := tags }) (proof := proof)
+    (via : List VaultId := []) (proof : Option ShareId := none) (blob : BlobId := 0) (fits : Bool := true) :
+    Action :=
+  .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0, blob⟩)) (tags := { add := tags }) (proof := proof)
+    (fits := fits)
 
 /-- Edits in sequence: each builds on the one before, ids count from `start`. -/
 def chain (start : Nat) (steps : List (SignerId × List SignerId × Action)) : List Edit :=
@@ -575,44 +578,73 @@ def headsOf (edits : List Edit) (l : Option EditId) : List EditId := heads (view
 
 /-! ## Scenario 9: schema v2
 
-The coop moves its documents to schema v2. Alice's Mac, acting for the coop, publishes the v2 schema and the lens from
-v1 into the coop's schema lane, one per vault. Carol may write Onboarding but not publish there. -/
+The coop moves its documents to schema v2. A vault's schemas and lenses are entries of the built-in types schema and
+lens, which it shares with everyone through a share of its own, made with its first schema, that selects those types.
+Alice's Mac, acting for the coop, creates the v2 schema and the lens from v1 as entries of the coop, and their readers
+read the coop's lane off them (T17). Carol may write Onboarding, and create through her share, but puts nothing in the
+coop's lane. -/
 
 def schemaV2 : BlobId := 1
 def lensV1V2 : BlobId := 2
+def coopSchema := 4
+def coopLens := 5
+def daveSchema := 6
+def schemas : Selector := .anyOf [[.typeIn schemaTypes]]
 
 def s9 : List Edit := s7 ++ chain 65 [
   (macA, [], .share (.grant (shareOf 5 coop carol .write (byId onboarding)) [alice])),
   (macA, [], .move coop onboarding [5] [31] [alice]),
-  (macA, [], .publish coop coop schemaV2 [alice]),
-  (macA, [], .publish coop coop lensV1V2 [alice]),
+  -- with its first schema, the coop shares its schemas and lenses with everyone
+  (macA, [], .share (.grant (publicShare 7 coop schemas) [alice])),
+  (macA, [], create coop coopSchema coop [7] schemaType (via := [alice]) (blob := schemaV2)),
+  (macA, [], create coop coopLens coop [7] lensType (via := [alice]) (blob := lensV1V2)),
   -- Dave's own vault moves to v2 too: the same blob, in another vault's lane
-  (macD, [], .publish dave dave schemaV2)]
-#guard refused s9 == []
+  (macD, [], .share (.grant (publicShare 8 dave schemas))),
+  (macD, [], create dave daveSchema dave [8] schemaType (blob := schemaV2))]
+#guard refused s9 == [] && tidy s9
 
-#guard (view s9).lane == [(coop, schemaV2), (coop, lensV1V2), (dave, schemaV2)]
--- the same blob again is refused; Bob's Mac acts for the coop too, through Bob's vault, and may publish another
-#guard !accepted s9 (attempt macA [] (.publish coop coop schemaV2 [alice]))
-#guard accepted s9 (attempt macB [] (.publish coop coop 3 [bob]))
--- Carol writes Onboarding, but publishes into the coop's lane neither for herself nor for the coop, whose owner her
--- vault isn't; nor does a stranger
+#guard laneOf (view s9) coop == [schemaV2, lensV1V2] && laneOf (view s9) dave == [schemaV2]
+/-- The coop's lane after an edit tried on `edits`, if it is accepted. -/
+def laneAfter (edits : List Edit) (edit : Edit) : Option (List BlobId) := (step (view edits) edit).map (laneOf · coop)
+-- the same blob again adds nothing; Bob's Mac acts for the coop too, through Bob's vault, and adds another
+#guard laneAfter s9 (attempt macA [] (create coop 9 coop [7] schemaType (via := [alice]) (blob := schemaV2))) ==
+  some [schemaV2, lensV1V2]
+#guard laneAfter s9 (attempt macB [] (create coop 9 coop [7] lensType (via := [bob]) (blob := 3))) ==
+  some [schemaV2, lensV1V2, 3]
+-- a schema its readers don't count, as it doesn't fit, adds nothing either
+#guard laneAfter s9 (attempt macA [] (create coop 9 coop [7] schemaType (via := [alice]) (blob := 3) (fits := false)))
+  == some [schemaV2, lensV1V2]
+-- a later write to the coop's schema, its tags too, leaves the lane as it was: only the creation is read
+#guard laneAfter s9 (attempt macA [] (.write coop coopSchema coop none 0 [68] (via := [alice])
+  (tags := { add := [urgent] }))) == some [schemaV2, lensV1V2]
+-- Carol writes Onboarding, and creates a schema through her share, which every peer accepts; but it acts for her, so
+-- it puts nothing in the coop's lane; for the coop she acts not at all, as her vault isn't its owner; nor does a
+-- stranger
 #guard accepted s9 (attempt macC [] (.write coop onboarding carol (some 66) 0 [31]))
-#guard !accepted s9 (attempt macC [] (.publish coop carol 3))
-#guard !accepted s9 (attempt macC [] (.publish coop coop 3 [carol]))
-#guard !accepted s9 (attempt stranger [] (.publish coop coop 3))
--- an owner share on a slice of the coop doesn't publish into its lane; owner of the whole coop is an owner of it,
--- which no grant makes, even with the coop's approval (WideOwner): only the coop's own owners publish there
-def daveOwns (sel : Selector) : List Edit := s9 ++ chain 70 [
+#guard laneAfter s9 (attempt macC [] (create coop 9 carol [5] schemaType (proof := some 5) (blob := 3))) ==
+  some [schemaV2, lensV1V2]
+#guard !accepted s9 (attempt macC [] (create coop 9 coop [7] schemaType (via := [carol]) (blob := 3)))
+#guard !accepted s9 (attempt stranger [] (create coop 9 coop [7] schemaType (blob := 3)))
+-- owner of the whole coop is an owner of it, which no grant makes, even with the coop's approval (WideOwner); an owner
+-- share on a slice of the coop creates through itself, for Dave, and puts nothing in the coop's lane either: only the
+-- coop's own owners do
+def daveOwns (sel : Selector) : List Edit := s9 ++ chain 80 [
   (passkeyA, [passkeyB], .share (.grant (shareOf 6 coop dave .owner sel) [alice]))]
-#guard refused (daveOwns .all) == [70] && refused (daveOwns docs) == []
-#guard !ownsLane (view (daveOwns .all)) dave coop && !ownsLane (view (daveOwns docs)) dave coop
-#guard !accepted (daveOwns .all) (attempt macD [] (.publish coop dave 3))
-#guard !accepted (daveOwns docs) (attempt macD [] (.publish coop dave 3))
--- a vault's lane travels with its log: Carol's Mac receives the coop's, through her shares, and so does anyone, through
--- the public Charter; Dave's goes to his own devices, and not to Carol's Mac, as nothing she receives names his vault
-#guard [macC, stranger].all fun d => (respond s9 d).any (·.action == .publish coop coop schemaV2 [alice])
-#guard (respond s9 macD).any (·.action == .publish dave dave schemaV2)
-#guard !(respond s9 macC).any (·.action == .publish dave dave schemaV2)
+#guard refused (daveOwns .all) == [80] && refused (daveOwns docs) == []
+#guard !accepted (daveOwns .all) (attempt macD [] (create coop 9 dave [] schemaType (blob := 3)))
+#guard laneAfter (daveOwns docs) (attempt macD [] (create coop 9 dave [6] schemaType (proof := some 6) (blob := 3))) ==
+  some [schemaV2, lensV1V2]
+-- what everyone may read goes to whoever has an interest in the vault (T12): Carol's Mac receives the coop's schema,
+-- through her shares, and a stranger nothing at all, unless it follows the coop; then it receives what is public of
+-- the coop, its schema and lens and the Charter, and none of its other entries
+#guard (respond s9 macC).any (entryLog? · == some coopSchema) && respond s9 stranger == []
+#guard ((respond s9 stranger [coop]).filterMap entryLog?).eraseDups == [charter, coopSchema, coopLens]
+-- Dave's schema goes to his own devices, and to Carol's Mac only once it follows his vault
+#guard (respond s9 macD).any (entryLog? · == some daveSchema)
+#guard !(respond s9 macC).any (entryLog? · == some daveSchema)
+#guard (respond s9 macC [dave]).any (entryLog? · == some daveSchema)
+-- a relay, which reads no type and no blob, has the same edits stand (T25)
+#guard (standing (s9.map Edit.blind)).map (·.id) == (standing s9).map (·.id)
 
 /-- Welcome as an app still on v1 wrote it: v1's fields only. -/
 def welcomeV1 : Lens.StoredDoc := { title := "Welcome", blocks := [
@@ -825,7 +857,7 @@ def comeback (n : Nat := 8) : List Edit := lib ++ chain 600 ([
 
 -- an entry created in the empty audience brings it back into use too: its first write may name the epoch the audience
 -- moves to, which the lost Mac doesn't open, and no later one
-def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g (create := some ([34], ⟨todo, 0⟩))
+def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g (create := some ([34], ⟨todo, 0, 0⟩))
   (tags := { add := [urgent] }))
 #guard reenters (view (comeback 6)) alice [34]
 #guard accepted (comeback 6) (lampTodo 1) && !accepted (comeback 6) (lampTodo 2)
