@@ -8,6 +8,8 @@
  * hybrid inverters; its cards say so. Its own actor, beside the Power Cube and the ElectroCube (./electrocube.js).
  */
 import { BLACK, CUBE, DARK, POWERCUBE_SOURCES, RED, STEEL, cubeCast } from './powercube.js';
+import { loop } from './rig';
+import { ease } from './excavator-rig.js';
 import { PACK, batteryPackParts } from './batterypack.js';
 import { CLICKLOCK, clickKeeper } from './clicklock.js';
 
@@ -65,5 +67,30 @@ function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 4) {
 	});
 }
 
-/** The BatteryCube on its own (version `v`), every part its own: drawn apart, built. Its size is the Power Cube's. @returns {import('./rig').Cast} */
-export const batteryCube = (v = 4) => cubeCast({ name: 'BatteryCube', assemblies: ASSEMBLIES, steps: STEPS, stepOf: { frame: 1, battery: 2, power: 3 }, sources: POWERCUBE_SOURCES, hums: false, len: CUBE.L, engine: false, controls: false, insides: (part, tools) => cells(part, tools, v) });
+/** The BatteryCube on its own (version `v`; from v5 it pulls a pack out and pushes it back as a move), every part its own: drawn apart, built. Its size is the Power Cube's. @returns {import('./rig').Cast} */
+export const batteryCube = (v = 5) => {
+	const cast = cubeCast({ name: 'BatteryCube', assemblies: ASSEMBLIES, steps: STEPS, stepOf: { frame: 1, battery: 2, power: 3 }, sources: POWERCUBE_SOURCES, hums: false, len: CUBE.L, engine: false, controls: false, insides: (part, tools) => cells(part, tools, v) });
+	if (v < 5) return cast;
+	// from v5 a pack comes out and goes back (Samuel 2026-10-13): the third pack's grip is squeezed, it slides out on its
+	// rails, waits, slides back in and clicks home
+	const ids = (cast.catalog?.parts ?? []).map((p) => p.id).filter((id) => id.startsWith(PULLED));
+	/** @param {number} out how far it is out (m) @param {number} squeeze the trigger, 0…1 @returns {import('./rig').Pose} */
+	const pulled = (out, squeeze) => {
+		/** @type {import('./rig').Pose} */
+		const p = {};
+		for (const id of ids) p[`p.${id}`] = [0, 0, 0, 1, 0, 0, out];
+		p[`p.${PULLED}lock-trigger`] = [0, 0, 0, 1, 0, squeeze * 0.004, out];
+		return p;
+	};
+	const s = (/** @type {number} */ u, /** @type {number} */ a, /** @type {number} */ b) => ease(Math.min(1, Math.max(0, (u - a) / (b - a))));
+	cast.clips['pull out'] = (t) => {
+		const u = loop(t, 8) * 8; // seconds into its 8 s
+		const squeeze = s(u, 0.3, 0.7) - s(u, 3.2, 3.4);
+		const out = PULL * (s(u, 0.8, 3) - s(u, 4.6, 6.8));
+		return pulled(out, squeeze);
+	};
+	cast.poses = { ...cast.poses, 'pulled out': pulled(PULL, 0) };
+	return cast;
+};
+/** the pack that comes out, and how far (m): most of its length, its back plug well clear of the backplane */
+const PULLED = 'pack-3-', PULL = 0.36;
