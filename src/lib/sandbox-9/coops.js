@@ -20,7 +20,7 @@ import { BASICS, BED, CLASS, COMPUTE, ENERGY, FOOD, G, GLASS, GOOD_INDEX, GOODS_
 import { monthOf, shockFactor } from './energy.js';
 import { capDayOf, newCoop, newPlant, plantCapDay, solarGain, vcOf, rawOf } from './genesis.js';
 import { outdoorShare, indoorShare, INDOOR_INDEX, skillOf } from './food.js';
-import { exportPlan, bankExport } from './border.js';
+import { exportPlan, bankExport, exportEurKwh } from './border.js';
 import { newPool, indexPools, buildCycles } from './pools.js';
 import { rnd } from './rng.js';
 
@@ -811,9 +811,12 @@ export function produce(w, fill) {
 		// the export that replaces worn accelerators cut by the dispatch (the city's own needs took the electricity):
 		// energy binds the halls that stand worn (./engine.js physicalLimit reads it)
 		if (co.exportUp > 0) co.exUpFillEma = (co.exUpFillEma ?? 1) + ((t.fillExportUp ?? 1) - (co.exUpFillEma ?? 1)) / 30;
-		co.exportEurEma = (co.exportEurEma ?? 0) + (exKwh * w.c.eurPerKwh - (co.exportEurEma ?? 0)) / 30;
+		const pEx = exportEurKwh(w);
+		co.exportEurEma = (co.exportEurEma ?? 0) + (exKwh * pEx - (co.exportEurEma ?? 0)) / 30;
 		if (exKwh > 0) {
-			const B = w.border, eur = exKwh * w.c.eurPerKwh;
+			const B = w.border, eur = exKwh * pEx;
+			t.exportEurBy = t.exportEurBy ?? new Float64Array(G);
+			t.exportEurBy[co.good] += eur;
 			// a COOP's export into its deposit at the bank; the bank's own export into its own euros
 			if (co.city) B.shared += eur;
 			else B.eur[co.k] += eur;

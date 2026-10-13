@@ -93,6 +93,7 @@ function newYear(w, y) {
 		exportKwh: 0,
 		exportEur: 0,
 		exportBy: new Float64Array(G),
+		exportEurBy: new Float64Array(G),
 		sharedDrawn: 0,
 		reserveEur: 0,
 		reserveMin: Infinity,
@@ -166,8 +167,9 @@ function yearDay(w, protD) {
 	for (let g = 0; g < G; g++) Y.badges[g * 32 + (w.badge[g] | 0)]++;
 	if (t.imp) for (const k of IMPORT_KINDS) (Y.imp[k] += t.imp[k] ?? 0), (Y.impEur[k] += t.impEur[k] ?? 0);
 	Y.exportKwh += t.exportKwh ?? 0;
-	Y.exportEur += (t.exportKwh ?? 0) * c.eurPerKwh;
+	Y.exportEur += t.eurIn ?? 0;
 	if (t.exportBy) for (let g = 0; g < G; g++) Y.exportBy[g] += t.exportBy[g];
+	if (t.exportEurBy) for (let g = 0; g < G; g++) Y.exportEurBy[g] += t.exportEurBy[g];
 	if ((t.impShort ?? 0) > 1e-9) Y.impShortDays++;
 	Y.reserveEur = reserveEur(w);
 	Y.reserveMin = Math.min(Y.reserveMin, Y.reserveEur);
@@ -568,7 +570,9 @@ export function borderYears(w) {
 			importEur,
 			exportKwh: Y.exportKwh,
 			exportEur: Y.exportEur,
-			exportByGood: Object.fromEntries(GOOD_IDS.map((id, g) => [id, Y.exportBy[g] * w.c.eurPerKwh]).filter(([, v]) => v > 0)),
+			exportByGood: Object.fromEntries(GOOD_IDS.map((id, g) => [id, Y.exportEurBy[g]]).filter(([, v]) => v > 0)),
+			// € a MWh the line earned on average that year
+			exportEurMwh: Y.exportKwh > 0 ? (Y.exportEur / Y.exportKwh) * 1000 : null,
 			reserveEur: Y.reserveEur,
 			foundingLeftEur: Y.sharedEur,
 			foundingDrawnEur: Y.sharedDrawn,

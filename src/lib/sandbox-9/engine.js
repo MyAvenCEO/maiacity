@@ -1550,7 +1550,7 @@ function checkLedgers(w) {
 	if (Math.abs(eur - eexp) > 1e-7 * Math.max(1, Math.abs(eur)) || (!B.open && eur < -1e-6)) leak(w, w.matter.leaks, `euro reserve: ${eur} vs ${eexp}`);
 	// the bank's cumulative balance against its founding euros: its lowest is what the village needed at once
 	if (eur - B.shared0 < B.low) (B.low = eur - B.shared0), (B.lowDay = w.day);
-	if (Math.abs((t.eurIn ?? 0) - (t.exportKwh ?? 0) * w.c.eurPerKwh) > 1e-7 * Math.max(1, t.eurIn ?? 0)) leak(w, w.matter.leaks, `euro reserve: earned ${t.eurIn ?? 0} for ${t.exportKwh ?? 0} kWh exported`);
+	if (Math.abs((t.eurIn ?? 0) - (t.exportKwh ?? 0) * (t.eurPerKwh ?? w.c.eurPerKwh)) > 1e-7 * Math.max(1, t.eurIn ?? 0)) leak(w, w.matter.leaks, `euro reserve: earned ${t.eurIn ?? 0} for ${t.exportKwh ?? 0} kWh exported`);
 	B.prev = eur;
 	B.inEur += t.eurIn ?? 0;
 	B.outEur += t.eurOut ?? 0;

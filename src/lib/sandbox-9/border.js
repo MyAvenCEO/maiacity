@@ -41,6 +41,21 @@ export function newBorder(w, sharedEur) {
 	return { eur: new Float64Array(M), open, shared: s0, shared0: s0, prev: s0, inEur: 0, outEur: 0, drawShared: 0, low: 0, lowDay: 0, advanced: 0, repaidEur: 0, repaidR: 0 };
 }
 
+/**
+ * € a kWh the line earns today: the share of today's electricity the sun made at the month's market value of solar
+ * power, the rest (geothermal, the battery) at the German day-ahead average (./primitives.js CHIPS); the setting
+ * exportEurMwh gives one flat price. (Optimistic for the sun's part: the line sells what the village does not use,
+ * most of it at noon.)
+ */
+export function exportEurKwh(w) {
+	const t = w.today, c = w.c;
+	if (t.eurPerKwh != null) return t.eurPerKwh;
+	if (c.exportFlat || !c.solarEurKwh) return (t.eurPerKwh = c.eurPerKwh);
+	const h = t.harvest ?? {}, sun = Math.max(0, h.solar ?? 0), base = Math.max(0, (h.geo ?? 0) + (h.battery ?? 0));
+	const sh = sun + base > 0 ? sun / (sun + base) : 0;
+	return (t.eurPerKwh = sh * c.solarEurKwh[t.month ?? 0] + (1 - sh) * c.spotEurKwh);
+}
+
 /** euros in the reserve: the founding euros left and every COOP's account */
 export function reserveEur(w) {
 	const B = w.border;
