@@ -117,8 +117,8 @@ function lidless(geo, above) {
 /** the people in the van: where each sits, how tall, what they look like, how they sit */
 const PEOPLE = [
 	{ id: 'driver', x: -0.48, row: 'front', h: 1.78, sits: 'drive', look: { skin: '#8d5a3c', hair: 'short', hairColour: '#16110e', brows: '#16110e', iris: '#2c1d14', shirt: '#9c3b2f', trousers: '#3b3a36', lips: '#7e4a3e' } },
-	{ id: 'aunt', x: 0.48, row: 'front', h: 1.62, sits: 'out', look: { skin: '#c69472', hair: 'bun', hairColour: '#bdb6ad', brows: '#8a8075', shirt: '#3f6f9a', trousers: '#4a3f36', lips: '#9a5a50' } },
-	{ id: 'her', x: -0.1, row: 'middle', h: 1.66, sits: 'sit', look: { skin: '#b07a56', hair: 'long', hairColour: '#3b2418', brows: '#2a1a12', iris: '#3a2616', shirt: '#4f6b3a', trousers: '#2f3a4a', lips: '#a0574c' } },
+	{ id: 'aunt', x: 0.48, row: 'front', h: 1.62, sits: 'out', look: { face: 'woman', skin: '#c69472', hair: 'bun', hairColour: '#bdb6ad', brows: '#8a8075', shirt: '#3f6f9a', trousers: '#4a3f36', lips: '#9a5a50' } },
+	{ id: 'her', x: -0.1, row: 'middle', h: 1.66, sits: 'sit', look: { face: 'woman', skin: '#b07a56', hair: 'long', hairColour: '#3b2418', brows: '#2a1a12', iris: '#3a2616', shirt: '#4f6b3a', trousers: '#2f3a4a', lips: '#a0574c' } },
 	{ id: 'sleeper', x: -0.58, row: 'back', h: 1.8, sits: 'asleep', look: { skin: '#e0b896', hair: 'short', hairColour: '#8a5a2b', brows: '#7a4f28', iris: '#4a6a8a', shirt: '#7b5ea7', trousers: '#47566c' } },
 	{ id: 'child', x: -0.05, row: 'back', h: 1.3, sits: 'sit', look: { skin: '#a8714c', hair: 'short', hairColour: '#1c1612', brows: '#1c1612', shirt: '#d8b04a', trousers: '#5a4a3a' } },
 	{ id: 'elder', x: 0.5, row: 'back', h: 1.72, sits: 'out', look: { skin: '#9a6a48', hair: 'none', brows: '#d9d2c7', shirt: '#d8ccaa', trousers: '#5b5145', lips: '#8a5a48' } }

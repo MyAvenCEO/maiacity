@@ -19,7 +19,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { pickup, solarPanel } from '$lib/models/village.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
-import { MOUTH, human, skinAt } from '$lib/actors/human.ts';
+import { human } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan } from './van.js';
@@ -431,45 +431,8 @@ export function person(seat) {
 		chest.updateWorldMatrix(true, false);
 		pack.position.copy(chest.worldToLocal(V(0, 1.12, -0.24)));
 	} else (pack.position.set(0, 1.12, -0.24), g.add(pack));
-	// joy, on the head bone: a broad open smile on the lips (a crescent laid on the skin, its upper teeth showing), shown
-	// when they beam (after the first mint); the eyes' catchlights are the stand-in's own
-	const joyFace = new THREE.Group();
-	const head = cast.rig.bones.head;
-	if (head) {
-		cast.rig.object.updateMatrixWorld(true);
-		const k = 1.8 / 1.823; // the stand-in's measure (./actors/human.ts) to 1.8 m
-		const at = (x, y, z) => head.worldToLocal(V(x * k, y * k, z * k));
-		/** a band between two edges of the smile (x, y about the mouth's middle, `mid` m at the middle, `end` at the
-		 * corners), laid onto the face `lift` m off the skin, in short strips that follow its curve */
-		const W = MOUTH.w + 0.001; // half the smile's width
-		const band = (top, bottom, lift, w = W, n = 16) => {
-			const pts = [], idx = [];
-			for (let i = 0; i <= n; i++) {
-				const x = -w + (2 * w * i) / n, u = (x / W) ** 2;
-				for (const [mid, end] of [top, bottom]) {
-					const y = MOUTH.y + 0.0036 + mid + (end - mid) * u;
-					pts.push(...at(x, y, skinAt(x, y) + lift).toArray());
-				}
-				if (i) idx.push(2 * i - 2, 2 * i, 2 * i - 1, 2 * i - 1, 2 * i, 2 * i + 1);
-			}
-			const geo = new THREE.BufferGeometry();
-			geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-			geo.setIndex(idx);
-			geo.computeVertexNormals();
-			return geo;
-		};
-		const red = new THREE.MeshStandardMaterial({ color: 0x5a2226, roughness: 0.8, side: THREE.DoubleSide });
-		const white = new THREE.MeshStandardMaterial({ color: 0xf3eee6, roughness: 0.45, side: THREE.DoubleSide });
-		const mouth = new THREE.Mesh(band([0.0005, 0.004], [-0.0095, 0.004], 0.0036), red);
-		const teeth = new THREE.Mesh(band([0.0002, 0.0034], [-0.0045, 0.0018], 0.0062, W * 0.72), white);
-		const smile = new THREE.Group();
-		smile.add(mouth, teeth);
-		joyFace.add(smile);
-		joyFace.visible = false;
-		head.add(joyFace);
-	}
 	g.add(cast.rig.object, glow);
-	g.userData = { glow, cast, joyFace, act: 'idle', t: Math.random() * 9 };
+	g.userData = { glow, cast, act: 'idle', t: Math.random() * 9 };
 	return g;
 }
 
@@ -482,13 +445,12 @@ function acting(p, t) {
 	const { cast, act } = p.userData;
 	const [what, legs] = act.split('+'); // 'carry+walk': the arms carry, the legs walk
 	const base = legs ? cast.clips[legs]?.(t) ?? {} : null;
+	// joy: the stand-in's own smile (its blend shape: the mouth open wide, the upper teeth showing, the eyes narrowed),
+	// shown when they beam (after the first mint), coming on and going off over a moment
+	const face = cast.rig.object, j = face.morphTargetDictionary?.joy;
+	if (j !== undefined) face.morphTargetInfluences[j] += ((p.userData.joy ? 1 : 0) - face.morphTargetInfluences[j]) * 0.2;
 	const hold = { carry: CARRY, push: PUSH, cans: CANS }[what];
 	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
-	const glad = p.userData.joyFace;
-	if (glad) {
-		glad.visible = !!p.userData.joy;
-		if (glad.visible) glad.children.forEach((c, i) => c.userData.twinkle && c.scale.setScalar(0.8 + 0.3 * Math.abs(Math.sin(t * 3 + i * 1.7))));
-	}
 	const lift = p.userData.joy ? { neck: [-0.02, 0, 0], head: [-0.06, 0, 0] } : p.userData.extra ?? {}; // the chin up, beaming
 	if (cast.clips[what]) return cast.rig.pose({ ...cast.clips[what](t), ...lift });
 	cast.rig.pose({ ...(cast.poses[what] ?? cast.poses.stand), ...lift });

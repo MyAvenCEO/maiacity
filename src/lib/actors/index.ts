@@ -18,6 +18,7 @@ import { human as humanV1 } from './human.v1';
 import { human as humanV2 } from './human.v2';
 import { human as humanV3 } from './human.v3';
 import { human as humanV4 } from './human.v4';
+import { human as humanV5 } from './human.v5';
 import { pod } from './pod.js';
 import { pod as podV1 } from './pod.v1.js';
 import { pod as podV2 } from './pod.v2.js';
@@ -61,7 +62,8 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 		{ v: 2, date: '2026-10-13', note: 'A face and hair: eyes with their whites, irises, pupils and a glint, lids over them, a nose with a bridge and a tip, two lips, a finer skull; and hair (short, long, a bun, or none) in its own colour', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v2: an egg of a skull, a small jaw ball under it', make: () => humanV2() }] },
 		{ v: 3, date: '2026-10-13', note: 'A real head: one sculpted surface on a skull’s proportions (22.8 cm chin to crown, 15.4 cm across, the eyes half way down, brows, nose base and chin a third of the face apart), with a brow ridge, eye sockets, cheekbones, a square jaw 10 cm across at its angle and a chin; ears from brow to nose base; the hair one layer grown from a hairline, thin at the line and full above it', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v3: a neutral face', make: () => humanV3() }] },
 		{ v: 4, date: '2026-10-13', note: 'Friendly: a soft smile (the mouth’s corners lifted, fuller lips, dimples), the cheeks lifted with it, the eyes open with the lower lids raised a little, and thin arched brows raised a little', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v4: lid pads, one flat skin colour', make: () => humanV4() }] },
-		{ v: 5, date: '2026-10-13', note: 'Real and warm: each eye a glossy ball in its socket (white, iris with a darker rim, pupil, catchlight) under two curved lids with a lash line; a toned skin (warm cheeks and nose tip, the lips’ colour, light under the nose); a round nose, a fuller upper lip and a wider warm smile; a shorter chin and a softer jaw; relaxed brows; fuller hair on top; a sturdier neck' }
+		{ v: 5, date: '2026-10-13', note: 'Real and warm: each eye a glossy ball in its socket (white, iris with a darker rim, pupil, catchlight) under two curved lids with a lash line; a toned skin (warm cheeks and nose tip, the lips’ colour, light under the nose); a round nose, a fuller upper lip and a wider warm smile; a shorter chin and a softer jaw; relaxed brows; fuller hair on top; a sturdier neck', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v5: a head drawn by sums, its smile laid on', make: () => humanV5() }] },
+		{ v: 6, date: '2026-10-13', note: 'A sculpted head: MakeHuman’s head and neck (CC0), a man’s or a woman’s (`face`), smoothed; eyes in its lids with a lash line of single lashes, brows of single hairs, the lips’ colour by their shape, teeth one by one and a tongue, the hair grown over the scalp from a hairline with sideburns, round the ears; and a real smile as a blend shape (`joy`): the mouth open wide, the upper teeth showing, the eyes narrowed' }
 	],
 	goose: [{ ...FIRST, build: GEESE_V1 }, { v: 2, date: '2026-10-06', note: 'Grazing with the neck stretched forward and down in one curve, the bill in the grass ahead of the feet (the head bent back under the breast); the head carried level walking, slow long looks standing' }],
 	goat: [{ ...FIRST, build: quadV1('goat', GOAT_BREEDS, goat) }, GRAZE_V2],
