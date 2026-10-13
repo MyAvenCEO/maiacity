@@ -78,16 +78,16 @@
 
 					<h3>Treasury <small>≈ {f(inHearts(view, c.treasury, hv))} HEARTS{chosen === 'maia' ? ` · with its pool basket ≈ ${f(inHearts(view, c.treasury, hv) + inHearts(view, view.pool, hv))} HEARTS` : ''}</small></h3>
 					<ul class="rows">
-						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t])} <small>≈ {f(c.treasury[t] * hv[t])} HEARTS</small></strong></li>{/each}
+						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t] * hv[t])} HEARTS <small>{f(c.treasury[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
 					</ul>
 					{#if chosen === 'maia'}
 						<h3>The pool basket it owns <small>the AMM pool is wholly the MaiaCity COOP's</small></h3>
 						<PoolBasket {view} treasury={c.treasury} />
 					{/if}
 
-					<h3>Who holds {TOKEN_LABEL[c.mind]} <small>{f(minted)} in all</small></h3>
+					<h3>Who holds {TOKEN_LABEL[c.mind]} <small>{f(minted)} in all · {f(minted * hv[c.mind])} HEARTS</small></h3>
 					<ul class="rows">
-						{#each holders as [id, v] (id)}<li><span>{nameOf(view, id)}{id === `coop:${chosen}` ? ' (its treasury)' : ''}</span><strong>{f(v)} <small>{pct(minted ? v / minted : 0)}</small></strong></li>{:else}<li class="dim">Nobody yet.</li>{/each}
+						{#each holders as [id, v] (id)}<li><span>{nameOf(view, id)}{id === `coop:${chosen}` ? ' (its treasury)' : ''}</span><strong>{f(v * hv[c.mind])} HEARTS <small>{f(v)} {TOKEN_LABEL[c.mind]} · {pct(minted ? v / minted : 0)}</small></strong></li>{:else}<li class="dim">Nobody yet.</li>{/each}
 					</ul>
 
 					<h3>What it owns</h3>
@@ -96,15 +96,15 @@
 							{@const r = rentFor(a.id)}
 							<li>
 								<span><b>{a.name}</b><small>{[a.kind, VILLAGE_INFO[a.id]?.specs[1] && VILLAGE_INFO[a.id].specs[1].join(': ').toLowerCase(), r && `rented to ${r.from}`].filter(Boolean).join(' · ')}</small></span>
-								{#if r}<strong>{f(r.monthly)} <small>{TOKEN_LABEL[r.token]} a month</small></strong>{/if}
+								{#if r}<strong>{f(r.monthly * hv[r.token])} HEARTS <small>a month · {f(r.monthly)} {TOKEN_LABEL[r.token]}</small></strong>{/if}
 							</li>
 						{/each}
 					</ul>
 
 					<h3>Rents each weekly pay day</h3>
 					<ul class="rows">
-						{#each gets as r (r.what + r.from)}<li><span>In · {r.what}<small>from {nameOf(view, r.from)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed to it</em>{/if}</small></span><strong class="plus">+{f(r.weekly, 3)} <small>{TOKEN_LABEL[r.token]}</small></strong></li>{/each}
-						{#each pays as r (r.what + r.to)}<li><span>Out · {r.what}<small>to {nameOf(view, r.to)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed</em>{/if}</small></span><strong class="minus">−{f(r.weekly, 3)} <small>{TOKEN_LABEL[r.token]}</small></strong></li>{/each}
+						{#each gets as r (r.what + r.from)}<li><span>In · {r.what}<small>from {nameOf(view, r.from)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed to it</em>{/if}</small></span><strong class="plus">+{f(r.weekly * hv[r.token], 3)} HEARTS <small>{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</small></strong></li>{/each}
+						{#each pays as r (r.what + r.to)}<li><span>Out · {r.what}<small>to {nameOf(view, r.to)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed</em>{/if}</small></span><strong class="minus">−{f(r.weekly * hv[r.token], 3)} HEARTS <small>{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</small></strong></li>{/each}
 						{#if !gets.length && !pays.length}<li class="dim">No rents.</li>{/if}
 					</ul>
 					<p class="dim small">{f(view.settings.dividendShare * 100, 0)} % of every rent paid in {TOKEN_LABEL[c.mind]} goes on at once to its holders (Law 5).</p>

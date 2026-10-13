@@ -57,11 +57,10 @@
 	{:else}
 		<section class="wallet">
 			<div>
-				<p class="eyebrow">{me ? `${me.name} · your HEARTS` : 'MaiaCity V1'}</p>
+				<p class="eyebrow">{me ? `${me.name} · all you hold, in HEARTS` : 'MaiaCity V1'}</p>
 				{#if me}
-					<p class="balance">{f(me.wallet.HEARTS)} <small>HEARTS</small></p>
-					<p class="dim">{MINDS.map((t) => `${f(me.wallet[t])} ${TOKEN_LABEL[t]}`).join(' · ')}</p>
-					<p class="dim">≈ {f(inHearts(view, me.wallet, hv))} HEARTS in all, its MINDs counted in HEARTS</p>
+					<p class="balance">{f(inHearts(view, me.wallet, hv))} <small>HEARTS</small></p>
+					<p class="dim">{f(me.wallet.HEARTS)} own HEARTS · {MINDS.map((t) => `${f(me.wallet[t])} ${TOKEN_LABEL[t]}`).join(' · ')}</p>
 				{:else}
 					<p class="balance small">No seat yet</p>
 					<p class="dim">Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> to mint and invest. Every wallet below is open to read.</p>
@@ -93,8 +92,8 @@
 				<header class="whose">
 					<small>{who.startsWith('player:') ? 'Player' : who === 'pool' ? 'AMM pool · owned by the MaiaCity COOP' : 'COOP'}</small>
 					<h2>{nameOf(view, who)}</h2>
-					<p class="worth">≈ {f(total)} <span>HEARTS{who === 'coop:maia' ? ', treasury and pool basket' : ''}</span></p>
-					<p class="dim small">Every MIND counted in HEARTS: the average MIND is worth 1 HEART, the pool says how each stands against it ({MINDS.map((t) => `${TOKEN_LABEL[t]} ${f(hv[t])}`).join(' · ')}).</p>
+					<p class="worth">{f(total)} <span>HEARTS{who === 'coop:maia' ? ', treasury and pool basket' : ''}</span></p>
+					<p class="dim small" title="The average MIND is worth 1 HEART; the pool says how each stands against it">1 MIND in HEARTS: {MINDS.map((t) => `${TOKEN_LABEL[t]} ${f(hv[t])}`).join(' · ')}</p>
 				</header>
 				<div class="tabs" role="tablist">
 					{#each TABS as [id, label] (id)}
@@ -107,8 +106,8 @@
 						<div class="pane" class:off={tab !== 'assets'}>
 							<p class="eyebrow">{who === 'coop:maia' ? 'Assets · its treasury' : 'Assets'}</p>
 							<ul class="holdings">
-								{#if who.startsWith('player:')}<li><span><i class="heart"></i>{heartsLabel}</span><strong>{f(balance.HEARTS)}</strong></li>{/if}
-								{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(balance[t])}<small>≈ {f(balance[t] * hv[t])} HEARTS</small></strong></li>{/each}
+								{#if who.startsWith('player:')}<li><span><i class="heart"></i>{heartsLabel}</span><strong>{f(balance.HEARTS)} HEARTS</strong></li>{/if}
+								{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(balance[t] * hv[t])} HEARTS<small>{f(balance[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
 							</ul>
 							{#if who === 'coop:maia'}
 								<p class="eyebrow">The pool basket it owns</p>
@@ -192,6 +191,10 @@
 		font-family: var(--font-body);
 		font-size: 0.9rem;
 		opacity: 0.75;
+	}
+	.wallet > div:first-child {
+		flex: 1 1 20rem;
+		min-width: 0;
 	}
 	.mint {
 		text-align: right;
