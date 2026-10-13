@@ -188,6 +188,12 @@
 			{/each}
 			<p class="speednote">a month a real day · rent in {dur(nextMonth - now)}</p>
 		</nav>
+		{#if canMove}
+			<!-- the universal mint button: always at hand, over the nav pill -->
+			<button class="mintbar" disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
+				<span class="heart">♥</span> Mint <b>{f(mint.amount, mint.amount >= 100 ? 0 : 2)}</b> HEARTS{#if mint.starter}<small>incl. starter pack</small>{/if}
+			</button>
+		{/if}
 		<button class="fab" class:on={tools} aria-label="Tools" onclick={() => (tools = !tools)}>
 			<svg viewBox="0 0 24 24"><path d={tools ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} /></svg>
 		</button>
@@ -527,6 +533,39 @@
 	}
 	.clock.m {
 		display: none;
+	}
+	.mintbar {
+		position: absolute;
+		z-index: 7;
+		left: 50%;
+		bottom: calc(var(--nav-room, 4rem) + 0.4rem);
+		transform: translateX(-50%);
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.7rem 1.3rem;
+		border: 0;
+		border-radius: 999px;
+		background: #24452f;
+		color: #fff;
+		font: inherit;
+		font-weight: 600;
+		white-space: nowrap;
+		box-shadow: 0 10px 30px rgb(38 56 44 / 0.28);
+		cursor: pointer;
+	}
+	.mintbar .heart {
+		color: #ff8a9b;
+	}
+	.mintbar small {
+		margin-left: 0.3rem;
+		font-weight: 400;
+		opacity: 0.8;
+	}
+	.mintbar:disabled {
+		background: rgb(250 248 242 / 0.94);
+		color: #6b7a6f;
+		cursor: default;
 	}
 	.clock {
 		padding: 0.5rem 0.8rem;
@@ -1048,7 +1087,7 @@
 			bottom: 0;
 			width: auto;
 			max-height: 50dvh;
-			padding: 0.8rem 1rem var(--nav-room, 4rem);
+			padding: 0.8rem 1rem calc(var(--nav-room, 4rem) + 3.6rem);
 			border-radius: 18px 18px 0 0;
 			border-bottom: 0;
 			box-shadow: 0 -8px 28px rgb(0 0 0 / 0.16);
