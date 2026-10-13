@@ -1,12 +1,22 @@
 // @ts-nocheck — plain JS
 /**
- * SANDBOX 8 · THE EURO BORDER — what the village cannot make, its COOPs buy outside (paper §11.4, §12.4), as COOPs only.
+ * SANDBOX 8 · THE EURO BORDER — what the village cannot make, its COOPs buy outside (paper §11.4, §12.4), as COOPs only,
+ * through the MaiaCity COOP's bank.
  *
- * The euro reserve holds the founding euros left over (the village's buffer, `w.border.shared`) and each COOP's own
- * account (`w.border.eur[k]`). A COOP that buys at the border pays from its own account first, then from the founding
- * euros. It fills its own account by exporting electricity: it buys the kWh from the energy COOPs in MIND (a real sale,
- * with Law 5), the line sells it at the wholesale price, and the euros go into its account. No person holds euros, no
- * MIND is made from euros, HEARTS never buy anything.
+ * The MaiaCity COOP (the City COOP) is the bank at the border: every euro in or out goes through it. It holds the
+ * founding euros, which come from outside (`w.border.shared`: the bank's own euros), and each COOP's deposit
+ * (`w.border.eur[k]`). A COOP that buys at the border pays from its deposit first; beyond it the bank advances the
+ * euros from its own (`co.advEur` records what the COOP owes). A COOP pays an advance back in its own MIND, moved from
+ * its treasury to the City COOP's (./border.js repayAdvances), at the euro's price in electricity: the R value at
+ * today's energy price of the kWh the village would export to earn that euro. The City COOP then holds that MIND as an
+ * owner and gets its Law 5 dividends. No interest; no MIND is made from euros; no person changes MIND into euros.
+ *
+ * A COOP fills its deposit by exporting electricity: it buys the kWh from the energy COOPs in MIND (a real sale, with
+ * Law 5), the line sells it at the wholesale price, and the euros go into the bank as its deposit.
+ *
+ * The founding euros: with `foundingEur` null (the default) the bank draws on its founders outside as far as the
+ * village needs, and the most it ever needs at once (the lowest cumulative balance, `w.border.low`) is the bootstrap
+ * number; with a number (or `reserveYears`), that is all it has, and a COOP that finds no euros buys less.
  *
  * Who buys what: the food COOPs buy food (in the diet's mix, at wholesale) when their stores and harvests ahead fall
  * short of what their buyers will eat; the works buy their raw inputs (logs beyond the village's woods, steel scrap
@@ -23,9 +33,12 @@ export const IMPORT_KINDS = ['food', 'logs', 'scrap', 'float', 'cells', 'glulam'
 /** the finished goods a works COOP buys when its works cannot keep up (by good index: glulam, steel, glass, panels) */
 const FINISHED = { [WOOD]: 'glulam', [STEEL]: 'steel', [GLASS]: 'glazing', [PANEL]: 'panels' };
 
-/** a fresh border: the founding euros left over, and an empty account for each COOP */
+/** a fresh border: the bank's founding euros (Infinity: drawn from its founders as needed), an empty deposit for each
+ * COOP */
 export function newBorder(w, sharedEur) {
-	return { eur: new Float64Array(M), shared: sharedEur, shared0: sharedEur, prev: sharedEur, inEur: 0, outEur: 0, drawShared: 0 };
+	const open = !Number.isFinite(sharedEur);
+	const s0 = open ? 0 : sharedEur;
+	return { eur: new Float64Array(M), open, shared: s0, shared0: s0, prev: s0, inEur: 0, outEur: 0, drawShared: 0, low: 0, lowDay: 0, advanced: 0, repaidEur: 0, repaidR: 0 };
 }
 
 /** euros in the reserve: the founding euros left and every COOP's account */
@@ -36,15 +49,17 @@ export function reserveEur(w) {
 	return s;
 }
 
-/** pay `eur` for a COOP's import: its own account first, then the founding euros; returns what was paid */
+/** pay `eur` for a COOP's import: its own deposit first, then an advance from the bank's own euros (the COOP owes it,
+ * to be paid back in its MIND); returns what was paid */
 export function payEur(w, co, eur) {
 	const B = w.border, t = w.today;
 	if (!(eur > 0)) return 0;
 	const own = Math.min(B.eur[co.k], eur);
 	B.eur[co.k] -= own;
-	const shared = Math.min(B.shared, eur - own);
+	const shared = B.open ? eur - own : Math.min(Math.max(0, B.shared), eur - own);
 	B.shared -= shared;
 	B.drawShared += shared;
+	if (shared > 0 && !co.city) (co.advEur = (co.advEur ?? 0) + shared), (B.advanced += shared), (t.advEur = (t.advEur ?? 0) + shared);
 	const paid = own + shared;
 	t.eurOut = (t.eurOut ?? 0) + paid;
 	co.eurToday = (co.eurToday ?? 0) + paid;
@@ -177,3 +192,41 @@ export function shareLine(w) {
 
 /** the export class a COOP's border trade is served in (for the page) */
 export const EXPORT_CLASS = CLASS.running;
+
+/**
+ * The COOPs pay their advances back to the City COOP in their own MIND (weekly, in the slow loop): a 26th of what each
+ * owes, at least €1, at most a twentieth of the MIND its treasury holds of its own. A euro is priced at the electricity
+ * that earns it: eurR (its kWh at today's energy price, in R), turned into the COOP's MIND at its pool price. The MIND
+ * moves from the COOP's treasury to the City COOP's (an exact transfer: no MIND is made or melted), where it earns Law 5
+ * dividends. No interest. Returns the R repaid.
+ */
+export function repayAdvances(w, dt = 7) {
+	const B = w.border, city = w.cityK, P = w.P;
+	if (!B) return 0;
+	let paidR = 0;
+	for (const co of w.coops) {
+		if (!co.alive || co.city || !(co.advEur > 1e-9)) continue;
+		const k = co.k;
+		const eur = Math.min(co.advEur, Math.max(1, (co.advEur * dt) / 182));
+		const perEur = eurR(w, 1) / (P[k] > 0 ? P[k] : 1);
+		const have = Math.max(0, w.tre[k * M + k]) * 0.05;
+		const count = Math.min(eur * perEur, have);
+		if (!(count > 0) || !(perEur > 0)) continue;
+		w.tre[k * M + k] -= count;
+		w.tre[city * M + k] += count;
+		const e = count / perEur;
+		co.advEur = Math.max(0, co.advEur - e);
+		co.repaidR = (co.repaidR ?? 0) + count * P[k];
+		B.repaidEur += e;
+		B.repaidR += count * P[k];
+		paidR += count * P[k];
+	}
+	return paidR;
+}
+
+/** euros the COOPs owe the bank (advances not yet paid back in MIND) */
+export function advancesOwed(w) {
+	let s = 0;
+	for (const co of w.coops) s += co.advEur ?? 0;
+	return s;
+}

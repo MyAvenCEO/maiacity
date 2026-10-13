@@ -14,7 +14,7 @@
  */
 import { exp, pow } from './dmath.js';
 import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, FOOD as FOODCAT } from './primitives.js';
-import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor } from './food.js';
+import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor, skillRamp, skillOf } from './food.js';
 import { villageFacts } from './village.js';
 import { BED, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOOD_INDEX, GOODS_, MAX_COOPS, NX, SPRING, WATER, LIMIT } from './consts.js';
 import { gauss, rnd } from './rng.js';
@@ -37,16 +37,24 @@ export const DEFAULTS = {
 	 * nuts and seeds, eggs and chicken; no potatoes or grains) or 'sandbox6' (Sandbox 6's diet with potatoes and
 	 * chestnuts). The land a person needs follows from the grams of each group and each group's yield (./food.js) */
 	diet: 'samuel',
-	/** the food yields: 'average' (organic statistics and trials, food-research.md) or 'best' (the best measured small
-	 * farms and food forests, food-best.md, when it is wired) */
-	foodYields: 'average',
+	/** the food yields: 'ramp' (the default: measured averages in years 1–5, rising to the best practice by year 10 as
+	 * the growers learn, food-best.md's own recommendation), 'average' (organic statistics and trials,
+	 * food-research.md) or 'best' (the top quarter of measured farms and gardens, food-best.md) */
+	foodYields: 'ramp',
+	/** irrigation of the outdoor food land in dry summers from the gravel aquifer (true: a dry year costs × 0.95 instead
+	 * of × 0.8; its pumps' electricity is in the basics class) */
+	irrigation: true,
 	/** the village's land, ha (null: Sandbox 6's seven hexes, 268.6 ha) */
 	landHa: null,
 	/** the food forests' yields, times the catalog's (./food.js; the suite tests 0.5 and 1.5) */
 	forestYield: 1,
 	/** LED light in the food domes in the dark months (needs food-research.md's kWh per 1,000 kcal) */
 	led: false,
-	/** the euros left in the euro reserve at founding, in years of the village's food at wholesale (BORDER.reserveYears) */
+	/** the founding euros the MaiaCity COOP's bank holds on day 0, from outside (null: it draws on its founders as far as
+	 * the village needs; the most it needs at once is the bootstrap number) */
+	foundingEur: null,
+	/** or the founding euros as years of the village's food at wholesale (null: see foundingEur; scenario F01 tests 0,
+	 * 1 and 3: a bank that runs dry rations the imports) */
 	reserveYears: null,
 	/** the price the line sells electricity at, € a MWh (null: CHIPS.eurPerMwh, 87.5) */
 	exportEurMwh: null,
@@ -227,7 +235,9 @@ function constants(cfg) {
 	const bedsHome = V.beds.dome80 + V.beds.dome40;
 	const beds = V.beds.total;
 	const ip = cfg.importPrice ?? 1;
-	const diet = dietFacts(cfg.diet ?? 'samuel', cfg.foodYields ?? 'average');
+	const diet = dietFacts(cfg.diet ?? 'samuel', cfg.foodYields ?? 'ramp');
+	// the outdoor food land that grows food: less tracks, sheds and hedges, and the compost ley (food-best.md §3)
+	const outNet = OUTDOOR.netShare.v - OUTDOOR.leyShare.v;
 	const eurMwh = cfg.exportEurMwh ?? CHIPS.eurPerMwh.v;
 	return {
 		scale: s,
@@ -285,8 +295,15 @@ function constants(cfg) {
 		landInPerson: diet.in.total,
 		// the food forests, in units of 1,000 kcal that reach a store (after the harvest's losses in storage, processing
 		// and the kitchen): outdoors a m² a year at maturity, under glass at maturity
-		forest100: ((diet.out.kcalM2Year * (1 - OUTDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
-		forestGrown: (diet.out.kcalM2Year / 1000) * (cfg.forestYield ?? 1),
+		// (a m² of the outdoor food land, of which outNet grows food)
+		forest100: ((diet.out.kcalM2Year * (1 - OUTDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1) * outNet,
+		forestGrown: (diet.out.kcalM2Year / 1000) * (cfg.forestYield ?? 1) * outNet,
+		outNet,
+		outNetM2: V.outdoorFoodM2 * vf * outNet,
+		// the growers' skill by year as a share of the mature yields (foodYields 'ramp'), outdoors and under glass
+		skill: skillRamp(diet.diet, diet.yields),
+		irrigation: cfg.irrigation !== false,
+		irrigKwhM3: OUTDOOR.irrigKwhM3.v,
 		forestLoss: OUTDOOR.loss.v,
 		// the forest's maturity ramp for this diet (its annual layers bear from year 1, its trees over 15 years) and the
 		// share of its calories a late frost (trees) and alternate bearing (nuts) touch
@@ -776,12 +793,12 @@ export function plantCapDay(w, pl, day) {
 			// each plot keeps the yield of the year it was planted
 			let uYear = 0;
 			for (const p of pl.plots) uYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * outdoorShare((day - p.born) / 365, w.c.forestRamp);
-			return uYear / 365;
+			return (uYear / 365) * skillOf(w, 'out', day);
 		}
 		case 'greenhouse':
 			// light-limited: an average day of the year at its age since planting (./coops.js plan scales a day's output
 			// by the month's light)
-			return ((eff * w.c.ghYield) / vcOf(pl, 'yield') / 365) * indoorShare(day - (pl.born ?? 0));
+			return ((eff * w.c.ghYield) / vcOf(pl, 'yield') / 365) * indoorShare(day - (pl.born ?? 0)) * skillOf(w, 'in', day);
 		case 'rain': {
 			// the tanks give what rain gives: this tank's share of the roofs, an average day
 			let roof = 0, tanks = 0;

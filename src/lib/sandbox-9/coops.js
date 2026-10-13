@@ -19,7 +19,7 @@ import { DAYS_IN_MONTH, GOODS, MONTHLY, YEAR_DAYS } from './primitives.js';
 import { BASICS, BED, CLASS, COMPUTE, ENERGY, FOOD, G, GLASS, GOOD_INDEX, GOODS_, IN_HAND, LIMIT, LIMIT_OF_GOOD, MATERIALS, MAX_COOPS, PANEL, SPRING, STEEL, WATER, WOOD } from './consts.js';
 import { monthOf, shockFactor } from './energy.js';
 import { capDayOf, newCoop, newPlant, plantCapDay, solarGain, vcOf, rawOf } from './genesis.js';
-import { outdoorShare, indoorShare, INDOOR_INDEX } from './food.js';
+import { outdoorShare, indoorShare, INDOOR_INDEX, skillOf } from './food.js';
 import { exportPlan } from './border.js';
 import { newPool, indexPools, buildCycles } from './pools.js';
 import { rnd } from './rng.js';
@@ -53,6 +53,7 @@ function forestHarvest(w, pl, day, wx = true) {
 	// each plot keeps the yield of the year it was planted (a perennial forest is not replanted)
 	let uYear = 0;
 	for (const p of pl.plots) uYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * outdoorShare((day - p.born) / 365, w.c.forestRamp);
+	uYear *= skillOf(w, 'out', day);
 	const t = w.today;
 	const f = wx && t && day === w.day ? (t.outWx ?? 1) : 1;
 	const tree = t && Math.floor(day / 365) === Math.floor(w.day / 365) ? (t.treeF ?? 1) : 1;
@@ -264,7 +265,9 @@ export function margins(w) {
 		if (co.good === FOOD || co.good === WATER) {
 			let r = Infinity;
 			for (let j = 0; j < ahead.length; j++) r = Math.min(r, (held + ahead[j] + imp * 5 * (j + 1)) / (5 * (j + 1) + IN_HAND));
-			co.sustain = r;
+			// while the bank can advance euros without bound, what the store lacks at its tightest point can be bought then:
+			// no rationing (the price still carries the scarcity)
+			co.sustain = w.border?.open && importsOpen(w, co) ? Infinity : r;
 		}
 		co.marginEma += (co.margin - co.marginEma) / 14;
 		// how often it has been short lately (a 90-day average of short days): building answers a lasting shortage
@@ -293,11 +296,13 @@ export function importsOpen(w, co) {
 	if (!(co.good === FOOD || MATERIALS.includes(co.good)) || w.cfg.border === false) return false;
 	return true;
 }
-/** units a day of its good a seller can pay for at the border: its account and its share of the founding euros spread
- * over `H` days, and what its exports earned a day lately */
+/** units a day of its good a seller can pay for at the border: its deposit and its share of the bank's founding euros
+ * spread over `H` days, and what its exports earned a day lately (without bound while the bank draws on its founders) */
 export function importsPayable(w, co, H) {
 	const B = w.border, unit = unitEurOf(w, co);
 	if (!B || !(unit > 0)) return 0;
+	// the bank advances what its deposit does not cover, as far as its founders allow (unbounded by default)
+	if (B.open) return Infinity;
 	let n = 0;
 	for (const c of w.coops) if (c.alive && importsOpen(w, c)) n++;
 	return ((B.eur[co.k] + B.shared / Math.max(1, n)) / Math.max(1, H) + (co.exportEurEma ?? 0)) / unit;
@@ -584,6 +589,11 @@ export function plan(w, req, heatReq) {
 		co.capDay = co.ratedDay * f;
 		// the forest's harvest needs processing energy; the store, rain, beds, wells and springs are cleared later
 		if (co.harvestToday > 0) co.eReq[CLASS.basics] += co.harvestToday * kwhOf(w, co.plants.find((p) => p.tech === 'forest'));
+		// the irrigation pumps (./food.js foodSeason: today's rain shortfall), by the COOP's share of the outdoor food land
+		if (t.irrigM3 > 0) {
+			const fm = co.plants.reduce((a, p) => a + (p.tech === 'forest' ? p.cap : 0), 0);
+			if (fm > 0) co.eReq[CLASS.basics] += (t.irrigM3 * w.c.irrigKwhM3 * fm) / Math.max(1, w.c.village.outdoorFoodM2 * w.c.vf);
+		}
 		const H = horizonOf(co);
 		const target = (H > 180 ? 30 : Math.min(H, 60) + 5) * co.demandEma;
 		const want = Math.max(0, co.demandEma + (target - co.stock) / 10);

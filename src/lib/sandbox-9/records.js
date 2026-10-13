@@ -14,7 +14,7 @@ import { BASICS, CONSUMER, COMPUTE, ENERGY, FOOD, WATER, G, LIMIT, LIMIT_NAMES, 
 import { capDayOf, plantCapDay } from './genesis.js';
 import { DAYS_IN_MONTH, CHIPS, BORDER, FOOD as FOOD_R } from './primitives.js';
 import { monthOf } from './energy.js';
-import { reserveEur, IMPORT_KINDS } from './border.js';
+import { reserveEur, IMPORT_KINDS, advancesOwed } from './border.js';
 import { indoorMonths, dietFacts, peopleFed, DIETS, YIELDS } from './food.js';
 
 const SERIES = {
@@ -81,7 +81,7 @@ function newYear(w, y) {
 		pd: new Float64Array(11),
 		short: new Float64Array(11), // people short of a basic on at least one day this year, by their tenth that day
 		shortAll: 0,
-		food: { outdoors: 0, indoors: 0, imported: 0, eaten: 0, led: 0, unpicked: 0, lost: 0, rotted: 0 },
+		food: { outdoors: 0, indoors: 0, imported: 0, eaten: 0, led: 0, unpicked: 0, lost: 0, rotted: 0, irrigM3: 0 },
 		season: { weather: 1, tree: 1, frost: false },
 		indoorMonth: new Float64Array(12),
 		monthDays: new Float64Array(12),
@@ -100,7 +100,14 @@ function newYear(w, y) {
 		impShortDays: 0,
 		solarKwp: 0,
 		people: 0,
-		drawStart: w.border?.drawShared ?? 0
+		drawStart: w.border?.drawShared ?? 0,
+		advStart: w.border?.advanced ?? 0,
+		repStart: w.border?.repaidR ?? 0,
+		advEur: 0,
+		repaidR: 0,
+		owedEur: 0,
+		cumEur: 0,
+		lowEur: 0
 	};
 }
 
@@ -130,6 +137,7 @@ function yearDay(w, protD) {
 	}
 	const m = monthOf(w.day);
 	Y.food.outdoors += t.foodOut ?? 0;
+	Y.food.irrigM3 += t.irrigM3 ?? 0;
 	Y.food.indoors += t.foodIn ?? 0;
 	Y.food.imported += t.imp?.food ?? 0;
 	Y.food.led += t.ledUnits ?? 0;
@@ -165,6 +173,13 @@ function yearDay(w, protD) {
 	Y.reserveMin = Math.min(Y.reserveMin, Y.reserveEur);
 	Y.sharedEur = w.border.shared;
 	Y.sharedDrawn = w.border.drawShared - Y.drawStart;
+	// the bank: advances to the COOPs this year, MIND paid back (R), what the COOPs still owe, and its cumulative
+	// balance (exports less imports since day 0) and the lowest it has been
+	Y.advEur = w.border.advanced - Y.advStart;
+	Y.repaidR = w.border.repaidR - Y.repStart;
+	Y.owedEur = advancesOwed(w);
+	Y.cumEur = Y.reserveEur - w.border.shared0;
+	Y.lowEur = w.border.low;
 	let kwp = 0;
 	for (const co of w.coops) if (co.alive && co.good === ENERGY) for (const pl of co.plants) if (pl.tech === 'solar') kwp += Math.max(0, pl.cap - pl.worn);
 	Y.solarKwp = kwp;
@@ -444,7 +459,7 @@ export function villageYears(w) {
 		out.push({
 			year: Y.year,
 			days: Y.days,
-			food: { outdoors: k(Y.food.outdoors), indoors: k(Y.food.indoors), imported: k(Y.food.imported), eaten: k(Y.food.eaten), led: k(Y.food.led), lost: k(Y.food.lost), rotted: k(Y.food.rotted), unpicked: k(Y.food.unpicked) },
+			food: { outdoors: k(Y.food.outdoors), indoors: k(Y.food.indoors), imported: k(Y.food.imported), eaten: k(Y.food.eaten), led: k(Y.food.led), lost: k(Y.food.lost), rotted: k(Y.food.rotted), unpicked: k(Y.food.unpicked), irrigationM3: Y.food.irrigM3, irrigationKwh: per(Y.food.irrigM3 * w.c.irrigKwhM3, Y) },
 			season: { ...Y.season },
 			indoorByMonth: Array.from(Y.indoorMonth, (x, m) => (Y.monthDays[m] > 0 ? (x * 1000) / Y.monthDays[m] : null)),
 			energy: {
@@ -476,8 +491,11 @@ export function indoorMonthsOf(w) {
  */
 export function foodLand(w) {
 	const c = w.c, f = dietFacts(c.diet, c.foodYields), V = c.village;
-	const outM2 = V.outdoorFoodM2 * c.vf, inM2 = V.indoorFoodM2 * c.vf;
-	const fed = peopleFed(f, outM2 * (w.cfg.forestYield ?? 1), inM2 * (w.cfg.forestYield ?? 1));
+	// the outdoor land that grows food: less tracks, sheds and hedges and the compost ley (./food.js OUTDOOR)
+	const grossOut = V.outdoorFoodM2 * c.vf, outM2 = grossOut * (c.outNet ?? 1), inM2 = V.indoorFoodM2 * c.vf;
+	const fy = w.cfg.forestYield ?? 1;
+	const fed = peopleFed(f, outM2 * fy, inM2 * fy);
+	const fedBy = Object.fromEntries(['average', 'best'].map((k) => { const g = dietFacts(c.diet, k), x = peopleFed(g, outM2 * fy, inM2 * fy); return [k, { out: x.out, in: x.in, all: x.all, kcalM2Year: { out: g.out.kcalM2Year, in: g.in.kcalM2Year }, proteinM2Year: { out: (g.out.kcalM2Year * g.out.proteinPer1000) / 1000, in: (g.in.kcalM2Year * g.in.proteinPer1000) / 1000 }, landM2: { out: g.out.total, in: g.in.total } }]; }));
 	const D = DIETS[f.diet];
 	let firstFed = null, lastImport = null;
 	for (const Y of w.rec?.years ?? []) {
@@ -495,8 +513,16 @@ export function foodLand(w) {
 		proteinDay: f.proteinDay,
 		landM2: { out: f.out.total, in: f.in.total, outByGroup: f.out.m2, inByGroup: f.in.m2 },
 		kcalM2Year: { out: f.out.kcalM2Year, in: f.in.kcalM2Year },
-		foodHa: { out: outM2 / 1e4, in: inM2 / 1e4 },
+		proteinM2Year: { out: (f.out.kcalM2Year * f.out.proteinPer1000) / 1000, in: (f.in.kcalM2Year * f.in.proteinPer1000) / 1000 },
+		foodHa: { out: outM2 / 1e4, outGross: grossOut / 1e4, in: inM2 / 1e4 },
 		peopleFed: { out: fed.out, in: fed.in, all: fed.all },
+		// at maturity, for each yield setting ('ramp' reaches 'best' from year 10)
+		peopleFedBy: fedBy,
+		skill: c.skill,
+		irrigation: c.irrigation,
+		// the legumes' share of the outdoor annual land (legumes, sweet potato, vegetables, seeds) at maturity: the
+		// rotation allows about half (food-best.md §2)
+		legumeShare: (() => { const m = f.out.m2, ann = (m.legumes ?? 0) + (m.sweetPotato ?? 0) + (m.vegetables ?? 0) + (m.nutsSeeds ?? 0) + (m.roots ?? 0); return ann > 0 ? (m.legumes ?? 0) / ann : null; })(),
 		people: w.N,
 		firstFedYear: firstFed,
 		lastImportYear: lastImport
@@ -551,6 +577,11 @@ export function borderYears(w) {
 			reserveMinEur: Y.reserveMin,
 			importShortDays: Y.impShortDays,
 			reserveOut: Y.impShortDays > 0,
+			// the City COOP's bank: euros advanced to the COOPs this year, what they paid back in MIND (R), what they still
+			// owe at the year's end, the cumulative balance (all exports less all imports since day 0) and the lowest it has
+			// been so far (the euros the village needed from its founders at once)
+			bank: { advancedEur: Y.advEur, repaidR: Y.repaidR, owedEur: Y.owedEur, cumulativeEur: Y.cumEur, lowestEur: Y.lowEur },
+			exportsCoverCumulative: Y.cumEur >= 0,
 			ownFoodShare: ownShare(Y),
 			fedSelf: grewNeed(Y),
 			noFoodImports: noFoodImports(Y),

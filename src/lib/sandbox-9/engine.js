@@ -27,7 +27,7 @@ import { updatePrices, poolInflow, arbitrage, swap } from './pools.js';
 import { postPrices, peopleOrders, openPayments, payDirect, payRest, settleSwaps, law5, sellerOutcome } from './market.js';
 import { nature, margins, costs, plan, produce, runningItems, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
 import { initRecords, recordDay, physicsCeiling, foundingStores } from './records.js';
-import { newBorder, importsDay, shareLine } from './border.js';
+import { newBorder, importsDay, shareLine, repayAdvances } from './border.js';
 import { villageRecords } from './village.js';
 import { catalogList } from './primitives.js';
 import { OUTDOOR, INDOOR } from './food.js';
@@ -56,9 +56,10 @@ export function createWorld(config = {}) {
 	w.matter.prevRaw = rawTotal(w);
 	w.liquid = new Uint8Array(M);
 	w.poolQueue = new Float64Array(M); // pool inflow waiting for the weekly slice (bootstrap off only)
-	// the euro reserve of the border (paper §11.4), in €: the founding euros left over (reserveYears of the village's
-	// food at wholesale) and each COOP's own account, and what came in and went out (./border.js)
-	w.border = newBorder(w, w.c.reserveYears * w.cfg.people * w.c.need[0] * 365 * w.c.eur.food);
+	// the MaiaCity COOP's bank at the border (paper §11.4), in €: the founding euros (foundingEur; or reserveYears of the
+	// village's food at wholesale; by default drawn from the founders outside as far as the village needs) and each
+	// COOP's deposit, and what came in and went out (./border.js)
+	w.border = newBorder(w, w.cfg.foundingEur != null ? w.cfg.foundingEur : w.cfg.reserveYears != null ? w.cfg.reserveYears * w.cfg.people * w.c.need[0] * 365 * w.c.eur.food : Infinity);
 	// what was bought outside before day 0 to found the village (./records.js foundingBill)
 	w.founding = foundingStores(w);
 	// the catalog's day-0 guesses, in R, indexed like the rate card to the HEARTS issued a day; genesisPrices below
@@ -1236,6 +1237,8 @@ function slowLoop(w) {
 	w.lastSlow = w.day;
 	arbitrage(w);
 	payRent(w, dt);
+	// the COOPs pay their euro advances back to the City COOP's bank in their own MIND (./border.js)
+	if (w.border) w.today.repaidR = (w.today.repaidR ?? 0) + repayAdvances(w, dt);
 	if (w.day % 7 === 0) adjustRent(w);
 	payout(w, 1 - pow(1 - w.cfg.payoutRate, dt / 7));
 	if (w.day % 7 === 0) learn(w);
@@ -1544,7 +1547,9 @@ function checkLedgers(w) {
 	let eur = B.shared;
 	for (let k = 0; k < M; k++) eur += B.eur[k];
 	const eexp = B.prev + (t.eurIn ?? 0) - (t.eurOut ?? 0);
-	if (Math.abs(eur - eexp) > 1e-7 * Math.max(1, eur) || eur < -1e-6) leak(w, w.matter.leaks, `euro reserve: ${eur} vs ${eexp}`);
+	if (Math.abs(eur - eexp) > 1e-7 * Math.max(1, Math.abs(eur)) || (!B.open && eur < -1e-6)) leak(w, w.matter.leaks, `euro reserve: ${eur} vs ${eexp}`);
+	// the bank's cumulative balance against its founding euros: its lowest is what the village needed at once
+	if (eur - B.shared0 < B.low) (B.low = eur - B.shared0), (B.lowDay = w.day);
 	if (Math.abs((t.eurIn ?? 0) - (t.exportKwh ?? 0) * w.c.eurPerKwh) > 1e-7 * Math.max(1, t.eurIn ?? 0)) leak(w, w.matter.leaks, `euro reserve: earned ${t.eurIn ?? 0} for ${t.exportKwh ?? 0} kWh exported`);
 	B.prev = eur;
 	B.inEur += t.eurIn ?? 0;
