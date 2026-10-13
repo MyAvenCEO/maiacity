@@ -155,6 +155,11 @@ export const DEFAULTS = {
 	 * stays too small for the dividends alone to pay the basic bundle (Proposition 3, P2 strict); the cost is a lower
 	 * living standard for the cohort in its first decades (./scenarios.js B34 compares the two) */
 	ownerKeep: 1,
+	/** how an owner-only person's Aven spends on extras: 'income' (round 4, the default: on extras, what its income, the HEARTS
+	 * half and the dividends, brings in above its basics, as far as its holding still grows at least as fast as the
+	 * melt takes; it spends income, never capital) or 'keep' (until round 4: it keeps the share ownerKeep of the HEARTS
+	 * half and spends three quarters of its dividends above the basics) */
+	ownerRule: 'income',
 	/** the share of its person's other inflow (dividends, Aven pay) it also keeps */
 	keepOther: 0.25,
 	/** the Aven budgets on the average of what flowed in over this many days (a year: the seasons and the first

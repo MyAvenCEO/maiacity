@@ -214,13 +214,17 @@ export function peopleOrders(w) {
 		// cfg.inflowDays) above the basics; what it holds above the resting level of what it keeps (kept ÷ melt) it also
 		// spends, a share (cfg.spendRate) a day. Keeping a share of every inflow makes holdings follow what a person
 		// earns, and Law 5 pays pro rata: ownership is how people live. An Aven whose person delivers nothing (Aven
-		// output 0, whoever it is: the owner-only cohort, an owner-only newcomer) keeps a larger share of the HEARTS half
-		// (cfg.ownerKeep): the dividends are the only income it can grow, so it builds the holding that pays its
-		// person's life. It reads what it sees (its own output), never the proof's cohort list
-		const kept = (w.aven[i] > 0 ? cfg.keep : cfg.ownerKeep ?? cfg.keep) * w.heartsEma[i] + (cfg.keepOther ?? 0) * Math.max(0, w.inflowEma[i] - w.heartsEma[i]);
+		// output 0, whoever it is: the owner-only cohort, an owner-only newcomer) spends income, never capital (round 4,
+		// cfg.ownerRule 'income'): on extras, what its income (the HEARTS half and the dividends) brings in above the
+		// basics, as far as its holding still grows at least as fast as the melt takes it. (Until round 4 it kept the
+		// whole HEARTS half, cfg.ownerRule 'keep' with cfg.ownerKeep, and spent only dividends above its basics: a
+		// budget rule that kept the cohort out of extras for life.) It reads what it sees (its own output), never the
+		// proof's cohort list
+		const ownerIncome = !(w.aven[i] > 0) && (cfg.ownerRule ?? 'income') === 'income';
+		const kept = ownerIncome ? 0 : (w.aven[i] > 0 ? cfg.keep : cfg.ownerKeep ?? cfg.keep) * w.heartsEma[i] + (cfg.keepOther ?? 0) * Math.max(0, w.inflowEma[i] - w.heartsEma[i]);
 		const rest = kept / meltDay;
 		const Wv = Math.min(W, Ws);
-		let E = Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));
+		let E = ownerIncome ? Math.min(W - Cb, w.inflowEma[i] - Cb - meltDay * Wv) : Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));
 		if (!(E > 0)) E = 0;
 		extraEnergy[i] = 0;
 		// an Aven whose spending rule leaves nothing for extras today (what flows in, less what it keeps and the basics)

@@ -348,14 +348,19 @@ export function track(w) {
 	// on the build-out: who went short, the settlers of day 0 while they were the whole village, newcomers in their
 	// first 90 days, or anyone else (proof.md's P1 section)
 	if (w.ramp && d >= 1) {
-		const r = x.rampShort ?? (x.rampShort = { settlersPD: 0, settlersDays: 0, settlersLastDay: -1, newPD: 0, newDays: 0, otherPD: 0, otherDays: 0, byYear: [] });
+		const r = x.rampShort ?? (x.rampShort = { settlersPD: 0, settlersDays: 0, settlersLastDay: -1, newPD: 0, newDays: 0, otherPD: 0, otherDays: 0, byYear: [], arrivalPD: 0, ownerPD: 0, arrivals: 0, arrivalHeartsR: 0, arrivalBasicR: 0, arrivalShortHeartsR: 0, arrivalShortBasicR: 0 });
 		const settlers = w.ramp.plan?.options?.settlers ?? 2;
 		let sS = 0, sN = 0, sO = 0;
 		for (let i = 0; i < w.N; i++) {
+			// a newcomer's arrival day: what its first HEARTS half was worth against the day's basics
+			const arr = w.N > settlers && w.born[i] > 0 && d === w.born[i];
+			if (arr) (r.arrivals++), (r.arrivalHeartsR += w.heartsR[i]), (r.arrivalBasicR += w.basicCost[i]);
 			if (!(w.met[i] < 0.98)) continue;
 			if (w.N <= settlers) sS++;
 			else if (w.born[i] > 0 && d - w.born[i] < 90) sN++;
 			else sO++;
+			if (w.N > settlers && arr) (r.arrivalPD++), (r.arrivalShortHeartsR += w.heartsR[i]), (r.arrivalShortBasicR += w.basicCost[i]);
+			if (w.N > settlers && w.owner[i]) r.ownerPD++;
 		}
 		if (sS) (r.settlersPD += sS), r.settlersDays++, (r.settlersLastDay = d);
 		if (sN) (r.newPD += sN), r.newDays++;
