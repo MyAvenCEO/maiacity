@@ -16,7 +16,7 @@
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
-	import { AT_HOME, lineDur, story } from './tour.js';
+	import { AT_HOME, story } from './tour.js';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
@@ -80,25 +80,11 @@
 	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
 	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
 	let caption = $state(null); // the line the arrival's shot carries: { title, sub, big, dur }
-	// the whole story plays as a film (Samuel 2026-10-13): every step is a shot with its words as a voice-over line by
-	// line, the drives, the loading and the pitching play by themselves; only a move the player makes (mint, invest)
+	// the whole story plays as a film (Samuel 2026-10-13): every line of a step's words is its own shot, its voice-over
+	// carried by the world's moment; the drives, the loading and the pitching play by themselves; only a move the player makes (mint, invest)
 	// waits, and then only a small prompt with its button shows, after its words were told
 	let told = $state({}); // the moves whose words were already told this visit
-	let cut = 0; // bumped by Skip: the voice-over of the shot playing stops at once
-	const toldFor = (lines) => lines.reduce((a, l) => a + lineDur(l), 0);
-	/** the voice-over: the step's words as subtitles, one line after another; resolves when the last has been shown */
-	async function narrate(lines) {
-		const mine = cut;
-		for (const line of lines) {
-			if (cut !== mine) break;
-			const dur = lineDur(line);
-			caption = { title: line, dur };
-			await new Promise((r) => setTimeout(r, dur * 1000));
-		}
-		if (cut === mine) caption = null;
-	}
 	function skipShot() {
-		cut++;
 		caption = null;
 		world?.skip();
 	}
@@ -107,7 +93,7 @@
 		const step = tour;
 		if (step.kind === 'intro') {
 			playing = 'intro';
-			world.intro(step.part).then(() => ((playing = ''), mark(step.id)));
+			world.intro(step.part, { lines: step.lines }).then(() => ((playing = ''), mark(step.id)));
 		} else if (step.kind === 'drive' || step.kind === 'load' || step.kind === 'build') {
 			playing = step.kind;
 			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
@@ -116,10 +102,10 @@
 			moment.then(() => ((playing = ''), mark(step.id)));
 		} else if ((step.kind === 'invest' || step.kind === 'mint') && !told[step.id]) {
 			playing = 'scene';
-			Promise.all([world.scene(step.place, toldFor(step.lines), step), narrate(step.lines)]).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
+			world.scene(step.place, step).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
 		} else if (step.kind === 'next' || step.kind === 'done') {
 			playing = 'scene';
-			Promise.all([world.scene(step.place, toldFor(step.lines), step), narrate(step.lines)]).then(() => ((playing = ''), mark(step.id)));
+			world.scene(step.place, step).then(() => ((playing = ''), mark(step.id)));
 		}
 	});
 
