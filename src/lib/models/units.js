@@ -33,6 +33,6 @@ export const REAL_SIZES = {
 	busStop: { size: [5, 2.9, 2.2], what: 'a bus shelter with its sign' },
 	gasStation: { size: [24, 8.2, 16], what: 'a forecourt with its canopy and price sign' },
 	oldShed: { size: [6.2, 2.9, 5], what: 'a small half-roofed shed' },
-	person: { size: [0.52, 1.8, 0.66], what: 'a grown-up, backpack and all (the heart over them not counted)' },
+	person: { size: [0.52, 1.8, 0.55], what: 'a grown-up, backpack and all (the heart over them not counted)' },
 	tent: { size: [5.6, 2.1, 5.6], what: 'a 4 m geodesic dome tent on its 5.6 m deck' }
 };
