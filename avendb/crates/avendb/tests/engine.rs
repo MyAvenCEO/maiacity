@@ -1,21 +1,21 @@
 //! The ops engine on the Lab (`avendb::engine`, `docs/OPS.md`): queries that pick entries by the selector of their
 //! labels and test what they open; record ops through an app's schema and its lens, which write only what changed;
 //! every write's changes in its entry's history, the same for every reader; batches, proposals, merges, restores,
-//! undos and variants as ops; and every op's write judged as any peer's, by the caps of the vault it acts for, by the
-//! ops of every cap of the chain it relies on (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas its entry was
-//! written under (S1 to S4): `may` answers before a page offers a button, a write they don't allow is refused, and one
-//! a patched app makes all the same counts for no reader, nor anything built on it. Alice's library (`cast::library`)
-//! and the coop's handbook (`cast::handbook`, Welcome written by a v1 app) are the data; the ops are JSON, as the page
-//! and the Mac app send them.
+//! undos and variants as ops; and every op's write judged as any peer's, by the shares of the vault it acts for, by the
+//! ops of every share of the chain it relies on (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas its entry
+//! was written under (S1 to S4): `may` answers before a page offers a button, a write they don't allow is refused, and
+//! one a patched app makes all the same counts for no reader, nor anything built on it. Alice's library
+//! (`cast::library`) and the coop's handbook (`cast::handbook`, Welcome written by a v1 app) are the data; the ops are
+//! JSON, as the page and the Mac app send them.
 
 use avendb::cast::{self, World};
 use avendb::engine;
 use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
-use avendb::lab::{NewCap, Tamper};
+use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{Schema, Status, TypeV2, View};
-use avendb::policy::{Action, Refusal, Role};
-use avendb::rules::{self, Rule};
+use avendb::policy::{Action, Level, Refusal};
+use avendb::rules::{self, Op};
 use serde_json::{json, Value};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
@@ -56,7 +56,7 @@ fn a_query_picks_by_labels_then_tests_what_it_opens() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let (mac, alice) = (w.mac_a, w.alice.to_hex());
-    // labels alone: the plan is the selector a cap would hold, and nothing else is opened
+    // labels alone: the plan is the selector a share would hold, and nothing else is opened
     let work = json!({ "op": "query", "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] } });
     let work = ok(run(&mut w, mac, work));
     assert_eq!(entries(&work), [hex(l.door), hex(l.solar)]);
@@ -87,7 +87,7 @@ fn a_query_picks_by_labels_then_tests_what_it_opens() {
     let order = json!([["created", "desc"], ["entry", "asc"]]);
     let latest = json!({ "op": "query", "where": { "type": ["note"] }, "order": order });
     assert_eq!(ok(run(&mut w, mac, latest))["count"], 2);
-    // Bob's Mac holds none of Alice's entries: no cap gives his vault any
+    // Bob's Mac holds none of Alice's entries: no share gives his vault any
     let mac_b = w.mac_b;
     w.lab.sync_all(0);
     assert_eq!(ok(run(&mut w, mac_b, json!({ "op": "query", "vault": alice })))["count"], 0);
@@ -313,13 +313,13 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
 }
 
 /// Ops from their JSON.
-fn ops_of(v: Value) -> Vec<Rule> {
+fn ops_of(v: Value) -> Vec<Op> {
     rules::ops_of_json(&v).unwrap_or_else(|why| panic!("{v}: {why}"))
 }
 
-/// A cap over `over` naming the ops `ops` for `grantee` on entry `e`.
-fn on_entry(over: VaultId, grantee: VaultId, e: EntryId, ops: Vec<Rule>) -> NewCap {
-    NewCap { name: "Door".into(), ops, ..cast::cap(over, cast::vault(grantee), Role::Write, cast::by_id(e)) }
+/// A share over `over` naming the ops `ops` for `who` on entry `e`.
+fn on_entry(over: VaultId, who: VaultId, e: EntryId, ops: Vec<Op>) -> NewShare {
+    NewShare { name: "Door".into(), ops, ..cast::share(over, cast::vault(who), Level::Write, cast::by_id(e)) }
 }
 
 /// Whether device `d`, acting for `actor`, would make each of `ops`: `true`, or the refusal's name.
@@ -340,7 +340,7 @@ fn title(w: &World, d: SignerId, e: EntryId) -> String {
 }
 
 #[test]
-fn a_cap_lets_its_grantee_make_only_what_its_ops_allow() {
+fn a_share_lets_whom_it_names_make_only_what_its_ops_allow() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
@@ -373,7 +373,7 @@ fn a_cap_lets_its_grantee_make_only_what_its_ops_allow() {
     // nor anything built on it: a write of Alice's own that a patched app of hers makes on it (C4)
     let st = w.lab.state(mac);
     let en = st.entry(l.door).expect("the door");
-    let action = cast::write(alice, l.door, alice, en.stay(), st.epoch(KeyFam::Cell(alice, en.cell())));
+    let action = cast::write(alice, l.door, alice, en.stay(), st.epoch(KeyFam::Audience(alice, en.audience())));
     let on_it = w.lab.tamper(mac, Tamper::Unchecked { signers: vec![mac], action }).expect("Alice's Mac takes it");
     assert!(w.lab.history(mac, l.door).and_then(|h| h.get(on_it)).is_some_and(|c| !c.counted));
     assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(on_it.to_hex(), false)));
@@ -386,9 +386,9 @@ fn a_cap_lets_its_grantee_make_only_what_its_ops_allow() {
     }
 }
 
-/// C1: a cap resting on an owner cap is held to the owner cap's ops as well as its own.
+/// C1: a share resting on an owner share is held to the owner share's ops as well as its own.
 #[test]
-fn c1_a_cap_resting_on_an_owner_cap_is_held_to_both() {
+fn c1_a_share_resting_on_an_owner_share_is_held_to_both() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let coop = cast::coop_on(&mut w);
@@ -402,9 +402,9 @@ fn c1_a_cap_resting_on_an_owner_cap_is_held_to_both() {
     w.lab.sync_all(0);
     // acting for the coop, Bob lets Dave retitle it, and Carol edit it as an Editor
     let retitle = ops_of(json!([{ "op": "set", "path": ["title"] }]));
-    let to_dave = cast::cap_on(alice, cast::vault(dave), Role::Write, cast::by_id(l.door), owner, coop);
-    w.lab.issue(mac_b, &[mac_b], NewCap { ops: retitle, ..to_dave }).expect("Bob gives Dave a cap that retitles");
-    let to_carol = cast::cap_on(alice, cast::vault(carol), Role::Write, cast::by_id(l.door), owner, coop);
+    let to_dave = cast::share_on(alice, cast::vault(dave), Level::Write, cast::by_id(l.door), owner, coop);
+    w.lab.issue(mac_b, &[mac_b], NewShare { ops: retitle, ..to_dave }).expect("Bob gives Dave a cap that retitles");
+    let to_carol = cast::share_on(alice, cast::vault(carol), Level::Write, cast::by_id(l.door), owner, coop);
     w.lab.issue(mac_b, &[mac_b], to_carol).expect("and Carol an Editor one");
     w.lab.sync_all(1);
     let set = |path: &str, value: &str| json!({ "op": "set", "entry": hex(l.door), "path": [path], "value": value });
@@ -425,7 +425,7 @@ fn c1_a_cap_resting_on_an_owner_cap_is_held_to_both() {
 }
 
 #[test]
-fn a_cap_that_only_suggests_writes_on_proposals_an_owner_merges() {
+fn a_share_that_only_suggests_writes_on_proposals_an_owner_merges() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let (alice, carol, mac, mac_c) = (w.alice, w.carol, w.mac_a, w.mac_c);

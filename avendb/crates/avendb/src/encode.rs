@@ -4,16 +4,16 @@
 //! byte is the format's version, so a later format can live beside this one.
 
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role, SyncRule};
-use crate::rules::{Grant, On, Proof, Rule, Scalar, Step};
+use crate::policy::{Action, Edit, Kind, Level, Principal, Proposal, Share, SyncRule, Who};
+use crate::rules::{Grant, On, Op, Proof, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
 /// The version byte every edit starts with: 7 since every human vault is founded with the master recovery key among
-/// its owners, so avenDB starts afresh with it (6 since caps are named groups of ops, each cap's slice holding its
-/// name and its ops and every write through a cap carrying a proof, 5 since flat vaults, whose caps select slices of a
-/// vault and whose entries sit in cells, 4 since the three kinds of vault, 3 since P5, whose writes name the line of
-/// history they extend, 2 since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
+/// its owners, so avenDB starts afresh with it (6 since shares are named groups of ops, each share's slice holding its
+/// name and its ops and every write through a share carrying a proof, 5 since flat vaults, whose shares select slices
+/// of a vault and whose entries sit in audiences, 4 since the three kinds of vault, 3 since P5, whose writes name the
+/// line of history they extend, 2 since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
 pub const VERSION: u8 = 7;
 
 /// An edit's id: the hash of its encoding, for a purpose that keeps an edit's old name, op (`hash::PREFIX`).
@@ -30,7 +30,7 @@ pub fn bytes(edit: &Edit) -> Vec<u8> {
 }
 
 /// What a write's ciphertext is bound to: the edit's bytes with an empty body, so the edit can't be moved to another
-/// edit, entry, stay or generation.
+/// edit, entry, stay or epoch.
 pub fn write_context(edit: &Edit) -> Vec<u8> {
     let mut edit = edit.clone();
     if let Action::Write { body, .. } = &mut edit.action {
@@ -39,18 +39,18 @@ pub fn write_context(edit: &Edit) -> Vec<u8> {
     bytes(&edit)
 }
 
-/// What a cap's sealed slice is bound to: the cap with an empty `select`, so the slice can't be moved to another cap,
-/// another grantee or another role.
-pub fn cap_context(cap: &Cap) -> Vec<u8> {
+/// What a share's sealed slice is bound to: the share with an empty `select`, so the slice can't be moved to another
+/// share, another grantee or another level.
+pub fn share_context(share: &Share) -> Vec<u8> {
     let mut out = vec![VERSION];
-    Cap { select: vec![], ..cap.clone() }.encode(&mut out);
+    Share { select: vec![], ..share.clone() }.encode(&mut out);
     out
 }
 
-/// What a box of a cap's selector key is bound to (`slice::Select`): the cap with an empty `select`, the key it holds,
-/// and for whom. It opens as no other box, and for no other cap.
-pub fn select_info(cap: &Cap, id: KeyId, to: &Recipient) -> Vec<u8> {
-    let mut out = cap_context(cap);
+/// What a box of a share's selector key is bound to (`slice::Select`): the share with an empty `select`, the key it
+/// holds, and for whom. It opens as no other box, and for no other share.
+pub fn select_info(share: &Share, id: KeyId, to: &Recipient) -> Vec<u8> {
+    let mut out = share_context(share);
     out.extend_from_slice(b"selector key");
     id.encode(&mut out);
     to.encode(&mut out);
@@ -183,8 +183,8 @@ ids!(
     crate::id::SignerId,
     crate::id::VaultId,
     crate::id::EntryId,
-    crate::id::CapId,
-    crate::id::CellId,
+    crate::id::ShareId,
+    crate::id::AudienceId,
     crate::id::EditId,
     crate::id::BlobId,
     KeyId
@@ -204,12 +204,12 @@ impl Encode for KeyFam {
                 out.push(0);
                 v.encode(out);
             }
-            KeyFam::Cap(v, c) => {
+            KeyFam::Share(v, c) => {
                 out.push(1);
                 v.encode(out);
                 c.encode(out);
             }
-            KeyFam::Cell(v, x) => {
+            KeyFam::Audience(v, x) => {
                 out.push(2);
                 v.encode(out);
                 x.encode(out);
@@ -230,11 +230,11 @@ impl Encode for KeyName {
                 k.encode(out);
                 epoch.encode(out);
             }
-            KeyName::Entry(e, stay, generation) => {
+            KeyName::Entry(e, stay, epoch) => {
                 out.push(2);
                 e.encode(out);
                 stay.encode(out);
-                generation.encode(out);
+                epoch.encode(out);
             }
         }
     }
@@ -389,45 +389,45 @@ impl Encode for Scalar {
     }
 }
 
-/// Tagged in the order caps list their ops.
-impl Encode for Rule {
+/// Tagged in the order shares list their ops.
+impl Encode for Op {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            Rule::Relay => out.push(0),
-            Rule::Backup => out.push(1),
-            Rule::Read => out.push(2),
-            Rule::Create => out.push(3),
-            Rule::Set { path, to, on } => {
+            Op::Relay => out.push(0),
+            Op::Backup => out.push(1),
+            Op::Read => out.push(2),
+            Op::Create => out.push(3),
+            Op::Set { path, to, on } => {
                 out.push(4);
                 path.encode(out);
                 to.as_deref().encode(out);
                 on.encode(out);
             }
-            Rule::Insert { path, on } => {
+            Op::Insert { path, on } => {
                 out.push(5);
                 path.encode(out);
                 on.encode(out);
             }
-            Rule::Remove { path, on } => {
+            Op::Remove { path, on } => {
                 out.push(6);
                 path.encode(out);
                 on.encode(out);
             }
-            Rule::Move { path, on } => {
+            Op::Move { path, on } => {
                 out.push(7);
                 path.encode(out);
                 on.encode(out);
             }
-            Rule::Tag(tags) => {
+            Op::Tag(tags) => {
                 out.push(8);
                 tags.as_deref().encode(out);
             }
-            Rule::Propose => out.push(9),
-            Rule::Merge { on } => {
+            Op::Propose => out.push(9),
+            Op::Merge { on } => {
                 out.push(10);
                 on.encode(out);
             }
-            Rule::Share => out.push(11),
+            Op::Share => out.push(11),
         }
     }
 }
@@ -441,7 +441,7 @@ impl Encode for Grant {
 
 impl Encode for Proof {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.cap.encode(out);
+        self.share.encode(out);
         self.grants.encode(out);
     }
 }
@@ -514,35 +514,35 @@ impl Encode for Principal {
     }
 }
 
-impl Encode for Role {
+impl Encode for Level {
     fn encode(&self, out: &mut Vec<u8>) {
         out.push(match self {
-            Role::Backup => 0,
-            Role::Read => 1,
-            Role::Write => 2,
-            Role::Owner => 3,
-            Role::Relay => 4,
+            Level::Backup => 0,
+            Level::Read => 1,
+            Level::Write => 2,
+            Level::Owner => 3,
+            Level::Relay => 4,
         });
     }
 }
 
-impl Encode for Grantee {
+impl Encode for Who {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            Grantee::Principal(p) => {
+            Who::Principal(p) => {
                 out.push(0);
                 p.encode(out);
             }
-            Grantee::Public => out.push(1),
+            Who::Everyone => out.push(1),
         }
     }
 }
 
-impl Encode for Cap {
+impl Encode for Share {
     fn encode(&self, out: &mut Vec<u8>) {
         self.over.encode(out);
-        self.grantee.encode(out);
-        self.role.encode(out);
+        self.who.encode(out);
+        self.level.encode(out);
         self.wide.encode(out);
         self.select.encode(out);
         self.parent.encode(out);
@@ -623,26 +623,26 @@ impl Encode for Action {
                 root.encode(out);
                 keep.encode(out);
             }
-            Action::Cap(c, via) => {
+            Action::Share(c, via) => {
                 out.push(7);
                 c.encode(out);
                 via.encode(out);
             }
-            Action::Revoke { cap, actor, keep, via } => {
+            Action::Revoke { share, actor, keep, via } => {
                 out.push(8);
-                cap.encode(out);
+                share.encode(out);
                 actor.encode(out);
                 keep.encode(out);
                 via.encode(out);
             }
             // a write that brings files has a tag of its own, so a write that brings none keeps its bytes and its id
-            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body } => {
+            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body } => {
                 out.push(if files.is_empty() { 9 } else { 14 });
                 vault.encode(out);
                 entry.encode(out);
                 actor.encode(out);
                 stay.encode(out);
-                generation.encode(out);
+                epoch.encode(out);
                 deps.encode(out);
                 proposal.encode(out);
                 via.encode(out);
@@ -715,7 +715,7 @@ impl Encode for Edit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id::{CapId, EditId, EntryId, SignerId, VaultId};
+    use crate::id::{EditId, EntryId, ShareId, SignerId, VaultId};
 
     fn genesis(nonce: u64) -> Edit {
         let owners = vec![Principal::Signer(SignerId::from_u64(1))];
@@ -723,10 +723,10 @@ mod tests {
         Edit { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
     }
 
-    fn write(stay: Option<EditId>, proposal: Proposal, via: Vec<VaultId>, create: Option<Vec<CapId>>) -> Edit {
+    fn write(stay: Option<EditId>, proposal: Proposal, via: Vec<VaultId>, create: Option<Vec<ShareId>>) -> Edit {
         let (vault, entry, actor) = (VaultId::from_u64(1), EntryId::from_u64(1), VaultId::from_u64(1));
         let (deps, files, body) = (vec![], vec![], vec![]);
-        let action = Action::Write { vault, entry, actor, stay, generation: 0, deps, proposal, via, create, files, body };
+        let action = Action::Write { vault, entry, actor, stay, epoch: 0, deps, proposal, via, create, files, body };
         Edit { action, ..genesis(0) }
     }
 
@@ -765,7 +765,7 @@ mod tests {
     }
 
     #[test]
-    fn a_writes_line_stay_and_cell_change_its_id() {
+    fn a_writes_line_stay_and_audience_change_its_id() {
         let (a, b) = (EditId::from_u64(1), EditId::from_u64(2));
         let main = |stay| write(stay, Proposal::Main, vec![], None);
         let ids = [
@@ -776,7 +776,7 @@ mod tests {
             edit_id(&write(None, Proposal::On(a), vec![], None)),
             edit_id(&write(None, Proposal::On(b), vec![], None)),
             edit_id(&write(None, Proposal::Main, vec![], Some(vec![]))),
-            edit_id(&write(None, Proposal::Main, vec![], Some(vec![CapId::from_u64(1)]))),
+            edit_id(&write(None, Proposal::Main, vec![], Some(vec![ShareId::from_u64(1)]))),
         ];
         assert!(distinct(&ids));
     }
@@ -809,21 +809,21 @@ mod tests {
     }
 
     #[test]
-    fn a_caps_slice_and_width_change_its_id() {
-        let cap = |wide, select: &[u8]| {
-            let c = Cap {
+    fn a_shares_slice_and_width_change_its_id() {
+        let share = |wide, select: &[u8]| {
+            let c = Share {
                 over: VaultId::from_u64(1),
-                grantee: Grantee::Principal(Principal::Vault(VaultId::from_u64(2))),
-                role: Role::Read,
+                who: Who::Principal(Principal::Vault(VaultId::from_u64(2))),
+                level: Level::Read,
                 wide,
                 select: select.to_vec(),
                 parent: None,
                 issuer: VaultId::from_u64(1),
                 nonce: 0,
             };
-            edit_id(&Edit { action: Action::Cap(c, vec![]), ..genesis(0) })
+            edit_id(&Edit { action: Action::Share(c, vec![]), ..genesis(0) })
         };
-        assert!(distinct(&[cap(false, b""), cap(true, b""), cap(false, b"todos"), cap(false, b"notes")]));
+        assert!(distinct(&[share(false, b""), share(true, b""), share(false, b"todos"), share(false, b"notes")]));
     }
 
     #[test]

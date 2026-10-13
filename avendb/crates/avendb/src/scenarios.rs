@@ -11,12 +11,12 @@ use serde_json::{json, Value};
 use crate::cast::*;
 use crate::doc::Item;
 use crate::history::MAIN;
-use crate::id::{CellId, EntryId, SignerId, VaultId};
+use crate::id::{AudienceId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName};
-use crate::lab::{Lab, NewCap, Tamper};
+use crate::lab::{Lab, NewShare, Tamper};
 use crate::lens::{Status, DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
-use crate::policy::{mk_cell, Action, Grantee, Kind, Principal, Refusal, Role};
-use crate::rules::Rule;
+use crate::policy::{mk_audience, Action, Kind, Level, Principal, Refusal, Who};
+use crate::rules::Op;
 use crate::slice::{Selector, Sym};
 
 /// One scenario of the plan.
@@ -129,7 +129,7 @@ pub static SCENARIOS: [Scenario; 29] = [
     Scenario { number: "3b", title: "The coop key opens only on owner devices", phase: "P3", play: the_coop_key },
     Scenario { number: "4", title: "A vault's own entries", phase: "F2", play: own_entries },
     Scenario { number: "5", title: "Write and sync", phase: "P3", play: write_and_sync },
-    Scenario { number: "6", title: "One document via caps", phase: "P3", play: one_document_via_caps },
+    Scenario { number: "6", title: "One document via caps", phase: "P3", play: one_document_via_shares },
     Scenario { number: "7", title: "Public", phase: "P3", play: public },
     Scenario { number: "8", title: "Proposals", phase: "P5", play: proposals },
     Scenario { number: "9", title: "Schema v2", phase: "P4", play: schema_v2 },
@@ -139,7 +139,7 @@ pub static SCENARIOS: [Scenario; 29] = [
     Scenario { number: "13", title: "Offline conflicts", phase: "P6", play: offline_conflicts },
     Scenario { number: "14", title: "Tampering", phase: "P3", play: tampering },
     Scenario { number: "15", title: "Social todo", phase: "P3", play: social_todo },
-    Scenario { number: "16", title: "Roles change on one todo", phase: "P3", play: roles_change },
+    Scenario { number: "16", title: "Roles change on one todo", phase: "P3", play: levels_change },
     Scenario { number: "17", title: "Peer to peer", phase: "P6", play: peer_to_peer },
     Scenario { number: "18", title: "Recovery after losing every device", phase: "P3", play: recovery },
     Scenario {
@@ -152,9 +152,9 @@ pub static SCENARIOS: [Scenario; 29] = [
     Scenario { number: "20", title: "Share by a tag", phase: "F2", play: share_a_tag },
     Scenario { number: "21", title: "A tag moves an entry out of a slice", phase: "F2", play: out_of_a_slice },
     Scenario { number: "22", title: "Asking for a tag", phase: "F2", play: asking_for_a_tag },
-    Scenario { number: "23", title: "Creating through a cap", phase: "F2", play: creating_through_a_cap },
-    Scenario { number: "24", title: "A cap resting on a cap", phase: "F2", play: a_cap_on_a_cap },
-    Scenario { number: "25", title: "Wide caps, relays and Public", phase: "F2", play: wide_caps },
+    Scenario { number: "23", title: "Creating through a cap", phase: "F2", play: creating_through_a_share },
+    Scenario { number: "24", title: "A cap resting on a cap", phase: "F2", play: a_share_on_a_share },
+    Scenario { number: "25", title: "Wide caps, relays and Public", phase: "F2", play: wide_shares },
     Scenario { number: "26", title: "A cell that comes back into use moves on", phase: "F2", play: comeback },
 ];
 
@@ -168,15 +168,15 @@ fn named(lab: &Lab, s: SignerId) -> String {
     lab.name(s).unwrap_or("a device").to_string()
 }
 
-/// The cell entry `e` is in now, by device `d`'s view.
-fn cell(lab: &Lab, d: SignerId, e: EntryId) -> Option<CellId> {
-    Some(lab.state(d).entry(e)?.cell())
+/// The audience entry `e` is in now, by device `d`'s view.
+fn audience(lab: &Lab, d: SignerId, e: EntryId) -> Option<AudienceId> {
+    Some(lab.state(d).entry(e)?.audience())
 }
 
-/// The key family of the cell entry `e` is in now, by device `d`'s view.
-fn cell_key(lab: &Lab, d: SignerId, e: EntryId) -> Option<KeyFam> {
+/// The key family of the audience entry `e` is in now, by device `d`'s view.
+fn audience_key(lab: &Lab, d: SignerId, e: EntryId) -> Option<KeyFam> {
     let en = lab.state(d).entry(e)?;
-    Some(KeyFam::Cell(en.vault, en.cell()))
+    Some(KeyFam::Audience(en.vault, en.audience()))
 }
 
 /// Device `d` holds the key entry `e` is under now by device `by`'s view. A device that never hears that an entry
@@ -185,7 +185,7 @@ fn reads_by(lab: &Lab, by: SignerId, d: SignerId, e: EntryId) -> bool {
     lab.state(by).entry_key(e).is_some_and(|name| lab.holds_key(d, name))
 }
 
-/// How many cells entry `e` has been in, by device `d`'s view: one until a steward first moves it.
+/// How many audiences entry `e` has been in, by device `d`'s view: one until a steward first moves it.
 fn stays(lab: &Lab, d: SignerId, e: EntryId) -> usize {
     lab.state(d).entry(e).map_or(0, |en| en.stays.len())
 }
@@ -204,7 +204,7 @@ fn syms(xs: &[&str]) -> Vec<Sym> {
 fn forced(lab: &Lab, d: SignerId, e: EntryId, actor: VaultId) -> Action {
     let st = lab.state(d);
     match st.entry(e) {
-        Some(en) => write(en.vault, e, actor, en.stay(), st.epoch(KeyFam::Cell(en.vault, en.cell()))),
+        Some(en) => write(en.vault, e, actor, en.stay(), st.epoch(KeyFam::Audience(en.vault, en.audience()))),
         None => write(actor, e, actor, None, 0),
     }
 }
@@ -312,8 +312,8 @@ fn own_entries(run: &mut Run) -> Done {
     let meaning = run.some("Bob's Mac reads what Welcome is", w.lab.meaning(w.mac_b, h.welcome))?;
     let what = (meaning.attrs.ty.as_str(), meaning.attrs.author, meaning.attrs.tags.len());
     run.same("a doc, which the coop made, with no tags", what, ("doc", h.coop, 0));
-    let none = Some(CellId::of(h.coop, &[]));
-    run.same("no cap selects it: it sits in the cell of no caps", cell(&w.lab, w.mac_b, h.welcome), none);
+    let none = Some(AudienceId::of(h.coop, &[]));
+    run.same("no cap selects it: it sits in the cell of no caps", audience(&w.lab, w.mac_b, h.welcome), none);
     run.same("which only the coop's devices read: Carol's Mac never receives it", w.lab.fetched(w.mac_c, h.welcome), 0);
     run.check("Alice's diary is Alice's alone: Bob's Mac doesn't even learn it exists", v.entry(diary).is_none());
     let relayed = w.lab.fetched(w.server, diary);
@@ -327,7 +327,7 @@ fn write_and_sync(run: &mut Run) -> Done {
     let read = text(&w.lab, w.mac_b, h.welcome, 2);
     run.same("Bob's Mac fetched Welcome without being asked, and reads it", read.as_deref(), Some(WELCOME_TEXT));
     run.check("the server holds Welcome's edits", w.lab.fetched(w.server, h.welcome) > 0);
-    let key = run.some("Welcome is in a cell of the coop", cell_key(&w.lab, w.server, h.welcome))?;
+    let key = run.some("Welcome is in a cell of the coop", audience_key(&w.lab, w.server, h.welcome))?;
     let opens = w.lab.reads(w.server, h.welcome) || w.lab.opens(w.server, key);
     run.check("the server opens neither Welcome's key nor its cell's", !opens);
     let meaning = w.lab.meaning(w.server, h.welcome);
@@ -336,15 +336,15 @@ fn write_and_sync(run: &mut Run) -> Done {
     Ok(())
 }
 
-fn one_document_via_caps(run: &mut Run) -> Done {
+fn one_document_via_shares(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
     let carol = w.carol;
-    let read = cap(h.coop, vault(carol), Role::Read, by_id(h.welcome));
+    let read = share(h.coop, vault(carol), Level::Read, by_id(h.welcome));
     let read = run.ok("the coop gives Carol read on Welcome only, by its id", w.lab.issue(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(6);
-    let moved = cell(&w.lab, w.mac_b, h.welcome);
-    let carols = Some(CellId::of(h.coop, &[read]));
+    let moved = audience(&w.lab, w.mac_b, h.welcome);
+    let carols = Some(AudienceId::of(h.coop, &[read]));
     run.same("a steward, Alice's Mac, moved Welcome into the cell of Carol's cap", moved, carols);
     let selects = w.lab.slice(w.mac_c, read).map(|s| s.select.clone());
     run.same("Carol's Mac reads what her cap selects: Welcome", selects, Some(by_id(h.welcome)));
@@ -368,7 +368,7 @@ fn public(run: &mut Run) -> Done {
     let h = handbook(&mut w);
     let charter = document("Charter", CHARTER_TEXT, w.mac_a);
     let charter = run.ok("the coop writes its Charter", w.lab.create(w.mac_a, h.coop, h.coop, "doc", &[], charter))?;
-    let public = cap(h.coop, Grantee::Public, Role::Read, by_id(charter));
+    let public = share(h.coop, Who::Everyone, Level::Read, by_id(charter));
     run.ok("and makes it public", w.lab.issue(w.mac_a, &[w.mac_a], public))?;
     w.lab.sync_all(7);
     w.lab.sync(w.server, w.stranger);
@@ -471,7 +471,7 @@ fn proposals(run: &mut Run) -> Done {
     let old = old.and_then(|d| d.blocks.get(1).map(|b| b.text.clone()));
     run.same("the version before the merge opens read-only, as it was", old.as_deref(), Some(WELCOME_TEXT));
     let carol = w.carol;
-    let read = cap(coop, vault(carol), Role::Read, by_id(welcome));
+    let read = share(coop, vault(carol), Level::Read, by_id(welcome));
     run.ok("the coop gives Carol read on Welcome", w.lab.issue(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(8);
     let mine = w.lab.propose(w.mac_c, carol, welcome, &first, "mine").err();
@@ -558,18 +558,22 @@ fn revoke_carol(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
     let carol = w.carol;
-    let read = cap(h.coop, vault(carol), Role::Read, by_id(h.welcome));
+    let read = share(h.coop, vault(carol), Level::Read, by_id(h.welcome));
     let carol_read = run.ok("the coop gives Carol read on Welcome", w.lab.issue(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(10);
-    let key = run.some("a steward moved Welcome into the cell of her cap", cell_key(&w.lab, w.mac_a, h.welcome))?;
+    let key = run.some("a steward moved Welcome into the cell of her cap", audience_key(&w.lab, w.mac_a, h.welcome))?;
     let before = w.lab.state(w.mac_a).epoch(key);
     let had = w.lab.fetched(w.mac_c, h.welcome);
-    let revoke = Action::Revoke { cap: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke { share: carol_read, actor: h.coop, keep: vec![], via: vec![] };
     run.ok("the coop revokes it", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
     let edit = w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     run.ok("Alice edits Welcome afterwards", edit)?;
     w.lab.sync_all(10);
-    run.same("Welcome stays in its cell: a revocation moves no entry", cell_key(&w.lab, w.mac_a, h.welcome), Some(key));
+    run.same(
+        "Welcome stays in its cell: a revocation moves no entry",
+        audience_key(&w.lab, w.mac_a, h.welcome),
+        Some(key),
+    );
     run.same("the cell's key rotated", w.lab.state(w.mac_a).epoch(key), before + 1);
     run.check("Carol can't open the new key, Bob can", !w.lab.opens(w.mac_c, key) && w.lab.opens(w.mac_b, key));
     let kept = text(&w.lab, w.mac_c, h.welcome, 2);
@@ -582,7 +586,7 @@ fn revoke_carol(run: &mut Run) -> Done {
 fn lost_iphone(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
-    let welcome = run.some("Welcome is in a cell of the coop", cell_key(&w.lab, w.mac_a, h.welcome))?;
+    let welcome = run.some("Welcome is in a cell of the coop", audience_key(&w.lab, w.mac_a, h.welcome))?;
     let keys = [
         (KeyFam::Seed(w.alice), "Alice's vault key"),
         (KeyFam::Seed(h.coop), "the coop's key"),
@@ -613,7 +617,7 @@ fn bob_leaves(run: &mut Run) -> Done {
     let bobs = w.lab.edit(w.mac_b, h.coop, h.welcome, |i| i.set_text(2, "Bob's words"));
     let bobs = run.ok("Bob edits Welcome", bobs)?;
     w.lab.sync_all(12);
-    let welcome = run.some("Welcome is in a cell of the coop", cell_key(&w.lab, w.mac_a, h.welcome))?;
+    let welcome = run.some("Welcome is in a cell of the coop", audience_key(&w.lab, w.mac_a, h.welcome))?;
     let keys = [KeyFam::Seed(h.coop), welcome];
     let before = keys.map(|k| w.lab.state(w.mac_a).epoch(k));
     let bob = w.bob;
@@ -641,14 +645,14 @@ fn offline_conflicts(run: &mut Run) -> Done {
         let mut w = world();
         let h = handbook(&mut w);
         let carol = w.carol;
-        let write_cap = cap(h.coop, vault(carol), Role::Write, by_id(h.welcome));
-        let carol_write = run.must("the coop gives Carol write", w.lab.issue(w.mac_a, &[w.mac_a], write_cap))?;
+        let write_share = share(h.coop, vault(carol), Level::Write, by_id(h.welcome));
+        let carol_write = run.must("the coop gives Carol write", w.lab.issue(w.mac_a, &[w.mac_a], write_share))?;
         w.lab.sync_all(seed);
         // Carol edits offline while the coop revokes Carol
         w.lab.set_online(w.mac_c, false);
         let carols = w.lab.edit(w.mac_c, carol, h.welcome, |i| i.set_text(2, "Carol, offline"));
         let carols = run.must("Carol edits Welcome offline", carols)?;
-        let revoke = Action::Revoke { cap: carol_write, actor: h.coop, keep: vec![], via: vec![] };
+        let revoke = Action::Revoke { share: carol_write, actor: h.coop, keep: vec![], via: vec![] };
         run.must("the coop revokes Carol", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
         // Alice and Bob edit the same block at the same moment
         w.lab.set_online(w.mac_b, false);
@@ -694,11 +698,11 @@ fn tampering(run: &mut Run) -> Done {
     );
     // an old sealed key replayed after a revocation opens nothing new
     let carol = w.carol;
-    let read = cap(h.coop, vault(carol), Role::Read, by_id(h.welcome));
+    let read = share(h.coop, vault(carol), Level::Read, by_id(h.welcome));
     let carol_read = run.ok("the coop gives Carol read on Welcome", w.lab.issue(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(14);
-    let key = run.some("a steward moved Welcome into the cell of her cap", cell_key(&w.lab, w.mac_a, h.welcome))?;
-    let revoke = Action::Revoke { cap: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    let key = run.some("a steward moved Welcome into the cell of her cap", audience_key(&w.lab, w.mac_a, h.welcome))?;
+    let revoke = Action::Revoke { share: carol_read, actor: h.coop, keep: vec![], via: vec![] };
     run.ok("and revokes it", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
     let edit = w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     run.ok("Alice edits Welcome afterwards", edit)?;
@@ -718,9 +722,9 @@ fn social_todo(run: &mut Run) -> Done {
     let t = todos_on(&mut w);
     w.lab.sync_all(15);
     let (alice, bob) = (w.alice, w.bob);
-    let shared = mk_cell(&[t.bob_write, t.carol_read, t.coop_owner]);
-    let moved = cell(&w.lab, w.mac_b, t.door);
-    let three = Some(CellId::of(alice, &shared));
+    let shared = mk_audience(&[t.bob_write, t.carol_read, t.coop_owner]);
+    let moved = audience(&w.lab, w.mac_b, t.door);
+    let three = Some(AudienceId::of(alice, &shared));
     run.same("Alice's Mac moved the door todo into the cell of the three caps", moved, three);
     let done = w.lab.edit(w.mac_b, bob, t.door, |i| i.set_status(Status::Done));
     run.ok("Bob checks the door todo off on Bob's Mac", done)?;
@@ -732,10 +736,10 @@ fn social_todo(run: &mut Run) -> Done {
     let edit = w.lab.edit(w.mac_c, carol, t.door, |i| i.set_status(Status::Open));
     run.same("Carol can only read it", edit.err(), Some(Refusal::NoCap));
     let (dave, phone) = (w.dave, w.phone_a);
-    let share = cap_on(alice, vault(dave), Role::Read, by_id(t.door), t.coop_owner, t.coop);
+    let further = share_on(alice, vault(dave), Level::Read, by_id(t.door), t.coop_owner, t.coop);
     run.ok(
         "acting for the coop, any coop owner's device shares it further: Alice's iPhone with Dave",
-        w.lab.issue(phone, &[phone], share),
+        w.lab.issue(phone, &[phone], further),
     )?;
     w.lab.sync_all(15);
     run.same("Dave's Mac sees it done", status(&w.lab, w.mac_d, t.door), Some(Status::Done));
@@ -746,19 +750,20 @@ fn social_todo(run: &mut Run) -> Done {
     Ok(())
 }
 
-fn roles_change(run: &mut Run) -> Done {
+fn levels_change(run: &mut Run) -> Done {
     let mut w = world();
     let t = todos_on(&mut w);
     let (carol, dave, alice) = (w.carol, w.dave, w.alice);
     w.lab.sync_all(16);
-    let read = cap_on(alice, vault(dave), Role::Read, by_id(t.door), t.coop_owner, t.coop);
+    let read = share_on(alice, vault(dave), Level::Read, by_id(t.door), t.coop_owner, t.coop);
     run.ok("acting for the coop, Bob gives Dave read", w.lab.issue(w.mac_b, &[w.mac_b], read))?;
-    let write = cap(alice, vault(carol), Role::Write, by_id(t.door));
+    let write = share(alice, vault(carol), Level::Write, by_id(t.door));
     run.ok("Alice raises Carol to write", w.lab.issue(w.mac_a, &[w.mac_a], write))?;
-    let revoke = Action::Revoke { cap: t.bob_write, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke { share: t.bob_write, actor: alice, keep: vec![], via: vec![] };
     run.ok("and takes Bob's own write away", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
     w.lab.sync_all(16);
-    let key = run.some("Alice's Mac moved the todo into the cell of the new caps", cell_key(&w.lab, w.mac_a, t.door))?;
+    let key =
+        run.some("Alice's Mac moved the todo into the cell of the new caps", audience_key(&w.lab, w.mac_a, t.door))?;
     let before = w.lab.state(w.mac_a).epoch(key);
     run.same("Bob still reaches the todo through the coop, so its cell's key never rotated", before, 0);
     run.check("Bob and Dave read it", w.lab.reads(w.mac_b, t.door) && w.lab.reads(w.mac_d, t.door));
@@ -767,12 +772,12 @@ fn roles_change(run: &mut Run) -> Done {
     run.ok("Carol edits it", w.lab.edit(w.mac_c, carol, t.door, |i| i.set_status(Status::Done)))?;
     w.lab.sync_all(16);
     let had = (w.lab.fetched(w.mac_b, t.door), w.lab.fetched(w.mac_d, t.door));
-    let revoke = Action::Revoke { cap: t.coop_owner, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke { share: t.coop_owner, actor: alice, keep: vec![], via: vec![] };
     let what = "Alice's passkey takes the coop's owner cap away, which also ends the read Bob gave Dave";
     run.ok(what, w.lab.submit(w.mac_a, &[w.passkey_a], revoke))?;
     run.ok("Alice edits the todo", w.lab.edit(w.mac_a, alice, t.door, |i| i.set_status(Status::Open)))?;
     w.lab.sync_all(16);
-    let now = (cell_key(&w.lab, w.mac_a, t.door), w.lab.state(w.mac_a).epoch(key));
+    let now = (audience_key(&w.lab, w.mac_a, t.door), w.lab.state(w.mac_a).epoch(key));
     run.same("the todo stays in its cell, whose key only now rotates", now, (Some(key), before + 1));
     run.check("Bob and Dave can't open it anymore", !w.lab.reads(w.mac_b, t.door) && !w.lab.reads(w.mac_d, t.door));
     run.check("Carol and Alice still do", w.lab.reads(w.mac_c, t.door) && w.lab.reads(w.mac_a, t.door));
@@ -810,8 +815,8 @@ fn peer_to_peer(run: &mut Run) -> Done {
     Ok(())
 }
 
-/// What the new Mac must reach after a recovery: Alice's vault and the coop, their keys and the key of Welcome's cell,
-/// and Welcome with its history.
+/// What the new Mac must reach after a recovery: Alice's vault and the coop, their keys and the key of Welcome's
+/// audience, and Welcome with its history.
 fn recovered(run: &mut Run, w: &World, h: &Handbook, new_mac: SignerId) {
     let (coop, alice) = (h.coop, w.alice);
     let v = w.lab.state(w.mac_b);
@@ -821,7 +826,7 @@ fn recovered(run: &mut Run, w: &World, h: &Handbook, new_mac: SignerId) {
     );
     run.check("and the lost devices act for neither", !v.acts_for(w.mac_a, coop) && !v.acts_for(w.phone_a, coop));
     run.check("the new Mac knows the coop", w.lab.state(new_mac).vault(coop).is_some());
-    let welcome = cell_key(&w.lab, new_mac, h.welcome);
+    let welcome = audience_key(&w.lab, new_mac, h.welcome);
     let keys = [
         (Some(KeyFam::Seed(alice)), "Alice's vault key"),
         (Some(KeyFam::Seed(coop)), "the coop's key"),
@@ -910,13 +915,13 @@ fn share_a_type(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, mac) = (w.alice, w.bob, w.mac_a);
-    let todos = cap(alice, vault(bob), Role::Read, of_type("todo"));
+    let todos = share(alice, vault(bob), Level::Read, of_type("todo"));
     let todos = run.ok("Alice shares all her todos with Bob, read", w.lab.issue(mac, &[mac], todos))?;
     w.lab.sync_all(19);
-    let (theirs, none) = (Some(CellId::of(alice, &[todos])), Some(CellId::of(alice, &[])));
-    let cells = lib.all().map(|e| cell(&w.lab, mac, e));
+    let (theirs, none) = (Some(AudienceId::of(alice, &[todos])), Some(AudienceId::of(alice, &[])));
+    let audiences = lib.all().map(|e| audience(&w.lab, mac, e));
     let moved = [theirs, theirs, theirs, none, none];
-    run.same("her Mac moved the three todos into the cap's cell, and left the notes", cells, moved);
+    run.same("her Mac moved the three todos into the cap's cell, and left the notes", audiences, moved);
     let reads = lib.all().map(|e| w.lab.reads(w.mac_b, e));
     run.same("Bob's Mac reads the three todos and neither note", reads, [true, true, true, false, false]);
     run.same("and never receives the notes", [lib.plan, lib.diary].map(|e| w.lab.fetched(w.mac_b, e)), [0, 0]);
@@ -930,7 +935,7 @@ fn share_a_type(run: &mut Run) -> Done {
     let lamp = w.lab.create(mac, alice, alice, "todo", &[], Item::todo("Fix the lamp", mac));
     let lamp = run.ok("Alice adds a todo", lamp)?;
     w.lab.sync_all(19);
-    let straight = cell(&w.lab, w.mac_b, lamp) == theirs && stays(&w.lab, w.mac_b, lamp) == 1;
+    let straight = audience(&w.lab, w.mac_b, lamp) == theirs && stays(&w.lab, w.mac_b, lamp) == 1;
     run.check("her Mac creates it straight in the cap's cell, with no move", straight);
     run.check("and Bob reads it", w.lab.reads(w.mac_b, lamp));
     Ok(())
@@ -940,7 +945,7 @@ fn share_a_tag(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, mac) = (w.alice, w.bob, w.mac_a);
-    let work = cap(alice, vault(bob), Role::Write, tagged("todo", "work"));
+    let work = share(alice, vault(bob), Level::Write, tagged("todo", "work"));
     run.ok("Alice shares her todos tagged work with Bob, write", w.lab.issue(mac, &[mac], work))?;
     w.lab.sync_all(20);
     let reads = lib.all().map(|e| w.lab.reads(w.mac_b, e));
@@ -960,7 +965,7 @@ fn out_of_a_slice(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, mac) = (w.alice, w.bob, w.mac_a);
-    let work = cap(alice, vault(bob), Role::Write, tagged("todo", "work"));
+    let work = share(alice, vault(bob), Level::Write, tagged("todo", "work"));
     run.ok("Alice shares her todos tagged work with Bob, write", w.lab.issue(mac, &[mac], work))?;
     w.lab.sync_all(21);
     let doing = w.lab.edit(w.mac_b, bob, lib.solar, |i| i.set_status(Status::Doing));
@@ -974,12 +979,12 @@ fn out_of_a_slice(run: &mut Run) -> Done {
     let late = w.lab.edit(w.mac_b, bob, lib.solar, |i| i.set_status(Status::Done));
     let late = run.ok("Bob, who hasn't heard of it yet, checks them off", late)?;
     w.lab.sync_all(21);
-    let none = Some(CellId::of(alice, &[]));
-    run.same("her Mac moved them to the cell of no caps", cell(&w.lab, mac, lib.solar), none);
+    let none = Some(AudienceId::of(alice, &[]));
+    run.same("her Mac moved them to the cell of no caps", audience(&w.lab, mac, lib.solar), none);
     run.same("and shows them as Bob left them", status(&w.lab, mac, lib.solar), Some(Status::Doing));
     let mine = status(&w.lab, w.mac_b, lib.solar);
     run.same("Bob's Mac, which never hears of the move, still shows his own check", mine, Some(Status::Done));
-    let key = run.some("the solar panels are in a cell", cell_key(&w.lab, mac, lib.solar))?;
+    let key = run.some("the solar panels are in a cell", audience_key(&w.lab, mac, lib.solar))?;
     let blind = !reads_by(&w.lab, mac, w.mac_b, lib.solar) && !w.lab.opens(w.mac_b, key);
     run.check("Bob opens neither their key now nor their cell's", blind);
     run.check("the note written after they left never reaches Bob", !contains(&w.lab.store(w.mac_b), AFTER_TEXT));
@@ -994,12 +999,12 @@ fn asking_for_a_tag(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, carol, mac) = (w.alice, w.bob, w.carol, w.mac_a);
-    let set = Rule::Set { path: vec![], to: None, on: None };
-    let ops = vec![Rule::Read, set, Rule::Tag(Some(syms(&["urgent"])))];
-    let work = NewCap { name: "Work".into(), ops, ..cap(alice, vault(bob), Role::Write, tagged("todo", "work")) };
+    let set = Op::Set { path: vec![], to: None, on: None };
+    let ops = vec![Op::Read, set, Op::Tag(Some(syms(&["urgent"])))];
+    let work = NewShare { name: "Work".into(), ops, ..share(alice, vault(bob), Level::Write, tagged("todo", "work")) };
     let what = "Alice shares her todos tagged work with Bob: he edits them and may ask for the urgent tag alone";
     let work = run.ok(what, w.lab.issue(mac, &[mac], work))?;
-    let urgent = cap(alice, vault(carol), Role::Read, tagged("todo", "urgent"));
+    let urgent = share(alice, vault(carol), Level::Read, tagged("todo", "urgent"));
     let urgent = run.ok("and her urgent todos with Carol, read", w.lab.issue(mac, &[mac], urgent))?;
     w.lab.sync_all(22);
     run.check("Carol reads none of them yet", lib.all().iter().all(|&e| !w.lab.reads(w.mac_c, e)));
@@ -1007,8 +1012,8 @@ fn asking_for_a_tag(run: &mut Run) -> Done {
     run.ok("Bob tags the door todo urgent, which asks Alice's Mac to", ask)?;
     w.lab.sync_all(22);
     run.same("Alice's Mac grants it", tags(&w.lab, mac, lib.door), Some(syms(&["work", "urgent"])));
-    let both = Some(CellId::of(alice, &mk_cell(&[work, urgent])));
-    run.same("and moves the todo into the cell of both caps", cell(&w.lab, mac, lib.door), both);
+    let both = Some(AudienceId::of(alice, &mk_audience(&[work, urgent])));
+    run.same("and moves the todo into the cell of both caps", audience(&w.lab, mac, lib.door), both);
     let both = w.lab.reads(w.mac_c, lib.door) && w.lab.reads(w.mac_b, lib.door);
     run.check("Carol reads it now, and Bob still does", both);
     let granted = Some(syms(&["work", "urgent"]));
@@ -1025,24 +1030,24 @@ fn asking_for_a_tag(run: &mut Run) -> Done {
     Ok(())
 }
 
-fn creating_through_a_cap(run: &mut Run) -> Done {
+fn creating_through_a_share(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, carol, mac) = (w.alice, w.bob, w.carol, w.mac_a);
-    let all = cap(alice, vault(carol), Role::Write, of_type("todo"));
+    let all = share(alice, vault(carol), Level::Write, of_type("todo"));
     let all = run.ok("Alice shares all her todos with Carol, write", w.lab.issue(mac, &[mac], all))?;
-    let work = cap(alice, vault(bob), Role::Write, tagged("todo", "work"));
+    let work = share(alice, vault(bob), Level::Write, tagged("todo", "work"));
     let work = run.ok("and those tagged work with Bob, write", w.lab.issue(mac, &[mac], work))?;
     w.lab.sync_all(23);
     let lamp = w.lab.create(w.mac_b, bob, alice, "todo", &["work"], Item::todo("Fix the lamp", w.mac_b));
     let lamp = run.ok("Bob creates a todo tagged work in Alice's vault", lamp)?;
-    let intake = Some(CellId::of(alice, &[work]));
-    run.same("in his cap's intake cell: the only cell his Mac can work out", cell(&w.lab, w.mac_b, lamp), intake);
+    let intake = Some(AudienceId::of(alice, &[work]));
+    run.same("in his cap's intake cell: the only cell his Mac can work out", audience(&w.lab, w.mac_b, lamp), intake);
     w.lab.sync(w.mac_b, w.mac_c);
     run.same("Carol's cap selects it too, but her Mac receives none of it there", w.lab.fetched(w.mac_c, lamp), 0);
     w.lab.sync_all(23);
-    let both = Some(CellId::of(alice, &mk_cell(&[all, work])));
-    run.same("Alice's Mac moved it into the cell of both caps", cell(&w.lab, mac, lamp), both);
+    let both = Some(AudienceId::of(alice, &mk_audience(&[all, work])));
+    run.same("Alice's Mac moved it into the cell of both caps", audience(&w.lab, mac, lamp), both);
     run.check("now Carol reads it, and Bob still does", w.lab.reads(w.mac_c, lamp) && w.lab.reads(w.mac_b, lamp));
     run.ok("and Bob still writes it", w.lab.edit(w.mac_b, bob, lamp, |i| i.set_status(Status::Doing)))?;
     let note = document("Bob's note", "Outside my slice", w.mac_b);
@@ -1051,33 +1056,33 @@ fn creating_through_a_cap(run: &mut Run) -> Done {
     let forced = w.lab.create_in(w.mac_b, bob, alice, vec![work], "note", &["work"], note);
     let note = run.ok("a patched app puts it in his intake cell anyway, which every peer accepts", forced)?;
     w.lab.sync_all(23);
-    let none = Some(CellId::of(alice, &[]));
-    run.same("Alice's Mac keeps it, in the cell of no caps", cell(&w.lab, mac, note), none);
+    let none = Some(AudienceId::of(alice, &[]));
+    run.same("Alice's Mac keeps it, in the cell of no caps", audience(&w.lab, mac, note), none);
     let theirs = !reads_by(&w.lab, mac, w.mac_b, note) && w.lab.reads(mac, note);
     run.check("so Bob reads it no more, and Alice does", theirs);
     run.check("nor any other entry: his notes were never his", !w.lab.reads(w.mac_b, lib.plan));
     Ok(())
 }
 
-fn a_cap_on_a_cap(run: &mut Run) -> Done {
+fn a_share_on_a_share(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, carol, dave, mac) = (w.alice, w.carol, w.dave, w.mac_a);
-    let owner = cap(alice, vault(carol), Role::Owner, of_type("todo"));
+    let owner = share(alice, vault(carol), Level::Owner, of_type("todo"));
     let refused = w.lab.issue(mac, &[mac], owner.clone()).err();
     run.same("Alice's Mac alone can't make anyone owner", refused, Some(Refusal::BelowThreshold));
     let owner = run.ok("Alice's passkey makes Carol owner of her todos", w.lab.issue(mac, &[w.passkey_a], owner))?;
     w.lab.sync_all(24);
-    let home = cap_on(alice, vault(dave), Role::Read, tagged("todo", "home"), owner, carol);
+    let home = share_on(alice, vault(dave), Level::Read, tagged("todo", "home"), owner, carol);
     let home = run.ok("Carol gives Dave the todos tagged home, read", w.lab.issue(w.mac_c, &[w.mac_c], home))?;
-    let notes = cap_on(alice, vault(dave), Role::Read, of_type("note"), owner, carol);
+    let notes = share_on(alice, vault(dave), Level::Read, of_type("note"), owner, carol);
     let notes = run.ok("and, claiming more than she holds, the notes", w.lab.issue(w.mac_c, &[w.mac_c], notes))?;
     w.lab.sync_all(24);
     let reads = |lab: &Lab, d| lib.all().map(|e| lab.reads(d, e));
     run.same("Carol reads the three todos", reads(&w.lab, w.mac_c), [true, true, true, false, false]);
     let what = "Dave reads what every cap of his chains selects: the seeds todo, at home, and no note";
     run.same(what, reads(&w.lab, w.mac_d), [false, true, false, false, false]);
-    let revoke = Action::Revoke { cap: owner, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke { share: owner, actor: alice, keep: vec![], via: vec![] };
     run.ok("Alice's passkey revokes Carol's owner cap", w.lab.submit(mac, &[w.passkey_a], revoke))?;
     let after = w.lab.edit(mac, alice, lib.seeds, |i| {
         i.edit_todo(|t| t.notes = AFTER_TEXT.into());
@@ -1093,11 +1098,11 @@ fn a_cap_on_a_cap(run: &mut Run) -> Done {
     Ok(())
 }
 
-fn wide_caps(run: &mut Run) -> Done {
+fn wide_shares(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, dave, mac) = (w.alice, w.dave, w.mac_a);
-    let backup = cap(alice, vault(dave), Role::Read, Selector::All);
+    let backup = share(alice, vault(dave), Level::Read, Selector::All);
     run.ok("Alice gives Dave, her backup, read on her whole vault", w.lab.issue(mac, &[mac], backup))?;
     w.lab.sync_all(25);
     let none = lib.all().iter().all(|&e| stays(&w.lab, mac, e) == 1);
@@ -1105,7 +1110,7 @@ fn wide_caps(run: &mut Run) -> Done {
     run.check("Dave reads every entry", lib.all().iter().all(|&e| w.lab.reads(w.mac_d, e)));
     let relayed = lib.all().iter().all(|&e| w.lab.fetched(w.server, e) > 0 && !w.lab.reads(w.server, e));
     run.check("the server, through avenCEO's wide relay cap, holds every entry and reads none", relayed);
-    let public = cap(alice, Grantee::Public, Role::Read, by_id(lib.plan));
+    let public = share(alice, Who::Everyone, Level::Read, by_id(lib.plan));
     run.ok("Alice makes her plan public", w.lab.issue(mac, &[mac], public))?;
     w.lab.sync_all(25);
     w.lab.sync(w.server, w.stranger);
@@ -1121,9 +1126,9 @@ fn comeback(run: &mut Run) -> Done {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, mac, phone) = (w.alice, w.mac_a, w.phone_a);
-    let urgent = cap(alice, vault(w.bob), Role::Read, tagged("todo", "urgent"));
+    let urgent = share(alice, vault(w.bob), Level::Read, tagged("todo", "urgent"));
     let urgent = run.ok("Alice shares her urgent todos with Bob, read", w.lab.issue(mac, &[mac], urgent))?;
-    let key = KeyFam::Cell(alice, CellId::of(alice, &[urgent]));
+    let key = KeyFam::Audience(alice, AudienceId::of(alice, &[urgent]));
     run.ok("and tags the seeds todo urgent", w.lab.tag(mac, alice, lib.seeds, &["urgent"], &[]))?;
     w.lab.sync_all(26);
     run.check("Bob reads it while it is urgent", w.lab.reads(w.mac_b, lib.seeds));

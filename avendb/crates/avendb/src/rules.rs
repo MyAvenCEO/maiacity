@@ -1,17 +1,17 @@
-//! Caps are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`avendb/docs/OPS.md`, caps). A cap is a name
-//! and the ops its grantee may make on the slice its selector picks: relay, backup and read (keep, pass on and open the
-//! slice's edits), the write ops (create an entry, set a value, add, delete or move rows, ask for tags, start a
-//! proposal, merge a line) and share (issue caps resting on it). Its role, which relays and every operational rule read
-//! in the clear (`policy::Cap::role`), is the class of its strongest op (`level_of`). Every reader of an entry judges
-//! each write by its touches, what its Loro ops did, place by place, read off the write imported on the version it
-//! builds on (`doc::Item::footprint`, `history::History::reading`), and the tags it asks for: a value set at a place,
-//! rows of a list added, deleted or moved, the entry created, a proposal started, another line merged in, a tag asked
-//! for. A cap's ops allow a write when each touch is allowed by one of them.
+//! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`avendb/docs/OPS.md`, shares). A share is a
+//! name and the ops its grantee may make on the slice its selector picks: relay, backup and read (keep, pass on and
+//! open the slice's edits), the write ops (create an entry, set a value, add, delete or move rows, ask for tags, start
+//! a proposal, merge a line) and share (issue shares resting on it). Its level, which relays and every operational rule
+//! read in the clear (`policy::Share::level`), is the class of its strongest op (`level_of`). Every reader of an entry
+//! judges each write by its touches, what its Loro ops did, place by place, read off the write imported on the version
+//! it builds on (`doc::Item::footprint`, `history::History::reading`), and the tags it asks for: a value set at a
+//! place, rows of a list added, deleted or moved, the entry created, a proposal started, another line merged in, a tag
+//! asked for. A share's ops allow a write when each touch is allowed by one of them.
 //!
-//! The ops travel sealed in the cap's slice, beside its selector, with a salt (`Grant`); the cap's `select` carries
+//! The ops travel sealed in the share's slice, beside its selector, with a salt (`Grant`); the share's `select` carries
 //! their hash in the clear (`Grant::commitment`, `slice::Select`), which tells a relay nothing of them. A write through
-//! a cap carries, inside its encrypted body, a proof (`Proof`): the cap it relies on and the grant of every cap of that
-//! cap's chain, which its readers check against the commitments, and each cap's role against its ops
+//! a share carries, inside its encrypted body, a proof (`Proof`): the share it relies on and the grant of every share
+//! of that share's chain, which its readers check against the commitments, and each share's level against its ops
 //! (`policy::State::lets`).
 //!
 //! An op in JSON, as the docs write it:
@@ -28,21 +28,21 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::id::CapId;
+use crate::id::ShareId;
 use crate::ops::Loc;
-use crate::policy::Role;
+use crate::policy::Level;
 use crate::slice::{Sym, TagDelta};
 
-/// The most ops a cap names, steps a pattern has, and values an op may set a place to or tags it may ask for: so
-/// judging a write stays linear in it, and ops fit in a sealed slice. The most caps a proof opens: a write through a
-/// longer chain is never counted. And the longest name a cap has, in characters.
-pub const MAX_RULES: usize = 64;
+/// The most ops a share names, steps a pattern has, and values an op may set a place to or tags it may ask for: so
+/// judging a write stays linear in it, and ops fit in a sealed slice. The most shares a proof opens: a write through a
+/// longer chain is never counted. And the longest name a share has, in characters.
+pub const MAX_OPS: usize = 64;
 pub const MAX_STEPS: usize = 8;
 pub const MAX_VALUES: usize = 64;
 pub const MAX_GRANTS: usize = 16;
 pub const MAX_NAME: usize = 64;
 
-/// A step of a rule's path: a field, a row of a list of records by its id, or any one step.
+/// A step of an op's path: a field, a row of a list of records by its id, or any one step.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Step {
     Field(String),
@@ -50,14 +50,14 @@ pub enum Step {
     Any,
 }
 
-/// The lines a rule holds on.
+/// The lines an op holds on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum On {
     Main,
     Proposals,
 }
 
-/// A value a rule may set a place to, and the value a touch names where one op set one: `null`, a boolean, an integer
+/// A value an op may set a place to, and the value a touch names where one op set one: `null`, a boolean, an integer
 /// or a text.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Scalar {
@@ -84,13 +84,13 @@ pub enum Touch {
     Merge,
 }
 
-/// An op a cap names, in the order caps list them (`normalize`): `Relay`, `Backup` and `Read` its slice's edits;
+/// An op a share names, in the order shares list them (`normalize`): `Relay`, `Backup` and `Read` its slice's edits;
 /// `Create` entries; `Set` any change at or under `path` (only to the values `to`, if it lists them), `Insert`,
 /// `Remove` or `Move` the rows of a list, `Merge` another line, each on the lines `on` names (either, if none); ask for
-/// the tags `Tag` lists (any, if none); `Propose`; and `Share`, issue caps resting on it, and on the whole vault
+/// the tags `Tag` lists (any, if none); `Propose`; and `Share`, issue shares resting on it, and on the whole vault
 /// publish into its schema lane.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Rule {
+pub enum Op {
     Relay,
     Backup,
     Read,
@@ -105,29 +105,29 @@ pub enum Rule {
     Share,
 }
 
-/// A cap's ops and the salt that keeps them from being guessed: what its slice carries, sealed, and what a proof opens
-/// to readers. Their hash is the cap's commitment, in the clear.
+/// A share's ops and the salt that keeps them from being guessed: what its slice carries, sealed, and what a proof
+/// opens to readers. Their hash is the share's commitment, in the clear.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Grant {
-    pub ops: Vec<Rule>,
+    pub ops: Vec<Op>,
     pub salt: [u8; 32],
 }
 
-/// What a write through a cap carries inside its encrypted body: the cap it relies on, and the grant of each cap of
-/// that cap's chain, root first.
+/// What a write through a share carries inside its encrypted body: the share it relies on, and the grant of each share
+/// of that share's chain, root first.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Proof {
-    pub cap: CapId,
+    pub share: ShareId,
     pub grants: Vec<Grant>,
 }
 
-/// A built-in group: a name, what it lets its holders do in a few words, the ops its caps name, and whether it goes to
-/// everyone (Public). The page offers them when it shares; anyone may name their own.
+/// A built-in group: a name, what it lets its holders do in a few words, the ops its shares name, and whether it goes
+/// to everyone (Public). The page offers them when it shares; anyone may name their own.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Group {
     pub name: &'static str,
     pub hint: &'static str,
-    pub ops: Vec<Rule>,
+    pub ops: Vec<Op>,
     pub everyone: bool,
 }
 
@@ -154,15 +154,15 @@ impl Scalar {
 }
 
 impl Grant {
-    /// The commitment to the ops, as the cap's `select` carries it in the clear: the hash of the ops and the salt.
+    /// The commitment to the ops, as the share's `select` carries it in the clear: the hash of the ops and the salt.
     pub fn commitment(&self) -> [u8; 32] {
         let mut bytes = vec![];
         crate::encode::Encode::encode(self, &mut bytes);
         crate::hash::hash("grant", &bytes)
     }
 
-    /// The role a cap with these ops has (`level_of`).
-    pub fn level(&self) -> Role {
+    /// The level a share with these ops has (`level_of`).
+    pub fn level(&self) -> Level {
         level_of(&self.ops)
     }
 }
@@ -213,7 +213,7 @@ pub fn reaches(pattern: &[Step], path: &[Step]) -> bool {
     pattern.len() <= path.len() && pattern.iter().zip(path).all(|(p, x)| p.fits(x))
 }
 
-/// A rule's lines hold a write on the main line (`main`) or on a proposal.
+/// An op's lines hold a write on the main line (`main`) or on a proposal.
 fn on_line(main: bool, on: Option<On>) -> bool {
     match on {
         None => true,
@@ -222,33 +222,33 @@ fn on_line(main: bool, on: Option<On>) -> bool {
     }
 }
 
-impl Rule {
+impl Op {
     /// Its class: relay, backup and read are their own, share is owner, and every op that writes is write.
-    pub fn level(&self) -> Role {
+    pub fn level(&self) -> Level {
         match self {
-            Rule::Relay => Role::Relay,
-            Rule::Backup => Role::Backup,
-            Rule::Read => Role::Read,
-            Rule::Share => Role::Owner,
-            _ => Role::Write,
+            Op::Relay => Level::Relay,
+            Op::Backup => Level::Backup,
+            Op::Read => Level::Read,
+            Op::Share => Level::Owner,
+            _ => Level::Write,
         }
     }
 
-    /// Its place in the order caps list their ops.
+    /// Its place in the order shares list their ops.
     fn rank(&self) -> u8 {
         match self {
-            Rule::Relay => 0,
-            Rule::Backup => 1,
-            Rule::Read => 2,
-            Rule::Create => 3,
-            Rule::Set { .. } => 4,
-            Rule::Insert { .. } => 5,
-            Rule::Remove { .. } => 6,
-            Rule::Move { .. } => 7,
-            Rule::Tag(_) => 8,
-            Rule::Propose => 9,
-            Rule::Merge { .. } => 10,
-            Rule::Share => 11,
+            Op::Relay => 0,
+            Op::Backup => 1,
+            Op::Read => 2,
+            Op::Create => 3,
+            Op::Set { .. } => 4,
+            Op::Insert { .. } => 5,
+            Op::Remove { .. } => 6,
+            Op::Move { .. } => 7,
+            Op::Tag(_) => 8,
+            Op::Propose => 9,
+            Op::Merge { .. } => 10,
+            Op::Share => 11,
         }
     }
 
@@ -256,7 +256,7 @@ impl Rule {
     pub fn allows(&self, main: bool, t: &Touch) -> bool {
         let list = |f: &String| [Step::Field(f.clone())];
         match (self, t) {
-            (Rule::Set { path, to, on }, Touch::Set(l, v)) => {
+            (Op::Set { path, to, on }, Touch::Set(l, v)) => {
                 on_line(main, *on)
                     && reaches(path, &steps(l))
                     && match (to, v) {
@@ -265,13 +265,13 @@ impl Rule {
                         (Some(_), None) => false,
                     }
             }
-            (Rule::Set { path, to: None, on }, Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f))
-            | (Rule::Insert { path, on }, Touch::Insert(f))
-            | (Rule::Remove { path, on }, Touch::Remove(f))
-            | (Rule::Move { path, on }, Touch::Move(f)) => on_line(main, *on) && reaches(path, &list(f)),
-            (Rule::Merge { on }, Touch::Merge) => on_line(main, *on),
-            (Rule::Tag(tags), Touch::Tag(t)) => tags.as_ref().is_none_or(|ts| ts.contains(t)),
-            (Rule::Propose, Touch::Propose) | (Rule::Create, Touch::Create) => true,
+            (Op::Set { path, to: None, on }, Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f))
+            | (Op::Insert { path, on }, Touch::Insert(f))
+            | (Op::Remove { path, on }, Touch::Remove(f))
+            | (Op::Move { path, on }, Touch::Move(f)) => on_line(main, *on) && reaches(path, &list(f)),
+            (Op::Merge { on }, Touch::Merge) => on_line(main, *on),
+            (Op::Tag(tags), Touch::Tag(t)) => tags.as_ref().is_none_or(|ts| ts.contains(t)),
+            (Op::Propose, Touch::Propose) | (Op::Create, Touch::Create) => true,
             _ => false,
         }
     }
@@ -279,33 +279,33 @@ impl Rule {
     pub fn to_json(&self) -> Value {
         let path = |p: &[Step]| Value::Array(p.iter().map(Step::to_json).collect());
         let mut out = match self {
-            Rule::Set { path: p, to, .. } => {
+            Op::Set { path: p, to, .. } => {
                 let mut o = json!({ "op": "set", "path": path(p) });
                 if let Some(vs) = to {
                     o["to"] = vs.iter().map(Scalar::to_json).collect();
                 }
                 o
             }
-            Rule::Insert { path: p, .. } => json!({ "op": "insert", "path": path(p) }),
-            Rule::Remove { path: p, .. } => json!({ "op": "remove", "path": path(p) }),
-            Rule::Move { path: p, .. } => json!({ "op": "move", "path": path(p) }),
-            Rule::Merge { .. } => json!({ "op": "merge" }),
-            Rule::Tag(None) => return json!({ "op": "tag" }),
-            Rule::Tag(Some(ts)) => {
+            Op::Insert { path: p, .. } => json!({ "op": "insert", "path": path(p) }),
+            Op::Remove { path: p, .. } => json!({ "op": "remove", "path": path(p) }),
+            Op::Move { path: p, .. } => json!({ "op": "move", "path": path(p) }),
+            Op::Merge { .. } => json!({ "op": "merge" }),
+            Op::Tag(None) => return json!({ "op": "tag" }),
+            Op::Tag(Some(ts)) => {
                 return json!({ "op": "tag", "tags": ts.iter().map(Sym::as_str).collect::<Vec<_>>() });
             }
-            Rule::Relay => return json!({ "op": "relay" }),
-            Rule::Backup => return json!({ "op": "backup" }),
-            Rule::Read => return json!({ "op": "read" }),
-            Rule::Create => return json!({ "op": "create" }),
-            Rule::Propose => return json!({ "op": "propose" }),
-            Rule::Share => return json!({ "op": "share" }),
+            Op::Relay => return json!({ "op": "relay" }),
+            Op::Backup => return json!({ "op": "backup" }),
+            Op::Read => return json!({ "op": "read" }),
+            Op::Create => return json!({ "op": "create" }),
+            Op::Propose => return json!({ "op": "propose" }),
+            Op::Share => return json!({ "op": "share" }),
         };
-        if let Rule::Set { on: Some(on), .. }
-        | Rule::Insert { on: Some(on), .. }
-        | Rule::Remove { on: Some(on), .. }
-        | Rule::Move { on: Some(on), .. }
-        | Rule::Merge { on: Some(on) } = self
+        if let Op::Set { on: Some(on), .. }
+        | Op::Insert { on: Some(on), .. }
+        | Op::Remove { on: Some(on), .. }
+        | Op::Move { on: Some(on), .. }
+        | Op::Merge { on: Some(on) } = self
         {
             out["on"] = match on {
                 On::Main => "main",
@@ -316,7 +316,7 @@ impl Rule {
         out
     }
 
-    pub fn of_json(v: &Value) -> Result<Rule, String> {
+    pub fn of_json(v: &Value) -> Result<Op, String> {
         let o = v.as_object().ok_or("an op is an object")?;
         let name = o.get("op").and_then(Value::as_str).ok_or("an op names itself: \"op\"")?;
         let fields: &[&str] = match name {
@@ -363,40 +363,40 @@ impl Rule {
                         ));
                     }
                 };
-                Rule::Set { path: path(true)?, to, on }
+                Op::Set { path: path(true)?, to, on }
             }
-            "insert" => Rule::Insert { path: path(false)?, on },
-            "remove" => Rule::Remove { path: path(false)?, on },
-            "move" => Rule::Move { path: path(false)?, on },
-            "merge" => Rule::Merge { on },
+            "insert" => Op::Insert { path: path(false)?, on },
+            "remove" => Op::Remove { path: path(false)?, on },
+            "move" => Op::Move { path: path(false)?, on },
+            "merge" => Op::Merge { on },
             "tag" => {
                 let names = |xs: &Vec<Value>| xs.iter().map(|x| x.as_str().map(Sym::new)).collect::<Option<Vec<_>>>();
-                Rule::Tag(match o.get("tags") {
+                Op::Tag(match o.get("tags") {
                     None | Some(Value::Null) => None,
                     Some(Value::Array(xs)) if xs.len() <= MAX_VALUES && names(xs).is_some() => names(xs),
                     Some(_) => return Err(format!("tags is a list of at most {MAX_VALUES} tags")),
                 })
             }
-            "relay" => Rule::Relay,
-            "backup" => Rule::Backup,
-            "read" => Rule::Read,
-            "create" => Rule::Create,
-            "propose" => Rule::Propose,
-            _ => Rule::Share,
+            "relay" => Op::Relay,
+            "backup" => Op::Backup,
+            "read" => Op::Read,
+            "create" => Op::Create,
+            "propose" => Op::Propose,
+            _ => Op::Share,
         })
     }
 }
 
-/// A cap's role: the class of its strongest op, relay for none (`Rules.lean`'s `levelOf`).
-pub fn level_of(ops: &[Rule]) -> Role {
-    ops.iter().map(Rule::level).max().unwrap_or(Role::Relay)
+/// A share's level: the class of its strongest op, relay for none (`Rules.lean`'s `levelOf`).
+pub fn level_of(ops: &[Op]) -> Level {
+    ops.iter().map(Op::level).max().unwrap_or(Level::Relay)
 }
 
-/// A cap's ops as it carries them: each once, in the order caps list them (an op's kind, then as given), read with
+/// A share's ops as it carries them: each once, in the order shares list them (an op's kind, then as given), read with
 /// every op that writes or shares, as a writer reads what it builds on, and no relay or backup beside read or backup,
-/// which they are part of. Refused: none, more than `MAX_RULES`, or ops of no role (none is).
-pub fn normalize(ops: Vec<Rule>) -> Result<Vec<Rule>, String> {
-    let mut out: Vec<Rule> = Vec::with_capacity(ops.len() + 1);
+/// which they are part of. Refused: none, more than `MAX_OPS`, or ops of no level (none is).
+pub fn normalize(ops: Vec<Op>) -> Result<Vec<Op>, String> {
+    let mut out: Vec<Op> = Vec::with_capacity(ops.len() + 1);
     for o in ops {
         if !out.contains(&o) {
             out.push(o);
@@ -406,22 +406,22 @@ pub fn normalize(ops: Vec<Rule>) -> Result<Vec<Rule>, String> {
         return Err("a cap names at least one op".into());
     }
     let level = level_of(&out);
-    if level.allows(Role::Write) && !out.contains(&Rule::Read) {
-        out.push(Rule::Read);
+    if level.allows(Level::Write) && !out.contains(&Op::Read) {
+        out.push(Op::Read);
     }
     out.retain(|o| match o {
-        Rule::Relay => level == Role::Relay,
-        Rule::Backup => level == Role::Backup,
+        Op::Relay => level == Level::Relay,
+        Op::Backup => level == Level::Backup,
         _ => true,
     });
-    out.sort_by_key(Rule::rank);
-    if out.len() > MAX_RULES {
-        return Err(format!("a cap names at most {MAX_RULES} ops"));
+    out.sort_by_key(Op::rank);
+    if out.len() > MAX_OPS {
+        return Err(format!("a cap names at most {MAX_OPS} ops"));
     }
     Ok(out)
 }
 
-/// A cap's name: a few words, at most `MAX_NAME` characters, not blank.
+/// A share's name: a few words, at most `MAX_NAME` characters, not blank.
 pub fn name_ok(name: &str) -> Result<(), String> {
     if name.trim().is_empty() || name.chars().count() > MAX_NAME {
         return Err(format!("a cap has a name of 1 to {MAX_NAME} characters"));
@@ -429,59 +429,59 @@ pub fn name_ok(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The built-in groups, as `Rules.lean` has them (`groups`): a role's group for each role, Suggester (start
+/// The built-in groups, as `Rules.lean` has them (`groups`): a level's group for each level, Suggester (start
 /// proposals and write on them) and Public (everyone reads).
 pub fn groups() -> Vec<Group> {
     let suggester = vec![
-        Rule::Read,
-        Rule::Set { path: vec![], to: None, on: Some(On::Proposals) },
-        Rule::Propose,
-        Rule::Merge { on: Some(On::Proposals) },
+        Op::Read,
+        Op::Set { path: vec![], to: None, on: Some(On::Proposals) },
+        Op::Propose,
+        Op::Merge { on: Some(On::Proposals) },
     ];
     let g = |name, hint, ops, everyone| Group { name, hint, ops, everyone };
-    let role = |r: Role, hint| g(r.group(), hint, r.ops(), false);
+    let level = |r: Level, hint| g(r.group(), hint, r.ops(), false);
     vec![
-        role(Role::Owner, "Reads, edits and shares it on"),
-        role(Role::Write, "Reads and edits it"),
+        level(Level::Owner, "Reads, edits and shares it on"),
+        level(Level::Write, "Reads and edits it"),
         g("Suggester", "Reads it and suggests changes to merge", suggester, false),
-        role(Role::Read, "Reads it"),
-        g("Public", "Everyone reads it", Role::Read.ops(), true),
-        role(Role::Backup, "Keeps it encrypted, reads nothing"),
-        role(Role::Relay, "Finds its devices, keeps nothing"),
+        level(Level::Read, "Reads it"),
+        g("Public", "Everyone reads it", Level::Read.ops(), true),
+        level(Level::Backup, "Keeps it encrypted, reads nothing"),
+        level(Level::Relay, "Finds its devices, keeps nothing"),
     ]
 }
 
-impl Role {
+impl Level {
     /// The name of its built-in group.
     pub fn group(self) -> &'static str {
         match self {
-            Role::Owner => "Owner",
-            Role::Write => "Editor",
-            Role::Read => "Viewer",
-            Role::Backup => "Backup",
-            Role::Relay => "Relay",
+            Level::Owner => "Owner",
+            Level::Write => "Editor",
+            Level::Read => "Viewer",
+            Level::Backup => "Backup",
+            Level::Relay => "Relay",
         }
     }
 
-    /// The ops of its built-in group: what a cap with this role and no narrower ops allows (`Rules.lean`'s
-    /// `Role.ops`).
-    pub fn ops(self) -> Vec<Rule> {
+    /// The ops of its built-in group: what a share with this level and no narrower ops allows (`Rules.lean`'s
+    /// `Level.ops`).
+    pub fn ops(self) -> Vec<Op> {
         let edit = || {
             vec![
-                Rule::Read,
-                Rule::Create,
-                Rule::Set { path: vec![], to: None, on: None },
-                Rule::Tag(None),
-                Rule::Propose,
-                Rule::Merge { on: None },
+                Op::Read,
+                Op::Create,
+                Op::Set { path: vec![], to: None, on: None },
+                Op::Tag(None),
+                Op::Propose,
+                Op::Merge { on: None },
             ]
         };
         match self {
-            Role::Relay => vec![Rule::Relay],
-            Role::Backup => vec![Rule::Backup],
-            Role::Read => vec![Rule::Read],
-            Role::Write => edit(),
-            Role::Owner => [edit(), vec![Rule::Share]].concat(),
+            Level::Relay => vec![Op::Relay],
+            Level::Backup => vec![Op::Backup],
+            Level::Read => vec![Op::Read],
+            Level::Write => edit(),
+            Level::Owner => [edit(), vec![Op::Share]].concat(),
         }
     }
 }
@@ -494,21 +494,21 @@ impl Group {
 
 /// Ops allow a write: each of its touches, of a write on the main line (`main`) or on a proposal, is allowed by one of
 /// them.
-pub fn allows_all(ops: &[Rule], main: bool, touches: &[Touch]) -> bool {
+pub fn allows_all(ops: &[Op], main: bool, touches: &[Touch]) -> bool {
     touches.iter().all(|t| ops.iter().any(|r| r.allows(main, t)))
 }
 
-/// A cap's ops from their JSON: a list of ops, at most `MAX_RULES`, as given (`normalize` puts them in order).
-pub fn ops_of_json(v: &Value) -> Result<Vec<Rule>, String> {
+/// A share's ops from their JSON: a list of ops, at most `MAX_OPS`, as given (`normalize` puts them in order).
+pub fn ops_of_json(v: &Value) -> Result<Vec<Op>, String> {
     let rs = v.as_array().ok_or("ops are a list of ops")?;
-    if rs.len() > MAX_RULES {
-        return Err(format!("a cap names at most {MAX_RULES} ops"));
+    if rs.len() > MAX_OPS {
+        return Err(format!("a cap names at most {MAX_OPS} ops"));
     }
-    rs.iter().map(Rule::of_json).collect()
+    rs.iter().map(Op::of_json).collect()
 }
 
-pub fn ops_to_json(ops: &[Rule]) -> Value {
-    ops.iter().map(Rule::to_json).collect()
+pub fn ops_to_json(ops: &[Op]) -> Value {
+    ops.iter().map(Op::to_json).collect()
 }
 
 /// The tags a write asks for, added or removed, as touches (`Rules.lean`'s `TagDelta.touches`).
@@ -583,8 +583,8 @@ pub fn dedup(touches: Vec<Touch>) -> Vec<Touch> {
 mod tests {
     use super::*;
 
-    fn rule(v: Value) -> Rule {
-        Rule::of_json(&v).expect("a rule")
+    fn op(v: Value) -> Op {
+        Op::of_json(&v).expect("an op")
     }
 
     fn touch(v: Value) -> Touch {
@@ -592,8 +592,8 @@ mod tests {
     }
 
     #[test]
-    fn a_rule_reads_back_from_its_json() {
-        let rules = [
+    fn a_shares_op_reads_back_from_its_json() {
+        let ops = [
             json!({ "op": "set", "path": ["status"], "to": ["open", "done"] }),
             json!({ "op": "set", "path": [], "on": "proposals" }),
             json!({ "op": "set", "path": ["blocks", "*", "checked"] }),
@@ -612,10 +612,10 @@ mod tests {
             json!({ "op": "read" }),
             json!({ "op": "share" }),
         ];
-        for v in rules {
-            assert_eq!(rule(v.clone()).to_json(), v);
+        for v in ops {
+            assert_eq!(op(v.clone()).to_json(), v);
         }
-        assert_eq!(rule(json!({ "op": "insert" })), Rule::Insert { path: vec![], on: None });
+        assert_eq!(op(json!({ "op": "insert" })), Op::Insert { path: vec![], on: None });
         let bad = [
             json!({ "op": "set" }),
             json!({ "op": "set", "path": ["status"], "to": [1.5] }),
@@ -629,7 +629,7 @@ mod tests {
             json!({ "op": "read", "path": [] }),
         ];
         for v in bad {
-            assert!(Rule::of_json(&v).is_err(), "{v}");
+            assert!(Op::of_json(&v).is_err(), "{v}");
         }
     }
 
@@ -653,14 +653,14 @@ mod tests {
     }
 
     #[test]
-    fn a_rule_allows_the_touches_its_op_path_values_and_line_name() {
-        let status = rule(json!({ "op": "set", "path": ["status"], "to": ["open", "done"] }));
+    fn an_op_allows_the_touches_its_path_values_and_line_name() {
+        let status = op(json!({ "op": "set", "path": ["status"], "to": ["open", "done"] }));
         assert!(status.allows(true, &touch(json!({ "set": ["status"], "to": "done" }))));
         assert!(!status.allows(true, &touch(json!({ "set": ["status"], "to": "lost" }))));
         assert!(!status.allows(true, &touch(json!({ "set": ["status"] }))));
         assert!(!status.allows(true, &touch(json!({ "set": ["title"], "to": "done" }))));
         // a set without values names rows too, at or under its path
-        let items = rule(json!({ "op": "set", "path": ["items"] }));
+        let items = op(json!({ "op": "set", "path": ["items"] }));
         for t in [json!({ "insert": "items" }), json!({ "remove": "items" }), json!({ "move": "items" })] {
             assert!(items.allows(false, &touch(t)));
         }
@@ -668,38 +668,38 @@ mod tests {
         assert!(!items.allows(true, &touch(json!({ "set": [] }))));
         assert!(!items.allows(true, &touch(json!({ "insert": "blocks" }))));
         // any row's field
-        let checked = rule(json!({ "op": "set", "path": ["blocks", "*", "checked"] }));
+        let checked = op(json!({ "op": "set", "path": ["blocks", "*", "checked"] }));
         assert!(checked.allows(true, &touch(json!({ "set": ["blocks", { "id": 7 }, "checked"], "to": true }))));
         assert!(!checked.allows(true, &touch(json!({ "set": ["blocks", { "id": 7 }, "text"] }))));
         assert!(!checked.allows(true, &touch(json!({ "remove": "blocks" }))));
         // the lines
-        let suggest = rule(json!({ "op": "set", "path": [], "on": "proposals" }));
+        let suggest = op(json!({ "op": "set", "path": [], "on": "proposals" }));
         assert!(suggest.allows(false, &touch(json!({ "set": ["title"], "to": "x" }))));
         assert!(!suggest.allows(true, &touch(json!({ "set": ["title"], "to": "x" }))));
-        let merge = rule(json!({ "op": "merge", "on": "main" }));
+        let merge = op(json!({ "op": "merge", "on": "main" }));
         assert!(merge.allows(true, &Touch::Merge) && !merge.allows(false, &Touch::Merge));
-        assert!(rule(json!({ "op": "create" })).allows(true, &Touch::Create));
-        assert!(!rule(json!({ "op": "create" })).allows(true, &Touch::Propose));
+        assert!(op(json!({ "op": "create" })).allows(true, &Touch::Create));
+        assert!(!op(json!({ "op": "create" })).allows(true, &Touch::Propose));
         // tags: those it lists, or any
-        let urgent = rule(json!({ "op": "tag", "tags": ["urgent"] }));
+        let urgent = op(json!({ "op": "tag", "tags": ["urgent"] }));
         assert!(urgent.allows(true, &touch(json!({ "tag": "urgent" }))));
         assert!(!urgent.allows(true, &touch(json!({ "tag": "work" }))));
-        assert!(rule(json!({ "op": "tag" })).allows(false, &touch(json!({ "tag": "work" }))));
+        assert!(op(json!({ "op": "tag" })).allows(false, &touch(json!({ "tag": "work" }))));
         // read, relay, backup and share allow no touch
-        for op in ["read", "relay", "backup", "share"] {
-            assert!(!rule(json!({ "op": op })).allows(true, &Touch::Create), "{op}");
+        for name in ["read", "relay", "backup", "share"] {
+            assert!(!op(json!({ "op": name })).allows(true, &Touch::Create), "{name}");
         }
-        // every touch, by one rule or another
-        let rules = [status, rule(json!({ "op": "insert", "path": ["items"] }))];
+        // every touch, by one op or another
+        let ops = [status, op(json!({ "op": "insert", "path": ["items"] }))];
         let ts = [touch(json!({ "set": ["status"], "to": "open" })), touch(json!({ "insert": "items" }))];
-        assert!(allows_all(&rules, true, &ts));
-        assert!(allows_all(&rules, true, &[]));
-        assert!(!allows_all(&rules, true, &[touch(json!({ "remove": "items" }))]));
+        assert!(allows_all(&ops, true, &ts));
+        assert!(allows_all(&ops, true, &[]));
+        assert!(!allows_all(&ops, true, &[touch(json!({ "remove": "items" }))]));
     }
 
     #[test]
     fn a_commitment_binds_the_ops_and_the_salt() {
-        let ops = vec![rule(json!({ "op": "set", "path": ["status"], "to": ["done"] }))];
+        let ops = vec![op(json!({ "op": "set", "path": ["status"], "to": ["done"] }))];
         let a = Grant { ops: ops.clone(), salt: [1; 32] };
         assert_eq!(a.commitment(), a.clone().commitment());
         assert_ne!(a.commitment(), Grant { ops: ops.clone(), salt: [2; 32] }.commitment());
@@ -707,40 +707,43 @@ mod tests {
     }
 
     #[test]
-    fn a_caps_role_is_the_class_of_its_strongest_op() {
-        assert_eq!(level_of(&[]), Role::Relay);
-        assert_eq!(level_of(&[Rule::Backup]), Role::Backup);
-        assert_eq!(level_of(&[Rule::Read, Rule::Propose]), Role::Write);
-        assert_eq!(level_of(&[Rule::Tag(None), Rule::Share]), Role::Owner);
-        for r in [Role::Relay, Role::Backup, Role::Read, Role::Write, Role::Owner] {
+    fn a_shares_level_is_the_class_of_its_strongest_op() {
+        assert_eq!(level_of(&[]), Level::Relay);
+        assert_eq!(level_of(&[Op::Backup]), Level::Backup);
+        assert_eq!(level_of(&[Op::Read, Op::Propose]), Level::Write);
+        assert_eq!(level_of(&[Op::Tag(None), Op::Share]), Level::Owner);
+        for r in [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner] {
             assert_eq!(level_of(&r.ops()), r);
         }
     }
 
     #[test]
     fn ops_go_in_order_with_read_beside_every_write() {
-        let set = rule(json!({ "op": "set", "path": ["status"] }));
-        let ops = normalize(vec![Rule::Merge { on: None }, set.clone(), Rule::Relay, set.clone()]).expect("ops");
-        assert_eq!(ops, vec![Rule::Read, set.clone(), Rule::Merge { on: None }]);
-        assert_eq!(normalize(vec![Rule::Relay, Rule::Backup]).expect("ops"), vec![Rule::Backup]);
-        assert_eq!(normalize(vec![Rule::Read, Rule::Relay]).expect("ops"), vec![Rule::Read]);
+        let set = op(json!({ "op": "set", "path": ["status"] }));
+        let ops = normalize(vec![Op::Merge { on: None }, set.clone(), Op::Relay, set.clone()]).expect("ops");
+        assert_eq!(ops, vec![Op::Read, set.clone(), Op::Merge { on: None }]);
+        assert_eq!(normalize(vec![Op::Relay, Op::Backup]).expect("ops"), vec![Op::Backup]);
+        assert_eq!(normalize(vec![Op::Read, Op::Relay]).expect("ops"), vec![Op::Read]);
         assert!(normalize(vec![]).is_err());
-        let many = (0..=MAX_RULES as i64).map(|i| Rule::Set { path: vec![Step::Row(i)], to: None, on: None });
+        let many = (0..=MAX_OPS as i64).map(|i| Op::Set { path: vec![Step::Row(i)], to: None, on: None });
         assert!(normalize(many.collect()).is_err());
         assert!(name_ok("Work todos").is_ok());
         assert!(name_ok(" ").is_err() && name_ok(&"x".repeat(MAX_NAME + 1)).is_err());
     }
 
     #[test]
-    fn the_built_in_groups_are_their_roles_and_suggester() {
+    fn the_built_in_groups_are_their_levels_and_suggester() {
         let gs = groups();
         let names: Vec<&str> = gs.iter().map(|g| g.name).collect();
         assert_eq!(names, ["Owner", "Editor", "Suggester", "Viewer", "Public", "Backup", "Relay"]);
-        let levels: Vec<Role> = gs.iter().map(|g| level_of(&g.ops)).collect();
-        assert_eq!(levels, [Role::Owner, Role::Write, Role::Write, Role::Read, Role::Read, Role::Backup, Role::Relay]);
+        let levels: Vec<Level> = gs.iter().map(|g| level_of(&g.ops)).collect();
+        assert_eq!(
+            levels,
+            [Level::Owner, Level::Write, Level::Write, Level::Read, Level::Read, Level::Backup, Level::Relay]
+        );
         for g in &gs {
             assert_eq!(normalize(g.ops.clone()).as_ref(), Ok(&g.ops), "{} is in order", g.name);
-            assert!(!g.everyone || level_of(&g.ops) == Role::Read, "{} goes to everyone only to read", g.name);
+            assert!(!g.everyone || level_of(&g.ops) == Level::Read, "{} goes to everyone only to read", g.name);
         }
         let suggester = &gs[2].ops;
         let fix = touch(json!({ "set": ["title"], "to": "x" }));

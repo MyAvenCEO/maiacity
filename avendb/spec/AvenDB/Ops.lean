@@ -400,7 +400,7 @@ theorem Doc.apply_diff (d e : Doc) : apply d.meaning (d.diff e) = e.meaning := b
 /-! ## Ops -/
 
 /-- What an app asks of a record. A row is named by its id: an app's view holds one row of each id. -/
-inductive Op where
+inductive RecordOp where
   /-- The whole record. -/
   | put       (d : Doc)
   | set       (f : String) (x : Item)
@@ -420,7 +420,7 @@ inductive Op where
   | drop      (f : String) (v : Val)
   deriving Repr
 
-def Op.loc : Op → Loc
+def RecordOp.loc : RecordOp → Loc
   | .put _              => .root
   | .set f _            => .field f
   | .unset f            => .field f
@@ -455,7 +455,7 @@ def Doc.rowsAt (d : Doc) (f : String) : Option (List Row) :=
 
 /-- The record after `op`, or none where the op makes no sense of it: a row or a field that isn't there, a second row
     with one id, a place past the end of a list, a row's id changed. -/
-def Doc.run (d : Doc) : Op → Option Doc
+def Doc.run (d : Doc) : RecordOp → Option Doc
   | .put e => some e
   | .set f x => some (assign d f x)
   | .unset f => some (unassign d f)
@@ -505,7 +505,7 @@ def Doc.run (d : Doc) : Op → Option Doc
     | _ => none
 
 /-- Ops one after the other: none if one makes no sense. -/
-def Doc.runAll (d : Doc) (ops : List Op) : Option Doc := ops.foldlM Doc.run d
+def Doc.runAll (d : Doc) (ops : List RecordOp) : Option Doc := ops.foldlM Doc.run d
 
 /-- `Within`, on the places of two records: decidable, so the vectors check it of every op they run. -/
 def Doc.within (ls : List Loc) (d e : Doc) : Bool :=

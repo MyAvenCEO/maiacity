@@ -1,12 +1,12 @@
 //! The people and vaults of the plan's scenarios, the same cast as `avendb/spec/AvenDB/Examples.lean`: on one log for
 //! the rules (`cast`, signers by number), and on the Lab (`avendb::cast`: `world`, real devices and keys). What no rule
-//! reads travels sealed or encrypted in the core: a cap's selector, a new entry's header, a write's tags. On the rules'
-//! log they travel as nothing, and what a reader would open of them goes into the cast's `Readings`.
+//! reads travels sealed or encrypted in the core: a share's selector, a new entry's header, a write's tags. On the
+//! rules' log they travel as nothing, and what a reader would open of them goes into the cast's `Readings`.
 #![allow(dead_code)]
 
 pub use avendb::cast::*;
-use avendb::id::{CapId, EditId, EntryId, SignerId, VaultId};
-use avendb::policy::{mk_cell, Action, Cap, Grantee, Kind, Log, Principal, Proposal, Readings, Refusal, Role};
+use avendb::id::{EditId, EntryId, ShareId, SignerId, VaultId};
+use avendb::policy::{mk_audience, Action, Kind, Level, Log, Principal, Proposal, Readings, Refusal, Share, Who};
 use avendb::slice::{Header, Selector, Sym, TagDelta};
 
 // Signers on the rules' log: passkeys and device keys.
@@ -34,7 +34,7 @@ pub const DIARY: EntryId = EntryId::from_u64(25);
 pub const LAMP: EntryId = EntryId::from_u64(26);
 
 /// The rules' log after scenarios 1 and 2: Alice with her passkey, Mac and iPhone; Bob, Carol and Dave with a passkey
-/// and a Mac each. `readings` holds what the readers of its caps and entries open.
+/// and a Mac each. `readings` holds what the readers of its shares and entries open.
 pub struct Cast {
     pub log: Log,
     pub alice: VaultId,
@@ -75,17 +75,17 @@ fn syms(xs: &[&str]) -> Vec<Sym> {
     xs.iter().map(|&x| Sym::new(x)).collect()
 }
 
-/// A write that creates entry `entry` of vault `vault` for `actor`, in the cell of the caps `cell`; its header and
-/// tags travel in its body, which here is nothing anyone opens.
-pub fn creation(vault: VaultId, entry: EntryId, actor: VaultId, cell: &[CapId]) -> Action {
-    let (body, proposal, create) = (vec![0xc1, 0x9e, 0x47], Proposal::Main, Some(mk_cell(cell)));
+/// A write that creates entry `entry` of vault `vault` for `actor`, in the audience of the shares `audience`; its
+/// header and tags travel in its body, which here is nothing anyone opens.
+pub fn creation(vault: VaultId, entry: EntryId, actor: VaultId, audience: &[ShareId]) -> Action {
+    let (body, proposal, create) = (vec![0xc1, 0x9e, 0x47], Proposal::Main, Some(mk_audience(audience)));
     let (deps, via, files) = (vec![], vec![], vec![]);
-    Action::Write { vault, entry, actor, stay: None, generation: 0, deps, proposal, via, create, files, body }
+    Action::Write { vault, entry, actor, stay: None, epoch: 0, deps, proposal, via, create, files, body }
 }
 
 impl Cast {
-    /// `signer` creates entry `entry` of vault `vault` for `actor`, of type `ty` with tags `tags`, in the cell of the
-    /// caps `cell`; its readers read the header and tags.
+    /// `signer` creates entry `entry` of vault `vault` for `actor`, of type `ty` with tags `tags`, in the audience of
+    /// the shares `audience`; its readers read the header and tags.
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &mut self,
@@ -93,31 +93,31 @@ impl Cast {
         vault: VaultId,
         entry: EntryId,
         actor: VaultId,
-        cell: &[CapId],
+        audience: &[ShareId],
         ty: &str,
         tags: &[&str],
     ) -> Result<EditId, Refusal> {
-        let id = self.log.append(signer, &[], creation(vault, entry, actor, cell))?;
+        let id = self.log.append(signer, &[], creation(vault, entry, actor, audience))?;
         self.readings.headers.insert(id, Header { ty: Sym::new(ty), created: 0 });
         self.readings.tags.insert(id, TagDelta { add: syms(tags), remove: vec![] });
         Ok(id)
     }
 
-    /// `signer`, with `cosigners`, issues a root cap over vault `over` to `grantee` with `role` on what `select`
+    /// `signer`, with `cosigners`, issues a root share over vault `over` to `who` with `level` on what `select`
     /// selects; its readers read the selector.
     pub fn issue(
         &mut self,
         signer: SignerId,
         cosigners: &[SignerId],
         over: VaultId,
-        grantee: Grantee,
-        role: Role,
+        who: Who,
+        level: Level,
         select: Selector,
-    ) -> Result<CapId, Refusal> {
-        self.issue_on(signer, cosigners, over, grantee, role, select, None, over, 0)
+    ) -> Result<ShareId, Refusal> {
+        self.issue_on(signer, cosigners, over, who, level, select, None, over, 0)
     }
 
-    /// `issue`, resting on the owner cap `parent` that `issuer` holds, if any, with `nonce` to tell it from a cap
+    /// `issue`, resting on the owner share `parent` that `issuer` holds, if any, with `nonce` to tell it from a share
     /// that says the same.
     #[allow(clippy::too_many_arguments)]
     pub fn issue_on(
@@ -125,29 +125,35 @@ impl Cast {
         signer: SignerId,
         cosigners: &[SignerId],
         over: VaultId,
-        grantee: Grantee,
-        role: Role,
+        who: Who,
+        level: Level,
         select: Selector,
-        parent: Option<CapId>,
+        parent: Option<ShareId>,
         issuer: VaultId,
         nonce: u64,
-    ) -> Result<CapId, Refusal> {
+    ) -> Result<ShareId, Refusal> {
         let wide = select == Selector::All;
-        let cap = Cap { over, grantee, role, wide, select: vec![], parent, issuer, nonce };
-        let id = CapId::from(self.log.append(signer, cosigners, Action::Cap(cap, vec![]))?);
+        let share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce };
+        let id = ShareId::from(self.log.append(signer, cosigners, Action::Share(share, vec![]))?);
         self.readings.selectors.insert(id, select);
         Ok(id)
     }
 
-    /// `signer`, a steward acting for vault `vault`, moves entry `entry` to the cell of the caps `to`, keeping every
-    /// write of it.
-    pub fn move_to(&mut self, signer: SignerId, vault: VaultId, entry: EntryId, to: &[CapId]) -> Result<EditId, Refusal> {
+    /// `signer`, a steward acting for vault `vault`, moves entry `entry` to the audience of the shares `to`, keeping
+    /// every write of it.
+    pub fn move_to(
+        &mut self,
+        signer: SignerId,
+        vault: VaultId,
+        entry: EntryId,
+        to: &[ShareId],
+    ) -> Result<EditId, Refusal> {
         let keep = self.log.view().writes(entry);
-        let to = mk_cell(to);
+        let to = mk_audience(to);
         self.log.append(signer, &[], Action::Move { vault, entry, to, keep, via: vec![] })
     }
 
-    /// `signer` writes entry `entry` for `actor`, under its current stay and generation, adding the tags `add` and
+    /// `signer` writes entry `entry` for `actor`, under its current stay and epoch, adding the tags `add` and
     /// removing `remove`; the tags count only when it acts for the entry's vault.
     pub fn retag(
         &mut self,
@@ -159,8 +165,8 @@ impl Cast {
     ) -> Result<EditId, Refusal> {
         let st = self.log.view();
         let en = st.entry(entry).ok_or(Refusal::UnknownEntry)?;
-        let generation = st.epoch(avendb::keys::KeyFam::Cell(en.vault, en.cell()));
-        let id = self.log.append(signer, &[], write(en.vault, entry, actor, en.stay(), generation))?;
+        let epoch = st.epoch(avendb::keys::KeyFam::Audience(en.vault, en.audience()));
+        let id = self.log.append(signer, &[], write(en.vault, entry, actor, en.stay(), epoch))?;
         self.readings.tags.insert(id, TagDelta { add: syms(add), remove: syms(remove) });
         Ok(id)
     }
@@ -168,7 +174,7 @@ impl Cast {
     /// Every entry where a steward would move it, moved there by `signer`, acting for its vault.
     pub fn tidy(&mut self, signer: SignerId) {
         let st = self.log.view();
-        let moves: Vec<(VaultId, EntryId, Vec<CapId>)> = st
+        let moves: Vec<(VaultId, EntryId, Vec<ShareId>)> = st
             .entries()
             .iter()
             .filter_map(|en| Some((en.vault, en.id, st.meaning(en.id, &self.readings)?.desired?)))
@@ -180,14 +186,14 @@ impl Cast {
 }
 
 /// The rules' side of scenario 15: three todos in Alice's vault, the door todo shared with Bob (write), Carol (read)
-/// and the coop (owner, which needs Alice's passkey), each by a cap on the door todo alone; and Alice's Mac, a
-/// steward, has moved the door todo into the cell of the three caps.
+/// and the coop (owner, which needs Alice's passkey), each by a share on the door todo alone; and Alice's Mac, a
+/// steward, has moved the door todo into the audience of the three shares.
 pub struct SocialTodo {
     pub c: Cast,
     pub coop: VaultId,
-    pub bob_write: CapId,
-    pub carol_read: CapId,
-    pub coop_owner: CapId,
+    pub bob_write: ShareId,
+    pub carol_read: ShareId,
+    pub coop_owner: ShareId,
 }
 
 pub fn social_todo() -> SocialTodo {
@@ -198,9 +204,9 @@ pub fn social_todo() -> SocialTodo {
         c.create(MAC_A, alice, e, alice, &[], "todo", &[tag]).unwrap();
     }
     let door = by_id(DOOR);
-    let bob_write = c.issue(MAC_A, &[], alice, vault(c.bob), Role::Write, door.clone()).unwrap();
-    let carol_read = c.issue(MAC_A, &[], alice, vault(c.carol), Role::Read, door.clone()).unwrap();
-    let coop_owner = c.issue(PASSKEY_A, &[], alice, vault(coop), Role::Owner, door).unwrap();
+    let bob_write = c.issue(MAC_A, &[], alice, vault(c.bob), Level::Write, door.clone()).unwrap();
+    let carol_read = c.issue(MAC_A, &[], alice, vault(c.carol), Level::Read, door.clone()).unwrap();
+    let coop_owner = c.issue(PASSKEY_A, &[], alice, vault(coop), Level::Owner, door).unwrap();
     c.tidy(MAC_A);
     SocialTodo { c, coop, bob_write, carol_read, coop_owner }
 }

@@ -2,11 +2,11 @@
 //! checked by every `lake build`). A step case's edits, applied one after the other from the empty state, must be
 //! accepted or refused exactly as the model says. A view case's edits, each at the depth it claims, must stand or be
 //! cut exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case
-//! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, caps, entries
+//! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, shares, entries
 //! (their stays, and as their readers see them their attributes, whether their creation was let in, their semantic
-//! cell and where a steward would move them), writes, key schedule (each family's epoch, every seal, every published
-//! key), schema lanes, and the writes their readers count, line by line. The lens vectors hold each app's view of many
-//! stored blocks and todos, and what each edit through a view stores.
+//! audience and where a steward would move them), writes, key schedule (each family's epoch, every seal, every
+//! published key), schema lanes, and the writes their readers count, line by line. The lens vectors hold each app's
+//! view of many stored blocks and todos, and what each edit through a view stores.
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -14,29 +14,28 @@
 //! (`respond`) and given what it named (`respond_since`); and each passkey that proves itself to link a new device
 //! must be handed the same vault logs (`link_card`).
 //!
-//! The model names what an edit creates (a vault, a cap) by a number, and an edit by its place in the case; the core
-//! names them by hashes, so each number maps to what its edit created, and each place to that edit's id. A cell is a set
-//! of caps: the core keeps its caps sorted by id and names it by the hash of its vault and those caps. What no rule
-//! reads travels encrypted or sealed in the core: a cap's selector, a write's header and tags. Here a cap carries its
-//! selector's JSON where its sealed selector goes, and a write its header's and tags' JSON where its ciphertext goes, and
-//! the readings (`Readings`) hold what a reader opens of them. A cap's selector JSON goes inside a sealed selector,
-//! beside the commitment to its ops, salted with its number; a write's proof and touches go into the readings, its
-//! proof opening the ops of every cap of its cap's chain. The core's built-in groups of ops are the model's. A keys
-//! edit of the model names only
-//! where its boxes go; the core's carries the boxes too, which no rule opens, so here they are empty. A publish names
-//! its blob by a number: here the blob is the bytes `blob <number>`. A type or a tag is a number in the model, and its
-//! digits here.
+//! The model names what an edit creates (a vault, a share) by a number, and an edit by its place in the case; the core
+//! names them by hashes, so each number maps to what its edit created, and each place to that edit's id. An audience is
+//! a set of shares: the core keeps its shares sorted by id and names it by the hash of its vault and those shares. What
+//! no rule reads travels encrypted or sealed in the core: a share's selector, a write's header and tags. Here a share
+//! carries its selector's JSON where its sealed selector goes, and a write its header's and tags' JSON where its
+//! ciphertext goes, and the readings (`Readings`) hold what a reader opens of them. A share's selector JSON goes inside
+//! a sealed selector, beside the commitment to its ops, salted with its number; a write's proof and touches go into the
+//! readings, its proof opening the ops of every share of its share's chain. The core's built-in groups of ops are the
+//! model's. A keys edit of the model names only where its boxes go; the core's carries the boxes too, which no rule
+//! opens, so here they are empty. A publish names its blob by a number: here the blob is the bytes `blob <number>`. A
+//! type or a tag is a number in the model, and its digits here.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
-    checkpointed, history, mk_cell, replay, tips, Action, Cap, Edit, Grantee, Kind, Line, Principal, Proposal, Readings,
-    Role, State, SyncRule, Vault,
+    checkpointed, history, mk_audience, replay, tips, Action, Edit, Kind, Level, Line, Principal, Proposal, Readings,
+    Share, State, SyncRule, Vault, Who,
 };
 use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
 use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta};
@@ -94,14 +93,14 @@ fn kind(v: &Value) -> Kind {
     }
 }
 
-fn role(v: &Value) -> Role {
+fn level(v: &Value) -> Level {
     match v.as_str() {
-        Some("relay") => Role::Relay,
-        Some("backup") => Role::Backup,
-        Some("read") => Role::Read,
-        Some("write") => Role::Write,
-        Some("owner") => Role::Owner,
-        _ => panic!("a role, not {v}"),
+        Some("relay") => Level::Relay,
+        Some("backup") => Level::Backup,
+        Some("read") => Level::Read,
+        Some("write") => Level::Write,
+        Some("owner") => Level::Owner,
+        _ => panic!("a level, not {v}"),
     }
 }
 
@@ -119,11 +118,11 @@ fn header(v: &Value) -> Header {
     Header { ty: sym(&v["type"]), created: num(&v["created"]) }
 }
 
-/// A cap's ops, salted with its number.
-fn grant(cap: &Value) -> Grant {
-    let ops = ops_of_json(&cap["ops"]).expect("the model's ops");
+/// A share's ops, salted with its number.
+fn grant(share: &Value) -> Grant {
+    let ops = ops_of_json(&share["ops"]).expect("the model's ops");
     let mut salt = [0; 32];
-    salt[..8].copy_from_slice(&num(&cap["id"]).to_le_bytes());
+    salt[..8].copy_from_slice(&num(&share["id"]).to_le_bytes());
     Grant { ops, salt }
 }
 
@@ -139,13 +138,13 @@ fn same_set<T: Clone + Debug + Eq + Hash>(ours: impl IntoIterator<Item = T>, wan
 #[derive(Default)]
 struct Names {
     vaults: HashMap<u64, VaultId>,
-    caps: HashMap<u64, CapId>,
+    shares: HashMap<u64, ShareId>,
     /// Each edit's id, by its place in the case.
     edits: Vec<EditId>,
     readings: Readings,
-    /// Each cap's parent, and its ops: what a proof opens.
-    parents: HashMap<CapId, Option<CapId>>,
-    grants: HashMap<CapId, Grant>,
+    /// Each share's parent, and its ops: what a proof opens.
+    parents: HashMap<ShareId, Option<ShareId>>,
+    grants: HashMap<ShareId, Grant>,
 }
 
 impl Names {
@@ -154,9 +153,9 @@ impl Names {
         self.vaults.get(&n).copied().unwrap_or(VaultId::from_u64(n))
     }
 
-    fn cap(&self, v: &Value) -> CapId {
+    fn share(&self, v: &Value) -> ShareId {
         let n = num(v);
-        self.caps.get(&n).copied().unwrap_or(CapId::from_u64(n))
+        self.shares.get(&n).copied().unwrap_or(ShareId::from_u64(n))
     }
 
     fn edit(&self, v: &Value) -> EditId {
@@ -184,21 +183,21 @@ impl Names {
         list(v).iter().map(|x| self.vault(x)).collect()
     }
 
-    /// A cell's caps, in the core's canonical order.
-    fn cell(&self, v: &Value) -> Vec<CapId> {
-        mk_cell(&list(v).iter().map(|c| self.cap(c)).collect::<Vec<_>>())
+    /// An audience's shares, in the core's canonical order.
+    fn audience(&self, v: &Value) -> Vec<ShareId> {
+        mk_audience(&list(v).iter().map(|c| self.share(c)).collect::<Vec<_>>())
     }
 
-    /// A cell's caps as a set.
-    fn cell_set(&self, v: &Value) -> BTreeSet<CapId> {
-        list(v).iter().map(|c| self.cap(c)).collect()
+    /// An audience's shares as a set.
+    fn audience_set(&self, v: &Value) -> BTreeSet<ShareId> {
+        list(v).iter().map(|c| self.share(c)).collect()
     }
 
     /// A steward's marks: in the core's canonical order where the model's are in its own, and out of it where they
     /// aren't.
-    fn picks(&self, v: &Value) -> Vec<CapId> {
+    fn picks(&self, v: &Value) -> Vec<ShareId> {
         let ns: Vec<u64> = list(v).iter().map(num).collect();
-        let mut ids: Vec<CapId> = list(v).iter().map(|r| self.cap(r)).collect();
+        let mut ids: Vec<ShareId> = list(v).iter().map(|r| self.share(r)).collect();
         ids.sort();
         if !ns.windows(2).all(|w| w[0] < w[1]) {
             ids.reverse();
@@ -214,10 +213,10 @@ impl Names {
         }
     }
 
-    fn grantee(&self, v: &Value) -> Grantee {
+    fn who(&self, v: &Value) -> Who {
         match v.as_str() {
-            Some("public") => Grantee::Public,
-            _ => Grantee::Principal(self.principal(v)),
+            Some("everyone") => Who::Everyone,
+            _ => Who::Principal(self.principal(v)),
         }
     }
 
@@ -252,18 +251,18 @@ impl Names {
         }
     }
 
-    /// A cap as the core issues it: its selector where its sealed slice goes, beside the commitment to its ops, its
+    /// A share as the core issues it: its selector where its sealed slice goes, beside the commitment to its ops, its
     /// number as its nonce.
-    fn cap_of(&self, v: &Value) -> Cap {
+    fn share_of(&self, v: &Value) -> Share {
         let slice = serde_json::to_vec(&v["select"]).unwrap();
         let select = Select::Sealed { boxes: vec![], slice, commitment: grant(v).commitment() }.to_wire();
-        Cap {
+        Share {
             over: self.vault(&v["over"]),
-            grantee: self.grantee(&v["grantee"]),
-            role: role(&v["role"]),
+            who: self.who(&v["who"]),
+            level: level(&v["level"]),
             wide: v["wide"].as_bool().unwrap(),
             select,
-            parent: (!v["parent"].is_null()).then(|| self.cap(&v["parent"])),
+            parent: (!v["parent"].is_null()).then(|| self.share(&v["parent"])),
             issuer: self.vault(&v["issuer"]),
             nonce: num(&v["id"]),
         }
@@ -288,10 +287,10 @@ impl Names {
     fn key_fam(&self, v: &Value) -> KeyFam {
         match variant(v) {
             ("seed", x) => KeyFam::Seed(self.vault(x)),
-            ("cap", x) => KeyFam::Cap(self.vault(&x["vault"]), self.cap(&x["cap"])),
-            ("cell", x) => {
+            ("share", x) => KeyFam::Share(self.vault(&x["vault"]), self.share(&x["share"])),
+            ("audience", x) => {
                 let vault = self.vault(&x["vault"]);
-                KeyFam::Cell(vault, CellId::of(vault, &self.cell(&x["caps"])))
+                KeyFam::Audience(vault, AudienceId::of(vault, &self.audience(&x["shares"])))
             }
             (other, _) => panic!("no key family {other}"),
         }
@@ -301,7 +300,7 @@ impl Names {
         if let Some(s) = v.get("signer") {
             KeyName::Signer(signer(s))
         } else if let Some(e) = v.get("entry") {
-            KeyName::Entry(entry(e), self.opt_edit(&v["stay"]), num(&v["gen"]))
+            KeyName::Entry(entry(e), self.opt_edit(&v["stay"]), num(&v["epoch"]))
         } else {
             KeyName::Scoped(self.key_fam(&v["key"]), num(&v["epoch"]))
         }
@@ -310,10 +309,10 @@ impl Names {
     fn log(&self, v: &Value) -> LogId {
         match variant(v) {
             ("vault", x) => LogId::Vault(self.vault(x)),
-            ("cap", x) => LogId::Cap(self.cap(x)),
-            ("cell", x) => {
+            ("share", x) => LogId::Share(self.share(x)),
+            ("audience", x) => {
                 let vault = self.vault(&x["vault"]);
-                LogId::Cell(vault, CellId::of(vault, &self.cell(&x["caps"])))
+                LogId::Audience(vault, AudienceId::of(vault, &self.audience(&x["shares"])))
             }
             ("entry", x) => LogId::Entry(entry(x)),
             (other, _) => panic!("no log {other}"),
@@ -352,9 +351,9 @@ impl Names {
                 root: (!x["root"].is_null()).then(|| signer(&x["root"])),
                 keep: keep(),
             },
-            "cap" => Action::Cap(self.cap_of(&x["cap"]), self.via(&x["via"])),
+            "share" => Action::Share(self.share_of(&x["share"]), self.via(&x["via"])),
             "revoke" => Action::Revoke {
-                cap: self.cap(&x["cap"]),
+                share: self.share(&x["share"]),
                 actor: self.vault(&x["actor"]),
                 keep: keep(),
                 via: self.via(&x["via"]),
@@ -364,18 +363,18 @@ impl Names {
                 entry: entry(&x["entry"]),
                 actor: self.vault(&x["actor"]),
                 stay: self.opt_edit(&x["stay"]),
-                generation: num(&x["gen"]),
+                epoch: num(&x["epoch"]),
                 deps: self.edits(&x["deps"]),
                 proposal: self.proposal(&x["proposal"]),
                 via: self.via(&x["via"]),
-                create: (!x["create"].is_null()).then(|| self.cell(&x["create"]["cell"])),
+                create: (!x["create"].is_null()).then(|| self.audience(&x["create"]["audience"])),
                 files: vec![],
                 body: serde_json::to_vec(&json!({"create": x["create"], "tags": x["tags"]})).unwrap(),
             },
             "move" => Action::Move {
                 vault: vault(),
                 entry: entry(&x["entry"]),
-                to: self.cell(&x["to"]),
+                to: self.audience(&x["to"]),
                 keep: keep(),
                 via: self.via(&x["via"]),
             },
@@ -395,7 +394,7 @@ impl Names {
             "checkpoint" => Action::Checkpoint { entry: entry(&x["entry"]), covers: self.edits(&x["covers"]) },
             "syncRule" => Action::SyncRule(self.rule_of(&x["rule"]), self.via(&x["via"])),
             "endRule" => Action::EndSyncRule {
-                rule: self.cap(&x["rule"]),
+                rule: self.share(&x["rule"]),
                 issuer: self.vault(&x["issuer"]),
                 via: self.via(&x["via"]),
             },
@@ -421,7 +420,7 @@ impl Names {
     }
 
     /// Name what `edit`, at the next place, creates, and note what its readers open. A vault's number names the vault
-    /// only once its genesis is accepted, as the step cases try one number more than once; a cap has a number of its
+    /// only once its genesis is accepted, as the step cases try one number more than once; a share has a number of its
     /// own.
     fn created(&mut self, v: &Value, edit: &Edit, accepted: bool) {
         let id = edit.id();
@@ -429,17 +428,17 @@ impl Names {
             ("genesis", x) if accepted => {
                 self.vaults.insert(num(&x["vault"]), VaultId::from(id));
             }
-            ("cap", x) => {
-                let (cap, parent) = (CapId::from(id), &x["cap"]["parent"]);
-                self.readings.selectors.insert(cap, self.selector(&x["cap"]["select"]));
-                self.parents.insert(cap, (!parent.is_null()).then(|| self.cap(parent)));
-                self.grants.insert(cap, grant(&x["cap"]));
-                self.caps.insert(num(&x["cap"]["id"]), cap);
+            ("share", x) => {
+                let (share, parent) = (ShareId::from(id), &x["share"]["parent"]);
+                self.readings.selectors.insert(share, self.selector(&x["share"]["select"]));
+                self.parents.insert(share, (!parent.is_null()).then(|| self.share(parent)));
+                self.grants.insert(share, grant(&x["share"]));
+                self.shares.insert(num(&x["share"]["id"]), share);
             }
             ("syncRule", x) => {
-                let rule = CapId::from(id);
+                let rule = ShareId::from(id);
                 self.readings.selectors.insert(rule, self.selector(&x["rule"]["select"]));
-                self.caps.insert(num(&x["rule"]["id"]), rule);
+                self.shares.insert(num(&x["rule"]["id"]), rule);
             }
             ("write", x) => {
                 if !x["create"].is_null() {
@@ -447,9 +446,9 @@ impl Names {
                 }
                 self.readings.tags.insert(id, tag_delta(&x["tags"]));
                 if let Some(c) = x.get("proof") {
-                    let cap = self.cap(c);
-                    let grants = self.chain(cap).iter().filter_map(|c| self.grants.get(c).cloned()).collect();
-                    self.readings.proofs.insert(id, Proof { cap, grants });
+                    let share = self.share(c);
+                    let grants = self.chain(share).iter().filter_map(|c| self.grants.get(c).cloned()).collect();
+                    self.readings.proofs.insert(id, Proof { share, grants });
                 }
                 let touches = x.get("touches").map_or(&[][..], list).iter().map(|t| Touch::of_json(t).unwrap());
                 self.readings.touches.insert(id, touches.collect());
@@ -462,8 +461,8 @@ impl Names {
         self.edits.push(id);
     }
 
-    /// The caps cap `c` rests on, from its root down to itself.
-    fn chain(&self, c: CapId) -> Vec<CapId> {
+    /// The shares share `c` rests on, from its root down to itself.
+    fn chain(&self, c: ShareId) -> Vec<ShareId> {
         let mut chain = vec![c];
         while let Some(&Some(p)) = chain.last().and_then(|c| self.parents.get(c)) {
             chain.push(p);
@@ -497,22 +496,24 @@ impl Names {
     fn check_state(&self, name: &str, case: &Value, st: &State) {
         let vaults: Vec<Vault> = list(&case["vaults"]).iter().map(|v| self.vault_of(v)).collect();
         assert_eq!(st.vaults(), &vaults[..], "{name}: vaults");
-        // every cap issued, live or revoked, in the order issued
-        type CapRow = (CapId, VaultId, Grantee, Role, bool, Option<CapId>, VaultId);
-        let caps: Vec<CapRow> = list(&case["caps"])
+        // every share issued, live or revoked, in the order issued
+        type ShareRow = (ShareId, VaultId, Who, Level, bool, Option<ShareId>, VaultId);
+        let shares: Vec<ShareRow> = list(&case["shares"])
             .iter()
             .map(|v| {
-                let c = self.cap_of(v);
-                (self.cap(&v["id"]), c.over, c.grantee, c.role, c.wide, c.parent, c.issuer)
+                let c = self.share_of(v);
+                (self.share(&v["id"]), c.over, c.who, c.level, c.wide, c.parent, c.issuer)
             })
             .collect();
-        let ours: Vec<CapRow> = st
-            .caps()
+        let ours: Vec<ShareRow> = st
+            .shares()
             .iter()
-            .map(|cp| (cp.id, cp.cap.over, cp.cap.grantee, cp.cap.role, cp.cap.wide, cp.cap.parent, cp.cap.issuer))
+            .map(|cp| {
+                (cp.id, cp.share.over, cp.share.who, cp.share.level, cp.share.wide, cp.share.parent, cp.share.issuer)
+            })
             .collect();
-        assert_eq!(ours, caps, "{name}: caps");
-        let revoked: Vec<CapId> = list(&case["revoked"]).iter().map(|c| self.cap(c)).collect();
+        assert_eq!(ours, shares, "{name}: shares");
+        let revoked: Vec<ShareId> = list(&case["revoked"]).iter().map(|c| self.share(c)).collect();
         assert_eq!(st.revoked(), &revoked[..], "{name}: revoked");
         // each entry: its stays, the current one first, and what its readers see
         let want: Vec<&Value> = list(&case["entries"]).iter().collect();
@@ -520,43 +521,46 @@ impl Names {
         for (en, v) in st.entries().iter().zip(want) {
             let what = format!("{name}: entry {}", v["id"]);
             assert_eq!((en.id, en.vault), (entry(&v["id"]), self.vault(&v["vault"])), "{what}");
-            let stays: Vec<(Option<EditId>, BTreeSet<CapId>)> =
-                list(&v["stays"]).iter().map(|s| (self.opt_edit(&s["stay"]), self.cell_set(&s["cell"]))).collect();
-            let ours: Vec<(Option<EditId>, BTreeSet<CapId>)> = en
+            let stays: Vec<(Option<EditId>, BTreeSet<ShareId>)> = list(&v["stays"])
+                .iter()
+                .map(|s| (self.opt_edit(&s["stay"]), self.audience_set(&s["audience"])))
+                .collect();
+            let ours: Vec<(Option<EditId>, BTreeSet<ShareId>)> = en
                 .stays
                 .iter()
                 .rev()
-                .map(|(s, x)| (*s, st.cell_caps(*x).expect("a cell's caps").iter().copied().collect()))
+                .map(|(s, x)| (*s, st.audience_shares(*x).expect("an audience's shares").iter().copied().collect()))
                 .collect();
             assert_eq!(ours, stays, "{what}: stays");
             let m = st.meaning(en.id, &self.readings).expect("an entry's meaning");
             assert_eq!(m.attrs, self.attrs(&v["attrs"]), "{what}: attributes");
             assert_eq!(m.admitted, v["admitted"].as_bool().unwrap(), "{what}: let in");
-            let cell: BTreeSet<CapId> = m.cell.iter().copied().collect();
-            assert_eq!(cell, self.cell_set(&v["semCell"]), "{what}: semantic cell");
-            let desired = m.desired.map(|x| x.into_iter().collect::<BTreeSet<CapId>>());
-            let want = (!v["desired"].is_null()).then(|| self.cell_set(&v["desired"]));
+            let audience: BTreeSet<ShareId> = m.audience.iter().copied().collect();
+            assert_eq!(audience, self.audience_set(&v["semAudience"]), "{what}: semantic audience");
+            let desired = m.desired.map(|x| x.into_iter().collect::<BTreeSet<ShareId>>());
+            let want = (!v["desired"].is_null()).then(|| self.audience_set(&v["desired"]));
             assert_eq!(desired, want, "{what}: where a steward moves it");
-            let marks: BTreeSet<CapId> = st.picks_of(en.id).iter().copied().collect();
-            assert_eq!(marks, self.cell_set(&v["picks"]), "{what}: the rules it is marked with");
-            let picks: BTreeSet<CapId> = m.picks.into_iter().collect();
-            assert_eq!(picks, self.cell_set(&v["semPicks"]), "{what}: the rules that pick it");
-            let pick = m.pick.map(|x| x.into_iter().collect::<BTreeSet<CapId>>());
-            let want = (!v["desiredPicks"].is_null()).then(|| self.cell_set(&v["desiredPicks"]));
+            let marks: BTreeSet<ShareId> = st.picks_of(en.id).iter().copied().collect();
+            assert_eq!(marks, self.audience_set(&v["picks"]), "{what}: the rules it is marked with");
+            let picks: BTreeSet<ShareId> = m.picks.into_iter().collect();
+            assert_eq!(picks, self.audience_set(&v["semPicks"]), "{what}: the rules that pick it");
+            let pick = m.pick.map(|x| x.into_iter().collect::<BTreeSet<ShareId>>());
+            let want = (!v["desiredPicks"].is_null()).then(|| self.audience_set(&v["desiredPicks"]));
             assert_eq!(pick, want, "{what}: what a steward marks it with");
         }
         // every sync rule set, live or ended, in the order set, and the rules that ended
-        type RuleRow = (CapId, VaultId, SignerId, VaultId, bool, bool);
-        let row = |id: CapId, r: &SyncRule| (id, r.issuer, r.device, r.over, r.wide, r.keep);
-        let rules: Vec<RuleRow> = list(&case["rules"]).iter().map(|v| row(self.cap(&v["id"]), &self.rule_of(v))).collect();
+        type RuleRow = (ShareId, VaultId, SignerId, VaultId, bool, bool);
+        let row = |id: ShareId, r: &SyncRule| (id, r.issuer, r.device, r.over, r.wide, r.keep);
+        let rules: Vec<RuleRow> =
+            list(&case["rules"]).iter().map(|v| row(self.share(&v["id"]), &self.rule_of(v))).collect();
         let ours: Vec<RuleRow> = st.rules().iter().map(|(id, r)| row(*id, r)).collect();
         assert_eq!(ours, rules, "{name}: sync rules");
-        let ended: Vec<CapId> = list(&case["ended"]).iter().map(|r| self.cap(r)).collect();
+        let ended: Vec<ShareId> = list(&case["ended"]).iter().map(|r| self.share(r)).collect();
         assert_eq!(st.ended(), &ended[..], "{name}: ended sync rules");
         same_set(st.all_born().iter().copied(), list(&case["born"]).iter().map(entry), &format!("{name}: born"));
-        // the writes, each with the cell its entry was in when it was accepted
+        // the writes, each with the audience its entry was in when it was accepted
         type WriteRow = (EditId, SignerId, VaultId, EntryId, Option<EditId>, u64, Vec<EditId>, Proposal);
-        type WriteRest = (Vec<VaultId>, bool, BTreeSet<CapId>);
+        type WriteRest = (Vec<VaultId>, bool, BTreeSet<ShareId>);
         let writes: Vec<(WriteRow, WriteRest)> = list(&case["writes"])
             .iter()
             .map(|v| {
@@ -566,20 +570,20 @@ impl Names {
                     self.vault(&v["actor"]),
                     entry(&v["entry"]),
                     self.opt_edit(&v["stay"]),
-                    num(&v["gen"]),
+                    num(&v["epoch"]),
                     self.edits(&v["deps"]),
                     self.proposal(&v["proposal"]),
                 );
-                (row, (self.via(&v["via"]), v["first"].as_bool().unwrap(), self.cell_set(&v["cell"])))
+                (row, (self.via(&v["via"]), v["first"].as_bool().unwrap(), self.audience_set(&v["audience"])))
             })
             .collect();
         let ours: Vec<(WriteRow, WriteRest)> = st
             .all_writes()
             .iter()
             .map(|w| {
-                let cell = st.cell_caps(w.cell).expect("a write's cell").iter().copied().collect();
-                let row = (w.edit, w.author, w.actor, w.entry, w.stay, w.generation, w.deps.clone(), w.proposal);
-                (row, (w.via.clone(), w.first, cell))
+                let audience = st.audience_shares(w.audience).expect("a write's audience").iter().copied().collect();
+                let row = (w.edit, w.author, w.actor, w.entry, w.stay, w.epoch, w.deps.clone(), w.proposal);
+                (row, (w.via.clone(), w.first, audience))
             })
             .collect();
         assert_eq!(ours, writes, "{name}: writes");

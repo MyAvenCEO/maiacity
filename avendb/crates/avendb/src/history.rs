@@ -20,20 +20,21 @@
 //! snapshot refuses the updates of a proposal that starts before it.
 //!
 //! A line's history is made of the writes the entry's readers count (`Change::counted`, C1 to C4, S1 to S4): a write
-//! counts where it fits the schemas its entry was written under, through a cap only where the ops of the caps of its
-//! chain allow what it touches and the tags it asks for, and only if what it builds on counts too. Both are read off
-//! what it carries, on the history before it (`History::reading`). So a write that breaks its schema, or that no op of
-//! its caps allows, changes no line anyone shows, and nothing a device writes builds on it.
+//! counts where it fits the schemas its entry was written under, through a share only where the ops of the shares of
+//! its chain allow what it touches and the tags it asks for, and only if what it builds on counts too. Both are read
+//! off what it carries, on the history before it (`History::reading`). So a write that breaks its schema, or that no op
+//! of its shares allows, changes no line anyone shows, and nothing a device writes builds on it.
 //!
 //! `History` is what a device holds of one entry, every accepted write with what it could open; the Lab builds one
-//! for each entry it shows. `Repo` keeps one locally, with no keys and no caps, for the tests and the property checks.
+//! for each entry it shows. `Repo` keeps one locally, with no keys and no shares, for the tests and the property
+//! checks.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{Map, Value};
 
 use crate::doc::Item;
-use crate::id::{BlobId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::id::{AudienceId, BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lens::Lane;
 use crate::policy::{self, Line, Proposal, Refusal, Write};
 use crate::rules::{self, Touch};
@@ -455,8 +456,8 @@ fn undo_list(now: &[Value], after: &[Value], before: &[Value]) -> Vec<Value> {
     out.into_iter().map(|(_, v)| v).collect()
 }
 
-/// One entry's history kept locally, with no keys, caps or signatures: what proposals do to an item, for the tests and
-/// the property checks of T10. Writes are numbered from 1; the first holds the item the repo starts from.
+/// One entry's history kept locally, with no keys, shares or signatures: what proposals do to an item, for the tests
+/// and the property checks of T10. Writes are numbered from 1; the first holds the item the repo starts from.
 #[derive(Clone)]
 pub struct Repo {
     history: History,
@@ -525,9 +526,9 @@ impl Repo {
     pub fn make(&mut self, author: SignerId, d: Draft) -> Result<EditId, Refusal> {
         let edit = EditId::from_u64(self.history.changes.len() as u64 + 1);
         let (entry, actor) = (EntryId::from_u64(0), VaultId::from_u64(0));
-        let (stay, generation, cell, first) = (None, 0, CellId::of(actor, &[]), self.history.changes.is_empty());
-        let (deps, proposal, via, caps) = (d.deps, d.proposal, vec![], vec![]);
-        let write = Write { edit, author, actor, entry, stay, generation, deps, proposal, via, first, cell, caps };
+        let (stay, epoch, audience, first) = (None, 0, AudienceId::of(actor, &[]), self.history.changes.is_empty());
+        let (deps, proposal, via, shares) = (d.deps, d.proposal, vec![], vec![]);
+        let write = Write { edit, author, actor, entry, stay, epoch, deps, proposal, via, first, audience, shares };
         self.history.push(Change { write, body: Some(d.body), fits: true, counted: true })?;
         Ok(edit)
     }

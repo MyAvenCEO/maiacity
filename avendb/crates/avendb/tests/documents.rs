@@ -3,8 +3,8 @@
 //! older one undone, a variant that copies a record into a new entry, and items that converge whatever order their
 //! edits arrive in and refuse an update whose ops aren't its signer's. In a flat vault each item is one entry, a doc, a
 //! note or a todo: its writes carry its Loro updates, encrypted, on the main line or on a proposal, and an app reads
-//! it through the schemas and lenses in its vault's lane, which the vault and any vault holding a wide owner cap over
-//! it publish into (T17, in `caps.rs`).
+//! it through the schemas and lenses in its vault's lane, which the vault and any vault holding a wide owner share over
+//! it publish into (T17, in `shares.rs`).
 
 mod common;
 

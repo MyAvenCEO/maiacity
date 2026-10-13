@@ -19,7 +19,7 @@
 //! of ops that the line's history holds whole (`history`). No clock goes into the updates: the same edits export the
 //! same bytes.
 //!
-//! What a write touches (`rules::Touch`), which the ops of the caps it relies on judge, is read off its Loro ops once
+//! What a write touches (`rules::Touch`), which the ops of the shares it relies on judge, is read off its Loro ops once
 //! imported on the version it builds on (`Item::footprint`): each op by the place its container has in the record then.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -32,8 +32,8 @@ use loro::{
 use serde_json::Value;
 
 use crate::id::{BlobId, SignerId};
-use crate::lens::{BlockV2, DocV1, DocV2, Record, Status, Stored, TodoV1, TodoV2, View};
-use crate::ops::{self, Loc};
+use crate::lens::{BlockV2, DocV1, DocV2, Status, Stored, TodoV1, TodoV2, View};
+use crate::ops::{self, Loc, Record};
 use crate::policy::Line;
 use crate::rules::{Scalar, Touch};
 

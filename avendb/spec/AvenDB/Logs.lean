@@ -3,16 +3,16 @@ import AvenDB.Sync
 /-!
 # Logs, frontiers and forks
 
-Every edit belongs to one log (`Edit.log?`, in `Sync.lean`): a vault's, a cap's, a cell's or an entry's. An edit names
-as its parents the frontier of its own log as its device held it, so each log is a small history of its own, and two
-copies of a log compare by their frontiers alone: one hash per log on the wire. A device that asks a peer sends, for
+Every edit belongs to one log (`Edit.log?`, in `Sync.lean`): a vault's, a share's, an audience's or an entry's. An edit
+names as its parents the frontier of its own log as its device held it, so each log is a small history of its own, and
+two copies of a log compare by their frontiers alone: one hash per log on the wire. A device that asks a peer sends, for
 each log it holds, its frontier and a few edits further back (`haves`): those 1, 2, 4, 8, … steps back from the
-frontier, and the oldest. The peer sends back only what lies beyond the ones it holds (`respondSince`): the edits of
-the log that are not among them and that none of them builds on (`missing`). A peer that is behind holds the whole
-frontier and sends exactly what the device lacks; one that lacks the device's latest edits still holds one of them
-close by, so it sends back little the device holds. That withholds nothing the device lacks (T19), because a device
-sends only edits of the part of a log whose whole past it holds (`closedPart`): an edit whose parent hasn't arrived
-waits outside, with whatever builds on it, until the gap is filled.
+frontier, and the oldest. The peer sends back only what lies beyond the ones it holds (`respondSince`): the edits of the
+log that are not among them and that none of them builds on (`missing`). A peer that is behind holds the whole frontier
+and sends exactly what the device lacks; one that lacks the device's latest edits still holds one of them close by, so
+it sends back little the device holds. That withholds nothing the device lacks (T19), because a device sends only edits
+of the part of a log whose whole past it holds (`closedPart`): an edit whose parent hasn't arrived waits outside, with
+whatever builds on it, until the gap is filled.
 
 A device signs its edits in a log one after another, each building on the one before, so two edits of one device in one
 log where neither builds on the other (`forks`) mean its key signed twice from the same past: a cloned device, one

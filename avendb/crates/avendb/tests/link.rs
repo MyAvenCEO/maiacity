@@ -1,14 +1,15 @@
 //! Linking a device by its passkey (P8c), as a device's QR code or the server's offer starts it. A new device of
 //! Alice's shows her passkey's pass for it on a connection to a device that holds her vault's log, her Mac or the
 //! server, where its hello proved it; that device hands it the logs of the vaults the passkey owns (the link card),
-//! vault logs alone and nothing of any cap, cell or entry (T20); the new device adds itself to the vault its passkey
-//! is the root of, signed by the passkey and by itself, and the peer accepts that one edit; then the two sync by caps
-//! and cells, and the new device reads every entry of its vault and of the vaults it acts for. Each device runs split off, as on a machine of its own, and they
-//! speak by the bytes they would send each other: `avendb-net` carries the same bytes over iroh.
+//! vault logs alone and nothing of any share, audience or entry (T20); the new device adds itself to the vault its
+//! passkey is the root of, signed by the passkey and by itself, and the peer accepts that one edit; then the two sync
+//! by shares and audiences, and the new device reads every entry of its vault and of the vaults it acts for. Each
+//! device runs split off, as on a machine of its own, and they speak by the bytes they would send each other:
+//! `avendb-net` carries the same bytes over iroh.
 
 mod common;
 
-use avendb::id::{CellId, EditId, SignerId};
+use avendb::id::{AudienceId, EditId, SignerId};
 use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Edit, Refusal};
@@ -83,8 +84,8 @@ fn a_new_iphone_links_through_alices_mac_by_the_passkey_alone() {
     let devices = &mac.state(w.mac_a).vault(alice).expect("Alice's vault").devices;
     assert!(devices.contains(&new), "and the Mac counts it among Alice's devices");
     settle((&mut phone, new), (&mut mac, w.mac_a));
-    // the seeds of Alice's vault and of the coop, and the keys of the cells Welcome and her diary are in
-    let none = |v| KeyFam::Cell(v, CellId::of(v, &[]));
+    // the seeds of Alice's vault and of the coop, and the keys of the audiences Welcome and her diary are in
+    let none = |v| KeyFam::Audience(v, AudienceId::of(v, &[]));
     let keys = [KeyFam::Seed(alice), KeyFam::Seed(h.coop), none(h.coop), none(alice)];
     for k in keys {
         assert!(phone.opens(new, k), "the new iPhone opens {k:?}");
@@ -124,7 +125,7 @@ fn alice_gets_her_vault_back_through_the_server_with_her_passkey_alone() {
     assert_eq!(text(&mac, new, h.onboarding, 2).as_deref(), Some(ONBOARDING_TEXT), "and Onboarding");
     assert_eq!(text(&mac, new, diary, 2).as_deref(), Some(DIARY_TEXT), "and her diary, which the server relays");
     // the server, which handed over the vault's log, opens none of its keys and holds no text
-    let none = |v| KeyFam::Cell(v, CellId::of(v, &[]));
+    let none = |v| KeyFam::Audience(v, AudienceId::of(v, &[]));
     let keys = [KeyFam::Seed(alice), KeyFam::Seed(h.coop), none(h.coop), none(alice)];
     for k in keys {
         assert!(mac.opens(new, k), "the new Mac opens {k:?}");

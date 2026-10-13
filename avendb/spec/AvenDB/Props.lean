@@ -34,11 +34,11 @@ def Acyclic (st : State) : Prop := ∀ v, ¬ OwnsPlus st v v
 def OwnersExist (st : State) : Prop :=
   ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st.vault? o).isSome
 
-/-! ## Caps -/
+/-! ## Shares -/
 
-def CapsNameVaults (st : State) : Prop := ∀ c ∈ st.caps, ∀ s, c.grantee ≠ .principal (.signer s)
+def SharesNameVaults (st : State) : Prop := ∀ c ∈ st.shares, ∀ s, c.who ≠ .principal (.signer s)
 
-def PublicReadOnly (st : State) : Prop := ∀ c ∈ st.caps, c.grantee = .«public» → c.role = .read
+def EveryoneReadOnly (st : State) : Prop := ∀ c ∈ st.shares, c.who = .everyone → c.level = .read
 
 /-! ## Writes -/
 
@@ -51,21 +51,21 @@ def CountsClosed (st : State) : Prop := ∀ w ∈ st.writes, ∀ d ∈ w.deps, d
 
 /-! ## Ops
 
-What every reader of an entry sees of the caps when it judges a write: each cap without its selector, which only the
-readers of that cap open, and without its ops, but for the caps of the chain the write's proof names, whose ops the
+What every reader of an entry sees of the shares when it judges a write: each share without its selector, which only the
+readers of that share open, and without its ops, but for the shares of the chain the write's proof names, whose ops the
 proof opens. -/
 
-/-- The caps whose ops a write's proof `p` opens: the chain of the cap it names. -/
-def proofCaps (st : State) : Option CapId → List CapId
+/-- The shares whose ops a write's proof `p` opens: the chain of the share it names. -/
+def proofShares (st : State) : Option ShareId → List ShareId
   | none => []
-  | some p => (st.caps.filter (·.id == p)).flatMap fun c => (chain st c).map (·.id)
+  | some p => (st.shares.filter (·.id == p)).flatMap fun c => (chain st c).map (·.id)
 
-/-- A cap as every reader of an entry sees it, judging a write whose proof opens the ops of the caps `vis`. -/
-def Cap.seen (vis : List CapId) (c : Cap) : Cap :=
+/-- A share as every reader of an entry sees it, judging a write whose proof opens the ops of the shares `vis`. -/
+def Share.seen (vis : List ShareId) (c : Share) : Share :=
   { c with select := .all, ops := if vis.contains c.id then c.ops else [] }
 
-/-- A state as every reader of an entry sees it, judging a write whose proof opens the ops of the caps `vis`. -/
-def State.seen (st : State) (vis : List CapId) : State := { st with caps := st.caps.map (Cap.seen vis) }
+/-- A state as every reader of an entry sees it, judging a write whose proof opens the ops of the shares `vis`. -/
+def State.seen (st : State) (vis : List ShareId) : State := { st with shares := st.shares.map (Share.seen vis) }
 
 /-! ## Keys -/
 
@@ -84,23 +84,23 @@ inductive EverReads (sts : List State) : Holder → KeyFam → Prop where
 
 /-- The vault a key family belongs to. -/
 def KeyFam.vault : KeyFam → VaultId
-  | .seed v | .cap v _ | .cell v _ => v
+  | .seed v | .share v _ | .audience v _ => v
 
 /-! ## Relays
 
-A relay reads no selector, no type, no tag, no op and no record: it sees a cap without its selector and ops (only
-its role, their class), a sync rule without its selector, and a write without its header, tags, proof, touches and whether it fits its schemas. What it
-then works out of the edits is the operational part of the state. -/
+A relay reads no selector, no type, no tag, no op and no record: it sees a share without its selector and ops (only
+its level, their class), a sync rule without its selector, and a write without its header, tags, proof, touches and
+whether it fits its schemas. What it then works out of the edits is the operational part of the state. -/
 
-/-- A cap as a relay sees it. -/
-def Cap.blind (c : Cap) : Cap := { c with select := .all, ops := [] }
+/-- A share as a relay sees it. -/
+def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
 
 /-- A sync rule as a relay sees it. -/
 def SyncRule.blind (r : SyncRule) : SyncRule := { r with select := .all }
 
 /-- An action as a relay sees it. -/
 def Action.blind : Action → Action
-  | .cap c via => .cap c.blind via
+  | .share c via => .share c.blind via
   | .syncRule r via => .syncRule r.blind via
   | .write v e a s g deps p via create _ _ _ _ =>
     .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none [] true
@@ -110,7 +110,7 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 
 /-- The operational part of a state: all of it but what only readers see. -/
 def State.ops (st : State) : State :=
-  { st with caps := st.caps.map Cap.blind,
+  { st with shares := st.shares.map Share.blind,
             entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false },
             uncounted := [], rules := st.rules.map SyncRule.blind }
 

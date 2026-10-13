@@ -99,11 +99,11 @@ Every change op may carry `"as": VaultId`, the vault it acts for (the device's o
 ops that name none), as every edit does, and the rules judge it as they judge any peer's edit. An op carrying a field
 it doesn't take is refused, never half read.
 
-- **The record ops** (`ops::Op`): `set` the whole record, a field, a row (all its fields) or a field of a row; `unset`
-  a field or a field of a row; `insert` a row into a list of records, or a value into a list of values, at place `at`
-  or last; `remove` a row, or (with `value`) every copy of a value from a list of values, a no-op if it holds none;
-  `move` a row to place `to` of the list without it. Each names a place (`ops::Loc`) and changes nothing it doesn't
-  cover (O2).
+- **The record ops** (`ops::RecordOp`): `set` the whole record, a field, a row (all its fields) or a field of a row;
+  `unset` a field or a field of a row; `insert` a row into a list of records, or a value into a list of values, at
+  place `at` or last; `remove` a row, or (with `value`) every copy of a value from a list of values, a no-op if it
+  holds none; `move` a row to place `to` of the list without it. Each names a place (`ops::Loc`) and changes nothing
+  it doesn't cover (O2).
 - **Apply, then write.** The engine runs the record ops on the app's view of the line, fills each field they leave
   out at its schema's default, checks the result is a view of the schema (`View::put`, else `NotAView`), and hands it
   to `Item::write`, whose lens and Loro diff make the smallest change. So ops are schema-generic: a new schema needs
@@ -244,7 +244,7 @@ it. A write **counts** when it fits (below), builds only on writes that count, a
 its proof names a live cap its actor holds with write or more that reaches the entry, every grant of whose chain
 hashes to its cap's commitment, is of its cap's role, and allows every touch. A creation counts the same way through
 the cap it is created through, with the touch `create`. Whether a write counts is decided by what was true when it was
-accepted: the caps its actor held then (`policy::Write::caps`, none for a write that acts for the entry's own vault),
+accepted: the caps its actor held then (`policy::Write::shares`, none for a write that acts for the entry's own vault),
 the cell its entry was in, its proof and the writes it builds on (C2). Nothing of it reads a selector, an entry's type
 or its tags, so every reader of the entry, whatever caps it opened, reaches the same verdict.
 

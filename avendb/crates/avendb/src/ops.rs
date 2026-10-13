@@ -8,10 +8,10 @@
 //!   how many rows with that id come before it (`Key`).
 //! - **Changes** (`Change`, `diff`). What a write did, in a normal form: a place's new value, a list's new rows. The
 //!   diff of two records applied to the first gives the second (O1), so nothing a write did escapes its diff.
-//! - **Ops** (`Op`). What an app asks: `set` or `unset` a field, a row or a field of a row; `insert`, `remove` and
-//!   `move` a row of a list of records; `insert` a value into a list of values, `remove` one from it. Each names a
+//! - **Ops** (`RecordOp`). What an app asks: `set` or `unset` a field, a row or a field of a row; `insert`, `remove`
+//!   and `move` a row of a list of records; `insert` a value into a list of values, `remove` one from it. Each names a
 //!   place (`Loc`) and changes nothing it doesn't cover (O2).
-//! - **Queries** (`Where`). A `where` mixes labels, the tests of a cap's selector, with tests of a record's values.
+//! - **Queries** (`Where`). A `where` mixes labels, the tests of a share's selector, with tests of a record's values.
 //!   Its labels make a selector that picks no less than it does (`Where::plan`), so a device picks entries by labels
 //!   first and tests values only in what it opens (O3).
 //!
@@ -305,10 +305,10 @@ impl Loc {
     }
 }
 
-/// What an app asks of a record, as `Op::of_json` reads it. A row is named by its id: an app's view holds one row of
-/// each id.
+/// What an app asks of a record, as `RecordOp::of_json` reads it. A row is named by its id: an app's view holds one row
+/// of each id.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Op {
+pub enum RecordOp {
     /// `{"op": "set", "path": [], "value": record}`: the whole record.
     Put(Record),
     /// `{"op": "set", "path": [f], "value": v}`.
@@ -340,8 +340,8 @@ fn scalar(v: &Value) -> bool {
     !v.is_array() && !v.is_object()
 }
 
-impl Op {
-    pub fn of_json(v: &Value) -> Result<Op, String> {
+impl RecordOp {
+    pub fn of_json(v: &Value) -> Result<RecordOp, String> {
         let o = v.as_object().ok_or("an op is an object")?;
         if let Some(other) = o.keys().find(|k| !OP_FIELDS.contains(&k.as_str())) {
             return Err(format!("an op has no field {other:?}"));
@@ -366,27 +366,27 @@ impl Op {
         };
         Ok(match (name, loc) {
             ("set", Loc::Root) => match value()? {
-                Value::Object(r) => Op::Put(r),
+                Value::Object(r) => RecordOp::Put(r),
                 _ => return Err("a record is an object".into()),
             },
-            ("set", Loc::Field(f)) => Op::Set(f, value()?),
-            ("set", Loc::Row(f, i)) => Op::SetRow(f, i, row(value()?, Some(i))?),
-            ("set", Loc::Cell(f, i, g)) => Op::SetCell(f, i, g, value()?),
-            ("unset", Loc::Field(f)) => Op::Unset(f),
-            ("unset", Loc::Cell(f, i, g)) => Op::UnsetCell(f, i, g),
+            ("set", Loc::Field(f)) => RecordOp::Set(f, value()?),
+            ("set", Loc::Row(f, i)) => RecordOp::SetRow(f, i, row(value()?, Some(i))?),
+            ("set", Loc::Cell(f, i, g)) => RecordOp::SetCell(f, i, g, value()?),
+            ("unset", Loc::Field(f)) => RecordOp::Unset(f),
+            ("unset", Loc::Cell(f, i, g)) => RecordOp::UnsetCell(f, i, g),
             ("insert", Loc::Field(f)) => match value()? {
-                x @ Value::Object(_) => Op::Insert(f, row(x, None)?, at()?),
-                x if scalar(&x) => Op::Add(f, x, at()?),
+                x @ Value::Object(_) => RecordOp::Insert(f, row(x, None)?, at()?),
+                x if scalar(&x) => RecordOp::Add(f, x, at()?),
                 _ => return Err("insert takes a row, or a value for a list of values".into()),
             },
-            ("remove", Loc::Row(f, i)) => Op::Remove(f, i),
+            ("remove", Loc::Row(f, i)) => RecordOp::Remove(f, i),
             ("remove", Loc::Field(f)) => match value()? {
-                x if scalar(&x) => Op::Drop(f, x),
+                x if scalar(&x) => RecordOp::Drop(f, x),
                 _ => return Err("remove takes the value to take out of a list of values".into()),
             },
             ("move", Loc::Row(f, i)) => {
                 let to = o.get("to").and_then(Value::as_u64).ok_or("move names the place it moves to: to")?;
-                Op::Move(f, i, to as usize)
+                RecordOp::Move(f, i, to as usize)
             }
             (name, loc) => return Err(format!("{name} makes no sense at {}", loc.to_json())),
         })
@@ -399,35 +399,37 @@ impl Op {
             }
         };
         match self {
-            Op::Put(r) => json!({ "op": "set", "path": [], "value": r }),
-            Op::Set(f, v) => json!({ "op": "set", "path": [f], "value": v }),
-            Op::Unset(f) => json!({ "op": "unset", "path": [f] }),
-            Op::SetRow(f, i, r) => json!({ "op": "set", "path": [f, { "id": i }], "value": r }),
-            Op::SetCell(f, i, g, v) => json!({ "op": "set", "path": [f, { "id": i }, g], "value": v }),
-            Op::UnsetCell(f, i, g) => json!({ "op": "unset", "path": [f, { "id": i }, g] }),
-            Op::Insert(f, r, n) => {
+            RecordOp::Put(r) => json!({ "op": "set", "path": [], "value": r }),
+            RecordOp::Set(f, v) => json!({ "op": "set", "path": [f], "value": v }),
+            RecordOp::Unset(f) => json!({ "op": "unset", "path": [f] }),
+            RecordOp::SetRow(f, i, r) => json!({ "op": "set", "path": [f, { "id": i }], "value": r }),
+            RecordOp::SetCell(f, i, g, v) => json!({ "op": "set", "path": [f, { "id": i }, g], "value": v }),
+            RecordOp::UnsetCell(f, i, g) => json!({ "op": "unset", "path": [f, { "id": i }, g] }),
+            RecordOp::Insert(f, r, n) => {
                 let mut o = json!({ "op": "insert", "path": [f], "value": r });
                 at(&mut o, n);
                 o
             }
-            Op::Remove(f, i) => json!({ "op": "remove", "path": [f, { "id": i }] }),
-            Op::Move(f, i, to) => json!({ "op": "move", "path": [f, { "id": i }], "to": to }),
-            Op::Add(f, v, n) => {
+            RecordOp::Remove(f, i) => json!({ "op": "remove", "path": [f, { "id": i }] }),
+            RecordOp::Move(f, i, to) => json!({ "op": "move", "path": [f, { "id": i }], "to": to }),
+            RecordOp::Add(f, v, n) => {
                 let mut o = json!({ "op": "insert", "path": [f], "value": v });
                 at(&mut o, n);
                 o
             }
-            Op::Drop(f, v) => json!({ "op": "remove", "path": [f], "value": v }),
+            RecordOp::Drop(f, v) => json!({ "op": "remove", "path": [f], "value": v }),
         }
     }
 
     pub fn loc(&self) -> Loc {
         match self {
-            Op::Put(_) => Loc::Root,
-            Op::Set(f, _) | Op::Unset(f) | Op::Add(f, ..) | Op::Drop(f, _) => Loc::Field(f.clone()),
-            Op::SetRow(f, i, _) | Op::Remove(f, i) | Op::Move(f, i, _) => Loc::Row(f.clone(), *i),
-            Op::Insert(f, r, _) => Loc::Row(f.clone(), r["id"].as_i64().expect("a row has an integer id")),
-            Op::SetCell(f, i, g, _) | Op::UnsetCell(f, i, g) => Loc::Cell(f.clone(), *i, g.clone()),
+            RecordOp::Put(_) => Loc::Root,
+            RecordOp::Set(f, _) | RecordOp::Unset(f) | RecordOp::Add(f, ..) | RecordOp::Drop(f, _) => {
+                Loc::Field(f.clone())
+            }
+            RecordOp::SetRow(f, i, _) | RecordOp::Remove(f, i) | RecordOp::Move(f, i, _) => Loc::Row(f.clone(), *i),
+            RecordOp::Insert(f, r, _) => Loc::Row(f.clone(), r["id"].as_i64().expect("a row has an integer id")),
+            RecordOp::SetCell(f, i, g, _) | RecordOp::UnsetCell(f, i, g) => Loc::Cell(f.clone(), *i, g.clone()),
         }
     }
 
@@ -442,25 +444,25 @@ impl Op {
             Some((rs.to_vec(), at))
         };
         match self {
-            Op::Put(d) => return Some(d.clone()),
-            Op::Set(f, x) => drop(out.insert(f.clone(), x.clone())),
-            Op::Unset(f) => drop(out.remove(f)),
-            Op::SetRow(f, i, row) => {
+            RecordOp::Put(d) => return Some(d.clone()),
+            RecordOp::Set(f, x) => drop(out.insert(f.clone(), x.clone())),
+            RecordOp::Unset(f) => drop(out.remove(f)),
+            RecordOp::SetRow(f, i, row) => {
                 let (mut rs, at) = row_of(f, *i)?;
                 rs[at] = Value::Object(row.clone());
                 out.insert(f.clone(), rs.into());
             }
-            Op::SetCell(f, i, g, v) => {
+            RecordOp::SetCell(f, i, g, v) => {
                 let (mut rs, at) = row_of(f, *i).filter(|_| g != "id")?;
                 fields(&mut rs[at]).insert(g.clone(), v.clone());
                 out.insert(f.clone(), rs.into());
             }
-            Op::UnsetCell(f, i, g) => {
+            RecordOp::UnsetCell(f, i, g) => {
                 let (mut rs, at) = row_of(f, *i).filter(|_| g != "id")?;
                 fields(&mut rs[at]).remove(g);
                 out.insert(f.clone(), rs.into());
             }
-            Op::Insert(f, row, n) => {
+            RecordOp::Insert(f, row, n) => {
                 let id = row["id"].as_i64();
                 let mut rs = match r.get(f) {
                     None => vec![],
@@ -473,12 +475,12 @@ impl Op {
                 rs.insert(n, Value::Object(row.clone()));
                 out.insert(f.clone(), rs.into());
             }
-            Op::Remove(f, i) => {
+            RecordOp::Remove(f, i) => {
                 let (mut rs, at) = row_of(f, *i)?;
                 rs.remove(at);
                 out.insert(f.clone(), rs.into());
             }
-            Op::Move(f, i, to) => {
+            RecordOp::Move(f, i, to) => {
                 let (mut rs, at) = row_of(f, *i)?;
                 let row = rs.remove(at);
                 if *to > rs.len() {
@@ -487,7 +489,7 @@ impl Op {
                 rs.insert(*to, row);
                 out.insert(f.clone(), rs.into());
             }
-            Op::Add(f, v, n) => {
+            RecordOp::Add(f, v, n) => {
                 let mut vs = match r.get(f) {
                     None => vec![],
                     Some(Value::Array(xs)) if xs.is_empty() || rows(&Value::Array(xs.clone())).is_none() => xs.clone(),
@@ -500,7 +502,7 @@ impl Op {
                 vs.insert(n, v.clone());
                 out.insert(f.clone(), vs.into());
             }
-            Op::Drop(f, v) => match r.get(f) {
+            RecordOp::Drop(f, v) => match r.get(f) {
                 None => {}
                 Some(Value::Array(xs)) if xs.is_empty() => {}
                 Some(x @ Value::Array(xs)) if rows(x).is_none() => {
@@ -518,7 +520,7 @@ fn fields(row: &mut Value) -> &mut Record {
 }
 
 /// Ops one after the other: `None` if one makes no sense.
-pub fn run_all(r: &Record, ops: &[Op]) -> Option<Record> {
+pub fn run_all(r: &Record, ops: &[RecordOp]) -> Option<Record> {
     ops.iter().try_fold(r.clone(), |r, op| op.run(&r))
 }
 
@@ -644,7 +646,7 @@ impl Target {
     }
 }
 
-/// A query's `where`: `{"all": [w, ..]}`, `{"any": [w, ..]}`, `{"not": w}`, a label as a cap's selector writes it
+/// A query's `where`: `{"all": [w, ..]}`, `{"any": [w, ..]}`, `{"not": w}`, a label as a share's selector writes it
 /// (`Selector::to_json`), or `{"path": path, test: value}`. `{"all": []}` holds of everything, `{"any": []}` of
 /// nothing, and a longer list nests from the right: `{"all": [a, b, c]}` is a and (b and c).
 #[derive(Clone, Debug, PartialEq)]
@@ -674,8 +676,8 @@ impl Where {
         }
     }
 
-    /// It tests labels alone, with no test of a value and no `not`: its cover picks exactly what it does, and a cap may
-    /// pick by it (`slice::Selector::of_json`).
+    /// It tests labels alone, with no test of a value and no `not`: its cover picks exactly what it does, and a share
+    /// may pick by it (`slice::Selector::of_json`).
     pub fn labels_only(&self) -> bool {
         match self {
             Where::Yes | Where::No | Where::Label(_) => true,
@@ -704,7 +706,7 @@ impl Where {
         }
     }
 
-    /// The selector a device picks entries by, a cap's, before it tests what it opens: its labels', or the whole
+    /// The selector a device picks entries by, a share's, before it tests what it opens: its labels', or the whole
     /// vault's where those make a selector beyond the bounds.
     pub fn plan(&self) -> Selector {
         Some(self.cover()).filter(Selector::bounded).unwrap_or(Selector::All)
@@ -837,10 +839,10 @@ mod tests {
             json!({ "op": "remove", "path": ["tags"], "value": "work" }),
         ];
         for v in ops {
-            assert_eq!(Op::of_json(&v).expect("an op").to_json(), v);
+            assert_eq!(RecordOp::of_json(&v).expect("an op").to_json(), v);
         }
-        let row = Op::of_json(&json!({ "op": "set", "path": ["blocks", { "id": 2 }], "value": { "text": "z" } }));
-        assert_eq!(row, Ok(Op::SetRow("blocks".into(), 2, record(json!({ "text": "z", "id": 2 })))));
+        let row = RecordOp::of_json(&json!({ "op": "set", "path": ["blocks", { "id": 2 }], "value": { "text": "z" } }));
+        assert_eq!(row, Ok(RecordOp::SetRow("blocks".into(), 2, record(json!({ "text": "z", "id": 2 })))));
         let bad = [
             json!({ "op": "set", "path": ["blocks", { "id": 2 }], "value": { "id": 3 } }),
             json!({ "op": "unset", "path": [] }),
@@ -850,7 +852,7 @@ mod tests {
             json!({ "op": "set", "path": ["title"], "value": "y", "vaule": 1 }),
         ];
         for v in bad {
-            assert!(Op::of_json(&v).is_err(), "{v}");
+            assert!(RecordOp::of_json(&v).is_err(), "{v}");
         }
     }
 

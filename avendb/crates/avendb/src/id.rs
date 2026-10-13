@@ -1,7 +1,7 @@
 //! Ids, all 32 bytes. A signer is its public key. Everything an edit creates is named by that edit's id, the hash of
-//! the signed edit: a vault by its genesis, a cap by the edit that issued it. An entry's id is drawn at random by
-//! whoever creates it. A cell, the entries of a vault that the same caps select, is named by the hash of its vault and
-//! its caps (`CellId::of`).
+//! the signed edit: a vault by its genesis, a share by the edit that issued it. An entry's id is drawn at random by
+//! whoever creates it. An audience, the entries of a vault that the same shares select, is named by the hash of its
+//! vault and its shares (`AudienceId::of`).
 
 macro_rules! ids {
     ($($(#[$doc:meta])* $name:ident),* $(,)?) => {$(
@@ -73,10 +73,11 @@ ids! {
     VaultId,
     /// One entry of a vault, a note or a todo: 32 random bytes its creator draws.
     EntryId,
-    /// A cap: the id of the edit that issued it.
-    CapId,
-    /// A cell of a vault: the hash of the vault and the ids of the caps that select its entries (`CellId::of`).
-    CellId,
+    /// A share: the id of the edit that issued it.
+    ShareId,
+    /// An audience of a vault: the hash of the vault and the ids of the shares that select its entries
+    /// (`AudienceId::of`).
+    AudienceId,
     /// A signed edit: the hash of its encoding with its signatures.
     EditId,
     /// Bytes named by their hash: a schema or a lens in a vault's schema lane, or a Classic McEliece public key.
@@ -96,23 +97,24 @@ impl From<EditId> for VaultId {
     }
 }
 
-impl From<EditId> for CapId {
+impl From<EditId> for ShareId {
     fn from(id: EditId) -> Self {
         Self(id.0)
     }
 }
 
-impl CellId {
-    /// The id of the cell of vault `v` that the caps `caps` select, given in canonical order (`policy::mk_cell`): the
-    /// hash of the vault and the caps, so two peers name one cell alike and no relay learns more than which caps.
-    pub fn of(v: VaultId, caps: &[CapId]) -> CellId {
+impl AudienceId {
+    /// The id of the audience of vault `v` that the shares `shares` select, given in canonical order
+    /// (`policy::mk_audience`): the hash of the vault and the shares, so two peers name one audience alike and no relay
+    /// learns more than which shares.
+    pub fn of(v: VaultId, shares: &[ShareId]) -> AudienceId {
         let mut h = crate::hash::Hasher::new("cell id");
         h.update(&v.0);
-        h.update(&(caps.len() as u64).to_be_bytes());
-        for c in caps {
+        h.update(&(shares.len() as u64).to_be_bytes());
+        for c in shares {
             h.update(&c.0);
         }
-        CellId(h.finalize())
+        AudienceId(h.finalize())
     }
 }
 
@@ -129,12 +131,13 @@ mod tests {
     }
 
     #[test]
-    fn a_cell_id_names_its_vault_and_caps() {
+    fn an_audience_id_names_its_vault_and_shares() {
         let (v, w) = (VaultId::from_u64(1), VaultId::from_u64(2));
-        let (a, b) = (CapId::from_u64(1), CapId::from_u64(2));
-        let ids = [CellId::of(v, &[]), CellId::of(v, &[a]), CellId::of(v, &[a, b]), CellId::of(w, &[a, b])];
+        let (a, b) = (ShareId::from_u64(1), ShareId::from_u64(2));
+        let ids =
+            [AudienceId::of(v, &[]), AudienceId::of(v, &[a]), AudienceId::of(v, &[a, b]), AudienceId::of(w, &[a, b])];
         assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
-        assert_eq!(CellId::of(v, &[a, b]), CellId::of(v, &[a, b]));
+        assert_eq!(AudienceId::of(v, &[a, b]), AudienceId::of(v, &[a, b]));
     }
 
     #[test]

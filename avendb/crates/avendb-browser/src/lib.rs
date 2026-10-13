@@ -33,10 +33,11 @@
 //! outboard (`shelf_of`).
 //!
 //! A vault holds its entries itself, flat: each entry has a type (`note`, `todo`, `card`, `profile`) and tags, all of
-//! it inside the entry's encrypted writes. A vault shares what it holds by caps (`Device::share`), each on a slice of
-//! its entries, whatever its selector picks (`words`): every entry of a type, those with a tag, one entry, or the whole
-//! vault. Nothing is shared but what a cap names: least is the default. A relay cap hands out ciphertext and no key,
-//! which is how a vault lets avenCEO, the server's vault, keep and pass on its entries: a cap on the whole vault.
+//! it inside the entry's encrypted writes. A vault shares what it holds through shares (`Device::share`), each on a
+//! slice of its entries, whatever its selector picks (`words`): every entry of a type, those with a tag, one entry, or
+//! the whole vault. Nothing is shared but what a share names: least is the default. A relay share hands out ciphertext
+//! and no key, which is how a vault lets avenCEO, the server's vault, keep and pass on its entries: a share on the
+//! whole vault.
 //!
 //! The page shows its person's account (`Device::account`): their human vault, its root passkey and its devices, each
 //! by the name on its card. A card is an entry of type `card` of their vault that the device writes itself, titled
@@ -47,11 +48,12 @@
 //! ceremony of the passkey signs all their geneses, and then the device, acting for each through their vault (the
 //! edit's `via`), gives avenCEO relay on it and writes its profile, an entry of type `profile` titled with its name
 //! (`Device::profile`). The device acts for every vault its person's vault owns, so the page enacts each of them: it
-//! writes, tags, shares and revokes as that vault, and the rules check each edit against that vault's caps, as any
+//! writes, tags, shares and revokes as that vault, and the rules check each edit against that vault's shares, as any
 //! peer's would. The page shows the device's whole world (`Device::world`): every vault it knows, whom it acts for and
-//! through which owners; every cap in force, with its slice where the device reads it, what it reaches and who may
-//! revoke it; every cell, the entries the same caps reach and one key opens, with the devices that sync it and whether
-//! each opens it or only relays its ciphertext; and every entry, with its type, its tags and each vault's role on it.
+//! through which owners; every share in force, with its slice where the device reads it, what it reaches and who may
+//! revoke it; every audience, the entries the same shares reach and one key opens, with the devices that sync it and
+//! whether each opens it or only relays its ciphertext; and every entry, with its type, its tags and each vault's level
+//! on it.
 //!
 //! Every read and change of the entries the device holds, whatever their schema, is one op of the ops engine
 //! (`Device::run`, `avendb::engine`, `avendb/docs/OPS.md`): JSON the page writes, which the device runs as the vault it
@@ -59,7 +61,7 @@
 //! line and each proposal (a proposal of its history), and every edit of it, each with what it changed, to edit on any
 //! line, retitle, propose, merge, promote, restore, undo or make a variant (a new note with what a line shows, marked
 //! with the note it came from), each an op. And each vault's database shows as the device holds it, every entry with
-//! its record, its type, its tags, its cell and its edits, and the schemas and lenses the app ships and the vault
+//! its record, its type, its tags, its audience and its edits, and the schemas and lenses the app ships and the vault
 //! publishes (`Device::database`, `data`); and the database's history, every signed edit the device holds (the core's
 //! edits), each with what it does, who signed it and how, and the vaults it concerns (`Device::history`).
 //!
@@ -81,11 +83,11 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::doc::Item;
 use avendb::engine;
-use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, KeyFam};
-use avendb::lab::{Backup, Lab, NewCap};
+use avendb::lab::{Backup, Lab, NewShare};
 use avendb::lens::{DocV2, Status};
-use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Principal, Refusal, Role, State, Vault};
+use avendb::policy::{Action, Issued, Kind, Level, Principal, Refusal, Share, State, Vault, Who};
 use avendb::recovery::{self, RecoveryKey};
 use avendb::rules;
 use avendb::sealed::{Brought, FileRoot};
@@ -109,7 +111,7 @@ use zeroize::Zeroizing;
 mod data;
 pub mod words;
 
-use words::{grantee_name, hex, kind_name, role_name, status_name};
+use words::{hex, kind_name, level_name, status_name, who_name};
 
 /// The type of a device's card: an entry of its person's human vault, titled with the device's name, that the device
 /// wrote itself (`Device::card`).
@@ -271,8 +273,8 @@ impl Device {
     /// server yet, the same ceremony claims it, and their vault owns avenCEO, the aven vault the server is a device of.
     /// Then it gives avenCEO backup on the whole vault, so the server keeps their ciphertext and knows the device
     /// from then on, or, if `backup` is false, relay alone, so the server knows the vault's devices, lets them through
-    /// and helps them find each other, and keeps none of its entries (`server_role`, `Device::back_up`); and writes its
-    /// card there (`Device::card`). The relay honours the pass while it is open to sign-up
+    /// and helps them find each other, and keeps none of its entries (`server_level`, `Device::back_up`); and writes
+    /// its card there (`Device::card`). The relay honours the pass while it is open to sign-up
     /// (`avendb_net::Admission::open`) or while nobody has claimed the server.
     pub async fn found(
         start: Start,
@@ -302,8 +304,8 @@ impl Device {
         let device = Device::of(node, passkey, &passkeys, Some(fresh.mask(&unlock))).await?;
         let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
-            let role = if backup { Role::Backup } else { Role::Relay };
-            let server = cast::cap(vault, cast::vault(avenceo), role, Selector::All);
+            let level = if backup { Level::Backup } else { Level::Relay };
+            let server = cast::share(vault, cast::vault(avenceo), level, Selector::All);
             lab.issue(me, &[me], server).map_err(|why| anyhow!("avenCEO's cap is refused: {why:?}"))?;
             let card = named(&name, me);
             lab.create(me, vault, vault, CARD, &[], card).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
@@ -413,48 +415,48 @@ impl Device {
     }
 
     /// Whether avenDB's server keeps a backup of its person's vault: avenCEO holds backup on the whole of it
-    /// (`server_role`). `None` while it knows no avenCEO.
+    /// (`server_level`). `None` while it knows no avenCEO.
     pub async fn backs_up(&self) -> Option<bool> {
         self.node
             .read(|lab, me| {
                 let mine = lab.vault_of(me)?;
                 let st = lab.state(me);
-                Some(server_role(st, mine, avenceo(st, mine)?) == Role::Backup)
+                Some(server_level(st, mine, avenceo(st, mine)?) == Level::Backup)
             })
             .await
     }
 
-    /// Has avenDB's server keep a backup of its person's vault and of every vault the server holds a cap on the whole
+    /// Has avenDB's server keep a backup of its person's vault and of every vault the server holds a share on the whole
     /// of that this device acts for, if `on`, or relay alone, which keeps nothing of their entries from then on: it
-    /// gives avenCEO the one role on each, then revokes the caps of the other. What the server kept before, it keeps.
-    /// Whether anything changed.
+    /// gives avenCEO the one level on each, then revokes the shares of the other. What the server kept before, it
+    /// keeps. Whether anything changed.
     pub async fn back_up(&self, on: bool) -> Result<bool> {
-        let (want, other) = if on { (Role::Backup, Role::Relay) } else { (Role::Relay, Role::Backup) };
+        let (want, other) = if on { (Level::Backup, Level::Relay) } else { (Level::Relay, Level::Backup) };
         let change = move |lab: &mut Lab, me| {
             let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
             let st = lab.state(me);
             let Some(avenceo) = avenceo(st, mine) else { return Ok(false) };
-            let to = Grantee::Principal(Principal::Vault(avenceo));
-            let server = |cp: &&Issued| cp.cap.wide && cp.cap.grantee == to && st.live(cp.id);
-            let mut vaults: Vec<VaultId> = st.caps().iter().filter(server).map(|cp| cp.cap.over).collect();
+            let to = Who::Principal(Principal::Vault(avenceo));
+            let server = |cp: &&Issued| cp.share.wide && cp.share.who == to && st.live(cp.id);
+            let mut vaults: Vec<VaultId> = st.shares().iter().filter(server).map(|cp| cp.share.over).collect();
             vaults.sort();
             vaults.dedup();
             vaults.retain(|&v| st.acts_for(me, v));
             let mut plan = vec![];
             for &v in &vaults {
-                let has = st.caps_over(v).any(|cp| server(&cp) && cp.cap.role == want);
-                let ends = st.caps_over(v).filter(|cp| server(cp) && cp.cap.role == other).map(|cp| cp.id);
-                let ends: Vec<CapId> = ends.collect();
+                let has = st.shares_over(v).any(|cp| server(&cp) && cp.share.level == want);
+                let ends = st.shares_over(v).filter(|cp| server(cp) && cp.share.level == other).map(|cp| cp.id);
+                let ends: Vec<ShareId> = ends.collect();
                 plan.push((v, has, ends));
             }
             let mut changed = false;
             for (v, has, ends) in plan {
                 if !has {
-                    lab.issue(me, &[me], cast::cap(v, cast::vault(avenceo), want, Selector::All))?;
+                    lab.issue(me, &[me], cast::share(v, cast::vault(avenceo), want, Selector::All))?;
                     changed = true;
                 }
-                for cap in ends {
-                    lab.submit(me, &[me], Action::Revoke { cap, actor: v, keep: vec![], via: vec![] })?;
+                for share in ends {
+                    lab.submit(me, &[me], Action::Revoke { share, actor: v, keep: vec![], via: vec![] })?;
                     changed = true;
                 }
             }
@@ -555,53 +557,53 @@ impl Device {
             let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
             let st = lab.state(me);
             if let Some(avenceo) = avenceo(st, mine).filter(|&a| a != vault && !relays(st, vault, a)) {
-                let role = server_role(st, mine, avenceo);
-                lab.issue(me, &[me], cast::cap(vault, cast::vault(avenceo), role, Selector::All))?;
+                let level = server_level(st, mine, avenceo);
+                lab.issue(me, &[me], cast::share(vault, cast::vault(avenceo), level, Selector::All))?;
             }
             lab.create(me, vault, vault, PROFILE, &[], named(&name, me)).map(|_| true)
         };
         self.node.act(profile).await.map_err(|why: Refusal| anyhow!("the profile is refused: {why:?}"))
     }
 
-    /// Gives `grantee` the cap `spec` describes, a named group of ops on a slice of vault `over` (`{name, where, ops}`,
-    /// `words::spec_of`), acting for vault `issuer`: the vault itself, or a vault holding an owner cap over it, on
-    /// which this one then rests, a wide one for a cap on the whole vault (`parent`). A cap whose ops share is an
+    /// Gives `who` the share `spec` describes, a named group of ops on a slice of vault `over` (`{name, where, ops}`,
+    /// `words::spec_of`), acting for vault `issuer`: the vault itself, or a vault holding an owner share over it, on
+    /// which this one then rests, a wide one for a share on the whole vault (`parent`). A share whose ops share is an
     /// owner's, and giving one is governance, which the passkey approves in a ceremony; anything less this device signs
-    /// alone. The cap's slice is sealed to the vault, its grantee and its issuer. The cap's id.
+    /// alone. The share's slice is sealed to the vault, its grantee and its issuer. The share's id.
     pub async fn share(
         &self,
         issuer: VaultId,
         over: VaultId,
         spec: &Value,
-        grantee: Grantee,
+        who: Who,
         authenticator: &impl Authenticator,
-    ) -> Result<CapId> {
+    ) -> Result<ShareId> {
         let (name, select, ops) = words::spec_of(spec)?;
-        let (role, wide) = (rules::level_of(&ops), select == Selector::All);
+        let (level, wide) = (rules::level_of(&ops), select == Selector::All);
         let parent = self.node.read(move |lab, me| parent(lab.state(me), issuer, over, wide)).await;
-        let new = NewCap { over, grantee, name, select, ops, parent, issuer };
+        let new = NewShare { over, who, name, select, ops, parent, issuer };
         let refused = |why| anyhow!("the cap is refused: {why:?}");
-        if role != Role::Owner {
+        if level != Level::Owner {
             return self.node.act(move |lab, me| lab.issue(me, &[me], new)).await.map_err(refused);
         }
         let passkey = self.passkey;
-        let draft = self.node.act(move |lab, me| lab.draft_cap(me, &[passkey], new)).await.map_err(refused)?;
+        let draft = self.node.act(move |lab, me| lab.draft_share(me, &[passkey], new)).await.map_err(refused)?;
         let ceremony = authenticator.ceremony(draft.challenge(), Step::Approve).await?;
         let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &ceremony)]);
         let id = self.node.act(complete).await.map_err(|why| anyhow!("the passkey didn't sign the cap: {why:?}"))?;
-        Ok(CapId::from(id))
+        Ok(ShareId::from(id))
     }
 
-    /// Ends cap `cap` and every cap resting on it, acting for vault `actor`, which issued it, is the vault it is over,
-    /// holds it, or may revoke a cap it rests on. Ending an owner cap is governance, which the passkey approves in a
-    /// ceremony.
-    pub async fn revoke(&self, actor: VaultId, cap: CapId, authenticator: &impl Authenticator) -> Result<()> {
-        let role = move |lab: &Lab, me| {
+    /// Ends share `share` and every share resting on it, acting for vault `actor`, which issued it, is the vault it is
+    /// over, holds it, or may revoke a share it rests on. Ending an owner share is governance, which the passkey
+    /// approves in a ceremony.
+    pub async fn revoke(&self, actor: VaultId, share: ShareId, authenticator: &impl Authenticator) -> Result<()> {
+        let level = move |lab: &Lab, me| {
             let st = lab.state(me);
-            st.cap(cap).filter(|cp| st.live(cp.id)).map(|cp| cp.cap.role)
+            st.share(share).filter(|cp| st.live(cp.id)).map(|cp| cp.share.level)
         };
-        let revoke = Action::Revoke { cap, actor, keep: vec![], via: vec![] };
-        if self.node.read(role).await.context("no such cap in force")? == Role::Owner {
+        let revoke = Action::Revoke { share, actor, keep: vec![], via: vec![] };
+        if self.node.read(level).await.context("no such cap in force")? == Level::Owner {
             let passkey = self.passkey;
             let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey], revoke);
             self.node.approve_with(passkey, draft, authenticator).await?;
@@ -772,8 +774,9 @@ fn typed(lab: &Lab, me: SignerId, e: EntryId, ty: &str) -> bool {
     lab.meaning(me, e).is_some_and(|m| m.attrs.ty.as_str() == ty)
 }
 
-/// A device's world by its view (`Device::world`): every vault it knows, in the order they were founded; every cap in
-/// force, in the order they were issued; every cell an entry is in; and every entry, in the order they were created.
+/// A device's world by its view (`Device::world`): every vault it knows, in the order they were founded; every share in
+/// force, in the order they were issued; every audience an entry is in; and every entry, in the order they were
+/// created.
 pub struct World {
     /// Its own vault, its person's.
     pub mine: VaultId,
@@ -782,8 +785,8 @@ pub struct World {
     /// It trusts no curve (`Lab::set_pq_only`): only the writes a checkpoint by their author covers count.
     pub pq_only: bool,
     pub vaults: Vec<VaultView>,
-    pub caps: Vec<CapView>,
-    pub cells: Vec<CellView>,
+    pub shares: Vec<ShareView>,
+    pub audiences: Vec<AudienceView>,
     pub entries: Vec<EntryView>,
 }
 
@@ -799,33 +802,33 @@ pub struct VaultView {
     pub via: Option<Vec<VaultId>>,
 }
 
-/// A cap in force as a device shows it.
-pub struct CapView {
-    pub id: CapId,
-    pub cap: Cap,
-    /// The caps it rests on, from its root cap down to itself.
-    pub chain: Vec<CapId>,
+/// A share in force as a device shows it.
+pub struct ShareView {
+    pub id: ShareId,
+    pub share: Share,
+    /// The shares it rests on, from its root share down to itself.
+    pub chain: Vec<ShareId>,
     /// Its slice, if the device reads it: its selector is sealed to the vault it is over, its grantee and its issuer,
     /// so a device acting for none of them sees only that it is there, and what it reaches.
     pub slice: Option<Slice>,
     /// The vaults that may revoke it.
     pub revokers: Vec<VaultId>,
-    /// The entries it reaches now: every entry of its vault for a cap on the whole vault, else those in a cell of
-    /// caps it is one of.
+    /// The entries it reaches now: every entry of its vault for a share on the whole vault, else those in an audience
+    /// of shares it is one of.
     pub entries: Vec<EntryId>,
 }
 
-/// A cell as a device shows it: the entries of a vault that the same caps reach, under one key.
-pub struct CellView {
-    pub id: CellId,
+/// An audience as a device shows it: the entries of a vault that the same shares reach, under one key.
+pub struct AudienceView {
+    pub id: AudienceId,
     pub vault: VaultId,
-    /// The caps that reach it beside the vault's caps on the whole of it: none for the cell of the vault's own entries
-    /// that no cap selects.
-    pub caps: Vec<CapId>,
-    /// Its key's generation: it moves on when a reader may no longer read it.
-    pub generation: u64,
+    /// The shares that reach it beside the vault's shares on the whole of it: none for the audience of the vault's own
+    /// entries that no share selects.
+    pub shares: Vec<ShareId>,
+    /// Its key's epoch: it moves on when a reader may no longer read it.
+    pub epoch: u64,
     pub entries: Vec<EntryId>,
-    /// The vaults that read it: its own, and each vault a cap with read or more that reaches it names.
+    /// The vaults that read it: its own, and each vault a share with read or more that reaches it names.
     pub readers: Vec<VaultId>,
     /// Everyone may read it.
     pub public: bool,
@@ -833,13 +836,13 @@ pub struct CellView {
     pub syncs: Vec<Syncing>,
 }
 
-/// A device that receives a cell's edits: the vault it receives them through, the one of those it acts for that holds
-/// the strongest role on the cell, that role, and whether it opens any of what they hold, or only keeps their
+/// A device that receives an audience's edits: the vault it receives them through, the one of those it acts for that
+/// holds the strongest level on the audience, that level, and whether it opens any of what they hold, or only keeps
 /// ciphertext, as the server for avenCEO.
 pub struct Syncing {
     pub device: SignerId,
     pub through: VaultId,
-    pub role: Role,
+    pub level: Level,
     pub opens: bool,
 }
 
@@ -854,11 +857,11 @@ pub struct EntryView {
     pub ty: Option<String>,
     pub tags: Option<Vec<String>>,
     pub created: Option<u64>,
-    pub cell: CellId,
+    pub audience: AudienceId,
     /// Everyone may read it.
     pub public: bool,
-    /// The strongest role each vault holds on it: its own vault's is owner.
-    pub roles: Vec<(VaultId, Role)>,
+    /// The strongest level each vault holds on it: its own vault's is owner.
+    pub levels: Vec<(VaultId, Level)>,
     pub what: What,
 }
 
@@ -877,13 +880,15 @@ pub enum What {
 }
 
 impl World {
-    /// The world as device `me`'s page reads it (`PageDevice::world`): ids in 64 hex digits, kinds, roles and statuses
-    /// by their lowercase names, a cap's slice as the core writes it (`{name, where, ops, above}`,
+    /// The world as device `me`'s page reads it (`PageDevice::world`): ids in 64 hex digits, kinds, levels and statuses
+    /// by their lowercase names, a share's slice as the core writes it (`{name, where, ops, above}`,
     /// `avendb::slice::Slice::to_json`), `null` where the device doesn't read it, a vault's `via` `null` where the
-    /// device doesn't act for it, a cap's `grantee` `"everyone"` for Public (`words::grantee_name`), an entry's `type`,
-    /// `tags` and `created` `null` where the device doesn't read them and its `roles` by vault; the built-in groups of
-    /// ops the page offers when it shares (`avendb::rules::groups`); and the master recovery key it adds, `recovery`,
-    /// `null` for none, which a vault's owners mark as such.
+    /// device doesn't act for it, a share's `grantee` `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's
+    /// `type`, `tags` and `created` `null` where the device doesn't read them and its levels by vault; the built-in
+    /// groups of ops the page offers when it shares (`avendb::rules::groups`); and the master recovery key it adds,
+    /// `recovery`, `null` for none, which a vault's owners mark as such. The page's keys keep their older names: the
+    /// shares are `caps`, the audiences `cells`, a share's who and level `grantee` and `role`, an entry's audience and
+    /// levels `cell` and `roles`, and an audience's epoch `generation`.
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let owner = |p: &Principal| match p {
@@ -903,15 +908,15 @@ impl World {
                 "via": v.via.as_deref().map(ids),
             })
         };
-        let cap = |c: &CapView| {
+        let share = |c: &ShareView| {
             json!({
                 "id": hex(&c.id.0),
-                "over": hex(&c.cap.over.0),
-                "issuer": hex(&c.cap.issuer.0),
-                "grantee": grantee_name(c.cap.grantee),
-                "role": role_name(c.cap.role),
-                "wide": c.cap.wide,
-                "parent": c.cap.parent.map(|p| hex(&p.0)),
+                "over": hex(&c.share.over.0),
+                "issuer": hex(&c.share.issuer.0),
+                "grantee": who_name(c.share.who),
+                "role": level_name(c.share.level),
+                "wide": c.share.wide,
+                "parent": c.share.parent.map(|p| hex(&p.0)),
                 "chain": c.chain.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
                 "slice": c.slice.as_ref().map(Slice::to_json),
                 "revokers": ids(&c.revokers),
@@ -920,14 +925,14 @@ impl World {
         };
         let syncing = |x: &Syncing| {
             let (device, through) = (hex(&x.device.0), hex(&x.through.0));
-            json!({ "device": device, "through": through, "role": role_name(x.role), "opens": x.opens })
+            json!({ "device": device, "through": through, "role": level_name(x.level), "opens": x.opens })
         };
-        let cell = |c: &CellView| {
+        let audience = |c: &AudienceView| {
             json!({
                 "id": hex(&c.id.0),
                 "vault": hex(&c.vault.0),
-                "caps": c.caps.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
-                "generation": c.generation,
+                "caps": c.shares.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
+                "generation": c.epoch,
                 "entries": c.entries.iter().map(|e| hex(&e.0)).collect::<Vec<_>>(),
                 "readers": ids(&c.readers),
                 "public": c.public,
@@ -957,8 +962,8 @@ impl World {
                 }
                 _ => (None, vec![]),
             };
-            let roles: serde_json::Map<String, Value> =
-                i.roles.iter().map(|(v, r)| (hex(&v.0), Value::from(role_name(*r)))).collect();
+            let levels: serde_json::Map<String, Value> =
+                i.levels.iter().map(|(v, r)| (hex(&v.0), Value::from(level_name(*r)))).collect();
             json!({
                 "entry": hex(&i.entry.0),
                 "vault": hex(&i.vault.0),
@@ -966,9 +971,9 @@ impl World {
                 "type": i.ty,
                 "tags": i.tags,
                 "created": i.created,
-                "cell": hex(&i.cell.0),
+                "cell": hex(&i.audience.0),
                 "public": i.public,
-                "roles": roles,
+                "roles": levels,
                 "kind": kind,
                 "title": title,
                 "text": text,
@@ -987,8 +992,8 @@ impl World {
             "recovery": self.recovery.map(|r| hex(&r.0)),
             "pqOnly": self.pq_only,
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
-            "caps": self.caps.iter().map(cap).collect::<Vec<_>>(),
-            "cells": self.cells.iter().map(cell).collect::<Vec<_>>(),
+            "caps": self.shares.iter().map(share).collect::<Vec<_>>(),
+            "cells": self.audiences.iter().map(audience).collect::<Vec<_>>(),
             "entries": self.entries.iter().map(entry).collect::<Vec<_>>(),
             "groups": rules::groups().iter().map(rules::Group::to_json).collect::<Vec<_>>(),
         })
@@ -1005,34 +1010,35 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
         VaultView { vault: v.clone(), name, names, via: st.via(me, v.id) }
     };
     let vaults = st.vaults().iter().map(vault).collect();
-    let cap = |cp: &Issued| {
-        let reaches =
-            |en: &&avendb::policy::Entry| en.vault == cp.cap.over && (cp.cap.wide || in_cell(st, en.cell(), cp.id));
-        CapView {
+    let share = |cp: &Issued| {
+        let reaches = |en: &&avendb::policy::Entry| {
+            en.vault == cp.share.over && (cp.share.wide || in_audience(st, en.audience(), cp.id))
+        };
+        ShareView {
             id: cp.id,
-            cap: cp.cap.clone(),
+            share: cp.share.clone(),
             chain: cp.chain.to_vec(),
             slice: lab.slice(me, cp.id).cloned(),
             revokers: st.vaults().iter().map(|v| v.id).filter(|&a| st.may_revoke(a, cp)).collect(),
             entries: st.entries().iter().filter(reaches).map(|en| en.id).collect(),
         }
     };
-    let caps = st.caps().iter().filter(|cp| st.live(cp.id)).map(cap).collect();
+    let shares = st.shares().iter().filter(|cp| st.live(cp.id)).map(share).collect();
     let devices: Vec<(SignerId, VaultId)> =
         st.vaults().iter().flat_map(|v| v.devices.iter().map(move |&d| (d, v.id))).collect();
-    let mut cells: Vec<CellView> = vec![];
+    let mut audiences: Vec<AudienceView> = vec![];
     for en in st.entries() {
-        let (v, x) = (en.vault, en.cell());
-        if let Some(c) = cells.iter_mut().find(|c| c.id == x) {
+        let (v, x) = (en.vault, en.audience());
+        if let Some(c) = audiences.iter_mut().find(|c| c.id == x) {
             c.entries.push(en.id);
             continue;
         }
-        let k = KeyFam::Cell(v, x);
-        cells.push(CellView {
+        let k = KeyFam::Audience(v, x);
+        audiences.push(AudienceView {
             id: x,
             vault: v,
-            caps: st.cell_caps(x).unwrap_or_default().to_vec(),
-            generation: st.epoch(k),
+            shares: st.audience_shares(x).unwrap_or_default().to_vec(),
+            epoch: st.epoch(k),
             entries: vec![en.id],
             readers: st.readers(k),
             public: st.public_key(k),
@@ -1040,7 +1046,7 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
         });
     }
     let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
-    Some(World { mine, recovery: lab.recovery(), pq_only: lab.pq_only(), vaults, caps, cells, entries })
+    Some(World { mine, recovery: lab.recovery(), pq_only: lab.pq_only(), vaults, shares, audiences, entries })
 }
 
 /// Entry `en` as device `me` shows it.
@@ -1075,7 +1081,7 @@ fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
         }
         None => (None, None, None),
     };
-    let (v, x) = (en.vault, en.cell());
+    let (v, x) = (en.vault, en.audience());
     EntryView {
         entry: en.id,
         vault: v,
@@ -1083,9 +1089,9 @@ fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
         ty,
         tags,
         created,
-        cell: x,
-        public: st.public_key(KeyFam::Cell(v, x)),
-        roles: roles(st, v, x),
+        audience: x,
+        public: st.public_key(KeyFam::Audience(v, x)),
+        levels: levels(st, v, x),
         what,
     }
 }
@@ -1096,50 +1102,52 @@ fn variant_of(doc: &DocV2) -> Option<EntryId> {
     of.map(|b| EntryId(b.0))
 }
 
-/// Cap `cap` is one of the caps of cell `x`.
-fn in_cell(st: &State, x: CellId, cap: CapId) -> bool {
-    st.cell_caps(x).is_some_and(|caps| caps.contains(&cap))
+/// Share `share` is one of the shares of audience `x`.
+fn in_audience(st: &State, x: AudienceId, share: ShareId) -> bool {
+    st.audience_shares(x).is_some_and(|shares| shares.contains(&share))
 }
 
-/// The caps in force that reach cell `x` of vault `v`: over the vault, and on the whole of it or among the cell's.
-fn reaching(st: &State, v: VaultId, x: CellId) -> impl Iterator<Item = &Issued> {
-    st.caps_over(v).filter(move |cp| st.live(cp.id) && (cp.cap.wide || in_cell(st, x, cp.id)))
+/// The shares in force that reach audience `x` of vault `v`: over the vault, and on the whole of it or among the
+/// audience's.
+fn reaching(st: &State, v: VaultId, x: AudienceId) -> impl Iterator<Item = &Issued> {
+    st.shares_over(v).filter(move |cp| st.live(cp.id) && (cp.share.wide || in_audience(st, x, cp.id)))
 }
 
-/// The strongest role each vault holds on cell `x` of vault `v`: the vault itself owner, and each vault a cap in force
-/// that reaches the cell names, the strongest of those caps.
-fn roles(st: &State, v: VaultId, x: CellId) -> Vec<(VaultId, Role)> {
-    let mut roles = vec![(v, Role::Owner)];
+/// The strongest level each vault holds on audience `x` of vault `v`: the vault itself owner, and each vault a share in
+/// force that reaches the audience names, the strongest of those shares.
+fn levels(st: &State, v: VaultId, x: AudienceId) -> Vec<(VaultId, Level)> {
+    let mut levels = vec![(v, Level::Owner)];
     for cp in reaching(st, v, x) {
-        let Grantee::Principal(Principal::Vault(g)) = cp.cap.grantee else { continue };
-        match roles.iter_mut().find(|(a, _)| *a == g) {
-            Some((_, r)) => *r = (*r).max(cp.cap.role),
-            None => roles.push((g, cp.cap.role)),
+        let Who::Principal(Principal::Vault(g)) = cp.share.who else { continue };
+        match levels.iter_mut().find(|(a, _)| *a == g) {
+            Some((_, r)) => *r = (*r).max(cp.share.level),
+            None => levels.push((g, cp.share.level)),
         }
     }
-    roles
+    levels
 }
 
-/// The devices `devices` (each with its own vault) that receive the edits of cell `x` of vault `v`, as a peer sends
-/// them (`avendb::sync`): those acting for the vault, or for a vault a cap with backup or more that reaches the cell
-/// names (a relay cap receives none of them), or every device, through its own vault, if a cap to everyone reaches it.
-fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: CellId) -> Vec<Syncing> {
-    let caps: Vec<&Issued> = reaching(st, v, x).collect();
-    let public = caps.iter().any(|cp| cp.cap.grantee == Grantee::Public);
+/// The devices `devices` (each with its own vault) that receive the edits of audience `x` of vault `v`, as a peer sends
+/// them (`avendb::sync`): those acting for the vault, or for a vault a share with backup or more that reaches the
+/// audience names (a relay share receives none of them), or every device, through its own vault, if a share to everyone
+/// reaches it.
+fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: AudienceId) -> Vec<Syncing> {
+    let shares: Vec<&Issued> = reaching(st, v, x).collect();
+    let public = shares.iter().any(|cp| cp.share.who == Who::Everyone);
     let through = |d: SignerId, own: VaultId| {
-        let mut best: Option<(Role, VaultId)> = st.acts_for(d, v).then_some((Role::Owner, v));
-        for cp in &caps {
-            let Grantee::Principal(Principal::Vault(g)) = cp.cap.grantee else { continue };
-            if cp.cap.role >= Role::Backup && st.acts_for(d, g) && best.is_none_or(|(r, _)| cp.cap.role > r) {
-                best = Some((cp.cap.role, g));
+        let mut best: Option<(Level, VaultId)> = st.acts_for(d, v).then_some((Level::Owner, v));
+        for cp in &shares {
+            let Who::Principal(Principal::Vault(g)) = cp.share.who else { continue };
+            if cp.share.level >= Level::Backup && st.acts_for(d, g) && best.is_none_or(|(r, _)| cp.share.level > r) {
+                best = Some((cp.share.level, g));
             }
         }
-        best.or(public.then_some((Role::Read, own)))
+        best.or(public.then_some((Level::Read, own)))
     };
-    let k = KeyFam::Cell(v, x);
+    let k = KeyFam::Audience(v, x);
     let sync = |&(d, own): &(SignerId, VaultId)| {
-        let (role, through) = through(d, own)?;
-        Some(Syncing { device: d, through, role, opens: st.entitled(d, k) })
+        let (level, through) = through(d, own)?;
+        Some(Syncing { device: d, through, level, opens: st.entitled(d, k) })
     };
     devices.iter().filter_map(sync).collect()
 }
@@ -1179,28 +1187,28 @@ fn avenceo(st: &State, mine: VaultId) -> Option<VaultId> {
     st.vaults().iter().find(server).map(|v| v.id)
 }
 
-/// Vault `to` holds a cap in force on the whole of vault `over`, relay or more.
+/// Vault `to` holds a share in force on the whole of vault `over`, relay or more.
 fn relays(st: &State, over: VaultId, to: VaultId) -> bool {
-    st.caps_over(over).any(|cp| cp.cap.wide && st.holds(to, cp, Role::Relay))
+    st.shares_over(over).any(|cp| cp.share.wide && st.holds(to, cp, Level::Relay))
 }
 
-/// What the server's vault `avenceo` holds on the whole of vault `mine`: backup, if any cap in force there gives it
+/// What the server's vault `avenceo` holds on the whole of vault `mine`: backup, if any share in force there gives it
 /// backup or more, else relay alone. The vaults `mine` owns give the server the same.
-fn server_role(st: &State, mine: VaultId, avenceo: VaultId) -> Role {
-    let backs_up = st.caps_over(mine).any(|cp| cp.cap.wide && st.holds(avenceo, cp, Role::Backup));
-    if backs_up { Role::Backup } else { Role::Relay }
+fn server_level(st: &State, mine: VaultId, avenceo: VaultId) -> Level {
+    let backs_up = st.shares_over(mine).any(|cp| cp.share.wide && st.holds(avenceo, cp, Level::Backup));
+    if backs_up { Level::Backup } else { Level::Relay }
 }
 
-/// The owner cap vault `issuer`'s right to share a slice of vault `over` rests on: none if it is the vault itself, else
-/// one in force over the vault that it holds, a cap on the whole vault first, and only such a one if the new cap is on
-/// the whole vault (`wide`), as a cap on the whole vault rests only on another.
-fn parent(st: &State, issuer: VaultId, over: VaultId, wide: bool) -> Option<CapId> {
+/// The owner share vault `issuer`'s right to share a slice of vault `over` rests on: none if it is the vault itself,
+/// else one in force over the vault that it holds, a share on the whole vault first, and only such a one if the new
+/// share is on the whole vault (`wide`), as a share on the whole vault rests only on another.
+fn parent(st: &State, issuer: VaultId, over: VaultId, wide: bool) -> Option<ShareId> {
     if issuer == over {
         return None;
     }
-    let owner = |cp: &&Issued| cp.cap.over == over && st.holds(issuer, cp, Role::Owner) && (cp.cap.wide || !wide);
-    let mut held: Vec<&Issued> = st.caps_held(issuer).filter(owner).collect();
-    held.sort_by_key(|cp| !cp.cap.wide);
+    let owner = |cp: &&Issued| cp.share.over == over && st.holds(issuer, cp, Level::Owner) && (cp.share.wide || !wide);
+    let mut held: Vec<&Issued> = st.shares_held(issuer).filter(owner).collect();
+    held.sort_by_key(|cp| !cp.share.wide);
     held.first().map(|cp| cp.id)
 }
 
@@ -1570,28 +1578,28 @@ impl PageDevice {
         })
     }
 
-    /// Gives `grantee`, a vault's id or `"everyone"`, the cap `spec` describes on vault `over`, a named group of ops on
+    /// Gives `who`, a vault's id or `"everyone"`, the share `spec` describes on vault `over`, a named group of ops on
     /// a slice of it (`{name, where, ops}`, `words::spec_of`), acting for vault `issuer` (`Device::share`): a promise
-    /// of the cap's id, after one ceremony for an owner's. Ids in hex.
-    pub fn share(&self, issuer: String, over: String, spec: JsValue, grantee: String, ceremony: Function) -> Promise {
+    /// of the share's id, after one ceremony for an owner's. Ids in hex.
+    pub fn share(&self, issuer: String, over: String, spec: JsValue, who: String, ceremony: Function) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
             let (issuer, over) = (VaultId(id(&issuer)?), VaultId(id(&over)?));
             let spec = String::from(js_sys::JSON::stringify(&spec)?);
             let spec: Value = serde_json::from_str(&spec).map_err(|e| JsError::new(&format!("no cap: {e}")))?;
-            let grantee = words::grantee_of(&grantee).map_err(js_value)?;
-            let cap = device.share(issuer, over, &spec, grantee, &Js(ceremony)).await.map_err(js_value)?;
-            Ok(hex(&cap.0).into())
+            let who = words::who_of(&who).map_err(js_value)?;
+            let share = device.share(issuer, over, &spec, who, &Js(ceremony)).await.map_err(js_value)?;
+            Ok(hex(&share.0).into())
         })
     }
 
-    /// Ends cap `cap`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for an
-    /// owner cap.
-    pub fn revoke(&self, actor: String, cap: String, ceremony: Function) -> Promise {
+    /// Ends share `share`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for
+    /// an owner share.
+    pub fn revoke(&self, actor: String, share: String, ceremony: Function) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {
-            let (actor, cap) = (VaultId(id(&actor)?), CapId(id(&cap)?));
-            device.revoke(actor, cap, &Js(ceremony)).await.map_err(js_value)?;
+            let (actor, share) = (VaultId(id(&actor)?), ShareId(id(&share)?));
+            device.revoke(actor, share, &Js(ceremony)).await.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }

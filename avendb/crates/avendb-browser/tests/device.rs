@@ -22,7 +22,7 @@ use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::lens::Status;
-use avendb::policy::{Grantee, Kind, Principal, Role};
+use avendb::policy::{Kind, Level, Principal, Who};
 use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
 use avendb::sign::{Ceremony, Passkey, device_salt};
@@ -326,7 +326,8 @@ async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_a
     assert_eq!(browser.node().proven(other.node().id()), Some(other.node().device()), "through the first browser");
     let both = move |lab: &Lab, me| lab.state(me).vault(alice).map(|v| v.devices.len()) == Some(4);
     until("the Mac counts both browsers among Alice's devices", || mac.read(both)).await;
-    // an edit its view refuses fails: Alice's own vault, acting as itself and not for the coop, holds no cap on Welcome
+    // an edit its view refuses fails: Alice's own vault, acting as itself and not for the coop, holds no share on
+    // Welcome
     let refused = run(&browser, set_text(alice, welcome, None, 2, "Alice's own words")).await;
     assert_eq!(refused.expect_err("refused")["refused"], "NoCap");
     for n in [browser.node(), other.node(), &mac, &server] {
@@ -390,9 +391,9 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     }
 }
 
-/// The role vault `v` holds in `roles`, if any.
-fn role(roles: &[(VaultId, Role)], v: VaultId) -> Option<Role> {
-    roles.iter().find(|(x, _)| *x == v).map(|(_, r)| *r)
+/// The level vault `v` holds in `levels`, if any.
+fn level(levels: &[(VaultId, Level)], v: VaultId) -> Option<Level> {
+    levels.iter().find(|(x, _)| *x == v).map(|(_, r)| *r)
 }
 
 /// Entry `e` in the world `w` a device shows.
@@ -411,16 +412,16 @@ fn profile(w: &Seen, v: VaultId) -> EntryId {
     w.entries.iter().find(of).expect("its profile").entry
 }
 
-/// How device `d` takes the edits of the cell entry `e` is in, as the world `w` a device shows: through which of its
-/// vaults, with what role, and whether it opens them.
-fn syncs(w: &Seen, e: EntryId, d: SignerId) -> Option<(VaultId, Role, bool)> {
-    let x = item(w, e).cell;
-    let cell = w.cells.iter().find(|c| c.id == x).expect("its cell");
-    cell.syncs.iter().find(|s| s.device == d).map(|s| (s.through, s.role, s.opens))
+/// How device `d` takes the edits of the audience entry `e` is in, as the world `w` a device shows: through which of
+/// its vaults, with what level, and whether it opens them.
+fn syncs(w: &Seen, e: EntryId, d: SignerId) -> Option<(VaultId, Level, bool)> {
+    let x = item(w, e).audience;
+    let audience = w.audiences.iter().find(|c| c.id == x).expect("its audience");
+    audience.syncs.iter().find(|s| s.device == d).map(|s| (s.through, s.level, s.opens))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
+async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     let admission = Admission::default();
     let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
     let url: RelayUrl = relay.url();
@@ -452,9 +453,10 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     assert_eq!((named(&w, eve_v).as_deref(), named(&w, avenceo).as_deref()), (Some("Eve"), Some("avenCEO")));
     let (eve_p, ceo_p) = (profile(&w, eve_v), profile(&w, avenceo));
     let (mine, srv) = (first.node().device(), server.device());
-    assert_eq!(syncs(&w, eve_p, srv), Some((avenceo, Role::Backup, false)), "the server keeps her entries' ciphertext");
-    assert_eq!(syncs(&w, eve_p, mine), Some((eve_v, Role::Owner, true)));
-    assert_eq!(syncs(&w, ceo_p, srv), Some((avenceo, Role::Owner, true)), "avenCEO's own entries its server opens");
+    let kept = Some((avenceo, Level::Backup, false));
+    assert_eq!(syncs(&w, eve_p, srv), kept, "the server keeps her entries' ciphertext");
+    assert_eq!(syncs(&w, eve_p, mine), Some((eve_v, Level::Owner, true)));
+    assert_eq!(syncs(&w, ceo_p, srv), Some((avenceo, Level::Owner, true)), "avenCEO's own entries its server opens");
     // four vaults her vault owns, in one ceremony, each of which gives avenCEO relay on the whole of it
     let avens = ["avenALICE", "avenBOB", "avenCHARLY"].map(|n| (Kind::Aven, n.to_string()));
     let new = avens.into_iter().chain([(Kind::Coop, "Maia City COOP".to_string())]).collect();
@@ -470,8 +472,8 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
         assert_eq!((&x.vault.owners[..], x.vault.root), (&[Principal::Vault(eve_v)][..], None), "her vault owns it");
         assert_eq!(x.via, Some(vec![eve_v]), "her browser acts for it through her vault");
         let (srv_sees, mine_sees) = (syncs(&w, profile(&w, v), srv), syncs(&w, profile(&w, v), mine));
-        assert_eq!(srv_sees, Some((avenceo, Role::Backup, false)), "the server keeps its entries' ciphertext");
-        assert_eq!(mine_sees, Some((v, Role::Owner, true)), "her browser opens them, acting for it");
+        assert_eq!(srv_sees, Some((avenceo, Level::Backup, false)), "the server keeps its entries' ciphertext");
+        assert_eq!(mine_sees, Some((v, Level::Owner, true)), "her browser opens them, acting for it");
     }
     // avenALICE writes a note into her vault; avenBOB may not write there, nor read it
     let plan = titled("Plan", "Plant beans.");
@@ -480,21 +482,21 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     let it = item(&w, note);
     assert!(matches!(&it.what, What::Note { title, text, .. } if title == "Plan" && text == "Plant beans."));
     assert_eq!((it.ty.as_deref(), it.tags.as_deref()), (Some("note"), Some(&["garden".to_string()][..])));
-    let (alices, bobs) = (role(&it.roles, alice), role(&it.roles, bob));
-    assert_eq!((it.vault, it.by, alices, bobs), (alice, alice, Some(Role::Owner), None));
-    assert_eq!(role(&it.roles, avenceo), Some(Role::Backup));
+    let (alices, bobs) = (level(&it.levels, alice), level(&it.levels, bob));
+    assert_eq!((it.vault, it.by, alices, bobs), (alice, alice, Some(Level::Owner), None));
+    assert_eq!(level(&it.levels, avenceo), Some(Level::Backup));
     let refused = write_note(&first, bob, alice, titled("Mine", "Not here."), &[]).await;
     assert_eq!(refused.expect_err("refused")["refused"], "NoCap", "avenBOB holds no cap on avenALICE's vault");
-    // she shares the note by its id with avenBOB to read, with no ceremony: her browser moves it to the cell of that
-    // cap, under a key of its own, which avenBOB reads; he can't edit it
+    // she shares the note by its id with avenBOB to read, with no ceremony: her browser moves it to the audience of
+    // that share, under a key of its own, which avenBOB reads; he can't edit it
     let (the_note, reads) = (json!({ "entry": [hex_of(&note.0)] }), json!([{ "op": "read" }]));
     let by_note = spec("Plan", &the_note, &reads);
     let read = first.share(alice, alice, &by_note, vault(bob), &eve).await.expect("shared");
     assert_eq!(eve.steps(), [], "a read cap needs no ceremony");
     let moved = || async {
         let w = first.world().await.expect("her world");
-        let roles = &item(&w, note).roles;
-        (role(roles, bob), role(roles, charly)) == (Some(Role::Read), None)
+        let levels = &item(&w, note).levels;
+        (level(levels, bob), level(levels, charly)) == (Some(Level::Read), None)
     };
     until("the note moves to the cell avenBOB reads", moved).await;
     let edit = run(&first, set_text(bob, note, None, 2, "Plant peas.")).await;
@@ -505,16 +507,16 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     // a note for everyone: the Public group, which reads alone, needs no ceremony; everyone writing is refused
     let notice = write_note(&first, alice, alice, titled("Notice", "Market on Saturday."), &[]).await.expect("a note");
     let the_notice = json!({ "entry": [hex_of(&notice.0)] });
-    first.share(alice, alice, &spec("Public", &the_notice, &reads), Grantee::Public, &eve).await.expect("public");
+    first.share(alice, alice, &spec("Public", &the_notice, &reads), Who::Everyone, &eve).await.expect("public");
     let everyone = || async { first.world().await.is_some_and(|w| item(&w, notice).public) };
     until("everyone reads the notice", everyone).await;
     let sets = json!([{ "op": "set", "path": [] }]);
-    let refused = first.share(alice, alice, &spec("Everyone edits", &the_notice, &sets), Grantee::Public, &eve).await;
+    let refused = first.share(alice, alice, &spec("Everyone edits", &the_notice, &sets), Who::Everyone, &eve).await;
     assert!(refused.unwrap_err().to_string().contains("PublicBeyondRead"), "everyone only reads");
     assert_eq!(eve.steps(), [], "a cap that doesn't share needs no ceremony");
     // write on her todos, by their type, as an Editor: avenBOB adds a todo to her vault and closes it
     let todos = json!({ "type": ["todo"] });
-    let editor = spec("Editor", &todos, &ops_to_json(&Role::Write.ops()));
+    let editor = spec("Editor", &todos, &ops_to_json(&Level::Write.ops()));
     let write = first.share(alice, alice, &editor, vault(bob), &eve).await.expect("write");
     let (by, into) = (bob.to_hex(), alice.to_hex());
     let new_todo = |title: &str| {
@@ -528,7 +530,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     let it = item(&w, todo);
     assert!(matches!(&it.what, What::Todo { title, status: Status::Done } if title == "Water the beans"));
     assert_eq!((it.vault, it.by), (alice, bob), "avenBOB wrote it into her vault");
-    // a cap on her todos whose ops let avenCHARLY only tick them done: the page asks first which ops would be made
+    // a share on her todos whose ops let avenCHARLY only tick them done: the page asks first which ops would be made
     // (may), and a write its ops don't allow is refused, as its readers wouldn't count it
     let value = json!({ "kind": "todo", "title": "Weed the beds" });
     let weed = json!({ "op": "create", "as": into, "vault": into, "type": "todo", "value": value });
@@ -538,7 +540,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     let ticks = first.share(alice, alice, &ticks, vault(charly), &eve).await.expect("a cap that ticks");
     let reaches = || async {
         let w = first.world().await.expect("her world");
-        role(&item(&w, weed).roles, charly) == Some(Role::Write)
+        level(&item(&w, weed).levels, charly) == Some(Level::Write)
     };
     until("her todo moves to the cell avenCHARLY writes", reaches).await;
     let (c, at) = (charly.to_hex(), weed.to_hex());
@@ -560,25 +562,25 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     let ops = json!([{ "op": "read" }, tick]);
     assert_eq!((&shown["name"], &shown["ops"]), (&json!("Tick done"), &ops), "the page reads its name and ops");
     // owner of the whole of her vault for the coop is governance: her passkey approves it in a ceremony
-    let owner = spec("Owner", &all, &ops_to_json(&Role::Owner.ops()));
+    let owner = spec("Owner", &all, &ops_to_json(&Level::Owner.ops()));
     first.share(alice, alice, &owner, vault(coop), &eve).await.expect("the coop owns it");
     assert_eq!(eve.steps(), [Step::Approve]);
     let w = first.world().await.expect("her world");
-    let roles = &item(&w, todo).roles;
-    assert_eq!((role(roles, coop), role(roles, bob)), (Some(Role::Owner), Some(Role::Write)));
+    let levels = &item(&w, todo).levels;
+    assert_eq!((level(levels, coop), level(levels, bob)), (Some(Level::Owner), Some(Level::Write)));
     // avenALICE takes avenBOB's write back: he writes no more there, and still reads the note
     first.revoke(alice, write, &eve).await.expect("revoked");
     assert_eq!(eve.steps(), [], "a write cap ends without a ceremony");
     let refused = run(&first, new_todo("Again")).await;
     assert_eq!(refused.expect_err("refused")["refused"], "NoCap");
     let w = first.world().await.expect("her world");
-    assert_eq!(role(&item(&w, note).roles, bob), Some(Role::Read), "{read:?} stands");
+    assert_eq!(level(&item(&w, note).levels, bob), Some(Level::Read), "{read:?} stands");
     let json = w.to_json(mine);
     assert_eq!((json["pqOnly"].as_bool(), json["vaults"][2]["name"].as_str()), (Some(true), Some("avenALICE")));
-    let caps = json["caps"].as_array().expect("its caps");
-    let shared = caps.iter().find(|c| c["id"] == hex_of(&read.0)).expect("the read cap");
+    let shares = json["caps"].as_array().expect("its caps");
+    let shared = shares.iter().find(|c| c["id"] == hex_of(&read.0)).expect("the read cap");
     assert_eq!((&shared["role"], &shared["slice"]["where"]), (&"read".into(), &the_note), "the note by its id");
-    let public = caps.iter().find(|c| c["grantee"] == "everyone").expect("the public cap");
+    let public = shares.iter().find(|c| c["grantee"] == "everyone").expect("the public cap");
     assert_eq!((&public["slice"]["name"], &public["role"]), (&json!("Public"), &json!("read")));
     // the server keeps it all, counts the writes, each covered by a checkpoint, and opens none of avenALICE's keys
     let counts = move |lab: &Lab, me| lab.state(me).entry_writes(note).count() == 1;
@@ -603,7 +605,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_caps() {
     }
 }
 
-/// A cap as the page writes it: a group of ops called `name` on what `picks` picks.
+/// A share as the page writes it: a group of ops called `name` on what `picks` picks.
 fn spec(name: &str, picks: &Value, ops: &Value) -> Value {
     json!({ "name": name, "where": picks, "ops": ops })
 }
@@ -777,8 +779,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let writes = db["edits"]["writes"].as_u64();
     assert!(writes.is_some_and(|n| n >= kinds(&shown).len() as u64 + 2), "{}", db["edits"]);
     assert!(db["edits"]["caps"].as_u64().is_some_and(|n| n >= 1), "avenCEO relays it");
-    let cells = db["cells"].as_array().expect("its cells");
-    let one = (cells.len(), cells[0]["entries"].as_u64(), cells[0]["caps"].as_array().map(Vec::len));
+    let audiences = db["cells"].as_array().expect("its cells");
+    let one = (audiences.len(), audiences[0]["entries"].as_u64(), audiences[0]["caps"].as_array().map(Vec::len));
     assert_eq!(one, (1, Some(3), Some(0)), "her card, the note and its variant: no cap splits her vault");
     assert_eq!(db["builtIn"]["lenses"][0]["title"].as_str(), Some("Markdown document, v1 to v2"));
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her

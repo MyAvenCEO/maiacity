@@ -158,8 +158,8 @@ async fn alice_gets_her_vault_back_through_the_server_with_her_passkey_alone() {
     until("and Onboarding", || reads(&mac, onboarding, ONBOARDING_TEXT)).await;
     assert!(mac.read(move |lab, me| lab.opens(me, KeyFam::Seed(alice))).await, "and opens her vault's seed");
     let opens = move |lab: &Lab, me| {
-        let cell = lab.state(me).entry(welcome).map(|en| KeyFam::Cell(coop, en.cell()));
-        let keys = [KeyFam::Seed(alice), KeyFam::Seed(coop)].into_iter().chain(cell);
+        let audience = lab.state(me).entry(welcome).map(|en| KeyFam::Audience(coop, en.audience()));
+        let keys = [KeyFam::Seed(alice), KeyFam::Seed(coop)].into_iter().chain(audience);
         lab.reads(me, welcome) || keys.into_iter().any(|k| lab.opens(me, k))
     };
     assert!(!server.read(opens).await, "the server, which handed over the vault's log, opens none of its keys");

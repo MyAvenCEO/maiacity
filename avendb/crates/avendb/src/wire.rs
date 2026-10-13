@@ -15,11 +15,11 @@
 use std::collections::BTreeMap;
 
 use crate::encode::{Encode, VERSION};
-use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role, SyncRule};
+use crate::policy::{Action, Edit, Kind, Level, Principal, Proposal, Share, SyncRule, Who};
 use crate::recovery::RecoveryKey;
-use crate::rules::{Grant, On, Proof, Rule, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_RULES, MAX_STEPS, MAX_VALUES};
+use crate::rules::{Grant, On, Op, Proof, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_OPS, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
 use crate::sign::{Assertion, Classical, Hello, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -283,7 +283,7 @@ macro_rules! ids {
     )*};
 }
 
-ids!(SignerId, VaultId, EntryId, CapId, CellId, EditId, BlobId, KeyId);
+ids!(SignerId, VaultId, EntryId, ShareId, AudienceId, EditId, BlobId, KeyId);
 
 impl Decode for bool {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
@@ -312,8 +312,8 @@ impl Decode for KeyFam {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
             0 => Ok(KeyFam::Seed(VaultId::decode(r)?)),
-            1 => Ok(KeyFam::Cap(VaultId::decode(r)?, CapId::decode(r)?)),
-            2 => Ok(KeyFam::Cell(VaultId::decode(r)?, CellId::decode(r)?)),
+            1 => Ok(KeyFam::Share(VaultId::decode(r)?, ShareId::decode(r)?)),
+            2 => Ok(KeyFam::Audience(VaultId::decode(r)?, AudienceId::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
     }
@@ -387,7 +387,7 @@ impl Decode for Selector {
     }
 }
 
-/// Only with a name of at most `rules::MAX_NAME` characters, and a chain of at most `rules::MAX_GRANTS` caps.
+/// Only with a name of at most `rules::MAX_NAME` characters, and a chain of at most `rules::MAX_GRANTS` shares.
 impl Decode for Slice {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let name = String::decode(r)?;
@@ -444,7 +444,7 @@ impl Decode for Scalar {
 }
 
 /// Only within the bounds ops keep (`rules::MAX_STEPS`, `rules::MAX_VALUES`).
-impl Decode for Rule {
+impl Decode for Op {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let path = |r: &mut Reader<'_>| r.bounded(1, MAX_STEPS);
         // a list of at most `MAX_VALUES`, or none
@@ -456,18 +456,18 @@ impl Decode for Rule {
             }
         }
         Ok(match r.u8()? {
-            0 => Rule::Relay,
-            1 => Rule::Backup,
-            2 => Rule::Read,
-            3 => Rule::Create,
-            4 => Rule::Set { path: path(r)?, to: values(r, 1)?, on: r.option()? },
-            5 => Rule::Insert { path: path(r)?, on: r.option()? },
-            6 => Rule::Remove { path: path(r)?, on: r.option()? },
-            7 => Rule::Move { path: path(r)?, on: r.option()? },
-            8 => Rule::Tag(values(r, 4)?),
-            9 => Rule::Propose,
-            10 => Rule::Merge { on: r.option()? },
-            11 => Rule::Share,
+            0 => Op::Relay,
+            1 => Op::Backup,
+            2 => Op::Read,
+            3 => Op::Create,
+            4 => Op::Set { path: path(r)?, to: values(r, 1)?, on: r.option()? },
+            5 => Op::Insert { path: path(r)?, on: r.option()? },
+            6 => Op::Remove { path: path(r)?, on: r.option()? },
+            7 => Op::Move { path: path(r)?, on: r.option()? },
+            8 => Op::Tag(values(r, 4)?),
+            9 => Op::Propose,
+            10 => Op::Merge { on: r.option()? },
+            11 => Op::Share,
             _ => return Err(WireError::Unknown),
         })
     }
@@ -475,13 +475,13 @@ impl Decode for Rule {
 
 impl Decode for Grant {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Grant { ops: r.bounded(1, MAX_RULES)?, salt: r.array()? })
+        Ok(Grant { ops: r.bounded(1, MAX_OPS)?, salt: r.array()? })
     }
 }
 
 impl Decode for Proof {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Proof { cap: CapId::decode(r)?, grants: r.bounded(36, MAX_GRANTS)? })
+        Ok(Proof { share: ShareId::decode(r)?, grants: r.bounded(36, MAX_GRANTS)? })
     }
 }
 
@@ -550,35 +550,35 @@ impl Decode for Principal {
     }
 }
 
-impl Decode for Role {
+impl Decode for Level {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(Role::Backup),
-            1 => Ok(Role::Read),
-            2 => Ok(Role::Write),
-            3 => Ok(Role::Owner),
-            4 => Ok(Role::Relay),
+            0 => Ok(Level::Backup),
+            1 => Ok(Level::Read),
+            2 => Ok(Level::Write),
+            3 => Ok(Level::Owner),
+            4 => Ok(Level::Relay),
             _ => Err(WireError::Unknown),
         }
     }
 }
 
-impl Decode for Grantee {
+impl Decode for Who {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(Grantee::Principal(Principal::decode(r)?)),
-            1 => Ok(Grantee::Public),
+            0 => Ok(Who::Principal(Principal::decode(r)?)),
+            1 => Ok(Who::Everyone),
             _ => Err(WireError::Unknown),
         }
     }
 }
 
-impl Decode for Cap {
+impl Decode for Share {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Cap {
+        Ok(Share {
             over: VaultId::decode(r)?,
-            grantee: Grantee::decode(r)?,
-            role: Role::decode(r)?,
+            who: Who::decode(r)?,
+            level: Level::decode(r)?,
             wide: bool::decode(r)?,
             select: r.bytes()?,
             parent: r.option()?,
@@ -630,9 +630,9 @@ impl Decode for Action {
             4 => Action::AddDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, seal_to: r.option()? },
             5 => Action::RemoveDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, keep: r.seq(32)? },
             6 => Action::SetRoot { vault: VaultId::decode(r)?, root: r.option()?, keep: r.seq(32)? },
-            7 => Action::Cap(Cap::decode(r)?, r.seq(32)?),
+            7 => Action::Share(Share::decode(r)?, r.seq(32)?),
             8 => Action::Revoke {
-                cap: CapId::decode(r)?,
+                share: ShareId::decode(r)?,
                 actor: VaultId::decode(r)?,
                 keep: r.seq(32)?,
                 via: r.seq(32)?,
@@ -643,7 +643,7 @@ impl Decode for Action {
                 entry: EntryId::decode(r)?,
                 actor: VaultId::decode(r)?,
                 stay: r.option()?,
-                generation: u64::decode(r)?,
+                epoch: u64::decode(r)?,
                 deps: r.seq(32)?,
                 proposal: Proposal::decode(r)?,
                 via: r.seq(32)?,
@@ -680,7 +680,7 @@ impl Decode for Action {
             },
             13 => Action::Checkpoint { entry: EntryId::decode(r)?, covers: r.seq(32)? },
             15 => Action::SyncRule(SyncRule::decode(r)?, r.seq(32)?),
-            16 => Action::EndSyncRule { rule: CapId::decode(r)?, issuer: VaultId::decode(r)?, via: r.seq(32)? },
+            16 => Action::EndSyncRule { rule: ShareId::decode(r)?, issuer: VaultId::decode(r)?, via: r.seq(32)? },
             17 => Action::Pick {
                 vault: VaultId::decode(r)?,
                 entry: EntryId::decode(r)?,
@@ -826,11 +826,11 @@ impl Encode for LogId {
                 out.push(0);
                 v.encode(out);
             }
-            LogId::Cap(c) => {
+            LogId::Share(c) => {
                 out.push(1);
                 c.encode(out);
             }
-            LogId::Cell(v, x) => {
+            LogId::Audience(v, x) => {
                 out.push(2);
                 v.encode(out);
                 x.encode(out);
@@ -847,8 +847,8 @@ impl Decode for LogId {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
             0 => Ok(LogId::Vault(VaultId::decode(r)?)),
-            1 => Ok(LogId::Cap(CapId::decode(r)?)),
-            2 => Ok(LogId::Cell(VaultId::decode(r)?, CellId::decode(r)?)),
+            1 => Ok(LogId::Share(ShareId::decode(r)?)),
+            2 => Ok(LogId::Audience(VaultId::decode(r)?, AudienceId::decode(r)?)),
             3 => Ok(LogId::Entry(EntryId::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
@@ -1121,7 +1121,7 @@ mod tests {
             entry: EntryId([2; 32]),
             actor: VaultId([1; 32]),
             stay: None,
-            generation: 0,
+            epoch: 0,
             deps: vec![],
             proposal: Proposal::Main,
             via: vec![],

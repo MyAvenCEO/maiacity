@@ -15,20 +15,20 @@ cut what they hadn't seen. The Rust core must give the same answer for every cas
 `lake build` checks that `vectors/vaults.json` holds exactly what the model says, and fails when it doesn't
 (`VectorsCheck.lean`); `lake exe vectors` writes the file again after a change to the rules.
 
-The Rust core names a vault and a cap by the hash of the edit that created it, and orders edits of the same depth and
+The Rust core names a vault and a share by the hash of the edit that created it, and orders edits of the same depth and
 rank by their hashes, where the model picks numbers: the Rust side maps each number to what its edit created, so every
-cap number is used once per case, every vault number once per view and sync case, and no two edits of a view case share
-a depth and a rank. An entry's id is random bytes its creator draws: the Rust side maps entry number `e` to fixed bytes.
-A cell is a set of caps, which the model keeps sorted by number and the Rust core by id, so every cell a case names is in
-the model's order (a cell in another order is refused by the model and could be taken by the Rust core), and the Rust
-side compares the cells of the state as sets. A blob is named by the hash of its bytes: the Rust side maps blob number
-`b` to the bytes `blob b`. The state includes each entry's stays and, as its readers see it, its attributes, whether its
-creation was let in, its semantic cell and where a steward would move it; the key schedule (each family's epoch where it
-isn't 0, every seal and every published key, all three compared as sets); the schema lane; the writes its readers don't
-count (`uncounted`); and each line of each entry's history, of the writes they count: its writes and its heads, the main
-line first and then each proposal in the order it started. A write carries its proof and its touches, as its readers
-read them off its body, and a cap its ops. The file starts with the built-in groups (`groups`), which the Rust core
-offers as they are.
+share number is used once per case, every vault number once per view and sync case, and no two edits of a view case
+share a depth and a rank. An entry's id is random bytes its creator draws: the Rust side maps entry number `e` to fixed
+bytes. An audience is a set of shares, which the model keeps sorted by number and the Rust core by id, so every audience
+a case names is in the model's order (an audience in another order is refused by the model and could be taken by the
+Rust core), and the Rust side compares the audiences of the state as sets. A blob is named by the hash of its bytes: the
+Rust side maps blob number `b` to the bytes `blob b`. The state includes each entry's stays and, as its readers see it,
+its attributes, whether its creation was let in, its semantic audience and where a steward would move it; the key
+schedule (each family's epoch where it isn't 0, every seal and every published key, all three compared as sets); the
+schema lane; the writes its readers don't count (`uncounted`); and each line of each entry's history, of the writes they
+count: its writes and its heads, the main line first and then each proposal in the order it started. A write carries its
+proof and its touches, as its readers read them off its body, and a share its ops. The file starts with the built-in
+groups (`groups`), which the Rust core offers as they are.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
 reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
@@ -73,7 +73,7 @@ def runView (c : ViewCase) : List Bool × State :=
 Signers: Alice's passkey 1, her Mac 2, her iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
 passkey 8, a second passkey 9 (Alice's backup) and a third 10, a new device 77, a stranger 555, the relay server 600.
 Vaults: Alice 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200, aven vaults from 300 (avenCEO 300).
-Caps from 30. Entries: Welcome 1, the Charter 2, notes from 3, todos from 21. Types: a note 1, a todo 2; tags: work 7,
+Shares from 30. Entries: Welcome 1, the Charter 2, notes from 3, todos from 21. Types: a note 1, a todo 2; tags: work 7,
 home 8. Blobs (schemas and lenses): from 1. An act for the coop names the human vault it goes through: Alice's Mac (2)
 and passkey (1) through `[100]`, Bob's Mac (5) through `[101]`. An entry's stays are named by the moves that began them:
 a write names the stay whose key it is encrypted under, `none` for the one its entry's creation began. -/
@@ -96,39 +96,39 @@ def humans : List (SignerId × List SignerId × Action) := [
   (6, [], .genesis 102 .human [.signer 6] 1),
   (8, [], .genesis 103 .human [.signer 8] 1)]
 
-def toVault (v : VaultId) : Grantee := .principal (.vault v)
+def toVault (v : VaultId) : Who := .principal (.vault v)
 
-/-- Cap `id` over vault `over` with role `r`, issued by `issuer`: the ops of its role's group (`Role.ops`), unless it
-    names its own. -/
-def newCap (id over : Nat) (to : Grantee) (r : Role) (issuer : VaultId) (select : Selector := .all)
-    (wide : Bool := false) (parent : Option CapId := none) (via : List VaultId := [])
-    (ops : Option (List Rule) := none) : Action :=
-  .cap { id, over, grantee := to, role := r, wide, select, ops := ops.getD r.ops, parent, issuer } via
+/-- Share `id` over vault `over` with level `r`, issued by `issuer`: the ops of its level's group (`Level.ops`), unless
+    it names its own. -/
+def newShare (id over : Nat) (to : Who) (r : Level) (issuer : VaultId) (select : Selector := .all)
+    (wide : Bool := false) (parent : Option ShareId := none) (via : List VaultId := [])
+    (ops : Option (List Op) := none) : Action :=
+  .share { id, over, who := to, level := r, wide, select, ops := ops.getD r.ops, parent, issuer } via
 
-/-- A write that creates entry `e` of vault `v` in cell `x`, with the proof `proof`, whose record fits its schemas or
-    not (`fits`). -/
-def newEntry (v e : Nat) (actor : VaultId) (x : Cell) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
-    (via : List VaultId := []) (gen : Nat := 0) (proof : Option CapId := none) (fits : Bool := true) : Action :=
-  .write v e actor none gen (via := via) (create := some (x, ⟨type, created⟩)) (tags := { add := tags })
+/-- A write that creates entry `e` of vault `v` in audience `x`, with the proof `proof`, whose record fits its schemas
+    or not (`fits`). -/
+def newEntry (v e : Nat) (actor : VaultId) (x : Audience) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
+    (via : List VaultId := []) (epoch : Nat := 0) (proof : Option ShareId := none) (fits : Bool := true) : Action :=
+  .write v e actor none epoch (via := via) (create := some (x, ⟨type, created⟩)) (tags := { add := tags })
     (proof := proof) (fits := fits)
 
-/-- A write of entry `e`, in its stay `stay` at generation `gen` of that stay's cell, with the proof `proof`, touching
+/-- A write of entry `e`, in its stay `stay` at epoch `epoch` of that stay's audience, with the proof `proof`, touching
     `touches`, whose result fits the entry's schemas or not (`fits`). -/
-def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (gen : Nat := 0)
+def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (epoch : Nat := 0)
     (proposal : Proposal := .main) (via : List VaultId := []) (add : List Sym := []) (remove : List Sym := [])
-    (proof : Option CapId := none) (touches : List Touch := []) (fits : Bool := true) : Action :=
-  .write v e actor stay gen deps proposal via (tags := { add, remove }) (proof := proof) (touches := touches)
+    (proof : Option ShareId := none) (touches : List Touch := []) (fits : Bool := true) : Action :=
+  .write v e actor stay epoch deps proposal via (tags := { add, remove }) (proof := proof) (touches := touches)
     (fits := fits)
 
 /-- Setting a todo's field `f` to the text `x`. -/
 def sets (f x : String) : Touch := .set (.field f) (some (.str x))
 
 /-- Setting a todo's status, to open or done only. -/
-def statusRule : Rule := .set [.field "status"] (some [.str "open", .str "done"]) none
+def statusOp : Op := .set [.field "status"] (some [.str "open", .str "done"]) none
 
 def seedKey (v ε : Nat) : KeyName := .scoped (.seed v) ε
-def capKey (v c ε : Nat) : KeyName := .scoped (.cap v c) ε
-def cellKey (v : Nat) (x : Cell) (ε : Nat) : KeyName := .scoped (.cell v x) ε
+def shareKey (v c ε : Nat) : KeyName := .scoped (.share v c) ε
+def audienceKey (v : Nat) (x : Audience) (ε : Nat) : KeyName := .scoped (.audience v x) ε
 
 def cases : List Case := [
   { name := "a human vault, its devices and a backup passkey", edits := [
@@ -264,40 +264,40 @@ def cases : List Case := [
     (5, [], newEntry 205 19 205 [] note (via := [200, 101])),
     (5, [], newEntry 205 20 205 [] note (via := [101])),
     (5, [], newEntry 205 21 205 [] note (via := [200]))] },
-  { name := "caps and Public", edits := humans ++ [
+  { name := "shares and everyone", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
-    -- Alice's Mac creates the coop's Welcome note in no cap's cell, where only the coop reads it; Carol's passkey
+    -- Alice's Mac creates the coop's Welcome note in no share's audience, where only the coop reads it; Carol's passkey
     -- can't create for Alice
     (2, [], newEntry 200 1 200 [] note (via := [100])),
     (6, [], newEntry 100 3 100 [] note),
-    -- read for Carol's vault, never for a signer or for the vault itself; Public only reads
-    (2, [], newCap 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
-    (2, [], newCap 31 200 (.principal (.signer 6)) .read 200 (only 1) (via := [100])),
-    (2, [], newCap 32 200 (toVault 200) .read 200 (only 1) (via := [100])),
-    (2, [], newCap 33 200 .«public» .write 200 (only 1) (via := [100])),
-    (2, [], newCap 34 200 .«public» .read 200 (only 1) (via := [100])),
-    -- a steward moves Welcome to the cell of the caps that select it, whose key is then published
+    -- read for Carol's vault, never for a signer or for the vault itself; everyone only reads
+    (2, [], newShare 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
+    (2, [], newShare 31 200 (.principal (.signer 6)) .read 200 (only 1) (via := [100])),
+    (2, [], newShare 32 200 (toVault 200) .read 200 (only 1) (via := [100])),
+    (2, [], newShare 33 200 .everyone .write 200 (only 1) (via := [100])),
+    (2, [], newShare 34 200 .everyone .read 200 (only 1) (via := [100])),
+    -- a steward moves Welcome to the audience of the shares that select it, whose key is then published
     (2, [], .move 200 1 [30, 34] [] [100]),
     -- making Dave owner of the coop's notes is governance: both passkeys of the threshold-2 coop
-    (2, [], newCap 35 200 (toVault 103) .owner 200 notes (via := [100])),
-    (1, [4], newCap 36 200 (toVault 103) .owner 200 notes (via := [100])),
-    -- Dave shares on through his owner cap; naming none, he would have to be the coop
-    (8, [], newCap 37 200 (toVault 102) .write 103 (only 1) (parent := some 36)),
-    (8, [], newCap 38 200 (toVault 101) .read 103 (only 1)),
-    -- a cap that rests on another is no wider than it, and none rests on a read cap
-    (8, [], newCap 39 200 (toVault 101) .read 103 (wide := true) (parent := some 36)),
-    (6, [], newCap 40 200 (toVault 101) .read 102 (only 1) (parent := some 30)),
+    (2, [], newShare 35 200 (toVault 103) .owner 200 notes (via := [100])),
+    (1, [4], newShare 36 200 (toVault 103) .owner 200 notes (via := [100])),
+    -- Dave shares on through his owner share; naming none, he would have to be the coop
+    (8, [], newShare 37 200 (toVault 102) .write 103 (only 1) (parent := some 36)),
+    (8, [], newShare 38 200 (toVault 101) .read 103 (only 1)),
+    -- a share that rests on another is no wider than it, and none rests on a read share
+    (8, [], newShare 39 200 (toVault 101) .read 103 (wide := true) (parent := some 36)),
+    (6, [], newShare 40 200 (toVault 101) .read 102 (only 1) (parent := some 30)),
     -- Bob writes for the coop, not for himself
     (5, [], wr 200 1 101 [7] (stay := some 14)),
     (5, [], wr 200 1 200 [7] (stay := some 14) (via := [101])),
-    -- Carol's cap reaches Welcome only once a steward moves it into its cell
+    -- Carol's share reaches Welcome only once a steward moves it into its audience
     (6, [], wr 200 1 102 [22] (stay := some 14)),
     (5, [], .move 200 1 [30, 34, 36, 37] [] [101]),
     (6, [], wr 200 1 102 [22] (stay := some 24) (proof := some 37)),
-    -- each write builds on writes that were accepted, in a stay of its entry, at a generation that stay's cell reached
+    -- each write builds on writes that were accepted, in a stay of its entry, at an epoch that stay's audience reached
     (6, [], wr 200 1 102 [99] (stay := some 24) (proof := some 37)),
     (6, [], wr 200 1 102 [25] (stay := some 99) (proof := some 37)),
-    (6, [], wr 200 1 102 [25] (stay := some 24) (gen := 1) (proof := some 37)),
+    (6, [], wr 200 1 102 [25] (stay := some 24) (epoch := 1) (proof := some 37)),
     -- a device that hasn't seen the move writes in the stay before it, and a stranger not at all
     (6, [], wr 200 1 102 [25] (stay := some 14) (proof := some 37)),
     (555, [], wr 200 1 200 [25] (stay := some 24))] },
@@ -307,14 +307,14 @@ def cases : List Case := [
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
     (2, [], newEntry 100 22 100 [] todo (tags := [home])),
     (2, [], newEntry 100 1 100 [] note),
-    (2, [], newCap 30 100 (toVault 101) .write 100 workTodos
+    (2, [], newShare 30 100 (toVault 101) .write 100 workTodos
       (ops := some [.read, .create, .set [] none none, .tag (some [work, home]), .propose, .merge none])),
-    (2, [], newCap 31 100 (toVault 102) .read 100 todos),
-    -- the stewards move each todo to the cell of the caps that select it; the note is where it belongs
+    (2, [], newShare 31 100 (toVault 102) .read 100 todos),
+    -- the stewards move each todo to the audience of the shares that select it; the note is where it belongs
     (2, [], .move 100 21 [30, 31] []),
     (2, [], .move 100 22 [31] []),
     (2, [], .move 100 1 [] []),
-    -- a move goes only to a cell of the vault's own caps, and only a steward moves
+    -- a move goes only to an audience of the vault's own shares, and only a steward moves
     (2, [], .move 100 22 [31, 77] []),
     (5, [], .move 100 22 [30, 31] [] [101]),
     -- Bob writes the work todo, not the home one
@@ -327,21 +327,21 @@ def cases : List Case := [
     (5, [], wr 100 21 101 [19] (stay := some 11) (proof := some 30)),
     (2, [], .move 100 21 [31] [16, 18]),
     (5, [], wr 100 21 101 [19] (stay := some 21) (proof := some 30)),
-    -- Bob creates through his cap, in its intake cell only: a work todo, inside his slice, and a note, outside it
+    -- Bob creates through his share, in its intake audience only: a work todo, inside his slice, and a note, outside it
     (5, [], newEntry 100 23 101 [30] todo (tags := [work]) (proof := some 30)),
     (5, [], newEntry 100 2 101 [30] note (proof := some 30)),
     (5, [], newEntry 100 24 101 [30, 31] todo (tags := [work]) (proof := some 30)),
     -- Carol only reads, and creates nothing
     (6, [], newEntry 100 25 102 [31] todo),
-    -- the stewards move the work todo to the cell of the caps that select it, and the note to no cap's cell, keeping
-    -- what Bob made; he can't write the note any more
+    -- the stewards move the work todo to the audience of the shares that select it, and the note to no share's
+    -- audience, keeping what Bob made; he can't write the note any more
     (2, [], .move 100 23 [30, 31] [23]),
     (2, [], .move 100 2 [] [24]),
     (5, [], wr 100 2 101 [24] (stay := some 28) (proof := some 30)),
-    -- Bob asks for a tag his cap doesn't name: whatever else it does, his write counts for no reader
+    -- Bob asks for a tag his share doesn't name: whatever else it does, his write counts for no reader
     (5, [], wr 100 23 101 [23] (stay := some 27) (add := [9]) (proof := some 30)),
     -- Alice tags the home todo for work too: its readers see it belongs in Bob's slice, but until a steward moves it,
-    -- Bob's cap doesn't reach it
+    -- Bob's share doesn't reach it
     (2, [], wr 100 22 100 [7] (stay := some 12) (add := [work])),
     (5, [], wr 100 22 101 [31] (stay := some 12) (proof := some 30))] },
   { name := "selectors pick by type, author, entry, time and tags", edits := humans ++ [
@@ -351,14 +351,15 @@ def cases : List Case := [
     (2, [], newEntry 100 23 100 [] todo (created := 3) (tags := [home, 9])),
     -- Bob reads the todos made before 10 with no tags but work and home; Carol Welcome, the second todo and every todo
     -- not tagged work; Dave what Bob makes; and Bob writes every todo
-    (2, [], newCap 30 100 (toVault 101) .read 100 (.anyOf [[.typeIn [todo], .tagsWithin [work, home], .createdIn 0 10]])),
-    (2, [], newCap 31 100 (toVault 102) .read 100 (.anyOf [[.entryIn [1, 22]], [.typeIn [todo], .tagNone [work]]])),
-    (2, [], newCap 32 100 (toVault 103) .read 100 (.anyOf [[.authorIn [101]]])),
-    (2, [], newCap 33 100 (toVault 101) .write 100 todos),
-    -- no cap over a vault that doesn't exist; Bob creates a todo through his write cap
-    (2, [], newCap 34 999 (toVault 101) .read 100),
+    (2, [], newShare 30 100 (toVault 101) .read 100
+      (.anyOf [[.typeIn [todo], .tagsWithin [work, home], .createdIn 0 10]])),
+    (2, [], newShare 31 100 (toVault 102) .read 100 (.anyOf [[.entryIn [1, 22]], [.typeIn [todo], .tagNone [work]]])),
+    (2, [], newShare 32 100 (toVault 103) .read 100 (.anyOf [[.authorIn [101]]])),
+    (2, [], newShare 33 100 (toVault 101) .write 100 todos),
+    -- no share over a vault that doesn't exist; Bob creates a todo through his write share
+    (2, [], newShare 34 999 (toVault 101) .read 100),
     (5, [], newEntry 100 24 101 [33] todo (proof := some 33)),
-    -- the stewards move each entry to the cell of the caps that select it
+    -- the stewards move each entry to the audience of the shares that select it
     (2, [], .move 100 1 [31] []),
     (2, [], .move 100 21 [30, 33] []),
     (2, [], .move 100 22 [31, 33] []),
@@ -367,39 +368,40 @@ def cases : List Case := [
   { name := "revocation, cascades and keep lists", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
-    (2, [], newCap 30 100 (toVault 101) .write 100 workTodos),
-    (1, [], newCap 31 100 (toVault 200) .owner 100 todos),
-    (2, [], newCap 33 100 (toVault 102) .read 100 todos),
-    -- acting for the coop, Bob's Mac gives Dave read through the coop's owner cap
-    (5, [], newCap 32 100 (toVault 103) .read 200 todos (parent := some 31) (via := [101])),
+    (2, [], newShare 30 100 (toVault 101) .write 100 workTodos),
+    (1, [], newShare 31 100 (toVault 200) .owner 100 todos),
+    (2, [], newShare 33 100 (toVault 102) .read 100 todos),
+    -- acting for the coop, Bob's Mac gives Dave read through the coop's owner share
+    (5, [], newShare 32 100 (toVault 103) .read 200 todos (parent := some 31) (via := [101])),
     (2, [], .move 100 21 [30, 31, 32, 33] []),
     (5, [], wr 100 21 101 [7] (stay := some 12) (proof := some 30)),
     -- Alice takes Bob's own write away, keeping the write she had seen
     (2, [], .revoke 30 100 [13]),
     (5, [], wr 100 21 101 [13] (stay := some 12) (proof := some 30)),
-    -- Bob still writes for the coop, whose owner cap reaches the todo, and creates one for it in that cap's intake cell
+    -- Bob still writes for the coop, whose owner share reaches the todo, and creates one for it in that share's intake
+    -- audience
     (5, [], wr 100 21 200 [13] (stay := some 12) (via := [101]) (proof := some 31)),
     (2, [], wr 100 21 100 [16] (stay := some 12)),
     (5, [], newEntry 100 22 200 [31] todo (via := [101]) (proof := some 31)),
-    -- a grantee gives its cap up; nobody but its issuer, its vault and those above them in its chain may end it
+    -- a grantee gives its share up; nobody but its issuer, its vault and those above them in its chain may end it
     (8, [], .revoke 33 103 []),
     (6, [], .revoke 33 102 []),
-    -- taking the coop's owner cap away is governance; it ends Dave's read with it, and the coop's write and todo,
+    -- taking the coop's owner share away is governance; it ends Dave's read with it, and the coop's write and todo,
     -- which it hadn't seen, and Alice's write that builds on the coop's
     (2, [], .revoke 31 100 [13]),
     (1, [], .revoke 31 100 [13]),
     (5, [], wr 100 21 200 [13] (stay := some 12) (via := [101]) (proof := some 31)),
-    -- an id is created once, even after its entry fell; a cap is revoked once, and only a cap that was issued
+    -- an id is created once, even after its entry fell; a share is revoked once, and only a share that was issued
     (2, [], newEntry 100 22 100 [] todo),
     (2, [], .revoke 32 100 []),
     (2, [], .revoke 99 100 [])] },
   { name := "keys go only where the schedule seals them", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     (2, [], newEntry 200 1 200 [] note (via := [100])),
-    -- Alice's Mac boxes each key to what the schedule seals it to: Welcome's to its cell's, the cell's to the coop's
-    -- seed, the coop's seed to its owners' seeds, and her vault's seed to her passkey and her Mac
-    (2, [], .keys (.entry 1 none 0) [cellKey 200 [] 0]),
-    (2, [], .keys (cellKey 200 [] 0) [seedKey 200 0]),
+    -- Alice's Mac boxes each key to what the schedule seals it to: Welcome's to its audience's, the audience's to the
+    -- coop's seed, the coop's seed to its owners' seeds, and her vault's seed to her passkey and her Mac
+    (2, [], .keys (.entry 1 none 0) [audienceKey 200 [] 0]),
+    (2, [], .keys (audienceKey 200 [] 0) [seedKey 200 0]),
     (2, [], .keys (seedKey 200 0) [seedKey 100 0, seedKey 101 0]),
     (2, [], .keys (seedKey 100 0) [.signer 1, .signer 2]),
     -- and nowhere else: not to a device directly, not to Bob's Mac
@@ -408,87 +410,87 @@ def cases : List Case := [
     -- only a signer that may open a key boxes it
     (5, [], .keys (seedKey 100 0) []),
     (6, [], .keys (.entry 1 none 0) []),
-    -- no key of a generation, a stay or a family that doesn't exist, and nothing published that isn't public
-    (2, [], .keys (cellKey 200 [] 1) []),
+    -- no key of an epoch, a stay or a family that doesn't exist, and nothing published that isn't public
+    (2, [], .keys (audienceKey 200 [] 1) []),
     (2, [], .keys (.entry 1 (some 99) 0) []),
-    (2, [], .keys (cellKey 200 [30] 0) []),
-    (2, [], .keys (cellKey 200 [] 0) [] true),
-    -- Carol may read Welcome: a cap names her, a steward moves Welcome into its cell, the cell's key is wrapped under
-    -- the cap's key, and that is sealed to her vault's seed
-    (2, [], newCap 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
+    (2, [], .keys (audienceKey 200 [30] 0) []),
+    (2, [], .keys (audienceKey 200 [] 0) [] true),
+    -- Carol may read Welcome: a share names her, a steward moves Welcome into its audience, the audience's key is
+    -- wrapped under the share's key, and that is sealed to her vault's seed
+    (2, [], newShare 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
     (2, [], .move 200 1 [30] [] [100]),
-    (2, [], .keys (capKey 200 30 0) [seedKey 200 0, seedKey 102 0]),
-    (6, [], .keys (cellKey 200 [30] 0) [capKey 200 30 0]),
-    (6, [], .keys (.entry 1 (some 21) 0) [cellKey 200 [30] 0]),
+    (2, [], .keys (shareKey 200 30 0) [seedKey 200 0, seedKey 102 0]),
+    (6, [], .keys (audienceKey 200 [30] 0) [shareKey 200 30 0]),
+    (6, [], .keys (.entry 1 (some 21) 0) [audienceKey 200 [30] 0]),
     -- the key of Welcome's first write is wrapped under Welcome's key now, a link: Carol reads its whole history, and
-    -- no key of the cell it left
+    -- no key of the audience it left
     (6, [], .keys (.entry 1 none 0) [.entry 1 (some 21) 0]),
-    (6, [], .keys (cellKey 200 [] 0) []),
-    -- Welcome goes public: its cell's key is published
-    (2, [], newCap 31 200 .«public» .read 200 (only 1) (via := [100])),
+    (6, [], .keys (audienceKey 200 [] 0) []),
+    -- Welcome goes public: its audience's key is published
+    (2, [], newShare 31 200 .everyone .read 200 (only 1) (via := [100])),
     (2, [], .move 200 1 [30, 31] [] [100]),
-    (2, [], .keys (cellKey 200 [30, 31] 0) [] true),
+    (2, [], .keys (audienceKey 200 [30, 31] 0) [] true),
     -- revoking Carol rotates nothing while Welcome is public; making it private again does
     (2, [], .revoke 30 200 [] [100]),
     (2, [], .revoke 31 200 [] [100]),
-    (2, [], .keys (cellKey 200 [30, 31] 1) [seedKey 200 0]),
-    (2, [], .keys (cellKey 200 [30, 31] 0) [cellKey 200 [30, 31] 1]),
-    (6, [], .keys (cellKey 200 [30, 31] 1) []),
-    (2, [], .keys (cellKey 200 [30, 31] 1) [seedKey 102 0])] },
+    (2, [], .keys (audienceKey 200 [30, 31] 1) [seedKey 200 0]),
+    (2, [], .keys (audienceKey 200 [30, 31] 0) [audienceKey 200 [30, 31] 1]),
+    (6, [], .keys (audienceKey 200 [30, 31] 1) []),
+    (2, [], .keys (audienceKey 200 [30, 31] 1) [seedKey 102 0])] },
   { name := "a removed device's vault keys all move on", edits := humans ++ [
     (1, [3], .addDevice 100 3),
     (2, [], newEntry 100 1 100 [] note),
-    (2, [], newCap 30 100 (toVault 102) .read 100 notes),
+    (2, [], newShare 30 100 (toVault 102) .read 100 notes),
     (2, [], .move 100 1 [30] []),
     -- the iPhone writes Welcome twice, and is lost; Alice removes it, keeping the write she had seen
     (3, [], wr 100 1 100 [7] (stay := some 9)),
     (3, [], wr 100 1 100 [10] (stay := some 9)),
     (1, [], .removeDevice 100 3 [10]),
-    -- the iPhone could open Alice's seed, so her seed, her caps' keys and her cells' keys all start a new
-    -- generation, which it can't box
+    -- the iPhone could open Alice's seed, so her seed, her shares' keys and her audiences' keys all start a new
+    -- epoch, which it can't box
     (3, [], .keys (seedKey 100 0) []),
     (2, [], .keys (seedKey 100 1) [.signer 1, .signer 2]),
     (2, [], .keys (seedKey 100 0) [seedKey 100 1]),
-    (2, [], .keys (capKey 100 30 1) [seedKey 100 1, seedKey 102 0]),
-    (2, [], .keys (cellKey 100 [30] 1) [seedKey 100 1, capKey 100 30 1]),
-    (2, [], .keys (cellKey 100 [30] 1) [capKey 100 30 0])] },
-  { name := "a cell an entry comes back into moves on", edits := humans ++ [
+    (2, [], .keys (shareKey 100 30 1) [seedKey 100 1, seedKey 102 0]),
+    (2, [], .keys (audienceKey 100 [30] 1) [seedKey 100 1, shareKey 100 30 1]),
+    (2, [], .keys (audienceKey 100 [30] 1) [shareKey 100 30 0])] },
+  { name := "an audience an entry comes back into moves on", edits := humans ++ [
     -- Bob's and Carol's coop reads Alice's work todos
     (4, [6], .genesis 200 .coop [.vault 101, .vault 102] 1),
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
-    (2, [], newCap 30 100 (toVault 200) .read 100 workTodos),
+    (2, [], newShare 30 100 (toVault 200) .read 100 workTodos),
     (2, [], .move 100 21 [30] []),
-    -- the todo loses its tag and leaves the cell, which goes out of use; Carol leaves the coop meanwhile, and the
-    -- cell's key doesn't move on, since no entry is in it
+    -- the todo loses its tag and leaves the audience, which goes out of use; Carol leaves the coop meanwhile, and the
+    -- audience's key doesn't move on, since no entry is in it
     (2, [], wr 100 21 100 [7] (stay := some 9) (remove := [work])),
     (2, [], .move 100 21 [] [10]),
     (6, [], .removeOwner 200 (.vault 102) []),
-    -- the todo gets its tag back and returns: the cell's key starts a new generation, which Carol can't open
+    -- the todo gets its tag back and returns: the audience's key starts a new epoch, which Carol can't open
     (2, [], wr 100 21 100 [10] (stay := some 11) (add := [work])),
     (2, [], .move 100 21 [30] [13]),
-    (2, [], .keys (cellKey 100 [30] 1) [seedKey 100 0, capKey 100 30 1]),
-    (6, [], .keys (cellKey 100 [30] 1) []),
-    (6, [], .keys (cellKey 100 [30] 0) [])] },
-  { name := "a new entry brings an empty cell back into use at the generation it moves to", edits := humans ++ [
+    (2, [], .keys (audienceKey 100 [30] 1) [seedKey 100 0, shareKey 100 30 1]),
+    (6, [], .keys (audienceKey 100 [30] 1) []),
+    (6, [], .keys (audienceKey 100 [30] 0) [])] },
+  { name := "a new entry brings an empty audience back into use at the epoch it moves to", edits := humans ++ [
     (4, [6], .genesis 200 .coop [.vault 101, .vault 102] 1),
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
-    (2, [], newCap 30 100 (toVault 200) .read 100 workTodos),
+    (2, [], newShare 30 100 (toVault 200) .read 100 workTodos),
     (2, [], .move 100 21 [30] []),
     (2, [], wr 100 21 100 [7] (stay := some 9) (remove := [work])),
     (2, [], .move 100 21 [] [10]),
     (6, [], .removeOwner 200 (.vault 102) []),
-    -- a new work todo, created straight into the empty cell, may name the generation the cell moves to as it comes
-    -- back into use, which Carol can't open, and no later one; so may the next, the cell in use by then
-    (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (gen := 2)),
-    (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (gen := 1)),
-    (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (gen := 2)),
-    (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (gen := 1)),
-    (5, [], .keys (cellKey 100 [30] 1) [capKey 100 30 1]),
-    (6, [], .keys (cellKey 100 [30] 1) []),
-    (6, [], .keys (cellKey 100 [30] 0) [])] },
+    -- a new work todo, created straight into the empty audience, may name the epoch the audience moves to as it comes
+    -- back into use, which Carol can't open, and no later one; so may the next, the audience in use by then
+    (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (epoch := 2)),
+    (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (epoch := 1)),
+    (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (epoch := 2)),
+    (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (epoch := 1)),
+    (5, [], .keys (audienceKey 100 [30] 1) [shareKey 100 30 1]),
+    (6, [], .keys (audienceKey 100 [30] 1) []),
+    (6, [], .keys (audienceKey 100 [30] 0) [])] },
   { name := "the schema lane", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
-    (2, [], newCap 30 200 (toVault 102) .write 200 (wide := true) (via := [100])),
+    (2, [], newShare 30 200 (toVault 102) .write 200 (wide := true) (via := [100])),
     -- Alice's Mac, acting for the coop, publishes a schema and a lens into its lane
     (2, [], .publish 200 200 1 [100]),
     (2, [], .publish 200 200 2 [100]),
@@ -502,9 +504,9 @@ def cases : List Case := [
     (555, [], .publish 200 200 3),
     (2, [], .publish 299 200 3 [100]),
     -- Dave, made owner of the whole coop by both passkeys, publishes; Carol, owner of its notes, doesn't
-    (1, [4], newCap 31 200 (toVault 103) .owner 200 (wide := true) (via := [100])),
+    (1, [4], newShare 31 200 (toVault 103) .owner 200 (wide := true) (via := [100])),
     (8, [], .publish 200 103 3),
-    (1, [4], newCap 32 200 (toVault 102) .owner 200 notes (via := [100])),
+    (1, [4], newShare 32 200 (toVault 102) .owner 200 notes (via := [100])),
     (6, [], .publish 200 102 4),
     (5, [], .publish 200 200 4 [101])] },
   { name := "a device vouches only for its own writes", edits := humans ++ [
@@ -527,8 +529,8 @@ def cases : List Case := [
     (2, [], .checkpoint 2 [8])] },
   { name := "proposals of an entry", edits := humans ++ [
     (2, [], newEntry 100 1 100 [] note),
-    (2, [], newCap 30 100 (toVault 101) .write 100 (only 1)),
-    (2, [], newCap 31 100 (toVault 102) .read 100 (only 1)),
+    (2, [], newShare 30 100 (toVault 101) .write 100 (only 1)),
+    (2, [], newShare 31 100 (toVault 102) .read 100 (only 1)),
     (2, [], .move 100 1 [30, 31] []),
     -- Bob's Mac starts a draft of Welcome from its first version and writes on it
     (5, [], wr 100 1 101 [6] (stay := some 9) (proposal := .new) (proof := some 30) (touches := [.propose])),
@@ -551,46 +553,47 @@ def cases : List Case := [
     -- Alice's Mac starts a proposal of its own from the merge, and Bob writes on it
     (2, [], wr 100 1 100 [19] (stay := some 9) (proposal := .new)),
     (5, [], wr 100 1 101 [22] (stay := some 9) (proposal := .on 22) (proof := some 30))] },
-  { name := "ops: a write cap that may only set a todo's status", edits := humans ++ [
+  { name := "ops: a write share that may only set a todo's status", edits := humans ++ [
     -- Alice's todo; Bob may set its status, to open or done, and Carol reads it
     (2, [], newEntry 100 21 100 [] todo),
-    (2, [], newCap 30 100 (toVault 101) .write 100 todos (ops := some [.read, statusRule])),
-    (2, [], newCap 31 100 (toVault 102) .read 100 todos),
+    (2, [], newShare 30 100 (toVault 101) .write 100 todos (ops := some [.read, statusOp])),
+    (2, [], newShare 31 100 (toVault 102) .read 100 todos),
     (2, [], .move 100 21 [30, 31] []),
     -- every write below is accepted, as relays see it; its readers count only what the ops allow, with the proof that
-    -- names Bob's cap
+    -- names Bob's share
     (5, [], wr 100 21 101 [6] (stay := some 9) (proof := some 30) (touches := [sets "status" "done"])),
     (5, [], wr 100 21 101 [10] (stay := some 9) (proof := some 30) (touches := [sets "title" "Lamp"])),
     -- what builds on a write they don't count, they don't count either
     (5, [], wr 100 21 101 [11] (stay := some 9) (proof := some 30) (touches := [sets "status" "open"])),
-    -- a write through a cap needs a proof that names a cap its actor holds, and the values the op lists
+    -- a write through a share needs a proof that names a share its actor holds, and the values the op lists
     (5, [], wr 100 21 101 [10] (stay := some 9) (touches := [sets "status" "open"])),
     (5, [], wr 100 21 101 [10] (stay := some 9) (proof := some 31) (touches := [sets "status" "open"])),
     (5, [], wr 100 21 101 [10] (stay := some 9) (proof := some 30) (touches := [sets "status" "lost"])),
     -- the vault itself writes anything
     (2, [], wr 100 21 100 [10] (stay := some 9) (touches := [sets "title" "Lamp"])),
-    -- Bob's cap has no op to create: his todo is accepted, but not counted, and not let into his slice
+    -- Bob's share has no op to create: his todo is accepted, but not counted, and not let into his slice
     (5, [], newEntry 100 22 101 [30] todo (proof := some 30)),
-    -- a second cap lets him create todos, add their items and set their status; not edit an item or remove one
-    (2, [], newCap 32 100 (toVault 101) .write 100 todos (ops := some [.read, .create, statusRule,
+    -- a second share lets him create todos, add their items and set their status; not edit an item or remove one
+    (2, [], newShare 32 100 (toVault 101) .write 100 todos (ops := some [.read, .create, statusOp,
       .insert [.field "items"] none])),
     (5, [], newEntry 100 23 101 [32] todo (proof := some 32)),
     (5, [], wr 100 23 101 [19] (proof := some 32) (touches := [.insert "items"])),
     (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.set (.cell "items" 1 "text") (some (.str "milk"))])),
     (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.remove "items"])),
-    -- ops never widen a cap: Carol reads, and writes nothing, whatever proof she names
+    -- ops never widen a share: Carol reads, and writes nothing, whatever proof she names
     (6, [], wr 100 21 102 [10] (stay := some 9) (proof := some 31) (touches := [sets "status" "done"]))] },
-  { name := "ops: a chain narrows the caps resting on it, and a suggester writes on proposals",
+  { name := "ops: a chain narrows the shares resting on it, and a suggester writes on proposals",
     edits := humans ++ [
     (2, [], newEntry 100 21 100 [] todo),
     -- Alice's passkey makes Dave owner of her todos, narrowed: he may set their status, create them and share
-    (1, [], newCap 30 100 (toVault 103) .owner 100 todos
+    (1, [], newShare 30 100 (toVault 103) .owner 100 todos
       (ops := some [.read, .create, .set [.field "status"] none none, .share])),
-    -- Dave lets Carol set anything, which his own ops still narrow, and Bob edit, as his role's group says
-    (8, [], newCap 31 100 (toVault 102) .write 103 todos (parent := some 30) (ops := some [.read, .set [] none none])),
-    (8, [], newCap 32 100 (toVault 101) .write 103 todos (parent := some 30)),
+    -- Dave lets Carol set anything, which his own ops still narrow, and Bob edit, as his level's group says
+    (8, [], newShare 31 100 (toVault 102) .write 103 todos (parent := some 30)
+      (ops := some [.read, .set [] none none])),
+    (8, [], newShare 32 100 (toVault 101) .write 103 todos (parent := some 30)),
     -- Alice lets Carol suggest: start proposals and write on them
-    (2, [], newCap 33 100 (toVault 102) .write 100 todos
+    (2, [], newShare 33 100 (toVault 102) .write 100 todos
       (ops := some [.read, .set [] none (some .proposals), .propose])),
     (2, [], .move 100 21 [30, 31, 32, 33] []),
     (6, [], wr 100 21 102 [6] (stay := some 11) (proof := some 31) (touches := [sets "status" "done"])),
@@ -604,16 +607,16 @@ def cases : List Case := [
     (6, [], wr 100 21 102 [14] (stay := some 11) (proof := some 33) (touches := [sets "title" "Desk lamp"])),
     -- Alice merges it
     (2, [], wr 100 21 100 [14, 17] (stay := some 11) (touches := [.merge, sets "title" "Desk lamp"])),
-    -- Dave creates through his cap; Carol's chain doesn't let her
+    -- Dave creates through his share; Carol's chain doesn't let her
     (8, [], newEntry 100 22 103 [30] todo (proof := some 30)),
     (6, [], newEntry 100 24 102 [30, 31] todo (proof := some 31)),
-    -- a cap rests only on an owner cap, so Bob can't pass his own on to Carol, even narrowed
-    (5, [], newCap 34 100 (toVault 102) .write 101 todos (parent := some 32) (ops := some [.read, statusRule])),
-    -- a cap whose role isn't the class of its ops lets nothing through, nor does any cap resting on it: a write cap
-    -- for Bob that names an owner's ops, and an owner cap for Carol that names an editor's
-    (2, [], newCap 35 100 (toVault 101) .write 100 todos (ops := some Role.owner.ops)),
-    (1, [], newCap 36 100 (toVault 102) .owner 100 todos (ops := some Role.write.ops)),
-    (6, [], newCap 37 100 (toVault 101) .write 102 todos (parent := some 36)),
+    -- a share rests only on an owner share, so Bob can't pass his own on to Carol, even narrowed
+    (5, [], newShare 34 100 (toVault 102) .write 101 todos (parent := some 32) (ops := some [.read, statusOp])),
+    -- a share whose level isn't the class of its ops lets nothing through, nor does any share resting on it: a write
+    -- share for Bob that names an owner's ops, and an owner share for Carol that names an editor's
+    (2, [], newShare 35 100 (toVault 101) .write 100 todos (ops := some Level.owner.ops)),
+    (1, [], newShare 36 100 (toVault 102) .owner 100 todos (ops := some Level.write.ops)),
+    (6, [], newShare 37 100 (toVault 101) .write 102 todos (parent := some 36)),
     (2, [], .move 100 21 [30, 31, 32, 33, 35, 36, 37] []),
     (5, [], wr 100 21 101 [19] (stay := some 26) (proof := some 35) (touches := [sets "status" "open"])),
     (5, [], wr 100 21 101 [19] (stay := some 26) (proof := some 37) (touches := [sets "status" "open"])),
@@ -621,7 +624,7 @@ def cases : List Case := [
   { name := "schemas: a write whose result doesn't fit its schemas counts for no reader", edits := humans ++ [
     -- Alice's todo, which Bob may write
     (2, [], newEntry 100 21 100 [] todo),
-    (2, [], newCap 30 100 (toVault 101) .write 100 todos),
+    (2, [], newShare 30 100 (toVault 101) .write 100 todos),
     (2, [], .move 100 21 [30] []),
     -- every write below is accepted, as relays see it; its readers count only what fits, and what builds on it
     (5, [], wr 100 21 101 [6] (stay := some 8) (proof := some 30)),
@@ -633,7 +636,7 @@ def cases : List Case := [
     -- nor creates: a todo that doesn't fit counts for no reader, nor a write on it
     (2, [], newEntry 100 22 100 [] todo (fits := false)),
     (2, [], wr 100 22 100 [14]),
-    -- fitting is no cap: Carol holds none, and writes nothing
+    -- fitting is no share: Carol holds none, and writes nothing
     (6, [], wr 100 21 102 [9] (stay := some 8))] },
   { name := "sync rules: each device syncs what its rules pick", edits := humans ++ [
     (1, [3], .addDevice 100 3),
@@ -641,7 +644,7 @@ def cases : List Case := [
     -- Alice's note and her work todo; Carol reads her notes
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
-    (2, [], newCap 30 100 (toVault 102) .read 100 notes),
+    (2, [], newShare 30 100 (toVault 102) .read 100 notes),
     -- Alice's iPhone syncs her notes and keeps their files, her Mac all of her vault
     (2, [], .syncRule ⟨40, 100, 3, 100, false, notes, true⟩),
     (2, [], .syncRule ⟨41, 100, 2, 100, true, .all, false⟩),
@@ -649,7 +652,7 @@ def cases : List Case := [
     (2, [], .syncRule ⟨42, 100, 5, 100, true, .all, false⟩),
     (5, [], .syncRule ⟨44, 100, 3, 100, true, .all, false⟩),
     (2, [], .syncRule ⟨45, 100, 3, 101, true, .all, false⟩),
-    -- Carol, who holds a cap over Alice's vault, sets one for her Mac over it
+    -- Carol, who holds a share over Alice's vault, sets one for her Mac over it
     (7, [], .syncRule ⟨43, 102, 7, 100, false, .anyOf [[.typeIn [note]], [.tagHas work]], false⟩),
     -- Alice's Mac marks what the rules pick; a wide rule picks without marks
     (2, [], .pick 100 1 [40, 43]),
@@ -709,8 +712,8 @@ def views : List ViewCase := [
     (4, 1, [], .removeOwner 100 (.signer 9) [])] },
   { name := "a revoked writer's unseen edits are cut, with what builds on them", edits := humansV ++ [
     (6, 2, [], newEntry 100 21 100 [] todo),
-    (7, 2, [], newCap 30 100 (toVault 101) .write 100 todos),
-    (8, 2, [], newCap 31 100 (toVault 102) .write 100 todos),
+    (7, 2, [], newShare 30 100 (toVault 101) .write 100 todos),
+    (8, 2, [], newShare 31 100 (toVault 102) .write 100 todos),
     (9, 2, [], .move 100 21 [30, 31] []),
     -- Bob's write Alice saw, and one she didn't, which Carol builds on
     (10, 5, [], wr 100 21 101 [6] (stay := some 9) (proof := some 30)),
@@ -720,8 +723,8 @@ def views : List ViewCase := [
     (14, 6, [], wr 100 21 102 [10] (stay := some 9) (proof := some 31))] },
   { name := "a revocation cuts a proposal it hadn't seen, with every write on it", edits := humansV ++ [
     (6, 2, [], newEntry 100 21 100 [] todo),
-    (7, 2, [], newCap 30 100 (toVault 101) .write 100 todos),
-    (8, 2, [], newCap 31 100 (toVault 102) .write 100 todos),
+    (7, 2, [], newShare 30 100 (toVault 101) .write 100 todos),
+    (8, 2, [], newShare 31 100 (toVault 102) .write 100 todos),
     (9, 2, [], .move 100 21 [30, 31] []),
     -- Bob's Mac starts a draft Alice sees, and another on an old copy, which she doesn't; Carol writes on the second
     (10, 5, [], wr 100 21 101 [6] (stay := some 9) (proposal := .new) (proof := some 30)),
@@ -733,17 +736,17 @@ def views : List ViewCase := [
     (15, 2, [], wr 100 21 100 [6, 11] (stay := some 9)),
     (16, 6, [], wr 100 21 102 [15, 13] (stay := some 9) (proof := some 31))] },
   { name := "a revocation cuts a creation it hadn't seen", edits := humansV ++ [
-    (6, 2, [], newCap 30 100 (toVault 101) .write 100 workTodos),
-    -- Bob creates two work todos through his cap; Alice revokes it having seen only the first
+    (6, 2, [], newShare 30 100 (toVault 101) .write 100 workTodos),
+    -- Bob creates two work todos through his share; Alice revokes it having seen only the first
     (7, 5, [], newEntry 100 21 101 [30] todo (tags := [work]) (proof := some 30)),
     (8, 5, [], newEntry 100 22 101 [30] todo (tags := [work]) (proof := some 30)),
     (9, 2, [], .revoke 30 100 [7]),
     -- Alice writes the todo she kept; the other never was
     (10, 2, [], wr 100 21 100 [7]),
     (11, 2, [], wr 100 22 100 [8])] },
-  { name := "a move cuts a write it hadn't seen into the cell it left", edits := humansV ++ [
+  { name := "a move cuts a write it hadn't seen into the audience it left", edits := humansV ++ [
     (6, 2, [], newEntry 100 21 100 [] todo (tags := [work])),
-    (7, 2, [], newCap 30 100 (toVault 101) .write 100 workTodos),
+    (7, 2, [], newShare 30 100 (toVault 101) .write 100 workTodos),
     (8, 2, [], .move 100 21 [30] []),
     (9, 5, [], wr 100 21 101 [6] (stay := some 8) (proof := some 30)),
     -- Alice takes the work tag off and a steward moves the todo out of Bob's slice, having seen Bob's first write but
@@ -770,11 +773,11 @@ def views : List ViewCase := [
   { name := "a revoked reader's back-dated keys are cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], newEntry 200 1 200 [] note (via := [100])),
-    (8, 2, [], newCap 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
+    (8, 2, [], newShare 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
     (9, 2, [], .move 200 1 [30] [] [100]),
-    -- Carol's passkey boxes the cell's key twice; Alice revokes Carol's read having seen only the first
-    (10, 6, [], .keys (cellKey 200 [30] 0) [capKey 200 30 0]),
-    (11, 6, [], .keys (cellKey 200 [30] 0) [seedKey 200 0]),
+    -- Carol's passkey boxes the audience's key twice; Alice revokes Carol's read having seen only the first
+    (10, 6, [], .keys (audienceKey 200 [30] 0) [shareKey 200 30 0]),
+    (11, 6, [], .keys (audienceKey 200 [30] 0) [seedKey 200 0]),
     (12, 2, [], .revoke 30 200 [10] [100])] },
   { name := "a removed owner's back-dated publish is cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
@@ -813,11 +816,11 @@ def views : List ViewCase := [
     (15, 3, [], .checkpoint 1 [14])] },
   { name := "the senior revoker ranks first", edits := humansV ++ [
     (6, 2, [], newEntry 100 1 100 [] note),
-    (7, 1, [], newCap 30 100 (toVault 103) .owner 100 notes),
-    (8, 8, [], newCap 31 100 (toVault 102) .read 103 notes (parent := some 30)),
+    (7, 1, [], newShare 30 100 (toVault 103) .owner 100 notes),
+    (8, 8, [], newShare 31 100 (toVault 102) .read 103 notes (parent := some 30)),
     (9, 2, [], .move 100 1 [30, 31] []),
-    -- Alice revokes Dave's owner cap; Dave revokes the read he gave Carol on a copy that hadn't seen it, so his
-    -- revocation sorts first, and falls with the cap it rested on
+    -- Alice revokes Dave's owner share; Dave revokes the read he gave Carol on a copy that hadn't seen it, so his
+    -- revocation sorts first, and falls with the share it rested on
     (11, 1, [], .revoke 30 100 [6, 7, 8, 9]),
     (10, 8, [], .revoke 31 103 [])] },
   { name := "a vault settles before the coops it owns", edits := humansV ++ [
@@ -882,14 +885,14 @@ def peerEdits (edits : List Edit) : Option (List Nat) → List Edit
   | none => edits
 
 def syncs : List SyncCase := [
-  { name := "an entry by caps, by frontiers", edits := plain (humans ++ [
+  { name := "an entry by shares, by frontiers", edits := plain (humans ++ [
       (6, [7], .addDevice 102 7),
       (1, [3], .addDevice 100 3),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
       -- the coop's Welcome and Charter: Carol reads Welcome, Bob edits it
       (2, [], newEntry 200 1 200 [] note (via := [100])),
       (2, [], newEntry 200 2 200 [] note (via := [100])),
-      (2, [], newCap 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
+      (2, [], newShare 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
       (2, [], .move 200 1 [30] [] [100]),
       (5, [], wr 200 1 200 [9] (stay := some 12) (via := [101])),
       (2, [], .checkpoint 1 [9]),
@@ -922,28 +925,28 @@ def syncs : List SyncCase := [
       -- the iPhone claiming to be no deeper than the edit it builds on: malformed, so it never stands
       { author := 3, action := wr 100 1 100 [10], parents := some [10], depth := some 10 }],
     asks := [(3, [0, 1, 2, 3, 4, 5, 6, 7, 10], none), (2, [], none)] },
-  { name := "a revocation joins its cap's log", edits := plain (humans ++ [
+  { name := "a revocation joins its share's log", edits := plain (humans ++ [
       (6, [7], .addDevice 102 7),
       (2, [], newEntry 100 21 100 [] todo),
-      (2, [], newCap 30 100 (toVault 102) .read 100 (only 21)),
+      (2, [], newShare 30 100 (toVault 102) .read 100 (only 21)),
       (2, [], .move 100 21 [30] []),
       (2, [], newEntry 100 22 100 [] todo),
       -- Alice revokes Carol's read: Carol hears of it, and of nothing else about the todo
       (2, [], .revoke 30 100 [7, 8, 9]),
       (2, [], wr 100 21 100 [7] (stay := some 9))]),
     asks := [(7, [0, 1, 4, 6, 7, 8, 9], none), (7, [], none), (5, [2, 3], none),
-      -- Carol holding the revocation but not the cap it revokes: it is loose, and isn't sent again
+      -- Carol holding the revocation but not the share it revokes: it is loose, and isn't sent again
       (7, [0, 1, 4, 6, 7, 9, 11], none)] },
-  { name := "a relay holds the cells it may relay, and no key", edits := plain (humans ++ [
+  { name := "a relay holds the audiences it may relay, and no key", edits := plain (humans ++ [
       (1, [], .genesis 300 .aven [.vault 100] 1),
       (1, [600], .addDevice 300 600),
       -- Alice's note and her todo; avenCEO may hold her notes, and read none
       (2, [], newEntry 100 1 100 [] note),
       (2, [], newEntry 100 21 100 [] todo),
-      (2, [], newCap 30 100 (toVault 300) .backup 100 notes),
+      (2, [], newShare 30 100 (toVault 300) .backup 100 notes),
       (2, [], .move 100 1 [30] []),
       (2, [], wr 100 1 100 [8] (stay := some 11)),
-      (2, [], .keys (cellKey 100 [30] 0) [seedKey 100 0])]),
+      (2, [], .keys (audienceKey 100 [30] 0) [seedKey 100 0])]),
     asks := [(600, [], none), (600, [0, 1, 6, 7, 10], none), (5, [], none)] },
   { name := "a device ahead of its peer", edits := plain (humans ++ [
       (1, [3], .addDevice 100 3),
@@ -964,7 +967,7 @@ def syncs : List SyncCase := [
       (1, [9], .addOwner 100 (.signer 9)),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
       (2, [], newEntry 200 1 200 [] note (via := [100])),
-      (2, [], newCap 30 200 (toVault 102) .read 200 (wide := true) (via := [100]))]),
+      (2, [], newShare 30 200 (toVault 102) .read 200 (wide := true) (via := [100]))]),
     asks := [(3, [], none)],
     -- Alice's passkey, her backup passkey, Bob's and Carol's, Alice's Mac (a device, no passkey), and a stranger's
     links := [1, 9, 4, 6, 2, 555] },
@@ -976,9 +979,9 @@ def syncs : List SyncCase := [
       { author := 2, action := newEntry 100 1 100 [] note, files := [1] },
       { author := 2, action := newEntry 100 21 100 [] todo, files := [2] }] ++ plain [
       -- Carol reads her notes, avenCEO backs them up, Dan only relays her vault
-      (2, [], newCap 30 100 (toVault 102) .read 100 notes),
-      (2, [], newCap 31 100 (toVault 300) .backup 100 notes),
-      (2, [], newCap 32 100 (toVault 103) .relay 100),
+      (2, [], newShare 30 100 (toVault 102) .read 100 notes),
+      (2, [], newShare 31 100 (toVault 300) .backup 100 notes),
+      (2, [], newShare 32 100 (toVault 103) .relay 100),
       (2, [], .move 100 1 [30, 31] [])] ++ [
       -- then a film, into the note
       { author := 2, action := wr 100 1 100 [9] (stay := some 14), files := [3] }],
@@ -995,8 +998,8 @@ def syncs : List SyncCase := [
       { author := 2, action := newEntry 100 1 100 [] note, files := [1] },
       { author := 2, action := newEntry 100 21 100 [] todo, files := [2] }] ++ plain [
       -- avenCEO backs up all of her vault, Carol reads all of it
-      (2, [], newCap 30 100 (toVault 300) .backup 100 (wide := true)),
-      (2, [], newCap 31 100 (toVault 102) .read 100 (wide := true)),
+      (2, [], newShare 30 100 (toVault 300) .backup 100 (wide := true)),
+      (2, [], newShare 31 100 (toVault 102) .read 100 (wide := true)),
       -- her iPhone syncs her notes and keeps their files; Carol's Mac syncs nothing of hers
       (2, [], .syncRule ⟨40, 100, 3, 100, false, notes, true⟩),
       (7, [], .syncRule ⟨41, 102, 7, 100, false, .anyOf [], false⟩),
@@ -1028,16 +1031,16 @@ def kind : Kind → String
   | .coop  => str "coop"
   | .aven  => str "aven"
 
-def role : Role → String
+def level : Level → String
   | .relay => str "relay"
   | .backup => str "backup"
   | .read  => str "read"
   | .write => str "write"
   | .owner => str "owner"
 
-def grantee : Grantee → String
+def who : Who → String
   | .principal p => principal p
-  | .«public»    => str "public"
+  | .everyone    => str "everyone"
 
 def atom : Atom → String
   | .typeIn ts       => obj [("typeIn", ids ts)]
@@ -1071,7 +1074,7 @@ def onJson : Option On → List (String × String)
   | some .proposals => [("on", str "proposals")]
 
 /-- An op as the docs write it (`avendb/docs/OPS.md`): a tag, a number here, by its digits, as the core names it. -/
-def rule : Rule → String
+def opJson : Op → String
   | .relay => obj [("op", str "relay")]
   | .backup => obj [("op", str "backup")]
   | .read => obj [("op", str "read")]
@@ -1102,10 +1105,10 @@ def touch : Touch → String
   | .propose => str "propose"
   | .merge => str "merge"
 
-/-- A cap, with its ops. -/
-def capJson (c : Cap) : String :=
-  obj [("id", nat c.id), ("over", nat c.over), ("grantee", grantee c.grantee), ("role", role c.role),
-       ("wide", bool c.wide), ("select", selector c.select), ("ops", arr (c.ops.map rule)),
+/-- A share, with its ops. -/
+def shareJson (c : Share) : String :=
+  obj [("id", nat c.id), ("over", nat c.over), ("who", who c.who), ("level", level c.level),
+       ("wide", bool c.wide), ("select", selector c.select), ("ops", arr (c.ops.map opJson)),
        ("parent", opt nat c.parent), ("issuer", nat c.issuer)]
 
 /-- A sync rule. -/
@@ -1115,17 +1118,17 @@ def syncRuleJson (r : SyncRule) : String :=
 
 /-- A built-in group. -/
 def group (g : Group) : String :=
-  obj [("name", str g.name), ("ops", arr (g.ops.map rule)), ("everyone", bool g.everyone)]
+  obj [("name", str g.name), ("ops", arr (g.ops.map opJson)), ("everyone", bool g.everyone)]
 
 def keyFam : KeyFam → String
-  | .seed v   => obj [("seed", nat v)]
-  | .cap v c  => obj [("cap", obj [("vault", nat v), ("cap", nat c)])]
-  | .cell v x => obj [("cell", obj [("vault", nat v), ("caps", ids x)])]
+  | .seed v       => obj [("seed", nat v)]
+  | .share v c    => obj [("share", obj [("vault", nat v), ("share", nat c)])]
+  | .audience v x => obj [("audience", obj [("vault", nat v), ("shares", ids x)])]
 
 def keyName : KeyName → String
   | .signer s    => obj [("signer", nat s)]
   | .scoped k ε  => obj [("key", keyFam k), ("epoch", nat ε)]
-  | .entry e s g => obj [("entry", nat e), ("stay", opt nat s), ("gen", nat g)]
+  | .entry e s g => obj [("entry", nat e), ("stay", opt nat s), ("epoch", nat g)]
 
 def proposal : Proposal → String
   | .main => str "main"
@@ -1145,12 +1148,12 @@ def action : Action → String
   | .addDevice v d => obj [("addDevice", obj [("vault", nat v), ("device", nat d)])]
   | .removeDevice v d keep => obj [("removeDevice", obj [("vault", nat v), ("device", nat d), ("keep", ids keep)])]
   | .setRoot v r keep => obj [("setRoot", obj [("vault", nat v), ("root", opt nat r), ("keep", ids keep)])]
-  | .cap c via => obj [("cap", obj [("cap", capJson c), ("via", ids via)])]
-  | .revoke c a keep via => obj [("revoke", obj [("cap", nat c), ("actor", nat a), ("keep", ids keep),
+  | .share c via => obj [("share", obj [("share", shareJson c), ("via", ids via)])]
+  | .revoke c a keep via => obj [("revoke", obj [("share", nat c), ("actor", nat a), ("keep", ids keep),
       ("via", ids via)])]
   | .write v e a s g deps p via create tags pr ts ft => obj [("write", obj ([("vault", nat v), ("entry", nat e),
-      ("actor", nat a), ("stay", opt nat s), ("gen", nat g), ("deps", ids deps), ("proposal", proposal p),
-      ("via", ids via), ("create", opt (fun (x, h) => obj [("cell", ids x), ("header", header h)]) create),
+      ("actor", nat a), ("stay", opt nat s), ("epoch", nat g), ("deps", ids deps), ("proposal", proposal p),
+      ("via", ids via), ("create", opt (fun (x, h) => obj [("audience", ids x), ("header", header h)]) create),
       ("tags", tagDelta tags)] ++ (match pr with
         | some c => [("proof", nat c)]
         | none => []) ++ (if ts.isEmpty then [] else [("touches", arr (ts.map touch))]) ++
@@ -1177,15 +1180,15 @@ def attrs (a : Attrs) : String :=
 /-- An entry: its stays, the current one first, and what only its readers see. -/
 def entryJson (st : State) (en : Entry) : String :=
   obj [("id", nat en.id), ("vault", nat en.vault),
-       ("stays", arr (en.stays.map fun (s, x) => obj [("stay", opt nat s), ("cell", ids x)])),
-       ("attrs", attrs en.attrs), ("admitted", bool en.admitted), ("semCell", ids (semCell st en)),
+       ("stays", arr (en.stays.map fun (s, x) => obj [("stay", opt nat s), ("audience", ids x)])),
+       ("attrs", attrs en.attrs), ("admitted", bool en.admitted), ("semAudience", ids (semAudience st en)),
        ("desired", opt ids (desired st en)), ("picks", ids (st.picksOf en.id)), ("semPicks", ids (semPicks st en)),
        ("desiredPicks", opt ids (desiredPicks st en))]
 
 def write (w : Write) : String :=
   obj [("edit", nat w.edit), ("author", nat w.author), ("actor", nat w.actor), ("entry", nat w.entry),
-       ("stay", opt nat w.stay), ("gen", nat w.gen), ("deps", ids w.deps), ("proposal", proposal w.proposal),
-       ("via", ids w.via), ("first", bool w.first), ("cell", ids w.cell)]
+       ("stay", opt nat w.stay), ("epoch", nat w.epoch), ("deps", ids w.deps), ("proposal", proposal w.proposal),
+       ("via", ids w.via), ("first", bool w.first), ("audience", ids w.audience)]
 
 def sealed (x : Seal) : String := obj [("secret", keyName x.secret), ("to", keyName x.to)]
 
@@ -1202,7 +1205,7 @@ def lines (st : State) : String :=
 def state (st : State) : String :=
   ",\n ".intercalate [
     str "vaults" ++ ": " ++ arr (st.vaults.map vault),
-    str "caps" ++ ": " ++ arr (st.caps.map capJson),
+    str "shares" ++ ": " ++ arr (st.shares.map shareJson),
     str "revoked" ++ ": " ++ ids st.revoked,
     str "entries" ++ ": " ++ arr (st.entries.map (entryJson st)),
     str "born" ++ ": " ++ ids st.born,
@@ -1232,10 +1235,10 @@ def viewCase (c : ViewCase) : String :=
     state st ++ "}"
 
 def logId : LogId → String
-  | .vault v  => obj [("vault", nat v)]
-  | .cap c    => obj [("cap", nat c)]
-  | .cell v x => obj [("cell", obj [("vault", nat v), ("caps", ids x)])]
-  | .entry e  => obj [("entry", nat e)]
+  | .vault v      => obj [("vault", nat v)]
+  | .share c      => obj [("share", nat c)]
+  | .audience v x => obj [("audience", obj [("vault", nat v), ("shares", ids x)])]
+  | .entry e      => obj [("entry", nat e)]
 
 def syncCase (c : SyncCase) : String :=
   let edits := c.toEdits
@@ -1264,16 +1267,16 @@ def render : String :=
     ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++ ",\n".intercalate (views.map viewCase) ++
     "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++ "\n]}\n"
 
-/-- What an edit creates, by the model's number: a vault or a cap. -/
+/-- What an edit creates, by the model's number: a vault or a share. -/
 def created : Action → Option (Nat × Nat)
   | .genesis v .. => some (0, v)
-  | .cap c _ => some (1, c.id)
+  | .share c _ => some (1, c.id)
   | _ => none
 
-/-- The cells an edit names. -/
-def cellsOf : Action → List Cell :=
-  let named : KeyName → List Cell
-    | .scoped (.cell _ x) _ => [x]
+/-- The audiences an edit names. -/
+def audiencesOf : Action → List Audience :=
+  let named : KeyName → List Audience
+    | .scoped (.audience _ x) _ => [x]
     | _ => []
   fun
   | .write _ _ _ _ _ _ _ _ (some (x, _)) _ _ _ => [x]
@@ -1289,14 +1292,14 @@ def allActions : List Action :=
 -- every case refuses some edits and accepts others, so neither side can pass by always saying the same thing
 #guard cases.all fun c => let (acc, _) := run c.edits; acc.any id && acc.any (!·)
 #guard views.all fun c => let (stood, _) := runView c; stood.any id && stood.any (!·)
--- in a view case, every vault and cap number is created once, and no two edits share a depth and a rank, so the
+-- in a view case, every vault and share number is created once, and no two edits share a depth and a rank, so the
 -- hashes the Rust core orders by never decide
 #guard views.all fun c => nodup (c.edits.filterMap fun (_, _, _, a) => created a)
 #guard views.all fun c => nodup (c.toEdits.map fun o => (o.depth, o.rank))
--- in a step case, caps too
+-- in a step case, shares too
 #guard cases.all fun c => nodup (c.edits.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
--- every cell a case names is in the model's order, so it names one set of caps whatever order the Rust core keeps
-#guard allActions.all fun a => (cellsOf a).all fun x => x == mkCell x
+-- every audience a case names is in the model's order, so it names one set of shares whatever order the Rust core keeps
+#guard allActions.all fun a => (audiencesOf a).all fun x => x == mkAudience x
 -- a post-quantum case drops some writes that would stand in the full view, so the Rust core must drop them too
 #guard views.all fun c => !c.pq || (runView c).1 != (runView { c with pq := false }).1
 -- some entry's creation is let in and another's isn't, some entry is where its readers say it belongs and another
@@ -1308,7 +1311,7 @@ def allActions : List Action :=
   | some en => w.stay != en.stay && !w.first
   | none => false
 #guard cases.any fun c => let st := (run c.edits).2; st.born.any fun e => (st.entry? e).isNone
--- in a sync case, every vault and cap number is created once, an edit builds only on edits before it or on one nobody
+-- in a sync case, every vault and share number is created once, an edit builds only on edits before it or on one nobody
 -- holds, and no two edits in the replay order share a depth and a rank
 #guard syncs.all fun c => nodup (c.edits.filterMap fun o => created o.action)
 #guard syncs.all fun c => c.toEdits.all fun o => o.parents.all fun p => p < o.id || p ≥ c.edits.length
@@ -1346,17 +1349,17 @@ def allActions : List Action :=
 #guard syncs.any fun c => c.files.all fun f => (c.toEdits.filter (·.files.contains f)).all fun o =>
   standing c.toEdits |>.contains o
 #guard syncs.any fun c => !(allForks c.toEdits).isEmpty
--- a relay is sent an entry it may relay and not one it may not, and a cell's log
+-- a relay is sent an entry it may relay and not one it may not, and an audience's log
 #guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, _, peer) =>
   let sent := respond (peerEdits edits peer) d
   sent.any (fun o => o.log? == some (.entry 1)) && !sent.any (fun o => o.log? == some (.entry 21)) &&
     sent.any fun o => match o.log? with
-      | some (.cell ..) => true
+      | some (.audience ..) => true
       | _ => false
--- some device is sent the log of a cell whose key it can't open: a relay
+-- some device is sent the log of an audience whose key it can't open: a relay
 #guard syncs.any fun c => let edits := c.toEdits; let st := view edits; c.asks.any fun (d, _, peer) =>
   (respond (peerEdits edits peer) d).any fun o => match o.log? with
-    | some (.cell v x) => !knows st [.signer d] (st.curKey (.cell v x))
+    | some (.audience v x) => !knows st [.signer d] (st.curKey (.audience v x))
     | _ => false
 -- a passkey that owns a vault is handed its log, one that owns none nothing, and the card holds only vault logs (T20)
 #guard syncs.any fun c => c.links.any fun p => !(linkCard c.toEdits p).isEmpty

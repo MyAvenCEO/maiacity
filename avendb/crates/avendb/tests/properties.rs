@@ -1,15 +1,15 @@
 //! One property per Lean theorem that the rules alone decide, checked on random histories of flat vaults: random
-//! signers trying random actions on top of scenarios 1 to 3 and a few entries and caps, each kept when the rules accept
-//! it, then replayed in other orders; and forked histories, where devices that were offline meet with concurrent
-//! changes, many of them around one entry and one device. The actions: vault governance and devices; caps over random
-//! slices (a type, tags, entries, a creator, a creation time, or the whole vault) with random grantees, roles and
-//! parents; revocations; entries created with a type and tags, in a cell; writes, which retag their entry when they act
-//! for its vault; moves by a vault's stewards, to where an entry's meaning asks or anywhere; keys and schemas. What no
-//! rule reads (a cap's selector, an entry's header, a write's tags) goes into each history's `Readings`, as the readers
-//! of its caps and entries open it. The lens laws (T9) are checked on random items, as any mix of apps could have
-//! stored them, read and edited through each app's view, and the proposal laws (T10) on random histories of one
-//! document. Sync (T12, T13, T19) is checked between devices holding random parts of random histories, gaps and all.
-//! Each property carries its theorem's name; T7 (the blind server, which follows from T5), T15 (rotation follows
+//! signers trying random actions on top of scenarios 1 to 3 and a few entries and shares, each kept when the rules
+//! accept it, then replayed in other orders; and forked histories, where devices that were offline meet with concurrent
+//! changes, many of them around one entry and one device. The actions: vault governance and devices; shares over random
+//! slices (a type, tags, entries, a creator, a creation time, or the whole vault) with random grantees, levels and
+//! parents; revocations; entries created with a type and tags, in an audience; writes, which retag their entry when
+//! they act for its vault; moves by a vault's stewards, to where an entry's meaning asks or anywhere; keys and schemas.
+//! What no rule reads (a share's selector, an entry's header, a write's tags) goes into each history's `Readings`, as
+//! the readers of its shares and entries open it. The lens laws (T9) are checked on random items, as any mix of apps
+//! could have stored them, read and edited through each app's view, and the proposal laws (T10) on random histories of
+//! one document. Sync (T12, T13, T19) is checked between devices holding random parts of random histories, gaps and
+//! all. Each property carries its theorem's name; T7 (the blind server, which follows from T5), T15 (rotation follows
 //! revocation, which follows from T24), T17 and T20 are guarded by the tests the Lean README lists.
 
 mod common;
@@ -22,12 +22,12 @@ use common::*;
 use serde_json::{json, Value};
 use avendb::doc::Item;
 use avendb::history::{Repo, MAIN};
-use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{
-    checkpointed, mk_cell, order, removes, replay, trace, view, Action, Cap, Edit, Entry, Fact, Grantee, Holder, Issued,
-    Kind, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Role, State, SyncRule, Vault, Write,
+    checkpointed, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder, Issued, Kind,
+    Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Share, State, SyncRule, Vault, Who, Write,
 };
 use avendb::rules::Grant;
 use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -68,14 +68,14 @@ fn pick_from<'a, T>(rng: &mut Rng, xs: &'a [T]) -> Option<&'a T> {
 const SIGNERS: [SignerId; 11] =
     [PASSKEY_A, MAC_A, PHONE_A, PASSKEY_B, MAC_B, PASSKEY_C, MAC_C, PASSKEY_D, MAC_D, NEW_DEVICE, STRANGER];
 const ENTRIES: [EntryId; 9] = [WELCOME, CHARTER, ONBOARDING, DOOR, SEEDS, SOLAR, PLAN, DIARY, LAMP];
-const ROLES: [Role; 5] = [Role::Relay, Role::Backup, Role::Read, Role::Write, Role::Owner];
+const LEVELS: [Level; 5] = [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner];
 const TYPES: [&str; 3] = ["doc", "note", "todo"];
 const TAGS: [&str; 4] = ["work", "home", "garden", "door"];
 const BLOBS: [&[u8]; 3] = [b"a schema", b"its next version", b"a lens between the two"];
 const RUNS: std::ops::Range<u64> = 1..41;
 
-/// A random history: its log; the vaults it may name, some of which the log may not hold; what the readers of its caps
-/// and entries open of them; and the attempts the rules refused, as their signers drafted them.
+/// A random history: its log; the vaults it may name, some of which the log may not hold; what the readers of its
+/// shares and entries open of them; and the attempts the rules refused, as their signers drafted them.
 #[derive(Clone)]
 struct History {
     log: Log,
@@ -99,9 +99,9 @@ impl History {
     }
 }
 
-/// What every random history of caps and writes starts with: scenarios 1 to 3; Alice's todos, the door (tagged work)
+/// What every random history of shares and writes starts with: scenarios 1 to 3; Alice's todos, the door (tagged work)
 /// and the seeds (tagged home), and the coop's documents, the welcome and the charter (tagged work); Bob writing
-/// Alice's work todos, Carol reading her todos, Dave writing the coop's documents, and Carol holding a wide owner cap
+/// Alice's work todos, Carol reading her todos, Dave writing the coop's documents, and Carol holding a wide owner share
 /// over the coop, which both its owners approved; and every entry where its vault's stewards would move it.
 fn start() -> History {
     let mut c = cast();
@@ -111,10 +111,10 @@ fn start() -> History {
     c.create(PHONE_A, alice, SEEDS, alice, &[], "todo", &["home"]).unwrap();
     c.create(MAC_A, coop, WELCOME, coop, &[], "doc", &[]).unwrap();
     c.create(MAC_B, coop, CHARTER, coop, &[], "doc", &["work"]).unwrap();
-    c.issue(MAC_A, &[], alice, vault(bob), Role::Write, tagged("todo", "work")).unwrap();
-    c.issue(MAC_A, &[], alice, vault(carol), Role::Read, of_type("todo")).unwrap();
-    c.issue(MAC_B, &[], coop, vault(dave), Role::Write, of_type("doc")).unwrap();
-    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Role::Owner, Selector::All).unwrap();
+    c.issue(MAC_A, &[], alice, vault(bob), Level::Write, tagged("todo", "work")).unwrap();
+    c.issue(MAC_A, &[], alice, vault(carol), Level::Read, of_type("todo")).unwrap();
+    c.issue(MAC_B, &[], coop, vault(dave), Level::Write, of_type("doc")).unwrap();
+    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Level::Owner, Selector::All).unwrap();
     c.tidy(MAC_A);
     let start = c.log.edits().len();
     History { log: c.log, vaults: vec![alice, bob, carol, dave, coop], readings: c.readings, refused: vec![], start }
@@ -131,9 +131,10 @@ fn history(seed: u64, n: usize) -> History {
 }
 
 /// Three devices take one random history offline, each adds its own random attempts, half of them clashing, and then
-/// all the edits meet: writes, caps, retags and moves made concurrently with revocations and removals that hadn't seen
-/// them, and moves of one entry by two stewards, most around one entry and one device all three contend for (`Hot`).
-/// Each device's edits keep to a lane of depths of their own (`attempts`), so no two of them sort by their ids.
+/// all the edits meet: writes, shares, retags and moves made concurrently with revocations and removals that hadn't
+/// seen them, and moves of one entry by two stewards, most around one entry and one device all three contend for
+/// (`Hot`). Each device's edits keep to a lane of depths of their own (`attempts`), so no two of them sort by their
+/// ids.
 fn forked(seed: u64, n: usize) -> History {
     let base = history(seed, n / 2);
     let mut rng = Rng(seed.wrapping_mul(0x2545_f491_4f6c_dd1d) | 1);
@@ -147,7 +148,7 @@ fn forked(seed: u64, n: usize) -> History {
     out
 }
 
-/// What the devices of a forked history contend for: an entry, which some write through a cap while others move it
+/// What the devices of a forked history contend for: an entry, which some write through a share while others move it
 /// anywhere, and a device that acts for the entry's vault, which signs those moves while others remove it.
 #[derive(Clone, Copy)]
 struct Hot {
@@ -176,7 +177,7 @@ struct Attempt {
     said: Said,
 }
 
-/// What the readers of an edit open of it and no rule reads: a cap's selector, a new entry's header and first tags,
+/// What the readers of an edit open of it and no rule reads: a share's selector, a new entry's header and first tags,
 /// the tags a write adds and removes.
 enum Said {
     Nothing,
@@ -222,7 +223,7 @@ fn keep(h: &mut History, st: &State, a: Attempt, depth: Option<u64>) -> bool {
     match a.said {
         Said::Nothing => {}
         Said::Selector(s) => {
-            h.readings.selectors.insert(CapId::from(id), s);
+            h.readings.selectors.insert(ShareId::from(id), s);
         }
         Said::Created(header, tags) => {
             h.readings.headers.insert(id, header);
@@ -238,14 +239,14 @@ fn keep(h: &mut History, st: &State, a: Attempt, depth: Option<u64>) -> bool {
     true
 }
 
-/// One random attempt: a write, a new entry, a cap, a revocation, a move, a vault edit, a key, a schema, a sync rule,
+/// One random attempt: a write, a new entry, a share, a revocation, a move, a vault edit, a key, a schema, a sync rule,
 /// its end or a steward's marks. An act for a vault names, a time in eight, a random chain of one or two vaults to go
 /// through; otherwise the chain its author acts through, as the log drafts it.
 fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let mut a = match rng.below(24) {
         0..=3 => a_write(rng, h, st),
         4..=6 => Some(a_creation(rng, h, st)),
-        7..=9 => Some(a_cap(rng, h, st)),
+        7..=9 => Some(a_share(rng, h, st)),
         10 => a_revocation(rng, h, st),
         11 | 12 => a_move(rng, h, st),
         13..=16 => {
@@ -261,7 +262,7 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     if rng.below(8) == 0 {
         let chain: Vec<VaultId> = (0..1 + rng.below(2)).map(|_| rng.pick(&h.vaults)).collect();
         match &mut a.action {
-            Action::Cap(_, via)
+            Action::Share(_, via)
             | Action::Revoke { via, .. }
             | Action::Write { via, .. }
             | Action::Move { via, .. }
@@ -277,7 +278,7 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
 
 /// What clashes when made concurrently: a write by a vault that may write its entry; a retag of an entry by its own
 /// vault, which changes where its stewards would move it; a steward's move of an entry to where its meaning asks; a
-/// revocation of a live cap by its issuer; a device removed; a change to the owners or the threshold of a vault. Half
+/// revocation of a live share by its issuer; a device removed; a change to the owners or the threshold of a vault. Half
 /// the writes, moves and removals of devices are of what the devices contend for (`Hot`): the hot entry written by
 /// another vault than its own, moved anywhere by the hot device, and the hot device removed.
 fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt> {
@@ -303,23 +304,23 @@ fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt>
         }
         2 if hot.entry.is_some_and(|e| st.entry(e).is_some()) && rng.below(2) == 0 => {
             let en = st.entry(hot.entry?)?;
-            let (vault, entry, to) = (en.vault, en.id, random_cell(rng, st, en.vault));
+            let (vault, entry, to) = (en.vault, en.id, random_audience(rng, st, en.vault));
             let action = Action::Move { vault, entry, to, keep: vec![], via: vec![] };
             let author = hot.device.unwrap_or_else(|| author_for(rng, st, vault));
             Attempt { author, cosigners: vec![], action, said: Said::Nothing }
         }
         2 => {
             let desired = |en: &Entry| Some((en.vault, en.id, st.meaning(en.id, &h.readings)?.desired?));
-            let moving: Vec<(VaultId, EntryId, Vec<CapId>)> = ens.iter().filter_map(desired).collect();
+            let moving: Vec<(VaultId, EntryId, Vec<ShareId>)> = ens.iter().filter_map(desired).collect();
             let (vault, entry, to) = pick_from(rng, &moving)?.clone();
             let action = Action::Move { vault, entry, to, keep: vec![], via: vec![] };
             Attempt { author: author_for(rng, st, vault), cosigners: vec![], action, said: Said::Nothing }
         }
         3 => {
-            let live: Vec<&Issued> = st.caps().iter().filter(|cp| st.live(cp.id)).collect();
+            let live: Vec<&Issued> = st.shares().iter().filter(|cp| st.live(cp.id)).collect();
             let cp = *pick_from(rng, &live)?;
-            let (author, cosigners) = signers_for(rng, st, cp.cap.issuer, cp.cap.role == Role::Owner);
-            let action = Action::Revoke { cap: cp.id, actor: cp.cap.issuer, keep: vec![], via: vec![] };
+            let (author, cosigners) = signers_for(rng, st, cp.share.issuer, cp.share.level == Level::Owner);
+            let action = Action::Revoke { share: cp.id, actor: cp.share.issuer, keep: vec![], via: vec![] };
             Attempt { author, cosigners, action, said: Said::Nothing }
         }
         4 => {
@@ -370,10 +371,10 @@ fn signers(rng: &mut Rng) -> (SignerId, Vec<SignerId>) {
     }
 }
 
-/// The vault cap `cp` names, if it names one.
-fn grantee_vault(cp: &Issued) -> Option<VaultId> {
-    match cp.cap.grantee {
-        Grantee::Principal(Principal::Vault(g)) => Some(g),
+/// The vault share `cp` names, if it names one.
+fn who_vault(cp: &Issued) -> Option<VaultId> {
+    match cp.share.who {
+        Who::Principal(Principal::Vault(g)) => Some(g),
         _ => None,
     }
 }
@@ -389,17 +390,17 @@ fn some_tags(rng: &mut Rng) -> TagDelta {
     TagDelta { add, remove: (0..rng.below(2)).map(|_| Sym::new(rng.pick(&TAGS))).collect() }
 }
 
-/// A write of entry `en` for `actor`, under its current stay and its cell's current generation, adding and removing
+/// A write of entry `en` for `actor`, under its current stay and its audience's current epoch, adding and removing
 /// random tags, by a signer that most often acts for `actor`.
 fn written(rng: &mut Rng, st: &State, en: &Entry, actor: VaultId) -> Attempt {
-    let generation = st.epoch(KeyFam::Cell(en.vault, en.cell()));
-    let action = write(en.vault, en.id, actor, en.stay(), generation);
+    let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
+    let action = write(en.vault, en.id, actor, en.stay(), epoch);
     Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Tags(some_tags(rng)) }
 }
 
 /// A write of an entry the log holds, now and then of one it doesn't or for another vault than the entry's: for the
-/// entry's vault, a vault holding a live write cap that reaches it, or any vault; mostly under the entry's current stay
-/// and its cell's current generation, on its main line, now and then under an earlier stay or a generation the cell
+/// entry's vault, a vault holding a live write share that reaches it, or any vault; mostly under the entry's current
+/// stay and its audience's current epoch, on its main line, now and then under an earlier stay or an epoch the audience
 /// hasn't reached, or starting a proposal or on one the entry has.
 fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let Some(en) = pick_from(rng, st.entries()).filter(|_| rng.below(8) > 0) else {
@@ -407,11 +408,11 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
         let (author, said) = (rng.pick(&SIGNERS), Said::Tags(some_tags(rng)));
         return Some(Attempt { author, cosigners: vec![], action, said });
     };
-    let cell = st.cell_caps(en.cell()).unwrap_or_default();
+    let audience = st.audience_shares(en.audience()).unwrap_or_default();
     let reaches = |cp: &&Issued| {
-        st.live(cp.id) && cp.cap.role.allows(Role::Write) && (cp.cap.wide || cell.contains(&cp.id))
+        st.live(cp.id) && cp.share.level.allows(Level::Write) && (cp.share.wide || audience.contains(&cp.id))
     };
-    let writers: Vec<VaultId> = st.caps_over(en.vault).filter(reaches).filter_map(grantee_vault).collect();
+    let writers: Vec<VaultId> = st.shares_over(en.vault).filter(reaches).filter_map(who_vault).collect();
     let actor = match rng.below(4) {
         0 | 1 => en.vault,
         2 => pick_from(rng, &writers).copied().unwrap_or(en.vault),
@@ -419,8 +420,8 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     };
     let vault = if rng.below(16) == 0 { rng.pick(&h.vaults) } else { en.vault };
     let stay = if rng.below(6) > 0 { en.stay() } else { rng.pick(&en.stays).0 };
-    let x = en.stay_cell(stay).expect("a stay of the entry");
-    let generation = st.epoch(KeyFam::Cell(en.vault, x)) + u64::from(rng.below(10) == 0);
+    let x = en.stay_audience(stay).expect("a stay of the entry");
+    let epoch = st.epoch(KeyFam::Audience(en.vault, x)) + u64::from(rng.below(10) == 0);
     let starts: Vec<EditId> = st.lines(en.id).into_iter().flatten().collect();
     let proposal = match rng.below(8) {
         0 => Proposal::New,
@@ -429,66 +430,66 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     };
     let (entry, deps, via, create, body) = (en.id, vec![], vec![], None, vec![rng.next() as u8]);
     let files = vec![];
-    let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body };
+    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
     Some(Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Tags(some_tags(rng)) })
 }
 
-/// The cell an entry of vault `v` with attributes `a` belongs in by the selectors `r` holds: the live caps over `v`
-/// that aren't wide and select it, in canonical order.
-fn semantic_cell(st: &State, r: &Readings, v: VaultId, a: &Attrs) -> Vec<CapId> {
-    let selects = |cp: &&Issued| st.live(cp.id) && !cp.cap.wide && st.eff_selects(cp, a, r);
-    mk_cell(&st.caps_over(v).filter(selects).map(|cp| cp.id).collect::<Vec<_>>())
+/// The audience an entry of vault `v` with attributes `a` belongs in by the selectors `r` holds: the live shares over
+/// `v` that aren't wide and select it, in canonical order.
+fn semantic_audience(st: &State, r: &Readings, v: VaultId, a: &Attrs) -> Vec<ShareId> {
+    let selects = |cp: &&Issued| st.live(cp.id) && !cp.share.wide && st.eff_selects(cp, a, r);
+    mk_audience(&st.shares_over(v).filter(selects).map(|cp| cp.id).collect::<Vec<_>>())
 }
 
-/// Up to two of the caps over vault `v` that aren't wide, live or not, in canonical order; now and then with any cap
-/// besides, which makes no cell of `v`.
-fn random_cell(rng: &mut Rng, st: &State, v: VaultId) -> Vec<CapId> {
-    let narrow: Vec<CapId> = st.caps_over(v).filter(|cp| !cp.cap.wide).map(|cp| cp.id).collect();
-    let mut cell: Vec<CapId> = match narrow.is_empty() {
+/// Up to two of the shares over vault `v` that aren't wide, live or not, in canonical order; now and then with any
+/// share besides, which makes no audience of `v`.
+fn random_audience(rng: &mut Rng, st: &State, v: VaultId) -> Vec<ShareId> {
+    let narrow: Vec<ShareId> = st.shares_over(v).filter(|cp| !cp.share.wide).map(|cp| cp.id).collect();
+    let mut audience: Vec<ShareId> = match narrow.is_empty() {
         true => vec![],
         false => (0..rng.below(3)).map(|_| rng.pick(&narrow)).collect(),
     };
     if rng.below(10) == 0
-        && let Some(cp) = pick_from(rng, st.caps())
+        && let Some(cp) = pick_from(rng, st.shares())
     {
-        cell.push(cp.id);
+        audience.push(cp.id);
     }
-    mk_cell(&cell)
+    mk_audience(&audience)
 }
 
 /// A new entry of a random vault, under an id the log may have used already, of a random type, time and tags: made by
-/// the vault itself, in the cell its meaning asks for, the empty cell or a random one; or by a vault holding a live
-/// write cap over it, in the cap's intake cell, now and then in a random one. It takes the generation its cell moves
-/// to if it brings the cell back into use.
+/// the vault itself, in the audience its meaning asks for, the empty audience or a random one; or by a vault holding a
+/// live write share over it, in the share's intake audience, now and then in a random one. It takes the epoch its
+/// audience moves to if it brings the audience back into use.
 fn a_creation(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     let unborn: Vec<EntryId> = ENTRIES.into_iter().filter(|&e| !st.born(e)).collect();
     let entry = if unborn.is_empty() || rng.below(6) == 0 { rng.pick(&ENTRIES) } else { rng.pick(&unborn) };
     let vault = rng.pick(&h.vaults);
     let header = Header { ty: Sym::new(rng.pick(&TYPES)), created: rng.below(4) as u64 };
     let tags = TagDelta { add: some_syms(rng), remove: vec![] };
-    let holds = |cp: &&Issued| st.live(cp.id) && cp.cap.role.allows(Role::Write) && grantee_vault(cp).is_some();
-    let through: Vec<&Issued> = st.caps_over(vault).filter(holds).collect();
-    let (actor, cell) = match pick_from(rng, &through).filter(|_| rng.below(2) == 0) {
+    let holds = |cp: &&Issued| st.live(cp.id) && cp.share.level.allows(Level::Write) && who_vault(cp).is_some();
+    let through: Vec<&Issued> = st.shares_over(vault).filter(holds).collect();
+    let (actor, audience) = match pick_from(rng, &through).filter(|_| rng.below(2) == 0) {
         Some(cp) => {
-            let cell = if rng.below(6) > 0 { cp.intake.to_vec() } else { random_cell(rng, st, vault) };
-            (grantee_vault(cp).expect("a cap to a vault"), cell)
+            let audience = if rng.below(6) > 0 { cp.intake.to_vec() } else { random_audience(rng, st, vault) };
+            (who_vault(cp).expect("a cap to a vault"), audience)
         }
         None => {
             let (ty, created, tags) = (header.ty.clone(), header.created, tags.apply(&[]));
             let attrs = Attrs { ty, author: vault, entry, created, tags };
-            let cell = match rng.below(4) {
-                0 | 1 => semantic_cell(st, &h.readings, vault, &attrs),
+            let audience = match rng.below(4) {
+                0 | 1 => semantic_audience(st, &h.readings, vault, &attrs),
                 2 => vec![],
-                _ => random_cell(rng, st, vault),
+                _ => random_audience(rng, st, vault),
             };
-            (vault, cell)
+            (vault, audience)
         }
     };
-    let x = CellId::of(vault, &cell);
-    let generation = st.epoch(KeyFam::Cell(vault, x)) + u64::from(st.reenters(vault, x));
+    let x = AudienceId::of(vault, &audience);
+    let epoch = st.epoch(KeyFam::Audience(vault, x)) + u64::from(st.reenters(vault, x));
     let (stay, deps, proposal, via, body) = (None, vec![], Proposal::Main, vec![], vec![rng.next() as u8]);
-    let (create, files) = (Some(cell), vec![]);
-    let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body };
+    let (create, files) = (Some(audience), vec![]);
+    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
     Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Created(header, tags) }
 }
 
@@ -517,19 +518,20 @@ fn a_selector(rng: &mut Rng, h: &History) -> Selector {
     Selector::AnyOf(any)
 }
 
-/// A cap to a random grantee (a vault, now and then a signer or everyone) with a random role, on a random slice or the
-/// whole vault: resting on a live owner cap and issued by that cap's grantee; or a root cap issued by the vault it is
-/// over, now and then by another; or now and then resting on any cap. A few caps select every entry without being
-/// wide. Its selector travels in the clear.
-fn a_cap(rng: &mut Rng, h: &History, st: &State) -> Attempt {
-    let owners: Vec<&Issued> = st.caps().iter().filter(|cp| cp.cap.role == Role::Owner && st.live(cp.id)).collect();
+/// A share to a random grantee (a vault, now and then a signer or everyone) with a random level, on a random slice or
+/// the whole vault: resting on a live owner share and issued by that share's grantee; or a root share issued by the
+/// vault it is over, now and then by another; or now and then resting on any share. A few shares select every entry
+/// without being wide. Its selector travels in the clear.
+fn a_share(rng: &mut Rng, h: &History, st: &State) -> Attempt {
+    let owners: Vec<&Issued> =
+        st.shares().iter().filter(|cp| cp.share.level == Level::Owner && st.live(cp.id)).collect();
     let (over, parent, issuer) = match rng.below(4) {
         0 if !owners.is_empty() => {
             let p = owners[rng.below(owners.len())];
-            (p.cap.over, Some(p.id), grantee_vault(p).unwrap_or(p.cap.over))
+            (p.share.over, Some(p.id), who_vault(p).unwrap_or(p.share.over))
         }
-        1 if !st.caps().is_empty() && rng.below(3) == 0 => {
-            let p = st.caps()[rng.below(st.caps().len())].id;
+        1 if !st.shares().is_empty() && rng.below(3) == 0 => {
+            let p = st.shares()[rng.below(st.shares().len())].id;
             (rng.pick(&h.vaults), Some(p), rng.pick(&h.vaults))
         }
         _ => {
@@ -537,43 +539,43 @@ fn a_cap(rng: &mut Rng, h: &History, st: &State) -> Attempt {
             (over, None, if rng.below(8) == 0 { rng.pick(&h.vaults) } else { over })
         }
     };
-    let grantee = match rng.below(10) {
-        0 => Grantee::Public,
-        1 => Grantee::Principal(Principal::Signer(rng.pick(&SIGNERS))),
+    let who = match rng.below(10) {
+        0 => Who::Everyone,
+        1 => Who::Principal(Principal::Signer(rng.pick(&SIGNERS))),
         _ => vault(rng.pick(&h.vaults)),
     };
-    let role = if grantee == Grantee::Public && rng.below(2) == 0 { Role::Read } else { rng.pick(&ROLES) };
+    let level = if who == Who::Everyone && rng.below(2) == 0 { Level::Read } else { rng.pick(&LEVELS) };
     let select = if rng.below(4) == 0 { Selector::All } else { a_selector(rng, h) };
     let wide = select == Selector::All && rng.below(6) > 0;
-    let grant = Grant { ops: role.ops(), salt: [0; 32] };
-    let slice = Slice { name: role.group().into(), select: select.clone(), grant, above: vec![] };
+    let grant = Grant { ops: level.ops(), salt: [0; 32] };
+    let slice = Slice { name: level.group().into(), select: select.clone(), grant, above: vec![] };
     let bytes = Select::Clear(slice).to_wire();
-    let cap = Cap { over, grantee, role, wide, select: bytes, parent, issuer, nonce: rng.next() };
-    let (author, cosigners) = signers_for(rng, st, issuer, role == Role::Owner);
-    Attempt { author, cosigners, action: Action::Cap(cap, vec![]), said: Said::Selector(select) }
+    let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next() };
+    let (author, cosigners) = signers_for(rng, st, issuer, level == Level::Owner);
+    Attempt { author, cosigners, action: Action::Share(share, vec![]), said: Said::Selector(select) }
 }
 
-/// A revocation of a random cap, live or not, by its issuer, the vault it is over, its grantee or any vault.
+/// A revocation of a random share, live or not, by its issuer, the vault it is over, its grantee or any vault.
 fn a_revocation(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
-    let cp = pick_from(rng, st.caps())?;
+    let cp = pick_from(rng, st.shares())?;
     let actor = match rng.below(4) {
-        0 => cp.cap.issuer,
-        1 => cp.cap.over,
-        2 => grantee_vault(cp).unwrap_or(cp.cap.over),
+        0 => cp.share.issuer,
+        1 => cp.share.over,
+        2 => who_vault(cp).unwrap_or(cp.share.over),
         _ => rng.pick(&h.vaults),
     };
-    let (author, cosigners) = signers_for(rng, st, actor, cp.cap.role == Role::Owner);
-    let action = Action::Revoke { cap: cp.id, actor, keep: vec![], via: vec![] };
+    let (author, cosigners) = signers_for(rng, st, actor, cp.share.level == Level::Owner);
+    let action = Action::Revoke { share: cp.id, actor, keep: vec![], via: vec![] };
     Some(Attempt { author, cosigners, action, said: Said::Nothing })
 }
 
-/// A steward of an entry's vault moves it to the cell its meaning asks for, if any, two times in three; otherwise to a
-/// random cell, which may be the one it is in; now and then for another vault than the entry's.
+/// A steward of an entry's vault moves it to the audience its meaning asks for, if any, two times in three; otherwise
+/// to a random audience, which may be the one it is in; now and then for another vault than the entry's.
 fn a_move(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let en = pick_from(rng, st.entries())?;
     let to = match st.meaning(en.id, &h.readings).and_then(|m| m.desired) {
         Some(to) if rng.below(3) > 0 => to,
-        _ => random_cell(rng, st, en.vault),
+        _ => random_audience(rng, st, en.vault),
     };
     let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
     let action = Action::Move { vault, entry: en.id, to, keep: vec![], via: vec![] };
@@ -615,8 +617,8 @@ fn a_pick(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
         Some(rules) if rng.below(3) > 0 => rules,
         _ => {
             let n = rng.below(3);
-            let rules: Vec<CapId> = (0..n).filter_map(|_| pick_from(rng, st.rules()).map(|r| r.0)).collect();
-            if rng.below(2) == 0 { mk_cell(&rules) } else { rules }
+            let rules: Vec<ShareId> = (0..n).filter_map(|_| pick_from(rng, st.rules()).map(|r| r.0)).collect();
+            if rng.below(2) == 0 { mk_audience(&rules) } else { rules }
         }
     };
     let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
@@ -772,8 +774,8 @@ fn for_every_seed(make: fn(u64) -> Pair) -> Vec<Pair> {
     made
 }
 
-/// The random histories of caps and writes the properties run on, made once for them all.
-static CAPS: LazyLock<Vec<Pair>> =
+/// The random histories of shares and writes the properties run on, made once for them all.
+static SHARES: LazyLock<Vec<Pair>> =
     LazyLock::new(|| for_every_seed(|seed| Pair { seed, one: history(seed, 60), forked: forked(seed, 60) }));
 
 /// The random histories of vault edits alone.
@@ -781,14 +783,14 @@ static VAULTS: LazyLock<Vec<Pair>> = LazyLock::new(|| {
     for_every_seed(|seed| Pair { seed, one: vault_history(seed, 60), forked: forked_vaults(seed, 60) })
 });
 
-/// Every history of caps and writes with its seed: those of one device, then the forked ones.
+/// Every history of shares and writes with its seed: those of one device, then the forked ones.
 fn every_history() -> impl Iterator<Item = (u64, &'static History)> {
-    CAPS.iter().map(|p| (p.seed, &p.one)).chain(CAPS.iter().map(|p| (p.seed, &p.forked)))
+    SHARES.iter().map(|p| (p.seed, &p.one)).chain(SHARES.iter().map(|p| (p.seed, &p.forked)))
 }
 
-/// The forked histories of caps and writes with their seeds.
+/// The forked histories of shares and writes with their seeds.
 fn forked_histories() -> impl Iterator<Item = (u64, &'static History)> {
-    CAPS.iter().map(|p| (p.seed, &p.forked))
+    SHARES.iter().map(|p| (p.seed, &p.forked))
 }
 
 /// Every history of vault edits alone with its seed: those of one device, then the forked ones.
@@ -820,8 +822,8 @@ fn states(edits: &[Edit]) -> Vec<State> {
 fn t1_authorized_writes() {
     // a step adds a write of an entry that exists only if, just before it, the write's author acted for its actor
     // through the owners it names, and that vault could write the entry where it was; and creates an entry only with
-    // its first write, by its vault or in the intake cell of a live write cap its creator held
-    let (mut through, mut created, mut by_cap) = (0, 0, 0);
+    // its first write, by its vault or in the intake audience of a live write share its creator held
+    let (mut through, mut created, mut by_share) = (0, 0, 0);
     for (seed, h) in every_history() {
         for (edit, before, after) in steps(h.log.edits()) {
             for w in after.all_writes().iter().filter(|w| before.write(w.edit).is_none()) {
@@ -829,12 +831,12 @@ fn t1_authorized_writes() {
                 through += usize::from(!w.via.is_empty());
                 let en = after.entry(w.entry).expect("a write's entry");
                 if w.first {
-                    let cell = after.cell_caps(en.cell()).expect("the cell it is created in");
-                    assert!(before.may_create(w.actor, en.vault, cell), "seed {seed}: {w:?}");
+                    let audience = after.audience_shares(en.audience()).expect("the cell it is created in");
+                    assert!(before.may_create(w.actor, en.vault, audience), "seed {seed}: {w:?}");
                     created += 1;
                 } else {
                     assert!(before.authorized(w) && before.may_write(w.actor, w.entry), "seed {seed}: {w:?}");
-                    by_cap += usize::from(w.actor != en.vault);
+                    by_share += usize::from(w.actor != en.vault);
                 }
             }
             for en in after.entries().iter().filter(|en| before.entry(en.id).is_none()) {
@@ -843,8 +845,11 @@ fn t1_authorized_writes() {
             }
         }
     }
-    // and some writes go through the owners they name, some create their entry, some go through a cap
-    assert!(through > 0 && created > 0 && by_cap > 0, "{through} through owners, {created} created, {by_cap} by cap");
+    // and some writes go through the owners they name, some create their entry, some go through a share
+    assert!(
+        through > 0 && created > 0 && by_share > 0,
+        "{through} through owners, {created} created, {by_share} by share"
+    );
 }
 
 #[test]
@@ -1030,26 +1035,26 @@ fn forks_really_clash() {
 }
 
 #[test]
-fn t4_caps_name_vaults_and_t8_public_read_only() {
+fn t4_shares_name_vaults_and_t8_everyone_only_reads() {
     // in every state along the way, and in the view of each history with the attempts the rules refused put back, as a
-    // peer that skips the rules would send them: no cap names a signer, and Public only ever reads
+    // peer that skips the rules would send them: no share names a signer, and everyone only ever reads
     let mut tried = 0;
     for (seed, h) in every_history() {
         let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
         for st in states(h.log.edits()).iter().chain([&view(&with_refused)]) {
-            for cp in st.caps() {
-                let signer = matches!(cp.cap.grantee, Grantee::Principal(Principal::Signer(_)));
+            for cp in st.shares() {
+                let signer = matches!(cp.share.who, Who::Principal(Principal::Signer(_)));
                 assert!(!signer, "seed {seed}: {cp:?}");
-                assert!(cp.cap.grantee != Grantee::Public || cp.cap.role == Role::Read, "seed {seed}: {cp:?}");
+                assert!(cp.share.who != Who::Everyone || cp.share.level == Level::Read, "seed {seed}: {cp:?}");
             }
         }
-        let barred = |c: &Cap| {
-            matches!(c.grantee, Grantee::Principal(Principal::Signer(_)))
-                || (c.grantee == Grantee::Public && c.role != Role::Read)
+        let barred = |c: &Share| {
+            matches!(c.who, Who::Principal(Principal::Signer(_)))
+                || (c.who == Who::Everyone && c.level != Level::Read)
         };
-        tried += h.refused.iter().filter(|o| matches!(&o.action, Action::Cap(c, _) if barred(c))).count();
+        tried += h.refused.iter().filter(|o| matches!(&o.action, Action::Share(c, _) if barred(c))).count();
     }
-    // and the histories do try such caps
+    // and the histories do try such shares
     assert!(tried > 0);
 }
 
@@ -1105,8 +1110,8 @@ fn hidden(r: &Replay, facts: &[Vec<Fact>], i: usize) -> Vec<Fact> {
 #[test]
 fn t16_strong_removal() {
     // an edit stands only if the state just before it accepts it with what each removal after it that stands, and
-    // hadn't seen it, takes away hidden: an owner, a device, a root, a cap and those resting on it, or for a move the
-    // cell it put the entry in
+    // hadn't seen it, takes away hidden: an owner, a device, a root, a share and those resting on it, or for a move the
+    // audience it put the entry in
     let mut cut = 0;
     for (seed, h) in forked_histories() {
         let edits = h.log.edits();
@@ -1180,7 +1185,7 @@ fn t18_checkpointed_writes() {
 #[test]
 fn honest_logs_keep_all_they_accepted() {
     // every edit a device appended stands in its own view: its removals keep everything they had seen
-    for p in CAPS.iter() {
+    for p in SHARES.iter() {
         let r = replay(p.one.log.edits());
         assert!(r.stood.iter().all(|&s| s), "seed {}", p.seed);
     }
@@ -1201,45 +1206,47 @@ fn ids(edits: &[Edit]) -> HashSet<EditId> {
     edits.iter().map(Edit::id).collect()
 }
 
-/// Device `d` may receive the edits of the cell of the caps `caps` of vault `v` by `st` (`mayReceiveCell`): it acts for
-/// the vault, or for the grantee of a live cap over it, backup or more, that is in the cell or wide, or such a cap is
-/// public.
-fn may_receive_cell(st: &State, d: SignerId, v: VaultId, caps: &[CapId]) -> bool {
-    let names = |g: Grantee| match g {
-        Grantee::Principal(Principal::Vault(g)) => st.acts_for(d, g),
-        Grantee::Principal(Principal::Signer(_)) => false,
-        Grantee::Public => true,
+/// Device `d` may receive the edits of the audience of the shares `shares` of vault `v` by `st` (`mayReceiveAudience`):
+/// it acts for the vault, or for the grantee of a live share over it, backup or more, that is in the audience or wide,
+/// or such a share is public.
+fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId]) -> bool {
+    let names = |g: Who| match g {
+        Who::Principal(Principal::Vault(g)) => st.acts_for(d, g),
+        Who::Principal(Principal::Signer(_)) => false,
+        Who::Everyone => true,
     };
-    let keeps = |cp: &Issued| cp.cap.role.allows(Role::Backup);
+    let keeps = |cp: &Issued| cp.share.level.allows(Level::Backup);
     st.acts_for(d, v)
-        || st.caps_over(v).any(|cp| {
-            st.live(cp.id) && keeps(cp) && (cp.cap.wide || caps.contains(&cp.id)) && names(cp.cap.grantee)
+        || st.shares_over(v).any(|cp| {
+            st.live(cp.id) && keeps(cp) && (cp.share.wide || shares.contains(&cp.id)) && names(cp.share.who)
         })
 }
 
-/// Device `d` may receive the edits of entry `e` by `st` (`mayReceive`): it may receive the entry's cell.
+/// Device `d` may receive the edits of entry `e` by `st` (`mayReceive`): it may receive the entry's audience.
 fn may_receive(st: &State, d: SignerId, e: EntryId) -> bool {
-    st.entry(e).is_some_and(|en| may_receive_cell(st, d, en.vault, st.cell_caps(en.cell()).unwrap_or_default()))
+    st.entry(e).is_some_and(|en| {
+        may_receive_audience(st, d, en.vault, st.audience_shares(en.audience()).unwrap_or_default())
+    })
 }
 
-/// Device `d` needs cap `cp` by `st` (`seesCap`): it acts for the vault the cap is over or for the vault it names, or
-/// the cap is wide or was ever in the cell of an entry of its vault that `d` may receive.
-fn sees_cap(st: &State, d: SignerId, cp: &Issued) -> bool {
-    let stayed = |en: &Entry| en.stays.iter().any(|(_, x)| st.cell_caps(*x).unwrap_or_default().contains(&cp.id));
-    st.acts_for(d, cp.cap.over)
-        || grantee_vault(cp).is_some_and(|g| st.acts_for(d, g))
+/// Device `d` needs share `cp` by `st` (`seesShare`): it acts for the vault the share is over or for the vault it
+/// names, or the share is wide or was ever in the audience of an entry of its vault that `d` may receive.
+fn sees_share(st: &State, d: SignerId, cp: &Issued) -> bool {
+    let stayed = |en: &Entry| en.stays.iter().any(|(_, x)| st.audience_shares(*x).unwrap_or_default().contains(&cp.id));
+    st.acts_for(d, cp.share.over)
+        || who_vault(cp).is_some_and(|g| st.acts_for(d, g))
         || st.entries().iter().any(|en| {
-            en.vault == cp.cap.over && may_receive(st, d, en.id) && (cp.cap.wide || stayed(en))
+            en.vault == cp.share.over && may_receive(st, d, en.id) && (cp.share.wide || stayed(en))
         })
 }
 
-/// Device `d` may receive log `l` by `st` (`mayReceiveLog`): the log of an entry or a cell it may receive, or of a cap
-/// it needs or that a cap it needs rests on. A cell `st` never met has no caps.
+/// Device `d` may receive log `l` by `st` (`mayReceiveLog`): the log of an entry or an audience it may receive, or of a
+/// share it needs or that a share it needs rests on. An audience `st` never met has no shares.
 fn may_receive_log(st: &State, d: SignerId, l: LogId) -> bool {
     match l {
         LogId::Entry(e) => may_receive(st, d, e),
-        LogId::Cell(v, x) => may_receive_cell(st, d, v, st.cell_caps(x).unwrap_or_default()),
-        LogId::Cap(c) => st.caps().iter().any(|x| x.chain.contains(&c) && sees_cap(st, d, x)),
+        LogId::Audience(v, x) => may_receive_audience(st, d, v, st.audience_shares(x).unwrap_or_default()),
+        LogId::Share(c) => st.shares().iter().any(|x| x.chain.contains(&c) && sees_share(st, d, x)),
         LogId::Vault(_) => false,
     }
 }
@@ -1250,10 +1257,10 @@ fn syncs(st: &State, d: SignerId, e: EntryId) -> bool {
 }
 
 #[test]
-fn t12_sync_shares_only_caps() {
-    // a peer sends a device only edits it holds, of the entries, cells and caps the device may receive by the peer's
-    // view, and of vaults' logs; whatever the device says it holds
-    let (mut entries, mut cells, mut caps) = (0, 0, 0);
+fn t12_sync_sends_only_what_shares_reach() {
+    // a peer sends a device only edits it holds, of the entries, audiences and shares the device may receive by the
+    // peer's view, and of vaults' logs; whatever the device says it holds
+    let (mut entries, mut audiences, mut shares) = (0, 0, 0);
     for (seed, h) in every_history() {
         let (edits, st) = (h.log.edits(), h.log.view());
         let held = ids(edits);
@@ -1270,15 +1277,18 @@ fn t12_sync_shares_only_caps() {
                 assert!(ok, "seed {seed}: {d:?} was sent {edit:?} of {l:?}");
                 match l {
                     LogId::Entry(_) => entries += 1,
-                    LogId::Cell(..) => cells += 1,
-                    LogId::Cap(_) => caps += 1,
+                    LogId::Audience(..) => audiences += 1,
+                    LogId::Share(_) => shares += 1,
                     LogId::Vault(_) => {}
                 }
             }
         }
     }
-    // and devices are sent the logs of entries, cells and caps
-    assert!(entries > 0 && cells > 0 && caps > 0, "{entries} of entries, {cells} of cells, {caps} of caps");
+    // and devices are sent the logs of entries, audiences and shares
+    assert!(
+        entries > 0 && audiences > 0 && shares > 0,
+        "{entries} of entries, {audiences} of audiences, {shares} of shares"
+    );
 }
 
 #[test]
@@ -1411,9 +1421,9 @@ fn t29_marks_mean_rules() {
         let st = h.log.view();
         for en in st.entries() {
             let Some(m) = st.meaning(en.id, &h.readings).filter(|m| m.pick.is_none()) else { continue };
-            let picks = |id: &CapId| h.readings.selectors.get(id).is_some_and(|s| s.matches(&m.attrs));
+            let picks = |id: &ShareId| h.readings.selectors.get(id).is_some_and(|s| s.matches(&m.attrs));
             for d in SIGNERS {
-                let rules: Vec<(CapId, &SyncRule)> = st.rules_of(d, en.vault).collect();
+                let rules: Vec<(ShareId, &SyncRule)> = st.rules_of(d, en.vault).collect();
                 let by_rules = rules.is_empty() || rules.iter().any(|(id, r)| r.wide || picks(id));
                 assert_eq!(st.wants(d, en), by_rules, "seed {seed}: {d:?} and {:?}", en.id);
                 checked += usize::from(!rules.is_empty());
@@ -1472,10 +1482,10 @@ fn t6_forward_secrecy() {
                     }
                 }
             }
-            // which is why a family only moves on after a removal, or for a cell an entry brings back into use: nothing
-            // else makes a key stale
+            // which is why a family only moves on after a removal, or for an audience an entry brings back into use:
+            // nothing else makes a key stale
             for (k, e) in after.epochs().filter(|&(k, e)| e > before.epoch(k)) {
-                let back = matches!(k, KeyFam::Cell(..)) && !before.has_fam(k) && after.has_fam(k);
+                let back = matches!(k, KeyFam::Audience(..)) && !before.has_fam(k) && after.has_fam(k);
                 assert!(edit.is_removal() || back, "seed {seed}: {edit:?} moves {k:?} on to {e}");
                 rotated += 1;
             }
@@ -1589,10 +1599,10 @@ fn t5_confidentiality() {
 }
 
 #[test]
-fn t24_entry_keys_reach_only_cell_readers() {
-    // in every state along the way, whoever opens the key of an entry in its current stay, at its cell's current
-    // generation, may open that cell's current key; and after any history, a holder opens a key of an entry only if
-    // over that history it could read some cell the entry was in
+fn t24_entry_keys_reach_only_audience_readers() {
+    // in every state along the way, whoever opens the key of an entry in its current stay, at its audience's current
+    // epoch, may open that audience's current key; and after any history, a holder opens a key of an entry only if
+    // over that history it could read some audience the entry was in
     let mut earlier = 0;
     for (seed, h) in every_history() {
         let sts = states(h.log.edits());
@@ -1600,7 +1610,7 @@ fn t24_entry_keys_reach_only_cell_readers() {
             for holder in every_holder(st) {
                 let opened = st.opens(&holder.start(st));
                 for en in st.entries() {
-                    let k = KeyFam::Cell(en.vault, en.cell());
+                    let k = KeyFam::Audience(en.vault, en.audience());
                     if st.entry_key(en.id).is_some_and(|n| opened.contains(&n)) {
                         let may = holder.entitled(st, k) || st.public_key(k);
                         assert!(may, "seed {seed}: {holder:?} opens the key of {en:?}");
@@ -1609,16 +1619,19 @@ fn t24_entry_keys_reach_only_cell_readers() {
             }
         }
         let (st, ever) = (sts.last().expect("a state"), Ever::new(&sts));
-        let mut cells: HashMap<EntryId, HashSet<KeyFam>> = HashMap::new();
+        let mut audiences: HashMap<EntryId, HashSet<KeyFam>> = HashMap::new();
         for x in &sts {
             for en in x.entries() {
-                cells.entry(en.id).or_default().extend(en.stays.iter().map(|&(_, c)| KeyFam::Cell(en.vault, c)));
+                audiences
+                    .entry(en.id)
+                    .or_default()
+                    .extend(en.stays.iter().map(|&(_, c)| KeyFam::Audience(en.vault, c)));
             }
         }
         for holder in every_holder(st) {
             for n in st.opens(&holder.start(st)) {
                 let KeyName::Entry(e, stay, _) = n else { continue };
-                let read = cells.get(&e).is_some_and(|ks| ks.iter().any(|&k| ever.reads(holder, k)));
+                let read = audiences.get(&e).is_some_and(|ks| ks.iter().any(|&k| ever.reads(holder, k)));
                 assert!(read, "seed {seed}: {holder:?} opens {n:?}");
                 earlier += usize::from(st.entry(e).is_some_and(|en| en.stay() != stay));
             }
@@ -1646,26 +1659,26 @@ fn some_attrs(st: &State, r: &Readings) -> Vec<Attrs> {
 }
 
 #[test]
-fn t22_caps_narrow_down_their_chain() {
-    // in the view of every history, and with the attempts the rules refused put back: a cap that rests on another is
-    // over the same vault, rests on an owner cap issued to its own issuer, selects nothing that cap doesn't, and is
-    // wide only if that cap is; a root cap is issued by the vault it is over
+fn t22_shares_narrow_down_their_chain() {
+    // in the view of every history, and with the attempts the rules refused put back: a share that rests on another is
+    // over the same vault, rests on an owner share issued to its own issuer, selects nothing that share doesn't, and is
+    // wide only if that share is; a root share is issued by the vault it is over
     let mut rested = 0;
     for (seed, h) in every_history() {
         let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
         for st in [h.log.view(), view(&with_refused)] {
             let attrs = some_attrs(&st, &h.readings);
-            for cp in st.caps() {
+            for cp in st.shares() {
                 assert_eq!(cp.chain.last(), Some(&cp.id), "seed {seed}: {cp:?}");
-                let Some(p) = cp.cap.parent else {
-                    assert!(cp.cap.issuer == cp.cap.over && cp.chain.len() == 1, "seed {seed}: {cp:?}");
+                let Some(p) = cp.share.parent else {
+                    assert!(cp.share.issuer == cp.share.over && cp.chain.len() == 1, "seed {seed}: {cp:?}");
                     continue;
                 };
-                let pc = st.cap(p).expect("a cap's parent");
-                assert_eq!(pc.cap.over, cp.cap.over, "seed {seed}: {cp:?}");
-                assert_eq!(pc.cap.role, Role::Owner, "seed {seed}: {cp:?}");
-                assert_eq!(pc.cap.grantee, vault(cp.cap.issuer), "seed {seed}: {cp:?}");
-                assert!(!cp.cap.wide || pc.cap.wide, "seed {seed}: {cp:?}");
+                let pc = st.share(p).expect("a cap's parent");
+                assert_eq!(pc.share.over, cp.share.over, "seed {seed}: {cp:?}");
+                assert_eq!(pc.share.level, Level::Owner, "seed {seed}: {cp:?}");
+                assert_eq!(pc.share.who, vault(cp.share.issuer), "seed {seed}: {cp:?}");
+                assert!(!cp.share.wide || pc.share.wide, "seed {seed}: {cp:?}");
                 assert_eq!(cp.chain[..cp.chain.len() - 1], pc.chain[..], "seed {seed}: {cp:?}");
                 for a in &attrs {
                     let narrower = !st.eff_selects(cp, a, &h.readings) || st.eff_selects(pc, a, &h.readings);
@@ -1675,15 +1688,15 @@ fn t22_caps_narrow_down_their_chain() {
             }
         }
     }
-    // and caps do rest on caps
+    // and shares do rest on shares
     assert!(rested > 0);
 }
 
 #[test]
-fn t23_cells_mean_what_caps_say() {
-    // in every state along the way: where an entry's cell, revoked caps left aside, is the cell its meaning asks for,
-    // the rule every peer checks without reading a selector, a type or a tag lets exactly the vaults write it that the
-    // caps' selectors let; and that rule never refuses a creation inside its creator's slice
+fn t23_audiences_mean_what_shares_say() {
+    // in every state along the way: where an entry's audience, revoked shares left aside, is the audience its meaning
+    // asks for, the rule every peer checks without reading a selector, a type or a tag lets exactly the vaults write it
+    // that the shares' selectors let; and that rule never refuses a creation inside its creator's slice
     let (mut meant, mut moving, mut admitted) = (0, 0, 0);
     for (seed, h) in every_history() {
         for st in states(h.log.edits()) {
@@ -1697,30 +1710,31 @@ fn t23_cells_mean_what_caps_say() {
                     let (may, sem) = (st.may_write(v, en.id), st.sem_write(v, en.id, &h.readings));
                     assert_eq!(may, sem, "seed {seed}: {v:?} on {en:?}");
                 }
-                meant += usize::from(!m.cell.is_empty());
+                meant += usize::from(!m.audience.is_empty());
             }
             let attrs = some_attrs(&st, &h.readings);
-            for cp in st.caps() {
-                let Some(a) = grantee_vault(cp).filter(|&a| st.holds(a, cp, Role::Write)) else { continue };
+            for cp in st.shares() {
+                let Some(a) = who_vault(cp).filter(|&a| st.holds(a, cp, Level::Write)) else { continue };
                 if let Some(x) = attrs.iter().find(|x| st.eff_selects(cp, x, &h.readings)) {
-                    assert!(st.may_create(a, cp.cap.over, &cp.intake), "seed {seed}: {a:?} creates {x:?} by {cp:?}");
+                    assert!(st.may_create(a, cp.share.over, &cp.intake), "seed {seed}: {a:?} creates {x:?} by {cp:?}");
                     admitted += 1;
                 }
             }
         }
     }
-    // the entries do sit in cells of caps, some wait for a steward to move them, and caps do let their grantees create
+    // the entries do sit in audiences of shares, some wait for a steward to move them, and shares do let their grantees
+    // create
     assert!(meant > 0 && moving > 0 && admitted > 0, "{meant} in place, {moving} to move, {admitted} admitted");
 }
 
-/// A relay's twin of a history (T25): every edit as a peer that reads no selector, no type and no tag sees it, a cap
+/// A relay's twin of a history (T25): every edit as a peer that reads no selector, no type and no tag sees it, a share
 /// selecting the whole vault (its ops as they were), a write with an empty body, a new entry's header blank. The twins
-/// hash to other ids, so whatever names an edit is renamed: what an edit creates (a vault, a cap), the cells the caps
-/// make, and every edit named as a parent, a dependency, a stay, a proposal, kept or covered.
+/// hash to other ids, so whatever names an edit is renamed: what an edit creates (a vault, a share), the audiences the
+/// shares make, and every edit named as a parent, a dependency, a stay, a proposal, kept or covered.
 #[derive(Default)]
 struct Twin {
     edits: HashMap<EditId, EditId>,
-    cells: HashMap<CellId, CellId>,
+    audiences: HashMap<AudienceId, AudienceId>,
 }
 
 impl Twin {
@@ -1728,16 +1742,16 @@ impl Twin {
         self.edits.get(&id).copied().unwrap_or(id)
     }
 
-    fn cap(&self, c: CapId) -> CapId {
-        CapId(self.edit(EditId(c.0)).0)
+    fn share(&self, c: ShareId) -> ShareId {
+        ShareId(self.edit(EditId(c.0)).0)
     }
 
     fn vault(&self, v: VaultId) -> VaultId {
         VaultId(self.edit(EditId(v.0)).0)
     }
 
-    fn cell(&self, x: CellId) -> CellId {
-        self.cells.get(&x).copied().unwrap_or(x)
+    fn audience(&self, x: AudienceId) -> AudienceId {
+        self.audiences.get(&x).copied().unwrap_or(x)
     }
 
     fn edits(&self, ids: &[EditId]) -> Vec<EditId> {
@@ -1748,9 +1762,9 @@ impl Twin {
         vs.iter().map(|&v| self.vault(v)).collect()
     }
 
-    /// The caps of a cell, renamed, in canonical order again.
-    fn caps(&self, xs: &[CapId]) -> Vec<CapId> {
-        mk_cell(&xs.iter().map(|&c| self.cap(c)).collect::<Vec<_>>())
+    /// The shares of an audience, renamed, in canonical order again.
+    fn shares(&self, xs: &[ShareId]) -> Vec<ShareId> {
+        mk_audience(&xs.iter().map(|&c| self.share(c)).collect::<Vec<_>>())
     }
 
     fn principal(&self, p: Principal) -> Principal {
@@ -1760,9 +1774,9 @@ impl Twin {
         }
     }
 
-    fn grantee(&self, g: Grantee) -> Grantee {
+    fn who(&self, g: Who) -> Who {
         match g {
-            Grantee::Principal(p) => Grantee::Principal(self.principal(p)),
+            Who::Principal(p) => Who::Principal(self.principal(p)),
             g => g,
         }
     }
@@ -1777,8 +1791,8 @@ impl Twin {
     fn fam(&self, k: KeyFam) -> KeyFam {
         match k {
             KeyFam::Seed(v) => KeyFam::Seed(self.vault(v)),
-            KeyFam::Cap(v, c) => KeyFam::Cap(self.vault(v), self.cap(c)),
-            KeyFam::Cell(v, x) => KeyFam::Cell(self.vault(v), self.cell(x)),
+            KeyFam::Share(v, c) => KeyFam::Share(self.vault(v), self.share(c)),
+            KeyFam::Audience(v, x) => KeyFam::Audience(self.vault(v), self.audience(x)),
         }
     }
 
@@ -1790,11 +1804,11 @@ impl Twin {
         }
     }
 
-    /// The cell of the caps `xs` of vault `v`, renamed; and from now on its id.
-    fn new_cell(&mut self, v: VaultId, xs: &[CapId]) -> Vec<CapId> {
-        let caps = self.caps(xs);
-        self.cells.insert(CellId::of(v, xs), CellId::of(self.vault(v), &caps));
-        caps
+    /// The audience of the shares `xs` of vault `v`, renamed; and from now on its id.
+    fn new_audience(&mut self, v: VaultId, xs: &[ShareId]) -> Vec<ShareId> {
+        let shares = self.shares(xs);
+        self.audiences.insert(AudienceId::of(v, xs), AudienceId::of(self.vault(v), &shares));
+        shares
     }
 
     /// The relay's twin of `edit`, whatever it names renamed; and from now on its id.
@@ -1828,36 +1842,36 @@ impl Twin {
             Action::SetRoot { vault, root, keep } => {
                 Action::SetRoot { vault: self.vault(vault), root, keep: self.edits(&keep) }
             }
-            Action::Cap(c, via) => {
-                // of the selector, a relay reads the commitment to the cap's ops, in the clear
+            Action::Share(c, via) => {
+                // of the selector, a relay reads the commitment to the share's ops, in the clear
                 let select = match Select::from_wire(&c.select) {
                     Ok(s) => Select::Sealed { boxes: vec![], slice: vec![], commitment: s.commitment() }.to_wire(),
                     Err(_) => vec![],
                 };
-                let cap = Cap {
+                let share = Share {
                     over: self.vault(c.over),
-                    grantee: self.grantee(c.grantee),
+                    who: self.who(c.who),
                     select,
-                    parent: c.parent.map(|p| self.cap(p)),
+                    parent: c.parent.map(|p| self.share(p)),
                     issuer: self.vault(c.issuer),
                     ..c
                 };
-                Action::Cap(cap, self.vaults(&via))
+                Action::Share(share, self.vaults(&via))
             }
-            Action::Revoke { cap, actor, keep, via } => {
+            Action::Revoke { share, actor, keep, via } => {
                 let (keep, via) = (self.edits(&keep), self.vaults(&via));
-                Action::Revoke { cap: self.cap(cap), actor: self.vault(actor), keep, via }
+                Action::Revoke { share: self.share(share), actor: self.vault(actor), keep, via }
             }
-            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, .. } => {
+            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, .. } => {
                 let header = create.is_some().then(|| Header { ty: Sym::new(""), created: 0 });
                 let body = Body { header, ..Body::default() }.to_wire();
-                let create = create.map(|x| self.new_cell(vault, &x));
+                let create = create.map(|x| self.new_audience(vault, &x));
                 let (stay, deps, proposal) = (stay.map(|s| self.edit(s)), self.edits(&deps), self.proposal(proposal));
                 let (vault, actor, via) = (self.vault(vault), self.vault(actor), self.vaults(&via));
-                Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body }
+                Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }
             }
             Action::Move { vault, entry, to, keep, via } => {
-                let to = self.new_cell(vault, &to);
+                let to = self.new_audience(vault, &to);
                 Action::Move { vault: self.vault(vault), entry, to, keep: self.edits(&keep), via: self.vaults(&via) }
             }
             Action::Keys { name, id, public, boxes, clear } => {
@@ -1878,14 +1892,14 @@ impl Twin {
                 Action::SyncRule(rule, self.vaults(&via))
             }
             Action::EndSyncRule { rule, issuer, via } => {
-                Action::EndSyncRule { rule: self.cap(rule), issuer: self.vault(issuer), via: self.vaults(&via) }
+                Action::EndSyncRule { rule: self.share(rule), issuer: self.vault(issuer), via: self.vaults(&via) }
             }
             Action::Pick { vault, entry, rules, via } => {
                 // in canonical order again where they were, and out of it where they weren't
-                let mut renamed: Vec<CapId> = rules.iter().map(|&r| self.cap(r)).collect();
-                if rules == mk_cell(&rules) {
-                    renamed = mk_cell(&renamed);
-                } else if renamed == mk_cell(&renamed) {
+                let mut renamed: Vec<ShareId> = rules.iter().map(|&r| self.share(r)).collect();
+                if rules == mk_audience(&rules) {
+                    renamed = mk_audience(&renamed);
+                } else if renamed == mk_audience(&renamed) {
                     renamed.reverse();
                 }
                 Action::Pick { vault: self.vault(vault), entry, rules: renamed, via: self.vaults(&via) }
@@ -1895,23 +1909,23 @@ impl Twin {
 }
 
 /// What a peer knows of the operational part of a state (`State.ops`): all of it but what only readers read, the
-/// selectors of caps and sync rules, every id renamed by `t`.
+/// selectors of shares and sync rules, every id renamed by `t`.
 #[derive(Debug, PartialEq)]
 struct Ops {
     vaults: Vec<Vault>,
-    caps: Vec<Issued>,
-    revoked: Vec<CapId>,
+    shares: Vec<Issued>,
+    revoked: Vec<ShareId>,
     entries: Vec<Entry>,
     born: Vec<EntryId>,
     writes: Vec<Write>,
-    cells: BTreeMap<CellId, Vec<CapId>>,
+    audiences: BTreeMap<AudienceId, Vec<ShareId>>,
     epochs: BTreeMap<KeyFam, Vec<Option<EditId>>>,
     seals: BTreeSet<(KeyName, KeyName)>,
     published: Vec<KeyName>,
     lane: Vec<(VaultId, BlobId)>,
-    rules: Vec<(CapId, SyncRule)>,
-    ended: Vec<CapId>,
-    picks: Vec<(EntryId, Vec<CapId>)>,
+    rules: Vec<(ShareId, SyncRule)>,
+    ended: Vec<ShareId>,
+    picks: Vec<(EntryId, Vec<ShareId>)>,
 }
 
 fn ops(st: &State, t: &Twin) -> Ops {
@@ -1920,27 +1934,27 @@ fn ops(st: &State, t: &Twin) -> Ops {
         let owners = v.owners.iter().map(|&p| t.principal(p)).collect();
         Vault { id: t.vault(v.id), owners, ..v.clone() }
     };
-    let cap = |cp: &Issued| Issued {
-        id: t.cap(cp.id),
-        cap: Cap {
-            over: t.vault(cp.cap.over),
-            grantee: t.grantee(cp.cap.grantee),
+    let share = |cp: &Issued| Issued {
+        id: t.share(cp.id),
+        share: Share {
+            over: t.vault(cp.share.over),
+            who: t.who(cp.share.who),
             select: vec![],
-            parent: cp.cap.parent.map(|p| t.cap(p)),
-            issuer: t.vault(cp.cap.issuer),
-            ..cp.cap.clone()
+            parent: cp.share.parent.map(|p| t.share(p)),
+            issuer: t.vault(cp.share.issuer),
+            ..cp.share.clone()
         },
-        chain: cp.chain.iter().map(|&c| t.cap(c)).collect(),
-        intake: t.caps(&cp.intake).into(),
+        chain: cp.chain.iter().map(|&c| t.share(c)).collect(),
+        intake: t.shares(&cp.intake).into(),
         commitment: cp.commitment,
     };
     let entry = |en: &Entry| Entry {
         id: en.id,
         vault: t.vault(en.vault),
-        stays: en.stays.iter().map(|&(s, x)| (s.map(|s| t.edit(s)), t.cell(x))).collect(),
+        stays: en.stays.iter().map(|&(s, x)| (s.map(|s| t.edit(s)), t.audience(x))).collect(),
         creator: t.vault(en.creator),
         creation: t.edit(en.creation),
-        intake: en.intake.iter().map(|&c| t.cap(c)).collect(),
+        intake: en.intake.iter().map(|&c| t.share(c)).collect(),
         retags: t.edits(&en.retags),
     };
     let write = |w: &Write| Write {
@@ -1950,33 +1964,33 @@ fn ops(st: &State, t: &Twin) -> Ops {
         deps: t.edits(&w.deps),
         proposal: t.proposal(w.proposal),
         via: t.vaults(&w.via),
-        cell: t.cell(w.cell),
-        caps: w.caps.iter().map(|&c| t.cap(c)).collect(),
+        audience: t.audience(w.audience),
+        shares: w.shares.iter().map(|&c| t.share(c)).collect(),
         ..w.clone()
     };
     let moved = |k: KeyFam, e: u64| (1..=e).map(|i| st.moved_by(k, i).map(|m| t.edit(m))).collect();
     Ops {
         vaults: st.vaults().iter().map(vault).collect(),
-        caps: st.caps().iter().map(cap).collect(),
-        revoked: st.revoked().iter().map(|&c| t.cap(c)).collect(),
+        shares: st.shares().iter().map(share).collect(),
+        revoked: st.revoked().iter().map(|&c| t.share(c)).collect(),
         entries: st.entries().iter().map(entry).collect(),
         born: st.all_born().to_vec(),
         writes: st.all_writes().iter().map(write).collect(),
-        cells: st.cells().map(|(x, caps)| (t.cell(x), t.caps(caps))).collect(),
+        audiences: st.audiences().map(|(x, shares)| (t.audience(x), t.shares(shares))).collect(),
         epochs: st.epochs().map(|(k, e)| (t.fam(k), moved(k, e))).collect(),
         seals: st.seals().iter().map(|s| (t.key(s.secret), t.key(s.to))).collect(),
         published: st.published().iter().map(|&n| t.key(n)).collect(),
         lane: st.lane().iter().map(|p| (t.vault(p.vault), p.blob)).collect(),
-        rules: st.rules().iter().map(|(id, r)| (t.cap(*id), rule(r))).collect(),
-        ended: st.ended().iter().map(|&r| t.cap(r)).collect(),
-        picks: st.entries().iter().map(|en| (en.id, t.caps(st.picks_of(en.id)))).collect(),
+        rules: st.rules().iter().map(|(id, r)| (t.share(*id), rule(r))).collect(),
+        ended: st.ended().iter().map(|&r| t.share(r)).collect(),
+        picks: st.entries().iter().map(|en| (en.id, t.shares(st.picks_of(en.id)))).collect(),
     }
 }
 
 #[test]
 fn t25_blind_relays() {
     // a peer that reads no selector, no type and no tag, holding the same edits as an owner, has every edit stand or
-    // fall alike, and knows the same of the vaults, caps, entries and their cells, writes and keys
+    // fall alike, and knows the same of the vaults, shares, entries and their audiences, writes and keys
     let mut moved = 0;
     for (seed, h) in every_history() {
         let r = replay(h.log.edits());
@@ -1988,7 +2002,7 @@ fn t25_blind_relays() {
         assert_eq!(ops(&b.state, &Twin::default()), ops(&r.state, &twin), "seed {seed}");
         moved += r.state.entries().iter().filter(|en| en.stays.len() > 1).count();
     }
-    // and the stewards do move entries between cells, which the twins name by other ids
+    // and the stewards do move entries between audiences, which the twins name by other ids
     assert!(moved > 0);
 }
 
@@ -2005,7 +2019,7 @@ fn each_step_settles_as_the_whole_model_does() {
             assert_eq!(a, b, "seed {seed}: {edit:?}");
             let what = format!("seed {seed}, after {edit:?}");
             assert_eq!(light.vaults(), full.vaults(), "{what}");
-            assert_eq!(light.caps(), full.caps(), "{what}");
+            assert_eq!(light.shares(), full.shares(), "{what}");
             assert_eq!(light.revoked(), full.revoked(), "{what}");
             assert_eq!(light.entries(), full.entries(), "{what}");
             assert_eq!(light.all_writes(), full.all_writes(), "{what}");

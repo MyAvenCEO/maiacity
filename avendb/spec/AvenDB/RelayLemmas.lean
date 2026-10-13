@@ -6,7 +6,7 @@ import AvenDB.Props
 The proof of T25: a peer that reads no selector, no type and no tag, such as the server, has every edit stand or fall
 as an owner does and knows the same of the operational part of the state. Stated as in `Theorems.lean`.
 
-A simulation. Every rule a peer checks or applies reads only the operational part of a state (`State.ops`): the caps
+A simulation. Every rule a peer checks or applies reads only the operational part of a state (`State.ops`): the shares
 without their selectors and ops, the entries without their attributes and whether they were let in
 (`admits` and `effSelects`, which read those, only ever feed `admitted`). So checking an edit on a state's operational
 part, as the relay's copy of it, accepts and refuses alike and changes the operational part alike (`apply_ops`), and
@@ -24,16 +24,16 @@ namespace AvenDB.Relays
 /-- An entry as a relay knows it: its id, vault and stays, without its attributes or whether it was let in. -/
 def eblind (en : Entry) : Entry := { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false }
 
-/-- The operational part blinds the caps and the entries and keeps the rest. -/
+/-- The operational part blinds the shares and the entries and keeps the rest. -/
 theorem ops_eq (st : State) :
-    st.ops = { st with caps := st.caps.map Cap.blind, entries := st.entries.map eblind, uncounted := [],
+    st.ops = { st with shares := st.shares.map Share.blind, entries := st.entries.map eblind, uncounted := [],
                        rules := st.rules.map SyncRule.blind } :=
   rfl
 
 /-- The operational part keeps the vaults. -/
 theorem ops_vaults (st : State) : st.ops.vaults = st.vaults := by cases st; rfl
-/-- The operational part has the caps as a relay sees them. -/
-theorem ops_caps (st : State) : st.ops.caps = st.caps.map Cap.blind := by cases st; rfl
+/-- The operational part has the shares as a relay sees them. -/
+theorem ops_shares (st : State) : st.ops.shares = st.shares.map Share.blind := by cases st; rfl
 /-- The operational part keeps the revocations. -/
 theorem ops_revoked (st : State) : st.ops.revoked = st.revoked := by cases st; rfl
 /-- The operational part has the entries as a relay knows them. -/
@@ -59,24 +59,24 @@ theorem ops_ended (st : State) : st.ops.ended = st.ended := by cases st; rfl
 /-- The operational part keeps the stewards' marks. -/
 theorem ops_picks (st : State) : st.ops.picks = st.picks := by cases st; rfl
 
-/-- A cap as a relay sees it keeps its id. -/
-theorem blind_id (c : Cap) : c.blind.id = c.id := by cases c; rfl
-/-- A cap as a relay sees it keeps the vault it is over. -/
-theorem blind_over (c : Cap) : c.blind.over = c.over := by cases c; rfl
-/-- A cap as a relay sees it keeps its grantee. -/
-theorem blind_grantee (c : Cap) : c.blind.grantee = c.grantee := by cases c; rfl
-/-- A cap as a relay sees it keeps its role. -/
-theorem blind_role (c : Cap) : c.blind.role = c.role := by cases c; rfl
-/-- A cap as a relay sees it keeps whether it is wide. -/
-theorem blind_wide (c : Cap) : c.blind.wide = c.wide := by cases c; rfl
-/-- A cap as a relay sees it keeps its parent. -/
-theorem blind_parent (c : Cap) : c.blind.parent = c.parent := by cases c; rfl
-/-- A cap as a relay sees it keeps its issuer. -/
-theorem blind_issuer (c : Cap) : c.blind.issuer = c.issuer := by cases c; rfl
-/-- A relay sees a cap it already sees blind the same. -/
-theorem blind_blind (c : Cap) : c.blind.blind = c.blind := by cases c; rfl
-/-- Blinding caps twice is blinding them once. -/
-theorem blind_comp_blind : Cap.blind ∘ Cap.blind = Cap.blind := by funext c; cases c; rfl
+/-- A share as a relay sees it keeps its id. -/
+theorem blind_id (c : Share) : c.blind.id = c.id := by cases c; rfl
+/-- A share as a relay sees it keeps the vault it is over. -/
+theorem blind_over (c : Share) : c.blind.over = c.over := by cases c; rfl
+/-- A share as a relay sees it keeps its grantee. -/
+theorem blind_who (c : Share) : c.blind.who = c.who := by cases c; rfl
+/-- A share as a relay sees it keeps its level. -/
+theorem blind_level (c : Share) : c.blind.level = c.level := by cases c; rfl
+/-- A share as a relay sees it keeps whether it is wide. -/
+theorem blind_wide (c : Share) : c.blind.wide = c.wide := by cases c; rfl
+/-- A share as a relay sees it keeps its parent. -/
+theorem blind_parent (c : Share) : c.blind.parent = c.parent := by cases c; rfl
+/-- A share as a relay sees it keeps its issuer. -/
+theorem blind_issuer (c : Share) : c.blind.issuer = c.issuer := by cases c; rfl
+/-- A relay sees a share it already sees blind the same. -/
+theorem blind_blind (c : Share) : c.blind.blind = c.blind := by cases c; rfl
+/-- Blinding shares twice is blinding them once. -/
+theorem blind_comp_blind : Share.blind ∘ Share.blind = Share.blind := by funext c; cases c; rfl
 
 /-- A sync rule as a relay sees it keeps its id. -/
 theorem rblind_id (r : SyncRule) : r.blind.id = r.id := by cases r; rfl
@@ -99,10 +99,10 @@ theorem eblind_id (en : Entry) : (eblind en).id = en.id := by cases en; rfl
 theorem eblind_vault (en : Entry) : (eblind en).vault = en.vault := by cases en; rfl
 /-- An entry as a relay knows it keeps its stays. -/
 theorem eblind_stays (en : Entry) : (eblind en).stays = en.stays := by cases en; rfl
-/-- An entry as a relay knows it is in the same cell. -/
-theorem eblind_cell (en : Entry) : (eblind en).cell = en.cell := by cases en; rfl
-/-- An entry as a relay knows it has the same cells for its stays. -/
-theorem eblind_stayCell (en : Entry) : (eblind en).stayCell = en.stayCell := by cases en; rfl
+/-- An entry as a relay knows it is in the same audience. -/
+theorem eblind_audience (en : Entry) : (eblind en).audience = en.audience := by cases en; rfl
+/-- An entry as a relay knows it has the same audiences for its stays. -/
+theorem eblind_stayAudience (en : Entry) : (eblind en).stayAudience = en.stayAudience := by cases en; rfl
 /-- Blinding entries twice is blinding them once. -/
 theorem eblind_comp_eblind : eblind ∘ eblind = eblind := by funext en; cases en; rfl
 
@@ -196,33 +196,33 @@ theorem openAll_ops (st : State) : openAll st.ops = openAll st := by
 theorem opens_ops (st : State) : opens st.ops = opens st := by
   funext start; simp only [opens, openAll_ops, ops_seals, ops_published]
 
-/-! ## What reads the caps, but not their selectors -/
+/-! ## What reads the shares, but not their selectors -/
 
-/-- Looking up a cap in the operational part finds it as a relay sees it. -/
-theorem cap?_ops (st : State) (c : CapId) : st.ops.cap? c = (st.cap? c).map Cap.blind := by
-  simp only [State.cap?, ops_caps, List.find?_map]; rfl
+/-- Looking up a share in the operational part finds it as a relay sees it. -/
+theorem share?_ops (st : State) (c : ShareId) : st.ops.share? c = (st.share? c).map Share.blind := by
+  simp only [State.share?, ops_shares, List.find?_map]; rfl
 
-/-- Whether a cap is live reads only ids and revocations. -/
+/-- Whether a share is live reads only ids and revocations. -/
 theorem live_ops (st : State) : st.ops.live = st.live := by
-  funext c; simp only [State.live, ops_caps, List.any_map, Function.comp_def, blind_id, ops_revoked]
+  funext c; simp only [State.live, ops_shares, List.any_map, Function.comp_def, blind_id, ops_revoked]
 
-/-- The parent of a cap as a relay sees it is its parent. -/
-theorem bind_parent_blind (o : Option Cap) : (o.map Cap.blind).bind (·.parent) = o.bind (·.parent) := by
+/-- The parent of a share as a relay sees it is its parent. -/
+theorem bind_parent_blind (o : Option Share) : (o.map Share.blind).bind (·.parent) = o.bind (·.parent) := by
   cases o <;> rfl
 
-/-- Resting on a cap reads only ids and parents. -/
+/-- Resting on a share reads only ids and parents. -/
 theorem restsOnN_ops (st : State) : restsOnN st.ops = restsOnN st := by
   funext c n
   induction n with
   | zero => rfl
-  | succ n ih => funext x; simp only [restsOnN, ih, cap?_ops, bind_parent_blind]
+  | succ n ih => funext x; simp only [restsOnN, ih, share?_ops, bind_parent_blind]
 
-/-- Resting on a cap reads only ids and parents. -/
+/-- Resting on a share reads only ids and parents. -/
 theorem restsOn_ops (st : State) : restsOn st.ops = restsOn st := by
-  funext c x; simp only [restsOn, restsOnN_ops, ops_caps, List.length_map]
+  funext c x; simp only [restsOn, restsOnN_ops, ops_shares, List.length_map]
 
-/-- A cap's chain in the operational part is its chain as a relay sees it. -/
-theorem chainN_ops (st : State) : ∀ n (c : Cap), chainN st.ops n c.blind = (chainN st n c).map Cap.blind
+/-- A share's chain in the operational part is its chain as a relay sees it. -/
+theorem chainN_ops (st : State) : ∀ n (c : Share), chainN st.ops n c.blind = (chainN st n c).map Share.blind
   | 0, _ => rfl
   | n + 1, c => by
     rw [chainN, chainN, List.map_append]
@@ -231,36 +231,36 @@ theorem chainN_ops (st : State) : ∀ n (c : Cap), chainN st.ops n c.blind = (ch
     cases c.parent with
     | none => rfl
     | some p =>
-      simp only [Option.bind_some, cap?_ops]
-      cases st.cap? p with
+      simp only [Option.bind_some, share?_ops]
+      cases st.share? p with
       | none => rfl
       | some q => exact chainN_ops st n q
 
-/-- A cap's chain in the operational part is its chain as a relay sees it. -/
-theorem chain_ops (st : State) (c : Cap) : chain st.ops c.blind = (chain st c).map Cap.blind := by
-  simp only [chain, chainN_ops, ops_caps, List.length_map]
+/-- A share's chain in the operational part is its chain as a relay sees it. -/
+theorem chain_ops (st : State) (c : Share) : chain st.ops c.blind = (chain st c).map Share.blind := by
+  simp only [chain, chainN_ops, ops_shares, List.length_map]
 
-/-- A cap's intake cell reads only its chain's ids and whether they are wide. -/
-theorem intake_ops (st : State) (c : Cap) : intake st.ops c.blind = intake st c := by
+/-- A share's intake audience reads only its chain's ids and whether they are wide. -/
+theorem intake_ops (st : State) (c : Share) : intake st.ops c.blind = intake st c := by
   simp only [intake, chain_ops, List.filter_map, List.map_map]; rfl
 
-/-- Whether a cell is one of a vault's reads only the caps' ids, vaults and whether they are wide. -/
-theorem cellOk_ops (st : State) : cellOk st.ops = cellOk st := by
-  funext v x; simp only [cellOk, ops_caps, List.any_map, Function.comp_def, blind_id, blind_over, blind_wide]
+/-- Whether an audience is one of a vault's reads only the shares' ids, vaults and whether they are wide. -/
+theorem audienceOk_ops (st : State) : audienceOk st.ops = audienceOk st := by
+  funext v x; simp only [audienceOk, ops_shares, List.any_map, Function.comp_def, blind_id, blind_over, blind_wide]
 
-/-- Holding a cap reads whether it is live, its grantee and its role. -/
-theorem holdsCap_ops (st : State) : holdsCap st.ops = holdsCap st := by
-  funext a c r; simp only [holdsCap, live_ops]
+/-- Holding a share reads whether it is live, its grantee and its level. -/
+theorem holdsShare_ops (st : State) : holdsShare st.ops = holdsShare st := by
+  funext a c r; simp only [holdsShare, live_ops]
 
-/-- Holding a cap as a relay sees it is holding the cap. -/
-theorem holdsCap_blind (st : State) (a : VaultId) (c : Cap) (r : Role) :
-    holdsCap st a c.blind r = holdsCap st a c r := by
+/-- Holding a share as a relay sees it is holding the share. -/
+theorem holdsShare_blind (st : State) (a : VaultId) (c : Share) (r : Level) :
+    holdsShare st a c.blind r = holdsShare st a c r := by
   cases c; rfl
 
 /-! ## Sync rules: what relays read of them -/
 
 /-- Looking up a sync rule finds it as a relay sees it. -/
-theorem rule?_ops (st : State) (r : CapId) : st.ops.rule? r = (st.rule? r).map SyncRule.blind := by
+theorem rule?_ops (st : State) (r : ShareId) : st.ops.rule? r = (st.rule? r).map SyncRule.blind := by
   simp only [State.rule?, ops_rules, List.find?_map]; rfl
 
 /-- Whether a sync rule is live reads only ids and the rules that ended. -/
@@ -275,21 +275,21 @@ theorem picksOf_ops (st : State) : st.ops.picksOf = st.picksOf := by
 theorem isDevice_ops (st : State) : isDevice st.ops = isDevice st := by
   funext d v; simp only [isDevice, vault?_ops]
 
-/-- Whether a vault may hold entries of another reads the caps' vaults, grantees and roles. -/
+/-- Whether a vault may hold entries of another reads the shares' vaults, grantees and levels. -/
 theorem mayHold_ops (st : State) : mayHold st.ops = mayHold st := by
   funext a v
-  simp only [mayHold, ops_caps, List.any_map, Function.comp_def, blind_over, holdsCap_ops, holdsCap_blind]
+  simp only [mayHold, ops_shares, List.any_map, Function.comp_def, blind_over, holdsShare_ops, holdsShare_blind]
 
-/-- Whether a cap reaches an entry reads its id, vault and width, and the entry's id, vault and cell. -/
-theorem inCell_ops (st : State) : inCell st.ops = inCell st := by cases st; rfl
-/-- A cap as a relay sees it reaches what the cap reaches. -/
-theorem inCell_blind (st : State) (c : Cap) (en : Entry) : inCell st c.blind en = inCell st c en := by
+/-- Whether a share reaches an entry reads its id, vault and width, and the entry's id, vault and audience. -/
+theorem inAudience_ops (st : State) : inAudience st.ops = inAudience st := by cases st; rfl
+/-- A share as a relay sees it reaches what the share reaches. -/
+theorem inAudience_blind (st : State) (c : Share) (en : Entry) : inAudience st c.blind en = inAudience st c en := by
   cases c; rfl
 
 /-- The write rule reads no selector, type or tag. -/
 theorem mayWrite_ops (st : State) : mayWrite st.ops = mayWrite st := by
-  funext a en; simp only [mayWrite, ops_caps, List.any_map, Function.comp_def, holdsCap_ops, holdsCap_blind,
-    inCell_ops, inCell_blind]
+  funext a en; simp only [mayWrite, ops_shares, List.any_map, Function.comp_def, holdsShare_ops, holdsShare_blind,
+    inAudience_ops, inAudience_blind]
 
 /-- The write rule reads no attribute of the entry. -/
 theorem mayWrite_eblind (st : State) (a : VaultId) (en : Entry) :
@@ -298,7 +298,7 @@ theorem mayWrite_eblind (st : State) (a : VaultId) (en : Entry) :
 
 /-- The create rule reads no selector. -/
 theorem mayCreate_ops (st : State) : mayCreate st.ops = mayCreate st := by
-  funext a v x; simp only [mayCreate, ops_caps, List.any_map, Function.comp_def, holdsCap_ops, holdsCap_blind,
+  funext a v x; simp only [mayCreate, ops_shares, List.any_map, Function.comp_def, holdsShare_ops, holdsShare_blind,
     blind_over, intake_ops]
 
 /-- Looking up an entry in the operational part finds it as a relay knows it. -/
@@ -314,7 +314,7 @@ theorem authorized_ops (st : State) : authorized st.ops = authorized st := by
 
 /-- Who publishes into a schema lane reads no selector. -/
 theorem ownsLane_ops (st : State) : ownsLane st.ops = ownsLane st := by
-  funext a v; simp only [ownsLane, ops_caps, List.any_map, Function.comp_def, holdsCap_ops, holdsCap_blind,
+  funext a v; simp only [ownsLane, ops_shares, List.any_map, Function.comp_def, holdsShare_ops, holdsShare_blind,
     blind_over, blind_wide]
 
 /-- Who may read a key family reads no selector. -/
@@ -322,18 +322,18 @@ theorem readsV_ops (st : State) : readsV st.ops = readsV st := by
   funext y k
   cases k with
   | seed v => rfl
-  | cap v c => simp only [readsV, cap?_ops, live_ops]; cases st.cap? c <;> rfl
-  | cell v x => simp only [readsV, ops_caps, List.any_map, Function.comp_def, live_ops, blind_id, blind_over,
-      blind_role, blind_wide, blind_grantee]
+  | share v c => simp only [readsV, share?_ops, live_ops]; cases st.share? c <;> rfl
+  | audience v x => simp only [readsV, ops_shares, List.any_map, Function.comp_def, live_ops, blind_id, blind_over,
+      blind_level, blind_wide, blind_who]
 
 /-- Which key families are public reads no selector. -/
 theorem publicKey_ops (st : State) : publicKey st.ops = publicKey st := by
   funext k
   cases k with
   | seed v => rfl
-  | cap v c => simp only [publicKey, cap?_ops, live_ops]; cases st.cap? c <;> rfl
-  | cell v x => simp only [publicKey, ops_caps, List.any_map, Function.comp_def, live_ops, blind_id, blind_over,
-      blind_role, blind_wide, blind_grantee]
+  | share v c => simp only [publicKey, share?_ops, live_ops]; cases st.share? c <;> rfl
+  | audience v x => simp only [publicKey, ops_shares, List.any_map, Function.comp_def, live_ops, blind_id, blind_over,
+      blind_level, blind_wide, blind_who]
 
 /-- Who is entitled to a key reads no selector. -/
 theorem entitled_ops (st : State) : entitled st.ops = entitled st := by
@@ -347,12 +347,12 @@ theorem entitledV_ops (st : State) : entitledV st.ops = entitledV st := by
 theorem holderEntitled_ops (st : State) : Holder.entitled st.ops = Holder.entitled st := by
   funext h; cases h <;> simp only [Holder.entitled, entitled_ops, entitledV_ops, publicKey_ops]
 
-/-- The key families read the vaults, the live caps with read or more, and the entries' cells. -/
+/-- The key families read the vaults, the live shares with read or more, and the entries' audiences. -/
 theorem keyFams_ops (st : State) : keyFams st.ops = keyFams st := by
-  simp only [keyFams, ops_vaults, ops_caps, ops_entries, List.filter_map, List.map_map, live_ops]; rfl
+  simp only [keyFams, ops_vaults, ops_shares, ops_entries, List.filter_map, List.map_map, live_ops]; rfl
 
-/-- A relay sees whether a new entry brings its cell back into use. -/
-theorem reenters_ops (st : State) (v : VaultId) (x : Cell) : reenters st.ops v x = reenters st v x := by
+/-- A relay sees whether a new entry brings its audience back into use. -/
+theorem reenters_ops (st : State) (v : VaultId) (x : Audience) : reenters st.ops v x = reenters st v x := by
   simp only [reenters, keyFams_ops, ops_seals, curKey_ops]
 
 /-- Whom a key is sealed to reads no selector. -/
@@ -360,43 +360,43 @@ theorem targets_ops (st : State) : targets st.ops = targets st := by
   funext k
   cases k with
   | seed v => cases st; rfl
-  | cap v c => simp only [targets, cap?_ops, curKey_ops]; cases st.cap? c <;> rfl
-  | cell v x => simp only [targets, curKey_ops, ops_caps, List.filter_map, List.map_map, live_ops]; rfl
+  | share v c => simp only [targets, share?_ops, curKey_ops]; cases st.share? c <;> rfl
+  | audience v x => simp only [targets, curKey_ops, ops_shares, List.filter_map, List.map_map, live_ops]; rfl
 
 /-- Which keys go stale reads no selector, type or tag. -/
 theorem staleKeys_ops (pre post : State) : staleKeys pre.ops post.ops = staleKeys pre post := by
   simp only [staleKeys, holders_ops, opens_ops, start_ops, keyFams_ops, publicKey_ops, curKey_ops,
     holderEntitled_ops, ops_seals]
 
-/-- Whether a cap rests rightly on its parent reads no selector. -/
-theorem capParentOk_ops (st : State) : capParentOk st.ops = capParentOk st := by
-  funext c; simp only [capParentOk, cap?_ops, live_ops]
+/-- Whether a share rests rightly on its parent reads no selector. -/
+theorem shareParentOk_ops (st : State) : shareParentOk st.ops = shareParentOk st := by
+  funext c; simp only [shareParentOk, share?_ops, live_ops]
   cases c.parent with
   | none => rfl
-  | some p => simp only; cases st.cap? p <;> rfl
+  | some p => simp only; cases st.share? p <;> rfl
 
-/-- Whether a cap as a relay sees it rests rightly on its parent is whether the cap does. -/
-theorem capParentOk_blind (st : State) (c : Cap) : capParentOk st c.blind = capParentOk st c := by
+/-- Whether a share as a relay sees it rests rightly on its parent is whether the share does. -/
+theorem shareParentOk_blind (st : State) (c : Share) : shareParentOk st c.blind = shareParentOk st c := by
   cases c; rfl
 
-/-- Who may revoke a cap reads only issuers, vaults, grantees and parents. -/
+/-- Who may revoke a share reads only issuers, vaults, grantees and parents. -/
 theorem mayRevokeN_ops (st : State) (a : VaultId) :
-    ∀ n (c : Cap), mayRevokeN st.ops a n c.blind = mayRevokeN st a n c
+    ∀ n (c : Share), mayRevokeN st.ops a n c.blind = mayRevokeN st a n c
   | 0, _ => rfl
   | n + 1, c => by
-    simp only [mayRevokeN, blind_issuer, blind_over, blind_grantee, blind_parent]
+    simp only [mayRevokeN, blind_issuer, blind_over, blind_who, blind_parent]
     congr 1
     cases c.parent with
     | none => rfl
     | some p =>
-      simp only [Option.bind_some, cap?_ops]
-      cases st.cap? p with
+      simp only [Option.bind_some, share?_ops]
+      cases st.share? p with
       | none => rfl
       | some q => exact mayRevokeN_ops st a n q
 
-/-- Who may revoke a cap reads only issuers, vaults, grantees and parents. -/
-theorem mayRevoke_ops (st : State) (a : VaultId) (c : Cap) : mayRevoke st.ops a c.blind = mayRevoke st a c := by
-  simp only [mayRevoke, mayRevokeN_ops, ops_caps, List.length_map]
+/-- Who may revoke a share reads only issuers, vaults, grantees and parents. -/
+theorem mayRevoke_ops (st : State) (a : VaultId) (c : Share) : mayRevoke st.ops a c.blind = mayRevoke st a c := by
+  simp only [mayRevoke, mayRevokeN_ops, ops_shares, List.length_map]
 
 /-- Who may box a key reads no selector, type or tag. -/
 theorem mayBox_ops (st : State) : mayBox st.ops = mayBox st := by
@@ -406,8 +406,8 @@ theorem mayBox_ops (st : State) : mayBox st.ops = mayBox st := by
   | «scoped» k ε => simp only [mayBox, keyFams_ops, entitled_ops]; rfl
   | entry e s g => simp only [mayBox, entry?_ops, entitled_ops, epochOf_ops]; cases st.entry? e <;> rfl
 
-/-- How senior a revoker is reads only the cap's chain of issuers. -/
-theorem seniority_ops (st : State) (a : VaultId) (c : Cap) : seniority st.ops a c.blind = seniority st a c := by
+/-- How senior a revoker is reads only the share's chain of issuers. -/
+theorem seniority_ops (st : State) (a : VaultId) (c : Share) : seniority st.ops a c.blind = seniority st a c := by
   simp only [seniority, blind_over, chain_ops, List.findIdx?_map, List.length_map]; rfl
 
 /-- A removal's priority reads no selector, type or tag. -/
@@ -418,8 +418,8 @@ theorem priority_ops (st : State) : priority st.ops = priority st := by
   · simp only [tier_ops, vault?_ops, approves_ops]
   · simp only [tier_ops, vault?_ops, approves_ops]
   · simp only [tier_ops, vault?_ops, approves_ops]
-  · simp only [cap?_ops]
-    cases st.cap? _ with
+  · simp only [share?_ops]
+    cases st.share? _ with
     | none => rfl
     | some c => simp only [Option.map_some, Option.elim, seniority_ops]
   · rfl
@@ -457,7 +457,7 @@ theorem dropUnseen_ops (pre post : State) (keep : List EditId) :
     (dropUnseen pre post keep).ops = dropUnseen pre.ops post.ops keep := by
   simp only [dropUnseen]
   -- first what the drop reads, then the operational part of what it leaves
-  simp only [authorized_ops, ops_writes, ops_entries, ops_vaults, ops_caps, ops_revoked, ops_epochs, ops_seals,
+  simp only [authorized_ops, ops_writes, ops_entries, ops_vaults, ops_shares, ops_revoked, ops_epochs, ops_seals,
     ops_published, ops_lane, ops_born, List.filter_map, List.any_map]
   simp only [ops_eq, Function.comp_def, eblind_id]
 
@@ -476,13 +476,13 @@ theorem bump_ops (st : State) (k : KeyFam) : (bump st k).ops = bump st.ops k := 
 
 /-- An entry's key reads only the epochs. -/
 theorem entryKey_ops (st : State) : entryKey st.ops = entryKey st := by cases st; rfl
-/-- An entry's key reads only its id, stay, vault and cell. -/
+/-- An entry's key reads only its id, stay, vault and audience. -/
 theorem entryKey_eblind (st : State) (en : Entry) : entryKey st (eblind en) = entryKey st en := by
   cases en; rfl
 
 /-- `linkAll`'s step for one write `w` of entry `en`. -/
 def linkW (en : Entry) (acc : State) (w : Write) : State :=
-  let acc := addSeal acc ⟨w.key, .scoped (.cell en.vault ((en.stayCell w.stay).getD [])) w.gen⟩
+  let acc := addSeal acc ⟨w.key, .scoped (.audience en.vault ((en.stayAudience w.stay).getD [])) w.epoch⟩
   if w.stay == en.stay || acc.seals.any (fun s => s.secret == w.key && match s.to with
       | .entry e s' _ => e == en.id && s' == en.stay
       | _ => false) then acc
@@ -490,7 +490,7 @@ def linkW (en : Entry) (acc : State) (w : Write) : State :=
 
 /-- `linkAll`'s step for one entry `en`, given the writes `ws`. -/
 def linkE (ws : List Write) (acc : State) (en : Entry) : State :=
-  let acc := addSeal acc ⟨entryKey acc en, acc.curKey (.cell en.vault en.cell)⟩
+  let acc := addSeal acc ⟨entryKey acc en, acc.curKey (.audience en.vault en.audience)⟩
   (ws.filter (·.entry == en.id)).foldl (linkW en) acc
 
 /-- `linkAll` is a fold of `linkE` over the entries. -/
@@ -504,7 +504,7 @@ theorem linkW_ops (en : Entry) (acc : State) (w : Write) : linkW en acc.ops w = 
 /-- Linking one entry commutes with taking the operational part, which knows the entry as a relay does. -/
 theorem linkE_ops (ws : List Write) (en : Entry) (acc : State) :
     linkE ws acc.ops (eblind en) = (linkE ws acc en).ops := by
-  simp only [linkE, entryKey_eblind, eblind_vault, eblind_cell, eblind_id, entryKey_ops, curKey_ops, ← addSeal_ops]
+  simp only [linkE, entryKey_eblind, eblind_vault, eblind_audience, eblind_id, entryKey_ops, curKey_ops, ← addSeal_ops]
   exact List.foldl_hom State.ops (fun acc w => linkW_ops en acc w)
 
 /-- Linking the entry keys commutes with taking the operational part. -/
@@ -599,25 +599,25 @@ theorem apply_ops (st : State) (edit : Edit) :
     cases st.vault? v with
     | none => rfl
     | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
-  | cap c via =>
-    -- the checks read no selector, and the new cap is kept as a relay sees it
+  | share c via =>
+    -- the checks read no selector, and the new share is kept as a relay sees it
     simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, cap?_ops, Option.isSome_map, actsVia_ops, capParentOk_ops,
-      capParentOk_blind, approves_ops, ops_caps, blind_id, blind_over, blind_grantee, blind_role, blind_issuer]
+    simp only [apply, sigs_mk, vault?_ops, share?_ops, Option.isSome_map, actsVia_ops, shareParentOk_ops,
+      shareParentOk_blind, approves_ops, ops_shares, blind_id, blind_over, blind_who, blind_level, blind_issuer]
     simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
       eblind_comp_eblind, rblind_comp_rblind, List.map_cons, List.map_nil, blind_blind]
   | revoke cid actor keep via =>
     simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, cap?_ops, live_ops, actsVia_ops, approves_ops]
-    cases st.cap? cid with
+    simp only [apply, sigs_mk, share?_ops, live_ops, actsVia_ops, approves_ops]
+    cases st.share? cid with
     | none => rfl
     | some c =>
-      simp only [Option.map_some, mayRevoke_ops, blind_role, ops_vaults, ops_caps, ops_revoked, ops_entries,
+      simp only [Option.map_some, mayRevoke_ops, blind_level, ops_vaults, ops_shares, ops_revoked, ops_entries,
         ops_writes, ops_epochs, ops_seals, ops_published, ops_lane, ops_born, restsOn_ops,
         List.filter_map, List.map_map, Function.comp_def, blind_id]
       simp only [map_ite_none, Option.map_some, dropUnseen_ops, ops_ops]
       simp only [ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind, rblind_comp_rblind]
-  | write v e actor stay gen deps proposal via create tags =>
+  | write v e actor stay epoch deps proposal via create tags =>
     -- the header and the tags reach only the entry's attributes and whether it was let in
     simp only [Edit.blind, Action.blind]
     cases create with
@@ -629,9 +629,9 @@ theorem apply_ops (st : State) (edit : Edit) :
         cases st.entry? e with
         | none => rfl
         | some en =>
-          simp only [Option.map_some, eblind_vault, mayWrite_ops, mayWrite_eblind, eblind_stayCell, eblind_cell]
+          simp only [Option.map_some, eblind_vault, mayWrite_ops, mayWrite_eblind, eblind_stayAudience, eblind_audience]
           simp only [map_ite_none]
-          cases en.stayCell stay with
+          cases en.stayAudience stay with
           | none => rfl
           | some x =>
             simp only [epochOf_ops, ops_writes]
@@ -642,9 +642,9 @@ theorem apply_ops (st : State) (edit : Edit) :
         cases st.entry? e with
         | none => rfl
         | some en =>
-          simp only [Option.map_some, eblind_vault, mayWrite_ops, mayWrite_eblind, eblind_stayCell, eblind_cell]
+          simp only [Option.map_some, eblind_vault, mayWrite_ops, mayWrite_eblind, eblind_stayAudience, eblind_audience]
           simp only [map_ite_none]
-          cases en.stayCell stay with
+          cases en.stayAudience stay with
           | none => rfl
           | some x =>
             simp only [epochOf_ops, ops_writes]
@@ -652,18 +652,18 @@ theorem apply_ops (st : State) (edit : Edit) :
     | some p =>
       obtain ⟨x, hdr⟩ := p
       simp only [Option.map_some]
-      simp only [apply, ops_writes, actsVia_ops, entry?_ops, Option.isSome_map, ops_born, vault?_ops, cellOk_ops,
+      simp only [apply, ops_writes, actsVia_ops, entry?_ops, Option.isSome_map, ops_born, vault?_ops, audienceOk_ops,
         mayCreate_ops, epochOf_ops, reenters_ops]
       simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
         eblind_comp_eblind, rblind_comp_rblind, List.map_cons, List.map_nil]
       rfl
   | move v e to keep via =>
     simp only [Edit.blind, Action.blind]
-    simp only [apply, entry?_ops, actsVia_ops, cellOk_ops]
+    simp only [apply, entry?_ops, actsVia_ops, audienceOk_ops]
     cases st.entry? e with
     | none => rfl
     | some en =>
-      simp only [Option.map_some, eblind_vault, eblind_cell, eblind_stays]
+      simp only [Option.map_some, eblind_vault, eblind_audience, eblind_stays]
       simp only [map_ite_none, Option.map_some, dropUnseen_ops, setEntry_ops, ops_ops]
       rfl
   | keys secret to pub =>
@@ -726,7 +726,7 @@ theorem eblind_edit_rank (o : Edit) : o.blind.rank = o.rank := by
 theorem eblind_edit_blind (o : Edit) : o.blind.blind = o.blind := by
   rcases o with ⟨_, _, _, _, a, _⟩
   cases a with
-  | cap c via => simp only [Edit.blind, Action.blind, blind_blind]
+  | share c via => simp only [Edit.blind, Action.blind, blind_blind]
   | syncRule r via => simp only [Edit.blind, Action.blind, rblind_blind]
   | write v e a s g deps p via create tags => cases create <;> rfl
   | _ => rfl
@@ -800,17 +800,17 @@ theorem runFrom_blind (rem : List Edit) (cs : List (Nat × List EditId × List F
 
 /-! ## What a removal takes away -/
 
-/-- The caps relay copies of edits issue are the caps the edits issue, as a relay sees them. -/
-theorem capsIn_blind (edits : List Edit) : capsIn (edits.map Edit.blind) = (capsIn edits).map Cap.blind := by
-  simp only [capsIn, List.filterMap_map, List.map_filterMap]
+/-- The shares relay copies of edits issue are the shares the edits issue, as a relay sees them. -/
+theorem sharesIn_blind (edits : List Edit) : sharesIn (edits.map Edit.blind) = (sharesIn edits).map Share.blind := by
+  simp only [sharesIn, List.filterMap_map, List.map_filterMap]
   congr 1
   funext o
   rcases o with ⟨_, _, _, _, a, _⟩
   cases a <;> rfl
 
-/-- Resting on a cap among caps reads only their ids and parents. -/
-theorem restsOnIn_blind (cs : List Cap) (c : CapId) :
-    ∀ n x, restsOnIn (cs.map Cap.blind) c n x = restsOnIn cs c n x
+/-- Resting on a share among shares reads only their ids and parents. -/
+theorem restsOnIn_blind (cs : List Share) (c : ShareId) :
+    ∀ n x, restsOnIn (cs.map Share.blind) c n x = restsOnIn cs c n x
   | 0, _ => rfl
   | n + 1, x => by
     simp only [restsOnIn, List.find?_map, Function.comp_def, blind_id, bind_parent_blind, restsOnIn_blind cs c n]
@@ -820,7 +820,7 @@ theorem removes_blind (edits : List Edit) (r : Edit) : removes (edits.map Edit.b
   rcases r with ⟨_, _, _, _, a, _⟩
   cases a with
   | revoke c actor keep via =>
-    simp only [Edit.blind, Action.blind, removes, capsIn_blind, List.filter_map, List.map_map, List.length_map,
+    simp only [Edit.blind, Action.blind, removes, sharesIn_blind, List.filter_map, List.map_map, List.length_map,
       restsOnIn_blind, Function.comp_def, blind_id]
   | _ => rfl
 

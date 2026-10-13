@@ -14,7 +14,7 @@
 //! - `draft`: the edits that found its person's vault, add the device to it, and claim the server nobody owns yet;
 //! - `sign`: the passkey's ceremony that signs those edits in one go;
 //! - `claim`: the server, handed its claim, signs that the new vault owns avenCEO;
-//! - `settle`: the server's cap on the new vault and the device's card in it;
+//! - `settle`: the server's share on the new vault and the device's card in it;
 //! - `pass`: the passkey's pass for the device, shown to the peer it links through, which hands back its person's vault;
 //! - `vault`: that vault's log, every edit checked as it is taken;
 //! - `join`: the edit that adds the device to its vault, signed and sent to the peer;

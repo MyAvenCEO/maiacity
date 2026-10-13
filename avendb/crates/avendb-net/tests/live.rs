@@ -115,8 +115,8 @@ async fn scenario_5_over_iroh() {
     assert_eq!(bob.proven(mac.id()), None, "Bob's Mac never reached Alice's: Welcome came through the server");
     assert!(server.read(move |lab, me| lab.fetched(me, welcome) > 0).await, "the server holds Welcome's edits");
     let opens = move |lab: &Lab, me| {
-        let cell = lab.state(me).entry(welcome).expect("Welcome").cell();
-        lab.reads(me, welcome) || lab.opens(me, KeyFam::Cell(coop, cell)) || lab.opens(me, KeyFam::Seed(coop))
+        let audience = lab.state(me).entry(welcome).expect("Welcome").audience();
+        lab.reads(me, welcome) || lab.opens(me, KeyFam::Audience(coop, audience)) || lab.opens(me, KeyFam::Seed(coop))
     };
     assert!(!server.read(opens).await, "the server opens neither Welcome's key, nor its cell's, nor the coop's");
     let store = server.read(|lab, me| lab.store(me)).await;
@@ -210,7 +210,7 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     let mut w = world();
     let coop = handbook_ready(&mut w);
     // the coop founds the Garden, an aven vault it owns, on Alice's Mac, Alice and Bob consenting: the public half of
-    // its seed, which caps over it are sealed to, is a new McEliece key; and it gives the server relay on all of it
+    // its seed, which shares over it are sealed to, is a new McEliece key; and it gives the server relay on all of it
     let (owners, nonce) = (vec![Principal::Vault(coop)], 7);
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
     let garden = w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("the Garden");

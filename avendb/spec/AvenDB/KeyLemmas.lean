@@ -45,12 +45,12 @@ theorem vault?_isSome {st : State} {vt : Vault} (h : vt ∈ st.vaults) : (st.vau
   rw [List.find?_isSome]
   exact ⟨vt, h, by simp⟩
 
-/-- A lookup finds a cap with that id. -/
-theorem cap?_id {st : State} {c : CapId} {cp : Cap} (h : st.cap? c = some cp) : cp.id = c := by
+/-- A lookup finds a share with that id. -/
+theorem share?_id {st : State} {c : ShareId} {cp : Share} (h : st.share? c = some cp) : cp.id = c := by
   simpa using List.find?_some h
 
-/-- A lookup finds a cap of the state. -/
-theorem cap?_mem {st : State} {c : CapId} {cp : Cap} (h : st.cap? c = some cp) : cp ∈ st.caps :=
+/-- A lookup finds a share of the state. -/
+theorem share?_mem {st : State} {c : ShareId} {cp : Share} (h : st.share? c = some cp) : cp ∈ st.shares :=
   List.mem_of_find?_eq_some h
 
 /-- A lookup finds an entry with that id. -/
@@ -75,15 +75,15 @@ theorem eq_of_nodup_map {α β : Type} {f : α → β} : ∀ {l : List α}, (l.m
       exact absurd (by rw [← hxy]; exact List.mem_map_of_mem hxl) hn.1
     · exact eq_of_nodup_map hn.2 hxl hyl hxy
 
-/-- With distinct ids, a lookup finds the one cap of that id. -/
-theorem cap?_of_mem {st : State} (hn : (st.caps.map (·.id)).Nodup) {cp : Cap} (h : cp ∈ st.caps) :
-    st.cap? cp.id = some cp := by
-  cases hf : st.cap? cp.id with
+/-- With distinct ids, a lookup finds the one share of that id. -/
+theorem share?_of_mem {st : State} (hn : (st.shares.map (·.id)).Nodup) {cp : Share} (h : cp ∈ st.shares) :
+    st.share? cp.id = some cp := by
+  cases hf : st.share? cp.id with
   | none =>
-    unfold State.cap? at hf
+    unfold State.share? at hf
     rw [List.find?_eq_none] at hf
     exact absurd (by simp) (hf cp h)
-  | some cp' => rw [eq_of_nodup_map hn (cap?_mem hf) h (cap?_id hf)]
+  | some cp' => rw [eq_of_nodup_map hn (share?_mem hf) h (share?_id hf)]
 
 /-- With distinct ids, a lookup finds the one entry of that id. -/
 theorem entry?_of_mem {st : State} (hn : (st.entries.map (·.id)).Nodup) {en : Entry} (h : en ∈ st.entries) :
@@ -95,9 +95,10 @@ theorem entry?_of_mem {st : State} (hn : (st.entries.map (·.id)).Nodup) {en : E
     exact absurd (by simp) (hf en h)
   | some en' => rw [eq_of_nodup_map hn (entry?_mem hf) h (entry?_id hf)]
 
-/-- The cell of a stay is the cell of a stay the entry has. -/
-theorem stayCell_mem {en : Entry} {s : Option EditId} {x : Cell} (h : en.stayCell s = some x) : (s, x) ∈ en.stays := by
-  unfold Entry.stayCell at h
+/-- The audience of a stay is the audience of a stay the entry has. -/
+theorem stayAudience_mem {en : Entry} {s : Option EditId} {x : Audience} (h : en.stayAudience s = some x) :
+    (s, x) ∈ en.stays := by
+  unfold Entry.stayAudience at h
   cases hf : en.stays.find? (·.1 == s) with
   | none => rw [hf] at h; cases h
   | some p =>
@@ -108,10 +109,10 @@ theorem stayCell_mem {en : Entry} {s : Option EditId} {x : Cell} (h : en.stayCel
     rw [← hp]
     exact List.mem_of_find?_eq_some hf
 
-/-- A stay the entry has has a cell. -/
-theorem stayCell_of_mem {en : Entry} {s : Option EditId} (h : s ∈ en.stays.map (·.1)) :
-    ∃ x, en.stayCell s = some x := by
-  unfold Entry.stayCell
+/-- A stay the entry has has an audience. -/
+theorem stayAudience_of_mem {en : Entry} {s : Option EditId} (h : s ∈ en.stays.map (·.1)) :
+    ∃ x, en.stayAudience s = some x := by
+  unfold Entry.stayAudience
   cases hf : en.stays.find? (·.1 == s) with
   | none =>
     rw [List.find?_eq_none] at hf
@@ -148,21 +149,21 @@ inductive Change (st : State) : State → Prop where
       Change st { st with vaults := st.vaults ++ [vt] }
   | setVault (v : VaultId) (vt vt' : Vault) : st.vault? v = some vt → vt'.id = vt.id →
       (∀ p ∈ vt'.owners, p ∈ vt.owners ∨ ownerFits st vt.kind p = true) → Change st (setVault st vt')
-  | cap (c : Cap) : st.cap? c.id = none → (st.vault? c.over).isSome = true →
-      (∀ g, c.grantee = .principal (.vault g) → (st.vault? g).isSome = true) →
-      Change st { st with caps := st.caps ++ [c] }
-  | revoke (rs : List CapId) : Change st { st with revoked := st.revoked ++ rs }
-  | create (en : Entry) (w : Write) (x : Cell) (u : List EditId) : st.entry? en.id = none → en.id ∉ st.born →
+  | share (c : Share) : st.share? c.id = none → (st.vault? c.over).isSome = true →
+      (∀ g, c.who = .principal (.vault g) → (st.vault? g).isSome = true) →
+      Change st { st with shares := st.shares ++ [c] }
+  | revoke (rs : List ShareId) : Change st { st with revoked := st.revoked ++ rs }
+  | create (en : Entry) (w : Write) (x : Audience) (u : List EditId) : st.entry? en.id = none → en.id ∉ st.born →
       (st.vault? en.vault).isSome = true → en.stays = [(none, x)] → w.entry = en.id → w.stay = none →
       Change st { st with entries := st.entries ++ [en], born := st.born ++ [en.id], writes := st.writes ++ [w],
                           uncounted := u }
   | write (en : Entry) (w : Write) (st₁ : State) (u : List EditId) : st.entry? w.entry = some en →
       w.stay ∈ en.stays.map (·.1) → (st₁ = st ∨ ∃ a, st₁ = setEntry st { en with attrs := a }) →
       Change st { st₁ with writes := st₁.writes ++ [w], uncounted := u }
-  | move (en : Entry) (σ : Option EditId) (x : Cell) : st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
+  | move (en : Entry) (σ : Option EditId) (x : Audience) : st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
       Change st (setEntry st { en with stays := (σ, x) :: en.stays })
   | lane (l : List (VaultId × BlobId)) : Change st { st with lane := l }
-  | sync (rs : List SyncRule) (en : List CapId) (ps : List (EntryId × List CapId)) :
+  | sync (rs : List SyncRule) (en : List ShareId) (ps : List (EntryId × List ShareId)) :
       Change st { st with rules := rs, ended := en, picks := ps }
 
 /-- An accepted edit: a change, then some of the entries and writes dropped. -/
@@ -235,24 +236,24 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     rename_i hv _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- a cap naming a signer is refused
+  · -- a share naming a signer is refused
     rename_i hno _ _
     exact absurd rfl hno
-  · -- a cap naming a vault
+  · -- a share naming a vault
     rename_i hfree _ g hg hgv _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree hgv
-    refine Change.applied (.cap _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
+    refine Change.applied (.share _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
     rw [hg] at hg'
     cases hg'
     exact Option.isSome_iff_ne_none.2 hgv.1
-  · -- a public cap
+  · -- a public share
     rename_i hfree _ hg _ _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree
-    refine Change.applied (.cap _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
+    refine Change.applied (.share _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
     rw [hg] at hg'
     cases hg'
   · -- revoke
@@ -268,11 +269,11 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   · -- a write to an entry, by its own vault
     rename_i he _ _ _ hx _ _ _ _
     cases h
-    exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayCell_mem hx, rfl⟩) (.inr ⟨_, rfl⟩))
+    exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inr ⟨_, rfl⟩))
   · -- a write to an entry, by another vault
     rename_i he _ _ _ hx _ _ _ _
     cases h
-    exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayCell_mem hx, rfl⟩) (.inl rfl))
+    exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inl rfl))
   · -- move
     rename_i he _ hnew
     cases h
@@ -301,7 +302,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
 
 /-! ## What exists
 
-Owners, a cap's vault and grantee, and an entry's vault exist; caps and entries have distinct ids; each entry has
+Owners, a share's vault and grantee, and an entry's vault exist; shares and entries have distinct ids; each entry has
 stays, all distinct; and a write is of an entry once created, in one of its entry's stays (`Sane`). Every accepted
 edit keeps this. -/
 
@@ -341,17 +342,17 @@ theorem vault?_setVault (st : State) (vt' : Vault) (x : VaultId) :
   simp only [Function.comp]
   split <;> simp_all
 
-/-- What every reachable state keeps about what exists: what owners, caps and entries name exists, ids are distinct,
+/-- What every reachable state keeps about what exists: what owners, shares and entries name exists, ids are distinct,
     entries have distinct stays, and writes are of entries once created, in stays they have. -/
 structure Sane (st : State) : Prop where
   /-- Every owner vault exists. -/
   owners : ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st.vault? o).isSome = true
-  /-- Caps have distinct ids. -/
-  capIds : (st.caps.map (·.id)).Nodup
-  /-- A cap's vault exists. -/
-  capOver : ∀ cp ∈ st.caps, (st.vault? cp.over).isSome = true
-  /-- A cap's grantee vault exists. -/
-  capGrantee : ∀ cp ∈ st.caps, ∀ g, cp.grantee = .principal (.vault g) → (st.vault? g).isSome = true
+  /-- Shares have distinct ids. -/
+  shareIds : (st.shares.map (·.id)).Nodup
+  /-- A share's vault exists. -/
+  shareOver : ∀ cp ∈ st.shares, (st.vault? cp.over).isSome = true
+  /-- A share's grantee vault exists. -/
+  shareWho : ∀ cp ∈ st.shares, ∀ g, cp.who = .principal (.vault g) → (st.vault? g).isSome = true
   /-- Entries have distinct ids. -/
   entryIds : (st.entries.map (·.id)).Nodup
   /-- An entry's vault exists. -/
@@ -371,12 +372,12 @@ structure Sane (st : State) : Prop where
 theorem Sane.of_vaults {st st' : State} (hs : Sane st)
     (hgrow : ∀ x, (st.vault? x).isSome = true → (st'.vault? x).isSome = true)
     (howners : ∀ x vt, st'.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st'.vault? o).isSome = true)
-    (hc : st'.caps = st.caps) (he : st'.entries = st.entries) (hw : st'.writes = st.writes)
+    (hc : st'.shares = st.shares) (he : st'.entries = st.entries) (hw : st'.writes = st.writes)
     (hb : st'.born = st.born) : Sane st' where
   owners := howners
-  capIds := hc ▸ hs.capIds
-  capOver cp hcp := hgrow _ (hs.capOver cp (hc ▸ hcp))
-  capGrantee cp hcp g hg := hgrow _ (hs.capGrantee cp (hc ▸ hcp) g hg)
+  shareIds := hc ▸ hs.shareIds
+  shareOver cp hcp := hgrow _ (hs.shareOver cp (hc ▸ hcp))
+  shareWho cp hcp g hg := hgrow _ (hs.shareWho cp (hc ▸ hcp) g hg)
   entryIds := he ▸ hs.entryIds
   entryVault en hen := hgrow _ (hs.entryVault en (he ▸ hen))
   entryBorn en hen := hb ▸ hs.entryBorn en (he ▸ hen)
@@ -385,8 +386,8 @@ theorem Sane.of_vaults {st st' : State} (hs : Sane st)
   writeBorn w hw' := hb ▸ hs.writeBorn w (hw ▸ hw')
   writeStay w hw' en hen := hs.writeStay w (hw ▸ hw') en (he ▸ hen)
 
-/-- A state with the same vaults, caps, entries, writes and births is as sane. -/
-theorem Sane.congr {st st' : State} (hs : Sane st) (hv : st'.vaults = st.vaults) (hc : st'.caps = st.caps)
+/-- A state with the same vaults, shares, entries, writes and births is as sane. -/
+theorem Sane.congr {st st' : State} (hs : Sane st) (hv : st'.vaults = st.vaults) (hc : st'.shares = st.shares)
     (he : st'.entries = st.entries) (hw : st'.writes = st.writes) (hb : st'.born = st.born) : Sane st' :=
   hs.of_vaults (fun x h => by rw [vault?_congr hv]; exact h)
     (fun x vt h o ho => by rw [vault?_congr hv] at h ⊢; exact hs.owners x vt h o ho) hc he hw hb
@@ -405,7 +406,7 @@ theorem Sane.set_entry {st : State} (hs : Sane st) {en en' : Entry} (hen : en �
     · exact .inr ⟨by simp [hxid, hx], by simp [hxid]⟩
   refine Sane.of_vaults (st := { st with entries := (AvenDB.setEntry st en').entries }) ?_ (fun _ h => h) hs.owners
     rfl rfl rfl rfl
-  refine ⟨hs.owners, hs.capIds, hs.capOver, hs.capGrantee, ?_, ?_, ?_, ?_, ?_, hs.writeBorn, ?_⟩
+  refine ⟨hs.owners, hs.shareIds, hs.shareOver, hs.shareWho, ?_, ?_, ?_, ?_, ?_, hs.writeBorn, ?_⟩
   · show ((st.entries.map fun x : Entry => if x.id == en'.id then en' else x).map fun x : Entry => x.id).Nodup
     rw [List.map_map]
     have : ((·.id) ∘ fun x : Entry => if x.id == en'.id then en' else x) = (·.id) := by
@@ -442,9 +443,9 @@ theorem Sane.addWrite {st : State} (hs : Sane st) {w : Write} {u : List EditId} 
     (hstay : ∀ en ∈ st.entries, en.id = w.entry → w.stay ∈ en.stays.map (·.1)) :
     Sane { st with writes := st.writes ++ [w], uncounted := u } where
   owners := hs.owners
-  capIds := hs.capIds
-  capOver := hs.capOver
-  capGrantee := hs.capGrantee
+  shareIds := hs.shareIds
+  shareOver := hs.shareOver
+  shareWho := hs.shareWho
   entryIds := hs.entryIds
   entryVault := hs.entryVault
   entryBorn := hs.entryBorn
@@ -463,9 +464,9 @@ theorem Sane.addWrite {st : State} (hs : Sane st) {w : Write} {u : List EditId} 
 theorem Sane.drop {st : State} (hs : Sane st) {es : List Entry} {ws : List Write} (he : es.Sublist st.entries)
     (hw : ws.Sublist st.writes) : Sane { st with entries := es, writes := ws } where
   owners := hs.owners
-  capIds := hs.capIds
-  capOver := hs.capOver
-  capGrantee := hs.capGrantee
+  shareIds := hs.shareIds
+  shareOver := hs.shareOver
+  shareWho := hs.shareWho
   entryIds := (he.map _).nodup hs.entryIds
   entryVault en hen := hs.entryVault en (he.subset hen)
   entryBorn en hen := hs.entryBorn en (he.subset hen)
@@ -528,25 +529,25 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
         · simp only [beq_iff_eq, hy, ite_false] at hx
           subst hx
           exact hgrow (hs.owners x _ hl o ho)
-  | cap c hfree hover hgr =>
+  | share c hfree hover hgr =>
     refine ⟨hs.owners, ?_, ?_, ?_, hs.entryIds, hs.entryVault, hs.entryBorn, hs.staysNe, hs.staysNodup,
       hs.writeBorn, hs.writeStay⟩
-    · show ((st.caps ++ [c]).map (·.id)).Nodup
+    · show ((st.shares ++ [c]).map (·.id)).Nodup
       rw [List.map_append, List.nodup_append]
-      refine ⟨hs.capIds, by simp, fun a ha b hb => ?_⟩
+      refine ⟨hs.shareIds, by simp, fun a ha b hb => ?_⟩
       rw [List.mem_singleton.1 hb]
       intro hac
       obtain ⟨cp, hcp, rfl⟩ := List.mem_map.1 ha
-      unfold State.cap? at hfree
+      unfold State.share? at hfree
       rw [List.find?_eq_none] at hfree
       exact hfree cp hcp (by simp [hac])
     · intro cp hcp
       rcases List.mem_append.1 hcp with hcp | hcp
-      · exact hs.capOver cp hcp
+      · exact hs.shareOver cp hcp
       · rw [List.mem_singleton.1 hcp]; exact hover
     · intro cp hcp g hg
       rcases List.mem_append.1 hcp with hcp | hcp
-      · exact hs.capGrantee cp hcp g hg
+      · exact hs.shareWho cp hcp g hg
       · rw [List.mem_singleton.1 hcp] at hg; exact hgr g hg
   | revoke rs => exact hs.congr rfl rfl rfl rfl rfl
   | create en w x _ hfree hnew hv hstays hwe hws =>
@@ -554,7 +555,7 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
       unfold State.entry? at hfree
       rw [List.find?_eq_none] at hfree
       exact hfree y hy (by simp [hid])
-    refine ⟨hs.owners, hs.capIds, hs.capOver, hs.capGrantee, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨hs.owners, hs.shareIds, hs.shareOver, hs.shareWho, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · show ((st.entries ++ [en]).map (·.id)).Nodup
       rw [List.map_append, List.nodup_append]
       refine ⟨hs.entryIds, by simp, fun a ha b hb => ?_⟩
@@ -622,7 +623,7 @@ theorem Sane.of_apply {st post : State} {edit : Edit} (hs : Sane st) (h : apply 
 
 /-! ## What the key rules read
 
-Who may open what reads only the vaults, the caps and the revocations; the key families read the entries too, and the
+Who may open what reads only the vaults, the shares and the revocations; the key families read the entries too, and the
 targets the epochs. -/
 
 /-- The current key reads only the epochs. -/
@@ -641,32 +642,32 @@ theorem ownsN_congr {st st' : State} (hv : st'.vaults = st.vaults) (a : VaultId)
   | 0, _ => rfl
   | n + 1, x => by simp only [ownsN, vault?_congr hv, ownsN_congr hv a n]
 
-/-- What a vault may read reads only the caps and the revocations. -/
-theorem readsV_congr {st st' : State} (hc : st'.caps = st.caps) (hr : st'.revoked = st.revoked) (y : VaultId)
+/-- What a vault may read reads only the shares and the revocations. -/
+theorem readsV_congr {st st' : State} (hc : st'.shares = st.shares) (hr : st'.revoked = st.revoked) (y : VaultId)
     (k : KeyFam) : readsV st' y k = readsV st y k := by
-  cases k <;> simp only [readsV, State.cap?, State.live, hc, hr]
+  cases k <;> simp only [readsV, State.share?, State.live, hc, hr]
 
-/-- Being public reads only the caps and the revocations. -/
-theorem publicKey_congr {st st' : State} (hc : st'.caps = st.caps) (hr : st'.revoked = st.revoked) (k : KeyFam) :
+/-- Being public reads only the shares and the revocations. -/
+theorem publicKey_congr {st st' : State} (hc : st'.shares = st.shares) (hr : st'.revoked = st.revoked) (k : KeyFam) :
     publicKey st' k = publicKey st k := by
-  cases k <;> simp only [publicKey, State.cap?, State.live, hc, hr]
+  cases k <;> simp only [publicKey, State.share?, State.live, hc, hr]
 
-/-- Being entitled reads only the vaults, the caps and the revocations. -/
-theorem Holder.entitled_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.caps = st.caps)
+/-- Being entitled reads only the vaults, the shares and the revocations. -/
+theorem Holder.entitled_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.shares = st.shares)
     (hr : st'.revoked = st.revoked) (h : Holder) (k : KeyFam) : h.entitled st' k = h.entitled st k := by
   have hd : st'.depth = st.depth := by simp [State.depth, hv]
   cases h <;> simp only [Holder.entitled, AvenDB.entitled, entitledV, actsFor, owns, hd, actsForN_congr hv,
     ownsN_congr hv, readsV_congr hc hr, hv, publicKey_congr hc hr]
 
-/-- The key families read only the vaults, the caps, the revocations and the entries. -/
-theorem keyFams_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.caps = st.caps)
+/-- The key families read only the vaults, the shares, the revocations and the entries. -/
+theorem keyFams_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.shares = st.shares)
     (hr : st'.revoked = st.revoked) (he : st'.entries = st.entries) : keyFams st' = keyFams st := by
   simp only [keyFams, State.live, hv, hc, hr, he]
 
-/-- The targets read only the vaults, the caps, the revocations and the epochs. -/
-theorem targets_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.caps = st.caps)
+/-- The targets read only the vaults, the shares, the revocations and the epochs. -/
+theorem targets_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.shares = st.shares)
     (hr : st'.revoked = st.revoked) (he : st'.epochs = st.epochs) (k : KeyFam) : targets st' k = targets st k := by
-  cases k <;> simp only [targets, vault?_congr hv, State.cap?, State.live, hc, hr, curKey_congr he]
+  cases k <;> simp only [targets, vault?_congr hv, State.share?, State.live, hc, hr, curKey_congr he]
 
 /-- The holders read only the vaults. -/
 theorem holders_congr {st st' : State} (hv : st'.vaults = st.vaults) : holders st' = holders st := by
@@ -706,7 +707,7 @@ theorem KeysOnly.trans {a b c : State} (h₁ : KeysOnly a b) (h₂ : KeysOnly b 
 /-- What a change of keys keeps. -/
 structure Kept (st st' : State) : Prop where
   vaults : st'.vaults = st.vaults
-  caps : st'.caps = st.caps
+  shares : st'.shares = st.shares
   revoked : st'.revoked = st.revoked
   entries : st'.entries = st.entries
   writes : st'.writes = st.writes
@@ -724,19 +725,19 @@ theorem SealsOnly.epochs {a b : State} (h : SealsOnly a b) : b.epochs = a.epochs
 
 /-- A change of keys keeps the families in use. -/
 theorem Kept.keyFams {a b : State} (h : Kept a b) : keyFams b = keyFams a :=
-  keyFams_congr h.vaults h.caps h.revoked h.entries
+  keyFams_congr h.vaults h.shares h.revoked h.entries
 
 /-- A change of keys keeps who is entitled to what. -/
 theorem Kept.entitled {a b : State} (h : Kept a b) (x : Holder) (k : KeyFam) : x.entitled b k = x.entitled a k :=
-  Holder.entitled_congr h.vaults h.caps h.revoked x k
+  Holder.entitled_congr h.vaults h.shares h.revoked x k
 
 /-- A change of keys keeps which families are public. -/
 theorem Kept.publicKey {a b : State} (h : Kept a b) (k : KeyFam) : publicKey b k = publicKey a k :=
-  publicKey_congr h.caps h.revoked k
+  publicKey_congr h.shares h.revoked k
 
 /-- A change of keys keeps the state sane. -/
 theorem Kept.sane {a b : State} (h : Kept a b) (hs : Sane a) : Sane b :=
-  hs.congr h.vaults h.caps h.entries h.writes h.born
+  hs.congr h.vaults h.shares h.entries h.writes h.born
 
 /-- Adding a seal changes only the seals. -/
 theorem sealsOnly_addSeal (st : State) (s : Seal) : SealsOnly st (addSeal st s) := by
@@ -760,7 +761,7 @@ theorem sealsOnly_linkAll (st : State) : SealsOnly st (linkAll st) := by
   refine foldl_inv (fun acc => SealsOnly st acc) _ (fun acc w h => ?_) _ _
     (h.trans (sealsOnly_addSeal _ _))
   have h' := h.trans (sealsOnly_addSeal acc
-    ⟨w.key, .scoped (.cell en.vault ((en.stayCell w.stay).getD [])) w.gen⟩)
+    ⟨w.key, .scoped (.audience en.vault ((en.stayAudience w.stay).getD [])) w.epoch⟩)
   split
   · exact h'
   · exact h'.trans (sealsOnly_addSeal _ _)
@@ -857,7 +858,7 @@ theorem linkAll_mono (st : State) : (linkAll st).published = st.published ∧ �
     ⟨by unfold addSeal; split <;> rfl, fun s hs => mem_addSeal_of_mem hs⟩
   refine foldl_inv (fun acc : State => acc.published = st.published ∧ ∀ s ∈ st.seals, s ∈ acc.seals) _
     (fun acc w h => ?_) _ _ ⟨(hstep _ _).1.trans h.1, fun s hs => (hstep _ _).2 s (h.2 s hs)⟩
-  have h₁ := hstep acc ⟨w.key, .scoped (.cell en.vault ((en.stayCell w.stay).getD [])) w.gen⟩
+  have h₁ := hstep acc ⟨w.key, .scoped (.audience en.vault ((en.stayAudience w.stay).getD [])) w.epoch⟩
   split
   · exact ⟨h₁.1.trans h.1, fun s hs => h₁.2 s (h.2 s hs)⟩
   · exact ⟨(hstep _ _).1.trans (h₁.1.trans h.1), fun s hs => (hstep _ _).2 s (h₁.2 s (h.2 s hs))⟩
@@ -960,7 +961,7 @@ theorem foldl_sealOne_spec (st : State) (l : List KeyFam) :
   refine ⟨hso.trans (sealsOnly_sealOne acc k), fun s hs => ?_, fun x hx => ?_⟩
   · rcases sealOne_seals hs with hs | ⟨t, ht, rfl⟩
     · exact hseals s hs
-    · rw [targets_congr hkept.vaults hkept.caps hkept.revoked hso.epochs] at ht
+    · rw [targets_congr hkept.vaults hkept.shares hkept.revoked hso.epochs] at ht
       exact .inr ⟨k, hk, t, ht, by rw [curKey_congr hso.epochs]⟩
   · rcases sealOne_published hx with hx | ⟨hkp, rfl⟩
     · exact hpub x hx
@@ -992,19 +993,19 @@ theorem foldl_sealOne_all (st : State) {k : KeyFam} :
     · refine ⟨fun t ht => ?_, fun hpub => ?_⟩
       · refine foldl_inv (fun a : State => ⟨st.curKey k, t⟩ ∈ a.seals) _ (fun a _ h => sealOne_seals_mono h) l _ ?_
         rw [← curKey_congr hso.epochs]
-        exact sealOne_sealed acc k (by rw [targets_congr hkept.vaults hkept.caps hkept.revoked hso.epochs]; exact ht)
+        exact sealOne_sealed acc k (by rw [targets_congr hkept.vaults hkept.shares hkept.revoked hso.epochs]; exact ht)
       · refine foldl_inv (fun a : State => st.curKey k ∈ a.published) _ (fun a _ h => sealOne_published_mono h) l _
           ?_
         rw [← curKey_congr hso.epochs]
         exact sealOne_publishes (by rw [hkept.publicKey]; exact hpub)
     · exact foldl_sealOne_all st l _ (hso.trans (sealsOnly_sealOne acc k')) hmem
 
-/-- The seals `linkAll` adds: each entry's current key under its cell's current key, each write's key under its stay's
-    cell key of its generation, and the key of a write from an earlier stay under its entry's current key. -/
+/-- The seals `linkAll` adds: each entry's current key under its audience's current key, each write's key under its
+    stay's audience key of its epoch, and the key of a write from an earlier stay under its entry's current key. -/
 def LinkSeal (st : State) (s : Seal) : Prop :=
-  ∃ en ∈ st.entries, s = ⟨entryKey st en, st.curKey (.cell en.vault en.cell)⟩ ∨
+  ∃ en ∈ st.entries, s = ⟨entryKey st en, st.curKey (.audience en.vault en.audience)⟩ ∨
     ∃ w ∈ st.writes, w.entry = en.id ∧
-      (s = ⟨w.key, .scoped (.cell en.vault ((en.stayCell w.stay).getD [])) w.gen⟩ ∨
+      (s = ⟨w.key, .scoped (.audience en.vault ((en.stayAudience w.stay).getD [])) w.epoch⟩ ∨
         (w.stay ≠ en.stay ∧ s = ⟨w.key, entryKey st en⟩))
 
 /-- An entry key reads only the epochs. -/
@@ -1019,8 +1020,8 @@ theorem linkAll_seals {st : State} {s : Seal} (hs : s ∈ (linkAll st).seals) : 
     ?_ st ⟨.refl _, fun s hs => .inl hs⟩).2 s hs
   intro acc en hen ⟨hso, hseals⟩
   dsimp only
-  have h₀ : SealsOnly st (addSeal acc ⟨entryKey acc en, acc.curKey (.cell en.vault en.cell)⟩) ∧
-      ∀ s ∈ (addSeal acc ⟨entryKey acc en, acc.curKey (.cell en.vault en.cell)⟩).seals,
+  have h₀ : SealsOnly st (addSeal acc ⟨entryKey acc en, acc.curKey (.audience en.vault en.audience)⟩) ∧
+      ∀ s ∈ (addSeal acc ⟨entryKey acc en, acc.curKey (.audience en.vault en.audience)⟩).seals,
         s ∈ st.seals ∨ LinkSeal st s := by
     refine ⟨hso.trans (sealsOnly_addSeal _ _), fun s hs => ?_⟩
     rcases mem_addSeal hs with hs | rfl
@@ -1031,8 +1032,9 @@ theorem linkAll_seals {st : State} {s : Seal} (hs : s ∈ (linkAll st).seals) : 
   intro acc w hw ⟨hso, hseals⟩
   obtain ⟨hw, hwe⟩ := List.mem_filter.1 hw
   have hwe' : w.entry = en.id := by simpa using hwe
-  have h₁ : SealsOnly st (addSeal acc ⟨w.key, .scoped (.cell en.vault ((en.stayCell w.stay).getD [])) w.gen⟩) ∧
-      ∀ s ∈ (addSeal acc ⟨w.key, .scoped (.cell en.vault ((en.stayCell w.stay).getD [])) w.gen⟩).seals,
+  have h₁ : SealsOnly st
+        (addSeal acc ⟨w.key, .scoped (.audience en.vault ((en.stayAudience w.stay).getD [])) w.epoch⟩) ∧
+      ∀ s ∈ (addSeal acc ⟨w.key, .scoped (.audience en.vault ((en.stayAudience w.stay).getD [])) w.epoch⟩).seals,
         s ∈ st.seals ∨ LinkSeal st s := by
     refine ⟨hso.trans (sealsOnly_addSeal _ _), fun s hs => ?_⟩
     rcases mem_addSeal hs with hs | rfl
@@ -1147,7 +1149,7 @@ theorem settle_seals {pre post : State} {s : Seal} (hs : s ∈ (settle pre post)
         exact he2
     · refine .inr (.inr (.inl ⟨k, ?_, t, ?_, ?_⟩))
       · rw [← hmid.keyFams]; exact hk'
-      · rw [targets_congr hk.vaults hk.caps hk.revoked hall.epochs]; exact ht
+      · rw [targets_congr hk.vaults hk.shares hk.revoked hall.epochs]; exact ht
       · rw [curKey_congr hall.epochs]
   · refine .inr (.inr (.inr ?_))
     obtain ⟨en, hen, h⟩ := hs
@@ -1193,7 +1195,7 @@ theorem settle_sealed {pre post : State} {k : KeyFam} (hk : k ∈ keyFams post) 
   unfold settle
   rw [sealAll_eq]
   refine ⟨fun t ht => ?_, fun hpub => ?_⟩
-  · rw [targets_congr hk'.vaults hk'.caps hk'.revoked hall.epochs] at ht
+  · rw [targets_congr hk'.vaults hk'.shares hk'.revoked hall.epochs] at ht
     rw [curKey_congr hall.epochs]
     exact hmono.2 _ (hts t ht)
   · rw [hmono.1, curKey_congr hall.epochs]
@@ -1607,11 +1609,11 @@ theorem actsFor_mem {st : State} {s : SignerId} {v : VaultId} (h : actsFor st s 
 
 /-! ## Who may open a family's current key -/
 
-/-- The key families: each vault's seed, the key of each live cap with read or more, and each entry's cell. -/
+/-- The key families: each vault's seed, the key of each live share with read or more, and each entry's audience. -/
 theorem mem_keyFams {st : State} {k : KeyFam} :
     k ∈ keyFams st ↔ (∃ vt ∈ st.vaults, k = .seed vt.id) ∨
-      (∃ cp ∈ st.caps, st.live cp.id = true ∧ cp.role.allows .read = true ∧ k = .cap cp.over cp.id) ∨
-      ∃ en ∈ st.entries, k = .cell en.vault en.cell := by
+      (∃ cp ∈ st.shares, st.live cp.id = true ∧ cp.level.allows .read = true ∧ k = .share cp.over cp.id) ∨
+      ∃ en ∈ st.entries, k = .audience en.vault en.audience := by
   unfold keyFams
   simp only [List.mem_append, List.mem_map, List.mem_filter, List.mem_eraseDups, Bool.and_eq_true]
   constructor
@@ -1638,15 +1640,15 @@ theorem seed_mem_keyFams_iff {st : State} {v : VaultId} (h : KeyFam.seed v ∈ k
   · cases h
   · cases h
 
-/-- A cap family is of a live cap with read or more, over its vault: with distinct ids, the one `cap?` finds. -/
-theorem cap_mem_keyFams {st : State} (hn : (st.caps.map (·.id)).Nodup) {v : VaultId} {c : CapId}
-    (h : KeyFam.cap v c ∈ keyFams st) :
-    ∃ cp, st.cap? c = some cp ∧ cp ∈ st.caps ∧ cp.over = v ∧ cp.id = c ∧ st.live c = true ∧
-      cp.role.allows .read = true := by
+/-- A share family is of a live share with read or more, over its vault: with distinct ids, the one `share?` finds. -/
+theorem share_mem_keyFams {st : State} (hn : (st.shares.map (·.id)).Nodup) {v : VaultId} {c : ShareId}
+    (h : KeyFam.share v c ∈ keyFams st) :
+    ∃ cp, st.share? c = some cp ∧ cp ∈ st.shares ∧ cp.over = v ∧ cp.id = c ∧ st.live c = true ∧
+      cp.level.allows .read = true := by
   rcases mem_keyFams.1 h with ⟨_, _, h⟩ | ⟨cp, hcp, hl, hr, h⟩ | ⟨_, _, h⟩
   · cases h
   · cases h
-    exact ⟨cp, cap?_of_mem hn hcp, hcp, rfl, rfl, hl, hr⟩
+    exact ⟨cp, share?_of_mem hn hcp, hcp, rfl, rfl, hl, hr⟩
   · cases h
 
 /-- Whoever may open a vault's seed may open what that vault may open. -/
@@ -1674,71 +1676,72 @@ theorem mayOpen_via {st : State} {h : Holder} {v : VaultId} {k : KeyFam}
     | everyone => simp [Holder.entitled, publicKey] at hv
   · exact .inr hk
 
-/-- Family `k` lies within family `f` in `st`: it is `f`, or `f` is a cap's and `k` a cell of the same vault that the
-    cap reaches, being in it or wide. -/
+/-- Family `k` lies within family `f` in `st`: it is `f`, or `f` is a share's and `k` an audience of the same vault that
+    the share reaches, being in it or wide. -/
 def Within (st : State) : KeyFam → KeyFam → Prop
-  | .cap v c, k => k = .cap v c ∨
-      ∃ x, k = .cell v x ∧ (x.contains c = true ∨ ∃ cp ∈ st.caps, cp.id = c ∧ cp.wide = true)
+  | .share v c, k => k = .share v c ∨
+      ∃ x, k = .audience v x ∧ (x.contains c = true ∨ ∃ cp ∈ st.shares, cp.id = c ∧ cp.wide = true)
   | f, k => k = f
 
 /-- A family lies within itself. -/
 theorem Within.refl (st : State) (f : KeyFam) : Within st f f := by
   cases f <;> simp [Within]
 
-/-- What lies within a cap's or a cell's family is a cap's or a cell's family. -/
+/-- What lies within a share's or an audience's family is a share's or an audience's family. -/
 theorem Within.not_seed {st : State} {f k : KeyFam} (h : Within st f k) (hf : ∀ v, f ≠ .seed v) :
     ∀ v, k ≠ .seed v := by
   intro v hk
   subst hk
   cases f with
   | seed u => exact hf u rfl
-  | cap u c =>
+  | share u c =>
     rcases h with h | ⟨x, h, -⟩
     · cases h
     · cases h
-  | cell u x => cases h
+  | audience u x => cases h
 
 /-- Lying within chains. -/
 theorem Within.trans {st : State} {f k k' : KeyFam} (h₁ : Within st f k) (h₂ : Within st k k') : Within st f k' := by
   cases f with
   | seed v => simp only [Within] at h₁; subst h₁; exact h₂
-  | cell v x => simp only [Within] at h₁; subst h₁; exact h₂
-  | cap v c =>
+  | audience v x => simp only [Within] at h₁; subst h₁; exact h₂
+  | share v c =>
     rcases h₁ with rfl | ⟨x, rfl, hx⟩
     · exact h₂
     · simp only [Within] at h₂
       subst h₂
       exact .inr ⟨x, rfl, hx⟩
 
-/-- More caps, more within. -/
-theorem Within.mono {st st' : State} (hc : ∀ cp ∈ st.caps, cp ∈ st'.caps) {f k : KeyFam} (h : Within st f k) :
+/-- More shares, more within. -/
+theorem Within.mono {st st' : State} (hc : ∀ cp ∈ st.shares, cp ∈ st'.shares) {f k : KeyFam} (h : Within st f k) :
     Within st' f k := by
   cases f with
   | seed v => exact h
-  | cell v x => exact h
-  | cap v c =>
+  | audience v x => exact h
+  | share v c =>
     rcases h with h | ⟨x, rfl, hx | ⟨cp, hcp, hid, hw⟩⟩
     · exact .inl h
     · exact .inr ⟨x, rfl, .inl hx⟩
     · exact .inr ⟨x, rfl, .inr ⟨cp, hc cp hcp, hid, hw⟩⟩
 
-/-- A cap named in a cell, or whose every copy is wide, reaches the cell; with distinct cap ids a wide cap of that id
-    is its only copy. -/
-theorem wide_all {st : State} (hn : (st.caps.map (·.id)).Nodup) {c : CapId} {x : Cell}
-    (hx : x.contains c = true ∨ ∃ cp ∈ st.caps, cp.id = c ∧ cp.wide = true) :
-    x.contains c = true ∨ ∀ cp ∈ st.caps, cp.id = c → cp.wide = true := by
+/-- A share named in an audience, or whose every copy is wide, reaches the audience; with distinct share ids a wide
+    share of that id is its only copy. -/
+theorem wide_all {st : State} (hn : (st.shares.map (·.id)).Nodup) {c : ShareId} {x : Audience}
+    (hx : x.contains c = true ∨ ∃ cp ∈ st.shares, cp.id = c ∧ cp.wide = true) :
+    x.contains c = true ∨ ∀ cp ∈ st.shares, cp.id = c → cp.wide = true := by
   rcases hx with hx | ⟨cp, hcp, hid, hw⟩
   · exact .inl hx
   · refine .inr fun cp' hcp' hid' => ?_
     rw [eq_of_nodup_map hn hcp' hcp (hid'.trans hid.symm)]
     exact hw
 
-/-- A cap a vault may read reaches a cell it is in, or every cell when wide: the vault may read that cell. -/
-theorem readsV_cell_of_cap {st : State} {y v : VaultId} {c : CapId} {x : Cell}
-    (h : readsV st y (.cap v c) = true) (hx : x.contains c = true ∨ ∀ cp ∈ st.caps, cp.id = c → cp.wide = true) :
-    readsV st y (.cell v x) = true := by
+/-- A share a vault may read reaches an audience it is in, or every audience when wide: the vault may read that
+    audience. -/
+theorem readsV_audience_of_share {st : State} {y v : VaultId} {c : ShareId} {x : Audience}
+    (h : readsV st y (.share v c) = true) (hx : x.contains c = true ∨ ∀ cp ∈ st.shares, cp.id = c → cp.wide = true) :
+    readsV st y (.audience v x) = true := by
   simp only [readsV] at h ⊢
-  cases hc : st.cap? c with
+  cases hc : st.share? c with
   | none => rw [hc] at h; cases h
   | some cp =>
     rw [hc] at h
@@ -1746,8 +1749,8 @@ theorem readsV_cell_of_cap {st : State} {y v : VaultId} {c : CapId} {x : Cell}
     obtain ⟨⟨⟨hover, hlive⟩, hread⟩, hy⟩ := h
     rcases hy with rfl | hg
     · simp
-    · have hcp := cap?_mem hc
-      have hid := cap?_id hc
+    · have hcp := share?_mem hc
+      have hid := share?_id hc
       refine Bool.or_eq_true_iff.2 (.inr (List.any_eq_true.2 ⟨cp, hcp, ?_⟩))
       simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, hover, hid, hlive, hread, hg, and_true,
         true_and]
@@ -1755,19 +1758,19 @@ theorem readsV_cell_of_cap {st : State} {y v : VaultId} {c : CapId} {x : Cell}
       · exact .inr hx
       · exact .inl (hw cp hcp hid)
 
-/-- A public cap reaches a cell it is in, or every cell when wide: that cell is public. -/
-theorem publicKey_cell_of_cap {st : State} {v : VaultId} {c : CapId} {x : Cell}
-    (h : publicKey st (.cap v c) = true) (hx : x.contains c = true ∨ ∀ cp ∈ st.caps, cp.id = c → cp.wide = true) :
-    publicKey st (.cell v x) = true := by
+/-- A public share reaches an audience it is in, or every audience when wide: that audience is public. -/
+theorem publicKey_audience_of_share {st : State} {v : VaultId} {c : ShareId} {x : Audience}
+    (h : publicKey st (.share v c) = true) (hx : x.contains c = true ∨ ∀ cp ∈ st.shares, cp.id = c → cp.wide = true) :
+    publicKey st (.audience v x) = true := by
   simp only [publicKey] at h ⊢
-  cases hc : st.cap? c with
+  cases hc : st.share? c with
   | none => rw [hc] at h; cases h
   | some cp =>
     rw [hc] at h
     simp only [Bool.and_eq_true, beq_iff_eq] at h
     obtain ⟨⟨⟨hover, hlive⟩, hread⟩, hg⟩ := h
-    have hcp := cap?_mem hc
-    have hid := cap?_id hc
+    have hcp := share?_mem hc
+    have hid := share?_id hc
     refine List.any_eq_true.2 ⟨cp, hcp, ?_⟩
     simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, hover, hid, hlive, hread, hg, and_true,
       true_and]
@@ -1775,33 +1778,34 @@ theorem publicKey_cell_of_cap {st : State} {v : VaultId} {c : CapId} {x : Cell}
     · exact .inr hx
     · exact .inl (hw cp hcp hid)
 
-/-- Whoever is entitled to a cap's key is entitled to the keys of the cells it reaches. -/
-theorem Holder.entitled_cell_of_cap {st : State} {h : Holder} {v : VaultId} {c : CapId} {x : Cell}
-    (hk : h.entitled st (.cap v c) = true)
-    (hx : x.contains c = true ∨ ∀ cp ∈ st.caps, cp.id = c → cp.wide = true) : h.entitled st (.cell v x) = true := by
+/-- Whoever is entitled to a share's key is entitled to the keys of the audiences it reaches. -/
+theorem Holder.entitled_audience_of_share {st : State} {h : Holder} {v : VaultId} {c : ShareId} {x : Audience}
+    (hk : h.entitled st (.share v c) = true)
+    (hx : x.contains c = true ∨ ∀ cp ∈ st.shares, cp.id = c → cp.wide = true) :
+    h.entitled st (.audience v x) = true := by
   cases h with
   | signer s =>
     simp only [Holder.entitled, AvenDB.entitled, List.any_eq_true, Bool.and_eq_true] at hk ⊢
     obtain ⟨y, hy, hact, hread⟩ := hk
-    exact ⟨y, hy, hact, readsV_cell_of_cap hread hx⟩
+    exact ⟨y, hy, hact, readsV_audience_of_share hread hx⟩
   | vault w =>
     simp only [Holder.entitled, entitledV, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true] at hk ⊢
     rcases hk with hk | ⟨y, hy, hown, hread⟩
-    · exact .inl (readsV_cell_of_cap hk hx)
-    · exact .inr ⟨y, hy, hown, readsV_cell_of_cap hread hx⟩
-  | everyone => exact publicKey_cell_of_cap hk hx
+    · exact .inl (readsV_audience_of_share hk hx)
+    · exact .inr ⟨y, hy, hown, readsV_audience_of_share hread hx⟩
+  | everyone => exact publicKey_audience_of_share hk hx
 
 /-- Whoever may open a family's key may open the keys of the families within it. -/
-theorem mayOpen_within {st : State} (hn : (st.caps.map (·.id)).Nodup) {h : Holder} {f k : KeyFam}
+theorem mayOpen_within {st : State} (hn : (st.shares.map (·.id)).Nodup) {h : Holder} {f k : KeyFam}
     (hfk : Within st f k) (hf : MayOpen st h f) : MayOpen st h k := by
   cases f with
   | seed v => simp only [Within] at hfk; subst hfk; exact hf
-  | cell v x => simp only [Within] at hfk; subst hfk; exact hf
-  | cap v c =>
+  | audience v x => simp only [Within] at hfk; subst hfk; exact hf
+  | share v c =>
     rcases hfk with rfl | ⟨x, rfl, hx⟩
     · exact hf
-    · exact hf.imp (fun h => Holder.entitled_cell_of_cap h (wide_all hn hx))
-        (fun h => publicKey_cell_of_cap h (wide_all hn hx))
+    · exact hf.imp (fun h => Holder.entitled_audience_of_share h (wide_all hn hx))
+        (fun h => publicKey_audience_of_share h (wide_all hn hx))
 
 /-- A vault holder may open its own seed. -/
 theorem mayOpen_self (st : State) (v : VaultId) : MayOpen st (.vault v) (.seed v) :=
@@ -1811,13 +1815,13 @@ theorem mayOpen_self (st : State) (v : VaultId) : MayOpen st (.vault v) (.seed v
 theorem publicKey_seed (st : State) (v : VaultId) : publicKey st (.seed v) = false := rfl
 
 /-- Whom the current key of a family is sealed to, wrapped under or derived from: a signer entitled to it, the seed
-    of a vault entitled to it, or for a cell the key of a live cap with read or more that reaches it. -/
+    of a vault entitled to it, or for an audience the key of a live share with read or more that reaches it. -/
 theorem mem_targets {st : State} (hs : Sane st) {k : KeyFam} (hk : k ∈ keyFams st) {t : KeyName}
     (ht : t ∈ targets st k) :
     (∃ d, t = .signer d ∧ entitled st d k = true) ∨
     (∃ o, t = st.curKey (.seed o) ∧ (st.vault? o).isSome = true ∧ entitledV st o k = true) ∨
-    (∃ v c x, k = .cell v x ∧ t = st.curKey (.cap v c) ∧ .cap v c ∈ keyFams st ∧
-      (x.contains c = true ∨ ∃ cp ∈ st.caps, cp.id = c ∧ cp.wide = true)) := by
+    (∃ v c x, k = .audience v x ∧ t = st.curKey (.share v c) ∧ .share v c ∈ keyFams st ∧
+      (x.contains c = true ∨ ∃ cp ∈ st.shares, cp.id = c ∧ cp.wide = true)) := by
   cases k with
   | seed v =>
     simp only [targets] at ht
@@ -1850,11 +1854,11 @@ theorem mem_targets {st : State} (hs : Sane st) {k : KeyFam} (hk : k ∈ keyFams
           simp only [entitledV, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true]
           exact .inr ⟨vt, hvt, by rw [hid]; exact owns_owner hv hp, by simp [readsV, hid]⟩
         | signer _ => cases hpo
-  | cap v c =>
-    obtain ⟨cp, hc, hcp, hover, hid, hlive, hread⟩ := cap_mem_keyFams hs.capIds hk
+  | share v c =>
+    obtain ⟨cp, hc, hcp, hover, hid, hlive, hread⟩ := share_mem_keyFams hs.shareIds hk
     simp only [targets] at ht
     rcases List.mem_cons.1 ht with rfl | ht
-    · refine .inr (.inl ⟨v, rfl, hover ▸ hs.capOver cp hcp, ?_⟩)
+    · refine .inr (.inl ⟨v, rfl, hover ▸ hs.shareOver cp hcp, ?_⟩)
       simp only [entitledV, readsV, hc, hover, hlive, hread, beq_self_eq_true, Bool.true_or, Bool.and_true]
     · rw [hc] at ht
       dsimp only at ht
@@ -1862,11 +1866,11 @@ theorem mem_targets {st : State} (hs : Sane st) {k : KeyFam} (hk : k ∈ keyFams
       · rename_i g hg
         rw [List.mem_singleton] at ht
         subst ht
-        refine .inr (.inl ⟨g, rfl, hs.capGrantee cp hcp g hg, ?_⟩)
+        refine .inr (.inl ⟨g, rfl, hs.shareWho cp hcp g hg, ?_⟩)
         simp only [entitledV, readsV, hc, hover, hlive, hread, hg, beq_self_eq_true, Bool.or_true, Bool.and_true,
           Bool.true_or]
       · cases ht
-  | cell v x =>
+  | audience v x =>
     simp only [targets] at ht
     rcases List.mem_cons.1 ht with rfl | ht
     · refine .inr (.inl ⟨v, rfl, ?_, by simp [entitledV, readsV]⟩)
@@ -1887,9 +1891,9 @@ theorem mem_targets {st : State} (hs : Sane st) {k : KeyFam} (hk : k ∈ keyFams
 
 /-! ## What an accepted step keeps -/
 
-/-- A change keeps every cap, adding caps only at the end, every entry id ever created and every vault. -/
+/-- A change keeps every share, adding shares only at the end, every entry id ever created and every vault. -/
 theorem Change.grows {st mid : State} (h : Change st mid) :
-    (∃ l, mid.caps = st.caps ++ l) ∧ (∀ e ∈ st.born, e ∈ mid.born) ∧
+    (∃ l, mid.shares = st.shares ++ l) ∧ (∀ e ∈ st.born, e ∈ mid.born) ∧
     ∀ x, (st.vault? x).isSome = true → (mid.vault? x).isSome = true := by
   cases h with
   | genesis vt _ _ =>
@@ -1904,7 +1908,7 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
     cases hl : st.vault? x with
     | none => rw [hl] at hx; cases hx
     | some _ => rfl
-  | cap c _ _ _ => exact ⟨⟨[c], rfl⟩, fun e he => he, fun x hx => hx⟩
+  | share c _ _ _ => exact ⟨⟨[c], rfl⟩, fun e he => he, fun x hx => hx⟩
   | create en w x _ _ _ _ _ _ _ =>
     exact ⟨⟨[], by simp⟩, fun e he => List.mem_append_left _ he, fun x hx => hx⟩
   | write en w st₁ _ _ _ h₁ =>
@@ -1917,9 +1921,9 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
   | lane l => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | sync _ _ _ => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
 
-/-- An accepted edit keeps every cap, adding caps only at the end, every entry id ever created and every vault. -/
+/-- An accepted edit keeps every share, adding shares only at the end, every entry id ever created and every vault. -/
 theorem apply_grows {st post : State} {edit : Edit} (h : apply st edit = some post) :
-    (∃ l, post.caps = st.caps ++ l) ∧ (∀ e ∈ st.born, e ∈ post.born) ∧
+    (∃ l, post.shares = st.shares ++ l) ∧ (∀ e ∈ st.born, e ∈ post.born) ∧
     ∀ x, (st.vault? x).isSome = true → (post.vault? x).isSome = true := by
   obtain ⟨mid, hc, es, ws, -, -, rfl⟩ := apply_cases h
   exact hc.grows
@@ -1947,7 +1951,7 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
   | same => exact hsame
   | genesis _ _ _ => exact hsame
   | setVault _ _ _ _ _ _ => exact hsame
-  | cap _ _ _ _ => exact hsame
+  | share _ _ _ _ => exact hsame
   | revoke _ => exact hsame
   | lane _ => exact hsame
   | sync _ _ _ => exact hsame
@@ -1997,7 +2001,7 @@ and entry keys (`MayKnow`); and each current key of a family in use among these 
 in use rotates (`staleKeys`) when a holder listed before opened its key and may no longer, everyone among them, or when
 it comes back into use while a seal holds its key; and a holder listed nowhere opened only its own seed and what
 everyone opened. Entry keys open only entry keys, and an entry's key in its current stay is derived only from its
-cell's key of the same generation (T24). -/
+audience's key of the same epoch (T24). -/
 
 /-- What every reachable state keeps about its keys: T6 for every holder and every family in use, and what its seals
     and published keys may hold. -/
@@ -2013,7 +2017,7 @@ structure KeyInv (st : State) : Prop where
     (∀ f e', s.to = .scoped f e' → e' ≤ st.epochOf f) ∧ ∀ x σ g, s.to ≠ .entry x σ g
   /-- Nothing is sealed to the seed of a vault that doesn't exist. -/
   seedTo : ∀ s ∈ st.seals, ∀ u e, s.to = .scoped (.seed u) e → (st.vault? u).isSome = true
-  /-- What is sealed to a cap's or a cell's key is a key of a family within it, or an entry key. -/
+  /-- What is sealed to a share's or an audience's key is a key of a family within it, or an entry key. -/
   within : ∀ s ∈ st.seals, ∀ f e, s.to = .scoped f e → (∀ v, f ≠ .seed v) →
     (∃ k e', s.secret = .scoped k e' ∧ Within st f k) ∨ ∃ x σ g, s.secret = .entry x σ g
   /-- What is published is a scoped key of an epoch its family has reached, and also sealed. -/
@@ -2021,9 +2025,10 @@ structure KeyInv (st : State) : Prop where
   /-- The current key of every public family in use is published. -/
   «public» : ∀ k ∈ keyFams st, publicKey st k = true → st.curKey k ∈ st.published
   /-- An entry's key is of an entry once created, in a stay it has if it exists, and in its current stay it is sealed
-      only under its cell's key of the same generation. -/
+      only under its audience's key of the same epoch. -/
   entries : ∀ s ∈ st.seals, ∀ e σ g, s.secret = .entry e σ g → e ∈ st.born ∧
-    ∀ en ∈ st.entries, en.id = e → σ ∈ en.stays.map (·.1) ∧ (σ = en.stay → s.to = .scoped (.cell en.vault en.cell) g)
+    ∀ en ∈ st.entries, en.id = e → σ ∈ en.stays.map (·.1) ∧
+      (σ = en.stay → s.to = .scoped (.audience en.vault en.audience) g)
 
 /-- A key one opens is one it started with, the secret of a seal, or published. -/
 theorem knows_cases {st : State} {start : List KeyName} {x : KeyName} (h : Knows st start x) :
@@ -2057,7 +2062,7 @@ theorem knows_fresh {st : State} {y x : KeyName} (hy : ∀ s ∈ st.seals, s.to 
     · exact absurd heq (hy _ hs)
     · exact .inr (.unseal hs ih)
 
-/-- From a cap's or a cell's key one opens keys of families within it, entry keys, and what everyone opens. -/
+/-- From a share's or an audience's key one opens keys of families within it, entry keys, and what everyone opens. -/
 theorem KeyInv.knows_within {st : State} (hinv : KeyInv st) {f : KeyFam} (hf : ∀ v, f ≠ .seed v) {x : KeyName}
     (h : Knows st [st.curKey f] x) :
     (∃ k e, x = .scoped k e ∧ Within st f k) ∨ (∃ e σ g, x = .entry e σ g) ∨ Knows st [] x := by
@@ -2197,17 +2202,17 @@ theorem KeyInv.closure_mayOpen {pre post : State} {edit : Edit} (hinv : KeyInv p
     (hx : Knows pre [pre.curKey f] (pre.curKey k)) : MayOpen (settle pre post) h k := by
   have hkept := kept_settle pre post
   have hs' : Sane (settle pre post) := hkept.sane (hinv.sane.of_apply hpost)
-  obtain ⟨⟨l, hcaps⟩, -, -⟩ := apply_grows hpost
-  -- a cap's or a cell's key
+  obtain ⟨⟨l, hshares⟩, -, -⟩ := apply_grows hpost
+  -- a share's or an audience's key
   have hwithin : (∀ v, f ≠ .seed v) → MayOpen (settle pre post) h k := by
     intro hfs
     rcases hinv.knows_within hfs hx with ⟨k', e, heq, hfk⟩ | ⟨e, σ, g, heq⟩ | hev
     · simp only [State.curKey, KeyName.scoped.injEq] at heq
       obtain ⟨rfl, -⟩ := heq
-      have hc : ∀ cp ∈ pre.caps, cp ∈ (settle pre post).caps := fun cp hcp => by
-        rw [hkept.caps, hcaps]
+      have hc : ∀ cp ∈ pre.shares, cp ∈ (settle pre post).shares := fun cp hcp => by
+        rw [hkept.shares, hshares]
         exact List.mem_append_left _ hcp
-      exact mayOpen_within hs'.capIds (hfk.mono hc) hf
+      exact mayOpen_within hs'.shareIds (hfk.mono hc) hf
     · simp [State.curKey] at heq
     · rcases hinv.base_mayOpen (h := .everyone) hk hS hev with h1 | h1
       · exact .inr h1
@@ -2218,8 +2223,8 @@ theorem KeyInv.closure_mayOpen {pre post : State} {edit : Edit} (hinv : KeyInv p
     rcases hf with hf | hf
     · exact mayOpen_via hf hv
     · simp [publicKey] at hf
-  | cap v c => exact hwithin (fun _ h => by cases h)
-  | cell v x => exact hwithin (fun _ h => by cases h)
+  | share v c => exact hwithin (fun _ h => by cases h)
+  | audience v x => exact hwithin (fun _ h => by cases h)
 
 /-- What holder `h` may open after the step from `pre` that settles as `st'`: what it opened before, what the previous
     key of a family it may open now opened before, the new keys of families it may open now, and entry keys. -/
@@ -2356,7 +2361,7 @@ theorem KeyInv.mayKnow_closed {pre post : State} {edit : Edit} (hinv : KeyInv pr
         rcases hv with hv | hv
         · exact mayOpen_via hv (.inl hent)
         · simp [publicKey] at hv
-      · exact mayOpen_within hs'.capIds (f := .cap v c) (.inr ⟨x, rfl, hx⟩)
+      · exact mayOpen_within hs'.shareIds (f := .share v c) (.inr ⟨x, rfl, hx⟩)
           (hinv.mayKnow_cur hpost (by rw [← hkept.keyFams]; exact hc) ih)
     · -- linking opens only entry keys
       rcases hl with rfl | ⟨w, -, -, rfl | ⟨-, rfl⟩⟩
@@ -2364,25 +2369,26 @@ theorem KeyInv.mayKnow_closed {pre post : State} {edit : Edit} (hinv : KeyInv pr
       · exact .inr (.inr (.inr ⟨_, _, _, rfl⟩))
       · exact .inr (.inr (.inr ⟨_, _, _, rfl⟩))
 
-/-- An entry with stays is in its current stay and its current cell, and its current stay's cell is that cell. -/
+/-- An entry with stays is in its current stay and its current audience, and its current stay's audience is that
+    audience. -/
 theorem stay_mem {en : Entry} (h : en.stays ≠ []) :
-    en.stay ∈ en.stays.map (·.1) ∧ en.cell ∈ en.stays.map (·.2) ∧ en.stayCell en.stay = some en.cell := by
+    en.stay ∈ en.stays.map (·.1) ∧ en.audience ∈ en.stays.map (·.2) ∧ en.stayAudience en.stay = some en.audience := by
   cases hs : en.stays with
   | nil => exact absurd hs h
   | cons p l =>
     obtain ⟨σ, x⟩ := p
-    simp [Entry.stay, Entry.cell, Entry.stayCell, hs]
+    simp [Entry.stay, Entry.audience, Entry.stayAudience, hs]
 
 /-- An entry that extends another, with distinct stays, whose current stay is a stay of the other, has the other's
-    current stay and cell: nothing moved it. -/
+    current stay and audience: nothing moved it. -/
 theorem Extends.stay {en en' : Entry} (hext : Extends en en') (hnd : (en'.stays.map (·.1)).Nodup)
     {σ : Option EditId} (hσ : σ ∈ en.stays.map (·.1)) (hcur : σ = en'.stay) :
-    en'.stay = en.stay ∧ en'.cell = en.cell := by
+    en'.stay = en.stay ∧ en'.audience = en.audience := by
   obtain ⟨-, -, l, hl⟩ := hext
   cases l with
   | nil =>
     rw [List.nil_append] at hl
-    constructor <;> simp [Entry.stay, Entry.cell, hl]
+    constructor <;> simp [Entry.stay, Entry.audience, hl]
   | cons p l =>
     -- a move put a fresh stay in front
     exfalso
@@ -2392,13 +2398,13 @@ theorem Extends.stay {en en' : Entry} (hext : Extends en en') (hnd : (en'.stays.
     simp only [List.cons_append, List.map_cons, List.nodup_cons, List.map_append, List.mem_append] at hnd
     exact hnd.1 (.inr (hst ▸ hcur ▸ hσ))
 
-/-- The key of a cap or a cell is derived from its vault's seed. -/
+/-- The key of a share or an audience is derived from its vault's seed. -/
 theorem seed_mem_targets (st : State) {k : KeyFam} (hk : ∀ v, k ≠ .seed v) :
     st.curKey (.seed k.vault) ∈ targets st k := by
   cases k with
   | seed v => exact absurd rfl (hk v)
-  | cap v c => simp [targets, KeyFam.vault]
-  | cell v x => simp [targets, KeyFam.vault]
+  | share v c => simp [targets, KeyFam.vault]
+  | audience v x => simp [targets, KeyFam.vault]
 
 /-- One step keeps `KeyInv`. -/
 theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step st edit = some st') :
@@ -2407,14 +2413,14 @@ theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step 
   obtain ⟨-, hseals, hpubs⟩ := apply_keys hpost
   have hkept := kept_settle st post
   have hs' : Sane (settle st post) := hkept.sane (hinv.sane.of_apply hpost)
-  obtain ⟨⟨l, hcaps⟩, hborn, hvaults⟩ := apply_grows hpost
+  obtain ⟨⟨l, hshares⟩, hborn, hvaults⟩ := apply_grows hpost
   have hmono := settle_mono st post
   have hle : ∀ k, st.epochOf k ≤ (settle st post).epochOf k := epochOf_le_step hpost
   have hvault : ∀ u, (st.vault? u).isSome = true → ((settle st post).vault? u).isSome = true := fun u hu => by
     rw [vault?_congr hkept.vaults]
     exact hvaults u hu
-  have hcap : ∀ cp ∈ st.caps, cp ∈ (settle st post).caps := fun cp hcp => by
-    rw [hkept.caps, hcaps]
+  have hshare : ∀ cp ∈ st.shares, cp ∈ (settle st post).shares := fun cp hcp => by
+    rw [hkept.shares, hshares]
     exact List.mem_append_left _ hcp
   have hfam : ∀ {k}, k ∈ keyFams post → k ∈ keyFams (settle st post) := fun hk => by rw [hkept.keyFams]; exact hk
   refine ⟨hs', fun h k hk hx => ?_, fun s hs => ?_, fun s hs => ?_, fun s hs => ?_, fun s hs => ?_, fun x hx => ?_,
@@ -2463,12 +2469,12 @@ theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step 
         exact ho
       · cases hto
     · rcases hl with rfl | ⟨w, -, -, rfl | ⟨-, rfl⟩⟩ <;> cases hto
-  · -- what is sealed to a cap's or a cell's key
+  · -- what is sealed to a share's or an audience's key
     intro f e hto hf
     rcases settle_seals hs with hs | ⟨k, e', -, -, -, rfl⟩ | ⟨k, hk, t, ht, rfl⟩ | ⟨en, -, hl⟩
     · rw [hseals] at hs
       rcases hinv.within s hs f e hto hf with ⟨k, e', hsec, hfk⟩ | hent
-      · exact .inl ⟨k, e', hsec, hfk.mono hcap⟩
+      · exact .inl ⟨k, e', hsec, hfk.mono hshare⟩
       · exact .inr hent
     · cases hto
       exact .inl ⟨f, e', rfl, Within.refl _ _⟩
@@ -2565,10 +2571,10 @@ theorem knows_cases_to {st : State} {start : List KeyName} {x : KeyName} (h : Kn
   | published hx => exact .inr (.inl hx)
   | «unseal» hs hto => exact .inr (.inr ⟨_, hs, rfl, hto⟩)
 
-/-- Whoever opens the key of an entry in its current stay, at its cell's current generation, opens its cell's current
+/-- Whoever opens the key of an entry in its current stay, at its audience's current epoch, opens its audience's current
     key, and so may open it. -/
 theorem KeyInv.entry_key {st : State} (hinv : KeyInv st) (h : Holder) {en : Entry} (hen : en ∈ st.entries)
-    (hk : Knows st (h.start st) (entryKey st en)) : MayOpen st h (.cell en.vault en.cell) := by
+    (hk : Knows st (h.start st) (entryKey st en)) : MayOpen st h (.audience en.vault en.audience) := by
   rcases knows_cases_to hk with hst | hpub | ⟨s, hs, hsec, hto⟩
   · cases h <;> simp [Holder.start, entryKey, State.curKey] at hst
   · obtain ⟨⟨k, e, heq, -⟩, -⟩ := hinv.published _ hpub
@@ -2581,10 +2587,10 @@ theorem KeyInv.entry_key {st : State} (hinv : KeyInv st) (h : Holder) {en : Entr
 /-! ## T5 and T24, along the history
 
 Every seal is justified by the history: a scoped key sealed to a signer's key is one that signer could read, a scoped
-key sealed to another family's key is one whoever could read that family could read, an entry key sealed to a cell's
-key is of an entry that whoever could read that cell could read, an entry key is linked only under a key of the same
-entry, and a published key is of a family that was public. Opening keys follows seals, so whoever opens a key could
-read its family, or a cell its entry was in. -/
+key sealed to another family's key is one whoever could read that family could read, an entry key sealed to an
+audience's key is of an entry that whoever could read that audience could read, an entry key is linked only under a key
+of the same entry, and a published key is of a family that was public. Opening keys follows seals, so whoever opens a
+key could read its family, or an audience its entry was in. -/
 
 /-- Whoever could read a vault's seed could read whatever that vault could read. -/
 theorem EverReads.trans_seed {sts : List State} {h : Holder} {v : VaultId} {k : KeyFam}
@@ -2595,24 +2601,24 @@ theorem EverReads.trans_seed {sts : List State} {h : Holder} {v : VaultId} {k : 
   | «public» _ hpub => subst hk; simp [publicKey] at hpub
   | via hst hent _ ih => exact .via hst hent (ih h₂ hk)
 
-/-- Whoever could read a cap could read the cells it reaches, when the caps of every state of the history are among
-    `all`, whose ids are distinct: a cap is then the same in every state. -/
-theorem EverReads.cell_of_cap {sts : List State} {all : List Cap} (hn : (all.map (·.id)).Nodup)
-    (hall : ∀ st ∈ sts, ∀ cp ∈ st.caps, cp ∈ all) {h : Holder} {v : VaultId} {c : CapId} {x : Cell}
-    (hr : EverReads sts h (.cap v c)) (hx : x.contains c = true ∨ ∃ cp ∈ all, cp.id = c ∧ cp.wide = true) :
-    EverReads sts h (.cell v x) := by
-  -- in every state of the history, the cap reaches the cell
-  have hx' : ∀ st ∈ sts, x.contains c = true ∨ ∀ cp ∈ st.caps, cp.id = c → cp.wide = true := by
+/-- Whoever could read a share could read the audiences it reaches, when the shares of every state of the history are
+    among `all`, whose ids are distinct: a share is then the same in every state. -/
+theorem EverReads.audience_of_share {sts : List State} {all : List Share} (hn : (all.map (·.id)).Nodup)
+    (hall : ∀ st ∈ sts, ∀ cp ∈ st.shares, cp ∈ all) {h : Holder} {v : VaultId} {c : ShareId} {x : Audience}
+    (hr : EverReads sts h (.share v c)) (hx : x.contains c = true ∨ ∃ cp ∈ all, cp.id = c ∧ cp.wide = true) :
+    EverReads sts h (.audience v x) := by
+  -- in every state of the history, the share reaches the audience
+  have hx' : ∀ st ∈ sts, x.contains c = true ∨ ∀ cp ∈ st.shares, cp.id = c → cp.wide = true := by
     intro st hst
     rcases hx with hx | ⟨cp, hcp, hid, hw⟩
     · exact .inl hx
     · refine .inr fun cp' hcp' hid' => ?_
       rw [eq_of_nodup_map hn (hall st hst cp' hcp') hcp (hid'.trans hid.symm)]
       exact hw
-  generalize hk : KeyFam.cap v c = kc at hr
+  generalize hk : KeyFam.share v c = kc at hr
   induction hr with
-  | entitled hst hent => subst hk; exact .entitled hst (Holder.entitled_cell_of_cap hent (hx' _ hst))
-  | «public» hst hpub => subst hk; exact .public hst (publicKey_cell_of_cap hpub (hx' _ hst))
+  | entitled hst hent => subst hk; exact .entitled hst (Holder.entitled_audience_of_share hent (hx' _ hst))
+  | «public» hst hpub => subst hk; exact .public hst (publicKey_audience_of_share hpub (hx' _ hst))
   | via hst hent _ ih => exact .via hst hent (ih hk)
 
 /-- A trace holds the state it starts from. -/
@@ -2625,33 +2631,33 @@ theorem replay_mem_trace : ∀ (st : State) (edits : List Edit), replay st edits
   | _, [] => List.mem_singleton_self _
   | st, edit :: edits => List.mem_cons_of_mem _ (replay_mem_trace ((step st edit).getD st) edits)
 
-/-- A step keeps every cap. -/
-theorem caps_step (st : State) (edit : Edit) : ∀ cp ∈ st.caps, cp ∈ ((step st edit).getD st).caps := by
+/-- A step keeps every share. -/
+theorem shares_step (st : State) (edit : Edit) : ∀ cp ∈ st.shares, cp ∈ ((step st edit).getD st).shares := by
   intro cp hcp
   cases hs : step st edit with
   | none => exact hcp
   | some st' =>
     obtain ⟨post, hpost, rfl⟩ := step_cases hs
     obtain ⟨⟨l, hl⟩, -, -⟩ := apply_grows hpost
-    show cp ∈ (settle st post).caps
-    rw [(kept_settle st post).caps, hl]
+    show cp ∈ (settle st post).shares
+    rw [(kept_settle st post).shares, hl]
     exact List.mem_append_left _ hcp
 
-/-- Along a replay caps are only added: every cap of a state of its trace is a cap where it ends. -/
-theorem caps_replay : ∀ (st : State) (edits : List Edit), ∀ x ∈ trace st edits, ∀ cp ∈ x.caps,
-    cp ∈ (replay st edits).caps
+/-- Along a replay shares are only added: every share of a state of its trace is a share where it ends. -/
+theorem shares_replay : ∀ (st : State) (edits : List Edit), ∀ x ∈ trace st edits, ∀ cp ∈ x.shares,
+    cp ∈ (replay st edits).shares
   | _, [], x, hx, cp, hcp => by rw [List.mem_singleton.1 hx] at hcp; exact hcp
   | st, edit :: edits, x, hx, cp, hcp => by
     rcases List.mem_cons.1 hx with rfl | hx
-    · exact caps_replay _ edits _ (mem_trace_self _ edits) cp (caps_step x edit cp hcp)
-    · exact caps_replay _ edits x hx cp hcp
+    · exact shares_replay _ edits _ (mem_trace_self _ edits) cp (shares_step x edit cp hcp)
+    · exact shares_replay _ edits x hx cp hcp
 
-/-- Over the history `sts`, holder `h` could read some cell entry `e` was in. -/
+/-- Over the history `sts`, holder `h` could read some audience entry `e` was in. -/
 def EntryRead (sts : List State) (h : Holder) (e : EntryId) : Prop :=
-  ∃ st ∈ sts, ∃ en ∈ st.entries, en.id = e ∧ ∃ x ∈ en.stays.map (·.2), EverReads sts h (.cell en.vault x)
+  ∃ st ∈ sts, ∃ en ∈ st.entries, en.id = e ∧ ∃ x ∈ en.stays.map (·.2), EverReads sts h (.audience en.vault x)
 
 /-- Over the history `sts`, every seal and published key of `st` is justified: whoever opens what a key is sealed to
-    could read the key's family, or a cell its entry was in; and a published key is of a family that was public. -/
+    could read the key's family, or an audience its entry was in; and a published key is of a family that was public. -/
 def SealsRead (sts : List State) (st : State) : Prop :=
   (∀ s ∈ st.seals, (∀ d, s.secret ≠ .signer d) ∧
     -- a scoped key is sealed to a signer that could read its family, or under a family whose readers could read it
@@ -2659,7 +2665,8 @@ def SealsRead (sts : List State) (st : State) : Prop :=
       (∀ d, s.to = .signer d → EverReads sts (.signer d) a) ∧
       (∀ b e', s.to = .scoped b e' → ∀ h, EverReads sts h b → EverReads sts h a) ∧
       ∀ x σ g, s.to ≠ .entry x σ g) ∧
-    -- an entry key is sealed under a cell whose readers could read a cell of the entry, or under the same entry
+    -- an entry key is sealed under an audience whose readers could read an audience of the entry, or under the same
+    -- entry
     ∀ x σ g, s.secret = .entry x σ g →
       (∀ d, s.to ≠ .signer d) ∧
       (∀ b e', s.to = .scoped b e' → ∀ h, EverReads sts h b → EntryRead sts h x) ∧
@@ -2668,8 +2675,8 @@ def SealsRead (sts : List State) (st : State) : Prop :=
 
 /-- A step whose result is part of the history keeps every seal justified: a rotation seals a key under its family's
     next key, a current key goes only to those entitled to it then, and a link stays within one entry. -/
-theorem SealsRead.step {sts : List State} {all : List Cap} (hn : (all.map (·.id)).Nodup)
-    (hall : ∀ st ∈ sts, ∀ cp ∈ st.caps, cp ∈ all) {st st' : State} {edit : Edit} (hinv : SealsRead sts st)
+theorem SealsRead.step {sts : List State} {all : List Share} (hn : (all.map (·.id)).Nodup)
+    (hall : ∀ st ∈ sts, ∀ cp ∈ st.shares, cp ∈ all) {st st' : State} {edit : Edit} (hinv : SealsRead sts st)
     (hsane : Sane st) (h : step st edit = some st') (hst' : st' ∈ sts) : SealsRead sts st' := by
   obtain ⟨post, hpost, rfl⟩ := step_cases h
   obtain ⟨-, hseals, hpubs⟩ := apply_keys hpost
@@ -2697,10 +2704,10 @@ theorem SealsRead.step {sts : List State} {all : List Cap} (hn : (all.map (·.id
         exact EverReads.trans_seed hr (.entitled hst' hent)
       · refine ⟨fun d hd => (by cases hd), fun b e'' hb h hr => ?_, fun x σ g hx => (by cases hx)⟩
         cases hb
-        exact EverReads.cell_of_cap hn hall hr
+        exact EverReads.audience_of_share hn hall hr
           (hx.imp id fun ⟨cp, hcp, hid, hw⟩ => ⟨cp, hall _ hst' cp hcp, hid, hw⟩)
-    · -- linking seals an entry's keys to the keys of its stays' cells and to its own current key
-      have hread : ∀ y ∈ en.stays.map (·.2), ∀ h, EverReads sts h (.cell en.vault y) → EntryRead sts h en.id :=
+    · -- linking seals an entry's keys to the keys of its stays' audiences and to its own current key
+      have hread : ∀ y ∈ en.stays.map (·.2), ∀ h, EverReads sts h (.audience en.vault y) → EntryRead sts h en.id :=
         fun y hy h hr => ⟨_, hst', en, hen, rfl, y, hy, hr⟩
       rcases hl with rfl | ⟨w, hw, hwe, rfl | ⟨-, rfl⟩⟩
       · refine ⟨fun d hd => (by cases hd), fun a e hae => (by cases hae), fun x σ g hx => ?_⟩
@@ -2715,9 +2722,9 @@ theorem SealsRead.step {sts : List State} {all : List Cap} (hn : (all.map (·.id
         refine ⟨fun d hd => (by cases hd), fun b e' hb h hr => ?_, fun x' σ' g' hx' => (by cases hx')⟩
         cases hb
         rw [hwe]
-        obtain ⟨y, hy⟩ := stayCell_of_mem (hs'.writeStay w hw en hen hwe.symm)
+        obtain ⟨y, hy⟩ := stayAudience_of_mem (hs'.writeStay w hw en hen hwe.symm)
         simp only [hy, Option.getD_some] at hr
-        exact hread y (List.mem_map.2 ⟨_, stayCell_mem hy, rfl⟩) h hr
+        exact hread y (List.mem_map.2 ⟨_, stayAudience_mem hy, rfl⟩) h hr
       · refine ⟨fun d hd => (by cases hd), fun a e hae => (by cases hae), fun x σ g hx => ?_⟩
         simp only [Write.key, KeyName.entry.injEq] at hx
         obtain ⟨rfl, -, -⟩ := hx
@@ -2729,8 +2736,8 @@ theorem SealsRead.step {sts : List State} {all : List Cap} (hn : (all.map (·.id
     · exact ⟨k, _, rfl, _, hst', by rw [hkept.publicKey]; exact hpub⟩
 
 /-- Along a replay whose states are all part of the history, every seal stays justified. -/
-theorem sealsRead_replay {sts : List State} {all : List Cap} (hn : (all.map (·.id)).Nodup)
-    (hall : ∀ st ∈ sts, ∀ cp ∈ st.caps, cp ∈ all) :
+theorem sealsRead_replay {sts : List State} {all : List Share} (hn : (all.map (·.id)).Nodup)
+    (hall : ∀ st ∈ sts, ∀ cp ∈ st.shares, cp ∈ all) :
     ∀ (edits : List Edit) (st : State), (∀ x ∈ trace st edits, x ∈ sts) → Sane st →
       SealsRead sts st → SealsRead sts (replay st edits)
   | [], _, _, _, h => h
@@ -2750,11 +2757,11 @@ theorem sealsRead_replay {sts : List State} {all : List Cap} (hn : (all.map (·.
 
 /-- Every seal along a history from the empty state is justified by it. -/
 theorem sealsRead_trace (edits : List Edit) : SealsRead (trace {} edits) (replay {} edits) :=
-  sealsRead_replay (keyInv_replay edits).sane.capIds (caps_replay {} edits) edits {} (fun _ hx => hx)
+  sealsRead_replay (keyInv_replay edits).sane.shareIds (shares_replay {} edits) edits {} (fun _ hx => hx)
     keyInv_empty.sane ⟨fun _ h => (by cases h), fun _ h => (by cases h)⟩
 
 /-- With every seal justified, a holder opens a signer's key only if it is that signer, a key of a family only if it
-    could read that family, and a key of an entry only if it could read a cell the entry was in. -/
+    could read that family, and a key of an entry only if it could read an audience the entry was in. -/
 theorem knows_everReads {sts : List State} {st : State} (hst : st ∈ sts) (hinv : SealsRead sts st) {h : Holder}
     {x : KeyName} (hx : Knows st (h.start st) x) :
     (∀ d, x = .signer d → h = .signer d) ∧ (∀ k e, x = .scoped k e → EverReads sts h k) ∧
@@ -2852,14 +2859,14 @@ theorem T7_blind_server (edits : List Edit) (srv : SignerId)
   everReads_blind (T5_confidentiality edits (.signer srv) k e h) hblind hk
 
 theorem T24_entry_keys {st : State} (hr : Reachable st) (h : Holder) {en : Entry} (hen : en ∈ st.entries)
-    (hk : Knows st (h.start st) (entryKey st en)) : MayOpen st h (.cell en.vault en.cell) := by
+    (hk : Knows st (h.start st) (entryKey st en)) : MayOpen st h (.audience en.vault en.audience) := by
   obtain ⟨edits, rfl⟩ := hr
   exact (keyInv_replay edits).entry_key h hen hk
 
 theorem T24_entry_history (edits : List Edit) (h : Holder) (e : EntryId) (s : Option EditId) (g : Nat)
     (hk : Knows (replay {} edits) (h.start (replay {} edits)) (.entry e s g)) :
     ∃ st ∈ trace {} edits, ∃ en ∈ st.entries, en.id = e ∧
-      ∃ x ∈ en.stays.map (·.2), EverReads (trace {} edits) h (.cell en.vault x) :=
+      ∃ x ∈ en.stays.map (·.2), EverReads (trace {} edits) h (.audience en.vault x) :=
   (knows_everReads (replay_mem_trace {} edits) (sealsRead_trace edits) hk).2.2 e s g rfl
 
 end AvenDB.Keys
