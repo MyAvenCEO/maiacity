@@ -42,7 +42,7 @@ theorem T1_created_entries {st st' : State} {edit : Edit} (h : step st edit = so
   Core.T1_created_entries h hen hnew
 
 /-- T1, second half (revocation wins): an older write that a step takes the authorization from survives only if
-    the step is a removal that had seen it: a revocation, a vault losing an owner or a device, or a move that took the
+    the step is a removal that had seen it: a revocation, a vault losing an owner or a device, or a mark that took the
     entry out of an audience the write relied on. -/
 theorem T1_revocation_wins {st st' : State} {edit : Edit} (h : step st edit = some st') {w : Write}
     (hw : w ∈ st'.writes) (hold : w ∈ st.writes) (hwas : authorized st w = true)
@@ -126,12 +126,17 @@ theorem T22_wide_shares {st : State} (hr : Reachable st) {c : Share} (hc : c ∈
     (c.level = .owner → c.wide = false) ∧ (c.wide = true → c.parent = none ∧ c.issuer = c.over) :=
   Shares.T22_wide_shares hr c hc
 
-/-- T23 (audiences mean what the shares say): where an entry's audience, revoked shares left aside, is its semantic
-    audience, the write rule every peer checks without reading a selector, a type or a tag allows exactly the vaults the
-    shares' selectors allow. -/
-theorem T23_audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
-    (haudience : liveAudience st en = semAudience st en) (a : VaultId) : mayWrite st a en = semWrite st a en :=
-  Shares.T23_audiences_mean_slices hr en haudience a
+/-- T23 (marks mean what the shares say): where an entry's marks, what isn't live left aside, are what its vault's
+    stewards mark it with (`desiredMark`), the rules every peer checks without reading a selector, a type or a tag mean
+    what the selectors say. Its audience: where it is the entry's semantic audience, the write rule allows exactly the
+    vaults the shares' selectors allow. Its wants: where they are the sync rules that want the entry (`semWants`), a
+    device wants it exactly when it has no rule over the entry's vault, or one of its rules there is wide or its
+    selector matches the entry. So a relay, which reads only the marks, writes and sends as the selectors say. -/
+theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
+    (liveAudience st en = semAudience st en → ∀ a, mayWrite st a en = semWrite st a en) ∧
+    (liveWants st en = semWants st en → ∀ d, wants st d en = ((rulesOf st d en.vault).isEmpty ||
+      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs)) :=
+  Shares.T23_marks_mean_shares hr en
 
 /-- T23, new entries: the rule every peer checks never refuses a creation that stays inside its creator's slice. -/
 theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}
@@ -310,9 +315,9 @@ theorem writes_ordered (edits : List Edit) : Ordered (view edits).writes :=
 
 /-- T16 (strong removal), replaying `edits` with the removals `rem`: an edit stands only if `apply` accepts it on the
     state just before it (the replay of the edits that stood before it) with the facts hidden from it taken away; and
-    those facts include everything each removal of `rem` after it takes away, unless that removal had seen it. A move's
-    fact is the audience it put the entry in, so a write it hadn't seen stands only if its writer may write there
-    too. -/
+    those facts include everything each removal of `rem` after it takes away, unless that removal had seen it. A mark's
+    fact is the audience it put the entry in, so a write it hadn't seen stands only if its writer may write there too; a
+    mark of the wants alone takes nothing away. -/
 theorem T16_strong_removal (edits rem : List Edit) (pre post : List (Edit × Nat)) (x : Edit) (i : Nat)
     (hsplit : edits.zipIdx = pre ++ (x, i) :: post)
     (hstood : (runFrom rem (cuts edits rem) (runFrom rem (cuts edits rem) {} pre).1 [(x, i)]).2 = [x]) :
@@ -361,7 +366,7 @@ theorem T7_blind_server (edits : List Edit) (srv : SignerId)
   Keys.T7_blind_server edits srv hblind hk h
 
 /-- T24 (an entry's key reaches only its audience's readers): in every reachable state, whoever opens the key of an
-    entry in its current stay, at its audience's current epoch, may open that audience's current key. So neither a move
+    entry in its current stay, at its audience's current epoch, may open that audience's current key. So neither a mark
     nor a link carrying the entry's history to its new audience hands a key to anyone its current audience keeps out. -/
 theorem T24_entry_keys {st : State} (hr : Reachable st) (h : Holder) {en : Entry} (hen : en ∈ st.entries)
     (hk : Knows st (h.start st) (entryKey st en)) : MayOpen st h (.audience en.vault en.audience) :=
@@ -465,7 +470,7 @@ theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : Fil
 
 /-- T28 (a device syncs what it may and wants): every edit of an entry a peer sends a device is of an entry the device
     may receive by the peer's view and that its sync rules want: it has no rule over the entry's vault, or one there is
-    wide or picks the entry. A rule only narrows: it hands nobody anything. -/
+    wide or among the entry's wants. A rule only narrows: it hands nobody anything. -/
 theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
     (hl : o.log? = some (.entry e)) :
     ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience = true ∧
@@ -477,16 +482,6 @@ theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h 
 theorem T28_no_rule_wants_all (st : State) (d : SignerId) (en : Entry) (h : rulesOf st d en.vault = []) :
     wants st d en = true :=
   Syncing.T28_no_rule_wants_all st d en h
-
-/-- T29 (marks mean what the rules say): where the live marks on an entry are the rules that pick it (`semPicks`), as
-    the vault's stewards keep them, a device wants the entry exactly when it has no rule over the entry's vault, or one
-    of its rules there is wide or its selector matches the entry. So a relay, which reads only the marks, sends each
-    device what its rules' selectors pick. -/
-theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
-    (hpicks : livePicks st en = semPicks st en) :
-    wants st d en = ((rulesOf st d en.vault).isEmpty ||
-      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs) :=
-  Shares.T29_marks_mean_rules hr d en hpicks
 
 /-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few edits
     further back, and the edits it holds outside them (`asks`), is sent every edit of the peer's answer that it lacks.

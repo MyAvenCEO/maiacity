@@ -57,7 +57,7 @@ theorem ops_rules (st : State) : st.ops.rules = st.rules.map SyncRule.blind := b
 /-- The operational part keeps the rules that ended. -/
 theorem ops_ended (st : State) : st.ops.ended = st.ended := by cases st; rfl
 /-- The operational part keeps the stewards' marks. -/
-theorem ops_picks (st : State) : st.ops.picks = st.picks := by cases st; rfl
+theorem ops_marks (st : State) : st.ops.marks = st.marks := by cases st; rfl
 
 /-- A share as a relay sees it keeps its id. -/
 theorem blind_id (c : Share) : c.blind.id = c.id := by cases c; rfl
@@ -267,9 +267,14 @@ theorem rule?_ops (st : State) (r : ShareId) : st.ops.rule? r = (st.rule? r).map
 theorem ruleLive_ops (st : State) : st.ops.ruleLive = st.ruleLive := by
   funext r; simp only [State.ruleLive, ops_rules, List.any_map, Function.comp_def, rblind_id, ops_ended]
 
-/-- The marks on an entry are what the stewards marked, in the clear. -/
-theorem picksOf_ops (st : State) : st.ops.picksOf = st.picksOf := by
-  funext e; simp only [State.picksOf, ops_picks]
+/-- The wants marked on an entry are what the stewards marked, in the clear. -/
+theorem wantsOf_ops (st : State) : st.ops.wantsOf = st.wantsOf := by
+  funext e; simp only [State.wantsOf, ops_marks]
+
+/-- Which wants a vault's entries may be marked with reads only the sync rules' ids, vaults and widths. -/
+theorem wantsOk_ops (st : State) : wantsOk st.ops = wantsOk st := by
+  funext v rs
+  simp only [wantsOk, ops_rules, List.any_map, Function.comp_def, rblind_id, rblind_over, rblind_wide]
 
 /-- Being a device of a vault reads only the vaults. -/
 theorem isDevice_ops (st : State) : isDevice st.ops = isDevice st := by
@@ -436,6 +441,11 @@ theorem setEntry_ops (st : State) (en : Entry) : (setEntry st en).ops = setEntry
   congr 1
   apply List.map_congr_left; intro x _
   by_cases h : x.id == en.id <;> simp only [Function.comp, eblind_id, h, ite_true, ite_false, Bool.false_eq_true]
+
+/-- Marking an entry's wants commutes with taking the operational part, which keeps the marks. -/
+theorem markWants_ops (st : State) (e : EntryId) (rs : List ShareId) :
+    (st.markWants e rs).ops = st.ops.markWants e rs := by
+  cases st; rfl
 
 /-- Changing the writes commutes with taking the operational part. -/
 theorem ops_with_writes (s : State) (W : List Write) :
@@ -664,15 +674,17 @@ theorem apply_ops (st : State) (edit : Edit) :
       simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
         eblind_comp_eblind, rblind_comp_rblind, List.map_cons, List.map_nil]
       rfl
-  | move v e to keep via =>
+  | mark v e caps wants keep via =>
+    -- a mark is in the clear, and its checks read the entry's vault and stays, and the ids, vaults and widths of rules
     simp only [Edit.blind, Action.blind]
-    simp only [apply, entry?_ops, actsVia_ops, audienceOk_ops]
+    simp only [apply, entry?_ops, actsVia_ops, audienceOk_ops, wantsOk_ops, wantsOf_ops]
     cases st.entry? e with
     | none => rfl
     | some en =>
       simp only [Option.map_some, eblind_vault, eblind_audience, eblind_stays]
-      simp only [map_ite_none, Option.map_some, dropUnseen_ops, setEntry_ops, ops_ops]
-      rfl
+      cases caps <;> cases wants <;>
+        simp only [map_ite_none, Option.map_some, dropUnseen_ops, setEntry_ops, markWants_ops, ops_ops] <;>
+        rfl
   | keys secret to pub =>
     simp only [Edit.blind, Action.blind]
     simp only [apply, mayBox_ops, ops_seals, ops_published]
@@ -699,16 +711,6 @@ theorem apply_ops (st : State) (edit : Edit) :
     | none => rfl
     | some x =>
       simp only [Option.map_some, rblind_issuer, ops_ended]
-      simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind, rblind_comp_rblind,
-        rblind_comp_rblind]
-  | pick v e rs via =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, entry?_ops, actsVia_ops, picksOf_ops, ops_rules, List.any_map, Function.comp_def, rblind_id,
-      rblind_over, rblind_wide, ruleLive_ops, ops_picks]
-    cases st.entry? e with
-    | none => rfl
-    | some en =>
-      simp only [Option.map_some, eblind_vault]
       simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind, rblind_comp_rblind,
         rblind_comp_rblind]
 
@@ -848,6 +850,7 @@ theorem removes_blind (edits : List Edit) (r : Edit) : removes (edits.map Edit.b
     | _ => rfl
   | settings v s => cases s <;> rfl
   | share s => cases s <;> rfl
+  | mark v e caps wants keep via => cases caps <;> rfl
   | _ => rfl
 
 /-- Relay copies of the edits and the removals cut what they do. -/

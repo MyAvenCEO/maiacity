@@ -11,7 +11,8 @@ the same things against the real code.
 A vault holds its entries directly. A share selects a slice of them by type, author, entry id, creation time and tags,
 and the audiences, the sets of shares that select an entry alike, carry the keys. The model never moves an entry on its
 own: a steward, a device acting for the vault, moves each entry to the audience its shares select (`desired`) with a
-`move` edit, so a scenario includes the moves a steward would make, and checks that it has nothing left to do.
+`mark` edit (here `.move`, a mark of the audience alone), so a scenario includes the marks a steward would make, and
+checks that it has nothing left to do.
 -/
 
 namespace AvenDB.Examples
@@ -115,7 +116,7 @@ def writable (edits : List Edit) (a : VaultId) : List EntryId :=
 /-- The audience entry `e` is in. -/
 def audienceOf (edits : List Edit) (e : EntryId) : Audience := ((view edits).entry? e).elim [] (·.audience)
 
-/-- What a steward does with entry `e`: nothing (`none`), or move it to the audience its shares select. -/
+/-- What a steward does with entry `e`: nothing (`none`), or mark it into the audience its shares select. -/
 def upkeep (edits : List Edit) (e : EntryId) : Option Audience := let st := view edits; (st.entry? e).bind (desired st)
 
 /-- Every entry is in the audience its shares select: a steward has nothing left to do. -/

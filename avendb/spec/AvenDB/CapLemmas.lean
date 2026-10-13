@@ -10,9 +10,10 @@ Settling keys changes only the epochs, the seals and what is published, and neve
 adds a share only with a new id and a parent that comes before it (`shareParentOk`), never takes a share away, and never
 sets `narrow`, which only `hide` does while an edit is checked. So in every reachable state the shares are well formed
 (`SharesWell`): a share's chain is its parent's chain and the share itself (T22), and with nothing narrowed the write
-rule reads exactly what the selectors say wherever an entry's live audience is its semantic audience (T23). A new write
-brings a new id and builds on accepted writes, and a removal keeps some of the writes with what they build on, so the
-writes stay ordered. A run with removals ends in the replay of the edits that stood in it.
+rule reads exactly what the selectors say wherever an entry's live audience is its semantic audience, as the sync rules
+do wherever its live wants are the rules that want it (T23). A new write brings a new id and builds on accepted writes,
+and a removal keeps some of the writes with what they build on, so the writes stay ordered. A run with removals ends in
+the replay of the edits that stood in it.
 -/
 
 namespace AvenDB.Shares
@@ -432,7 +433,7 @@ theorem chain_parent {st : State} (hw : SharesWell st) {c pc : Share} {p : Share
   unfold chain
   rw [h1, chainN_stable st (st.shares.idxOf ·) hr st.shares.length (st.shares.length + 1) pc hpcm (by omega) (by omega)]
 
-/-! ## T22 and T23 -/
+/-! ## T22, and audiences that mean what the shares say -/
 
 theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
     (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) :
@@ -493,10 +494,10 @@ theorem any_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x �
   | cons x l ih =>
     simp only [List.any_cons, h x List.mem_cons_self, ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
 
-/-- Marks mean what the selectors say, the one step T23 and T29 share. Where the live part of the marks `m` an entry
-    carries is the canonical list of the members of `xs` (shares, or sync rules) that test `p` picks, a live member
-    that `p` reads as `sel` (one over the entry's vault that isn't wide, `sel` asking whether its selector holds the
-    entry) is among the marks exactly when `sel` holds of it. -/
+/-- Marks mean what the selectors say, the one step both parts of T23 share. Where the live part of the marks `m` an
+    entry carries is the canonical list of the members of `xs` (shares, or sync rules) that test `p` picks, a live
+    member that `p` reads as `sel` (one over the entry's vault that isn't wide, `sel` asking whether its selector holds
+    the entry) is among the marks exactly when `sel` holds of it. -/
 theorem mark_means {α : Type} {xs : List α} {id : α → ShareId} (hnd : (xs.map id).Nodup) {live : ShareId → Bool}
     {p sel : α → Bool} {m : List ShareId} (h : m.filter live = mkAudience ((xs.filter p).map id)) {x : α}
     (hx : x ∈ xs) (hl : live (id x) = true) (hp : p x = sel x) : m.contains (id x) = sel x := by
@@ -511,7 +512,9 @@ theorem mark_means {α : Type} {xs : List α} {id : α → ShareId} (hnd : (xs.m
   · intro hs
     exact ⟨x, ⟨hx, hp ▸ hs⟩, rfl⟩
 
-theorem T23_audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
+/-- An entry's audience means what the shares say: where its live part is the entry's semantic audience, the write rule
+    allows exactly the vaults the shares' selectors allow. -/
+theorem audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
     (haudience : liveAudience st en = semAudience st en) (a : VaultId) : mayWrite st a en = semWrite st a en := by
   have hw := sharesWell_reachable hr
   have hn := narrow_reachable hr
@@ -560,8 +563,10 @@ theorem rules_nodup_reachable {st : State} (hr : Reachable st) : (st.rules.map (
     have := List.find?_eq_none.1 hnew x hx
     simp [hab.trans hb] at this
 
-theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
-    (hpicks : livePicks st en = semPicks st en) :
+/-- An entry's wants mean what the sync rules say: where their live part is the rules that want the entry, a device
+    wants it exactly when it has no rule over the entry's vault, or one of its rules there is wide or matches it. -/
+theorem wants_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
+    (hwants : liveWants st en = semWants st en) :
     wants st d en = ((rulesOf st d en.vault).isEmpty ||
       (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs) := by
   unfold wants
@@ -574,9 +579,17 @@ theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en
   cases hw : r.wide
   · -- a rule that isn't wide is among the marks exactly when its selector matches the entry
     rw [Bool.false_or, Bool.false_or]
-    exact mark_means (sel := fun r => r.select.matches en.attrs) (rules_nodup_reachable hr) hpicks hrm hlive
+    exact mark_means (sel := fun r => r.select.matches en.attrs) (rules_nodup_reachable hr) hwants hrm hlive
       (by simp [hover, hlive, hw])
   · simp
+
+/-! ## Marks mean what the shares say -/
+
+theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
+    (liveAudience st en = semAudience st en → ∀ a, mayWrite st a en = semWrite st a en) ∧
+    (liveWants st en = semWants st en → ∀ d, wants st d en = ((rulesOf st d en.vault).isEmpty ||
+      (rulesOf st d en.vault).any fun r => r.wide || r.select.matches en.attrs)) :=
+  ⟨fun h a => audiences_mean_slices hr en h a, fun h d => wants_mean_rules hr d en h⟩
 
 theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}
     (h : admits st a v x attrs proof = true) :

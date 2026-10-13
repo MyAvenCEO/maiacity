@@ -4,7 +4,7 @@ import AvenDB.Step
 # Sync by audiences
 
 Every edit belongs to one log (`Edit.log?`): a vault's (its governance, its seed's keys, its schema lane), a share's
-(the share, its revocation, its keys), an audience's (its keys), or an entry's (its writes, moves, checkpoints and entry
+(the share, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks, checkpoints and entry
 keys). A device asks a peer for what it may receive, and the peer answers from its own view: the logs of the entries and
 audiences it may receive (it acts for their vault, or for the grantee of a live share reaching their audience, or a
 public share does), the logs of every share it needs to check those (the shares of every audience such an entry was ever
@@ -14,8 +14,8 @@ audience. Receiving is not reading: relay gets no key. The connection proves whi
 is the device key), so the request names the device.
 
 Of the entries a device may receive, it syncs those its sync rules want (`wants`, `State.lean`; T28): all of a vault
-it has no rule over, else those a rule of its picks. A rule only narrows what a device syncs, and the peer reads only
-the stewards' marks to apply it, never a selector (T29).
+it has no rule over, else those whose wants name one of its rules. A rule only narrows what a device syncs, and the
+peer reads only the stewards' marks to apply it, never a selector (T23).
 -/
 
 namespace AvenDB
@@ -30,14 +30,14 @@ inductive LogId where
 
 /-- The log an edit belongs to: a vault's genesis and settings, its owners and devices given and revoked, a schema or
     lens, and a seed's key to its vault's; a grant, its revocation and its key to the grant's; an audience's key to the
-    audience's; a write, a move, a checkpoint and an entry's key to the entry's. -/
+    audience's; a write, a mark, a checkpoint and an entry's key to the entry's. -/
 def Edit.log? (edit : Edit) : Option LogId :=
   match edit.action with
   | .genesis v .. | .settings v _ | .share (.owner v _) | .share (.device v _) | .revoke (.owner v ..)
   | .revoke (.device v ..) | .publish v .. => some (.vault v)
   | .share (.grant c _) => some (.share c.id)
   | .revoke (.grant c ..) => some (.share c)
-  | .write _ e .. | .move _ e .. | .checkpoint e _ | .pick _ e .. => some (.entry e)
+  | .write _ e .. | .mark _ e .. | .checkpoint e _ => some (.entry e)
   | .syncRule r _ => some (.vault r.issuer)
   | .endRule _ i _ => some (.vault i)
   | .keys k .. =>
@@ -105,10 +105,9 @@ def Edit.vaultsNamed (edit : Edit) : List VaultId :=
     | _ => []) ++ via
   | .revoke (.grant _ a _ via) => a :: via
   | .write v _ a _ _ _ _ via _ _ => [v, a] ++ via
-  | .move v _ _ _ via => v :: via
+  | .mark v _ _ _ _ via => v :: via
   | .syncRule r via => [r.issuer, r.over] ++ via
   | .endRule _ i via => i :: via
-  | .pick v _ _ via => v :: via
   | _ => []
 
 /-- `vs` and every vault that owns one of them, directly or further up. -/

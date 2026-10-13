@@ -160,11 +160,14 @@ inductive Change (st : State) : State → Prop where
   | write (en : Entry) (w : Write) (st₁ : State) (u : List EditId) : st.entry? w.entry = some en →
       w.stay ∈ en.stays.map (·.1) → (st₁ = st ∨ ∃ a, st₁ = setEntry st { en with attrs := a }) →
       Change st { st₁ with writes := st₁.writes ++ [w], uncounted := u }
-  | move (en : Entry) (σ : Option EditId) (x : Audience) : st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
-      Change st (setEntry st { en with stays := (σ, x) :: en.stays })
+  /-- A mark that takes an entry to another audience, beginning a fresh stay, and may mark its wants too (`ms`). -/
+  | mark (en : Entry) (σ : Option EditId) (x : Audience) (ms : List (EntryId × List ShareId)) :
+      st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
+      Change st (setEntry { st with marks := ms } { en with stays := (σ, x) :: en.stays })
   | lane (l : List (VaultId × BlobId)) : Change st { st with lane := l }
-  | sync (rs : List SyncRule) (en : List ShareId) (ps : List (EntryId × List ShareId)) :
-      Change st { st with rules := rs, ended := en, picks := ps }
+  /-- Sync rules set or ended, or the wants marked on an entry. -/
+  | sync (rs : List SyncRule) (en : List ShareId) (ms : List (EntryId × List ShareId)) :
+      Change st { st with rules := rs, ended := en, marks := ms }
 
 /-- An accepted edit: a change, then some of the entries and writes dropped. -/
 def Applied (st post : State) : Prop :=
@@ -180,6 +183,20 @@ theorem Change.applied_drop {st mid : State} (h : Change st mid) (keep : List Ed
     Applied st (dropUnseen st mid keep) :=
   ⟨mid, h, _, _, List.filter_sublist, List.filter_sublist.trans ((closeDeps_sublist _).trans List.filter_sublist),
     rfl⟩
+
+/-- The entry a lookup finds is found by its own id. -/
+theorem entry?_self {st : State} {e : EntryId} {en : Entry} (he : st.entry? e = some en) :
+    st.entry? en.id = some en := by
+  rw [entry?_id he]; exact he
+
+/-- A mark whose audience passes the check begins a stay its entry didn't have. -/
+theorem mark_fresh {st : State} {v : VaultId} {en : Entry} {to : Audience} {σ : EditId}
+    (h : ¬(!(some to).all fun to => audienceOk st v to && to != en.audience && !en.stays.any (·.1 == some σ)) = true) :
+    some σ ∉ en.stays.map (·.1) := fun hm => by
+  obtain ⟨p, hp, hp1⟩ := List.mem_map.1 hm
+  simp only [Option.all_some, Bool.not_eq_true', Bool.not_eq_false, Bool.and_eq_true, Bool.not_eq_true',
+    List.any_eq_false, beq_iff_eq] at h
+  exact h.2 p hp hp1
 
 /-- Every accepted edit is a change, then some entries and writes dropped. -/
 theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some post) : Applied st post := by
@@ -274,13 +291,15 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     rename_i he _ _ _ hx _ _ _ _
     cases h
     exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inl rfl))
-  · -- move
-    rename_i he _ hnew
+  · -- a mark that takes the entry to another audience and marks its wants
     cases h
-    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, List.any_eq_false, beq_iff_eq] at hnew
-    refine Change.applied_drop (.move _ _ _ (by rw [entry?_id he]; exact he) fun hm => ?_) _
-    obtain ⟨p, hp, hp1⟩ := List.mem_map.1 hm
-    exact hnew.2 p hp hp1
+    exact Change.applied_drop (.mark _ _ _ _ (entry?_self ‹_›) (mark_fresh ‹_›)) _
+  · -- a mark that takes the entry to another audience and leaves its wants
+    cases h
+    exact Change.applied_drop (.mark _ _ _ _ (entry?_self ‹_›) (mark_fresh ‹_›)) _
+  · -- a mark of the wants alone
+    cases h
+    exact Change.applied (.sync _ _ _)
   · -- keys
     cases h
     exact Change.applied .same
@@ -294,9 +313,6 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     cases h
     exact Change.applied (.sync _ _ _)
   · -- a sync rule ends
-    cases h
-    exact Change.applied (.sync _ _ _)
-  · -- a steward marks an entry
     cases h
     exact Change.applied (.sync _ _ _)
 
@@ -608,9 +624,10 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
         exact hstay
       · simp only [beq_iff_eq, hxid, ite_false] at hyw ⊢
         exact absurd (hyw.trans hid.symm) hxid
-  | move en σ x he hσ =>
+  | mark en σ x ms he hσ =>
     have hen := entry?_mem he
-    refine hs.set_entry hen rfl rfl (by simp) ?_ fun s hs => List.mem_cons_of_mem _ hs
+    refine (hs.congr (st' := { st with marks := ms }) rfl rfl rfl rfl rfl).set_entry hen rfl rfl (by simp) ?_
+      fun s hs => List.mem_cons_of_mem _ hs
     rw [List.map_cons, List.nodup_cons]
     exact ⟨hσ, hs.staysNodup en hen⟩
   | lane l => exact hs.congr rfl rfl rfl rfl rfl
@@ -1915,7 +1932,7 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
     · exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
-  | move en σ x _ _ => exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
+  | mark en σ x _ _ _ => exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
   | same => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | revoke rs => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | lane l => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
@@ -1965,7 +1982,7 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact hsame
     · exact hset en _ (entry?_mem he) ⟨rfl, rfl, [], rfl⟩
-  | move en σ x he _ => exact hset en _ (entry?_mem he) ⟨rfl, rfl, [(σ, x)], rfl⟩
+  | mark en σ x _ he _ => exact hset en _ (entry?_mem he) ⟨rfl, rfl, [(σ, x)], rfl⟩
 
 /-- After an accepted edit, every entry is one that was there, with more stays in front if any, or one whose id was
     never created before. -/
@@ -2390,7 +2407,7 @@ theorem Extends.stay {en en' : Entry} (hext : Extends en en') (hnd : (en'.stays.
     rw [List.nil_append] at hl
     constructor <;> simp [Entry.stay, Entry.audience, hl]
   | cons p l =>
-    -- a move put a fresh stay in front
+    -- a mark put a fresh stay in front
     exfalso
     obtain ⟨τ, y⟩ := p
     have hst : en'.stay = τ := by simp [Entry.stay, hl]

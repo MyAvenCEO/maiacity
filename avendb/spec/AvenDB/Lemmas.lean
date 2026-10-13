@@ -1207,13 +1207,27 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
                 · exact setEntry_ids _ _
                 · exact same st
               · simpa [authorized, hact, hen, mayWrite, inAudience, Entry.audience] using hok
-  · -- move
+  · -- a mark: a removal where it takes the entry to another audience, else only the wants change
     split at h
     · simp at h
     · rename_i keep _ heq _ _ _
-      simp at h
-      obtain ⟨-, -, rfl⟩ := h
-      exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, setEntry_ids _ _⟩))
+      -- each check refuses, or the mark ends in one of four ways
+      split at h
+      · cases h
+      split at h
+      · cases h
+      split at h
+      · cases h
+      split at h
+      · cases h
+      split at h
+      · cases h
+        exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, setEntry_ids _ _⟩))
+      · cases h
+        exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, setEntry_ids _ _⟩))
+      · cases h
+        exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
+      · cases h
   · -- keys: change nothing
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, -, rfl⟩ := h
@@ -1235,12 +1249,6 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     · simp at h
     · simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
       obtain ⟨-, rfl⟩ := h
-      exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
-  · -- a steward marks an entry: only the marks
-    split at h
-    · simp at h
-    · simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-      obtain ⟨-, -, rfl⟩ := h
       exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
 
 /-- Every write's entry exists, and every entry's first write is accepted. -/

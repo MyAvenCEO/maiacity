@@ -7,7 +7,7 @@ Every change is a signed edit. A peer checks each edit against the state just be
 links keys (`settle`), and replays all the edits it holds in one fixed order (`order`), so peers holding the same edits
 end in the same state. A removal also cuts what it hadn't seen (`view`): an edit it hadn't seen stands only if it stands
 without what the removal takes away, so neither a removed owner nor a thief holding a stolen passkey can sign edits that
-claim to come before the removal, and nobody writes into an entry after a move took it out of their slice.
+claim to come before the removal, and nobody writes into an entry after a mark took it out of their slice.
 -/
 
 namespace AvenDB
@@ -40,7 +40,7 @@ inductive Revoking where
 def Revoking.keep : Revoking → List EditId
   | .grant _ _ k _ | .owner _ _ k | .device _ _ k => k
 
-/-- Every change. An edit that acts for a vault (issues or revokes a grant, writes, moves, publishes) names the owners
+/-- Every change. An edit that acts for a vault (issues or revokes a grant, writes, marks, publishes) names the owners
     `via` its author acts through (`actsVia`): none when its author is a member of the vault, else from an owner of the
     vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop through
     `[bob]`. -/
@@ -66,8 +66,12 @@ inductive Action where
                (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
                (create : Option (Audience × Header) := none) (tags : TagDelta := {}) (proof : Option ShareId := none)
                (touches : List Touch := []) (fits : Bool := true)
-  /-- A steward, acting for vault `v`, moves its entry `e` to audience `to`, keeping the writes it had seen. -/
-  | move       (v : VaultId) (e : EntryId) (to : Audience) (keep : List EditId) (via : List VaultId := [])
+  /-- A steward, acting for vault `v`, marks its entry `e`: with the audience its shares select (`caps`), which begins a
+      stay and keeps the writes it had seen (`keep`), with the sync rules that want it (`wants`), or with both. A part
+      left out (`none`) stays as it is, so a mark of the wants alone never puts back an audience that another steward
+      changed meanwhile. -/
+  | mark       (v : VaultId) (e : EntryId) (caps : Option Audience) (wants : Option (List ShareId))
+               (keep : List EditId) (via : List VaultId := [])
   /-- The real boxes of one key: `secret` sealed or wrapped to the keys `to`, or published (`pub`). The schedule already
       says who may open what, so this edit changes nothing here: a peer accepts it only from a signer that may open the
       key, and only if every box is one the schedule seals. -/
@@ -82,15 +86,23 @@ inductive Action where
   | syncRule   (r : SyncRule) (via : List VaultId := [])
   /-- Sync rule `r` of vault `issuer` ends. -/
   | endRule    (r : ShareId) (issuer : VaultId) (via : List VaultId := [])
-  /-- A steward, acting for vault `v`, marks the sync rules that pick its entry `e` (`desiredPicks`). -/
-  | pick       (v : VaultId) (e : EntryId) (rules : List ShareId) (via : List VaultId := [])
   deriving DecidableEq, Repr
 
-/-- The edits a removal had seen and keeps; every removal names them: each revocation, handing the root on, and a
-    move. -/
+/-- A mark that takes entry `e` to audience `to` and leaves its wants as they are: what a move was. -/
+@[match_pattern] abbrev Action.move (v : VaultId) (e : EntryId) (to : Audience) (keep : List EditId)
+    (via : List VaultId := []) : Action :=
+  .mark v e (some to) none keep via
+
+/-- A mark of the sync rules `rs` that want entry `e`, which leaves its audience as it is: what a pick was. -/
+@[match_pattern] abbrev Action.pick (v : VaultId) (e : EntryId) (rs : List ShareId) (via : List VaultId := []) :
+    Action :=
+  .mark v e none (some rs) [] via
+
+/-- The edits a removal had seen and keeps; every removal names them: each revocation, handing the root on, and a mark
+    that takes an entry to another audience. -/
 def Action.keep? : Action → Option (List EditId)
   | .revoke r => some r.keep
-  | .settings _ (.root _ k) | .move _ _ _ k _ => some k
+  | .settings _ (.root _ k) | .mark _ _ (some _) _ k _ => some k
   | _ => none
 
 structure Edit where
@@ -122,6 +134,10 @@ def setVault (st : State) (vt : Vault) : State :=
 /-- The writes readers don't count, and write `w` among them unless they count it (`ok`). -/
 def State.counting (st : State) (ok : Bool) (w : EditId) : List EditId :=
   if ok then st.uncounted else st.uncounted ++ [w]
+
+/-- Entry `e` marked with the wants `rs`. -/
+def State.markWants (st : State) (e : EntryId) (rs : List ShareId) : State :=
+  { st with marks := st.marks.filter (·.1 != e) ++ [(e, rs)] }
 
 def setEntry (st : State) (en : Entry) : State :=
   { st with entries := st.entries.map fun x => if x.id == en.id then en else x }
@@ -171,8 +187,8 @@ def closeDeps (ws : List Write) : List Write :=
 /-- After a removal from `pre` to `post`: drop every write the removal took the authorization from, unless the
     remover had seen it, and every write that builds on a dropped one; an entry whose creation is dropped goes with all
     its writes. Writes that were already unauthorized (kept by an earlier removal) stay. Revocation wins over what it
-    had not seen. Each write is judged in the audience it was written in (`authorized`), so a move drops nothing here: a
-    write a move hadn't seen falls by strong removal, checked against the audience the move took its entry to
+    had not seen. Each write is judged in the audience it was written in (`authorized`), so a mark drops nothing here: a
+    write a mark hadn't seen falls by strong removal, checked against the audience the mark took its entry to
     (`hide`). -/
 def dropUnseen (pre post : State) (keep : List EditId) : State :=
   let ws := closeDeps (post.writes.filter fun w => keep.contains w.edit || !authorized pre w || authorized post w)
@@ -342,14 +358,29 @@ def apply (st : State) (edit : Edit) : Option State :=
               -- they count what it builds on
               let ok := counts st actor en deps proof (proposal == .main) (touches ++ tags.touches) fits
               some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id }
-  | .move v e to keep via =>
+  | .mark v e caps wants keep via =>
     match st.entry? e with
     | none => none
     | some en =>
-      -- only a steward moves, to another audience of the vault, and a move begins one stay
+      -- only a steward marks an entry of its vault
       if en.vault != v || !actsVia st edit.author via v then none
-      else if !audienceOk st v to || to == en.audience || en.stays.any (·.1 == some edit.id) then none
-      else some (dropUnseen st (setEntry st { en with stays := (some edit.id, to) :: en.stays }) keep)
+      -- it marks an audience, the sync rules that want the entry, or both; only a new audience is a removal, which
+      -- keeps what it had seen
+      else if (caps.isNone && wants.isNone) || (caps.isNone && !keep.isEmpty) then none
+      -- another audience of the vault, and a mark begins one stay
+      else if !caps.all (fun to => audienceOk st v to && to != en.audience && !en.stays.any (·.1 == some edit.id)) then
+        none
+      -- wants of the vault, other than the entry's, but where the mark takes it to a new audience. Neither list asks
+      -- whether what it names is live: a revocation or an ended rule that sorts before the mark mustn't refuse it, and
+      -- readers leave out what isn't live
+      else if !wants.all (fun rs => wantsOk st v rs && (caps.isSome || rs != st.wantsOf e)) then none
+      -- a new audience cuts what the mark hadn't seen that only the audience the entry leaves allowed
+      else match caps, wants with
+        | some to, some rs =>
+          some (dropUnseen st (setEntry (st.markWants e rs) { en with stays := (some edit.id, to) :: en.stays }) keep)
+        | some to, none => some (dropUnseen st (setEntry st { en with stays := (some edit.id, to) :: en.stays }) keep)
+        | none, some rs => some (st.markWants e rs)
+        | none, none => none
   | .keys secret to pub =>
     if !mayBox st edit.author secret then none
     -- a box the schedule doesn't seal would hand the key to someone who may not open it
@@ -378,15 +409,6 @@ def apply (st : State) (edit : Edit) : Option State :=
     | some x =>
       if x.issuer != issuer || !st.ruleLive r || !actsVia st edit.author via issuer then none
       else some { st with ended := st.ended ++ [r] }
-  | .pick v e rs via =>
-    match st.entry? e with
-    | none => none
-    | some en =>
-      -- only a steward marks an entry, with live rules over its vault that aren't wide, each once, smallest first
-      if en.vault != v || !actsVia st edit.author via v then none
-      else if rs != mkAudience rs || rs == st.picksOf e ||
-          !rs.all (fun r => st.rules.any fun x => x.id == r && x.over == v && !x.wide && st.ruleLive r) then none
-      else some { st with picks := st.picks.filter (·.1 != e) ++ [(e, rs)] }
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)
@@ -404,7 +426,7 @@ def trace (st : State) : List Edit → List State
 /-- Removals sort before anything else at the same depth. -/
 def Edit.rank (edit : Edit) : Nat :=
   match edit.action with
-  | .revoke _ | .settings _ (.root ..) | .move .. => 0
+  | .revoke _ | .settings _ (.root ..) | .mark _ _ (some _) .. => 0
   | _ => 1
 
 /-- The one order every peer replays in: causal depth, then removals first, then id. -/
@@ -424,12 +446,13 @@ def order (edits : List Edit) : List Edit := (edits.filter (wellFormed edits)).m
 /-! ## Strong removal
 
 A removal names the edits it had seen and keeps (`keep`): revoking an owner, a device or a grant, the root handing
-itself on, and moving an entry. Every other edit that comes before it in the replay order was made concurrently, or
-claims to be: it stands only if it also stands with what the removal takes away hidden. When removals clash, the senior
-one stands: a vault's removals (revoking an owner or a device, handing the root on) settle from the top down, a vault's
-before those of the coops it owns, and within a vault its root, then its owners in the order they joined, then removals
-no owner approved (a device leaving); revoked grants follow, the most senior revoker first; moves come last
-(`priority`). -/
+itself on, and a mark that takes an entry to another audience. Every other edit that comes before it in the replay order
+was made concurrently, or claims to be: it stands only if it also stands with what the removal takes away hidden. When
+removals clash, the senior one stands: a vault's removals (revoking an owner or a device, handing the root on) settle
+from the top down, a vault's before those of the coops it owns, and within a vault its root, then its owners in the
+order they joined, then removals no owner approved (a device leaving); revoked grants follow, the most senior revoker
+first; marks that change an audience come last (`priority`). A mark of the wants alone is no removal: it takes nothing
+away, so nothing it hadn't seen falls by it. -/
 
 /-- What a removal takes away. -/
 inductive Fact where
@@ -474,7 +497,7 @@ def restsOnIn (cs : List Share) (c : ShareId) : Nat → ShareId → Bool
     | none   => false
 
 /-- What removal `r` takes away: the owner, the device, the root, among the grants `edits` issue the grant and every
-    grant resting on it, or for a move the audiences the entry no longer is in. -/
+    grant resting on it, or for a mark that changes an audience the audiences the entry no longer is in. -/
 def removes (edits : List Edit) (r : Edit) : List Fact :=
   match r.action with
   | .revoke (.owner v p _)   => [.owner v p]
@@ -483,7 +506,7 @@ def removes (edits : List Edit) (r : Edit) : List Fact :=
   | .revoke (.grant c _ _ _) =>
     let cs := sharesIn edits
     (cs.filter fun x => restsOnIn cs c (cs.length + 1) x.id).map fun x => .share x.id
-  | .move _ e to _ _         => [.audience e to]
+  | .mark _ e (some to) ..   => [.audience e to]
   | _ => []
 
 /-- Each removal of `rem`, at its position in `edits`: the edits it keeps, and what it takes away. -/
@@ -534,9 +557,9 @@ def seniority (st : State) (a : VaultId) (c : Share) : Nat :=
     coop's removals rest on its owners' approval and never the other way round. Within a vault: its root, then its
     owners by seniority, their place among the owners where no removal has happened yet, then removals no owner
     approved. Revoked grants follow, the most senior revoker first: the vault the grant is over, then whoever issued a
-    grant higher up the chain of the grant revoked, since a grant falls with the grant it rests on. Moves come last: a
-    steward's upkeep. So a removal is only ever kept out by one that ranks above it, and what ranks above it never
-    rests on what it takes away. -/
+    grant higher up the chain of the grant revoked, since a grant falls with the grant it rests on. Marks that change an
+    audience come last: a steward's upkeep. So a removal is only ever kept out by one that ranks above it, and what
+    ranks above it never rests on what it takes away. -/
 def priority (base : State) (edit : Edit) : List Nat :=
   match edit.action with
   | .revoke (.owner v _ _) | .revoke (.device v _ _) | .settings v (.root ..) =>
@@ -549,7 +572,7 @@ def priority (base : State) (edit : Edit) : List Nat :=
         | some (_, i) => [0, t, 1, i]
         | none => [0, t, 2, 0]
   | .revoke (.grant c a _ _) => [1, (base.share? c).elim 0 (seniority base a), 0, 0]
-  | .move .. => [2, 0, 0, 0]
+  | .mark _ _ (some _) .. => [2, 0, 0, 0]
   | _ => [3, 0, 0, 0]
 
 /-- Priorities compare place by place. -/

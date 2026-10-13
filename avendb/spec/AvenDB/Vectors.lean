@@ -22,13 +22,13 @@ share a depth and a rank. An entry's id is random bytes its creator draws: the R
 bytes. An audience is a set of shares, which the model keeps sorted by number and the Rust core by id, so every audience
 a case names is in the model's order (an audience in another order is refused by the model and could be taken by the
 Rust core), and the Rust side compares the audiences of the state as sets. A blob is named by the hash of its bytes: the
-Rust side maps blob number `b` to the bytes `blob b`. The state includes each entry's stays and, as its readers see it,
-its attributes, whether its creation was let in, its semantic audience and where a steward would move it; the key
-schedule (each family's epoch where it isn't 0, every seal and every published key, all three compared as sets); the
-schema lane; the writes its readers don't count (`uncounted`); and each line of each entry's history, of the writes they
-count: its writes and its heads, the main line first and then each proposal in the order it started. A write carries its
-proof and its touches, as its readers read them off its body, and a share its ops. The file starts with the built-in
-groups (`groups`), which the Rust core offers as they are.
+Rust side maps blob number `b` to the bytes `blob b`. The state includes each entry's stays and wants and, as its
+readers see it, its attributes, whether its creation was let in, its semantic audience and wants, and what a steward
+would mark it with; the key schedule (each family's epoch where it isn't 0, every seal and every published key, all
+three compared as sets); the schema lane; the writes its readers don't count (`uncounted`); and each line of each
+entry's history, of the writes they count: its writes and its heads, the main line first and then each proposal in the
+order it started. A write carries its proof and its touches, as its readers read them off its body, and a share its ops.
+The file starts with the built-in groups (`groups`), which the Rust core offers as they are.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
 reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
@@ -76,7 +76,8 @@ Vaults: Alice 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200, 
 Shares from 30. Entries: Welcome 1, the Charter 2, notes from 3, todos from 21. Types: a note 1, a todo 2; tags: work 7,
 home 8. Blobs (schemas and lenses): from 1. An act for the coop names the human vault it goes through: Alice's Mac (2)
 and passkey (1) through `[100]`, Bob's Mac (5) through `[101]`. An entry's stays are named by the moves that began them:
-a write names the stay whose key it is encrypted under, `none` for the one its entry's creation began. -/
+a write names the stay whose key it is encrypted under, `none` for the one its entry's creation began. A mark of the
+audience alone is written `.move`, and a mark of the wants alone `.pick`. -/
 
 def note : Sym := 1
 def todo : Sym := 2
@@ -336,7 +337,7 @@ def cases : List Case := [
     (2, [], .revoke (.grant 30 100 [])),
     (2, [], .revoke (.grant 33 100 [])),
     (1, [], .revoke (.grant 33 100 []))] },
-  { name := "tags, moves and stewards", edits := humans ++ [
+  { name := "tags, marks and stewards", edits := humans ++ [
     -- Alice's work todo, her home todo and a note; Bob may write her work todos and ask for the work and home tags,
     -- Carol reads every todo
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
@@ -345,11 +346,11 @@ def cases : List Case := [
     (2, [], newShare 30 100 (toVault 101) .write 100 workTodos
       (ops := some [.read, .create, .set [] none none, .tag (some [work, home]), .propose, .merge none])),
     (2, [], newShare 31 100 (toVault 102) .read 100 todos),
-    -- the stewards move each todo to the audience of the shares that select it; the note is where it belongs
+    -- the stewards mark each todo with the audience of the shares that select it; the note is where it belongs
     (2, [], .move 100 21 [30, 31] []),
     (2, [], .move 100 22 [31] []),
     (2, [], .move 100 1 [] []),
-    -- a move goes only to an audience of the vault's own shares, and only a steward moves
+    -- a mark names only an audience of the vault's own shares, and only a steward marks
     (2, [], .move 100 22 [31, 77] []),
     (5, [], .move 100 22 [30, 31] [] [101]),
     -- Bob writes the work todo, not the home one
@@ -358,7 +359,7 @@ def cases : List Case := [
     -- Bob asks for the home tag: his tags count for nothing until a device of Alice's vault makes the change
     (5, [], wr 100 21 101 [16] (stay := some 11) (add := [home]) (remove := [work]) (proof := some 30)),
     (2, [], wr 100 21 100 [18] (stay := some 11) (add := [home]) (remove := [work])),
-    -- Bob writes again; a steward that hadn't seen it moves the todo out of his slice, and his write goes
+    -- Bob writes again; a steward that hadn't seen it marks the todo out of his slice, and his write goes
     (5, [], wr 100 21 101 [19] (stay := some 11) (proof := some 30)),
     (2, [], .move 100 21 [31] [16, 18]),
     (5, [], wr 100 21 101 [19] (stay := some 21) (proof := some 30)),
@@ -368,14 +369,14 @@ def cases : List Case := [
     (5, [], newEntry 100 24 101 [30, 31] todo (tags := [work]) (proof := some 30)),
     -- Carol only reads, and creates nothing
     (6, [], newEntry 100 25 102 [31] todo),
-    -- the stewards move the work todo to the audience of the shares that select it, and the note to no share's
+    -- the stewards mark the work todo with the audience of the shares that select it, and the note with no share's
     -- audience, keeping what Bob made; he can't write the note any more
     (2, [], .move 100 23 [30, 31] [23]),
     (2, [], .move 100 2 [] [24]),
     (5, [], wr 100 2 101 [24] (stay := some 28) (proof := some 30)),
     -- Bob asks for a tag his share doesn't name: whatever else it does, his write counts for no reader
     (5, [], wr 100 23 101 [23] (stay := some 27) (add := [9]) (proof := some 30)),
-    -- Alice tags the home todo for work too: its readers see it belongs in Bob's slice, but until a steward moves it,
+    -- Alice tags the home todo for work too: its readers see it belongs in Bob's slice, but until a steward marks it,
     -- Bob's share doesn't reach it
     (2, [], wr 100 22 100 [7] (stay := some 12) (add := [work])),
     (5, [], wr 100 22 101 [31] (stay := some 12) (proof := some 30))] },
@@ -690,7 +691,7 @@ def cases : List Case := [
     (2, [], .syncRule ⟨45, 100, 3, 101, true, .all, false⟩),
     -- Carol, who holds a share over Alice's vault, sets one for her Mac over it
     (7, [], .syncRule ⟨43, 102, 7, 100, false, .anyOf [[.typeIn [note]], [.tagHas work]], false⟩),
-    -- Alice's Mac marks what the rules pick; a wide rule picks without marks
+    -- Alice's Mac marks the rules that want each entry; a wide rule wants it without marks
     (2, [], .pick 100 1 [40, 43]),
     (2, [], .pick 100 21 [43]),
     (2, [], .pick 100 21 [41]),
@@ -704,10 +705,44 @@ def cases : List Case := [
     (2, [], .endRule 40 100),
     (2, [], .endRule 40 100),
     (2, [], .endRule 43 102),
-    -- an ended rule marks nothing; marks drop it
+    -- a mark may name an ended rule, which readers leave out: no rule that ends refuses a mark that sorts after it
     (2, [], .pick 100 1 [40]),
     (2, [], .pick 100 1 [43]),
-    (2, [], .pick 100 999 [43])] }]
+    (2, [], .pick 100 999 [43])] },
+  { name := "marks, part by part", edits := humans ++ [
+    (1, [3], .share (.device 100 3)),
+    -- Alice's work todo; Bob writes her todos, Carol reads her work todos; her iPhone syncs her todos, her Mac all
+    (2, [], newEntry 100 21 100 [] todo (tags := [work])),
+    (2, [], newShare 30 100 (toVault 101) .write 100 todos),
+    (2, [], newShare 31 100 (toVault 102) .read 100 workTodos),
+    (2, [], .syncRule ⟨40, 100, 3, 100, false, todos, true⟩),
+    (2, [], .syncRule ⟨41, 100, 2, 100, true, .all, false⟩),
+    -- a mark names an audience, the rules that want the entry, or both; and keeps what it had seen only where it takes
+    -- the entry to a new audience (BadMark)
+    (2, [], .mark 100 21 none none [] []),
+    (2, [], .mark 100 21 none (some [40]) [7] []),
+    -- one mark takes the todo to the audience of the shares that select it, and marks the rule that wants it
+    (2, [], .mark 100 21 (some [30, 31]) (some [40]) [7] []),
+    -- the same audience again (SameAudience), the same wants alone (SameWants)
+    (2, [], .move 100 21 [30, 31] []),
+    (2, [], .pick 100 21 [40]),
+    -- an audience naming a share that isn't one of the vault's (BadAudience), a wide rule among the wants, an entry of
+    -- another vault (WrongVault), and a mark by a device that doesn't act for the vault (NotActing)
+    (2, [], .move 100 21 [30, 77] []),
+    (2, [], .pick 100 21 [41]),
+    (5, [], .pick 101 21 []),
+    (5, [], .pick 100 21 [] [101]),
+    -- Carol's share ends: a new audience with the same wants takes the todo out of it, and leaves the wants as they are
+    (2, [], .revoke (.grant 31 100 [])),
+    (2, [], .mark 100 21 (some [30]) (some [40]) [7] []),
+    -- the iPhone's rule ends; a mark may still name the revoked share and the ended rule, which readers leave out
+    (2, [], .endRule 40 100),
+    (2, [], .mark 100 21 (some [30, 31]) (some [40]) [7] []),
+    -- the wants alone, which leave the audience as it is
+    (2, [], .pick 100 21 []),
+    -- Dave's share and a new rule of the iPhone select the todo: a steward has one mark to make, with both
+    (2, [], newShare 32 100 (toVault 103) .read 100 todos),
+    (2, [], .syncRule ⟨42, 100, 3, 100, false, workTodos, false⟩)] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -780,12 +815,12 @@ def views : List ViewCase := [
     -- Alice writes the todo she kept; the other never was
     (10, 2, [], wr 100 21 100 [7]),
     (11, 2, [], wr 100 22 100 [8])] },
-  { name := "a move cuts a write it hadn't seen into the audience it left", edits := humansV ++ [
+  { name := "a mark cuts a write it hadn't seen into the audience it left", edits := humansV ++ [
     (6, 2, [], newEntry 100 21 100 [] todo (tags := [work])),
     (7, 2, [], newShare 30 100 (toVault 101) .write 100 workTodos),
     (8, 2, [], .move 100 21 [30] []),
     (9, 5, [], wr 100 21 101 [6] (stay := some 8) (proof := some 30)),
-    -- Alice takes the work tag off and a steward moves the todo out of Bob's slice, having seen Bob's first write but
+    -- Alice takes the work tag off and a steward marks the todo out of Bob's slice, having seen Bob's first write but
     -- not his second
     (10, 5, [], wr 100 21 101 [9] (stay := some 8) (proof := some 30)),
     (11, 2, [], wr 100 21 100 [9] (stay := some 8) (remove := [work])),
@@ -887,7 +922,36 @@ def views : List ViewCase := [
     -- the old passkey, stolen later, revokes Dave's owner share on a copy that hadn't seen the root handed on: it
     -- sorts first and falls, as the hand-on ranks above it and the old passkey alone no longer approves
     (5, 1, [], .revoke (.grant 30 100 [])),
-    (6, 1, [9], .settings 100 (.root (some 9) [0, 1, 2, 3, 4]))] }]
+    (6, 1, [9], .settings 100 (.root (some 9) [0, 1, 2, 3, 4]))] },
+  { name := "a mark of the wants alone puts back no audience", edits := humansV ++ [
+    (6, 1, [3], .share (.device 100 3)),
+    (7, 2, [], newEntry 100 1 100 [] note),
+    (8, 2, [], newEntry 100 21 100 [] todo),
+    (9, 2, [], newShare 30 100 (toVault 102) .read 100 (.anyOf [[.typeIn [note]], [.typeIn [todo]]])),
+    (10, 2, [], .syncRule ⟨40, 100, 3, 100, false, .anyOf [[.typeIn [note]], [.typeIn [todo]]], true⟩),
+    -- the Mac marks the note with Carol's audience while the iPhone, which hasn't seen it, marks only the note's wants:
+    -- the wants come after and leave the audience the Mac set
+    (11, 2, [], .move 100 1 [30] [7]),
+    (11, 3, [], .pick 100 1 [40]),
+    -- the other way round for the todo: the wants come first, and the Mac's mark, which hadn't seen them, cuts nothing
+    -- of them, as they don't rest on the audience it takes the todo out of
+    (12, 3, [], .pick 100 21 [40]),
+    (13, 2, [], .move 100 21 [30] [8]),
+    -- the same wants again are refused
+    (14, 3, [], .pick 100 1 [40])] },
+  { name := "a mark stands after what it names is revoked or ended", edits := humansV ++ [
+    (6, 1, [3], .share (.device 100 3)),
+    (7, 2, [], newEntry 100 21 100 [] todo (tags := [work])),
+    (8, 2, [], newShare 30 100 (toVault 101) .write 100 todos),
+    (9, 2, [], newShare 31 100 (toVault 102) .read 100 workTodos),
+    (10, 2, [], .syncRule ⟨40, 100, 3, 100, false, todos, true⟩),
+    -- Alice's passkey revokes Carol's share and ends the iPhone's rule while her Mac, which has seen neither, marks the
+    -- todo with both: the mark sorts after them and stands, and readers leave out what isn't live
+    (11, 1, [], .revoke (.grant 31 100 [])),
+    (11, 1, [], .endRule 40 100),
+    (12, 2, [], .mark 100 21 (some [30, 31]) (some [40]) [7] []),
+    -- only a steward marks
+    (13, 555, [], .pick 100 21 [])] }]
 
 /-! ## Sync cases
 
@@ -1198,6 +1262,10 @@ def header (h : Header) : String := obj [("type", nat h.type), ("created", nat h
 
 def tagDelta (d : TagDelta) : String := obj [("add", ids d.add), ("remove", ids d.remove)]
 
+/-- What a mark carries: an audience and wants, either left out (`null`). -/
+def markJson (caps : Option Audience) (wants : Option (List ShareId)) : List (String × String) :=
+  [("caps", opt ids caps), ("wants", opt ids wants)]
+
 def action : Action → String
   | .genesis v k owners t root => obj [("genesis", obj [("vault", nat v), ("kind", kind k),
       ("owners", arr (owners.map principal)), ("threshold", nat t), ("root", opt nat root)])]
@@ -1220,8 +1288,8 @@ def action : Action → String
         | some c => [("proof", nat c)]
         | none => []) ++ (if ts.isEmpty then [] else [("touches", arr (ts.map touch))]) ++
         if ft then [] else [("fits", bool false)]))]
-  | .move v e to keep via => obj [("move", obj [("vault", nat v), ("entry", nat e), ("to", ids to),
-      ("keep", ids keep), ("via", ids via)])]
+  | .mark v e caps wants keep via => obj [("mark", obj ([("vault", nat v), ("entry", nat e)] ++ markJson caps wants ++
+      [("keep", ids keep), ("via", ids via)]))]
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),
       ("public", bool pub)])]
   | .publish v a b via => obj [("publish", obj [("vault", nat v), ("actor", nat a), ("blob", nat b),
@@ -1229,7 +1297,6 @@ def action : Action → String
   | .checkpoint e covers => obj [("checkpoint", obj [("entry", nat e), ("covers", ids covers)])]
   | .syncRule r via => obj [("syncRule", obj [("rule", syncRuleJson r), ("via", ids via)])]
   | .endRule r i via => obj [("endRule", obj [("rule", nat r), ("issuer", nat i), ("via", ids via)])]
-  | .pick v e rs via => obj [("pick", obj [("vault", nat v), ("entry", nat e), ("rules", ids rs), ("via", ids via)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -1239,13 +1306,13 @@ def attrs (a : Attrs) : String :=
   obj [("type", nat a.type), ("author", nat a.author), ("entry", nat a.entry), ("created", nat a.created),
        ("tags", ids a.tags)]
 
-/-- An entry: its stays, the current one first, and what only its readers see. -/
+/-- An entry: its stays, the current one first, and its wants; and what only its readers see. -/
 def entryJson (st : State) (en : Entry) : String :=
   obj [("id", nat en.id), ("vault", nat en.vault),
        ("stays", arr (en.stays.map fun (s, x) => obj [("stay", opt nat s), ("audience", ids x)])),
-       ("attrs", attrs en.attrs), ("admitted", bool en.admitted), ("semAudience", ids (semAudience st en)),
-       ("desired", opt ids (desired st en)), ("picks", ids (st.picksOf en.id)), ("semPicks", ids (semPicks st en)),
-       ("desiredPicks", opt ids (desiredPicks st en))]
+       ("wants", ids (st.wantsOf en.id)), ("attrs", attrs en.attrs), ("admitted", bool en.admitted),
+       ("semAudience", ids (semAudience st en)), ("semWants", ids (semWants st en)),
+       ("desiredMark", opt (fun (caps, wants) => obj (markJson caps wants)) (desiredMark st en))]
 
 def write (w : Write) : String :=
   obj [("edit", nat w.edit), ("author", nat w.author), ("actor", nat w.actor), ("entry", nat w.entry),
@@ -1342,7 +1409,7 @@ def audiencesOf : Action → List Audience :=
     | _ => []
   fun
   | .write _ _ _ _ _ _ _ _ (some (x, _)) _ _ _ => [x]
-  | .move _ _ to _ _ => [to]
+  | .mark _ _ (some to) _ _ _ => [to]
   | .keys s to _ => named s ++ to.flatMap named
   | _ => []
 
@@ -1375,6 +1442,24 @@ def allActions : List Action :=
   (runView c).1.drop humansV.length == [true, true, true, true, false, false, true, true]
 #guard (views.find? (·.name == "handing the root on outranks a revoked grant")).all fun c =>
   (runView c).1 == [true, true, true, true, true, false, true]
+-- a mark names an audience, wants or both, asks nothing of what they name being live, and is refused only as its
+-- comment says; at the end a steward's one mark carries both
+#guard (cases.find? (·.name == "marks, part by part")).all fun c =>
+  let (acc, st) := run c.edits
+  acc.drop humans.length == [true, true, true, true, true, true, false, false, true, false, false, false, false, false,
+    false, true, true, true, true, true, true, true] &&
+    (st.entry? 21).any fun en => desiredMark st en == some (some [30, 32], some [42])
+-- a mark of the wants alone leaves the audience a concurrent mark set, and the mark that sets it cuts nothing of it
+#guard (views.find? (·.name == "a mark of the wants alone puts back no audience")).all fun c =>
+  let (stood, st) := runView c
+  stood.drop humansV.length == [true, true, true, true, true, true, true, true, true, false] &&
+    [1, 21].all fun e => (st.entry? e).any fun en => en.audience == [30] && st.wantsOf e == [40]
+-- a mark naming a share revoked, and a rule ended, before it stands; readers leave both out, so a steward has nothing
+-- left to do
+#guard (views.find? (·.name == "a mark stands after what it names is revoked or ended")).all fun c =>
+  let (stood, st) := runView c
+  stood.drop humansV.length == [true, true, true, true, true, true, true, true, false] &&
+    (st.entry? 21).any fun en => en.audience == [30, 31] && st.wantsOf 21 == [40] && desiredMark st en == none
 -- some entry's creation is let in and another's isn't, some entry is where its readers say it belongs and another
 -- isn't yet, some write is on an earlier stay, and some entry fell: the Rust core must say the same of each
 #guard cases.any fun c => (run c.edits).2.entries.any (·.admitted) && (run c.edits).2.entries.any (!·.admitted)

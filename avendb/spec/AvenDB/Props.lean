@@ -98,7 +98,7 @@ def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
 /-- A sync rule as a relay sees it. -/
 def SyncRule.blind (r : SyncRule) : SyncRule := { r with select := .all }
 
-/-- An action as a relay sees it. -/
+/-- An action as a relay sees it. A mark is in the clear: a relay reads its audience and its wants as they are. -/
 def Action.blind : Action → Action
   | .share (.grant c via) => .share (.grant c.blind via)
   | .syncRule r via => .syncRule r.blind via
