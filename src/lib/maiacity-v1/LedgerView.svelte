@@ -19,6 +19,17 @@
 	const subsIn = $derived(subs.filter((r) => r.to === who));
 	const subsOut = $derived(subs.filter((r) => r.from === who));
 	const divs = $derived(view ? dividendsOf(view, who) : []);
+	/** the dividends, one line per COOP that pays them; its rents are the line's details */
+	const divsBy = $derived.by(() => {
+		const by = new Map();
+		for (const r of divs) {
+			const d = by.get(r.from) ?? { from: r.from, token: r.token, weekly: 0, parts: [] };
+			d.weekly += r.weekly;
+			d.parts.push({ what: r.what, weekly: r.weekly });
+			by.set(r.from, d);
+		}
+		return [...by.values()];
+	});
 	const weekNet = $derived.by(() => {
 		const n = {};
 		for (const r of [...subsIn, ...divs]) n[r.token] = (n[r.token] ?? 0) + r.weekly;
@@ -41,14 +52,19 @@
 				{#each subsIn as r (r.what + r.from + r.to)}
 					<div class="row" title="paid weekly, {f(r.weekly)} {TOKEN_LABEL[r.token]} each pay day"><span>{r.what}<small>from {nameOf(view, r.from)}{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.monthly * hv[r.token])} ❤︎<small>{f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
 				{/each}
-				{#each divs as r (r.what + r.from)}
-					<div class="row" title="{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now"><span>Dividend<small>{nameOf(view, r.from)} · {r.what.toLowerCase()}</small></span><span class="amt plus">+{f(r.weekly * 4 * hv[r.token])} ❤︎<small>{f(r.weekly * 4)} {TOKEN_LABEL[r.token]}</small></span></div>
+				{#each divsBy as d (d.from)}
+					<details class="fold" title="{f(view.settings.dividendShare * 100, 0)} % of every rent it is paid in its own MIND, for the {TOKEN_LABEL[d.token]} held now">
+						<summary class="row"><span>Dividend <i class="caret"></i><small>{nameOf(view, d.from)} · {d.parts.length} {d.parts.length > 1 ? 'rents' : 'rent'}</small></span><span class="amt plus">+{f(d.weekly * 4 * hv[d.token])} ❤︎<small>{f(d.weekly * 4)} {TOKEN_LABEL[d.token]}</small></span></summary>
+						{#each d.parts as p (p.what)}
+							<div class="row part"><span>{p.what}</span><span class="amt plus">+{f(p.weekly * 4 * hv[d.token])} ❤︎<small>{f(p.weekly * 4)} {TOKEN_LABEL[d.token]}</small></span></div>
+						{/each}
+					</details>
 				{/each}
 				{#if subsOut.length}<p class="group">Out</p>{/if}
 				{#each subsOut as r (r.what + r.from + r.to)}
 					<div class="row" title="paid weekly, {f(r.weekly)} {TOKEN_LABEL[r.token]} each pay day"><span>{r.what}<small>to {nameOf(view, r.to)}{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.monthly * hv[r.token])} ❤︎<small>{f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
 				{/each}
-				<div class="row net" title="4 pay days a month; a payer short of the MIND swaps through the pool"><span>Net a month<small>next pay day {vdate((view.week + 1) / 4)}</small></span><span class="amt" class:plus={net > 0} class:minus={net < 0}>{signed(net, 2)} ❤︎<small>{weekNet.map(([t, x]) => `${signed(x * 4)} ${TOKEN_LABEL[t]}`).join(' · ')}</small></span></div>
+				<div class="row net" title="4 pay days a month; a payer short of the MIND swaps through the pool"><span>Net a month<small>next pay day {vdate((view.week + 1) / 4)}</small></span><span class="amt" class:plus={net > 0} class:minus={net < 0}>{signed(net, 2)} ❤︎{#each weekNet as [t, x] (t)}<small>{signed(x * 4)} {TOKEN_LABEL[t]}</small>{/each}</span></div>
 			</div>
 		{/if}
 		{#if days.length && show === 'all'}
@@ -154,6 +170,26 @@
 	.flow .row .bad {
 		color: #b5523a;
 		font-weight: 600;
+	}
+	.fold summary {
+		cursor: pointer;
+		list-style: none;
+	}
+	.fold summary::-webkit-details-marker {
+		display: none;
+	}
+	.caret::after {
+		content: '▸';
+		font-style: normal;
+		opacity: 0.45;
+	}
+	.fold[open] .caret::after {
+		content: '▾';
+	}
+	.flow .row.part {
+		padding-left: 0.9rem;
+		font-size: 0.74rem;
+		opacity: 0.85;
 	}
 	.flow .row.net {
 		margin-top: 0.3rem;
