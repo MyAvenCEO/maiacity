@@ -23,6 +23,10 @@
  *   --out <dir>                                   write proof.md and proof.csv elsewhere (proof.json only on a full run)
  *   --save <file>, --load <file>                  keep the runs' results; report from them again without running
  *                                                  (refused when the engine's files changed since)
+ *   --only S00 --page                              the five base worlds only, and their summary written to proof.json's
+ *                                                  "suite" as a partial suite (`partial`: no other scenario and no
+ *                                                  experiment), so the page shows this engine's base world while the
+ *                                                  whole suite still runs
  *
  * Every number in the report is computed by the run; nothing is typed in.
  */
@@ -80,6 +84,7 @@ if (!isMainThread) {
 async function main() {
 	const args = process.argv.slice(2);
 	const quick = args.includes('--quick');
+	const page = args.includes('--page');
 	const oi = args.indexOf('--only');
 	const only = oi >= 0 ? args[oi + 1].split(',') : null;
 	const di = args.indexOf('--out');
@@ -171,7 +176,8 @@ async function main() {
 	const suffix = (only ? '-' + only.join('-') : '') + (Object.keys(set).length ? '-set' : '') + (quick ? '-quick' : '');
 	writeFileSync(join(OUT, `proof${suffix}.md`), md);
 	writeFileSync(join(OUT, `proof${suffix}.csv`), toCsv(exps, scen, bases, R));
-	if (!only && !Object.keys(set).length && !quick) {
+	const partial = page && only?.length === 1 && only[0] === 'S00';
+	if ((!only || partial) && !Object.keys(set).length && !quick) {
 		const dir = join(ROOT, 'static', 'sandbox-9');
 		mkdirSync(dir, { recursive: true });
 		// The page's Proof view reads the top-level keys of this file (scripts/sandbox-9-proof-json.mjs writes them).
@@ -183,7 +189,10 @@ async function main() {
 		} catch {
 			prev = {};
 		}
-		writeFileSync(file, JSON.stringify({ ...prev, suite: toJson(exps, scen, bases, NOT_COVERED, meta) }, null, '\t'));
+		const suite = toJson(exps, scen, bases, NOT_COVERED, meta);
+		// a partial suite (--only S00 --page) says so: the page reads its base world, and no other scenario's verdict
+		if (partial) suite.partial = { only, note: 'the five base worlds only (S00); the other scenarios and the experiments are not in this summary' };
+		writeFileSync(file, JSON.stringify({ ...prev, suite }, null, '\t'));
 		console.log(`wrote ${file} (key "suite")`);
 	}
 	console.log(`wrote ${join(OUT, `proof${suffix}.md`)} and .csv (${(wall / 1000).toFixed(1)} s)`);
