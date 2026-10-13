@@ -106,9 +106,9 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     })
 }
 
-/// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves and checkpoints of its
-/// entries, the keys edits of its keys and its entries', the shares over it and the revocations of those, and what was
-/// published into its lane.
+/// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves (marks that take an entry to
+/// an audience) and checkpoints of its entries, the keys edits of its keys and its entries', the shares over it and the
+/// revocations of those, and what was published into its lane.
 fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let (log, st) = (lab.log(me), lab.state(me));
     let edits = || log.edits().iter().zip(log.ids());
@@ -123,7 +123,7 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         match &edit.action {
             Action::Genesis { .. } if VaultId::from(*id) == vault => founded += 1,
             Action::Write { vault: v, .. } if *v == vault => writes += 1,
-            Action::Move { vault: v, .. } if *v == vault => moves += 1,
+            Action::Mark { vault: v, caps: Some(_), .. } if *v == vault => moves += 1,
             Action::Checkpoint { entry, .. } if of(entry) => checkpoints += 1,
             Action::Keys { name: KeyName::Scoped(k, _), .. } if k.vault() == vault => keys += 1,
             Action::Keys { name: KeyName::Entry(e, ..), .. } if of(e) => keys += 1,
@@ -210,9 +210,10 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
 
 /// What edit `id` does, as the History view shows it: its kind, and its fields, ids in hex. What is sealed, a write's
 /// body, a share's or a sync rule's slice, keys' boxes, shows by its size or its recipient alone, and a public key by
-/// whether there is one. A write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one; a
-/// write that creates its entry names the audience it goes in (`create`), and its `stay` the move that put the entry
-/// where it is now (`null` for where it was created).
+/// whether there is one. A write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it
+/// starts one; a write that creates its entry names the audience it goes in (`create`), and its `stay` the mark that
+/// put the entry where it is now (`null` for where it was created). A mark names the audience it takes its entry to
+/// (`caps`) and the sync rules it marks it as wanted by (`wants`), each `null` where it leaves that part as it is.
 fn action(id: EditId, a: &Action) -> (&'static str, Value) {
     let vias = |via: &[VaultId]| via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
     match a {
@@ -287,12 +288,13 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 }),
             )
         }
-        Action::Move { vault, entry, to, keep, via } => (
-            "move",
+        Action::Mark { vault, entry, caps, wants, keep, via } => (
+            "mark",
             json!({
                 "vault": hex(&vault.0),
                 "entry": hex(&entry.0),
-                "to": share_ids(to),
+                "caps": caps.as_deref().map(share_ids),
+                "wants": wants.as_deref().map(share_ids),
                 "keep": keep.len(),
                 "via": vias(via),
             }),
@@ -341,10 +343,6 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         Action::EndSyncRule { rule, issuer, via } => {
             ("endSyncRule", json!({ "rule": hex(&rule.0), "issuer": hex(&issuer.0), "via": vias(via) }))
         }
-        Action::Pick { vault, entry, rules, via } => (
-            "pick",
-            json!({ "vault": hex(&vault.0), "entry": hex(&entry.0), "rules": share_ids(rules), "via": vias(via) }),
-        ),
     }
 }
 
@@ -384,8 +382,7 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
         Action::Settings { vault, .. }
         | Action::Share(Sharing::Device { vault, .. })
         | Action::Revoke(Revoking::Device { vault, .. })
-        | Action::Move { vault, .. }
-        | Action::Pick { vault, .. } => vec![*vault],
+        | Action::Mark { vault, .. } => vec![*vault],
         Action::SyncRule(r, _) => vec![r.issuer, r.over],
         Action::EndSyncRule { issuer, .. } => vec![*issuer],
         Action::Share(Sharing::Grant(c, _)) => {

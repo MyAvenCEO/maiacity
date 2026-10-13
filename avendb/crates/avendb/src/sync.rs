@@ -9,11 +9,11 @@
 //! hears of it, and knows what it may no longer do. Nothing about any other entry or audience leaves the peer (T12):
 //! not its writes, not even its audience. Of the entries a device may receive, it is sent those its sync rules want
 //! (`State::wants`, T28): all of a vault it has no rule over, else those one of its rules there is wide over or marks;
-//! the peer reads the stewards' marks, never a selector (T29). Two devices that answered each other hold the same
+//! the peer reads the stewards' marks, never a selector (T23). Two devices that answered each other hold the same
 //! writes for every entry both sync (T13). Receiving is not reading: a relay share gets the ciphertext and no key.
 //!
 //! Every edit belongs to one log (`log_of`): a vault's (its governance, its seed's keys, its schema lane), a share's
-//! (the share, its revocation, its keys), an audience's (its keys), or an entry's (its writes, moves, checkpoints and
+//! (the share, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks, checkpoints and
 //! keys). It names as its parents the frontier of its own log as its device held it. So each log is a small history of
 //! its own, and two copies of a log compare by their frontiers alone: one hash per log (`digests`), which is what
 //! devices gossip. A device asks with its frontier of each log it holds and a few edits further back, the edits 1, 2,
@@ -48,7 +48,7 @@ pub enum LogId {
 
 /// The log of edit `edit`, whose id is `id` (`Edit.log?`): a vault's genesis and settings, its owners and devices given
 /// and revoked, a schema or lens, and a seed's key go to their vault's; a grant, its revocation and its key to the
-/// grant's; an audience's key to the audience's; a write, a move, a checkpoint and an entry's key to the entry's. A
+/// grant's; an audience's key to the audience's; a write, a mark, a checkpoint and an entry's key to the entry's. A
 /// signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id names the log only of an edit that
 /// starts one, a genesis or a grant. The edit's kind alone says which, so a peer that knows nothing else routes it.
 pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
@@ -60,10 +60,9 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
         | Action::Publish { vault, .. } => LogId::Vault(*vault),
         Action::Share(Sharing::Grant(..)) => LogId::Share(ShareId::from(id)),
         Action::Revoke(Revoking::Grant { share, .. }) => LogId::Share(*share),
-        Action::Write { entry, .. }
-        | Action::Move { entry, .. }
-        | Action::Checkpoint { entry, .. }
-        | Action::Pick { entry, .. } => LogId::Entry(*entry),
+        Action::Write { entry, .. } | Action::Mark { entry, .. } | Action::Checkpoint { entry, .. } => {
+            LogId::Entry(*entry)
+        }
         Action::SyncRule(r, _) => LogId::Vault(r.issuer),
         Action::EndSyncRule { issuer, .. } => LogId::Vault(*issuer),
         Action::Keys { name, .. } => match *name {
@@ -95,9 +94,7 @@ fn vaults_named(edit: &Edit) -> Vec<VaultId> {
             std::iter::once(*actor).chain(via.iter().copied()).collect()
         }
         Action::Write { vault, actor, via, .. } => [*vault, *actor].into_iter().chain(via.iter().copied()).collect(),
-        Action::Move { vault, via, .. } | Action::Pick { vault, via, .. } => {
-            std::iter::once(*vault).chain(via.iter().copied()).collect()
-        }
+        Action::Mark { vault, via, .. } => std::iter::once(*vault).chain(via.iter().copied()).collect(),
         Action::SyncRule(r, via) => [r.issuer, r.over].into_iter().chain(via.iter().copied()).collect(),
         Action::EndSyncRule { issuer, via, .. } => std::iter::once(*issuer).chain(via.iter().copied()).collect(),
         _ => vec![],

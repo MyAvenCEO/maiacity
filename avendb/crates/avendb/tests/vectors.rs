@@ -3,10 +3,11 @@
 //! accepted or refused exactly as the model says. A view case's edits, each at the depth it claims, must stand or be
 //! cut exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case
 //! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, shares, entries
-//! (their stays, and as their readers see them their attributes, whether their creation was let in, their semantic
-//! audience and where a steward would move them), writes, key schedule (each family's epoch, every seal, every
-//! published key), schema lanes, and the writes their readers count, line by line. The lens vectors hold each app's
-//! view of many stored blocks and todos, and what each edit through a view stores.
+//! (their stays and their wants, and as their readers see them their attributes, whether their creation was let in,
+//! their semantic audience, the sync rules that want them and what a steward would mark them with), writes, key
+//! schedule (each family's epoch, every seal, every published key), schema lanes, and the writes their readers count,
+//! line by line. The lens vectors hold each app's view of many stored blocks and todos, and what each edit through a
+//! view stores.
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -193,9 +194,9 @@ impl Names {
         list(v).iter().map(|c| self.share(c)).collect()
     }
 
-    /// A steward's marks: in the core's canonical order where the model's are in its own, and out of it where they
+    /// A mark's wants: in the core's canonical order where the model's are in its own, and out of it where they
     /// aren't.
-    fn picks(&self, v: &Value) -> Vec<ShareId> {
+    fn wants(&self, v: &Value) -> Vec<ShareId> {
         let ns: Vec<u64> = list(v).iter().map(num).collect();
         let mut ids: Vec<ShareId> = list(v).iter().map(|r| self.share(r)).collect();
         ids.sort();
@@ -405,10 +406,12 @@ impl Names {
                 files: vec![],
                 body: serde_json::to_vec(&json!({"create": x["create"], "tags": x["tags"]})).unwrap(),
             },
-            "move" => Action::Move {
+            // each part there, or `null` where the mark leaves it as it is
+            "mark" => Action::Mark {
                 vault: vault(),
                 entry: entry(&x["entry"]),
-                to: self.audience(&x["to"]),
+                caps: (!x["caps"].is_null()).then(|| self.audience(&x["caps"])),
+                wants: (!x["wants"].is_null()).then(|| self.wants(&x["wants"])),
                 keep: keep(),
                 via: self.via(&x["via"]),
             },
@@ -430,12 +433,6 @@ impl Names {
             "endRule" => Action::EndSyncRule {
                 rule: self.share(&x["rule"]),
                 issuer: self.vault(&x["issuer"]),
-                via: self.via(&x["via"]),
-            },
-            "pick" => Action::Pick {
-                vault: vault(),
-                entry: entry(&x["entry"]),
-                rules: self.picks(&x["rules"]),
                 via: self.via(&x["via"]),
             },
             other => panic!("no action {other}"),
@@ -572,16 +569,19 @@ impl Names {
             assert_eq!(m.admitted, v["admitted"].as_bool().unwrap(), "{what}: let in");
             let audience: BTreeSet<ShareId> = m.audience.iter().copied().collect();
             assert_eq!(audience, self.audience_set(&v["semAudience"]), "{what}: semantic audience");
-            let desired = m.desired.map(|x| x.into_iter().collect::<BTreeSet<ShareId>>());
-            let want = (!v["desired"].is_null()).then(|| self.audience_set(&v["desired"]));
-            assert_eq!(desired, want, "{what}: where a steward moves it");
-            let marks: BTreeSet<ShareId> = st.picks_of(en.id).iter().copied().collect();
-            assert_eq!(marks, self.audience_set(&v["picks"]), "{what}: the rules it is marked with");
-            let picks: BTreeSet<ShareId> = m.picks.into_iter().collect();
-            assert_eq!(picks, self.audience_set(&v["semPicks"]), "{what}: the rules that pick it");
-            let pick = m.pick.map(|x| x.into_iter().collect::<BTreeSet<ShareId>>());
-            let want = (!v["desiredPicks"].is_null()).then(|| self.audience_set(&v["desiredPicks"]));
-            assert_eq!(pick, want, "{what}: what a steward marks it with");
+            let marked: BTreeSet<ShareId> = st.wants_of(en.id).iter().copied().collect();
+            assert_eq!(marked, self.audience_set(&v["wants"]), "{what}: the wants it is marked with");
+            let wants: BTreeSet<ShareId> = m.wants.into_iter().collect();
+            assert_eq!(wants, self.audience_set(&v["semWants"]), "{what}: the rules that want it");
+            // the steward's one mark, each part a set or left out
+            let part = |x: Option<Vec<ShareId>>| x.map(|x| x.into_iter().collect::<BTreeSet<ShareId>>());
+            let part_of = |x: &Value| (!x.is_null()).then(|| self.audience_set(x));
+            let mark = m.mark.map(|(caps, wants)| (part(caps), part(wants)));
+            let want = (!v["desiredMark"].is_null())
+                .then(|| (part_of(&v["desiredMark"]["caps"]), part_of(&v["desiredMark"]["wants"])));
+            assert_eq!(mark, want, "{what}: what a steward marks it with");
+            let desired = want.and_then(|(caps, _)| caps);
+            assert_eq!(part(m.desired), desired, "{what}: where a steward's mark takes it");
         }
         // every sync rule set, live or ended, in the order set, and the rules that ended
         type RuleRow = (ShareId, VaultId, SignerId, VaultId, bool, bool);
@@ -690,7 +690,10 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
     let cases = list(&vectors["cases"]);
     assert!(cases.len() >= 12);
     const KINDS: &str = "settings, shares and revocations, kind by kind";
-    assert!(cases.iter().any(|c| c["name"] == KINDS), "the model's case {KINDS:?}");
+    const MARKS: &str = "marks, part by part";
+    for name in [KINDS, MARKS] {
+        assert!(cases.iter().any(|c| c["name"] == name), "the model's case {name:?}");
+    }
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (edits, accepted) = (list(&case["edits"]), list(&case["accepted"]));
@@ -719,6 +722,15 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
             let grant = |n: u64| edits.iter().position(|v| v["action"]["share"]["grant"]["share"]["id"] == n).unwrap();
             assert_eq!(why[grant(31)], Some(Refusal::DeviceOnlyKeeps), "{name}: a grant to a device");
             assert_eq!(why[grant(34)], Some(Refusal::WideOwner), "{name}: a wide owner grant");
+        }
+        // and each part of a mark: nothing to mark, edits kept where it moves nothing, the audience or the wants the
+        // entry has already, a share or a rule that isn't one, another vault's entry, and a stranger
+        if name == MARKS {
+            use Refusal::*;
+            let refused: Vec<Refusal> = why.iter().flatten().copied().collect();
+            let want =
+                [BadMark, BadMark, SameAudience, SameWants, BadAudience, BadWants, WrongVault, NotActing];
+            assert_eq!(refused, want, "{name}: why each mark falls");
         }
     }
 }
@@ -755,8 +767,15 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
     let cases = list(&vectors["views"]);
     assert!(cases.len() >= 12);
     // a vault's own removals outrank a revoked grant: a core that ranked them the other way round would keep the
-    // revocations these views cut, and drop the removals
-    for view in ["a vault's removals outrank a revoked grant", "handing the root on outranks a revoked grant"] {
+    // revocations these views cut, and drop the removals; a mark of the wants alone leaves the audience as it is, and
+    // a mark stands though a revocation or the end of a rule sorts before it
+    let views = [
+        "a vault's removals outrank a revoked grant",
+        "handing the root on outranks a revoked grant",
+        "a mark of the wants alone puts back no audience",
+        "a mark stands after what it names is revoked or ended",
+    ];
+    for view in views {
         assert!(cases.iter().any(|c| c["name"] == view), "the model's view {view:?}");
     }
     for case in cases {

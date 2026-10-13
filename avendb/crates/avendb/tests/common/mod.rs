@@ -141,8 +141,8 @@ impl Cast {
         Ok(id)
     }
 
-    /// `signer`, a steward acting for vault `vault`, moves entry `entry` to the audience of the shares `to`, keeping
-    /// every write of it.
+    /// `signer`, a steward acting for vault `vault`, marks entry `entry` with the audience of the shares `to`, which
+    /// moves it there, keeping every write of it, and leaves its wants as they are.
     pub fn move_to(
         &mut self,
         signer: SignerId,
@@ -151,8 +151,8 @@ impl Cast {
         to: &[ShareId],
     ) -> Result<EditId, Refusal> {
         let keep = self.log.view().writes(entry);
-        let to = mk_audience(to);
-        self.log.append(signer, &[], Action::Move { vault, entry, to, keep, via: vec![] })
+        let caps = Some(mk_audience(to));
+        self.log.append(signer, &[], Action::Mark { vault, entry, caps, wants: None, keep, via: vec![] })
     }
 
     /// `signer` writes entry `entry` for `actor`, under its current stay and epoch, adding the tags `add` and

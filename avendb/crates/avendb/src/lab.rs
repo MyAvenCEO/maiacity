@@ -21,9 +21,10 @@
 //! A sync rule says which entries of a vault one device syncs, by a selector as a share's, and whether it keeps whole
 //! the files they bring (`policy::SyncRule`, `set_rule`): any data, by type, tag, author, entry or creation. It grants
 //! nothing. Its selector travels sealed as a share's, to the seeds of the vault it is over and of its issuer; the
-//! stewards read it and mark each entry with the rules that pick it (`policy::Action::Pick`), as they move entries to
-//! their audiences, and every peer then sends a device only the entries it may receive and its rules want (T28),
-//! reading the marks and never a selector (T29). A device with no rule over a vault syncs all of it that it may.
+//! stewards read it and mark each entry with the rules that want it, in the mark that moves it to its audience or in
+//! one of the wants alone (`policy::Action::Mark`), and every peer then sends a device only the entries it may receive
+//! and its rules want (T28), reading the marks and never a selector (T23). A device with no rule over a vault syncs all
+//! of it that it may.
 //!
 //! Every unlocked device keeps its keys up to date as an honest app would, each time its edits change. It opens every
 //! box its standing `Keys` edits hold for a key it has and every key published in the clear, and derives the key of
@@ -2894,9 +2895,10 @@ fn upkeep(
 /// What a steward of vault `v` does, once it reads the selector of every share of the vault (`Store::reads_shares`):
 /// for each entry whose creation and tags it reads, it answers the asks for tags no write acting for the vault answered
 /// yet, granting each its entry's readers count (`show_items`) where the asker may (`granted`), in one write acting for
-/// the vault; and moves an entry no ask waits on to the audience its meaning asks for, if it isn't there
-/// (`policy::Meaning::desired`), and, once it reads the selector of every sync rule over the vault too
-/// (`Store::reads_rules`), marks it with the rules that pick it, if it isn't marked so (`policy::Meaning::pick`).
+/// the vault; and marks an entry no ask waits on in one mark (`policy::Meaning::mark`): with the audience its meaning
+/// asks for, if it isn't there, and, once it reads the selector of every sync rule over the vault too
+/// (`Store::reads_rules`), with the rules that want it, if it isn't marked so. A part it has nothing to change in it
+/// leaves out, so it never puts back an audience another steward changed meanwhile.
 fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
     if !store.reads_shares(st, v) {
         return vec![];
@@ -2918,11 +2920,12 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
             .filter(|w| store.bodies.get(&w.edit).is_some_and(|b| !b.tags.is_empty()))
             .collect();
         if asks.is_empty() {
-            if let Some(to) = m.desired {
-                out.push(Work::Edit(Action::Move { vault: v, entry: en.id, to, keep: vec![], via: vec![] }));
-            }
-            if let Some(rules) = m.pick.filter(|_| marks) {
-                out.push(Work::Edit(Action::Pick { vault: v, entry: en.id, rules, via: vec![] }));
+            if let Some((caps, wants)) = m.mark {
+                let wants = wants.filter(|_| marks);
+                if caps.is_some() || wants.is_some() {
+                    let (keep, via) = (vec![], vec![]);
+                    out.push(Work::Edit(Action::Mark { vault: v, entry: en.id, caps, wants, keep, via }));
+                }
             }
             continue;
         }

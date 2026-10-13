@@ -3,7 +3,7 @@
 //! come back, and come back from old backups, which forks what they sign next. A peer sends a device the logs of the
 //! entries and audiences it reaches, and nothing about the others (T12): an entry a steward moves out of a device's
 //! reach stops syncing to it, and the device never hears of the move. Since blobs B2c, of those a device syncs the
-//! entries its sync rules want (T28), by the stewards' marks, which a relay applies without reading a selector (T29).
+//! entries its sync rules want (T28), by the stewards' marks, which a relay applies without reading a selector (T23).
 
 mod common;
 
@@ -302,7 +302,7 @@ fn t28_each_device_syncs_what_its_rules_pick() {
     let original_files: BTreeSet<FileRoot> = originals.iter().flat_map(|&e| files_of(&w.lab, mac, e)).collect();
     assert!(proxy_files.iter().all(|f| w.lab.may_fetch_file(mac, phone, f)));
     assert!(original_files.iter().all(|f| !w.lab.may_fetch_file(mac, phone, f)));
-    // the server reads no selector of Alice's, and still sends the iPhone only what its rule picks, by the marks (T29):
+    // the server reads no selector of Alice's, and still sends the iPhone only what its rule picks, by the marks (T23):
     // a new proxy reaches the iPhone through the server alone, while the Mac is away
     assert!(w.lab.slice(server, phone_rule).is_none());
     let late = clip(&mut w, "Noon, proxy", "proxy", 5);

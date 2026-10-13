@@ -217,6 +217,15 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// `option`, of a `seq`.
+    fn option_seq<T: Decode>(&mut self, min: usize) -> Result<Option<Vec<T>>, WireError> {
+        match self.u8()? {
+            0 => Ok(None),
+            1 => Ok(Some(self.seq(min)?)),
+            _ => Err(WireError::Unknown),
+        }
+    }
+
     /// `seq`, of at most `max` values.
     fn bounded<T: Decode>(&mut self, min: usize, max: usize) -> Result<Vec<T>, WireError> {
         let out: Vec<T> = self.seq(min)?;
@@ -677,18 +686,16 @@ impl Decode for Action {
                 deps: r.seq(32)?,
                 proposal: Proposal::decode(r)?,
                 via: r.seq(32)?,
-                create: match r.u8()? {
-                    0 => None,
-                    1 => Some(r.seq(32)?),
-                    _ => return Err(WireError::Unknown),
-                },
+                create: r.option_seq(32)?,
                 files: r.set(40)?,
                 body: r.bytes()?,
             },
-            5 => Action::Move {
+            // its audience and its wants, each there or not; the rules, not the format, say a mark marks something
+            5 => Action::Mark {
                 vault: VaultId::decode(r)?,
                 entry: EntryId::decode(r)?,
-                to: r.seq(32)?,
+                caps: r.option_seq(32)?,
+                wants: r.option_seq(32)?,
                 keep: r.seq(32)?,
                 via: r.seq(32)?,
             },
@@ -708,12 +715,6 @@ impl Decode for Action {
             },
             9 => Action::SyncRule(SyncRule::decode(r)?, r.seq(32)?),
             10 => Action::EndSyncRule { rule: ShareId::decode(r)?, issuer: VaultId::decode(r)?, via: r.seq(32)? },
-            11 => Action::Pick {
-                vault: VaultId::decode(r)?,
-                entry: EntryId::decode(r)?,
-                rules: r.seq(32)?,
-                via: r.seq(32)?,
-            },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -1237,7 +1238,8 @@ mod tests {
         // whom a share names: a vault (0) or a device (2), each named next, or everyone (1), and nothing else
         assert_eq!(granted(with(who, 2)), Some((Who::Device(SignerId(g.0)), Level::Read)));
         assert_eq!(with(who, 3), Err(WireError::Unknown));
-        // three sub-kinds of share and of revocation, two of settings; eight kinds and four more, for now
+        // three sub-kinds of share and of revocation, two of settings; eight kinds and three more, for now, as a
+        // pick's tag, 11, went with it into the mark's
         assert_eq!(with(at + 1, 3), Err(WireError::Unknown));
         let revoke = edit(Action::Revoke(Revoking::Grant { share: ShareId(g.0), actor: v, keep: vec![], via: vec![] }));
         let mut bytes = revoke.to_wire();
@@ -1246,7 +1248,45 @@ mod tests {
         let mut bytes = edit(Action::Settings { vault: v, set: Setting::Threshold(1) }).to_wire();
         bytes[at + 1 + 32] = 2;
         assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
+        assert_eq!(with(at, 11), Err(WireError::Unknown));
         assert_eq!(with(at, 12), Err(WireError::Unknown));
+    }
+
+    #[test]
+    fn a_mark_names_its_audience_and_its_wants_each_or_not() {
+        let (v, e, c, k) = (VaultId([1; 32]), EntryId([2; 32]), ShareId([3; 32]), EditId([4; 32]));
+        let mark = |caps: Option<Vec<ShareId>>, wants: Option<Vec<ShareId>>, keep: Vec<EditId>| Edit {
+            parents: vec![],
+            depth: 0,
+            author: SignerId([5; 32]),
+            cosigners: vec![],
+            action: Action::Mark { vault: v, entry: e, caps, wants, keep, via: vec![VaultId([6; 32])] },
+        };
+        // either part there or not, each read back as it was; a mark that keeps what it had seen and takes its entry
+        // to no audience reads back too, as the rules refuse it, not the format (`Refusal::BadMark`)
+        let parts = [(None, None), (Some(vec![c]), None), (None, Some(vec![c])), (Some(vec![]), Some(vec![c, c]))];
+        for (caps, wants) in parts {
+            for keep in [vec![], vec![k]] {
+                let m = mark(caps.clone(), wants.clone(), keep);
+                assert_eq!(Edit::from_wire(&m.to_wire()), Ok(m));
+            }
+        }
+        // after the version, no parents, the depth, the author and no cosigners: the kind, the vault and the entry,
+        // then a byte that says whether an audience follows, and one for the wants; a flag the format doesn't have is
+        // no edit, and nor is a pick's old tag, 11
+        let at = 1 + 4 + 8 + 32 + 4;
+        let bytes = mark(None, Some(vec![c]), vec![]).to_wire();
+        let (caps, wants) = (at + 1 + 32 + 32, at + 1 + 32 + 32 + 1);
+        assert_eq!((bytes[at], bytes[caps], bytes[wants]), (5, 0, 1));
+        for (i, b) in [(caps, 2), (wants, 2), (at, 11)] {
+            let mut x = bytes.clone();
+            x[i] = b;
+            assert_eq!(Edit::from_wire(&x), Err(WireError::Unknown), "byte {i} as {b}");
+        }
+        // an audience said to be there that isn't
+        let mut x = bytes.clone();
+        x[caps] = 1;
+        assert!(Edit::from_wire(&x).is_err());
     }
 
     #[test]

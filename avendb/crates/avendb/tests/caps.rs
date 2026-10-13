@@ -331,7 +331,7 @@ fn a_wide_share_reaches_every_audience_and_splits_none() {
     let (bobs, none) = (Some(AudienceId::of(alice, &[work])), Some(AudienceId::of(alice, &[])));
     assert_eq!(LIBRARY.map(|e| audience_of(&c.log, e)), [bobs, none, bobs, none, none]);
     assert!(LIBRARY.iter().all(|&e| v.meaning(e, &c.readings).is_some_and(|m| m.desired.is_none())));
-    assert_eq!(c.move_to(MAC_A, alice, DIARY, &[backup]).err(), Some(Refusal::BadCell));
+    assert_eq!(c.move_to(MAC_A, alice, DIARY, &[backup]).err(), Some(Refusal::BadAudience));
     // Dave reads every entry, in every audience, and writes none; Bob reads and writes the two in his audience alone
     assert!(LIBRARY.iter().all(|&e| reads(&v, MAC_D, e) && !v.may_write(dave, e)));
     assert_eq!(LIBRARY.map(|e| reads(&v, MAC_B, e) && v.may_write(bob, e)), [true, false, true, false, false]);

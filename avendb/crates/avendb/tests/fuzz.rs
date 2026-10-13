@@ -268,23 +268,23 @@ fn seal_body(mut edit: Edit, body: &Body, key: &Secret, rng: &mut SeededRng) -> 
 /// A signed edit of each kind: governance, which both halves sign, by a passkey with the new device consenting; a
 /// write creating the door in the audience of two shares, and a write of its tags on a proposal, through the owners it
 /// names, which only the classical half signs; a share for Bob to write Alice's work todos, its selector sealed; a
-/// steward's move of the door to another audience, keeping the writes it had seen; a sync rule of Alice's for her
-/// device to sync Bob's proxies, its selector sealed, and its end; and a steward's marks on the door, of the rules that
-/// pick it.
+/// steward's mark of the door, taking it to another audience, keeping the writes it had seen, and with the rules that
+/// want it; a sync rule of Alice's for her device to sync Bob's proxies, its selector sealed, and its end; and a
+/// steward's mark of the door's wants alone.
 struct Edits {
     add: Signed,
     create: Signed,
     write: Signed,
     share: Signed,
-    moved: Signed,
+    marked: Signed,
     rule: Signed,
     ended: Signed,
-    pick: Signed,
+    wanted: Signed,
 }
 
 impl Edits {
     fn all(&self) -> [&Signed; 8] {
-        [&self.add, &self.create, &self.write, &self.share, &self.moved, &self.rule, &self.ended, &self.pick]
+        [&self.add, &self.create, &self.write, &self.share, &self.marked, &self.rule, &self.ended, &self.wanted]
     }
 }
 
@@ -341,17 +341,18 @@ fn signed_edits() -> Edits {
     share.select = seal_select(Of::Share(&share), &work_todos(), &k, &mut rng);
     let share = by_device(edit(4, Action::Share(Sharing::Grant(share, vec![]))));
     let keep = vec![create.edit.id(), write.edit.id()];
-    let moved = Action::Move { vault: ALICE, entry: DOOR, to: vec![ShareId::from_u64(9)], keep, via: vec![] };
-    let moved = by_device(edit(5, moved));
+    let (caps, wants) = (Some(vec![ShareId::from_u64(9)]), Some(vec![ShareId::from_u64(5)]));
+    let marked = by_device(edit(5, Action::Mark { vault: ALICE, entry: DOOR, caps, wants, keep, via: vec![] }));
     let (device, over) = (device.id(), BOB);
     let mut rule = SyncRule { issuer: ALICE, device, over, wide: false, select: vec![], keep: true, nonce: 3 };
     rule.select = seal_select(Of::Rule(&rule), &proxies(), &k, &mut rng);
     let rule = by_device(edit(6, Action::SyncRule(rule, vec![])));
     let ended = Action::EndSyncRule { rule: ShareId::from(rule.edit.id()), issuer: ALICE, via: vec![] };
     let ended = by_device(edit(7, ended));
-    let rules = vec![ShareId::from_u64(5), ShareId::from_u64(6)];
-    let pick = by_device(edit(8, Action::Pick { vault: ALICE, entry: DOOR, rules, via: vec![] }));
-    Edits { add, create, write, share, moved, rule, ended, pick }
+    let wants = Some(vec![ShareId::from_u64(5), ShareId::from_u64(6)]);
+    let wanted = Action::Mark { vault: ALICE, entry: DOOR, caps: None, wants, keep: vec![], via: vec![] };
+    let wanted = by_device(edit(8, wanted));
+    Edits { add, create, write, share, marked, rule, ended, wanted }
 }
 
 /// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another edit drafted with it.
@@ -445,8 +446,8 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     s
 }
 
-/// `edit` with one field changed: of the edit, or of its action, a write's, a share's, a move's, a device's, a sync
-/// rule's, its end's or a pick's.
+/// `edit` with one field changed: of the edit, or of its action, a write's, a share's, a mark's, a device's, a sync
+/// rule's or its end's.
 fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
     let mut o = edit.clone();
     let id = |g: &mut Gen| EditId::from_u64(g.next());
@@ -502,10 +503,22 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                 7 => c.nonce ^= 1 << g.below(64),
                 _ => via.push(vault(g)),
             },
-            Action::Move { entry, to, keep, via, .. } => match g.below(4) {
-                0 => *entry = EntryId::from_u64(g.next()),
-                1 => to.push(share(g)),
-                2 => keep.push(id(g)),
+            // either part there or not, longer or shorter
+            Action::Mark { vault: v, entry, caps, wants, keep, via } => match g.below(6) {
+                0 => *v = vault(g),
+                1 => *entry = EntryId::from_u64(g.next()),
+                2 | 3 => {
+                    let part = if g.below(2) == 0 { caps } else { wants };
+                    match part {
+                        Some(xs) if g.below(3) > 0 => match xs.is_empty() || g.below(2) == 0 {
+                            true => xs.push(share(g)),
+                            false => drop(xs.pop()),
+                        },
+                        Some(_) => *part = None,
+                        None => *part = Some(vec![]),
+                    }
+                }
+                4 => keep.push(id(g)),
                 _ => via.push(vault(g)),
             },
             Action::SyncRule(r, via) => match g.below(8) {
@@ -521,13 +534,6 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
             Action::EndSyncRule { rule, issuer, via } => match g.below(3) {
                 0 => *rule = share(g),
                 1 => *issuer = vault(g),
-                _ => via.push(vault(g)),
-            },
-            Action::Pick { vault: v, entry, rules, via } => match g.below(4) {
-                0 => *v = vault(g),
-                1 => *entry = EntryId::from_u64(g.next()),
-                2 if !rules.is_empty() && g.below(2) == 0 => drop(rules.pop()),
-                2 => rules.push(share(g)),
                 _ => via.push(vault(g)),
             },
             other => unreachable!("{other:?}"),
@@ -559,8 +565,8 @@ fn a_changed_signed_edit_is_refused() {
             }
         }
     }
-    // the classical half alone signs nothing but a write: no governance, no share, no move, no sync rule, no pick
-    for signed in [&edits.add, &edits.share, &edits.moved, &edits.rule, &edits.ended, &edits.pick] {
+    // the classical half alone signs nothing but a write: no governance, no share, no mark, no sync rule
+    for signed in [&edits.add, &edits.share, &edits.marked, &edits.rule, &edits.ended, &edits.wanted] {
         let mut classical = signed.clone();
         classical.sigs.iter_mut().for_each(|s| s.pq = None);
         assert!(classical.verify().is_err(), "{classical:?}");

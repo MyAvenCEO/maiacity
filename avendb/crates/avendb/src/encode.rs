@@ -643,9 +643,9 @@ impl Encode for Revoking {
     }
 }
 
-/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 move, 6 keys, 7 checkpoint, then the
-/// kinds that go in later v8 phases, 8 publish, 9 sync rule, 10 end of a sync rule, 11 pick. A settings, share or
-/// revoke edit's sub-kind follows in a byte of its own.
+/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys, 7 checkpoint, then the
+/// kinds that go in later v8 phases, 8 publish, 9 sync rule, 10 end of a sync rule; 11, a pick, went into the mark. A
+/// settings, share or revoke edit's sub-kind follows in a byte of its own.
 impl Encode for Action {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -686,11 +686,13 @@ impl Encode for Action {
                 files.encode(out);
                 body.encode(out);
             }
-            Action::Move { vault, entry, to, keep, via } => {
+            // its audience and its wants, each there or not
+            Action::Mark { vault, entry, caps, wants, keep, via } => {
                 out.push(5);
                 vault.encode(out);
                 entry.encode(out);
-                to.encode(out);
+                caps.as_deref().encode(out);
+                wants.as_deref().encode(out);
                 keep.encode(out);
                 via.encode(out);
             }
@@ -723,13 +725,6 @@ impl Encode for Action {
                 out.push(10);
                 rule.encode(out);
                 issuer.encode(out);
-                via.encode(out);
-            }
-            Action::Pick { vault, entry, rules, via } => {
-                out.push(11);
-                vault.encode(out);
-                entry.encode(out);
-                rules.encode(out);
                 via.encode(out);
             }
         }
@@ -871,13 +866,13 @@ mod tests {
             (Action::Revoke(Revoking::Owner { vault: v, owner, keep: vec![] }), &[3, 1]),
             (Action::Revoke(Revoking::Device { vault: v, device: d, keep: vec![] }), &[3, 2]),
             (write(None, Proposal::Main, vec![], None).action, &[4]),
-            (Action::Move { vault: v, entry: e, to: vec![], keep: vec![], via: vec![] }, &[5]),
+            (Action::Mark { vault: v, entry: e, caps: Some(vec![]), wants: None, keep: vec![], via: vec![] }, &[5]),
+            (Action::Mark { vault: v, entry: e, caps: None, wants: Some(vec![]), keep: vec![], via: vec![] }, &[5]),
             (keys, &[6]),
             (Action::Checkpoint { entry: e, covers: vec![] }, &[7]),
             (Action::Publish { vault: v, actor: v, via: vec![], blob: vec![] }, &[8]),
             (Action::SyncRule(rule, vec![]), &[9]),
             (Action::EndSyncRule { rule: c, issuer: v, via: vec![] }, &[10]),
-            (Action::Pick { vault: v, entry: e, rules: vec![], via: vec![] }, &[11]),
         ];
         for (action, tag) in kinds {
             assert!(tagged(action.clone()).starts_with(tag), "{action:?}");
@@ -887,6 +882,36 @@ mod tests {
         assert_eq!(threshold, [&[1][..], &v.0, &[0], &1u32.to_be_bytes()].concat());
         let root = tagged(Action::Settings { vault: v, set: Setting::Root { root: None, keep: vec![] } });
         assert_eq!(root, [&[1][..], &v.0, &[1, 0], &[0; 4]].concat());
+    }
+
+    #[test]
+    fn a_marks_audience_and_its_wants_are_each_there_or_not() {
+        let (v, e, k) = (VaultId::from_u64(1), EntryId::from_u64(2), EditId::from_u64(5));
+        let (a, b) = (ShareId::from_u64(3), ShareId::from_u64(4));
+        let mark = |caps: Option<Vec<ShareId>>, wants: Option<Vec<ShareId>>, keep: Vec<EditId>| {
+            Action::Mark { vault: v, entry: e, caps, wants, keep, via: vec![] }
+        };
+        let n = |x: u32| x.to_be_bytes();
+        // its tag, its vault, its entry; its audience's shares behind a byte that says whether they are there (1) or
+        // not (0), its wants alike; then the edits it keeps and the owners it goes through
+        let golden: [(Action, Vec<u8>); 4] = [
+            (
+                mark(Some(vec![a, b]), None, vec![k]),
+                [&[5][..], &v.0, &e.0, &[1], &n(2), &a.0, &b.0, &[0], &n(1), &k.0, &n(0)].concat(),
+            ),
+            (mark(None, Some(vec![a]), vec![]), [&[5][..], &v.0, &e.0, &[0], &[1], &n(1), &a.0, &n(0), &n(0)].concat()),
+            (
+                mark(Some(vec![b]), Some(vec![a]), vec![]),
+                [&[5][..], &v.0, &e.0, &[1], &n(1), &b.0, &[1], &n(1), &a.0, &n(0), &n(0)].concat(),
+            ),
+            (mark(None, None, vec![]), [&[5][..], &v.0, &e.0, &[0], &[0], &n(0), &n(0)].concat()),
+        ];
+        for (action, bytes) in &golden {
+            assert_eq!(tagged(action.clone()), *bytes, "{action:?}");
+        }
+        // an empty audience or no wants is something, and not the same as leaving the part out
+        let some = [mark(Some(vec![]), None, vec![]), mark(None, Some(vec![]), vec![]), mark(None, None, vec![])];
+        assert!(distinct(&some.map(|action| edit_id(&Edit { action, ..genesis(0) }))));
     }
 
     #[test]

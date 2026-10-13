@@ -4,7 +4,8 @@
 //! changes, many of them around one entry and one device. The actions: vault governance and devices; shares over random
 //! slices (a type, tags, entries, a creator, a creation time, or the whole vault) with random grantees, levels and
 //! parents; revocations; entries created with a type and tags, in an audience; writes, which retag their entry when
-//! they act for its vault; moves by a vault's stewards, to where an entry's meaning asks or anywhere; keys and schemas.
+//! they act for its vault; marks by a vault's stewards, of an entry's audience, of its wants or of both, to what its
+//! meaning asks or anything; keys and schemas.
 //! What no rule reads (a share's selector, an entry's header, a write's tags) goes into each history's `Readings`, as
 //! the readers of its shares and entries open it. The lens laws (T9) are checked on random items, as any mix of apps
 //! could have stored them, read and edited through each app's view, and the proposal laws (T10) on random histories of
@@ -240,16 +241,17 @@ fn keep(h: &mut History, st: &State, a: Attempt, depth: Option<u64>) -> bool {
     true
 }
 
-/// One random attempt: a write, a new entry, a share, a revocation, a move, a vault edit, a key, a schema, a sync rule,
-/// its end or a steward's marks. An act for a vault names, a time in eight, a random chain of one or two vaults to go
-/// through; otherwise the chain its author acts through, as the log drafts it.
+/// One random attempt: a write, a new entry, a share, a revocation, a steward's mark that moves an entry, a vault edit,
+/// a key, a schema, a sync rule, its end or a steward's mark of an entry's wants. An act for a vault names, a time in
+/// eight, a random chain of one or two vaults to go through; otherwise the chain its author acts through, as the log
+/// drafts it.
 fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let mut a = match rng.below(24) {
         0..=3 => a_write(rng, h, st),
         4..=6 => Some(a_creation(rng, h, st)),
         7..=9 => Some(a_share(rng, h, st)),
         10 => a_revocation(rng, h, st),
-        11 | 12 => a_move(rng, h, st),
+        11 | 12 => a_mark(rng, h, st, true),
         13..=16 => {
             let (author, cosigners) = signers(rng);
             Some(Attempt { author, cosigners, action: vault_action(rng, &h.vaults), said: Said::Nothing })
@@ -258,7 +260,7 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
         18 | 19 => Some(a_publish(rng, h, st)),
         20 | 21 => Some(a_rule(rng, h, st)),
         22 => a_rule_end(rng, h, st),
-        _ => a_pick(rng, h, st),
+        _ => a_mark(rng, h, st, false),
     }?;
     if rng.below(8) == 0 {
         let chain: Vec<VaultId> = (0..1 + rng.below(2)).map(|_| rng.pick(&h.vaults)).collect();
@@ -266,11 +268,10 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
             Action::Share(Sharing::Grant(_, via))
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
-            | Action::Move { via, .. }
+            | Action::Mark { via, .. }
             | Action::Publish { via, .. }
             | Action::SyncRule(_, via)
-            | Action::EndSyncRule { via, .. }
-            | Action::Pick { via, .. } => *via = chain,
+            | Action::EndSyncRule { via, .. } => *via = chain,
             _ => {}
         }
     }
@@ -278,10 +279,11 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
 }
 
 /// What clashes when made concurrently: a write by a vault that may write its entry; a retag of an entry by its own
-/// vault, which changes where its stewards would move it; a steward's move of an entry to where its meaning asks; a
-/// revocation of a live share by its issuer; a device removed; a change to the owners or the threshold of a vault. Half
-/// the writes, moves and removals of devices are of what the devices contend for (`Hot`): the hot entry written by
-/// another vault than its own, moved anywhere by the hot device, and the hot device removed.
+/// vault, which changes where its stewards would move it; a steward's mark of an entry with what its meaning asks, its
+/// audience, its wants or both, as the steward marks it; a revocation of a live share by its issuer; a device removed;
+/// a change to the owners or the threshold of a vault. Half the writes, moves and removals of devices are of what the
+/// devices contend for (`Hot`): the hot entry written by another vault than its own, moved anywhere by the hot device,
+/// and the hot device removed.
 fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt> {
     let ens = st.entries();
     let a = match rng.below(6) {
@@ -306,15 +308,15 @@ fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt>
         2 if hot.entry.is_some_and(|e| st.entry(e).is_some()) && rng.below(2) == 0 => {
             let en = st.entry(hot.entry?)?;
             let (vault, entry, to) = (en.vault, en.id, random_audience(rng, st, en.vault));
-            let action = Action::Move { vault, entry, to, keep: vec![], via: vec![] };
+            let action = Action::Mark { vault, entry, caps: Some(to), wants: None, keep: vec![], via: vec![] };
             let author = hot.device.unwrap_or_else(|| author_for(rng, st, vault));
             Attempt { author, cosigners: vec![], action, said: Said::Nothing }
         }
         2 => {
-            let desired = |en: &Entry| Some((en.vault, en.id, st.meaning(en.id, &h.readings)?.desired?));
-            let moving: Vec<(VaultId, EntryId, Vec<ShareId>)> = ens.iter().filter_map(desired).collect();
-            let (vault, entry, to) = pick_from(rng, &moving)?.clone();
-            let action = Action::Move { vault, entry, to, keep: vec![], via: vec![] };
+            let desired = |en: &Entry| Some((en.vault, en.id, st.meaning(en.id, &h.readings)?.mark?));
+            let marking: Vec<(VaultId, EntryId, Marked)> = ens.iter().filter_map(desired).collect();
+            let (vault, entry, (caps, wants)) = pick_from(rng, &marking)?.clone();
+            let action = Action::Mark { vault, entry, caps, wants, keep: vec![], via: vec![] };
             Attempt { author: author_for(rng, st, vault), cosigners: vec![], action, said: Said::Nothing }
         }
         3 => {
@@ -572,16 +574,39 @@ fn a_revocation(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     Some(Attempt { author, cosigners, action, said: Said::Nothing })
 }
 
-/// A steward of an entry's vault moves it to the audience its meaning asks for, if any, two times in three; otherwise
-/// to a random audience, which may be the one it is in; now and then for another vault than the entry's.
-fn a_move(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
+/// A steward's mark of an entry: the audience it takes it to and the wants it marks it with, each left out or not.
+type Marked = (Option<Vec<ShareId>>, Option<Vec<ShareId>>);
+
+/// A steward of an entry's vault marks it. Where it `moves` the entry: to the audience its meaning asks for, if any,
+/// two times in three, otherwise to a random audience, which may be the one it is in, now and then with wants too. Else
+/// with the sync rules that want it, if that changed, two times in three, otherwise with up to two random rules, in
+/// canonical order or not; now and then with an audience too, with nothing at all, or keeping a write though it takes
+/// the entry to no audience. Now and then for another vault than the entry's.
+fn a_mark(rng: &mut Rng, h: &History, st: &State, moves: bool) -> Option<Attempt> {
     let en = pick_from(rng, st.entries())?;
-    let to = match st.meaning(en.id, &h.readings).and_then(|m| m.desired) {
+    let m = st.meaning(en.id, &h.readings);
+    let caps = |rng: &mut Rng| match m.as_ref().and_then(|m| m.desired.clone()) {
         Some(to) if rng.below(3) > 0 => to,
         _ => random_audience(rng, st, en.vault),
     };
+    let wants = |rng: &mut Rng| match m.as_ref().and_then(|m| m.mark.clone()).and_then(|(_, wants)| wants) {
+        Some(rules) if rng.below(3) > 0 => rules,
+        _ => {
+            let n = rng.below(3);
+            let rules: Vec<ShareId> = (0..n).filter_map(|_| pick_from(rng, st.rules()).map(|r| r.0)).collect();
+            if rng.below(2) == 0 { mk_audience(&rules) } else { rules }
+        }
+    };
+    let (caps, wants, keep) = match (moves, rng.below(8)) {
+        (true, 0) => (Some(caps(rng)), Some(wants(rng)), vec![]),
+        (true, _) => (Some(caps(rng)), None, vec![]),
+        (false, 0) => (Some(caps(rng)), Some(wants(rng)), vec![]),
+        (false, 1) => (None, None, vec![]),
+        (false, 2) => (None, Some(wants(rng)), st.writes(en.id).into_iter().take(1).collect()),
+        (false, _) => (None, Some(wants(rng)), vec![]),
+    };
     let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
-    let action = Action::Move { vault, entry: en.id, to, keep: vec![], via: vec![] };
+    let action = Action::Mark { vault, entry: en.id, caps, wants, keep, via: vec![] };
     Some(Attempt { author: author_for(rng, st, en.vault), cosigners: vec![], action, said: Said::Nothing })
 }
 
@@ -610,23 +635,6 @@ fn a_rule_end(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let issuer = if rng.below(6) > 0 { r.issuer } else { rng.pick(&h.vaults) };
     let action = Action::EndSyncRule { rule: *rule, issuer, via: vec![] };
     Some(Attempt { author: author_for(rng, st, issuer), cosigners: vec![], action, said: Said::Nothing })
-}
-
-/// A steward of an entry's vault marks it with the sync rules that pick it, if that changed, two times in three;
-/// otherwise with up to two random rules, in canonical order or not; now and then for another vault than the entry's.
-fn a_pick(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
-    let en = pick_from(rng, st.entries())?;
-    let rules = match st.meaning(en.id, &h.readings).and_then(|m| m.pick) {
-        Some(rules) if rng.below(3) > 0 => rules,
-        _ => {
-            let n = rng.below(3);
-            let rules: Vec<ShareId> = (0..n).filter_map(|_| pick_from(rng, st.rules()).map(|r| r.0)).collect();
-            if rng.below(2) == 0 { mk_audience(&rules) } else { rules }
-        }
-    };
-    let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
-    let action = Action::Pick { vault, entry: en.id, rules, via: vec![] };
-    Some(Attempt { author: author_for(rng, st, en.vault), cosigners: vec![], action, said: Said::Nothing })
 }
 
 /// A key of the schedule announced with no boxes: a family's current key, or an entry's in its current stay; by a
@@ -1117,8 +1125,8 @@ fn hidden(r: &Replay, facts: &[Vec<Fact>], i: usize) -> Vec<Fact> {
 #[test]
 fn t16_strong_removal() {
     // an edit stands only if the state just before it accepts it with what each removal after it that stands, and
-    // hadn't seen it, takes away hidden: an owner, a device, a root, a share and those resting on it, or for a move the
-    // audience it put the entry in
+    // hadn't seen it, takes away hidden: an owner, a device, a root, a share and those resting on it, or for a mark
+    // that moves an entry the audience it put the entry in
     let mut cut = 0;
     for (seed, h) in forked_histories() {
         let edits = h.log.edits();
@@ -1420,27 +1428,6 @@ fn t28_sync_follows_rules() {
 }
 
 #[test]
-fn t29_marks_mean_rules() {
-    // where an entry's live marks are what its vault's rules pick (`Meaning::pick` is none), a device wants it exactly
-    // when it has no rule over the vault, or one is wide or picks it by its selector: the peer reads only the marks
-    let mut checked = 0;
-    for (seed, h) in every_history() {
-        let st = h.log.view();
-        for en in st.entries() {
-            let Some(m) = st.meaning(en.id, &h.readings).filter(|m| m.pick.is_none()) else { continue };
-            let picks = |id: &ShareId| h.readings.selectors.get(id).is_some_and(|s| s.matches(&m.attrs));
-            for d in SIGNERS {
-                let rules: Vec<(ShareId, &SyncRule)> = st.rules_of(d, en.vault).collect();
-                let by_rules = rules.is_empty() || rules.iter().any(|(id, r)| r.wide || picks(id));
-                assert_eq!(st.wants(d, en), by_rules, "seed {seed}: {d:?} and {:?}", en.id);
-                checked += usize::from(!rules.is_empty());
-            }
-        }
-    }
-    assert!(checked > 0);
-}
-
-#[test]
 fn t19_one_digest_per_log() {
     // two devices hold the same edits of a log exactly when their digests of it are equal
     let (mut same, mut differ) = (0, 0);
@@ -1702,23 +1689,38 @@ fn t22_shares_narrow_down_their_chain() {
 
 #[test]
 fn t23_audiences_mean_what_shares_say() {
-    // in every state along the way: where an entry's audience, revoked shares left aside, is the audience its meaning
-    // asks for, the rule every peer checks without reading a selector, a type or a tag lets exactly the vaults write it
-    // that the shares' selectors let; and that rule never refuses a creation inside its creator's slice
+    // in every state along the way, an entry's marks mean what the selectors say, as the rules every peer checks read
+    // them without reading a selector, a type or a tag. Where its audience, revoked shares left aside, is the audience
+    // its meaning asks for, they let exactly the vaults write it that the shares' selectors let; where its wants, ended
+    // rules left aside, are the sync rules that want it, a device wants it exactly when it has no rule over the vault,
+    // or one is wide or picks it by its selector (each part of `Meaning::mark` none). And the write rule never refuses
+    // a creation inside its creator's slice
     let (mut meant, mut moving, mut admitted) = (0, 0, 0);
+    let (mut ruled, mut rewanting) = (0, 0);
     for (seed, h) in every_history() {
         for st in states(h.log.edits()) {
             for en in st.entries() {
                 let Some(m) = st.meaning(en.id, &h.readings) else { continue };
                 if m.desired.is_some() {
                     moving += 1;
+                } else {
+                    for &v in &h.vaults {
+                        let (may, sem) = (st.may_write(v, en.id), st.sem_write(v, en.id, &h.readings));
+                        assert_eq!(may, sem, "seed {seed}: {v:?} on {en:?}");
+                    }
+                    meant += usize::from(!m.audience.is_empty());
+                }
+                if m.mark.as_ref().is_some_and(|(_, wants)| wants.is_some()) {
+                    rewanting += 1;
                     continue;
                 }
-                for &v in &h.vaults {
-                    let (may, sem) = (st.may_write(v, en.id), st.sem_write(v, en.id, &h.readings));
-                    assert_eq!(may, sem, "seed {seed}: {v:?} on {en:?}");
+                let picks = |id: &ShareId| h.readings.selectors.get(id).is_some_and(|s| s.matches(&m.attrs));
+                for d in SIGNERS {
+                    let rules: Vec<(ShareId, &SyncRule)> = st.rules_of(d, en.vault).collect();
+                    let by_rules = rules.is_empty() || rules.iter().any(|(id, r)| r.wide || picks(id));
+                    assert_eq!(st.wants(d, en), by_rules, "seed {seed}: {d:?} and {:?}", en.id);
+                    ruled += usize::from(!rules.is_empty());
                 }
-                meant += usize::from(!m.audience.is_empty());
             }
             let attrs = some_attrs(&st, &h.readings);
             for cp in st.shares() {
@@ -1730,9 +1732,10 @@ fn t23_audiences_mean_what_shares_say() {
             }
         }
     }
-    // the entries do sit in audiences of shares, some wait for a steward to move them, and shares do let their grantees
-    // create
+    // the entries do sit in audiences of shares, some wait for a steward to move them, shares do let their grantees
+    // create, devices do sync under rules, and some entries wait for a steward to mark their wants
     assert!(meant > 0 && moving > 0 && admitted > 0, "{meant} in place, {moving} to move, {admitted} admitted");
+    assert!(ruled > 0 && rewanting > 0, "{ruled} under rules, {rewanting} to mark with their wants");
 }
 
 /// A relay's twin of a history (T25): every edit as a peer that reads no selector, no type and no tag sees it, a share
@@ -1881,9 +1884,20 @@ impl Twin {
                 let (vault, actor, via) = (self.vault(vault), self.vault(actor), self.vaults(&via));
                 Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }
             }
-            Action::Move { vault, entry, to, keep, via } => {
-                let to = self.new_audience(vault, &to);
-                Action::Move { vault: self.vault(vault), entry, to, keep: self.edits(&keep), via: self.vaults(&via) }
+            Action::Mark { vault, entry, caps, wants, keep, via } => {
+                let caps = caps.map(|to| self.new_audience(vault, &to));
+                // in canonical order again where they were, and out of it where they weren't
+                let wants = wants.map(|rules| {
+                    let mut renamed: Vec<ShareId> = rules.iter().map(|&r| self.share(r)).collect();
+                    if rules == mk_audience(&rules) {
+                        renamed = mk_audience(&renamed);
+                    } else if renamed == mk_audience(&renamed) {
+                        renamed.reverse();
+                    }
+                    renamed
+                });
+                let (vault, keep, via) = (self.vault(vault), self.edits(&keep), self.vaults(&via));
+                Action::Mark { vault, entry, caps, wants, keep, via }
             }
             Action::Keys { name, id, public, boxes, clear } => {
                 let to = |r: Recipient| match r {
@@ -1904,16 +1918,6 @@ impl Twin {
             }
             Action::EndSyncRule { rule, issuer, via } => {
                 Action::EndSyncRule { rule: self.share(rule), issuer: self.vault(issuer), via: self.vaults(&via) }
-            }
-            Action::Pick { vault, entry, rules, via } => {
-                // in canonical order again where they were, and out of it where they weren't
-                let mut renamed: Vec<ShareId> = rules.iter().map(|&r| self.share(r)).collect();
-                if rules == mk_audience(&rules) {
-                    renamed = mk_audience(&renamed);
-                } else if renamed == mk_audience(&renamed) {
-                    renamed.reverse();
-                }
-                Action::Pick { vault: self.vault(vault), entry, rules: renamed, via: self.vaults(&via) }
             }
         }
     }
@@ -1936,7 +1940,7 @@ struct Ops {
     lane: Vec<(VaultId, BlobId)>,
     rules: Vec<(ShareId, SyncRule)>,
     ended: Vec<ShareId>,
-    picks: Vec<(EntryId, Vec<ShareId>)>,
+    wants: Vec<(EntryId, Vec<ShareId>)>,
 }
 
 fn ops(st: &State, t: &Twin) -> Ops {
@@ -1994,7 +1998,7 @@ fn ops(st: &State, t: &Twin) -> Ops {
         lane: st.lane().iter().map(|p| (t.vault(p.vault), p.blob)).collect(),
         rules: st.rules().iter().map(|(id, r)| (t.share(*id), rule(r))).collect(),
         ended: st.ended().iter().map(|&r| t.share(r)).collect(),
-        picks: st.entries().iter().map(|en| (en.id, t.shares(st.picks_of(en.id)))).collect(),
+        wants: st.entries().iter().map(|en| (en.id, t.shares(st.wants_of(en.id)))).collect(),
     }
 }
 
