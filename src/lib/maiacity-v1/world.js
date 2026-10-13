@@ -10,7 +10,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.js';
 
-const HEX_R = 34;
+/** the hex's radius in metres: 51, one and a half times the first 34 (Samuel 2026-10-13) */
+const HEX_R = 51;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
 /** the Village COOP's assets (engine COOPS.village, by id) and where each stands on the hex: x, z, turned; the panel faces the sun at −z.
  *  The pickup stands at twice its size, beside the players, the solar panel twice as high and six times as wide, a long
@@ -94,12 +95,15 @@ function trees(group) {
 	const r = rng(42);
 	const trunk = mat(0x6b4f35);
 	const leaves = [mat(0x3f6e3a), mat(0x4f7f40), mat(0x5d8a45)];
-	for (let i = 0; i < 70; i++) {
+	// as dense as on the first 34 m hex: 70 trees on it, more by its area
+	for (let i = 0, n = Math.round(70 * (HEX_R / 34) ** 2); i < n; i++) {
 		const a = r() * Math.PI * 2;
 		const d = 9 + r() * (HEX_R - 11);
 		const x = Math.cos(a) * d;
 		const z = Math.sin(a) * d;
 		if (Math.abs(x) < 8 && z > 0 && z < 12) continue;
+		// on the hex, not over its flat sides (its corners point to ±z, as the cylinder's do)
+		if ([0, 1, 2, 3, 4, 5].some((k) => x * Math.sin(Math.PI / 6 + (k * Math.PI) / 3) + z * Math.cos(Math.PI / 6 + (k * Math.PI) / 3) > HEX_R * 0.866 - 2.5)) continue;
 		if (ASSETS.some(({ at, clear }) => Math.hypot(x - at[0], z - at[1]) < clear)) continue;
 		const t = new THREE.Group();
 		const h = 1.5 + r() * 2.5;
@@ -122,14 +126,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	const scene = new THREE.Scene();
 	const sky = new THREE.Color(0xcfe0e6);
 	scene.background = sky;
-	scene.fog = new THREE.Fog(sky, 140, 320);
+	scene.fog = new THREE.Fog(sky, 210, 480);
 	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 600);
-	camera.position.set(52, 44, 64);
+	camera.position.set(78, 66, 96);
 	const controls = new OrbitControls(camera, canvas);
 	controls.target.set(2, 1, 3);
 	controls.enableDamping = true;
 	controls.minDistance = 18;
-	controls.maxDistance = 120;
+	controls.maxDistance = 180;
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotate = true;
 	controls.autoRotateSpeed = 0.25;
@@ -140,7 +144,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
 	sun.castShadow = true;
 	sun.shadow.mapSize.set(2048, 2048);
-	Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 220 });
+	Object.assign(sun.shadow.camera, { left: -68, right: 68, top: 68, bottom: -68, near: 1, far: 330 });
 	scene.add(sun, sun.target);
 
 	const world = new THREE.Group();
@@ -220,7 +224,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	ro.observe(canvas);
 	resize();
 	// upright, the whole hex needs the camera further out
-	if (camera.aspect < 0.8) camera.position.set(86, 74, 106);
+	if (camera.aspect < 0.8) camera.position.set(129, 111, 159);
 
 	// a tap (not a drag) names the thing under it
 	const ray = new THREE.Raycaster();
