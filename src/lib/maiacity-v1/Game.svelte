@@ -356,7 +356,7 @@
 			{:else if panel === 'invest'}
 				<p class="eyebrow">{f(player.wallet.HEARTS)} HEARTS held</p>
 				<h2>Invest HEARTS</h2>
-				<p class="about">Each HEART makes 1 MIND of the COOP: half yours, half its treasury. {f(view.settings.poolShare * 100, 0)} % of the treasury half goes into the pool.</p>
+				<p class="about">Each HEART makes 1 MIND of the COOP: {f(50, 0)} % yours, {f(50 - view.settings.poolShare * 100, 0)} % its treasury, {f(view.settings.poolShare * 100, 0)} % into the city pool.</p>
 				{#if canMove}
 					<div class="row">
 						<input type="number" min="0" step="1" bind:value={amount} />
@@ -425,7 +425,7 @@
 									{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
 									{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
 								</dl>
-								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every treasury half flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
+								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
 							{:else if a.id === 'hex'}
 								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} maiaMIND a month, paid a quarter each weekly pay day.</small>
 							{:else if a.id === 'tent'}
