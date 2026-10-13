@@ -1,9 +1,10 @@
 <!--
 	A vault's database studio, as this browser holds it and the acting vault opens it (db.js `studio`), each page its
 	own item in the vault's list: the query console (any op of the ops engine), the table editor (its entries as tables,
-	by type), its cells, its schemas, its lenses, and the database's history, every signed edit. It reads the database
-	again whenever what the device holds changes, and the history only while it shows. What the acting vault holds no
-	cap to read shows sealed, as avenDB's server holds it.
+	by type), its shares (its entries by who they are shared with), its schemas, its lenses, and the database's
+	history, every signed edit. The table editor and the shares show the studio's internals, keys' ids and generations
+	and documents' sizes, only once the person asks. It reads the database again whenever what the device holds
+	changes, and the history only while it shows. What the acting vault doesn't open shows sealed.
 -->
 <script>
 	import History from './History.svelte';
@@ -16,7 +17,7 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any,
-	 *   view: 'query' | 'tables' | 'cells' | 'schemas' | 'lenses' | 'history', onopen: (entry: string) => void,
+	 *   view: 'query' | 'tables' | 'shares' | 'schemas' | 'lenses' | 'history', onopen: (entry: string) => void,
 	 *   onview: (view: string) => void }}
 	 */
 	let { world, vault, actor, api, view, onopen, onview } = $props();
@@ -25,8 +26,10 @@
 	let failed = $state('');
 	let log = $state(/** @type {{ edits: import('./db.js').SignedEdit[] } | null} */ (null));
 	let logFailed = $state('');
-	/** the cell the table editor shows: '' for all of them */
+	/** the cell the table editor shows, the entries shared with the same vaults alike: '' for all of them */
 	let cell = $state('');
+	/** whether the studio shows its internals */
+	let internals = $state(false);
 
 	// what the device holds changed, or another vault is picked: read its database again
 	$effect(() => {
@@ -76,10 +79,15 @@
 		<p class="error">Reading the database failed: {failed}</p>
 	{:else if !db || db.vault !== vault}
 		<p class="soft">Reading the database…</p>
-	{:else if view === 'tables'}
-		<TableEditor {s} bind:cell={() => shown, (v) => (cell = v)} {actor} {onopen} />
-	{:else if view === 'cells'}
-		<Cells {s} {db} onpick={(id) => ((cell = id), onview('tables'))} />
+	{:else if view === 'tables' || view === 'shares'}
+		<label class="internals soft">
+			<input type="checkbox" bind:checked={internals} /> Show the internals: key ids and generations, document sizes
+		</label>
+		{#if view === 'tables'}
+			<TableEditor {s} bind:cell={() => shown, (v) => (cell = v)} {actor} {internals} {onopen} />
+		{:else}
+			<Cells {s} {db} {internals} onpick={(id) => ((cell = id), onview('tables'))} />
+		{/if}
 	{:else if view === 'schemas'}
 		<Schemas {s} onlens={() => onview('lenses')} />
 	{:else if view === 'lenses'}
@@ -88,3 +96,14 @@
 		<History {s} {log} failed={logFailed} {vault} pqOnly={world.pqOnly} />
 	{/if}
 </div>
+
+<style>
+	.internals {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin: 0 0 0.8rem;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+</style>

@@ -35,7 +35,9 @@
 	const untag = (t) => tag([], [t]);
 
 	const hint = $derived(
-		asks ? `asks ${nameOf(world.vaults.find((v) => v.id === entry.vault))}’s devices, who grant what its caps let it` : ''
+		asks
+			? `asks ${nameOf(world.vaults.find((v) => v.id === entry.vault))}’s devices, who grant what its shares let it`
+			: ''
 	);
 </script>
 

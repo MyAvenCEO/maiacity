@@ -28,9 +28,9 @@
 	<div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="new-vaults">
 		<h3 id="new-vaults">New vaults {nameOf(mine)} owns</h3>
 		<p class="soft">
-			Each is a real vault on avenDB's network, owned by your vault: this browser acts as it, and its own caps decide what
-			it may read, write and share. An aven is an agent's or a server's vault; a coop has no devices and acts through its
-			owners.
+			Each is a real vault on avenDB's network, owned by your vault: this browser acts as it, and what is shared with it
+			decides what it may read, write and share. An aven is an agent's or a server's vault; a coop has no devices and
+			acts through its owners.
 		</p>
 		{#each rows as row, i (i)}
 			<div class="row line">

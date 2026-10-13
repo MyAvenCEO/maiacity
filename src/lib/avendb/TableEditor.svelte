@@ -1,17 +1,17 @@
 <!--
-	The studio's table editor: a vault's entries as tables, as a database studio shows Postgres's: a cell to pick, or
-	all of them, and its tables on the left, each entry in the one of its type (notes, todos, devices' cards, vaults'
-	profiles, other records, and what the acting vault holds no cap to read, sealed); the table picked as a grid, its
-	columns the fields of its schema, newest version first, each with its type, then what avenDB keeps of each row (its
-	cell, the tags caps select it by, which its record's own fields don't hold, its schemas, edits, proposals, its key's
-	generation, size, who wrote it first and who holds a role on it); sorted by a column, searched, and each row opened
-	in a drawer, its record field by field.
+	The studio's table editor: a vault's entries as tables, as a database studio shows Postgres's: who they are shared
+	with to pick, or all of them, and its tables on the left, each entry in the one of its type (notes, todos, devices'
+	cards, vaults' profiles, other records, and what the acting vault doesn't open, sealed); the table picked as a grid,
+	its columns the fields of its schema, newest version first, each with its type, then what avenDB keeps of each row
+	(who it is shared with, the tags shares select it by, which its record's own fields don't hold, its schemas, edits,
+	proposals and who wrote it first, and with the studio's internals shown its key's generation and size); sorted by a
+	column, searched, and each row opened in a drawer, its record field by field.
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import Panel from './Panel.svelte';
-	import { cell, families, familyOf, hint, parsed, pgType, size, tables, typeOf } from './db.js';
-	import { allows, count, holders, nameOf, ROLES, short } from './vaults.js';
+	import { cell, families, familyOf, hint, parsed, pgType, tables, typeOf } from './db.js';
+	import { allows, count, nameOf, sharerWords, short, size } from './vaults.js';
 
 	/**
 	 * @typedef {import('./db.js').RowView} Row
@@ -19,9 +19,10 @@
 	 */
 
 	/**
-	 * @type {{ s: import('./db.js').Studio, cell: string, actor: string, onopen: (entry: string) => void }}
+	 * @type {{ s: import('./db.js').Studio, cell: string, actor: string, internals: boolean,
+	 *   onopen: (entry: string) => void }}
 	 */
-	let { s, cell: within = $bindable(''), actor, onopen } = $props();
+	let { s, cell: within = $bindable(''), actor, internals, onopen } = $props();
 
 	let picked = $state('notes');
 	let query = $state('');
@@ -64,10 +65,10 @@
 		}
 		/** @type {Column[]} */
 		const kept = [
-			...(within ? [] : [{ name: 'cell', type: 'text', hint: 'Its cell: the caps that reach it, under one key', get: (/** @type {Row} */ r) => s.cellName(r.cell) }]),
+			{ name: 'shared_with', type: 'text', hint: 'Who it is shared with, and at what level', get: (/** @type {Row} */ r) => s.shared(r.entry) },
 			...(sealed
 				? []
-				: [{ name: 'cap_tags', type: 'text[]', hint: 'Its tags now, outside its record: what caps select it by', get: (/** @type {Row} */ r) => r.tags }]),
+				: [{ name: 'entry_tags', type: 'text[]', hint: 'Its tags now, outside its record: what shares select it by', get: (/** @type {Row} */ r) => r.tags }]),
 			...(sealed
 				? []
 				: [
@@ -75,10 +76,11 @@
 					]),
 			{ name: 'edits', type: 'int4', hint: sealed ? 'The edits of it this browser holds, sealed' : 'The edits of it this browser counts', get: (r) => (sealed ? r.held : r.edits) },
 			...(sealed ? [] : [{ name: 'proposals', type: 'int4', hint: 'Its proposals: lines besides main', get: (/** @type {Row} */ r) => Math.max(0, r.lines - 1) }]),
-			{ name: 'key_generation', type: 'int4', hint: 'Its cell key’s generation: it moves on when a reader may no longer read it', get: (r) => r.generation },
-			...(sealed ? [] : [{ name: 'loro_bytes', type: 'int8', hint: 'The size of its Loro document', get: (/** @type {Row} */ r) => r.bytes }]),
-			{ name: 'first_by', type: 'text', hint: 'The device and the vault of its first edit', get: first },
-			{ name: 'roles', type: 'text', hint: 'The vaults that hold a role on it', get: (r) => holders(r.roles).map((h) => `${nameOf(s.byId.get(h.id))} ${ROLES[h.role]}`).join(', ') + (r.public ? ', everyone reads' : '') }
+			...(internals
+				? [{ name: 'key_generation', type: 'int4', hint: 'Its key’s generation: it moves on when a reader may no longer read it', get: (/** @type {Row} */ r) => r.generation }]
+				: []),
+			...(internals && !sealed ? [{ name: 'loro_bytes', type: 'int8', hint: 'The size of its Loro document', get: (/** @type {Row} */ r) => r.bytes }] : []),
+			{ name: 'first_by', type: 'text', hint: 'The device and the vault of its first edit', get: first }
 		];
 		return [...cols, ...kept.map((c) => ({ ...c, sys: true }))];
 	});
@@ -116,10 +118,10 @@
 <div class="editor">
 	<aside class="tables" aria-label="Tables">
 		<label class="pick">
-			<span>Cell</span>
-			<select class="field" bind:value={within} aria-label="Cell">
-				<option value="">All cells</option>
-				{#each s.cells as x (x.id)}<option value={x.id}>{s.cellName(x.id)}</option>{/each}
+			<span>Shared with</span>
+			<select class="field" bind:value={within} aria-label="Shared with">
+				<option value="">Every entry</option>
+				{#each s.cells as x (x.id)}<option value={x.id}>{s.sharedIn(x.id) ?? short(x.id)}</option>{/each}
 			</select>
 		</label>
 		<h4>Tables</h4>
@@ -192,8 +194,8 @@
 			</div>
 			<footer class="foot">
 				<span>{count(rows.length, 'row')}{query ? ` of ${table.rows.length}` : ''}</span>
-				<span class="soft">{within ? `The cell ${s.cellName(within)}` : count(s.cells.length, 'cell')} · {nameOf(s.here)}</span>
-				<span class="soft">As {nameOf(s.as)}: what its caps open shows; the rest is in sealed.</span>
+				<span class="soft">{within ? `Shared with ${s.sharedIn(within)}` : 'Every entry'} · {nameOf(s.here)}</span>
+				<span class="soft">As {nameOf(s.as)}: what is shared with it shows; the rest is in sealed.</span>
 			</footer>
 		{/if}
 	</section>
@@ -225,8 +227,8 @@
 			<p class="soft">This browser holds no key to it yet: its edits are ciphertext here.</p>
 		{:else}
 			<p class="soft">
-				Sealed for {nameOf(s.as)}: it holds no cap to read it. This browser keeps its edits as ciphertext, as avenDB’s
-				server does.
+				Sealed for {nameOf(s.as)}: no share it holds opens it. This browser keeps its edits encrypted, and opens none
+				of them.
 			</p>
 		{/if}
 
@@ -234,8 +236,13 @@
 		<dl>
 			<dt>Entry</dt>
 			<dd class="mono">{row.entry}</dd>
-			<dt>Cell</dt>
-			<dd>{s.cell(row.cell)}</dd>
+			<dt>Shared with</dt>
+			<dd class="chips">
+				{#each s.sharers(row.entry).who as x (x.id)}
+					<span class="chip" class:accent={x.id === actor}>{sharerWords(x)}</span>
+				{/each}
+				{#if row.public}<span class="chip ok">Public</span>{/if}
+			</dd>
 			{#if row.type !== null}
 				<dt>Type</dt>
 				<dd>{row.type}</dd>
@@ -254,21 +261,16 @@
 				<dt>Proposals</dt>
 				<dd>{row.proposals.map((b) => b ?? 'one this browser can’t name').join(', ')}</dd>
 			{/if}
-			<dt>Key generation</dt>
-			<dd>{row.generation}</dd>
-			{#if opened && row.bytes}
-				<dt>Its Loro document</dt>
-				<dd>{size(row.bytes)}</dd>
+			{#if internals}
+				<dt>Key generation</dt>
+				<dd>{row.generation}</dd>
+				{#if opened && row.bytes}
+					<dt>Its Loro document</dt>
+					<dd>{size(row.bytes)}</dd>
+				{/if}
 			{/if}
 			<dt>First written by</dt>
 			<dd>{first(row) ?? 'nobody this browser knows'}</dd>
-			<dt>Roles</dt>
-			<dd class="chips">
-				{#each holders(row.roles) as h (h.id)}
-					<span class="chip" class:accent={h.id === actor}>{nameOf(s.byId.get(h.id))} {ROLES[h.role]}</span>
-				{/each}
-				{#if row.public}<span class="chip ok">everyone reads</span>{/if}
-			</dd>
 		</dl>
 		{#if opened}
 			<details>

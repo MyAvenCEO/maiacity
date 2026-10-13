@@ -1,7 +1,7 @@
 <!--
 	Share a slice of a vault on, as the acting vault, as a cap: a name, what it picks and the JSON ops its grantee may
 	make there (avendb-browser's `Device::share`, `{name, where, ops}` as its `words` read it; avendb/docs/OPS.md). What
-	it picks is one entry, every note or todo, or those tagged one way and not another, or the whole vault: a rule,
+	it picks is one entry, every note, todo or file, or those tagged one way and not another, or the whole vault: a rule,
 	never a list, so an entry tagged to match it later is shared then, one untagged leaves it, and the vault's devices
 	move each into the cell the caps that hold it share, under that cell's key. Its ops are a group: a built-in one
 	(Owner, Editor, Suggester, Viewer, Backup, Relay, the core's `groups`), or one of its own, named, built op by op or
@@ -15,7 +15,6 @@
 	import Ops from './Ops.svelte';
 	import {
 		attrsOf,
-		capWords,
 		count,
 		EVERYONE,
 		fieldsOf,
@@ -25,6 +24,8 @@
 		nameOf,
 		opsWords,
 		reads,
+		shareWords,
+		singular,
 		tagsIn,
 		titleOf,
 		whereWords
@@ -114,7 +115,8 @@
 
 	/** the fields of what it shares, each once, with the values each takes where it takes only some */
 	const fields = $derived.by(() => {
-		const of = what === 'entry' && one?.type ? [one.type] : what === 'all' ? ['note', 'todo'] : types.split(',');
+		const of =
+			what === 'entry' && one?.type ? [one.type] : what === 'all' ? ['note', 'todo', 'file'] : types.split(',');
 		const all = of.flatMap((t) => fieldsOf(lane, t));
 		return all.filter((f, i) => all.findIndex((g) => g.name === f.name) === i);
 	});
@@ -189,7 +191,7 @@
 	<div class="row">
 		<span class="lead">Share</span>
 		<select class="field" bind:value={what} aria-label="What">
-			{#if entry}<option value="entry">this {one?.type === 'todo' ? 'todo' : one?.type === 'note' ? 'note' : 'entry'} alone</option>{/if}
+			{#if entry}<option value="entry">this {singular(one?.type)} alone</option>{/if}
 			<option value="rule">every</option>
 			{#if whole}<option value="all">the whole vault</option>{/if}
 		</select>
@@ -197,6 +199,7 @@
 			<select class="field" bind:value={types} aria-label="Type">
 				<option value="todo">todo</option>
 				<option value="note">note</option>
+				<option value="file">file</option>
 				<option value="note,todo">note and todo</option>
 			</select>
 			<input class="field tags" placeholder="tagged (any)" bind:value={tagged} aria-label="Tagged" />
@@ -287,12 +290,13 @@
 				: ''}, and every one that matches later.
 		{/if}
 		{#if vault !== actor && through.length}
-			It reaches no further than {nameOf(byId.get(actor))}’s own cap: {list(through.map((c) => capWords(c, world)), 'or')}.
+			It reaches no further than {nameOf(byId.get(actor))}’s own share:
+			{list(through.map((c) => shareWords(c, world)), 'or')}.
 		{/if}
 	</p>
 	{#if shown}
 		<details class="as-json">
-			<summary class="soft">The cap, as JSON</summary>
+			<summary class="soft">The share, as JSON</summary>
 			<pre class="mono">{shown}</pre>
 		</details>
 	{/if}

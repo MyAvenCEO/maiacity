@@ -1,8 +1,9 @@
 <!--
 	A vault's Library: every file of the vault the acting vault reads, as a media app lists them, by kind (films,
 	images, SVGs, PDFs, audio, other), the deleted ones apart; each a tile with a preview where it is a picture, its
-	size, and who added it. A click opens it on the whole screen: a film or a song plays as the browser's player asks for
-	it, a range at a time, streamed from the device through a service worker (./files.js), or read whole where none runs;
+	size, who added it and who it is shared with. A click opens it on the whole screen: a film or a song plays as the
+	browser's player asks for it, a range at a time, streamed from the device through a service worker (./files.js), or
+	read whole where none runs;
 	a picture, an SVG or a PDF shows whole; any file saves. Files dropped on the page, or picked, go into the vault one
 	by one: each sealed under a key of its own on this device as it is read, a megabyte at a time, then an entry that
 	brings it, which syncs as any edit does, so the person's other devices and avenDB's server fetch its sealed bytes and
@@ -14,9 +15,9 @@
 <script>
 	import { onDestroy } from 'svelte';
 	import Icon from './Icon.svelte';
-	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, sized, whole, WHOLE } from './files.js';
+	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
 	import { deleting, may, noteRecord } from './ops.js';
-	import { allows, count, creates, list, nameOf, reads, tagsIn } from './vaults.js';
+	import { allows, count, creates, list, nameOf, reads, sharedWith, sharedWords, size, tagsIn } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -59,7 +60,9 @@
 	let tagging = $state('');
 	const typed = $derived(tagsIn(tagging));
 	const asked = $derived(creates(world, vault, actor, 'file', typed));
-	const tagsWords = $derived(asked?.length ? `, tagged ${list(asked.map((t) => `“${t}”`))} as its cap asks` : '');
+	const tagsWords = $derived(asked?.length ? `, tagged ${list(asked.map((t) => `“${t}”`))} as its share asks` : '');
+	/** Who entry `e` is shared with, in words. @param {EntryView} e */
+	const sharedOf = (e) => `Shared with ${sharedWords(sharedWith(world, vault, e.entry))}${e.public ? ' · Public' : ''}`;
 
 	/** why the ops of the cap the acting vault adds through don't let it add a file, as the device answers: '' */
 	let unadded = $state('');
@@ -303,9 +306,9 @@
 	{#if !seen.length && vault !== actor}
 		<div class="empty">
 			<p>
-				{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: it
-				holds no cap on any of it. A vault that owns it can share some of it with {nameOf(as)} in
-				<button class="link" onclick={onaccess}>Access</button>.
+				{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}:
+				none of it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)} in
+				<button class="link" onclick={onaccess}>Sharing</button>.
 			</p>
 		</div>
 	{:else if shown.length}
@@ -325,13 +328,14 @@
 					<span class="info">
 						<b>{e.title}</b>
 						<small class="soft">
-							{file?.len != null ? sized(file.len) : 'sealed'} · {KINDS.find(([x]) => x === k)?.[1]}{e.by !== vault
+							{file?.len != null ? size(file.len) : 'sealed'} · {KINDS.find(([x]) => x === k)?.[1]}{e.by !== vault
 								? ` · by ${nameOf(byId.get(e.by))}`
 								: ''}
 						</small>
 						{#if e.tags?.length}
 							<span class="tags">{#each e.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>
 						{/if}
+						<small class="soft shared">{sharedOf(e)}</small>
 					</span>
 				</button>
 			{/each}
@@ -357,7 +361,8 @@
 			<button class="btn quiet" onclick={close} aria-label="Close"><Icon name="back" /> Back</button>
 			<div class="what">
 				<b>{viewing.title}</b>
-				<small>{viewing.media ?? 'file'}{file?.len != null ? ` · ${sized(file.len)}` : ''}</small>
+				<small>{viewing.media ?? 'file'}{file?.len != null ? ` · ${size(file.len)}` : ''}</small>
+				<small>{sharedOf(viewing)}</small>
 			</div>
 			<div class="row">
 				<button class="btn" disabled={busy || !file || file.len === null || loading >= 0} onclick={() => save(viewing)}

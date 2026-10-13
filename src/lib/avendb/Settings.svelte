@@ -1,13 +1,12 @@
 <!--
 	A vault's settings, as its aside lists them: About (what it is, who approves a change to it, how this browser acts
 	for it), Owners and devices (who owns it, what it owns, the devices that act for it, and for the person's own vault
-	this browser's name, linking the next device and forgetting this one), Access (every cap in force over it, each a
-	named group of ops on a slice of it, clustered by its group: the group's name and ops as chips, then who holds it on
-	what, what it reaches now and who may revoke it; sharing a slice of it as the acting vault; and the caps it holds in
-	other vaults), and Sync (its cells, the entries the same caps reach under one key,
-	each with the devices that receive its edits and whether each opens them or only relays their ciphertext). All of it
-	is the device's world (avendb-browser's `World`); sharing and revoking go out acting for the acting vault, and the
-	rules check them against its caps.
+	this browser's name, linking the next device and forgetting this one), and Sharing (who it is shared with: its
+	owners, then every share in force over it, each who · level · what, with what it reaches now and who may revoke
+	it; sharing some of it as the acting vault; what is shared with it elsewhere; and its entries by who they are
+	shared with, each with the devices that get them and whether each opens them or only keeps an encrypted copy). All
+	of it is the device's world (avendb-browser's `World`); sharing and revoking go out acting for the acting vault, and
+	the rules check them against what is shared with it.
 -->
 <script>
 	import { native } from '$lib/native';
@@ -15,27 +14,31 @@
 	import Ops from './Ops.svelte';
 	import Share from './Share.svelte';
 	import {
-		capName,
-		cellWords,
 		count,
 		EVERYONE,
 		granteeOf,
+		groupOf,
+		KEEPS,
 		KIND_HINTS,
 		KINDS,
+		levelName,
 		list,
 		nameOf,
 		reads,
+		roleGroup,
+		sharedThrough,
+		sharedWords,
+		shareWhat,
 		short,
 		shares,
+		signerName,
 		STRONGEST,
-		titleOf,
-		whereWords
+		titleOf
 	} from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   tab: 'about' | 'members' | 'access' | 'sync', thisName: string, link: string, qr: string,
-	 *   sockets?: string[] | null }}
+	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null }}
 	 */
 	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null } = $props();
 
@@ -50,40 +53,64 @@
 	const recoveryMissing = $derived(
 		vault === world.mine && !!world.recovery && !v.owners.some((o) => 'signer' in o && o.signer === world.recovery)
 	);
-	/** A signer owner's name. @param {{ signer: string, recovery: boolean }} o */
-	const signerName = (o) => (o.recovery ? 'Master recovery key' : o.signer === v.root ? 'Root passkey' : 'Passkey');
+	/** whether the vault has the master recovery key among its owners */
+	const recovers = $derived(v.owners.some((o) => 'signer' in o && o.recovery));
+	/** A signer owner, as the owners list labels it. @param {{ signer: string, recovery: boolean }} o */
+	const ownerLabel = (o) => (o.recovery ? 'Master recovery key' : o.signer === v.root ? 'Root passkey' : 'Passkey');
 	/**
 	 * An owner the person's passkey may remove: of their own vault or one it acts for, never the last nor the root.
 	 * @param {{ vault: string } | { signer: string }} o
 	 */
 	const removable = (o) =>
 		v.owners.length > 1 && (vault === world.mine || v.via !== null) && !('signer' in o && o.signer === v.root);
-	/**
-	 * the caps in force over the vault by their group, a name and its ops, the strongest first (a cap whose slice this
-	 * device doesn't read alone in its own); and those it holds in other vaults
-	 */
-	const groups = $derived.by(() => {
-		/**
-		 * @type {Map<string, { name: string, ops: import('./vaults.js').Op[] | null, role: string,
-		 *   caps: typeof world.caps }>}
-		 */
-		const by = new Map();
-		for (const c of world.caps.filter((c) => c.over === vault)) {
-			const key = c.slice ? JSON.stringify([c.slice.name, c.slice.ops]) : c.id;
-			const g = by.get(key);
-			if (g) g.caps.push(c);
-			else by.set(key, { name: capName(c), ops: c.slice?.ops ?? null, role: c.role, caps: [c] });
-		}
-		const rank = (/** @type {{ role: string }} */ g) => STRONGEST.indexOf(/** @type {any} */ (g.role));
-		return [...by].sort(([, a], [, b]) => rank(a) - rank(b) || a.name.localeCompare(b.name));
-	});
+	/** the vault itself and the vaults that own it: each holds all of it */
+	const owners = $derived(
+		[v, ...v.owners.flatMap((o) => ('vault' in o ? [byId.get(o.vault)] : []))].filter((x) => !!x)
+	);
+	/** every share in force over the vault, the strongest first, then by who holds it */
+	const given = $derived(
+		world.caps
+			.filter((c) => c.over === vault)
+			.sort(
+				(a, b) =>
+					STRONGEST.indexOf(a.role) - STRONGEST.indexOf(b.role) ||
+					granteeOf(a, world).localeCompare(granteeOf(b, world))
+			)
+	);
+	/** what is shared with the vault in other vaults */
 	const held = $derived(world.caps.filter((c) => c.grantee === vault && c.over !== vault));
-	/** its cells, the entries the same caps reach, its own first */
-	const cells = $derived(world.cells.filter((x) => x.vault === vault).sort((a, b) => a.caps.length - b.caps.length));
+	/**
+	 * its entries by who they are shared with, those the same shares reach (each of the core's cells) together where
+	 * who they are shared with reads the same: each with its entries and the devices that get them, the fewest first
+	 */
+	const audiences = $derived.by(() => {
+		/** @typedef {{ n: number, entries: string[], syncs: Map<string, import('./vaults.js').Syncing> }} Audience */
+		/** @type {Map<string, Audience>} */
+		const by = new Map();
+		for (const x of world.cells.filter((x) => x.vault === vault)) {
+			const shared = sharedThrough(world, vault, x.caps);
+			const words = sharedWords(shared);
+			/** @type {Audience} */
+			const a = by.get(words) ?? { n: shared.who.length + shared.gone, entries: [], syncs: new Map() };
+			a.entries.push(...x.entries);
+			for (const d of x.syncs) {
+				const had = a.syncs.get(d.device);
+				a.syncs.set(d.device, had ? { ...had, opens: had.opens || d.opens } : d);
+			}
+			by.set(words, a);
+		}
+		return [...by].sort(([, a], [, b]) => a.n - b.n);
+	});
 	/** every device this browser knows, by its id: its name and the vault it is a device of */
 	const devices = $derived(
 		new Map(world.vaults.flatMap((x) => x.devices.map((d) => [d.id, { ...d, vault: x }])))
 	);
+	/**
+	 * What a device does with the entries it gets: opens them, or, where it doesn't, keeps an encrypted copy (Backup) or
+	 * only connects (Relay), by the role the device's world names; else only that it opens none of them.
+	 * @param {import('./vaults.js').Syncing} d
+	 */
+	const gets = (d) => (d.opens ? 'opens it' : ((d.role && KEEPS[d.role]) ?? 'opens none of it'));
 
 	let renaming = $state(/** @type {string | null} */ (null));
 	let naming = $state(/** @type {string | null} */ (null));
@@ -95,13 +122,8 @@
 		api.backsUp().then((/** @type {boolean | null} */ b) => (backs = b), () => (backs = null));
 	});
 
-	/** A device's name: its card's, or what it is. @param {string} id */
-	function deviceName(id) {
-		const d = devices.get(id);
-		if (!d) return `A device ${short(id)}`;
-		if (d.name) return d.name;
-		return d.vault.kind === 'aven' ? `${nameOf(d.vault)}'s server` : `A device ${short(id)}`;
-	}
+	/** A device's name, to start a line: its card's, or what it is. @param {string} id */
+	const deviceName = (id) => signerName(world, id, true);
 
 	/** How this browser acts for the vault. */
 	const acting = $derived.by(() => {
@@ -111,7 +133,7 @@
 		return `It acts for it through ${list(chain)}, which ${v.via.length === 1 ? 'owns it' : 'own it in turn'}.`;
 	});
 
-	/** The entries a cell holds, as a person reads them: titled where the acting vault reads them. @param {string[]} es */
+	/** Entries, as a person reads them: titled where the acting vault reads them. @param {string[]} es */
 	function titles(es) {
 		const known = es.map((e) => world.entries.find((x) => x.entry === e)).filter((x) => !!x);
 		const named = known.filter((x) => reads(x, actor) && x.title).map((x) => titleOf(world, x.entry));
@@ -158,7 +180,11 @@
 				<dd class="mono" title={v.id}>{short(v.id)}</dd>
 				{#if v.root}
 					<dt>Its root</dt>
-					<dd>Passkey <span class="mono">{short(v.root)}</span>: it approves every change alone, and is its only recovery.</dd>
+					<dd>
+						Passkey <span class="mono">{short(v.root)}</span>: it approves every change alone{recovers
+							? '; the master recovery key can also recover it while avenDB is young'
+							: ''}.
+					</dd>
 				{/if}
 				<dt>A change needs</dt>
 				<dd>
@@ -209,7 +235,7 @@
 								<span class="soft">{KINDS[byId.get(o.vault)?.kind ?? 'human']}</span>
 							{:else}
 								<span class="key">{o.recovery ? '🛟' : '🔑'}</span>
-								<b>{signerName(o)}</b>
+								<b>{ownerLabel(o)}</b>
 								<span class="soft mono">{short(o.signer)}</span>
 							{/if}
 						</span>
@@ -299,8 +325,8 @@
 						avenDB runs beside the app, not in this page: it reaches your other devices directly, over {count(
 							sockets.length,
 							'UDP socket'
-						)} of its own, through avenDB's relay only where your network leaves no other way, and keeps your vault in a
-						folder on this Mac.
+						)} of its own, through avenDB's connection server only where your network leaves no other way, and keeps
+						your vault in a folder on this Mac.
 					</p>
 				{/if}
 				<p class="soft">
@@ -311,59 +337,64 @@
 			</article>
 		{/if}
 	</div>
-{:else if tab === 'access'}
+{:else if tab === 'sharing'}
 	<div class="cards">
 		<article class="card wide">
-			<h3>Caps over {nameOf(v)}</h3>
+			<h3>Who {nameOf(v)} is shared with</h3>
 			<p class="soft">
-				Each cap is a named group of ops, what its holder may do, on a slice of it: a rule over its entries'
-				types and tags, or chosen entries. What it reaches changes as entries are written and tagged.
-				{nameOf(v)} itself holds every right over all of it.
+				Each share is who, at what level, on what: everything, its entries of a type or with some tags, or chosen
+				entries. A share on a type or a tag reaches what matches it now and later. {nameOf(v)} and the vaults that
+				own it hold all of it.
 			</p>
-			{#each groups as [key, g] (key)}
-				<section class="group">
-					<div class="group-head">
-						<b>{g.name}</b>
-						{#if g.ops}
-							<Ops ops={g.ops} />
-						{:else}
-							<span class="soft">its ops are sealed from {here}</span>
-						{/if}
-					</div>
-					<ul class="list grants">
-						{#each g.caps as c (c.id)}
-							<li>
-								<span class="cap">
-									{#if c.grantee === EVERYONE}
-										<span class="chip">Everyone</span>
-									{:else}
-										<Mark vault={byId.get(c.grantee)} size={28} />
-									{/if}
-									<span>
-										<b class:mine={c.grantee === actor}>{granteeOf(c, world)}</b>
-										on {whereWords(c.slice?.where, world)}
-										<small class="soft">
-											· reaches {count(c.entries.length, 'entry', 'entries')} now · given by
-											{nameOf(byId.get(c.issuer))}{c.parent
-												? ', through an owner cap of its own, whose ops narrow it too'
-												: ''}
-										</small>
-									</span>
+			<ul class="list grants">
+				{#each owners as o (o.id)}
+					<li>
+						<span class="cap">
+							<Mark vault={o} size={28} />
+							<span>
+								<b class:mine={o.id === actor}>{nameOf(o)}</b> · {roleGroup(world, 'owner')} · Everything
+								<small class="soft">· {o.id === vault ? 'the vault itself' : 'owns it'}</small>
+							</span>
+						</span>
+					</li>
+				{/each}
+				{#each given as c (c.id)}
+					{@const group = groupOf(c, world)}
+					<li>
+						<span class="cap">
+							{#if c.grantee === EVERYONE}
+								<span class="chip">Public</span>
+							{:else}
+								<Mark vault={byId.get(c.grantee)} size={28} />
+							{/if}
+							<span class="held">
+								<span>
+									<b class:mine={c.grantee === actor}>{granteeOf(c, world)}</b> ·
+									<span title={group ? group.hint : undefined}>{levelName(c, world)}</span> · {shareWhat(c, world)}
+									<small class="soft">
+										{KEEPS[c.role] ? `· ${KEEPS[c.role]} ` : ''}· reaches
+										{count(c.entries.length, 'entry', 'entries')} now · given by {nameOf(byId.get(c.issuer))}{c.parent
+											? ', through its own Owner share, which narrows it too'
+											: ''}
+									</small>
 								</span>
-								{#if c.revokers.includes(actor)}
-									<button
-										class="btn quiet danger"
-										disabled={busy}
-										onclick={() => api.revoke(actor, c.id, c.role)}>Revoke</button
-									>
+								{#if !c.slice}
+									<small class="soft">What it picks and allows is sealed from {here}.</small>
+								{:else if !group}
+									<Ops ops={c.slice.ops} />
 								{/if}
-							</li>
-						{/each}
-					</ul>
-				</section>
-			{:else}
-				<p class="soft">No cap: only {nameOf(v)} itself holds anything in it.</p>
-			{/each}
+							</span>
+						</span>
+						{#if c.revokers.includes(actor)}
+							<button
+								class="btn quiet danger"
+								disabled={busy}
+								onclick={() => api.revoke(actor, c.id, c.role)}>Revoke</button
+							>
+						{/if}
+					</li>
+				{/each}
+			</ul>
 		</article>
 
 		<article class="card">
@@ -372,59 +403,52 @@
 				<Share {world} {actor} {api} {busy} {vault} />
 			{:else}
 				<p class="soft">
-					{nameOf(as)} holds no owner cap over {nameOf(v)}: only the vault itself, or a vault it lets own some of it, shares it
-					on.
+					Nothing of {nameOf(v)} is shared with {nameOf(as)} as Owner: only the vault itself, or a vault it shares
+					some of it with as Owner, shares it on.
 				</p>
 			{/if}
 		</article>
 
 		<article class="card">
-			<h3>What {nameOf(v)} holds elsewhere</h3>
+			<h3>Shared with {nameOf(v)} elsewhere</h3>
 			<ul class="list">
 				{#each held as c (c.id)}
 					<li>
 						<Mark vault={byId.get(c.over)} size={28} />
 						<span class="held">
 							<span>
-								<b>{capName(c)}</b> on {whereWords(c.slice?.where, world)} of
-								<b>{nameOf(byId.get(c.over))}</b>
+								<b>{levelName(c, world)}</b> · {shareWhat(c, world)} · of <b>{nameOf(byId.get(c.over))}</b>
 							</span>
-							{#if c.slice}<Ops ops={c.slice.ops} />{/if}
+							{#if c.slice && !groupOf(c, world)}<Ops ops={c.slice.ops} />{/if}
 						</span>
 					</li>
 				{:else}
-					<li class="soft">No cap in another vault.</li>
+					<li class="soft">Nothing in another vault.</li>
 				{/each}
 			</ul>
 		</article>
 	</div>
-{:else if tab === 'sync'}
+
+	<h3 class="who-gets">Who gets what</h3>
 	<p class="lead-in soft">
-		{nameOf(v)}'s entries sync by cells: the entries the same caps reach share one key, and go to the devices of {nameOf(v)}
-		and of each vault those caps name, and to no one else. A tag that takes an entry into a cap's slice, or out of it, moves
-		it to another cell. A device whose vault only relays a cell keeps and forwards its ciphertext, and opens none of it.
+		{nameOf(v)}'s entries, by who they are shared with, and the devices that get them: those of {nameOf(v)} and of each
+		vault they are shared with, and no one else. A tag that takes an entry into a share, or out of it, changes who gets
+		it. A device that only keeps an encrypted copy opens none of it.
 	</p>
-	{#each cells as x (x.id)}
-		<section class="cell">
-			<h2>{cellWords(x, world)}</h2>
-			<p class="soft">
-				{count(x.entries.length, 'entry', 'entries')}: {titles(x.entries)} · key generation {x.generation}{x.public
-					? ' · everyone reads it'
-					: ''}
-			</p>
+	{#each audiences as [words, a] (words)}
+		<section class="audience">
+			<h2>Shared with {words}</h2>
+			<p class="soft">{count(a.entries.length, 'entry', 'entries')}: {titles(a.entries)}</p>
 			<ul class="card list">
-				{#each x.syncs as d (d.device)}
+				{#each [...a.syncs.values()] as d (d.device)}
+					{@const of = devices.get(d.device)?.vault}
 					<li>
 						<b>{deviceName(d.device)}</b>
-						<span class="soft">of {nameOf(devices.get(d.device)?.vault)}, through {nameOf(byId.get(d.through))}</span>
-						{#if d.opens}
-							<span class="chip ok">opens it</span>
-						{:else}
-							<span class="chip">relays its ciphertext only</span>
-						{/if}
+						<span class="soft">of {nameOf(of)}{of?.id !== d.through ? `, as ${nameOf(byId.get(d.through))}` : ''}</span>
+						<span class="chip" class:ok={d.opens}>{gets(d)}</span>
 					</li>
 				{:else}
-					<li class="soft">No device receives it.</li>
+					<li class="soft">No device gets it.</li>
 				{/each}
 			</ul>
 		</section>
@@ -491,19 +515,6 @@
 		justify-content: space-between;
 	}
 
-	.group + .group {
-		margin-top: 0.9rem;
-	}
-
-	.group-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-		padding-bottom: 0.35rem;
-		border-bottom: 1px solid var(--edge);
-	}
-
 	.mine {
 		color: var(--accent);
 	}
@@ -540,17 +551,21 @@
 		height: 28px;
 	}
 
-	.cell {
+	.who-gets {
+		margin: 2rem 0 0.4rem;
+	}
+
+	.audience {
 		margin-bottom: 1.8rem;
 	}
 
-	.cell > p {
+	.audience > p {
 		margin: 0 0 0.6rem;
 		font-size: 0.84rem;
 		line-height: 1.5;
 	}
 
-	.cell h2 {
+	.audience h2 {
 		margin: 0 0 0.6rem;
 		font-family: var(--font-body);
 		font-size: 1.05rem;

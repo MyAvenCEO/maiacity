@@ -10,8 +10,8 @@
 -->
 <script>
 	import Panel from './Panel.svelte';
-	import { describe, GROUPS, KIND_NAMES, size } from './db.js';
-	import { count, list, short } from './vaults.js';
+	import { describe, GROUPS, KIND_NAMES } from './db.js';
+	import { count, list, short, size } from './vaults.js';
 
 	/**
 	 * @type {{ s: import('./db.js').Studio, log: { edits: import('./db.js').SignedEdit[] } | null, failed: string,
@@ -58,7 +58,7 @@
 
 	/** why a write's entry's readers don't count it, where the ops of its caps don't allow it */
 	const NOT_ALLOWED =
-		'the ops of the caps it relies on don’t allow what it changes, or what it builds on: no reader counts it';
+		'the ops of the shares it relies on don’t allow what it changes, or what it builds on: no reader counts it';
 	/** why they don't, where what it makes of the entry's record breaks the schemas the entry was written under */
 	const UNFIT = 'what it makes of its entry’s record breaks the entry’s schema: no reader counts it';
 	/** what an edit its readers don't count shows, and why @param {import('./db.js').SignedEdit} e */
@@ -167,7 +167,7 @@
 			{#if picked.allowed !== null}
 				<dt>Allowed</dt>
 				{#if picked.allowed}
-					<dd>Yes: it fits its schema, and the ops of its caps allow it</dd>
+					<dd>Yes: it fits its schema, and the ops of its shares allow it</dd>
 				{:else}
 					<dd>No: {uncounted(picked).why}</dd>
 				{/if}

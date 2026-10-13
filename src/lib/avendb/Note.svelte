@@ -1,6 +1,6 @@
 <!--
 	One note as a docs app shows a document, the whole screen: at the top its title, its vault, its tags, its edits, the
-	line being edited, who holds a role on it and Share (this note alone, or a rule its tags match); on the left its
+	line being edited, who it is shared with and Share (this note alone, or a rule its tags match); on the left its
 	main line and its proposals, each a line of its own to switch to, and its variants, the notes made from it; in the
 	middle the note on the line picked, as a page, to edit there, and what a proposal changes against main, to accept
 	it, make main match it or bring main's changes in; on the right its history, every edit of that line, newest first,
@@ -20,7 +20,18 @@
 	import { blockText, deleting, may, variantMark } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
-	import { allows, count, creates, holders as rank, hue, nameOf, ROLES, short } from './vaults.js';
+	import {
+		allows,
+		count,
+		creates,
+		hue,
+		nameOf,
+		sharedWith,
+		sharedWords,
+		sharerWords,
+		short,
+		signerName
+	} from './vaults.js';
 
 	/**
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
@@ -87,8 +98,6 @@
 	const owns = $derived(allows(item?.roles[actor], 'owner'));
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const as = $derived(byId.get(actor));
-	/** the devices this browser knows, by id: their name and their vault */
-	const devices = $derived(new Map(world.vaults.flatMap((v) => v.devices.map((d) => [d.id, { name: d.name, vault: v }]))));
 	/** every edit of the note its readers count, numbered in the order the device took them; how many they don't count
 	 * as what they make of it breaks its schema, and how many they don't for any other reason */
 	const counted = $derived((note?.edits ?? []).filter((e) => e.counted !== false));
@@ -110,12 +119,13 @@
 	/** of those, the ones the ops of its caps there let it add the variant to (`can`) */
 	const targets = $derived(into_.filter((v) => lets(`variant ${v.id}`)));
 	/** the notes this browser reads, by entry */
-	const notes = $derived(new Map(world.entries.filter((e) => e.kind === 'note').map((e) => [e.entry, e])));
+	const notes = $derived(new Map(world.entries.filter((e) => e.type === 'note').map((e) => [e.entry, e])));
 	const origin = $derived(item?.variantOf ? notes.get(item.variantOf) : undefined);
 	const variants = $derived([...notes.values()].filter((n) => n.variantOf === entry));
 	const unsaved = $derived(!!here && writes && !seen && (drafts[k] ?? '') !== (here.text ?? ''));
-	/** the vaults that hold a role on the note, the strongest first */
-	const holders = $derived(rank(item?.roles ?? {}));
+	/** who the note is shared with: its vault first, then the strongest */
+	const shared = $derived(item ? sharedWith(world, item.vault, entry) : { who: [], gone: 0 });
+	const sharers = $derived(shared.who);
 
 	/**
 	 * What the ops of the caps the acting vault writes through let it do on the line shown, as the device answers a
@@ -129,12 +139,12 @@
 	/** The ops let the acting vault do `what` (`can`), as they do until the device answers. @param {string} what */
 	const lets = (what) => can[what] !== false;
 	/** Why a button doesn't offer `what`, for its title: nothing where the ops allow it. @param {string} what */
-	const barred = (what) => (lets(what) ? undefined : `The ops of ${nameOf(as)}’s cap don’t allow it`);
+	const barred = (what) => (lets(what) ? undefined : `${nameOf(as)}’s share doesn’t allow it`);
 	/** what the acting vault may do on the line, in words, where it writes the note and the ops allow no change */
 	const viewOnly = $derived.by(() => {
 		if (!writes || lets('write') || lets('title')) return '';
 		if (here?.line === null && lets('propose')) return `${nameOf(as)} may only propose changes`;
-		return `the ops of ${nameOf(as)}’s cap allow no change here`;
+		return `${nameOf(as)}’s share allows no change here`;
 	});
 
 	$effect(() => {
@@ -193,11 +203,7 @@
 	const vaultName = (id) => (id ? nameOf(byId.get(id)) : 'a vault');
 
 	/** Who made edit `e`: its device by name, and the vault it acted for. @param {EditView} e */
-	function who(e) {
-		const d = devices.get(e.author);
-		const device = d?.name ?? (d ? `A device of ${nameOf(d.vault)}` : 'A device this browser doesn’t know');
-		return `${device}, for ${nameOf(byId.get(e.actor))}`;
-	}
+	const who = (e) => `${signerName(world, e.author, true)}, for ${nameOf(byId.get(e.actor))}`;
 
 	/** What edit `e` did, in words. @param {Numbered} e */
 	function what(e) {
@@ -378,12 +384,15 @@
 					> ·
 				{/if}
 				{#if uncounted}
-					<b class="unsaved" title="The ops of their caps don’t allow what they change: no one counts them"
+					<b class="unsaved" title="Their shares don’t allow what they change: no one counts them"
 						>{count(uncounted, 'edit')} not allowed</b
 					> ·
 				{/if}
 				{#if unsaved}<b class="unsaved">Unsaved changes</b>{:else}Every edit signed and saved{/if}
 			</p>
+			{#if item}
+				<p class="meta">Shared with {sharedWords(shared)}{item.public ? ' · Public' : ''}</p>
+			{/if}
 		</div>
 		<div class="tools">
 			{#if here}
@@ -391,7 +400,7 @@
 					{#if seen}
 						Viewing version #{seen.n}
 					{:else if !writes}
-						Viewing: {nameOf(as)} only reads it
+						Viewing: {nameOf(as)} may only view it
 					{:else if viewOnly}
 						Viewing: {viewOnly}
 					{:else if here.line === null}
@@ -406,8 +415,8 @@
 				<button class="btn quiet" onclick={() => (drafts[k] = here?.text ?? '')}>Discard</button>
 			{/if}
 			<span class="people">
-				{#each holders as h (h.id)}
-					<span class="person" title="{nameOf(byId.get(h.id))} {ROLES[h.role]} it"><Mark vault={byId.get(h.id)} size={28} /></span>
+				{#each sharers.filter((x) => byId.has(x.id)) as x (x.id)}
+					<span class="person" title="Shared with {sharerWords(x)}"><Mark vault={byId.get(x.id)} size={28} /></span>
 				{/each}
 			</span>
 			{#if owns}
@@ -443,10 +452,11 @@
 	{#if sharing && item}
 		<div class="sharebar">
 			<span class="who">
-				{#each holders as h (h.id)}
-					<span class="chip" class:accent={h.id === actor}>{nameOf(byId.get(h.id))} {ROLES[h.role]}</span>
+				<span class="soft">Shared with</span>
+				{#each sharers as x (x.id)}
+					<span class="chip" class:accent={x.id === actor}>{sharerWords(x)}</span>
 				{/each}
-				{#if item?.public}<span class="chip">everyone reads</span>{/if}
+				{#if item?.public}<span class="chip">Public</span>{/if}
 			</span>
 			<Share {world} {actor} {api} {busy} vault={item.vault} {entry} ondone={() => (sharing = false)} />
 		</div>

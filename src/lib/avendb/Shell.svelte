@@ -2,8 +2,8 @@
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
 	vault's name and its pages, as a database studio lists them: its notes, its todos and its Library of files, films,
-	pictures, PDFs and songs; its database (the query console, the table editor, its cells, schemas and lenses, and its
-	history, every signed edit); then its settings (About, Owners and devices, Access, Sync); and the page picked in
+	pictures, PDFs and songs; its database (the query console, the table editor, its shares, schemas and lenses, and
+	its history, every signed edit); then its settings (About, Owners and devices, Sharing); and the page picked in
 	the middle. Each page has an address of its own
 	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
 	screen. The page picks who the person acts as in each vault, with no switch to flip: in a vault their vault owns,
@@ -23,7 +23,7 @@
 	import Notes from './Notes.svelte';
 	import Settings from './Settings.svelte';
 	import Todos from './Todos.svelte';
-	import { actorIn, KINDS, list, nameOf, reaches } from './vaults.js';
+	import { actorIn, KINDS, list, nameOf, reaches, signerName } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
@@ -50,7 +50,7 @@
 			[
 				['query', 'Query', 'search'],
 				['tables', 'Table editor', 'table'],
-				['cells', 'Cells', 'cell'],
+				['shares', 'Shares', 'cell'],
 				['schemas', 'Schemas', 'schema'],
 				['lenses', 'Lenses', 'lens'],
 				['history', 'History', 'history']
@@ -61,8 +61,7 @@
 			[
 				['about', 'About', 'info'],
 				['members', 'Owners & devices', 'users'],
-				['access', 'Access', 'access'],
-				['sync', 'Sync', 'sync']
+				['sharing', 'Sharing', 'share']
 			]
 		]
 	]);
@@ -70,11 +69,14 @@
 	const PAGES = NAV.flatMap(([, items]) => /** @type {readonly PageItem[]} */ (items));
 	/** @typedef {PageItem[0]} Page */
 	/** the pages that show a vault as its owners see it, whoever acts */
-	const SETTINGS = /** @type {Page[]} */ (['about', 'members', 'access', 'sync']);
+	const SETTINGS = /** @type {Page[]} */ (['about', 'members', 'sharing']);
+	/** the pages older addresses name, by the page that shows the same now */
+	const MOVED = /** @type {Record<string, string>} */ ({ access: 'sharing', sync: 'sharing', cells: 'shares' });
 
 	/** The page an address names: `#todos`, a note's `#notes/` and its entry, else the notes. @param {string} hash */
 	function parse(hash) {
-		const [page, entry] = hash.replace(/^#/, '').split('/');
+		const [at, entry] = hash.replace(/^#/, '').split('/');
+		const page = MOVED[at] ?? at;
 		const known = PAGES.find(([id]) => id === page)?.[0] ?? 'notes';
 		return { page: known, entry: known === 'notes' && /^[0-9a-f]{64}$/.test(entry ?? '') ? entry : '' };
 	}
@@ -113,7 +115,7 @@
 	/** Who owns vault `v`, as a line. @param {import('./vaults.js').VaultView} v */
 	function owners(v) {
 		if (v.id === world.mine) return 'Your vault: your passkey is its root.';
-		const names = v.owners.map((o) => ('vault' in o ? nameOf(byId.get(o.vault)) : 'a passkey'));
+		const names = v.owners.map((o) => ('vault' in o ? nameOf(byId.get(o.vault)) : signerName(world, o.signer)));
 		return `Owned by ${list(names)}.`;
 	}
 </script>
@@ -180,19 +182,19 @@
 				{:else if actor === context}
 					As <b>{nameOf(mine)}</b>, its owner: you see and change all of it.
 				{:else if !SETTINGS.includes(tab)}
-					As <b>{nameOf(as)}</b>: you see what {nameOf(as)}'s caps allow in {nameOf(here)}.
+					As <b>{nameOf(as)}</b>: you see what {nameOf(here)} shares with {nameOf(as)}.
 				{:else}
-					As <b>{nameOf(as)}</b>. {nameOf(here)}'s settings show every cap and device, as its owners see them.
+					As <b>{nameOf(as)}</b>. {nameOf(here)}'s settings show every share and device, as its owners see them.
 				{/if}
 			</p>
 		</header>
 		{#if tab === 'notes'}
-			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onopen={open} />
+			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
 		{:else if tab === 'todos'}
-			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} />
+			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 		{:else if tab === 'library'}
-			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} />
-		{:else if tab === 'about' || tab === 'members' || tab === 'access' || tab === 'sync'}
+			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+		{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
 			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} />
 		{:else}
 			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />

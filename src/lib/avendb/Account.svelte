@@ -1,8 +1,9 @@
 <!--
 	Your account (P8e, P8f): the person's own avenDB. Their account is their human vault: its root is their passkey,
-	which stays in the browser's authenticator and is the vault's only recovery, and this browser is one of its devices,
-	its keys unmasked by the passkey at every unlock, what it holds kept in the browser's private file system (OPFS) so
-	that it opens again in one ceremony. Every device of the vault shows by the name on its card, an entry of the vault the device writes itself,
+	which stays in the browser's authenticator, with the master recovery key as a way back while avenDB is young, and
+	this browser is one of its devices, its keys unmasked by the passkey at every unlock, what it holds kept in the
+	browser's private file system (OPFS) so that it opens again in one ceremony. Every device of the vault shows by the
+	name on its card, an entry of the vault the device writes itself,
 	end-to-end encrypted like its notes (avendb-browser's `Device::card`), and every vault by the name on its profile,
 	an entry this browser writes into it (`Device::profile`): the person's own by their maiaCITY name, avenCEO's as
 	avenCEO. In the Mac app the device runs natively beside the app ($lib/avendb/native.js): its node on UDP sockets of
@@ -656,8 +657,8 @@
 					<article class="card">
 						<h3>New to avenDB?</h3>
 						<p>
-							Set up your account: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its root and
-							its only recovery, and {here} its first device.
+							Set up your account: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its
+							root, and {here} its first device. The master recovery key can also recover it while avenDB is young.
 						</p>
 						<div class="row">
 							<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(false)}>
@@ -696,7 +697,7 @@
 					<details>
 						<summary class="soft">avenDB's server</summary>
 						<p class="soft">maiaCITY's server, at avendb.maia.city. Change these only for a test server.</p>
-						<input class="field" placeholder="Its relay: https://…" bind:value={relay} />
+						<input class="field" placeholder="Its connection server: https://…" bind:value={relay} />
 						<input class="field" placeholder="The server’s code: AVENDB1…" bind:value={server} />
 						<p class="soft">The first person to found their vault through a server owns avenCEO, the aven vault the server is a device of.</p>
 					</details>
