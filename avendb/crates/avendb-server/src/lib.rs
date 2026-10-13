@@ -66,6 +66,8 @@ pub struct Config {
     /// The bucket its store lives in (`AVENDB_BUCKET` and the rest of `BucketConfig`), if any; else its folder alone
     /// holds it.
     pub bucket: Option<BucketConfig>,
+    /// The most bytes of the files in its bucket its folder caches (`AVENDB_CACHE`, in gigabytes, 8 by default).
+    pub cache: u64,
 }
 
 /// The bucket the server's store lives in (blobs B3a), its folder only a cache of it.
@@ -119,6 +121,10 @@ impl Config {
                 Some(v) => return Err(anyhow!("AVENDB_SIGNUP: {v} is neither open nor closed")),
             },
             bucket: var("AVENDB_BUCKET").map(|name| bucket_config(name, &var)).transpose()?,
+            cache: match var("AVENDB_CACHE") {
+                Some(v) => v.parse::<u64>().map(|g| g << 30).with_context(|| format!("AVENDB_CACHE: {v} isn't one"))?,
+                None => avendb_net::bucket::CACHE,
+            },
         })
     }
 }
@@ -181,6 +187,8 @@ pub async fn start(config: &Config) -> Result<Running> {
             Some(b) => Some(Sealed::new(bucket::S3::new(b)?, &b.seal)),
             None => None,
         },
+        shelf: None,
+        cache: config.cache,
     };
     let node = server::open(&config.data, opts).await?;
     let mut offer = node.offer();

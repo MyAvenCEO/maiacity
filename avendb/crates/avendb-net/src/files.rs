@@ -1,25 +1,27 @@
 //! Files over iroh-blobs (blobs B2, `docs/BLOBS.md`): a node keeps one blob store, on disk in its store's folder
-//! (`blobs/`) or else in memory, and a file is its sealed pieces there, each a blob, with the HashSeq of their hashes
-//! when there are several. A node brings a file by sealing it as it reads it, a piece at a time, under a key of its own
-//! (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its device opens, from its own
-//! store or else from a peer that may hand it over, fetching only the sealed segments that hold the range, which it
-//! keeps (`Node::read_file`); and keeps whole every file its device's sync rules say to keep, fetched from its peers as
-//! soon as it learns of them: where its device has no rule over a vault, every file of the vault if the node keeps
-//! files (`Options::keep`), as the server does, and none otherwise (`Lab::kept_files`). It drops no file it kept.
+//! (`blobs/`), over a shelf (`shelf`), or else in memory, and a file is its sealed pieces there, each a blob, with the
+//! HashSeq of their hashes when there are several. A node brings a file by sealing it as it reads it, a piece at a
+//! time, under a key of its own (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its
+//! device opens, from its own store or else from a peer that may hand it over, fetching only the sealed segments that
+//! hold the range, which it keeps (`Node::read_file`); and keeps whole every file its device's sync rules say to keep,
+//! fetched from its peers as soon as it learns of them: where its device has no rule over a vault, every file of the
+//! vault if the node keeps files (`Options::keep`), as the server does, and none otherwise (`Lab::kept_files`). It
+//! drops no file it kept.
 //!
 //! The blob gate (`blobs::gate`) hands a peer a blob only if the peer may fetch it: a McEliece key by `Lab::may_fetch`,
 //! a file's root or one of its pieces by `Lab::may_fetch_file` (T27). Every request names one blob, never a HashSeq
 //! with its children: a node fetches a file's HashSeq as a blob of its own and then its pieces one by one, so that the
 //! gate weighs every hash a peer asks for, and no blob that merely holds hashes hands out the blobs it names.
 //!
-//! A page's store is in memory, so it forgets what it read (`forgetful`): every little while it lets go of each blob no
-//! tag holds, keeping the files it brought or keeps whole, the McEliece keys it offers, and what it is reading or
-//! fetching now (`Pins`). So a page that plays a film holds only the stretch that plays, not the film.
+//! A page's store and the server's keep what they bring and keep whole on their shelf (`shelf`), OPFS and the bucket,
+//! and what else they read in memory, a window at a time: a page that plays a film holds only the stretches that
+//! play. A node reads a range a few megabytes at a time (`READ`), so that the window holds what it fetched until it
+//! has read it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use avendb::sealed::{Brought, FileKey, FileRoot, PIECE, PIECE_SEGMENTS, SEALED, SEGMENT, Sealer, open};
@@ -41,58 +43,8 @@ use crate::{Backoff, Node, Shared, WAIT};
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) const BLOBS: &str = "blobs";
 
-/// How often a page's store lets go of the blobs it holds no tag for (`forgetful`).
-#[cfg(target_arch = "wasm32")]
-const FORGET: std::time::Duration = std::time::Duration::from_secs(15);
-
-/// The blobs a node uses now, each with how many uses hold it: the root and the pieces of a file it reads or fetches
-/// whole. A store that forgets (`forgetful`) keeps them while they are held.
-#[derive(Clone, Default)]
-pub(crate) struct Pins(Arc<Mutex<HashMap<Hash, usize>>>);
-
-impl Pins {
-    /// Holds `hash` until what this returns is dropped.
-    fn pin(&self, hash: Hash) -> Pinned {
-        *self.0.lock().expect("pins").entry(hash).or_default() += 1;
-        Pinned(self.clone(), hash)
-    }
-
-    /// Every blob held now.
-    #[cfg(target_arch = "wasm32")]
-    fn held(&self) -> Vec<Hash> {
-        self.0.lock().expect("pins").keys().copied().collect()
-    }
-}
-
-/// A use of a blob (`Pins::pin`), which ends when it is dropped.
-struct Pinned(Pins, Hash);
-
-impl Drop for Pinned {
-    fn drop(&mut self) {
-        let mut pins = (self.0).0.lock().expect("pins");
-        if let Some(n) = pins.get_mut(&self.1) {
-            *n -= 1;
-            if *n == 0 {
-                pins.remove(&self.1);
-            }
-        }
-    }
-}
-
-/// A page's blob store, in memory: every `FORGET` it lets go of each blob no tag holds, but for those `pins` hold and
-/// the McEliece keys in `offered`. What it brings and what it keeps whole is tagged (`tag`), and stays.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn forgetful(pins: Pins, offered: Arc<Mutex<crate::blobs::Offered>>) -> Store {
-    use iroh_blobs::store::mem::{MemStore, Options};
-    use iroh_blobs::store::{GcConfig, ProtectCb, ProtectOutcome};
-    let protect: ProtectCb = Arc::new(move |live: &mut HashSet<Hash>| {
-        live.extend(pins.held());
-        live.extend(offered.lock().expect("offered").hashes());
-        Box::pin(async { ProtectOutcome::Continue })
-    });
-    let gc = GcConfig { interval: FORGET, add_protected: Some(protect) };
-    MemStore::new_with_opts(Options { gc_config: Some(gc) }).into()
-}
+/// The most sealed bytes of a piece a node reads at a time: whole segments, as each opens on its own.
+const READ: u64 = 64 * SEALED as u64;
 
 /// The name a file's root is kept under in the blob store, so that whatever cleans the store up leaves it whole.
 fn tag(root: &FileRoot) -> Vec<u8> {
@@ -124,10 +76,10 @@ impl Node {
         self.shared.read_file(root, range).await
     }
 
-    /// Whether this node holds every sealed byte of file `root`.
+    /// Whether this node holds every sealed byte of file `root`: on a shelf, once the shelf holds it whole, which on
+    /// the server is its bucket.
     pub async fn holds_file(&self, root: FileRoot) -> bool {
-        let local = self.shared.store.remote().local(content(&root)).await;
-        local.is_ok_and(|l| l.is_complete())
+        self.shared.holds(root).await
     }
 }
 
@@ -203,14 +155,11 @@ impl Shared {
         pieces.write(sealer.finish().map_err(|_| anyhow!("fewer bytes than the file's {len}"))?).await?;
         let pieces = pieces.finish().await?;
         let hashes: Vec<Hash> = pieces.iter().map(TempTag::hash).collect();
-        // the HashSeq's own temporary tag holds it until its tag does, so that a store that forgets keeps it
-        let _seq;
         let root = match &hashes[..] {
             [one] => *one,
             many => {
                 let seq: HashSeq = many.iter().copied().collect();
-                _seq = self.store.add_bytes_with_opts((seq.into_inner(), BlobFormat::HashSeq)).temp_tag().await?;
-                _seq.hash()
+                self.store.add_bytes_with_opts((seq.into_inner(), BlobFormat::HashSeq)).temp_tag().await?.hash()
             }
         };
         let brought = Brought::new(*root.as_bytes(), key, len);
@@ -228,16 +177,17 @@ impl Shared {
             return Ok(Vec::new());
         }
         let segments = shape.segments_of(from..to);
-        let _root = self.pins.pin(Hash::from_bytes(root.hash));
         let pieces = self.pieces_of(root).await?;
         let mut plain = Vec::new();
-        for (p, at) in shape.sealed_ranges(from..to) {
+        for (p, sealed) in shape.sealed_ranges(from..to) {
             let hash = pieces[p as usize];
-            let _piece = self.pins.pin(hash);
-            self.get(GetRequest::blob_ranges(hash, ChunkRanges::bytes(at.clone()))).await?;
-            let sealed = self.store.export_ranges(hash, at.clone()).concatenate().await?;
-            let first = p * PIECE_SEGMENTS + at.start / SEALED as u64;
-            plain.extend(open(&brought.key, shape, first, &sealed).context("sealed bytes that don't open")?);
+            for start in sealed.clone().step_by(READ as usize) {
+                let at = start..(start + READ).min(sealed.end);
+                self.get(GetRequest::blob_ranges(hash, ChunkRanges::bytes(at.clone()))).await?;
+                let bytes = self.store.export_ranges(hash, at.clone()).concatenate().await?;
+                let first = p * PIECE_SEGMENTS + at.start / SEALED as u64;
+                plain.extend(open(&brought.key, shape, first, &bytes).context("sealed bytes that don't open")?);
+            }
         }
         let skip = (from - segments.start * SEGMENT as u64) as usize;
         Ok(plain[skip..skip + (to - from) as usize].to_vec())
@@ -342,17 +292,36 @@ impl Shared {
             }
             return Ok(());
         }
-        let _root = self.pins.pin(Hash::from_bytes(root.hash));
         let pieces = self.pieces_of(root).await?;
-        let _pieces: Vec<Pinned> = pieces.iter().map(|&p| self.pins.pin(p)).collect();
+        // tagged first, so that a blob store over a shelf puts the pieces it fetches onto it
+        self.store.tags().set(tag(&root), content(&root)).await?;
         for (p, &piece) in pieces.iter().enumerate() {
             self.get(GetRequest::blob(piece)).await?;
+            // whole, and on a shelf, finished there: on the server, in its bucket; until then the keeper tries again
             let want = (root.size - p as u64 * PIECE).min(PIECE);
-            if !matches!(self.store.status(piece).await?, BlobStatus::Complete { size } if size == want) {
-                tracing::warn!("avendb: file {} names a piece of another size", Hash::from_bytes(root.hash));
+            match self.store.status(piece).await? {
+                BlobStatus::Complete { size } if size == want => {}
+                BlobStatus::Complete { size } => bail!("piece {p} of the file is {size} bytes, not {want}"),
+                _ => bail!("piece {p} of the file isn't kept whole yet"),
             }
         }
-        self.store.tags().set(tag(&root), content(&root)).await?;
         Ok(())
+    }
+
+    /// `Node::holds_file`.
+    pub(crate) async fn holds(&self, root: FileRoot) -> bool {
+        let Some(shelf) = &self.shelf else {
+            let local = self.store.remote().local(content(&root)).await;
+            return local.is_ok_and(|l| l.is_complete());
+        };
+        let hash = Hash::from_bytes(root.hash);
+        if !shelf.shelved(&hash) {
+            return false;
+        }
+        if !root.pieced() {
+            return true;
+        }
+        let seq = self.store.get_bytes(hash).await.ok().and_then(HashSeq::new);
+        seq.is_some_and(|seq| seq.iter().all(|p| shelf.shelved(&p)))
     }
 }

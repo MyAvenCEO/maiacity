@@ -3,7 +3,9 @@
 //! alone, reads ranges of the photo through the server with Alice's Mac gone, fetching only the segments that hold
 //! them; and nobody fetches a file that no edit they may receive brings: not Carol the scan, not Dave nor a stranger
 //! either file, and nobody a HashSeq with its children. And sync rules (blobs B2c): Alice's iPhone syncs only her
-//! proxies and keeps their films whole, while the server keeps every film.
+//! proxies and keeps their films whole, while the server keeps every film. And shelves (blobs B2d, B3b): a page brings
+//! files onto its shelf, the server keeps them in its bucket, moving those its disk kept before, and serves them from
+//! the bucket alone once its folder is lost.
 
 mod common;
 
@@ -17,7 +19,8 @@ use avendb::lab::NewRule;
 use avendb::policy::Role;
 use avendb::sealed::{FileRoot, PIECE, PIECE_SEGMENTS, SEGMENT};
 use avendb::slice::{Atom, Selector, Sym};
-use avendb_net::{Node, Options};
+use avendb_net::bucket::{self, Sealed};
+use avendb_net::{Node, Options, Shelf};
 use bytes::Bytes;
 use common::Folder;
 use iroh::Endpoint;
@@ -152,6 +155,93 @@ async fn files_follow_their_edits_over_iroh() {
     assert_eq!(all, bytes(1, 0, photo_len), "every byte");
     assert!(carol.holds_file(photo_root).await, "and holds it whole now");
     for n in [carol, dave, stranger, server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// The names of the blobs whose records bucket folder `objects` holds.
+fn records(objects: &std::path::Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(objects.join("blobs")) else { return Vec::new() };
+    entries.map(|e| e.expect("a record").file_name().into_string().expect("a name")).collect()
+}
+
+/// Alice's page brings a scan onto its shelf, and the server keeps it on its disk, as before B3b. Given a bucket, the
+/// server moves it there as it starts and puts its disk store aside; the photo the page brings next goes into the
+/// bucket alone, and counts only once it is there. With its folder lost, the server serves Carol the photo from the
+/// bucket, caching what it reads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn files_live_on_a_shelf_and_in_the_bucket() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let read = cap(h.coop, vault(w.carol), Role::Read, by_id(h.welcome));
+    w.lab.issue(w.mac_a, &[w.mac_a], read).expect("Alice's Mac shares Welcome with Carol to read");
+    w.lab.sync_all(1);
+    let (mac_a, passkey_a, server_d, mac_c, passkey_c) = (w.mac_a, w.passkey_a, w.server, w.mac_c, w.passkey_c);
+    let (coop, welcome, onboarding) = (h.coop, h.welcome, h.onboarding);
+    let (disk, objects, lost) = (Folder::new("shelf-disk"), Folder::new("shelf-bucket"), Folder::new("shelf-lost"));
+    let page_opts = Options { shelf: Some(Shelf::memory()), ..Options::local() };
+    let page = node(&mut w, mac_a, &[passkey_a], 1, page_opts).await;
+    let carol = node(&mut w, mac_c, &[passkey_c], 3, Options::local()).await;
+    let on_disk = Options { store: Some(disk.path().into()), keep: true, ..Options::local() };
+    let server = node(&mut w, server_d, &[], 2, on_disk).await;
+    page.know(server.addr());
+    server.know(page.addr());
+    let scan_len = 100_000;
+    let scan = page.store_file(scan_len, reading(2, scan_len)).await.expect("the page seals the scan onto its shelf");
+    let scan_root = scan.root;
+    assert!(page.holds_file(scan_root).await, "whole on its shelf");
+    page.act(move |lab, me| lab.bring(me, coop, onboarding, vec![scan], |_| {})).await.expect("brought");
+    until("the server keeps the scan on its disk", || server.holds_file(scan_root)).await;
+    server.shutdown().await.expect("the server stops");
+    drop(server);
+    // the server keeps a bucket now: the scan moves there, and the disk store goes aside
+    let sealed = Sealed::new(bucket::Folder::new(objects.path()), &[7; 32]);
+    let backed = |dir: &Folder| Options {
+        store: Some(dir.path().into()),
+        bucket: Some(sealed.clone()),
+        keep: true,
+        ..Options::local()
+    };
+    let mut again = world();
+    handbook(&mut again);
+    let server = node(&mut again, server_d, &[], 6, backed(&disk)).await;
+    assert!(server.holds_file(scan_root).await, "the scan, in the bucket now");
+    assert_eq!(records(objects.path()).len(), 1, "one blob's record in the bucket: the scan's one piece");
+    assert!(!disk.path().join("blobs").exists(), "the disk store moved");
+    let aside = std::fs::read_dir(disk.path().join("aside")).expect("aside").map(|e| e.expect("an entry").file_name());
+    assert!(aside.into_iter().any(|n| n.to_string_lossy().ends_with("-blobs")), "and put aside, not deleted");
+    // the photo goes into the bucket alone
+    page.know(server.addr());
+    server.know(page.addr());
+    let photo_len = 300_000;
+    let photo = page.store_file(photo_len, reading(1, photo_len)).await.expect("the page seals the photo");
+    let photo_root = photo.root;
+    page.act(move |lab, me| lab.bring(me, coop, welcome, vec![photo], |_| {})).await.expect("brought");
+    until("the server keeps the photo in its bucket", || server.holds_file(photo_root)).await;
+    let hex = Hash::from_bytes(photo_root.hash).to_hex();
+    assert!(records(objects.path()).iter().any(|r| r.starts_with(&hex)), "its record in the bucket");
+    assert!(std::fs::read_dir(disk.path().join("shelf/staging")).expect("staging").next().is_none(), "none staged");
+    for n in [page, server] {
+        n.shutdown().await.expect("the node stops");
+    }
+    // its folder lost, the server serves Carol from the bucket alone
+    let mut third = world();
+    handbook(&mut third);
+    let server = node(&mut third, server_d, &[], 7, backed(&lost)).await;
+    assert!(server.holds_file(photo_root).await && server.holds_file(scan_root).await, "both, from the bucket");
+    carol.know(server.addr());
+    until("Carol's Mac gets the write that brings the photo", || async {
+        carol.sync_with(server.id()).await.ok();
+        carol.read(move |lab, me| lab.file(me, &photo_root).is_some()).await
+    })
+    .await;
+    let got = carol.read_file(photo_root, 70_000..70_010).await.expect("Carol's Mac reads ten bytes of the photo");
+    assert_eq!(got, bytes(1, 70_000, 70_010), "the very bytes");
+    let all = carol.read_file(photo_root, 0..u64::MAX).await.expect("and the whole photo");
+    assert_eq!(all, bytes(1, 0, photo_len), "every byte");
+    let cached = std::fs::read_dir(lost.path().join("shelf/cache")).expect("the cache").count();
+    assert!(cached > 0, "the server cached what it read from the bucket");
+    for n in [carol, server] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

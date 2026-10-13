@@ -14,6 +14,11 @@ avendb = { path = "../avendb" }
 iroh-blobs = { version = "=0.103.1", default-features = false }
 # the sealed pieces of a file as they stream into the blob store (blobs B2)
 bytes = "1.12"
+# a node's own blob store over its shelf (blobs B2d, B3b, `shelf`): iroh-blobs' own versions and features of the BLAKE3
+# trees, its store protocol's channels and its ranges
+bao-tree = { version = "=0.16.1", default-features = false, features = ["experimental-mixed", "tokio_fsm", "validate"] }
+irpc = { version = "=0.17.0", default-features = false }
+range-collections = "=0.4.6"
 tokio = { version = "1.44", default-features = false, features = ["sync"] }
 # tasks and timers on tokio, and in a browser on its event loop (P8d)
 n0-future = "0.3.2"

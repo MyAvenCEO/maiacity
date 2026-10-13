@@ -375,6 +375,7 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
         now: SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs(),
         direct: false,
         store: None,
+        shelf: None,
         progress: Progress::new(),
         recovery: None,
     };

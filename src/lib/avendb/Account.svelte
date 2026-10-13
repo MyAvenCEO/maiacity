@@ -23,7 +23,6 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { sized, WHOLE } from './files.js';
 	import { answer } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { count, levelOf, plain } from './vaults.js';
@@ -335,7 +334,7 @@
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
 			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
 			const shows = device();
-			const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, sign, backup, shows);
+			const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, sign, backup, shows, store);
 			step('save');
 			await started(d, nonce, held.id);
 		});
@@ -355,7 +354,7 @@
 			const { unlock, held } = await ceremonies(undefined);
 			const nonce = crypto.getRandomValues(new Uint8Array(32));
 			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
-			const d = await avendb.Device.link(name.trim(), relay, through.trim(), unlockNew, device())
+			const d = await avendb.Device.link(name.trim(), relay, through.trim(), unlockNew, device(), store)
 				.catch(noAccount);
 			step('save');
 			await started(d, nonce, held.id);
@@ -397,7 +396,7 @@
 		step('load');
 		const kept = await store.load();
 		const opens = [meta.name, meta.relay, meta.passkey, meta.mask];
-		running(await avendb.Device.open(...opens, unlocked, kept.edits, kept.keys, device()));
+		running(await avendb.Device.open(...opens, unlocked, kept.edits, kept.keys, device(), store));
 	}
 
 	/** The device runs from here on, its store following it, even should keeping what opens it again fail: it can
@@ -511,16 +510,15 @@
 		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
 		note: (entry) => device.note(entry),
 		/**
-		 * Brings file `file` into vault `vault`, tagged `tags`, acting for `actor`: sealed into this browser's store a
-		 * megabyte at a time, then an entry that brings it, which syncs as any edit does. The new entry, or `null`.
+		 * Brings file `file` into vault `vault`, tagged `tags`, acting for `actor`: sealed onto this browser's shelf in
+		 * OPFS a megabyte at a time, whatever its size, then an entry that brings it, which syncs as any edit does. The
+		 * new entry, or `null`.
 		 * @param {string} actor @param {string} vault @param {File} file @param {string} media @param {string[]} tags
 		 */
 		addFile: async (actor, vault, file, media, tags) => {
 			const what = `Adding ${file.name}`;
 			let entry = null;
 			const ok = await act(what, async () => {
-				// a page holds what it adds in its memory until it keeps file pieces in OPFS too (B2d)
-				if (!mac && file.size > WHOLE) throw new Error(`${file.name} is over ${sized(WHOLE)}: add it from the Mac app`);
 				/** @param {number} at @param {number} n */
 				const read = async (at, n) => {
 					if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
