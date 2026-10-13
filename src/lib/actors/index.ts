@@ -101,12 +101,14 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 	batterycube: [
 		{ ...FIRST, date: '2026-10-13', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v1: busbars down the front, a one-way inverter', make: () => batteryCubeV1() }] },
 		{ v: 2, date: '2026-10-13', note: 'Plug in and pull out: a backplane behind the stack takes each BatteryPack’s (v3) back plug, and a ClickLock rail pair holds each pack; no busbars on the front', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v2: a one-way inverter', make: () => batteryCube(2) }] },
-		{ v: 3, date: '2026-10-13', note: 'A charger too: the inverter is bidirectional, and an AC inlet on its back charges the packs from the grid, an ElectroCube or a generator' }
+		{ v: 3, date: '2026-10-13', note: 'A charger too: the inverter is bidirectional, and an AC inlet on its back charges the packs from the grid, an ElectroCube or a generator', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v3: its packs with two handles each', make: () => batteryCube(3) }] },
+		{ v: 4, date: '2026-10-13', note: 'Its four BatteryPacks at v4: one centre grip each, its trigger releasing the pack' }
 	],
 	batterypack: [
 		{ ...FIRST, date: '2026-10-13', build: [{ id: 'batterypack', label: 'BatteryPack', note: 'as at v1: a square case, five charge lights', make: () => batteryPackV1() }] },
 		{ v: 2, date: '2026-10-13', note: 'Smooth and modern: one matte black case with round corners (R 30 mm), a soft-edged lid, a light seam under it, a darker foot band, flush latches, and a slim LED strip along the top of its face that shows the state of charge in ten segments. Same 460 × 480 × 125 mm', build: [{ id: 'batterypack', label: 'BatteryPack', note: 'as at v2: its terminals still on its face', make: () => batteryPack(2) }] },
-		{ v: 3, date: '2026-10-13', note: 'Plug in, pull out: power and data leave by one blind-mate plug in its back, between two guide pins (no terminals on its face), and a ClickLock clicks it into its rails; press the tab on its face and it slides out' }
+		{ v: 3, date: '2026-10-13', note: 'Plug in, pull out: power and data leave by one blind-mate plug in its back, between two guide pins (no terminals on its face), and a ClickLock clicks it into its rails; press the tab on its face and it slides out', build: [{ id: 'batterypack', label: 'BatteryPack', note: 'as at v3: two handles and a release tab', make: () => batteryPack(3) }] },
+		{ v: 4, date: '2026-10-13', note: 'One grip for one hand, in the middle of its face, in place of the two handles: its trigger releases the ClickLock, so one squeeze and one pull take the pack out, and pushing it in clicks it home' }
 	],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
