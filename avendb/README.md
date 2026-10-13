@@ -27,7 +27,7 @@ history and proposals, and, from P8, its own iroh networking (its own ALPN, its 
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T25) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
-| `docs/` | Flat vaults as built (`FLAT-VAULTS.md`), and the research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
+| `docs/` | Blobs, the one backend for edits and files of any size, as it is built (`BLOBS.md`); flat vaults as built (`FLAT-VAULTS.md`), and the research and the first plan that led here (`VERSIONING-RESEARCH.md`, `DATABASE-PLAN.md`), kept for their reasoning |
 
 ## Build and test
 
