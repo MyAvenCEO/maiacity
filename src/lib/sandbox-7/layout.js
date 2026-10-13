@@ -17,7 +17,7 @@
  * areas the page shows come from counting the cells outdoors and from each dome's floor plan (./specs.js) indoors,
  * so the map and the numbers always agree.
  */
-import { capOf, FACTORIES, HALLS, KINDS, POND_BAND, POND_HALF, POND_IN, TOWER, siteHall } from './specs.js';
+import { capOf, DF, FACTORIES, HALLS, KINDS, POND_BAND, POND_HALF, POND_IN, TOWER, siteHall } from './specs.js';
 
 /** the hex: across its flats, its side (centre to corner) and its area */
 export const HEX_W = 13 * 1.6 * 32;
@@ -321,6 +321,11 @@ export function zonesOf(/** @type {Site} */ s, /** @type {HexPlan} */ plan) {
 	const h = siteHall(s);
 	if (h) return [...h.parts.map((/** @type {{ label: string, m2: number }} */ p) => ({ use: 'factory', label: p.label, m2: p.m2 })), { use: 'factory', label: 'Aisles and spare floor', m2: h.floor - h.need }];
 	const floor = Math.PI * footR(s, plan) ** 2;
+	// the dome factory: its lines on the floor (./specs.js DF), and the aisles, testing and loading between them
+	if (s.kind === 'factory120' && FACTORIES.find((f) => f.id === s.factory)?.dome) {
+		const lines = DF.lines.filter((l) => l.floor.length).map((l) => ({ use: 'factory', label: `${l.label}: ${l.floor.map((x) => x.label.toLowerCase()).join(', ')}`, m2: l.floor.reduce((a, x) => a + x.m2, 0), color: l.color }));
+		return [...lines, { use: 'factory', label: 'Aisles, the test lab and loading', m2: Math.max(0, floor - DF.floor), color: '#a8a196' }];
+	}
 	return [{ use: s.kind === 'tower' ? 'tower' : 'factory', label: K.label, m2: floor }];
 }
 
