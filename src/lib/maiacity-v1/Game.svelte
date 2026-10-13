@@ -281,7 +281,7 @@
 				<p class="eyebrow">{mine ? 'You' : player.founder ? 'The other player' : 'A free seat'}</p>
 				<h2>{player.name}</h2>
 				{#if !player.founder && !mySeat}
-					<p class="about">Take this seat to play. Your first mint brings {f(view.settings.starterPack ?? 720, 0)} HEARTS, then they grow {f(view.settings.heartsPerDay, 0)} a game day.</p>
+					<p class="about">Take this seat to play. Your first mint brings {f(view.settings.starterPack ?? 8736, 0)} HEARTS, then they grow {f(view.settings.heartsPerDay, 0)} a game day.</p>
 					<div class="buttons"><button class="primary" disabled={busy} onclick={() => run(() => takeSeat(seat))}>Play as {player.name}</button></div>
 				{/if}
 				{@const hv = heartsValue(view)}
@@ -302,7 +302,7 @@
 			{:else if panel === 'mint'}
 				<p class="eyebrow">Your HEARTS</p>
 				<h2>Mint</h2>
-				<p class="about">Your first mint brings a starter pack of {f(view.settings.starterPack ?? 720, 0)} HEARTS. After that your HEARTS grow {f(view.settings.heartsPerDay, 0)} a game day, {view.settings.heartsPerDay === 24 ? 'one every game hour' : `one every ${f(24 / view.settings.heartsPerDay, 1)} game hours`}, on the game clock ({f(view.settings.heartsPerDay * 28 * 24 / view.settings.hoursPerMonth, 0)} a real day). Mint whenever you like: you get all that grew since your last mint. The right to mint reaches back {reach} only, so check in at least that often: growth older than that is lost. HEARTS you hold stay.</p>
+				<p class="about">Your first mint brings a starter pack of {f(view.settings.starterPack ?? 8736, 0)} HEARTS. After that your HEARTS grow {f(view.settings.heartsPerDay, 0)} a game day, {view.settings.heartsPerDay === 24 ? 'one every game hour' : `one every ${f(24 / view.settings.heartsPerDay, 1)} game hours`}, on the game clock ({f(view.settings.heartsPerDay * 28 * 24 / view.settings.hoursPerMonth, 0)} a real day). Mint whenever you like: you get all that grew since your last mint. The right to mint reaches back {reach} only, so check in at least that often: growth older than that is lost. HEARTS you hold stay.</p>
 				<div class="wares">
 					<div><span>Ready to mint</span><b>{f(mint.amount)}</b></div>
 					{#if mint.starter}<div><span>Starter pack</span><b>{f(mint.starter)}</b></div>{/if}
