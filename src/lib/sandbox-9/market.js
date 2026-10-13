@@ -282,7 +282,8 @@ export function peopleOrders(w) {
 		for (const g of CONSUMER) tot[g] += w.order[o + g];
 	}
 	// the work the COOPs need today (./coops.js workNeed: running items and a seventh of the posted proposals), shared
-	// out over the offers in proportion: what an Aven will work it buys as Aven service, beside its help
+	// out over the offers in proportion: the hours an Aven works are Aven service beside its help, settled from the
+	// work items' pay (./coops.js workBook)
 	const needH = (w.workNeed?.run ?? 0) + (w.workNeed?.prop ?? 0);
 	const fw = offerAll > 0 ? Math.min(1, needH / offerAll) : 0;
 	for (let i = 0; i < N; i++) {

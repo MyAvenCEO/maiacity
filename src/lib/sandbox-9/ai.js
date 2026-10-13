@@ -16,11 +16,13 @@
  * - **Aven service.** The avenCEO COOP runs the harness (TECH.harness): it buys the inference and sells Aven hours to
  *   the people (the COMPUTE good). An Aven hour takes 1 ÷ 16 of an accelerator-hour (CHIPS.sessions), less as the
  *   harness learns (coefficient `infer`). Its own costs are Aven hours at the rate card (the harness's upkeep, its R&D).
- * - **The personal Avens work for all COOPs.** A person's Aven runs on the Aven service its person buys: help for its
- *   person (the living-standard stat) and work for the COOPs (running items and work proposals). An Aven works at most
- *   workCapH hours a day, only if its person buys the hours, and the work items' MIND goes to people in proportion to
- *   skill × hours delivered (./coops.js workItems). So the village's demand for inference is the people's help, all the
- *   COOPs' work and the avenCEO COOP's own hours.
+ * - **The personal Avens work for all COOPs.** A person's Aven runs on Aven service: help for its person (the
+ *   living-standard stat, bought from what the person holds) and work for the COOPs (running items and work
+ *   proposals). An Aven works at most workCapH hours a day while an hour of its work earns more than the hour's Aven
+ *   service costs; the work item's pay settles that Aven service at delivery and the person gets the rest, in
+ *   proportion to skill × hours delivered (./coops.js workBook, workItems), so nobody needs MIND in hand before their
+ *   Aven can work. So the village's demand for inference is the people's help, all the COOPs' work and the avenCEO
+ *   COOP's own hours.
  * - **The binding resource** is accelerators × hours × electricity: the owners' capacity (accelerators × 24 h × CHIPS.avail),
  *   the running class of the dispatch for their electricity, the data-centre floor that holds them, and (closed border)
  *   the accelerators that can come in at all. Where Aven service is short, work is served before help, and running
