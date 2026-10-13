@@ -143,9 +143,11 @@ An owner signs its consent to every edit that adds it (`policy`), and the secret
 standing consent as it was made: both halves over a challenge that names it alone (`sign::consent_challenge`). An edit
 that founds a vault with it among the first owners, or adds it as an owner, takes that consent in place of its
 signature, unless it is the edit's author or the vault's root; no other edit does (`sign::standing`). The key's file is
-built in (`crates/avendb/master-recovery.pub`, `recovery::master`), and every device's Lab adds it
-(`Lab::set_recovery`): a human vault a device founds has it among its first owners, in the same ceremony
-(`Lab::human_owners`). Whoever holds the secret signs as an owner in full: alone, it adds a device of its own to a vault
+built in (`crates/avendb/master-recovery.pub`, `recovery::master`; the key `d9941b22…`, since avenDB started afresh
+with it, edit version 7), and every device's Lab adds it (`Lab::set_recovery`): a human vault a device founds has it
+among its first owners, in the same ceremony (`Lab::human_owners`). A vault's Settings show it among the owners as the
+master recovery key, and its person removes it, or adds it again, as any owner (`Device::remove_owner`,
+`Device::add_recovery`). Whoever holds the secret signs as an owner in full: alone, it adds a device of its own to a vault
 whose person lost every passkey and device, and that device opens the vault, as its keys were sealed to the master key
 as to every owner.
 
