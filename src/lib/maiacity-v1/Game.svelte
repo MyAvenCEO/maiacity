@@ -11,7 +11,7 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
-	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe,  mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
@@ -244,7 +244,7 @@
 		{#if canMove}
 			<!-- the universal mint button: always at hand, over the nav pill -->
 			<button class="mintbar" disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
-				<span class="heart">♥</span> Mint <b>{f(mint.amount, mint.amount >= 100 ? 0 : 2)}</b> HEARTS{#if mint.starter}<small>incl. starter pack</small>{/if}
+				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
 		<button class="fab" class:on={tools} aria-label="Tools" onclick={() => (tools = !tools)}>
@@ -262,20 +262,18 @@
 					<p class="about">Take this seat to play. Your first mint brings {f(view.settings.starterPack ?? 720, 0)} HEARTS, then they grow {f(view.settings.heartsPerDay, 0)} a game day.</p>
 					<div class="buttons"><button class="primary" disabled={busy} onclick={() => run(() => takeSeat(seat))}>Play as {player.name}</button></div>
 				{/if}
-				<div class="wares">
-					<div><span>HEARTS</span><b>{f(player.wallet.HEARTS)}</b></div>
-					<div><span>Ready to mint</span><b>{f(mint.amount)}</b></div>
-					{#each MINDS as t (t)}<div><span>{TOKEN_LABEL[t]}</span><b>{f(player.wallet[t])}</b></div>{/each}
-				</div>
-				<dl>
-					{#each MINDS as t (t)}<dt>Share of all {TOKEN_LABEL[t]}</dt><dd>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} %` : '—'}</dd>{/each}
-					<dt>Tent rent</dt><dd>{f(view.settings.tentRent)} settlementMIND a month, {f(view.settings.tentRent / 4)} each weekly pay day</dd>
-					{#if player.arrears > 0.001}<dt>Rent owed</dt><dd class="bad">{f(player.arrears)} settlementMIND</dd>{/if}
-				</dl>
+				{@const hv = heartsValue(view)}
+				<p class="worth">{f(inHearts(view, player.wallet, hv))} <span>❤︎ in all</span></p>
+				<ul class="hold">
+					<li><span>{player.name.charAt(0).toLowerCase() + player.name.slice(1).replace(/\s+/g, '')}HEARTS{#if mint.amount > 0.005}<small>+{f(mint.amount)} ❤︎ ready to mint</small>{/if}</span><strong>{f(player.wallet.HEARTS)} ❤︎</strong></li>
+					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
+				</ul>
+				<LedgerView {view} who={`player:${seat}`} show="cash" />
+				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} settlementMIND tent rent owed</p>{/if}
 				{#if canMove}
 					<div class="buttons">
-						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount)} HEARTS</button>
-						<button onclick={() => open('invest')}>Invest</button>
+						<button class="primary" onclick={() => open('invest')}>Invest</button>
+						<button onclick={() => open('ledger')}>Ledger</button>
 					</div>
 					{#if !mine}<p class="small">Admin: you move for this seat.</p>{/if}
 				{/if}
@@ -612,6 +610,42 @@
 	}
 	.clock.m {
 		display: none;
+	}
+	.worth {
+		margin: 0.2rem 0 0.6rem;
+		font-family: var(--font-display);
+		font-size: 1.9rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.worth span {
+		font-family: var(--font-body);
+		font-size: 0.85rem;
+		opacity: 0.6;
+	}
+	.hold {
+		margin: 0 0 0.8rem;
+		padding: 0;
+		list-style: none;
+	}
+	.hold li {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.8rem;
+		padding: 0.4rem 0;
+		border-top: 1px solid rgb(31 42 35 / 0.08);
+		font-size: 0.85rem;
+	}
+	.hold small {
+		display: block;
+		font-size: 0.7rem;
+		font-weight: 400;
+		opacity: 0.6;
+	}
+	.hold strong {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 	.mintbar {
 		position: absolute;
