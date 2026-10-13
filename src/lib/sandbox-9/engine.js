@@ -26,13 +26,14 @@ import { GOODS, MONTH_NAMES, YEAR_DAYS } from './primitives.js';
 import { calendar, harvest, dispatch, shockFactor } from './energy.js';
 import { updatePrices, poolInflow, arbitrage, swap } from './pools.js';
 import { postPrices, peopleOrders, openPayments, payDirect, payRest, settleSwaps, law5, sellerOutcome } from './market.js';
-import { nature, margins, costs, plan, produce, runningItems, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
+import { nature, margins, costs, plan, produce, workItems, workNeed, workBook, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
 import { initRecords, recordDay, physicsCeiling, foundingStores } from './records.js';
 import { newBorder, importsDay, shareLine, repayAdvances } from './border.js';
 import { rampDay, rampOn, notFounded } from './ramp.js';
 import { villageRecords } from './village.js';
 import { catalogList } from './primitives.js';
 import { OUTDOOR, INDOOR } from './food.js';
+import { aiMorning, aiLoads, aiBills, aiSettle, aiEvening, chipsAll, inferenceSplit } from './ai.js';
 
 const M = MAX_COOPS;
 const PEOPLE_GOODS = [FOOD, WATER, BED, GOODS_, SPRING, COMPUTE];
@@ -199,9 +200,12 @@ export function step(w) {
 	// the border: food and raw inputs bought outside today (./border.js)
 	importsDay(w);
 	const slow = cfg.dailySlow || w.day < YEAR_DAYS || w.day < w.slowUntil || w.day % 7 === 0;
+	// the AI market's morning: the hardware owners' capacity and inference prices, what each harness can serve (./ai.js)
+	aiMorning(w);
 	costs(w, slow || w.day === 0);
 	margins(w);
 	postPrices(w);
+	workNeed(w);
 	peopleOrders(w);
 	// the COOPs plan (their own requests are summed below, after the people's goods have cleared)
 	plan(w, new Float64Array(5), { basics: 0, running: 0 });
@@ -249,8 +253,11 @@ export function step(w) {
 	produce(w, fill);
 	settle(w, fill);
 	badges(w, fill);
+	// the accelerators wear, and the owners buy what the inference ahead needs (./ai.js)
+	aiEvening(w);
+	// the work items: running items and work proposals, delivered by the personal Avens' work hours (./coops.js)
+	workItems(w);
 	recordDay(w);
-	runningItems(w);
 	wear(w);
 	if (slow) slowLoop(w);
 	sellerOutcome(w);
@@ -570,6 +577,29 @@ function clearPeople(w) {
 		for (let g = 0; g < G; g++) w.q[o + g] = 0;
 		for (const g of PEOPLE_GOODS) w.q[o + g] = Math.min(w.order[o + g], w.gcap[g]) * w.gfrac[g];
 	}
+	// Aven service short (the inference binds): the Avens' work hours for the COOPs are served before anyone's help
+	// (the COOPs' running items keep the village going), the help shares the rest in proportion to what was asked
+	const wo = w.workOrd;
+	if (!w.workH || w.workH.length !== w.Nmax) w.workH = new Float64Array(w.Nmax);
+	w.workH.fill(0);
+	if (wo) {
+		let Wt = 0;
+		for (let i = 0; i < N; i++) Wt += wo[i];
+		const T = w.peopleOrderTot[COMPUTE];
+		let fw = 1, fh = 1;
+		if (w.gfrac[COMPUTE] < 1) {
+			const S = w.gfrac[COMPUTE] * T;
+			if (S >= Wt) (fw = 1), (fh = T - Wt > 1e-12 ? (S - Wt) / (T - Wt) : 1);
+			else (fw = Wt > 0 ? S / Wt : 0), (fh = 0);
+			w.today.avenCut = { work: 1 - fw, help: 1 - fh };
+		}
+		for (let i = 0; i < N; i++) {
+			const o = i * G;
+			const wk = wo[i] * fw;
+			w.workH[i] = wk;
+			if (w.gfrac[COMPUTE] < 1) w.q[o + COMPUTE] = wk + Math.max(0, w.order[o + COMPUTE] - wo[i]) * fh;
+		}
+	}
 }
 
 /** the cap c with Σ min(order, c) = S */
@@ -625,7 +655,10 @@ function affordPeople(w) {
 			basicC += qb * pe[b];
 			extraC += (q - qb) * pe[b];
 		}
-		extraC += w.q[o + GOODS_] * pe[GOODS_] + w.q[o + SPRING] * pe[SPRING] + w.q[o + COMPUTE] * pe[COMPUTE];
+		// the Aven's work hours for the COOPs cost its person nothing up front: the work item's pay settles their Aven
+		// service at delivery (./coops.js workBook), so they are never cut for what the person holds
+		const wk = w.workH ? w.workH[i] : 0;
+		extraC += w.q[o + GOODS_] * pe[GOODS_] + w.q[o + SPRING] * pe[SPRING] + (w.q[o + COMPUTE] - wk) * pe[COMPUTE];
 		w.basicCost[i] = need[0] * pe[FOOD] + need[1] * pe[WATER] + need[2] * pe[ENERGY] + need[3] * pe[BED];
 		let W = w.wealth[i];
 		if (w.spendCap && w.spendCap[i] >= 0) W = Math.min(W, w.spendCap[i]);
@@ -644,7 +677,7 @@ function affordPeople(w) {
 		w.extraEnergy[i] *= fx;
 		w.q[o + GOODS_] *= fx;
 		w.q[o + SPRING] *= fx;
-		w.q[o + COMPUTE] *= fx;
+		w.q[o + COMPUTE] = wk + (w.q[o + COMPUTE] - wk) * fx;
 	}
 	// what each good's sellers deliver to people in all
 	if (!w.D || w.D.length !== G) w.D = new Float64Array(G);
@@ -671,12 +704,11 @@ function basicsLoads(w) {
 		} else if (g === SPRING) {
 			// an open warm pond loses this month's heat for each bather-hour it is open (./primitives.js spring)
 			if (co.plants.some((p) => p.tech === 'spring')) co.heatRun += x * t.springHeat;
-		} else if (g === COMPUTE) {
-			// the accelerators run on electricity in the running class
-			const pl = co.plants.find((p) => p.tech === 'compute');
-			co.eReq[CLASS.running] += x * (pl ? kwhOf(w, pl) : 0);
 		}
 	}
+	// Aven service: the inference its Aven hours take, bought from the hardware owners, whose accelerators run on
+	// electricity in the running class (./ai.js)
+	aiLoads(w);
 }
 
 /**
@@ -698,6 +730,8 @@ function affordCoops(w) {
 		// the energy and heat of the basics it delivers come first: a COOP draws only what it can pay for; if its
 		// treasury cannot pay for all of it, it delivers that much less today (and goes into receivership tonight)
 		const billB = (co.eReq[CLASS.basics] + co.heatReq / cop + co.heatRun / cop) * pE;
+		// the heat its plants need today, before any cut (the payout's reserve keeps the months ahead's: ./coops.js payout)
+		co.heatNeed = [co.heatReq / cop * pE, co.heatRun / cop * pE];
 		if (billB > budget) {
 			const f = Math.max(0, budget / billB);
 			co.own = f;
@@ -706,8 +740,23 @@ function affordCoops(w) {
 			co.heatRun *= f;
 		}
 		budget -= billB * co.own;
+		// what it could pay for (a share under 1 is a day it could not pay: ./engine.js endOfDay)
+		co.ownPaid = co.own;
+		// a COOP whose running hours the personal Avens did not deliver yesterday (Aven service short: ./coops.js
+		// workItems) runs its plants that much less today: it delivers and makes that share less
+		const wf = w.runFillY ?? 1;
+		if (wf < 1) {
+			co.own *= wf;
+			co.eReq[CLASS.basics] *= wf;
+			co.heatReq *= wf;
+			co.heatRun *= wf;
+			// (the works' electricity with their plans; the accelerators' own is the Avens' inference and is not cut)
+			const aiKwh = co.aiKwh ?? 0;
+			co.eReq[CLASS.running] = (co.eReq[CLASS.running] - aiKwh) * wf + aiKwh;
+			for (const pl of co.plants) (pl.plan = (pl.plan ?? 0) * wf), (pl.upkeepPlan = (pl.upkeepPlan ?? 0) * wf);
+		}
 		// today's running items next (they are paid at the end of the day)
-		let runH = 0;
+		let runH = co.inf?.rackH ?? 0;
 		for (const pl of co.plants) runH += runHours(w, pl);
 		budget -= runH * w.c.rateR;
 		// (the border's export that replaces worn accelerators is upkeep: it is budgeted with the running energy)
@@ -854,7 +903,10 @@ function deliver(w, fill) {
 		if (fa < 1) w.q[o + WATER] *= fa;
 		if (fb < 1) w.q[o + BED] *= fb;
 		if (fs < 1) w.q[o + SPRING] *= fs;
-		if (fr < 1) w.q[o + COMPUTE] *= fr;
+		if (fr < 1) {
+			w.q[o + COMPUTE] *= fr;
+			if (w.workH) w.workH[i] *= fr;
+		}
 		w.q[o + ENERGY] = w.basicEnergy[i] * fa + w.extraEnergy[i] * fr;
 	}
 	if (!w.D || w.D.length !== G) w.D = new Float64Array(G);
@@ -951,7 +1003,7 @@ function clearMaterials(w) {
  * own goods and pays nothing (that is no sale).
  */
 function settle(w, fill) {
-	const N = w.N, P = w.P, t = w.today, cop = t.cop, p0g = w.c.p0g;
+	const N = w.N, P = w.P, t = w.today, cop = t.cop, p0g = w.pYear ?? w.c.p0g;
 	openPayments(w);
 	const dec = 1 / 30;
 	// people: each Aven pays with the MIND it values least, the one that pays it the least Law 5 dividend for each R it
@@ -968,21 +1020,43 @@ function settle(w, fill) {
 	let peopleR = 0;
 	// what a unit of each good costs today from each seller, in its MIND and in R, by the sellers' shares
 	const unit = [];
+	// the inference in an Aven hour, paid straight to the hardware owners on the AI COOPs' bills (./ai.js inferenceSplit)
+	const split = inferenceSplit(w);
+	for (const co of w.coops) co.passToday = 0;
 	for (const g of CONSUMER) {
 		const list = [];
 		for (const co of w.sellers[g]) {
 			const s = g === ENERGY ? w.eShare[co.k] : w.sh[g * M + co.k];
-			if (s > 0) list.push(co.k, s * co.price, s * co.price * P[co.k], s * p0g[g] * dec);
+			if (!(s > 0)) continue;
+			const mixW = s * p0g[g] * dec * (co.vaShare ?? 1);
+			if (g === COMPUTE && split && co.priceR > 0) {
+				let infR = 0;
+				for (let j = 0; j < split.length; j += 3) infR += split[j + 2];
+				const f = infR < co.priceR ? 1 : co.priceR / infR;
+				for (let j = 0; j < split.length; j += 3) list.push(split[j], s * split[j + 1] * f, s * split[j + 2] * f, 0);
+				const own = Math.max(0, 1 - (infR * f) / co.priceR);
+				list.push(co.k, s * co.price * own, s * co.price * own * P[co.k], mixW);
+				co.passToday = infR * f * s * (w.D[COMPUTE] ?? 0) * fill[CLASS.running];
+			} else list.push(co.k, s * co.price, s * co.price * P[co.k], mixW);
 		}
 		if (list.length) unit.push(g, list);
 	}
+	// the Avens' work hours for the COOPs: their Aven service is settled from the work items' pay (./coops.js
+	// workBook); a person pays from its holdings only its help, and the rare part of its hours' bill a day's pay fell
+	// short of
+	let unitAI = null, unitR = 0;
+	for (let u = 0; u < unit.length; u += 2) if (unit[u] === COMPUTE) unitAI = unit[u + 1];
+	if (unitAI) for (let j = 0; j < unitAI.length; j += 4) unitR += unitAI[j + 2];
+	const book = workBook(w, unitR);
+	const wH = w.workH, selfH = w.workSelfH;
 	const mix = w.spendMix, qq = w.q;
 	for (let i = 0; i < N; i++) {
 		const row = i * M, o = i * G;
 		let spentR = 0;
 		owe.fill(0);
 		for (let u = 0; u < unit.length; u += 2) {
-			const q = qq[o + unit[u]];
+			let q = qq[o + unit[u]];
+			if (unit[u] === COMPUTE && wH) q = Math.max(0, q - wH[i] + selfH[i]);
 			if (!(q > 0)) continue;
 			const list = unit[u + 1];
 			for (let j = 0; j < list.length; j += 4) {
@@ -1024,7 +1098,11 @@ function settle(w, fill) {
 				}
 			for (let k = 0; k < M; k++) if (owe[k] > 0) w.due[k] += owe[k];
 			if (swapR > 0) w.payers.push([w.hold, row, swapR]);
-			if (left > spentR * 1e-9) w.unpaidR += left;
+			if (left > spentR * 1e-9) {
+				w.unpaidR += left;
+				w.unpaidBy = w.unpaidBy ?? {};
+				w.unpaidBy['(people)'] = (w.unpaidBy['(people)'] ?? 0) + left;
+			}
 		}
 		w.spent[i] = spentR;
 		peopleR += spentR;
@@ -1086,6 +1164,32 @@ function settle(w, fill) {
 				restR += payDirect(w, w.tre, row, s.k, count) * P[s.k];
 			}
 		}
+		// inference from the hardware owners (an AI COOP), and AIX's Aven service for export (the MaiaCity COOP): a
+		// real delivery, each seller paid in its own MIND (./ai.js)
+		// the Aven service its work items used today, settled from their pay (./coops.js workBook): its share of the
+		// covered bills, in proportion to what it pays for the work, to each seller of the hour in its own MIND
+		const wR = (co.workRunR ?? 0) + (co.workPropR ?? 0);
+		if (unitAI && unitR > 0 && book.cov > 0 && wR > 0) {
+			const units = (book.cov * (wR / book.RR)) / unitR;
+			for (let j = 0; j < unitAI.length; j += 4) {
+				const k = unitAI[j];
+				if (k === co.k) continue;
+				const count = units * unitAI[j + 1];
+				if (!(count > 0)) continue;
+				costR += count * P[k];
+				b2bR += count * P[k];
+				t.workBillR = (t.workBillR ?? 0) + count * P[k];
+				restR += payDirect(w, w.tre, row, k, count) * P[k];
+			}
+		}
+		const bills = aiBills(w, co, fill[CLASS.running]);
+		if (bills)
+			for (const [k, count] of bills) {
+				if (!(count > 0)) continue;
+				costR += count * P[k];
+				b2bR += count * P[k];
+				restR += payDirect(w, w.tre, row, k, count) * P[k];
+			}
 		if (restR > 0) {
 			const paid = payRest(w, w.tre, row, restR, co.k);
 			if (paid < restR * (1 - 1e-9)) {
@@ -1097,8 +1201,11 @@ function settle(w, fill) {
 			}
 		}
 		co.costR += costR;
+		// (and what its customers paid its suppliers on its bills: an AI COOP's inference)
+		co.b2bToday = costR + (co.passToday ?? 0);
 	}
 	t.salesB2BR = b2bR;
+	aiSettle(w, fill[CLASS.running]);
 	settleSwaps(w);
 	// Law 5 pays holders and the seller's own treasury only: the pools must be untouched by it
 	let pools0 = 0;
@@ -1210,9 +1317,15 @@ function physicalLimit(w, g) {
 	// food the sellers could not buy at the border today: no euros in their accounts or the founding reserve
 	if (g === FOOD && (w.today.impShort ?? 0) > 1e-9) return LIMIT.euros;
 	if (best.limiter && best.limiter !== LIMIT.none) return best.limiter;
-	// Aven services whose worn halls wait for accelerators while the dispatch cuts the export that replaces them (the
-	// city's own basics, running and building took the electricity): energy
-	if (g === COMPUTE && w.sellers[g].some((co) => co.exportUp > 0 && (co.exUpFillEma ?? 1) < 0.9)) return LIMIT.energy;
+	// Aven service sold out: the inference binds (./ai.js). No accelerator can come in (the closed border), the
+	// accelerators' electricity was cut in the dispatch, no data-centre floor is free for more, or the owners hold too
+	// few accelerators today (they buy more each evening)
+	if (g === COMPUTE) {
+		if (w.cfg.chipImport === false) return LIMIT.chips;
+		if ((w.today.fill?.[CLASS.running] ?? 1) < 0.999) return LIMIT.energy;
+		if (w.today.aiSpaceShort) return LIMIT.dcSpace;
+		return LIMIT.inference;
+	}
 	const pl = best.plants[0];
 	if (!pl) return LIMIT.capacity;
 	// built capacity binds, and what stops the sellers building more is physics (land, a deposit, energy, accelerators,
@@ -1422,14 +1535,14 @@ function payDomeRent(w, dt) {
 /**
  * Where the HEARTS go (the Avens' rule, world model 4.3 step 15). Half of a person's HEARTS follow what the person
  * buys (so the Aven can pay each seller in its own MIND, the bootstrap habit); the other half follow what the economy
- * gets (each good's share of all delivered output, to people and to COOPs, over the last month, at base-year prices)
+ * gets (each good's share of all delivered output, to people and to COOPs, over the last month, at the year's traded prices, w.pYear)
  * and, between the sellers of a good,
- * the replicator of Eq. 8 on delivered output per HEART (audited meters, at base-year prices): a seller that delivers
+ * the replicator of Eq. 8 on delivered output per HEART (audited meters, at the year's traded prices): a seller that delivers
  * more for each HEART invested in it draws a growing share. Founders put all their HEARTS into their new COOP for its
  * first 90 days (in invest). Moves at a limited speed.
  */
 function updateAlloc(w, dt) {
-	const p0 = w.c.p0g, N = w.N;
+	const p0 = w.pYear ?? w.c.p0g, N = w.N;
 	// each good's share of all sales
 	const gs = new Float64Array(G);
 	let tot = 0;
@@ -1441,7 +1554,7 @@ function updateAlloc(w, dt) {
 	for (const co of w.coops) {
 		if (!co.alive) continue;
 		// 'output' (default): delivered output per HEART; 'price': what a HEART's MIND is worth in the pools (the TWAP)
-		f[co.k] = w.cfg.allocBy === 'price' ? Math.max(1e-12, w.Ptw[co.k]) : (co.soldEma * p0[co.good] + 1e-12) / Math.max(co.heartsEma, 1e-3 * N);
+		f[co.k] = w.cfg.allocBy === 'price' ? Math.max(1e-12, w.Ptw[co.k]) : (co.soldEma * p0[co.good] * (co.vaShare ?? 1) + 1e-12) / Math.max(co.heartsEma, 1e-3 * N);
 		fbar[co.good] += w.repl[co.k] * f[co.k];
 		rs[co.good] += w.repl[co.k];
 	}
@@ -1511,9 +1624,19 @@ function endOfDay(w) {
 	const soldU = new Float64Array(G), soldR = new Float64Array(G);
 	for (const co of w.coops) if (co.alive && co.sold > 0 && co.priceR > 0) (soldU[co.good] += co.sold), (soldR[co.good] += co.sold * co.priceR);
 	for (let g = 0; g < G; g++) if (soldU[g] > 0) w.pbarSlow[g] += (soldR[g] / soldU[g] - w.pbarSlow[g]) / 365;
+	// the Avens' meters value output at the year's traded prices as well (round 4): each good at what it traded at
+	// over the last year (over the days since it first traded, while it has traded less than a year), not at day 0's
+	// calibration guesses (GENESIS_PRICE_R), which the world leaves behind. A guess four times too high drew four times
+	// the HEARTS its sales could carry, and that MIND's price fell until its COOP could not pay its bills
+	w.pYear = w.pYear ?? Float64Array.from(w.c.p0g);
+	w.pYearN = w.pYearN ?? new Float64Array(G);
+	for (let g = 0; g < G; g++) if (soldU[g] > 0) w.pYear[g] += (soldR[g] / soldU[g] - w.pYear[g]) / Math.min(365, ++w.pYearN[g]);
 	for (const co of w.coops) {
 		if (!co.alive) continue;
 		co.costREma += (co.costR - co.costREma) / 30;
+		// its running costs over the last year (over the days since it was founded, in its first year)
+		co.costYearN = Math.min(365, (co.costYearN ?? 0) + 1);
+		co.costYearR = (co.costYearR ?? co.costR) + (co.costR - (co.costYearR ?? co.costR)) / co.costYearN;
 		// what rebuilding its worn plant cost today, at the prices its input store was bought at (a 90-day average)
 		co.upkeepREma = (co.upkeepREma ?? 0) + ((co.upkeepRToday ?? 0) - (co.upkeepREma ?? 0)) / 90;
 		co.upkeepRToday = 0;
@@ -1525,13 +1648,31 @@ function endOfDay(w) {
 		const tr = treasuryR(w, co.k);
 		// a COOP that could not pay for all the energy and materials it needed today (it made and delivered only what
 		// it paid for: co.own < 1) or left a bill unpaid. Nobody delivers to it unpaid; it simply makes less that day
-		co.billFail = (co.own ?? 1) < 1 - 1e-9 || co.unpaidBillR > 0;
+		// (the share it could pay for, not the share the Avens' running hours let it deliver: a day the Aven service
+		// fell short is not a day the COOP could not pay)
+		co.billFail = (co.ownPaid ?? co.own ?? 1) < 1 - 1e-9 || co.unpaidBillR > 0;
+		// the heat its plants needed today (in R), and per unit of the month's heat index: the payout's reserve keeps the
+		// months ahead's (./coops.js payout)
+		const [hd, hp] = co.heatNeed ?? [0, 0];
+		co.heatREma = (co.heatREma ?? 0) + (hd + hp - (co.heatREma ?? 0)) / 30;
+		const hiD = w.today.heatShare ?? 0, hiP = w.today.springHeat ?? 0;
+		if (hd > 0 && hiD > 0) co.heatDomeUnitR = (co.heatDomeUnitR ?? hd / hiD) + (hd / hiD - (co.heatDomeUnitR ?? hd / hiD)) / 30;
+		if (hp > 0 && hiP > 0) co.heatPondUnitR = (co.heatPondUnitR ?? hp / hiP) + (hp / hiP - (co.heatPondUnitR ?? hp / hiP)) / 30;
+		co.heatNeed = null;
 		// insolvent today: it could not pay all its running items, its bills or its inputs. 30 such days in a row
 		// and it goes into receivership (./coops.js receiverships)
 		co.lowDays = co.unpaidH > 1e-9 || co.unpaidBillR > 1e-9 * Math.max(1, co.costREma) || co.billFail ? co.lowDays + 1 : 0;
-		// what it delivered today at base-year prices (to people and to other COOPs): the real output the Avens'
+		// what it delivered today at the year's traded prices (to people and to other COOPs): the real output the Avens'
 		// replicator reads (audited meters), not its sales in R, which move with every price
-		co.salesShareR += (co.sold * w.c.p0g[co.good] - co.salesShareR) / 30;
+		// (round 4) counted at what the COOP adds itself, its value added: the share of its sales it does not pass on to
+		// other COOPs for its inputs (energy, heat, materials, inference, all paid through the pools). A reseller, such
+		// as an AI COOP buying inference by the hour, adds only its part; were its whole sales counted, the HEARTS would
+		// put more of its MIND in its buyers' hands than its sales can take back, its buyers would pay it in that MIND,
+		// and it would have to sell its own MIND into the pools for every input until its price gave way
+		co.revEma = (co.revEma ?? 0) + (co.sold * co.priceR - (co.revEma ?? 0)) / 30;
+		co.b2bEma = (co.b2bEma ?? 0) + ((co.b2bToday ?? 0) - (co.b2bEma ?? 0)) / 30;
+		co.vaShare = co.revEma > 0 ? Math.max(0.05, Math.min(1, 1 - co.b2bEma / co.revEma)) : 1;
+		co.salesShareR += (co.sold * (w.pYear ?? w.c.p0g)[co.good] * co.vaShare - co.salesShareR) / 30;
 		co.divEma = (co.divEma ?? 0) + (co.divR - (co.divEma ?? 0)) / 30;
 		co.idleDays = co.sold <= 0 && co.heartsToday <= 0 ? co.idleDays + 1 : 0;
 		// the audit: days in a row its output stood under a quarter of what its plants are rated for
@@ -1599,7 +1740,7 @@ function checkLedgers(w) {
 	if (Math.abs(raw - rexp) > 1e-7 * Math.max(1, raw)) leak(w, w.matter.leaks, `raw logs/scrap/float glass/cells: ${raw} vs ${rexp}`);
 	w.matter.prevRaw = raw;
 	// accelerators: they come in only through the border, and leave only into a plant
-	let chips = w.cityChips ?? 0;
+	let chips = (w.cityChips ?? 0) + chipsAll(w);
 	for (const co of w.coops) chips += co.chips ?? 0;
 	const cexp = (w.matter.prevChips ?? chips) + (t.chipsIn ?? 0) - (t.chipsUsed ?? 0);
 	if (Math.abs(chips - cexp) > 1e-7 * Math.max(1, chips)) leak(w, w.matter.leaks, `accelerators: ${chips} vs ${cexp}`);
@@ -1611,13 +1752,13 @@ function checkLedgers(w) {
 	const B = w.border;
 	let eur = B.shared;
 	for (let k = 0; k < M; k++) eur += B.eur[k];
-	const eexp = B.prev + (t.eurIn ?? 0) - (t.eurOut ?? 0);
+	const eexp = B.prev + (t.eurIn ?? 0) + (t.eurInAi ?? 0) - (t.eurOut ?? 0);
 	if (Math.abs(eur - eexp) > 1e-7 * Math.max(1, Math.abs(eur)) || (!B.open && eur < -1e-6)) leak(w, w.matter.leaks, `euro reserve: ${eur} vs ${eexp}`);
 	// the bank's cumulative balance against its founding euros: its lowest is what the village needed at once
 	if (eur - B.shared0 < B.low) (B.low = eur - B.shared0), (B.lowDay = w.day);
 	if (Math.abs((t.eurIn ?? 0) - (t.exportKwh ?? 0) * (t.eurPerKwh ?? w.c.eurPerKwh)) > 1e-7 * Math.max(1, t.eurIn ?? 0)) leak(w, w.matter.leaks, `euro reserve: earned ${t.eurIn ?? 0} for ${t.exportKwh ?? 0} kWh exported`);
 	B.prev = eur;
-	B.inEur += t.eurIn ?? 0;
+	B.inEur += (t.eurIn ?? 0) + (t.eurInAi ?? 0);
 	B.outEur += t.eurOut ?? 0;
 	// energy
 	const h = t.harvest;

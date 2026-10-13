@@ -26,6 +26,7 @@
 	import WorldParams from './WorldParams.svelte';
 	import LivingView from './LivingView.svelte';
 	import ImportsView from './ImportsView.svelte';
+	import AiView from './AiView.svelte';
 	import { SETTINGS, plain, words } from './params.js';
 	// read as a namespace: the whole catalog shows when the engine offers it
 	import * as ENG from './engine.js';
@@ -86,17 +87,19 @@
 		return { base: say(exp.base) || 'as it is', changed: say(exp.changed) || 'changed' };
 	}
 
-	/** the run view's sub-tabs: the live charts, the living standards per tenth, the import bill, every parameter */
+	/** the run view's sub-tabs: the live charts, the living standards per tenth, the import bill, the AI market, every
+	 * parameter */
 	const VIEWS = [
 		['charts', 'Charts'],
 		['living', 'Living'],
 		['imports', 'Imports'],
+		['ai', 'AI'],
 		['world', 'World']
 	];
 
 	// ── where we are ──
 	let tab = $state(/** @type {'experiments' | 'rules' | 'proof'} */ ('experiments'));
-	let view = $state(/** @type {'charts' | 'living' | 'imports' | 'world'} */ ('charts'));
+	let view = $state(/** @type {'charts' | 'living' | 'imports' | 'ai' | 'world'} */ ('charts'));
 	let expId = $state(/** @type {string | null} */ (null));
 	const exp = $derived(expId ? EXPERIMENTS[expId] : null);
 	const side = $derived(exp ? sides(exp) : { base: '', changed: '' });
@@ -119,7 +122,7 @@
 	let version = $state(0);
 	let pts = $state.raw({ base: /** @type {any[]} */ ([]), changed: /** @type {any[]} */ ([]) });
 	/** switch the run view's sub-tab; in the sheet, bring the tab bar to the top so the view is in sight */
-	function showView(/** @type {'charts' | 'living' | 'imports' | 'world'} */ id, /** @type {HTMLElement} */ el) {
+	function showView(/** @type {'charts' | 'living' | 'imports' | 'ai' | 'world'} */ id, /** @type {HTMLElement} */ el) {
 		view = id;
 		if (mode === 'wide') return;
 		const bar = el.closest('.viewbar'), body = el.closest('.body');
@@ -480,6 +483,8 @@
 		<LivingView worlds={[stats?.base?.living, stats?.changed?.living]} names={['Base', 'Changed']} sub={[side.base, side.changed]} running={stage !== 'end'} />
 	{:else if view === 'imports'}
 		<ImportsView worlds={[stats?.base?.imports, stats?.changed?.imports]} names={['Base', 'Changed']} sub={[side.base, side.changed]} running={stage !== 'end'} />
+	{:else if view === 'ai'}
+		<AiView worlds={[stats?.base?.ai, stats?.changed?.ai]} names={['Base', 'Changed']} sub={[side.base, side.changed]} running={stage !== 'end'} />
 	{:else}
 		<p class="fine sides"><span class="pair"><i class="b"></i>Base: {side.base}</span> <span class="pair"><i class="c"></i>Changed: {side.changed}</span></p>
 		<WorldParams sets={[meta?.params?.base, meta?.params?.changed]} names={['Base', 'Changed']} defaults={meta?.params?.defaults} records={catalog} />

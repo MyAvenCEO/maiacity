@@ -175,6 +175,11 @@ export function peopleOrders(w) {
 	for (let i = 0; i < N; i++) hs += w.wealthSlow[i];
 	w.meanHold = hs / Math.max(1, N);
 	const meltDay = 1 - exp(-cfg.melt / 365);
+	// the Avens' work: what a skill-weighted work hour paid lately, and what an hour of Aven service costs
+	const offer = (w.workOffer = w.workOffer && w.workOffer.length === w.Nmax ? w.workOffer : new Float64Array(w.Nmax));
+	const workOrd = (w.workOrd = w.workOrd && w.workOrd.length === w.Nmax ? w.workOrd : new Float64Array(w.Nmax));
+	const payH = w.workPayEma ?? c.rateR, pC = pbar[COMPUTE];
+	let offerAll = 0;
 	for (let i = 0; i < N; i++) {
 		const b = i * M;
 		let W = 0, Ws = 0;
@@ -209,15 +214,23 @@ export function peopleOrders(w) {
 		// cfg.inflowDays) above the basics; what it holds above the resting level of what it keeps (kept ÷ melt) it also
 		// spends, a share (cfg.spendRate) a day. Keeping a share of every inflow makes holdings follow what a person
 		// earns, and Law 5 pays pro rata: ownership is how people live. An Aven whose person delivers nothing (Aven
-		// output 0, whoever it is: the owner-only cohort, an owner-only newcomer) keeps a larger share of the HEARTS half
-		// (cfg.ownerKeep): the dividends are the only income it can grow, so it builds the holding that pays its
-		// person's life. It reads what it sees (its own output), never the proof's cohort list
-		const kept = (w.aven[i] > 0 ? cfg.keep : cfg.ownerKeep ?? cfg.keep) * w.heartsEma[i] + (cfg.keepOther ?? 0) * Math.max(0, w.inflowEma[i] - w.heartsEma[i]);
+		// output 0, whoever it is: the owner-only cohort, an owner-only newcomer) spends income, never capital (round 4,
+		// cfg.ownerRule 'income'): on extras, what its income (the HEARTS half and the dividends) brings in above the
+		// basics, as far as its holding still grows at least as fast as the melt takes it. (Until round 4 it kept the
+		// whole HEARTS half, cfg.ownerRule 'keep' with cfg.ownerKeep, and spent only dividends above its basics: a
+		// budget rule that kept the cohort out of extras for life.) It reads what it sees (its own output), never the
+		// proof's cohort list
+		const ownerIncome = !(w.aven[i] > 0) && (cfg.ownerRule ?? 'income') === 'income';
+		const kept = ownerIncome ? 0 : (w.aven[i] > 0 ? cfg.keep : cfg.ownerKeep ?? cfg.keep) * w.heartsEma[i] + (cfg.keepOther ?? 0) * Math.max(0, w.inflowEma[i] - w.heartsEma[i]);
 		const rest = kept / meltDay;
 		const Wv = Math.min(W, Ws);
-		let E = Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));
+		let E = ownerIncome ? Math.min(W - Cb, w.inflowEma[i] - Cb - meltDay * Wv) : Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));
 		if (!(E > 0)) E = 0;
 		extraEnergy[i] = 0;
+		// an Aven whose spending rule leaves nothing for extras today (what flows in, less what it keeps and the basics)
+		// is held below satiation in every extra on sale by its budget, not by what its person wants: it counts as
+		// MIND-bound (round 4: without this, the poorest tenth's extras read "what people want" once the richer satiate)
+		if (!(E > 0)) for (let x = 0; x < NX; x++) if (pbar[EXTRA_GOODS[x]] > 0 && w.taste[i * NX + x] > 0) bound[EXTRA_GOODS[x]]++;
 		if (E > 0) {
 			capX[0] = c.sat[FOOD] - need[0];
 			capX[1] = c.sat[WATER] - need[1];
@@ -258,8 +271,30 @@ export function peopleOrders(w) {
 			w.order[o + COMPUTE] += q[5];
 			extraEnergy[i] = q[2];
 		}
+		// the Aven's work for the COOPs (round 4): it offers up to workCapH hours a day when a work hour pays its skill
+		// more than an hour of Aven service costs (an owner-only person's Aven delivers nothing and offers none). What
+		// its person holds does not limit it: the work item's pay settles the hours' Aven service at delivery
+		// (./coops.js workBook), so a newcomer who holds only today's HEARTS half is not kept from the work that pays
+		// its basics (the trap of round 4's brief)
+		offer[i] = 0;
+		if (w.aven[i] > 0 && pC > 0 && w.aven[i] * payH >= pC) offer[i] = c.workCapH;
+		offerAll += offer[i];
 		for (const g of CONSUMER) tot[g] += w.order[o + g];
 	}
+	// the work the COOPs need today (./coops.js workNeed: running items and a seventh of the posted proposals), shared
+	// out over the offers in proportion: the hours an Aven works are Aven service beside its help, settled from the
+	// work items' pay (./coops.js workBook)
+	const needH = (w.workNeed?.run ?? 0) + (w.workNeed?.prop ?? 0);
+	const fw = offerAll > 0 ? Math.min(1, needH / offerAll) : 0;
+	for (let i = 0; i < N; i++) {
+		const x = offer[i] * fw;
+		workOrd[i] = x;
+		if (x > 0) {
+			w.order[i * G + COMPUTE] += x;
+			tot[COMPUTE] += x;
+		}
+	}
+	w.today.workOffer = offerAll;
 	w.peopleOrderTot = tot;
 }
 

@@ -136,7 +136,7 @@ export const SETTINGS = {
 	foodSplit: { g: 'coops', label: 'Share of the food forest the second food COOP holds', f: pct },
 	geothermal: { g: 'energy', label: 'Geothermal plant', f: onOff },
 	geoStages: { g: 'energy', label: 'Geothermal stages built', f: (v) => `${num(v)} stage${v === 1 ? '' : 's'}` },
-	chipImport: { g: 'border', label: 'Accelerators bought through the euro border', f: (v) => (v === false ? 'no: the city is closed' : 'yes, by the COMPUTE COOPs from the reserve') },
+	chipImport: { g: 'border', label: 'Accelerators bought through the euro border', f: (v) => (v === false ? 'no: the city is closed' : 'yes, by the hardware owners (settlement and Village COOPs), advanced by the bank') },
 	law5: { g: 'economy', label: 'Law 5: share of every sale paid at once to the holders', f: pct },
 	melt: { g: 'economy', label: 'Melt of HEARTS and MINDs', f: (v) => `${pct(v)} a year` },
 	heartsPerDay: { g: 'economy', label: 'HEARTS a person a day', unit: 'HEARTS' },
@@ -156,12 +156,13 @@ export const SETTINGS = {
 	avenSpread: { g: 'avens', label: 'Spread of Aven output (lognormal σ)' },
 	spendRate: { g: 'avens', label: 'Share of the holding above its resting level spent a day', f: (v) => (v > 0 && v < 1 ? `1/${num(1 / v)}` : num(v)) },
 	keep: { g: 'avens', label: 'Share of the HEARTS half an Aven keeps as ownership', f: pct },
-	ownerKeep: { g: 'avens', label: 'Share an owner-only person’s Aven keeps', f: pct },
+	ownerKeep: { g: 'avens', label: 'Share an owner-only person’s Aven keeps (with ownerRule “keep”)', f: pct },
 	keepOther: { g: 'avens', label: 'Share of dividends and Aven pay kept', f: pct },
 	inflowDays: { g: 'avens', label: 'An Aven budgets on the mean inflow of', unit: 'days' },
 	logitBeta: { g: 'avens', label: 'How sharply buyers choose the cheaper seller (logit β)' },
 	extrasSigma: { g: 'avens', label: 'How easily extras replace each other (CES σ)' },
 	ownerSpend: { g: 'avens', label: 'Owner-only people spend', f: (v) => (v === 'dividends' ? 'their dividends only' : 'dividends and some of what they hold') },
+	ownerRule: { g: 'avens', label: 'An owner-only person’s Aven spends on extras', f: (v) => (v === 'keep' ? 'three quarters of its dividends above the basics (it keeps the HEARTS half)' : v === 'income' ? 'its income above the basics, as far as the holding keeps up with the melt' : plain(v)) },
 	rd: { g: 'rd', label: 'R&D from surplus energy', f: onOff },
 	rdAsks: { g: 'rd', label: 'What R&D asks for counts as demand', f: yesNo },
 	rdShare: { g: 'rd', label: 'Share of a payout that goes to R&D', f: pct },
@@ -249,7 +250,6 @@ export const CATALOG = {
 	chipEur: { g: 'border', label: 'Price of an accelerator', f: (v) => `€${num(v)}` },
 	eurPerKwh: { g: 'border', label: 'Exported electricity earns', f: (v) => `€${num(v * 1000)} a MWh` },
 	lineKwhDay: { g: 'border', label: 'Export line', unit: 'kWh a day' },
-	chipsSpare: { g: 'border', label: 'Spare accelerators in each COMPUTE COOP at the founding', unit: 'accelerators' },
 	K0: { g: 'rd', label: 'Knowledge a recipe already embodies (K₀)', unit: 'MWh of R&D' },
 	kDecay: { g: 'rd', label: 'R&D knowledge forgotten', f: (v) => `${pct(v)} a year` },
 	replant: { g: 'rd', label: 'Timber land replanted', f: (v) => `${pct(v)} a year` },
@@ -502,5 +502,42 @@ export function importsOf(B, F, V, marks = {}, L = null) {
 		selfFedYear: marks.firstFedYear !== undefined ? marks.firstFedYear : first('fedSelf'),
 		exportsPayYear: marks.exportsCoverYear !== undefined ? marks.exportsCoverYear : first('exportsCover'),
 		runOut: neg?.y ?? null
+	};
+}
+
+/**
+ * The AI tab's record of one world: `A` from aiYears(w) (./records.js). Who owns the accelerators each year (the
+ * settlement COOPs and the Village COOP), the inference they sold to the AI COOPs and its price, the Aven hours a
+ * person by tenth of holdings (help and work), each tenth's MIND income by source, the accelerators imported and what
+ * bound the Aven service. { owners: [{ id, label }], years: [...] }
+ */
+export function aiOf(A) {
+	if (!Array.isArray(A) || !A.length) return null;
+	const owners = [];
+	for (const r of A) for (const o of r.owners ?? []) if (!owners.some((x) => x.id === o.id)) owners.push({ id: o.id, label: o.label ?? o.id });
+	const tenth = (t) => (t ? { helpH: t.helpH, workH: t.workH, hearts: t.hearts, work: t.work, div: t.div } : null);
+	return {
+		owners,
+		years: A.map((r) => ({
+			y: r.year,
+			days: r.days,
+			partial: r.days != null && r.days < 365,
+			people: r.people,
+			chips: r.chips,
+			byOwner: Object.fromEntries((r.owners ?? []).map((o) => [o.id, { chips: o.chips, chipsMean: o.chipsMean, AHDay: o.AHDay, priceR: o.priceR }])),
+			capAHDay: r.capAHDay,
+			AHDay: r.AHDay,
+			inferPriceR: r.inferPriceR,
+			utilization: r.utilization,
+			aiCoops: (r.aiCoops ?? []).map((c) => ({ id: c.id, label: c.label ?? c.id, hoursDay: c.hoursDay, priceR: c.priceR })),
+			tenths: Array.from({ length: 10 }, (_, i) => tenth(r.tenths?.[i + 1] ?? r.tenths?.[String(i + 1)])),
+			all: tenth(r.all),
+			work: r.work ?? null,
+			imported: r.imported ?? { n: 0, eur: 0 },
+			worn: r.worn ?? null,
+			bind: r.bind ?? null,
+			export: r.export ?? { AHDay: 0, eur: 0 },
+			bankCumEur: r.bankCumEur ?? null
+		}))
 	};
 }

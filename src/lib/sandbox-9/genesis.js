@@ -71,13 +71,17 @@ export const DEFAULTS = {
 	importPrice: 1,
 	/** each month's sun and rain drawn from the seed around the normals (true), or the normals every year (false) */
 	weather: true,
-	/** the euro border for accelerators (paper §11.4, as COOPs only): a COMPUTE COOP buys electricity from the energy
-	 * COOPs, the line exports it, its euros go into its own account in the euro reserve and the reserve buys accelerators (true,
-	 * default: no hex can make chips, as no real town can, so a city buys them); or the city is strictly closed and the
-	 * accelerators it holds at genesis are all it ever has (false: scenario B23's closed city). World model call 12 had
-	 * the closed city as the default; it cannot keep a stock it cannot replace, so the base world opens the border for
-	 * accelerators and nothing else */
+	/** accelerators come in through the euro border (true, default: no hex can make chips, as no real town can, so the
+	 * hardware owners, the settlement COOPs and the Village COOP, buy them with the bank's advances, ./ai.js); or none
+	 * comes in (false: scenario B23's closed city) */
 	chipImport: true,
+	/** the AI-exports experiment (AIX, round 4): the MaiaCity COOP buys Aven service from the avenCEO COOP in MIND and
+	 * sells it abroad for euros, at a GPU-hour's market price, up to a small provider's demand (false: the base, where
+	 * electricity is the only export) */
+	aiExport: false,
+	/** AIX's price and demand, times the catalog's (CHIPS.exportEurGpuH, exportGpus × 24 × exportUtil) */
+	aiExportPrice: 1,
+	aiExportScale: 1,
 	/** this hex's share of the village geothermal plant: on or off, and its stages */
 	geothermal: true,
 	geoStages: 1,
@@ -151,6 +155,11 @@ export const DEFAULTS = {
 	 * stays too small for the dividends alone to pay the basic bundle (Proposition 3, P2 strict); the cost is a lower
 	 * living standard for the cohort in its first decades (./scenarios.js B34 compares the two) */
 	ownerKeep: 1,
+	/** how an owner-only person's Aven spends on extras: 'income' (round 4, the default: on extras, what its income, the HEARTS
+	 * half and the dividends, brings in above its basics, as far as its holding still grows at least as fast as the
+	 * melt takes; it spends income, never capital) or 'keep' (until round 4: it keeps the share ownerKeep of the HEARTS
+	 * half and spends three quarters of its dividends above the basics) */
+	ownerRule: 'income',
 	/** the share of its person's other inflow (dividends, Aven pay) it also keeps */
 	keepOther: 0.25,
 	/** the Aven budgets on the average of what flowed in over this many days (a year: the seasons and the first
@@ -189,7 +198,7 @@ export const SETTLEMENTS = [
 ];
 export const VILLAGE_COOP = { id: 'VILLAGE', hex: 'tower', label: 'Village COOP' };
 /** plain names of the genesis COOPs that have one (the page and the proof show them) */
-export const COOP_LABELS = { CITY: 'MaiaCity COOP', VILLAGE: 'Village COOP', ...Object.fromEntries(SETTLEMENTS.map((s) => [s.id, s.label])) };
+export const COOP_LABELS = { CITY: 'MaiaCity COOP', VILLAGE: 'Village COOP', AVENCEO: 'avenCEO COOP', ...Object.fromEntries(SETTLEMENTS.map((s) => [s.id, s.label])) };
 /** a COOP's plain name: its label, or its id (a split genesis COOP keeps its parent's name and its number) */
 export const coopLabel = (co) => co.label ?? COOP_LABELS[co.id] ?? co.id;
 
@@ -214,8 +223,8 @@ const GENESIS = [
 	{ id: 'GOODS-B', tech: 'goods', i: 1 },
 	{ id: 'SPRING-A', tech: 'spring', i: 0 },
 	{ id: 'SPRING-B', tech: 'spring', i: 1 },
-	{ id: 'COMPUTE-A', tech: 'compute', i: 0 },
-	{ id: 'COMPUTE-B', tech: 'compute', i: 1 }
+	// the avenCEO COOP (Samuel, 2026-10-13 07:27): the city's AI COOP, founded at the founding; it owns no hardware
+	{ id: 'AVENCEO', tech: 'harness', ai: true }
 ];
 
 /** a technology's numbers, read out of the catalog once */
@@ -391,7 +400,18 @@ function constants(cfg) {
 		eurMwh,
 		lineKwhDay: CHIPS.lineKw.v * s * 24,
 		gridEurKwh: BORDER.gridEurKwh.v,
-		chipsSpare: CHIPS.spare.v,
+		// the accelerators (./ai.js): kWh an accelerator-hour (at the wall, with cooling), sessions, life, hours a day
+		chipKwhH: CHIPS.kwAtWall.v * CHIPS.pue.v,
+		chipSessions: CHIPS.sessions.v,
+		chipLife: CHIPS.life.v,
+		chipHoursDay: 24 * CHIPS.avail.v,
+		chipM2: CHIPS.m2.v,
+		dcM2: CHIPS.hallM2.v * vf,
+		campChips: CHIPS.campChips.v,
+		rackRunH: CHIPS.rackRunH.v,
+		workCapH: PERSON.satiation.work.v,
+		aiExportEurH: CHIPS.exportEurGpuH.v * (cfg.aiExportPrice ?? 1),
+		aiExportAhDay: CHIPS.exportGpus.v * 24 * CHIPS.exportUtil.v * (cfg.aiExportScale ?? 1),
 		// the border's prices, € (BORDER): food a unit, logs, scrap and float glass a t, cells a kWp
 		eur: { food: diet.eurPer1000 * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatEur.v * ip, cells: BORDER.cellsEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip },
 		accountDays: BORDER.accountDays.v,
@@ -559,9 +579,11 @@ function seedPlants(w) {
 				pl.cap = S.springHours[g.i] * s * (cfg.springSites / RESOURCES.spring.sites.v);
 				pl.landM2 = pl.cap * def.land;
 				break;
-			case 'compute':
-				pl.cap = S.computeHoursDay[g.i] * s;
-				pl.landM2 = pl.cap * def.land;
+			case 'harness':
+				// the harness serves up to two Aven sessions a person around the clock (help and work); it ramps with the
+				// people the plan brings (./ramp.js)
+				pl.cap = 2 * 24 * cfg.people;
+				pl.landM2 = 0;
 				break;
 		}
 		sets.push({ g, k, pl });
@@ -583,7 +605,10 @@ function attachHalls(w) {
 	const V = w.c.village, D = V.domes, vf = w.c.vf, nL = V.livingHexes, T = w.tech;
 	const f120 = D.floor120;
 	const livingFloor = (D.foodPerHex + D.utilPerHex) * f120;
-	const worksFloor = Object.values(D.works).reduce((a, n) => a + n, 0) * f120;
+	// the four works the engine trades stand in Dome120s or, in Sandbox 6's design packages 3–4, in plain halls
+	// (./village.js domes.worksFloor: each one's own floor)
+	const WF = D.worksFloor ?? Object.fromEntries(Object.entries(D.works).map(([k, n]) => [k, n * f120]));
+	const worksFloor = Object.values(WF).reduce((a, m2) => a + m2, 0);
 	const villageFloor = D.centreFloor + worksFloor;
 	const recipe = (parts, m2) => ({ ...T.hall.build, wood: parts.wood / m2, steel: parts.steel / m2, glass: parts.glass / m2 });
 	const livingParts = { wood: V.foodDomes.wood + V.util.wood, steel: V.foodDomes.steel + V.util.steel, glass: V.foodDomes.glass + V.util.glass };
@@ -640,12 +665,11 @@ function attachHalls(w) {
 		greenhouse: { hosts: living(D.foodPerHex * f120 + D.utilPerHex * D.utilGardenM2), hosted: 1 },
 		well: { hosts: living(D.utilPerHex * Z.water), hosted: 0 },
 		solar: { hosts: living(D.utilPerHex * (Z.battery + Z.hydrogen)), hosted: 0 },
-		compute: { hosts: living(D.utilPerHex * Z.datacenter), hosted: 0 },
 		goods: { hosts: living(D.utilPerHex * Z.workshop), hosted: 0 },
-		timber: { hosts: vHosts((D.works.timber + D.works.bamboo) * f120 * vf), hosted: 1 },
-		steel: { hosts: vHosts(D.works.steel * f120 * vf), hosted: 1 },
-		glass: { hosts: vHosts(0.7 * D.works.glass * f120 * vf), hosted: 1 },
-		panel: { hosts: vHosts(0.3 * D.works.glass * f120 * vf), hosted: 1 },
+		timber: { hosts: vHosts((WF.timber + WF.bamboo) * vf), hosted: 1 },
+		steel: { hosts: vHosts(WF.steel * vf), hosted: 1 },
+		glass: { hosts: vHosts(0.7 * WF.glass * vf), hosted: 1 },
+		panel: { hosts: vHosts(0.3 * WF.glass * vf), hosted: 1 },
 		// the settlement COOPs rent the centre's halls (and the four works domes the engine does not trade) for their
 		// residents, by their beds
 		home: { hosts: vHosts(D.centreFloor * vf), hosted: 0 }
@@ -756,7 +780,7 @@ export function createWorld(config = {}) {
 			for (const x of list) {
 				// a settlement COOP and the Village COOP own their hex's domes: they are not split (six settlements already
 				// sell beds, and the MIND slots would not hold every COOP twice)
-				if (x.g.village || x.g.hex != null) {
+				if (x.g.village || x.g.hex != null || x.g.ai) {
 					plan.push({ ids: [x.g.id], plants: [[x.pl]], city: !!x.g.city });
 					continue;
 				}
@@ -827,8 +851,7 @@ export function createWorld(config = {}) {
 		} else if (co.good === WATER && co.plants.some((p) => p.tech === 'rain')) co.stock = co.plants.reduce((a, p) => a + (p.tech === 'rain' ? p.cap * 1000 * S.tankFill : 0), 0);
 		else if ([4, 5, 6, 7].includes(co.good)) co.stock = cap * w.c.storesDays;
 		else if (co.good === GOODS_) co.stock = cap * 14;
-		// accelerators in store: a spare or two per COMPUTE COOP (the installed ones are part of its plant)
-		co.chips = co.good === COMPUTE ? w.c.chipsSpare * (perOf(COMPUTE) >= 4 ? 0.5 : 1) * Math.max(w.c.scale, 0.2) : 0;
+		co.chips = 0;
 		co.demandEma = cap * 0.8;
 		co.soldEma = co.demandEma;
 		co.madeEma = cap * 0.8;
@@ -856,7 +879,7 @@ export function createWorld(config = {}) {
 
 	// ── ledgers, records, today ──
 	w.ledger = { created: new Float64Array(M), melted: new Float64Array(M), prev: new Float64Array(M), leaks: [], checks: 0, maxRel: 0 };
-	w.matter = { prevStock: null, leaks: [], maxRel: 0 };
+	w.matter = { prevStock: null, leaks: [], maxRel: 0, prevChips: 0 };
 	w.meltIndex = 1;
 	w.events = [];
 	w.shockDays = [];
@@ -1015,6 +1038,10 @@ export function plantCapDay(w, pl, day) {
 		case 'spring':
 		case 'service':
 			return eff;
+		case 'harness':
+			// the harness serves what the inference it can buy carries today (./ai.js aiMorning sets inferCapDay: the
+			// hardware owners' accelerators × hours × the sessions an accelerator serves)
+			return Math.min(eff, pl.inferCapDay ?? 0);
 	}
 	return 0;
 }

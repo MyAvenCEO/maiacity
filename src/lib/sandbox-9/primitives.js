@@ -19,7 +19,7 @@
  * household goods in kg, hot-spring time in hours. Money inside the village is never in here: prices are found by
  * the COOPs each day. Euro prices appear only at the border (BORDER), where COOPs buy what the village cannot make.
  */
-import { DAY, DIET } from '../sandbox-7/specs.js';
+import { DAY, DIET, PRICES, DENSITY, DESIGN } from '../sandbox-7/specs.js';
 
 /** a number with its unit and source; est marks an estimate nobody has checked yet */
 const n = (v, u, src, est = false) => ({ v, u, src, est });
@@ -68,7 +68,8 @@ export const PERSON = {
 		energy: n((900 / 365) * 3, 'kWh a day', 'three times home use: devices, cooking, e-bikes (estimate)', true),
 		goods: n(3, 'kg a day', 'household goods, tools, clothes, devices: about 1.1 t a year (estimate)', true),
 		spring: n(2, 'h a day', 'two hours at the hot spring (estimate)', true),
-		compute: n(24, 'h a day', 'Aven services (learning, games, design, care, errands): at most one Aven working for a person around the clock (estimate)', true)
+		compute: n(24, 'h a day', 'Aven help (learning, games, design, care, errands): at most one Aven helping a person around the clock (estimate)', true),
+		work: n(24, 'h a day', 'Aven work for the COOPs: at most one Aven working around the clock beside its help (round 4: help and work run as separate sessions on the Aven service its person buys; estimate)', true)
 	},
 	/** how a person's Aven splits spending above the basic bundle (Stone–Geary marginal shares) */
 	extrasShare: n({ food: 0.06, water: 0.02, energy: 0.06, goods: 0.3, spring: 0.16, compute: 0.4 }, 'share', 'Aven taste, spread by person ±30 % (estimate)', true)
@@ -426,26 +427,29 @@ export const TECH = {
 		life: n(25, 'years', 'estimate', true),
 		learn: { group: 'materials', coef: { scrap: n(1 / 1.1, 'materials per kg at the floor', 'LIMITS.goodsMassFloor: 1.1 → 1.0 t per t'), kwh: n(0.27, 'kWh per kg at the floor', '3 → 0.8 kWh/kg (estimate)', true) } }
 	},
-	compute: {
-		label: 'Aven services: hours of Aven work bought as a service, run on accelerators',
+	/**
+	 * The avenCEO COOP's agent harness (Samuel, 2026-10-13 07:27): the software that runs the village's Avens. It owns no
+	 * hardware: it buys inference (accelerator-hours) from the settlement COOPs and the Village COOP, which own the
+	 * accelerators in their utilities domes' data centres (./ai.js), and sells Aven service (Aven hours) to the people.
+	 * Its own costs are Aven hours, at the rate card: the harness's upkeep (in step with the hours it serves) and its R&D
+	 * (work proposals, ./coops.js payout).
+	 */
+	harness: {
+		label: 'Agent harness: Avens run on inference bought from the hardware owners',
 		good: 'compute',
-		kind: 'service',
-		capUnit: 'service-hours a day',
-		kwh: n((1.3 * 1.2) / 16, 'kWh per service-hour', 'physics audit (2026-10-13): an H100-class accelerator draws ~1.3 kW at the wall with its share of the server, PUE 1.2, serving 16 sessions at once (realistic 17–130; the audit’s cautious 16–50)', true),
-		runH: n(1, 'Aven hours a day per service-hour a day', 'the service is an Aven at work: one Aven hour per hour delivered, at the rate card'),
-		build: {
-			chips: n(1 / 384, 'accelerators per service-hour a day', 'physics audit: one accelerator serves 16 sessions around the clock, 384 service-hours a day (was 4 sessions, 96)', true),
-			steel: n(0.03 / 384, 't of steel per service-hour a day', 'a ~30 kg server slot per accelerator (estimate)', true),
-			mwh: n(0.2 / 384, 'MWh per service-hour a day', 'racks, cooling and installation in the hall (estimate); the accelerator itself is made outside', true)
-		},
+		kind: 'harness',
+		capUnit: 'Aven hours a day',
+		kwh: n(0, 'kWh per Aven hour', 'the accelerators’ electricity is the hardware owners’ (in the price of inference, ./ai.js)'),
+		runH: n(0.02, 'Aven hours a day per Aven hour a day', 'the harness’s upkeep: one Aven hour watches, updates and evaluates 50 Aven hours served (estimate)', true),
+		build: { mwh: n(0.0002, 'MWh per Aven hour a day', 'servers for the harness itself (orchestration, memory, logs) in the hardware owners’ halls (estimate)', true) },
 		buildDays: n(60, 'days', 'estimate', true),
-		land: n(2 / 384, 'm² per service-hour a day', 'a compute hall: ~2 m² per accelerator with cooling (estimate)', true),
-		life: n(5, 'years', 'accelerators are replaced after ~5 years (estimate)', true),
+		land: n(0, 'm² per Aven hour a day', 'software: it stands in the hardware owners’ data centres'),
+		life: n(0, 'years', 'software does not wear: its upkeep is Aven hours (runH)'),
 		learn: {
 			group: 'compute',
 			coef: {
-				kwh: n(0.1, 'kWh per service-hour at the floor', 'Koomey: ~10× less energy per computation in a decade; Landauer is far below (estimate)', true),
-				aven: n(0.25, 'Aven hours per service-hour at the floor', 'an Aven learns to serve about four people at once (estimate)', true)
+				infer: n(0.25, 'inference per Aven hour at the floor (1 = 1/16 accelerator-hour)', 'smaller models, caching and batching: the inference an agent hour needs falls about fourfold (estimate)', true),
+				aven: n(0.25, 'harness Aven hours per Aven hour at the floor', 'an Aven learns to keep four times as many Avens running (estimate)', true)
 			}
 		}
 	},
@@ -464,20 +468,26 @@ export const TECH = {
 };
 
 /**
- * Accelerators (the chips Aven services run on) cannot be made in the city: world model 5.3 says "GPUs come from
- * outside (euro border)". A chip fab is a plant of billions of euros and hundreds of megawatts, so no hex has one, as
- * no real town has one: a city buys its chips. The way in is the border of paper §11.4 and §12.4, as COOPs only: a
- * COMPUTE COOP buys electricity from the energy COOPs (a real sale, paid in MIND, with Law 5); the border line
- * carries it out at the wholesale price; the euros it earns go into the euro reserve, into the account of the COOP
- * that paid for the electricity (each COOP spends only its own account), and the reserve buys accelerators for it at
- * their list price. No person holds or redeems
- * euros, no MIND is made from euros, and nothing else crosses the border (./coops.js plan, produce). The export line
- * caps how much can leave a day. With the setting chipImport false the city is strictly closed (scenario B23), and
- * the accelerators it holds wear out after five years.
+ * Accelerators (the chips the Avens run on) cannot be made in the city: world model 5.3 says "GPUs come from outside
+ * (euro border)". A chip fab is a plant of billions of euros and hundreds of megawatts, so no hex has one, as no real
+ * town has one: a city buys its chips. Round 4 (Samuel, 2026-10-13 07:27): the hardware belongs to the settlement COOPs
+ * and the Village COOP. They buy accelerators through the euro border (advanced by the MaiaCity COOP's bank and paid
+ * back in their own MIND, ./border.js payEur), install them in the data centres of their utilities domes, run them on
+ * their power and replace them as they wear; they sell inference (accelerator-hours) to the avenCEO COOP (./ai.js).
+ * With the setting chipImport false the city is strictly closed (scenario B23): no accelerator comes in.
  */
-const CHIP_EUR = 35000, MWH_EUR = 87.5;
+const CHIP_EUR = 30000, MWH_EUR = 87.5;
 export const CHIPS = {
-	eurPerChip: n(CHIP_EUR, '€ per accelerator', 'an H100-class accelerator ~€30,000–40,000 (2024–25 list prices); the middle (estimate)', true),
+	eurPerChip: n(CHIP_EUR, '€ per accelerator with its share of the server (an H100-class GPU in an 8-GPU server)', 'an H100-class GPU costs $25,000–40,000 (intuitionlabs.ai GPU price guide, 2025–26), and an 8-GPU HGX H100 server $250,000–320,000 ($31,000–40,000 a GPU with its share of the server); at $1.13 a € (Bank of Finland, 2025 average) €30,000 is used (range 20,000–40,000; cost audit 2026-10-13, was 35,000) (estimate)', true),
+	kwAtWall: n(1.3, 'kW per accelerator at the wall, with its share of the server', 'NVIDIA DGX H100 user guide: 10.2 kW maximum for the 8-GPU system, 1.275 kW a GPU'),
+	pue: n(1.2, 'power usage effectiveness of a village data hall (cooling and power losses)', 'Uptime Institute Global Data Center Survey 2025: the weighted average stays about 1.54 for the sixth year; hyperscale halls 1.10–1.15. A small hall with free cooling in a central European climate: 1.2 (estimate)', true),
+	sessions: n(16, 'Aven sessions an accelerator serves at once', 'the physics audit (2026-10-13): an H100-class accelerator serves 16 agent sessions around the clock (realistic 17–130; the audit’s cautious 16–50)', true),
+	life: n(5, 'years an accelerator serves before it is replaced', 'Amazon cut some servers’ useful life from six years to five from January 2025, citing the pace of AI; Meta moved most servers to 5.5 years (company filings, Feb 2025)', true),
+	avail: n(0.97, 'share of the year an accelerator can serve', 'Meta’s Llama 3 report: 148 faulty-GPU and 72 HBM3 interruptions in 54 days on 16,384 H100s, about 9 % of the GPUs a year; with repairs and maintenance about 3 % of the hours lost (estimate)', true),
+	m2: n(2, 'm² of data hall per accelerator, with its cooling', 'air-cooled racks of one 8-GPU server (about 10 kW) each, aisles and coolers (estimate)', true),
+	hallM2: n(700, 'm² of data hall in each utilities dome (and in the centre dome)', 'src/lib/sandbox-7 utilities dome zones: the data centre, 700 m² of each utilities dome'),
+	campChips: n(64, 'accelerators the camp’s container data hall holds before the first utilities dome stands', 'a 20-ft container data hall of eight 8-GPU servers, about 85 kW with its cooling, beside the camp’s 200 beds (estimate)', true),
+	rackRunH: n(0.01, 'Aven hours per accelerator-hour', 'racks watched and repaired: one Aven hour for 100 accelerator-hours (estimate)', true),
 	eurPerMwh: n(MWH_EUR, '€ per MWh of exported electricity (the old flat price; kept for the accelerators’ kWh and the setting exportEurMwh)', 'EU wholesale power ~€80–100 per MWh (2024–25 day-ahead averages); the middle (estimate)', true),
 	// what the line really earns: the German day-ahead price, and far less for what the sun makes at noon
 	spotEurMwh: n(89.32, '€ per MWh, the German day-ahead average (baseload: what the geothermal plant and the battery sell)', 'Netztransparenz (the transmission operators) via Rödl & Partner, Feb 2026: spot average 8.932 ct/kWh in 2025 (7.946 in 2024)'),
@@ -485,7 +495,10 @@ export const CHIPS = {
 	// derived from the two above, never typed in (./genesis.js computes the engine's chipKwh the same way)
 	kwhPerChip: n((CHIP_EUR / MWH_EUR) * 1000, 'kWh of exported electricity per accelerator (derived: eurPerChip ÷ eurPerMwh)', 'eurPerChip ÷ eurPerMwh (derived)', true),
 	lineKw: n(10000 / 6, 'kW export line, a living hex’s share (the village: 10 MW)', 'the village’s connection: a 20 kV medium-voltage line, the usual connection for a village and for plants up to about 10–20 MW (VDE-AR-N 4110, the German technical rules for medium-voltage connections); larger parks connect at 110 kV (VDE-AR-N 4120), which needs a substation. One 20 kV feeder carries about 10 MVA (estimate). The engine holds it at the quarter hour: the line carries at most 10 MW at any moment (./energy.js lineRoom)', true),
-	spare: n(2, 'accelerators in each COMPUTE COOP’s store at genesis', 'a spare or two per hall (estimate)', true)
+	// the AI-exports experiment (AIX): what a GPU-hour of inference sells for abroad, and how much a small provider sells
+	exportEurGpuH: n(2, '€ a GPU-hour of inference sold abroad (an H100-class GPU, on demand)', 'H100 on demand: specialist clouds $2.00–2.40 (GMI Cloud), $2.59–4.29 (RunPod, Lambda), median about $3.37 across tracked providers; one-year contracts rose from $1.70 to $2.35 between Oct 2025 and Mar 2026 (intuitionlabs.ai and akash.network price trackers, 2026). A village provider without a name sells at the low end: about €2 (estimate)', true),
+	exportGpus: n(1024, 'GPUs a small provider rents out abroad', 'a small GPU cloud: the 1,024-GPU H100 cluster that GPU-cloud business models use (hosted.ai, 2025); no measured fleet size of small providers was found (estimate)', true),
+	exportUtil: n(0.55, 'share of those GPU-hours that find a buyer', 'GPU clouds model 55 % against 85 % utilisation and break even near 70 % on debt (hosted.ai, 2025); non-optimised deployments 20–40 % (estimate)', true)
 };
 
 /**
@@ -503,7 +516,7 @@ export const FOOD = {
 /**
  * The euro border (paper §11.4, §12.4): what the village cannot make, its COOPs buy outside with euros from the shared
  * euro reserve, filled by the founding euros left over and by exports (electricity a COOP buys in MIND and sells across
- * the line). Food COOPs buy food, the works buy their raw inputs, the COMPUTE COOPs accelerators. No person holds euros,
+ * the line). Food COOPs buy food, the works buy their raw inputs, the settlement COOPs and the Village COOP accelerators. No person holds euros,
  * no MIND is made from euros, HEARTS never buy anything.
  */
 const DIET_EUR_KG = { legumes: 1.5, nuts: 7, chestnuts: 3, roots: 0.4, vegetables: 1.2, fruit: 1.25, eggs: 3, chicken: 4.5 };
@@ -514,11 +527,13 @@ export const BORDER = {
 	logsEur: n(105 / 0.45, '€ a t of logs (dry)', 'spruce sawlogs B/C 2b €84–120 a solid m³ (LWK Niedersachsen, May 2025), ~€98 in Bavaria; €105 a m³ at ~0.45 dry t a m³', true),
 	scrapEur: n(300, '€ a t of steel scrap', 'sandbox-7 SOURCES.steel: scrap ~300 €/t (EU 2025)'),
 	floatEur: n(650, '€ a t of float glass', 'float glass ~USD 680 a t in Germany (IMARC price trend, 2026 edition); EU import unit values ~€2,000 a t include worked glass (estimate)', true),
-	cellsEur: n(300, '€ per kWp of solar cells', 'TOPCon modules €0.10 a Wp delivered in Europe (pv magazine, May 2025); see-through cells for glass cost more: semi-transparent BIPV glass 1.0–1.6 €/Wp as a module (sandbox-7 SOURCES.pv); cells alone €0.3 a Wp (estimate)', true),
-	glulamEur: n(565 / 0.55, '€ a t of glulam, bought when the timber works cannot keep up', 'spruce glulam 555–575 €/m³ wholesale (Holzkurier, Nov 2025; sandbox-7 SOURCES.glulam) at 0.55 t a m³'),
-	steelEur: n(770, '€ a t of steel, bought when the steelworks cannot keep up', 'steel plate ~770 €/t (sandbox-7 SOURCES.steel, gmk.center 2025); the hubs are cast and machined in the village (estimate)', true),
-	glazingEur: n(2000, '€ a t of laminated glazing, bought when the glassworks cannot keep up', 'double glazing 95–140 €/m² (sandbox-7 SOURCES.glass) at ~0.05 t a m²: €1,900–2,800 a t (estimate)', true),
-	panelsEur: n(1000, '€ per kWp of see-through solar glass, bought when the panel works cannot keep up', 'semi-transparent BIPV glass 1.0–1.6 €/Wp as a module (sandbox-7 SOURCES.pv; estimate)', true),
+	cellsEur: n(60, '€ per kWp of solar cells', 'TOPCon cells $0.036–0.040 a W (pv magazine, 9 May 2025) at $1.13 a € (Bank of Finland, 2025 average): ~€0.035 a W, €60 a kWp with the see-through cells’ premium (range 40–100; cost audit 2026-10-13, was 300)', true),
+	// the materials bought when the village's works cannot keep up are Sandbox 6's own, at its design package's prices
+	// (sandbox-7 specs.js DESIGN, PRICES, DENSITY): read from there, never copied
+	glulamEur: n(PRICES.glulam.eur / DENSITY.glulam, '€ a t of glulam, bought when the timber works cannot keep up', `sandbox-7 PRICES.glulam (design package ${DESIGN}): ${PRICES.glulam.label}, €${PRICES.glulam.eur} a m³ (range ${PRICES.glulam.range}) at ${DENSITY.glulam} t a m³ (cost audit 2026-10-13)`, true),
+	steelEur: n(PRICES.hubs.eur, '€ a t of steel, bought when the steelworks cannot keep up', `what the village’s steelworks makes is the domes’ hubs, ring and connectors, so what it buys stands for finished hubs: sandbox-7 PRICES.hubs (design package ${DESIGN}): ${PRICES.hubs.label}, €${PRICES.hubs.eur} a t (range ${PRICES.hubs.range}; cost audit 2026-10-13)`, true),
+	glazingEur: n(PRICES.glass.eur / DENSITY.glass, '€ a t of laminated glazing, bought when the glassworks cannot keep up', `sandbox-7 PRICES.glass: ${PRICES.glass.label}, €${PRICES.glass.eur} a m² (range ${PRICES.glass.range}) at ~${DENSITY.glass} t a m² (cost audit 2026-10-13)`, true),
+	panelsEur: n(440, '€ per kWp of see-through solar glass, bought when the panel works cannot keep up', 'glass-glass modules €0.16–0.22 a Wp (ema-energiewelt.de, 2026); cells laid into a pane at ~€100 a m² and ~1,000 kWh a kWp: €440 a kWp (range 200–700; cost audit 2026-10-13, was 1,000)', true),
 	accountDays: n(60, 'days of its imports a COOP keeps in its euro account', 'what a COOP exports ahead, so a dark week does not stop its imports (estimate)', true),
 	importAhead: n(30, 'days of supply a COOP looks ahead when it buys at the border', 'estimate', true),
 	foodStoreDays: n(90, 'days of food in the stores at founding (bought before day 0)', 'round 3 brief: "a few months of imported food" (estimate)', true),
@@ -540,7 +555,7 @@ export const GOODS = [
 	{ id: 'panel', label: 'Solar panels', unit: 'kWp', basic: false, store: true, horizon: 30 },
 	{ id: 'goods', label: 'Goods', unit: 'kg', basic: false, store: true, horizon: 14 },
 	{ id: 'spring', label: 'Hot spring', unit: 'h', basic: false, store: false, horizon: 14 },
-	{ id: 'compute', label: 'Aven services', unit: 'h', basic: false, store: false, horizon: 14 }
+	{ id: 'compute', label: 'Aven service', unit: 'h', basic: false, store: false, horizon: 14 }
 ];
 
 /**
@@ -552,7 +567,7 @@ export const GOODS = [
  * make a day.
  */
 export const GENESIS_PRICE_R = n(
-	{ food: 0.2, water: 0.002, energy: 0.05, bed: 0.5, wood: 400, steel: 800, glass: 300, panel: 100, goods: 1, spring: 1, compute: 2.5 },
+	{ food: 0.2, water: 0.002, energy: 0.05, bed: 0.5, wood: 400, steel: 800, glass: 300, panel: 100, goods: 1, spring: 1, compute: 0.1 },
 	'R a unit',
 	'calibration guesses for day 0 (estimate): the world moves them from there',
 	true
@@ -581,18 +596,17 @@ export const STARTING_CAPITAL = n(
 		panelWorksKwpYear: [500, 500],
 		goodsWorksKgDay: [250, 250],
 		springHours: [150, 150],
-		computeHoursDay: [1000, 1000],
 		homesSplit: 'one settlement COOP a hex (Samuel, 2026-10-13 06:50): each living hex’s owns its 290 beds and its food and utilities domes; the centre hex’s, the Village COOP (07:00), owns the centre dome, the eight factory domes and the geothermal plant',
 		rentedM2: {
 			food: 'the whole of each food dome (11,310 m² of floor) and the gardens in the utilities dome: the food COOPs',
 			water: '1,200 m² of each utilities dome (membrane bioreactor and wetland): the City COOP’s water works',
 			solar: '700 m² of each utilities dome (batteries 250 m², hydrogen 450 m²): the solar COOPs',
-			compute: '700 m² of each utilities dome (the data centre): the Aven-service COOPs',
+			compute: '700 m² of each utilities dome (the data centre): the settlement COOP’s own accelerators (and the Village COOP’s in the centre dome), not rented',
 			goods: '1,600 m² of each utilities dome (the workshops): the goods works',
 			works: 'the timber and bamboo domes (timber works), the steelworks dome, the glass & solar dome (glass works 70 %, panel works 30 %, estimate)',
 			halls: 'the centre dome (community halls) and the hemp, lime, clay and recycling domes, whose works the engine does not trade: rented by the six living settlement COOPs for their residents, a sixth each'
 		},
-		computeChips: 'one accelerator per 384 service-hours a day of capacity, plus CHIPS.spare in store'
+		accelerators: 'none at founding: the hardware owners buy them as the avenCEO COOP’s inference demand grows (./ai.js), the camp’s first server on day 0'
 	},
 	'',
 	'round 3: the village is founded on day 0 (outdoor food forest and woodland planted, food domes planted, stores bought). Works sizes from sandbox-7 FACTORY_RUN; the panel and goods works, the warm ponds and the Aven-service halls a living hex’s share as in round 2 (estimate)',

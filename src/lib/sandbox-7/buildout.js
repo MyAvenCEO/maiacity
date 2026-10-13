@@ -20,6 +20,8 @@
  * Every dome's size, tonnes and prices come from Sandbox 6 (./specs.js shellOf, KINDS, PRICES, FITOUT; ./stats.js
  * FACTORY_RUN, EQUIPMENT); this module adds only what building it takes: the kit, the work rates (crew-hours, crane
  * lifts) and the order. Every rate and price says where it comes from (BUILD_SOURCES) or that it is an estimate.
+ * The design package (./specs.js DESIGN) sets the struts' timber, how the hubs are made, the utilities' machines and
+ * whether the eight works stand in Dome120s or in plain halls (./specs.js hallOf, built here by `hallWork`).
  *
  * The scheduler is a month-by-month resource model: each month the crew's hours, the cranes' and the telehandlers'
  * days are handed out to the steps under way in priority order; a step runs through its phases (footing, frame, shell,
@@ -30,7 +32,7 @@
  * Pure and deterministic: the same options give the same plan, in node or the browser. `buildPlan()` is cached.
  */
 import { LIVING, TOWER_HEX, VILLAGE, HEX_AREA, landOf } from './layout.js';
-import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, shellOf, towerShell, towerFloors, geodesicOf } from './specs.js';
+import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, WORKS_MACHINES, DESIGN, PACKAGE, INSIDES, HALLS, HUBS_WELDED, HALL_PRICES, shellOf, towerShell, towerFloors, geodesicOf, hallOf } from './specs.js';
 import { FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from './stats.js';
 
 // ── sources ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -39,7 +41,9 @@ import { FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from './stats.js';
 export const BUILD_SOURCES = {
 	containers: { label: 'Site containers (dealer listings, 2025/26)', url: 'https://www.maschinensucher.de/mss/sanit%C3%A4rcontainer', note: 'A new 20 ft office/living container with heating and air conditioning 5,750 € net (Cologne maker, fixed price); a new 20 ft container with shower cabin, sink and hot-water tank 12,900 € net (dealer near Sittensen); small new WC/shower units 3,130–3,730 € net. Asking prices, not a market survey.' },
 	solarContainer: { label: 'Solar containers', url: 'https://www.qualenergia.it/articoli/fotovoltaico-mobile-cresce-potenza-container-140-kw/', note: 'SolarCont: a ~140 kWp fold-out container 135,000–145,000 €, "about 1,000 € a kWp" (QualEnergia); AEP Solar-Box, a 20 ft container with modules and storage, ~125,000 € (pv magazine 2023); a used 130 kWp Solarfold 95,000 € (listing).' },
-	battery: { label: 'Battery storage (BNEF 2025)', url: 'https://www.energy-storage.news/battery-storage-system-prices-continue-to-fall-sharply-bnef-and-ember-reports-find/', note: 'BNEF Energy Storage Systems Cost Survey 2025: turnkey systems average US$177/kWh in Europe (US$117 worldwide, US$73 in China). A single small container costs more a kWh: 250 €/kWh used here (estimate).' },
+	battery: { label: 'Battery storage (BNEF 2025)', url: 'https://www.energy-storage.news/battery-storage-system-prices-continue-to-fall-sharply-bnef-and-ember-reports-find/', note: 'BNEF Energy Storage Systems Cost Survey 2025: turnkey systems average US$177/kWh in Europe (US$117 worldwide, US$73 in China), ≈ 155 €/kWh at 1.13 $/€. A single small container costs more a kWh: 200 €/kWh used here (estimate; 250 before the cost audit, 2026-10-13).' },
+	joinery: { label: 'Beam joinery centre (used)', url: 'https://www.maschinensucher.de/mss/hundegger+abbundanlage', note: 'Used Hundegger beam processing centres (K2 and similar) listed at ~55,000–255,000 € (maschinensucher.de, 2025/26). One at ~150,000 € with ~50,000 € to move, set and wire it (estimate) lets the village cut its own struts from blank glulam instead of buying them CNC-cut (cost audit, 2026-10-13).' },
+	design: { label: 'Engineering, permits and the village plan', url: 'https://www.ftimmobilien24.com/immobilienmakler-m%C3%BCnchen/baunebenkosten-muenchen-2026-hoai-lbk-statik/', note: 'Building side costs (KG 700) run 15–20 % of a build, the architect 8–12 %, the structural engineer 1.5–2.5 % (Munich 2026); a development plan (Bebauungsplan) 20,000–100,000 € and more (bau.de). Three dome types designed once and repeated, a village plan, a development plan, soil and environmental reports, a checking engineer for each dome type and the fire concept: ~3 M€ (1.5–6, estimate; 0.75 M€ before the cost audit, 2026-10-13).' },
 	excavator: { label: 'Excavators (Bagger)', url: 'https://equipbook.ai/value/year/2025-caterpillar-320', note: 'A 2025 Cat 320 (22 t) MSRP ~US$265,000 (valuation model, equipbook); a new JCB 145XR (17 t) 150,000 € net (dealer listing, Eltmann). A 20–22 t crawler excavator at ~230,000 € and an 8 t one at ~95,000 € are estimates from these.' },
 	towerCrane: { label: 'Tower cranes (used, dealer listings 2026)', url: 'https://www.truckscout24.com/tsp/ts-204-89-430', note: 'Potain MDT 109 (2019, 55 m jib, ~2,000 h) 283,827 € net; Potain MDT 259 (2018, 65 m jib) 374,850 € net. A 65 m jib reaches the middle of a Dome120 (60 m in radius) from a mast inside it.' },
 	mobileCrane: { label: 'All-terrain mobile crane (used)', url: 'https://www.cranetrader.com/listings/for-sale/liebherr/ltm1060/all-terrain-cranes/1016', note: 'Liebherr LTM 1060-3.1 (2019, 60 t) listed at 485,000 €; LTM 1060s range from US$75,000 to 729,000 by age and hours (CraneTrader).' },
@@ -47,7 +51,7 @@ export const BUILD_SOURCES = {
 	telehandler: { label: 'Telehandlers', url: 'https://www.maschinensucher.de/manitou-mt+1840/i-21793858', note: 'A new Manitou MT 1840 (17.5 m) 99,500 € net EXW (2025 listing); a 2025 one with 416 h 95,000 €.' },
 	scaffold: { label: 'System scaffolding', url: 'https://www.maschinensucher.de/layher-ger%C3%BCst/i-22318012', note: 'Used Layher scaffold ~28–30 €/m² (a 45,000 m² lot at 1.25 M€ net; 58.9 m² at 1,750 € on eBay); new ~110 €/m² (the seller’s figure).' },
 	trucks: { label: 'Trucks and trailers', url: 'https://www.truckscout24.de', note: 'New 3-axle tipper semi-trailers 34,900–56,900 € net (listings 2025/26); a 3-axle tipper truck (~160,000 €) and a truck with a loader crane (~220,000 €) are estimates.' },
-	geothermal: { label: 'Geothermal wells and plant', url: 'https://www.bund-naturschutz.de/fileadmin/Bilder_und_Dokumente/Themen/Energiewende/230615_BN_Informiert_Geothermie-final.pdf', note: 'Our village energy research (energy/village-energy.md): an EGS triplet (1 injector, 2 producers) ~5.5 km deep and ~1.5 km sideways, a 4.3 MW gross / 3.4 MW net ORC, 30–45 M€ today. A Bavarian deep well “quickly costs over 10 M€” (BUND Naturschutz 2023); a doublet’s wells 12–25 M€ (GGSC 2009); Holzkirchen spent over 30 M€ on preparation and drilling (2016–17); a drilling day costs ~80,000 € (Schwäbische Zeitung); Fervo drilled a 5,927 m well in 21 days (ThinkGeoEnergy 2026). Priced here per well and metre: ~7,000 m measured a well at ~1,400 €/m (estimate), the ORC, coolers and exchangers at ~1,750 €/kW (estimate) — 37.5 M€ together, as Sandbox 6 puts the plant.' },
+	geothermal: { label: 'Geothermal wells and plant', url: 'https://www.bund-naturschutz.de/fileadmin/Bilder_und_Dokumente/Themen/Energiewende/230615_BN_Informiert_Geothermie-final.pdf', note: 'Our village energy research (energy/village-energy.md): an EGS triplet (1 injector, 2 producers) ~5.5 km deep and ~1.5 km sideways, a 4.3 MW gross / 3.4 MW net ORC, 30–45 M€ today. A Bavarian deep well “quickly costs over 10 M€” (BUND Naturschutz 2023); a doublet’s wells 12–25 M€ (GGSC 2009); Holzkirchen spent over 30 M€ on preparation and drilling (2016–17); a drilling day costs ~80,000 € (Schwäbische Zeitung); Fervo drilled a 5,927 m well in 21 days (ThinkGeoEnergy 2026). Priced here per well and metre (GEO): ~7,000 m measured a well at ~2,400 €/m (1,400–3,500, estimate: Bavarian deep wells cost 10–15 M€ each, kommunal.de), the ORC, coolers, exchangers and the stimulation at ~3,500 €/kW gross (2,000–5,000, estimate: small binary plants 3,700–7,200 $/kW, ESMAP) — ~65.5 M€, 66.5 M€ with the grid link. That is 19,500 € a kW net, inside NREL’s ATB 2024 range for deep EGS (13,400–33,500 $/kW, mean 22,100: atb.nrel.gov/electricity/2024/geothermal). Before the cost audit (2026-10-13) the plant was 37.9 M€ at 1,400 €/m and 1,750 €/kW, about half of what EGS costs today; Fervo aims at 3,000–5,500 $/kW later (fervoenergy.com, Q2 2026).' },
 	eden: { label: 'Eden Project biomes (1998–2001)', url: 'https://www.constructionnews.co.uk/sections/news/the-genesis-of-the-new-eden-28-09-2000/', note: 'A kit of unique steel tubes cut by machine (MERO), erected by SGB from a 12-level birdcage scaffold 25 m across (230 miles of poles), the tower crane lifting the scaffold and then the steel; 625 hexagons, 16 pentagons and 190 triangles of ETFE; 2½ years to build, opened March 2001. The method our big domes follow: a crane at the middle, a scaffold under the crown.' },
 	domerama: { label: 'Geodesic dome kits', url: 'https://www.domerama.com/raising-a-dome/geodesic-domes-and-assembly-times/', note: 'A 30 ft (9 m) 3V kit: 20 h for 3 people; a 36 ft: 30 h for 3–4 (Domerama); Pacific Domes 30 ft: 6–14 h with 3–4; a 42 ft growing dome ~5 days (Growing Spaces). Light struts by hand: ~0.3–0.4 crew-hours a strut.' },
 	gridshell: { label: 'Timber gridshells', url: 'https://www.woodsolutions.com.au/blog/uk-field-tour-day-four', note: 'Savill Building (Windsor, 2006): the larch gridshell by 20 carpenters (Green Oak Carpentry), the building ~12 months; Weald & Downland (2002): the laths bent by lowering the edges a few centimetres a day from a scaffold (Buro Happold, Structural Engineer 2001). Bent-lath gridshells are slower than a geodesic of cut struts: an upper bound.' },
@@ -56,7 +60,7 @@ export const BUILD_SOURCES = {
 	learning: { label: 'Learning on repeated work', url: 'https://www.construction-physics.com/p/where-are-my-damn-learning-curves', note: 'The UN’s “Effect of Repetition on Building Operations and Processes on Site” (1965) and site studies: formwork 83.5 %, rebar 87.9 % a doubling (ECAM 2017); most production 60–90 %. Used here: 90 % a doubling of the same dome, the first at 1.3× and never under 0.7× (estimate).' },
 	cranes: { label: 'Crane lifts', url: 'https://www.iaarc.org/publications/fulltext/An_integrated_approach_to_the_development_of_construction_site_crane_operations.PDF', note: 'More than half of tower-crane lifts take under 4 minutes; 5–15 % over 15 minutes, precast up to 15 % (IAARC). A panel or a strut triangle held while it is bolted: ~20 minutes a lift, 24 lifts a crane-day (estimate).' },
 	steelErection: { label: 'Steel erection', url: 'https://www.planningplanet.com/index.php/comment/97943', note: 'Practitioners quote 20–120 man-hours a tonne for steelwork, erection with alignment and bolting at the top (forum figures: a wide spread). Our hubs go up bolted to their struts, so the frame is counted by the piece and the lift instead.' },
-	raw: { label: 'Raw inputs once the works stand', url: 'https://www.lwk-niedersachsen.de', note: 'Spruce sawlogs 84–120 €/m³ (LWK Niedersachsen, May 2025), larch and Douglas about twice; steel scrap ~300 €/t (EU 2025); float glass ~US$680 a t in Germany (IMARC 2026); TOPCon modules 0.10 €/Wp delivered (pv magazine, May 2025), see-through cells for glass ~0.3 €/Wp (estimate). The same figures as Sandbox 8’s border prices.' },
+	raw: { label: 'Raw inputs once the works stand', url: 'https://www.lwk-niedersachsen.de', note: 'Spruce sawlogs 84–120 €/m³ (LWK Niedersachsen, May 2025), larch and Douglas about twice; steel scrap ~300 €/t (EU 2025); float glass ~US$680 a t in Germany (IMARC 2026); TOPCon modules 0.10 €/Wp delivered (pv magazine, May 2025), TOPCon cells 0.036–0.040 $/W (pv magazine, May 2025), ~0.045 €/Wp delivered at ~200 Wp a m² (estimate; see-through cells at ~0.3 €/Wp and 80 Wp before the cost audit, 2026-10-13). Sandbox 8’s border prices used the same figures before the audit.' },
 	sandbox6: { label: 'Sandbox 6 (./specs.js, ./stats.js)', note: 'Every dome’s tonnes, panels and prices, the fit-out per m² (BKI 2025), the utilities’ machines, the works’ yearly output (FACTORY_RUN), the land at 78,000 €/ha.' }
 };
 
@@ -77,7 +81,7 @@ export const KIT = [
 	{ id: 'delivery', group: 'camp', label: 'Delivering and setting down a container', n: 44, eur: 800, src: 'containers', est: true, note: 'the dealer’s truck crane sets them' },
 	// power
 	{ id: 'solar', group: 'power', label: 'Solar containers, ~140 kWp each, fold-out', n: 2, eur: 140000, kwp: 140, src: 'solarContainer' },
-	{ id: 'battery', group: 'power', label: 'Battery container, 500 kWh LFP', n: 1, eur: 500 * 250, kwh: 500, src: 'battery', est: true },
+	{ id: 'battery', group: 'power', label: 'Battery container, 500 kWh LFP', n: 1, eur: 500 * 200, kwh: 500, src: 'battery', est: true, was: 500 * 250 },
 	{ id: 'genset', group: 'power', label: 'Generator, 150 kVA, on HVO (winter and crane peaks)', n: 1, eur: 35000, src: 'sandbox6', est: true },
 	{ id: 'power', group: 'power', label: 'Site power: distribution boards and cables', n: 1, eur: 25000, src: 'sandbox6', est: true },
 	// water
@@ -100,13 +104,23 @@ export const KIT = [
 	{ id: 'shoring', group: 'site', label: 'Shoring towers and props for the crowns', n: 1, eur: 60000, src: 'sandbox6', est: true },
 	{ id: 'survey', group: 'site', label: 'Survey kit: GNSS rover and total station', n: 1, eur: 30000, src: 'sandbox6', est: true },
 	// workshop
-	{ id: 'cnc', group: 'workshop', label: 'Timber workshop: 3 × 2 m CNC router, panel saw, planer, dust extraction', n: 1, eur: 160000, src: 'sandbox6', est: true, note: 'for the north cassettes and the fit-out joinery; the struts come CNC-cut' },
+	{ id: 'cnc', group: 'workshop', label: 'Timber workshop: 3 × 2 m CNC router, panel saw, planer, dust extraction', n: 1, eur: 160000, src: 'sandbox6', est: true, note: 'for the north cassettes and the fit-out joinery' },
+	{ id: 'joinery', group: 'workshop', label: 'Beam joinery centre (used), to cut the struts from blank glulam', n: 1, eur: 200000, src: 'joinery', est: true, note: '~150,000 € used and ~50,000 € to move, set and wire it; it replaces buying the struts CNC-cut (cost audit, 2026-10-13)' },
 	{ id: 'tools', group: 'workshop', label: 'Tools: power tools, welding, lifting gear, safety', n: 1, eur: 90000, src: 'sandbox6', est: true }
 ];
 /** the kit's groups, for the page */
 export const KIT_GROUPS = { camp: 'The camp', power: 'Power', water: 'Water', machines: 'Machines', site: 'Site gear', workshop: 'Workshop' };
-/** running the kit: fuel, upkeep, insurance and tyres, a share of the machines' and the power kit's price a year (estimate) */
+/** running the kit: fuel, upkeep, insurance and tyres, a share of the machines' and the power kit's price a year
+ * (estimate; fleets budget 10–15 % of a machine's value a year for maintenance alone, getclue.com 2025; the tower
+ * cranes run on the site's power, so 15 % in all is about right, checked in the cost audit, 2026-10-13) */
 const RUNNING_SHARE = 0.15;
+/** the geothermal plant, bought as services (BUILD_SOURCES.geothermal; estimates, cost audit 2026-10-13): `wells` ×
+ * `mWell` measured metres at `eurM`, the ORC, coolers, exchangers and the rock's stimulation at `eurKw` a kW gross,
+ * and the grid link (a medium-voltage connection fee of 88–131 €/kW, Stadtwerke price sheets, and the line). Low–high:
+ * 1,400–3,500 €/m and 2,000–5,000 €/kW. */
+export const GEO = { wells: 3, mWell: 7000, eurM: 2400, kwGross: 4300, eurKw: 3500, grid: 1e6, est: true };
+/** engineering, permits and the village plan, € (BUILD_SOURCES.design; estimate, 1.5–6 M€) */
+export const DESIGN_EUR = 3e6;
 
 // ── how fast the work goes ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -125,6 +139,12 @@ export const RATES = {
 	water: { v: 5, unit: 'crew-h a m² of the water works and its planted wetland', src: 'sandbox6', est: true },
 	garden: { v: 0.6, unit: 'crew-h a m² of garden under the glass: soil, pond, paths, planting', src: 'sandbox6', est: true },
 	works: { v: 4, unit: 'crew-h a m² of a works’ floor: its hall and setting its machines', src: 'sandbox6', est: true },
+	// the works halls (packages 3–4)
+	slab: { v: 0.5, unit: 'crew-h a m² of a hall’s slab: gravel bed, membrane, mesh, pouring and floating (a crew of 8 casts ~250 m² a day)', src: 'sandbox6', est: true },
+	hallFrame: { v: 0.2, unit: 'crew-h a m² of hall to stand, brace and fix its glulam frames and purlins (besides the lifts)', src: 'sandbox6', est: true },
+	cladding: { v: 0.25, unit: 'crew-h a m² of sandwich panel, roof or wall, with its flashings (a crew of 4 lays ~150 m² a day)', src: 'sandbox6', est: true },
+	pvRoof: { v: 0.2, unit: 'crew-h a m² of solar module on a hall’s roof, with its rails and cables', src: 'sandbox6', est: true },
+	hallInside: { v: 2.5, unit: 'crew-h a m² of a hall’s floor: its services and setting its machines', src: 'sandbox6', est: true },
 	forest: { v: 250, unit: 'crew-h a ha of outdoor food forest: ~300 trees and ~1,500 shrubs, mulch, seed', src: 'sandbox6', est: true },
 	woods: { v: 250, unit: 'crew-h a ha of timber woodland or bamboo planted', src: 'sandbox6', est: true },
 	sow: { v: 20, unit: 'crew-h a ha of hemp sown', src: 'sandbox6', est: true },
@@ -148,20 +168,25 @@ export const LABOUR = {
 
 /** what a material costs bought finished (Sandbox 6's PRICES) and made in the village's own works from raw inputs (estimates) */
 const OWN = {
-	/** larch/Douglas logs ~210 €/m³ at ~0.5 m³ of glulam a m³ of logs, glue and wear ~40: € a m³ of glulam or CLT */
-	timberM3: 210 / 0.5 + 40,
-	/** scrap 300 €/t at 1.1 t a t, electrodes, alloys and zinc ~150: € a t of cast hubs and connectors */
-	steelT: 300 * 1.1 + 150,
+	/** logs at ~0.5 m³ of glulam a m³ of logs, glue and wear ~40: € a m³ of glulam or CLT. Package 1: larch/Douglas
+	 * logs ~210 €/m³; packages 2–4: spruce sawlogs 84–120 €/m³, ~100 (BUILD_SOURCES.raw) */
+	timberM3: (INSIDES ? 100 : 210) / 0.5 + 40,
+	/** € a t of hubs and connectors. Package 1 casts them: scrap 300 €/t at 1.1 t a t, electrodes, alloys and zinc ~150.
+	 * Packages 2–4 weld them from bought plate: ./specs.js HUBS_WELDED.village, ~2,400 */
+	steelT: INSIDES ? HUBS_WELDED.village : 300 * 1.1 + 150,
 	/** float glass ~650 €/t at 0.05 t a m², interlayer, spacers and low-E ~25: € a m² of laminated double glazing */
 	glassM2: 650 * 0.05 + 25,
-	/** see-through cells ~0.3 €/Wp at ~80 Wp a m², ribbons and junctions ~6: € a m² of solar panel on top of its glass */
-	pvM2: 0.3 * 80 + 6
+	/** TOPCon cells 0.036–0.040 $/W FOB (pv magazine, May 2025), ~0.045 €/Wp delivered in small lots, at the ~200 Wp a
+	 * m² that the model's 227 kWh/m² a year needs; encapsulant, ribbons and junctions ~6: € a m² of solar panel on top of
+	 * its glass (estimate; 0.3 €/Wp × 80 Wp = 30 € before the cost audit, 2026-10-13) */
+	pvM2: 0.045 * 200 + 6
 };
 /** what one works makes a month at full output (Sandbox 6 FACTORY_RUN), and how long it takes to get there */
 const WORKS_OUT = { steel: { t: FACTORY_RUN.steel.t / 12 }, glass: { m2: 20000 / 12 }, timber: { t: FACTORY_RUN.timber.t / 12 } };
 const WORKS_RAMP = 6;
-/** works whose furnace or kiln needs the geothermal plant's power to run */
-const NEEDS_GEO = new Set(['steel', 'lime', 'clay']);
+/** works whose furnace or kiln needs the geothermal plant's power to run; a steel works that welds the hubs from plate
+ * (packages 2–4) has no furnace: it runs on the grid as soon as it stands */
+const NEEDS_GEO = new Set(INSIDES ? ['lime', 'clay'] : ['steel', 'lime', 'clay']);
 /** the works that make what the build-out buys most of; the others are built but staffed after the build-out */
 const MAKERS = new Set(['steel', 'glass', 'timber']);
 
@@ -199,6 +224,7 @@ const landM2 = (plan) => {
  * @param {string} kind dome40 | dome80 | food120 | util120 | factory120 | centre
  */
 function domeWork(kind, factory) {
+	if (kind === 'factory120' && HALLS) return hallWork(factory);
 	const K = KINDS[kind === 'centre' ? 'util120' : kind];
 	const sh = shellOf(K.D);
 	const g = geodesicOf(K.D);
@@ -218,8 +244,8 @@ function domeWork(kind, factory) {
 		},
 		{
 			id: 'shell', label: 'glass and hemp', h: (glazedPanels + g.count.hemp) * R.lift.v + sh.glazed * R.glazing.v + sh.north * R.hemp.v, lifts: glazedPanels + g.count.hemp, pool, outdoor: true,
-			eur: sh.eur.glass + sh.eur.pv + sh.eur.hemp + cassette * PRICES.glulam.eur, t: { glass: sh.t.glass, hemp: sh.t.hemp, glulam: cassette * DENSITY.glulam }, pvM2: sh.m.pv,
-			own: { glassM2: sh.glazed, pvM2: sh.m.pv, timberM3: cassette, timberEur: cassette * PRICES.glulam.eur }
+			eur: sh.eur.glass + sh.eur.pv + sh.eur.hemp + cassette * PRICES.cassette.eur, t: { glass: sh.t.glass, hemp: sh.t.hemp, glulam: cassette * DENSITY.glulam }, pvM2: sh.m.pv,
+			own: { glassM2: sh.glazed, pvM2: sh.m.pv, timberM3: cassette, timberEur: cassette * PRICES.cassette.eur }
 		}
 	];
 	// inside: what each kind of dome holds
@@ -246,10 +272,11 @@ function domeWork(kind, factory) {
 		use += kind === 'centre' ? 0 : ENERGY.datacenter + UTIL_BUILT * ENERGY.workshop;
 		label = kind === 'centre' ? 'Dome120 centre: utilities and community halls' : 'Dome120 utilities';
 	} else {
-		// a works: its hall and machines are bought (Sandbox 6's 1,500 €/m² fit-out less the villagers' labour, ~60 %)
+		// a works: its machines are bought (specs.js WORKS_MACHINES, listings and estimates); the hall is the dome. Before
+		// the cost audit (2026-10-13) each works was 60 % of a factory's 1,500 €/m² fit-out: 10.2 M€ each.
 		const floor = sh.cap.floor;
 		inside = { id: 'inside', label: 'the works’ machines', h: floor * R.works.v, lifts: 20 * R.liftsPerDay.v, pool: 'mobile', eur: 0, t: {} };
-		machines = floor * FITOUT.factory * 0.6;
+		machines = WORKS_MACHINES[factory]?.eur ?? 2e6;
 		check = 30000;
 		const run = FACTORY_RUN[factory];
 		use += run ? run.t * run.kwh : 0;
@@ -257,6 +284,41 @@ function domeWork(kind, factory) {
 	}
 	phases.push(inside);
 	return { phases, beds, machines, check, label, energy: { solarKwhYear: sh.solar, useKwhYear: use, heatKwhYear: sh.heat } };
+}
+
+/**
+ * A works hall (packages 3–4) as a build step, its phases named as a dome's so the timeline reads it the same way:
+ * the slab and footings, the glulam frames (lifted by the mobile crane, no tower crane), the roof, walls and solar,
+ * and inside the services and the works' machines (./specs.js hallOf: the hall's parts, tonnes and euros).
+ */
+function hallWork(factory) {
+	const h = hallOf(factory);
+	const R = RATES;
+	// a lift for each column and beam of a frame, two bundles of purlins a bay; panels by the crane in packs of ~50 m²,
+	// the solar modules on pallets of ~60 m²
+	const frameLifts = h.frames * 3 + h.bays * 2;
+	const shellLifts = Math.ceil((h.roof + h.walls) / 50) + Math.ceil(h.m.modules / 60);
+	const phases = [
+		{ id: 'footing', label: 'slab and footings', h: h.m.footing * R.footing.v + h.floor * R.slab.v, lifts: 0, pool: null, outdoor: true, eur: h.eur.slab, t: { concrete: h.t.concrete, gravel: h.t.gravel, steel: h.m.mesh } },
+		{
+			id: 'frame', label: 'glulam frames', h: frameLifts * R.lift.v + h.floor * R.hallFrame.v, lifts: frameLifts, pool: 'mobile', outdoor: true, eur: h.eur.frame, t: { glulam: h.t.glulam, steel: h.m.steel },
+			own: { timberM3: h.m.glulam + h.m.purlins, timberEur: h.m.glulam * HALL_PRICES.glulam.eur + h.m.purlins * PRICES.cassette.eur }
+		},
+		{ id: 'shell', label: 'roof, walls and solar', h: shellLifts * R.lift.v + (h.roof + h.walls) * R.cladding.v + h.m.modules * R.pvRoof.v, lifts: shellLifts, pool: 'mobile', outdoor: true, eur: h.eur.cladding + h.eur.pv, t: { panels: h.t.panels, modules: h.t.modules } },
+		// the works' machines are bought (specs.js WORKS_MACHINES), set with the mobile crane as in a dome
+		{ id: 'inside', label: 'services and the works’ machines', h: h.floor * R.hallInside.v, lifts: 20 * R.liftsPerDay.v, pool: 'mobile', eur: h.eur.kit, t: {} }
+	];
+	const run = FACTORY_RUN[factory];
+	return {
+		phases,
+		beds: 0,
+		machines: WORKS_MACHINES[factory]?.eur ?? 2e6,
+		// a checking engineer for a standard glulam hall (estimate)
+		check: 10000,
+		hall: true,
+		label: `${FACTORIES.find((f) => f.id === factory)?.label ?? 'Works'} hall`,
+		energy: { solarKwhYear: h.solar, useKwhYear: h.climate + (run ? run.t * run.kwh : 0), heatKwhYear: h.heat }
+	};
 }
 
 /** the tower, for the experiment with it: its diagrid, glass and floors as one step */
@@ -314,12 +376,12 @@ function makeSteps(o) {
 			if (o.prefab && (p.id === 'frame' || p.id === 'shell')) p.lifts *= o.prefab.lifts;
 		}
 		const extra = o.prefab ? w.phases.filter((p) => p.id === 'frame' || p.id === 'shell').reduce((a, p) => a + p.eur, 0) * o.prefab.shellEur + (w.beds ? (kind === 'dome80' ? KINDS.dome80.gfa : KINDS.dome40.gfa) * o.prefab.homeEurM2 : 0) : 0;
-		return add({ id: `${hex}/${site}`, hex, site, kind, factory, label: w.label, phases: w.phases, beds: w.beds, machines: w.machines, check: w.check, energy: w.energy, prefabEur: extra, maxCrew: kind === 'dome40' ? 14 : kind === 'dome80' ? 34 : 50, gate });
+		return add({ id: `${hex}/${site}`, hex, site, kind, factory, hall: !!w.hall, label: w.label, phases: w.phases, beds: w.beds, machines: w.machines, check: w.check, energy: w.energy, prefabEur: extra, maxCrew: w.hall ? 30 : kind === 'dome40' ? 14 : kind === 'dome80' ? 34 : 50, gate });
 	};
 	const settled = (key) => (st) => st.hexDone[key];
 
 	// the engineering of the three dome types and the village plan, at day 0 (designs reused for every dome)
-	add({ id: 'design', hex: LIVING_ORDER[0], site: 'design', kind: 'design', label: 'Engineering of the three dome types, the village plan and its permits', phases: [{ id: 'paper', h: 0, fixed: 1 }], services: 750000, maxCrew: 1 });
+	add({ id: 'design', hex: LIVING_ORDER[0], site: 'design', kind: 'design', label: 'Engineering of the three dome types, the village plan and its permits', phases: [{ id: 'paper', h: 0, fixed: 1 }], services: DESIGN_EUR, maxCrew: 1 });
 
 	LIVING_ORDER.forEach((key, i) => {
 		const prev = LIVING_ORDER[i - 1];
@@ -348,7 +410,7 @@ function makeSteps(o) {
 			add({
 				id: 'tower/geothermal', hex: 'tower', site: 'geothermal', kind: 'geothermal', label: 'Geothermal: three wells ~7 km each, the ORC plant and the heat loop',
 				phases: [{ id: 'drill', label: 'drilling the wells', h: 2000, fixed: 12, outdoor: true }, { id: 'plant', label: 'stimulating the rock, building the ORC', h: 1500, fixed: 6 }],
-				services: 3 * 7000 * 1400 + 4300 * 1750, grid: 1e6, maxCrew: 6, gate: after1,
+				services: GEO.wells * GEO.mWell * GEO.eurM + GEO.kwGross * GEO.eurKw, grid: GEO.grid, maxCrew: 6, gate: after1,
 				energy: { solarKwhYear: 0, useKwhYear: 0, geoKwhYear: GEOTHERMAL, heatKwhYear: 104e6 }
 			});
 			const cl = landM2(TOWER_HEX);
@@ -419,6 +481,7 @@ function schedule(o) {
 		s.eur = { materials: 0, materialsFinished: 0, worksSaved: 0, machines: 0, services: 0, land: 0, prefab: 0 };
 		s.t = {};
 		s.pvM2 = 0;
+		s.hubsOwnT = 0;
 	}
 	const st = {
 		m: 0,
@@ -571,6 +634,7 @@ function schedule(o) {
 			if (p.own) {
 				const ow = p.own;
 				if (ow.steelT) saved += cover.steelT * ow.steelT * dp * (PRICES.hubs.eur - OWN.steelT);
+				if (ow.steelT && o.ownWorks) s.hubsOwnT += cover.steelT * ow.steelT * dp;
 				if (ow.glassM2) saved += cover.glassM2 * dp * (ow.glassM2 * (PRICES.glass.eur - OWN.glassM2) + (ow.pvM2 ?? 0) * (PRICES.pv.eur - OWN.pvM2));
 				if (ow.timberM3) saved += cover.timberM3 * dp * Math.max(0, ow.timberEur - ow.timberM3 * OWN.timberM3);
 			}
@@ -632,7 +696,9 @@ function schedule(o) {
 		for (const k of hexes) hexCum[k] += hexM[k];
 		const allDone = steps.every((s) => s.state === 'done');
 		const building = steps.filter((s) => s.state === 'run' || (s.end === m && s.start !== m) || (s.start === m && s.end === m));
-		const standing = steps.filter((s) => s.state === 'done' && s.phases.some((p) => p.id === 'shell')).length;
+		// the domes standing (and the works halls, counted apart), and the domes and halls going up
+		const standing = steps.filter((s) => s.state === 'done' && !s.hall && s.phases.some((p) => p.id === 'shell')).length;
+		const hallsUp = steps.filter((s) => s.state === 'done' && s.hall).length;
 		const framing = steps.filter((s) => s.state === 'run' && s.phases.some((p) => p.id === 'shell')).length;
 		months.push({
 			m,
@@ -644,6 +710,7 @@ function schedule(o) {
 			campBeds: campOn ? campBeds : 0,
 			camp: campOn || m === 0 ? campAt ?? LIVING_ORDER[0] : null,
 			domes: standing,
+			halls: hallsUp,
 			framing,
 			building: building.map((s) => s.id),
 			eur: eurM,
@@ -815,6 +882,7 @@ function planFor(opts = {}) {
 			site: s.site,
 			kind: s.kind,
 			factory: s.factory,
+			hall: !!s.hall,
 			label: s.label,
 			start: s.start ?? null,
 			end: s.end ?? null,
@@ -826,6 +894,7 @@ function planFor(opts = {}) {
 			handlerDays: Math.round(s.used.handler * 10) / 10,
 			t: Object.fromEntries(Object.entries(s.t).map(([k, v]) => [k, Math.round(v * 10) / 10])),
 			pvM2: Math.round(s.pvM2),
+			hubsOwnT: Math.round(s.hubsOwnT * 10) / 10,
 			eur: Object.fromEntries(Object.entries(eur).map(([k, v]) => [k, Math.round(v)])),
 			beds: s.beds ?? 0,
 			energy: s.energy ?? null,
@@ -862,7 +931,8 @@ function planFor(opts = {}) {
 			founded: Number.isFinite(founded) ? founded : null,
 			done: Math.max(...own.map((s) => s.end ?? -1)),
 			beds: own.reduce((a, s) => a + s.beds, 0),
-			domes: own.filter((s) => s.phases.some((p) => p.id === 'shell')).length,
+			domes: own.filter((s) => !s.hall && s.phases.some((p) => p.id === 'shell')).length,
+			halls: own.filter((s) => s.hall).length,
 			eur: { kit: kitE, running: Math.max(0, runE), materials: by.materials, machines: by.machines, services: by.services + design, land: by.land, total: last.hexCum[key] }
 		};
 	});
@@ -879,17 +949,25 @@ function planFor(opts = {}) {
 		handlerDays: outSteps.reduce((a, s) => a + s.handlerDays, 0),
 		worksSaved: outSteps.reduce((a, s) => a + s.eur.worksSaved, 0),
 		materialsFinished: outSteps.reduce((a, s) => a + s.eur.materialsFinished, 0),
-		t: { glulam: sumT('glulam'), steel: sumT('steel'), glass: sumT('glass'), hemp: sumT('hemp'), lime: sumT('lime'), concrete: sumT('concrete'), gravel: sumT('gravel') },
+		t: { glulam: sumT('glulam'), steel: sumT('steel'), glass: sumT('glass'), hemp: sumT('hemp'), lime: sumT('lime'), concrete: sumT('concrete'), gravel: sumT('gravel'), panels: sumT('panels'), modules: sumT('modules') },
 		pvM2: outSteps.reduce((a, s) => a + s.pvM2, 0),
 		beds: outSteps.reduce((a, s) => a + s.beds, 0),
-		domes: outSteps.filter((s) => s.phases.some((p) => p.id === 'shell')).length,
+		domes: outSteps.filter((s) => !s.hall && s.phases.some((p) => p.id === 'shell')).length,
+		halls: outSteps.filter((s) => s.hall).length,
 		perPerson: total / o.targetPeople
 	};
+	// the hubs: how many tonnes the village's own steel works made, and from which month it ran (the rest are bought:
+	// cast in package 1, welded by a fabricator in packages 2–4)
+	const hubsT = outSteps.filter((s) => !s.hall && s.kind !== 'tower' && s.phases.some((p) => p.id === 'frame')).reduce((a, s) => a + (s.t.steel ?? 0), 0);
+	const ownT = outSteps.reduce((a, s) => a + s.hubsOwnT, 0);
+	totals.hubs = { how: INSIDES ? 'welded from plate' : 'cast', t: hubsT, ownT, boughtT: hubsT - ownT, ownFrom: months.find((x) => x.works.includes('steel'))?.m ?? null, boughtEur: PRICES.hubs.eur, ownEur: OWN.steelT };
 
 	// what held the build back: the months the crew's hours ran out, and the months the tower cranes were all busy
 	const binds = { hours: months.filter((x) => x.hours.used >= x.hours.pool * 0.98).length, cranes: months.filter((x) => x.lifts.crane >= x.lifts.craneCap * 0.66).length, months: months.length };
 
 	const plan = {
+		/** the design package the plan is built to (./specs.js DESIGN) */
+		design: { id: DESIGN, ...PACKAGE },
 		options: { tower: o.tower, settlers: o.settlers, targetPeople: o.targetPeople, months: o.months, startYear: o.startYear, startMonth: o.startMonth, ownWorks: o.ownWorks, avenH: o.avenH, prefab: !!o.prefab, kit: opts.kit ?? {} },
 		kit: {
 			items: o.kit.map((k) => ({ ...k, total: k.n * k.eur })),

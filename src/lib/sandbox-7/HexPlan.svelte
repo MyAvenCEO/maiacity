@@ -10,6 +10,9 @@
 	settlers to 1,500 people, dome by dome, as ./buildout.js plans it, in the village without the tower (the centre's
 	middle one more Dome120 of utilities and community halls). Closed, the world is the finished village as before.
 	?month=18 opens it at a month, &kit=starter with the starter kit, &hex=living-e over a hex.
+
+	The design package (./specs.js DESIGN, 2026-10-13): from package 3 the eight works stand in plain portal-frame halls
+	with solar on their south roofs instead of Dome120s; the cards, counts and panels follow it.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -18,7 +21,7 @@
 	import { LIVING, TOWER_HEX, USES, VILLAGE, landOf } from './layout.js';
 	import { hexStats, siteCard, villageStats } from './stats.js';
 	import { DAYS, placeAll, sunShares } from './light.js';
-	import { DAY, DIET, ENERGY, GROWN, KINDS, LAND_PERSON, NORTH, PRICES, SOURCES, TOWER } from './specs.js';
+	import { DAY, DIET, ENERGY, GROWN, HALLS, KINDS, LAND_PERSON, NORTH, PRICES, SOURCES, TOWER, worksCompare } from './specs.js';
 	import { FLOOR_COLOURS } from './scene.js';
 	import { BUILD_SOURCES, EUR_KINDS, KIT_GROUPS, LABOUR, RATES, buildPlan, monthAt, nowLine, phaseAt } from './buildout.js';
 
@@ -43,6 +46,8 @@
 	]);
 	// the sun on every dome, with its neighbours and the tower
 	const sun = sunShares(placeAll(VILLAGE));
+	/** the eight works in Dome120s against the eight in halls: their solar, heat and climate power a year */
+	const works = worksCompare();
 	/** @type {any} */
 	const stats = $derived(hex === 'village' ? village : hex === 'tower' ? towerStats : livingStats);
 	/** the plan a hex of the village has */
@@ -53,7 +58,7 @@
 		{ id: 'landuse', label: 'Land use' },
 		{ id: 'labels', label: 'Labels' },
 		{ id: 'dims', label: 'Dimensions' },
-		{ id: 'shell', label: 'Solar glass & hemp shells' },
+		{ id: 'shell', label: HALLS ? 'Shells & hall roofs' : 'Solar glass & hemp shells' },
 		{ id: 'inside', label: 'Inside' },
 		{ id: 'plants', label: 'Plants' },
 		{ id: 'outline', label: 'Hex lines' }
@@ -296,6 +301,7 @@
 				<button class:on={kitId === 'auto'} onclick={() => (kitId = 'auto')}>Six-year kit</button>
 				<button class:on={kitId === 'starter'} onclick={() => (kitId = 'starter')}>Starter kit</button>
 			</div>
+			<p class="small"><b>Design package {plan.design.n} of 4:</b> {plan.design.note}. <small>Switch: ./specs.js DESIGN.</small></p>
 			<p class="small"><b>Six years?</b> {F.statement}</p>
 			<h3>What it costs <span class="sub">{plan.feasibility.kit.short}</span></h3>
 			<table>
@@ -365,7 +371,7 @@
 			<p class="note">{card.note}</p>
 			<dl>
 				{#each card.facts as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
-				{#if cardSun}<dt>Sun on its south glass</dt><dd>{n0(100 * cardSun.winter)}% of the sunny day on {DAYS.winter.label} ({n1(cardSun.winter * sun.dayHours.winter)} of {n1(sun.dayHours.winter)} h), {n0(100 * cardSun.equinox)}% on {DAYS.equinox.label}</dd>{/if}
+				{#if cardSun}<dt>{card.hall ? 'Sun on its south roof' : 'Sun on its south glass'}</dt><dd>{n0(100 * cardSun.winter)}% of the sunny day on {DAYS.winter.label} ({n1(cardSun.winter * sun.dayHours.winter)} of {n1(sun.dayHours.winter)} h), {n0(100 * cardSun.equinox)}% on {DAYS.equinox.label}</dd>{/if}
 			</dl>
 			{#if card.block && card.cap}
 				{@const B = card.block}
@@ -405,17 +411,34 @@
 					{/each}
 				</tbody>
 			</table>
-			<h3>Its shell</h3>
-			<table>
-				<tbody>
-					<tr><td>Glulam struts and cassettes</td><td class="num">{n0(card.shell.m.timber)} m³ · {tonnes(card.shell.t.timber)} t</td></tr>
-					<tr><td>Steel hubs, ring, connectors</td><td class="num">{tonnes(card.shell.t.steel)} t</td></tr>
-					<tr><td>Laminated double glazing</td><td class="num">{n0(card.shell.m.glass)} m² · {tonnes(card.shell.t.glass)} t</td></tr>
-					<tr><td>Hemp fibre, north side</td><td class="num">{n0(card.shell.m.hemp)} m³ · {tonnes(card.shell.t.hemp)} t</td></tr>
-					<tr><td>Lime footing</td><td class="num">{n0(card.shell.m.lime)} m³ · {tonnes(card.shell.t.lime)} t</td></tr>
-					<tr class="total"><td>Shell materials at today’s prices</td><td class="num">{eur(card.eur)}</td></tr>
-				</tbody>
-			</table>
+			{#if card.hall}
+				{@const H = card.hall}
+				<h3>The hall</h3>
+				<table>
+					<tbody>
+						<tr><td>Spruce glulam frames and purlins<small>{H.frames} portal frames, {n0(H.m.glulam)} m³ and {n0(H.m.purlins)} m³ of purlins; {tonnes(H.m.steel)} t of steel connectors</small></td><td class="num">{tonnes(H.t.glulam)} t · {eur(H.eur.frame)}</td></tr>
+						<tr><td>Sandwich panels, roof and walls<small>{n0(H.roof)} m² and {n0(H.walls)} m²</small></td><td class="num">{tonnes(H.t.panels)} t · {eur(H.eur.cladding)}</td></tr>
+						<tr><td>Slab on gravel, footings<small>{n0(H.m.slab)} m³ of concrete, {tonnes(H.m.mesh)} t of mesh, {n0(H.columns)} footings</small></td><td class="num">{tonnes(H.t.concrete + H.t.gravel)} t · {eur(H.eur.slab)}</td></tr>
+						<tr><td>Doors, rooflights, services</td><td class="num">{eur(H.eur.kit)}</td></tr>
+						<tr><td>Solar on the south slope<small>{n0(H.m.modules)} m², {n0(H.m.kwp)} kWp</small></td><td class="num">{tonnes(H.t.modules)} t · {eur(H.eur.pv)}</td></tr>
+						<tr class="total"><td>The hall at today’s prices</td><td class="num">{eur(card.eur)}</td></tr>
+					</tbody>
+				</table>
+				<p class="small">Estimates: ./specs.js HALL and HALL_PRICES. The works’ machines are counted apart.</p>
+			{:else}
+				{@const sh = /** @type {any} */ (card.shell)}
+				<h3>Its shell</h3>
+				<table>
+					<tbody>
+						<tr><td>Glulam struts and cassettes</td><td class="num">{n0(sh.m.timber)} m³ · {tonnes(sh.t.timber)} t</td></tr>
+						<tr><td>Steel hubs, ring, connectors</td><td class="num">{tonnes(sh.t.steel)} t</td></tr>
+						<tr><td>Laminated double glazing</td><td class="num">{n0(sh.m.glass)} m² · {tonnes(sh.t.glass)} t</td></tr>
+						<tr><td>Hemp fibre, north side</td><td class="num">{n0(sh.m.hemp)} m³ · {tonnes(sh.t.hemp)} t</td></tr>
+						<tr><td>Lime footing</td><td class="num">{n0(sh.m.lime)} m³ · {tonnes(sh.t.lime)} t</td></tr>
+						<tr class="total"><td>Shell materials at today’s prices</td><td class="num">{eur(card.eur)}</td></tr>
+					</tbody>
+				</table>
+			{/if}
 			<button class="link" onclick={() => picked && world?.focusSite(picked.id, picked.hex)}>Fly to it</button>
 		</section>
 	{/if}
@@ -435,7 +458,7 @@
 					<tr><td colspan="5">A resident’s share</td><td class="num">{eur(village.total / village.residents)}</td></tr>
 				</tbody>
 			</table>
-			<p class="small">People: who lives there. Food: what the hex grows against what its people eat (the tower hex grows little; the living hexes feed it). GWh: the power it makes less what it uses, a year. Sun: the share of the sunny day on {DAYS.winter.label} that reaches the homes’ south glass (the tower hex: its factory domes), with the neighbours’ domes and the tower’s long winter shadow counted. Click a hex to fly to it.</p>
+			<p class="small">People: who lives there. Food: what the hex grows against what its people eat (the tower hex grows little; the living hexes feed it). GWh: the power it makes less what it uses, a year. Sun: the share of the sunny day on {DAYS.winter.label} that reaches the homes’ south glass (the tower hex: {HALLS ? 'its works halls’ south roofs' : 'its factory domes'}), with the neighbours’ domes and the tower’s long winter shadow counted. Click a hex to fly to it.</p>
 		</section>
 	{/if}
 
@@ -447,7 +470,7 @@
 				{#each groups as g (g.label)}<li><i style:background={g.color}></i>{g.label} <b>{n1(g.pct)}%</b></li>{/each}
 			</ul>
 			<table>
-				<thead><tr><th>Under glass ({ha(stats.glassHa)} ha, {n1((100 * stats.glassHa) / stats.hexHa)}%)</th><th class="num">ha</th><th class="num">%</th></tr></thead>
+				<thead><tr><th>{HALLS ? 'Under glass or a roof' : 'Under glass'} ({ha(stats.glassHa)} ha, {n1((100 * stats.glassHa) / stats.hexHa)}%)</th><th class="num">ha</th><th class="num">%</th></tr></thead>
 				<tbody>
 					{#each stats.uses.filter((/** @type {any} */ u) => u.inside) as u (u.id)}
 						<tr><td><i style:background={u.map}></i>{u.label}</td><td class="num">{ha(u.ha)}</td><td class="num">{n1(u.pct)}</td></tr>
@@ -463,7 +486,7 @@
 			{#if hex !== 'tower'}
 				<p class="small">Food forest under glass {n1(sum(['indoorFood']))}% · outdoors {n1(sum(['foodForest']))}% · homes {n1(sum(['living']))}% of the land ({n0(stats.buildings.reduce((/** @type {number} */ a, /** @type {any} */ b) => a + (b.gfa ?? 0) * b.count, 0))} m² of floor in blocks of {KINDS.dome40.storeys} and {KINDS.dome80.storeys} storeys) · nature {n1(sum(['nature']))}%.{#if hex === 'village'} Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}%.{/if}</p>
 			{:else}
-				<p class="small">Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}% (no domes over them: only the works are under glass) · nature {n1(sum(['nature']))}%.</p>
+				<p class="small">Raw-material fields and woods {n1(sum(['hemp', 'bamboo', 'woodland']))}% · open pits {n1(sum(['mine']))}% (no domes over them: {HALLS ? 'only the works are indoors, in plain halls' : 'only the works are under glass'}) · nature {n1(sum(['nature']))}%.</p>
 			{/if}
 			<p class="tip">Turn on “Land use” to paint these colours on the ground.</p>
 		</section>
@@ -473,14 +496,14 @@
 		<section class="panel">
 			<h2>Buildings</h2>
 			<table>
-				<thead><tr><th></th><th class="num">Ø m</th><th class="num">high</th><th class="num">floor m²</th><th class="num">shell m²</th></tr></thead>
+				<thead><tr><th></th><th class="num">{HALLS ? 'Ø or size, m' : 'Ø m'}</th><th class="num">high</th><th class="num">floor m²</th><th class="num">shell m²</th></tr></thead>
 				<tbody>
 					{#each stats.buildings as b (b.kind)}
-						<tr><td>{b.count} × {b.label}{#if b.people}<small>{b.people} people each</small>{/if}</td><td class="num">{b.D}</td><td class="num">{n1(b.h)}</td><td class="num">{n0(b.floor)}</td><td class="num">{n0(b.shell)}</td></tr>
+						<tr><td>{b.count} × {b.label}{#if b.people}<small>{b.people} people each</small>{/if}</td><td class="num">{b.size ?? b.D}</td><td class="num">{n1(b.h)}</td><td class="num">{n0(b.floor)}</td><td class="num">{n0(b.shell)}</td></tr>
 					{/each}
 				</tbody>
 			</table>
-			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 120 m dome’s 40 m). The homes are one straight block across the north of each dome, east to west: Dome40 {KINDS.dome40.storeys} storeys for {KINDS.dome40.people} people, Dome80 {KINDS.dome80.storeys} for {KINDS.dome80.people}, small balconies on the south face looking into the dome’s own food garden. Every panel is one of three: a white hemp triangle (solid, insulated) on the cold north side ({n0(NORTH * 100)}% of the shell), its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; everywhere else glass and solar panels alternate like a chessboard, half each, so the plants keep half the light. The domes are Class I geodesics (frequency 7, 11 and 14: struts ~3–6 m), the tower a diagrid of triangles.</p>
+			<p class="small">Every dome is a geodesic cap a third as high as it is wide (the 120 m dome’s 40 m). The homes are one straight block across the north of each dome, east to west: Dome40 {KINDS.dome40.storeys} storeys for {KINDS.dome40.people} people, Dome80 {KINDS.dome80.storeys} for {KINDS.dome80.people}, small balconies on the south face looking into the dome’s own food garden. Every panel is one of three: a white hemp triangle (solid, insulated) on the cold north side ({n0(NORTH * 100)}% of the shell), its edge one smooth line from the foot 70° west of north, over the north side below the crown, down to the foot 70° east of north; everywhere else glass and solar panels alternate like a chessboard, half each, so the plants keep half the light. The domes are Class I geodesics (frequency 7, 11 and 14: struts ~3–6 m), the tower a diagrid of triangles.{#if HALLS} The eight works stand in plain halls instead: spruce glulam portal frames every 6 m over 24 or 30 m, a 10° roof with its ridge east to west, insulated sandwich panels, solar on the south slope. Each is as long as its works needs.{/if}</p>
 		</section>
 	{/if}
 
@@ -565,10 +588,24 @@
 				</tbody>
 				<thead><tr><th>Heat</th><th></th></tr></thead>
 				<tbody>
-					<tr><td>The domes need beyond their fish ponds</td><td class="num">{gwh(stats.energy.heat)}</td></tr>
+					{#each stats.energy.heatRows as m (m.label)}<tr><td>{m.label}</td><td class="num">{gwh(m.kwh)}</td></tr>{/each}
 					{#each stats.energy.heatFrom as m (m.label)}<tr><td>{m.label}</td><td class="num">{gwh(m.kwh)}</td></tr>{/each}
 				</tbody>
 			</table>
+			{#if HALLS && hex !== 'living'}
+				<h3>The works: halls against Dome120s <span class="sub">a year, the eight</span></h3>
+				<table>
+					<thead><tr><th></th><th class="num">8 halls</th><th class="num">8 Dome120s</th></tr></thead>
+					<tbody>
+						<tr><td>Floor, m²</td><td class="num">{n0(works.halls.floor)}</td><td class="num">{n0(works.domes.floor)}</td></tr>
+						<tr><td>Solar made</td><td class="num">{gwh(works.halls.solar)}</td><td class="num">{gwh(works.domes.solar)}</td></tr>
+						<tr><td>Heat needed</td><td class="num">{gwh(works.halls.heat)}</td><td class="num">{gwh(works.domes.heat)}</td></tr>
+						<tr><td>Power for fans or dome climate</td><td class="num">{gwh(works.halls.climate)}</td><td class="num">{gwh(works.domes.climate)}</td></tr>
+						<tr class="total"><td>The buildings at today’s prices</td><td class="num">{eur(works.halls.eur)}</td><td class="num">{eur(works.domes.eur)}</td></tr>
+					</tbody>
+				</table>
+				<p class="small">The halls’ south roofs carry {n0(works.halls.kwp)} kWp. They make less solar than the domes’ cells, but they need about half the heat and almost no climate power.</p>
+			{/if}
 		</section>
 	{/if}
 
@@ -610,7 +647,7 @@
 					{#each stats.raw as r (r.id)}<tr><td>{r.label}<small>{r.note}</small></td><td class="num">{ha(r.ha)} ha</td><td class="num">{r.per ? `${n0(r.yearly)} ${r.unit}` : ''}</td></tr>{/each}
 				</tbody>
 			</table>
-			<h3>The eight factory domes</h3>
+			<h3>{HALLS ? 'The eight works halls' : 'The eight factory domes'}</h3>
 			<ul class="plain">
 				{#each TOWER_HEX.sites.filter((s) => s.kind === 'factory120') as s (s.id)}
 					{@const run = stats.factoryRun[s.factory ?? '']}
@@ -667,7 +704,7 @@
 			<div class="counts">
 				<span><b>{n0(mo.people)}</b> people</span>
 				<span><b>{n0(mo.beds)}</b> beds{mo.campBeds ? ` (${mo.campBeds} in the camp)` : ''}</span>
-				<span><b>{mo.domes}</b> of {plan.totals.domes} domes{mo.framing ? `, ${mo.framing} going up` : ''}</span>
+				<span><b>{mo.domes}</b> of {plan.totals.domes} domes{plan.totals.halls ? ` · ${mo.halls} of ${plan.totals.halls} halls` : ''}{mo.framing ? `, ${mo.framing} going up` : ''}</span>
 				<span><b>{eur(mo.cumTotal)}</b> spent</span>
 			</div>
 			<div class="kinds">

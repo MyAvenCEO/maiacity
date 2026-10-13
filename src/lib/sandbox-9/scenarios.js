@@ -630,7 +630,7 @@ export const SCENARIOS = [
 		name: 'euro-border',
 		paper: 'world model 9 (the border); paper §11.4 (the euro reserve)',
 		stress: 'P3: Aven services without a chip fab',
-		claim: 'The base city trades across the border as COOPs only (paper §11.4): a COMPUTE COOP buys electricity from the energy COOPs, the line exports it, the euros go into that COOP’s own account in the euro reserve, and the reserve buys accelerators with them; no person redeems MIND and no MIND is made from euros. The closed city (the counter-case) cannot make or import accelerators, so its Aven services wear away with them. The open city keeps more Aven services than the closed one, nobody is short of a basic in any of the three worlds, when accelerators cost three times as much from year 10 the reserve buys fewer, and Proposition 3 (P1–P3) holds through that import price shock (the world model’s target for B23).',
+		claim: 'The base city trades across the border as COOPs only (paper §11.4): the hardware owners (the settlement COOPs and the Village COOP) buy the accelerators for their data halls with euros the MaiaCity COOP’s bank advances, and pay the advances back in their own MIND; no person redeems MIND and no MIND is made from euros. The closed city (the counter-case) cannot make or import accelerators, so its Aven services wear away with them. The open city keeps more Aven services than the closed one, nobody is short of a basic in any of the three worlds, when accelerators cost three times as much from year 10 the reserve buys fewer, and Proposition 3 (P1–P3) holds through that import price shock (the world model’s target for B23).',
 		runs: [base30, run({ chipImport: false }, 30, 'closed city (no border)'), run({ shocks: [{ kind: 'importPrice', day: 3650, days: 7300, factor: 3 }] }, 30, 'border open, accelerators 3× dearer from year 10')],
 		judge(R, runs) {
 			const [o, c, d] = runs.map((r) => R[r.key]);
@@ -843,8 +843,8 @@ export const SCENARIOS = [
 		name: 'owner-keep',
 		paper: 'Proposition 3, P2 (the owner-only cohort)',
 		stress: 'P2 against P3: what the owner-only cohort keeps',
-		claim: 'A comparison, not a test of the Proposition (it has no verdict): an Aven whose person delivers nothing keeps the whole HEARTS half as ownership (the base), against keeping half of it, as every other Aven does. It shows what the saving rule buys the owner-only cohort (dividends that pay its bundle every day) and what it costs (a lower living standard in its first years), and what it does to P3.',
-		runs: [base30, run({ ownerKeep: 0.5 }, 30, 'owner-only Avens keep half the HEARTS half')],
+		claim: 'A comparison, not a test of the Proposition (it has no verdict): an Aven whose person delivers nothing spends its income above the basics on extras as far as its holding keeps up with the melt, never its capital (the base, round 4), against keeping the whole HEARTS half as ownership and spending only dividends (the rule until round 4). It shows what each rule gives the owner-only cohort (dividends toward its bundle, or extras now) and what it does to P2 and P3.',
+		runs: [base30, run({ ownerRule: 'keep', ownerKeep: 1 }, 30, 'owner-only Avens keep the whole HEARTS half (until round 4)')],
 		judge(R, runs) {
 			const [a, b] = runs.map((r) => R[r.key]);
 			const row = (s, i) => ({ label: runs[i].label, strictFrom: s.prop3.P2.strict.holdsEveryDayFrom, strict: s.prop3.P2.strict.pass, normal: s.prop3.P2.normal.pass, ownerL5: s.ownerL5, ownerLLast: s.ownerLLast, poorH: s.poorH, poorA: s.poorA, P3failed: s.prop3.P3.failed.length });
@@ -882,7 +882,7 @@ export const NOT_COVERED = [
 	['B19', 'price-pump', 'an attacker on one pool is not modelled (the B11 ring pushes its own price)'],
 	['B20', 'sybil-farm', 'no fake identities'],
 	['B21', 'estates', 'no deaths or heirs'],
-	['B23 (part)', 'euro-border', 'B23 runs the border for accelerators only: the euro reserve (paper §11.4) holds each COMPUTE COOP’s own account, filled by the electricity it exports and spent on its accelerators; a reserve pooled across COOPs (energy COOPs earning euros, other imports such as panels) and any other trade across the border are not modelled'],
+	['B23 (part)', 'euro-border', 'B23 closes the border to accelerators only (everything else still crosses): the hardware owners buy them with euros the MaiaCity COOP’s bank advances (paper §11.4), paid back in their own MIND; the bank’s euros come from the line’s electricity (and, in AIX, Aven service sold abroad)'],
 	['B24', 'care-underfunding', 'care is not a good in the engine'],
 	['B25', 'two-choices and faithful Avens', 'no random human choices or Aven mistakes']
 ];

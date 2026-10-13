@@ -3,7 +3,7 @@
  * seven hexes (./scene.js), the labels over the hexes and buildings drawn in HTML, and a click to pick a building.
  *
  *   look     drag turns and tilts, the wheel zooms, WASD travels (the kit's orbit rig)
- *   pick     click a dome or the tower to see its numbers
+ *   pick     click a dome, a works hall or the tower to see its numbers
  *   focus    the page flies over the whole village, the tower hex or one living hex
  *   labels   from afar one label a hex; closer, the buildings round where the camera looks, and with the land-use map on
  *            each patch of outdoor land, its use and size
@@ -32,7 +32,7 @@ const hexView = (/** @type {number} */ x, /** @type {number} */ z, tower = false
 export function timelineAt(plan, t) {
 	/** @type {Record<string, Record<string, { phase: string, f: number }>>} */
 	const sites = {};
-	/** @type {Record<string, { done: number, of: number, up: number, beds: number }>} */
+	/** @type {Record<string, { done: number, of: number, up: number, beds: number, halls: number, hallsDone: number }>} */
 	const count = {};
 	/** @type {Record<string, any>} */
 	const byId = {};
@@ -44,7 +44,14 @@ export function timelineAt(plan, t) {
 		const from = i > 0 ? s.phases[i - 1].to : 0, to = i >= 0 ? s.phases[i].to : 1;
 		const f = a.phase === 'none' ? 0 : a.phase === 'done' ? 1 : Math.min(1, Math.max(0, (a.p - from) / Math.max(1e-6, to - from)));
 		(sites[s.hex] ??= {})[s.site] = { phase: a.phase, f };
-		const c = (count[s.hex] ??= { done: 0, of: 0, up: 0, beds: 0 });
+		const c = (count[s.hex] ??= { done: 0, of: 0, up: 0, beds: 0, halls: 0, hallsDone: 0 });
+		// the works halls count apart from the domes
+		if (s.hall) {
+			c.halls++;
+			if (a.phase === 'done') c.hallsDone++;
+			else if (a.phase !== 'none') c.up++;
+			continue;
+		}
 		c.of++;
 		if (a.phase === 'done') {
 			c.done++;
@@ -92,8 +99,8 @@ export function timelineAt(plan, t) {
 		const coop = st?.coop ?? '';
 		hexHead[h.key] = coop || h.label;
 		const founded = st?.founded ?? null;
-		if (!c || (c.done === 0 && c.up === 0)) hexText[h.key] = founded !== null && t >= founded ? `founded ${plan.months[Math.min(founded, plan.months.length - 1)]?.label ?? ''} · roads and planting` : `Not begun${founded !== null ? ` · starts ${plan.months[Math.min(founded, plan.months.length - 1)]?.label ?? ''}` : ''}`;
-		else hexText[h.key] = `${c.done} of ${c.of} domes${c.up ? ` (+${c.up})` : ''}${c.beds ? ` · ${c.beds.toLocaleString('en-US')} beds` : ''}${campHex === h.key ? ` · camp ${plan.kit.campBeds}` : ''}`;
+		if (!c || (c.done === 0 && c.up === 0 && c.hallsDone === 0)) hexText[h.key] = founded !== null && t >= founded ? `founded ${plan.months[Math.min(founded, plan.months.length - 1)]?.label ?? ''} · roads and planting` : `Not begun${founded !== null ? ` · starts ${plan.months[Math.min(founded, plan.months.length - 1)]?.label ?? ''}` : ''}`;
+		else hexText[h.key] = `${c.done} of ${c.of} domes${c.halls ? ` · ${c.hallsDone} of ${c.halls} halls` : ''}${c.up ? ` (+${c.up})` : ''}${c.beds ? ` · ${c.beds.toLocaleString('en-US')} beds` : ''}${campHex === h.key ? ` · camp ${plan.kit.campBeds}` : ''}`;
 	}
 	/** @type {Record<string, boolean>} */
 	const begun = {};
@@ -134,10 +141,11 @@ export function mountWorld(container, labelLayer, o = {}) {
 			el.className = 'lbl';
 			const K = KINDS[b.site.kind];
 			const title = b.site.kind === 'tower' ? (h.plan.tower?.label ?? 'Tower') : b.site.kind === 'factory120' ? b.site.name : K.label;
-			const sub = b.site.kind === 'factory120' ? 'Dome120 factory' : b.site.kind === 'dome40' || b.site.kind === 'dome80' ? `${K.people} people, ${K.storeys} storeys` : b.site.kind === 'food120' ? 'Food forest under glass' : b.id === 'centre' ? 'Utilities and community halls' : b.site.kind === 'util120' ? 'Utilities' : 'Factory, utilities, offices, homes';
+			const sub = b.hall ? 'Works hall' : b.site.kind === 'factory120' ? 'Dome120 factory' : b.site.kind === 'dome40' || b.site.kind === 'dome80' ? `${K.people} people, ${K.storeys} storeys` : b.site.kind === 'food120' ? 'Food forest under glass' : b.id === 'centre' ? 'Utilities and community halls' : b.site.kind === 'util120' ? 'Utilities' : 'Factory, utilities, offices, homes';
 			el.innerHTML = `<b>${title}</b><span>${sub}</span>`;
 			const dims = document.createElement('em');
 			if (b.site.kind === 'tower' && h.plan.tower) dims.textContent = `Ø${h.plan.tower.D} m · ${h.plan.tower.H} m high`;
+			else if (b.hall) dims.textContent = `${b.hall.length} × ${b.hall.span} m · ${b.hall.ridge.toFixed(1)} m high · ${Math.round(b.hall.floor).toLocaleString('en-US')} m²`;
 			else {
 				const c = capOf(K.D);
 				dims.textContent = `Ø${K.D} m · ${c.h.toFixed(1)} m high · ${Math.round(c.floor).toLocaleString('en-US')} m²`;

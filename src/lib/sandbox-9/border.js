@@ -20,8 +20,8 @@
  *
  * Who buys what: the food COOPs buy food (in the diet's mix, at wholesale) when their stores and harvests ahead fall
  * short of what their buyers will eat; the works buy their raw inputs (logs beyond the village's woods, steel scrap
- * beyond the village's own worn steel, float glass, solar cells); the COMPUTE COOPs buy accelerators (./coops.js plan,
- * produce). What is bought arrives the same day. A COOP that finds no euros buys less: its buyers go short.
+ * beyond the village's own worn steel, float glass, solar cells); the hardware owners (the settlement COOPs and the
+ * Village COOP) buy accelerators for their data halls (./ai.js aiEvening). What is bought arrives the same day. A COOP that finds no euros buys less: its buyers go short.
  */
 import { CLASS, ENERGY, FOOD, MAX_COOPS, WOOD, STEEL, GLASS, PANEL } from './consts.js';
 import { rawOf, plantCapDay, capDayOf } from './genesis.js';
@@ -96,15 +96,30 @@ export function importsDay(w) {
 	t.imp = { ...Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])), ...(t.imp ?? {}) };
 	t.impEur = { ...Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])), ...(t.impEur ?? {}) };
 	t.impShort = 0;
+	// (round 4) the border fills what the village cannot grow: each food COOP's gap (its buyers' need over the weeks
+	// ahead, less its store and harvest ahead) counts only as far as the village's own food falls short, all its
+	// growers' stores and harvests ahead together. A COOP with a small dome and many buyers used to buy its buyers'
+	// whole need abroad while the village's growers held months of food in store; the imported food undercut them in
+	// winter, they could not pay their domes' heat, and one failed after the other (round 3: years 7 and 15)
+	const foodGap = new Map();
+	let gapAll = 0, gapVillage = 0;
+	for (const co of w.coops) {
+		if (!co.alive || co.good !== FOOD) continue;
+		const ahead = supplyAhead(w, co, H);
+		// on the ramp, the people the build-out plan brings over the weeks ahead will eat too (./ramp.js)
+		const need = Math.max(co.demandEma, 0) * (w.ramp && !w.ramp.over ? Math.max(1, peopleAhead(w, H + 15) / Math.max(1, w.N)) : 1);
+		const gap = need * (H + 15) - co.stock - ahead[ahead.length - 1];
+		foodGap.set(co, gap);
+		gapVillage += gap;
+		if (gap > 0) gapAll += gap;
+	}
+	const foodScale = gapAll > 0 ? Math.max(0, Math.min(1, gapVillage / gapAll)) : 0;
 	for (const co of w.coops) {
 		co.eurToday = 0;
 		co.importToday = 0;
 		if (!co.alive) continue;
 		if (co.good === FOOD) {
-			const ahead = supplyAhead(w, co, H);
-			// on the ramp, the people the build-out plan brings over the weeks ahead will eat too (./ramp.js)
-			const need = Math.max(co.demandEma, 0) * (w.ramp && !w.ramp.over ? Math.max(1, peopleAhead(w, H + 15) / Math.max(1, w.N)) : 1);
-			const gap = need * (H + 15) - co.stock - ahead[ahead.length - 1];
+			const gap = (foodGap.get(co) ?? 0) * foodScale;
 			if (gap > 1e-9) {
 				const want = gap / 5;
 				const paid = payEur(w, co, want * E.food);
@@ -179,7 +194,7 @@ export function importsDay(w) {
  * accountDays of what it has spent lately, or at what it will have to buy at the border before its own plants catch
  * up (its deficit ahead: a food COOP saves in the autumn for the spring), whichever is more, spread over two months
  * (the line's room is shared out by shareLine). Upkeep's class (served with the running class, before any building): food and the works' inputs
- * are what the village lives on. The COMPUTE COOPs plan theirs for accelerators in ./coops.js plan.
+ * are what the village lives on. The hardware owners' accelerators are advanced by the bank (./ai.js aiEvening).
  */
 export function exportPlan(w, co) {
 	const B = w.border;

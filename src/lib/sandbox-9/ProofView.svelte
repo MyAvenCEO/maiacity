@@ -7,17 +7,19 @@
 
 	Above the verdicts, the base world itself, read from the saved full run (proof.json `suite`): how people live per
 	tenth year by year (the Living table, first), what the village imports to be built and to eat until its food
-	forest bears (Imports), and every parameter it ran with (World).
+	forest bears (Imports), the AI market (who owns the accelerators, the inference and Aven hours, each tenth's income
+	by source), and every parameter it ran with (World).
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
 	import { onMount, onDestroy } from 'svelte';
 	import { proofJobs, assemble, engineHash, ENGINE_FILES } from './proofRun.js';
-	import { livingOf, importsOf } from './params.js';
+	import { livingOf, importsOf, aiOf } from './params.js';
 	import { DAY } from '../sandbox-7/specs.js';
 	import LivingView from './LivingView.svelte';
 	import ImportsView from './ImportsView.svelte';
+	import AiView from './AiView.svelte';
 	import WorldParams from './WorldParams.svelte';
 	import * as ENG from './engine.js';
 
@@ -117,6 +119,7 @@
 		const L = su.living?.years ?? null, V = su.village?.years ?? null;
 		const living = livingOf(L, V, catalog, DAY);
 		const imports = importsOf(su.border?.years ?? null, su.border?.founding ?? null, V, { firstFedYear: su.border?.firstFedYear, exportsCoverYear: su.border?.exportsCoverYear }, L);
+		const ai = aiOf(su.ai?.years ?? null);
 		const years = Math.max(L?.length ?? 0, su.border?.years?.length ?? 0);
 		return {
 			seed,
@@ -126,6 +129,7 @@
 			defaults: pb?.defaults ?? null,
 			living,
 			imports,
+			ai,
 			indoor: su.village?.indoorMonths ?? null
 		};
 	});
@@ -157,6 +161,10 @@
 			<LivingView worlds={[baseWorld.living]} names={['Base']} indoor={baseWorld.indoor} />
 			<h3 class="sub">What the village imports</h3>
 			<ImportsView worlds={[baseWorld.imports]} names={['Base']} />
+			{#if baseWorld.ai}
+				<h3 class="sub">The AI market</h3>
+				<AiView worlds={[baseWorld.ai]} names={['Base']} />
+			{/if}
 			{#if baseWorld.params}
 				<details class="params">
 					<summary><b>Every parameter of the base world</b> <span>{nParams} settings and constants and the village plan, grouped, in plain units</span></summary>
