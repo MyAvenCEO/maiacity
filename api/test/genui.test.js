@@ -40,3 +40,14 @@ test("replacing a view raises its version; unknown props are dropped", async () 
   await deleteView("hello");
   await expect(deleteView("hello")).rejects.toThrow(/No such view/);
 });
+
+test("a view card is a screen a MIP may carry: checked, pinned libraries only", async () => {
+  const { checkCard } = await import("../../game/economy/params.js");
+  const { DEFAULT_VIEWS, viewsOf } = await import("../../game/economy/views.js");
+  expect(checkCard(DEFAULT_VIEWS[0]).card.data).toEqual({ slot: "panel", libs: [], height: 520 });
+  expect(checkCard({ id: "vw", kind: "view", code: "<p>hi</p>", data: { libs: ["evil"] } }).error).toMatch(/no library/);
+  expect(checkCard({ id: "vw", kind: "view", code: "" }).error).toMatch(/HTML/);
+  const mine = { id: "view-wants", kind: "view", name: "Wants 2", code: "<p>2</p>" };
+  expect(viewsOf([mine]).map((v) => v.name)).toEqual(["Wants 2"]);
+  expect(viewsOf([]).map((v) => v.id)).toEqual(["view-wants"]);
+});

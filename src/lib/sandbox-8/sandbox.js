@@ -115,7 +115,8 @@ function load(QJS, card) {
  * that owns the rule first, then every other card exporting that hook, each given what the one before made of it.
  */
 export async function loadCode(cards) {
-	const coded = fullCards(cards).filter((c) => typeof c?.code === 'string' && c.code.trim());
+	// a view card's code is a screen (HTML), run in its own frame by the page, never here
+	const coded = fullCards(cards).filter((c) => c?.kind !== 'view' && typeof c?.code === 'string' && c.code.trim());
 	if (!coded.length) return null;
 	const QJS = await quickjs();
 	const units = coded.map((c) => load(QJS, c));
@@ -166,6 +167,7 @@ export async function loadCode(cards) {
  */
 export async function testCard(card, valley, sample) {
 	if (!card?.code?.trim()) return { hooks: [], error: 'This card has no code.' };
+	if (card.kind === 'view') return { hooks: [], error: 'A view card is a screen: it shows in the valley once accepted, it has no hooks to test.' };
 	const QJS = await quickjs();
 	const u = load(QJS, card);
 	try {

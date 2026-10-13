@@ -519,8 +519,14 @@ pub struct EconomyMip {
     /// it follows, from economy_runs; default its world_id) }; the answer lists every setting that differs from
     /// that world), name and about (a new config's name and description; on edit, a rename), from (create: the config
     /// it starts from), cards: [whole config cards as they will be once accepted (for a world: on top of the world it follows, its cards and values as played; send only what changes): { id, kind
-    /// (policy, world, resource or recipe), name, description, values: { key: number } (keys from economy_configs'
-    /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }],
+    /// (policy, world, resource, recipe or view), name, description, values: { key: number } (keys from economy_configs'
+    /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }];
+    /// a view card is one of the valley's screens, an MCP App: { id, kind: "view", name, description, data: { slot:
+    /// "panel" (a tab of the valley's side panel), libs?: ["three" | "d3" | "mcp-apps"], height?: 160-1200 }, code: its
+    /// HTML (up to 100,000 characters) }; it runs in a sandboxed frame with no network and gets the valley as its tool
+    /// result every 1.5 s ({ day, time, goods, avens with stock/need/buy, market, values }: game/economy/views.js), and
+    /// may send ui/update-model-context { structuredContent: { select: avenId } }; the default Wants screen is the view
+    /// card view-wants, which a card of that id replaces,
     /// remove: [ids of cards to take out], prs: [the GitHub PRs whose engine changes in code it needs (a hook its card code
     /// calls, a rule the page runs): { number, title }, at most 10; shown on the proposal as links] }
     pub mip: Value,
@@ -1646,7 +1652,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code. Or create a new config from another, or delete one, or amend a running world's own rules (action amend: its cards on top of the world's own, the world plays on them once accepted), or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
+        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code, and view cards (the valley's screens, MCP Apps: change a rule and the screen that shows it in one MIP). Or create a new config from another, or delete one, or amend a running world's own rules (action amend: its cards on top of the world's own, the world plays on them once accepted), or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
     )]
     async fn economy_mip_create(&self, Parameters(a): Parameters<EconomyMip>) -> String {
         let mut mip = a.mip;

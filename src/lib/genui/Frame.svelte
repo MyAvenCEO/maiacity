@@ -21,8 +21,16 @@
 	import { LIBS, LIMITS, METHODS, PROTOCOL } from '../../../game/genui/views.js';
 	import { native } from '$lib/native';
 
-	let { view, onevent = () => {}, onerror = () => {} } = $props();
+	// `data`, when given, is the view's tool result as it moves on (a game's state): sent again whenever it changes
+	let { view, data = undefined, onevent = () => {}, onerror = () => {} } = $props();
 	let frame = $state();
+	let ready = $state(false);
+	const send = (m) => frame?.contentWindow?.postMessage({ jsonrpc: '2.0', ...m }, '*');
+	const result = (d) => send({ method: 'ui/notifications/tool-result', params: { content: [], structuredContent: JSON.parse(JSON.stringify(d ?? {})) } });
+	$effect(() => {
+		const d = data === undefined ? undefined : $state.snapshot(data);
+		if (ready && d !== undefined) result(d);
+	});
 	let height = $state(view.spec.height);
 	// no device, no passkey, no clipboard, no payment: every powerful feature off, whatever the browser would allow
 	const DENY = ['camera', 'microphone', 'geolocation', 'display-capture', 'clipboard-read', 'clipboard-write', 'payment', 'usb', 'serial', 'hid', 'publickey-credentials-get', 'publickey-credentials-create', 'storage-access'].map((f) => `${f} 'none'`).join('; ');
@@ -78,7 +86,6 @@ addEventListener('unhandledrejection', (e) => log(e.reason && e.reason.message |
 	});
 
 	onMount(() => {
-		const send = (m) => frame?.contentWindow?.postMessage({ jsonrpc: '2.0', ...m }, '*');
 		const answer = (id, result) => id != null && send({ id, result });
 		const refuse = (id, code, message) => id != null && send({ id, error: { code, message } });
 		const take = (e) => {
@@ -102,7 +109,8 @@ addEventListener('unhandledrejection', (e) => log(e.reason && e.reason.message |
 				case 'ui/notifications/initialized':
 					// the view's tool input and result: what the agent handed it, nothing of ours
 					send({ method: 'ui/notifications/tool-input', params: { arguments: plain(view.spec.input ?? {}) } });
-					send({ method: 'ui/notifications/tool-result', params: { content: [], structuredContent: plain(view.spec.data ?? {}) } });
+					if (data === undefined) result(view.spec.data);
+					ready = true;
 					return;
 				case 'ui/notifications/size-changed':
 					if (Number.isFinite(p.height)) height = Math.round(Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], p.height)));
