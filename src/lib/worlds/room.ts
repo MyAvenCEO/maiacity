@@ -18,7 +18,7 @@ import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize } from '$lib/sandbox-kit';
 import { CRATE, bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin } from '$lib/models/furniture';
-import { standIn } from '$lib/actors/human';
+import { standIn } from '$lib/actors/human.v1'; // the stand-in as these shots were blocked (v1)
 import { limedOak, plasterBump } from '$lib/models/textures';
 import { buildApartment, type Apartment, type Rect } from './apartment';
 

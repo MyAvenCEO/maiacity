@@ -22,6 +22,7 @@ import { batteryCube } from '$lib/actors/batterycube.js';
 import { human } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
+import { ME_EYES, ME_SEAT, packedVan } from './van.js';
 import { maiaCentre, oldShed, travelVan } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 
@@ -397,6 +398,7 @@ export function person(seat) {
 	const cast = human({ shirt: `#${SEAT_COLOUR[seat].toString(16).padStart(6, '0')}`, trousers: seat === 'A' ? '#5b5145' : '#3d4a5c' }, 1.8);
 	cast.rig.object.name = g.name;
 	cast.rig.object.castShadow = true;
+	cast.rig.object.receiveShadow = false; // the sun's shadow map is far too coarse for a face: it drew a dark band over the eyes
 	cast.rig.object.frustumCulled = false;
 	const glow = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0xe0435a, emissive: 0xe0435a, emissiveIntensity: 0.7 }));
 	glow.position.y = 2.3;
@@ -415,8 +417,36 @@ export function person(seat) {
 		chest.updateWorldMatrix(true, false);
 		pack.position.copy(chest.worldToLocal(V(0, 1.12, -0.24)));
 	} else (pack.position.set(0, 1.12, -0.24), g.add(pack));
+	// joy, on the head bone: a wide open smile over the lips (its teeth showing), a sparkle in each eye and two
+	// twinkles beside them, shown when they beam (after the first mint)
+	const joyFace = new THREE.Group();
+	const head = cast.rig.bones.head;
+	if (head) {
+		cast.rig.object.updateMatrixWorld(true);
+		const k = 1.8 / 1.823; // the stand-in's measure (./actors/human.ts) to 1.8 m
+		const at = (x, y, z) => head.worldToLocal(V(x * k, y * k, z * k));
+		const smile = new THREE.Group();
+		const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.024, 20, Math.PI, Math.PI).scale(1, 0.62, 1), new THREE.MeshStandardMaterial({ color: 0x4a1a1c, roughness: 0.7 }));
+		const teeth = new THREE.Mesh(new THREE.PlaneGeometry(0.036, 0.0055), new THREE.MeshStandardMaterial({ color: 0xf6f1e8, roughness: 0.4 }));
+		teeth.position.set(0, -0.0028, 0.0004);
+		const lip = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0026, 6, 20, Math.PI).rotateZ(Math.PI).scale(1, 0.62, 1), new THREE.MeshStandardMaterial({ color: 0xa8665a, roughness: 0.6 }));
+		smile.add(mouth, teeth, lip);
+		smile.position.copy(at(0, 1.6585, 0.1125));
+		const shine = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3c4, emissiveIntensity: 1.2 });
+		for (const x of [-1, 1]) {
+			const glint = new THREE.Mesh(new THREE.OctahedronGeometry(0.0035, 0), shine);
+			glint.position.copy(at(x * 0.032, 1.7145, 0.1145));
+			const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.011, 0).scale(0.35, 1, 0.2), shine);
+			star.position.copy(at(x * 0.066, 1.744, 0.1));
+			star.userData.twinkle = glint.userData.twinkle = true;
+			joyFace.add(glint, star);
+		}
+		joyFace.add(smile);
+		joyFace.visible = false;
+		head.add(joyFace);
+	}
 	g.add(cast.rig.object, glow);
-	g.userData = { glow, cast, act: 'idle', t: Math.random() * 9 };
+	g.userData = { glow, cast, joyFace, act: 'idle', t: Math.random() * 9 };
 	return g;
 }
 
@@ -431,82 +461,19 @@ function acting(p, t) {
 	const base = legs ? cast.clips[legs]?.(t) ?? {} : null;
 	const hold = { carry: CARRY, push: PUSH, cans: CANS }[what];
 	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
-	if (cast.clips[what]) return cast.rig.pose(cast.clips[what](t));
-	cast.rig.pose(cast.poses[what] ?? cast.poses.stand);
-}
-
-/** the travel van as the intro rides in it: see-through glass, and inside the people and bags it is packed with,
- *  seat backs, the dashboard and the window posts, so the view from its back seat feels like one */
-function packedVan() {
-	const van = travelVan();
-	van.traverse((o) => {
-		if (o.isMesh && o.material?.color?.getHex() === 0x27323a) {
-			o.material = o.material.clone();
-			o.material.transparent = true;
-			o.material.opacity = 0.12;
-			o.material.depthWrite = false;
-		}
-	});
-	const inside = new THREE.Group();
-	const dark = mat(0x2a2622, { side: THREE.DoubleSide });
-	const seatM = mat(0x5a4632);
-	const skin = [mat(0x8d5a3c), mat(0xc69472), mat(0x6e4630), mat(0xb07a56)];
-	const cloth = [mat(0x9c3b2f), mat(0x3f6f9a), mat(0xd8b04a), mat(0x4f6b3a), mat(0x7b5ea7)];
-	const box = (w, h, d, m, x, y, z) => {
-		const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-		b.position.set(x, y, z);
-		inside.add(b);
-		return b;
-	};
-	for (const x of [-0.93, 0.93]) {
-		box(0.02, 0.95, 4.6, dark, x, 1.0, -0.1); // the walls below the windows
-		for (const z of [-2.05, -1.1, -0.1, 0.9]) box(0.06, 0.62, 0.1, dark, x, 1.78, z); // window posts
-		box(0.08, 0.7, 0.08, dark, x * 0.95, 1.8, 2.02).rotation.x = -0.25; // the windscreen's pillars
+	const glad = p.userData.joyFace;
+	if (glad) {
+		glad.visible = !!p.userData.joy;
+		if (glad.visible) glad.children.forEach((c, i) => c.userData.twinkle && c.scale.setScalar(0.5 + 0.7 * Math.abs(Math.sin(t * 5 + i * 1.7))));
 	}
-	box(1.84, 0.02, 4.6, mat(0x6b6156, { side: THREE.DoubleSide }), 0, 2.1, -0.1); // the roof lining
-	box(1.8, 0.3, 0.45, dark, 0, 1.28, 1.9); // the dashboard
-	box(0.26, 0.07, 0.03, dark, 0, 1.97, 1.82); // the mirror, a charm hanging from it
-	const charm = new THREE.Mesh(new THREE.OctahedronGeometry(0.03, 0), mat(0xd8b04a));
-	charm.position.set(0, 1.82, 1.82);
-	inside.add(charm);
-	box(0.5, 0.2, 0.3, cloth[4], 0.45, 1.5, 1.85); // a bag on the dashboard
-	// the rows of seats, and people in them: the driver and a passenger in front of the camera, someone beside it
-	const people = [];
-	[[1.2, [-0.5, 0.58]], [0.2, [-0.55]], [-0.8, [-0.5, 0.4]]].forEach(([z, xs], row) => {
-		for (const x of [-0.45, 0.45]) box(0.8, 0.75, 0.12, seatM, x, 1.12, z - 0.25);
-		for (const [k, x] of xs.entries()) {
-			const p = new THREE.Group();
-			const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.26), cloth[(row * 2 + k) % cloth.length]);
-			torso.position.y = 1.25;
-			const head = new THREE.Group();
-			const face = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), skin[(row + k) % skin.length]);
-			const hair = new THREE.Mesh(new THREE.SphereGeometry(0.118, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), (row + k) % 3 ? mat(0x1c1612) : cloth[(row + k + 2) % cloth.length]);
-			hair.position.set(0, 0.012, -0.012);
-			head.add(face, hair);
-			head.position.y = 1.62;
-			const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.14, 8), skin[(row + k) % skin.length]);
-			neck.position.y = 1.5;
-			p.add(torso, neck, head);
-			p.position.set(x, 0, z);
-			p.userData.head = head;
-			inside.add(p);
-			people.push(p);
-		}
-	});
-	// bags piled on the seat beside the camera, and on the floor
-	box(0.55, 0.4, 0.5, cloth[0], -0.45, 1.05, -1.3);
-	box(0.5, 0.35, 0.45, cloth[3], -0.4, 1.42, -1.35);
-	box(0.6, 0.3, 0.4, mat(0xd8ccaa), 0.5, 0.95, -0.55);
-	van.add(inside);
-	van.userData.people = people;
-	return van;
+	const lift = p.userData.joy ? { neck: [-0.04, 0, 0], head: [-0.12, 0, 0] } : p.userData.extra ?? {}; // the chin up, beaming
+	if (cast.clips[what]) return cast.rig.pose({ ...cast.clips[what](t), ...lift });
+	cast.rig.pose({ ...(cast.poses[what] ?? cast.poses.stand), ...lift });
 }
 
-/** where the newcomer sits in the van, and where they look */
-const VAN_SEAT = V(0.12, 1.6, 0.2);
+/** where the newcomer's eyes are in the van (leaning into the aisle to see the road ahead), and where they look */
+const VAN_SEAT = V(0.2, 1.8, 0.26);
 const VAN_LOOK = V(0.0, 1.45, 14);
-/** where the player sits in the van when a shot shows them: the back seat by the door, on its cushion */
-const ME_SEAT = V(0.45, 0.3, 0.15);
 
 export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {} } = {}) {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -588,6 +555,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	world.add(truck, cube, bundle, ...fuel);
 	// the travel van of the arrival, packed
 	const van = named(packedVan(), 'asset:van');
+	for (const p of van.userData.people) p.castShadow = false; // its people stay out of the sun's coarse shadow map
 	van.visible = false;
 	world.add(van);
 	const people = { A: person('A'), B: person('B') };
@@ -618,6 +586,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (!busy) place();
 	}
 	function place() {
+		seatMe(false);
 		const { at, me, other, rides } = stage;
 		// the second player is fetched: until then the pickup stands at home with the first
 		const fetched = me === 'B';
@@ -642,9 +611,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 		van.visible = at === 'van';
 		riding = at === 'van';
+		if (!riding) ((rideHold = ''), phoneOut && phoneShow(null));
 		if (riding) {
 			for (const p of van.userData.people) p.visible = true;
 			for (const s of ['A', 'B']) people[s].visible = false;
+			if (RIDE_SHOTS[rideHold]?.me) seatMe(true);
 			controls.enabled = false;
 			lensIn();
 		} else if (!busy) {
@@ -661,8 +632,16 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function ride(step) {
 		rollVan(step);
 		const t = performance.now() / 1000;
-		camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
-		camera.lookAt(van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))));
+		const held = RIDE_SHOTS[rideHold];
+		camera.position.copy(held ? held.cam(t, 1) : van.localToWorld(VAN_SEAT.clone())).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
+		camera.lookAt(held ? held.at(t, 1) : van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))));
+	}
+	/** the shot the ride holds while the story waits on the player (the mint: close on their face), or none */
+	let rideHold = '';
+	function holdRide(name = '') {
+		rideHold = name;
+		seatMe(!!RIDE_SHOTS[name]?.me);
+		if (riding) lensIn();
 	}
 	/** the van rolling on at its real speed, its people nodding to the road */
 	function rollVan(step) {
@@ -671,8 +650,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		van.rotation.y = Math.PI / 2;
 		van.updateMatrixWorld(true);
 		dust(van, -2.6);
-		const t = performance.now() / 1000;
-		for (const [i, p] of van.userData.people.entries()) p.userData.head.position.y = 1.62 + Math.sin(t * 9 + i) * 0.015;
+		van.userData.nod(performance.now() / 1000, step);
 	}
 	/** the shots of the ride, one a line of the story, so every sentence cuts to a new view (Samuel 2026-10-13): the
 	 *  back seat looking ahead, out of the side window at the steppe going by, alongside the van, from high above it,
@@ -680,15 +658,20 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  +x the door's side) */
 	const RIDE_SHOTS = {
 		seat: { inside: true, cam: () => van.localToWorld(VAN_SEAT.clone()), at: (t) => van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))) },
-		window: { inside: true, cam: () => van.localToWorld(V(0.45, 1.55, -0.6)), at: (t, k) => van.localToWorld(V(30, 1.2 - 0.4 * k, 6 - 10 * k)) },
-		faces: { inside: true, cam: () => van.localToWorld(V(-0.2, 1.75, 1.75)), at: (t, k) => van.localToWorld(V(0.3 * k - 0.15, 1.35, -1.6)) },
+		window: { inside: true, cam: () => van.localToWorld(V(0.55, 1.76, 0.42)), at: (t, k) => van.localToWorld(V(30, 1.2 - 0.4 * k, 6 - 10 * k)) },
+		faces: { inside: true, cam: () => van.localToWorld(V(0.0, 1.97, 1.86)), at: (t, k) => van.localToWorld(V(0.25 * k - 0.1, 1.45, -1.2)) },
 		along: { cam: (t, k) => van.localToWorld(V(8 - 2 * k, 1.5 + 0.5 * k, 6 - 8 * k)), at: () => van.localToWorld(V(0, 1.4, 0.5)) },
 		aerial: { cam: (t, k) => van.localToWorld(V(-40 + 20 * k, 34 - 8 * k, -55 + 25 * k)), at: () => van.localToWorld(V(0, 0, 18)) },
 		pass: { fixed: true, cam: () => van.localToWorld(V(4.2, 0.7, 75)), at: () => van.localToWorld(V(0, 1.2, 0)) },
 		// the player themself in the back seat, gazing out of the side window (Samuel 2026-10-13): from the front at the
 		// side, then close on their face
-		profile: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.05 + 0.08 * k, 1.58, 1.35)), at: () => van.localToWorld(V(ME_SEAT.x + 0.1, 1.38, ME_SEAT.z)) },
-		close: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.7, 1.66, 0.62 - 0.08 * k)), at: () => van.localToWorld(V(ME_SEAT.x, 1.52, ME_SEAT.z)) }
+		profile: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.08 + 0.06 * k, 1.74, 1.08)), at: () => van.localToWorld(V(ME_SEAT.x + 0.07, 1.62, ME_SEAT.z + 0.03)) },
+		close: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.5 + 0.03 * k, 1.8, 0.84 - 0.06 * k)), at: () => van.localToWorld(V(0.49, 1.71, 0.27)) },
+		// what the woman beside you does as she tells of the HEARTS (Samuel 2026-10-13: show what the line says): the
+		// two of you from the front as she leans over with her phone; its screen, over your shoulder; her face
+		lean: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.24 - 0.03 * k, 1.8, 0.98 - 0.06 * k)), at: () => van.localToWorld(V(0.17, 1.6, 0.2)) },
+		screen: { inside: true, cam: (t, k) => van.localToWorld(ME_EYES.clone()).lerp(van.userData.phoneAt(), 0.36 + 0.12 * k), at: () => van.userData.phoneAt() },
+		her: { inside: true, cam: (t, k) => van.localToWorld(V(0.42, 1.7, 0.52 - 0.04 * k)), at: () => van.userData.herFace() }
 	};
 	// every line of the ride a new view, the back seat's own once (Samuel 2026-10-13: it came round three times)
 	const RIDE_ORDER = ['seat', 'aerial', 'profile', 'window', 'along', 'close', 'faces', 'pass'];
@@ -702,15 +685,24 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			me.rotation.set(0, 0.45, 0); // the head and shoulders turned to the window
 			me.userData.glow.visible = false;
 			act(me, 'sit');
+			// while the woman beside them shows her phone, they look at it
+			me.userData.extra = phoneOut ? { neck: [0.12, -0.2, 0], head: [0.28, -0.32, 0] } : null;
 			me.visible = true;
 		} else if (me.parent === van) {
 			world.attach(me);
 			me.userData.glow.visible = true;
+			me.userData.extra = null;
 			me.visible = false;
 			act(me, 'idle');
 		}
 	}
 	let rideCut = 0;
+	let phoneOut = false;
+	/** the woman beside the player leans over with her phone showing `screen`, or sits back (null) */
+	function phoneShow(screen) {
+		phoneOut = !!screen;
+		van.userData.lean(phoneOut, screen);
+	}
 	/** the jerrycans: waiting on the forecourt beside the pickup, in its bed, or at home beside the Power Cube */
 	function placeFuel(where) {
 		fuel.forEach((c, i) => {
@@ -955,6 +947,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  over the whole city plot. Each shot carries its line of the story (onCaption). */
 	function intro(part = 'road', { lines } = {}) {
 		placed = true;
+		holdRide();
+		phoneShow(null);
 		const me = people[stage.me];
 		// where the van is at the trailer's second T: far out on the steppe in the first two shots (a cut may jump), then
 		// on, slowing, to the bus stop
@@ -1004,7 +998,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 						van.updateMatrixWorld(true);
 						camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, bump(T), 0));
 						camera.lookAt(van.localToWorld(VAN_LOOK.clone()));
-						for (const [i, p] of van.userData.people.entries()) p.userData.head.position.y = 1.62 + Math.sin(T * 9 + i) * 0.015;
+						van.userData.nod(T);
 					}
 				},
 				{
@@ -1440,18 +1434,43 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			{ dur: 0.3, start: () => ((stage.battery = 'home'), placeBattery('home'), act(me, 'idle')) }
 		], lines));
 	}
+	/** the player's joy (Samuel 2026-10-13: after the first mint): close on their face in the van, a big smile and
+	 *  sparkling eyes, a few seconds */
+	function joy() {
+		const me = people[stage.me];
+		const close = RIDE_SHOTS.close;
+		if (!riding) return Promise.resolve();
+		return play([
+			beat(4, (sec, k) => {
+				rollVan(dt);
+				const t = performance.now() / 1000;
+				const at = close.at(t, 1);
+				camera.position.copy(close.cam(t, 1)).lerp(at, 0.3 * ease(Math.min(1, k * 2))).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
+				camera.lookAt(at);
+			}, () => {
+				rollVan(0);
+				lensIn();
+				if (riding) holdRide('close');
+				me.userData.joy = true;
+			}),
+			{ dur: 0.1, start: () => (me.userData.joy = false) }
+		]);
+	}
 	/** jump to the end of what is playing */
 	/** a shot of the story told over the world (a voice-over's length, dur s): still riding in the van, the ride rolls
 	 *  on; anywhere else the camera glides slowly round the place the story is at, closing in a little, like a crane */
-	function shotAt(name, { lines = [], act: doing, close = false } = {}) {
+	function shotAt(name, { lines = [], act: doing, close = false, shots, phone, hold } = {}) {
 		const p = PLACES[name];
 		const me = people[stage.me];
 		const n = Math.max(1, lines.length);
 		const steps = [];
 		if (riding) {
-			// on the road: each line cuts to the next view of the ride
+			// on the road: each line cuts to the view that shows what it says (shots), or else to the next view of the ride;
+			// the woman beside the player has her phone out while she tells of the HEARTS
+			holdRide();
+			phoneShow(phone);
 			for (let i = 0; i < n; i++) {
-				const kind = RIDE_SHOTS[RIDE_ORDER[rideCut++ % RIDE_ORDER.length]];
+				const kind = RIDE_SHOTS[shots?.[i]] ?? RIDE_SHOTS[RIDE_ORDER[rideCut++ % RIDE_ORDER.length]];
 				let fixed = null;
 				steps.push(beat(3, (sec, k) => {
 					rollVan(dt);
@@ -1466,6 +1485,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 					fixed = kind.fixed ? kind.cam(0, 0) : null;
 				}));
 			}
+			// a move to make (the mint): the shot it is made in holds while the story waits on it
+			if (hold) steps.push({ dur: 0.05, start: () => holdRide(hold) });
 			return play(told(steps, lines));
 		}
 		if (!p) return play(told([beat(3, () => {})], lines));
@@ -1615,6 +1636,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		touring,
 		intro,
 		scene: shotAt,
+		joy,
 		drive,
 		load,
 		pitch,

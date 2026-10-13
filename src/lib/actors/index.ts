@@ -14,6 +14,7 @@ import { miniExcavator } from './excavator.js';
 import { excavator as excavatorV1 } from './excavator.v1.js';
 import { excavator as excavatorV2 } from './excavator.v2.js';
 import { human } from './human';
+import { human as humanV1 } from './human.v1';
 import { pod } from './pod.js';
 import { pod as podV1 } from './pod.v1.js';
 import { pod as podV2 } from './pod.v2.js';
@@ -52,6 +53,10 @@ const GEESE_V1: Actor[] = GOOSE_BREEDS.map((id) => ({ id: `goose-${id}`, label: 
 
 /** the kinds' older versions, by id, each with its frozen variants (the rest are at v1) */
 const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
+	'stand-in': [
+		{ ...FIRST, build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v1: bald, dark slits for eyes, a beak of a nose', make: () => humanV1() }] },
+		{ v: 2, date: '2026-10-13', note: 'A face and hair: eyes with their whites, irises, pupils and a glint, lids over them, a nose with a bridge and a tip, two lips, a finer skull; and hair (short, long, a bun, or none) in its own colour' }
+	],
 	goose: [{ ...FIRST, build: GEESE_V1 }, { v: 2, date: '2026-10-06', note: 'Grazing with the neck stretched forward and down in one curve, the bill in the grass ahead of the feet (the head bent back under the breast); the head carried level walking, slow long looks standing' }],
 	goat: [{ ...FIRST, build: quadV1('goat', GOAT_BREEDS, goat) }, GRAZE_V2],
 	sheep: [{ ...FIRST, build: quadV1('sheep', SHEEP_BREEDS, sheep) }, GRAZE_V2],
@@ -125,7 +130,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	{
 		id: 'stand-in',
 		label: 'Stand-in',
-		note: 'a person of 1.70 m, bald, rigged head to toe — 17 bones under one skin, any pose, any move',
+		note: 'a person of 1.70 m with a face and hair, rigged head to toe — 17 bones under one skin, any pose, any move',
 		from: 'the room: Day 01, Day 02',
 		variants: [{ id: 'stand-in', label: 'Stand-in', note: 'a person of 1.70 m', make: () => human() }]
 	},

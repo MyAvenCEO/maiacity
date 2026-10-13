@@ -84,13 +84,26 @@
 	// carried by the world's moment; the drives, the loading and the pitching play by themselves; only a move the player makes (mint, invest)
 	// waits, and then only a small prompt with its button shows, after its words were told
 	let told = $state({}); // the moves whose words were already told this visit
+	// the first mint makes the player beam: close on their face, smiling, eyes sparkling (Samuel 2026-10-13); the next
+	// step waits for it
+	function celebrate() {
+		if (!world || playing) return;
+		playing = 'joy';
+		world.joy().then(() => (playing = ''));
+	}
 	function skipShot() {
 		caption = null;
 		world?.skip();
 	}
+	// a new chapter fades in from black; the steps within one cut straight on (Samuel 2026-10-13: the woman leaning
+	// over was lost in the dark)
+	let fadeIn = $state(true);
+	let lastChapter = '';
 	$effect(() => {
 		if (!tour || !world || playing) return;
 		const step = tour;
+		fadeIn = step.chapter !== lastChapter;
+		lastChapter = step.chapter;
 		if (step.kind === 'intro') {
 			playing = 'intro';
 			world.intro(step.part, { lines: step.lines }).then(() => ((playing = ''), mark(step.id)));
@@ -406,7 +419,7 @@
 		{#if playing}
 			<!-- the arrival, as a trailer: black bars, one line of the story a shot, fading in and out -->
 			<div class="bars top" aria-hidden="true"></div><div class="bars bottom" aria-hidden="true"></div>
-			<div class="fade-in" aria-hidden="true"></div>
+			{#if fadeIn}<div class="fade-in" aria-hidden="true"></div>{/if}
 			{#if caption}
 				{#key caption.title}
 					<div class="title" class:big={caption.big} style="--dur:{caption.dur ?? 5}s" role="status">
@@ -433,7 +446,7 @@
 						{@const left = Math.min(Math.ceil(tour.goal - tour.have), Math.floor(player.wallet.HEARTS))}
 						<button class="primary" disabled={busy || left < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: left })}>Invest {f(left, 0)} ❤︎</button>
 					{:else}
-						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount, 0)} ❤︎</button>
+						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => (celebrate(), doMove({ type: 'mint' }))}>Mint {f(mint.amount, 0)} ❤︎</button>
 					{/if}
 				</div>
 			</div>
