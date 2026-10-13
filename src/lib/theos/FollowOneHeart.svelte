@@ -1,10 +1,10 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Laws 4 and 5, told as a story in five steps: Anna invests one HEART into the solar COOP; it converts and is gone;
-	// one new SOLARmind appears, half in Anna's wallet (her ownership) and half in the treasury (working capital); Anna
-	// pays for her lamp's power in SOLARmind, and at that moment a fifth of the sale goes to every SOLARmind holder as a
+	// one new solarMIND appears, half in Anna's wallet (her ownership) and half in the treasury (working capital); Anna
+	// pays for her lamp's power in solarMIND, and at that moment a fifth of the sale goes to every solarMIND holder as a
 	// dividend (Law 5), the rest to the treasury; the treasury pays it out again, through proposals: a tenth of its half
-	// drips into the pool, the panel COOP gets its own PANELmind through the pool, and Mia gets SOLARmind for her Aven's
+	// drips into the pool, the panel COOP gets its own panelMIND through the pool, and Mia gets solarMIND for her Aven's
 	// work proposal. Coin areas are to scale.
 	import { onMount } from 'svelte';
 	import { runClock, watchNarrow, HEART, ease, arc } from './anim.js';
@@ -18,11 +18,11 @@
 	};
 	const SPOT = (p) => [p[0] - 40, p[1]];
 	const STEPS = [
-		'Anna invests one AnnaHEART into the solar COOP.',
-		'The HEART converts and is gone for good. One new SOLARmind appears.',
-		'Half goes to Anna’s wallet: she now owns part of the COOP. Half goes to the treasury: the COOP’s working capital. It is the same SOLARmind.',
-		'Anna switches on her lamp and pays 0.10 SOLARmind for the power. At that moment a fifth of it, 0.02, goes to everyone who holds SOLARmind, as a dividend (Law 5). Anna holds some too, so a little comes back to her. The other 0.08 goes to the treasury.',
-		'The treasury pays it out again. A tenth of its half drips into the pool. The panel COOP gets 0.20 through the pool, as its own PANELmind. Mia gets 0.15 for her Aven’s work proposal.'
+		'Anna invests one annaHEART into the solar COOP.',
+		'The HEART converts and is gone for good. One new solarMIND appears.',
+		'Half goes to Anna’s wallet: she now owns part of the COOP. Half goes to the treasury: the COOP’s working capital. It is the same solarMIND.',
+		'Anna switches on her lamp and pays 0.10 solarMIND for the power. At that moment a fifth of it, 0.02, goes to everyone who holds solarMIND, as a dividend (Law 5). Anna holds some too, so a little comes back to her. The other 0.08 goes to the treasury.',
+		'The treasury pays it out again. A tenth of its half drips into the pool. The panel COOP gets 0.20 through the pool, as its own panelMIND. Mia gets 0.15 for her Aven’s work proposal.'
 	];
 	const USE = 0.1, DIV = 0.02, DRIP = 0.05, PAY = 0.2, WORK = 0.15;
 	const GOLD = '#d9a520', STEEL = '#7d97ad';
@@ -38,7 +38,7 @@
 	const k = $derived(ease(raw));
 	const done = (i) => (step > i || (step === i && raw >= 1) ? 1 : 0);
 	// steps 4 and 5 have two moves each. Step 4: Anna's payment to the COOP, then the dividend out to the holders.
-	// Step 5: SOLARmind out of the treasury (into the pool and to Mia), then PANELmind out of the pool
+	// Step 5: solarMIND out of the treasury (into the pool and to Mia), then panelMIND out of the pool
 	const k1 = $derived(ease(Math.min(1, raw * 2)));
 	const k2 = $derived(ease(Math.max(0, raw * 2 - 1)));
 	const into = $derived(step > 4 ? 1 : step === 4 ? k1 : 0);
@@ -68,7 +68,7 @@
 
 <div bind:this={box}>
 <div class="scroll">
-<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Follow one HEART in five steps. Anna invests one AnnaHEART into the solar COOP. It converts and is gone, and one new SOLARmind appears. Half goes to Anna's wallet as her ownership, and half to the COOP's treasury as working capital. Anna pays for her lamp's power with a little SOLARmind. At that moment a fifth of the payment goes to everyone who holds SOLARmind as a dividend, and the rest goes to the treasury. The treasury pays it out again: a tenth of its half drips into the pool, the panel COOP receives its own PANELmind through the pool, and Mia receives SOLARmind for her Aven's work proposal.">
+<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Follow one HEART in five steps. Anna invests one annaHEART into the solar COOP. It converts and is gone, and one new solarMIND appears. Half goes to Anna's wallet as her ownership, and half to the COOP's treasury as working capital. Anna pays for her lamp's power with a little solarMIND. At that moment a fifth of the payment goes to everyone who holds solarMIND as a dividend, and the rest goes to the treasury. The treasury pays it out again: a tenth of its half drips into the pool, the panel COOP receives its own panelMIND through the pool, and Mia receives solarMIND for her Aven's work proposal.">
 	<!-- steps 4 and 5: the power that Anna pays for, from the COOP to her lamp -->
 	{#if lit > 0}
 		<line x1={L.COOP[0]} y1={L.COOP[1]} x2={L.LAMP[0]} y2={L.LAMP[1]} stroke="#e0b030" stroke-width="3" stroke-dasharray="7 6" stroke-dashoffset={-t * 24} opacity={lit * 0.9} />
@@ -84,12 +84,12 @@
 			{#if a > 0.001}
 				<circle cx="34" cy="2" r={r(a)} fill={GOLD} opacity="0.88" />
 				<text x="46" y="0" class="amt">{a.toFixed(2)}</text>
-				<text x="46" y="13" class="unit">SOLARmind</text>
+				<text x="46" y="13" class="unit">solarMIND</text>
 			{/if}
 		</g>
 	{/each}
 
-	<!-- everyone who holds SOLARmind: people and other COOPs -->
+	<!-- everyone who holds solarMIND: people and other COOPs -->
 	<g transform="translate({L.HOLD[0]} {L.HOLD[1]})">
 		{#each [[-22, 5, 0.78], [22, 5, 0.78], [0, 0, 0.9]] as [dx, dy, s]}
 			<g transform="translate({dx} {dy}) scale({s})">
@@ -97,7 +97,7 @@
 				<path d="M-17 22 C-17 0 17 0 17 22 Z" fill="#8a9a8f" stroke="var(--paper)" stroke-width="1.5" />
 			</g>
 		{/each}
-		<text y="44" text-anchor="middle" class="node">SOLARmind holders</text>
+		<text y="44" text-anchor="middle" class="node">solarMIND holders</text>
 		<text y="59" text-anchor="middle" class="sub">people and other COOPs</text>
 		{#if held > 0.001}
 			<circle cx="-12" cy="-44" r={r(held) + 1} fill={GOLD} opacity="0.88" />
@@ -122,7 +122,7 @@
 		<path d="M-10 4 A13 13 0 1 1 10 4 L7 14 H-7 Z" fill={lit > 0.5 ? '#f2c94c' : 'var(--paper)'} stroke="var(--ink)" stroke-width="1.4" />
 		<rect x="-6" y="16" width="12" height="5" rx="1.5" fill="var(--ink)" />
 		<text y="44" text-anchor="middle" class="node">Anna’s lamp</text>
-		<text y="59" text-anchor="middle" class="sub" opacity={lit}>paid in SOLARmind</text>
+		<text y="59" text-anchor="middle" class="sub" opacity={lit}>paid in solarMIND</text>
 	</g>
 
 	<!-- the pool: a basket of MINDs that belongs to the protocol -->
@@ -130,12 +130,12 @@
 		<circle r="30" fill="var(--paper)" stroke="#5b8fa8" stroke-width="1.6" />
 		<path d="M-18 -2 q6 -6 12 0 t12 0 t12 0 M-18 8 q6 -6 12 0 t12 0 t12 0" fill="none" stroke="#5b8fa8" stroke-width="1.6" stroke-linecap="round" />
 		<text y="48" text-anchor="middle" class="node">pool</text>
-		<text y="63" text-anchor="middle" class="sub">{panel > 0 ? 'SOLARmind in,' : 'a basket of MINDs'}</text>
-		{#if panel > 0}<text y="77" text-anchor="middle" class="sub">PANELmind out</text>{/if}
+		<text y="63" text-anchor="middle" class="sub">{panel > 0 ? 'solarMIND in,' : 'a basket of MINDs'}</text>
+		{#if panel > 0}<text y="77" text-anchor="middle" class="sub">panelMIND out</text>{/if}
 	</g>
 
 	<!-- the three holdings -->
-	{#each [[L.WALLET, wallet, GOLD, 'SOLARmind', 'Anna’s wallet', 'her ownership'], [L.TREASURY, treasury, GOLD, 'SOLARmind', 'COOP treasury', 'working capital'], [L.PANEL, panel, STEEL, 'PANELmind', 'panel COOP', 'paid in its own MIND']] as [p, a, col, unit, name, sub]}
+	{#each [[L.WALLET, wallet, GOLD, 'solarMIND', 'Anna’s wallet', 'her ownership'], [L.TREASURY, treasury, GOLD, 'solarMIND', 'COOP treasury', 'working capital'], [L.PANEL, panel, STEEL, 'panelMIND', 'panel COOP', 'paid in its own MIND']] as [p, a, col, unit, name, sub]}
 		<g transform="translate({p[0]} {p[1]})">
 			<rect x={-L.box / 2} y="-28" width={L.box} height="56" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2" />
 			{#if a > 0.001}

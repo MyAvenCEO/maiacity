@@ -1,8 +1,8 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 // One small three.js stage for the paper's figures: a renderer sized to its box, a camera, a loop that only runs
 // while the figure is on screen, at most 30 frames a second (and holds still for anyone who asked for reduced
-// motion), and a clean teardown. Only one frame is ever pending: a redraw asked for during a frame (OrbitControls
-// fires 'change' from its own update) folds into that frame's follow-up instead of starting a second loop.
+// motion), and a clean teardown. Only one frame is ever pending: a redraw asked for during a frame folds into that
+// frame's follow-up instead of starting a second loop.
 import * as THREE from 'three';
 
 export function createStage(box, { fov = 40, position = [0, 6, 18], target = [0, 0, 0] } = {}) {
@@ -77,14 +77,9 @@ export function createStage(box, { fov = 40, position = [0, 6, 18], target = [0,
 		renderer,
 		scene,
 		camera,
-		still,
 		/** the per-frame update: (dt in seconds, time in seconds) */
 		loop(fn) {
 			tick = fn;
-			request();
-		},
-		/** draw once more, e.g. after a control moved while reduced motion holds the loop */
-		redraw() {
 			request();
 		},
 		/** where a world point lands on the box, in px */

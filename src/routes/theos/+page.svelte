@@ -5,7 +5,6 @@
 	import Cite from '$lib/theos/Cite.svelte';
 	import LineChart from '$lib/theos/LineChart.svelte';
 	import Circulation from '$lib/theos/Circulation.svelte';
-	import DecaySurface from '$lib/theos/DecaySurface.svelte';
 	import SplitFlow from '$lib/theos/SplitFlow.svelte';
 	import DayOfHearts from '$lib/theos/DayOfHearts.svelte';
 	import WhereHeartsGo from '$lib/theos/WhereHeartsGo.svelte';
@@ -20,24 +19,25 @@
 		poolAfterCrash, heldAfterCrash, pairCount, ROUND_TRIP, flowSum, incomeShare,
 		SIM, BASIC_BUNDLE, PROOF, DECILES, OWNER_ONLY, DYN, STATIC, RESERVES, LADDER, variation,
 		variationsMuAbove, foodShort, foodOnlyShort, allPass, PRICES_BY_YEAR, bundleShareOfLiving, COMPETITION, FAILURE,
-		ENERGY_ENTRANTS, MIND_RETURNS, spendShare, strictThreshold, ownerOnlyYield, impliedSales, netHalfLife,
+		ENERGY_ENTRANTS, MIND_RETURNS, spendShare, strictThreshold, ownerOnlyYield, impliedSales,
 		meltMargin, stockGrowthDay, moneyGap, growth, poorestDip, livingAt, livingSeries, ENERGY, kwPerPerson, gjToKw, domeYears,
 		starveFail, holdingCoverYears, holdingLivingDays, ownerOnlyDividendShare, growthRate, plantGrowthRate, tenYearFalls,
-		strictWorstEarly, bedsFromEnergy, decemberGap, SDE_CHECK, bundleMargin, treasuryShare, salesAfterLaw5
+		strictWorstEarly, bedsFromEnergy, decemberGap, SDE_CHECK, bundleMargin, treasuryShare, salesAfterLaw5, OLD_R,
+		EURO_BORDER
 	} from '$lib/theos/model.js';
 
-	// Figure 12's simulation, run at build time (+page.server.js)
+	// Figure 11's simulation, run at build time (+page.server.js)
 	let { data } = $props();
 
 	// the four series colours, validated together for colour-blind separation on the paper's surface
 	const C = ['#c8744f', '#2f6fbf', '#1f7a52', '#8a5fb0'];
 
 	// one map for the numbers of figures, tables and equations, so that a new one never leaves a stale reference behind
-	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, surface: 5, conv: 6, split: 7, lvr: 8, infra: 9, selection: 10, machine: 11, gini: 12, dial: 13, cycle: 14, deciles: 15 };
+	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, split: 6, lvr: 7, infra: 8, selection: 9, machine: 10, gini: 11, dial: 12, cycle: 13, deciles: 14 };
 	const TAB = { speeds: 1, prices: 2, binds: 3, rivals: 4, parts: 5, twoWorlds: 6, roundTrip: 7, prop3: 8, variations: 9, gameCity: 10, conditions: 11, notation: 12, threats: 13, physics: 14 };
-	const EQ = { normal: 11, strict: 12, abundance: 13 };
+	const EQ = { unit: 7, built: 8, select: 9, level: 10, gini: 11, normal: 12, strict: 13, abundance: 14 };
 
-	// one rate drives Figures 5 and 6, so a reader can feel what the 7 % does
+	// the slider under Figure 5 sets the rate, so a reader can feel what the 7 % does
 	let rate = $state(RATE);
 
 	const idle = idleSeries().map((s, i) => ({ id: `r${s.r}`, label: `${Math.round(s.r * 100)} % a year`, color: [C[1], C[0], C[3]][i], points: s.points }));
@@ -47,8 +47,9 @@
 	const lvr = lvrSeries().map((s, i) => ({ ...s, color: [C[2], C[0], C[1]][i] }));
 	const sel = selectionSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
 	const gin = $derived(data.gini.map((s, i) => ({ ...s, color: ['#8a8578', C[0], C[2], C[1]][i] })));
-	const dial = dialSeries(undefined, DYN.mu).map((s, i) => ({ ...s, color: [C[1], C[0], C[3], C[2]][i], dash: i === 3 }));
-	// Figure 15: real consumption of the richest, the middle and the poorest tenth, every year, on a log scale
+	// the simulation's lasting return at rest is above the melt, where (11) has no resting state, so no line draws it
+	const dial = dialSeries().map((s, i) => ({ ...s, color: [C[1], C[0], C[3]][i] }));
+	// Figure 14: real consumption of the richest, the middle and the poorest tenth, every year, on a log scale
 	const living = livingSeries().map((s, i) => ({ ...s, color: [C[3], C[1], C[0]][i] }));
 
 	// a no-break space keeps a number and its % sign on one line
@@ -59,7 +60,7 @@
 	const tn = (v, d = 0) => fmt(v, d).replace(/,/g, '{,}');
 	const ev = lifeForRate(RATE);
 	const u = UIA_DAY * 365;
-	// Figure 10 in numbers, as drawn, and with a COOP C that never learns
+	// Figure 9 in numbers, as drawn, and with a COOP C that never learns
 	const selNow = selectionStats();
 	const selFlat = selectionStats(0);
 	// Section 10.4: the round trip, signed, and a person's income by source
@@ -115,7 +116,7 @@
 
 <svelte:head>
 	<title>theOS · The civilization scale operating system of Abundism · maiaCITY</title>
-	<meta name="description" content="theOS: a macroeconomic and system-engineering framework for a post-labour economy. Universal intent allocation, continuous demurrage, protocol-owned liquidity, open market governance, and Proposition 3: no one starves, no one has to work to survive, and the consumption of every tenth of the people rises from one ten-year mark to the next. By Samuel Andert." />
+	<meta name="description" content="theOS: a macroeconomic and system-engineering framework for a post-labour economy. Universal intent allocation, continuous demurrage, HEARTS as the unit of account, liquidity owned by the City COOP, open market governance, and Proposition 3: no one starves, no one has to work to survive, and the consumption of every tenth of the people rises from one ten-year mark to the next. By Samuel Andert and Claude." />
 </svelte:head>
 
 <main class="paper">
@@ -124,7 +125,7 @@
 		<p class="kind">Working paper · v6 · October 2026 · maiaCITY</p>
 		<h1>The civilization scale operating system of Abundism</h1>
 		<p class="subtitle">A macroeconomic and system-engineering framework for a post-labour economy</p>
-		<p class="author">Samuel Andert</p>
+		<p class="author">Samuel Andert and Claude</p>
 		<p class="affil">maiaCITY · Munich</p>
 	</header>
 
@@ -139,7 +140,7 @@
 		<p>
 			This paper proposes a different answer: an economic operating system that we call theOS. Every person gets a
 			personal currency every day, simply for being alive: {UIA_DAY} HEARTS, one for each hour. Samuel's are
-			SamuelHEARTS, Anna's are AnnaHEARTS. HEARTS buy nothing and pay for nothing, not even food. They are a voice.
+			samuelHEARTS, Anna's are annaHEARTS. HEARTS buy nothing and pay for nothing, not even food. They are a voice.
 			People can only invest them into cooperatives, or COOPs: shared enterprises that make what a city needs, such as
 			energy, food or housing.
 		</p>
@@ -147,8 +148,10 @@
 			Each HEART that a person invests converts into one unit of that COOP's MIND. A MIND is one currency of ownership
 			and utility: to hold it is to own part of the COOP, and to spend it is to use what the COOP makes. Half of the new
 			MIND goes to the investor and half to the COOP's treasury, the money that the COOP works with. A tenth of that
-			half flows into liquidity pools that the protocol owns, so anyone can trade one MIND for another. A treasury keeps
-			about {SIM.reserveMonths} months of reserves and pays out the rest.
+			half flows into the city's liquidity pools, whose shares the City COOP holds, so anyone can trade one MIND for
+			another. A treasury keeps
+			about {SIM.reserveMonths} months of reserves and pays out the rest. Every value is shown in HEARTS, the unit of
+			account: the average MIND is worth 1 HEART.
 		</p>
 		<p>
 			Every sale pays the COOP's owners. A fixed share of every sale, by default {pc(DIVIDEND_SHARE)}, goes at once to
@@ -188,8 +191,9 @@
 			on {pc(1 - strictEarly.share)} of the owner-only days in year {strictEarly.year}, on up to {pc(1 - strictLater.share)}
 			in a later year until year {PROOF.strict.lastShortYear}, and on {pc(1 - PROOF.strict.shareAfter10, 2)} after year 10. The poorest tenth consumed {pc(-dip.fall)} less in year
 			{dip.to} than in year {dip.from}. Only the main run, 1 of {LADDER.length} runs on one seed, passed all three checks.
-			In {starveFail()} of the {LADDER.length - 1} variations, someone ran short of basics, mostly of food. We propose a
-			fix for each failure, but none is tested yet.
+			In {starveFail()} of the {LADDER.length - 1} variations, someone ran short of basics, mostly of food. And the
+			lasting return on holdings stayed above the melt, so nothing bounded how unequal ownership could grow. We propose
+			a fix for each failure, but none is tested yet.
 		</p>
 		<p>
 			We will prove theOS first in a game, then in the real city. The game is a test city, where AI agents live under
@@ -198,7 +202,7 @@
 		</p>
 		<p class="keywords">
 			<strong>Keywords:</strong> demurrage · personal currencies · universal dividend · Relative Theory of Money · post-labour economics ·
-			cooperatives · automated market makers · protocol-owned liquidity · mechanism design · agent-based model ·
+			cooperatives · automated market makers · city-owned liquidity · unit of account · mechanism design · agent-based model ·
 			stock-flow consistency · energy return on investment
 		</p>
 		<p class="keywords"><strong>JEL:</strong> C63 · D31 · E42 · E51 · H41 · O33 · P13 · Q43</p>
@@ -415,8 +419,8 @@
 			<p class="lawname">Law 1 · Universal Intent Allocation (UIA)</p>
 			<p>
 				Every human gets {UIA_DAY} HEARTS a day, without conditions, one for each hour lived, from birth to death. Each
-				human has one stream. Each person's HEARTS are a currency of their own: Samuel's are SamuelHEARTS, Anna's are
-				AnnaHEARTS. Only their owner can invest them; for a child, a guardian does.
+				human has one stream. Each person's HEARTS are a currency of their own: Samuel's are samuelHEARTS, Anna's are
+				annaHEARTS. Only their owner can invest them; for a child, a guardian does.
 			</p>
 		</div>
 		<p>
@@ -487,7 +491,7 @@
 		<div class="law">
 			<p class="lawname">Law 4 · Every COOP has its own MIND, created by investing HEARTS</p>
 			<p>
-				Every COOP has its own MIND: SOLARmind for a solar COOP, AGRImind for a farming COOP. A MIND is the COOP's
+				Every COOP has its own MIND: solarMIND for a solar COOP, agriMIND for a farming COOP. A MIND is the COOP's
 				shared intelligence, its automated capacity to make something. It is one currency of ownership and utility. To
 				hold it is to own part of the COOP, and to spend it is to use what the COOP makes. Only investment creates MIND.
 				Each invested HEART converts into one new MIND of its COOP: half goes to the investor and half to the COOP's
@@ -495,26 +499,26 @@
 			</p>
 		</div>
 		<p>
-			Follow one HEART. Anna invests one AnnaHEART into the solar COOP. The HEART converts and is gone for good. Nobody
-			holds it after that, not even the COOP. In its place, one new SOLARmind appears: half in Anna's wallet and half in
-			the COOP's treasury. It is the same SOLARmind in both places, and it does every job.
+			Follow one HEART. Anna invests one annaHEART into the solar COOP. The HEART converts and is gone for good. Nobody
+			holds it after that, not even the COOP. In its place, one new solarMIND appears: half in Anna's wallet and half in
+			the COOP's treasury. It is the same solarMIND in both places, and it does every job.
 		</p>
 		<p>
-			In Anna's wallet, the SOLARmind is her ownership: she is now a part-owner of the solar COOP. While she holds it,
+			In Anna's wallet, the solarMIND is her ownership: she is now a part-owner of the solar COOP. While she holds it,
 			its value follows the COOP's success, through its price and through a share of every sale (Law 5). When Anna
-			switches on her lamp, she pays for the power in SOLARmind. She can pay with any MIND that she holds: the pools
-			convert it, and the solar COOP always receives SOLARmind. What she spends goes back to the COOP. What she keeps
+			switches on her lamp, she pays for the power in solarMIND. She can pay with any MIND that she holds: the pools
+			convert it, and the solar COOP always receives solarMIND. What she spends goes back to the COOP. What she keeps
 			stays her ownership.
 		</p>
 		<p>
-			In the treasury, the SOLARmind is the COOP's working capital. A tenth of this half drips into the pools. The COOP
-			spends the rest through proposals that its members accept. It <em>buys</em> panels: it pays in SOLARmind, the
-			pools convert it, and the panel COOP receives PANELmind. And it <em>pays for work</em>, but never for human
+			In the treasury, the solarMIND is the COOP's working capital. A tenth of this half drips into the pools. The COOP
+			spends the rest through proposals that its members accept. It <em>buys</em> panels: it pays in solarMIND, the
+			pools convert it, and the panel COOP receives panelMIND. And it <em>pays for work</em>, but never for human
 			labour. The Avens propose and deliver all work, with the COOP's machines, and the COOP pays the human whose Aven
 			delivers. Each such piece of work is an <em>Aven work item</em>. Mia's Aven runs the daily check of the panels: a
 			<em>running item</em>, which the COOP pays from its running costs. It also proposes a plan for the panels'
 			repairs: a <em>work proposal</em>. The COOP accepts, Mia's Aven and the COOP's robots do the work, and the COOP
-			pays Mia in SOLARmind. Mia herself does not labour for it. And Mia does not keep it long: her Aven pays for her
+			pays Mia in solarMIND. Mia herself does not labour for it. And Mia does not keep it long: her Aven pays for her
 			food, her tram rides and a concert. So the MIND that leaves a treasury comes back to the COOPs through what they
 			sell (Section 10.4).
 		</p>
@@ -537,7 +541,7 @@
 		</div>
 		<p>
 			This payment is the <em>dividend</em>. When Anna pays for her light, {pc(DIVIDEND_SHARE)} of her payment goes at once to everyone
-			who holds SOLARmind. Anna holds SOLARmind too, so she gets a little of it back. The holders are people and other
+			who holds solarMIND. Anna holds solarMIND too, so she gets a little of it back. The holders are people and other
 			COOPs' treasuries. The solar COOP's own treasury and the pools get no share (Section 9). The other {pc(1 - DIVIDEND_SHARE)} goes to
 			the treasury. It pays for inputs, services, building, ground rent, running items and accepted work proposals.
 			Nobody has to vote on each dividend.
@@ -559,11 +563,11 @@
 		<figure>
 			<FollowOneHeart />
 			<figcaption>
-				<strong>Figure {FIG.heart}.</strong> Laws 4 and 5, step by step. One HEART converts into one SOLARmind. Half goes to
+				<strong>Figure {FIG.heart}.</strong> Laws 4 and 5, step by step. One HEART converts into one solarMIND. Half goes to
 				Anna's wallet as her ownership, and half to the treasury as working capital. Anna pays for her light in
-				SOLARmind, and most of it goes back to the treasury. The treasury pays it out again: a tenth of its half into
-				the pool, the panel COOP through the pool in its own PANELmind, and Mia for her Aven's work proposal. A share of
-				every sale goes at once to everyone who holds SOLARmind; Anna gets some back as a holder. The areas of the coins
+				solarMIND, and most of it goes back to the treasury. The treasury pays it out again: a tenth of its half into
+				the pool, the panel COOP through the pool in its own panelMIND, and Mia for her Aven's work proposal. A share of
+				every sale goes at once to everyone who holds solarMIND; Anna gets some back as a holder. The areas of the coins
 				are to scale. Tap a number to go to a step.
 			</figcaption>
 		</figure>
@@ -616,19 +620,6 @@
 			<figcaption>
 				<strong>Figure {FIG.idle}.</strong> What remains of 100 idle HEARTS or MINDs. At theOS's 7 % a year, half is gone after
 				{fmt(halfLife(), 1)} years. A working balance that people spend and refill every few weeks loses almost nothing.
-			</figcaption>
-		</figure>
-		<figure class="wide">
-			<DecaySurface {rate} />
-			<div class="control">
-				<label for="rate">Demurrage rate <strong>{pct(rate * 100, 1)}</strong> a year</label>
-				<input id="rate" type="range" min="0.01" max="0.15" step="0.005" bind:value={rate} />
-			</div>
-			<figcaption>
-				<strong>Figure {FIG.surface}.</strong> All the demurrage curves <Tex tex={String.raw`B(t, r) = e^{-rt}`} /> as one surface.
-				One axis shows the time held, the other the demurrage rate. The height shows what remains of one HEART or MIND.
-				The terracotta line is the rate that you set with the slider, which also controls Figure {FIG.conv}. Drag the surface to
-				turn it.
 			</figcaption>
 		</figure>
 		<h3>5.2 Where all money settles</h3>
@@ -702,12 +693,16 @@
 				y={{ min: 0, max: 1_000_000, ticks: [0, 250_000, 500_000, 750_000, 1_000_000], fmt: (v, tip) => (tip ? fmt(v) : v >= 999_500 ? '1 M' : v ? `${fmt(v / 1000)}k` : '0'), label: 'Tokens per person, all holders' }}
 				refs={[{ axis: 'y', at: star, label: `steady state u/r = ${fmt(star)}` }]}
 			/>
+			<div class="control">
+				<label for="rate">Demurrage rate <strong>{pct(rate * 100, 1)}</strong> a year</label>
+				<input id="rate" type="range" min="0.01" max="0.15" step="0.005" bind:value={rate} />
+			</div>
 			<figcaption>
 				<strong>Figure {FIG.conv}.</strong> The average count of HEARTS and MINDs per person, in wallets, treasuries and pools,
 				with a constant population. It is a count of tokens, not anyone's wealth. Three starts: none (a new city), the 7 %
 				steady state, and a million per person. All three meet at <Tex tex="u/r" />, and a new city reaches 95 % of it
-				after about {fmt(yearsToReach(0.95, rate))} years. Move the slider under Figure {FIG.surface}. A lower rate raises the steady
-				state and slows the approach to it. A higher rate does the opposite.
+				after about {fmt(yearsToReach(0.95, rate))} years. Move the slider under the chart to change the rate. A lower
+				rate raises the steady state and slows the approach to it. A higher rate does the opposite.
 			</figcaption>
 		</figure>
 		<h3>5.3 Laborde's rule, arrived at from the other side</h3>
@@ -750,8 +745,9 @@
 			city is different. Its money per person grows about {fmt(balanceAt(0, 30) / balanceAt(0, 1))}-fold from year 1 to
 			year 30. If people spend a steady share of what they hold, Fisher's equation says that prices in MIND rise by
 			about the same factor, unless output grows faster. In the simulation, output did grow faster. A
-			day's basics cost {fmt(PRICES_BY_YEAR[1].bundleMind, 3)} MIND in year 1 and {fmt(PRICES_BY_YEAR[30].bundleMind, 3)}
-			in year 30. At rest they still got {pc(-DYN.bundleChange, 1)} cheaper a year in real terms (R, Section 6.3).
+			day's basics cost {fmt(PRICES_BY_YEAR[1].bundle, 3)} HEARTS in year 1 and {fmt(PRICES_BY_YEAR[30].bundle, 3)}
+			in year 30, counted in the average MIND (Section 6.3). At rest they still got {pc(-DYN.bundleChange, 1)} cheaper a
+			year.
 		</p>
 		<p>
 			theOS does not take its rate from (4). The pair of 24 a day and 7 % a year comes from Circles v2
@@ -768,7 +764,7 @@
 		</p>
 		<p>
 			Money now has a source, a form and a limit. One practical question remains. Every COOP has its own MIND. So how
-			does Anna pay for a tram ride with SOLARmind? And how does the solar COOP pay the steel COOP in STEELmind for a new
+			does Anna pay for a tram ride with solarMIND? And how does the solar COOP pay the steel COOP in steelMIND for a new
 			turbine? The liquidity pools are the answer.
 		</p>
 	</section>
@@ -782,20 +778,25 @@
 			formula at any time, and nobody has to wait for a buyer or a seller <Cite k="uniswap" />. Such pools give reliable
 			public prices when traders can compare them with an outside market <Cite k="angeris" />. In theOS the pools are
 			the market. So arbitrage keeps their prices consistent with each other, but not always right. MIND prices need not
-			be equal either (Section 6.3). Section 12 asks how to anchor them.
+			be equal either. Section 6.3 shows them all in one unit, the HEART.
 		</p>
 		<p>
 			The best-known AMMs pair two currencies, and outside investors supply them and can withdraw their money again.
-			theOS does neither. Its pools hold baskets of many MINDs, and they belong to the protocol itself.
+			theOS does neither. Its pools hold baskets of many MINDs, and together they are the city's liquidity pool. A pool
+			issues <em>LP tokens</em> (liquidity-provider tokens) for what enters it: shares that say who owns the pool. In
+			theOS the City COOP of Section 8.1 holds them. In maiaCITY that is the MaiaCity COOP.
 		</p>
 		<div class="law">
 			<p class="lawname">The liquidity rule</p>
 			<p>
 				A tenth of every COOP's treasury half flows automatically into liquidity pools. So {pc(POOL_DRIP / 2)} of the
 				MIND that each invested HEART creates drips into the pools, in the COOP's own MIND. What a COOP earns by selling is not levied. Each pool holds a basket of 4 to 8
-				different MINDs. The COOP chooses which baskets its MIND joins. The pools belong to the protocol, not to any
-				COOP. Nobody can ever withdraw what enters a pool. MIND leaves a pool only through trades, by melting, or when its
-				COOP fails and its MIND is retired (Section 12.3).
+				different MINDs. The COOP chooses which baskets its MIND joins. Each deposit makes LP tokens, and they go to the
+				City COOP, not to the COOP that deposits. The City COOP may redeem LP tokens only when its members vote for it
+				under its own rules (Section 9); in maiaCITY, such a vote is a MIP. What it redeems goes to the City COOP's
+				treasury, never to a person and never as HEARTS. So no COOP and no person can withdraw what enters a pool. MIND
+				leaves a pool only through trades, by melting, when its COOP fails and its MIND is retired (Section 12.3), or by
+				a redemption that the City COOP's members voted for.
 			</p>
 		</div>
 		<p>
@@ -805,22 +806,22 @@
 			own MIND in its first basket. Only then can people trade its MIND.
 		</p>
 		<p>
-			For example, the solar COOP's SOLARmind might sit in one basket with TRAMmind, AGRImind and STEELmind. It might
-			sit in another basket with WATERmind, COMPUTEmind, HABITATmind and ARTmind. No HEARTS ever sit in a pool, because
+			For example, the solar COOP's solarMIND might sit in one basket with tramMIND, agriMIND and steelMIND. It might
+			sit in another basket with waterMIND, computeMIND, habitatMIND and artMIND. No HEARTS ever sit in a pool, because
 			every HEART converted into MIND at the moment of its investment.
 		</p>
 		<p>
 			The pools also do the routing. When a COOP sells something, it always gets its own MIND. The buyer's Aven pays
 			with whatever MINDs the buyer holds. In the background, the pools convert them into the seller's MIND and route it
-			to the seller. So the tram COOP gets only TRAMmind for a ride, whatever its passengers hold.
+			to the seller. So the tram COOP gets only tramMIND for a ride, whatever its passengers hold.
 		</p>
 		<figure>
 			<SplitFlow />
 			<figcaption>
 				<strong>Figure {FIG.split}.</strong> One HEART invested into a COOP converts into one MIND and is gone. Half of that MIND
 				goes to the investor, half to the COOP's treasury, its working capital. Both halves are the same MIND. A tenth
-				of the treasury half, {pc(POOL_DRIP / 2)} of the new MIND, flows on into the protocol's pools, baskets of 4 to 8 MINDs, and never
-				returns.
+				of the treasury half, {pc(POOL_DRIP / 2)} of the new MIND, flows on into the city's pools, baskets of 4 to 8 MINDs, and never
+				returns to the COOP.
 			</figcaption>
 		</figure>
 		<h3>6.1 The design: one equal-weight basket</h3>
@@ -847,12 +848,15 @@
 			<li>
 				<strong>A fixed fee of 0.3 %</strong> on every trade, the usual level for volatile currencies, whose prices move
 				a lot. Arbitrage is trading to profit from a price difference between two markets. A fee widens the band of
-				prices in which arbitrage does not pay <Cite k="lvrfees" />. There are no outside liquidity providers, so the fee
-				goes to nobody. It stays in the pool and makes the pool larger.
+				prices in which arbitrage does not pay <Cite k="lvrfees" />. There are no outside liquidity providers, so no
+				investor collects the fee. It stays in the pool and makes the pool larger, and so it adds to what the City COOP's
+				LP tokens stand for.
 			</li>
 			<li>
-				<strong>No pool tokens.</strong> Nobody ever withdraws anything, so a pool issues no tokens that someone could
-				redeem. A COOP adds its {pc(POOL_DRIP)} inflow to the pool in its own MIND only: a one-sided deposit.
+				<strong>LP tokens for the City COOP.</strong> A COOP adds its {pc(POOL_DRIP)} inflow to the pool in its own MIND
+				only: a one-sided deposit. The pool issues LP tokens for it, and the City COOP receives them, not the COOP that
+				deposits. So the city's liquidity belongs to all its citizens. The City COOP redeems LP tokens only after a vote of
+				its members, and only into its own treasury.
 			</li>
 			<li>
 				<strong>Inflows in small slices.</strong> A large inflow moves a price at once, and arbitrageurs take the gap. So
@@ -892,7 +896,7 @@
 			0.3 % fee wins part of it back <Cite k="lvrfees" />.
 		</p>
 		<p>
-			In theOS, the protocol's pools carry this cost, not any one wallet. The MIND in Anna's wallet is never part of a
+			In theOS, the city's pools carry this cost, not any one wallet. The MIND in Anna's wallet is never part of a
 			pool. But the cost is real, and people pay it together. Of every new MIND, {pc(POOL_DRIP / 2)} goes to the pools. What
 			the pools lose goes to arbitrageurs, to whoever orders the transactions and to the fastest Avens. A speculative
 			attack can make a pool smaller, but every COOP's working capital and its turbines keep going. Clearing trades in
@@ -916,47 +920,112 @@
 				{pct((basketLvr(8, 0.4) / basketLvr(4, 0.4) - 1) * 100)}.
 			</figcaption>
 		</figure>
-		<h3>6.3 What a MIND is worth: R and days of living</h3>
+		<h3>6.3 HEARTS: the universal display and unit of account</h3>
 		<p>
-			A price needs a yardstick. One SOLARmind buys some kWh, and one AGRImind buys some food. But one of what? theOS has
-			no single money to count in, so this paper counts in <em>R</em>. R compares a MIND with three everyday MINDs:
-			SOLARmind, HABITATmind and CITYmind. To price a MIND in R, ask what it trades for in the pools against each of the
-			three. Then take their geometric mean: the average that multiplies instead of adding. If one AGRImind trades for
-			about two of each, it is worth 2 R. R is a yardstick, not a currency: nobody holds R or pays in it. When one of those COOPs ends, its successor takes its place, so R does not jump. We propose that the
-			protocol publishes R from time-averaged pool prices.
+			A price needs a unit. One solarMIND buys some kWh, and one agriMIND buys some food. But one of what? Every COOP
+			prices in its own MIND, so theOS needs one unit in which to show and compare all values. That unit is the HEART. A
+			<em>unit of account</em> is the unit in which people write prices and keep their books. In German it is the
+			<em>Rechnungseinheit</em>, and economists call it a <em>numéraire</em>. It need not be what people pay with.
 		</p>
 		<p>
-			MIND prices do not settle at 1 R. A price of 1 would mean that every COOP delivers the same for its MIND. In a
-			world where nothing changes, they nearly do: in the earlier static world of Section 10.3, every MIND ended between
-			{fmt(STATIC.pricesMin, 2)} and {fmt(STATIC.pricesMax, 2)} R. In a dynamic world, they do not. In the simulation,
-			prices at rest spread from {fmt(DYN.pricesMin, 2)} to {fmt(DYN.pricesMax, 2)} R. A MIND is worth
-			what its COOP delivers for it, plus what it pays its holders. A COOP that loses its market is worth less, and its
-			MIND can end at zero.
+			Why the HEART? Because every MIND starts as one. Each HEART that a person invests makes exactly one MIND: half for
+			the investor, half for the COOP's treasury. HEARTS and MINDs melt at the same {pc(RATE)} a year. So the MINDs that
+			exist are the HEARTS that people invested, less the same melt and less the MIND of COOPs that ended. The pools set
+			only relative prices: how many of one MIND trade for one of another. Nothing in them says what the average MIND is
+			worth. theOS fixes that one free number: the average MIND, weighted by how much of each exists, is worth exactly 1
+			HEART.
+		</p>
+		<p>
+			Let <Tex tex="s_k" /> be the supply of MIND <Tex tex="k" />: all of it that exists, in wallets, treasuries and
+			pools. Let <Tex tex="p_k" /> be its pool price against one MIND, the same one for every <Tex tex="k" />. Then the
+			value of MIND <Tex tex="k" /> in HEARTS is
+		</p>
+		<Tex display tex={String.raw`\begin{gathered} v_k = \frac{p_k}{\bar p}, \qquad \bar p = \frac{\sum_j s_j\, p_j}{\sum_j s_j} \\ \Rightarrow\; \sum_k s_k\, v_k = \sum_k s_k \end{gathered} \tag{${EQ.unit}}`} />
+		<p>
+			In words: all MIND together is worth as many HEARTS as there are MINDs. The MIND that the prices are measured
+			against drops out, because it scales every <Tex tex="p_k" /> and <Tex tex={String.raw`\bar p`} /> alike. So the
+			HEART needs no anchor MIND: no cityMIND, no chosen basket and no reference COOP that might fail. We propose that
+			the protocol publishes every <Tex tex="v_k" /> from time-averaged pool prices.
+		</p>
+		<p>
+			The HEART is for display only. Each Aven shows every balance and every price first in HEARTS, with the amount of
+			MIND in small type. The rule never changes a trade, a price or a payment. HEARTS still buy nothing (Law 2), and
+			every payment is in MIND. Three things the HEART is not:
+		</p>
+		<ul>
+			<li>
+				<strong>Not a peg.</strong> Nobody trades a MIND for a HEART at 1, and nobody can. A MIND whose COOP delivers
+				more rises above 1 HEART, and one whose COOP delivers less falls below it. Only the average is fixed.
+			</li>
+			<li>
+				<strong>Not a price that anyone pays.</strong> HEARTS buy nothing, never food. A HEART can only be invested, and
+				then it is gone.
+			</li>
+			<li>
+				<strong>Not a promise of what a HEART buys.</strong> What 1 HEART buys in goods moves with what the COOPs
+				deliver. In this, the HEART is like the IMF's Special Drawing Right (SDR). The SDR is a unit of account whose
+				value comes from a basket of five currencies, and it is neither a currency nor a claim <Cite k="imf" />. Keynes's
+				bancor was to be such a unit too, for clearing between central banks, not money that people hold
+				<Cite k="keynes43" />. The HEART's basket is every MIND, weighted by supply, and it changes as COOPs start and
+				end.
+			</li>
+		</ul>
+		<p>
+			Three cases need care. <strong>A failing COOP.</strong> As its MIND falls, the fixed average lifts every other
+			MIND a little in HEARTS. When the COOP fails, its MIND leaves the pools and is retired (Section 12.3). It then
+			leaves both sides of ({EQ.unit}), and its holders lose what it was worth. So a value in HEARTS is a share of all
+			MIND, not an amount of goods. <strong>A new MIND.</strong> Until its first basket trades, the pools cannot price
+			it. It counts at 1 HEART, the HEART that made it. <strong>The investor's half.</strong> A HEART makes one MIND,
+			but the investor gets only half of it. So a person's {UIA_DAY} HEARTS a day give them {UIA_DAY / 2} MIND of their
+			own. At rest in the simulation, these were worth {fmt(RT.people.in.own, 2)} HEARTS a day, not {UIA_DAY}. The
+			other half works in the COOP's treasury, and people own the COOPs.
+		</p>
+		<p>
+			So the HEART is the right unit for the rest of this paper. Each new MIND is worth about 1 HEART, so a person's new
+			ownership has the same value in HEARTS every year. In any unit tied to chosen MINDs, that value drifts.
 		</p>
 		<p>
 			A second yardstick is closer to life: a <em>day of living</em>. It is what an average person consumes in a day,
-			priced in R that year. It grew from {fmt(PRICES_BY_YEAR[1].living, 1)} R in year 1 to
-			{fmt(PRICES_BY_YEAR[60].living)} R in year 60, because people consume more, not because things got dearer. One
+			priced in HEARTS that year. It grew from {fmt(PRICES_BY_YEAR[1].living, 1)} HEARTS in year 1 to
+			{fmt(PRICES_BY_YEAR[60].living)} in year 60, because people consume more, not because things got dearer. One
 			person's basics for a day, the <em>basic bundle</em>, are {fmt(BASIC_BUNDLE.kcal)} kcal of food,
 			{BASIC_BUNDLE.L} L of water, {BASIC_BUNDLE.kWh} kWh of energy and {BASIC_BUNDLE.m2} m² of home. A day's basics
-			fell from {fmt(PRICES_BY_YEAR[1].bundleR, 3)} to {fmt(PRICES_BY_YEAR[60].bundleR, 3)} R: from
+			fell from {fmt(PRICES_BY_YEAR[1].bundle, 3)} to {fmt(PRICES_BY_YEAR[60].bundle, 3)} HEARTS: from
 			{pc(bundleShareOfLiving(1))} of a day of living to {pc(bundleShareOfLiving(60), 2)}. Table {TAB.prices} shows the
 			path.
 		</p>
+		<p>
+			MIND values do not settle at 1 HEART. Equal values would mean that every COOP delivers the same for its MIND. In a
+			world where nothing changes, they nearly do: in the earlier static world of Section 10.3, every MIND ended between
+			{fmt(STATIC.pricesMin, 2)} and {fmt(STATIC.pricesMax, 2)} HEARTS. In a dynamic world, they do not. In the
+			simulation, values at rest spread from {fmt(DYN.pricesMin, 2)} to {fmt(DYN.pricesMax, 2)} HEARTS. A MIND is worth
+			what its COOP delivers for it, plus what it pays its holders. A COOP that loses its market is worth less, and its
+			MIND can end at zero.
+		</p>
 		<div class="table-wrap">
 			<table class="narrow">
-				<caption><strong>Table {TAB.prices}.</strong> Prices in R and in days of living, in the simulation of Section 10.3. A MIND on average is the mean price of all live MINDs.</caption>
+				<caption><strong>Table {TAB.prices}.</strong> Values in HEARTS and in days of living, in the simulation of Section 10.3. The last column shows how far single MINDs spread around the average MIND, which is worth 1 HEART.</caption>
 				<thead>
-					<tr><th>Year</th><th class="num">A day of living, R</th><th class="num">Basics a day, R</th><th class="num">Basics, share of a day of living</th><th class="num">A MIND on average, R</th></tr>
+					<tr><th>Year</th><th class="num">A day of living, HEARTS</th><th class="num">Basics a day, HEARTS</th><th class="num">Basics, share of a day of living</th><th class="num">MIND values, HEARTS</th></tr>
 				</thead>
 				<tbody>
 					{#each [1, 10, 30, 60] as y (y)}
 						{@const p = PRICES_BY_YEAR[y]}
-						<tr><td>{y}</td><td class="num">{fmt(p.living, 1)}</td><td class="num">{fmt(p.bundleR, 3)}</td><td class="num">{pc(bundleShareOfLiving(y), y > 10 ? 2 : 1)}</td><td class="num">{fmt(p.mindAvg, 2)}</td></tr>
+						<tr><td>{y}</td><td class="num">{fmt(p.living, 1)}</td><td class="num">{fmt(p.bundle, 3)}</td><td class="num">{pc(bundleShareOfLiving(y), y > 10 ? 2 : 1)}</td><td class="num">{fmt(p.vMin, 2)}–{fmt(p.vMax, 2)}</td></tr>
 					{/each}
 				</tbody>
 			</table>
 		</div>
+		<p>
+			<strong>What changed.</strong> Earlier versions of this paper counted in R, the geometric mean of a MIND's prices
+			against three chosen MINDs: solarMIND, habitatMIND and cityMIND. We retired R for two reasons. It needed an anchor
+			of three COOPs that could fail. And it drifted, because those three MINDs moved against the average MIND. One
+			HEART was worth {fmt(OLD_R.y1, 2)} R in year 1, {fmt(OLD_R.y40, 2)} R in year 40 and {fmt(OLD_R.y60, 2)} R in year
+			60. Every value in this paper is now in HEARTS, from the same simulation runs. The values changed because R
+			drifted, not because the economy did. The largest change is in Section 9.3. At rest, the three MINDs of R rose
+			against the average, so in R every other MIND seemed to lose value. In HEARTS, the lasting return at rest is above
+			the melt, not below it.
+		</p>
 		<p>
 			Through the pools, anyone can now trade a MIND that sits in a basket for any other MIND that the baskets connect
 			to. But no person can follow thousands of currencies and their prices. The next layer does that work for them.
@@ -980,8 +1049,8 @@
 				decides which infrastructure people build or maintain next.
 			</li>
 			<li>
-				<strong>The life one wants to draw on:</strong> a mix of MINDs, for example 40 % AGRImind, 30 % SOLARmind and
-				30 % COMPUTEmind. Through the pools, the Aven trades the MINDs that its human holds into that mix.
+				<strong>The life one wants to draw on:</strong> a mix of MINDs, for example 40 % agriMIND, 30 % solarMIND and
+				30 % computeMIND. Through the pools, the Aven trades the MINDs that its human holds into that mix.
 			</li>
 		</ol>
 		<p>The Aven does the rest.</p>
@@ -1055,7 +1124,7 @@
 			what is left after <Tex tex="T" /> years of the same intent: left idle, or built into a project whose utility
 			changes at its real rate <Tex tex="g" />:
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} \text{idle: } e^{-rT}, \qquad \text{built: } e^{gT} \\ r = ${tn(RATE * 100)}\,\%,\ g = -1\,\%,\ T = 50 \\ \Rightarrow\; ${tn(decay(100, RATE, 50))}\,\% \text{ against } ${tn(decay(100, 0.01, 50))}\,\% \end{gathered} \tag{7}`} />
+		<Tex display tex={String.raw`\begin{gathered} \text{idle: } e^{-rT}, \qquad \text{built: } e^{gT} \\ r = ${tn(RATE * 100)}\,\%,\ g = -1\,\%,\ T = 50 \\ \Rightarrow\; ${tn(decay(100, RATE, 50))}\,\% \text{ against } ${tn(decay(100, 0.01, 50))}\,\% \end{gathered} \tag{${EQ.built}}`} />
 		<p>
 			What lasts is what the investment built. But the melt does not make the far future worth more to an investor: the
 			investor's MIND melts too, so a share of use in fifty years is worth less to its holder than a share of use today.
@@ -1093,7 +1162,7 @@
 			<p>
 				All land belongs to the City COOP. Every citizen holds one equal share in it. Nobody can sell or buy
 				land or a share. Whoever wants to build, a person or a COOP, leases a plot and pays a yearly ground rent in MIND.
-				The rent can be paid in any MIND; the pools convert it, and the City COOP receives its own CITYmind.
+				The rent can be paid in any MIND; the pools convert it, and the City COOP receives its own cityMIND.
 			</p>
 		</div>
 		<p>
@@ -1105,7 +1174,7 @@
 			keep the value of the land for itself.
 		</p>
 		<p>
-			So the value that the city creates returns to the city. There is no separate commons beside the City COOP: what
+			So the value that the city creates returns to the city. Nothing shared sits outside the City COOP: what
 			all citizens share, such as streets, parks and water, the City COOP holds and runs, and the ground rent pays for
 			it. Every citizen's share is equal, comes with citizenship and ends with
 			it. It is a membership, not money and not a MIND, so it does not bend Law 4, and nobody can collect land the way
@@ -1226,16 +1295,16 @@
 			per HEART. Then the shares follow the equation of natural selection, known as replicator dynamics. Whatever does
 			better than average grows, and whatever does worse shrinks, at a speed <Tex tex={String.raw`\kappa`} />:
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} \dot s_i = \kappa\, s_i \left(f_i - \bar f\right) \\ \bar f = \textstyle\sum_j s_j f_j \end{gathered} \tag{8}`} />
+		<Tex display tex={String.raw`\begin{gathered} \dot s_i = \kappa\, s_i \left(f_i - \bar f\right) \\ \bar f = \textstyle\sum_j s_j f_j \end{gathered} \tag{${EQ.select}}`} />
 		<p>
 			In 1950, Alchian proposed this mechanism to explain why markets select efficient firms, even when no firm
 			optimises <Cite k="alchian" />. Demurrage makes it stronger: a COOP that stops attracting investment watches its
 			treasury melt. Below the level that its service needs, the COOP closes. Its physical assets go to the City COOP,
 			which leases them to a COOP that runs them better. Ideas about markets that are designed on purpose, not inherited
-			<Cite k="radical" />, become experiments here. One limit is built into (8): a COOP with no share stays at zero. So
+			<Cite k="radical" />, become experiments here. One limit is built into ({EQ.select}): a COOP with no share stays at zero. So
 			a new COOP needs its first HEARTS from its founders and friends, and Section 12 asks how to keep that door open
 			without self-dealing. Law 3 is the way in: anyone can found a rival, and Section 9.1 shows when founders step in.
-			Equation (8) also explains why leaders drift toward a monopoly.
+			Equation ({EQ.select}) also explains why leaders drift toward a monopoly.
 		</p>
 		<figure>
 			<LineChart
@@ -1245,7 +1314,7 @@
 				y={{ min: 0, max: 100, ticks: [0, 25, 50, 75, 100], fmt: (v, tip) => `${fmt(v, tip ? 1 : 0)} %`, label: 'Share of investment' }}
 			/>
 			<figcaption>
-				<strong>Figure {FIG.selection}.</strong> An example of (8), not a forecast. A starts as the most efficient, but it slowly
+				<strong>Figure {FIG.selection}.</strong> An example of ({EQ.select}), not a forecast. A starts as the most efficient, but it slowly
 				becomes extractive: it gives back less for each HEART. B is steady but slow, and C starts behind and learns.
 				Avens route the investment every month, so it follows the utility delivered. A leads until year
 				{fmt(selNow.lead, 2)}, and after five years C has {pct(selNow.share)} of the sector. The result follows from the
@@ -1344,11 +1413,11 @@
 					<tr><td>MIND</td><td>Ownership of a COOP and the means to use what it makes; people hold it as ownership and spend it to use, the COOP holds it as working capital</td><td>Every invested HEART, one for one: half to the investor, half to the COOP's treasury</td><td>Spent on what the COOP makes, and the seller always receives its own MIND; paid out again by COOPs for resources, services and Aven work items; a tenth of each treasury half into the pools; or melted</td></tr>
 					<tr><td>Treasury</td><td>A COOP's working capital: its own MIND and other COOPs' MIND, never HEARTS</td><td>The COOP's half of each new MIND, and {pc(1 - DIVIDEND_SHARE)} of every sale</td><td>Inputs, building, ground rent and Aven work items; a reserve of about {SIM.reserveMonths} months; the rest paid out for work proposals; melt</td></tr>
 					<tr><td>Dividends</td><td>Pay the owners of a COOP when it is useful (Law 5)</td><td>A fixed share of every sale, by default {pc(DIVIDEND_SHARE)}, at the moment of sale</td><td>Everyone who holds the seller's MIND, people and other COOPs' treasuries, in proportion to what each one holds; with what people hold, how they live without working</td></tr>
-					<tr><td>Prices</td><td>Tell COOPs what to make and Avens where to buy</td><td>Each COOP, every day, in its own MIND: up when sold out, down when idle; no caps</td><td>Avens, which show them in R and in days of living (Section 6.3)</td></tr>
-					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; owned by the protocol, not by a COOP</td><td>A tenth of every treasury half, automatically, in baskets of 4 to 8 MINDs</td><td>Never withdrawn; MIND leaves a pool only through trades, by melting, or when its COOP fails and its MIND is retired</td></tr>
+					<tr><td>Prices</td><td>Tell COOPs what to make and Avens where to buy</td><td>Each COOP, every day, in its own MIND: up when sold out, down when idle; no caps</td><td>Avens, which show them in HEARTS and in days of living (Section 6.3)</td></tr>
+					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; the City COOP holds their LP tokens</td><td>A tenth of every treasury half, automatically, in baskets of 4 to 8 MINDs</td><td>No COOP or person withdraws; the City COOP redeems LP tokens only after a vote of its members, into its own treasury. MIND leaves a pool only through trades, by melting, when its COOP fails and its MIND is retired, or by such a redemption</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: {pc(RATE)} a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
 					<tr><td>Avens</td><td>One person's agent: invest, trade, pay, propose and deliver all work items with the COOPs' machines, collect dividends, leave</td><td>One per person</td><td>Work only for their human, who receives their pay; no human labour is paid</td></tr>
-					<tr><td>City COOP</td><td>Holds all land and what all citizens share, and leases land; never sells it</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder; pays for streets, parks and water</td></tr>
+					<tr><td>City COOP</td><td>Holds all land and what all citizens share, and leases land; never sells it. Holds the LP tokens of the city's pools, and the euro border (Section 12.4)</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder; pays for streets, parks and water</td></tr>
 					<tr><td>COOP governance</td><td>How each COOP decides; tested by selection</td><td>Chosen by each COOP</td><td>Tested by where people invest</td></tr>
 				</tbody>
 			</table>
@@ -1372,7 +1441,7 @@
 		<h3>9.3 Who owns the machine: fair ownership, in numbers</h3>
 		<p>
 			Section 1 asked who gets what the machines make. Now we can answer with numbers. Let <Tex tex="W_i" /> be the MIND
-			that person <Tex tex="i" /> owns, valued in a common basket of MINDs. Let <Tex tex="a" /> be what the person keeps
+			that person <Tex tex="i" /> owns, valued in HEARTS (Section 6.3). Let <Tex tex="a" /> be what the person keeps
 			each year: the ownership their investing creates, plus their Aven's pay, minus what they spend. Demurrage takes
 			<Tex tex={String.raw`r\,W_i`} />, so a holding moves toward <Tex tex="a/r" />. A person who keeps the ownership
 			their investing creates, and pays for daily life from their Aven's pay and their dividends, keeps
@@ -1381,7 +1450,7 @@
 			Germany's today, with a Gini index <Tex tex="G_0" /> and a mean <Tex tex="m_0" />. (The Gini index of Section 1 is
 			0 if everyone has the same, and 1 if one person has everything.) Then the Gini index after <Tex tex="t" /> years is
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} G(t) = \frac{G_0\, e^{-rt}\, m_0}{e^{-rt}\, m_0 + W^{*}\left(1 - e^{-rt}\right)} \\ m_0 = W^{*} \;\Rightarrow\; G(t) = G_0\, e^{-rt} \end{gathered} \tag{9}`} />
+		<Tex display tex={String.raw`\begin{gathered} G(t) = \frac{G_0\, e^{-rt}\, m_0}{e^{-rt}\, m_0 + W^{*}\left(1 - e^{-rt}\right)} \\ m_0 = W^{*} \;\Rightarrow\; G(t) = G_0\, e^{-rt} \end{gathered} \tag{${EQ.level}}`} />
 		<p>
 			So, if everyone keeps the same, inequality halves every {fmt(halfLife(), 1)} years, the same half-life as an idle
 			balance. From Germany's
@@ -1414,37 +1483,39 @@
 		<p>
 			<strong>Proposition 2.</strong> <em>If <Tex tex={String.raw`\mu < r`} />, the holdings settle into an
 			inverse-gamma spread with shape <Tex tex={String.raw`\alpha = 1 + 2(r - \mu)/\sigma^2`} /> and mean
-			<Tex tex={String.raw`a/(r - \mu)`} />. Its Gini index is (10). If any holder keeps
+			<Tex tex={String.raw`a/(r - \mu)`} />. Its Gini index is ({EQ.gini}). If any holder keeps
 			<Tex tex={String.raw`\mu \ge r`} />, that holding grows without limit.</em>
 		</p>
-		<Tex display tex={String.raw`G_{\infty} = \frac{\Gamma\!\left(\alpha - \tfrac12\right)}{\sqrt{\pi}\;\Gamma(\alpha)} \tag{10}`} />
+		<Tex display tex={String.raw`G_{\infty} = \frac{\Gamma\!\left(\alpha - \tfrac12\right)}{\sqrt{\pi}\;\Gamma(\alpha)} \tag{${EQ.gini}}`} />
 		<p>
 			The stationary Fokker–Planck equation of this process has the inverse-gamma solution <Cite k="bouchaud" />, and
-			its Lorenz curve gives (10). A simulation of the process agrees with (10) to within
+			its Lorenz curve gives ({EQ.gini}). A simulation of the process agrees with ({EQ.gini}) to within
 			{fmt(SDE_CHECK.formula - SDE_CHECK.sim, 3)}. ∎ So inequality stays
 			bounded if, and only if, demurrage is larger than the best lasting return on holdings. This is theOS's own form of
 			Piketty's <Tex tex="r > g" />. Proposition 2 bounds the spread that returns create. Unequal Aven pay adds its own
 			spread on top.
 		</p>
 		<p>
-			Theory meets the simulation here, but only late in the run. At rest, the lasting return is
+			Here the simulation does not meet the theory. At rest, the lasting return in HEARTS is
 			<Tex tex={String.raw`\mu = ${tn(DYN.mu * 100, 1)}\,\%`} /> and its spread is
-			<Tex tex={String.raw`\sigma = ${tn(DYN.sigma * 100, 1)}\,\%`} />. By (10), the resting Gini index is then
-			{fmt(giniRest(DYN.sigma, RATE, DYN.mu), 2)}. What people hold is more unequal, {fmt(DYN.giniOwned, 2)}, because
-			unequal Aven pay adds its own spread. Over the whole run, though, <Tex tex={String.raw`\mu`} /> averaged
-			{pc(DYN.muRun, 1)}, at or above the melt in {DYN.muYearsAbove.years} of {DYN.muYearsAbove.of} years, while the city
-			grew fast. So Proposition 2's condition held, on average, only in years {SIM.restFrom} to {SIM.years}. The simulation also shows the warning of Proposition 2. Of the
-			{MIND_RETURNS.withThreeYears} MINDs that lived at least three years, {MIND_RETURNS.aboveMelt} returned more than the
-			melt on average, and {MIND_RETURNS.aboveMeltEnded} of those then ended. One, ARTS, returned
-			{pc(MIND_RETURNS.arts.compounded, 1)} a year for {MIND_RETURNS.arts.years} years. A person who held only ARTS would
-			have grown without limit. Avens that spread what people own lower the average, but the simulation's Avens did not
-			keep it below the melt in most years.
+			<Tex tex={String.raw`\sigma = ${tn(DYN.sigma * 100, 1)}\,\%`} />. So <Tex tex={String.raw`\mu`} /> is
+			{fmt(-meltMargin(), 1)} points above the {pc(RATE)} melt, and ({EQ.gini}) has no resting state. What people hold
+			kept growing more unequal: its Gini index was {fmt(DYN.giniOwnedBy.y20, 2)} in year 20, {fmt(DYN.giniOwned, 2)} at
+			rest and {fmt(DYN.giniOwnedBy.y60, 2)} in year {SIM.years}. Over the whole run, <Tex tex={String.raw`\mu`} />
+			averaged {pc(DYN.muRun, 1)}, at or above the melt in {DYN.muYearsAbove.years} of {DYN.muYearsAbove.of} years. So
+			Proposition 2's condition did not hold in the main run, not even at rest. An earlier count in R showed
+			{pc(OLD_R.mainMu, 1)} at rest, below the melt, but that came from R's drift (Section 6.3). The simulation also shows the warning of
+			Proposition 2. Of the {MIND_RETURNS.withThreeYears} MINDs that lived at least three years,
+			{MIND_RETURNS.aboveMelt} returned more than the melt on average, and {MIND_RETURNS.aboveMeltEnded} of those then
+			ended. One, artsMIND, returned {pc(MIND_RETURNS.arts.compounded, 1)} a year for {MIND_RETURNS.arts.years} years.
+			A person who held only artsMIND would have grown without limit. Avens that spread what people own lower the average,
+			but the simulation's Avens did not keep it below the melt.
 		</p>
 		<p>
 			Dividends are such a return. Under Law 5, a COOP's dividend yield is its share of every sale, times its yearly
 			sales, divided by the MIND that others hold. With the same yield for everyone, the resting level rises to
 			<Tex tex={String.raw`a/(r - \mu)`} />. Dividends also widen the spread. At a spread of returns of 20 %, a lasting
-			return of {pct((RATE / 2) * 100, 1)} a year would raise the resting Gini index of (10) from
+			return of {pct((RATE / 2) * 100, 1)} a year would raise the resting Gini index of ({EQ.gini}) from
 			{fmt(giniRest(0.2), 2)} to {fmt(giniRest(0.2, RATE, RATE / 2), 2)}. So Law 5 is safe only while the lasting return
 			stays below the melt. At the default share of {pc(DIVIDEND_SHARE)}, the yield alone stays below the melt while
 			yearly sales stay below {pc(salesBound())} of the MIND that others hold.
@@ -1453,28 +1524,31 @@
 			Dividends make holding pay. In the simulation, people buy far more than basics. A year's sales are about
 			{pc(impliedSales(), 1)} of the MIND that others hold, so the dividend yield is {pc(DYN.yield, 1)}, above the melt.
 			So the yield alone breaks the simple bound. That bound assumes that prices and COOPs stay the same. What matters
-			is <Tex tex={String.raw`\mu`} />: dividends plus price changes. At rest, MIND prices fell by
-			{pc(-DYN.priceChange, 1)} a year in R, and the MIND of a COOP that ends is lost. So at rest
-			<Tex tex={String.raw`\mu`} /> is {pc(DYN.mu, 1)}, below the {pc(RATE)} melt, with a thin margin of
-			{fmt(meltMargin(), 1)} points. Over the whole run it was {pc(DYN.muRun, 1)}, above the melt.
+			is <Tex tex={String.raw`\mu`} />: dividends plus price changes. In HEARTS, the average MIND neither rises nor falls,
+			because ({EQ.unit}) fixes it at 1. At rest, price changes added only {pc(DYN.priceChange, 1)} a year to what people
+			hold, and the MIND of a COOP that ends is lost. So at rest <Tex tex={String.raw`\mu`} /> is {pc(DYN.mu, 1)},
+			{fmt(-meltMargin(), 1)} points above the {pc(RATE)} melt. Over the whole run it was {pc(DYN.muRun, 1)}.
 		</p>
 		<p>
 			The price is slower levelling. A fortune spread over many MINDs, and not spent, shrinks only at the net rate
-			<Tex tex={String.raw`r - \mu`} />. At the <Tex tex={String.raw`\mu`} /> of the rest, it halves in about
-			{fmt(netHalfLife())} years, not {fmt(halfLife(), 1)}. While <Tex tex={String.raw`\mu`} /> stays above the melt, it
-			does not halve at all. Law 5 trades levelling speed for a living from ownership.
+			<Tex tex={String.raw`r - \mu`} />. With no dividends, it halves in {fmt(halfLife(), 1)} years. At the
+			<Tex tex={String.raw`\mu`} /> of the simulation's rest, which is above the melt, it does not halve at all. Law 5
+			trades levelling speed for a living from ownership, and at {pc(DIVIDEND_SHARE)} the simulation traded too much.
 		</p>
 		<p>
 			We tested three shares, one run each. A <em>person-day</em> is one person on one day. At
 			{pc(DIVIDEND_SHARE)}, the yield is {pc(V('main').yield, 1)} and <Tex tex={String.raw`\mu`} />
 			{pc(V('main').mu, 1)} at rest. All three parts of Proposition 3 pass, part 2 with its normal test (Section 10).
-			At {pc(V('law35').share)},
-			<Tex tex={String.raw`\mu`} /> rises to {pc(V('law35').mu, 1)}, {V('law35').failures} COOPs fail and basics run
-			short on {pc(V('law35').shortfall, 2)} of person-days. At {pc(V('law50').share)}, <Tex tex={String.raw`\mu`} /> rises to
-			{pc(V('law50').mu, 1)}, and food runs short. Of the three shares tested, only {pc(DIVIDEND_SHARE)} passed, and it
-			kept <Tex tex={String.raw`\mu`} /> at rest at least a point below the melt. Lower shares are untested. The
-			protocol's limit on the share should stay near {pc(DIVIDEND_SHARE)} until the test city has tried lower ones
-			(Section 10.6). In the earlier static world, every want had a limit, people spent only {pc(STATIC.spent)} of their
+			At {pc(V('law35').share)}, {V('law35').failures} COOPs fail and basics run short on
+			{pc(V('law35').shortfall, 2)} of person-days. So many MINDs end that <Tex tex={String.raw`\mu`} /> at rest is
+			{pc(V('law35').mu, 1)}, with a spread of {pc(V('law35').sigma)} between people. In R it read
+			{pc(OLD_R.law35Mu, 1)}, because the three MINDs of R fell far against the average MIND: at rest, one HEART was
+			worth {fmt(OLD_R.law35, 1)} R. At
+			{pc(V('law50').share)}, <Tex tex={String.raw`\mu`} /> rises to {pc(V('law50').mu, 1)}, and food runs short. Of the
+			three shares tested, only {pc(DIVIDEND_SHARE)} passed, and even it left <Tex tex={String.raw`\mu`} /> at rest
+			above the melt. Lower shares are untested. They would pay less in dividends, and so lower
+			<Tex tex={String.raw`\mu`} />. The protocol's limit on the share should stay near {pc(DIVIDEND_SHARE)} until the
+			test city has tried lower ones (Section 10.6). In the earlier static world, every want had a limit, people spent only {pc(STATIC.spent)} of their
 			income, and the yield was only {pc(STATIC.yield, 1)}.
 		</p>
 		<p>
@@ -1505,7 +1579,7 @@
 				y={{ min: 0, max: 0.8, ticks: [0, 0.2, 0.4, 0.6, 0.8], fmt: (v) => fmt(v, 2), label: 'Gini index of ownership' }}
 			/>
 			<figcaption>
-				<strong>Figure {FIG.gini}.</strong> An illustration of (9) and (10), not a forecast. Everyone starts as unequal as
+				<strong>Figure {FIG.gini}.</strong> An illustration of ({EQ.level}) and ({EQ.gini}), not a forecast. Everyone starts as unequal as
 				Germany today. If everyone keeps the same amount each year and all holdings earn the same return, inequality
 				halves every {fmt(halfLife(), 1)} years and goes to zero. If returns spread by 10 % or 20 % between people, it
 				settles near {fmt(giniRest(0.1), 2)} or {fmt(giniRest(0.2), 2)}. Unequal Aven pay adds its own spread: in the
@@ -1521,26 +1595,25 @@
 			and how much people's returns spread. Avens
 			that spread each person's MIND over many COOPs keep <Tex tex={String.raw`\sigma`} /> small. A basket of 8
 			independent MINDs has about a third of the spread of one MIND. So diversification is part of fairness, not only a
-			convenience. This matters more in a dynamic world. In the simulation, <Tex tex={String.raw`r - \mu`} /> was only
-			about a point at rest, and below zero in most earlier years.
+			convenience. This matters more in a dynamic world. In the simulation, <Tex tex={String.raw`r - \mu`} /> was below
+			zero at rest, and in most earlier years too.
 		</p>
 		<figure>
 			<LineChart
-				title="Resting Gini index of ownership against the spread of returns, for three rates, and at 7 % with the dynamic world's dividends"
+				title="Resting Gini index of ownership against the spread of returns, for three rates of demurrage"
 				series={dial}
 				x={{ min: 0.05, max: 0.5, ticks: [0.1, 0.2, 0.3, 0.4, 0.5], fmt: (v, tip) => (tip ? `Spread ${fmt(v * 100)} %` : `${fmt(v * 100)} %`), label: 'Spread of returns between people (σ)' }}
 				y={{ min: 0, max: 1, ticks: [0, 0.2, 0.4, 0.6, 0.8, 1], fmt: (v) => fmt(v, 2), label: 'Resting Gini index' }}
 				refs={[{ axis: 'y', at: GINI_DE, label: `Germany today: ${fmt(GINI_DE, 2)}` }, { axis: 'x', at: DYN.sigma, label: `σ simulated: ${fmt(DYN.sigma * 100, 1)} %` }]}
 			/>
 			<figcaption>
-				<strong>Figure {FIG.dial}.</strong> The fairness dial, from (10). A higher rate of demurrage or a smaller spread of
+				<strong>Figure {FIG.dial}.</strong> The fairness dial, from ({EQ.gini}). A higher rate of demurrage or a smaller spread of
 				returns gives a fairer resting state. At {pc(RATE)} and a spread of 20 %, the Gini index is {fmt(giniRest(0.2), 2)}.
 				If people hold one COOP each (a spread of about 40 %), it is {fmt(giniRest(0.4), 2)}, still below Germany's
-				{fmt(GINI_DE, 2)} today. The dashed line adds the dynamic world's dividends,
-				<Tex tex={String.raw`\mu = ${tn(DYN.mu * 100, 1)}\,\%`} />. There, a spread of {pc(DYN.sigma, 1)} gives
-				{fmt(giniRest(DYN.sigma, RATE, DYN.mu), 2)}, but a spread of 20 % would give {fmt(giniRest(0.2, RATE, DYN.mu), 2)},
-				near Germany's. This line uses the <Tex tex={String.raw`\mu`} /> of the rest. Over the whole run,
-				<Tex tex={String.raw`\mu`} /> averaged {pc(DYN.muRun, 1)}, above the melt, and then (10) has no resting state.
+				{fmt(GINI_DE, 2)} today. The lines assume no lasting return. Dividends raise the curves, and a lasting return
+				at or above the melt removes the resting state at any spread. In the simulation's rest,
+				<Tex tex={String.raw`\mu`} /> was {pc(DYN.mu, 1)}, above the melt, so ({EQ.gini}) has no resting state there
+				(Section 9.3).
 			</figcaption>
 		</figure>
 		<p>
@@ -1549,15 +1622,15 @@
 			their birth. <strong>Self-direction:</strong> each person decides what their share builds. <strong>Bounded
 			advantage:</strong> every holding melts, so any advantage from luck, skill, an Aven's output or inheritance fades
 			unless the holder earns it again. Without dividends, it halves in {fmt(halfLife(), 1)} years. With the dividends
-			of the simulation's rest, it halves in about {fmt(netHalfLife())}, and while <Tex tex={String.raw`\mu`} /> stays
-			above the melt, not at all. Fair participation follows from fair ownership: every person
+			of the simulation's rest, <Tex tex={String.raw`\mu`} /> was above the melt, and then it does not halve at all.
+			Bounded advantage needs a lasting return below the melt. Fair participation follows from fair ownership: every person
 			owns and steers the automated economy in equal measure of issuance.
 		</p>
 		<p>
 			theOS does not promise equal outcomes. People who use more own less. People whose Avens serve others well earn
 			more. People who choose better COOPs hold more. theOS promises that no difference grows without limit while the
 			lasting return <Tex tex={String.raw`\mu`} /> stays below the melt, and that then nobody inherits a difference for
-			long. In the simulation, this held only at rest, as shown above. In Rawls's terms, theOS is a property-owning democracy whose "beginning of
+			long. In the main run of the simulation, it did not hold, as shown above. In Rawls's terms, theOS is a property-owning democracy whose "beginning of
 			each period" is every day <Cite k="rawls" />.
 		</p>
 	</section>
@@ -1648,7 +1721,7 @@
 		<h3>10.2 Why it can hold</h3>
 		<p>
 			Part 2 rests on margins that we can compute. Take the normal test first. Let <Tex tex="W_i" /> be what person
-			<Tex tex="i" /> holds, in R, and let <Tex tex="X_i" /> be what they spend. Let <Tex tex={String.raw`\omega`} /> be
+			<Tex tex="i" /> holds, in HEARTS, and let <Tex tex="X_i" /> be what they spend. Let <Tex tex={String.raw`\omega`} /> be
 			the ownership that their investing creates for them, and <Tex tex="D_i" /> their dividends. Let
 			<Tex tex="p_b" /> be the cost of a day's basic bundle. With all flows counted a year,
 		</p>
@@ -1658,21 +1731,22 @@
 			normal test asks only that the holding never runs out while it pays for the basics. The second line is the
 			condition that carries it. A holding cannot run out while the ownership that a year of investing creates,
 			<Tex tex={String.raw`\omega`} />, plus the dividends, exceeds a year of basics. In the main run, a day's basics cost
-			at most {fmt(PROOF.bundleMindMax, 3)} MIND (year {PROOF.bundleMindMaxYear}). A day of investing creates
-			{UIA_DAY / 2} MIND for the investor, so the margin was about ×{fmt(bundleMargin())}. Where this margin collapsed,
-			owner-only people went short: ×{fmt(bundleMargin(V('law35').bundleMax), 1)} with Law 5 at {pc(V('law35').share)},
+			at most {fmt(PROOF.bundleMax, 3)} HEARTS, in year {PROOF.bundleMaxYear}. A day of investing creates
+			{UIA_DAY / 2} MIND for the investor, worth about {UIA_DAY / 2} HEARTS (Section 6.3), so the margin was about
+			×{fmt(bundleMargin())}. Where this margin collapsed, owner-only people went short:
+			×{fmt(bundleMargin(V('law35').bundleMax), 2)} with Law 5 at {pc(V('law35').share)},
 			×{fmt(bundleMargin(V('prod0').bundleMax), 1)} without productivity growth,
 			×{fmt(bundleMargin(V('aven').bundleMax), 1)} with fixed Aven capacity. In the other variations that failed, the basics themselves ran short (part 1).
 			<Tex tex="T_i" /> measures the buffer: how many years a holding <Tex tex="W_i" /> would pay a day's basics with
 			nothing flowing in at all, the melt included. In the simulation, the lowest holding of any owner-only person, from year 2 on, was
-			{fmt(PROOF.normal.lowestHolding)} R. With no dividends and no new ownership, it alone would have paid that year's
+			{fmt(PROOF.normal.lowestHolding)} HEARTS. With no dividends and no new ownership, it alone would have paid that year's
 			basic bundle for about {fmt(holdingCoverYears())} years. In fact it never came close to running out (Table
 			{TAB.prop3}). Equation ({EQ.normal}) leaves out price moves: when a MIND that a person holds falls in price, so
 			does the holding. The simulation includes them. Their HEARTS buy nothing: what they spend is MIND that they own.
 		</p>
 		<p>
 			The strict test asks more: dividends alone. Law 5 pays each holder in proportion to what they hold. Let
-			<Tex tex={String.raw`\lambda`} /> be Law 5's share, <Tex tex="Y" /> what people buy from COOPs (R a person a day)
+			<Tex tex={String.raw`\lambda`} /> be Law 5's share, <Tex tex="Y" /> what people buy from COOPs (HEARTS a person a day)
 			and <Tex tex={String.raw`\bar W`} /> the mean holding. Then the city's dividend yield is
 			<Tex tex={String.raw`\bar\eta = \lambda Y / \bar W`} />, and
 		</p>
@@ -1696,8 +1770,8 @@
 		<p>
 			Part 3 needs output per person to grow fast enough (C1), and wants that grow with it (C5). The poorest tenth gain
 			through two channels. Every person gets the same new ownership each day, {UIA_DAY / 2} MIND. And competition
-			passes productivity on as lower MIND prices: a day's basics cost {fmt(PRICES_BY_YEAR[1].bundleMind, 3)} MIND in
-			year 1 and {fmt(PRICES_BY_YEAR[60].bundleMind, 3)} in year {SIM.years}. So the same daily ownership buys more each
+			passes productivity on as lower MIND prices: a day's basics cost {fmt(PRICES_BY_YEAR[1].bundle, 3)} HEARTS in
+			year 1 and {fmt(PRICES_BY_YEAR[60].bundle, 3)} in year {SIM.years}. So the same daily ownership buys more each
 			year. How fast is enough is open. The run with even growth, {pc(SIM.prodGrowth)} for every COOP, meets C1 to C5 as
 			stated, and part 3 still fails there. Its output per unit of plant grew
 			{pc(plantGrowthRate(V('even').plant), 1)} a year, against {pc(plantGrowthRate(), 1)} in the main run. Part 3 has
@@ -1749,14 +1823,14 @@
 					<tr><th>Measure</th><th class="num">Dynamic</th><th class="num">Static</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>A day of living, R: year 1 / year {SIM.years}</td><td class="num">{fmt(DYN.dayLiving.y1, 1)} / {fmt(DYN.dayLiving.y60, 1)}</td><td class="num">{fmt(STATIC.dayLiving.y1, 1)} / {fmt(STATIC.dayLiving.y60, 1)}</td></tr>
-					<tr><td>Income a person a day, R</td><td class="num">{fmt(DYN.income, 1)}</td><td class="num">{fmt(STATIC.income, 1)}</td></tr>
+					<tr><td>A day of living, HEARTS: year 1 / year {SIM.years}</td><td class="num">{fmt(DYN.dayLiving.y1, 1)} / {fmt(DYN.dayLiving.y60, 1)}</td><td class="num">{fmt(STATIC.dayLiving.y1, 1)} / {fmt(STATIC.dayLiving.y60, 1)}</td></tr>
+					<tr><td>Income a person a day, HEARTS</td><td class="num">{fmt(DYN.income, 1)}</td><td class="num">{fmt(STATIC.income, 1)}</td></tr>
 					<tr><td>Share of income spent / melting in wallets</td><td class="num">{pc(DYN.spent)} / {pc(DYN.walletMelt)}</td><td class="num">{pc(STATIC.spent)} / {pc(STATIC.walletMelt)}</td></tr>
-					<tr><td>Share of all MIND: people / treasuries / pools</td><td class="num">{fmt(DYN.people * 100)} / {fmt(DYN.treasuries * 100)} / {pc(DYN.pools)}</td><td class="num">{fmt(STATIC.people * 100)} / {fmt(STATIC.treasuries * 100)} / {pc(STATIC.pools)}</td></tr>
+					<tr><td>Share of all MIND by value: people / treasuries / pools</td><td class="num">{fmt(DYN.people * 100)} / {fmt(DYN.treasuries * 100)} / {pc(DYN.pools)}</td><td class="num">{fmt(STATIC.people * 100)} / {fmt(STATIC.treasuries * 100)} / {pc(STATIC.pools)}</td></tr>
 					<tr><td>Dividend yield a year</td><td class="num">{pc(DYN.yield, 1)}</td><td class="num">{pc(STATIC.yield, 1)}</td></tr>
 					<tr><td>Lasting return <Tex tex={String.raw`\mu`} />; whole run</td><td class="num">{pc(DYN.mu, 1)}; {pc(DYN.muRun, 1)}</td><td class="num">{pc(STATIC.mu, 1)}</td></tr>
 					<tr><td>Gini index of what people hold</td><td class="num">{fmt(DYN.giniOwned, 2)}</td><td class="num">{fmt(STATIC.giniOwned, 2)}</td></tr>
-					<tr><td>MIND prices, R</td><td class="num">{fmt(DYN.pricesMin, 2)}–{fmt(DYN.pricesMax, 2)}</td><td class="num">{fmt(STATIC.pricesMin, 2)}–{fmt(STATIC.pricesMax, 2)}</td></tr>
+					<tr><td>MIND values, HEARTS</td><td class="num">{fmt(DYN.pricesMin, 2)}–{fmt(DYN.pricesMax, 2)}</td><td class="num">{fmt(STATIC.pricesMin, 2)}–{fmt(STATIC.pricesMax, 2)}</td></tr>
 					<tr><td>COOP failures / exits / foundings, whole run</td><td class="num">{DYN.failures} / {DYN.exits} / {DYN.foundings}</td><td class="num">{STATIC.failures} / {STATIC.exits} / {STATIC.foundings}</td></tr>
 					<tr><td>MINDs alive at the end</td><td class="num">{DYN.mindsAlive}</td><td class="num">{STATIC.mindsAlive}</td></tr>
 				</tbody>
@@ -1790,20 +1864,20 @@
 		</p>
 		<p>
 			Table {TAB.roundTrip} follows every MIND around the round trip, at rest in years {SIM.restFrom} to {SIM.years}. The
-			unit is R (Section 6.3). When prices move, so does the value of what each place holds. Godley and Lavoie call this
+			unit is the HEART (Section 6.3). When prices move, so does the value of what each place holds. Godley and Lavoie call this
 			revaluation <Cite k="godley" />. With it, every place balances to within {pc(RT.unexplainedMax, 2)} of its
 			inflow.
 		</p>
 		<div class="table-wrap">
 			<table class="flows">
 				<caption>
-					<strong>Table {TAB.roundTrip}.</strong> The round trip at rest, in R a person a day. In each place, the net
+					<strong>Table {TAB.roundTrip}.</strong> The round trip at rest, in HEARTS a person a day. In each place, the net
 					flow plus the price moves equals the change of what that place holds, to within {pc(RT.unexplainedMax, 2)}
-					of its inflow. All values are rounded to 0.01 R. The Law 5 share goes from each sale straight to the holders, so
+					of its inflow. All values are rounded to 0.01 HEARTS. The Law 5 share goes from each sale straight to the holders, so
 					it never passes through a treasury.
 				</caption>
 				<thead>
-					<tr><th>Flow</th><th>R a day</th></tr>
+					<tr><th>Flow</th><th>HEARTS a day</th></tr>
 				</thead>
 				<tbody>
 					<tr><th colspan="2" scope="colgroup">People's wallets</th></tr>
@@ -1842,7 +1916,7 @@
 		</div>
 		<p>
 			Flows between treasuries cancel out, so Table {TAB.roundTrip} leaves them out. Examples are sales to other COOPs
-			({fmt(RT.between.sales, 2)} R) and ground rent to the City COOP ({fmt(RT.between.rent, 2)} R). The macro checks,
+			({fmt(RT.between.sales, 2)} HEARTS) and ground rent to the City COOP ({fmt(RT.between.rent, 2)} HEARTS). The macro checks,
 			each marked as met or not:
 		</p>
 		<ul>
@@ -1855,7 +1929,8 @@
 				{pc(-moneyGap(), 1)} below <Tex tex={String.raw`u/r = ${tn(steadyState())}`} />, and still filling. At that
 				level, (3) predicts growth of {fmt(stockGrowthDay(), 2)} MIND a person a day. The simulation shows
 				{fmt(RT.stockGrowth, 2)}, plus {fmt(RT.retiredMind, 2)} that left with COOPs that ended. New MIND
-				({fmt(RT.issuedMind, 2)} a day) still exceeds the melt ({fmt(RT.meltedMind, 2)}). Money is still approaching
+				({fmt(RT.issuedMind, 2)} a day) still exceeds the melt ({fmt(RT.meltedMind, 2)}). In HEARTS the melt is the same
+				number, because by ({EQ.unit}) all MIND is worth as many HEARTS as there are MINDs. Money is still approaching
 				<Tex tex="u/r" />; it does not leak.
 			</li>
 			<li>
@@ -1865,7 +1940,7 @@
 				nobody went short of basics.
 			</li>
 			<li>
-				<strong>Basics get cheaper: met.</strong> At rest, a day's basics cost {pc(-DYN.bundleChange, 1)} less in R
+				<strong>Basics get cheaper: met.</strong> At rest, a day's basics cost {pc(-DYN.bundleChange, 1)} less in HEARTS
 				each year, as productivity rises.
 			</li>
 			<li>
@@ -1874,8 +1949,8 @@
 				COOPs.
 			</li>
 			<li>
-				<strong>Holding does not beat the melt: met at rest only.</strong> At rest, the lasting return
-				<Tex tex={String.raw`\mu`} /> is {pc(DYN.mu, 1)}, below the {pc(RATE)} melt. Over the whole run it averaged
+				<strong>Holding does not beat the melt: not met.</strong> At rest, the lasting return
+				<Tex tex={String.raw`\mu`} /> is {pc(DYN.mu, 1)}, above the {pc(RATE)} melt. Over the whole run it averaged
 				{pc(DYN.muRun, 1)} (Section 9.3).
 			</li>
 		</ul>
@@ -1895,9 +1970,9 @@
 					<tr><td>1. No one starves</td><td>Every person-day from day {PROOF.fromDay}</td><td>{PROOF.short} of {fmt(PROOF.personDays)} below {pc(BASIC_BUNDLE.tolerance)}; the worst person-day had {pc(PROOF.worst)}</td></tr>
 					<tr><td>1, after shocks</td><td>The {SIM.shockAfterDays} days after each of {PROOF.shocks} shocks</td><td>{PROOF.shockShort} of {fmt(PROOF.shockPersonDays)} short; the worst had {pc(PROOF.shockWorst)}</td></tr>
 					<tr><td>1, after ends</td><td>The {SIM.endAfterDays} days after {PROOF.failures} failure and {PROOF.exits} exits</td><td>{PROOF.endedShort} of {fmt(PROOF.endedPersonDays)} short; the worst had {pc(PROOF.endedWorst)}</td></tr>
-					<tr><td>2. Normal test</td><td>Every owner-only person, every day from day {PROOF.fromDay}</td><td>Always covered; the lowest holding was {fmt(PROOF.normal.lowestHolding)} R in year {PROOF.normal.lowestYear}, about {fmt(holdingLivingDays())} days of living, or {fmt(holdingCoverYears())} years of basics with nothing flowing in</td></tr>
+					<tr><td>2. Normal test</td><td>Every owner-only person, every day from day {PROOF.fromDay}</td><td>Always covered; the lowest holding was {fmt(PROOF.normal.lowestHolding)} HEARTS in year {PROOF.normal.lowestYear}, about {fmt(holdingLivingDays())} days of living, or {fmt(holdingCoverYears())} years of basics with nothing flowing in</td></tr>
 					<tr><td>Strict test (not claimed)</td><td>Dividends alone, for every owner-only person</td><td>Missed on {pc(1 - strictEarly.share)} of their person-days in year {strictEarly.year}, and on up to {pc(1 - strictLater.share)} in a later year until year {PROOF.strict.lastShortYear} (year {strictLater.year}); after year 10, on {pc(1 - PROOF.strict.shareAfter10, 2)}, all in years {PROOF.strict.lateMissYears.join(' and ')}; in year {SIM.years}, the worst day paid {fmt(PROOF.strict.endRatio, 2)} times the bundle</td></tr>
-					<tr><td>3. Living standards rise</td><td>Real consumption of every tenth, at every ten-year mark</td><td>Higher at every ten-year mark, but not over every ten-year window: those that start in years {falls[0][0]} to {falls.at(-1)[0]} end lower for the poorest tenth. Poorest {fmt(DECILES.d1[0], 1)} → {fmt(DECILES.d1.at(-1), 1)} R a day (×{fmt(growth('d1'))}); middle ×{fmt(growth('d5'))}; richest ×{fmt(growth('d10'))}</td></tr>
+					<tr><td>3. Living standards rise</td><td>Real consumption of every tenth, at every ten-year mark</td><td>Higher at every ten-year mark, but not over every ten-year window: those that start in years {falls[0][0]} to {falls.at(-1)[0]} end lower for the poorest tenth. Poorest {fmt(DECILES.d1[0], 1)} → {fmt(DECILES.d1.at(-1), 1)} HEARTS a day at day-1 prices (×{fmt(growth('d1'))}); middle ×{fmt(growth('d5'))}; richest ×{fmt(growth('d10'))}</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -1906,7 +1981,7 @@
 				title={`Real consumption a person a day, at the prices of day 1, for the poorest, the middle and the richest tenth, years 1 to ${SIM.years}`}
 				series={living}
 				x={{ min: 1, max: SIM.years, ticks: [1, 10, 20, 30, 40, 50, 60], fmt: (v, tip) => (tip ? `Year ${fmt(v)}` : `${v}`), label: 'Year' }}
-				y={{ min: 10, max: 10_000, log: true, ticks: [10, 100, 1_000, 10_000], fmt: (v, tip) => (tip ? `${fmt(v, 1)} R` : v >= 10_000 ? `${fmt(v / 1000)}k` : fmt(v)), label: 'R a day, day-1 prices (log)' }}
+				y={{ min: 10, max: 10_000, log: true, ticks: [10, 100, 1_000, 10_000], fmt: (v, tip) => (tip ? `${fmt(v, 1)} HEARTS` : v >= 10_000 ? `${fmt(v / 1000)}k` : fmt(v)), label: 'HEARTS a day, day-1 prices (log)' }}
 				refs={[{ axis: 'x', at: FAILURE.year, label: 'first food COOP fails' }]}
 			/>
 			<figcaption>
@@ -1919,7 +1994,7 @@
 		<p>
 			Every tenth gains, but not alike. The Gini index of consumption grew from {fmt(DECILES.gini[0], 2)} to
 			{fmt(DECILES.gini.at(-1), 2)}, because Avens that deliver more earn more. We checked part 3 at ten-year marks.
-			Over shorter or shifted windows it fails. The poorest tenth had {fmt(livingAt('d1', 50), 1)} R a day in year 50,
+			Over shorter or shifted windows it fails. The poorest tenth had {fmt(livingAt('d1', 50), 1)} HEARTS a day in year 50,
 			against {fmt(livingAt('d1', 45), 1)} in year 45. Every ten-year window that starts in years {falls[0][0]} to
 			{falls.at(-1)[0]} ends lower than it starts.
 		</p>
@@ -1945,8 +2020,8 @@
 				{fmt(PROOF.strict.worst, 2)} times the bundle, in year {PROOF.strict.worstYear}, and in year {SIM.years} the worst
 				day paid only {fmt(PROOF.strict.endRatio, 2)} times. So the owner-only people lived mainly from the ownership that
 				their investing creates each day. Their dividends were about {pc(ownerOnlyDividendShare(40))} of what flowed in to
-				them in year 40, but only {pc(ownerOnlyDividendShare(60), 1)} in year {SIM.years}, if we value their new
-				ownership at the average MIND price. The cause: Law 5 pays only on sales. CITYmind made up {pc(OWNER_ONLY.mix.CITY.share)} of what
+				them in year 40, but only {pc(ownerOnlyDividendShare(60), 1)} in year {SIM.years}, if we count their new
+				ownership at 1 HEART a MIND, the average (Section 6.3). The cause: Law 5 pays only on sales. cityMIND made up {pc(OWNER_ONLY.mix.CITY.share)} of what
 				the group held, and it pays almost nothing, because ground rent is not a sale and the City COOP sells little
 				water. The group also spent its experience MIND, which paid the most, and kept what paid least. Its yield was
 				{pc(ownerOnlyYield(), 1)}, against the city's {pc(DYN.yield, 1)}. Fix (proposed): C4, the Aven's holding mix. No
@@ -1954,7 +2029,7 @@
 			</li>
 			<li>
 				<strong>The poorest tenth's dip.</strong> Their real consumption fell {pc(-dip.fall)} from year {dip.from} to
-				{dip.to}. Their holdings fell from {fmt(OWNER_ONLY.holding40)} R in year 40 to {fmt(OWNER_ONLY.holding60)} R in
+				{dip.to}. Their holdings fell from {fmt(OWNER_ONLY.holding40)} HEARTS in year 40 to {fmt(OWNER_ONLY.holding60)} in
 				year {SIM.years}. The likely cause is that the dividends on what they held fell, and a run that tracks this must
 				confirm it. Fix (proposed): the same as for dividends alone. The test city checks every window, not only
 				ten-year marks.
@@ -1973,22 +2048,24 @@
 				Section 9.1.
 			</li>
 			<li>
-				<strong>The lasting return near the melt.</strong> <Tex tex={String.raw`\mu`} /> was {pc(DYN.mu, 1)} at rest in
-				the main run, but {pc(DYN.muRun, 1)} over the whole run. At rest, {variationsMuAbove()} of the
-				{LADDER.length - 1} variations reached {pc(RATE)} or more. Fix (proposed): keep Law 5 near
-				{pc(DIVIDEND_SHARE)}, within the protocol's limit on the share (Appendix F), and let Avens spread holdings (C4).
-				The test city must show that <Tex tex={String.raw`\mu`} /> stays below the melt over a whole run.
+				<strong>The lasting return above the melt.</strong> <Tex tex={String.raw`\mu`} /> was {pc(DYN.mu, 1)} at rest
+				in the main run, and {pc(DYN.muRun, 1)} over the whole run. At rest, {variationsMuAbove()} of the
+				{LADDER.length - 1} variations reached {pc(RATE)} or more. So in these runs, holding beat the melt, and
+				Proposition 2 gives no bound on inequality. Fix (proposed): keep Law 5 at {pc(DIVIDEND_SHARE)}, within the
+				protocol's limit on the share (Appendix F), and let Avens spread holdings (C4). The test city must find what
+				keeps <Tex tex={String.raw`\mu`} /> below the melt over a whole run, with the rate as a parameter (Section
+				12.5).
 			</li>
 			<li>
 				<strong>Newcomers.</strong> When the population grows, newcomers start with nothing, and some went short in their
 				first weeks. Owner-only people went short too, with {pc(V('pop').ownerWorst)} of the basics on the worst day. The
-				poorest of them consumed {fmt(V('pop').poorOwner[0], 1)} R a day in year 10 and {fmt(V('pop').poorOwner[1], 1)}
+				poorest of them consumed {fmt(V('pop').poorOwner[0], 1)} HEARTS a day, at day-1 prices, in year 10 and {fmt(V('pop').poorOwner[1], 1)}
 				in year 20. Fix (proposed): the same bootstrap as day 1, for every newcomer.
 			</li>
 		</ul>
 		<div class="table-wrap">
 			<table class="narrow">
-				<caption><strong>Table {TAB.variations}.</strong> The main run and ten variations, one run each. Checks: 1 no one starves, 2 no one has to work (normal test), 3 living standards rise. The strict test failed in every run.</caption>
+				<caption><strong>Table {TAB.variations}.</strong> The main run and ten variations, one run each. Checks: 1 no one starves, 2 no one has to work (normal test), 3 living standards rise. The strict test failed in every run. μ is the lasting return at rest, in HEARTS.</caption>
 				<thead>
 					<tr><th>Run</th><th class="checks">Checks 1 · 2 · 3</th><th><Tex tex={String.raw`\mu`} /></th><th>What broke first</th></tr>
 				</thead>
@@ -2039,7 +2116,7 @@
 				<tbody>
 					<tr><td>Allocation</td><td>Every agent gets {UIA_DAY} personal HEARTS a day, which it can only invest</td><td>Every person with a verified identity gets {UIA_DAY} personal HEARTS a day: one stream per human</td></tr>
 					<tr><td>COOPs</td><td>Agents found COOPs and invest HEARTS, which convert into MIND</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
-					<tr><td>Markets</td><td>Protocol-owned baskets of MINDs, fed by every treasury. {pc(DIVIDEND_SHARE)} of every sale goes at once to the holders of the seller's MIND</td><td>Avens route every purchase through the pools, and the seller gets its own MIND. Each COOP can change its dividend share, within the protocol's limit</td></tr>
+					<tr><td>Markets</td><td>Baskets of MINDs, fed by every treasury; the City COOP holds their LP tokens. {pc(DIVIDEND_SHARE)} of every sale goes at once to the holders of the seller's MIND</td><td>Avens route every purchase through the pools, and the seller gets its own MIND. Each COOP can change its dividend share, within the protocol's limit</td></tr>
 					<tr><td>Prices</td><td>Free, every day, with two rivals for each basic</td><td>The same</td></tr>
 					<tr><td>Land</td><td>One City COOP holds the map; agents lease plots and pay ground rent</td><td>The City COOP holds all land; every citizen holds one equal share; builders lease plots like an Erbbaurecht</td></tr>
 					<tr><td>Energy</td><td>Every recipe costs energy; growth comes only from surplus energy</td><td>Measured on the village's meters</td></tr>
@@ -2216,9 +2293,9 @@
 				COOP's inflow stops too. Once the COOP has failed, its MIND leaves the baskets. The main run of Section 10 assumes
 				this rule: a failed COOP's MIND leaves the pools and is retired, and its holders lose it. It is a third way out of a pool, beside trades and the melt. In the earlier static world, a failed
 				COOP's MIND kept a pool price, and its holders could still swap it for their partners' MIND. The healthy
-				reserves could then move into a successor pool. That needs one decision: whether "never withdrawn" means "never
-				leaves the protocol's pools". A hub MIND in every basket, for
-				example CITYmind, keeps routes short and the network connected. <em>Test:</em> junk dumping, price pumps and
+				reserves could then move into a successor pool, by a redemption that the City COOP's members vote for (Section
+				6). A hub MIND in every basket, for
+				example cityMIND, keeps routes short and the network connected. <em>Test:</em> junk dumping, price pumps and
 				sudden failures in the test city.
 			</li>
 			<li>
@@ -2231,18 +2308,29 @@
 			</li>
 			<li>
 				<strong>A unit of account.</strong> Every COOP prices in its own MIND, and 1,000 COOPs have
-				{fmt(pairCount(1000))} exchange rates between them. So this paper counts in R, the yardstick of Section 6.3.
-				Two questions stay open: which MINDs should define R, and how stable it stays. Each COOP also publishes what one
-				of its MIND buys, for example kWh per SOLARmind. <em>Test:</em> the test city measures how R moves against a day
-				of living.
+				{fmt(pairCount(1000))} exchange rates between them. Section 6.3 settles which unit to count in: the HEART, the
+				average MIND, which needs no anchor MIND. One question stays open: how stable the HEART's purchasing power is.
+				What 1 HEART buys moves with what the COOPs deliver, and no rule holds it steady. In the simulation, a day's
+				basics cost {pc(-DYN.bundleChange, 1)} fewer HEARTS each year at rest. Each COOP also publishes what one of its
+				MIND buys, for example kWh per solarMIND. <em>Test:</em> the test city measures how the HEART moves against a
+				day of living and against the basic bundle.
 			</li>
 			<li>
-				<strong>Liquidity that never leaves.</strong> Nobody can withdraw from the pools, so nobody can repair a pool by
-				moving money out, and every bug stays exposed. So the code must be right from the start. It needs verified
-				maths, rounding in the pool's favour and one global melt index. A narrow pause may stop trading but never move
-				funds (Appendix F). Equal-weight baskets are in wide use, but never yet with steady one-sided inflows, no
-				withdrawals and melting currencies. <em>Test:</em> the test city, a red team and a bug bounty test this mix before
-				real value flows.
+				<strong>Liquidity that leaves only by vote.</strong> The City COOP holds the LP tokens, and it redeems them only
+				when its members vote for it (Section 6). So no COOP and no person can withdraw from the pools. Until a vote
+				passes, nobody can repair a pool by moving money out, and every bug stays exposed. So the code must be right from
+				the start. It needs verified maths, rounding in the pool's favour and one global melt index. A narrow pause may
+				stop trading but never move funds (Appendix F). Equal-weight baskets are in wide use, but never yet with steady
+				one-sided inflows, withdrawals only by a city's vote and melting currencies. The simulation runs with no
+				redemptions. <em>Test:</em> the test city, a red team and a bug bounty test this mix before real value flows.
+			</li>
+			<li>
+				<strong>A vote that thins a pool.</strong> A redemption takes reserves out of a pool. A thinner pool moves its
+				prices more for each trade. So a pushed price costs less to make, and every payment that routes through the pool
+				costs more. A vote could also empty a pool to pay for something else. The guard is the City COOP's own decision
+				rule (Section 9), in which every citizen holds one equal share. theOS does not yet set how large a majority a
+				redemption needs. <em>Test:</em> the test city runs redemptions by vote, and measures prices and routing costs
+				before and after.
 			</li>
 		</ul>
 		<h3>12.4 The city, the euro and the law</h3>
@@ -2256,13 +2344,18 @@
 			</li>
 			<li>
 				<strong>The euro border.</strong> Panels, chips, medicine and insurance cost euros, and taxes are due in euros,
-				even on services paid in MIND. No supplier outside the city accepts SOLARmind. The alternative currencies that
+				even on services paid in MIND. No supplier outside the city accepts solarMIND. The alternative currencies that
 				lasted kept a bridge to national money; the Chiemgauer charges a fee to change back into euros
-				<Cite k="gelleri" />. We propose that each COOP is a legal eG with a euro balance sheet. COOPs that sell power,
-				heat, food or services outside the city earn euros, and a shared euro reserve pays for imports and taxes.
-				Changing MIND into euros carries a fee, and individuals cannot redeem MIND for euros. Each COOP publishes a euro
-				reference price and keeps a tax reserve. <em>Test:</em> the test city adds an outside euro economy that agents can
-				trade with and leave for.
+				<Cite k="gelleri" />. theOS keeps one bridge. The City COOP is the city's euro bank at the border, and every
+				euro goes through it; in maiaCITY that is the MaiaCity COOP. It advances euros to COOPs for machines, imports
+				and taxes, and each COOP repays in its own MIND, with no interest. No MIND is ever made from euros, and no person
+				changes MIND into euros. COOPs that sell power, heat, food or services outside the city earn euros, and
+				these euros go through the City COOP too. Each COOP is a legal eG with a euro balance sheet, publishes a euro reference price and keeps a tax
+				reserve. One cost must be said plainly. A repayment in MIND never returns a euro. So the founders' euros are in
+				effect a grant, unless exports earn them back. A test village of about {fmt(EURO_BORDER.people)} people needs
+				about €{fmt(EURO_BORDER.euros / 1e6)} million, and its exports do not repay that within {EURO_BORDER.years}
+				years. <em>Test:</em> the rules are proven first in a game, then in the real city. The test city adds an outside
+				euro economy that agents can trade with and leave for, and counts the euros that exports earn back.
 			</li>
 			<li>
 				<strong>Securities and co-op law.</strong> Under EU rules, a token that carries ownership and can be traded is
@@ -2304,9 +2397,9 @@
 					<tr><th>Condition</th><th>Needed for</th><th>In the simulation</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>The lasting return <Tex tex={String.raw`\mu`} /> stays below the melt</td><td>P2</td><td>Only at rest: {pc(DYN.mu, 1)} in years {SIM.restFrom} to {SIM.years} of the main run, but {pc(DYN.muRun, 1)} over the whole run, at or above the melt in {DYN.muYearsAbove.years} of {DYN.muYearsAbove.of} years; {pc(RATE)} or more at rest in {variationsMuAbove()} of {LADDER.length - 1} variations; {MIND_RETURNS.aboveMelt} of {MIND_RETURNS.withThreeYears} MINDs above it over their lives</td></tr>
+					<tr><td>The lasting return <Tex tex={String.raw`\mu`} /> stays below the melt</td><td>P2</td><td>Not met: {pc(DYN.mu, 1)} in years {SIM.restFrom} to {SIM.years} of the main run, and {pc(DYN.muRun, 1)} over the whole run, at or above the melt in {DYN.muYearsAbove.years} of {DYN.muYearsAbove.of} years; {pc(RATE)} or more at rest in {variationsMuAbove()} of {LADDER.length - 1} variations; {MIND_RETURNS.aboveMelt} of {MIND_RETURNS.withThreeYears} MINDs above it over their lives</td></tr>
 					<tr><td>Every COOP accepts HEARTS from anyone</td><td>P2, P3</td><td>Assumed</td></tr>
-					<tr><td>A rule for how euros can buy MIND</td><td>P2</td><td>A closed city, with no euros</td></tr>
+					<tr><td>The euro border: euros never make MIND, and no person changes MIND into euros (Section 12.4)</td><td>P2</td><td>A closed city, with no euros</td></tr>
 					<tr><td>A rule for estates</td><td>P2</td><td>Not modelled</td></tr>
 					<tr><td>The payout rule, with a reserve of about {SIM.reserveMonths} months</td><td>P2, P3</td><td>People hold {pc(DYN.people)}, treasuries {pc(DYN.treasuries)}, pools {pc(DYN.pools)}; reserves of {V('res6').months} and {V('res12').months} months failed</td></tr>
 					<tr><td>All land with the City COOP</td><td>P2</td><td>An earlier model: a Gini index of {fmt(STATIC.land.city, 2)}, against {fmt(STATIC.land.private, 2)} with private land</td></tr>
@@ -2367,7 +2460,8 @@
 			first week, and part 3 held at every ten-year mark. It also failed. The first week was short. Dividends alone
 			missed often in the first {PROOF.strict.lastShortYear} years. The poorest tenth consumed {pc(-dip.fall)} less in
 			year {dip.to} than in year {dip.from}. And in {starveFail()} of {LADDER.length - 1} variations, someone ran short,
-			mostly of food. Only 1 of {LADDER.length} runs, on one seed, passed all three checks. We propose a fix for each
+			mostly of food. The lasting return on holdings stayed above the melt, so Proposition 2 set no bound on
+			inequality. Only 1 of {LADDER.length} runs, on one seed, passed all three checks. We propose a fix for each
 			failure, and the test city must show that each one works. Human action becomes steering: deciding,
 			every day and together, what the city builds next. maiaCITY will prove it first in a game, and then in the real
 			city.
@@ -2391,9 +2485,10 @@
 			<li><strong>Treasuries pay out.</strong> Law 5 sends {pc(DIVIDEND_SHARE)} of every sale to the holders. The rest follows the payout rule of Section 9.3: a reserve of about {SIM.reserveMonths} months, plant first, then payout for work proposals.</li>
 			<li><strong>Honest prices.</strong> Time-averaged pool prices reflect the use that each MIND buys.</li>
 			<li><strong>Connected baskets.</strong> Every MIND in a basket can reach every other MIND through the pools.</li>
+			<li><strong>No redemptions.</strong> The City COOP redeems no LP tokens, so MIND leaves a pool only through trades, the melt and retired MIND. The simulation runs this way (Section 12.3).</li>
 			<li>
-				<strong>Random returns.</strong> In Proposition 2, holdings are valued in a common basket of MINDs. Their
-				returns move as a random walk, with a lasting return below the melt.
+				<strong>Random returns.</strong> In Proposition 2, holdings are valued in HEARTS (Section 6.3). Their returns
+				move as a random walk, with a lasting return below the melt.
 			</li>
 			<li><strong>Land in the City COOP.</strong> All land belongs to the City COOP and is only leased (Section 8.1).</li>
 			<li>
@@ -2445,13 +2540,13 @@
 					<tr><td><Tex tex={String.raw`\mu`} /></td><td>The lasting return on a holding: dividend yield plus any lasting price rise</td><td>9.3</td></tr>
 					<tr><td><Tex tex={String.raw`\sigma,\ dZ,\ \alpha`} /></td><td>The spread of returns between people, random noise, and the shape of the resting spread</td><td>9.3</td></tr>
 					<tr><td><Tex tex={String.raw`G,\ G_0,\ G_{\infty}`} /></td><td>The Gini index of ownership: over time, at the start, and at rest</td><td>9.3</td></tr>
-					<tr><td>R</td><td>The yardstick of value: what a MIND trades for against three reference MINDs, on their geometric mean</td><td>6.3</td></tr>
+					<tr><td><Tex tex={String.raw`s_k,\ v_k`} /></td><td>The supply of MIND <Tex tex="k" />, and its value in HEARTS, the unit of account: its pool price over the supply-weighted average price ({EQ.unit})</td><td>6.3</td></tr>
 					<tr><td><Tex tex={String.raw`\lambda`} /></td><td>Law 5's share of every sale, {pc(DIVIDEND_SHARE)} by default</td><td>10.2</td></tr>
 					<tr><td><Tex tex={String.raw`\omega`} /></td><td>The ownership that a person's investing creates for them</td><td>10.2</td></tr>
 					<tr><td><Tex tex="T_i" /></td><td>The years a holding would pay the basic bundle with nothing flowing in</td><td>10.2</td></tr>
 					<tr><td><Tex tex="p_b" /></td><td>The cost of a day's basic bundle</td><td>10.2</td></tr>
 					<tr><td><Tex tex={String.raw`D_i,\ X_i`} /></td><td>A person's dividends, and what they spend</td><td>10.2</td></tr>
-					<tr><td><Tex tex={String.raw`\bar W,\ Y`} /></td><td>The mean holding, and what people buy from COOPs, R a person a day</td><td>10.2</td></tr>
+					<tr><td><Tex tex={String.raw`\bar W,\ Y`} /></td><td>The mean holding, and what people buy from COOPs, HEARTS a person a day</td><td>10.2</td></tr>
 					<tr><td><Tex tex={String.raw`\bar\eta`} /></td><td>The city's dividend yield, <Tex tex={String.raw`\lambda Y / \bar W`} /></td><td>10.2</td></tr>
 					<tr><td><Tex tex={String.raw`\theta`} /></td><td>The share of what they hold that people spend a year</td><td>10.4</td></tr>
 				</tbody>
@@ -2463,7 +2558,7 @@
 		<h2><span>C</span>Glossary</h2>
 		<dl class="glossary">
 			<dt>HEARTS</dt>
-			<dd>A person's own currency of intent, {UIA_DAY} a day. HEARTS buy nothing and pay for nothing, not even food. They earn nothing and can only be invested into COOPs.</dd>
+			<dd>A person's own currency of intent, {UIA_DAY} a day. HEARTS buy nothing and pay for nothing, not even food. They earn nothing and can only be invested into COOPs. The HEART is also the unit of account (Section 6.3): every value is shown in HEARTS, and the average MIND is worth 1 HEART.</dd>
 			<dt>MIND</dt>
 			<dd>A COOP's own currency of ownership and utility. To hold it is to own part of the COOP; to spend it is to use what the COOP makes.</dd>
 			<dt>COOP</dt>
@@ -2480,14 +2575,16 @@
 			<dd>A proposed rule. A treasury keeps a reserve of about {SIM.reserveMonths} months of running costs and planned building, and grows its own plant first. It pays out the rest within weeks, for work proposals.</dd>
 			<dt>Turnover</dt>
 			<dd>The total of a COOP's sales over a time. Only real deliveries count.</dd>
-			<dt>R</dt>
-			<dd>The yardstick of value of Section 6.3. To price a MIND in R, ask what it trades for in the pools against SOLARmind, HABITATmind and CITYmind, and take the geometric mean. A MIND that trades for about two of each is worth 2 R. When one of their COOPs ends, its successor takes its place, so the chain of prices does not jump. Nobody holds R or pays in it.</dd>
+			<dt>Unit of account</dt>
+			<dd>The unit in which all values are shown and compared: the HEART. The pools set only how MINDs stand against each other; the supply-weighted average MIND is worth 1 HEART, and a MIND that the pools cannot price yet counts at 1 HEART (Section 6.3). It is for display only: it never changes a trade, a price or a payment, and it is not a peg.</dd>
 			<dt>Melt, demurrage</dt>
 			<dd>To melt is to shrink continuously, at a rate of {pc(RATE)} a year. Demurrage is the name of that holding cost.</dd>
 			<dt>UIA</dt>
 			<dd>Universal Intent Allocation, Law 1: the right of every human to invest {UIA_DAY} HEARTS a day.</dd>
 			<dt>Pool, basket</dt>
-			<dd>A protocol-owned store of 4 to 8 MINDs in equal value shares, which anyone can trade against and nobody can withdraw from. MIND leaves it only through trades, by melting, or when its COOP fails and its MIND is retired.</dd>
+			<dd>A store of 4 to 8 MINDs in equal value shares, which anyone can trade against. Together the pools are the city's liquidity pool. The City COOP holds their LP tokens, so no COOP and no person withdraws from a pool. The City COOP may redeem LP tokens, but only after a vote of its members, and only into its own treasury. MIND leaves a pool only through trades, by melting, when its COOP fails and its MIND is retired, or by such a redemption.</dd>
+			<dt>LP token</dt>
+			<dd>Liquidity-provider token: a share of a pool, which the pool issues for each deposit. In theOS every COOP deposits a tenth of its treasury half in its own MIND, and the LP tokens for it go to the City COOP (Section 6). The City COOP may redeem them only after a vote of its members.</dd>
 			<dt>G3M</dt>
 			<dd>Geometric mean market maker: the pool formula (5), which keeps the geometric mean of the reserves constant in every trade.</dd>
 			<dt>LVR</dt>
@@ -2495,9 +2592,9 @@
 			<dt>Aven</dt>
 			<dd>A personal AI agent that works only for its human: it invests, trades, pays, proposes and delivers Aven work items, and collects dividends.</dd>
 			<dt>City COOP</dt>
-			<dd>The COOP that holds all land and everything that all citizens share. Every citizen holds one equal share, as a membership.</dd>
+			<dd>The COOP that holds all land and everything that all citizens share, including the LP tokens of the city's pools. It is also the city's euro bank (Section 12.4). Every citizen holds one equal share, as a membership. In maiaCITY it is the MaiaCity COOP.</dd>
 			<dt>Ground rent, Erbbaurecht</dt>
-			<dd>The yearly fee for a leased plot, paid in any MIND and received as CITYmind. The lease works like a German heritable building right.</dd>
+			<dd>The yearly fee for a leased plot, paid in any MIND and received as cityMIND. The lease works like a German heritable building right.</dd>
 			<dt>Protocol</dt>
 			<dd>The shared software at the base of theOS that runs the laws. No person or COOP owns it.</dd>
 			<dt>Steady state</dt>
@@ -2507,7 +2604,7 @@
 			<dt>Sybil attack</dt>
 			<dd>One person posing as many people, to collect many streams of HEARTS.</dd>
 			<dt>Day of living</dt>
-			<dd>What an average person consumes in a day, priced in R that year (Section 6.3).</dd>
+			<dd>What an average person consumes in a day, priced in HEARTS that year (Section 6.3).</dd>
 			<dt>Basic bundle</dt>
 			<dd>One day of basics for one person: {fmt(BASIC_BUNDLE.kcal)} kcal of food, {BASIC_BUNDLE.L} L of water, {BASIC_BUNDLE.kWh} kWh of energy and {BASIC_BUNDLE.m2} m² of home.</dd>
 			<dt>Owner-only person</dt>
@@ -2577,7 +2674,12 @@
 		<p>
 			<strong>Balancer and geometric mean pools.</strong> Balancer's weighted pools use the formula of theOS's baskets,
 			but outside investors supply the reserves, hold pool tokens and can withdraw <Cite k="balancer evans" />. theOS
-			pools belong to the protocol, issue no pool tokens, take one-sided inflows and hold currencies that melt.
+			pools take one-sided inflows from every COOP, give their LP tokens to the City COOP and hold currencies that melt.
+			The closest model is <em>protocol-owned liquidity</em>, which Olympus made known: a protocol's treasury buys the
+			LP tokens of its own pools and keeps them, so it does not have to pay outside investors to supply liquidity
+			<Cite k="olympus" />. theOS keeps that idea, with one change. A city COOP owns the liquidity, so every citizen owns
+			an equal part of it, and the inflow comes from the COOPs' own MIND, not from a sale of new tokens. The City COOP
+			can take liquidity out, but only by a vote of its members, and only into its own treasury.
 		</p>
 		<p>
 			<strong>Agent-based and stock-flow consistent models.</strong> Mark-0 <Cite k="gualdi" /> and the model of Dosi
@@ -2625,7 +2727,7 @@
 					<tr><td>Empty work items</td><td>Treasury MIND for work that an Aven never delivered, or for a friend's Aven</td><td>Public work items with a proof of delivery, members' acceptance, work proposals open to every Aven, audits of the largest earners</td><td>Avens that bill empty work, COOPs that favour related Avens</td></tr>
 					<tr><td>Pool attacks and front-running</td><td>A pushed price draws HEARTS from Avens; bots trade around payments and inflows</td><td>Time-averaged prices, one batch at one price per block, sealed orders, an event breaker</td><td>Price pumps, junk dumping, sandwich bots</td></tr>
 					<tr><td>Capture</td><td>Control of a COOP's treasury, of the Avens' defaults, or of the protocol's code</td><td>The holder rule, a default COOP constitution, several Aven providers, the process of Appendix F</td><td>Vote buying, a captured Aven provider, injected instructions</td></tr>
-					<tr><td>Bugs</td><td>Value drained from pools that nobody can withdraw from</td><td>Verified maths, one global melt index, independent code, a pause that cannot move funds, a bug bounty</td><td>A red team before real value flows</td></tr>
+					<tr><td>Bugs</td><td>Value drained from pools that only a vote of the City COOP's members can withdraw from</td><td>Verified maths, one global melt index, independent code, a pause that cannot move funds, a bug bounty</td><td>A red team before real value flows</td></tr>
 					<tr><td>Market power over a basic</td><td>A leading COOP raises prices or keeps rivals out</td><td>A founding signal when need goes unmet or a rival's cost is far below the price (Law 3 entry is always open); open improvements after a delay; Avens' exit; Law 5 to all holders; the City COOP leases idle plants</td><td>One, two and four sellers of each good</td></tr>
 				</tbody>
 			</table>
@@ -2655,7 +2757,7 @@
 			<strong>Details inside the laws.</strong> Some rules work inside the laws. Among them are the reserve target of
 			about {SIM.reserveMonths} months, the founding signal for rivals (Law 3 entry itself is always open), and the Law 5
 			share and its limit. Basket
-			admission, R and the identity system are rules of this kind too. The limit matters: a share of {pc(V('law35').share)} failed the checks of Proposition 3. These
+			admission, how the HEART index reads pool prices (Section 6.3) and the identity system are rules of this kind too. The limit matters: a share of {pc(V('law35').share)} failed the checks of Proposition 3. These
 			rules change by the same process as the code, and the test city tests each change first.
 		</p>
 		<p>
@@ -2667,8 +2769,9 @@
 	<section id="disclosure">
 		<h2><span>G</span>Interests and code</h2>
 		<p>
-			The author leads maiaCITY, which builds the test city and the real city that this paper describes. He therefore
-			has an interest in the success of theOS. The code behind every number and figure in this paper is open, in the
+			Samuel Andert leads maiaCITY, which builds the test city and the real city, and so has an interest in the success
+			of theOS. Claude, an AI model made by Anthropic, co-wrote the text and the code behind its numbers. It holds no
+			stake in maiaCITY. The code behind every number and figure in this paper is open, in the
 			maiaCITY repository at
 			<a href="https://github.com/MyAvenCEO/maiacity" target="_blank" rel="noopener noreferrer">github.com/MyAvenCEO/maiacity</a>.
 			The file <code>src/lib/theos/model.js</code> holds every number that the text prints. Each constant names the
@@ -2684,6 +2787,12 @@
 			gives the same results, in about {fmt(SIM.runSeconds / 60)} minutes. The flag <code>--quick</code> runs a short smoke test, and
 			<code>--csv FILE</code> also writes a yearly series of every run. The test city's world model is being built from
 			this script (Section 11.1).
+		</p>
+		<p>
+			The script still counts in R, the yardstick that Section 6.3 retired. The values in HEARTS come from the same
+			seeded runs. A report values every flow and every holding at the HEART index of its step, and it changes no move,
+			price or trade. Its tables, <code>sim-dynamic-hearts.md</code>, sit beside the script's own output, and
+			<code>model.js</code> names them as H1 to H7. The report is not yet part of the script in the repository.
 		</p>
 	</section>
 
@@ -2736,7 +2845,7 @@
 			{/each}
 		</ol>
 		<p class="cite-as">
-			<strong>Cite as:</strong> Andert, S. (2026). theOS: The civilization scale operating system of Abundism. A macroeconomic and
+			<strong>Cite as:</strong> Andert, S., &amp; Claude (2026). theOS: The civilization scale operating system of Abundism. A macroeconomic and
 			system-engineering framework for a post-labour economy, v6. maiaCITY working paper.
 		</p>
 	</section>

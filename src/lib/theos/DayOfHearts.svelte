@@ -38,7 +38,7 @@
 </script>
 
 <div class="scroll" bind:this={box}>
-<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Three clocks run through one day. Every hour drops one HEART into each person's dial, in their own currency: SamuelHEARTS, AnnaHEARTS, MiaHEARTS. At midnight the 24 HEARTS leave to be invested into COOPs.">
+<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Three clocks run through one day. Every hour drops one HEART into each person's dial, in their own currency: samuelHEARTS, annaHEARTS, miaHEARTS. At midnight the 24 HEARTS leave to be invested into COOPs.">
 	{#each PEOPLE as p, n}
 		<g transform="translate({L.at[n][0]} {L.at[n][1]})">
 			<circle r={R + 14} fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2" opacity="0.9" />
@@ -59,7 +59,7 @@
 			{/if}
 			<text y="8" text-anchor="middle" class="big" fill={p.color}>{count}</text>
 			<text y="26" text-anchor="middle" class="sub">of 24 today</text>
-			<text y={R + 36} text-anchor="middle" class="node" fill={p.color}>{p.name}HEARTS</text>
+			<text y={R + 36} text-anchor="middle" class="node" fill={p.color}>{p.name.toLowerCase()}HEARTS</text>
 		</g>
 	{/each}
 	<text x={L.w / 2} y={L.foot} text-anchor="middle" class="sub" opacity={0.4 + out * 0.6}>

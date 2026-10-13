@@ -1,6 +1,6 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 14: MIND goes round. New MIND (24 HEARTS a day convert) reaches people and treasuries; treasuries pay people
+	// Figure 13: MIND goes round. New MIND (24 HEARTS a day convert) reaches people and treasuries; treasuries pay people
 	// for their Avens' work items; people spend at the COOPs, so the MIND comes back. At each sale, Law 5's share branches
 	// off at once to the holders, and only the rest reaches the treasury. A little melts in each place. Arrow widths are shares of a person's income, and gold MIND coins travel along each arrow at a
 	// rate in proportion to its flow. Two worlds: the dynamic world (wants that keep growing) and the earlier static one.
@@ -23,7 +23,7 @@
 			lab: { own: [8, 140, 'start'], coop: [354, 140, 'end'], buy: [180, 178, 'middle'], work: [180, 344, 'middle'], div: [204, 242, 'middle'], meltP: [84, 520, 'start'], meltT: [276, 520, 'end'] } }
 	};
 
-	// the flows of one world, R a person a day
+	// the flows of one world, HEARTS a person a day
 	const flowsOf = (rt) => ({
 		own: rt.people.in.own,
 		coop: rt.treasuries.in.own + rt.pools.in.tenth,
