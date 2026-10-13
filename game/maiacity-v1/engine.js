@@ -1,16 +1,19 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
- * MaiaCity V1: the simplest game of the city. Two players, two COOPs, one hex, one tent, one pool.
+ * MaiaCity V1: the simplest game of the city. Two players, three COOPs, one hex, one tent, one pool.
  *
  * - Each player's personal HEARTS grow 24 a day (one an hour), minted at any moment: all that grew since the last mint.
  *   The right to mint expires after 24 h, not the HEARTS: growth older than 24 h is lost. HEARTS buy nothing: they are
  *   only invested.
  * - Investing 1 HEART into a COOP makes 1 MIND of that COOP: half to the player's wallet, half to the COOP's treasury.
- * - The MaiaCity COOP (MaiaMIND) owns the shared hex. The Settlement COOP (VillageMIND) owns the 2-person dome tent.
- * - 5 % of every MIND that lands in a treasury goes into one protocol-owned constant-product pool, MaiaMIND/VillageMIND.
- *   No one can take it out; anyone can swap through it (0.3 % fee stays in the pool).
- * - Rent, every virtual month: each player pays the Settlement COOP for the tent in VillageMIND; the Settlement COOP pays
- *   the MaiaCity COOP for the hex in MaiaMIND. A payer who lacks the MIND swaps the other one through the pool; what is
+ * - Three COOPs, each with its own MIND: the MaiaCity COOP (MaiaMIND) owns the settlement hex and the AMM pool; the
+ *   Settlement COOP (SettlementMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (VillageMIND)
+ *   owns the pickup, the powercube (a diesel generator), a solar panel and a big battery pack.
+ * - 5 % of every MIND that lands in a treasury goes into the MaiaCity COOP's pool: one equal-weight basket of all three
+ *   MINDs (a constant-product pool, x·y·z), so any MIND swaps for any other. It is never paid out; anyone can swap
+ *   through it (0.3 % fee stays in the pool).
+ * - Rent, every virtual month: each player pays the Settlement COOP for the tent in SettlementMIND; the Settlement COOP
+ *   pays the MaiaCity COOP for the hex in MaiaMIND. A payer who lacks the MIND swaps others through the pool; what is
  *   still missing is owed (arrears) and paid first next month.
  * - Time: one virtual month per real day, from virtual year 0. Every balance (HEARTS, wallets, treasuries, the pool)
  *   melts by 7 % a year of virtual time, continuously.
@@ -24,12 +27,18 @@
 export const DAY_MS = 86_400_000;
 /** one virtual month per real day */
 export const MONTH_MS = DAY_MS;
-export const TOKENS = ['HEARTS', 'MAIA', 'VILLAGE'];
-export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'MaiaMIND', VILLAGE: 'VillageMIND' };
+export const TOKENS = ['HEARTS', 'MAIA', 'SETTLEMENT', 'VILLAGE'];
+/** the MINDs, one a COOP */
+export const MINDS = ['MAIA', 'SETTLEMENT', 'VILLAGE'];
+export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'MaiaMIND', SETTLEMENT: 'SettlementMIND', VILLAGE: 'VillageMIND' };
+export const TOKEN_COLOUR = { MAIA: '#5f8f6e', SETTLEMENT: '#c87a4f', VILLAGE: '#4f7fa8' };
+/** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
+export const VERSION = 2;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
-	maia: { name: 'MaiaCity COOP', mind: 'MAIA', owns: 'the shared hex' },
-	village: { name: 'Settlement COOP', mind: 'VILLAGE', owns: 'the 2-person dome tent' }
+	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The settlement hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: MaiaMIND, SettlementMIND, VillageMIND' }] },
+	settlement: { name: 'Settlement COOP', mind: 'SETTLEMENT', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
+	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The powercube', kind: 'Diesel generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'A big battery pack', kind: 'Storage' }] }
 };
 const MAX_LEDGER = 3000;
 const DUST = 1e-9;
@@ -44,14 +53,14 @@ export const DEFAULT_SETTINGS = {
 	poolShare: 0.05,
 	/** the pool's swap fee, kept in the pool */
 	swapFee: 0.003,
-	/** each player, each virtual month, to the Settlement COOP, in VillageMIND */
+	/** each player, each virtual month, to the Settlement COOP, in SettlementMIND */
 	tentRent: 10,
 	/** the Settlement COOP, each virtual month, to the MaiaCity COOP, in MaiaMIND */
 	hexRent: 10
 };
 
 /** the settings, in words */
-export const SETTING_NAMES = { heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (VillageMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+export const SETTING_NAMES = { heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -63,19 +72,19 @@ export const SETTING_LIMITS = {
 	hexRent: [0, 10000]
 };
 
-const wallet = () => ({ HEARTS: 0, MAIA: 0, VILLAGE: 0 });
+const wallet = () => ({ HEARTS: 0, MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 });
 
 /** a new game, its virtual year 0 starting now */
 export function newGame(now = Date.now(), settings = {}) {
 	return {
-		version: 1,
+		version: VERSION,
 		started: now,
 		t: now,
 		month: 0,
 		settings: { ...DEFAULT_SETTINGS, ...settings },
 		players: Object.fromEntries(SEATS.map((s) => [s, { seat: s, name: `Player ${s}`, founder: null, wallet: wallet(), lastMint: null, arrears: 0 }])),
 		coops: Object.fromEntries(Object.entries(COOPS).map(([id, c]) => [id, { id, ...c, treasury: wallet(), arrears: 0 }])),
-		pool: { MAIA: 0, VILLAGE: 0 },
+		pool: { MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 },
 		melt: {},
 		ledger: [],
 		mips: [],
@@ -107,7 +116,7 @@ function holders(s) {
 
 export const nameOf = (s, who) => {
 	if (!who) return '';
-	if (who === 'pool') return 'AMM pool';
+	if (who === 'pool') return 'AMM pool (MaiaCity COOP)';
 	if (who === 'mint') return 'Mint';
 	if (who === 'melt') return 'Demurrage';
 	const [kind, id] = who.split(':');
@@ -147,12 +156,14 @@ function bookMelt(s, at) {
 	s.melt = {};
 }
 
-/** the pool's price of one MaiaMIND in VillageMIND (null while a side is empty) */
-export const price = (s) => (s.pool.MAIA > DUST && s.pool.VILLAGE > DUST ? s.pool.VILLAGE / s.pool.MAIA : null);
+/** the pool's price of one `tok` in MaiaMIND (null while either side is empty); equal weights: the ratio of balances */
+export const price = (s, tok = 'SETTLEMENT') => (s.pool.MAIA > DUST && s.pool[tok] > DUST ? s.pool.MAIA / s.pool[tok] : null);
 
-/** what `amountIn` of token `inTok` buys from the pool */
-export function quote(s, inTok, amountIn) {
-	const outTok = inTok === 'MAIA' ? 'VILLAGE' : 'MAIA';
+const isMind = (t) => MINDS.includes(t);
+
+/** what `amountIn` of `inTok` buys of `outTok` from the pool (equal weights: each pair trades as x·y = k) */
+export function quote(s, inTok, outTok, amountIn) {
+	if (inTok === outTok || !isMind(inTok) || !isMind(outTok)) return 0;
 	const x = s.pool[inTok];
 	const y = s.pool[outTok];
 	if (!(x > DUST && y > DUST) || !(amountIn > 0)) return 0;
@@ -160,18 +171,16 @@ export function quote(s, inTok, amountIn) {
 	return (y * a) / (x + a);
 }
 
-/** how much of `inTok` buys exactly `amountOut` of the other token (Infinity if the pool can't) */
-function costOf(s, inTok, amountOut) {
-	const outTok = inTok === 'MAIA' ? 'VILLAGE' : 'MAIA';
+/** how much of `inTok` buys exactly `amountOut` of `outTok` (Infinity if the pool can't) */
+function costOf(s, inTok, outTok, amountOut) {
 	const x = s.pool[inTok];
 	const y = s.pool[outTok];
 	if (!(x > DUST && y > DUST) || amountOut >= y) return Infinity;
 	return (x * amountOut) / (y - amountOut) / (1 - s.settings.swapFee);
 }
 
-function swapRaw(s, at, who, bal, inTok, amountIn, note) {
-	const outTok = inTok === 'MAIA' ? 'VILLAGE' : 'MAIA';
-	const out = quote(s, inTok, amountIn);
+function swapRaw(s, at, who, bal, inTok, outTok, amountIn, note) {
+	const out = quote(s, inTok, outTok, amountIn);
 	if (!(out > 0)) return 0;
 	bal[inTok] -= amountIn;
 	s.pool[inTok] += amountIn;
@@ -181,14 +190,14 @@ function swapRaw(s, at, who, bal, inTok, amountIn, note) {
 	return out;
 }
 
-/** pay `amount` of `token` from a holder to another; swap the other MIND through the pool when short; owe the rest */
+/** pay `amount` of `token` from a holder to another; swap the other MINDs through the pool when short (the most held
+ * first); owe the rest */
 function payRent(s, at, from, bal, to, toBal, token, amount, note) {
-	const other = token === 'MAIA' ? 'VILLAGE' : 'MAIA';
-	if (bal[token] < amount && bal[other] > DUST) {
-		const need = amount - bal[token];
-		const cost = costOf(s, other, need);
-		const spend = Math.min(bal[other], cost);
-		if (spend > DUST) swapRaw(s, at, from, bal, other, spend, `swapped to pay rent`);
+	const others = MINDS.filter((t) => t !== token && bal[t] > DUST).sort((a, b) => bal[b] - bal[a]);
+	for (const other of others) {
+		if (bal[token] >= amount) break;
+		const spend = Math.min(bal[other], costOf(s, other, token, amount - bal[token]));
+		if (spend > DUST) swapRaw(s, at, from, bal, other, token, spend, 'swapped to pay rent');
 	}
 	const paid = Math.max(0, Math.min(bal[token], amount));
 	if (paid > DUST) {
@@ -203,21 +212,21 @@ function payRent(s, at, from, bal, to, toBal, token, amount, note) {
 function monthEnd(s, at) {
 	s.month += 1;
 	bookMelt(s, at);
-	const v = s.coops.village;
+	const st = s.coops.settlement;
 	const m = s.coops.maia;
 	for (const seat of SEATS) {
 		const p = s.players[seat];
 		const had = p.arrears > DUST;
 		const due = s.settings.tentRent + p.arrears;
 		if (due <= DUST) continue;
-		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:village', v.treasury, 'VILLAGE', due, `tent rent, month ${s.month}${had ? ' (with arrears)' : ''}`);
-		if (p.arrears > DUST) log(s, at, { kind: 'arrears', from: `player:${seat}`, to: 'coop:village', token: 'VILLAGE', amount: p.arrears, note: 'tent rent still owed' });
+		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:settlement', st.treasury, 'SETTLEMENT', due, `tent rent, month ${s.month}${had ? ' (with arrears)' : ''}`);
+		if (p.arrears > DUST) log(s, at, { kind: 'arrears', from: `player:${seat}`, to: 'coop:settlement', token: 'SETTLEMENT', amount: p.arrears, note: 'tent rent still owed' });
 	}
-	const had = v.arrears > DUST;
-	const due = s.settings.hexRent + v.arrears;
+	const had = st.arrears > DUST;
+	const due = s.settings.hexRent + st.arrears;
 	if (due > DUST) {
-		v.arrears = payRent(s, at, 'coop:village', v.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, month ${s.month}${had ? ' (with arrears)' : ''}`);
-		if (v.arrears > DUST) log(s, at, { kind: 'arrears', from: 'coop:village', to: 'coop:maia', token: 'MAIA', amount: v.arrears, note: 'hex rent still owed' });
+		st.arrears = payRent(s, at, 'coop:settlement', st.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, month ${s.month}${had ? ' (with arrears)' : ''}`);
+		if (st.arrears > DUST) log(s, at, { kind: 'arrears', from: 'coop:settlement', to: 'coop:maia', token: 'MAIA', amount: st.arrears, note: 'hex rent still owed' });
 	}
 }
 
@@ -292,7 +301,7 @@ function checkMip(s, mip) {
 	const payouts = (Array.isArray(mip.payouts) ? mip.payouts : []).slice(0, 20).map((x) => {
 		if (!PAYERS.includes(x?.from)) throw new GameError('A payout comes out of a COOP treasury.');
 		if (!PAYEES.includes(x.to) || x.to === x.from) throw new GameError('Pay out to another wallet.');
-		if (x.token !== 'MAIA' && x.token !== 'VILLAGE') throw new GameError('Pay out MaiaMIND or VillageMIND.');
+		if (!MINDS.includes(x.token)) throw new GameError('Pay out a MIND.');
 		return { from: x.from, to: x.to, token: x.token, amount: num(x.amount) };
 	});
 	if (!Object.keys(settings).length && !payouts.length) throw new GameError('A proposal changes a setting or pays out.');
@@ -341,7 +350,7 @@ function settle(s, mip, now) {
  * one move by a player: `{ type, ... }`. The state is advanced to `now` first.
  *   mint                         the HEARTS grown since the last mint (24 h of them at most)
  *   invest { coop, amount }      HEARTS into a COOP
- *   swap { token, amount }       a MIND through the pool for the other
+ *   swap { token, to, amount }   a MIND through the pool for another
  *   name { name }                the player's name
  *   propose { mip }              a MIP: title, description, settings and payouts; the proposer signs it
  *   sign { number }              sign a MIP: with two signatures it is accepted and applies at once
@@ -381,11 +390,12 @@ export function act(state, seat, action, now = Date.now()) {
 		}
 		case 'swap': {
 			const tok = action.token;
-			if (tok !== 'MAIA' && tok !== 'VILLAGE') throw new GameError('Swap MaiaMIND or VillageMIND.');
+			const to = action.to;
+			if (!isMind(tok) || !isMind(to) || tok === to) throw new GameError('Swap one MIND for another.');
 			const n = num(action.amount);
 			if (n > p.wallet[tok] + SLACK) throw new GameError(`You hold only ${p.wallet[tok].toFixed(2)} ${TOKEN_LABEL[tok]}.`);
-			if (!quote(s, tok, Math.min(n, p.wallet[tok]))) throw new GameError('The pool needs both MINDs before it can swap.');
-			swapRaw(s, now, me, p.wallet, tok, Math.min(n, p.wallet[tok]), 'swap');
+			if (!quote(s, tok, to, Math.min(n, p.wallet[tok]))) throw new GameError('The pool needs both MINDs before it can swap them.');
+			swapRaw(s, now, me, p.wallet, tok, to, Math.min(n, p.wallet[tok]), 'swap');
 			break;
 		}
 		case 'name': {
@@ -435,7 +445,7 @@ export const ledgerOf = (s, who) => s.ledger.filter((e) => e.from === who || e.t
 
 /** every MIND in the game, by token: wallets, treasuries and the pool */
 export function supply(s) {
-	const out = { HEARTS: 0, MAIA: 0, VILLAGE: 0 };
+	const out = { HEARTS: 0, MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 };
 	for (const [, bal] of holders(s)) for (const k of TOKENS) out[k] += bal[k] ?? 0;
 	return out;
 }

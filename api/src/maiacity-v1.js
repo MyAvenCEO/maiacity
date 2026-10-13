@@ -5,7 +5,7 @@
  * never lose each other's moves. A seat is taken by a signed-in founder; only they (or an admin) move for it.
  */
 import { db } from "./pg";
-import { GameError, SEATS, act, advance, newGame } from "../../game/maiacity-v1/engine.js";
+import { GameError, SEATS, VERSION, act, advance, newGame } from "../../game/maiacity-v1/engine.js";
 
 export { GameError };
 
@@ -14,7 +14,14 @@ const json = (v) => JSON.stringify(v ?? null);
 
 async function load(tx, now) {
   const { rows } = await tx.query("SELECT state FROM v1_games WHERE id = $1 FOR UPDATE", [GAME]);
-  if (rows[0]) return rows[0].state;
+  const old = rows[0]?.state;
+  if (old && (old.version ?? 1) === VERSION) return old;
+  if (old) {
+    // a game of an older shape (V1 had two COOPs) starts again from year 0; its seats stay with their founders
+    const state = newGame(now);
+    for (const s of SEATS) Object.assign(state.players[s], { founder: old.players?.[s]?.founder ?? null, name: old.players?.[s]?.name ?? `Player ${s}` });
+    return state;
+  }
   const state = newGame(now);
   await tx.query("INSERT INTO v1_games (id, state) VALUES ($1, ($2::text)::jsonb) ON CONFLICT (id) DO NOTHING", [GAME, json(state)]);
   return state;
