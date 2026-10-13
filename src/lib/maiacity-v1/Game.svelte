@@ -72,12 +72,13 @@
 	$effect(() => {
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
-		world.set({ at: where.at, cube: where.cube, me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village' });
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village' });
 		world.touring(!!tour);
 		if (where.place) world.focus(where.place);
 	});
 	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
 	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
+	let caption = $state(null); // the line the arrival's shot carries: { title, sub, big, dur }
 	$effect(() => {
 		if (tour?.kind !== 'intro' || !world || playing) return;
 		playing = 'intro';
@@ -86,7 +87,7 @@
 	async function act(step) {
 		if (playing) return;
 		playing = step.kind;
-		await (step.kind === 'load' ? world.load() : world.drive(step.leg, { fetch: !!step.fetch }));
+		await (step.kind === 'load' ? world.load() : step.kind === 'build' ? world.pitch() : world.drive(step.leg, { fetch: !!step.fetch }));
 		playing = '';
 		mark(step.id);
 	}
@@ -134,7 +135,8 @@
 				seat = name.slice(7);
 				open('you');
 			},
-			onLabels: (l) => (labels = l)
+			onLabels: (l) => (labels = l),
+			onCaption: (c) => (caption = c)
 		});
 		refresh().then(() => {
 			if (mySeat) seat = mySeat;
@@ -302,12 +304,18 @@
 			</button>
 		{/if}
 		{#if tour && (tour.kind === 'intro' || playing === 'intro')}
-			<!-- the arrival: a caption over the ride in the van -->
-			<div class="caption panel" role="status">
-				<p class="eyebrow">{tour.chapter}</p>
-				<p>{tour.text}</p>
-				<button class="link" onclick={() => world?.skip()}>Skip</button>
-			</div>
+			<!-- the arrival, as a trailer: black bars, one line of the story a shot, fading in and out -->
+			<div class="bars top" aria-hidden="true"></div><div class="bars bottom" aria-hidden="true"></div>
+			<div class="fade-in" aria-hidden="true"></div>
+			{#if caption}
+				{#key caption.title}
+					<div class="title" class:big={caption.big} style="--dur:{caption.dur ?? 5}s" role="status">
+						<p>{caption.title}</p>
+						{#if caption.sub}<small>{caption.sub}</small>{/if}
+					</div>
+				{/key}
+			{/if}
+			<button class="skip link" onclick={() => world?.skip()}>Skip</button>
 		{:else if tour && !playing}
 			<!-- the first-run story: one idea a step, over the Mint button, pointing at what it talks about -->
 			<div class="tour panel" class:down={tour.hint === 'mintbar'} role="dialog" aria-label="Getting started">
@@ -328,7 +336,7 @@
 						<button class="primary" disabled={busy || left < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: left })}>Invest {f(left, 0)} ❤︎</button>
 					{:else if tour.kind === 'mint'}
 						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount, 0)} ❤︎</button>
-					{:else if tour.kind === 'drive' || tour.kind === 'load'}
+					{:else if tour.kind === 'drive' || tour.kind === 'load' || tour.kind === 'build'}
 						<button class="primary" onclick={() => act(tour)}>{tour.action}</button>
 					{:else if tour.kind === 'done'}
 						<button class="primary" onclick={() => mark('done')}>Start playing</button>
@@ -436,7 +444,7 @@
 				{@const id = panel.slice(6)}
 				{@const owner = ownerOf(id)}
 				{@const a = owner?.[1].assets.find((x) => x.id === id)}
-				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id]}
+				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : null)}
 				<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
 				<h2>{a?.name ?? info?.name ?? info?.model}</h2>
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
@@ -829,23 +837,87 @@
 	.cinema :is(.tools, .topstats, .topright, .card, .mintbar, .tag, .fab, .brand) {
 		display: none !important;
 	}
-	.caption {
+	.bars {
 		position: absolute;
 		z-index: 8;
+		left: 0;
+		width: 100%;
+		height: 11vh;
+		background: #000;
+		pointer-events: none;
+	}
+	.bars.top {
+		top: 0;
+	}
+	.bars.bottom {
+		bottom: 0;
+	}
+	.fade-in {
+		position: absolute;
+		inset: 0;
+		z-index: 9;
+		background: #000;
+		pointer-events: none;
+		animation: fadeout 2.4s ease-out forwards;
+	}
+	@keyframes fadeout {
+		to { opacity: 0; }
+	}
+	.title {
+		position: absolute;
+		z-index: 9;
 		left: 50%;
-		top: 4.2rem;
+		bottom: calc(11vh + 2.2rem);
 		transform: translateX(-50%);
-		width: min(26rem, calc(100vw - 32px));
-		padding: 0.7rem 1rem;
-		border-radius: 16px;
-		font-size: 0.88rem;
-		line-height: 1.4;
+		width: min(40rem, calc(100vw - 32px));
+		text-align: center;
+		color: #fff8ec;
+		text-shadow: 0 2px 18px rgb(0 0 0 / 0.55), 0 1px 3px rgb(0 0 0 / 0.5);
+		pointer-events: none;
+		animation: titlein var(--dur) ease-in-out forwards;
 	}
-	.caption p {
-		margin: 0 0 0.3rem;
+	.title p {
+		margin: 0;
+		font-family: var(--font-display, Georgia, serif);
+		font-size: clamp(1.25rem, 3.2vw, 2rem);
+		line-height: 1.25;
+		letter-spacing: 0.01em;
 	}
-	.caption .link {
-		float: right;
+	.title small {
+		display: block;
+		margin-top: 0.5rem;
+		font-size: clamp(0.85rem, 1.6vw, 1.05rem);
+		opacity: 0.9;
+	}
+	.title.big {
+		bottom: 50%;
+		transform: translate(-50%, 50%);
+	}
+	.title.big p {
+		font-size: clamp(2.2rem, 7vw, 4.4rem);
+		letter-spacing: 0.04em;
+	}
+	@keyframes titlein {
+		0% { opacity: 0; filter: blur(4px); }
+		18% { opacity: 1; filter: blur(0); }
+		82% { opacity: 1; filter: blur(0); }
+		100% { opacity: 0; filter: blur(2px); }
+	}
+	.title.big {
+		animation-name: titlebig;
+	}
+	@keyframes titlebig {
+		0% { opacity: 0; letter-spacing: 0.2em; }
+		25% { opacity: 1; letter-spacing: 0.06em; }
+		100% { opacity: 1; letter-spacing: 0.04em; }
+	}
+	.skip {
+		position: absolute;
+		z-index: 10;
+		right: 1rem;
+		top: calc(11vh + 0.6rem);
+		color: #fff8ec !important;
+		opacity: 0.8;
 	}
 	.hint {
 		animation: hint 1.6s ease-in-out infinite;

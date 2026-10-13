@@ -188,7 +188,7 @@ const WAYSIDE_LIST: (Omit<Model, 'versions' | 'version'> & { group: string })[] 
 	{ id: 'bus-stop', label: 'Bus stop', group: 'Wayside', note: `${WAYSIDE_INFO.busStop.note}. Where every newcomer steps off`, usedIn: 'MaiaCity V1', make: () => busStop() },
 	{ id: 'gas-station', label: 'Abandoned gas station', group: 'Wayside', note: `${WAYSIDE_INFO.gasStation.note}. The old world, left behind at the city's centre`, usedIn: 'MaiaCity V1', make: () => gasStation() },
 	{ id: 'old-shed', label: 'Old shed', group: 'Wayside', note: WAYSIDE_INFO.shed.note, usedIn: 'MaiaCity V1', make: () => oldShed() },
-	{ id: 'maia-centre', label: 'MaiaCity centre', group: 'Places', note: 'the centre of the city plot today: the bus stop on the sand highway, the abandoned gas station behind it, the travel van pulling in. Where the story starts', usedIn: 'MaiaCity V1', make: () => maiaCentre() },
+	{ id: 'maia-centre', label: 'MaiaCity centre', group: 'Places', note: 'the centre of the city plot today, where the sand highway ends: the abandoned gas station at the road’s end, the bus stop, the travel van pulling in. Where the story starts', usedIn: 'MaiaCity V1', make: () => maiaCentre() },
 	{ id: 'village-store', label: 'Village store', group: 'Places', note: "the village centre's future storage area: the broken shed with the powercube inside, the solar row and the battery beside it. All the Village COOP's", usedIn: 'MaiaCity V1', make: () => villageStore() }
 ];
 export const WAYSIDE: Model[] = versioned(WAYSIDE_LIST, 'make', HISTORY);

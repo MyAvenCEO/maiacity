@@ -35,11 +35,12 @@ export function story(view, seat, seen) {
 	const year = st.heartsPerDay * 28 * 13;
 	const invest = (id, goal) => ({ kind: 'invest', coop: id, goal, have: investedBy(view, seat, id), done: investedBy(view, seat, id) >= goal - 0.5 });
 	const next = (id) => ({ kind: 'next', done: !!seen[id] });
-	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', place: 'centre' };
-	const atStore = { at: 'village', cube: first ? 'shed' : 'home', place: 'village' };
-	const home = { at: 'home', cube: 'home', place: 'tribe' };
+	// the first player fetches the powercube and the tent from the village shed; the second finds them home already
+	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'centre' };
+	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'village' };
+	const home = { at: 'home', cube: 'home', tent: 'up', place: 'tribe' };
 	return [
-		{ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', done: !!seen.arrive, at: 'arrive', cube: atStop.cube,
+		{ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', done: !!seen.arrive, at: 'arrive', cube: atStop.cube, tent: atStop.tent,
 			text: `The old van rattles down the sand highway, full to the roof: people, bags, a sack of rice. Outside, steppe and dust as far as you can see. Somewhere ahead is a place called MaiaCity.` },
 		{ id: 'welcome', chapter: 'The road', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop,
 			text: `The van drives on, and the dust settles. A bus stop, an abandoned gas station, the wide steppe. The old world passed this place by and left it behind. This is where MaiaCity begins, and you are one of its very first people.` },
@@ -57,20 +58,24 @@ export function story(view, seat, seen) {
 			text: `A tenth of your investment went into the city pool. The pool holds a little of every MIND, about ${f(inHearts(view, view.pool, hv))} ❤︎ now, so anyone can swap one MIND for another at a fair price, at any time. The ${c.maia.name} looks after it for everyone.` },
 		first
 			? { id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', action: 'Get in and drive', done: !!seen.ride, ...atStop,
-				text: `Beside the bus stop stands a pickup, the key in it. It belongs to the ${c.village.name}, and today it is here for you. A gravel track leaves the highway and winds east, towards the green. Get in and drive.` }
+				text: `At the old gas station stands a pickup, the key in it. It belongs to the ${c.village.name}, and today it is here for you. Throw your backpack in the back. A narrow track leaves the road's end and winds east, towards the green. Drive.` }
 			: { id: 'ride', chapter: 'The track', title: `${other.founder ? other.name : 'Someone'} comes to fetch you`, kind: 'drive', leg: 'village', fetch: true, action: 'Wave and get in', done: !!seen.ride, ...atStop,
 				text: `A cloud of dust on the gravel track: ${other.founder ? other.name : 'the first settler'} is coming in the ${c.village.name}'s pickup to fetch you. The village is on the way home.` },
 		{ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000), ...atStore,
 			text: `You have reached your village: seven hexes of grass, with this centre hex in the middle. The pickup you came in, the powercube, the solar row and the battery all belong to the ${c.village.name}. It serves every tribe of the village and lends them its machines for a rent. Invest 2,000 HEARTS, and every machine here works a little for you too.` },
 		first
-			? { id: 'cube', chapter: 'The village', title: 'Load the powercube', kind: 'load', action: 'Load it', done: !!seen.cube, ...atStore,
-				text: `In the old shed, under half a roof, waits the powercube: a diesel generator in its silenced cube. One day this shed will be the village store, and the solar row beside it will feed the whole village. Today your tribe needs power first. Load the powercube onto the pickup.` }
+			? { id: 'cube', chapter: 'The village', title: 'Load the powercube and the tent', kind: 'load', action: 'Load them', done: !!seen.cube, ...atStore,
+				text: `In the old shed, under half a roof, wait two things: the powercube, a diesel generator in its silenced cube, and a little dome tent, packed in its canvas. One day this shed will be the village store, and the solar row beside it will feed the whole village. Today your tribe needs power and a roof. Load them both onto the pickup.` }
 			: { id: 'cube', chapter: 'The village', title: 'The old shed', ...next('cube'), ...atStore,
-				text: `This is where ${other.founder ? other.name : 'the first settler'} fetched the powercube on the first day. One day the shed becomes the village store; for now the solar row and the battery stand here alone, waiting for more tribes to come.` },
-		{ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', action: 'Drive home', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home',
+				text: `This is where ${other.founder ? other.name : 'the first settler'} fetched the powercube and the tent on the first day. One day the shed becomes the village store; for now the solar row and the battery stand here alone, waiting for more tribes to come.` },
+		{ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', action: 'Drive home', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up',
 			text: `Out of the village centre the track bends on through the grass, to the hex at the village's edge where you will live. Drive home.` },
+		...(first
+			? [{ id: 'pitch', chapter: 'Your home', title: 'Pitch your tent', kind: 'build', action: 'Pitch the tent', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed',
+				text: `This is it: a clearing of grass and a few bushes at the edge of the village, your hex. Nothing stands here yet. Unload the powercube, unroll the canvas, and raise the little dome, strut by strut. Your first home in MaiaCity.` }]
+			: []),
 		{ id: 'tribe', chapter: 'Your home', title: `The ${c.tribe.name}: your home`, hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home,
-			text: `Welcome home. A clearing of grass and a few bushes, a little dome tent, the powercube beside it. The tent belongs to the ${c.tribe.name}, the COOP of this one hex: your tribe. It rents the land from the city and the machines from the village, and you pay it a small rent for your bed. Invest 1,000 HEARTS, and you own a part of your own home.` },
+			text: `Welcome home. ${first ? 'The tent you just raised' : `The tent ${other.founder ? other.name : 'the first settler'} raised`} stands on the grass, the powercube humming beside it. The tent belongs to the ${c.tribe.name}, the COOP of this one hex: your tribe. It rents the land from the city and the machines from the village, and you pay it a small rent for your bed. Invest 1,000 HEARTS, and you own a part of your own home.` },
 		{ id: 'payday', chapter: 'Pay day', title: 'Every week, the city pays you back', hint: 'you', ...next('payday'), ...home,
 			text: `At the end of each game week it is pay day. The rents flow: from you to your tribe, from your tribe to the land and the machines. And a fifth of every rent flows straight back to the people who own the COOPs. That is you. Look at your cash flow to see it.` },
 		{ id: 'melt', chapter: 'Pay day', title: 'Owning beats hoarding', hint: '', ...next('melt'), ...home,
