@@ -14,11 +14,14 @@ avendb = { path = "../avendb" }
 avendb-net = { path = "../avendb-net" }
 avendb-browser = { path = "../avendb-browser" }
 anyhow = "1"
+# a file's chunks from the page, for its stream into the blob store
+bytes = "1.12"
 # the page's bytes in base64, the sheet's in base64url
 data-encoding = "2.11"
 getrandom = "0.4"
 # the relay's URL
 iroh = { version = "=1.3.0", default-features = false }
+n0-future = "0.3.2"
 # the device's code as a QR code, for the next device's camera
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 serde_json.workspace = true

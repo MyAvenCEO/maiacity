@@ -244,6 +244,34 @@ folder is lost is the same device again; and while the server's bucket is down, 
 announces nothing, so Bob's Mac reads Welcome only once the bucket is up again. The server's files (`blobs/`) stay on
 its disk until B3b.
 
+## The Library (B4a)
+
+Every vault has a Library (`src/lib/avendb/Library.svelte`): every file of the vault the acting vault reads, by kind
+(films, images, SVGs, PDFs, audio, other), each opened on the whole screen. A file is an entry of type `file`: a
+document titled with the file's name, its media type among the document's own tags (`avendb:media:video/mp4`), whose
+first edit brings the file (`Device::add_file`); deleted and brought back as a note is, by the `avendb:deleted` mark.
+The core needs nothing new: the document's schema holds it, and the caps on type `file` decide who may add, read and
+delete one. The device's world shows each with its media type and the files it brings, each with its length where the
+device opens it (`Lab::entry_files`).
+
+- Adding: the page hands its device the file a megabyte at a time (`addFile`), which seals it into its blob store as it
+  comes (`Node::store_file`), then writes the entry; in the Mac app each megabyte goes to the app's device in base64
+  (`fileStart`, `fileChunk`, `fileEnd`). The server keeps every file whole, fetched from the device that wrote it.
+- Reading: `readFile` hands over any range, cut to the file, from the device's store or fetched in iroh-blobs ranges
+  from a peer that may hand them over, only the 64 KiB segments it needs, each opened under its own number. A page's
+  blob store is in memory and forgets every 15 seconds what nothing holds (`files::forgetful`): what a read or a keep
+  is using stays, as do the files the device brought or keeps, so a page playing a film holds little more than the
+  window that is playing.
+- Playing: a film or a song streams through a service worker (`static/app/avendb-files.sw.js`, scoped to the avenDB
+  page): the browser's player asks it for `…/app/avendb/file/<root>/<size>/<len>`, in ranges, and it asks the page for
+  those bytes a megabyte at a time over a MessageChannel. It serves only films' and songs' types, sandboxed; anything
+  else saves as bytes. Where no service worker runs, as in the Mac app's web view, a film opens whole, up to 1 GiB.
+- Pictures and PDFs open whole; an SVG as a data URL, never as a page of the site, so its scripts never run there.
+
+`tests/device.rs` runs it: Alice's browser brings a film of three megabytes and a bit into her vault, a megabyte at a
+time; her world shows it as a file with its media type and length; her Mac reads three ranges of it, across a megabyte
+and past its end, fetched from the browser; and it is deleted and brought back.
+
 ## Phases
 
 | Phase | What | State |
@@ -256,7 +284,8 @@ its disk until B3b.
 | B2d | The page's file pieces in OPFS beside its edits: the files its rules keep whole, and the pieces it read | in B4 |
 | B3a | The server's edits, McEliece keys and device secret in its bucket, sealed; nothing announced before the bucket has it; its disk a cache it rebuilds from the bucket | built |
 | B3b | The server's files in its bucket: one object per piece, outboards and roots, read-ahead in ranges | |
-| B4 | Streaming: the Mac reads a range as a file, a page through a service worker; a Files page | |
+| B4a | The Library: files as entries of a vault, added a megabyte at a time, read in ranges, films streamed through a service worker | built |
+| B4 | Streaming: the Mac app's player reads ranges natively, the page's file pieces in OPFS (B2d) | |
 | B5 | Studio's media on avenDB, beside the legacy vault, which stays as it is | |
 
 The bucket is `maiacity-avendb` in hel1, beside the media vault's, made by the avenDB workflow

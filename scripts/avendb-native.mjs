@@ -8,6 +8,8 @@
  * from the "Mac" in two sheets, the page's own sheet showing every step of it done, with its seconds; the page shows
  * the device native, on its own UDP sockets; reloaded, it opens with no sheet, as the device runs on; the app quits
  * and starts again, and the device opens from its folder in one sheet; it is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored, deleted and brought back, with no sheet. Their
+ * Library takes a picture, an SVG, a PDF and a song, each sealed by the device a megabyte at a time; the pictures show,
+ * the song plays streamed through the page's service worker, in ranges, and the PDF is deleted and brought back. Their
  * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
  * each as its owner, with no switch: in avenALICE's vault the page acts as her, and she writes a note and three todos,
  * one tagged “work”, adds a fourth from her studio’s query console and queries those she has left there, and shares
@@ -30,7 +32,7 @@
  */
 import { spawn } from 'node:child_process';
 import { createHash, createHmac, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -370,6 +372,35 @@ const todoRow = (title) =>
 		return li?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
 	}, title);
 
+/** A one-page PDF with nothing on it. */
+const PDF = `%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj
+trailer<</Root 1 0 R>>
+%%EOF
+`;
+
+/** A WAV of a quiet tone `seconds` long, mono, 16-bit at `rate` Hz. @param {number} seconds @param {number} rate */
+function wav(seconds, rate) {
+	const n = seconds * rate;
+	const b = Buffer.alloc(44 + 2 * n);
+	b.write('RIFF', 0);
+	b.writeUInt32LE(36 + 2 * n, 4);
+	b.write('WAVEfmt ', 8);
+	b.writeUInt32LE(16, 16);
+	b.writeUInt16LE(1, 20);
+	b.writeUInt16LE(1, 22);
+	b.writeUInt32LE(rate, 24);
+	b.writeUInt32LE(2 * rate, 28);
+	b.writeUInt16LE(2, 32);
+	b.writeUInt16LE(16, 34);
+	b.write('data', 36);
+	b.writeUInt32LE(2 * n, 40);
+	for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(3000 * Math.sin((2 * Math.PI * 440 * i) / rate)), 44 + 2 * i);
+	return b;
+}
+
 const NOTE = 'Hello from Alice';
 const BODY = 'Only Bob may read this.';
 const TODO = 'Plant the north beds';
@@ -491,6 +522,49 @@ try {
 	await back();
 	check('among the notes again', await until(async () => !!(await note('Plan')), 30000));
 	check('none of it asked for a sheet', app.sheets().length === 0);
+
+	// their Library: a picture, an SVG, a PDF and a song, picked, each sealed by the device a megabyte at a time; the
+	// song streams through the service worker, in ranges the device reads; the PDF is deleted and brought back
+	const media = mkdtempSync(join(tmpdir(), 'avendb-media-'));
+	const [svg, pdf, song] = ['Logo.svg', 'Plan.pdf', 'Birdsong.wav'].map((f) => join(media, f));
+	writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#2f6d62"/></svg>');
+	writeFileSync(pdf, PDF);
+	writeFileSync(song, wav(48, 16000));
+	await goTo('Library');
+	check('the Library offers to add files', await waitText('Add files', 30000, '.main'));
+	const picker = await page.$('.main .library input[type=file]');
+	await /** @type {any} */ (picker)?.uploadFile(resolve('static/the-os.png'), svg, pdf, song);
+	const tiles = () => shown('.main .library .tile .info b');
+	check('four files in the Library', await until(async () => (await tiles()).length === 4, 120000), (await tiles()).join(', '));
+	const kinds = (await shown('.main .filter button')).join(' | ');
+	check('by kind: an image, an SVG, a PDF and audio', ['Images 1', 'SVGs 1', 'PDFs 1', 'Audio 1'].every((k) => kinds.includes(k)), kinds);
+	check('the pictures previewed', await until(async () => (await page.$$('.main .library .thumb img')).length === 2, 30000));
+	check('adding them took no sheet', app.sheets().length === 0);
+	await shot('5b-library');
+	await click('Birdsong.wav', '.main .library .tile');
+	const played = () =>
+		page.evaluate(() => {
+			const a = document.querySelector('.viewer audio');
+			return a instanceof HTMLAudioElement ? { src: a.getAttribute('src'), duration: a.duration } : null;
+		});
+	const streamed = async () => (await played())?.src?.includes('/app/avendb/file/');
+	check('the song streams through the service worker', await until(streamed, 20000), JSON.stringify(await played()));
+	const long = async () => Math.round((await played())?.duration ?? 0) === 48;
+	check('its 48 seconds read from ranges of it', await until(long, 30000), JSON.stringify(await played()));
+	await shot('5c-song');
+	await click('Back', '.viewer header button');
+	await click('Plan.pdf', '.main .library .tile');
+	check('the PDF opens whole', await until(async () => !!(await page.$('.viewer iframe')), 30000), await text('.viewer'));
+	await click('Delete', '.viewer header button');
+	check('deleted: gone from the Library', await until(async () => !(await tiles()).includes('Plan.pdf'), 30000), (await tiles()).join(', '));
+	await click('Deleted 1', '.main .filter button');
+	await click('Plan.pdf', '.main .library .tile');
+	await click('Bring back', '.viewer header button');
+	await click('Back', '.viewer header button');
+	check('brought back', await until(async () => (await tiles()).includes('Plan.pdf'), 30000), (await tiles()).join(', '));
+	check('none of it asked for a sheet', app.sheets().length === 0);
+	check('and no error', !(await problem()), await problem());
+	rmSync(media, { recursive: true, force: true });
 
 	// four vaults Samuel's vault owns, named by hand, in one sheet
 	await page.click('.bar .add');

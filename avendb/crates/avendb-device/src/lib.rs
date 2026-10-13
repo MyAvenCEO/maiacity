@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{ErrorKind, Write as _};
+use std::io::{self, ErrorKind, Write as _};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -39,11 +39,14 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{BlobId, CapId, EntryId, VaultId};
 use avendb::keys;
 use avendb::policy::Kind;
+use avendb::sealed::FileRoot;
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Fresh, Start, Unlock, backup, steps_json, words};
+use avendb_browser::{Device, Fresh, NewFile, Start, Unlock, backup, steps_json, words};
 use avendb_net::{Authenticator, Ending, Offer, Progress, Step};
+use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
+use n0_future::stream;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
 use tokio::sync::{mpsc, oneshot};
@@ -96,6 +99,7 @@ pub async fn serve(
         device: Mutex::default(),
         life: tokio::sync::Mutex::default(),
         progress: Mutex::default(),
+        files: Mutex::default(),
     });
     let mut lines = BufReader::new(input).lines();
     while let Some(line) = lines.next_line().await? {
@@ -129,6 +133,19 @@ struct Service {
     life: tokio::sync::Mutex<()>,
     /// The steps of the start under way, or of the last, for the page to show (`steps`).
     progress: Mutex<Option<Progress>>,
+    /// The files on their way in from the page (`fileStart`), by number.
+    files: Mutex<HashMap<u64, Incoming>>,
+}
+
+/// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and a new entry
+/// that brings it (`Device::add_file`).
+struct Incoming {
+    /// The chunks, for the file's stream.
+    chunks: mpsc::Sender<io::Result<Bytes>>,
+    /// How many of its bytes the page handed over so far.
+    at: u64,
+    /// The new entry, once the file is in.
+    entry: tokio::task::JoinHandle<Result<EntryId>>,
 }
 
 impl Service {
@@ -214,6 +231,31 @@ impl Service {
             "removeOwner" => {
                 d.remove_owner(vault(0)?, words::owner_of(a.get(1))?, &self.approver()?).await?;
                 Value::Null
+            }
+            "fileStart" => self.file_start(&d, vault(0)?, vault(1)?, NewFile::from_json(a.get(2))?).into(),
+            "fileChunk" => {
+                let at = a.get(1).as_u64().context("argument 2 is where the chunk starts")?;
+                let chunk = BASE64.decode(a.text(2)?.as_bytes()).context("a chunk in base64")?;
+                self.file_chunk(a.get(0).as_u64().context("argument 1 is a file's number")?, at, chunk).await?;
+                Value::Null
+            }
+            "fileEnd" => {
+                let incoming = self.files.lock().expect("the files").remove(&a.get(0).as_u64().unwrap_or_default());
+                let Incoming { chunks, entry, .. } = incoming.context("no such file on its way in")?;
+                drop(chunks);
+                hex(&entry.await.context("bringing the file failed")??.0).into()
+            }
+            "fileDrop" => {
+                let incoming = self.files.lock().expect("the files").remove(&a.get(0).as_u64().unwrap_or_default());
+                if let Some(Incoming { entry, .. }) = incoming {
+                    entry.abort();
+                }
+                Value::Null
+            }
+            "readFile" => {
+                let root = FileRoot { hash: a.id(0)?, size: a.get(1).as_u64().context("argument 2 is a size")? };
+                let (from, to) = (a.get(2).as_u64().unwrap_or_default(), a.get(3).as_u64().unwrap_or_default());
+                BASE64.encode(&d.read_file(root, from..to).await?).into()
             }
             _ => bail!("no call {call:?}"),
         })
@@ -321,6 +363,32 @@ impl Service {
             d.close().await.ok();
         }
         self.sheets.lock().expect("the sheets").clear();
+    }
+
+    /// File `file` on its way into vault `vault`, acting for `actor` (`Device::add_file`), its chunks still to come in
+    /// order (`fileChunk`), then its end (`fileEnd`), which answers the new entry: its number.
+    fn file_start(&self, d: &Arc<Device>, actor: VaultId, vault: VaultId, file: NewFile) -> u64 {
+        let (chunks, rx) = mpsc::channel(2);
+        let data = Box::pin(stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|chunk| (chunk, rx)) }));
+        let d = d.clone();
+        let entry = tokio::spawn(async move { d.add_file(actor, vault, file, data).await });
+        let n = self.next.fetch_add(1, Ordering::Relaxed);
+        self.files.lock().expect("the files").insert(n, Incoming { chunks, at: 0, entry });
+        n
+    }
+
+    /// The bytes of file `n` from `at` on (`fileStart`), handed over once the chunks before them are.
+    async fn file_chunk(&self, n: u64, at: u64, chunk: Vec<u8>) -> Result<()> {
+        let chunks = {
+            let mut files = self.files.lock().expect("the files");
+            let incoming = files.get_mut(&n).context("no such file on its way in")?;
+            if incoming.at != at {
+                bail!("the file's bytes from {at} on came before those from {}", incoming.at);
+            }
+            incoming.at += chunk.len() as u64;
+            incoming.chunks.clone()
+        };
+        chunks.send(Ok(Bytes::from(chunk))).await.map_err(|_| anyhow!("the file is no longer coming in"))
     }
 
     fn device(&self) -> Result<Arc<Device>> {

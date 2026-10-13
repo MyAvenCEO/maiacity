@@ -11,11 +11,15 @@
 //! a file's root or one of its pieces by `Lab::may_fetch_file` (T27). Every request names one blob, never a HashSeq
 //! with its children: a node fetches a file's HashSeq as a blob of its own and then its pieces one by one, so that the
 //! gate weighs every hash a peer asks for, and no blob that merely holds hashes hands out the blobs it names.
+//!
+//! A page's store is in memory, so it forgets what it read (`forgetful`): every little while it lets go of each blob no
+//! tag holds, keeping the files it brought or keeps whole, the McEliece keys it offers, and what it is reading or
+//! fetching now (`Pins`). So a page that plays a film holds only the stretch that plays, not the film.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use avendb::sealed::{Brought, FileKey, FileRoot, PIECE, PIECE_SEGMENTS, SEALED, SEGMENT, Sealer, open};
@@ -36,6 +40,59 @@ use crate::{Backoff, Node, Shared, WAIT};
 /// The folder of a node's blob store, in its store's folder.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) const BLOBS: &str = "blobs";
+
+/// How often a page's store lets go of the blobs it holds no tag for (`forgetful`).
+#[cfg(target_arch = "wasm32")]
+const FORGET: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// The blobs a node uses now, each with how many uses hold it: the root and the pieces of a file it reads or fetches
+/// whole. A store that forgets (`forgetful`) keeps them while they are held.
+#[derive(Clone, Default)]
+pub(crate) struct Pins(Arc<Mutex<HashMap<Hash, usize>>>);
+
+impl Pins {
+    /// Holds `hash` until what this returns is dropped.
+    fn pin(&self, hash: Hash) -> Pinned {
+        *self.0.lock().expect("pins").entry(hash).or_default() += 1;
+        Pinned(self.clone(), hash)
+    }
+
+    /// Every blob held now.
+    #[cfg(target_arch = "wasm32")]
+    fn held(&self) -> Vec<Hash> {
+        self.0.lock().expect("pins").keys().copied().collect()
+    }
+}
+
+/// A use of a blob (`Pins::pin`), which ends when it is dropped.
+struct Pinned(Pins, Hash);
+
+impl Drop for Pinned {
+    fn drop(&mut self) {
+        let mut pins = (self.0).0.lock().expect("pins");
+        if let Some(n) = pins.get_mut(&self.1) {
+            *n -= 1;
+            if *n == 0 {
+                pins.remove(&self.1);
+            }
+        }
+    }
+}
+
+/// A page's blob store, in memory: every `FORGET` it lets go of each blob no tag holds, but for those `pins` hold and
+/// the McEliece keys in `offered`. What it brings and what it keeps whole is tagged (`tag`), and stays.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn forgetful(pins: Pins, offered: Arc<Mutex<crate::blobs::Offered>>) -> Store {
+    use iroh_blobs::store::mem::{MemStore, Options};
+    use iroh_blobs::store::{GcConfig, ProtectCb, ProtectOutcome};
+    let protect: ProtectCb = Arc::new(move |live: &mut HashSet<Hash>| {
+        live.extend(pins.held());
+        live.extend(offered.lock().expect("offered").hashes());
+        Box::pin(async { ProtectOutcome::Continue })
+    });
+    let gc = GcConfig { interval: FORGET, add_protected: Some(protect) };
+    MemStore::new_with_opts(Options { gc_config: Some(gc) }).into()
+}
 
 /// The name a file's root is kept under in the blob store, so that whatever cleans the store up leaves it whole.
 fn tag(root: &FileRoot) -> Vec<u8> {
@@ -146,11 +203,14 @@ impl Shared {
         pieces.write(sealer.finish().map_err(|_| anyhow!("fewer bytes than the file's {len}"))?).await?;
         let pieces = pieces.finish().await?;
         let hashes: Vec<Hash> = pieces.iter().map(TempTag::hash).collect();
+        // the HashSeq's own temporary tag holds it until its tag does, so that a store that forgets keeps it
+        let _seq;
         let root = match &hashes[..] {
             [one] => *one,
             many => {
                 let seq: HashSeq = many.iter().copied().collect();
-                self.store.add_bytes_with_opts((seq.into_inner(), BlobFormat::HashSeq)).temp_tag().await?.hash()
+                _seq = self.store.add_bytes_with_opts((seq.into_inner(), BlobFormat::HashSeq)).temp_tag().await?;
+                _seq.hash()
             }
         };
         let brought = Brought::new(*root.as_bytes(), key, len);
@@ -168,10 +228,12 @@ impl Shared {
             return Ok(Vec::new());
         }
         let segments = shape.segments_of(from..to);
+        let _root = self.pins.pin(Hash::from_bytes(root.hash));
         let pieces = self.pieces_of(root).await?;
         let mut plain = Vec::new();
         for (p, at) in shape.sealed_ranges(from..to) {
             let hash = pieces[p as usize];
+            let _piece = self.pins.pin(hash);
             self.get(GetRequest::blob_ranges(hash, ChunkRanges::bytes(at.clone()))).await?;
             let sealed = self.store.export_ranges(hash, at.clone()).concatenate().await?;
             let first = p * PIECE_SEGMENTS + at.start / SEALED as u64;
@@ -280,7 +342,9 @@ impl Shared {
             }
             return Ok(());
         }
+        let _root = self.pins.pin(Hash::from_bytes(root.hash));
         let pieces = self.pieces_of(root).await?;
+        let _pieces: Vec<Pinned> = pieces.iter().map(|&p| self.pins.pin(p)).collect();
         for (p, &piece) in pieces.iter().enumerate() {
             self.get(GetRequest::blob(piece)).await?;
             let want = (root.size - p as u64 * PIECE).min(PIECE);
