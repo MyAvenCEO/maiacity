@@ -102,7 +102,8 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 		{ ...FIRST, date: '2026-10-13', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v1: busbars down the front, a one-way inverter', make: () => batteryCubeV1() }] },
 		{ v: 2, date: '2026-10-13', note: 'Plug in and pull out: a backplane behind the stack takes each BatteryPack’s (v3) back plug, and a ClickLock rail pair holds each pack; no busbars on the front', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v2: a one-way inverter', make: () => batteryCube(2) }] },
 		{ v: 3, date: '2026-10-13', note: 'A charger too: the inverter is bidirectional, and an AC inlet on its back charges the packs from the grid, an ElectroCube or a generator', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v3: its packs with two handles each', make: () => batteryCube(3) }] },
-		{ v: 4, date: '2026-10-13', note: 'Its four BatteryPacks at v4: one centre grip each, its trigger releasing the pack' }
+		{ v: 4, date: '2026-10-13', note: 'Its four BatteryPacks at v4: one centre grip each, its trigger releasing the pack', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v4: no pull-out move', make: () => batteryCube(4) }] },
+		{ v: 5, date: '2026-10-13', note: 'Pull out as a move: a hand squeezes the third pack’s grip, it slides 36 cm out on its rails, waits, slides back and clicks home; and a “pulled out” pose' }
 	],
 	batterypack: [
 		{ ...FIRST, date: '2026-10-13', build: [{ id: 'batterypack', label: 'BatteryPack', note: 'as at v1: a square case, five charge lights', make: () => batteryPackV1() }] },
