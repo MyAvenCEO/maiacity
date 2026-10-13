@@ -7,17 +7,21 @@
  */
 import {
 	allows,
-	capName,
-	capWords,
-	cellWords,
 	count,
 	EVERYONE,
 	granteeOf,
+	levelName,
 	list,
 	nameOf,
-	ROLES,
+	roleGroup,
+	sharedThrough,
+	sharedWith,
+	sharedWords,
+	signerName,
 	short,
 	singular,
+	size,
+	wholeVault,
 	whereWords
 } from './vaults.js';
 
@@ -49,7 +53,7 @@ import {
  * Vault `vault`'s database as the page shows it to vault `actor`: what this browser holds of it, its cells, its schemas
  * and lenses (the app's own, then what the vault's lane publishes: public, as they hold no data and the lane goes in
  * the clear to every device that syncs the vault), and how to name what the views show: vaults, devices and passkeys,
- * cells, caps, entries, schemas.
+ * who entries are shared with, shares, entries, schemas.
  * @param {import('./vaults.js').WorldView} world @param {Db | null} db @param {string} vault @param {string} actor
  */
 export function studio(world, db, vault, actor) {
@@ -67,41 +71,34 @@ export function studio(world, db, vault, actor) {
 	const uses = new Map();
 	for (const r of rows.filter(opens)) for (const id of r.authored) uses.set(id, (uses.get(id) ?? 0) + 1);
 
-	/** The vault or signer `id` names, as a person reads it: a vault, a device by its name, a vault's passkey. */
-	const signer = (/** @type {string} */ id) => {
-		for (const v of world.vaults) {
-			const d = v.devices.find((d) => d.id === id);
-			if (d) return d.name ?? `a device of ${nameOf(v)}`;
-			if (v.root === id) return `${nameOf(v)}’s passkey`;
-		}
-		return `key ${short(id)}`;
-	};
-	/** Cap `id` in words, where it is in force and this browser knows it. @param {string} id */
-	const cap = (id) => {
-		const c = world.caps.find((x) => x.id === id);
-		return c ? capWords(c, world) : `cap ${short(id)}`;
-	};
-	/** Cap `id`'s name and slice in words, where it is in force and this browser reads it. @param {string} id */
-	const slice = (id) => {
-		const c = world.caps.find((x) => x.id === id);
-		return c?.slice ? `“${c.slice.name}” on ${whereWords(c.slice.where, world)}` : null;
-	};
-	/** Cell `id` in words: what reaches it. @param {string} id */
-	const cell = (id) => cellWords(world.cells.find((x) => x.id === id), world);
+	/** The vault or signer `id` names, as a person reads it: a device by its name, a vault's passkey. */
+	const signer = (/** @type {string} */ id) => signerName(world, id);
 	/**
-	 * Cell `id`, short, as a grid's cell names it: "its own", or who holds the caps that reach it, and which.
+	 * Cap `id` as a share, where it is in force: "avenBOB’s share of todos tagged “garden” as Editor".
 	 * @param {string} id
 	 */
-	const cellName = (id) => {
-		const caps = world.cells.find((x) => x.id === id)?.caps ?? cells.find((x) => x.id === id)?.caps;
-		if (!caps) return `cell ${short(id)}`;
-		if (!caps.length) return 'its own';
-		const named = caps.map((id) => {
-			const c = world.caps.find((x) => x.id === id);
-			return c ? `${granteeOf(c, world)} (${capName(c)})` : 'a cap';
-		});
-		return list(named);
+	const share = (id) => {
+		const c = world.caps.find((x) => x.id === id);
+		const what = c && (wholeVault(c) ? 'everything' : whereWords(c.slice?.where, world));
+		return c ? `${granteeOf(c, world)}’s share of ${what} as ${levelName(c, world)}` : `share ${short(id)}`;
 	};
+	/**
+	 * Who the entries caps `caps` pick in vault `of` are shared with, in words, those on the whole vault too.
+	 * @param {string[]} caps @param {string} [of]
+	 */
+	const through = (caps, of = vault) => sharedWords(sharedThrough(world, of, caps));
+	/**
+	 * Who the entries of cell `id` of vault `of` are shared with, in words: `null` for a cell this browser doesn't know.
+	 * @param {string} id @param {string} [of]
+	 */
+	const sharedIn = (id, of = vault) => {
+		const caps = world.cells.find((x) => x.id === id)?.caps ?? cells.find((x) => x.id === id)?.caps;
+		return caps ? through(caps, of) : null;
+	};
+	/** Who entry `entry` of the vault is shared with. @param {string} entry */
+	const sharers = (entry) => sharedWith(world, vault, entry);
+	/** Who entry `entry` of the vault is shared with, in words. @param {string} entry */
+	const shared = (entry) => sharedWords(sharers(entry));
 	/** Entry `entry`: its title in quotes if the acting vault reads it, else what it is and its id. @param {string} entry */
 	const entry = (entry) => {
 		const row = rows.find((r) => r.entry === entry);
@@ -123,11 +120,13 @@ export function studio(world, db, vault, actor) {
 		schemas,
 		lenses,
 		uses,
+		world,
 		signer,
-		cap,
-		slice,
-		cell,
-		cellName,
+		share,
+		through,
+		sharedIn,
+		sharers,
+		shared,
 		entry,
 		schemaName,
 		vaultName: (/** @type {string} */ id) => nameOf(byId.get(id))
@@ -150,15 +149,15 @@ const TABLES = /** @type {const} */ ([
 	['device_cards', 'Each device’s card: a document of its vault, named for the device', 'document'],
 	['vault_profiles', 'The vault’s profile: a document of it, titled with its name', 'document'],
 	['records', 'Entries of any other type', null],
-	['sealed', 'What the acting vault holds no cap to read: its ciphertext, as avenDB’s server holds it', null]
+	['sealed', 'What the acting vault doesn’t open: no share it holds opens it, or its key hasn’t come here yet', null]
 ]);
 
 /** The table of each type. */
 const BY_TYPE = /** @type {Record<string, string>} */ ({ note: 'notes', todo: 'todos', card: 'device_cards', profile: 'vault_profiles' });
 
 /**
- * The tables of the vault's entries, of one cell or of all of them, each with its rows, as `s.opens` says the acting
- * vault opens them: `records` only when it has any.
+ * The tables of the vault's entries, of one cell (the entries shared with the same vaults alike) or of all of them,
+ * each with its rows, as `s.opens` says the acting vault opens them: `records` only when it has any.
  * @param {Studio} s @param {string} only a cell's id, or '' for every cell
  * @returns {Table[]}
  */
@@ -251,9 +250,6 @@ export function cell(v) {
 /** @param {string} s */
 const clip = (s) => (s.length > 160 ? `${s.slice(0, 160)}…` : s);
 
-/** A size in bytes, as a person reads it. @param {number} n */
-export const size = (n) => (n < 1000 ? `${n} B` : n < 1e6 ? `${(n / 1e3).toFixed(1)} kB` : `${(n / 1e6).toFixed(1)} MB`);
-
 /**
  * The schemas as families: each the versions a chain of lenses joins, oldest first, with the lens from each to the
  * next; a schema no lens joins is a family of its own. A family is named by its newest version's title, less its
@@ -323,11 +319,25 @@ export const sideOf = (side) =>
 /** The kinds of edits, as the History view groups them. */
 export const GROUPS = /** @type {const} */ ([
 	['all', 'All', []],
-	['writes', 'Writes & moves', ['write', 'move']],
+	['writes', 'Writes & moves', ['write', 'move', 'pick']],
 	['checkpoints', 'Checkpoints', ['checkpoint']],
 	['keys', 'Keys', ['keys']],
-	['caps', 'Caps', ['cap', 'revoke']],
-	['vaults', 'Vaults & devices', ['genesis', 'addOwner', 'removeOwner', 'setThreshold', 'addDevice', 'removeDevice', 'setRoot']],
+	['caps', 'Shares', ['cap', 'revoke']],
+	[
+		'vaults',
+		'Vaults & devices',
+		[
+			'genesis',
+			'addOwner',
+			'removeOwner',
+			'setThreshold',
+			'addDevice',
+			'removeDevice',
+			'setRoot',
+			'syncRule',
+			'endSyncRule'
+		]
+	],
 	['schemas', 'Schemas', ['publish']]
 ]);
 
@@ -340,19 +350,22 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 	addDevice: 'add device',
 	removeDevice: 'remove device',
 	setRoot: 'set root',
-	cap: 'cap',
+	cap: 'share',
 	revoke: 'revoke',
 	write: 'write',
 	move: 'move',
 	keys: 'keys',
 	publish: 'publish',
-	checkpoint: 'checkpoint'
+	checkpoint: 'checkpoint',
+	syncRule: 'device syncs',
+	endSyncRule: 'device stops',
+	pick: 'marks wanted'
 });
 
 /**
  * What edit `edit` does, in words, naming what it touches as `s` names it; `edits` finds an edit by its id, a cap's
- * for its revocation. A cap's slice is sealed in its edit: it shows in words where the cap is in force and this browser
- * reads it.
+ * for its revocation, a device's rule for its end. A cap's slice is sealed in its edit: it shows in words where the cap
+ * is in force and this browser reads it.
  * @param {SignedEdit} edit @param {Studio} s @param {(id: string) => SignedEdit | undefined} edits
  */
 export function describe(edit, s, edits) {
@@ -364,27 +377,37 @@ export function describe(edit, s, edits) {
 		return typeof p === 'string' ? s.vaultName(p) : p.vault ? s.vaultName(p.vault) : s.signer(p.signer);
 	};
 	/**
-	 * the cap edit `id`, of fields `c`, gives: its name and slice in words, or what its role does and that its slice is
-	 * sealed @param {string} id @param {any} c
+	 * where vault `over` is named, beside the vault `actor` that acts on it
+	 * @param {string} actor @param {string} over
 	 */
-	const reach = (id, c) => {
-		const where = c.wide ? 'the whole' : `a slice (${size(c.sealed ?? 0)} sealed)`;
-		const role = ROLES[/** @type {keyof typeof ROLES} */ (c.role)] ?? c.role;
-		return `cap ${s.slice(id) ?? `that ${role} ${where}`} of ${s.vaultName(c.over)}`;
+	const inside = (actor, over) => (actor === over ? '' : ` in ${s.vaultName(over)}`);
+	/**
+	 * the share the cap edit `id`, of fields `c`, gives: to whom, at what level, and on what, in words where it is in
+	 * force and this browser reads its slice, else by its size alone @param {string} id @param {any} c
+	 */
+	const granted = (id, c) => {
+		const live = s.world.caps.find((x) => x.id === id);
+		const level = live ? levelName(live, s.world) : roleGroup(s.world, c.role);
+		const sealed = `a filter (${size(c.sealed ?? 0)} sealed)`;
+		const read = live?.slice ? whereWords(live.slice.where, s.world) : sealed;
+		return { to: who(c.grantee), level, what: c.wide || (live && wholeVault(live)) ? 'everything' : read };
 	};
 	/** a key of the schedule, by its name @param {any} k */
-	const key = (k) =>
-		k?.signer
-			? `${s.signer(k.signer)}’s own key`
-			: k?.seed
-				? `${s.vaultName(k.seed)}’s seed`
-				: k?.cap
-					? `the key of ${s.cap(k.cap)}`
-					: k?.cell
-						? `the key of the cell ${s.cellName(k.cell)} of ${s.vaultName(k.vault)}`
-						: k?.entry
-							? `the key of ${s.entry(k.entry)}`
-							: 'a key';
+	const key = (k) => {
+		if (k?.signer) return `${s.signer(k.signer)}’s own key`;
+		if (k?.seed) return `${s.vaultName(k.seed)}’s seed`;
+		if (k?.cap) return `the key of ${s.share(k.cap)}`;
+		if (k?.cell) {
+			const shared = s.sharedIn(k.cell, k.vault);
+			return `the key of ${shared ? `the entries shared with ${shared}` : `some entries of ${s.vaultName(k.vault)}`}`;
+		}
+		return k?.entry ? `the key of ${s.entry(k.entry)}` : 'a key';
+	};
+	/** what a device's rule, of fields `x`, has it sync: everything, or a filter its edit seals @param {any} x */
+	const syncs = (x) => {
+		const what = x.wide ? 'everything' : `a filter (${size(x.sealed ?? 0)} sealed)`;
+		return `${what}${inside(x.issuer, x.over)}${x.keep ? ', keeping its files whole' : ''}`;
+	};
 	switch (edit.kind) {
 		case 'genesis': {
 			const owners = list((f.owners ?? []).map(who));
@@ -404,32 +427,60 @@ export function describe(edit, s, edits) {
 		case 'setRoot':
 			return f.root ? `Makes ${s.signer(f.root)} the root of ${s.vaultName(f.vault)}` : `Clears ${s.vaultName(f.vault)}’s root`;
 		case 'cap': {
-			const through = f.parent ? `, through its own cap ${short(f.parent)}` : '';
-			return `${s.vaultName(f.issuer)} gives ${who(f.grantee)} the ${reach(edit.id, f)}${through}`;
+			const g = granted(edit.id, f);
+			const through = f.parent ? `, through its own share ${short(f.parent)}` : '';
+			const where = inside(f.issuer, f.over);
+			return `${s.vaultName(f.issuer)} shares ${g.what}${where} with ${g.to} as ${g.level}${through}`;
 		}
 		case 'revoke': {
 			const c = edits(f.cap);
-			if (!c) return `${s.vaultName(f.actor)} revokes cap ${short(f.cap)}`;
-			return `${s.vaultName(f.actor)} revokes ${who(c.fields.grantee)}’s ${reach(c.id, c.fields)}`;
+			if (!c) return `${s.vaultName(f.actor)} revokes share ${short(f.cap)}`;
+			const g = granted(c.id, c.fields);
+			const where = inside(f.actor, c.fields.over);
+			return `${s.vaultName(f.actor)} revokes ${g.to}’s share of ${g.what}${where} as ${g.level}`;
 		}
 		case 'write': {
 			const line = f.starts ? ', proposing a change' : f.line ? ', on a proposal' : '';
 			const made = f.create
-				? `creates ${s.entry(f.entry)} in ${f.create.length ? `the cell of ${list(f.create.map(s.cap))}` : 'the vault’s own cell'}`
+				? `creates ${s.entry(f.entry)}, shared with ${s.through(f.create, f.vault)}`
 				: `writes ${s.entry(f.entry)}${line}`;
-			return `${s.vaultName(f.actor)} ${made}: ${size(f.sealed)} sealed`;
+			/** @type {{ root: string, size: number }[]} */
+			const files = f.files ?? [];
+			const bytes = files.reduce((n, x) => n + x.size, 0);
+			const bringing = files.length ? `, bringing ${count(files.length, 'file')} (${size(bytes)})` : '';
+			return `${s.vaultName(f.actor)} ${made}${bringing}: ${size(f.sealed)} sealed`;
 		}
-		case 'move':
-			return `Moves ${s.entry(f.entry)} to ${f.to?.length ? `the cell of ${list(f.to.map(s.cap))}` : 'the vault’s own cell'}`;
+		case 'move': {
+			const entry = s.entry(f.entry);
+			return `${entry[0].toUpperCase()}${entry.slice(1)} is now shared with ${s.through(f.to ?? [], f.vault)}`;
+		}
 		case 'keys': {
 			const to = f.boxes?.length ? `, sealed to ${count(f.boxes.length, 'holder')}` : '';
-			const at = f.key?.generation ? `Rotates ${key(f.key)} to generation ${f.key.generation}` : `Makes ${key(f.key)}`;
+			const at = f.key?.generation ? `Rotates ${key(f.key)}` : `Makes ${key(f.key)}`;
 			return `${at}${to}${f.public ? ', announcing its public half' : ''}${f.clear ? ', in the clear: everyone reads it' : ''}`;
 		}
 		case 'publish':
 			return `Publishes ${f.title ? `“${f.title}”` : `a blob of ${size(f.bytes)}`} into ${s.vaultName(f.vault)}’s lane`;
 		case 'checkpoint':
 			return `Checkpoints ${s.entry(f.entry)}, covering ${count(f.covers?.length ?? 0, 'write')}`;
+		case 'syncRule':
+			return `${s.vaultName(f.issuer)} has ${s.signer(f.device)} sync ${syncs(f)}`;
+		case 'endSyncRule': {
+			const r = edits(f.rule);
+			const device = r ? s.signer(r.fields.device) : 'one of its devices';
+			return `${s.vaultName(f.issuer)} has ${device} stop syncing${r ? ` ${syncs(r.fields)}` : ' what it chose to'}`;
+		}
+		case 'pick': {
+			/** @type {string[]} */
+			const rules = f.rules ?? [];
+			const devices = [...new Set(rules.map((id) => edits(id)?.fields.device).filter(Boolean))];
+			const by = devices.length
+				? list(devices.map(s.signer))
+				: rules.length
+					? count(rules.length, 'device')
+					: 'no device';
+			return `Marks ${s.entry(f.entry)} as wanted by ${by}`;
+		}
 		default:
 			return edit.kind;
 	}

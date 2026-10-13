@@ -18,7 +18,7 @@
 	let { world, vault, actor, api, onopen } = $props();
 
 	const as = $derived(world.vaults.find((v) => v.id === actor));
-	const notes = $derived(world.entries.filter((e) => e.vault === vault && e.kind === 'note'));
+	const notes = $derived(world.entries.filter((e) => e.vault === vault && e.type === 'note'));
 
 	/** @typedef {{ name: string, op: object, change?: boolean }} Example */
 	/** The examples, for the vault looked at: each a name, its op, and whether it changes anything. */
@@ -154,7 +154,7 @@
 {:else if rows}
 	<p class="picked soft">
 		{count(out.ok.count, 'row')}{out.ok.count > rows.length ? `, ${rows.length} shown` : ''}. Picked by its labels
-		before any entry was opened, as a cap selects: <b>{whereWords(out.ok.plan, world)}</b>
+		before any entry was opened, as a share selects: <b>{whereWords(out.ok.plan, world)}</b>
 		<code>{JSON.stringify(out.ok.plan)}</code>
 	</p>
 	{#if rows.length}
@@ -164,7 +164,7 @@
 					<tr>
 						<th>entry</th>
 						<th>type</th>
-						<th>tags</th>
+						<th title="Its tags now, outside its record: what shares select it by">entry_tags</th>
 						{#each fields as f (f)}<th>{f}</th>{/each}
 					</tr>
 				</thead>

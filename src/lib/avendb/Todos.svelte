@@ -1,15 +1,16 @@
 <!--
 	A vault's todos, as the acting vault sees them: one flat list of every todo of the vault it reads, narrowed by a
 	tag, each a tick through open, doing and done where it writes and the ops of its caps allow the next one (the
-	device answers, by a dry run of each tick: `may`), its tags, to add and take off where it may (Tags), and shared on
-	where it owns; and a new todo where it may add one, tagged as the slice of its cap asks, and where the ops of
-	that cap allow it (`may` again). What it holds no cap on stays out of sight, as on a device of that vault alone.
+	device answers, by a dry run of each tick: `may`), its tags, to add and take off where it may (Tags), who it is
+	shared with, and shared on where it owns; and a new todo where it may add one, tagged as the slice of its cap asks,
+	and where the ops of that cap allow it (`may` again). What it holds no cap on stays out of sight, as on a device of
+	that vault alone.
 -->
 <script>
 	import { may } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
-	import { allows, count, creates, list, nameOf, reads, tagsIn, tagsOf } from './vaults.js';
+	import { allows, count, creates, list, nameOf, reads, sharedWith, sharedWords, tagsIn, tagsOf } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -104,7 +105,7 @@
 			<p>
 				{nameOf(as)} can't see {entries.length ? `the ${count(entries.length, 'entry', 'entries')}` : 'anything'} in
 				{nameOf(here)}. A vault that owns it can share its todos with {nameOf(as)}, all of them or those tagged one way, in
-				<button class="link" onclick={onaccess}>Access</button>.
+				<button class="link" onclick={onaccess}>Sharing</button>.
 			</p>
 		</div>
 	{:else}
@@ -118,7 +119,7 @@
 						class="tick"
 						disabled={busy || !writes || !!refused}
 						title={!writes
-							? `${nameOf(as)} only reads it`
+							? `${nameOf(as)} may only view it`
 							: refused
 								? `It can't be marked ${NEXT[it.status ?? 'open']}: ${refused.why}`
 								: `Mark it ${NEXT[it.status ?? 'open']}`}
@@ -132,6 +133,9 @@
 					{#if allows(it.roles[actor], 'owner')}
 						<button class="btn quiet" disabled={busy} onclick={() => (sharing = sharing === it.entry ? '' : it.entry)}>Share</button>
 					{/if}
+					<small class="soft shared">
+						Shared with {sharedWords(sharedWith(world, vault, it.entry))}{it.public ? ' · Public' : ''}
+					</small>
 					{#if sharing === it.entry}
 						<div class="sharing">
 							<Share {world} {actor} {api} {busy} {vault} entry={it.entry} ondone={() => (sharing = '')} />
@@ -157,7 +161,7 @@
 					{#if unadded}
 						<small class="soft">{nameOf(as)} can’t add it: {unadded}.</small>
 					{:else if asked.length}
-						<small class="soft">Tagged {list(asked.map((t) => `“${t}”`))} too, as {nameOf(as)}’s cap asks.</small>
+						<small class="soft">Tagged {list(asked.map((t) => `“${t}”`))} too, as {nameOf(as)}’s share asks.</small>
 					{/if}
 				</li>
 			{/if}
@@ -263,8 +267,15 @@
 		background: #dcebd9;
 	}
 
-	.sharing {
+	.sharing,
+	.shared {
 		flex-basis: 100%;
+	}
+
+	.shared {
+		margin-top: -0.3rem;
+		padding-left: 4.8rem;
+		font-size: 0.74rem;
 	}
 
 	.grow {

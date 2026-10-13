@@ -6,6 +6,7 @@
 // no service worker runs, as in the Mac app.
 
 import { base } from '$app/paths';
+import { size } from './vaults.js';
 
 /** A file's kinds, as the Library groups them: each its name and icon. */
 export const KINDS = /** @type {const} */ ([
@@ -61,14 +62,6 @@ export function kindOf(media, name = '') {
 	return 'other';
 }
 
-/** A length in bytes, as a person reads it. @param {number} n */
-export function sized(n) {
-	const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
-	let [v, u] = [n, 0];
-	while (v >= 1000 && u < units.length - 1) [v, u] = [v / 1000, u + 1];
-	return u === 0 ? `${n} bytes` : `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[u]}`;
-}
-
 /** How many bytes the page asks its device for at a time. */
 const WINDOW = 4 << 20;
 /** The most the page reads whole into its memory. */
@@ -86,7 +79,7 @@ export const WHOLE = 1 << 30;
  */
 export async function whole(read, file, type, progress) {
 	const len = file.len ?? 0;
-	if (len > WHOLE) throw new Error(`it is ${sized(len)}, more than the ${sized(WHOLE)} a page opens whole`);
+	if (len > WHOLE) throw new Error(`it is ${size(len)}, more than the ${size(WHOLE)} a page opens whole`);
 	/** @type {BlobPart[]} */
 	const parts = [];
 	for (let at = 0; at < len; ) {

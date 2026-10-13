@@ -62,7 +62,7 @@
 //! back; a device restored from a backup forks from what it made since (`forks`).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand_core::Rng as _;
@@ -321,6 +321,9 @@ struct Store {
     /// The replay of its edits: which stand, and what it knows. Of the checkpointed ones only, once it no longer trusts
     /// the curves.
     replay: Replay,
+    /// What its edits say with every write counted, once it no longer trusts the curves (`Lab::full_view`): replayed
+    /// once for the edits it holds now, not on every ask, announce and fetch.
+    full: OnceLock<State>,
     /// Empty while it is locked, as is everything below but what it made itself and has to vouch for.
     keys: Keyring,
     /// The entry keys it derived: by the key of the cell it derived each from, the entry and the stay.
@@ -349,6 +352,7 @@ impl Default for Store {
             signed: HashMap::new(),
             blobs: HashMap::new(),
             replay: replay(&[]),
+            full: OnceLock::new(),
             keys: Keyring::default(),
             derived: HashSet::new(),
             slices: HashMap::new(),
@@ -1043,6 +1047,7 @@ impl Lab {
         }
         if new {
             store.digests = None;
+            store.full = OnceLock::new();
         }
         new
     }
@@ -1387,7 +1392,11 @@ impl Lab {
     /// What device `d` makes of its edits, every write counted: what it drafts and checks its own edits by.
     fn full_view(&self, d: SignerId) -> std::borrow::Cow<'_, State> {
         let store = self.held(d);
-        if self.pq_only { std::borrow::Cow::Owned(store.log.view()) } else { std::borrow::Cow::Borrowed(store.view()) }
+        if self.pq_only {
+            std::borrow::Cow::Borrowed(store.full.get_or_init(|| store.log.view()))
+        } else {
+            std::borrow::Cow::Borrowed(store.view())
+        }
     }
 
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
@@ -1849,8 +1858,7 @@ impl Lab {
         }
         let unvouched = std::mem::take(&mut store.unvouched);
         // its own writes as every edit it holds has them, whether it counts them yet or not
-        let full = if self.pq_only { Some(store.log.view()) } else { None };
-        let st = full.as_ref().unwrap_or(store.view());
+        let st = if self.pq_only { store.full.get_or_init(|| store.log.view()) } else { store.view() };
         let mut by: BTreeMap<EntryId, Vec<EditId>> = BTreeMap::new();
         for w in st.all_writes() {
             if unvouched.contains(&w.edit) {

@@ -1,7 +1,7 @@
 <!--
 	A vault's notes, as a docs app lists its documents: a blank note to start, made at once and opened, then every note
 	of the vault the acting vault reads, one flat library, narrowed by a tag, the deleted ones apart; each a page with its tags, its edits, its
-	proposals, whether it is a variant of another, and who holds a role on it; a click opens it (Note). Everything else
+	proposals, whether it is a variant of another, and who it is shared with; a click opens it (Note). Everything else
 	stays out of sight, as on a device of the acting vault alone: the device's world says which vault holds which role
 	on each entry, by the caps whose slices hold it (avendb-browser's `World`), and every edit goes out acting for that
 	vault. A vault other than this one adds a note only through a cap with write on a slice that holds it, tagged as its
@@ -10,7 +10,7 @@
 <script>
 	import Icon from './Icon.svelte';
 	import { may, noteRecord } from './ops.js';
-	import { count, creates, holders, list, nameOf, reads, ROLES, tagsIn, tagsOf } from './vaults.js';
+	import { count, creates, list, nameOf, reads, sharedWith, sharedWords, tagsIn, tagsOf } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -23,9 +23,10 @@
 	const as = $derived(byId.get(actor));
 	const entries = $derived(world.entries.filter((e) => e.vault === vault));
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
-	const docs = $derived(seen.filter((e) => e.kind === 'note' && !e.deleted));
+	// a note is an entry of type note: a device's card and a vault's profile are documents too, of their own types
+	const docs = $derived(seen.filter((e) => e.type === 'note' && !e.deleted));
 	/** the notes deleted: listed apart, each to open and bring back */
-	const deleted = $derived(seen.filter((e) => e.kind === 'note' && e.deleted));
+	const deleted = $derived(seen.filter((e) => e.type === 'note' && e.deleted));
 	const hidden = $derived(entries.length - seen.length);
 	const tags = $derived(tagsOf(docs));
 	/** the tag the notes are narrowed to: '' for all of them */
@@ -41,10 +42,10 @@
 	const typed = $derived(tagsIn(tagging));
 	const asked = $derived(creates(world, vault, actor, 'note', typed));
 	/** every note this browser knows, by entry: to name the one a variant came from */
-	const notes = $derived(new Map(world.entries.filter((e) => e.kind === 'note').map((e) => [e.entry, e])));
+	const notes = $derived(new Map(world.entries.filter((e) => e.type === 'note').map((e) => [e.entry, e])));
 
-	/** the tags the cap asks a new note to carry, in words */
-	const tagsWords = $derived(asked?.length ? `, tagged ${list(asked.map((t) => `“${t}”`))} as its cap asks` : '');
+	/** the tags the share asks a new note to carry, in words */
+	const tagsWords = $derived(asked?.length ? `, tagged ${list(asked.map((t) => `“${t}”`))} as its share asks` : '');
 
 	/** The op that adds a blank note, tagged as typed and as the cap asks. */
 	const blankNote = () => ({
@@ -125,9 +126,9 @@
 {#if !seen.length && vault !== actor}
 	<div class="empty">
 		<p>
-			{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: it holds no
-			cap on any of it. A vault that owns it can share some of it with {nameOf(as)}, a note, its todos, whatever is tagged
-			one way, in <button class="link" onclick={onaccess}>Access</button>.
+			{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: none
+			of it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)}, a note, its todos,
+			whatever is tagged one way, in <button class="link" onclick={onaccess}>Sharing</button>.
 		</p>
 	</div>
 {:else if shown.length}
@@ -151,12 +152,10 @@
 					{#if it.tags?.length}
 						<span class="who">{#each it.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>
 					{/if}
-					<span class="who">
-						{#each holders(it.roles) as h (h.id)}
-							<span class="chip" class:accent={h.id === actor}>{nameOf(byId.get(h.id))} {ROLES[h.role]}</span>
-						{/each}
-						{#if it.public}<span class="chip">everyone reads</span>{/if}
-					</span>
+					<small class="soft shared">
+						Shared with {sharedWords(sharedWith(world, vault, it.entry))}
+						{#if it.public}<span class="chip">Public</span>{/if}
+					</small>
 				</span>
 			</a>
 		{/each}
@@ -373,8 +372,14 @@
 		margin-top: 0.3rem;
 	}
 
-	.who .chip {
+	.who .chip,
+	.shared .chip {
 		font-size: 0.66rem;
+	}
+
+	.shared {
+		margin-top: 0.3rem;
+		line-height: 1.45;
 	}
 
 	.empty p {

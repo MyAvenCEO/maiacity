@@ -1,46 +1,56 @@
 <!--
-	The studio's cells: what this browser holds in all and of the vault, then each cell of its entries, as a database
-	studio lists its partitions. A cell is a dynamic group: the entries of the vault the same caps reach, whatever their
-	slices select, under one key of its own, which moves to its next generation when a reader may no longer read it. An
-	entry tagged into a cap's slice, or out of it, moves to another cell. No cell is named by hand: each is the caps
-	that reach it. A click opens its tables.
+	The studio's shares: what this browser holds of the vault, then its entries by who they are shared with, as a
+	database studio lists its partitions: each row the entries the same shares reach, named by who they are shared
+	with. A share on a type or a tag reaches what matches it now and later, so a row grows and shrinks as entries are
+	written and tagged. Each row is one key of the core's (a cell); its id and its key's generation, which moves on when
+	a reader may no longer read it, show with the studio's internals, with how much this browser holds in all. A click
+	opens its tables.
 -->
 <script>
 	import { count, nameOf, short } from './vaults.js';
 
-	/** @type {{ s: import('./db.js').Studio, db: import('./db.js').Db, onpick: (cell: string) => void }} */
-	let { s, db, onpick } = $props();
+	/**
+	 * @type {{ s: import('./db.js').Studio, db: import('./db.js').Db, internals: boolean,
+	 *   onpick: (cell: string) => void }}
+	 */
+	let { s, db, internals, onpick } = $props();
 
-	/** the cells, the vault's own first, then by how many caps reach them */
+	/** the entries by who they are shared with, the vault's own alone first, then by how many shares reach them */
 	const cells = $derived([...s.cells].sort((a, b) => a.caps.length - b.caps.length));
 </script>
 
 <div class="stats">
 	<div class="stat"><b>{s.rows.length}</b><span>{s.rows.length === 1 ? 'entry' : 'entries'}</span></div>
-	<div class="stat"><b>{cells.length}</b><span>{cells.length === 1 ? 'cell' : 'cells'}</span></div>
-	<div class="stat" title="Writes of its entries, and moves of them from cell to cell">
-		<b>{db.edits.writes}</b><span>writes, {count(db.edits.moves, 'move')}</span>
+	<div class="stat" title="Writes of its entries">
+		<b>{db.edits.writes}</b><span>writes</span>
 	</div>
-	<div class="stat" title="Caps issued over it, and how many of those were revoked">
-		<b>{db.edits.caps}</b><span>caps, {db.edits.revokes} revoked</span>
+	<div class="stat" title="Shares given over it, and how many of those were revoked">
+		<b>{db.edits.caps}</b><span>shares, {db.edits.revokes} revoked</span>
 	</div>
-	<div class="stat" title="Every signed edit this browser holds, of every vault it knows">
-		<b>{db.held.edits}</b><span>signed edits held</span>
-	</div>
-	<div class="stat" title="The McEliece keys this browser holds, to open what is sealed to it">
-		<b>{db.held.keys}</b><span>McEliece keys held</span>
-	</div>
+	{#if internals}
+		<div class="stat" title="The keys of its entries: one for the entries the same shares reach">
+			<b>{cells.length}</b>
+			<span>{cells.length === 1 ? 'key' : 'keys'}, {count(db.edits.moves, 'move')} between them</span>
+		</div>
+		<div class="stat" title="Every signed edit this browser holds, of every vault it knows">
+			<b>{db.held.edits}</b><span>signed edits held</span>
+		</div>
+		<div class="stat" title="The McEliece keys this browser holds, to open what is sealed to it">
+			<b>{db.held.keys}</b><span>McEliece keys held</span>
+		</div>
+	{/if}
 </div>
 
 <div class="grid">
 	<table>
 		<thead>
 			<tr>
-				<th>Cell</th>
-				<th>Id</th>
-				<th>Reached by</th>
-				<th class="num">Key generation</th>
+				<th>Shared with</th>
 				<th class="num">Entries</th>
+				{#if internals}
+					<th>Key id</th>
+					<th class="num">Key generation</th>
+				{/if}
 			</tr>
 		</thead>
 		<tbody>
@@ -48,23 +58,30 @@
 				<!-- the row opens on a click anywhere; its first cell's button takes the keyboard's -->
 				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 				<tr class="rec" onclick={() => onpick(x.id)}>
-					<td><button class="open" onclick={(e) => (e.stopPropagation(), onpick(x.id))}>{s.cellName(x.id)}</button></td>
-					<td class="mono" title={x.id}>{short(x.id)}</td>
-					<td class="reach">{x.caps.length ? s.cell(x.id).replace(/^Shared: /, '') : 'no cap but those on the whole vault'}</td>
-					<td class="num">{x.generation}</td>
+					<td class="reach">
+						<button class="open" onclick={(e) => (e.stopPropagation(), onpick(x.id))}>
+							{s.sharedIn(x.id) ?? short(x.id)}
+						</button>
+					</td>
 					<td class="num">{x.entries}</td>
+					{#if internals}
+						<td class="mono" title={x.id}>{short(x.id)}</td>
+						<td class="num">{x.generation}</td>
+					{/if}
 				</tr>
 			{:else}
-				<tr><td colspan="5" class="soft">{nameOf(s.here)} holds no entry yet.</td></tr>
+				<tr><td colspan={internals ? 4 : 2} class="soft">{nameOf(s.here)} holds no entry yet.</td></tr>
 			{/each}
 		</tbody>
 	</table>
 </div>
 <p class="soft note">
-	A cell is never named by hand: it is the entries the same caps reach, under one key. A cap on a type or a tag reaches
-	every entry that matches it, now and later, so a cell grows and shrinks as entries are written and tagged, and each
-	device receives exactly the cells its vaults' caps reach. {count(cells.length, 'cell')} of {nameOf(s.here)}; its seed is
-	at generation {db.seed}.
+	Each row is the entries of {nameOf(s.here)} the same shares reach. A share on a type or a tag reaches every entry that
+	matches it, now and later, so a row grows and shrinks as entries are written and tagged, and each device gets exactly
+	what is shared with its vault.{internals
+		? ` Each row has one key, whose generation moves on when a reader may no longer read it; the vault's seed is at` +
+			` generation ${db.seed}.`
+		: ''}
 </p>
 
 <style>

@@ -27,11 +27,17 @@ export function stepWords(here) {
 		keys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret your passkey unmasks' },
 		restore: { title: 'Replaying your vault', does: 'Every edit checked again and applied in order' },
 		node: { title: `Starting ${here}’s node`, does: 'Its own endpoint, quantum-proof TLS on every connection' },
-		server: { title: 'Reaching avenDB’s server', does: 'Through its relay; its hello proves it is the server' },
+		server: {
+			title: 'Reaching avenDB’s server',
+			does: 'Through its connection server; its hello proves it is the server'
+		},
 		draft: { title: 'Drafting your vault', does: `Its genesis, ${here} in it, avenCEO if nobody owns the server` },
 		sign: { title: 'Create your vault', does: 'Your passkey signs the whole draft in one go', prompt: true },
 		claim: { title: 'Handing the server its claim', does: 'It signs that your vault owns avenCEO' },
-		settle: { title: 'Giving the server its cap', does: `Backup or relay on your vault, and ${here}’s card in it` },
+		settle: {
+			title: 'Sharing your vault with the server',
+			does: `As Backup, or as Relay with backups off, and ${here}’s card in your vault`
+		},
 		pass: { title: 'Showing your pass', does: 'The server checks it, hands back your vault, still encrypted' },
 		vault: { title: 'Checking your vault', does: 'Every edit’s signatures, before any of it counts' },
 		join: { title: `Adding ${here} to your vault`, does: 'Your pass signs the edit that adds it' },
