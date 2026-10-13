@@ -20,7 +20,8 @@
 	const eur = (x) => (x == null || !Number.isFinite(x) ? '–' : `€${num(x)}`);
 	const h = (x) => (x == null || !Number.isFinite(x) ? '–' : num(x, 2));
 	const r = (x) => (x == null || !Number.isFinite(x) ? '–' : num(x, 3));
-	const pc = (x) => (x == null || !Number.isFinite(x) ? '–' : `${num(100 * x, 2)} %`);
+	// at least two significant digits, and never an exponent for 100 %
+	const pc = (x) => (x == null || !Number.isFinite(x) ? '–' : `${num(100 * x, Math.abs(100 * x) >= 10 ? 3 : 2)} %`);
 	/** the last whole year of a world (or the year so far) */
 	const lastOf = (x) => x?.years?.findLast?.((y) => !y.partial) ?? x?.years?.at(-1) ?? null;
 	const ownersAt = (x, y) =>
@@ -39,7 +40,7 @@
 		const want = [1, 2, 5, 10, 20, 30, 60].filter((y) => ys.includes(y));
 		const last = lastOf(w)?.y;
 		if (last != null && !want.includes(last)) want.push(last);
-		return want;
+		return want.sort((a, b) => a - b);
 	});
 	const yrow = $derived((w?.years ?? []).find((y) => y.y === (yearPick ?? lastOf(w)?.y)) ?? lastOf(w));
 	const TENTH_NAMES = ['1 (poorest)', '2', '3', '4', '5', '6', '7', '8', '9', '10 (richest)'];
