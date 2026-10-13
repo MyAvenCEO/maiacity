@@ -19,7 +19,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { pickup, solarPanel } from '$lib/models/village.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
-import { human, skinAt } from '$lib/actors/human.ts';
+import { MOUTH, human, skinAt } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_EYES, ME_SEAT, packedVan } from './van.js';
@@ -417,8 +417,8 @@ export function person(seat) {
 		chest.updateWorldMatrix(true, false);
 		pack.position.copy(chest.worldToLocal(V(0, 1.12, -0.24)));
 	} else (pack.position.set(0, 1.12, -0.24), g.add(pack));
-	// joy, on the head bone: a broad open smile on the lips (a crescent laid on the skin, its upper teeth showing) and
-	// a bright catchlight in each eye, shown when they beam (after the first mint)
+	// joy, on the head bone: a broad open smile on the lips (a crescent laid on the skin, its upper teeth showing), shown
+	// when they beam (after the first mint); the eyes' catchlights are the stand-in's own
 	const joyFace = new THREE.Group();
 	const head = cast.rig.bones.head;
 	if (head) {
@@ -427,13 +427,13 @@ export function person(seat) {
 		const at = (x, y, z) => head.worldToLocal(V(x * k, y * k, z * k));
 		/** a band between two edges of the smile (x, y about the mouth's middle, `mid` m at the middle, `end` at the
 		 * corners), laid onto the face `lift` m off the skin, in short strips that follow its curve */
-		const W = 0.022; // half the smile's width
+		const W = MOUTH.w + 0.001; // half the smile's width
 		const band = (top, bottom, lift, w = W, n = 16) => {
 			const pts = [], idx = [];
 			for (let i = 0; i <= n; i++) {
 				const x = -w + (2 * w * i) / n, u = (x / W) ** 2;
 				for (const [mid, end] of [top, bottom]) {
-					const y = 1.6585 + mid + (end - mid) * u;
+					const y = MOUTH.y + 0.0036 + mid + (end - mid) * u;
 					pts.push(...at(x, y, skinAt(x, y) + lift).toArray());
 				}
 				if (i) idx.push(2 * i - 2, 2 * i, 2 * i - 1, 2 * i - 1, 2 * i, 2 * i + 1);
@@ -450,12 +450,6 @@ export function person(seat) {
 		const teeth = new THREE.Mesh(band([0.0002, 0.0034], [-0.0045, 0.0018], 0.0062, W * 0.72), white);
 		const smile = new THREE.Group();
 		smile.add(mouth, teeth);
-		const shine = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.9 });
-		for (const x of [-1, 1]) {
-			const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0013, 8, 6), shine);
-			glint.position.copy(at(x * 0.032 - 0.002, 1.7155, skinAt(x * 0.032, 1.7145) + 0.0045));
-			joyFace.add(glint);
-		}
 		joyFace.add(smile);
 		joyFace.visible = false;
 		head.add(joyFace);
