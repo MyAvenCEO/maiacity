@@ -318,6 +318,8 @@
 		for (const x of steps.slice(0, tourAt + 1)) for (const u of UNLOCKS[x.id] ?? []) on.add(u);
 		return on;
 	});
+	/** a step that only tells (Next, or an intro shot), so it can be told again: not a move read off the game */
+	const TOLD = (x) => x.kind === 'next' || x.kind === 'intro';
 	const shows = (what) => !unlocked || unlocked.has('all') || unlocked.has(what) || (what.startsWith('view:') && unlocked.has('mips'));
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
@@ -331,6 +333,20 @@
 		if (!started) return;
 		try { seen = Object.fromEntries(SEATS.map((s) => [s, JSON.parse(localStorage.getItem(storyKey(s)) ?? '{}')])); } catch {}
 		seenOf = started;
+	});
+	// coming back halfway through a chapter (Samuel 2026-10-13: the story began at "They ripen like fruit"), the chapter
+	// is told again from its first line: the told steps before the open one in its chapter are unseen once per visit
+	let resumed = 0;
+	$effect(() => {
+		if (!tour || resumed === started || demo) return;
+		resumed = started;
+		const ch = steps[tourAt]?.chapter;
+		let i = tourAt;
+		while (i > 0 && steps[i - 1].chapter === ch && TOLD(steps[i - 1])) i--;
+		if (i === tourAt) return;
+		const mine = { ...(seen[seat] ?? {}) };
+		for (const x of steps.slice(i, tourAt)) delete mine[x.id];
+		seen = { ...seen, [seat]: mine };
 	});
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
