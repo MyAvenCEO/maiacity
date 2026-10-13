@@ -75,6 +75,7 @@ export const ADMIN: Place[] = [
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix' },
 	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki" },
 	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', cap: 'media:admin', note: 'Your own vaults, end-to-end encrypted and quantum-proof' },
+	{ href: `${base}/app/genui/`, label: 'Generated UI', icon: 'spark', cap: 'media:admin', note: 'Mini apps agents make on the fly, each in its own box' },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];
 
@@ -89,7 +90,7 @@ export const released = (founder: Founder | null, p: Place) => p.release !== 'dr
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
 export const gameAt = (path: string) =>
 	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
-	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : undefined);
+	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : path.startsWith(`${base}/app/genui/`) ? GENUI_TILE : undefined);
 /** the Worlds grid, the Assets, the Buildings, the Actors, the Plants, the Skills and avenDB: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
 const MODELS_TILE: Place = { href: `${base}/app/models/`, label: 'Assets', icon: 'media', release: 'draft' };
@@ -99,6 +100,7 @@ const PLANTS_TILE: Place = { href: `${base}/app/plants/`, label: 'Plants', icon:
 const BIOMES_TILE: Place = { href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', release: 'draft' };
 const SKILLS_TILE: Place = { href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', release: 'draft' };
 const AVENDB_TILE: Place = { href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', release: 'draft' };
+const GENUI_TILE: Place = { href: `${base}/app/genui/`, label: 'Generated UI', icon: 'spark', release: 'draft' };
 
 /** Where a path is, in words: the top bar's title. */
 export function placeOf(path: string): string {
@@ -113,6 +115,7 @@ export function placeOf(path: string): string {
 	if (rel.startsWith('/app/biomes/')) return 'Biomes';
 	if (rel.startsWith('/app/skills/')) return 'Skills';
 	if (rel.startsWith('/app/avendb/')) return 'avenDB';
+	if (rel.startsWith('/app/genui/')) return 'Generated UI';
 	const city = CITY.find((p) => path.startsWith(p.href));
 	if (city) return city.label;
 	const app = APPS.find((p) => path.startsWith(p.href));

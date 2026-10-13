@@ -950,4 +950,22 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // Generated UI (Samuel, 2026-10-13): mini app views an agent writes over the MCP and /app/genui/ draws
+    // (api/src/genui.js, game/genui/views.js). One row per view; the spec as checked.
+    id: "0047-genui-views",
+    sql: `
+      CREATE TABLE genui_views (
+        id      TEXT PRIMARY KEY,
+        title   TEXT NOT NULL,
+        note    TEXT NOT NULL DEFAULT '',
+        kind    TEXT NOT NULL CHECK (kind IN ('a2ui', 'html')),
+        spec    JSONB NOT NULL,
+        via     TEXT NOT NULL DEFAULT 'mcp',
+        version INTEGER NOT NULL DEFAULT 1,
+        created TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];

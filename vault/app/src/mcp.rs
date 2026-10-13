@@ -589,6 +589,38 @@ pub struct Item {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct GenuiPut {
+    /// the view's id: lowercase letters, digits and dashes, up to 48 (an existing id replaces that view, its version goes up)
+    pub id: String,
+    /// the title shown above it, up to 80 characters
+    pub title: String,
+    /// one line under the title: what it shows (optional)
+    pub note: Option<String>,
+    /// "a2ui": declarative JSON drawn by the page's own components (the safest; use it for forms, numbers, lists,
+    /// bars, tables). "html": open code in a sandboxed frame (for three.js scenes, d3 charts, canvas, custom HTML/CSS)
+    pub kind: String,
+    /// for "a2ui": { root (a component id), components: [{ id, type, ...props, children?: [ids] }] (a flat list),
+    /// data: { the data model }, logic?: a JS module run in QuickJS exporting init(data) and on(event, data), each
+    /// returning the whole new data model }. Types and props: Column/Row {gap s|m|l, align, wrap}, Grid {columns, gap},
+    /// Card {title, subtitle, tone}, Heading {text, level}, Text {text, tone, size s|l}, Metric {label, value, unit,
+    /// delta, tone}, Badge {text, tone}, Progress {label, value, max, tone}, Bars {label, items: [{label, value}], unit},
+    /// Table {columns, rows}, List {items}, Button {label, event, value, tone}, Slider {label, event, value, min, max,
+    /// step, unit}, Divider. Tones: default, accent, good, warn, bad, muted. Any prop may be {"$data": "path.in.data"}.
+    /// A Button or Slider sends {name: its event, value} to on(). For "html": { html (the body with its own style and
+    /// script tags, up to 200,000 characters), libs?: ["three"] (import * as THREE from 'three', addons from
+    /// 'three/addons/...', in a script type=module) and/or ["d3"] (the global d3), height?: 160-1200 px (default 420) }.
+    /// The frame has no network (no fetch, no images from URLs: use data: or draw them), no storage, no cookies; it may
+    /// tell the page about a click with parent.postMessage({ type: 'genui:event', name, value }, '*')
+    pub spec: Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct GenuiDelete {
+    /// the view's id
+    pub id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct ApiArgs {
     /// GET, POST, PUT, PATCH or DELETE
     pub method: String,
@@ -1714,6 +1746,28 @@ impl Studio {
         text(r.await)
     }
 
+    // ── Generated UI (/app/genui/): mini app views an agent writes on the fly, each drawn in its own box ──
+
+    #[tool(
+        description = "The Generated UI views on the dashboard's Generated UI page (/app/genui/), newest change first: id, title, note, kind (a2ui = declarative JSON drawn by the page's own components, html = code in a sandboxed frame), spec, version and who wrote it. Read this before changing one."
+    )]
+    async fn genui_views(&self) -> String {
+        text(self.api("GET", "/api/genui", None).await)
+    }
+
+    #[tool(
+        description = "Make or replace a Generated UI view: a mini app that appears at once on the dashboard's Generated UI page (/app/genui/), for the admin. Prefer kind a2ui (declarative: components from a fixed catalog, its logic in QuickJS) for forms, numbers, tables and bars; use kind html (sandboxed code, libraries three and d3) for 3D scenes, rich charts or custom HTML/CSS. The view is checked: a component outside the catalog, a library outside the list or a spec too big is refused with the reason. An html view runs only when the admin presses Run; it has no network, no storage and no reach into the page, so put all its data inside it."
+    )]
+    async fn genui_put(&self, Parameters(a): Parameters<GenuiPut>) -> String {
+        let body = json!({ "title": a.title, "note": a.note.unwrap_or_default(), "kind": a.kind, "spec": a.spec });
+        text(self.api("PUT", &format!("/api/genui/{}", a.id), Some(body)).await)
+    }
+
+    #[tool(description = "Delete a Generated UI view by its id. With none left, the page starts again from its three examples.")]
+    async fn genui_delete(&self, Parameters(a): Parameters<GenuiDelete>) -> String {
+        text(self.api("DELETE", &format!("/api/genui/{}", a.id), None).await.map(|_| json!({ "deleted": a.id })))
+    }
+
     // ── anything else the admin may do ──
 
     #[tool(description = "Any maiaCITY API call under /api/ with the app's key (shots, grades, jobs, LUTs, media …) — the same rights the admin gave this Mac")]
@@ -1925,7 +1979,8 @@ impl ServerHandler for Studio {
              the best parts of shots), timelines (edit, audio), grades, renders and hero frames (rendered \
              natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
              hash only. Also the economy sandbox (Sandbox 7, the avens trading): its configs, every run's stats day by \
-             day, and MIPs (proposals that change a config, which only the admin accepts).",
+             day, and MIPs (proposals that change a config, which only the admin accepts). And Generated UI: mini app \
+             views (declarative or sandboxed code) an agent puts on the dashboard's Generated UI page on the fly.",
         )
     }
 }

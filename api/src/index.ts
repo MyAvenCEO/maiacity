@@ -27,6 +27,7 @@ import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, K
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
+import { ViewError, deleteView, listViews, putView } from "./genui.js";
 import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -128,7 +129,7 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof EconomyError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof EconomyError || e instanceof GameError || e instanceof ViewError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -228,6 +229,44 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         try {
           return json(req, { game: await resetGame(), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    // Generated UI (api/src/genui.js): mini app views an agent writes over the MCP (the app's key) and /app/genui/
+    // draws, each in its own box. An admin's, like the other tools: reading and writing both need media:admin.
+    "/api/genui": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, { views: await listViews(), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/genui/:id": {
+      OPTIONS: preflight,
+      PUT: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const body = await readJson(req);
+          return json(req, { view: await putView({ ...body, id: req.params.id }, "scope" in me ? "mcp" : "page") });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+      DELETE: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          await deleteView(req.params.id);
+          return new Response(null, { status: 204, headers: cors(req) });
         } catch (e) {
           return fail(req, e);
         }
