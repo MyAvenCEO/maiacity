@@ -466,7 +466,7 @@
 		{:else if tour && (tour.kind === 'invest' || tour.kind === 'mint')}
 			<!-- the story's only stops: a move the player makes, its words already told as the film's voice-over, so only
 			     its title and its button show (Samuel 2026-10-13: as little modal text as possible) -->
-			<div class="tour panel prompt" class:down={tour.hint === 'mintbar'} role="dialog" aria-label={tour.title}>
+			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
 				<b>{tour.title}</b>
 				{#if tour.kind === 'invest'}
 					<div class="goal"><span style="width:{Math.min(100, (tour.have / tour.goal) * 100)}%"></span></div>
@@ -899,7 +899,7 @@
 		position: absolute;
 		z-index: 8;
 		left: 50%;
-		bottom: calc(var(--nav-room, 4rem) + 4.4rem);
+		bottom: var(--nav-room, 4.5rem); /* just over the nav pill (Samuel 2026-10-13: only a small gap) */
 		transform: translateX(-50%);
 		width: min(22rem, calc(100vw - 32px));
 		padding: 0.9rem 1rem 0.8rem;
@@ -918,16 +918,6 @@
 	}
 	.tour .eyebrow {
 		margin: 0;
-	}
-	.tour.down::after {
-		content: '';
-		position: absolute;
-		left: 50%;
-		bottom: -7px;
-		width: 14px;
-		height: 14px;
-		background: inherit;
-		transform: translateX(-50%) rotate(45deg);
 	}
 	.tour .goal {
 		height: 0.35rem;

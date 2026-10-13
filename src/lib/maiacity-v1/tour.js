@@ -13,8 +13,8 @@
  * (./trees.js). Then the Tribe COOP, the weekly pay day and the melt.
  *
  * The story plays as a film: each step's words are its voice-over, a line a shot (lines), and in the van each line's
- * shot shows what it says (shots: the woman beside you leaning over, her phone's screen, her face, you; phone: what
- * her phone shows; hold: the shot that stays while the story waits on your move). Steps that only tell
+ * shot shows what it says (shots: the two of you, her face over your shoulder, your face as you listen; talk: the woman
+ * beside you turned to you, telling you; hold: the shot that stays while the story waits on your move). Steps that only tell
  * something are done once told; steps that ask for a move (mint, invest) are done when the game shows it, so the story
  * picks up wherever the player is. Each step also says where the world is at that moment
  * (at: where the pickup and the player are, cube: where the powercube is, place: what the camera looks at, reveal:
@@ -74,7 +74,7 @@ export function story(view, seat, seen) {
 	// cut one shot a line, and a line holds its shot as long as it takes to tell
 	const say = (step, ...lines) => ({ ...step, lines, text: lines.join(' ') });
 	return [
-		// one story from the first shot: the road, the van and its people, what lies ahead, the HEARTS shown on a phone,
+		// one story from the first shot: the road, the van and its people, what lies ahead, the HEARTS as she tells of them,
 		// the first mint, the end of the road, stepping out, MaiaCity
 		say({ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', part: 'road', done: !!seen.arrive, ...inVan },
 			'Dawn over the endless steppe. One sand highway, and on it, one old van.',
@@ -86,11 +86,11 @@ export function story(view, seat, seen) {
 			'An economy rebuilt from the ground up, owned by the people who use it.',
 			'Perhaps the most important civilisation-building project of our time: the blueprint for a new generation of cities.',
 			'And everyone who arrives helps to draw it, so that life gets better every year, for everyone.'),
-		say({ id: 'hearts', chapter: 'The road', title: 'Every hour, you receive a HEART', hint: '', ...next('hearts'), ...inVan, shots: ['lean', 'screen', 'her'], phone: { big: f(st.heartsPerDay), small: 'HEARTS a day\none every hour, for life', name: hearts } },
-			'The woman beside you leans over and shows you her phone.',
+		say({ id: 'hearts', chapter: 'The road', title: 'Every hour, you receive a HEART', hint: '', ...next('hearts'), ...inVan, shots: ['two', 'over', 'listen'], talk: true },
+			'The woman beside you turns to you with a warm smile.',
 			`“There, everyone receives ${f(st.heartsPerDay)} HEARTS a day, one every hour, for life. Yours will be ${hearts}.”`,
 			'“A HEART is not money. It is your right to become an owner.”'),
-		say({ id: 'mint', chapter: 'The road', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan, shots: ['screen', 'close'], hold: 'close', phone: { big: f(st.starterPack ?? year), small: 'HEARTS ripe\nyour first year', name: hearts, button: 'Mint' } },
+		say({ id: 'mint', chapter: 'The road', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan, shots: ['her', 'close'], hold: 'close', talk: true },
 			'“They ripen like fruit. Mint them, and they are yours.”',
 			`“Your first mint is a whole year: ${f(st.starterPack ?? year)} HEARTS. Go on, while the road rolls by.”`),
 		say({ id: 'arrival', chapter: 'The road', title: 'The end of the road', kind: 'intro', part: 'arrive', done: !!seen.arrival, ...inVan },
