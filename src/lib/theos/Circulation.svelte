@@ -1,10 +1,12 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Figure 10: the loop of theOS, live. People on the outer ring send their daily HEARTS (terracotta) into the
-	// cooperatives in the middle; every HEART that lands is invested and creates the COOP's MIND in two halves: one half flies
-	// back to its investor (gold), the other sinks into the COOP's treasury (its ring grows). Everything shrinks a
-	// little as it travels: demurrage. Every few seconds one COOP turns extractive; the avens notice and route around it.
+	// cooperatives in the middle; every HEART that lands is invested and creates one MIND of the COOP: 0.5 to the investor,
+	// 0.4 to the treasury, 0.1 to the pool. The investor's half flies back to its investor (gold), the treasury's part sinks
+	// into the COOP's treasury (its ring grows); the pools are not drawn. Everything shrinks a little as it travels:
+	// demurrage. Every few seconds one COOP turns extractive; the avens notice and route around it.
 	import { onMount } from 'svelte';
+	import { TREASURY_SHARE, POOL_SHARE, fmt } from './model.js';
 
 	const COOPS = [
 		{ id: 'SOLAR', color: 0xd99a2b },
@@ -117,11 +119,11 @@
 					if (d.t >= 1) {
 						live.splice(i, 1);
 						if (d.kind === 'heart') {
-							// invested: creates one MIND, half back to the investor who sent the HEART, half to the treasury (Law 4);
-							// an extractive COOP's MIND is worth less, so its dot is smaller
+							// invested: creates one MIND, half back to the investor who sent the HEART, 0.4 to the treasury and 0.1
+							// to the pools (Law 4); an extractive COOP's MIND is worth less, so its dot is smaller
 							send('mind', d.to, d.from.clone().setY(0.25), d.coop, 0, 0.45 + 0.55 * d.coop.efficiency);
 							send('sink', d.to, d.coop.g.position.clone().setY(0.08), d.coop);
-						} else if (d.kind === 'sink') d.coop.pool += 0.06;
+						} else if (d.kind === 'sink') d.coop.pool += 0.12 * TREASURY_SHARE;
 						continue;
 					}
 					if (n >= MAX) continue;
@@ -171,7 +173,7 @@
 	<div class="keys" aria-hidden="true">
 		<span><i class="h"></i>HEARTS that people invest</span>
 		<span><i class="m"></i>MIND, half back to the investor</span>
-		<span><i class="s"></i>MIND, half into the COOP's treasury</span>
+		<span><i class="s"></i>MIND, {fmt(TREASURY_SHARE, 1)} into the COOP's treasury ({fmt(POOL_SHARE, 1)} goes to the pools)</span>
 	</div>
 </div>
 
