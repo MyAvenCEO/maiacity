@@ -309,8 +309,26 @@ export const TECH = {
 		life: n(30, 'years', 'ENERGY_SOURCES.egs.lifeYears'),
 		learn: { group: 'energy', coef: { orc: n(0.8, 'heat per kWh at the floor', 'ORC 12 % → 15 % gross: about 60 % of the exergy limit of 23.8 % at these temperatures, which good ORCs reach (estimate)', true) } }
 	},
+	hall: {
+		label: 'Dome shells a settlement COOP owns and rents out: the food, utilities, factory and centre domes (Samuel, 2026-10-13)',
+		good: 'bed',
+		kind: 'hall',
+		capUnit: 'm² of dome floor',
+		kwh: n(0, 'kWh per m²-day', 'the tenants pay their own climate and light'),
+		runH: n(0, 'Aven hours a day per m²', 'the tenants run what stands in it'),
+		build: {
+			wood: n(0, 't glulam a m² of floor (set from the village: ./genesis.js villageTech)', 'sandbox-7 shellOf(120)'),
+			steel: n(0, 't steel a m² of floor (set from the village)', 'sandbox-7 shellOf(120)'),
+			glass: n(0, 't glass a m² of floor (set from the village)', 'sandbox-7 shellOf(120)'),
+			mwhPerT: n(0.1, 'MWh per t built', 'rules.js BUILD_MWH_T')
+		},
+		buildDays: n(365, 'days', 'estimate', true),
+		land: n(1, 'm² of land a m² of floor (the dome’s footprint)', 'sandbox-7 capOf(120): the floor is the footprint'),
+		life: n(50, 'years (the frame)', 'sandbox-6/numbers.md: upkeep 2 % a year'),
+		glassLife: n(30, 'years (the glazing)', 'physics audit (2026-10-13)')
+	},
 	home: {
-		label: 'Dome homes (Dome80 of 40 and Dome40 of 10), with the halls kept up with them',
+		label: 'Dome homes (Dome80 of 40 and Dome40 of 10) of a settlement COOP',
 		good: 'bed',
 		kind: 'home',
 		capUnit: 'bed',
@@ -563,7 +581,16 @@ export const STARTING_CAPITAL = n(
 		goodsWorksKgDay: [250, 250],
 		springHours: [150, 150],
 		computeHoursDay: [1000, 1000],
-		homesSplit: 'HOME-A the Dome80 homes, HOME-B the Dome40 homes',
+		homesSplit: 'one settlement COOP a hex (Samuel, 2026-10-13 06:50): each living hex’s owns its 290 beds and its food and utilities domes; the centre hex’s, the Village COOP (07:00), owns the centre dome, the eight factory domes and the geothermal plant',
+		rentedM2: {
+			food: 'the whole of each food dome (11,310 m² of floor) and the gardens in the utilities dome: the food COOPs',
+			water: '1,200 m² of each utilities dome (membrane bioreactor and wetland): the City COOP’s water works',
+			solar: '700 m² of each utilities dome (batteries 250 m², hydrogen 450 m²): the solar COOPs',
+			compute: '700 m² of each utilities dome (the data centre): the Aven-service COOPs',
+			goods: '1,600 m² of each utilities dome (the workshops): the goods works',
+			works: 'the timber and bamboo domes (timber works), the steelworks dome, the glass & solar dome (glass works 70 %, panel works 30 %, estimate)',
+			halls: 'the centre dome (community halls) and the hemp, lime, clay and recycling domes, whose works the engine does not trade: rented by the six living settlement COOPs for their residents, a sixth each'
+		},
 		computeChips: 'one accelerator per 384 service-hours a day of capacity, plus CHIPS.spare in store'
 	},
 	'',

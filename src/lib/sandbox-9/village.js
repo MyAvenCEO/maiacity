@@ -74,19 +74,29 @@ export function villageFacts(livingHexes = 6, tower = false) {
 	const m2 = (id) => nL * (landL[id] ?? 0) + (landC[id] ?? 0);
 
 	// ── buildings by what the engine makes of them ──
-	const homes80 = zero(), homes40 = zero(), food = zero(), halls = zero(), works = {};
+	// util: the living hexes' utilities domes; centre: the centre hex's buildings no works COOP rents (the centre dome or
+	// the tower, the hemp, lime, clay and recycling works); halls = util + centre (what was kept up with the homes)
+	const homes80 = zero(), homes40 = zero(), food = zero(), halls = zero(), util = zero(), centre = zero(), works = {};
 	for (const s of LIVING.sites) {
 		const p = siteParts(s, LIVING);
 		if (s.kind === 'dome80') addParts(homes80, p, nL);
 		else if (s.kind === 'dome40') addParts(homes40, p, nL);
 		else if (s.kind === 'food120') addParts(food, p, nL);
-		else addParts(halls, p, nL);
+		else addParts(halls, p, nL), addParts(util, p, nL);
 	}
 	for (const s of cPlan.sites) {
 		const p = siteParts(s, cPlan);
 		if (s.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(s.factory)) works[s.factory] = addParts(zero(), p);
-		else addParts(halls, p);
+		else addParts(halls, p), addParts(centre, p);
 	}
+	// floor m² of the domes the settlement COOPs rent out: a Dome120's floor is its footprint (sandbox-7 capOf); the
+	// tower's, its floors
+	const floor120 = Math.PI * 60 * 60;
+	const centreFloor = tower && cPlan.tower ? towerFloors(cPlan.tower).reduce((a, f) => a + f.m2, 0) + floor120 * (cPlan.sites.filter((s) => s.kind !== 'tower' && s.kind !== 'factory120').length + cPlan.sites.filter((s) => s.kind === 'factory120' && !['timber', 'bamboo', 'steel', 'glass'].includes(s.factory)).length) : floor120 * cPlan.sites.filter((s) => !(s.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(s.factory))).length;
+	const utilZones = Object.fromEntries(KINDS.util120.zones.filter((z) => z.block).map((z) => [z.block, z.m2]));
+	const utilGardenM2 = KINDS.util120.zones.find((z) => z.use === 'indoorFood')?.m2 ?? 0;
+	const foodPerHex = LIVING.sites.filter((s) => s.kind === 'food120').length;
+	const utilPerHex = LIVING.sites.filter((s) => s.kind === 'util120').length;
 	const homes = addParts(addParts(zero(), homes80), homes40);
 	const beds80 = nL * LIVING.sites.filter((s) => s.kind === 'dome80').length * KINDS.dome80.people;
 	const beds40 = nL * LIVING.sites.filter((s) => s.kind === 'dome40').length * KINDS.dome40.people;
@@ -139,6 +149,18 @@ export function villageFacts(livingHexes = 6, tower = false) {
 		homes40,
 		foodDomes: food,
 		halls,
+		util,
+		centre,
+		domes: {
+			floor120,
+			foodPerHex,
+			utilPerHex,
+			utilZones,
+			utilGardenM2,
+			centreFloor,
+			centreFootM2: cPlan.sites.filter((s) => !(s.kind === 'factory120' && ['timber', 'bamboo', 'steel', 'glass'].includes(s.factory))).reduce((a, s) => a + (s.kind === 'tower' && cPlan.tower ? Math.PI * (cPlan.tower.D / 2) ** 2 : floor120), 0),
+			works: Object.fromEntries(['timber', 'bamboo', 'steel', 'glass'].map((k) => [k, cPlan.sites.filter((s) => s.kind === 'factory120' && s.factory === k).length]))
+		},
 		works,
 		indoorFoodM2,
 		outdoorFoodM2,

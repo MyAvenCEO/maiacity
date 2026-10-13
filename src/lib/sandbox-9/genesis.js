@@ -161,6 +161,29 @@ export const DEFAULTS = {
 	label: 'base'
 };
 
+/**
+ * The settlement COOPs (Samuel, 2026-10-13 06:50): one a hex, each founded when its settlement launches. A living hex's
+ * settlement COOP owns every dome in its hex: it rents the beds to its residents (the bed good, paid in its own MIND:
+ * the six compete for residents) and the dome space to the business COOPs (a running cost for them, a sale for it, so
+ * Law 5 applies). The centre hex's is the Village COOP (07:00): it owns the centre dome, the eight factory domes and the
+ * geothermal plant, rents the factory domes to the works COOPs and sells the plant's electricity and heat (it replaces
+ * round 2's GEO COOP; the solar COOPs compete with it). The MaiaCity COOP (CITY) stays apart: it owns the land and runs
+ * the euro bank. In the order the build-out launches the settlements (src/lib/sandbox-7/buildout.js LIVING_ORDER).
+ */
+export const SETTLEMENTS = [
+	{ id: 'EAST', hex: 'living-e', label: 'East settlement COOP' },
+	{ id: 'SOUTH-EAST', hex: 'living-se', label: 'South-east settlement COOP' },
+	{ id: 'SOUTH-WEST', hex: 'living-sw', label: 'South-west settlement COOP' },
+	{ id: 'WEST', hex: 'living-w', label: 'West settlement COOP' },
+	{ id: 'NORTH-WEST', hex: 'living-nw', label: 'North-west settlement COOP' },
+	{ id: 'NORTH-EAST', hex: 'living-ne', label: 'North-east settlement COOP' }
+];
+export const VILLAGE_COOP = { id: 'VILLAGE', hex: 'tower', label: 'Village COOP' };
+/** plain names of the genesis COOPs that have one (the page and the proof show them) */
+export const COOP_LABELS = { CITY: 'MaiaCity COOP', VILLAGE: 'Village COOP', ...Object.fromEntries(SETTLEMENTS.map((s) => [s.id, s.label])) };
+/** a COOP's plain name: its label, or its id (a split genesis COOP keeps its parent's name and its number) */
+export const coopLabel = (co) => co.label ?? COOP_LABELS[co.id] ?? co.id;
+
 /** the genesis COOPs: name, technology, and which share of the hex's plant of that technology it holds */
 const GENESIS = [
 	{ id: 'CITY', tech: 'well', city: true },
@@ -168,9 +191,8 @@ const GENESIS = [
 	{ id: 'AGRI', tech: 'forest' },
 	{ id: 'GREEN', tech: 'greenhouse' },
 	{ id: 'SOLAR', tech: 'solar' },
-	{ id: 'GEO', tech: 'geo' },
-	{ id: 'HOME-A', tech: 'home', beds: 0 },
-	{ id: 'HOME-B', tech: 'home', beds: 1 },
+	{ id: VILLAGE_COOP.id, tech: 'geo', village: true },
+	...SETTLEMENTS.map((x, h) => ({ id: x.id, tech: 'home', hex: h })),
 	{ id: 'TIMBER-A', tech: 'timber', i: 0 },
 	{ id: 'TIMBER-B', tech: 'timber', i: 1 },
 	{ id: 'STEEL-A', tech: 'steel', i: 0 },
@@ -442,6 +464,7 @@ function seedPlants(w) {
 	const sets = [];
 	for (const g of GENESIS) {
 		const k = sets.length;
+		if (g.hex != null && g.hex >= V.livingHexes) continue;
 		const def = w.tech[g.tech];
 		const pl = newPlant(w, g.tech, 0);
 		pl.born = 0;
@@ -474,10 +497,13 @@ function seedPlants(w) {
 				break;
 			case 'geo':
 				pl.cap = cfg.geothermal ? cfg.geoStages * s : 0;
+				pl.village = true;
 				break;
 			case 'home':
-				// HOME-A the Dome80 homes (and the tower's apartments), HOME-B the Dome40 homes
-				pl.cap = (g.beds === 0 ? V.beds.dome80 + V.beds.tower : V.beds.dome40) * vf;
+				// a living hex's settlement COOP: its 290 beds (5 Dome80 homes of 40, 9 Dome40 homes of 10); with the tower,
+				// its apartments are let by the six settlement COOPs, a sixth each
+				pl.cap = (V.beds.total / V.livingHexes) * vf;
+				pl.hex = g.hex;
 				pl.landM2 = pl.cap * def.land;
 				break;
 			case 'timber': {

@@ -87,9 +87,9 @@ export const KIT = [
 	// machines
 	{ id: 'excavator', group: 'machines', label: 'Crawler excavators (Bagger), 20–22 t', n: 2, eur: 230000, src: 'excavator', est: true },
 	{ id: 'mini', group: 'machines', label: 'Excavator, 8 t', n: 1, eur: 95000, src: 'excavator', est: true },
-	{ id: 'tower', group: 'machines', label: 'Tower cranes, flat-top, 65 m jib (used)', n: 2, eur: 374850, crane: 1, src: 'towerCrane', note: 'stood at the middle of each Dome80 and Dome120 while its frame and glass go up' },
-	{ id: 'mobile', group: 'machines', label: 'All-terrain mobile crane, 60 t (used)', n: 1, eur: 485000, crane: 1, src: 'mobileCrane', note: 'sets the tower cranes, the containers, the CLT and the works’ machines' },
-	{ id: 'handler', group: 'machines', label: 'Telehandlers, 17.5 m', n: 2, eur: 99500, handler: 1, src: 'telehandler', note: 'lift the Dome40s’ struts and panels' },
+	{ id: 'tower', group: 'machines', label: 'Tower cranes, flat-top, 65 m jib (used)', n: 2, eur: 374850, src: 'towerCrane', note: 'stood at the middle of each Dome80 and Dome120 while its frame and glass go up' },
+	{ id: 'mobile', group: 'machines', label: 'All-terrain mobile crane, 60 t (used)', n: 1, eur: 485000, src: 'mobileCrane', note: 'sets the tower cranes, the containers, the CLT and the works’ machines' },
+	{ id: 'handler', group: 'machines', label: 'Telehandlers, 17.5 m', n: 2, eur: 99500, src: 'telehandler', note: 'lift the Dome40s’ struts and panels' },
 	{ id: 'boom', group: 'machines', label: 'Boom lifts, 26 m (used)', n: 3, eur: 65000, src: 'sandbox6', est: true, note: 'to bolt the hubs at height' },
 	{ id: 'scissor', group: 'machines', label: 'Scissor lifts, 12 m', n: 4, eur: 18000, src: 'sandbox6', est: true },
 	{ id: 'tipper', group: 'machines', label: 'Tipper truck, 3 axles', n: 1, eur: 160000, src: 'trucks', est: true },
@@ -203,7 +203,8 @@ function domeWork(kind, factory) {
 	const sh = shellOf(K.D);
 	const g = geodesicOf(K.D);
 	const big = K.D >= 80;
-	const pool = big ? 'crane' : 'handler';
+	// a tower crane stands in the middle of a Dome80 or Dome120 while its frame and glass go up; the telehandlers lift a Dome40's
+	const pool = big ? 'tower' : 'handler';
 	const cassette = sh.north * CASSETTE_M;
 	const struts = sh.m.timber - cassette;
 	const R = RATES;
@@ -227,7 +228,7 @@ function domeWork(kind, factory) {
 	if (kind === 'dome40' || kind === 'dome80') {
 		const clt = K.gfa * 0.28;
 		const lifts = Math.ceil((K.gfa * 2) / 20);
-		inside = { id: 'inside', label: 'homes inside', h: K.gfa * R.homes.v + gardenM2(K.zones) * R.garden.v + lifts * R.lift.v, lifts, pool: big ? 'crane' : 'handler', eur: K.gfa * FITOUT_HOME * 0.5 + gardenM2(K.zones) * 40, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur } };
+		inside = { id: 'inside', label: 'homes inside', h: K.gfa * R.homes.v + gardenM2(K.zones) * R.garden.v + lifts * R.lift.v, lifts, pool: 'handler', eur: K.gfa * FITOUT_HOME * 0.5 + gardenM2(K.zones) * 40, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur } };
 		beds = K.people;
 		check = big ? 15000 : 8000;
 		use += beds * ENERGY.person + beds * ENERGY.water;
@@ -238,7 +239,7 @@ function domeWork(kind, factory) {
 		label = 'Dome120 food forest';
 	} else if (kind === 'util120' || kind === 'centre') {
 		const clt = UTIL_BUILT * 0.25;
-		inside = { id: 'inside', label: kind === 'centre' ? 'halls and utilities' : 'utilities and workshops', h: UTIL_BUILT * R.halls.v + UTIL_WATER * R.water.v, lifts: 15 * R.liftsPerDay.v, pool: 'crane', eur: UTIL_BUILT * FITOUT.utilities * 0.5, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur } };
+		inside = { id: 'inside', label: kind === 'centre' ? 'halls and utilities' : 'utilities and workshops', h: UTIL_BUILT * R.halls.v + UTIL_WATER * R.water.v, lifts: 15 * R.liftsPerDay.v, pool: 'mobile', eur: UTIL_BUILT * FITOUT.utilities * 0.5, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur } };
 		// the centre keeps the village's 40 MWh of batteries (village.js: the tower's data centre and water works go)
 		machines = kind === 'centre' ? TOWER_EQUIPMENT.filter((e) => /Batteries/.test(e.label)).reduce((a, e) => a + e.eur, 0) : EQUIPMENT.reduce((a, e) => a + e.eur, 0);
 		check = 30000;
@@ -247,7 +248,7 @@ function domeWork(kind, factory) {
 	} else {
 		// a works: its hall and machines are bought (Sandbox 6's 1,500 €/m² fit-out less the villagers' labour, ~60 %)
 		const floor = sh.cap.floor;
-		inside = { id: 'inside', label: 'the works’ machines', h: floor * R.works.v, lifts: 20 * R.liftsPerDay.v, pool: 'crane', eur: 0, t: {} };
+		inside = { id: 'inside', label: 'the works’ machines', h: floor * R.works.v, lifts: 20 * R.liftsPerDay.v, pool: 'mobile', eur: 0, t: {} };
 		machines = floor * FITOUT.factory * 0.6;
 		check = 30000;
 		const run = FACTORY_RUN[factory];
@@ -271,9 +272,9 @@ function towerWork(T) {
 	const fit = floors.reduce((a, f) => a + f.m2 * (FITOUT[f.use] ?? 2500), 0);
 	const phases = [
 		{ id: 'footing', label: 'footing', h: sh.m.lime * R.footing.v, lifts: 0, pool: null, outdoor: true, eur: sh.eur.lime, t: { lime: sh.t.lime } },
-		{ id: 'frame', label: 'frame', h: liftsFrame * R.lift.v + grid.struts * R.strut.v + grid.hubs * R.hub.v, lifts: liftsFrame, set: 20, pool: 'crane', outdoor: true, eur: sh.eur.timber + sh.eur.steel, t: { glulam: sh.t.timber, steel: sh.t.steel } },
-		{ id: 'shell', label: 'glass and hemp', h: panels * R.lift.v + sh.glazed * R.glazing.v + sh.north * R.hemp.v, lifts: panels, pool: 'crane', outdoor: true, eur: sh.eur.glass + sh.eur.pv + sh.eur.hemp, t: { glass: sh.t.glass, hemp: sh.t.hemp }, pvM2: sh.m.pv },
-		{ id: 'inside', label: 'floors inside', h: floorM2 * R.homes.v, lifts: Math.ceil(floorM2 / 10), pool: 'crane', eur: fit * 0.5, t: { glulam: clt * DENSITY.clt, concrete: screed * DENSITY.concrete } }
+		{ id: 'frame', label: 'frame', h: liftsFrame * R.lift.v + grid.struts * R.strut.v + grid.hubs * R.hub.v, lifts: liftsFrame, set: 20, pool: 'tower', outdoor: true, eur: sh.eur.timber + sh.eur.steel, t: { glulam: sh.t.timber, steel: sh.t.steel } },
+		{ id: 'shell', label: 'glass and hemp', h: panels * R.lift.v + sh.glazed * R.glazing.v + sh.north * R.hemp.v, lifts: panels, pool: 'tower', outdoor: true, eur: sh.eur.glass + sh.eur.pv + sh.eur.hemp, t: { glass: sh.t.glass, hemp: sh.t.hemp }, pvM2: sh.m.pv },
+		{ id: 'inside', label: 'floors inside', h: floorM2 * R.homes.v, lifts: Math.ceil(floorM2 / 10), pool: 'mobile', eur: fit * 0.5, t: { glulam: clt * DENSITY.clt, concrete: screed * DENSITY.concrete } }
 	];
 	const machines = TOWER_EQUIPMENT.filter((e) => !/Geothermal/.test(e.label)).reduce((a, e) => a + e.eur, 0);
 	const apts = Math.round((floors.find((f) => f.id === 'apartments')?.m2 ?? 0) / 250);
@@ -327,7 +328,7 @@ function makeSteps(o) {
 		add({ id: `${key}/land`, hex: key, site: 'land', kind: 'land', label: `Land, ${(HEX_AREA / 1e4).toFixed(1)} ha`, phases: [{ id: 'buy', h: 0 }], land: LAND_EUR, maxCrew: 1, gate: launched });
 		add({
 			id: `${key}/camp`, hex: key, site: 'camp', kind: 'camp', label: i ? 'Moving the camp' : 'The starter camp',
-			phases: [{ id: 'set', label: i ? 'moving the containers' : 'setting up the containers', h: i ? containers * R.move.v : containers * R.container.v + 200, lifts: i ? containers * 2 : 0, pool: i ? 'crane' : null }],
+			phases: [{ id: 'set', label: i ? 'moving the containers' : 'setting up the containers', h: i ? containers * R.move.v : containers * R.container.v + 200, lifts: i ? containers * 2 : 0, pool: i ? 'mobile' : null }],
 			camp: true, maxCrew: 20, gate: launched
 		});
 		const roadM2 = land.road ?? 0;
@@ -394,8 +395,13 @@ function schedule(o) {
 	const kit = o.kit;
 	const kitEur = kit.reduce((a, k) => a + k.n * k.eur, 0);
 	const runEurMonth = (kit.filter((k) => k.group === 'machines' || k.group === 'power').reduce((a, k) => a + k.n * k.eur, 0) * RUNNING_SHARE) / 12;
-	const cranes = kit.filter((k) => k.crane).reduce((a, k) => a + k.n, 0);
-	const handlers = kit.filter((k) => k.handler).reduce((a, k) => a + k.n, 0);
+	const nOf = (id) => kit.find((k) => k.id === id)?.n ?? 0;
+	const towers = nOf('tower'), mobiles = nOf('mobile'), handlers = nOf('handler');
+	const cranes = towers + mobiles;
+	/** lifts a crane or telehandler makes in a month of 21 working days */
+	const LIFTS_MONTH = 21 * RATES.liftsPerDay.v;
+	/** the tower cranes: each stands in one dome from its frame to its last pane */
+	const slots = Array.from({ length: towers }, () => ({ holder: null, left: 0, used: 0 }));
 	const campBeds = kit.filter((k) => k.beds).reduce((a, k) => a + k.n * k.beds, 0);
 	const L = o.labour;
 	const hexes = [...LIVING_ORDER, 'tower'];
@@ -447,8 +453,14 @@ function schedule(o) {
 		const worksH = running.length * L.jobs.v * 140;
 		let pool = Math.max(0, human - worksH) + people * o.avenH;
 		const poolStart = pool;
-		const lifts = { crane: cranes * 21 * RATES.liftsPerDay.v, handler: handlers * 21 * RATES.liftsPerDay.v };
+		const lifts = { mobile: mobiles * LIFTS_MONTH, handler: handlers * LIFTS_MONTH };
 		const liftsStart = { ...lifts };
+		for (const sl of slots) {
+			sl.left = LIFTS_MONTH;
+			sl.used = 0;
+		}
+		// steps waiting for a tower crane this month: a crane freed later in the month waits for them, not for a step behind
+		const waiting = new Set();
 		// materials wanted this month, for the works to cover
 		const want = [];
 		const work = (s) => {
@@ -462,26 +474,41 @@ function schedule(o) {
 				if (p.fixed) dp = Math.min(dp, 1 / p.fixed);
 				const eff = (p.outdoor && winter ? L.winter.v : 1) * (p.planting && !planting ? 0 : 1);
 				if (p.h > 0) dp = eff > 0 ? Math.min(dp, (Math.min(pool, capLeft) * eff) / p.h) : 0;
-				if (p.lifts > 0 && p.pool) {
-					const liftNeed = p.lifts + (p.set ?? 0) * RATES.liftsPerDay.v;
-					dp = Math.min(dp, lifts[p.pool] / liftNeed);
-				}
+				const liftNeed = p.lifts > 0 && p.pool ? p.lifts + (p.set ?? 0) * RATES.liftsPerDay.v : 0;
+				const weather = p.outdoor && winter ? L.winter.v : 1;
+				let slot = null;
+				if (liftNeed && p.pool === 'tower') {
+					// a tower crane of its own, held until its last pane is in
+					slot = slots.find((x) => x.holder === s) ?? (waiting.size && !waiting.has(s) ? null : slots.find((x) => x.holder === null)) ?? null;
+					if (!slot) {
+						waiting.add(s);
+						break;
+					}
+					waiting.delete(s);
+					slot.holder = s;
+					dp = Math.min(dp, (slot.left * weather) / liftNeed);
+				} else if (liftNeed) dp = Math.min(dp, (lifts[p.pool] * weather) / liftNeed);
 				if (dp <= 1e-9) break;
 				const h = p.h > 0 ? (dp * p.h) / eff : 0;
 				pool -= h;
 				capLeft -= h;
 				s.used.h += h;
 				s.done += dp * p.h;
-				if (p.lifts > 0 && p.pool) {
-					const l = dp * (p.lifts + (p.set ?? 0) * RATES.liftsPerDay.v);
-					lifts[p.pool] -= l;
-					s.used[p.pool] += l / RATES.liftsPerDay.v;
+				if (liftNeed) {
+					const l = (dp * liftNeed) / weather;
+					if (slot) {
+						slot.left -= l;
+						slot.used += l;
+					} else lifts[p.pool] -= l;
+					s.used[p.pool === 'handler' ? 'handler' : 'crane'] += l / RATES.liftsPerDay.v;
 				}
 				if (p.eur) want.push({ s, p, dp });
 				s.pDone += dp;
 				if (s.pDone >= 1 - 1e-9) {
 					s.phase++;
 					s.pDone = 0;
+					// the last pane is in: the tower crane goes on to the next dome
+					if (p.pool === 'tower' && s.phases[s.phase]?.pool !== 'tower') for (const x of slots) if (x.holder === s) x.holder = null;
 				} else break;
 			}
 		};
@@ -491,9 +518,18 @@ function schedule(o) {
 			if (s.state !== 'wait') continue;
 			if (s.gate && !s.gate(st)) continue;
 			if (s.camp && s.hex !== LIVING_ORDER[0] && campAt === null) continue;
+			// a dome starts only when its lifting will be free by the time its footing is in: no more big domes on the way
+			// to their last pane than tower cranes and one, no more Dome40s than telehandlers and one
+			const lifter = s.phases.find((p) => p.pool === 'tower' || (p.pool === 'handler' && p.id !== 'inside'))?.pool;
+			if (lifter) {
+				const busy = steps.filter((x) => x.state === 'run' && x.phases.some((p, k) => p.pool === lifter && p.id !== 'inside' && k >= x.phase)).length;
+				if (busy >= (lifter === 'tower' ? towers : handlers) + 1) continue;
+			}
+			// it needs a quarter of its full crew for a month (or half of a small crew's month); when the hours are not there,
+			// nothing further down the list starts either: the hours wait for the step that comes first
 			const first = s.phases[0];
-			const needs = first.h > 0 ? Math.min(first.h, s.maxCrew * L.fte.v * 0.25) : 0;
-			if (pool < needs && !(first.fixed && pool > 0)) continue;
+			const needs = first.h > 0 ? Math.min(first.h, s.maxCrew * L.fte.v * 0.25, poolStart * 0.5) : 0;
+			if (pool < needs && !(first.fixed && pool > 0)) break;
 			s.state = 'run';
 			s.start = m;
 			if (s.land) {
@@ -507,9 +543,10 @@ function schedule(o) {
 				hexM[s.hex] += s.services;
 			}
 			if (s.prefabEur) {
+				// prefabricated parts, bought on top of the materials
 				s.eur.prefab += s.prefabEur;
-				s.eur.services += s.prefabEur;
-				eurM.services += s.prefabEur;
+				s.eur.materials += s.prefabEur;
+				eurM.materials += s.prefabEur;
 				hexM[s.hex] += s.prefabEur;
 			}
 			if (s.camp) campAt = s.hex;
@@ -614,7 +651,7 @@ function schedule(o) {
 			cumTotal: KINDS_EUR.reduce((a, k) => a + cum[k], 0),
 			hexCum: { ...hexCum },
 			hours: { pool: poolStart, used: usedH, avens: people * o.avenH, worksJobs: running.length * L.jobs.v },
-			lifts: { crane: (liftsStart.crane - lifts.crane) / RATES.liftsPerDay.v, craneCap: cranes * 21, handler: (liftsStart.handler - lifts.handler) / RATES.liftsPerDay.v, handlerCap: handlers * 21 },
+			lifts: { crane: (slots.reduce((a, x) => a + x.used, 0) + liftsStart.mobile - lifts.mobile) / RATES.liftsPerDay.v, craneCap: cranes * 21, handler: (liftsStart.handler - lifts.handler) / RATES.liftsPerDay.v, handlerCap: handlers * 21 },
 			works: running,
 			geothermal: geoOn !== null && m >= geoOn,
 			forestHa: steps.filter((s) => s.forestHa && s.state !== 'wait').reduce((a, s) => a + s.forestHa * Math.min(1, s.prog[s.prog.length - 1] ?? 0), 0),
@@ -628,7 +665,7 @@ function schedule(o) {
 			break;
 		}
 	}
-	return { steps, months, end, peopleFull, geoOn, campGone, works, kitEur, runEurMonth, cranes, handlers, campBeds };
+	return { steps, months, end, peopleFull, geoOn, campGone, works, kitEur, runEurMonth, cranes, towers, handlers, campBeds };
 }
 
 // ── the plan ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -639,14 +676,112 @@ const cache = new Map();
 /** a kit with some items changed: { id: n } */
 const kitWith = (/** @type {Record<string, number>} */ ns) => KIT.map((k) => (ns[k.id] !== undefined ? { ...k, n: ns[k.id] } : k));
 
+/** the camp's containers for `beds` beds: living containers of two, a sanitary container for ten, a kitchen for 25 */
+const camp = (/** @type {number} */ beds) => {
+	const live = Math.ceil(beds / 2), sanitary = Math.ceil(beds / 10), kitchen = Math.ceil(beds / 25);
+	return { live, sanitary, kitchen, delivery: live + sanitary + kitchen + 5 };
+};
+
+/**
+ * The kits tried in turn, cheapest first, until one builds the village in the months asked for: more tower cranes and
+ * a bigger camp first (they cost little), then prefabrication and faster Avens (they cost much, or do not exist yet).
+ * The work rates never change, only how many machines and beds there are to work with.
+ */
+export const KIT_LADDER = [
+	{ id: 'starter', label: 'The starter kit: 2 tower cranes, a mobile crane, 2 telehandlers, a camp of 60 beds', short: 'Starter kit', kit: {} },
+	{ id: 'c4b200', label: '4 tower cranes and a camp of 200 beds', short: '4 cranes, 200 beds', kit: { tower: 4, ...camp(200) } },
+	{ id: 'c6b200', label: '6 tower cranes and a camp of 200 beds', short: '6 cranes, 200 beds', kit: { tower: 6, ...camp(200) } },
+	{ id: 'c6b300', label: '6 tower cranes, 4 telehandlers and a camp of 300 beds', short: '6 cranes, 300 beds', kit: { tower: 6, handler: 4, ...camp(300) } },
+	{ id: 'c6b300p', label: '6 tower cranes, 4 telehandlers, a camp of 300 beds and prefabricated shells and homes', short: '+ prefab', kit: { tower: 6, handler: 4, ...camp(300) }, prefab: true },
+	{ id: 'c6b300pa', label: '6 tower cranes, 4 telehandlers, a camp of 300 beds, prefab and Avens at half a builder’s pace', short: '+ prefab, robots', kit: { tower: 6, handler: 4, ...camp(300) }, prefab: true, avenH: LABOUR.aven.v * 2.5 }
+];
+
 /**
  * The build-out plan.
- * @param {{ tower?: boolean, settlers?: number, targetPeople?: number, months?: number, startYear?: number, startMonth?: number, ownWorks?: boolean, kit?: Record<string, number>, avenH?: number, hoursFactor?: number, prefab?: boolean, maxMonths?: number, levers?: boolean }} [opts]
- *   kit: how many of each kit item (by id), to try more cranes or a bigger camp; avenH: an Aven's crew-hour equivalents a
- *   month; prefab: shells lifted as glazed cassettes and homes from prefabricated elements (bought: costs more);
- *   levers: false skips working out what would make six years
+ * @param {{ tower?: boolean, settlers?: number, targetPeople?: number, months?: number, startYear?: number, startMonth?: number, ownWorks?: boolean, kit?: 'auto' | string | Record<string, number>, avenH?: number, hoursFactor?: number, prefab?: boolean, maxMonths?: number, ladder?: boolean }} [opts]
+ *   kit: 'auto' (the default) tries KIT_LADDER until the village stands within `months`; a rung's id (e.g. 'starter')
+ *   takes that kit; an object sets how many of each kit item (by id). avenH: an Aven's crew-hour equivalents a month;
+ *   prefab: shells lifted as glazed cassettes and homes from bought prefabricated elements; ladder: false skips
+ *   working out the other rungs and the levers (faster)
+ * @returns {any}
  */
 export function buildPlan(opts = {}) {
+	const key = 'plan' + JSON.stringify(opts);
+	if (cache.has(key)) return cache.get(key);
+	const { kit = 'auto', ladder: _l, ...rest } = opts;
+	const months = rest.months ?? DEFAULTS.months;
+	const rungOpts = (/** @type {any} */ g) => ({ ...rest, kit: g.kit, prefab: rest.prefab ?? g.prefab, avenH: rest.avenH ?? g.avenH });
+	const tried = [];
+	let chosen = null, rung = null;
+	const row = (/** @type {any} */ g, /** @type {any} */ p) => ({ id: g.id, label: g.label, short: g.short, doneMonth: p.totals.doneMonth, peopleMonth: p.totals.peopleMonth, total: p.totals.total, kitEur: p.kit.eur, makes: p.totals.doneMonth !== null && p.totals.doneMonth <= months });
+	if (kit === 'auto') {
+		// cheapest first: the first rung that makes it, or the last one
+		for (const g of KIT_LADDER) {
+			const p = planFor(rungOpts(g));
+			tried.push(row(g, p));
+			chosen = p;
+			rung = g;
+			if (tried[tried.length - 1].makes) break;
+		}
+	} else if (typeof kit === 'string') {
+		rung = KIT_LADDER.find((g) => g.id === kit);
+		if (!rung) throw new Error(`buildPlan: no kit '${kit}' (try ${KIT_LADDER.map((g) => g.id).join(', ')})`);
+		chosen = planFor(rungOpts(rung));
+	} else {
+		chosen = planFor({ ...rest, kit });
+		rung = { id: 'custom', label: 'A kit of your own', short: 'Own kit', kit };
+	}
+	if (opts.ladder !== false) {
+		// the whole ladder, for the page: what each rung would take
+		for (const g of KIT_LADDER) if (!tried.some((t) => t.id === g.id)) tried.push(row(g, planFor(rungOpts(g))));
+		tried.sort((a, b) => KIT_LADDER.findIndex((g) => g.id === a.id) - KIT_LADDER.findIndex((g) => g.id === b.id));
+	}
+	const starter = planFor(rungOpts(KIT_LADDER[0]));
+	const base = { ...rest };
+	const lever = (/** @type {string} */ label, /** @type {string} */ change, /** @type {any} */ more) => {
+		const p = planFor({ ...base, ...more });
+		return { label, change, doneMonth: p.totals.doneMonth, peopleMonth: p.totals.peopleMonth, total: p.totals.total, extraEur: p.totals.total - starter.totals.total, kitEur: p.kit.eur - starter.kit.eur };
+	};
+	const levers = opts.ladder === false ? [] : [
+		lever('Two more tower cranes', '4 tower cranes instead of 2 (used, ~375,000 € each)', { kit: { tower: 4 } }),
+		lever('Four more tower cranes', '6 tower cranes instead of 2', { kit: { tower: 6 } }),
+		lever('A camp of 200 beds', '100 living containers instead of 30, with their washrooms and kitchens', { kit: camp(200) }),
+		lever('Prefabricated shells and homes', 'glazed strut triangles lifted as one; homes from bought CLT elements and bath pods', { prefab: true }),
+		lever('Avens that build at half a builder’s pace', `${LABOUR.aven.v * 2.5} crew-hours a month from each Aven instead of ${LABOUR.aven.v}`, { avenH: LABOUR.aven.v * 2.5 })
+	];
+	const p = chosen;
+	const yrs = (/** @type {number | null} */ m) => (m === null ? 'never' : `month ${m} (${(m / 12).toFixed(1)} years, ${p.months[Math.min(m, p.months.length - 1)]?.label ?? ''})`);
+	const syrs = (/** @type {number | null} */ m) => (m === null ? 'never' : `month ${m} (${(m / 12).toFixed(1)} years, ${starter.months[Math.min(m, starter.months.length - 1)]?.label ?? ''})`);
+	const done = p.totals.doneMonth, sDone = starter.totals.doneMonth;
+	const feasible = done !== null && done <= months;
+	const starterOk = sDone !== null && sDone <= months;
+	const at = (/** @type {any} */ q, /** @type {number} */ m) => q.months[Math.min(m, q.months.length - 1)];
+	const n = (/** @type {number} */ x) => x.toLocaleString('en-US');
+	const M = (/** @type {number} */ e) => `${(e / 1e6).toFixed(1)} M€`;
+	let statement;
+	if (starterOk) statement = `Yes: with the starter kit the village stands in ${syrs(sDone)}, within the ${months} months; all ${n(p.options.targetPeople)} people live there from month ${starter.totals.peopleMonth}.`;
+	else if (feasible) statement = `Not with the starter kit: at these rates it builds the whole village by ${syrs(sDone)}; at month ${months} it has ${n(at(starter, months).people)} people and ${at(starter, months).domes} of ${starter.totals.domes} domes. Six years takes ${rung.label.replace(/^The /, 'the ')} (${M(p.kit.eur)} of kit instead of ${M(starter.kit.eur)}): then the village stands in ${yrs(done)} and all ${n(p.options.targetPeople)} people live there from month ${p.totals.peopleMonth}. The work rates are the same; only the cranes and the camp’s beds change.`;
+	else statement = `No: at these rates even ${rung.label.replace(/^The /, 'the ')} builds the village by ${yrs(done)}, not month ${months}; the starter kit takes until ${syrs(sDone)}.`;
+	const feasibility = {
+		target: months,
+		feasible,
+		doneMonth: done,
+		peopleMonth: p.totals.peopleMonth,
+		atTarget: { people: at(p, months).people, beds: at(p, months).beds, domes: at(p, months).domes, of: p.totals.domes },
+		kit: { id: rung.id, label: rung.label, short: rung.short },
+		starter: { doneMonth: sDone, peopleMonth: starter.totals.peopleMonth, atTarget: { people: at(starter, months).people, domes: at(starter, months).domes }, total: starter.totals.total, kitEur: starter.kit.eur, feasible: starterOk },
+		ladder: tried,
+		levers,
+		statement,
+		binds: p.binds
+	};
+	const out = { ...p, feasibility, kitChoice: rung.id };
+	cache.set(key, out);
+	return out;
+}
+
+/** one plan for one kit (cached) @param {any} opts */
+function planFor(opts = {}) {
 	const key = JSON.stringify(opts);
 	if (cache.has(key)) return cache.get(key);
 	const o = {
@@ -751,55 +886,8 @@ export function buildPlan(opts = {}) {
 		perPerson: total / o.targetPeople
 	};
 
-	// can it be done in six years?
-	const target = o.months;
-	const at = (m) => months[Math.min(m, months.length - 1)];
-	const feasible = doneMonth !== null && doneMonth <= target;
-	const feasibility = {
-		target,
-		doneMonth,
-		feasible,
-		peopleMonth: r.peopleFull,
-		atTarget: { people: at(target).people, beds: at(target).beds, domes: at(target).domes, of: totals.domes },
-		statement: '',
-		levers: [],
-		makes: null
-	};
-	if (opts.levers !== false) {
-		const base = { ...opts, levers: false };
-		const run = (label, change, more) => {
-			const p = buildPlan({ ...base, ...more, kit: { ...(base.kit ?? {}), ...(more.kit ?? {}) } });
-			return { label, change, doneMonth: p.totals.doneMonth, peopleMonth: p.totals.peopleMonth, total: p.totals.total, extraEur: p.totals.total - total };
-		};
-		const cranes = r.cranes;
-		feasibility.levers = [
-			run('Two more tower cranes', `${cranes + 2} cranes instead of ${cranes}`, { kit: { tower: (o.kit.find((k) => k.id === 'tower')?.n ?? 2) + 2 } }),
-			run('A camp of 200 beds', '100 living containers instead of 30, and their services', { kit: { live: 100, sanitary: 20, kitchen: 8, delivery: 44 + 70 + 14 + 5 } }),
-			run('Prefabricated shells and homes', 'glazed strut triangles lifted as one; homes from bought CLT elements and bath pods', { prefab: true }),
-			run('Avens that build at half a builder’s pace', `${LABOUR.aven.v * 2.5} crew-hours a month from each Aven instead of ${LABOUR.aven.v}`, { avenH: LABOUR.aven.v * 2.5 })
-		];
-		if (!feasible) {
-			// the combinations in turn, cheapest first, until one makes the target
-			const combos = [
-				['More cranes and a bigger camp', { kit: { tower: 4, live: 100, sanitary: 20, kitchen: 8, delivery: 133 } }],
-				['More cranes, a bigger camp and prefab', { kit: { tower: 4, live: 100, sanitary: 20, kitchen: 8, delivery: 133 }, prefab: true }],
-				['More cranes, a bigger camp, prefab and faster Avens', { kit: { tower: 4, live: 100, sanitary: 20, kitchen: 8, delivery: 133 }, prefab: true, avenH: LABOUR.aven.v * 2.5 }],
-				['Six cranes, a camp of 300, prefab and faster Avens', { kit: { tower: 6, live: 150, sanitary: 30, kitchen: 12, delivery: 210 }, prefab: true, avenH: LABOUR.aven.v * 2.5 }]
-			];
-			for (const [label, more] of combos) {
-				const l = run(label, '', more);
-				if (l.doneMonth !== null && l.doneMonth <= target) {
-					feasibility.makes = { ...l, opts: more };
-					break;
-				}
-				feasibility.makes = { ...l, opts: more, short: true };
-			}
-		}
-	}
-	const yrs = (m) => (m === null ? 'never' : `month ${m} (${(m / 12).toFixed(1)} years)`);
-	feasibility.statement = feasible
-		? `Yes: at these rates the village stands in ${yrs(doneMonth)}, within the ${target} months, and its ${o.targetPeople.toLocaleString('en-US')} people have moved in by month ${r.peopleFull}.`
-		: `No: at these rates the whole village stands in ${yrs(doneMonth)}, not ${target}; at month ${target} it has ${at(target).people.toLocaleString('en-US')} people and ${at(target).domes} of its ${totals.domes} domes${r.peopleFull !== null ? `, and all ${o.targetPeople.toLocaleString('en-US')} people live there from month ${r.peopleFull}` : ''}.`;
+	// what held the build back: the months the crew's hours ran out, and the months the tower cranes were all busy
+	const binds = { hours: months.filter((x) => x.hours.used >= x.hours.pool * 0.98).length, cranes: months.filter((x) => x.lifts.crane >= x.lifts.craneCap * 0.66).length, months: months.length };
 
 	const plan = {
 		options: { tower: o.tower, settlers: o.settlers, targetPeople: o.targetPeople, months: o.months, startYear: o.startYear, startMonth: o.startMonth, ownWorks: o.ownWorks, avenH: o.avenH, prefab: !!o.prefab, kit: opts.kit ?? {} },
@@ -809,6 +897,7 @@ export function buildPlan(opts = {}) {
 			byGroup: Object.fromEntries(Object.keys(KIT_GROUPS).map((g) => [g, o.kit.filter((k) => k.group === g).reduce((a, k) => a + k.n * k.eur, 0)])),
 			running: { eurYear: r.runEurMonth * 12, share: RUNNING_SHARE, note: 'fuel, upkeep, insurance and tyres: 15 % of the machines’ and the power kit’s price a year (estimate)' },
 			cranes: r.cranes,
+			towers: r.towers,
 			handlers: r.handlers,
 			campBeds: r.campBeds
 		},
@@ -816,7 +905,7 @@ export function buildPlan(opts = {}) {
 		months,
 		totals,
 		settlements,
-		feasibility,
+		binds,
 		rates: RATES,
 		labour: { ...LABOUR, aven: { ...LABOUR.aven, v: o.avenH } },
 		own: OWN,
@@ -863,7 +952,8 @@ export function phaseAt(s, t) {
 	const after = s.prog[Math.min(i, s.prog.length - 1)] ?? 1;
 	const p = s.end !== null && t >= s.end + 1 ? 1 : before + (after - before) * Math.min(1, k - i);
 	if (p >= 1) return { phase: 'done', p: 1 };
-	const ph = s.phases.find((x) => p < x.to - 1e-9) ?? s.phases[s.phases.length - 1];
+	// the progress is kept to three decimals: a phase ends within half a thousandth of its mark
+	const ph = s.phases.find((x) => p < x.to - 6e-4) ?? s.phases[s.phases.length - 1];
 	return { phase: ph.id, p };
 }
 
@@ -877,7 +967,7 @@ export function nowLine(plan, t) {
 	if (!live.length) return mo.m >= (plan.totals.doneMonth ?? Infinity) ? 'The village stands: every dome is built and lived in.' : 'Waiting for the planting season and the next crews.';
 	const word = (s) => {
 		const ph = phaseAt(s, mo.m + 0.5);
-		const where = s.hex === 'tower' ? 'centre' : SHORT(s.hex);
+		const where = s.hex === 'tower' ? 'Centre' : SHORT(s.hex);
 		const what = s.kind === 'dome40' || s.kind === 'dome80' ? `${s.kind === 'dome40' ? 'Dome40' : 'Dome80'} home ${Number(s.site.split('-')[1]) + 1}` : s.kind === 'food120' ? `food dome ${s.site === 'foodW' ? 'west' : 'east'}` : s.kind === 'util120' ? 'utilities dome' : s.kind === 'centre' ? 'centre dome' : s.kind === 'factory120' ? s.label.toLowerCase() : s.kind === 'camp' ? (s.label === 'The starter camp' ? 'the starter camp' : 'moving the camp') : s.kind === 'forest' ? 'planting the food forest' : s.kind === 'fields' ? 'planting the woods' : s.kind === 'roads' ? 'roads and lines' : s.kind === 'geothermal' ? 'drilling the geothermal wells' : s.kind === 'tower' ? 'Tower180' : s.label;
 		const phase = s.phases.find((p) => p.id === ph.phase)?.label;
 		return `${where}: ${what}${phase && s.phases.length > 1 && ph.phase !== 'done' ? ` (${phase})` : ''}`;
