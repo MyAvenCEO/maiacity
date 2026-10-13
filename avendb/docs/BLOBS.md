@@ -221,11 +221,14 @@ it while the browser runs.
 | B2a | One iroh-blobs store per node, on disk natively; files sealed as they are read, read in ranges through the cap gate, kept whole by the server | built |
 | B2c | Sync rules: per device, by the cap selector, for any data, marked by the stewards and applied by every peer (T28, T29); the keeper keeps what the rules say | built |
 | B2b | The page's store in OPFS, in its worker: its edits, McEliece keys and what opens it again; one tab at a time; IndexedDB moved over once and gone | built |
-| B2d | The page's file pieces in OPFS beside its edits: the files its rules keep whole, and the pieces it read | next |
+| B2d | The page's file pieces in OPFS beside its edits: the files its rules keep whole, and the pieces it read | in B4 |
 | B3 | The server's bucket as its source of truth: packs of small blobs, one object per piece, outboards and roots, read-ahead in ranges; its disk a cache it can lose | |
 | B4 | Streaming: the Mac reads a range as a file, a page through a service worker; a Files page | |
 | B5 | Studio's media on avenDB, beside the legacy vault, which stays as it is | |
 
-Two choices wait for Samuel at B3: whether the server reaches the bucket over post-quantum TLS only (Hetzner may not
-offer it; what would travel is ciphertext either way), and a new bucket with Object Lock, which can only be chosen when
-a bucket is made.
+The bucket is `maiacity-avendb` in hel1, beside the media vault's, made by the avenDB workflow
+(`.github/workflows/avendb.yml`) with the project's S3 keys and Object Lock, as Samuel chose: every object version is
+locked in compliance mode for 7 days, so no key deletes or overwrites it before then; a replaced or deleted version goes
+7 days later, an unfinished upload after 2. One choice still waits at B3: whether the server reaches the bucket over
+post-quantum TLS only (Hetzner may not offer it, which the workflow checks; what would travel is ciphertext either
+way).
