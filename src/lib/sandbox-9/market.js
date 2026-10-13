@@ -223,6 +223,10 @@ export function peopleOrders(w) {
 		let E = Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));
 		if (!(E > 0)) E = 0;
 		extraEnergy[i] = 0;
+		// an Aven whose spending rule leaves nothing for extras today (what flows in, less what it keeps and the basics)
+		// is held below satiation in every extra on sale by its budget, not by what its person wants: it counts as
+		// MIND-bound (round 4: without this, the poorest tenth's extras read "what people want" once the richer satiate)
+		if (!(E > 0)) for (let x = 0; x < NX; x++) if (pbar[EXTRA_GOODS[x]] > 0 && w.taste[i * NX + x] > 0) bound[EXTRA_GOODS[x]]++;
 		if (E > 0) {
 			capX[0] = c.sat[FOOD] - need[0];
 			capX[1] = c.sat[WATER] - need[1];
@@ -264,12 +268,12 @@ export function peopleOrders(w) {
 			extraEnergy[i] = q[2];
 		}
 		// the Aven's work for the COOPs (round 4): it offers up to workCapH hours a day when a work hour pays its skill
-		// more than an hour of Aven service costs (an owner-only person's Aven delivers nothing and offers none), as far
-		// as its person can pay for the hours. The hours come first, before the basics (./engine.js affordPeople): the
-		// work items pay them back tonight, many times over, so a newcomer who holds only today's HEARTS half is not
-		// kept from the work that pays its basics tomorrow (the trap of round 4's brief)
+		// more than an hour of Aven service costs (an owner-only person's Aven delivers nothing and offers none). What
+		// its person holds does not limit it: the work item's pay settles the hours' Aven service at delivery
+		// (./coops.js workBook), so a newcomer who holds only today's HEARTS half is not kept from the work that pays
+		// its basics (the trap of round 4's brief)
 		offer[i] = 0;
-		if (w.aven[i] > 0 && pC > 0 && w.aven[i] * payH >= pC) offer[i] = Math.min(c.workCapH, Math.max(0, W) / pC);
+		if (w.aven[i] > 0 && pC > 0 && w.aven[i] * payH >= pC) offer[i] = c.workCapH;
 		offerAll += offer[i];
 		for (const g of CONSUMER) tot[g] += w.order[o + g];
 	}

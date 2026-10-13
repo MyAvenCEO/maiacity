@@ -972,65 +972,120 @@ export function payAvens(w, k, R) {
 export function workNeed(w) {
 	let run = 0, prop = 0;
 	for (const co of w.coops) {
+		co.workRunH = 0;
 		if (!co.alive) continue;
-		run += co.inf?.rackH ?? 0;
-		for (const pl of co.plants) run += runHours(w, pl);
+		let h = co.inf?.rackH ?? 0;
+		for (const pl of co.plants) h += runHours(w, pl);
+		co.workRunH = h;
+		run += h;
 		prop += (co.propBacklogR ?? 0) / PROP_DAYS / w.c.rateR;
 	}
 	return (w.workNeed = { run, prop });
 }
 
 /**
- * The work items of the day (round 4, Samuel 07:27: the personal Avens work for all COOPs). The COOPs need Aven hours:
- * every plant's running hours (and the hardware owners' racks), and the work proposals their treasuries posted
- * (./coops.js payout), worked off a seventh a day. The personal Avens deliver them with the Aven service their persons
- * bought for work (./market.js peopleOrders, ./engine.js clearPeople): running items first, proposals with the rest.
- * Each COOP pays the rate card for the hours delivered, in its own MIND first, to the people in proportion to their
- * Avens' skill × the work hours they delivered (payAvens). Hours not delivered are not paid; a COOP whose running
- * hours fell short runs that much less tomorrow (./engine.js affordCoops).
+ * The day's book of work items (./engine.js settle calls it, once the Aven hours are delivered): what each COOP pays
+ * for the hours its items got (the rate card: running items first, proposals with the rest), what each person's work
+ * earns (in proportion to its Aven's skill × the hours it delivered), and the Aven service the hours used. An Aven's
+ * work for a COOP pays for its own inference at delivery (round 4, the coordinator's rule): the work item's pay settles
+ * the avenCEO bill for those hours first (the COOPs pay it in settle, in proportion to their pay, to avenCEO and the
+ * hardware owners, each in its own MIND), and the person gets the rest (workItems). Nobody needs MIND in hand before
+ * their Aven can work. Only if a day's pay falls short of the hours' bill (the Aven's skill was judged on the month's
+ * pay) does the person pay the difference from its holdings, with its help. `unitR` is what an Aven hour costs in R
+ * today, by the sellers' shares.
  */
-export function workItems(w) {
-	const N = w.N, t = w.today, rateR = w.c.rateR;
+export function workBook(w, unitR) {
+	const N = w.N, rateR = w.c.rateR;
 	const need = w.workNeed ?? { run: 0, prop: 0 };
-	if (!w.workW || w.workW.length !== w.Nmax) w.workW = new Float64Array(w.Nmax);
+	const arr = (name) => (w[name] = w[name] && w[name].length === w.Nmax ? w[name] : new Float64Array(w.Nmax));
+	const W = arr('workW'), cov = arr('workCov'), net = arr('workNet'), self = arr('workSelfH');
 	let WH = 0, Wsum = 0;
 	for (let i = 0; i < N; i++) {
 		const h = w.workH ? w.workH[i] : 0;
 		WH += h;
-		w.workW[i] = h > 0 ? w.aven[i] * h : 0;
-		Wsum += w.workW[i];
+		W[i] = h > 0 ? w.aven[i] * h : 0;
+		Wsum += W[i];
 	}
 	const runFill = need.run > 0 ? Math.min(1, WH / need.run) : 1;
 	const propFill = need.prop > 0 ? Math.min(1, Math.max(0, WH - need.run) / need.prop) : 1;
-	let paidAll = 0, runH = 0;
+	let RR = 0;
+	for (const co of w.coops) {
+		co.workRunR = 0;
+		co.workPropR = 0;
+		if (!co.alive || !(Wsum > 0)) continue;
+		co.workRunR = (co.workRunH ?? 0) * rateR * runFill;
+		co.workPropR = ((co.propBacklogR ?? 0) / PROP_DAYS) * propFill;
+		RR += co.workRunR + co.workPropR;
+	}
+	const perW = Wsum > 0 ? RR / Wsum : 0;
+	let C = 0, selfH = 0;
+	for (let i = 0; i < N; i++) {
+		cov[i] = 0;
+		net[i] = 0;
+		self[i] = 0;
+		const h = w.workH ? w.workH[i] : 0;
+		if (!(h > 0)) continue;
+		const pay = W[i] * perW, bill = h * Math.max(0, unitR);
+		const c = Math.min(pay, bill);
+		cov[i] = c;
+		net[i] = pay - c;
+		self[i] = bill > 0 ? h * (1 - c / bill) : 0;
+		C += c;
+		selfH += self[i];
+	}
+	return (w.workBook = { WH, Wsum, runFill, propFill, RR, cov: C, selfH, unitR });
+}
+
+/**
+ * The work items of the day (round 4, Samuel 07:27: the personal Avens work for all COOPs). The COOPs need Aven hours:
+ * every plant's running hours (and the hardware owners' racks), and the work proposals their treasuries posted
+ * (./coops.js payout), worked off a seventh a day. The personal Avens deliver them (./market.js peopleOrders,
+ * ./engine.js clearPeople): running items first, proposals with the rest. Each COOP pays the rate card for the hours
+ * delivered (./coops.js workBook): the part that settles the Aven service the hours used went to avenCEO and the
+ * hardware owners in settle; the rest it pays now, in its own MIND first, to the people in proportion to what each
+ * one's work earned less its hours' bill (payAvens). Hours not delivered are not paid; a COOP whose running hours fell
+ * short runs that much less tomorrow (./engine.js affordCoops).
+ */
+export function workItems(w) {
+	const t = w.today;
+	const B = w.workBook ?? workBook(w, 0);
+	const need = w.workNeed ?? { run: 0, prop: 0 };
+	// the people's weights: what each one's work earned less the bill its pay settled
+	const net = w.workNet;
+	const wsave = w.workW;
+	w.workW = net;
+	const keep = B.RR > 0 ? Math.max(0, 1 - B.cov / B.RR) : 0;
+	let paidAll = 0, billAll = 0;
 	for (const co of w.coops) {
 		if (!co.alive) continue;
-		let h = co.inf?.rackH ?? 0;
-		for (const pl of co.plants) h += runHours(w, pl);
-		runH += h;
-		const R = h * rateR * runFill;
-		const paid = Wsum > 0 ? payAvens(w, co.k, R) : 0;
-		co.runToday = paid;
+		const Rrun = co.workRunR ?? 0, Rprop = co.workPropR ?? 0;
+		const billRun = Rrun * (1 - keep), billProp = Rprop * (1 - keep);
+		const paid = B.Wsum > 0 ? payAvens(w, co.k, Rrun * keep) : 0;
+		co.runToday = paid + billRun;
 		// (hours the Avens did not deliver are not the treasury's failure: only what it could not pay counts)
-		co.unpaidH = R > 0 ? Math.max(0, 1 - paid / R) * h * runFill : 0;
+		co.unpaidH = Rrun * keep > 0 ? Math.max(0, 1 - paid / (Rrun * keep)) * (co.workRunH ?? 0) * B.runFill : 0;
 		co.costR += paid;
-		t.runningR += paid;
-		paidAll += paid;
+		t.runningR += paid + billRun;
+		paidAll += paid + billRun;
+		billAll += billRun;
 		// the work proposals it posted: a seventh a day, as far as the Avens deliver them
 		const bl = co.propBacklogR ?? 0;
 		if (bl > 0) {
-			const due = (bl / PROP_DAYS) * propFill;
-			const p = Wsum > 0 && due > 0 ? payAvens(w, co.k, due) : 0;
+			const p = B.Wsum > 0 && Rprop * keep > 0 ? payAvens(w, co.k, Rprop * keep) : 0;
 			co.propBacklogR = Math.max(0, bl - bl / PROP_DAYS);
-			co.payoutToday = (co.payoutToday ?? 0) + p;
-			t.proposalsR += p;
-			paidAll += p;
+			co.payoutToday = (co.payoutToday ?? 0) + p + billProp;
+			t.proposalsR += p + billProp;
+			paidAll += p + billProp;
+			billAll += billProp;
 		}
 	}
-	w.runFillY = runFill;
-	t.work = { WH, needRun: need.run, needProp: need.prop, runFill, propFill, paidR: paidAll, runH };
-	// what a skill-weighted work hour paid today (the Avens judge from it whether a work hour is worth buying)
-	if (Wsum > 0) w.workPayEma = (w.workPayEma ?? rateR) + (paidAll / Wsum - (w.workPayEma ?? rateR)) / 30;
+	w.workW = wsave;
+	w.runFillY = B.runFill;
+	t.work = { WH: B.WH, needRun: need.run, needProp: need.prop, runFill: B.runFill, propFill: B.propFill, paidR: paidAll, billR: billAll, selfH: B.selfH };
+	// what a skill-weighted work hour paid today, its inference included (the Avens judge from it whether a work hour
+	// is worth its Aven service)
+	if (B.Wsum > 0) w.workPayEma = (w.workPayEma ?? w.c.rateR) + (paidAll / B.Wsum - (w.workPayEma ?? w.c.rateR)) / 30;
+	w.workBook = null;
 }
 
 /** capital wears at 1 ÷ life a year; upkeep (in produce) rebuilds it */

@@ -102,7 +102,7 @@ function newYear(w, y) {
 		exportEurElec: 0,
 		exportEurAi: 0,
 		// the AI market (./ai.js): sums over the year's days
-		ai: { days: 0, capAH: 0, AH: 0, revR: 0, exportAH: 0, exportEur: 0, workH: 0, runNeed: 0, propNeed: 0, runFill: 0, propFill: 0, workPaidR: 0, spaceShortDays: 0, chipsUsed: 0, chipsEnd: 0, byOwner: {}, byAi: {} },
+		ai: { days: 0, capAH: 0, AH: 0, revR: 0, exportAH: 0, exportEur: 0, workH: 0, runNeed: 0, propNeed: 0, runFill: 0, propFill: 0, workPaidR: 0, workBillR: 0, workSelfH: 0, spaceShortDays: 0, chipsUsed: 0, chipsEnd: 0, byOwner: {}, byAi: {} },
 		exportBy: new Float64Array(G),
 		exportEurBy: new Float64Array(G),
 		sharedDrawn: 0,
@@ -209,7 +209,7 @@ function yearDay(w, protD) {
 			b.hours += co.sold;
 			b.revR += co.sold * co.priceR;
 		}
-		if (t.work) (A.workH += t.work.WH), (A.runNeed += t.work.needRun), (A.propNeed += t.work.needProp), (A.runFill += t.work.runFill), (A.propFill += t.work.propFill), (A.workPaidR += t.work.paidR);
+		if (t.work) (A.workH += t.work.WH), (A.runNeed += t.work.needRun), (A.propNeed += t.work.needProp), (A.runFill += t.work.runFill), (A.propFill += t.work.propFill), (A.workPaidR += t.work.paidR), (A.workBillR += t.work.billR ?? 0), (A.workSelfH += t.work.selfH ?? 0);
 		if (t.aiSpaceShort) A.spaceShortDays++;
 		A.chipsUsed += t.chipsUsed ?? 0;
 	}
@@ -739,7 +739,7 @@ export function aiYears(w) {
 			tenths: L ? Object.fromEntries(L.byHoldings.map((r, i) => [i + 1, tenth(r)])) : {},
 			all: L ? tenth(L.all) : null,
 			// the COOPs' need for Aven work (hours a day) and how much of it the Avens delivered
-			work: { hoursDay: A.workH / d, runNeedDay: A.runNeed / d, propNeedDay: A.propNeed / d, runFill: A.runFill / d, propFill: A.propFill / d, paidRDay: A.workPaidR / d },
+			work: { hoursDay: A.workH / d, runNeedDay: A.runNeed / d, propNeedDay: A.propNeed / d, runFill: A.runFill / d, propFill: A.propFill / d, paidRDay: A.workPaidR / d, billRDay: A.workBillR / d, selfHDay: A.workSelfH / d },
 			imported: { n: Y.imp.chips ?? 0, eur: Y.impEur.chips ?? 0 },
 			worn: A.chipsUsed,
 			bind: bindOf(Y, COMPUTE),

@@ -26,7 +26,7 @@ import { GOODS, MONTH_NAMES, YEAR_DAYS } from './primitives.js';
 import { calendar, harvest, dispatch, shockFactor } from './energy.js';
 import { updatePrices, poolInflow, arbitrage, swap } from './pools.js';
 import { postPrices, peopleOrders, openPayments, payDirect, payRest, settleSwaps, law5, sellerOutcome } from './market.js';
-import { nature, margins, costs, plan, produce, workItems, workNeed, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
+import { nature, margins, costs, plan, produce, workItems, workNeed, workBook, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
 import { initRecords, recordDay, physicsCeiling, foundingStores } from './records.js';
 import { newBorder, importsDay, shareLine, repayAdvances } from './border.js';
 import { rampDay, rampOn, notFounded } from './ramp.js';
@@ -655,20 +655,18 @@ function affordPeople(w) {
 			basicC += qb * pe[b];
 			extraC += (q - qb) * pe[b];
 		}
-		// the Aven's work hours for the COOPs (bought as Aven service, paid back by the work items tonight, many times
-		// over) come first, then the basics, then the extras
+		// the Aven's work hours for the COOPs cost its person nothing up front: the work item's pay settles their Aven
+		// service at delivery (./coops.js workBook), so they are never cut for what the person holds
 		const wk = w.workH ? w.workH[i] : 0;
-		const workC = wk * pe[COMPUTE];
 		extraC += w.q[o + GOODS_] * pe[GOODS_] + w.q[o + SPRING] * pe[SPRING] + (w.q[o + COMPUTE] - wk) * pe[COMPUTE];
 		w.basicCost[i] = need[0] * pe[FOOD] + need[1] * pe[WATER] + need[2] * pe[ENERGY] + need[3] * pe[BED];
 		let W = w.wealth[i];
 		if (w.spendCap && w.spendCap[i] >= 0) W = Math.min(W, w.spendCap[i]);
 		const room = W * 0.999;
-		if (basicC + workC + extraC <= room) continue;
-		let fb = 1, fx = 0, fw = 1;
-		if (basicC + workC <= room) fx = extraC > 0 ? (room - basicC - workC) / extraC : 0;
-		else if (workC <= room) fb = basicC > 0 ? (room - workC) / basicC : 0;
-		else (fw = workC > 0 ? room / workC : 0), (fb = 0);
+		if (basicC + extraC <= room) continue;
+		let fb = 1, fx = 0;
+		if (basicC <= room) fx = extraC > 0 ? (room - basicC) / extraC : 0;
+		else fb = basicC > 0 ? room / basicC : 0;
 		for (let b = 0; b < 4; b++) {
 			if (b === ENERGY) continue;
 			const q = w.q[o + b];
@@ -679,8 +677,7 @@ function affordPeople(w) {
 		w.extraEnergy[i] *= fx;
 		w.q[o + GOODS_] *= fx;
 		w.q[o + SPRING] *= fx;
-		w.q[o + COMPUTE] = wk * fw + (w.q[o + COMPUTE] - wk) * fx;
-		if (w.workH) w.workH[i] = wk * fw;
+		w.q[o + COMPUTE] = wk + (w.q[o + COMPUTE] - wk) * fx;
 	}
 	// what each good's sellers deliver to people in all
 	if (!w.D || w.D.length !== G) w.D = new Float64Array(G);
@@ -1044,13 +1041,22 @@ function settle(w, fill) {
 		}
 		if (list.length) unit.push(g, list);
 	}
+	// the Avens' work hours for the COOPs: their Aven service is settled from the work items' pay (./coops.js
+	// workBook); a person pays from its holdings only its help, and the rare part of its hours' bill a day's pay fell
+	// short of
+	let unitAI = null, unitR = 0;
+	for (let u = 0; u < unit.length; u += 2) if (unit[u] === COMPUTE) unitAI = unit[u + 1];
+	if (unitAI) for (let j = 0; j < unitAI.length; j += 4) unitR += unitAI[j + 2];
+	const book = workBook(w, unitR);
+	const wH = w.workH, selfH = w.workSelfH;
 	const mix = w.spendMix, qq = w.q;
 	for (let i = 0; i < N; i++) {
 		const row = i * M, o = i * G;
 		let spentR = 0;
 		owe.fill(0);
 		for (let u = 0; u < unit.length; u += 2) {
-			const q = qq[o + unit[u]];
+			let q = qq[o + unit[u]];
+			if (unit[u] === COMPUTE && wH) q = Math.max(0, q - wH[i] + selfH[i]);
 			if (!(q > 0)) continue;
 			const list = unit[u + 1];
 			for (let j = 0; j < list.length; j += 4) {
@@ -1160,6 +1166,22 @@ function settle(w, fill) {
 		}
 		// inference from the hardware owners (an AI COOP), and AIX's Aven service for export (the MaiaCity COOP): a
 		// real delivery, each seller paid in its own MIND (./ai.js)
+		// the Aven service its work items used today, settled from their pay (./coops.js workBook): its share of the
+		// covered bills, in proportion to what it pays for the work, to each seller of the hour in its own MIND
+		const wR = (co.workRunR ?? 0) + (co.workPropR ?? 0);
+		if (unitAI && unitR > 0 && book.cov > 0 && wR > 0) {
+			const units = (book.cov * (wR / book.RR)) / unitR;
+			for (let j = 0; j < unitAI.length; j += 4) {
+				const k = unitAI[j];
+				if (k === co.k) continue;
+				const count = units * unitAI[j + 1];
+				if (!(count > 0)) continue;
+				costR += count * P[k];
+				b2bR += count * P[k];
+				t.workBillR = (t.workBillR ?? 0) + count * P[k];
+				restR += payDirect(w, w.tre, row, k, count) * P[k];
+			}
+		}
 		const bills = aiBills(w, co, fill[CLASS.running]);
 		if (bills)
 			for (const [k, count] of bills) {
