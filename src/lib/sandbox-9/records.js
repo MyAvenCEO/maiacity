@@ -69,7 +69,7 @@ export function initRecords(w) {
 }
 
 /** the living-standard measures of the yearly table, a person: their sums over the year's person-days */
-const LIV = ['kcal', 'protein', 'homeM2', 'waterL', 'homeKwh', 'avenH', 'goodsKg', 'pondH', 'bed'];
+const LIV = ['kcal', 'protein', 'homeM2', 'waterL', 'homeKwh', 'avenH', 'goodsKg', 'pondH', 'bed', 'workH', 'incHearts', 'incWork', 'incDiv'];
 const TENTHS = { poorest: 0, middle: 4, richest: 9 };
 
 function newYear(w, y) {
@@ -130,7 +130,10 @@ function yearDay(w, protD) {
 	for (let i = 0; i < N; i++) {
 		const o = i * G, d = w.decH[i], da = w.decA[i];
 		const f = w.q[o + FOOD];
-		const v = [f * 1000, f * protD, w.q[o + BED] * homeM2, w.q[o + WATER], w.q[o + ENERGY], w.q[o + COMPUTE], w.q[o + GOODS_], w.q[o + SPRING], w.q[o + BED]];
+		// Aven help is what a person's Aven gave its person: the Aven hours bought less those it worked for the COOPs;
+		// the income is the R value a day of the HEARTS half, the work items and the Law 5 dividends
+		const wk = w.workH ? w.workH[i] : 0;
+		const v = [f * 1000, f * protD, w.q[o + BED] * homeM2, w.q[o + WATER], w.q[o + ENERGY], w.q[o + COMPUTE] - wk, w.q[o + GOODS_], w.q[o + SPRING], w.q[o + BED], wk, w.heartsR[i], w.income[i], w.div[i]];
 		for (let m = 0; m < nL; m++) (Y.liv[d * nL + m] += v[m]), (Y.liv[10 * nL + m] += v[m]), (Y.livA[da * nL + m] += v[m]);
 		Y.pd[d]++;
 		Y.pd[10]++;
@@ -260,7 +263,8 @@ export function recordDay(w) {
 			const lr = w.pbar[b] > 0 ? w.limit[i * 4 + b] / w.pbar[b] : Infinity;
 			if (lr < limMin[b]) limMin[b] = lr;
 		}
-		for (const g of CONSUMER) cons[g] += w.q[o + g];
+		const wk = w.workH ? w.workH[i] : 0;
+		for (const g of CONSUMER) cons[g] += g === COMPUTE ? w.q[o + g] - wk : w.q[o + g];
 		w.met[i] = m;
 		if (short) shortAny++;
 		if (short && w.day > 0) {
@@ -272,8 +276,8 @@ export function recordDay(w) {
 		// does not make a better unit, so there is no quality ladder to read Q_g from. The index is therefore read with
 		// and without Aven services (Lx), which are most of it
 		let L = 0;
-		for (const g of CONSUMER) L += w.q[o + g] * p0[g];
-		const Lx = L - w.q[o + COMPUTE] * p0[COMPUTE];
+		for (const g of CONSUMER) L += (g === COMPUTE ? w.q[o + g] - wk : w.q[o + g]) * p0[g];
+		const Lx = L - (w.q[o + COMPUTE] - wk) * p0[COMPUTE];
 		w.L[i] = L;
 		Lsum += L;
 		if (L < Lmin) Lmin = L;
@@ -453,7 +457,7 @@ export function livingYears(w) {
 		const rowOf = (liv, pdA, d, short) => {
 			const pd = Math.max(1, pdA[d]);
 			const v = (m) => liv[d * nL + LIV.indexOf(m)] / pd;
-			return { kcal: v('kcal'), protein: v('protein'), homeM2: v('homeM2'), waterL: v('waterL'), homeKwh: v('homeKwh'), bed: v('bed'), avenH: v('avenH'), goodsKgYear: v('goodsKg') * 365, pondHWeek: v('pondH') * 7, shortPeople: short, personDays: pdA[d] };
+			return { kcal: v('kcal'), protein: v('protein'), homeM2: v('homeM2'), waterL: v('waterL'), homeKwh: v('homeKwh'), bed: v('bed'), avenH: v('avenH'), workH: v('workH'), income: { hearts: v('incHearts'), work: v('incWork'), div: v('incDiv') }, goodsKgYear: v('goodsKg') * 365, pondHWeek: v('pondH') * 7, shortPeople: short, personDays: pdA[d] };
 		};
 		const row = (d) => rowOf(Y.liv, Y.pd, d, Y.short[d]);
 		const tenths = {};

@@ -156,8 +156,10 @@ function shareOf(w, pl, mo) {
 		case 'panel':
 			return mo.works.has('glass') ? 1 : 0;
 		case 'goods':
-		case 'compute':
 			return mo.util;
+		case 'harness':
+			// the avenCEO COOP's harness serves the people the plan has brought
+			return mo.people / Math.max(1, S.people);
 		case 'spring':
 			return mo.domes;
 		case 'well':

@@ -32,14 +32,14 @@ export const CLASS = { basics: 0, running: 1, building: 2, rd: 3, storage: 4 };
 export const CLASS_NAMES = ['basics', 'running', 'building', 'R&D', 'storage'];
 
 /** what limits a good today (world model 5.6) */
-export const LIMIT = { none: 0, capacity: 1, land: 2, water: 3, energy: 4, wood: 5, steel: 6, glass: 7, panel: 8, ore: 9, sand: 10, ramp: 11, mind: 12, nature: 13, demand: 14, logs: 15, noSeller: 16, notBuilt: 17, chips: 18, treasury: 19, noSlot: 20, importDear: 21, euros: 22 };
+export const LIMIT = { none: 0, capacity: 1, land: 2, water: 3, energy: 4, wood: 5, steel: 6, glass: 7, panel: 8, ore: 9, sand: 10, ramp: 11, mind: 12, nature: 13, demand: 14, logs: 15, noSeller: 16, notBuilt: 17, chips: 18, treasury: 19, noSlot: 20, importDear: 21, euros: 22, inference: 23, dcSpace: 24 };
 /** 'no seller' and 'not built' are institutional causes, not physical ones: plants stand idle with the City COOP, or
  * free land lies unused while a good is short */
-export const LIMIT_NAMES = ['need met', 'built capacity', 'land', 'water', 'energy', 'material: glulam', 'material: steel', 'material: glass', 'material: panels', 'material: ore', 'material: sand', 'ramp (age)', 'MIND', 'nature (sun, rain, spring)', 'demand', 'material: logs', 'no seller (plants idle with the City COOP)', 'not built (free land, no project)', 'accelerators (none can be made or imported)', 'COOP treasury (cannot carry the build)', 'no MIND slot free (no new COOP can open)', 'accelerators: the import does not pay back at today’s prices (a price, not physics)', 'euros: the border could not be paid (no exports yet, the reserve empty)'];
+export const LIMIT_NAMES = ['need met', 'built capacity', 'land', 'water', 'energy', 'material: glulam', 'material: steel', 'material: glass', 'material: panels', 'material: ore', 'material: sand', 'ramp (age)', 'MIND', 'nature (sun, rain, spring)', 'demand', 'material: logs', 'no seller (plants idle with the City COOP)', 'not built (free land, no project)', 'accelerators (none can be made or imported)', 'COOP treasury (cannot carry the build)', 'no MIND slot free (no new COOP can open)', 'accelerators: the import does not pay back at today’s prices (a price, not physics)', 'euros: the border could not be paid (no exports yet, the reserve empty)', 'accelerators: the hardware owners’ inference (accelerators × hours)', 'data-centre floor: no room for more accelerators'];
 /** the codes that name an institution, not physics: 'MIND' (a person cannot pay) is kept apart, it is the one the
  * proof forbids for a basic */
 export const INSTITUTIONAL = [16, 17, 19, 20];
 /** the codes that are physics (or the closed border). 'accelerators: the import does not pay back' (21) is a price
  * test with the border open, like a build that does not pay back ('demand'): it is in neither list */
-export const PHYSICAL = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 18];
+export const PHYSICAL = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 18, 23, 24];
 export const LIMIT_OF_GOOD = { [WOOD]: LIMIT.wood, [STEEL]: LIMIT.steel, [GLASS]: LIMIT.glass, [PANEL]: LIMIT.panel };

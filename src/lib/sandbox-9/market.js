@@ -175,6 +175,11 @@ export function peopleOrders(w) {
 	for (let i = 0; i < N; i++) hs += w.wealthSlow[i];
 	w.meanHold = hs / Math.max(1, N);
 	const meltDay = 1 - exp(-cfg.melt / 365);
+	// the Avens' work: what a skill-weighted work hour paid lately, and what an hour of Aven service costs
+	const offer = (w.workOffer = w.workOffer && w.workOffer.length === w.Nmax ? w.workOffer : new Float64Array(w.Nmax));
+	const workOrd = (w.workOrd = w.workOrd && w.workOrd.length === w.Nmax ? w.workOrd : new Float64Array(w.Nmax));
+	const payH = w.workPayEma ?? c.rateR, pC = pbar[COMPUTE];
+	let offerAll = 0;
 	for (let i = 0; i < N; i++) {
 		const b = i * M;
 		let W = 0, Ws = 0;
@@ -258,8 +263,27 @@ export function peopleOrders(w) {
 			w.order[o + COMPUTE] += q[5];
 			extraEnergy[i] = q[2];
 		}
+		// the Aven's work for the COOPs (round 4): it offers up to workCapH hours a day when a work hour pays its skill
+		// more than an hour of Aven service costs (an owner-only person's Aven delivers nothing and offers none), and as
+		// far as its person can pay for the hours after the basics
+		offer[i] = 0;
+		if (w.aven[i] > 0 && pC > 0 && w.aven[i] * payH >= pC) offer[i] = Math.min(c.workCapH, Math.max(0, W - Cb * fB) / pC);
+		offerAll += offer[i];
 		for (const g of CONSUMER) tot[g] += w.order[o + g];
 	}
+	// the work the COOPs need today (./coops.js workNeed: running items and a seventh of the posted proposals), shared
+	// out over the offers in proportion: what an Aven will work it buys as Aven service, beside its help
+	const needH = (w.workNeed?.run ?? 0) + (w.workNeed?.prop ?? 0);
+	const fw = offerAll > 0 ? Math.min(1, needH / offerAll) : 0;
+	for (let i = 0; i < N; i++) {
+		const x = offer[i] * fw;
+		workOrd[i] = x;
+		if (x > 0) {
+			w.order[i * G + COMPUTE] += x;
+			tot[COMPUTE] += x;
+		}
+	}
+	w.today.workOffer = offerAll;
 	w.peopleOrderTot = tot;
 }
 
