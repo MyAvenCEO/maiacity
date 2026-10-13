@@ -7,7 +7,7 @@
 			href: `${base}/docs/avendb`,
 			kind: 'Architecture',
 			title: 'avenDB',
-			text: 'The user-owned, local-first, post-quantum database under maiaCITY: vaults, CRDT entries with history, schemas and lenses, caps, sync between your devices, and terabytes of media backed up to a sealed bucket.',
+			text: 'The user-owned, local-first, post-quantum database under maiaCITY: what the server can and cannot see, vaults, CRDT entries with history, shares, schemas and lenses, sync between your devices, and terabytes of media backed up to a sealed bucket.',
 			updated: '13 October 2026',
 			tags: ['local-first', 'CRDT', 'iroh', 'post-quantum']
 		}

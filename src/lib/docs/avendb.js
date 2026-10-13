@@ -10,32 +10,32 @@ export const TRIPS = [
 	{
 		title: 'You write a note',
 		caption:
-			'If the desktop and the phone see each other directly, they sync directly too, and the server only catches up. The server announces an edit only once the bucket holds it, so its announcement is the receipt: until then the desktop keeps the edit marked as not backed up yet, and announces it again.',
+			'If the desktop and the phone reach each other, they sync directly too, and the server only catches up. The server says it holds an edit only once the bucket does, so its holdings are the receipt: until then the desktop sees the server lacks it, keeps it and offers it again. Only logs that changed are named, so a quiet vault costs nothing.',
 		spec: {
 			actors: [you, desktop, server, bucket, phone],
 			steps: [
 				{ from: 'you', to: 'M', text: 'type in the note' },
-				{ from: 'M', to: 'M', text: 'sign the edit, encrypt its body, keep it' },
+				{ from: 'M', to: 'M', text: 'sign the edit, encrypt its body, save it on the shelf' },
 				{ note: ['M'], text: 'it counts now, online or not' },
-				{ from: 'M', to: 'S', text: 'announce the new frontier' },
-				{ from: 'S', to: 'M', text: 'ask for what it lacks' },
+				{ from: 'M', to: 'S', text: 'holdings: this note has a new head' },
+				{ from: 'S', to: 'M', text: 'ask for that log alone' },
 				{ from: 'M', to: 'S', text: 'the edit, ciphertext', reply: true },
-				{ from: 'S', to: 'S', text: 'check signatures and caps, keep it' },
-				{ from: 'S', to: 'B', text: 'seal it, write it in a pack' },
+				{ from: 'S', to: 'S', text: 'check signatures and shares, keep it' },
+				{ from: 'S', to: 'B', text: 'seal it into the journal' },
 				{ from: 'B', to: 'S', text: 'held, locked for 7 days', reply: true },
-				{ from: 'S', to: 'M', text: 'announce: the server holds it' },
-				{ note: ['M'], text: 'backed up' },
-				{ from: 'S', to: 'P', text: 'announce' },
-				{ from: 'P', to: 'S', text: 'ask' },
+				{ from: 'S', to: 'M', text: 'holdings: the server holds it' },
+				{ note: ['M'], text: 'Synced to: the server' },
+				{ from: 'S', to: 'P', text: 'holdings: that note changed' },
+				{ from: 'P', to: 'S', text: 'ask for that log' },
 				{ from: 'S', to: 'P', text: 'the edit', reply: true },
-				{ from: 'P', to: 'P', text: 'decrypt, apply to the note' }
+				{ from: 'P', to: 'P', text: 'open it, merge it into the note' }
 			]
 		}
 	},
 	{
 		title: 'You add a 2 TB film on your desktop',
 		caption:
-			'Your uplink sets the pace: at 54 Mbit/s a terabyte takes about 41 hours, at 1 Gbit/s about 2.2 hours. The desktop keeps working the whole time, and the film is readable on it from the first second.',
+			'Your uplink sets the pace: at 54 Mbit/s a terabyte takes about 41 hours, at 1 Gbit/s about 2.2 hours. The desktop keeps working the whole time, and the film plays on it from the first second. A piece counts on the server once its outboard is in the bucket, written after every part.',
 		spec: {
 			actors: [you, desktop, server, bucket],
 			steps: [
@@ -43,29 +43,31 @@ export const TRIPS = [
 				{
 					group: 'loop',
 					label: 'every 1 GiB piece, as it is read',
-					steps: [{ from: 'M', to: 'M', text: 'encrypt 64 KiB segments, hash with BLAKE3' }]
+					steps: [{ from: 'M', to: 'M', text: 'seal 64 KiB segments, hash with BLAKE3, shelve it' }]
 				},
-				{ from: 'M', to: 'M', text: 'write the HashSeq root, sign one edit naming it' },
-				{ from: 'M', to: 'S', text: 'sync the edit (small, instant)' },
-				{ note: ['S'], text: 'its sync rule says: keep every file' },
+				{ from: 'M', to: 'M', text: 'write the HashSeq root, sign one write that brings it' },
+				{ from: 'M', to: 'S', text: 'sync the write (small, at once)' },
+				{ note: ['S'], text: 'it keeps every file whole' },
 				{ from: 'S', to: 'M', text: 'get the root, then piece after piece' },
 				{
 					group: 'loop',
-					label: 'each piece, up to 32 at once',
+					label: 'each piece',
 					steps: [
 						{ from: 'M', to: 'S', text: 'bytes, verified every 16 KiB', reply: true },
-						{ from: 'S', to: 'B', text: 'multipart upload, 16 MiB parts' },
-						{ from: 'S', to: 'S', text: "keep the piece's outboard" }
+						{ from: 'S', to: 'B', text: 'sealed parts of 8 MiB' },
+						{ from: 'S', to: 'B', text: 'its outboard, last' }
 					]
 				},
-				{ note: ['M', 'S'], text: 'a dropped link resumes at the next missing range' }
+				{ note: ['M', 'S'], text: 'a dropped link resumes at the next missing range' },
+				{ from: 'S', to: 'M', text: 'holdings: the film, whole' },
+				{ note: ['M'], text: 'Synced to: the server' }
 			]
 		}
 	},
 	{
 		title: 'You play it on the phone and jump to minute 93',
 		caption:
-			'The server reads whole windows, never single 16 KiB groups and never whole files, so seeking stays fast on a 50 GB file and the bucket’s 750 requests a second are never the limit.',
+			'Holdings tell the phone which devices hold the piece, so it asks them first. The server reads whole 8 MiB parts and caches them, never single segments and never whole files, so seeking stays fast on a 50 GB file and the bucket’s 750 requests a second are never the limit.',
 		spec: {
 			actors: [you, phone, desktop, server, bucket],
 			steps: [
@@ -73,22 +75,22 @@ export const TRIPS = [
 				{ from: 'P', to: 'P', text: 'byte offset to segment, piece and range' },
 				{
 					group: 'alt',
-					label: 'the desktop is reachable',
+					label: 'the desktop holds that piece and is reachable',
 					steps: [
-						{ from: 'P', to: 'M', text: 'get piece 1,412, that range' },
-						{ from: 'M', to: 'P', text: 'verified bytes from its disk', reply: true }
+						{ from: 'P', to: 'M', text: 'get piece 1,412, a 4 MiB range' },
+						{ from: 'M', to: 'P', text: 'verified bytes from its shelf', reply: true }
 					],
 					else: {
 						label: 'only the server',
 						steps: [
 							{ from: 'P', to: 'S', text: 'get the same range' },
-							{ from: 'S', to: 'B', text: 'one ranged GET, a 4 to 8 MiB window' },
-							{ from: 'B', to: 'S', text: 'ciphertext', reply: true },
+							{ from: 'S', to: 'B', text: 'the 8 MiB part that holds it, unless cached' },
+							{ from: 'B', to: 'S', text: 'a sealed part', reply: true },
 							{ from: 'S', to: 'P', text: 'bytes, verified against the outboard', reply: true }
 						]
 					}
 				},
-				{ from: 'P', to: 'P', text: 'decrypt the segments, hand them to the player' },
+				{ from: 'P', to: 'P', text: 'open the segments, hand them to the player' },
 				{ note: ['P'], text: 'playback starts after one window' }
 			]
 		}
@@ -96,7 +98,7 @@ export const TRIPS = [
 	{
 		title: 'Your devices keep each other in sync',
 		caption:
-			'Every pair of devices runs the same exchange. Order never matters: each log is a chain of hashes, and Loro merges concurrent edits to the same note deterministically. File pieces are not copied by sync: each device fetches them when it plays them or when its sync rules say so.',
+			'Every pair of devices runs the same exchange. Each log has its own frontier, so a device asks only for the logs that changed, never the whole vault. Order never matters: Loro merges concurrent edits to the same note the same way everywhere. File pieces are not copied by sync: each device fetches them as its keep shares say, or as it plays them.',
 		spec: {
 			actors: [
 				{ id: 'M', label: 'Desktop' },
@@ -105,17 +107,22 @@ export const TRIPS = [
 				{ id: 'S', label: 'avenDB server' }
 			],
 			steps: [
-				{ note: ['M', 'P'], text: 'same café wifi, a direct path' },
-				{ from: 'M', to: 'P', text: 'frontier digests per log' },
-				{ from: 'P', to: 'M', text: 'what differs, both ways', reply: true },
+				{ note: ['M', 'P'], text: 'same café wifi' },
+				{ from: 'M', to: 'P', text: 'hello, proven by a hash-based signature' },
+				{ from: 'P', to: 'M', text: 'hello', reply: true },
+				{ from: 'M', to: 'P', text: 'holdings: each log’s frontier' },
+				{ from: 'P', to: 'M', text: 'holdings, and ask the logs that differ' },
+				{ from: 'M', to: 'P', text: 'what it lacks, nothing more', reply: true },
 				{ note: ['P'], text: 'offline: you keep writing' },
-				{ from: 'P', to: 'P', text: 'edits pile up, each one valid' },
+				{ from: 'P', to: 'P', text: 'edits pile up, each one counts' },
 				{ note: ['P', 'S'], text: 'back online, only the server is reachable' },
-				{ from: 'P', to: 'S', text: 'announce frontiers' },
-				{ from: 'S', to: 'P', text: 'everything the desktop wrote meanwhile', reply: true },
-				{ from: 'P', to: 'S', text: 'everything the phone wrote' },
-				{ from: 'S', to: 'M', text: 'announce' },
-				{ from: 'M', to: 'S', text: "ask, and get the phone's edits" },
+				{ from: 'P', to: 'S', text: 'hello, then holdings' },
+				{ from: 'S', to: 'P', text: 'ask the logs that changed' },
+				{ from: 'P', to: 'S', text: 'the phone’s edits', reply: true },
+				{ from: 'P', to: 'S', text: 'ask what the desktop wrote meanwhile' },
+				{ from: 'S', to: 'P', text: 'those edits', reply: true },
+				{ from: 'S', to: 'M', text: 'holdings: these logs changed' },
+				{ from: 'M', to: 'S', text: 'ask those logs alone' },
 				{ from: 'W', to: 'S', text: 'through the relay, the same exchange' }
 			]
 		}
@@ -123,15 +130,16 @@ export const TRIPS = [
 	{
 		title: 'A new phone signs in with your passkey alone',
 		caption:
-			'History moves in pages of thousands of edits per request, so a vault with a million edits arrives in seconds instead of a million round trips.',
+			'The link card holds the logs of the vaults your passkey owns and nothing of an entry, so the pass alone reads nothing. History then comes in pages of thousands of edits, so a vault with a million edits arrives in seconds instead of a million round trips. With every other device lost, this is how a vault comes back.',
 		spec: {
 			actors: [you, { id: 'N', label: 'New phone' }, server],
 			steps: [
 				{ from: 'you', to: 'N', text: 'sign in with your passkey' },
-				{ from: 'N', to: 'S', text: 'show the pass your passkey signed' },
-				{ from: 'S', to: 'N', text: "your vault's log, still encrypted", reply: true },
+				{ from: 'N', to: 'S', text: 'through the relay: show the pass your passkey signed' },
+				{ from: 'S', to: 'N', text: 'the link card: your vault’s log', reply: true },
 				{ from: 'N', to: 'N', text: 'check every edit, open the keys your passkey unlocks' },
 				{ from: 'N', to: 'S', text: 'join: the edit that adds this phone' },
+				{ from: 'N', to: 'S', text: 'ask for every log it may receive' },
 				{ from: 'S', to: 'N', text: 'pages of history', reply: true },
 				{ note: ['N'], text: 'notes and todos are there' },
 				{ from: 'N', to: 'S', text: 'pieces of a file, only when you open it' }
@@ -141,18 +149,20 @@ export const TRIPS = [
 	{
 		title: 'The server is lost and rebuilt',
 		caption:
-			"The bucket holds every edit and key the server took, and the server's own device secret, all sealed. Only the seal key sits apart, in the deploy's secrets with a copy kept offline. So a new server on an empty disk is the same device again, and nothing changes for your vaults.",
+			"The bucket holds every edit and key the server took, and the server's own device secret, all sealed. Only the seal key sits apart, in the deploy's secrets with a copy kept offline. So a new server on an empty disk is the same device again, and nothing changes for your vaults. File parts come back from the bucket as they are read.",
 		spec: {
 			actors: [{ id: 'S', label: 'New server' }, bucket, { id: 'D', label: 'Any of your devices' }],
 			steps: [
 				{ from: 'S', to: 'B', text: 'get its device secret' },
 				{ from: 'B', to: 'S', text: 'sealed', reply: true },
 				{ from: 'S', to: 'S', text: 'open it with the seal key: the same device again' },
-				{ from: 'S', to: 'B', text: 'list edits/ and keys/, fetch what its disk lacks' },
-				{ from: 'B', to: 'S', text: 'sealed packs and keys', reply: true },
+				{ from: 'S', to: 'B', text: 'the newest head, and the journal after it' },
+				{ from: 'B', to: 'S', text: 'a few dozen sealed objects', reply: true },
+				{ from: 'S', to: 'B', text: 'the packs they name' },
+				{ from: 'B', to: 'S', text: 'sealed packs', reply: true },
 				{ from: 'S', to: 'S', text: 'open each, check every edit again' },
-				{ note: ['S'], text: 'it announces only what the bucket holds' },
-				{ from: 'D', to: 'S', text: 'sync as usual' },
+				{ note: ['S'], text: 'its holdings name only what the bucket holds' },
+				{ from: 'D', to: 'S', text: 'hello and holdings, as usual' },
 				{ note: ['S', 'D'], text: 'anything newer comes back from your devices' }
 			]
 		}
