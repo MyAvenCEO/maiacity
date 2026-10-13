@@ -13,7 +13,7 @@
 	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
 
 	const g = liveGame();
-	let chosen = $state(typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('coop') ?? 'settlement') : 'settlement');
+	let chosen = $state(typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('coop') ?? 'tribe') : 'tribe');
 	let amount = $state(12);
 
 	const view = $derived(g.view);
@@ -35,10 +35,10 @@
 	/** what an asset earns a month, and from whom: the hex and the tent by their own settings, the machines by RENTED */
 	const rentFor = (id) => {
 		if (!view || !c) return null;
-		if (id === 'hex') return { monthly: view.settings.hexRent, token: 'MAIA', from: 'the Settlement COOP' };
-		if (id === 'tent') return { monthly: view.settings.tentRent, token: 'SETTLEMENT', from: 'each player' };
+		if (id === 'hex') return { monthly: view.settings.hexRent, token: 'MAIA', from: 'the Tribe COOP' };
+		if (id === 'tent') return { monthly: view.settings.tentRent, token: 'TRIBE', from: 'each player' };
 		const r = RENTED.find((x) => x.asset === id);
-		return r && chosen !== 'settlement' ? { monthly: view.settings[r.setting] ?? 0, token: c.mind, from: 'the Settlement COOP' } : null;
+		return r && chosen !== 'tribe' ? { monthly: view.settings[r.setting] ?? 0, token: c.mind, from: 'the Tribe COOP' } : null;
 	};
 	const pct = (x) => `${f(x * 100, 1)} %`;
 </script>

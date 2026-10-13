@@ -13,9 +13,9 @@
  *
  * What a screen is handed (structuredContent), every few seconds while it is open:
  *   { date, month, seat, minds: [{ id, label, colour }], hearts: { token: worth of 1 in HEARTS, shown as ❤︎ },
- *     players: [{ seat, name, wallet: { HEARTS, MAIA, SETTLEMENT, VILLAGE }, worth, arrears }],
+ *     players: [{ seat, name, wallet: { HEARTS, MAIA, TRIBE, VILLAGE }, worth, arrears }],
  *     coops: [{ id, name, mind, treasury: {...}, worth, assets: [{ id, name, kind }] }],
- *     pool: { MAIA, SETTLEMENT, VILLAGE }, poolWorth, settings: { key: number },
+ *     pool: { MAIA, TRIBE, VILLAGE }, poolWorth, settings: { key: number },
  *     rents: [{ what, from, to, token, monthly, weekly, owed }], names: { who: name },
  *     ledger: [{ id, vm, kind, from, to, token, amount, note }] (the last 80, newest first) }
  */
