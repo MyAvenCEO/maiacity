@@ -10,7 +10,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, SIGNATURES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, price, quote, supply } from '../../../game/maiacity-v1/engine.js';
+	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, price, quote, signaturesOf, supply, timeOfMonth } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 
@@ -48,7 +48,11 @@
 	const lines = $derived(view ? ledgerOf(view, who).slice(0, 200) : []);
 	const total = $derived(view ? supply(view) : null);
 	const swapOut = $derived(view ? quote(view, swapToken, swapTo, Number(swapAmount) || 0) : 0);
-	const nextMonth = $derived(view ? view.started + (view.month + 1) * DAY_MS : 0);
+	const nextMonth = $derived(view ? timeOfMonth(view, view.month + 1) : 0);
+	// how fast the game runs and how far minting reaches, in words (both are settings a MIP may change)
+	const hrs = (h) => (h === 24 ? 'a real day' : h % 24 === 0 ? `${h / 24} real days` : `${h} real hours`);
+	const speed = $derived(view ? `a month ${view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}` : '');
+	const reach = $derived(view ? hrs(view.settings.mintWindowHours) : '');
 	const mips = $derived(view?.mips ?? []);
 	const openMips = $derived(mips.filter((m) => m.status === 'open'));
 	const decidedMips = $derived(mips.filter((m) => m.status !== 'open').reverse());
@@ -113,14 +117,28 @@
 	}
 
 	function newMip(payout) {
-		draft = { title: payout ? `Payout from the ${nameOf(view, payout.from)}` : '', description: '', settings: { ...view.settings }, payouts: payout ? [payout] : [] };
+		draft = { title: payout ? `Payout from the ${nameOf(view, payout.from)}` : '', description: '', settings: { ...view.settings }, coops: Object.fromEntries(Object.values(view.coops).map((c) => [c.id, { name: c.name, assets: c.assets.map((x) => `${x.name} | ${x.kind}`).join('\n') }])), payouts: payout ? [payout] : [] };
 		panel = 'mips';
 	}
 
 	async function propose() {
 		const settings = Object.fromEntries(Object.entries(draft.settings).filter(([k, v]) => Number(v) !== view.settings[k]));
 		const payouts = draft.payouts.filter((x) => Number(x.amount) > 0);
-		if (await doMove({ type: 'propose', mip: { title: draft.title, description: draft.description, settings, payouts } })) draft = null;
+		// a COOP's assets are written one a line, "name | kind"; only what differs goes into the MIP
+		const coops = {};
+		for (const [id, c] of Object.entries(draft.coops)) {
+			const now = view.coops[id];
+			const assets = c.assets.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+				const [name, ...kind] = l.split('|');
+				const known = now.assets.find((x) => x.name === name.trim());
+				return { id: known?.id ?? '', name: name.trim(), kind: kind.join('|').trim() };
+			});
+			const change = {};
+			if (c.name.trim() !== now.name) change.name = c.name.trim();
+			if (JSON.stringify(assets.map((x) => [x.name, x.kind])) !== JSON.stringify(now.assets.map((x) => [x.name, x.kind]))) change.assets = assets;
+			if (Object.keys(change).length) coops[id] = change;
+		}
+		if (await doMove({ type: 'propose', mip: { title: draft.title, description: draft.description, settings, coops, payouts } })) draft = null;
 	}
 
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -135,7 +153,7 @@
 	const vdate = (vm) => dateText(dateOf(vm));
 	const sign = (e) => (e.kind === 'arrears' ? '' : e.to === who ? '+' : e.from === who ? '−' : '');
 	const LABELS = { mint: 'Minted', invest: 'Invested', pool: 'To the pool', swap: 'Swap', rent: 'Rent', arrears: 'Owed', demurrage: 'Melt', expired: 'Expired', settings: 'Settings', proposal: 'MIP', payout: 'Payout' };
-	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, COOPS[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
+	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, view.coops[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
 	const TOOLS = [
 		['you', '◉', 'You'],
 		['mint', '♥', 'Mint'],
@@ -170,7 +188,7 @@
 		<div class="topstats">
 			<span class="stat panel" title="HEARTS held, and ready to mint"><span class="heart">♥</span> <b>{f(player.wallet.HEARTS, 1)}</b>{#if mint.amount > 0.05}<em>+{f(mint.amount, 1)}</em>{/if}</span>
 			{#each MINDS as t (t)}<span class="stat panel" title={TOKEN_LABEL[t]}><i style="background:{TOKEN_COLOUR[t]}"></i> <b>{f(player.wallet[t], 1)}</b></span>{/each}
-			<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). A month a real day, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
+			<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). {speed}, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
 		</div>
 
 		<div class="topright">
@@ -179,14 +197,14 @@
 					<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
 				{/each}
 			</div>
-			<span class="clock panel" title="The game clock: a month a real day, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
+			<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
 		</div>
 
 		<nav class="tools" class:open={tools}>
 			{#each TOOLS as [id, ic, label] (id)}
 				<button class:on={panel === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
 			{/each}
-			<p class="speednote">a month a real day · rent in {dur(nextMonth - now)}</p>
+			<p class="speednote">{speed} · rent in {dur(nextMonth - now)}</p>
 		</nav>
 		{#if canMove}
 			<!-- the universal mint button: always at hand, over the nav pill -->
@@ -229,13 +247,13 @@
 			{:else if panel === 'mint'}
 				<p class="eyebrow">Your HEARTS</p>
 				<h2>Mint</h2>
-				<p class="about">Your first mint brings a starter pack of {f(view.settings.starterPack ?? 720, 0)} HEARTS. After that your HEARTS grow 24 a day, one an hour. Mint whenever you like: you get all that grew since your last mint. The right to mint reaches back one game month (one real day, 24 h) only, so check in at least once a game month: growth older than that is lost. HEARTS you hold stay.</p>
+				<p class="about">Your first mint brings a starter pack of {f(view.settings.starterPack ?? 720, 0)} HEARTS. After that your HEARTS grow {f(view.settings.heartsPerDay, 0)} a real day. Mint whenever you like: you get all that grew since your last mint. The right to mint reaches back {reach} only, so check in at least that often: growth older than that is lost. HEARTS you hold stay.</p>
 				<div class="wares">
 					<div><span>Ready to mint</span><b>{f(mint.amount)}</b></div>
 					{#if mint.starter}<div><span>Starter pack</span><b>{f(mint.starter)}</b></div>{/if}
 					<div><span>Last mint</span><b class="small">{player.lastMint ? `${dur(now - player.lastMint)} ago` : 'never'}</b></div>
 				</div>
-				{#if mint.lost > 0.001}<p class="bad small">{f(mint.lost)} HEARTS grew more than 24 h ago and are lost.</p>{:else if mint.full > now}<p class="small">A full game month of HEARTS in {dur(mint.full - now)}: mint before then so none are lost.</p>{/if}
+				{#if mint.lost > 0.001}<p class="bad small">{f(mint.lost)} HEARTS grew more than {reach} ago and are lost.</p>{:else if mint.full > now}<p class="small">The mint window is full in {dur(mint.full - now)}: mint before then so none are lost.</p>{/if}
 				{#if canMove}<div class="buttons"><button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount)} HEARTS</button></div>{/if}
 			{:else if panel === 'invest'}
 				<p class="eyebrow">{f(player.wallet.HEARTS)} HEARTS held</p>
@@ -248,7 +266,7 @@
 					</div>
 					<div class="buttons col">
 						{#each Object.keys(COOPS) as id (id)}
-							<button class="primary" disabled={busy || !(player.wallet.HEARTS > 0)} onclick={() => doMove({ type: 'invest', coop: id, amount })}>Into the {COOPS[id].name}</button>
+							<button class="primary" disabled={busy || !(player.wallet.HEARTS > 0)} onclick={() => doMove({ type: 'invest', coop: id, amount })}>Into the {view.coops[id].name}</button>
 						{/each}
 					</div>
 				{/if}
@@ -275,9 +293,9 @@
 				{#each Object.keys(COOPS) as id (id)}
 					{@const c = view.coops[id]}
 					<button class="coop" onclick={() => (panel = `coop:${id}`)}>
-						<span class="coop-head"><b>{COOPS[id].name}</b><span class="mind"><i style="background:{TOKEN_COLOUR[COOPS[id].mind]}"></i>{TOKEN_LABEL[COOPS[id].mind]}</span></span>
-						<span class="assets">{#each COOPS[id].assets as a (a.id)}<span class="asset">{a.name}</span>{/each}</span>
-						<span class="treasury">Treasury {MINDS.filter((t) => t === COOPS[id].mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`).join(' · ')}</span>
+						<span class="coop-head"><b>{c.name}</b><span class="mind"><i style="background:{TOKEN_COLOUR[c.mind]}"></i>{TOKEN_LABEL[c.mind]}</span></span>
+						<span class="assets">{#each c.assets as a (a.id)}<span class="asset">{a.name}</span>{/each}</span>
+						<span class="treasury">Treasury {MINDS.filter((t) => t === c.mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`).join(' · ')}</span>
 					</button>
 				{/each}
 			{:else if isCoopPanel(panel)}
@@ -287,7 +305,7 @@
 				<h2>{c.name}</h2>
 				<p class="eyebrow">Assets it owns</p>
 				<ul class="asset-list">
-					{#each COOPS[c.id].assets as a (a.id)}
+					{#each c.assets as a (a.id)}
 						<li>
 							<b>{a.name}</b><span>{a.kind}</span>
 							{#if a.id === 'pool'}
@@ -349,7 +367,7 @@
 			{:else if panel === 'mips'}
 				<p class="eyebrow">MaiaCity improvement proposals</p>
 				<h2>Proposals</h2>
-				<p class="about">Every decision is a MIP: the settings, and payouts from a COOP treasury to any wallet. It needs {SIGNATURES} signatures and applies at once, in this same game.</p>
+				<p class="about">Every decision is a MIP: any setting, a COOP's name and the assets it owns, and payouts from a COOP treasury to any wallet. It needs {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'} and applies at once, in this same game.</p>
 				{#if draft}
 					<div class="draft">
 						<input class="full" placeholder="Title" bind:value={draft.title} />
@@ -361,6 +379,14 @@
 								<dd><input type="number" step="any" min={SETTING_LIMITS[k][0]} max={SETTING_LIMITS[k][1]} bind:value={draft.settings[k]} /></dd>
 							{/each}
 						</dl>
+						<p class="eyebrow">COOPs and what they own</p>
+						{#each Object.values(view.coops) as c (c.id)}
+							<div class="coopdraft">
+								<input class="full" class:changed={draft.coops[c.id].name.trim() !== c.name} bind:value={draft.coops[c.id].name} />
+								<textarea class="full" rows={Math.max(2, c.assets.length + 1)} placeholder="One asset a line: name | kind" bind:value={draft.coops[c.id].assets}></textarea>
+							</div>
+						{/each}
+						<p class="small">One asset a line, its name and kind split by “|”.</p>
 						<p class="eyebrow">Payouts</p>
 						{#each draft.payouts as x, i (i)}
 							<div class="payout">
@@ -411,7 +437,7 @@
 				<dl class="settings">
 					{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
 				</dl>
-				<p class="about">One virtual month a real day, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts {f(view.settings.demurrage * 100, 0)} % a year. Rent is due at each month’s end. A setting changes only through a MIP with {SIGNATURES} signatures.</p>
+				<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts {f(view.settings.demurrage * 100, 0)} % a year. Rent is due at each month’s end. Every setting and every COOP changes only through a MIP with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}.</p>
 				<div class="buttons">
 					{#if canMove}<button class="primary" onclick={() => newMip()}>Propose a change</button>{/if}
 					{#if admin}<button class="danger" disabled={busy} onclick={() => confirm('Start the game again from year 0? Every balance, MIP and the ledger go.') && run(resetGame)}>Start again from year 0</button>{/if}
@@ -812,6 +838,14 @@
 	.payout input,
 	.payout select {
 		min-width: 0;
+	}
+	.coopdraft {
+		display: grid;
+		gap: 0.25rem;
+		margin-bottom: 0.5rem;
+	}
+	.coopdraft input.changed {
+		outline: 2px solid #d7a53a;
 	}
 	.draft {
 		margin: 0.4rem 0 0.6rem;

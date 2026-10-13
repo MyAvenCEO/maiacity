@@ -543,6 +543,27 @@ pub struct EconomyWorldDelete {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct V1Mips {
+    /// open, accepted or rejected (default: every MIP)
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct V1Propose {
+    /// the MIP: { title, description (prose: what and why), settings: { key: number } (only what changes; keys and
+    /// limits: hoursPerMonth 1-720 real hours a game month lasts, mintWindowHours 1-720 how far back minting reaches,
+    /// signatures 1-2, starterPack 0-10000 HEARTS on a first mint, heartsPerDay 1-1000, demurrage 0-0.5 a year,
+    /// poolShare 0-0.5 of every treasury half into the AMM pool, swapFee 0-0.1, tentRent 0-10000 SettlementMIND each
+    /// player a month, hexRent 0-10000 MaiaMIND the Settlement COOP a month), coops: { maia | settlement | village:
+    /// { name, assets: [the whole list as it will be: { id (keep an asset's id from maiacity_v1_mips), name, kind }] } },
+    /// payouts: [{ from: "coop:maia" | "coop:settlement" | "coop:village", to: "player:A" | "player:B" | a coop,
+    /// token: "MAIA" | "SETTLEMENT" | "VILLAGE", amount }] }
+    pub mip: Value,
+    /// the seat it is proposed from, "A" or "B" (default: the seat this Mac's founder plays)
+    pub seat: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct EconomyBrains {
     /// the world's id, from economy_runs
     pub world: String,
@@ -1652,6 +1673,46 @@ impl Studio {
         text(self.api("POST", &format!("/api/economy/brains/{}/{}", a.world, a.aven), Some(a.edit)).await)
     }
 
+    // ── MaiaCity V1 (the two-player HEARTS game, /app/maiacity-v1/): its settings, COOPs and MIPs ──
+
+    #[tool(
+        description = "MaiaCity V1, the two-player game: the clock (game month, the 13-month calendar), every setting as it stands (each one a MIP may change), the COOPs (name, MIND, the assets each owns, treasury), the AMM pool, both players' wallets, and its MIPs newest first: number, title, description, what it changes in words, settings, coops, payouts, who proposed it and how (page or mcp), signatures, status (open, accepted, rejected) and the note. Every decision about settings and COOPs is a MIP that needs the game's signatures (2 by default) and applies at once in this same game."
+    )]
+    async fn maiacity_v1_mips(&self, Parameters(a): Parameters<V1Mips>) -> String {
+        let r = async {
+            let v = self.api("GET", "/api/maiacity-v1", None).await?;
+            let g = &v["game"];
+            let mut mips: Vec<Value> = g["mips"].as_array().cloned().unwrap_or_default();
+            if let Some(st) = &a.status {
+                mips.retain(|m| m["status"].as_str() == Some(st.as_str()));
+            }
+            mips.reverse();
+            let players: Value = g["players"].as_object().map(|ps| {
+                ps.iter().map(|(k, p)| (k.clone(), json!({ "name": p["name"], "founder": p["founder"], "wallet": p["wallet"], "arrears": p["arrears"] }))).collect()
+            }).unwrap_or_default();
+            Ok::<_, String>(json!({ "started": g["started"], "month": g["month"], "settings": g["settings"], "coops": g["coops"],
+                "pool": g["pool"], "players": players, "mips": mips, "now": v["now"] }))
+        };
+        text(r.await)
+    }
+
+    #[tool(
+        description = "Propose a MaiaCity V1 MIP: a title, a description in prose, and what it changes: any settings (the clock speed, the mint window, the signatures needed, the starter pack, HEARTS a day, demurrage, the pool share, the swap fee, both rents), any COOP's name and the whole list of assets it owns, and payouts of MIND from a COOP treasury to any wallet. Read maiacity_v1_mips first. It is checked at once and waits, open and unsigned, for the players: both sign or reject it on the page; it is never signed from here."
+    )]
+    async fn maiacity_v1_propose(&self, Parameters(a): Parameters<V1Propose>) -> String {
+        let mut mip = a.mip;
+        if let Some(o) = mip.as_object_mut() {
+            o.insert("via".to_string(), json!("mcp"));
+        }
+        let body = json!({ "seat": a.seat.unwrap_or_default(), "action": { "type": "propose", "mip": mip } });
+        let r = async {
+            let v = self.api("POST", "/api/maiacity-v1/move", Some(body)).await?;
+            let last = v["game"]["mips"].as_array().and_then(|m| m.last().cloned()).unwrap_or(Value::Null);
+            Ok::<_, String>(json!({ "proposed": last }))
+        };
+        text(r.await)
+    }
+
     // ── anything else the admin may do ──
 
     #[tool(description = "Any maiaCITY API call under /api/ with the app's key (shots, grades, jobs, LUTs, media …) — the same rights the admin gave this Mac")]
@@ -1662,6 +1723,13 @@ impl Studio {
         // a MIP is accepted or rejected by the admin, on the page — never by an agent
         if a.path.starts_with("/api/economy/mips/") && a.path.trim_end_matches('/').ends_with("/decide") {
             return "error: only the admin accepts or rejects a MIP, on the page".into();
+        }
+        // and a MaiaCity V1 MIP is signed or rejected by a player, on the page (the server refuses a key's too)
+        if a.path.starts_with("/api/maiacity-v1/move") {
+            let kind = a.body.as_ref().and_then(|b| b["action"]["type"].as_str()).unwrap_or("");
+            if kind == "sign" || kind == "reject" {
+                return "error: a MaiaCity V1 MIP is signed or rejected by a player, on the page".into();
+            }
         }
         text(self.api(&a.method.to_uppercase(), &a.path, a.body).await)
     }

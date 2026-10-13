@@ -47,6 +47,12 @@ const DUST = 1e-9;
 const SLACK = 0.005;
 
 export const DEFAULT_SETTINGS = {
+	/** real hours a game month lasts (24: a month a real day) */
+	hoursPerMonth: 24,
+	/** how far back the right to mint reaches, in real hours */
+	mintWindowHours: 24,
+	/** signatures a MIP needs before it applies (two seats: 1 or 2) */
+	signatures: 2,
 	/** each player's first mint brings this starter pack on top of what grew */
 	starterPack: 720,
 	heartsPerDay: 24,
@@ -63,10 +69,13 @@ export const DEFAULT_SETTINGS = {
 };
 
 /** the settings, in words */
-export const SETTING_NAMES = { starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
+	hoursPerMonth: [1, 720],
+	mintWindowHours: [1, 720],
+	signatures: [1, 2],
 	starterPack: [0, 10000],
 	heartsPerDay: [1, 1000],
 	demurrage: [0, 0.5],
@@ -99,7 +108,17 @@ export function newGame(now = Date.now(), settings = {}) {
 const clone = (s) => (typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s)));
 
 /** virtual time in months since year 0 */
-export const monthsAt = (s, now) => Math.max(0, now - s.started) / MONTH_MS;
+export const monthsAt = (s, now) => {
+	const a = s.clock ?? { at: s.started, months: 0 };
+	return Math.max(0, a.months + (now - a.at) / monthMs(s));
+};
+/** how long a game month lasts in real ms (a setting; a change re-anchors the clock where it stands, see settle) */
+export const monthMs = (s) => (s.settings?.hoursPerMonth ?? DEFAULT_SETTINGS.hoursPerMonth) * 3_600_000;
+/** the real time game month `m` (months since year 0) begins */
+export const timeOfMonth = (s, m) => {
+	const a = s.clock ?? { at: s.started, months: 0 };
+	return a.at + (m - a.months) * monthMs(s);
+};
 /** the real-day number since the start: one mint per day */
 export const dayAt = (s, now) => Math.floor(Math.max(0, now - s.started) / DAY_MS);
 
@@ -154,7 +173,7 @@ function log(s, at, entry) {
 /** melt every balance over `ms` of real time (that many virtual months), counting what melted per holder */
 function melt(s, ms) {
 	if (ms <= 0 || !s.settings.demurrage) return;
-	const f = Math.pow(1 - s.settings.demurrage, ms / MONTH_MS / MONTHS_A_YEAR);
+	const f = Math.pow(1 - s.settings.demurrage, ms / monthMs(s) / MONTHS_A_YEAR);
 	for (const [who, bal] of holders(s)) {
 		for (const k of Object.keys(bal)) {
 			if (!bal[k]) continue;
@@ -257,7 +276,7 @@ export function advance(state, now = Date.now()) {
 	s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
 	if (now <= s.t) return s;
 	for (let guard = 0; guard < 100_000; guard++) {
-		const nextMonth = s.started + (s.month + 1) * MONTH_MS;
+		const nextMonth = timeOfMonth(s, s.month + 1);
 		const next = Math.min(nextMonth, now);
 		melt(s, next - s.t);
 		s.t = next;
@@ -291,14 +310,16 @@ export function mintState(s, seat, now) {
 	const p = s.players[seat];
 	const since = p.lastMint ?? s.started;
 	const grown = Math.max(0, now - since);
-	const window = Math.min(grown, DAY_MS);
+	const reach = (s.settings.mintWindowHours ?? DEFAULT_SETTINGS.mintWindowHours) * 3_600_000;
+	const window = Math.min(grown, reach);
 	const perMs = s.settings.heartsPerDay / DAY_MS;
 	const starter = p.starter ? 0 : (s.settings.starterPack ?? DEFAULT_SETTINGS.starterPack);
-	return { amount: starter + window * perMs, starter, grown: window * perMs, since, full: since + DAY_MS, lost: Math.max(0, grown - DAY_MS) * perMs };
+	return { amount: starter + window * perMs, starter, grown: window * perMs, since, full: since + reach, lost: Math.max(0, grown - reach) * perMs };
 }
 
-/** signatures a MIP needs before it is accepted */
+/** signatures a MIP needs before it is accepted (the default; the game's own is its signatures setting) */
 export const SIGNATURES = 2;
+export const signaturesOf = (s) => s.settings?.signatures ?? SIGNATURES;
 /** where a payout may come from: a COOP's treasury (the pool is never paid out) */
 export const PAYERS = Object.keys(COOPS).map((id) => `coop:${id}`);
 /** who a payout may go to: any wallet in the game but the pool */
@@ -308,7 +329,8 @@ const balanceOf = (s, who) => (who.startsWith('player:') ? s.players[who.slice(7
 
 /**
  * A MIP (MaiaCity improvement proposal), as in Sandbox 7: a title, a description in prose, and what it changes — any of
- * the game's settings, and payouts of MIND out of a COOP's treasury into any wallet. The proposer signs it; with two
+ * the game's settings, the COOPs (a new name, the list of assets each owns), and payouts of MIND out of a COOP's
+ * treasury into any wallet. The proposer signs it; with two
  * signatures it is accepted and applies at once, in this same game. Either player may reject it; the proposer withdraws.
  */
 function checkMip(s, mip) {
@@ -328,13 +350,42 @@ function checkMip(s, mip) {
 		if (!MINDS.includes(x.token)) throw new GameError('Pay out a MIND.');
 		return { from: x.from, to: x.to, token: x.token, amount: num(x.amount) };
 	});
-	if (!Object.keys(settings).length && !payouts.length) throw new GameError('A proposal changes a setting or pays out.');
-	return { title, description, settings, payouts };
+	const coops = {};
+	for (const [id, c] of Object.entries(mip.coops && typeof mip.coops === 'object' ? mip.coops : {})) {
+		const now = s.coops[id];
+		if (!now) throw new GameError(`No COOP ${id}.`);
+		const change = {};
+		if (c?.name != null) {
+			const name = String(c.name).trim().slice(0, 60);
+			if (!name) throw new GameError('A COOP needs a name.');
+			if (name !== now.name) change.name = name;
+		}
+		if (c?.assets != null) {
+			if (!Array.isArray(c.assets) || c.assets.length > 30) throw new GameError('A COOP owns a list of at most 30 assets.');
+			const seen = new Set();
+			const assets = c.assets.map((x, i) => {
+				const name = String(x?.name ?? '').trim().slice(0, 80);
+				if (!name) throw new GameError('Every asset needs a name.');
+				let aid = String(x?.id ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || `asset-${i + 1}`;
+				while (seen.has(aid)) aid += '-2';
+				seen.add(aid);
+				return { id: aid, name, kind: String(x?.kind ?? '').trim().slice(0, 80) };
+			});
+			if (JSON.stringify(assets) !== JSON.stringify(now.assets)) change.assets = assets;
+		}
+		if (Object.keys(change).length) coops[id] = change;
+	}
+	if (!Object.keys(settings).length && !payouts.length && !Object.keys(coops).length) throw new GameError('A proposal changes a setting or a COOP, or pays out.');
+	return { title, description, settings, coops, payouts };
 }
 
 /** what a MIP changes, in words */
 export function describe(s, mip) {
 	const parts = Object.entries(mip.settings ?? {}).map(([k, v]) => `${SETTING_NAMES[k] ?? k} → ${v}`);
+	for (const [id, c] of Object.entries(mip.coops ?? {})) {
+		if (c.name) parts.push(`rename ${nameOf(s, `coop:${id}`)} → ${c.name}`);
+		if (c.assets) parts.push(`${c.name ?? nameOf(s, `coop:${id}`)} owns ${c.assets.map((x) => x.name).join(', ') || 'nothing'}`);
+	}
 	for (const x of mip.payouts ?? []) parts.push(`pay ${x.amount.toFixed(2)} ${TOKEN_LABEL[x.token]} from ${nameOf(s, x.from)} to ${nameOf(s, x.to)}`);
 	return parts.join('; ');
 }
@@ -352,11 +403,18 @@ function shortOf(s, mip) {
 
 /** a MIP with its signatures is accepted and applies at once, all of it */
 function settle(s, mip, now) {
-	if (mip.status !== 'open' || mip.signatures.length < SIGNATURES) return;
+	if (mip.status !== 'open' || mip.signatures.length < signaturesOf(s)) return;
 	const short = shortOf(s, mip);
 	if (short) throw new GameError(`MIP #${mip.number} can’t apply yet: ${short}`);
 	const before = Object.fromEntries(Object.keys(mip.settings).map((k) => [k, s.settings[k]]));
+	// a new month length keeps the clock where it stands now and runs on from here at the new speed
+	if ('hoursPerMonth' in mip.settings) s.clock = { at: now, months: monthsAt(s, now) };
 	Object.assign(s.settings, mip.settings);
+	const coopsBefore = {};
+	for (const [id, c] of Object.entries(mip.coops ?? {})) {
+		coopsBefore[id] = { name: s.coops[id].name, assets: s.coops[id].assets };
+		Object.assign(s.coops[id], c);
+	}
 	for (const x of mip.payouts) {
 		const from = balanceOf(s, x.from);
 		const amount = Math.min(x.amount, from[x.token]);
@@ -366,7 +424,7 @@ function settle(s, mip, now) {
 	}
 	mip.status = 'accepted';
 	mip.decided = now;
-	mip.result = { before };
+	mip.result = { before, coops: coopsBefore };
 	log(s, now, { kind: 'proposal', from: '', to: '', token: '', amount: 0, note: `MIP #${mip.number} accepted: ${mip.title} (${describe(s, mip)})` });
 }
 
@@ -376,7 +434,8 @@ function settle(s, mip, now) {
  *   invest { coop, amount }      HEARTS into a COOP
  *   swap { token, to, amount }   a MIND through the pool for another
  *   name { name }                the player's name
- *   propose { mip }              a MIP: title, description, settings and payouts; the proposer signs it
+ *   propose { mip }              a MIP: title, description, settings, coops and payouts; the proposer signs it (not
+ *                                one made over the MCP, via 'mcp': both players sign that on the page)
  *   sign { number }              sign a MIP: with two signatures it is accepted and applies at once
  *   reject { number, note }      reject a MIP (the proposer withdraws it)
  */
@@ -438,7 +497,9 @@ export function act(state, seat, action, now = Date.now()) {
 			const short = mip.payouts.length ? shortOf(s, mip) : '';
 			if (short) throw new GameError(short);
 			const number = s.mips.length + 1;
-			const made = { number, ...mip, by: seat, at: now, signatures: [seat], status: 'open', decided: null, note: '' };
+			// one proposed over the MCP (via 'mcp') carries no signature: both players sign it on the page
+			const via = action.mip?.via === 'mcp' ? 'mcp' : 'page';
+			const made = { number, ...mip, by: seat, via, at: now, signatures: via === 'mcp' ? [] : [seat], status: 'open', decided: null, note: '' };
 			s.mips.push(made);
 			log(s, now, { kind: 'proposal', from: me, to: '', token: '', amount: 0, note: `MIP #${number} proposed: ${mip.title}` });
 			settle(s, made, now);

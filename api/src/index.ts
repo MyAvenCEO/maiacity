@@ -212,6 +212,8 @@ const server = Bun.serve({
         const me = await signedIn(req);
         if (me instanceof Response) return me;
         const body = await readJson(req);
+        // an app key (the Mac's MCP, an agent) proposes, but never signs or rejects: that is the players' own, on the page
+        if ("scope" in me && ["sign", "reject"].includes(body?.action?.type)) return json(req, { error: "A MIP is signed or rejected by a player, on the page." }, { status: 403 });
         try {
           return json(req, { game: await move(me, can(me, "economy:admin"), String(body?.seat ?? ""), body?.action), now: Date.now() });
         } catch (e) {

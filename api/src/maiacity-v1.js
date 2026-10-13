@@ -54,11 +54,14 @@ export function takeSeat(founder, seat, now = Date.now()) {
   });
 }
 
-/** one move for a seat: by the founder in it, or by an admin (who may play both seats to test) */
+/** one move for a seat: by the founder in it, or by an admin (who may play both seats to test). No seat named: the one
+ * the founder holds (an admin holding none moves for A). */
 export function move(founder, admin, seat, action, now = Date.now()) {
-  if (!SEATS.includes(seat)) throw new GameError("No such player.");
+  if (seat && !SEATS.includes(seat)) throw new GameError("No such player.");
   return db.transaction(async (tx) => {
     const before = await load(tx, now);
+    seat ||= SEATS.find((s) => before.players[s].founder === founder.id) ?? (admin ? "A" : "");
+    if (!seat) throw new GameError("Take a seat first.", 403);
     const p = before.players[seat];
     if (p.founder !== founder.id && !admin) throw new GameError(p.founder ? `Only ${p.name} moves for this seat.` : "Take this seat first.", 403);
     const state = act(before, seat, action, now);
