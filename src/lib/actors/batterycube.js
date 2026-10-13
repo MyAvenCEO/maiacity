@@ -10,7 +10,7 @@
 import { BLACK, CUBE, DARK, POWERCUBE_SOURCES, RED, STEEL, cubeCast } from './powercube.js';
 import { loop } from './rig';
 import { ease } from './excavator-rig.js';
-import { PACK, batteryPackParts, lockZ } from './batterypack.js';
+import { PACK, batteryPackParts, lockBack, lockZ } from './batterypack.js';
 import { CLICKLOCK, clickKeeper } from './clicklock.js';
 
 const SRC_B = 'BatteryCube (our design)';
@@ -27,10 +27,10 @@ const STEPS = ['Cut, drill and bolt the frame: skids, posts, top rails, quick-at
 
 /** a BatteryCube's insides at version `v` (2: one-way inverter, no AC inlet; 3: bidirectional, its AC inlet;
  * 4: its packs at v4, a centre grip each; 6: its packs at v5, the grip low and the lock at its height, and pins on the
- * backplane for the packs' holes)
+ * backplane for the packs' holes; 7: its packs at v6, a service drawer in each)
  * @param {Parameters<import('./powercube.js').Insides>[0]} part @param {Parameters<import('./powercube.js').Insides>[1]} tools */
-function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 6) {
-	const pv = v >= 6 ? 5 : v >= 4 ? 4 : 3; // the packs' version
+function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 7) {
+	const pv = v >= 7 ? 6 : v >= 6 ? 5 : v >= 4 ? 4 : 3; // the packs' version
 		// four BatteryPacks (./batterypack.js) stacked on the skids, their fronts to the cube's front: each arrives whole
 	for (let k = 0; k < 4; k++) batteryPackParts(kit, { at: P(0, MOD.y, B + 10 + k * MOD.gap), base, assembly: () => 'battery', step: () => 2, prefix: `pack-${k + 1}-`, unit: `pack-${k + 1}`, seg: 6, v: pv });
 	const back = MOD.y - MOD.l / 2, top = B + 10 + 4 * MOD.gap;
@@ -64,7 +64,7 @@ function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 6) {
 	});
 	part('battery', { ...CLICKLOCK, id: 'pack-rails', label: 'Pack rails', count: 4, source: SRC_B, what: `${CLICKLOCK.what} Here: a pair of rails for each BatteryPack, their keepers where the pack’s back plug meets the backplane.` }, base, (put) => {
 		// the rails sit 6 mm under the packs' pawls, their keepers level with them
-		for (let k = 0; k < 4; k++) clickKeeper(box, put, { half: PACK.W / 2, face: MOD.y + MOD.l / 2, z: B + 10 + k * MOD.gap + lockZ(pv) - 6, len: MOD.l });
+		for (let k = 0; k < 4; k++) clickKeeper(box, put, { half: PACK.W / 2, face: MOD.y + MOD.l / 2, z: B + 10 + k * MOD.gap + lockZ(pv) - 6, len: MOD.l, back: lockBack(pv) });
 	});
 	part('power', { id: 'inverter', label: 'Hybrid inverter', source: SRC_B, what: v < 3 ? 'One box does it all: an MPPT solar charger, a battery charger and a pure-sine inverter. It fills the packs from the panels by day and turns their 52 V into 230 V for the home by night.' : 'One bidirectional box does it all: an MPPT solar charger, a charger from outside power and a pure-sine inverter. It fills the packs from the panels by day, or from the grid, an ElectroCube or a generator at its AC inlet, and turns their 52 V into 230 V for the home.', specs: [['Power', '6 kW continuous, 12 kW peak [inferred]'], ['Solar in', '500 V, 2 × MPPT, up to 8 kWp'], ['AC in (charging)', '230 V, up to 5 kW [inferred]'], ['Out', '230 V, 50 Hz'], ['Battery', '52 V, CAN to every pack']] }, base, (put) => {
 		put(box(0, -Lh + 80, B + 290, 520, 100, 520, 10), CASE);
@@ -90,7 +90,7 @@ function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 6) {
 }
 
 /** The BatteryCube on its own (version `v`; from v5 it pulls a pack out and pushes it back as a move), every part its own: drawn apart, built. Its size is the Power Cube's. @returns {import('./rig').Cast} */
-export const batteryCube = (v = 6) => {
+export const batteryCube = (v = 7) => {
 	const cast = cubeCast({ name: 'BatteryCube', assemblies: ASSEMBLIES, steps: STEPS, stepOf: { frame: 1, battery: 2, power: 3 }, sources: POWERCUBE_SOURCES, hums: false, len: CUBE.L, engine: false, controls: false, insides: (part, tools) => cells(part, tools, v) });
 	if (v < 5) return cast;
 	// from v5 a pack comes out and goes back (Samuel 2026-10-13): the third pack's grip is squeezed, it slides out on its
