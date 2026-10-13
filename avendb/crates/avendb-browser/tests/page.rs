@@ -324,19 +324,27 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let entry = EntryId(id(&first, "entry"));
     let holds = move |lab: &Lab, me| lab.fetched(me, entry) > 0;
     until("the server keeps her note", || server.read(holds)).await;
+    // the file she brought is on her browser's shelf in OPFS: its one piece under its hash, its outboard beside it
+    let root = first["file"]["root"].as_str().unwrap_or_else(|| panic!("the file she brought: {first}"));
+    let shelf = first["shelf"].as_array().expect("what her browser's shelf keeps");
+    for name in [root.to_string(), format!("{root}.obao")] {
+        assert!(shelf.contains(&json!(name)), "{name} on her browser's shelf: {shelf:?}");
+    }
 
     // her second browser links through the first one's code, in one ceremony, and edits the note
     let field = |key| first[key].as_str().unwrap_or_else(|| panic!("{key} in {first}"));
     let note = [("actor", field("actor")), ("entry", field("entry"))];
     let offer = first["offer"].as_str().expect("the first browser's code");
     let second = [("page", "second"), ("store", "second"), ("name", "Eve's other browser"), ("relay", &url)];
-    let steps = [("offer", offer), ("reads", MARCH), ("write", APRIL), ("then", MAY)];
+    let file = format!("{root}:{}", first["file"]["size"]);
+    let steps = [("offer", offer), ("reads", MARCH), ("file", &file), ("write", APRIL), ("then", MAY)];
     tab.frame(&[&second[..], &steps, &note[..]].concat()).await;
     let second = tab.expect("second", "started").await;
     eprintln!("Eve's second browser linked in {} ms", second["ms"]);
     assert_eq!(second["ceremonies"], 1, "the unlock, which is the passkey's pass and signs the join: {second}");
     assert_eq!(second["vault"], first["vault"], "it joined her vault");
     tab.expect("second", "read").await;
+    tab.expect("second", "fetched").await;
     tab.expect("second", "wrote").await;
     tab.expect("first", "read").await;
     let closed = tab.expect("first", "closed").await;

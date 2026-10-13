@@ -5,7 +5,9 @@
  * yet, then writes a note; with `offer`, it
  * links through that code; if its store (`store`, in OPFS) holds a device already, it opens that one again. Then it
  * waits to read `reads` in block 2 of the note, writes `write` there, and waits to read `then`; once done, with
- * `close`, it saves and closes. Each step is reported to the test, with the passkey's ceremonies so far. With `legacy`,
+ * `close`, it saves and closes. The device that founds the vault also brings a file, whose pieces its shelf keeps in
+ * OPFS beside its store, and reads it back; with `file`, a device reads that file from its peers. Each step is
+ * reported to the test, with the passkey's ceremonies so far. With `legacy`,
  * it puts the store back where pages kept it before B2b, in IndexedDB, for the next page to move over; with `twice`,
  * it tries to load a store another page's device runs from.
  */
@@ -48,6 +50,55 @@ const titled = (/** @type {string} */ title, /** @type {string} */ text) => ({
 		{ id: 2, type: 'paragraph', text }
 	]
 });
+
+/** How long the file the founding browser brings is: more than three of the page's one megabyte steps. */
+const FILE = 3 * 1024 * 1024 + 4321;
+
+/** The bytes from `from` to `to` of the file the test brings. */
+const pattern = (/** @type {number} */ from, /** @type {number} */ to) =>
+	Uint8Array.from({ length: to - from }, (_, i) => ((from + i) * 7) % 251);
+
+/** Brings the test's file into vault `vault` and reads it back: its root and sealed size, in hex and bytes. */
+async function bring(device, vault) {
+	const file = { name: 'Seeds.bin', media: 'application/octet-stream', tags: [], len: FILE };
+	const entry = await device.addFile(vault, vault, file, (/** @type {number} */ at, /** @type {number} */ n) =>
+		pattern(at, at + n)
+	);
+	const world = await device.world();
+	const [{ root, size }] = world.entries.find((/** @type {{entry: string}} */ e) => e.entry === entry).files;
+	if (!(await same(device, { root, size }))) throw new Error('the file it brought reads back wrong');
+	return { root, size };
+}
+
+/** Whether the device reads the test's file right across a step, or false while it can't read it yet. */
+async function same(device, /** @type {{root: string, size: number}} */ file) {
+	const [from, to] = [1024 * 1024 - 100, 2 * 1024 * 1024 + 50];
+	const got = await device.readFile(file.root, file.size, from, to).catch(() => null);
+	const want = pattern(from, to);
+	return !!got && got.length === want.length && got.every((b, i) => b === want[i]);
+}
+
+/** Waits until the device reads the test's file from its peers, two minutes at most. */
+async function fetched(device, /** @type {{root: string, size: number}} */ file) {
+	const end = Date.now() + 120_000;
+	while (!(await same(device, file))) {
+		if (Date.now() > end) throw new Error('it doesn\'t read the file within two minutes');
+		await sleep(500);
+	}
+}
+
+/** The names in OPFS of what store `name`'s shelf keeps: each blob under its hash, and its outboard beside it. */
+async function shelved(/** @type {string} */ name) {
+	try {
+		const stores = await (await navigator.storage.getDirectory()).getDirectoryHandle('avendb');
+		const blobs = await (await stores.getDirectoryHandle(name)).getDirectoryHandle('blobs');
+		const names = [];
+		for await (const key of blobs.keys()) names.push(key);
+		return names.sort();
+	} catch {
+		return [];
+	}
+}
 
 /** Waits until the device reads `body` in block 2 of the note, two minutes at most. */
 async function reads(device, note, body) {
@@ -117,7 +168,7 @@ async function main() {
 		const unlock = await passkey.unlock(unhex(meta.nonce));
 		const kept = await store.load();
 		const { name, relay, passkey: p256, mask } = meta;
-		device = await avendb.Device.open(name, relay, p256, mask, unlock, kept.edits, kept.keys);
+		device = await avendb.Device.open(name, relay, p256, mask, unlock, kept.edits, kept.keys, undefined, store);
 		note = meta.note;
 	} else {
 		const [name, relay] = [q.get('name'), q.get('relay')];
@@ -128,16 +179,19 @@ async function main() {
 			passkey = counted(ceremonies(avendb, made.id));
 			trace('unlocking and founding');
 			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
-			device = await avendb.Device.found(name, relay, q.get('server'), made.spki, unlock, passkey.sign);
+			const server = q.get('server');
+			const [spki, sign] = [made.spki, passkey.sign];
+			device = await avendb.Device.found(name, relay, server, spki, unlock, sign, undefined, undefined, store);
 			const vault = await device.vault();
 			const write = { op: 'create', vault, type: 'note', value: titled('Seeds', q.get('write')) };
 			const { entry } = await run(device, write);
-			note = { actor: vault, entry };
+			trace('bringing a file');
+			note = { actor: vault, entry, file: await bring(device, vault) };
 		} else {
 			passkey = counted(ceremonies(avendb));
 			trace('unlocking and linking');
 			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
-			device = await avendb.Device.link(name, relay, q.get('offer'), unlock);
+			device = await avendb.Device.link(name, relay, q.get('offer'), unlock, undefined, store);
 			note = { actor: q.get('actor'), entry: q.get('entry') };
 		}
 		const credential = passkey.passkey.held.id;
@@ -150,11 +204,18 @@ async function main() {
 	const [edits, keys] = await device.size();
 	const found = { ms, vault, edits, keys, ceremonies: ceremonies_, offer: device.offer(), endpoint: device.endpoint() };
 	found.indexed = (await indexedDB.databases()).map((d) => d.name);
+	found.shelf = await shelved(q.get('store'));
 	await report(meta ? 'opened' : 'started', { ...found, ...note });
 	if (q.get('reads')) {
 		trace('reading');
 		await reads(device, note, q.get('reads'));
 		await report('read');
+	}
+	if (q.get('file')) {
+		const [root, size] = q.get('file').split(':');
+		trace('reading the file');
+		await fetched(device, { root, size: Number(size) });
+		await report('fetched');
 	}
 	if (q.get('write') && !q.get('server')) {
 		const path = ['blocks', { id: 2 }, 'text'];
