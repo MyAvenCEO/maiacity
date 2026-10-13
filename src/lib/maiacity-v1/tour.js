@@ -1,8 +1,9 @@
 // @ts-nocheck — plain JS
 /**
  * MaiaCity V1's first-run story: the journey every player makes at their own seat. It starts on the road, in a packed
- * old travel van down a sandy highway, and gets off at the bus stop by the abandoned gas station: the MaiaCity centre.
- * There the newcomer meets the idea one step at a time (the HEARTS, the first mint, the COOPs and their MINDs) and
+ * old travel van down a sandy highway: inside it, rolling on, the newcomer hears the vision (a world where no one must
+ * work to survive), learns of the HEARTS and mints their first year of them. Then the road ends at the bus stop by the
+ * abandoned gas station, the future centre of MaiaCity. There the newcomer meets the COOPs and their MINDs and
  * invests into the MaiaCity COOP, the owner of all the land. Then into the Village COOP's pickup (the first player
  * drives it; the second is fetched by the first) and along the gravel track to the village's centre hex, where the
  * Village COOP keeps the powercube in an old shed beside its solar row and battery: invest there, load the cube, and
@@ -36,20 +37,26 @@ export function story(view, seat, seen) {
 	const invest = (id, goal) => ({ kind: 'invest', coop: id, goal, have: investedBy(view, seat, id), done: investedBy(view, seat, id) >= goal - 0.5 });
 	const next = (id) => ({ kind: 'next', done: !!seen[id] });
 	// the first player fetches the powercube and the tent from the village shed; the second finds them home already
+	// still on the road: the van rolls on, the camera in its back seat, while the idea is told and the first HEARTS minted
+	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'van' };
 	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'centre' };
 	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'village' };
 	const home = { at: 'home', cube: 'home', tent: 'up', place: 'tribe' };
 	return [
-		{ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', done: !!seen.arrive, at: 'arrive', cube: atStop.cube, tent: atStop.tent,
+		{ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', part: 'road', done: !!seen.arrive, ...inVan,
 			text: `The old van rattles down the sand highway, full to the roof: people, bags, a sack of rice. Outside, steppe and dust as far as you can see. Somewhere ahead is a place called MaiaCity.` },
-		{ id: 'welcome', chapter: 'The road', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop,
-			text: `The van drives on, and the dust settles. A bus stop, an abandoned gas station, the wide steppe. The old world passed this place by and left it behind. This is where MaiaCity begins, and you are one of its very first people.` },
-		{ id: 'vision', chapter: 'The road', title: 'A city that belongs to its people', hint: '', ...next('vision'), ...atStop,
-			text: `Look at that gas station. Someone owned it, people paid them, and one day the owner left and took everything with them. Here it works the other way round: everything belongs to the people who live here. ${other.founder ? `You and ${other.name}` : 'You and the next person to arrive'} will own all of it, together.` },
-		{ id: 'hearts', chapter: 'Your HEARTS', title: 'Every hour, you receive a HEART', hint: '', ...next('hearts'), ...atStop,
-			text: `Simply because you are here, you receive ${f(st.heartsPerDay)} HEARTS a day, one every hour, for as long as you live. Yours are called ${hearts}. A HEART is not money: you cannot buy bread with it. It is something better: your right to become an owner of your city.` },
-		{ id: 'mint', chapter: 'Your HEARTS', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...atStop,
-			text: `Your HEARTS grow quietly all the time. To make them yours, you mint them, like picking fruit that has ripened. As a welcome gift, your first mint brings a whole year at once: ${f(st.starterPack ?? year)} HEARTS. Tap Mint.` },
+		{ id: 'vision', chapter: 'The road', title: 'Imagine a world', hint: '', ...next('vision'), ...inVan,
+			text: `Imagine a world where the machines do the heavy work, and the machines belong to everyone. Where no one goes hungry and no one has to work to survive. Where you spend your days on what you love, because you want to, not because you must. That world does not wait in some far future. It begins at the end of this road.` },
+		{ id: 'hearts', chapter: 'The road', title: 'Every hour, you receive a HEART', hint: '', ...next('hearts'), ...inVan,
+			text: `The woman beside you smiles and shows you her phone. In MaiaCity, simply because you are alive and here, you receive ${f(st.heartsPerDay)} HEARTS a day, one every hour, for as long as you live. Yours are called ${hearts}. A HEART is not money: you cannot buy bread with it. It is something better: your right to become an owner of the city.` },
+		{ id: 'mint', chapter: 'The road', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan,
+			text: `Your HEARTS grow quietly all the time. To make them yours, you mint them, like picking fruit that has ripened. As a welcome gift, your first mint brings a whole year at once: ${f(st.starterPack ?? year)} HEARTS. Mint them now, while the road rolls by.` },
+		{ id: 'arrival', chapter: 'The road', title: 'The end of the road', kind: 'intro', part: 'arrive', done: !!seen.arrival, ...inVan,
+			text: `The van slows down. Ahead, the road ends.` },
+		{ id: 'welcome', chapter: 'MaiaCity', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop,
+			text: `The van drives on, and the dust settles. A bus stop, an abandoned gas station, the wide steppe. The old world passed this place by and left it behind. ${other.founder ? `You and ${other.name} are` : 'You are'} among its very first people.` },
+		{ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop,
+			text: `Look closer. This bus stop and this old gas station are the centre of MaiaCity: one day a square full of life will stand here, with markets, workshops, gardens and homes all round, a flourishing city owned by everyone who lives in it. Someone once owned this gas station, people paid them, and one day the owner left and took everything. Here it works the other way round: everything belongs to the people. ${other.founder ? `You and ${other.name}` : 'You and the next person to arrive'} will own all of it, together.` },
 		{ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...next('coops'), ...atStop,
 			text: `Everything in the city belongs to a COOP: a company its people own together. There are three, each with its own job, and each has its own share, called a MIND. Turn 1 HEART into 1 MIND, and you own a little part of that COOP. Half the MIND goes to you, four tenths stay in the COOP's treasury so it can grow, and one tenth goes into the city pool.` },
 		{ id: 'maia', chapter: 'The city', title: `The ${c.maia.name}: the ground beneath your feet`, hint: 'invest', reveal: 2, ...invest('maia', 5000), ...atStop, place: 'city',

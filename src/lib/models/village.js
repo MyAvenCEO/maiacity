@@ -18,8 +18,8 @@ export const VILLAGE_INFO = {
 	},
 	powercube: {
 		model: 'powercube',
-		note: 'a diesel generator in a silenced cube, 2.2 m each way, about 60 kVA: a 500-litre tank in its skid, louvres each side, the control panel behind its front door, the exhaust up through its roof',
-		specs: [['Size', '2.2 m each way'], ['Power', 'about 60 kVA (48 kW)'], ['Fuel tank', '500 l of diesel, in its skid'], ['Burn', 'about 13 l an hour at full load'], ['Runtime', 'about 38 h at full load'], ['Noise', 'about 65 dB(A) at 7 m']]
+		note: 'a diesel generator in a silenced cube, 1.45 × 0.8 m, 1.15 m high, about 20 kVA: a 70-litre tank in its skid, louvres each side, the control panel behind its front door, the exhaust up through its roof; light enough (about 650 kg) to ride in the pickup\'s bed',
+		specs: [['Size', '1.45 × 0.8 × 1.15 m'], ['Power', 'about 20 kVA (16 kW)'], ['Fuel tank', '70 l of diesel, in its skid'], ['Burn', 'about 5 l an hour at full load'], ['Runtime', 'about 14 h at full load'], ['Weight', 'about 650 kg']]
 	},
 	solar: {
 		model: 'solar-panel',
@@ -98,24 +98,37 @@ export function pickup() {
 	return g;
 }
 
-/** The powercube: a diesel generator in a silenced cube, 2.2 m each way, about 60 kVA; a 500-litre tank in its skid, louvres each side, the control panel behind its front door, the exhaust up through its roof. */
+/** The powercube: a diesel generator in a silenced cube, 1.45 m long (x), 0.8 m deep, 1.15 m high, about 20 kVA; a 70-litre tank in its skid, louvres each side, the control panel behind its front door, the exhaust up through its roof. Small enough to ride in the pickup's bed. */
 export function powercube() {
 	const g = new THREE.Group();
 	g.name = 'powercube';
-	part(g, 2.3, 0.3, 2.3, m.skid(), 0, 0.15, 0); // the skid, the fuel tank in it
-	soft(g, 2.2, 1.9, 2.2, 0.05, m.genset(), 0, 1.25, 0); // the cube
-	// louvres each side, air in at one, out at the other
-	for (const sx of [-1, 1]) for (let i = 0; i < 8; i++) part(g, 0.03, 0.06, 1.5, m.louvre(), sx * 1.11, 0.75 + i * 0.13, 0);
+	const W = 1.45, D = 0.8, H = 1.15; // its outer size, the skid and the exhaust's cap within it
+	part(g, W, 0.12, D, m.skid(), 0, 0.06, 0); // the skid, the fuel tank in it
+	soft(g, W - 0.05, 0.86, D - 0.04, 0.03, m.genset(), 0, 0.55, 0); // the cube
+	// louvres each end, air in at one, out at the other
+	for (const sx of [-1, 1]) for (let i = 0; i < 6; i++) part(g, 0.02, 0.04, D * 0.6, m.louvre(), sx * (W / 2 - 0.02), 0.3 + i * 0.09, 0);
 	// the front: two doors, the control panel's window in the left one
-	part(g, 0.02, 1.6, 0.02, m.louvre(), 0, 1.25, 1.105);
-	part(g, 0.5, 0.36, 0.03, m.screen(), -0.5, 1.6, 1.11);
-	for (const x of [-0.12, 0.12]) part(g, 0.04, 0.22, 0.05, m.steel(), x, 1.3, 1.12); // the handles
-	part(g, 1.6, 0.1, 0.03, m.louvre(), 0, 2.0, 1.11); // its name plate's strip
+	part(g, 0.015, 0.72, 0.015, m.louvre(), 0, 0.55, D / 2 - 0.015);
+	part(g, 0.32, 0.22, 0.02, m.screen(), -0.36, 0.72, D / 2 - 0.01);
+	for (const x of [-0.08, 0.08]) part(g, 0.03, 0.14, 0.03, m.steel(), x, 0.55, D / 2);
+	part(g, W * 0.7, 0.06, 0.02, m.louvre(), 0, 0.92, D / 2 - 0.01); // its name plate's strip
 	// the exhaust, its rain cap; the fuel cap on the skid; lifting eyes on the roof
-	bar(g, v3(0.6, 2.2, -0.6), v3(0.6, 2.75, -0.6), 0.075, m.steel());
-	part(g, 0.22, 0.02, 0.22, m.steel(), 0.6, 2.78, -0.6).rotation.x = 0.35;
-	part(g, 0.14, 0.08, 0.14, m.louvre(), 0.9, 0.34, 1.0);
-	for (const [x, z] of [[-0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) bar(g, v3(x, 2.2, z), v3(x, 2.3, z), 0.04, m.steel());
+	bar(g, v3(0.45, 0.98, -0.2), v3(0.45, H - 0.03, -0.2), 0.04, m.steel());
+	part(g, 0.12, 0.015, 0.12, m.steel(), 0.45, H - 0.01, -0.2).rotation.x = 0.3;
+	part(g, 0.1, 0.05, 0.1, m.louvre(), 0.6, 0.14, D / 2 - 0.06);
+	for (const x of [-0.5, 0.5]) bar(g, v3(x, 0.98, 0), v3(x, 1.04, 0), 0.025, m.steel());
+	return g;
+}
+
+/** A solar row: n real panels side by side on their racks, 1.8 m apart, centred on the origin, along x. */
+export function solarRow(n = 6) {
+	const g = new THREE.Group();
+	g.name = 'solar-row';
+	for (let i = 0; i < n; i++) {
+		const p = solarPanel();
+		p.position.x = (i - (n - 1) / 2) * 1.8;
+		g.add(p);
+	}
 	return g;
 }
 
