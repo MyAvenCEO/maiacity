@@ -2,7 +2,10 @@
 	Actors: everyone and everything rigged to move (src/lib/actors) — the stand-in a shot is blocked with and the animals
 	of the worlds — kind by kind down the left (the chickens, the rabbits, the goats …), the kind's variants (its breeds,
 	the rooster and the chick) to switch between on the right, one at a time on a turntable, playing its moves. The stand-in also holds its poses, and any joint of
-	it can be turned by hand (the pose copied out as data). Drag to turn round it, scroll to come closer. An admin's.
+	it can be turned by hand (the pose copied out as data). A machine taken apart (one with a catalog of its parts: the
+	LifeTrac) has every part to pick, on it or from its list, each with its card: what it is, what moves it, its numbers
+	— shown alone if asked, the rest of the machine a ghost round it. Drag to turn round it, scroll to come closer. An
+	admin's.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -38,6 +41,14 @@
 	/** @type {[number, number, number] | null} */
 	let size = $state(null);
 	let copied = $state(false);
+	/** a machine's part picked (by its id), and whether it is shown alone, the rest a ghost */
+	/** @type {string | null} */
+	let picked = $state(null);
+	let alone = $state(false);
+	/** @type {((id: string) => void) | null} */
+	let lookAt = null;
+	const catalog = $derived(cast?.catalog ?? null);
+	const card = $derived(catalog && picked ? catalog.parts.find((p) => p.id === picked) ?? null : null);
 	/** @type {((a: Actor) => void) | null} */
 	let show = null;
 	/** @type {(() => void) | null} */
@@ -72,6 +83,59 @@
 		scene.add(floor);
 		/** @type {InstanceType<typeof THREE.Group> | null} */
 		let grid = null;
+		// a machine's parts: lit up when picked, and the rest a ghost when it is shown alone (the materials the mesh's
+		// groups take then, after its own)
+		const lit = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, emissive: '#ff7a1a', emissiveIntensity: 0.55, side: THREE.DoubleSide });
+		const ghost = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide });
+		/** @type {number[]} */
+		let own = [];
+		paint = () => {
+			const c = cast;
+			if (!c?.rig.parts) return;
+			const mesh = c.rig.object, mats = /** @type {import('three').Material[]} */ (mesh.material);
+			const at = mats.indexOf(lit);
+			mesh.geometry.groups.forEach((g, i) => {
+				const part = c.rig.parts?.[i];
+				g.materialIndex = picked && part === picked ? at : picked && alone ? at + 1 : own[i];
+			});
+		};
+		const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+		/** the part under a point of the canvas, if any @param {PointerEvent} e */
+		const partAt = (e) => {
+			const c = cast;
+			if (!c?.rig.parts) return null;
+			const r = renderer.domElement.getBoundingClientRect();
+			ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+			ray.setFromCamera(ndc, camera);
+			c.rig.object.computeBoundingSphere(); // as it is posed now
+			const groups = c.rig.object.geometry.groups;
+			for (const hit of ray.intersectObject(c.rig.object, false)) {
+				const at = (hit.faceIndex ?? 0) * 3;
+				const i = groups.findIndex((g) => at >= g.start && at < g.start + g.count);
+				const part = c.rig.parts[i];
+				// shown alone, the ghosts are looked through
+				if (part && (!alone || !picked || part === picked)) return part;
+			}
+			return null;
+		};
+		/** @type {{ x: number, y: number } | null} */
+		let down = null;
+		renderer.domElement.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
+		renderer.domElement.addEventListener('pointerup', (e) => {
+			// a tap, not a drag round it, picks the part under it (or, on nothing, lets go)
+			if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || !cast?.catalog) return;
+			down = null;
+			const part = partAt(e);
+			picked = part;
+			if (part) lookAt?.(part);
+			else alone = false;
+		});
+		/** @type {import('three').Vector3 | null} */
+		let aim = null;
+		lookAt = (id) => {
+			const bone = cast?.rig.bones[`p.${id}`];
+			if (bone) aim = bone.getWorldPosition(new THREE.Vector3());
+		};
 
 		show = async (a) => {
 			// an animal's skin is meshed off the page first; picked away from meanwhile, it is not shown
@@ -82,6 +146,13 @@
 			const c = a.make();
 			cast = c;
 			edits = {};
+			picked = null;
+			alone = false;
+			if (c.catalog) {
+				const mesh = c.rig.object;
+				own = mesh.geometry.groups.map((g) => g.materialIndex ?? 0);
+				mesh.material = [.../** @type {import('three').Material[]} */ (mesh.material), lit, ghost];
+			}
 			doing = { kind: 'clip', name: c.first in c.clips ? c.first : Object.keys(c.clips)[0] };
 			if (c.poses && c.first in c.poses) doing = { kind: 'pose', name: c.first };
 			joint = c.rig.names.includes('head') ? 'head' : c.rig.names[0];
@@ -128,6 +199,11 @@
 				if (doing.kind === 'clip') cast.rig.pose(cast.clips[doing.name]?.(t) ?? {});
 				else if (holding) cast.rig.pose(/** @type {Pose} */ (holding));
 			}
+			// on to a part looked at, the camera's aim moving over to it
+			if (aim) {
+				controls.target.lerp(aim, 0.12);
+				if (controls.target.distanceTo(aim) < 0.002) aim = null;
+			}
 			controls.update();
 			renderer.render(scene, camera);
 			frame = requestAnimationFrame(tick);
@@ -142,6 +218,18 @@
 		};
 	});
 	onDestroy(() => dispose?.());
+
+	/** @type {() => void} */
+	let paint = () => {};
+	$effect(() => {
+		void [picked, alone, cast];
+		paint();
+	});
+	/** @param {string} id */
+	const choose = (id) => {
+		picked = picked === id ? null : id;
+		if (picked) lookAt?.(picked);
+	};
 
 	/** @param {Family} f */
 	const pick = (f) => {
@@ -220,7 +308,27 @@
 				{/each}
 			</nav>
 		{/if}
-		{#if cast && holding}
+		{#if catalog}
+			<div class="parts">
+				<div class="row head">
+					<span class="label">{catalog.parts.length} parts</span>
+					<button class="chip" class:on={alone} disabled={!picked} onclick={() => (alone = !alone)}>Alone</button>
+				</div>
+				{#each catalog.assemblies as a (a.id)}
+					{@const list = catalog.parts.filter((p) => p.assembly === a.id)}
+					<details open={!!picked && list.some((p) => p.id === picked)}>
+						<summary><b>{a.label}</b> <small>{list.length}</small></summary>
+						<p class="note">{a.note}</p>
+						<ul>
+							{#each list as p (p.id)}
+								<li><button class:on={picked === p.id} onclick={() => choose(p.id)}>{p.label}{#if p.count && p.count > 1}<small> ×{p.count}</small>{/if}{#if p.moves}<i title="moves">↻</i>{/if}</button></li>
+							{/each}
+						</ul>
+					</details>
+				{/each}
+			</div>
+		{/if}
+		{#if cast && holding && !catalog}
 			<div class="joints">
 				<label>
 					<span>Joint</span>
@@ -243,14 +351,152 @@
 		{/if}
 	{/snippet}
 	{#snippet readout()}
+		{#if card && catalog}
+			{@const a = catalog.assemblies.find((x) => x.id === card.assembly)}
+			<div class="part-card">
+				<span class="label">{a?.label} · step {card.step} of {catalog.steps.length}</span>
+				<b>{card.label}{#if card.count && card.count > 1}<small> ×{card.count}</small>{/if}</b>
+				<p>{card.what}</p>
+				{#if card.moves}<p><span class="tag">Moves</span> {card.moves}</p>{/if}
+				{#if card.drive}<p><span class="tag">Driven by</span> {card.drive}</p>{/if}
+				{#if card.specs?.length}
+					<dl>
+						{#each card.specs as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
+					</dl>
+				{/if}
+				<small>Build step {card.step}: {catalog.steps[card.step - 1]}{#if card.source} · source: {#each catalog.sources.filter((s) => s.label === card.source) as s (s.url)}<a href={s.url} target="_blank" rel="noreferrer">{s.label}</a>{:else}{card.source}{/each}{/if}</small>
+				<div class="row">
+					<button class="chip" onclick={() => lookAt?.(card.id)}>Look at it</button>
+					<button class="chip" class:on={alone} onclick={() => (alone = !alone)}>Alone</button>
+					<button class="chip" onclick={() => ((picked = null), (alone = false))}>Close</button>
+				</div>
+			</div>
+		{:else}
 		<b>{variants.length > 1 ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
 		{#if variants.length > 1}<small>{variant.note}</small>{/if}
 		{#if size && cast}<span>{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high · {cast.rig.names.length} bones</span>{/if}
-		<small>Drag to turn round it · pinch or scroll to come closer{doing.kind === 'pose' ? ' · turn any joint by hand' : ''}</small>
+		<small>Drag to turn round it · pinch or scroll to come closer{catalog ? ' · tap any part for its card' : doing.kind === 'pose' ? ' · turn any joint by hand' : ''}</small>
+		{/if}
 	{/snippet}
 </Turntable>
 
 <style>
+	.variants + .joints,
+	.variants + .parts {
+		margin-top: 0.8rem;
+	}
+
+	.parts details {
+		border-top: 1px solid rgb(0 0 0 / 0.08);
+		padding: 0.3rem 0;
+	}
+
+	.parts summary {
+		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		gap: 0.4rem;
+	}
+
+	.parts summary small,
+	.parts li small {
+		opacity: 0.55;
+	}
+
+	.parts .note {
+		margin: 0.25rem 0 0.35rem;
+		font-size: 0.75rem;
+		opacity: 0.7;
+	}
+
+	.parts ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.parts li button {
+		display: flex;
+		width: 100%;
+		gap: 0.3rem;
+		align-items: baseline;
+		text-align: left;
+		padding: 0.18rem 0.4rem;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+	}
+
+	.parts li button:hover {
+		background: rgb(0 0 0 / 0.05);
+	}
+
+	.parts li button.on {
+		background: #ff7a1a;
+		color: #fff;
+	}
+
+	.parts li i {
+		margin-left: auto;
+		font-style: normal;
+		opacity: 0.45;
+	}
+
+	.parts .head {
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.3rem;
+	}
+
+	.parts .chip:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	.part-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.part-card p {
+		margin: 0;
+		line-height: 1.4;
+	}
+
+	.part-card .tag {
+		font-size: 0.68rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		opacity: 0.55;
+	}
+
+	.part-card dl {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 0.1rem 0.8rem;
+		margin: 0.15rem 0;
+		font-size: 0.8rem;
+	}
+
+	.part-card dt {
+		opacity: 0.6;
+	}
+
+	.part-card dd {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.part-card a {
+		color: inherit;
+	}
+
+	.part-card .row {
+		justify-content: flex-start;
+		flex-wrap: wrap;
+	}
+
 	.variants + .joints {
 		margin-top: 0.8rem;
 	}
