@@ -10,7 +10,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, price, quote, signaturesOf, supply, timeOfMonth } from '../../../game/maiacity-v1/engine.js';
+	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, invariant, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 
@@ -273,7 +273,7 @@
 			{:else if panel === 'swap'}
 				<p class="eyebrow">The MaiaCity COOP’s AMM pool</p>
 				<h2>Swap</h2>
-				<p class="about">Constant product, owned by no one. A {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
+				<p class="about">A Balancer weighted pool of the MaiaCity COOP: one basket of all three MINDs, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}. Any MIND swaps for any other. A {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
 				{#if canMove}
 					<div class="row">
 						<input type="number" min="0" step="0.1" bind:value={swapAmount} />
@@ -313,7 +313,7 @@
 									{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
 									{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} MaiaMIND`}</dd>{/each}
 								</dl>
-								<small>{f(view.settings.poolShare * 100, 0)} % of every treasury half flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
+								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every treasury half flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
 							{:else if a.id === 'hex'}
 								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} MaiaMIND a month.</small>
 							{:else if a.id === 'tent'}

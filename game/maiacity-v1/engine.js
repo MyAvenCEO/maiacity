@@ -9,9 +9,10 @@
  * - Three COOPs, each with its own MIND: the MaiaCity COOP (MaiaMIND) owns the settlement hex and the AMM pool; the
  *   Settlement COOP (SettlementMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (VillageMIND)
  *   owns the pickup, the powercube (a diesel generator), a solar panel and a big battery pack.
- * - 5 % of every MIND that lands in a treasury goes into the MaiaCity COOP's pool: one equal-weight basket of all three
- *   MINDs (a constant-product pool, x·y·z), so any MIND swaps for any other. It is never paid out; anyone can swap
- *   through it (0.3 % fee stays in the pool).
+ * - 5 % of every MIND that lands in a treasury goes into the MaiaCity COOP's pool: a Balancer weighted pool, one
+ *   basket of all three MINDs with equal weights (1/3 each, settings a MIP may change). Its invariant is
+ *   V = Π Bᵢ^wᵢ; any MIND swaps for any other by Balancer's maths (out = Bₒ·(1 − (Bᵢ/(Bᵢ + Aᵢ·(1 − fee)))^(wᵢ/wₒ))),
+ *   so V never falls. It is never paid out; anyone can swap through it (the 0.3 % fee stays in the pool).
  * - Rent, every virtual month: each player pays the Settlement COOP for the tent in SettlementMIND; the Settlement COOP
  *   pays the MaiaCity COOP for the hex in MaiaMIND. A payer who lacks the MIND swaps others through the pool; what is
  *   still missing is owed (arrears) and paid first next month.
@@ -60,6 +61,10 @@ export const DEFAULT_SETTINGS = {
 	demurrage: 0.07,
 	/** of every MIND into a treasury, this share goes to the pool */
 	poolShare: 0.05,
+	/** the pool's weights, one per MIND (taken as shares of their sum: 1, 1, 1 is 1/3 each) */
+	weightMAIA: 1,
+	weightSETTLEMENT: 1,
+	weightVILLAGE: 1,
 	/** the pool's swap fee, kept in the pool */
 	swapFee: 0.003,
 	/** each player, each virtual month, to the Settlement COOP, in SettlementMIND */
@@ -69,7 +74,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -80,6 +85,9 @@ export const SETTING_LIMITS = {
 	heartsPerDay: [1, 1000],
 	demurrage: [0, 0.5],
 	poolShare: [0, 0.5],
+	weightMAIA: [0.1, 10],
+	weightSETTLEMENT: [0.1, 10],
+	weightVILLAGE: [0.1, 10],
 	swapFee: [0, 0.1],
 	tentRent: [0, 10000],
 	hexRent: [0, 10000]
@@ -195,27 +203,47 @@ function bookMelt(s, at) {
 	s.melt = {};
 }
 
-/** the pool's price of one `tok` in MaiaMIND (null while either side is empty); equal weights: the ratio of balances */
-export const price = (s, tok = 'SETTLEMENT') => (s.pool.MAIA > DUST && s.pool[tok] > DUST ? s.pool.MAIA / s.pool[tok] : null);
+/** the pool's normalised weights, one per MIND, summing to 1 (Balancer's wᵢ) */
+export function weights(s) {
+	const raw = Object.fromEntries(MINDS.map((t) => [t, s.settings[`weight${t}`] ?? 1]));
+	const sum = MINDS.reduce((a, t) => a + raw[t], 0);
+	return Object.fromEntries(MINDS.map((t) => [t, raw[t] / sum]));
+}
+
+/** the pool's invariant V = Π Bᵢ^wᵢ (0 while a MIND is missing from the basket) */
+export function invariant(s) {
+	const w = weights(s);
+	return MINDS.reduce((v, t) => v * Math.pow(Math.max(0, s.pool[t]), w[t]), 1);
+}
+
+/** Balancer's spot price of one `tok` in `inTok` (MaiaMIND by default), fee left out: (B_in/w_in)/(B_tok/w_tok);
+ * null while either side is empty */
+export function price(s, tok = 'SETTLEMENT', inTok = 'MAIA') {
+	const w = weights(s);
+	if (!(s.pool[inTok] > DUST && s.pool[tok] > DUST)) return null;
+	return s.pool[inTok] / w[inTok] / (s.pool[tok] / w[tok]);
+}
 
 const isMind = (t) => MINDS.includes(t);
 
-/** what `amountIn` of `inTok` buys of `outTok` from the pool (equal weights: each pair trades as x·y = k) */
+/** Balancer's out-given-in: what `amountIn` of `inTok` buys of `outTok`; the fee is taken from what goes in and stays */
 export function quote(s, inTok, outTok, amountIn) {
 	if (inTok === outTok || !isMind(inTok) || !isMind(outTok)) return 0;
-	const x = s.pool[inTok];
-	const y = s.pool[outTok];
-	if (!(x > DUST && y > DUST) || !(amountIn > 0)) return 0;
+	const bi = s.pool[inTok];
+	const bo = s.pool[outTok];
+	if (!(bi > DUST && bo > DUST) || !(amountIn > 0)) return 0;
+	const w = weights(s);
 	const a = amountIn * (1 - s.settings.swapFee);
-	return (y * a) / (x + a);
+	return bo * (1 - Math.pow(bi / (bi + a), w[inTok] / w[outTok]));
 }
 
-/** how much of `inTok` buys exactly `amountOut` of `outTok` (Infinity if the pool can't) */
+/** Balancer's in-given-out: how much of `inTok` buys exactly `amountOut` of `outTok` (Infinity if the pool can't) */
 function costOf(s, inTok, outTok, amountOut) {
-	const x = s.pool[inTok];
-	const y = s.pool[outTok];
-	if (!(x > DUST && y > DUST) || amountOut >= y) return Infinity;
-	return (x * amountOut) / (y - amountOut) / (1 - s.settings.swapFee);
+	const bi = s.pool[inTok];
+	const bo = s.pool[outTok];
+	if (!(bi > DUST && bo > DUST) || amountOut >= bo) return Infinity;
+	const w = weights(s);
+	return (bi * (Math.pow(bo / (bo - amountOut), w[outTok] / w[inTok]) - 1)) / (1 - s.settings.swapFee);
 }
 
 function swapRaw(s, at, who, bal, inTok, outTok, amountIn, note) {
