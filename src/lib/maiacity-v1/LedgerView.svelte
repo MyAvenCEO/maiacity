@@ -8,7 +8,8 @@
 	// @ts-nocheck — plain JS
 	import { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
 
-	let { view, who, limit = 200 } = $props();
+	/** show: 'all', or only the 'cash' flow (rents, dividends, pay days) or only the 'tx' (every transaction) */
+	let { view, who, limit = 200, show = 'all', tall = false } = $props();
 
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 	const vdate = (vm) => dateText(dateOf(vm));
@@ -29,22 +30,23 @@
 	const LABELS = { mint: 'Minted', invest: 'Invested', pool: 'To the pool', swap: 'Swap', rent: 'Rent', arrears: 'Owed', demurrage: 'Melt', expired: 'Expired', settings: 'Settings', proposal: 'MIP', payout: 'Payout', dividend: 'Dividend' };
 </script>
 
+{#if show !== 'tx'}
 		{#if subsIn.length || subsOut.length || divs.length}
-			<p class="eyebrow">Rent subscriptions · each weekly pay day</p>
+			<p class="eyebrow">Subscriptions in and out · by their interval</p>
 			<div class="subs">
 				{#each subsIn as r (r.what + r.from + r.to)}
-					<div class="line"><span class="when">In<small>{r.what}</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(r.monthly)} {TOKEN_LABEL[r.token]} a month{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</span></div>
+					<div class="line"><span class="when">In<small>{r.what}</small></span><span class="what">from {nameOf(view, r.from)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.monthly)} {TOKEN_LABEL[r.token]}<small>a month</small></span></div>
 				{/each}
 				{#each divs as r (r.what + r.from)}
-					<div class="line"><span class="when">In<small>Dividend</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now</small></span><span class="amt plus">+{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</span></div>
+					<div class="line"><span class="when">In<small>Dividend</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now · paid weekly with it</small></span><span class="amt plus">+{f(r.weekly * 4, 3)} {TOKEN_LABEL[r.token]}<small>a month</small></span></div>
 				{/each}
 				{#each subsOut as r (r.what + r.from + r.to)}
-					<div class="line"><span class="when">Out<small>{r.what}</small></span><span class="what">to {nameOf(view, r.to)}<small>{f(r.monthly)} {TOKEN_LABEL[r.token]} a month{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</span></div>
+					<div class="line"><span class="when">Out<small>{r.what}</small></span><span class="what">to {nameOf(view, r.to)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.monthly)} {TOKEN_LABEL[r.token]}<small>a month</small></span></div>
 				{/each}
-				<div class="line total"><span class="when">Net<small>a pay day</small></span><span class="what">next pay day {vdate((view.week + 1) / 4)}<small>a payer short of the MIND swaps through the pool</small></span><span class="amt">{#each weekNet as [t, x] (t)}<span class:plus={x > 0} class:minus={x < 0}>{signed(x)} {TOKEN_LABEL[t]}</span>{/each}</span></div>
+				<div class="line total"><span class="when">Net<small>a month</small></span><span class="what">next pay day {vdate((view.week + 1) / 4)}<small>4 pay days a month; a payer short of the MIND swaps through the pool</small></span><span class="amt">{#each weekNet as [t, x] (t)}<span class:plus={x > 0} class:minus={x < 0}>{signed(x * 4)} {TOKEN_LABEL[t]}</span>{/each}</span></div>
 			</div>
 		{/if}
-		{#if days.length}
+		{#if days.length && show === 'all'}
 			<p class="eyebrow">Cash flow, the last pay days</p>
 			<div class="subs">
 				{#each days as d (d.week)}
@@ -56,9 +58,12 @@
 				{/each}
 			</div>
 		{/if}
+		{#if show === 'cash' && !subsIn.length && !subsOut.length && !divs.length}<p class="about">No rents in or out yet.</p>{/if}
+{/if}
+{#if show !== 'cash'}
 		<p class="eyebrow">Every transaction</p>
 		{#if lines.length}
-			<div class="ledger">
+			<div class="ledger" class:tall>
 				{#each lines as e (e.id)}
 					<div class="line">
 						<span class="when">{vdate(e.vm)}<small>{LABELS[e.kind] ?? e.kind}</small></span>
@@ -76,6 +81,8 @@
 			<p class="about">Nothing yet.</p>
 		{/if}
 
+{/if}
+
 <style>
 	.eyebrow {
 		margin: 0.6rem 0 0;
@@ -92,6 +99,9 @@
 	.ledger {
 		max-height: 40dvh;
 		overflow-y: auto;
+	}
+	.ledger.tall {
+		max-height: none;
 	}
 	.subs {
 		margin-bottom: 0.6rem;

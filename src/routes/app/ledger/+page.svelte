@@ -2,7 +2,7 @@
 	Ledger: the money of MaiaCity V1's one game, on its own, with no world round it. The single source of truth is the
 	game (game/maiacity-v1/engine.js, held by the server): your seat's HEARTS and MINDs, what is ready to mint (the
 	game's own rule, on the game clock), and, for any player, COOP or the pool, its rents in and out, what each weekly
-	pay day nets it, what the last pay days moved, and every transaction ($lib/maiacity-v1/LedgerView.svelte, the same
+	pay day nets it, by interval, and every transaction ($lib/maiacity-v1/LedgerView.svelte, the same
 	view as the game's Ledger card).
 -->
 <script>
@@ -28,6 +28,17 @@
 		const [kind, id] = who.split(':');
 		return kind === 'player' ? view.players[id].wallet : kind === 'coop' ? view.coops[id].treasury : view.pool;
 	});
+	let tab = $state('tx');
+	const TABS = [['tx', 'Transactions'], ['cash', 'Cash flow'], ['assets', 'Assets']];
+	/** a wallet's mark in the bar, like a vault's in avenDB: initials on a colour, a circle for a player, a rounded square
+	 * for a COOP, a hexagon for the pool */
+	const markOf = (id) => {
+		const [kind, k] = id.split(':');
+		if (kind === 'player') return { shape: 'human', text: (view.players[k].name || k).slice(0, 2), hue: k === 'A' ? 28 : 205 };
+		if (kind === 'coop') return { shape: 'coop', text: view.coops[k].name.replace(/ COOP$/, '').slice(0, 2), colour: TOKEN_COLOUR[view.coops[k].mind] };
+		return { shape: 'aven', text: 'AMM', colour: '#8a7a55' };
+	};
+	const heartsLabel = $derived(who.startsWith('player:') ? `${view.players[who.slice(7)].name.replace(/\s+/g, '')}HEARTS` : 'HEARTS');
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 </script>
 
@@ -63,32 +74,55 @@
 		</section>
 		{#if g.error}<p class="bad">{g.error}</p>{/if}
 
-		<div class="cols">
-			<section>
-				<h2>Whose ledger</h2>
-				<ul class="wallets">
-					{#each wallets as [id, label] (id)}
-						<li><button class:on={who === id} onclick={() => (chosen = id)}>{label}</button></li>
+		<div class="body">
+			<nav class="bar" aria-label="Whose ledger">
+				{#each wallets as [id, label], i (id)}
+					{@const m = markOf(id)}
+					{#if i === SEATS.length || i === wallets.length - 1}<hr />{/if}
+					<button class="slot" class:on={who === id} title={label} aria-label={label} aria-current={who === id ? 'true' : undefined} onclick={() => (chosen = id)}>
+						<span class="mark {m.shape}" style={m.colour ? `background:${m.colour}` : `background:hsl(${m.hue} 38% 42%)`}>{m.text}</span>
+					</button>
+				{/each}
+			</nav>
+
+			<div class="side">
+				<header class="whose">
+					<small>{who.startsWith('player:') ? 'Player' : who === 'pool' ? 'AMM pool · owned by the MaiaCity COOP' : 'COOP'}</small>
+					<h2>{nameOf(view, who)}</h2>
+				</header>
+				<div class="tabs" role="tablist">
+					{#each TABS as [id, label] (id)}
+						<button role="tab" aria-selected={tab === id} class:on={tab === id} onclick={() => (tab = id)}>{label}</button>
 					{/each}
-				</ul>
-				<h2 class="hold">What {nameOf(view, who)} holds{who === 'coop:maia' ? ' in its treasury' : ''}</h2>
-				<ul class="holdings">
-					{#if who.startsWith('player:')}<li><span>HEARTS</span><strong>{f(balance.HEARTS)}</strong></li>{/if}
-					{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(balance[t])}</strong></li>{/each}
-				</ul>
-				{#if who === 'coop:maia'}
-					<h2 class="hold">The pool basket it owns</h2>
-					<p class="dim small">The AMM pool belongs wholly to the MaiaCity COOP, so its basket is part of what the COOP holds.</p>
-					<PoolBasket {view} treasury={balance} />
-				{:else if who === 'pool'}
-					<h2 class="hold">Inside the basket</h2>
-					<PoolBasket {view} />
-				{/if}
+				</div>
+
+				<div class="split">
+					<section class="left">
+						<div class="pane" class:off={tab !== 'assets'}>
+							<p class="eyebrow">{who === 'coop:maia' ? 'Assets · its treasury' : 'Assets'}</p>
+							<ul class="holdings">
+								{#if who.startsWith('player:')}<li><span><i class="heart"></i>{heartsLabel}</span><strong>{f(balance.HEARTS)}</strong></li>{/if}
+								{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(balance[t])}</strong></li>{/each}
+							</ul>
+							{#if who === 'coop:maia'}
+								<p class="eyebrow">The pool basket it owns</p>
+								<p class="dim small">The AMM pool belongs wholly to the MaiaCity COOP, so its basket is part of what the COOP holds.</p>
+								<PoolBasket {view} treasury={balance} />
+							{:else if who === 'pool'}
+								<p class="eyebrow">Inside the basket</p>
+								<PoolBasket {view} />
+							{/if}
+						</div>
+						<div class="pane" class:off={tab !== 'cash'}>
+							<LedgerView {view} {who} show="cash" />
+						</div>
+					</section>
+					<section class="right pane" class:off={tab !== 'tx'}>
+						<LedgerView {view} {who} show="tx" tall />
+					</section>
+				</div>
 				<p class="dim small">The one game is the source of every number here: <a href="{base}/app/maiacity-v1/">MaiaCity V1</a>.</p>
-			</section>
-			<section class="book">
-				<LedgerView {view} {who} />
-			</section>
+			</div>
 		</div>
 	{/if}
 </main>
@@ -167,42 +201,115 @@
 		background: var(--mustard);
 		color: var(--ink);
 	}
-	.cols {
+	.body {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+		grid-template-columns: 64px minmax(0, 1fr);
 		gap: 1.5rem;
 		margin-top: 1.8rem;
+		align-items: start;
 	}
-	h2 {
-		margin: 0 0 0.7rem;
-		font-size: 1.3rem;
+	.bar {
+		position: sticky;
+		top: 1rem;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.9rem 0;
+		border-radius: 20px;
+		background: #e6e0d4;
 	}
-	h2.hold {
+	.bar hr {
+		width: 2rem;
+		margin: 0.1rem 0;
+		border: 0;
+		border-top: 2px solid rgb(0 0 0 / 0.12);
+	}
+	.slot {
+		position: relative;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: pointer;
+	}
+	/* the picked wallet's marker at the bar's edge, as avenDB marks the vault open */
+	.slot::before {
+		position: absolute;
+		left: -10px;
+		width: 5px;
+		height: 0;
+		border-radius: 0 4px 4px 0;
+		background: var(--ink);
+		content: '';
+		transition: height 0.15s ease;
+	}
+	.slot:hover::before {
+		height: 12px;
+	}
+	.slot.on::before {
+		height: 36px;
+	}
+	.mark {
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		color: #fff;
+		font-size: 0.85rem;
+		font-weight: 600;
+		transition: transform 0.15s ease;
+		user-select: none;
+	}
+	.slot:hover .mark {
+		transform: scale(1.06);
+	}
+	.mark.coop {
+		border-radius: 28%;
+	}
+	.mark.aven {
+		border-radius: 0;
+		font-size: 0.7rem;
+		clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
+	}
+	.whose small {
+		font-size: 0.72rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.whose h2 {
+		margin: 0.1rem 0 0.8rem;
+		font-family: var(--font-display);
+		font-size: 1.7rem;
+	}
+	.tabs {
+		display: none;
+	}
+	.split {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 1.5rem;
+	}
+	.left .pane + .pane {
 		margin-top: 1.4rem;
+	}
+	.eyebrow {
+		margin: 0.4rem 0 0.4rem;
+		font-size: 0.72rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.pane > .eyebrow:not(:first-child) {
+		margin-top: 1.2rem;
 	}
 	ul {
 		margin: 0;
 		padding: 0;
 		list-style: none;
-	}
-	.wallets {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
-	}
-	.wallets button {
-		padding: 0.4rem 0.8rem;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		background: none;
-		color: var(--ink);
-		font: inherit;
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-	.wallets button.on {
-		background: var(--ink);
-		color: var(--paper);
 	}
 	.holdings li {
 		display: flex;
@@ -219,15 +326,72 @@
 		margin-right: 0.45rem;
 		border-radius: 50%;
 	}
+	.holdings i.heart {
+		background: var(--terracotta);
+	}
 	.holdings strong {
 		font-variant-numeric: tabular-nums;
 	}
 	@media (max-width: 720px) {
-		.cols {
-			grid-template-columns: minmax(0, 1fr);
-		}
 		.mint {
 			text-align: left;
+		}
+		.body {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 1rem;
+			margin-top: 1.2rem;
+		}
+		.bar {
+			position: static;
+			flex-direction: row;
+			overflow-x: auto;
+			padding: 0.6rem 0.8rem;
+			border-radius: 16px;
+		}
+		.bar hr {
+			width: 0;
+			height: 2rem;
+			border-top: 0;
+			border-left: 2px solid rgb(0 0 0 / 0.12);
+		}
+		.slot::before {
+			display: none;
+		}
+		.slot.on .mark {
+			outline: 3px solid var(--ink);
+			outline-offset: 2px;
+		}
+		.tabs {
+			display: flex;
+			gap: 0.3rem;
+			margin-bottom: 1rem;
+			padding: 0.25rem;
+			border-radius: 999px;
+			background: #e6e0d4;
+		}
+		.tabs button {
+			flex: 1;
+			padding: 0.5rem 0.4rem;
+			border: 0;
+			border-radius: 999px;
+			background: none;
+			color: var(--ink);
+			font: inherit;
+			font-size: 0.85rem;
+			cursor: pointer;
+		}
+		.tabs button.on {
+			background: var(--ink);
+			color: var(--paper);
+		}
+		.split {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.left .pane + .pane {
+			margin-top: 0;
+		}
+		.off {
+			display: none;
 		}
 	}
 </style>
