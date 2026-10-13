@@ -148,3 +148,29 @@ export function check(v) {
 	const spec = kind === 'a2ui' ? checkA2ui(v.spec) : checkHtml(v.spec);
 	return { id, title, note: str(v.note, LIMITS.note).trim(), kind, spec };
 }
+
+/**
+ * A view card (Samuel, 2026-10-13): a game's screen that a proposal carries beside its rules, an MCP App run like an
+ * html view (Frame.svelte) and handed the game's state as its tool result. { id, kind: 'view', name, description,
+ * data: { slot: 'panel', libs, height }, code: its HTML }. Sandbox 7's config cards (game/economy/params.js) and
+ * MaiaCity V1's MIPs (game/maiacity-v1/engine.js) both check theirs here: { card } or { error } in a sentence.
+ */
+export const VIEW_SLOTS = ['panel'];
+export const MAX_VIEW = 100_000;
+export function checkViewCard(raw) {
+	const id = String(raw?.id ?? '').trim();
+	if (!/^[a-z][a-z0-9_-]{1,40}$/.test(id)) return { error: `A view card's id is lowercase letters, digits, - and _, 2 to 41 long (got "${id.slice(0, 40)}").` };
+	const name = String(raw?.name ?? '').trim().slice(0, 80) || id;
+	const description = String(raw?.description ?? '').trim().slice(0, 4000);
+	const code = String(raw?.code ?? '');
+	if (!code.trim()) return { error: `Card ${id}: a view's code is its HTML (an MCP App).` };
+	if (code.length > MAX_VIEW) return { error: `Card ${id}: a view's code is at most ${MAX_VIEW} characters.` };
+	const d = raw?.data ?? {};
+	const slot = d.slot ?? 'panel';
+	if (!VIEW_SLOTS.includes(slot)) return { error: `Card ${id}: a view's slot is one of ${VIEW_SLOTS.join(', ')}.` };
+	const libs = Array.isArray(d.libs) ? d.libs.filter((l) => typeof l === 'string') : [];
+	const bad = libs.find((l) => !LIBS[l]);
+	if (bad) return { error: `Card ${id}: no library "${bad.slice(0, 30)}"; a view may load ${Object.keys(LIBS).join(', ')}.` };
+	const height = Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], Math.round(Number(d.height) || 520)));
+	return { card: { id, kind: 'view', name, description, values: {}, data: { slot, libs: [...new Set(libs)], height }, code } };
+}

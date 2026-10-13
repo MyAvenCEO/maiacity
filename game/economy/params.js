@@ -5,7 +5,7 @@
 // API, which checks every card a MIP (a MaiaCity improvement proposal) puts in against it.
 
 import { DEFAULT_CODE } from './rules-code.js';
-import { LIBS } from '../genui/views.js';
+import { checkViewCard } from '../genui/views.js';
 
 export { DEFAULT_CODE };
 export const GOODS = ['water', 'fruits', 'vegetables', 'legumes', 'chicken'];
@@ -156,8 +156,7 @@ export function checkParam(key, value) {
 // can change a rule and the screen that shows it, and both land together when it is accepted.
 
 export const CARD_KINDS = ['policy', 'world', 'resource', 'recipe', 'view'];
-/** where a view card shows: a tab of the valley's side panel */
-export const VIEW_SLOTS = ['panel'];
+
 
 /** the catalogue's sections, each one card: its id, kind and name */
 export const SECTIONS = [
@@ -199,7 +198,6 @@ export function paramsOf(cards) {
 
 const CARD_ID = /^[a-z][a-z0-9_-]{1,40}$/;
 const MAX_CODE = 20000;
-const MAX_VIEW = 100000;
 const MAX_DATA = 50000;
 
 /**
@@ -219,27 +217,12 @@ export function checkCard(raw) {
 		if (ok == null) return { error: `Card ${id}: ${k} is not a value the valley has (or ${JSON.stringify(v)} is not a number).` };
 		values[k] = ok;
 	}
-	if (kind === 'view') return checkView(id, name, description, raw);
+	if (kind === 'view') return checkViewCard({ ...raw, id, name, description });
 	const data = raw?.data == null ? undefined : raw.data;
 	if (data !== undefined && (typeof data !== 'object' || JSON.stringify(data).length > MAX_DATA)) return { error: `Card ${id}: its data is a JSON object of at most ${MAX_DATA} characters.` };
 	const code = String(raw?.code ?? '');
 	if (code.length > MAX_CODE) return { error: `Card ${id}: its code is at most ${MAX_CODE} characters.` };
 	return { card: { id, kind, name, description, values, ...(data !== undefined ? { data } : {}), code } };
-}
-
-/** a view card: its HTML (an MCP App), where it shows, the pinned libraries it loads and its height; no values */
-function checkView(id, name, description, raw) {
-	const code = String(raw?.code ?? '');
-	if (!code.trim()) return { error: `Card ${id}: a view's code is its HTML (an MCP App).` };
-	if (code.length > MAX_VIEW) return { error: `Card ${id}: a view's code is at most ${MAX_VIEW} characters.` };
-	const d = raw?.data ?? {};
-	const slot = d.slot ?? 'panel';
-	if (!VIEW_SLOTS.includes(slot)) return { error: `Card ${id}: a view's slot is one of ${VIEW_SLOTS.join(', ')}.` };
-	const libs = Array.isArray(d.libs) ? d.libs.filter((l) => typeof l === 'string') : [];
-	const bad = libs.find((l) => !LIBS[l]);
-	if (bad) return { error: `Card ${id}: no library "${bad.slice(0, 30)}"; a view may load ${Object.keys(LIBS).join(', ')}.` };
-	const height = Math.min(1200, Math.max(160, Math.round(Number(d.height) || 520)));
-	return { card: { id, kind: 'view', name, description, values: {}, data: { slot, libs: [...new Set(libs)], height }, code } };
 }
 
 /** a config's cards after a MIP: each card put in replaces the one with its id (or joins at the end), removed ones go */

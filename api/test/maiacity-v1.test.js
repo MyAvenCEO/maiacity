@@ -217,3 +217,22 @@ test("two founders take the two seats and only move their own", async () => {
   expect(s.month).toBe(0);
   expect(s.players.B.founder).toBe("bob");
 });
+
+test("a MIP brings a screen (a view card) with its signatures; it changes nothing of the play", async () => {
+  const { viewsOf, DEFAULT_VIEWS } = await import("../../game/maiacity-v1/views.js");
+  let s = newGame(T0);
+  expect(viewsOf(s).map((v) => v.id)).toEqual(["view-holders"]);
+  const screen = { id: "view-rents", kind: "view", name: "Rents", code: "<p>rents</p>", data: { height: 9999 } };
+  expect(() => act(s, "A", { type: "propose", mip: { title: "Bad", views: [{ ...screen, data: { libs: ["evil"] } }] } }, T0)).toThrow(/no library/);
+  s = act(s, "A", { type: "propose", mip: { title: "A rents screen", views: [screen, { ...DEFAULT_VIEWS[0], name: "Holders 2" }] } }, T0);
+  const before = JSON.stringify({ players: s.players, coops: s.coops, pool: s.pool, settings: s.settings });
+  expect(s.views ?? []).toEqual([]);
+  s = act(s, "B", { type: "sign", number: 1 }, T0);
+  expect(s.mips[0].status).toBe("accepted");
+  expect(viewsOf(s).map((v) => v.name)).toEqual(["Holders 2", "Rents"]);
+  expect(s.views.find((v) => v.id === "view-rents").data.height).toBe(1200);
+  expect(JSON.stringify({ players: s.players, coops: s.coops, pool: s.pool, settings: s.settings })).toBe(before);
+  s = act(s, "A", { type: "propose", mip: { title: "No rents screen", removeViews: ["view-rents"] } }, T0);
+  s = act(s, "B", { type: "sign", number: 2 }, T0);
+  expect(viewsOf(s).map((v) => v.id)).toEqual(["view-holders"]);
+});

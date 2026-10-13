@@ -564,7 +564,11 @@ pub struct V1Propose {
     /// pickupRent, powercubeRent, batteryRent 0-10000 the Settlement COOP a month to the machine's owner in its MIND), coops: { maia | settlement | village:
     /// { name, assets: [the whole list as it will be: { id (keep an asset's id from maiacity_v1_mips), name, kind }] } },
     /// payouts: [{ from: "coop:maia" | "coop:settlement" | "coop:village", to: "player:A" | "player:B" | a coop,
-    /// token: "MAIA" | "SETTLEMENT" | "VILLAGE", amount }] }
+    /// token: "MAIA" | "SETTLEMENT" | "VILLAGE", amount }], views: [screens, view cards: { id, kind: "view", name,
+    /// description, data: { slot: "panel", libs?: ["three" | "d3" | "mcp-apps"], height?: 160-1200 }, code: its HTML, an
+    /// MCP App run sandboxed, handed the game as its tool result every second: { date, month, minds, players with
+    /// wallets, coops with treasuries and assets, pool, settings } (game/maiacity-v1/views.js); a card with an id
+    /// already there replaces it (the default screen is view-holders)], removeViews: [ids of screens to take out] }
     pub mip: Value,
     /// the seat it is proposed from, "A" or "B" (default: the seat this Mac's founder plays)
     pub seat: Option<String>,
@@ -1719,7 +1723,7 @@ impl Studio {
     // ── MaiaCity V1 (the two-player HEARTS game, /app/maiacity-v1/): its settings, COOPs and MIPs ──
 
     #[tool(
-        description = "MaiaCity V1, the two-player game: the clock (game month, the 13-month calendar), every setting as it stands (each one a MIP may change), the COOPs (name, MIND, the assets each owns, treasury), the AMM pool, both players' wallets, and its MIPs newest first: number, title, description, what it changes in words, settings, coops, payouts, who proposed it and how (page or mcp), signatures, status (open, accepted, rejected) and the note. Every decision about settings and COOPs is a MIP that needs the game's signatures (2 by default) and applies at once in this same game."
+        description = "MaiaCity V1, the two-player game: the clock (game month, the 13-month calendar), every setting as it stands (each one a MIP may change), the COOPs (name, MIND, the assets each owns, treasury), the AMM pool, both players' wallets, the screens that MIPs put in (view cards), and its MIPs newest first: number, title, description, what it changes in words, settings, coops, payouts, who proposed it and how (page or mcp), signatures, status (open, accepted, rejected) and the note. Every decision about settings and COOPs is a MIP that needs the game's signatures (2 by default) and applies at once in this same game."
     )]
     async fn maiacity_v1_mips(&self, Parameters(a): Parameters<V1Mips>) -> String {
         let r = async {
@@ -1734,13 +1738,13 @@ impl Studio {
                 ps.iter().map(|(k, p)| (k.clone(), json!({ "name": p["name"], "founder": p["founder"], "wallet": p["wallet"], "arrears": p["arrears"] }))).collect()
             }).unwrap_or_default();
             Ok::<_, String>(json!({ "started": g["started"], "month": g["month"], "settings": g["settings"], "coops": g["coops"],
-                "pool": g["pool"], "players": players, "mips": mips, "now": v["now"] }))
+                "pool": g["pool"], "players": players, "views": g["views"], "mips": mips, "now": v["now"] }))
         };
         text(r.await)
     }
 
     #[tool(
-        description = "Propose a MaiaCity V1 MIP: a title, a description in prose, and what it changes: any settings (the clock speed, the mint window, the signatures needed, the starter pack, HEARTS a day, demurrage, the pool share, the swap fee, both rents), any COOP's name and the whole list of assets it owns, and payouts of MIND from a COOP treasury to any wallet. Read maiacity_v1_mips first. It is checked at once and waits, open and unsigned, for the players: both sign or reject it on the page; it is never signed from here."
+        description = "Propose a MaiaCity V1 MIP: a title, a description in prose, and what it changes: any settings (the clock speed, the mint window, the signatures needed, the starter pack, HEARTS a day, demurrage, the pool share, the swap fee, both rents), any COOP's name and the whole list of assets it owns, and payouts of MIND from a COOP treasury to any wallet, and the game's screens (view cards, MCP Apps run sandboxed: change a rule and the screen that shows it in one MIP). Read maiacity_v1_mips first. It is checked at once and waits, open and unsigned, for the players: both sign or reject it on the page; it is never signed from here."
     )]
     async fn maiacity_v1_propose(&self, Parameters(a): Parameters<V1Propose>) -> String {
         let mut mip = a.mip;
