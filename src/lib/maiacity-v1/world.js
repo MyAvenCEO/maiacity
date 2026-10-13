@@ -12,9 +12,10 @@ import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.
 
 const HEX_R = 34;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
-/** the Village COOP's assets (engine COOPS.village, by id) and where each stands on the hex: x, z, turned; the panel faces the sun at −z */
+/** the Village COOP's assets (engine COOPS.village, by id) and where each stands on the hex: x, z, turned; the panel faces the sun at −z.
+ *  The pickup stands at twice its size, beside the players (Samuel 2026-10-13); the Assets viewer keeps it real. */
 const ASSETS = [
-	{ id: 'pickup', make: pickup, at: [-13, 11, 2.2], clear: 6 },
+	{ id: 'pickup', make: pickup, at: [-16, 10, 2.2], clear: 9, scale: 2 },
 	{ id: 'powercube', make: powercube, at: [12, -6, -0.5], clear: 5 },
 	{ id: 'solar', make: solarPanel, at: [-3, -12, Math.PI], clear: 5 },
 	{ id: 'battery', make: batteryPack, at: [13, 6, -0.9], clear: 5 }
@@ -153,8 +154,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	people.A.rotation.y = 0.4;
 	world.add(people.A, people.B);
 	// the Village COOP's machines; tapping one names it
-	for (const { id, make, at } of ASSETS) {
+	for (const { id, make, at, scale = 1 } of ASSETS) {
 		const a = make();
+		a.scale.setScalar(scale);
 		a.position.set(at[0], 0, at[1]);
 		a.rotation.y = at[2];
 		a.traverse((o) => {
