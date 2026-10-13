@@ -49,6 +49,38 @@ function hexGround() {
 	return g;
 }
 
+/** the land still to unlock, as sand-grey plots with a dotted rim: first the six other hexes of this village, then
+ *  the six villages round it, seven hexes each, the whole city plot of 49 hexes (Samuel 2026-10-13). Each opens as
+ *  the settlement grows; for now nothing stands on them. Hexes point north (+z): axial (q, r) sits at
+ *  x = √3·R·(q + r/2), z = 1.5·R·r, a hex is one settlement and seven are a village. */
+const AXIAL = [[0, 0], [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]];
+const VILLAGES = [[0, 0], [2, 1], [-1, 3], [-3, 2], [-2, -1], [1, -3], [3, -2]];
+function lockedLand() {
+	const g = new THREE.Group();
+	g.name = 'locked-land';
+	const near = mat(0xd9cfb6), far = mat(0xc9c4b6);
+	const rimNear = new THREE.LineDashedMaterial({ color: 0x8a7f66, dashSize: 5, gapSize: 6, transparent: true, opacity: 0.8 });
+	const rimFar = new THREE.LineDashedMaterial({ color: 0x9a948a, dashSize: 5, gapSize: 6, transparent: true, opacity: 0.6 });
+	const r = HEX_R - 0.8;
+	const slab = new THREE.CylinderGeometry(r, r, 1.2, 6, 1);
+	const rim = new THREE.BufferGeometry().setFromPoints(Array.from({ length: 7 }, (_, k) => new THREE.Vector3(Math.sin((k * Math.PI) / 3) * r, 0, Math.cos((k * Math.PI) / 3) * r)));
+	for (const [vq, vr] of VILLAGES)
+		for (const [dq, dr] of AXIAL) {
+			const q = vq + dq, rr = vr + dr;
+			if (!q && !rr) continue; // our own settlement, alive
+			const home = !vq && !vr;
+			const x = Math.sqrt(3) * HEX_R * (q + rr / 2), z = 1.5 * HEX_R * rr;
+			const plot = new THREE.Mesh(slab, home ? near : far);
+			const line = new THREE.Line(rim, home ? rimNear : rimFar);
+			plot.userData.level = line.userData.level = home ? 1 : 2; // 1: this village, 2: the whole city
+			plot.position.set(x, -1.0, z);
+			line.position.set(x, -0.35, z);
+			line.computeLineDistances();
+			g.add(plot, line);
+		}
+	return g;
+}
+
 /** the gravel: a round parking lot for the pickup beside the tent, a road that meanders in to it from the hex's west
  *  side, and one round yard east of the tent where all the utilities stand: the powercube, the battery and the solar row */
 const LOT = { x: -16, z: 10, r: 8 };
@@ -177,14 +209,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	const scene = new THREE.Scene();
 	const sky = new THREE.Color(0xcfe0e6);
 	scene.background = sky;
-	scene.fog = new THREE.Fog(sky, 315, 720);
-	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 900);
+	scene.fog = new THREE.Fog(sky, 380, 2200);
+	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 3200);
 	camera.position.set(117, 99, 144);
 	const controls = new OrbitControls(camera, canvas);
 	controls.target.set(2, 1, 3);
 	controls.enableDamping = true;
 	controls.minDistance = 18;
-	controls.maxDistance = 270;
+	controls.maxDistance = 1500; // far enough out to see the whole city plot
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotate = true;
 	controls.autoRotateSpeed = 0.25;
@@ -201,6 +233,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	const world = new THREE.Group();
 	scene.add(world);
 	world.add(hexGround());
+	const locked = lockedLand();
+	world.add(locked);
+	let shown = -1;
+	let zoomTo = 0; // a distance the camera eases out to when more land is shown
+	/** how much of the land still to unlock is shown: 0 none, 1 this village, 2 the whole city plot; the welcome
+	 *  story opens it step by step, and the camera eases out to take it in */
+	function reveal(level) {
+		if (level === shown) return;
+		for (const o of locked.children) o.visible = o.userData.level <= level;
+		if (shown >= 0 && level > shown) zoomTo = level === 2 ? 1100 : 420;
+		shown = level;
+	}
+	for (const o of locked.children) o.visible = false; // until the page says how far the story is
 	world.add(gravel());
 	const theTent = tent();
 	world.add(theTent);
@@ -298,6 +343,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	function loop() {
 		raf = requestAnimationFrame(loop);
 		const t = clock.getElapsedTime();
+		if (zoomTo) {
+			const d = camera.position.distanceTo(controls.target);
+			if (Math.abs(d - zoomTo) < 2) zoomTo = 0;
+			else camera.position.sub(controls.target).multiplyScalar(1 + (zoomTo - d) * 0.025 / d).add(controls.target);
+		}
 		controls.update();
 		light(t);
 		renderer.render(scene, camera);
@@ -316,6 +366,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 
 	return {
 		update,
+		reveal,
 		dispose() {
 			cancelAnimationFrame(raf);
 			ro.disconnect();
