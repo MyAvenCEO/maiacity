@@ -12,7 +12,7 @@
  */
 import { BASICS, CONSUMER, COMPUTE, ENERGY, FOOD, WATER, G, LIMIT, LIMIT_NAMES, BED, PHYSICAL, GOODS_, SPRING, WOOD, STEEL, GLASS, PANEL, GOOD_IDS, CLASS } from './consts.js';
 import { capDayOf, plantCapDay } from './genesis.js';
-import { DAYS_IN_MONTH, CHIPS, BORDER } from './primitives.js';
+import { DAYS_IN_MONTH, CHIPS, BORDER, FOOD as FOOD_R } from './primitives.js';
 import { monthOf } from './energy.js';
 import { reserveEur, IMPORT_KINDS } from './border.js';
 import { indoorMonths, dietFacts, peopleFed, DIETS, YIELDS } from './food.js';
@@ -471,7 +471,8 @@ export function indoorMonthsOf(w) {
  * The diet and the land it takes (cheap: no pass over the days): what a person eats (grams of each group, kcal and
  * protein a day), the m² a person needs outdoors and under glass at maturity, the kcal a m² gives, and how many people
  * the village's food land feeds at maturity in an average year after the harvest's losses (outdoors, under glass, all);
- * then, from the run so far, the first year the village fed itself and the last year it bought food.
+ * then, from the run so far, the first full year the village grew at least what everyone needs and the last year it
+ * bought food (more than 1 % of what was eaten).
  */
 export function foodLand(w) {
 	const c = w.c, f = dietFacts(c.diet, c.foodYields), V = c.village;
@@ -481,9 +482,8 @@ export function foodLand(w) {
 	let firstFed = null, lastImport = null;
 	for (const Y of w.rec?.years ?? []) {
 		if (!Y || Y.days < 365) continue;
-		const fedSelf = Y.food.eaten > 0 && Y.food.imported <= 0.01 * Y.food.eaten;
-		if (fedSelf && firstFed == null) firstFed = Y.year;
-		if (!fedSelf) lastImport = Y.year;
+		if (grewNeed(Y) && firstFed == null) firstFed = Y.year;
+		if (!noFoodImports(Y)) lastImport = Y.year;
 	}
 	return {
 		diet: f.diet,
@@ -503,11 +503,20 @@ export function foodLand(w) {
 	};
 }
 
+/** the village's own food that year (outdoors and under glass, after losses) as a share of what everyone needs
+ * (2,240 kcal a person a day) */
+const ownShare = (Y) => (Y.peopleDays > 0 ? ((Y.food.outdoors + Y.food.indoors) * 1000) / (Y.peopleDays * FOOD_R.kcalNeed.v) : 0);
+/** the village fed itself: it grew at least what everyone needs (people may still buy food above need at the border) */
+const grewNeed = (Y) => ownShare(Y) >= 1;
+/** it bought no food at the border (under 1 % of what was eaten) */
+const noFoodImports = (Y) => Y.food.eaten > 0 && Y.food.imported <= 0.01 * Y.food.eaten;
+
 /**
  * The border's ledger a year at a time: what the COOPs bought (food in kcal for the whole village, logs, scrap and
  * float glass in t, cells in kWp, accelerators in units) and what it cost in €, what the line's exports earned, the
- * euro reserve at the year's end (the founding euros left and the COOPs' accounts), whether the village fed itself
- * (food bought under 1 % of food eaten) and whether exports paid for all imports.
+ * euro reserve at the year's end (the founding euros left and the COOPs' accounts), the village's own food as a share
+ * of need, whether it fed itself (grew at least what everyone needs), whether it bought no food (under 1 % of food
+ * eaten) and whether exports paid for all imports.
  */
 export function borderYears(w) {
 	const out = [];
@@ -542,7 +551,9 @@ export function borderYears(w) {
 			reserveMinEur: Y.reserveMin,
 			importShortDays: Y.impShortDays,
 			reserveOut: Y.impShortDays > 0,
-			fedSelf: Y.food.eaten > 0 && Y.food.imported <= 0.01 * Y.food.eaten,
+			ownFoodShare: ownShare(Y),
+			fedSelf: grewNeed(Y),
+			noFoodImports: noFoodImports(Y),
 			exportsCover: Y.exportEur >= importEur - 1e-6
 		});
 	}

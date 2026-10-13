@@ -271,7 +271,7 @@ function report(exps, scen, bases, notCovered, meta) {
 	// headline
 	if (bases.length) {
 		L.push('## Headline: does Proposition 3 hold?', '');
-		L.push(`The base world: ${bases[0].N} people, ${Math.round(bases[0].s.days / 365)} years, seeds ${bases.map((b) => b.seed).join(', ')}. Each part is checked per person, every day. The strict test starts from a cold start, where everyone holds nothing; A07 tests owner-only newcomers who join a settled city.`, '');
+		L.push(`The base world: ${k0(bases[0].N)} people, ${Math.round(bases[0].s.days / 365)} years, seeds ${bases.map((b) => b.seed).join(', ')}. Each part is checked per person, every day. The strict test starts from a cold start, where everyone holds nothing; A07 tests owner-only newcomers who join a settled city.`, '');
 		L.push(borderLine(bases[0], scen), '');
 		L.push('| part | base world, every seed | what it shows | where it breaks |', '|---|---|---|---|');
 		for (const r of headline(exps, scen, bases)) L.push(`| ${r.part} | **${r.holds ? 'holds' : 'fails'}** | ${r.base} | ${r.breaks.length ? r.breaks.join(', ') : 'nowhere in this suite'} |`);
@@ -313,7 +313,7 @@ function report(exps, scen, bases, notCovered, meta) {
 			L.push(`### ${s.id} ${s.name} (${s.paper})`, '');
 			L.push(`**Stress.** ${s.stress}.`, '');
 			L.push(`**Claim.** ${s.claim}`, '');
-			L.push(`**Runs.** ${s.runs.map((r) => `${r.label} (${r.people ?? 1500} people, ${r.years} years)`).join('; ')}.`, '');
+			L.push(`**Runs.** ${s.runs.map((r) => `${r.label} (${k0(r.people ?? 1500)} people, ${r.years} years)`).join('; ')}.`, '');
 			L.push(`**Result.** ${s.takeaway}`, '');
 			L.push(`**Verdict: ${yes(s.pass)}.** ${s.evidence}`, '');
 		}
@@ -338,6 +338,158 @@ function report(exps, scen, bases, notCovered, meta) {
 	if (bases.length) baseEvidence(L, bases, exps, meta);
 	return L.join('\n');
 }
+// ── the simple numbers (round 3): what people get, the village's food and energy, the diet, the border ───────────
+const k0 = (x) => (Number.isFinite(x) ? Math.round(x).toLocaleString('en-US') : '–');
+const k1 = (x) => (Number.isFinite(x) ? x.toLocaleString('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) : '–');
+const eurM = (x) => (Number.isFinite(x) ? `€${(x / 1e6).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })} M` : '–');
+const YEARS_SHOWN = [1, 2, 3, 5, 10, 15, 20, 30, 40, 50, 60];
+const TENTH_NAMES = { poorest: 'poorest tenth', middle: 'middle (5th) tenth', richest: 'richest tenth' };
+const MEASURES = [
+	['kcal', 'kcal eaten (need 2,240)', k0],
+	['protein', 'protein g (need 73)', k0],
+	['homeM2', 'm² of home', k1],
+	['waterL', 'litres of water', k0],
+	['homeKwh', 'kWh at home', k1],
+	['avenH', 'hours of Aven help', k1],
+	['goodsKgYear', 'kg of goods a year', k0],
+	['pondHWeek', 'hours at the warm ponds a week', k1]
+];
+
+function simpleStats(L, bases, scen) {
+	const b0 = bases[0], s0 = b0.s, Ls = s0.living ?? [], Vs = s0.village ?? [], fl = s0.food ?? {};
+	const ys = YEARS_SHOWN.filter((y) => y <= Ls.length);
+	L.push('## The village of 1,500: what people get, year by year', '');
+	L.push(`${k0(b0.N)} people live in Sandbox 6’s village: six living hexes of homes, food domes and food forest round a centre hex of works, ${k0(s0.params?.settings?.beds)} beds, ${s0.params?.settings?.tower ? 'with the Tower180' : 'no tower'}. The run starts on moving-in day, with the outdoor food forest just planted. They eat ${fl.dietLabel ?? fl.diet} (${k0(fl.kcalDay)} kcal and ${k0(fl.proteinDay)} g of protein a day as planned; need 2,240 kcal and 73 g). Tenths are by MIND holdings, each a yearly mean a person a day unless it says otherwise. Seed ${b0.seed}; the five seeds side by side follow.`, '');
+	L.push('| year | tenth | ' + MEASURES.map((m) => m[1]).join(' | ') + ' | people short of anything that year |', '|---|---|' + '---|'.repeat(MEASURES.length + 1));
+	for (const y of ys) {
+		const r = Ls[y - 1];
+		for (const [k, name] of Object.entries(TENTH_NAMES)) L.push(`| ${y} | ${name} | ${MEASURES.map(([m, , fm]) => fm(r.tenths[k][m])).join(' | ')} | ${k0(r.tenths[k].shortPeople)} |`);
+	}
+	L.push('');
+	// the five seeds: mean (lowest–highest)
+	L.push('**All five seeds** (mean over the seeds, lowest–highest in brackets):', '');
+	const span = (xs, fm) => (xs.length ? `${fm(xs.reduce((a, x) => a + x, 0) / xs.length)} (${fm(Math.min(...xs))}–${fm(Math.max(...xs))})` : '–');
+	L.push('| year | tenth | kcal | protein g | hours of Aven help | kg of goods a year | hours at the ponds a week | people short (all seeds) |', '|---|---|---|---|---|---|---|---|');
+	for (const y of [1, 5, 10, 30, 60].filter((y) => bases.every((b) => (b.s.living ?? []).length >= y))) {
+		for (const [k, name] of Object.entries(TENTH_NAMES)) {
+			const rs = bases.map((b) => b.s.living[y - 1].tenths[k]);
+			L.push(`| ${y} | ${name} | ${span(rs.map((r) => r.kcal), k0)} | ${span(rs.map((r) => r.protein), k0)} | ${span(rs.map((r) => r.avenH), k1)} | ${span(rs.map((r) => r.goodsKgYear), k0)} | ${span(rs.map((r) => r.pondHWeek), k1)} | ${k0(rs.reduce((a, r) => a + r.shortPeople, 0))} |`);
+		}
+	}
+	L.push('');
+	// the village a year
+	L.push('### The whole village, a person a day', '');
+	L.push('Food in kcal: what the forest outdoors and the food domes put in the stores (after the harvest’s losses), what the food COOPs bought abroad, what people ate, and what was lost in storage, processing and the kitchen. Electricity in kWh: made by the solar cells in the glass and the geothermal plant, and where it went (basics first, then running the works and homes, building, R&D, the line’s exports, storage; curtailed is what nobody could use).', '');
+	L.push('| year | food outdoors | food domes | bought abroad | eaten | lost | solar | geothermal | basics | running | building | R&D | exported | storage | curtailed |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+	for (let y = 1; y <= Vs.length; y += y < 10 ? 1 : 5) {
+		const v = Vs[y - 1], m = v.energy.made, g = v.energy.went;
+		L.push(`| ${y} | ${k0(v.food.outdoors)} | ${k0(v.food.indoors)} | ${k0(v.food.imported)} | ${k0(v.food.eaten)} | ${k0(v.food.lost)} | ${k1(m.solar)} | ${k1(m.geothermal)} | ${k1(g.basics)} | ${k1(g.running)} | ${k1(g.building)} | ${k1(g.rd)} | ${k1(g.export)} | ${k1(g.storage)} | ${k1(g.curtailed)} |`);
+	}
+	if (Vs.length && (Vs.length - 1) % 5 !== 0 && Vs.length > 10) {
+		const v = Vs[Vs.length - 1], m = v.energy.made, g = v.energy.went;
+		L.push(`| ${Vs.length} | ${k0(v.food.outdoors)} | ${k0(v.food.indoors)} | ${k0(v.food.imported)} | ${k0(v.food.eaten)} | ${k0(v.food.lost)} | ${k1(m.solar)} | ${k1(m.geothermal)} | ${k1(g.basics)} | ${k1(g.running)} | ${k1(g.building)} | ${k1(g.rd)} | ${k1(g.export)} | ${k1(g.storage)} | ${k1(g.curtailed)} |`);
+	}
+	L.push('');
+	L.push('### What binds each good (the limit on most days of the year)', '');
+	const yb = [1, 5, 10, 30, 60].filter((y) => y <= Vs.length);
+	const goods = Object.keys(Vs[0]?.binds ?? {});
+	L.push('| good | ' + yb.map((y) => `year ${y}`).join(' | ') + ' |', '|---|' + '---|'.repeat(yb.length));
+	for (const g of goods) L.push(`| ${g} | ${yb.map((y) => `${Vs[y - 1].binds[g]} (${pc(Vs[y - 1].bindShare?.[g], 0)})`).join(' | ')} |`);
+	L.push('');
+	// the food domes by month
+	const im = s0.indoorMonths;
+	if (im) {
+		const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+		L.push('### The food domes by month (kcal a person a day)', '');
+		L.push(`At maturity, after losses, for the domes as they stand at the end of the run: without lamps, and with an LED top-up raising November to February to 12 mol a m² a day (about ${k0(im.ledKwhM2Year)} kWh a m² a year at ${k0(im.ledKwhPer1000)} kWh a 1,000 kcal; scenario F04 runs it). Then what the domes gave in year 10 of the run.`, '');
+		L.push('| | ' + MN.join(' | ') + ' |', '|---|' + '---|'.repeat(12));
+		L.push('| without light | ' + im.withoutLight.map(k0).join(' | ') + ' |');
+		L.push('| with LED light | ' + im.withLight.map(k0).join(' | ') + ' |');
+		const v10 = Vs[Math.min(10, Vs.length) - 1];
+		if (v10) L.push(`| the run, year ${v10.year} | ` + v10.indoorByMonth.map(k0).join(' | ') + ' |');
+		L.push('');
+	}
+	// what goes up, what goes down, and why: computed from the tables
+	L.push('### What goes up, what goes down, and why', '');
+	L.push(trendParagraph(s0), '');
+}
+
+/** the text with its first letter capitalized */
+const cap1 = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+
+/** one plain paragraph from the run's own tables: each measure's change for the poorest and richest tenths from the first full year to the last, and what bound the good behind it in the last year */
+function trendParagraph(s) {
+	const Ls = s.living ?? [], Vs = s.village ?? [];
+	if (Ls.length < 2) return 'The run is too short to say.';
+	const a = Ls[0], z = Ls[Ls.length - 1], vz = Vs[Vs.length - 1], va = Vs[0];
+	const goodOf = { kcal: 'food', homeM2: 'bed', waterL: 'water', homeKwh: 'energy', avenH: 'compute', goodsKgYear: 'goods', pondHWeek: 'spring' };
+	const names = { kcal: 'Food eaten', homeM2: 'Home space', waterL: 'Water', homeKwh: 'Electricity at home', avenH: 'Aven help', goodsKgYear: 'The weight of goods a year', pondHWeek: 'Time at the warm ponds' };
+	const fm = { kcal: k0, homeM2: k1, waterL: k0, homeKwh: k1, avenH: k1, goodsKgYear: k0, pondHWeek: k1 };
+	const way = (x0, x1) => (!(x0 > 0) ? (x1 > 0 ? 'rises from nothing' : 'stays at nothing') : x1 / x0 > 1.05 ? 'goes up' : x1 / x0 < 0.95 ? 'goes down' : 'stays about level');
+	const parts = [];
+	for (const m of Object.keys(names)) {
+		const p0 = a.tenths.poorest[m], p1 = z.tenths.poorest[m], r0 = a.tenths.richest[m], r1 = z.tenths.richest[m];
+		const g = goodOf[m];
+		parts.push(`${names[m]} ${way(p0, p1)} for the poorest tenth (${fm[m](p0)} → ${fm[m](p1)}) and ${way(r0, r1)} for the richest (${fm[m](r0)} → ${fm[m](r1)}); in the last year it was bound by ${vz?.binds?.[g] ?? '–'}.`);
+	}
+	const imp0 = va?.food.eaten > 0 ? va.food.imported / va.food.eaten : NaN, imp1 = vz?.food.eaten > 0 ? vz.food.imported / vz.food.eaten : NaN;
+	const e0 = va ? va.energy.made.solar + va.energy.made.geothermal : NaN, e1 = vz ? vz.energy.made.solar + vz.energy.made.geothermal : NaN;
+	parts.push(`Behind them: the food bought abroad went from ${pc(imp0, 0)} of what was eaten in year 1 to ${pc(imp1, 0)} in year ${Ls.length}, as the forest outdoors grew from ${k0(va?.food.outdoors)} to ${k0(vz?.food.outdoors)} kcal a person a day; electricity made went from ${k1(e0)} to ${k1(e1)} kWh a person a day (solar ${k1(va?.energy.made.solar)} → ${k1(vz?.energy.made.solar)}, geothermal ${k1(va?.energy.made.geothermal)} → ${k1(vz?.energy.made.geothermal)}), and the line exported ${k1(va?.energy.went.export)} → ${k1(vz?.energy.went.export)} of it to pay for what the village buys abroad.`);
+	return `Year 1 against year ${Ls.length}, seed ${s.seed}. ` + parts.join(' ');
+}
+
+function foodAndLand(L, bases, scen) {
+	const s0 = bases[0].s, fl = s0.food;
+	if (!fl) return;
+	L.push('## The diet and the land it takes', '');
+	L.push(`${fl.dietLabel}. Yields: ${fl.yieldsLabel}. A person’s day as planned, and the land it takes at maturity (no losses; the layers’ land equivalent ratio 1.1), outdoors and under glass; the hens’ feed is grown too (its land is in the legume, seed and root rows).`, '');
+	const groups = Object.entries(fl.groups);
+	L.push('| group | g a day | kcal | protein g | m² outdoors | m² under glass |', '|---|---|---|---|---|---|');
+	for (const [k, g] of groups) L.push(`| ${g.label} | ${k0(g.g)} | ${k0(g.kcal)} | ${k1(g.protein)} | ${k0(fl.landM2.outByGroup[k])} | ${k0(fl.landM2.inByGroup[k])} |`);
+	L.push(`| **a person’s day** | | **${k0(fl.kcalDay)}** | **${k1(fl.proteinDay)}** | **${k0(fl.landM2.out)}** | **${k0(fl.landM2.in)}** |`, '');
+	L.push(`So a m² gives ${k0(fl.kcalM2Year.out)} kcal of this diet a year outdoors and ${k0(fl.kcalM2Year.in)} under glass at maturity. With 15 % lost after the harvest, the village’s ${k1(fl.foodHa.out)} ha outdoors and ${k1(fl.foodHa.in)} ha under glass feed **${k0(fl.peopleFed.all)} people** in an average mature year (${k0(fl.peopleFed.out)} from outdoors, ${k0(fl.peopleFed.in)} from the domes); ${k0(bases[0].N)} live there.`, '');
+	const cmp = scen.find((x) => x.id === 'F02');
+	const best = scen.find((x) => x.id === 'F03');
+	const rows = [];
+	for (const sc of [cmp, best].filter(Boolean)) for (const r of sc.numbers?.rows ?? []) if (!rows.some((x) => x.label === r.label)) rows.push(r);
+	if (rows.length) {
+		L.push('**The diets and yields side by side** (each a 30- or 60-year run of the same village, seed 20261012):', '');
+		L.push('| run | m² a person outdoors | under glass | people the 177 ha feed at maturity | food bought, year 1 | year 10 | last year | first year it grew all it needs | person-days short |', '|---|---|---|---|---|---|---|---|---|');
+		for (const r of rows) L.push(`| ${r.label} | ${k0(r.landOut)} | ${k0(r.landIn)} | ${k0(r.fed)} | ${pc(r.impShare1, 0)} | ${pc(r.impShare10, 0)} | ${pc(r.impShareLast, 0)} | ${r.firstFed ?? 'never'} | ${k0(r.shortPD)} |`);
+		L.push('');
+	}
+}
+
+function foundingAndBorder(L, bases, scen) {
+	const s0 = bases[0].s, F = s0.founding, B = s0.border ?? [];
+	if (!F) return;
+	L.push('## The founding bill and the border', '');
+	L.push(`Before day 0 the village is built from imports (paper §12.4: “Euros fund the first machines, never MIND”). ${cap1(F.sources?.tower ?? '')}. Prices: ${F.sources?.prices ?? ''}.`, '');
+	L.push('| item | quantity | € |', '|---|---|---|');
+	for (const r of F.rows) {
+		const q = typeof r.t === 'number' ? `${k0(r.t)} t` : r.kwp ? `${k0(r.kwp)} kWp` : r.n ? `${k0(r.n)}` : r.kcal ? `${k0(r.kcal / 1e6)} million kcal` : r.ha ? `${k1(r.ha)} ha` : '';
+		L.push(`| ${r.label} | ${q} | ${eurM(r.eur)} |`);
+	}
+	L.push(`| **total** | ${k0(F.tonnes)} t of materials | **${eurM(F.totalEur)}** |`, '');
+	L.push('From day 0 the COOPs buy abroad only what the village cannot yet make or grow, through the shared euro reserve: the food COOPs buy food in the diet’s mix, the works buy logs, scrap, float glass and cells (and finished glulam, steel, glazing and panels when their works cannot keep up), the COMPUTE COOPs buy accelerators. They pay with the electricity they export at €87.5 a MWh. No person holds euros, no MIND is made from euros, HEARTS never buy anything.', '');
+	L.push('| year | food bought (kcal a person a day) | food € | logs t | scrap t | float glass t | cells kWp | glulam t | steel t | glazing t | panels kWp | accelerators | all imports € | exports earned € | reserve at the year’s end € | days a COOP could not pay |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+	const V = s0.village ?? [];
+	for (let y = 1; y <= B.length; y += y < 10 ? 1 : 5) {
+		const b = B[y - 1], i = b.imports;
+		L.push(`| ${y} | ${k0(V[y - 1]?.food.imported)} | ${eurM(i.food.eur)} | ${k0(i.logs.t)} | ${k0(i.scrap.t)} | ${k0(i.float.t)} | ${k0(i.cells.kwp)} | ${k0(i.glulam.t)} | ${k0(i.steel.t)} | ${k0(i.glazing.t)} | ${k0(i.panels.kwp)} | ${k0(i.accelerators.n)} | ${eurM(b.importEur)} | ${eurM(b.exportEur)} | ${eurM(b.reserveEur)} | ${k0(b.importShortDays)} |`);
+	}
+	L.push('');
+	const fy = (b) => (b.border ?? []).filter((x) => x.days >= 365);
+	L.push('| seed | first year the village fed itself (grew at least 2,240 kcal a person a day) | last year it bought food (over 1 % of what it ate) | first year exports paid all imports | lowest reserve € | days a COOP could not pay for its imports | person-days short of a basic |', '|---|---|---|---|---|---|---|');
+	for (const b of bases) {
+		const bb = fy(b.s);
+		L.push(`| ${b.seed} | ${b.s.food?.firstFedYear ?? 'never'} | ${b.s.food?.lastImportYear ?? '–'} | ${bb.find((x) => x.exportsCover)?.year ?? 'never'} | ${eurM(Math.min(...bb.map((x) => x.reserveMinEur ?? Infinity)))} | ${k0(bb.reduce((a, x) => a + (x.importShortDays ?? 0), 0))} | ${k0(b.p.P1.personDaysShortAny)} |`);
+	}
+	L.push('');
+	const f01 = scen.find((x) => x.id === 'F01');
+	if (f01) L.push(`**If the founding euros run out (F01).** ${f01.takeaway}`, '');
+}
+
 /** the base world's border setting, as the run had it, and why (the other setting is B23's counter-case) */
 function borderLine(b0, scen) {
 	// the base run's own setting: the defaults with what --set changed, as the world ran it

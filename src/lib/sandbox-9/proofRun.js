@@ -56,7 +56,7 @@ export function runJob(job) {
 			question: r.question,
 			ruleChanged: r.ruleChanged,
 			takeaway: r.takeaway,
-			verdict: { pass: !!r.verdict.pass, claim: r.verdict.claim, evidence: r.verdict.evidence },
+			verdict: { pass: r.verdict.pass == null ? null : !!r.verdict.pass, claim: r.verdict.claim, evidence: r.verdict.evidence },
 			ms: Date.now() - t0
 		};
 	}
@@ -187,7 +187,7 @@ export function assemble(results, meta = {}) {
 		people: bases[0]?.people ?? null,
 		baseYears: bases[0]?.years ?? null,
 		seeds: bases.map((b) => b.seed),
-		pass: parts.every((p) => p.pass) && exps.every((e) => e.verdict.pass),
+		pass: parts.every((p) => p.pass) && exps.every((e) => e.verdict.pass !== false),
 		engineHash: meta.engineHash ?? null,
 		suiteUsed: Object.keys(suite).length > 0,
 		parts: parts.map((p) => ({ ...p, failingLines: failing(p.evidence), evidence: lines(p.evidence) })),

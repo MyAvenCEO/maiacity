@@ -27,7 +27,7 @@
 import { exp, log } from './dmath.js';
 import { polar } from './rng.js';
 import { createWorld, step, DEFAULTS, getLedger, paramSet } from './engine.js';
-import { livingYears, villageYears, borderYears, foundingBill, foodLand } from './records.js';
+import { livingYears, villageYears, borderYears, foundingBill, foodLand, indoorMonthsOf } from './records.js';
 import { prop3 } from './prop3.js';
 import { guessText } from './guesses.js';
 import { openCoop } from './coops.js';
@@ -1342,7 +1342,8 @@ export function summarize(w) {
 		village: villageYears(w),
 		border: borderYears(w),
 		founding: foundingBill(w),
-		food: foodLand(w)
+		food: foodLand(w),
+		indoorMonths: indoorMonthsOf(w)
 	};
 }
 

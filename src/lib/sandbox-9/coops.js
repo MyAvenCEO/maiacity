@@ -232,7 +232,7 @@ export function supplyAhead(w, co, H, only = null) {
  * itself); and each good's margin over all its sellers.
  */
 export function margins(w) {
-	const haveG = new Float64Array(G), needG = new Float64Array(G);
+	const haveG = new Float64Array(G), needG = new Float64Array(G), defG = new Float64Array(G);
 	for (const co of w.coops) {
 		if (!co.alive) continue;
 		const H = horizonOf(co);
@@ -250,6 +250,7 @@ export function margins(w) {
 			let def = 0;
 			for (let j = 0; j < ahead.length; j++) def = Math.max(def, (5 * (j + 1) + IN_HAND) * need - held - ahead[j]);
 			co.deficitAhead = def;
+			defG[co.good] += def;
 		} else co.deficitAhead = 0;
 		// a good that keeps (food, water, materials, goods) is judged at its tightest point; one that does not (energy,
 		// a bed-day, spring time) over its whole horizon
@@ -283,6 +284,8 @@ export function margins(w) {
 		needG[co.good] += need;
 	}
 	w.goodMargin = Float64Array.from(haveG, (h, g) => (needG[g] > 0 ? h / needG[g] : Infinity));
+	// what all the sellers of a good will have to buy at the border at their tightest points ahead, in days of their need
+	w.goodDeficit = Float64Array.from(defG, (x, g) => (needG[g] > 0 ? x / needG[g] : 0));
 }
 /** a seller of food or a material buys what it lacks at the border while euros can be had (its account, the founding
  * reserve, or electricity to export) */
@@ -441,7 +444,11 @@ export function costs(w, full) {
 		if (full) {
 			// what it sells a day, at least a quarter of what its plants can make today (a plant finished this morning
 			// counts already)
-			const sold = Math.max(co.soldEma, 0.25 * Math.max(capDayOf(w, co, w.day), co.soldEma));
+			// (a food seller's forest and domes give their harvest whether it sells it or not: its fixed bills are spread
+			// over what they can grow, so a seller that loses buyers for a while does not price itself out of the market
+			// while its store fills and its food rots, and one that sells imported food does not spread its bills thinner)
+			const capNow = capDayOf(w, co, w.day);
+			const sold = co.good === FOOD && capNow > 1e-9 ? capNow : Math.max(co.soldEma, 0.25 * Math.max(capNow, co.soldEma));
 			const rentR = co.city ? 0 : landM2;
 			// the price at which the treasury breaks even: it keeps only 1 − λ of each sale. The ground rent counted here is
 			// the COOP's own lease, locked at the rate of the day each plot was leased (./coops.js signLease): a fixed bill
@@ -603,7 +610,11 @@ export function plan(w, req, heatReq) {
 					if (w.c.ledKwh != null && gl > gi) pl.ledPlan = cap * (gl - gi);
 					cap = lit + pl.ledPlan;
 				}
-				let p = Math.min(cap, want * (cap / Math.max(1e-12, co.capDay)));
+				// the food domes grow all their light gives while the village's food sellers see a shortfall ahead that
+				// they would have to buy at the border (the dark months): what they grow in the bright months keeps in the
+				// store for winter (a fuller store lowers the price: ./market.js)
+				const growAll = d.kind === 'greenhouse' && (w.goodDeficit?.[co.good] ?? 0) > IN_HAND;
+				let p = growAll ? cap : Math.min(cap, want * (cap / Math.max(1e-12, co.capDay)));
 				// raw stock and input stores bound the plan
 				for (const [g, a] of inputsOf(w, pl)) {
 					if (typeof g === 'number') p = Math.min(p, Math.max(0, avail[g]) / a);

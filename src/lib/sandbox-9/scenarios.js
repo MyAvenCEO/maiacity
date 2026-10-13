@@ -170,7 +170,7 @@ export const SCENARIOS = [
 				pass: null,
 				comparison: true,
 				numbers: { rows },
-				takeaway: rows.map((r) => `${r.label}: ${f0(r.landOut)} m² a person outdoors and ${f0(r.landIn)} under glass; the 177 ha feed ${f0(r.fed)} people at maturity; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1, ${pct(r.impShare10, 0)} in year 10 and ${pct(r.impShareLast, 0)} in the last year; first fed itself in year ${r.firstFed ?? 'never'}`).join('. ') + '.',
+				takeaway: rows.map((r) => `${r.label}: ${f0(r.landOut)} m² a person outdoors and ${f0(r.landIn)} under glass; the 177 ha feed ${f0(r.fed)} people at maturity; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1, ${pct(r.impShare10, 0)} in year 10 and ${pct(r.impShareLast, 0)} in the last year; first grew all it needs (2,240 kcal a person a day) in year ${r.firstFed ?? 'never'}`).join('. ') + '.',
 				evidence: rows.map((r) => `${r.label}: ${f0(r.kcalDay)} kcal and ${f2(r.proteinDay)} g protein a day as planned; ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average; mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
 			};
 		}
