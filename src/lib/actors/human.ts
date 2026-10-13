@@ -1,6 +1,7 @@
 /*
- * THE STAND-IN — a person of 1.70 m, bald, to block a shot with before its actor is in it (a film's second team): never
- * a likeness of anyone, but a person — a head with a face that shows where it looks, a T-shirt, jeans, trainers —
+ * THE STAND-IN — a person of 1.70 m, to block a shot with before its actor is in it (a film's second team): never
+ * a likeness of anyone, but a person — a head with a face that shows where it looks and feels (v2, 2026-10-13: eyes
+ * with whites and irises, a nose, lips, and hair: short, long, a bun or none), a T-shirt, jeans, trainers —
  * rigged head to toe so it takes any pose and any move: 17 bones (the hips, the spine, the chest, the neck, the head;
  * each arm's upper arm, forearm and hand; each leg's thigh, shin and foot), one skinned mesh over them, every joint
  * bending smoothly.
@@ -10,7 +11,7 @@
  */
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { blend, egg, limb, loft, loop, rig, skin, spike, type BoneSpec, type Cast, type Clip, type Piece, type Pose, type V3 } from './rig';
+import { blend, egg, limb, loft, loop, rig, skin, type BoneSpec, type Cast, type Clip, type Piece, type Pose, type V3 } from './rig';
 
 /** how tall it is (m) */
 export const HEIGHT = 1.7;
@@ -20,8 +21,9 @@ const MEASURED = 1.823;
 const SEAT = 0.5;
 
 /** what the stand-in wears (and its skin, its brows) */
-export type Look = { skin: string; brows: string; shirt: string; trousers: string; belt: string; shoes: string; soles: string };
-export const LOOK: Look = { skin: '#d6b094', brows: '#3a2a1f', shirt: '#3c4452', trousers: '#47566c', belt: '#2d251f', shoes: '#2a2a2d', soles: '#e9e6df' };
+export type Hair = 'none' | 'short' | 'long' | 'bun';
+export type Look = { skin: string; brows: string; shirt: string; trousers: string; belt: string; shoes: string; soles: string; hair: Hair; hairColour: string; iris: string; lips: string };
+export const LOOK: Look = { skin: '#d6b094', brows: '#3a2a1f', shirt: '#3c4452', trousers: '#47566c', belt: '#2d251f', shoes: '#2a2a2d', soles: '#e9e6df', hair: 'short', hairColour: '#3a2a1f', iris: '#5a4030', lips: '#a8665a' };
 
 const sides = [
 	['L', 1],
@@ -43,6 +45,62 @@ const BONES: BoneSpec[] = [
 		{ name: `foot${s}`, parent: `shin${s}`, at: [x * 0.1, 0.085, -0.005] }
 	])
 ];
+
+/** its hair, on the head bone: a cap over the skull, its front edge lifted off the brow, and for `long` a fall down the
+ *  back of the neck, for `bun` a knot at the back of the crown */
+function hair(k: Look): Piece[] {
+	if (k.hair === 'none') return [];
+	const cap = new THREE.SphereGeometry(1, 44, 22, 0, Math.PI * 2, 0, Math.PI * 0.56);
+	cap.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(0, 1.709, 0.008), new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.5, 0, 0)), new THREE.Vector3(0.1, 0.126, 0.112)));
+	const out: Piece[] = [{ geo: cap, color: k.hairColour, bone: 'head' }];
+	if (k.hair === 'long') {
+		out.push({ geo: egg([0, 1.62, -0.055], [0.098, 0.15, 0.06], [0.12, 0, 0], [28, 20]), color: k.hairColour, bone: 'head' });
+		for (const x of [-1, 1]) out.push({ geo: egg([x * 0.085, 1.64, -0.01], [0.03, 0.11, 0.06], [0, 0, x * 0.08], [16, 14]), color: k.hairColour, bone: 'head' });
+	}
+	if (k.hair === 'bun') out.push({ geo: egg([0, 1.78, -0.085], [0.042, 0.04, 0.04], [0, 0, 0], [20, 16]), color: k.hairColour, bone: 'head' });
+	return out;
+}
+
+/** how far forward the face's skin is at (x, y): the skull or, lower down, the jaw, whichever stands out */
+const SKULL = { c: [0, 1.705, 0.012], r: [0.093, 0.118, 0.105] }, JAW = { c: [0, 1.648, 0.045], r: [0.07, 0.05, 0.07] };
+function skinAt(x: number, y: number): number {
+	const z = (e: typeof SKULL) => {
+		const q = 1 - (x / e.r[0]) ** 2 - ((y - e.c[1]) / e.r[1]) ** 2;
+		return q > 0 ? e.c[2] + e.r[2] * Math.sqrt(q) : -1;
+	};
+	return Math.max(z(SKULL), z(JAW));
+}
+
+/** the face, every feature set on the skin where it is (so none sinks into the head, none floats off it): eyes with
+ *  their whites, irises, pupils and a glint, turned with the face's curve; lids with a lash line; brows; a nose with a
+ *  bridge, a tip, its wings and nostrils; two lips with the line between them */
+function face(k: Look): Piece[] {
+	const on = (x: number, y: number, out: number, s: V3, rot: V3, color: string, detail: [number, number] = [16, 12]): Piece => ({ geo: egg([x, y, skinAt(x, y) + out], s, rot, detail), color, bone: 'head' });
+	const out: Piece[] = [];
+	for (const [, x] of sides) {
+		const ex = x * 0.034, ey = 1.712, turn: V3 = [0, x * 0.42, 0];
+		out.push(
+			on(ex, ey, -0.0022, [0.0125, 0.0085, 0.0045], turn, '#f3efe7'),
+			on(ex - x * 0.001, ey - 0.0004, 0.0019, [0.0058, 0.0058, 0.0016], turn, k.iris, [14, 10]),
+			on(ex - x * 0.001, ey - 0.0004, 0.0029, [0.0029, 0.0029, 0.001], turn, '#141110', [10, 8]),
+			on(ex + 0.0016, ey + 0.002, 0.0036, [0.0012, 0.0012, 0.0005], turn, '#ffffff', [8, 6]),
+			on(ex, ey + 0.0062, -0.0018, [0.0142, 0.0048, 0.0062], [0, x * 0.42, x * -0.05], k.skin),
+			on(ex, ey + 0.0026, 0.0026, [0.0134, 0.0011, 0.0022], [0, x * 0.42, x * -0.05], '#2a1d17', [14, 6]),
+			on(ex, ey - 0.0072, -0.0016, [0.0125, 0.0028, 0.0045], [0, x * 0.42, 0], k.skin, [14, 8]),
+			on(x * 0.036, 1.737, -0.0012, [0.02, 0.0042, 0.006], [0, x * 0.4, x * -0.12], k.brows, [14, 8]),
+			on(x * 0.0105, 1.6745, -0.0035, [0.0062, 0.006, 0.0065], [0, 0, 0], k.skin, [12, 10]),
+			on(x * 0.0058, 1.6705, 0.0035, [0.0032, 0.0018, 0.0028], [0, 0, 0], '#5a3a2e', [10, 6])
+		);
+	}
+	out.push(
+		on(0, 1.697, -0.0078, [0.0085, 0.022, 0.011], [-0.25, 0, 0], k.skin, [14, 12]),
+		on(0, 1.679, -0.0005, [0.0125, 0.0095, 0.0105], [0, 0, 0], k.skin),
+		on(0, 1.6585, -0.0028, [0.0205, 0.0045, 0.0068], [0, 0, 0], k.lips, [16, 10]),
+		on(0, 1.6515, -0.003, [0.0185, 0.0052, 0.0072], [0, 0, 0], k.lips, [16, 10]),
+		on(0, 1.6548, 0.0036, [0.0185, 0.0008, 0.0018], [0, 0, 0], '#6a3a34', [14, 6])
+	);
+	return out;
+}
 
 function parts(k: Look): Piece[] {
 	const box = (w: number, h: number, d: number, r: number, at: V3) => {
@@ -68,21 +126,18 @@ function parts(k: Look): Piece[] {
 				{ y: 1.495, w: 0.26, d: 0.14, z: -0.015 },
 				{ y: 1.53, w: 0.14, d: 0.12, z: -0.015 },
 				{ y: 1.545, w: 0.02, d: 0.02, z: -0.015 }
-			]),
+			], 44),
 			color: (p) => (p.y < 0.985 ? k.trousers : p.y < 1.012 ? k.belt : k.shirt),
 			chain: { bones: ['hips', 'spine', 'chest', 'neck'], soft: 0.07 }
 		},
 		{ geo: limb([0, 1.64, 0], [0, 1.47, -0.015], 0.05, 0.058), color: k.skin, chain: { bones: ['chest', 'neck', 'head'], soft: 0.04 } },
-		// the head, bald: a skull, a jaw, ears; the face — eyes, brows, a nose, a mouth — so it shows where it looks
-		{ geo: egg([0, 1.705, 0.012], [0.093, 0.118, 0.105], [0, 0, 0], [28, 20]), color: k.skin, bone: 'head' },
-		{ geo: egg([0, 1.648, 0.045], [0.07, 0.05, 0.07]), color: k.skin, bone: 'head' },
-		...sides.flatMap(([, x]): Piece[] => [
-			{ geo: egg([x * 0.093, 1.695, 0.0], [0.016, 0.03, 0.022]), color: k.skin, bone: 'head' },
-			{ geo: egg([x * 0.034, 1.712, 0.098], [0.012, 0.009, 0.006]), color: '#2b2622', bone: 'head' },
-			{ geo: egg([x * 0.035, 1.736, 0.101], [0.022, 0.005, 0.008], [0, 0, x * -0.12]), color: k.brows, bone: 'head' }
-		]),
-		{ geo: spike([0, 1.692, 0.108], [0, -0.35, 1], 0.016, 0.035, { seg: 12 }), color: k.skin, bone: 'head' },
-		{ geo: egg([0, 1.655, 0.1], [0.022, 0.004, 0.006]), color: '#9a6a5a', bone: 'head' },
+		// the head: a skull, a jaw, ears; the face — eyes with their whites, irises and a glint, lids, brows, a nose, lips —
+		// so it shows where it looks and how it feels
+		{ geo: egg([0, 1.705, 0.012], [0.093, 0.118, 0.105], [0, 0, 0], [44, 32]), color: k.skin, bone: 'head' },
+		{ geo: egg([0, 1.648, 0.045], [0.07, 0.05, 0.07], [0, 0, 0], [28, 18]), color: k.skin, bone: 'head' },
+		...sides.map(([, x]): Piece => ({ geo: egg([x * 0.093, 1.695, 0.0], [0.016, 0.03, 0.022], [0, 0, 0], [16, 12]), color: k.skin, bone: 'head' })),
+		...face(k),
+		...hair(k),
 		// each arm: the sleeve over the top of it, the bare forearm, a hand with its thumb
 		...sides.flatMap(([s, x]): Piece[] => [
 			{ geo: limb([x * 0.185, 1.43, -0.01], [x * 0.2, 1.17, -0.02], 0.047, 0.04), color: (p) => (p.y > 1.32 ? k.shirt : k.skin), chain: { bones: [`upperArm${s}`, `forearm${s}`], soft: 0.06 } },
