@@ -17,8 +17,8 @@ export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media'
 // a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,
 // with no map. Every sandbox draws the same ones.
 export const APPS: Place[] = [
-	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your hearts, what you hold, what happened' },
-	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'Found, join and back cities and settlements' }
+	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your HEARTS and MINDs, every rent and pay day, every transaction' },
+	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The three COOPs: treasuries, holders, assets, rents' }
 ];
 
 /** the worlds' and sandboxes' older versions, by address, each with what it was */
