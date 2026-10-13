@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.js';
 import { maiaCentre, oldShed, travelVan } from '$lib/models/wayside.js';
+import { look, pathOf } from '../../../game/film/camera.js';
 
 /** the hex's radius in metres: 76.5, one and a half times the second 51 (Samuel 2026-10-13) */
 const HEX_R = 76.5;
@@ -53,13 +54,19 @@ const hexKey = (x, z) => {
 const BIOME = new Map(HEXES.map((h) => [`${h.q},${h.r}`, h.biome]));
 const isGrass = (x, z) => BIOME.get(hexKey(x, z)) === 'grass';
 
-/** the highway: a dusty road due north–south, past the city's centre hex just west of its middle */
-const HIGHWAY_X = CX - 14;
+/** the highway: a dusty sand road that comes in from the far west, the side away from our village, and ends at the
+ *  city's centre hex, at the abandoned gas station: a dead end (Samuel 2026-10-13) */
+const ROAD_Z = CZ;
+const ROAD_END = CX - 2;
 const HIGHWAY_W = 9;
-/** the MaiaCity centre (wayside.js), turned so its road runs along the highway and its bus stop faces east, to the land */
-const CENTRE = { x: HIGHWAY_X, z: CZ, rot: Math.PI / 2 };
-const STOP = V(HIGHWAY_X + 7, 0, CZ - 2.5); // where a newcomer stands, by the bus stop
-const VAN_STOP = CZ - 4; // the van halts here, its side door to the bus stop
+/** the MaiaCity centre (wayside.js) stands at the road's end: the gas station beyond it, the bus stop on its south side */
+const CENTRE = { x: ROAD_END, z: ROAD_Z };
+const STOP = V(ROAD_END - 12, 0, ROAD_Z - 5.4); // where a newcomer stands, by the bus stop
+const VAN_HALT = V(ROAD_END - 14, 0, ROAD_Z - 1.8); // the van halts here, its side door to the bus stop
+/** the van's way out: on round the forecourt, turning, and back west down the highway */
+const VAN_OUT = new THREE.CatmullRomCurve3(
+	[[0, -1.8], [10, -2.6], [17, 1], [12, 5], [0, 2.4], [-20, 2.2], [-420, 2.2]].map(([x, z]) => V(VAN_HALT.x + x, 0, ROAD_Z + z))
+);
 /** the village store: the old shed at the village's centre hex, its door to the track; the solar row and the battery behind */
 const STORE = { x: VX + 2, z: VZ - 13 };
 const CUBE_IN_SHED = V(STORE.x + 0.6, 0.1, STORE.z - 0.4);
@@ -67,12 +74,12 @@ const CUBE_IN_SHED = V(STORE.x + 0.6, 0.1, STORE.z - 0.4);
 const LOT = { x: -16, z: 10, r: 8 };
 const YARD = { x: 12, z: -4, r: 5.5 };
 const STORE_YARD = { x: STORE.x + 1, z: STORE.z - 3, r: 14 };
-const PATH_W = 6;
+const PATH_W = 4.2; // a narrow offroad track, two ruts in it (Samuel 2026-10-13)
 /** the gravel track's centre line: off the highway beside the bus stop, a slow meander east through the steppe and
  *  the village's grass, past the old shed, and on into our tribe's lot (Samuel 2026-10-13) */
 const TRACK = new THREE.CatmullRomCurve3(
 	[
-		[HIGHWAY_X + 4, CZ - 12], [HIGHWAY_X + 34, CZ - 22], [-410, -70], [-360, -84], [-312, -48], [-262, -58], [-214, -20],
+		[CX + 2, CZ - 8], [CX + 5, CZ - 20], [CX + 24, CZ - 24], [CX + 48, CZ - 6], [-405, -70], [-360, -84], [-312, -48], [-262, -58], [-214, -20],
 		[-176, 2], [VX - 12, VZ + 4], [VX + 14, VZ], [-100, -6], [-74, 10], [-48, 18], [-30, 12], [LOT.x, LOT.z]
 	].map(([x, z]) => V(x, 0, z)),
 	false,
@@ -85,10 +92,10 @@ const U_STORE = (() => {
 	PATH.forEach((p, i) => { if (Math.hypot(p.x - STORE.x, p.z - VZ) < Math.hypot(PATH[best].x - STORE.x, PATH[best].z - VZ)) best = i; });
 	return best / (PATH.length - 1);
 })();
-const U_START = 0.025; // the pickup waits just off the highway
+const U_START = 0.004; // the pickup waits at the gas station's forecourt
 const nearPath = (x, z, r) => PATH.some((p) => Math.abs(p.x - x) < r + 2 && Math.hypot(p.x - x, p.z - z) < r + 1);
 const onGravel = (x, z, pad = 0) =>
-	[LOT, YARD, STORE_YARD].some((c) => Math.hypot(x - c.x, z - c.z) < c.r + pad) || nearPath(x, z, PATH_W / 2 + pad) || Math.abs(x - HIGHWAY_X) < HIGHWAY_W / 2 + pad;
+	[LOT, YARD, STORE_YARD].some((c) => Math.hypot(x - c.x, z - c.z) < c.r + pad) || nearPath(x, z, PATH_W / 2 + pad) || (x < ROAD_END + 2 && Math.abs(z - ROAD_Z) < HIGHWAY_W / 2 + pad);
 
 /** a little seeded random, so everything stands in the same places for everyone */
 function rng(seed) {
@@ -139,39 +146,40 @@ function land() {
 	return { group: g, rims };
 }
 
-/** the highway: packed sand, two darker wheel tracks, old asphalt in patches, and telegraph poles along its west side */
+/** the highway: packed sand, two darker wheel tracks, old asphalt in patches, telegraph poles along its north side,
+ *  and at its end a low bank of sand: the road goes no further */
 function highway() {
 	const g = new THREE.Group();
 	const len = 7000;
-	const strip = (w, color, x, lift) => {
-		const m = new THREE.Mesh(new THREE.PlaneGeometry(w, len), flat(color, lift));
+	const strip = (w, color, z, lift) => {
+		const m = new THREE.Mesh(new THREE.PlaneGeometry(len, w), flat(color, lift));
 		m.rotation.x = -Math.PI / 2;
-		m.position.set(x, 0, CZ);
+		m.position.set(ROAD_END - len / 2, 0, z);
 		m.receiveShadow = true;
 		g.add(m);
 	};
-	strip(HIGHWAY_W, 0xb8a072, HIGHWAY_X, 3);
-	strip(1.1, 0x9c8660, HIGHWAY_X - 1.7, 4);
-	strip(1.1, 0x9c8660, HIGHWAY_X + 1.7, 4);
+	strip(HIGHWAY_W, 0xb8a072, ROAD_Z, 3);
+	strip(1.1, 0x9c8660, ROAD_Z - 1.7, 4);
+	strip(1.1, 0x9c8660, ROAD_Z + 1.7, 4);
 	const r = rng(11);
 	const patch = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), flat(0x6f6a62, 5), 160);
 	const o = new THREE.Object3D();
 	for (let i = 0; i < 160; i++) {
-		o.position.set(HIGHWAY_X + (r() - 0.5) * 5, 0, CZ + (r() - 0.5) * 4000);
-		o.scale.set(1.5 + r() * 3, 1, 2 + r() * 10);
+		o.position.set(ROAD_END - 30 - r() * 3600, 0, ROAD_Z + (r() - 0.5) * 5);
+		o.scale.set(2 + r() * 10, 1, 1.5 + r() * 3);
 		o.rotation.y = (r() - 0.5) * 0.2;
 		o.updateMatrix();
 		patch.setMatrixAt(i, o.matrix);
 	}
 	g.add(patch);
-	const poles = 160;
+	const poles = 80;
 	const wood = mat(0x6a5440);
 	const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.11, 0.15, 7.5, 6).translate(0, 3.75, 0), wood, poles);
-	const arm = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 0.12, 0.12).translate(0, 7, 0), wood, poles);
+	const arm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.12, 1.8).translate(0, 7, 0), wood, poles);
 	for (let i = 0; i < poles; i++) {
-		o.position.set(HIGHWAY_X - 8, 0, CZ - 3600 + i * 45);
+		o.position.set(ROAD_END - 40 - i * 45, 0, ROAD_Z + 8);
 		o.scale.set(1, 1, 1);
-		o.rotation.set((r() - 0.5) * 0.06, 0, (r() - 0.5) * 0.08); // leaning a little, as old poles do
+		o.rotation.set((r() - 0.5) * 0.08, 0, (r() - 0.5) * 0.06); // leaning a little, as old poles do
 		o.updateMatrix();
 		pole.setMatrixAt(i, o.matrix);
 		arm.setMatrixAt(i, o.matrix);
@@ -187,13 +195,14 @@ function steppe() {
 	const g = new THREE.Group();
 	const r = rng(23);
 	const o = new THREE.Object3D();
-	const free = (x, z) => !isGrass(x, z) && !onGravel(x, z, 2) && Math.hypot(x - (HIGHWAY_X + 14), z - (CZ + 8)) > 30;
+	const free = (x, z) => !isGrass(x, z) && !onGravel(x, z, 2) && Math.hypot(x - (CX + 2), z - CZ) > 30;
 	const spot = (reach) => {
 		for (let k = 0; k < 20; k++) {
 			// more of them near the city's centre and along the highway, where the eye is
 			const a = r() * Math.PI * 2, d = reach * Math.pow(r(), 0.7);
-			const x = r() < 0.35 ? HIGHWAY_X + (r() - 0.5) * 220 : CX + Math.cos(a) * d;
-			const z = r() < 0.35 ? CZ + (r() - 0.5) * 3000 : CZ + Math.sin(a) * d;
+			const road = r() < 0.35;
+			const x = road ? ROAD_END - r() * 3000 : CX + Math.cos(a) * d;
+			const z = road ? CZ + (r() - 0.5) * 220 : CZ + Math.sin(a) * d;
 			if (free(x, z)) return [x, z];
 		}
 		return null;
@@ -250,21 +259,30 @@ function gravel() {
 		disc.receiveShadow = true;
 		g.add(disc);
 	}
-	const pos = [];
-	PATH.forEach((p, i) => {
-		const a = PATH[Math.max(0, i - 1)], b = PATH[Math.min(PATH.length - 1, i + 1)];
-		const l = Math.hypot(b.x - a.x, b.z - a.z), nx = -(b.z - a.z) / l, nz = (b.x - a.x) / l, h = PATH_W / 2;
-		pos.push(p.x + nx * h, 0.01, p.z + nz * h, p.x - nx * h, 0.01, p.z - nz * h);
-	});
-	const index = [];
-	for (let i = 0; i < PATH.length - 1; i++) { const a = i * 2; index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-	const geo = new THREE.BufferGeometry();
-	geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-	geo.setIndex(index);
-	geo.computeVertexNormals();
-	const road = new THREE.Mesh(geo, stone);
-	road.receiveShadow = true;
-	g.add(road);
+	// the track: a strip of packed dirt, and two darker ruts in it
+	const ribbon = (half, off, material) => {
+		const pos = [];
+		PATH.forEach((p, i) => {
+			const a = PATH[Math.max(0, i - 1)], b = PATH[Math.min(PATH.length - 1, i + 1)];
+			const l = Math.hypot(b.x - a.x, b.z - a.z), nx = -(b.z - a.z) / l, nz = (b.x - a.x) / l;
+			pos.push(p.x + nx * (off + half), 0.01, p.z + nz * (off + half), p.x + nx * (off - half), 0.01, p.z + nz * (off - half));
+		});
+		const index = [];
+		for (let i = 0; i < PATH.length - 1; i++) { const a = i * 2; index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		geo.setIndex(index);
+		geo.computeVertexNormals();
+		const m = new THREE.Mesh(geo, material);
+		m.receiveShadow = true;
+		g.add(m);
+	};
+	const dirt = flat(0xb19e78, 3);
+	const rut = flat(0x958262, 4);
+	dirt.side = rut.side = THREE.DoubleSide;
+	ribbon(PATH_W / 2, 0, dirt);
+	ribbon(0.4, -1.05, rut);
+	ribbon(0.4, 1.05, rut);
 	return g;
 }
 
@@ -315,6 +333,23 @@ function tent() {
 	return g;
 }
 
+/** the tent packed: a canvas bundle with its poles, strapped, as it waits in the village shed */
+function packedTent() {
+	const g = new THREE.Group();
+	const canvas = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 1.3, 12).rotateZ(Math.PI / 2), mat(0xd9ccb0));
+	canvas.position.y = 0.34;
+	const poles = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.5, 8).rotateZ(Math.PI / 2), mat(0x6b5236));
+	poles.position.set(0, 0.12, 0.42);
+	g.add(canvas, poles);
+	for (const x of [-0.4, 0.4]) {
+		const strap = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.025, 6, 16).rotateY(Math.PI / 2), mat(0x3b2f24));
+		strap.position.set(x, 0.34, 0);
+		g.add(strap);
+	}
+	g.traverse((o) => o.isMesh && (o.castShadow = true));
+	return g;
+}
+
 function person(seat) {
 	const g = new THREE.Group();
 	g.name = `player:${seat}`;
@@ -329,7 +364,14 @@ function person(seat) {
 	const glow = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0xe0435a, emissive: 0xe0435a, emissiveIntensity: 0.7 }));
 	glow.position.y = 3;
 	glow.name = g.name;
-	g.add(body, head, glow);
+	// one backpack each, clothes and all they brought (Samuel 2026-10-13)
+	const pack = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.72, 0.3), mat(seat === 'A' ? 0x7a5a36 : 0x4f6b3a));
+	pack.position.set(0, 1.25, -0.5);
+	const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.62, 10).rotateZ(Math.PI / 2), mat(0x9c3b2f));
+	roll.position.set(0, 1.68, -0.5);
+	pack.castShadow = roll.castShadow = true;
+	pack.name = roll.name = g.name;
+	g.add(body, head, glow, pack, roll);
 	g.userData.glow = glow;
 	return g;
 }
@@ -405,7 +447,7 @@ function packedVan() {
 const VAN_SEAT = V(0.12, 1.6, 0.2);
 const VAN_LOOK = V(0.0, 1.45, 14);
 
-export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } = {}) {
+export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {} } = {}) {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 	renderer.shadowMap.enabled = true;
@@ -424,7 +466,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotateSpeed = 0.25;
 	let goal = null; // where the camera eases to: { target, offset }
-	controls.addEventListener('start', () => ((controls.autoRotate = false), (goal = null)));
+	let drift = true; // the slow orbit round the place; a drag stops it until the story moves on
+	controls.addEventListener('start', () => ((drift = false), (goal = null)));
 
 	const hemi = new THREE.HemisphereLight(0xeef4ff, 0x7a6b4a, 1.1);
 	scene.add(hemi);
@@ -446,13 +489,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		shown = level;
 	}
 	reveal(0);
-	world.add(tent());
+	const home = tent();
+	world.add(home);
 
 	const named = (o, name) => (o.traverse((c) => { c.name = name; if (c.isMesh) c.castShadow = true; }), o);
 	// the MaiaCity centre: the bus stop and the abandoned gas station by the highway
 	const centre = maiaCentre({ withVan: false, withRoad: false });
 	centre.position.set(CENTRE.x, 0, CENTRE.z);
-	centre.rotation.y = CENTRE.rot;
 	centre.children.forEach((c, i) => named(c, i === 0 ? 'asset:busStop' : 'asset:gasStation'));
 	world.add(centre);
 	// the village store: the old shed, the solar row and the battery the Village COOP keeps at its centre hex
@@ -470,7 +513,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	const truck = named(pickup(), 'asset:pickup');
 	truck.scale.setScalar(2);
 	const cube = named(powercube(), 'asset:powercube');
-	world.add(truck, cube);
+	const bundle = named(packedTent(), 'asset:tent');
+	world.add(truck, cube, bundle);
 	// the travel van of the arrival, packed
 	const van = named(packedVan(), 'asset:van');
 	van.visible = false;
@@ -496,7 +540,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	/** where things stand at this point of the story: at ('arrive', 'stop', 'village', 'home'), the powercube
 	 *  ('shed', 'bed', 'home'), whose seat this is (me), the other seat if anyone has it, and whether the other
 	 *  rides along (they came to fetch me) */
-	let stage = { at: 'home', cube: 'home', me: 'A', other: 'B', rides: false };
+	let stage = { at: 'home', cube: 'home', tent: 'up', me: 'A', other: 'B', rides: false };
 	let busy = false; // an intro, a drive or a load is playing
 	function set(next) {
 		stage = { ...stage, ...next };
@@ -511,6 +555,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		else (putTruck(1), (truck.rotation.y = 2.2));
 		truck.updateMatrixWorld(true);
 		placeCube(stage.cube);
+		placeTent(stage.tent);
 		for (const s of ['A', 'B']) {
 			const p = people[s];
 			p.visible = true;
@@ -522,6 +567,23 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 			else p.position.copy(beside(truck, 1, s === me ? 1 : -1.6));
 		}
 		van.visible = false;
+	}
+	const TENT_IN_SHED = V(STORE.x - 1.5, 0, STORE.z + 0.6);
+	/** the tent: packed in the shed, packed on the pickup's bed, or pitched at the middle of our hex */
+	function placeTent(where) {
+		home.visible = where === 'up';
+		home.scale.setScalar(1);
+		bundle.visible = where !== 'up';
+		if (bundle.parent !== world) world.attach(bundle);
+		bundle.scale.setScalar(1);
+		bundle.rotation.set(0, 0.3, 0);
+		if (where === 'shed') bundle.position.copy(TENT_IN_SHED);
+		else if (where === 'bed') {
+			truck.add(bundle);
+			bundle.position.set(0, 1.17, -2.42);
+			bundle.rotation.set(0, 0, 0);
+			bundle.scale.setScalar(0.5);
+		}
 	}
 	function placeCube(where) {
 		if (cube.parent !== world) world.attach(cube);
@@ -536,9 +598,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		}
 	}
 
-	/** the camera's places: what it looks at, and from where */
+	/** the camera's places: what it looks at, and from where; once there, it drifts slowly round, like a crane on a set */
 	const PLACES = {
-		centre: { target: V(STOP.x + 4, 2, STOP.z - 4), offset: V(46, 30, -48) },
+		centre: { target: V(STOP.x + 6, 2, STOP.z + 1), offset: V(-34, 26, -50) },
 		city: { target: V(CX + 120, 0, CZ + 80), offset: V(620, 900, 860) },
 		village: { target: V(STORE.x, 2, VZ - 6), offset: V(52, 38, 58) },
 		tribe: { target: V(2, 1, 3), offset: V(115, 98, 141) }
@@ -555,27 +617,35 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		if (busy) return; // taken up when the moment ends
 		if (!placed) (placed = true), (now = true);
 		const offset = p.offset.clone().multiplyScalar(camera.aspect < 0.8 ? 1.65 : 1);
-		// while the story's card sits low on the screen, look a little short of the place, so it shows above the card
-		const short = tourOn ? V(offset.x, 0, offset.z).multiplyScalar(0.32) : V(0, 0, 0);
-		goal = { target: p.target.clone().add(short), offset };
-		controls.autoRotate = name === 'tribe' && !tourOn;
+		goal = { target: p.target.clone(), offset };
+		drift = true;
 		if (now) {
 			controls.target.copy(goal.target);
 			camera.position.copy(goal.target).add(offset);
 			goal = null;
 		}
 	}
-	const touring = (on) => ((tourOn = on), (controls.autoRotate = !on && placeNow === 'tribe'));
+	/** while the story's card sits low on the screen, the picture is drawn a little higher, so the place shows above it */
+	function frameView() {
+		const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+		if (tourOn && !busy) camera.setViewOffset(w, h, 0, h * 0.17, w, h);
+		else camera.clearViewOffset();
+	}
+	const touring = (on) => {
+		if (on === tourOn) return;
+		tourOn = on;
+		frameView();
+	};
 
 	// moments that play over a few seconds: one at a time, each step a function of its own clock
 	let moment = null;
-	function play(steps) {
+	function play(steps, { hour: at } = {}) {
 		return new Promise((done) => {
 			busy = true;
 			controls.enabled = false;
-			controls.autoRotate = false;
 			goal = null;
-			moment = { steps, i: 0, t0: performance.now() / 1000, done };
+			frameView();
+			moment = { steps, i: 0, t0: performance.now() / 1000, done, hour: at };
 		});
 	}
 	function endMoment() {
@@ -586,7 +656,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		camera.near = 0.5;
 		camera.fov = camera.aspect < 0.8 ? 58 : 42;
 		camera.updateProjectionMatrix();
-		// what the moment moved stays where it ended; the page sets the next stage
+		// the orbit picks up from where the camera looks now; what the moment moved stays where it ended, and the page sets the next stage
+		controls.target.copy(camera.position).add(camera.getWorldDirection(V(0, 0, 0)).multiplyScalar(40));
+		frameView();
+		onCaption(null);
 		const name = placeNow;
 		placeNow = '';
 		if (name) focus(name);
@@ -596,7 +669,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		const m = moment;
 		dt = Math.min(0.25, now - (m.last ?? now - 1 / 60));
 		m.last = now;
-		if (!m.started) (m.started = true), m.steps[0].start?.();
+		if (!m.started) (m.started = true), m.steps[0].start?.(), m.steps[0].caption && onCaption(m.steps[0].caption);
 		let step = m.steps[m.i];
 		let t = now - m.t0;
 		while (t >= step.dur) {
@@ -607,12 +680,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 			if (m.i >= m.steps.length) return endMoment();
 			step = m.steps[m.i];
 			step.start?.();
+			if (step.caption) onCaption(step.caption);
 		}
 		step.run?.(t / step.dur);
 	}
 	const ease = (k) => k * k * (3 - 2 * k);
 	const easeOut = (k) => 1 - (1 - k) * (1 - k);
-	const easeIn = (k) => k * k;
 	let dt = 1 / 60; // the last frame's length, so the camera follows at the same pace however fast the frames come
 	const camLerp = (pos, look, k = 0.08) => {
 		k = 1 - Math.pow(1 - k, dt * 60);
@@ -620,132 +693,278 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		const t = controls.target.lerp(look, k);
 		camera.lookAt(t);
 	};
+	/** a pose of the film camera (game/film/camera.js): [x, y, z, yaw, pitch] */
+	const pose = (p) => {
+		camera.position.set(p[0], p[1], p[2]);
+		camera.rotation.set(p[4], p[3], 0, 'YXZ');
+	};
+	const shot = (spec) => pathOf(spec);
+	const arr = (v) => [v.x, v.y, v.z];
 
-	/** the arrival: inside the packed van down the sand highway, then from the bus stop the van pulling up, the
-	 *  newcomer stepping out of its side door and the van driving on */
+	// dust: puffs behind whatever drives over the sand, swelling and fading
+	const puffs = Array.from({ length: 60 }, () => {
+		const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0xd9c8a0, roughness: 1, transparent: true, opacity: 0, depthWrite: false }));
+		m.visible = false;
+		m.userData.age = 9;
+		world.add(m);
+		return m;
+	});
+	let puffAt = 0;
+	const lastDust = new WeakMap();
+	function dust(o, back) {
+		const was = lastDust.get(o);
+		const now = o.position.clone();
+		lastDust.set(o, now);
+		if (!was || was.distanceTo(now) < 0.05 || was.distanceTo(now) > 20) return;
+		puffAt += was.distanceTo(now);
+		if (puffAt < 1.6) return;
+		puffAt = 0;
+		const p = puffs.find((x) => x.userData.age > 2.4) ?? puffs[0];
+		o.updateMatrixWorld(true);
+		p.position.copy(o.localToWorld(V((Math.random() - 0.5) * 1.2, 0.5, back)));
+		p.userData.age = 0;
+		p.visible = true;
+	}
+	function settleDust(step) {
+		for (const p of puffs) {
+			if (!p.visible) continue;
+			const a = (p.userData.age += step);
+			if (a > 2.4) (p.visible = false), (p.material.opacity = 0);
+			else (p.scale.setScalar(0.8 + a * 1.6), (p.material.opacity = 0.32 * (1 - a / 2.4)), (p.position.y += step * 0.6));
+		}
+	}
+
+	/** the arrival, cut like a trailer on the film camera's moves: dawn over the endless steppe and a van's dust far
+	 *  below; inside the packed van; alongside it past the telegraph poles; the road ending at the abandoned gas station;
+	 *  the van pulling up and the newcomer stepping out; looking east, over their shoulder, to the green land; and up,
+	 *  over the whole city plot. Each shot carries its line of the story (onCaption). */
 	function intro() {
 		placed = true;
 		const me = people[stage.me];
-		const vanAt = (z) => van.position.set(HIGHWAY_X + 2, 0, z);
-		const startZ = VAN_STOP - 260;
+		// where the van is at the trailer's second T: far out on the steppe in the first two shots (a cut may jump), then
+		// on, slowing, to the bus stop
+		const vx = (T) =>
+			T < 6 ? VAN_HALT.x - 1500 + 22 * T : T < 12 ? VAN_HALT.x - 1000 + 22 * (T - 6) : T <= 17 ? VAN_HALT.x - 55 - 22 * (17 - T) : T <= 22 ? VAN_HALT.x - 55 + 55 * (1 - (1 - (T - 17) / 5) ** 2) : VAN_HALT.x;
+		const vanAt = (T) => {
+			van.position.set(vx(T), 0, VAN_HALT.z);
+			van.rotation.y = Math.PI / 2;
+			dust(van, -2.6);
+		};
 		const bump = (t) => Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02;
-		const watch = V(HIGHWAY_X + 13, 2.6, VAN_STOP - 20); // south of the bus stop, across from the van's door side
-		return play([
-			{
-				dur: 7.5,
-				start: () => {
-					place();
-					van.visible = true;
-					van.rotation.y = 0;
-					for (const p of van.userData.people) p.visible = true;
-					me.visible = false;
-					camera.near = 0.05;
-					camera.fov = 72;
-					camera.updateProjectionMatrix();
+		const door = V(VAN_HALT.x + 0.4, 0, VAN_HALT.z - 1.4);
+		const lens = (fov, near = 0.5) => ((camera.fov = fov), (camera.near = near), camera.updateProjectionMatrix());
+		const wide = () => (camera.aspect < 0.8 ? 62 : 40);
+		const crane = shot({ kind: 'move', from: [VAN_HALT.x - 70, 2.4, ROAD_Z - 9], to: [VAN_HALT.x - 52, 30, ROAD_Z - 44], aimFrom: [VAN_HALT.x - 40, 1.4, ROAD_Z], aimTo: [CX + 4, 2, ROAD_Z], curve: 'ease' });
+		const low = shot({ kind: 'move', from: [STOP.x + 6, 0.9, STOP.z - 5.5], to: [STOP.x + 4.5, 1.1, STOP.z - 4], aimFrom: [VAN_HALT.x, 1.3, VAN_HALT.z], aimTo: [VAN_HALT.x + 1, 1.4, VAN_HALT.z - 1], curve: 'drift' });
+		const shoulder = shot({ kind: 'move', from: [STOP.x - 7, 2.3, STOP.z - 4.5], to: [STOP.x - 2.6, 2.05, STOP.z - 1.4], aimFrom: [STOP.x, 1.8, STOP.z], aimTo: [CX + 240, 3, CZ - 70], curve: 'ease' });
+		let rise = null;
+		let T = 0;
+		return play(
+			[
+				{
+					dur: 6,
+					caption: { title: 'Somewhere past the end of the map…', dur: 6 },
+					start: () => {
+						place();
+						van.visible = true;
+						for (const p of van.userData.people) p.visible = true;
+						me.visible = false;
+						lens(wide());
+					},
+					run: (k) => {
+						T = k * 6;
+						vanAt(T);
+						const e = ease(k), x = vx(T);
+						pose(look([x - 170 + 120 * e, 150 - 80 * e, ROAD_Z + 230 - 120 * e], [x + 30, 0, ROAD_Z]));
+					}
 				},
-				run: (k) => {
-					const t = k * 7.5;
-					vanAt(startZ + k * 190);
-					van.updateMatrixWorld(true);
-					camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, bump(t), 0));
-					const look = van.localToWorld(VAN_LOOK.clone());
-					controls.target.copy(look);
-					camera.lookAt(look);
-					for (const [i, p] of van.userData.people.entries()) p.userData.head.position.y = 1.62 + Math.sin(t * 9 + i) * 0.015;
-				}
-			},
-			{
-				dur: 4.5,
-				start: () => {
-					camera.near = 0.5;
-					camera.fov = camera.aspect < 0.8 ? 58 : 42;
-					camera.updateProjectionMatrix();
-					camera.position.copy(watch);
-					controls.target.set(HIGHWAY_X + 2, 1.5, VAN_STOP - 60);
-					for (const p of van.userData.people) p.visible = false;
+				{
+					dur: 6,
+					caption: { title: '…a van full of people, and everything they own.', dur: 6 },
+					start: () => lens(72, 0.05),
+					run: (k) => {
+						T = 6 + k * 6;
+						vanAt(T);
+						van.updateMatrixWorld(true);
+						camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, bump(T), 0));
+						camera.lookAt(van.localToWorld(VAN_LOOK.clone()));
+						for (const [i, p] of van.userData.people.entries()) p.userData.head.position.y = 1.62 + Math.sin(T * 9 + i) * 0.015;
+					}
 				},
-				run: (k) => {
-					vanAt(startZ + 190 + easeOut(k) * (VAN_STOP - startZ - 190));
-					camLerp(watch, V(HIGHWAY_X + 2, 1.4, van.position.z + 2), 0.12);
-				}
-			},
-			{
-				dur: 2.2,
-				start: () => {
-					me.visible = true;
-					me.rotation.y = Math.PI / 2;
+				{
+					dur: 5,
+					caption: { title: 'They are not running away.', sub: 'They are going towards something.', dur: 5 },
+					start: () => {
+						lens(wide() + 6);
+						for (const p of van.userData.people) p.visible = false;
+					},
+					run: (k) => {
+						T = 12 + k * 5;
+						vanAt(T);
+						const x = vx(T);
+						pose(look([x + 5 - 4 * k, 1.3, ROAD_Z - 9.5], [x + 1.5, 1.3, VAN_HALT.z]));
+					}
 				},
-				run: (k) => {
-					me.position.set(HIGHWAY_X + 3.4 + ease(k) * (STOP.x - HIGHWAY_X - 3.4), 0, VAN_STOP + 0.9 + ease(k) * (STOP.z - VAN_STOP - 0.9));
-					camLerp(watch, V(STOP.x - 1.5, 1.4, STOP.z), 0.08);
+				{
+					dur: 5,
+					caption: { title: 'Here, the old road ends.', dur: 5 },
+					start: () => lens(wide()),
+					run: (k) => {
+						T = 17 + k * 5;
+						vanAt(T);
+						pose(crane(k));
+					}
+				},
+				{
+					dur: 5,
+					caption: { title: 'And something new begins.', dur: 5 },
+					start: () => {
+						vanAt(22);
+						me.visible = true;
+						me.position.copy(door);
+					},
+					run: (k) => {
+						const w = Math.min(1, Math.max(0, (k - 0.15) / 0.6));
+						me.position.lerpVectors(door, STOP, ease(w));
+						pose(low(k));
+					}
+				},
+				{
+					dur: 5,
+					caption: { title: 'Land that belongs to everyone who lives on it.', dur: 5 },
+					run: (k) => {
+						const u = easeOut(k) * 0.35;
+						van.position.copy(VAN_OUT.getPointAt(u));
+						const t = VAN_OUT.getTangentAt(Math.max(0.001, u));
+						van.rotation.y = Math.atan2(t.x, t.z);
+						dust(van, -2.6);
+						pose(shoulder(k));
+					}
+				},
+				{
+					dur: 6.5,
+					caption: { title: 'Welcome to MaiaCity', sub: 'A city owned by the people who live in it. You are one of the first.', big: true, dur: 6.5 },
+					start: () => {
+						van.visible = false;
+						reveal(2);
+						const from = arr(camera.position);
+						rise = shot({ kind: 'move', from, to: [CX - 260, 560, CZ - 560], aimFrom: [CX + 240, 3, CZ - 70], aimTo: [CX + 160, 0, CZ + 80], curve: 'ease' });
+					},
+					run: (k) => pose(rise(k))
 				}
-			},
-			{
-				dur: 4,
-				start: () => (me.rotation.y = -Math.PI / 2 - 0.5),
-				run: (k) => {
-					vanAt(VAN_STOP + easeIn(k) * 160);
-					van.visible = k < 0.97;
-					camLerp(watch.clone().add(V(-2, 0.4, 8)), V(STOP.x, 1.6, STOP.z + 2), 0.03);
-				}
-			}
-		]);
+			],
+			{ hour: 8.6 }
+		);
 	}
 
-	/** a drive in the pickup along the track: to the village's shed, or on home to our tribe; when the other player
-	 *  comes to fetch me (fetch), the pickup first drives out from the tribe to the bus stop */
+	/** a drive in the pickup along the track, cut in three shots: from the roadside as it sets off, from the air
+	 *  as it crosses the land, and close behind it as it arrives. To the village's shed, or on home to our tribe; when the
+	 *  other player comes to fetch me (fetch), the pickup first drives out from the tribe to the bus stop. */
 	function drive(leg, { fetch = false } = {}) {
 		const me = people[stage.me];
 		const other = stage.other ? people[stage.other] : null;
-		const chase = (u, back) => {
-			const { p, t } = along(u);
-			const dir = back ? t.clone().negate() : t;
-			const side = V(dir.z, 0, -dir.x);
-			camLerp(p.clone().sub(dir.clone().multiplyScalar(30)).add(V(0, 15, 0)).add(side.multiplyScalar(8)), p.clone().add(dir.clone().multiplyScalar(10)).setY(1.5), 0.2);
+		const go = (from, to, dur) => {
+			let cut = -1;
+			let fixed = null;
+			return {
+				dur,
+				run: (k) => {
+					const u = from + (to - from) * ease(k);
+					const back = to < from;
+					putTruck(u, back);
+					dust(truck, -2.8);
+					const { p, t } = along(u);
+					const dir = back ? t.clone().negate() : t;
+					const side = V(dir.z, 0, -dir.x);
+					const phase = k < 0.3 ? 0 : k < 0.68 ? 1 : 2;
+					if (phase !== cut) {
+						cut = phase;
+						if (phase === 0) {
+							const ahead = along(from + (to - from) * 0.1);
+							fixed = ahead.p.clone().add(side.clone().multiplyScalar(9)).setY(1.7);
+						}
+						if (phase === 1) camera.position.copy(p).add(side.clone().multiplyScalar(48)).add(V(0, 30, 0)).sub(dir.clone().multiplyScalar(14));
+						if (phase === 2) camera.position.copy(p).sub(dir.clone().multiplyScalar(26)).add(V(0, 11, 0)).add(side.clone().multiplyScalar(6));
+						controls.target.copy(p);
+					}
+					if (phase === 0) (camera.position.copy(fixed), camLerp(fixed, p.clone().setY(1.6), 0.3));
+					else if (phase === 1) camLerp(p.clone().add(side.clone().multiplyScalar(48)).add(V(0, 30, 0)).sub(dir.clone().multiplyScalar(14)), p.clone().add(dir.clone().multiplyScalar(12)), 0.12);
+					else camLerp(p.clone().sub(dir.clone().multiplyScalar(26)).add(V(0, 11, 0)).add(side.clone().multiplyScalar(6)), p.clone().add(dir.clone().multiplyScalar(10)).setY(1.5), 0.2);
+				}
+			};
 		};
-		const go = (from, to, dur) => ({
-			dur,
-			run: (k) => {
-				const u = from + (to - from) * ease(k);
-				putTruck(u, to < from);
-				chase(u, to < from);
-			}
-		});
 		const getIn = (start) => ({ dur: 0.7, start: () => { start?.(); me.visible = false; if (other && stage.rides) other.visible = false; } });
 		const steps = [];
 		if (fetch) steps.push({ dur: 0.7, start: () => { putTruck(1, true); if (other) other.visible = false; } }, go(1, U_START, 12), getIn());
 		else steps.push(getIn());
-		steps.push(leg === 'village' ? go(U_START, U_STORE, 12) : go(U_STORE, 1, 8));
+		steps.push(leg === 'village' ? go(U_START, U_STORE, 13) : go(U_STORE, 1, 9));
 		const first = steps[0].start;
 		steps[0].start = () => {
 			first();
-			truck.updateMatrixWorld(true);
-			const { t } = along(fetch ? 1 : leg === 'village' ? U_START : U_STORE);
-			camera.position.copy(truck.position).sub(t.clone().multiplyScalar(fetch ? -30 : 30)).add(V(8, 15, 0));
-			controls.target.copy(truck.position);
+			camera.fov = camera.aspect < 0.8 ? 58 : 42;
+			camera.updateProjectionMatrix();
 		};
 		return play(steps);
 	}
 
-	/** loading the powercube from the shed onto the pickup's bed */
+	/** loading the powercube and the packed tent from the shed onto the pickup's bed */
 	function load() {
 		truck.updateMatrixWorld(true);
-		const from = CUBE_IN_SHED.clone();
-		const to = truck.localToWorld(V(0, 1.16, -1.8));
+		const lift = (o, from, to, k, h = 5) => {
+			const e = ease(k);
+			o.position.lerpVectors(from, to, e).setY(from.y + (to.y - from.y) * e + Math.sin(Math.PI * e) * h);
+			o.rotation.y = truck.rotation.y * e;
+		};
+		const cubeTo = truck.localToWorld(V(0, 1.16, -1.8));
+		const tentTo = truck.localToWorld(V(0, 1.17, -2.42));
 		const look = V(STORE.x + 2, 2, (STORE.z + VZ) / 2);
 		const eye = V(STORE.x + 22, 12, VZ + 26);
 		return play([
-			{ dur: 0.3, start: () => placeCube('shed') },
+			{ dur: 0.3, start: () => (placeCube('shed'), placeTent('shed')) },
+			{ dur: 2.6, run: (k) => (lift(cube, CUBE_IN_SHED, cubeTo, k), camLerp(eye, look, 0.06)) },
+			{ dur: 0.2, start: () => ((stage.cube = 'bed'), placeCube('bed')) },
+			{ dur: 2, run: (k) => (lift(bundle, TENT_IN_SHED, tentTo, k, 3), camLerp(eye.clone().add(V(-6, -2, 4)), look, 0.06)) },
+			{ dur: 0.6, start: () => ((stage.tent = 'bed'), placeTent('bed')), run: () => camLerp(eye, look, 0.06) }
+		]);
+	}
+
+	/** pitching the tent at the middle of our hex: the bundle comes off the pickup, the powercube goes to its yard, and
+	 *  the little dome rises strut by strut while the camera circles it */
+	function pitch() {
+		truck.updateMatrixWorld(true);
+		const from = truck.localToWorld(V(0, 1.17, -2.42));
+		const cubeFrom = truck.localToWorld(V(0, 1.16, -1.8));
+		const orbit = shot({ kind: 'orbit', centre: [0, 0], a0: 0.4, a1: 1.9, r0: 26, r1: 18, y0: 12, y1: 6, aim: [0, 2, 0], curve: 'ease' });
+		return play([
 			{
-				dur: 2.6,
+				dur: 1.6,
+				start: () => {
+					world.attach(bundle);
+					world.attach(cube);
+					bundle.scale.setScalar(1);
+					cube.scale.setScalar(1);
+				},
 				run: (k) => {
 					const e = ease(k);
-					cube.position.lerpVectors(from, to, e).setY(from.y + (to.y - from.y) * e + Math.sin(Math.PI * e) * 5);
-					cube.rotation.y = truck.rotation.y * e;
-					camLerp(eye, look, 0.06);
+					bundle.position.lerpVectors(from, V(0, 0, 2), e).setY(from.y * (1 - e) + Math.sin(Math.PI * e) * 2);
+					cube.position.lerpVectors(cubeFrom, V(YARD.x, 0, YARD.z), e).setY(cubeFrom.y * (1 - e) + Math.sin(Math.PI * e) * 3);
+					pose(orbit(k * 0.2));
 				}
 			},
-			{ dur: 0.6, start: () => ((stage.cube = 'bed'), placeCube('bed')), run: () => camLerp(eye, look, 0.06) }
+			{
+				dur: 4.2,
+				start: () => {
+					bundle.visible = false;
+					home.visible = true;
+				},
+				run: (k) => {
+					const e = ease(k);
+					home.scale.set(0.3 + 0.7 * e, Math.max(0.02, e), 0.3 + 0.7 * e);
+					home.rotation.y = (1 - e) * 0.6;
+					pose(orbit(0.2 + k * 0.8));
+				}
+			},
+			{ dur: 0.4, start: () => ((stage.tent = 'up'), (stage.cube = 'home'), placeTent('up'), placeCube('home')), run: () => pose(orbit(1)) }
 		]);
 	}
 	/** jump to the end of what is playing */
@@ -764,7 +983,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		for (const seat of ['A', 'B']) {
 			const hearts = view.players[seat].wallet.HEARTS;
 			const glow = people[seat].userData.glow;
-			glow.visible = hearts > 0.01;
+			glow.visible = hearts > 0.01 && !busy;
 			glow.scale.setScalar(0.5 + Math.min(1.5, hearts / 24));
 		}
 	}
@@ -772,7 +991,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	// the sun by the virtual hour: up from 6 to 18, low and warm at the ends, a cool night with a moonlight; it
 	// follows what the camera looks at, so the shadows fall wherever the story is
 	function light(t) {
-		const day = (hour - 6) / 12;
+		const day = ((moment?.hour ?? hour) - 6) / 12;
 		const up = Math.sin(Math.PI * Math.min(1, Math.max(0, day)));
 		const a = Math.PI * day;
 		sun.target.position.copy(controls.target).setY(0);
@@ -801,6 +1020,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		camera.aspect = w / h;
 		if (!busy) camera.fov = w / h < 0.8 ? 58 : 42;
 		camera.updateProjectionMatrix();
+		frameView();
 	}
 	const ro = new ResizeObserver(resize);
 	ro.observe(canvas);
@@ -823,9 +1043,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	let frame = 0;
 	let raf = 0;
 	const clock = new THREE.Clock();
+	let lastT = null;
 	function loop() {
 		raf = requestAnimationFrame(loop);
 		const t = clock.getElapsedTime();
+		const step = Math.min(0.25, t - (lastT ?? t));
+		lastT = t;
+		settleDust(step);
 		if (moment) runMoment(performance.now() / 1000);
 		else {
 			if (goal) {
@@ -834,6 +1058,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 				camera.position.lerp(at, 0.06);
 				if (camera.position.distanceTo(at) < 0.5) goal = null;
 			}
+			controls.autoRotate = drift && !goal;
+			controls.autoRotateSpeed = tourOn ? 0.45 : 0.25;
 			controls.update();
 		}
 		light(t);
@@ -861,6 +1087,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 		intro,
 		drive,
 		load,
+		pitch,
 		skip,
 		get busy() {
 			return busy;
