@@ -726,6 +726,7 @@ export function aiYears(w) {
 		const aiCoops = Object.entries(A.byAi).map(([id, b]) => ({ id, label: b.label, hoursDay: b.hours / d, priceR: b.hours > 0 ? b.revR / b.hours : null }));
 		out.push({
 			year: Y.year,
+			days: Y.days,
 			people: Y.people,
 			owners,
 			chips: A.chipsEnd,

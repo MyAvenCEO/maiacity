@@ -27,7 +27,7 @@
 import { exp, log } from './dmath.js';
 import { polar } from './rng.js';
 import { createWorld, step, DEFAULTS, getLedger, paramSet } from './engine.js';
-import { livingYears, villageYears, borderYears, foundingBill, foodLand, indoorMonthsOf } from './records.js';
+import { livingYears, villageYears, borderYears, foundingBill, foodLand, indoorMonthsOf, aiYears } from './records.js';
 import { prop3 } from './prop3.js';
 import { guessText } from './guesses.js';
 import { openCoop } from './coops.js';
@@ -1130,6 +1130,59 @@ export const EXPERIMENTS = {
 		}
 	},
 
+	AIX: {
+		id: 'AIX',
+		question: 'Does selling Aven service abroad repay the bank?',
+		ruleChanged: 'Electricity is the village’s only export (base) vs the MaiaCity COOP also buying Aven service from avenCEO in MIND and selling it abroad for euros (changed): at a sourced market price for an accelerator-hour (€2), bounded by a small provider’s demand (1,024 accelerators at 55 % use), only while the bank is behind and while an accelerator-hour abroad earns more than its electricity and its accelerator cost in euros.',
+		guesses: [
+			{ text: 'AI exports earn the bank more euros a year than the line’s electricity does.', check: (rb, rc) => rc.values.aiEurY > rc.values.elecEurY },
+			{ text: 'The bank gets its founding euros back within the 60 years.', check: (rb, rc) => rc.values.repayYear > 0 },
+			{ text: 'People keep their Aven help: selling inference abroad does not take it from the village.', check: (rb, rc) => rc.values.helpLast >= 0.98 * rb.values.helpLast }
+		],
+		people: PAGE_PEOPLE,
+		years: 60,
+		base: { aiExport: false },
+		changed: { aiExport: true },
+		charts: ['mean living standard', 'energy a person and the capacity per person', 'person-days short'],
+		metrics: [
+			{ id: 'bootstrapM', label: 'bootstrap number: the lowest cumulative balance at the bank, € M', of: (w) => -Math.min(0, ...borderYears(w).map((y) => y.bank.lowestEur ?? 0)) / 1e6 },
+			{ id: 'cumEndM', label: 'cumulative balance at the end (all exports less all imports since day 0), € M', of: (w) => (borderYears(w).at(-1)?.bank.cumulativeEur ?? NaN) / 1e6 },
+			{ id: 'repayYear', label: 'first year the cumulative balance is back at zero (−1: not within the run)', of: (w) => borderYears(w).find((y) => y.year > 1 && y.bank.cumulativeEur >= 0)?.year ?? -1 },
+			{ id: 'netLast10M', label: 'exports less imports, € M a year (mean of the last 10 years)', of: (w) => { const b = borderYears(w).slice(-10); return b.reduce((a, y) => a + y.exportEur - y.importEur, 0) / Math.max(1, b.length) / 1e6; } },
+			{ id: 'aiEurY', label: 'AI exports, € a year (mean of the run)', of: (w) => { const b = borderYears(w); return b.reduce((a, y) => a + (y.exportEurAi ?? 0), 0) / Math.max(1, b.length); } },
+			{ id: 'elecEurY', label: 'electricity exports, € a year (mean of the run)', of: (w) => { const b = borderYears(w); return b.reduce((a, y) => a + (y.exportEurElec ?? 0), 0) / Math.max(1, b.length); } },
+			{ id: 'chipEurY', label: 'accelerators imported, € a year (mean of the run)', of: (w) => { const b = borderYears(w); return b.reduce((a, y) => a + (y.imports.accelerators?.eur ?? 0), 0) / Math.max(1, b.length); } },
+			{ id: 'chipsEnd', label: 'accelerators in the data halls at the end', of: (w) => aiYears(w).at(-1)?.chips ?? NaN },
+			{ id: 'helpLast', label: 'Aven help a person a day, h (last year)', of: (w) => aiYears(w).at(-1)?.all?.helpH ?? NaN },
+			{ id: 'workLast', label: 'Aven work for the COOPs a person a day, h (last year)', of: (w) => aiYears(w).at(-1)?.all?.workH ?? NaN },
+			{ id: 'shortPD', label: 'person-days short of a basic (after day 0)', of: (w) => shortPD(w) },
+			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) },
+			{ id: 'Lpoor', label: 'poorest holdings decile, last year', of: (w) => meanOf(w, 'decH', ...lastYear(w), 0) }
+		],
+		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			const when = (v) => (v.repayYear > 0 ? `in year ${f0(v.repayYear)}` : v.netLast10M > 0 ? `not within the run’s 60 years (about ${f0(-v.cumEndM / v.netLast10M)} more years at the last decade’s pace)` : `never at the last decade’s pace (exports did not cover imports)`);
+			return `Selling Aven service abroad earned €${f0(c.aiEurY / 1e3)}k a year; the bootstrap number went from €${f2(b.bootstrapM)} M to €${f2(c.bootstrapM)} M, and the bank is repaid ${when(c)} (electricity only: ${when(b)}).`;
+		},
+		numbers(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return (
+				`Bootstrap number €${f2(b.bootstrapM)} M (electricity only) vs €${f2(c.bootstrapM)} M (with AI exports); cumulative balance at the end €${f2(b.cumEndM)} M vs €${f2(c.cumEndM)} M; ` +
+				`exports less imports in the last 10 years €${f2(b.netLast10M)} M vs €${f2(c.netLast10M)} M a year; repaid in year ${b.repayYear > 0 ? f0(b.repayYear) : 'never in the run'} vs ${c.repayYear > 0 ? f0(c.repayYear) : 'never in the run'}. ` +
+				`AI exports €${f0(c.aiEurY)} a year; electricity exports €${f0(b.elecEurY)} vs €${f0(c.elecEurY)}; accelerators imported €${f0(b.chipEurY)} vs €${f0(c.chipEurY)} a year; ${f0(b.chipsEnd)} vs ${f0(c.chipsEnd)} accelerators at the end. ` +
+				`Aven help ${f2(b.helpLast)} vs ${f2(c.helpLast)} h a person a day, work ${f2(b.workLast)} vs ${f2(c.workLast)} h; person-days short ${f0(b.shortPD)} vs ${f0(c.shortPD)}; mean living standard ${f2(b.Lmean)} vs ${f2(c.Lmean)}, poorest tenth ${f2(b.Lpoor)} vs ${f2(c.Lpoor)}.`
+			);
+		},
+		pass(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return {
+				pass: null,
+				claim: 'A comparison, not a test: what selling Aven service abroad does to the bank’s balance (the bootstrap number and the year the founding euros are back) and to the village’s own Aven service.',
+				evidence: `bootstrap €${f2(b.bootstrapM)} M → €${f2(c.bootstrapM)} M; repaid ${b.repayYear > 0 ? `year ${f0(b.repayYear)}` : 'not in the run'} → ${c.repayYear > 0 ? `year ${f0(c.repayYear)}` : 'not in the run'}; AI exports €${f0(c.aiEurY)} a year; Aven help ${pct(rel(c.helpLast, b.helpLast))}`
+			};
+		}
+	},
+
 	SH: {
 		id: 'SH',
 		question: 'Through a drought, a dark winter, two failing COOPs and a failing well, does everyone keep the basics, and does every decile recover within two years?',
@@ -1361,7 +1414,9 @@ export function summarize(w) {
 		border: borderYears(w),
 		founding: foundingBill(w),
 		food: foodLand(w),
-		indoorMonths: indoorMonthsOf(w)
+		indoorMonths: indoorMonthsOf(w),
+		// the AI market by year: who owns the accelerators, inference, Aven hours and income by tenth (./records.js)
+		ai: aiYears(w)
 	};
 }
 

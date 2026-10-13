@@ -503,3 +503,40 @@ export function importsOf(B, F, V, marks = {}, L = null) {
 		runOut: neg?.y ?? null
 	};
 }
+
+/**
+ * The AI tab's record of one world: `A` from aiYears(w) (./records.js). Who owns the accelerators each year (the
+ * settlement COOPs and the Village COOP), the inference they sold to the AI COOPs and its price, the Aven hours a
+ * person by tenth of holdings (help and work), each tenth's MIND income by source, the accelerators imported and what
+ * bound the Aven service. { owners: [{ id, label }], years: [...] }
+ */
+export function aiOf(A) {
+	if (!Array.isArray(A) || !A.length) return null;
+	const owners = [];
+	for (const r of A) for (const o of r.owners ?? []) if (!owners.some((x) => x.id === o.id)) owners.push({ id: o.id, label: o.label ?? o.id });
+	const tenth = (t) => (t ? { helpH: t.helpH, workH: t.workH, hearts: t.hearts, work: t.work, div: t.div } : null);
+	return {
+		owners,
+		years: A.map((r) => ({
+			y: r.year,
+			days: r.days,
+			partial: r.days != null && r.days < 365,
+			people: r.people,
+			chips: r.chips,
+			byOwner: Object.fromEntries((r.owners ?? []).map((o) => [o.id, { chips: o.chips, chipsMean: o.chipsMean, AHDay: o.AHDay, priceR: o.priceR }])),
+			capAHDay: r.capAHDay,
+			AHDay: r.AHDay,
+			inferPriceR: r.inferPriceR,
+			utilization: r.utilization,
+			aiCoops: (r.aiCoops ?? []).map((c) => ({ id: c.id, label: c.label ?? c.id, hoursDay: c.hoursDay, priceR: c.priceR })),
+			tenths: Array.from({ length: 10 }, (_, i) => tenth(r.tenths?.[i + 1] ?? r.tenths?.[String(i + 1)])),
+			all: tenth(r.all),
+			work: r.work ?? null,
+			imported: r.imported ?? { n: 0, eur: 0 },
+			worn: r.worn ?? null,
+			bind: r.bind ?? null,
+			export: r.export ?? { AHDay: 0, eur: 0 },
+			bankCumEur: r.bankCumEur ?? null
+		}))
+	};
+}

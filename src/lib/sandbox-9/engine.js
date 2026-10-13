@@ -733,6 +733,8 @@ function affordCoops(w) {
 		// the energy and heat of the basics it delivers come first: a COOP draws only what it can pay for; if its
 		// treasury cannot pay for all of it, it delivers that much less today (and goes into receivership tonight)
 		const billB = (co.eReq[CLASS.basics] + co.heatReq / cop + co.heatRun / cop) * pE;
+		// the heat its plants need today, before any cut (the payout's reserve keeps the months ahead's: ./coops.js payout)
+		co.heatNeed = [co.heatReq / cop * pE, co.heatRun / cop * pE];
 		if (billB > budget) {
 			const f = Math.max(0, budget / billB);
 			co.own = f;
@@ -741,6 +743,8 @@ function affordCoops(w) {
 			co.heatRun *= f;
 		}
 		budget -= billB * co.own;
+		// what it could pay for (a share under 1 is a day it could not pay: ./engine.js endOfDay)
+		co.ownPaid = co.own;
 		// a COOP whose running hours the personal Avens did not deliver yesterday (Aven service short: ./coops.js
 		// workItems) runs its plants that much less today: it delivers and makes that share less
 		const wf = w.runFillY ?? 1;
@@ -1608,6 +1612,9 @@ function endOfDay(w) {
 	for (const co of w.coops) {
 		if (!co.alive) continue;
 		co.costREma += (co.costR - co.costREma) / 30;
+		// its running costs over the last year (over the days since it was founded, in its first year)
+		co.costYearN = Math.min(365, (co.costYearN ?? 0) + 1);
+		co.costYearR = (co.costYearR ?? co.costR) + (co.costR - (co.costYearR ?? co.costR)) / co.costYearN;
 		// what rebuilding its worn plant cost today, at the prices its input store was bought at (a 90-day average)
 		co.upkeepREma = (co.upkeepREma ?? 0) + ((co.upkeepRToday ?? 0) - (co.upkeepREma ?? 0)) / 90;
 		co.upkeepRToday = 0;
@@ -1619,7 +1626,17 @@ function endOfDay(w) {
 		const tr = treasuryR(w, co.k);
 		// a COOP that could not pay for all the energy and materials it needed today (it made and delivered only what
 		// it paid for: co.own < 1) or left a bill unpaid. Nobody delivers to it unpaid; it simply makes less that day
-		co.billFail = (co.own ?? 1) < 1 - 1e-9 || co.unpaidBillR > 0;
+		// (the share it could pay for, not the share the Avens' running hours let it deliver: a day the Aven service
+		// fell short is not a day the COOP could not pay)
+		co.billFail = (co.ownPaid ?? co.own ?? 1) < 1 - 1e-9 || co.unpaidBillR > 0;
+		// the heat its plants needed today (in R), and per unit of the month's heat index: the payout's reserve keeps the
+		// months ahead's (./coops.js payout)
+		const [hd, hp] = co.heatNeed ?? [0, 0];
+		co.heatREma = (co.heatREma ?? 0) + (hd + hp - (co.heatREma ?? 0)) / 30;
+		const hiD = w.today.heatShare ?? 0, hiP = w.today.springHeat ?? 0;
+		if (hd > 0 && hiD > 0) co.heatDomeUnitR = (co.heatDomeUnitR ?? hd / hiD) + (hd / hiD - (co.heatDomeUnitR ?? hd / hiD)) / 30;
+		if (hp > 0 && hiP > 0) co.heatPondUnitR = (co.heatPondUnitR ?? hp / hiP) + (hp / hiP - (co.heatPondUnitR ?? hp / hiP)) / 30;
+		co.heatNeed = null;
 		// insolvent today: it could not pay all its running items, its bills or its inputs. 30 such days in a row
 		// and it goes into receivership (./coops.js receiverships)
 		co.lowDays = co.unpaidH > 1e-9 || co.unpaidBillR > 1e-9 * Math.max(1, co.costREma) || co.billFail ? co.lowDays + 1 : 0;

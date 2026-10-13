@@ -17,7 +17,7 @@ import { judgeGuesses } from './guesses.js';
 // read as namespaces: a reader the engine does not have (yet) is simply left out, never a failed build
 import * as ENG from './engine.js';
 import * as REC from './records.js';
-import { livingOf, importsOf } from './params.js';
+import { livingOf, importsOf, aiOf } from './params.js';
 import { DAY } from '../sandbox-7/specs.js';
 
 const FRAME_MS = 33; // at most 30 frames a second
@@ -192,7 +192,7 @@ function paramsOf(w) {
 	return { settings: plain(p.settings ?? w.cfg), catalog: plain(p.catalog ?? w.c ?? {}), village: plain(p.village ?? null) };
 }
 
-/** each world's yearly living standards and border ledger so far (the Living and Imports tabs) */
+/** each world's yearly living standards, border ledger and AI market so far (the Living, Imports and AI tabs) */
 function statsNow() {
 	const r = run;
 	if (!r) return null;
@@ -201,7 +201,8 @@ function statsNow() {
 		try {
 			const L = REC.livingYears?.(w) ?? null, V = REC.villageYears?.(w) ?? null;
 			const B = REC.borderYears?.(w) ?? null, F = REC.foundingBill?.(w) ?? null;
-			return { living: plain(livingOf(L, V, w.c, DAY)), imports: plain(importsOf(B, F, V, {}, L)) };
+			const A = REC.aiYears?.(w) ?? null;
+			return { living: plain(livingOf(L, V, w.c, DAY)), imports: plain(importsOf(B, F, V, {}, L)), ai: plain(aiOf(A)) };
 		} catch (err) {
 			return { error: String(err?.message || err) };
 		}

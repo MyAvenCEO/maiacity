@@ -1418,9 +1418,21 @@ export function treasuryR(w, k) {
 export function payout(w, rate) {
 	const cfg = w.cfg;
 	rate = rate ?? cfg.payoutRate;
+	// the climate's heat index over the reserve's span ahead: the domes' (homes, food domes) and the warm ponds' (round 4)
+	const [domeAhead, pondAhead] = heatIndexAhead(w, cfg.reserveDays);
 	for (const co of w.coops) {
 		if (!co.alive) continue;
-		const reserve = cfg.reserveDays * co.costREma + co.plannedR + co.rdBudgetR;
+		// (round 4) the heat its plants will need over the reserve's span, month by month, at what a unit of the month's
+		// heat index cost it lately: a COOP that heats (a warm pond, food domes, homes) keeps its winter's heat in
+		// reserve through the summer. Counted at the last month's heat bill, a warm pond kept a summer's reserve, paid
+		// the rest out as work proposals, and could not pay its first winter's heat (round 3: year 2)
+		const heatNow = co.heatREma ?? 0;
+		const heatAhead = (co.heatDomeUnitR ?? 0) * domeAhead + (co.heatPondUnitR ?? 0) * pondAhead;
+		// (and at least reserveDays of its costs at the last year's average, which carries the winter's dearer energy too,
+		// once it has seen one)
+		const heat = cfg.reserveDays * Math.max(0, co.costREma - heatNow) + Math.max(cfg.reserveDays * heatNow, heatAhead);
+		const year = cfg.reserveDays * Math.max(co.costREma, co.costYearR ?? 0);
+		const reserve = Math.max(heat, year) + co.plannedR + co.rdBudgetR;
 		// (the proposals it has posted and not yet paid are spoken for)
 		const surplus = treasuryR(w, co.k) - reserve - (co.propBacklogR ?? 0);
 		co.reserveR = reserve;
@@ -1439,6 +1451,18 @@ export function payout(w, rate) {
 		co.rdBudgetR += rd / 2;
 		w.today.rdR += rd / 2;
 	}
+}
+
+/** the sum of the domes' daily heat index (the month's share of the year's heat) and of the warm ponds' heat a
+ * bather-hour over the next `days` days */
+function heatIndexAhead(w, days) {
+	let dome = 0, pond = 0;
+	for (let d = 1; d <= days; d++) {
+		const m = monthOf(w.day + d);
+		dome += MONTHLY.heat.v[m] / DAYS_IN_MONTH[m];
+		pond += w.c.springHeat?.[m] ?? 0;
+	}
+	return [dome, pond];
 }
 
 /** R&D energy budgets are spent over a week; the learning curves move with the energy that arrived */
