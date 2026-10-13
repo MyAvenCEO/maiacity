@@ -870,7 +870,7 @@ mod tests {
             entry: EntryId::from_u64(1),
             actor: VaultId::from_u64(1),
             stay: None,
-            generation: 0,
+            epoch: 0,
             deps: vec![],
             proposal: crate::policy::Proposal::Main,
             via: vec![],

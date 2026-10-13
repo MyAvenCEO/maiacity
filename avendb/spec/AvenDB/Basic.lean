@@ -2,9 +2,9 @@
 # Basic notions
 
 Every id stands for a hash or a public key: a signer's id is its public key, a vault's id is the hash of its
-genesis, an edit's id and a cap's id are the hashes of their bytes, an entry's id is 32 random bytes its creator draws,
-a blob's (a schema's or a lens's) the hash of its bytes, a type or a tag a short name. The model uses `Nat` for all of
-them. That they never collide is the "hashes don't collide" assumption; the theorems that need it say so in a
+genesis, an edit's id and a share's id are the hashes of their bytes, an entry's id is 32 random bytes its creator
+draws, a blob's (a schema's or a lens's) the hash of its bytes, a type or a tag a short name. The model uses `Nat` for
+all of them. That they never collide is the "hashes don't collide" assumption; the theorems that need it say so in a
 hypothesis.
 -/
 
@@ -13,7 +13,7 @@ namespace AvenDB
 abbrev SignerId := Nat
 abbrev VaultId  := Nat
 abbrev EntryId  := Nat
-abbrev CapId    := Nat
+abbrev ShareId  := Nat
 abbrev EditId   := Nat
 abbrev BlobId   := Nat
 /-- A file, by its root: the hash iroh names its sealed pieces by (`docs/BLOBS.md`). -/
@@ -39,9 +39,9 @@ inductive Principal where
 
 /-- relay < backup < read < write < owner. Relay only learns the vault's devices, from its log, so that a server lets
     them through and helps them find each other: it receives none of the slice's edits. Backup may hold and pass on the
-    encrypted edits of a slice but gets no key for it: that is the server's role by default. Owner also shares the slice
-    on and is governance. -/
-inductive Role where
+    encrypted edits of a slice but gets no key for it: that is the server's level by default. Owner also shares the
+    slice on and is governance. -/
+inductive Level where
   | relay
   | backup
   | read
@@ -49,28 +49,28 @@ inductive Role where
   | owner
   deriving DecidableEq, Repr
 
-def Role.rank : Role → Nat
+def Level.rank : Level → Nat
   | .relay  => 0
   | .backup => 1
   | .read   => 2
   | .write  => 3
   | .owner  => 4
 
-/-- A cap with role `r` allows what `need` allows. -/
-def Role.allows (r need : Role) : Bool := decide (need.rank ≤ r.rank)
+/-- A share with level `r` allows what `need` allows. -/
+def Level.allows (r need : Level) : Bool := decide (need.rank ≤ r.rank)
 
-/-- Whom a cap names: a vault, or Public. A cap naming a signer is refused (T4); the type still allows one, so that the
-    refusal is something we prove rather than assume. -/
-inductive Grantee where
+/-- Whom a share names: a vault, or everyone. A share naming a signer is refused (T4); the type still allows one, so
+    that the refusal is something we prove rather than assume. -/
+inductive Who where
   | principal (p : Principal)
-  | «public»
+  | everyone
   deriving DecidableEq, Repr
 
 /-! ## Slices
 
-A cap selects a slice of its vault's entries by what their first write says of them (their type, the vault that
+A share selects a slice of its vault's entries by what their first write says of them (their type, the vault that
 created them, their id, when they were created) and by their tags now. Groups of entries are never named: a slice is
-whatever a selector picks, and the cells (`State.lean`) are whatever caps pick alike. -/
+whatever a selector picks, and the audiences (`State.lean`) are whatever shares pick alike. -/
 
 /-- What a selector tests of an entry. -/
 structure Attrs where
@@ -102,7 +102,7 @@ def Atom.test (a : Attrs) : Atom → Bool
   | .tagNone ts     => !ts.any a.tags.contains
   | .tagsWithin ts  => a.tags.all ts.contains
 
-/-- The whole vault, or the entries that pass every test of at least one of the conjunctions. The wire caps a selector
+/-- The whole vault, or the entries that pass every test of at least one of the conjunctions. The wire shares a selector
     at 8 conjunctions of 16 tests and an `entryIn` at 1,000 ids, so matching stays linear. -/
 inductive Selector where
   | all
@@ -131,19 +131,19 @@ structure Header where
   created : Nat
   deriving DecidableEq, Repr
 
-/-! ## Cells and keys -/
+/-! ## Audiences and keys -/
 
-/-- A cell of a vault: the caps that select its entries, as the sorted list of their ids (its signature). On the wire a
-    cell is named by the hash of its vault and its signature. -/
-abbrev Cell := List CapId
+/-- An audience of a vault: the shares that select its entries, as the sorted list of their ids (its signature). On the
+    wire an audience is named by the hash of its vault and its signature. -/
+abbrev Audience := List ShareId
 
-/-- A family of keys that rotates through epochs (a seed's and a cell's are called generations): a vault's seed, whose
-    key pair is the vault's key and from which its master key is derived; the key of a cap with read or more; a cell's
-    key. -/
+/-- A family of keys that rotates through epochs (a seed's and an audience's are called epochs): a vault's seed, whose
+    key pair is the vault's key and from which its master key is derived; the key of a share with read or more; an
+    audience's key. -/
 inductive KeyFam where
-  | seed (v : VaultId)
-  | cap  (v : VaultId) (c : CapId)
-  | cell (v : VaultId) (x : Cell)
+  | seed     (v : VaultId)
+  | share    (v : VaultId) (c : ShareId)
+  | audience (v : VaultId) (x : Audience)
   deriving DecidableEq, Repr
 
 /-- The line of an entry's history a write extends: the main line, a new proposal that the write starts (the write's id
@@ -155,12 +155,12 @@ inductive Proposal where
   deriving DecidableEq, Repr
 
 /-- A signer's own encryption key (a device's, or one derived from a passkey), one epoch of a key family, or the key of
-    an entry in one of its stays (`none` for the stay its creation began, else the move that began it) at a generation
-    of that stay's cell, derived from the cell's key of that generation. -/
+    an entry in one of its stays (`none` for the stay its creation began, else the move that began it) at an epoch
+    of that stay's audience, derived from the audience's key of that epoch. -/
 inductive KeyName where
   | signer (s : SignerId)
   | scoped (k : KeyFam) (epoch : Nat)
-  | entry  (e : EntryId) (stay : Option EditId) (gen : Nat)
+  | entry  (e : EntryId) (stay : Option EditId) (epoch : Nat)
   deriving DecidableEq, Repr
 
 end AvenDB

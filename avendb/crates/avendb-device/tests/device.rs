@@ -286,7 +286,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert!(status["meta"]["mask"].as_str().is_some_and(|m| m.len() == 64), "its secret, masked: {status}");
     let again = app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await;
     assert_eq!(again, Err("this Mac holds an avenDB account already: forget it here first".into()));
-    // a note in her vault, which the server keeps, as the relay cap her vault gave it at its founding reaches it
+    // a note in her vault, which the server keeps, as the relay share her vault gave it at its founding reaches it
     let vault = app.call("world", json!([])).await.expect("its world")["mine"].clone();
     let seeds = titled("Seeds", "Tomatoes in March.");
     let write = json!({ "op": "create", "vault": vault, "type": "note", "tags": ["garden"], "value": seeds });
@@ -309,17 +309,17 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     shown(&mut app, &todo, "her todo, doing and urgent", doing).await;
     let work = json!({ "all": [{ "type": ["todo"] }, { "tag": "work" }] });
     let public = json!({ "name": "Public", "where": work, "ops": [{ "op": "read" }] });
-    let cap = app.call("share", json!([vault, vault, public, "everyone"])).await.expect("a cap");
+    let share = app.call("share", json!([vault, vault, public, "everyone"])).await.expect("a cap");
     shown(&mut app, &todo, "her work todos, public", |t| t["public"] == true).await;
     let world = app.call("world", json!([])).await.expect("its world");
-    let caps = world["caps"].as_array().expect("its caps");
-    let shared = caps.iter().find(|c| c["id"] == cap).expect("the cap");
-    let (grantee, role, slice) = (&shared["grantee"], &shared["role"], &shared["slice"]);
+    let shares = world["caps"].as_array().expect("its caps");
+    let shared = shares.iter().find(|c| c["id"] == share).expect("the cap");
+    let (who, level, slice) = (&shared["grantee"], &shared["role"], &shared["slice"]);
     let picks = (&slice["name"], &slice["where"], &slice["ops"]);
-    assert_eq!((grantee, role), (&json!("everyone"), &json!("read")), "everyone reads");
+    assert_eq!((who, level), (&json!("everyone"), &json!("read")), "everyone reads");
     assert_eq!(picks, (&public["name"], &work, &public["ops"]), "her work todos, by the Public group");
     assert_eq!(shown(&mut app, &entry, "her note", |n| n["public"] == false).await["title"], "Seeds", "not a todo");
-    assert_eq!(app.call("revoke", json!([vault, cap])).await, Ok(Value::Null));
+    assert_eq!(app.call("revoke", json!([vault, share])).await, Ok(Value::Null));
     shown(&mut app, &todo, "her work todos, hers alone again", |t| t["public"] == false).await;
     let size = app.call("size", json!([])).await.expect("its size");
     assert!(size[0].as_u64().expect("its edits") > 0, "it holds her vault's edits: {size}");

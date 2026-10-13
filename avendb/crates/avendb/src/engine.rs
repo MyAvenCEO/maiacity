@@ -12,14 +12,14 @@
 //!   its labels first (`ops::Where::plan`), so a device opens no more than the selector picks, then ordered and a page
 //!   at a time. `get`: one entry on a line, or at a version. `history`: an entry's lines and every write of it, each
 //!   with the changes it made to the entry's stored record (`ops::diff`), as every reader sees them alike. `schemas`:
-//!   the schemas and lenses a vault's entries are read through. `groups`: the built-in groups of ops a cap names
+//!   the schemas and lenses a vault's entries are read through. `groups`: the built-in groups of ops a share names
 //!   (`rules::groups`), which the page offers when it shares.
-//! - **Changes** (`run`). `create`; the record ops (`ops::Op`): `set`, `unset`, `insert`, `remove`, `move`; `tag`;
-//!   `propose`, `merge`, `restore`, `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make
-//!   one write. Each acts for a vault (`"as"`, the device's own by default), as every edit does, and the rules judge
-//!   it as they judge any peer's. A write through a cap carries the proof that the ops of the caps of its chain allow
-//!   what it touches and the tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't
-//!   count it (`rules`).
+//! - **Changes** (`run`). `create`; the record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`;
+//!   `tag`; `propose`, `merge`, `restore`, `undo`, `variant`; and `batch`, whose record ops in a row on one entry's
+//!   line make one write. Each acts for a vault (`"as"`, the device's own by default), as every edit does, and the
+//!   rules judge it as they judge any peer's. A write through a share carries the proof that the ops of the shares of
+//!   its chain allow what it touches and the tags it asks for, and is refused (`NotAllowed`) where they don't: its
+//!   readers wouldn't count it (`rules`).
 //! - **Asking** (`may`). Whether each of some change ops would be made, by a dry run of each that checks, proves and
 //!   refuses as `run` does and makes nothing: what a page asks before it offers a button.
 //!
@@ -37,7 +37,7 @@ use crate::history::{self, History, MAIN};
 use crate::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lab::Lab;
 use crate::lens::{self, Lane, Schema, View};
-use crate::ops::{self, Op, Path, Record, Where};
+use crate::ops::{self, Path, Record, RecordOp, Where};
 use crate::policy::{Line, Proposal, Refusal};
 use crate::rules;
 use crate::slice::Attrs;
@@ -497,7 +497,7 @@ pub struct Wrote {
     pub base: Vec<EditId>,
     /// Why its readers don't count it, if they don't: it builds on a write they don't count (`builds-on`); they can't
     /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); or the ops of
-    /// the caps it relies on don't allow what it touches or the tags it asks for (`ops`, C1 to C4).
+    /// the shares it relies on don't allow what it touches or the tags it asks for (`ops`, C1 to C4).
     pub why: Option<&'static str>,
 }
 
@@ -542,9 +542,9 @@ pub fn line_name(h: &History, line: Line) -> Option<String> {
 /// it started, each with its name, the version it started from and its heads; and every write of it the device holds,
 /// in the order it took them, each with its id, its device (`author`), the vault it acted for, its line, what it
 /// builds on, what it is (`wrote`), whether its readers count it (`counted`: a write that breaks its entry's schemas,
-/// that no rule of its caps allows, or that builds on one, is on no line), why not (`why`) and, for the latest `limit`
-/// (`SHOWN`, left out) that change anything, the changes it made to the stored record (`ops::diff`), which every
-/// reader of the entry sees alike.
+/// that no op of its shares allows, or that builds on one, is on no line), why not (`why`) and, for the latest
+/// `limit` (`SHOWN`, left out) that change anything, the changes it made to the stored record (`ops::diff`), which
+/// every reader of the entry sees alike.
 fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let entry = entry_of(o)?;
     let limit = count_of(o, "limit")?.unwrap_or(SHOWN);
@@ -639,13 +639,13 @@ struct Act {
 enum Step {
     Create { vault: VaultId, ty: String, tags: Vec<String>, schema: Named, value: Value },
     /// Record ops on one entry's line, through one schema: one write.
-    Edits { entry: EntryId, line: Line, schema: Named, ops: Vec<Op> },
+    Edits { entry: EntryId, line: Line, schema: Named, ops: Vec<RecordOp> },
     Tag { entry: EntryId, add: Vec<String>, remove: Vec<String> },
     Propose { entry: EntryId, from: Option<Vec<EditId>>, name: String },
     Merge { entry: EntryId, from: Line, into: Line, promote: bool },
     Restore { entry: EntryId, line: Line, at: Vec<EditId> },
     Undo { entry: EntryId, line: Line, edit: EditId },
-    Variant { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<Op> },
+    Variant { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<RecordOp> },
 }
 
 impl Step {
@@ -664,8 +664,8 @@ impl Step {
     }
 }
 
-/// Record ops, read: each of `ops::Op`, carrying no field an op on a record doesn't take.
-fn record_ops(v: &Value) -> Result<Vec<Op>, Refused> {
+/// Record ops, read: each of `ops::RecordOp`, carrying no field an op on a record doesn't take.
+fn record_ops(v: &Value) -> Result<Vec<RecordOp>, Refused> {
     let xs = v.as_array().ok_or_else(|| bad("ops is a list of ops"))?;
     let one = |x: &Value| {
         let (name, o) = op_of(x)?;
@@ -675,7 +675,7 @@ fn record_ops(v: &Value) -> Result<Vec<Op>, Refused> {
         if let Some(k) = ["entry", "line", "schema", "as"].iter().find(|k| o.contains_key(**k)) {
             return Err(bad(format!("an op on the copy takes no {k:?}: the variant names them")));
         }
-        Op::of_json(x).map_err(bad)
+        RecordOp::of_json(x).map_err(bad)
     };
     xs.iter().map(one).collect()
 }
@@ -695,7 +695,7 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
             Step::Create { vault: vault_of(o, "vault")?, ty: text("type")?, tags, schema, value: value.clone() }
         }
         "set" | "unset" | "insert" | "remove" | "move" => {
-            let op = Op::of_json(v).map_err(bad)?;
+            let op = RecordOp::of_json(v).map_err(bad)?;
             Step::Edits { entry: entry_of(o)?, line: line_of(o, "line")?, schema: named(o)?, ops: vec![op] }
         }
         "tag" => Step::Tag { entry: entry_of(o)?, add: texts_of(o, "add")?, remove: texts_of(o, "remove")? },
@@ -768,7 +768,7 @@ fn change(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
 
 /// `{"op": "may", "ops", "as"?}`: whether device `me` would make each of the change ops `ops`, each acting for the
 /// vault it names (`as`, else the may's, else the device's own), each on what the device holds now: for each, `true`,
-/// or the refusal running it would meet. Each runs dry (`Lab::dry`): checked, proven against the ops of the caps it
+/// or the refusal running it would meet. Each runs dry (`Lab::dry`): checked, proven against the ops of the shares it
 /// relies on and refused as `run` would, and then not made.
 fn may(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
     let (_, o) = op_of(v)?;
@@ -848,7 +848,7 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
 
 /// Record ops `ops` run on what item `item` shows through `schema`: the record after them, each field they leave out
 /// at its default, and the view to write it through.
-fn ran(lane: &Lane, item: &Item, schema: &Named, ops: &[Op]) -> Result<(Value, View), Refused> {
+fn ran(lane: &Lane, item: &Item, schema: &Named, ops: &[RecordOp]) -> Result<(Value, View), Refused> {
     let seen = see(lane, item, schema).ok_or_else(|| unseen(schema))?;
     let view = seen.view.ok_or_else(|| Refused::NoSchema("a stored record changes only through its schema".into()))?;
     if seen.read_only {
@@ -872,7 +872,7 @@ fn edits(
     actor: VaultId,
     (entry, line): (EntryId, Line),
     schema: &Named,
-    ops: &[Op],
+    ops: &[RecordOp],
 ) -> Result<Value, Refused> {
     let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
     let lane = lane(lab, me, vault);

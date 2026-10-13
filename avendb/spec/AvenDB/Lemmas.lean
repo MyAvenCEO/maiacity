@@ -3,16 +3,16 @@ import AvenDB.Props
 /-!
 # Vaults and writes
 
-The proofs of the theorems about vaults (T2, T3, T21 and that devices don't govern), about who writes (T1), the caps'
+The proofs of the theorems about vaults (T2, T3, T21 and that devices don't govern), about who writes (T1), the shares'
 grantees (T4, T8), the schema lane (T17) and causal closure (T14), stated as in `Theorems.lean`.
 
 Settling keys changes only the epochs, the seals and what is published, so a step changes everything else only through
-`apply`: it adds a vault or changes one (`VaultChange`), adds a cap, an entry or a write, or drops writes and entries
+`apply`: it adds a vault or changes one (`VaultChange`), adds a share, an entry or a write, or drops writes and entries
 (`dropUnseen`). Without cycles, `owns` finds every chain of owners, so the check in `addOwner` refuses every owner that
-would close a cycle. Authorization reads only the vaults, the caps, which caps are revoked, `narrow` and the entries'
-vaults and cells, so an edit that only adds to these keeps every write authorized (`Keeps`); every other edit is a
-removal, and `dropUnseen` keeps a write that lost its authorization only if the removal had seen it. `dropUnseen` keeps
-or drops all the entries of one id together, so no lemma here needs entry ids to be unique.
+would close a cycle. Authorization reads only the vaults, the shares, which shares are revoked, `narrow` and the
+entries' vaults and audiences, so an edit that only adds to these keeps every write authorized (`Keeps`); every other
+edit is a removal, and `dropUnseen` keeps a write that lost its authorization only if the removal had seen it.
+`dropUnseen` keeps or drops all the entries of one id together, so no lemma here needs entry ids to be unique.
 -/
 
 namespace AvenDB.Core
@@ -69,9 +69,9 @@ theorem settle_same {β : Type} (get : State → β)
 theorem settle_vaults (pre post : State) : (settle pre post).vaults = post.vaults :=
   settle_same State.vaults (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
 
-/-- Settling keys leaves the caps alone. -/
-theorem settle_caps (pre post : State) : (settle pre post).caps = post.caps :=
-  settle_same State.caps (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
+/-- Settling keys leaves the shares alone. -/
+theorem settle_shares (pre post : State) : (settle pre post).shares = post.shares :=
+  settle_same State.shares (fun _ _ _ => rfl) (fun _ _ => rfl) (fun _ _ => rfl) pre post
 
 /-- Settling keys revokes nothing. -/
 theorem settle_revoked (pre post : State) : (settle pre post).revoked = post.revoked :=
@@ -743,19 +743,20 @@ theorem setEntry_ids (st : State) (en' : Entry) : ∀ y ∈ (setEntry st en').en
 
 /-! ## What authorization reads
 
-`authorized` reads the vaults (who acts for which), the caps, which of them are revoked, `narrow`, the entries (their
-vault) and the cell each write was accepted in, and never the other writes, the thresholds, the roots or the keys. A
+`authorized` reads the vaults (who acts for which), the shares, which of them are revoked, `narrow`, the entries (their
+vault) and the audience each write was accepted in, and never the other writes, the thresholds, the roots or the keys. A
 state that keeps all of these keeps every write authorized. -/
 
-/-- `st'` keeps what `authorized` reads in `st`: every vault with its owners and devices, every cap, no cap revoked or
-    cell narrowed that wasn't, and every entry with its vault and cell. -/
+/-- `st'` keeps what `authorized` reads in `st`: every vault with its owners and devices, every share, no share revoked
+    or audience narrowed that wasn't, and every entry with its vault and audience. -/
 structure Keeps (st st' : State) : Prop where
   vaults : ∀ x vt, st.vault? x = some vt → ∃ vt', st'.vault? x = some vt' ∧
     (∀ p ∈ vt.owners, p ∈ vt'.owners) ∧ ∀ d ∈ vt.devices, d ∈ vt'.devices
-  caps : ∀ c ∈ st.caps, c ∈ st'.caps
+  shares : ∀ c ∈ st.shares, c ∈ st'.shares
   revoked : ∀ c ∈ st'.revoked, c ∈ st.revoked
   narrow : ∀ x ∈ st'.narrow, x ∈ st.narrow
-  entries : ∀ e en, st.entry? e = some en → ∃ en', st'.entry? e = some en' ∧ en'.vault = en.vault ∧ en'.cell = en.cell
+  entries : ∀ e en, st.entry? e = some en →
+    ∃ en', st'.entry? e = some en' ∧ en'.vault = en.vault ∧ en'.audience = en.audience
 
 /-- Keeping what `authorized` reads is transitive. -/
 theorem Keeps.trans {a b c : State} (h₁ : Keeps a b) (h₂ : Keeps b c) : Keeps a c where
@@ -763,7 +764,7 @@ theorem Keeps.trans {a b c : State} (h₁ : Keeps a b) (h₂ : Keeps b c) : Keep
     obtain ⟨vt₁, hx₁, ho₁, hd₁⟩ := h₁.vaults x vt hx
     obtain ⟨vt₂, hx₂, ho₂, hd₂⟩ := h₂.vaults x vt₁ hx₁
     exact ⟨vt₂, hx₂, fun p hp => ho₂ p (ho₁ p hp), fun d hd => hd₂ d (hd₁ d hd)⟩
-  caps c hc := h₂.caps c (h₁.caps c hc)
+  shares c hc := h₂.shares c (h₁.shares c hc)
   revoked c hc := h₁.revoked c (h₂.revoked c hc)
   narrow x hx := h₁.narrow x (h₂.narrow x hx)
   entries e en h := by
@@ -772,30 +773,30 @@ theorem Keeps.trans {a b c : State} (h₁ : Keeps a b) (h₂ : Keeps b c) : Keep
     exact ⟨en₂, h₂', hv₂.trans hv₁, hc₂.trans hc₁⟩
 
 /-- A state that changes none of what `authorized` reads but the entries, whose lookups it keeps, keeps it all. -/
-theorem Keeps.of_entries {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.caps = st.caps)
+theorem Keeps.of_entries {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.shares = st.shares)
     (hr : st'.revoked = st.revoked) (hn : st'.narrow = st.narrow)
     (he : ∀ e en, st.entry? e = some en → st'.entry? e = some en) : Keeps st st' where
   vaults x vt hx := ⟨vt, by rw [vault?_congr hv]; exact hx, fun _ h => h, fun _ h => h⟩
-  caps _ h := hc ▸ h
+  shares _ h := hc ▸ h
   revoked _ h := hr ▸ h
   narrow _ h := hn ▸ h
   entries e en h := ⟨en, he e en h, rfl, rfl⟩
 
 /-- A state that changes none of what `authorized` reads keeps it. -/
-theorem Keeps.of_eq {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.caps = st.caps)
+theorem Keeps.of_eq {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.shares = st.shares)
     (hr : st'.revoked = st.revoked) (hn : st'.narrow = st.narrow) (he : st'.entries = st.entries) : Keeps st st' :=
   .of_entries hv hc hr hn fun e en h => by simp only [State.entry?, he]; exact h
 
 /-- Settling keys keeps everything. -/
 theorem Keeps.settle (pre post : State) : Keeps post (settle pre post) :=
-  .of_eq (settle_vaults pre post) (settle_caps pre post) (settle_revoked pre post) (settle_narrow pre post)
+  .of_eq (settle_vaults pre post) (settle_shares pre post) (settle_revoked pre post) (settle_narrow pre post)
     (settle_entries pre post)
 
 /-- A new vault keeps the others. -/
 theorem Keeps.addVault (st : State) (vt : Vault) : Keeps st { st with vaults := st.vaults ++ [vt] } where
   vaults x y hy := ⟨y, by simp only [State.vault?, List.find?_append] at hy ⊢; rw [hy]; rfl,
     fun _ h => h, fun _ h => h⟩
-  caps _ h := h
+  shares _ h := h
   revoked _ h := h
   narrow _ h := h
   entries _ en h := ⟨en, h, rfl, rfl⟩
@@ -814,24 +815,24 @@ theorem Keeps.setVault {st : State} {v : VaultId} {vt vt' : Vault} (hv : st.vaul
       cases hy
       exact ⟨vt', by simp [hyv], ho, hd⟩
     · exact ⟨y, by simp [hyv], fun _ h => h, fun _ h => h⟩
-  caps _ h := h
+  shares _ h := h
   revoked _ h := h
   narrow _ h := h
   entries _ en h := ⟨en, h, rfl, rfl⟩
 
-/-- A new cap keeps the others. -/
-theorem Keeps.addCap (st : State) (c : Cap) : Keeps st { st with caps := st.caps ++ [c] } where
+/-- A new share keeps the others. -/
+theorem Keeps.addShare (st : State) (c : Share) : Keeps st { st with shares := st.shares ++ [c] } where
   vaults _ vt hx := ⟨vt, hx, fun _ h => h, fun _ h => h⟩
-  caps _ h := List.mem_append_left _ h
+  shares _ h := List.mem_append_left _ h
   revoked _ h := h
   narrow _ h := h
   entries _ en h := ⟨en, h, rfl, rfl⟩
 
-/-- Changing an entry keeps the entries when it keeps its vault and its cell. -/
+/-- Changing an entry keeps the entries when it keeps its vault and its audience. -/
 theorem Keeps.setEntry {st : State} {en en' : Entry} (hen : st.entry? en'.id = some en) (hv : en'.vault = en.vault)
-    (hc : en'.cell = en.cell) : Keeps st (setEntry st en') where
+    (hc : en'.audience = en.audience) : Keeps st (setEntry st en') where
   vaults _ vt hx := ⟨vt, hx, fun _ h => h, fun _ h => h⟩
-  caps _ h := h
+  shares _ h := h
   revoked _ h := h
   narrow _ h := h
   entries e y hy := by
@@ -886,13 +887,13 @@ theorem actsVia_keeps {st st' : State} (hk : Keeps st st') {s : SignerId} :
     simp only [actsVia, Bool.and_eq_true] at h ⊢
     exact ⟨ownerOf_keeps hk h.1, actsVia_keeps hk h.2⟩
 
-/-- A state that keeps the caps and revokes none keeps every cap held. -/
-theorem holdsCap_keeps {st st' : State} (hk : Keeps st st') {a : VaultId} {cp : Cap} {r : Role}
-    (hcp : cp ∈ st.caps) (h : holdsCap st a cp r = true) : holdsCap st' a cp r = true := by
-  unfold holdsCap State.live at h ⊢
+/-- A state that keeps the shares and revokes none keeps every share held. -/
+theorem holdsShare_keeps {st st' : State} (hk : Keeps st st') {a : VaultId} {cp : Share} {r : Level}
+    (hcp : cp ∈ st.shares) (h : holdsShare st a cp r = true) : holdsShare st' a cp r = true := by
+  unfold holdsShare State.live at h ⊢
   simp only [Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, beq_iff_eq] at h ⊢
   obtain ⟨⟨⟨-, hrev⟩, hg⟩, hr⟩ := h
-  refine ⟨⟨⟨⟨cp, hk.caps cp hcp, rfl⟩, ?_⟩, hg⟩, hr⟩
+  refine ⟨⟨⟨⟨cp, hk.shares cp hcp, rfl⟩, ?_⟩, hg⟩, hr⟩
   cases hc : st'.revoked.contains cp.id with
   | false => rfl
   | true =>
@@ -901,10 +902,11 @@ theorem holdsCap_keeps {st st' : State} (hk : Keeps st st') {a : VaultId} {cp : 
     rw [hrev] at this
     cases this
 
-/-- A state that narrows no cell keeps every cap reaching an entry that keeps its vault, id and cell. -/
-theorem inCell_keeps {st st' : State} (hk : Keeps st st') {cp : Cap} {en en' : Entry} (hid : en'.id = en.id)
-    (hv : en'.vault = en.vault) (hc : en'.cell = en.cell) (h : inCell st cp en = true) : inCell st' cp en' = true := by
-  unfold inCell at h ⊢
+/-- A state that narrows no audience keeps every share reaching an entry that keeps its vault, id and audience. -/
+theorem inAudience_keeps {st st' : State} (hk : Keeps st st') {cp : Share} {en en' : Entry} (hid : en'.id = en.id)
+    (hv : en'.vault = en.vault) (hc : en'.audience = en.audience) (h : inAudience st cp en = true) :
+    inAudience st' cp en' = true := by
+  unfold inAudience at h ⊢
   rw [hid, hv, hc]
   simp only [Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true] at h ⊢
   refine ⟨h.1, h.2.imp id fun h' => ⟨h'.1, fun x hx => h'.2 x (hk.narrow x hx)⟩⟩
@@ -926,9 +928,9 @@ theorem authorized_keeps {st st' : State} (hk : Keeps st st') {w : Write} (h : a
     unfold mayWrite at h ⊢
     simp only [Bool.or_eq_true, beq_iff_eq, List.any_eq_true, Bool.and_eq_true] at h ⊢
     exact h.2.imp (fun h => h.trans hv.symm) fun ⟨cp, hcp, hh, hin⟩ =>
-      ⟨cp, hk.caps cp hcp, holdsCap_keeps hk hcp hh,
-        inCell_keeps (en := { en with stays := [(w.stay, w.cell)] }) (en' := { en' with stays := [(w.stay, w.cell)] })
-          hk hid hv rfl hin⟩
+      ⟨cp, hk.shares cp hcp, holdsShare_keeps hk hcp hh,
+        inAudience_keeps (en := { en with stays := [(w.stay, w.audience)] })
+          (en' := { en' with stays := [(w.stay, w.audience)] }) hk hid hv rfl hin⟩
 
 /-- Who acts for which vault reads only the vaults. -/
 theorem actsVia_congr {st st' : State} (hv : st'.vaults = st.vaults) (s : SignerId) :
@@ -936,19 +938,19 @@ theorem actsVia_congr {st st' : State} (hv : st'.vaults = st.vaults) (s : Signer
   | [], v => by simp only [actsVia, member, vault?_congr hv]
   | o :: via, v => by simp only [actsVia, ownerOf, vault?_congr hv, actsVia_congr hv s via o]
 
-/-- Authorization reads only the vaults, the caps, which are revoked, `narrow` and the write's entry. -/
-theorem authorized_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.caps = st.caps)
+/-- Authorization reads only the vaults, the shares, which are revoked, `narrow` and the write's entry. -/
+theorem authorized_congr {st st' : State} (hv : st'.vaults = st.vaults) (hc : st'.shares = st.shares)
     (hr : st'.revoked = st.revoked) (hn : st'.narrow = st.narrow) {w : Write}
     (he : st'.entry? w.entry = st.entry? w.entry) : authorized st' w = authorized st w := by
   unfold authorized
   rw [actsVia_congr hv, he]
   cases st.entry? w.entry with
   | none => rfl
-  | some en => simp only [mayWrite, holdsCap, State.live, inCell, hc, hr, hn]
+  | some en => simp only [mayWrite, holdsShare, State.live, inAudience, hc, hr, hn]
 
 /-- Settling keys changes no write's authorization. -/
 theorem authorized_settle (pre post : State) (w : Write) : authorized (settle pre post) w = authorized post w :=
-  authorized_congr (settle_vaults pre post) (settle_caps pre post) (settle_revoked pre post) (settle_narrow pre post)
+  authorized_congr (settle_vaults pre post) (settle_shares pre post) (settle_revoked pre post) (settle_narrow pre post)
     (by simp only [State.entry?, settle_entries])
 
 /-! ## Dropping what a removal hadn't seen -/
@@ -1096,7 +1098,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     (post.writes = st.writes ∧ Keeps st post ∧ ∀ en ∈ post.entries, ∃ x ∈ st.entries, x.id = en.id) ∨
     (∃ w en, post.writes = st.writes ++ [w] ∧ post.entries = st.entries ++ [en] ∧ Keeps st post ∧
       w.edit = edit.id ∧ w.entry = en.id ∧ w.first = true ∧ w.deps = [] ∧
-      actsVia st w.author w.via w.actor = true ∧ mayCreate st w.actor en.vault en.cell = true) ∨
+      actsVia st w.author w.via w.actor = true ∧ mayCreate st w.actor en.vault en.audience = true) ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ Keeps st post ∧ (∀ en ∈ post.entries, ∃ x ∈ st.entries, x.id = en.id) ∧
       w.first = false ∧ authorized st w = true ∧ depsIn st.writes w = true) ∨
     (∃ keep mid, edit.action.keep? = some keep ∧ post = dropUnseen st mid keep ∧ mid.writes = st.writes ∧
@@ -1151,10 +1153,10 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       simp at h
       obtain ⟨-, rfl⟩ := h
       exact .inl ⟨rfl, .setVault hv rfl (fun _ hp => hp) (fun _ hd => hd), same st⟩
-  · -- cap
+  · -- share
     simp at h
     obtain ⟨-, -, -, -, rfl⟩ := h
-    exact .inl ⟨rfl, .addCap _ _, same st⟩
+    exact .inl ⟨rfl, .addShare _ _, same st⟩
   · -- revoke
     split at h
     · simp at h
@@ -1163,7 +1165,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, same st⟩))
   · -- write
-    rename_i v e actor stay gen deps proposal via create tags proof touches fits heq
+    rename_i v e actor stay epoch deps proposal via create tags proof touches fits heq
     dsimp only at h
     split at h
     · cases h
@@ -1191,8 +1193,8 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
             · cases h
             · simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
               obtain ⟨-, hdeps, -, rfl⟩ := h
-              refine .inr (.inr (.inl ⟨⟨edit.id, edit.author, actor, e, stay, gen, deps, proposal, via, false, en.cell⟩,
-                ?_, ?_, ?_, rfl, ?_, of_not_not hdeps⟩))
+              refine .inr (.inr (.inl ⟨⟨edit.id, edit.author, actor, e, stay, epoch, deps, proposal, via, false,
+                en.audience⟩, ?_, ?_, ?_, rfl, ?_, of_not_not hdeps⟩))
               · split <;> rfl
               · split
                 · -- only the tags change
@@ -1204,7 +1206,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
               · split
                 · exact setEntry_ids _ _
                 · exact same st
-              · simpa [authorized, hact, hen, mayWrite, inCell, Entry.cell] using hok
+              · simpa [authorized, hact, hen, mayWrite, inAudience, Entry.audience] using hok
   · -- move
     split at h
     · simp at h
@@ -1301,14 +1303,14 @@ theorem entriesWhole_step {st st' : State} {edit : Edit} (hinv : EntriesWhole st
         exact ⟨en', entry?_mem he', entry?_id he'⟩
   · exact dropUnseen_whole _ _ _
 
-/-! ## What one step does to the caps and the schema lane -/
+/-! ## What one step does to the shares and the schema lane -/
 
-/-- An accepted edit leaves the caps alone (a revocation only marks caps revoked), or adds one cap that names a vault or
-    Public, Public only with read. -/
-theorem apply_caps {st post : State} {edit : Edit} (h : apply st edit = some post) :
-    post.caps = st.caps ∨
-    (∃ c, post.caps = st.caps ++ [c] ∧ (∀ s, c.grantee ≠ .principal (.signer s)) ∧
-      (c.grantee = .«public» → c.role = .read)) := by
+/-- An accepted edit leaves the shares alone (a revocation only marks shares revoked), or adds one share that names a
+    vault or everyone, everyone only with read. -/
+theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
+    post.shares = st.shares ∨
+    (∃ c, post.shares = st.shares ++ [c] ∧ (∀ s, c.who ≠ .principal (.signer s)) ∧
+      (c.who = .everyone → c.level = .read)) := by
   unfold apply at h
   split at h
   case h_8 c via _ =>
@@ -1319,7 +1321,7 @@ theorem apply_caps {st post : State} {edit : Edit} (h : apply st edit = some pos
       cases hname
     · rw [hp] at hname
       simpa using hname
-  -- every other edit leaves the caps alone
+  -- every other edit leaves the shares alone
   all_goals
     dsimp only at h
     repeat' split at h
@@ -1327,7 +1329,7 @@ theorem apply_caps {st post : State} {edit : Edit} (h : apply st edit = some pos
     all_goals exact .inl rfl
 
 /-- An accepted edit leaves the lane alone, or publishes one blob into a vault's lane: its author acts for that vault
-    or for a vault holding a wide owner cap over it. -/
+    or for a vault holding a wide owner share over it. -/
 theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.lane = st.lane ∨
     ∃ v actor blob via, edit.action = .publish v actor blob via ∧ actsVia st edit.author via actor = true ∧
@@ -1376,7 +1378,7 @@ theorem T1_authorized_writes {st st' : State} {edit : Edit} (h : step st edit = 
 theorem T1_created_entries {st st' : State} {edit : Edit} (h : step st edit = some st') {en : Entry}
     (hen : en ∈ st'.entries) (hnew : ∀ x ∈ st.entries, x.id ≠ en.id) :
     ∃ w ∈ st'.writes, w.edit = edit.id ∧ w.entry = en.id ∧ w.first = true ∧
-      actsVia st w.author w.via w.actor = true ∧ mayCreate st w.actor en.vault en.cell = true := by
+      actsVia st w.author w.via w.actor = true ∧ mayCreate st w.actor en.vault en.audience = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [settle_entries] at hen
@@ -1536,13 +1538,13 @@ theorem T3_no_cycles (edits : List Edit) : Acyclic (replay {} edits) := by
       obtain ⟨h₁', h₂'⟩ := T3_step h₁ h₂ hs
       exact ih st' h₁' h₂'
 
-theorem T4_caps_name_vaults {st st' : State} {edit : Edit} (hinv : CapsNameVaults st) (h : step st edit = some st') :
-    CapsNameVaults st' := by
+theorem T4_shares_name_vaults {st st' : State} {edit : Edit} (hinv : SharesNameVaults st)
+    (h : step st edit = some st') : SharesNameVaults st' := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   intro c hc
-  rw [settle_caps] at hc
-  rcases apply_caps hpost with hcs | ⟨c', hcs, hname, -⟩
+  rw [settle_shares] at hc
+  rcases apply_shares hpost with hcs | ⟨c', hcs, hname, -⟩
   · exact hinv c (hcs ▸ hc)
   · rw [hcs] at hc
     rcases List.mem_append.1 hc with hc | hc
@@ -1551,13 +1553,13 @@ theorem T4_caps_name_vaults {st st' : State} {edit : Edit} (hinv : CapsNameVault
       subst hc
       exact hname
 
-theorem T8_public_read_only {st st' : State} {edit : Edit} (hinv : PublicReadOnly st) (h : step st edit = some st') :
-    PublicReadOnly st' := by
+theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneReadOnly st)
+    (h : step st edit = some st') : EveryoneReadOnly st' := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   intro c hc
-  rw [settle_caps] at hc
-  rcases apply_caps hpost with hcs | ⟨c', hcs, -, hpub⟩
+  rw [settle_shares] at hc
+  rcases apply_shares hpost with hcs | ⟨c', hcs, -, hpub⟩
   · exact hinv c (hcs ▸ hc)
   · rw [hcs] at hc
     rcases List.mem_append.1 hc with hc | hc

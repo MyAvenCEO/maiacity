@@ -1,15 +1,15 @@
 //! The device's secure boundary (P8c): a device's secrets stay in its memory, and only while it needs them. Every key
-//! wipes itself as it is dropped, and prints as its id alone; a locked device keeps no key (no seed, no cell's key, no
-//! entry's key derived from one), nothing a key opened (no selector, no entry's type or tags), and no secret half of a
-//! key that nothing else in its process holds; and once it unlocks, it draws randomness that a copy of its memory taken
-//! while it was locked can't foresee. One test, alone in its binary, as the McEliece pairs it looks for are the
+//! wipes itself as it is dropped, and prints as its id alone; a locked device keeps no key (no seed, no audience's key,
+//! no entry's key derived from one), nothing a key opened (no selector, no entry's type or tags), and no secret half of
+//! a key that nothing else in its process holds; and once it unlocks, it draws randomness that a copy of its memory
+//! taken while it was locked can't foresee. One test, alone in its binary, as the McEliece pairs it looks for are the
 //! process's, which other tests would make and forget meanwhile.
 
 mod common;
 
 use std::mem::ManuallyDrop;
 
-use avendb::id::{CellId, EntryId, SignerId};
+use avendb::id::{AudienceId, EntryId, SignerId};
 use avendb::keys::{self, KeyFam, KeyId, Secret};
 use avendb::lab::Lab;
 use avendb::sign::{DeviceKey, Passkey};
@@ -79,7 +79,7 @@ fn a_device_keeps_its_secrets_inside_and_only_while_it_needs_them() {
     assert!(!keys::pair_made(own), "nor the secret half of its own");
     assert!(shared.iter().all(|s| keys::pair_made(s.id())), "the Mac's keys keep their pairs");
     assert!(w.lab.unlock(phone));
-    let none = KeyFam::Cell(h.coop, CellId::of(h.coop, &[]));
+    let none = KeyFam::Audience(h.coop, AudienceId::of(h.coop, &[]));
     let opens = [KeyFam::Seed(alice), KeyFam::Seed(w.avenceo), KeyFam::Seed(h.coop), none];
     assert!(opens.iter().all(|&k| w.lab.opens(phone, k)), "unlocked, it opens them all again");
     assert!(w.lab.meaning(phone, h.welcome).is_some(), "and reads what Welcome is");

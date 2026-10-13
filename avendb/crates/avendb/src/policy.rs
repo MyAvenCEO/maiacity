@@ -1,26 +1,26 @@
 //! The rules every peer applies, edit for edit the Lean model (`avendb/spec/AvenDB/State.lean` and `Step.lean`): who
-//! acts for which vault, who governs it, which caps a vault holds and which cells they reach, which edits are
+//! acts for which vault, who governs it, which shares a vault holds and which audiences they reach, which edits are
 //! accepted, the key schedule, and how a removal cuts what it hadn't seen.
 //!
 //! Two layers, as in the model. The operational one is everything here: it reads nothing a relay can't see (no
-//! selector, no type, no tag), so the server applies exactly these rules (T25). An entry sits in a cell, the caps that
-//! select it, named on the wire by the hash of its vault and those caps (`CellId::of`); a cap reaches an entry when it
-//! is in the entry's cell or is wide. The semantic layer, what a cap's selector picks and what an entry's header and
-//! tags say, is known only to an entry's readers and the vault's own devices, the stewards, who keep every entry in
-//! the cell its meaning asks for by moving it (`Meaning`, T23).
+//! selector, no type, no tag), so the server applies exactly these rules (T25). An entry sits in an audience, the
+//! shares that select it, named on the wire by the hash of its vault and those shares (`AudienceId::of`); a share
+//! reaches an entry when it is in the entry's audience or is wide. The semantic layer, what a share's selector picks
+//! and what an entry's header and tags say, is known only to an entry's readers and the vault's own devices, the
+//! stewards, who keep every entry in the audience its meaning asks for by moving it (`Meaning`, T23).
 //!
-//! A cap is a name and the ops its grantee may make (`rules`): its ops travel sealed in its slice, and only the
-//! commitment to them is in the clear, in its `select`, with its role, their class. So no rule here reads them: a
-//! write is accepted by its writer's caps' roles, and its readers, who read its proof and what it touches, count it or
-//! not (`State::lets`, `State::uncounted`; C1 to C4).
+//! A share is a name and the ops its grantee may make (`rules`): its ops travel sealed in its slice, and only the
+//! commitment to them is in the clear, in its `select`, with its level, their class. So no rule here reads them: a
+//! write is accepted by its writer's shares' levels, and its readers, who read its proof and what it touches, count it
+//! or not (`State::lets`, `State::uncounted`; C1 to C4).
 //!
 //! Edits reach this module already verified: an edit's author and cosigners are the signers whose signatures checked
-//! out (`sign::Signed::verify`). Where the core differs from the model: what an edit creates (a vault, a cap) is named
-//! by that edit's id, where the model picks numbers; a cell is named by its id, and the caps of every cell the state
-//! has met are kept beside (`cell_caps`); an entry's stays are kept oldest first, where the model puts the current one
-//! first; a refused edit says why, where the model only says no; and edits carry what the model leaves out, which no
-//! rule reads: the keys signers have keys sealed to, the boxes of a `Keys` edit, a cap's sealed selector, and a write's
-//! ciphertext, whose plaintext holds the entry's header and tags.
+//! out (`sign::Signed::verify`). Where the core differs from the model: what an edit creates (a vault, a share) is
+//! named by that edit's id, where the model picks numbers; an audience is named by its id, and the shares of every
+//! audience the state has met are kept beside (`audience_shares`); an entry's stays are kept oldest first, where the
+//! model puts the current one first; a refused edit says why, where the model only says no; and edits carry what the
+//! model leaves out, which no rule reads: the keys signers have keys sealed to, the boxes of a `Keys` edit, a share's
+//! sealed selector, and a write's ciphertext, whose plaintext holds the entry's header and tags.
 //!
 //! The key schedule is the model's too: each family's epoch, every seal (which key may open which) and every published
 //! key. Real keys follow it: a `Keys` edit carries real boxes, and a peer accepts it only if each box is a seal of the
@@ -28,16 +28,16 @@
 //!
 //! A replay steps one state in place (`State::step_mut`), so a write costs what it adds, not a copy of everything
 //! before it. After an edit that removes nothing, `settle` touches only what the edit touched: the family it adds or
-//! grows, the cell an entry goes to, the write it links. That is the model's `settle` because of T6: in every reachable
-//! state a holder opens the current key of a family in use only while entitled to it, and outside removals every
-//! entitlement only grows, so the only key that goes stale is a cell's that comes back into use. A removal runs the
-//! model's `settle` in full (`stale_keys`).
+//! grows, the audience an entry goes to, the write it links. That is the model's `settle` because of T6: in every
+//! reachable state a holder opens the current key of a family in use only while entitled to it, and outside removals
+//! every entitlement only grows, so the only key that goes stale is an audience's that comes back into use. A removal
+//! runs the model's `settle` in full (`stale_keys`).
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
 
-use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Seal};
 use crate::rules::{self, Grant, Proof};
 use crate::sealed::FileRoot;
@@ -69,12 +69,12 @@ pub enum Principal {
     Vault(VaultId),
 }
 
-/// What a cap allows; each role includes the ones before it. Relay only knows the vault's devices, so that its holder,
-/// a server, lets them through its relay and helps them find each other: it receives none of the entries. Backup also
-/// stores and forwards the ciphertext of the entries a cap reaches, and gets no key: the server's role by default.
-/// Owner also issues caps on its slice and is governance.
+/// What a share allows; each level includes the ones before it. Relay only knows the vault's devices, so that its
+/// holder, a server, lets them through its relay and helps them find each other: it receives none of the entries.
+/// Backup also stores and forwards the ciphertext of the entries a share reaches, and gets no key: the server's level
+/// by default. Owner also issues shares on its slice and is governance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Role {
+pub enum Level {
     Relay,
     Backup,
     Read,
@@ -82,55 +82,55 @@ pub enum Role {
     Owner,
 }
 
-impl Role {
-    pub fn allows(self, need: Role) -> bool {
+impl Level {
+    pub fn allows(self, need: Level) -> bool {
         need <= self
     }
 }
 
-/// Whom a cap names: a vault, never a signer (T4), or everyone (read only, T8). The type allows a signer only so that
-/// a peer can receive such a cap and refuse it.
+/// Whom a share names: a vault, never a signer (T4), or everyone (read only, T8). The type allows a signer only so that
+/// a peer can receive such a share and refuse it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Grantee {
+pub enum Who {
     Principal(Principal),
-    Public,
+    Everyone,
 }
 
-/// A cap: `grantee` may make the ops its slice names on the entries of vault `over` that its selector picks, and that
-/// every cap it rests on picks too (T22). Its id is the id of the edit that issued it.
+/// A share: `who` may make the ops its slice names on the entries of vault `over` that its selector picks, and that
+/// every share it rests on picks too (T22). Its id is the id of the edit that issued it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Cap {
+pub struct Share {
     pub over: VaultId,
-    pub grantee: Grantee,
+    pub who: Who,
     /// The class of its ops (`rules::level_of`), in the clear: what relays and every rule here read of them. Its
     /// readers count a write through it only where it is the class of its ops (`State::chain_allows`).
-    pub role: Role,
-    /// It selects the whole vault, in the clear, so a peer that reads no selector knows it reaches every cell.
+    pub level: Level,
+    /// It selects the whole vault, in the clear, so a peer that reads no selector knows it reaches every audience.
     pub wide: bool,
     /// Its slice, its name, selector and ops (`slice::Slice`), sealed to `over`'s vault key and the grantee's (in the
-    /// clear for Public), with the commitment to its ops in the clear (`slice::Select`). No rule here reads it: its
+    /// clear for everyone), with the commitment to its ops in the clear (`slice::Select`). No rule here reads it: its
     /// readers do (`Readings`, `State::lets`).
     pub select: Vec<u8>,
-    /// The owner cap its issuer relied on; `None` when the vault itself issued it.
-    pub parent: Option<CapId>,
+    /// The owner share its issuer relied on; `None` when the vault itself issued it.
+    pub parent: Option<ShareId>,
     pub issuer: VaultId,
-    /// Keeps two caps that say the same apart.
+    /// Keeps two shares that say the same apart.
     pub nonce: u64,
 }
 
 /// A sync rule (`State.lean`): device `device` of vault `issuer` syncs the entries of vault `over` its selector picks,
 /// or all of them (`wide`), and keeps whole the files they bring (`keep`) rather than fetching a file's pieces as it
 /// reads them. It grants nothing: a device syncs what it may receive and its rules want (`State::wants`, T28). Its id
-/// is the id of the edit that set it, from the same hashes as a cap's, and the stewards mark entries with it (`Pick`)
-/// as they place them in the cells of caps, so a peer that reads no selector applies it too (T29).
+/// is the id of the edit that set it, from the same hashes as a share's, and the stewards mark entries with it (`Pick`)
+/// as they place them in the audiences of shares, so a peer that reads no selector applies it too (T29).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SyncRule {
     pub issuer: VaultId,
     pub device: SignerId,
     pub over: VaultId,
-    /// It picks every entry of `over`, in the clear, as a wide cap selects them all.
+    /// It picks every entry of `over`, in the clear, as a wide share selects them all.
     pub wide: bool,
-    /// Its name and selector (`slice::Slice`, granting no op), sealed as a cap's are, to `over`'s vault key and
+    /// Its name and selector (`slice::Slice`, granting no op), sealed as a share's are, to `over`'s vault key and
     /// `issuer`'s (`slice::Select`): no rule here reads it; the vault's stewards and the issuer's devices do.
     pub select: Vec<u8>,
     pub keep: bool,
@@ -153,13 +153,13 @@ pub enum Proposal {
 /// A line of an entry's history: `None` is the main line, `Some(b)` the proposal write `b` started.
 pub type Line = Option<EditId>;
 
-/// Every change is one of these, signed. Governance (owners, threshold, devices, the root, owner caps) needs the
+/// Every change is one of these, signed. Governance (owners, threshold, devices, the root, owner shares) needs the
 /// vault's approval: its root, or its threshold of owners; everything else needs one device acting for the vault.
 /// Every removal names the edits it had seen and keeps (`keep`); what it hadn't seen and relied on what it takes away
-/// is cut (`view`). An edit that acts for a vault (issues or revokes a cap, writes, moves, publishes) names the owners
-/// `via` its author acts through (`State::acts_via`): none when its author is a member of the vault, else from an owner
-/// of the vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop
-/// through `[bob]`.
+/// is cut (`view`). An edit that acts for a vault (issues or revokes a share, writes, moves, publishes) names the
+/// owners `via` its author acts through (`State::acts_via`): none when its author is a member of the vault, else from
+/// an owner of the vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's
+/// coop through `[bob]`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
     /// A new vault; its id is this edit's id. Every first owner signs, and so does the root, the passkey of a human
@@ -185,15 +185,15 @@ pub enum Action {
     RemoveDevice { vault: VaultId, device: SignerId, keep: Vec<EditId> },
     /// The root hands itself on to a new passkey, which signs too, or steps down (`None`).
     SetRoot { vault: VaultId, root: Option<SignerId>, keep: Vec<EditId> },
-    /// A cap, issued by its issuer through the owners `via`; its id is this edit's id.
-    Cap(Cap, Vec<VaultId>),
-    /// Ends `cap` and every cap resting on it.
-    Revoke { cap: CapId, actor: VaultId, keep: Vec<EditId>, via: Vec<VaultId> },
+    /// A share, issued by its issuer through the owners `via`; its id is this edit's id.
+    Share(Share, Vec<VaultId>),
+    /// Ends `share` and every share resting on it.
+    Revoke { share: ShareId, actor: VaultId, keep: Vec<EditId>, via: Vec<VaultId> },
     /// An encrypted edit of entry `entry` of vault `vault`, on the line `proposal` of its history, under the key of its
-    /// stay `stay` at generation `generation` of that stay's cell. `deps` are the entry's writes it builds on (its Loro
+    /// stay `stay` at epoch `epoch` of that stay's audience. `deps` are the entry's writes it builds on (its Loro
     /// frontier): a write that starts a proposal builds on the version the proposal starts from, and a merge also on
-    /// the heads of the line it brings in. A write that creates its entry names the cell it goes in (`create`, its caps
-    /// in canonical order), and its stay is the one its creation begins (`None`). Its `body` is the update, the
+    /// the heads of the line it brings in. A write that creates its entry names the audience it goes in (`create`, its
+    /// shares in canonical order), and its stay is the one its creation begins (`None`). Its `body` is the update, the
     /// header of a new entry and the tags it adds and removes, encrypted: the tags count only when it acts for the
     /// vault, except that a new entry's added tags are its first tags. The files it brings (`sealed`) are named in the
     /// clear by their roots, smallest first, so whoever may receive it keeps them; their keys are in its body.
@@ -202,24 +202,24 @@ pub enum Action {
         entry: EntryId,
         actor: VaultId,
         stay: Option<EditId>,
-        generation: u64,
+        epoch: u64,
         deps: Vec<EditId>,
         proposal: Proposal,
         via: Vec<VaultId>,
-        create: Option<Vec<CapId>>,
+        create: Option<Vec<ShareId>>,
         files: Vec<FileRoot>,
         body: Vec<u8>,
     },
-    /// A steward, acting for vault `vault`, moves its entry `entry` to the cell of the caps `to` (canonical order),
-    /// keeping the writes it had seen.
-    Move { vault: VaultId, entry: EntryId, to: Vec<CapId>, keep: Vec<EditId>, via: Vec<VaultId> },
+    /// A steward, acting for vault `vault`, moves its entry `entry` to the audience of the shares `to` (canonical
+    /// order), keeping the writes it had seen.
+    Move { vault: VaultId, entry: EntryId, to: Vec<ShareId>, keep: Vec<EditId>, via: Vec<VaultId> },
     /// The real boxes of one key of the schedule, `name`: its `id`, its `public` half for those who seal to it without
     /// holding it, the key sealed or wrapped to each recipient, and for a public family the key itself, in the
     /// `clear`. The schedule already says who may open what, so this changes nothing in it: a peer accepts it only
     /// from a signer that may open the key, and only if every box goes where the schedule seals the key.
     Keys { name: KeyName, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
-    /// A schema or a lens, published into the vault's schema lane by the vault or a vault holding a wide owner cap over
-    /// it (T17): a blob that holds no data, named by its hash (`BlobId::of`).
+    /// A schema or a lens, published into the vault's schema lane by the vault or a vault holding a wide owner share
+    /// over it (T17): a blob that holds no data, named by its hash (`BlobId::of`).
     Publish { vault: VaultId, actor: VaultId, via: Vec<VaultId>, blob: Vec<u8> },
     /// A device vouches for its own accepted writes of one entry, named in `covers`, with both halves of its signature,
     /// where the writes carry only the classical half (`sign`). It changes nothing; a peer that no longer trusts the
@@ -228,10 +228,10 @@ pub enum Action {
     /// A sync rule, set by its issuer for one of its own devices through the owners `via`; its id is this edit's id.
     SyncRule(SyncRule, Vec<VaultId>),
     /// Sync rule `rule` of vault `issuer` ends.
-    EndSyncRule { rule: CapId, issuer: VaultId, via: Vec<VaultId> },
+    EndSyncRule { rule: ShareId, issuer: VaultId, via: Vec<VaultId> },
     /// A steward, acting for vault `vault`, marks its entry `entry` with the sync rules that pick it (`rules`, in
     /// canonical order): so a peer that reads no selector knows which devices want it.
-    Pick { vault: VaultId, entry: EntryId, rules: Vec<CapId>, via: Vec<VaultId> },
+    Pick { vault: VaultId, entry: EntryId, rules: Vec<ShareId>, via: Vec<VaultId> },
 }
 
 impl Action {
@@ -261,7 +261,7 @@ impl Action {
     /// The owners an act for a vault goes through, for the edits that act for one.
     pub fn via(&self) -> Option<&[VaultId]> {
         match self {
-            Action::Cap(_, via)
+            Action::Share(_, via)
             | Action::Revoke { via, .. }
             | Action::Write { via, .. }
             | Action::Move { via, .. }
@@ -275,7 +275,7 @@ impl Action {
 
     fn via_mut(&mut self) -> Option<&mut Vec<VaultId>> {
         match self {
-            Action::Cap(_, via)
+            Action::Share(_, via)
             | Action::Revoke { via, .. }
             | Action::Write { via, .. }
             | Action::Move { via, .. }
@@ -292,7 +292,7 @@ impl Action {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Edit {
     /// The frontier of its own log (`sync::LogId`) as its device held it: what it builds on there. An edit that starts
-    /// a log, a genesis or a cap, builds on nothing.
+    /// a log, a genesis or a share, builds on nothing.
     pub parents: Vec<EditId>,
     /// Causal depth: one more than the deepest edit its device held when it made it, in any log, 0 for the first. It
     /// only orders edits: whatever a device had seen sorts before what it makes next. It travels with the edit because
@@ -316,10 +316,10 @@ impl Edit {
         std::iter::once(self.author).chain(self.cosigners.iter().copied())
     }
 
-    /// The vault an edit acts for: a cap's issuer, a revoker, a writer, a mover (the vault itself), a publisher.
+    /// The vault an edit acts for: a share's issuer, a revoker, a writer, a mover (the vault itself), a publisher.
     pub fn actor(&self) -> Option<VaultId> {
         match &self.action {
-            Action::Cap(c, _) => Some(c.issuer),
+            Action::Share(c, _) => Some(c.issuer),
             Action::Revoke { actor, .. } | Action::Write { actor, .. } | Action::Publish { actor, .. } => Some(*actor),
             Action::Move { vault, .. } | Action::Pick { vault, .. } => Some(*vault),
             Action::SyncRule(r, _) => Some(r.issuer),
@@ -384,18 +384,18 @@ pub struct Vault {
     pub root: Option<SignerId>,
 }
 
-/// A cap as issued, with what never changes about it worked out once.
+/// A share as issued, with what never changes about it worked out once.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Issued {
-    pub id: CapId,
-    pub cap: Cap,
-    /// The caps it rests on, from its root cap down to itself (`chain`).
-    pub chain: Arc<[CapId]>,
-    /// Its intake cell: the caps of its chain that aren't wide, in canonical order. A vault that creates an entry
-    /// through it puts it there, where only those caps' grantees, the wide caps and the stewards read it, until a
-    /// steward moves it to its semantic cell.
-    pub intake: Arc<[CapId]>,
-    /// The commitment to its ops, from its `select`: none for a cap whose `select` doesn't read.
+    pub id: ShareId,
+    pub share: Share,
+    /// The shares it rests on, from its root share down to itself (`chain`).
+    pub chain: Arc<[ShareId]>,
+    /// Its intake audience: the shares of its chain that aren't wide, in canonical order. A vault that creates an entry
+    /// through it puts it there, where only those shares' grantees, the wide shares and the stewards read it, until a
+    /// steward moves it to its semantic audience.
+    pub intake: Arc<[ShareId]>,
+    /// The commitment to its ops, from its `select`: none for a share whose `select` doesn't read.
     pub commitment: Option<[u8; 32]>,
 }
 
@@ -404,24 +404,24 @@ pub struct Issued {
 pub struct Entry {
     pub id: EntryId,
     pub vault: VaultId,
-    /// Its stays, the first first: the move that put it in a cell (`None` for its creation), and that cell.
-    pub stays: Vec<(Option<EditId>, CellId)>,
+    /// Its stays, the first first: the move that put it in an audience (`None` for its creation), and that audience.
+    pub stays: Vec<(Option<EditId>, AudienceId)>,
     /// The vault its creation acted for, and the creation's edit, whose header says the rest of what never changes
     /// about it.
     pub creator: VaultId,
     pub creation: EditId,
-    /// The caps its creator could have created it through: those over its vault that the creator held with write or
-    /// more, live, whose intake cell is the one it was created in. Its creation was let in if one of them selects it
-    /// (`Meaning::admitted`).
-    pub intake: Vec<CapId>,
+    /// The shares its creator could have created it through: those over its vault that the creator held with write or
+    /// more, live, whose intake audience is the one it was created in. Its creation was let in if one of them selects
+    /// it (`Meaning::admitted`).
+    pub intake: Vec<ShareId>,
     /// The writes that acted for its vault after its creation, in the order they were accepted, and those a removal
     /// dropped since too: the tags they add and remove count (`Meaning::attrs`), as in the model.
     pub retags: Vec<EditId>,
 }
 
 impl Entry {
-    /// The cell it is in now.
-    pub fn cell(&self) -> CellId {
+    /// The audience it is in now.
+    pub fn audience(&self) -> AudienceId {
         self.stays.last().expect("an entry is created in a cell").1
     }
 
@@ -430,14 +430,14 @@ impl Entry {
         self.stays.last().expect("an entry is created in a cell").0
     }
 
-    /// The cell of one of its stays.
-    pub fn stay_cell(&self, s: Option<EditId>) -> Option<CellId> {
+    /// The audience of one of its stays.
+    pub fn stay_audience(&self, s: Option<EditId>) -> Option<AudienceId> {
         self.stays.iter().find(|(x, _)| *x == s).map(|(_, x)| *x)
     }
 }
 
 /// An accepted write: one encrypted edit of one entry, on one line of its history, under the key of one of the entry's
-/// stays at one generation of its cell. Its author, a device, acts for `actor` through the owners `via`
+/// stays at one epoch of its audience. Its author, a device, acts for `actor` through the owners `via`
 /// (`State::acts_via`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Write {
@@ -446,19 +446,19 @@ pub struct Write {
     pub actor: VaultId,
     pub entry: EntryId,
     pub stay: Option<EditId>,
-    pub generation: u64,
+    pub epoch: u64,
     /// The writes of the same entry it builds on.
     pub deps: Vec<EditId>,
     pub proposal: Proposal,
     pub via: Vec<VaultId>,
     /// It created its entry.
     pub first: bool,
-    /// The cell its entry was in when it was accepted, where a removal judges it (`State::authorized`).
-    pub cell: CellId,
-    /// The caps its readers judge it by (`State::lets`): those with write or more its actor held, live, that reached
-    /// its entry when it was accepted, or for a creation those whose intake cell it was created in. None for a write
-    /// that acts for its entry's own vault.
-    pub caps: Vec<CapId>,
+    /// The audience its entry was in when it was accepted, where a removal judges it (`State::authorized`).
+    pub audience: AudienceId,
+    /// The shares its readers judge it by (`State::lets`): those with write or more its actor held, live, that reached
+    /// its entry when it was accepted, or for a creation those whose intake audience it was created in. None for a
+    /// write that acts for its entry's own vault.
+    pub shares: Vec<ShareId>,
 }
 
 impl AsRef<Write> for Write {
@@ -477,9 +477,9 @@ impl Write {
         }
     }
 
-    /// The key it is encrypted under: its entry's in its stay, at its generation.
+    /// The key it is encrypted under: its entry's in its stay, at its epoch.
     pub fn key(&self) -> KeyName {
-        KeyName::Entry(self.entry, self.stay, self.generation)
+        KeyName::Entry(self.entry, self.stay, self.epoch)
     }
 }
 
@@ -519,26 +519,27 @@ pub enum Refusal {
     NotRoot,
     /// The edit's author doesn't act for the vault it claims to act for through the owners it names.
     NotActing,
-    /// The vault holds no cap that allows this: no live cap with the role it needs that reaches the entry, no cap whose
-    /// intake is the cell it creates in, no right to revoke the cap, no wide owner cap over the vault's lane.
+    /// The vault holds no share that allows this: no live share with the level it needs that reaches the entry, no
+    /// share whose intake is the audience it creates in, no right to revoke the share, no wide owner share over the
+    /// vault's lane.
     NoCap,
-    /// Not a rule of the edits but of a device: no cap the vault writes through names ops that allow what the write
+    /// Not a rule of the edits but of a device: no share the vault writes through names ops that allow what the write
     /// does (`rules`), so its readers wouldn't count it, and the device doesn't make it.
     NotAllowed,
-    /// Not a rule of the edits but of a device: a cap to issue names no op or more than a cap names, has a blank or
+    /// Not a rule of the edits but of a device: a share to issue names no op or more than a share names, has a blank or
     /// long name, a selector beyond the bounds a peer accepts, or rests on a chain too long to prove
     /// (`rules::normalize`, `rules::name_ok`, `rules::MAX_GRANTS`).
     BadCap,
-    /// Caps name vaults, never signers (T4).
+    /// Shares name vaults, never signers (T4).
     CapToSigner,
-    /// A cap never names the vault it is over: that vault holds every right over itself already.
+    /// A share never names the vault it is over: that vault holds every right over itself already.
     CapToItself,
-    /// Public only ever gets read (T8).
+    /// Everyone only ever gets read (T8).
     PublicBeyondRead,
-    /// The parent cap isn't a live owner cap over the same vault held by the issuer, or a wide cap rests on one that
-    /// isn't, or a root cap is issued by another vault than the one it is over.
+    /// The parent share isn't a live owner share over the same vault held by the issuer, or a wide share rests on one
+    /// that isn't, or a root share is issued by another vault than the one it is over.
     BadParent,
-    /// The cap was revoked already.
+    /// The share was revoked already.
     Revoked,
     /// An entry id is created once: this one exists, or existed and fell.
     Reborn,
@@ -546,9 +547,9 @@ pub enum Refusal {
     NotFirst,
     /// The entry is another vault's.
     WrongVault,
-    /// A cell's caps aren't in canonical order, or one of them isn't a cap over the vault, or is wide.
+    /// An audience's shares aren't in canonical order, or one of them isn't a share over the vault, or is wide.
     BadCell,
-    /// A move to the cell its entry is in already.
+    /// A move to the audience its entry is in already.
     SameCell,
     /// A write under a stay its entry never had.
     UnknownStay,
@@ -603,9 +604,9 @@ pub enum Fact {
     Device(VaultId, SignerId),
     /// Whatever root the vault had.
     Root(VaultId),
-    Cap(CapId),
-    /// The entry is in the cell of these caps: whatever only the cell it left allowed falls.
-    Cell(EntryId, Arc<[CapId]>),
+    Share(ShareId),
+    /// The entry is in the audience of these shares: whatever only the audience it left allowed falls.
+    Audience(EntryId, Arc<[ShareId]>),
 }
 
 /// Whoever starts out holding keys: a signer with its own key, whoever holds a vault's seed (its members, and the
@@ -705,7 +706,7 @@ pub struct Published {
     pub bytes: Arc<[u8]>,
 }
 
-/// What a peer knows after replaying its edits: vaults, caps, entries and their cells, accepted writes, the key
+/// What a peer knows after replaying its edits: vaults, shares, entries and their audiences, accepted writes, the key
 /// schedule and the schema lanes. Every collection is shared, so a copy of a state costs a few counts, and grows in
 /// place while nothing else holds it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -713,27 +714,27 @@ pub struct State {
     /// In the order they were created, with each one's place.
     vaults: Arc<Vec<Vault>>,
     vault_at: Arc<HashMap<VaultId, usize>>,
-    /// Every cap issued, live or revoked, in the order issued, with each one's place, the places of the caps naming
-    /// each vault and of the caps over each vault.
-    caps: Arc<Vec<Issued>>,
-    cap_at: Arc<HashMap<CapId, usize>>,
+    /// Every share issued, live or revoked, in the order issued, with each one's place, the places of the shares naming
+    /// each vault and of the shares over each vault.
+    shares: Arc<Vec<Issued>>,
+    share_at: Arc<HashMap<ShareId, usize>>,
     held: Arc<HashMap<VaultId, Vec<usize>>>,
     over: Arc<HashMap<VaultId, Vec<usize>>>,
-    revoked: Arc<Listed<CapId>>,
+    revoked: Arc<Listed<ShareId>>,
     /// In the order they were created, with each one's place.
     entries: Arc<Vec<Entry>>,
     entry_at: Arc<HashMap<EntryId, usize>>,
     /// Every entry id ever created, even of an entry that fell since: an id is created once, so an entry key's name
-    /// (the entry, its stay, a generation) names one key.
+    /// (the entry, its stay, an epoch) names one key.
     born: Arc<Listed<EntryId>>,
     /// In the order they were accepted, with each one's place and the places of each entry's.
     writes: Arc<Vec<Write>>,
     write_at: Arc<HashMap<EditId, usize>>,
     by_entry: Arc<HashMap<EntryId, Vec<usize>>>,
-    /// The caps of every cell an entry was ever in or created in, by its id.
-    cells: Arc<HashMap<CellId, Arc<[CapId]>>>,
-    /// The cells entries are in now, with their vault and how many.
-    in_use: Arc<HashMap<CellId, (VaultId, usize)>>,
+    /// The shares of every audience an entry was ever in or created in, by its id.
+    audiences: Arc<HashMap<AudienceId, Arc<[ShareId]>>>,
+    /// The audiences entries are in now, with their vault and how many.
+    in_use: Arc<HashMap<AudienceId, (VaultId, usize)>>,
     /// Each key family's epoch, where it isn't 0, and the removal that moved it to each epoch.
     epochs: Arc<HashMap<KeyFam, u64>>,
     moved: Arc<HashMap<(KeyFam, u64), EditId>>,
@@ -744,15 +745,15 @@ pub struct State {
     seal_keys: Arc<HashMap<SignerId, PublicKey>>,
     /// Each vault's schema lane: the schemas and lenses published into it, in the order they came.
     lane: Arc<Vec<Published>>,
-    /// Only while checking an edit that a move after it hadn't seen (`hide`): each entry such a move took to a cell,
-    /// and that cell's caps. A write must be allowed there too.
-    narrow: Vec<(EntryId, Arc<[CapId]>)>,
+    /// Only while checking an edit that a move after it hadn't seen (`hide`): each entry such a move took to an
+    /// audience, and that audience's shares. A write must be allowed there too.
+    narrow: Vec<(EntryId, Arc<[ShareId]>)>,
     /// Every sync rule set, live or ended, in the order set, with its id and each one's place; the rules that ended, in
     /// the order they did; and the rules the stewards last marked each entry with.
-    rules: Arc<Vec<(CapId, SyncRule)>>,
-    rule_at: Arc<HashMap<CapId, usize>>,
-    ended: Arc<Listed<CapId>>,
-    picks: Arc<HashMap<EntryId, Arc<[CapId]>>>,
+    rules: Arc<Vec<(ShareId, SyncRule)>>,
+    rule_at: Arc<HashMap<ShareId, usize>>,
+    ended: Arc<Listed<ShareId>>,
+    picks: Arc<HashMap<EntryId, Arc<[ShareId]>>>,
 }
 
 /// What an accepted edit changes, worked out before anything changes (`State::check`).
@@ -767,23 +768,23 @@ enum Change {
     AddDevice { at: usize, device: SignerId, seal_to: Option<PublicKey> },
     RemoveDevice { at: usize, device: SignerId },
     SetRoot { at: usize, root: Option<SignerId> },
-    Cap(Issued),
-    /// The caps that end, in the order they were issued.
-    Revoke(Vec<CapId>),
-    Create(Entry, Box<Write>, Arc<[CapId]>),
+    Share(Issued),
+    /// The shares that end, in the order they were issued.
+    Revoke(Vec<ShareId>),
+    Create(Entry, Box<Write>, Arc<[ShareId]>),
     /// A write, and whether it acts for its entry's vault, so its tags count.
     Write(Write, bool),
-    Move { at: usize, stay: EditId, to: CellId, caps: Arc<[CapId]> },
+    Move { at: usize, stay: EditId, to: AudienceId, shares: Arc<[ShareId]> },
     Publish(Published),
-    SyncRule(CapId, SyncRule),
-    EndSyncRule(CapId),
-    Pick(EntryId, Arc<[CapId]>),
+    SyncRule(ShareId, SyncRule),
+    EndSyncRule(ShareId),
+    Pick(EntryId, Arc<[ShareId]>),
 }
 
 impl Change {
     /// A removal that drops what it took the authorization from (`drop_unseen`) and may make keys stale. A move takes
-    /// nothing from a write accepted before it, which is judged in the cell it was written in, and makes no key stale
-    /// but a cell's that comes back into use: it takes the light path.
+    /// nothing from a write accepted before it, which is judged in the audience it was written in, and makes no key
+    /// stale but an audience's that comes back into use: it takes the light path.
     fn removes(&self) -> bool {
         matches!(
             self,
@@ -797,11 +798,11 @@ enum Touch {
     Nothing,
     /// Families that are new or have new targets, none of whose keys went stale.
     Grew(Vec<KeyFam>),
-    /// An entry came into the cell, which was empty before when `fresh`, with only its own write.
+    /// An entry came into the audience, which was empty before when `fresh`, with only its own write.
     Created { entry: usize, fresh: bool },
     /// A write was added.
     Wrote(usize),
-    /// An entry moved into a cell, which was empty before when `fresh`.
+    /// An entry moved into an audience, which was empty before when `fresh`.
     Moved { entry: usize, fresh: bool },
 }
 
@@ -810,16 +811,16 @@ fn nodup<T: PartialEq>(xs: &[T]) -> bool {
     xs.iter().enumerate().all(|(i, x)| !xs[..i].contains(x))
 }
 
-/// A cell's canonical form: its cap ids, each once, smallest first.
-pub fn mk_cell(xs: &[CapId]) -> Vec<CapId> {
+/// An audience's canonical form: its share ids, each once, smallest first.
+pub fn mk_audience(xs: &[ShareId]) -> Vec<ShareId> {
     let mut out = xs.to_vec();
     out.sort();
     out.dedup();
     out
 }
 
-/// The caps `xs` are in canonical form.
-fn canonical(xs: &[CapId]) -> bool {
+/// The shares `xs` are in canonical form.
+fn canonical(xs: &[ShareId]) -> bool {
     xs.windows(2).all(|w| w[0] < w[1])
 }
 
@@ -838,33 +839,33 @@ impl State {
         self.vaults.len() + 1
     }
 
-    pub fn cap(&self, c: CapId) -> Option<&Issued> {
-        self.cap_at.get(&c).map(|&i| &self.caps[i])
+    pub fn share(&self, c: ShareId) -> Option<&Issued> {
+        self.share_at.get(&c).map(|&i| &self.shares[i])
     }
 
-    /// Every cap issued, live or revoked, in the order issued.
-    pub fn caps(&self) -> &[Issued] {
-        &self.caps
+    /// Every share issued, live or revoked, in the order issued.
+    pub fn shares(&self) -> &[Issued] {
+        &self.shares
     }
 
-    /// The caps naming vault `a`, live or revoked.
-    pub fn caps_held(&self, a: VaultId) -> impl Iterator<Item = &Issued> {
-        self.held.get(&a).into_iter().flatten().map(|&i| &self.caps[i])
+    /// The shares naming vault `a`, live or revoked.
+    pub fn shares_held(&self, a: VaultId) -> impl Iterator<Item = &Issued> {
+        self.held.get(&a).into_iter().flatten().map(|&i| &self.shares[i])
     }
 
-    /// The caps over vault `v`, live or revoked.
-    pub fn caps_over(&self, v: VaultId) -> impl Iterator<Item = &Issued> {
-        self.over.get(&v).into_iter().flatten().map(|&i| &self.caps[i])
+    /// The shares over vault `v`, live or revoked.
+    pub fn shares_over(&self, v: VaultId) -> impl Iterator<Item = &Issued> {
+        self.over.get(&v).into_iter().flatten().map(|&i| &self.shares[i])
     }
 
-    /// The caps revoked, in the order they ended.
-    pub fn revoked(&self) -> &[CapId] {
+    /// The shares revoked, in the order they ended.
+    pub fn revoked(&self) -> &[ShareId] {
         self.revoked.as_slice()
     }
 
-    /// Cap `c` was issued and hasn't been revoked.
-    pub fn live(&self, c: CapId) -> bool {
-        self.cap_at.contains_key(&c) && !self.revoked.contains(&c)
+    /// Share `c` was issued and hasn't been revoked.
+    pub fn live(&self, c: ShareId) -> bool {
+        self.share_at.contains_key(&c) && !self.revoked.contains(&c)
     }
 
     pub fn entry(&self, e: EntryId) -> Option<&Entry> {
@@ -886,18 +887,18 @@ impl State {
         self.born.as_slice()
     }
 
-    /// The caps of cell `x`, if an entry was ever in it or created in it here.
-    pub fn cell_caps(&self, x: CellId) -> Option<&[CapId]> {
-        self.cells.get(&x).map(|c| &c[..])
+    /// The shares of audience `x`, if an entry was ever in it or created in it here.
+    pub fn audience_shares(&self, x: AudienceId) -> Option<&[ShareId]> {
+        self.audiences.get(&x).map(|c| &c[..])
     }
 
-    fn caps_of(&self, x: CellId) -> &[CapId] {
-        self.cell_caps(x).unwrap_or_default()
+    fn shares_of(&self, x: AudienceId) -> &[ShareId] {
+        self.audience_shares(x).unwrap_or_default()
     }
 
-    /// Every cell an entry was ever in or created in, with its caps.
-    pub fn cells(&self) -> impl Iterator<Item = (CellId, &[CapId])> {
-        self.cells.iter().map(|(x, caps)| (*x, &caps[..]))
+    /// Every audience an entry was ever in or created in, with its shares.
+    pub fn audiences(&self) -> impl Iterator<Item = (AudienceId, &[ShareId])> {
+        self.audiences.iter().map(|(x, shares)| (*x, &shares[..]))
     }
 
     /// What was published into every vault's schema lane, in the order it came.
@@ -1055,112 +1056,115 @@ impl State {
         }
     }
 
-    /// Vault `a` holds cap `cp` with role `r` or more: the cap is live and names `a`.
-    pub fn holds(&self, a: VaultId, cp: &Issued, r: Role) -> bool {
-        self.live(cp.id) && cp.cap.grantee == Grantee::Principal(Principal::Vault(a)) && cp.cap.role.allows(r)
+    /// Vault `a` holds share `cp` with level `r` or more: the share is live and names `a`.
+    pub fn holds(&self, a: VaultId, cp: &Issued, r: Level) -> bool {
+        self.live(cp.id) && cp.share.who == Who::Principal(Principal::Vault(a)) && cp.share.level.allows(r)
     }
 
-    /// Cap `cp` reaches entry `e` of vault `v` in the cell of the caps `cell`: it is over the vault, and wide, or in
-    /// the cell and in the cell of every move the edit being checked hadn't seen (`narrow`).
-    fn in_cell(&self, cp: &Issued, e: EntryId, v: VaultId, cell: &[CapId]) -> bool {
-        cp.cap.over == v
-            && (cp.cap.wide
-                || (cell.contains(&cp.id) && self.narrow.iter().all(|(x, caps)| *x != e || caps.contains(&cp.id))))
+    /// Share `cp` reaches entry `e` of vault `v` in the audience of the shares `audience`: it is over the vault, and
+    /// wide, or in the audience and in the audience of every move the edit being checked hadn't seen (`narrow`).
+    fn in_audience(&self, cp: &Issued, e: EntryId, v: VaultId, audience: &[ShareId]) -> bool {
+        cp.share.over == v
+            && (cp.share.wide
+                || (audience.contains(&cp.id)
+                    && self.narrow.iter().all(|(x, shares)| *x != e || shares.contains(&cp.id))))
     }
 
-    /// Vault `a` may write entry `e` of vault `v` in the cell of the caps `cell`: it is the vault, or it holds a cap
-    /// with write or more that reaches the entry there.
-    fn may_write_in(&self, a: VaultId, e: EntryId, v: VaultId, cell: &[CapId]) -> bool {
-        a == v || self.caps_held(a).any(|cp| self.holds(a, cp, Role::Write) && self.in_cell(cp, e, v, cell))
+    /// Vault `a` may write entry `e` of vault `v` in the audience of the shares `audience`: it is the vault, or it
+    /// holds a share with write or more that reaches the entry there.
+    fn may_write_in(&self, a: VaultId, e: EntryId, v: VaultId, audience: &[ShareId]) -> bool {
+        a == v || self.shares_held(a).any(|cp| self.holds(a, cp, Level::Write) && self.in_audience(cp, e, v, audience))
     }
 
-    /// The caps through which vault `a` may write entry `e` of vault `v` in the cell of the caps `cell`: those it holds
-    /// with write or more that reach the entry there.
-    fn write_caps(&self, a: VaultId, e: EntryId, v: VaultId, cell: &[CapId]) -> Vec<CapId> {
-        let reach = |cp: &&Issued| self.holds(a, cp, Role::Write) && self.in_cell(cp, e, v, cell);
-        self.caps_held(a).filter(reach).map(|cp| cp.id).collect()
+    /// The shares through which vault `a` may write entry `e` of vault `v` in the audience of the shares `audience`:
+    /// those it holds with write or more that reach the entry there.
+    fn write_shares(&self, a: VaultId, e: EntryId, v: VaultId, audience: &[ShareId]) -> Vec<ShareId> {
+        let reach = |cp: &&Issued| self.holds(a, cp, Level::Write) && self.in_audience(cp, e, v, audience);
+        self.shares_held(a).filter(reach).map(|cp| cp.id).collect()
     }
 
     /// Vault `a` may write entry `e`, by what every peer sees (no selector, type or tag): it is the entry's vault, or
-    /// it holds a cap with write or more that reaches the entry's cell.
+    /// it holds a share with write or more that reaches the entry's audience.
     pub fn may_write(&self, a: VaultId, e: EntryId) -> bool {
-        self.entry(e).is_some_and(|en| self.may_write_in(a, en.id, en.vault, self.caps_of(en.cell())))
+        self.entry(e).is_some_and(|en| self.may_write_in(a, en.id, en.vault, self.shares_of(en.audience())))
     }
 
-    /// The caps over vault `v` through which vault `a` may create an entry in the cell of the caps `x`: those it holds
-    /// with write or more whose intake cell `x` is.
-    fn intake_caps(&self, a: VaultId, v: VaultId, x: &[CapId]) -> Vec<CapId> {
-        self.caps_held(a)
-            .filter(|cp| cp.cap.over == v && self.holds(a, cp, Role::Write) && &cp.intake[..] == x)
+    /// The shares over vault `v` through which vault `a` may create an entry in the audience of the shares `x`: those
+    /// it holds with write or more whose intake audience `x` is.
+    fn intake_shares(&self, a: VaultId, v: VaultId, x: &[ShareId]) -> Vec<ShareId> {
+        self.shares_held(a)
+            .filter(|cp| cp.share.over == v && self.holds(a, cp, Level::Write) && &cp.intake[..] == x)
             .map(|cp| cp.id)
             .collect()
     }
 
-    /// Vault `a` may create an entry of vault `v` in the cell of the caps `x`: it is `v`, which creates in any cell, or
-    /// `x` is the intake cell of a cap over `v` that it holds with write or more.
-    pub fn may_create(&self, a: VaultId, v: VaultId, x: &[CapId]) -> bool {
-        a == v || !self.intake_caps(a, v, x).is_empty()
+    /// Vault `a` may create an entry of vault `v` in the audience of the shares `x`: it is `v`, which creates in any
+    /// audience, or `x` is the intake audience of a share over `v` that it holds with write or more.
+    pub fn may_create(&self, a: VaultId, v: VaultId, x: &[ShareId]) -> bool {
+        a == v || !self.intake_shares(a, v, x).is_empty()
     }
 
     /// A write is authorized: its author acts for its actor through the owners it names, and that vault may write its
-    /// entry as the write found it, in the cell it was in then (`Write::cell`). Strong removal judges an edit at its
-    /// own place in the replay too, so a removal takes from a write only what it took from it there: a move between
-    /// them doesn't hand the removal writes that never rested on what it takes away.
+    /// entry as the write found it, in the audience it was in then (`Write::audience`). Strong removal judges an edit
+    /// at its own place in the replay too, so a removal takes from a write only what it took from it there: a move
+    /// between them doesn't hand the removal writes that never rested on what it takes away.
     pub fn authorized(&self, w: &Write) -> bool {
         self.acts_via(w.author, &w.via, w.actor)
-            && self.entry(w.entry).is_some_and(|en| self.may_write_in(w.actor, en.id, en.vault, self.caps_of(w.cell)))
+            && self
+                .entry(w.entry)
+                .is_some_and(|en| self.may_write_in(w.actor, en.id, en.vault, self.shares_of(w.audience)))
     }
 
-    /// Vault `a` publishes into vault `v`'s schema lane: it is `v`, or holds a wide owner cap over it.
+    /// Vault `a` publishes into vault `v`'s schema lane: it is `v`, or holds a wide owner share over it.
     pub fn owns_lane(&self, a: VaultId, v: VaultId) -> bool {
-        a == v || self.caps_held(a).any(|cp| cp.cap.over == v && cp.cap.wide && self.holds(a, cp, Role::Owner))
+        a == v || self.shares_held(a).any(|cp| cp.share.over == v && cp.share.wide && self.holds(a, cp, Level::Owner))
     }
 
-    /// A cap's parent is a live owner cap over the same vault that its issuer holds, and a wide cap rests only on a
-    /// wide one (so a wide cap's whole chain is wide); a root cap is issued by the vault it is over.
-    fn cap_parent_ok(&self, c: &Cap) -> bool {
+    /// A share's parent is a live owner share over the same vault that its issuer holds, and a wide share rests only on
+    /// a wide one (so a wide share's whole chain is wide); a root share is issued by the vault it is over.
+    fn share_parent_ok(&self, c: &Share) -> bool {
         match c.parent {
             None => c.issuer == c.over,
-            Some(p) => self.cap(p).is_some_and(|pc| {
+            Some(p) => self.share(p).is_some_and(|pc| {
                 self.live(p)
-                    && pc.cap.over == c.over
-                    && pc.cap.role == Role::Owner
-                    && pc.cap.grantee == Grantee::Principal(Principal::Vault(c.issuer))
-                    && (!c.wide || pc.cap.wide)
+                    && pc.share.over == c.over
+                    && pc.share.level == Level::Owner
+                    && pc.share.who == Who::Principal(Principal::Vault(c.issuer))
+                    && (!c.wide || pc.share.wide)
             }),
         }
     }
 
-    /// Vault `a` may revoke cap `cp`: it issued it, the cap is over it, it holds the cap (and gives it up), or it may
-    /// revoke a cap `cp` rests on.
+    /// Vault `a` may revoke share `cp`: it issued it, the share is over it, it holds the share (and gives it up), or it
+    /// may revoke a share `cp` rests on.
     pub fn may_revoke(&self, a: VaultId, cp: &Issued) -> bool {
-        cp.chain.iter().filter_map(|&c| self.cap(c)).any(|x| {
-            x.cap.issuer == a || x.cap.over == a || x.cap.grantee == Grantee::Principal(Principal::Vault(a))
+        cp.chain.iter().filter_map(|&c| self.share(c)).any(|x| {
+            x.share.issuer == a || x.share.over == a || x.share.who == Who::Principal(Principal::Vault(a))
         })
     }
 
     /// Sync rule `r`, live or ended.
-    pub fn rule(&self, r: CapId) -> Option<&SyncRule> {
+    pub fn rule(&self, r: ShareId) -> Option<&SyncRule> {
         self.rule_at.get(&r).map(|&i| &self.rules[i].1)
     }
 
     /// Every sync rule set, live or ended, in the order set, with its id.
-    pub fn rules(&self) -> &[(CapId, SyncRule)] {
+    pub fn rules(&self) -> &[(ShareId, SyncRule)] {
         &self.rules
     }
 
     /// The sync rules that ended, in the order they did.
-    pub fn ended(&self) -> &[CapId] {
+    pub fn ended(&self) -> &[ShareId] {
         self.ended.as_slice()
     }
 
     /// Sync rule `r` was set and hasn't ended.
-    pub fn rule_live(&self, r: CapId) -> bool {
+    pub fn rule_live(&self, r: ShareId) -> bool {
         self.rule_at.contains_key(&r) && !self.ended.contains(&r)
     }
 
     /// The sync rules the stewards last marked entry `e` with.
-    pub fn picks_of(&self, e: EntryId) -> &[CapId] {
+    pub fn picks_of(&self, e: EntryId) -> &[ShareId] {
         self.picks.get(&e).map(|p| &p[..]).unwrap_or_default()
     }
 
@@ -1169,16 +1173,16 @@ impl State {
         self.vault(v).is_some_and(|vt| vt.devices.contains(&d))
     }
 
-    /// Vault `a` may hold entries of vault `v`: it is `v`, or holds a cap over it, backup or more. A vault sets sync
+    /// Vault `a` may hold entries of vault `v`: it is `v`, or holds a share over it, backup or more. A vault sets sync
     /// rules only over such a vault, so no stranger has a vault's stewards mark entries for it.
     pub fn may_hold(&self, a: VaultId, v: VaultId) -> bool {
-        a == v || self.caps_over(v).any(|cp| self.holds(a, cp, Role::Backup))
+        a == v || self.shares_over(v).any(|cp| self.holds(a, cp, Level::Backup))
     }
 
     /// The live sync rules device `d` syncs vault `v` by, with their ids: those over `v` naming `d`, set by a vault `d`
     /// is still a device of.
-    pub fn rules_of(&self, d: SignerId, v: VaultId) -> impl Iterator<Item = (CapId, &SyncRule)> {
-        let live = move |(id, r): &&(CapId, SyncRule)| {
+    pub fn rules_of(&self, d: SignerId, v: VaultId) -> impl Iterator<Item = (ShareId, &SyncRule)> {
+        let live = move |(id, r): &&(ShareId, SyncRule)| {
             r.device == d && r.over == v && self.rule_live(*id) && self.is_device(d, r.issuer)
         };
         self.rules.iter().filter(live).map(|(id, r)| (*id, r))
@@ -1201,9 +1205,9 @@ impl State {
         Some(rules.any(|(id, r)| r.keep && (r.wide || picks.contains(&id))))
     }
 
-    /// Cell `x` is a cell of vault `v`: in canonical form, each of its caps one over `v` that isn't wide.
-    pub fn cell_ok(&self, v: VaultId, x: &[CapId]) -> bool {
-        canonical(x) && x.iter().all(|&c| self.cap(c).is_some_and(|cp| cp.cap.over == v && !cp.cap.wide))
+    /// Audience `x` is an audience of vault `v`: in canonical form, each of its shares one over `v` that isn't wide.
+    pub fn audience_ok(&self, v: VaultId, x: &[ShareId]) -> bool {
+        canonical(x) && x.iter().all(|&c| self.share(c).is_some_and(|cp| cp.share.over == v && !cp.share.wide))
     }
 
     /// How far below the human vaults vault `v` sits: a human vault at 0, a coop or an aven vault one below its lowest
@@ -1222,96 +1226,99 @@ impl State {
         }
     }
 
-    /// How senior vault `a` is in revoking cap `cp`: 0 for the vault it is over, else the place in its chain of the
-    /// highest cap `a` issued, the root cap at 0; a grantee giving its cap up comes last.
+    /// How senior vault `a` is in revoking share `cp`: 0 for the vault it is over, else the place in its chain of the
+    /// highest share `a` issued, the root share at 0; a grantee giving its share up comes last.
     fn seniority(&self, a: VaultId, cp: &Issued) -> usize {
-        if cp.cap.over == a {
+        if cp.share.over == a {
             return 0;
         }
-        let issuer = |c: &CapId| self.cap(*c).map(|x| x.cap.issuer);
+        let issuer = |c: &ShareId| self.share(*c).map(|x| x.share.issuer);
         cp.chain.iter().position(|c| issuer(c) == Some(a)).unwrap_or(cp.chain.len())
     }
 
     /* The semantic layer: what only an entry's readers and its vault's stewards know. */
 
-    /// Cap `cp` with its whole chain selects attributes `a`, by the selectors `r` holds (T22): every cap of the chain
-    /// is wide or its selector matches. A selector `r` doesn't hold selects nothing.
+    /// Share `cp` with its whole chain selects attributes `a`, by the selectors `r` holds (T22): every share of the
+    /// chain is wide or its selector matches. A selector `r` doesn't hold selects nothing.
     pub fn eff_selects(&self, cp: &Issued, a: &Attrs, r: &Readings) -> bool {
         cp.chain.iter().all(|c| {
-            self.cap(*c).is_some_and(|x| x.cap.wide || r.selectors.get(c).is_some_and(|s| s.matches(a)))
+            self.share(*c).is_some_and(|x| x.share.wide || r.selectors.get(c).is_some_and(|s| s.matches(a)))
         })
     }
 
     /// What entry `e` means to whoever reads it, by the selectors, headers and tags `r` holds: its attributes, whether
-    /// its creation was let in, its semantic cell and where a steward would move it. `None` for an entry that doesn't
-    /// exist, or whose header `r` doesn't hold.
+    /// its creation was let in, its semantic audience and where a steward would move it. `None` for an entry that
+    /// doesn't exist, or whose header `r` doesn't hold.
     pub fn meaning(&self, e: EntryId, r: &Readings) -> Option<Meaning> {
         let en = self.entry(e)?;
         let header = r.headers.get(&en.creation)?;
         let first = r.tags.get(&en.creation).map(|d| d.apply(&[])).unwrap_or_default();
         let mut attrs =
             Attrs { ty: header.ty.clone(), author: en.creator, entry: en.id, created: header.created, tags: first };
-        // its creator was the vault, or created it in the intake cell of a cap whose slice held it then, and whose
-        // ops let a creation through
+        // its creator was the vault, or created it in the intake audience of a share whose slice held it then, and
+        // whose ops let a creation through
         let proof = r.proofs.get(&en.creation);
         let through = |cp: &Issued| self.lets_through(cp, proof, true, &[rules::Touch::Create]);
         let admitted = en.creator == en.vault
-            || en.intake.iter().any(|&c| self.cap(c).is_some_and(|cp| self.eff_selects(cp, &attrs, r) && through(cp)));
+            || en
+                .intake
+                .iter()
+                .any(|&c| self.share(c).is_some_and(|cp| self.eff_selects(cp, &attrs, r) && through(cp)));
         for w in &en.retags {
             if let Some(d) = r.tags.get(w) {
                 attrs.tags = d.apply(&attrs.tags);
             }
         }
-        let cell: Vec<CapId> = if admitted {
+        let audience: Vec<ShareId> = if admitted {
             let selects =
-                |cp: &&Issued| self.live(cp.id) && !cp.cap.wide && self.eff_selects(cp, &attrs, r);
-            mk_cell(&self.caps_over(en.vault).filter(selects).map(|cp| cp.id).collect::<Vec<_>>())
+                |cp: &&Issued| self.live(cp.id) && !cp.share.wide && self.eff_selects(cp, &attrs, r);
+            mk_audience(&self.shares_over(en.vault).filter(selects).map(|cp| cp.id).collect::<Vec<_>>())
         } else {
             vec![]
         };
-        let live: Vec<CapId> = self.caps_of(en.cell()).iter().copied().filter(|&c| self.live(c)).collect();
-        let desired = (live != cell).then(|| cell.clone());
-        // the sync rules that pick it, read as its caps are, and the marks a steward puts on it
-        let picks: Vec<CapId> = self
+        let live: Vec<ShareId> = self.shares_of(en.audience()).iter().copied().filter(|&c| self.live(c)).collect();
+        let desired = (live != audience).then(|| audience.clone());
+        // the sync rules that pick it, read as its shares are, and the marks a steward puts on it
+        let picks: Vec<ShareId> = self
             .rules
             .iter()
             .filter(|(id, x)| x.over == en.vault && !x.wide && self.rule_live(*id))
             .filter(|(id, _)| r.selectors.get(id).is_some_and(|s| s.matches(&attrs)))
             .map(|(id, _)| *id)
             .collect();
-        let picks = mk_cell(&picks);
-        let marked: Vec<CapId> = self.picks_of(e).iter().copied().filter(|&x| self.rule_live(x)).collect();
+        let picks = mk_audience(&picks);
+        let marked: Vec<ShareId> = self.picks_of(e).iter().copied().filter(|&x| self.rule_live(x)).collect();
         let pick = (marked != picks).then(|| picks.clone());
-        Some(Meaning { attrs, admitted, cell, desired, picks, pick })
+        Some(Meaning { attrs, admitted, audience, desired, picks, pick })
     }
 
-    /// Every cap of `cp`'s chain, root first, is opened by one of `grants` in turn (`State.lean`'s `chainAllows`): each
-    /// grant hashes to the commitment its cap carries in the clear, its cap's role is the class of its ops, and its ops
-    /// allow the touches `touches` of a write on the main line (`main`) or on a proposal.
+    /// Every share of `cp`'s chain, root first, is opened by one of `grants` in turn (`State.lean`'s `chainAllows`):
+    /// each grant hashes to the commitment its share carries in the clear, its share's level is the class of its ops,
+    /// and its ops allow the touches `touches` of a write on the main line (`main`) or on a proposal.
     pub fn chain_allows(&self, cp: &Issued, grants: &[Grant], main: bool, touches: &[rules::Touch]) -> bool {
         cp.chain.len() == grants.len()
             && cp.chain.iter().zip(grants).all(|(c, g)| {
-                self.cap(*c).is_some_and(|x| {
+                self.share(*c).is_some_and(|x| {
                     x.commitment == Some(g.commitment())
-                        && x.cap.role == g.level()
+                        && x.share.level == g.level()
                         && rules::allows_all(&g.ops, main, touches)
                 })
             })
     }
 
-    /// A write through cap `cp` makes only ops it may, by what its proof shows (`State.lean`'s `lets`): the proof names
-    /// `cp` and opens its chain's grants, which allow every touch of the write, on the main line (`main`) or on a
+    /// A write through share `cp` makes only ops it may, by what its proof shows (`State.lean`'s `lets`): the proof
+    /// names `cp` and opens its chain's grants, which allow every touch of the write, on the main line (`main`) or on a
     /// proposal.
     pub fn lets_through(&self, cp: &Issued, proof: Option<&Proof>, main: bool, touches: &[rules::Touch]) -> bool {
-        proof.is_some_and(|p| p.cap == cp.id && self.chain_allows(cp, &p.grants, main, touches))
+        proof.is_some_and(|p| p.share == cp.id && self.chain_allows(cp, &p.grants, main, touches))
     }
 
-    /// Write `w`'s caps let it through, by its proof `proof`, its touches `touches` and the tags it asks for `asks` (C1
-    /// to C3; `State.lean`'s `counts`, but for what it builds on): it acts for its entry's vault, so it relies on no
-    /// cap (`Write::caps`), or one of the caps it was accepted through lets it. A creation touches only its creation,
-    /// and its tags are its first; touches its readers couldn't read (`None`) pass no cap.
+    /// Write `w`'s shares let it through, by its proof `proof`, its touches `touches` and the tags it asks for `asks`
+    /// (C1 to C3; `State.lean`'s `counts`, but for what it builds on): it acts for its entry's vault, so it relies on
+    /// no share (`Write::shares`), or one of the shares it was accepted through lets it. A creation touches only its
+    /// creation, and its tags are its first; touches its readers couldn't read (`None`) pass no share.
     pub fn lets(&self, w: &Write, proof: Option<&Proof>, touches: Option<&[rules::Touch]>, asks: &TagDelta) -> bool {
-        if w.caps.is_empty() {
+        if w.shares.is_empty() {
             return true;
         }
         let touches: Vec<rules::Touch> = match touches {
@@ -1320,11 +1327,11 @@ impl State {
             None => return false,
         };
         let main = w.proposal == Proposal::Main;
-        w.caps.iter().any(|c| self.cap(*c).is_some_and(|cp| self.lets_through(cp, proof, main, &touches)))
+        w.shares.iter().any(|c| self.share(*c).is_some_and(|cp| self.lets_through(cp, proof, main, &touches)))
     }
 
     /// The writes of entry `e` its readers don't count, by the proofs, touches, tags and fits `r` holds, in the order
-    /// they were accepted (`State.lean`'s `uncounted`): a write that doesn't fit, one no cap of its lets through, and
+    /// they were accepted (`State.lean`'s `uncounted`): a write that doesn't fit, one no share of its lets through, and
     /// every write that builds on one.
     pub fn uncounted(&self, e: EntryId, r: &Readings) -> Vec<EditId> {
         let mut out = vec![];
@@ -1340,15 +1347,15 @@ impl State {
         out
     }
 
-    /// The write rule by meaning: vault `a` is the entry's vault, or holds a live cap with write or more over it that
+    /// The write rule by meaning: vault `a` is the entry's vault, or holds a live share with write or more over it that
     /// is wide, or whose slice holds the entry and its creation was let in.
     pub fn sem_write(&self, a: VaultId, e: EntryId, r: &Readings) -> bool {
         let (Some(en), Some(m)) = (self.entry(e), self.meaning(e, r)) else { return false };
         a == en.vault
-            || self.caps_held(a).any(|cp| {
-                cp.cap.over == en.vault
-                    && self.holds(a, cp, Role::Write)
-                    && (cp.cap.wide || (m.admitted && self.eff_selects(cp, &m.attrs, r)))
+            || self.shares_held(a).any(|cp| {
+                cp.share.over == en.vault
+                    && self.holds(a, cp, Level::Write)
+                    && (cp.share.wide || (m.admitted && self.eff_selects(cp, &m.attrs, r)))
             })
     }
 
@@ -1364,11 +1371,11 @@ impl State {
         KeyName::Scoped(k, self.epoch(k))
     }
 
-    /// A new entry in cell `x` of vault `v` brings the cell back into use: no entry is in it, and its current key was
-    /// sealed before. Settling then moves the cell to a new generation, which the creation may name: whoever a removal
-    /// took out while the cell was empty may still hold its current key.
-    pub fn reenters(&self, v: VaultId, x: CellId) -> bool {
-        let k = KeyFam::Cell(v, x);
+    /// A new entry in audience `x` of vault `v` brings the audience back into use: no entry is in it, and its current
+    /// key was sealed before. Settling then moves the audience to a new epoch, which the creation may name: whoever a
+    /// removal took out while the audience was empty may still hold its current key.
+    pub fn reenters(&self, v: VaultId, x: AudienceId) -> bool {
+        let k = KeyFam::Audience(v, x);
         !self.has_fam(k) && self.seals.secrets.contains(&self.current(k))
     }
 
@@ -1403,61 +1410,63 @@ impl State {
         self.seal_keys.get(&s)
     }
 
-    /// The key of entry `e` in its current stay, at its cell's current generation.
+    /// The key of entry `e` in its current stay, at its audience's current epoch.
     pub fn entry_key(&self, e: EntryId) -> Option<KeyName> {
         let en = self.entry(e)?;
-        Some(KeyName::Entry(en.id, en.stay(), self.epoch(KeyFam::Cell(en.vault, en.cell()))))
+        Some(KeyName::Entry(en.id, en.stay(), self.epoch(KeyFam::Audience(en.vault, en.audience()))))
     }
 
-    /// Every key family that exists: each vault's seed, the key of each live cap with read or more, and the key of
-    /// each cell an entry is in.
+    /// Every key family that exists: each vault's seed, the key of each live share with read or more, and the key of
+    /// each audience an entry is in.
     pub fn key_fams(&self) -> Vec<KeyFam> {
         let seeds = self.vaults.iter().map(|v| KeyFam::Seed(v.id));
-        let caps = self
-            .caps
+        let shares = self
+            .shares
             .iter()
-            .filter(|cp| self.live(cp.id) && cp.cap.role.allows(Role::Read))
-            .map(|cp| KeyFam::Cap(cp.cap.over, cp.id));
+            .filter(|cp| self.live(cp.id) && cp.share.level.allows(Level::Read))
+            .map(|cp| KeyFam::Share(cp.share.over, cp.id));
         let mut seen = HashSet::new();
-        let cells = self.entries.iter().map(|en| KeyFam::Cell(en.vault, en.cell())).filter(|k| seen.insert(*k));
-        seeds.chain(caps).chain(cells.collect::<Vec<_>>()).collect()
+        let audiences =
+            self.entries.iter().map(|en| KeyFam::Audience(en.vault, en.audience())).filter(|k| seen.insert(*k));
+        seeds.chain(shares).chain(audiences.collect::<Vec<_>>()).collect()
     }
 
     /// Family `k` exists (`key_fams`).
     pub fn has_fam(&self, k: KeyFam) -> bool {
         match k {
             KeyFam::Seed(v) => self.vault(v).is_some(),
-            KeyFam::Cap(v, c) => {
-                self.cap(c).is_some_and(|cp| cp.cap.over == v && self.live(c) && cp.cap.role.allows(Role::Read))
+            KeyFam::Share(v, c) => {
+                self.share(c).is_some_and(|cp| cp.share.over == v && self.live(c) && cp.share.level.allows(Level::Read))
             }
-            KeyFam::Cell(v, x) => self.in_use.get(&x).is_some_and(|&(u, n)| u == v && n > 0),
+            KeyFam::Audience(v, x) => self.in_use.get(&x).is_some_and(|&(u, n)| u == v && n > 0),
         }
     }
 
-    /// The live caps over vault `v` with read or more that reach the cell of the caps `x`: in it, or wide.
-    fn read_caps(&self, v: VaultId, x: &[CapId]) -> impl Iterator<Item = &Issued> {
-        self.caps_over(v)
-            .filter(move |cp| self.live(cp.id) && cp.cap.role.allows(Role::Read) && (cp.cap.wide || x.contains(&cp.id)))
+    /// The live shares over vault `v` with read or more that reach the audience of the shares `x`: in it, or wide.
+    fn read_shares(&self, v: VaultId, x: &[ShareId]) -> impl Iterator<Item = &Issued> {
+        self.shares_over(v).filter(move |cp| {
+            self.live(cp.id) && cp.share.level.allows(Level::Read) && (cp.share.wide || x.contains(&cp.id))
+        })
     }
 
-    /// The vaults that may read family `k` themselves (`readsV`): a seed's vault; a live cap with read or more's vault
-    /// and the vault it names; a cell's vault and the vaults the live caps with read or more reaching it name. Relay
-    /// caps get no key.
+    /// The vaults that may read family `k` themselves (`readsV`): a seed's vault; a live share with read or more's
+    /// vault and the vault it names; an audience's vault and the vaults the live shares with read or more reaching it
+    /// name. Relay shares get no key.
     pub fn readers(&self, k: KeyFam) -> Vec<VaultId> {
-        let grantee = |cp: &Issued| match cp.cap.grantee {
-            Grantee::Principal(Principal::Vault(g)) => Some(g),
+        let who = |cp: &Issued| match cp.share.who {
+            Who::Principal(Principal::Vault(g)) => Some(g),
             _ => None,
         };
         match k {
             KeyFam::Seed(v) => vec![v],
-            KeyFam::Cap(v, c) => match self.cap(c) {
-                Some(cp) if cp.cap.over == v && self.live(c) && cp.cap.role.allows(Role::Read) => {
-                    std::iter::once(v).chain(grantee(cp)).collect()
+            KeyFam::Share(v, c) => match self.share(c) {
+                Some(cp) if cp.share.over == v && self.live(c) && cp.share.level.allows(Level::Read) => {
+                    std::iter::once(v).chain(who(cp)).collect()
                 }
                 _ => vec![],
             },
-            KeyFam::Cell(v, x) => {
-                std::iter::once(v).chain(self.read_caps(v, self.caps_of(x)).filter_map(grantee)).collect()
+            KeyFam::Audience(v, x) => {
+                std::iter::once(v).chain(self.read_shares(v, self.shares_of(x)).filter_map(who)).collect()
             }
         }
     }
@@ -1467,14 +1476,17 @@ impl State {
         self.readers(k).contains(&y)
     }
 
-    /// Everyone may read family `k`: a live cap with read to Public reaches it.
+    /// Everyone may read family `k`: a live share with read to everyone reaches it.
     pub fn public_key(&self, k: KeyFam) -> bool {
         match k {
             KeyFam::Seed(_) => false,
-            KeyFam::Cap(v, c) => self.cap(c).is_some_and(|cp| {
-                cp.cap.over == v && self.live(c) && cp.cap.role.allows(Role::Read) && cp.cap.grantee == Grantee::Public
+            KeyFam::Share(v, c) => self.share(c).is_some_and(|cp| {
+                cp.share.over == v
+                    && self.live(c)
+                    && cp.share.level.allows(Level::Read)
+                    && cp.share.who == Who::Everyone
             }),
-            KeyFam::Cell(v, x) => self.read_caps(v, self.caps_of(x)).any(|cp| cp.cap.grantee == Grantee::Public),
+            KeyFam::Audience(v, x) => self.read_shares(v, self.shares_of(x)).any(|cp| cp.share.who == Who::Everyone),
         }
     }
 
@@ -1491,8 +1503,8 @@ impl State {
 
     /// The keys the current key of `k` is sealed to, wrapped under or derived from: a seed is sealed to its vault's
     /// devices and owner signers (a human vault's passkeys, through keys derived from them) and to the seeds of its
-    /// owner vaults; a cap key is derived from its vault's seed and sealed to its grantee's; a cell key is derived from
-    /// its vault's seed and wrapped under the key of each cap with read or more that reaches it.
+    /// owner vaults; a share key is derived from its vault's seed and sealed to its grantee's; an audience key is
+    /// derived from its vault's seed and wrapped under the key of each share with read or more that reaches it.
     pub fn targets(&self, k: KeyFam) -> Vec<KeyName> {
         let seed = |v: VaultId| self.current(KeyFam::Seed(v));
         match k {
@@ -1510,15 +1522,15 @@ impl State {
                     vt.devices.iter().copied().chain(signers).map(KeyName::Signer).chain(vaults).collect()
                 }
             },
-            KeyFam::Cap(v, c) => {
-                let grantee = self.cap(c).and_then(|cp| match cp.cap.grantee {
-                    Grantee::Principal(Principal::Vault(g)) => Some(seed(g)),
+            KeyFam::Share(v, c) => {
+                let who = self.share(c).and_then(|cp| match cp.share.who {
+                    Who::Principal(Principal::Vault(g)) => Some(seed(g)),
                     _ => None,
                 });
-                std::iter::once(seed(v)).chain(grantee).collect()
+                std::iter::once(seed(v)).chain(who).collect()
             }
-            KeyFam::Cell(v, x) => std::iter::once(seed(v))
-                .chain(self.read_caps(v, self.caps_of(x)).map(|cp| self.current(KeyFam::Cap(v, cp.id))))
+            KeyFam::Audience(v, x) => std::iter::once(seed(v))
+                .chain(self.read_shares(v, self.shares_of(x)).map(|cp| self.current(KeyFam::Share(v, cp.id))))
                 .collect(),
         }
     }
@@ -1559,8 +1571,8 @@ impl State {
     }
 
     /// Signer `d` may box key `name`: the key of a family that exists, at an epoch it has reached, that `d` should be
-    /// able to open; or the key of one of an entry's stays at a generation that stay's cell has reached, when `d`
-    /// should be able to open the key of the entry's cell.
+    /// able to open; or the key of one of an entry's stays at an epoch that stay's audience has reached, when `d`
+    /// should be able to open the key of the entry's audience.
     fn may_box(&self, d: SignerId, name: KeyName) -> Result<(), Refusal> {
         match name {
             KeyName::Signer(_) => Err(Refusal::UnknownKey),
@@ -1578,11 +1590,11 @@ impl State {
             }
             KeyName::Entry(e, s, g) => {
                 let en = self.entry(e).ok_or(Refusal::UnknownKey)?;
-                if !self.entitled(d, KeyFam::Cell(en.vault, en.cell())) {
+                if !self.entitled(d, KeyFam::Audience(en.vault, en.audience())) {
                     return Err(Refusal::NotEntitled);
                 }
-                let x = en.stay_cell(s).ok_or(Refusal::UnknownKey)?;
-                if g > self.epoch(KeyFam::Cell(en.vault, x)) {
+                let x = en.stay_audience(s).ok_or(Refusal::UnknownKey)?;
+                if g > self.epoch(KeyFam::Audience(en.vault, x)) {
                     return Err(Refusal::FutureEpoch);
                 }
                 Ok(())
@@ -1784,49 +1796,49 @@ impl State {
                 }
                 Ok(Change::SetRoot { at, root })
             }
-            Action::Cap(c, via) => {
-                let cid = CapId::from(id);
-                if self.cap(cid).is_some() {
+            Action::Share(c, via) => {
+                let cid = ShareId::from(id);
+                if self.share(cid).is_some() {
                     return Err(Refusal::Duplicate);
                 }
                 if self.vault(c.over).is_none() {
                     return Err(Refusal::UnknownVault);
                 }
-                // caps name vaults or Public, never signers, nor the vault they are over; Public only reads
-                match c.grantee {
-                    Grantee::Principal(Principal::Signer(_)) => return Err(Refusal::CapToSigner),
-                    Grantee::Principal(Principal::Vault(x)) if self.vault(x).is_none() => {
+                // shares name vaults or everyone, never signers, nor the vault they are over; everyone only reads
+                match c.who {
+                    Who::Principal(Principal::Signer(_)) => return Err(Refusal::CapToSigner),
+                    Who::Principal(Principal::Vault(x)) if self.vault(x).is_none() => {
                         return Err(Refusal::UnknownVault);
                     }
-                    Grantee::Principal(Principal::Vault(x)) if x == c.over => return Err(Refusal::CapToItself),
-                    Grantee::Public if c.role != Role::Read => return Err(Refusal::PublicBeyondRead),
+                    Who::Principal(Principal::Vault(x)) if x == c.over => return Err(Refusal::CapToItself),
+                    Who::Everyone if c.level != Level::Read => return Err(Refusal::PublicBeyondRead),
                     _ => {}
                 }
                 if !self.acts_via(edit.author, via, c.issuer) {
                     return Err(Refusal::NotActing);
                 }
-                if !self.cap_parent_ok(c) {
+                if !self.share_parent_ok(c) {
                     return Err(Refusal::BadParent);
                 }
                 // making someone owner is governance
-                if c.role == Role::Owner && !approves(Principal::Vault(c.issuer)) {
+                if c.level == Level::Owner && !approves(Principal::Vault(c.issuer)) {
                     return Err(Refusal::BelowThreshold);
                 }
-                let above = c.parent.and_then(|p| self.cap(p)).map(|p| &p.chain[..]).unwrap_or_default();
-                let chain: Arc<[CapId]> = above.iter().copied().chain([cid]).collect();
-                let narrow: Vec<CapId> = chain
+                let above = c.parent.and_then(|p| self.share(p)).map(|p| &p.chain[..]).unwrap_or_default();
+                let chain: Arc<[ShareId]> = above.iter().copied().chain([cid]).collect();
+                let narrow: Vec<ShareId> = chain
                     .iter()
                     .copied()
-                    .filter(|&x| if x == cid { !c.wide } else { self.cap(x).is_some_and(|y| !y.cap.wide) })
+                    .filter(|&x| if x == cid { !c.wide } else { self.share(x).is_some_and(|y| !y.share.wide) })
                     .collect();
-                let intake = mk_cell(&narrow).into();
+                let intake = mk_audience(&narrow).into();
                 // what every peer reads of its ops: the commitment to them
                 let commitment = Select::from_wire(&c.select).ok().map(|s| s.commitment());
-                Ok(Change::Cap(Issued { id: cid, cap: c.clone(), chain, intake, commitment }))
+                Ok(Change::Share(Issued { id: cid, share: c.clone(), chain, intake, commitment }))
             }
-            &Action::Revoke { cap, actor, ref via, .. } => {
-                let c = self.cap(cap).ok_or(Refusal::UnknownCap)?;
-                if !self.live(cap) {
+            &Action::Revoke { share, actor, ref via, .. } => {
+                let c = self.share(share).ok_or(Refusal::UnknownCap)?;
+                if !self.live(share) {
                     return Err(Refusal::Revoked);
                 }
                 if !self.acts_via(edit.author, via, actor) {
@@ -1835,16 +1847,19 @@ impl State {
                 if !self.may_revoke(actor, c) {
                     return Err(Refusal::NoCap);
                 }
-                if c.cap.role == Role::Owner && !approves(Principal::Vault(actor)) {
+                if c.share.level == Level::Owner && !approves(Principal::Vault(actor)) {
                     return Err(Refusal::BelowThreshold);
                 }
-                // the cap and every cap resting on it end
-                let ending =
-                    self.caps.iter().filter(|x| x.chain.contains(&cap) && !self.revoked.contains(&x.id)).map(|x| x.id);
+                // the share and every share resting on it end
+                let ending = self
+                    .shares
+                    .iter()
+                    .filter(|x| x.chain.contains(&share) && !self.revoked.contains(&x.id))
+                    .map(|x| x.id);
                 Ok(Change::Revoke(ending.collect()))
             }
-            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, .. } => {
-                let (v, e, actor, stay, generation, proposal) = (*vault, *entry, *actor, *stay, *generation, *proposal);
+            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, .. } => {
+                let (v, e, actor, stay, epoch, proposal) = (*vault, *entry, *actor, *stay, *epoch, *proposal);
                 if self.write_at.contains_key(&id) {
                     return Err(Refusal::Duplicate);
                 }
@@ -1853,8 +1868,8 @@ impl State {
                 }
                 match create {
                     Some(x) => {
-                        // a new entry, with an id never used before, in a cell its actor may create in, under a
-                        // generation that cell has reached
+                        // a new entry, with an id never used before, in an audience its actor may create in, under an
+                        // epoch that audience has reached
                         if self.entry(e).is_some() || self.born.contains(&e) {
                             return Err(Refusal::Reborn);
                         }
@@ -1864,16 +1879,16 @@ impl State {
                         if stay.is_some() || !deps.is_empty() || proposal != Proposal::Main {
                             return Err(Refusal::NotFirst);
                         }
-                        if !self.cell_ok(v, x) {
+                        if !self.audience_ok(v, x) {
                             return Err(Refusal::BadCell);
                         }
-                        let intake = self.intake_caps(actor, v, x);
+                        let intake = self.intake_shares(actor, v, x);
                         if actor != v && intake.is_empty() {
                             return Err(Refusal::NoCap);
                         }
-                        // or the generation it moves to as the new entry brings it back into use
-                        let cell = CellId::of(v, x);
-                        if generation > self.epoch(KeyFam::Cell(v, cell)) + self.reenters(v, cell) as u64 {
+                        // or the epoch it moves to as the new entry brings it back into use
+                        let audience = AudienceId::of(v, x);
+                        if epoch > self.epoch(KeyFam::Audience(v, audience)) + self.reenters(v, audience) as u64 {
                             return Err(Refusal::FutureEpoch);
                         }
                         let w = Write {
@@ -1882,18 +1897,18 @@ impl State {
                             actor,
                             entry: e,
                             stay: None,
-                            generation,
+                            epoch,
                             deps: vec![],
                             proposal,
                             via: via.clone(),
                             first: true,
-                            cell,
-                            caps: intake.clone(),
+                            audience,
+                            shares: intake.clone(),
                         };
                         let en = Entry {
                             id: e,
                             vault: v,
-                            stays: vec![(None, cell)],
+                            stays: vec![(None, audience)],
                             creator: actor,
                             creation: id,
                             intake,
@@ -1906,9 +1921,9 @@ impl State {
                         if en.vault != v {
                             return Err(Refusal::WrongVault);
                         }
-                        // a vault holds no cap over itself, so its own writes rely on none
-                        let caps = self.write_caps(actor, e, v, self.caps_of(en.cell()));
-                        if actor != v && caps.is_empty() {
+                        // a vault holds no share over itself, so its own writes rely on none
+                        let shares = self.write_shares(actor, e, v, self.shares_of(en.audience()));
+                        if actor != v && shares.is_empty() {
                             return Err(Refusal::NoCap);
                         }
                         let (deps, via) = (deps.clone(), via.clone());
@@ -1918,16 +1933,16 @@ impl State {
                             actor,
                             entry: e,
                             stay,
-                            generation,
+                            epoch,
                             deps,
                             proposal,
                             via,
                             first: false,
-                            cell: en.cell(),
-                            caps,
+                            audience: en.audience(),
+                            shares,
                         };
-                        let x = en.stay_cell(stay).ok_or(Refusal::UnknownStay)?;
-                        if generation > self.epoch(KeyFam::Cell(v, x)) {
+                        let x = en.stay_audience(stay).ok_or(Refusal::UnknownStay)?;
+                        if epoch > self.epoch(KeyFam::Audience(v, x)) {
                             return Err(Refusal::FutureEpoch);
                         }
                         // what it builds on was accepted, so the accepted writes stay causally closed (T14); a write
@@ -1942,24 +1957,24 @@ impl State {
                 let (v, e) = (*vault, *entry);
                 let at = self.entry_at.get(&e).copied().ok_or(Refusal::UnknownEntry)?;
                 let en = &self.entries[at];
-                // only a steward moves, to another cell of the vault, and a move begins one stay
+                // only a steward moves, to another audience of the vault, and a move begins one stay
                 if en.vault != v {
                     return Err(Refusal::WrongVault);
                 }
                 if !self.acts_via(edit.author, via, v) {
                     return Err(Refusal::NotActing);
                 }
-                if !self.cell_ok(v, to) {
+                if !self.audience_ok(v, to) {
                     return Err(Refusal::BadCell);
                 }
-                let cell = CellId::of(v, to);
-                if cell == en.cell() {
+                let audience = AudienceId::of(v, to);
+                if audience == en.audience() {
                     return Err(Refusal::SameCell);
                 }
                 if en.stays.iter().any(|(s, _)| *s == Some(id)) {
                     return Err(Refusal::Duplicate);
                 }
-                Ok(Change::Move { at, stay: id, to: cell, caps: to.as_slice().into() })
+                Ok(Change::Move { at, stay: id, to: audience, shares: to.as_slice().into() })
             }
             Action::Keys { name, boxes, clear, .. } => {
                 self.may_box(edit.author, *name)?;
@@ -1980,7 +1995,7 @@ impl State {
                 if self.lane.iter().any(|p| p.vault == v && p.blob == b) {
                     return Err(Refusal::AlreadyPublished);
                 }
-                // only the vault, or a vault holding a wide owner cap over it, publishes into its lane
+                // only the vault, or a vault holding a wide owner share over it, publishes into its lane
                 if !self.acts_via(edit.author, via, actor) {
                     return Err(Refusal::NotActing);
                 }
@@ -1998,7 +2013,7 @@ impl State {
                 Ok(Change::Nothing)
             }
             Action::SyncRule(r, via) => {
-                let rid = CapId::from(id);
+                let rid = ShareId::from(id);
                 if self.rule(rid).is_some() {
                     return Err(Refusal::Duplicate);
                 }
@@ -2041,7 +2056,7 @@ impl State {
                 if !self.acts_via(edit.author, via, v) {
                     return Err(Refusal::NotActing);
                 }
-                let fits = |&r: &CapId| self.rule(r).is_some_and(|x| x.over == v && !x.wide) && self.rule_live(r);
+                let fits = |&r: &ShareId| self.rule(r).is_some_and(|x| x.over == v && !x.wide) && self.rule_live(r);
                 if !canonical(rules) || !rules.iter().all(fits) {
                     return Err(Refusal::BadPicks);
                 }
@@ -2105,25 +2120,25 @@ impl State {
                 Arc::make_mut(&mut self.vaults)[at].root = root;
                 Touch::Nothing
             }
-            Change::Cap(issued) => {
-                let (c, v, i) = (issued.id, issued.cap.over, self.caps.len());
-                // a new cap with read or more has a key, and a wide one reaches every cell in use; no cell in use holds
-                // a cap that didn't exist yet
+            Change::Share(issued) => {
+                let (c, v, i) = (issued.id, issued.share.over, self.shares.len());
+                // a new share with read or more has a key, and a wide one reaches every audience in use; no audience in
+                // use holds a share that didn't exist yet
                 let mut grew = vec![];
-                if issued.cap.role.allows(Role::Read) {
-                    grew.push(KeyFam::Cap(v, c));
-                    if issued.cap.wide {
+                if issued.share.level.allows(Level::Read) {
+                    grew.push(KeyFam::Share(v, c));
+                    if issued.share.wide {
                         let mut seen = HashSet::new();
-                        let cells = self.entries.iter().filter(|en| en.vault == v).map(|en| en.cell());
-                        grew.extend(cells.filter(|x| seen.insert(*x)).map(|x| KeyFam::Cell(v, x)));
+                        let audiences = self.entries.iter().filter(|en| en.vault == v).map(|en| en.audience());
+                        grew.extend(audiences.filter(|x| seen.insert(*x)).map(|x| KeyFam::Audience(v, x)));
                     }
                 }
-                if let Grantee::Principal(Principal::Vault(g)) = issued.cap.grantee {
+                if let Who::Principal(Principal::Vault(g)) = issued.share.who {
                     Arc::make_mut(&mut self.held).entry(g).or_default().push(i);
                 }
                 Arc::make_mut(&mut self.over).entry(v).or_default().push(i);
-                Arc::make_mut(&mut self.cap_at).insert(c, i);
-                Arc::make_mut(&mut self.caps).push(issued);
+                Arc::make_mut(&mut self.share_at).insert(c, i);
+                Arc::make_mut(&mut self.shares).push(issued);
                 Touch::Grew(grew)
             }
             Change::Revoke(ending) => {
@@ -2133,10 +2148,10 @@ impl State {
                 }
                 Touch::Nothing
             }
-            Change::Create(en, w, caps) => {
-                let (e, v, cell, i) = (en.id, en.vault, en.cell(), self.entries.len());
-                Arc::make_mut(&mut self.cells).entry(cell).or_insert(caps);
-                let fresh = self.enter(v, cell);
+            Change::Create(en, w, shares) => {
+                let (e, v, audience, i) = (en.id, en.vault, en.audience(), self.entries.len());
+                Arc::make_mut(&mut self.audiences).entry(audience).or_insert(shares);
+                let fresh = self.enter(v, audience);
                 Arc::make_mut(&mut self.born).push(e);
                 Arc::make_mut(&mut self.entry_at).insert(e, i);
                 Arc::make_mut(&mut self.entries).push(en);
@@ -2150,9 +2165,9 @@ impl State {
                 }
                 Touch::Wrote(self.add_write(w))
             }
-            Change::Move { at, stay, to, caps } => {
-                let (v, from) = (self.entries[at].vault, self.entries[at].cell());
-                Arc::make_mut(&mut self.cells).entry(to).or_insert(caps);
+            Change::Move { at, stay, to, shares } => {
+                let (v, from) = (self.entries[at].vault, self.entries[at].audience());
+                Arc::make_mut(&mut self.audiences).entry(to).or_insert(shares);
                 self.leave(from);
                 let fresh = self.enter(v, to);
                 Arc::make_mut(&mut self.entries)[at].stays.push((Some(stay), to));
@@ -2178,15 +2193,15 @@ impl State {
         }
     }
 
-    /// One more entry in cell `x` of vault `v`: whether the cell was empty before.
-    fn enter(&mut self, v: VaultId, x: CellId) -> bool {
+    /// One more entry in audience `x` of vault `v`: whether the audience was empty before.
+    fn enter(&mut self, v: VaultId, x: AudienceId) -> bool {
         let n = &mut Arc::make_mut(&mut self.in_use).entry(x).or_insert((v, 0)).1;
         *n += 1;
         *n == 1
     }
 
-    /// One entry fewer in cell `x`.
-    fn leave(&mut self, x: CellId) {
+    /// One entry fewer in audience `x`.
+    fn leave(&mut self, x: AudienceId) {
         let in_use = Arc::make_mut(&mut self.in_use);
         if let Some((_, n)) = in_use.get_mut(&x) {
             *n -= 1;
@@ -2229,7 +2244,7 @@ impl State {
         self.index_entries();
     }
 
-    /// Index the entries and the writes again, and count the cells in use.
+    /// Index the entries and the writes again, and count the audiences in use.
     fn index_entries(&mut self) {
         self.entry_at = Arc::new(self.entries.iter().enumerate().map(|(i, en)| (en.id, i)).collect());
         self.write_at = Arc::new(self.writes.iter().enumerate().map(|(i, w)| (w.edit, i)).collect());
@@ -2238,9 +2253,9 @@ impl State {
             by_entry.entry(w.entry).or_default().push(i);
         }
         self.by_entry = Arc::new(by_entry);
-        let mut in_use: HashMap<CellId, (VaultId, usize)> = HashMap::new();
+        let mut in_use: HashMap<AudienceId, (VaultId, usize)> = HashMap::new();
         for en in self.entries.iter() {
-            in_use.entry(en.cell()).or_insert((en.vault, 0)).1 += 1;
+            in_use.entry(en.audience()).or_insert((en.vault, 0)).1 += 1;
         }
         self.in_use = Arc::new(in_use);
     }
@@ -2249,14 +2264,14 @@ impl State {
 
     /// After a change that removed nothing: seal what it added, link what it wrote. Every holder that opened a current
     /// key of a family in use was entitled to it (T6), and outside removals no entitlement shrinks, so no key goes
-    /// stale but a cell's that comes back into use: while it was empty its key didn't move on with the removals.
+    /// stale but an audience's that comes back into use: while it was empty its key didn't move on with the removals.
     fn settle(&mut self, touch: Touch, id: EditId) {
         match touch {
             Touch::Nothing => {}
             Touch::Grew(fams) => self.seal_fams(&fams),
             Touch::Created { entry, fresh } | Touch::Moved { entry, fresh } => {
                 let en = &self.entries[entry];
-                let k = KeyFam::Cell(en.vault, en.cell());
+                let k = KeyFam::Audience(en.vault, en.audience());
                 if fresh && self.seals.secrets.contains(&self.current(k)) {
                     self.bump(k, id);
                 }
@@ -2268,8 +2283,8 @@ impl State {
             Touch::Wrote(i) => {
                 let w = &self.writes[i];
                 let en = &self.entries[self.entry_at[&w.entry]];
-                let x = en.stay_cell(w.stay).expect("a write's stay");
-                let to = KeyName::Scoped(KeyFam::Cell(en.vault, x), w.generation);
+                let x = en.stay_audience(w.stay).expect("a write's stay");
+                let to = KeyName::Scoped(KeyFam::Audience(en.vault, x), w.epoch);
                 let linked = w.stay == en.stay() || self.seals.linked.contains(&(w.key(), en.id, en.stay()));
                 if !self.seals.set.contains(&Seal { secret: w.key(), to }) || !linked {
                     let seals = Arc::make_mut(&mut self.seals);
@@ -2293,9 +2308,9 @@ impl State {
 
     /// The families whose current key some holder could open before a change but should no longer open after it, unless
     /// the family is public now: these start a new epoch. A family that stops being public is one: everyone held its
-    /// key. So is a cell that comes back into use, an entry moving into it again: while it was empty its key didn't
-    /// move on with the removals, so whoever a removal took out then may still open it. A vault's cap and cell keys are
-    /// derived from its seed, so when the seed starts a new generation they all start a new epoch too. Called after the
+    /// key. So is an audience that comes back into use, an entry moving into it again: while it was empty its key
+    /// didn't move on with the removals, so whoever a removal took out then may still open it. A vault's share and
+    /// audience keys are derived from its seed, so when the seed starts a new epoch they all do too. Called after the
     /// change, with the holders and the families from before it, while the epochs and the seals are still as they were.
     fn stale_keys(&self, holders: &[Holder], before: &HashSet<KeyFam>) -> Vec<KeyFam> {
         let fams = self.key_fams();
@@ -2328,7 +2343,7 @@ impl State {
             .filter(|k| {
                 stale.contains(k)
                     || match k {
-                        KeyFam::Cap(v, _) | KeyFam::Cell(v, _) => seeds.contains(v),
+                        KeyFam::Share(v, _) | KeyFam::Audience(v, _) => seeds.contains(v),
                         KeyFam::Seed(_) => false,
                     }
             })
@@ -2361,9 +2376,9 @@ impl State {
         }
     }
 
-    /// The model's `linkAll`: every entry's key in its current stay derives from its cell's current key, and the key
-    /// each accepted write used from its stay's cell key of that generation; the key of each write from an earlier stay
-    /// is wrapped under the current stay's key, unless it already is under some key of that stay.
+    /// The model's `linkAll`: every entry's key in its current stay derives from its audience's current key, and the
+    /// key each accepted write used from its stay's audience key of that epoch; the key of each write from an earlier
+    /// stay is wrapped under the current stay's key, unless it already is under some key of that stay.
     fn link_all(&mut self) {
         let seals = Arc::make_mut(&mut self.seals);
         for en in self.entries.iter() {
@@ -2390,8 +2405,8 @@ impl State {
         }
         for f in fs {
             match f {
-                Fact::Cap(c) => Arc::make_mut(&mut st.revoked).push(*c),
-                Fact::Cell(e, caps) => st.narrow.push((*e, caps.clone())),
+                Fact::Share(c) => Arc::make_mut(&mut st.revoked).push(*c),
+                Fact::Audience(e, shares) => st.narrow.push((*e, shares.clone())),
                 _ => {}
             }
         }
@@ -2403,8 +2418,8 @@ impl State {
         self.check(edit, id).map(drop)
     }
 
-    /// `accepts`, and for a write, the write it would be, with the caps its readers would judge it by (`Write::caps`):
-    /// what a device proves a write of its own by (`rules::Proof`).
+    /// `accepts`, and for a write, the write it would be, with the shares its readers would judge it by
+    /// (`Write::shares`): what a device proves a write of its own by (`rules::Proof`).
     pub fn accepted_write(&self, edit: &Edit, id: EditId) -> Result<Option<Write>, Refusal> {
         Ok(match self.check(edit, id)? {
             Change::Create(_, w, _) => Some(*w),
@@ -2428,32 +2443,32 @@ fn reach(by_to: &HashMap<KeyName, Vec<KeyName>>, start: impl Iterator<Item = Key
     open
 }
 
-/// The model's `linkAll` for one entry `en` and its writes `ws`: its key in its current stay derives from its cell's
-/// current key, each write's key from its stay's cell key of its generation, and the key of a write from an earlier
-/// stay is wrapped under the current stay's key, unless some key of that stay already wraps it. So whoever reads an
-/// entry now reads its whole history, and a move hands nobody a key of the cell the entry left (T24).
+/// The model's `linkAll` for one entry `en` and its writes `ws`: its key in its current stay derives from its
+/// audience's current key, each write's key from its stay's audience key of its epoch, and the key of a write from an
+/// earlier stay is wrapped under the current stay's key, unless some key of that stay already wraps it. So whoever
+/// reads an entry now reads its whole history, and a move hands nobody a key of the audience the entry left (T24).
 fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: impl IntoIterator<Item = &'a Write>) {
     let epoch = |k: KeyFam| epochs.get(&k).copied().unwrap_or(0);
-    let cell = KeyFam::Cell(en.vault, en.cell());
-    let key = KeyName::Entry(en.id, en.stay(), epoch(cell));
-    seals.add(Seal { secret: key, to: KeyName::Scoped(cell, epoch(cell)) });
+    let audience = KeyFam::Audience(en.vault, en.audience());
+    let key = KeyName::Entry(en.id, en.stay(), epoch(audience));
+    seals.add(Seal { secret: key, to: KeyName::Scoped(audience, epoch(audience)) });
     for w in ws {
-        let x = en.stay_cell(w.stay).unwrap_or_else(|| CellId::of(en.vault, &[]));
-        seals.add(Seal { secret: w.key(), to: KeyName::Scoped(KeyFam::Cell(en.vault, x), w.generation) });
+        let x = en.stay_audience(w.stay).unwrap_or_else(|| AudienceId::of(en.vault, &[]));
+        seals.add(Seal { secret: w.key(), to: KeyName::Scoped(KeyFam::Audience(en.vault, x), w.epoch) });
         if w.stay != en.stay() && !seals.linked.contains(&(w.key(), en.id, en.stay())) {
             seals.add(Seal { secret: w.key(), to: key });
         }
     }
 }
 
-/// What an entry's readers and its vault's stewards read where no relay can: each cap's and each sync rule's selector,
-/// opened from its sealed `select` (a rule's id is an edit's id, as a cap's is, so the two never meet); each entry's
-/// header and each write's tags and proof, from inside the writes' bodies; and what each write touches, and whether it
-/// fits the schemas its entry was written under, read off its update on the version it builds on
+/// What an entry's readers and its vault's stewards read where no relay can: each share's and each sync rule's
+/// selector, opened from its sealed `select` (a rule's id is an edit's id, as a share's is, so the two never meet);
+/// each entry's header and each write's tags and proof, from inside the writes' bodies; and what each write touches,
+/// and whether it fits the schemas its entry was written under, read off its update on the version it builds on
 /// (`history::History::reading`).
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
-    pub selectors: HashMap<CapId, Selector>,
+    pub selectors: HashMap<ShareId, Selector>,
     /// By the edit that created the entry.
     pub headers: HashMap<EditId, Header>,
     /// By the write.
@@ -2469,21 +2484,21 @@ pub struct Readings {
 pub struct Meaning {
     /// What its first write says of it, and its tags now.
     pub attrs: Attrs,
-    /// Its creator was the vault itself, or created it inside the slice of a cap it created it through, whose ops let
+    /// Its creator was the vault itself, or created it inside the slice of a share it created it through, whose ops let
     /// a creation through.
     pub admitted: bool,
-    /// Its semantic cell: the live caps over its vault that aren't wide and whose slice holds it, in canonical order;
-    /// none for an entry its creator made outside its own slice.
-    pub cell: Vec<CapId>,
-    /// Where a steward moves it: nowhere while the live part of its cell is its semantic cell (a revoked cap left in it
-    /// is ignored, so a revocation moves no entry), else to its semantic cell.
-    pub desired: Option<Vec<CapId>>,
+    /// Its semantic audience: the live shares over its vault that aren't wide and whose slice holds it, in canonical
+    /// order; none for an entry its creator made outside its own slice.
+    pub audience: Vec<ShareId>,
+    /// Where a steward moves it: nowhere while the live part of its audience is its semantic audience (a revoked share
+    /// left in it is ignored, so a revocation moves no entry), else to its semantic audience.
+    pub desired: Option<Vec<ShareId>>,
     /// The sync rules that pick it: the live ones over its vault that aren't wide and whose selector holds it, in
     /// canonical order (`semPicks`), whether or not its creation was let in.
-    pub picks: Vec<CapId>,
+    pub picks: Vec<ShareId>,
     /// What a steward marks it with: nothing while the live part of its marks is what the rules pick (an ended rule
     /// left in them is ignored, so ending a rule marks no entry), else what they pick (`desiredPicks`).
-    pub pick: Option<Vec<CapId>>,
+    pub pick: Option<Vec<ShareId>>,
 }
 
 /// The edits a peer counts once it no longer trusts the curves, so neither ed25519 nor P-256: every edit but a write,
@@ -2587,35 +2602,35 @@ fn order_ids(edits: &[Edit], ids: &[EditId]) -> (Vec<Edit>, Vec<EditId>) {
     out.into_iter().map(|(.., id, edit)| (edit.clone(), id)).unzip()
 }
 
-/// The caps the edits issue, each with its parent, among edits paired with their ids.
-fn caps_issued<'a>(edits: impl Iterator<Item = (&'a Edit, EditId)>) -> Vec<(CapId, Option<CapId>)> {
+/// The shares the edits issue, each with its parent, among edits paired with their ids.
+fn shares_issued<'a>(edits: impl Iterator<Item = (&'a Edit, EditId)>) -> Vec<(ShareId, Option<ShareId>)> {
     edits
         .filter_map(|(o, id)| match &o.action {
-            Action::Cap(c, _) => Some((CapId::from(id), c.parent)),
+            Action::Share(c, _) => Some((ShareId::from(id), c.parent)),
             _ => None,
         })
         .collect()
 }
 
-/// What removal `r` takes away: the owner, the device, the root, among the caps the edits `edits` issue the cap and
-/// every cap resting on it, or for a move the cell the entry no longer is in.
+/// What removal `r` takes away: the owner, the device, the root, among the shares the edits `edits` issue the share and
+/// every share resting on it, or for a move the audience the entry no longer is in.
 pub fn removes(edits: &[Edit], r: &Edit) -> Vec<Fact> {
-    removes_among(r, || caps_issued(edits.iter().map(|o| (o, o.id()))))
+    removes_among(r, || shares_issued(edits.iter().map(|o| (o, o.id()))))
 }
 
-/// `removes`, the caps issued (`caps_issued`) worked out only for a revocation.
-fn removes_among(r: &Edit, caps: impl FnOnce() -> Vec<(CapId, Option<CapId>)>) -> Vec<Fact> {
+/// `removes`, the shares issued (`shares_issued`) worked out only for a revocation.
+fn removes_among(r: &Edit, shares: impl FnOnce() -> Vec<(ShareId, Option<ShareId>)>) -> Vec<Fact> {
     match &r.action {
         Action::RemoveOwner { vault, owner, .. } => vec![Fact::Owner(*vault, *owner)],
         Action::RemoveDevice { vault, device, .. } => vec![Fact::Device(*vault, *device)],
         Action::SetRoot { vault, .. } => vec![Fact::Root(*vault)],
-        Action::Revoke { cap, .. } => {
-            let cs = caps();
-            let parent: HashMap<CapId, Option<CapId>> = cs.iter().rev().copied().collect();
-            let rests_on = |x: CapId| {
+        Action::Revoke { share, .. } => {
+            let cs = shares();
+            let parent: HashMap<ShareId, Option<ShareId>> = cs.iter().rev().copied().collect();
+            let rests_on = |x: ShareId| {
                 let mut x = x;
                 for _ in 0..=cs.len() {
-                    if x == *cap {
+                    if x == *share {
                         return true;
                     }
                     match parent.get(&x).copied().flatten() {
@@ -2625,9 +2640,9 @@ fn removes_among(r: &Edit, caps: impl FnOnce() -> Vec<(CapId, Option<CapId>)>) -
                 }
                 false
             };
-            cs.iter().filter(|(id, _)| rests_on(*id)).map(|(id, _)| Fact::Cap(*id)).collect()
+            cs.iter().filter(|(id, _)| rests_on(*id)).map(|(id, _)| Fact::Share(*id)).collect()
         }
-        Action::Move { entry, to, .. } => vec![Fact::Cell(*entry, to.as_slice().into())],
+        Action::Move { entry, to, .. } => vec![Fact::Audience(*entry, to.as_slice().into())],
         _ => vec![],
     }
 }
@@ -2649,15 +2664,15 @@ struct Run {
 }
 
 fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> Run {
-    let caps = std::cell::OnceCell::new();
-    let caps = || caps.get_or_init(|| caps_issued(edits.iter().zip(ids.iter().copied()))).clone();
+    let shares = std::cell::OnceCell::new();
+    let shares = || shares.get_or_init(|| shares_issued(edits.iter().zip(ids.iter().copied()))).clone();
     let cuts: Vec<Cut> = edits
         .iter()
         .enumerate()
         .filter(|(i, _)| rem.contains(&ids[*i]))
         .map(|(at, r)| {
             let keep = r.action.keep().unwrap_or(&[]).iter().copied().collect();
-            Cut { at, keep, facts: removes_among(r, caps) }
+            Cut { at, keep, facts: removes_among(r, shares) }
         })
         .collect();
     let mut out = Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![] };
@@ -2688,10 +2703,10 @@ fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> R
 /// Who stands when removals clash, the smallest first. Vault removals come before revocations, and a vault's removals
 /// before those of the coops it owns (`tier`), since a coop's removals rest on its owners' approval and never the other
 /// way round. Within a vault: its root, then its owners by seniority, their place among the owners where no removal has
-/// happened yet, then removals no owner approved. Revocations follow, the most senior revoker first: the vault the cap
-/// is over, then whoever issued a cap higher up the chain of the cap revoked, since a cap falls with the cap it rests
-/// on. Moves come last: a steward's upkeep. So a removal is only ever kept out by one that ranks above it, and what
-/// ranks above it never rests on what it takes away.
+/// happened yet, then removals no owner approved. Revocations follow, the most senior revoker first: the vault the
+/// share is over, then whoever issued a share higher up the chain of the share revoked, since a share falls with the
+/// share it rests on. Moves come last: a steward's upkeep. So a removal is only ever kept out by one that ranks above
+/// it, and what ranks above it never rests on what it takes away.
 fn priority(base: &State, edit: &Edit) -> (u8, usize, u8, usize) {
     match &edit.action {
         Action::RemoveOwner { vault, .. } | Action::RemoveDevice { vault, .. } | Action::SetRoot { vault, .. } => {
@@ -2710,7 +2725,7 @@ fn priority(base: &State, edit: &Edit) -> (u8, usize, u8, usize) {
                 }
             }
         }
-        Action::Revoke { cap, actor, .. } => (1, base.cap(*cap).map_or(0, |c| base.seniority(*actor, c)), 0, 0),
+        Action::Revoke { share, actor, .. } => (1, base.share(*share).map_or(0, |c| base.seniority(*actor, c)), 0, 0),
         Action::Move { .. } => (2, 0, 0, 0),
         _ => (3, 0, 0, 0),
     }
@@ -2829,12 +2844,12 @@ impl Log {
     }
 
     /// The edit `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
-    /// builds on the frontier of its own log (one that starts a log, a genesis or a cap, on nothing) and is one deeper
-    /// than the deepest edit the log holds, so it sorts after everything this peer had seen. A write with no `deps` on
-    /// the main line or a proposal builds on that line's heads. An act for a vault that names no `via` goes through the
-    /// owners its author acts through (`State::via`). A removal keeps, beside what its `keep` names, every edit of the
-    /// log that stands now and that it would cut otherwise: an honest device keeps all it had seen. A move takes away
-    /// only what the writes of its entry rested on, so it keeps every write of its entry that stands now.
+    /// builds on the frontier of its own log (one that starts a log, a genesis or a share, on nothing) and is one
+    /// deeper than the deepest edit the log holds, so it sorts after everything this peer had seen. A write with no
+    /// `deps` on the main line or a proposal builds on that line's heads. An act for a vault that names no `via` goes
+    /// through the owners its author acts through (`State::via`). A removal keeps, beside what its `keep` names, every
+    /// edit of the log that stands now and that it would cut otherwise: an honest device keeps all it had seen. A move
+    /// takes away only what the writes of its entry rested on, so it keeps every write of its entry that stands now.
     pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
         self.draft_with(None, author, cosigners, action)
     }
@@ -2848,7 +2863,7 @@ impl Log {
     fn draft_with(&self, given: Option<&State>, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
         let depth = self.edits.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
         let mut edit = Edit { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
-        if !matches!(edit.action, Action::Genesis { .. } | Action::Cap(..))
+        if !matches!(edit.action, Action::Genesis { .. } | Action::Share(..))
             && let Some(l) = crate::sync::log_of(&edit, EditId([0; 32]))
         {
             edit.parents = crate::sync::frontier_of(&self.edits, &self.ids, l);
@@ -2948,10 +2963,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn each_role_includes_the_ones_before_it() {
-        assert!(Role::Owner.allows(Role::Read) && Role::Write.allows(Role::Write) && Role::Read.allows(Role::Backup));
-        assert!(Role::Backup.allows(Role::Relay) && !Role::Relay.allows(Role::Backup));
-        assert!(!Role::Backup.allows(Role::Read) && !Role::Read.allows(Role::Write));
+    fn each_level_includes_the_ones_before_it() {
+        assert!(
+            Level::Owner.allows(Level::Read) && Level::Write.allows(Level::Write) && Level::Read.allows(Level::Backup)
+        );
+        assert!(Level::Backup.allows(Level::Relay) && !Level::Relay.allows(Level::Backup));
+        assert!(!Level::Backup.allows(Level::Read) && !Level::Read.allows(Level::Write));
     }
 
     #[test]
@@ -2973,10 +2990,10 @@ mod tests {
     }
 
     #[test]
-    fn a_cell_is_canonical_when_its_caps_are_sorted_once() {
-        let (a, b) = (CapId::from_u64(1), CapId::from_u64(2));
+    fn an_audience_is_canonical_when_its_shares_are_sorted_once() {
+        let (a, b) = (ShareId::from_u64(1), ShareId::from_u64(2));
         assert!(canonical(&[]) && canonical(&[a]) && canonical(&[a, b]));
         assert!(!canonical(&[b, a]) && !canonical(&[a, a]));
-        assert_eq!(mk_cell(&[b, a, b]), vec![a, b]);
+        assert_eq!(mk_audience(&[b, a, b]), vec![a, b]);
     }
 }

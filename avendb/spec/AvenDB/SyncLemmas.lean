@@ -7,9 +7,9 @@ The proofs of convergence (T11) and of sync (T12, T13, T19, T20), stated as in `
 
 The replay order is a total preorder whose ties are edits with the same id, so sorting any arrangement of the same
 edits, with distinct ids, gives one list (`order_perm`). A peer's answer is made of two filters of its edits: the edits
-of the entry, cell and cap logs the device may receive, and the edits of the vault logs it gathers (`mem_respond`). The
-closed part of a log holds the whole past of each of its edits, so everything a responder finds below an asker's
-frontier is something the asker holds (`reaches_held`).
+of the entry, audience and share logs the device may receive, and the edits of the vault logs it gathers
+(`mem_respond`). The closed part of a log holds the whole past of each of its edits, so everything a responder finds
+below an asker's frontier is something the asker holds (`reaches_held`).
 -/
 
 namespace AvenDB.Syncing
@@ -106,7 +106,7 @@ theorem syncsLog_may {st : State} {d : SignerId} {l : LogId} (h : syncsLog st d 
   | entry e => exact syncs_may h
   | _ => exact h
 
-/-- An edit a peer sends a device is one it holds, of an entry log the device syncs or a cell or a cap log it may
+/-- An edit a peer sends a device is one it holds, of an entry log the device syncs or an audience or a share log it may
     receive, or of a vault's log. -/
 theorem mem_respond_syncs {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) :
     o ∈ edits ∧ ((∃ l, o.log? = some l ∧ syncsLog (view edits) d l = true) ∨ ∃ v, o.log? = some (.vault v)) := by
@@ -121,8 +121,8 @@ theorem mem_respond_syncs {edits : List Edit} {d : SignerId} {o : Edit} (h : o �
     · next v hv' => exact ⟨v, hv'⟩
     · simp at hv
 
-/-- An edit a peer sends a device is one it holds, of an entry, a cell or a cap log the device may receive, or of a
-    vault's log. -/
+/-- An edit a peer sends a device is one it holds, of an entry, an audience or a share log the device may receive, or of
+    a vault's log. -/
 theorem mem_respond {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) :
     o ∈ edits ∧ ((∃ l, o.log? = some l ∧ mayReceiveLog (view edits) d l = true) ∨ ∃ v, o.log? = some (.vault v)) := by
   obtain ⟨hm, ⟨l, hl, hs⟩ | hv⟩ := mem_respond_syncs h
@@ -146,7 +146,7 @@ theorem entry_in_respond {edits : List Edit} {d : SignerId} {o : Edit} {e : Entr
   -- an entry's log is one `syncsLog` allows exactly when `syncs` allows the entry
   exact .inl ⟨hm, by rw [hl]; exact hr⟩
 
-theorem T12_sync_shares_only_caps (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) :
+theorem T12_sync_sends_only_what_shares_reach (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) :
     o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) := by
   obtain ⟨hm, ⟨l, hl, hr⟩ | ⟨v, hv⟩⟩ := mem_respond h
   · exact ⟨hm, l, hl, .inl hr⟩
@@ -154,7 +154,7 @@ theorem T12_sync_shares_only_caps (edits : List Edit) (d : SignerId) {o : Edit} 
 
 theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
     (hl : o.log? = some (.entry e)) :
-    ∃ en, (view edits).entry? e = some en ∧ mayReceiveCell (view edits) d en.vault en.cell = true ∧
+    ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience = true ∧
       wants (view edits) d en = true := by
   obtain ⟨-, ⟨l, hl', hs⟩ | ⟨v, hv⟩⟩ := mem_respond_syncs h
   · rw [hl] at hl'
@@ -175,7 +175,7 @@ theorem T28_no_rule_wants_all (st : State) (d : SignerId) (en : Entry) (h : rule
 
 theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {o : Edit} (h : o ∈ respondSince edits d fr) :
     o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) :=
-  T12_sync_shares_only_caps edits d (respondSince_sub h)
+  T12_sync_sends_only_what_shares_reach edits d (respondSince_sub h)
 
 /-! ## Frontiers -/
 

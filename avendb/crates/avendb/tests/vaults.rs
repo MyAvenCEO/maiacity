@@ -343,7 +343,7 @@ fn an_aven_vaults_devices_act_for_it_but_never_govern_it() {
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B, NEW_DEVICE], device).err(), Some(Refusal::NoDevices));
 }
 
-/// A write by which vault `v` creates its own entry `e`, in the cell of no caps, through the owners `via`.
+/// A write by which vault `v` creates its own entry `e`, in the audience of no shares, through the owners `via`.
 fn create_via(v: VaultId, e: EntryId, via: Vec<VaultId>) -> Action {
     let mut create = creation(v, e, v, &[]);
     if let Action::Write { via: chain, .. } = &mut create {

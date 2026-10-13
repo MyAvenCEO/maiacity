@@ -1,15 +1,15 @@
-//! Slices, as in `avendb/spec/AvenDB/Basic.lean`: what a cap selects of its vault's entries, and what a write says of
-//! its entry. A cap selects entries by what their first write says of them (their type, the vault that created them,
+//! Slices, as in `avendb/spec/AvenDB/Basic.lean`: what a share selects of its vault's entries, and what a write says of
+//! its entry. A share selects entries by what their first write says of them (their type, the vault that created them,
 //! their id, when they were created) and by their tags now; groups of entries are never named, a slice is whatever a
 //! selector picks. The header and the tags travel inside the encrypted body of a write and the selector is sealed, so
-//! no rule of `policy` reads any of this: only a vault's stewards (the devices acting for it) and a cap's grantee read
-//! a selector, and only an entry's readers its header and tags (`policy::Meaning`).
+//! no rule of `policy` reads any of this: only a vault's stewards (the devices acting for it) and a share's grantee
+//! read a selector, and only an entry's readers its header and tags (`policy::Meaning`).
 
 use serde_json::{json, Value};
 
 use crate::id::{EditId, EntryId, VaultId};
 use crate::keys::KeyBox;
-use crate::rules::{self, Grant, Proof, Rule};
+use crate::rules::{self, Grant, Op, Proof};
 use crate::sealed::Brought;
 
 /// A type (`note`, `todo`, …) or a tag: a short name.
@@ -234,10 +234,10 @@ pub struct Header {
     pub created: u64,
 }
 
-/// What a cap's sealed `select` holds (`policy::Cap::select`): its name, its selector, and its grant: the ops its
-/// grantee may make, with the salt whose hash with them is the commitment its `select` carries in the clear. A cap
-/// resting on others carries their grants too (`above`, root first), copied by its issuer from the slice of the cap it
-/// rests on: so its grantee can prove a write against every cap of its chain (`rules::Proof`).
+/// What a share's sealed `select` holds (`policy::Share::select`): its name, its selector, and its grant: the ops its
+/// grantee may make, with the salt whose hash with them is the commitment its `select` carries in the clear. A share
+/// resting on others carries their grants too (`above`, root first), copied by its issuer from the slice of the share
+/// it rests on: so its grantee can prove a write against every share of its chain (`rules::Proof`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Slice {
     pub name: String,
@@ -247,13 +247,13 @@ pub struct Slice {
 }
 
 impl Slice {
-    /// The grants of every cap of its cap's chain, root first: what a write relying on its cap proves.
+    /// The grants of every share of its share's chain, root first: what a write relying on its share proves.
     pub fn grants(&self) -> Vec<Grant> {
         self.above.iter().chain([&self.grant]).cloned().collect()
     }
 
-    /// How the page and the docs write a cap's slice: `{"name", "where", "ops"}` (`spec_of_json`), with the ops of the
-    /// caps it rests on, root first, as `"above"`: what the caps of its chain allow too. No salt.
+    /// How the page and the docs write a share's slice: `{"name", "where", "ops"}` (`spec_of_json`), with the ops of
+    /// the shares it rests on, root first, as `"above"`: what the shares of its chain allow too. No salt.
     pub fn to_json(&self) -> Value {
         let above: Vec<Value> = self.above.iter().map(|g| rules::ops_to_json(&g.ops)).collect();
         json!({
@@ -265,11 +265,11 @@ impl Slice {
     }
 }
 
-/// What a new cap names, from its JSON as the page and the docs write it: `{"name": "Work todos", "where": {"all":
+/// What a new share names, from its JSON as the page and the docs write it: `{"name": "Work todos", "where": {"all":
 /// [{"type": ["todo"]}, {"tag": "work"}]}, "ops": [{"op": "read"}, {"op": "set", "path": ["status"]}]}`, `where` left
-/// out for the whole vault (`Selector::of_json`, `rules::Rule::of_json`): its name, its selector and its ops in order
+/// out for the whole vault (`Selector::of_json`, `rules::Op::of_json`): its name, its selector and its ops in order
 /// (`rules::normalize`). Fails on anything else, on a name blank or too long and on no op.
-pub fn spec_of_json(v: &Value) -> Result<(String, Selector, Vec<Rule>), String> {
+pub fn spec_of_json(v: &Value) -> Result<(String, Selector, Vec<Op>), String> {
     let o = v.as_object().ok_or("a cap is {name, where, ops}")?;
     if let Some(k) = o.keys().find(|k| !matches!(k.as_str(), "name" | "where" | "ops")) {
         return Err(format!("a cap takes no field {k:?}: it is {{name, where, ops}}"));
@@ -281,14 +281,14 @@ pub fn spec_of_json(v: &Value) -> Result<(String, Selector, Vec<Rule>), String> 
     Ok((name.to_string(), select, ops))
 }
 
-/// What a cap's `select` holds (`policy::Cap::select`): its slice, in the clear for a cap to Public, else sealed: the
-/// slice encrypted under a key of its own and bound to the cap (`keys::seal_edit`, `encode::cap_context`), and that key
-/// in a box for each vault that reads the slice, wrapped or sealed to the vault's seed (`encode::select_info`): the
-/// vault the cap is over, whose stewards keep its entries in their cells, its grantee unless it only relays or keeps,
-/// and its issuer.
+/// What a share's `select` holds (`policy::Share::select`): its slice, in the clear for a share to everyone, else
+/// sealed: the slice encrypted under a key of its own and bound to the share (`keys::seal_edit`,
+/// `encode::share_context`), and that key in a box for each vault that reads the slice, wrapped or sealed to the
+/// vault's seed (`encode::select_info`): the vault the share is over, whose stewards keep its entries in their
+/// audiences, its grantee unless it only relays or keeps, and its issuer.
 ///
-/// The commitment to a cap's ops (`rules::Grant::commitment`) travels in the clear beside its sealed slice: salted, it
-/// tells every peer, a relay too, nothing of them, and binds what a proof opens to what the cap was issued with.
+/// The commitment to a share's ops (`rules::Grant::commitment`) travels in the clear beside its sealed slice: salted,
+/// it tells every peer, a relay too, nothing of them, and binds what a proof opens to what the share was issued with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Select {
     Clear(Slice),
@@ -296,7 +296,7 @@ pub enum Select {
 }
 
 impl Select {
-    /// The commitment to its cap's ops.
+    /// The commitment to its share's ops.
     pub fn commitment(&self) -> [u8; 32] {
         match self {
             Select::Clear(slice) => slice.grant.commitment(),
@@ -308,7 +308,7 @@ impl Select {
 /// What a write's ciphertext holds: the header of the entry it creates; the tags it adds and removes, which count when
 /// it acts for the entry's vault and otherwise ask the vault's stewards to; the writes whose asks it answers, a
 /// steward's; its content: a Loro update, a proposal's name, or nothing for a merge or a write of tags alone; and the
-/// proof of a write through a cap (`rules::Proof`), which its readers check its touches and asks against.
+/// proof of a write through a share (`rules::Proof`), which its readers check its touches and asks against.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Body {
     pub header: Option<Header>,

@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use avendb::cast::*;
 use avendb::id::SignerId;
 use avendb::lab::NewRule;
-use avendb::policy::Role;
+use avendb::policy::Level;
 use avendb::sealed::{FileRoot, PIECE, PIECE_SEGMENTS, SEGMENT};
 use avendb::slice::{Atom, Selector, Sym};
 use avendb_net::bucket::{self, Sealed};
@@ -73,7 +73,7 @@ async fn by_hand(from: &Endpoint, to: &Node, request: GetRequest) -> Option<Vec<
 async fn files_follow_their_edits_over_iroh() {
     let mut w = world();
     let h = handbook(&mut w);
-    let read = cap(h.coop, vault(w.carol), Role::Read, by_id(h.welcome));
+    let read = share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome));
     w.lab.issue(w.mac_a, &[w.mac_a], read).expect("Alice's Mac shares Welcome with Carol to read");
     w.lab.sync_all(1);
     let (mac_a, passkey_a, server_d, mac_c, passkey_c, mac_d, passkey_d, stranger_d) =
@@ -173,7 +173,7 @@ fn records(objects: &std::path::Path) -> Vec<String> {
 async fn files_live_on_a_shelf_and_in_the_bucket() {
     let mut w = world();
     let h = handbook(&mut w);
-    let read = cap(h.coop, vault(w.carol), Role::Read, by_id(h.welcome));
+    let read = share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome));
     w.lab.issue(w.mac_a, &[w.mac_a], read).expect("Alice's Mac shares Welcome with Carol to read");
     w.lab.sync_all(1);
     let (mac_a, passkey_a, server_d, mac_c, passkey_c) = (w.mac_a, w.passkey_a, w.server, w.mac_c, w.passkey_c);
@@ -304,7 +304,7 @@ async fn the_iphone_keeps_the_proxies_its_rule_picks() {
 async fn a_file_of_two_pieces_over_iroh() {
     let mut w = world();
     let h = handbook(&mut w);
-    let read = cap(h.coop, vault(w.carol), Role::Read, by_id(h.welcome));
+    let read = share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome));
     w.lab.issue(w.mac_a, &[w.mac_a], read).expect("Alice's Mac shares Welcome with Carol to read");
     w.lab.sync_all(1);
     let (mac_a, passkey_a, server_d, mac_c, passkey_c, mac_d, passkey_d) =

@@ -2,40 +2,40 @@ import AvenDB.CapLemmas
 import AvenDB.Lemmas
 
 /-!
-# Caps that name ops
+# Shares that name ops
 
-The proofs of C1 to C4 (`avendb/docs/OPS.md`, caps), stated as in `Theorems.lean`.
+The proofs of C1 to C4 (`avendb/docs/OPS.md`, shares), stated as in `Theorems.lean`.
 
-A chain allows a write where every cap of it is the class of its ops and its ops allow it, and a cap's chain is the
-chain of the cap it rests on and the cap itself (T22), so a cap allows no more than the cap it rests on (C1). Whether a
-write counts reads, of the caps, what every peer reads and the ops of the chain the write's proof names, and of the
-entry its id, vault and cell alone (C2). A counted write by anyone but the entry's vault relies on the cap its proof
-names and did only what that cap's chain allows (C3), and a write that fits, builds on counted writes, whose proof names
-a cap its actor holds that reaches the entry and whose chain allows it, counts (C4). Readers count no write that builds
-on one they don't count, since each write is judged when it comes, on what it builds on, and the writes they don't
-count only grow; nor one whose result doesn't fit (S3).
+A chain allows a write where every share of it is the class of its ops and its ops allow it, and a share's chain is the
+chain of the share it rests on and the share itself (T22), so a share allows no more than the share it rests on (C1).
+Whether a write counts reads, of the shares, what every peer reads and the ops of the chain the write's proof names, and
+of the entry its id, vault and audience alone (C2). A counted write by anyone but the entry's vault relies on the share
+its proof names and did only what that share's chain allows (C3), and a write that fits, builds on counted writes, whose
+proof names a share its actor holds that reaches the entry and whose chain allows it, counts (C4). Readers count no
+write that builds on one they don't count, since each write is judged when it comes, on what it builds on, and the
+writes they don't count only grow; nor one whose result doesn't fit (S3).
 -/
 
 namespace AvenDB.Ruling
 
 /-! ## C1: chains narrow -/
 
-theorem chain_narrows {st : State} {cp c : Cap} {main : Bool} {ts : List Touch}
+theorem chain_narrows {st : State} {cp c : Share} {main : Bool} {ts : List Touch}
     (h : chainAllows st cp main ts = true) (hc : c ∈ chain st cp) :
-    c.role = levelOf c.ops ∧ allowsAll c.ops main ts = true := by
+    c.level = levelOf c.ops ∧ allowsAll c.ops main ts = true := by
   unfold chainAllows at h
   have := List.all_eq_true.1 h c hc
   simp only [Bool.and_eq_true, beq_iff_eq] at this
   exact this
 
-theorem child_narrows {st : State} (hr : Reachable st) {c pc : Cap} (hc : c ∈ st.caps) (hp : c.parent = some pc.id)
-    (hpc : pc ∈ st.caps) : ∀ main ts, chainAllows st c main ts = true → chainAllows st pc main ts = true := by
-  have hw := Caps.capsWell_reachable hr
+theorem child_narrows {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares) (hp : c.parent = some pc.id)
+    (hpc : pc ∈ st.shares) : ∀ main ts, chainAllows st c main ts = true → chainAllows st pc main ts = true := by
+  have hw := Shares.sharesWell_reachable hr
   obtain ⟨pc', hpc', -⟩ := hw.2 c hc pc.id hp
   -- ids come once, so the parent found is `pc`
   have hid : pc'.id = pc.id := by simpa using List.find?_some hpc'
-  obtain rfl := Caps.cap_eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
-  have hch := Caps.chain_parent hw hp hpc'
+  obtain rfl := Shares.share_eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
+  have hch := Shares.chain_parent hw hp hpc'
   intro main ts h
   unfold chainAllows at h ⊢
   rw [hch, List.all_append, Bool.and_eq_true] at h
@@ -43,27 +43,27 @@ theorem child_narrows {st : State} (hr : Reachable st) {c pc : Cap} (hc : c ∈ 
 
 /-! ## C2: every reader counts the same writes -/
 
-theorem seen_id (vis : List CapId) (c : Cap) : (c.seen vis).id = c.id := rfl
-theorem seen_over (vis : List CapId) (c : Cap) : (c.seen vis).over = c.over := rfl
-theorem seen_parent (vis : List CapId) (c : Cap) : (c.seen vis).parent = c.parent := rfl
-theorem seen_wide (vis : List CapId) (c : Cap) : (c.seen vis).wide = c.wide := rfl
-theorem seen_role (vis : List CapId) (c : Cap) : (c.seen vis).role = c.role := rfl
-theorem seen_ops (vis : List CapId) (c : Cap) :
+theorem seen_id (vis : List ShareId) (c : Share) : (c.seen vis).id = c.id := rfl
+theorem seen_over (vis : List ShareId) (c : Share) : (c.seen vis).over = c.over := rfl
+theorem seen_parent (vis : List ShareId) (c : Share) : (c.seen vis).parent = c.parent := rfl
+theorem seen_wide (vis : List ShareId) (c : Share) : (c.seen vis).wide = c.wide := rfl
+theorem seen_level (vis : List ShareId) (c : Share) : (c.seen vis).level = c.level := rfl
+theorem seen_ops (vis : List ShareId) (c : Share) :
     (c.seen vis).ops = if vis.contains c.id then c.ops else [] := rfl
-theorem seen_caps (st : State) (vis : List CapId) : (st.seen vis).caps = st.caps.map (Cap.seen vis) := rfl
+theorem seen_shares (st : State) (vis : List ShareId) : (st.seen vis).shares = st.shares.map (Share.seen vis) := rfl
 
-/-- Looking up a cap among the caps as a reader sees them finds it as a reader sees it. -/
-theorem cap?_seen (st : State) (vis : List CapId) (x : CapId) :
-    (st.seen vis).cap? x = (st.cap? x).map (Cap.seen vis) := by
-  simp only [State.cap?, seen_caps, List.find?_map]; rfl
+/-- Looking up a share among the shares as a reader sees them finds it as a reader sees it. -/
+theorem share?_seen (st : State) (vis : List ShareId) (x : ShareId) :
+    (st.seen vis).share? x = (st.share? x).map (Share.seen vis) := by
+  simp only [State.share?, seen_shares, List.find?_map]; rfl
 
-/-- Whether a cap is live reads only ids and revocations. -/
-theorem live_seen (st : State) (vis : List CapId) : (st.seen vis).live = st.live := by
-  funext c; simp only [State.live, seen_caps, List.any_map, Function.comp_def, seen_id]; rfl
+/-- Whether a share is live reads only ids and revocations. -/
+theorem live_seen (st : State) (vis : List ShareId) : (st.seen vis).live = st.live := by
+  funext c; simp only [State.live, seen_shares, List.any_map, Function.comp_def, seen_id]; rfl
 
-/-- A cap's chain among the caps as a reader sees them is its chain as a reader sees it. -/
-theorem chainN_seen (st : State) (vis : List CapId) :
-    ∀ n (c : Cap), chainN (st.seen vis) n (c.seen vis) = (chainN st n c).map (Cap.seen vis)
+/-- A share's chain among the shares as a reader sees them is its chain as a reader sees it. -/
+theorem chainN_seen (st : State) (vis : List ShareId) :
+    ∀ n (c : Share), chainN (st.seen vis) n (c.seen vis) = (chainN st n c).map (Share.seen vis)
   | 0, _ => rfl
   | n + 1, c => by
     rw [chainN, chainN, List.map_append]
@@ -72,32 +72,33 @@ theorem chainN_seen (st : State) (vis : List CapId) :
     cases c.parent with
     | none => rfl
     | some p =>
-      simp only [Option.bind_some, cap?_seen]
-      cases st.cap? p with
+      simp only [Option.bind_some, share?_seen]
+      cases st.share? p with
       | none => rfl
       | some q => exact chainN_seen st vis n q
 
-theorem chain_seen (st : State) (vis : List CapId) (c : Cap) :
-    chain (st.seen vis) (c.seen vis) = (chain st c).map (Cap.seen vis) := by
-  simp only [chain, chainN_seen, seen_caps, List.length_map]
+theorem chain_seen (st : State) (vis : List ShareId) (c : Share) :
+    chain (st.seen vis) (c.seen vis) = (chain st c).map (Share.seen vis) := by
+  simp only [chain, chainN_seen, seen_shares, List.length_map]
 
-/-- A cap's intake cell reads only its chain's ids and whether they are wide. -/
-theorem intake_seen (st : State) (vis : List CapId) (c : Cap) : intake (st.seen vis) (c.seen vis) = intake st c := by
+/-- A share's intake audience reads only its chain's ids and whether they are wide. -/
+theorem intake_seen (st : State) (vis : List ShareId) (c : Share) :
+    intake (st.seen vis) (c.seen vis) = intake st c := by
   simp only [intake, chain_seen, List.filter_map, List.map_map]; rfl
 
-/-- Holding a cap reads whether it is live, its grantee and its role. -/
-theorem holdsCap_seen (st : State) (vis : List CapId) (a : VaultId) (c : Cap) (r : Role) :
-    holdsCap (st.seen vis) a (c.seen vis) r = holdsCap st a c r := by
-  simp only [holdsCap, live_seen]; rfl
+/-- Holding a share reads whether it is live, its grantee and its level. -/
+theorem holdsShare_seen (st : State) (vis : List ShareId) (a : VaultId) (c : Share) (r : Level) :
+    holdsShare (st.seen vis) a (c.seen vis) r = holdsShare st a c r := by
+  simp only [holdsShare, live_seen]; rfl
 
-/-- Whether a cap reaches an entry reads its id, vault and width, and the entry's id, vault and cell. -/
-theorem inCell_seen (st : State) (vis : List CapId) (c : Cap) (en : Entry) (attrs : Attrs) :
-    inCell (st.seen vis) (c.seen vis) { en with attrs } = inCell st c en := rfl
+/-- Whether a share reaches an entry reads its id, vault and width, and the entry's id, vault and audience. -/
+theorem inAudience_seen (st : State) (vis : List ShareId) (c : Share) (en : Entry) (attrs : Attrs) :
+    inAudience (st.seen vis) (c.seen vis) { en with attrs } = inAudience st c en := rfl
 
-/-- The proof that names a cap opens the ops of every cap of its chain. -/
-theorem mem_proofCaps {st : State} {cp c : Cap} (hcp : cp ∈ st.caps) (hc : c ∈ chain st cp) :
-    (proofCaps st (some cp.id)).contains c.id = true := by
-  simp only [proofCaps, List.contains_iff_mem, List.mem_flatMap, List.mem_filter, List.mem_map]
+/-- The proof that names a share opens the ops of every share of its chain. -/
+theorem mem_proofShares {st : State} {cp c : Share} (hcp : cp ∈ st.shares) (hc : c ∈ chain st cp) :
+    (proofShares st (some cp.id)).contains c.id = true := by
+  simp only [proofShares, List.contains_iff_mem, List.mem_flatMap, List.mem_filter, List.mem_map]
   exact ⟨cp, ⟨hcp, by simp⟩, c, hc, rfl⟩
 
 /-- Two tests that agree on every member of a list agree on whether every member passes. -/
@@ -107,10 +108,11 @@ theorem all_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x �
   | cons x l ih =>
     simp only [List.all_cons, h x List.mem_cons_self, ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
 
-/-- Whether a cap lets a write through reads the ops of the chain the write's proof names, and only those. -/
-theorem lets_seen (st : State) {cp : Cap} (hcp : cp ∈ st.caps) (proof : Option CapId) (main : Bool)
+/-- Whether a share lets a write through reads the ops of the chain the write's proof names, and only those. -/
+theorem lets_seen (st : State) {cp : Share} (hcp : cp ∈ st.shares) (proof : Option ShareId) (main : Bool)
     (ts : List Touch) :
-    lets (st.seen (proofCaps st proof)) (cp.seen (proofCaps st proof)) proof main ts = lets st cp proof main ts := by
+    lets (st.seen (proofShares st proof)) (cp.seen (proofShares st proof)) proof main ts =
+      lets st cp proof main ts := by
   unfold lets
   rw [seen_id]
   by_cases hp : proof = some cp.id
@@ -119,39 +121,39 @@ theorem lets_seen (st : State) {cp : Cap} (hcp : cp ∈ st.caps) (proof : Option
     unfold chainAllows
     rw [chain_seen, List.all_map]
     refine all_congr_mem fun c hc => ?_
-    simp only [Function.comp_def, seen_role, seen_ops, mem_proofCaps hcp hc, ite_true]
+    simp only [Function.comp_def, seen_level, seen_ops, mem_proofShares hcp hc, ite_true]
   · have hf : (proof == some cp.id) = false := by simpa using hp
     simp only [hf, Bool.false_and]
 
 /-- C2: whether readers count a write reads no selector, no type and no tag, and no ops but those of the chain its
     proof names. -/
 theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (deps : List EditId)
-    (proof : Option CapId) (main : Bool) (ts : List Touch) (fits : Bool) :
-    counts (st.seen (proofCaps st proof)) a { en with attrs } deps proof main ts fits =
+    (proof : Option ShareId) (main : Bool) (ts : List Touch) (fits : Bool) :
+    counts (st.seen (proofShares st proof)) a { en with attrs } deps proof main ts fits =
       counts st a en deps proof main ts fits := by
   unfold counts
-  rw [seen_caps, List.any_map]
+  rw [seen_shares, List.any_map]
   congr 2
-  refine Caps.any_congr_mem fun cp hcp => ?_
-  simp only [Function.comp_def, holdsCap_seen, inCell_seen, lets_seen st hcp]
+  refine Shares.any_congr_mem fun cp hcp => ?_
+  simp only [Function.comp_def, holdsShare_seen, inAudience_seen, lets_seen st hcp]
 
 /-- C2, creations: whether readers count a creation reads no selector and no ops but those of the chain its proof
     names. -/
-theorem creates_seen (st : State) (a v : VaultId) (x : Cell) (proof : Option CapId) (fits : Bool) :
-    creates (st.seen (proofCaps st proof)) a v x proof fits = creates st a v x proof fits := by
+theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (fits : Bool) :
+    creates (st.seen (proofShares st proof)) a v x proof fits = creates st a v x proof fits := by
   unfold creates
-  rw [seen_caps, List.any_map]
+  rw [seen_shares, List.any_map]
   congr 2
-  refine Caps.any_congr_mem fun cp hcp => ?_
-  simp only [Function.comp_def, seen_over, holdsCap_seen, intake_seen, lets_seen st hcp]
+  refine Shares.any_congr_mem fun cp hcp => ?_
+  simp only [Function.comp_def, seen_over, holdsShare_seen, intake_seen, lets_seen st hcp]
 
 /-! ## C3: counted writes do what they may -/
 
-theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option CapId}
+theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
-    ∃ cp ∈ st.caps, proof = some cp.id ∧ holdsCap st a cp .write = true ∧ inCell st cp en = true ∧
-      ∀ c ∈ chain st cp, c.role = levelOf c.ops ∧ allowsAll c.ops main ts = true := by
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ holdsShare st a cp .write = true ∧ inAudience st cp en = true ∧
+      ∀ c ∈ chain st cp, c.level = levelOf c.ops ∧ allowsAll c.ops main ts = true := by
   unfold counts at hc
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.any_eq_true] at hc
   obtain ⟨-, hc | ⟨cp, hcp, ⟨hh, hi⟩, hl⟩⟩ := hc
@@ -160,12 +162,12 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
     simp only [Bool.and_eq_true, beq_iff_eq] at hl
     exact ⟨cp, hcp, hl.1, hh, hi, fun c hc' => chain_narrows hl.2 hc'⟩
 
-/-- A counted write's touches are each allowed by an op that writes, of every cap of the chain it relies on: no read,
+/-- A counted write's touches are each allowed by an op that writes, of every share of the chain it relies on: no read,
     relay, backup or share op lets anything through. -/
-theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option CapId}
+theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
-    ∃ cp ∈ st.caps, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ ts, ∃ o ∈ c.ops, o.allows main t = true ∧
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ ts, ∃ o ∈ c.ops, o.allows main t = true ∧
       o.level = .write := by
   obtain ⟨cp, hcp, hp, -, -, hall⟩ := counted_allowed hc hv
   refine ⟨cp, hcp, hp, fun c hc' t ht => ?_⟩
@@ -177,8 +179,8 @@ theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List Edit
 /-! ## C4: allowed writes count -/
 
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
-    {cp : Cap} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.caps) (hh : holdsCap st a cp .write = true)
-    (hi : inCell st cp en = true) (ha : chainAllows st cp main ts = true) :
+    {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
+    (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true) :
     counts st a en deps (some cp.id) main ts true = true := by
   unfold counts
   simp only [Bool.true_and, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true, Bool.not_eq_true', beq_iff_eq,
@@ -187,8 +189,8 @@ theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List Edit
   · simpa using hd d hd'
   · simp [lets, ha]
 
-theorem allowed_creates {st : State} {a v : VaultId} {cp : Cap} (hcp : cp ∈ st.caps) (hv : cp.over = v)
-    (hh : holdsCap st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :
+theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} (hcp : cp ∈ st.shares) (hv : cp.over = v)
+    (hh : holdsShare st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :
     creates st a v (intake st cp) (some cp.id) true = true := by
   unfold creates
   simp only [Bool.true_and, Bool.or_eq_true, beq_iff_eq, List.any_eq_true, Bool.and_eq_true]
@@ -198,7 +200,7 @@ theorem allowed_creates {st : State} {a v : VaultId} {cp : Cap} (hcp : cp ∈ st
 
 /-- Settling keys keeps which writes readers count. -/
 theorem settle_uncounted (pre post : State) : (settle pre post).uncounted = post.uncounted := by
-  obtain ⟨_, _, _, h⟩ := Caps.keysOnly_settle pre post
+  obtain ⟨_, _, _, h⟩ := Shares.keysOnly_settle pre post
   rw [h]
 
 /-- Fewer writes, and the same ones uncounted, keep what readers count closed. -/
@@ -211,7 +213,7 @@ theorem CountsClosed.mono {st st' : State} (hc : CountsClosed st) (hw : ∀ w �
 /-- What a removal keeps of fewer writes, the same ones uncounted, keeps what readers count closed. -/
 theorem CountsClosed.drop {st pre mid : State} (hc : CountsClosed st) (hw : ∀ w ∈ mid.writes, w ∈ st.writes)
     (hu : mid.uncounted = st.uncounted) (keep : List EditId) : CountsClosed (dropUnseen pre mid keep) :=
-  CountsClosed.mono hc (fun w hw' => hw w ((Caps.dropUnseen_writes pre mid keep).1.subset hw')) hu
+  CountsClosed.mono hc (fun w hw' => hw w ((Shares.dropUnseen_writes pre mid keep).1.subset hw')) hu
 
 /-- A new write with an id no write has, to which every write builds only on writes there are, keeps what readers
     count closed, where readers don't count it if it builds on one they don't count. -/
@@ -254,7 +256,7 @@ theorem apply_countsClosed {st post : State} {edit : Edit} (hcc : CausallyClosed
   unfold apply at h
   dsimp only at h
   split at h
-  case h_10 v e actor stay gen deps proposal via create tags proof touches fits hact =>
+  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits hact =>
     split at h
     · cases h
     rename_i hok
@@ -275,7 +277,7 @@ theorem apply_countsClosed {st post : State} {edit : Edit} (hcc : CausallyClosed
         refine CountsClosed.add hcc hc _ hfresh ?_ ?_
         · intro d hd
           simp only [Bool.not_eq_true', Bool.not_eq_false] at hdeps
-          obtain ⟨x, hx, hxd, -⟩ := Caps.depsIn_iff.1 hdeps d hd
+          obtain ⟨x, hx, hxd, -⟩ := Shares.depsIn_iff.1 hdeps d hd
           exact ⟨x, hx, hxd⟩
         · rintro ⟨d, hd, hdu⟩
           simp only [counts, Bool.and_eq_false_iff, List.all_eq_false]
@@ -289,8 +291,8 @@ theorem apply_countsClosed {st post : State} {edit : Edit} (hcc : CausallyClosed
 
 /-- An accepted write whose result doesn't fit its schemas is one its readers don't count. -/
 theorem apply_unfit {st post : State} {edit : Edit} (h : apply st edit = some post)
-    {v e actor stay gen deps proposal via create tags proof touches}
-    (ha : edit.action = .write v e actor stay gen deps proposal via create tags proof touches false) :
+    {v e actor stay epoch deps proposal via create tags proof touches}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via create tags proof touches false) :
     edit.id ∈ post.uncounted := by
   unfold apply at h
   rw [ha] at h
@@ -307,8 +309,8 @@ theorem apply_unfit {st post : State} {edit : Edit} (h : apply st edit = some po
 
 /-- The same of a step, which also settles keys. -/
 theorem step_unfit {st post : State} {edit : Edit} (h : step st edit = some post)
-    {v e actor stay gen deps proposal via create tags proof touches}
-    (ha : edit.action = .write v e actor stay gen deps proposal via create tags proof touches false) :
+    {v e actor stay epoch deps proposal via create tags proof touches}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via create tags proof touches false) :
     edit.id ∈ post.uncounted := by
   unfold step at h
   obtain ⟨mid, hmid, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -319,12 +321,12 @@ theorem step_unfit {st post : State} {edit : Edit} (h : step st edit = some post
 theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st := by
   obtain ⟨edits, rfl⟩ := hr
   suffices h : CausallyClosed (replay {} edits) ∧ CountsClosed (replay {} edits) from h.2
-  refine Caps.replay_inv (fun st => CausallyClosed st ∧ CountsClosed st) (fun st st' edit hi h => ?_) edits {}
+  refine Shares.replay_inv (fun st => CausallyClosed st ∧ CountsClosed st) (fun st st' edit hi h => ?_) edits {}
     ⟨fun w hw => (by cases hw), fun w hw => (by cases hw)⟩
   refine ⟨Core.T14_causally_closed hi.1 h, ?_⟩
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
-  exact CountsClosed.mono (apply_countsClosed hi.1 hi.2 hpost) (fun w hw => by rwa [Caps.settle_writes] at hw)
+  exact CountsClosed.mono (apply_countsClosed hi.1 hi.2 hpost) (fun w hw => by rwa [Shares.settle_writes] at hw)
     (settle_uncounted _ _)
 
 end AvenDB.Ruling

@@ -4,7 +4,7 @@
 //! random records, written one after another by two devices, wholesale or by random ops, the places of a write's
 //! touches cover every change it makes to the stored record (`Within`, which C3's `changes_allowed` takes of this
 //! side), and where only touches naming values cover a change, the place one of them names holds that value after: so
-//! rules that allow some values only allow no write that leaves another there. Ruled caps on the Lab, through the ops
+//! rules that allow some values only allow no write that leaves another there. Ruled shares on the Lab, through the ops
 //! engine, are in `engine.rs`.
 
 mod records;
@@ -13,7 +13,7 @@ use avendb::cast;
 use avendb::doc::Item;
 use avendb::id::SignerId;
 use avendb::lens::{Status, TodoV2, View};
-use avendb::ops::{diff, run_all, Loc, Op, Record};
+use avendb::ops::{diff, run_all, Loc, Record, RecordOp};
 use avendb::rules::{Scalar, Touch};
 use records::{random_op, random_record, Rng};
 use serde_json::{json, Value};
@@ -135,7 +135,7 @@ fn c3_touches_cover_every_change() {
             let after = match rng.below(3) {
                 0 => random_record(&mut rng),
                 _ => {
-                    let ops = (0..1 + rng.below(3)).map(|_| Op::of_json(&random_op(&mut rng, &before)));
+                    let ops = (0..1 + rng.below(3)).map(|_| RecordOp::of_json(&random_op(&mut rng, &before)));
                     let Ok(ops) = ops.collect::<Result<Vec<_>, _>>() else { continue };
                     let Some(after) = run_all(&before, &ops) else { continue };
                     after

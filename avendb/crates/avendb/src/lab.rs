@@ -1,45 +1,46 @@
 //! The Lab: in-process devices on a network the test controls. Each device has its own keys, its own edits and its own
 //! store, exactly what a real device would hold; there is also a relay server, a device of the aven vault avenCEO,
-//! which holds relay caps and never reads, and any number of strangers. The scenario tests run on it, and so do the
+//! which holds relay shares and never reads, and any number of strangers. The scenario tests run on it, and so do the
 //! nodes: a device split off to run on its own (`split`) is what `avendb-net` puts on iroh.
 //!
-//! A vault is a flat library of entries (notes, todos, profiles), each with a type and tags, and caps grant relay,
+//! A vault is a flat library of entries (notes, todos, profiles), each with a type and tags, and shares grant relay,
 //! read, write or owner on any slice of it (`slice::Selector`): the whole vault, a type, a tag, an author, one entry,
-//! or any AND/OR of those. An entry sits in the cell of the caps whose slices hold it, and every rule, every key and
-//! all sync go by cells (`policy`). The devices acting for a vault are its stewards: they read every selector of the
-//! vault's caps and every entry's header and tags, and keep each entry in the cell its meaning asks for by moving it
-//! (`policy::Meaning`). A steward creates an entry straight in its cell; anyone else creates it in the intake cell of
-//! the cap it creates it through, for a steward to move. A write by anyone but the vault that adds or removes tags asks
-//! the stewards to, and a steward answers it with a write acting for the vault, carrying what each counted ask asks for
-//! (its proof's chain allows those tags) where the slice of the cap it proves holds the entry before and after.
+//! or any AND/OR of those. An entry sits in the audience of the shares whose slices hold it, and every rule, every key
+//! and all sync go by audiences (`policy`). The devices acting for a vault are its stewards: they read every selector
+//! of the vault's shares and every entry's header and tags, and keep each entry in the audience its meaning asks for by
+//! moving it (`policy::Meaning`). A steward creates an entry straight in its audience; anyone else creates it in the
+//! intake audience of the share it creates it through, for a steward to move. A write by anyone but the vault that adds
+//! or removes tags asks the stewards to, and a steward answers it with a write acting for the vault, carrying what each
+//! counted ask asks for (its proof's chain allows those tags) where the slice of the share it proves holds the entry
+//! before and after.
 //!
-//! A cap's selector travels sealed in the cap (`slice::Select`), to the seeds of the vault it is over, of its grantee
-//! and of its issuer; a write's header, tags and content travel in its encrypted body (`slice::Body`). A device keeps
-//! what it opened of both, as no edit changes them, and what it reads in them (`policy::Readings`).
+//! A share's selector travels sealed in the share (`slice::Select`), to the seeds of the vault it is over, of its
+//! grantee and of its issuer; a write's header, tags and content travel in its encrypted body (`slice::Body`). A device
+//! keeps what it opened of both, as no edit changes them, and what it reads in them (`policy::Readings`).
 //!
-//! A sync rule says which entries of a vault one device syncs, by a selector as a cap's, and whether it keeps whole the
-//! files they bring (`policy::SyncRule`, `set_rule`): any data, by type, tag, author, entry or creation. It grants
-//! nothing. Its selector travels sealed as a cap's, to the seeds of the vault it is over and of its issuer; the
+//! A sync rule says which entries of a vault one device syncs, by a selector as a share's, and whether it keeps whole
+//! the files they bring (`policy::SyncRule`, `set_rule`): any data, by type, tag, author, entry or creation. It grants
+//! nothing. Its selector travels sealed as a share's, to the seeds of the vault it is over and of its issuer; the
 //! stewards read it and mark each entry with the rules that pick it (`policy::Action::Pick`), as they move entries to
-//! their cells, and every peer then sends a device only the entries it may receive and its rules want (T28), reading
-//! the marks and never a selector (T29). A device with no rule over a vault syncs all of it that it may.
+//! their audiences, and every peer then sends a device only the entries it may receive and its rules want (T28),
+//! reading the marks and never a selector (T29). A device with no rule over a vault syncs all of it that it may.
 //!
 //! Every unlocked device keeps its keys up to date as an honest app would, each time its edits change. It opens every
 //! box its standing `Keys` edits hold for a key it has and every key published in the clear, and derives the key of
-//! each entry in each cell whose key it holds, for each stay the entry had there (`keys::entry_key`). For each family
-//! it may open (a vault's seed, a cap's key, a cell's key), it makes a random key of each epoch from the oldest it
-//! holds to the current one where nobody has yet; announces the public half of each current seed it holds, as keys are
-//! sealed only to seeds and signers; boxes each current key for every target the schedule names that has no box yet,
-//! wrapped where it holds the target's key, sealed to a signer's or a seed's public half otherwise, and left for a
-//! steward where it is a cap's key it doesn't hold; publishes it if the family is public; and wraps each older key it
-//! holds under the next epoch's. Where an entry moved to another cell, it wraps the keys of the entry's earlier stays
-//! under the key it is under now (a move link), so the entry's readers read its whole history and nothing else of the
-//! cells it left. An owner key (a passkey) authoring an edit on a device lends it, for that ceremony only, the key that
-//! is sealed to the owner: that is how a new device reads again after every other device is lost.
+//! each entry in each audience whose key it holds, for each stay the entry had there (`keys::entry_key`). For each
+//! family it may open (a vault's seed, a share's key, an audience's key), it makes a random key of each epoch from the
+//! oldest it holds to the current one where nobody has yet; announces the public half of each current seed it holds, as
+//! keys are sealed only to seeds and signers; boxes each current key for every target the schedule names that has no
+//! box yet, wrapped where it holds the target's key, sealed to a signer's or a seed's public half otherwise, and left
+//! for a steward where it is a share's key it doesn't hold; publishes it if the family is public; and wraps each older
+//! key it holds under the next epoch's. Where an entry moved to another audience, it wraps the keys of the entry's
+//! earlier stays under the key it is under now (a move link), so the entry's readers read its whole history and nothing
+//! else of the audiences it left. An owner key (a passkey) authoring an edit on a device lends it, for that ceremony
+//! only, the key that is sealed to the owner: that is how a new device reads again after every other device is lost.
 //!
 //! A device shows each entry on every line of its history (`history`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Proposing, merging, promoting, restoring, undoing and making a
-//! variant are writes like any edit, encrypted under the entry's key and checked against the writer's caps.
+//! variant are writes like any edit, encrypted under the entry's key and checked against the writer's shares.
 //!
 //! A person's device derives its keys from their passkey at every unlock (`sign::Passkey::device`) and holds them only
 //! while it is unlocked: a locked device keeps its edits and their ciphertext, and no key, nor anything a key opened.
@@ -70,18 +71,18 @@ use serde_json::Value;
 use zeroize::Zeroizing;
 
 use crate::doc::{Item, Version};
-use crate::encode::{self, box_info, cap_context, rule_context, rule_select_info, select_info, write_context};
+use crate::encode::{self, box_info, rule_context, rule_select_info, select_info, share_context, write_context};
 use crate::hash::{Hasher, Reader};
 use crate::history::{Change, Draft, History, MAIN};
-use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Schema};
 use crate::policy::{
-    checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Issued, Kind, Line, Log, Meaning, Principal, Proposal,
-    Readings, Refusal, Replay, Role, State, SyncRule, Write,
+    checkpointed, mk_audience, replay, Action, Edit, Issued, Kind, Level, Line, Log, Meaning, Principal, Proposal,
+    Readings, Refusal, Replay, Share, State, SyncRule, Who, Write,
 };
 use crate::recovery::RecoveryKey;
-use crate::rules::{self, Grant, Proof, Rule, Touch};
+use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -90,9 +91,9 @@ use crate::sync::{
 };
 use crate::wire::{Claim, Join, Request, Wire as _};
 
-/// A device keeps its keys and cells up to date in a few rounds at most: one to make and seal keys and move entries,
-/// one to seal the keys of the cells they moved to and link their history, one to answer what moved, one to find
-/// nothing left. More means an edit the rules refuse, made again and again.
+/// A device keeps its keys and audiences up to date in a few rounds at most: one to make and seal keys and move
+/// entries, one to seal the keys of the audiences they moved to and link their history, one to answer what moved, one
+/// to find nothing left. More means an edit the rules refuse, made again and again.
 const ROUNDS: usize = 10;
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
@@ -101,7 +102,7 @@ type Blobs = HashMap<BlobId, Arc<[u8]>>;
 /// A tampering attempt, delivered to a device to show that it is rejected or opens nothing.
 #[derive(Clone, Debug)]
 pub enum Tamper {
-    /// An edit the rules refuse, properly signed by `signers` and sent anyway: no cap, or a made-up chain.
+    /// An edit the rules refuse, properly signed by `signers` and sent anyway: no share, or a made-up chain.
     Unchecked { signers: Vec<SignerId>, action: Action },
     /// An edit claiming a signature from a signer that didn't sign it.
     ForgedSignature { claimed: SignerId, action: Action },
@@ -256,8 +257,8 @@ struct Keyring {
     by_name: HashMap<KeyName, Vec<KeyId>>,
     /// The epochs of each family it holds a key of.
     epochs: HashMap<KeyFam, BTreeSet<u64>>,
-    /// Its cell keys, in the order it took them: what the entry keys derive from.
-    cells: Vec<KeyId>,
+    /// Its audience keys, in the order it took them: what the entry keys derive from.
+    audiences: Vec<KeyId>,
 }
 
 impl Keyring {
@@ -272,8 +273,8 @@ impl Keyring {
         ids.insert(at, id);
         if let KeyName::Scoped(k, e) = name {
             self.epochs.entry(k).or_default().insert(e);
-            if let KeyFam::Cell(..) = k {
-                self.cells.push(id);
+            if let KeyFam::Audience(..) = k {
+                self.audiences.push(id);
             }
         }
         self.by_id.insert(id, (name, secret));
@@ -326,13 +327,13 @@ struct Store {
     full: OnceLock<State>,
     /// Empty while it is locked, as is everything below but what it made itself and has to vouch for.
     keys: Keyring,
-    /// The entry keys it derived: by the key of the cell it derived each from, the entry and the stay.
+    /// The entry keys it derived: by the key of the audience it derived each from, the entry and the stay.
     derived: HashSet<(KeyId, EntryId, Option<EditId>)>,
-    /// The slices of the caps and sync rules whose selectors it opened, and those whose selectors never open for it:
+    /// The slices of the shares and sync rules whose selectors it opened, and those whose selectors never open for it:
     /// garbled, or with no box for a key it holds that opens, or, where it is a steward, for no seed of the vault the
-    /// cap or rule is over.
-    slices: HashMap<CapId, Slice>,
-    unreadable: HashSet<CapId>,
+    /// share or rule is over.
+    slices: HashMap<ShareId, Slice>,
+    unreadable: HashSet<ShareId>,
     /// The bodies of the writes it opened, and the writes whose bodies never open: garbled under the key they name.
     bodies: HashMap<EditId, Body>,
     spoilt: HashSet<EditId>,
@@ -384,17 +385,17 @@ impl Store {
         self.shown.clear();
     }
 
-    /// It read the selector of every live cap over vault `v` and of every cap those rest on, or knows it never will:
-    /// what a steward waits for before it works out any entry's cell.
-    fn reads_caps(&self, st: &State, v: VaultId) -> bool {
-        let read = |c: &CapId| self.slices.contains_key(c) || self.unreadable.contains(c);
-        st.caps_over(v).filter(|cp| st.live(cp.id)).all(|cp| cp.chain.iter().all(read))
+    /// It read the selector of every live share over vault `v` and of every share those rest on, or knows it never
+    /// will: what a steward waits for before it works out any entry's audience.
+    fn reads_shares(&self, st: &State, v: VaultId) -> bool {
+        let read = |c: &ShareId| self.slices.contains_key(c) || self.unreadable.contains(c);
+        st.shares_over(v).filter(|cp| st.live(cp.id)).all(|cp| cp.chain.iter().all(read))
     }
 
     /// It read the selector of every live sync rule over vault `v`, or knows it never will: what a steward waits for
     /// before it marks any entry with the rules that pick it.
     fn reads_rules(&self, st: &State, v: VaultId) -> bool {
-        let read = |r: &CapId| self.slices.contains_key(r) || self.unreadable.contains(r);
+        let read = |r: &ShareId| self.slices.contains_key(r) || self.unreadable.contains(r);
         st.rules().iter().filter(|(id, r)| r.over == v && st.rule_live(*id)).all(|(id, _)| read(id))
     }
 }
@@ -515,25 +516,25 @@ impl Backup {
     }
 }
 
-/// A cap to issue (`Lab::issue`): a named group of ops (`rules`) its grantee may make on the entries of vault `over`
-/// that `select` picks, and that every cap it rests on allows and picks too. Its role is the class of its ops
-/// (`rules::level_of`); a selector that picks all makes a wide cap. The Lab seals its name, selector and ops into its
+/// A share to issue (`Lab::issue`): a named group of ops (`rules`) its grantee may make on the entries of vault `over`
+/// that `select` picks, and that every share it rests on allows and picks too. Its level is the class of its ops
+/// (`rules::level_of`); a selector that picks all makes a wide share. The Lab seals its name, selector and ops into its
 /// slice, the ops with a salt of their own.
 #[derive(Clone, Debug)]
-pub struct NewCap {
+pub struct NewShare {
     pub over: VaultId,
-    pub grantee: Grantee,
+    pub who: Who,
     pub name: String,
     pub select: Selector,
-    pub ops: Vec<Rule>,
-    /// The owner cap its issuer relies on: `None` when the vault itself issues it.
-    pub parent: Option<CapId>,
+    pub ops: Vec<Op>,
+    /// The owner share its issuer relies on: `None` when the vault itself issues it.
+    pub parent: Option<ShareId>,
     pub issuer: VaultId,
 }
 
 /// A sync rule to set (`set_rule`): device `device` of vault `issuer` syncs the entries of vault `over` that `select`
 /// picks, and keeps whole the files they bring (`keep`). A selector that picks all makes a wide rule. The Lab seals its
-/// name and selector as a cap's (`slice::Select`), in a slice that grants no op.
+/// name and selector as a share's (`slice::Select`), in a slice that grants no op.
 #[derive(Clone, Debug)]
 pub struct NewRule {
     pub issuer: VaultId,
@@ -580,8 +581,8 @@ pub struct Lab {
     now: u64,
     /// A dry run (`dry`): a write is checked, proven and refused as ever, and then not made.
     dry: bool,
-    /// Its devices are a patched app's (`patched`): they ignore the ops of the caps they write through, and the schemas
-    /// of what they write.
+    /// Its devices are a patched app's (`patched`): they ignore the ops of the shares they write through, and the
+    /// schemas of what they write.
     lawless: bool,
     /// The master recovery key every human vault it founds adds as an owner (`set_recovery`).
     recovery: Option<Arc<RecoveryKey>>,
@@ -1072,7 +1073,7 @@ impl Lab {
     }
 
     /// Device `from` hands vault `v`'s log to device `to`, as when two people exchange contact cards: a peer needs a
-    /// vault's log before it accepts a cap to that vault.
+    /// vault's log before it accepts a share to that vault.
     pub fn share_contact(&mut self, from: SignerId, to: SignerId, v: VaultId) {
         let store = self.held(from);
         let ids: Vec<EditId> = vault_logs(store.log.edits(), store.view(), vec![v]).iter().map(Edit::id).collect();
@@ -1204,23 +1205,23 @@ impl Lab {
         blobs
     }
 
-    /// Issue a cap on device `on`, signed by `signers`, if `on`'s view accepts it: its id. An owner cap is governance,
-    /// so the issuer's root, or its threshold of owners, signs too. Its selector is sealed (`slice::Select`).
-    /// `UnknownKey` if `on` can't seal it to the vault the cap is over, or to its grantee, as it holds no seed of
-    /// theirs nor its announced public half.
-    pub fn issue(&mut self, on: SignerId, signers: &[SignerId], cap: NewCap) -> Result<CapId, Refusal> {
-        let draft = self.draft_cap(on, signers, cap)?;
-        self.complete(on, draft, &[]).map(CapId::from)
+    /// Issue a share on device `on`, signed by `signers`, if `on`'s view accepts it: its id. An owner share is
+    /// governance, so the issuer's root, or its threshold of owners, signs too. Its selector is sealed
+    /// (`slice::Select`). `UnknownKey` if `on` can't seal it to the vault the share is over, or to its grantee, as it
+    /// holds no seed of theirs nor its announced public half.
+    pub fn issue(&mut self, on: SignerId, signers: &[SignerId], share: NewShare) -> Result<ShareId, Refusal> {
+        let draft = self.draft_share(on, signers, share)?;
+        self.complete(on, draft, &[]).map(ShareId::from)
     }
 
-    /// The cap `issue` issues, drafted for the passkeys among its signers to sign in their ceremonies (`draft`). It
-    /// carries its ops in order (`rules::normalize`) and the grants of the caps it rests on, which its issuer reads in
-    /// the slice of the cap it rests on: so its grantee can prove its writes (`rules::Proof`). `BadCap` for a cap of no
-    /// name, no op, too many or a selector beyond the bounds a peer accepts, or resting on a chain too long to prove;
-    /// `NotAllowed` if `on` doesn't read the slice of the cap it rests on.
-    pub fn draft_cap(&mut self, on: SignerId, signers: &[SignerId], new: NewCap) -> Result<Unsigned, Refusal> {
+    /// The share `issue` issues, drafted for the passkeys among its signers to sign in their ceremonies (`draft`). It
+    /// carries its ops in order (`rules::normalize`) and the grants of the shares it rests on, which its issuer reads
+    /// in the slice of the share it rests on: so its grantee can prove its writes (`rules::Proof`). `BadCap` for a
+    /// share of no name, no op, too many or a selector beyond the bounds a peer accepts, or resting on a chain too long
+    /// to prove; `NotAllowed` if `on` doesn't read the slice of the share it rests on.
+    pub fn draft_share(&mut self, on: SignerId, signers: &[SignerId], new: NewShare) -> Result<Unsigned, Refusal> {
         self.unlocked(on)?;
-        let NewCap { over, grantee, name, select, ops, parent, issuer } = new;
+        let NewShare { over, who, name, select, ops, parent, issuer } = new;
         let ops = rules::normalize(ops).map_err(|_| Refusal::BadCap)?;
         if rules::name_ok(&name).is_err() || !select.bounded() {
             return Err(Refusal::BadCap);
@@ -1234,32 +1235,32 @@ impl Lab {
         }
         let mut salt = [0u8; 32];
         self.rng.fill_bytes(&mut salt);
-        let role = rules::level_of(&ops);
+        let level = rules::level_of(&ops);
         let slice = Slice { name, select, grant: Grant { ops, salt }, above };
         let wide = slice.select == Selector::All;
         let nonce = self.rng.next_u64();
-        let mut cap = Cap { over, grantee, role, wide, select: vec![], parent, issuer, nonce };
-        cap.select = self.seal_select(on, &cap, &slice)?;
-        self.draft(on, signers, Action::Cap(cap, vec![]))
+        let mut share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce };
+        share.select = self.seal_select(on, &share, &slice)?;
+        self.draft(on, signers, Action::Share(share, vec![]))
     }
 
-    /// The `select` of `cap`, holding `slice`: in the clear for a cap to Public, else sealed under a key of its own,
-    /// which is boxed to the seed of each vault that reads it: the vault the cap is over, its grantee unless the cap
-    /// only relays, and its issuer where `on` holds or knows the issuer's seed (`slice::Select`).
-    fn seal_select(&mut self, on: SignerId, cap: &Cap, slice: &Slice) -> Result<Vec<u8>, Refusal> {
-        if cap.grantee == Grantee::Public {
+    /// The `select` of `share`, holding `slice`: in the clear for a share to everyone, else sealed under a key of its
+    /// own, which is boxed to the seed of each vault that reads it: the vault the share is over, its grantee unless the
+    /// share only relays, and its issuer where `on` holds or knows the issuer's seed (`slice::Select`).
+    fn seal_select(&mut self, on: SignerId, share: &Share, slice: &Slice) -> Result<Vec<u8>, Refusal> {
+        if share.who == Who::Everyone {
             return Ok(Select::Clear(slice.clone()).to_wire());
         }
-        let grantee = match cap.grantee {
-            Grantee::Principal(Principal::Vault(g)) if cap.role.allows(Role::Read) => Some(g),
+        let who = match share.who {
+            Who::Principal(Principal::Vault(g)) if share.level.allows(Level::Read) => Some(g),
             _ => None,
         };
-        let readers: Vec<VaultId> = [Some(cap.over), grantee, Some(cap.issuer)].into_iter().flatten().collect();
-        let needed: Vec<VaultId> = [Some(cap.over), grantee].into_iter().flatten().collect();
-        self.seal_slice(on, Picker::Cap(cap), slice, &readers, &needed)
+        let readers: Vec<VaultId> = [Some(share.over), who, Some(share.issuer)].into_iter().flatten().collect();
+        let needed: Vec<VaultId> = [Some(share.over), who].into_iter().flatten().collect();
+        self.seal_slice(on, Picker::Share(share), slice, &readers, &needed)
     }
 
-    /// `slice`, the slice of a cap's or a sync rule's selector `of`, sealed under a key of its own, which is boxed to
+    /// `slice`, the slice of a share's or a sync rule's selector `of`, sealed under a key of its own, which is boxed to
     /// the seed of each vault of `readers` that `on` holds or knows the seed of (`slice::Select`). `UnknownKey` if it
     /// can't box it for one of `needed`.
     fn seal_slice(
@@ -1290,12 +1291,12 @@ impl Lab {
     }
 
     /// Set a sync rule on device `on`, signed by `signers`, if `on`'s view accepts it: its id. Its selector is sealed
-    /// as a cap's, to the vault it is over and to its issuer. `BadCap` for a rule of no name or a selector beyond the
+    /// as a share's, to the vault it is over and to its issuer. `BadCap` for a rule of no name or a selector beyond the
     /// bounds a peer accepts; `UnknownKey` if `on` can't seal a rule that isn't wide to the vault it is over, as it
     /// holds no seed of the vault nor its announced public half.
-    pub fn set_rule(&mut self, on: SignerId, signers: &[SignerId], rule: NewRule) -> Result<CapId, Refusal> {
+    pub fn set_rule(&mut self, on: SignerId, signers: &[SignerId], rule: NewRule) -> Result<ShareId, Refusal> {
         let draft = self.draft_rule(on, signers, rule)?;
-        self.complete(on, draft, &[]).map(CapId::from)
+        self.complete(on, draft, &[]).map(ShareId::from)
     }
 
     /// The rule `set_rule` sets, drafted for the passkeys among its signers to sign in their ceremonies (`draft`).
@@ -1317,14 +1318,14 @@ impl Lab {
     }
 
     /// End sync rule `rule` on device `on`, signed by `signers`, acting for the vault that set it.
-    pub fn end_rule(&mut self, on: SignerId, signers: &[SignerId], rule: CapId) -> Result<EditId, Refusal> {
+    pub fn end_rule(&mut self, on: SignerId, signers: &[SignerId], rule: ShareId) -> Result<EditId, Refusal> {
         let issuer = self.full_view(on).rule(rule).map(|r| r.issuer).ok_or(Refusal::UnknownRule)?;
         self.submit(on, signers, Action::EndSyncRule { rule, issuer, via: vec![] })
     }
 
-    /// Bring device `d`'s keys, cells and items up to date with its edits, `lent` holding the keys of owners signing on
-    /// it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and makes the
-    /// edits its upkeep calls for (`upkeep`). A locked device only replays.
+    /// Bring device `d`'s keys, audiences and items up to date with its edits, `lent` holding the keys of owners
+    /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
+    /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
@@ -1365,14 +1366,14 @@ impl Lab {
             Work::Edit(action) => self.held(d).log.draft_on(view, d, &[], action),
             Work::Retag { vault, entry, body } => {
                 let en = view.entry(entry).expect("an entry of the view");
-                let (stay, x) = (en.stay(), en.cell());
-                let generation = view.epoch(KeyFam::Cell(vault, x));
+                let (stay, x) = (en.stay(), en.audience());
+                let epoch = view.epoch(KeyFam::Audience(vault, x));
                 let action = Action::Write {
                     vault,
                     entry,
                     actor: vault,
                     stay,
-                    generation,
+                    epoch,
                     deps: vec![],
                     proposal: Proposal::Main,
                     via: vec![],
@@ -1400,7 +1401,7 @@ impl Lab {
     }
 
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
-    /// it: the edit, and the write it is, with the caps its readers judge it by.
+    /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         let edit = self.held(on).log.draft_on(view, on, &[], action);
         let w = view.accepted_write(&edit, edit.id())?.expect("a write");
@@ -1408,8 +1409,8 @@ impl Lab {
     }
 
     /// The proof write `w` of device `on` carries, which touches `touches` and asks for the tags `asks`
-    /// (`rules::Proof`): none where it acts for its entry's vault, so relies on no cap, else one for the first cap it
-    /// relies on whose chain's ops, as `on` reads them, allow every touch and every tag it asks for. `NotAllowed` if
+    /// (`rules::Proof`): none where it acts for its entry's vault, so relies on no share, else one for the first share
+    /// it relies on whose chain's ops, as `on` reads them, allow every touch and every tag it asks for. `NotAllowed` if
     /// none does, or `on` can't read what the write touches.
     fn prove(
         &self,
@@ -1419,11 +1420,11 @@ impl Lab {
         touches: Option<&[Touch]>,
         asks: &TagDelta,
     ) -> Result<Option<Proof>, Refusal> {
-        if self.lawless || w.caps.is_empty() {
+        if self.lawless || w.shares.is_empty() {
             return Ok(None);
         }
         let store = self.held(on);
-        let proofs = w.caps.iter().filter_map(|c| Some(Proof { cap: *c, grants: store.slices.get(c)?.grants() }));
+        let proofs = w.shares.iter().filter_map(|c| Some(Proof { share: *c, grants: store.slices.get(c)?.grants() }));
         let mut proofs = proofs.filter(|p| view.lets(w, Some(p), touches, asks));
         proofs.next().map(Some).ok_or(Refusal::NotAllowed)
     }
@@ -1457,7 +1458,7 @@ impl Lab {
         out
     }
 
-    /// Run `f` as devices of a patched app, which ignore the ops of the caps they write through and the schemas of
+    /// Run `f` as devices of a patched app, which ignore the ops of the shares they write through and the schemas of
     /// what they write: their writes carry no proof and are made all the same, whether they fit or not, and no reader
     /// of their entries counts those that break either, the writer's own device neither, nor anything built on them
     /// (`History::reading`, `State::uncounted`).
@@ -1476,11 +1477,11 @@ impl Lab {
     }
 
     /// Create an entry of vault `vault` of type `ty` with tags `tags` holding `item`, on device `on`, acting for
-    /// `actor`: its first encrypted write. A steward puts it in its cell, once it reads the selectors of every cap of
-    /// the vault, and in the vault's own cell before (a steward moves it); anyone else in the intake cell of a cap it
-    /// holds with write or more (`policy::Issued::intake`) whose slice holds it, or of the first such cap if it reads
-    /// none of their selectors. The item must have been made on `on`, as its Loro edits carry `on`'s peer. `NoCap` if
-    /// `actor` holds no such cap, or every slice it reads leaves the entry out.
+    /// `actor`: its first encrypted write. A steward puts it in its audience, once it reads the selectors of every
+    /// share of the vault, and in the vault's own audience before (a steward moves it); anyone else in the intake
+    /// audience of a share it holds with write or more (`policy::Issued::intake`) whose slice holds it, or of the first
+    /// such share if it reads none of their selectors. The item must have been made on `on`, as its Loro edits carry
+    /// `on`'s peer. `NoCap` if `actor` holds no such share, or every slice it reads leaves the entry out.
     pub fn create(
         &mut self,
         on: SignerId,
@@ -1494,19 +1495,19 @@ impl Lab {
         let entry = self.new_entry_id();
         let header = Header { ty: Sym::new(ty), created: self.now };
         let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
-        let cell = self.intake(on, actor, vault, entry, &header, &tags)?;
-        self.create_as(on, actor, vault, entry, cell, header, tags, item)
+        let audience = self.intake(on, actor, vault, entry, &header, &tags)?;
+        self.create_as(on, actor, vault, entry, audience, header, tags, item)
     }
 
-    /// `create` in the cell of the caps `cell`, whatever their slices say: what a device that ignores where its entry
-    /// belongs does, which the rules check by the cell alone.
+    /// `create` in the audience of the shares `audience`, whatever their slices say: what a device that ignores where
+    /// its entry belongs does, which the rules check by the audience alone.
     #[allow(clippy::too_many_arguments)]
     pub fn create_in(
         &mut self,
         on: SignerId,
         actor: VaultId,
         vault: VaultId,
-        cell: Vec<CapId>,
+        audience: Vec<ShareId>,
         ty: &str,
         tags: &[&str],
         item: Item,
@@ -1515,11 +1516,11 @@ impl Lab {
         let entry = self.new_entry_id();
         let header = Header { ty: Sym::new(ty), created: self.now };
         let tags = tags.iter().map(|&t| Sym::new(t)).collect();
-        self.create_as(on, actor, vault, entry, cell, header, tags, item)
+        self.create_as(on, actor, vault, entry, audience, header, tags, item)
     }
 
-    /// The first write of entry `entry`, in the cell of the caps `cell`, under the generation the cell is at, or the
-    /// one it moves to as the entry brings it back into use (`policy::State::reenters`).
+    /// The first write of entry `entry`, in the audience of the shares `audience`, under the epoch the audience is at,
+    /// or the one it moves to as the entry brings it back into use (`policy::State::reenters`).
     #[allow(clippy::too_many_arguments)]
     fn create_as(
         &mut self,
@@ -1527,24 +1528,24 @@ impl Lab {
         actor: VaultId,
         vault: VaultId,
         entry: EntryId,
-        cell: Vec<CapId>,
+        audience: Vec<ShareId>,
         header: Header,
         tags: Vec<Sym>,
         item: Item,
     ) -> Result<EntryId, Refusal> {
         let view = self.full_view(on).into_owned();
-        let x = CellId::of(vault, &cell);
-        let generation = view.epoch(KeyFam::Cell(vault, x)) + view.reenters(vault, x) as u64;
+        let x = AudienceId::of(vault, &audience);
+        let epoch = view.epoch(KeyFam::Audience(vault, x)) + view.reenters(vault, x) as u64;
         let action = Action::Write {
             vault,
             entry,
             actor,
             stay: None,
-            generation,
+            epoch,
             deps: vec![],
             proposal: Proposal::Main,
             via: vec![],
-            create: Some(cell),
+            create: Some(audience),
             files: vec![],
             body: vec![],
         };
@@ -1555,7 +1556,7 @@ impl Lab {
         Ok(entry)
     }
 
-    /// The cell a new entry goes in (`create`).
+    /// The audience a new entry goes in (`create`).
     fn intake(
         &self,
         on: SignerId,
@@ -1564,30 +1565,30 @@ impl Lab {
         entry: EntryId,
         header: &Header,
         tags: &[Sym],
-    ) -> Result<Vec<CapId>, Refusal> {
+    ) -> Result<Vec<ShareId>, Refusal> {
         let (store, st) = (self.held(on), self.full_view(on));
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.to_vec() };
         if actor == vault {
-            let complete = store.reads_caps(&st, vault);
-            return Ok(if complete { semantic_cell(&st, vault, &attrs, &store.readings) } else { vec![] });
+            let complete = store.reads_shares(&st, vault);
+            return Ok(if complete { semantic_audience(&st, vault, &attrs, &store.readings) } else { vec![] });
         }
-        let caps: Vec<&Issued> =
-            st.caps_held(actor).filter(|cp| cp.cap.over == vault && st.holds(actor, cp, Role::Write)).collect();
+        let shares: Vec<&Issued> =
+            st.shares_held(actor).filter(|cp| cp.share.over == vault && st.holds(actor, cp, Level::Write)).collect();
         // its own selector, as the grantee reads it: the stewards judge by the whole chain; and of those, one whose
         // ops let a creation through first
-        let holds = |cp: &&Issued| store.slices.get(&cp.id).map(|s| cp.cap.wide || s.select.matches(&attrs));
+        let holds = |cp: &&Issued| store.slices.get(&cp.id).map(|s| cp.share.wide || s.select.matches(&attrs));
         let creates = |cp: &Issued| {
-            let proof = store.slices.get(&cp.id).map(|s| Proof { cap: cp.id, grants: s.grants() });
+            let proof = store.slices.get(&cp.id).map(|s| Proof { share: cp.id, grants: s.grants() });
             st.lets_through(cp, proof.as_ref(), true, &[Touch::Create])
         };
-        let held: Vec<&Issued> = caps.iter().copied().filter(|cp| holds(cp) == Some(true)).collect();
+        let held: Vec<&Issued> = shares.iter().copied().filter(|cp| holds(cp) == Some(true)).collect();
         if let Some(cp) = held.iter().find(|cp| creates(cp)).or(held.first()) {
             return Ok(cp.intake.to_vec());
         }
-        if !caps.is_empty() && caps.iter().all(|cp| holds(cp).is_some()) {
+        if !shares.is_empty() && shares.iter().all(|cp| holds(cp).is_some()) {
             return Err(Refusal::NoCap);
         }
-        caps.first().map(|cp| cp.intake.to_vec()).ok_or(Refusal::NoCap)
+        shares.first().map(|cp| cp.intake.to_vec()).ok_or(Refusal::NoCap)
     }
 
     /// Edit an entry on device `on`, acting for `actor`, on its main line: `edit_on`.
@@ -1636,7 +1637,7 @@ impl Lab {
 
     /// Add the tags `add` to an entry and remove the tags `remove`, on device `on`, acting for `actor`: a write on its
     /// main line carrying only the tags, building on the line's heads, as the device counts them. They count at once
-    /// when `actor` is the entry's vault; anyone else asks the vault's stewards, who answer with what its caps let it
+    /// when `actor` is the entry's vault; anyone else asks the vault's stewards, who answer with what its shares let it
     /// ask for.
     pub fn tag(
         &mut self,
@@ -1766,7 +1767,7 @@ impl Lab {
     }
 
     /// Make the write `draft` describes of entry `entry` on device `on`, acting for `actor`, carrying the tags `tags`,
-    /// under the entry's key in its stay now, at its cell's generation now, in what the device knows (T15).
+    /// under the entry's key in its stay now, at its audience's epoch now, in what the device knows (T15).
     fn make(
         &mut self,
         on: SignerId,
@@ -1793,21 +1794,21 @@ impl Lab {
         let roots = files.iter().map(|f| f.root).collect();
         let view = self.full_view(on).into_owned();
         let en = view.entry(entry).ok_or(Refusal::UnknownEntry)?;
-        let (vault, stay, x) = (en.vault, en.stay(), en.cell());
-        let generation = view.epoch(KeyFam::Cell(vault, x));
+        let (vault, stay, x) = (en.vault, en.stay(), en.audience());
+        let epoch = view.epoch(KeyFam::Audience(vault, x));
         let Draft { proposal, deps, body: content } = draft;
         let (via, create) = (vec![], None);
         let action =
-            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files: roots, body: vec![] };
+            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: vec![] };
         let (edit, w) = self.check_write(on, &view, action)?;
         let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags))?;
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files }, x)
     }
 
-    /// Encrypt `body` into the write `edit`, whose stay is in cell `x`, then sign and keep it (`seal_write`); once
+    /// Encrypt `body` into the write `edit`, whose stay is in audience `x`, then sign and keep it (`seal_write`); once
     /// peers count only checkpointed writes, vouch for it at once; and bring the device up to date. In a dry run,
     /// nothing: its id.
-    fn write(&mut self, on: SignerId, edit: Edit, body: Body, x: CellId) -> Result<EditId, Refusal> {
+    fn write(&mut self, on: SignerId, edit: Edit, body: Body, x: AudienceId) -> Result<EditId, Refusal> {
         if self.dry {
             return Ok(edit.id());
         }
@@ -1819,13 +1820,13 @@ impl Lab {
         Ok(id)
     }
 
-    /// Encrypt `body` into the write `edit`, whose stay is in cell `x`, under the key of its entry in that stay at the
-    /// generation it names (`entry_key_for`), bound to the edit, then sign and keep it.
-    fn seal_write(&mut self, on: SignerId, mut edit: Edit, body: Body, x: CellId) -> Result<EditId, Refusal> {
-        let Action::Write { vault, entry, stay, generation, .. } = edit.action else { unreachable!("a write") };
+    /// Encrypt `body` into the write `edit`, whose stay is in audience `x`, under the key of its entry in that stay at
+    /// the epoch it names (`entry_key_for`), bound to the edit, then sign and keep it.
+    fn seal_write(&mut self, on: SignerId, mut edit: Edit, body: Body, x: AudienceId) -> Result<EditId, Refusal> {
+        let Action::Write { vault, entry, stay, epoch, .. } = edit.action else { unreachable!("a write") };
         let Lab { stores, rng, .. } = self;
         let store = stores.get_mut(&on).expect("a device");
-        let key = entry_key_for(store, rng, vault, x, entry, stay, generation);
+        let key = entry_key_for(store, rng, vault, x, entry, stay, epoch);
         let sealed = keys::seal_edit(&key, &body.to_wire(), &write_context(&edit), rng);
         if let Action::Write { body: b, .. } = &mut edit.action {
             *b = sealed;
@@ -1963,22 +1964,22 @@ impl Lab {
     }
 
     /// The entries device `d` knows of, in the order they were created: those of its vaults, and those its vaults'
-    /// caps reach, whether it reads them or only relays them.
+    /// shares reach, whether it reads them or only relays them.
     pub fn entries(&self, d: SignerId) -> Vec<EntryId> {
         self.held(d).view().entries().iter().map(|en| en.id).collect()
     }
 
     /// What entry `entry` means to device `d`, by what it reads (`policy::State::meaning`): its type, its author, its
-    /// tags now, its cell, and where a steward would move it. `None` if it doesn't read the entry's header.
+    /// tags now, its audience, and where a steward would move it. `None` if it doesn't read the entry's header.
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
         let store = self.held(d);
         store.view().meaning(entry, &store.readings)
     }
 
-    /// The slice of cap or sync rule `cap` as device `d` reads it: `None` unless its selector is sealed to a vault `d`
-    /// acts for (or is public), and `d` opened it.
-    pub fn slice(&self, d: SignerId, cap: CapId) -> Option<&Slice> {
-        self.held(d).slices.get(&cap)
+    /// The slice of share or sync rule `share` as device `d` reads it: `None` unless its selector is sealed to a vault
+    /// `d` acts for (or is public), and `d` opened it.
+    pub fn slice(&self, d: SignerId, share: ShareId) -> Option<&Slice> {
+        self.held(d).slices.get(&share)
     }
 
     /// Device `d` holds the key its view says entry `entry` is under now: it reads what is written to it next.
@@ -2243,8 +2244,8 @@ impl Lab {
 
     /// What device `d` hands a device whose passkey `passkey` proved itself on their connection (`sync::link_card`):
     /// the signed edits of the logs of the vaults the passkey owns, and of every vault that owns one of them, up the
-    /// chains, so that the device can add itself to its person's vault (`join`). Nothing about any cap, cell or entry
-    /// (T20); a passkey that owns no vault gets nothing.
+    /// chains, so that the device can add itself to its person's vault (`join`). Nothing about any share, audience or
+    /// entry (T20); a passkey that owns no vault gets nothing.
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
         let places = link_places(store.log.edits(), &self.full_view(d), passkey);
@@ -2589,11 +2590,11 @@ impl Lab {
 }
 
 /// Open every box the device can: for one of `mine` (its own key, and what owners lend it), or for a key it already
-/// holds; then every key published in the clear; then derive the keys of the entries in each cell whose key it holds;
-/// and again, until nothing more opens. A box counts only if what opens is the key it names.
+/// holds; then every key published in the clear; then derive the keys of the entries in each audience whose key it
+/// holds; and again, until nothing more opens. A box counts only if what opens is the key it names.
 fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
-    // the stays each cell had: the entries whose keys a key of the cell derives, and in which stay
-    let mut stays: HashMap<CellId, Vec<(EntryId, Option<EditId>)>> = HashMap::new();
+    // the stays each audience had: the entries whose keys a key of the audience derives, and in which stay
+    let mut stays: HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>> = HashMap::new();
     for en in store.replay.state.entries() {
         for (s, x) in &en.stays {
             stays.entry(*x).or_default().push((en.id, *s));
@@ -2629,16 +2630,16 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
     }
 }
 
-/// Derive the key of each entry that ever stayed in a cell whose key the device holds, for that stay, at that key's
-/// generation (`keys::entry_key`): true if it derived any.
-fn derive(store: &mut Store, stays: &HashMap<CellId, Vec<(EntryId, Option<EditId>)>>) -> bool {
+/// Derive the key of each entry that ever stayed in an audience whose key the device holds, for that stay, at that
+/// key's epoch (`keys::entry_key`): true if it derived any.
+fn derive(store: &mut Store, stays: &HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>) -> bool {
     let mut new = vec![];
-    for id in &store.keys.cells {
-        let (name, cell) = &store.keys.by_id[id];
-        let KeyName::Scoped(KeyFam::Cell(_, x), g) = *name else { continue };
+    for id in &store.keys.audiences {
+        let (name, audience) = &store.keys.by_id[id];
+        let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else { continue };
         for &(e, s) in stays.get(&x).into_iter().flatten() {
             if store.derived.insert((*id, e, s)) {
-                new.push((KeyName::Entry(e, s, g), keys::entry_key(cell, e, s)));
+                new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
             }
         }
     }
@@ -2649,15 +2650,15 @@ fn derive(store: &mut Store, stays: &HashMap<CellId, Vec<(EntryId, Option<EditId
     more
 }
 
-/// The key of entry `e` in its stay `stay`, in cell `x` of vault `v`, at generation `g`: one the device holds, or one
-/// it derives from a key it holds of the cell at that generation, or from a new key of the cell where it holds none,
+/// The key of entry `e` in its stay `stay`, in audience `x` of vault `v`, at epoch `g`: one the device holds, or one
+/// it derives from a key it holds of the audience at that epoch, or from a new key of the audience where it holds none,
 /// which it keeps, and boxes as it brings its keys up to date.
 #[allow(clippy::too_many_arguments)]
 fn entry_key_for(
     store: &mut Store,
     rng: &mut SeededRng,
     v: VaultId,
-    x: CellId,
+    x: AudienceId,
     e: EntryId,
     stay: Option<EditId>,
     g: u64,
@@ -2666,12 +2667,12 @@ fn entry_key_for(
     if let Some(key) = store.keys.first(name) {
         return key.clone();
     }
-    let cell = KeyName::Scoped(KeyFam::Cell(v, x), g);
-    let under = match store.keys.first(cell) {
+    let audience = KeyName::Scoped(KeyFam::Audience(v, x), g);
+    let under = match store.keys.first(audience) {
         Some(key) => key.clone(),
         None => {
             let key = Secret::generate(rng);
-            store.keys.insert(cell, key.clone());
+            store.keys.insert(audience, key.clone());
             key
         }
     };
@@ -2681,13 +2682,13 @@ fn entry_key_for(
     key
 }
 
-/// Open what the device's keys open of its edits and keep it: the selector of each cap and each sync rule
+/// Open what the device's keys open of its edits and keep it: the selector of each share and each sync rule
 /// (`open_select`), and the body of each write its view counts, or whose tags count (`policy::Entry::retags`); then
 /// what it reads in them.
 fn read(d: SignerId, store: &mut Store) {
     let st = &store.replay.state;
-    let caps = st.caps().iter().map(|cp| (cp.id, Picker::Cap(&cp.cap)));
-    for (id, of) in caps.chain(st.rules().iter().map(|(id, r)| (*id, Picker::Rule(r)))) {
+    let shares = st.shares().iter().map(|cp| (cp.id, Picker::Share(&cp.share)));
+    for (id, of) in shares.chain(st.rules().iter().map(|(id, r)| (*id, Picker::Rule(r)))) {
         if store.slices.contains_key(&id) || store.unreadable.contains(&id) {
             continue;
         }
@@ -2709,12 +2710,12 @@ fn read(d: SignerId, store: &mut Store) {
         let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
         for id in wanted {
             let Some(edit) = edits.get(&id) else { continue };
-            let Action::Write { entry, stay, generation, body, .. } = &edit.action else { continue };
+            let Action::Write { entry, stay, epoch, body, .. } = &edit.action else { continue };
             let Some(key) = keys::edit_key(body) else {
                 store.spoilt.insert(id);
                 continue;
             };
-            let Some(key) = store.keys.get(&key, KeyName::Entry(*entry, *stay, *generation)) else { continue };
+            let Some(key) = store.keys.get(&key, KeyName::Entry(*entry, *stay, *epoch)) else { continue };
             match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
@@ -2741,17 +2742,17 @@ fn read(d: SignerId, store: &mut Store) {
     store.readings = r;
 }
 
-/// What carries a sealed selector (`slice::Select`): a cap, or a sync rule.
+/// What carries a sealed selector (`slice::Select`): a share, or a sync rule.
 #[derive(Clone, Copy)]
 enum Picker<'a> {
-    Cap(&'a Cap),
+    Share(&'a Share),
     Rule(&'a SyncRule),
 }
 
 impl Picker<'_> {
     fn select(&self) -> &[u8] {
         match self {
-            Picker::Cap(c) => &c.select,
+            Picker::Share(c) => &c.select,
             Picker::Rule(r) => &r.select,
         }
     }
@@ -2759,7 +2760,7 @@ impl Picker<'_> {
     /// The vault it is over, whose stewards read it.
     fn over(&self) -> VaultId {
         match self {
-            Picker::Cap(c) => c.over,
+            Picker::Share(c) => c.over,
             Picker::Rule(r) => r.over,
         }
     }
@@ -2767,7 +2768,7 @@ impl Picker<'_> {
     /// What its sealed slice is bound to.
     fn context(&self) -> Vec<u8> {
         match self {
-            Picker::Cap(c) => cap_context(c),
+            Picker::Share(c) => share_context(c),
             Picker::Rule(r) => rule_context(r),
         }
     }
@@ -2775,13 +2776,13 @@ impl Picker<'_> {
     /// What a box of its selector key `id` for `to` is bound to.
     fn info(&self, id: KeyId, to: &Recipient) -> Vec<u8> {
         match self {
-            Picker::Cap(c) => select_info(c, id, to),
+            Picker::Share(c) => select_info(c, id, to),
             Picker::Rule(r) => rule_select_info(r, id, to),
         }
     }
 }
 
-/// The slice a cap's or a sync rule's selector holds (`slice::Select`), opened with the keys `keys`: `Ok(None)` while
+/// The slice a share's or a sync rule's selector holds (`slice::Select`), opened with the keys `keys`: `Ok(None)` while
 /// none of its boxes goes to a key held, `Err` if it never opens: it is garbled, a box for a key held doesn't open, or
 /// what that opens doesn't, or, for a steward of the vault it is over (`steward`), no box goes to any seed of that
 /// vault.
@@ -2882,17 +2883,17 @@ fn upkeep(
     }
     // move links: the keys of an entry's earlier stays under a key of its stay now, as the schedule links them
     for en in st.entries() {
-        if !st.entitled(d, KeyFam::Cell(en.vault, en.cell())) {
+        if !st.entitled(d, KeyFam::Audience(en.vault, en.audience())) {
             continue;
         }
-        let generation = st.epoch(KeyFam::Cell(en.vault, en.cell()));
+        let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
         let mut seen = HashSet::new();
         for w in st.entry_writes(en.id).filter(|w| w.stay != en.stay()) {
             let name = w.key();
             if !seen.insert(name) {
                 continue;
             }
-            let linked = (0..=generation).map(|g| KeyName::Entry(en.id, en.stay(), g)).find(|&to| st.sealed(name, to));
+            let linked = (0..=epoch).map(|g| KeyName::Entry(en.id, en.stay(), g)).find(|&to| st.sealed(name, to));
             let Some(to_name) = linked else { continue };
             let Some(under) = store.keys.first(to_name).cloned() else { continue };
             for secret in store.keys.held(name) {
@@ -2913,14 +2914,14 @@ fn upkeep(
     out
 }
 
-/// What a steward of vault `v` does, once it reads the selector of every cap of the vault (`Store::reads_caps`): for
-/// each entry whose creation and tags it reads, it answers the asks for tags no write acting for the vault answered
-/// yet, granting each its entry's readers count (`show_items`) where the asker may (`granted`), in one write acting
-/// for the vault; and moves an entry no ask waits on to the cell its meaning asks for, if it isn't there
+/// What a steward of vault `v` does, once it reads the selector of every share of the vault (`Store::reads_shares`):
+/// for each entry whose creation and tags it reads, it answers the asks for tags no write acting for the vault answered
+/// yet, granting each its entry's readers count (`show_items`) where the asker may (`granted`), in one write acting for
+/// the vault; and moves an entry no ask waits on to the audience its meaning asks for, if it isn't there
 /// (`policy::Meaning::desired`), and, once it reads the selector of every sync rule over the vault too
 /// (`Store::reads_rules`), marks it with the rules that pick it, if it isn't marked so (`policy::Meaning::pick`).
 fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
-    if !store.reads_caps(st, v) {
+    if !store.reads_shares(st, v) {
         return vec![];
     }
     let marks = store.reads_rules(st, v);
@@ -2969,28 +2970,30 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
 }
 
 /// The stewards grant what a write its readers count asks for, the tags it adds to and removes from an entry whose
-/// attributes are `attrs`, which the chain of the cap its proof names allows (`policy::State::lets`): where its writer
-/// still holds that cap, with write or more, and its slice holds the entry before the change and after it.
+/// attributes are `attrs`, which the chain of the share its proof names allows (`policy::State::lets`): where its
+/// writer still holds that share, with write or more, and its slice holds the entry before the change and after it.
 fn granted(st: &State, store: &Store, w: &Write, attrs: &Attrs) -> bool {
     let r = &store.readings;
     let after = Attrs { tags: store.bodies[&w.edit].tags.apply(&attrs.tags), ..attrs.clone() };
-    let cap = r.proofs.get(&w.edit).and_then(|p| st.cap(p.cap));
-    cap.is_some_and(|cp| {
-        st.holds(w.actor, cp, Role::Write) && st.eff_selects(cp, attrs, r) && st.eff_selects(cp, &after, r)
+    let share = r.proofs.get(&w.edit).and_then(|p| st.share(p.share));
+    share.is_some_and(|cp| {
+        st.holds(w.actor, cp, Level::Write) && st.eff_selects(cp, attrs, r) && st.eff_selects(cp, &after, r)
     })
 }
 
-/// The semantic cell of an entry of vault `v` its creator, the vault, made with attributes `attrs`, by what `r` reads:
-/// the live caps over `v` that aren't wide whose slice holds it, in canonical order (`policy::Meaning::cell`).
-fn semantic_cell(st: &State, v: VaultId, attrs: &Attrs, r: &Readings) -> Vec<CapId> {
-    let picks = st.caps_over(v).filter(|cp| st.live(cp.id) && !cp.cap.wide && st.eff_selects(cp, attrs, r));
-    mk_cell(&picks.map(|cp| cp.id).collect::<Vec<_>>())
+/// The semantic audience of an entry of vault `v` its creator, the vault, made with attributes `attrs`, by what `r`
+/// reads: the live shares over `v` that aren't wide whose slice holds it, in canonical order
+/// (`policy::Meaning::audience`).
+fn semantic_audience(st: &State, v: VaultId, attrs: &Attrs, r: &Readings) -> Vec<ShareId> {
+    let picks = st.shares_over(v).filter(|cp| st.live(cp.id) && !cp.share.wide && st.eff_selects(cp, attrs, r));
+    mk_audience(&picks.map(|cp| cp.id).collect::<Vec<_>>())
 }
 
 /// A box of `secret` for target `t`, bound to `info(recipient)`: wrapped under the target's key where the device holds
 /// it (its own key, a key an owner lends it, or a key it holds), and sealed otherwise to the target's public half, a
 /// signer's or an announced seed's, an X-Wing key and the McEliece blob it names, once the blob is checked against that
-/// name. `None` while the device holds neither, and for a cap's or a cell's key it doesn't hold: a steward boxes those.
+/// name. `None` while the device holds neither, and for a share's or an audience's key it doesn't hold: a steward boxes
+/// those.
 #[allow(clippy::too_many_arguments)]
 fn key_box(
     secret: &Secret,
@@ -3045,7 +3048,7 @@ fn show_items(d: SignerId, store: &mut Store) {
             continue;
         }
         // each write counted where what it builds on counts, it fits the schemas the entry was written under, and its
-        // caps let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`): the
+        // shares let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`): the
         // first two read off it on one scratch item (`History::reading_on`)
         let lane = lanes.entry(en.vault).or_insert_with(|| Lane::with_built_ins(st.lane_of(en.vault)));
         let (mut history, mut scratch) = (History::default(), None);

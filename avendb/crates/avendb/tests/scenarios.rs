@@ -47,7 +47,7 @@ fn scenario_05_write_and_sync() {
 }
 
 #[test]
-fn scenario_06_one_document_via_caps() {
+fn scenario_06_one_document_via_shares() {
     play("6");
 }
 
@@ -97,7 +97,7 @@ fn scenario_15_social_todo() {
 }
 
 #[test]
-fn scenario_16_roles_change_on_one_todo() {
+fn scenario_16_levels_change_on_one_todo() {
     play("16");
 }
 
@@ -137,22 +137,22 @@ fn scenario_22_asking_for_a_tag() {
 }
 
 #[test]
-fn scenario_23_creating_through_a_cap() {
+fn scenario_23_creating_through_a_share() {
     play("23");
 }
 
 #[test]
-fn scenario_24_a_cap_resting_on_a_cap() {
+fn scenario_24_a_share_resting_on_a_share() {
     play("24");
 }
 
 #[test]
-fn scenario_25_wide_caps_relays_and_public() {
+fn scenario_25_wide_shares_relays_and_public() {
     play("25");
 }
 
 #[test]
-fn scenario_26_a_cell_that_comes_back_into_use_moves_on() {
+fn scenario_26_an_audience_that_comes_back_into_use_moves_on() {
     play("26");
 }
 

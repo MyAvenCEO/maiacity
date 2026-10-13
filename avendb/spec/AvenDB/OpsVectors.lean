@@ -60,7 +60,7 @@ def records : List Doc := [[], todo, shipIt, plan, copies, odd]
 
 def water : Row := row 4 [("type", s "paragraph"), ("text", s "Water")]
 
-def runs : List (Doc × List Op) :=
+def runs : List (Doc × List RecordOp) :=
   [ (plan, [.setCell "blocks" 2 "text" (s "Sow in March")]),
     (plan, [.unsetCell "blocks" 3 "checked"]),
     (plan, [.setCell "blocks" 9 "text" (s "Nowhere")]),
@@ -222,7 +222,7 @@ def place : Option Nat → List (String × String)
   | some n => [("at", nat n)]
   | none => []
 
-def op : Op → String
+def op : RecordOp → String
   | .put d            => obj [("op", str "set"), ("path", arr []), ("value", doc d)]
   | .set f x          => obj [("op", str "set"), ("path", arr [str f]), ("value", item x)]
   | .unset f          => obj [("op", str "unset"), ("path", arr [str f])]
@@ -300,7 +300,7 @@ def entryJson (a : Attrs) (d : Doc) : String :=
 def diffCase (d e : Doc) : String :=
   obj [("before", doc d), ("after", doc e), ("changes", arr ((d.diff e).map change))]
 
-def runCase (d : Doc) (ops : List Op) : String :=
+def runCase (d : Doc) (ops : List RecordOp) : String :=
   obj [("before", doc d), ("ops", arr (ops.map op)), ("after", opt doc (d.runAll ops))]
 
 def queryCase (w : Where) : String :=
@@ -319,7 +319,7 @@ def render : String :=
 
 /-! ## What the cases cover -/
 
-def _root_.AvenDB.Ops.Op.kind : Op → String
+def _root_.AvenDB.Ops.RecordOp.kind : RecordOp → String
   | .put _ => "put"
   | .set .. => "set"
   | .unset _ => "unset"
@@ -334,7 +334,7 @@ def _root_.AvenDB.Ops.Op.kind : Op → String
 
 -- O2 on the cases: every run that makes sense changes only what its ops name
 #guard runs.all fun (d, ops) => match d.runAll ops with
-  | some e => d.within (ops.map Op.loc) e
+  | some e => d.within (ops.map RecordOp.loc) e
   | none => true
 -- every op runs somewhere, and every op that names a row or a list somewhere makes no sense
 #guard ["put", "set", "unset", "setRow", "setCell", "unsetCell", "insert", "remove", "move", "add", "drop"].all

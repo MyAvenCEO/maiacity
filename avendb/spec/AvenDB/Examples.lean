@@ -8,10 +8,10 @@ Each `#guard` replays part of an acceptance scenario from the plan and checks wh
 every `lake build`, so a change to the model that breaks a scenario fails the build. The Rust scenario tests check
 the same things against the real code.
 
-A vault holds its entries directly. A cap selects a slice of them by type, author, entry id, creation time and tags,
-and the cells, the sets of caps that select an entry alike, carry the keys. The model never moves an entry on its own:
-a steward, a device acting for the vault, moves each entry to the cell its caps select (`desired`) with a `move` edit,
-so a scenario includes the moves a steward would make, and checks that it has nothing left to do.
+A vault holds its entries directly. A share selects a slice of them by type, author, entry id, creation time and tags,
+and the audiences, the sets of shares that select an entry alike, carry the keys. The model never moves an entry on its
+own: a steward, a device acting for the vault, moves each entry to the audience its shares select (`desired`) with a
+`move` edit, so a scenario includes the moves a steward would make, and checks that it has nothing left to do.
 -/
 
 namespace AvenDB.Examples
@@ -64,22 +64,22 @@ def homeTodos : Selector := .anyOf [[.typeIn [todo], .tagHas home]]
 def urgentTodos : Selector := .anyOf [[.typeIn [todo], .tagHas urgent]]
 def byId (e : EntryId) : Selector := .anyOf [[.entryIn [e]]]
 
-/-- Cap `id` over vault `over`: vault `grantee` holds `role` on what `sel` selects, the whole vault (a wide cap) for
-    `all`. A root cap, issued by the vault it is over, unless it rests on the owner cap `parent`, whose grantee
+/-- Share `id` over vault `over`: vault `who` holds `level` on what `sel` selects, the whole vault (a wide share) for
+    `all`. A root share, issued by the vault it is over, unless it rests on the owner share `parent`, whose grantee
     `issuer` issues it. -/
-def capOf (id : CapId) (over grantee : VaultId) (role : Role) (sel : Selector) (parent : Option CapId := none)
-    (issuer : VaultId := over) : Cap :=
-  { id, over, grantee := .principal (.vault grantee), role, wide := sel == .all, select := sel, ops := role.ops, parent,
+def shareOf (id : ShareId) (over who : VaultId) (level : Level) (sel : Selector) (parent : Option ShareId := none)
+    (issuer : VaultId := over) : Share :=
+  { id, over, who := .principal (.vault who), level, wide := sel == .all, select := sel, ops := level.ops, parent,
     issuer }
 
-/-- Cap `id` over vault `over`: everyone reads what `sel` selects. -/
-def publicCap (id : CapId) (over : VaultId) (sel : Selector) : Cap :=
-  { capOf id over over .read sel with grantee := .«public» }
+/-- Share `id` over vault `over`: everyone reads what `sel` selects. -/
+def publicShare (id : ShareId) (over : VaultId) (sel : Selector) : Share :=
+  { shareOf id over over .read sel with who := .everyone }
 
-/-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in cell `x`, through the cap `proof`
-    names, if it isn't the vault. -/
-def create (v : VaultId) (e : EntryId) (actor : VaultId) (x : Cell) (t : Sym) (tags : List Sym := [])
-    (via : List VaultId := []) (proof : Option CapId := none) : Action :=
+/-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in audience `x`, through the share
+    `proof` names, if it isn't the vault. -/
+def create (v : VaultId) (e : EntryId) (actor : VaultId) (x : Audience) (t : Sym) (tags : List Sym := [])
+    (via : List VaultId := []) (proof : Option ShareId := none) : Action :=
   .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0⟩)) (tags := { add := tags }) (proof := proof)
 
 /-- Edits in sequence: each builds on the one before, ids count from `start`. -/
@@ -98,11 +98,12 @@ def opens' (edits : List Edit) (d : SignerId) (k : KeyFam) : Bool :=
   knows st [.signer d] (st.curKey k)
 
 /-- The entries device `d` reads now, in what a peer holding `edits` knows: it opens the current key of the entry's
-    cell, and the entry's key in its current stay at that cell's generation. -/
+    audience, and the entry's key in its current stay at that audience's epoch. -/
 def readable (edits : List Edit) (d : SignerId) : List EntryId :=
   let st := view edits
   (st.entries.filter fun en =>
-    knows st [.signer d] (st.curKey (.cell en.vault en.cell)) && knows st [.signer d] (entryKey st en)).map (·.id)
+    knows st [.signer d] (st.curKey (.audience en.vault en.audience)) &&
+      knows st [.signer d] (entryKey st en)).map (·.id)
 
 def reads (edits : List Edit) (d : SignerId) (e : EntryId) : Bool := (readable edits d).contains e
 
@@ -111,13 +112,13 @@ def writable (edits : List Edit) (a : VaultId) : List EntryId :=
   let st := view edits
   (st.entries.filter (mayWrite st a)).map (·.id)
 
-/-- The cell entry `e` is in. -/
-def cellOf (edits : List Edit) (e : EntryId) : Cell := ((view edits).entry? e).elim [] (·.cell)
+/-- The audience entry `e` is in. -/
+def audienceOf (edits : List Edit) (e : EntryId) : Audience := ((view edits).entry? e).elim [] (·.audience)
 
-/-- What a steward does with entry `e`: nothing (`none`), or move it to the cell its caps select. -/
-def upkeep (edits : List Edit) (e : EntryId) : Option Cell := let st := view edits; (st.entry? e).bind (desired st)
+/-- What a steward does with entry `e`: nothing (`none`), or move it to the audience its shares select. -/
+def upkeep (edits : List Edit) (e : EntryId) : Option Audience := let st := view edits; (st.entry? e).bind (desired st)
 
-/-- Every entry is in the cell its caps select: a steward has nothing left to do. -/
+/-- Every entry is in the audience its shares select: a steward has nothing left to do. -/
 def tidy (edits : List Edit) : Bool := let st := view edits; st.entries.all (desired st · == none)
 
 /-- The entry whose log an edit belongs to. -/
@@ -264,19 +265,19 @@ def sGuild : List Edit := s3 ++ chain 410 [(passkeyA, [passkeyB], .genesis guild
 #guard !accepted sGuild (attempt macB [] (create guild welcome guild [] doc (via := [bob])))
 #guard !accepted sGuild (attempt macB [] (create guild welcome guild [] doc (via := [coop])))
 
-/-! ## Scenarios 4 to 7: entries, writes, one document via a cap, public
+/-! ## Scenarios 4 to 7: entries, writes, one document via a share, public
 
-The coop's Handbook is the coop's documents, in its vault. An entry no cap selects is in the cell of no caps, which
-only the vault reads. A cap moves nothing by itself: a steward, a device acting for the coop, moves each entry to the
-cell its caps select, and creates a new one straight there. -/
+The coop's Handbook is the coop's documents, in its vault. An entry no share selects is in the audience of no shares,
+which only the vault reads. A share moves nothing by itself: a steward, a device acting for the coop, moves each entry
+to the audience its shares select, and creates a new one straight there. -/
 
 def s4 : List Edit := s3 ++ chain 30 [
   (macA, [], create coop welcome coop [] doc (via := [alice])),
   (macA, [], create coop onboarding coop [] doc (via := [alice]))]
 #guard refused s4 == [] && tidy s4
 
--- both are in the cell of no caps: Bob's Mac reads them through the coop; Carol and a stranger can't
-#guard cellOf s4 welcome == [] && readable s4 macB == [welcome, onboarding]
+-- both are in the audience of no shares: Bob's Mac reads them through the coop; Carol and a stranger can't
+#guard audienceOf s4 welcome == [] && readable s4 macB == [welcome, onboarding]
 #guard readable s4 macC == [] && readable s4 stranger == []
 -- Bob's Mac receives Welcome's log, Carol's Mac doesn't
 #guard (respond s4 macB).any (entryLog? · == some welcome) && !(respond s4 macC).any (entryLog? · == some welcome)
@@ -285,45 +286,45 @@ def s5 : List Edit := s4 ++ chain 40 [
   (macB, [], .write coop welcome coop none 0 [30] (via := [bob]))]
 #guard refused s5 == []
 
--- a write names a stay its entry has been in, at a generation that stay's cell has reached
+-- a write names a stay its entry has been in, at an epoch that stay's audience has reached
 #guard !accepted s5 (attempt macB [] (.write coop welcome coop (some 77) 0 [40] (via := [bob])))
 #guard !accepted s5 (attempt macB [] (.write coop welcome coop none 1 [40] (via := [bob])))
 -- and builds only on writes of its own entry
 #guard !accepted s5 (attempt macB [] (.write coop onboarding coop none 0 [40] (via := [bob])))
 
 def s6 : List Edit := s5 ++ chain 50 [
-  (macA, [], .cap (capOf 1 coop carol .read (byId welcome)) [alice]),
-  -- a steward, acting for the coop, moves Welcome to the cell of that cap
+  (macA, [], .share (shareOf 1 coop carol .read (byId welcome)) [alice]),
+  -- a steward, acting for the coop, moves Welcome to the audience of that share
   (macA, [], .move coop welcome [1] [30, 40] [alice])]
 #guard refused s6 == [] && tidy s6
 
--- the cap alone moves nothing: Carol reads Welcome only once a steward has moved it
+-- the share alone moves nothing: Carol reads Welcome only once a steward has moved it
 #guard upkeep s6.dropLast welcome == some [1] && !reads s6.dropLast macC welcome
-#guard readable s6 macC == [welcome] && cellOf s6 welcome == [1]
--- she reads its whole history, written before her cap: the move linked its old key to the new one
+#guard readable s6 macC == [welcome] && audienceOf s6 welcome == [1]
+-- she reads its whole history, written before her share: the move linked its old key to the new one
 #guard knows (view s6) [.signer macC] (.entry welcome none 0)
 -- she can't edit it, and Bob's Mac still reads both documents
 #guard !accepted s6 (attempt macC [] (.write coop welcome carol (some 51) 0 [40]))
 #guard readable s6 macB == [welcome, onboarding]
--- a cap naming a device is refused (T4)
-#guard !accepted s6 (attempt macA [] (.cap { capOf 2 coop carol .read (byId welcome) with
-                                              grantee := .principal (.signer macC) } [alice]))
+-- a share naming a device is refused (T4)
+#guard !accepted s6 (attempt macA [] (.share { shareOf 2 coop carol .read (byId welcome) with
+                                              who := .principal (.signer macC) } [alice]))
 
 def s7 : List Edit := s6 ++ chain 60 [
-  (macA, [], .cap (publicCap 3 coop (byId charter)) [alice]),
-  -- a steward creates Charter straight in the cell its cap selects
+  (macA, [], .share (publicShare 3 coop (byId charter)) [alice]),
+  -- a steward creates Charter straight in the audience its share selects
   (macA, [], create coop charter coop [3] doc (via := [alice]))]
 #guard refused s7 == [] && tidy s7
 
--- anyone opens Charter, and nothing else; Public can't be given write (T8)
+-- anyone opens Charter, and nothing else; everyone can't be given write (T8)
 #guard readable s7 stranger == [charter]
-#guard !accepted s7 (attempt macA [] (.cap { publicCap 4 coop (byId charter) with role := .write } [alice]))
+#guard !accepted s7 (attempt macA [] (.share { publicShare 4 coop (byId charter) with level := .write } [alice]))
 
-/-! ## Slices: caps select entries, cells carry the keys
+/-! ## Slices: shares select entries, audiences carry the keys
 
-Alice's vault holds her todos and her notes directly, each made in the cell of no caps. She shares with Bob all her
-todos, or only those tagged work, or one note by its id. Her Mac, a steward, then moves each entry to the cell its caps
-select, and Bob reads exactly what his cap selects, and writes only where it has write. -/
+Alice's vault holds her todos and her notes directly, each made in the audience of no shares. She shares with Bob all
+her todos, or only those tagged work, or one note by its id. Her Mac, a steward, then moves each entry to the audience
+its shares select, and Bob reads exactly what his share selects, and writes only where it has write. -/
 
 def lib : List Edit := s2 ++ chain 500 [
   (macA, [], create alice door alice [] todo [work]),
@@ -331,11 +332,11 @@ def lib : List Edit := s2 ++ chain 500 [
   (macA, [], create alice solar alice [] todo [work]),
   (macA, [], create alice plan alice [] note [work]),
   (macA, [], create alice diary alice [] note)]
--- no cap selects them yet: they are in the cell of no caps, and Bob reads none of them
+-- no share selects them yet: they are in the audience of no shares, and Bob reads none of them
 #guard refused lib == [] && tidy lib && readable lib macB == []
 
--- all of Alice's todos, read: the cap alone moves nothing, a steward has three todos to move into its cell
-def allTodos : List Edit := lib ++ chain 510 [(macA, [], .cap (capOf 31 alice bob .read todos))]
+-- all of Alice's todos, read: the share alone moves nothing, a steward has three todos to move into its audience
+def allTodos : List Edit := lib ++ chain 510 [(macA, [], .share (shareOf 31 alice bob .read todos))]
 #guard [door, seeds, solar, plan, diary].map (upkeep allTodos) == [some [31], some [31], some [31], none, none]
 #guard readable allTodos macB == []
 def allTodos' : List Edit := allTodos ++ chain 511 [
@@ -349,7 +350,7 @@ def allTodos' : List Edit := allTodos ++ chain 511 [
 
 -- only the todos tagged work, write
 def workShare : List Edit := lib ++ chain 510 [
-  (macA, [], .cap (capOf 32 alice bob .write workTodos)),
+  (macA, [], .share (shareOf 32 alice bob .write workTodos)),
   (macA, [], .move alice door [32] [500]),
   (macA, [], .move alice solar [32] [502])]
 -- moved, Bob reads and writes the two todos tagged work, not the one tagged home nor the note tagged work
@@ -360,7 +361,7 @@ def workShare : List Edit := lib ++ chain 510 [
 
 -- one note, by its id, write
 def onePlan : List Edit := lib ++ chain 510 [
-  (macA, [], .cap (capOf 33 alice bob .write (byId plan))),
+  (macA, [], .share (shareOf 33 alice bob .write (byId plan))),
   (macA, [], .move alice plan [33] [503])]
 -- moved, Bob reads and writes that note alone
 #guard refused onePlan == [] && tidy onePlan
@@ -368,29 +369,29 @@ def onePlan : List Edit := lib ++ chain 510 [
 #guard accepted onePlan (attempt macB [] (.write alice plan bob (some 511) 0 [503]))
 #guard !accepted onePlan (attempt macB [] (.write alice diary bob none 0 [504]))
 
--- a cell is the set of caps that select its entries alike: Carol writes all of Alice's todos and Bob the ones tagged
--- work, so the two work todos share a cell of both caps, and the other todo is in Carol's alone
+-- an audience is the set of shares that select its entries alike: Carol writes all of Alice's todos and Bob the ones
+-- tagged work, so the two work todos share an audience of both shares, and the other todo is in Carol's alone
 def shared : List Edit := lib ++ chain 510 [
-  (macA, [], .cap (capOf 31 alice carol .write todos)),
-  (macA, [], .cap (capOf 32 alice bob .write workTodos)),
+  (macA, [], .share (shareOf 31 alice carol .write todos)),
+  (macA, [], .share (shareOf 32 alice bob .write workTodos)),
   (macA, [], .move alice door [31, 32] [500]),
   (macA, [], .move alice seeds [31] [501]),
   (macA, [], .move alice solar [31, 32] [502])]
 -- moved, Bob reads and writes the two work todos, Carol all three
 #guard refused shared == [] && tidy shared
-#guard [door, seeds, solar, plan, diary].map (cellOf shared) == [[31, 32], [31], [31, 32], [], []]
+#guard [door, seeds, solar, plan, diary].map (audienceOf shared) == [[31, 32], [31], [31, 32], [], []]
 #guard readable shared macB == [door, solar] && writable shared bob == [door, solar]
 #guard readable shared macC == [door, seeds, solar] && writable shared carol == [door, seeds, solar]
 
 /-! ## Retagging moves an entry out of a slice
 
-Only the vault's own devices change tags. Alice takes the work tag off the solar todo: Bob's cap no longer selects it,
-and her Mac moves it to the cell of no caps. From the move on, Bob writes it no more, nor opens its new key, while he
-keeps what he could read up to the move. -/
+Only the vault's own devices change tags. Alice takes the work tag off the solar todo: Bob's share no longer selects it,
+and her Mac moves it to the audience of no shares. From the move on, Bob writes it no more, nor opens its new key, while
+he keeps what he could read up to the move. -/
 
 def retag : List Edit := workShare ++ chain 520 [
   (macA, [], .write alice solar alice (some 512) 0 [502] (tags := { remove := [work] }))]
--- Alice's tag counts: the todo leaves Bob's slice, and a steward has it to move to the cell of no caps
+-- Alice's tag counts: the todo leaves Bob's slice, and a steward has it to move to the audience of no shares
 #guard refused retag == []
 #guard upkeep retag solar == some [] && ((view retag).entry? solar).map (·.attrs.tags) == some []
 -- Bob can only ask for a tag to change: a tag in his write changes nothing
@@ -401,26 +402,26 @@ def retag' : List Edit := retag ++ chain 521 [(macA, [], .move alice solar [] [5
 #guard refused retag' == [] && tidy retag'
 #guard readable retag' macB == [door] && writable retag' bob == [door]
 #guard !accepted retag' (attempt macB [] (.write alice solar bob (some 521) 0 [520]))
--- Bob opens neither the key solar has now nor its cell's, but still the key of its stay before the move, and so
+-- Bob opens neither the key solar has now nor its audience's, but still the key of its stay before the move, and so
 -- everything written up to the move
-#guard !opens' retag' macB (.cell alice [])
+#guard !opens' retag' macB (.audience alice [])
 #guard ((view retag').entry? solar).any fun en => !knows (view retag') [.signer macB] (entryKey (view retag') en)
 #guard knows (view retag') [.signer macB] (.entry solar (some 512) 0)
 #guard knows (view retag') [.signer macB] (.entry solar none 0)
 
-/-! ## Creating through a cap
+/-! ## Creating through a share
 
-A writer that isn't a steward sees no other cap, so it can't work out where a new entry belongs: it creates it in its
-cap's intake cell, the cell of its cap's chain, which only those caps' grantees and the vault read. Every peer checks
-only that; whether the entry lies in the writer's slice (`admits`, the entry's `admitted`) only the stewards can tell,
-and one moves it on to its semantic cell. -/
+A writer that isn't a steward sees no other share, so it can't work out where a new entry belongs: it creates it in its
+share's intake audience, the audience of its share's chain, which only those shares' grantees and the vault read. Every
+peer checks only that; whether the entry lies in the writer's slice (`admits`, the entry's `admitted`) only the stewards
+can tell, and one moves it on to its semantic audience. -/
 
--- Bob creates the lamp todo, tagged work, in his cap's intake cell, and nowhere else
+-- Bob creates the lamp todo, tagged work, in his share's intake audience, and nowhere else
 def intake : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob [32] todo [work] (proof := some 32))]
 #guard refused intake == []
 #guard !accepted shared (attempt macB [] (create alice lamp bob [] todo [work]))
 #guard !accepted shared (attempt macB [] (create alice lamp bob [31, 32] todo [work]))
--- it lies in his slice; Carol's cap selects it too, but she reads it only once a steward has moved it
+-- it lies in his slice; Carol's share selects it too, but she reads it only once a steward has moved it
 #guard admits (view shared) bob alice [32] ⟨todo, bob, lamp, 0, [work]⟩ (some 32)
 #guard ((view intake).entry? lamp).map (·.admitted) == some true
 #guard upkeep intake lamp == some [31, 32] && !reads intake macC lamp && reads intake macB lamp
@@ -429,8 +430,8 @@ def intake' : List Edit := intake ++ chain 521 [(macA, [], .move alice lamp [31,
 #guard refused intake' == [] && tidy intake'
 #guard reads intake' macC lamp && reads intake' macB lamp && (writable intake' bob).contains lamp
 
--- a note Bob makes in the same cell is accepted too, but lies outside his slice: a steward moves it to the cell of no
--- caps, where only Alice reads it, keeping what Bob wrote
+-- a note Bob makes in the same audience is accepted too, but lies outside his slice: a steward moves it to the audience
+-- of no shares, where only Alice reads it, keeping what Bob wrote
 def outside : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob [32] note [work] (proof := some 32))]
 #guard refused outside == []
 #guard !admits (view shared) bob alice [32] ⟨note, bob, lamp, 0, [work]⟩ (some 32)
@@ -441,30 +442,33 @@ def outside' : List Edit := outside ++ chain 521 [(macA, [], .move alice lamp []
 #guard !reads outside' macB lamp && reads outside' macA lamp && !(writable outside' bob).contains lamp
 #guard ((view outside').entry? lamp).isSome
 
-/-! ## A cap resting on a cap
+/-! ## A share resting on a share
 
-An owner may share its slice on: a cap resting on an owner cap is issued by that cap's grantee, and grants only what
-every cap of its chain selects (T22). Alice makes Carol owner of her todos, a governance act, and Carol gives Dave the
-home todos and, claiming more than she holds, the notes. Revoking Carol's cap ends both. -/
+An owner may share its slice on: a share resting on an owner share is issued by that share's grantee, and grants only
+what every share of its chain selects (T22). Alice makes Carol owner of her todos, a governance act, and Carol gives
+Dave the home todos and, claiming more than she holds, the notes. Revoking Carol's share ends both. -/
 
 def resting : List Edit := lib ++ chain 540 [
-  (passkeyA, [], .cap (capOf 41 alice carol .owner todos)),
-  (macC, [], .cap (capOf 42 alice dave .read homeTodos (parent := some 41) (issuer := carol))),
-  (macC, [], .cap (capOf 43 alice dave .read notes (parent := some 41) (issuer := carol)))]
+  (passkeyA, [], .share (shareOf 41 alice carol .owner todos)),
+  (macC, [], .share (shareOf 42 alice dave .read homeTodos (parent := some 41) (issuer := carol))),
+  (macC, [], .share (shareOf 43 alice dave .read notes (parent := some 41) (issuer := carol)))]
 #guard refused resting == []
 
--- a device alone can't make anyone owner, and only the grantee of an owner cap issues on it
-#guard !accepted lib (attempt macA [] (.cap (capOf 41 alice carol .owner todos)))
-#guard !accepted resting (attempt macB [] (.cap (capOf 44 alice bob .read todos (parent := some 41) (issuer := bob))))
-#guard !accepted resting (attempt macD [] (.cap (capOf 44 alice bob .read todos (parent := some 42) (issuer := dave))))
--- a wide cap rests only on a wide one; an owner cap resting on Carol's takes her own approval
-#guard !accepted resting (attempt macC [] (.cap (capOf 44 alice dave .read .all (parent := some 41) (issuer := carol))))
-#guard !accepted resting (attempt macC [] (.cap (capOf 44 alice dave .owner homeTodos (some 41) carol)))
-#guard accepted resting (attempt passkeyC [] (.cap (capOf 44 alice dave .owner homeTodos (some 41) carol)))
--- Dave's slices are what every cap of their chain selects: the todo tagged home, and no note at all
-#guard ((view resting).cap? 42).any fun c =>
+-- a device alone can't make anyone owner, and only the grantee of an owner share issues on it
+#guard !accepted lib (attempt macA [] (.share (shareOf 41 alice carol .owner todos)))
+#guard !accepted resting (attempt macB []
+  (.share (shareOf 44 alice bob .read todos (parent := some 41) (issuer := bob))))
+#guard !accepted resting (attempt macD []
+  (.share (shareOf 44 alice bob .read todos (parent := some 42) (issuer := dave))))
+-- a wide share rests only on a wide one; an owner share resting on Carol's takes her own approval
+#guard !accepted resting (attempt macC []
+  (.share (shareOf 44 alice dave .read .all (parent := some 41) (issuer := carol))))
+#guard !accepted resting (attempt macC [] (.share (shareOf 44 alice dave .owner homeTodos (some 41) carol)))
+#guard accepted resting (attempt passkeyC [] (.share (shareOf 44 alice dave .owner homeTodos (some 41) carol)))
+-- Dave's slices are what every share of their chain selects: the todo tagged home, and no note at all
+#guard ((view resting).share? 42).any fun c =>
   (view resting).entries.map (effSelects (view resting) c ·.attrs) == [false, true, false, false, false]
-#guard ((view resting).cap? 43).any fun c => !(view resting).entries.any (effSelects (view resting) c ·.attrs)
+#guard ((view resting).share? 43).any fun c => !(view resting).entries.any (effSelects (view resting) c ·.attrs)
 #guard [door, seeds, solar, plan, diary].map (upkeep resting) == [some [41], some [41, 42], some [41], none, none]
 def resting' : List Edit := resting ++ chain 550 [
   (macA, [], .move alice door [41] [500]),
@@ -473,44 +477,44 @@ def resting' : List Edit := resting ++ chain 550 [
 -- moved, Carol reads the todos, and Dave only the one tagged home
 #guard refused resting' == [] && tidy resting'
 #guard readable resting' macC == [door, seeds, solar] && readable resting' macD == [seeds]
--- Carol, who issued Dave's cap, and Dave, giving it up, may revoke it; Bob may not
+-- Carol, who issued Dave's share, and Dave, giving it up, may revoke it; Bob may not
 #guard accepted resting' (attempt macC [] (.revoke 42 carol []))
 #guard accepted resting' (attempt macD [] (.revoke 42 dave []))
 #guard !accepted resting' (attempt macB [] (.revoke 42 bob []))
--- revoking Carol's owner cap is governance, and ends Dave's caps with it; no entry needs to move
+-- revoking Carol's owner share is governance, and ends Dave's shares with it; no entry needs to move
 def carolRevoked : List Edit := resting' ++ chain 560 [(passkeyA, [], .revoke 41 alice [540, 541, 542, 550, 551, 552])]
 #guard refused carolRevoked == [] && tidy carolRevoked
 #guard [41, 42, 43].all (!(view carolRevoked).live ·)
 #guard readable carolRevoked macC == [] && readable carolRevoked macD == []
 
-/-! ## Wide caps, Public, relays
+/-! ## Wide shares, everyone, relays
 
-A wide cap selects the whole vault, in the clear: it reaches every cell, and splits none, so issuing it moves
-nothing. Alice gives Dave, her backup, a wide read cap, and everyone her plan; avenCEO, the server's vault, gets a wide
-relay cap: its servers hold and pass on every entry of Alice's, and open no key of hers. -/
+A wide share selects the whole vault, in the clear: it reaches every audience, and splits none, so issuing it moves
+nothing. Alice gives Dave, her backup, a wide read share, and everyone her plan; avenCEO, the server's vault, gets a
+wide relay share: its servers hold and pass on every entry of Alice's, and open no key of hers. -/
 
-def wideCaps : List Edit := shared ++ chain 540 [
+def wideShares : List Edit := shared ++ chain 540 [
   (passkeyA, [], .genesis avenCEO .aven [.vault alice] 1),
   (passkeyA, [server], .addDevice avenCEO server),
-  (macA, [], .cap (capOf 50 alice dave .read .all)),
-  (macA, [], .cap (capOf 51 alice avenCEO .backup .all))]
--- a wide cap splits no cell: there is nothing to move
-#guard refused wideCaps == [] && tidy wideCaps
--- Dave reads every entry, in every cell
-#guard readable wideCaps macD == [door, seeds, solar, plan, diary]
+  (macA, [], .share (shareOf 50 alice dave .read .all)),
+  (macA, [], .share (shareOf 51 alice avenCEO .backup .all))]
+-- a wide share splits no audience: there is nothing to move
+#guard refused wideShares == [] && tidy wideShares
+-- Dave reads every entry, in every audience
+#guard readable wideShares macD == [door, seeds, solar, plan, diary]
 -- the server receives every entry of Alice's, and Alice's Mac sends it their logs, but it reads none
-#guard (view wideCaps).entries.all fun en => mayReceive (view wideCaps) server en.id
-#guard [door, seeds, solar, plan, diary].all fun e => (respond wideCaps server).any (entryLog? · == some e)
-#guard readable wideCaps server == []
--- everyone reads the plan, the server too, once a steward has moved it to the public cap's cell
-def withPublic : List Edit := wideCaps ++ chain 544 [
-  (macA, [], .cap (publicCap 52 alice (byId plan))),
+#guard (view wideShares).entries.all fun en => mayReceive (view wideShares) server en.id
+#guard [door, seeds, solar, plan, diary].all fun e => (respond wideShares server).any (entryLog? · == some e)
+#guard readable wideShares server == []
+-- everyone reads the plan, the server too, once a steward has moved it to the public share's audience
+def withPublic : List Edit := wideShares ++ chain 544 [
+  (macA, [], .share (publicShare 52 alice (byId plan))),
   (macA, [], .move alice plan [52] [503])]
 #guard refused withPublic == [] && tidy withPublic
 #guard readable withPublic stranger == [plan] && readable withPublic server == [plan]
--- a relay, which reads no selector, type or tag, has the same edits stand and the entries in the same cells (T25)
+-- a relay, which reads no selector, type or tag, has the same edits stand and the entries in the same audiences (T25)
 #guard (standing (withPublic.map Edit.blind)).map (·.id) == (standing withPublic).map (·.id)
-#guard (view (withPublic.map Edit.blind)).entries.map (·.cell) == (view withPublic).entries.map (·.cell)
+#guard (view (withPublic.map Edit.blind)).entries.map (·.audience) == (view withPublic).entries.map (·.audience)
 
 /-! ## Scenario 8: proposals
 
@@ -565,7 +569,7 @@ def schemaV2 : BlobId := 1
 def lensV1V2 : BlobId := 2
 
 def s9 : List Edit := s7 ++ chain 65 [
-  (macA, [], .cap (capOf 5 coop carol .write (byId onboarding)) [alice]),
+  (macA, [], .share (shareOf 5 coop carol .write (byId onboarding)) [alice]),
   (macA, [], .move coop onboarding [5] [31] [alice]),
   (macA, [], .publish coop coop schemaV2 [alice]),
   (macA, [], .publish coop coop lensV1V2 [alice]),
@@ -583,14 +587,14 @@ def s9 : List Edit := s7 ++ chain 65 [
 #guard !accepted s9 (attempt macC [] (.publish coop carol 3))
 #guard !accepted s9 (attempt macC [] (.publish coop coop 3 [carol]))
 #guard !accepted s9 (attempt stranger [] (.publish coop coop 3))
--- a vault holding a wide owner cap over the coop publishes into its lane; an owner cap on a slice doesn't
+-- a vault holding a wide owner share over the coop publishes into its lane; an owner share on a slice doesn't
 def daveOwns (sel : Selector) : List Edit := s9 ++ chain 70 [
-  (passkeyA, [passkeyB], .cap (capOf 6 coop dave .owner sel) [alice])]
+  (passkeyA, [passkeyB], .share (shareOf 6 coop dave .owner sel) [alice])]
 #guard refused (daveOwns .all) == [] && refused (daveOwns docs) == []
 #guard ownsLane (view (daveOwns .all)) dave coop && !ownsLane (view (daveOwns docs)) dave coop
 #guard accepted (daveOwns .all) (attempt macD [] (.publish coop dave 3))
 #guard !accepted (daveOwns docs) (attempt macD [] (.publish coop dave 3))
--- a vault's lane travels with its log: Carol's Mac receives the coop's, through her caps, and so does anyone, through
+-- a vault's lane travels with its log: Carol's Mac receives the coop's, through her shares, and so does anyone, through
 -- the public Charter; Dave's goes to his own devices, and not to Carol's Mac, as nothing she receives names his vault
 #guard [macC, stranger].all fun d => (respond s9 d).any (·.action == .publish coop coop schemaV2 [alice])
 #guard (respond s9 macD).any (·.action == .publish dave dave schemaV2)
@@ -623,33 +627,34 @@ def welcomeV2 : Lens.StoredDoc :=
 #guard welcomeV2.v2.tags == ["greenhouse"]
 #guard (welcomeV2.putV1 { welcomeV2.v1 with title := "Welcome!" }).tags == ["greenhouse"]
 
-/-! ## Scenario 10: revoking a cap rotates the cells it was in
+/-! ## Scenario 10: revoking a share rotates the audiences it was in
 
-The cells the revoked cap was in move to a new generation, whose key only their remaining caps get. The revoked cap
-stays in the cell: only the live part of a cell has to be its semantic cell, so a revocation moves no entry. -/
+The audiences the revoked share was in move to a new epoch, whose key only their remaining shares get. The revoked share
+stays in the audience: only the live part of an audience has to be its semantic audience, so a revocation moves no
+entry. -/
 
 def s10 : List Edit := s7 ++ chain 80 [(macA, [], .revoke 1 coop [] [alice])]
 #guard refused s10 == []
 
--- Welcome's cell moves on: Carol doesn't open its new generation, Bob does, and Welcome stays where it is
-#guard (view s10).epochOf (.cell coop [1]) == (view s7).epochOf (.cell coop [1]) + 1
+-- Welcome's audience moves on: Carol doesn't open its new epoch, Bob does, and Welcome stays where it is
+#guard (view s10).epochOf (.audience coop [1]) == (view s7).epochOf (.audience coop [1]) + 1
 #guard !reads s10 macC welcome && reads s10 macB welcome
-#guard cellOf s10 welcome == [1] && upkeep s10 welcome == none
+#guard audienceOf s10 welcome == [1] && upkeep s10 welcome == none
 -- Carol keeps what she could read before
-#guard knows (view s10) [.signer macC] (.scoped (.cell coop [1]) 0)
+#guard knows (view s10) [.signer macC] (.scoped (.audience coop [1]) 0)
 
--- Alice revokes Bob's write on her work todos: their cell moves on, the others' don't, and Bob opens nothing new,
+-- Alice revokes Bob's write on her work todos: their audience moves on, the others' don't, and Bob opens nothing new,
 -- though no entry moves
 def unshared : List Edit := shared ++ chain 530 [(macA, [], .revoke 32 alice [500, 501, 502, 510, 511, 512, 513, 514])]
-#guard refused unshared == [] && tidy unshared && cellOf unshared door == [31, 32]
+#guard refused unshared == [] && tidy unshared && audienceOf unshared door == [31, 32]
 #guard (keyFams (view unshared)).all fun k =>
-  (view unshared).epochOf k == (view shared).epochOf k + if k == .cell alice [31, 32] then 1 else 0
+  (view unshared).epochOf k == (view shared).epochOf k + if k == .audience alice [31, 32] then 1 else 0
 #guard readable unshared macB == [] && readable unshared macC == [door, seeds, solar]
-#guard knows (view unshared) [.signer macB] (.scoped (.cell alice [31, 32]) 0)
+#guard knows (view unshared) [.signer macB] (.scoped (.audience alice [31, 32]) 0)
 
 /-! ## Scenario 11: a lost iPhone rotates everything it could reach
 
-A vault's cap and cell keys derive from its seed, so when the seed moves on they all do. -/
+A vault's share and audience keys derive from its seed, so when the seed moves on they all do. -/
 
 def s11 : List Edit := s7 ++ chain 90 [(passkeyA, [], .removeDevice alice phoneA [])]
 #guard refused s11 == []
@@ -658,11 +663,12 @@ def s11 : List Edit := s7 ++ chain 90 [(passkeyA, [], .removeDevice alice phoneA
 #guard !opens' s11 phoneA (.seed alice) && !opens' s11 phoneA (.seed coop)
 #guard !reads s11 phoneA welcome && reads s11 macA welcome && reads s11 macB welcome
 #guard !accepted s11 (attempt phoneA [] (.write coop welcome coop (some 51) 1 [40] (via := [alice])))
--- Alice's seed and the coop's, which it reached through Alice's, move on, and every cap and cell key of both vaults
+-- Alice's seed and the coop's, which it reached through Alice's, move on, and every share and audience key of both
+-- vaults
 #guard (keyFams (view s11)).all fun k =>
   (view s11).epochOf k == (view s7).epochOf k + if k.vault == alice || k.vault == coop then 1 else 0
 
--- the same in Alice's own vault, where Bob and Carol hold caps: every key of hers moves on, theirs don't
+-- the same in Alice's own vault, where Bob and Carol hold shares: every key of hers moves on, theirs don't
 def lostPhone : List Edit := shared ++ chain 530 [(passkeyA, [], .removeDevice alice phoneA [])]
 #guard refused lostPhone == []
 #guard (keyFams (view lostPhone)).all fun k =>
@@ -683,21 +689,21 @@ def bobLeft : List Edit := s12 ++ offline 98 61 [(macB, [], .write coop welcome 
 #guard refused bobLeft == [98]
 #guard !accepted s12 (attempt macB [] (.write coop welcome coop (some 51) 0 [40] (via := [bob])))
 
-/-! ## Scenarios 15 and 16: one todo, many vaults, changing roles -/
+/-! ## Scenarios 15 and 16: one todo, many vaults, changing levels -/
 
 def s15 : List Edit := s3 ++ chain 100 [
   (macA, [], create alice door alice [] todo [work]),
   (macA, [], create alice seeds alice [] todo [home]),
   (macA, [], create alice solar alice [] todo [work]),
-  (macA, [], .cap (capOf 10 alice bob .write (byId door))),
-  (macA, [], .cap (capOf 11 alice carol .read (byId door))),
+  (macA, [], .share (shareOf 10 alice bob .write (byId door))),
+  (macA, [], .share (shareOf 11 alice carol .read (byId door))),
   -- making the coop owner of the todo is governance: Alice's passkey
-  (passkeyA, [], .cap (capOf 12 alice coop .owner (byId door))),
+  (passkeyA, [], .share (shareOf 12 alice coop .owner (byId door))),
   (macA, [], .move alice door [10, 11, 12] [100])]
 #guard refused s15 == [] && tidy s15
 
 -- a device alone can't make anyone owner
-#guard !accepted s15 (attempt macA [] (.cap (capOf 13 alice coop .owner (byId door))))
+#guard !accepted s15 (attempt macA [] (.share (shareOf 13 alice coop .owner (byId door))))
 #guard accepted s15 (attempt macB [] (.write alice door bob (some 106) 0 [100]))
 #guard !accepted s15 (attempt macC [] (.write alice door carol (some 106) 0 [100]))
 #guard reads s15 macC door && !reads s15 macC seeds
@@ -705,16 +711,16 @@ def s15 : List Edit := s3 ++ chain 100 [
 
 def s16a : List Edit := s15 ++ chain 110 [
   -- acting for the coop, through Bob's vault, Bob gives Dave read
-  (macB, [], .cap (capOf 14 alice dave .read (byId door) (parent := some 12) (issuer := coop)) [bob]),
+  (macB, [], .share (shareOf 14 alice dave .read (byId door) (parent := some 12) (issuer := coop)) [bob]),
   -- Alice raises Carol to write and takes Bob's own write away
-  (macA, [], .cap (capOf 15 alice carol .write (byId door))),
+  (macA, [], .share (shareOf 15 alice carol .write (byId door))),
   (macA, [], .revoke 10 alice [100, 106])]
 #guard refused s16a == []
 
--- Bob still reaches the todo through the coop, so its cell's key didn't rotate
-#guard entitled (view s16a) macB (.cell alice [10, 11, 12])
-#guard (view s16a).epochOf (.cell alice [10, 11, 12]) == (view s15).epochOf (.cell alice [10, 11, 12])
--- the new caps reach the todo once a steward has moved it, which drops the revoked cap from its cell
+-- Bob still reaches the todo through the coop, so its audience's key didn't rotate
+#guard entitled (view s16a) macB (.audience alice [10, 11, 12])
+#guard (view s16a).epochOf (.audience alice [10, 11, 12]) == (view s15).epochOf (.audience alice [10, 11, 12])
+-- the new shares reach the todo once a steward has moved it, which drops the revoked share from its audience
 #guard upkeep s16a door == some [11, 12, 14, 15] && !reads s16a macD door
 def s16b : List Edit := s16a ++ chain 113 [(macA, [], .move alice door [11, 12, 14, 15] [100])]
 #guard refused s16b == [] && tidy s16b
@@ -724,14 +730,15 @@ def s16b : List Edit := s16a ++ chain 113 [(macA, [], .move alice door [11, 12, 
 #guard accepted s16b (attempt macB [] (.write alice door coop (some 113) 0 [100] (via := [bob])))
 
 def s16 : List Edit := s16b ++ chain 120 [
-  -- taking the coop's owner cap away is governance, and ends the read Bob gave Dave, which Alice had seen
+  -- taking the coop's owner share away is governance, and ends the read Bob gave Dave, which Alice had seen
   (passkeyA, [], .revoke 12 alice [110])]
 #guard refused s16 == [] && tidy s16
 
--- Dave's cap ended with the coop's; neither Bob nor Dave may open the todo's cell, which moves on
+-- Dave's share ended with the coop's; neither Bob nor Dave may open the todo's audience, which moves on
 #guard !(view s16).live 14
-#guard [macB, macD].all fun d => !entitled (view s16) d (.cell alice [11, 12, 14, 15])
-#guard (view s16).epochOf (.cell alice [11, 12, 14, 15]) == (view s16b).epochOf (.cell alice [11, 12, 14, 15]) + 1
+#guard [macB, macD].all fun d => !entitled (view s16) d (.audience alice [11, 12, 14, 15])
+#guard (view s16).epochOf (.audience alice [11, 12, 14, 15]) ==
+  (view s16b).epochOf (.audience alice [11, 12, 14, 15]) + 1
 -- Bob and Dave read the todo no more, Carol and Alice still do; Bob no longer writes it for the coop
 #guard !reads s16 macB door && !reads s16 macD door
 #guard reads s16 macC door && reads s16 macA door
@@ -739,50 +746,50 @@ def s16 : List Edit := s16b ++ chain 120 [
 
 /-! ## Keys edits carry only the boxes the schedule seals -/
 
--- Alice's Mac boxes Welcome's key to its cell's key, and Carol's cap key to Carol's vault key; Dave's Mac, which can't
--- open Welcome's key, can't box it
-#guard accepted s6 (attempt macA [] (.keys (.entry welcome (some 51) 0) [.scoped (.cell coop [1]) 0]))
-#guard accepted s6 (attempt macA [] (.keys (.scoped (.cap coop 1) 0) [.scoped (.seed carol) 0]))
+-- Alice's Mac boxes Welcome's key to its audience's key, and Carol's share key to Carol's vault key; Dave's Mac, which
+-- can't open Welcome's key, can't box it
+#guard accepted s6 (attempt macA [] (.keys (.entry welcome (some 51) 0) [.scoped (.audience coop [1]) 0]))
+#guard accepted s6 (attempt macA [] (.keys (.scoped (.share coop 1) 0) [.scoped (.seed carol) 0]))
 #guard !accepted s6 (attempt macD [] (.keys (.entry welcome (some 51) 0) []))
 -- Carol may pass on the boxes of what she reads
-#guard accepted s6 (attempt macC [] (.keys (.scoped (.cell coop [1]) 0) [.scoped (.cap coop 1) 0]))
--- a box the schedule doesn't seal is refused, and so is a key of a generation that doesn't exist yet
+#guard accepted s6 (attempt macC [] (.keys (.scoped (.audience coop [1]) 0) [.scoped (.share coop 1) 0]))
+-- a box the schedule doesn't seal is refused, and so is a key of an epoch that doesn't exist yet
 #guard !accepted s6 (attempt macA [] (.keys (.entry welcome (some 51) 0) [.signer macD]))
 #guard !accepted s6 (attempt macA [] (.keys (.entry welcome (some 51) 1) []))
-#guard !accepted s6 (attempt macA [] (.keys (.scoped (.cell coop [1]) 1) []))
+#guard !accepted s6 (attempt macA [] (.keys (.scoped (.audience coop [1]) 1) []))
 -- only a public key is published
-#guard !accepted s6 (attempt macA [] (.keys (.scoped (.cell coop [1]) 0) [] true))
-#guard accepted s7 (attempt macA [] (.keys (.scoped (.cell coop [3]) 0) [] true))
+#guard !accepted s6 (attempt macA [] (.keys (.scoped (.audience coop [1]) 0) [] true))
+#guard accepted s7 (attempt macA [] (.keys (.scoped (.audience coop [3]) 0) [] true))
 
 /-! ## A coop that stops reading rotates the key, though its members still read
 
 Alice's second coop reads her notes, then stops. Alice still reads them as their vault, but the coop's key would carry
-the notes' cell key to whoever joins the coop later, so the cell moves on. Bob joins and opens only the old generation:
-a vault's newcomers inherit what it could read. -/
+the notes' audience key to whoever joins the coop later, so the audience moves on. Bob joins and opens only the old
+epoch: a vault's newcomers inherit what it could read. -/
 
 def coop2 := 202
 def gap : List Edit := s3 ++ chain 190 [
   (passkeyA, [], .genesis coop2 .coop [.vault alice] 1),
   (macA, [], create alice plan alice [] note),
-  (macA, [], .cap (capOf 20 alice coop2 .read notes)),
+  (macA, [], .share (shareOf 20 alice coop2 .read notes)),
   (macA, [], .move alice plan [20] [191]),
   (macA, [], .revoke 20 alice []),
   (passkeyA, [passkeyB], .addOwner coop2 (.vault bob))]
 #guard refused gap == [] && tidy gap
 
--- the notes' cell moves on: Alice opens its new generation, Bob, now in the coop, only the one before
-#guard (view gap).epochOf (.cell alice [20]) == 1
-#guard !opens' gap macB (.cell alice [20]) && opens' gap macA (.cell alice [20])
-#guard knows (view gap) [.signer macB] (.scoped (.cell alice [20]) 0)
+-- the notes' audience moves on: Alice opens its new epoch, Bob, now in the coop, only the one before
+#guard (view gap).epochOf (.audience alice [20]) == 1
+#guard !opens' gap macB (.audience alice [20]) && opens' gap macA (.audience alice [20])
+#guard knows (view gap) [.signer macB] (.scoped (.audience alice [20]) 0)
 
-/-! ## A cell that comes back into use moves on
+/-! ## An audience that comes back into use moves on
 
 Bob reads Alice's urgent todos. The seeds todo is urgent for a while, then not, and Bob loses his Mac while no entry is
-in that cell, so its key doesn't move on with his seed's. When the seeds todo is urgent again, the cell moves to a new
-generation, which the lost Mac doesn't open. -/
+in that audience, so its key doesn't move on with his seed's. When the seeds todo is urgent again, the audience moves to
+a new epoch, which the lost Mac doesn't open. -/
 
 def comeback (n : Nat := 8) : List Edit := lib ++ chain 600 ([
-  (macA, [], .cap (capOf 34 alice bob .read urgentTodos)),
+  (macA, [], .share (shareOf 34 alice bob .read urgentTodos)),
   (macA, [], .write alice seeds alice none 0 [501] (tags := { add := [urgent] })),
   (macA, [], .move alice seeds [34] [501, 601]),
   (macA, [], .write alice seeds alice (some 602) 0 [601] (tags := { remove := [urgent] })),
@@ -794,23 +801,23 @@ def comeback (n : Nat := 8) : List Edit := lib ++ chain 600 ([
 
 -- Bob reads the seeds todo while it is urgent, and not after
 #guard reads (comeback 3) macB seeds && !reads (comeback 5) macB seeds
--- while the cell was empty, Bob's seed and his cap's key moved on, the cell's key didn't
-#guard (view (comeback 6)).epochOf (.cap alice 34) == 1 && (view (comeback 6)).epochOf (.cell alice [34]) == 0
-#guard knows (view (comeback 6)) [.signer macB] (.scoped (.cell alice [34]) 0)
--- the seeds todo back in it, the cell moves on: Bob's passkey reads it, his lost Mac doesn't
-#guard (view (comeback)).epochOf (.cell alice [34]) == 1
+-- while the audience was empty, Bob's seed and his share's key moved on, the audience's key didn't
+#guard (view (comeback 6)).epochOf (.share alice 34) == 1 && (view (comeback 6)).epochOf (.audience alice [34]) == 0
+#guard knows (view (comeback 6)) [.signer macB] (.scoped (.audience alice [34]) 0)
+-- the seeds todo back in it, the audience moves on: Bob's passkey reads it, his lost Mac doesn't
+#guard (view (comeback)).epochOf (.audience alice [34]) == 1
 #guard reads (comeback) passkeyB seeds && !reads (comeback) macB seeds
 
--- an entry created in the empty cell brings it back into use too: its first write may name the generation the cell
+-- an entry created in the empty audience brings it back into use too: its first write may name the epoch the audience
 -- moves to, which the lost Mac doesn't open, and no later one
 def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g (create := some ([34], ⟨todo, 0⟩))
   (tags := { add := [urgent] }))
 #guard reenters (view (comeback 6)) alice [34]
 #guard accepted (comeback 6) (lampTodo 1) && !accepted (comeback 6) (lampTodo 2)
 #guard ((step (view (comeback 6)) (lampTodo 1)).map fun st =>
-  st.epochOf (.cell alice [34]) == 1 && !knows st [.signer macB] (.entry lamp none 1) &&
+  st.epochOf (.audience alice [34]) == 1 && !knows st [.signer macB] (.entry lamp none 1) &&
     knows st [.signer passkeyB] (.entry lamp none 1)) == some true
--- a cell in use, or one whose key was never sealed, has no generation ahead to name
+-- an audience in use, or one whose key was never sealed, has no epoch ahead to name
 #guard !reenters (view (comeback 3)) alice [34] && !reenters (view (comeback 6)) alice [34, 99]
 
 /-! ## Scenario 17: each todo syncs on its own -/
@@ -819,10 +826,10 @@ def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g
 #guard [door, seeds, solar].map (mayReceive (view s15) macC) == [true, false, false]
 #guard (respond s15 macC).any (entryLog? · == some door)
 #guard (respond s15 macC).all fun o => (entryLog? o).all (· == door)
--- a device with no cap on it gets none of it
+-- a device with no share on it gets none of it
 #guard (respond s15 stranger).all (entryLog? · == none)
 -- after the coop lost the todo, Dave's Mac gets none of its edits, only the revocation that ended its read, as Bob's
--- Mac does for the coop's owner cap
+-- Mac does for the coop's owner share
 #guard (respond s16 macD).all (entryLog? · == none)
 #guard [macD, macB].all fun d => (respond s16 d).any (·.id == 120)
 #guard !(respond s16 stranger).any (·.id == 120)
@@ -849,7 +856,7 @@ def carolMac' := receive carolMac (respond bobMac macC)
 /-! ## Linking a new device
 
 A new device whose passkey proves itself on a connection is handed the logs of the vaults that passkey owns, as it
-needs them to add itself to its vault, and nothing about any cap, cell or entry (T20). -/
+needs them to add itself to its vault, and nothing about any share, audience or entry (T20). -/
 
 -- Alice's passkey is handed her vault's log, Bob's his, a device key or a stranger's passkey nothing
 #guard (linkCard s15 passkeyA).map (·.id) == [1, 2, 3]
@@ -932,9 +939,9 @@ def handover : List Edit := s1 ++ chain 140 [
 
 /-! ## Moves are removals too
 
-A move takes its entry out of every cap it leaves behind: a write the move hadn't seen stands only if its writer could
-write in the cell the move took the entry to. Alice takes the work tag off the solar todo and her Mac moves it to
-Carol's cell, while Bob and Carol, on copies that had seen neither, each write it. -/
+A move takes its entry out of every share it leaves behind: a write the move hadn't seen stands only if its writer could
+write in the audience the move took the entry to. Alice takes the work tag off the solar todo and her Mac moves it to
+Carol's audience, while Bob and Carol, on copies that had seen neither, each write it. -/
 
 def movedOver (keep : List EditId) : List Edit := shared ++ chain 520 [
   (macA, [], .write alice solar alice (some 514) 0 [502] (tags := { remove := [work] })),
@@ -951,25 +958,25 @@ def movedOver (keep : List EditId) : List Edit := shared ++ chain 520 [
 /-! ## A move hands a removal nothing
 
 Bob writes Alice's work todos and her urgent ones. He creates the lamp todo, tagged work. Alice makes it urgent rather
-than work, and her Mac moves it to the cell of Bob's urgent cap. Meanwhile her passkey, on a device that never received
-the lamp, revokes that cap. Bob made the lamp through his work cap, which still holds, and every write is judged in the
-cell it was written in, so the revocation takes nothing from the lamp: it stays, with Alice's write, and Bob writes it
-no more. -/
+than work, and her Mac moves it to the audience of Bob's urgent share. Meanwhile her passkey, on a device that never
+received the lamp, revokes that share. Bob made the lamp through his work share, which still holds, and every write is
+judged in the audience it was written in, so the revocation takes nothing from the lamp: it stays, with Alice's write,
+and Bob writes it no more. -/
 
 def kept : List Edit := workShare ++ chain 520 [
-  (macA, [], .cap (capOf 34 alice bob .write urgentTodos)),
+  (macA, [], .share (shareOf 34 alice bob .write urgentTodos)),
   (macB, [], create alice lamp bob [32] todo [work] (proof := some 32)),
   (macA, [], .write alice lamp alice none 0 [521] (tags := { add := [urgent], remove := [work] })),
   (macA, [], .move alice lamp [34] [521, 522])] ++ offline 530 524 [
   (passkeyA, [], .revoke 34 alice [520])]
 #guard refused kept == []
-#guard (entryWrites (view kept) lamp).map (·.edit) == [521, 522] && cellOf kept lamp == [34]
+#guard (entryWrites (view kept) lamp).map (·.edit) == [521, 522] && audienceOf kept lamp == [34]
 #guard !(writable kept bob).contains lamp && !accepted kept (attempt macB [] (.write alice lamp bob none 0 [522]))
 
 /-! ## An entry id is created once
 
-In step order, where a removal's keep list alone says what it had seen, Bob creates the lamp through his work cap and
-Alice's passkey revokes that cap without having seen it: the lamp falls with its writes. Its id stays used even so:
+In step order, where a removal's keep list alone says what it had seen, Bob creates the lamp through his work share and
+Alice's passkey revokes that share without having seen it: the lamp falls with its writes. Its id stays used even so:
 nobody creates it again, so an entry key's name never names two keys. -/
 
 def fallen : List Edit := workShare ++ chain 520 [
@@ -983,15 +990,15 @@ def fallen : List Edit := workShare ++ chain 520 [
 
 A removal is only ever kept out by one that ranks above it, so what ranks above a removal must never rest on what it
 takes away: a vault's removals come before those of the coops it owns, and a senior revoker's before those of whoever
-holds a cap beneath the one revoked. -/
+holds a share beneath the one revoked. -/
 
 -- Alice gives Dave owner on her notes, and Dave gives Carol read beneath it. Dave revokes Carol's read on a copy that
--- hadn't seen Alice, the vault the caps are over, revoke Dave's cap, so Dave's revocation sorts first. Alice ranks
--- first all the same: Dave's cap goes, Carol's with it, and Dave's revocation falls with the cap it rested on.
+-- hadn't seen Alice, the vault the shares are over, revoke Dave's share, so Dave's revocation sorts first. Alice ranks
+-- first all the same: Dave's share goes, Carol's with it, and Dave's revocation falls with the share it rested on.
 def seniorRevoke : List Edit := s2 ++ chain 700 [
   (macA, [], create alice plan alice [] note),
-  (passkeyA, [], .cap (capOf 701 alice dave .owner notes)),
-  (macD, [], .cap (capOf 702 alice carol .read notes (parent := some 701) (issuer := dave))),
+  (passkeyA, [], .share (shareOf 701 alice dave .owner notes)),
+  (macD, [], .share (shareOf 702 alice carol .read notes (parent := some 701) (issuer := dave))),
   (macA, [], create alice diary alice [] note),
   (macA, [], .write alice plan alice none 0 [700]),
   (passkeyA, [], .revoke 701 alice [700, 701, 702, 703, 704])] ++ offline 720 702 [
@@ -1033,7 +1040,7 @@ def vouched : List Edit := s15 ++ chain 200 [
 #guard (entryWrites (view (checkpointed vouched)) door).map (·.edit) == [100]
 -- no checkpoint covers the other todos' edits, so they don't count either; every edit but a write still does
 #guard entryWrites (view (checkpointed vouched)) seeds == []
-#guard (view (checkpointed vouched)).caps == (view vouched).caps
+#guard (view (checkpointed vouched)).shares == (view vouched).shares
 -- a device vouches only for its own accepted writes of the entry, and for at least one
 #guard accepted s15 (attempt macA [] (.checkpoint door [100]))
 #guard !accepted s15 (attempt macB [] (.checkpoint door [100]))

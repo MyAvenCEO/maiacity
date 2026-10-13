@@ -27,7 +27,7 @@ impl Rng {
 }
 
 pub const FIELDS: [&str; 4] = ["title", "blocks", "tags", "n"];
-pub const CELLS: [&str; 4] = ["text", "type", "level", "id"];
+pub const AUDIENCES: [&str; 4] = ["text", "type", "level", "id"];
 
 pub fn scalar(rng: &mut Rng) -> Value {
     rng.pick(&[json!("a"), json!("B"), json!(""), json!(1), json!(-2), json!(true), json!(null), json!(1.5)])
@@ -37,7 +37,7 @@ pub fn scalar(rng: &mut Rng) -> Value {
 pub fn row(rng: &mut Rng) -> Value {
     let mut r = Record::new();
     r.insert("id".into(), (rng.below(4) as i64 + 1).into());
-    for g in &CELLS[..3] {
+    for g in &AUDIENCES[..3] {
         if rng.below(2) == 0 {
             r.insert(g.to_string(), scalar(rng));
         }
@@ -69,7 +69,7 @@ pub fn random_op(rng: &mut Rng, r: &Record) -> Value {
     let rows = r.get(f).and_then(Value::as_array).into_iter().flatten();
     let ids: Vec<i64> = rows.filter_map(|x| x["id"].as_i64()).collect();
     let id = if ids.is_empty() || rng.below(4) == 0 { rng.below(5) as i64 + 1 } else { rng.pick(&ids) };
-    let g = rng.pick(&CELLS);
+    let g = rng.pick(&AUDIENCES);
     let mut op = match rng.below(11) {
         0 => json!({ "op": "set", "path": [], "value": random_record(rng) }),
         1 => json!({ "op": "set", "path": [f], "value": value(rng) }),

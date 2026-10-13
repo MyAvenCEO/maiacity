@@ -1,7 +1,7 @@
 //! A device on a machine of its own (P8b): randomness drawn from the machine, a device that keeps a secret of its own
 //! (the server), claimed once by the first human vault to claim it, as a device of avenCEO (P8f), in the same ceremony
 //! that founds that vault, which then acts for avenCEO and never governs it; the contact card the server hands out,
-//! avenCEO's vault log, which another vault needs before it gives avenCEO a cap; and a store reopened from what the
+//! avenCEO's vault log, which another vault needs before it gives avenCEO a share; and a store reopened from what the
 //! device saved, which goes on vouching for the device's writes.
 
 mod common;
@@ -9,7 +9,7 @@ mod common;
 use avendb::id::{SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Action, Kind, Principal, Refusal, Role};
+use avendb::policy::{Action, Kind, Level, Principal, Refusal};
 use avendb::sign::{Classical, Signed};
 use avendb::slice::Selector;
 use avendb::sync::{log_of, LogId};
@@ -176,7 +176,7 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
     // someone else, who knows nothing of this avenCEO, gives it relay on their whole vault once they hold the card
     let mut w = world();
     let bob = w.bob;
-    let relay = cap(bob, vault(avenceo), Role::Backup, Selector::All);
+    let relay = share(bob, vault(avenceo), Level::Backup, Selector::All);
     let refused = w.lab.issue(w.mac_b, &[w.mac_b], relay.clone()).err();
     assert_eq!(refused, Some(Refusal::UnknownVault), "a vault Bob's Mac doesn't know gets no cap");
     let n = card.len();

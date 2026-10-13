@@ -2,16 +2,16 @@
 //! one ceremony at a time brings back, an assertion over a challenge and the PRF output on the app's salt. It drafts
 //! each edit the passkey signs, the passkey signs the edit's id in a ceremony, and the device keeps the edit; its own
 //! keys come from the PRF output on a salt of its own, or from a secret of its own that output masks. It writes with
-//! no ceremony, a note of its vault in a cell whose key it makes; and once it joins Alice's vault, the keys of the
-//! coop's cells reach it as they reach any of Alice's devices. A new device signs up or in with two ceremonies: the one
-//! that unlocks it is its passkey's pass for it, as it made its secret first, and the next founds or joins its vault,
-//! which also shows which of the keys the first one recovers to is the passkey's. Here a software passkey stands in for
-//! the browser's authenticator: it makes the same ceremonies, and the device's Lab sees nothing else of it.
+//! no ceremony, a note of its vault in an audience whose key it makes; and once it joins Alice's vault, the keys of the
+//! coop's audiences reach it as they reach any of Alice's devices. A new device signs up or in with two ceremonies: the
+//! one that unlocks it is its passkey's pass for it, as it made its secret first, and the next founds or joins its
+//! vault, which also shows which of the keys the first one recovers to is the passkey's. Here a software passkey stands
+//! in for the browser's authenticator: it makes the same ceremonies, and the device's Lab sees nothing else of it.
 
 mod common;
 
 use common::*;
-use avendb::id::{CellId, EditId, SignerId};
+use avendb::id::{AudienceId, EditId, SignerId};
 use avendb::keys::{self, KeyFam};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Principal, Refusal};
@@ -67,15 +67,16 @@ fn a_browser_founds_alices_vault_in_ceremonies() {
     ceremony(&mut lab, device, &[passkey, device], add, &mut authenticator);
     assert_eq!(lab.vault_of(device), Some(vault), "the browser belongs to the vault its passkey founded");
     assert!(lab.opens(device, KeyFam::Seed(vault)), "and opens its seed");
-    // the device writes on its own, with no ceremony: a note in its vault, in the cell of no caps, as no cap selects it
+    // the device writes on its own, with no ceremony: a note in its vault, in the audience of no shares, as no share
+    // selects it
     let note = lab.create(device, vault, vault, "note", &[], document("Seeds", "Tomatoes in March.", device));
     let note = note.expect("the browser writes a note");
-    let cell = KeyFam::Cell(vault, CellId::of(vault, &[]));
-    assert!(lab.opens(device, cell), "under the key of a cell it made");
+    let audience = KeyFam::Audience(vault, AudienceId::of(vault, &[]));
+    assert!(lab.opens(device, audience), "under the key of a cell it made");
     assert_eq!(text(&lab, device, note, 2).as_deref(), Some("Tomatoes in March."));
     // locked, it opens nothing; the PRF output on its salt unlocks it again, and nothing else does
     lab.lock(device);
-    assert!(!lab.opens(device, KeyFam::Seed(vault)) && !lab.opens(device, cell));
+    assert!(!lab.opens(device, KeyFam::Seed(vault)) && !lab.opens(device, audience));
     assert!(!lab.unlock(device), "the Lab holds no passkey to derive its keys from");
     assert!(!lab.unlock_with(device, *authenticator.prf(&device_salt(&[6; 32]))), "another salt's output");
     assert!(lab.unlock_with(device, *authenticator.prf(&device_salt(&[5; 32]))));
@@ -205,8 +206,8 @@ fn a_browser_links_through_alices_mac_in_two_ceremonies() {
         ask((&mut mac, w.mac_a), (&mut browser, device));
         ask((&mut browser, device), (&mut mac, w.mac_a));
     }
-    let cell = KeyFam::Cell(h.coop, CellId::of(h.coop, &[]));
+    let audience = KeyFam::Audience(h.coop, AudienceId::of(h.coop, &[]));
     assert!(browser.opens(device, KeyFam::Seed(h.coop)), "the browser opens the coop's seed");
-    assert!(browser.opens(device, cell), "and the key of the cell Welcome is in");
+    assert!(browser.opens(device, audience), "and the key of the cell Welcome is in");
     assert_eq!(text(&browser, device, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
 }

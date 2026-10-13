@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::{BlobId, CapId, EntryId, VaultId};
+use avendb::id::{BlobId, EntryId, ShareId, VaultId};
 use avendb::keys;
 use avendb::policy::Kind;
 use avendb::sealed::FileRoot;
@@ -217,11 +217,11 @@ impl Service {
                 json!(vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>())
             }
             "share" => {
-                let (issuer, over, grantee) = (vault(0)?, vault(1)?, words::grantee_of(&a.text(3)?)?);
-                hex(&d.share(issuer, over, a.get(2), grantee, &self.approver()?).await?.0).into()
+                let (issuer, over, who) = (vault(0)?, vault(1)?, words::who_of(&a.text(3)?)?);
+                hex(&d.share(issuer, over, a.get(2), who, &self.approver()?).await?.0).into()
             }
             "revoke" => {
-                d.revoke(vault(0)?, CapId(a.id(1)?), &self.approver()?).await?;
+                d.revoke(vault(0)?, ShareId(a.id(1)?), &self.approver()?).await?;
                 Value::Null
             }
             "addRecovery" => {
@@ -481,7 +481,7 @@ impl Service {
         Ok(())
     }
 
-    /// The passkey's ceremonies for what its vault approves (new vaults, an owner cap, its revocation): in the
+    /// The passkey's ceremonies for what its vault approves (new vaults, an owner share, its revocation): in the
     /// sheet, with the passkey that opened the device.
     fn approver(self: &Arc<Self>) -> Result<Sheets> {
         let meta = self.meta()?.context("this Mac holds no avenDB account")?;

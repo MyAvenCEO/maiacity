@@ -1,22 +1,21 @@
 //! Mutation fuzzing (P4b): what a device takes from others (key boxes, encrypted writes, signed edits, schemas, lenses,
 //! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced; from P8 every message on the wire
 //! (signed edits, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins); and with
-//! flat vaults what only readers read: a cap's slice, its selector in the clear or sealed (from B2c a sync rule's too),
-//! and a write's body. Nothing panics; a changed box, write, signed edit or sealed selector is refused, a changed
+//! flat vaults what only readers read: a share's slice, its selector in the clear or sealed (from B2c a sync rule's
+//! too), and a write's body. Nothing panics; a changed box, write, signed edit or sealed selector is refused, a changed
 //! message reads as nothing or as another message whose own bytes these are, and a changed Loro update that is refused
-//! leaves the item as it was.
-//! Every mutation is drawn from a fixed seed, so a failure replays exactly.
+//! leaves the item as it was. Every mutation is drawn from a fixed seed, so a failure replays exactly.
 
 use std::fmt::Debug;
 
 use serde_json::{json, Map, Value};
 use avendb::doc::{Item, Version};
-use avendb::encode::{cap_context, rule_context, rule_select_info, select_info, write_context};
-use avendb::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use avendb::encode::{rule_context, rule_select_info, select_info, share_context, write_context};
+use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, KeyBox, KeyFam, KeyId, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
-use avendb::policy::{Action, Cap, Edit, Grantee, Principal, Proposal, Role, SyncRule};
-use avendb::rules::{Grant, On, Proof, Rule, Scalar, Step};
+use avendb::policy::{Action, Edit, Level, Principal, Proposal, Share, SyncRule, Who};
+use avendb::rules::{Grant, On, Op, Proof, Scalar, Step};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
@@ -120,7 +119,7 @@ const BOB: VaultId = VaultId::from_u64(101);
 const DOOR: EntryId = EntryId::from_u64(21);
 
 /// What the sealed parts of `signed_edits` open with: the key of the door in its first stay, under which its writes
-/// are encrypted, and the current seeds of Alice's and Bob's vaults, to which the cap's selector key is wrapped.
+/// are encrypted, and the current seeds of Alice's and Bob's vaults, to which the share's selector key is wrapped.
 struct Keys {
     door: Secret,
     alice: Secret,
@@ -132,10 +131,11 @@ fn keys() -> Keys {
     Keys { door: Secret::generate(&mut rng), alice: Secret::generate(&mut rng), bob: Secret::generate(&mut rng) }
 }
 
-/// What the cap of `signed_edits` shares: Alice's work todos, for Bob to edit and ask her stewards for the tag `done`.
+/// What the share of `signed_edits` shares: Alice's work todos, for Bob to edit and ask her stewards for the tag
+/// `done`.
 fn work_todos() -> Slice {
     let select = Selector::AnyOf(vec![vec![Atom::TypeIn(vec![Sym::new("todo")]), Atom::TagHas(Sym::new("work"))]]);
-    let ops = vec![Rule::Read, Rule::Set { path: vec![], to: None, on: None }, Rule::Tag(Some(vec![Sym::new("done")]))];
+    let ops = vec![Op::Read, Op::Set { path: vec![], to: None, on: None }, Op::Tag(Some(vec![Sym::new("done")]))];
     Slice { name: "Work todos".into(), select, grant: Grant { ops, salt: [4; 32] }, above: vec![] }
 }
 
@@ -159,38 +159,38 @@ fn door_retagged() -> Body {
     Body { header: None, tags, answers, content: vec![], proof: None, files: vec![] }
 }
 
-/// Alice's work todos as a narrower cap shares them (`rules`): its own ops, to tick a todo done on the main line, add
-/// its items, merge proposals in and start them, under the ops of a cap above it, which every kind of op, step and
+/// Alice's work todos as a narrower share shares them (`rules`): its own ops, to tick a todo done on the main line, add
+/// its items, merge proposals in and start them, under the ops of a share above it, which every kind of op, step and
 /// value appears in.
 fn tick_todos() -> Slice {
     let (done, items) = (Step::Field("done".into()), Step::Field("items".into()));
     let ops = vec![
-        Rule::Read,
-        Rule::Set { path: vec![done], to: Some(vec![Scalar::Bool(true)]), on: Some(On::Main) },
-        Rule::Insert { path: vec![items.clone()], on: None },
-        Rule::Merge { on: Some(On::Proposals) },
-        Rule::Propose,
+        Op::Read,
+        Op::Set { path: vec![done], to: Some(vec![Scalar::Bool(true)]), on: Some(On::Main) },
+        Op::Insert { path: vec![items.clone()], on: None },
+        Op::Merge { on: Some(On::Proposals) },
+        Op::Propose,
     ];
     let to = vec![Scalar::Null, Scalar::Int(-7), Scalar::Text("ok".into()), Scalar::Bool(false)];
     let above = vec![
-        Rule::Set { path: vec![items.clone(), Step::Row(-3), Step::Any], to: Some(to), on: None },
-        Rule::Set { path: vec![], to: None, on: Some(On::Proposals) },
-        Rule::Remove { path: vec![items.clone()], on: Some(On::Main) },
-        Rule::Move { path: vec![Step::Any], on: None },
-        Rule::Merge { on: None },
-        Rule::Create,
-        Rule::Tag(None),
-        Rule::Relay,
-        Rule::Backup,
-        Rule::Share,
+        Op::Set { path: vec![items.clone(), Step::Row(-3), Step::Any], to: Some(to), on: None },
+        Op::Set { path: vec![], to: None, on: Some(On::Proposals) },
+        Op::Remove { path: vec![items.clone()], on: Some(On::Main) },
+        Op::Move { path: vec![Step::Any], on: None },
+        Op::Merge { on: None },
+        Op::Create,
+        Op::Tag(None),
+        Op::Relay,
+        Op::Backup,
+        Op::Share,
     ];
     let above = vec![Grant { ops: above, salt: [9; 32] }];
     Slice { name: "Done on main".into(), grant: Grant { ops, salt: [5; 32] }, above, ..work_todos() }
 }
 
-/// The write of tags of `door_retagged` by a steward relying on the cap of `tick_todos`, with its proof.
+/// The write of tags of `door_retagged` by a steward relying on the share of `tick_todos`, with its proof.
 fn door_proven() -> Body {
-    let proof = Proof { cap: CapId::from_u64(9), grants: tick_todos().grants() };
+    let proof = Proof { share: ShareId::from_u64(9), grants: tick_todos().grants() };
     Body { proof: Some(proof), ..door_retagged() }
 }
 
@@ -199,38 +199,39 @@ fn to_seed(v: VaultId, seed: &Secret) -> Recipient {
     Recipient::Key { name: KeyName::Scoped(KeyFam::Seed(v), 0), id: seed.id() }
 }
 
-/// What a sealed selector belongs to: a cap, or a sync rule, whose selector is sealed as a cap's is, bound to the rule.
+/// What a sealed selector belongs to: a share, or a sync rule, whose selector is sealed as a share's is, bound to the
+/// rule.
 #[derive(Clone, Copy)]
 enum Of<'a> {
-    Cap(&'a Cap),
+    Share(&'a Share),
     Rule(&'a SyncRule),
 }
 
 impl Of<'_> {
     fn select(&self) -> &[u8] {
         match self {
-            Of::Cap(c) => &c.select,
+            Of::Share(c) => &c.select,
             Of::Rule(r) => &r.select,
         }
     }
 
     fn context(&self) -> Vec<u8> {
         match self {
-            Of::Cap(c) => cap_context(c),
+            Of::Share(c) => share_context(c),
             Of::Rule(r) => rule_context(r),
         }
     }
 
     fn info(&self, id: KeyId, to: &Recipient) -> Vec<u8> {
         match self {
-            Of::Cap(c) => select_info(c, id, to),
+            Of::Share(c) => select_info(c, id, to),
             Of::Rule(r) => rule_select_info(r, id, to),
         }
     }
 }
 
 /// The `select` of `of`, holding `slice`, sealed under a key of its own, which is wrapped under the seeds of Alice's
-/// vault and of Bob's (the cap's issuer and grantee, or the rule's issuer and the vault it is over), with the
+/// vault and of Bob's (the share's issuer and grantee, or the rule's issuer and the vault it is over), with the
 /// commitment to the slice's ops (`slice::Select`).
 fn seal_select(of: Of<'_>, slice: &Slice, k: &Keys, rng: &mut SeededRng) -> Vec<u8> {
     let key = Secret::generate(rng);
@@ -265,15 +266,16 @@ fn seal_body(mut edit: Edit, body: &Body, key: &Secret, rng: &mut SeededRng) -> 
 }
 
 /// A signed edit of each kind: governance, which both halves sign, by a passkey with the new device consenting; a
-/// write creating the door in the cell of two caps, and a write of its tags on a proposal, through the owners it names,
-/// which only the classical half signs; a cap for Bob to write Alice's work todos, its selector sealed; a steward's
-/// move of the door to another cell, keeping the writes it had seen; a sync rule of Alice's for her device to sync
-/// Bob's proxies, its selector sealed, and its end; and a steward's marks on the door, of the rules that pick it.
+/// write creating the door in the audience of two shares, and a write of its tags on a proposal, through the owners it
+/// names, which only the classical half signs; a share for Bob to write Alice's work todos, its selector sealed; a
+/// steward's move of the door to another audience, keeping the writes it had seen; a sync rule of Alice's for her
+/// device to sync Bob's proxies, its selector sealed, and its end; and a steward's marks on the door, of the rules that
+/// pick it.
 struct Edits {
     add: Signed,
     create: Signed,
     write: Signed,
-    cap: Signed,
+    share: Signed,
     moved: Signed,
     rule: Signed,
     ended: Signed,
@@ -282,7 +284,7 @@ struct Edits {
 
 impl Edits {
     fn all(&self) -> [&Signed; 8] {
-        [&self.add, &self.create, &self.write, &self.cap, &self.moved, &self.rule, &self.ended, &self.pick]
+        [&self.add, &self.create, &self.write, &self.share, &self.moved, &self.rule, &self.ended, &self.pick]
     }
 }
 
@@ -305,17 +307,17 @@ fn signed_edits() -> Edits {
     let add = Signed { edit: add, sigs };
     let author = device.id();
     let edit = |depth: u64, action: Action| Edit { parents: vec![], depth, author, cosigners: vec![], action };
-    let (cell, main) = (vec![CapId::from_u64(8), CapId::from_u64(9)], Proposal::Main);
+    let (audience, main) = (vec![ShareId::from_u64(8), ShareId::from_u64(9)], Proposal::Main);
     let create = Action::Write {
         vault: ALICE,
         entry: DOOR,
         actor: ALICE,
         stay: None,
-        generation: 1,
+        epoch: 1,
         deps: vec![],
         proposal: main,
         via: vec![],
-        create: Some(cell),
+        create: Some(audience),
         files: vec![],
         body: vec![],
     };
@@ -325,7 +327,7 @@ fn signed_edits() -> Edits {
         entry: DOOR,
         actor: ALICE,
         stay: None,
-        generation: 1,
+        epoch: 1,
         deps: vec![create.edit.id()],
         proposal: Proposal::On(create.edit.id()),
         via: vec![VaultId::from_u64(3), VaultId::from_u64(4)],
@@ -334,22 +336,22 @@ fn signed_edits() -> Edits {
         body: vec![],
     };
     let write = by_device(seal_body(edit(3, write), &door_retagged(), &k.door, &mut rng));
-    let (grantee, role, issuer) = (Grantee::Principal(Principal::Vault(BOB)), Role::Write, ALICE);
-    let mut cap = Cap { over: ALICE, grantee, role, wide: false, select: vec![], parent: None, issuer, nonce: 7 };
-    cap.select = seal_select(Of::Cap(&cap), &work_todos(), &k, &mut rng);
-    let cap = by_device(edit(4, Action::Cap(cap, vec![])));
+    let (who, level, issuer) = (Who::Principal(Principal::Vault(BOB)), Level::Write, ALICE);
+    let mut share = Share { over: ALICE, who, level, wide: false, select: vec![], parent: None, issuer, nonce: 7 };
+    share.select = seal_select(Of::Share(&share), &work_todos(), &k, &mut rng);
+    let share = by_device(edit(4, Action::Share(share, vec![])));
     let keep = vec![create.edit.id(), write.edit.id()];
-    let moved = Action::Move { vault: ALICE, entry: DOOR, to: vec![CapId::from_u64(9)], keep, via: vec![] };
+    let moved = Action::Move { vault: ALICE, entry: DOOR, to: vec![ShareId::from_u64(9)], keep, via: vec![] };
     let moved = by_device(edit(5, moved));
     let (device, over) = (device.id(), BOB);
     let mut rule = SyncRule { issuer: ALICE, device, over, wide: false, select: vec![], keep: true, nonce: 3 };
     rule.select = seal_select(Of::Rule(&rule), &proxies(), &k, &mut rng);
     let rule = by_device(edit(6, Action::SyncRule(rule, vec![])));
-    let ended = Action::EndSyncRule { rule: CapId::from(rule.edit.id()), issuer: ALICE, via: vec![] };
+    let ended = Action::EndSyncRule { rule: ShareId::from(rule.edit.id()), issuer: ALICE, via: vec![] };
     let ended = by_device(edit(7, ended));
-    let rules = vec![CapId::from_u64(5), CapId::from_u64(6)];
+    let rules = vec![ShareId::from_u64(5), ShareId::from_u64(6)];
     let pick = by_device(edit(8, Action::Pick { vault: ALICE, entry: DOOR, rules, via: vec![] }));
-    Edits { add, create, write, cap, moved, rule, ended, pick }
+    Edits { add, create, write, share, moved, rule, ended, pick }
 }
 
 /// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another edit drafted with it.
@@ -443,12 +445,12 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     s
 }
 
-/// `edit` with one field changed: of the edit, or of its action, a write's, a cap's, a move's, a device's, a sync
+/// `edit` with one field changed: of the edit, or of its action, a write's, a share's, a move's, a device's, a sync
 /// rule's, its end's or a pick's.
 fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
     let mut o = edit.clone();
     let id = |g: &mut Gen| EditId::from_u64(g.next());
-    let cap = |g: &mut Gen| CapId::from_u64(g.next());
+    let share = |g: &mut Gen| ShareId::from_u64(g.next());
     let vault = |g: &mut Gen| VaultId::from_u64(g.next());
     match g.below(5) {
         0 => o.depth ^= 1 << g.below(64),
@@ -460,12 +462,12 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                 0 => *v = vault(g),
                 _ => *device = SignerId::from_u64(g.next()),
             },
-            Action::Write { entry, actor, stay, generation, deps, proposal, via, create, body, .. } => {
+            Action::Write { entry, actor, stay, epoch, deps, proposal, via, create, body, .. } => {
                 match g.below(9) {
                     0 => *entry = EntryId::from_u64(g.next()),
                     1 => *actor = vault(g),
                     2 => *stay = if stay.is_some() && g.below(2) == 0 { None } else { Some(id(g)) },
-                    3 => *generation ^= 1 << g.below(64),
+                    3 => *epoch ^= 1 << g.below(64),
                     4 => deps.push(id(g)),
                     5 => {
                         let others = [Proposal::Main, Proposal::New, Proposal::On(id(g))];
@@ -473,35 +475,35 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                     }
                     6 => via.push(vault(g)),
                     7 => match create {
-                        Some(cell) if g.below(2) == 0 => cell.push(cap(g)),
+                        Some(audience) if g.below(2) == 0 => audience.push(share(g)),
                         Some(_) => *create = None,
                         None => *create = Some(vec![]),
                     },
                     _ => *body = mutate(g, body),
                 }
             }
-            Action::Cap(c, via) => match g.below(9) {
+            Action::Share(c, via) => match g.below(9) {
                 0 => c.select = mutate(g, &c.select),
                 1 => c.over = vault(g),
                 2 => {
-                    let roles = [Role::Relay, Role::Backup, Role::Read, Role::Write, Role::Owner];
-                    c.role = roles.into_iter().filter(|&r| r != c.role).nth(g.below(4)).expect("another role");
+                    let levels = [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner];
+                    c.level = levels.into_iter().filter(|&r| r != c.level).nth(g.below(4)).expect("another role");
                 }
                 3 => c.wide = !c.wide,
                 4 => {
-                    c.grantee = match c.grantee {
-                        Grantee::Principal(_) if g.below(2) == 0 => Grantee::Public,
-                        _ => Grantee::Principal(Principal::Vault(vault(g))),
+                    c.who = match c.who {
+                        Who::Principal(_) if g.below(2) == 0 => Who::Everyone,
+                        _ => Who::Principal(Principal::Vault(vault(g))),
                     }
                 }
-                5 => c.parent = if c.parent.is_some() && g.below(2) == 0 { None } else { Some(cap(g)) },
+                5 => c.parent = if c.parent.is_some() && g.below(2) == 0 { None } else { Some(share(g)) },
                 6 => c.issuer = vault(g),
                 7 => c.nonce ^= 1 << g.below(64),
                 _ => via.push(vault(g)),
             },
             Action::Move { entry, to, keep, via, .. } => match g.below(4) {
                 0 => *entry = EntryId::from_u64(g.next()),
-                1 => to.push(cap(g)),
+                1 => to.push(share(g)),
                 2 => keep.push(id(g)),
                 _ => via.push(vault(g)),
             },
@@ -516,7 +518,7 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                 _ => via.push(vault(g)),
             },
             Action::EndSyncRule { rule, issuer, via } => match g.below(3) {
-                0 => *rule = cap(g),
+                0 => *rule = share(g),
                 1 => *issuer = vault(g),
                 _ => via.push(vault(g)),
             },
@@ -524,7 +526,7 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                 0 => *v = vault(g),
                 1 => *entry = EntryId::from_u64(g.next()),
                 2 if !rules.is_empty() && g.below(2) == 0 => drop(rules.pop()),
-                2 => rules.push(cap(g)),
+                2 => rules.push(share(g)),
                 _ => via.push(vault(g)),
             },
             other => unreachable!("{other:?}"),
@@ -556,8 +558,8 @@ fn a_changed_signed_edit_is_refused() {
             }
         }
     }
-    // the classical half alone signs nothing but a write: no governance, no cap, no move, no sync rule, no pick
-    for signed in [&edits.add, &edits.cap, &edits.moved, &edits.rule, &edits.ended, &edits.pick] {
+    // the classical half alone signs nothing but a write: no governance, no share, no move, no sync rule, no pick
+    for signed in [&edits.add, &edits.share, &edits.moved, &edits.rule, &edits.ended, &edits.pick] {
         let mut classical = signed.clone();
         classical.sigs.iter_mut().for_each(|s| s.pq = None);
         assert!(classical.verify().is_err(), "{classical:?}");
@@ -571,10 +573,12 @@ fn a_changed_signed_edit_is_refused() {
 #[test]
 fn a_changed_selector_opens_to_nothing_or_to_its_own_slice() {
     let (edits, k) = (signed_edits(), keys());
-    let Action::Cap(cap, _) = &edits.cap.edit.action else { unreachable!("a cap") };
+    let Action::Share(share, _) = &edits.share.edit.action else { unreachable!("a cap") };
     let Action::SyncRule(rule, _) = &edits.rule.edit.action else { unreachable!("a sync rule") };
     let mut g = Gen::new(6);
-    for (signed, of, held) in [(&edits.cap, Of::Cap(cap), work_todos()), (&edits.rule, Of::Rule(rule), proxies())] {
+    for (signed, of, held) in
+        [(&edits.share, Of::Share(share), work_todos()), (&edits.rule, Of::Rule(rule), proxies())]
+    {
         // Alice's vault and Bob's open the slice; another vault's seed, or the wrong one, opens nothing
         let readers = [(ALICE, &k.alice), (BOB, &k.bob)];
         for (v, seed) in readers {
@@ -591,10 +595,10 @@ fn a_changed_selector_opens_to_nothing_or_to_its_own_slice() {
                 continue;
             }
             sealed += 1;
-            let bad_cap = Cap { select: select.clone(), ..cap.clone() };
+            let bad_share = Share { select: select.clone(), ..share.clone() };
             let bad_rule = SyncRule { select, ..rule.clone() };
             let bad = match of {
-                Of::Cap(_) => Of::Cap(&bad_cap),
+                Of::Share(_) => Of::Share(&bad_share),
                 Of::Rule(_) => Of::Rule(&bad_rule),
             };
             for (v, seed) in readers {
@@ -605,14 +609,14 @@ fn a_changed_selector_opens_to_nothing_or_to_its_own_slice() {
             }
         }
         assert!(sealed > 100 && same > 0, "{sealed} still sealed, {same} opened");
-        // the same selector in a cap or rule that says anything else opens to nothing: a cap's is bound to the vault
-        // it is over, its grantee, role, width, parent, issuer and nonce; a rule's to its issuer, device, the vault it
-        // is over, its width, keep and nonce
+        // the same selector in a share or rule that says anything else opens to nothing: a share's is bound to the
+        // vault it is over, its grantee, level, width, parent, issuer and nonce; a rule's to its issuer, device, the
+        // vault it is over, its width, keep and nonce
         let mut bound = 0;
         for _ in 0..1000 {
             let o = mutate_edit(&mut g, &signed.edit);
             let other = match (&o.action, of) {
-                (Action::Cap(other, _), Of::Cap(c)) if other.select == c.select && other != c => Of::Cap(other),
+                (Action::Share(other, _), Of::Share(c)) if other.select == c.select && other != c => Of::Share(other),
                 (Action::SyncRule(other, _), Of::Rule(r)) if other.select == r.select && other != r => Of::Rule(other),
                 _ => continue,
             };
@@ -666,8 +670,8 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
             }
         });
     }
-    let Action::Cap(cap, _) = &edits.cap.edit.action else { unreachable!("a cap") };
-    let sealed = Select::from_wire(&cap.select).expect("a sealed selector");
+    let Action::Share(share, _) = &edits.share.edit.action else { unreachable!("a cap") };
+    let sealed = Select::from_wire(&share.select).expect("a sealed selector");
     let Select::Sealed { boxes, slice, .. } = sealed.clone() else { unreachable!("sealed") };
     let commitment = tick_todos().grant.commitment();
     for select in [sealed, Select::Sealed { boxes, slice, commitment }] {
@@ -707,11 +711,11 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     let key = avendb::keys::Secret::from_bytes([5; 32]).public();
     wire_mutations(&mut g, &key, 1000, |_| {});
     // what a sync carries: asks of each kind of log, requests, replies and announcements
-    let cell = LogId::Cell(ALICE, CellId::of(ALICE, &[CapId::from_u64(8), CapId::from_u64(9)]));
+    let audience = LogId::Audience(ALICE, AudienceId::of(ALICE, &[ShareId::from_u64(8), ShareId::from_u64(9)]));
     let mut ask = Ask::default();
     ask.haves.insert(LogId::Vault(ALICE), vec![EditId::from_u64(1), EditId::from_u64(2)]);
-    ask.haves.insert(LogId::Cap(CapId::from_u64(12)), vec![]);
-    ask.haves.insert(cell, vec![EditId::from_u64(4)]);
+    ask.haves.insert(LogId::Share(ShareId::from_u64(12)), vec![]);
+    ask.haves.insert(audience, vec![EditId::from_u64(4)]);
     ask.haves.insert(LogId::Entry(DOOR), vec![EditId::from_u64(5), EditId::from_u64(6)]);
     ask.loose = vec![EditId::from_u64(7), EditId::from_u64(9)];
     wire_mutations(&mut g, &ask, 3000, |_| {});
@@ -726,7 +730,7 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
             assert!(edit.verify().is_err(), "{edit:?}");
         }
     });
-    let logs = [LogId::Vault(ALICE), LogId::Cap(CapId::from_u64(12)), cell, LogId::Entry(DOOR)];
+    let logs = [LogId::Vault(ALICE), LogId::Share(ShareId::from_u64(12)), audience, LogId::Entry(DOOR)];
     let announce = Announce { digests: logs.into_iter().zip(1..).map(|(l, n)| (l, [n; 32])).collect() };
     wire_mutations(&mut g, &announce, 3000, |_| {});
 }

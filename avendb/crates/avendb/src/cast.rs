@@ -7,30 +7,30 @@
 //!
 //! A vault holds its entries itself, each with a type (`doc`, `note`, `todo`) and tags; the coop's documents are in the
 //! coop's vault, Alice's todos and notes in hers. A vault that wants the server to hold and pass on its entries gives
-//! avenCEO a wide relay cap (`relay_on`); everything else is shared by caps on slices: a type, a tag, one entry.
+//! avenCEO a wide relay share (`relay_on`); everything else is shared by shares on slices: a type, a tag, one entry.
 
 use crate::doc::Item;
-use crate::id::{CapId, EditId, EntryId, SignerId, VaultId};
-use crate::lab::{Lab, NewCap};
+use crate::id::{EditId, EntryId, ShareId, SignerId, VaultId};
+use crate::lab::{Lab, NewShare};
 use crate::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
-use crate::policy::{Action, Grantee, Kind, Principal, Proposal, Role};
+use crate::policy::{Action, Kind, Level, Principal, Proposal, Who};
 use crate::slice::{Atom, Selector};
 
-/// Vault `v` as a cap's grantee.
-pub fn vault(v: VaultId) -> Grantee {
-    Grantee::Principal(Principal::Vault(v))
+/// Vault `v` as a share's grantee.
+pub fn vault(v: VaultId) -> Who {
+    Who::Principal(Principal::Vault(v))
 }
 
-/// A root cap over vault `over`, issued by the vault itself: `grantee` holds the built-in group of `role`, Public for
+/// A root share over vault `over`, issued by the vault itself: `who` holds the built-in group of `level`, Public for
 /// everyone, on what `select` picks.
-pub fn cap(over: VaultId, grantee: Grantee, role: Role, select: Selector) -> NewCap {
-    let name = if grantee == Grantee::Public { "Public" } else { role.group() };
-    NewCap { over, grantee, name: name.into(), select, ops: role.ops(), parent: None, issuer: over }
+pub fn share(over: VaultId, who: Who, level: Level, select: Selector) -> NewShare {
+    let name = if who == Who::Everyone { "Public" } else { level.group() };
+    NewShare { over, who, name: name.into(), select, ops: level.ops(), parent: None, issuer: over }
 }
 
-/// A cap over vault `over` resting on the owner cap `parent`, issued by its grantee `issuer`.
-pub fn cap_on(over: VaultId, grantee: Grantee, role: Role, select: Selector, parent: CapId, issuer: VaultId) -> NewCap {
-    NewCap { parent: Some(parent), issuer, ..cap(over, grantee, role, select) }
+/// A share over vault `over` resting on the owner share `parent`, issued by its grantee `issuer`.
+pub fn share_on(over: VaultId, who: Who, level: Level, select: Selector, parent: ShareId, issuer: VaultId) -> NewShare {
+    NewShare { parent: Some(parent), issuer, ..share(over, who, level, select) }
 }
 
 /// The entries of type `ty`: "all todos".
@@ -48,12 +48,12 @@ pub fn by_id(e: EntryId) -> Selector {
     Selector::AnyOf(vec![vec![Atom::EntryIn(vec![e])]])
 }
 
-/// A write of entry `entry` of vault `vault` for `actor`, under the entry's stay `stay` at generation `generation`,
+/// A write of entry `entry` of vault `vault` for `actor`, under the entry's stay `stay` at epoch `epoch`,
 /// with a body nobody opens: what a patched app sends. The log fills in `deps` and `via` as it drafts the edit.
-pub fn write(vault: VaultId, entry: EntryId, actor: VaultId, stay: Option<EditId>, generation: u64) -> Action {
+pub fn write(vault: VaultId, entry: EntryId, actor: VaultId, stay: Option<EditId>, epoch: u64) -> Action {
     let body = vec![0xc1, 0x9e, 0x47];
     let (proposal, files) = (Proposal::Main, vec![]);
-    Action::Write { vault, entry, actor, stay, generation, deps: vec![], proposal, via: vec![], create: None, files, body }
+    Action::Write { vault, entry, actor, stay, epoch, deps: vec![], proposal, via: vec![], create: None, files, body }
 }
 
 /// The Lab after scenarios 1 and 2, plus the server, avenCEO and a stranger.
@@ -247,9 +247,9 @@ pub fn coop_on(w: &mut World) -> VaultId {
 }
 
 /// Vault `v` gives avenCEO relay on all its entries, on Alice's Mac, for the server to hold and pass them on: a wide
-/// cap, which reaches every cell and splits none.
-pub fn relay_on(w: &mut World, v: VaultId) -> CapId {
-    let relay = cap(v, vault(w.avenceo), Role::Backup, Selector::All);
+/// share, which reaches every audience and splits none.
+pub fn relay_on(w: &mut World, v: VaultId) -> ShareId {
+    let relay = share(v, vault(w.avenceo), Level::Backup, Selector::All);
     w.lab.issue(w.mac_a, &[w.mac_a], relay).expect("the vault gives the server relay")
 }
 
@@ -307,8 +307,8 @@ pub fn handbook_ready(w: &mut World) -> VaultId {
 }
 
 /// Scenarios 3 to 5 on the Lab: the coop, its documents Welcome and Onboarding written by Alice for the coop, and every
-/// device synced. Welcome is older: an app still on v1 wrote it (scenario 9). No cap selects either: they are in the
-/// cell of no caps, which the coop's devices read and the server relays.
+/// device synced. Welcome is older: an app still on v1 wrote it (scenario 9). No share selects either: they are in the
+/// audience of no shares, which the coop's devices read and the server relays.
 pub struct Handbook {
     pub coop: VaultId,
     pub welcome: EntryId,
@@ -327,16 +327,16 @@ pub fn handbook(w: &mut World) -> Handbook {
 }
 
 /// Scenario 15 on the Lab: three of Alice's todos in her vault, the door todo shared by its id with Bob (write), Carol
-/// (read) and the coop (owner, signed with Alice's passkey), and moved by Alice's Mac into the cell of those caps.
-/// Nothing synced yet.
+/// (read) and the coop (owner, signed with Alice's passkey), and moved by Alice's Mac into the audience of those
+/// shares. Nothing synced yet.
 pub struct Todos {
     pub coop: VaultId,
     pub door: EntryId,
     pub seeds: EntryId,
     pub solar: EntryId,
-    pub bob_write: CapId,
-    pub carol_read: CapId,
-    pub coop_owner: CapId,
+    pub bob_write: ShareId,
+    pub carol_read: ShareId,
+    pub coop_owner: ShareId,
 }
 
 pub fn todos_on(w: &mut World) -> Todos {
@@ -356,19 +356,19 @@ pub fn todos_in(w: &mut World, coop: VaultId) -> Todos {
     let seeds = new("Order seeds", "home");
     let solar = new("Clean the solar panels", "work");
     let passkey = w.passkey_a;
-    let mut give = |signer, role, to| {
-        let shared = w.lab.issue(mac, &[signer], cap(alice, vault(to), role, by_id(door)));
+    let mut give = |signer, level, to| {
+        let shared = w.lab.issue(mac, &[signer], share(alice, vault(to), level, by_id(door)));
         shared.expect("Alice shares the door")
     };
-    let bob_write = give(mac, Role::Write, w.bob);
-    let carol_read = give(mac, Role::Read, w.carol);
-    let coop_owner = give(passkey, Role::Owner, coop);
+    let bob_write = give(mac, Level::Write, w.bob);
+    let carol_read = give(mac, Level::Read, w.carol);
+    let coop_owner = give(passkey, Level::Owner, coop);
     Todos { coop, door, seeds, solar, bob_write, carol_read, coop_owner }
 }
 
 /// Alice's library, as the Lean model's slices start from it: three todos, the door and the solar panels tagged work
 /// and the seeds home, and two notes, the plan tagged work and her diary, all in her vault, which gives the server
-/// relay on them. No other cap selects any of them yet. Nothing synced yet.
+/// relay on them. No other share selects any of them yet. Nothing synced yet.
 pub struct Library {
     pub door: EntryId,
     pub seeds: EntryId,

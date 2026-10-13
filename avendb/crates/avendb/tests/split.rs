@@ -1,14 +1,14 @@
 //! Devices split off the Lab to run on their own (P8): each holds only its own store and keys, and they sync by the
 //! bytes they would send each other on the network, the requests, the replies and the McEliece keys fetched, and the
-//! digests they announce. A device names to a peer, and announces to it, only the logs of the entries, cells and caps
-//! that peer may receive, and the vault logs those name: nothing of any other entry or cell (T12). `avendb-net` carries
-//! the same bytes over iroh.
+//! digests they announce. A device names to a peer, and announces to it, only the logs of the entries, audiences and
+//! shares that peer may receive, and the vault logs those name: nothing of any other entry or audience (T12).
+//! `avendb-net` carries the same bytes over iroh.
 
 mod common;
 
 use std::collections::HashMap;
 
-use avendb::id::{CellId, EditId, SignerId, VaultId};
+use avendb::id::{AudienceId, EditId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::Action;
@@ -65,8 +65,8 @@ fn scenario_5_between_devices_split_off() {
     assert!(ask((&mut bob, w.mac_b), (&mut server, w.server)) > 0);
     assert_eq!(text(&bob, w.mac_b, welcome, 2).as_deref(), Some(WELCOME_TEXT), "Bob's Mac reads Welcome");
     assert!(server.fetched(w.server, welcome) > 0, "the server holds Welcome's edits");
-    let cell = KeyFam::Cell(coop, CellId::of(coop, &[]));
-    let either = server.reads(w.server, welcome) || server.opens(w.server, cell);
+    let audience = KeyFam::Audience(coop, AudienceId::of(coop, &[]));
+    let either = server.reads(w.server, welcome) || server.opens(w.server, audience);
     assert!(!either, "the server opens neither Welcome's key nor its cell's");
     assert!(server.meaning(w.server, welcome).is_none(), "nor reads what Welcome is");
     assert!(!contains(&server.store(w.server), WELCOME_TEXT), "Welcome's text appears nowhere in the server's store");
@@ -83,7 +83,8 @@ fn a_device_names_only_the_logs_its_peer_may_hold() {
     let welcome = welcome.expect("Alice's Mac writes Welcome for the coop");
     let diary = mac.create(w.mac_a, alice, alice, "note", &[], document("Diary", "Dear diary", w.mac_a));
     let diary = diary.expect("and her diary in her own vault");
-    let (coops, alices) = (LogId::Cell(coop, CellId::of(coop, &[])), LogId::Cell(alice, CellId::of(alice, &[])));
+    let (coops, alices) =
+        (LogId::Audience(coop, AudienceId::of(coop, &[])), LogId::Audience(alice, AudienceId::of(alice, &[])));
     let to_stranger = mac.request(w.mac_a, w.stranger);
     assert_eq!(to_stranger, Request::default(), "a stranger is told nothing of what Alice's Mac holds");
     let names = |r: &Request, l: LogId| r.ask.haves.contains_key(&l);

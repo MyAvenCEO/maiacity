@@ -338,7 +338,7 @@ pub enum Step {
     /// The genesis of avenCEO, the aven vault its person's human vault founds as their device claims a server, and the
     /// edit that adds the server to it, drafted together (`Node::claim_with`).
     Claim,
-    /// Changes its person's vault approves, as the root of the vaults it owns: new vaults it owns, an owner cap, the
+    /// Changes its person's vault approves, as the root of the vaults it owns: new vaults it owns, an owner share, the
     /// revocation of one, drafted together (`Node::approve_with`).
     Approve,
 }
@@ -748,7 +748,7 @@ impl Node {
     }
 
     /// Edits that need the approval of a vault its person's passkey `passkey` roots, or of one their vault owns, as the
-    /// genesis of a vault their vault owns or an owner cap: `draft` drafts them on this device one on top of the
+    /// genesis of a vault their vault owns or an owner share: `draft` drafts them on this device one on top of the
     /// other (`Lab::drafting`), and `authenticator` signs them all in one ceremony; then this device keeps them in that
     /// order and tells its peers. What `draft` returned. Fails if this device's view refuses one, or the passkey
     /// didn't sign them.
@@ -856,7 +856,7 @@ impl Node {
         self.shared.lookup.add_endpoint_info(addr);
     }
 
-    /// Act on its Lab as its device, as its app does: a write, a cap, an edit. Then it tells its peers of whatever
+    /// Act on its Lab as its device, as its app does: a write, a share, an edit. Then it tells its peers of whatever
     /// changed.
     pub async fn act<T: Send + 'static>(&self, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let out = self.shared.lab(f).await;

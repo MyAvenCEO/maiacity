@@ -1,13 +1,13 @@
-//! Keys. Every vault has a seed per generation, every cap with read or more a key per epoch, every cell (the entries
-//! of a vault that the same caps select) a key per generation, and every entry a key per stay and generation, derived
-//! from its cell's. The schedule in `policy` (the Lean model's `targets` and `linkAll`) says what each is sealed to,
-//! wrapped under or derived from: a seed to its vault's devices and owner signers (a passkey through a key derived from
-//! its PRF output) and to its owner vaults' seeds, a cap key to its grantee's seed (published for Public), a cell key
-//! to the key of each cap with read or more that reaches the cell. Every write is encrypted under its entry's key in
-//! the stay and generation it names, bound to the edit that carries it. When anyone loses access, every key they could
-//! open moves to a new epoch and the old key is sealed to the new one, so those who remain still read the history
-//! (T5, T6); a move wraps the entry's old keys under its new one, so its readers read its whole history and nobody gets
-//! a key of the cell it left (T24). Relay caps get no key at all (T7, T25).
+//! Keys. Every vault has a seed per epoch, every share with read or more a key per epoch, every audience (the entries
+//! of a vault that the same shares select) a key per epoch, and every entry a key per stay and epoch, derived
+//! from its audience's. The schedule in `policy` (the Lean model's `targets` and `linkAll`) says what each is sealed
+//! to, wrapped under or derived from: a seed to its vault's devices and owner signers (a passkey through a key derived
+//! from its PRF output) and to its owner vaults' seeds, a share key to its grantee's seed (published for everyone), an
+//! audience key to the key of each share with read or more that reaches the audience. Every write is encrypted under
+//! its entry's key in the stay and epoch it names, bound to the edit that carries it. When anyone loses access, every
+//! key they could open moves to a new epoch and the old key is sealed to the new one, so those who remain still read
+//! the history (T5, T6); a move wraps the entry's old keys under its new one, so its readers read its whole history and
+//! nobody gets a key of the audience it left (T24). Relay shares get no key at all (T7, T25).
 //!
 //! A key is 32 secret bytes. From them come its id, which names it in boxes and edits, the key that encrypts data under
 //! it, and its two key pairs that others seal to without holding it: X-Wing (ML-KEM-768 with X25519) and Classic
@@ -32,7 +32,7 @@ use x_wing::{Decapsulate as _, Decapsulator as _, Encapsulate as _, KeyExport as
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::hash::{self, Hasher, Reader};
-use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
+use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 
 /// The suite of every box and edit: X-Wing and Classic McEliece 6688128f, XChaCha20-Poly1305, SHA-3. Its first byte.
 pub const SUITE: u8 = 1;
@@ -50,27 +50,26 @@ const XWING_CIPHERTEXT: usize = x_wing::CIPHERTEXT_SIZE;
 pub const MCELIECE_PUBLIC_BYTES: usize = mceliece::CRYPTO_PUBLICKEYBYTES;
 const MCELIECE_CIPHERTEXT: usize = mceliece::CRYPTO_CIPHERTEXTBYTES;
 
-/// A family of keys that rotates through epochs (a seed's and a cell's are called generations): a vault's seed, whose
-/// key pair is the vault's key and from which its master key is derived; the key of a cap with read or more; a cell's
-/// key.
+/// A family of keys that rotates through epochs: a vault's seed, whose key pair is the vault's key and from which its
+/// master key is derived; the key of a share with read or more; an audience's key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyFam {
     Seed(VaultId),
-    Cap(VaultId, CapId),
-    Cell(VaultId, CellId),
+    Share(VaultId, ShareId),
+    Audience(VaultId, AudienceId),
 }
 
 impl KeyFam {
     /// The vault the family belongs to.
     pub fn vault(self) -> VaultId {
         match self {
-            KeyFam::Seed(v) | KeyFam::Cap(v, _) | KeyFam::Cell(v, _) => v,
+            KeyFam::Seed(v) | KeyFam::Share(v, _) | KeyFam::Audience(v, _) => v,
         }
     }
 }
 
 /// A signer's own key, one epoch of a key family, or the key of an entry in one of its stays (`None` for the stay its
-/// creation began, else the move that began it) at a generation of that stay's cell: what the schedule seals keys to.
+/// creation began, else the move that began it) at an epoch of that stay's audience: what the schedule seals keys to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyName {
     Signer(SignerId),
@@ -208,7 +207,7 @@ impl Secret {
     }
 
     /// Start making the key's McEliece pair in the background, so that the first `public` or `open` that needs it
-    /// waits less: a device does so for its own key as it unlocks, and for a seed or a cap key as it makes one. A web
+    /// waits less: a device does so for its own key as it unlocks, and for a seed or a share key as it makes one. A web
     /// page has no threads, so there the pair is only wanted (`want`), for the page to make in its workers.
     pub fn prepare(&self) {
         #[cfg(not(target_arch = "wasm32"))]
@@ -563,10 +562,10 @@ pub fn open_edit(key: &Secret, body: &[u8], context: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// The key of entry `e` in its stay `stay` (`None` for the stay its creation began), derived from the key of that
-/// stay's cell at a generation: the schedule's seal of an entry key to its cell key (`KeyName::Entry`). Whoever opens
-/// the cell key derives the key of each entry in it, so a cell's entries need no box of their own; only a move wraps
-/// the keys of an entry's earlier stays under the key of its new one.
-pub fn entry_key(cell: &Secret, e: EntryId, stay: Option<EditId>) -> Secret {
+/// stay's audience at an epoch: the schedule's seal of an entry key to its audience key (`KeyName::Entry`). Whoever
+/// opens the audience key derives the key of each entry in it, so an audience's entries need no box of their own; only
+/// a move wraps the keys of an entry's earlier stays under the key of its new one.
+pub fn entry_key(audience: &Secret, e: EntryId, stay: Option<EditId>) -> Secret {
     let mut data = Vec::with_capacity(65);
     data.extend_from_slice(&e.0);
     match stay {
@@ -576,7 +575,7 @@ pub fn entry_key(cell: &Secret, e: EntryId, stay: Option<EditId>) -> Secret {
             data.extend_from_slice(&s.0);
         }
     }
-    cell.child("entry key", &data)
+    audience.child("entry key", &data)
 }
 
 /// Randomness from a seed, the Lab's: its keys and nonces come from it, so a failing test replays exactly, and a device

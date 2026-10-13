@@ -1,19 +1,19 @@
-//! Sync on the Lab (P6): every edit is in one log, a vault's, a cap's, a cell's or an entry's, and devices ask each
-//! other with what they hold of each log, gossip one digest per log and ask only where one differs, go offline and come
-//! back, and come back from old backups, which forks what they sign next. A peer sends a device the logs of the entries
-//! and cells it reaches, and nothing about the others (T12): an entry a steward moves out of a device's reach stops
-//! syncing to it, and the device never hears of the move. Since blobs B2c, of those a device syncs the entries its
-//! sync rules want (T28), by the stewards' marks, which a relay applies without reading a selector (T29).
+//! Sync on the Lab (P6): every edit is in one log, a vault's, a share's, an audience's or an entry's, and devices ask
+//! each other with what they hold of each log, gossip one digest per log and ask only where one differs, go offline and
+//! come back, and come back from old backups, which forks what they sign next. A peer sends a device the logs of the
+//! entries and audiences it reaches, and nothing about the others (T12): an entry a steward moves out of a device's
+//! reach stops syncing to it, and the device never hears of the move. Since blobs B2c, of those a device syncs the
+//! entries its sync rules want (T28), by the stewards' marks, which a relay applies without reading a selector (T29).
 
 mod common;
 
 use std::collections::BTreeSet;
 
 use avendb::doc::Item;
-use avendb::id::{CellId, EntryId, SignerId, VaultId};
+use avendb::id::{AudienceId, EntryId, SignerId, VaultId};
 use avendb::lab::{Lab, NewRule};
 use avendb::lens::Status;
-use avendb::policy::{Refusal, Role};
+use avendb::policy::{Level, Refusal};
 use avendb::sealed::{seal, Brought, FileKey, FileRoot};
 use avendb::slice::{Atom, Selector, Sym};
 use avendb::sync::{log_of, LogId};
@@ -73,7 +73,7 @@ fn devices_that_synced_gossip_the_same_digests() {
             assert!(db.get(l).is_none_or(|y| y == x), "{a:?} and {b:?} differ on {l:?}");
         }
     }
-    // an edit changes the digest of its entry's log alone, not its cell's nor its vault's
+    // an edit changes the digest of its entry's log alone, not its audience's nor its vault's
     w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     let after = digests(&mut w.lab, w.mac_a);
     let changed: Vec<_> = after.iter().filter(|(l, x)| mac.get(l) != Some(x)).map(|(l, _)| *l).collect();
@@ -165,26 +165,26 @@ fn every_order_of_delivery_ends_the_same() {
 }
 
 #[test]
-fn a_device_receives_the_logs_of_the_cells_it_reaches_and_nothing_of_the_others() {
+fn a_device_receives_the_logs_of_the_audiences_it_reaches_and_nothing_of_the_others() {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, mac) = (w.alice, w.bob, w.mac_a);
-    let work = cap(alice, vault(bob), Role::Read, tagged("todo", "work"));
+    let work = share(alice, vault(bob), Level::Read, tagged("todo", "work"));
     let work = w.lab.issue(mac, &[mac], work).expect("Alice shares her todos tagged work with Bob");
     w.lab.sync_all(5);
-    // Bob's Mac holds the logs of the two work todos, of the cell her Mac moved them into, and of Bob's cap
+    // Bob's Mac holds the logs of the two work todos, of the audience her Mac moved them into, and of Bob's share
     let held = logs(&w.lab, w.mac_b);
-    let theirs = CellId::of(alice, &[work]);
-    for l in [LogId::Entry(lib.door), LogId::Entry(lib.solar), LogId::Cell(alice, theirs), LogId::Cap(work)] {
+    let theirs = AudienceId::of(alice, &[work]);
+    for l in [LogId::Entry(lib.door), LogId::Entry(lib.solar), LogId::Audience(alice, theirs), LogId::Share(work)] {
         assert!(held.contains(&l), "Bob's Mac holds {l:?}");
     }
-    // and nothing of the seeds, the plan or the diary, not even the cell they sit in, the cell of no caps
+    // and nothing of the seeds, the plan or the diary, not even the audience they sit in, the audience of no shares
     for e in [lib.seeds, lib.plan, lib.diary] {
         assert!(!held.contains(&LogId::Entry(e)), "{e:?}");
         assert_eq!(w.lab.fetched(w.mac_b, e), 0, "{e:?}");
     }
-    assert!(!held.contains(&LogId::Cell(alice, CellId::of(alice, &[]))), "nor the cell of no caps");
-    // the server, which relays the whole vault through avenCEO's wide cap, holds every entry's log
+    assert!(!held.contains(&LogId::Audience(alice, AudienceId::of(alice, &[]))), "nor the cell of no caps");
+    // the server, which relays the whole vault through avenCEO's wide share, holds every entry's log
     let relayed = logs(&w.lab, w.server);
     assert!(lib.all().iter().all(|&e| relayed.contains(&LogId::Entry(e))));
 }
@@ -194,7 +194,7 @@ fn an_entry_that_leaves_a_devices_reach_stops_syncing_to_it() {
     let mut w = world();
     let lib = library(&mut w);
     let (alice, bob, mac, bobs) = (w.alice, w.bob, w.mac_a, w.mac_b);
-    let work = cap(alice, vault(bob), Role::Write, tagged("todo", "work"));
+    let work = share(alice, vault(bob), Level::Write, tagged("todo", "work"));
     let work = w.lab.issue(mac, &[mac], work).expect("Alice shares her todos tagged work with Bob");
     w.lab.sync_all(6);
     let solar = LogId::Entry(lib.solar);
@@ -206,19 +206,19 @@ fn an_entry_that_leaves_a_devices_reach_stops_syncing_to_it() {
         i.edit_todo(|t| t.notes = AFTER_TEXT.into());
     })
     .expect("and writes a note on it");
-    // her Mac, a steward, moved it to the cell of no caps, out of Bob's reach: it no longer tells Bob's Mac of the
-    // todo's log, in what it announces or in what it asks
-    let none = Some(CellId::of(alice, &[]));
-    assert_eq!(w.lab.state(mac).entry(lib.solar).map(|en| en.cell()), none);
+    // her Mac, a steward, moved it to the audience of no shares, out of Bob's reach: it no longer tells Bob's Mac of
+    // the todo's log, in what it announces or in what it asks
+    let none = Some(AudienceId::of(alice, &[]));
+    assert_eq!(w.lab.state(mac).entry(lib.solar).map(|en| en.audience()), none);
     assert!(!named(&mut w.lab));
     assert!(!w.lab.request(mac, w.mac_b).ask.haves.contains_key(&solar));
     w.lab.sync_all(6);
     assert_eq!(w.lab.fetched(w.mac_b, lib.solar), had, "Bob's Mac fetches nothing of it since");
-    // it never hears of the move: by its own view the todo is still in the cell of Bob's cap
-    let still = Some(CellId::of(alice, &[work]));
-    assert_eq!(w.lab.state(w.mac_b).entry(lib.solar).map(|en| en.cell()), still);
+    // it never hears of the move: by its own view the todo is still in the audience of Bob's share
+    let still = Some(AudienceId::of(alice, &[work]));
+    assert_eq!(w.lab.state(w.mac_b).entry(lib.solar).map(|en| en.audience()), still);
     assert!(!contains(&w.lab.store(w.mac_b), AFTER_TEXT), "nor sees the note written after it left");
-    // the door todo, still in that cell, syncs on: Bob checks it off and Alice sees it
+    // the door todo, still in that audience, syncs on: Bob checks it off and Alice sees it
     w.lab.edit(w.mac_b, bob, lib.door, |i| i.set_status(Status::Done)).expect("Bob checks it off");
     w.lab.sync_all(6);
     assert_eq!(status(&w.lab, mac, lib.door), Some(Status::Done));
@@ -273,7 +273,7 @@ fn roots(xs: impl IntoIterator<Item = FileRoot>) -> BTreeSet<FileRoot> {
 /// her vault, which gives the server relay. Her iPhone syncs only the proxies and keeps their files whole; the server
 /// syncs every entry of hers and keeps every file whole, by a rule of avenCEO's own; her Mac has no rule and syncs all
 /// of it, fetching files as it reads them. Nothing in the rules names a proxy: they are any slice of any data, by the
-/// same selectors as caps, and the stewards mark which rules pick each entry.
+/// same selectors as shares, and the stewards mark which rules pick each entry.
 #[test]
 fn t28_each_device_syncs_what_its_rules_pick() {
     let mut w = world();
@@ -331,14 +331,14 @@ fn sync_rules_grant_nothing() {
     let (alice, carol, mac, mac_c) = (w.alice, w.carol, w.mac_a, w.mac_c);
     let l = library(&mut w);
     w.lab.sync_all(0);
-    // a rule for a device of another vault, or over a vault the issuer holds no cap over, is refused
+    // a rule for a device of another vault, or over a vault the issuer holds no share over, is refused
     let not_hers = w.lab.set_rule(mac, &[mac], rule(alice, mac_c, alice, Selector::All, false));
     assert_eq!(not_hers, Err(Refusal::NotDevice));
-    let no_cap = w.lab.set_rule(mac_c, &[mac_c], rule(carol, mac_c, alice, Selector::All, false));
-    assert_eq!(no_cap.map(drop), Err(Refusal::NoCap));
-    // with a cap to read Alice's notes, Carol's Mac may set a rule over her vault: one that picks the todos brings her
-    // none of them, and no new note either; once it ends, the new note comes
-    w.lab.issue(mac, &[mac], cap(alice, vault(carol), Role::Read, of_type("note"))).unwrap();
+    let no_share = w.lab.set_rule(mac_c, &[mac_c], rule(carol, mac_c, alice, Selector::All, false));
+    assert_eq!(no_share.map(drop), Err(Refusal::NoCap));
+    // with a share to read Alice's notes, Carol's Mac may set a rule over her vault: one that picks the todos brings
+    // her none of them, and no new note either; once it ends, the new note comes
+    w.lab.issue(mac, &[mac], share(alice, vault(carol), Level::Read, of_type("note"))).unwrap();
     w.lab.sync_all(1);
     assert_eq!(set(w.lab.entries(mac_c)), set([l.plan, l.diary]));
     let todos = w.lab.set_rule(mac_c, &[mac_c], rule(carol, mac_c, alice, of_type("todo"), true)).unwrap();

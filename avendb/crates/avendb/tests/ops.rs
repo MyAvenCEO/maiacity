@@ -9,7 +9,7 @@
 mod records;
 
 use avendb::id::{EntryId, VaultId};
-use avendb::ops::{diff, run_all, Change, Flat, Op, Record, Where};
+use avendb::ops::{diff, run_all, Change, Flat, Record, RecordOp, Where};
 use avendb::slice::{Attrs, Sym};
 use records::{random_op, random_record, Rng, FIELDS};
 use serde_json::{json, Value};
@@ -53,10 +53,10 @@ fn each_run_ends_where_the_models_does() {
     let v = vectors();
     for case in list(&v["runs"]) {
         let before = record(&case["before"]);
-        let op = |o: &Value| Op::of_json(o).unwrap_or_else(|why| panic!("{o}: {why}"));
-        let ops: Vec<Op> = list(&case["ops"]).iter().map(op).collect();
+        let op = |o: &Value| RecordOp::of_json(o).unwrap_or_else(|why| panic!("{o}: {why}"));
+        let ops: Vec<RecordOp> = list(&case["ops"]).iter().map(op).collect();
         for op in &ops {
-            assert_eq!(Op::of_json(&op.to_json()).as_ref(), Ok(op), "{case}");
+            assert_eq!(RecordOp::of_json(&op.to_json()).as_ref(), Ok(op), "{case}");
         }
         let after = run_all(&before, &ops);
         assert_eq!(after.as_ref(), case["after"].as_object(), "{case}");
@@ -123,7 +123,7 @@ fn o2_ops_change_only_what_they_name() {
     for _ in 0..4000 {
         let before = random_record(&mut rng);
         let json: Vec<Value> = (0..1 + rng.below(3)).map(|_| random_op(&mut rng, &before)).collect();
-        let Ok(ops) = json.iter().map(Op::of_json).collect::<Result<Vec<_>, _>>() else { continue };
+        let Ok(ops) = json.iter().map(RecordOp::of_json).collect::<Result<Vec<_>, _>>() else { continue };
         let Some(after) = run_all(&before, &ops) else { continue };
         taken += 1;
         for c in diff(&before, &after) {

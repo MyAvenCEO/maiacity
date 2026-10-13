@@ -1,21 +1,21 @@
 import AvenDB.Props
 
 /-!
-# Caps, cells, removals and relays
+# Shares, audiences, removals and relays
 
-The proofs of the theorems about cap chains and cells (T22, T23), the replay and strong removal (T16, T18, the view,
-the order of writes, the generations along a replay for T15), stated as in `Theorems.lean`.
+The proofs of the theorems about share chains and audiences (T22, T23), the replay and strong removal (T16, T18, the
+view, the order of writes, the epochs along a replay for T15), stated as in `Theorems.lean`.
 
 Settling keys changes only the epochs, the seals and what is published, and never lowers an epoch. An accepted edit
-adds a cap only with a new id and a parent that comes before it (`capParentOk`), never takes a cap away, and never sets
-`narrow`, which only `hide` does while an edit is checked. So in every reachable state the caps are well formed
-(`CapsWell`): a cap's chain is its parent's chain and the cap itself (T22), and with nothing narrowed the write rule
-reads exactly what the selectors say wherever an entry's live cell is its semantic cell (T23). A new write brings a new
-id and builds on accepted writes, and a removal keeps some of the writes with what they build on, so the writes stay
-ordered. A run with removals ends in the replay of the edits that stood in it.
+adds a share only with a new id and a parent that comes before it (`shareParentOk`), never takes a share away, and never
+sets `narrow`, which only `hide` does while an edit is checked. So in every reachable state the shares are well formed
+(`SharesWell`): a share's chain is its parent's chain and the share itself (T22), and with nothing narrowed the write
+rule reads exactly what the selectors say wherever an entry's live audience is its semantic audience (T23). A new write
+brings a new id and builds on accepted writes, and a removal keeps some of the writes with what they build on, so the
+writes stay ordered. A run with removals ends in the replay of the edits that stood in it.
 -/
 
-namespace AvenDB.Caps
+namespace AvenDB.Shares
 
 /-! ## Folds, and settling keys
 
@@ -84,8 +84,8 @@ theorem keysOnly_settle (pre post : State) : KeysOnly post (settle pre post) := 
   rw [h2, h1]
   exact ⟨es, ss, ps, rfl⟩
 
-/-- Settling keeps the caps. -/
-theorem settle_caps (pre post : State) : (settle pre post).caps = post.caps := by
+/-- Settling keeps the shares. -/
+theorem settle_shares (pre post : State) : (settle pre post).shares = post.shares := by
   obtain ⟨_, _, _, h⟩ := keysOnly_settle pre post
   rw [h]
 
@@ -211,9 +211,10 @@ theorem apply_epochs {st post : State} {edit : Edit} (h : apply st edit = some p
   dsimp only at h
   split at h <;> (repeat' split at h) <;> (try cases h) <;> (try rfl)
 
-/-- An accepted edit leaves the caps alone, or adds one cap with a new id that `capParentOk` accepts. -/
-theorem apply_caps {st post : State} {edit : Edit} (h : apply st edit = some post) :
-    post.caps = st.caps ∨ ∃ c, post.caps = st.caps ++ [c] ∧ st.cap? c.id = none ∧ capParentOk st c = true := by
+/-- An accepted edit leaves the shares alone, or adds one share with a new id that `shareParentOk` accepts. -/
+theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
+    post.shares = st.shares ∨
+      ∃ c, post.shares = st.shares ++ [c] ∧ st.share? c.id = none ∧ shareParentOk st c = true := by
   unfold apply at h
   dsimp only at h
   split at h
@@ -221,10 +222,10 @@ theorem apply_caps {st post : State} {edit : Edit} (h : apply st edit = some pos
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨h1, -, h3, -, rfl⟩ := h
     refine .inr ⟨c, rfl, ?_, ?_⟩
-    · cases hc : st.cap? c.id with
+    · cases hc : st.share? c.id with
       | none => rfl
       | some _ => simp [hc] at h1
-    · cases hp : capParentOk st c with
+    · cases hp : shareParentOk st c with
       | true => rfl
       | false => simp [hp] at h3
   all_goals (repeat' split at h) <;> (try cases h) <;> exact .inl rfl
@@ -255,7 +256,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
   unfold apply at h
   dsimp only at h
   split at h
-  case h_10 v e actor stay gen deps proposal via create tags hact =>
+  case h_10 v e actor stay epoch deps proposal via create tags hact =>
     split at h
     · cases h
     rename_i hok
@@ -300,17 +301,17 @@ theorem narrow_reachable {st : State} (hr : Reachable st) : st.narrow = [] := by
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [settle_narrow, apply_narrow hpost, hn]
 
-/-! ## Cap chains -/
+/-! ## Share chains -/
 
-/-- The caps of a state are well formed: no two share an id, and a cap resting on another names one that comes before
-    it, over the same vault, an owner cap granted to its issuer, wide if it is. -/
-def CapsWell (st : State) : Prop :=
-  (st.caps.map (·.id)).Nodup ∧
-  ∀ c ∈ st.caps, ∀ p, c.parent = some p → ∃ pc, st.cap? p = some pc ∧ st.caps.idxOf pc < st.caps.idxOf c ∧
-    pc.over = c.over ∧ pc.role = .owner ∧ pc.grantee = .principal (.vault c.issuer) ∧ (c.wide = true → pc.wide = true)
+/-- The shares of a state are well formed: no two share an id, and a share resting on another names one that comes
+    before it, over the same vault, an owner share granted to its issuer, wide if it is. -/
+def SharesWell (st : State) : Prop :=
+  (st.shares.map (·.id)).Nodup ∧
+  ∀ c ∈ st.shares, ∀ p, c.parent = some p → ∃ pc, st.share? p = some pc ∧ st.shares.idxOf pc < st.shares.idxOf c ∧
+    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .principal (.vault c.issuer) ∧ (c.wide = true → pc.wide = true)
 
-/-- Two caps with one id are one, where ids come once. -/
-theorem cap_eq_of_id {cs : List Cap} (hnd : (cs.map (·.id)).Nodup) {a b : Cap} (ha : a ∈ cs) (hb : b ∈ cs)
+/-- Two shares with one id are one, where ids come once. -/
+theorem share_eq_of_id {cs : List Share} (hnd : (cs.map (·.id)).Nodup) {a b : Share} (ha : a ∈ cs) (hb : b ∈ cs)
     (h : a.id = b.id) : a = b := by
   induction cs with
   | nil => simp at ha
@@ -323,69 +324,70 @@ theorem cap_eq_of_id {cs : List Cap} (hnd : (cs.map (·.id)).Nodup) {a b : Cap} 
     · exact absurd (by rw [← hb, ← h]; exact List.mem_map_of_mem ha) hnd.1
     · exact ih hnd.2 ha hb
 
-/-- Well-formedness reads only the caps. -/
-theorem capsWell_congr {st st' : State} (h : st'.caps = st.caps) : CapsWell st' ↔ CapsWell st := by
-  unfold CapsWell State.cap?
+/-- Well-formedness reads only the shares. -/
+theorem sharesWell_congr {st st' : State} (h : st'.shares = st.shares) : SharesWell st' ↔ SharesWell st := by
+  unfold SharesWell State.share?
   rw [h]
 
-/-- Adding a cap with a new id that `capParentOk` accepts keeps the caps well formed: its parent is an earlier cap. -/
-theorem capsWell_add {st st' : State} (hw : CapsWell st) {c : Cap} (hcaps : st'.caps = st.caps ++ [c])
-    (hnew : st.cap? c.id = none) (hok : capParentOk st c = true) : CapsWell st' := by
+/-- Adding a share with a new id that `shareParentOk` accepts keeps the shares well formed: its parent is an earlier
+    share. -/
+theorem sharesWell_add {st st' : State} (hw : SharesWell st) {c : Share} (hshares : st'.shares = st.shares ++ [c])
+    (hnew : st.share? c.id = none) (hok : shareParentOk st c = true) : SharesWell st' := by
   obtain ⟨hnd, hpar⟩ := hw
-  have hids : ∀ x ∈ st.caps, x.id ≠ c.id := fun x hx hxc => by
+  have hids : ∀ x ∈ st.shares, x.id ≠ c.id := fun x hx hxc => by
     have := List.find?_eq_none.1 hnew x hx
     simp [hxc] at this
-  have hc : c ∉ st.caps := fun hc => hids c hc rfl
-  -- a lookup that finds a cap before still finds it
-  have hlook : ∀ p pc, st.cap? p = some pc → st'.cap? p = some pc := fun p pc h => by
-    unfold State.cap? at h ⊢
-    rw [hcaps, List.find?_append, h]
+  have hc : c ∉ st.shares := fun hc => hids c hc rfl
+  -- a lookup that finds a share before still finds it
+  have hlook : ∀ p pc, st.share? p = some pc → st'.share? p = some pc := fun p pc h => by
+    unfold State.share? at h ⊢
+    rw [hshares, List.find?_append, h]
     rfl
-  have hidx : ∀ x ∈ st.caps, st'.caps.idxOf x = st.caps.idxOf x := fun x hx => by
-    simp only [hcaps, List.idxOf_append, hx, ↓reduceIte]
+  have hidx : ∀ x ∈ st.shares, st'.shares.idxOf x = st.shares.idxOf x := fun x hx => by
+    simp only [hshares, List.idxOf_append, hx, ↓reduceIte]
   refine ⟨?_, fun x hx p hp => ?_⟩
-  · rw [hcaps, List.map_append, List.nodup_append]
+  · rw [hshares, List.map_append, List.nodup_append]
     refine ⟨hnd, by simp, fun a ha b hb hab => ?_⟩
     obtain ⟨x, hx, rfl⟩ := List.mem_map.1 ha
     rw [List.map_singleton, List.mem_singleton] at hb
     exact hids x hx (hab.trans hb)
-  · rw [hcaps, List.mem_append, List.mem_singleton] at hx
+  · rw [hshares, List.mem_append, List.mem_singleton] at hx
     rcases hx with hx | rfl
     · obtain ⟨pc, hpc, hlt, hrest⟩ := hpar x hx p hp
       exact ⟨pc, hlook p pc hpc, by rw [hidx pc (List.mem_of_find?_eq_some hpc), hidx x hx]; exact hlt, hrest⟩
-    · -- the new cap: its parent passed `capParentOk` and comes before it
-      unfold capParentOk at hok
+    · -- the new share: its parent passed `shareParentOk` and comes before it
+      unfold shareParentOk at hok
       rw [hp] at hok
       dsimp only at hok
-      cases hpc : st.cap? p with
+      cases hpc : st.share? p with
       | none => rw [hpc] at hok; cases hok
       | some pc =>
         rw [hpc] at hok
         simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true'] at hok
-        obtain ⟨⟨⟨⟨_, hover⟩, hrole⟩, hgr⟩, hwide⟩ := hok
+        obtain ⟨⟨⟨⟨_, hover⟩, hlevel⟩, hgr⟩, hwide⟩ := hok
         have hpcm := List.mem_of_find?_eq_some hpc
-        refine ⟨pc, hlook p pc hpc, ?_, hover, hrole, hgr, fun h => by simpa [h] using hwide⟩
+        refine ⟨pc, hlook p pc hpc, ?_, hover, hlevel, hgr, fun h => by simpa [h] using hwide⟩
         rw [hidx pc hpcm]
-        simp only [hcaps, List.idxOf_append, hc, ↓reduceIte, List.idxOf_cons_self, Nat.zero_add]
+        simp only [hshares, List.idxOf_append, hc, ↓reduceIte, List.idxOf_cons_self, Nat.zero_add]
         exact List.idxOf_lt_length_of_mem hpcm
 
-/-- In every reachable state the caps are well formed. -/
-theorem capsWell_reachable {st : State} (hr : Reachable st) : CapsWell st := by
+/-- In every reachable state the shares are well formed. -/
+theorem sharesWell_reachable {st : State} (hr : Reachable st) : SharesWell st := by
   obtain ⟨edits, rfl⟩ := hr
-  refine replay_inv CapsWell (fun st st' edit hw h => ?_) edits {} ⟨List.nodup_nil, fun _ h => by cases h⟩
+  refine replay_inv SharesWell (fun st st' edit hw h => ?_) edits {} ⟨List.nodup_nil, fun _ h => by cases h⟩
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
-  rcases apply_caps hpost with hcaps | ⟨c, hcaps, hnew, hok⟩
-  · exact (capsWell_congr ((settle_caps st post).trans hcaps)).2 hw
-  · exact capsWell_add hw ((settle_caps st post).trans hcaps) hnew hok
+  rcases apply_shares hpost with hshares | ⟨c, hshares, hnew, hok⟩
+  · exact (sharesWell_congr ((settle_shares st post).trans hshares)).2 hw
+  · exact sharesWell_add hw ((settle_shares st post).trans hshares) hnew hok
 
-/-- With a rank that drops from each cap to its parent, any fuel at least a cap's rank gives its whole chain. -/
-theorem chainN_stable (st : State) (r : Cap → Nat)
-    (hr : ∀ x ∈ st.caps, ∀ p, x.parent.bind st.cap? = some p → r p < r x) :
-    ∀ m n x, x ∈ st.caps → r x ≤ m → r x ≤ n → chainN st m x = chainN st n x := by
-  -- a cap of rank 0 rests on nothing
-  have hroot : ∀ x ∈ st.caps, r x = 0 → x.parent.bind st.cap? = none := fun x hx h0 => by
-    cases h : x.parent.bind st.cap? with
+/-- With a rank that drops from each share to its parent, any fuel at least a share's rank gives its whole chain. -/
+theorem chainN_stable (st : State) (r : Share → Nat)
+    (hr : ∀ x ∈ st.shares, ∀ p, x.parent.bind st.share? = some p → r p < r x) :
+    ∀ m n x, x ∈ st.shares → r x ≤ m → r x ≤ n → chainN st m x = chainN st n x := by
+  -- a share of rank 0 rests on nothing
+  have hroot : ∀ x ∈ st.shares, r x = 0 → x.parent.bind st.share? = none := fun x hx h0 => by
+    cases h : x.parent.bind st.share? with
     | none => rfl
     | some p => exact absurd (hr x hx p h) (by omega)
   intro m
@@ -400,18 +402,18 @@ theorem chainN_stable (st : State) (r : Cap → Nat)
     cases n with
     | zero => simp [chainN, hroot x hx (by omega)]
     | succ n =>
-      cases h : x.parent.bind st.cap? with
+      cases h : x.parent.bind st.share? with
       | none => simp only [chainN, h]
       | some p =>
         obtain ⟨q, -, hq⟩ := Option.bind_eq_some_iff.1 h
         have := hr x hx p h
         simp only [chainN, h, ih n p (List.mem_of_find?_eq_some hq) (by omega) (by omega)]
 
-/-- In a well-formed state, the chain of a cap resting on `pc` is `pc`'s chain and the cap. -/
-theorem chain_parent {st : State} (hw : CapsWell st) {c pc : Cap} {p : CapId}
-    (hp : c.parent = some p) (hpc : st.cap? p = some pc) : chain st c = chain st pc ++ [c] := by
-  -- the place in the caps ranks them: a parent comes first
-  have hr : ∀ x ∈ st.caps, ∀ q, x.parent.bind st.cap? = some q → st.caps.idxOf q < st.caps.idxOf x := by
+/-- In a well-formed state, the chain of a share resting on `pc` is `pc`'s chain and the share. -/
+theorem chain_parent {st : State} (hw : SharesWell st) {c pc : Share} {p : ShareId}
+    (hp : c.parent = some p) (hpc : st.share? p = some pc) : chain st c = chain st pc ++ [c] := by
+  -- the place in the shares ranks them: a parent comes first
+  have hr : ∀ x ∈ st.shares, ∀ q, x.parent.bind st.share? = some q → st.shares.idxOf q < st.shares.idxOf x := by
     intro x hx q hq
     obtain ⟨p', hp', hq'⟩ := Option.bind_eq_some_iff.1 hq
     obtain ⟨pc', hpc', hlt, -⟩ := hw.2 x hx p' hp'
@@ -420,23 +422,23 @@ theorem chain_parent {st : State} (hw : CapsWell st) {c pc : Cap} {p : CapId}
     exact hlt
   have hpcm := List.mem_of_find?_eq_some hpc
   have hlt := List.idxOf_lt_length_of_mem hpcm
-  have h1 : chainN st (st.caps.length + 1) c = chainN st st.caps.length pc ++ [c] := by
+  have h1 : chainN st (st.shares.length + 1) c = chainN st st.shares.length pc ++ [c] := by
     simp only [chainN, hp, Option.bind_some, hpc]
   unfold chain
-  rw [h1, chainN_stable st (st.caps.idxOf ·) hr st.caps.length (st.caps.length + 1) pc hpcm (by omega) (by omega)]
+  rw [h1, chainN_stable st (st.shares.idxOf ·) hr st.shares.length (st.shares.length + 1) pc hpcm (by omega) (by omega)]
 
 /-! ## T22 and T23 -/
 
-theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Cap} (hc : c ∈ st.caps) (hp : c.parent = some pc.id)
-    (hpc : pc ∈ st.caps) :
-    pc.over = c.over ∧ pc.role = .owner ∧ pc.grantee = .principal (.vault c.issuer) ∧
+theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
+    (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) :
+    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .principal (.vault c.issuer) ∧
       (∀ a, effSelects st c a = true → effSelects st pc a = true) ∧ (c.wide = true → pc.wide = true) := by
-  have hw := capsWell_reachable hr
-  obtain ⟨pc', hpc', -, hover, hrole, hgr, hwide⟩ := hw.2 c hc pc.id hp
+  have hw := sharesWell_reachable hr
+  obtain ⟨pc', hpc', -, hover, hlevel, hgr, hwide⟩ := hw.2 c hc pc.id hp
   -- ids come once, so the parent found is `pc`
   have hid : pc'.id = pc.id := by simpa using List.find?_some hpc'
-  obtain rfl := cap_eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
-  refine ⟨hover, hrole, hgr, fun a ha => ?_, hwide⟩
+  obtain rfl := share_eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
+  refine ⟨hover, hlevel, hgr, fun a ha => ?_, hwide⟩
   unfold effSelects at ha ⊢
   rw [chain_parent hw hp hpc', List.all_append, Bool.and_eq_true] at ha
   exact ha.1
@@ -448,39 +450,40 @@ theorem any_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x �
   | cons x l ih =>
     simp only [List.any_cons, h x List.mem_cons_self, ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
 
-theorem T23_cells_mean_slices {st : State} (hr : Reachable st) (en : Entry) (hcell : liveCell st en = semCell st en)
-    (a : VaultId) : mayWrite st a en = semWrite st a en := by
-  have hw := capsWell_reachable hr
+theorem T23_audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
+    (haudience : liveAudience st en = semAudience st en) (a : VaultId) : mayWrite st a en = semWrite st a en := by
+  have hw := sharesWell_reachable hr
   have hn := narrow_reachable hr
   unfold mayWrite semWrite
   congr 1
   refine any_congr_mem fun cp hcp => ?_
-  unfold inCell
+  unfold inAudience
   rw [hn]
   simp only [List.all_nil, Bool.and_true]
-  cases hh : holdsCap st a cp .write
+  cases hh : holdsShare st a cp .write
   · simp
   have hlive : st.live cp.id = true := by
-    simp only [holdsCap, Bool.and_eq_true] at hh
+    simp only [holdsShare, Bool.and_eq_true] at hh
     exact hh.1.1
   cases ho : cp.over == en.vault
   · simp
   cases hwd : cp.wide
-  · -- a cap that isn't wide: in the cell, live, exactly when its slice holds the entry and its creation was let in
+  · -- a share that isn't wide: in the audience, live, exactly when its slice holds the entry and its creation
+    -- was let in
     simp only [Bool.true_and, Bool.false_or, Bool.and_true]
     rw [Bool.eq_iff_iff]
-    have hmem : en.cell.contains cp.id = true ↔ cp.id ∈ semCell st en := by
-      rw [← hcell, liveCell, List.mem_filter, List.contains_iff_mem]
+    have hmem : en.audience.contains cp.id = true ↔ cp.id ∈ semAudience st en := by
+      rw [← haudience, liveAudience, List.mem_filter, List.contains_iff_mem]
       exact ⟨fun h => ⟨h, hlive⟩, fun h => h.1⟩
     rw [hmem]
-    unfold semCell
+    unfold semAudience
     cases had : en.admitted
     · simp
-    · simp only [↓reduceIte, mkCell, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter,
+    · simp only [↓reduceIte, mkAudience, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter,
         Bool.true_and]
       constructor
       · rintro ⟨cp', ⟨hcp', hcond⟩, hid⟩
-        obtain rfl := cap_eq_of_id hw.1 hcp' hcp hid
+        obtain rfl := share_eq_of_id hw.1 hcp' hcp hid
         simp only [Bool.and_eq_true] at hcond
         exact hcond.2
       · intro he
@@ -540,7 +543,7 @@ theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en
       rw [← hpicks, livePicks, List.mem_filter, List.contains_iff_mem]
       exact ⟨fun h => ⟨h, hlive⟩, fun h => h.1⟩
     rw [hmem]
-    simp only [semPicks, mkCell, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter]
+    simp only [semPicks, mkAudience, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter]
     constructor
     · rintro ⟨r', ⟨hr'm, hc⟩, hid⟩
       obtain rfl := rule_eq_of_id hnd hr'm hrm hid
@@ -550,7 +553,7 @@ theorem T29_marks_mean_rules {st : State} (hr : Reachable st) (d : SignerId) (en
       exact ⟨r, ⟨hrm, by simp [hover, hlive, hw, hm]⟩, rfl⟩
   · simp
 
-theorem T23_creations (st : State) (a v : VaultId) (x : Cell) (attrs : Attrs) {proof : Option CapId}
+theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}
     (h : admits st a v x attrs proof = true) :
     mayCreate st a v x = true := by
   unfold admits at h
@@ -754,7 +757,7 @@ theorem T18_checkpointed_writes (edits : List Edit) {w : Write} (hw : w ∈ (vie
       exact ⟨c, hc, hca.trans hauth, e, covers, heq, hid ▸ List.contains_iff_mem.1 hcov⟩
     · cases hcov
 
-/-! ## The generations along a replay -/
+/-! ## The epochs along a replay -/
 
 /-- A trace holds the state it starts from. -/
 theorem mem_trace_self (st : State) : ∀ edits, st ∈ trace st edits
@@ -788,4 +791,4 @@ theorem T15_no_older_epoch (edits : List Edit) (k : KeyFam) :
   rw [view_eq_replay]
   exact epochOf_le_replay k {} _ st hst
 
-end AvenDB.Caps
+end AvenDB.Shares

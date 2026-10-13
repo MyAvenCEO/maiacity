@@ -1,19 +1,19 @@
-//! How the page names what the core says (JSON): kinds, roles and statuses by their lowercase names, ids in 64 hex
-//! digits, a cap's grantee, and a cap itself. The Mac app's device takes the same words (`avendb-device`).
+//! How the page names what the core says (JSON): kinds, levels and statuses by their lowercase names, ids in 64 hex
+//! digits, a share's grantee, and a share itself. The Mac app's device takes the same words (`avendb-device`).
 //!
-//! A cap is a named group of ops on a slice of its vault (`avendb::slice::spec_of_json`): `{"name": "Work todos",
+//! A share is a named group of ops on a slice of its vault (`avendb::slice::spec_of_json`): `{"name": "Work todos",
 //! "where": {"all": [{"type": ["todo"]}, {"tag": "work"}]}, "ops": [{"op": "read"}, {"op": "set", "path": ["status"],
 //! "to": ["done"]}]}`, the ops as the docs write them (`avendb::rules`, `avendb/docs/OPS.md`), `where` a query's
-//! `where` of labels alone, left out for the whole vault. Its role is the class of its strongest op, which the page
-//! reads and never names. A cap the page reads carries, as `above`, the ops of the caps it rests on too, which narrow
-//! it further (`avendb::slice::Slice::to_json`). The built-in groups the page offers come from the core (`{"op":
+//! `where` of labels alone, left out for the whole vault. Its level is the class of its strongest op, which the page
+//! reads and never names. A share the page reads carries, as `above`, the ops of the shares it rests on too, which
+//! narrow it further (`avendb::slice::Slice::to_json`). The built-in groups the page offers come from the core (`{"op":
 //! "groups"}`, `avendb::rules::groups`).
 
 use anyhow::{Result, anyhow, bail};
 use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::lens::Status;
-use avendb::policy::{Grantee, Kind, Principal, Role};
-use avendb::rules::Rule;
+use avendb::policy::{Kind, Level, Principal, Who};
+use avendb::rules::Op;
 use avendb::slice::{self, Selector};
 use serde_json::Value;
 
@@ -25,13 +25,13 @@ pub fn kind_name(kind: Kind) -> &'static str {
     }
 }
 
-pub fn role_name(role: Role) -> &'static str {
-    match role {
-        Role::Relay => "relay",
-        Role::Backup => "backup",
-        Role::Read => "read",
-        Role::Write => "write",
-        Role::Owner => "owner",
+pub fn level_name(level: Level) -> &'static str {
+    match level {
+        Level::Relay => "relay",
+        Level::Backup => "backup",
+        Level::Read => "read",
+        Level::Write => "write",
+        Level::Owner => "owner",
     }
 }
 
@@ -63,20 +63,20 @@ pub fn id_of(s: &str) -> Result<[u8; 32]> {
     BlobId::from_hex(s).map(|b| b.0).ok_or_else(|| anyhow!("{s:?} is no id"))
 }
 
-/// A cap's grantee as the page names it: `"everyone"` for Public, else the vault's id.
-pub fn grantee_name(g: Grantee) -> String {
+/// A share's grantee as the page names it: `"everyone"` for `Who::Everyone`, else the vault's id.
+pub fn who_name(g: Who) -> String {
     match g {
-        Grantee::Public => "everyone".to_string(),
-        Grantee::Principal(Principal::Vault(v)) => hex(&v.0),
-        Grantee::Principal(Principal::Signer(s)) => hex(&s.0),
+        Who::Everyone => "everyone".to_string(),
+        Who::Principal(Principal::Vault(v)) => hex(&v.0),
+        Who::Principal(Principal::Signer(s)) => hex(&s.0),
     }
 }
 
-/// A cap's grantee from what the page wrote (`grantee_name`): `"everyone"`, or a vault's id.
-pub fn grantee_of(name: &str) -> Result<Grantee> {
+/// A share's grantee from what the page wrote (`who_name`): `"everyone"`, or a vault's id.
+pub fn who_of(name: &str) -> Result<Who> {
     Ok(match name {
-        "everyone" => Grantee::Public,
-        v => Grantee::Principal(Principal::Vault(VaultId(id_of(v)?))),
+        "everyone" => Who::Everyone,
+        v => Who::Principal(Principal::Vault(VaultId(id_of(v)?))),
     })
 }
 
@@ -90,8 +90,8 @@ pub fn owner_of(v: &Value) -> Result<Principal> {
     }
 }
 
-/// A new cap's name, selector and ops from what the page wrote (`avendb::slice::spec_of_json`).
-pub fn spec_of(v: &Value) -> Result<(String, Selector, Vec<Rule>)> {
+/// A new share's name, selector and ops from what the page wrote (`avendb::slice::spec_of_json`).
+pub fn spec_of(v: &Value) -> Result<(String, Selector, Vec<Op>)> {
     slice::spec_of_json(v).map_err(|why| anyhow!(why))
 }
 
@@ -104,7 +104,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_cap_reads_from_its_words() {
+    fn a_share_reads_from_its_words() {
         let work = json!({
             "name": "Work todos",
             "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] },
@@ -119,18 +119,18 @@ mod tests {
         // the whole vault where it picks nothing narrower; what the page reads back says the same
         let public = json!({ "name": "Public", "ops": [{ "op": "read" }] });
         let (name, select, ops) = spec_of(&public).expect("a cap");
-        assert_eq!((name.as_str(), &select, &ops[..]), ("Public", &Selector::All, &[Rule::Read][..]));
-        let above = vec![Grant { ops: Role::Owner.ops(), salt: [3; 32] }];
+        assert_eq!((name.as_str(), &select, &ops[..]), ("Public", &Selector::All, &[Op::Read][..]));
+        let above = vec![Grant { ops: Level::Owner.ops(), salt: [3; 32] }];
         let slice = Slice { name, select, grant: Grant { ops, salt: [4; 32] }, above };
         let read = slice.to_json();
         assert_eq!((&read["where"], &read["ops"]), (&json!({ "all": [] }), &json!([{ "op": "read" }])));
-        assert_eq!(read["above"][0], rules::ops_to_json(&Role::Owner.ops()));
+        assert_eq!(read["above"][0], rules::ops_to_json(&Level::Owner.ops()));
         let again = spec_of(&json!({ "name": read["name"], "where": read["where"], "ops": read["ops"] }));
         assert_eq!(again.expect("its own words").1, Selector::All);
     }
 
     #[test]
-    fn a_cap_written_otherwise_is_refused() {
+    fn a_share_written_otherwise_is_refused() {
         let ops = json!([{ "op": "read" }]);
         let bad = [
             json!({ "where": { "all": [] }, "ops": ops }),
@@ -145,16 +145,16 @@ mod tests {
             json!({ "name": "Bob", "who": "Bob", "ops": ops }),
             json!({ "name": "Role", "role": "read", "ops": ops }),
         ];
-        for cap in bad {
-            assert!(spec_of(&cap).is_err(), "{cap}");
+        for share in bad {
+            assert!(spec_of(&share).is_err(), "{share}");
         }
     }
 
     #[test]
-    fn a_grantee_reads_back_from_its_name() {
-        for g in [Grantee::Public, Grantee::Principal(Principal::Vault(VaultId([7; 32])))] {
-            assert_eq!(grantee_of(&grantee_name(g)).expect("its own name"), g);
+    fn whom_a_share_names_reads_back_from_its_name() {
+        for g in [Who::Everyone, Who::Principal(Principal::Vault(VaultId([7; 32])))] {
+            assert_eq!(who_of(&who_name(g)).expect("its own name"), g);
         }
-        assert!(grantee_of("public").is_err() && grantee_of("beef").is_err());
+        assert!(who_of("public").is_err() && who_of("beef").is_err());
     }
 }
