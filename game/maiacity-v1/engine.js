@@ -690,3 +690,26 @@ export function supply(s) {
 	for (const [, bal] of holders(s)) for (const k of TOKENS) out[k] += bal[k] ?? 0;
 	return out;
 }
+
+/** HEARTS as the one display currency (Samuel 2026-10-13): what one of each MIND is worth in HEARTS, for showing only,
+ * never for a move. Every MIND is born from HEARTS one for one, so the average MIND in existence is worth 1 HEART; the
+ * pool's spot prices say how each MIND stands against the others. So the MINDs the pool prices are scaled together
+ * until their supply-weighted average is 1 HEART (Σ supplyᵢ·valueᵢ = Σ supplyᵢ), and a MIND the pool cannot price yet
+ * counts at its mint price, 1 HEART. HEARTS count as 1. */
+export function heartsValue(s) {
+	const out = { HEARTS: 1, MAIA: 1, SETTLEMENT: 1, VILLAGE: 1 };
+	const rel = Object.fromEntries(MINDS.map((t) => [t, t === 'MAIA' ? (s.pool.MAIA > DUST ? 1 : null) : price(s, t, 'MAIA')]));
+	const priced = MINDS.filter((t) => rel[t] != null);
+	if (priced.length < 2) return out;
+	const sup = supply(s);
+	const units = priced.reduce((a, t) => a + sup[t], 0);
+	const worth = priced.reduce((a, t) => a + sup[t] * rel[t], 0);
+	if (!(units > DUST && worth > DUST)) return out;
+	for (const t of priced) out[t] = (rel[t] * units) / worth;
+	return out;
+}
+
+/** a balance's whole worth in HEARTS (see heartsValue) */
+export function inHearts(s, bal, v = heartsValue(s)) {
+	return TOKENS.reduce((a, t) => a + (bal[t] ?? 0) * (v[t] ?? 1), 0);
+}

@@ -7,7 +7,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
-	import { COOPS, MINDS, RENTED, SEATS, TOKEN_COLOUR, TOKEN_LABEL, nameOf, rents, supply } from '../../../../game/maiacity-v1/engine.js';
+	import { COOPS, MINDS, RENTED, SEATS, TOKEN_COLOUR, TOKEN_LABEL, heartsValue, inHearts, nameOf, rents, supply } from '../../../../game/maiacity-v1/engine.js';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
 	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
@@ -30,6 +30,7 @@
 		const list = [...SEATS.map((s) => [`player:${s}`, view.players[s].wallet[t]]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, view.coops[id].treasury[t]]), ['pool', view.pool[t]]];
 		return list.filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]);
 	});
+	const hv = $derived(view ? heartsValue(view) : null);
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 	/** what an asset earns a month, and from whom: the hex and the tent by their own settings, the machines by RENTED */
 	const rentFor = (id) => {
@@ -75,9 +76,9 @@
 					<p class="eyebrow">COOP · mints {TOKEN_LABEL[c.mind]}</p>
 					<h2>{c.name}</h2>
 
-					<h3>Treasury</h3>
+					<h3>Treasury <small>≈ {f(inHearts(view, c.treasury, hv))} HEARTS{chosen === 'maia' ? ` · with its pool basket ≈ ${f(inHearts(view, c.treasury, hv) + inHearts(view, view.pool, hv))} HEARTS` : ''}</small></h3>
 					<ul class="rows">
-						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t])}</strong></li>{/each}
+						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t])} <small>≈ {f(c.treasury[t] * hv[t])} HEARTS</small></strong></li>{/each}
 					</ul>
 					{#if chosen === 'maia'}
 						<h3>The pool basket it owns <small>the AMM pool is wholly the MaiaCity COOP's</small></h3>
