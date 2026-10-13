@@ -43,8 +43,8 @@ export const capHeight = (/** @type {Cap} */ c, /** @type {number} */ r) => Math
 // ── the design package: the one switch ──────────────────────────────────────────────────────────────────────────
 
 /**
- * The design packages Samuel is choosing between (the cost audit, theos/sandbox-8/cost-audit.md, 2026-10-13). Each adds
- * to the one before. Every number that differs between them reads `PACKAGE` (or `INSIDES` and `HALLS`) below.
+ * The design packages from the cost audit (theos/sandbox-8/cost-audit.md, 2026-10-13). Each adds to the one before.
+ * Samuel chose 'insides' on 2026-10-13: every dome stays, the insides get cheaper. Every number that differs between them reads `PACKAGE` (or `INSIDES` and `HALLS`) below.
  *   prices       the audit's price corrections only: larch/Douglas struts, cast hubs, a fuel cell and an electrolyser
  *                in each utilities dome, 100 MWh of batteries, the eight works in Dome120s
  *   insides      cheaper insides: spruce glulam struts, hubs welded from plate, no fuel cells or electrolysers, 30 MWh
@@ -63,7 +63,7 @@ export const PACKAGES = {
  * THE SWITCH: 'prices' | 'insides' | 'halls'. Change this line to flip the whole village to another package. A script
  * can print another package without editing it: S7_DESIGN=prices node script.mjs (the page always uses this line).
  */
-const DESIGN_DEFAULT = 'halls';
+const DESIGN_DEFAULT = 'insides';
 /** the design package in use @type {string} */
 export const DESIGN = (() => {
 	const env = typeof process !== 'undefined' ? process.env?.S7_DESIGN : undefined;
