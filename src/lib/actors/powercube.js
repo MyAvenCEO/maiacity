@@ -57,11 +57,12 @@ const STEP_OF = { frame: 1, engine: 2, hydraulics: 3, controls: 4 };
 /**
  * Add a Power Cube's parts to a machine's kit, its foot's middle at `at` (actor metres), its front towards +z.
  * Its moving parts ride the joints named in `joints` (flywheel, coupling, fan: bones the caller makes at the points
- * `powerCubeJoints` gives); every other part rides `base`.
+ * `powerCubeJoints` gives); every other part rides `base`. With `unit`, the cube goes into the machine's build already
+ * built, all its parts at once.
  * @param {ReturnType<typeof machineKit>} kit
- * @param {{ at: V3, base: string, joints: { flywheel: string, coupling: string, fan: string }, assembly: (g: Group) => string, step: (g: Group) => number, prefix?: string }} o
+ * @param {{ at: V3, base: string, joints: { flywheel: string, coupling: string, fan: string }, assembly: (g: Group) => string, step: (g: Group) => number, prefix?: string, unit?: string }} o
  */
-export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix = 'pc-' }) {
+export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix = 'pc-', unit }) {
 	const m = new THREE.Matrix4().makeTranslation(...at);
 	/** a point of the cube (mm) in the actor @param {number} x @param {number} y @param {number} z @returns {V3} */
 	const L = (x, y, z) => [x * S, z * S, y * S];
@@ -91,7 +92,7 @@ export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix =
 	const W = CUBE.W / 2, Lh = CUBE.L / 2, H = CUBE.H, B = CUBE.base;
 	const id = (/** @type {string} */ s) => `${prefix}${s}`;
 	/** @param {Group} g @param {Omit<import('./parts.js').PartInfo, 'assembly' | 'step'>} info @param {string} joint @param {(put: (geo: THREE.BufferGeometry, color: string, mat?: number) => void) => void} make */
-	const part = (g, info, joint, make) => kit.part({ ...info, id: id(info.id), assembly: assembly(g), step: step(g) }, joint, make);
+	const part = (g, info, joint, make) => kit.part({ ...info, id: id(info.id), assembly: assembly(g), step: step(g), ...(unit ? { unit } : {}) }, joint, make);
 
 	/* the frame */
 	part('frame', { id: 'skids', label: 'Power Cube base skids (4×4 tube)', count: 2, source: SRC.s7, what: 'Two 4×4 steel tubes front to back under the cube: the “strong structural frame” of 7s that the engine, pump and tanks bolt to, and that takes the forks, the lifting pins or another cube stacked on it.', specs: [['Stock', '4" × 4" square tube (101.6 mm)'], ['Length', '660 mm [inferred: the 27" cube]'], ['Version', '7s / v15.6 (VII: 2×2 angle)']] }, base, (put) => {

@@ -33,6 +33,8 @@ import * as THREE from 'three';
  * @property {number} [count] how many of it the machine has, where one card stands for several alike
  * @property {number} step the build step it goes on at (1 first)
  * @property {string} [source] where its numbers come from (a source's label in the catalog)
+ * @property {string} [unit] a unit it comes in with, already built (the Power Cube in the LifeTrac): in the build,
+ *   all of a unit's parts arrive together, as one
  */
 /**
  * @typedef {object} Catalog a machine's parts: its assemblies, its parts' cards, its build steps and its sources
@@ -124,15 +126,20 @@ export function machineKit(assemblies) {
 		 * @param {Record<string, V3>} centre @param {number} u @param {number} steps @param {Pose} [into]
 		 */
 		assemble(centre, u, steps, into = {}) {
-			/** @type {Record<number, PartInfo[]>} */
+			// what arrives, step by step: a part on its own, or a whole unit at once
+			const key = (/** @type {PartInfo} */ info) => info.unit ?? info.id;
+			/** @type {Record<number, string[]>} */
 			const per = {};
-			for (const info of infos) (per[info.step] ??= []).push(info);
 			for (const info of infos) {
-				const list = per[info.step], i = list.indexOf(info);
+				const list = (per[info.step] ??= []);
+				if (!list.includes(key(info))) list.push(key(info));
+			}
+			for (const info of infos) {
+				const list = per[info.step], i = list.indexOf(key(info));
 				// a step's share of the time, its parts arriving across the first two thirds of it
 				const s0 = (info.step - 1) / steps, s1 = info.step / steps;
 				const t0 = s0 + ((s1 - s0) * 0.66 * i) / Math.max(1, list.length);
-				const t1 = t0 + Math.min(0.03, (s1 - s0) * 0.5);
+				const t1 = t0 + (info.unit ? (s1 - s0) * 0.5 : Math.min(0.03, (s1 - s0) * 0.5)); // a whole unit is lowered in slowly
 				const k = Math.min(1, Math.max(0, (u - t0) / (t1 - t0)));
 				const e = k * k * (3 - 2 * k);
 				const o = out[info.assembly];
