@@ -14,7 +14,7 @@
  */
 import { exp, pow } from './dmath.js';
 import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, FOOD as FOODCAT } from './primitives.js';
-import { OUTDOOR, INDOOR, outdoorShare, indoorShare } from './food.js';
+import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor } from './food.js';
 import { villageFacts } from './village.js';
 import { BED, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOOD_INDEX, GOODS_, MAX_COOPS, NX, SPRING, WATER, LIMIT } from './consts.js';
 import { gauss, rnd } from './rng.js';
@@ -33,6 +33,13 @@ export const DEFAULTS = {
 	livingHexes: 6,
 	/** the Tower180 in the centre hex (false, default: one more Dome120 of utilities and community halls instead) */
 	tower: false,
+	/** what people eat: 'samuel' (Samuel's diet, the default: legumes first, sweet potato and yam, vegetables, fruit,
+	 * nuts and seeds, eggs and chicken; no potatoes or grains) or 'sandbox6' (Sandbox 6's diet with potatoes and
+	 * chestnuts). The land a person needs follows from the grams of each group and each group's yield (./food.js) */
+	diet: 'samuel',
+	/** the food yields: 'average' (organic statistics and trials, food-research.md) or 'best' (the best measured small
+	 * farms and food forests, food-best.md, when it is wired) */
+	foodYields: 'average',
 	/** the village's land, ha (null: Sandbox 6's seven hexes, 268.6 ha) */
 	landHa: null,
 	/** the food forests' yields, times the catalog's (./food.js; the suite tests 0.5 and 1.5) */
@@ -220,6 +227,7 @@ function constants(cfg) {
 	const bedsHome = V.beds.dome80 + V.beds.dome40;
 	const beds = V.beds.total;
 	const ip = cfg.importPrice ?? 1;
+	const diet = dietFacts(cfg.diet ?? 'samuel', cfg.foodYields ?? 'average');
 	const eurMwh = cfg.exportEurMwh ?? CHIPS.eurPerMwh.v;
 	return {
 		scale: s,
@@ -267,22 +275,36 @@ function constants(cfg) {
 		roofPerBed: V.homes.footM2 / bedsHome,
 		landM2,
 		rechargeL: ((R.groundwater.rechargeMm.v / 1000) * landM2 * 1000) / 365,
+		// the diet and its yields (./food.js dietFacts): the land a person's diet takes outdoors and under glass, from the
+		// grams of each group and each group's yield; a unit of food is 1,000 kcal of the diet as eaten
+		diet: diet.diet,
+		foodYields: diet.yields,
+		dietKcal: diet.kcalDay,
+		dietProtein: diet.proteinDay,
+		landOutPerson: diet.out.total,
+		landInPerson: diet.in.total,
 		// the food forests, in units of 1,000 kcal that reach a store (after the harvest's losses in storage, processing
-		// and the kitchen): outdoors a m² a year at maturity, under glass at maturity (./food.js)
-		forest100: ((OUTDOOR.kcalM2Year.v * (1 - OUTDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
-		forestGrown: (OUTDOOR.kcalM2Year.v / 1000) * (cfg.forestYield ?? 1),
+		// and the kitchen): outdoors a m² a year at maturity, under glass at maturity
+		forest100: ((diet.out.kcalM2Year * (1 - OUTDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
+		forestGrown: (diet.out.kcalM2Year / 1000) * (cfg.forestYield ?? 1),
 		forestLoss: OUTDOOR.loss.v,
+		// the forest's maturity ramp for this diet (its annual layers bear from year 1, its trees over 15 years) and the
+		// share of its calories a late frost (trees) and alternate bearing (nuts) touch
+		forestRamp: rampFor(diet.out.treeShare),
+		treeShare: diet.out.treeShare,
+		nutShare: diet.out.nutShare,
 		forestRot: R.foodForest.rotPerDay.v,
-		ghYield: ((INDOOR.kcalM2Year.v * (1 - INDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
-		ghGrown: (INDOOR.kcalM2Year.v / 1000) * (cfg.forestYield ?? 1),
+		ghYield: ((diet.in.kcalM2Year * (1 - INDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
+		ghGrown: (diet.in.kcalM2Year / 1000) * (cfg.forestYield ?? 1),
 		ghLoss: INDOOR.loss.v,
 		ghLight: INDOOR.light.v,
 		// LED light (setting led): kWh a unit that reaches the store (400 kWh a unit grown)
 		led: !!cfg.led,
 		ledKwh: cfg.led ? INDOOR.ledKwhPer1000.v / (1 - INDOOR.loss.v) : null,
-		protOut: OUTDOOR.proteinPer1000.v,
-		protIn: INDOOR.proteinPer1000.v,
-		protImp: BORDER.foodProtein.v,
+		protOut: diet.out.proteinPer1000,
+		protIn: diet.in.proteinPer1000,
+		// food bought at the border comes in the diet's own mix
+		protImp: (diet.proteinDay / diet.kcalDay) * 1000,
 		// the food domes' heat a m² a year at 24 °C with a planted canopy (food-research.md §4; our dome model gives
 		// V.foodDomes.heat / V.indoorFoodM2, the low end) and climate a m² a day (Sandbox 6's food domes)
 		ghHeatM2: INDOOR.heatKwhM2Year.v,
@@ -305,7 +327,7 @@ function constants(cfg) {
 		lineKwhDay: CHIPS.lineKw.v * s * 24,
 		chipsSpare: CHIPS.spare.v,
 		// the border's prices, € (BORDER): food a unit, logs, scrap and float glass a t, cells a kWp
-		eur: { food: BORDER.foodEur.v * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatEur.v * ip, cells: BORDER.cellsEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip },
+		eur: { food: diet.eurPer1000 * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatEur.v * ip, cells: BORDER.cellsEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip },
 		accountDays: BORDER.accountDays.v,
 		importAhead: BORDER.importAhead.v,
 		foodStoreDays: BORDER.foodStoreDays.v,
@@ -347,7 +369,7 @@ function villageTech(w) {
 }
 
 /** a food forest's share of its mature harvest by age in years (./food.js) */
-export const forestShareOf = outdoorShare;
+export const forestShareOf = (w, age) => outdoorShare(age, w.c.forestRamp);
 
 /**
  * A new plant of a technology with so much capacity. A plant keeps the recipe of the day it was built (vintage
@@ -753,7 +775,7 @@ export function plantCapDay(w, pl, day) {
 			// the forest gives what nature gives (./coops.js nature); its capacity is the year's harvest at its age, a day;
 			// each plot keeps the yield of the year it was planted
 			let uYear = 0;
-			for (const p of pl.plots) uYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * outdoorShare((day - p.born) / 365);
+			for (const p of pl.plots) uYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * outdoorShare((day - p.born) / 365, w.c.forestRamp);
 			return uYear / 365;
 		}
 		case 'greenhouse':

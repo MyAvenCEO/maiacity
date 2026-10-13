@@ -9,6 +9,7 @@
  * search summaries and marks its own numbers as estimates.
  */
 import { DAYS_IN_MONTH, FOOD } from './primitives.js';
+import { DIET as DIET6, HENS } from '../sandbox-7/specs.js';
 import { exp, pow } from './dmath.js';
 import { polar } from './rng.js';
 
@@ -58,8 +59,7 @@ export const INDOOR = {
 };
 
 /** a food forest's share of its mature yield at `ageYears` since planting, with its layers' land equivalent ratio */
-export function outdoorShare(ageYears) {
-	const r = OUTDOOR.ramp.v;
+export function outdoorShare(ageYears, r = OUTDOOR.ramp.v) {
 	if (!(ageYears >= 0)) return 0;
 	const y = Math.floor(ageYears);
 	const ler = OUTDOOR.lerYoung.v + (OUTDOOR.lerMature.v - OUTDOOR.lerYoung.v) * Math.min(1, Math.max(0, (y + 1 - 8) / 7));
@@ -83,12 +83,13 @@ export function outdoorWeather(sun, rain) {
 	return Math.min(O.cap.v, Math.max(O.floor.v, f));
 }
 
-/** this year's tree crop factor: a late frost on fruit and nuts, and the nuts' alternate bearing (two uniforms u1, z) */
-export function treeYear(u, z) {
+/** this year's tree crop factor: a late frost on fruit and nuts, and the nuts' alternate bearing (a uniform u, a normal
+ * z), for a diet whose outdoor calories come treeShare from trees and nutShare from nuts and chestnuts */
+export function treeYear(u, z, treeShare = OUTDOOR.treeShare.v, nutShare = OUTDOOR.nutShare.v) {
 	const O = OUTDOOR;
-	const frost = u < O.frostP.v ? 1 - O.frostLoss.v * O.treeShare.v : 1;
+	const frost = u < O.frostP.v ? 1 - O.frostLoss.v * treeShare : 1;
 	const s = O.bearingSigma.v;
-	const bear = 1 + O.nutShare.v * (exp(s * z - (s * s) / 2) - 1);
+	const bear = 1 + nutShare * (exp(s * z - (s * s) / 2) - 1);
 	return frost * bear;
 }
 
@@ -139,7 +140,7 @@ export function foodSeason(w) {
 			return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
 		};
 		const u1 = u();
-		fs.tree = treeYear(u1, polar(u));
+		fs.tree = treeYear(u1, polar(u), w.c.treeShare, w.c.nutShare);
 		fs.frost = u1 < OUTDOOR.frostP.v;
 	}
 	if (m >= 3 && m <= 8) {
@@ -169,5 +170,154 @@ export function indoorMonths(m2, people) {
 		ledKwhPer1000: INDOOR.ledKwhPer1000.v,
 		ledKwhM2Year: (INDOOR_INDEX.led.reduce((a, x, i) => a + (x - INDOOR_INDEX.base[i]) * DAYS_IN_MONTH[i], 0) / 365) * INDOOR.kcalM2Year.v * (INDOOR.ledKwhPer1000.v / 1000)
 	};
+}
+
+// ── the diets, and the land a person's diet takes ─────────────────────────────────────────────────────────────────
+const SRC6 = 'src/lib/sandbox-7/specs.js DIET (Sandbox 6)';
+const USDA = 'USDA FoodData Central (food-research.md [N1])';
+/**
+ * What a person eats a day: grams of each group (legumes dry, nuts and seeds as kernels, the rest fresh), with kcal and
+ * g of protein a kg, and € a kg wholesale (for food bought at the border in the diet's own mix).
+ *
+ * 'samuel' (the default, Samuel 2026-10-13 06:20): "Healthy diet is just fruits vegetables legumes chicken and eggs incl
+ * seeds and nuts", without potatoes, wheat or other grains: legumes the main source, sweet potato (outdoors in summer
+ * and under glass) and yam (under glass only) for roots, vegetables, fruit and berries, nuts and seeds (seeds more than
+ * nuts: nut trees are the most land-hungry), a few chestnuts, eggs and chicken at Sandbox 6's amounts with the hens'
+ * feed grown too. 150 g of dry legumes a day is the top of the EAT-Lancet ranges (dry beans, lentils and peas 0–100 g
+ * plus soy 0–50 g; its reference is 75 g, 50 g of nuts) and about twice the Blue Zones' cup of cooked beans (~90 g dry):
+ * above common advice, within the planetary health diet's own ranges. 75 g of nuts and seeds is the top of EAT-Lancet's
+ * 0–75 g. The day comes to ~2,220 kcal and ~77 g of protein; a person who eats the 2,240 kcal of need eats a little more
+ * of the same mix.
+ *
+ * 'sandbox6': Sandbox 6's diet as it was (potatoes and Jerusalem artichokes for roots, 220 g of chestnuts), for the
+ * comparison scenario F02.
+ */
+export const DIETS = {
+	samuel: {
+		label: 'Samuel’s diet: legumes first, sweet potato and yam, vegetables, fruit, nuts and seeds, eggs and chicken',
+		src: 'Samuel 2026-10-13 06:20; amounts: EAT-Lancet (Willett et al. 2019) ranges, Blue Zones (Buettner) for legumes; kcal and protein ' + USDA,
+		groups: {
+			legumes: { label: 'Legumes (faba beans, peas, lentils, lupins, beans), dry', g: 150, kcal: 3400, protein: 220, eur: 1.5 },
+			sweetPotato: { label: 'Sweet potato', g: 450, kcal: 860, protein: 16, eur: 1.1 },
+			yam: { label: 'Yam (under glass only)', g: 150, kcal: 1180, protein: 15, eur: 1.6 },
+			nuts: { label: 'Tree nuts (hazel, walnut), kernels', g: 40, kcal: 6400, protein: 150, eur: 7 },
+			seeds: { label: 'Seeds (sunflower, pumpkin, hemp), kernels', g: 35, kcal: 5800, protein: 230, eur: 2.8 },
+			chestnuts: { label: 'Sweet chestnuts (a few)', g: 50, kcal: 1960, protein: 24, eur: 3 },
+			vegetables: { label: 'Vegetables and greens', g: 500, kcal: 300, protein: 15, eur: 1.2 },
+			fruit: { label: 'Fruit and berries (apples, pears, berries outdoors; bananas, papaya under glass)', g: 600, kcal: 600, protein: 5, eur: 1.25 },
+			eggs: { label: 'Eggs (about 3 a week)', g: 25, kcal: 1430, protein: 125, eur: 3 },
+			chicken: { label: 'Chicken (about 210 g a week)', g: 30, kcal: 1500, protein: 200, eur: 4.5 }
+		},
+		// the hens' feed (Sandbox 6's HENS): its roots are sweet potato, its nuts are seeds
+		feed: { legumes: HENS.mix.legumes, seeds: HENS.mix.nuts, sweetPotato: HENS.mix.roots },
+		// what grows in place of a group that does not grow there, by kcal
+		swapOut: { yam: 'sweetPotato' },
+		swapIn: { chestnuts: 'sweetPotato' }
+	},
+	sandbox6: {
+		label: 'Sandbox 6’s diet: legumes, nuts, chestnuts, potatoes and other roots, vegetables, fruit, eggs and chicken',
+		src: SRC6,
+		groups: Object.fromEntries(Object.entries(DIET6).map(([k, d]) => [k, { ...d, eur: { legumes: 1.5, nuts: 7, chestnuts: 3, roots: 0.4, vegetables: 1.2, fruit: 1.25, eggs: 3, chicken: 4.5 }[k] }])),
+		feed: { ...HENS.mix },
+		swapOut: {},
+		swapIn: { chestnuts: 'roots' }
+	}
+};
+
+/** which groups are trees (they bear after years: the ramp, late frost) and which of them bear in alternate years */
+const TREE = { nuts: true, chestnuts: true, fruit: true };
+const ALTERNATE = { nuts: true, chestnuts: true };
+
+/**
+ * Yields, t a ha a year, organic, mature, as a sole crop (legumes dry, nuts and seeds as kernels, chestnuts in shell, the
+ * rest fresh); under glass at 24 °C with ~53 % of the light, no lamps. 'average': food-research.md's diet groups (§ "Diet
+ * groups for the engine"), with the crops it does not list marked as estimates.
+ */
+export const YIELDS = {
+	average: {
+		label: 'Average good practice: organic yields from German and European statistics and trials (food-research.md)',
+		grade: 'measured (statistics, trials) outdoors; scaled estimates under glass',
+		ler: { young: OUTDOOR.lerYoung.v, mature: OUTDOOR.lerMature.v, indoor: OUTDOOR.lerMature.v },
+		out: {
+			legumes: n(2.5, 't/ha dry', `${R}: faba bean 2.9–3.2, field pea 2.5 organic (range 1.5–3.2)`),
+			roots: n(22, 't/ha', `${R}: Bavarian organic potatoes 19–25 (range 19–34)`),
+			sweetPotato: n(20, 't/ha', 'LWG Bamberg trials 2016–17 (Hedrich and Rascher 2018, orgprints.org/38303): Beauregard 19.3 t/ha marketable, 35–55 total; LFA MV Gülzow 2018 26–69 total. Organic, all roots eaten: 20 (range 15–35)', true),
+			nuts: n(1.0, 't/ha kernels', `${R}: hazel 0.45–0.9 average, walnut ~0.85 (range 0.5–1.8)`),
+			seeds: n(1.4, 't/ha kernels', `${R}: sunflower seed 2.0–3.0 t/ha, kernels ~1.4–2.1 (~70 % kernel)`, true),
+			chestnuts: n(2.0, 't/ha in shell', `${R}: 1.0–1.5 Italian average, 2.2–2.8 mature grafted orchards (range 1.0–2.8)`),
+			vegetables: n(29, 't/ha', `${R}: German organic vegetables 2025 (range 20–35)`),
+			fruit: n(18, 't/ha', `${R}: apples 22–28 organic estimate, berries 4–12 (range 12–25)`)
+		},
+		in: {
+			legumes: n(2.0, 't/ha dry', `${R}: pigeon pea and dry beans 1.2–2.5 under the dome's light (estimate)`, true),
+			roots: n(20, 't/ha', `${R}: sweet potato and cassava under glass (estimate)`, true),
+			sweetPotato: n(20, 't/ha', `${R}: 15–25 under the dome's light (estimate)`, true),
+			yam: n(10, 't/ha', 'no source for yam under glass at 48° N: tropical fields 8–30 t/ha (FAO world average ~9), at the dome’s ~0.5 of their light (estimate, range 6–15)', true),
+			nuts: n(1.0, 't/ha kernels', `${R} (estimate)`, true),
+			seeds: n(1.4, 't/ha kernels', `${R}: sunflower "possible as a summer crop" (estimate)`, true),
+			vegetables: n(60, 't/ha', `${R}: several crops a year, 30–100 (estimate)`, true),
+			fruit: n(25, 't/ha', `${R}: bananas 18–28, papaya 30–60 (estimate)`, true)
+		}
+	}
+};
+
+const yearOf = (g) => (g * 365) / 1000;
+
+/**
+ * A diet on a yield set: what a person's year takes, kg grown of each group (with the hens' feed), the m² a person
+ * needs outdoors and under glass at maturity (no losses; the layers' LER at maturity), and what a m² gives: kcal eaten
+ * a year (the eggs and chicken included, the feed they took counted as land), protein a 1,000 kcal eaten, € a 1,000
+ * kcal bought, and the share of the outdoor calories from trees (late frost) and from nuts (alternate bearing). The
+ * engine's food unit is 1,000 kcal of this diet as eaten.
+ */
+export function dietFacts(dietKey = 'samuel', yieldKey = 'average') {
+	const D = DIETS[dietKey] ?? DIETS.samuel, Yd = YIELDS[yieldKey] ?? YIELDS.average;
+	const G = D.groups;
+	let kcal = 0, protein = 0, eur = 0;
+	for (const d of Object.values(G)) (kcal += (d.g / 1000) * d.kcal), (protein += (d.g / 1000) * d.protein), (eur += (d.g / 1000) * d.eur);
+	const feedKg = ((G.eggs ? yearOf(G.eggs.g) * HENS.eggsFeed : 0) + (G.chicken ? yearOf(G.chicken.g) * HENS.meatFeed : 0)) * (1 - HENS.forage);
+	// kg a year of each plant group a person needs grown (what they eat, and the hens' share of the feed)
+	const grown = {};
+	for (const [k, d] of Object.entries(G)) if (k !== 'eggs' && k !== 'chicken') grown[k] = yearOf(d.g) + feedKg * (D.feed[k] ?? 0);
+	const place = (where) => {
+		const t = Yd[where], swap = where === 'out' ? D.swapOut : D.swapIn, ler = where === 'out' ? Yd.ler.mature : Yd.ler.indoor;
+		const kg = {};
+		for (const [k, x] of Object.entries(grown)) {
+			if (t[k]) kg[k] = (kg[k] ?? 0) + x;
+			else if (swap[k] && t[swap[k]]) kg[swap[k]] = (kg[swap[k]] ?? 0) + (x * G[k].kcal) / G[swap[k]].kcal;
+		}
+		const m2 = {};
+		for (const [k, x] of Object.entries(kg)) m2[k] = x / (t[k].v * 0.1) / ler;
+		const total = Object.values(m2).reduce((a, b) => a + b, 0);
+		// the calories a person eats from what grows here (the swapped crops at their own kcal), and protein
+		let eatK = 0, eatP = 0, treeK = 0, nutK = 0;
+		for (const [k, d] of Object.entries(G)) {
+			const to = t[k] ? k : swap[k] && t[swap[k]] ? swap[k] : null;
+			if (!to && k !== 'eggs' && k !== 'chicken') continue;
+			const kc = (d.g / 1000) * d.kcal;
+			eatK += kc;
+			eatP += to && to !== k ? ((d.g / 1000) * d.kcal * G[to].protein) / G[to].kcal : (d.g / 1000) * d.protein;
+			if (TREE[to ?? k]) treeK += kc;
+			if (ALTERNATE[to ?? k]) nutK += kc;
+		}
+		return { kg, m2, total, kcalM2Year: (eatK * 365) / total, proteinPer1000: (eatP / eatK) * 1000, treeShare: treeK / eatK, nutShare: nutK / eatK };
+	};
+	const out = place('out'), inn = place('in');
+	return { diet: dietKey, yields: yieldKey, label: D.label, kcalDay: kcal, proteinDay: protein, eurPer1000: (eur / kcal) * 1000, grown, feedKg, out, in: inn };
+}
+
+/** people a village's food land feeds at maturity in an average year, after the harvest's losses */
+export function peopleFed(f, outM2, inM2) {
+	return { out: (outM2 * (1 - OUTDOOR.loss.v)) / f.out.total, in: (inM2 * (1 - INDOOR.loss.v)) / f.in.total, get all() { return this.out + this.in; } };
+}
+
+/**
+ * A food forest's share of its mature yield by age for a diet: the annual layers (legumes, roots, vegetables, seeds)
+ * bear in full from year 1; the trees (fruit, nuts, chestnuts) follow food-research.md's ramp for its tree part (its
+ * whole-forest ramp less the annual 46 %, over the trees' 54 %), with the layers' LER (1.0 before year 8, 1.1 from 15)
+ */
+export const TREE_RAMP = OUTDOOR.ramp.v.map((r) => (r - 0.46) / 0.54);
+export function rampFor(treeShare) {
+	return OUTDOOR.ramp.v.map((_, y) => 1 - treeShare + treeShare * TREE_RAMP[y]);
 }
 export { FOOD };

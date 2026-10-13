@@ -39,7 +39,7 @@ export function foodIn(co, u, d) {
 }
 
 /** a forest's share of its mature harvest by age (./food.js) */
-export const forestShare = outdoorShare;
+export const forestShare = (w, age) => outdoorShare(age, w.c.forestRamp);
 
 /**
  * what a forest plant gives on a day, in units of 1,000 kcal that reach the store (after the harvest's losses): the
@@ -52,7 +52,7 @@ function forestHarvest(w, pl, day, wx = true) {
 	const share = MONTHLY.harvest.v[m] / DAYS_IN_MONTH[m];
 	// each plot keeps the yield of the year it was planted (a perennial forest is not replanted)
 	let uYear = 0;
-	for (const p of pl.plots) uYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * outdoorShare((day - p.born) / 365);
+	for (const p of pl.plots) uYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * outdoorShare((day - p.born) / 365, w.c.forestRamp);
 	const t = w.today;
 	const f = wx && t && day === w.day ? (t.outWx ?? 1) : 1;
 	const tree = t && Math.floor(day / 365) === Math.floor(w.day / 365) ? (t.treeF ?? 1) : 1;
@@ -63,7 +63,7 @@ function forestHarvest(w, pl, day, wx = true) {
 export function rampOf(w, pl) {
 	if (pl.tech === 'forest') {
 		let a = 0, m = 0;
-		for (const p of pl.plots) (a += p.m2 * outdoorShare((w.day - p.born) / 365)), (m += p.m2);
+		for (const p of pl.plots) (a += p.m2 * outdoorShare((w.day - p.born) / 365, w.c.forestRamp)), (m += p.m2);
 		return m > 0 ? a / m : 1;
 	}
 	if (pl.tech === 'greenhouse') return indoorShare(w.day - (pl.born ?? 0));
