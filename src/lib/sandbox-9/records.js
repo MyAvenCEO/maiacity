@@ -37,8 +37,8 @@ const SERIES = {
 	badge: G, // binding limit per good (LIMIT codes)
 	pbar: G, // expected price per good, R
 	ePP: 1, // all electricity used, a person a day (kWh)
-	surplusPP: 1, // surplus energy (R&D, storage, export, curtailed), a person a day
-	exportPP: 1, // electricity exported across the border for accelerators (B23 only), a person a day
+	surplusPP: 1, // surplus energy (R&D, storage, curtailed), a person a day
+	exportPP: 1, // electricity exported across the border for accelerators (the euro reserve, paper §11.4), a person a day
 	rdKwh: 1, // R&D energy delivered
 	N: 1,
 	basicCostR: 1,
@@ -209,7 +209,7 @@ export function recordDay(w) {
 		if (ok) rec.strictDays++;
 	}
 	const t = w.today;
-	// the electricity the city used (the export across the border, B23 only, is not use: it is its own series)
+	// the electricity the city used (the export across the border for accelerators is not use: it is its own series)
 	let used = 0;
 	for (let cl = 0; cl < 4; cl++) used += t.use[cl];
 	rec.ePP[d] = used / N;

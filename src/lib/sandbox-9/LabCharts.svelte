@@ -28,6 +28,7 @@
 		{ key: 'basics', label: 'Basics', color: '#2a78d6' },
 		{ key: 'running', label: 'Works and extras', color: '#eb6834' },
 		{ key: 'building', label: 'Building', color: '#1baf7a' },
+		{ key: 'exported', label: 'Exported for accelerators', color: '#0f7c8c' },
 		{ key: 'R&D', label: 'R&D', color: '#eda100' },
 		{ key: 'storage', label: 'Into storage', color: '#e87ba4' },
 		{ key: 'curtailed', label: 'Curtailed', color: '#9a9a94' },

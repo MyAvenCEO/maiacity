@@ -35,14 +35,15 @@ function rand(seed) {
 export function makeViewer(w) {
 	const rnd = rand((w.cfg.seed ?? 1) * 7 + 3);
 	// ring buffers of the last WINDOW days: energy (kWh) by source and by use, and the surplus of each basic (R)
-	const E_KEYS = ['solar', 'geo', 'battery', ...CLASS_NAMES, 'curtailed', 'losses'];
+	// (the electricity exported for accelerators is its own key: harvest = uses + storage + export + curtailed + losses)
+	const E_KEYS = ['solar', 'geo', 'battery', ...CLASS_NAMES, 'exported', 'curtailed', 'losses'];
 	const ring = { e: new Float64Array(WINDOW * E_KEYS.length), buy: new Float64Array(WINDOW * 4), sell: new Float64Array(WINDOW * 4), n: new Float64Array(WINDOW), filled: 0, at: 0 };
 	let evAt = 0; // the events already shown
 
 	/** add the day just run to the running sums */
 	function day() {
 		const t = w.today, h = t.harvest, slot = ring.at;
-		const e = [h.solar, h.geo, h.battery, ...Array.from(t.use), t.curtailed, t.battLoss];
+		const e = [h.solar, h.geo, h.battery, ...Array.from(t.use), t.exportKwh ?? 0, t.curtailed, t.battLoss];
 		for (let j = 0; j < E_KEYS.length; j++) ring.e[slot * E_KEYS.length + j] = e[j] || 0;
 		// who keeps the surplus of each basic: buyers (what each person would pay for a unit less the price, on what
 		// they got) and sellers (the price less the variable cost, on what they sold). What a person would pay is their

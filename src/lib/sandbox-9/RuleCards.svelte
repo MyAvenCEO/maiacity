@@ -15,8 +15,8 @@
 		{ t: 'The melt', s: 'Every HEART and every MIND melts 7 % a year, everywhere at once.' },
 		{ t: 'Land', s: 'All land belongs to the City COOP. Every citizen holds one equal share that cannot be sold; builders lease plots and pay ground rent in MIND.' },
 		{ t: 'Free prices', s: 'No price caps, no protected prices, no subsidies. Two COOPs sell every good from the first day, and anyone can found another. A seller never sells below its own cost floor.' },
-		{ t: 'Energy first', s: 'Energy serves the basics first, then the works, then building. Only the surplus pays for R&D, and only R&D and practice make recipes better, never past their physical floor.' },
-		{ t: 'Only physics', s: 'Nothing appears that physics does not allow: food grows on the forest by its age and the season, rain fills the tanks, and the sun and the geothermal well give the energy. The accelerators that run the Avens’ services are made outside: the city buys them with electricity it exports.' },
+		{ t: 'Energy first', s: 'Energy serves the basics first, then the works, then building, then the export that buys accelerators. Only the surplus pays for R&D, and only R&D and practice make recipes better, never past their physical floor.' },
+		{ t: 'Only physics', s: 'Nothing appears that physics does not allow: food grows on the forest by its age and the season, rain fills the tanks, and the sun and the geothermal well give the energy. The accelerators that run the Avens’ services are made outside: COOPs buy them through a euro reserve (each COOP its own account), with electricity they export after the city’s own basics and works. No person redeems MIND, and no MIND is made from euros.' },
 		{ t: 'Ownership', s: 'Everyone owns MINDs, and holding MINDs pays more MIND. That is how people live.' }
 	];
 </script>
