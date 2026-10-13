@@ -10,7 +10,7 @@
  * mattress at the back.
  *
  * And its people, seated stand-ins of every look ($lib/actors/human.ts): the driver with his hands on the wheel, an
- * older woman beside him looking out, in the middle row the woman beside you with her phone, and in the back a young
+ * older woman beside him looking out, in the middle row the woman beside you who turns to you to talk, and in the back a young
  * man asleep against the window, a child, and an old man watching the steppe go by. They sway with the road.
  *
  * In the van's own frame: +z ahead, +x the sliding door's side, the floor at FLOOR.
@@ -31,8 +31,6 @@ const EDGE = FLOOR + 0.5;
 const ROW = { front: 1.2, middle: 0.15, back: -0.85 };
 /** the player's place: the middle row, by the sliding door */
 export const ME_SEAT = V(0.45, FLOOR, ROW.middle);
-/** the player's eyes in that place, looking out (where the woman beside them shows her phone to) */
-export const ME_EYES = V(0.48, 1.72, 0.3);
 
 /** a smooth material: cloth, vinyl, plastic, steel */
 const m = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...o });
@@ -96,64 +94,6 @@ function dial(needle) {
 	return t;
 }
 
-/** the phone the woman beside you shows you: its screen drawn on a canvas, what it shows set by `show` */
-function phone() {
-	const c = document.createElement('canvas');
-	c.width = 256;
-	c.height = 512;
-	const tex = new THREE.CanvasTexture(c);
-	tex.colorSpace = THREE.SRGBColorSpace;
-	const g = new THREE.Group();
-	g.name = 'phone';
-	const body = new THREE.Mesh(new RoundedBoxGeometry(0.074, 0.152, 0.009, 3, 0.008), m(0x1b1b1e, { roughness: 0.35, metalness: 0.3 }));
-	const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.067, 0.139), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
-	screen.position.z = 0.0047;
-	g.add(body, screen);
-	const heart = (x, cx, cy, r) => {
-		x.beginPath();
-		x.moveTo(cx, cy + r * 0.9);
-		x.bezierCurveTo(cx - r * 1.6, cy - r * 0.1, cx - r * 0.8, cy - r * 1.2, cx, cy - r * 0.45);
-		x.bezierCurveTo(cx + r * 0.8, cy - r * 1.2, cx + r * 1.6, cy - r * 0.1, cx, cy + r * 0.9);
-		x.fill();
-	};
-	/** what the screen shows: a big number, the words under it, a name, and a button if there is one to press */
-	g.userData.show = ({ big = '', small = '', name = '', button = '' } = {}) => {
-		const x = c.getContext('2d');
-		const bg = x.createLinearGradient(0, 0, 0, 512);
-		bg.addColorStop(0, '#2b1633');
-		bg.addColorStop(1, '#6e2440');
-		x.fillStyle = bg;
-		x.fillRect(0, 0, 256, 512);
-		x.fillStyle = 'rgba(255,255,255,0.55)';
-		x.font = '600 18px sans-serif';
-		x.textAlign = 'center';
-		x.fillText('MaiaCity', 128, 40);
-		x.fillStyle = '#ff4d6d';
-		heart(x, 128, 150, 52);
-		x.fillStyle = '#ffffff';
-		x.font = `700 ${big.length > 5 ? 54 : 70}px sans-serif`;
-		x.fillText(big, 128, 290);
-		x.font = '500 22px sans-serif';
-		x.fillStyle = 'rgba(255,255,255,0.85)';
-		small.split('\n').forEach((l, i) => x.fillText(l, 128, 330 + i * 28));
-		x.font = '600 20px sans-serif';
-		x.fillStyle = '#ffd3dc';
-		x.fillText(name, 128, 412);
-		if (button) {
-			x.fillStyle = '#ff4d6d';
-			x.beginPath();
-			x.roundRect(48, 436, 160, 46, 23);
-			x.fill();
-			x.fillStyle = '#ffffff';
-			x.font = '700 22px sans-serif';
-			x.fillText(button, 128, 467);
-		}
-		tex.needsUpdate = true;
-	};
-	g.userData.show();
-	return g;
-}
-
 /** a box without its top: every triangle facing up above y (its own frame) cut away */
 function lidless(geo, above) {
 	const g = geo.index ? geo.toNonIndexed() : geo.clone();
@@ -193,8 +133,9 @@ function seated(cast, sits, side) {
 	if (sits === 'asleep') return { ...sit, spine: [0.12, 0, -side * 0.06], chest: [0.04, 0, -side * 0.08], neck: [0.2, 0, -side * 0.3], head: [0.25, 0, -side * 0.32] };
 	return sit;
 }
-/** the woman beside you leaning over to you (on her left, +x), her phone held out in her left hand */
-const LEAN = { spine: [0.12, 0.18, -0.12], chest: [0.06, 0.22, -0.1], neck: [0.03, 0.12, 0], head: [0.06, 0.3, 0.04], upperArmL: [-1.3, 0, 0.1], forearmL: [-1.2, 0, 0], handL: [-0.3, 0, 0] };
+/** the woman beside you turned to you as she talks (on her left, +x): her shoulders and head round to you, a little
+ *  forward, as people sit when they tell each other something on a long ride (Samuel 2026-10-13: a conversation, no phone) */
+const TALK = { spine: [0.06, 0.1, 0], chest: [0.04, 0.16, 0], neck: [0.02, 0.26, 0], head: [0.04, 0.42, 0.02] };
 
 export function packedVan() {
 	const van = travelVan();
@@ -396,45 +337,29 @@ export function packedVan() {
 		people.push(o);
 	}
 	const her = people.find((o) => o.userData.id === 'her');
-	const handL = her.userData.cast.rig.bones.handL;
 	const herHead = her.userData.cast.rig.bones.head;
-	const held = phone();
-	held.visible = false;
-	inside.add(held);
-	const eyes = V(0, 0, 0);
-	const at = V(0, 0, 0);
 
 	van.add(inside);
 	van.userData = {
 		people,
-		/** the people swaying with the road at time t (s); the woman beside you leaning over to you and back */
+		/** the people swaying with the road at time t (s); the woman beside you turning to you and back, nodding a little
+		 *  as she talks */
 		nod(t, dt = 1 / 60) {
 			for (const o of people) {
 				const { cast, base, i } = o.userData;
 				o.userData.k += Math.sign(o.userData.to - o.userData.k) * Math.min(Math.abs(o.userData.to - o.userData.k), dt * 1.4);
 				const k = o.userData.k * o.userData.k * (3 - 2 * o.userData.k);
-				const pose = k > 0 ? blend(base, { ...base, ...LEAN }, k) : base;
+				const pose = k > 0 ? blend(base, { ...base, ...TALK }, k) : base;
 				const h = pose.head ?? [0, 0, 0];
-				cast.rig.pose({ ...pose, head: [h[0] + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
-			}
-			if (held.visible) {
-				van.updateMatrixWorld(true);
-				// in her palm, just in front of it as the player sees it, its screen turned to the player's eyes
-				van.localToWorld(eyes.copy(ME_EYES));
-				handL.localToWorld(at.set(0, -0.07, 0.02));
-				at.add(eyes.clone().sub(at).setLength(0.025));
-				held.position.copy(inside.worldToLocal(at.clone()));
-				held.lookAt(eyes);
+				const says = k * (Math.sin(t * 5.3 + i) * 0.035 + Math.sin(t * 1.7) * 0.025); // the small nods of someone talking
+				cast.rig.pose({ ...pose, head: [h[0] + says + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
 			}
 		},
-		/** the woman beside you leans over with her phone (on), or sits back with it put away */
-		lean(on, screen) {
+		/** the woman beside you turns to you to talk (on), or sits back and looks ahead */
+		talk(on) {
 			her.userData.to = on ? 1 : 0;
-			held.visible = !!on;
-			if (screen) held.userData.show(screen);
 		},
-		/** where the phone is, and her face (world) */
-		phoneAt: () => held.getWorldPosition(V(0, 0, 0)),
+		/** her face (world) */
 		herFace: () => herHead.localToWorld(V(0, 0.075, 0.08))
 	};
 	return van;

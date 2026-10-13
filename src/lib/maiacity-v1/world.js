@@ -22,7 +22,7 @@ import { batteryCube } from '$lib/actors/batterycube.js';
 import { MOUTH, human, skinAt } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
-import { ME_EYES, ME_SEAT, packedVan } from './van.js';
+import { ME_SEAT, packedVan } from './van.js';
 import { startStage } from './trees.js';
 import { plantAt } from '$lib/plants/index.js';
 import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
@@ -637,7 +637,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 		van.visible = at === 'van';
 		riding = at === 'van';
-		if (!riding) ((rideHold = ''), phoneOut && phoneShow(null));
+		if (!riding) ((rideHold = ''), talking && talkShow(false));
 		if (riding) {
 			for (const p of van.userData.people) p.visible = true;
 			for (const s of ['A', 'B']) people[s].visible = false;
@@ -693,11 +693,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// side, then close on their face
 		profile: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.08 + 0.06 * k, 1.74, 1.08)), at: () => van.localToWorld(V(ME_SEAT.x + 0.07, 1.62, ME_SEAT.z + 0.03)) },
 		close: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.5 + 0.03 * k, 1.8, 0.84 - 0.06 * k)), at: () => van.localToWorld(V(0.49, 1.71, 0.27)) },
-		// what the woman beside you does as she tells of the HEARTS (Samuel 2026-10-13: show what the line says): the
-		// two of you from the front as she leans over with her phone; its screen, over your shoulder; her face
-		lean: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.24 - 0.03 * k, 1.8, 0.98 - 0.06 * k)), at: () => van.localToWorld(V(0.17, 1.6, 0.2)) },
-		screen: { inside: true, cam: (t, k) => van.localToWorld(ME_EYES.clone()).lerp(van.userData.phoneAt(), 0.36 + 0.12 * k), at: () => van.userData.phoneAt() },
-		her: { inside: true, cam: (t, k) => van.localToWorld(V(0.42, 1.7, 0.52 - 0.04 * k)), at: () => van.userData.herFace() }
+		// the woman beside you telling you of the HEARTS, as a conversation is filmed (Samuel 2026-10-13: no phone, her
+		// telling you): the two of you from the front as she turns to you; her face over your shoulder; your face as you
+		// listen; her face from the front
+		two: { inside: true, me: true, cam: (t, k) => van.localToWorld(V(0.2 - 0.03 * k, 1.8, 1.0 - 0.06 * k)), at: () => van.localToWorld(V(0.18, 1.55, 0.2)) },
+		over: { inside: true, me: true, fov: 46, cam: (t, k) => van.localToWorld(V(0.8 - 0.02 * k, 1.86, -0.1 + 0.03 * k)), at: () => van.userData.herFace() },
+		listen: { inside: true, me: true, fov: 52, cam: (t, k) => van.localToWorld(V(0.1 + 0.02 * k, 1.72, 0.74 - 0.04 * k)), at: () => van.localToWorld(V(ME_SEAT.x + 0.02, 1.66, ME_SEAT.z + 0.12)) },
+		her: { inside: true, fov: 52, cam: (t, k) => van.localToWorld(V(0.42, 1.7, 0.52 - 0.04 * k)), at: () => van.userData.herFace() }
 	};
 	// every line of the ride a new view, the back seat's own once (Samuel 2026-10-13: it came round three times)
 	const RIDE_ORDER = ['seat', 'aerial', 'profile', 'window', 'along', 'close', 'faces', 'pass'];
@@ -708,11 +710,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (on) {
 			van.add(me);
 			me.position.copy(ME_SEAT);
-			me.rotation.set(0, 0.45, 0); // the head and shoulders turned to the window
+			me.rotation.set(0, talking ? 0.05 : 0.45, 0); // the head and shoulders turned to the window, or to her as she talks
 			me.userData.glow.visible = false;
 			act(me, 'sit');
-			// while the woman beside them shows her phone, they look at it
-			me.userData.extra = phoneOut ? { neck: [0.12, -0.2, 0], head: [0.28, -0.32, 0] } : null;
+			// while the woman beside them talks, they turn to her and listen
+			me.userData.extra = talking ? { neck: [0.02, -0.28, 0], head: [0.04, -0.4, 0] } : null;
 			me.visible = true;
 		} else if (me.parent === van) {
 			world.attach(me);
@@ -723,11 +725,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 	}
 	let rideCut = 0;
-	let phoneOut = false;
-	/** the woman beside the player leans over with her phone showing `screen`, or sits back (null) */
-	function phoneShow(screen) {
-		phoneOut = !!screen;
-		van.userData.lean(phoneOut, screen);
+	let talking = false;
+	/** the woman beside the player turns to them and talks (on), or sits back */
+	function talkShow(on) {
+		talking = !!on;
+		van.userData.talk(talking);
 	}
 	/** the jerrycans: waiting on the forecourt beside the pickup, in its bed, or at home beside the Power Cube */
 	function placeFuel(where) {
@@ -1093,7 +1095,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function intro(part = 'road', { lines } = {}) {
 		placed = true;
 		holdRide();
-		phoneShow(null);
+		talkShow(false);
 		const me = people[stage.me];
 		// where the van is at the trailer's second T: far out on the steppe in the first two shots (a cut may jump), then
 		// on, slowing, to the bus stop
@@ -1648,16 +1650,16 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** jump to the end of what is playing */
 	/** a shot of the story told over the world (a voice-over's length, dur s): still riding in the van, the ride rolls
 	 *  on; anywhere else the camera glides slowly round the place the story is at, closing in a little, like a crane */
-	function shotAt(name, { lines = [], act: doing, close = false, shots, phone, hold } = {}) {
+	function shotAt(name, { lines = [], act: doing, close = false, shots, talk, hold } = {}) {
 		const p = PLACES[name];
 		const me = people[stage.me];
 		const n = Math.max(1, lines.length);
 		const steps = [];
 		if (riding) {
 			// on the road: each line cuts to the view that shows what it says (shots), or else to the next view of the ride;
-			// the woman beside the player has her phone out while she tells of the HEARTS
+			// the woman beside the player turns to them while she tells of the HEARTS
 			holdRide();
-			phoneShow(phone);
+			talkShow(talk);
 			for (let i = 0; i < n; i++) {
 				const kind = RIDE_SHOTS[shots?.[i]] ?? RIDE_SHOTS[RIDE_ORDER[rideCut++ % RIDE_ORDER.length]];
 				let fixed = null;
@@ -1671,6 +1673,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 					rollVan(0);
 					seatMe(!!kind.me);
 					kind.inside ? lensIn() : ((camera.near = 0.5), (camera.fov = camera.aspect < 0.8 ? 60 : 38), camera.updateProjectionMatrix());
+					if (kind.fov) (camera.fov = kind.fov + (camera.aspect < 0.8 ? 14 : 0)), camera.updateProjectionMatrix(); // a longer lens close on a face
 					fixed = kind.fixed ? kind.cam(0, 0) : null;
 				}));
 			}
