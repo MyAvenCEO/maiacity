@@ -41,10 +41,13 @@
 		{/each}
 	</div>
 
-	<p class="divider">MaiaCity</p>
-	<div class="tiles two">
-		{#each CITY as t (t.href)}
-			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
+	<p class="divider">Game Worlds</p>
+	<div class="games">
+		{#each CITY as g (g.href)}
+			<a class="game" href={g.href}>
+				{#if g.cover}<img src={asset(g.cover)} alt="" loading="lazy" />{:else}<span class="nocover"></span>{/if}
+				<span class="label"><b>{g.label}</b><span>{g.note}</span></span>
+			</a>
 		{/each}
 	</div>
 

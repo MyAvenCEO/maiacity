@@ -78,7 +78,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -86,7 +86,7 @@ export const SETTING_LIMITS = {
 	mintWindowHours: [1, 720],
 	signatures: [1, 2],
 	starterPack: [0, 10000],
-	heartsPerDay: [1, 1000],
+	heartsPerDay: [0, 1000],
 	demurrage: [0, 0.5],
 	poolShare: [0, 0.5],
 	dividendShare: [0, 1],
@@ -365,21 +365,23 @@ const num = (v) => {
 };
 
 /**
- * what a seat may mint now: HEARTS grow all the time (24 a day, one an hour) and are minted whenever the player likes,
- * all that grew since the last mint. The right to mint reaches back 24 hours only: what grew before that is lost, so a
- * player who never mints for a day mints 24 at most. Minted HEARTS stay (they only melt). A player's first mint also
- * brings the starter pack (720 HEARTS, a month's worth) once.
- * { amount (starter included), starter, grown, since, full: when the 24 h are full and growth starts being lost, lost: what was lost already }
+ * what a seat may mint now: HEARTS grow all the time on the GAME clock, 24 a game day (one a game hour; at a month a
+ * real day that is 672 a real day), and are minted whenever the player likes, all that grew since the last mint. The
+ * right to mint reaches back the mint window only (24 real hours: one game month): what grew before that is lost.
+ * Minted HEARTS stay (they only melt). A player's first mint also brings the starter pack (720 HEARTS) once.
+ * { amount (starter included), starter, grown, since, full: when the window is full and growth starts being lost, lost: what was lost already }
  */
 export function mintState(s, seat, now) {
 	const p = s.players[seat];
 	const since = p.lastMint ?? s.started;
-	const grown = Math.max(0, now - since);
 	const reach = (s.settings.mintWindowHours ?? DEFAULT_SETTINGS.mintWindowHours) * 3_600_000;
-	const window = Math.min(grown, reach);
-	const perMs = s.settings.heartsPerDay / DAY_MS;
+	const from = Math.max(since, now - reach);
+	// game days between two real moments, read off the game clock (so a faster month makes HEARTS grow faster)
+	const gameDays = (a, b) => Math.max(0, monthsAt(s, b) - monthsAt(s, a)) * DAYS_A_MONTH;
+	const per = s.settings.heartsPerDay;
+	const grown = gameDays(from, now) * per;
 	const starter = p.starter ? 0 : (s.settings.starterPack ?? DEFAULT_SETTINGS.starterPack);
-	return { amount: starter + window * perMs, starter, grown: window * perMs, since, full: since + reach, lost: Math.max(0, grown - reach) * perMs };
+	return { amount: starter + grown, starter, grown, since, full: since + reach, lost: gameDays(since, from) * per };
 }
 
 /** signatures a MIP needs before it is accepted (the default; the game's own is its signatures setting) */

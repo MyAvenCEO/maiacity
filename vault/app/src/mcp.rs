@@ -552,7 +552,7 @@ pub struct V1Mips {
 pub struct V1Propose {
     /// the MIP: { title, description (prose: what and why), settings: { key: number } (only what changes; keys and
     /// limits: hoursPerMonth 1-720 real hours a game month lasts, mintWindowHours 1-720 how far back minting reaches,
-    /// signatures 1-2, starterPack 0-10000 HEARTS on a first mint, heartsPerDay 1-1000, demurrage 0-0.5 a year,
+    /// signatures 1-2, starterPack 0-10000 HEARTS on a first mint, heartsPerDay 0-1000 HEARTS a game day, demurrage 0-0.5 a year,
     /// poolShare 0-0.5 of every treasury half into the AMM pool, swapFee 0-0.1, tentRent 0-10000 SettlementMIND each
     /// player a month, hexRent 0-10000 MaiaMIND the Settlement COOP a month), coops: { maia | settlement | village:
     /// { name, assets: [the whole list as it will be: { id (keep an asset's id from maiacity_v1_mips), name, kind }] } },
