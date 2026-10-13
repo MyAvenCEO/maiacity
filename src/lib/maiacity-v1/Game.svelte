@@ -16,7 +16,7 @@
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
-	import { AT_HOME, story } from './tour.js';
+	import { AT_HOME, lineDur, story } from './tour.js';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
@@ -79,19 +79,48 @@
 	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
 	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
 	let caption = $state(null); // the line the arrival's shot carries: { title, sub, big, dur }
-	$effect(() => {
-		if (tour?.kind !== 'intro' || !world || playing) return;
-		playing = 'intro';
-		const id = tour.id;
-		world.intro(tour.part).then(() => ((playing = ''), mark(id)));
-	});
-	async function act(step) {
-		if (playing) return;
-		playing = step.kind;
-		await (step.kind === 'load' ? world.load() : step.kind === 'build' ? world.pitch() : world.drive(step.leg, { fetch: !!step.fetch }));
-		playing = '';
-		mark(step.id);
+	// the whole story plays as a film (Samuel 2026-10-13): every step is a shot with its words as a voice-over line by
+	// line, the drives, the loading and the pitching play by themselves; only a move the player makes (mint, invest)
+	// waits, and then only a small prompt with its button shows, after its words were told
+	let told = $state({}); // the moves whose words were already told this visit
+	let cut = 0; // bumped by Skip: the voice-over of the shot playing stops at once
+	const toldFor = (lines) => lines.reduce((a, l) => a + lineDur(l), 0);
+	/** the voice-over: the step's words as subtitles, one line after another; resolves when the last has been shown */
+	async function narrate(lines) {
+		const mine = cut;
+		for (const line of lines) {
+			if (cut !== mine) break;
+			const dur = lineDur(line);
+			caption = { title: line, dur };
+			await new Promise((r) => setTimeout(r, dur * 1000));
+		}
+		if (cut === mine) caption = null;
 	}
+	function skipShot() {
+		cut++;
+		caption = null;
+		world?.skip();
+	}
+	$effect(() => {
+		if (!tour || !world || playing) return;
+		const step = tour;
+		if (step.kind === 'intro') {
+			playing = 'intro';
+			world.intro(step.part).then(() => ((playing = ''), mark(step.id)));
+		} else if (step.kind === 'drive' || step.kind === 'load' || step.kind === 'build') {
+			playing = step.kind;
+			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
+			const lines = step.lines;
+			const moment = step.kind === 'load' ? world.load({ lines }) : step.kind === 'build' ? world.pitch({ lines }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
+			moment.then(() => ((playing = ''), mark(step.id)));
+		} else if ((step.kind === 'invest' || step.kind === 'mint') && !told[step.id]) {
+			playing = 'scene';
+			Promise.all([world.scene(step.place, toldFor(step.lines), step), narrate(step.lines)]).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
+		} else if (step.kind === 'next' || step.kind === 'done') {
+			playing = 'scene';
+			Promise.all([world.scene(step.place, toldFor(step.lines), step), narrate(step.lines)]).then(() => ((playing = ''), mark(step.id)));
+		}
+	});
 
 	function take(res) {
 		game = res.game;
@@ -283,7 +312,7 @@
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
 
-<div class="v1" class:cinema={playing === 'intro'}>
+<div class="v1" class:cinema={!!playing}>
 	<canvas class="stage" bind:this={canvas}></canvas>
 
 	{#if view}
@@ -328,7 +357,7 @@
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
-		{#if tour && (tour.kind === 'intro' || playing === 'intro')}
+		{#if playing}
 			<!-- the arrival, as a trailer: black bars, one line of the story a shot, fading in and out -->
 			<div class="bars top" aria-hidden="true"></div><div class="bars bottom" aria-hidden="true"></div>
 			<div class="fade-in" aria-hidden="true"></div>
@@ -340,33 +369,25 @@
 					</div>
 				{/key}
 			{/if}
-			<button class="skip link" onclick={() => world?.skip()}>Skip</button>
-		{:else if tour && !playing}
-			<!-- the first-run story: one idea a step, over the Mint button, pointing at what it talks about -->
-			<div class="tour panel" class:down={tour.hint === 'mintbar'} role="dialog" aria-label="Getting started">
-				<p class="eyebrow">{tour.chapter} · {tour.n} of {tour.steps}</p>
+			<button class="skip link" onclick={skipShot}>Skip</button>
+			<button class="skip link all" onclick={() => (mark('off'), skipShot())}>Skip the story</button>
+		{:else if tour && (tour.kind === 'invest' || tour.kind === 'mint')}
+			<!-- the story's only stops: a move the player makes, its words already told as the film's voice-over, so only
+			     its title and its button show (Samuel 2026-10-13: as little modal text as possible) -->
+			<div class="tour panel prompt" class:down={tour.hint === 'mintbar'} role="dialog" aria-label={tour.title}>
 				<b>{tour.title}</b>
-				<p>{tour.text}</p>
 				{#if tour.kind === 'invest'}
 					<div class="goal"><span style="width:{Math.min(100, (tour.have / tour.goal) * 100)}%"></span></div>
-					<p class="small">{f(tour.have, 0)} of {f(tour.goal, 0)} ❤︎ invested · you hold {f(player.wallet.HEARTS, 0)} ❤︎</p>
+					<p class="small">{f(tour.have, 0)} of {f(tour.goal, 0)} ❤︎ · you hold {f(player.wallet.HEARTS, 0)} ❤︎</p>
 				{/if}
-				<div class="dots">{#each steps as x, i (x.id)}<i class:on={x.done} class:now={i === tourAt}></i>{/each}</div>
-				<!-- Skip on the left, the step's own button on the right (Samuel 2026-10-13) -->
 				<div class="buttons">
-					{#if tour.kind !== 'done'}<button class="link" onclick={() => mark('off')}>Skip the story</button>{/if}
+					<button class="link" onclick={() => mark('off')}>Skip the story</button>
 					<span class="grow"></span>
 					{#if tour.kind === 'invest'}
 						{@const left = Math.min(Math.ceil(tour.goal - tour.have), Math.floor(player.wallet.HEARTS))}
 						<button class="primary" disabled={busy || left < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: left })}>Invest {f(left, 0)} ❤︎</button>
-					{:else if tour.kind === 'mint'}
-						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount, 0)} ❤︎</button>
-					{:else if tour.kind === 'drive' || tour.kind === 'load' || tour.kind === 'build'}
-						<button class="primary" onclick={() => act(tour)}>{tour.action}</button>
-					{:else if tour.kind === 'done'}
-						<button class="primary" onclick={() => mark('done')}>Start playing</button>
 					{:else}
-						<button class="primary" onclick={() => mark(tour.id)}>Next</button>
+						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount, 0)} ❤︎</button>
 					{/if}
 				</div>
 			</div>
@@ -943,6 +964,10 @@
 		top: calc(11vh + 0.6rem);
 		color: #fff8ec !important;
 		opacity: 0.8;
+	}
+	.skip.all {
+		right: auto;
+		left: 1rem;
 	}
 	.hint {
 		animation: hint 1.6s ease-in-out infinite;

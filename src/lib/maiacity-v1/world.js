@@ -18,7 +18,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { batteryPack, pickup, solarRow } from '$lib/models/village.js';
 import { powerCube } from '$lib/actors/powercube.js';
+import { human } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
+import { lineDur } from './tour.js';
 import { maiaCentre, oldShed, travelVan } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 
@@ -378,31 +380,51 @@ function packedTent() {
 	return g;
 }
 
-/** a player: 1.8 m tall, their one backpack on */
+/** a player: the rigged stand-in from Actors (./actors/human.ts) at 1.8 m, in their seat's colour, their one backpack
+ *  on. It plays what it does (act): a clip of the stand-in (idle, walk, wave), one of its poses (kneel, point, look up,
+ *  think) or one of the player's own (carry, push), walking on as it moves */
 export function person(seat) {
 	const g = new THREE.Group();
 	g.name = `player:${seat}`;
-	const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.82, 4, 10), mat(SEAT_COLOUR[seat]));
-	body.position.y = 0.67;
-	body.castShadow = true;
-	body.name = g.name;
-	const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(0xe8c4a0));
-	head.position.y = 1.67;
-	head.castShadow = true;
-	head.name = g.name;
+	const cast = human({ shirt: `#${SEAT_COLOUR[seat].toString(16).padStart(6, '0')}`, trousers: seat === 'A' ? '#5b5145' : '#3d4a5c' }, 1.8);
+	cast.rig.object.name = g.name;
+	cast.rig.object.castShadow = true;
+	cast.rig.object.frustumCulled = false;
 	const glow = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0xe0435a, emissive: 0xe0435a, emissiveIntensity: 0.7 }));
 	glow.position.y = 2.3;
 	glow.name = g.name;
-	// one backpack each, clothes and all they brought (Samuel 2026-10-13)
-	const pack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.5, 0.2), mat(seat === 'A' ? 0x7a5a36 : 0x4f6b3a));
-	pack.position.set(0, 1.1, -0.33);
+	// one backpack each, clothes and all they brought (Samuel 2026-10-13), on the chest bone so it moves with the back
+	const pack = new THREE.Group();
+	const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.46, 0.18), mat(seat === 'A' ? 0x7a5a36 : 0x4f6b3a));
 	const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.4, 10).rotateZ(Math.PI / 2), mat(0x9c3b2f));
-	roll.position.set(0, 1.4, -0.33);
-	pack.castShadow = roll.castShadow = true;
-	pack.name = roll.name = g.name;
-	g.add(body, head, glow, pack, roll);
-	g.userData.glow = glow;
+	roll.position.y = 0.3;
+	bag.castShadow = roll.castShadow = true;
+	bag.name = roll.name = g.name;
+	pack.add(bag, roll);
+	const chest = cast.rig.bones.chest ?? cast.rig.bones.spine;
+	if (chest) {
+		chest.add(pack);
+		chest.updateWorldMatrix(true, false);
+		pack.position.copy(chest.worldToLocal(V(0, 1.12, -0.24)));
+	} else (pack.position.set(0, 1.12, -0.24), g.add(pack));
+	g.add(cast.rig.object, glow);
+	g.userData = { glow, cast, act: 'idle', t: Math.random() * 9 };
 	return g;
+}
+
+/** the player's own poses, beyond the stand-in's: carrying something in both arms before them, pushing something along */
+const CARRY = { upperArmL: [-0.75, 0, 0.18], upperArmR: [-0.75, 0, -0.18], forearmL: [-0.95, 0, 0], forearmR: [-0.95, 0, 0], handL: [0, 0, -0.3], handR: [0, 0, 0.3] };
+const CANS = { upperArmL: [0, 0, 0.16], upperArmR: [0, 0, -0.16], forearmL: [-0.05, 0, 0], forearmR: [-0.05, 0, 0] };
+const PUSH = { spine: [0.25, 0, 0], chest: [0.15, 0, 0], upperArmL: [-1.25, 0, 0.12], upperArmR: [-1.25, 0, -0.12], forearmL: [-0.25, 0, 0], forearmR: [-0.25, 0, 0] };
+/** play a player's act at time t: a clip, a pose, or walking carrying/pushing (the legs walk, the arms hold) */
+function acting(p, t) {
+	const { cast, act } = p.userData;
+	const [what, legs] = act.split('+'); // 'carry+walk': the arms carry, the legs walk
+	const base = legs ? cast.clips[legs]?.(t) ?? {} : null;
+	const hold = { carry: CARRY, push: PUSH, cans: CANS }[what];
+	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
+	if (cast.clips[what]) return cast.rig.pose(cast.clips[what](t));
+	cast.rig.pose(cast.poses[what] ?? cast.poses.stand);
 }
 
 /** the travel van as the intro rides in it: see-through glass, and inside the people and bags it is packed with,
@@ -591,6 +613,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		for (const s of ['A', 'B']) {
 			const p = people[s];
 			p.visible = true;
+			act(p, 'idle');
 			p.rotation.y = s === 'A' ? 0.4 : -0.4;
 			if (s !== me && s !== other) p.visible = false;
 			else if (at === 'home' || (s === other && !rides)) p.position.copy(HOME[s]);
@@ -654,6 +677,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 	function placeCube(where) {
 		if (cube.parent !== world) world.attach(cube);
+		if (where !== 'home') cubeCast.rig.pose(cubeCast.clips.off(0)); // it hums only at home, powering the tent
 		if (where === 'shed') (cube.position.copy(CUBE_IN_SHED), (cube.rotation.y = Math.PI / 2));
 		else if (where === 'home') (cube.position.set(YARD.x, 0, YARD.z), (cube.rotation.y = -0.3));
 		else {
@@ -724,7 +748,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// the orbit picks up from where the camera looks now; what the moment moved stays where it ended, and the page sets the next stage
 		controls.target.copy(camera.position).add(camera.getWorldDirection(V(0, 0, 0)).multiplyScalar(40));
 		frameView();
-		onCaption(null);
+		if (m?.steps.some((x) => x.caption)) onCaption(null); // the page's own voice-over keeps its line
 		const name = placeNow;
 		placeNow = '';
 		if (riding) (lensIn(), (controls.enabled = false));
@@ -799,6 +823,53 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			else (p.scale.setScalar(0.8 + a * 1.6), (p.material.opacity = 0.32 * (1 - a / 2.4)), (p.position.y += step * 0.6));
 		}
 	}
+
+	// the players act their own story: walking at their real pace (SPEED.walk), carrying, pushing, kneeling, getting in
+	const WALK = SPEED.walk;
+	const act = (p, what) => void (p.userData.act = what);
+	const face = (p, at) => void (p.rotation.y = Math.atan2(at.x - p.position.x, at.z - p.position.z));
+	/** walk a player along points (world, on the ground), s seconds after setting off; holding something (hold: an act
+	 *  for the arms) or not; once there they stand, holding it still. Returns whether they have arrived */
+	function walkOn(p, pts, s, hold) {
+		let left = s * WALK;
+		for (let i = 1; i < pts.length; i++) {
+			const a = pts[i - 1], b = pts[i], d = a.distanceTo(b);
+			if (left <= d) {
+				p.position.lerpVectors(a, b, d ? left / d : 1);
+				if (d > 0.05) p.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+				act(p, hold ? `${hold}+walk` : 'walk');
+				return false;
+			}
+			left -= d;
+		}
+		p.position.copy(pts[pts.length - 1]);
+		act(p, hold ?? 'idle');
+		return true;
+	}
+	const walkTime = (pts) => pts.slice(1).reduce((a, b, i) => a + pts[i].distanceTo(b), 0) / WALK;
+	// on the pickup (its own frame, +z ahead, the driver's door on its left, +x): the doors, the tailgate, beside it
+	const atTruck = (x, z) => (truck.updateMatrixWorld(true), truck.localToWorld(V(x, 0, z)).setY(0));
+	const DRIVER = [1.25, 0.55], PASSENGER = [-1.25, 0.55], TAIL = [0.5, -3.3], BESIDE = [2.6, 1], BESIDE_2 = [2.6, -1.6];
+	/** a shot of a moment: at least min seconds, and as long as the line of the voice-over it carries; its run gets the
+	 *  seconds since it began (s), so a walk keeps its pace however long the line holds the shot */
+	function beat(min, run, start) {
+		const st = { dur: min, shot: true, start, run: (k) => run(k * st.dur, k, st.dur) };
+		return st;
+	}
+	/** the voice-over: one line a shot, in order (more lines than shots: the last carries them all); each shot holds
+	 *  as long as its line takes to tell */
+	function told(steps, lines = []) {
+		const shots = steps.filter((x) => x.shot);
+		lines.forEach((line, i) => {
+			const st = shots[Math.min(i, shots.length - 1)];
+			if (st) st.caption = st.caption ? { title: `${st.caption.title} ${line}` } : { title: line };
+		});
+		for (const st of shots) if (st.caption) (st.dur = Math.max(st.dur, lineDur(st.caption.title))), (st.caption.dur = st.dur);
+		return steps;
+	}
+	/** a camera standing still, turning to follow what it looks at (a player's head) */
+	const still = (eye, at) => camLerp(eye, at, 0.12);
+	const head = (p, y = 1.35) => p.position.clone().setY(y);
 
 	/** the arrival, cut like a trailer on the film camera's moves: dawn over the endless steppe and a van's dust far
 	 *  below; inside the packed van; alongside it past the telegraph poles; the road ending at the abandoned gas station;
@@ -896,8 +967,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 						me.position.copy(door);
 					},
 					run: (k) => {
-						const w = Math.min(1, Math.max(0, (k - 0.15) / 0.6));
-						me.position.lerpVectors(door, STOP, ease(w));
+						walkOn(me, [door, STOP], Math.max(0, k - 0.15) * 5);
+						if (k > 0.85) act(me, 'look up');
 						pose(low(k));
 					}
 				},
@@ -933,7 +1004,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** a drive in the pickup along the track, cut in three shots: from the roadside as it sets off, from the air
 	 *  as it crosses the land, and close behind it as it arrives. To the village's shed, or on home to our tribe; when the
 	 *  other player comes to fetch me (fetch), the pickup first drives out from the tribe to the bus stop. */
-	function drive(leg, { fetch = false } = {}) {
+	function drive(leg, { fetch = false, lines } = {}) {
 		const me = people[stage.me];
 		const other = stage.other ? people[stage.other] : null;
 		// the pickup drives at a real track speed (SPEED.track); the cuts between the three shots skip the middle of
@@ -980,81 +1051,277 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}
 			};
 		};
-		const getIn = (start) => ({ dur: 0.7, start: () => { start?.(); placeFuel(stage.cube === 'home' ? 'home' : 'bed'); me.visible = false; if (other && stage.rides) other.visible = false; } });
+		const drivesMe = stage.me === 'A'; // the first player drives; the fetched one sits beside them
+		const myDoor = () => atTruck(...(drivesMe ? DRIVER : PASSENGER));
+		const shotOf = (st) => ((st.shot = true), st);
+		// getting in: from where each stands, round to their door, then the door shuts behind them
+		const getIn = () => {
+			let mine = null, theirs = null;
+			return beat(2.5, (s) => {
+				const k = mine ? walkOn(me, mine, s) : true;
+				const j = theirs ? walkOn(other, theirs, s) : true;
+				if (k) me.visible = false;
+				if (j && other) other.visible = false;
+				still(camEye, head(me));
+			}, () => {
+				placeFuel(stage.cube === 'home' ? 'home' : 'bed');
+				const side = drivesMe ? 1 : -1;
+				const door = myDoor();
+				// the passenger goes round the front of the pickup
+				mine = [me.position.clone(), ...(side < 0 ? [atTruck(1.6, 3.4), atTruck(-1.6, 3.4)] : []), door];
+				theirs = other && stage.rides && other.visible ? [other.position.clone(), atTruck(...DRIVER)] : null;
+				camEye = atTruck(9 * side, 7).setY(3.4);
+				camera.position.copy(camEye);
+				controls.target.copy(head(me));
+			});
+		};
+		// getting out where the drive ends: out of the doors to where the story has them stand
+		const getOut = (where) => {
+			let mine = null, theirs = null;
+			return beat(2.5, (s) => {
+				walkOn(me, mine, s);
+				if (theirs) walkOn(other, theirs, s);
+				still(camEye, head(me));
+			}, () => {
+				const rides = other && (stage.rides || fetch);
+				const myEnd = where === 'home' ? HOME[stage.me] : atTruck(...BESIDE);
+				const door = myDoor();
+				me.visible = true;
+				me.position.copy(door);
+				mine = [door, ...(drivesMe ? [] : [atTruck(-1.6, 3.4), atTruck(1.6, 3.4)]), myEnd];
+				if (rides) {
+					other.visible = true;
+					other.position.copy(atTruck(...DRIVER));
+					theirs = [other.position.clone(), where === 'home' ? HOME[stage.other] : atTruck(...BESIDE_2)];
+				}
+				camEye = atTruck(drivesMe ? 6 : 5, 5.5).setY(2);
+				camera.position.copy(camEye);
+				controls.target.copy(head(me));
+			});
+		};
+		let camEye = V(0, 0, 0);
 		const steps = [];
-		if (fetch) steps.push({ dur: 0.7, start: () => { putTruck(1, true); if (other) other.visible = false; } }, go(1, U_START, 12), getIn());
-		else steps.push(getIn());
-		steps.push(leg === 'village' ? go(U_START, U_STORE, 13) : go(U_STORE, 1, 9));
+		if (fetch) {
+			// the other player comes for me: the pickup out of the tribe's hex to the bus stop, me waving as it nears
+			const come = shotOf(go(1, U_START, 12));
+			const run = come.run;
+			come.start = () => {
+				putTruck(1, true);
+				if (other) other.visible = false;
+				me.visible = true;
+				me.position.copy(STOP);
+			};
+			come.run = (k) => (run(k), face(me, truck.position), act(me, k > 0.55 ? 'wave' : 'idle'));
+			steps.push(come);
+		} else if (leg === 'village') {
+			// the first player: the two jerrycans off the forecourt into the back, then round to the driver's door
+			let cans = [], toCans = [], toTail = [];
+			const fill = beat(4.5, (s) => {
+				walkOn(me, toCans, s);
+				still(camEye, head(me));
+			}, () => {
+				placeFuel('station');
+				me.visible = true;
+				me.position.copy(STOP);
+				cans = fuel.map((c) => c.position.clone());
+				toCans = [STOP.clone(), atTruck(2.2, -1.8)];
+				camEye = atTruck(10, 7).setY(3.2);
+				camera.position.copy(camEye);
+				controls.target.copy(head(me));
+			});
+			const carry = beat(4, (s) => {
+				const t0 = 0.6; // kneeling to take hold of them
+				if (s < t0) act(me, 'kneel');
+				const there = s >= t0 && walkOn(me, toTail, s - t0, 'cans');
+				const lift = there ? Math.min(1, (s - t0 - walkTime(toTail)) / 0.8) : 0;
+				fuel.forEach((c, i) => {
+					if (s < t0) return;
+					const hand = me.localToWorld(V(i ? -0.32 : 0.32, 0.3, 0.05));
+					if (!there) (c.position.copy(hand), (c.rotation.y = me.rotation.y));
+					else {
+						const to = truck.localToWorld(FUEL_ON_BED[i].clone());
+						c.position.lerpVectors(hand, to, ease(lift)).setY(hand.y + (to.y - hand.y) * ease(lift) + Math.sin(Math.PI * lift) * 0.5);
+					}
+				});
+				if (there && lift < 1) act(me, 'carry');
+				still(camEye, head(me, 1));
+			}, () => {
+				toTail = [me.position.clone(), atTruck(...TAIL)];
+				camEye = atTruck(4.5, -7).setY(1.8);
+			});
+			const done = { dur: 0.1, start: () => placeFuel('bed') };
+			steps.push(fill, carry, done);
+		}
+		steps.push(getIn());
+		steps.push(shotOf(leg === 'village' ? go(U_START, U_STORE, 13) : go(U_STORE, 1, 9)));
+		steps.push(getOut(leg === 'village' ? 'village' : 'home'));
 		const first = steps[0].start;
 		steps[0].start = () => {
-			first();
-			camera.fov = camera.aspect < 0.8 ? 58 : 42;
-			camera.updateProjectionMatrix();
+			first?.();
+			lensOut();
 		};
-		return play(steps);
+		return play(told(steps, lines));
 	}
 
-	/** loading the powercube and the packed tent from the shed onto the pickup's bed */
-	function load() {
+	/** loading at the village's shed: out of the pickup, the Power Cube pushed out of the shed and up onto the bed, the
+	 *  packed tent carried over and swung in, and back beside the pickup */
+	function load({ lines } = {}) {
+		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
-		const lift = (o, from, to, k, h = 5) => {
-			const e = ease(k);
-			o.position.lerpVectors(from, to, e).setY(from.y + (to.y - from.y) * e + Math.sin(Math.PI * e) * h);
-			o.rotation.y = truck.rotation.y * e;
-		};
+		const look = V(STORE.x + 2, 1.2, (STORE.z + VZ) / 2);
+		const eye = V(STORE.x + 11, 4.5, VZ + 12).sub(look).multiplyScalar(0.6).add(look);
 		const cubeTo = truck.localToWorld(CUBE_ON_BED.clone());
-		const tentTo = truck.localToWorld(TENT_ON_BED.clone());
-		const look = V(STORE.x + 2, 2, (STORE.z + VZ) / 2);
-		const eye = V(STORE.x + 13, 7, VZ + 16);
-		return play([
-			{ dur: 0.3, start: () => (placeCube('shed'), placeTent('shed')) },
-			{ dur: 2.6, run: (k) => (lift(cube, CUBE_IN_SHED, cubeTo, k), camLerp(eye, look, 0.06)) },
-			{ dur: 0.2, start: () => ((stage.cube = 'bed'), placeCube('bed')) },
-			{ dur: 2, run: (k) => (lift(bundle, TENT_IN_SHED, tentTo, k, 3), camLerp(eye.clone().add(V(-6, -2, 4)), look, 0.06)) },
-			{ dur: 0.6, start: () => ((stage.tent = 'bed'), placeTent('bed')), run: () => camLerp(eye, look, 0.06) }
-		]);
+		const yawTo = truck.rotation.y + Math.PI / 2;
+		const tail = atTruck(0, -3.9);
+		const front = (o, d) => o.clone().add(V(Math.sin(me.rotation.y), 0, Math.cos(me.rotation.y)).multiplyScalar(d));
+		let toShed = [], toTent = [], back = [];
+		return play(told([
+			beat(3.5, (s) => (walkOn(me, toShed, s), still(eye, head(me))), () => {
+				placeCube('shed');
+				placeTent('shed');
+				me.visible = true;
+				me.position.copy(atTruck(...BESIDE));
+				const behind = CUBE_IN_SHED.clone().setY(0).add(CUBE_IN_SHED.clone().setY(0).sub(tail).setLength(1.2));
+				toShed = [me.position.clone(), behind];
+				camera.position.copy(eye);
+				controls.target.copy(head(me));
+			}),
+			// pushing it along the ground to the tailgate (1 m/s), then up the ramp into the bed
+			beat(7, (s) => {
+				const from = CUBE_IN_SHED.clone(), d = from.distanceTo(tail), push = d / 1;
+				const u = Math.min(1, s / push), r = Math.min(1, Math.max(0, (s - push) / 2));
+				const at = from.clone().lerp(tail.clone().setY(0.1), u);
+				if (r > 0) at.lerpVectors(tail.clone().setY(0.1), cubeTo, ease(r));
+				cube.position.copy(at);
+				cube.rotation.y = Math.PI / 2 + (yawTo - Math.PI / 2) * ease(Math.min(1, u * 1.4));
+				const dir = tail.clone().sub(from).setY(0).normalize();
+				me.position.copy(r > 0 ? tail.clone().sub(dir.clone().multiplyScalar(0.9)).setY(0) : at.clone().setY(0).sub(dir.clone().multiplyScalar(0.95)));
+				me.rotation.y = Math.atan2(dir.x, dir.z);
+				act(me, u < 1 ? 'push+walk' : r < 1 ? 'push' : 'idle');
+				still(eye.clone().add(V(-3, -1, 2)), at.clone().setY(1));
+			}),
+			{ dur: 0.1, start: () => ((stage.cube = 'bed'), placeCube('bed')) },
+			beat(5, (s) => {
+				const t1 = walkTime(toTent), there = walkOn(me, toTent, s), t2 = t1 + 0.5;
+				if (s >= t1 && s < t2) act(me, 'kneel');
+				const going = s >= t2 && !walkOn(me, back, s - t2, 'carry');
+				const lift = s >= t2 + walkTime(back) ? Math.min(1, (s - t2 - walkTime(back)) / 0.8) : 0;
+				if (s >= t2) {
+					const arms = front(me.position, 0.42).setY(1.05);
+					const to = truck.localToWorld(TENT_ON_BED.clone());
+					if (going || !lift) bundle.position.copy(arms), (bundle.rotation.y = me.rotation.y + Math.PI / 2);
+					else bundle.position.lerpVectors(arms, to, ease(lift)).setY(arms.y + (to.y - arms.y) * ease(lift) + Math.sin(Math.PI * lift) * 0.6);
+				}
+				void there;
+				still(eye.clone().add(V(-5, -1.5, 3)), head(me, 1));
+			}, () => {
+				toTent = [me.position.clone(), TENT_IN_SHED.clone().add(V(1.1, 0, 0.2))];
+				back = [toTent[1], atTruck(0.6, -3.3)];
+			}),
+			{ dur: 0.1, start: () => ((stage.tent = 'bed'), placeTent('bed')) },
+			beat(2.5, (s) => (walkOn(me, [atTruck(0.6, -3.3), atTruck(2.4, -2), atTruck(...BESIDE)], s), still(eye, head(me))))
+		], lines));
 	}
 
-	/** pitching the tent at the middle of our hex: the bundle comes off the pickup, the powercube goes to its yard, and
-	 *  the little dome rises strut by strut while the camera circles it */
-	function pitch() {
+	/** pitching the tent at the middle of our hex: the packed canvas carried off the pickup and unrolled, the little dome
+	 *  raised strut by strut while the camera circles it, then the Power Cube pushed down off the bed to its yard */
+	function pitch({ lines } = {}) {
+		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
-		const from = truck.localToWorld(TENT_ON_BED.clone());
-		const cubeFrom = truck.localToWorld(CUBE_ON_BED.clone());
 		const orbit = shot({ kind: 'orbit', centre: [0, 0], a0: 0.4, a1: 1.9, r0: 16, r1: 10, y0: 8, y1: 3.5, aim: [0, 1, 0], curve: 'ease' });
-		return play([
-			{
-				dur: 1.6,
-				start: () => {
-					world.attach(bundle);
-					world.attach(cube);
-					bundle.scale.setScalar(1);
-					cube.scale.setScalar(1);
-				},
-				run: (k) => {
-					const e = ease(k);
-					bundle.position.lerpVectors(from, V(0, 0, 2), e).setY(from.y * (1 - e) + Math.sin(Math.PI * e) * 2);
-					cube.position.lerpVectors(cubeFrom, V(YARD.x, 0, YARD.z), e).setY(cubeFrom.y * (1 - e) + Math.sin(Math.PI * e) * 3);
-					pose(orbit(k * 0.2));
+		const LAY = V(0, 0, 2.2), KNEEL = V(0, 0, 3.3);
+		let toTail = [], toLay = [], toTail2 = [];
+		const eye = V(-4, 3.2, 12);
+		const cubeFrom = () => truck.localToWorld(CUBE_ON_BED.clone());
+		const tail = atTruck(0, -3.9);
+		const yard = V(YARD.x, 0, YARD.z);
+		return play(told([
+			beat(6, (s) => {
+				const t1 = walkTime(toTail);
+				walkOn(me, toTail, s);
+				if (s >= t1 && s < t1 + 0.7) {
+					act(me, 'carry');
+					bundle.position.lerpVectors(truck.localToWorld(TENT_ON_BED.clone()), me.localToWorld(V(0, 1.05, 0.42)), ease((s - t1) / 0.7));
+				} else if (s >= t1 + 0.7) {
+					const there = walkOn(me, toLay, s - t1 - 0.7, 'carry');
+					bundle.position.copy(me.localToWorld(V(0, 1.05, 0.42)));
+					bundle.rotation.y = me.rotation.y + Math.PI / 2;
+					if (there) (act(me, 'kneel'), bundle.position.copy(LAY).setY(0.2));
 				}
-			},
-			{
-				dur: 4.2,
-				start: () => {
-					bundle.visible = false;
-					home.visible = true;
-				},
-				run: (k) => {
-					const e = ease(k);
-					home.scale.set(0.3 + 0.7 * e, Math.max(0.02, e), 0.3 + 0.7 * e);
-					home.rotation.y = (1 - e) * 0.6;
-					pose(orbit(0.2 + k * 0.8));
+				still(eye, head(me, 1.1));
+			}, () => {
+				world.attach(bundle);
+				me.visible = true;
+				toTail = [me.position.clone(), atTruck(...TAIL)];
+				toLay = [toTail[1], KNEEL];
+				camera.position.copy(eye);
+				controls.target.copy(head(me));
+			}),
+			beat(5.5, (s, k) => {
+				const e = ease(Math.min(1, s / 4.5));
+				home.scale.set(0.3 + 0.7 * e, Math.max(0.02, e), 0.3 + 0.7 * e);
+				home.rotation.y = (1 - e) * 0.6;
+				me.position.copy(KNEEL);
+				face(me, V(0, 0, 0));
+				act(me, e < 0.35 ? 'kneel' : e < 1 ? 'push' : 'look up');
+				pose(orbit(k));
+			}, () => {
+				bundle.visible = false;
+				home.visible = true;
+			}),
+			{ dur: 0.1, start: () => ((stage.tent = 'up'), placeTent('up')) },
+			beat(7, (s) => {
+				const t1 = walkTime(toTail2);
+				const down = Math.min(1, Math.max(0, (s - t1) / 1.5));
+				const along = Math.max(0, s - t1 - 1.5);
+				const d = tail.distanceTo(yard), u = Math.min(1, along / d);
+				const from = cubeFrom();
+				const at = down < 1 ? from.clone().lerp(tail.clone().setY(0), ease(down)) : tail.clone().lerp(yard, u);
+				if (s >= t1) cube.position.copy(at);
+				if (s < t1) walkOn(me, toTail2, s);
+				else {
+					const dir = (down < 1 ? tail.clone().sub(from) : yard.clone().sub(tail)).setY(0).normalize();
+					me.position.copy(down < 1 ? atTruck(0, -2.9) : at.clone().setY(0).sub(dir.clone().multiplyScalar(0.95)));
+					me.rotation.y = down < 1 ? truck.rotation.y + Math.PI : Math.atan2(dir.x, dir.z);
+					act(me, down < 1 ? 'carry' : u < 1 ? 'push+walk' : 'idle');
 				}
-			},
-			{ dur: 0.4, start: () => ((stage.tent = 'up'), (stage.cube = 'home'), placeTent('up'), placeCube('home')), run: () => pose(orbit(1)) }
-		]);
+				still(V(YARD.x - 9, 4, YARD.z + 11), (s < t1 ? me.position : cube.position).clone().setY(1));
+			}, () => {
+				world.attach(cube);
+				toTail2 = [me.position.clone(), V(KNEEL.x + 3, 0, KNEEL.z + 1), atTruck(0, -2.9)];
+			}),
+			{ dur: 0.4, start: () => ((stage.cube = 'home'), placeCube('home'), act(me, 'idle')), run: () => still(V(YARD.x - 9, 4, YARD.z + 11), V(4, 1, -1)) }
+		], lines));
 	}
 	/** jump to the end of what is playing */
+	/** a shot of the story told over the world (a voice-over's length, dur s): still riding in the van, the ride rolls
+	 *  on; anywhere else the camera glides slowly round the place the story is at, closing in a little, like a crane */
+	function shotAt(name, dur, { act: doing, close = false } = {}) {
+		const p = PLACES[name];
+		const me = people[stage.me];
+		if (riding || !p) return play([{ dur, run: () => riding && ride(dt) }]);
+		// close: on the player themself, the camera easing in to them as they act the line (point, look up, think)
+		if (close && me.visible) {
+			const from = me.localToWorld(V(1.5, 1.8, 3.6)), to = me.localToWorld(V(0.75, 1.62, 2.2));
+			const at = head(me, 1.45);
+			return play([{ dur, start: () => (lensOut(), doing && act(me, doing)), run: (k) => (camera.position.lerpVectors(from, to, ease(k)), camera.lookAt(at)) }]);
+		}
+		const offset = p.offset.clone().multiplyScalar(camera.aspect < 0.8 ? 1.65 : 1);
+		const r0 = Math.hypot(offset.x, offset.z), a0 = Math.atan2(offset.z, offset.x);
+		const spin = dur * 0.012 + 0.12;
+		return play([
+			{
+				dur,
+				start: () => (lensOut(), doing && me.visible && act(me, doing)),
+				run: (k) => {
+					const e = ease(k);
+					const a = a0 + spin * e, r = r0 * (1.08 - 0.16 * e), y = offset.y * (1.06 - 0.12 * e);
+					camera.position.set(p.target.x + Math.cos(a) * r, p.target.y + y, p.target.z + Math.sin(a) * r);
+					camera.lookAt(p.target);
+				}
+			}
+		]);
+	}
 	const skip = () => {
 		if (!moment) return;
 		for (const s of moment.steps.slice(moment.i)) (s.start?.(), s.run?.(1));
@@ -1137,6 +1404,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const step = Math.min(0.25, t - (lastT ?? t));
 		lastT = t;
 		settleDust(step);
+		for (const p of Object.values(people)) if (p.visible) (acting(p, (p.userData.t += step)), busy && (p.userData.glow.visible = false));
+		if (stage.cube === 'home' && cube.parent === world && !busy) cubeCast.rig.pose(cubeCast.clips.run(t));
 		if (moment) runMoment(performance.now() / 1000);
 		else if (riding) ride(step);
 		else {
@@ -1174,6 +1443,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		focus,
 		touring,
 		intro,
+		scene: shotAt,
 		drive,
 		load,
 		pitch,
