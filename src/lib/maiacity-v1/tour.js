@@ -102,7 +102,7 @@ export function story(view, seat, seen) {
 			'The old world passed this place by and left it behind.',
 			`${other.founder && !first ? `${other.name} came before you. You are` : 'You are'} among its very first people.`),
 		say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop, act: 'point' },
-			'One day a square full of life stands here: markets, workshops, gardens and homes.',
+			'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
 			'Here no single owner can leave and take it all. It belongs to the people who live here.'),
 		say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...next('coops'), ...atStop, act: 'think', close: true },
 			'Everything here belongs to a COOP, a company its people own together.',
