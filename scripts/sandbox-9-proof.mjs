@@ -266,6 +266,7 @@ function report(exps, scen, bases, notCovered, meta) {
 	// and the border (round 3 brief: before the verdicts)
 	if (bases.length) {
 		simpleStats(L, bases, scen);
+		aiMarket(L, bases, exps);
 		foodAndLand(L, bases, scen);
 		foundingAndBorder(L, bases, scen);
 		priceTable(L, meta, bases);
@@ -372,7 +373,7 @@ function simpleStats(L, bases, scen) {
 	}
 	L.push('');
 	const av = Ls.filter((r) => r.days >= 365).map((r) => r.tenths.poorest.avenH);
-	if (av.length) L.push(`Aven help for the poorest tenth runs from ${k1(Math.min(...av))} to ${k1(Math.max(...av))} hours a day over the run: Aven services are sold in a market of their own (accelerators bought abroad, the rate card), and the AI market for them (avenCEO) comes in round 4.`, '');
+	if (av.length) L.push(`Aven help for the poorest tenth runs from ${k1(Math.min(...av))} to ${k1(Math.max(...av))} hours a day over the run: Aven service comes from the AI market (the next section): the settlement COOPs and the Village COOP sell inference, avenCEO sells the hours, and each person’s Aven splits what its person buys between help and work.`, '');
 	// the five seeds: mean (lowest–highest)
 	L.push('**All five seeds** (mean over the seeds, lowest–highest in brackets):', '');
 	const span = (xs, fm) => (xs.length ? `${fm(xs.reduce((a, x) => a + x, 0) / xs.length)} (${fm(Math.min(...xs))}–${fm(Math.max(...xs))})` : '–');
@@ -419,6 +420,61 @@ function simpleStats(L, bases, scen) {
 	// what goes up, what goes down, and why: computed from the tables
 	L.push('### What goes up, what goes down, and why', '');
 	L.push(trendParagraph(s0), '');
+}
+
+/**
+ * The AI market (round 4): who owns the accelerators, the inference sold to the AI COOPs and its price, the Aven hours
+ * a person by tenth of holdings (help and work), each tenth's MIND income by source, the accelerators imported, what
+ * bound the Aven service; the trap (does the poorest tenth earn?); and the bank with and without AI exports (AIX).
+ */
+function aiMarket(L, bases, exps) {
+	const b0 = bases[0], A = b0.s.ai ?? [];
+	if (!A.length) return;
+	const k2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : '–');
+	const k3 = (x) => (Number.isFinite(x) ? x.toFixed(3) : '–');
+	L.push('## The AI market (avenCEO)', '');
+	L.push('The settlement COOPs and the Village COOP own the accelerators, in the data halls of their utility domes, and run them on their own power. They buy them through the euro border with euros the MaiaCity COOP’s bank advances, repaid in their own MIND, and replace them as they wear. They sell inference by the accelerator-hour to the AI COOPs: the avenCEO COOP, founded at the founding, and any rival Law 3 founds. avenCEO pays the owners in its own MIND (Law 5 on every sale), runs the harnesses and sells Aven service to the people. A person’s Aven spends the hours its person buys on help for the person and on work items for the COOPs (their running items and work proposals), and each COOP pays those items by skill × hours delivered. The owner-only cohort buys no work hours. An Aven hour takes a sixteenth of an accelerator-hour (sixteen sessions an accelerator, less as the harness learns); the people pay the inference in each hour straight to the owners, on avenCEO’s bill.', '');
+	const ys = [1, 2, 3, 5, 10, 20, 30, 40, 50, 60].filter((y) => A.some((r) => r.year === y && r.days >= 365));
+	L.push(`Seed ${b0.seed}, a person a day unless it says otherwise:`, '');
+	L.push('| year | people | accelerators (owners) | imported (€) | capacity, accelerator-h a day | inference sold, accelerator-h a day (use) | price, R an accelerator-h | Aven help h | Aven work h | COOP work asked · done, h a day | what bound the Aven service (share of days) |', '|---|---|---|---|---|---|---|---|---|---|---|');
+	for (const y of ys) {
+		const r = A.find((x) => x.year === y);
+		const own = (r.owners ?? []).filter((o) => o.chips > 0.5);
+		L.push(`| ${y} | ${k0(r.people)} | ${k0(r.chips)} (${own.map((o) => `${o.label ?? o.id} ${k0(o.chips)}`).join(', ') || '–'}) | ${k0(r.imported?.n)} (€${k0(r.imported?.eur)}) | ${k0(r.capAHDay)} | ${k0(r.AHDay)} (${pc(r.utilization, 0)}) | ${k3(r.inferPriceR)} | ${k1(r.all?.helpH)} | ${k1(r.all?.workH)} | ${k0((r.work?.runNeedDay ?? 0) + (r.work?.propNeedDay ?? 0))} · ${k0(r.work?.hoursDay)} | ${r.bind?.words ?? '–'} (${pc(r.bind?.share, 0)}) |`);
+	}
+	L.push('');
+	L.push('**By tenth of MIND holdings** (seed ' + b0.seed + '): Aven hours a person a day (help · work) and MIND income in R a day by source: the HEARTS half (what the person’s own 24 HEARTS make), Aven work items, Law 5 dividends.', '');
+	L.push('| year | tenth | help h | work h | HEARTS half | work items | dividends | all | share from work |', '|---|---|---|---|---|---|---|---|---|');
+	for (const y of [1, 5, 10, 30, 60].filter((y) => A.some((r) => r.year === y))) {
+		const r = A.find((x) => x.year === y);
+		for (const k of [1, 2, 5, 10]) {
+			const t = r.tenths?.[k];
+			if (!t) continue;
+			const all = (t.hearts ?? 0) + (t.work ?? 0) + (t.div ?? 0);
+			L.push(`| ${y} | ${k === 1 ? '1 (poorest)' : k === 10 ? '10 (richest)' : k} | ${k1(t.helpH)} | ${k1(t.workH)} | ${k2(t.hearts)} | ${k2(t.work)} | ${k2(t.div)} | ${k2(all)} | ${pc(all > 0 ? t.work / all : NaN, 0)} |`);
+		}
+	}
+	L.push('');
+	// where it binds: accelerators × hours × electricity, or the people's MIND, or what people want
+	const binds = {};
+	for (const r of A.filter((x) => x.days >= 365)) binds[r.bind?.words ?? '–'] = [...(binds[r.bind?.words ?? '–'] ?? []), r.year];
+	const span = (yy) => (yy.length > 1 ? `years ${yy[0]}–${yy.at(-1)}` : `year ${yy[0]}`);
+	L.push(`**Where it binds.** ${Object.entries(binds).map(([why, yy]) => `${cap1(why)}: ${span(yy)} (${yy.length} year${yy.length > 1 ? 's' : ''})`).join('; ')}. The physical limit is accelerators × hours × electricity: the owners keep ${pc(1 / 1.25, 0)} of their capacity in use and buy another accelerator when they run short, so the accelerators bind only for the days before a new one arrives; while the village is built, what binds is what people can pay (their MIND), and once it is built, what people want at the day’s prices. ${A.some((r) => r.spaceShortDays > 0) ? `The data halls ran out of floor on ${k0(A.reduce((a, r) => a + (r.spaceShortDays ?? 0), 0))} days.` : 'The data halls never ran out of floor.'}`, '');
+	// the trap
+	const last = A.filter((r) => r.days >= 365).at(-1), first = A.find((r) => r.days >= 365 && r.year >= 2) ?? A[0];
+	const t1 = last?.tenths?.[1], t5 = last?.tenths?.[5], f1 = first?.tenths?.[1];
+	if (t1 && t5) {
+		const inc = (t) => (t.hearts ?? 0) + (t.work ?? 0) + (t.div ?? 0);
+		const nc = b0.s.newcomers ?? {};
+		L.push(`**The trap: does the poorest tenth get out?** In year ${last.year} the poorest tenth by holdings bought ${k1(t1.workH)} hours of Aven work a person a day (the middle tenth ${k1(t5.workH)}), earned ${k2(t1.work)} R a day from work items (the middle tenth ${k2(t5.work)}), and had ${k2(inc(t1))} R a day of MIND income in all, ${pc(inc(t1) / Math.max(1e-12, inc(t5)), 0)} of the middle tenth’s; ${pc(t1.hearts / Math.max(1e-12, inc(t1)), 0)} of it is the HEARTS half (in year ${first.year}: ${k1(f1?.workH)} work hours and ${k2(f1?.work)} R from work). An Aven buys work hours only while an hour of its work earns at least what the Aven hour costs, and work items pay by skill × hours, so a low-skill Aven earns little, and the owner-only cohort buys no work hours at all. The poorest tenth is mostly these people and newcomers who arrive holding nothing: a newcomer’s Aven buys work hours from its first day (the work comes before its basics, so it can earn at all), so it earns from its second day; on its first day the HEARTS half alone did not pay for all its basics in the build-out’s winters (P1).`, '');
+	}
+	// the bank with and without AI exports
+	const aix = exps.find((e) => e.r.id === 'AIX');
+	if (aix) {
+		const b = aix.r.base.values, c = aix.r.changed.values;
+		const when = (v) => (v.repayYear > 0 ? `in year ${k0(v.repayYear)}` : v.netLast10M > 0 ? `not within the ${aix.r.years} years (about ${k0(-v.cumEndM / v.netLast10M)} more years at the last decade’s pace)` : 'never at the last decade’s pace: exports did not cover imports');
+		L.push(`**The bank with and without AI exports (AIX, seed ${aix.r.seed}, ${aix.r.years} years).** Electricity only (the base): bootstrap number €${k2(b.bootstrapM)} M, cumulative balance €${k2(b.cumEndM)} M at the end, repaid ${when(b)}. With Aven service sold abroad at €2 a GPU-hour (a small provider’s demand, 1,024 accelerators at 55 % use, estimated): bootstrap number €${k2(c.bootstrapM)} M, cumulative balance €${k2(c.cumEndM)} M at the end, repaid ${when(c)}. AI exports earned €${k0(c.aiEurY)} a year on average, while the accelerators bought for the village and the export cost €${k0(c.chipEurY)} a year (electricity only: €${k0(b.chipEurY)}); ${k0(c.chipsEnd)} accelerators stood at the end against ${k0(b.chipsEnd)}. The accelerators an exported hour runs on are bought abroad too, so only the margin over their price and electricity comes home.`, '');
+	}
 }
 
 /** the text with its first letter capitalized */
