@@ -46,6 +46,18 @@
 	const v = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(vault)));
 	const as = $derived(byId.get(actor));
 	const owned = $derived(world.vaults.filter((x) => x.owners.some((o) => 'vault' in o && o.vault === vault)));
+	/** the person's own vault lacks the master recovery key this device adds */
+	const recoveryMissing = $derived(
+		vault === world.mine && !!world.recovery && !v.owners.some((o) => 'signer' in o && o.signer === world.recovery)
+	);
+	/** A signer owner's name. @param {{ signer: string, recovery: boolean }} o */
+	const signerName = (o) => (o.recovery ? 'Master recovery key' : o.signer === v.root ? 'Root passkey' : 'Passkey');
+	/**
+	 * An owner the person's passkey may remove: of their own vault or one it acts for, never the last nor the root.
+	 * @param {{ vault: string } | { signer: string }} o
+	 */
+	const removable = (o) =>
+		v.owners.length > 1 && (vault === world.mine || v.via !== null) && !('signer' in o && o.signer === v.root);
 	/**
 	 * the caps in force over the vault by their group, a name and its ops, the strongest first (a cap whose slice this
 	 * device doesn't read alone in its own); and those it holds in other vaults
@@ -187,22 +199,38 @@
 	<div class="cards">
 		<article class="card">
 			<h3>Owners</h3>
-			<ul class="list">
+			<ul class="list grants">
 				{#each v.owners as o (('vault' in o ? o.vault : o.signer))}
 					<li>
-						{#if 'vault' in o}
-							<Mark vault={byId.get(o.vault)} size={28} />
-							<b>{nameOf(byId.get(o.vault))}</b>
-							<span class="soft">{KINDS[byId.get(o.vault)?.kind ?? 'human']}</span>
-						{:else}
-							<span class="key">🔑</span>
-							<b>{o.signer === v.root ? 'Root passkey' : 'Passkey'}</b>
-							<span class="soft mono">{short(o.signer)}</span>
+						<span class="cap">
+							{#if 'vault' in o}
+								<Mark vault={byId.get(o.vault)} size={28} />
+								<b>{nameOf(byId.get(o.vault))}</b>
+								<span class="soft">{KINDS[byId.get(o.vault)?.kind ?? 'human']}</span>
+							{:else}
+								<span class="key">{o.recovery ? '🛟' : '🔑'}</span>
+								<b>{signerName(o)}</b>
+								<span class="soft mono">{short(o.signer)}</span>
+							{/if}
+						</span>
+						{#if removable(o)}
+							<button class="btn quiet danger" disabled={busy} onclick={() => api.removeOwner(vault, o)}
+								>Remove</button
+							>
 						{/if}
 					</li>
 				{/each}
 			</ul>
 			<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
+			{#if recoveryMissing}
+				<p class="soft">
+					The master recovery key is avenDB's way back into a vault whose passkeys are all lost, while avenDB
+					is young. Your vault doesn't have it.
+				</p>
+				<button class="btn" disabled={busy} onclick={() => api.addRecovery()}
+					>Add the master recovery key</button
+				>
+			{/if}
 		</article>
 
 		{#if owned.length}

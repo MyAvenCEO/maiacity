@@ -573,8 +573,8 @@ impl Node {
         Ok((vault, avenceo))
     }
 
-    /// Found this device's person's human vault, its root their passkey, with this device in it, and make it known to
-    /// the server `offer` names, whose card it takes (`contact`): `authenticator` signs the vault's genesis and the edit
+    /// Found this device's person's human vault, its root their passkey, with this device in it and the master recovery
+    /// key the Lab adds among its owners (`Lab::set_recovery`), and make it known to the server `offer` names, whose card it takes (`contact`): `authenticator` signs the vault's genesis and the edit
     /// that adds this device in one ceremony (`Lab::drafting`). If the card names no avenCEO, as nobody has claimed the
     /// server yet, the same ceremony founds avenCEO, an aven vault the new human vault owns, and adds the server as its
     /// device, which the server signs too and keeps (`Lab::accept_claim`): the first person to found their vault
@@ -603,11 +603,13 @@ impl Node {
         let progress = &self.shared.opts.progress;
         progress.step("draft");
         let draft = move |lab: &mut Lab, me| {
+            let lab = &*lab;
             let found = |drafting: &mut Drafting<'_>, passkey| {
-                let (owners, root) = (vec![Principal::Signer(passkey)], Some(passkey));
+                // the master recovery key the Lab adds is an owner beside the passkey, by its standing consent
+                let ((owners, signers), root) = (lab.human_owners(passkey), Some(passkey));
                 let genesis =
                     Action::Genesis { kind: Kind::Human, owners, threshold: 1, root, nonce: 0, seal_to: vec![] };
-                let vault = VaultId::from(drafting.draft(&[passkey], genesis)?);
+                let vault = VaultId::from(drafting.draft(&signers, genesis)?);
                 drafting.draft(&[passkey, me], Action::AddDevice { vault, device: me, seal_to: None })?;
                 if let Some(key) = &key {
                     let avenceo = VaultId::from(drafting.draft(&[passkey], aven(vault))?);

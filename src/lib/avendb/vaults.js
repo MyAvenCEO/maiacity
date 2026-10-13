@@ -13,7 +13,8 @@
 /** @typedef {'relay' | 'backup' | 'read' | 'write' | 'owner'} Role */
 /** @typedef {{ id: string, name?: string | null, me: boolean }} DeviceView */
 /**
- * @typedef {{ id: string, kind: Kind, name: string | null, owners: ({ vault: string } | { signer: string })[],
+ * @typedef {{ id: string, kind: Kind, name: string | null,
+ *   owners: ({ vault: string } | { signer: string, recovery: boolean })[],
  *   threshold: number, root: string | null, devices: DeviceView[], via: string[] | null }} VaultView
  */
 /**
@@ -61,8 +62,8 @@
  *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, edits: number, proposals: number }} EntryView
  */
 /**
- * @typedef {{ me: string, mine: string, pqOnly: boolean, vaults: VaultView[], caps: CapView[], cells: CellView[],
- *   entries: EntryView[], groups: Group[] }} WorldView
+ * @typedef {{ me: string, mine: string, recovery: string | null, pqOnly: boolean, vaults: VaultView[], caps: CapView[],
+ *   cells: CellView[], entries: EntryView[], groups: Group[] }} WorldView
  */
 
 /** Each role ranked: each includes the ones before it. */

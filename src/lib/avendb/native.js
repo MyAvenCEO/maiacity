@@ -147,6 +147,16 @@ export class NativeDevice {
 		return call('revoke', actor, cap);
 	}
 
+	/** The master recovery key as an owner of its person's vault, the passkey's ceremony in the app's sheet. */
+	addRecovery() {
+		return call('addRecovery');
+	}
+
+	/** @param {string} vault @param {{ signer: string } | { vault: string }} owner */
+	removeOwner(vault, owner) {
+		return call('removeOwner', vault, owner);
+	}
+
 	/** New vaults its person's vault owns, in one ceremony, in the app's sheet. @param {{ name: string, kind: string }[]} vaults */
 	foundVaults(vaults) {
 		return call('foundVaults', vaults);

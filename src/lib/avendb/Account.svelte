@@ -525,6 +525,12 @@
 			act(role === 'owner' ? `Revoking: ${asks} once` : 'Revoking', async () =>
 				device.revoke(actor, cap, await approver())
 			),
+		/** The master recovery key as an owner of the person's vault: one prompt. */
+		addRecovery: () =>
+			act(`Adding the master recovery key: ${asks} once`, async () => device.addRecovery(await approver())),
+		/** @param {string} vault @param {{ signer: string } | { vault: string }} owner */
+		removeOwner: (vault, owner) =>
+			act(`Removing an owner: ${asks} once`, async () => device.removeOwner(vault, owner, await approver())),
 		/** @param {{ name: string, kind: string }[]} vaults */
 		foundVaults: (vaults) =>
 			act(`Creating ${count(vaults.length, 'vault')}: ${asks} once`, async () =>

@@ -207,6 +207,14 @@ impl Service {
                 d.revoke(vault(0)?, CapId(a.id(1)?), &self.approver()?).await?;
                 Value::Null
             }
+            "addRecovery" => {
+                d.add_recovery(&self.approver()?).await?;
+                Value::Null
+            }
+            "removeOwner" => {
+                d.remove_owner(vault(0)?, words::owner_of(a.get(1))?, &self.approver()?).await?;
+                Value::Null
+            }
             _ => bail!("no call {call:?}"),
         })
     }
@@ -329,7 +337,8 @@ impl Service {
         let mut entropy = Zeroizing::new([0; 32]);
         getrandom::fill(&mut *entropy).map_err(|e| anyhow!("no randomness: {e}"))?;
         let (name, store, direct) = (name.trim().to_string(), Some(self.config.dir.join(STORE)), self.config.direct);
-        Ok((Start { name, relay, entropy: *entropy, now: now(), direct, store, progress }, ending))
+        let (entropy, recovery) = (*entropy, Start::recovery());
+        Ok((Start { name, relay, entropy, now: now(), direct, store, progress, recovery }, ending))
     }
 
     /// The steps of the start under way, or of the last (`avendb_browser::steps_json`): null before the first.
