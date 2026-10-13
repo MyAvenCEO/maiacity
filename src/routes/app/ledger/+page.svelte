@@ -53,7 +53,6 @@
 				<p class="eyebrow">{me ? `${me.name} · all you hold, in ❤︎` : 'MaiaCity V1'}</p>
 				{#if me}
 					<p class="balance">{f(inHearts(view, me.wallet, hv))} <small>❤︎</small></p>
-					<p class="dim">{f(me.wallet.HEARTS)} ❤︎ own · {MINDS.map((t) => `${f(me.wallet[t])} ${TOKEN_LABEL[t]}`).join(' · ')}</p>
 				{:else}
 					<p class="balance small">No seat yet</p>
 					<p class="dim">Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> to mint and invest. Every wallet below is open to read.</p>
