@@ -1,6 +1,6 @@
 // MaiaCity V1's rules (game/maiacity-v1/engine.js): HEARTS, the 50/50 MIND split, the pool, rent and the melt.
 import { expect, test } from "bun:test";
-import { DAY_MS, act, advance, ledgerOf, newGame, price, supply } from "../../game/maiacity-v1/engine.js";
+import { DAY_MS, act, advance, ledgerOf, monthsAt, newGame, price, supply } from "../../game/maiacity-v1/engine.js";
 
 const T0 = Date.UTC(2026, 9, 13);
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
@@ -75,6 +75,26 @@ test("a MIP needs two signatures and applies at once in the same game: settings 
   s = act(s, "A", { type: "reject", number: 2, note: "no" }, T0);
   expect(s.mips[1].status).toBe("rejected");
   expect(s.settings.poolShare).toBe(0.05);
+});
+
+test("a MIP may change every setting and every COOP: the clock speed, the mint window, signatures, names and assets", () => {
+  let s = newGame(T0, { demurrage: 0 });
+  // 12 h a month from day 2: the clock keeps where it stood and runs twice as fast from then
+  s = act(s, "A", { type: "propose", mip: { title: "Faster", settings: { hoursPerMonth: 12, mintWindowHours: 48 } } }, T0 + DAY_MS / 2);
+  s = act(s, "B", { type: "sign", number: 1 }, T0 + DAY_MS / 2);
+  s = advance(s, T0 + DAY_MS);
+  expect(monthsAt(s, T0 + DAY_MS)).toBeCloseTo(1.5, 6);
+  expect(s.month).toBe(1);
+  s = act(s, "A", { type: "mint" }, T0 + 3 * DAY_MS);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(720 + 48, 6);
+  // the Village COOP renamed, its assets rewritten; then one signature is enough
+  s = act(s, "A", { type: "propose", mip: { title: "Village kit", coops: { village: { name: "Valley COOP", assets: [{ name: "The pickup", kind: "Vehicle" }, { name: "A tractor", kind: "Vehicle" }] } }, settings: { signatures: 1 } } }, T0 + 3 * DAY_MS);
+  s = act(s, "B", { type: "sign", number: 2 }, T0 + 3 * DAY_MS);
+  expect(s.coops.village.name).toBe("Valley COOP");
+  expect(s.coops.village.assets.map((x) => x.id)).toEqual(["asset-1", "asset-2"]);
+  s = act(s, "A", { type: "propose", mip: { title: "Cheap", settings: { tentRent: 1 } } }, T0 + 3 * DAY_MS);
+  expect(s.mips[2].status).toBe("accepted");
+  expect(() => act(s, "A", { type: "propose", mip: { title: "Bad", coops: { nowhere: { name: "x" } } } }, T0 + 3 * DAY_MS)).toThrow();
 });
 
 // the shared game in the database (PGlite): seats, moves, locks
