@@ -21,6 +21,8 @@
  *                                                  writes nothing unless --out is given
  *   --set key=value                               change a setting in every world (exploring; the report says so)
  *   --out <dir>                                   write proof.md and proof.csv elsewhere (proof.json only on a full run)
+ *   --save <file>, --load <file>                  keep the runs' results; report from them again without running
+ *                                                  (refused when the engine's files changed since)
  *
  * Every number in the report is computed by the run; nothing is typed in.
  */
@@ -28,6 +30,7 @@ import { Worker, isMainThread, parentPort, workerData } from 'node:worker_thread
 import { fileURLToPath } from 'node:url';
 import { cpus } from 'node:os';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import v8 from 'node:v8';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -110,8 +113,22 @@ async function main() {
 	const par = Math.max(1, Math.min(jobs.length, cpus().length));
 	process.stderr.write(`${jobs.length} jobs (${specs.length} scenario worlds, ${expIds.length} experiments) on ${par} threads\n`);
 	const t0 = Date.now();
-	const results = await runAll(jobs, par);
-	const wall = Date.now() - t0;
+	// --save <file> keeps the runs' results (v8 serialized, with the engine's hash), --load <file> reports from them
+	// without running again (only when the engine's files are unchanged)
+	const si = args.indexOf('--save'), li = args.indexOf('--load');
+	const { ENGINE_FILES: EF, engineHash: eh } = await import(join(LIB, 'proofRun.js'));
+	const hashNow = eh(Object.fromEntries(EF.map((fl) => [fl, readFileSync(join(LIB, fl), 'utf8')])));
+	let results, wall;
+	if (li >= 0) {
+		const saved = v8.deserialize(readFileSync(args[li + 1]));
+		if (saved.hash !== hashNow) throw new Error(`--load: the saved runs are of engine ${saved.hash}, the files are ${hashNow}`);
+		(results = saved.results), (wall = saved.wall);
+		process.stderr.write(`loaded ${results.length} results (engine ${saved.hash})\n`);
+	} else {
+		results = await runAll(jobs, par);
+		wall = Date.now() - t0;
+		if (si >= 0) writeFileSync(args[si + 1], v8.serialize({ hash: hashNow, wall, results }));
+	}
 	const R = {}, detail = {};
 	for (const m of results.filter((x) => x.job.kind === 'run')) {
 		R[m.job.spec.key] = { ...m.s, ms: m.ms };
@@ -433,7 +450,7 @@ function aiMarket(L, bases, exps) {
 	const k2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : '–');
 	const k3 = (x) => (Number.isFinite(x) ? x.toFixed(3) : '–');
 	L.push('## The AI market (avenCEO)', '');
-	L.push('The settlement COOPs and the Village COOP own the accelerators, in the data halls of their utility domes, and run them on their own power. They buy them through the euro border with euros the MaiaCity COOP’s bank advances, repaid in their own MIND, and replace them as they wear. They sell inference by the accelerator-hour to the AI COOPs: the avenCEO COOP, founded at the founding, and any rival Law 3 founds. avenCEO pays the owners in its own MIND (Law 5 on every sale), runs the harnesses and sells Aven service to the people. A person’s Aven spends the hours its person buys on help for the person and on work items for the COOPs (their running items and work proposals), and each COOP pays those items by skill × hours delivered. The owner-only cohort buys no work hours. An Aven hour takes a sixteenth of an accelerator-hour (sixteen sessions an accelerator, less as the harness learns); the people pay the inference in each hour straight to the owners, on avenCEO’s bill.', '');
+	L.push('The settlement COOPs and the Village COOP own the accelerators, in the data halls of their utility domes, and run them on their own power. They buy them through the euro border with euros the MaiaCity COOP’s bank advances, repaid in their own MIND, and replace them as they wear. They sell inference by the accelerator-hour to the AI COOPs: the avenCEO COOP, founded at the founding, and any rival Law 3 founds. avenCEO pays the owners in its own MIND (Law 5 on every sale), runs the harnesses and sells Aven service to the people. A person’s Aven spends Aven hours on help for its person, bought from what the person holds, and on work items for the COOPs (their running items and work proposals). Each COOP pays those items by skill × hours delivered; the pay settles the hours’ Aven service first and the person gets the rest, so nobody needs MIND in hand before their Aven can work. The owner-only cohort does no work. An Aven hour takes a sixteenth of an accelerator-hour (sixteen sessions an accelerator, less as the harness learns); the people pay the inference in each hour straight to the owners, on avenCEO’s bill.', '');
 	const ys = [1, 2, 3, 5, 10, 20, 30, 40, 50, 60].filter((y) => A.some((r) => r.year === y && r.days >= 365));
 	L.push(`Seed ${b0.seed}, a person a day unless it says otherwise:`, '');
 	L.push('| year | people | accelerators (owners) | imported (€) | capacity, accelerator-h a day | inference sold, accelerator-h a day (use) | price, R an accelerator-h | Aven help h | Aven work h | COOP work asked · done, h a day | what bound the Aven service (share of days) |', '|---|---|---|---|---|---|---|---|---|---|---|');
@@ -466,7 +483,7 @@ function aiMarket(L, bases, exps) {
 	if (t1 && t5) {
 		const inc = (t) => (t.hearts ?? 0) + (t.work ?? 0) + (t.div ?? 0);
 		const nc = b0.s.newcomers ?? {};
-		L.push(`**The trap: does the poorest tenth get out?** In year ${last.year} the poorest tenth by holdings bought ${k1(t1.workH)} hours of Aven work a person a day (the middle tenth ${k1(t5.workH)}), earned ${k2(t1.work)} R a day from work items (the middle tenth ${k2(t5.work)}), and had ${k2(inc(t1))} R a day of MIND income in all, ${pc(inc(t1) / Math.max(1e-12, inc(t5)), 0)} of the middle tenth’s; ${pc(t1.hearts / Math.max(1e-12, inc(t1)), 0)} of it is the HEARTS half (in year ${first.year}: ${k1(f1?.workH)} work hours and ${k2(f1?.work)} R from work). An Aven works for the COOPs only while an hour of its work earns at least what the Aven hour costs; the work item’s pay settles the hour’s Aven service first and the person gets the rest (the work income here is that rest), so nobody needs MIND in hand before their Aven can work. Work items pay by skill × hours, so a low-skill Aven earns little, and the owner-only cohort does no work at all. The poorest tenth is mostly these people and newcomers who arrive holding nothing: a newcomer’s Aven works from its first day and is paid that evening; on its first day the HEARTS half alone did not pay for all its basics in the build-out’s dear quarters (P1, the arrival day).`, '');
+		L.push(`**The trap: does the poorest tenth get out?** In year ${last.year} the poorest tenth’s Avens by holdings worked ${k1(t1.workH)} hours a person a day for the COOPs (the middle tenth ${k1(t5.workH)}), earned ${k2(t1.work)} R a day from work items (the middle tenth ${k2(t5.work)}), and had ${k2(inc(t1))} R a day of MIND income in all, ${pc(inc(t1) / Math.max(1e-12, inc(t5)), 0)} of the middle tenth’s; ${pc(t1.hearts / Math.max(1e-12, inc(t1)), 0)} of it is the HEARTS half (in year ${first.year}: ${k1(f1?.workH)} work hours and ${k2(f1?.work)} R from work). An Aven works for the COOPs only while an hour of its work earns at least what the Aven hour costs; the work item’s pay settles the hour’s Aven service first and the person gets the rest (the work income here is that rest), so nobody needs MIND in hand before their Aven can work. Work items pay by skill × hours, so a low-skill Aven earns little, and the owner-only cohort does no work at all. The poorest tenth is mostly these people and newcomers who arrive holding nothing: a newcomer’s Aven works from its first day and is paid that evening; on its first day the HEARTS half alone did not pay for all its basics in the build-out’s dear quarters (P1, the arrival day).`, '');
 	}
 	// the bank with and without AI exports
 	const aix = exps.find((e) => e.r.id === 'AIX');
@@ -759,6 +776,7 @@ function p1Why(L, bases) {
 	}
 	L.push('');
 	const r0 = bases[0].s.rampShort;
+	const k2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : '–');
 	if (r0 && r0.arrivals > 0) {
 		const all = (k) => bases.reduce((a, b) => a + (b.s.rampShort?.[k] ?? 0), 0);
 		const arrPD = all('arrivalPD'), arrN = all('arrivals');

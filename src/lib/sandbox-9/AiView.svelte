@@ -196,7 +196,7 @@
 		{:else}
 			<p class="fine">{running ? 'The first year fills in as the run goes.' : 'No yearly AI ledger in this record.'}</p>
 		{/if}
-		<p class="fine">The settlement COOPs and the Village COOP own the accelerators, in the data halls of their utility domes, run them on their own power and buy them through the euro border (the MaiaCity COOP’s bank advances the euros; they pay back in their own MIND). They sell inference by the accelerator-hour to the AI COOPs, avenCEO first; avenCEO runs the harnesses and sells Aven service to the people, who pay in any MIND (the seller receives only its own MIND; Law 5 pays a fifth to its holders). A person’s Aven spends its hours on help for its person and on work items for the COOPs.</p>
+		<p class="fine">The settlement COOPs and the Village COOP own the accelerators, in the data halls of their utility domes, run them on their own power and buy them through the euro border (the MaiaCity COOP’s bank advances the euros; they pay back in their own MIND). They sell inference by the accelerator-hour to the AI COOPs, avenCEO first; avenCEO runs the harnesses and sells Aven service to the people, who pay in any MIND (the seller receives only its own MIND; Law 5 pays a fifth to its holders). A person’s Aven spends its hours on help for its person, bought from what the person holds, and on work items for the COOPs, whose pay settles the hours’ Aven service first; the person gets the rest, so nobody needs MIND in hand before their Aven can work.</p>
 	{/if}
 </div>
 
