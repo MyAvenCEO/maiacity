@@ -7,7 +7,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import Mark from './Mark.svelte';
-	import { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, heartsValue, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
+	import { DAYS_A_MONTH, MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, heartsValue, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
 
 	/** show: 'all', or only the 'cash' flow (rents, dividends, pay days) or only the 'tx' (every transaction) */
 	let { view, who, limit = 200, show = 'all', tall = false } = $props();
@@ -36,8 +36,12 @@
 		for (const r of subsOut) n[r.token] = (n[r.token] ?? 0) - r.weekly;
 		return MINDS.filter((t) => t in n).map((t) => [t, n[t]]);
 	});
+	/** a player's own HEARTS: they grow every game day and are minted when the player likes, a month's worth as income */
+	const player = $derived(view && who?.startsWith('player:') ? view.players[who.slice(7)] : null);
+	const grows = $derived(player ? view.settings.heartsPerDay * DAYS_A_MONTH : 0);
+	const heartsName = $derived(player ? `${player.name.charAt(0).toLowerCase()}${player.name.slice(1).replace(/\s+/g, '')}HEARTS` : '');
 	const hv = $derived(view ? heartsValue(view) : null);
-	const net = $derived(hv ? weekNet.reduce((a, [t, x]) => a + x * 4 * hv[t], 0) : 0);
+	const net = $derived(hv ? grows + weekNet.reduce((a, [t, x]) => a + x * 4 * hv[t], 0) : 0);
 	const days = $derived(view ? payDaysOf(view, who) : []);
 	const signed = (x, d = 3) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${f(Math.abs(x), d)}`;
 	const sign = (e) => (e.kind === 'arrears' ? '' : e.to === who ? '+' : e.from === who ? '−' : '');
@@ -45,10 +49,13 @@
 </script>
 
 {#if show !== 'tx'}
-		{#if subsIn.length || subsOut.length || divs.length}
+		{#if grows || subsIn.length || subsOut.length || divs.length}
 			<p class="eyebrow">Cash flow · a month, paid weekly</p>
 			<div class="flow">
-				{#if subsIn.length || divs.length}<p class="group">In</p>{/if}
+				{#if grows || subsIn.length || divs.length}<p class="group">In</p>{/if}
+				{#if grows}
+					<div class="row" title="they grow all the time and are yours once minted; the right to mint reaches back {view.settings.mintWindowHours} real hours"><span>Minted<small>{heartsName} · {f(view.settings.heartsPerDay, 0)} a game day</small></span><span class="amt plus">+{f(grows)} ❤︎</span></div>
+				{/if}
 				{#each subsIn as r (r.what + r.from + r.to)}
 					<div class="row" title="paid weekly, {f(r.weekly)} {TOKEN_LABEL[r.token]} each pay day"><span>{r.what}<small>from {nameOf(view, r.from)}{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.monthly * hv[r.token])} ❤︎<small>{f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
 				{/each}
@@ -64,7 +71,7 @@
 				{#each subsOut as r (r.what + r.from + r.to)}
 					<div class="row" title="paid weekly, {f(r.weekly)} {TOKEN_LABEL[r.token]} each pay day"><span>{r.what}<small>to {nameOf(view, r.to)}{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.monthly * hv[r.token])} ❤︎<small>{f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
 				{/each}
-				<div class="row net" title="4 pay days a month; a payer short of the MIND swaps through the pool"><span>Net a month<small>next pay day {vdate((view.week + 1) / 4)}</small></span><span class="amt" class:plus={net > 0} class:minus={net < 0}>{signed(net, 2)} ❤︎{#each weekNet as [t, x] (t)}<small>{signed(x * 4)} {TOKEN_LABEL[t]}</small>{/each}</span></div>
+				<div class="row net" title="4 pay days a month; a payer short of the MIND swaps through the pool"><span>Net a month<small>next pay day {vdate((view.week + 1) / 4)}</small></span><span class="amt" class:plus={net > 0} class:minus={net < 0}>{signed(net, 2)} ❤︎{#if grows}<small>+{f(grows)} {heartsName}</small>{/if}{#each weekNet as [t, x] (t)}<small>{signed(x * 4)} {TOKEN_LABEL[t]}</small>{/each}</span></div>
 			</div>
 		{/if}
 		{#if days.length && show === 'all'}
@@ -79,7 +86,7 @@
 				{/each}
 			</div>
 		{/if}
-		{#if show === 'cash' && !subsIn.length && !subsOut.length && !divs.length}<p class="about">No rents in or out yet.</p>{/if}
+		{#if show === 'cash' && !grows && !subsIn.length && !subsOut.length && !divs.length}<p class="about">No rents in or out yet.</p>{/if}
 {/if}
 {#if show !== 'cash'}
 		<p class="eyebrow">Every transaction</p>
