@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import { bar, part, shared, soft, std, v3 } from './parts';
-import { batteryPack, powercube, solarPanel } from './village.js';
+import { batteryPack, powercube, solarRow } from './village.js';
 
 export const WAYSIDE_INFO = {
 	van: { name: 'The travel van', note: 'an old minibus that has crossed a continent: 5.0 × 1.9 m, 2.3 m high, its blue paint sun-faded and rusting through, a sliding side door, a roof rack piled with bags, a sack of rice and a spare tyre' },
@@ -250,8 +250,7 @@ export function villageStore({ withPowercube = true } = {}) {
 		cube.position.set(0.6, 0.1, -0.4);
 		g.add(cube);
 	}
-	const solar = solarPanel();
-	solar.scale.set(6, 2, 2);
+	const solar = solarRow(6);
 	solar.position.set(0, 0, -9);
 	solar.rotation.y = Math.PI;
 	const battery = batteryPack();

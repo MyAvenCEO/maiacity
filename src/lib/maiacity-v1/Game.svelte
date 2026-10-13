@@ -82,7 +82,8 @@
 	$effect(() => {
 		if (tour?.kind !== 'intro' || !world || playing) return;
 		playing = 'intro';
-		world.intro().then(() => ((playing = ''), mark('arrive')));
+		const id = tour.id;
+		world.intro(tour.part).then(() => ((playing = ''), mark(id)));
 	});
 	async function act(step) {
 		if (playing) return;
@@ -255,6 +256,17 @@
 	const steps = $derived(view && player && mine ? story(view, seat, seen[seat] ?? {}) : []);
 	const tourAt = $derived(steps.findIndex((x) => !x.done));
 	const tour = $derived(tourAt >= 0 && seenOf && seenOf === started && !seen[seat]?.off ? { ...steps[tourAt], n: tourAt + 1, steps: steps.length } : null);
+	// each milestone of the story unlocks the controls and views it talks about (Samuel 2026-10-13): nothing but the
+	// world in the trailer, then the HEARTS and the clock, the mint, the COOPs and their MINDs, invest, swap, and at
+	// pay day the player's own page and the ledger; the rest comes with the last steps. Without a story, all of it.
+	const UNLOCKS = { welcome: ['brand'], hearts: ['hearts', 'clock'], mint: ['mint'], coops: ['coops', 'minds'], maia: ['invest'], pool: ['swap'], payday: ['you', 'ledger', 'seats'], melt: ['mips', 'rules'], done: ['all'] };
+	const unlocked = $derived.by(() => {
+		if (!tour) return null;
+		const on = new Set();
+		for (const x of steps.slice(0, tourAt + 1)) for (const u of UNLOCKS[x.id] ?? []) on.add(u);
+		return on;
+	});
+	const shows = (what) => !unlocked || unlocked.has('all') || unlocked.has(what) || (what.startsWith('view:') && unlocked.has('mips'));
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
 		try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
@@ -286,31 +298,31 @@
 		{/each}
 	{/if}
 
-	<div class="brand panel">MaiaCity <b>V1</b></div>
+	{#if !view || shows('brand')}<div class="brand panel">MaiaCity <b>V1</b></div>{/if}
 
 	{#if view && player}
 		<div class="topstats">
-			<span class="stat panel" title="HEARTS held, and ready to mint"><span class="heart">♥</span> <b>{f(player.wallet.HEARTS, 1)}</b>{#if mint.amount > 0.05}<em>+{f(mint.amount, 1)}</em>{/if}</span>
-			{#each MINDS as t (t)}<span class="stat panel" title={TOKEN_LABEL[t]}><i style="background:{TOKEN_COLOUR[t]}"></i> <b>{f(player.wallet[t], 1)}</b></span>{/each}
-			<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). {speed}, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
+			{#if shows('hearts')}<span class="stat panel" title="HEARTS held, and ready to mint"><span class="heart">♥</span> <b>{f(player.wallet.HEARTS, 1)}</b>{#if mint.amount > 0.05}<em>+{f(mint.amount, 1)}</em>{/if}</span>{/if}
+			{#if shows('minds')}{#each MINDS as t (t)}<span class="stat panel" title={TOKEN_LABEL[t]}><i style="background:{TOKEN_COLOUR[t]}"></i> <b>{f(player.wallet[t], 1)}</b></span>{/each}{/if}
+			{#if shows('clock')}<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). {speed}, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
 		</div>
 
 		<div class="topright">
-			<div class="seg panel">
+			{#if shows('seats')}<div class="seg panel">
 				{#each SEATS as s (s)}
 					<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
 				{/each}
-			</div>
-			<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
+			</div>{/if}
+			{#if shows('clock')}<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
 		</div>
 
-		<nav class="tools" class:open={tools}>
-			{#each allTools as [id, ic, label] (id)}
+		{#if shows('mint')}<nav class="tools" class:open={tools}>
+			{#each allTools.filter(([id]) => shows(id)) as [id, ic, label] (id)}
 				<button class:on={panel === id} class:hint={tour?.hint === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
 			{/each}
-			<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>
-		</nav>
-		{#if canMove}
+			{#if shows('you')}<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>{/if}
+		</nav>{/if}
+		{#if canMove && shows('mint')}
 			<!-- the universal mint button: always at hand, over the nav pill -->
 			<button class="mintbar" class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
@@ -359,11 +371,11 @@
 				</div>
 			</div>
 		{/if}
-		<button class="fab" class:on={tools} aria-label="Tools" onclick={() => (tools = !tools)}>
+		{#if shows('mint')}<button class="fab" class:on={tools} aria-label="Tools" onclick={() => (tools = !tools)}>
 			<svg viewBox="0 0 24 24"><path d={tools ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} /></svg>
-		</button>
+		</button>{/if}
 
-		{#if panel}
+		{#if panel && shows(panel)}
 		<aside class="card panel" class:wide={panel === 'ledger' || panel === 'mips' || isViewPanel(panel)}>
 			<button class="close" aria-label="Close" onclick={() => (panel = null)}>×</button>
 

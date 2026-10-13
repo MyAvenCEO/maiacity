@@ -16,7 +16,8 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.js';
+import { batteryPack, pickup, powercube, solarRow } from '$lib/models/village.js';
+import { SPEED } from '$lib/models/units.js';
 import { maiaCentre, oldShed, travelVan } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 
@@ -73,8 +74,8 @@ const VAN_OUT = new THREE.CatmullRomCurve3(
 const STORE = { x: VX + 2, z: VZ - 13 };
 const CUBE_IN_SHED = V(STORE.x + 0.6, 0.1, STORE.z - 0.4);
 /** our tribe: the tent at the middle, the pickup's round lot, a little yard for the powercube once it is home */
-const LOT = { x: -16, z: 10, r: 8 };
-const YARD = { x: 12, z: -4, r: 5.5 };
+const LOT = { x: -16, z: 10, r: 5 }; // room to turn a 5.4 m pickup
+const YARD = { x: 12, z: -4, r: 3 };
 const STORE_YARD = { x: STORE.x + 1, z: STORE.z - 3, r: 14 };
 const PATH_W = 4.2; // a narrow offroad track, two ruts in it (Samuel 2026-10-13)
 /** the gravel track's centre line: off the highway beside the bus stop, a slow meander east through the steppe and
@@ -225,10 +226,10 @@ function steppe() {
 		m.castShadow = shadow;
 		g.add(m);
 	};
-	scatter(new THREE.ConeGeometry(0.45, 0.9, 5).translate(0, 0.4, 0), mat(0xb39a5c), Math.round(6000 * K * K), 1500 * K, [0.6, 1.8]);
-	scatter(new THREE.ConeGeometry(0.4, 0.7, 5).translate(0, 0.3, 0), mat(0xa48e55), Math.round(3000 * K * K), 1500 * K, [0.7, 1.6]);
-	scatter(new THREE.IcosahedronGeometry(1, 0).translate(0, 0.5, 0), mat(0x8c8f5a), Math.round(900 * K * K), 1400 * K, [0.6, 1.8], true);
-	scatter(new THREE.DodecahedronGeometry(0.7, 0).translate(0, 0.2, 0), mat(0x9d927d), Math.round(500 * K * K), 1400 * K, [0.4, 1.6], true);
+	scatter(new THREE.ConeGeometry(0.45, 0.9, 5).translate(0, 0.4, 0), mat(0xb39a5c), Math.round(6000 * K * K), 1500 * K, [0.4, 0.9]); // grass tussocks, 0.3-0.8 m
+	scatter(new THREE.ConeGeometry(0.4, 0.7, 5).translate(0, 0.3, 0), mat(0xa48e55), Math.round(3000 * K * K), 1500 * K, [0.45, 1]);
+	scatter(new THREE.IcosahedronGeometry(1, 0).translate(0, 0.5, 0), mat(0x8c8f5a), Math.round(900 * K * K), 1400 * K, [0.4, 0.9], true); // shrubs, 0.8-1.8 m across
+	scatter(new THREE.DodecahedronGeometry(0.7, 0).translate(0, 0.2, 0), mat(0x9d927d), Math.round(500 * K * K), 1400 * K, [0.3, 1.2], true); // stones and a few boulders
 	// thorn trees: a crooked trunk and a flat crown
 	const trunk = new THREE.CylinderGeometry(0.18, 0.3, 3.4, 5).translate(0, 1.7, 0);
 	const crown = new THREE.CylinderGeometry(3.4, 2.2, 1, 7).translate(0, 3.6, 0);
@@ -299,9 +300,9 @@ function bushes() {
 		if (hexKey(x, z) !== '0,0' || Math.hypot(x, z) > HEX_R * 0.8 || onGravel(x, z, 3)) continue;
 		const b = new THREE.Group();
 		for (let k = 0, c = 2 + Math.floor(r() * 3); k < c; k++) {
-			const s = 0.7 + r() * 0.9;
+			const s = 0.35 + r() * 0.5; // bushes 1-2 m high
 			const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), leaves[(i + k) % 3]);
-			ball.position.set((r() - 0.5) * 1.6, s * 0.7, (r() - 0.5) * 1.6);
+			ball.position.set((r() - 0.5) * 1.1, s * 0.75, (r() - 0.5) * 1.1);
 			ball.castShadow = true;
 			b.add(ball);
 		}
@@ -312,9 +313,10 @@ function bushes() {
 	return g;
 }
 
-function tent() {
+/** the Tribe COOP's tent pitched: a 4 m geodesic dome, 2 m high at its middle, on a round timber deck */
+export function tent() {
 	const g = new THREE.Group();
-	const r = 4.2;
+	const r = 2;
 	const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 2), mat(0xf1e8d4, { side: THREE.DoubleSide }));
 	// keep the upper half only: a geodesic dome
 	const pos = shell.geometry.attributes.position;
@@ -325,10 +327,10 @@ function tent() {
 	g.add(shell);
 	const struts = new THREE.LineSegments(new THREE.EdgesGeometry(shell.geometry, 1), new THREE.LineBasicMaterial({ color: 0x6b5236 }));
 	g.add(struts);
-	const door = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2, 0.3), mat(0x3b2f24));
-	door.position.set(0, 1, r - 0.25);
+	const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.6, 0.2), mat(0x3b2f24));
+	door.position.set(0, 0.8, Math.sqrt(r * r - 1.6 * 1.6) - 0.05);
 	g.add(door);
-	const deck = new THREE.Mesh(new THREE.CylinderGeometry(r + 1.2, r + 1.2, 0.2, 24), mat(0xb08a5e));
+	const deck = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.8, r + 0.8, 0.2, 24), mat(0xb08a5e));
 	deck.position.y = 0.05;
 	deck.receiveShadow = true;
 	g.add(deck);
@@ -336,6 +338,11 @@ function tent() {
 }
 
 /** the tent packed: a canvas bundle with its poles, strapped, as it waits in the village shed */
+/** where the powercube and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up): the cube
+ *  across the bed behind the tool box, the tent strapped on top of it */
+const CUBE_ON_BED = V(0, 1.16, -1.6);
+const TENT_ON_BED = V(0, 1.16 + 1.15, -1.6);
+
 function packedTent() {
 	const g = new THREE.Group();
 	const canvas = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 1.3, 12).rotateZ(Math.PI / 2), mat(0xd9ccb0));
@@ -352,25 +359,26 @@ function packedTent() {
 	return g;
 }
 
-function person(seat) {
+/** a player: 1.8 m tall, their one backpack on */
+export function person(seat) {
 	const g = new THREE.Group();
 	g.name = `player:${seat}`;
-	const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 10), mat(SEAT_COLOUR[seat]));
-	body.position.y = 0.95;
+	const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.82, 4, 10), mat(SEAT_COLOUR[seat]));
+	body.position.y = 0.67;
 	body.castShadow = true;
 	body.name = g.name;
-	const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 10), mat(0xe8c4a0));
-	head.position.y = 2.05;
+	const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(0xe8c4a0));
+	head.position.y = 1.67;
 	head.castShadow = true;
 	head.name = g.name;
 	const glow = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0xe0435a, emissive: 0xe0435a, emissiveIntensity: 0.7 }));
-	glow.position.y = 3;
+	glow.position.y = 2.3;
 	glow.name = g.name;
 	// one backpack each, clothes and all they brought (Samuel 2026-10-13)
-	const pack = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.72, 0.3), mat(seat === 'A' ? 0x7a5a36 : 0x4f6b3a));
-	pack.position.set(0, 1.25, -0.5);
-	const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.62, 10).rotateZ(Math.PI / 2), mat(0x9c3b2f));
-	roll.position.set(0, 1.68, -0.5);
+	const pack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.5, 0.2), mat(seat === 'A' ? 0x7a5a36 : 0x4f6b3a));
+	pack.position.set(0, 1.1, -0.33);
+	const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.4, 10).rotateZ(Math.PI / 2), mat(0x9c3b2f));
+	roll.position.set(0, 1.4, -0.33);
 	pack.castShadow = roll.castShadow = true;
 	pack.name = roll.name = g.name;
 	g.add(body, head, glow, pack, roll);
@@ -503,17 +511,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// the village store: the old shed, the solar row and the battery the Village COOP keeps at its centre hex
 	const shed = named(oldShed(), 'asset:shed');
 	shed.position.set(STORE.x, 0, STORE.z);
-	const solar = named(solarPanel(), 'asset:solar');
-	solar.scale.set(6, 2, 2);
+	const solar = named(solarRow(6), 'asset:solar');
 	solar.position.set(STORE.x, 0, STORE.z - 9);
 	solar.rotation.y = Math.PI;
 	const battery = named(batteryPack(), 'asset:battery');
 	battery.position.set(STORE.x + 7, 0, STORE.z - 2);
 	battery.rotation.y = -0.3;
 	world.add(shed, solar, battery);
-	// the pickup, at twice its size (Samuel 2026-10-13), and the powercube it fetches
+	// the pickup at its real size (5.4 m), and the powercube it fetches, drawn as a small silenced cube that fits its bed
 	const truck = named(pickup(), 'asset:pickup');
-	truck.scale.setScalar(2);
 	const cube = named(powercube(), 'asset:powercube');
 	const bundle = named(packedTent(), 'asset:tent');
 	world.add(truck, cube, bundle);
@@ -568,7 +574,33 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			else if (at === 'stop') (p.position.copy(STOP), (p.rotation.y = -Math.PI / 2 - 0.5));
 			else p.position.copy(beside(truck, 1, s === me ? 1 : -1.6));
 		}
-		van.visible = false;
+		van.visible = at === 'van';
+		riding = at === 'van';
+		if (riding) {
+			for (const p of van.userData.people) p.visible = true;
+			for (const s of ['A', 'B']) people[s].visible = false;
+			controls.enabled = false;
+			lensIn();
+		} else if (!busy) {
+			controls.enabled = true;
+			if (camera.near < 0.5) lensOut();
+		}
+	}
+	/** still on the road (at 'van'): the van rolls on down the highway at its real speed, the camera in its back seat,
+	 *  while the story tells what lies ahead; the road loops far out on the steppe, so the van never reaches the stop */
+	let riding = false;
+	let rideT = 0;
+	const lensIn = () => ((camera.fov = camera.aspect < 0.8 ? 80 : 72), (camera.near = 0.05), camera.updateProjectionMatrix());
+	const lensOut = () => ((camera.near = 0.5), (camera.fov = camera.aspect < 0.8 ? 58 : 42), camera.updateProjectionMatrix());
+	function ride(step) {
+		rideT = (rideT + step) % 50;
+		van.position.set(VAN_HALT.x - 2200 + SPEED.highway * rideT, 0, VAN_HALT.z);
+		van.rotation.y = Math.PI / 2;
+		van.updateMatrixWorld(true);
+		const t = performance.now() / 1000;
+		camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
+		camera.lookAt(van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))));
+		for (const [i, p] of van.userData.people.entries()) p.userData.head.position.y = 1.62 + Math.sin(t * 9 + i) * 0.015;
 	}
 	const TENT_IN_SHED = V(STORE.x - 1.5, 0, STORE.z + 0.6);
 	/** the tent: packed in the shed, packed on the pickup's bed, or pitched at the middle of our hex */
@@ -582,21 +614,18 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (where === 'shed') bundle.position.copy(TENT_IN_SHED);
 		else if (where === 'bed') {
 			truck.add(bundle);
-			bundle.position.set(0, 1.17, -2.42);
+			bundle.position.copy(TENT_ON_BED);
 			bundle.rotation.set(0, 0, 0);
-			bundle.scale.setScalar(0.5);
 		}
 	}
 	function placeCube(where) {
 		if (cube.parent !== world) world.attach(cube);
-		cube.scale.setScalar(1);
 		if (where === 'shed') (cube.position.copy(CUBE_IN_SHED), (cube.rotation.y = 0));
 		else if (where === 'home') (cube.position.set(YARD.x, 0, YARD.z), (cube.rotation.y = -0.3));
 		else {
 			truck.add(cube);
-			cube.position.set(0, 1.16, -1.8);
-			cube.rotation.set(0, 0, 0);
-			cube.scale.setScalar(0.5); // the pickup is drawn at twice its size; the cube rides at its own
+			cube.position.copy(CUBE_ON_BED);
+			cube.rotation.set(0, 0, 0); // its 1.45 m across the 1.7 m bed
 		}
 	}
 
@@ -605,7 +634,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		centre: { target: V(STOP.x + 6, 2, STOP.z + 1), offset: V(-34, 26, -50) },
 		city: { target: V(CX + 120 * K, 0, CZ + 80 * K), offset: V(620 * K, 900 * K, 860 * K) },
 		village: { target: V(STORE.x, 2, VZ - 6), offset: V(52, 38, 58) },
-		tribe: { target: V(2, 1, 3), offset: V(138, 118, 170) }
+		tribe: { target: V(2, 1, 3), offset: V(30, 22, 40) }
 	};
 	let placeNow = '';
 	let placed = false; // the first place is taken at once, without easing
@@ -616,7 +645,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const p = PLACES[name];
 		if (!p) return;
 		placeNow = name;
-		if (busy) return; // taken up when the moment ends
+		if (busy || riding) return; // taken up when the moment ends
 		if (!placed) (placed = true), (now = true);
 		const offset = p.offset.clone().multiplyScalar(camera.aspect < 0.8 ? 1.65 : 1);
 		goal = { target: p.target.clone(), offset };
@@ -664,7 +693,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		onCaption(null);
 		const name = placeNow;
 		placeNow = '';
-		if (name) focus(name);
+		if (riding) (lensIn(), (controls.enabled = false));
+		else if (name) focus(name);
 		m?.done();
 	}
 	function runMoment(now) {
@@ -740,13 +770,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  below; inside the packed van; alongside it past the telegraph poles; the road ending at the abandoned gas station;
 	 *  the van pulling up and the newcomer stepping out; looking east, over their shoulder, to the green land; and up,
 	 *  over the whole city plot. Each shot carries its line of the story (onCaption). */
-	function intro() {
+	function intro(part = 'road') {
 		placed = true;
 		const me = people[stage.me];
 		// where the van is at the trailer's second T: far out on the steppe in the first two shots (a cut may jump), then
 		// on, slowing, to the bus stop
+		const VV = SPEED.highway; // the van at 80 km/h, braking to the bus stop over its last five seconds
+		const BRAKE = (VV * 5) / 2;
 		const vx = (T) =>
-			T < 6 ? VAN_HALT.x - 2200 + 22 * T : T < 12 ? VAN_HALT.x - 1400 + 22 * (T - 6) : T <= 17 ? VAN_HALT.x - 55 - 22 * (17 - T) : T <= 22 ? VAN_HALT.x - 55 + 55 * (1 - (1 - (T - 17) / 5) ** 2) : VAN_HALT.x;
+			T < 6 ? VAN_HALT.x - 2200 + VV * T : T < 12 ? VAN_HALT.x - 1400 + VV * (T - 6) : T <= 17 ? VAN_HALT.x - BRAKE - VV * (17 - T) : T <= 22 ? VAN_HALT.x - BRAKE + BRAKE * (1 - (1 - (T - 17) / 5) ** 2) : VAN_HALT.x;
 		const vanAt = (T) => {
 			van.position.set(vx(T), 0, VAN_HALT.z);
 			van.rotation.y = Math.PI / 2;
@@ -761,8 +793,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const shoulder = shot({ kind: 'move', from: [STOP.x - 7, 2.3, STOP.z - 4.5], to: [STOP.x - 2.6, 2.05, STOP.z - 1.4], aimFrom: [STOP.x, 1.8, STOP.z], aimTo: [CX + 240, 3, CZ - 70], curve: 'ease' });
 		let rise = null;
 		let T = 0;
-		return play(
-			[
+		const shots = [
 				{
 					dur: 6,
 					caption: { title: 'Somewhere past the end of the map…', dur: 6 },
@@ -810,7 +841,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				{
 					dur: 5,
 					caption: { title: 'Here, the old road ends.', dur: 5 },
-					start: () => lens(wide()),
+					start: () => {
+						lens(wide());
+						van.visible = true;
+						for (const p of van.userData.people) p.visible = false;
+						me.visible = false;
+					},
 					run: (k) => {
 						T = 17 + k * 5;
 						vanAt(T);
@@ -854,9 +890,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 					},
 					run: (k) => pose(rise(k))
 				}
-			],
-			{ hour: 8.6 }
-		);
+			];
+		// the road (three shots, then the ride goes on inside the van while the story tells of what lies ahead), or
+		// the arrival at the end of the road (four shots)
+		return play(part === 'road' ? shots.slice(0, 3) : shots.slice(3), { hour: 8.6 });
 	}
 
 	/** a drive in the pickup along the track, cut in three shots: from the roadside as it sets off, from the air
@@ -865,13 +902,27 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function drive(leg, { fetch = false } = {}) {
 		const me = people[stage.me];
 		const other = stage.other ? people[stage.other] : null;
+		// the pickup drives at a real track speed (SPEED.track); the cuts between the three shots skip the middle of
+		// the way, as a film does, so a long drive still plays in a few seconds without the truck flying
+		const L = TRACK.getLength();
 		const go = (from, to, dur) => {
 			let cut = -1;
 			let fixed = null;
+			const dist = Math.abs(to - from) * L;
+			const v = SPEED.track;
+			const d0 = dur * 0.3, d1 = dur * 0.38, d2 = dur * 0.32;
+			const ramp = (t) => (t < 2 ? (v * t * t) / 4 : v * (t - 1)); // two seconds to get up to speed
+			const metres = (k) => {
+				if (dist <= ramp(d0) + v * d1 + ramp(d2)) return dist * ease(k); // short enough to drive whole
+				const t = k * dur;
+				if (t < d0) return ramp(t);
+				if (t < d0 + d1) return dist / 2 + v * (t - d0 - d1 / 2);
+				return dist - ramp(dur - t);
+			};
 			return {
 				dur,
 				run: (k) => {
-					const u = from + (to - from) * ease(k);
+					const u = from + Math.sign(to - from) * (metres(k) / L);
 					const back = to < from;
 					putTruck(u, back);
 					dust(truck, -2.8);
@@ -883,15 +934,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 						cut = phase;
 						if (phase === 0) {
 							const ahead = along(from + (to - from) * 0.1);
-							fixed = ahead.p.clone().add(side.clone().multiplyScalar(9)).setY(1.7);
+							fixed = ahead.p.clone().add(side.clone().multiplyScalar(6)).setY(1.5);
 						}
-						if (phase === 1) camera.position.copy(p).add(side.clone().multiplyScalar(48)).add(V(0, 30, 0)).sub(dir.clone().multiplyScalar(14));
-						if (phase === 2) camera.position.copy(p).sub(dir.clone().multiplyScalar(26)).add(V(0, 11, 0)).add(side.clone().multiplyScalar(6));
+						if (phase === 1) camera.position.copy(p).add(side.clone().multiplyScalar(28)).add(V(0, 17, 0)).sub(dir.clone().multiplyScalar(8));
+						if (phase === 2) camera.position.copy(p).sub(dir.clone().multiplyScalar(14)).add(V(0, 5.5, 0)).add(side.clone().multiplyScalar(3));
 						controls.target.copy(p);
 					}
 					if (phase === 0) (camera.position.copy(fixed), camLerp(fixed, p.clone().setY(1.6), 0.3));
-					else if (phase === 1) camLerp(p.clone().add(side.clone().multiplyScalar(48)).add(V(0, 30, 0)).sub(dir.clone().multiplyScalar(14)), p.clone().add(dir.clone().multiplyScalar(12)), 0.12);
-					else camLerp(p.clone().sub(dir.clone().multiplyScalar(26)).add(V(0, 11, 0)).add(side.clone().multiplyScalar(6)), p.clone().add(dir.clone().multiplyScalar(10)).setY(1.5), 0.2);
+					else if (phase === 1) camLerp(p.clone().add(side.clone().multiplyScalar(28)).add(V(0, 17, 0)).sub(dir.clone().multiplyScalar(8)), p.clone().add(dir.clone().multiplyScalar(7)), 0.12);
+					else camLerp(p.clone().sub(dir.clone().multiplyScalar(14)).add(V(0, 5.5, 0)).add(side.clone().multiplyScalar(3)), p.clone().add(dir.clone().multiplyScalar(6)).setY(1.2), 0.2);
 				}
 			};
 		};
@@ -917,10 +968,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			o.position.lerpVectors(from, to, e).setY(from.y + (to.y - from.y) * e + Math.sin(Math.PI * e) * h);
 			o.rotation.y = truck.rotation.y * e;
 		};
-		const cubeTo = truck.localToWorld(V(0, 1.16, -1.8));
-		const tentTo = truck.localToWorld(V(0, 1.17, -2.42));
+		const cubeTo = truck.localToWorld(CUBE_ON_BED.clone());
+		const tentTo = truck.localToWorld(TENT_ON_BED.clone());
 		const look = V(STORE.x + 2, 2, (STORE.z + VZ) / 2);
-		const eye = V(STORE.x + 22, 12, VZ + 26);
+		const eye = V(STORE.x + 13, 7, VZ + 16);
 		return play([
 			{ dur: 0.3, start: () => (placeCube('shed'), placeTent('shed')) },
 			{ dur: 2.6, run: (k) => (lift(cube, CUBE_IN_SHED, cubeTo, k), camLerp(eye, look, 0.06)) },
@@ -934,9 +985,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  the little dome rises strut by strut while the camera circles it */
 	function pitch() {
 		truck.updateMatrixWorld(true);
-		const from = truck.localToWorld(V(0, 1.17, -2.42));
-		const cubeFrom = truck.localToWorld(V(0, 1.16, -1.8));
-		const orbit = shot({ kind: 'orbit', centre: [0, 0], a0: 0.4, a1: 1.9, r0: 26, r1: 18, y0: 12, y1: 6, aim: [0, 2, 0], curve: 'ease' });
+		const from = truck.localToWorld(TENT_ON_BED.clone());
+		const cubeFrom = truck.localToWorld(CUBE_ON_BED.clone());
+		const orbit = shot({ kind: 'orbit', centre: [0, 0], a0: 0.4, a1: 1.9, r0: 16, r1: 10, y0: 8, y1: 3.5, aim: [0, 1, 0], curve: 'ease' });
 		return play([
 			{
 				dur: 1.6,
@@ -1011,7 +1062,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		for (const seat of ['A', 'B']) {
 			const g = people[seat].userData.glow;
 			g.rotation.y = t * 1.5;
-			g.position.y = 3 + Math.sin(t * 2 + (seat === 'A' ? 0 : 1.5)) * 0.12;
+			g.position.y = 2.3 + Math.sin(t * 2 + (seat === 'A' ? 0 : 1.5)) * 0.1;
 		}
 	}
 
@@ -1053,6 +1104,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		lastT = t;
 		settleDust(step);
 		if (moment) runMoment(performance.now() / 1000);
+		else if (riding) ride(step);
 		else {
 			if (goal) {
 				const at = goal.target.clone().add(goal.offset);
@@ -1073,7 +1125,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const out = {};
 			for (const k of ['A', 'B']) {
 				const o = people[k];
-				const p = o.localToWorld(V(0, 3.8, 0)).project(camera);
+				const p = o.localToWorld(V(0, 2.8, 0)).project(camera);
 				out[`player:${k}`] = { x: ((p.x + 1) / 2) * w, y: ((1 - p.y) / 2) * h, on: o.visible && !busy && p.z < 1 };
 			}
 			onLabels(out);
