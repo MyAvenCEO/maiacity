@@ -18,7 +18,7 @@ const R = 'food-research.md (2026-10-13)';
 
 /** the food forest outdoors (Munich), a m² of forest */
 export const OUTDOOR = {
-	kcalM2Year: n(800, 'kcal grown a m² a year at maturity (organic, planted for the diet, LER 1.1)', `${R} §6: 800 (range 400–950); measured NL/BE food forests 95, the best-documented mature garden (Scotland) 520. Was ~1,030`, true),
+	kcalM2Year: n(800, 'kcal grown a m² a year at maturity for Sandbox 6’s diet, the hens’ feed included (organic, LER 1.1): the research’s reference. The engine computes each diet’s own from its groups (dietFacts)', `${R} §6: 800 (range 400–950); measured NL/BE food forests 95, the best-documented mature garden (Scotland) 520. Was ~1,030`, true),
 	loss: n(0.15, 'share of the harvest lost in storage, processing and the kitchen', `${R} §6 and the physics audit: 10–20 %`, true),
 	ramp: n([0.46, 0.48, 0.53, 0.59, 0.63, 0.68, 0.73, 0.78, 0.84, 0.89, 0.92, 0.96, 0.97, 0.99, 1], 'share of the mature output by year since planting (year 1 first; 1 from year 15)', `${R} §2: annual layers bear at once, nuts and chestnuts in 10–15 years (estimate)`, true),
 	lerYoung: n(1.0, 'the layers’ land equivalent ratio before year 8 (1.1 from year 15, a straight line between)', `${R} §2: the stack ramps from 1.0 to 1.1`, true),
@@ -45,7 +45,7 @@ const MOL = [4.3, 7.6, 12.0, 17.3, 19.6, 21.5, 21.2, 18.4, 13.7, 8.5, 4.6, 3.1];
 
 /** the food forest under glass (two Dome120 food domes a living hex), a m² of it */
 export const INDOOR = {
-	kcalM2Year: n(1050, 'kcal grown a m² a year at maturity, no lamps (diet mix, LER 1.1)', `${R} §4 and §6: 1,050 (range 600–1,500); 2,000 if planted for calories (bananas, cassava, sweet potato) with little protein. Was ~1,810`, true),
+	kcalM2Year: n(1050, 'kcal grown a m² a year at maturity for Sandbox 6’s diet, no lamps (LER 1.1): the research’s reference; the engine computes each diet’s own (dietFacts)', `${R} §4 and §6: 1,050 (range 600–1,500); 2,000 if planted for calories (bananas, cassava, sweet potato) with little protein. Was ~1,810`, true),
 	loss: n(0.15, 'share of the harvest lost in storage, processing and the kitchen', `${R} §6`, true),
 	ramp: n([0.8, 1], 'share of the mature output in year 1, then from year 2', `${R} §2: bananas, papaya, roots bear in 4–18 months (estimate)`, true),
 	light: n(0.53, 'share of the outside light under the glass and its cells', `${R} §4: the dome model lets in 634 of Munich’s 1,190 kWh/m² a year`),
@@ -162,13 +162,13 @@ export function foodSeason(w) {
  * kcal a person a day the food domes give by month at maturity (after losses), with and without the LED top-up, for
  * `m2` of food forest under glass and `people`
  */
-export function indoorMonths(m2, people) {
-	const day = (INDOOR.kcalM2Year.v * (1 - INDOOR.loss.v) * m2) / 365 / people;
+export function indoorMonths(m2, people, kcalM2Year = INDOOR.kcalM2Year.v) {
+	const day = (kcalM2Year * (1 - INDOOR.loss.v) * m2) / 365 / people;
 	return {
 		withoutLight: INDOOR_INDEX.base.map((x) => x * day),
 		withLight: INDOOR_INDEX.led.map((x) => x * day),
 		ledKwhPer1000: INDOOR.ledKwhPer1000.v,
-		ledKwhM2Year: (INDOOR_INDEX.led.reduce((a, x, i) => a + (x - INDOOR_INDEX.base[i]) * DAYS_IN_MONTH[i], 0) / 365) * INDOOR.kcalM2Year.v * (INDOOR.ledKwhPer1000.v / 1000)
+		ledKwhM2Year: (INDOOR_INDEX.led.reduce((a, x, i) => a + (x - INDOOR_INDEX.base[i]) * DAYS_IN_MONTH[i], 0) / 365) * kcalM2Year * (INDOOR.ledKwhPer1000.v / 1000)
 	};
 }
 

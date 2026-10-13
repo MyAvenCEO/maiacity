@@ -15,7 +15,7 @@ import { capDayOf, plantCapDay } from './genesis.js';
 import { DAYS_IN_MONTH, CHIPS, BORDER } from './primitives.js';
 import { monthOf } from './energy.js';
 import { reserveEur, IMPORT_KINDS } from './border.js';
-import { indoorMonths } from './food.js';
+import { indoorMonths, dietFacts, peopleFed, DIETS, YIELDS } from './food.js';
 
 const SERIES = {
 	minMet: 4, // the lowest share of need met by anyone, per basic
@@ -464,7 +464,43 @@ export function villageYears(w) {
 export function indoorMonthsOf(w) {
 	let m2 = 0;
 	for (const co of w.coops) if (co.alive) for (const pl of co.plants) if (pl.tech === 'greenhouse') m2 += Math.max(0, pl.cap - pl.worn);
-	return indoorMonths(m2 * (w.cfg.forestYield ?? 1), Math.max(1, w.N));
+	return indoorMonths(m2 * (w.cfg.forestYield ?? 1), Math.max(1, w.N), w.c.ghGrown * 1000);
+}
+
+/**
+ * The diet and the land it takes (cheap: no pass over the days): what a person eats (grams of each group, kcal and
+ * protein a day), the m² a person needs outdoors and under glass at maturity, the kcal a m² gives, and how many people
+ * the village's food land feeds at maturity in an average year after the harvest's losses (outdoors, under glass, all);
+ * then, from the run so far, the first year the village fed itself and the last year it bought food.
+ */
+export function foodLand(w) {
+	const c = w.c, f = dietFacts(c.diet, c.foodYields), V = c.village;
+	const outM2 = V.outdoorFoodM2 * c.vf, inM2 = V.indoorFoodM2 * c.vf;
+	const fed = peopleFed(f, outM2 * (w.cfg.forestYield ?? 1), inM2 * (w.cfg.forestYield ?? 1));
+	const D = DIETS[f.diet];
+	let firstFed = null, lastImport = null;
+	for (const Y of w.rec?.years ?? []) {
+		if (!Y || Y.days < 365) continue;
+		const fedSelf = Y.food.eaten > 0 && Y.food.imported <= 0.01 * Y.food.eaten;
+		if (fedSelf && firstFed == null) firstFed = Y.year;
+		if (!fedSelf) lastImport = Y.year;
+	}
+	return {
+		diet: f.diet,
+		dietLabel: f.label,
+		yields: f.yields,
+		yieldsLabel: YIELDS[f.yields]?.label ?? f.yields,
+		groups: Object.fromEntries(Object.entries(D.groups).map(([k, d]) => [k, { label: d.label, g: d.g, kcal: (d.g / 1000) * d.kcal, protein: (d.g / 1000) * d.protein }])),
+		kcalDay: f.kcalDay,
+		proteinDay: f.proteinDay,
+		landM2: { out: f.out.total, in: f.in.total, outByGroup: f.out.m2, inByGroup: f.in.m2 },
+		kcalM2Year: { out: f.out.kcalM2Year, in: f.in.kcalM2Year },
+		foodHa: { out: outM2 / 1e4, in: inM2 / 1e4 },
+		peopleFed: { out: fed.out, in: fed.in, all: fed.all },
+		people: w.N,
+		firstFedYear: firstFed,
+		lastImportYear: lastImport
+	};
 }
 
 /**

@@ -59,7 +59,7 @@ if (!isMainThread) {
 		parentPort.postMessage(out);
 	} else {
 		const r = runExperiment(EXPERIMENTS[job.id], { config: job.set, seed: job.set?.seed });
-		const slim = (x) => ({ label: x.label, values: x.values, prop3: { pass: x.prop3.pass, P1: { pass: x.prop3.P1.pass, personDaysShortAny: x.prop3.P1.personDaysShortAny }, P2: { pass: x.prop3.P2.pass, strictFrom: x.prop3.P2.strict.holdsEveryDayFrom, normal: x.prop3.P2.normal.pass }, P3: { pass: x.prop3.P3.pass, failed: x.prop3.P3.failed }, abundance: { pass: x.prop3.abundance.pass, mindBindsBasics: x.prop3.abundance.mindBindsBasics } } });
+		const slim = (x) => ({ label: x.label, values: x.values, params: x.params, food: x.food, prop3: { pass: x.prop3.pass, P1: { pass: x.prop3.P1.pass, personDaysShortAny: x.prop3.P1.personDaysShortAny }, P2: { pass: x.prop3.P2.pass, strictFrom: x.prop3.P2.strict.holdsEveryDayFrom, normal: x.prop3.P2.normal.pass }, P3: { pass: x.prop3.P3.pass, failed: x.prop3.P3.failed }, abundance: { pass: x.prop3.abundance.pass, mindBindsBasics: x.prop3.abundance.mindBindsBasics } } });
 		parentPort.postMessage({ job, ms: r.ms, r: { ...r, base: slim(r.base), changed: slim(r.changed) } });
 	}
 
@@ -96,16 +96,16 @@ async function main() {
 	const s00 = SCENARIOS.find((x) => x.id === 'S00');
 	const isBase = (sp) => s00.runs.some((r) => r.key === sp.key);
 	const jobs = [
-		...specs.map((spec) => ({ kind: 'run', spec, set, detail: isBase(spec), cost: spec.years * Math.pow(spec.config.people ?? 250, 0.3) * (spec.config.coopsPerGood === 4 ? 1.6 : 1) })),
+		...specs.map((spec) => ({ kind: 'run', spec, set, detail: isBase(spec), cost: spec.years * ((spec.config.people ?? 1500) / 1500 + 0.15) * (spec.config.coopsPerGood === 4 ? 1.6 : 1) })),
 		...expIds.map((id) => {
 			const e = EXPERIMENTS[id];
-			return { kind: 'exp', id, set, cost: 2 * e.years * Math.pow(e.people ?? 250, 0.3) };
+			return { kind: 'exp', id, set, cost: 2 * e.years * ((e.people ?? 1500) / 1500 + 0.15) };
 		}),
 		// X9 (doubling HEARTS) is judged on the five base seeds, chosen before any verdict: its goods market is thin, and
 		// one seed's change can land on either side of the 1 % mark by chance
 		...expIds
 			.filter((id) => ENSEMBLE.includes(id))
-			.flatMap((id) => BASE_KEYS_SEEDS.filter((sd) => sd !== (set.seed ?? BASE_KEYS_SEEDS[0])).map((sd) => ({ kind: 'exp', id, set: { ...set, seed: sd }, ens: sd, cost: 2 * EXPERIMENTS[id].years * Math.pow(EXPERIMENTS[id].people ?? 250, 0.3) })))
+			.flatMap((id) => BASE_KEYS_SEEDS.filter((sd) => sd !== (set.seed ?? BASE_KEYS_SEEDS[0])).map((sd) => ({ kind: 'exp', id, set: { ...set, seed: sd }, ens: sd, cost: 2 * EXPERIMENTS[id].years * ((EXPERIMENTS[id].people ?? 1500) / 1500 + 0.15) })))
 	].sort((a, b) => b.cost - a.cost);
 	const par = Math.max(1, Math.min(jobs.length, cpus().length));
 	process.stderr.write(`${jobs.length} jobs (${specs.length} scenario worlds, ${expIds.length} experiments) on ${par} threads\n`);
@@ -131,7 +131,7 @@ async function main() {
 		const s = SCENARIOS.find((x) => x.id === id);
 		const v = judge(id, R);
 		const ms = s.runs.reduce((a, r) => a + (R[r.key]?.ms ?? 0), 0);
-		return { id, name: s.name, paper: s.paper, stress: s.stress, claim: s.claim, runs: s.runs.map((r) => ({ label: R[r.key] ? r.label.replace('seed 20261012', `seed ${R[r.key].seed}`) : r.label, years: r.years, people: r.config.people, ms: R[r.key]?.ms })), ms, ...v };
+		return { id, name: s.name, paper: s.paper, stress: s.stress, claim: s.claim, runs: s.runs.map((r) => ({ label: R[r.key] ? r.label.replace('seed 20261012', `seed ${R[r.key].seed}`) : r.label, years: r.years, people: r.config.people, ms: R[r.key]?.ms, params: R[r.key]?.params, food: R[r.key]?.food })), ms, ...v };
 	});
 	const bases = BASE_KEYS_SEEDS.filter((sd) => detail[sd]).map((sd) => ({ seed: sd, ...detail[sd] }));
 	const now = new Date().toISOString();
@@ -213,7 +213,7 @@ function headline(exps, scen, bases) {
 	const allB = (fn) => bases.length > 0 && bases.every(fn);
 	const rows = [];
 	const fails = (list) => list.filter((x) => x && x.pass === false).map((x) => x.id);
-	const failE = (list) => list.map(E).filter((x) => x && !x.verdict.pass).map((x) => x.id);
+	const failE = (list) => list.map(E).filter((x) => x && x.verdict.pass === false).map((x) => x.id);
 	// the seed ensemble (S04) breaks a part when that part fails on any of its worlds
 	const ens = (key) => (S('S04')?.numbers?.rows ?? []).some((r) => r[key] === false) ? ['S04'] : [];
 	rows.push({
@@ -252,13 +252,21 @@ function headline(exps, scen, bases) {
 
 function report(exps, scen, bases, notCovered, meta) {
 	const L = [];
-	const nPass = exps.filter((e) => e.r.verdict.pass).length + scen.filter((s) => s.pass === true).length;
-	const nCmp = scen.filter((s) => s.pass == null).length;
+	const nPass = exps.filter((e) => e.r.verdict.pass === true).length + scen.filter((s) => s.pass === true).length;
+	const nCmp = scen.filter((s) => s.pass == null).length + exps.filter((e) => e.r.verdict.pass == null).length;
 	L.push('# Sandbox 8 — the proof of Proposition 3', '');
 	L.push(`Run ${meta.now.slice(0, 16).replace('T', ' ')} UTC by \`node scripts/sandbox-9-proof.mjs${meta.quick ? ' --quick' : ''}${meta.only ? ' --only ' + meta.only.join(',') : ''}\`. Engine: \`src/lib/sandbox-9/\` (hash ${meta.hash}). Wall time ${(meta.wall / 1000).toFixed(0)} s on ${meta.threads} threads (${(meta.totalCpu / 1000).toFixed(0)} s of runs). Every number below comes from the run.`, '');
 	if (meta.quick) L.push('**Quick run:** every scenario world was cut to at most 10 years. Verdicts below that need longer worlds read short ones; this is a smoke test, not the proof.', '');
 	if (Object.keys(meta.set).length) L.push(`**Settings changed from the defaults in every world:** \`${JSON.stringify(meta.set)}\`.`, '');
-	L.push(`${exps.length} experiments and ${scen.length} scenarios ran. ${nPass} pass and ${exps.length + scen.length - nPass - nCmp} fail${nCmp ? `; ${nCmp} only compare two rules and have no verdict (${scen.filter((s) => s.pass == null).map((s) => s.id).join(', ')})` : ''}.`, '');
+	L.push(`${exps.length} experiments and ${scen.length} scenarios ran. ${nPass} pass and ${exps.length + scen.length - nPass - nCmp} fail${nCmp ? `; ${nCmp} only compare and have no verdict (${[...exps.filter((e) => e.r.verdict.pass == null).map((e) => e.r.id), ...scen.filter((s) => s.pass == null).map((s) => s.id)].join(', ')})` : ''}.`, '');
+
+	// the simple numbers first: what people get, the village's food and energy, the diet and its land, the founding bill
+	// and the border (round 3 brief: before the verdicts)
+	if (bases.length) {
+		simpleStats(L, bases, scen);
+		foodAndLand(L, bases, scen);
+		foundingAndBorder(L, bases, scen);
+	}
 
 	// headline
 	if (bases.length) {
@@ -274,7 +282,7 @@ function report(exps, scen, bases, notCovered, meta) {
 	L.push('## Every experiment and scenario', '');
 	L.push('| id | question or scenario | verdict | key result | people × years | run time |', '|---|---|---|---|---|---|');
 	for (const e of exps) L.push(`| ${e.r.id} | ${e.r.question} | **${yes(e.r.verdict.pass)}** | ${e.r.verdict.evidence.replace(/\|/g, '/')} | ${e.r.people.base === e.r.people.changed ? e.r.people.base : `${e.r.people.base} / ${e.r.people.changed}`} × ${e.r.years} | ${(e.ms / 1000).toFixed(1)} s |`);
-	for (const s of scen) L.push(`| ${s.id} | ${s.name} | **${yes(s.pass)}** | ${s.takeaway.replace(/\|/g, '/')} | ${[...new Set(s.runs.map((r) => `${r.people ?? 250} × ${r.years}`))].join(', ')} | ${(s.ms / 1000).toFixed(0)} s |`);
+	for (const s of scen) L.push(`| ${s.id} | ${s.name} | **${yes(s.pass)}** | ${s.takeaway.replace(/\|/g, '/')} | ${[...new Set(s.runs.map((r) => `${r.people ?? 1500} × ${r.years}`))].join(', ')} | ${(s.ms / 1000).toFixed(0)} s |`);
 	L.push('');
 
 	// experiments, Primer style
@@ -305,14 +313,14 @@ function report(exps, scen, bases, notCovered, meta) {
 			L.push(`### ${s.id} ${s.name} (${s.paper})`, '');
 			L.push(`**Stress.** ${s.stress}.`, '');
 			L.push(`**Claim.** ${s.claim}`, '');
-			L.push(`**Runs.** ${s.runs.map((r) => `${r.label} (${r.people ?? 250} people, ${r.years} years)`).join('; ')}.`, '');
+			L.push(`**Runs.** ${s.runs.map((r) => `${r.label} (${r.people ?? 1500} people, ${r.years} years)`).join('; ')}.`, '');
 			L.push(`**Result.** ${s.takeaway}`, '');
 			L.push(`**Verdict: ${yes(s.pass)}.** ${s.evidence}`, '');
 		}
 	}
 
 	// what fails and why
-	const failing = [...exps.filter((e) => !e.r.verdict.pass).map((e) => [e.r.id, e.r.verdict.evidence]), ...scen.filter((s) => s.pass === false).map((s) => [s.id, s.evidence])];
+	const failing = [...exps.filter((e) => e.r.verdict.pass === false).map((e) => [e.r.id, e.r.verdict.evidence]), ...scen.filter((s) => s.pass === false).map((s) => [s.id, s.evidence])];
 	if (failing.length) {
 		L.push('## What fails', '');
 		L.push('Each item fails in this run; the line under it is the run’s own evidence (scenario evidence names the short good, its binding limit and the parts that fail, computed from the worlds). No cause or fix is typed in here: a note written by hand can outlive the run it was true of.', '');
@@ -461,16 +469,42 @@ const csvq = (s) => `"${String(s).replace(/"/g, '""')}"`;
 
 /** numbers rounded to 4 significant digits, for the page's JSON */
 const round = (v) => (typeof v === 'number' ? (Number.isFinite(v) ? +v.toPrecision(4) : null) : Array.isArray(v) ? v.map(round) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round(x)])) : v);
+/** a run's parameter set against the base's: the settings it changed and the catalog numbers that differ */
+function paramDiff(p, base) {
+	if (!p) return null;
+	const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+	const overrides = {};
+	for (const [k, v] of Object.entries(p.settings ?? {})) if (!same(v, base?.defaults?.[k]) && k !== 'label') overrides[k] = v;
+	const catalog = {};
+	for (const [k, v] of Object.entries(p.catalog ?? {})) if (!same(v, base?.catalog?.[k])) catalog[k] = v;
+	return round({ overrides, catalog });
+}
+const pbaseOf = (bases) => {
+	const p = bases[0]?.s?.params;
+	return p ? { defaults: p.defaults, catalog: p.catalog, village: p.village } : null;
+};
+let pbase = null;
 function toJson(exps, scen, bases, notCovered, meta) {
+	pbase = pbaseOf(bases);
+	const b0 = bases[0]?.s;
+	const firstYear = (B, f) => B?.find((b) => b.days >= 365 && f(b))?.year ?? null;
 	return {
+		// the base world's parameters once, and per run only what differs (contract.md §1)
+		paramsBase: pbase ? round(pbase) : null,
+		// the base world (seed 20261012): living standards by tenth, the village's food and energy, the border, the diet
+		// and its land (contract.md §2–4)
+		living: b0 ? { seed: b0.seed, years: round(b0.living) } : null,
+		village: b0 ? { seed: b0.seed, years: round(b0.village), indoorMonths: round(b0.indoorMonths ?? null) } : null,
+		border: b0 ? { seed: b0.seed, years: round(b0.border), founding: round(b0.founding), firstFedYear: b0.food?.firstFedYear ?? null, lastImportYear: b0.food?.lastImportYear ?? null, exportsCoverYear: firstYear(b0.border, (b) => b.exportsCover), reserveOutYear: firstYear(b0.border, (b) => b.reserveOut) } : null,
+		food: b0 ? round(b0.food) : null,
 		generated: meta.now,
 		command: 'node scripts/sandbox-9-proof.mjs',
 		engineHash: meta.hash,
 		wallSeconds: Math.round(meta.wall / 1000),
 		headline: bases.length ? headline(exps, scen, bases).map((r) => ({ part: r.part, holds: r.holds, base: r.base, breaks: r.breaks })) : [],
-		seeds: bases.map((b) => ({ seed: b.seed, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
-		experiments: exps.map((e) => ({ id: e.r.id, question: e.r.question, ruleChanged: e.r.ruleChanged, people: e.r.people, years: e.r.years, seed: e.r.seed, pass: e.r.verdict.pass, ens: e.r.ens ?? null, claim: e.r.verdict.claim, evidence: e.r.verdict.evidence, takeaway: e.r.takeaway, metrics: e.r.metrics.map((m) => ({ id: m.id, label: m.label, base: round(m.base), changed: round(m.changed) })), seconds: round(e.ms / 1000) })),
-		scenarios: scen.map((s) => ({ id: s.id, name: s.name, paper: s.paper, claim: s.claim, pass: s.pass, takeaway: s.takeaway, evidence: s.evidence, runs: s.runs.map((r) => ({ label: r.label, people: r.people ?? 250, years: r.years })), numbers: round(s.numbers), seconds: round(s.ms / 1000) })),
+		seeds: bases.map((b) => ({ seed: b.seed, params: paramDiff(b.s.params, pbase), living: round(b.s.living), border: { firstFedYear: b.s.food?.firstFedYear ?? null, lastImportYear: b.s.food?.lastImportYear ?? null, exportsCoverYear: firstYear(b.s.border, (x) => x.exportsCover), reserveOutYear: firstYear(b.s.border, (x) => x.reserveOut), reserveLow: round(Math.min(...(b.s.border ?? []).map((x) => x.reserveMinEur ?? Infinity))), importShortDays: (b.s.border ?? []).reduce((a, x) => a + (x.importShortDays ?? 0), 0), shortPD: b.p.P1.personDaysShortAny }, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
+		experiments: exps.map((e) => ({ id: e.r.id, question: e.r.question, ruleChanged: e.r.ruleChanged, people: e.r.people, years: e.r.years, seed: e.r.seed, params: { base: paramDiff(e.r.base.params, pbase), changed: paramDiff(e.r.changed.params, pbase) }, food: { base: round(e.r.base.food ?? null), changed: round(e.r.changed.food ?? null) }, pass: e.r.verdict.pass, ens: e.r.ens ?? null, claim: e.r.verdict.claim, evidence: e.r.verdict.evidence, takeaway: e.r.takeaway, metrics: e.r.metrics.map((m) => ({ id: m.id, label: m.label, base: round(m.base), changed: round(m.changed) })), seconds: round(e.ms / 1000) })),
+		scenarios: scen.map((s) => ({ id: s.id, name: s.name, paper: s.paper, claim: s.claim, pass: s.pass, takeaway: s.takeaway, evidence: s.evidence, runs: s.runs.map((r) => ({ label: r.label, people: r.people ?? 1500, years: r.years, params: r.params ? paramDiff(r.params, pbase) : null, food: r.food ? round(r.food) : null })), numbers: round(s.numbers), seconds: round(s.ms / 1000) })),
 		notCovered: notCovered.map(([id, name, why]) => ({ id, name, why }))
 	};
 }

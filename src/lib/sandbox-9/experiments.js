@@ -27,7 +27,7 @@
 import { exp, log } from './dmath.js';
 import { polar } from './rng.js';
 import { createWorld, step, DEFAULTS, getLedger, paramSet } from './engine.js';
-import { livingYears, villageYears, borderYears, foundingBill } from './records.js';
+import { livingYears, villageYears, borderYears, foundingBill, foodLand } from './records.js';
 import { prop3 } from './prop3.js';
 import { guessText } from './guesses.js';
 import { openCoop } from './coops.js';
@@ -1252,7 +1252,7 @@ function measure(exp, w) {
 	const values = {};
 	// the run's full parameter set (settings and catalog, for the page's World tab) and its yearly tables (living
 	// standards by tenth, the village's food and energy, the border's ledger, the founding bill)
-	const res = { label: w.cfg.label, config: w.cfg, params: paramSet(w), living: livingYears(w), village: villageYears(w), border: borderYears(w), founding: foundingBill(w), values, prop3: p, world: w };
+	const res = { label: w.cfg.label, config: w.cfg, params: paramSet(w), living: livingYears(w), village: villageYears(w), border: borderYears(w), founding: foundingBill(w), food: foodLand(w), values, prop3: p, world: w };
 	for (const m of exp.metrics) values[m.id] = m.of(w, p);
 	return res;
 }
@@ -1341,7 +1341,8 @@ export function summarize(w) {
 		living: livingYears(w),
 		village: villageYears(w),
 		border: borderYears(w),
-		founding: foundingBill(w)
+		founding: foundingBill(w),
+		food: foodLand(w)
 	};
 }
 

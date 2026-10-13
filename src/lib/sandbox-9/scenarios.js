@@ -72,6 +72,41 @@ function causeOf(s) {
 	return out.join('; ') || 'passes';
 }
 
+/** a world's food and border in a row: the diet's land, the people it feeds, food bought, the euros (./records.js) */
+function foodRow(s) {
+	const fl = s.food ?? {}, B = s.border ?? [], V = s.village ?? [];
+	const share = (y) => {
+		const v = V[Math.min(V.length, y) - 1];
+		return v && v.food.eaten > 0 ? v.food.imported / v.food.eaten : NaN;
+	};
+	const mean = (xs) => (xs.length ? xs.reduce((a, x) => a + x, 0) / xs.length : NaN);
+	const full = B.filter((b) => b.days >= 365);
+	return {
+		diet: fl.diet,
+		yields: fl.yields,
+		kcalDay: fl.kcalDay,
+		proteinDay: fl.proteinDay,
+		landOut: fl.landM2?.out,
+		landIn: fl.landM2?.in,
+		fed: fl.peopleFed?.all,
+		firstFed: fl.firstFedYear,
+		lastImport: fl.lastImportYear,
+		impShare1: share(1),
+		impShare10: share(10),
+		impShareLast: share(V.length),
+		indoorKcal10: V[Math.min(V.length, 10) - 1]?.food.indoors,
+		ledKcal10: V[Math.min(V.length, 10) - 1]?.food.led,
+		importEurMean: mean(full.map((b) => b.importEur)),
+		exportEurMean: mean(full.map((b) => b.exportEur)),
+		coverYear: full.find((b) => b.exportsCover)?.year ?? null,
+		impShortDays: B.reduce((a, b) => a + (b.importShortDays ?? 0), 0),
+		reserve0: s.founding?.reserveEur,
+		shortPD: s.shortPD,
+		Lmean: s.Lmean,
+		poorH: s.poorH
+	};
+}
+
 // ── the scenarios ────────────────────────────────────────────────────────────────────────────────────────────────
 const DROUGHT = { kind: 'drought', day: 3 * Y + 152, days: 92, factor: 0.5 };
 const FAIL10 = { kind: 'coopFail', coop: 'AGRI', day: 9 * Y + 300, days: 365, factor: 0.1 };
@@ -101,6 +136,81 @@ export const SCENARIOS = [
 				evidence:
 					seeds.map((x) => `seed ${x.seed}: P1 ${f0(x.shortPD)} person-days short, strict ${x.strictFrom >= 0 ? `from day ${x.strictFrom}` : 'never held to the end'}, normal ${x.P2n ? 'pass' : 'fail'}, P3 ${x.P3 ? 'pass' : `fail (${x.P3failed} deciles, ${f0(x.windowsFailed)} decile-days in falling windows)`}, P3 without Aven services ${x.P3noCompute ? 'pass' : `fail (${x.P3noComputeFailed})`}, COOPs ${x.coops ? 'pass' : 'fail'}, worst fall ${pct(x.worstFall, 1)}, Aven services ${pct(x.computeShare30, 0)} of the index in year 30 and ${pct(x.computeShareEnd, 0)} in year 60 (${pct(x.computeSharePoorEnd, 0)} for the poorest tenth), MIND binds a basic on ${x.mindBinds} day-goods`).join('; ') +
 					'. The strict test is measured from a cold start, where everyone begins with nothing; A07 tests owner-only newcomers joining a settled city.'
+			};
+		}
+	},
+	{
+		id: 'F01',
+		name: 'founding-reserve',
+		paper: 'round 3 brief: the founding euros left over',
+		stress: 'P1 when the euros run out before exports pay for the imports',
+		claim: 'A comparison, not a test: the village founded with no euros left over, with a year of its food at wholesale (the base), and with three years. If the founding euros run out before exports pay for all imports, people go short: this shows whether they do.',
+		runs: [run({}, 10, 'base (a year of food in euros), 10 years'), run({ reserveYears: 0 }, 10, 'no founding euros left over'), run({ reserveYears: 3 }, 10, 'three years of food in euros')],
+		judge(R, runs) {
+			const rows = runs.map((r) => ({ label: r.label, ...foodRow(R[r.key]) }));
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: reserve €${f0(r.reserve0)} at day 0, ${f0(r.impShortDays)} days a COOP could not pay for all its imports, ${f0(r.shortPD)} person-days short of a basic`).join('; ') + '.',
+				evidence: rows.map((r) => `${r.label}: exports first paid all imports in year ${r.coverYear ?? 'never'}; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'F02',
+		name: 'old-diet',
+		paper: 'Samuel 2026-10-13 06:20',
+		stress: 'P1 and the border on another diet',
+		claim: 'A comparison, not a test: Samuel’s diet (the base: legumes first, sweet potato and yam, no potatoes or grains, a few chestnuts) against Sandbox 6’s old diet with potatoes and chestnuts, on the same land and yields. The land a person needs follows from the grams of each group and each group’s yield.',
+		runs: [base30, run({ diet: 'sandbox6' }, 30, 'Old diet with potatoes and chestnuts')],
+		judge(R, runs) {
+			const rows = runs.map((r) => ({ label: r.label, ...foodRow(R[r.key]) }));
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: ${f0(r.landOut)} m² a person outdoors and ${f0(r.landIn)} under glass; the 177 ha feed ${f0(r.fed)} people at maturity; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1, ${pct(r.impShare10, 0)} in year 10 and ${pct(r.impShareLast, 0)} in the last year; first fed itself in year ${r.firstFed ?? 'never'}`).join('. ') + '.',
+				evidence: rows.map((r) => `${r.label}: ${f0(r.kcalDay)} kcal and ${f2(r.proteinDay)} g protein a day as planned; ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average; mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'F04',
+		name: 'winter-light',
+		paper: 'round 3 brief: LED light turns electricity into winter food',
+		stress: 'energy as the master resource for food',
+		claim: 'A comparison, not a test: the food domes with an LED top-up November to February (12 mol a m² a day, ~400 kWh a 1,000 kcal) against without (the base).',
+		runs: [base30, run({ led: true }, 30, 'LED top-up in winter')],
+		judge(R, runs) {
+			const rows = runs.map((r) => ({ label: r.label, ...foodRow(R[r.key]) }));
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: the domes gave ${f0(r.indoorKcal10)} kcal a person a day in year 10 (LED ${f0(r.ledKcal10)}), food bought ${pct(r.impShare10, 0)} of what was eaten; exports earned €${f0(r.exportEurMean)} a year`).join('; ') + '.',
+				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short; mean living standard ${f2(r.Lmean)}`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'V01',
+		name: 'bed-ladder',
+		paper: 'round 3 brief: 250 to 290 people a living hex',
+		stress: 'P1–P3 as the village fills its beds',
+		claim: 'A comparison, not a test (this scenario changes the population): 250, 260, 270, 280 and 290 people a living hex (1,500 to 1,740, every bed full), on the same village and land.',
+		runs: [250, 260, 270, 280, 290].map((n) => (n === 250 ? base30 : run({ people: n * 6 }, 30, `${n} a hex (${(n * 6).toLocaleString('en-US')} people)`))),
+		judge(R, runs) {
+			const rows = runs.map((r) => {
+				const s = R[r.key];
+				return { label: r.label, people: s.N0, P1: s.prop3.P1.pass, P3: s.prop3.P3.pass, ...foodRow(s) };
+			});
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${f0(r.people)} people: ${f0(r.shortPD)} person-days short, food bought ${pct(r.impShareLast, 0)} of what was eaten in the last year, imports €${f0(r.importEurMean)} a year, mean living standard ${f2(r.Lmean)}, the poorest tenth ${f2(r.poorH)}`).join('; ') + '.',
+				evidence: rows.map((r) => `${f0(r.people)}: P1 ${r.P1 ? 'holds' : 'fails'}, P3 ${r.P3 ? 'holds' : 'fails'}, first fed itself in year ${r.firstFed ?? 'never'}, exports first paid all imports in year ${r.coverYear ?? 'never'}`).join('; ')
 			};
 		}
 	},
