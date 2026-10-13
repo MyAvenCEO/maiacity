@@ -6,7 +6,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
+	import { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, heartsValue, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
 
 	/** show: 'all', or only the 'cash' flow (rents, dividends, pay days) or only the 'tx' (every transaction) */
 	let { view, who, limit = 200, show = 'all', tall = false } = $props();
@@ -24,6 +24,7 @@
 		for (const r of subsOut) n[r.token] = (n[r.token] ?? 0) - r.weekly;
 		return MINDS.filter((t) => t in n).map((t) => [t, n[t]]);
 	});
+	const hv = $derived(view ? heartsValue(view) : null);
 	const days = $derived(view ? payDaysOf(view, who) : []);
 	const signed = (x, d = 3) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${f(Math.abs(x), d)}`;
 	const sign = (e) => (e.kind === 'arrears' ? '' : e.to === who ? '+' : e.from === who ? '−' : '');
@@ -35,15 +36,15 @@
 			<p class="eyebrow">Subscriptions in and out · by their interval</p>
 			<div class="subs">
 				{#each subsIn as r (r.what + r.from + r.to)}
-					<div class="line"><span class="when">In<small>{r.what}</small></span><span class="what">from {nameOf(view, r.from)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.monthly)} {TOKEN_LABEL[r.token]}<small>a month</small></span></div>
+					<div class="line"><span class="when">In<small>{r.what}</small></span><span class="what">from {nameOf(view, r.from)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.monthly)} {TOKEN_LABEL[r.token]}<small>a month · ≈ {f(r.monthly * hv[r.token])} HEARTS</small></span></div>
 				{/each}
 				{#each divs as r (r.what + r.from)}
-					<div class="line"><span class="when">In<small>Dividend</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now · paid weekly with it</small></span><span class="amt plus">+{f(r.weekly * 4, 3)} {TOKEN_LABEL[r.token]}<small>a month</small></span></div>
+					<div class="line"><span class="when">In<small>Dividend</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now · paid weekly with it</small></span><span class="amt plus">+{f(r.weekly * 4, 3)} {TOKEN_LABEL[r.token]}<small>a month · ≈ {f(r.weekly * 4 * hv[r.token])} HEARTS</small></span></div>
 				{/each}
 				{#each subsOut as r (r.what + r.from + r.to)}
-					<div class="line"><span class="when">Out<small>{r.what}</small></span><span class="what">to {nameOf(view, r.to)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.monthly)} {TOKEN_LABEL[r.token]}<small>a month</small></span></div>
+					<div class="line"><span class="when">Out<small>{r.what}</small></span><span class="what">to {nameOf(view, r.to)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.monthly)} {TOKEN_LABEL[r.token]}<small>a month · ≈ {f(r.monthly * hv[r.token])} HEARTS</small></span></div>
 				{/each}
-				<div class="line total"><span class="when">Net<small>a month</small></span><span class="what">next pay day {vdate((view.week + 1) / 4)}<small>4 pay days a month; a payer short of the MIND swaps through the pool</small></span><span class="amt">{#each weekNet as [t, x] (t)}<span class:plus={x > 0} class:minus={x < 0}>{signed(x * 4)} {TOKEN_LABEL[t]}</span>{/each}</span></div>
+				<div class="line total"><span class="when">Net<small>a month</small></span><span class="what">next pay day {vdate((view.week + 1) / 4)}<small>4 pay days a month; a payer short of the MIND swaps through the pool</small></span><span class="amt">{#each weekNet as [t, x] (t)}<span class:plus={x > 0} class:minus={x < 0}>{signed(x * 4)} {TOKEN_LABEL[t]}</span>{/each}<small>≈ {signed(weekNet.reduce((a, [t, x]) => a + x * 4 * hv[t], 0), 2)} HEARTS</small></span></div>
 			</div>
 		{/if}
 		{#if days.length && show === 'all'}
@@ -72,7 +73,7 @@
 							{:else}{e.from === who ? `to ${nameOf(view, e.to)}` : `from ${nameOf(view, e.from)}`}<small>{e.note}</small>{/if}
 						</span>
 						{#if e.amount}
-							<span class="amt" class:plus={sign(e) === '+'} class:minus={sign(e) === '−'}>{sign(e)}{f(e.amount, 3)} {TOKEN_LABEL[e.token] ?? e.token}{#if e.out}<small>+{f(e.out.amount, 3)} {TOKEN_LABEL[e.out.token]}</small>{/if}</span>
+							<span class="amt" class:plus={sign(e) === '+'} class:minus={sign(e) === '−'}>{sign(e)}{f(e.amount, 3)} {TOKEN_LABEL[e.token] ?? e.token}{#if MINDS.includes(e.token)}<small>≈ {f(e.amount * hv[e.token], 3)} HEARTS</small>{/if}{#if e.out}<small>+{f(e.out.amount, 3)} {TOKEN_LABEL[e.out.token]}</small>{/if}</span>
 						{/if}
 					</div>
 				{/each}

@@ -1,16 +1,17 @@
 <!--
 	PoolBasket: the AMM pool basket the MaiaCity COOP owns, MIND by MIND: what lies in it, its Balancer weight, what that
-	is worth in MaiaMIND at the pool's own spot price, and its share of the basket's value. With `treasury`, it also adds
+	is worth in HEARTS, the display currency (engine heartsValue), and its share of the basket's value. With `treasury`, it also adds
 	the treasury and the basket together, so the COOP's whole holding reads in one place.
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { MINDS, TOKEN_COLOUR, TOKEN_LABEL, price, weights } from '../../../game/maiacity-v1/engine.js';
+	import { MINDS, TOKEN_COLOUR, TOKEN_LABEL, heartsValue, weights } from '../../../game/maiacity-v1/engine.js';
 
 	let { view, treasury = null } = $props();
 
 	const w = $derived(weights(view));
-	const worth = $derived(Object.fromEntries(MINDS.map((t) => [t, t === 'MAIA' ? view.pool[t] : view.pool[t] * (price(view, t, 'MAIA') ?? 0)])));
+	const hv = $derived(heartsValue(view));
+	const worth = $derived(Object.fromEntries(MINDS.map((t) => [t, view.pool[t] * hv[t]])));
 	const total = $derived(MINDS.reduce((a, t) => a + worth[t], 0));
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 	const pct = (x) => `${f(x * 100, 1)} %`;
@@ -20,17 +21,18 @@
 	{#each MINDS as t (t)}
 		<li>
 			<span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>weight {pct(w[t])} · {pct(total ? worth[t] / total : 0)} of its value</small></span>
-			<strong>{f(view.pool[t])}<small>≈ {f(worth[t])} MaiaMIND</small></strong>
+			<strong>{f(view.pool[t])}<small>≈ {f(worth[t])} HEARTS</small></strong>
 		</li>
 	{/each}
-	<li class="sum"><span>Basket value</span><strong>≈ {f(total)} <small class="inline">MaiaMIND</small></strong></li>
+	<li class="sum"><span>Basket value</span><strong>≈ {f(total)} <small class="inline">HEARTS</small></strong></li>
 </ul>
 {#if treasury}
 	<p class="label">Treasury and basket together</p>
 	<ul class="basket">
 		{#each MINDS as t (t)}
-			<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(treasury[t] + view.pool[t])}</strong></li>
+			<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(treasury[t] + view.pool[t])}<small>≈ {f((treasury[t] + view.pool[t]) * hv[t])} HEARTS</small></strong></li>
 		{/each}
+		<li class="sum"><span>All of it</span><strong>≈ {f(MINDS.reduce((a, t) => a + (treasury[t] + view.pool[t]) * hv[t], 0))} <small class="inline">HEARTS</small></strong></li>
 	</ul>
 {/if}
 

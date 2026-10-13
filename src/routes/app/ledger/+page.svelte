@@ -8,7 +8,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
-	import { COOPS, MINDS, SEATS, TOKEN_COLOUR, TOKEN_LABEL, calendar, dateText, mintState, nameOf } from '../../../../game/maiacity-v1/engine.js';
+	import { COOPS, MINDS, SEATS, TOKEN_COLOUR, TOKEN_LABEL, calendar, dateText, heartsValue, inHearts, mintState, nameOf } from '../../../../game/maiacity-v1/engine.js';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
 	import LedgerView from '$lib/maiacity-v1/LedgerView.svelte';
 	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
@@ -39,6 +39,9 @@
 		return { shape: 'aven', text: 'AMM', colour: '#8a7a55' };
 	};
 	const heartsLabel = $derived(who.startsWith('player:') ? `${view.players[who.slice(7)].name.replace(/\s+/g, '')}HEARTS` : 'HEARTS');
+	const hv = $derived(view ? heartsValue(view) : null);
+	/** the chosen wallet's whole worth in HEARTS; the MaiaCity COOP's counts the pool basket it owns */
+	const total = $derived(view && balance ? inHearts(view, balance, hv) + (who === 'coop:maia' ? inHearts(view, view.pool, hv) : 0) : 0);
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 </script>
 
@@ -58,6 +61,7 @@
 				{#if me}
 					<p class="balance">{f(me.wallet.HEARTS)} <small>HEARTS</small></p>
 					<p class="dim">{MINDS.map((t) => `${f(me.wallet[t])} ${TOKEN_LABEL[t]}`).join(' · ')}</p>
+					<p class="dim">≈ {f(inHearts(view, me.wallet, hv))} HEARTS in all, its MINDs counted in HEARTS</p>
 				{:else}
 					<p class="balance small">No seat yet</p>
 					<p class="dim">Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> to mint and invest. Every wallet below is open to read.</p>
@@ -89,6 +93,8 @@
 				<header class="whose">
 					<small>{who.startsWith('player:') ? 'Player' : who === 'pool' ? 'AMM pool · owned by the MaiaCity COOP' : 'COOP'}</small>
 					<h2>{nameOf(view, who)}</h2>
+					<p class="worth">≈ {f(total)} <span>HEARTS{who === 'coop:maia' ? ', treasury and pool basket' : ''}</span></p>
+					<p class="dim small">Every MIND counted in HEARTS: the average MIND is worth 1 HEART, the pool says how each stands against it ({MINDS.map((t) => `${TOKEN_LABEL[t]} ${f(hv[t])}`).join(' · ')}).</p>
 				</header>
 				<div class="tabs" role="tablist">
 					{#each TABS as [id, label] (id)}
@@ -102,7 +108,7 @@
 							<p class="eyebrow">{who === 'coop:maia' ? 'Assets · its treasury' : 'Assets'}</p>
 							<ul class="holdings">
 								{#if who.startsWith('player:')}<li><span><i class="heart"></i>{heartsLabel}</span><strong>{f(balance.HEARTS)}</strong></li>{/if}
-								{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(balance[t])}</strong></li>{/each}
+								{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(balance[t])}<small>≈ {f(balance[t] * hv[t])} HEARTS</small></strong></li>{/each}
 							</ul>
 							{#if who === 'coop:maia'}
 								<p class="eyebrow">The pool basket it owns</p>
@@ -287,6 +293,24 @@
 		font-size: 0.72rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.worth {
+		margin: 0 0 0.3rem;
+		font-family: var(--font-display);
+		font-size: 1.6rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.worth span {
+		font-family: var(--font-body);
+		font-size: 0.85rem;
+		color: var(--muted);
+	}
+	.holdings strong small {
+		display: block;
+		text-align: right;
+		font-size: 0.75rem;
+		font-weight: 400;
 		color: var(--muted);
 	}
 	.whose h2 {
