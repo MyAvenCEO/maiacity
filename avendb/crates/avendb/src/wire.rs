@@ -303,7 +303,8 @@ impl Decode for PublicKey {
 
 impl Decode for RecoveryKey {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(RecoveryKey { keys: SignerKeys::decode(r)?, seal: PublicKey::decode(r)?, mceliece: r.bytes()?.into() })
+        let (keys, seal, mceliece) = (SignerKeys::decode(r)?, PublicKey::decode(r)?, r.bytes()?.into());
+        Ok(RecoveryKey { keys, seal, mceliece, consent: Signature::decode(r)? })
     }
 }
 

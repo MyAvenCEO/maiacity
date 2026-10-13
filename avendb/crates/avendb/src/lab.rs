@@ -80,6 +80,7 @@ use crate::policy::{
     checkpointed, mk_cell, replay, Action, Cap, Edit, Grantee, Issued, Kind, Line, Log, Meaning, Principal, Proposal,
     Readings, Refusal, Replay, Role, State, SyncRule, Write,
 };
+use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Proof, Rule, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
@@ -122,6 +123,9 @@ enum Key {
     /// ceremony showed them, and the id of that key, whose McEliece pair the process forgets as a device locks. It
     /// signs in a ceremony alone (`Lab::complete`).
     Web { keys: SignerKeys, seal: (PublicKey, Arc<[u8]>), pair: KeyId },
+    /// A signer the Lab holds the public half of alone, and its standing consent to be added as an owner, as the master
+    /// recovery key (`Lab::set_recovery`): it signs no edit but one that takes that consent (`sign::standing`).
+    Consent(Arc<RecoveryKey>),
 }
 
 impl Key {
@@ -130,7 +134,7 @@ impl Key {
         match self {
             Key::Device(k) => Some(k.sign(edit, pq)),
             Key::Passkey(p) => Some(p.sign(edit, pq)),
-            Key::Web { .. } => None,
+            Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -140,7 +144,7 @@ impl Key {
         match self {
             Key::Device(k) => Some(k.seal_secret()),
             Key::Passkey(p) => Some(p.seal_secret()),
-            Key::Web { .. } => None,
+            Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -148,6 +152,7 @@ impl Key {
     fn seal_public(&self) -> (PublicKey, Arc<[u8]>) {
         match (self, self.seal_secret()) {
             (Key::Web { seal, .. }, _) => seal.clone(),
+            (Key::Consent(k), _) => (k.seal.clone(), k.mceliece.clone()),
             (_, secret) => {
                 let secret = secret.expect("a key at hand");
                 (secret.public(), secret.mceliece_public())
@@ -160,6 +165,7 @@ impl Key {
             Key::Device(k) => k.keys(),
             Key::Passkey(p) => p.keys(),
             Key::Web { keys, .. } => *keys,
+            Key::Consent(k) => k.keys,
         }
     }
 }
@@ -573,6 +579,8 @@ pub struct Lab {
     /// Its devices are a patched app's (`patched`): they ignore the ops of the caps they write through, and the schemas
     /// of what they write.
     lawless: bool,
+    /// The master recovery key every human vault it founds adds as an owner (`set_recovery`).
+    recovery: Option<Arc<RecoveryKey>>,
 }
 
 impl Default for Lab {
@@ -609,6 +617,7 @@ impl Lab {
             now: 0,
             dry: false,
             lawless: false,
+            recovery: None,
         };
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
@@ -679,7 +688,7 @@ impl Lab {
     pub fn passkey_secret(&self, passkey: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&passkey)? {
             Key::Passkey(p) => Some(p.secret()),
-            Key::Device(_) | Key::Web { .. } => None,
+            Key::Device(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -722,6 +731,29 @@ impl Lab {
         self.keys.insert(id, Key::Web { keys, seal, pair });
         self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
         Some(id)
+    }
+
+    /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
+    /// an owner, by its standing consent (`sign::standing`), and the Lab signs as it with that consent alone, on such an
+    /// edit or one that adds it as an owner. A Lab that holds its secret (`passkey_from`) signs as it in full. Its id.
+    pub fn set_recovery(&mut self, key: Arc<RecoveryKey>) -> SignerId {
+        let id = key.id();
+        self.keys.entry(id).or_insert_with(|| Key::Consent(key.clone()));
+        self.names.entry(id).or_insert_with(|| "the master recovery key".into());
+        self.recovery = Some(key);
+        id
+    }
+
+    /// The master recovery key this Lab adds (`set_recovery`), if any.
+    pub fn recovery(&self) -> Option<SignerId> {
+        self.recovery.as_ref().map(|k| k.id())
+    }
+
+    /// The first owners of a human vault the passkey `passkey` founds, its root, and the signers of its genesis: the
+    /// passkey, and the master recovery key the Lab adds (`set_recovery`), if any, which signs by its standing consent.
+    pub fn human_owners(&self, passkey: SignerId) -> (Vec<Principal>, Vec<SignerId>) {
+        let signers: Vec<SignerId> = [passkey].into_iter().chain(self.recovery().filter(|&r| r != passkey)).collect();
+        (signers.iter().map(|&s| Principal::Signer(s)).collect(), signers)
     }
 
     /// The public keys of signer `s`, if its key is at hand: a passkey's, or a device's while it is unlocked.
@@ -769,7 +801,7 @@ impl Lab {
         }
         let (id, pq) = (edit.id(), sign::needs_pq(&edit));
         let signers: Vec<SignerId> = edit.sigs().filter(|&s| s != server).collect();
-        let signature = |s| self.sign_by(s, id, pq, ceremonies, &batch, None);
+        let signature = |s| self.sign_by(s, id, pq, ceremonies, &batch, None, &[]);
         let sigs = signers.into_iter().map(signature).collect::<Result<_, _>>()?;
         let store = self.held(on);
         let logs: Vec<EditId> = vault_logs(store.log.edits(), store.view(), vec![vault]).iter().map(Edit::id).collect();
@@ -820,7 +852,7 @@ impl Lab {
         }
         // its own signature in its place among the edit's signers, the others' in theirs
         let (id, pq) = (add.id(), sign::needs_pq(&add));
-        let mine = self.sign_by(d, id, pq, &[], &[], None)?;
+        let mine = self.sign_by(d, id, pq, &[], &[], None, &[])?;
         let mut theirs = sigs.into_iter();
         let all: Option<Vec<Signature>> =
             add.sigs().map(|s| if s == d { Some(mine.clone()) } else { theirs.next() }).collect();
@@ -843,9 +875,10 @@ impl Lab {
 
     /// Signer `s`'s signature on edit `id`: by its ceremony among `ceremonies`, over the edit's id or, with the edits
     /// `batch` drafted together, over theirs (`Ceremony::sign_in`), or, with `pass`, the device an edit adds and when
-    /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`); or by its key at hand; both
-    /// halves if `pq`. `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its own over that
-    /// challenge.
+    /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`); or by its key at hand
+    /// (`sign_held`); both halves if `pq`. `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its
+    /// own over that challenge.
+    #[allow(clippy::too_many_arguments)]
     fn sign_by(
         &mut self,
         s: SignerId,
@@ -854,6 +887,7 @@ impl Lab {
         ceremonies: &[(SignerId, &Ceremony)],
         batch: &[EditId],
         pass: Option<(SignerId, u64)>,
+        standing: &[SignerId],
     ) -> Result<Signature, Refusal> {
         match ceremonies.iter().find(|(c, _)| *c == s) {
             Some((_, c)) => {
@@ -864,7 +898,17 @@ impl Lab {
                 };
                 signed.ok_or(Refusal::BadSignature)
             }
-            None => self.keys.get_mut(&s).and_then(|k| k.sign(id, pq)).ok_or(Refusal::Locked),
+            None => self.sign_held(s, id, pq, standing),
+        }
+    }
+
+    /// Signer `s`'s signature on edit `id` by its key at hand, both halves if `pq`; or, for a signer the Lab holds the
+    /// standing consent of alone (`Key::Consent`), that consent, if the edit takes it (`standing`, `sign::standing`).
+    /// `Locked` if neither is at hand.
+    fn sign_held(&mut self, s: SignerId, id: EditId, pq: bool, standing: &[SignerId]) -> Result<Signature, Refusal> {
+        match self.keys.get_mut(&s).ok_or(Refusal::Locked)? {
+            Key::Consent(k) if standing.contains(&s) => Ok(k.consent.clone()),
+            key => key.sign(id, pq).ok_or(Refusal::Locked),
         }
     }
 
@@ -964,13 +1008,14 @@ impl Lab {
         Some(self.keys.get(&s)?.seal_public())
     }
 
-    /// Sign `edit` with the key of each of its signers: both halves, or on a write the classical half alone. `Locked`
-    /// if a signer's key isn't at hand.
+    /// Sign `edit` with the key of each of its signers: both halves, or on a write the classical half alone; a signer
+    /// the Lab holds the standing consent of alone by that consent, where the edit takes it (`sign_held`). `Locked` if
+    /// a signer's key isn't at hand.
     fn sign(&mut self, edit: Edit) -> Result<Signed, Refusal> {
-        let (id, pq) = (edit.id(), sign::needs_pq(&edit));
+        let (id, pq, standing) = (edit.id(), sign::needs_pq(&edit), sign::standing(&edit));
         let mut sigs = vec![];
         for s in edit.sigs() {
-            sigs.push(self.keys.get_mut(&s).and_then(|k| k.sign(id, pq)).ok_or(Refusal::Locked)?);
+            sigs.push(self.sign_held(s, id, pq, &standing)?);
         }
         Ok(Signed { edit, sigs })
     }
@@ -1098,7 +1143,7 @@ impl Lab {
         if self.held(on).log.ids().len() != held {
             self.held(on).view().step(&edit)?;
         }
-        let (id, pq) = (edit.id(), sign::needs_pq(&edit));
+        let (id, pq, standing) = (edit.id(), sign::needs_pq(&edit), sign::standing(&edit));
         let ceremony = |s: SignerId| ceremonies.iter().find(|(c, _)| *c == s).map(|(_, c)| *c);
         let signers: Vec<SignerId> = edit.sigs().collect();
         let pass = match (&edit.action, pass) {
@@ -1109,7 +1154,7 @@ impl Lab {
         // the pass signs for the passkey alone: every other signer as ever
         let signature = |s: SignerId| {
             let by_pass = pass.filter(|_| matches!(self.keys_of(s), Some(SignerKeys::Passkey { .. })));
-            self.sign_by(s, id, pq, ceremonies, &batch, by_pass)
+            self.sign_by(s, id, pq, ceremonies, &batch, by_pass, &standing)
         };
         let sigs = signers.into_iter().map(signature).collect::<Result<_, _>>()?;
         let signed = Signed { edit, sigs };
@@ -2108,12 +2153,16 @@ impl Lab {
 
     /// Device `d` split off to run on its own, as on a machine of its own (`avendb-net` puts it on iroh): a Lab holding
     /// only `d`'s store, the keys of `d` and of the signers `with` that are used on it (its person's passkey), every
-    /// signer's name, and randomness of its own from `seed`, so that no two devices split off make the same keys or
-    /// nonces. This Lab keeps the rest.
+    /// signer's name, the master recovery key this Lab adds (`set_recovery`), and randomness of its own from `seed`, so
+    /// that no two devices split off make the same keys or nonces. This Lab keeps the rest.
     pub fn split(&mut self, d: SignerId, with: &[SignerId], seed: [u8; 32]) -> Lab {
         let store = self.stores.remove(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         self.devices.retain(|&x| x != d);
-        let keys = [d].iter().chain(with).filter_map(|s| Some((*s, self.keys.remove(s)?))).collect();
+        let mut keys: HashMap<SignerId, Key> =
+            [d].iter().chain(with).filter_map(|s| Some((*s, self.keys.remove(s)?))).collect();
+        if let Some(r) = &self.recovery {
+            keys.entry(r.id()).or_insert_with(|| Key::Consent(r.clone()));
+        }
         let salts = self.salts.remove(&d).map(|salt| (d, salt)).into_iter().collect();
         let seed = Zeroizing::new(seed);
         let mut rng = SeededRng::new("lab randomness", &*seed);
@@ -2134,6 +2183,7 @@ impl Lab {
             now: self.now,
             dry: false,
             lawless: false,
+            recovery: self.recovery.clone(),
         }
     }
 
@@ -2141,7 +2191,7 @@ impl Lab {
     pub fn endpoint_secret(&self, d: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.endpoint_secret()),
-            Key::Passkey(_) | Key::Web { .. } => None,
+            Key::Passkey(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -2150,7 +2200,7 @@ impl Lab {
     pub fn hello(&self, d: SignerId, exporter: &[u8; 32], dialer: bool) -> Option<Hello> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.hello(exporter, dialer)),
-            Key::Passkey(_) | Key::Web { .. } => None,
+            Key::Passkey(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -2163,7 +2213,7 @@ impl Lab {
         let device = device.keys();
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.pass(device, made)),
-            Key::Device(_) | Key::Web { .. } => None,
+            Key::Device(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -2172,7 +2222,7 @@ impl Lab {
     pub fn ceremony(&mut self, passkey: SignerId, challenge: [u8; 32]) -> Option<Ceremony> {
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.ceremony(challenge)),
-            Key::Device(_) | Key::Web { .. } => None,
+            Key::Device(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 

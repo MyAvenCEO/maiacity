@@ -130,13 +130,24 @@ whose signing keys and seal key all derive from 32 secret bytes. Its person make
 
 ```sh
 cargo run --release -p avendb --bin master-key -- new ~/Desktop/master-recovery
-cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.secret
+cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.pub
 ```
 
-`new` writes `master-recovery.secret`, the 32 bytes in hex, readable by its owner alone, and `master-recovery.pub`,
-the public half every vault needs: its P-256 and SLH-DSA keys and its X-Wing and Classic McEliece keys, a megabyte. It
-never writes over a file. `id` names the key a `.secret` or `.pub` file holds, to check a copy against the other.
-Whoever holds the secret owns every vault that added the key: it stays offline, and only the `.pub` file is handed on.
+`new` prints the secret in the terminal, 64 hex digits to copy and keep offline, and writes it nowhere. Its one file is
+`master-recovery.pub`, the public half every vault needs: its P-256 and SLH-DSA keys, its X-Wing and Classic McEliece
+keys, a megabyte, and its standing consent to be added as an owner. It never writes over a file. `pub` asks for the
+secret and makes the `.pub` file again; `id` names the key a `.pub` file holds, or, with no file, the secret it asks
+for. Whoever holds the secret owns every vault that added the key: only the `.pub` file is handed on.
+
+An owner signs its consent to every edit that adds it (`policy`), and the secret stays offline, so the key signed one
+standing consent as it was made: both halves over a challenge that names it alone (`sign::consent_challenge`). An edit
+that founds a vault with it among the first owners, or adds it as an owner, takes that consent in place of its
+signature, unless it is the edit's author or the vault's root; no other edit does (`sign::standing`). The key's file is
+built in (`crates/avendb/master-recovery.pub`, `recovery::master`), and every device's Lab adds it
+(`Lab::set_recovery`): a human vault a device founds has it among its first owners, in the same ceremony
+(`Lab::human_owners`). Whoever holds the secret signs as an owner in full: alone, it adds a device of its own to a vault
+whose person lost every passkey and device, and that device opens the vault, as its keys were sealed to the master key
+as to every owner.
 
 ## A device in the browser
 

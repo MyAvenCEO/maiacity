@@ -19,6 +19,12 @@
 //! for its writes in its next checkpoint, signed both ways (`policy::Action::Checkpoint`), and a peer that no longer
 //! trusts the curves counts only checkpointed writes (`policy::checkpointed`).
 //!
+//! A signer may also consent once, for good, to be added as an owner (`consent_challenge`, `standing`): its signature,
+//! both halves, over a challenge that names it alone. An edit that founds a vault with it among the first owners, or
+//! adds it as an owner, takes that standing consent in place of its signature on the edit, unless the signer authors
+//! the edit or is the vault's root; no other edit does. So a key kept offline, as the master recovery key is
+//! (`recovery`), is added to vaults without ever coming online.
+//!
 //! Each signer also has a key that keys are sealed to (`keys`): a device derives it with its other keys, a passkey
 //! from its PRF output, so whoever can sign as the signer can also open what is sealed to it, and nothing else can.
 //!
@@ -38,7 +44,7 @@ use zeroize::{ZeroizeOnDrop, Zeroizing};
 use crate::hash::{self, Hasher};
 use crate::id::{EditId, SignerId};
 use crate::keys::Secret;
-use crate::policy::{Action, Edit, Refusal};
+use crate::policy::{Action, Edit, Principal, Refusal};
 
 /// What both halves of a signature sign: ed25519 this followed by the edit's id, SLH-DSA the edit's id with this as its
 /// context string. It keeps an edit's old name, op, as every signature already made signs it.
@@ -174,7 +180,10 @@ impl Signed {
             Action::AddDevice { device, .. } if self.edit.cosigners.contains(&device) => Some(device),
             _ => None,
         };
-        let verifies = |(&s, sig): (&SignerId, &Signature)| verify_adding(s, id, sig, pq, joins);
+        let standing = standing(&self.edit);
+        let consents =
+            |s: SignerId, sig: &Signature| standing.contains(&s) && verify(s, EditId(consent_challenge(s)), sig, true);
+        let verifies = |(&s, sig): (&SignerId, &Signature)| verify_adding(s, id, sig, pq, joins) || consents(s, sig);
         let all = signers.len() == self.sigs.len() && signers.iter().zip(&self.sigs).all(verifies);
         if all { Ok(&self.edit) } else { Err(Refusal::BadSignature) }
     }
@@ -327,6 +336,32 @@ pub fn pass_challenge(device: SignerId, made: u64) -> [u8; 32] {
     let mut h = Hasher::new("relay pass for a device");
     h.update(&device.0).update(&made.to_be_bytes());
     h.finalize()
+}
+
+/// What a signer signs, both halves, to consent for good to be added as an owner (`standing`): a hash of its id alone.
+/// Its own hash, so it is never an edit's id, nor a batch's, a hello's or a pass's challenge.
+pub fn consent_challenge(signer: SignerId) -> [u8; 32] {
+    let mut h = Hasher::new("standing consent to own");
+    h.update(&signer.0);
+    h.finalize()
+}
+
+/// The signers whose standing consent (`consent_challenge`) `edit` takes in place of their signature on it: those it
+/// adds as owners, as the first owners of a vault it founds or one it adds, but its author and the vault's root, who
+/// sign the edit itself. Every other edit takes none.
+pub fn standing(edit: &Edit) -> Vec<SignerId> {
+    let added = match &edit.action {
+        Action::Genesis { owners, root, .. } => owners
+            .iter()
+            .filter_map(|p| match p {
+                Principal::Signer(s) if Some(*s) != *root => Some(*s),
+                _ => None,
+            })
+            .collect(),
+        Action::AddOwner { owner: Principal::Signer(s), .. } => vec![*s],
+        _ => vec![],
+    };
+    added.into_iter().filter(|&s| s != edit.author).collect()
 }
 
 /// What a passkey's assertion signs for several edits at once, in one ceremony (`Classical::Batch`): a hash of their
@@ -766,6 +801,11 @@ impl Passkey {
         self.sign_at(edit, ORIGINS[0], pq)
     }
 
+    /// The passkey's standing consent to be added as an owner (`standing`): both halves over its consent challenge.
+    pub fn consent(&mut self) -> Signature {
+        self.sign(EditId(consent_challenge(self.id())), true)
+    }
+
     /// The passkey's ceremony over `challenge`, on the website (`Ceremony`): an assertion, and the PRF output on
     /// `PRF_SALT`, as a browser's authenticator answers `navigator.credentials.get` with the PRF extension.
     pub fn ceremony(&mut self, challenge: [u8; 32]) -> Ceremony {
@@ -848,6 +888,57 @@ mod tests {
             assert_eq!(base64url(plain.as_bytes()), encoded);
         }
         assert_eq!(base64url(&[0xfb, 0xff]), "-_8");
+    }
+
+    #[test]
+    fn a_standing_consent_counts_only_where_its_signer_is_added() {
+        let (mut owner, mut master) = (Passkey::from_seed([1; 32]), Passkey::from_seed([2; 32]));
+        let mut other = Passkey::from_seed([3; 32]);
+        let (o, m, device) = (owner.id(), master.id(), DeviceKey::from_secret([4; 32]).id());
+        let consent = master.consent();
+        let mut signed = |edit: Edit, consent: &Signature| {
+            let own = owner.sign(edit.id(), true);
+            let sigs = if edit.author == o { vec![own, consent.clone()] } else { vec![consent.clone(), own] };
+            Signed { edit, sigs }.verify().map(|_| ())
+        };
+        let genesis = |owners: &[SignerId], root| Action::Genesis {
+            kind: Kind::Human,
+            owners: owners.iter().map(|&s| Principal::Signer(s)).collect(),
+            threshold: 1,
+            root,
+            nonce: 0,
+            seal_to: vec![],
+        };
+        let by = |author, action| {
+            let cosigners = vec![if author == o { m } else { o }];
+            Edit { parents: vec![], depth: 0, author, cosigners, action }
+        };
+        let v = VaultId::from_u64(1);
+        let add = |s| Action::AddOwner { vault: v, owner: Principal::Signer(s), seal_to: None };
+        // founding a vault with it among the first owners, or adding it as an owner, takes it
+        assert_eq!(signed(by(o, genesis(&[o, m], Some(o))), &consent), Ok(()));
+        assert_eq!(signed(by(o, genesis(&[m, o], None)), &consent), Ok(()));
+        assert_eq!(signed(by(o, add(m)), &consent), Ok(()));
+        // no other edit: another owner added, a vault founded without it, a device added, its threshold, its removal
+        for action in [
+            add(other.id()),
+            genesis(&[o], Some(o)),
+            Action::AddDevice { vault: v, device, seal_to: None },
+            Action::SetThreshold { vault: v, threshold: 1 },
+            Action::RemoveOwner { vault: v, owner: Principal::Signer(m), keep: vec![] },
+        ] {
+            assert_eq!(signed(by(o, action), &consent), Err(Refusal::BadSignature));
+        }
+        // nor as the vault's root, nor as the edit's author, who sign it themselves
+        assert_eq!(signed(by(o, genesis(&[o, m], Some(m))), &consent), Err(Refusal::BadSignature));
+        assert_eq!(signed(by(m, genesis(&[o, m], Some(o))), &consent), Err(Refusal::BadSignature));
+        // another signer's consent is no consent of its
+        assert_eq!(signed(by(o, add(m)), &other.consent()), Err(Refusal::BadSignature));
+        // and a consent is no signature on an edit, as no edit's id is its challenge
+        let mut on_edit = master.sign(EditId(consent_challenge(m)), true);
+        assert!(verify(m, EditId(consent_challenge(m)), &on_edit, true));
+        on_edit.pq = None;
+        assert!(!verify(m, EditId(consent_challenge(m)), &on_edit, true), "both halves");
     }
 
     #[test]
