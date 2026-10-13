@@ -11,6 +11,12 @@
  * (./lifetrac.js) carries one — and `powerCube` is the cube on its own, as the Actors and the Assets show it.
  * Built in its own frame: its foot's middle at the origin, its front (the flywheel's end) towards +z, in mm through
  * `L`; the wiki's figures where it gives them, the rest inferred to fit the 27" cube (its cards say which).
+ *
+ * POWER CUBE ELECTRIC (our variant, not an OSE design; Samuel 2026-10-13): the same frame, engine, tank, battery and
+ * quick-attach plate, but the hydraulics swapped for a brushless alternator on the engine's shaft, its control box and
+ * sockets on the back, so the cube that drives the village's machines can also light its homes. The alternator is
+ * longer than the pump and its tank were, so the electric cube is 27" wide and high but 35" (900 mm) long. Its
+ * figures are inferred from the engine (20.9 kW) and common 3,000/3,600 rpm alternators; its cards say so.
  */
 import * as THREE from 'three';
 import { loop, rig, skin } from './rig';
@@ -22,7 +28,7 @@ import { machineKit } from './parts.js';
 /** @typedef {import('./rig').Cast} Cast */
 /** @typedef {import('./rig').BoneSpec} BoneSpec */
 /** @typedef {[number, number, number]} MM a point of the cube: x across, y forward, z up (mm) */
-/** @typedef {'frame' | 'engine' | 'hydraulics' | 'controls'} Group */
+/** @typedef {'frame' | 'engine' | 'hydraulics' | 'electrics' | 'controls'} Group */
 
 const S = 0.001;
 /** the cube's size: 27" each way (W across, L along, H high), the 4×4 base's height */
@@ -52,7 +58,12 @@ const OWN = /** @type {import('./parts.js').Assembly[]} */ ([
 	{ id: 'controls', label: 'Fuel and controls', note: 'The removable 7-gallon fuel tank, the 12 V battery and the panel with the key, the choke and the throttle.', out: [-0.5, 0.35, 0.2] }
 ]);
 const OWN_STEPS = ['Cut, drill and bolt the frame: skids, posts, top rails, quick-attach plate', 'Bolt in the engine on its mount plate', 'Mount the pump and coupling; fit the reservoir, filter, relief, gauge, cooler, couplers and hoses', 'Fit the fuel tank, the battery and the control panel'];
-const STEP_OF = { frame: 1, engine: 2, hydraulics: 3, controls: 4 };
+const STEP_OF = { frame: 1, engine: 2, hydraulics: 3, electrics: 3, controls: 4 };
+/** the electric cube's assemblies and steps: the hydraulics' place taken by the alternator and its sockets */
+const OWN_ELECTRIC = /** @type {import('./parts.js').Assembly[]} */ (OWN.map((a) => (a.id === 'hydraulics' ? { id: 'electrics', label: 'Electrics', note: 'A brushless alternator flanged to the engine and turned by its shaft, its voltage regulator and breakers in a box on the back, and the sockets a home, a workshop or the village grid plugs into.', out: [0, 0.22, -0.55] } : a)));
+const OWN_ELECTRIC_STEPS = OWN_STEPS.map((x, i) => (i === 2 ? 'Flange the alternator to the engine on its coupling; fit its feet, the control box, the sockets and the cable' : x));
+/** the electric cube's length: the alternator needs more room than the pump and its tank */
+export const CUBE_ELECTRIC_L = 900;
 
 /**
  * Add a Power Cube's parts to a machine's kit, its foot's middle at `at` (actor metres), its front towards +z.
@@ -60,9 +71,10 @@ const STEP_OF = { frame: 1, engine: 2, hydraulics: 3, controls: 4 };
  * `powerCubeJoints` gives); every other part rides `base`. With `unit`, the cube goes into the machine's build already
  * built, all its parts at once.
  * @param {ReturnType<typeof machineKit>} kit
- * @param {{ at: V3, base: string, joints: { flywheel: string, coupling: string, fan: string }, assembly: (g: Group) => string, step: (g: Group) => number, prefix?: string, unit?: string }} o
+ * With `electric`, it is the Power Cube Electric: an alternator and sockets in place of the hydraulics, a longer frame.
+ * @param {{ at: V3, base: string, joints: { flywheel: string, coupling: string, fan: string }, assembly: (g: Group) => string, step: (g: Group) => number, prefix?: string, unit?: string, electric?: boolean }} o
  */
-export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix = 'pc-', unit }) {
+export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix = 'pc-', unit, electric = false }) {
 	const m = new THREE.Matrix4().makeTranslation(...at);
 	/** a point of the cube (mm) in the actor @param {number} x @param {number} y @param {number} z @returns {V3} */
 	const L = (x, y, z) => [x * S, z * S, y * S];
@@ -89,14 +101,15 @@ export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix =
 		}
 		return out;
 	};
-	const W = CUBE.W / 2, Lh = CUBE.L / 2, H = CUBE.H, B = CUBE.base;
+	const LEN = electric ? CUBE_ELECTRIC_L : CUBE.L;
+	const W = CUBE.W / 2, Lh = LEN / 2, H = CUBE.H, B = CUBE.base;
 	const id = (/** @type {string} */ s) => `${prefix}${s}`;
 	/** @param {Group} g @param {Omit<import('./parts.js').PartInfo, 'assembly' | 'step'>} info @param {string} joint @param {(put: (geo: THREE.BufferGeometry, color: string, mat?: number) => void) => void} make */
 	const part = (g, info, joint, make) => kit.part({ ...info, id: id(info.id), assembly: assembly(g), step: step(g), ...(unit ? { unit } : {}) }, joint, make);
 
 	/* the frame */
 	part('frame', { id: 'skids', label: 'Power Cube base skids (4×4 tube)', count: 2, source: SRC.s7, what: 'Two 4×4 steel tubes front to back under the cube: the “strong structural frame” of 7s that the engine, pump and tanks bolt to, and that takes the forks, the lifting pins or another cube stacked on it.', specs: [['Stock', '4" × 4" square tube (101.6 mm)'], ['Length', '660 mm [inferred: the 27" cube]'], ['Version', '7s / v15.6 (VII: 2×2 angle)']] }, base, (put) => {
-		for (const sx of [-1, 1]) put(box(sx * (W - 50.8), 0, B / 2, 101.6, CUBE.L, 101.6, 6), FRAME);
+		for (const sx of [-1, 1]) put(box(sx * (W - 50.8), 0, B / 2, 101.6, LEN, 101.6, 6), FRAME);
 		for (const y of [-Lh + 40, Lh - 40]) put(box(0, y, B / 2, CUBE.W - 203, 50.8, 50.8, 3), FRAME);
 	});
 	part('frame', { id: 'cage', label: 'Power Cube posts and top rails (2×2 angle)', count: 8, source: SRC.vii, what: 'Four corner posts and four top rails of 1/4" × 2" × 2" angle make the cube’s cage: they guard the engine, carry the fuel tank and give hand-holds to lift it by. OSE’s frame page cuts its members 29", 27" and 24" long.', specs: [['Stock', '1/4" × 2" × 2" angle (6.35 × 50.8 × 50.8 mm)'], ['Members', '29", 27" and 24" pieces'], ['Envelope', '27" (686 mm) cube']] }, base, (put) => {
@@ -160,6 +173,9 @@ export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix =
 		put(cyl([-150, 230, 150], [-150, 248, 150], 20, 12), STEEL);
 	});
 
+	if (electric) electrics(part, { box, cyl, hose, T, Lh, B, joints, base });
+	else hydraulics();
+	function hydraulics() {
 	/* the hydraulics */
 	part('hydraulics', { id: 'coupling', label: 'Shaft coupling', source: SRC.port, what: 'Not a bought jaw coupling: OSE cut two coupling halves and welded them into one sleeve, keyed and set-screwed to the engine’s shaft, splined onto the pump’s 3/4" shaft.', moves: 'Turns with the engine (shown slowed).', drive: 'The crankshaft; it drives the pump', specs: [['Engine side', 'Keyed, set screws'], ['Pump side', '3/4" spline (11-tooth typical)'], ['Made', 'Two halves cut and welded']] }, joints.coupling, (put) => {
 		put(cyl([0, CPL - 40, CRANK], [0, CPL + 40, CRANK], 34, 18), STEEL);
@@ -220,6 +236,7 @@ export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix =
 		put(hose([[290, -Lh + 30, B + 150], [W - 30, -240, 160], [W - 30, -200, 140]], 9), HOSE);
 		put(hose([[W - 30, 120, 320], [300, 60, 600], [150, -Lh + 120, 690]], 9), HOSE);
 	});
+	}
 
 	/* fuel and controls */
 	part('controls', { id: 'fuel-tank', label: 'Fuel tank (7 gal)', source: SRC.vii, what: 'The removable petrol tank on top of the cube, over the engine: lift it off to fill it away from the machine.', specs: [['Volume', '7 gal (26.5 L)'], ['Fuel', 'Petrol (gasoline)'], ['Removable', 'Yes']] }, base, (put) => {
@@ -239,6 +256,57 @@ export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix =
 	});
 }
 
+/** the Power Cube Electric's own parts, where the hydraulics were: all figures inferred (no OSE design exists) */
+/** @typedef {(geo: THREE.BufferGeometry, color: string, mat?: number) => void} Put */
+/**
+ * @param {(g: Group, info: any, joint: string, make: (put: Put) => void) => void} part
+ * @param {{ box: (...a: number[]) => THREE.BufferGeometry, cyl: (a: MM, b: MM, r: number, seg?: number, r1?: number) => THREE.BufferGeometry, hose: (pts: MM[], r?: number) => THREE.BufferGeometry, T: (g: THREE.BufferGeometry) => THREE.BufferGeometry, Lh: number, B: number, joints: { flywheel: string, coupling: string, fan: string }, base: string }} o
+ */
+function electrics(part, { box, cyl, hose, T, Lh, B, joints, base }) {
+	const AX0 = CPL - 50, AX1 = -Lh + 40; // the alternator's length along the shaft, from its flange to its end bell
+	const SRC_E = 'Power Cube Electric (our variant)';
+	part('electrics', { id: 'coupling', label: 'Flexible coupling', source: SRC_E, what: 'A rubber-element coupling between the engine’s shaft and the alternator’s rotor: it takes up the twin’s firing pulses so the rotor turns smoothly.', moves: 'Turns with the engine (shown slowed).', drive: 'The crankshaft; it drives the rotor', specs: [['Type', 'Jaw coupling, rubber spider [inferred]']] }, joints.coupling, (put) => {
+		put(cyl([0, CPL - 40, CRANK], [0, CPL + 40, CRANK], 34, 18), STEEL);
+		put(cyl([0, CPL - 6, CRANK], [0, CPL + 6, CRANK], 40, 18), BLACK);
+		// the rotor's fan at its far end, turning with it: it draws air through the alternator
+		for (let k = 0; k < 8; k++) {
+			const g = block(0.006, 0.11, 0.03, [0, 0, 0], 0.003);
+			g.rotateZ((k / 8) * Math.PI * 2);
+			g.translate(0, CRANK * S, (AX1 + 20) * S);
+			put(T(g), DARK);
+		}
+	});
+	part('electrics', { id: 'adapter', label: 'Alternator adapter (bell housing)', source: SRC_E, what: 'An SAE bell housing bolted to the engine’s face and the alternator’s flange: it holds the two shafts in line, as the pump mount did.', specs: [['Flange', 'SAE 5 / 6.5" [inferred]']] }, base, (put) => {
+		put(cyl([0, CPL - 30, CRANK], [0, AX0, CRANK], 120, 24, 100), '#5b6266');
+		put(box(0, -170, B + 30, 200, 100, 12, 2), STEEL);
+	});
+	part('electrics', { id: 'alternator', label: 'Brushless alternator', source: SRC_E, what: 'A single-bearing, brushless synchronous alternator: its rotor turns inside the stator’s copper windings and gives alternating current at the engine’s governed speed. The 28 hp twin carries about 15 kVA of it.', moves: 'Its rotor turns with the engine.', drive: 'The engine, through the coupling', specs: [['Power', '~15 kVA (12 kW) continuous [inferred: 20.9 kW engine]'], ['Output', '400 V three-phase and 230 V, 50 Hz at 3,000 rpm (60 Hz at 3,600)'], ['Type', 'Brushless, self-excited, single bearing'], ['Cooling', 'Its own fan, on the rotor']] }, base, (put) => {
+		put(cyl([0, AX0, CRANK], [0, AX1, CRANK], 128, 28), '#2f4d6e');
+		for (let y = AX0 - 25; y > AX1 + 20; y -= 22) put(cyl([0, y, CRANK], [0, y - 4, CRANK], 131, 28), '#3c5f86'); // the stator's ribs
+		put(cyl([0, AX1, CRANK], [0, AX1 - 18, CRANK], 120, 28), '#5b6266'); // the end bell, its fan behind the grille
+		put(box(0, (AX0 + AX1) / 2, CRANK + 150, 170, 160, 50, 6), '#2f4d6e'); // the terminal box on top
+	});
+	part('electrics', { id: 'feet', label: 'Alternator foot', source: SRC_E, what: 'A steel foot under the alternator’s end bell, bolted to the frame’s back cross member on rubber mounts; its flange end hangs on the engine.', specs: [['Mounts', 'Rubber, anti-vibration']] }, base, (put) => {
+		put(box(0, AX1 + 15, 92, 220, 40, 32, 3), STEEL);
+		for (const sx of [-1, 1]) put(cyl([sx * 80, AX1 + 15, 76], [sx * 80, AX1 + 15, 84], 18, 10), BLACK);
+	});
+	part('electrics', { id: 'control-box', label: 'Control box (regulator and breakers)', source: SRC_E, what: 'The box on the cube’s back: the automatic voltage regulator that holds the voltage steady as loads come and go, the main breaker, an earth-leakage breaker, an hour meter and a voltmeter.', specs: [['Regulator', 'AVR, ±1 %'], ['Protection', 'Main breaker + 30 mA RCD'], ['Meters', 'Volts, hours']] }, base, (put) => {
+		put(box(-120, -Lh + 30, 470, 300, 60, 220, 8), DARK);
+		put(cyl([-200, -Lh, 520], [-200, -Lh - 6, 520], 30, 20), '#f4f4ee');
+		put(box(-60, -Lh - 2, 520, 90, 6, 40, 3), BLACK);
+	});
+	part('electrics', { id: 'sockets', label: 'Sockets', count: 3, source: SRC_E, what: 'What the cube gives out: a red three-phase socket for the village grid or a workshop, and two blue 230 V sockets for a home or tools, each under its spring lid.', specs: [['Three-phase', '400 V, 16 A (CEE red)'], ['Single phase', '2 × 230 V, 16 A (CEE blue)']] }, base, (put) => {
+		for (const [x, c] of /** @type {const} */ ([[60, RED], [140, '#2f6fb5'], [210, '#2f6fb5']])) {
+			put(box(x, -Lh + 4, 300, 64, 8, 64, 6), c);
+			put(cyl([x, -Lh + 2, 300], [x, -Lh - 30, 300], 24, 14), c);
+		}
+	});
+	part('electrics', { id: 'cable', label: 'Alternator cable', source: SRC_E, what: 'The armoured cable from the alternator’s terminal box to the control box and sockets.', specs: [['Cable', '5 × 4 mm², H07RN-F']] }, base, (put) => {
+		put(hose([[0, (AX0 + AX1) / 2, CRANK + 175], [-80, -Lh + 120, 520], [-120, -Lh + 60, 470]], 10), HOSE);
+		put(hose([[-120, -Lh + 60, 400], [100, -Lh + 40, 320], [140, -Lh + 10, 300]], 9), HOSE);
+	});
+}
+
 /** where a Power Cube's moving joints are, its foot's middle at `at` @param {V3} at @returns {{ flywheel: V3, coupling: V3, fan: V3 }} */
 export function powerCubeJoints(at) {
 	const L = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => /** @type {V3} */ ([at[0] + x * S, at[1] + z * S, at[2] + y * S]);
@@ -252,16 +320,16 @@ export const powerCubeTurns = (t) => ({ engine: t * 2 * Math.PI * 2.2, fan: t * 
  * The Power Cube on its own, every part its own: runs (its engine and fan turning), off, is drawn apart, is built.
  * @returns {Cast}
  */
-export function powerCube() {
-	const kit = machineKit(OWN);
+export function powerCube({ electric = false } = {}) {
+	const kit = machineKit(electric ? OWN_ELECTRIC : OWN);
 	const at = /** @type {V3} */ ([0, 0, 0]);
-	powerCubeParts(kit, { at, base: 'base', joints: { flywheel: 'flywheel', coupling: 'coupling', fan: 'fan' }, assembly: (g) => g, step: (g) => STEP_OF[g], prefix: '' });
+	powerCubeParts(kit, { at, base: 'base', joints: { flywheel: 'flywheel', coupling: 'coupling', fan: 'fan' }, assembly: (g) => g, step: (g) => STEP_OF[g], prefix: '', electric });
 	const built = kit.build();
 	const j = powerCubeJoints(at);
 	/** @type {BoneSpec[]} */
 	const bones = [{ name: 'base', at: [0, 0, 0] }, { name: 'flywheel', parent: 'base', at: j.flywheel }, { name: 'coupling', parent: 'base', at: j.coupling }, { name: 'fan', parent: 'base', at: j.fan }, ...built.bones];
 	const r = rig(bones, built.pieces, [skin(0.55, { side: THREE.DoubleSide })]);
-	r.object.name = 'Power Cube';
+	r.object.name = electric ? 'Power Cube Electric' : 'Power Cube';
 	/** @param {number} t @param {boolean} run @returns {Pose} */
 	const pose = (t, run) => {
 		const { engine, fan } = powerCubeTurns(run ? t : 0);
@@ -278,13 +346,13 @@ export function powerCube() {
 				return kit.explode(built.centre, k, pose(t, true));
 			},
 			assemble: (t) => {
-				const n = OWN_STEPS.length, period = n * 2.6 + 3;
+				const n = (electric ? OWN_ELECTRIC_STEPS : OWN_STEPS).length, period = n * 2.6 + 3;
 				const u = Math.min(1, loop(t, period) * (period / (n * 2.6)));
 				return kit.assemble(built.centre, u, n, pose(t, u >= 1));
 			}
 		},
 		poses: { off: pose(0, false), exploded: kit.explode(built.centre, 1, pose(0, false)) },
 		first: 'run',
-		catalog: { assemblies: OWN, parts: built.catalogParts, steps: OWN_STEPS, sources: POWERCUBE_SOURCES }
+		catalog: { assemblies: electric ? OWN_ELECTRIC : OWN, parts: built.catalogParts, steps: electric ? OWN_ELECTRIC_STEPS : OWN_STEPS, sources: POWERCUBE_SOURCES }
 	};
 }
