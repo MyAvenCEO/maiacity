@@ -342,7 +342,25 @@ export function tent() {
 /** where the Power Cube Electric (0.75 × 1 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
  *  side by side, the cube behind the tool box, the tent by the tailgate */
 const CUBE_ON_BED = V(0, 1.16, -1.42);
-const TENT_ON_BED = V(0, 1.16, -2.28);
+const TENT_ON_BED = V(0, 1.16 + 0.47, -2.3); // lying on the two jerrycans
+/** the two 20-litre jerrycans of petrol for the Power Cube Electric (its engine runs on petrol): in the bed behind
+ *  the cube, the tent strapped over them */
+const FUEL_ON_BED = [V(-0.55, 1.16, -1.95), V(0.55, 1.16, -1.95)];
+
+/** a 20-litre jerrycan: 0.47 m high, 0.35 m long, 0.17 m wide, its handles and spout on top */
+function jerrycan() {
+	const g = new THREE.Group();
+	const red = mat(0xb3261e);
+	const body = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.4, 0.35), red);
+	body.position.y = 0.2;
+	const top = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.05, 0.22), red);
+	top.position.set(0, 0.425, 0.05);
+	const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.06, 8), mat(0x3a3a3a));
+	spout.position.set(0, 0.44, -0.13);
+	g.add(body, top, spout);
+	g.traverse((o) => o.isMesh && (o.castShadow = true));
+	return g;
+}
 
 function packedTent() {
 	const g = new THREE.Group();
@@ -526,7 +544,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	cubeCast.rig.pose(cubeCast.clips.off(0));
 	const cube = named(cubeCast.rig.object, 'asset:powercube');
 	const bundle = named(packedTent(), 'asset:tent');
-	world.add(truck, cube, bundle);
+	const fuel = [jerrycan(), jerrycan()].map((c) => named(c, 'asset:fuel'));
+	world.add(truck, cube, bundle, ...fuel);
 	// the travel van of the arrival, packed
 	const van = named(packedVan(), 'asset:van');
 	van.visible = false;
@@ -568,6 +587,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		truck.updateMatrixWorld(true);
 		placeCube(stage.cube);
 		placeTent(stage.tent);
+		placeFuel(stage.cube === 'home' ? 'home' : at === 'van' || at === 'arrive' || (at === 'stop' && !fetched) ? 'station' : 'bed');
 		for (const s of ['A', 'B']) {
 			const p = people[s];
 			p.visible = true;
@@ -605,6 +625,16 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		camera.position.copy(van.localToWorld(VAN_SEAT.clone())).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
 		camera.lookAt(van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))));
 		for (const [i, p] of van.userData.people.entries()) p.userData.head.position.y = 1.62 + Math.sin(t * 9 + i) * 0.015;
+	}
+	/** the jerrycans: waiting on the forecourt beside the pickup, in its bed, or at home beside the Power Cube */
+	function placeFuel(where) {
+		fuel.forEach((c, i) => {
+			if (c.parent !== world) world.attach(c);
+			c.rotation.set(0, 0, 0);
+			if (where === 'bed') (truck.add(c), c.position.copy(FUEL_ON_BED[i]));
+			else if (where === 'home') (c.position.set(YARD.x + 1.1, 0, YARD.z + 0.5 + i * 0.25), (c.rotation.y = 0.3));
+			else (truck.updateMatrixWorld(true), c.position.copy(truck.localToWorld(V(1.35, 0, -1.6 - i * 0.45))), (c.rotation.y = truck.rotation.y));
+		});
 	}
 	const TENT_IN_SHED = V(STORE.x - 1.5, 0, STORE.z + 0.6);
 	/** the tent: packed in the shed, packed on the pickup's bed, or pitched at the middle of our hex */
@@ -950,7 +980,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}
 			};
 		};
-		const getIn = (start) => ({ dur: 0.7, start: () => { start?.(); me.visible = false; if (other && stage.rides) other.visible = false; } });
+		const getIn = (start) => ({ dur: 0.7, start: () => { start?.(); placeFuel(stage.cube === 'home' ? 'home' : 'bed'); me.visible = false; if (other && stage.rides) other.visible = false; } });
 		const steps = [];
 		if (fetch) steps.push({ dur: 0.7, start: () => { putTruck(1, true); if (other) other.visible = false; } }, go(1, U_START, 12), getIn());
 		else steps.push(getIn());

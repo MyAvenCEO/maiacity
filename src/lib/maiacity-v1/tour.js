@@ -65,7 +65,7 @@ export function story(view, seat, seen) {
 			text: `A tenth of your investment went into the city pool. The pool holds a little of every MIND, about ${f(inHearts(view, view.pool, hv))} ❤︎ now, so anyone can swap one MIND for another at a fair price, at any time. The ${c.maia.name} looks after it for everyone.` },
 		first
 			? { id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', action: 'Get in and drive', done: !!seen.ride, ...atStop,
-				text: `At the old gas station stands a pickup, the key in it. It belongs to the ${c.village.name}, and today it is here for you. Throw your backpack in the back. A narrow track leaves the road's end and winds east, towards the green. Drive.` }
+				text: `At the old gas station stands a pickup, the key in it. It belongs to the ${c.village.name}, and today it is here for you. Beside it wait two jerrycans of petrol, 40 litres for the Power Cube Electric you will fetch on the way. Throw them and your backpack in the back. A narrow track leaves the road's end and winds east, towards the green. Drive.` }
 			: { id: 'ride', chapter: 'The track', title: `${other.founder ? other.name : 'Someone'} comes to fetch you`, kind: 'drive', leg: 'village', fetch: true, action: 'Wave and get in', done: !!seen.ride, ...atStop,
 				text: `A cloud of dust on the gravel track: ${other.founder ? other.name : 'the first settler'} is coming in the ${c.village.name}'s pickup to fetch you. The village is on the way home.` },
 		{ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000), ...atStore,
