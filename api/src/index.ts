@@ -179,15 +179,17 @@ const server = Bun.serve({
       },
     },
 
-    // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it and may
-    // take an empty seat; only the founder in a seat moves for it, an admin for either (to test both sides alone).
+    // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it; the first
+    // two to sign in take seat A and seat B, and only the founder in a seat moves for it.
     "/api/maiacity-v1": {
       OPTIONS: preflight,
       GET: async (req) => {
         const me = await signedIn(req);
         if (me instanceof Response) return me;
         try {
-          return json(req, { game: await getGame(), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
+          // an app key (the Mac's MCP) only reads: a seat goes to a person signing in on the page
+          const [f] = "scope" in me ? [] : await sql`SELECT name FROM founders WHERE id = ${me.id}`;
+          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name: f?.name ?? "" }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }

@@ -12,9 +12,10 @@
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
-	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
+	import { loadGame, resetGame, sendMove } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
+	import { story } from './tour.js';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
@@ -44,7 +45,7 @@
 	const view = $derived(game ? advance(game, now) : null);
 	const player = $derived(view?.players[seat]);
 	const mine = $derived(player?.founder === me);
-	const canMove = $derived(!!player && (mine || admin));
+	const canMove = $derived(!!player && mine);
 	const mySeat = $derived(view ? SEATS.find((s) => view.players[s].founder === me) : null);
 	const cal = $derived(view ? calendar(view, now) : null);
 	const hour = $derived(cal ? cal.hour : 11);
@@ -211,34 +212,19 @@
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
 	/** the rent the Settlement COOP pays for an asset, if it rents it */
 	const rentOf = (id) => RENTED.find((r) => r.asset === id);
-	/** the first-run tour, for each player at their own seat: mint the starter pack, then invest it into the three
-	 *  COOPs, 5,000 HEARTS into the MaiaCity COOP, 2,000 into the Village COOP and 1,000 into its Settlement COOP.
-	 *  Each step reads off the game itself (the first mint, the HEARTS each COOP was paid by this seat), so it picks up
-	 *  wherever the player is; skipping it is remembered in this browser only. */
-	const TOUR = [
-		['maia', 5000, 'The MaiaCity COOP holds the land and runs the AMM pool: the city everyone stands on.'],
-		['village', 2000, 'The Village COOP owns the pickup, the powercube, the battery and the solar row.'],
-		['settlement', 1000, 'The Settlement COOP owns the tent and rents the machines: your home on this hex.']
-	];
-	let tourOff = $state({});
-	const invested = (s, id) => (view ? view.ledger.filter((e) => e.kind === 'invest' && e.from === `player:${s}` && e.to === `coop:${id}`).reduce((a, e) => a + e.amount, 0) : 0);
-	const tour = $derived.by(() => {
-		if (!view || !player || !mine || tourOff[seat]) return null;
-		const steps = TOUR.length + 1;
-		if (!player.lastMint) return { n: 1, steps, kind: 'mint', title: 'Mint your starter pack', text: `Welcome, ${player.name}. Your first mint brings ${f(view.settings.starterPack ?? 8736, 0)} HEARTS, a year of them. Tap the Mint button below.` };
-		for (let i = 0; i < TOUR.length; i++) {
-			const [id, goal, why] = TOUR[i];
-			const left = goal - invested(seat, id);
-			if (left > 0.5) return { n: i + 2, steps, kind: 'invest', coop: id, amount: Math.min(Math.round(left), Math.floor(player.wallet.HEARTS)), title: `Invest ${f(goal, 0)} ❤︎ into the ${view.coops[id].name}`, text: `${why} Each HEART makes 1 ${TOKEN_LABEL[view.coops[id].mind]}: half yours, half its treasury.` };
-		}
-		return { n: steps + 1, steps, kind: 'done', title: 'You are set up', text: 'You own a share of all three COOPs now. Their rents pay you a dividend every weekly pay day: watch it in your cash flow.' };
-	});
-	const skipTour = () => {
-		tourOff = { ...tourOff, [seat]: true };
-		try { localStorage.setItem(`v1-tour-off-${seat}`, '1'); } catch {}
+	/** the first-run story ($lib/maiacity-v1/tour.js): one idea a step, for each player at their own seat. The steps
+	 *  that only tell remember "Next" in this browser; the moves (mint, invest) are read off the game. */
+	let seen = $state({});
+	const steps = $derived(view && player && mine ? story(view, seat, seen[seat] ?? {}) : []);
+	const tourAt = $derived(steps.findIndex((x) => !x.done));
+	const tour = $derived(tourAt >= 0 && !seen[seat]?.off ? { ...steps[tourAt], n: tourAt + 1, steps: steps.length } : null);
+	const mark = (id) => {
+		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
+		try { localStorage.setItem(`v1-story-${seat}`, JSON.stringify(seen[seat])); } catch {}
+		if (id === 'payday') panel = 'you';
 	};
 	$effect(() => {
-		try { tourOff = Object.fromEntries(SEATS.map((s) => [s, localStorage.getItem(`v1-tour-off-${s}`) === '1'])); } catch {}
+		try { seen = Object.fromEntries(SEATS.map((s) => [s, JSON.parse(localStorage.getItem(`v1-story-${s}`) ?? '{}')])); } catch {}
 	});
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
@@ -278,32 +264,39 @@
 
 		<nav class="tools" class:open={tools}>
 			{#each allTools as [id, ic, label] (id)}
-				<button class:on={panel === id} class:hint={tour?.kind === 'invest' && id === 'invest'} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
+				<button class:on={panel === id} class:hint={tour?.hint === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
 			{/each}
 			<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>
 		</nav>
 		{#if canMove}
 			<!-- the universal mint button: always at hand, over the nav pill -->
-			<button class="mintbar" class:hint={tour?.kind === 'mint'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
+			<button class="mintbar" class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
-				{#if tour}
-			<!-- the first-run tour: a tip over the Mint button that walks each player through their first moves -->
-			<div class="tour panel" class:down={tour.kind === 'mint'} role="dialog" aria-label="Getting started">
-				<p class="eyebrow">{tour.kind === 'done' ? 'Getting started · done' : `Getting started · step ${tour.n} of ${tour.steps}`}</p>
+		{#if tour}
+			<!-- the first-run story: one idea a step, over the Mint button, pointing at what it talks about -->
+			<div class="tour panel" class:down={tour.hint === 'mintbar'} role="dialog" aria-label="Getting started">
+				<p class="eyebrow">{tour.chapter} · {tour.n} of {tour.steps}</p>
 				<b>{tour.title}</b>
 				<p>{tour.text}</p>
-				<div class="dots">{#each Array(tour.steps) as _, i (i)}<i class:on={i < tour.n - 1} class:now={i === tour.n - 1}></i>{/each}</div>
+				{#if tour.kind === 'invest'}
+					<div class="goal"><span style="width:{Math.min(100, (tour.have / tour.goal) * 100)}%"></span></div>
+					<p class="small">{f(tour.have, 0)} of {f(tour.goal, 0)} ❤︎ invested · you hold {f(player.wallet.HEARTS, 0)} ❤︎</p>
+				{/if}
+				<div class="dots">{#each steps as x, i (x.id)}<i class:on={x.done} class:now={i === tourAt}></i>{/each}</div>
 				<div class="buttons">
 					{#if tour.kind === 'invest'}
-						<button class="primary" disabled={busy || tour.amount < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: tour.amount })}>Invest {f(tour.amount, 0)} ❤︎</button>
-						<button class="link" onclick={skipTour}>Skip the tour</button>
+						{@const left = Math.min(Math.ceil(tour.goal - tour.have), Math.floor(player.wallet.HEARTS))}
+						<button class="primary" disabled={busy || left < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: left })}>Invest {f(left, 0)} ❤︎</button>
+					{:else if tour.kind === 'mint'}
+						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount, 0)} ❤︎</button>
 					{:else if tour.kind === 'done'}
-						<button class="primary" onclick={skipTour}>Done</button>
+						<button class="primary" onclick={() => mark('done')}>Start playing</button>
 					{:else}
-						<button class="link" onclick={skipTour}>Skip the tour</button>
+						<button class="primary" onclick={() => mark(tour.id)}>Next</button>
 					{/if}
+					{#if tour.kind !== 'done'}<button class="link" onclick={() => mark('off')}>Skip the story</button>{/if}
 				</div>
 			</div>
 		{/if}
@@ -328,9 +321,10 @@
 			{:else if panel === 'you'}
 				<p class="eyebrow">{mine ? 'You' : player.founder ? 'The other player' : 'A free seat'}</p>
 				<h2>{player.name}</h2>
-				{#if !player.founder && !mySeat}
-					<p class="about">Take this seat to play. Your first mint brings {f(view.settings.starterPack ?? 8736, 0)} HEARTS, then they grow {f(view.settings.heartsPerDay, 0)} a game day.</p>
-					<div class="buttons"><button class="primary" disabled={busy} onclick={() => run(() => takeSeat(seat))}>Play as {player.name}</button></div>
+				{#if !player.founder}
+					<p class="about">This seat is waiting: the next person to sign in becomes {player.name}.</p>
+				{:else if !mySeat}
+					<p class="about">Both seats are taken, so you are watching this game.</p>
 				{/if}
 				{@const hv = heartsValue(view)}
 				<p class="worth">{f(inHearts(view, player.wallet, hv))} <span>❤︎ in all</span></p>
@@ -345,7 +339,6 @@
 						<button class="primary" onclick={() => open('invest')}>Invest</button>
 						<button onclick={() => open('ledger')}>Ledger</button>
 					</div>
-					{#if !mine}<p class="small">Admin: you move for this seat.</p>{/if}
 				{/if}
 			{:else if panel === 'mint'}
 				<p class="eyebrow">Your HEARTS</p>
@@ -751,13 +744,30 @@
 		background: inherit;
 		transform: translateX(-50%) rotate(45deg);
 	}
+	.tour .goal {
+		height: 0.35rem;
+		margin: 0.1rem 0 0.25rem;
+		border-radius: 999px;
+		background: rgb(31 42 35 / 0.12);
+		overflow: hidden;
+	}
+	.tour .goal span {
+		display: block;
+		height: 100%;
+		background: #3d7a4a;
+		transition: width 0.4s;
+	}
+	.tour .small {
+		font-size: 0.74rem;
+		opacity: 0.7;
+	}
 	.tour .dots {
 		display: flex;
 		gap: 0.3rem;
 		margin-bottom: 0.6rem;
 	}
 	.tour .dots i {
-		width: 1.4rem;
+		flex: 1;
 		height: 0.25rem;
 		border-radius: 999px;
 		background: rgb(31 42 35 / 0.15);
