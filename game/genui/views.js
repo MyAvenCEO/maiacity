@@ -1,0 +1,150 @@
+// @ts-nocheck — plain JS, kept loose on purpose
+/**
+ * Generated UI (Samuel, 2026-10-13): mini app views an agent writes on the fly, over the MCP, and the page
+ * /app/genui/ draws. Two kinds, after the two kinds of generative UI (A2UI and MCP Apps):
+ *
+ * - `a2ui`: DECLARATIVE. JSON only: a flat list of components from OUR catalog (below), each with an id, the root's
+ *   id, a data model, and optional logic. The page draws it with its own Svelte components; text is always text.
+ *   Nothing the agent wrote runs in the page. Its logic (`logic`, a JS module exporting `init(data)` and
+ *   `on(event, data)`) runs in a QuickJS engine (src/lib/genui/logic.js, the same box as Sandbox 7's card code):
+ *   no page, no network, no clock, 8 MB, a few ms a call. It only ever hands back a new data model.
+ * - `html`: OPEN CODE, an MCP App (the MCP Apps standard, spec 2026-01-26: text/html;profile=mcp-app). HTML, CSS and
+ *   JS for what no catalog can hold (a three.js scene, a d3 chart). The page runs it in an iframe sandboxed WITHOUT
+ *   allow-same-origin (a throwaway "null" origin: no cookies, no storage, no passkeys, no reach into the page or our
+ *   API) with a CSP that forbids every connection and loads scripts only inline or from the pinned library files in
+ *   LIBS (src/lib/genui/Frame.svelte). It speaks to the page only as an MCP App speaks to its host: JSON-RPC over
+ *   postMessage (ui/initialize, then the view's `data` as its tool result), and of those only the METHODS below.
+ *   A view built with the official SDK (libs: ['mcp-apps']) runs here unchanged.
+ *
+ * The API (api/src/genui.js) and the page both check a view with `check` before keeping or drawing it.
+ */
+
+/** the components an a2ui view may use, and the props each takes (anything else is dropped) */
+export const CATALOG = {
+	Column: { props: ['gap', 'align'], children: true },
+	Row: { props: ['gap', 'align', 'wrap'], children: true },
+	Grid: { props: ['columns', 'gap'], children: true },
+	Card: { props: ['title', 'subtitle', 'tone'], children: true },
+	Heading: { props: ['text', 'level'] },
+	Text: { props: ['text', 'tone', 'size'] },
+	Metric: { props: ['label', 'value', 'unit', 'delta', 'tone'] },
+	Badge: { props: ['text', 'tone'] },
+	Progress: { props: ['label', 'value', 'max', 'tone'] },
+	Bars: { props: ['label', 'items', 'unit'] },
+	Table: { props: ['columns', 'rows'] },
+	List: { props: ['items'] },
+	Button: { props: ['label', 'event', 'value', 'tone'] },
+	Slider: { props: ['label', 'event', 'value', 'min', 'max', 'step', 'unit'] },
+	Divider: { props: [] }
+};
+
+/** colours a component may ask for: names, never CSS */
+export const TONES = ['default', 'accent', 'good', 'warn', 'bad', 'muted'];
+
+/**
+ * The libraries an html view may load: exact, pinned files on one CDN, nothing else. `three` is a module (import
+ * map: `import * as THREE from 'three'`, addons from 'three/addons/…'); `d3` a classic script (the global `d3`).
+ */
+export const LIBS = {
+	three: {
+		version: '0.186.0',
+		allow: 'https://cdn.jsdelivr.net/npm/three@0.186.0/',
+		imports: { three: 'https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js', 'three/addons/': 'https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/' }
+	},
+	d3: { version: '7.9.0', allow: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js', script: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js' },
+	// the MCP Apps SDK, its dependencies bundled: import { App } from '@modelcontextprotocol/ext-apps'
+	'mcp-apps': {
+		version: '2.0.3',
+		allow: 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/dist/src/app-with-deps.js',
+		imports: { '@modelcontextprotocol/ext-apps': 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/dist/src/app-with-deps.js' }
+	}
+};
+
+/** the MCP Apps version this page speaks as a host */
+export const PROTOCOL = '2026-01-26';
+
+/**
+ * What a code view may ask of the page (MCP Apps methods, View -> Host), and nothing else. ui/initialize is answered,
+ * size-changed resizes the frame (within LIMITS.height), notifications/message, ui/update-model-context and ui/message
+ * land in the page's feed as plain data. ui/open-link, tools/call and resources/read are refused: a generated view
+ * never leaves its box, calls a tool or reads anything we did not hand it.
+ */
+export const METHODS = ['ui/initialize', 'ui/notifications/initialized', 'ui/notifications/size-changed', 'notifications/message', 'ui/update-model-context', 'ui/message', 'ui/request-display-mode', 'ping'];
+
+export const LIMITS = { title: 80, note: 400, html: 200_000, components: 300, json: 100_000, logic: 20_000, height: [160, 1200] };
+
+const ID = /^[a-z0-9][a-z0-9-]{0,47}$/;
+const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+
+export class ViewError extends Error {
+	constructor(message, status = 400) {
+		super(message);
+		this.status = status;
+	}
+}
+
+/** a prop's value: plain JSON, or a binding {$data: 'a.b'} to the view's data model */
+const plain = (v, depth = 0) => {
+	if (depth > 6) return null;
+	if (v === null || typeof v === 'boolean') return v;
+	if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+	if (typeof v === 'string') return v.slice(0, 2000);
+	if (Array.isArray(v)) return v.slice(0, 200).map((x) => plain(x, depth + 1));
+	if (typeof v === 'object') return Object.fromEntries(Object.entries(v).slice(0, 50).map(([k, x]) => [k.slice(0, 40), plain(x, depth + 1)]));
+	return null;
+};
+
+/** a declarative view's spec, cleaned: unknown components are refused, unknown props dropped */
+function checkA2ui(spec) {
+	const list = Array.isArray(spec?.components) ? spec.components : null;
+	if (!list?.length) throw new ViewError('An a2ui view needs components: [{ id, type, ...props, children? }].');
+	if (list.length > LIMITS.components) throw new ViewError(`At most ${LIMITS.components} components.`);
+	const ids = new Set();
+	const components = list.map((c, i) => {
+		const type = c?.type;
+		const def = CATALOG[type];
+		if (!def) throw new ViewError(`Component ${i + 1}: "${String(type).slice(0, 30)}" is not in the catalog (${Object.keys(CATALOG).join(', ')}).`);
+		const id = str(c.id, 48);
+		if (!id || ids.has(id)) throw new ViewError(`Component ${i + 1}: each needs its own id.`);
+		ids.add(id);
+		const out = { id, type };
+		for (const p of def.props) if (c[p] !== undefined) out[p] = plain(c[p]);
+		if (def.children) out.children = Array.isArray(c.children) ? c.children.filter((x) => typeof x === 'string').slice(0, 100) : [];
+		return out;
+	});
+	const root = str(spec.root, 48) || components[0].id;
+	if (!ids.has(root)) throw new ViewError(`The root "${root}" is no component.`);
+	for (const c of components) for (const k of c.children ?? []) if (!ids.has(k)) throw new ViewError(`${c.id}: no child "${k}".`);
+	const data = plain(spec.data ?? {});
+	if (JSON.stringify({ components, data }).length > LIMITS.json) throw new ViewError('The view is too big.');
+	const logic = str(spec.logic, LIMITS.logic + 1);
+	if (logic.length > LIMITS.logic) throw new ViewError(`Its logic is longer than ${LIMITS.logic} characters.`);
+	return { root, components, data: data && typeof data === 'object' && !Array.isArray(data) ? data : {}, ...(logic.trim() ? { logic } : {}) };
+}
+
+function checkHtml(spec) {
+	const html = typeof spec?.html === 'string' ? spec.html : '';
+	if (!html.trim()) throw new ViewError('An html view needs html: the body, its <style> and <script> included.');
+	if (html.length > LIMITS.html) throw new ViewError(`Its html is longer than ${LIMITS.html} characters.`);
+	const libs = (Array.isArray(spec.libs) ? spec.libs : []).filter((l) => typeof l === 'string');
+	const bad = libs.find((l) => !LIBS[l]);
+	if (bad) throw new ViewError(`No library "${bad.slice(0, 30)}": only ${Object.keys(LIBS).join(', ')}.`);
+	const h = Math.round(Number(spec.height) || 420);
+	// what the view is handed as its tool's input and result (ui/notifications/tool-input, tool-result): plain JSON
+	const input = plain(spec.input ?? {});
+	const data = plain(spec.data ?? {});
+	if (JSON.stringify({ input, data }).length > LIMITS.json) throw new ViewError('Its data is too big.');
+	return { html, libs: [...new Set(libs)], height: Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], h)), input, data };
+}
+
+/** a whole view, as an agent sends it: { id, title, note?, kind, spec } -> the clean one, or a ViewError */
+export function check(v) {
+	const id = str(v?.id, 49);
+	if (!ID.test(id)) throw new ViewError('Give the view an id: lowercase letters, digits and dashes, up to 48.');
+	const title = str(v.title, LIMITS.title).trim();
+	if (!title) throw new ViewError('Give the view a title.');
+	const kind = v.kind;
+	if (kind !== 'a2ui' && kind !== 'html') throw new ViewError('kind is "a2ui" (declarative JSON) or "html" (sandboxed code).');
+	const spec = kind === 'a2ui' ? checkA2ui(v.spec) : checkHtml(v.spec);
+	return { id, title, note: str(v.note, LIMITS.note).trim(), kind, spec };
+}
