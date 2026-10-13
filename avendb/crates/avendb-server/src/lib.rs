@@ -114,6 +114,7 @@ pub async fn start(config: &Config) -> Result<Running> {
         relay: Some(url),
         retry: Duration::from_secs(1),
         store: None,
+        keep: false,
         card: false,
         admission: Some(admission),
         relay_pass: None,

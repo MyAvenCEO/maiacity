@@ -232,14 +232,15 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     until("and Bob's Mac", || holds(&bob, new.clone())).await;
     until("which opens the Garden's seed", || bob.read(move |lab, me| lab.opens(me, KeyFam::Seed(garden)))).await;
     assert!(!holds(&carol, new.clone()).await, "Carol's Mac, outside the coop, holds none of them");
-    // by hand: over iroh-blobs, Alice's Mac hands each key to Bob's Mac and to no other; each asks Alice's Mac
-    // first, so its hello proves it there, even if all it holds came through the server
-    bob.sync_with(mac.id()).await.expect("Bob's Mac asks Alice's Mac, and its hello proves it");
-    carol.sync_with(mac.id()).await.expect("Carol's Mac asks Alice's Mac, and its hello proves it");
+    // by hand: over iroh-blobs, the server, which fetched every new key, hands each to Bob's Mac and to no other; each
+    // asks the server first, so its hello proves it there. (Not Alice's Mac: it offers a key only once a reply of its
+    // own named it, and the server may have taken some keys from another peer first.)
+    bob.sync_with(server.id()).await.expect("Bob's Mac asks the server, and its hello proves it");
+    carol.sync_with(server.id()).await.expect("Carol's Mac asks the server, and its hello proves it");
     for (b, key) in &keys {
         let hash = Hash::new(key);
         let fetch = |from: &Endpoint| {
-            let (from, to) = (from.clone(), mac.addr());
+            let (from, to) = (from.clone(), server.addr());
             async move {
                 let conn = from.connect(to, iroh_blobs::ALPN).await.ok()?;
                 let store = MemStore::new();

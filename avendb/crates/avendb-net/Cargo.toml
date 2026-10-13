@@ -12,6 +12,8 @@ publish.workspace = true
 avendb = { path = "../avendb" }
 # 0.103.0 was yanked
 iroh-blobs = { version = "=0.103.1", default-features = false }
+# the sealed pieces of a file as they stream into the blob store (blobs B2)
+bytes = "1.12"
 tokio = { version = "1.44", default-features = false, features = ["sync"] }
 # tasks and timers on tokio, and in a browser on its event loop (P8d)
 n0-future = "0.3.2"
@@ -32,6 +34,8 @@ x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
 iroh = { version = "=1.3.0", default-features = false, features = ["tls-aws-lc-rs", "portmapper", "fast-apple-datapath"] }
 rustls = { version = "0.23.33", default-features = false, features = ["aws_lc_rs", "std"] }
 tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "io-util"] }
+# the blob store on disk, beside the node's store (blobs B2)
+iroh-blobs = { version = "=0.103.1", default-features = false, features = ["fs-store"] }
 
 # In a browser (P8d), where aws-lc-rs doesn't build: ring for TLS, and X25519MLKEM768 in pure Rust (`kx`); randomness
 # from the browser
