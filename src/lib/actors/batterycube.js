@@ -29,10 +29,11 @@ const STEPS = ['Cut, drill and bolt the frame: skids, posts, top rails, quick-at
  * 4: its packs at v4, a centre grip each; 6: its packs at v5, the grip low and the lock at its height, and pins on the
  * backplane for the packs' holes; 7: its packs at v6, a service drawer in each; 8: its packs at v7, grip and lock at
  * the base plate's level, its rails lowered to meet them, and every live pin sunk in an insulating collar; 9: its packs
- * at v8, grip and lock in the shell's foot, the rails lower still, and every pin of a header in one line)
+ * at v8, grip and lock in the shell's foot, the rails lower still, and every pin of a header in one line; 10: its
+ * packs at v9, their release buttons in the shells' corner columns)
  * @param {Parameters<import('./powercube.js').Insides>[0]} part @param {Parameters<import('./powercube.js').Insides>[1]} tools */
-function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 9) {
-	const pv = v >= 9 ? 8 : v >= 8 ? 7 : v >= 7 ? 6 : v >= 6 ? 5 : v >= 4 ? 4 : 3; // the packs' version
+function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 10) {
+	const pv = v >= 10 ? 9 : v >= 9 ? 8 : v >= 8 ? 7 : v >= 7 ? 6 : v >= 6 ? 5 : v >= 4 ? 4 : 3; // the packs' version
 		// four BatteryPacks (./batterypack.js) stacked on the skids, their fronts to the cube's front: each arrives whole
 	for (let k = 0; k < 4; k++) batteryPackParts(kit, { at: P(0, MOD.y, B + 10 + k * MOD.gap), base, assembly: () => 'battery', step: () => 2, prefix: `pack-${k + 1}-`, unit: `pack-${k + 1}`, seg: 6, v: pv });
 	const back = MOD.y - MOD.l / 2, top = B + 10 + 4 * MOD.gap;
@@ -115,7 +116,7 @@ function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 9) {
 }
 
 /** The BatteryCube on its own (version `v`; from v5 it pulls a pack out and pushes it back as a move), every part its own: drawn apart, built. Its size is the Power Cube's. @returns {import('./rig').Cast} */
-export const batteryCube = (v = 9) => {
+export const batteryCube = (v = 10) => {
 	const cast = cubeCast({ name: 'BatteryCube', assemblies: ASSEMBLIES, steps: STEPS, stepOf: { frame: 1, battery: 2, power: 3 }, sources: POWERCUBE_SOURCES, hums: false, len: CUBE.L, engine: false, controls: false, insides: (part, tools) => cells(part, tools, v) });
 	if (v < 5) return cast;
 	// from v5 a pack comes out and goes back (Samuel 2026-10-13): the third pack's grip is squeezed, it slides out on its

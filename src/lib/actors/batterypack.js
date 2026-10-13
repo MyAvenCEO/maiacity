@@ -32,6 +32,10 @@ export const lockBack = (v = 8) => (v >= 6 ? 22 : 40);
 const gripZ = (/** @type {number} */ v) => (v >= 8 ? 10 : v >= 7 ? 28 : 40);
 /** how high (mm) the shell's foot (its floor tub and the sill across its face) stands from v8: the drawer rides on it */
 const FOOT_8 = 20;
+/** from v9 the shell's two front corner columns (mm): `w` across from its side, up to the base plate's top. The cells'
+ *  block fills 446 of the shell's 452 mm inside, so a column any taller would stop the drawer coming out: the base
+ *  plate runs between the two, and the cells' holders pass over them */
+const POST_9 = { w: 46, top: 25 };
 /** its cells: 14 rows in series (along y) of 20 in parallel (along x), 22 mm apart, standing; their zone's middle */
 const CELLS = { s: 14, p: 20, pitch: 22, r: 10.5, h: 70, z0: 16, y: -55 };
 const SRC = 'BatteryPack (our design)';
@@ -66,6 +70,13 @@ const ASSEMBLIES_8 = /** @type {import('./parts.js').Assembly[]} */ ([
 	{ id: 'electronics', label: 'BMS and plug', note: 'The battery management system on the drawer, and its inner plug that meets the shell’s back socket when the drawer is in.', out: [0, 0.21, 0.85] },
 	{ id: 'lock', label: 'ClickLock', note: 'The snap-in latch that holds the pack in its cube, in the shell’s foot: two spring pawls, their pivots and the cables to the grip’s trigger.', out: [0, -0.02, 0.3] }
 ]);
+/** from v9 the release buttons and their catches sit in the shell's two front corner columns, at the base plate's level */
+const ASSEMBLIES_9 = /** @type {import('./parts.js').Assembly[]} */ ([
+	{ id: 'shell', label: 'Shell', note: 'The closed outer shell on its foot: floor tub, walls, top and back in one, open at the front above the foot’s sill. Its two front corners stand up as columns to the base plate’s top, each with a release button in its face and the drawer’s catch inside; the sill between them carries the grip, and the back socket sits in the back.', out: [0, 0, 0] },
+	{ ...ASSEMBLIES_8[1], note: 'One L of aluminium riding on the shell’s foot: the front plate (the face above the sill and the two columns, with its finger pull and the charge strip) and the base plate behind it, running between the columns. It carries every inner part and nothing you hold: press the two buttons, pull it by its finger pull, and the whole inside comes out.' },
+	...ASSEMBLIES_8.slice(2)
+]);
+const STEPS_9 = ['Lay out the shell on its foot: floor tub, walls, top and back, its two corner columns with their release buttons and catches, the back socket, the grip and the ClickLock', 'Build the drawer: base plate and front plate with its finger pull and charge strip', 'Set the bottom contact plates and holder on the base plate, and stand the 280 cells in it', 'Press on the top holder, the top plates and the clamp', 'Fit the BMS, its leads and the inner plug; slide the drawer in between the columns until both catches click into the base plate'];
 const STEPS_8 = ['Lay out the shell on its foot: floor tub, walls, top and back, the back socket, the grip, the ClickLock, the release buttons and their catches', 'Build the drawer: base plate and front plate with its finger pull and charge strip', 'Set the bottom contact plates and holder on the base plate, and stand the 280 cells in it', 'Press on the top holder, the top plates and the clamp', 'Fit the BMS, its leads and the inner plug; slide the drawer in over the sill until both catches click'];
 const STEP_8 = /** @type {Record<string, number>} */ ({ tray: 1, terminals: 1, handles: 1, 'release-left': 1, 'release-right': 1, 'catch-left': 1, 'catch-right': 1, 'lock-pawls': 1, 'lock-springs': 1, 'lock-pivots': 1, 'lock-cables': 1, 'lock-trigger': 1, front: 2, base: 2, charge: 2, 'plates-bottom': 3, 'holder-bottom': 3, cells: 3, 'holder-top': 4, 'plates-top': 4, clamp: 4, bms: 5, 'inner-plug': 5 });
 const GROUP_8 = /** @type {Record<string, string>} */ ({ tray: 'shell', terminals: 'shell', handles: 'shell', 'release-left': 'shell', 'release-right': 'shell', 'catch-left': 'shell', 'catch-right': 'shell', front: 'drawer', base: 'drawer', charge: 'drawer', clamp: 'drawer', 'lock-pawls': 'lock', 'lock-springs': 'lock', 'lock-pivots': 'lock', 'lock-cables': 'lock', 'lock-trigger': 'lock', 'plates-bottom': 'contacts', 'holder-bottom': 'cells', cells: 'cells', 'holder-top': 'cells', 'plates-top': 'contacts', bms: 'electronics', 'inner-plug': 'electronics' });
@@ -90,14 +101,16 @@ const GROUP = /** @type {Record<string, string>} */ ({ tray: 'case', front: 'cas
  * and its back plug as holes for the cube's pins; 6: a closed shell and one L-shaped service drawer carrying every
  * inner part, released by two push buttons in the shell's sides; 7: the grip, the lock and two release buttons on the
  * face's left and right ends, all down at the base plate's level; 8: the grip, the lock and the release buttons all on
- * the shell, in its foot's sill across the face, the drawer riding on the foot; the back socket's holes in one line).
+ * the shell, in its foot's sill across the face, the drawer riding on the foot; the back socket's holes in one line;
+ * 9: the release buttons and catches in the shell's two front corner columns, at the base plate's level, the catches
+ * shooting sideways into the base plate's edges).
  * @param {ReturnType<typeof machineKit>} kit
  * @param {{ at: V3, base: string, assembly?: (g: string) => string, step?: (p: string) => number, prefix?: string, unit?: string, seg?: number, v?: number }} o
  */
-export function batteryPackParts(kit, { at, base, assembly = (g) => g, step, prefix = '', unit, seg = 10, v = 8 }) {
+export function batteryPackParts(kit, { at, base, assembly = (g) => g, step, prefix = '', unit, seg = 10, v = 9 }) {
 	const G = v >= 8 ? GROUP_8 : v >= 7 ? { ...GROUP_6, 'release-left': 'drawer', 'release-right': 'drawer' } : v >= 6 ? GROUP_6 : GROUP;
 	const GRIP_Z = gripZ(v);
-	const stepOf = step ?? ((/** @type {string} */ p) => (v >= 8 ? STEP_8 : v >= 6 ? STEP_6 : STEP)[p]);
+	const stepOf = step ?? ((/** @type {string} */ p) => (v >= 8 ? STEP_8 : v >= 6 ? STEP_6 : STEP)[p]); // v9 builds in v8's steps
 	// from v8 every inner part rides higher, on the shell's foot
 	const DZ = v >= 8 ? FOOT_8 - 3 : 0;
 	const m = new THREE.Matrix4().makeTranslation(...at);
@@ -194,6 +207,19 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step, pre
 	// the release buttons in the shell's sides, and the drawer's catches behind them; from v7 the buttons on the face's
 	// two ends and the catches just inside the shell's front, all at the base plate's level
 	const REL = v >= 7 ? { y: Y0 - 18, z: 22, x: 182 } : { y: 150, z: 64, x: 0 };
+	// from v9: where the columns begin (x), and where their catches meet the base plate (y)
+	const PX = Wh - POST_9.w, CATCH_Y = Y0 - 14;
+	/** a front corner column in plan: inside the wall behind the face, round at the corner in front of it */
+	const postP = (/** @type {number} */ sx) => (/** @type {THREE.Shape} */ p) => {
+		const pt = (/** @type {number} */ x, /** @type {number} */ y) => at2(sx * x, y);
+		p.moveTo(...pt(PX, Y0 - 30));
+		p.lineTo(...pt(Wh - 4, Y0 - 30));
+		p.lineTo(...pt(Wh - 4, Y0));
+		p.lineTo(...pt(Wh, Y0));
+		p.quadraticCurveTo(...pt(Wh, Lh), ...pt(Wh - 30, Lh));
+		p.lineTo(...pt(PX, Lh));
+		p.closePath();
+	};
 
 	if (v >= 8) {
 		const F = FOOT_8;
@@ -202,20 +228,34 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step, pre
 			put(prism(shellU(0), 0, F - 2), CASE); // its floor tub
 			put(prism(shellU(0), H - 4, 4), LID); // its top
 			put(prism(capD, 0, F), FACE); // the sill across the face
-			put(box(0, Lh + 0.6, F, W - 8, 1.4, 1.2), HOLE); // the line where the drawer sits on it
+			if (v >= 9) {
+				// its two front corner columns, up to the base plate's top: round at the corner like the case, inside the
+				// walls behind the face
+				for (const sx of [-1, 1]) put(prism(postP(sx), F - 1, POST_9.top - F + 1), FACE);
+				put(box(0, Lh + 0.6, F, 2 * PX - 2, 1.4, 1.2), HOLE); // the line where the drawer sits on the sill
+				for (const sx of [-1, 1]) {
+					put(box(sx * PX, Lh + 0.6, (F + POST_9.top) / 2, 1.4, 1.4, POST_9.top - F), HOLE); // and beside each column
+					put(box(sx * (PX + 8), Lh + 0.6, POST_9.top, 16, 1.4, 1.2), HOLE); // and over it
+				}
+			} else put(box(0, Lh + 0.6, F, W - 8, 1.4, 1.2), HOLE); // the line where the drawer sits on it
 			for (const sx of [-1, 1]) put(box(sx * (Wh - 60), -15, -1, 20, LEN - 110, 3), DARK);
 		});
 		part('front', { label: 'Front plate', what: 'The upright of the service drawer’s L: the pack’s face above the sill, its round front corners and bands flush with the shell. A long finger pull along its foot and the charge strip along its top; nothing you carry by. The base plate is fixed to its foot.', specs: [['Size', `460 × 30 × ${H - F} mm`], ['Pull', 'Finger slot, 240 mm'], ['Material', 'Aluminium, black anodised']] }, (put) => {
-			for (const [z0, h, c] of /** @type {[number, number, string][]} */ ([[F, 110 - F, CASE], [110, 2, SEAM], [112, 13, LID]])) put(prism(capD, z0, h), c);
+			const Z = v >= 9 ? POST_9.top : F; // from v9 its two lower corners sit on the columns
+			for (const [z0, h, c] of /** @type {[number, number, string][]} */ ([[Z, 110 - Z, CASE], [110, 2, SEAM], [112, 13, LID]])) put(prism(capD, z0, h), c);
+			if (v >= 9) put(box(0, (Y0 + Lh) / 2, (F + Z) / 2, 2 * PX - 1, Lh - Y0, Z - F), CASE); // and between them down to the sill
 			put(box(0, Lh + 1, 66, 380, 3, 68, 1), FACE);
 			put(box(0, Lh + 1.2, F + 7, 240, 3, 8, 3), BLACK); // the finger pull's lip
 			put(box(0, Lh + 1.6, F + 5.5, 228, 2.4, 4, 1), HOLE); // and the slot behind it
-			for (const sx of [-1, 1]) put(box(sx * (Wh - 1.2), Y0 + 0.8, (F + H) / 2, 3, 1.6, H - F - 1), HOLE);
+			for (const sx of [-1, 1]) put(box(sx * (Wh - 1.2), Y0 + 0.8, (Z + H) / 2, 3, 1.6, H - Z - 1), HOLE);
 			put(box(0, Y0 + 0.8, H - 1, W - 4, 1.6, 3), HOLE);
 		});
 		part('base', { label: 'Base plate', what: 'The floor of the service drawer’s L, riding on the shell’s foot: every inner part is mounted on it, the cells’ holders, the contact plates, the clamp and the BMS. It runs on two low-friction strips and slides out over the sill.', specs: [['Size', '444 × 446 × 5 mm'], ['Material', 'Aluminium, 5 mm'], ['Runs on', '2 PTFE strips']] }, (put) => {
-			put(box(0, (Y0 - Lh + 4) / 2, 5.5 + DZ, W - 16, Y0 + Lh - 4, 5, 1), STEEL);
-			for (const sx of [-1, 1]) put(box(sx * (Wh - 40), (Y0 - Lh + 4) / 2, 3.5 + DZ, 14, Y0 + Lh - 10, 1, 0.3), '#e8e8e4');
+			// from v9 it runs between the shell's two columns, the cells' holders reaching out over them
+			const bw = v >= 9 ? 2 * (PX - 2) : W - 16;
+			put(box(0, (Y0 - Lh + 4) / 2, 5.5 + DZ, bw, Y0 + Lh - 4, 5, 1), STEEL);
+			for (const sx of [-1, 1]) put(box(sx * (v >= 9 ? bw / 2 - 40 : Wh - 40), (Y0 - Lh + 4) / 2, 3.5 + DZ, 14, Y0 + Lh - 10, 1, 0.3), '#e8e8e4');
+			if (v >= 9) for (const sx of [-1, 1]) put(box(sx * (bw / 2 - 2.5), CATCH_Y, 5.5 + DZ, 5.4, 9, 5.2), HOLE); // the catches' notches
 		});
 	} else if (v >= 6) {
 		part('tray', { label: 'Shell', what: 'The pack’s outer shell: floor, walls, top and back in one smooth aluminium piece with round corners, open only at the front where the service drawer slides in. No lid and no latches any more: nothing opens but the drawer.', specs: [['Outside', '460 × 450 × 125 mm, the front plate makes 480'], ['Material', 'Aluminium, 3 mm, black anodised'], ['Corners', 'R 30 mm']] }, (put) => {
@@ -364,6 +404,22 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step, pre
 			put(box(0, -Lh + 14, 40 + DZ, 150, 12, 30, 1), BLACK);
 		});
 		for (const [sx, side] of /** @type {const} */ ([[-1, 'left'], [1, 'right']])) {
+			if (v >= 9) {
+				// on the column's face, in the flat between the drawer and the round corner, at the base plate's level
+				const bx = sx * (PX + 8), bz = 18, cz = 5.5 + DZ;
+				part(`release-${side}`, { label: `Release button, ${side}`, what: 'A round push button in the face of the shell’s corner column on its side, at the base plate’s level: part of the shell, so it stays put while the drawer comes out. Behind it a short plunger with a wedge runs back inside the column and pushes the catch’s bolt out of its notch in the base plate. Press both, pull the drawer by its finger pull, and the whole inside slides out between the columns.', specs: [['Button', '⌀ 10 mm, 4 mm travel'], ['On', 'The shell’s corner column'], ['Force', '~10 N each [inferred]']] }, (put) => {
+					put(cyl([bx, Lh + 0.2, bz], [bx, Lh + 1, bz], 7, 18), STEEL);
+					put(cyl([bx, Lh - 4, bz], [bx, Lh + 2.4, bz], 5, 18), '#3a3f44');
+					put(cyl([bx, Lh - 6, bz], [bx, CATCH_Y + 6, bz], 1.8, 6), STEEL); // the plunger
+					put(box(bx, CATCH_Y + 4, (bz + cz) / 2, 6, 6, cz - bz + 6, 0.5), STEEL); // its wedge on the bolt's collar
+				});
+				part(`catch-${side}`, { label: `Drawer catch, ${side}`, what: 'A spring bolt lying across inside the shell’s corner column, at the base plate’s height: its spring pushes its tip into a notch in the base plate’s edge and holds the drawer in. The button’s wedge pushes it back out; slide the drawer home and the bolt clicks in again on its own.', specs: [['Bolt', 'Stainless, ⌀ 6 mm, 5 mm travel'], ['Spring', 'Compression, ~12 N [inferred]'], ['In', 'The shell’s corner column']] }, (put) => {
+					put(cyl([sx * (PX - 4.5), CATCH_Y, cz], [sx * (Wh - 8), CATCH_Y, cz], 2.5, 12), STEEL);
+					put(cyl([sx * (PX + 9), CATCH_Y, cz], [sx * (PX + 11), CATCH_Y, cz], 3.5, 12), STEEL); // its collar
+					for (let k = 0; k < 5; k++) put(cyl([sx * (PX + 13 + k * 4), CATCH_Y, cz], [sx * (PX + 14 + k * 4), CATCH_Y, cz], 3.4, 10), '#b8bdc0'); // its spring
+				});
+				continue;
+			}
 			if (v >= 8) {
 				const bx = sx * (Wh - 26), bz = FOOT_8 / 2;
 				part(`release-${side}`, { label: `Release button, ${side}`, what: 'A round push button in the shell’s sill, at its outer end on the face: part of the shell, so it stays put while the drawer comes out. A short rod behind it pulls the drawer’s catch on that side down. Press both, pull the drawer by its finger pull, and the whole inside slides out over the sill.', specs: [['Button', '⌀ 13 mm, 4 mm travel'], ['On', 'The shell’s sill'], ['Force', '~10 N each [inferred]']] }, (put) => {
@@ -410,9 +466,10 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step, pre
 }
 
 /** The BatteryPack on its own (version `v`), every part its own: drawn apart, built step by step. @returns {Cast} */
-export function batteryPack(v = 8) {
-	const kit = machineKit(v >= 8 ? ASSEMBLIES_8 : v >= 6 ? ASSEMBLIES_6 : ASSEMBLIES);
-	const steps = v >= 8 ? STEPS_8 : v >= 6 ? STEPS_6 : STEPS;
+export function batteryPack(v = 9) {
+	const assemblies = v >= 9 ? ASSEMBLIES_9 : v >= 8 ? ASSEMBLIES_8 : v >= 6 ? ASSEMBLIES_6 : ASSEMBLIES;
+	const kit = machineKit(assemblies);
+	const steps = v >= 9 ? STEPS_9 : v >= 8 ? STEPS_8 : v >= 6 ? STEPS_6 : STEPS;
 	batteryPackParts(kit, { at: [0, 0, 0], base: 'base', v });
 	const built = kit.build();
 	const r = rig([{ name: 'base', at: [0, 0, 0] }, ...built.bones], built.pieces, [skin(0.55, { side: THREE.DoubleSide })]);
@@ -435,7 +492,7 @@ export function batteryPack(v = 8) {
 		},
 		poses: { off: {}, exploded: kit.explode(built.centre, 1, {}), ...(v >= 6 ? { 'drawer out': service(built.catalogParts, DRAWER_OUT, 0, 1, v) } : {}) },
 		first: v >= 6 ? 'service' : 'explode',
-		catalog: { assemblies: v >= 8 ? ASSEMBLIES_8 : v >= 6 ? ASSEMBLIES_6 : ASSEMBLIES, parts: built.catalogParts, steps, sources: [] }
+		catalog: { assemblies, parts: built.catalogParts, steps, sources: [] }
 	};
 	if (v >= 6) {
 		const parts = built.catalogParts;
@@ -457,7 +514,7 @@ export function batteryPack(v = 8) {
  * @param {import('./parts.js').PartInfo[]} parts @param {number} out @param {number} press @param {number} [catches] @param {number} [v]
  * @returns {import('./rig').Pose}
  */
-function service(parts, out, press, catches = press, v = 8) {
+function service(parts, out, press, catches = press, v = 9) {
 	/** @type {import('./rig').Pose} */
 	const p = {};
 	const shell = onShell(v);
@@ -465,6 +522,8 @@ function service(parts, out, press, catches = press, v = 8) {
 		const inward = id.endsWith('left') ? 1 : -1;
 		// from v8 the buttons and the catches are the shell's: the buttons pressed in, the catches pulled down
 		if (v >= 8 && id.startsWith('release-')) p[`p.${id}`] = [0, 0, 0, 1, 0, 0, -press * 0.004];
+		// from v9 the catches are bolts across the columns: pushed out of their notches, sideways
+		else if (v >= 9 && id.startsWith('catch-')) p[`p.${id}`] = [0, 0, 0, 1, -inward * catches * 0.005, 0, 0];
 		else if (v >= 8 && id.startsWith('catch-')) p[`p.${id}`] = [0, 0, 0, 1, 0, -catches * 0.005, 0];
 		// from v7 the buttons are on the face: pressed in (backwards), and out with the drawer
 		else if (id.startsWith('release-')) p[`p.${id}`] = v >= 7 ? [0, 0, 0, 1, 0, 0, out - press * 0.004] : [0, 0, 0, 1, inward * press * 0.004, 0, 0];
