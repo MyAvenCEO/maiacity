@@ -14,11 +14,11 @@ export type Place = {
 };
 export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'leaf' | 'database' | 'universe';
 
-// a founder's own apps: their money, and the communities — cities and settlements, founded, joined and backed here,
-// with no map. Every sandbox draws the same ones.
+// a founder's own apps: their money and the COOPs, read from MaiaCity V1's one game, and the Universe stream.
+// Every sandbox draws the same ones.
 export const APPS: Place[] = [
-	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your hearts, what you hold, what happened' },
-	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'Found, join and back cities and settlements' },
+	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your HEARTS and MINDs, every rent and pay day, every transaction' },
+	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The three COOPs: treasuries, holders, assets, rents' },
 	// the stream lives on the public site (the navbar's Universe tab); the tile takes you there
 	{ href: `${base}/universe/`, label: 'Universe', icon: 'universe', note: 'What happens in maiaCITY, as it happens' }
 ];

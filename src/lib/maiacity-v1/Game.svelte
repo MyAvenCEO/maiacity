@@ -11,9 +11,10 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
-	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, dividendsOf, ledgerOf, payDaysOf, rents, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe,  mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
+	import LedgerView from './LedgerView.svelte';
 
 	let game = $state.raw(null);
 	let me = $state('');
@@ -46,7 +47,6 @@
 	const hour = $derived(cal ? cal.hour : 11);
 	const mint = $derived(view ? mintState(view, seat, now) : null);
 	const who = $derived(ledgerOfWho || `player:${seat}`);
-	const lines = $derived(view ? ledgerOf(view, who).slice(0, 200) : []);
 	const total = $derived(view ? supply(view) : null);
 	const swapOut = $derived(view ? quote(view, swapToken, swapTo, Number(swapAmount) || 0) : 0);
 	const nextMonth = $derived(view ? nextPayDay(view) : 0);
@@ -154,21 +154,6 @@
 	};
 	const pad = (n) => String(n).padStart(2, '0');
 	const vdate = (vm) => dateText(dateOf(vm));
-	// the selected wallet's running rents, in and out, its expected dividends, and what each pay day nets it
-	const subs = $derived(view ? rents(view) : []);
-	const subsIn = $derived(subs.filter((r) => r.to === who));
-	const subsOut = $derived(subs.filter((r) => r.from === who));
-	const divs = $derived(view ? dividendsOf(view, who) : []);
-	const weekNet = $derived.by(() => {
-		const n = {};
-		for (const r of [...subsIn, ...divs]) n[r.token] = (n[r.token] ?? 0) + r.weekly;
-		for (const r of subsOut) n[r.token] = (n[r.token] ?? 0) - r.weekly;
-		return MINDS.filter((t) => t in n).map((t) => [t, n[t]]);
-	});
-	const days = $derived(view ? payDaysOf(view, who) : []);
-	const signed = (x, d = 3) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${f(Math.abs(x), d)}`;
-	const sign = (e) => (e.kind === 'arrears' ? '' : e.to === who ? '+' : e.from === who ? '−' : '');
-	const LABELS = { mint: 'Minted', invest: 'Invested', pool: 'To the pool', swap: 'Swap', rent: 'Rent', arrears: 'Owed', demurrage: 'Melt', expired: 'Expired', settings: 'Settings', proposal: 'MIP', payout: 'Payout', dividend: 'Dividend' };
 	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, view.coops[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
 	const TOOLS = [
 		['you', '◉', 'You'],
@@ -386,52 +371,7 @@
 					<option value="">{player.name} (shown)</option>
 					{#each holdersList as [id, label] (id)}<option value={id}>{label}</option>{/each}
 				</select>
-				{#if subsIn.length || subsOut.length || divs.length}
-					<p class="eyebrow">Rent subscriptions · each weekly pay day</p>
-					<div class="subs">
-						{#each subsIn as r (r.what + r.from + r.to)}
-							<div class="line"><span class="when">In<small>{r.what}</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(r.monthly)} {TOKEN_LABEL[r.token]} a month{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</span></div>
-						{/each}
-						{#each divs as r (r.what + r.from)}
-							<div class="line"><span class="when">In<small>Dividend</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now</small></span><span class="amt plus">+{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</span></div>
-						{/each}
-						{#each subsOut as r (r.what + r.from + r.to)}
-							<div class="line"><span class="when">Out<small>{r.what}</small></span><span class="what">to {nameOf(view, r.to)}<small>{f(r.monthly)} {TOKEN_LABEL[r.token]} a month{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</span></div>
-						{/each}
-						<div class="line total"><span class="when">Net<small>a pay day</small></span><span class="what">next pay day {vdate((view.week + 1) / 4)}<small>a payer short of the MIND swaps through the pool</small></span><span class="amt">{#each weekNet as [t, x] (t)}<span class:plus={x > 0} class:minus={x < 0}>{signed(x)} {TOKEN_LABEL[t]}</span>{/each}</span></div>
-					</div>
-				{/if}
-				{#if days.length}
-					<p class="eyebrow">Cash flow, the last pay days</p>
-					<div class="subs">
-						{#each days as d (d.week)}
-							<div class="line">
-								<span class="when">{vdate(d.vm)}<small>week {d.week}</small></span>
-								<span class="what">{#each MINDS.filter((t) => d.flows[t]) as t (t)}<small>{TOKEN_LABEL[t]}: in {f(d.flows[t].in, 3)} · out {f(d.flows[t].out, 3)}</small>{/each}</span>
-								<span class="amt">{#each MINDS.filter((t) => d.flows[t]) as t (t)}{@const x = d.flows[t].in - d.flows[t].out}<span class:plus={x > 0} class:minus={x < 0}>{signed(x)} {TOKEN_LABEL[t]}</span>{/each}</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-				<p class="eyebrow">Every transaction</p>
-				{#if lines.length}
-					<div class="ledger">
-						{#each lines as e (e.id)}
-							<div class="line">
-								<span class="when">{vdate(e.vm)}<small>{LABELS[e.kind] ?? e.kind}</small></span>
-								<span class="what">
-									{#if e.kind === 'settings' || e.kind === 'proposal'}{e.note}
-									{:else}{e.from === who ? `to ${nameOf(view, e.to)}` : `from ${nameOf(view, e.from)}`}<small>{e.note}</small>{/if}
-								</span>
-								{#if e.amount}
-									<span class="amt" class:plus={sign(e) === '+'} class:minus={sign(e) === '−'}>{sign(e)}{f(e.amount, 3)} {TOKEN_LABEL[e.token] ?? e.token}{#if e.out}<small>+{f(e.out.amount, 3)} {TOKEN_LABEL[e.out.token]}</small>{/if}</span>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<p class="about">Nothing yet.</p>
-				{/if}
+				<LedgerView {view} {who} />
 			{:else if panel === 'mips'}
 				<p class="eyebrow">MaiaCity improvement proposals</p>
 				<h2>Proposals</h2>
@@ -971,21 +911,8 @@
 	.subs {
 		margin-bottom: 0.6rem;
 	}
-	.subs .amt span {
-		display: block;
-	}
-	.subs .amt .plus {
-		color: #3d7a4a;
-	}
-	.subs .amt .minus {
-		color: #b5523a;
-	}
 	.line.total {
 		border-top: 1px solid rgb(31 42 35 / 0.25);
-		font-weight: 600;
-	}
-	.line .bad {
-		color: #b5523a;
 		font-weight: 600;
 	}
 	.line {
@@ -996,11 +923,6 @@
 		padding: 0.4rem 0;
 		border-top: 1px solid rgb(31 42 35 / 0.08);
 		font-size: 0.76rem;
-	}
-	.line small {
-		display: block;
-		font-size: 0.68rem;
-		opacity: 0.6;
 	}
 	.when {
 		font-variant-numeric: tabular-nums;
