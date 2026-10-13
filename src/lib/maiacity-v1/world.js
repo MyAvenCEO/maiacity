@@ -49,11 +49,23 @@ function hexGround() {
 	return g;
 }
 
-/** the pickup's gravel: a parking lot beside the tent, and a road from it to the hex's west side */
+/** the pickup's gravel: a parking lot beside the tent, and a road that meanders in to it from the hex's west side */
 const LOT = { x: -16, z: 10, w: 15, d: 10 };
-const ROAD = { z: 10, w: 4, from: -HEX_R * 0.866, to: LOT.x - LOT.w / 2 };
+const ROAD_W = 3.6;
+/** the road's centre line, from the west edge to the lot: a slow S of two bends */
+const ROAD = Array.from({ length: 41 }, (_, i) => {
+	const t = i / 40;
+	const x0 = -HEX_R * 0.866 + 0.4, x = x0 + t * (LOT.x - LOT.w / 2 + 1 - x0);
+	return [x, 22 - 12 * t + 9 * Math.sin(t * Math.PI * 2.2) * (1 - t * 0.6)];
+});
+const nearRoad = (x, z, r) => ROAD.some(([px, pz], i) => {
+	if (!i) return false;
+	const [ax, az] = ROAD[i - 1], dx = px - ax, dz = pz - az;
+	const k = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+	return Math.hypot(x - ax - k * dx, z - az - k * dz) < r;
+});
 const onGravel = (x, z, pad = 0) =>
-	(Math.abs(x - LOT.x) < LOT.w / 2 + pad && Math.abs(z - LOT.z) < LOT.d / 2 + pad) || (x > ROAD.from - 1 && x < ROAD.to + pad && Math.abs(z - ROAD.z) < ROAD.w / 2 + pad);
+	(Math.abs(x - LOT.x) < LOT.w / 2 + pad && Math.abs(z - LOT.z) < LOT.d / 2 + pad) || nearRoad(x, z, ROAD_W / 2 + pad);
 
 function gravel() {
 	const g = new THREE.Group();
@@ -61,10 +73,21 @@ function gravel() {
 	const lot = new THREE.Mesh(new THREE.PlaneGeometry(LOT.w, LOT.d), stone);
 	lot.rotation.x = -Math.PI / 2;
 	lot.position.set(LOT.x, 0.03, LOT.z);
-	const len = ROAD.to - ROAD.from;
-	const road = new THREE.Mesh(new THREE.PlaneGeometry(len, ROAD.w), stone);
-	road.rotation.x = -Math.PI / 2;
-	road.position.set(ROAD.from + len / 2, 0.025, ROAD.z);
+	// a ribbon along the centre line, each point pushed half the width out to both sides
+	const pos = [];
+	ROAD.forEach(([x, z], i) => {
+		const [ax, az] = ROAD[Math.max(0, i - 1)], [bx, bz] = ROAD[Math.min(ROAD.length - 1, i + 1)];
+		const l = Math.hypot(bx - ax, bz - az), nx = -(bz - az) / l, nz = (bx - ax) / l, h = ROAD_W / 2;
+		pos.push(x + nx * h, 0.025, z + nz * h, x - nx * h, 0.025, z - nz * h);
+	});
+	const index = [];
+	for (let i = 0; i < ROAD.length - 1; i++) { const a = i * 2; index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+	geo.setIndex(index);
+	geo.computeVertexNormals();
+	const road = new THREE.Mesh(geo, stone);
+	stone.side = THREE.DoubleSide;
 	lot.receiveShadow = road.receiveShadow = true;
 	g.add(lot, road);
 	return g;
