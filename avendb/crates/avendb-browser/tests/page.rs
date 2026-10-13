@@ -1,13 +1,14 @@
-//! avenDB's device in Chromium (P8d, P8e): `tests/device.rs` again, each browser a page. The test serves the page
-//! (`tests/page/`) and the device's WebAssembly, which `scripts/test-browser.sh` builds for passkeys of localhost; it
-//! starts a relay open to sign-up and a new server, nobody's yet, on this machine, and drives one headless Chromium
-//! over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and each of her browsers
-//! is a frame of the tab, with a store of its own in OPFS. Her first browser makes the passkey, founds her vault and
-//! claims the server in one ceremony after the unlock, and writes a note; her second links through the first one's code
-//! in one ceremony and edits it; the first closes, its store is put back in IndexedDB as pages kept it before B2b, and
-//! it opens again in one ceremony, moving the store into OPFS, and edits the note once more; no other page can load
-//! its store while it runs. Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs
-//! it.
+//! avenDB's device in Chromium (P8d, P8e, v8 phase S): `tests/device.rs` again, each browser a page. The test serves
+//! the page (`tests/page/`) and the device's WebAssembly, which `scripts/test-browser.sh` builds for passkeys of
+//! localhost; it starts a relay open to sign-up and a new server, nobody's yet, on this machine, and drives one
+//! headless Chromium over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and
+//! each of her browsers is a frame of the tab, with a store of its own in OPFS, its shelf. Her first browser finds
+//! there what an earlier avenDB kept, which it never reads, makes the passkey, founds her vault and claims the server
+//! in one ceremony after the unlock, and writes a note; her second links through the first one's code in one ceremony
+//! and edits it; the first closes, opens again from its shelf in one ceremony and edits the note once more, no other
+//! page holding its store while it runs; then she forgets it there, and its shelf is put aside, a new one in use, what
+//! the earlier avenDB kept still as it was. Each page reports its steps to the test over HTTP. `cargo test` skips it;
+//! the script runs it.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -309,6 +310,11 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let opts = Options { relay: Some(relay.url()), admission: Some(admission.clone()), card: true, ..Options::local() };
     let server = Node::spawn(lab, server_d, opts).await.expect("the server");
 
+    // what an earlier avenDB kept for her first browser's store, in OPFS and in IndexedDB, which nothing reads
+    tab.frame(&[("page", "earlier"), ("store", "first"), ("earlier", "1")]).await;
+    let earlier = tab.expect("earlier", "earlier").await;
+    assert!(earlier["ops"].is_string() && earlier["indexed"] == true, "kept: {earlier}");
+
     // Eve's first browser makes her passkey, founds her vault, claims the server and writes a note, in two ceremonies
     let code = server.offer().to_text();
     let params = [("store", "first"), ("name", "Eve's browser"), ("relay", &url), ("server", &code)];
@@ -324,11 +330,13 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let entry = EntryId(id(&first, "entry"));
     let holds = move |lab: &Lab, me| lab.fetched(me, entry) > 0;
     until("the server keeps her note", || server.read(holds)).await;
-    // the file she brought is on her browser's shelf in OPFS: its one piece under its hash, its outboard beside it
+    // her browser's shelf is a new one, beside what the earlier avenDB kept; the file she brought is there, its one
+    // piece under its hash, its outboard too
+    assert_eq!(first["generations"], json!(["g1"]), "one shelf: {first}");
     let root = first["file"]["root"].as_str().unwrap_or_else(|| panic!("the file she brought: {first}"));
-    let shelf = first["shelf"].as_array().expect("what her browser's shelf keeps");
-    for name in [root.to_string(), format!("{root}.obao")] {
-        assert!(shelf.contains(&json!(name)), "{name} on her browser's shelf: {shelf:?}");
+    for kept in ["blobs", "outboards"] {
+        let held = first["shelf"][kept].as_array().unwrap_or_else(|| panic!("its {kept}: {first}"));
+        assert!(held.contains(&json!(root)), "{root} in its {kept}: {held:?}");
     }
 
     // her second browser links through the first one's code, in one ceremony, and edits the note
@@ -349,30 +357,36 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.expect("first", "read").await;
     let closed = tab.expect("first", "closed").await;
     eprintln!("Eve's first browser kept {} edits and {} McEliece keys in OPFS", closed["edits"], closed["keys"]);
+    let shelf = closed["shelf"].as_array().expect("the names on its shelf");
+    assert!(shelf.contains(&json!("meta/0000000000000001")), "what opens it again: {shelf:?}");
+    assert!(shelf.iter().any(|n| n.as_str().is_some_and(|n| n.starts_with("journal/"))), "its edits: {shelf:?}");
 
-    // its store goes back where pages kept it before B2b, in IndexedDB, and out of OPFS
-    tab.frame(&[("page", "legacy"), ("store", "first"), ("legacy", "1")]).await;
-    let legacy = tab.expect("legacy", "legacy").await;
-    assert_eq!((&legacy["edits"], &legacy["keys"]), (&closed["edits"], &closed["keys"]), "all it kept: {legacy}");
-
-    // the first browser opens again from its store, which moves into OPFS and out of IndexedDB, in the unlock alone,
-    // and edits the note once more
-    tab.frame(&[("page", "again"), ("store", "first"), ("reads", APRIL), ("write", MAY)]).await;
+    // the first browser opens again from its shelf, in the unlock alone, and edits the note once more
+    let again = [("page", "again"), ("store", "first"), ("reads", APRIL), ("write", MAY)];
+    tab.frame(&[&again[..], &[("wait", "1"), ("close", "1"), ("forget", "1")]].concat()).await;
     let again = tab.expect("again", "opened").await;
     eprintln!("Eve's first browser opened again in {} ms", again["ms"]);
     assert_eq!(again["ceremonies"], 1, "the unlock alone: {again}");
     assert_eq!((&again["endpoint"], &again["vault"]), (&first["endpoint"], &first["vault"]), "the same device");
-    assert_eq!((&again["edits"], &again["keys"]), (&closed["edits"], &closed["keys"]), "holding what its store kept");
-    let indexed = again["indexed"].as_array().expect("the databases of IndexedDB");
-    assert!(!indexed.contains(&json!("first")), "its store left IndexedDB: {indexed:?}");
+    assert_eq!((&again["edits"], &again["keys"]), (&closed["edits"], &closed["keys"]), "holding what its shelf kept");
     tab.expect("again", "read").await;
     tab.expect("again", "wrote").await;
-    // while it runs, no other page loads its store
+    // while it runs, no other page holds its store
     tab.frame(&[("page", "twice"), ("store", "first"), ("twice", "1")]).await;
     let twice = tab.expect("twice", "twice").await;
-    let refused = twice["refused"].as_str().unwrap_or_else(|| panic!("a second page loaded the store: {twice}"));
+    let refused = twice["refused"].as_str().unwrap_or_else(|| panic!("a second page held the store: {twice}"));
     assert!(refused.contains("open in another tab"), "{refused}");
     tab.expect("second", "read again").await;
+
+    // she forgets it there: its shelf is put aside, never deleted, and a new one is in use, holding nothing; what the
+    // earlier avenDB kept is as it was
+    tab.eval("localStorage.setItem('go:again', '1')").await;
+    tab.expect("again", "closed").await;
+    let forgot = tab.expect("again", "forgot").await;
+    assert_eq!(forgot["generations"], json!(["g1", "g2"]), "a new shelf beside the old: {forgot}");
+    assert_eq!(forgot["metas"], json!({ "g1": ["0000000000000001"], "g2": [] }), "the old shelf as it was");
+    assert_eq!(forgot["meta"], Value::Null, "nothing opens a device on the new one");
+    assert_eq!(forgot["earlier"], earlier, "what the earlier avenDB kept, untouched");
     let passkeys = tab.passkeys().await;
     assert_eq!(passkeys.len(), 1, "one passkey, Eve's: {passkeys:?}");
     assert_eq!(passkeys[0]["rpId"], "localhost");

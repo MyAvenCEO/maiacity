@@ -32,7 +32,7 @@ export async function status() {
 	}
 }
 
-/** Bytes as base64, as the app's device takes the edits and keys the page's store kept. @param {Uint8Array} bytes */
+/** Bytes as base64, as the app's device takes a file's chunks. @param {Uint8Array} bytes */
 export function base64(bytes) {
 	let text = '';
 	for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));

@@ -22,15 +22,16 @@
 //!   (`avendb_net::Node::link_by_pass`), in one ceremony, the unlock, which is its passkey's pass for it and signs the
 //!   edit that adds it too: its passkey is the key, of those the unlock's assertion recovers to, whose vault the peer
 //!   hands over.
-//! - `Device::open`: a device the page made before opens again from its store, in the unlock's ceremony alone; the
+//! - `Device::open`: a device the page made before opens again from its shelf, in the unlock's ceremony alone; the
 //!   server's relay knows it.
 //!
-//! The page keeps what the device holds in the browser's private file system, OPFS (`js/store.js`), by a worker of its
-//! own, which has OPFS's synchronous files (`js/store.worker.js`): its edits in the order it took them, in the same
-//! records as a node's on disk (`avendb_net::Disk`), and its McEliece keys, saved after each change (`Node::changes`).
-//! A store IndexedDB kept, as pages did before (B2b), moves over the first time it opens and is deleted. The same store
-//! is its node's shelf (B2d, `avendb_net::shelf`): the pieces of the files it brings or keeps, whole, each with its
-//! outboard (`shelf_of`).
+//! The page keeps what the device holds in the browser's private file system, OPFS, on its node's shelf (v8 phase S,
+//! `avendb_net::shelf`), laid out as every place lays out its own: its edits as a journal, packs and heads
+//! (`avendb_net` keeps them), its McEliece keys and the pieces of the files it brings or keeps, each a blob, and what
+//! opens it again (`Meta`). The page's store (`js/store.js`) only carries the shelf's calls to a worker of its own,
+//! which has OPFS's synchronous files and holds the shelf for one tab at a time (`js/store.worker.js`): all that is
+//! kept, and how, is the device's (`shelf_of`). A store is never deleted: a new device, or one forgotten, starts a
+//! new generation of it, and the old stays aside.
 //!
 //! A vault holds its entries itself, flat: each entry has a type (`note`, `todo`, `card`, `profile`) and tags, all of
 //! it inside the entry's encrypted writes. A vault shares what it holds through shares (`Device::share`), each on a
@@ -67,7 +68,7 @@
 //!
 //! The same device runs natively in the Mac app (`avendb-device`, beside maiaCITY Studio): there its node binds UDP
 //! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it
-//! holds in a folder on disk (`Start::direct`, `Start::store`).
+//! holds on a shelf in a folder on disk (`Start::direct`, `avendb_net::disk`).
 //!
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
@@ -75,7 +76,6 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::ops::Range;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -83,17 +83,16 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::doc::Item;
 use avendb::engine;
-use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
+use avendb::id::{AudienceId, BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, KeyFam};
-use avendb::lab::{Backup, Lab, NewShare};
+use avendb::lab::{Lab, NewShare};
 use avendb::lens::{DocV2, Status};
 use avendb::policy::{Action, Issued, Kind, Level, Principal, Refusal, Revoking, Share, Sharing, State, Vault, Who};
 use avendb::recovery::{self, RecoveryKey};
 use avendb::rules;
 use avendb::sealed::{Brought, FileRoot};
-use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
+use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
-use avendb::wire::Wire as _;
 use avendb_net::shelf::hash_of;
 use avendb_net::{Authenticator, Call, Node, Offer, Options, Progress, Shelf, Stage, Step, Steps};
 use bytes::Bytes;
@@ -171,7 +170,7 @@ pub const DELETED: &str = "avendb:deleted";
 
 /// What the ceremony that unlocks a device brings back: the ceremony itself, over a new device's challenge
 /// (`Fresh::challenge`) or one of the page's own, and the PRF output on the device's salt (`sign::device_salt`), which
-/// masks the secret its keys come from (`Fresh::mask`), or, for a device made before 2026-10-10, is that secret.
+/// masks the secret its keys come from (`Fresh::mask`).
 pub struct Unlock {
     pub ceremony: Ceremony,
     pub device: Zeroizing<[u8; 32]>,
@@ -226,20 +225,20 @@ fn xor(a: &[u8; 32], b: &[u8; 32]) -> Zeroizing<[u8; 32]> {
 }
 
 /// Where a device starts: its name, the relay it reaches its peers through, 32 bytes of the browser's randomness and
-/// the time, seconds since 1970. In a page that is all: it binds no socket, and the page keeps its store. A device on a
-/// machine, the Mac app's, binds sockets of its own (`direct`, `avendb_net::Options::direct`), so it reaches its peers
-/// directly and through the relay only where it must, and keeps its store in a folder (`store`, `avendb_net::Disk`).
-/// It marks each step of its start in `progress`, for its person to watch (`avendb_net::Progress`); whoever started it
-/// marks the start over. Every human vault it founds adds the master recovery key `recovery` as an owner, avenDB's own
-/// (`Start::recovery`) while avenDB is bootstrapped (`avendb::recovery`), and so its person may add it to their vault.
-/// A page's node keeps the files it brings or keeps on its store's shelf (`shelf`, `shelf_of`), else in memory.
+/// the time, seconds since 1970, and its shelf (`avendb_net::Options::shelf`): a page's in OPFS (`shelf_of`), the Mac
+/// app's in its folder (`avendb_net::disk`), where it keeps what it holds and what opens it again (`Meta`). A device
+/// with none, as in a test, keeps nothing past its end. A page binds no socket; a device on a machine, the Mac app's,
+/// binds sockets of its own (`direct`, `avendb_net::Options::direct`), so it reaches its peers directly and through
+/// the relay only where it must. It marks each step of its start in `progress`, for its person to watch
+/// (`avendb_net::Progress`); whoever started it marks the start over. Every human vault it founds adds the master
+/// recovery key `recovery` as an owner, avenDB's own (`Start::recovery`) while avenDB is bootstrapped
+/// (`avendb::recovery`), and so its person may add it to their vault.
 pub struct Start {
     pub name: String,
     pub relay: RelayUrl,
     pub entropy: [u8; 32],
     pub now: u64,
     pub direct: bool,
-    pub store: Option<PathBuf>,
     pub shelf: Option<Shelf>,
     pub progress: Progress,
     pub recovery: Option<Arc<RecoveryKey>>,
@@ -252,13 +251,98 @@ impl Start {
     }
 }
 
+/// What opens a device again, kept on its shelf beside what it holds (`Meta::keep`): its name, the relay it reaches its
+/// peers through, its salt's own 32 bytes (`sign::device_salt`), its secret masked by the PRF output on its salt
+/// (`Fresh::mask`), the credential of its person's passkey (base64url) and that passkey's P-256 key, compressed, and
+/// the device's id, which the unmasked secret must be the key of before the device touches its shelf (`Device::open`).
+/// None of it is a secret: only the passkey unmasks the device's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Meta {
+    pub name: String,
+    pub relay: String,
+    pub nonce: [u8; 32],
+    pub mask: [u8; 32],
+    pub credential: String,
+    pub p256: [u8; 33],
+    pub device: SignerId,
+}
+
+/// Where a shelf keeps what opens its device again: each version an object of its own, `meta/0000000000000001` and
+/// on, put once, the newest that reads counting.
+const META: &str = "meta/";
+
+impl Meta {
+    /// As the page and the Mac app read it: `{name, relay, nonce, mask, credential, passkey, device}`, the nonce, the
+    /// mask, the passkey's P-256 key and the device's id in hex.
+    pub fn to_json(&self) -> Value {
+        json!({
+            "name": self.name,
+            "relay": self.relay,
+            "nonce": hex(&self.nonce),
+            "mask": hex(&self.mask),
+            "credential": self.credential,
+            "passkey": self.p256.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "device": hex(&self.device.0),
+        })
+    }
+
+    /// From what `to_json` writes.
+    pub fn from_json(v: &Value) -> Result<Meta> {
+        let field = |k: &str| v.get(k).and_then(Value::as_str).with_context(|| format!("what opens it: no {k}"));
+        let bytes = |k: &str| field(k).map(|f| hex_bytes(f).unwrap_or_default());
+        Ok(Meta {
+            name: field("name")?.into(),
+            relay: field("relay")?.into(),
+            nonce: bytes("nonce")?.try_into().ok().context("a device's nonce is 32 bytes in hex")?,
+            mask: bytes("mask")?.try_into().ok().context("a device's mask is 32 bytes in hex")?,
+            credential: field("credential")?.into(),
+            p256: bytes("passkey")?.try_into().ok().context("a passkey's P-256 key is 33 bytes in hex")?,
+            device: SignerId(bytes("device")?.try_into().ok().context("a device's id is 32 bytes in hex")?),
+        })
+    }
+
+    /// What opens the device on `shelf` again: the newest version that reads, or none while the shelf holds none.
+    pub async fn load(shelf: &Shelf) -> Result<Option<Meta>> {
+        let names = shelf.names(META).await.context("what opens the device")?;
+        for name in names.iter().rev() {
+            let Some(bytes) = shelf.get(name).await.context("what opens the device")? else { continue };
+            // a version that doesn't read counts for nothing, and the one before it counts
+            let read = serde_json::from_slice(&bytes).map_err(anyhow::Error::from).and_then(|v| Meta::from_json(&v));
+            if let Ok(meta) = read {
+                return Ok(Some(meta));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Keeps it on `shelf`, as the newest version: done once the shelf holds it.
+    pub async fn keep(&self, shelf: &Shelf) -> Result<()> {
+        let names = shelf.names(META).await.context("what opens the device")?;
+        let number = |name: &String| u64::from_str_radix(name.strip_prefix(META)?, 16).ok();
+        let mut n = names.iter().filter_map(number).max().map_or(1, |n| n + 1);
+        let bytes = Bytes::from(self.to_json().to_string());
+        loop {
+            match shelf.put(&format!("{META}{n:016x}"), bytes.clone()).await {
+                Ok(()) => return Ok(()),
+                // another version took the number first: this one comes after it
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => n += 1,
+                Err(e) => return Err(anyhow::Error::from(e).context("keeping what opens the device")),
+            }
+        }
+    }
+}
+
 /// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, the mask its
-/// secret is kept under (`Fresh::mask`), none for a device made before 2026-10-10, and whether it closed.
+/// secret is kept under (`Fresh::mask`), its shelf, if it keeps one (`Start::shelf`), the name and relay it started
+/// with, and whether it closed.
 pub struct Device {
     node: Node,
     passkey: SignerId,
     p256: [u8; 33],
-    mask: Option<[u8; 32]>,
+    mask: [u8; 32],
+    shelf: Option<Shelf>,
+    name: String,
+    relay: RelayUrl,
     closed: watch::Sender<bool>,
 }
 
@@ -301,7 +385,7 @@ impl Device {
         }
         let (passkey, vault, avenceo) = node.found_with(server, &passkeys, authenticator).await?;
         progress.step("settle");
-        let device = Device::of(node, passkey, &passkeys, Some(fresh.mask(&unlock))).await?;
+        let device = Device::of(node, passkey, &passkeys, fresh.mask(&unlock), &start).await?;
         let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
             let level = if backup { Level::Backup } else { Level::Relay };
@@ -327,31 +411,26 @@ impl Device {
         let mask = fresh.mask(&unlock);
         let node = Device::spawn(lab, me, &start, Some(pass.clone())).await?;
         let (passkey, _) = node.link_by_pass(offer, &pass, unlock.ceremony).await?;
-        Device::of(node, passkey, &passkeys, Some(mask)).await
+        Device::of(node, passkey, &passkeys, mask, &start).await
     }
 
-    /// The device the page made before, opened again from what its store kept (`backup`), unlocked by the ceremony of
-    /// the passkey whose P-256 key is `p256`, its secret kept under `mask` (`Fresh::mask`), none for a device made
-    /// before 2026-10-10: the relay knows it, so it needs no pass. A device with a folder of its own (`Start::store`)
-    /// opens from what the folder holds, or, while it holds nothing, from `backup`, which it then keeps there: so the
-    /// Mac app's device moves from its page's store to disk.
-    pub async fn open(
-        start: Start,
-        p256: [u8; 33],
-        mask: Option<[u8; 32]>,
-        unlock: Unlock,
-        backup: &Backup,
-    ) -> Result<Device> {
+    /// The device made here before, opened again from its shelf (`Start::shelf`) by what the shelf keeps to open it
+    /// (`meta`), unlocked by the ceremony of the passkey whose P-256 key it names, its secret kept under the mask it
+    /// names (`Fresh::mask`): the relay knows it, so it needs no pass. Its node takes back what the shelf kept
+    /// (`avendb_net::Node::spawn`). Fails, before it touches the shelf, if the unlock isn't that passkey's or unmasks
+    /// another device's secret; and if the device then belongs to no vault, as one taken out of its vault.
+    pub async fn open(start: Start, meta: &Meta, unlock: Unlock) -> Result<Device> {
+        let (p256, mask) = (meta.p256, meta.mask);
         let progress = &start.progress;
         progress.step("keys");
-        let (mut lab, passkey, me) = lab(&start, p256, mask, &unlock)?;
-        progress.step("restore");
-        lab.restore_backup(me, backup);
-        if start.store.is_none() && lab.vault_of(me).is_none() {
-            bail!("the store holds no vault this device belongs to");
+        let (lab, passkey, me) = lab(&start, p256, mask, &unlock)?;
+        if me != meta.device {
+            bail!("the unlock opens another device than the one this shelf keeps");
         }
+        progress.step("restore");
         let node = Device::spawn(lab, me, &start, None).await?;
-        let device = Device { node, passkey, p256, mask, closed: watch::Sender::new(false) };
+        let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
+        let device = Device { node, passkey, p256, mask, shelf, name, relay, closed: watch::Sender::new(false) };
         progress.step("check");
         if device.vault().await.is_none() {
             device.close().await.ok();
@@ -361,25 +440,61 @@ impl Device {
     }
 
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by `pass` if the relay
-    /// doesn't know it yet, and directly too if it binds a socket; with its store in a folder, if it has one.
+    /// doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
     async fn spawn(lab: Lab, me: SignerId, start: &Start, pass: Option<RelayPass>) -> Result<Node> {
-        let (direct, relay, store, shelf, progress) =
-            (start.direct, Some(start.relay.clone()), start.store.clone(), start.shelf.clone(), start.progress.clone());
-        let opts = Options { bind: None, direct, relay, relay_pass: pass, store, shelf, progress, ..Options::local() };
+        let (direct, relay, shelf, progress) =
+            (start.direct, Some(start.relay.clone()), start.shelf.clone(), start.progress.clone());
+        let opts = Options { bind: None, direct, relay, relay_pass: pass, shelf, progress, ..Options::local() };
         Node::spawn(lab, me, opts).await
     }
 
     /// The new device whose node is `node`, of the person whose passkey turned out to be `passkey`, of `passkeys`,
-    /// those its unlock may have been from (`passed`), its secret kept under `mask`: it forgets the others' keys, which
-    /// nobody holds.
-    async fn of(node: Node, passkey: SignerId, passkeys: &[SignerId], mask: Option<[u8; 32]>) -> Result<Device> {
+    /// those its unlock may have been from (`passed`), its secret kept under `mask`, started at `start`: it forgets the
+    /// others' keys, which nobody holds.
+    async fn of(node: Node, passkey: SignerId, passkeys: &[SignerId], mask: [u8; 32], start: &Start) -> Result<Device> {
         let others: Vec<SignerId> = passkeys.iter().copied().filter(|&p| p != passkey).collect();
         let forget = move |lab: &mut Lab, _| {
             others.into_iter().for_each(|p| lab.lose(p));
             lab.keys_of(passkey)
         };
         let Some(SignerKeys::Passkey { p256, .. }) = node.act(forget).await else { bail!("the passkey's keys") };
-        Ok(Device { node, passkey, p256, mask, closed: watch::Sender::new(false) })
+        let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
+        Ok(Device { node, passkey, p256, mask, shelf, name, relay, closed: watch::Sender::new(false) })
+    }
+
+    /// What opens it again, as it started: its name and relay, its secret's mask, its passkey's P-256 key and its id,
+    /// with `nonce`, its salt's own bytes, and `credential`, its passkey's, which the unlock named.
+    pub fn meta(&self, nonce: [u8; 32], credential: String) -> Meta {
+        let (name, relay, device) = (self.name.trim().to_string(), self.relay.to_string(), self.node.device());
+        Meta { name, relay, nonce, mask: self.mask, credential, p256: self.p256, device }
+    }
+
+    /// Keeps `meta` on its shelf, what opens it again (`Meta::keep`): a device new here keeps it once it started, and
+    /// its shelf holds it from then on. Fails for a device that keeps no shelf.
+    pub async fn keep(&self, meta: &Meta) -> Result<()> {
+        meta.keep(self.shelf.as_ref().context("this device keeps no shelf")?).await
+    }
+
+    /// Its name reads `name`: in what opens it again, on its shelf, then on its card (`Device::card`). Whether its card
+    /// changed.
+    pub async fn rename(&self, name: String) -> Result<bool> {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            bail!("a device has a name");
+        }
+        let shelf = self.shelf.as_ref().context("this device keeps no shelf")?;
+        let mut meta = Meta::load(shelf).await?.context("its shelf holds nothing that opens it")?;
+        if meta.name != name {
+            meta.name.clone_from(&name);
+            meta.keep(shelf).await?;
+        }
+        self.card(name).await
+    }
+
+    /// Its shelf lacks something it holds: until the shelf has it, it tells its peers nothing new
+    /// (`avendb_net::Node::behind`).
+    pub async fn behind(&self) -> bool {
+        self.node.behind().await
     }
 
     /// Its node.
@@ -397,9 +512,9 @@ impl Device {
         self.passkey
     }
 
-    /// The mask its secret is kept under (`Fresh::mask`): what the page keeps, beside its salt's own bytes, to open the
-    /// device again. None for a device made before 2026-10-10, whose secret is the PRF output on its salt itself.
-    pub fn mask(&self) -> Option<[u8; 32]> {
+    /// The mask its secret is kept under (`Fresh::mask`): what its shelf keeps, beside its salt's own bytes, to open it
+    /// again (`Meta`).
+    pub fn mask(&self) -> [u8; 32] {
         self.mask
     }
 
@@ -710,20 +825,7 @@ impl Device {
         self.node.read(data::history).await
     }
 
-    /// The signed edits it holds from the `from`th on, in the order it took them, each as its bytes on the wire; `None`
-    /// if it holds fewer than `from`, as some of what the store kept failed their checks: then the store is written
-    /// anew from the first.
-    pub async fn edits(&self, from: usize) -> Option<Vec<Vec<u8>>> {
-        self.node
-            .read(move |lab, me| {
-                let ids = lab.log(me).ids();
-                let wire = |id: &EditId| lab.signed_edit(me, *id).expect("an edit it holds").to_wire();
-                ids.get(from..).map(|ids| ids.iter().map(wire).collect())
-            })
-            .await
-    }
-
-    /// Waits until it holds other than `held`, how many edits and McEliece keys its page's store holds
+    /// Waits until it holds other than `held`, how many edits and McEliece keys the page last showed it holding
     /// (`Node::changes`): true, or false once it closed.
     pub async fn changed(&self, held: (usize, usize)) -> bool {
         let (mut changes, mut closed) = (self.node.changes(), self.closed.subscribe());
@@ -731,20 +833,11 @@ impl Device {
         or(changed, async move { closed.wait_for(|&closed| closed).await.is_err() }).await
     }
 
-    /// Closes its connections and its endpoint.
+    /// Closes its connections and its endpoint, once its shelf holds what it holds, if it can
+    /// (`avendb_net::Node::shutdown`).
     pub async fn close(&self) -> Result<()> {
         self.closed.send_replace(true);
         self.node.shutdown().await
-    }
-
-    /// The McEliece keys it holds, each by its id.
-    pub async fn key_ids(&self) -> Vec<BlobId> {
-        self.node.read(|lab, me| lab.blob_ids(me)).await
-    }
-
-    /// McEliece key `id`, if it holds it.
-    pub async fn key(&self, id: BlobId) -> Option<Arc<[u8]>> {
-        self.node.read(move |lab, me| lab.blob(me, id)).await
     }
 }
 
@@ -1225,23 +1318,15 @@ pub fn steps_json(steps: &Steps) -> Value {
     json!({ "steps": steps.steps.iter().map(stage).collect::<Vec<_>>(), "over": steps.over })
 }
 
-/// What a store kept, read back (`js/store.js`): the signed edits, each as its bytes on the wire, in the order the
-/// device took them, and its McEliece keys. Reading stops at the first edit that doesn't decode, as a store on disk
-/// does.
-pub fn backup(edits: &[Vec<u8>], keys: Vec<Arc<[u8]>>) -> Backup {
-    Backup::new(edits.iter().map_while(|edit| Signed::from_wire(edit).ok()).collect(), keys)
-}
-
 /// A browser's device's Lab as it opens again: its person's passkey, by its P-256 key and the ceremony that unlocked
 /// the device, and the device, its keys from its secret, which the PRF output on its salt unmasks from `mask`
-/// (`Fresh::mask`), or, for a device made before 2026-10-10, with no mask, is.
-fn lab(start: &Start, p256: [u8; 33], mask: Option<[u8; 32]>, unlock: &Unlock) -> Result<(Lab, SignerId, SignerId)> {
+/// (`Fresh::mask`).
+fn lab(start: &Start, p256: [u8; 33], mask: [u8; 32], unlock: &Unlock) -> Result<(Lab, SignerId, SignerId)> {
     let mut lab = Lab::with_entropy(start.entropy);
     start.recovery.clone().map(|key| lab.set_recovery(key));
     let passkey = lab.web_passkey("the person", p256, &unlock.ceremony);
     let passkey = passkey.context("the unlock's ceremony isn't of the passkey with this P-256 key")?;
-    let secret = mask.map_or_else(|| unlock.device.clone(), |mask| xor(&mask, &unlock.device));
-    let me = lab.device_with(&start.name, *secret);
+    let me = lab.device_with(&start.name, *xor(&mask, &unlock.device));
     Ok((lab, passkey, me))
 }
 
@@ -1282,26 +1367,29 @@ pub fn start() {
     std::panic::set_hook(Box::new(|info| error(&format!("avenDB: {info}"))));
 }
 
-/// The device as the page holds it (`Device`): every call that waits on the network or on its person is a promise.
+/// The device as the page holds it (`Device`), with the page's store its shelf is on (`js/store.js`): every call that
+/// waits on the network or on its person is a promise.
 ///
 /// A ceremony is the page's: `ceremony(challenge, step)`, a function the device calls with the 32 bytes the passkey
 /// signs and what for (`"found"`, `"join"`, `"claim"`, `"approve"`), which resolves to the ceremony's
 /// `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`. The unlock
 /// is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, `nonce` the 32 bytes the
-/// page keeps for the device. A new device asks for it as `unlock(challenge)`, a function that resolves to it, over the
-/// challenge that makes it the passkey's pass for the device (`Fresh`).
+/// device keeps for its salt (`Meta`). A new device asks for it as `unlock(challenge)`, a function that resolves to
+/// it, over the challenge that makes it the passkey's pass for the device (`Fresh`).
 ///
 /// A device starting shows the page each step of its start as it begins and ends, if the page passes `steps`: a
-/// function it calls with them all so far, each time they change (`steps_json`), until the start is over.
+/// function it calls with them all so far, each time they change (`steps_json`), until the start is over. It holds the
+/// store's shelf for this page alone from its start until it closes: the same device never runs in two tabs.
 #[wasm_bindgen(js_name = Device)]
-pub struct PageDevice(Rc<Device>);
+pub struct PageDevice(Rc<Device>, JsValue);
 
 #[wasm_bindgen(js_class = Device)]
 impl PageDevice {
     /// The first device named `name` of a new person, reaching its peers through the relay at `relay` alone, whose
     /// passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`, or `undefined` for a passkey made
     /// before, as at maiaCITY's sign-up: unlocked by `unlock(challenge)`, it founds their human vault and makes it
-    /// known to the server whose code reads `server`, which it claims if nobody has yet (`Device::found`).
+    /// known to the server whose code reads `server`, which it claims if nobody has yet (`Device::found`). It keeps
+    /// what it holds on the shelf of the page's `store`, which holds no device yet (`new_shelf`).
     #[allow(clippy::too_many_arguments)]
     pub async fn found(
         name: String,
@@ -1312,66 +1400,96 @@ impl PageDevice {
         ceremony: Function,
         backup: Option<bool>,
         steps: Option<Function>,
-        store: Option<JsValue>,
+        store: JsValue,
     ) -> Result<PageDevice, JsError> {
         let not_p256 = || JsError::new("not a P-256 passkey's public key info");
         let p256 = spki.map(|spki| sign::spki_p256(&spki).ok_or_else(not_p256)).transpose()?;
         let server = Offer::from_text(&server).map_err(js_error)?;
-        let (start, fresh) = (starting(name, &relay, steps, store)?, Fresh::new().map_err(js_error)?);
-        let _ending = start.progress.ending();
-        start.progress.step("unlock");
-        let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
-        let device = Device::found(start, &server, p256, fresh, unlock, &ceremonies, backup.unwrap_or(true));
-        Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
+        let shelf = new_shelf(&store).await?;
+        let found = async {
+            let (start, fresh) = (starting(name, &relay, steps, shelf)?, Fresh::new().map_err(js_error)?);
+            let _ending = start.progress.ending();
+            start.progress.step("unlock");
+            let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
+            let device = Device::found(start, &server, p256, fresh, unlock, &ceremonies, backup.unwrap_or(true));
+            device.await.map_err(js_error)
+        };
+        PageDevice::on(found.await, store).await
     }
 
     /// A new device named `name` of a person who has one already, unlocked by `unlock(challenge)`, linked through the
-    /// device whose code reads `offer` (`Device::link`).
+    /// device whose code reads `offer` (`Device::link`), on the shelf of the page's `store`, which holds no device yet
+    /// (`new_shelf`).
     pub async fn link(
         name: String,
         relay: String,
         offer: String,
         unlock: Function,
         steps: Option<Function>,
-        store: Option<JsValue>,
+        store: JsValue,
     ) -> Result<PageDevice, JsError> {
         let offer = Offer::from_text(&offer).map_err(js_error)?;
-        let (start, fresh) = (starting(name, &relay, steps, store)?, Fresh::new().map_err(js_error)?);
-        let _ending = start.progress.ending();
-        start.progress.step("unlock");
-        let unlock = unlocking(&unlock, fresh.challenge(start.now)).await?;
-        let device = Device::link(start, &offer, fresh, unlock);
-        Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
+        let shelf = new_shelf(&store).await?;
+        let link = async {
+            let (start, fresh) = (starting(name, &relay, steps, shelf)?, Fresh::new().map_err(js_error)?);
+            let _ending = start.progress.ending();
+            start.progress.step("unlock");
+            let unlock = unlocking(&unlock, fresh.challenge(start.now)).await?;
+            Device::link(start, &offer, fresh, unlock).await.map_err(js_error)
+        };
+        PageDevice::on(link.await, store).await
     }
 
-    /// The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
-    /// `passkey()`), the mask its secret is kept under (in hex, `mask()`), `undefined` for a device made before
-    /// 2026-10-10, and what its store kept, its `edits` in order and its McEliece `keys`, each bytes (`Device::open`).
-    /// The page made the unlock's ceremony itself, so the steps it is shown begin after it.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn open(
-        name: String,
-        relay: String,
-        p256: String,
-        mask: Option<String>,
-        unlock: JsValue,
-        edits: Array,
-        keys: Array,
-        steps: Option<Function>,
-        store: Option<JsValue>,
-    ) -> Result<PageDevice, JsError> {
-        let p256 = hex_bytes(&p256).and_then(|b| <[u8; 33]>::try_from(b).ok());
-        let p256 = p256.ok_or_else(|| JsError::new("a passkey's P-256 key is 33 bytes in hex"))?;
-        let not_mask = || JsError::new("a device's mask is 32 bytes in hex");
-        let mask = mask.map(|m| hex_bytes(&m).and_then(|b| <[u8; 32]>::try_from(b).ok()).ok_or_else(not_mask));
-        let mask = mask.transpose()?;
-        let edits: Vec<Vec<u8>> = edits.iter().map(|edit| Uint8Array::new(&edit).to_vec()).collect();
-        let keys = keys.iter().map(|key| Arc::from(Uint8Array::new(&key).to_vec())).collect();
-        let backup = backup(&edits, keys);
-        let start = starting(name, &relay, steps, store)?;
-        let _ending = start.progress.ending();
-        let device = Device::open(start, p256, mask, unlocked(&unlock)?, &backup);
-        Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
+    /// The device the page made before, opened again from the shelf of the page's `store`, by what the shelf keeps to
+    /// open it (`Meta`, `storeMeta`) and the unlock, a ceremony the page made itself over the device's salt, so the
+    /// steps it is shown begin after it (`Device::open`).
+    pub async fn open(unlock: JsValue, steps: Option<Function>, store: JsValue) -> Result<PageDevice, JsError> {
+        hold(&store).await?;
+        let shelf = shelf_of(store.clone());
+        let open = async {
+            let meta = Meta::load(&shelf).await.map_err(js_error)?;
+            let meta = meta.ok_or_else(|| JsError::new("this browser holds no avenDB account"))?;
+            let start = starting(meta.name.clone(), &meta.relay, steps, shelf)?;
+            let _ending = start.progress.ending();
+            Device::open(start, &meta, unlocked(&unlock)?).await.map_err(js_error)
+        };
+        PageDevice::on(open.await, store).await
+    }
+
+    /// The device a start made on the page's `store`; or, if it failed, the store let go of, for the next start.
+    async fn on(device: Result<Device, JsError>, store: JsValue) -> Result<PageDevice, JsError> {
+        match device {
+            Ok(device) => Ok(PageDevice(Rc::new(device), store)),
+            Err(e) => {
+                ask_store(&store, "release", &[]).await.ok();
+                Err(e)
+            }
+        }
+    }
+
+    /// Keeps what opens it again on its shelf (`Device::keep`), with `nonce`, its salt's own 32 bytes in hex, and
+    /// `credential`, its passkey's, which its unlock named: a promise of it, as the page reads it (`Meta::to_json`).
+    pub fn keep(&self, nonce: String, credential: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let nonce = hex_bytes(&nonce).and_then(|b| <[u8; 32]>::try_from(b).ok());
+            let nonce = nonce.ok_or_else(|| JsError::new("a device's nonce is 32 bytes in hex"))?;
+            let meta = device.meta(nonce, credential);
+            device.keep(&meta).await.map_err(js_value)?;
+            js_sys::JSON::parse(&meta.to_json().to_string())
+        })
+    }
+
+    /// Its name reads `name`, on its shelf and on its card (`Device::rename`): a promise of whether its card changed.
+    pub fn rename(&self, name: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.rename(name).await.map_err(js_value)?.into()) })
+    }
+
+    /// Whether its shelf lacks something it holds (`Device::behind`): a promise.
+    pub fn behind(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.behind().await.into()) })
     }
 
     /// Its device's id, in hex.
@@ -1384,15 +1502,9 @@ impl PageDevice {
         hex(self.0.node.id().as_bytes())
     }
 
-    /// Its person's passkey's P-256 key, compressed, in hex: what the page keeps to open the device again.
+    /// Its person's passkey's P-256 key, compressed, in hex: what its shelf keeps to open it again (`Meta`).
     pub fn passkey(&self) -> String {
         self.0.p256.iter().map(|b| format!("{b:02x}")).collect()
-    }
-
-    /// The mask its secret is kept under, in hex (`Device::mask`): what the page keeps too, beside its salt's own
-    /// bytes, to open the device again; `undefined` for a device made before 2026-10-10.
-    pub fn mask(&self) -> Option<String> {
-        self.0.mask.map(|mask| hex(&mask))
     }
 
     /// Its code, for the next device of its person to link through (`Offer::to_text`).
@@ -1637,51 +1749,34 @@ impl PageDevice {
         })
     }
 
-    /// Its signed edits from the `from`th on, in the order it took them, each bytes: a promise, of `undefined` if it
-    /// holds fewer than `from` (`Device::edits`).
-    pub fn edits(&self, from: u32) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let edits = device.edits(from as usize).await;
-            let bytes =
-                |edits: Vec<Vec<u8>>| edits.iter().map(|edit| Uint8Array::from(&edit[..])).collect::<Array>().into();
-            Ok(edits.map_or(JsValue::UNDEFINED, bytes))
-        })
-    }
-
-    /// The ids of the McEliece keys it holds, in hex: a promise.
-    #[wasm_bindgen(js_name = keyIds)]
-    pub fn key_ids(&self) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            Ok(device.key_ids().await.iter().map(|b| JsValue::from(b.to_hex())).collect::<Array>().into())
-        })
-    }
-
-    /// McEliece key `id` (in hex), as bytes: a promise, of `undefined` if it doesn't hold it.
-    pub fn key(&self, id: String) -> Promise {
-        let device = self.0.clone();
-        future_to_promise(async move {
-            let key = device.key(BlobId::from_hex(&id).ok_or_else(|| JsError::new("no key's id"))?).await;
-            Ok(key.map_or(JsValue::UNDEFINED, |k| Uint8Array::from(&k[..]).into()))
-        })
-    }
-
-    /// Waits until it holds other than `edits` edits and `keys` McEliece keys, what the page's store holds: a promise
-    /// of true, or of false once the device closed.
+    /// Waits until it holds other than `edits` edits and `keys` McEliece keys, as the page last showed it (`size`): a
+    /// promise of true, or of false once the device closed.
     pub fn changed(&self, edits: u32, keys: u32) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.changed((edits as usize, keys as usize)).await.into()) })
     }
 
-    /// Closes its connections and its endpoint.
+    /// Closes its connections and its endpoint, once its shelf holds what it holds, if it can; then lets go of the
+    /// page's store, for another tab to hold.
     pub fn close(&self) -> Promise {
-        let device = self.0.clone();
+        let (device, store) = (self.0.clone(), self.1.clone());
         future_to_promise(async move {
-            device.close().await.map_err(js_value)?;
+            let closed = device.close().await;
+            ask_store(&store, "release", &[]).await.ok();
+            closed.map_err(js_value)?;
             Ok(JsValue::UNDEFINED)
         })
     }
+}
+
+/// What opens the device on the page's `store` again (`Meta::load`), as the page reads it (`Meta::to_json`): a promise,
+/// of `undefined` while the store holds none, as on a browser new to avenDB, or one whose account was forgotten.
+#[wasm_bindgen(js_name = storeMeta)]
+pub fn store_meta(store: JsValue) -> Promise {
+    future_to_promise(async move {
+        let meta = Meta::load(&shelf_of(store)).await.map_err(js_value)?;
+        meta.map_or(Ok(JsValue::UNDEFINED), |meta| js_sys::JSON::parse(&meta.to_json().to_string()))
+    })
 }
 
 /// The salt of the PRF output a ceremony brings for the passkey's own keys (`sign::PRF_SALT`).
@@ -1877,19 +1972,47 @@ fn object(fields: &[(&str, JsValue)]) -> JsValue {
 }
 
 /// Where a device starts: named `name`, through the relay at `relay`, with the browser's randomness, now; showing the
-/// page each step of its start by `steps`, if it watches them; its files on the shelf of the page's `store`, if the
-/// page passes it, else in memory.
-fn starting(name: String, relay: &str, steps: Option<Function>, store: Option<JsValue>) -> Result<Start, JsError> {
+/// page each step of its start by `steps`, if it watches them; on `shelf`, the page's store's (`shelf_of`).
+fn starting(name: String, relay: &str, steps: Option<Function>, shelf: Shelf) -> Result<Start, JsError> {
     let relay: RelayUrl = relay.parse().map_err(|_| JsError::new("the relay's URL isn't one"))?;
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
-    let (progress, shelf) = (shown(steps), store.filter(|s| !s.is_undefined() && !s.is_null()).map(shelf_of));
-    let recovery = Start::recovery();
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None, shelf, progress, recovery })
+    let (progress, shelf, recovery) = (shown(steps), Some(shelf), Start::recovery());
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery })
 }
 
-/// The shelf the page's `store` keeps in OPFS (`js/store.js`, B2d): each call answered by the store's method of the
-/// same name, which its worker runs, `blobs`, `blobRead`, `blobOutboard`, `blobWrite`, `blobFinish` and `blobDrop`.
+/// Holds the page's `store` for this page alone, until the device on it closes (`PageDevice::close`): refused while
+/// another tab holds it, so the same device never runs in two tabs.
+async fn hold(store: &JsValue) -> Result<(), JsError> {
+    ask_store(store, "hold", &[]).await.map(|_| ()).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// The shelf of the page's `store` for a new device, held for this page alone (`hold`): refused while it opens a device
+/// already, which the page forgets first; and if it holds anything else, as what a start cut short left, a new
+/// generation of it, the old put aside, never deleted.
+async fn new_shelf(store: &JsValue) -> Result<Shelf, JsError> {
+    hold(store).await?;
+    let shelf = shelf_of(store.clone());
+    let fresh = async {
+        if Meta::load(&shelf).await?.is_some() {
+            bail!("this browser holds an avenDB account already: forget it here first");
+        }
+        if !shelf.names("").await?.is_empty() {
+            ask_store(store, "aside", &[]).await?;
+        }
+        Ok(())
+    };
+    if let Err(e) = fresh.await {
+        ask_store(store, "release", &[]).await.ok();
+        return Err(js_error(e));
+    }
+    Ok(shelf)
+}
+
+/// The shelf the page's `store` keeps in OPFS (`js/store.js`, `avendb_net::shelf`), in the generation its worker opened
+/// or put in use last: each call answered by the store's method of the same name, which its worker runs on bytes alone,
+/// `list`, `read`, `outboard`, `write`, `finish`, `drop`, `put`, `get` and `names`. What the bytes mean, the device
+/// reads and writes itself.
 fn shelf_of(store: JsValue) -> Shelf {
     let (shelf, mut calls) = Shelf::new();
     wasm_bindgen_futures::spawn_local(async move {
@@ -1920,7 +2043,7 @@ async fn answer_call(store: &JsValue, call: Call) {
     let bytes = |b: &[u8]| JsValue::from(Uint8Array::from(b));
     match call {
         Call::List(tx) => {
-            let listed = ask_store(store, "blobs", &[]).await.map(|held| {
+            let listed = ask_store(store, "list", &[]).await.map(|held| {
                 let blob = |b: JsValue| {
                     let b = Array::from(&b);
                     Some((hash_of(&b.get(0).as_string()?)?, b.get(1).as_f64()? as u64))
@@ -1931,21 +2054,34 @@ async fn answer_call(store: &JsValue, call: Call) {
         }
         Call::Read { name, at, len, tx } => {
             let args = [name.into(), (at as f64).into(), (len as f64).into()];
-            tx.send(ask_store(store, "blobRead", &args).await.map(store_bytes)).ok();
+            tx.send(ask_store(store, "read", &args).await.map(store_bytes)).ok();
         }
         Call::Outboard { hash, tx } => {
-            tx.send(ask_store(store, "blobOutboard", &[hash.to_hex().into()]).await.map(store_bytes)).ok();
+            tx.send(ask_store(store, "outboard", &[hash.to_hex().into()]).await.map(store_bytes)).ok();
         }
         Call::Write { name, at, bytes: written, tx } => {
             let args = [name.into(), (at as f64).into(), bytes(&written)];
-            tx.send(ask_store(store, "blobWrite", &args).await.map(|_| ())).ok();
+            tx.send(ask_store(store, "write", &args).await.map(|_| ())).ok();
         }
         Call::Finish { name, hash, size, outboard, tx } => {
             let args = [name.into(), hash.to_hex().into(), (size as f64).into(), bytes(&outboard)];
-            tx.send(ask_store(store, "blobFinish", &args).await.map(|_| ())).ok();
+            tx.send(ask_store(store, "finish", &args).await.map(|_| ())).ok();
         }
         Call::Drop { name, tx } => {
-            tx.send(ask_store(store, "blobDrop", &[name.into()]).await.map(|_| ())).ok();
+            tx.send(ask_store(store, "drop", &[name.into()]).await.map(|_| ())).ok();
+        }
+        Call::Put { name, bytes: put, tx } => {
+            let refused = || io::Error::new(io::ErrorKind::AlreadyExists, format!("other bytes are {name} already"));
+            let put = ask_store(store, "put", &[name.clone().into(), bytes(&put)]).await;
+            tx.send(put.and_then(|done| if done.is_falsy() { Err(refused()) } else { Ok(()) })).ok();
+        }
+        Call::Get { name, tx } => {
+            let got = ask_store(store, "get", &[name.into()]).await;
+            tx.send(got.map(|b| (!b.is_undefined() && !b.is_null()).then(|| store_bytes(b)))).ok();
+        }
+        Call::Names { prefix, tx } => {
+            let names = ask_store(store, "names", &[prefix.into()]).await;
+            tx.send(names.map(|n| Array::from(&n).iter().filter_map(|n| n.as_string()).collect())).ok();
         }
     }
 }
@@ -2022,22 +2158,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_device_opens_with_its_secret_unmasked_or_one_made_before_masks_with_the_prf_output_itself() {
+    fn a_device_opens_with_its_secret_unmasked_by_the_prf_output_on_its_salt() {
         let mut passkey = Passkey::from_seed([5; 32]);
         let device = passkey.prf(&device_salt(&[1; 32]));
         let unlock = Unlock { ceremony: passkey.ceremony([0xaa; 32]), device: device.clone() };
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
         let (entropy, recovery) = ([7; 32], None);
-        let start = Start { name, relay, entropy, now: 0, direct: false, store: None, shelf: None, progress, recovery };
-        // a device made since 2026-10-10: its own secret, kept masked by the PRF output on its salt
+        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery };
+        // its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);
         assert_ne!(mask, [9; 32], "the mask is no secret of the device's");
-        let (_, _, me) = lab(&start, passkey.public(), Some(mask), &unlock).expect("it opens");
+        let (_, _, me) = lab(&start, passkey.public(), mask, &unlock).expect("it opens");
         assert_eq!(me, fresh.keys().id());
-        // one made before: the PRF output is its secret
-        let (_, _, me) = lab(&start, passkey.public(), None, &unlock).expect("it opens");
-        assert_eq!(me, DeviceKey::from_secret(*device).id());
+        // without its mask, the unlock opens some other device, never this one
+        let (_, _, other) = lab(&start, passkey.public(), [0; 32], &unlock).expect("some device opens");
+        assert_ne!(other, me, "another device's");
+        assert_eq!(other, DeviceKey::from_secret(*device).id());
+    }
+
+    #[test]
+    fn what_opens_a_device_reads_back_as_it_was_written_and_nothing_else_does() {
+        let meta = Meta {
+            name: "Eve's browser".into(),
+            relay: "https://avendb.maia.city/".into(),
+            nonce: [1; 32],
+            mask: [2; 32],
+            credential: "Y3JlZGVudGlhbA".into(),
+            p256: [3; 33],
+            device: SignerId([4; 32]),
+        };
+        assert_eq!(Meta::from_json(&meta.to_json()).expect("it reads"), meta);
+        let mut maskless = meta.to_json();
+        maskless.as_object_mut().expect("an object").remove("mask");
+        assert!(Meta::from_json(&maskless).is_err(), "a device opens only by its mask");
+        let mut short = meta.to_json();
+        short["nonce"] = "0101".into();
+        assert!(Meta::from_json(&short).is_err(), "a nonce is 32 bytes");
     }
 }

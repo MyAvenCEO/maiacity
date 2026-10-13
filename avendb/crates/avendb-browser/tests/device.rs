@@ -1,7 +1,7 @@
 //! A browser's device, run natively (P8d, P8e): its person's passkey stays in the browser's authenticator, a software
 //! passkey here, which makes each ceremony the device asks for. Eve's first browser founds her vault through the relay,
 //! open to sign-up, with the passkey she signed up to maiaCITY with, and the server learns it; her second browser
-//! links through the first one's code, browser to browser; the first opens again from what its store kept; with both
+//! links through the first one's code, browser to browser; the first opens again from its shelf; with both
 //! lost, her passkey alone gets her vault back on a new browser, through the server. Alice's browser links through the
 //! code her Mac shows and edits Welcome. The first person to found their vault through a new server claims it from
 //! their first browser, in the same ceremony (P8f), and her vault founds four more vaults it owns in one more ceremony:
@@ -11,9 +11,12 @@
 //! count.
 //! `tests/page.rs` runs the same in Chromium, the passkey in its virtual authenticator.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -26,8 +29,8 @@ use avendb::policy::{Kind, Level, Principal, Who};
 use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
 use avendb::sign::{Ceremony, Passkey, device_salt};
-use avendb_browser::{DELETED, Device, EntryView, Fresh, NewFile, PROFILE, Start, Unlock, What, World as Seen, backup};
-use avendb_net::{Admission, Authenticator, Node, Offer, Options, Progress, Step};
+use avendb_browser::{DELETED, Device, EntryView, Fresh, Meta, NewFile, PROFILE, Start, Unlock, What, World as Seen};
+use avendb_net::{Admission, Authenticator, Node, Offer, Options, Progress, Step, disk};
 use avendb_server::Relay;
 use bytes::Bytes;
 use iroh::RelayUrl;
@@ -82,7 +85,50 @@ impl Browser {
 fn start(name: &str, url: &RelayUrl, seed: u8) -> Start {
     let (name, progress) = (name.into(), Progress::new());
     let (relay, recovery) = (url.clone(), None);
-    Start { name, relay, entropy: [seed; 32], now: now(), direct: false, store: None, shelf: None, progress, recovery }
+    Start { name, relay, entropy: [seed; 32], now: now(), direct: false, shelf: None, progress, recovery }
+}
+
+/// The same, on the shelf in folder `dir`, as a page's device keeps its in OPFS.
+fn start_on(dir: &Path, name: &str, url: &RelayUrl, seed: u8) -> Start {
+    Start { shelf: Some(disk::open(dir).expect("its shelf")), ..start(name, url, seed) }
+}
+
+/// A folder of its own in the system's temporary folder, removed with everything in it when dropped.
+struct Folder(PathBuf);
+
+impl Folder {
+    fn new(name: &str) -> Folder {
+        static MADE: AtomicU32 = AtomicU32::new(0);
+        let n = MADE.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").subsec_nanos();
+        let path = std::env::temp_dir().join(format!("avendb-browser-{name}-{}-{n}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&path).expect("a folder of its own");
+        Folder(path)
+    }
+}
+
+impl Drop for Folder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Every file in folder `dir` and under it, by its path there, with its bytes.
+fn files(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut found = BTreeMap::new();
+    let mut folders = vec![dir.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in std::fs::read_dir(&folder).expect("a folder") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                folders.push(path);
+            } else {
+                let bytes = std::fs::read(&path).expect("a file");
+                found.insert(path.strip_prefix(dir).expect("under it").to_path_buf(), bytes);
+            }
+        }
+    }
+    found
 }
 
 /// The steps a start marked, by name, once it is over: each with how long it took.
@@ -198,9 +244,12 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     // Eve is new to avenDB, but signed up to maiaCITY with her passkey: her first browser founds her vault with it
     let eve = Browser::new(Passkey::from_seed([5; 32]));
     let p256 = eve.0.lock().expect("the authenticator").0.public();
-    let first = start("Eve's browser", &url, 7);
+    let shelf = Folder::new("first");
+    let first = start_on(&shelf.0, "Eve's browser", &url, 7);
     let shown = first.progress.clone();
     let first = found(first, &server.offer(), None, &eve, [1; 32]).await.expect("her vault");
+    let meta = first.meta([1; 32], "ZXZl".into());
+    first.keep(&meta).await.expect("what opens it again, on its shelf");
     assert_eq!(eve.steps(), [Step::Found], "after the unlock, one ceremony for her vault and her browser");
     let founding = ["keys", "node", "server", "draft", "sign", "settle"];
     assert_eq!(steps(&shown), founding, "each step shown as it went, no claim as Alice's vault owns the server");
@@ -218,60 +267,53 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;
     until("the server keeps her note", || server.read(holds)).await;
     // her second browser links through the first one's code, in one ceremony: the unlock, which signs its join too
-    let other = start("Eve's other browser", &url, 8);
+    let other_browser = start("Eve's other browser", &url, 8);
     let code = first.node().offer();
-    let other = link(other, &code, &eve, [2; 32]).await.expect("it links through the first");
+    let other_browser = link(other_browser, &code, &eve, [2; 32]).await.expect("it links through the first");
     assert!(eve.steps().is_empty(), "no ceremony but the unlock");
-    assert_eq!((other.vault().await, other.p256()), (Some(vault), p256), "it learned her passkey's key");
-    until("it reads her note", || shows(&other, note, "Tomatoes in March.")).await;
-    run(&other, set_text(vault, note, None, 2, "Tomatoes in April.")).await.expect("it edits the note");
+    assert_eq!((other_browser.vault().await, other_browser.p256()), (Some(vault), p256), "it learned her key");
+    until("it reads her note", || shows(&other_browser, note, "Tomatoes in March.")).await;
+    run(&other_browser, set_text(vault, note, None, 2, "Tomatoes in April.")).await.expect("it edits the note");
     until("the first reads the edit", || shows(&first, note, "Tomatoes in April.")).await;
     // the second writes its card, as it holds her vault's keys now; each shows both browsers by name
-    assert!(other.card("Eve's other browser".into()).await.expect("its card"), "it had none");
+    assert!(other_browser.card("Eve's other browser".into()).await.expect("its card"), "it had none");
     let both = ["Eve's browser", "Eve's other browser"];
     until("the first shows both by name", || async { names(&first).await == both }).await;
-    assert_eq!(names(&other).await, both);
+    assert_eq!(names(&other_browser).await, both);
     // a card renames its device; the notes never show one
     assert!(first.card("Eve's Mac".into()).await.expect("a new name"));
     assert!(!first.card("Eve's Mac".into()).await.expect("the same name"), "nothing to write");
     let renamed = ["Eve's Mac", "Eve's other browser"];
-    until("the second shows the new name", || async { names(&other).await == renamed }).await;
-    assert_eq!(titles(&other).await, ["Seeds"]);
-    // the first browser closes, and opens again from what its store kept, in the unlock alone
-    let edits = first.edits(0).await.expect("its edits");
-    let mut keys = vec![];
-    for id in first.key_ids().await {
-        keys.push(first.key(id).await.expect("a key it holds"));
-    }
-    assert_eq!(first.edits(edits.len() + 1).await, None, "it holds no more edits than these");
-    assert_eq!(first.edits(edits.len()).await, Some(vec![]));
-    first.node().shutdown().await.expect("the node shuts down");
-    let kept = backup(&edits, keys.clone());
-    let (mask, page) = (first.mask(), [0xaa; 32]);
-    assert!(mask.is_some(), "it keeps its secret masked by the PRF output on its salt");
-    let unmasked = Device::open(start("Eve's browser", &url, 9), p256, None, eve.unlock([1; 32], page), &kept);
-    assert!(unmasked.await.is_err(), "unmasked, the PRF output alone is another device's secret");
-    let again = start("Eve's browser", &url, 9);
+    until("the second shows the new name", || async { names(&other_browser).await == renamed }).await;
+    assert_eq!(titles(&other_browser).await, ["Seeds"]);
+    // the first browser closes, its shelf holding all it holds, and opens again from its shelf in the unlock alone
+    first.close().await.expect("it closes");
+    let kept = files(&shelf.0);
+    let page = [0xaa; 32];
+    let on = disk::open(&shelf.0).expect("its shelf");
+    assert_eq!(Meta::load(&on).await.expect("it reads"), Some(meta.clone()), "what opens it, as it kept it");
+    // a mask other than its own unmasks another device's secret, and an unlock of another passkey opens nothing: each
+    // fails before it touches the shelf
+    let other = Meta { mask: [0; 32], ..meta.clone() };
+    let unmasked = Device::open(start_on(&shelf.0, "Eve's browser", &url, 9), &other, eve.unlock([1; 32], page));
+    assert!(unmasked.await.is_err(), "the PRF output alone is another device's secret");
+    let mallory = Browser::new(Passkey::from_seed([6; 32]));
+    let theirs = Device::open(start_on(&shelf.0, "Eve's browser", &url, 10), &meta, mallory.unlock([1; 32], page));
+    assert!(theirs.await.is_err(), "not her passkey's ceremony");
+    assert_eq!(files(&shelf.0), kept, "the shelf as it was");
+    let again = start_on(&shelf.0, "Eve's browser", &url, 11);
     let shown = again.progress.clone();
-    let again = Device::open(again, p256, mask, eve.unlock([1; 32], page), &kept).await.expect("it opens again");
+    let again = Device::open(again, &meta, eve.unlock([1; 32], page)).await.expect("it opens again");
     assert!(eve.steps().is_empty(), "with no ceremony but the unlock");
     assert_eq!(steps(&shown), ["keys", "restore", "node", "check"]);
     assert_eq!(again.node().id(), first.node().id(), "the same device");
-    assert!(shows(&again, note, "Tomatoes in April.").await, "it reads what its store kept");
+    assert!(shows(&again, note, "Tomatoes in April.").await, "it reads what its shelf kept");
     assert_eq!(names(&again).await, renamed, "and both cards");
-    run(&other, set_text(vault, note, None, 2, "Tomatoes in May.")).await.expect("another edit");
+    run(&other_browser, set_text(vault, note, None, 2, "Tomatoes in May.")).await.expect("another edit");
     let may = || shows(&again, note, "Tomatoes in May.");
     until("the relay lets it in again, as the server knows it", may).await;
-    // a store cut short reads back up to where it was cut; an unlock of another passkey opens nothing
-    let mut cut = edits.clone();
-    cut[3].truncate(10);
-    assert_eq!(backup(&cut, keys.clone()).signed().len(), 3);
-    let mallory = Browser::new(Passkey::from_seed([6; 32]));
-    let theirs = start("Eve's browser", &url, 10);
-    let theirs = Device::open(theirs, p256, mask, mallory.unlock([1; 32], page), &kept);
-    assert!(theirs.await.is_err(), "not her passkey's ceremony");
     // with both her browsers lost, her passkey alone gets her vault back on a new one, through the server (P8c)
-    for n in [again.node(), other.node()] {
+    for n in [again.node(), other_browser.node()] {
         n.shutdown().await.expect("the node shuts down");
     }
     let new = start("Eve's new browser", &url, 11);
@@ -794,7 +836,7 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     // covers it
     let log = first.history().await;
     let edits = log["edits"].as_array().expect("its edits");
-    assert_eq!(edits.len(), first.edits(0).await.expect("its edits").len(), "every edit it holds");
+    assert_eq!(edits.len(), first.node().read(|lab, me| lab.size(me).0).await, "every edit it holds");
     let places: Vec<u64> = edits.iter().filter_map(|o| o["n"].as_u64()).collect();
     assert_eq!(places, (1..=edits.len() as u64).collect::<Vec<_>>(), "in the order it took them");
     let of = |kind: &str| edits.iter().filter(|o| o["kind"].as_str() == Some(kind)).collect::<Vec<_>>();

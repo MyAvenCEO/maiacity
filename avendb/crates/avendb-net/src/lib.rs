@@ -24,14 +24,13 @@
 //!   every other member too, and its members learn each other's endpoints, while an announcement goes to one proven
 //!   device. A peer it can't reach it tries again after `Options::retry`, then twice as long each time it stays out
 //!   of reach, up to a minute, or at once when the peer connects to it.
-//! - **Store** (P8b): with `Options::store`, a node keeps what its device holds in a folder (`Disk`), saved as it
-//!   changes, and starts again from it.
-//! - **Bucket** (blobs B3a, `bucket`): with `Options::bucket` as well, the server's, its store lives in an S3 bucket,
-//!   every object sealed, and the folder is only a cache of it: the node puts there what it saved on disk, tells its
-//!   peers what changed only once the bucket has it, and starts again from the bucket when its folder is lost.
-//! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, on a machine on disk beside its store; a page's
-//!   and the server's keep what they bring and keep on a shelf (blobs B2d, B3b, `shelf`), the page's in OPFS and the
-//!   server's in its bucket, the one place each keeps them. It brings a file sealed as it reads it
+//! - **Shelf** (v8 phase S, `shelf`): with `Options::shelf`, a node keeps what its device holds on its shelf, the one
+//!   place it keeps what lasts, laid out the same everywhere: a page's in OPFS, the Mac's in its folder (`disk`), the
+//!   server's in its S3 bucket (`bucket`), every object sealed, its folder only a cache. It saves its device's edits
+//!   there as they change (`edits`), tells its peers what changed only once the shelf holds it, and starts again from
+//!   it. A place puts a shelf aside by starting a new generation beside it, and never deletes one.
+//! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, over its shelf (blobs B2d, B3b, `shelf`), or
+//!   else in memory: what it brings and keeps whole goes onto the shelf. It brings a file sealed as it reads it
 //!   (`Node::store_file`), reads any range of a file its device opens, fetching only the sealed segments that hold it
 //!   (`Node::read_file`), and keeps whole the files its device's sync rules say to keep, or with no rule over a vault,
 //!   if it keeps files (`Options::keep`), as the server does, every file of the vault. Its blob gate hands a file's
@@ -40,7 +39,7 @@
 //!   the stewards' marks (T28).
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
 //!   how long it took, for its person to watch while they wait (`Progress`).
-//! - **The server** (P8b, `server`): a node whose device keeps a secret of its own beside its store, and which hands
+//! - **The server** (P8b, `server`): a node whose device keeps a secret of its own on its shelf, and which hands
 //!   its contact card, avenCEO's log, to whoever asks (`Node::contact`), so that a vault can give avenCEO relay on its
 //!   entries. Devices reach each other and the server through its relay, which lets in only the devices the server
 //!   knows (`Admission`).
@@ -79,7 +78,9 @@
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
-mod disk;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod disk;
+mod edits;
 mod files;
 pub mod kx;
 mod progress;
@@ -91,7 +92,6 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -115,15 +115,12 @@ use iroh::{Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode,
 use iroh_blobs::BlobsProtocol;
 use iroh_blobs::api::Store;
 #[cfg(not(target_arch = "wasm32"))]
-use iroh_blobs::store::fs::FsStore;
-#[cfg(not(target_arch = "wasm32"))]
 use iroh_blobs::store::mem::MemStore;
 use rustls::crypto::CryptoProvider;
 use n0_future::task::{self, JoinHandle};
 use n0_future::time::{self, Instant};
 use tokio::sync::{Notify, watch};
 
-pub use disk::Disk;
 pub use progress::{Ending, Progress, Stage, Steps};
 pub use session::exporter;
 pub use shelf::{Call, Shelf};
@@ -193,11 +190,10 @@ pub struct Options {
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
-    /// The folder it keeps its store in (`Disk`), if any: it starts again from what it holds there. Its blob store is
-    /// in that folder's `blobs/` too, on a machine, but with a bucket or a shelf; else in memory.
-    pub store: Option<PathBuf>,
-    /// The shelf its blob store keeps the files it brings and keeps on (blobs B2d, `shelf`): a page's in OPFS. A page
-    /// with none keeps them on a shelf in memory; the server's shelf is its bucket.
+    /// Its shelf, if it keeps one (`shelf`): a page's in OPFS, the Mac's in its folder (`disk`), the server's in its
+    /// bucket (`bucket::shelf`). It starts again from the edits its device kept there (`edits`), saves there what its
+    /// device takes, and keeps there whole the files it brings and keeps. A node on a machine with none keeps nothing
+    /// past its end, its blobs in memory; a page needs one.
     pub shelf: Option<Shelf>,
     /// It keeps whole every file the edits its device holds bring, fetched from its peers as soon as it learns of them
     /// (`files`): the server's backup. Its device's sync rules over a vault say otherwise for that vault's files
@@ -217,13 +213,6 @@ pub struct Options {
     /// Where it marks the steps of its start, its own (`node`, once its store is replayed) and those of founding its
     /// person's vault or linking to it (`Node::found_with`, `Node::link_with`), for its person to watch.
     pub progress: Progress,
-    /// The bucket its store lives in, beside its folder (`store`), which is then only a cache of it: the server's
-    /// (blobs B3a, `bucket`). Its blob store's shelf is the bucket too (blobs B3b, `bucket::shelf`).
-    #[cfg(not(target_arch = "wasm32"))]
-    pub bucket: Option<bucket::Sealed>,
-    /// The most bytes of file pieces its folder keeps of its bucket, the least lately read let go first (blobs B3b).
-    #[cfg(not(target_arch = "wasm32"))]
-    pub cache: u64,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -238,7 +227,6 @@ impl Options {
             direct: false,
             relay: None,
             retry: Duration::from_secs(1),
-            store: None,
             shelf: None,
             keep: false,
             card: false,
@@ -246,10 +234,6 @@ impl Options {
             relay_pass: None,
             page: PAGE,
             progress: Progress::new(),
-            #[cfg(not(target_arch = "wasm32"))]
-            bucket: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            cache: bucket::CACHE,
         }
     }
 }
@@ -385,30 +369,32 @@ pub struct Node {
 impl Node {
     /// Device `me` of `lab` on the network: it answers its peers, tells them when its logs change, and asks them when
     /// theirs differ. It trusts no curve, and vouches at once for the writes of its own that no checkpoint covers yet.
-    /// With a store, it first takes back what the store holds, if anything, and saves what it holds from then on. Fails
-    /// while the device is locked, as its endpoint key is its own ed25519 key.
+    /// With a shelf, it first takes back what its device kept there, if anything, and saves there what its device holds
+    /// from then on (`edits`). Fails while the device is locked, as its endpoint key is its own ed25519 key, and if its
+    /// shelf can't be read.
     pub async fn spawn(lab: Lab, me: SignerId, opts: Options) -> Result<Node> {
         let secret = lab.endpoint_secret(me).context("a device of this Lab, unlocked")?;
-        let store = opts.store.clone();
-        // what the bucket holds and the folder doesn't, taken back first
-        #[cfg(not(target_arch = "wasm32"))]
-        let mut rebuilt = match (&opts.bucket, &store) {
-            (Some(bucket), Some(dir)) => Some(bucket::rebuild(bucket, dir).await?),
-            (Some(_), None) => bail!("a node keeps a bucket only beside a store"),
-            (None, _) => None,
-        };
-        #[cfg(not(target_arch = "wasm32"))]
-        let more = rebuilt.as_mut().map(|r| (std::mem::take(&mut r.edits), std::mem::take(&mut r.keys)));
-        #[cfg(not(target_arch = "wasm32"))]
-        let (lab, disk) = tokio::task::spawn_blocking(move || reopen(lab, me, store, more.unwrap_or_default())).await??;
-        // a page has no folders, nor threads to spare
+        // a page keeps what lasts in OPFS, and nowhere else
         #[cfg(target_arch = "wasm32")]
-        let (lab, disk) = reopen(lab, me, store, Default::default())?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let backed = match (opts.bucket.clone(), rebuilt, &opts.store) {
-            (Some(bucket), Some(rebuilt), Some(dir)) => Some(bucket::Backed::new(bucket, dir, rebuilt)?),
-            _ => None,
+        if opts.shelf.is_none() {
+            bail!("a node in a browser keeps a shelf");
+        }
+        let (edits, stored) = match &opts.shelf {
+            Some(shelf) => {
+                let (edits, stored) = edits::Edits::open(shelf.clone()).await?;
+                (Some(edits), stored)
+            }
+            None => (None, edits::Stored::default()),
         };
+        let restore = move || restore(lab, me, stored);
+        #[cfg(not(target_arch = "wasm32"))]
+        let (lab, stored) = tokio::task::spawn_blocking(restore).await?;
+        // a page has no threads to spare
+        #[cfg(target_arch = "wasm32")]
+        let (lab, stored) = restore();
+        if let Some(edits) = &edits {
+            edits.settle(&lab, me, &stored);
+        }
         opts.progress.step("node");
         if let Some(admission) = &opts.admission {
             let own = SecretKey::from_bytes(&secret).public();
@@ -444,34 +430,22 @@ impl Node {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(config)));
         }
         let endpoint = builder.bind().await?;
-        // the server's shelf is its bucket, where the files its folder's blob store held move first; a page's its OPFS,
-        // or memory; any other node keeps its blob store in its folder, or in memory
-        #[cfg(not(target_arch = "wasm32"))]
-        let (store, shelf): (Store, _) = match (&opts.bucket, &opts.store, &opts.shelf) {
-            (Some(bucket), Some(dir), _) => {
-                let (shelf, store) = shelf::ShelfStore::open(bucket::shelf(bucket.clone(), dir, opts.cache)?).await?;
-                bucket::adopt(dir, &store).await?;
-                (store, Some(shelf))
-            }
-            (_, _, Some(on)) => {
+        // its blob store over its shelf, which lists what it holds once its edits are taken back; else in memory
+        let (store, shelf): (Store, _) = match &opts.shelf {
+            Some(on) => {
                 let (shelf, store) = shelf::ShelfStore::open(on.clone()).await?;
                 (store, Some(shelf))
             }
-            (_, Some(dir), None) => (FsStore::load(dir.join(files::BLOBS)).await?.into(), None),
-            (_, None, None) => (MemStore::new().into(), None),
-        };
-        #[cfg(target_arch = "wasm32")]
-        let (store, shelf) = {
-            let (shelf, store) = shelf::ShelfStore::open(opts.shelf.clone().unwrap_or_else(Shelf::memory)).await?;
-            (store, Some(shelf))
+            #[cfg(not(target_arch = "wasm32"))]
+            None => (MemStore::new().into(), None),
+            #[cfg(target_arch = "wasm32")]
+            None => unreachable!("a page's node keeps a shelf"),
         };
         let (events, gate) = blobs::events();
         let shared = Arc::new(Shared {
             me,
             lab: Mutex::new(lab),
-            disk: disk.map(Mutex::new),
-            #[cfg(not(target_arch = "wasm32"))]
-            bucket: backed,
+            edits,
             endpoint: endpoint.clone(),
             lookup,
             store: store.clone(),
@@ -497,14 +471,12 @@ impl Node {
             .accept(ALPN, session::Protocol(shared.clone()))
             .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, Some(events)))
             .spawn();
-        #[allow(unused_mut)]
-        let mut tasks = vec![
+        let tasks = vec![
             task::spawn(blobs::gate(shared.clone(), gate)),
             task::spawn(shared.clone().announcer()),
             task::spawn(shared.clone().keeper()),
+            task::spawn(shared.clone().saver()),
         ];
-        #[cfg(not(target_arch = "wasm32"))]
-        tasks.push(task::spawn(shared.clone().flusher()));
         Ok(Node { shared, router, tasks })
     }
 
@@ -893,7 +865,7 @@ impl Node {
     }
 
     /// Marks each change of what its device holds: how many edits and McEliece keys (`Lab::size`), after every act of
-    /// its own and every edit it takes from a peer. A browser saves what changed to its store (P8e).
+    /// its own and every edit it takes from a peer.
     pub fn changes(&self) -> watch::Receiver<(usize, usize)> {
         self.shared.size.subscribe()
     }
@@ -913,24 +885,21 @@ impl Node {
         self.shared.sent.dials.load(Ordering::Relaxed)
     }
 
-    /// Its bucket lacks something its device holds (blobs B3a): until the bucket has it, the node tells its peers
-    /// nothing new. Never, for a node with no bucket.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Its shelf lacks something its device holds (`edits`): until the shelf has it, the node tells its peers nothing
+    /// new. Never, for a node with no shelf.
     pub async fn behind(&self) -> bool {
         let shared = self.shared.clone();
-        let behind = move || shared.behind(&shared.lab.lock().expect("the Lab"));
-        tokio::task::spawn_blocking(behind).await.expect("the Lab's task")
+        self.shared.lab(move |lab, _| shared.behind(lab)).await
     }
 
     /// Close its connections, its endpoint and its blob store, which the router closes with the blob protocol; with a
-    /// bucket, first put there what it lacks, if it can.
+    /// shelf, first put there what it lacks, if it can.
     pub async fn shutdown(&self) -> Result<()> {
         self.tasks.iter().for_each(JoinHandle::abort);
-        #[cfg(not(target_arch = "wasm32"))]
-        match time::timeout(WAIT, self.shared.flush()).await {
+        match time::timeout(WAIT, self.shared.save()).await {
             Ok(Ok(_)) => {}
-            Ok(Err(e)) => tracing::warn!("avendb: stopping with the bucket behind: {e:#}"),
-            Err(_) => tracing::warn!("avendb: stopping with the bucket behind: it took too long"),
+            Ok(Err(e)) => tracing::warn!("avendb: stopping with the shelf behind: {e:#}"),
+            Err(_) => tracing::warn!("avendb: stopping with the shelf behind: it took too long"),
         }
         self.router.shutdown().await?;
         Ok(())
@@ -943,33 +912,15 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab` with its store in folder `store`, if it keeps one: what the store holds taken back, if it holds
-/// anything, with the edits and keys its bucket held that the store didn't (`more`, `bucket::rebuild`), a checkpoint
-/// for the writes of its own that none covers yet, and whatever else the device holds saved: with edits from the
-/// bucket, the store is written anew.
-fn reopen(mut lab: Lab, me: SignerId, store: Option<PathBuf>, more: disk::Saved) -> Result<(Lab, Option<Disk>)> {
-    let mut disk = match store {
-        Some(dir) => {
-            let (mut disk, (mut signed, mut keys)) = Disk::read(&dir)?;
-            let (edits, blobs) = more;
-            let rebuilt = !edits.is_empty();
-            signed.extend(edits);
-            keys.extend(blobs);
-            if !signed.is_empty() {
-                lab.restore_backup(me, &Backup::new(signed, keys));
-            }
-            if rebuilt {
-                disk.rewrite(&lab, me)?;
-            }
-            Some(disk)
-        }
-        None => None,
-    };
-    lab.checkpoint(me);
-    if let Some(disk) = &mut disk {
-        disk.adopt(&lab, me)?;
+/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), and a checkpoint for the
+/// writes of its own that none covers yet; and the ids of the edits the shelf held, in its order.
+fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored) -> (Lab, Vec<EditId>) {
+    let stored = signed.iter().map(|s| s.edit.id()).collect();
+    if !signed.is_empty() {
+        lab.restore_backup(me, &Backup::new(signed, keys));
     }
-    Ok((lab, disk))
+    lab.checkpoint(me);
+    (lab, stored)
 }
 
 /// `s` is an edit of a vault's log (`sync::log_of`), all that a card carries.
@@ -1080,11 +1031,8 @@ struct Peer {
 struct Shared {
     me: SignerId,
     lab: Mutex<Lab>,
-    /// Its store on disk, if it keeps one.
-    disk: Option<Mutex<Disk>>,
-    /// The bucket its store lives in, if it keeps one (blobs B3a).
-    #[cfg(not(target_arch = "wasm32"))]
-    bucket: Option<bucket::Backed>,
+    /// Its device's edits on its shelf, if it keeps one.
+    edits: Option<edits::Edits>,
     endpoint: Endpoint,
     lookup: MemoryLookup,
     /// Its blob store: the McEliece keys it offers, and the sealed pieces of files (`files`).
@@ -1180,15 +1128,17 @@ struct News {
 }
 
 impl Shared {
-    /// `f` on the Lab, off the async threads: its crypto takes milliseconds, a McEliece key pair seconds. Then what
-    /// the device took is saved, if the node keeps a store.
+    /// `f` on the Lab, off the async threads: its crypto takes milliseconds, a McEliece key pair seconds. If what the
+    /// device holds changed, its saver puts it on the shelf, if the node keeps one.
     async fn lab<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let shared = self.clone();
         let work = move || {
             let mut lab = shared.lab.lock().expect("the Lab");
             let out = f(&mut lab, shared.me);
-            shared.save(&lab);
-            shared.size.send_if_modified(|size| *size != lab.size(shared.me) && { *size = lab.size(shared.me); true });
+            let now = lab.size(shared.me);
+            if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
+                shared.edits.iter().for_each(|edits| edits.due.notify_one());
+            }
             out
         };
         #[cfg(not(target_arch = "wasm32"))]
@@ -1198,31 +1148,10 @@ impl Shared {
         work()
     }
 
-    /// Saves what the device took since the last save, if the node keeps a store, and then puts it in the bucket,
-    /// if it keeps one. A store that can't be written is said so in the log, and tried again at the next change.
-    fn save(&self, lab: &Lab) {
-        let Some(disk) = &self.disk else { return };
-        match disk.lock().expect("the store").save(lab, self.me) {
-            #[cfg(not(target_arch = "wasm32"))]
-            Ok(true) => {
-                if let Some(bucket) = &self.bucket {
-                    bucket.due.notify_one();
-                }
-            }
-            Ok(_) => {}
-            Err(e) => tracing::warn!("avendb: the store can't be written: {e:#}"),
-        }
-    }
-
-    /// The node keeps a bucket that lacks something its device holds (blobs B3a): it tells its peers nothing new until
-    /// the bucket has it.
+    /// The node keeps a shelf that lacks something its device holds (`edits`): it tells its peers nothing new until
+    /// the shelf has it.
     fn behind(&self, lab: &Lab) -> bool {
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(bucket) = &self.bucket {
-            return bucket.behind(lab, self.me);
-        }
-        let _ = lab;
-        false
+        self.edits.as_ref().is_some_and(|edits| edits.behind(lab, self.me))
     }
 
     /// Where to reach `endpoint`: through the node's relay, if it has one, and wherever the lookup knows of.
@@ -1385,8 +1314,8 @@ impl Shared {
     }
 
     /// What to tell each peer, worked out again if the device's edits changed since `size`; then whom the relay lets
-    /// in, if the node keeps that. `None` if nothing changed, or if its bucket lacks something its device holds: until
-    /// the bucket has it, the peers are told nothing new.
+    /// in, if the node keeps that. `None` if nothing changed, or if its shelf lacks something its device holds: until
+    /// the shelf has it, the peers are told nothing new.
     async fn news(self: &Arc<Self>, size: (usize, usize)) -> Option<News> {
         let (server, shared) = (self.opts.card, self.clone());
         let (news, behind) = self

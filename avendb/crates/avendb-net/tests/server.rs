@@ -14,7 +14,7 @@ use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Kind, Level, Principal};
 use avendb::slice::Selector;
-use avendb_net::{Admission, Node, Options, server};
+use avendb_net::{Admission, Node, Options, disk, server};
 use common::Folder;
 use iroh::{EndpointId, SecretKey};
 
@@ -37,6 +37,21 @@ async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> 
     }
 }
 
+/// The server on the shelf in folder `dir`.
+async fn open(dir: &Folder, admission: &Admission) -> anyhow::Result<Node> {
+    server::open(disk::open(dir.path())?, admitting(admission)).await
+}
+
+/// Every file under `dir`, with its bytes.
+fn files(dir: &std::path::Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    let entries = std::fs::read_dir(dir).expect("a folder").map(|e| e.expect("an entry").path());
+    let read = |path: std::path::PathBuf| match path.is_dir() {
+        true => files(&path),
+        false => vec![(path.clone(), std::fs::read(&path).expect("a file"))],
+    };
+    entries.flat_map(read).collect()
+}
+
 /// A server's options: its relay's admission.
 fn admitting(admission: &Admission) -> Options {
     Options { admission: Some(admission.clone()), ..Options::local() }
@@ -46,11 +61,12 @@ fn admitting(admission: &Admission) -> Options {
 async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     let dir = Folder::new("claim");
     let admission = Admission::default();
-    let server = server::open(dir.path(), admitting(&admission)).await.expect("a new server");
+    let server = open(&dir, &admission).await.expect("a new server");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(dir.path().join(server::SECRET)).expect("its secret").permissions().mode();
+        let secret = dir.path().join("g1").join(server::SECRET);
+        let mode = std::fs::metadata(secret).expect("its secret").permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "its secret is readable by its owner alone");
     }
     assert_eq!(server::vault(&server).await, None, "a new server belongs to no vault");
@@ -92,7 +108,7 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     server.shutdown().await.expect("it stops");
     let id = server.id();
     drop(server);
-    let again = server::open(dir.path(), admitting(&admission)).await.expect("the server again");
+    let again = open(&dir, &admission).await.expect("the server again");
     assert_eq!(again.id(), id, "the same device, from its secret");
     assert_eq!(server::vault(&again).await, Some(avenceo), "still avenCEO's, from its store");
     assert_eq!(again.read(|lab, me| lab.size(me)).await, held, "and nothing claimed anew");
@@ -103,7 +119,7 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
 async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
     let dir = Folder::new("card");
     let admission = Admission::default();
-    let server = server::open(dir.path(), admitting(&admission)).await.expect("a new server");
+    let server = open(&dir, &admission).await.expect("a new server");
     let mut w = world();
     let coop = handbook_ready(&mut w);
     let (mac_a, passkey_a, mac_d, passkey_d, stranger_d) = (w.mac_a, w.passkey_a, w.mac_d, w.passkey_d, w.stranger);
@@ -134,8 +150,10 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
     assert!(!server.read(opens).await, "and opens neither Welcome's key nor the coop's seed");
     let store = server.read(|lab, me| lab.store(me)).await;
     assert!(!contains(&store, WELCOME_TEXT), "Welcome's text appears nowhere in its store");
-    let on_disk: Vec<u8> = std::fs::read(dir.path().join("ops")).expect("its store on disk");
-    assert!(!contains(&on_disk, WELCOME_TEXT), "nor on its disk");
+    until("the server's shelf holds Welcome's edits", || async { !server.behind().await }).await;
+    for (path, bytes) in files(dir.path()) {
+        assert!(!contains(&bytes, WELCOME_TEXT), "nor on its shelf, in {}", path.display());
+    }
     // from the coop's log it knows the devices of the vaults acting for the coop: its relay lets them in, and no one
     // else
     until("the server knows Alice's Mac", || async { admission.admits(&mac.id()) }).await;

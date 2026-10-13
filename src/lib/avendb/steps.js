@@ -1,8 +1,8 @@
 // The steps of a device's start, as the page shows them while the person waits (Signing.svelte): founding their
 // vault, signing in or unlocking. The device marks each step of its own as it begins and ends it, with how long it
 // took (avendb-net's `Progress`, avendb-browser's `steps_json`): in a page through the function it is handed, in the
-// Mac app through its `steps` call. The page marks its own steps around them, the same way: making a passkey, reading
-// its store, saving what opens the device again.
+// Mac app through its `steps` call. The page marks its own steps around them, the same way: making a passkey, and
+// saving what opens the device again.
 
 /** @typedef {{ step: string, start: number, end: number | null }} Stage a step begun, by the page's clock (ms) */
 /** @typedef {{ steps: { step: string, at: number, took: number | null }[], over: boolean }} Report the device's */
@@ -23,7 +23,6 @@ export function stepWords(here) {
 			prompt: true
 		},
 		unlock: { title: `Unlock ${here}`, does: `Your passkey signs a pass for ${here}’s new keys`, prompt: true },
-		load: { title: `Reading what ${here} kept`, does: 'Your vault’s encrypted edits and keys, from its store' },
 		keys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret your passkey unmasks' },
 		restore: { title: 'Replaying your vault', does: 'Every edit checked again and applied in order' },
 		node: { title: `Starting ${here}’s node`, does: 'Its own endpoint, quantum-proof TLS on every connection' },
@@ -43,13 +42,13 @@ export function stepWords(here) {
 		join: { title: `Adding ${here} to your vault`, does: 'Your pass signs the edit that adds it' },
 		sync: { title: 'Syncing', does: 'What the server keeps for your vault, asked for' },
 		check: { title: 'Opening your vault', does: `${here} belongs to the vault its store holds` },
-		save: { title: `Saving on ${here}`, does: 'What opens it again, kept in this browser' }
+		save: { title: `Saving on ${here}`, does: 'What opens it again, kept on its shelf in this browser' }
 	};
 }
 
 /**
  * The steps each start takes, in order: those it may skip show until a later one begins. In the Mac app the app's
- * device keeps its own store, so the page reads and saves nothing.
+ * device keeps its own shelf, so the page saves nothing.
  * @param {'found' | 'link' | 'open'} start @param {{ mac: boolean, make?: boolean }} how
  */
 export function plan(start, { mac, make = false }) {
@@ -62,7 +61,7 @@ export function plan(start, { mac, make = false }) {
 		];
 	if (start === 'link')
 		return ['unlock', 'keys', 'node', 'server', 'pass', 'vault', 'join', 'sync', ...own(['save'])];
-	return ['unlock', ...own(['load']), 'keys', 'restore', 'node', 'check'];
+	return ['unlock', 'keys', 'restore', 'node', 'check'];
 }
 
 /**

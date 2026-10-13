@@ -2,16 +2,14 @@
 //! its person's passkey's ceremonies in the sign-in sheet, which the app shows and whose page seals what it brings back
 //! to the key the device made for that ceremony alone. Here the app is the test, and the sheet's page a software
 //! passkey that seals as the page does (avendb-browser's `sealCeremony`). Eve founds her vault from the Mac in two
-//! sheets, through a relay open to sign-up; the device keeps her vault in its folder, opens again from it in the
-//! unlock's sheet alone, and puts it aside when she forgets it there. A device her browser made before, before
-//! 2026-10-10 even, moves into the folder as it opens (`adopt`), the same device, and opens again from the folder
-//! after.
+//! sheets, through a relay open to sign-up; the device keeps her vault on the shelf in its folder, opens again from it
+//! in the unlock's sheet alone, and puts the shelf aside when she forgets it there, never deleting it. A new device
+//! puts aside a shelf a start cut short left, and never reads what an earlier avenDB kept in the folder.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -19,12 +17,12 @@ use avendb::cast::*;
 use avendb::id::EntryId;
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
-use avendb::sign::{Ceremony, PRF_SALT, Passkey, device_salt};
-use avendb_browser::{Device, Fresh, Start, Unlock};
-use avendb_device::{ASIDE, Config, META, SHEET, STORE, serve};
-use avendb_net::{Admission, Authenticator, Node, Options, Progress, Step};
+use avendb::sign::{Ceremony, PRF_SALT, Passkey};
+use avendb_device::{Config, SHEET, serve};
+use avendb_net::{Admission, Node, Options, disk};
 use avendb_server::Relay;
-use data_encoding::{BASE64, BASE64URL_NOPAD};
+use bytes::Bytes;
+use data_encoding::BASE64URL_NOPAD;
 use iroh::RelayUrl;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, DuplexStream, Lines, ReadHalf, WriteHalf};
@@ -138,24 +136,6 @@ impl App {
     }
 }
 
-/// A browser's authenticator, holding its person's passkey, as a page's device asks it.
-struct Browser(Mutex<Passkey>);
-
-impl Authenticator for Browser {
-    async fn ceremony(&self, challenge: [u8; 32], _: Step) -> anyhow::Result<Ceremony> {
-        Ok(self.0.lock().expect("the authenticator").ceremony(challenge))
-    }
-}
-
-impl Browser {
-    /// The ceremony that unlocks the device whose salt ends in `nonce`, over `challenge`.
-    fn unlock(&self, nonce: [u8; 32], challenge: [u8; 32]) -> Unlock {
-        let mut passkey = self.0.lock().expect("the authenticator");
-        let device = passkey.prf(&device_salt(&nonce));
-        Unlock { ceremony: passkey.ceremony(challenge), device }
-    }
-}
-
 /// A folder of its own in the system's temporary folder, removed with everything in it when dropped.
 struct Folder(PathBuf);
 
@@ -196,6 +176,14 @@ async fn steps(app: &mut App) -> Vec<String> {
     let steps = shown["steps"].as_array().expect("its steps");
     assert!(steps.iter().all(|s| s["took"].is_u64() && s["at"].is_u64()), "each with its times: {shown}");
     steps.iter().map(|s| s["step"].as_str().expect("a name").to_string()).collect()
+}
+
+/// The names of the objects on shelf `g` in folder `dir` under `under`, in order.
+fn objects(dir: &Path, g: u64, under: &str) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir.join(format!("g{g}")).join(under)) else { return vec![] };
+    let mut names: Vec<String> = entries.map(|e| e.expect("an entry").file_name().to_string_lossy().into()).collect();
+    names.sort();
+    names
 }
 
 /// Waits until `check` holds, 60 seconds at most.
@@ -271,7 +259,8 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(found, Err("You closed the sign-in sheet.".into()));
     assert_eq!(app.asked(), ["unlock"]);
     assert_eq!(steps(&mut app).await, ["unlock"], "it stopped at the unlock");
-    assert!(!dir.join(META).exists(), "nothing to open");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1], "one shelf");
+    assert!(objects(&dir, 1, "meta").is_empty(), "nothing to open");
     // she founds her vault from the Mac in two sheets: the unlock, which is her passkey's pass for it, and her vault
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
     assert_eq!(app.asked(), ["unlock", "found"]);
@@ -335,7 +324,9 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert!(app.asked().is_empty(), "with no sheet");
     app.quit().await;
     // the app starts again: the device opens from its folder in the unlock's sheet alone, the same device
-    assert!(dir.join(META).exists() && dir.join(STORE).join("ops").exists(), "its folder keeps it");
+    let metas = ["0000000000000001", "0000000000000002"];
+    assert_eq!(objects(&dir, 1, "meta"), metas, "what opens it, as founded, then as renamed, each kept whole");
+    assert!(!objects(&dir, 1, "journal").is_empty(), "its shelf keeps its edits");
     let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["open"], &status["meta"]["name"]), (&json!(false), &json!("Eve's MacBook")));
@@ -347,80 +338,60 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert!(app.asked().is_empty());
     let read = note(&mut app, &entry).await;
     assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what its folder kept");
-    // she forgets it here: its store and what opens it are put aside, never deleted
+    // she forgets it here: its shelf, with what opens it, is put aside, never deleted, and a new one is in use
     assert_eq!(app.call("forget", json!([])).await, Ok(Value::Null));
     assert_eq!(app.call("status", json!([])).await, Ok(json!({ "meta": null, "open": false, "device": null })));
-    assert!(!dir.join(META).exists() && !dir.join(STORE).exists());
-    let aside = std::fs::read_dir(dir.join(ASIDE)).expect("aside");
-    let aside: Vec<_> = aside.map(|e| e.expect("an entry").path()).collect();
-    let [forgotten] = aside.as_slice() else { panic!("one store put aside: {aside:?}") };
-    assert!(forgotten.to_string_lossy().ends_with("-forgotten"));
-    assert!(forgotten.join(META).exists() && forgotten.join(STORE).join("ops").exists());
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, 2], "a new shelf beside the old");
+    assert_eq!(objects(&dir, 1, "meta"), metas, "the old shelf as it was");
+    assert!(objects(&dir, 2, "meta").is_empty() && objects(&dir, 2, "journal").is_empty(), "the new one empty");
+    app.quit().await;
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()), "forgotten");
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_it_after() {
+async fn a_new_device_puts_aside_a_shelf_cut_short_and_never_reads_what_an_earlier_avendb_kept() {
     let (_relay, url, server) = server().await;
-    // the app's page made her device before, in the web view, its store in IndexedDB; before 2026-10-10 even, so its
-    // secret is the PRF output on its salt itself, and the page kept no mask
-    let browser = Browser(Mutex::new(Passkey::from_seed([5; 32])));
-    let nonce = [1; 32];
-    let old = Fresh::from_secret(*browser.0.lock().expect("the authenticator").prf(&device_salt(&nonce)));
-    let start = Start {
-        name: "Eve's Mac".into(),
-        relay: url.clone(),
-        entropy: [7; 32],
-        now: SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs(),
-        direct: false,
-        store: None,
-        shelf: None,
-        progress: Progress::new(),
-        recovery: None,
-    };
-    let unlock = browser.unlock(nonce, old.challenge(start.now));
-    let page = Device::found(start, &server.offer(), None, old, unlock, &browser, true).await.expect("her vault");
-    let vault = page.vault().await.expect("her vault");
-    let seeds = titled("Seeds", "Tomatoes in March.");
-    let write = json!({ "op": "create", "vault": vault.to_hex(), "type": "note", "value": seeds });
-    let entry = page.run(write).await["ok"]["entry"].clone();
-    let edits = page.edits(0).await.expect("its edits");
-    let mut keys = vec![];
-    for id in page.key_ids().await {
-        keys.push(page.key(id).await.expect("a key it holds"));
-    }
-    let (device, p256) = (page.node().device(), page.p256());
-    page.close().await.expect("the page's device closes");
-    // the app moves it into its folder as it opens, in the unlock's sheet alone
-    let folder = Folder::new("adopt");
-    let mut app = App::start(&folder.0, Passkey::from_seed([5; 32]), false);
-    let meta = json!({
-        "name": "Eve's Mac",
+    let folder = Folder::new("aside");
+    let dir = folder.0.clone();
+    // what an earlier avenDB kept in the folder: its store, what opened its device, and a store it put aside
+    let opened = json!({
+        "name": "Eve's old Mac",
         "relay": url.to_string(),
-        "nonce": hex(&nonce),
+        "nonce": hex(&[1; 32]),
+        "mask": hex(&[2; 32]),
         "credential": CREDENTIAL,
-        "passkey": hex(&p256),
+        "passkey": hex(&Passkey::from_seed([5; 32]).public()),
     });
-    let edits: Vec<_> = edits.iter().map(|e| BASE64.encode(e)).collect();
-    let keys: Vec<_> = keys.iter().map(|k| BASE64.encode(k)).collect();
-    let adopted = app.call("adopt", json!([meta, edits, keys])).await.expect("it moves in");
-    assert_eq!(app.asked(), ["unlock"]);
-    assert_eq!(steps(&mut app).await, ["unlock", "keys", "restore", "node", "check"]);
-    assert_eq!(adopted["id"], hex(&device.0), "the same device");
-    assert!(adopted["sockets"].as_array().expect("its sockets").is_empty(), "on its relay alone, as asked");
-    let read = note(&mut app, &entry).await;
-    assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what the page kept");
+    let opened = opened.to_string().into_bytes();
+    let aside = "aside/1760000000-forgotten/meta.json";
+    let earlier: [(&str, &[u8]); 3] = [("meta.json", &opened), ("store/ops", &[0, 0, 0, 3, 1, 2, 3]), (aside, &opened)];
+    for (name, bytes) in earlier {
+        std::fs::create_dir_all(dir.join(name).parent().expect("a folder")).expect("its folder");
+        std::fs::write(dir.join(name), bytes).expect("kept");
+    }
+    // and a start cut short on the shelf in use: something kept, nothing that opens it
+    let shelf = disk::open(&dir).expect("its shelf");
+    shelf.put("journal/0000000000000001", Bytes::from_static(b"cut short")).await.expect("kept");
+    drop(shelf);
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), false);
+    let nothing = json!({ "meta": null, "open": false, "device": null });
+    assert_eq!(app.call("status", json!([])).await, Ok(nothing), "nothing it opens");
+    assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()));
+    let offer = server.offer().to_text();
+    let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, 2], "the shelf cut short put aside");
+    let cut = std::fs::read(dir.join("g1/journal/0000000000000001")).expect("still there");
+    assert_eq!(cut, b"cut short", "as it was");
+    assert_eq!(objects(&dir, 2, "meta"), ["0000000000000001"], "what opens her device, on its own shelf");
     let status = app.call("status", json!([])).await.expect("its status");
-    assert_eq!(status["meta"], meta, "what opens it, as the page kept it");
+    assert_eq!((&status["device"], &status["meta"]["name"]), (&device, &json!("Eve's Mac")));
     app.quit().await;
-    // and opens from the folder after, the page's store no longer needed
-    let mut app = App::start(&folder.0, Passkey::from_seed([5; 32]), false);
-    let opened = app.call("open", json!([])).await.expect("it opens again");
-    assert_eq!((app.asked(), &opened["id"]), (vec!["unlock".to_string()], &adopted["id"]));
-    let read = note(&mut app, &entry).await;
-    assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "from its folder");
-    app.quit().await;
+    for (name, bytes) in earlier {
+        assert_eq!(std::fs::read(dir.join(name)).expect("still there"), bytes, "{name} as it was");
+    }
     server.shutdown().await.expect("the server's node stops");
 }
 

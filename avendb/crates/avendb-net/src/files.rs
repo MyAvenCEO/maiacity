@@ -1,5 +1,5 @@
-//! Files over iroh-blobs (blobs B2, `docs/BLOBS.md`): a node keeps one blob store, on disk in its store's folder
-//! (`blobs/`), over a shelf (`shelf`), or else in memory, and a file is its sealed pieces there, each a blob, with the
+//! Files over iroh-blobs (blobs B2, `docs/BLOBS.md`): a node keeps one blob store, over its shelf (`shelf`), or else
+//! in memory, and a file is its sealed pieces there, each a blob, with the
 //! HashSeq of their hashes when there are several. A node brings a file by sealing it as it reads it, a piece at a
 //! time, under a key of its own (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its
 //! device opens, from its own store or else from a peer that may hand it over, fetching only the sealed segments that
@@ -13,8 +13,8 @@
 //! with its children: a node fetches a file's HashSeq as a blob of its own and then its pieces one by one, so that the
 //! gate weighs every hash a peer asks for, and no blob that merely holds hashes hands out the blobs it names.
 //!
-//! A page's store and the server's keep what they bring and keep whole on their shelf (`shelf`), OPFS and the bucket,
-//! and what else they read in memory, a window at a time: a page that plays a film holds only the stretches that
+//! A node keeps what it brings and keeps whole on its shelf (`shelf`), a page's OPFS, the Mac's folder or the server's
+//! bucket, and what else it reads in memory, a window at a time: a page that plays a film holds only the stretches that
 //! play. A node reads a range a few megabytes at a time (`READ`), so that the window holds what it fetched until it
 //! has read it.
 
@@ -38,10 +38,6 @@ use n0_future::{Stream, StreamExt as _, stream, time};
 use tokio::sync::mpsc;
 
 use crate::{Backoff, Node, Shared, WAIT};
-
-/// The folder of a node's blob store, in its store's folder.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) const BLOBS: &str = "blobs";
 
 /// The most sealed bytes of a piece a node reads at a time: whole segments, as each opens on its own.
 const READ: u64 = 64 * SEALED as u64;

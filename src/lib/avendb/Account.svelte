@@ -1,22 +1,22 @@
 <!--
 	Your account (P8e, P8f): the person's own avenDB. Their account is their human vault: its root is their passkey,
 	which stays in the browser's authenticator, with the master recovery key as a way back while avenDB is young, and
-	this browser is one of its devices, its keys unmasked by the passkey at every unlock, what it holds kept in the
-	browser's private file system (OPFS) so that it opens again in one ceremony. Every device of the vault shows by the
-	name on its card, an entry of the vault the device writes itself,
-	end-to-end encrypted like its notes (avendb-browser's `Device::card`), and every vault by the name on its profile,
-	an entry this browser writes into it (`Device::profile`): the person's own by their maiaCITY name, avenCEO's as
-	avenCEO. In the Mac app the device runs natively beside the app ($lib/avendb/native.js): its node on UDP sockets of
-	its own, its store in a folder on the Mac, and the device a page there made before moves into that folder as it
-	unlocks. A new person founds their vault here with the passkey they signed up to maiaCITY with (the same relying
-	party, maia.city), or one they make here; the first to found a vault through a server nobody has claimed yet claims
-	it in the same ceremony, so their vault owns avenCEO, the aven vault the server is a device of. A person with an
-	account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log as
-	ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or it
-	links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once
-	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and the aven and
-	coop vaults their vault founds and owns, each of which they act as. avenDB's server runs at avendb.maia.city: its
-	relay and its code are filled in, and a test server's can take their place (?relay=, ?server=).
+	this browser is one of its devices, its keys unmasked by the passkey at every unlock, what it holds kept on its
+	shelf in the browser's private file system (OPFS) so that it opens again in one ceremony. Every device of the vault
+	shows by the name on its card, an entry of the vault the device writes itself, end-to-end encrypted like its notes
+	(avendb-browser's `Device::card`), and every vault by the name on its profile, an entry this browser writes into it
+	(`Device::profile`): the person's own by their maiaCITY name, avenCEO's as avenCEO. In the Mac app the device runs
+	natively beside the app ($lib/avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
+	Mac. A device forgotten here, or what an earlier avenDB kept, is put aside and never read again. A new person
+	founds their vault here with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or
+	one they make here; the first to found a vault through a server nobody has claimed yet claims it in the same
+	ceremony, so their vault owns avenCEO, the aven vault the server is a device of. A person with an account signs in
+	on a new browser with their passkey alone: avenDB's server, which keeps their vault's log as ciphertext, hands it
+	over, and the browser joins their vault (P8c), as it does after they lost every device. Or it links through the
+	code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once unlocked, the account
+	opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and the aven and coop vaults their vault
+	founds and owns, each of which they act as. avenDB's server runs at avendb.maia.city: its relay and its code are
+	filled in, and a test server's can take their place (?relay=, ?server=).
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -39,17 +39,12 @@
 	let avendb = null;
 	/** @type {any} in the Mac app, its device beside it ($lib/avendb/native.js): null where the page runs the device */
 	let mac = null;
-	/** in the Mac app: whether the device a page there made before, in the page's store, moves into the app's folder as
-	 *  it unlocks */
-	let moving = $state(false);
-	/** @type {any} */
-	let stores = null;
-	/** @type {any} */
+	/** @type {any} the page's store, its device's shelf in OPFS (./device/store.js) */
 	let store = null;
 	/** @type {any} */
 	let device = $state(null);
-	/** @type {any} what opens this browser's device again: kept as a plain object, as the store's worker can't be handed
-	 *  a proxy */
+	/** @type {any} what opens this browser's device again, as its shelf keeps it (avendb-browser's `Meta`): kept as a
+	 *  plain object, as it comes */
 	let meta = $state.raw(null);
 	/** @type {'loading' | 'new' | 'closed' | 'open'} */
 	let phase = $state('loading');
@@ -159,9 +154,9 @@
 			const pkg = await import('./device/avendb_browser.js');
 			await pkg.default();
 			avendb = pkg;
-			stores = await import('./device/store.js');
+			const stores = await import('./device/store.js');
 			store = await stores.open(STORE);
-			meta = await store.meta();
+			meta = (await avendb.storeMeta(store)) ?? null;
 			phase = meta ? 'closed' : 'new';
 		} catch (e) {
 			error = `This browser can't be a device: ${/** @type {Error} */ (e).message}`;
@@ -171,29 +166,16 @@
 
 	onDestroy(() => device?.close());
 
-	/** In the Mac app: its device beside it, open already or to unlock, or the page's to move there. Whether the app
-	 *  runs avenDB natively: if it can't, the page runs the device, as before. */
+	/** In the Mac app: its device beside it, open already, to unlock, or none yet. Whether the app runs avenDB
+	 *  natively: if it can't, the page runs the device. */
 	async function openMac() {
 		const bridge = await import('./native.js');
 		const held = await bridge.status();
 		if (!held) return false;
 		mac = bridge;
-		if (held.meta) {
-			meta = held.meta;
-			if (held.device) running(new mac.NativeDevice(held.device));
-			else phase = 'closed';
-			return true;
-		}
-		// the device a page here made before: it moves into the app's folder as it unlocks
-		try {
-			stores = await import('./device/store.js');
-			store = await stores.open(STORE);
-			meta = (await store.meta()) ?? null;
-		} catch {
-			meta = null;
-		}
-		moving = !!meta;
-		phase = meta ? 'closed' : 'new';
+		meta = held.meta ?? null;
+		if (meta && held.device) running(new mac.NativeDevice(held.device));
+		else phase = meta ? 'closed' : 'new';
 		return true;
 	}
 
@@ -378,37 +360,22 @@
 	 *  and hands the device the function it shows its own by with `device`.
 	 *  @param {{ step: (step: string) => void, device: () => (report: any) => void }} at */
 	async function unlocking({ step, device }) {
-		if (mac && moving) {
-			// the page's device moves into the app's folder, the same device; then the page lets go of its copy, so
-			// that it never runs twice
-			step('load');
-			const kept = await store.load();
-			const [edits, keys] = [kept.edits.map(mac.base64), kept.keys.map(mac.base64)];
-			const info = await watching(device(), 'adopt', meta, edits, keys);
-			store.close();
-			await stores.remove(STORE);
-			[store, moving] = [null, false];
-			return macOpened(info);
-		}
 		if (mac) return macOpened(await watching(device(), 'open'));
 		const { unlock } = await ceremonies(meta.credential);
 		step('unlock');
 		const unlocked = await unlock(unhex(meta.nonce));
-		step('load');
-		const kept = await store.load();
-		const opens = [meta.name, meta.relay, meta.passkey, meta.mask];
-		running(await avendb.Device.open(...opens, unlocked, kept.edits, kept.keys, device(), store));
+		running(await avendb.Device.open(unlocked, device(), store));
 	}
 
-	/** The device runs from here on, its store following it, even should keeping what opens it again fail: it can
-	 *  still show its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
+	/** The device runs from here on, its shelf keeping what opens it again, even should that fail: it can still show
+	 *  its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
 	 *  @param {string} credential */
 	async function started(d, nonce, credential) {
-		meta = { name: name.trim(), relay, nonce: hex(nonce), mask: d.mask(), credential, passkey: d.passkey() };
+		meta = { name: name.trim(), relay };
 		running(d);
 		remember('relay', relay);
 		remember('server', server);
-		await store.setMeta(meta);
+		meta = await d.keep(hex(nonce), credential);
 	}
 
 	/** @param {any} d */
@@ -416,8 +383,6 @@
 		device = d;
 		phase = 'open';
 		sockets = mac ? d.sockets() : null;
-		// the app's device keeps its own store
-		if (!mac) store.follow(d).catch((/** @type {Error} */ e) => (error = `Saving failed: ${e.message}`));
 		// a link the person's other devices open: the site's, as the app's own pages are the app's alone
 		const site = native() ? 'https://maia.city' : location.origin;
 		link = `${site}${location.pathname}?${new URLSearchParams({ link: d.offer(), relay: meta.relay })}`;
@@ -569,14 +534,8 @@
 		rename: (name) =>
 			act(`Renaming ${here}`, async () => {
 				if (!name || name === meta.name) return;
-				if (mac) {
-					await mac.call('rename', name);
-					meta = { ...meta, name };
-					return;
-				}
+				await (mac ? mac.call('rename', name) : device.rename(name));
 				meta = { ...meta, name };
-				await store.setMeta(meta);
-				await device.card(name);
 			}),
 		/** Whether avenDB's server backs up the person's vault, or only relays for it; `null` if it holds no cap on it. */
 		backsUp: async () => (await device.backsUp()) ?? null,
@@ -594,16 +553,9 @@
 		if (!confirm(ask)) return;
 		return run(`Forgetting ${here}`, async () => {
 			await device?.close();
-			if (mac && !moving) {
-				// the app puts its folder's store aside, never deleting it
-				await mac.call('forget');
-				[device, meta, world, phase] = [null, null, null, 'new'];
-				return;
-			}
-			store.close();
-			await stores.remove(STORE);
-			[device, meta, world, phase, moving] = [null, null, null, 'new', false];
-			store = mac ? null : await stores.open(STORE);
+			// its shelf is put aside, never deleted, and a new one is in use: in the app's folder, or in OPFS
+			await (mac ? mac.call('forget') : store.aside());
+			[device, meta, world, phase] = [null, null, null, 'new'];
 		});
 	};
 </script>
@@ -628,12 +580,6 @@
 				<article class="card">
 					<h3>Unlock your account</h3>
 					<p>Your account is on {here}, as {meta?.name}. Unlock it with your passkey.</p>
-					{#if moving}
-						<p class="soft">
-							As it unlocks, it moves into the app: avenDB then runs natively beside it, on its own UDP sockets, and keeps
-							your vault in a folder on this Mac.
-						</p>
-					{/if}
 					<div class="row">
 						<button class="btn primary" disabled={!!doing} onclick={unlockHere}>Unlock</button>
 						<button class="btn quiet" disabled={!!doing} onclick={forget}>Forget it here</button>

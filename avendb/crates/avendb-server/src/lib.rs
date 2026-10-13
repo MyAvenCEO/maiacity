@@ -17,9 +17,10 @@
 //! TLS offers nothing else (`avendb_net::pq_provider`); and as iroh's relay path is `/relay`, the relay wants a host
 //! name of its own. Where it is deployed is said in `README.md`, under "Deploying the server".
 //!
-//! With a bucket (blobs B3a, `Config::bucket`), the node's store lives in it, every object sealed under the server's
-//! seal (`avendb_net::bucket`), its folder only a cache: the server tells its peers of an edit only once the bucket
-//! has it, and a server whose folder is lost starts again from the bucket alone, as the same device.
+//! The node's shelf (v8 phase S, `avendb_net::shelf`) is its bucket (`Config::bucket`), every object sealed under the
+//! server's seal (`avendb_net::bucket`), its folder only a cache: the server tells its peers of an edit only once the
+//! bucket has it, and a server whose folder is lost starts again from the bucket alone, as the same device. Without a
+//! bucket, its shelf is its folder (`avendb_net::disk`).
 
 pub mod bucket;
 
@@ -46,7 +47,8 @@ use zeroize::Zeroizing;
 /// How the server runs, as its environment says.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
-    /// Its folder (`AVENDB_DATA`, `/data` by default): its device's secret and its store.
+    /// Its folder (`AVENDB_DATA`, `/data` by default): its shelf, with its device's secret and its edits, or, beside a
+    /// bucket, only a cache.
     pub data: PathBuf,
     /// The UDP socket its node binds (`AVENDB_BIND`, `0.0.0.0:7401`), where devices on UDP reach it straight.
     pub bind: SocketAddr,
@@ -63,14 +65,13 @@ pub struct Config {
     /// whose pass any passkey signed (`avendb_net::Admission::open`), not only one whose passkey roots a vault the
     /// server knows. A device on UDP reaches the server without the relay anyway.
     pub signup: bool,
-    /// The bucket its store lives in (`AVENDB_BUCKET` and the rest of `BucketConfig`), if any; else its folder alone
-    /// holds it.
+    /// The bucket that is its shelf (`AVENDB_BUCKET` and the rest of `BucketConfig`), if any; else its folder is.
     pub bucket: Option<BucketConfig>,
     /// The most bytes of the files in its bucket its folder caches (`AVENDB_CACHE`, in gigabytes, 8 by default).
     pub cache: u64,
 }
 
-/// The bucket the server's store lives in (blobs B3a), its folder only a cache of it.
+/// The bucket that is the server's shelf (blobs B3a), its folder only a cache of it.
 #[derive(Clone, PartialEq, Eq)]
 pub struct BucketConfig {
     /// Its name (`AVENDB_BUCKET`).
@@ -164,18 +165,25 @@ impl Running {
     }
 }
 
-/// Starts the server as `config` says: its relay, then its node in its folder, made at its first start, which is
-/// reached through that relay and tells it whom to let in.
+/// Starts the server as `config` says: its relay, then its node on its shelf, its bucket's or its folder's, made at
+/// its first start, which is reached through that relay and tells it whom to let in.
 pub async fn start(config: &Config) -> Result<Running> {
     let admission = if config.signup { Admission::open() } else { Admission::default() };
     let relay = Relay::spawn(config.relay_bind, admission.clone()).await?;
     let url = config.relay_url.clone().unwrap_or_else(|| relay.url());
+    let shelf = match &config.bucket {
+        Some(b) => {
+            let sealed = Sealed::new(bucket::S3::new(b)?, &b.seal);
+            avendb_net::bucket::shelf(sealed, &config.data, config.cache).await?
+        }
+        None => avendb_net::disk::open(&config.data)?,
+    };
     let opts = Options {
         bind: Some(config.bind),
         direct: false,
         relay: Some(url),
         retry: Duration::from_secs(1),
-        store: None,
+        shelf: None,
         keep: false,
         card: false,
         admission: Some(admission),
@@ -183,14 +191,8 @@ pub async fn start(config: &Config) -> Result<Running> {
         page: avendb_net::PAGE,
         // its start is nobody's to watch
         progress: avendb_net::Progress::new(),
-        bucket: match &config.bucket {
-            Some(b) => Some(Sealed::new(bucket::S3::new(b)?, &b.seal)),
-            None => None,
-        },
-        shelf: None,
-        cache: config.cache,
     };
-    let node = server::open(&config.data, opts).await?;
+    let node = server::open(shelf, opts).await?;
     let mut offer = node.offer();
     if let Some(public) = config.public_addr {
         let relays: Vec<RelayUrl> = offer.addr.relay_urls().cloned().collect();
