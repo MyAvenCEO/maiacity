@@ -157,7 +157,8 @@ export function check(v) {
  */
 export const VIEW_SLOTS = ['panel'];
 export const MAX_VIEW = 100_000;
-export function checkViewCard(raw) {
+/** `slots`: where a game lets a screen stand (MaiaCity V1 names its own panels, game/maiacity-v1/views.js) */
+export function checkViewCard(raw, slots = VIEW_SLOTS) {
 	const id = String(raw?.id ?? '').trim();
 	if (!/^[a-z][a-z0-9_-]{1,40}$/.test(id)) return { error: `A view card's id is lowercase letters, digits, - and _, 2 to 41 long (got "${id.slice(0, 40)}").` };
 	const name = String(raw?.name ?? '').trim().slice(0, 80) || id;
@@ -167,7 +168,7 @@ export function checkViewCard(raw) {
 	if (code.length > MAX_VIEW) return { error: `Card ${id}: a view's code is at most ${MAX_VIEW} characters.` };
 	const d = raw?.data ?? {};
 	const slot = d.slot ?? 'panel';
-	if (!VIEW_SLOTS.includes(slot)) return { error: `Card ${id}: a view's slot is one of ${VIEW_SLOTS.join(', ')}.` };
+	if (!slots.includes(slot)) return { error: `Card ${id}: a view's slot is one of ${slots.join(', ')}.` };
 	const libs = Array.isArray(d.libs) ? d.libs.filter((l) => typeof l === 'string') : [];
 	const bad = libs.find((l) => !LIBS[l]);
 	if (bad) return { error: `Card ${id}: no library "${bad.slice(0, 30)}"; a view may load ${Object.keys(LIBS).join(', ')}.` };

@@ -29,6 +29,7 @@
  */
 
 import { checkViewCard } from '../genui/views.js';
+import { SLOTS, SLOT_NAMES } from './views.js';
 
 export const DAY_MS = 86_400_000;
 /** one virtual month per real day */
@@ -473,7 +474,7 @@ function checkMip(s, mip) {
 	// the game's screens (Samuel, 2026-10-13): view cards, MCP Apps the page runs sandboxed (game/genui/views.js); a MIP
 	// puts them in (a card with an id already there replaces it) or takes them out, beside the rules it changes
 	const views = (Array.isArray(mip.views) ? mip.views : []).slice(0, 10).map((v) => {
-		const r = checkViewCard(v);
+		const r = checkViewCard(v, SLOTS);
 		if (r.error) throw new GameError(r.error);
 		return r.card;
 	});
@@ -490,7 +491,7 @@ export function describe(s, mip) {
 		if (c.assets) parts.push(`${c.name ?? nameOf(s, `coop:${id}`)} owns ${c.assets.map((x) => x.name).join(', ') || 'nothing'}`);
 	}
 	for (const x of mip.payouts ?? []) parts.push(`pay ${x.amount.toFixed(2)} ${TOKEN_LABEL[x.token]} from ${nameOf(s, x.from)} to ${nameOf(s, x.to)}`);
-	for (const v of mip.views ?? []) parts.push(`${(s.views ?? []).some((x) => x.id === v.id) ? 'new version of the screen' : 'new screen'} ${v.name}`);
+	for (const v of mip.views ?? []) parts.push(`${(s.views ?? []).some((x) => x.id === v.id) ? 'new version of the screen' : 'new screen'} ${v.name}${v.data?.slot && v.data.slot !== 'panel' ? ` in ${SLOT_NAMES[v.data.slot]}` : ''}`);
 	for (const id of mip.removeViews ?? []) parts.push(`remove the screen ${(s.views ?? []).find((x) => x.id === id)?.name ?? id}`);
 	return parts.join('; ');
 }
@@ -545,7 +546,9 @@ function settle(s, mip, now) {
  *   invest { coop, amount }      HEARTS into a COOP
  *   swap { token, to, amount }   a MIND through the pool for another
  *   name { name }                the player's name
- *   propose { mip }              a MIP: title, description, settings, coops, payouts and screens (views, removeViews); the proposer signs it (not
+ *   propose { mip }              a MIP: title, description, settings, coops, payouts and screens (views, removeViews; a view's
+ *                                data.slot is 'panel' for a tab of its own or a panel it stands in: game/maiacity-v1/views.js
+ *                                SLOTS); the proposer signs it (not
  *                                one made over the MCP, via 'mcp': both players sign that on the page)
  *   sign { number }              sign a MIP: with two signatures it is accepted and applies at once
  *   reject { number, note }      reject a MIP (the proposer withdraws it)

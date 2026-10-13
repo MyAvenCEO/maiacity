@@ -565,10 +565,12 @@ pub struct V1Propose {
     /// { name, assets: [the whole list as it will be: { id (keep an asset's id from maiacity_v1_mips), name, kind }] } },
     /// payouts: [{ from: "coop:maia" | "coop:settlement" | "coop:village", to: "player:A" | "player:B" | a coop,
     /// token: "MAIA" | "SETTLEMENT" | "VILLAGE", amount }], views: [screens, view cards: { id, kind: "view", name,
-    /// description, data: { slot: "panel", libs?: ["three" | "d3" | "mcp-apps"], height?: 160-1200 }, code: its HTML, an
-    /// MCP App run sandboxed, handed the game as its tool result every second: { date, month, minds, players with
-    /// wallets, coops with treasuries and assets, pool, settings } (game/maiacity-v1/views.js); a card with an id
-    /// already there replaces it (the default screen is view-holders)], removeViews: [ids of screens to take out] }
+    /// description, data: { slot: "panel" (a tool of its own) | "you" | "mint" | "invest" | "swap" (stands over that
+    /// panel's moves) | "coops" | "ledger" | "rules" (takes that panel's place), libs?: ["three" | "d3" | "mcp-apps"],
+    /// height?: 160-1200 }, code: its HTML, an MCP App run sandboxed, handed the game as its tool result every second:
+    /// { date, month, seat, minds, hearts (worth of 1 of each in HEARTS), players with wallets and worth, coops with
+    /// treasuries, worth and assets, pool, settings, rents, names, ledger (last 80) } (game/maiacity-v1/views.js); a card
+    /// with an id already there replaces it (the default screen is view-holders)], removeViews: [ids of screens to take out] }
     pub mip: Value,
     /// the seat it is proposed from, "A" or "B" (default: the seat this Mac's founder plays)
     pub seat: Option<String>,

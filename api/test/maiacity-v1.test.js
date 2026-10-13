@@ -1,6 +1,6 @@
 // MaiaCity V1's rules (game/maiacity-v1/engine.js): HEARTS, the 50/50 MIND split, the pool, rent and the melt.
 import { expect, test } from "bun:test";
-import { DAY_MS, act, advance, dividendsOf, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
+import { DAY_MS, act, advance, describe, dividendsOf, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
 
 const T0 = Date.UTC(2026, 9, 13);
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
@@ -235,4 +235,16 @@ test("a MIP brings a screen (a view card) with its signatures; it changes nothin
   s = act(s, "A", { type: "propose", mip: { title: "No rents screen", removeViews: ["view-rents"] } }, T0);
   s = act(s, "B", { type: "sign", number: 2 }, T0);
   expect(viewsOf(s).map((v) => v.id)).toEqual(["view-holders"]);
+});
+
+test("a MIP stands a screen in one of the page's panels (a slot); an unknown slot is refused", async () => {
+  const { slotsOf } = await import("../../game/maiacity-v1/views.js");
+  let s = newGame(T0);
+  const ledger = { id: "view-ledger", kind: "view", name: "Ledger 2", code: "<p>ledger</p>", data: { slot: "ledger" } };
+  expect(() => act(s, "A", { type: "propose", mip: { title: "Bad", views: [{ ...ledger, data: { slot: "map" } }] } }, T0)).toThrow(/slot is one of/);
+  s = act(s, "A", { type: "propose", mip: { title: "A new ledger", views: [ledger] } }, T0);
+  expect(describe(s, s.mips[0])).toMatch(/new screen Ledger 2 in the Ledger/);
+  s = act(s, "B", { type: "sign", number: 1 }, T0);
+  expect(Object.keys(slotsOf(s))).toEqual(["ledger"]);
+  expect(slotsOf(s).ledger.name).toBe("Ledger 2");
 });
