@@ -6,7 +6,7 @@
 	import { onMount } from 'svelte';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
 	import Icon from '$lib/app/Icon.svelte';
-	import { ADMIN, APPS, PLAY, READ, holds, released } from '$lib/app/places';
+	import { ADMIN, APPS, CITY, PLAY, READ, holds, released } from '$lib/app/places';
 	import { asset } from '$lib/media/url';
 
 	let founder = $state<Founder | null>(null);
@@ -37,6 +37,13 @@
 	<p class="divider">Your apps</p>
 	<div class="tiles two">
 		{#each APPS as t (t.href)}
+			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
+		{/each}
+	</div>
+
+	<p class="divider">MaiaCity</p>
+	<div class="tiles two">
+		{#each CITY as t (t.href)}
 			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
 		{/each}
 	</div>

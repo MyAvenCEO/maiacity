@@ -26,6 +26,7 @@ import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queue
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
+import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
 import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -117,9 +118,17 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
   return me;
 }
 
+/** The signed-in founder (or a terminal's key holder), whatever they hold — or the response that says why not. */
+async function signedIn(req: Request): Promise<{ id: string; role: string } | Response> {
+  const key = await keyHolder(req);
+  if (key) return key;
+  const me = await viewer(req);
+  return me ?? json(req, { error: "Please sign in." }, { status: 401 });
+}
+
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof EconomyError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof EconomyError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -166,6 +175,60 @@ const server = Bun.serve({
         const who = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || srv.requestIP(req)?.address || "?";
         const { status, body } = await relayDecision(req, who);
         return Response.json(body, { status, headers });
+      },
+    },
+
+    // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it and may
+    // take an empty seat; only the founder in a seat moves for it, an admin for either (to test both sides alone).
+    "/api/maiacity-v1": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await signedIn(req);
+        if (me instanceof Response) return me;
+        try {
+          return json(req, { game: await getGame(), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/maiacity-v1/seat": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await signedIn(req);
+        if (me instanceof Response) return me;
+        const body = await readJson(req);
+        try {
+          const [f] = await sql`SELECT name FROM founders WHERE id = ${me.id}`;
+          return json(req, { game: await takeSeat({ id: me.id, name: f?.name ?? "" }, String(body?.seat ?? "")), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/maiacity-v1/move": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await signedIn(req);
+        if (me instanceof Response) return me;
+        const body = await readJson(req);
+        try {
+          return json(req, { game: await move(me, can(me, "economy:admin"), String(body?.seat ?? ""), body?.action), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/maiacity-v1/reset": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "economy:admin");
+        if (me instanceof Response) return me;
+        try {
+          return json(req, { game: await resetGame(), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
       },
     },
 
