@@ -22,6 +22,7 @@ import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, 
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, batteryPack, pickup, powercube, solarPanel } from './village.js';
+import { powerCube } from '$lib/actors/powercube.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
@@ -55,6 +56,10 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	'rabbit-hutch': [
 		{ ...FIRST, build: timberHutch },
 		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome of wire on grass, a little shingled dome inside to sleep in' }
+	],
+	powercube: [
+		{ ...FIRST, build: () => powercube() },
+		{ v: 2, date: '2026-10-13', note: 'Open Source Ecology’s own Power Cube (VII / 7s): a hydraulic power unit, not a generator; every part its own in the Actors, and the same cube the LifeTrac carries. MaiaCity V1 still shows v1 on its hex' }
 	],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
@@ -150,7 +155,7 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 4', make: () => rabbitDome().group },
 	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 4', make: () => playDome().group },
 	{ id: 'pickup', label: 'Pickup', note: `${VILLAGE_INFO.pickup.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => pickup() },
-	{ id: 'powercube', label: 'Powercube', note: `${VILLAGE_INFO.powercube.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => powercube() },
+	{ id: 'powercube', label: 'Power Cube', note: 'Open Source Ecology’s Power Cube VII / 7s, the hydraulic heart of their Global Village Construction Set: a 28 hp V-twin on a gear pump, 15 gpm at 3,000 psi, with its 7-gallon tanks, relief, gauge, six-tube cooler, battery and two quick couplers in a 27" cube of 181 kg, lifted from one machine to the next. Running; every part its own in the Actors', usedIn: 'The LifeTrac', make: () => working(powerCube(), 'run') },
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
 	{ id: 'battery-pack', label: 'Big battery pack', note: `${VILLAGE_INFO.battery.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => batteryPack() },
 	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() },

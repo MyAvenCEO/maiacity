@@ -2,7 +2,7 @@
  * THE ACTORS — everyone and everything rigged to move, as the Actors gallery (/app/actors/) lists it: the stand-in a
  * shot is blocked with, and the animals of the worlds, kind by kind — the chickens (six breeds of hen, the rooster, the
  * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the ants and their hill, the fish, and the
- * machines (the excavators, the pod, the forklift) — each kind with its variants.
+ * machines (the excavators, the pod, the forklift, the LifeTrac and its Power Cube) — each kind with its variants.
  * Each is built by a function that hands back its rig (./rig.ts), its moves (clips) and, for the stand-in, its poses.
  * An animal is its species' (./species/, on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a
  * line in its kind below.
@@ -20,6 +20,8 @@ import { pod as podV2 } from './pod.v2.js';
 import { pod as podV3 } from './pod.v3.js';
 import { pod as podV4 } from './pod.v4.js';
 import { forklift } from './forklift.js';
+import { lifetrac } from './lifetrac.js';
+import { powerCube } from './powercube.js';
 import type { Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
@@ -88,6 +90,8 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 		{ v: 5, date: '2026-10-07', note: 'The goods pod’s pallets are carried in and out by forklifts, one to each pallet: the Forklift actor built into its rig, driving in under the pallet, lifting it and carrying it through the doors; the pallets go out far enough to clear the doors’ swing' }
 	],
 	forklift: [{ ...FIRST, date: '2026-10-07' }],
+	lifetrac: [{ ...FIRST, date: '2026-10-13' }],
+	powercube: [{ ...FIRST, date: '2026-10-13' }],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
 		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
@@ -257,6 +261,20 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 			{ id: 'forklift', label: 'Forklift', note: '1.8 m long with its forks, 0.84 m wide, 1.23 m high; forks 0.8 m long, lifting 75 cm', make: () => forklift() },
 			{ id: 'forklift-pallet', label: 'With a pallet', note: 'a loaded Euro pallet (1200 × 800 mm, cartons to 1.2 m) on its forks', make: () => forklift({ pallet: true }) }
 		]
+	},
+	{
+		id: 'lifetrac',
+		label: 'LifeTrac',
+		note: 'Open Source Ecology’s open-source tractor, its newest design (v25): a compact loader driven by radio, every part of it its own — tap one for its card, show it alone, watch it go on step by step or the whole machine drawn apart',
+		from: 'Open Source Ecology: the Global Village Construction Set',
+		variants: [{ id: 'lifetrac-v25', label: 'v25', note: 'LifeTrac v25 (2025–26): bolted plate frame, four direct-drive hydraulic wheels, loader arms, LoRa remote control, a Power Cube for its heart', make: () => lifetrac() }]
+	},
+	{
+		id: 'powercube',
+		label: 'Power Cube',
+		note: 'Open Source Ecology’s hydraulic power unit, the heart of every machine of their set: an engine on a pump in a steel cube with its own tanks, cooler and couplers, lifted from one machine to the next — every part its own, as in the LifeTrac that carries one',
+		from: 'Open Source Ecology: the Global Village Construction Set',
+		variants: [{ id: 'powercube-7s', label: 'VII / 7s', note: 'Power Cube VII / 7s (v15.6, 2014–15): 28 hp Briggs & Stratton V-twin, 15.2 gpm at 3,000 psi, 27" cube, ~181 kg', make: () => powerCube() }]
 	}
 ];
 

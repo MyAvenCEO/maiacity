@@ -32,10 +32,13 @@ export type Piece = {
 	chain?: { bones: string[]; soft?: number; tip?: V3 };
 	/** which of the actor's materials: 0 its skin, then as it has them (an eye's gloss, the glass of a bee's wings) */
 	mat?: number;
+	/** the part of a machine it belongs to, by id, for an actor whose parts can be picked one by one (its `catalog`) */
+	part?: string;
 };
 
-/** a turn of one bone from its rest (radians about x, then y, then z), and its size (1: as built) */
-export type Turn = [number, number, number] | [number, number, number, number];
+/** a turn of one bone from its rest (radians about x, then y, then z), its size (1: as built), and how far it is moved
+ *  from its joint, in its parent's frame (m: a part of a machine drawn out of it, exploded) */
+export type Turn = [number, number, number] | [number, number, number, number] | [number, number, number, number, number, number, number];
 /** a pose: per bone its turn; `root` moves the first bone from where it rests (m) */
 export type Pose = { root?: V3 } & { [bone: string]: Turn | V3 | undefined };
 /**
@@ -55,6 +58,8 @@ export type Rig = {
 	names: string[];
 	/** turn the bones to a pose (from the rest pose: a bone it does not name rests) */
 	pose: (p: Pose) => void;
+	/** per group of the mesh's geometry (one a piece), the part it belongs to, if it was given one */
+	parts?: (string | undefined)[];
 };
 
 /** An actor with its moves: the clips it plays, the poses it holds (named), and which to show first; for a gait, the
@@ -68,6 +73,8 @@ export type Cast = {
 	/** the bones whose joints are set down on the ground walking: kept where they are put (./motion.ts), and measured
 	 *  so (scripts/actors.ts) */
 	feet?: string[];
+	/** a machine whose parts can be picked one by one: what each is, does and how it moves (./parts.js) */
+	catalog?: import('./parts.js').Catalog;
 };
 
 export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Material[]): Rig {
@@ -184,7 +191,7 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 	mesh.castShadow = mesh.receiveShadow = true;
 	mesh.frustumCulled = false; // a pose can carry it far from where it rests
 
-	return { object: mesh, bones: byName, names: list.map((b) => b.name), pose: poser(list) };
+	return { object: mesh, bones: byName, names: list.map((b) => b.name), pose: poser(list), parts: parts.map((p) => ('skin' in p ? undefined : p.part)) };
 }
 
 /** How to pose these bones (a rig's, or a clone's): from where they rest now, each turned as a pose says. */
@@ -206,7 +213,8 @@ export function poser(list: THREE.Bone[]): (p: Pose) => void {
 				const b = byName[name];
 				if (!b) continue;
 				b.rotation.set(t[0], t[1], t[2]);
-				if (t.length === 4) b.scale.setScalar(t[3]!);
+				if (t.length >= 4) b.scale.setScalar(t[3]!);
+				if (t.length === 7) b.position.add(move.set(t[4]!, t[5]!, t[6]!));
 			}
 		}
 	};
@@ -244,7 +252,9 @@ export function blend(a: Pose, b: Pose, t: number): Pose {
 		qa.setFromEuler(eb.set(x[0] ?? 0, x[1] ?? 0, x[2] ?? 0));
 		qb.setFromEuler(eb.set(y[0] ?? 0, y[1] ?? 0, y[2] ?? 0));
 		eb.setFromQuaternion(qa.slerp(qb, t));
-		out[name] = [eb.x, eb.y, eb.z, (x[3] ?? 1) + ((y[3] ?? 1) - (x[3] ?? 1)) * t] as Turn;
+		const size = (x[3] ?? 1) + ((y[3] ?? 1) - (x[3] ?? 1)) * t;
+		const off = [4, 5, 6].map((k) => (x[k] ?? 0) + ((y[k] ?? 0) - (x[k] ?? 0)) * t);
+		out[name] = (off.some((o) => o !== 0) ? [eb.x, eb.y, eb.z, size, ...off] : [eb.x, eb.y, eb.z, size]) as Turn;
 	}
 	return out;
 }
