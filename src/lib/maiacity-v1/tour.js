@@ -104,12 +104,13 @@ export function story(view, seat, seen) {
 			'The old world passed this place by and left it behind.',
 			`${other.founder && !first ? `${other.name} came before you. You are` : 'You are'} among its very first people.`),
 		// the first player does not wait at the stop (Samuel 2026-10-13): they walk over to the gas station and load the
-		// jerrycans into the village's pickup while the city is told, and get in while the COOPs are
+		// jerrycans into the village's pickup while the city is told, and get in while the COOPs are; the ElectroCube is
+		// not named until it waits in the shed
 		first
 			? say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', kind: 'fuel', done: !!seen.station, ...atStop },
 				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
 				`At the gas station waits the ${c.village.name}'s pickup, the key in it.`,
-				'Two jerrycans of petrol go in the back, for the ElectroCube you will fetch.',
+				'Two jerrycans of petrol go in the back.',
 				'Here no single owner can leave and take it all. It belongs to the people who live here.')
 			: say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop, act: 'point' },
 				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
@@ -138,7 +139,7 @@ export function story(view, seat, seen) {
 				'The village lies on the way home.',
 				'The centre of your village.'),
 		say({ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000), ...atStore },
-			`The pickup, the ElectroCube, the BatteryCube and the solar panel all belong to the ${c.village.name}.`,
+			`The pickup and every machine at the old shed belong to the ${c.village.name}.`,
 			`Whoever uses a machine pays its rent, and ${pct(st.dividendShare ?? 0.2)} of every sale goes to its owners.`,
 			'Invest 2,000 HEARTS, and every machine here works a little for you.'),
 		first
