@@ -937,4 +937,17 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE content_items ADD COLUMN image_title JSONB NOT NULL DEFAULT '[]'::jsonb;
     `,
   },
+  {
+    // MaiaCity V1 (Samuel, 2026-10-13): the simplest game of the city, two players, two COOPs, one pool
+    // (game/maiacity-v1/engine.js). One row per game, the whole game as it last stood; the server advances it.
+    id: "0046-maiacity-v1",
+    sql: `
+      CREATE TABLE v1_games (
+        id      TEXT PRIMARY KEY,
+        state   JSONB NOT NULL,
+        created TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];

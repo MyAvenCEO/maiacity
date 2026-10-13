@@ -52,6 +52,11 @@ export const WORLDS: Place[] = withVersions([
 	{ href: `${base}/app/worlds/backyard/`, label: 'The backyard', icon: 'play', release: 'draft', note: 'Munich · the courtyard, the pergola terrace, the garden corner' }
 ]);
 
+// MaiaCity itself, as games of its own, apart from the sandboxes: two players, HEARTS, COOPs and their MINDs
+export const CITY: Place[] = [
+	{ href: `${base}/app/maiacity-v1/`, label: 'MaiaCity V1', icon: 'coops', note: 'Two players, two COOPs, one hex, one tent, one pool' }
+];
+
 export const READ: Place[] = [
 	{ href: `${base}/blog/`, label: 'Journal', icon: 'journal', note: 'Day by day' },
 	{ href: `${base}/blog/inspire-me/`, label: 'Inspire me', icon: 'spark', note: 'Ideas we learn from' }
@@ -106,6 +111,8 @@ export function placeOf(path: string): string {
 	if (rel.startsWith('/app/biomes/')) return 'Biomes';
 	if (rel.startsWith('/app/skills/')) return 'Skills';
 	if (rel.startsWith('/app/avendb/')) return 'avenDB';
+	const city = CITY.find((p) => path.startsWith(p.href));
+	if (city) return city.label;
 	const app = APPS.find((p) => path.startsWith(p.href));
 	if (app) return app.label;
 	return ADMIN.find((p) => path.startsWith(p.href))?.label ?? '';
