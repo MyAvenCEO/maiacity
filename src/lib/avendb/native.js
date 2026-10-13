@@ -1,7 +1,7 @@
 // avenDB's device in the Mac app, maiaCITY Studio: run natively beside the app as its sidecar (avendb/crates/
 // avendb-device, vault/app/src/avendb.rs), not in this page's WebAssembly. Its node reaches the person's other devices
-// directly, over UDP sockets of its own, and keeps their vault in a folder on the Mac, not in IndexedDB; it runs on
-// while the app does, whichever page is open. Each ceremony of the person's passkey it asks for runs in the app's
+// directly, over UDP sockets of its own, and keeps their vault in a folder on the Mac, not in the page's store; it runs
+// on while the app does, whichever page is open. Each ceremony of the person's passkey it asks for runs in the app's
 // sign-in sheet, which the app shows for it: the page sees none of it. `NativeDevice` answers the page as the page's
 // own device does (avendb-browser's `PageDevice`), each call one of the app's.
 

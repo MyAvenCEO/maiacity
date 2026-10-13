@@ -1,8 +1,8 @@
 <!--
 	Your account (P8e, P8f): the person's own avenDB. Their account is their human vault: its root is their passkey,
 	which stays in the browser's authenticator and is the vault's only recovery, and this browser is one of its devices,
-	its keys unmasked by the passkey at every unlock, what it holds kept in IndexedDB so that it opens again in one
-	ceremony. Every device of the vault shows by the name on its card, an entry of the vault the device writes itself,
+	its keys unmasked by the passkey at every unlock, what it holds kept in the browser's private file system (OPFS) so
+	that it opens again in one ceremony. Every device of the vault shows by the name on its card, an entry of the vault the device writes itself,
 	end-to-end encrypted like its notes (avendb-browser's `Device::card`), and every vault by the name on its profile,
 	an entry this browser writes into it (`Device::profile`): the person's own by their maiaCITY name, avenCEO's as
 	avenCEO. In the Mac app the device runs natively beside the app ($lib/avendb/native.js): its node on UDP sockets of
@@ -38,8 +38,8 @@
 	let avendb = null;
 	/** @type {any} in the Mac app, its device beside it ($lib/avendb/native.js): null where the page runs the device */
 	let mac = null;
-	/** in the Mac app: whether the device a page there made before, in IndexedDB, moves into the app's folder as it
-	 *  unlocks */
+	/** in the Mac app: whether the device a page there made before, in the page's store, moves into the app's folder as
+	 *  it unlocks */
 	let moving = $state(false);
 	/** @type {any} */
 	let stores = null;
@@ -47,7 +47,8 @@
 	let store = null;
 	/** @type {any} */
 	let device = $state(null);
-	/** @type {any} what opens this browser's device again: kept as a plain object, as IndexedDB can't clone a proxy */
+	/** @type {any} what opens this browser's device again: kept as a plain object, as the store's worker can't be handed
+	 *  a proxy */
 	let meta = $state.raw(null);
 	/** @type {'loading' | 'new' | 'closed' | 'open'} */
 	let phase = $state('loading');

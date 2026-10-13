@@ -2,7 +2,8 @@
 # avenDB's device in Chromium (P8d, P8e): builds avendb-browser for the browser (with SIMD, see .cargo/config.toml) into
 # target/avendb-browser-pkg/, with passkeys of localhost, then runs its page test (crates/avendb-browser/tests/page.rs),
 # which serves the page, starts a relay and the server on this machine, and drives a headless Chromium whose virtual
-# authenticator holds Eve's passkey: her browsers found her vault, link and open again from IndexedDB.
+# authenticator holds Eve's passkey: her browsers found her vault, link and open again from OPFS, moving a store
+# IndexedDB kept over first.
 #
 #   avendb/scripts/test-browser.sh
 #

@@ -3,13 +3,15 @@
  * them share the tab's virtual authenticator, which holds the person's passkey. The query says who the device is and
  * what it does. With `server`, it makes the passkey and founds its person's vault, claiming the server if nobody has
  * yet, then writes a note; with `offer`, it
- * links through that code; if its store (`store`, in IndexedDB) holds a device already, it opens that one again. Then
- * it waits to read `reads` in block 2 of the note, writes `write` there, and waits to read `then`; once done, with
- * `close`, it saves and closes. Each step is reported to the test, with the passkey's ceremonies so far.
+ * links through that code; if its store (`store`, in OPFS) holds a device already, it opens that one again. Then it
+ * waits to read `reads` in block 2 of the note, writes `write` there, and waits to read `then`; once done, with
+ * `close`, it saves and closes. Each step is reported to the test, with the passkey's ceremonies so far. With `legacy`,
+ * it puts the store back where pages kept it before B2b, in IndexedDB, for the next page to move over; with `twice`,
+ * it tries to load a store another page's device runs from.
  */
 import init, * as avendb from '/pkg/avendb_browser.js';
 import { ceremonies, create } from '/js/passkey.js';
-import { open } from '/js/store.js';
+import { open, remove } from '/js/store.js';
 
 const q = new URLSearchParams(location.search);
 
@@ -67,10 +69,47 @@ function counted(passkey) {
 	};
 }
 
+/** A request to IndexedDB, as a promise. */
+const request = (r) =>
+	new Promise((resolve, reject) => {
+		r.onsuccess = () => resolve(r.result);
+		r.onerror = () => reject(r.error);
+	});
+
+/**
+ * Puts the store named `name` back in IndexedDB as pages kept it before B2b (`meta`, `ops` and `keys`), and takes it
+ * out of OPFS: the next page to open it moves it over again. What it put there, counted.
+ */
+async function legacy(name) {
+	const store = await open(name);
+	const [meta, kept] = [await store.meta(), await store.load()];
+	await store.close();
+	const stores = ['meta', 'ops', 'keys'];
+	const opening = indexedDB.open(name, 1);
+	opening.onupgradeneeded = () => stores.forEach((s) => opening.result.createObjectStore(s));
+	const db = await request(opening);
+	const tx = db.transaction(stores, 'readwrite');
+	tx.objectStore('meta').put(meta, 'device');
+	kept.edits.forEach((edit, i) => tx.objectStore('ops').put(edit, i));
+	kept.ids.forEach((id, i) => tx.objectStore('keys').put(kept.keys[i], id));
+	await new Promise((resolve, reject) => {
+		tx.oncomplete = resolve;
+		tx.onerror = tx.onabort = () => reject(tx.error);
+	});
+	db.close();
+	await remove(name);
+	return { edits: kept.edits.length, keys: kept.ids.length };
+}
+
 async function main() {
+	if (q.get('legacy')) return report('legacy', await legacy(q.get('store')));
 	await init();
 	const store = await open(q.get('store'));
 	const meta = await store.meta();
+	if (q.get('twice')) {
+		const refused = await store.load().then(() => null, (e) => e.message);
+		return report('twice', { refused });
+	}
 	const start = performance.now();
 	let device, passkey, note;
 	if (meta) {
@@ -110,6 +149,7 @@ async function main() {
 	const [vault, ceremonies_] = [await device.vault(), passkey.count()];
 	const [edits, keys] = await device.size();
 	const found = { ms, vault, edits, keys, ceremonies: ceremonies_, offer: device.offer(), endpoint: device.endpoint() };
+	found.indexed = (await indexedDB.databases()).map((d) => d.name);
 	await report(meta ? 'opened' : 'started', { ...found, ...note });
 	if (q.get('reads')) {
 		trace('reading');

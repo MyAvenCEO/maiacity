@@ -1,103 +1,133 @@
-// avenDB's device store in the browser (P8e): what a page's device holds, kept in IndexedDB as a node keeps it on
-// disk. `ops` holds its signed edits, each as its bytes on the wire, under its place in the order the device took them;
-// `keys` its McEliece keys, each under its id; `meta` what opens the device again: its name, its salt's own bytes, its
-// passkey's credential and P-256 key, and the relay. No secret is kept: the device's keys derive from its passkey at
-// every unlock, and it opens the rest again from its edits.
+// avenDB's device store in the browser (P8e, B2b): what a page's device holds, kept in the origin private file system
+// (OPFS) as a node keeps it on disk, by a worker of its own (`store.worker.js`), where OPFS has its fast synchronous
+// files: its signed edits in the order it took them, its McEliece keys, and what opens the device again (its name, its
+// salt's own bytes, its passkey's credential and P-256 key, and the relay). No secret is kept: the device's keys derive
+// from its passkey at every unlock, and it opens the rest again from its edits. OPFS is the one place the page keeps
+// any of it: a store IndexedDB kept, as pages did before, moves over the first time it opens, and is deleted.
 
-// the store of edits keeps the name it had when an edit was called an op, so every browser's store opens as it is
-const EDITS = 'ops';
-const STORES = ['meta', EDITS, 'keys'];
+/** The stores closing, by name: one is removed only once its worker let go of it. */
+const closing = new Map();
 
-function request(r) {
-	return new Promise((resolve, reject) => {
-		r.onsuccess = () => resolve(r.result);
-		r.onerror = () => reject(r.error);
-	});
-}
-
-function done(tx) {
-	return new Promise((resolve, reject) => {
-		tx.oncomplete = () => resolve();
-		tx.onerror = tx.onabort = () => reject(tx.error);
-	});
-}
+/** A worker of its own for a store. */
+const worker = () => new Worker(new URL('./store.worker.js', import.meta.url), { type: 'module' });
 
 /** Opens the store named `name` (one per device of the page). */
 export async function open(name = 'avendb') {
-	const r = indexedDB.open(name, 1);
-	r.onupgradeneeded = () => STORES.forEach((s) => r.result.createObjectStore(s));
-	return new Store(await request(r));
+	// asks the browser to keep what the origin stores should it run short of space, without waiting for the answer,
+	// which a browser may ask its person for
+	navigator.storage?.persist?.().catch(() => {});
+	const store = new Store(name, worker());
+	await store.call('open', [name]);
+	return store;
 }
 
 export class Store {
-	constructor(db) {
-		this.db = db;
+	constructor(name, worker) {
+		this.name = name;
+		this.worker = worker;
+		this.calls = new Map();
+		this.next = 0;
 		this.written = 0;
 		this.keys = new Set();
+		worker.onmessage = ({ data }) => {
+			const call = this.calls.get(data.id);
+			this.calls.delete(data.id);
+			if ('error' in data) call?.reject(new Error(data.error));
+			else call?.resolve(data.ok);
+		};
+		worker.onerror = (e) => this.fail(`the store's worker failed: ${e.message}`);
+	}
+
+	/** Every call still waiting fails with `why`. */
+	fail(why) {
+		this.calls.forEach((call) => call.reject(new Error(why)));
+		this.calls.clear();
+	}
+
+	/** Runs `op` in the worker, handing it what `moved` holds. */
+	call(op, args = [], moved = []) {
+		const id = this.next++;
+		return new Promise((resolve, reject) => {
+			this.calls.set(id, { resolve, reject });
+			this.worker.postMessage({ id, op, args }, moved);
+		});
 	}
 
 	/** What opens the device again, or `undefined` if the store holds no device yet. */
 	meta() {
-		return request(this.db.transaction('meta').objectStore('meta').get('device'));
+		return this.call('meta');
 	}
 
-	async setMeta(meta) {
-		const tx = this.db.transaction('meta', 'readwrite');
-		tx.objectStore('meta').put(meta, 'device');
-		await done(tx);
-	}
-
-	/** What the store kept: `{edits, keys}`, each a list of bytes, the edits in order. */
-	async load() {
-		const tx = this.db.transaction([EDITS, 'keys']);
-		const [edits, ids, keys] = await Promise.all([
-			request(tx.objectStore(EDITS).getAll()),
-			request(tx.objectStore('keys').getAllKeys()),
-			request(tx.objectStore('keys').getAll())
-		]);
-		this.written = edits.length;
-		this.keys = new Set(ids);
-		return { edits, keys };
+	setMeta(meta) {
+		return this.call('setMeta', [meta]);
 	}
 
 	/**
-	 * Saves what `device` took since the last save, its new edits and McEliece keys, in one transaction; if it holds
-	 * fewer edits than the store, as some failed their checks as it opened, the store's edits are written anew. True
-	 * if there was anything new.
+	 * What the store kept: `{edits, keys}`, each a list of bytes, the edits in order. From now on the store holds its
+	 * edits for this page alone, until the device closes: the same device can't run in two tabs.
+	 */
+	async load() {
+		const kept = await this.call('load');
+		this.written = kept.edits.length;
+		this.keys = new Set(kept.ids);
+		return kept;
+	}
+
+	/**
+	 * Saves what `device` took since the last save, its new edits and McEliece keys; if it holds fewer edits than the
+	 * store, as some failed their checks as it opened, the store's edits are written anew. A key the store kept that
+	 * the device doesn't hold, one a crash cut short, is dropped. True if there was anything new.
 	 */
 	async save(device) {
 		let edits = await device.edits(this.written);
 		const rewrite = edits === undefined;
 		if (rewrite) edits = await device.edits(0);
-		const ids = (await device.keyIds()).filter((id) => !this.keys.has(id));
+		const held = await device.keyIds();
+		const ids = held.filter((id) => !this.keys.has(id));
+		const drop = [...this.keys].filter((id) => !held.includes(id));
 		const keys = await Promise.all(ids.map((id) => device.key(id)));
-		if (!rewrite && !edits.length && !ids.length) return false;
+		const fresh = ids.flatMap((id, i) => (keys[i] ? [[id, keys[i]]] : []));
+		if (!rewrite && !edits.length && !fresh.length && !drop.length) return false;
 		const from = rewrite ? 0 : this.written;
-		const tx = this.db.transaction([EDITS, 'keys'], 'readwrite');
-		const store = tx.objectStore(EDITS);
-		if (rewrite) store.clear();
-		edits.forEach((edit, i) => store.put(edit, from + i));
-		ids.forEach((id, i) => keys[i] && tx.objectStore('keys').put(keys[i], id));
-		await done(tx);
+		await this.call('save', [{ from, edits, keys: fresh, drop }]);
 		this.written = from + edits.length;
-		ids.forEach((id, i) => keys[i] && this.keys.add(id));
+		fresh.forEach(([id]) => this.keys.add(id));
+		drop.forEach((id) => this.keys.delete(id));
 		return true;
 	}
 
-	/** Saves what `device` holds now and after each change, until it closes. */
+	/** Saves what `device` holds now and after each change, until it closes; then lets go of its edits. */
 	async follow(device) {
-		for (;;) {
-			await this.save(device);
-			if (!(await device.changed(this.written, this.keys.size))) return;
+		try {
+			for (;;) {
+				await this.save(device);
+				if (!(await device.changed(this.written, this.keys.size))) return;
+			}
+		} finally {
+			await this.call('release').catch(() => {});
 		}
 	}
 
+	/** Lets go of the store, and stops its worker. */
 	close() {
-		this.db.close();
+		const closed = this.call('close')
+			.catch(() => {})
+			.finally(() => {
+				this.worker.terminate();
+				this.fail('the store is closed');
+			});
+		closing.set(this.name, closed);
+		return closed;
 	}
 }
 
 /** Removes the store named `name`, and with it the device the page made. */
-export function remove(name = 'avendb') {
-	return request(indexedDB.deleteDatabase(name));
+export async function remove(name = 'avendb') {
+	await closing.get(name);
+	const store = new Store(name, worker());
+	try {
+		await store.call('remove', [name]);
+	} finally {
+		store.worker.terminate();
+	}
 }

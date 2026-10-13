@@ -2,7 +2,7 @@
 //! the app, as its sidecar. Its node binds UDP sockets of its own on every interface and maps a port on the router
 //! where one lets it, so it reaches its peers directly and through the relay only where it must
 //! (`avendb_net::Options::direct`); its TLS is aws-lc-rs, X25519MLKEM768 only; and it keeps what it holds in a folder
-//! on disk (`avendb_net::Disk`), not in the web view's IndexedDB.
+//! on disk (`avendb_net::Disk`), not in the web view's store.
 //!
 //! The app (vault/app/src/avendb.rs) starts it with the folder it keeps its account in and talks to it in lines of
 //! JSON on its stdin and stdout, for the app's avenDB page (src/lib/avendb/native.js):
@@ -24,8 +24,8 @@
 //! its salt's own bytes, its secret masked by the PRF output on its salt, which only its passkey computes again, and
 //! its passkey's credential and P-256 key), as the page keeps them; its keys come back at every unlock. A device made
 //! before 2026-10-10 keeps no mask: the PRF output on its salt is its secret. The device the page made before moves
-//! here as it opens (`adopt`): the store the page read from IndexedDB becomes the folder's. A store that no device
-//! opens any more is put aside in the folder, never deleted.
+//! here as it opens (`adopt`): the store the page read (from OPFS, or IndexedDB before B2b) becomes the folder's. A
+//! store that no device opens any more is put aside in the folder, never deleted.
 
 use std::collections::HashMap;
 use std::fs;
