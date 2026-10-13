@@ -257,7 +257,11 @@ export function powerCubeParts(kit, { at, base, joints, assembly, step, prefix =
 }
 
 /** the Power Cube Electric's own parts, where the hydraulics were: all figures inferred (no OSE design exists) */
-// @ts-ignore — the closures of powerCubeParts, passed in
+/** @typedef {(geo: THREE.BufferGeometry, color: string, mat?: number) => void} Put */
+/**
+ * @param {(g: Group, info: any, joint: string, make: (put: Put) => void) => void} part
+ * @param {{ box: (...a: number[]) => THREE.BufferGeometry, cyl: (a: MM, b: MM, r: number, seg?: number, r1?: number) => THREE.BufferGeometry, hose: (pts: MM[], r?: number) => THREE.BufferGeometry, T: (g: THREE.BufferGeometry) => THREE.BufferGeometry, Lh: number, B: number, joints: { flywheel: string, coupling: string, fan: string }, base: string }} o
+ */
 function electrics(part, { box, cyl, hose, T, Lh, B, joints, base }) {
 	const AX0 = CPL - 50, AX1 = -Lh + 40; // the alternator's length along the shaft, from its flange to its end bell
 	const SRC_E = 'Power Cube Electric (our variant)';
