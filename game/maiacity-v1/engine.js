@@ -48,6 +48,16 @@ export const COOPS = {
 	tribe: { name: 'Tribe COOP', mind: 'TRIBE', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
 	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The ElectroCube', kind: 'Generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'The BatteryCube', kind: 'Storage' }] }
 };
+/** the seedlings at the village shed, one for each newcomer to take home and plant as their first tree (Samuel
+ *  2026-10-13): food-bearing trees and bushes that grow outdoors in a central European climate, from the Plants
+ *  ($lib/plants: the page grows them from their stages) */
+export const SEEDLINGS = [
+	{ id: 'apple', label: 'Apple', fruit: 'apples' },
+	{ id: 'pear', label: 'Pear', fruit: 'pears' },
+	{ id: 'cherry', label: 'Sweet cherry', fruit: 'cherries' },
+	{ id: 'hazel', label: 'Hazel', fruit: 'hazelnuts' },
+	{ id: 'blackcurrant', label: 'Blackcurrant', fruit: 'blackcurrants' }
+];
 const MAX_LEDGER = 3000;
 const DUST = 1e-9;
 /** an amount asked for may exceed what is held by this much (the melt between a look and a click): it takes all */
@@ -547,6 +557,9 @@ function settle(s, mip, now) {
  *   invest { coop, amount }      HEARTS into a COOP
  *   swap { token, to, amount }   a MIND through the pool for another
  *   name { name }                the player's name
+ *   seedling { plant }           pick a seedling at the village shed (one of SEEDLINGS), until it is planted
+ *   plant { v }                  plant it: the player's first tree, named after them, growing from now on the game
+ *                                clock (v: the plant's version in $lib/plants as the page grew it)
  *   propose { mip }              a MIP: title, description, settings, coops, payouts and screens (views, removeViews; a view's
  *                                data.slot is 'panel' for a tab of its own or a panel it stands in: game/maiacity-v1/views.js
  *                                SLOTS); the proposer signs it (not
@@ -605,6 +618,19 @@ export function act(state, seat, action, now = Date.now()) {
 			const name = String(action.name ?? '').trim().slice(0, 40);
 			if (!name) throw new GameError('Give a name.');
 			p.name = name;
+			break;
+		}
+		case 'seedling': {
+			if (p.tree) throw new GameError('Your first tree is already planted.');
+			if (!SEEDLINGS.some((x) => x.id === action.plant)) throw new GameError('No such seedling at the shed.');
+			p.seedling = action.plant;
+			break;
+		}
+		case 'plant': {
+			if (p.tree) throw new GameError('Your first tree is already planted.');
+			if (!p.seedling) throw new GameError('Pick a seedling at the village shed first.');
+			const v = Math.floor(Number(action.v));
+			p.tree = { plant: p.seedling, v: v > 0 ? v : null, name: p.name, at: now, months: monthsAt(s, now) };
 			break;
 		}
 		case 'propose': {

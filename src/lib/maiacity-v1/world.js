@@ -23,6 +23,9 @@ import { human, skinAt } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_EYES, ME_SEAT, packedVan } from './van.js';
+import { startStage } from './trees.js';
+import { plantAt } from '$lib/plants/index.js';
+import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
 import { maiaCentre, oldShed, travelVan } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 
@@ -80,6 +83,16 @@ const STORE = { x: VX + 2, z: VZ - 13 };
 const CUBE_IN_SHED = V(STORE.x + 0.6, 0.1, STORE.z - 0.4);
 const BATT_AT = V(STORE.x + 3.4, 0, STORE.z + 0.6);
 const PANEL_AT = V(STORE.x + 6, 0, STORE.z - 1.2);
+/** the bench of seedlings beside the shed's door, its pots in a row along it (+x), facing the track */
+const BENCH = V(STORE.x - 4.4, 0, STORE.z + 3.2);
+/** where each player plants their first tree at home, off the tent and the players' places */
+const TREE_AT = { A: V(-6.5, 0, -3.5), B: V(7, 0, 9.5) };
+/** a tree spot's own frame (x across, y up, z on toward the tent at the hex's middle): a shot from behind it (-z) has
+ *  the tent beyond the tree */
+const spotAt = (S) => {
+	const f = V(-S.x, 0, -S.z).normalize(), r = V(f.z, 0, -f.x);
+	return (x, y, z) => S.clone().addScaledVector(r, x).add(V(0, y, 0)).addScaledVector(f, z);
+};
 /** our tribe: the tent at the middle, the pickup's round lot, a little yard for the powercube once it is home */
 const LOT = { x: -16, z: 10, r: 5 }; // room to turn a 5.4 m pickup
 const YARD = { x: 12, z: -4, r: 3 };
@@ -357,6 +370,7 @@ const PANEL_ON_BED = V(0, 1.16, -2.55);
 /** the two 20-litre jerrycans of petrol for the ElectroCube (its engine runs on petrol): in the bed behind
  *  the cube, the tent strapped over them */
 const FUEL_ON_BED = [V(-0.55, 1.16, -1.95), V(0.55, 1.16, -1.95)];
+const POT_ON_BED = V(0.6, 1.16, -0.86); // the seedling in its pot, in the bed's front corner by the cab
 
 /** a 20-litre jerrycan: 0.47 m high, 0.35 m long, 0.17 m wide, its handles and spout on top */
 function jerrycan() {
@@ -505,6 +519,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	controls.target.set(2, 1, 3);
 	controls.enableDamping = true;
 	controls.minDistance = 12;
+	/** how close the orbit may come at a place: 12 m, or nearer where the place is seen close */
+	const nearest = (offset) => Math.min(12, offset.length() * 0.8);
 	controls.maxDistance = 2700; // far enough out to see the whole city plot
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotateSpeed = 0.25;
@@ -594,7 +610,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** where things stand at this point of the story: at ('arrive', 'stop', 'village', 'home'), the powercube
 	 *  ('shed', 'bed', 'home'), whose seat this is (me), the other seat if anyone has it, and whether the other
 	 *  rides along (they came to fetch me) */
-	let stage = { at: 'home', cube: 'home', tent: 'up', battery: 'store', me: 'A', other: 'B', rides: false };
+	let stage = { at: 'home', cube: 'home', tent: 'up', battery: 'store', me: 'A', other: 'B', rides: false, pot: 'bench', pick: '' };
 	let busy = false; // an intro, a drive or a load is playing
 	function set(next) {
 		stage = { ...stage, ...next };
@@ -612,6 +628,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		placeCube(stage.cube);
 		placeTent(stage.tent);
 		placeBattery(stage.battery);
+		placePots(stage.pot, stage.pick);
 		placeFuel(stage.cube === 'home' ? 'home' : at === 'van' || at === 'arrive' || (at === 'stop' && !fetched) ? 'station' : 'bed');
 		for (const s of ['A', 'B']) {
 			const p = people[s];
@@ -756,6 +773,86 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 	}	/** the BatteryCube and the solar panel (where): beside the village's shed, in the pickup's bed (the cube where the
 	 *  ElectroCube rides, the panel on its rack lying over the tailgate), or set up at home beside the tent */
+	// the seedlings at the shed (Samuel 2026-10-13): a plank bench on trestles, and on it one terracotta pot of each
+	// of the five, a seedling a few centimetres high in each, grown by the Plants; the one a player picks rides home
+	// in the pickup's bed, waits beside the tent, and is planted as their first tree
+	const bench = new THREE.Group();
+	bench.position.copy(BENCH);
+	{
+		const wood = mat(0x8a6a48), legs = mat(0x6b5038);
+		const top = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.05, 0.5), wood);
+		top.position.y = 0.76;
+		bench.add(top);
+		for (const x of [-0.9, 0.9]) for (const z of [-0.2, 0.2]) {
+			const l = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.74, 0.05), legs);
+			l.position.set(x, 0.37, z);
+			bench.add(l);
+		}
+		bench.traverse((o) => o.isMesh && (o.castShadow = o.receiveShadow = true));
+	}
+	world.add(named(bench, 'asset:seedlings'));
+	const clay = mat(0xb5653d), soil = mat(0x3b2a1e);
+	const pots = Object.fromEntries(
+		SEEDLINGS.map((x, i) => {
+			const g = new THREE.Group();
+			const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.048, 0.11, 18), clay);
+			pot.position.y = 0.055;
+			const dirt = new THREE.Mesh(new THREE.CircleGeometry(0.06, 18).rotateX(-Math.PI / 2), soil);
+			dirt.position.y = 0.1;
+			g.add(pot, dirt);
+			g.userData = { pot, dirt, at: V(-0.72 + i * 0.36, 0.785, 0.02), plant: null };
+			named(g, `asset:seedling:${x.id}`);
+			return [x.id, g];
+		})
+	);
+	/** each pot's seedling, grown the first time it shows (the Plants grow it a few centimetres high) */
+	const sprout = (id) => {
+		const g = pots[id];
+		if (g.userData.plant) return;
+		const p = plantAt(id);
+		const plant = p.grow(startStage(id, 'shed'), 'shed');
+		plant.position.y = 0.1;
+		plant.traverse((o) => o.isMesh && ((o.castShadow = true), (o.name = `asset:seedling:${id}`)));
+		g.add(plant);
+		g.userData.plant = plant;
+	};
+	/** the pots: all on the bench, or the one picked in the pickup's bed, beside the tent, or planted (gone) */
+	function placePots(where = 'bench', pick = '') {
+		for (const [id, g] of Object.entries(pots)) {
+			if (g.parent !== world && g.parent) g.parent.remove(g);
+			const mine = id === pick && where !== 'bench';
+			g.userData.pot.visible = g.userData.dirt.visible = true;
+			if (g.userData.plant) g.userData.plant.position.y = 0.1;
+			g.rotation.set(0, 0, 0);
+			if (!mine) (bench.add(g), g.position.copy(g.userData.at));
+			else if (where === 'bed') (truck.add(g), g.position.copy(POT_ON_BED));
+			else if (where === 'home') (world.add(g), g.position.copy(spotAt(TREE_AT[stage.me])(0.3, 0, -0.25)));
+			g.visible = !mine || where !== 'planted';
+			if (g.visible && (bench.visible || mine)) sprout(id);
+		}
+	}
+
+	// the first trees at home, each named after the player who planted it, as they stand on the game clock now
+	const trees = {};
+	/** the players' trees (list: { seat, plant, seed, stage, label, now, name }), regrown when a stage moves on */
+	function setTrees(list = []) {
+		for (const seat of ['A', 'B']) {
+			const t = list.find((x) => x.seat === seat);
+			const had = trees[seat];
+			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(2)}` : '';
+			if (had?.userData.key === key) continue;
+			if (had) (world.remove(had), had.traverse((o) => o.geometry?.dispose?.()), delete trees[seat]);
+			if (!t) continue;
+			const g = t.plant.grow(t.stage, t.seed);
+			g.position.copy(TREE_AT[seat]);
+			g.traverse((o) => o.isMesh && ((o.castShadow = true), (o.name = `tree:${seat}`)));
+			const top = new THREE.Box3().setFromObject(g).max.y;
+			g.userData = { key, top: Math.max(0.4, top + 0.35) };
+			world.add(g);
+			trees[seat] = g;
+		}
+	}
+
 	function placeBattery(where) {
 		cables.visible = where === 'home';
 		for (const o of [battery, solar]) if (o.parent !== world) world.attach(o);
@@ -777,8 +874,45 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		centre: { target: V(STOP.x + 6, 2, STOP.z + 1), offset: V(-34, 26, -50) },
 		city: { target: V(CX + 120 * K, 0, CZ + 80 * K), offset: V(620 * K, 900 * K, 860 * K) },
 		village: { target: V(STORE.x, 2, VZ - 6), offset: V(52, 38, 58) },
-		tribe: { target: V(2, 1, 3), offset: V(30, 22, 40) }
+		tribe: { target: V(2, 1, 3), offset: V(30, 22, 40) },
+		// close on the seedlings' bench, the player standing at it; each player's spot for their first tree beside the
+		// tent, the seedling waiting in its pot; and the tree in the ground (its shots: one a line, in order)
+		bench: { target: V(BENCH.x, 0.85, BENCH.z), offset: V(1.6, 1.1, 2.6), stand: V(BENCH.x + 0.25, 0, BENCH.z + 0.62), face: Math.PI, shots: benchShots() },
+		...Object.fromEntries(['A', 'B'].flatMap((s) => {
+			const L = spotAt(TREE_AT[s]), stand = L(-0.95, 0, 0.55), target = TREE_AT[s].clone().setY(0.25);
+			const face = Math.atan2(TREE_AT[s].x - stand.x, TREE_AT[s].z - stand.z);
+			return [
+				[`plot${s}`, { target, offset: L(0.7, 1.3, -2.2).sub(target), shots: plotShots(L) }],
+				[`tree${s}`, { target, offset: L(0.6, 1.1, -1.9).sub(target), stand, face, shots: treeShots(L) }]
+			];
+		}))
 	};
+	/** the shots at the bench: close along the five pots; from the side at the player reaching for them; across the
+	 *  bench at the player's face looking down at them; along the row once more, slower */
+	function benchShots() {
+		const B = BENCH, at = (x, y, z) => V(B.x + x, y, B.z + z);
+		return [
+			(k) => [at(-0.9 + 0.5 * k, 1.12, 0.62), at(-0.35 + 0.5 * k, 0.82, 0)],
+			(k) => [at(1.55 - 0.1 * k, 1.85 - 0.1 * k, 1.0), at(-0.15, 0.82, 0)],
+			(k) => [at(0.05 + 0.1 * k, 1.25, -0.85), at(0.25, 1.45, 0.62)],
+			(k) => [at(0.95 - 1.7 * k, 0.98, 0.5), at(0.75 - 1.6 * k, 0.8, 0)]
+		];
+	}
+	/** before planting (L: the spot's own frame, the tent ahead): the seedling waiting in its pot with the tent behind
+	 *  it, then close on it */
+	function plotShots(L) {
+		return [(k) => [L(0.9 - 0.2 * k, 1.2 - 0.3 * k, -2.6 + 0.5 * k), L(0.1, 0.25, 0.8)], (k) => [L(0.62 - 0.05 * k, 0.3, -0.75 + 0.1 * k), L(0.3, 0.07, -0.25)]];
+	}
+	/** the tree in the ground: close at its leaves; with the player standing beside it; rising over it to the tent
+	 *  and the hex; and close once more */
+	function treeShots(L) {
+		return [
+			(k) => [L(-0.32 + 0.06 * k, 0.26 - 0.04 * k, -0.5 + 0.06 * k), L(0, 0.03, 0)],
+			(k) => [L(1.2 - 0.1 * k, 1.3, -2.9 + 0.2 * k), L(-0.45, 0.85, 0.3)],
+			(k) => [L(1.3 + 0.5 * ease(k), 1.3 + 3.7 * ease(k), -3.2 - 2.3 * ease(k)), L(-0.4 + 0.4 * ease(k), 0.5 + 0.2 * ease(k), 0.25 + 1.25 * ease(k))],
+			(k) => [L(-0.48 + 0.12 * k, 0.3, -0.36), L(0, 0.03, 0)]
+		];
+	}
 	let placeNow = '';
 	let placed = false; // the first place is taken at once, without easing
 	let tourOn = false;
@@ -791,11 +925,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (busy || riding) return; // taken up when the moment ends
 		if (!placed) (placed = true), (now = true);
 		const offset = p.offset.clone().multiplyScalar(camera.aspect < 0.8 ? 1.65 : 1);
+		controls.minDistance = Math.min(controls.minDistance, nearest(offset)); // the seedlings and the trees are seen close
 		goal = { target: p.target.clone(), offset };
 		drift = true;
 		if (now) {
 			controls.target.copy(goal.target);
 			camera.position.copy(goal.target).add(offset);
+			controls.minDistance = nearest(offset);
 			goal = null;
 		}
 	}
@@ -1449,6 +1585,50 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			{ dur: 0.3, start: () => ((stage.battery = 'home'), placeBattery('home'), act(me, 'idle')) }
 		], lines));
 	}
+	/** planting the first tree (Samuel 2026-10-13): the player kneels at its place beside the tent with the seedling's
+	 *  pot, takes it out and sets it in the ground, firms the soil, and stands up to look at it */
+	function plant() {
+		const me = people[stage.me];
+		const pot = pots[stage.pick];
+		const spot = TREE_AT[stage.me];
+		if (!pot || !me) return Promise.resolve();
+		// low and close from the side, the tent beyond: the player kneels beside the spot, the pot set down by the knee,
+		// the seedling out of it and into the ground; then the camera draws back as they stand up beside it
+		const L = spotAt(spot);
+		const kneel = L(-0.42, 0, 0.12), stand = L(-0.95, 0, 0.55);
+		const face = Math.atan2(spot.x - kneel.x, spot.z - kneel.z);
+		const lens = () => {
+			camera.near = 0.1;
+			camera.fov = camera.aspect < 0.8 ? 64 : 46;
+			camera.updateProjectionMatrix();
+		};
+		return play([
+			beat(2.6, (sec, k) => {
+				camera.position.copy(L(0.95 - 0.08 * k, 0.85 - 0.06 * k, -1.6 + 0.12 * k));
+				camera.lookAt(L(-0.2, 0.6 - 0.08 * k, 0.08));
+				if (k > 0.55 && pot.userData.pot.visible) {
+					pot.userData.pot.visible = pot.userData.dirt.visible = false;
+					pot.position.copy(spot);
+					if (pot.userData.plant) pot.userData.plant.position.y = 0;
+				}
+			}, () => {
+				lensOut();
+				lens();
+				placePots('home', stage.pick);
+				pot.position.copy(L(0.1, 0, -0.2));
+				me.visible = true;
+				me.position.copy(kneel);
+				me.rotation.y = face;
+				act(me, 'kneel');
+			}),
+			beat(2.8, (sec, k) => {
+				const e = ease(k);
+				camera.position.copy(L(0.87 + 0.28 * e, 0.79 + 0.81 * e, -1.48 - 1.12 * e));
+				camera.lookAt(L(-0.2 - 0.18 * e, 0.52 + 0.25 * e, 0.08 + 0.27 * e));
+			}, () => ((stage.pot = 'planted'), act(me, 'idle'), me.position.copy(stand), (me.rotation.y = face))),
+			{ dur: 0.05, start: () => placePots('planted', stage.pick) }
+		]);
+	}
 	/** the player's joy (Samuel 2026-10-13: after the first mint): close on their face in the van, a big smile and
 	 *  sparkling eyes, a few seconds */
 	function joy() {
@@ -1511,6 +1691,23 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// anywhere else: each line a new shot of the place: a crane drifting round it, low on the ground looking up at it,
 		// high over it, and close on the player as they act the line
 		const kinds = name === 'city' ? ['crane', 'high'] : near ? ['crane', 'close', 'low', 'high'] : ['crane', 'low', 'high'];
+		// a place with its own shots (the bench, the tree): each line the next of them, the player where it puts them
+		if (p.shots) {
+			for (let i = 0; i < n; i++) {
+				const at = p.shots[i % p.shots.length];
+				steps.push(beat(3, (sec, k) => {
+					const [eye, look] = at(ease(k));
+					camera.position.copy(eye);
+					camera.lookAt(look);
+				}, () => {
+					camera.near = 0.1; // close, yet deep enough that the grass far off doesn't flicker through
+					camera.fov = camera.aspect < 0.8 ? 60 : 40;
+					camera.updateProjectionMatrix();
+					if (i === 0 && p.stand && me.visible) (me.position.copy(p.stand), (me.rotation.y = p.face ?? 0), act(me, doing ?? 'idle'));
+				}));
+			}
+			return play(told(steps, lines));
+		}
 		for (let i = 0; i < n; i++) {
 			const kind = close && i === 0 ? 'close' : kinds[(i + (close ? 1 : 0)) % kinds.length];
 			const turn = a0 + i * 0.85;
@@ -1621,7 +1818,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				const ease = 1 - Math.exp(-3.7 * step); // the same glide at any frame rate
 				controls.target.lerp(goal.target, ease);
 				camera.position.lerp(at, ease);
-				if (camera.position.distanceTo(at) < 0.5) goal = null;
+				if (camera.position.distanceTo(at) < 0.5) (controls.minDistance = nearest(goal.offset)), (goal = null);
 			}
 			controls.autoRotate = drift && !goal;
 			controls.autoRotateSpeed = tourOn ? 0.45 : 0.25;
@@ -1637,6 +1834,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				const o = people[k];
 				const p = o.localToWorld(V(0, 2.8, 0)).project(camera);
 				out[`player:${k}`] = { x: ((p.x + 1) / 2) * w, y: ((1 - p.y) / 2) * h, on: o.visible && !busy && p.z < 1 };
+				const tree = trees[k];
+				if (tree) {
+					const q = tree.position.clone().setY(tree.userData.top).project(camera);
+					out[`tree:${k}`] = { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h, on: !busy && !riding && q.z < 1 && camera.position.distanceTo(tree.position) < 60 };
+				}
 			}
 			onLabels(out);
 		}
@@ -1652,6 +1854,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		intro,
 		scene: shotAt,
 		joy,
+		plant,
+		trees: setTrees,
 		drive,
 		load,
 		pitch,

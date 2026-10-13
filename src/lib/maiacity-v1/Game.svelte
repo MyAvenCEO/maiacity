@@ -17,6 +17,9 @@
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
 	import { AT_HOME, story } from './tour.js';
+	import { treeNow } from './trees.js';
+	import { plantAt } from '$lib/plants/index.js';
+	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
@@ -64,6 +67,9 @@
 	const decidedMips = $derived(mips.filter((m) => m.status !== 'open').reverse());
 
 	$effect(() => world?.update(view, hour));
+	// the players' first trees as they stand on the game clock now, each named after its planter
+	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree).map((s) => ({ seat: s, name: view.players[s].tree.name, ...treeNow(view, view.players[s].tree, now) })) : []);
+	$effect(() => void world?.trees(trees));
 	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
 	$effect(() => void (view && world?.reveal(tour ? Math.max(0, ...steps.slice(0, tourAt + 1).map((x) => x.reveal ?? 0)) : 2)));
 	// where the story stands in the world: the pickup, the powercube and the players, and what the camera looks at
@@ -73,7 +79,7 @@
 	$effect(() => {
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village' });
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village', pot: where.pot ?? (player?.tree ? 'planted' : 'bench'), pick: player?.tree?.plant ?? player?.seedling ?? '' });
 		world.touring(!!tour);
 		if (where.place) world.focus(where.place);
 	});
@@ -90,6 +96,13 @@
 		if (!world || playing) return;
 		playing = 'joy';
 		world.joy().then(() => (playing = ''));
+	}
+	// planting the first tree: the player kneels and sets the seedling in the ground while the move goes to the game
+	function plantIt() {
+		if (!world || playing || !player?.seedling) return;
+		playing = 'plant';
+		world.plant().then(() => (playing = ''));
+		doMove({ type: 'plant', v: plantAt(player.seedling)?.version });
 	}
 	function skipShot() {
 		caption = null;
@@ -113,7 +126,7 @@
 			const lines = step.lines;
 			const moment = step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
 			moment.then(() => ((playing = ''), mark(step.id)));
-		} else if ((step.kind === 'invest' || step.kind === 'mint') && !told[step.id]) {
+		} else if ((step.kind === 'invest' || step.kind === 'mint' || step.kind === 'pick' || step.kind === 'plant') && !told[step.id]) {
 			playing = 'scene';
 			world.scene(step.place, step).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
 		} else if (step.kind === 'next' || step.kind === 'done') {
@@ -372,7 +385,10 @@
 	{#if view}
 		<!-- the players' names over them in the world: tap one to see them -->
 		{#each Object.entries(labels) as [k, l] (k)}
-			{#if l.on}
+			{#if l.on && k.startsWith('tree:')}
+				{@const t = trees.find((x) => x.seat === k.slice(5))}
+				{#if t}<div class="tag tree" style="left:{l.x}px;top:{l.y}px">{t.name}<small>{t.label} · {t.now}</small></div>{/if}
+			{:else if l.on}
 				<button class="tag" class:me={k === `player:${seat}`} style="left:{l.x}px;top:{l.y}px" onclick={() => ((seat = k.slice(7)), open('you'))}>
 					{view.players[k.slice(7)].name}
 					<small>♥ {f(view.players[k.slice(7)].wallet.HEARTS, 1)}</small>
@@ -430,6 +446,23 @@
 			{/if}
 			<button class="skip link" onclick={skipShot}>Skip</button>
 			<button class="skip link all" onclick={() => (mark('off'), skipShot())}>Skip the story</button>
+		{:else if tour && (tour.kind === 'pick' || tour.kind === 'plant')}
+			<!-- the first tree: pick a seedling at the shed, plant it at home (Samuel 2026-10-13) -->
+			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
+				<b>{tour.title}</b>
+				{#if tour.kind === 'pick'}
+					<div class="picks">
+						{#each SEEDLINGS as x (x.id)}
+							<button disabled={busy} onclick={() => doMove({ type: 'seedling', plant: x.id })}>{x.label}<small>{x.fruit}</small></button>
+						{/each}
+					</div>
+				{/if}
+				<div class="buttons">
+					<button class="link" onclick={() => mark('off')}>Skip the story</button>
+					<span class="grow"></span>
+					{#if tour.kind === 'plant'}<button class="primary" disabled={busy} onclick={plantIt}>Plant it</button>{/if}
+				</div>
+			</div>
 		{:else if tour && (tour.kind === 'invest' || tour.kind === 'mint')}
 			<!-- the story's only stops: a move the player makes, its words already told as the film's voice-over, so only
 			     its title and its button show (Samuel 2026-10-13: as little modal text as possible) -->
@@ -1160,6 +1193,36 @@
 	.tag.me {
 		background: #24452f;
 		color: #f4f1e8;
+	}
+	.tag.tree {
+		background: rgb(244 241 232 / 0.85);
+		color: #2f5a36;
+		pointer-events: none;
+	}
+	.tour .picks {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(6.2rem, 1fr));
+		gap: 0.4rem;
+		margin: 0.35rem 0 0.6rem;
+	}
+	.tour .picks button {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		padding: 0.45rem 0.65rem;
+		border: 1px solid rgb(31 42 35 / 0.15);
+		border-radius: 12px;
+		background: #fff;
+		font-weight: 600;
+		text-align: left;
+	}
+	.tour .picks button:hover:not(:disabled) {
+		border-color: #24452f;
+	}
+	.tour .picks small {
+		font-weight: 400;
+		font-size: 0.68rem;
+		opacity: 0.7;
 	}
 	.card {
 		position: absolute;

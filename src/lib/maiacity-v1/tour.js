@@ -8,7 +8,9 @@
  * drives it; the second is fetched by the first) and along the gravel track to the village's centre hex, where the
  * Village COOP keeps the ElectroCube and the tent in an old shed, the BatteryCube and a solar panel beside it: invest
  * there; the first loads the ElectroCube and the tent and pitches the tent at home, the second loads the BatteryCube
- * and the panel and sets them up beside it. Then the Tribe COOP, the weekly pay day and the melt.
+ * and the panel and sets them up beside it. At the shed each also picks a seedling, a food tree or bush a few
+ * centimetres high, and plants it once home is set up: their first tree, named after them, growing on the game clock
+ * (./trees.js). Then the Tribe COOP, the weekly pay day and the melt.
  *
  * The story plays as a film: each step's words are its voice-over, a line a shot (lines), and in the van each line's
  * shot shows what it says (shots: the woman beside you leaning over, her phone's screen, her face, you; phone: what
@@ -18,7 +20,8 @@
  * (at: where the pickup and the player are, cube: where the powercube is, place: what the camera looks at, reveal:
  * how much of the locked land shows) and, for the moments the world plays (intro, drive, load), what plays.
  */
-import { heartsValue, inHearts } from '../../../game/maiacity-v1/engine.js';
+import { SEEDLINGS, heartsValue, inHearts } from '../../../game/maiacity-v1/engine.js';
+import { milestones } from './trees.js';
 
 const f = (n, d = 0) => Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
@@ -46,10 +49,25 @@ export function story(view, seat, seen) {
 	// the first player fetches the ElectroCube and the tent from the village shed; the second, the BatteryCube and the solar panel
 	// still on the road: the van rolls on, the camera in its back seat, while the idea is told and the first HEARTS minted
 	// the second fetches the Village COOP's BatteryCube and solar panel, and sets them up beside the tent
-	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'van' };
-	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'centre' };
-	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'village' };
-	const home = { at: 'home', cube: 'home', tent: 'up', battery: first ? 'store' : 'home', place: 'tribe' };
+	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'van', pot: 'bench' };
+	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'centre', pot: 'bench' };
+	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'village', pot: 'bench' };
+	// the seedling: on the shed's bench, then in the pickup's bed, waiting beside the tent, and planted
+	const pot = me.tree ? 'planted' : me.seedling ? 'home' : 'bench';
+	const home = { at: 'home', cube: 'home', tent: 'up', battery: first ? 'store' : 'home', place: 'tribe', pot };
+	// loaded at the shed: the first player's ElectroCube and tent in the bed, or the second's BatteryCube and panel
+	const loaded = seen.pitch ? { cube: 'home', tent: 'up', battery: home.battery } : { cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed' };
+	const inBed = me.seedling && !me.tree ? 'bed' : pot;
+	const kind = SEEDLINGS.find((x) => x.id === (me.tree?.plant ?? me.seedling)) ?? SEEDLINGS[0];
+	const grows = milestones(kind.id, me.tree?.name ?? me.name);
+	// a span of game months in words, and how many real days it lasts (a game month lasts hoursPerMonth real hours)
+	const span = (n) => {
+		if (n < 2) return 'a game month';
+		if (n < 13) return `${n} game months`;
+		const y = Math.round((n / 13) * 2) / 2;
+		return y === 1 ? 'a game year' : `about ${f(y, y % 1 ? 1 : 0)} game years`;
+	};
+	const real = (n) => `${f((n * (st.hoursPerMonth ?? 24)) / 24)} real days`;
 	const o = other.founder ? other.name : 'the first settler';
 	const pct = (x) => `${f(x * 100)} %`;
 	// each step's words are its voice-over, one line a shot (lines); the moments the world plays (drive, load, build)
@@ -124,19 +142,34 @@ export function story(view, seat, seen) {
 				'Beside the shed waits the BatteryCube: four BatteryPacks in the same open frame. Up the ramp it goes.',
 				'Then the solar panel on its rack.',
 				'Sun by day, stored for the night: no more petrol for the lights.'),
-		say({ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed' },
+		// a seedling for each newcomer, from the bench beside the shed (Samuel 2026-10-13): five food trees and bushes
+		// that grow outdoors here, a few centimetres high; the player picks one
+		say({ id: 'seedling', chapter: 'The village', title: 'Pick your first tree', kind: 'pick', done: !!(me.seedling || me.tree), ...atStore, ...loaded, place: 'bench' },
+			'Beside the shed stands a bench of seedlings in little clay pots, each a few centimetres high.',
+			'Every newcomer takes one home: the first tree of their own, to plant in their village.',
+			'An apple, a pear, a sweet cherry, a hazel or a blackcurrant. Which one will be yours?'),
+		say({ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed', pot: inBed },
 			'Back in, and on.',
 			'The track bends through the grass to the edge of the village.',
 			'Your hex. Nothing stands here yet.'),
 		...(first
-			? [say({ id: 'pitch', chapter: 'Your home', title: 'Pitch your tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed' },
+			? [say({ id: 'pitch', chapter: 'Your home', title: 'Pitch your tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed', pot: inBed },
 				'You carry the canvas to the middle of the clearing and unroll it.',
 				'Strut by strut, the little dome rises.',
 				'Then the ElectroCube to its yard. It starts, and the light comes on.')]
-			: [say({ id: 'pitch', chapter: 'Your home', title: 'Set up the sun', kind: 'build', what: 'power', done: !!seen.pitch, ...home, battery: 'bed' },
+			: [say({ id: 'pitch', chapter: 'Your home', title: 'Set up the sun', kind: 'build', what: 'power', done: !!seen.pitch, ...home, battery: 'bed', pot: inBed },
 				'Down the ramp comes the BatteryCube, beside the ElectroCube.',
 				'The solar panel goes up, facing the sun.',
 				'One cable, and the tent runs on sunlight. The ElectroCube can rest.')]),
+		// and now the first tree, in the ground beside the tent, named after the player, growing on the game clock
+		say({ id: 'plant', chapter: 'Your home', title: `Plant your ${kind.label.toLowerCase()}`, kind: 'plant', done: !!me.tree, ...home, pot: me.tree ? 'planted' : 'home', place: `plot${seat}` },
+			'Your home stands. Now plant your first tree.',
+			`Your ${kind.label.toLowerCase()} seedling waits beside the tent, in the open grass where it will have room to grow.`),
+		say({ id: 'tree', chapter: 'Your home', title: `${me.tree?.name ?? me.name}, your first tree`, hint: '', ...next('tree'), ...home, place: `tree${seat}` },
+			`Your ${kind.label.toLowerCase()} is in the ground, and it carries your name now: ${me.tree?.name ?? me.name}.`,
+			`It grows on the game's own clock: a sapling in ${span(grows.sapling)}, a young tree in ${span(grows.young)}.`,
+			`Its first ${kind.fruit} come in ${span(grows.fruit)}: ${real(grows.fruit)} from today.`,
+			'Look after it, and one day it feeds the people who come after you.'),
 		say({ id: 'tribe', chapter: 'Your home', title: `The ${c.tribe.name}: your home`, hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home },
 			`${first ? 'Your tent' : `The tent ${o} raised`} belongs to the ${c.tribe.name}, the COOP of this one hex.`,
 			'It rents the land from the city and the machines from the village. You rent your bed from it.',
