@@ -121,6 +121,10 @@ pub const TODO: &str = "todo";
 /// one line of another shows (`Device::variant`), marked with that note's entry in hex.
 pub const VARIANT: &str = "avendb:variant:";
 
+/// The mark a deleted note carries among its document's own tags, inside its record: the page lists it apart, under
+/// Deleted, and taking the mark out brings it back. Its edits stay in the vault's history, as every edit does.
+pub const DELETED: &str = "avendb:deleted";
+
 /// What the ceremony that unlocks a device brings back: the ceremony itself, over a new device's challenge
 /// (`Fresh::challenge`) or one of the page's own, and the PRF output on the device's salt (`sign::device_salt`), which
 /// masks the secret its keys come from (`Fresh::mask`), or, for a device made before 2026-10-10, is that secret.
@@ -782,9 +786,9 @@ pub struct EntryView {
 /// What an entry holds, as a device reads it.
 pub enum What {
     /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
-    /// it is a variant of, if it is one (`Device::variant`); how many edits of it the device counts, and how many
-    /// proposals it has.
-    Note { title: String, text: String, variant_of: Option<EntryId>, edits: usize, proposals: usize },
+    /// it is a variant of, if it is one (`Device::variant`); whether it is deleted (`DELETED`); how many edits of it
+    /// the device counts, and how many proposals it has.
+    Note { title: String, text: String, variant_of: Option<EntryId>, deleted: bool, edits: usize, proposals: usize },
     Todo { title: String, status: Status },
     /// What the device holds but can't open.
     Sealed,
@@ -853,9 +857,11 @@ impl World {
                 What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
                 What::Sealed => ("sealed", None, None, None),
             };
-            let (variant_of, edits, proposals) = match &i.what {
-                What::Note { variant_of, edits, proposals, .. } => (variant_of.map(|e| hex(&e.0)), *edits, *proposals),
-                _ => (None, 0, 0),
+            let (variant_of, deleted, edits, proposals) = match &i.what {
+                What::Note { variant_of, deleted, edits, proposals, .. } => {
+                    (variant_of.map(|e| hex(&e.0)), *deleted, *edits, *proposals)
+                }
+                _ => (None, false, 0, 0),
             };
             let roles: serde_json::Map<String, Value> =
                 i.roles.iter().map(|(v, r)| (hex(&v.0), Value::from(role_name(*r)))).collect();
@@ -874,6 +880,7 @@ impl World {
                 "text": text,
                 "status": status,
                 "variantOf": variant_of,
+                "deleted": deleted,
                 "edits": edits,
                 "proposals": proposals,
             })
@@ -950,7 +957,8 @@ fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
                 let history = lab.history(me, en.id);
                 let edits = history.map_or(0, |h| h.changes().len());
                 let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
-                What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), edits, proposals }
+                let deleted = doc.tags.iter().any(|t| t == DELETED);
+                What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), deleted, edits, proposals }
             }
             (None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (None, None) => What::Sealed,

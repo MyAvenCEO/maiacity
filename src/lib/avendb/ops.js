@@ -53,3 +53,12 @@ export const blockText = (id) => ['blocks', { id }, 'text'];
 
 /** The tag that marks a note a variant of entry `entry`, naming where it came from. @param {string} entry */
 export const variantMark = (entry) => `avendb:variant:${entry}`;
+
+/** The tag that marks a note deleted (avendb-browser's `DELETED`): listed apart, and back once the tag is out. */
+export const DELETED = 'avendb:deleted';
+
+/**
+ * The op that deletes note `entry`, or with `back`, brings it back: its mark among its own tags, on its main line.
+ * @param {string} entry @param {boolean} [back]
+ */
+export const deleting = (entry, back = false) => ({ op: back ? 'remove' : 'insert', entry, path: ['tags'], value: DELETED });

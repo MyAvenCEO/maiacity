@@ -7,7 +7,7 @@
  * account, as on a server that started fresh, the page names the button that sets one up; the person founds their vault
  * from the "Mac" in two sheets, the page's own sheet showing every step of it done, with its seconds; the page shows
  * the device native, on its own UDP sockets; reloaded, it opens with no sheet, as the device runs on; the app quits
- * and starts again, and the device opens from its folder in one sheet; it is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
+ * and starts again, and the device opens from its folder in one sheet; it is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored, deleted and brought back, with no sheet. Their
  * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
  * each as its owner, with no switch: in avenALICE's vault the page acts as her, and she writes a note and three todos,
  * one tagged “work”, adds a fourth from her studio’s query console and queries those she has left there, and shares
@@ -476,7 +476,21 @@ try {
 	check('none of it asked for a sheet', app.sheets().length === 0);
 	check('and no error', !(await problem()), await problem());
 	await shot('5-note');
+	// deleted: gone from the notes, listed apart under Deleted, and brought back from its page, with no sheet
+	const hash = () => page.evaluate(() => location.hash);
+	await click('Delete', '.doc .top button');
+	check('deleted: back at the notes', await until(async () => (await hash()) === '#notes', 30000), await hash());
+	check('and gone from them', await until(async () => !(await note('Plan')), 30000));
+	await click('Deleted 1', '.main .filter button');
+	check('listed under Deleted', await until(async () => !!(await note('Plan')), 5000));
+	await shot('5-deleted');
+	await page.click('.main .note');
+	check('its page says it is deleted', await waitText('This note is deleted', 30000, '.doc .gone'));
+	await click('Bring it back', '.doc .gone button');
+	check('brought back', await until(async () => !(await page.$('.doc .gone')), 30000));
 	await back();
+	check('among the notes again', await until(async () => !!(await note('Plan')), 30000));
+	check('none of it asked for a sheet', app.sheets().length === 0);
 
 	// four vaults Samuel's vault owns, named by hand, in one sheet
 	await page.click('.bar .add');
