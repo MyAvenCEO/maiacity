@@ -1,9 +1,12 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Maia Universe: maiaCITY's own content stream. Everything lives in memory for now; a reload starts it over.
-	import { AUTHORS, CHANNELS, POSTS, ago } from '$lib/universe/posts.js';
+	import { base } from '$app/paths';
+	import { AUTHORS, CHANNELS, fakeDocId, postHref, titleOf } from '$lib/universe/posts.js';
+	import { stream } from '$lib/universe/stream.svelte.js';
+	import PostCard from '$lib/universe/PostCard.svelte';
 
-	let posts = $state(POSTS.map((p) => ({ ...p, liked: false })));
+	const posts = $derived(stream.posts);
 	let channel = $state('All');
 	let draft = $state('');
 	let draftChannel = $state('Devlog');
@@ -12,16 +15,11 @@
 	const counts = $derived(Object.fromEntries(CHANNELS.map((c) => [c, c === 'All' ? posts.length : posts.filter((p) => p.channel === c).length])));
 	const top = $derived([...posts].sort((a, b) => b.likes - a.likes).slice(0, 3));
 
-	function like(p) {
-		p.liked = !p.liked;
-		p.likes += p.liked ? 1 : -1;
-	}
-
 	function share(e) {
 		e.preventDefault();
 		const text = draft.trim();
 		if (!text) return;
-		posts.unshift({ id: `n${Date.now()}`, author: 'samuel', ago: 0, channel: draftChannel, text, likes: 0, replies: 0, liked: false });
+		stream.posts.unshift({ id: `n${Date.now()}`, doc: fakeDocId(), title: titleOf(text), author: 'samuel', ago: 0, channel: draftChannel, text, likes: 0, replies: 0, liked: false });
 		draft = '';
 		channel = 'All';
 	}
@@ -61,44 +59,7 @@
 			</nav>
 
 			{#each shown as p (p.id)}
-				{@const a = AUTHORS[p.author]}
-				<article class="post card">
-					<span class="avatar" style:background={a.color}>{a.initials}</span>
-					<div class="body">
-						<div class="meta">
-							<strong>{a.name}</strong>
-							{#if a.ai}<span class="badge">AI</span>{:else if a.coop}<span class="badge coop">COOP</span>{/if}
-							<span class="dim">@{a.handle} · {p.ago === 0 ? 'now' : ago(p.ago)}</span>
-							<span class="channel">{p.channel}</span>
-						</div>
-
-						{#if p.kind === 'quote'}
-							<blockquote>“{p.text}”<cite>{p.note}</cite></blockquote>
-						{:else}
-							<p class="text">{p.text}</p>
-						{/if}
-
-						{#if p.kind === 'stat'}
-							<div class="stat">
-								<span class="value">{p.stat.value}<small>{p.stat.unit}</small></span>
-								<span class="label">{p.stat.label}</span>
-							</div>
-						{:else if p.kind === 'visual'}
-							<div class="visual" style:background="linear-gradient(135deg, {p.visual.from}, {p.visual.to})">
-								<span>{p.visual.caption}</span>
-							</div>
-						{/if}
-
-						<div class="actions">
-							<button class="act" aria-label="Reply">
-								<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" /></svg>{p.replies}
-							</button>
-							<button class="act" class:liked={p.liked} aria-pressed={p.liked} aria-label="Like" onclick={() => like(p)}>
-								<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>{p.likes}
-							</button>
-						</div>
-					</div>
-				</article>
+				<PostCard post={p} />
 			{:else}
 				<p class="empty">Nothing in {channel} yet. Be the first to share.</p>
 			{/each}
@@ -109,7 +70,7 @@
 				<h2>Most loved</h2>
 				<ol>
 					{#each top as p (p.id)}
-						<li><strong>{AUTHORS[p.author].name}</strong><span>{p.text}</span></li>
+						<li><a href={postHref(base, p)}><strong>{p.title}</strong><span>{AUTHORS[p.author].name}</span></a></li>
 					{/each}
 				</ol>
 			</section>
@@ -208,14 +169,12 @@
 		font-size: 0.65rem;
 	}
 
-	.composer,
-	.post {
+	.composer {
 		display: flex;
 		gap: 0.9rem;
 	}
 
-	.compose,
-	.body {
+	.compose {
 		flex: 1;
 		min-width: 0;
 	}
@@ -307,152 +266,6 @@
 		color: var(--sage);
 	}
 
-	.meta {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.35rem 0.5rem;
-		font-size: 0.9rem;
-	}
-
-	.dim {
-		color: var(--muted);
-	}
-
-	.badge {
-		padding: 0.05rem 0.4rem;
-		border-radius: 6px;
-		background: #2f6fbf1f;
-		color: #2f6fbf;
-		font-size: 0.66rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-	}
-
-	.badge.coop {
-		background: #1f7a521f;
-		color: #1f7a52;
-	}
-
-	.channel {
-		margin-left: auto;
-		font-size: 0.72rem;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
-		color: var(--terracotta);
-	}
-
-	.text {
-		margin: 0.45rem 0 0;
-		line-height: 1.55;
-		overflow-wrap: anywhere;
-	}
-
-	blockquote {
-		margin: 0.6rem 0 0;
-		font-family: var(--font-display);
-		font-size: 1.4rem;
-		font-style: italic;
-		line-height: 1.3;
-	}
-
-	cite {
-		display: block;
-		margin-top: 0.4rem;
-		font-family: var(--font-body);
-		font-size: 0.8rem;
-		font-style: normal;
-		color: var(--muted);
-	}
-
-	.stat {
-		display: flex;
-		align-items: baseline;
-		gap: 0.8rem;
-		margin-top: 0.8rem;
-		padding: 0.9rem 1.1rem;
-		border-radius: 16px;
-		background: var(--cream);
-	}
-
-	.value {
-		font-family: var(--font-display);
-		font-size: 2.2rem;
-		font-weight: 600;
-		line-height: 1;
-	}
-
-	.value small {
-		margin-left: 0.3rem;
-		font-family: var(--font-body);
-		font-size: 0.8rem;
-		font-weight: 600;
-		letter-spacing: 0.1em;
-		color: var(--terracotta);
-	}
-
-	.label {
-		font-size: 0.85rem;
-		color: var(--ink-soft);
-	}
-
-	.visual {
-		display: flex;
-		align-items: flex-end;
-		aspect-ratio: 16 / 7;
-		margin-top: 0.8rem;
-		padding: 0.9rem 1.1rem;
-		border-radius: 16px;
-	}
-
-	.visual span {
-		font-family: var(--font-display);
-		font-size: 1.2rem;
-		font-style: italic;
-		color: #fff;
-		text-shadow: 0 1px 8px rgb(0 0 0 / 0.25);
-	}
-
-	.actions {
-		display: flex;
-		gap: 1.2rem;
-		margin-top: 0.7rem;
-	}
-
-	.act {
-		display: flex;
-		align-items: center;
-		gap: 0.35rem;
-		padding: 0.25rem 0.4rem;
-		margin-left: -0.4rem;
-		border: 0;
-		border-radius: 999px;
-		background: transparent;
-		font-size: 0.85rem;
-		color: var(--muted);
-	}
-
-	.act svg {
-		width: 1.05rem;
-		height: 1.05rem;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.8;
-		stroke-linejoin: round;
-	}
-
-	.act:hover {
-		color: var(--ink);
-	}
-
-	.act.liked {
-		color: var(--terracotta);
-	}
-
-	.act.liked svg {
-		fill: currentColor;
-	}
-
 	.empty {
 		text-align: center;
 		color: var(--muted);
@@ -481,6 +294,16 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	ol a {
+		display: grid;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	ol a:hover strong {
+		color: var(--terracotta);
 	}
 
 	ol li {
@@ -531,8 +354,7 @@
 			padding: 0.95rem;
 		}
 
-		.composer,
-		.post {
+		.composer {
 			gap: 0.7rem;
 		}
 
@@ -542,8 +364,5 @@
 			font-size: 0.72rem;
 		}
 
-		.channel {
-			margin-left: 0;
-		}
 	}
 </style>

@@ -11,10 +11,14 @@ export const AUTHORS = {
 
 export const CHANNELS = ['All', 'Devlog', 'theOS', 'Village', 'Food', 'Energy'];
 
+// `doc` stands in for the post's iroh doc id (a fake one for now: 32 random bytes in base32, the way iroh prints a
+// namespace id); the post's page lives at /universe/<doc>/<slug of the title>.
 // `ago` is in minutes, so the stream reads the same whenever the page is opened
 export const POSTS = [
 	{
 		id: 'p1',
+		doc: 'ckvyzutd3zn5agywule6atscqugopai6ccjun2un53legrsuewha',
+		title: 'Day one of the Maia Universe',
 		author: 'samuel',
 		ago: 12,
 		channel: 'Devlog',
@@ -24,6 +28,8 @@ export const POSTS = [
 	},
 	{
 		id: 'p2',
+		doc: 'i6ooonkvir3fqq46umtm5fhodcwerhuvjcvsdktnhbp5zusw7vvq',
+		title: '24 HEARTS a day',
 		author: 'city',
 		ago: 47,
 		channel: 'theOS',
@@ -35,6 +41,8 @@ export const POSTS = [
 	},
 	{
 		id: 'p3',
+		doc: 'vplq2zlk4mm5bjhv75j5t4ul36livqmibd2lz7dv75armldo63ya',
+		title: 'First jackfruit under the dome',
 		author: 'forest',
 		ago: 95,
 		channel: 'Food',
@@ -46,6 +54,8 @@ export const POSTS = [
 	},
 	{
 		id: 'p4',
+		doc: '4lxlibw52ybvfrwa4pgmzjxvdvgfacogm56itxnibfi2j7k547la',
+		title: 'Weekly pay day closed',
 		author: 'aven',
 		ago: 160,
 		channel: 'Village',
@@ -55,6 +65,8 @@ export const POSTS = [
 	},
 	{
 		id: 'p5',
+		doc: 'iizsfajusmklcayp2fpfklmbhoaphzafh6binpsfu6ywcgpl7c6q',
+		title: 'One plant powers the village',
 		author: 'village',
 		ago: 240,
 		channel: 'Energy',
@@ -66,6 +78,8 @@ export const POSTS = [
 	},
 	{
 		id: 'p6',
+		doc: 'lhwdhyj2p6xmkpdfpkaw4xc4dofqxj6digwpqzhyhbvdthvnz5kq',
+		title: 'Fair participation through fair ownership',
 		author: 'samuel',
 		ago: 380,
 		channel: 'theOS',
@@ -77,6 +91,8 @@ export const POSTS = [
 	},
 	{
 		id: 'p7',
+		doc: 'zgp5zfqlovogwidtelxcal7vm5ss6cg4xphobfw2obd5kie2adbq',
+		title: 'Seven hexes make a village',
 		author: 'village',
 		ago: 600,
 		channel: 'Village',
@@ -88,6 +104,8 @@ export const POSTS = [
 	},
 	{
 		id: 'p8',
+		doc: 'nyhrtqrbka2u57avsmfwlqgkolmnawvl5ccs7avr3zatbl6gnsaa',
+		title: 'avenDB keeps every file by its hash',
 		author: 'aven',
 		ago: 1440,
 		channel: 'Devlog',
@@ -99,3 +117,29 @@ export const POSTS = [
 
 export const ago = (min) =>
 	min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`;
+
+// a title as it reads in an address: lower case, words joined by dashes
+export const slug = (title) =>
+	title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'post';
+
+// a fake iroh doc id until the stream has real docs: 32 random bytes, base32 lower case without padding (52 letters)
+export function fakeDocId() {
+	const bytes = crypto.getRandomValues(new Uint8Array(32));
+	const abc = 'abcdefghijklmnopqrstuvwxyz234567';
+	let bits = 0, value = 0, out = '';
+	for (const b of bytes) {
+		value = (value << 8) | b;
+		bits += 8;
+		while (bits >= 5) out += abc[(value >>> (bits -= 5)) & 31];
+	}
+	return bits ? out + abc[(value << (5 - bits)) & 31] : out;
+}
+
+// a new post's title: its first words, cut at a word
+export function titleOf(text) {
+	const words = text.trim().split(/\s+/);
+	const head = words.slice(0, 7).join(' ').replace(/[.,:;!?]+$/, '');
+	return words.length > 7 ? `${head}…` : head;
+}
+
+export const postHref = (base, p) => `${base}/universe/${p.doc}/${slug(p.title)}/`;
