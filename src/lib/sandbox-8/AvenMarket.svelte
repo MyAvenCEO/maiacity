@@ -15,6 +15,8 @@
 	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText, cashFlow } from './economy.js'; // GOODS: listed in rainbow order
 	import { loadCode } from './sandbox.js';
 	import { fullCards } from '../../../game/economy/params.js';
+	import { viewsOf } from '../../../game/economy/views.js';
+	import Frame from '$lib/genui/Frame.svelte';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
@@ -400,6 +402,35 @@
 		return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`;
 	}
 
+	// what a view card is handed (game/economy/views.js says the shape), at most every 1.5 s
+	let valleyAt = 0;
+	/** @type {any} */
+	let valleyLast = null;
+	function valleyForViews() {
+		if (valleyLast && performance.now() - valleyAt < 1500) return valleyLast;
+		valleyAt = performance.now();
+		return (valleyLast = {
+			day: world.day,
+			time: clock(world.t),
+			goods: GOODS.map((g) => ({ id: g, label: GOOD_LABEL[g], colour: GOOD_COLOUR[g], need: NEED[g] })),
+			avens: world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, hearts: o.hearts, health: o.health, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: o.alive ? want(o, g) : 0 }])) })),
+			market: Object.fromEntries(GOODS.map((g) => [g, { price: world.market[g].price }])),
+			values: { ...RULES }
+		});
+	}
+	// a view card as the sandboxed frame takes it (the same object while the card is, so its frame is never reloaded)
+	const frames = new WeakMap();
+	/** @param {any} c */
+	const frameOf = (c) => {
+		if (!frames.has(c)) frames.set(c, { id: c.id, title: c.name, kind: 'html', spec: { html: c.code, libs: c.data?.libs ?? [], height: c.data?.height ?? 520, data: {} } });
+		return frames.get(c);
+	};
+	/** what a view tells the page: { select: avenId } opens that aven; anything else is only noted */
+	function fromView(/** @type {any} */ v, /** @type {any} */ e) {
+		const id = e?.value?.select;
+		if (e.name === 'context' && Number.isInteger(id) && world.avens[id]) select(id);
+	}
+
 	/** @returns {any} */
 	function snapshot() {
 		const a = world.avens[selected ?? 0];
@@ -424,7 +455,9 @@
 			// every aven's wants right now: per good, what it holds against tonight's need and what it still wants to buy
 			// the valley's activity (economy.js, activity), newest first, only while the Activity tab is open
 			decisions: tab === 'decisions' && page === 'valley' ? (world.decisions ?? []).slice(-200).reverse().map((/** @type {any} */ d) => ({ ...d })) : [],
-			wants: tab === 'wants' ? world.avens.map((/** @type {any} */ o) => ({ id: o.id, name: o.name, colour: o.colour, alive: o.alive, grows: [...o.grows], last: { ...(o.yesterday?.short ?? {}) }, goods: Object.fromEntries(GOODS.map((g) => [g, { has: o.stock[g], need: NEED[g], buy: want(o, g), bought: o.today.bought[g] }])) })) : [],
+			// the valley's screens (view cards: game/economy/views.js), and, while one is open, the valley it is handed
+			views: viewsOf(CONFIG.cards),
+			valley: tab.startsWith('view:') ? valleyForViews() : null,
 			// the Maia City Coop's ledger: what the avens paid it for their fields, and for what
 			coop: world.coop ? { hearts: world.coop.hearts, from: { ...world.coop.from }, flow: world.layout === 'coop' ? cashFlow(world.coop.days, 3) : null } : null,
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, stock: world.layout === 'coop' ? { ...o.stock } : null, flow: world.layout === 'coop' && o.cashDays?.length ? cashFlow(o.cashDays, 3).net : null, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
@@ -1343,37 +1376,21 @@
 
 		<nav class="tabs">
 			<button class:on={tab === 'decisions'} onclick={() => (tab = 'decisions')}>Activity</button>
-			<button class:on={tab === 'wants'} onclick={() => (tab = 'wants')}>Wants</button>
+			{#each snap.views as v (v.id)}<button class:on={tab === `view:${v.id}`} onclick={() => ((tab = `view:${v.id}`), (snap = snapshot()))} title="{v.description || v.name} · an MCP App">{v.name}</button>{/each}
 			<button class:on={tab === 'prices'} onclick={() => (tab = 'prices')}>Prices</button>
 		</nav>
 
-		{#if tab === 'wants'}
-		<section>
-			<p class="sub">Tonight each aven needs 3 WATER and 2 of each food. <span class="ok">✓</span> it holds enough; <span class="miss">−n</span> it is n short unless it buys before night. "own": it grows that good. "buys n": it still wants n to reach its stock target. Last column: whether last night's needs were met.</p>
-			<div class="scroll"><table class="wants">
-				<thead><tr><th>Aven</th>{#each GOODS as g (g)}<th><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g].slice(0, 3)}</th>{/each}<th>Tonight</th><th>Last night</th></tr></thead>
-				<tbody>
-					{#each snap.wants as w (w.id)}
-						{@const missing = GOODS.filter((g) => w.goods[g].has < w.goods[g].need)}
-						<tr class:dead={!w.alive}>
-							<td><button class="who" onclick={() => select(w.id)}><i style:background={w.colour}></i>{w.name}</button></td>
-							{#if w.alive}
-								{#each GOODS as g (g)}
-									{@const c = w.goods[g]}
-									<td class="num" class:grown={w.grows.includes(g)} title={w.grows.includes(g) ? `grows ${GOOD_LABEL[g]}` : ''}>
-										{#if c.has >= c.need}<span class="ok">✓</span>{:else}<span class="miss">−{c.need - c.has}</span>{/if}
-										<small>{w.grows.includes(g) ? 'own' : c.buy ? `buys ${c.buy}` : ''}</small>
-									</td>
-								{/each}
-								<td class="num">{#if missing.length}<span class="miss">{missing.length} short</span>{:else}<span class="ok">all met</span>{/if}</td>
-								<td class="num">{#if Object.keys(w.last).length}<span class="miss">{Object.entries(w.last).map(([g, n]) => `${GOOD_LABEL[g].slice(0, 3)} −${n}`).join(' ')}</span>{:else}<span class="ok">met</span>{/if}</td>
-							{:else}
-								<td colspan={GOODS.length + 2} class="none">died</td>
-							{/if}
-						</tr>
-					{/each}
-				</tbody>
-			</table></div>
+		{#if tab.startsWith('view:')}
+		{@const card = snap.views.find((/** @type {any} */ v) => tab === `view:${v.id}`)}
+		<section class="view-card">
+			{#if card}
+				{#key card}
+					<Frame view={frameOf(card)} data={snap.valley} onevent={(/** @type {any} */ e) => fromView(card, e)} onerror={(/** @type {string} */ m) => console.warn(`view ${card.id}:`, m)} />
+				{/key}
+				<p class="sub">A view card: an MCP App in a sandboxed frame. A MIP changes it like any rule.</p>
+			{:else}
+				<p class="sub">This view is gone from the world's cards.</p>
+			{/if}
 		</section>
 		{:else if tab === 'prices'}
 		<section>
