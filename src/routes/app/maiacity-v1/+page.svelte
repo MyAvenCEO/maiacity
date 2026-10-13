@@ -1,6 +1,6 @@
 <!--
 	MaiaCity V1 — the simplest game of the city ($lib/maiacity-v1): two players, 24 HEARTS a day each, the MaiaCity COOP
-	with the shared hex, the Settlement COOP with the 2-person dome tent, one MaiaMIND/VillageMIND pool, rent and the melt.
+	with the shared hex, the Settlement COOP with the 2-person dome tent, one maiaMIND/villageMIND pool, rent and the melt.
 -->
 <script>
 	import Game from '$lib/maiacity-v1/Game.svelte';

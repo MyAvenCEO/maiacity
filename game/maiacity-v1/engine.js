@@ -6,17 +6,17 @@
  *   The right to mint expires after 24 h, not the HEARTS: growth older than 24 h is lost. HEARTS buy nothing: they are
  *   only invested.
  * - Investing 1 HEART into a COOP makes 1 MIND of that COOP: half to the player's wallet, half to the COOP's treasury.
- * - Three COOPs, each with its own MIND: the MaiaCity COOP (MaiaMIND) owns the settlement hex and the AMM pool; the
- *   Settlement COOP (SettlementMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (VillageMIND)
+ * - Three COOPs, each with its own MIND: the MaiaCity COOP (maiaMIND) owns the settlement hex and the AMM pool; the
+ *   Settlement COOP (settlementMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (villageMIND)
  *   owns the pickup, the powercube (a diesel generator), a solar panel and a big battery pack.
- * - 5 % of every MIND that lands in a treasury goes into the MaiaCity COOP's pool: a Balancer weighted pool, one
+ * - A tenth of every treasury half (5 % of each invested HEART's MIND) goes into the MaiaCity COOP's pool: a Balancer weighted pool, one
  *   basket of all three MINDs with equal weights (1/3 each, settings a MIP may change). Its invariant is
  *   V = Π Bᵢ^wᵢ; any MIND swaps for any other by Balancer's maths (out = Bₒ·(1 − (Bᵢ/(Bᵢ + Aᵢ·(1 − fee)))^(wᵢ/wₒ))),
  *   so V never falls. It is never paid out; anyone can swap through it (the 0.3 % fee stays in the pool).
  * - Rent, on the pay day that ends every game week (4 a month, each a quarter of the month's rent): each player pays
- *   the Settlement COOP for the tent in SettlementMIND; the Settlement COOP pays the MaiaCity COOP for the hex in
- *   MaiaMIND; the Settlement COOP rents the Village COOP's pickup, powercube and battery pack, paid to whichever COOP
- *   owns each in that COOP's MIND (VillageMIND). A payer who lacks the MIND swaps its others through the pool on its own; what is still missing is owed
+ *   the Settlement COOP for the tent in settlementMIND; the Settlement COOP pays the MaiaCity COOP for the hex in
+ *   maiaMIND; the Settlement COOP rents the Village COOP's pickup, powercube and battery pack, paid to whichever COOP
+ *   owns each in that COOP's MIND (villageMIND). A payer who lacks the MIND swaps its others through the pool on its own; what is still missing is owed
  *   (arrears) and paid first next pay day.
  * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
  *   year begins with Sol (from 21 March, the new year) and ends with March; every month starts on a Sunday. Every balance (HEARTS, wallets, treasuries, the pool)
@@ -36,13 +36,13 @@ export const MONTH_MS = DAY_MS;
 export const TOKENS = ['HEARTS', 'MAIA', 'SETTLEMENT', 'VILLAGE'];
 /** the MINDs, one a COOP */
 export const MINDS = ['MAIA', 'SETTLEMENT', 'VILLAGE'];
-export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'MaiaMIND', SETTLEMENT: 'SettlementMIND', VILLAGE: 'VillageMIND' };
+export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', SETTLEMENT: 'settlementMIND', VILLAGE: 'villageMIND' };
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', SETTLEMENT: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 2;
+export const VERSION = 3;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
-	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The settlement hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: MaiaMIND, SettlementMIND, VillageMIND' }] },
+	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The settlement hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, settlementMIND, villageMIND' }] },
 	settlement: { name: 'Settlement COOP', mind: 'SETTLEMENT', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
 	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The powercube', kind: 'Diesel generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'A big battery pack', kind: 'Storage' }] }
 };
@@ -64,7 +64,7 @@ export const DEFAULT_SETTINGS = {
 	/** a year of virtual time melts every balance by this much */
 	demurrage: 0.07,
 	/** of every MIND into a treasury, this share goes to the pool */
-	poolShare: 0.05,
+	poolShare: 0.1,
 	/** Law 5, every sale pays its owners: this share of every sale (each rent a COOP is paid) goes at once to the
 	 * holders of the COOP's MIND, pro rata, in that MIND (its own treasury and the pool get none) */
 	dividendShare: 0.2,
@@ -74,11 +74,11 @@ export const DEFAULT_SETTINGS = {
 	weightVILLAGE: 1,
 	/** the pool's swap fee, kept in the pool */
 	swapFee: 0.003,
-	/** each player, each virtual month, to the Settlement COOP, in SettlementMIND */
+	/** each player, each virtual month, to the Settlement COOP, in settlementMIND */
 	tentRent: 10,
-	/** the Settlement COOP, each virtual month, to the MaiaCity COOP, in MaiaMIND */
+	/** the Settlement COOP, each virtual month, to the MaiaCity COOP, in maiaMIND */
 	hexRent: 10,
-	/** the Settlement COOP, each virtual month, for the Village COOP's machines it uses, in the owner's MIND (VillageMIND) */
+	/** the Settlement COOP, each virtual month, for the Village COOP's machines it uses, in the owner's MIND (villageMIND) */
 	pickupRent: 4,
 	powercubeRent: 3,
 	batteryRent: 3
@@ -92,7 +92,7 @@ export const RENTED = [
 ];
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of MaiaMIND', weightSETTLEMENT: 'Pool weight of SettlementMIND', weightVILLAGE: 'Pool weight of VillageMIND', tentRent: 'Tent rent, each player a month (SettlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (MaiaMIND)', pickupRent: 'Pickup rent, Settlement COOP a month (VillageMIND)', powercubeRent: 'Powercube rent, Settlement COOP a month (VillageMIND)', batteryRent: 'Battery pack rent, Settlement COOP a month (VillageMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightSETTLEMENT: 'Pool weight of settlementMIND', weightVILLAGE: 'Pool weight of villageMIND', tentRent: 'Tent rent, each player a month (settlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (maiaMIND)', pickupRent: 'Pickup rent, Settlement COOP a month (villageMIND)', powercubeRent: 'Powercube rent, Settlement COOP a month (villageMIND)', batteryRent: 'Battery pack rent, Settlement COOP a month (villageMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -239,7 +239,7 @@ export function invariant(s) {
 	return MINDS.reduce((v, t) => v * Math.pow(Math.max(0, s.pool[t]), w[t]), 1);
 }
 
-/** Balancer's spot price of one `tok` in `inTok` (MaiaMIND by default), fee left out: (B_in/w_in)/(B_tok/w_tok);
+/** Balancer's spot price of one `tok` in `inTok` (maiaMIND by default), fee left out: (B_in/w_in)/(B_tok/w_tok);
  * null while either side is empty */
 export function price(s, tok = 'SETTLEMENT', inTok = 'MAIA') {
 	const w = weights(s);
