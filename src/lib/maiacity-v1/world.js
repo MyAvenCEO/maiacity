@@ -18,9 +18,9 @@ const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
  *  row (Samuel 2026-10-13); a scale is one number or [x, y, z]. The Assets viewer keeps them real. */
 const ASSETS = [
 	{ id: 'pickup', make: pickup, at: [-16, 10, 2.2], clear: 9, scale: 2 },
-	{ id: 'powercube', make: powercube, at: [12, -6, -0.5], clear: 5 },
-	{ id: 'solar', make: solarPanel, at: [-3, -13, Math.PI], clear: 9, scale: [6, 2, 2] },
-	{ id: 'battery', make: batteryPack, at: [13, 6, -0.9], clear: 5 }
+	{ id: 'powercube', make: powercube, at: [11, -3, -0.3], clear: 5 },
+	{ id: 'solar', make: solarPanel, at: [15, -11, Math.PI], clear: 9, scale: [6, 2, 2] },
+	{ id: 'battery', make: batteryPack, at: [19, -3, 0.3], clear: 5 }
 ];
 
 /** a little seeded random, so the trees stand in the same places for everyone */
@@ -49,13 +49,15 @@ function hexGround() {
 	return g;
 }
 
-/** the pickup's gravel: a parking lot beside the tent, and a road that meanders in to it from the hex's west side */
-const LOT = { x: -16, z: 10, w: 15, d: 10 };
+/** the gravel: a round parking lot for the pickup beside the tent, a road that meanders in to it from the hex's west
+ *  side, and one round yard east of the tent where all the utilities stand: the powercube, the battery and the solar row */
+const LOT = { x: -16, z: 10, r: 8 };
+const YARD = { x: 15, z: -6, r: 9.5 };
 const ROAD_W = 3.6;
 /** the road's centre line, from the west edge to the lot: a slow S of two bends */
 const ROAD = Array.from({ length: 41 }, (_, i) => {
 	const t = i / 40;
-	const x0 = -HEX_R * 0.866 + 0.4, x = x0 + t * (LOT.x - LOT.w / 2 + 1 - x0);
+	const x0 = -HEX_R * 0.866 + 0.4, x = x0 + t * (LOT.x - LOT.r + 1.5 - x0);
 	return [x, 22 - 12 * t + 9 * Math.sin(t * Math.PI * 2.2) * (1 - t * 0.6)];
 });
 const nearRoad = (x, z, r) => ROAD.some(([px, pz], i) => {
@@ -65,14 +67,18 @@ const nearRoad = (x, z, r) => ROAD.some(([px, pz], i) => {
 	return Math.hypot(x - ax - k * dx, z - az - k * dz) < r;
 });
 const onGravel = (x, z, pad = 0) =>
-	(Math.abs(x - LOT.x) < LOT.w / 2 + pad && Math.abs(z - LOT.z) < LOT.d / 2 + pad) || nearRoad(x, z, ROAD_W / 2 + pad);
+	[LOT, YARD].some((c) => Math.hypot(x - c.x, z - c.z) < c.r + pad) || nearRoad(x, z, ROAD_W / 2 + pad);
 
 function gravel() {
 	const g = new THREE.Group();
 	const stone = mat(0xbdb29c);
-	const lot = new THREE.Mesh(new THREE.PlaneGeometry(LOT.w, LOT.d), stone);
-	lot.rotation.x = -Math.PI / 2;
-	lot.position.set(LOT.x, 0.03, LOT.z);
+	const [lot, yard] = [LOT, YARD].map((c) => {
+		const disc = new THREE.Mesh(new THREE.CircleGeometry(c.r, 48), stone);
+		disc.rotation.x = -Math.PI / 2;
+		disc.position.set(c.x, 0.03, c.z);
+		disc.receiveShadow = true;
+		return disc;
+	});
 	// a ribbon along the centre line, each point pushed half the width out to both sides
 	const pos = [];
 	ROAD.forEach(([x, z], i) => {
@@ -88,8 +94,8 @@ function gravel() {
 	geo.computeVertexNormals();
 	const road = new THREE.Mesh(geo, stone);
 	stone.side = THREE.DoubleSide;
-	lot.receiveShadow = road.receiveShadow = true;
-	g.add(lot, road);
+	road.receiveShadow = true;
+	g.add(lot, yard, road);
 	return g;
 }
 
