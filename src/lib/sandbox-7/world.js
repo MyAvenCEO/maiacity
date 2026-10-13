@@ -90,9 +90,10 @@ export function timelineAt(plan, t) {
 		const c = count[h.key];
 		const st = plan.settlements?.find((/** @type {any} */ x) => x.key === h.key);
 		const coop = st?.coop ?? '';
-		hexHead[h.key] = st?.label ?? h.label;
-		if (!c || (c.done === 0 && c.up === 0)) hexText[h.key] = st?.founded !== null && st?.founded !== undefined && t >= st.founded ? `${coop} · land and roads` : `Not begun${st?.founded !== null && st?.founded !== undefined ? ` · starts ${plan.months[Math.min(st.founded, plan.months.length - 1)]?.label ?? ''}` : ''}`;
-		else hexText[h.key] = `${coop} · ${c.done} of ${c.of} domes standing${c.up ? `, ${c.up} going up` : ''}${c.beds ? ` · ${c.beds.toLocaleString('en-US')} beds` : ''}${campHex === h.key ? ` · camp of ${plan.kit.campBeds} beds` : ''}`;
+		hexHead[h.key] = coop || h.label;
+		const founded = st?.founded ?? null;
+		if (!c || (c.done === 0 && c.up === 0)) hexText[h.key] = founded !== null && t >= founded ? `founded ${plan.months[Math.min(founded, plan.months.length - 1)]?.label ?? ''} · roads and planting` : `Not begun${founded !== null ? ` · starts ${plan.months[Math.min(founded, plan.months.length - 1)]?.label ?? ''}` : ''}`;
+		else hexText[h.key] = `${c.done} of ${c.of} domes${c.up ? ` (+${c.up})` : ''}${c.beds ? ` · ${c.beds.toLocaleString('en-US')} beds` : ''}${campHex === h.key ? ` · camp ${plan.kit.campBeds}` : ''}`;
 	}
 	/** @type {Record<string, boolean>} */
 	const begun = {};

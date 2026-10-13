@@ -1374,6 +1374,9 @@ export function slimProp3(p) {
 		P3: {
 			pass: p.P3.pass,
 			failed: p.P3.failed,
+			// the verdict's own test: real units per tenth (./prop3.js realUnits), and the old money index beside it
+			real: p.P3.real ? { pass: p.P3.real.pass, rule: p.P3.real.rule, newcomers: p.P3.real.newcomers, years: p.P3.real.years, failedTenths: p.P3.real.failedTenths, basicsFail: p.P3.real.basicsFail, failures: p.P3.real.failures, excused: p.P3.real.excused.length, excusedList: p.P3.real.excused.slice(0, 40), riseFail: p.P3.real.riseFail, tenths: p.P3.real.tenths.map((t) => ({ by: t.by, tenth: t.tenth, pass: t.pass, basics: t.basics, extras: t.extras, rise: t.rise, first: t.first, last: t.last, change: t.change, up: t.up, down: t.down })) } : null,
+			oldIndex: p.P3.oldIndex,
 			netPass: p.P3.netPass,
 			deciles: p.P3.deciles.map(slimDecile),
 			withoutCompute: { pass: p.P3.withoutCompute.pass, failed: p.P3.withoutCompute.failed, deciles: p.P3.withoutCompute.deciles.map(slimDecile) },

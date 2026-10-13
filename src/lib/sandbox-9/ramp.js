@@ -26,8 +26,9 @@
 import { buildPlan } from '../sandbox-7/buildout.js';
 import { KINDS } from '../sandbox-7/specs.js';
 import { FACTORY_RUN } from '../sandbox-7/stats.js';
-import { initPerson, firstAlloc, SETTLEMENTS } from './genesis.js';
+import { initPerson, firstAlloc, newPlant, SETTLEMENTS } from './genesis.js';
 import { payEur } from './border.js';
+import { MAX_COOPS } from './consts.js';
 
 export const MONTH_DAYS = 365 / 12;
 /** the plan's kinds of euros, as the ledger names them */
@@ -64,14 +65,14 @@ export function rampSchedule(cfg) {
 		const s = m - 1; // what stands in month m: finished by the end of month m − 1
 		const done = s < 0 ? [] : plan.steps.filter((x) => x.end != null && x.end <= s);
 		const mo = plan.months[Math.max(0, Math.min(n - 1, s))];
+		// the beds of the settlements' domes, by hex
 		const bedsHex = hexes.map((h) => done.filter((x) => x.hex === h).reduce((a, x) => a + (x.beds ?? 0), 0));
-		// the camp's containers stand where the camp is; the two settlers of day 0 sleep in the first of them
-		const camp = s < 0 ? 'living-e' : mo.camp;
-		const campBeds = s < 0 ? 0 : mo.campBeds;
-		if (camp && hexes.includes(camp)) bedsHex[hexes.indexOf(camp)] += campBeds;
+		// the camp's containers: the East settlement COOP's (the first settlement's), wherever the camp stands; the two
+		// settlers of day 0 sleep in the first of them (a bed for everyone the plan has here before its beds stand)
 		const people = Math.max(plan.months[0].people, s < 0 ? plan.months[0].people : mo.people);
-		const bedsAll = bedsHex.reduce((a, b) => a + b, 0);
-		if (bedsAll < people) bedsHex[hexes.indexOf(camp ?? 'living-e')] += people - bedsAll;
+		let campBeds = s < 0 ? 0 : mo.campBeds ?? 0;
+		const bedsAll = bedsHex.reduce((a, b) => a + b, 0) + campBeds;
+		if (bedsAll < people) campBeds += people - bedsAll;
 		const of = (h, kinds) => done.filter((x) => x.hex === h && kinds.includes(x.kind)).length;
 		const hallHex = hexes.map((h) => (of(h, ['food120']) + of(h, ['util120'])) * FLOOR120);
 		const centreDone = done.filter((x) => x.hex === 'tower' && (x.kind === 'centre' || x.kind === 'tower' || (x.kind === 'factory120' && !['timber', 'bamboo', 'steel', 'glass'].includes(x.factory)))).length;
@@ -85,6 +86,8 @@ export function rampSchedule(cfg) {
 			m,
 			people,
 			bedsHex,
+			campBeds,
+			camp: s < 0 ? 'living-e' : mo.camp,
 			hallHex,
 			hallVillageDomes: centreDone + worksDomes,
 			centreDone,
@@ -125,7 +128,7 @@ export function rampSchedule(cfg) {
 	}
 	// the month each settlement launches (its COOP is founded)
 	const founded = Object.fromEntries(plan.settlements.map((s) => [s.key, s.founded]));
-	return { plan, months, eur, founded, doneMonth: n, people: last.people, hexes };
+	return { plan, months, eur, founded, doneMonth: n, people: last.people, hexes, campFull: Math.max(1, ...months.map((x) => x.campBeds)) };
 }
 
 /** which schedule share drives a plant (the tech's, or its hex's) */
@@ -133,6 +136,7 @@ function shareOf(w, pl, mo) {
 	const S = w.ramp;
 	switch (pl.tech) {
 		case 'home':
+			if (pl.camp) return mo.campBeds / S.campFull;
 			return pl.hex != null ? mo.bedsHex[pl.hex] / Math.max(1e-9, S.bedsHexFull[pl.hex]) : 1;
 		case 'hall':
 			return pl.hex === 'centre' ? mo.hallVillageDomes / Math.max(1, S.villageDomesFull) : mo.hallHex[pl.hex] / Math.max(1e-9, S.hallHexFull[pl.hex]);
@@ -159,7 +163,7 @@ function shareOf(w, pl, mo) {
 		case 'well':
 			return Math.max(mo.util, mo.people / Math.max(1, S.people));
 		case 'rain':
-			return mo.bedsHex.reduce((a, b) => a + b, 0) / Math.max(1, S.bedsFull);
+			return (mo.bedsHex.reduce((a, b) => a + b, 0) + mo.campBeds) / Math.max(1, S.bedsFull);
 		default:
 			return 1;
 	}
@@ -173,6 +177,21 @@ export function initRamp(w, S) {
 	w.ramp = S;
 	S.bedsHexFull = S.hexes.map((_, h) => w.coops.reduce((a, co) => a + co.plants.reduce((b, p) => b + (p.tech === 'home' && p.hex === h ? p.cap : 0), 0), 0));
 	S.bedsFull = S.bedsHexFull.reduce((a, b) => a + b, 0);
+	// the camp: the starter kit's living containers and the ones bought after it, a plant of the East settlement COOP
+	// at its largest size (it stands at the plan's camp beds each month, and is gone when the plan is done)
+	const east = w.coops.find((c) => c.alive && c.plants.some((p) => p.tech === 'home' && p.hex === 0));
+	if (east) {
+		const home = east.plants.find((p) => p.tech === 'home' && p.hex === 0);
+		const camp = newPlant(w, 'home', S.campFull);
+		camp.hex = 0;
+		camp.camp = true;
+		camp.born = 0;
+		camp.landM2 = S.campFull * (home.landM2 / Math.max(1e-9, home.cap));
+		camp.rentRate = home.rentRate;
+		if (home.hosts) camp.hosts = [];
+		camp.utilEma = home.utilEma;
+		east.plants.push(camp);
+	}
 	S.hallHexFull = S.months[S.months.length - 1].hallHex.map((x, h) => x || 1);
 	S.villageDomesFull = S.months[S.months.length - 1].hallVillageDomes || 1;
 	S.monthNow = -1;
@@ -233,16 +252,18 @@ export function rampDay(w) {
 		buildoutEuros(w, m);
 	}
 	// the month's newcomers, a few each day through the month
-	const mo = S.months[Math.min(m, S.months.length - 1)];
-	const prev = S.months[Math.max(0, m - 1)];
-	const into = Math.min(1, (w.day - m * MONTH_DAYS + 1) / MONTH_DAYS);
-	const target = Math.min(w.Nmax, Math.round(prev.people + (mo.people - prev.people) * into));
+	const target = peopleAhead(w, 0);
 	while (w.N < target) arrive(w);
 	// a COOP founded today starts with clean counters
 	for (const co of w.coops) if (co.alive && co.foundDay === w.day) (co.lowDays = 0), (co.idleDays = 0), (co.auditLow = 0), w.events.push({ day: w.day, kind: 'found', coop: co.id, from: 'the build-out' });
 }
 
-/** a newcomer: an Aven and nothing held; every twentieth (the owner-only share) has an Aven that delivers nothing */
+/**
+ * The newcomer rule: a newcomer arrives with an Aven and nothing held, and gets its 24 HEARTS from its first day like
+ * everyone. Its Aven puts them where the people already here put theirs, on average (the mean of their allocations,
+ * over the COOPs founded so far), and from then on moves them by the same rule as everyone's (./engine.js
+ * updateAlloc). Every twentieth newcomer (the owner-only share) has an Aven that delivers nothing.
+ */
 function arrive(w) {
 	const i = w.N++;
 	initPerson(w, i, w.day);
@@ -252,10 +273,31 @@ function arrive(w) {
 		w.aven[i] = 0;
 		w.ownerIds.push(i);
 	}
-	firstAlloc(w, i);
+	const mean = meanAlloc(w, i);
+	if (mean) for (let k = 0; k < MAX_COOPS; k++) w.alloc[i * MAX_COOPS + k] = mean[k];
+	else firstAlloc(w, i);
 	w.decH[i] = 0;
 	w.decA[i] = 0;
 	w.arrived = (w.arrived ?? 0) + 1;
+}
+
+/** the people's mean allocation of their HEARTS today, over the COOPs founded so far (worked out once a day) */
+function meanAlloc(w, n) {
+	const S = w.ramp;
+	if (S.meanDay === w.day) return S.mean;
+	S.meanDay = w.day;
+	S.mean = null;
+	if (!(n > 0)) return null;
+	const M = MAX_COOPS;
+	const ok = new Uint8Array(M);
+	for (const co of w.coops) if (co.alive && w.day >= (co.foundDay ?? 0)) ok[co.k] = 1;
+	const mean = new Float64Array(M);
+	for (let j = 0; j < n; j++) for (let k = 0; k < M; k++) if (ok[k] && w.alloc[j * M + k] > 0) mean[k] += w.alloc[j * M + k];
+	let sum = 0;
+	for (let k = 0; k < M; k++) sum += mean[k];
+	if (!(sum > 0)) return null;
+	for (let k = 0; k < M; k++) mean[k] /= sum;
+	return (S.mean = mean);
 }
 
 /** what the plan has finished by month m stands */
@@ -267,6 +309,9 @@ function applyMonth(w, m) {
 		const d = sh - pl.applied;
 		if (Math.abs(d) < 1e-12) continue;
 		const dCap = pl.capFull * d;
+		// what the plant is used for stays what it was: the share of it in use falls as it grows (the new part starts
+		// idle; its running items follow its use, ./coops.js runHours)
+		if (dCap > 0 && pl.utilEma != null) pl.utilEma = pl.cap > 0 ? (pl.utilEma * pl.cap) / (pl.cap + dCap) : 0;
 		if (pl.tech === 'greenhouse' && dCap > 0) {
 			// the domes are planted as they are finished: the plant's age is the average of its parts'
 			const old = Math.max(0, pl.cap);
@@ -311,7 +356,11 @@ function applyMonth(w, m) {
 	w.buildCache = {};
 }
 
-/** the month's build-out bill, through the bank: an advance to each owner, the land the MaiaCity COOP's */
+/**
+ * the month's build-out bill, through the bank: an advance to each owner, the land the MaiaCity COOP's. (It is paid
+ * before the day's imports, which start each COOP's euros of the day at 0: an advance for building is not the euros
+ * a COOP spends on its running imports, so its export plan does not save for the build-out, ./border.js exportPlan.)
+ */
 function buildoutEuros(w, m) {
 	const S = w.ramp, E = S.eur[m], t = w.today;
 	if (!E || !w.border) return;
@@ -342,6 +391,17 @@ function ownerOf(w, hex) {
 	if (hex === 'tower') return w.coops.find((c) => c.alive && c.plants.some((p) => p.tech === 'hall' && p.hex === 'centre')) ?? w.coops.find((c) => c.alive && c.plants.some((p) => p.village)) ?? w.coops[w.cityK];
 	const h = S.hexes.indexOf(hex);
 	return w.coops.find((c) => c.alive && c.plants.some((p) => p.tech === 'home' && p.hex === h)) ?? w.coops.find((c) => c.alive && c.plants.some((p) => p.tech === 'home')) ?? w.coops[w.cityK];
+}
+
+/** the people the plan has here `days` from today (the plan's months, a few arriving each day) */
+export function peopleAhead(w, days) {
+	const S = w.ramp;
+	if (!S) return w.N;
+	const d = w.day + days;
+	const m = Math.min(S.months.length - 1, Math.floor(d / MONTH_DAYS));
+	const mo = S.months[m], prev = S.months[Math.max(0, m - 1)];
+	const into = Math.min(1, (d - m * MONTH_DAYS + 1) / MONTH_DAYS);
+	return Math.min(w.Nmax, Math.round(prev.people + (mo.people - prev.people) * into));
 }
 
 /** is the build-out still under way (the plan decides what is built) */

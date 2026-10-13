@@ -236,9 +236,9 @@ function headline(exps, scen, bases) {
 		breaks: [...failE(['X2']), ...fails(['B05'].map(S)), ...ens('normal')]
 	});
 	rows.push({
-		part: 'P3 — living standards rise for every decile',
+		part: 'P3 — living standards rise for every tenth (real units)',
 		holds: allB((b) => b.p.P3.pass),
-		base: 'worst 5-year fall ' + bases.map((b) => pc(Math.max(...b.p.P3.deciles.map((d) => d.fall ?? 0)), 1)).join(', ') + '; deciles failing ' + bases.map((b) => b.p.P3.failed.length).join(', ') + '; without Aven services in the index, deciles failing ' + bases.map((b) => b.p.P3.withoutCompute.failed.length).join(', ') + '; Aven services’ share of the index in the last year ' + bases.map((b) => pc(b.p.P3.share.at(-1)?.all, 0)).join(', ') + '; COOP part ' + bases.map((b) => yes(b.p.P3.coops.pass)).join(', '),
+		base: 'tenths failing in real units (of 20: ten by holdings, ten by Aven output) ' + bases.map((b) => b.p.P3.real?.failedTenths.length ?? '–').join(', ') + '; items failing: basics ' + bases.map((b) => b.p.P3.real?.basicsFail.length ?? '–').join(', ') + ', extras’ falls ' + bases.map((b) => b.p.P3.real?.failures.length ?? '–').join(', ') + ', baskets not rising ' + bases.map((b) => b.p.P3.real?.riseFail.length ?? '–').join(', ') + '. Old money index (comparison): ' + 'worst 5-year fall ' + bases.map((b) => pc(Math.max(...b.p.P3.deciles.map((d) => d.fall ?? 0)), 1)).join(', ') + '; deciles failing ' + bases.map((b) => b.p.P3.failed.length).join(', ') + '; without Aven services in the index, deciles failing ' + bases.map((b) => b.p.P3.withoutCompute.failed.length).join(', ') + '; Aven services’ share of the index in the last year ' + bases.map((b) => pc(b.p.P3.share.at(-1)?.all, 0)).join(', ') + '; COOP part ' + bases.map((b) => yes(b.p.P3.coops.pass)).join(', '),
 		breaks: [...failE(['X10', 'SH']), ...fails(['B22', 'B27', 'S01', 'S03'].map(S))]
 	});
 	rows.push({
@@ -463,6 +463,7 @@ function foodAndLand(L, bases, scen) {
 function foundingAndBorder(L, bases, scen) {
 	const s0 = bases[0].s, F = s0.founding, B = s0.border ?? [];
 	if (!F) return;
+	if (F.ramp) return buildoutAndBank(L, bases, scen);
 	L.push('## The founding bill and the border', '');
 	L.push(`Before day 0 the village is built from imports (paper §12.4: “Euros fund the first machines, never MIND”). ${cap1(F.sources?.tower ?? '')}. Prices: ${F.sources?.prices ?? ''}.`, '');
 	L.push('| item | quantity | € |', '|---|---|---|');

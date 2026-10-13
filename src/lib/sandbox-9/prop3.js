@@ -265,7 +265,7 @@ export function realUnits(w, opts = {}) {
 	return {
 		pass: failedTenths.length === 0,
 		rule: 'basics (kcal, protein, water, home kWh, a bed) at or above need every year (within 1 %); extras (home m², goods kg a year, Aven hours, pond hours a week) never down more than 2 % over any 5-year window unless at satiation or a physical limit binds that year; each tenth’s basket rises over the run (one extra up 5 % or more, none down beyond 2 %); tenths by MIND holdings and by Aven output, yearly means a person, full years',
-		newcomers: 'every person counts in the tenth they are in that day; a newcomer arrives with nothing held (the poorest tenth by holdings) and in the tenth of their Aven’s output',
+		newcomers: 'every person counts in the tenth they are in that day. A newcomer arrives with an Aven and nothing held (so in the poorest tenth by holdings, and in the tenth of its Aven’s output), gets its 24 HEARTS from its first day, and its Aven puts them where the people already here put theirs on average; every twentieth newcomer is owner-only (an Aven that delivers nothing)',
 		years: Y.length,
 		failedTenths,
 		basicsFail,

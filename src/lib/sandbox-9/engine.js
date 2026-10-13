@@ -183,6 +183,9 @@ export function step(w) {
 	resetDay(w);
 	calendar(w);
 	growPopulation(w);
+	// the ramp: what the build-out plan finished stands, the month's people arrive (before the HEARTS, so a newcomer
+	// gets them on the day it arrives), its euros are advanced (./ramp.js)
+	if (w.ramp) rampDay(w);
 	melt(w);
 	invest(w);
 	updatePrices(w);
@@ -194,8 +197,6 @@ export function step(w) {
 	nature(w);
 	// the border: food and raw inputs bought outside today (./border.js)
 	importsDay(w);
-	// the ramp: what the build-out plan finished stands, the month's people arrive, its euros are advanced (./ramp.js)
-	if (w.ramp) rampDay(w);
 	const slow = cfg.dailySlow || w.day < YEAR_DAYS || w.day < w.slowUntil || w.day % 7 === 0;
 	costs(w, slow || w.day === 0);
 	margins(w);
@@ -723,7 +724,10 @@ function affordCoops(w) {
 		// materials: the works' inputs and upkeep first, then the building project
 		let matP = 0, matJ = 0;
 		for (const g of MATERIALS) (matP += w.b2bProd[g * M + co.k] * pMat[g]), (matJ += w.b2bProj[g * M + co.k] * pMat[g]);
-		const fp = matP > 0 ? Math.max(0, Math.min(1, budget / matP)) : 1;
+		// a seller of a basic keeps a week of its basics' energy and its running items in hand before it buys materials
+		// (its upkeep waits a few days and its plant wears a little; its beds and water do not stop)
+		const keepB = BASICS.includes(co.good) ? 7 * (billB * co.own + runH * w.c.rateR) : 0;
+		const fp = matP > 0 ? Math.max(0, Math.min(1, (budget - keepB) / matP)) : 1;
 		budget -= matP * fp;
 		// a building project never takes the last month of running costs (a COOP that builds stays able to pay its
 		// running items)
@@ -1350,7 +1354,8 @@ function payRent(w, dt) {
 	}
 	openPayments(w);
 	for (const [co, R7] of due) {
-		const R = Math.min((R7 * dt) / 7, 0.5 * treasuryR(w, co.k));
+		// at most half its treasury a week (the slow loop runs daily in the first year)
+		const R = Math.min((R7 * dt) / 7, (1 - pow(0.5, dt / 7)) * treasuryR(w, co.k));
 		if (!(R > 0)) continue;
 		const rest = payDirect(w, w.tre, co.k * M, city, R / P[city]);
 		if (rest > 0) payRest(w, w.tre, co.k * M, rest * P[city], co.k);
@@ -1365,7 +1370,7 @@ function payRent(w, dt) {
 /**
  * Dome rent (on the slow loop, with the ground rent): each tenant pays the settlement COOPs whose domes it works in, in
  * their own MIND, for the m² it rents at the landlord's rate (./coops.js hallRents). It is a sale for the landlord, so
- * Law 5 pays the landlord's holders λ of it. Like the ground rent, a tenant pays at most half its treasury at a time;
+ * Law 5 pays the landlord's holders λ of it. Like the ground rent, a tenant pays at most half its treasury a week;
  * what it cannot pay is owed (arrears) and paid first next time. What each landlord received is kept as a 30-day
  * average: its own price counts on it (./coops.js costs).
  */
@@ -1389,7 +1394,7 @@ function payDomeRent(w, dt) {
 		let total = 0;
 		for (const R of due.values()) total += R;
 		if (!(total > 0)) continue;
-		const can = Math.min(1, (0.5 * treasuryR(w, co.k)) / total);
+		const can = Math.min(1, ((1 - pow(0.5, dt / 7)) * treasuryR(w, co.k)) / total);
 		const row = co.k * M;
 		for (const [o, R] of due) {
 			const pay = R * can;

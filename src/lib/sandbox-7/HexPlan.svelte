@@ -9,7 +9,7 @@
 	The build-out (Samuel, 2026-10-13): a month slider with a play button shows the village growing from its first two
 	settlers to 1,500 people, dome by dome, as ./buildout.js plans it, in the village without the tower (the centre's
 	middle one more Dome120 of utilities and community halls). Closed, the world is the finished village as before.
-	?month=18 opens it at a month, &kit=starter with the starter kit.
+	?month=18 opens it at a month, &kit=starter with the starter kit, &hex=living-e over a hex.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -99,7 +99,7 @@
 	const maxMonth = $derived(plan ? Math.max(plan.options.months, plan.months.length) : 72);
 	/** @type {any} */
 	const mo = $derived(plan ? monthAt(plan, month) : null);
-	const now = $derived(plan ? nowLine(plan, Math.min(month, plan.months.length - 1)) : '');
+	const now = $derived(plan ? nowLine(plan, month) : '');
 	const CAL = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 	/** the calendar month of month m from day 0 */
 	const calOf = (/** @type {number} */ m) => {
@@ -210,6 +210,15 @@
 		if (q.has('month')) {
 			tl = true;
 			month = Math.max(0, Number(q.get('month')) || 0);
+		}
+		// ?hex=living-e flies to a hex once the world stands
+		const h = q.get('hex');
+		if (h && VILLAGE.some((x) => x.key === h)) {
+			const go = function () {
+				if (worldReady) world?.focusHex(h);
+				else setTimeout(go, 200);
+			};
+			go();
 		}
 		return () => mq.removeEventListener('change', fit);
 	});

@@ -74,7 +74,7 @@ export const KIT = [
 	{ id: 'kitchen', group: 'camp', label: 'Kitchen and dining containers, 20 ft, fitted', n: 3, eur: 22000, src: 'containers', est: true, note: 'the container and a commercial kitchen' },
 	{ id: 'workshop', group: 'camp', label: 'Workshop and store containers, 20 ft, benches and racks', n: 4, eur: 8750, src: 'containers', est: true },
 	{ id: 'office', group: 'camp', label: 'Site office and first-aid container', n: 1, eur: 9000, src: 'containers', est: true },
-	{ id: 'delivery', group: 'camp', label: 'Delivering and setting down the 44 containers', n: 44, eur: 800, src: 'containers', est: true, note: 'the dealer’s truck crane sets them' },
+	{ id: 'delivery', group: 'camp', label: 'Delivering and setting down a container', n: 44, eur: 800, src: 'containers', est: true, note: 'the dealer’s truck crane sets them' },
 	// power
 	{ id: 'solar', group: 'power', label: 'Solar containers, ~140 kWp each, fold-out', n: 2, eur: 140000, kwp: 140, src: 'solarContainer' },
 	{ id: 'battery', group: 'power', label: 'Battery container, 500 kWh LFP', n: 1, eur: 500 * 250, kwh: 500, src: 'battery', est: true },
@@ -963,6 +963,7 @@ export const monthAt = (plan, t) => plan.months[Math.max(0, Math.min(plan.months
 /** a short line naming what is being built at month t */
 export function nowLine(plan, t) {
 	const mo = monthAt(plan, t);
+	if (plan.totals.doneMonth !== null && t >= plan.totals.doneMonth + 1) return 'The village stands: every dome is built and lived in.';
 	const live = plan.steps.filter((s) => mo.building.includes(s.id));
 	if (!live.length) return mo.m >= (plan.totals.doneMonth ?? Infinity) ? 'The village stands: every dome is built and lived in.' : 'Waiting for the planting season and the next crews.';
 	const word = (s) => {

@@ -26,6 +26,7 @@
 import { CLASS, ENERGY, FOOD, MAX_COOPS, WOOD, STEEL, GLASS, PANEL } from './consts.js';
 import { rawOf, plantCapDay, capDayOf } from './genesis.js';
 import { supplyAhead, logsGrowth, foodIn, unitEurOf } from './coops.js';
+import { peopleAhead } from './ramp.js';
 
 const M = MAX_COOPS;
 /** the import kinds of the ledger, in order */
@@ -91,8 +92,9 @@ export const eurR = (w, eur) => (eur / w.c.eurPerKwh) * w.pbar[ENERGY];
  */
 export function importsDay(w) {
 	const t = w.today, H = w.c.importAhead, E = w.c.eur;
-	t.imp = Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0]));
-	t.impEur = Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0]));
+	// (the ramp's build-out euros of the day may already be in, ./ramp.js)
+	t.imp = { ...Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])), ...(t.imp ?? {}) };
+	t.impEur = { ...Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])), ...(t.impEur ?? {}) };
 	t.impShort = 0;
 	for (const co of w.coops) {
 		co.eurToday = 0;
@@ -100,7 +102,8 @@ export function importsDay(w) {
 		if (!co.alive) continue;
 		if (co.good === FOOD) {
 			const ahead = supplyAhead(w, co, H);
-			const need = Math.max(co.demandEma, 0);
+			// on the ramp, the people the build-out plan brings over the weeks ahead will eat too (./ramp.js)
+			const need = Math.max(co.demandEma, 0) * (w.ramp && !w.ramp.over ? Math.max(1, peopleAhead(w, H + 15) / Math.max(1, w.N)) : 1);
 			const gap = need * (H + 15) - co.stock - ahead[ahead.length - 1];
 			if (gap > 1e-9) {
 				const want = gap / 5;
@@ -229,7 +232,7 @@ export const EXPORT_CLASS = CLASS.running;
 
 /**
  * The COOPs pay their advances back to the City COOP in their own MIND (weekly, in the slow loop): a 26th of what each
- * owes, at least €1, at most a twentieth of the MIND its treasury holds of its own. A euro is priced at the electricity
+ * owes, at least €1, at most a twentieth a week of the MIND its treasury holds of its own. A euro is priced at the electricity
  * that earns it: eurR (its kWh at today's energy price, in R), turned into the COOP's MIND at its pool price. The MIND
  * moves from the COOP's treasury to the City COOP's (an exact transfer: no MIND is made or melted), where it earns Law 5
  * dividends. No interest. Returns the R repaid.
@@ -243,7 +246,8 @@ export function repayAdvances(w, dt = 7) {
 		const k = co.k;
 		const eur = Math.min(co.advEur, Math.max(1, (co.advEur * dt) / 182));
 		const perEur = eurR(w, 1) / (P[k] > 0 ? P[k] : 1);
-		const have = Math.max(0, w.tre[k * M + k]) * 0.05;
+		// at most 5 % of its own MIND in its treasury a week
+		const have = Math.max(0, w.tre[k * M + k]) * (1 - Math.pow(0.95, dt / 7));
 		const count = Math.min(eur * perEur, have);
 		if (!(count > 0) || !(perEur > 0)) continue;
 		w.tre[k * M + k] -= count;
