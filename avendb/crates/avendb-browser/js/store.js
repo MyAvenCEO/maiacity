@@ -1,8 +1,9 @@
 // avenDB's device store in the browser (P8e, B2b): what a page's device holds, kept in the origin private file system
 // (OPFS) as a node keeps it on disk, by a worker of its own (`store.worker.js`), where OPFS has its fast synchronous
 // files: its signed edits in the order it took them, its McEliece keys, and what opens the device again (its name, its
-// salt's own bytes, its passkey's credential and P-256 key, and the relay). No secret is kept: the device's keys derive
-// from its passkey at every unlock, and it opens the rest again from its edits. OPFS is the one place the page keeps
+// salt's own bytes, its passkey's credential and P-256 key, and the relay), and its node's shelf, the pieces of the
+// files it brings or keeps (B2d). No secret is kept: the device's keys derive from its passkey at every unlock, and it
+// opens the rest again from its edits. OPFS is the one place the page keeps
 // any of it: a store IndexedDB kept, as pages did before, moves over the first time it opens, and is deleted.
 
 /** The stores closing, by name: one is removed only once its worker let go of it. */
@@ -106,6 +107,32 @@ export class Store {
 		} finally {
 			await this.call('release').catch(() => {});
 		}
+	}
+
+	/** The blobs the shelf in OPFS holds whole, each `[hash, size]` (B2d, `avendb_net::shelf`), its node's: the
+	 *  calls the device makes of it, as it keeps the pieces of its files there. */
+	blobs() {
+		return this.call('blobs');
+	}
+
+	blobRead(name, at, len) {
+		return this.call('blobRead', [name, at, len]);
+	}
+
+	blobOutboard(hash) {
+		return this.call('blobOutboard', [hash]);
+	}
+
+	blobWrite(name, at, bytes) {
+		return this.call('blobWrite', [name, at, bytes]);
+	}
+
+	blobFinish(name, hash, size, outboard) {
+		return this.call('blobFinish', [name, hash, size, outboard]);
+	}
+
+	blobDrop(name) {
+		return this.call('blobDrop', [name]);
 	}
 
 	/** Lets go of the store, and stops its worker. */

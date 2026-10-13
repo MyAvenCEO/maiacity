@@ -406,7 +406,7 @@ impl Service {
         getrandom::fill(&mut *entropy).map_err(|e| anyhow!("no randomness: {e}"))?;
         let (name, store, direct) = (name.trim().to_string(), Some(self.config.dir.join(STORE)), self.config.direct);
         let (entropy, recovery) = (*entropy, Start::recovery());
-        Ok((Start { name, relay, entropy, now: now(), direct, store, progress, recovery }, ending))
+        Ok((Start { name, relay, entropy, now: now(), direct, store, shelf: None, progress, recovery }, ending))
     }
 
     /// The steps of the start under way, or of the last (`avendb_browser::steps_json`): null before the first.

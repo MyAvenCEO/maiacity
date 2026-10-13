@@ -43,25 +43,24 @@ impl Offered {
         self.ids.insert(hash, id);
         self.hashes.insert(id, hash);
     }
-
-    /// The hash of every McEliece key in the store.
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn hashes(&self) -> impl Iterator<Item = Hash> + '_ {
-        self.hashes.values().copied()
-    }
 }
 
 impl Shared {
-    /// The BLAKE3 hash of each McEliece key in `ids`, each put in the blob store first if it isn't there.
+    /// The BLAKE3 hash of each McEliece key in `ids`, each put in the blob store first if it isn't there: a key
+    /// fetched into a page's window may have left it since.
     pub(crate) async fn offer(self: &Arc<Self>, ids: Vec<BlobId>) -> Result<Vec<(BlobId, [u8; 32])>> {
         let mut offered = Vec::with_capacity(ids.len());
         for id in ids {
             let known = self.offered.lock().expect("offered").hashes.get(&id).copied();
-            let hash = match known {
+            let held = match known {
+                Some(hash) => self.store.has(hash).await?.then_some(hash),
+                None => None,
+            };
+            let hash = match held {
                 Some(hash) => hash,
                 None => {
                     let key = self.lab(move |lab, me| lab.blob(me, id)).await.context("a key the node holds")?;
-                    let hash = self.store.add_bytes(key.to_vec()).await?.hash;
+                    let hash = self.store.add_bytes(key.to_vec()).temp_tag().await?.hash();
                     self.offered.lock().expect("offered").insert(id, hash);
                     hash
                 }

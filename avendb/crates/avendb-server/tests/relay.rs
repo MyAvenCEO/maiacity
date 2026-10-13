@@ -130,8 +130,8 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     let dir = Folder::new("relay");
     let data = dir.path().to_path_buf();
     let (relay_url, public_addr) = (None, None);
-    let config =
-        Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false, bucket: None };
+    let (signup, bucket, cache) = (false, None, 0);
+    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
@@ -243,6 +243,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         public_addr: Some(public),
         signup: true,
         bucket: None,
+        cache: 0,
     };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");
@@ -263,6 +264,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(defaults.public_addr, None, "its own interfaces' addresses, unless it is said where it is reached");
     assert!(defaults.signup, "sign-up is open, unless it is said closed");
     assert!(defaults.bucket.is_none(), "no bucket, unless one is said");
+    assert_eq!(defaults.cache, 8 << 30, "its folder caches 8 GB of the bucket's files, unless it is said");
     let vars = HashMap::from([
         ("AVENDB_DATA", "/srv/avendb"),
         ("AVENDB_BIND", "[::]:7402"),
@@ -276,6 +278,7 @@ fn the_server_is_configured_by_its_environment() {
         ("AVENDB_BUCKET_ACCESS_KEY", "an access key"),
         ("AVENDB_BUCKET_SECRET_KEY", "a secret key"),
         ("AVENDB_BUCKET_SEAL", SEAL),
+        ("AVENDB_CACHE", "20"),
     ]);
     let set = Config::from_vars(|k| vars.get(k).map(|v| v.to_string())).expect("what the environment says");
     assert_eq!(set.data, PathBuf::from("/srv/avendb"));
@@ -288,6 +291,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!((bucket.name.as_str(), bucket.region.as_str()), ("maiacity-avendb", "hel1"));
     assert_eq!(*bucket.seal, [0xab; 32], "its seal, from 64 hex digits");
     assert!(!format!("{bucket:?}").contains("secret key"), "its keys never in a log line");
+    assert_eq!(set.cache, 20 << 30, "20 GB of cache");
     for (unsaid, seal) in [("AVENDB_BUCKET_REGION", SEAL), ("", &SEAL[2..])] {
         let var = |k: &str| {
             let v = if k == "AVENDB_BUCKET_SEAL" { Some(seal) } else { vars.get(k).copied() };
@@ -408,8 +412,8 @@ async fn a_persons_first_browser_founds_their_vault_through_a_relay_open_to_sign
 async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_strangers() {
     let dir = Folder::new("claim");
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
-    let config =
-        Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup: false, bucket: None };
+    let (signup, bucket, cache) = (false, None, 0);
+    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();

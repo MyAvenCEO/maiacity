@@ -120,9 +120,8 @@ exactly the entry's readers, and moves on as the entry's key does. The file's ow
 ## Stores (B2a)
 
 Each node keeps one iroh-blobs store, beside its store of edits (`avendb-net`, `files.rs`): on disk in its store's
-folder, `blobs/`, on a machine (the Mac app, the server), and in memory for a node without a folder, a page's among
-them until its file pieces move into OPFS (B2d). The McEliece keys a node offers and the sealed pieces of files live
-in it together.
+folder, `blobs/`, on the Mac; over a shelf in a page (OPFS, B2d) and on the server (its bucket, B3b), below; and in
+memory for a node with neither. The McEliece keys a node offers and the sealed pieces of files live in it together.
 
 - **Bringing a file** (`Node::store_file`): the node draws a new key, seals the file as it reads it, and streams each
   piece into the store, which hashes it as it comes, so a file of any size passes through a few segments of memory.
@@ -135,8 +134,8 @@ in it together.
 - **Keeping files** (`Options::keep`, `Lab::kept_files`): a node fetches whole the files its device's sync rules say
   to keep (below), and where its device has no rule over a vault, every file of that vault if it keeps files, as the
   server does: its HashSeq first and then each piece, as soon as it learns of it. It tries a file no peer hands over
-  again after `retry`, then twice as long each time, up to a minute. It drops no file it kept; that comes with the
-  bucket (B3), once nothing counts until the bucket holds it.
+  again after `retry`, then twice as long each time, up to a minute, until every piece is whole in its store, and on
+  a shelf finished there: on the server, in its bucket. It drops no file it kept.
 - **The gate** (`blobs::gate`): every request names one blob, never a HashSeq with its children, and the gate weighs
   each hash a peer asks for: a McEliece key the device may fetch (`Lab::may_fetch`), or a file's root or one of its
   pieces, which the device may fetch if it may fetch the file (`Lab::may_fetch_file`, T27). A blob that merely holds
@@ -241,8 +240,46 @@ replaced is deleted only as a mark: its bytes go 7 days later.
 (no pack header, no Welcome text), its folder is lost, and it starts again from the bucket alone showing Welcome, the
 whole log in one pack that replaced the ones before it; a bucket sealed under another seal is refused; a server whose
 folder is lost is the same device again; and while the server's bucket is down, it takes Welcome from Alice's Mac but
-announces nothing, so Bob's Mac reads Welcome only once the bucket is up again. The server's files (`blobs/`) stay on
-its disk until B3b.
+announces nothing, so Bob's Mac reads Welcome only once the bucket is up again. The server's files are in its bucket
+too since B3b (below).
+
+## Shelves: file pieces in OPFS and in the bucket (B2d, B3b)
+
+A page and the server keep their blobs on a shelf (`avendb-net`, `shelf.rs`): the one place each keeps them, OPFS and
+the bucket. A shelf answers six calls (`shelf::Call`): `List` the blobs it holds whole, `Read` a range of one,
+`Outboard` of one, `Write` a range of a blob being written under a name of the node's choosing, `Finish` it as blob
+`hash` of `size` bytes with its outboard, and `Drop` one. Over it the node runs a blob store of its own
+(`ShelfStore`), which iroh-blobs reads and writes like any other:
+
+- a piece of a file the node brings goes onto the shelf as it is sealed, its outboard, the BLAKE3 tree iroh-blobs
+  checks it by, made as it streams in (`tree::Outboarder`, checked against iroh-blobs' own); so a page brings a file
+  of any size a megabyte at a time, and the 1 GiB cap on a page's uploads is gone;
+- a blob the node keeps, one a tag names or a child of a HashSeq a tag names, goes onto the shelf as it is fetched,
+  and counts once whole and finished there; a fetch cut short leaves it partial, and the keeper tries again;
+- what the node fetches of any other blob, as a page plays a stretch of a film, stays in memory, in windows of 64 MiB
+  together at most, the oldest let go first; a node reads a range 4 MiB at a time, so the window holds what it fetched
+  until it read it;
+- McEliece keys and HashSeqs stay in memory, and go onto the shelf too once a tag keeps them; tags stay in memory, as
+  the keeper tags again what it keeps as the node starts.
+
+**The page's shelf** is its store's folder in OPFS (`js/store.worker.js`): `blobs/<hash>`, each blob whole, and
+`blobs/<hash>.obao`, its outboard, written last, so a blob counts once both are there; a blob being written is a file
+of the node's naming (`new-…`) until `Finish` moves it under its hash. The worker holds at most 16 blob files open, as
+OPFS's synchronous files, and drops whatever else the folder holds as the node lists it.
+
+**The server's shelf** is its bucket (`bucket::shelf`): `parts/<hash>/<n>`, a blob's parts of 8 MiB, the last
+shorter, and `blobs/<hash>-<size>`, its record (its outboard after a header, `avenDB blob 1`), put once every part is
+there: a blob counts once its record is in the bucket, and nothing before. Every object is sealed under the server's
+seal, as edits are. A blob being written is staged in the folder (`shelf/staging/`) until it is in the bucket; parts it
+read of late stay in `shelf/cache/`, up to `AVENDB_CACHE` gigabytes (8 by default), the least lately read let go first.
+A part is fetched whole from the bucket, since a sealed object opens only whole, and once at a time. The files the
+server's disk store (`blobs/`) kept before B3b move into the bucket as it starts, each piece checked against its hash
+as it is added (`bucket::adopt`), and the disk store is then put aside whole in `aside/<time>-blobs`, never deleted.
+
+`tests/files.rs` runs it: Alice's page brings a scan onto its shelf and the server keeps it on its disk, as before; given
+a bucket, the server moves it there as it starts and puts its disk store aside; the photo the page brings next goes into
+the bucket alone, counted once its record is there; and with its folder lost, the server serves Carol the photo from the
+bucket alone, caching what it read.
 
 ## The Library (B4a)
 
@@ -258,10 +295,9 @@ device opens it (`Lab::entry_files`).
   comes (`Node::store_file`), then writes the entry; in the Mac app each megabyte goes to the app's device in base64
   (`fileStart`, `fileChunk`, `fileEnd`). The server keeps every file whole, fetched from the device that wrote it.
 - Reading: `readFile` hands over any range, cut to the file, from the device's store or fetched in iroh-blobs ranges
-  from a peer that may hand them over, only the 64 KiB segments it needs, each opened under its own number. A page's
-  blob store is in memory and forgets every 15 seconds what nothing holds (`files::forgetful`): what a read or a keep
-  is using stays, as do the files the device brought or keeps, so a page playing a film holds little more than the
-  window that is playing.
+  from a peer that may hand them over, only the 64 KiB segments it needs, each opened under its own number. A page
+  keeps the files it brings or keeps on its shelf in OPFS, and holds what else it reads in windows of memory (above),
+  so a page playing a film holds little more than the window that is playing.
 - Playing: a film or a song streams through a service worker (`static/app/avendb-files.sw.js`, scoped to the avenDB
   page): the browser's player asks it for `…/app/avendb/file/<root>/<size>/<len>`, in ranges, and it asks the page for
   those bytes a megabyte at a time over a MessageChannel. It serves only films' and songs' types, sandboxed; anything
@@ -281,11 +317,11 @@ and past its end, fetched from the browser; and it is deleted and brought back.
 | B2a | One iroh-blobs store per node, on disk natively; files sealed as they are read, read in ranges through the cap gate, kept whole by the server | built |
 | B2c | Sync rules: per device, by the cap selector, for any data, marked by the stewards and applied by every peer (T28, T29); the keeper keeps what the rules say | built |
 | B2b | The page's store in OPFS, in its worker: its edits, McEliece keys and what opens it again; one tab at a time; IndexedDB moved over once and gone | built |
-| B2d | The page's file pieces in OPFS beside its edits: the files its rules keep whole, and the pieces it read | in B4 |
+| B2d | The page's file pieces in OPFS beside its edits, on a shelf: the files it brings and its rules keep whole | built |
 | B3a | The server's edits, McEliece keys and device secret in its bucket, sealed; nothing announced before the bucket has it; its disk a cache it rebuilds from the bucket | built |
-| B3b | The server's files in its bucket: one object per piece, outboards and roots, read-ahead in ranges | |
+| B3b | The server's files in its bucket, on a shelf: parts and records, counted once there, its disk a cache; the disk store's files moved over once | built |
 | B4a | The Library: files as entries of a vault, added a megabyte at a time, read in ranges, films streamed through a service worker | built |
-| B4 | Streaming: the Mac app's player reads ranges natively, the page's file pieces in OPFS (B2d) | |
+| B4 | Streaming: the Mac app's player reads ranges natively | |
 | B5 | Studio's media on avenDB, beside the legacy vault, which stays as it is | |
 
 The bucket is `maiacity-avendb` in hel1, beside the media vault's, made by the avenDB workflow

@@ -29,11 +29,13 @@
 //! - **Bucket** (blobs B3a, `bucket`): with `Options::bucket` as well, the server's, its store lives in an S3 bucket,
 //!   every object sealed, and the folder is only a cache of it: the node puts there what it saved on disk, tells its
 //!   peers what changed only once the bucket has it, and starts again from the bucket when its folder is lost.
-//! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, on a machine on disk beside its store. It brings
-//!   a file sealed as it reads it (`Node::store_file`), reads any range of a file its device opens, fetching only the
-//!   sealed segments that hold it (`Node::read_file`), and keeps whole the files its device's sync rules say to keep,
-//!   or with no rule over a vault, if it keeps files (`Options::keep`), as the server does, every file of the vault.
-//!   Its blob gate hands a file's root or pieces only to a device that may fetch the file (T27).
+//! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, on a machine on disk beside its store; a page's
+//!   and the server's keep what they bring and keep on a shelf (blobs B2d, B3b, `shelf`), the page's in OPFS and the
+//!   server's in its bucket, the one place each keeps them. It brings a file sealed as it reads it
+//!   (`Node::store_file`), reads any range of a file its device opens, fetching only the sealed segments that hold it
+//!   (`Node::read_file`), and keeps whole the files its device's sync rules say to keep, or with no rule over a vault,
+//!   if it keeps files (`Options::keep`), as the server does, every file of the vault. Its blob gate hands a file's
+//!   root or pieces only to a device that may fetch the file (T27).
 //! - **Sync rules** (blobs B2c): a node sends a peer's device only the entries it may receive and its rules want, by
 //!   the stewards' marks (T28).
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
@@ -83,6 +85,8 @@ pub mod kx;
 mod progress;
 pub mod server;
 mod session;
+pub mod shelf;
+mod tree;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
@@ -122,6 +126,7 @@ use tokio::sync::{Notify, watch};
 pub use disk::Disk;
 pub use progress::{Ending, Progress, Stage, Steps};
 pub use session::exporter;
+pub use shelf::{Call, Shelf};
 
 /// avenDB's own ALPN: its sync protocol, version 1.
 pub const ALPN: &[u8] = b"avendb/sync/1";
@@ -189,8 +194,11 @@ pub struct Options {
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
     /// The folder it keeps its store in (`Disk`), if any: it starts again from what it holds there. Its blob store is
-    /// in that folder's `blobs/` too, on a machine; else, and in a browser, in memory.
+    /// in that folder's `blobs/` too, on a machine, but with a bucket or a shelf; else in memory.
     pub store: Option<PathBuf>,
+    /// The shelf its blob store keeps the files it brings and keeps on (blobs B2d, `shelf`): a page's in OPFS. A page
+    /// with none keeps them on a shelf in memory; the server's shelf is its bucket.
+    pub shelf: Option<Shelf>,
     /// It keeps whole every file the edits its device holds bring, fetched from its peers as soon as it learns of them
     /// (`files`): the server's backup. Its device's sync rules over a vault say otherwise for that vault's files
     /// (`avendb::lab::Lab::kept_files`).
@@ -210,9 +218,12 @@ pub struct Options {
     /// person's vault or linking to it (`Node::found_with`, `Node::link_with`), for its person to watch.
     pub progress: Progress,
     /// The bucket its store lives in, beside its folder (`store`), which is then only a cache of it: the server's
-    /// (blobs B3a, `bucket`).
+    /// (blobs B3a, `bucket`). Its blob store's shelf is the bucket too (blobs B3b, `bucket::shelf`).
     #[cfg(not(target_arch = "wasm32"))]
     pub bucket: Option<bucket::Sealed>,
+    /// The most bytes of file pieces its folder keeps of its bucket, the least lately read let go first (blobs B3b).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub cache: u64,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -228,6 +239,7 @@ impl Options {
             relay: None,
             retry: Duration::from_secs(1),
             store: None,
+            shelf: None,
             keep: false,
             card: false,
             admission: None,
@@ -236,6 +248,8 @@ impl Options {
             progress: Progress::new(),
             #[cfg(not(target_arch = "wasm32"))]
             bucket: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            cache: bucket::CACHE,
         }
     }
 }
@@ -430,14 +444,27 @@ impl Node {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(config)));
         }
         let endpoint = builder.bind().await?;
+        // the server's shelf is its bucket, where the files its folder's blob store held move first; a page's its OPFS,
+        // or memory; any other node keeps its blob store in its folder, or in memory
         #[cfg(not(target_arch = "wasm32"))]
-        let store: Store = match &opts.store {
-            Some(dir) => FsStore::load(dir.join(files::BLOBS)).await?.into(),
-            None => MemStore::new().into(),
+        let (store, shelf): (Store, _) = match (&opts.bucket, &opts.store, &opts.shelf) {
+            (Some(bucket), Some(dir), _) => {
+                let (shelf, store) = shelf::ShelfStore::open(bucket::shelf(bucket.clone(), dir, opts.cache)?).await?;
+                bucket::adopt(dir, &store).await?;
+                (store, Some(shelf))
+            }
+            (_, _, Some(on)) => {
+                let (shelf, store) = shelf::ShelfStore::open(on.clone()).await?;
+                (store, Some(shelf))
+            }
+            (_, Some(dir), None) => (FsStore::load(dir.join(files::BLOBS)).await?.into(), None),
+            (_, None, None) => (MemStore::new().into(), None),
         };
-        let (pins, offered) = (files::Pins::default(), Arc::new(Mutex::new(blobs::Offered::default())));
         #[cfg(target_arch = "wasm32")]
-        let store: Store = files::forgetful(pins.clone(), offered.clone());
+        let (store, shelf) = {
+            let (shelf, store) = shelf::ShelfStore::open(opts.shelf.clone().unwrap_or_else(Shelf::memory)).await?;
+            (store, Some(shelf))
+        };
         let (events, gate) = blobs::events();
         let shared = Arc::new(Shared {
             me,
@@ -457,8 +484,8 @@ impl Node {
             unreached: Mutex::default(),
             asking: Mutex::default(),
             owed: Mutex::default(),
-            offered,
-            pins,
+            offered: Mutex::default(),
+            shelf,
             blob_peers: Mutex::default(),
             pieces: Mutex::default(),
             blob_conns: Mutex::default(),
@@ -1076,9 +1103,9 @@ struct Shared {
     /// The peers whose asking failed, and when to ask each again.
     owed: Mutex<Backoff<EndpointId>>,
     /// The McEliece keys in the blob store, by hash and by id.
-    offered: Arc<Mutex<blobs::Offered>>,
-    /// The blobs it uses now, which a page's store keeps while they are held (`files::forgetful`).
-    pins: files::Pins,
+    offered: Mutex<blobs::Offered>,
+    /// Its blob store over its shelf, if it keeps one (`shelf`): what the shelf holds whole.
+    shelf: Option<shelf::ShelfStore>,
     /// The blob connections the gate let in, each with its device.
     blob_peers: Mutex<HashMap<u64, SignerId>>,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out

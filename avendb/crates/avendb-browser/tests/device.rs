@@ -82,7 +82,7 @@ impl Browser {
 fn start(name: &str, url: &RelayUrl, seed: u8) -> Start {
     let (name, progress) = (name.into(), Progress::new());
     let (relay, recovery) = (url.clone(), None);
-    Start { name, relay, entropy: [seed; 32], now: now(), direct: false, store: None, progress, recovery }
+    Start { name, relay, entropy: [seed; 32], now: now(), direct: false, store: None, shelf: None, progress, recovery }
 }
 
 /// The steps a start marked, by name, once it is over: each with how long it took.

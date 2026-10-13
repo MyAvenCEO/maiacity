@@ -28,7 +28,9 @@
 //! The page keeps what the device holds in the browser's private file system, OPFS (`js/store.js`), by a worker of its
 //! own, which has OPFS's synchronous files (`js/store.worker.js`): its edits in the order it took them, in the same
 //! records as a node's on disk (`avendb_net::Disk`), and its McEliece keys, saved after each change (`Node::changes`).
-//! A store IndexedDB kept, as pages did before (B2b), moves over the first time it opens and is deleted.
+//! A store IndexedDB kept, as pages did before (B2b), moves over the first time it opens and is deleted. The same store
+//! is its node's shelf (B2d, `avendb_net::shelf`): the pieces of the files it brings or keeps, whole, each with its
+//! outboard (`shelf_of`).
 //!
 //! A vault holds its entries itself, flat: each entry has a type (`note`, `todo`, `card`, `profile`) and tags, all of
 //! it inside the entry's encrypted writes. A vault shares what it holds by caps (`Device::share`), each on a slice of
@@ -90,7 +92,8 @@ use avendb::sealed::{Brought, FileRoot};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
 use avendb::wire::Wire as _;
-use avendb_net::{Authenticator, Node, Offer, Options, Progress, Stage, Step, Steps};
+use avendb_net::shelf::hash_of;
+use avendb_net::{Authenticator, Call, Node, Offer, Options, Progress, Shelf, Stage, Step, Steps};
 use bytes::Bytes;
 use iroh::RelayUrl;
 use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
@@ -227,6 +230,7 @@ fn xor(a: &[u8; 32], b: &[u8; 32]) -> Zeroizing<[u8; 32]> {
 /// It marks each step of its start in `progress`, for its person to watch (`avendb_net::Progress`); whoever started it
 /// marks the start over. Every human vault it founds adds the master recovery key `recovery` as an owner, avenDB's own
 /// (`Start::recovery`) while avenDB is bootstrapped (`avendb::recovery`), and so its person may add it to their vault.
+/// A page's node keeps the files it brings or keeps on its store's shelf (`shelf`, `shelf_of`), else in memory.
 pub struct Start {
     pub name: String,
     pub relay: RelayUrl,
@@ -234,6 +238,7 @@ pub struct Start {
     pub now: u64,
     pub direct: bool,
     pub store: Option<PathBuf>,
+    pub shelf: Option<Shelf>,
     pub progress: Progress,
     pub recovery: Option<Arc<RecoveryKey>>,
 }
@@ -356,9 +361,9 @@ impl Device {
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by `pass` if the relay
     /// doesn't know it yet, and directly too if it binds a socket; with its store in a folder, if it has one.
     async fn spawn(lab: Lab, me: SignerId, start: &Start, pass: Option<RelayPass>) -> Result<Node> {
-        let (direct, relay, store, progress) =
-            (start.direct, Some(start.relay.clone()), start.store.clone(), start.progress.clone());
-        let opts = Options { bind: None, direct, relay, relay_pass: pass, store, progress, ..Options::local() };
+        let (direct, relay, store, shelf, progress) =
+            (start.direct, Some(start.relay.clone()), start.store.clone(), start.shelf.clone(), start.progress.clone());
+        let opts = Options { bind: None, direct, relay, relay_pass: pass, store, shelf, progress, ..Options::local() };
         Node::spawn(lab, me, opts).await
     }
 
@@ -1298,11 +1303,12 @@ impl PageDevice {
         ceremony: Function,
         backup: Option<bool>,
         steps: Option<Function>,
+        store: Option<JsValue>,
     ) -> Result<PageDevice, JsError> {
         let not_p256 = || JsError::new("not a P-256 passkey's public key info");
         let p256 = spki.map(|spki| sign::spki_p256(&spki).ok_or_else(not_p256)).transpose()?;
         let server = Offer::from_text(&server).map_err(js_error)?;
-        let (start, fresh) = (starting(name, &relay, steps)?, Fresh::new().map_err(js_error)?);
+        let (start, fresh) = (starting(name, &relay, steps, store)?, Fresh::new().map_err(js_error)?);
         let _ending = start.progress.ending();
         start.progress.step("unlock");
         let (unlock, ceremonies) = (unlocking(&unlock, fresh.challenge(start.now)).await?, Js(ceremony));
@@ -1318,9 +1324,10 @@ impl PageDevice {
         offer: String,
         unlock: Function,
         steps: Option<Function>,
+        store: Option<JsValue>,
     ) -> Result<PageDevice, JsError> {
         let offer = Offer::from_text(&offer).map_err(js_error)?;
-        let (start, fresh) = (starting(name, &relay, steps)?, Fresh::new().map_err(js_error)?);
+        let (start, fresh) = (starting(name, &relay, steps, store)?, Fresh::new().map_err(js_error)?);
         let _ending = start.progress.ending();
         start.progress.step("unlock");
         let unlock = unlocking(&unlock, fresh.challenge(start.now)).await?;
@@ -1342,6 +1349,7 @@ impl PageDevice {
         edits: Array,
         keys: Array,
         steps: Option<Function>,
+        store: Option<JsValue>,
     ) -> Result<PageDevice, JsError> {
         let p256 = hex_bytes(&p256).and_then(|b| <[u8; 33]>::try_from(b).ok());
         let p256 = p256.ok_or_else(|| JsError::new("a passkey's P-256 key is 33 bytes in hex"))?;
@@ -1351,7 +1359,7 @@ impl PageDevice {
         let edits: Vec<Vec<u8>> = edits.iter().map(|edit| Uint8Array::new(&edit).to_vec()).collect();
         let keys = keys.iter().map(|key| Arc::from(Uint8Array::new(&key).to_vec())).collect();
         let backup = backup(&edits, keys);
-        let start = starting(name, &relay, steps)?;
+        let start = starting(name, &relay, steps, store)?;
         let _ending = start.progress.ending();
         let device = Device::open(start, p256, mask, unlocked(&unlock)?, &backup);
         Ok(PageDevice(Rc::new(device.await.map_err(js_error)?)))
@@ -1860,14 +1868,82 @@ fn object(fields: &[(&str, JsValue)]) -> JsValue {
 }
 
 /// Where a device starts: named `name`, through the relay at `relay`, with the browser's randomness, now; showing the
-/// page each step of its start by `steps`, if it watches them.
-fn starting(name: String, relay: &str, steps: Option<Function>) -> Result<Start, JsError> {
+/// page each step of its start by `steps`, if it watches them; its files on the shelf of the page's `store`, if the
+/// page passes it, else in memory.
+fn starting(name: String, relay: &str, steps: Option<Function>, store: Option<JsValue>) -> Result<Start, JsError> {
     let relay: RelayUrl = relay.parse().map_err(|_| JsError::new("the relay's URL isn't one"))?;
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
-    let progress = shown(steps);
+    let (progress, shelf) = (shown(steps), store.filter(|s| !s.is_undefined() && !s.is_null()).map(shelf_of));
     let recovery = Start::recovery();
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None, progress, recovery })
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, store: None, shelf, progress, recovery })
+}
+
+/// The shelf the page's `store` keeps in OPFS (`js/store.js`, B2d): each call answered by the store's method of the
+/// same name, which its worker runs, `blobs`, `blobRead`, `blobOutboard`, `blobWrite`, `blobFinish` and `blobDrop`.
+fn shelf_of(store: JsValue) -> Shelf {
+    let (shelf, mut calls) = Shelf::new();
+    wasm_bindgen_futures::spawn_local(async move {
+        while let Some(call) = calls.recv().await {
+            let store = store.clone();
+            wasm_bindgen_futures::spawn_local(async move { answer_call(&store, call).await });
+        }
+    });
+    shelf
+}
+
+/// What the page's store answers `method` with, called with `args`.
+async fn ask_store(store: &JsValue, method: &str, args: &[JsValue]) -> io::Result<JsValue> {
+    let failed = |e: JsValue| io::Error::other(format!("the store's {method} failed: {}", js_text(&e)));
+    let f = Reflect::get(store, &method.into()).ok().and_then(|f| f.dyn_into::<Function>().ok());
+    let f = f.ok_or_else(|| io::Error::other(format!("the store has no {method}")))?;
+    let promise = f.apply(store, &args.iter().collect::<Array>()).map_err(failed)?;
+    JsFuture::from(Promise::from(promise)).await.map_err(failed)
+}
+
+/// Bytes the store answered with.
+fn store_bytes(value: JsValue) -> Bytes {
+    Bytes::from(Uint8Array::new(&value).to_vec())
+}
+
+/// Answers `call` by the page's store.
+async fn answer_call(store: &JsValue, call: Call) {
+    let bytes = |b: &[u8]| JsValue::from(Uint8Array::from(b));
+    match call {
+        Call::List(tx) => {
+            let listed = ask_store(store, "blobs", &[]).await.map(|held| {
+                let blob = |b: JsValue| {
+                    let b = Array::from(&b);
+                    Some((hash_of(&b.get(0).as_string()?)?, b.get(1).as_f64()? as u64))
+                };
+                Array::from(&held).iter().filter_map(blob).collect()
+            });
+            tx.send(listed).ok();
+        }
+        Call::Read { name, at, len, tx } => {
+            let args = [name.into(), (at as f64).into(), (len as f64).into()];
+            tx.send(ask_store(store, "blobRead", &args).await.map(store_bytes)).ok();
+        }
+        Call::Outboard { hash, tx } => {
+            tx.send(ask_store(store, "blobOutboard", &[hash.to_hex().into()]).await.map(store_bytes)).ok();
+        }
+        Call::Write { name, at, bytes: written, tx } => {
+            let args = [name.into(), (at as f64).into(), bytes(&written)];
+            tx.send(ask_store(store, "blobWrite", &args).await.map(|_| ())).ok();
+        }
+        Call::Finish { name, hash, size, outboard, tx } => {
+            let args = [name.into(), hash.to_hex().into(), (size as f64).into(), bytes(&outboard)];
+            tx.send(ask_store(store, "blobFinish", &args).await.map(|_| ())).ok();
+        }
+        Call::Drop { name, tx } => {
+            tx.send(ask_store(store, "blobDrop", &[name.into()]).await.map(|_| ())).ok();
+        }
+    }
+}
+
+/// What a JavaScript error says.
+fn js_text(e: &JsValue) -> String {
+    Reflect::get(e, &"message".into()).ok().and_then(|m| m.as_string()).or_else(|| e.as_string()).unwrap_or_default()
 }
 
 /// A start's steps, shown to the page by `steps(json)` each time they change (`steps_json`), until the start is over,
@@ -1944,7 +2020,7 @@ mod tests {
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
         let (entropy, recovery) = ([7; 32], None);
-        let start = Start { name, relay, entropy, now: 0, direct: false, store: None, progress, recovery };
+        let start = Start { name, relay, entropy, now: 0, direct: false, store: None, shelf: None, progress, recovery };
         // a device made since 2026-10-10: its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);

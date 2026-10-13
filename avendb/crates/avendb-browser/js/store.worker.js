@@ -9,6 +9,11 @@
 // and it opens the rest again from its edits. A crash can cut the last record short: reading stops at the first record
 // that isn't whole, and `ops` is cut back to the records before it.
 //
+// `blobs/` is the device's node's shelf (B2d, `avendb_net::shelf`): each blob it keeps whole, a piece of a file it
+// brings or keeps, in a file named by its BLAKE3 hash in hex, its outboard beside it in `<hash>.obao`, written last, so
+// that a blob counts once both are there; a blob being written is in a file of the node's naming (`new-...`) until it
+// is whole. What the folder holds of anything else, it drops as the node lists it.
+//
 // While its device runs, the worker holds `ops` open, which OPFS lets only one worker do: the same device can't run in
 // two tabs at once. A store IndexedDB kept under the same name, as pages did before, moves over once as the store
 // opens and is then deleted: its meta is written last, so a move cut short starts over the next time.
@@ -18,6 +23,13 @@
 const EDITS = 'ops';
 const KEYS = 'keys';
 const META = 'meta';
+const BLOBS = 'blobs';
+/** The most blob files held open at once, the least lately used let go first. */
+const HANDLES = 16;
+/** A finished blob's name: its hash in hex. */
+const HASH = /^[0-9a-f]{64}$/;
+/** The bytes copied at a time, where a browser can't move a file. */
+const COPY = 8 << 20;
 
 /** The folder of the store open here, its name, and `ops` while the device runs, with where each of its records ends. */
 let dir, name, log, ends;
@@ -57,9 +69,9 @@ function bytesOf(file) {
 	return bytes;
 }
 
-/** Opens file `name` of folder `folder` to write in place, made if there is none. */
-async function writable(folder, name) {
-	const handle = await folder.getFileHandle(name, { create: true });
+/** Opens file `name` of folder `folder` to write in place, made if there is none and `create`. */
+async function writable(folder, name, create = true) {
+	const handle = await folder.getFileHandle(name, { create });
 	try {
 		return await handle.createSyncAccessHandle();
 	} catch (e) {
@@ -173,10 +185,133 @@ async function save({ from, edits, keys, drop }) {
 	for (const id of drop) await folder.removeEntry(id).catch(() => {});
 }
 
-/** Lets go of `ops`, for another worker to hold. */
+/** Lets go of `ops`, for another worker to hold, and of every blob file. */
 function release() {
 	log?.close();
 	log = undefined;
+	for (const name of [...handles.keys()]) shut(name);
+}
+
+/** The blob files held open, by name, the least lately used first. */
+const handles = new Map();
+
+async function blobFolder() {
+	return dir.getDirectoryHandle(BLOBS, { create: true });
+}
+
+/** Blob file `name`, held open to read and write in place, made first if `create`. */
+async function blob(name, create = false) {
+	let file = handles.get(name);
+	if (file) {
+		handles.delete(name);
+	} else {
+		file = await writable(await blobFolder(), name, create);
+		if (handles.size >= HANDLES) shut(handles.keys().next().value);
+	}
+	handles.set(name, file);
+	return file;
+}
+
+/** Lets go of blob file `name`, if it is held. */
+function shut(name) {
+	handles.get(name)?.close();
+	handles.delete(name);
+}
+
+/** Whether `folder` holds a file `name`. */
+async function holds(folder, name) {
+	try {
+		await folder.getFileHandle(name);
+		return true;
+	} catch (e) {
+		if (e?.name === 'NotFoundError') return false;
+		throw e;
+	}
+}
+
+/** Removes file `name` of `folder`, if it is there. */
+async function removeFile(folder, name) {
+	shut(name);
+	await folder.removeEntry(name).catch((e) => {
+		if (e?.name !== 'NotFoundError') throw e;
+	});
+}
+
+/** Every blob the shelf holds whole, `[hash, size]`, dropping whatever else `blobs/` holds. */
+async function blobs() {
+	const folder = await blobFolder();
+	const names = new Set();
+	for await (const [name, handle] of folder.entries()) if (handle.kind === 'file') names.add(name);
+	const held = [];
+	for (const name of names) {
+		if (HASH.test(name) && names.has(`${name}.obao`)) {
+			held.push([name, handles.get(name)?.getSize() ?? (await (await folder.getFileHandle(name)).getFile()).size]);
+		} else if (!(name.endsWith('.obao') && HASH.test(name.slice(0, -5)) && names.has(name.slice(0, -5)))) {
+			await removeFile(folder, name);
+		}
+	}
+	return held;
+}
+
+/** `len` bytes of blob `name` from byte `at` on, or fewer at its end. */
+async function blobRead(name, at, len) {
+	const file = await blob(name);
+	const bytes = new Uint8Array(Math.max(0, Math.min(at + len, file.getSize()) - at));
+	file.read(bytes, { at });
+	return bytes;
+}
+
+/** The outboard of blob `hash`. */
+async function blobOutboard(hash) {
+	const bytes = await read(await blobFolder(), `${hash}.obao`);
+	if (!bytes) throw new Error(`no outboard of ${hash} on the shelf`);
+	return bytes;
+}
+
+/** Writes `bytes` from byte `at` on of blob `name`, begun if it isn't yet. */
+async function blobWrite(name, at, bytes) {
+	(await blob(name, true)).write(bytes, { at });
+}
+
+/** Blob `name` is whole: blob `hash` of `size` bytes from now on, its bytes under its hash, then its outboard. */
+async function blobFinish(name, hash, size, outboard) {
+	const folder = await blobFolder();
+	if (await holds(folder, `${hash}.obao`)) return removeFile(folder, name);
+	const file = await blob(name, size === 0);
+	if (file.getSize() !== size) throw new Error(`${name} is ${file.getSize()} bytes, not ${size}`);
+	file.flush();
+	shut(name);
+	if (name !== hash) {
+		await removeFile(folder, hash);
+		const handle = await folder.getFileHandle(name);
+		if (handle.move) await handle.move(hash);
+		else await copy(folder, name, hash, size);
+	}
+	await put(folder, `${hash}.obao`, outboard);
+}
+
+/** Copies file `from` of `folder` to `to`, `COPY` bytes at a time, then removes it: where a browser can't move one. */
+async function copy(folder, from, to, size) {
+	const [source, target] = [await writable(folder, from), await writable(folder, to)];
+	try {
+		const bytes = new Uint8Array(Math.min(COPY, size));
+		for (let at = 0; at < size; at += COPY) {
+			const n = source.read(bytes, { at });
+			target.write(bytes.subarray(0, n), { at });
+		}
+		target.flush();
+	} finally {
+		source.close();
+		target.close();
+	}
+	await removeFile(folder, from);
+}
+
+/** Drops blob `name`, its outboard first, so that it counts no more. */
+async function blobDrop(name) {
+	const folder = await blobFolder();
+	if (HASH.test(name)) await removeFile(folder, `${name}.obao`);
+	await removeFile(folder, name);
 }
 
 /** The store IndexedDB kept under `name`, as pages did before (P8e): `{meta, edits, keys, ids}`, or `undefined`. */
@@ -241,6 +376,12 @@ const ops = {
 	save,
 	release,
 	close: release,
+	blobs,
+	blobRead,
+	blobOutboard,
+	blobWrite,
+	blobFinish,
+	blobDrop,
 	/** Removes the store named `n`, and with it the device the page made. */
 	async remove(n) {
 		if (n === name) release();
@@ -254,7 +395,7 @@ const ops = {
 async function answer({ id, op, args }) {
 	try {
 		const ok = await ops[op](...args);
-		const moved = ok?.edits ? [...ok.edits, ...ok.keys].map((b) => b.buffer) : [];
+		const moved = ok?.edits ? [...ok.edits, ...ok.keys].map((b) => b.buffer) : ok instanceof Uint8Array ? [ok.buffer] : [];
 		postMessage({ id, ok }, moved);
 	} catch (e) {
 		postMessage({ id, error: String(e?.message ?? e) });
