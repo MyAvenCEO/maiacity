@@ -625,6 +625,65 @@ export function act(state, seat, action, now = Date.now()) {
 /** the ledger lines one holder is part of, newest first */
 export const ledgerOf = (s, who) => s.ledger.filter((e) => e.from === who || e.to === who).reverse();
 
+/** every rent running now, as the pay day pays it: who pays whom, in which MIND, a month and each weekly pay day, and
+ * what is still owed on it */
+export function rents(s) {
+	const st = s.coops.settlement;
+	const set = { ...DEFAULT_SETTINGS, ...s.settings };
+	const out = SEATS.map((seat) => ({ what: 'Tent rent', from: `player:${seat}`, to: 'coop:settlement', token: 'SETTLEMENT', monthly: set.tentRent, owed: s.players[seat].arrears ?? 0 }));
+	out.push({ what: 'Hex rent', from: 'coop:settlement', to: 'coop:maia', token: 'MAIA', monthly: set.hexRent, owed: st.arrears ?? 0 });
+	for (const r of RENTED) {
+		const owner = Object.values(s.coops).find((c) => c.assets.some((a) => a.id === r.asset));
+		if (!owner || owner.id === 'settlement') continue;
+		out.push({ what: `${r.label[0].toUpperCase()}${r.label.slice(1)} rent`, from: 'coop:settlement', to: `coop:${owner.id}`, token: owner.mind, monthly: set[r.setting] ?? 0, owed: st.owed?.[r.asset] ?? 0 });
+	}
+	return out.filter((r) => r.monthly > DUST || r.owed > DUST).map((r) => ({ ...r, weekly: r.monthly / WEEKS_A_MONTH }));
+}
+
+/** the dividends `who` can expect each pay day at today's holdings: Law 5's share of every rent paid to a COOP in its
+ * own MIND, pro rata among that MIND's holders (the COOP's own treasury and the pool get none) */
+export function dividendsOf(s, who) {
+	const share = s.settings.dividendShare ?? DEFAULT_SETTINGS.dividendShare;
+	const out = [];
+	for (const r of rents(s)) {
+		const c = s.coops[r.to.slice(5)];
+		if (!c || r.token !== c.mind || !(share > 0)) continue;
+		const holders = [...SEATS.map((seat) => [`player:${seat}`, s.players[seat].wallet]), ...Object.values(s.coops).filter((o) => o.id !== c.id).map((o) => [`coop:${o.id}`, o.treasury])].filter(([, b]) => b[r.token] > DUST);
+		const held = holders.reduce((a, [, b]) => a + b[r.token], 0);
+		const mine = holders.find(([id]) => id === who);
+		if (!mine || !(held > DUST)) continue;
+		const weekly = (r.weekly * share * mine[1][r.token]) / held;
+		const same = out.find((d) => d.what === r.what && d.from === r.to);
+		if (same) same.weekly += weekly;
+		else out.push({ what: r.what, from: r.to, token: r.token, weekly });
+	}
+	return out;
+}
+
+/** what actually flowed in and out of `who` on its last `n` pay days, by MIND: the rents, the dividends, and the
+ * swaps made to pay rent; newest first */
+export function payDaysOf(s, who, n = 8) {
+	const weeks = new Map();
+	for (const e of s.ledger) {
+		if (e.from !== who && e.to !== who) continue;
+		const paid = (e.kind === 'rent' || e.kind === 'dividend') && e.note?.includes('pay day');
+		if (!paid && !(e.kind === 'swap' && e.note === 'swapped to pay rent')) continue;
+		const week = Math.round(e.vm * WEEKS_A_MONTH);
+		if (!weeks.has(week)) weeks.set(week, { week, vm: week / WEEKS_A_MONTH, flows: {} });
+		const fl = weeks.get(week).flows;
+		const add = (token, d) => {
+			fl[token] ??= { in: 0, out: 0 };
+			if (d > 0) fl[token].in += d;
+			else fl[token].out -= d;
+		};
+		if (e.kind === 'swap') {
+			add(e.token, -e.amount);
+			add(e.out.token, e.out.amount);
+		} else add(e.token, e.to === who ? e.amount : -e.amount);
+	}
+	return [...weeks.values()].sort((a, b) => b.week - a.week).slice(0, n);
+}
+
 /** every MIND in the game, by token: wallets, treasuries and the pool */
 export function supply(s) {
 	const out = { HEARTS: 0, MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 };

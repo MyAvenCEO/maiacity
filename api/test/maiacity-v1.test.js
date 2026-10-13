@@ -1,6 +1,6 @@
 // MaiaCity V1's rules (game/maiacity-v1/engine.js): HEARTS, the 50/50 MIND split, the pool, rent and the melt.
 import { expect, test } from "bun:test";
-import { DAY_MS, act, advance, invariant, ledgerOf, monthsAt, newGame, price, quote, supply, weights } from "../../game/maiacity-v1/engine.js";
+import { DAY_MS, act, advance, dividendsOf, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
 
 const T0 = Date.UTC(2026, 9, 13);
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
@@ -170,6 +170,22 @@ test("the Settlement COOP rents the pickup, powercube and battery pack from the 
   let t = grown(newGame(T0, { demurrage: 0, tentRent: 0, hexRent: 0 }));
   t = advance(t, T0 + DAY_MS / 4);
   expect(t.coops.settlement.owed).toEqual({ pickup: 1, powercube: 0.75, battery: 0.75 });
+});
+
+test("the ledger's rents in and out, the dividends to expect, and what each pay day actually moved", () => {
+  let s = grown(newGame(T0, { demurrage: 0, poolShare: 0 }));
+  for (const seat of ["A", "B"]) s = act(s, seat, { type: "mint" }, T0);
+  s = act(s, "A", { type: "invest", coop: "settlement", amount: 20 }, T0);
+  s = act(s, "B", { type: "invest", coop: "settlement", amount: 20 }, T0);
+  expect(rents(s).filter((r) => r.from === "coop:settlement").map((r) => r.what)).toEqual(["Hex rent", "Pickup rent", "Powercube rent", "Battery pack rent"]);
+  expect(rents(s).filter((r) => r.to === "coop:settlement").map((r) => r.weekly)).toEqual([2.5, 2.5]);
+  // A holds half the SettlementMIND outside its treasury: half of 20 % of the 5 tent rent a pay day
+  expect(dividendsOf(s, "player:A").reduce((a, r) => a + r.weekly, 0)).toBeCloseTo(0.5, 6);
+  s = advance(s, T0 + DAY_MS / 2);
+  const days = payDaysOf(s, "player:A");
+  expect(days.map((d) => d.week)).toEqual([2, 1]);
+  expect(days[0].flows.SETTLEMENT.out).toBeCloseTo(2.5, 6);
+  expect(days[0].flows.SETTLEMENT.in).toBeGreaterThan(0.4);
 });
 
 // the shared game in the database (PGlite): seats, moves, locks
