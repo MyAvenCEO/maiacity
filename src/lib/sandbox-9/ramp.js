@@ -239,6 +239,11 @@ export function initRamp(w, S) {
 export function rampDay(w) {
 	const S = w.ramp;
 	if (!S || S.over) return;
+	// the build-out is a shock that lasts until every dome stands: the slow loop (rents, payouts, the bank, the
+	// HEARTS' allocation) runs every day while it lasts and for 90 days after, as it does after a scheduled shock. Run
+	// weekly from the second year, its week-sized lumps emptied the first settlement COOP's treasury in the first days
+	// of January on some seeds (the whole village short of beds for days)
+	w.slowUntil = Math.max(w.slowUntil ?? 0, w.day + 90);
 	const m = Math.floor(w.day / MONTH_DAYS);
 	if (m !== S.monthNow) {
 		if (m >= S.months.length - 1) {

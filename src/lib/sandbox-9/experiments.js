@@ -345,6 +345,23 @@ export function track(w) {
 		Yr.full[g] += co.sold * (Number.isFinite(co.fullR) ? co.fullR : co.priceR);
 		Yr.vc[g] += co.sold * (Number.isFinite(co.varR) ? co.varR : 0);
 	}
+	// on the build-out: who went short, the settlers of day 0 while they were the whole village, newcomers in their
+	// first 90 days, or anyone else (proof.md's P1 section)
+	if (w.ramp && d >= 1) {
+		const r = x.rampShort ?? (x.rampShort = { settlersPD: 0, settlersDays: 0, settlersLastDay: -1, newPD: 0, newDays: 0, otherPD: 0, otherDays: 0, byYear: [] });
+		const settlers = w.ramp.plan?.options?.settlers ?? 2;
+		let sS = 0, sN = 0, sO = 0;
+		for (let i = 0; i < w.N; i++) {
+			if (!(w.met[i] < 0.98)) continue;
+			if (w.N <= settlers) sS++;
+			else if (w.born[i] > 0 && d - w.born[i] < 90) sN++;
+			else sO++;
+		}
+		if (sS) (r.settlersPD += sS), r.settlersDays++, (r.settlersLastDay = d);
+		if (sN) (r.newPD += sN), r.newDays++;
+		if (sO) (r.otherPD += sO), r.otherDays++;
+		if (sS + sN + sO) r.byYear[y] = (r.byYear[y] ?? 0) + sS + sN + sO;
+	}
 	const N0 = w.cfg.people;
 	for (let i = N0; i < w.N; i++)
 		if (d - w.born[i] < 3 * Y) {
@@ -1329,6 +1346,7 @@ export function summarize(w) {
 		receiverships: w.events.filter((e) => e.kind === 'receivership').map((e) => ({ day: e.day, coop: e.coop, heir: e.heir, why: e.why })),
 		founded: w.events.filter((e) => e.kind === 'found').length,
 		newcomers: { pd: xt.newcomerPD, short: xt.newcomerShortPD, ...newcomerStrict(w, xt.newStrict) },
+		rampShort: xt.rampShort ? { ...xt.rampShort, byYear: Array.from(xt.rampShort.byYear, (v) => v ?? 0) } : null,
 		coopHearts: xt.coopHearts,
 		ring: w.ring ? { share: w.ring.heartsAll ? w.ring.heartsIn / w.ring.heartsAll : NaN, people: w.ring.members.length / w.N, wealth0: w.ring.wealth0, wealth1: w.ring.wealth1 ?? NaN, died: w.coops[w.ring.k].died } : null,
 		badges: Object.fromEntries(GOOD_IDS.map((id, g) => [id, topBadge(w, g)])),

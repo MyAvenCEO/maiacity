@@ -746,17 +746,25 @@ export function createWorld(config = {}) {
 	const byGood = Array.from({ length: G }, () => []);
 	for (const { g, pl } of sets) byGood[pl.def.good].push({ g, pl });
 	// coopsPerGood: 2 keeps the two genesis COOPs of each good; 1 gives both plants to the first; 4 splits each in two
+	// (but the settlement COOPs and the Village COOP)
 	const plan = [];
 	for (let gi = 0; gi < G; gi++) {
 		const list = byGood[gi];
 		const per = perOf(gi);
 		if (per === 1) plan.push({ ids: [list[0].g.id], plants: [list.map((x) => x.pl)], city: list.some((x) => x.g.city) });
 		else if (per >= 4)
-			for (const x of list)
+			for (const x of list) {
+				// a settlement COOP and the Village COOP own their hex's domes: they are not split (six settlements already
+				// sell beds, and the MIND slots would not hold every COOP twice)
+				if (x.g.village || x.g.hex != null) {
+					plan.push({ ids: [x.g.id], plants: [[x.pl]], city: !!x.g.city });
+					continue;
+				}
 				for (const half of [0, 1]) {
 					const pl = { ...x.pl, vc: { ...x.pl.vc }, cap: x.pl.cap / 2, landM2: x.pl.landM2 / 2, raw: x.pl.raw / 2, pits: x.pl.pits / 2, domeKwp: x.pl.domeKwp / 2, battCap: x.pl.battCap / 2, batt: x.pl.batt / 2, plots: x.pl.plots.map((p) => ({ ...p, m2: p.m2 / 2 })) };
 					plan.push({ ids: [x.g.id + (half ? '2' : '1')], plants: [[pl]], city: x.g.city && !half });
 				}
+			}
 		else if (gi === FOOD && list.length === 2 && cfg.foodSplit > 0) {
 			// food: the food domes cannot sell at the food forest's cost, so on their own they would leave food with a
 			// single seller within a year or two. GREEN holds a share of the forest (cfg.foodSplit) and of the domes

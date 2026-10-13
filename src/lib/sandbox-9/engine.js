@@ -16,7 +16,8 @@
  * through the pools, Law 5 → records → running items paid to Avens → wear → the slow loop (arbitrage, ground rent,
  * reserve and payout, learning, building, where the HEARTS go, Law 3 foundings, receivership) → both ledgers checked.
  *
- * The slow loop runs every day in the first year and for 90 days after a scheduled shock, otherwise every 7th day.
+ * The slow loop runs every day in the first year, while the village is being built (./ramp.js) and for 90 days after it
+ * or after a scheduled shock, otherwise every 7th day.
  */
 import { exp, log, pow } from './dmath.js';
 import { DEFAULTS, createWorld as genesisWorld, blankToday, initPerson, firstAlloc, capDayOf, plantCapDay, vcOf } from './genesis.js';

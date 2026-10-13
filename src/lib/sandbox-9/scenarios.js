@@ -97,6 +97,7 @@ function foodRow(s) {
 		indoorKcal10: V[Math.min(V.length, 10) - 1]?.food.indoors,
 		ledKcal10: V[Math.min(V.length, 10) - 1]?.food.led,
 		importEurMean: mean(full.map((b) => b.importEur)),
+		runEurLast: full.length ? full[full.length - 1].runEur : NaN,
 		exportEurMean: mean(full.map((b) => b.exportEur)),
 		coverYear: full.find((b) => b.exportsCover)?.year ?? null,
 		impShortDays: B.reduce((a, b) => a + (b.importShortDays ?? 0), 0),
@@ -172,7 +173,7 @@ export const SCENARIOS = [
 				comparison: true,
 				numbers: { rows },
 				takeaway: rows.map((r) => `${r.label}: ${f0(r.landOut)} m² a person outdoors and ${f0(r.landIn)} under glass; the 177 ha feed ${f0(r.fed)} people at maturity; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1, ${pct(r.impShare10, 0)} in year 10 and ${pct(r.impShareLast, 0)} in the last year; first grew all it needs (2,240 kcal a person a day) in year ${r.firstFed ?? 'never'}`).join('. ') + '.',
-				evidence: rows.map((r) => `${r.label}: ${f0(r.kcalDay)} kcal and ${f2(r.proteinDay)} g protein a day as planned; ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average; mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
+				evidence: rows.map((r) => `${r.label}: ${f0(r.kcalDay)} kcal and ${f2(r.proteinDay)} g protein a day as planned; ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average with the build-out (running imports €${f0(r.runEurLast)} in the last year); mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
 			};
 		}
 	},
@@ -190,7 +191,7 @@ export const SCENARIOS = [
 				comparison: true,
 				numbers: { rows },
 				takeaway: rows.map((r) => `${r.label}: ${f0(r.landOut)} m² a person outdoors and ${f0(r.landIn)} under glass (net of tracks, sheds and the ley); the food land feeds ${f0(r.fed)} people at maturity; food bought ${pct(r.impShare1, 0)} of what was eaten in year 1, ${pct(r.impShare10, 0)} in year 10 and ${pct(r.impShareLast, 0)} in the last year; first grew all it needs (2,240 kcal a person a day) in year ${r.firstFed ?? 'never'}; last bought food in year ${r.lastImport ?? '–'}`).join('. ') + '.',
-				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average; mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
+				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short; imports €${f0(r.importEurMean)} a year on average with the build-out (running imports €${f0(r.runEurLast)} in the last year); mean living standard ${f2(r.Lmean)} in the last year`).join('; ')
 			};
 		}
 	},
@@ -246,7 +247,7 @@ export const SCENARIOS = [
 				pass: null,
 				comparison: true,
 				numbers: { rows },
-				takeaway: rows.map((r) => `${f0(r.people)} people: ${f0(r.shortPD)} person-days short, food bought ${pct(r.impShareLast, 0)} of what was eaten in the last year, imports €${f0(r.importEurMean)} a year, mean living standard ${f2(r.Lmean)}, the poorest tenth ${f2(r.poorH)}`).join('; ') + '.',
+				takeaway: rows.map((r) => `${f0(r.people)} people: ${f0(r.shortPD)} person-days short, food bought ${pct(r.impShareLast, 0)} of what was eaten in the last year, imports €${f0(r.importEurMean)} a year on average with the build-out (running imports €${f0(r.runEurLast)} in the last year), mean living standard ${f2(r.Lmean)}, the poorest tenth ${f2(r.poorH)}`).join('; ') + '.',
 				evidence: rows.map((r) => `${f0(r.people)}: P1 ${r.P1 ? 'holds' : 'fails'}, P3 ${r.P3 ? 'holds' : 'fails'}, first fed itself in year ${r.firstFed ?? 'never'}, exports first paid all imports in year ${r.coverYear ?? 'never'}`).join('; ')
 			};
 		}

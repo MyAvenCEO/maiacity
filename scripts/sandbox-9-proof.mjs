@@ -221,7 +221,7 @@ function headline(exps, scen, bases) {
 	rows.push({
 		part: 'P1 — no one starves',
 		holds: allB((b) => b.p.P1.pass),
-		base: bases.map((b) => b.p.P1.personDaysShortAny).join(', ') + ' person-days short (seeds ' + bases.map((b) => b.seed).join(', ') + ')',
+		base: bases.map((b) => b.p.P1.personDaysShortAny).join(', ') + ' person-days short (seeds ' + bases.map((b) => b.seed).join(', ') + ')' + (bases.every((b) => b.s.rampShort) ? '; of them, while the two settlers were the whole village: ' + bases.map((b) => b.s.rampShort.settlersPD).join(', ') + ' (the appendix says why)' : ''),
 		breaks: [...failE(['X5', 'X12', 'X14', 'SH']), ...fails(['B10', 'B15', 'B26', 'B29', 'S02', 'S03'].map(S)), ...ens('P1')]
 	});
 	rows.push({
@@ -392,7 +392,7 @@ function simpleStats(L, bases, scen) {
 		const v = Vs[y - 1], m = v.energy.made, g = v.energy.went;
 		L.push(`| ${y} | ${k0(v.food.outdoors)} | ${k0(v.food.indoors)} | ${k0(v.food.imported)} | ${k0(v.food.eaten)} | ${k0(v.food.lost)} | ${k1(m.solar)} | ${k1(m.geothermal)} | ${k1(g.basics)} | ${k1(g.running)} | ${k1(g.building)} | ${k1(g.rd)} | ${k1(g.export)} | ${k1(g.storage)} | ${k1(g.curtailed)} |`);
 	}
-	if (Vs.length && (Vs.length - 1) % 5 !== 0 && Vs.length > 10) {
+	if (Vs.length && Vs.length % 5 !== 0 && Vs.length > 10) {
 		const v = Vs[Vs.length - 1], m = v.energy.made, g = v.energy.went;
 		L.push(`| ${Vs.length} | ${k0(v.food.outdoors)} | ${k0(v.food.indoors)} | ${k0(v.food.imported)} | ${k0(v.food.eaten)} | ${k0(v.food.lost)} | ${k1(m.solar)} | ${k1(m.geothermal)} | ${k1(g.basics)} | ${k1(g.running)} | ${k1(g.building)} | ${k1(g.rd)} | ${k1(g.export)} | ${k1(g.storage)} | ${k1(g.curtailed)} |`);
 	}
@@ -455,7 +455,7 @@ function foodAndLand(L, bases, scen) {
 	for (const [k, g] of groups) L.push(`| ${g.label} | ${k0(g.g)} | ${k0(g.kcal)} | ${k1(g.protein)} | ${k0(fl.landM2.outByGroup[k])} | ${k0(fl.landM2.inByGroup[k])} |`);
 	L.push(`| **a person’s day** | | **${k0(fl.kcalDay)}** | **${k1(fl.proteinDay)}** | **${k0(fl.landM2.out)}** | **${k0(fl.landM2.in)}** |`, '');
 	const kv = fl.kcalM2Village ?? {};
-	L.push(`Grown all outdoors, a m² gives ${k0(fl.kcalM2Year.out)} kcal of this diet a year at maturity; under glass, ${k0(fl.kcalM2Year.in)} kcal of the part of it the glass can grow (sweet potato, vegetables, fruit). The village splits its land by the diet’s groups, as food-best.md does: the glass grows sweet potato, vegetables and fruit, the outdoor land grows the beans, nuts, seeds and the hens’ feed for the same people, and the whole diet on what is left. So the village grows ${k0(kv.out)} kcal and ${k0(kv.proteinOut)} g of protein a net m² a year outdoors and ${k0(kv.in)} kcal and ${k0(kv.proteinIn)} g under glass (before the harvest’s losses), and the engine grows its food at exactly these yields. With 15 % lost after the harvest, the village’s ${k1(fl.foodHa.out)} net ha outdoors (${k1(fl.foodHa.outGross)} ha less tracks, sheds, hedges and the compost ley) and ${k1(fl.foodHa.in)} ha under glass feed **${k0(fl.peopleFed.all)} people** in an average mature year (${k0(fl.peopleFed.out)} from outdoors, ${k0(fl.peopleFed.in)} from the domes; ${fl.peopleFedByGroup?.bind ?? 'the glass'} binds the split); ${k0(bases[0].N)} live there. The village’s own food share in the tables counts only what its land grew and kept (after losses): never stores or imports.`, '');
+	L.push(`Grown all outdoors, a m² gives ${k0(fl.kcalM2Year.out)} kcal of this diet a year at maturity; under glass, ${k0(fl.kcalM2Year.in)} kcal of the part of it the glass can grow (sweet potato, vegetables, fruit). The village splits its land by the diet’s groups, as food-best.md does: the glass grows sweet potato, vegetables and fruit, the outdoor land grows the beans, nuts, seeds and the hens’ feed for the same people, and the whole diet on what is left. So the village grows ${k0(kv.out)} kcal and ${k0(kv.proteinOut)} g of protein a net m² a year outdoors and ${k0(kv.in)} kcal and ${k0(kv.proteinIn)} g under glass (before the harvest’s losses), and the engine grows its food at exactly these yields. With 15 % lost after the harvest, the village’s ${k1(fl.foodHa.out)} net ha outdoors (${k1(fl.foodHa.outGross)} ha less tracks, sheds, hedges and the compost ley) and ${k1(fl.foodHa.in)} ha under glass feed **${k0(fl.peopleFed.all)} people** in an average mature year (${k0(fl.peopleFed.out)} from outdoors, ${k0(fl.peopleFed.in)} from the domes; ${fl.peopleFedByGroup?.bind ?? 'the glass'} binds the split); ${k0(bases[0].N)} live there. The village’s own food share (\`borderYears\` ownFoodShare, on the page) is what its land grew and kept after the harvest’s losses, over what everyone needs: it never counts stores or imports. People eat above need when they can pay, so a share over 100 % can stand beside food still bought abroad.`, '');
 	// people fed per yield setting (food-best.md: ~1,100 at measured averages, ~1,660 at top yields, fully counted)
 	const fb = fl.peopleFedBy;
 	if (fb) {
@@ -561,7 +561,7 @@ function buildoutAndBank(L, bases, scen) {
 		const b = B[y - 1];
 		L.push(`| ${y} | ${k0(b.people)} | ${eurM(b.buildEur)} | ${eurM(b.runEur)} | ${eurM(b.importEur)} | ${eurM(b.exportEur)} | ${eurM(b.exportEur - b.importEur)} | ${eurM(b.bank?.cumulativeEur)} | ${eurM(b.bank?.lowestEur)} | ${eurM(b.bank?.advancedEur)} | ${eurM(b.bank?.owedEur)} |`);
 	}
-	if (B.length > 10 && (B.length - 1) % 5 !== 0) {
+	if (B.length > 10 && B.length % 5 !== 0) {
 		const b = B[B.length - 1];
 		L.push(`| ${B.length} | ${k0(b.people)} | ${eurM(b.buildEur)} | ${eurM(b.runEur)} | ${eurM(b.importEur)} | ${eurM(b.exportEur)} | ${eurM(b.exportEur - b.importEur)} | ${eurM(b.bank?.cumulativeEur)} | ${eurM(b.bank?.lowestEur)} | ${eurM(b.bank?.advancedEur)} | ${eurM(b.bank?.owedEur)} |`);
 	}
@@ -671,7 +671,8 @@ function p3Real(L, bases) {
 			L.push('');
 		}
 		if (R.riseFail.length) L.push('Baskets that did not rise over the run: ' + R.riseFail.map((x) => `${x.by} tenth ${x.tenth} (up: ${x.up.join(', ') || 'nothing'}; down: ${x.down.join(', ') || 'nothing'})`).join('; ') + '.', '');
-		if (R.excused) L.push(`${R.excused} falls were excused (at satiation, or a physical limit bound that year).`, '');
+		const nEx = Array.isArray(R.excused) ? R.excused.length : R.excused;
+		if (nEx) L.push(`${k0(nEx)} falls were excused (at satiation, or a physical limit bound that year).`, '');
 	}
 }
 
@@ -689,6 +690,25 @@ function borderLine(b0, scen) {
 }
 const p3s = (p) => `P1 ${yes(p.P1.pass)}, P2 ${yes(p.P2.pass)}, P3 ${yes(p.P3.pass)}, MIND never binds a basic ${yes(p.abundance.pass)}`;
 
+/** on the build-out: who went short (the settlers' months, newcomers' first 90 days, anyone else), seed by seed */
+function p1Why(L, bases) {
+	L.push('**Who went short, and why.** Each short person-day is counted in one of three groups: the two settlers while they were the whole village, newcomers in their first 90 days, and everyone else.', '');
+	L.push('| seed | person-days short | the settlers’ months: person-days (days, last day) | newcomers’ first 90 days: person-days (days) | everyone else: person-days (days) | by year (1, 2, 3, …) |', '|---|---|---|---|---|---|');
+	for (const b of bases) {
+		const r = b.s.rampShort;
+		if (!r) continue;
+		const by = r.byYear.slice();
+		while (by.length && !by[by.length - 1]) by.pop();
+		L.push(`| ${b.seed} | ${k0(b.p.P1.personDaysShortAny)} | ${k0(r.settlersPD)} (${r.settlersDays}${r.settlersLastDay >= 0 ? `, d${r.settlersLastDay}` : ''}) | ${k0(r.newPD)} (${r.newDays}) | ${k0(r.otherPD)} (${r.otherDays}) | ${by.length ? by.map((x) => k0(x)).join(', ') : 'none'} |`);
+	}
+	L.push('');
+	L.push('In the settlers’ months the whole economy is two people. Each MIND’s pools hold only a few MIND, so one day’s payments can move a MIND’s price tenfold. On some days the East settlement COOP’s treasury, which holds almost nothing but its own MIND, is worth too little to pay the heat of the two settlers’ beds, so the COOP delivers less of them (`engine.js affordCoops`: a COOP delivers only the basics whose energy it can pay for). This is a real result of the rules for a village of two: a MIND economy needs enough people trading for its prices to mean something. It ends when the first newcomers arrive.', '');
+	L.push('Two causes of short days later in the build-out were found and fixed in this round:', '');
+	L.push('- **The weekly slow loop.** From the second year the slow loop ran weekly, and its week-sized lumps emptied the first settlement COOP’s treasury in early January. Now it runs every day while the village is being built.', '');
+	L.push('- **Winter food prices.** A food COOP valued the food it bought abroad at no less than its own plants’ unit cost on the day. In a dark month that cost is the domes’ heat over the month’s small harvest, so in the build-out’s winters, when most of the food was bought, every imported kilogram was priced at it. Food then cost far more than over the year, and newcomers who held nothing yet could not pay for their basics. Imports are now valued at no less than the own plants’ unit cost over the year.', '');
+	L.push('What is left among the newcomers is a newcomer whose first days fall on a dear day, before its holdings have grown.', '');
+}
+
 /** the base world's evidence, seed by seed (the appendix) */
 function baseEvidence(L, bases, exps, meta) {
 	const b0 = bases[0];
@@ -702,6 +722,7 @@ function baseEvidence(L, bases, exps, meta) {
 		L.push(`| ${b.seed} | ${s.food} | ${s.water} | ${s.energy} | ${s.bed} | ${p.peopleEverShort} | ${['food', 'water', 'energy', 'bed'].map((g) => `${f(lo[g].share, 3)} (d${lo[g].day})`).join(' / ')} | ${p.worst ? `person ${p.worst.person}, day ${p.worst.day}, ${p.worst.good} ${f(p.worst.met, 3)}` : '–'} |`);
 	}
 	L.push('');
+	if (bases.some((b) => b.s.rampShort)) p1Why(L, bases);
 	L.push(`### P2 — the owner-only cohort (${b0.owners} people: Aven output 0, nothing held at the start)`, '');
 	L.push('Strict: today’s Law 5 dividends alone pay today’s basic bundle, for every member (target: from day 120 on). Normal: every member met every basic and still holds MIND, every day.', '');
 	L.push('| seed | strict: first day | holds every day from | days failing after the first | worst ratio after the first (day) | lowest ratio by year (1–5, last) | normal: failures | lowest holding (days of the bundle), year 1 → last |', '|---|---|---|---|---|---|---|---|');
@@ -756,7 +777,7 @@ function baseEvidence(L, bases, exps, meta) {
 	L.push('');
 	L.push('### Starting capital (day 0)', '');
 	L.push(`A village settled ten years before day 0. Nobody holds any MIND before day 0 (people’s holdings on day 0 before the first HEARTS: ${f(b0.day0.peopleMind, 0)}). The first MIND is made when everyone’s first HEARTS convert on day 0 (the bootstrap of §11.4). Land: ${b0.day0.landHa} ha, all the City COOP’s.`, '');
-	L.push('Catalog (`STARTING_CAPITAL`, estimate): ' + Object.entries(meta.start.v).map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(' + ') : v}`).join('; ') + '.', '');
+	L.push('Catalog (`STARTING_CAPITAL`, estimate): ' + Object.entries(meta.start.v).map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(' + ') : v && typeof v === 'object' ? '(' + Object.entries(v).map(([a, b]) => `${a}: ${b}`).join(', ') + ')' : v}`).join('; ') + '.', '');
 	L.push('| COOP | plant | capacity (its unit) | land m² |', '|---|---|---|---|');
 	for (const p of b0.day0.plants) L.push(`| ${p.coop} | ${p.tech} | ${f(p.cap, 1)} | ${f(p.landM2, 0)} |`);
 	L.push('');
@@ -839,7 +860,7 @@ function toJson(exps, scen, bases, notCovered, meta) {
 		engineHash: meta.hash,
 		wallSeconds: Math.round(meta.wall / 1000),
 		headline: bases.length ? headline(exps, scen, bases).map((r) => ({ part: r.part, holds: r.holds, base: r.base, breaks: r.breaks })) : [],
-		seeds: bases.map((b) => ({ seed: b.seed, params: paramDiff(b.s.params, pbase), living: round(b.s.living), border: { firstFedYear: b.s.food?.firstFedYear ?? null, lastImportYear: b.s.food?.lastImportYear ?? null, exportsCoverYear: firstYear(b.s.border, (x) => x.exportsCover), reserveOutYear: firstYear(b.s.border, (x) => x.reserveOut), reserveLow: round(Math.min(...(b.s.border ?? []).map((x) => x.reserveMinEur ?? Infinity))), importShortDays: (b.s.border ?? []).reduce((a, x) => a + (x.importShortDays ?? 0), 0), shortPD: b.p.P1.personDaysShortAny }, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3real: b.p.P3.real?.pass ?? null, P3realFailed: b.p.P3.real?.failedTenths ?? [], P3oldIndex: b.p.P3.oldIndex?.pass ?? null, bootstrapEur: round(-Math.min(...(b.s.border ?? []).map((x) => x.bank?.lowestEur ?? 0))), exportsOverImportsYear: firstYear(b.s.border, (x) => x.exportEur >= x.importEur), P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
+		seeds: bases.map((b) => ({ seed: b.seed, params: paramDiff(b.s.params, pbase), living: round(b.s.living), border: { firstFedYear: b.s.food?.firstFedYear ?? null, lastImportYear: b.s.food?.lastImportYear ?? null, exportsCoverYear: firstYear(b.s.border, (x) => x.exportsCover), reserveOutYear: firstYear(b.s.border, (x) => x.reserveOut), reserveLow: round(Math.min(...(b.s.border ?? []).map((x) => x.reserveMinEur ?? Infinity))), importShortDays: (b.s.border ?? []).reduce((a, x) => a + (x.importShortDays ?? 0), 0), shortPD: b.p.P1.personDaysShortAny }, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, rampShort: b.s.rampShort ?? null, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3real: b.p.P3.real?.pass ?? null, P3realFailed: b.p.P3.real?.failedTenths ?? [], P3oldIndex: b.p.P3.oldIndex?.pass ?? null, bootstrapEur: round(-Math.min(...(b.s.border ?? []).map((x) => x.bank?.lowestEur ?? 0))), exportsOverImportsYear: firstYear(b.s.border, (x) => x.exportEur >= x.importEur), P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
 		experiments: exps.map((e) => ({ id: e.r.id, question: e.r.question, ruleChanged: e.r.ruleChanged, people: e.r.people, years: e.r.years, seed: e.r.seed, params: { base: paramDiff(e.r.base.params, pbase), changed: paramDiff(e.r.changed.params, pbase) }, food: { base: round(e.r.base.food ?? null), changed: round(e.r.changed.food ?? null) }, pass: e.r.verdict.pass, ens: e.r.ens ?? null, claim: e.r.verdict.claim, evidence: e.r.verdict.evidence, takeaway: e.r.takeaway, metrics: e.r.metrics.map((m) => ({ id: m.id, label: m.label, base: round(m.base), changed: round(m.changed) })), seconds: round(e.ms / 1000) })),
 		scenarios: scen.map((s) => ({ id: s.id, name: s.name, paper: s.paper, claim: s.claim, pass: s.pass, takeaway: s.takeaway, evidence: s.evidence, runs: s.runs.map((r) => ({ label: r.label, people: r.people ?? 1500, years: r.years, params: r.params ? paramDiff(r.params, pbase) : null, food: r.food ? round(r.food) : null })), numbers: round(s.numbers), seconds: round(s.ms / 1000) })),
 		notCovered: notCovered.map(([id, name, why]) => ({ id, name, why }))
