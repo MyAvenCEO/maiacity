@@ -183,7 +183,8 @@ export function aiLoads(w) {
 		const x = (w.D[COMPUTE] ?? 0) * (s > 0 ? s : 0);
 		deliveredAll += x;
 		const ah = x * perH;
-		flow.buyers.push([co.k, ah]);
+		// (the people pay this inference straight to the owners, on the AI COOP's bill: inferenceSplit)
+		flow.buyers.push([co.k, ah, true]);
 		X += ah;
 		askedX += max(0, co.orders ?? 0) * perH;
 	}
@@ -257,7 +258,9 @@ export function aiBills(w, co, fillR) {
 	if (!f || !(f.AH > 0)) return null;
 	const out = [];
 	let ah = 0;
-	for (const [k, a] of f.buyers) if (k === co.k) ah += a;
+	// (the inference in the Aven hours sold to people is on the people's bills, paid straight to the owners:
+	// inferenceSplit; what is left here is the AIX export's)
+	for (const [k, a, viaPeople] of f.buyers) if (k === co.k && !viaPeople) ah += a;
 	if (ah > 0)
 		for (const o of w.aiOwners ?? []) {
 			const g = f.got[o.k];
@@ -269,6 +272,29 @@ export function aiBills(w, co, fillR) {
 		out.push([s.k, f.exportH * fillR * s.price]);
 	}
 	return out;
+}
+
+/**
+ * The inference an Aven hour sold to a person carries, as [owner k, count of its MIND, R] per Aven hour, by today's
+ * clearing between the owners (./engine.js settle). It is on the AI COOP's bill to the person, at the owners' prices,
+ * and the person's Aven pays it straight to the owners, each in its own MIND (through the pools for the rest, as every
+ * payment): the AI COOP bought it (it ordered it and the owners delivered it to its harness), and its customer settles
+ * that part of the invoice with the owner, so the AI COOP's own MIND is not sold into the pools for every hour of
+ * inference. Its own part of the price is the rest. Without this an AI COOP, paid by its customers in its own MIND
+ * (the HEARTS put it in their hands), had to sell that MIND for every accelerator-hour until its price gave way.
+ */
+export function inferenceSplit(w) {
+	const f = w.aiFlow;
+	if (!f || !(f.AH > 0)) return null;
+	const perH = ahPerAvenH(w);
+	const out = [];
+	for (const o of w.aiOwners ?? []) {
+		const g = f.got[o.k];
+		if (!(g > 0)) continue;
+		const fr = (g / f.AH) * perH;
+		out.push(o.k, fr * o.inf.price, fr * o.inf.priceR);
+	}
+	return out.length ? out : null;
 }
 
 /**

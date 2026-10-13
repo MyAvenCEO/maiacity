@@ -260,6 +260,11 @@ export function margins(w) {
 		let m = Infinity;
 		const from = GOODS[co.good].store ? 0 : ahead.length - 1;
 		for (let j = from; j < ahead.length; j++) m = Math.min(m, (held + ahead[j] + imp * 5 * (j + 1)) / ((5 * (j + 1) + IN_HAND) * need));
+		// an AI COOP makes Aven hours to order from inference it buys by the hour: the accelerators standing idle are
+		// the hardware owners', whose own margin already lowers the inference price (./ai.js aiMorning). It has no idle
+		// plant of its own to clear, so its margin goes no higher than 1: it prices at its reference while inference is
+		// to be had, and above it when inference binds
+		if (co.good === COMPUTE) m = Math.min(1, m);
 		co.margin = m;
 		// a seller of a basic that keeps (food, water) sells no faster than the rate its store and what it will make
 		// (and buy) can hold to the tightest point ahead, with 5 days in hand: what it offers above the basic orders is
@@ -535,7 +540,11 @@ export function fullHours(w, pl) {
 	// a worn-out part of a plant needs no running (only what still stands is run)
 	// (the harness is software: what it learns reaches every Aven at once)
 	const av = pl.tech === 'harness' ? (w.learn.harness?.coef.aven ?? 1) : vcOf(pl, 'aven');
-	let h = d.runH * Math.max(0, pl.cap - pl.worn) * av + (d.runFixH ?? 0);
+	let up = Math.max(0, pl.cap - pl.worn);
+	// a harness runs only as far as inference stands behind it: the part no accelerator can serve today is not run
+	// (it is software, kept ready at no cost until the hardware owners' capacity reaches it)
+	if (pl.tech === 'harness') up = Math.min(up, Math.max(0, pl.inferCapDay ?? 0));
+	let h = d.runH * up * av + (d.runFixH ?? 0);
 	if (pl.tech === 'timber') for (const p of pl.plots) h += d.runLandH * p.m2;
 	// a young food forest is tended in full but picked by its harvest: three tenths of the hours are care, the rest
 	// picking and the store (estimate)
@@ -1345,6 +1354,7 @@ function unitsToDay(w, pl, units) {
 		case 'home':
 		case 'spring':
 		case 'service':
+		case 'harness':
 			return units;
 		case 'solar':
 			return (units * w.c.kwhPerKwp) / 365;
