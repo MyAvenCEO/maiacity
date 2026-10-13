@@ -15,8 +15,8 @@ import { powerCube } from '../actors/powercube.js';
 
 // a player is measured without the heart that floats over them
 const bare = (o) => (o.remove(o.userData.glow), o);
-const ose = () => { const c = powerCube(); c.rig.pose(c.clips.off(0)); return c.rig.object; };
-const BUILD = { pickup, powerCube: ose, genset: powercube, solarPanel, batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent };
+const ose = (o) => { const c = powerCube(o); c.rig.pose(c.clips.off(0)); return c.rig.object; };
+const BUILD = { pickup, powerCube: () => ose(), powerCubeElectric: () => ose({ electric: true }), genset: powercube, solarPanel, batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {

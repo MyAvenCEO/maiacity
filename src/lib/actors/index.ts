@@ -274,7 +274,10 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 		label: 'Power Cube',
 		note: 'Open Source Ecology’s hydraulic power unit, the heart of every machine of their set: an engine on a pump in a steel cube with its own tanks, cooler and couplers, lifted from one machine to the next — every part its own, as in the LifeTrac that carries one',
 		from: 'Open Source Ecology: the Global Village Construction Set',
-		variants: [{ id: 'powercube-7s', label: 'VII / 7s', note: 'Power Cube VII / 7s (v15.6, 2014–15): 28 hp Briggs & Stratton V-twin, 15.2 gpm at 3,000 psi, 27" cube, ~181 kg', make: () => powerCube() }]
+		variants: [
+			{ id: 'powercube-7s', label: 'VII / 7s', note: 'Power Cube VII / 7s (v15.6, 2014–15): 28 hp Briggs & Stratton V-twin, 15.2 gpm at 3,000 psi, 27" cube, ~181 kg', make: () => powerCube() },
+			{ id: 'powercube-electric', label: 'Electric', note: 'Power Cube Electric (our variant, not an OSE design): the same frame, engine, tank and battery, a brushless ~15 kVA alternator on its shaft in place of the hydraulics, its regulator, breakers and sockets on the back; 27" wide and high, 35" long', make: () => powerCube({ electric: true }) }
+		]
 	}
 ];
 

@@ -25,6 +25,7 @@ export const SPEED = {
 export const REAL_SIZES = {
 	pickup: { size: [1.86, 1.82, 5.33], what: 'a double-cab pickup' },
 	powerCube: { size: [0.74, 0.75, 0.76], what: 'Open Source Ecology’s Power Cube VII, a 27" (0.69 m) frame, its couplers, caps and handles out of it (actors/powercube.js)' },
+	powerCubeElectric: { size: [0.74, 0.75, 0.97], what: 'our Power Cube Electric: the same 27" cube, 35" (0.9 m) long for its alternator' },
 	genset: { size: [2.3, 2.83, 2.3], what: 'a 60 kVA silenced diesel genset (the Assets’ powercube v1)' },
 	solarPanel: { size: [1.72, 1.08, 1.4], what: 'one 410 W panel on its 30° ground rack, ballast blocks and cable' },
 	batteryPack: { size: [1.6, 2.51, 1.6], what: 'a 230 kWh outdoor battery cabinet on its plinth, its cable out the back' },
