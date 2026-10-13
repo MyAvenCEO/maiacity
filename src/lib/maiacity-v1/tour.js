@@ -6,8 +6,9 @@
  * abandoned gas station, the future centre of MaiaCity. There the newcomer meets the COOPs and their MINDs and
  * invests into the MaiaCity COOP, the owner of all the land. Then into the Village COOP's pickup (the first player
  * drives it; the second is fetched by the first) and along the gravel track to the village's centre hex, where the
- * Village COOP keeps the powercube in an old shed beside its solar row and battery: invest there, load the cube, and
- * drive on home to the tribe's hex, the tent and the Tribe COOP. Then the weekly pay day and the melt.
+ * Village COOP keeps the ElectroCube and the tent in an old shed, the BatteryCube and a solar panel beside it: invest
+ * there; the first loads the ElectroCube and the tent and pitches the tent at home, the second loads the BatteryCube
+ * and the panel and sets them up beside it. Then the Tribe COOP, the weekly pay day and the melt.
  *
  * The story plays as a film: each step's words are its voice-over, a line a shot (lines). Steps that only tell
  * something are done once told; steps that ask for a move (mint, invest) are done when the game shows it, so the story
@@ -26,7 +27,7 @@ export const lineDur = (line) => 1.8 + line.split(/\s+/).length * 0.34;
 export const investedBy = (view, seat, coop) => view.ledger.filter((e) => e.kind === 'invest' && e.from === `player:${seat}` && e.to === `coop:${coop}`).reduce((a, e) => a + e.amount, 0);
 
 /** where the world stands when there is no story: home, the powercube in the tribe's yard, the camera on the tribe */
-export const AT_HOME = { at: 'home', cube: 'home', place: 'tribe', reveal: 2 };
+export const AT_HOME = { at: 'home', cube: 'home', battery: 'store', place: 'tribe', reveal: 2 };
 
 /** the story for one seat, as it stands in the game now: every step with its words, whether it is done, and where the world is */
 export function story(view, seat, seen) {
@@ -40,12 +41,13 @@ export function story(view, seat, seen) {
 	const year = st.heartsPerDay * 28 * 13;
 	const invest = (id, goal) => ({ kind: 'invest', coop: id, goal, have: investedBy(view, seat, id), done: investedBy(view, seat, id) >= goal - 0.5 });
 	const next = (id) => ({ kind: 'next', done: !!seen[id] });
-	// the first player fetches the powercube and the tent from the village shed; the second finds them home already
+	// the first player fetches the ElectroCube and the tent from the village shed; the second, the BatteryCube and the solar panel
 	// still on the road: the van rolls on, the camera in its back seat, while the idea is told and the first HEARTS minted
-	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'van' };
-	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'centre' };
-	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'village' };
-	const home = { at: 'home', cube: 'home', tent: 'up', place: 'tribe' };
+	// the second fetches the Village COOP's BatteryCube and solar panel, and sets them up beside the tent
+	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'van' };
+	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'centre' };
+	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'village' };
+	const home = { at: 'home', cube: 'home', tent: 'up', battery: first ? 'store' : 'home', place: 'tribe' };
 	const o = other.founder ? other.name : 'the first settler';
 	const pct = (x) => `${f(x * 100)} %`;
 	// each step's words are its voice-over, one line a shot (lines); the moments the world plays (drive, load, build)
@@ -88,7 +90,7 @@ export function story(view, seat, seen) {
 		first
 			? say({ id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', done: !!seen.ride, ...atStop },
 				`At the gas station waits the ${c.village.name}'s pickup, the key in it.`,
-				'Two jerrycans of petrol go in the back, for the Power Cube you will fetch.',
+				'Two jerrycans of petrol go in the back, for the ElectroCube you will fetch.',
 				'The pickup belongs to the COOP. Today it serves you.',
 				'A narrow track leaves the road and winds east, towards the green.',
 				'The centre of your village.')
@@ -98,19 +100,21 @@ export function story(view, seat, seen) {
 				'The village lies on the way home.',
 				'The centre of your village.'),
 		say({ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000), ...atStore },
-			`The pickup, the Power Cube, the solar row and the battery all belong to the ${c.village.name}.`,
+			`The pickup, the ElectroCube, the BatteryCube and the solar panel all belong to the ${c.village.name}.`,
 			`Whoever uses a machine pays its rent, and ${pct(st.dividendShare ?? 0.2)} of every sale goes to its owners.`,
 			'Invest 2,000 HEARTS, and every machine here works a little for you.'),
 		first
-			? say({ id: 'cube', chapter: 'The village', title: 'Load the Power Cube and the tent', kind: 'load', done: !!seen.cube, ...atStore },
+			? say({ id: 'cube', chapter: 'The village', title: 'Load the ElectroCube and the tent', kind: 'load', done: !!seen.cube, ...atStore },
 				'You step out at the old shed, the village store to be.',
-				'Inside waits the Power Cube Electric, open hardware anyone can build. Up the ramp it goes.',
+				'Inside waits the ElectroCube, open hardware anyone can build. Up the ramp it goes.',
 				'Then the little dome tent, packed in its canvas.',
 				'Power and a roof: all your tribe needs to begin.')
-			: say({ id: 'cube', chapter: 'The village', title: 'The old shed', ...next('cube'), ...atStore },
-				`Here ${o} fetched the Power Cube and the tent on the first day.`,
-				'One day this shed becomes the village store.'),
-		say({ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up' },
+			: say({ id: 'cube', chapter: 'The village', title: 'Load the BatteryCube and the solar panel', kind: 'load', what: 'power', done: !!seen.cube, ...atStore },
+				`You step out at the old shed. ${o} took the ElectroCube and the tent home on the first day.`,
+				'Beside the shed waits the BatteryCube: four BatteryPacks in the same open frame. Up the ramp it goes.',
+				'Then the solar panel on its rack.',
+				'Sun by day, stored for the night: no more petrol for the lights.'),
+		say({ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed' },
 			'Back in, and on.',
 			'The track bends through the grass to the edge of the village.',
 			'Your hex. Nothing stands here yet.'),
@@ -118,8 +122,11 @@ export function story(view, seat, seen) {
 			? [say({ id: 'pitch', chapter: 'Your home', title: 'Pitch your tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed' },
 				'You carry the canvas to the middle of the clearing and unroll it.',
 				'Strut by strut, the little dome rises.',
-				'Then the Power Cube to its yard. It starts, and the light comes on.')]
-			: []),
+				'Then the ElectroCube to its yard. It starts, and the light comes on.')]
+			: [say({ id: 'pitch', chapter: 'Your home', title: 'Set up the sun', kind: 'build', what: 'power', done: !!seen.pitch, ...home, battery: 'bed' },
+				'Down the ramp comes the BatteryCube, beside the ElectroCube.',
+				'The solar panel goes up, facing the sun.',
+				'One cable, and the tent runs on sunlight. The ElectroCube can rest.')]),
 		say({ id: 'tribe', chapter: 'Your home', title: `The ${c.tribe.name}: your home`, hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home },
 			`${first ? 'Your tent' : `The tent ${o} raised`} belongs to the ${c.tribe.name}, the COOP of this one hex.`,
 			'It rents the land from the city and the machines from the village. You rent your bed from it.',

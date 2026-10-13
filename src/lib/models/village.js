@@ -18,9 +18,9 @@ export const VILLAGE_INFO = {
 		specs: [['Size', '5.33 × 1.86 × 1.82 m'], ['Seats', '5, a double cab'], ['Payload', 'about 1 t'], ['Bed', '1.55 × 1.52 m, open'], ['Fuel', 'diesel, about 9 l per 100 km'], ['Weight', 'about 2.1 t']]
 	},
 	powercube: {
-		model: 'powercube',
-		note: 'the Power Cube Electric: Open Source Ecology’s Power Cube VII (a 28 hp V-twin in a 27-inch steel frame) with a brushless alternator on its shaft in place of the hydraulic pump, its regulator, breakers and sockets on the back. Our variant, not an OSE design: its figures are inferred',
-		specs: [['Size', '0.69 × 0.9 × 0.69 m'], ['Power', 'about 15 kVA (12 kW) [inferred]'], ['Output', '400 V three-phase, 2 × 230 V'], ['Engine', '28 hp (20.9 kW) petrol V-twin'], ['Fuel tank', '7 gal (26.5 l)'], ['Design', 'OSE Power Cube VII, our electric variant']]
+		model: 'electrocube',
+		note: 'the ElectroCube: our own cube on Open Source Ecology’s Power Cube frame (a 28 hp V-twin in a 27-inch steel frame) with a brushless alternator on its shaft where the hydraulic pump would be, its regulator, breakers and sockets on the back. Not an OSE design: its figures are inferred',
+		specs: [['Size', '0.69 × 0.9 × 0.69 m'], ['Power', 'about 15 kVA (12 kW) [inferred]'], ['Output', '400 V three-phase, 2 × 230 V'], ['Engine', '28 hp (20.9 kW) petrol V-twin'], ['Fuel tank', '7 gal (26.5 l)'], ['Design', 'ours, on the OSE Power Cube VII frame']]
 	},
 	solar: {
 		model: 'solar-panel',
@@ -29,8 +29,8 @@ export const VILLAGE_INFO = {
 	},
 	battery: {
 		model: 'battery-pack',
-		note: 'an outdoor lithium iron phosphate cabinet, 1.3 × 1.1 m, 2.3 m high, about 230 kWh: two doors, vents, its status lights and screen, on a concrete plinth',
-		specs: [['Size', '1.3 × 1.1 × 2.3 m'], ['Capacity', 'about 230 kWh'], ['Chemistry', 'lithium iron phosphate (LFP)'], ['Power', 'about 100 kW in or out'], ['Cycles', 'about 6,000'], ['Weight', 'about 2.5 t']]
+		note: 'the BatteryCube: the Power Cube’s 27-inch frame with no engine, four BatteryPacks of 280 cells each stacked to its top (about 20.7 kWh) and a 6 kW hybrid inverter on its back that turns their 52 V into 230 V and takes a solar panel straight in. Our design: its figures are inferred',
+		specs: [['Size', '0.69 × 0.66 × 0.69 m'], ['Capacity', 'about 20.7 kWh, 4 BatteryPacks'], ['Cells', '1,120 × 21700, 14S80P [inferred]'], ['Power', '6 kW at 230 V, 12 kW peak'], ['Solar in', 'MPPT, up to 8 kWp'], ['Weight', 'about 140 kg']]
 	}
 };
 

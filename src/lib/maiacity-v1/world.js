@@ -16,8 +16,9 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { batteryPack, pickup, solarRow } from '$lib/models/village.js';
-import { powerCube } from '$lib/actors/powercube.js';
+import { pickup, solarPanel } from '$lib/models/village.js';
+import { electroCube } from '$lib/actors/electrocube.js';
+import { batteryCube } from '$lib/actors/batterycube.js';
 import { human } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
@@ -76,9 +77,13 @@ const VAN_OUT = new THREE.CatmullRomCurve3(
 /** the village store: the old shed at the village's centre hex, its door to the track; the solar row and the battery behind */
 const STORE = { x: VX + 2, z: VZ - 13 };
 const CUBE_IN_SHED = V(STORE.x + 0.6, 0.1, STORE.z - 0.4);
+const BATT_AT = V(STORE.x + 3.4, 0, STORE.z + 0.6);
+const PANEL_AT = V(STORE.x + 6, 0, STORE.z - 1.2);
 /** our tribe: the tent at the middle, the pickup's round lot, a little yard for the powercube once it is home */
 const LOT = { x: -16, z: 10, r: 5 }; // room to turn a 5.4 m pickup
 const YARD = { x: 12, z: -4, r: 3 };
+const BATT_HOME = V(YARD.x + 1.4, 0, YARD.z + 1.1);
+const PANEL_HOME = V(YARD.x + 2.6, 0, YARD.z - 2.4);
 const STORE_YARD = { x: STORE.x + 1, z: STORE.z - 3, r: 14 };
 const PATH_W = 4.2; // a narrow offroad track, two ruts in it (Samuel 2026-10-13)
 /** the gravel track's centre line: off the highway beside the bus stop, a slow meander east through the steppe and
@@ -341,11 +346,14 @@ export function tent() {
 }
 
 /** the tent packed: a canvas bundle with its poles, strapped, as it waits in the village shed */
-/** where the Power Cube Electric (0.75 × 1 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
+/** where the ElectroCube (0.75 × 1 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
  *  side by side, the cube behind the tool box, the tent by the tailgate */
 const CUBE_ON_BED = V(0, 1.16, -1.42);
 const TENT_ON_BED = V(0, 1.16 + 0.47, -2.3); // lying on the two jerrycans
-/** the two 20-litre jerrycans of petrol for the Power Cube Electric (its engine runs on petrol): in the bed behind
+/** the second player's load: the BatteryCube where the ElectroCube rides, the solar panel on its rack behind it, over
+ *  the open tailgate; at the village beside the shed, at home beside the tent and the ElectroCube */
+const PANEL_ON_BED = V(0, 1.16, -2.55);
+/** the two 20-litre jerrycans of petrol for the ElectroCube (its engine runs on petrol): in the bed behind
  *  the cube, the tent strapped over them */
 const FUEL_ON_BED = [V(-0.55, 1.16, -1.95), V(0.55, 1.16, -1.95)];
 
@@ -552,17 +560,25 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// the village store: the old shed, the solar row and the battery the Village COOP keeps at its centre hex
 	const shed = named(oldShed(), 'asset:shed');
 	shed.position.set(STORE.x, 0, STORE.z);
-	const solar = named(solarRow(6), 'asset:solar');
-	solar.position.set(STORE.x, 0, STORE.z - 9);
-	solar.rotation.y = Math.PI;
-	const battery = named(batteryPack(), 'asset:battery');
-	battery.position.set(STORE.x + 7, 0, STORE.z - 2);
-	battery.rotation.y = -0.3;
+	// the Village COOP's solar panel on its rack and its BatteryCube (four BatteryPacks and an inverter in the Power
+	// Cube's frame) beside the shed: the second player fetches them home (placeBattery, placePanel)
+	const solar = named(solarPanel(), 'asset:solar');
+	const batteryCast = batteryCube();
+	batteryCast.rig.pose(batteryCast.clips.off(0));
+	const battery = named(batteryCast.rig.object, 'asset:battery');
 	world.add(shed, solar, battery);
+	// once both are home: one cable from the panel to the BatteryCube, and one on to the tent
+	const cables = new THREE.Group();
+	for (const pts of [[V(PANEL_HOME.x, 0.5, PANEL_HOME.z), V(PANEL_HOME.x - 0.4, 0.03, PANEL_HOME.z + 1.2), V(BATT_HOME.x, 0.03, BATT_HOME.z - 0.6), V(BATT_HOME.x, 0.3, BATT_HOME.z - 0.35)], [V(BATT_HOME.x - 0.3, 0.3, BATT_HOME.z), V(BATT_HOME.x - 1.5, 0.03, BATT_HOME.z + 0.4), V(3.2, 0.03, -1.2), V(2.6, 0.2, -1)]]) {
+		const c = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.012, 6), mat(0x161616));
+		cables.add(c);
+	}
+	cables.visible = false;
+	world.add(cables);
 	// the pickup at its real size (5.4 m), and the powercube it fetches, drawn as a small silenced cube that fits its bed
 	const truck = named(pickup(), 'asset:pickup');
-	// the powercube: the Power Cube Electric, OSE's Power Cube VII with an alternator in place of its hydraulics
-	const cubeCast = powerCube({ electric: true }); // the Power Cube Electric (#608): the tent's power
+	// the powercube: the ElectroCube, OSE's Power Cube frame with an alternator in place of its hydraulics
+	const cubeCast = electroCube(); // the ElectroCube (#608): the tent's power
 	cubeCast.rig.pose(cubeCast.clips.off(0));
 	const cube = named(cubeCast.rig.object, 'asset:powercube');
 	const bundle = named(packedTent(), 'asset:tent');
@@ -593,7 +609,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** where things stand at this point of the story: at ('arrive', 'stop', 'village', 'home'), the powercube
 	 *  ('shed', 'bed', 'home'), whose seat this is (me), the other seat if anyone has it, and whether the other
 	 *  rides along (they came to fetch me) */
-	let stage = { at: 'home', cube: 'home', tent: 'up', me: 'A', other: 'B', rides: false };
+	let stage = { at: 'home', cube: 'home', tent: 'up', battery: 'store', me: 'A', other: 'B', rides: false };
 	let busy = false; // an intro, a drive or a load is playing
 	function set(next) {
 		stage = { ...stage, ...next };
@@ -609,6 +625,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		truck.updateMatrixWorld(true);
 		placeCube(stage.cube);
 		placeTent(stage.tent);
+		placeBattery(stage.battery);
 		placeFuel(stage.cube === 'home' ? 'home' : at === 'van' || at === 'arrive' || (at === 'stop' && !fetched) ? 'station' : 'bed');
 		for (const s of ['A', 'B']) {
 			const p = people[s];
@@ -685,7 +702,23 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			cube.position.copy(CUBE_ON_BED);
 			cube.rotation.set(0, Math.PI / 2, 0); // its 1 m length across the 1.7 m bed
 		}
+	}	/** the BatteryCube and the solar panel (where): beside the village's shed, in the pickup's bed (the cube where the
+	 *  ElectroCube rides, the panel on its rack lying over the tailgate), or set up at home beside the tent */
+	function placeBattery(where) {
+		cables.visible = where === 'home';
+		for (const o of [battery, solar]) if (o.parent !== world) world.attach(o);
+		solar.rotation.set(0, 0, 0);
+		if (where === 'store') (battery.position.copy(BATT_AT), (battery.rotation.y = 0.2), solar.position.copy(PANEL_AT), (solar.rotation.y = Math.PI + 0.3));
+		else if (where === 'home') (battery.position.copy(BATT_HOME), (battery.rotation.y = -0.3), solar.position.copy(PANEL_HOME), (solar.rotation.y = Math.PI - 0.4));
+		else {
+			truck.add(battery, solar);
+			battery.position.copy(CUBE_ON_BED);
+			battery.rotation.set(0, Math.PI / 2, 0);
+			solar.position.copy(PANEL_ON_BED);
+			solar.rotation.set(0, Math.PI / 2, 0);
+		}
 	}
+
 
 	/** the camera's places: what it looks at, and from where; once there, it drifts slowly round, like a crane on a set */
 	const PLACES = {
@@ -1165,67 +1198,72 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 
 	/** loading at the village's shed: out of the pickup, the Power Cube pushed out of the shed and up onto the bed, the
 	 *  packed tent carried over and swung in, and back beside the pickup */
-	function load({ lines } = {}) {
+	function load({ lines, what } = {}) {
 		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
+		// the first player loads the ElectroCube and the packed tent; the second the BatteryCube and the solar panel
+		const P = what === 'power'
+			? { push: battery, from: BATT_AT.clone().setY(0.02), yaw0: 0.2, carry: solar, carryAt: PANEL_AT, carryTo: PANEL_ON_BED, lift: 0.3, ahead: 0.95, setup: () => placeBattery('store'), mid: () => {}, end: () => ((stage.battery = 'bed'), placeBattery('bed')) }
+			: { push: cube, from: CUBE_IN_SHED.clone(), yaw0: Math.PI / 2, carry: bundle, carryAt: TENT_IN_SHED, carryTo: TENT_ON_BED, lift: 1.05, ahead: 0.42, setup: () => (placeCube('shed'), placeTent('shed')), mid: () => ((stage.cube = 'bed'), placeCube('bed')), end: () => ((stage.tent = 'bed'), placeTent('bed')) };
 		const look = V(STORE.x + 2, 1.2, (STORE.z + VZ) / 2);
 		const eye = V(STORE.x + 11, 4.5, VZ + 12).sub(look).multiplyScalar(0.6).add(look);
-		const cubeTo = truck.localToWorld(CUBE_ON_BED.clone());
+		const pushTo = truck.localToWorld(CUBE_ON_BED.clone());
 		const yawTo = truck.rotation.y + Math.PI / 2;
 		const tail = atTruck(0, -3.9);
 		const front = (o, d) => o.clone().add(V(Math.sin(me.rotation.y), 0, Math.cos(me.rotation.y)).multiplyScalar(d));
-		let toShed = [], toTent = [], back = [];
+		let toShed = [], toCarry = [], back = [];
 		return play(told([
 			beat(3.5, (s) => (walkOn(me, toShed, s), still(eye, head(me))), () => {
-				placeCube('shed');
-				placeTent('shed');
+				P.setup();
 				me.visible = true;
 				me.position.copy(atTruck(...BESIDE));
-				const behind = CUBE_IN_SHED.clone().setY(0).add(CUBE_IN_SHED.clone().setY(0).sub(tail).setLength(1.2));
+				const behind = P.from.clone().setY(0).add(P.from.clone().setY(0).sub(tail).setLength(1.2));
 				toShed = [me.position.clone(), behind];
 				camera.position.copy(eye);
 				controls.target.copy(head(me));
 			}),
 			// pushing it along the ground to the tailgate (1 m/s), then up the ramp into the bed
 			beat(7, (s) => {
-				const from = CUBE_IN_SHED.clone(), d = from.distanceTo(tail), push = d / 1;
+				const from = P.from, d = from.distanceTo(tail), push = d / 1;
 				const u = Math.min(1, s / push), r = Math.min(1, Math.max(0, (s - push) / 2));
 				const at = from.clone().lerp(tail.clone().setY(0.1), u);
-				if (r > 0) at.lerpVectors(tail.clone().setY(0.1), cubeTo, ease(r));
-				cube.position.copy(at);
-				cube.rotation.y = Math.PI / 2 + (yawTo - Math.PI / 2) * ease(Math.min(1, u * 1.4));
+				if (r > 0) at.lerpVectors(tail.clone().setY(0.1), pushTo, ease(r));
+				P.push.position.copy(at);
+				P.push.rotation.y = P.yaw0 + (yawTo - P.yaw0) * ease(Math.min(1, u * 1.4));
 				const dir = tail.clone().sub(from).setY(0).normalize();
 				me.position.copy(r > 0 ? tail.clone().sub(dir.clone().multiplyScalar(0.9)).setY(0) : at.clone().setY(0).sub(dir.clone().multiplyScalar(0.95)));
 				me.rotation.y = Math.atan2(dir.x, dir.z);
 				act(me, u < 1 ? 'push+walk' : r < 1 ? 'push' : 'idle');
 				still(eye.clone().add(V(-3, -1, 2)), at.clone().setY(1));
 			}),
-			{ dur: 0.1, start: () => ((stage.cube = 'bed'), placeCube('bed')) },
+			{ dur: 0.1, start: () => P.mid() },
 			beat(5, (s) => {
-				const t1 = walkTime(toTent), there = walkOn(me, toTent, s), t2 = t1 + 0.5;
+				const t1 = walkTime(toCarry), t2 = t1 + 0.5;
+				walkOn(me, toCarry, s);
 				if (s >= t1 && s < t2) act(me, 'kneel');
 				const going = s >= t2 && !walkOn(me, back, s - t2, 'carry');
 				const lift = s >= t2 + walkTime(back) ? Math.min(1, (s - t2 - walkTime(back)) / 0.8) : 0;
 				if (s >= t2) {
-					const arms = front(me.position, 0.42).setY(1.05);
-					const to = truck.localToWorld(TENT_ON_BED.clone());
-					if (going || !lift) bundle.position.copy(arms), (bundle.rotation.y = me.rotation.y + Math.PI / 2);
-					else bundle.position.lerpVectors(arms, to, ease(lift)).setY(arms.y + (to.y - arms.y) * ease(lift) + Math.sin(Math.PI * lift) * 0.6);
+					const arms = front(me.position, P.ahead).setY(P.lift);
+					const to = truck.localToWorld(P.carryTo.clone());
+					if (going || !lift) P.carry.position.copy(arms), (P.carry.rotation.y = me.rotation.y + Math.PI / 2);
+					else (P.carry.position.lerpVectors(arms, to, ease(lift)).setY(arms.y + (to.y - arms.y) * ease(lift) + Math.sin(Math.PI * lift) * 0.6), (P.carry.rotation.y = me.rotation.y + Math.PI / 2 + (yawTo - me.rotation.y - Math.PI / 2) * ease(lift)));
 				}
-				void there;
 				still(eye.clone().add(V(-5, -1.5, 3)), head(me, 1));
 			}, () => {
-				toTent = [me.position.clone(), TENT_IN_SHED.clone().add(V(1.1, 0, 0.2))];
-				back = [toTent[1], atTruck(0.6, -3.3)];
+				toCarry = [me.position.clone(), P.carryAt.clone().setY(0).add(V(1.1, 0, 0.2))];
+				back = [toCarry[1], atTruck(0.6, -3.3)];
 			}),
-			{ dur: 0.1, start: () => ((stage.tent = 'bed'), placeTent('bed')) },
+			{ dur: 0.1, start: () => P.end() },
 			beat(2.5, (s) => (walkOn(me, [atTruck(0.6, -3.3), atTruck(2.4, -2), atTruck(...BESIDE)], s), still(eye, head(me))))
 		], lines));
 	}
 
+
 	/** pitching the tent at the middle of our hex: the packed canvas carried off the pickup and unrolled, the little dome
 	 *  raised strut by strut while the camera circles it, then the Power Cube pushed down off the bed to its yard */
-	function pitch({ lines } = {}) {
+	function pitch({ lines, what } = {}) {
+		if (what === 'power') return setUp({ lines });
 		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
 		const orbit = shot({ kind: 'orbit', centre: [0, 0], a0: 0.4, a1: 1.9, r0: 16, r1: 10, y0: 8, y1: 3.5, aim: [0, 1, 0], curve: 'ease' });
@@ -1291,6 +1329,63 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				toTail2 = [me.position.clone(), V(KNEEL.x + 3, 0, KNEEL.z + 1), atTruck(0, -2.9)];
 			}),
 			{ dur: 0.4, start: () => ((stage.cube = 'home'), placeCube('home'), act(me, 'idle')), run: () => still(V(YARD.x - 9, 4, YARD.z + 11), V(4, 1, -1)) }
+		], lines));
+	}
+	/** the second player's setting up at home: the BatteryCube down the ramp and pushed beside the ElectroCube, the solar
+	 *  panel carried to face the sun, then one cable from the panel to the BatteryCube and on to the tent */
+	function setUp({ lines } = {}) {
+		const me = people[stage.me];
+		truck.updateMatrixWorld(true);
+		const tail = atTruck(0, -3.9);
+		const eye = V(YARD.x - 13, 5.5, YARD.z + 15);
+		const front = (d) => me.position.clone().add(V(Math.sin(me.rotation.y), 0, Math.cos(me.rotation.y)).multiplyScalar(d));
+		let toTail = [], toPanel = [];
+		return play(told([
+			beat(7, (s) => {
+				const t1 = walkTime(toTail);
+				const down = Math.min(1, Math.max(0, (s - t1) / 1.5));
+				const d = tail.distanceTo(BATT_HOME), u = Math.min(1, Math.max(0, s - t1 - 1.5) / d);
+				const from = truck.localToWorld(CUBE_ON_BED.clone());
+				if (s < t1) return void (walkOn(me, toTail, s), still(eye, head(me, 1)));
+				const at = down < 1 ? from.clone().lerp(tail.clone().setY(0), ease(down)) : tail.clone().lerp(BATT_HOME, u);
+				battery.position.copy(at);
+				const dir = (down < 1 ? tail.clone().sub(from) : BATT_HOME.clone().sub(tail)).setY(0).normalize();
+				me.position.copy(down < 1 ? atTruck(0, -2.9) : at.clone().setY(0).sub(dir.clone().multiplyScalar(0.95)));
+				me.rotation.y = down < 1 ? truck.rotation.y + Math.PI : Math.atan2(dir.x, dir.z);
+				act(me, down < 1 ? 'carry' : u < 1 ? 'push+walk' : 'idle');
+				still(eye, at.clone().setY(1));
+			}, () => {
+				world.attach(battery);
+				me.visible = true;
+				toTail = [me.position.clone(), atTruck(...TAIL)];
+				camera.position.copy(eye);
+				controls.target.copy(head(me));
+			}),
+			beat(7, (s) => {
+				const t1 = walkTime(toTail), t2 = t1 + 0.6;
+				if (s < t1) return void (walkOn(me, toTail, s), still(eye, head(me, 1)));
+				const there = s >= t2 && walkOn(me, toPanel, s - t2, 'carry');
+				if (s < t2) act(me, 'carry');
+				else if (!there) (solar.position.copy(front(0.95).setY(0.3)), (solar.rotation.y = me.rotation.y + Math.PI / 2));
+				else {
+					const k = Math.min(1, (s - t2 - walkTime(toPanel)) / 1);
+					solar.position.lerpVectors(front(0.95).setY(0.3), PANEL_HOME, ease(k));
+					solar.rotation.y = me.rotation.y + Math.PI / 2 + (Math.PI - 0.4 - me.rotation.y - Math.PI / 2) * ease(k);
+					act(me, k < 1 ? 'carry' : 'look up');
+				}
+				still(eye.clone().add(V(2, 0, -2)), (s < t2 ? me.position : solar.position).clone().setY(1));
+			}, () => {
+				world.attach(solar);
+				toTail = [me.position.clone(), atTruck(0.6, -3.3)];
+				toPanel = [atTruck(0.6, -3.3), PANEL_HOME.clone().add(V(0, 0, 1.6))];
+			}),
+			beat(4.5, (s, k) => {
+				cables.visible = k > 0.35;
+				if (s < 1.6) walkOn(me, [me.position.clone(), BATT_HOME.clone().add(V(-0.9, 0, 0.6))], s);
+				else (face(me, BATT_HOME), act(me, k < 0.75 ? 'kneel' : 'idle'));
+				still(V(YARD.x - 5, 2.4, YARD.z + 6), BATT_HOME.clone().setY(0.6));
+			}),
+			{ dur: 0.3, start: () => ((stage.battery = 'home'), placeBattery('home'), act(me, 'idle')) }
 		], lines));
 	}
 	/** jump to the end of what is playing */
