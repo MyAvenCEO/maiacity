@@ -339,7 +339,7 @@ export function tent() {
 }
 
 /** the tent packed: a canvas bundle with its poles, strapped, as it waits in the village shed */
-/** where the Power Cube (0.75 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
+/** where the Power Cube Electric (0.75 × 1 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
  *  side by side, the cube behind the tool box, the tent by the tailgate */
 const CUBE_ON_BED = V(0, 1.16, -1.42);
 const TENT_ON_BED = V(0, 1.16, -2.28);
@@ -521,8 +521,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	world.add(shed, solar, battery);
 	// the pickup at its real size (5.4 m), and the powercube it fetches, drawn as a small silenced cube that fits its bed
 	const truck = named(pickup(), 'asset:pickup');
-	// the powercube: Open Source Ecology's Power Cube VII, the same one the LifeTrac carries (actors/powercube.js)
-	const cubeCast = powerCube();
+	// the powercube: the Power Cube Electric, OSE's Power Cube VII with an alternator in place of its hydraulics
+	const cubeCast = powerCube({ electric: true }); // the Power Cube Electric (#608): the tent's power
 	cubeCast.rig.pose(cubeCast.clips.off(0));
 	const cube = named(cubeCast.rig.object, 'asset:powercube');
 	const bundle = named(packedTent(), 'asset:tent');
@@ -624,12 +624,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 	function placeCube(where) {
 		if (cube.parent !== world) world.attach(cube);
-		if (where === 'shed') (cube.position.copy(CUBE_IN_SHED), (cube.rotation.y = 0));
+		if (where === 'shed') (cube.position.copy(CUBE_IN_SHED), (cube.rotation.y = Math.PI / 2));
 		else if (where === 'home') (cube.position.set(YARD.x, 0, YARD.z), (cube.rotation.y = -0.3));
 		else {
 			truck.add(cube);
 			cube.position.copy(CUBE_ON_BED);
-			cube.rotation.set(0, 0, 0);
+			cube.rotation.set(0, Math.PI / 2, 0); // its 1 m length across the 1.7 m bed
 		}
 	}
 

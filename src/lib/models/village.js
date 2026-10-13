@@ -19,8 +19,8 @@ export const VILLAGE_INFO = {
 	},
 	powercube: {
 		model: 'powercube',
-		note: 'Open Source Ecology’s Power Cube VII / 7s, the open-source heart of their Global Village Construction Set: a 28 hp V-twin on a hydraulic gear pump in a 27-inch (0.69 m) steel cube of about 181 kg, with its tanks, cooler and two quick couplers. It is a hydraulic power unit, not an electric generator: it couples to the LifeTrac, the brick press or any machine of the village and gives it its strength',
-		specs: [['Size', '0.69 × 0.66 × 0.69 m (27")'], ['Engine', '28 hp (20.9 kW) petrol V-twin'], ['Hydraulics', '15.2 gpm at 3,000 psi'], ['Tanks', '7 gal fuel, 7 gal oil'], ['Weight', 'about 181 kg'], ['Design', 'Open Source Ecology, open hardware']]
+		note: 'the Power Cube Electric: Open Source Ecology’s Power Cube VII (a 28 hp V-twin in a 27-inch steel frame) with a brushless alternator on its shaft in place of the hydraulic pump, its regulator, breakers and sockets on the back. Our variant, not an OSE design: its figures are inferred',
+		specs: [['Size', '0.69 × 0.9 × 0.69 m'], ['Power', 'about 15 kVA (12 kW) [inferred]'], ['Output', '400 V three-phase, 2 × 230 V'], ['Engine', '28 hp (20.9 kW) petrol V-twin'], ['Fuel tank', '7 gal (26.5 l)'], ['Design', 'OSE Power Cube VII, our electric variant']]
 	},
 	solar: {
 		model: 'solar-panel',
