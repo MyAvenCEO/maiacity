@@ -21,18 +21,18 @@
 	{#each MINDS as t (t)}
 		<li>
 			<span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>weight {pct(w[t])} · {pct(total ? worth[t] / total : 0)} of its value</small></span>
-			<strong>{f(view.pool[t])}<small>≈ {f(worth[t])} HEARTS</small></strong>
+			<strong>{f(worth[t])} HEARTS<small>{f(view.pool[t])} {TOKEN_LABEL[t]}</small></strong>
 		</li>
 	{/each}
-	<li class="sum"><span>Basket value</span><strong>≈ {f(total)} <small class="inline">HEARTS</small></strong></li>
+	<li class="sum"><span>Basket value</span><strong>{f(total)} <small class="inline">HEARTS</small></strong></li>
 </ul>
 {#if treasury}
 	<p class="label">Treasury and basket together</p>
 	<ul class="basket">
 		{#each MINDS as t (t)}
-			<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(treasury[t] + view.pool[t])}<small>≈ {f((treasury[t] + view.pool[t]) * hv[t])} HEARTS</small></strong></li>
+			<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f((treasury[t] + view.pool[t]) * hv[t])} HEARTS<small>{f(treasury[t] + view.pool[t])} {TOKEN_LABEL[t]}</small></strong></li>
 		{/each}
-		<li class="sum"><span>All of it</span><strong>≈ {f(MINDS.reduce((a, t) => a + (treasury[t] + view.pool[t]) * hv[t], 0))} <small class="inline">HEARTS</small></strong></li>
+		<li class="sum"><span>All of it</span><strong>{f(MINDS.reduce((a, t) => a + (treasury[t] + view.pool[t]) * hv[t], 0))} <small class="inline">HEARTS</small></strong></li>
 	</ul>
 {/if}
 
