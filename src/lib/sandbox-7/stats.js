@@ -5,7 +5,7 @@
  * and the energy it makes and uses; and the whole village's, its seven hexes added up (`villageStats`). Pure
  * functions: the same plan gives the same numbers, in the browser or in node.
  */
-import { capHeight, capOf, northCut, NORTH_TILT, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET, FOREST, GROWN, LAND_PERSON, KINDS, PRICES, RAW, ASSEMBLY, shellOf, towerFloors, towerShell } from './specs.js';
+import { capHeight, capOf, northCut, NORTH_TILT, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET, FOREST, GROWN, LAND_PERSON, KINDS, PRICES, RAW, ASSEMBLY, BATTERY_KWH, HALLS, HALL_PRICES, INSIDES, hallOf, shellOf, siteHall, towerFloors, towerShell } from './specs.js';
 import { HEX_AREA, USES, USE_IDS, landOf, zonesOf } from './layout.js';
 
 /** what each factory makes in a year and the power it takes (estimates: sized to build out a village of ~2,000
@@ -14,7 +14,11 @@ export const FACTORY_RUN = {
 	timber: { t: 1000, unit: 't glulam and CLT', kwh: 350, note: 'sawing, pressing, CNC; drying on the geothermal heat' },
 	hemp: { t: 2000, unit: 't hemp straw', kwh: 100, note: 'decorticating and pressing batts; the hex grows a part, the rest comes from farms around' },
 	bamboo: { t: 500, unit: 't scrimber', kwh: 600, note: 'crushing, drying, resin and hot pressing' },
-	steel: { t: 1000, unit: 't steel', kwh: 650, note: 'electric arc furnace on scrap (~400–600 kWh/t) and casting the hubs' },
+	// packages 2–4 weld the hubs from bought plate (estimate: plasma cutting, ~40 kg of weld metal a t at ~3 kWh a kg,
+	// drilling, the crane and the air: ~250 kWh a t)
+	steel: INSIDES
+		? { t: 1000, unit: 't welded hubs and connectors', kwh: 250, note: 'cutting plate on a CNC plasma table, welding and drilling the hubs; a galvaniser near by galvanises them (estimate)' }
+		: { t: 1000, unit: 't steel', kwh: 650, note: 'electric arc furnace on scrap (~400–600 kWh/t) and casting the hubs' },
 	lime: { t: 2000, unit: 't quicklime', kwh: 1100, note: 'electric kiln (estimate; burning lime takes ~880 kWh of heat a t in theory)' },
 	clay: { t: 3000, unit: 't fired clay', kwh: 500, note: 'the settlers game’s block works: voussoirs for the trade routes' },
 	glass: { t: 1000, unit: 't glazing (20,000 m²)', kwh: 300, note: 'laminating and laying the cells; float glass is bought' },
@@ -26,10 +30,16 @@ export const GEOTHERMAL = 3.4e3 * 8760 * 0.94;
  * price before the cost audit, 2026-10-13; the geothermal plant as ./buildout.js GEO prices it) */
 export const TOWER_EQUIPMENT = [
 	{ label: 'AI data center, 1 MW of IT', eur: 4.0e6, est: true, was: 10.5e6, note: 'modular data centers 4.4–4.6 M$ a MW of IT (AM Compute 2025) in a shell already built; a Frankfurt hyperscale building 11.6 $/W (Turner & Townsend 2025)' },
-	{ label: 'Batteries, 40 MWh LFP', eur: 40000 * 155, est: true, was: 40000 * 160, note: 'turnkey 177 $/kWh in Europe (BNEF 2025) ≈ 155 €/kWh' },
+	{ label: `Batteries, ${BATTERY_KWH.centre / 1000} MWh LFP`, eur: BATTERY_KWH.centre * 155, est: true, was: 40000 * 160, note: `turnkey 177 $/kWh in Europe (BNEF 2025) ≈ 155 €/kWh${INSIDES ? '; 18 MWh in packages 2–4 (40 in package 1)' : ''}` },
 	{ label: 'Water works for the tower’s 2,500 guests, workers and residents', eur: 2500 * 1000, note: 'membrane bioreactor and planted wetland, 150–3,000 € a person' },
 	{ label: 'Geothermal plant: a well triplet and a 4 MW ORC', eur: 3 * 7000 * 2400 + 4300 * 3500, est: true, was: 37.5e6, note: '~65.5 M€ (40–100): three 7 km wells at ~2,400 €/m and the ORC with stimulation at ~3,500 €/kW gross; deep EGS 13,400–33,500 $/kW net (NREL ATB 2024), Holzkirchen over 30 M€ to drill (GGSC)' }
 ];
+
+/** the cost rows' names that change with the design package (./specs.js DESIGN) */
+const COST_LABELS = {
+	shell: 'Shell materials (glulam, steel, glass, solar cells, hemp, footings)' + (HALLS ? ' and the works halls' : ''),
+	machines: INSIDES ? 'Machines: data center, batteries, water' : 'Machines: data center, batteries, hydrogen, water'
+};
 
 /** crops added up, t a year @param {[Record<string, number>, number][]} list each with how many times it counts */
 const sumCrops = (list) => {
@@ -50,19 +60,25 @@ export function hexStats(plan, land = landOf(plan)) {
 	const uses = USE_IDS.filter((u) => land.m2[u] > 1).map((u) => ({ id: u, ...USES[u], ha: land.m2[u] / 1e4, pct: (100 * land.m2[u]) / HEX_AREA }));
 	const glassHa = uses.filter((u) => u.inside).reduce((a, u) => a + u.ha, 0);
 
-	// ── buildings ──
+	// ── buildings (a works hall is a row of its own: each has its own size) ──
 	/** @type {Map<string, any>} */
 	const byKind = new Map();
 	for (const s of plan.sites) {
 		const K = KINDS[s.kind];
-		const row = byKind.get(s.kind) ?? { kind: s.kind, label: K.label, count: 0, note: K.note };
+		const hall = siteHall(s);
+		const key = hall ? `hall:${hall.id}` : s.kind;
+		const row = byKind.get(key) ?? { kind: key, label: hall ? `${FACTORIES.find((f) => f.id === hall.id)?.label ?? 'Works'} hall` : K.label, count: 0, note: K.note, hall: hall ? hall.id : null };
 		row.count++;
-		byKind.set(s.kind, row);
+		byKind.set(key, row);
 	}
 	const buildings = [...byKind.values()].map((b) => {
 		if (b.kind === 'tower' && tower) {
 			const sh = towerShell(tower);
 			return { ...b, label: tower.label, D: tower.D, h: tower.H, floor: sh.floor, shell: sh.shell, glazed: sh.glazed, north: sh.north, volume: sh.volume, people: 0, solar: sh.solar, heat: sh.heat, climate: sh.climate };
+		}
+		if (b.hall) {
+			const h = hallOf(b.hall);
+			return { ...b, D: null, size: `${h.length} × ${h.span}`, h: h.ridge, floor: h.floor, shell: h.roof + h.walls, glazed: 0, north: 0, volume: h.floor * (h.eaves + (h.ridge - h.eaves) / 2), people: 0, gfa: 0, solar: h.solar, heat: h.heat, climate: h.climate };
 		}
 		const K = KINDS[b.kind];
 		const sh = shellOf(K.D);
@@ -80,6 +96,17 @@ export function hexStats(plan, land = landOf(plan)) {
 	};
 	let fitout = 0, gfaHomes = 0;
 	for (const s of plan.sites) {
+		const hall = siteHall(s);
+		if (hall) {
+			// a works hall: its frame, its panels, its slab and footings, its doors and services, its solar
+			add('hallFrame', 'm³', hall.m.glulam + hall.m.purlins, hall.t.glulam + hall.m.steel, hall.eur.frame);
+			add('cladding', 'm²', hall.roof + hall.walls, hall.t.panels, hall.eur.cladding);
+			add('slab', 'm²', hall.floor, hall.t.concrete + hall.t.gravel + hall.m.mesh, hall.eur.slab);
+			add('hallKit', 'm²', hall.floor, 0, hall.eur.kit);
+			add('roofPv', 'kWp', hall.m.kwp, hall.t.modules, hall.eur.pv);
+			fitout += hall.floor * FITOUT.factory;
+			continue;
+		}
 		const sh = s.kind === 'tower' && tower ? towerShell(tower) : shellOf(KINDS[s.kind].D);
 		add('timber', 'm³', sh.m.timber, sh.t.timber, sh.eur.timber);
 		add('steel', 't', sh.m.steel, sh.t.steel, sh.eur.steel);
@@ -111,8 +138,10 @@ export function hexStats(plan, land = landOf(plan)) {
 		add('concrete', 'm³', sc, sc * DENSITY.concrete, sc * PRICES.concrete.eur);
 		fitout += f.m2 * (/** @type {Record<string, number>} */ (FITOUT)[f.use] ?? 2500);
 	}
-	const LABEL = { timber: 'Glulam struts and north cassettes', steel: 'Steel hubs, ring and connectors', glass: 'Laminated double glazing', pv: 'See-through solar cells in it', hemp: 'Hemp-fibre insulation (north side)', lime: 'Lime-pozzolan footings', clt: 'CLT and glulam floors inside', concrete: 'Screed on the floors' };
-	const PRICE_OF = { timber: PRICES.glulam, steel: tower && plan.id === 'tower' ? PRICES.hubs : PRICES.hubs, glass: PRICES.glass, pv: PRICES.pv, hemp: PRICES.hemp, lime: PRICES.lime, clt: PRICES.clt, concrete: PRICES.concrete };
+	const LABEL = { timber: 'Glulam struts and north cassettes', steel: 'Steel hubs, ring and connectors', glass: 'Laminated double glazing', pv: 'See-through solar cells in it', hemp: 'Hemp-fibre insulation (north side)', lime: 'Lime-pozzolan footings', clt: 'CLT and glulam floors inside', concrete: 'Screed on the floors', hallFrame: 'Works halls: spruce glulam frames and purlins, their steel connectors', cladding: 'Works halls: sandwich panels on the roofs and walls', slab: 'Works halls: slabs on gravel, footings', hallKit: 'Works halls: doors, rooflights, services', roofPv: 'Works halls: solar on the south roofs' };
+	/** a price a m² of a hall row, averaged over the halls (its parts are priced in specs.js HALL_PRICES) */
+	const perFloor = (/** @type {string} */ k, /** @type {string} */ range) => ({ eur: mat[k] ? Math.round(mat[k].eur / mat[k].qty) : 0, unit: 'm² of floor', range });
+	const PRICE_OF = { timber: PRICES.glulam, steel: PRICES.hubs, glass: PRICES.glass, pv: PRICES.pv, hemp: PRICES.hemp, lime: PRICES.lime, clt: PRICES.clt, concrete: PRICES.concrete, hallFrame: HALL_PRICES.glulam, cladding: HALL_PRICES.roof, slab: perFloor('slab', 'estimate'), hallKit: perFloor('hallKit', 'estimate'), roofPv: HALL_PRICES.pv };
 	const materials = Object.entries(mat).map(([k, m]) => ({ id: k, label: /** @type {any} */ (LABEL)[k], ...m, price: /** @type {any} */ (PRICE_OF)[k] }));
 	const shellEur = materials.filter((m) => m.id !== 'clt' && m.id !== 'concrete').reduce((a, m) => a + m.eur, 0);
 	const insideEur = materials.filter((m) => m.id === 'clt' || m.id === 'concrete').reduce((a, m) => a + m.eur, 0);
@@ -120,10 +149,10 @@ export function hexStats(plan, land = landOf(plan)) {
 	const equipmentEur = equipment.reduce((a, e) => a + e.eur, 0);
 	const landEur = (HEX_AREA / 1e4) * PRICES.land.eur;
 	const cost = [
-		{ label: 'Shell materials (glulam, steel, glass, solar cells, hemp, footings)', eur: shellEur },
+		{ label: COST_LABELS.shell, eur: shellEur },
 		{ label: `Putting the shells up (+${Math.round(ASSEMBLY * 100)}% of their materials)`, eur: shellEur * ASSEMBLY },
 		{ label: 'Building inside: floors, homes, halls, workshops (fit-out, its timber included)', eur: fitout },
-		{ label: 'Machines: data center, batteries, hydrogen, water' + (plan.id === 'tower' ? ', geothermal' : ''), eur: equipmentEur },
+		{ label: COST_LABELS.machines + (plan.id === 'tower' ? ', geothermal' : ''), eur: equipmentEur },
 		{ label: `The land, ${(HEX_AREA / 1e4).toFixed(1)} ha of farmland`, eur: landEur }
 	];
 	const total = cost.reduce((a, c) => a + c.eur, 0);
@@ -146,7 +175,7 @@ export function hexStats(plan, land = landOf(plan)) {
 		people.push({ label: 'Hotel rooms and short stays', n: Math.round((f.hotel?.m2 ?? 0) / 60), note: '60 m² gross a key; ~70% full, ~1.6 guests a room' });
 		people.push({ label: 'Desks in offices and co-working', n: Math.round((f.offices?.m2 ?? 0) / 15), note: '15 m² gross a desk (14 m² a desk in DACH offices)' });
 		people.push({ label: 'Jobs on the factory floor', n: Math.round((f.factory?.m2 ?? 0) / 150), note: 'one job for ~150 m² of hall' });
-		people.push({ label: 'Jobs in the 8 factory domes', n: 8 * 35, note: 'about 35 each, in shifts' });
+		people.push({ label: HALLS ? 'Jobs in the 8 works halls' : 'Jobs in the 8 factory domes', n: 8 * 35, note: 'about 35 each, in shifts' });
 	}
 	const eaters = plan.id === 'living' ? residents : (people[0].n * 2.2 + people[1].n * 0.7 * 1.6);
 
@@ -183,16 +212,27 @@ export function hexStats(plan, land = landOf(plan)) {
 		.map(([k, r]) => ({ id: k, ...r, ha: land.m2[k] / 1e4, yearly: (land.m2[k] / 1e4) * r.per }));
 
 	// ── energy, kWh a year ──
-	let solar = 0, climate = 0, heat = 0;
+	// the domes' and the tower's, and the works halls' (packages 3–4) apart
+	let solar = 0, climate = 0, heat = 0, hallSolar = 0, hallFans = 0, hallHeat = 0;
 	for (const b of buildings) {
+		if (b.hall) {
+			hallSolar += b.count * b.solar;
+			hallFans += b.count * b.climate;
+			hallHeat += b.count * b.heat;
+			continue;
+		}
 		solar += b.count * b.solar;
 		climate += b.count * b.climate;
 		heat += b.count * b.heat;
 	}
 	/** @type {{ label: string, kwh: number }[]} */
 	const makes = [{ label: 'Solar panels, every second glass panel (see-through cells)', kwh: solar }];
+	if (hallSolar) makes.push({ label: 'Solar on the works halls’ south roofs', kwh: hallSolar });
 	/** @type {{ label: string, kwh: number }[]} */
 	const uses2 = [{ label: 'The domes’ climate: fans, pumps, vents', kwh: climate }];
+	if (hallFans) uses2.push({ label: 'The works halls’ fans', kwh: hallFans });
+	/** the heat the buildings need a year, kWh: the domes beyond their fish ponds, the halls to keep 15 °C */
+	const heatRows = [{ label: 'The domes need beyond their fish ponds', kwh: heat }, ...(hallHeat ? [{ label: 'The works halls need, kept at 15 °C', kwh: hallHeat }] : [])];
 	if (plan.id === 'living') {
 		uses2.push({ label: `${residents} people at home (900 kWh each, sharing a dome)`, kwh: residents * ENERGY.person });
 		uses2.push({ label: 'AI data center, 300 kW of IT (PUE 1.2)', kwh: ENERGY.datacenter });
@@ -214,7 +254,8 @@ export function hexStats(plan, land = landOf(plan)) {
 		made,
 		used,
 		net: made - used,
-		heat,
+		heat: heat + hallHeat,
+		heatRows,
 		heatFrom: plan.id === 'living' ? [{ label: 'The data center’s waste heat (~85% of its power, at ~45 °C)', kwh: ENERGY.datacenterHeat }] : [{ label: 'The geothermal heat loop: 12.6 MW at 90→60 °C (~104 GWh a year)', kwh: 104e6 }]
 	};
 
@@ -245,7 +286,7 @@ export function villageStats(parts) {
 	const order = Object.keys(USES);
 	uses.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 	// the hexes' costs come in the same five rows
-	const cost = ['Shell materials (glulam, steel, glass, solar cells, hemp, footings)', parts[0].stats.cost[1].label, 'Building inside: floors, homes, halls, workshops (fit-out, its timber included)', 'Machines: data centers, batteries, hydrogen, water, geothermal', `The land, ${n1(hexHa)} ha of farmland`].map((label, k) => ({ label, eur: parts.reduce((a, p) => a + p.n * p.stats.cost[k].eur, 0) }));
+	const cost = [COST_LABELS.shell, parts[0].stats.cost[1].label, 'Building inside: floors, homes, halls, workshops (fit-out, its timber included)', `${COST_LABELS.machines.replace('data center', 'data centers')}, geothermal`, `The land, ${n1(hexHa)} ha of farmland`].map((label, k) => ({ label, eur: parts.reduce((a, p) => a + p.n * p.stats.cost[k].eur, 0) }));
 	const total = cost.reduce((a, c) => a + c.eur, 0);
 	const tower = parts.find((p) => p.stats.tower)?.stats;
 	const living = parts.filter((p) => !p.stats.tower);
@@ -278,7 +319,7 @@ export function villageStats(parts) {
 		residents: residents + aptPeople,
 		food,
 		raw: tower?.raw ?? [],
-		energy: { makes, uses: used, made, used: usedKwh, net: made - usedKwh, heat: parts.reduce((a, p) => a + p.n * p.stats.energy.heat, 0), heatFrom: merge((s) => s.energy.heatFrom, 'label', ['kwh']) },
+		energy: { makes, uses: used, made, used: usedKwh, net: made - usedKwh, heat: parts.reduce((a, p) => a + p.n * p.stats.energy.heat, 0), heatRows: merge((s) => s.energy.heatRows, 'label', ['kwh']), heatFrom: merge((s) => s.energy.heatFrom, 'label', ['kwh']) },
 		floors: tower?.floors ?? [],
 		tower: tower?.tower,
 		factoryRun: FACTORY_RUN,
@@ -330,12 +371,34 @@ export function siteCard(plan, id) {
 			floors
 		};
 	}
-	const sh = shellOf(K.D);
-	const c = sh.cap;
-	const geo = sh.geodesic;
 	const n = (/** @type {number} */ x) => Math.round(x).toLocaleString('en-US');
 	const fa = FACTORIES.find((f) => f.id === site.factory);
 	const run = fa ? /** @type {Record<string, any>} */ (FACTORY_RUN)[fa.id] : null;
+	const hall = siteHall(site);
+	if (hall) {
+		// a works hall (packages 3–4)
+		const dome = shellOf(120);
+		return {
+			kind: site.kind,
+			title: `${fa?.label ?? 'Works'} hall`,
+			note: fa?.makes ?? K.note,
+			facts: [
+				['Size', `${hall.length} × ${hall.span} m, ${n(hall.floor)} m² of floor (the works needs ${n(hall.need)} m²); its long side east to west`],
+				['Height', `${hall.eaves} m at the eaves, ${hall.ridge.toFixed(1)} m at the ridge, a ${hall.pitch}° roof`],
+				['Frame', `${hall.frames} spruce glulam portal frames every 6 m over ${hall.span} m: ${n(hall.m.glulam)} m³, and ${n(hall.m.purlins)} m³ of purlins`],
+				['Roof and walls', `${n(hall.roof)} m² and ${n(hall.walls)} m² of insulated sandwich panels`],
+				['Solar', `${n(hall.m.modules)} m² on the south slope, ${n(hall.m.kwp)} kWp: ${(hall.solar / 1e6).toFixed(2)} GWh a year (a Dome120’s cells make ${(dome.solar / 1e6).toFixed(2)})`],
+				['Heat and fans', `${(hall.heat / 1e6).toFixed(2)} GWh of heat a year at 15 °C, ${n(hall.climate / 1e3)} MWh for its fans; no dome climate (a Dome120: ${(dome.heat / 1e6).toFixed(2)} GWh of heat, ${n(dome.climate / 1e3)} MWh of climate power)`],
+				...(run ? [['Makes', `${run.t.toLocaleString('en-US')} ${run.unit} a year, ${run.kwh} kWh a t (${run.note})`]] : [])
+			],
+			zones: zonesOf(site, plan).map((/** @type {any} */ z) => ({ use: z.use, label: z.label, m2: z.m2 })),
+			hall,
+			eur: hall.total
+		};
+	}
+	const sh = shellOf(K.D);
+	const c = sh.cap;
+	const geo = sh.geodesic;
 	return {
 		kind: site.kind,
 		title: fa ? fa.label : K.label,

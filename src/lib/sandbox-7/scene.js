@@ -1,7 +1,8 @@
 /**
  * SANDBOX 6 · ONE VILLAGE · THE WORLD — the village's seven hexes in three.js at their real size, a metre a unit: the
  * land painted from its land-use raster (./layout.js), the domes as glazed geodesic caps with their cold north side
- * closed in hemp, the blocks of homes, the tower with its floors, and what grows on the land and under the glass. The
+ * closed in hemp, the blocks of homes, the tower with its floors, the works as plain pitched-roof halls with solar on
+ * their south roofs (design packages 3–4: ./specs.js DESIGN), and what grows on the land and under the glass. The
  * six living hexes are alike: one is built and the other five are copies of it.
  *
  * Everything an overlay can hide sits in its own group (`layers`), so the page toggles them: the land-use colours,
@@ -15,7 +16,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { capOf, CORE_R, FACADE, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, towerGridOf, towerLevels, towerRadius } from './specs.js';
+import { BATTERY_KWH, capOf, CORE_R, FACADE, INSIDES, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, siteHall, towerGridOf, towerLevels, towerRadius } from './specs.js';
 import { CELL, HEX_S, HEX_W, USES, USE_IDS, corners, landOf } from './layout.js';
 
 /** @type {Map<string, THREE.MeshStandardMaterial>} */
@@ -188,8 +189,13 @@ function homeInside(/** @type {any} */ K, /** @type {THREE.Group} */ inside) {
 /** a box on the floor of a dome */
 const box = (/** @type {number} */ w, /** @type {number} */ h, /** @type {number} */ d, /** @type {string} */ color, /** @type {number} */ x, /** @type {number} */ z, rough = 0.8) => part(new THREE.BoxGeometry(w, h, d), mat(color, rough), x, h / 2, z);
 
-/** the utilities dome: pond, data center, batteries, hydrogen, water works, workshops, the office crescent, stores */
-function utilInside(/** @type {THREE.Group} */ outer) {
+/**
+ * the utilities dome: pond, data center, batteries (and, in the first design package, the hydrogen), water works,
+ * workshops, the office crescent, stores
+ * @param {THREE.Group} outer
+ * @param {number} kwh the batteries it holds (./specs.js BATTERY_KWH)
+ */
+function utilInside(outer, kwh) {
 	const c120 = capOf(120);
 	outer.add(part(new THREE.CircleGeometry(c120.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#b9b3a8', 1), 0, FLOOR_Y, 0, false));
 	outer.add(part(new THREE.CircleGeometry(c120.a - 5, 72, Math.PI * 1.1, Math.PI * 0.8).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, FLOOR_Y + 0.12, 0, false));
@@ -204,13 +210,17 @@ function utilInside(/** @type {THREE.Group} */ outer) {
 	// the data center: a hall of racks, its dry coolers on the roof
 	inside.add(box(28, 7, 25, '#4b4f57', -22, -18, 0.5));
 	for (let k = 0; k < 4; k++) inside.add(box(5, 1.6, 4, '#9aa3ad', -32 + k * 7, -18, 0.4).translateY(7));
-	// batteries: three 40 ft containers
-	for (let k = 0; k < 3; k++) inside.add(box(12.2, 2.6, 2.4, '#e9eef2', 8, -28 + k * 4.2, 0.5));
-	// hydrogen: the electrolyser and fuel cell house, and three tanks lying down
-	inside.add(box(14, 5, 10, '#d9d9d2', 30, -20));
-	for (let k = 0; k < 3; k++) {
-		const tank = part(new THREE.CylinderGeometry(1.8, 1.8, 14, 16).rotateX(Math.PI / 2), mat('#f2f2ee', 0.4), 42 + k * 4.2, 1.9, -20);
-		inside.add(tank);
+	// batteries in 40 ft containers: three in the first package; from the second, one for every ~4 MWh of LFP cells
+	// (a 40 ft container holds ~3.7–5 MWh)
+	const containers = INSIDES ? Math.max(1, Math.round(kwh / 4000)) : 3;
+	for (let k = 0; k < containers; k++) inside.add(box(12.2, 2.6, 2.4, '#e9eef2', 8, -28 + k * 4.2, 0.5));
+	// hydrogen (first package only): the electrolyser and fuel cell house, and three tanks lying down
+	if (!INSIDES) {
+		inside.add(box(14, 5, 10, '#d9d9d2', 30, -20));
+		for (let k = 0; k < 3; k++) {
+			const tank = part(new THREE.CylinderGeometry(1.8, 1.8, 14, 16).rotateX(Math.PI / 2), mat('#f2f2ee', 0.4), 42 + k * 4.2, 1.9, -20);
+			inside.add(tank);
+		}
 	}
 	// the water works: the bioreactor's tanks and a planted wetland
 	inside.add(box(16, 4, 10, '#c9c2b2', -45, 8));
@@ -221,18 +231,127 @@ function utilInside(/** @type {THREE.Group} */ outer) {
 	inside.add(box(30, 7, 28, '#a8a196', 0, 52 - 10));
 }
 
+/** the colour of what each works makes @type {Record<string, string>} */
+const WORKS_COL = { timber: '#c8955a', hemp: '#b8b06a', bamboo: '#8fb05a', steel: '#6d7782', lime: '#e6e2d6', clay: '#c4734f', glass: '#9fd0dc', recycling: '#7e8f6a' };
+
 /** the machines of a factory dome, in the colours of what it makes */
 function factoryInside(/** @type {string} */ id, /** @type {THREE.Group} */ inside) {
 	const c = capOf(120);
 	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#a49d90', 1), 0, FLOOR_Y, 0, false));
-	/** @type {Record<string, string>} */
-	const COL = { timber: '#c8955a', hemp: '#b8b06a', bamboo: '#8fb05a', steel: '#6d7782', lime: '#e6e2d6', clay: '#c4734f', glass: '#9fd0dc', recycling: '#7e8f6a' };
-	const col = COL[id] ?? '#999';
+	const col = WORKS_COL[id] ?? '#999';
 	// the line down the middle: a long hall, two machines either side, a stack of what it made at the door
 	inside.add(box(60, 9, 18, '#d8d2c6', 0, -6));
 	for (const s of [-1, 1]) for (let k = 0; k < 2; k++) inside.add(box(10, 6 + k * 3, 10, col, -18 + k * 30, -6 + s * 18, 0.6));
 	if (id === 'lime' || id === 'clay' || id === 'steel' || id === 'glass') inside.add(part(new THREE.CylinderGeometry(3.5, 4, 22, 16), mat(col, 0.6), 22, 11, 14));
 	for (let k = 0; k < 6; k++) inside.add(box(4, 2 + (k % 3), 6, col, -12 + k * 5, 26));
+}
+
+// ── the works halls (design packages 3–4) ──────────────────────────────────────────────────────────────────────
+
+/** the halls' sandwich panels (light grey walls, a darker roof), their solar panels and their glulam frames */
+const PANEL = new THREE.MeshStandardMaterial({ color: '#dfe1dd', roughness: 0.7, flatShading: true, side: THREE.DoubleSide });
+const HALL_PV = new THREE.MeshStandardMaterial({ color: '#22405f', roughness: 0.3, metalness: 0.35, flatShading: true });
+const HALL_ROOF = '#80858a';
+const GLULAM = '#c49a64';
+
+/**
+ * Boxes merged into one mesh of one material, each [w, h, d, x, y, z] and a tilt about the east–west axis (radians).
+ * @param {number[][]} list @param {THREE.Material} m
+ */
+function boxes(list, m) {
+	const geos = list.map(([w, h, d, x, y, z, rx = 0]) => {
+		const geo = new THREE.BoxGeometry(w, h, d);
+		if (rx) geo.rotateX(rx);
+		return geo.translate(x, y, z);
+	});
+	return part(mergeGeometries(geos) ?? new THREE.BufferGeometry(), m);
+}
+
+/**
+ * A works hall (./specs.js hallOf): its slab, its glulam portal frames every 6 m, sandwich-panel walls with a band in
+ * the colour of what the works makes, a 10° roof with its ridge east to west, and solar panels in rows on its south
+ * slope. Its shell's parts go walls, solar, roof, frames: the order the timeline reads a dome's glass, solar, hemp,
+ * struts in.
+ * @param {any} h the hall @param {string} id the works
+ */
+function hallModel(h, id) {
+	const g = siteGroups();
+	g.root.add(g.shell, g.inside, g.dims);
+	const L = h.length, W = h.span, e = h.eaves, top = h.ridge, rise = top - e;
+	const p = (h.pitch * Math.PI) / 180;
+	const slope = W / 2 / Math.cos(p);
+	// the slab on its gravel, its top half a metre over the land like a dome's floor
+	const slab = part(new THREE.BoxGeometry(L + 1, FLOOR_Y, W + 1), mat('#bab5ab', 0.95), 0, FLOOR_Y / 2, 0);
+	slab.userData.part = 'plinth';
+	g.root.add(slab);
+	// the walls: the long sides to the eaves, the gables to the ridge, a roller door in each gable, the band under the eaves
+	const walls = new THREE.Group();
+	const t = 0.15;
+	walls.add(boxes([[L, e, t, 0, e / 2, -W / 2], [L, e, t, 0, e / 2, W / 2]], PANEL));
+	const shape = new THREE.Shape([new THREE.Vector2(-W / 2, 0), new THREE.Vector2(W / 2, 0), new THREE.Vector2(W / 2, e), new THREE.Vector2(0, top), new THREE.Vector2(-W / 2, e)]);
+	for (const s of [-1, 1]) walls.add(part(new THREE.ShapeGeometry(shape).rotateY(Math.PI / 2), PANEL, (s * L) / 2, 0, 0));
+	walls.add(boxes([[t + 0.1, 5.5, 6, -L / 2, 2.75, 0], [t + 0.1, 5.5, 6, L / 2, 2.75, 0]], mat('#8d9297', 0.6)));
+	walls.add(boxes([[L + 0.1, 1.2, t + 0.1, 0, e - 0.9, -W / 2], [L + 0.1, 1.2, t + 0.1, 0, e - 0.9, W / 2]], mat(WORKS_COL[id] ?? '#999', 0.7)));
+	// the roof: two slopes of sandwich panels, a little over the walls
+	const roof = boxes([[L + 0.8, 0.25, slope + 0.4, 0, e + rise / 2 + 0.15, -W / 4, -p], [L + 0.8, 0.25, slope + 0.4, 0, e + rise / 2 + 0.15, W / 4, p]], mat(HALL_ROOF, 0.6));
+	// the solar panels: rows down the south slope, a block a bay, walkways between the rows and at the ridge and eaves
+	const rows = Math.max(1, Math.round(slope / 5));
+	const rowD = (slope - 0.8 - (rows - 1) * 0.5) / rows;
+	/** @type {number[][]} */
+	const pv = [];
+	for (let b = 0; b < h.bays; b++)
+		for (let k = 0; k < rows; k++) {
+			const u = 0.4 + k * (rowD + 0.5) + rowD / 2;
+			pv.push([5.8, 0.08, rowD, -L / 2 + 3 + b * 6, e + u * Math.sin(p) + 0.37, W / 2 - u * Math.cos(p), p]);
+		}
+	const solar = boxes(pv, HALL_PV);
+	// the portal frames: a glulam column each side and a beam up each slope, every 6 m
+	const d = W / 20;
+	/** @type {number[][]} */
+	const fr = [];
+	for (let f = 0; f <= h.bays; f++) {
+		const x = Math.max(-L / 2 + 0.3, Math.min(L / 2 - 0.3, -L / 2 + f * 6));
+		for (const s of [-1, 1]) {
+			fr.push([0.2, e, 0.6, x, e / 2, s * (W / 2 - 0.45)]);
+			fr.push([0.2, d, slope, x, e + rise / 2 - d / 2 - 0.05, (s * W) / 4, s * p]);
+		}
+	}
+	const frames = boxes(fr, mat(GLULAM, 0.8));
+	g.shell.add(walls, solar, roof, frames);
+	// the dimension lines: along the south wall, across the west gable, up the middle to the ridge
+	const v = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => new THREE.Vector3(x, y, z);
+	const dimGeo = new THREE.BufferGeometry().setFromPoints([v(-L / 2, 1.5, W / 2 + 1.5), v(L / 2, 1.5, W / 2 + 1.5), v(-L / 2 - 1.5, 1.5, -W / 2), v(-L / 2 - 1.5, 1.5, W / 2), v(0, 0, 0), v(0, top, 0)]);
+	g.dims.add(new THREE.LineSegments(dimGeo, DIM));
+	// the hit volume for picking
+	const hit = new THREE.Mesh(new THREE.BoxGeometry(L, top, W), new THREE.MeshBasicMaterial({ visible: false }));
+	hit.position.y = top / 2;
+	g.root.add(hit);
+	return { ...g, hit, height: top, r: Math.hypot(L, W) / 2 };
+}
+
+/**
+ * What stands in a works hall: its parts (./specs.js WORKS_FLOOR) one after another from west to east, each on its share
+ * of the floor, the machines in the colour of what the works makes and the stores as stacks; the lime kiln's shaft
+ * through the roof, the steel works' hall crane.
+ * @param {any} h the hall @param {string} id the works @param {THREE.Group} inside
+ */
+function hallInside(h, id, inside) {
+	const col = WORKS_COL[id] ?? '#999';
+	const L = h.length, W = h.span;
+	let x0 = -L / 2 + 1;
+	for (const [k, q] of h.parts.entries()) {
+		const len = ((L - 2) * q.m2) / h.need;
+		const mid = x0 + len / 2;
+		if (/store|stock|racks|bales|in racks/i.test(q.label)) {
+			// stacks along the north wall, an aisle to the south
+			const n = Math.max(1, Math.floor((len - 1) / 3.5));
+			for (let i = 0; i < n; i++) for (let j = 0; j < 2; j++) inside.add(box(3, 2 + ((i + j) % 3) * 0.8, 3, j ? '#cfc6b4' : col, x0 + 2 + i * 3.5, -W / 2 + 3 + j * 4, 0.9));
+		} else inside.add(box(Math.max(2, len - 2), 3 + (k % 3) * 1.5, W * 0.45, k % 2 ? '#d8d2c6' : col, mid, -W * 0.12, 0.6));
+		if (id === 'lime' && /kiln/i.test(q.label)) inside.add(part(new THREE.CylinderGeometry(2.2, 2.6, h.ridge + 6, 16), mat(col, 0.6), mid, (h.ridge + 6) / 2, -W * 0.12));
+		x0 += len;
+	}
+	// the steel works' hall crane: a girder across the span, under the eaves
+	if (id === 'steel') inside.add(part(new THREE.BoxGeometry(0.6, 0.9, W - 1.2), mat('#e0b23a', 0.5), -L / 2 + 8, h.eaves - 1.4, 0));
 }
 
 /** the tropical food domes' pond and floor */
@@ -471,7 +590,7 @@ function sow(land, plants, /** @type {number} */ seed, plan) {
 	const id = Object.fromEntries(USE_IDS.map((u, k) => [k, u]));
 	const W = land.nx * CELL, H = land.nz * CELL;
 	// for the timeline: which dome a plant under the glass grows in, and what planting the outdoor ones wait for
-	const domes = plan.sites.filter((s) => s.kind !== 'tower').map((s) => ({ id: s.id, x: s.x, z: s.z, r: capOf(KINDS[s.kind].D).a }));
+	const domes = plan.sites.filter((s) => s.kind !== 'tower' && !siteHall(s)).map((s) => ({ id: s.id, x: s.x, z: s.z, r: capOf(KINDS[s.kind].D).a }));
 	/** @type {Record<string, string>} */
 	const OUT = { foodForest: 'forest', woodland: 'woods', bamboo: 'bamboo' };
 	const tagOf = (/** @type {string} */ use, /** @type {number} */ x, /** @type {number} */ z) => {
@@ -648,8 +767,9 @@ function bake(/** @type {THREE.Group} */ group) {
 }
 
 /**
- * @typedef {{ id: string, plan: import('./layout.js').HexPlan, site: import('./layout.js').Site, x: number, z: number, height: number, r: number, hit: THREE.Object3D, small: boolean, only?: 'timeline' | 'finished' }} Built
+ * @typedef {{ id: string, plan: import('./layout.js').HexPlan, site: import('./layout.js').Site, x: number, z: number, height: number, r: number, hit: THREE.Object3D, small: boolean, hall?: any, only?: 'timeline' | 'finished' }} Built
  *   only: the centre's Dome120 shows on the timeline only (the village without the tower), the tower on the finished village only
+ *   hall: a works hall's numbers (./specs.js hallOf), when the works stand in halls
  */
 
 /**
@@ -669,12 +789,14 @@ function buildHex(plan, /** @type {number} */ seed) {
 	const built = [];
 	for (const site of plan.sites) {
 		const K = KINDS[site.kind];
-		const b = site.kind === 'tower' && plan.tower ? towerModel(plan.tower, (x, y, z, kind, s) => plants.add(x + site.x, y, z + site.z, kind, s, `site:${site.id}`)) : domeShell(K.D);
+		const hall = siteHall(site);
+		const b = site.kind === 'tower' && plan.tower ? towerModel(plan.tower, (x, y, z, kind, s) => plants.add(x + site.x, y, z + site.z, kind, s, `site:${site.id}`)) : hall ? hallModel(hall, site.factory ?? '') : domeShell(K.D);
 		b.root.position.set(site.x, 0, site.z);
 		b.root.userData.siteRoot = site.id;
 		if (site.kind === 'dome40' || site.kind === 'dome80') homeInside(K, b.inside);
-		else if (site.kind === 'util120') utilInside(b.inside);
+		else if (site.kind === 'util120') utilInside(b.inside, BATTERY_KWH.util);
 		else if (site.kind === 'food120') foodInside(b.inside);
+		else if (hall) hallInside(hall, site.factory ?? '', b.inside);
 		else if (site.kind === 'factory120') factoryInside(site.factory ?? '', b.inside);
 		if (site.kind !== 'tower') bake(b.inside);
 		group.add(b.root);
@@ -682,7 +804,7 @@ function buildHex(plan, /** @type {number} */ seed) {
 		b.shell.userData.layer = 'shell';
 		b.inside.userData.layer = 'inside';
 		b.dims.userData.layer = 'dims';
-		built.push({ id: site.id, plan, site, x: site.x, z: site.z, height: b.height, r: b.r, hit: b.hit, small: site.kind === 'dome40' });
+		built.push({ id: site.id, plan, site, x: site.x, z: site.z, height: b.height, r: b.r, hit: b.hit, small: site.kind === 'dome40', ...(hall ? { hall } : {}) });
 	}
 	sow(land, plants, seed, plan);
 	const pg = plants.build();
@@ -758,7 +880,7 @@ export function buildWorld(scene, village, progress) {
 		const t = h.plan.sites.find((x) => x.kind === 'tower');
 		if (t && h.plan.tower) {
 			const c = domeShell(120);
-			utilInside(c.inside);
+			utilInside(c.inside, BATTERY_KWH.centre);
 			bake(c.inside);
 			c.root.position.set(t.x, 0, t.z);
 			c.root.userData.siteRoot = 'centre';
@@ -818,7 +940,8 @@ export function buildWorld(scene, village, progress) {
 				s.root.visible = st !== 'none';
 				if (st === 'none') continue;
 				const shellKids = s.shell?.children ?? [];
-				// the shell's parts: glass, solar, hemp, struts (shellMeshes' order); a tower's the same
+				// the shell's parts: glass, solar, hemp, struts (shellMeshes' order); a tower's the same; a works hall's
+				// walls, solar, roof, frames (hallModel)
 				const [glass, solar, hemp, struts] = shellKids;
 				const up = st === 'inside' || st === 'done';
 				if (struts) struts.visible = st !== 'footing';
@@ -863,13 +986,13 @@ export function buildWorld(scene, village, progress) {
 			camp.group.position.set(h.x, 0, h.z - 120);
 			camp.set(c.n);
 		}
-		// a tower crane in each big dome being framed or glazed
+		// a tower crane in each big dome being framed or glazed (mobile cranes put up the works halls)
 		let n = 0;
 		if (T && T.cranes !== false)
 			for (const [key, h] of Object.entries(hexes))
 				for (const b of h.built) {
 					const st = T.sites[key]?.[b.id];
-					if (!st || (st.phase !== 'frame' && st.phase !== 'shell') || b.small) continue;
+					if (!st || (st.phase !== 'frame' && st.phase !== 'shell') || b.small || b.hall) continue;
 					if (!cranes[n]) {
 						cranes[n] = towerCrane();
 						scene.add(cranes[n].g);

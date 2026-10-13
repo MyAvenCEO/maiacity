@@ -20,6 +20,8 @@
  * Every dome's size, tonnes and prices come from Sandbox 6 (./specs.js shellOf, KINDS, PRICES, FITOUT; ./stats.js
  * FACTORY_RUN, EQUIPMENT); this module adds only what building it takes: the kit, the work rates (crew-hours, crane
  * lifts) and the order. Every rate and price says where it comes from (BUILD_SOURCES) or that it is an estimate.
+ * The design package (./specs.js DESIGN) sets the struts' timber, how the hubs are made, the utilities' machines and
+ * whether the eight works stand in Dome120s or in plain halls (./specs.js hallOf, built here by `hallWork`).
  *
  * The scheduler is a month-by-month resource model: each month the crew's hours, the cranes' and the telehandlers'
  * days are handed out to the steps under way in priority order; a step runs through its phases (footing, frame, shell,
@@ -30,7 +32,7 @@
  * Pure and deterministic: the same options give the same plan, in node or the browser. `buildPlan()` is cached.
  */
 import { LIVING, TOWER_HEX, VILLAGE, HEX_AREA, landOf } from './layout.js';
-import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, WORKS_MACHINES, shellOf, towerShell, towerFloors, geodesicOf } from './specs.js';
+import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, WORKS_MACHINES, DESIGN, PACKAGE, INSIDES, HALLS, HUBS_WELDED, HALL_PRICES, shellOf, towerShell, towerFloors, geodesicOf, hallOf } from './specs.js';
 import { FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from './stats.js';
 
 // ── sources ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -137,6 +139,12 @@ export const RATES = {
 	water: { v: 5, unit: 'crew-h a m² of the water works and its planted wetland', src: 'sandbox6', est: true },
 	garden: { v: 0.6, unit: 'crew-h a m² of garden under the glass: soil, pond, paths, planting', src: 'sandbox6', est: true },
 	works: { v: 4, unit: 'crew-h a m² of a works’ floor: its hall and setting its machines', src: 'sandbox6', est: true },
+	// the works halls (packages 3–4)
+	slab: { v: 0.5, unit: 'crew-h a m² of a hall’s slab: gravel bed, membrane, mesh, pouring and floating (a crew of 8 casts ~250 m² a day)', src: 'sandbox6', est: true },
+	hallFrame: { v: 0.2, unit: 'crew-h a m² of hall to stand, brace and fix its glulam frames and purlins (besides the lifts)', src: 'sandbox6', est: true },
+	cladding: { v: 0.25, unit: 'crew-h a m² of sandwich panel, roof or wall, with its flashings (a crew of 4 lays ~150 m² a day)', src: 'sandbox6', est: true },
+	pvRoof: { v: 0.2, unit: 'crew-h a m² of solar module on a hall’s roof, with its rails and cables', src: 'sandbox6', est: true },
+	hallInside: { v: 2.5, unit: 'crew-h a m² of a hall’s floor: its services and setting its machines', src: 'sandbox6', est: true },
 	forest: { v: 250, unit: 'crew-h a ha of outdoor food forest: ~300 trees and ~1,500 shrubs, mulch, seed', src: 'sandbox6', est: true },
 	woods: { v: 250, unit: 'crew-h a ha of timber woodland or bamboo planted', src: 'sandbox6', est: true },
 	sow: { v: 20, unit: 'crew-h a ha of hemp sown', src: 'sandbox6', est: true },
@@ -160,10 +168,12 @@ export const LABOUR = {
 
 /** what a material costs bought finished (Sandbox 6's PRICES) and made in the village's own works from raw inputs (estimates) */
 const OWN = {
-	/** larch/Douglas logs ~210 €/m³ at ~0.5 m³ of glulam a m³ of logs, glue and wear ~40: € a m³ of glulam or CLT */
-	timberM3: 210 / 0.5 + 40,
-	/** scrap 300 €/t at 1.1 t a t, electrodes, alloys and zinc ~150: € a t of cast hubs and connectors */
-	steelT: 300 * 1.1 + 150,
+	/** logs at ~0.5 m³ of glulam a m³ of logs, glue and wear ~40: € a m³ of glulam or CLT. Package 1: larch/Douglas
+	 * logs ~210 €/m³; packages 2–4: spruce sawlogs 84–120 €/m³, ~100 (BUILD_SOURCES.raw) */
+	timberM3: (INSIDES ? 100 : 210) / 0.5 + 40,
+	/** € a t of hubs and connectors. Package 1 casts them: scrap 300 €/t at 1.1 t a t, electrodes, alloys and zinc ~150.
+	 * Packages 2–4 weld them from bought plate: ./specs.js HUBS_WELDED.village, ~2,400 */
+	steelT: INSIDES ? HUBS_WELDED.village : 300 * 1.1 + 150,
 	/** float glass ~650 €/t at 0.05 t a m², interlayer, spacers and low-E ~25: € a m² of laminated double glazing */
 	glassM2: 650 * 0.05 + 25,
 	/** TOPCon cells 0.036–0.040 $/W FOB (pv magazine, May 2025), ~0.045 €/Wp delivered in small lots, at the ~200 Wp a
@@ -174,8 +184,9 @@ const OWN = {
 /** what one works makes a month at full output (Sandbox 6 FACTORY_RUN), and how long it takes to get there */
 const WORKS_OUT = { steel: { t: FACTORY_RUN.steel.t / 12 }, glass: { m2: 20000 / 12 }, timber: { t: FACTORY_RUN.timber.t / 12 } };
 const WORKS_RAMP = 6;
-/** works whose furnace or kiln needs the geothermal plant's power to run */
-const NEEDS_GEO = new Set(['steel', 'lime', 'clay']);
+/** works whose furnace or kiln needs the geothermal plant's power to run; a steel works that welds the hubs from plate
+ * (packages 2–4) has no furnace: it runs on the grid as soon as it stands */
+const NEEDS_GEO = new Set(INSIDES ? ['lime', 'clay'] : ['steel', 'lime', 'clay']);
 /** the works that make what the build-out buys most of; the others are built but staffed after the build-out */
 const MAKERS = new Set(['steel', 'glass', 'timber']);
 
@@ -213,6 +224,7 @@ const landM2 = (plan) => {
  * @param {string} kind dome40 | dome80 | food120 | util120 | factory120 | centre
  */
 function domeWork(kind, factory) {
+	if (kind === 'factory120' && HALLS) return hallWork(factory);
 	const K = KINDS[kind === 'centre' ? 'util120' : kind];
 	const sh = shellOf(K.D);
 	const g = geodesicOf(K.D);
@@ -274,6 +286,41 @@ function domeWork(kind, factory) {
 	return { phases, beds, machines, check, label, energy: { solarKwhYear: sh.solar, useKwhYear: use, heatKwhYear: sh.heat } };
 }
 
+/**
+ * A works hall (packages 3–4) as a build step, its phases named as a dome's so the timeline reads it the same way:
+ * the slab and footings, the glulam frames (lifted by the mobile crane, no tower crane), the roof, walls and solar,
+ * and inside the services and the works' machines (./specs.js hallOf: the hall's parts, tonnes and euros).
+ */
+function hallWork(factory) {
+	const h = hallOf(factory);
+	const R = RATES;
+	// a lift for each column and beam of a frame, two bundles of purlins a bay; panels by the crane in packs of ~50 m²,
+	// the solar modules on pallets of ~60 m²
+	const frameLifts = h.frames * 3 + h.bays * 2;
+	const shellLifts = Math.ceil((h.roof + h.walls) / 50) + Math.ceil(h.m.modules / 60);
+	const phases = [
+		{ id: 'footing', label: 'slab and footings', h: h.m.footing * R.footing.v + h.floor * R.slab.v, lifts: 0, pool: null, outdoor: true, eur: h.eur.slab, t: { concrete: h.t.concrete, gravel: h.t.gravel, steel: h.m.mesh } },
+		{
+			id: 'frame', label: 'glulam frames', h: frameLifts * R.lift.v + h.floor * R.hallFrame.v, lifts: frameLifts, pool: 'mobile', outdoor: true, eur: h.eur.frame, t: { glulam: h.t.glulam, steel: h.m.steel },
+			own: { timberM3: h.m.glulam + h.m.purlins, timberEur: h.m.glulam * HALL_PRICES.glulam.eur + h.m.purlins * PRICES.cassette.eur }
+		},
+		{ id: 'shell', label: 'roof, walls and solar', h: shellLifts * R.lift.v + (h.roof + h.walls) * R.cladding.v + h.m.modules * R.pvRoof.v, lifts: shellLifts, pool: 'mobile', outdoor: true, eur: h.eur.cladding + h.eur.pv, t: { panels: h.t.panels, modules: h.t.modules } },
+		// the works' machines are bought (specs.js WORKS_MACHINES), set with the mobile crane as in a dome
+		{ id: 'inside', label: 'services and the works’ machines', h: h.floor * R.hallInside.v, lifts: 20 * R.liftsPerDay.v, pool: 'mobile', eur: h.eur.kit, t: {} }
+	];
+	const run = FACTORY_RUN[factory];
+	return {
+		phases,
+		beds: 0,
+		machines: WORKS_MACHINES[factory]?.eur ?? 2e6,
+		// a checking engineer for a standard glulam hall (estimate)
+		check: 10000,
+		hall: true,
+		label: `${FACTORIES.find((f) => f.id === factory)?.label ?? 'Works'} hall`,
+		energy: { solarKwhYear: h.solar, useKwhYear: h.climate + (run ? run.t * run.kwh : 0), heatKwhYear: h.heat }
+	};
+}
+
 /** the tower, for the experiment with it: its diagrid, glass and floors as one step */
 function towerWork(T) {
 	const sh = towerShell(T);
@@ -329,7 +376,7 @@ function makeSteps(o) {
 			if (o.prefab && (p.id === 'frame' || p.id === 'shell')) p.lifts *= o.prefab.lifts;
 		}
 		const extra = o.prefab ? w.phases.filter((p) => p.id === 'frame' || p.id === 'shell').reduce((a, p) => a + p.eur, 0) * o.prefab.shellEur + (w.beds ? (kind === 'dome80' ? KINDS.dome80.gfa : KINDS.dome40.gfa) * o.prefab.homeEurM2 : 0) : 0;
-		return add({ id: `${hex}/${site}`, hex, site, kind, factory, label: w.label, phases: w.phases, beds: w.beds, machines: w.machines, check: w.check, energy: w.energy, prefabEur: extra, maxCrew: kind === 'dome40' ? 14 : kind === 'dome80' ? 34 : 50, gate });
+		return add({ id: `${hex}/${site}`, hex, site, kind, factory, hall: !!w.hall, label: w.label, phases: w.phases, beds: w.beds, machines: w.machines, check: w.check, energy: w.energy, prefabEur: extra, maxCrew: w.hall ? 30 : kind === 'dome40' ? 14 : kind === 'dome80' ? 34 : 50, gate });
 	};
 	const settled = (key) => (st) => st.hexDone[key];
 
@@ -434,6 +481,7 @@ function schedule(o) {
 		s.eur = { materials: 0, materialsFinished: 0, worksSaved: 0, machines: 0, services: 0, land: 0, prefab: 0 };
 		s.t = {};
 		s.pvM2 = 0;
+		s.hubsOwnT = 0;
 	}
 	const st = {
 		m: 0,
@@ -586,6 +634,7 @@ function schedule(o) {
 			if (p.own) {
 				const ow = p.own;
 				if (ow.steelT) saved += cover.steelT * ow.steelT * dp * (PRICES.hubs.eur - OWN.steelT);
+				if (ow.steelT && o.ownWorks) s.hubsOwnT += cover.steelT * ow.steelT * dp;
 				if (ow.glassM2) saved += cover.glassM2 * dp * (ow.glassM2 * (PRICES.glass.eur - OWN.glassM2) + (ow.pvM2 ?? 0) * (PRICES.pv.eur - OWN.pvM2));
 				if (ow.timberM3) saved += cover.timberM3 * dp * Math.max(0, ow.timberEur - ow.timberM3 * OWN.timberM3);
 			}
@@ -647,7 +696,9 @@ function schedule(o) {
 		for (const k of hexes) hexCum[k] += hexM[k];
 		const allDone = steps.every((s) => s.state === 'done');
 		const building = steps.filter((s) => s.state === 'run' || (s.end === m && s.start !== m) || (s.start === m && s.end === m));
-		const standing = steps.filter((s) => s.state === 'done' && s.phases.some((p) => p.id === 'shell')).length;
+		// the domes standing (and the works halls, counted apart), and the domes and halls going up
+		const standing = steps.filter((s) => s.state === 'done' && !s.hall && s.phases.some((p) => p.id === 'shell')).length;
+		const hallsUp = steps.filter((s) => s.state === 'done' && s.hall).length;
 		const framing = steps.filter((s) => s.state === 'run' && s.phases.some((p) => p.id === 'shell')).length;
 		months.push({
 			m,
@@ -659,6 +710,7 @@ function schedule(o) {
 			campBeds: campOn ? campBeds : 0,
 			camp: campOn || m === 0 ? campAt ?? LIVING_ORDER[0] : null,
 			domes: standing,
+			halls: hallsUp,
 			framing,
 			building: building.map((s) => s.id),
 			eur: eurM,
@@ -830,6 +882,7 @@ function planFor(opts = {}) {
 			site: s.site,
 			kind: s.kind,
 			factory: s.factory,
+			hall: !!s.hall,
 			label: s.label,
 			start: s.start ?? null,
 			end: s.end ?? null,
@@ -841,6 +894,7 @@ function planFor(opts = {}) {
 			handlerDays: Math.round(s.used.handler * 10) / 10,
 			t: Object.fromEntries(Object.entries(s.t).map(([k, v]) => [k, Math.round(v * 10) / 10])),
 			pvM2: Math.round(s.pvM2),
+			hubsOwnT: Math.round(s.hubsOwnT * 10) / 10,
 			eur: Object.fromEntries(Object.entries(eur).map(([k, v]) => [k, Math.round(v)])),
 			beds: s.beds ?? 0,
 			energy: s.energy ?? null,
@@ -877,7 +931,8 @@ function planFor(opts = {}) {
 			founded: Number.isFinite(founded) ? founded : null,
 			done: Math.max(...own.map((s) => s.end ?? -1)),
 			beds: own.reduce((a, s) => a + s.beds, 0),
-			domes: own.filter((s) => s.phases.some((p) => p.id === 'shell')).length,
+			domes: own.filter((s) => !s.hall && s.phases.some((p) => p.id === 'shell')).length,
+			halls: own.filter((s) => s.hall).length,
 			eur: { kit: kitE, running: Math.max(0, runE), materials: by.materials, machines: by.machines, services: by.services + design, land: by.land, total: last.hexCum[key] }
 		};
 	});
@@ -894,17 +949,25 @@ function planFor(opts = {}) {
 		handlerDays: outSteps.reduce((a, s) => a + s.handlerDays, 0),
 		worksSaved: outSteps.reduce((a, s) => a + s.eur.worksSaved, 0),
 		materialsFinished: outSteps.reduce((a, s) => a + s.eur.materialsFinished, 0),
-		t: { glulam: sumT('glulam'), steel: sumT('steel'), glass: sumT('glass'), hemp: sumT('hemp'), lime: sumT('lime'), concrete: sumT('concrete'), gravel: sumT('gravel') },
+		t: { glulam: sumT('glulam'), steel: sumT('steel'), glass: sumT('glass'), hemp: sumT('hemp'), lime: sumT('lime'), concrete: sumT('concrete'), gravel: sumT('gravel'), panels: sumT('panels'), modules: sumT('modules') },
 		pvM2: outSteps.reduce((a, s) => a + s.pvM2, 0),
 		beds: outSteps.reduce((a, s) => a + s.beds, 0),
-		domes: outSteps.filter((s) => s.phases.some((p) => p.id === 'shell')).length,
+		domes: outSteps.filter((s) => !s.hall && s.phases.some((p) => p.id === 'shell')).length,
+		halls: outSteps.filter((s) => s.hall).length,
 		perPerson: total / o.targetPeople
 	};
+	// the hubs: how many tonnes the village's own steel works made, and from which month it ran (the rest are bought:
+	// cast in package 1, welded by a fabricator in packages 2–4)
+	const hubsT = outSteps.filter((s) => !s.hall && s.kind !== 'tower' && s.phases.some((p) => p.id === 'frame')).reduce((a, s) => a + (s.t.steel ?? 0), 0);
+	const ownT = outSteps.reduce((a, s) => a + s.hubsOwnT, 0);
+	totals.hubs = { how: INSIDES ? 'welded from plate' : 'cast', t: hubsT, ownT, boughtT: hubsT - ownT, ownFrom: months.find((x) => x.works.includes('steel'))?.m ?? null, boughtEur: PRICES.hubs.eur, ownEur: OWN.steelT };
 
 	// what held the build back: the months the crew's hours ran out, and the months the tower cranes were all busy
 	const binds = { hours: months.filter((x) => x.hours.used >= x.hours.pool * 0.98).length, cranes: months.filter((x) => x.lifts.crane >= x.lifts.craneCap * 0.66).length, months: months.length };
 
 	const plan = {
+		/** the design package the plan is built to (./specs.js DESIGN) */
+		design: { id: DESIGN, ...PACKAGE },
 		options: { tower: o.tower, settlers: o.settlers, targetPeople: o.targetPeople, months: o.months, startYear: o.startYear, startMonth: o.startMonth, ownWorks: o.ownWorks, avenH: o.avenH, prefab: !!o.prefab, kit: opts.kit ?? {} },
 		kit: {
 			items: o.kit.map((k) => ({ ...k, total: k.n * k.eur })),

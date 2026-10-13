@@ -9,14 +9,15 @@
  *
  *   living hex (Samuel's sketch for the light, his layout B; layout A was dropped on 2026-10-09): the Dome120s and
  *     Dome80s round a green in the north half, the tall ones north; nine Dome40s over the south half.
- *   tower hex (his second sketch): Tower180 in the middle, a ring road round it, eight Dome120 factories round that;
- *     outside, the fields, woods and pits that feed them.
+ *   tower hex (his second sketch): Tower180 in the middle, a ring road round it, eight works round that (Dome120s, or
+ *     plain halls on the same sites in design packages 3–4: ./specs.js DESIGN); outside, the fields, woods and pits
+ *     that feed them.
  *
  * The land is painted on a raster of 2 m cells (`landOf`): domes, roads, then what the outdoor land is used for. The
  * areas the page shows come from counting the cells outdoors and from each dome's floor plan (./specs.js) indoors,
  * so the map and the numbers always agree.
  */
-import { capOf, FACTORIES, KINDS, POND_BAND, POND_HALF, POND_IN, TOWER } from './specs.js';
+import { capOf, FACTORIES, HALLS, KINDS, POND_BAND, POND_HALF, POND_IN, TOWER, siteHall } from './specs.js';
 
 /** the hex: across its flats, its side (centre to corner) and its area */
 export const HEX_W = 13 * 1.6 * 32;
@@ -153,8 +154,21 @@ export const VILLAGE = [
 	}))
 ];
 
-/** a dome's or the tower's radius on the ground @param {Site} s @param {HexPlan} [plan] */
-export const footR = (s, plan) => (s.kind === 'tower' ? (plan?.tower?.D ?? TOWER.D) / 2 : capOf(KINDS[s.kind].D).a);
+/** a dome's or the tower's radius on the ground; a works hall's, the circle round it @param {Site} s @param {HexPlan} [plan] */
+export const footR = (s, plan) => {
+	if (s.kind === 'tower') return (plan?.tower?.D ?? TOWER.D) / 2;
+	const h = siteHall(s);
+	return h ? Math.hypot(h.length, h.span) / 2 : capOf(KINDS[s.kind].D).a;
+};
+/**
+ * Whether a point (dx, dz from a site's middle) is on its footprint, or within `grow` m of it: a dome's circle, a works
+ * hall's rectangle (its long side east to west). @param {Site} s @param {HexPlan} [plan]
+ */
+export function onFoot(s, /** @type {number} */ dx, /** @type {number} */ dz, plan, grow = 0) {
+	const h = siteHall(s);
+	if (h) return Math.abs(dx) <= h.length / 2 + grow && Math.abs(dz) <= h.span / 2 + grow;
+	return Math.hypot(dx, dz) <= footR(s, plan) + grow;
+}
 
 // ── the land, cell by cell ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -169,7 +183,7 @@ export const USES = {
 	pond: { label: 'Fish ponds under glass', inside: true, map: '#3b8fd0', ground: '#4f8fa8', group: 'Water' },
 	commons: { label: 'Paths and commons under glass', inside: true, map: '#c9b9a0', ground: '#c9bca2', group: 'Ways' },
 	utilities: { label: 'Utilities and workshops', inside: true, map: '#8a6fc0', ground: '#b9b3a8', group: 'Work' },
-	factory: { label: 'Factories under glass', inside: true, map: '#b0563a', ground: '#b3aa9c', group: 'Work' },
+	factory: { label: HALLS ? 'Works halls' : 'Factories under glass', inside: true, map: '#b0563a', ground: '#b3aa9c', group: 'Work' },
 	tower: { label: 'The tower (its floor)', inside: true, map: '#5a4fa0', ground: '#bdb6aa', group: 'Work' },
 	foodForest: { label: 'Food forest outdoors', map: '#9fd36a', ground: '#6f9446', group: 'Food outdoors' },
 	hemp: { label: 'Hemp fields', map: '#c8d860', ground: '#7d9a3e', group: 'Raw materials' },
@@ -214,7 +228,7 @@ export function landOf(plan) {
 			let use = '';
 			for (const s of plan.sites) {
 				const r = Math.hypot(x - s.x, z - s.z);
-				if (r <= footR(s, plan)) {
+				if (onFoot(s, x - s.x, z - s.z, plan)) {
 					use = insideUse(s, x - s.x, z - s.z, r);
 					break;
 				}
@@ -303,6 +317,9 @@ export function landPatches(land, minM2 = 4000, minDepth = 24) {
 export function zonesOf(/** @type {Site} */ s, /** @type {HexPlan} */ plan) {
 	const K = KINDS[s.kind];
 	if (K.zones) return K.zones;
+	// a works hall: what stands in it, and the aisles and spare floor its 6 m bays leave
+	const h = siteHall(s);
+	if (h) return [...h.parts.map((/** @type {{ label: string, m2: number }} */ p) => ({ use: 'factory', label: p.label, m2: p.m2 })), { use: 'factory', label: 'Aisles and spare floor', m2: h.floor - h.need }];
 	const floor = Math.PI * footR(s, plan) ** 2;
 	return [{ use: s.kind === 'tower' ? 'tower' : 'factory', label: K.label, m2: floor }];
 }
@@ -343,7 +360,8 @@ function towerLand(/** @type {HexPlan} */ plan, /** @type {number} */ x, /** @ty
 	const dx = x - plan.cx, dz = z - plan.cz;
 	const r = Math.hypot(dx, dz);
 	if (r < plan.ring.r + 10) return 'yard';
-	for (const s of plan.sites) if (s.kind === 'factory120' && Math.hypot(x - s.x, z - s.z) < capOf(120).a + 16) return 'yard';
+	// round each works: a dome's ring of yard, or 20 m round a hall for loading, stocks and turning (estimate)
+	for (const s of plan.sites) if (s.kind === 'factory120' && onFoot(s, x - s.x, z - s.z, plan, HALLS ? 20 : 16)) return 'yard';
 	if (r < plan.ring.r + 130) return 'nature';
 	const b = ((Math.atan2(dx, -dz) * 180) / Math.PI + 360) % 360;
 	if (b >= 315 || b < 40) return 'woodland';
