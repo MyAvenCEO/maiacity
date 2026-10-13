@@ -120,6 +120,24 @@ or, with no UDP of its own, as in a browser, through the relay by its passkey's 
 gains an attacker nothing: the pass names the new device, which alone says its hello, and every edit of a card is
 signed.
 
+## The master recovery key
+
+While avenDB is bootstrapped, one master recovery key is the way back in beside the passkeys (Samuel, 2026-10-13):
+every human vault adds it as an owner, and so owns through it the coop and aven vaults it owns, for emergencies; it is
+added and removed like any other owner. It is a signer like any other, a passkey kept in software (`avendb::recovery`),
+whose signing keys and seal key all derive from 32 secret bytes. Its person makes it on a machine of their own, from
+`avendb/`:
+
+```sh
+cargo run --release -p avendb --bin master-key -- new ~/Desktop/master-recovery
+cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.secret
+```
+
+`new` writes `master-recovery.secret`, the 32 bytes in hex, readable by its owner alone, and `master-recovery.pub`,
+the public half every vault needs: its P-256 and SLH-DSA keys and its X-Wing and Classic McEliece keys, a megabyte. It
+never writes over a file. `id` names the key a `.secret` or `.pub` file holds, to check a copy against the other.
+Whoever holds the secret owns every vault that added the key: it stays offline, and only the `.pub` file is handed on.
+
 ## A device in the browser
 
 `crates/avendb-browser` is a device of its person in a web page (P8d): the network crate as WebAssembly, so a page is a

@@ -18,6 +18,7 @@ use crate::encode::{Encode, VERSION};
 use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role, SyncRule};
+use crate::recovery::RecoveryKey;
 use crate::rules::{Grant, On, Proof, Rule, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_RULES, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
 use crate::sign::{Assertion, Classical, Hello, RelayPass, Signature, SignerKeys, Signed};
@@ -74,7 +75,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Ask, Hello, Request, Reply, Announce, Join, RelayPass, Claim, PublicKey, Slice, Select, Body);
+wire!(Signed, Ask, Hello, Request, Reply, Announce, Join, RelayPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -297,6 +298,12 @@ impl Decode for bool {
 impl Decode for PublicKey {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(PublicKey { xwing: r.bytes()?, mceliece: BlobId::decode(r)? })
+    }
+}
+
+impl Decode for RecoveryKey {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(RecoveryKey { keys: SignerKeys::decode(r)?, seal: PublicKey::decode(r)?, mceliece: r.bytes()?.into() })
     }
 }
 
