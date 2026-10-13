@@ -9,14 +9,13 @@
  * the device native, on its own UDP sockets; reloaded, it opens with no sheet, as the device runs on; the app quits
  * and starts again, and the device opens from its folder in one sheet; it is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored with no sheet. Their
  * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
- * each in turn: avenALICE writes a note and three todos, one tagged “work”, adds a fourth from her studio’s query
- * console and queries those she has left there, and shares the note alone with avenBOB, and every todo tagged “work”, a
- * rule: he reads the note and that todo, and one she tags “work” later, and finds her other todos sealed in her studio,
- * while avenCHARLY sees nothing of hers; then she gives avenCHARLY a Suggester cap on a plan of hers, whose ops let him
- * only suggest changes: the plan reads as viewing to him, he proposes and writes on his proposal, which he may not
- * accept, and she accepts it into main; her Sync page shows her cells, avenCEO's server relaying their ciphertext;
- * making the coop an Owner of her whole vault takes one sheet, revoking avenBOB's caps none; and the Public group lets
- * everyone read her todos tagged “work”, avenBOB among them again. Forgotten, the device's
+ * each as its owner, with no switch: in avenALICE's vault the page acts as her, and she writes a note and three todos,
+ * one tagged “work”, adds a fourth from her studio’s query console and queries those she has left there, and shares
+ * the note alone with avenBOB, and every todo tagged “work”, a rule, and one she tags “work” later; she gives
+ * avenCHARLY a Suggester cap on a plan of hers, whose ops let him only suggest changes; her Sync page shows her cells,
+ * avenCEO's server relaying their ciphertext; making the coop an Owner of her whole vault takes one sheet, revoking
+ * avenBOB's caps none; and the Public group lets everyone read her todos tagged “work”. What a cap's holder sees takes
+ * a person who owns it and not her, as the person owns every vault here. Forgotten, the device's
  * store is put aside in its folder, and the person signs in again through the server in one sheet, every vault and her
  * note coming back. Last, the store becomes an earlier avenDB's: the device puts it aside, and the page says it holds
  * no vault and forgets it. Each step is screenshot.
@@ -276,18 +275,6 @@ async function look(name, tab = 'Notes') {
 	await click(tab, '.aside .tabs-list .item');
 	return until(async () => (await text('.aside h1')) === name, 5000);
 }
-/** Act as vault `name`, from the switcher at the foot. */
-async function actAs(name) {
-	if (!(await page.$('.switcher .menu'))) await page.click('.switcher .pill');
-	const ok = await page.evaluate((name) => {
-		const all = [...document.querySelectorAll('.switcher .menu button')];
-		const el = all.find((b) => b.querySelector('.who b')?.textContent?.trim() === name);
-		if (el instanceof HTMLElement) el.click();
-		return !!el;
-	}, name);
-	if (!ok) check(`the switcher offers to act as ${name}`, false);
-	return until(async () => (await text('.switcher .pill b')) === name, 5000);
-}
 /** Go to page `label` of the vault looked at. */
 const goTo = (label) => click(label, '.aside .tabs-list .item');
 /** The note titled `title`, as the notes list shows it: its words, and who holds a role on it. */
@@ -298,14 +285,6 @@ const note = (title) =>
 		const chips = [...el.querySelectorAll('.who .chip')].map((c) => c.textContent?.replace(/\s+/g, ' ').trim());
 		return { words: el.querySelector('.thumb .page span')?.textContent ?? '', chips };
 	}, title);
-/** Open the note titled `title` from the notes list, on the whole screen. */
-async function openNote(title) {
-	await page.evaluate((title) => {
-		const el = [...document.querySelectorAll('.main .note')].find((n) => n.querySelector('.info b')?.textContent === title);
-		if (el instanceof HTMLElement) el.click();
-	}, title);
-	return until(async () => !!(await page.$('.shell.reading .doc .paper')), 10000);
-}
 /** Back from a note to the notes. */
 async function back() {
 	await page.click('.doc .top .back');
@@ -398,7 +377,6 @@ const WORK = 'Fix the greenhouse door';
 const LATER = 'Order seeds';
 const PLAN = 'Spring plan';
 const SOW = 'Sow beans.';
-const SOWN = 'Sow beans and peas.';
 
 try {
 	await page.goto(at, { waitUntil: 'domcontentloaded' });
@@ -515,8 +493,10 @@ try {
 	await shot('6-six-vaults');
 
 	// avenALICE writes a note and todos, and shares the note alone with avenBOB, and every todo tagged “work”
-	check('acting as avenALICE', await actAs('avenALICE'), await text('.switcher .pill b'));
 	await look('avenALICE');
+	const owner = await text('.main-head p');
+	check('in her vault the page acts as her, Samuel her owner', owner.includes('Samuel') && owner.includes('its owner'), owner);
+	check('with no switch to flip', !(await page.$('.switcher')));
 	await click('Blank note', '.main .start button');
 	check('her note opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
 	await retitle(NOTE);
@@ -593,41 +573,7 @@ try {
 	check('picked by its labels before any entry opened, as a cap picks', picked.includes('Picked by its labels') && picked.includes('todos'), picked);
 	await shot('8c-alice-query');
 
-	// avenBOB reads her note and her todos tagged “work”, and nothing else of hers
-	check('acting as avenBOB', await actAs('avenBOB'));
-	await look('avenALICE');
-	check('he reads her note', await until(async () => (await note(NOTE))?.words === BODY, 30000), JSON.stringify(await note(NOTE)));
-	check('he starts no note there', !(await page.$('.main .start')));
-	await goTo('Todos');
-	const both = async () => (await text('.main')).includes(WORK) && (await text('.main')).includes(LATER);
-	check('he reads her todos tagged “work”, the one tagged later too', await until(both, 60000), await text('.main'));
-	check('her other todo stays hidden', !(await text('.main')).includes(TODO));
-	check('he adds no todo there', !(await page.$('.main .todos li.add')));
-	await shot('9-bob');
-	await goTo('Notes');
-	await openNote(NOTE);
-	check('he opens it', await until(async () => (await docText()) === BODY, 10000), await docText());
-	const readOnly = !(await page.$('.doc .paper textarea')) && !(await page.$('.doc .top .share'));
-	check('and may not edit it', readOnly && (await text('.doc .top .mode')).includes('only reads it'), await text('.doc .top .mode'));
-	await back();
-	await goTo('Table editor');
-	const hers = async () => {
-		const t = await tablesShown();
-		return t.notes === 1 && t.todos === 2 && t.sealed >= 1;
-	};
-	check('in her table editor, her note and two todos open for him, the rest sealed', await until(hers, 20000), JSON.stringify(await tablesShown()));
-	await shot('9b-bob-database');
-
-	// avenCHARLY: nothing of hers
-	check('acting as avenCHARLY', await actAs('avenCHARLY'));
-	await look('avenALICE', 'Notes');
-	const none = /avenCHARLY can't see the \d+ entries in avenALICE/.test(await text('.main'));
-	check('he sees none of her entries', !(await note(NOTE)) && none, (await text('.main')).slice(0, 300));
-	await shot('10-charly');
-	await click('Act as avenALICE', '.main .empty button');
-	check('from there, one click acts as her', await until(async () => (await text('.switcher .pill b')) === 'avenALICE', 5000));
-
-	// a Suggester cap, whose ops let avenCHARLY only suggest changes to a plan of hers, on proposals she accepts
+	// a Suggester cap, whose ops let avenCHARLY only suggest changes to a plan of hers
 	await look('avenALICE', 'Notes');
 	await click('Blank note', '.main .start button');
 	check('her plan opens', await until(async () => !!(await page.$('.doc .paper textarea')), 30000));
@@ -653,41 +599,7 @@ try {
 		return g.startsWith('Suggester') && g.includes('start proposals');
 	};
 	check('her Access shows his cap by its group and ops', await suggester(), await group());
-	check('acting as avenCHARLY', await actAs('avenCHARLY'));
-	await look('avenALICE', 'Notes');
-	await openNote(PLAN);
-	check('he opens her plan', await until(async () => (await docText()) === SOW, 30000), await docText());
-	const proposes = async () => (await text('.doc .top .mode')).includes('avenCHARLY may only propose changes');
-	check('on main he may only propose changes', await until(proposes, 10000), await text('.doc .top .mode'));
-	const viewing = !(await page.$('.doc .paper textarea')) && !(await page.$('.doc .top input.title'));
-	check('so main is no page to write on', viewing);
-	await click('New proposal', '.doc .versions button');
-	await type('#proposal-name', 'peas too');
-	await click('Propose', '.doc .versions .naming button');
-	check('his proposal, picked', await until(async () => (await onLine()) === 'peas too'), await onLine());
-	const writable = await until(async () => !!(await page.$('.doc .paper textarea')), 10000);
-	check('he writes on it', writable && (await saveText(SOWN)), await docText());
-	const barred = (label) =>
-		page.evaluate((label) => {
-			const all = [...document.querySelectorAll('.doc .banner button')];
-			const b = all.find((e) => e.textContent?.trim() === label);
-			return b instanceof HTMLButtonElement && b.disabled && !!b.title;
-		}, label);
-	const unmerged = (await until(() => barred('Accept into main'), 10000)) && (await barred('Make main match it'));
-	check('he may not accept it into main, nor make main match it', unmerged);
-	check('and no error', !(await problem()), await problem());
-	await shot('10b-charly-proposes');
-	await back();
-	check('acting as avenALICE again', await actAs('avenALICE'));
-	await look('avenALICE', 'Notes');
-	await openNote(PLAN);
-	await click('peas too', '.doc .versions .line');
-	check('she sees his proposal', await until(async () => (await docText()) === SOWN, 30000), await docText());
-	await click('Accept into main', '.doc .banner button');
-	const accepted = until(async () => (await onLine()) === 'Main' && (await docText()) === SOWN);
-	check('she accepts it: main reads his change', await accepted, await docText());
-	await shot('10c-alice-accepts');
-	await back();
+	await shot('10-suggester');
 
 	// who receives her cells: this Mac opens them, avenCEO's server only relays their ciphertext
 	await look('avenALICE', 'Sync');
@@ -736,14 +648,8 @@ try {
 	check('and her Access', await fits());
 	await shot('12c-phone-access');
 	await page.setViewport({ width: 1300, height: 1000 });
-	await actAs('avenBOB');
-	await look('avenALICE');
-	check('avenBOB no longer reads her note', await until(async () => !(await note(NOTE)), 30000));
-	await goTo('Todos');
-	check('nor her todos', !(await text('.main')).includes(WORK), await text('.main'));
 
 	// everyone reads her todos tagged “work”: the Public group, which only reads
-	await actAs('avenALICE');
 	await look('avenALICE', 'Access');
 	await choose('.main select[aria-label="What"]', 'every');
 	await choose('.main select[aria-label="Type"]', 'todo');
@@ -775,12 +681,6 @@ try {
 	check('everyone reads her todos tagged “work”', publicly, (await shown('.main .group')).join(' | '));
 	check('with no sheet', app.sheets().length === 0);
 	await shot('12d-public');
-	await actAs('avenBOB');
-	await look('avenALICE', 'Todos');
-	const again = await until(async () => (await text('.main')).includes(WORK), 60000);
-	check('avenBOB reads them again, as anyone does', again, await text('.main'));
-	check('and nothing else of hers', !(await text('.main')).includes(TODO), await text('.main'));
-	await actAs('Samuel');
 	await look('Samuel', 'Owners & devices');
 
 	// forgotten here, its store is put aside; the passkey alone gets the vault back through the server
@@ -793,7 +693,6 @@ try {
 	check('signed in again, through the server', await opened(), await problem());
 	check('in one sheet: unlock', app.sheets().join(',') === 'unlock');
 	check('every vault came back', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
-	await actAs('avenALICE');
 	await look('avenALICE', 'Notes');
 	check('her note came back', await until(async () => (await note(NOTE))?.words === BODY, 60000), JSON.stringify(await note(NOTE)));
 	check('no error after signing in', !(await problem()), await problem());

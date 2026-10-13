@@ -239,10 +239,11 @@ shown again the moment anything arrives (`Device::changed`):
   (`Device::found_vaults`, over `Node::approve_with`); the device then gives avenCEO the same role it holds on the
   person's vault, backup or relay, on each and writes its name there. Its "+" opens on one empty row: the person names
   each vault they found.
-- **Acting as.** The person acts as any vault their vault owns, through it, from the switcher at the foot. The page then
-  shows what that vault's caps allow and nothing else, and every write, tag, cap and revocation goes out acting for
-  that vault, which the rules check as any peer checks them. Marks of the vaults the acting vault holds nothing in are
-  faded.
+- **Acting as.** The page picks who the person acts as in each vault, with no switch (`actorIn`): in a vault their
+  vault owns, directly or through owners of owners, they act as it, as its owners need no cap there (the owner chain
+  `via`); elsewhere as the vault of theirs that holds the strongest cap over it, their own first on a tie. The page
+  then shows what that vault's caps allow, and every write, tag, cap and revocation goes out acting for that vault,
+  which the rules check as any peer checks them. Marks of the vaults none of theirs holds anything in are faded.
 - **Sharing.** A note or a todo is shared alone from its own Share button; a vault's Access page shares a rule: every
   note or todo, tagged one way (and not another), or the whole vault, with another vault to relay, back up, read, write
   or own, or with everyone to read (`Device::share`). The form starts at the least, one entry or the vault's todos, to

@@ -19,10 +19,9 @@
 	 */
 
 	/**
-	 * @type {{ s: import('./db.js').Studio, cell: string, vault: string, actor: string,
-	 *   onopen: (entry: string) => void, onact: (vault: string) => void }}
+	 * @type {{ s: import('./db.js').Studio, cell: string, actor: string, onopen: (entry: string) => void }}
 	 */
-	let { s, cell: within = $bindable(''), vault, actor, onopen, onact } = $props();
+	let { s, cell: within = $bindable(''), actor, onopen } = $props();
 
 	let picked = $state('notes');
 	let query = $state('');
@@ -34,7 +33,6 @@
 	const all = $derived(tables(s, within));
 	const table = $derived(all.find((t) => t.id === picked) ?? all[0]);
 	const family = $derived(table?.family ? familyOf(families(s.schemas, s.lenses), table.family) : undefined);
-	const rowsHeld = $derived(s.rows.length);
 
 	/** The table's columns: its key, its schema's fields, newest version first, then what avenDB keeps of each row. */
 	const columns = $derived.by(() => {
@@ -146,13 +144,6 @@
 	</aside>
 
 	<section class="area">
-		{#if s.here?.via && vault !== actor && rowsHeld && !s.rows.some(s.opens)}
-			<div class="empty act">
-				<p>{nameOf(s.as)} holds no cap to open anything here; {nameOf(s.here)}’s own caps open all of it.</p>
-				<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(s.here)}</button>
-			</div>
-		{/if}
-
 		{#if table}
 			<header class="bar">
 				<h3 class="mono">{table.label}</h3>
@@ -237,9 +228,6 @@
 				Sealed for {nameOf(s.as)}: it holds no cap to read it. This browser keeps its edits as ciphertext, as avenDB’s
 				server does.
 			</p>
-			{#if s.here?.via && vault !== actor}
-				<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(s.here)}</button>
-			{/if}
 		{/if}
 
 		<h4 class="kept">What avenDB keeps of it</h4>
@@ -378,14 +366,6 @@
 
 	.area {
 		min-width: 0;
-	}
-
-	.act {
-		margin-bottom: 1rem;
-	}
-
-	.act p {
-		margin: 0 0 0.6rem;
 	}
 
 	.bar {

@@ -14,9 +14,9 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   onaccess: () => void, onact: (vault: string) => void, onopen: (entry: string) => void }}
+	 *   onaccess: () => void, onopen: (entry: string) => void }}
 	 */
-	let { world, vault, actor, api, busy, onaccess, onact, onopen } = $props();
+	let { world, vault, actor, api, busy, onaccess, onopen } = $props();
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
@@ -110,9 +110,6 @@
 			cap on any of it. A vault that owns it can share some of it with {nameOf(as)}, a note, its todos, whatever is tagged
 			one way, in <button class="link" onclick={onaccess}>Access</button>.
 		</p>
-		{#if here?.via}
-			<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(here)}</button>
-		{/if}
 	</div>
 {:else if shown.length}
 	<div class="docs">

@@ -157,6 +157,21 @@ export function reaches(world, v, actor) {
 	);
 }
 
+/**
+ * The vault the person acts as in vault `v`, which the page picks for them: `v` itself where their vault owns it,
+ * directly or through owners of owners, as its owners need no cap in it; else the vault they act for that holds the
+ * strongest cap over `v`, their own first on a tie; else their own.
+ * @param {WorldView} world @param {string} v
+ */
+export function actorIn(world, v) {
+	const own = world.vaults.filter((x) => x.via !== null).map((x) => x.id);
+	if (own.includes(v)) return v;
+	const rank = (/** @type {string} */ a) =>
+		Math.max(0, ...world.caps.filter((c) => c.over === v && c.grantee === a).map((c) => RANK[c.role]));
+	const first = [world.mine, ...own.filter((id) => id !== world.mine)];
+	return first.reduce((best, a) => (rank(a) > rank(best) ? a : best), world.mine);
+}
+
 /** The vaults that hold a role on an entry, the strongest first. @param {Record<string, Role>} roles */
 export const holders = (roles) =>
 	Object.entries(roles)
