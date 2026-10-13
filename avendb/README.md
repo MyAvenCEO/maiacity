@@ -174,9 +174,11 @@ once for each edit.
   pass's assertion names the device, the hash-based half from the same ceremony's PRF output signs the join itself).
   It never saw the passkey made: of the keys the unlock's assertion recovers to, its passkey's is the one whose vault
   the peer hands over.
-- **Open** (`Device::open`): what the device holds is kept in IndexedDB (`js/store.js`), its edits in the order it took
-  them and its McEliece keys, as a node keeps them on disk, saved after each change (`Node::changes`). It opens again in
-  one ceremony, the unlock; the relay knows it, so it needs no pass.
+- **Open** (`Device::open`): what the device holds is kept in the browser's private file system, OPFS, by a worker of
+  its own (`js/store.js`, `js/store.worker.js`; B2b), its edits in the order it took them and its McEliece keys, as a
+  node keeps them on disk, saved after each change (`Node::changes`). It opens again in one ceremony, the unlock; the
+  relay knows it, so it needs no pass. While it runs, its worker holds its edits, so it never runs in two tabs at once.
+  A store IndexedDB kept before B2b moves over the first time it opens, and is deleted.
 - **Steps** (`avendb_net::Progress`): each start marks its steps as it takes them, by name, with when each began and how
   long it took: the unlock, the keys, the node, the server, the draft, the ceremony that signs it, the claim, and so
   on (`progress.rs` lists them). The page watches them through the function it hands `found`, `link` or `open`, the
@@ -326,12 +328,13 @@ a prompt.
 that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium, Playwright's or
 `$AVENDB_CHROMIUM`) and runs `tests/page.rs`: a relay open to sign-up and a new server, nobody's yet, on this machine,
 and one headless Chromium driven over its DevTools protocol, whose virtual authenticator, with PRF, holds Eve's passkey.
-Each of her browsers is a frame of one tab, with a store of its own in IndexedDB: the first makes her passkey, founds
+Each of her browsers is a frame of one tab, with a store of its own in OPFS: the first makes her passkey, founds
 her vault, claims the server and writes a note (7.3 s, two ceremonies after the one that makes the passkey, the
 server's claim and avenCEO's keys among the work); the second links through the first one's code and edits the note
-(3.7 s, one ceremony); the first closes and opens again from its store (0.9 s, one ceremony), reads the edit and
-edits it once more. `tests/device.rs` runs the same natively, with a software passkey in the authenticator's place,
-and Alice's browsers linking through her Mac.
+(3.7 s, one ceremony); the first closes, its store goes back into IndexedDB as pages kept it before B2b, and it opens
+again (0.9 s, one ceremony), moving the store into OPFS with every edit and key, reads the edit and edits it once more;
+while it runs, no other page loads its store. `tests/device.rs` runs the same natively, with a software passkey in the
+authenticator's place, and Alice's browsers linking through her Mac.
 
 ## The device's secure boundary
 

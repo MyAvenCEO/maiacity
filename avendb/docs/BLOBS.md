@@ -121,7 +121,8 @@ exactly the entry's readers, and moves on as the entry's key does. The file's ow
 
 Each node keeps one iroh-blobs store, beside its store of edits (`avendb-net`, `files.rs`): on disk in its store's
 folder, `blobs/`, on a machine (the Mac app, the server), and in memory for a node without a folder, a page's among
-them until B2b. The McEliece keys a node offers and the sealed pieces of files live in it together.
+them until its file pieces move into OPFS (B2d). The McEliece keys a node offers and the sealed pieces of files live
+in it together.
 
 - **Bringing a file** (`Node::store_file`): the node draws a new key, seals the file as it reads it, and streams each
   piece into the store, which hashes it as it comes, so a file of any size passes through a few segments of memory.
@@ -190,6 +191,27 @@ keeps the proxy's film whole, never hears of the original, and may not fetch its
 T29 on random histories with random rules, ends and marks, and T25 with them: the server still decides every edit as
 an owner does.
 
+## The page's store in OPFS (B2b)
+
+A page keeps what its device holds in the browser's private file system, OPFS, the one place it keeps any of it
+(`avendb-browser`, `js/store.js`), by a worker of its own (`js/store.worker.js`), since only a worker has OPFS's
+synchronous files, which write in place. The store named `name` is the folder `avendb/<name>/`:
+
+- `ops`, the device's signed edits in the order it took them, each a record as on disk (its length in 4 bytes
+  big-endian, then its bytes on the wire), so a crash cuts at most the last one short, and reading stops before it;
+  a save writes each edit at its place in the order, so saving the same edits twice keeps them once;
+- `keys/`, its McEliece keys, one file each, named by its id; a key the device doesn't hold once it opened, one a crash
+  cut short, is dropped;
+- `meta`, what opens the device again, a record of JSON each time it changes, the last whole one counting.
+
+While the device runs, its worker holds `ops`, which OPFS lets only one worker do, so the same device never runs in
+two tabs at once: a second tab's load is refused. A store IndexedDB kept under the same name, as pages did before,
+moves over the first time the store opens, its edits and keys first and its meta last, so a move cut short starts over;
+then IndexedDB's database is deleted. The page asks the browser to keep what the origin stores should it run short of
+space. `tests/page.rs` runs it in Chromium: Eve's first browser's store goes back into IndexedDB as pages kept it, moves
+into OPFS as the browser opens again, holding every edit and key it kept, and leaves IndexedDB; a second page can't load
+it while the browser runs.
+
 ## Phases
 
 | Phase | What | State |
@@ -198,7 +220,8 @@ an owner does.
 | B1b | Edits name the files they bring (Lean model and theorem, wire, the Lab's fetch gate) | built |
 | B2a | One iroh-blobs store per node, on disk natively; files sealed as they are read, read in ranges through the cap gate, kept whole by the server | built |
 | B2c | Sync rules: per device, by the cap selector, for any data, marked by the stewards and applied by every peer (T28, T29); the keeper keeps what the rules say | built |
-| B2b | The page's store in OPFS in its worker, keeping what its rule wants (IndexedDB moved over and gone) | next |
+| B2b | The page's store in OPFS, in its worker: its edits, McEliece keys and what opens it again; one tab at a time; IndexedDB moved over once and gone | built |
+| B2d | The page's file pieces in OPFS beside its edits: the files its rules keep whole, and the pieces it read | next |
 | B3 | The server's bucket as its source of truth: packs of small blobs, one object per piece, outboards and roots, read-ahead in ranges; its disk a cache it can lose | |
 | B4 | Streaming: the Mac reads a range as a file, a page through a service worker; a Files page | |
 | B5 | Studio's media on avenDB, beside the legacy vault, which stays as it is | |

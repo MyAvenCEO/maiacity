@@ -2,10 +2,12 @@
 //! (`tests/page/`) and the device's WebAssembly, which `scripts/test-browser.sh` builds for passkeys of localhost; it
 //! starts a relay open to sign-up and a new server, nobody's yet, on this machine, and drives one headless Chromium
 //! over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and each of her browsers
-//! is a frame of the tab, with a store of its own in IndexedDB. Her first browser makes the passkey, founds her vault
-//! and claims the server in one ceremony after the unlock, and writes a note; her second links through the first one's
-//! code in one ceremony and edits it; the first closes, and opens again from its store in one ceremony, and edits the
-//! note once more. Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs it.
+//! is a frame of the tab, with a store of its own in OPFS. Her first browser makes the passkey, founds her vault and
+//! claims the server in one ceremony after the unlock, and writes a note; her second links through the first one's code
+//! in one ceremony and edits it; the first closes, its store is put back in IndexedDB as pages kept it before B2b, and
+//! it opens again in one ceremony, moving the store into OPFS, and edits the note once more; no other page can load
+//! its store while it runs. Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs
+//! it.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -338,17 +340,30 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.expect("second", "wrote").await;
     tab.expect("first", "read").await;
     let closed = tab.expect("first", "closed").await;
-    eprintln!("Eve's first browser kept {} edits and {} McEliece keys in IndexedDB", closed["edits"], closed["keys"]);
+    eprintln!("Eve's first browser kept {} edits and {} McEliece keys in OPFS", closed["edits"], closed["keys"]);
 
-    // the first browser opens again from its store, in the unlock alone, and edits the note once more
+    // its store goes back where pages kept it before B2b, in IndexedDB, and out of OPFS
+    tab.frame(&[("page", "legacy"), ("store", "first"), ("legacy", "1")]).await;
+    let legacy = tab.expect("legacy", "legacy").await;
+    assert_eq!((&legacy["edits"], &legacy["keys"]), (&closed["edits"], &closed["keys"]), "all it kept: {legacy}");
+
+    // the first browser opens again from its store, which moves into OPFS and out of IndexedDB, in the unlock alone,
+    // and edits the note once more
     tab.frame(&[("page", "again"), ("store", "first"), ("reads", APRIL), ("write", MAY)]).await;
     let again = tab.expect("again", "opened").await;
     eprintln!("Eve's first browser opened again in {} ms", again["ms"]);
     assert_eq!(again["ceremonies"], 1, "the unlock alone: {again}");
     assert_eq!((&again["endpoint"], &again["vault"]), (&first["endpoint"], &first["vault"]), "the same device");
     assert_eq!((&again["edits"], &again["keys"]), (&closed["edits"], &closed["keys"]), "holding what its store kept");
+    let indexed = again["indexed"].as_array().expect("the databases of IndexedDB");
+    assert!(!indexed.contains(&json!("first")), "its store left IndexedDB: {indexed:?}");
     tab.expect("again", "read").await;
     tab.expect("again", "wrote").await;
+    // while it runs, no other page loads its store
+    tab.frame(&[("page", "twice"), ("store", "first"), ("twice", "1")]).await;
+    let twice = tab.expect("twice", "twice").await;
+    let refused = twice["refused"].as_str().unwrap_or_else(|| panic!("a second page loaded the store: {twice}"));
+    assert!(refused.contains("open in another tab"), "{refused}");
     tab.expect("second", "read again").await;
     let passkeys = tab.passkeys().await;
     assert_eq!(passkeys.len(), 1, "one passkey, Eve's: {passkeys:?}");

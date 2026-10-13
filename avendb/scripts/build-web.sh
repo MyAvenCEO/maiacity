@@ -22,7 +22,8 @@ cargo build -p avendb-browser --target wasm32-unknown-unknown --release
 device=../src/lib/avendb/device
 rm -rf "$device"
 wasm-bindgen --target web --no-typescript --out-dir "$device" target/wasm32-unknown-unknown/release/avendb_browser.wasm
-for js in "$device/avendb_browser.js" crates/avendb-browser/js/passkey.js crates/avendb-browser/js/store.js; do
+modules=crates/avendb-browser/js
+for js in "$device/avendb_browser.js" "$modules/passkey.js" "$modules/store.js" "$modules/store.worker.js"; do
 	{ printf '// @ts-nocheck: written by avendb/scripts/build-web.sh from avenDB\n'; cat "$js"; } > "$js.new"
 	mv "$js.new" "$device/$(basename "$js")"
 done

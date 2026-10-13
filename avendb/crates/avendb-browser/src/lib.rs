@@ -25,8 +25,10 @@
 //! - `Device::open`: a device the page made before opens again from its store, in the unlock's ceremony alone; the
 //!   server's relay knows it.
 //!
-//! The page keeps what the device holds in IndexedDB (`js/store.js`): its edits in the order it took them and its
-//! McEliece keys, as a node keeps them on disk (`avendb_net::Disk`), saved after each change (`Node::changes`).
+//! The page keeps what the device holds in the browser's private file system, OPFS (`js/store.js`), by a worker of its
+//! own, which has OPFS's synchronous files (`js/store.worker.js`): its edits in the order it took them, in the same
+//! records as a node's on disk (`avendb_net::Disk`), and its McEliece keys, saved after each change (`Node::changes`).
+//! A store IndexedDB kept, as pages did before (B2b), moves over the first time it opens and is deleted.
 //!
 //! A vault holds its entries itself, flat: each entry has a type (`note`, `todo`, `card`, `profile`) and tags, all of
 //! it inside the entry's encrypted writes. A vault shares what it holds by caps (`Device::share`), each on a slice of
