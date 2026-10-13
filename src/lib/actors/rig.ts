@@ -23,13 +23,17 @@ export type PartSpec = Piece | { skin: Skin; mat?: number };
 /** a plain geometry riding its bone (or chain); a body sculpted as one skin (./sculpt.ts) brings its own weights */
 export type Piece = {
 	geo: THREE.BufferGeometry;
-	/** its colour, or a colour by where each vertex is in the rest pose (a sleeve, a belt, a stripe) */
-	color: string | ((p: THREE.Vector3) => string);
+	/** its colour, or a colour by where each vertex is in the rest pose (a sleeve, a belt, a stripe), and which it is */
+	color: string | ((p: THREE.Vector3, i?: number) => string | THREE.Color);
 	/** the bone that carries it whole */
 	bone?: string;
 	/** or the bones it lies along, from the first joint outwards, and how far either side of a joint they blend (m);
 	 *  `tip`: where the last bone's stretch ends (else it reaches as far as its parent's did) */
 	chain?: { bones: string[]; soft?: number; tip?: V3 };
+	/** or its weights by where each vertex is: the bones that carry it and how much (a head and its neck as one skin) */
+	weights?: (p: THREE.Vector3) => [string, number][];
+	/** its shapes to blend into (a smile): each an offset per vertex (m), as the mesh's morph targets by name */
+	morph?: Record<string, Float32Array>;
 	/** which of the actor's materials: 0 its skin, then as it has them (an eye's gloss, the glass of a bee's wings) */
 	mat?: number;
 	/** the part of a machine it belongs to, by id, for an actor whose parts can be picked one by one (its `catalog`) */
@@ -101,6 +105,10 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 	const v = new THREE.Vector3(), d = new THREE.Vector3(), q = new THREE.Vector3();
 	const weigh = (p: Piece, out: Map<string, number>) => {
 		out.clear();
+		if (p.weights) {
+			for (const [name, x] of p.weights(v)) out.set(name, (out.get(name) ?? 0) + x);
+			return;
+		}
 		if (!p.chain) return void out.set(p.bone!, 1);
 		const { bones: names, soft = 0.05, tip } = p.chain;
 		// the chain's stretches: joint i to joint i+1; the last to its tip (or as long again as the one before)
@@ -164,7 +172,7 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 		const color = new Float32Array(n * 3), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
 		for (let i = 0; i < n; i++) {
 			v.fromBufferAttribute(pos, i);
-			c.set(typeof p.color === 'string' ? p.color : p.color(v));
+			c.set(typeof p.color === 'string' ? p.color : p.color(v, i));
 			color[i * 3] = c.r;
 			color[i * 3 + 1] = c.g;
 			color[i * 3 + 2] = c.b;
@@ -181,8 +189,26 @@ export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Mater
 		g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
 		return g;
 	});
+	// shapes to blend into: every piece carries each (none of its own: no offsets), as offsets from where it rests
+	const morphs = [...new Set(parts.flatMap((p) => ('morph' in p && p.morph ? Object.keys(p.morph) : [])))];
+	if (morphs.length)
+		geos.forEach((g, i) => {
+			const p = parts[i]!, n = g.attributes.position!.count;
+			g.morphAttributes.position = morphs.map((name) => {
+				const d = 'morph' in p ? p.morph?.[name] : undefined;
+				const a = new THREE.Float32BufferAttribute(d && d.length === n * 3 ? d : new Float32Array(n * 3), 3);
+				a.name = name;
+				return a;
+			});
+			g.morphTargetsRelative = true;
+		});
 	const geometry = mergeGeometries(geos, true)!;
 	geometry.groups.forEach((grp, i) => (grp.materialIndex = parts[i]!.mat ?? 0));
+	if (morphs.length) {
+		// the merge keeps neither the shapes' names nor that they are offsets
+		geometry.morphTargetsRelative = true;
+		geometry.morphAttributes.position!.forEach((a, i) => (a.name = morphs[i]!));
+	}
 
 	const mesh = new THREE.SkinnedMesh(geometry, materials);
 	mesh.add(list[0]!);
