@@ -28,14 +28,15 @@ const STEPS = ['Cut, drill and bolt the frame: skids, posts, top rails, quick-at
 /** a BatteryCube's insides at version `v` (2: one-way inverter, no AC inlet; 3: bidirectional, its AC inlet;
  * 4: its packs at v4, a centre grip each; 6: its packs at v5, the grip low and the lock at its height, and pins on the
  * backplane for the packs' holes; 7: its packs at v6, a service drawer in each; 8: its packs at v7, grip and lock at
- * the base plate's level, its rails lowered to meet them, and every live pin sunk in an insulating collar)
+ * the base plate's level, its rails lowered to meet them, and every live pin sunk in an insulating collar; 9: its packs
+ * at v8, grip and lock in the shell's foot, the rails lower still, and every pin of a header in one line)
  * @param {Parameters<import('./powercube.js').Insides>[0]} part @param {Parameters<import('./powercube.js').Insides>[1]} tools */
-function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 8) {
-	const pv = v >= 8 ? 7 : v >= 7 ? 6 : v >= 6 ? 5 : v >= 4 ? 4 : 3; // the packs' version
+function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 9) {
+	const pv = v >= 9 ? 8 : v >= 8 ? 7 : v >= 7 ? 6 : v >= 6 ? 5 : v >= 4 ? 4 : 3; // the packs' version
 		// four BatteryPacks (./batterypack.js) stacked on the skids, their fronts to the cube's front: each arrives whole
 	for (let k = 0; k < 4; k++) batteryPackParts(kit, { at: P(0, MOD.y, B + 10 + k * MOD.gap), base, assembly: () => 'battery', step: () => 2, prefix: `pack-${k + 1}-`, unit: `pack-${k + 1}`, seg: 6, v: pv });
 	const back = MOD.y - MOD.l / 2, top = B + 10 + 4 * MOD.gap;
-	if (v >= 8) part('battery', { id: 'backplane', label: 'Backplane', source: SRC_B, what: 'A board behind the stack with a pin header for each BatteryPack. Every live pin stands sunk in its own insulating collar: the two copper power pins each in a round shroud, the four data pins together in one, their tips 5 mm below the rims, so a finger (or a dropped tool) meets plastic, never metal (finger-safe, IP2X). Slide a pack in and the collars go into matching pockets in its back socket before any pin touches its contact. Two long steel guide pins with pointed tips find the pack’s guide holes first; they carry no current, so they stay bare. Copper bars inside the board join the four side by side and carry their 52 V to the inverter.', specs: [['Headers', '4, blind-mate, finger-safe (IP2X)'], ['Power pins', '2 per pack, ⌀ 8 mm, 120 A [inferred], each in a ⌀ 18 mm collar, 5 mm sunk'], ['Data pins', '4 per pack, CAN, in one shroud, 5 mm sunk'], ['Guide pins', '2 per pack, ⌀ 10 × 24 mm, pointed, no current'], ['Bus', 'Tinned copper, 30 × 5 mm, 125 A']] }, base, (put) => {
+	if (v >= 8) part('battery', { id: 'backplane', label: 'Backplane', source: SRC_B, what: 'A board behind the stack with a pin header for each BatteryPack. Every live pin stands sunk in its own insulating collar: the two copper power pins each in a round shroud, the four data pins together in one between them, their tips 5 mm below the rims, so a finger (or a dropped tool) meets plastic, never metal (finger-safe, IP2X). Slide a pack in and the collars go into matching pockets in its back socket before any pin touches its contact. Two long steel guide pins with pointed tips find the pack’s guide holes first; they carry no current, so they stay bare. Copper bars inside the board join the four side by side and carry their 52 V to the inverter.', specs: [['Headers', '4, blind-mate, finger-safe (IP2X)'], ['Power pins', '2 per pack, ⌀ 8 mm, 120 A [inferred], each in a ⌀ 18 mm collar, 5 mm sunk'], ['Data pins', '4 per pack, CAN, in one shroud, 5 mm sunk'], ['Guide pins', '2 per pack, ⌀ 10 × 24 mm, pointed, no current'], ['Bus', 'Tinned copper, 30 × 5 mm, 125 A']] }, base, (put) => {
 		put(box(0, back - 15, (B + top) / 2, 420, 10, top - B, 2), DARK);
 		for (let k = 0; k < 4; k++) {
 			const z = B + 10 + k * MOD.gap + 58;
@@ -46,9 +47,10 @@ function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 8) {
 				put(cyl([x, lip, z], [x, lip + 0.3, z], 6, 18), '#050607'); // the collar's bore
 				put(cyl([x, lip + 0.3, z], [x, lip + 0.5, z], 3.2, 12), x < 0 ? RED : COPPER); // the pin's tip, 5 mm down
 			}
-			put(box(0, (f + lip) / 2, z + 14, 44, lip - f, 12, 2), BLACK); // the data shroud
-			put(box(0, lip + 0.15, z + 14, 38, 0.3, 7, 1), '#050607');
-			for (let j = 0; j < 4; j++) put(cyl([-12 + j * 8, lip + 0.3, z + 14], [-12 + j * 8, lip + 0.5, z + 14], 1.2, 6), CASE);
+			const dz = v >= 9 ? z : z + 14; // from v9 in one line with the power and guide pins
+			put(box(0, (f + lip) / 2, dz, 44, lip - f, 12, 2), BLACK); // the data shroud
+			put(box(0, lip + 0.15, dz, 38, 0.3, 7, 1), '#050607');
+			for (let j = 0; j < 4; j++) put(cyl([-12 + j * 8, lip + 0.3, dz], [-12 + j * 8, lip + 0.5, dz], 1.2, 6), CASE);
 			for (const sx of [-1, 1]) {
 				put(cyl([sx * 150, back - 14, z], [sx * 150, f, z], 10, 14), BLACK); // its boss
 				put(cyl([sx * 150, f, z], [sx * 150, back + 10, z], 5, 14), STEEL); // the guide pin
@@ -113,7 +115,7 @@ function cells(part, { box, cyl, P, kit, Lh, B, base }, v = 8) {
 }
 
 /** The BatteryCube on its own (version `v`; from v5 it pulls a pack out and pushes it back as a move), every part its own: drawn apart, built. Its size is the Power Cube's. @returns {import('./rig').Cast} */
-export const batteryCube = (v = 8) => {
+export const batteryCube = (v = 9) => {
 	const cast = cubeCast({ name: 'BatteryCube', assemblies: ASSEMBLIES, steps: STEPS, stepOf: { frame: 1, battery: 2, power: 3 }, sources: POWERCUBE_SOURCES, hums: false, len: CUBE.L, engine: false, controls: false, insides: (part, tools) => cells(part, tools, v) });
 	if (v < 5) return cast;
 	// from v5 a pack comes out and goes back (Samuel 2026-10-13): the third pack's grip is squeezed, it slides out on its
