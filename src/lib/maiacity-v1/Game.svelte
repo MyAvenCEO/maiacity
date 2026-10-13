@@ -120,11 +120,11 @@
 		if (step.kind === 'intro') {
 			playing = 'intro';
 			world.intro(step.part, { lines: step.lines }).then(() => ((playing = ''), mark(step.id)));
-		} else if (step.kind === 'drive' || step.kind === 'load' || step.kind === 'build') {
+		} else if (step.kind === 'drive' || step.kind === 'load' || step.kind === 'build' || step.kind === 'fuel' || step.kind === 'board') {
 			playing = step.kind;
 			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
 			const lines = step.lines;
-			const moment = step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
+			const moment = step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : step.kind === 'fuel' ? world.fuel({ lines }) : step.kind === 'board' ? world.board({ lines }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
 			moment.then(() => ((playing = ''), mark(step.id)));
 		} else if ((step.kind === 'invest' || step.kind === 'mint' || step.kind === 'pick' || step.kind === 'plant') && !told[step.id]) {
 			playing = 'scene';

@@ -51,6 +51,8 @@ export function story(view, seat, seen) {
 	// the second fetches the Village COOP's BatteryCube and solar panel, and sets them up beside the tent
 	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'van', pot: 'bench' };
 	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'centre', pot: 'bench' };
+	// the first player, the jerrycans loaded, sitting at the wheel of the pickup at the gas station; the second still waits at the stop
+	const inCab = first ? { ...atStop, at: 'cab' } : atStop;
 	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'village', pot: 'bench' };
 	// the seedling: on the shed's bench, then in the pickup's bed, waiting beside the tent, and planted
 	const pot = me.tree ? 'planted' : me.seedling ? 'home' : 'bench';
@@ -101,25 +103,33 @@ export function story(view, seat, seen) {
 		say({ id: 'welcome', chapter: 'MaiaCity', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop, act: 'look up', close: true },
 			'The old world passed this place by and left it behind.',
 			`${other.founder && !first ? `${other.name} came before you. You are` : 'You are'} among its very first people.`),
-		say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop, act: 'point' },
-			'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
-			'Here no single owner can leave and take it all. It belongs to the people who live here.'),
-		say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...next('coops'), ...atStop, act: 'think', close: true },
+		// the first player does not wait at the stop (Samuel 2026-10-13): they walk over to the gas station and load the
+		// jerrycans into the village's pickup while the city is told, and get in while the COOPs are
+		first
+			? say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', kind: 'fuel', done: !!seen.station, ...atStop },
+				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
+				`At the gas station waits the ${c.village.name}'s pickup, the key in it.`,
+				'Two jerrycans of petrol go in the back, for the ElectroCube you will fetch.',
+				'Here no single owner can leave and take it all. It belongs to the people who live here.')
+			: say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop, act: 'point' },
+				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
+				'Here no single owner can leave and take it all. It belongs to the people who live here.'),
+		say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...(first ? { kind: 'board', done: !!seen.coops, ...atStop, at: 'pickup' } : { ...next('coops'), ...atStop, act: 'think', close: true }) },
+			...(first ? ['The pickup belongs to the COOP. Today it serves you.'] : []),
 			'Everything here belongs to a COOP, a company its people own together.',
 			'Invest 1 HEART into a COOP, and it becomes 1 MIND: a share of that COOP.',
 			`Half the MIND is yours, four tenths stay in the COOP's treasury, and ${pct(st.poolShare ?? 0.1)} go to the city pool.`,
 			'COOPs never hold HEARTS. Only people do.'),
-		say({ id: 'maia', chapter: 'The city', title: `The ${c.maia.name}: the ground beneath your feet`, hint: 'invest', reveal: 2, ...invest('maia', 5000), ...atStop, place: 'city' },
-			`All 49 hexes of land belong to the ${c.maia.name}, so no one can ever buy them away from you.`,
-			'Every tribe pays it a small ground rent. Invest 5,000 HEARTS, and the land is, in part, yours.'),
-		say({ id: 'pool', chapter: 'The city', title: 'The city pool keeps everything fair', hint: 'swap', ...next('pool'), ...atStop },
+		// the land, without its rent: the ground rent is told where the tribe pays it (Samuel 2026-10-13); the city
+		// grows far beyond the first plot, so no count of hexes
+		say({ id: 'maia', chapter: 'The city', title: `The ${c.maia.name}: the ground beneath your feet`, hint: 'invest', reveal: 2, ...invest('maia', 5000), ...inCab, place: 'city' },
+			`The land of MaiaCity belongs to the ${c.maia.name}, so no one can ever buy it away from you.`,
+			'Invest 5,000 HEARTS, and the land is, in part, yours.'),
+		say({ id: 'pool', chapter: 'The city', title: 'The city pool keeps everything fair', hint: 'swap', ...next('pool'), ...inCab },
 			`The city pool holds a little of every MIND, about ${f(inHearts(view, view.pool, hv))} ❤︎ now.`,
 			'Anyone can swap one MIND for another there, at a fair price, at any time.'),
 		first
-			? say({ id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', done: !!seen.ride, ...atStop },
-				`At the gas station waits the ${c.village.name}'s pickup, the key in it.`,
-				'Two jerrycans of petrol go in the back, for the ElectroCube you will fetch.',
-				'The pickup belongs to the COOP. Today it serves you.',
+			? say({ id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', done: !!seen.ride, ...inCab },
 				'A narrow track leaves the road and winds east, towards the green.',
 				'The centre of your village.')
 			: say({ id: 'ride', chapter: 'The track', title: `${other.founder ? other.name : 'Someone'} comes to fetch you`, kind: 'drive', leg: 'village', fetch: true, done: !!seen.ride, ...atStop },
