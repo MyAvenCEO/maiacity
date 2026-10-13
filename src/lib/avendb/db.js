@@ -15,7 +15,6 @@ import {
 	granteeOf,
 	list,
 	nameOf,
-	reaches,
 	ROLES,
 	short,
 	singular,
@@ -47,9 +46,10 @@ import {
  */
 
 /**
- * Vault `vault`'s database as the page shows it to vault `actor`: what this browser holds of it, its cells, the schemas
- * and lenses the acting vault may read (the app's own, then what the vault's lane publishes, to who holds anything in
- * it), and how to name what the views show: vaults, devices and passkeys, cells, caps, entries, schemas.
+ * Vault `vault`'s database as the page shows it to vault `actor`: what this browser holds of it, its cells, its schemas
+ * and lenses (the app's own, then what the vault's lane publishes: public, as they hold no data and the lane goes in
+ * the clear to every device that syncs the vault), and how to name what the views show: vaults, devices and passkeys,
+ * cells, caps, entries, schemas.
  * @param {import('./vaults.js').WorldView} world @param {Db | null} db @param {string} vault @param {string} actor
  */
 export function studio(world, db, vault, actor) {
@@ -61,9 +61,8 @@ export function studio(world, db, vault, actor) {
 	const cells = held?.cells ?? [];
 	/** Whether the acting vault opens row `r`, and this browser holds its record. @param {RowView} r */
 	const opens = (r) => (r.public || allows(r.roles[actor], 'read')) && r.record !== null;
-	const lane = reaches(world, vault, actor);
-	const schemas = byIds([...(db?.builtIn.schemas ?? []), ...(lane ? (held?.schemas ?? []) : [])]);
-	const lenses = byIds([...(db?.builtIn.lenses ?? []), ...(lane ? (held?.lenses ?? []) : [])]);
+	const schemas = byIds([...(db?.builtIn.schemas ?? []), ...(held?.schemas ?? [])]);
+	const lenses = byIds([...(db?.builtIn.lenses ?? []), ...(held?.lenses ?? [])]);
 	/** the rows the acting vault opens, by the schemas they were written under */
 	const uses = new Map();
 	for (const r of rows.filter(opens)) for (const id of r.authored) uses.set(id, (uses.get(id) ?? 0) + 1);

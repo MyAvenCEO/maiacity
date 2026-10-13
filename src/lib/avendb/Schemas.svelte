@@ -11,6 +11,9 @@
 	/** @type {{ s: import('./db.js').Studio, onlens: () => void }} */
 	let { s, onlens } = $props();
 
+	// why it is shown as public
+	const PUBLIC = 'Public: a schema holds no data, so it goes in the clear to every device that syncs the vault';
+
 	const fams = $derived(families(s.schemas, s.lenses));
 </script>
 
@@ -31,7 +34,8 @@
 
 <p class="lead soft">
 	What each record holds, version by version, as a table holds its columns. Every edit names the schema it was written
-	under; a lens carries a record between two versions, so an app on either reads what the other writes.
+	under; a lens carries a record between two versions, so an app on either reads what the other writes. Schemas and
+	lenses are public: they hold no data, so every device that syncs the vault reads them, no key needed.
 </p>
 
 <div class="schemas">
@@ -55,6 +59,7 @@
 							<Icon name="table" size={14} />
 							<b>{sc.title}</b>
 							<span class="mono soft" title={sc.id}>{short(sc.id)}</span>
+							<span class="chip ok" title={PUBLIC}>Public</span>
 						</header>
 						{#if json}
 							<table class="fields">
