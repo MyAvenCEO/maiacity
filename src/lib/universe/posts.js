@@ -12,7 +12,7 @@ export const AUTHORS = {
 export const CHANNELS = ['All', 'Devlog', 'theOS', 'Village', 'Food', 'Energy'];
 
 // `doc` stands in for the post's iroh doc id (a fake one for now: 32 random bytes in base32, the way iroh prints a
-// namespace id); the post's page lives at /universe/<doc>/<slug of the title>.
+// namespace id); the post's page lives on the root, at /<doc>/?t=<slug of the title>.
 // `ago` is in minutes, so the stream reads the same whenever the page is opened
 export const POSTS = [
 	{
@@ -142,4 +142,4 @@ export function titleOf(text) {
 	return words.length > 7 ? `${head}…` : head;
 }
 
-export const postHref = (base, p) => `${base}/universe/${p.doc}/${slug(p.title)}/`;
+export const postHref = (base, p) => `${base}/${p.doc}/?t=${slug(p.title)}`;

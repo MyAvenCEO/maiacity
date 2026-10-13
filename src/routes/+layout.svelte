@@ -50,8 +50,11 @@
 			});
 	});
 
+	// a Maia Universe post lives on the root (/<doc>/?t=…), and still belongs to the Universe tab
 	const isActive = (href: string) =>
-		href === (base || '/') ? page.url.pathname === (base || '/') : page.url.pathname.startsWith(href);
+		href === `${base}/universe` && page.route.id === '/[doc=doc]'
+			? true
+			: href === (base || '/') ? page.url.pathname === (base || '/') : page.url.pathname.startsWith(href);
 </script>
 
 {#if !bare}

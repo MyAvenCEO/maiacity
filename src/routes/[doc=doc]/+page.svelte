@@ -2,6 +2,7 @@
 	// @ts-nocheck — plain JS, kept loose on purpose
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { AUTHORS, postHref, slug } from '$lib/universe/posts.js';
 	import { findPost, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
@@ -15,9 +16,10 @@
 		post ? [...stream.posts.filter((p) => p !== post && p.channel === post.channel), ...stream.posts.filter((p) => p !== post && p.channel !== post.channel)].slice(0, 3) : []
 	);
 
-	// an old or mistyped slug still finds the post by its doc id; the address is put right
+	// a missing, old or mistyped title still finds the post by its doc id; the address is put right
 	$effect(() => {
-		if (post && slug(post.title) !== data.slug) goto(postHref(base, post), { replaceState: true });
+		if (post && page.url.searchParams.get('t') !== slug(post.title))
+			goto(postHref(base, post), { replaceState: true, noScroll: true, keepFocus: true });
 	});
 </script>
 
