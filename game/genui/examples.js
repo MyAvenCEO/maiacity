@@ -68,7 +68,7 @@ const scene = `<style>
       tree.castShadow = true;
       scene.add(tree);
     }
-    domes.push({ mesh: shell, name: i ? 'Settlement ' + i : 'Village center' });
+    domes.push({ mesh: shell, name: i ? 'Tribe ' + i : 'Village center' });
   });
 
   const ray = new THREE.Raycaster(), m = new THREE.Vector2();
@@ -166,13 +166,13 @@ function year() {
 		a *= 1 + 0.05 + rnd() * 0.06;
 		b *= 1 + 0.03 + rnd() * 0.1;
 		c *= 1 + 0.08 + rnd() * 0.05;
-		rows.push({ month: m, maia: Math.round(a), village: Math.round(b), settlement: Math.round(c), hearts: Math.round(1344 + rnd() * 300 + m * 40) });
+		rows.push({ month: m, maia: Math.round(a), village: Math.round(b), tribe: Math.round(c), hearts: Math.round(1344 + rnd() * 300 + m * 40) });
 	}
 	return {
 		coops: [
 			{ key: 'maia', name: 'MaiaCity COOP', color: '#2f6f5e' },
 			{ key: 'village', name: 'Village COOP', color: '#c98a2b' },
-			{ key: 'settlement', name: 'Settlement COOP', color: '#7b5ea7' }
+			{ key: 'tribe', name: 'Tribe COOP', color: '#7b5ea7' }
 		],
 		rows
 	};
@@ -201,7 +201,7 @@ function figure(d) {
 }`,
 	components: [
 		{ id: 'page', type: 'Column', gap: 'm', children: ['head', 'controls', 'metrics', 'fillcard', 'bars'] },
-		{ id: 'head', type: 'Card', title: 'Dome planner', subtitle: 'How many domes, and how much land, for a settlement', children: ['intro'] },
+		{ id: 'head', type: 'Card', title: 'Dome planner', subtitle: 'How many domes, and how much land, for a tribe', children: ['intro'] },
 		{ id: 'intro', type: 'Text', text: 'Declarative: our own components draw this JSON, and its logic runs in QuickJS.', tone: 'muted', size: 's' },
 		{ id: 'controls', type: 'Card', children: ['people', 'sizes'] },
 		{ id: 'people', type: 'Slider', label: 'People', event: 'people', value: { $data: 'people' }, min: 12, max: 1500, step: 12 },

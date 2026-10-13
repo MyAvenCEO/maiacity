@@ -7,7 +7,7 @@
  */
 import { DOMES } from '$lib/sandbox-2/interior/interior';
 import { DOMES_IN_ORDER } from './domes.js';
-import { CONTAINERS } from '$lib/models';
+import { CONTAINERS, WAYSIDE } from '$lib/models';
 import { versioned } from '$lib/app/versions.js';
 
 /** @typedef {import('$lib/sandbox-2/interior/interior').DomeKind} DomeKind */
@@ -40,7 +40,7 @@ const DOME_LIST = DOMES_IN_ORDER.map((d) => ({
 const VERSIONED_DOMES = versioned(DOME_LIST, 'dome', HISTORY);
 
 /** @type {Building[]} */
-export const BUILDINGS = [...VERSIONED_DOMES, ...CONTAINERS];
+export const BUILDINGS = [...VERSIONED_DOMES, ...CONTAINERS, ...WAYSIDE];
 
 /** @param {Building} b */
-export const groupOf = (b) => ('dome' in b ? 'Tents and domes' : 'Containers');
+export const groupOf = (b) => ('dome' in b ? 'Tents and domes' : /** @type {any} */ (b).group ?? 'Containers');

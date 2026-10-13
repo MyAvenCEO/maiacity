@@ -559,12 +559,12 @@ pub struct V1Propose {
     /// the MIP: { title, description (prose: what and why), settings: { key: number } (only what changes; keys and
     /// limits: hoursPerMonth 1-720 real hours a game month lasts, mintWindowHours 1-720 how far back minting reaches,
     /// signatures 1-2, starterPack 0-10000 HEARTS on a first mint, heartsPerDay 0-1000 HEARTS a game day, demurrage 0-0.5 a year,
-    /// poolShare 0-0.5 of every invested HEART into the AMM pool (0.1: investor 0.5, treasury 0.4, pool 0.1), swapFee 0-0.1, tentRent 0-10000 settlementMIND each
-    /// player a month, hexRent 0-10000 maiaMIND the Settlement COOP a month,
-    /// pickupRent, powercubeRent, batteryRent 0-10000 the Settlement COOP a month to the machine's owner in its MIND), coops: { maia | settlement | village:
+    /// poolShare 0-0.5 of every invested HEART into the AMM pool (0.1: investor 0.5, treasury 0.4, pool 0.1), swapFee 0-0.1, tentRent 0-10000 tribeMIND each
+    /// player a month, hexRent 0-10000 maiaMIND the Tribe COOP a month,
+    /// pickupRent, powercubeRent, batteryRent 0-10000 the Tribe COOP a month to the machine's owner in its MIND), coops: { maia | tribe | village:
     /// { name, assets: [the whole list as it will be: { id (keep an asset's id from maiacity_v1_mips), name, kind }] } },
-    /// payouts: [{ from: "coop:maia" | "coop:settlement" | "coop:village", to: "player:A" | "player:B" | a coop,
-    /// token: "MAIA" | "SETTLEMENT" | "VILLAGE", amount }], views: [screens, view cards: { id, kind: "view", name,
+    /// payouts: [{ from: "coop:maia" | "coop:tribe" | "coop:village", to: "player:A" | "player:B" | a coop,
+    /// token: "MAIA" | "TRIBE" | "VILLAGE", amount }], views: [screens, view cards: { id, kind: "view", name,
     /// description, data: { slot: "panel" (a tool of its own) | "you" | "mint" | "invest" | "swap" (stands over that
     /// panel's moves) | "coops" | "ledger" | "rules" (takes that panel's place), libs?: ["three" | "d3" | "mcp-apps"],
     /// height?: 160-1200 }, code: its HTML, an MCP App run sandboxed, handed the game as its tool result every second:
