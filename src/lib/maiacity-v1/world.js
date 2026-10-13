@@ -16,7 +16,8 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { batteryPack, pickup, powercube, solarRow } from '$lib/models/village.js';
+import { batteryPack, pickup, solarRow } from '$lib/models/village.js';
+import { powerCube } from '$lib/actors/powercube.js';
 import { SPEED } from '$lib/models/units.js';
 import { maiaCentre, oldShed, travelVan } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
@@ -338,10 +339,10 @@ export function tent() {
 }
 
 /** the tent packed: a canvas bundle with its poles, strapped, as it waits in the village shed */
-/** where the powercube and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up): the cube
- *  across the bed behind the tool box, the tent strapped on top of it */
-const CUBE_ON_BED = V(0, 1.16, -1.6);
-const TENT_ON_BED = V(0, 1.16 + 1.15, -1.6);
+/** where the Power Cube (0.75 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
+ *  side by side, the cube behind the tool box, the tent by the tailgate */
+const CUBE_ON_BED = V(0, 1.16, -1.42);
+const TENT_ON_BED = V(0, 1.16, -2.28);
 
 function packedTent() {
 	const g = new THREE.Group();
@@ -520,7 +521,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	world.add(shed, solar, battery);
 	// the pickup at its real size (5.4 m), and the powercube it fetches, drawn as a small silenced cube that fits its bed
 	const truck = named(pickup(), 'asset:pickup');
-	const cube = named(powercube(), 'asset:powercube');
+	// the powercube: Open Source Ecology's Power Cube VII, the same one the LifeTrac carries (actors/powercube.js)
+	const cubeCast = powerCube();
+	cubeCast.rig.pose(cubeCast.clips.off(0));
+	const cube = named(cubeCast.rig.object, 'asset:powercube');
 	const bundle = named(packedTent(), 'asset:tent');
 	world.add(truck, cube, bundle);
 	// the travel van of the arrival, packed
@@ -625,7 +629,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		else {
 			truck.add(cube);
 			cube.position.copy(CUBE_ON_BED);
-			cube.rotation.set(0, 0, 0); // its 1.45 m across the 1.7 m bed
+			cube.rotation.set(0, 0, 0);
 		}
 	}
 

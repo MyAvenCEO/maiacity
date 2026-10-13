@@ -24,7 +24,8 @@ export const SPEED = {
 /** the real outer size of each asset, width (x) × height (y) × length (z), in metres, as its model must measure */
 export const REAL_SIZES = {
 	pickup: { size: [1.86, 1.82, 5.33], what: 'a double-cab pickup' },
-	powercube: { size: [1.45, 1.15, 0.8], what: 'a 20 kVA silenced diesel generator on its skid' },
+	powerCube: { size: [0.74, 0.75, 0.76], what: 'Open Source Ecology’s Power Cube VII, a 27" (0.69 m) frame, its couplers, caps and handles out of it (actors/powercube.js)' },
+	genset: { size: [2.3, 2.83, 2.3], what: 'a 60 kVA silenced diesel genset (the Assets’ powercube v1)' },
 	solarPanel: { size: [1.72, 1.08, 1.4], what: 'one 410 W panel on its 30° ground rack, ballast blocks and cable' },
 	batteryPack: { size: [1.6, 2.51, 1.6], what: 'a 230 kWh outdoor battery cabinet on its plinth, its cable out the back' },
 	travelVan: { size: [1.95, 2.8, 5.0], what: 'an old travel van, bags tied on its roof' },
