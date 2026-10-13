@@ -106,7 +106,10 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 	forklift: [{ ...FIRST, date: '2026-10-07' }],
 	lifetrac: [{ ...FIRST, date: '2026-10-13' }],
 	powercube: [{ ...FIRST, date: '2026-10-13' }, { v: 2, date: '2026-10-13', note: 'The Electric variant is its own actor now: the ElectroCube' }],
-	electrocube: [{ ...FIRST, date: '2026-10-13' }],
+	electrocube: [
+		{ ...FIRST, date: '2026-10-13', build: [{ id: 'electrocube', label: 'ElectroCube', note: 'as at v1: a classic alternator, 35" (0.9 m) long', make: () => electroCube(1) }] },
+		{ v: 2, date: '2026-10-13', note: 'The same 27" size as every other cube (686 × 660 × 686 mm): a flat axial-flux generator, under 10 cm long, on the engine’s shaft where the pump was, and a power converter on the back that makes clean 400 V and 230 V at 50 Hz from it' }
+	],
 	batterycube: [
 		{ ...FIRST, date: '2026-10-13', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v1: busbars down the front, a one-way inverter', make: () => batteryCubeV1() }] },
 		{ v: 2, date: '2026-10-13', note: 'Plug in and pull out: a backplane behind the stack takes each BatteryPack’s (v3) back plug, and a ClickLock rail pair holds each pack; no busbars on the front', build: [{ id: 'batterycube', label: 'BatteryCube', note: 'as at v2: a one-way inverter', make: () => batteryCube(2) }] },
@@ -313,9 +316,9 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	{
 		id: 'electrocube',
 		label: 'ElectroCube',
-		note: 'Our own cube on Open Source Ecology’s Power Cube frame: the same 28 hp V-twin, tank and battery, a brushless ~15 kVA alternator on its shaft where the hydraulics were, its regulator, breakers and sockets on the back; 27" wide and high, 35" long. Every part its own',
+		note: 'Our own cube on Open Source Ecology’s Power Cube frame: the same 28 hp V-twin, tank and battery, a flat axial-flux ~15 kW generator on its shaft where the hydraulics were, a power converter, breakers and sockets on the back; a 27" cube like every other. Every part its own',
 		from: 'Our design, on the Power Cube of Open Source Ecology',
-		variants: [{ id: 'electrocube', label: 'ElectroCube', note: 'about 15 kVA at 400 V three-phase and 230 V, a 28 hp petrol V-twin, 0.69 × 0.69 × 0.9 m', make: () => electroCube() }]
+		variants: [{ id: 'electrocube', label: 'ElectroCube', note: 'about 15 kVA at 400 V three-phase and 230 V, a 28 hp petrol V-twin, 0.69 × 0.69 × 0.66 m, the size of every cube', make: () => electroCube() }]
 	},
 	{
 		id: 'batterycube',

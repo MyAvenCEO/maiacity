@@ -19,8 +19,8 @@ export const VILLAGE_INFO = {
 	},
 	powercube: {
 		model: 'electrocube',
-		note: 'the ElectroCube: our own cube on Open Source Ecology’s Power Cube frame (a 28 hp V-twin in a 27-inch steel frame) with a brushless alternator on its shaft where the hydraulic pump would be, its regulator, breakers and sockets on the back. Not an OSE design: its figures are inferred',
-		specs: [['Size', '0.69 × 0.9 × 0.69 m'], ['Power', 'about 15 kVA (12 kW) [inferred]'], ['Output', '400 V three-phase, 2 × 230 V'], ['Engine', '28 hp (20.9 kW) petrol V-twin'], ['Fuel tank', '7 gal (26.5 l)'], ['Design', 'ours, on the OSE Power Cube VII frame']]
+		note: 'the ElectroCube: our own cube on Open Source Ecology’s Power Cube frame (a 28 hp V-twin in a 27-inch steel frame) with a flat axial-flux generator on its shaft where the hydraulic pump would be, a power converter, breakers and sockets on the back, the same 27-inch size as every cube. Not an OSE design: its figures are inferred',
+		specs: [['Size', '0.69 × 0.66 × 0.69 m'], ['Power', 'about 15 kW [inferred]'], ['Output', '400 V three-phase, 2 × 230 V'], ['Engine', '28 hp (20.9 kW) petrol V-twin'], ['Fuel tank', '7 gal (26.5 l)'], ['Design', 'ours, on the OSE Power Cube VII frame']]
 	},
 	solar: {
 		model: 'solar-panel',
