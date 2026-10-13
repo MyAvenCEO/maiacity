@@ -20,8 +20,8 @@
  *
  * Who buys what: the food COOPs buy food (in the diet's mix, at wholesale) when their stores and harvests ahead fall
  * short of what their buyers will eat; the works buy their raw inputs (logs beyond the village's woods, steel scrap
- * beyond the village's own worn steel, float glass, solar cells); the COMPUTE COOPs buy accelerators (./coops.js plan,
- * produce). What is bought arrives the same day. A COOP that finds no euros buys less: its buyers go short.
+ * beyond the village's own worn steel, float glass, solar cells); the hardware owners (the settlement COOPs and the
+ * Village COOP) buy accelerators for their data halls (./ai.js aiEvening). What is bought arrives the same day. A COOP that finds no euros buys less: its buyers go short.
  */
 import { CLASS, ENERGY, FOOD, MAX_COOPS, WOOD, STEEL, GLASS, PANEL } from './consts.js';
 import { rawOf, plantCapDay, capDayOf } from './genesis.js';
@@ -179,7 +179,7 @@ export function importsDay(w) {
  * accountDays of what it has spent lately, or at what it will have to buy at the border before its own plants catch
  * up (its deficit ahead: a food COOP saves in the autumn for the spring), whichever is more, spread over two months
  * (the line's room is shared out by shareLine). Upkeep's class (served with the running class, before any building): food and the works' inputs
- * are what the village lives on. The COMPUTE COOPs plan theirs for accelerators in ./coops.js plan.
+ * are what the village lives on. The hardware owners' accelerators are advanced by the bank (./ai.js aiEvening).
  */
 export function exportPlan(w, co) {
 	const B = w.border;

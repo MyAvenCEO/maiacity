@@ -15,6 +15,7 @@ import { capDayOf, plantCapDay } from './genesis.js';
 import { DAYS_IN_MONTH, CHIPS, BORDER, FOOD as FOOD_R } from './primitives.js';
 import { monthOf } from './energy.js';
 import { reserveEur, IMPORT_KINDS, advancesOwed } from './border.js';
+import { chipsOf } from './ai.js';
 import { indoorMonths, dietFacts, peopleFed, peopleFedByGroup, splitYields, DIETS, YIELDS } from './food.js';
 
 const SERIES = {
@@ -98,6 +99,10 @@ function newYear(w, y) {
 		rent: { bedR: 0, beds: 0, m2R: 0, m2: 0, paidR: 0, eurR: 0, days: 0, byCoop: {} },
 		exportKwh: 0,
 		exportEur: 0,
+		exportEurElec: 0,
+		exportEurAi: 0,
+		// the AI market (./ai.js): sums over the year's days
+		ai: { days: 0, capAH: 0, AH: 0, revR: 0, exportAH: 0, exportEur: 0, workH: 0, runNeed: 0, propNeed: 0, runFill: 0, propFill: 0, workPaidR: 0, spaceShortDays: 0, chipsUsed: 0, chipsEnd: 0, byOwner: {}, byAi: {} },
 		exportBy: new Float64Array(G),
 		exportEurBy: new Float64Array(G),
 		sharedDrawn: 0,
@@ -177,7 +182,37 @@ function yearDay(w, protD) {
 	for (let g = 0; g < G; g++) Y.badges[g * 32 + (w.badge[g] | 0)]++;
 	if (t.imp) for (const k of IMPORT_KINDS) (Y.imp[k] += t.imp[k] ?? 0), (Y.impEur[k] += t.impEur[k] ?? 0);
 	Y.exportKwh += t.exportKwh ?? 0;
-	Y.exportEur += t.eurIn ?? 0;
+	// euros the village earned abroad: the line's electricity, and (experiment AIX) Aven service
+	Y.exportEurElec += t.eurIn ?? 0;
+	Y.exportEurAi += t.eurInAi ?? 0;
+	Y.exportEur += (t.eurIn ?? 0) + (t.eurInAi ?? 0);
+	{
+		// the AI market: the owners' accelerators, capacity and inference sold (and its price), the AI COOPs' Aven hours,
+		// the work the personal Avens did for the COOPs, the AIX export
+		const A = Y.ai, ta = t.ai;
+		A.days++;
+		if (ta) (A.capAH += ta.capAH), (A.AH += ta.AH), (A.revR += ta.AH * ta.priceR), (A.exportAH += ta.exportAH), (A.exportEur += ta.exportEur);
+		let chips = 0;
+		for (const co of w.aiOwners ?? []) {
+			const n = chipsOf(co);
+			chips += n;
+			const b = (A.byOwner[co.id] ??= { label: co.label ?? co.id, chips: 0, chipDays: 0, AH: 0, revR: 0 });
+			b.chips = n;
+			b.chipDays += n;
+			b.AH += co.inf?.sold ?? 0;
+			b.revR += (co.inf?.sold ?? 0) * (co.inf?.priceR ?? 0);
+		}
+		A.chipsEnd = chips;
+		for (const co of w.coops) {
+			if (!co.alive || co.good !== COMPUTE) continue;
+			const b = (A.byAi[co.id] ??= { label: co.label ?? co.id, hours: 0, revR: 0 });
+			b.hours += co.sold;
+			b.revR += co.sold * co.priceR;
+		}
+		if (t.work) (A.workH += t.work.WH), (A.runNeed += t.work.needRun), (A.propNeed += t.work.needProp), (A.runFill += t.work.runFill), (A.propFill += t.work.propFill), (A.workPaidR += t.work.paidR);
+		if (t.aiSpaceShort) A.spaceShortDays++;
+		A.chipsUsed += t.chipsUsed ?? 0;
+	}
 	{
 		const Rt = Y.rent;
 		for (const co of w.coops) {
@@ -643,10 +678,13 @@ export function borderYears(w) {
 			runEur: importEur - buildEur,
 			people: Y.people,
 			exportKwh: Y.exportKwh,
+			// all the euros earned abroad: the line's electricity, and Aven service (experiment AIX only)
 			exportEur: Y.exportEur,
+			exportEurElec: Y.exportEurElec,
+			exportEurAi: Y.exportEurAi,
 			exportByGood: Object.fromEntries(GOOD_IDS.map((id, g) => [id, Y.exportEurBy[g]]).filter(([, v]) => v > 0)),
 			// € a MWh the line earned on average that year
-			exportEurMwh: Y.exportKwh > 0 ? (Y.exportEur / Y.exportKwh) * 1000 : null,
+			exportEurMwh: Y.exportKwh > 0 ? (Y.exportEurElec / Y.exportKwh) * 1000 : null,
 			reserveEur: Y.reserveEur,
 			foundingLeftEur: Y.sharedEur,
 			foundingDrawnEur: Y.sharedDrawn,
@@ -669,6 +707,49 @@ export function borderYears(w) {
 	return out;
 }
 
+/**
+ * The AI market a year at a time (round 4, ./ai.js): who owns the accelerators and how many (at the year's end, and
+ * on average), the inference they sold to the AI COOPs (accelerator-hours a day) and its price, the Aven hours the AI
+ * COOPs sold, per tenth of holdings split into the person's help and the work for the COOPs, each tenth's MIND income
+ * by source (the HEARTS half, Aven work items, Law 5 dividends; R a day), the accelerators bought at the border and
+ * their euros, what bound the Aven service most days, and the AIX export.
+ */
+export function aiYears(w) {
+	const out = [];
+	const liv = livingYears(w);
+	for (const Y of w.rec?.years ?? []) {
+		if (!Y || !Y.ai) continue;
+		const A = Y.ai, d = Math.max(1, A.days);
+		const L = liv.find((r) => r.year === Y.year);
+		const tenth = (r) => ({ helpH: r.avenH, workH: r.workH, hearts: r.income.hearts, work: r.income.work, div: r.income.div });
+		const owners = Object.entries(A.byOwner).map(([id, b]) => ({ id, label: b.label, chips: b.chips, chipsMean: b.chipDays / d, AHDay: b.AH / d, priceR: b.AH > 0 ? b.revR / b.AH : null, revRDay: b.revR / d }));
+		const aiCoops = Object.entries(A.byAi).map(([id, b]) => ({ id, label: b.label, hoursDay: b.hours / d, priceR: b.hours > 0 ? b.revR / b.hours : null }));
+		out.push({
+			year: Y.year,
+			people: Y.people,
+			owners,
+			chips: A.chipsEnd,
+			capAHDay: A.capAH / d,
+			AHDay: A.AH / d,
+			inferPriceR: A.AH > 0 ? A.revR / A.AH : null,
+			utilization: A.capAH > 0 ? A.AH / A.capAH : null,
+			aiCoops,
+			// the people's Aven hours (a person a day): help for themselves, work for the COOPs, by tenth of holdings
+			tenths: L ? Object.fromEntries(L.byHoldings.map((r, i) => [i + 1, tenth(r)])) : {},
+			all: L ? tenth(L.all) : null,
+			// the COOPs' need for Aven work (hours a day) and how much of it the Avens delivered
+			work: { hoursDay: A.workH / d, runNeedDay: A.runNeed / d, propNeedDay: A.propNeed / d, runFill: A.runFill / d, propFill: A.propFill / d, paidRDay: A.workPaidR / d },
+			imported: { n: Y.imp.chips ?? 0, eur: Y.impEur.chips ?? 0 },
+			worn: A.chipsUsed,
+			bind: bindOf(Y, COMPUTE),
+			spaceShortDays: A.spaceShortDays,
+			export: { AHDay: A.exportAH / d, eur: A.exportEur },
+			bankCumEur: Y.cumEur
+		});
+	}
+	return out;
+}
+
 /** what the village holds on day 0 that was bought outside before it (called by ./engine.js createWorld) */
 export function foundingStores(w) {
 	const st = { food: 0, mat: new Float64Array(G), raw: {}, chips: 0, chipsInstalled: 0 };
@@ -681,6 +762,8 @@ export function foundingStores(w) {
 			const ro = pl.def.inputs.find(([g]) => typeof g === 'string');
 			if (ro && pl.raw > 0) st.raw[ro[0]] = (st.raw[ro[0]] ?? 0) + pl.raw;
 			if (pl.def.build.chips) st.chipsInstalled += pl.cap * pl.def.build.chips;
+			// the accelerators standing in the hardware owners' data halls (./ai.js)
+			if (pl.def.kind === 'hall') st.chipsInstalled += pl.chipsN ?? 0;
 		}
 	}
 	st.reserveEur = w.border.shared;
@@ -714,7 +797,7 @@ export function foundingBill(w) {
 	add('machines', V.cost[3].label, { t: null, eur: V.cost[3].eur * vf, group: 'machines' });
 	add('land', V.cost[4].label, { t: null, ha: (V.landM2 * vf) / 1e4, eur: V.cost[4].eur * vf, group: 'land' });
 	const chips = F.chips + F.chipsInstalled;
-	add('accelerators', 'Accelerators for the Aven-service halls (installed and spares)', { t: null, n: chips, eur: chips * w.c.chipEur, group: 'machines' });
+	add('accelerators', 'Accelerators in the hardware owners’ data halls', { t: null, n: chips, eur: chips * w.c.chipEur, group: 'machines' });
 	add('foodStore', `Food in the stores (${Math.round(w.c.foodStoreDays)} days, the diet at wholesale)`, { t: null, kcal: F.food * 1000, eur: F.food * E.food, group: 'stores' });
 	const matEur = { [WOOD]: (P.glulam.eur / 0.55), [STEEL]: P.steel.eur, [GLASS]: P.glass.eur / 0.05, [PANEL]: (P.pv.eur * w.c.kwhPerKwp) / 227 };
 	add('materialStores', 'Glulam, steel, glass and panels in the works’ and builders’ stores (a month)', { t: F.mat[WOOD] + F.mat[STEEL] + F.mat[GLASS], kwp: F.mat[PANEL], eur: F.mat[WOOD] * matEur[WOOD] + F.mat[STEEL] * matEur[STEEL] + F.mat[GLASS] * matEur[GLASS] + F.mat[PANEL] * matEur[PANEL], group: 'stores' });

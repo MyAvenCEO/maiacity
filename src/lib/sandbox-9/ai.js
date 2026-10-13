@@ -31,7 +31,7 @@
  *   go over the 10 MW line; its electricity is in the dispatch's running class.
  */
 import { CLASS, COMPUTE, ENERGY, IN_HAND, MAX_COOPS } from './consts.js';
-import { payEur, reserveEur } from './border.js';
+import { payEur, reserveEur, eurR } from './border.js';
 import { peopleAhead } from './ramp.js';
 
 const M = MAX_COOPS;
@@ -188,23 +188,33 @@ export function aiLoads(w) {
 		X += ah;
 		askedX += max(0, co.orders ?? 0) * perH;
 	}
-	// AIX: the MaiaCity COOP exports Aven service bought from the avenCEO COOP, up to a small provider's demand, from
-	// what the village does not use, while the village still owes its founders, as far as its treasury can pay
+	// AIX: the MaiaCity COOP's bank exports Aven service bought from the avenCEO COOP, as it exports electricity
+	// (./border.js bankExport): for what the village still owes its founders, spread over bankPaybackYears, up to a
+	// small provider's demand abroad, only while a GPU-hour sold earns more euros than it costs the village in euros (the
+	// electricity the line would have sold instead, and the accelerator's wear at its border price), and as far as its
+	// treasury can pay the Aven service in MIND. The owners see the ask (they equip for it, ./ai.js aiEvening); the
+	// village's own use is served first, the export from what is left
 	if (w.cfg.aiExport && w.border && ai.length) {
 		const seller = ai.find((c) => c.id === 'AVENCEO') ?? ai[0];
-		const owes = reserveEur(w) - w.border.shared0 < 0;
-		const spare = max(0, (w.inferCapAH ?? 0) - X);
-		let ah = owes ? min(w.c.aiExportAhDay, spare) : 0;
+		const cum = reserveEur(w) - w.border.shared0;
 		const priceR = seller.priceR > 0 ? seller.priceR : seller.price * w.P[seller.k];
-		const avenH = perH > 0 ? ah / perH : 0;
-		const budget = 0.5 * payableAll(w, w.cityK);
-		if (avenH * priceR > budget) ah *= budget / max(1e-12, avenH * priceR);
+		const costAH = perH > 0 ? priceR / perH : Infinity;
+		const eurCostAH = w.c.chipKwhH * w.c.eurPerKwh + (w.c.chipEur * importFactorAi(w)) / (w.c.chipLife * 365 * w.c.chipHoursDay);
+		let want = 0;
+		if (cum < 0 && w.c.aiExportEurH > eurCostAH) want = min(w.c.aiExportAhDay, -cum / (max(1, w.c.bankPaybackYears) * 365) / w.c.aiExportEurH);
+		// it spends on it only its surplus: what its treasury holds above its reserve for its own bills (as payout)
+		const city = w.coops[w.cityK];
+		const budget = max(0, payableAll(w, w.cityK) - w.cfg.reserveDays * (city?.costREma ?? 0));
+		if (want * costAH > budget) want = budget / max(1e-12, costAH);
+		const ah = min(want, max(0, (w.inferCapAH ?? 0) - X));
+		flow.exportWant = want;
 		flow.exportAH = ah;
 		flow.exportH = perH > 0 ? ah / perH : 0;
 		flow.exportBuyer = seller.k;
-		flow.buyers.push([seller.k, ah]);
+		// (the bank pays this inference straight to the owners, on the avenCEO COOP's bill, as the people do)
+		flow.buyers.push([seller.k, ah, true]);
 		X += ah;
-		askedX += min(w.c.aiExportAhDay, owes ? w.c.aiExportAhDay : 0);
+		askedX += want;
 	}
 	flow.AH = X;
 	flow.askedAH = askedX;
@@ -268,8 +278,15 @@ export function aiBills(w, co, fillR) {
 			out.push([o.k, ((ah * g) / f.AH) * fillR * o.inf.price]);
 		}
 	if (co.k === w.cityK && f.exportH > 0 && f.exportBuyer >= 0) {
+		// the bank's bill for the Aven service it exports: the inference in it to the owners, the rest to the AI COOP
 		const s = w.coops[f.exportBuyer];
-		out.push([s.k, f.exportH * fillR * s.price]);
+		const split = inferenceSplit(w);
+		let infR = 0;
+		if (split) for (let j = 0; j < split.length; j += 3) infR += split[j + 2];
+		const fr = s.priceR > 0 && infR > s.priceR ? s.priceR / infR : 1;
+		if (split) for (let j = 0; j < split.length; j += 3) if (split[j] !== co.k) out.push([split[j], f.exportH * fillR * split[j + 1] * fr]);
+		const own = s.priceR > 0 ? Math.max(0, 1 - (infR * fr) / s.priceR) : 1;
+		out.push([s.k, f.exportH * fillR * s.price * own]);
 	}
 	return out;
 }
@@ -361,8 +378,8 @@ export function aiEvening(w) {
 	const ahead = w.ramp && !w.ramp.over ? peopleAhead(w, AHEAD_DAYS) : w.N;
 	const growth = max(1, ahead / max(1, w.N));
 	const prior = PRIOR_H * ahead * perH;
-	let need = max(asked * growth, prior);
-	if (w.cfg.aiExport && reserveEur(w) - w.border.shared0 < 0) need = max(need, asked * growth + w.c.aiExportAhDay);
+	// (in AIX the bank's export asks are in what was asked: the owners equip for them as for the village's)
+	const need = max(asked * growth, prior);
 	const target = (HEADROOM * need) / w.c.chipHoursDay;
 	let have = 0;
 	for (const co of owners) have += chipsOf(co);

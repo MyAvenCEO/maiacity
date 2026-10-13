@@ -476,9 +476,9 @@ export const TECH = {
  * their power and replace them as they wear; they sell inference (accelerator-hours) to the avenCEO COOP (./ai.js).
  * With the setting chipImport false the city is strictly closed (scenario B23): no accelerator comes in.
  */
-const CHIP_EUR = 35000, MWH_EUR = 87.5;
+const CHIP_EUR = 30000, MWH_EUR = 87.5;
 export const CHIPS = {
-	eurPerChip: n(CHIP_EUR, '€ per accelerator with its share of the server (an H100-class GPU in an 8-GPU server)', 'an 8-GPU HGX H100 server costs $250,000–320,000 (intuitionlabs.ai GPU price guide, 2025–26; Supermicro HGX H100 at $306,672 on Newegg, Sep 2026): $31,000–40,000 a GPU with its share of the server, about €30,000–37,000; the middle (estimate)', true),
+	eurPerChip: n(CHIP_EUR, '€ per accelerator with its share of the server (an H100-class GPU in an 8-GPU server)', 'an H100-class GPU costs $25,000–40,000 (intuitionlabs.ai GPU price guide, 2025–26), and an 8-GPU HGX H100 server $250,000–320,000 ($31,000–40,000 a GPU with its share of the server); at $1.13 a € (Bank of Finland, 2025 average) €30,000 is used (range 20,000–40,000; cost audit 2026-10-13, was 35,000) (estimate)', true),
 	kwAtWall: n(1.3, 'kW per accelerator at the wall, with its share of the server', 'NVIDIA DGX H100 user guide: 10.2 kW maximum for the 8-GPU system, 1.275 kW a GPU'),
 	pue: n(1.2, 'power usage effectiveness of a village data hall (cooling and power losses)', 'Uptime Institute Global Data Center Survey 2025: the weighted average stays about 1.54 for the sixth year; hyperscale halls 1.10–1.15. A small hall with free cooling in a central European climate: 1.2 (estimate)', true),
 	sessions: n(16, 'Aven sessions an accelerator serves at once', 'the physics audit (2026-10-13): an H100-class accelerator serves 16 agent sessions around the clock (realistic 17–130; the audit’s cautious 16–50)', true),
@@ -527,11 +527,11 @@ export const BORDER = {
 	logsEur: n(105 / 0.45, '€ a t of logs (dry)', 'spruce sawlogs B/C 2b €84–120 a solid m³ (LWK Niedersachsen, May 2025), ~€98 in Bavaria; €105 a m³ at ~0.45 dry t a m³', true),
 	scrapEur: n(300, '€ a t of steel scrap', 'sandbox-7 SOURCES.steel: scrap ~300 €/t (EU 2025)'),
 	floatEur: n(650, '€ a t of float glass', 'float glass ~USD 680 a t in Germany (IMARC price trend, 2026 edition); EU import unit values ~€2,000 a t include worked glass (estimate)', true),
-	cellsEur: n(300, '€ per kWp of solar cells', 'TOPCon modules €0.10 a Wp delivered in Europe (pv magazine, May 2025); see-through cells for glass cost more: semi-transparent BIPV glass 1.0–1.6 €/Wp as a module (sandbox-7 SOURCES.pv); cells alone €0.3 a Wp (estimate)', true),
-	glulamEur: n(565 / 0.55, '€ a t of glulam, bought when the timber works cannot keep up', 'spruce glulam 555–575 €/m³ wholesale (Holzkurier, Nov 2025; sandbox-7 SOURCES.glulam) at 0.55 t a m³'),
-	steelEur: n(770, '€ a t of steel, bought when the steelworks cannot keep up', 'steel plate ~770 €/t (sandbox-7 SOURCES.steel, gmk.center 2025); the hubs are cast and machined in the village (estimate)', true),
-	glazingEur: n(2000, '€ a t of laminated glazing, bought when the glassworks cannot keep up', 'double glazing 95–140 €/m² (sandbox-7 SOURCES.glass) at ~0.05 t a m²: €1,900–2,800 a t (estimate)', true),
-	panelsEur: n(1000, '€ per kWp of see-through solar glass, bought when the panel works cannot keep up', 'semi-transparent BIPV glass 1.0–1.6 €/Wp as a module (sandbox-7 SOURCES.pv; estimate)', true),
+	cellsEur: n(60, '€ per kWp of solar cells', 'TOPCon cells $0.036–0.040 a W (pv magazine, 9 May 2025) at $1.13 a € (Bank of Finland, 2025 average): ~€0.035 a W, €60 a kWp with the see-through cells’ premium (range 40–100; cost audit 2026-10-13, was 300)', true),
+	glulamEur: n(950 / 0.55, '€ a t of glulam, bought when the timber works cannot keep up', 'larch/Douglas glulam blanks for the struts ~800–1,200 €/m³, 950 used (sandbox-7 PRICES.glulam: spruce glulam 555–575 €/m³, Holzkurier Nov 2025, larch value logs ~1.7× spruce’s, BaySF 2019) at 0.55 t a m³ (cost audit 2026-10-13, was 1,027 for spruce)', true),
+	steelEur: n(6000, '€ a t of steel, bought when the steelworks cannot keep up', 'what the village’s steelworks makes is the domes’ cast hubs, ring and connectors, so what it buys stands for finished hubs: EU import unit values for cast steel parts €4.2–6.0 a kg (thetradehub.eu, 84879051), sandbox-7 PRICES.hubs €6,000 a t (range 4,500–9,000; cost audit 2026-10-13, was 770 for plate)', true),
+	glazingEur: n(3800, '€ a t of laminated glazing, bought when the glassworks cannot keep up', 'insulating glass €100–150 a m² (aroundhome.de) plus €35–80 a m² for laminated safety glass (clean-invoice.com): ~€190 a m² at ~0.05 t a m² (range 2,800–5,000 a t; cost audit 2026-10-13, was 2,000)', true),
+	panelsEur: n(440, '€ per kWp of see-through solar glass, bought when the panel works cannot keep up', 'glass-glass modules €0.16–0.22 a Wp (ema-energiewelt.de, 2026); cells laid into a pane at ~€100 a m² and ~1,000 kWh a kWp: €440 a kWp (range 200–700; cost audit 2026-10-13, was 1,000)', true),
 	accountDays: n(60, 'days of its imports a COOP keeps in its euro account', 'what a COOP exports ahead, so a dark week does not stop its imports (estimate)', true),
 	importAhead: n(30, 'days of supply a COOP looks ahead when it buys at the border', 'estimate', true),
 	foodStoreDays: n(90, 'days of food in the stores at founding (bought before day 0)', 'round 3 brief: "a few months of imported food" (estimate)', true),
