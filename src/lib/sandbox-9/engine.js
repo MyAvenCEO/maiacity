@@ -52,6 +52,9 @@ export function createWorld(config = {}) {
 	w.matter.prevRaw = rawTotal(w);
 	w.liquid = new Uint8Array(M);
 	w.poolQueue = new Float64Array(M); // pool inflow waiting for the weekly slice (bootstrap off only)
+	// the euro reserve of the border (paper §11.4), in €: each COOP's own account (a COOP spends only its own), and what
+	// came in and went out
+	w.border = { eur: new Float64Array(M), prev: 0, inEur: 0, outEur: 0 };
 	// the catalog's day-0 guesses, in R, indexed like the rate card to the HEARTS issued a day; genesisPrices below
 	// finds the real day-0 prices from costs. A few rounds of that fixed point do not converge, so a guess left at
 	// 24 HEARTS a day would leave day-0 prices in a 48-HEARTS world only part of the way to double (energy came out
@@ -212,10 +215,12 @@ export function step(w) {
 	const cop = w.today.cop;
 	w.energyAsked = req[0] + req[1] + Math.max(0, heatReq.basics - w.today.harvest.geoHeat) / cop;
 	const reqCopy = Float64Array.from(req);
-	let exportAsk = 0;
-	for (const co of w.coops) if (co.alive) exportAsk += co.exportReq ?? 0;
+	// the border's export for accelerators: upkeep's right after running, a project's with building (./coops.js plan)
+	const exportAsk = { up: 0, build: 0 };
+	for (const co of w.coops) if (co.alive) (exportAsk.up += co.exportUp), (exportAsk.build += co.exportBuild);
 	const fill = dispatch(w, req, heatReq, basicsB, exportAsk);
-	w.energyAsked += w.today.use[CLASS.building];
+	// what the energy sellers sold across the border is demand for their electricity too
+	w.energyAsked += w.today.use[CLASS.building] + w.today.exportKwh;
 	if (!cfg.rdAsks) w.energyAsked += w.today.use[CLASS.rd];
 	else w.energyAsked += reqCopy[CLASS.rd];
 	w.today.req = reqCopy;
@@ -686,11 +691,13 @@ function affordCoops(w) {
 		let runH = 0;
 		for (const pl of co.plants) runH += runHours(w, pl);
 		budget -= runH * w.c.rateR;
-		const run = co.eReq[CLASS.running] * pE;
+		// (the border's export that replaces worn accelerators is upkeep: it is budgeted with the running energy)
+		const run = (co.eReq[CLASS.running] + co.exportUp) * pE;
 		const fr = run > 0 ? Math.max(0, Math.min(1, budget / run)) : 1;
 		budget -= run * fr;
 		if (fr < 1) {
 			co.eReq[CLASS.running] *= fr;
+			co.exportUp *= fr;
 			for (const pl of co.plants) {
 				pl.plan = (pl.plan ?? 0) * fr;
 				pl.upkeepPlan = (pl.upkeepPlan ?? 0) * fr;
@@ -710,17 +717,16 @@ function affordCoops(w) {
 			w.b2bRun[g * M + co.k] = w.b2bProd[g * M + co.k] * fp;
 			w.b2b[g * M + co.k] = w.b2bRun[g * M + co.k] + w.b2bProj[g * M + co.k] * fj;
 		}
-		const bld = co.eReq[CLASS.building] * pE;
+		// (with the building project's energy, the border's export for the project's accelerators)
+		const bld = (co.eReq[CLASS.building] + co.exportBuild) * pE;
 		const fb = bld > 0 ? Math.max(0, Math.min(1, budget / bld)) : 1;
 		co.eReq[CLASS.building] *= fb;
+		co.exportBuild *= fb;
 		budget -= bld * fb;
 		const rd = co.eReq[CLASS.rd] * pE;
 		const fd = rd > 0 ? Math.max(0, Math.min(1, budget / rd)) : 1;
 		co.eReq[CLASS.rd] *= fd;
 		budget -= rd * fd;
-		// the border's export last (B23): what an accelerator costs in exported electricity
-		const ex = (co.exportReq ?? 0) * pE;
-		if (ex > 0) co.exportReq *= Math.max(0, Math.min(1, budget / ex));
 	}
 }
 
@@ -1019,7 +1025,7 @@ function settle(w, fill) {
 		// (the basics class in its two parts: the domes' climate and the heat pumps second, the rest first)
 		let kwh = co.eReq[CLASS.basics] * (co.good === BED ? t.fillB : t.fillA);
 		for (let cl = 1; cl < 4; cl++) kwh += co.eReq[cl] * fill[cl];
-		kwh += (co.exportReq ?? 0) * (t.fillExport ?? 0);
+		kwh += co.exportUp * t.fillExportUp + co.exportBuild * t.fillExportBuild;
 		const geoB = heatB > 0 ? (co.heatReq / heatB) * hb : 0;
 		const geoR = heatR > 0 ? (co.heatRun / heatR) * hr : 0;
 		kwh += ((co.heatReq - geoB) / cop) * t.fillB + ((co.heatRun - geoR) / cop) * fill[CLASS.running];
@@ -1180,6 +1186,9 @@ function physicalLimit(w, g) {
 	for (const co of w.sellers[g]) if (w.supply[g * M + co.k] > bs) (bs = w.supply[g * M + co.k]), (best = co);
 	if (!best) return LIMIT.noSeller;
 	if (best.limiter && best.limiter !== LIMIT.none) return best.limiter;
+	// Aven services whose worn halls wait for accelerators while the dispatch cuts the export that replaces them (the
+	// city's own basics, running and building took the electricity): energy
+	if (g === COMPUTE && w.sellers[g].some((co) => co.exportUp > 0 && (co.exUpFillEma ?? 1) < 0.9)) return LIMIT.energy;
 	const pl = best.plants[0];
 	if (!pl) return LIMIT.capacity;
 	// built capacity binds, and what stops the sellers building more is physics (land, a deposit, energy, accelerators,
@@ -1517,6 +1526,17 @@ function checkLedgers(w) {
 	if (Math.abs(chips - cexp) > 1e-7 * Math.max(1, chips)) leak(w, w.matter.leaks, `accelerators: ${chips} vs ${cexp}`);
 	if (chips < -1e-9) leak(w, w.matter.leaks, `accelerators below zero: ${chips}`);
 	w.matter.prevChips = chips;
+	// the euro reserve (paper §11.4): it moves only by what the line's export earned and what accelerators cost;
+	// it is held by COOPs only (no person holds euros) and never becomes MIND
+	const B = w.border;
+	let eur = 0;
+	for (let k = 0; k < M; k++) eur += B.eur[k];
+	const eexp = B.prev + (t.eurIn ?? 0) - (t.eurOut ?? 0);
+	if (Math.abs(eur - eexp) > 1e-7 * Math.max(1, eur) || eur < -1e-6) leak(w, w.matter.leaks, `euro reserve: ${eur} vs ${eexp}`);
+	if (Math.abs((t.eurIn ?? 0) - (t.exportKwh ?? 0) * w.c.eurPerKwh) > 1e-7 * Math.max(1, t.eurIn ?? 0)) leak(w, w.matter.leaks, `euro reserve: earned ${t.eurIn ?? 0} for ${t.exportKwh ?? 0} kWh exported`);
+	B.prev = eur;
+	B.inEur += t.eurIn ?? 0;
+	B.outEur += t.eurOut ?? 0;
 	// energy
 	const h = t.harvest;
 	const supply = h.solar + h.geo + h.battery;
@@ -1655,6 +1675,8 @@ export function getEnergy(w) {
 		harvest: { solar: h.solar, geothermal: h.geo, battery: h.battery },
 		use: Object.fromEntries(CLASS_NAMES.map((n, cl) => [n, t.use[cl]])),
 		unserved: Object.fromEntries(CLASS_NAMES.map((n, cl) => [n, t.unserved[cl]])),
+		// what the line exported for accelerators (paper §11.4): not the city's use, not surplus
+		exported: t.exportKwh ?? 0,
 		curtailed: t.curtailed,
 		batteryIn: t.battIn,
 		batteryLoss: t.battLoss,

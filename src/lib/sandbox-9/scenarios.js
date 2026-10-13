@@ -479,21 +479,25 @@ export const SCENARIOS = [
 	{
 		id: 'B23',
 		name: 'euro-border',
-		paper: 'world model 9 (the border)',
+		paper: 'world model 9 (the border); paper §11.4 (the euro reserve)',
 		stress: 'P3: Aven services without a chip fab',
-		claim: 'The closed city (the default) cannot make or import accelerators, so its Aven services wear away with them. Opening the border for accelerators only (bought with electricity exported from what would otherwise be curtailed; no euro reserve, no other trade) keeps more Aven services, nobody is short of a basic in any of the three worlds, and when accelerators cost three times as much from year 10 the city imports fewer.',
-		runs: [base30, run({ chipImport: true }, 30, 'border open for accelerators'), run({ chipImport: true, shocks: [{ kind: 'importPrice', day: 3650, days: 7300, factor: 3 }] }, 30, 'border open, accelerators 3× dearer from year 10')],
+		claim: 'The base city trades across the border as COOPs only (paper §11.4): a COMPUTE COOP buys electricity from the energy COOPs, the line exports it, the euros go into that COOP’s own account in the euro reserve, and the reserve buys accelerators with them; no person redeems MIND and no MIND is made from euros. The closed city (the counter-case) cannot make or import accelerators, so its Aven services wear away with them. The open city keeps more Aven services than the closed one, nobody is short of a basic in any of the three worlds, when accelerators cost three times as much from year 10 the reserve buys fewer, and Proposition 3 (P1–P3) holds through that import price shock (the world model’s target for B23).',
+		runs: [base30, run({ chipImport: false }, 30, 'closed city (no border)'), run({ shocks: [{ kind: 'importPrice', day: 3650, days: 7300, factor: 3 }] }, 30, 'border open, accelerators 3× dearer from year 10')],
 		judge(R, runs) {
-			const [c, o, d] = runs.map((r) => R[r.key]);
-			const rows = [c, o, d].map((s, i) => ({ label: runs[i].label, computeRun: s.consRun.compute, computeLast: s.consLast.compute, exportMwh: s.exportMwh ?? 0, shortPD: s.shortPD, Lmean: s.Lmean, P3: s.prop3.P3.pass }));
+			const [o, c, d] = runs.map((r) => R[r.key]);
+			const rows = [o, c, d].map((s, i) => ({ label: runs[i].label, seed: s.seed, years: runs[i].years, computeRun: s.consRun.compute, computeLast: s.consLast.compute, exportMwh: s.exportMwh ?? 0, chipsIn: s.chipsIn ?? 0, shortPD: s.shortPD, Lmean: s.Lmean, P3: s.prop3.P3.pass, P3failed: s.prop3.P3.failed.length }));
 			const more = o.consRun.compute > c.consRun.compute;
-			const fewer = (d.exportMwh ?? 0) <= (o.exportMwh ?? 0);
-			const noShort = [c, o, d].every((s) => s.shortPD === 0);
+			const fewer = (d.chipsIn ?? 0) < (o.chipsIn ?? 0);
+			const noShort = [o, c, d].every((s) => s.shortPD === 0);
+			// the world model's target (its scenario table, B23): Proposition 3 holds through the import price shock
+			const shockP3 = d.prop3.P1.pass && d.prop3.P2.pass && d.prop3.P3.pass;
 			return {
-				pass: more && fewer && noShort,
+				pass: more && fewer && noShort && shockP3,
 				numbers: { rows },
-				takeaway: rows.map((r) => `${r.label}: Aven services ${f2(r.computeRun)} h a person a day over the run (${f2(r.computeLast)} in the last year), ${f0(r.exportMwh)} MWh exported, ${f0(r.shortPD)} person-days short of a basic.`).join(' '),
-				evidence: `${more ? 'the open border kept more Aven services' : 'the open border did not keep more Aven services: the accelerators are bought only with electricity that would be curtailed, and the geothermal build and R&D take that electricity first'}; ${fewer ? 'dearer accelerators cut the export' : 'dearer accelerators did not cut the export'}; ${noShort ? 'no basic short in any world' : 'a basic was short'}.`
+				takeaway:
+					rows.map((r) => `${r.label}: Aven services ${f2(r.computeRun)} h a person a day over the run (${f2(r.computeLast)} in the last year), ${f0(r.exportMwh)} MWh exported for ${f0(r.chipsIn)} accelerators, ${f0(r.shortPD)} person-days short of a basic; mean living standard ${f2(r.Lmean)} in the last year, P3 ${r.P3 ? 'holds' : `fails (${r.P3failed} of 20 deciles)`}.`).join(' ') +
+					` Accelerators three times dearer cut the mean living standard by ${pct(1 - rows[2].Lmean / rows[0].Lmean)} and Aven services in the last year by ${pct(1 - rows[2].computeLast / Math.max(1e-12, rows[0].computeLast))}.`,
+				evidence: `${more ? 'the open border kept more Aven services than the closed city' : 'the open border did not keep more Aven services than the closed city'}; ${fewer ? 'dearer accelerators: the reserve bought fewer' : 'dearer accelerators: the reserve did not buy fewer'}; ${noShort ? 'no basic short in any world' : 'a basic was short'}; through the import price shock Proposition 3 ${shockP3 ? 'holds' : `fails (P1 ${d.prop3.P1.pass ? 'pass' : 'fail'}, P2 ${d.prop3.P2.pass ? 'pass' : 'fail'}, P3 ${d.prop3.P3.pass ? 'pass' : 'fail'})`}.`
 			};
 		}
 	},
@@ -662,6 +666,27 @@ export const SCENARIOS = [
 				evidence: `lowest share of food met: ${pct(e.lowestFood)} (equal) vs ${pct(p.lowestFood)} (proportional); poorest Aven decile ${f2(e.poorA)} vs ${f2(p.poorA)}. The engine keeps equal caps: a proportional cut gives the largest orders (the richest) the most of a short basic.`
 			};
 		}
+	},
+	{
+		id: 'B34',
+		name: 'owner-keep',
+		paper: 'Proposition 3, P2 (the owner-only cohort)',
+		stress: 'P2 against P3: what the owner-only cohort keeps',
+		claim: 'A comparison, not a test of the Proposition (it has no verdict): an Aven whose person delivers nothing keeps the whole HEARTS half as ownership (the base), against keeping half of it, as every other Aven does. It shows what the saving rule buys the owner-only cohort (dividends that pay its bundle every day) and what it costs (a lower living standard in its first years), and what it does to P3.',
+		runs: [base30, run({ ownerKeep: 0.5 }, 30, 'owner-only Avens keep half the HEARTS half')],
+		judge(R, runs) {
+			const [a, b] = runs.map((r) => R[r.key]);
+			const row = (s, i) => ({ label: runs[i].label, strictFrom: s.prop3.P2.strict.holdsEveryDayFrom, strict: s.prop3.P2.strict.pass, normal: s.prop3.P2.normal.pass, ownerL5: s.ownerL5, ownerLLast: s.ownerLLast, poorH: s.poorH, poorA: s.poorA, P3failed: s.prop3.P3.failed.length });
+			const rows = [row(a, 0), row(b, 1)];
+			return {
+				// a comparison of two rules: no pass or fail (the base's own P2 is judged in S00)
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: dividends alone pay the bundle ${r.strictFrom > 0 ? `every day from day ${f0(r.strictFrom)}` : 'on some days only'}; the cohort lives at ${f2(r.ownerL5)} over its first five years and ${f2(r.ownerLLast)} in the last year; ${r.P3failed} deciles fail P3.`).join(' ') + ` (One seed, ${a.seed}; P3 is not judged here, and how many deciles fail under each rule can change with the seed.)`,
+				evidence: rows.map((r) => `${r.label}: P2 strict ${r.strict ? 'pass' : 'fail'}, normal ${r.normal ? 'pass' : 'fail'}; poorest holdings decile ${f2(r.poorH)}, poorest Aven decile ${f2(r.poorA)} in the last year`).join('; ')
+			};
+		}
 	}
 ];
 
@@ -686,7 +711,7 @@ export const NOT_COVERED = [
 	['B19', 'price-pump', 'an attacker on one pool is not modelled (the B11 ring pushes its own price)'],
 	['B20', 'sybil-farm', 'no fake identities'],
 	['B21', 'estates', 'no deaths or heirs'],
-	['B23 (part)', 'euro-border', 'B23 runs the border for accelerators only (bought with exported electricity); a euro reserve and any other trade are not modelled'],
+	['B23 (part)', 'euro-border', 'B23 runs the border for accelerators only: the euro reserve (paper §11.4) holds each COMPUTE COOP’s own account, filled by the electricity it exports and spent on its accelerators; a reserve pooled across COOPs (energy COOPs earning euros, other imports such as panels) and any other trade across the border are not modelled'],
 	['B24', 'care-underfunding', 'care is not a good in the engine'],
 	['B25', 'two-choices and faithful Avens', 'no random human choices or Aven mistakes']
 ];
@@ -719,5 +744,7 @@ export function judge(id, R) {
 	const s = SCENARIOS.find((x) => x.id === id);
 	const missing = s.runs.filter((r) => !R[r.key]);
 	if (missing.length) return { pass: false, numbers: {}, takeaway: 'not run', evidence: `missing runs: ${missing.map((r) => r.label).join(', ')}` };
-	return s.judge(R, s.runs);
+	// a run's label names the seed it ran with (a run with every world's seed changed, --set seed=…, is not the base seed)
+	const runs = s.runs.map((r) => ({ ...r, label: r.label.replace(`seed ${B.seed}`, `seed ${R[r.key].seed}`) }));
+	return s.judge(R, runs);
 }

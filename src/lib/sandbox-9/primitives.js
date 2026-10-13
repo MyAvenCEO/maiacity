@@ -449,14 +449,22 @@ export const TECH = {
 
 /**
  * Accelerators (the chips Aven services run on) cannot be made in the city: world model 5.3 says "GPUs come from
- * outside (euro border)". The only way in is the border: a COMPUTE COOP buys electricity from the energy COOPs (a
- * real sale, paid in MIND, with Law 5) and the border line carries it out; each accelerator costs the electricity its
- * price buys at a wholesale power price. Nobody in the city holds euros: the border is a barter of exported
- * electricity for accelerators at a fixed rate, and the export line caps how much can leave a day. Without it (setting
- * chipImport false) the city is strictly closed, and its accelerators wear out after five years.
+ * outside (euro border)". A chip fab is a plant of billions of euros and hundreds of megawatts, so no hex has one, as
+ * no real town has one: a city buys its chips. The way in is the border of paper §11.4 and §12.4, as COOPs only: a
+ * COMPUTE COOP buys electricity from the energy COOPs (a real sale, paid in MIND, with Law 5); the border line
+ * carries it out at the wholesale price; the euros it earns go into the euro reserve, into the account of the COOP
+ * that paid for the electricity (each COOP spends only its own account), and the reserve buys accelerators for it at
+ * their list price. No person holds or redeems
+ * euros, no MIND is made from euros, and nothing else crosses the border (./coops.js plan, produce). The export line
+ * caps how much can leave a day. With the setting chipImport false the city is strictly closed (scenario B23), and
+ * the accelerators it holds wear out after five years.
  */
+const CHIP_EUR = 35000, MWH_EUR = 87.5;
 export const CHIPS = {
-	kwhPerChip: n(400000, 'kWh of exported electricity per accelerator', 'an H100-class accelerator ~€30,000–40,000 (2024–25 list prices) ÷ EU wholesale power ~€80–100 per MWh ≈ 300–500 MWh; the middle (estimate)', true),
+	eurPerChip: n(CHIP_EUR, '€ per accelerator', 'an H100-class accelerator ~€30,000–40,000 (2024–25 list prices); the middle (estimate)', true),
+	eurPerMwh: n(MWH_EUR, '€ per MWh of exported electricity', 'EU wholesale power ~€80–100 per MWh (2024–25 day-ahead averages); the middle (estimate)', true),
+	// derived from the two above, never typed in (./genesis.js computes the engine's chipKwh the same way)
+	kwhPerChip: n((CHIP_EUR / MWH_EUR) * 1000, 'kWh of exported electricity per accelerator (derived: eurPerChip ÷ eurPerMwh)', 'eurPerChip ÷ eurPerMwh (derived)', true),
 	lineKw: n(1000, 'kW export line', 'a medium-voltage line from the hex to the grid (estimate)', true),
 	spare: n(2, 'accelerators in each COMPUTE COOP’s store at genesis', 'a spare or two per hall (estimate)', true)
 };

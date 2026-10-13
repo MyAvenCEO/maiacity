@@ -814,7 +814,8 @@ export const EXPERIMENTS = {
 		charts: ['energy a person next to each decile’s living standard', 'where the energy goes', 'how far recipes have come toward their physical best'],
 		metrics: [
 			{ id: 'ePP', label: 'electricity used a person a day (kWh), last year', of: (w) => meanOf(w, 'ePP', ...lastYear(w)) },
-			{ id: 'surplusPP', label: 'surplus energy a person a day (kWh), last year', of: (w) => meanOf(w, 'surplusPP', ...lastYear(w)) },
+			{ id: 'surplusPP', label: 'surplus energy (R&D, storage, curtailed) a person a day (kWh), last year', of: (w) => meanOf(w, 'surplusPP', ...lastYear(w)) },
+			{ id: 'exportPP', label: 'electricity exported for accelerators a person a day (kWh), last year', of: (w) => meanOf(w, 'exportPP', ...lastYear(w)) },
 			{ id: 'rdMwh', label: 'R&D energy, all years (MWh)', of: (w) => sumOf(w, 'rdKwh', 0) / 1000 },
 			{ id: 'learn', label: 'how far recipes have come toward their physical best', of: (w) => learnProgress(w) },
 			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) },
@@ -830,8 +831,8 @@ export const EXPERIMENTS = {
 		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
-				`With geothermal and R&D, a person used ${f2(b.ePP)} kWh a day, and ${f2(b.surplusPP)} kWh of surplus fed R&D (recipes ${pct(b.learn)} of the way to their physical best). ` +
-				`Without, ${f2(c.ePP)} kWh and ${pct(c.learn)}. ` +
+				`With geothermal and R&D, a person used ${f2(b.ePP)} kWh a day in the last year, ${f2(b.exportPP)} kWh were exported for accelerators and ${f2(b.surplusPP)} kWh were surplus (R&D, storage, curtailed); R&D took ${f0(b.rdMwh)} MWh over the run (recipes ${pct(b.learn)} of the way to their physical best). ` +
+				`Without, ${f2(c.ePP)} kWh used, ${f2(c.exportPP)} exported, and ${pct(c.learn)}. ` +
 				`The poorest decile went from ${f2(b.Lpoor2)} to ${f2(b.Lpoor)} with surplus energy, and from ${f2(c.Lpoor2)} to ${f2(c.Lpoor)} without. ` +
 				`Person-days short: ${f0(b.shortPD)} vs ${f0(c.shortPD)}.`
 			);
@@ -1231,6 +1232,8 @@ export function summarize(w) {
 	return {
 		label: w.cfg.label,
 		seed: w.cfg.seed,
+		// the border setting the world ran with (the base world's: ./genesis.js DEFAULTS with any --set)
+		chipImport: w.cfg.chipImport !== false,
 		days: n,
 		N: w.N,
 		N0: w.cfg.people,
@@ -1244,6 +1247,9 @@ export function summarize(w) {
 		Lceil: meanOf(w, 'Lceil', ...ly),
 		poorA: meanOf(w, 'decA', ...ly, 0),
 		poorH: meanOf(w, 'decH', ...ly, 0),
+		// the owner-only cohort's living standard: its first five years and its last year (B34)
+		ownerL5: meanOf(w, 'ownerL', 1, Math.min(n, 5 * Y)),
+		ownerLLast: meanOf(w, 'ownerL', ...ly),
 		consLast: Object.fromEntries(CONSUMER.map((g) => [GOOD_IDS[g], meanOf(w, 'cons', ...ly, g)])),
 		consRun: Object.fromEntries(CONSUMER.map((g) => [GOOD_IDS[g], meanOf(w, 'cons', 1, n, g)])),
 		priceRun: Object.fromEntries(CONSUMER.map((g) => [GOOD_IDS[g], meanOf(w, 'pbar', 1, n, g)])),
@@ -1265,6 +1271,8 @@ export function summarize(w) {
 			for (let d = 0; d < rec.n; d++) s += (rec.exportPP?.[d] ?? 0) * (rec.N?.[d] ?? w.N);
 			return s / 1000;
 		})(),
+		// accelerators the euro reserve bought over the run (B23)
+		chipsIn: w.events.reduce((s, e) => s + (e.kind === 'chips' ? e.n : 0), 0),
 		receiverships: w.events.filter((e) => e.kind === 'receivership').map((e) => ({ day: e.day, coop: e.coop, heir: e.heir, why: e.why })),
 		founded: w.events.filter((e) => e.kind === 'found').length,
 		newcomers: { pd: xt.newcomerPD, short: xt.newcomerShortPD, ...newcomerStrict(w, xt.newStrict) },

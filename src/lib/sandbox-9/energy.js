@@ -8,7 +8,8 @@
  * condenser heat (30–40 °C) warms the hot spring; without it, heat pumps make heat from electricity (COP 3).
  *
  * The dispatch serves electricity in a fixed order (world model 4.3): basics (people's basic need, food, water, the
- * domes), running (the works, people's extra use, upkeep), building, R&D, storage; what is left is curtailed. Only
+ * domes), running (the works, people's extra use, upkeep), building, the border's export for accelerators (what
+ * replaces worn ones, then what a project needs), R&D, storage; what is left is curtailed. Only
  * what reaches R&D is "surplus energy", the only thing innovation runs on. The two energy COOPs share what is sold by
  * the buyers' logit on their prices, each capped by what it harvested.
  */
@@ -146,10 +147,13 @@ export function shockFactor(w, co) {
  * `basicsB` the part of the basics class that is the domes' climate (the rest of the basics, served first, is water
  * pumping, each person's basic power and food processing; the heat pumps for the domes' heat join the second part).
  * Heat comes from the geothermal plant first; the rest is made by heat pumps (this month's COP), which ask for
- * electricity in the class of what they heat. Returns the share served of each class; the basics' two parts are in
- * today.fillA and today.fillB.
+ * electricity in the class of what they heat. `exportAsk` holds the electricity the border line asks for accelerators
+ * (paper §11.4): it is served after the building class (the city's own energy plants, basics and every other project
+ * come first) and before R&D: `up`, what replaces worn accelerators, then `build`, what a project needs. It is not the
+ * city's own use. Returns the share served of each class; the basics' two parts are in today.fillA and today.fillB,
+ * the export's two parts in today.fillExportUp and today.fillExportBuild.
  */
-export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = 0) {
+export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = null) {
 	const t = w.today, h = t.harvest, c = w.c;
 	const cop = t.cop ?? c.cop;
 	// heat: direct geothermal heat for the domes and the growing dome, condenser heat for the spring
@@ -175,7 +179,9 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = 0) {
 	}
 	h.battery = battOut;
 	const fill = new Float64Array(5);
-	let left = supply;
+	let left = supply, exp = 0;
+	const exUp = Math.max(0, exportAsk?.up ?? 0), exBuild = Math.max(0, exportAsk?.build ?? 0);
+	t.fillExportUp = t.fillExportBuild = 1;
 	for (const cl of [CLASS.basics, CLASS.running, CLASS.building, CLASS.rd]) {
 		const r = req[cl];
 		const served = Math.min(r, left);
@@ -190,6 +196,17 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = 0) {
 			t.fillA = A > 0 ? sA / A : 1;
 			t.fillB = B > 0 ? Math.max(0, served - sA) / B : 1;
 		}
+		if (cl === CLASS.building) {
+			// the border's export for accelerators: after the city's own building (its energy plants, its basics, every
+			// project), before R&D. What replaces worn accelerators first, then what a project needs
+			const x = Math.min(exUp, left);
+			t.fillExportUp = exUp > 0 ? x / exUp : 1;
+			left -= x;
+			const y = Math.min(exBuild, left);
+			t.fillExportBuild = exBuild > 0 ? y / exBuild : 1;
+			left -= y;
+			exp = x + y;
+		}
 	}
 	// storage: the battery takes what is left of the solar harvest
 	let charge = 0;
@@ -202,19 +219,18 @@ export function dispatch(w, req, heatReq, basicsB = 0, exportAsk = 0) {
 	t.use[CLASS.storage] = charge;
 	t.battIn = charge;
 	t.battLoss = charge * (1 - c.battRT);
-	// the border (setting chipImport, scenario B23): the export line takes only what is left after R&D and storage,
-	// electricity that would otherwise be curtailed; it is never energy the city uses
-	const exp = Math.min(left, Math.max(0, exportAsk));
+	// the border (setting chipImport): what the line exported for accelerators, served after building above; it is
+	// electricity the energy COOPs sold, never energy the city used
 	t.exportKwh = exp;
-	t.exportAsk = exportAsk;
-	t.fillExport = exportAsk > 0 ? exp / exportAsk : 1;
-	left -= exp;
+	t.exportAsk = exUp + exBuild;
 	t.curtailed = left;
 	fill[CLASS.storage] = 1;
 	// who sold it: the buyers' logit on price, each seller capped by what it has (the battery is the solar COOP's)
 	const sold = supply - left - charge; // (the export included: it is electricity the energy COOPs sell)
 	splitSellers(w, sold, battOut, battery);
-	t.surplusKwh = t.use[CLASS.rd] + charge + exp + left;
+	// surplus energy: what was left after basics, running (with upkeep), building and the export, for R&D, storage or
+	// curtailment
+	t.surplusKwh = t.use[CLASS.rd] + charge + left;
 	return fill;
 }
 

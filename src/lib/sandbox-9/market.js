@@ -200,8 +200,11 @@ export function peopleOrders(w) {
 		// rest of what flows in (dividends, Aven pay) as ownership, and spends the rest of what flows in (averages over
 		// cfg.inflowDays) above the basics; what it holds above the resting level of what it keeps (kept ÷ melt) it also
 		// spends, a share (cfg.spendRate) a day. Keeping a share of every inflow makes holdings follow what a person
-		// earns, and Law 5 pays pro rata: ownership is how people live
-		const kept = cfg.keep * w.heartsEma[i] + (cfg.keepOther ?? 0) * Math.max(0, w.inflowEma[i] - w.heartsEma[i]);
+		// earns, and Law 5 pays pro rata: ownership is how people live. An Aven whose person delivers nothing (Aven
+		// output 0, whoever it is: the owner-only cohort, an owner-only newcomer) keeps a larger share of the HEARTS half
+		// (cfg.ownerKeep): the dividends are the only income it can grow, so it builds the holding that pays its
+		// person's life. It reads what it sees (its own output), never the proof's cohort list
+		const kept = (w.aven[i] > 0 ? cfg.keep : cfg.ownerKeep ?? cfg.keep) * w.heartsEma[i] + (cfg.keepOther ?? 0) * Math.max(0, w.inflowEma[i] - w.heartsEma[i]);
 		const rest = kept / meltDay;
 		const Wv = Math.min(W, Ws);
 		let E = Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));

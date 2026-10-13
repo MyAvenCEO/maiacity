@@ -133,7 +133,11 @@ export function assemble(results, meta = {}) {
 			title: 'No one has to work (strict)',
 			claim: 'The owner-only people (5 %, no Aven output, nothing held at the start) live on their Law 5 dividends alone, every day from day 120 at the latest.',
 			pass: all(bases, (b) => b.P2.strict.pass),
-			evidence: bases.map((b) => [b.P2.strict.from > 0 ? `${seed(b)}: dividends alone pay every owner-only person’s basics every day from day ${b.P2.strict.from} (target ${b.P2.strict.target}); ${b.P2.cohort} people in the cohort.` : `${seed(b)}: dividends alone never paid every owner-only person’s basics every day to the end (target: from day ${b.P2.strict.target}); ${b.P2.cohort} people in the cohort.`, b.P2.strict.pass])
+			evidence: bases
+				.map((b) => [b.P2.strict.from > 0 ? `${seed(b)}: dividends alone pay every owner-only person’s basics every day from day ${b.P2.strict.from} (target ${b.P2.strict.target}); ${b.P2.cohort} people in the cohort.` : `${seed(b)}: dividends alone never paid every owner-only person’s basics every day to the end (target: from day ${b.P2.strict.target}); ${b.P2.cohort} people in the cohort.`, b.P2.strict.pass])
+				// what the owner-only cohort keeps decides it, and what it costs them (./scenarios.js B34: a comparison of two
+				// rules with no verdict of its own, shown for what it measures)
+				.concat(fromSuite(['B34']).map((s) => [`Proof suite ${s.id} (a comparison, no verdict): ${s.takeaway}`, true]))
 		},
 		{
 			id: 'P2n',
@@ -152,7 +156,10 @@ export function assemble(results, meta = {}) {
 					`${seed(b)}: ${20 - b.P3.failed.length}/20 tenths pass${b.P3.failed.length ? ` (failing: ${b.P3.failed.length === 20 ? 'all' : b.P3.failed.join(', ')})` : ''}; worst fall ${pc(b.P3.worst.fall, 1)}${b.P3.worst.by ? ` (${b.P3.worst.by} tenth ${b.P3.worst.decile})` : ''}; poorest tenth by holdings ${f(b.P3.bottom?.first, 1)} → ${f(b.P3.bottom?.last, 1)}; Aven services are ${pc(b.P3.computeShare?.all, 0)} of the index in the last year, and without them ${b.P3.withoutCompute?.pass ? 'every tenth passes' : `${b.P3.withoutCompute?.failed} tenths fail`}; ${b.P3.coops.receiverships.length} receiverships, ${b.P3.coops.receiverships.reduce((a, r) => a + r.short, 0)} basic person-days short around them.`,
 					b.P3.pass
 				]
-			).concat(fromSuite(['S00', 'S03']).map((s) => [`Proof suite ${s.id}: ${s.pass ? 'pass' : 'FAIL'}. ${s.takeaway}`, s.pass]))
+			)
+				.concat(fromSuite(['S00', 'S03']).map((s) => [`Proof suite ${s.id}: ${s.pass ? 'pass' : 'FAIL'}. ${s.takeaway}`, s.pass]))
+				// B23 for its P3 verdicts in each world (open, closed, accelerators 3× dearer), never as a pass of P3
+				.concat(fromSuite(['B23']).map((s) => [`Proof suite ${s.id}, P3 in each world: ${(s.numbers?.rows ?? []).map((r) => `${r.label} ${r.P3 ? 'holds' : 'fails'} (mean living standard ${f(r.Lmean, 2)} in the last year)`).join('; ')}.`, (s.numbers?.rows ?? []).every((r) => r.P3)]))
 		},
 		{
 			id: 'AB',

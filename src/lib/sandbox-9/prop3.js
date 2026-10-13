@@ -326,7 +326,7 @@ export function bindingSummary(w, periods) {
 
 /** energy per person (own use, kWh a day) against the living standard, per decile, by year */
 export function energyByDecile(w) {
-	const rec = w.rec, n = rec.n, out = { holdings: [], aven: [], ePP: [], surplusPP: [] };
+	const rec = w.rec, n = rec.n, out = { holdings: [], aven: [], ePP: [], surplusPP: [], exportPP: [] };
 	for (let y = 0; y * YEAR < n; y++) {
 		const a = y * YEAR, b = Math.min(n, (y + 1) * YEAR);
 		const row = (keyL, keyE) =>
@@ -340,10 +340,11 @@ export function energyByDecile(w) {
 			});
 		out.holdings.push(row('decH', 'decHE'));
 		out.aven.push(row('decA', 'decAE'));
-		let ep = 0, sp = 0;
-		for (let d = a; d < b; d++) (ep += rec.ePP[d]), (sp += rec.surplusPP[d]);
+		let ep = 0, sp = 0, xp = 0;
+		for (let d = a; d < b; d++) (ep += rec.ePP[d]), (sp += rec.surplusPP[d]), (xp += rec.exportPP?.[d] ?? 0);
 		out.ePP.push(ep / (b - a));
 		out.surplusPP.push(sp / (b - a));
+		out.exportPP.push(xp / (b - a));
 	}
 	return out;
 }

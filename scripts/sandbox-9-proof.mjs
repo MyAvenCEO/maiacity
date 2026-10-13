@@ -34,6 +34,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const LIB = join(ROOT, 'src', 'lib', 'sandbox-9');
 const BASE_KEYS_SEEDS = [20261012, 1, 2, 3, 4];
+/** experiments judged on every base seed (the seeds fixed above, before any verdict) */
+const ENSEMBLE = ['X9'];
 
 // ── a worker runs one job ────────────────────────────────────────────────────────────────────────────────────────
 if (!isMainThread) {
@@ -56,7 +58,7 @@ if (!isMainThread) {
 		if (job.detail) out.detail = { p: prop3(w), day0, defaults: DEFAULTS, N: w.N, owners: w.ownerIds.length };
 		parentPort.postMessage(out);
 	} else {
-		const r = runExperiment(EXPERIMENTS[job.id], { config: job.set });
+		const r = runExperiment(EXPERIMENTS[job.id], { config: job.set, seed: job.set?.seed });
 		const slim = (x) => ({ label: x.label, values: x.values, prop3: { pass: x.prop3.pass, P1: { pass: x.prop3.P1.pass, personDaysShortAny: x.prop3.P1.personDaysShortAny }, P2: { pass: x.prop3.P2.pass, strictFrom: x.prop3.P2.strict.holdsEveryDayFrom, normal: x.prop3.P2.normal.pass }, P3: { pass: x.prop3.P3.pass, failed: x.prop3.P3.failed }, abundance: { pass: x.prop3.abundance.pass, mindBindsBasics: x.prop3.abundance.mindBindsBasics } } });
 		parentPort.postMessage({ job, ms: r.ms, r: { ...r, base: slim(r.base), changed: slim(r.changed) } });
 	}
@@ -98,7 +100,12 @@ async function main() {
 		...expIds.map((id) => {
 			const e = EXPERIMENTS[id];
 			return { kind: 'exp', id, set, cost: 2 * e.years * Math.pow(e.people ?? 250, 0.3) };
-		})
+		}),
+		// X9 (doubling HEARTS) is judged on the five base seeds, chosen before any verdict: its goods market is thin, and
+		// one seed's change can land on either side of the 1 % mark by chance
+		...expIds
+			.filter((id) => ENSEMBLE.includes(id))
+			.flatMap((id) => BASE_KEYS_SEEDS.filter((sd) => sd !== (set.seed ?? BASE_KEYS_SEEDS[0])).map((sd) => ({ kind: 'exp', id, set: { ...set, seed: sd }, ens: sd, cost: 2 * EXPERIMENTS[id].years * Math.pow(EXPERIMENTS[id].people ?? 250, 0.3) })))
 	].sort((a, b) => b.cost - a.cost);
 	const par = Math.max(1, Math.min(jobs.length, cpus().length));
 	process.stderr.write(`${jobs.length} jobs (${specs.length} scenario worlds, ${expIds.length} experiments) on ${par} threads\n`);
@@ -110,12 +117,21 @@ async function main() {
 		R[m.job.spec.key] = { ...m.s, ms: m.ms };
 		if (m.detail) detail[m.s.seed] = { ...m.detail, s: m.s, ms: m.ms };
 	}
-	const exps = expIds.map((id) => results.find((x) => x.job.kind === 'exp' && x.job.id === id));
+	const exps = expIds.map((id) => results.find((x) => x.job.kind === 'exp' && x.job.id === id && !x.job.ens));
+	// an experiment judged on an ensemble of seeds passes only when it passes on every seed (the mark of each run is
+	// unchanged)
+	for (const e of exps) {
+		if (!ENSEMBLE.includes(e.r.id)) continue;
+		const more = results.filter((x) => x.job.kind === 'exp' && x.job.id === e.r.id && x.job.ens).sort((a, b) => BASE_KEYS_SEEDS.indexOf(a.job.ens) - BASE_KEYS_SEEDS.indexOf(b.job.ens));
+		e.r.ens = [{ seed: e.r.seed, pass: !!e.r.verdict.pass, evidence: e.r.verdict.evidence }, ...more.map((x) => ({ seed: x.job.ens, pass: !!x.r.verdict.pass, evidence: x.r.verdict.evidence }))];
+		const k = e.r.ens.filter((x) => x.pass).length;
+		e.r.verdict = { ...e.r.verdict, pass: k === e.r.ens.length, evidence: `on ${k} of ${e.r.ens.length} seeds (${e.r.ens.map((x) => `seed ${x.seed} ${x.pass ? 'pass' : 'FAIL'}: ${x.evidence.split(';')[0]}`).join('; ')}). Seed ${e.r.seed} in full: ${e.r.verdict.evidence}` };
+	}
 	const scen = scenIds.map((id) => {
 		const s = SCENARIOS.find((x) => x.id === id);
 		const v = judge(id, R);
 		const ms = s.runs.reduce((a, r) => a + (R[r.key]?.ms ?? 0), 0);
-		return { id, name: s.name, paper: s.paper, stress: s.stress, claim: s.claim, runs: s.runs.map((r) => ({ label: r.label, years: r.years, people: r.config.people, ms: R[r.key]?.ms })), ms, ...v };
+		return { id, name: s.name, paper: s.paper, stress: s.stress, claim: s.claim, runs: s.runs.map((r) => ({ label: R[r.key] ? r.label.replace('seed 20261012', `seed ${R[r.key].seed}`) : r.label, years: r.years, people: r.config.people, ms: R[r.key]?.ms })), ms, ...v };
 	});
 	const bases = BASE_KEYS_SEEDS.filter((sd) => detail[sd]).map((sd) => ({ seed: sd, ...detail[sd] }));
 	const now = new Date().toISOString();
@@ -179,7 +195,8 @@ function runAll(jobs, par) {
 // ── formatting ───────────────────────────────────────────────────────────────────────────────────────────────────
 const f = (x, d = 2) => (x == null ? '–' : typeof x === 'number' ? (Number.isFinite(x) ? x.toFixed(d) : String(x)) : String(x));
 const pc = (x, d = 1) => (Number.isFinite(x) ? `${(100 * x).toFixed(d)} %` : String(x));
-const yes = (b) => (b ? 'PASS' : 'FAIL');
+// (a scenario that only compares two rules has no verdict: pass is null)
+const yes = (b) => (b == null ? 'comparison' : b ? 'PASS' : 'FAIL');
 const cellOf = (x) => (typeof x === 'number' ? (Number.isInteger(x) ? x.toLocaleString('en-US') : Math.abs(x) >= 100 ? x.toFixed(0) : Math.abs(x) >= 0.01 || x === 0 ? x.toFixed(3) : x.toExponential(2)) : x == null ? '–' : String(x));
 
 function printTable(exps, scen, wall) {
@@ -195,7 +212,7 @@ function headline(exps, scen, bases) {
 	const S = (id) => scen.find((s) => s.id === id);
 	const allB = (fn) => bases.length > 0 && bases.every(fn);
 	const rows = [];
-	const fails = (list) => list.filter((x) => x && !x.pass).map((x) => x.id);
+	const fails = (list) => list.filter((x) => x && x.pass === false).map((x) => x.id);
 	const failE = (list) => list.map(E).filter((x) => x && !x.verdict.pass).map((x) => x.id);
 	rows.push({
 		part: 'P1 — no one starves',
@@ -225,7 +242,7 @@ function headline(exps, scen, bases) {
 	rows.push({
 		part: 'Abundance limited only by physics',
 		holds: allB((b) => b.p.abundance.pass) && [E('X9'), E('AB1'), E('X11')].every((x) => !x || x.verdict.pass) && [S('B14'), S('B28'), S('B29')].every((x) => !x || x.pass),
-		base: 'MIND bound a basic on ' + bases.map((b) => b.p.abundance.mindBindsBasics).join(', ') + ' day-goods (a day and a basic); ' + [['X9', E('X9')?.verdict], ['AB1', E('AB1')?.verdict], ['X11', E('X11')?.verdict], ['B14', S('B14')], ['B28', S('B28')], ['B29', S('B29')]].map(([id, v]) => `${id} ${v ? yes(v.pass) : '–'}`).join(', '),
+		base: 'MIND bound a basic on ' + bases.map((b) => b.p.abundance.mindBindsBasics).join(', ') + ' day-goods (a day and a basic); ' + [['X9' + (E('X9')?.ens ? ` (${E('X9').ens.filter((x) => x.pass).length} of ${E('X9').ens.length} seeds)` : ''), E('X9')?.verdict], ['AB1', E('AB1')?.verdict], ['X11', E('X11')?.verdict], ['B14', S('B14')], ['B28', S('B28')], ['B29', S('B29')]].map(([id, v]) => `${id} ${v ? yes(v.pass) : '–'}`).join(', '),
 		breaks: [...failE(['X9', 'X11', 'AB1']), ...fails(['B14', 'B28', 'B29'].map(S))]
 	});
 	return rows;
@@ -233,17 +250,19 @@ function headline(exps, scen, bases) {
 
 function report(exps, scen, bases, notCovered, meta) {
 	const L = [];
-	const nPass = exps.filter((e) => e.r.verdict.pass).length + scen.filter((s) => s.pass).length;
+	const nPass = exps.filter((e) => e.r.verdict.pass).length + scen.filter((s) => s.pass === true).length;
+	const nCmp = scen.filter((s) => s.pass == null).length;
 	L.push('# Sandbox 8 — the proof of Proposition 3', '');
 	L.push(`Run ${meta.now.slice(0, 16).replace('T', ' ')} UTC by \`node scripts/sandbox-9-proof.mjs${meta.quick ? ' --quick' : ''}${meta.only ? ' --only ' + meta.only.join(',') : ''}\`. Engine: \`src/lib/sandbox-9/\` (hash ${meta.hash}). Wall time ${(meta.wall / 1000).toFixed(0)} s on ${meta.threads} threads (${(meta.totalCpu / 1000).toFixed(0)} s of runs). Every number below comes from the run.`, '');
 	if (meta.quick) L.push('**Quick run:** every scenario world was cut to at most 10 years. Verdicts below that need longer worlds read short ones; this is a smoke test, not the proof.', '');
 	if (Object.keys(meta.set).length) L.push(`**Settings changed from the defaults in every world:** \`${JSON.stringify(meta.set)}\`.`, '');
-	L.push(`${exps.length} experiments and ${scen.length} scenarios ran. ${nPass} pass and ${exps.length + scen.length - nPass} fail.`, '');
+	L.push(`${exps.length} experiments and ${scen.length} scenarios ran. ${nPass} pass and ${exps.length + scen.length - nPass - nCmp} fail${nCmp ? `; ${nCmp} only compare two rules and have no verdict (${scen.filter((s) => s.pass == null).map((s) => s.id).join(', ')})` : ''}.`, '');
 
 	// headline
 	if (bases.length) {
 		L.push('## Headline: does Proposition 3 hold?', '');
 		L.push(`The base world: ${bases[0].N} people, ${Math.round(bases[0].s.days / 365)} years, seeds ${bases.map((b) => b.seed).join(', ')}. Each part is checked per person, every day. The strict test starts from a cold start, where everyone holds nothing; A07 tests owner-only newcomers who join a settled city.`, '');
+		L.push(borderLine(bases[0], scen), '');
 		L.push('| part | base world, every seed | what it shows | where it breaks |', '|---|---|---|---|');
 		for (const r of headline(exps, scen, bases)) L.push(`| ${r.part} | **${r.holds ? 'holds' : 'fails'}** | ${r.base} | ${r.breaks.length ? r.breaks.join(', ') : 'nowhere in this suite'} |`);
 		L.push('');
@@ -291,7 +310,7 @@ function report(exps, scen, bases, notCovered, meta) {
 	}
 
 	// what fails and why
-	const failing = [...exps.filter((e) => !e.r.verdict.pass).map((e) => [e.r.id, e.r.verdict.evidence]), ...scen.filter((s) => !s.pass).map((s) => [s.id, s.evidence])];
+	const failing = [...exps.filter((e) => !e.r.verdict.pass).map((e) => [e.r.id, e.r.verdict.evidence]), ...scen.filter((s) => s.pass === false).map((s) => [s.id, s.evidence])];
 	if (failing.length) {
 		L.push('## What fails', '');
 		L.push('Each item fails in this run; the line under it is the run’s own evidence (scenario evidence names the short good, its binding limit and the parts that fail, computed from the worlds). No cause or fix is typed in here: a note written by hand can outlive the run it was true of.', '');
@@ -308,6 +327,18 @@ function report(exps, scen, bases, notCovered, meta) {
 
 	if (bases.length) baseEvidence(L, bases, exps, meta);
 	return L.join('\n');
+}
+/** the base world's border setting, as the run had it, and why (the other setting is B23's counter-case) */
+function borderLine(b0, scen) {
+	// the base run's own setting: the defaults with what --set changed, as the world ran it
+	const open = b0.s.chipImport !== false;
+	const b23 = scen.find((s) => s.id === 'B23');
+	const rows = b23?.numbers?.rows ?? [];
+	const lm = (r) => `a mean living standard of ${r.Lmean.toFixed(2)} in the last year (P3 ${yes(r.P3)})`;
+	const nums = rows.length >= 3 ? ` In B23 (seed ${rows[0].seed}, ${rows[0].years} years) the ${open ? 'open base' : 'closed base'} had ${rows[0].computeRun.toFixed(2)} h of Aven services a person a day over the run (${rows[0].computeLast.toFixed(2)} in the last year) and ${lm(rows[0])}; the ${open ? 'closed' : 'open'} city ${rows[1].computeRun.toFixed(2)} h (${rows[1].computeLast.toFixed(2)}) and ${lm(rows[1])}; with accelerators three times dearer from year 10, ${rows[2].computeRun.toFixed(2)} h (${rows[2].computeLast.toFixed(2)}) and ${lm(rows[2])}. Aven services are most of the living-standard index, so the base city’s living standard depends on the import price of accelerators.` : '';
+	return open
+		? `**The border (base setting: open for accelerators only).** A hex cannot make accelerators: a chip fab costs billions of euros and hundreds of megawatts, and no real town has one, so the base city buys them from outside, as a real city does. It does so only as COOPs trading through the euro reserve (paper §11.4): a COMPUTE COOP buys electricity from the energy COOPs (a real sale in MIND, with Law 5), the line exports it, the euros go into that COOP’s own account in the reserve, and the reserve buys accelerators with them. The export is served after the city’s own building class and before R&D, so it never takes electricity from the city’s basics, works or building. No person redeems MIND, no MIND is made from euros, and nothing else crosses the border. The closed city is B23's counter-case.${nums}`
+		: `**The border (base setting: closed).** The base city neither imports nor exports; the open border for accelerators (paper §11.4) is B23's alternative.${nums}`;
 }
 const p3s = (p) => `P1 ${yes(p.P1.pass)}, P2 ${yes(p.P2.pass)}, P3 ${yes(p.P3.pass)}, MIND never binds a basic ${yes(p.abundance.pass)}`;
 
@@ -360,12 +391,12 @@ function baseEvidence(L, bases, exps, meta) {
 	for (const l of b0.p.limits) L.push(`| ${l.good} | ${l.periods.map((p) => p.shares.slice(0, 3).map((s) => `${s.limit} ${pc(s.share, 0)}`).join(', ')).join(' | ')} | ${f(l.periods[l.periods.length - 1].ceilingPerPerson, 4)} |`);
 	L.push('');
 	L.push('### Energy a person against living standard, by decile (seed 20261012)', '');
-	L.push('Each cell: living standard / the person’s own electricity use (kWh a day), yearly mean. Then all electricity used and the surplus (R&D, storage, curtailed), a person a day.', '');
+	L.push('Each cell: living standard / the person’s own electricity use (kWh a day), yearly mean. Then all electricity the city used (basics, running, building, R&D), what the line exported for accelerators (not the city’s use; it is served after building and before R&D), and the surplus (R&D, storage, curtailed), a person a day.', '');
 	const E = b0.p.energy;
-	L.push('| year | H1 | H3 | H5 | H7 | H10 | A1 | A5 | A10 | all kWh/p/d | surplus kWh/p/d |', '|---|---|---|---|---|---|---|---|---|---|---|');
+	L.push('| year | H1 | H3 | H5 | H7 | H10 | A1 | A5 | A10 | used kWh/p/d | exported kWh/p/d | surplus kWh/p/d |', '|---|---|---|---|---|---|---|---|---|---|---|---|');
 	for (let y = 0; y < E.ePP.length; y += y < 5 ? 1 : 5) {
 		const c = (row, x) => `${f(row[x].living, 1)} / ${f(row[x].kwh, 1)}`;
-		L.push(`| ${y + 1} | ${c(E.holdings[y], 0)} | ${c(E.holdings[y], 2)} | ${c(E.holdings[y], 4)} | ${c(E.holdings[y], 6)} | ${c(E.holdings[y], 9)} | ${c(E.aven[y], 0)} | ${c(E.aven[y], 4)} | ${c(E.aven[y], 9)} | ${f(E.ePP[y], 1)} | ${f(E.surplusPP[y], 1)} |`);
+		L.push(`| ${y + 1} | ${c(E.holdings[y], 0)} | ${c(E.holdings[y], 2)} | ${c(E.holdings[y], 4)} | ${c(E.holdings[y], 6)} | ${c(E.holdings[y], 9)} | ${c(E.aven[y], 0)} | ${c(E.aven[y], 4)} | ${c(E.aven[y], 9)} | ${f(E.ePP[y], 1)} | ${f(E.exportPP?.[y], 1)} | ${f(E.surplusPP[y], 1)} |`);
 	}
 	L.push('');
 	L.push('### The two ledgers', '');

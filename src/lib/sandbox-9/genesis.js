@@ -31,10 +31,13 @@ export const DEFAULTS = {
 	forestYield: 1,
 	/** each month's sun and rain drawn from the seed around the normals (true), or the normals every year (false) */
 	weather: true,
-	/** the euro border (world model call 12: closed in the proofs; only scenario B23 opens it): accelerators come in
-	 * through the border for exported electricity that would otherwise be curtailed (true), or the city is strictly
-	 * closed and the accelerators it holds are all it has (false, default) */
-	chipImport: false,
+	/** the euro border for accelerators (paper §11.4, as COOPs only): a COMPUTE COOP buys electricity from the energy
+	 * COOPs, the line exports it, its euros go into its own account in the euro reserve and the reserve buys accelerators (true,
+	 * default: no hex can make chips, as no real town can, so a city buys them); or the city is strictly closed and the
+	 * accelerators it holds at genesis are all it ever has (false: scenario B23's closed city). World model call 12 had
+	 * the closed city as the default; it cannot keep a stock it cannot replace, so the base world opens the border for
+	 * accelerators and nothing else */
+	chipImport: true,
 	/** this hex's share of the village geothermal plant: on or off, and its stages */
 	geothermal: true,
 	geoStages: 1,
@@ -99,6 +102,12 @@ export const DEFAULTS = {
 	spendRate: 1 / 365,
 	/** the share of its person's HEARTS half an Aven keeps as ownership (it spends the rest of what flows in) */
 	keep: 0.5,
+	/** the share of its person's HEARTS half an owner-only person's Aven keeps (its person delivers nothing, so the
+	 * dividends are the only income it can grow: it keeps the whole HEARTS half and spends three quarters of the
+	 * dividends, as every Aven spends of its other inflow). With the share every other Aven keeps (0.5) the holding
+	 * stays too small for the dividends alone to pay the basic bundle (Proposition 3, P2 strict); the cost is a lower
+	 * living standard for the cohort in its first decades (./scenarios.js B34 compares the two) */
+	ownerKeep: 1,
 	/** the share of its person's other inflow (dividends, Aven pay) it also keeps */
 	keepOther: 0.25,
 	/** the Aven budgets on the average of what flowed in over this many days (a year: the seasons and the first
@@ -230,7 +239,9 @@ function constants(cfg) {
 		sandTPit: R.sand.tPerPit.v,
 		sandMax: R.sand.pitsMax.v * s,
 		springHeat: R.spring.heatKwhPerHour.v,
-		chipKwh: CHIPS.kwhPerChip.v,
+		chipKwh: (CHIPS.eurPerChip.v / CHIPS.eurPerMwh.v) * 1000,
+		chipEur: CHIPS.eurPerChip.v,
+		eurPerKwh: CHIPS.eurPerMwh.v / 1000,
 		lineKwhDay: CHIPS.lineKw.v * 24,
 		chipsSpare: CHIPS.spare.v,
 		standingKwhT: (STANDING_MWH_T.v * 1000) / 365,
@@ -269,7 +280,7 @@ export function newCoop(w, k, id, good, day) {
 		heartsEma: 0, heartsToday: 0, outBaseEma: 0, salesR: 0, salesREma: 0, costR: 0, costREma: 0, divR: 0,
 		project: null, plannedR: 0, rdBudgetR: 0, rdKwhToday: 0, rdKwhWeek: 0,
 		lowDays: 0, idleDays: 0, auditLow: 0, ratedDay: 0, unpaidH: 0, limiter: LIMIT.none, landWant: 0,
-		related: -1, chips: 0, chipKwh: 0, exportReq: 0, primerUp: 0, salesShareR: 0, unpaidBillR: 0, payoutToday: 0, runToday: 0, heatRun: 0, priceR: p0
+		related: -1, chips: 0, exportUp: 0, exportBuild: 0, primerUp: 0, salesShareR: 0, unpaidBillR: 0, payoutToday: 0, runToday: 0, heatRun: 0, priceR: p0
 	};
 }
 
