@@ -12,7 +12,7 @@
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
-	import { RENTED, COOPS, DAY_MS, act, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, COOPS, DAY_MS, act, newGame, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
@@ -158,19 +158,22 @@
 
 	const doMove = (action) => (demo ? demoMove(action) : run(() => sendMove(seat, action)));
 
-	// a test run of the second player's journey while that seat is free (Samuel 2026-10-13): the story plays for seat B
-	// on a copy of the game in this browser, its moves made here and never sent; ending it brings the real game back
+	// a test run of a seat's whole journey (Samuel 2026-10-13: "Play intro A / B"): the story plays from its first
+	// shot for that seat on a fresh game in this browser, the first player already in when it is B's; its moves are made
+	// here and never sent, and ending it brings the real game back
 	let demo = $state(false);
 	let realGame = null;
-	function startDemo() {
-		realGame = game;
-		const g = structuredClone(game);
-		g.players.B.founder = me;
-		g.players.B.name = 'Player B';
+	function startDemo(s = 'B') {
+		if (playing) skipShot();
+		if (!demo) realGame = game;
+		const g = newGame(now - 60e3);
+		g.players.A.founder = s === 'A' ? me : 'demo';
+		g.players.A.name = realGame.players.A.name;
+		if (s === 'B') (g.players.B.founder = me), (g.players.B.name = realGame.players.B.founder ? realGame.players.B.name : 'Player B');
 		game = g;
-		seen = { ...seen, B: {} };
+		seen = { ...seen, [s]: {} };
 		told = {};
-		seat = 'B';
+		seat = s;
 		panel = null;
 		demo = true;
 	}
@@ -186,7 +189,6 @@
 		skipShot();
 		demo = false;
 		game = realGame;
-		try { seen = { ...seen, B: JSON.parse(localStorage.getItem(storyKey('B')) ?? '{}') }; } catch {}
 		seat = mySeat ?? 'A';
 		refresh();
 	}
@@ -349,7 +351,8 @@
 
 <div class="v1" class:cinema={!!playing}>
 	<canvas class="stage" bind:this={canvas}></canvas>
-	{#if demo}<div class="demo panel" role="status">Test run · {view?.players.B.name}’s journey, nothing is saved <button class="link" onclick={endDemo}>End</button></div>{/if}
+	{#if demo}<div class="demo panel" role="status">Test run · {view?.players[seat].name}’s journey, nothing is saved <button class="link" onclick={endDemo}>End</button></div>
+{/if}
 
 	{#if view}
 		<!-- the players' names over them in the world: tap one to see them -->
@@ -376,12 +379,13 @@
 			{#if shows('seats')}<div class="seg panel">
 				{#each SEATS as s (s)}
 					{#if !view.players[s].founder && mySeat && !demo}
-						<button title="Test run this seat's journey in this browser, as long as no one has taken it" onclick={startDemo}>{view.players[s].name} · try</button>
+						<button title="Test run this seat's journey in this browser, as long as no one has taken it" onclick={() => startDemo(s)}>{view.players[s].name} · try</button>
 					{:else}
 						<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
 					{/if}
 				{/each}
 			</div>{/if}
+			{#if !demo && mySeat && !tour}<div class="seg panel intros" title="Replay a seat's whole story on a fresh test game in this browser; nothing is saved"><span>Play intro</span>{#each SEATS as s (s)}<button onclick={() => startDemo(s)}>{s}</button>{/each}</div>{/if}
 			{#if shows('clock')}<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
 		</div>
 
@@ -455,7 +459,7 @@
 				<h2>{player.name}</h2>
 				{#if !player.founder}
 					<p class="about">This seat is waiting: the next person to sign in becomes {player.name}.</p>
-					{#if mySeat}<button class="primary" onclick={startDemo}>Test run {player.name}’s journey</button>{/if}
+					{#if mySeat}<button class="primary" onclick={() => startDemo(seat)}>Test run {player.name}’s journey</button>{/if}
 				{:else if !mySeat}
 					<p class="about">Both seats are taken, so you are watching this game.</p>
 				{/if}
@@ -1009,6 +1013,12 @@
 	.skip.all {
 		right: auto;
 		left: 1rem;
+	}
+	.intros span {
+		align-self: center;
+		padding: 0 0.4rem 0 0.7rem;
+		font-size: 0.8rem;
+		opacity: 0.7;
 	}
 	.demo {
 		position: absolute;
