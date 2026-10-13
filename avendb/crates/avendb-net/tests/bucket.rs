@@ -1,7 +1,8 @@
 //! A node's bucket (blobs B3a, v8 phase S): its shelf, every object sealed under the node's seal; a node whose folder
 //! is lost starting again from its bucket alone; a bucket's first shelf marked beside whatever else it holds, and one
 //! put aside left whole; a bucket sealed under another seal refused; a server the same device again from its bucket,
-//! its secret there alone; and nothing told to a peer while the bucket lacks it.
+//! its secret there alone; and a server that states it holds an edit or a file only once its bucket has it (v8
+//! phase H).
 
 mod common;
 
@@ -17,9 +18,14 @@ use anyhow::anyhow;
 use avendb::cast::*;
 use avendb::id::SignerId;
 use avendb::lab::Lab;
+use avendb::sync::LogId;
+use avendb::wire::FileHold;
 use avendb_net::bucket::{self, Bucket, Fut, Sealed};
 use avendb_net::{Node, Options, server};
+use bytes::Bytes;
 use common::Folder;
+use iroh_blobs::Hash;
+use n0_future::stream;
 
 /// The seal the tests' buckets are sealed under.
 const SEAL: [u8; 32] = [7; 32];
@@ -170,7 +176,7 @@ async fn a_server_whose_folder_is_lost_is_the_same_device_again() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_node_tells_its_peers_nothing_its_bucket_lacks() {
+async fn a_server_states_a_holding_only_once_its_bucket_has_it() {
     let mut w = world();
     let coop = handbook_ready(&mut w);
     let (mac_a, passkey_a, server_d, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.server, w.mac_b, w.passkey_b);
@@ -183,7 +189,7 @@ async fn a_node_tells_its_peers_nothing_its_bucket_lacks() {
     let shelf = on(&Sealed::new(flaky, &SEAL), cache.path()).await.expect("its shelf, marked");
     // the bucket down from then on
     broken.store(true, Ordering::Relaxed);
-    let backed = Options { retry: Duration::from_millis(100), ..shelf };
+    let backed = Options { retry: Duration::from_millis(100), keep: true, ..shelf };
     let mac = node(&mut w, mac_a, &[passkey_a], 1, Options::local()).await;
     let server = node(&mut w, server_d, &[], 2, backed).await;
     let bob = node(&mut w, mac_b, &[passkey_b], 3, Options::local()).await;
@@ -192,19 +198,60 @@ async fn a_node_tells_its_peers_nothing_its_bucket_lacks() {
         n.know(server.addr());
         server.know(n.addr());
     }
-    let write = move |lab: &mut Lab, me| lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me));
-    let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
+    let photo_len = 300_000;
+    let bytes = Bytes::from((0..photo_len).map(|j| (j % 251) as u8).collect::<Vec<u8>>());
+    let photo = mac.store_file(photo_len, stream::iter([Ok(bytes)])).await.expect("Alice's Mac seals a photo");
+    let root = photo.root;
+    let write = move |lab: &mut Lab, me| {
+        let welcome = lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))?;
+        lab.bring(me, coop, welcome, vec![photo], |_| {})?;
+        Ok::<_, avendb::policy::Refusal>(welcome)
+    };
+    let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome, and brings a photo into it");
+    let log = LogId::Entry(welcome);
     let holds = || server.read(move |lab, me| lab.fetched(me, welcome) > 0);
     until("the server takes Welcome's edits from Alice's Mac", holds).await;
+    until("and tells Bob's Mac its holdings", || async { bob.holdings_of(server_d).is_some() }).await;
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(server.behind().await, "its bucket is down: the server's bucket lacks Welcome");
-    assert_eq!(server.sent().1, 0, "so the server announces nothing");
+    let held = server.holdings().await;
+    assert!(held.logs.is_empty() && held.files.is_empty(), "so the server states it holds nothing, of Welcome neither");
+    let told = bob.holdings_of(server_d).expect("what the server told Bob's Mac");
+    assert!(!told.logs.contains_key(&log) && !told.files.contains_key(&root), "nor tells Bob's Mac it does");
+    let synced = mac.synced_to().await;
+    assert_eq!(synced.entries[&welcome], [mac_a], "Alice's Mac shows Welcome synced to itself alone");
     let reads = || bob.read(move |lab, me| text(lab, me, welcome, 2).as_deref() == Some(WELCOME_TEXT));
     assert!(!reads().await, "and Bob's Mac doesn't read Welcome through it");
+    assert!(outboards(objects.path()).is_empty(), "the bucket holds no blob");
     broken.store(false, Ordering::Relaxed);
     until("the bucket up again, it takes all the server holds", || async { !server.behind().await }).await;
+    let frontier = mac.holdings().await.logs[&log].clone();
+    let stated = || async { server.holdings().await.logs.get(&log) == Some(&frontier) };
+    until("then the server states Welcome's log as Alice's Mac holds it", stated).await;
+    until("and the photo, once the bucket has it", || async {
+        server.holdings().await.files.get(&root) == Some(&FileHold::Whole)
+    })
+    .await;
+    let hex = Hash::from_bytes(root.hash).to_hex();
+    assert!(outboards(objects.path()).iter().any(|o| o.starts_with(&hex)), "which it does");
+    let told = || async {
+        bob.holdings_of(server_d).is_some_and(|h| h.logs.get(&log) == Some(&frontier) && h.files.contains_key(&root))
+    };
+    until("and tells Bob's Mac so", told).await;
     until("then Bob's Mac reads Welcome through the server", reads).await;
+    let synced = || async {
+        let synced = mac.synced_to().await;
+        let both = |d: &Vec<SignerId>| d.contains(&mac_a) && d.contains(&server_d);
+        synced.entries.get(&welcome).is_some_and(both) && synced.files.get(&root).is_some_and(both)
+    };
+    until("and Alice's Mac shows Welcome and the photo synced to the server", synced).await;
     for n in [mac, server, bob] {
         n.shutdown().await.expect("the node shuts down");
     }
+}
+
+/// The names of the blobs whose outboards bucket folder `objects` holds on its first shelf.
+fn outboards(objects: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(objects.join("g1/outboards")) else { return Vec::new() };
+    entries.map(|e| e.expect("an outboard").file_name().into_string().expect("a name")).collect()
 }

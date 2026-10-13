@@ -19,7 +19,8 @@ use avendb::rules::{Grant, On, Op, Proof, Scalar, Step};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
-use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
+use avendb::sealed::{FileRoot, PIECE};
+use avendb::wire::{Announce, Claim, FileHold, Frontier, Join, Reply, Request, Wire};
 
 /// Where and how to mutate: xorshift64*, seeded per test.
 struct Gen(u64);
@@ -740,7 +741,12 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
         }
     });
     let logs = [LogId::Vault(ALICE), LogId::Share(ShareId::from_u64(12)), audience, LogId::Entry(DOOR)];
-    let announce = Announce { digests: logs.into_iter().zip(1..).map(|(l, n)| (l, [n; 32])).collect() };
+    let frontier = |n: u64| Frontier { heads: vec![EditId::from_u64(n)], waiting: vec![EditId::from_u64(n + 10)] };
+    let logs = logs.into_iter().zip(1..).map(|(l, n)| (l, frontier(n))).collect();
+    let (one, film) = (FileRoot { hash: [1; 32], size: 16 }, FileRoot { hash: [2; 32], size: 3 * PIECE });
+    let dropped = FileRoot { hash: [3; 32], size: 16 };
+    let files = vec![(one, Some(FileHold::Whole)), (film, Some(FileHold::Pieces(vec![0, 2]))), (dropped, None)];
+    let announce = Announce { full: true, logs, files };
     wire_mutations(&mut g, &announce, 3000, |_| {});
 }
 

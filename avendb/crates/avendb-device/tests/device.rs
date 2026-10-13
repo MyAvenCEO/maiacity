@@ -285,6 +285,12 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     until("the server keeps her note", || server.read(holds)).await;
     let garden = |n: &Value| n["type"] == "note" && n["tags"] == json!(["garden"]) && n["title"] == "Seeds";
     shown(&mut app, &entry, "her note, tagged", garden).await;
+    // where her note is synced to (v8 phase H): her Mac, once its folder holds it, and the server, and no other
+    let (mac, keeper) = (device["id"].clone(), json!(hex(&server.device().0)));
+    let synced = |n: &Value| {
+        n["syncedTo"].as_array().is_some_and(|d| d.len() == 2 && d.contains(&mac) && d.contains(&keeper))
+    };
+    shown(&mut app, &entry, "her note, synced to her Mac and the server", synced).await;
     // a todo for her work, which she shares with everyone to read, and then no longer
     let sow = json!({ "kind": "todo", "title": "Sow tomatoes" });
     let todo = json!({ "op": "create", "vault": vault, "type": "todo", "tags": ["work"], "value": sow });

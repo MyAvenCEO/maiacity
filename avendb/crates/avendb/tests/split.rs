@@ -13,7 +13,7 @@ use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Revoking};
 use avendb::sync::{place, LogId, Place};
-use avendb::wire::{Announce, Reply, Request, Wire};
+use avendb::wire::{Reply, Request, Wire};
 use common::*;
 
 /// `to` asks `from` once, by the bytes alone: its request, the reply, and each McEliece key the reply names that
@@ -35,10 +35,10 @@ fn ask_page(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId), after: Option<
     (reply, new)
 }
 
-/// The digests `from` announces to `to`, read back from their bytes.
+/// The digests of the logs `from` names to `to`, each of a log `to` may hold by `from`'s view (`Lab::announce`): the
+/// logs whose holdings a node tells that peer (`avendb-net`).
 fn announced(from: (&mut Lab, SignerId), to: SignerId) -> Vec<(LogId, [u8; 32])> {
-    let digests = from.0.announce(from.1, to);
-    Announce::from_wire(&Announce { digests }.to_wire()).expect("an announcement").digests
+    from.0.announce(from.1, to)
 }
 
 /// Alice's Mac, the server and Bob's Mac split off after scenario 4, each with its own randomness: the coop and

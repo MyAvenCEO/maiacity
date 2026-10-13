@@ -18,23 +18,31 @@
 //!   proved that may fetch it (`Lab::may_fetch`), and checks each key against its id. A big answer comes a page at a
 //!   time (P8d, `Options::page`), each edit after the edits it builds on: the asker takes each page as it comes and
 //!   asks on after the last edit it got.
-//! - **Announcements**: whenever a log changes, the node tells each peer that may hold it by the node's view
-//!   (`Lab::announce`), straight over their connection, the digests that changed since it last told it; a peer whose
-//!   digests differ asks. Not iroh-gossip: a topic can't tell a device of a log it doesn't know yet without telling
-//!   every other member too, and its members learn each other's endpoints, while an announcement goes to one proven
-//!   device. A peer it can't reach it tries again after `Options::retry`, then twice as long each time it stays out
-//!   of reach, up to a minute, or at once when the peer connects to it.
+//! - **Holdings** (v8 phase H, `holdings`): each device tells each peer, straight over their connection, what it holds
+//!   for good of the logs and files the peer may know by its view (`wire::Announce`): of each log its frontier and the
+//!   edits there waiting for their past, of each file all of it or some of its pieces. All of it on each new
+//!   connection, then only what changed. A node keeps what each device told it, on the connection whose hello proved
+//!   that device alone, and asks a peer for the logs where it holds what the node lacks, and those alone
+//!   (`session::ASK_LOGS`); it fetches a file first from the peers that hold it, and shows where each entry and file is
+//!   synced to (`Node::synced_to`). Holdings route and never let anyone do anything: the blob gate hands a file out by
+//!   T27 alone. Not iroh-gossip: a topic can't tell a device of a log it doesn't know yet without telling every other
+//!   member too, and its members learn each other's endpoints, while an announcement goes to one proven device. A
+//!   peer it can't reach it tries again after `Options::retry`, then twice as long each time it stays out of reach,
+//!   up to a minute, or at once when the peer connects to it.
 //! - **Shelf** (v8 phase S, `shelf`): with `Options::shelf`, a node keeps what its device holds on its shelf, the one
 //!   place it keeps what lasts, laid out the same everywhere: a page's in OPFS, the Mac's in its folder (`disk`), the
 //!   server's in its S3 bucket (`bucket`), every object sealed, its folder only a cache. It saves its device's edits
-//!   there as they change (`edits`), tells its peers what changed only once the shelf holds it, and starts again from
-//!   it. A place puts a shelf aside by starting a new generation beside it, and never deletes one.
+//!   there as they change (`edits`), and starts again from it. What it holds for good, as it tells its peers, is what
+//!   its shelf holds: on the server, what its bucket took. A place puts a shelf aside by starting a new generation
+//!   beside it, and never deletes one.
 //! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, over its shelf (blobs B2d, B3b, `shelf`), or
 //!   else in memory: what it brings and keeps whole goes onto the shelf. It brings a file sealed as it reads it
 //!   (`Node::store_file`), reads any range of a file its device opens, fetching only the sealed segments that hold it
 //!   (`Node::read_file`), and keeps whole the files its device's sync rules say to keep, or with no rule over a vault,
-//!   if it keeps files (`Options::keep`), as the server does, every file of the vault. Its blob gate hands a file's
-//!   root or pieces only to a device that may fetch the file (T27).
+//!   if it keeps files (`Options::keep`), as the server does, every file of the vault. It fetches blobs, files and
+//!   McEliece keys alike, over one pool of blob connections, the keys a reply names in one request (`blobs`). Its blob
+//!   gate lets in a blob connection only from an endpoint whose live sync connection a hello proved, and hands a
+//!   file's root or pieces only to a device that may fetch the file (T27).
 //! - **Sync rules** (blobs B2c): a node sends a peer's device only the entries it may receive and its rules want, by
 //!   the stewards' marks (T28).
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
@@ -82,6 +90,7 @@ pub mod bucket;
 pub mod disk;
 mod edits;
 mod files;
+mod holdings;
 pub mod kx;
 mod progress;
 pub mod server;
@@ -97,14 +106,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::{BlobId, SignerId, VaultId};
+use avendb::id::{BlobId, EditId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Drafting, Lab, Unsigned};
-use avendb::id::EditId;
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
+use avendb::sealed::FileRoot;
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
 use avendb::sync::{log_of, place, LogId};
-use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
+use avendb::wire::{Announce, Claim, FileHold, Join, Reply, Request, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use iroh::address_lookup::MemoryLookup;
 #[cfg(not(target_arch = "wasm32"))]
@@ -114,6 +123,7 @@ use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey};
 use iroh_blobs::BlobsProtocol;
 use iroh_blobs::api::Store;
+use iroh_blobs::util::connection_pool::{self, ConnectionPool};
 #[cfg(not(target_arch = "wasm32"))]
 use iroh_blobs::store::mem::MemStore;
 use rustls::crypto::CryptoProvider;
@@ -121,6 +131,9 @@ use n0_future::task::{self, JoinHandle};
 use n0_future::time::{self, Instant};
 use tokio::sync::{Notify, watch};
 
+use holdings::{Logs, MOST};
+
+pub use holdings::{Holdings, SyncedTo};
 pub use progress::{Ending, Progress, Stage, Steps};
 pub use session::exporter;
 pub use shelf::{Call, Shelf};
@@ -133,6 +146,9 @@ const WAIT: Duration = Duration::from_secs(10);
 
 /// The longest a node waits before it tries a peer out of reach again.
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
+
+/// How long a blob connection nothing uses stays open.
+const IDLE: Duration = Duration::from_secs(30);
 
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
@@ -442,6 +458,8 @@ impl Node {
             None => unreachable!("a page's node keeps a shelf"),
         };
         let (events, gate) = blobs::events();
+        let pool = connection_pool::Options { idle_timeout: IDLE, connect_timeout: WAIT, ..Default::default() };
+        let pool = ConnectionPool::new(endpoint.clone(), iroh_blobs::ALPN, pool);
         let shared = Arc::new(Shared {
             me,
             lab: Mutex::new(lab),
@@ -451,8 +469,11 @@ impl Node {
             store: store.clone(),
             opts,
             peers: Mutex::default(),
-            proven: Mutex::default(),
             dialing: Mutex::default(),
+            logs: Mutex::default(),
+            own: Mutex::new(Own { at: ((usize::MAX, 0), 0), holdings: Holdings::default() }),
+            reach: Mutex::default(),
+            held: Mutex::default(),
             told: Mutex::default(),
             telling: Mutex::default(),
             unreached: Mutex::default(),
@@ -462,7 +483,7 @@ impl Node {
             shelf,
             blob_peers: Mutex::default(),
             pieces: Mutex::default(),
-            blob_conns: Mutex::default(),
+            pool,
             changed: Notify::new(),
             size: watch::Sender::new(size),
             sent: Sent::default(),
@@ -872,7 +893,27 @@ impl Node {
 
     /// The device at endpoint `peer` as its hello proved it, once they are connected.
     pub fn proven(&self, peer: EndpointId) -> Option<SignerId> {
-        self.shared.proven.lock().expect("proven").get(&peer).copied()
+        self.shared.peers.lock().expect("peers").get(&peer).map(|p| p.device)
+    }
+
+    /// What its device holds for good (`Holdings`), as it tells its peers: of each log the frontier of the edits its
+    /// shelf holds, of each file what its shelf holds whole, which on the server is its bucket; with no shelf, what it
+    /// holds.
+    pub async fn holdings(&self) -> Holdings {
+        self.shared.own_logs().await;
+        self.shared.own.lock().expect("own").holdings.clone()
+    }
+
+    /// What `device` told this node it holds for good, on a connection whose hello proved it, if it told anything.
+    pub fn holdings_of(&self, device: SignerId) -> Option<Holdings> {
+        self.shared.held.lock().expect("held").get(&device).cloned()
+    }
+
+    /// Where each entry and each file its device holds is synced to (`SyncedTo`): this device, once its shelf holds
+    /// every edit of the entry it holds, or the whole file; and each device whose own holdings, as it told them, hold
+    /// as much, among those that may hold it by this device's view.
+    pub async fn synced_to(&self) -> SyncedTo {
+        self.shared.synced_to().await
     }
 
     /// How many requests and announcements it has sent so far.
@@ -885,11 +926,11 @@ impl Node {
         self.shared.sent.dials.load(Ordering::Relaxed)
     }
 
-    /// Its shelf lacks something its device holds (`edits`): until the shelf has it, the node tells its peers nothing
-    /// new. Never, for a node with no shelf.
+    /// Its shelf lacks something its device holds (`edits`): its holdings name only what the shelf holds. Never, for a
+    /// node with no shelf.
     pub async fn behind(&self) -> bool {
         let shared = self.shared.clone();
-        self.shared.lab(move |lab, _| shared.behind(lab)).await
+        self.shared.lab(move |lab, me| shared.edits.as_ref().is_some_and(|edits| edits.lacks(lab, me))).await
     }
 
     /// Close its connections, its endpoint and its blob store, which the router closes with the blob protocol; with a
@@ -1038,14 +1079,20 @@ struct Shared {
     /// Its blob store: the McEliece keys it offers, and the sealed pieces of files (`files`).
     store: Store,
     opts: Options,
-    /// The live connection to each peer.
+    /// The live connection to each peer, with the device its hello proved: whom the blob gate lets in.
     peers: Mutex<HashMap<EndpointId, Peer>>,
-    /// Each endpoint a hello ever proved, with its device: whom the blob gate lets in.
-    proven: Mutex<HashMap<EndpointId, SignerId>>,
     /// A lock for each endpoint, held while dialing it, so that a node dials each peer once.
     dialing: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
-    /// The digests each peer was last told.
-    told: Mutex<HashMap<SignerId, BTreeMap<LogId, [u8; 32]>>>,
+    /// Its device's edits by their logs, as they were when they were last worked out.
+    logs: Mutex<Option<Arc<Logs>>>,
+    /// What its device holds for good.
+    own: Mutex<Own>,
+    /// Each device it may tell, by its device's view, and what of its holdings it tells it.
+    reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
+    /// What each device told it it holds, on a connection whose hello proved that device.
+    held: Mutex<HashMap<SignerId, Holdings>>,
+    /// What each peer was last told, and on which connection (`Connection::stable_id`).
+    told: Mutex<HashMap<SignerId, (usize, Holdings)>>,
     /// The peers being told now.
     telling: Mutex<HashSet<SignerId>>,
     /// The peers it couldn't tell, and when to try each again.
@@ -1058,13 +1105,14 @@ struct Shared {
     offered: Mutex<blobs::Offered>,
     /// Its blob store over its shelf, if it keeps one (`shelf`): what the shelf holds whole.
     shelf: Option<shelf::ShelfStore>,
-    /// The blob connections the gate let in, each with its device.
-    blob_peers: Mutex<HashMap<u64, SignerId>>,
+    /// The blob connections the gate let in, each with the device and endpoint of the live sync connection that let
+    /// it in.
+    blob_peers: Mutex<HashMap<u64, (SignerId, EndpointId)>>,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
     /// as those files.
     pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
-    /// The blob connection it dialed to each peer, for the files it fetches.
-    blob_conns: Mutex<HashMap<EndpointId, Connection>>,
+    /// Its blob connections to its peers, for the files and McEliece keys it fetches.
+    pool: ConnectionPool,
     /// Woken whenever the node's logs may have changed.
     changed: Notify,
     /// How many edits and McEliece keys its device holds (`Node::changes`).
@@ -1116,11 +1164,25 @@ impl<K: Hash + Eq + Copy> Backoff<K> {
     }
 }
 
-/// What a node tells each peer: the digests of the logs the peer may hold, as worked out for the device's edits when
-/// they were as many as `size` says (`Lab::size`).
+/// What a node's device holds for good (`Holdings`), its logs as worked out when it held as much as `at` says: its
+/// size (`Lab::size`), and how many of its edits its shelf held (`edits::Edits::held`).
+struct Own {
+    at: ((usize, usize), usize),
+    holdings: Holdings,
+}
+
+/// What a device may know of a node's holdings by the node's view: the logs of the edits it may receive
+/// (`Lab::announce`), and the files those bring, which it may fetch (T27). And its endpoint.
+struct Reach {
+    endpoint: EndpointId,
+    logs: BTreeSet<LogId>,
+    files: BTreeSet<FileRoot>,
+}
+
+/// Whom a node tells what, as worked out for the device's edits when they were as many as `size` says (`Lab::size`).
 struct News {
     size: (usize, usize),
-    peers: Vec<(SignerId, EndpointId, BTreeMap<LogId, [u8; 32]>)>,
+    reach: Arc<BTreeMap<SignerId, Reach>>,
     /// The passkeys that root the vaults in the device's view, whose passes a server's relay honours.
     roots: Vec<SignerId>,
     /// The node is a server whose device belongs to no vault yet: nobody has claimed it.
@@ -1146,12 +1208,6 @@ impl Shared {
         // a page's node runs in a worker of its own, which the Lab may hold up
         #[cfg(target_arch = "wasm32")]
         work()
-    }
-
-    /// The node keeps a shelf that lacks something its device holds (`edits`): it tells its peers nothing new until
-    /// the shelf has it.
-    fn behind(&self, lab: &Lab) -> bool {
-        self.edits.as_ref().is_some_and(|edits| edits.behind(lab, self.me))
     }
 
     /// Where to reach `endpoint`: through the node's relay, if it has one, and wherever the lookup knows of.
@@ -1192,13 +1248,16 @@ impl Shared {
         peers.get(&endpoint).filter(|p| p.conn.close_reason().is_none()).cloned()
     }
 
-    /// A connection whose hellos proved `device`, dialed or accepted: the one to its endpoint from now on. A new
-    /// connection starts their talk over: the node tells the peer every digest again, at once.
+    /// A connection whose hellos proved `device`, dialed or accepted: the one to its endpoint from now on, which its
+    /// blob connections reach too, through the node's relay if it has one. A new connection starts their talk over:
+    /// the node tells the peer all its holdings again, at once.
     fn connected(&self, conn: Connection, device: SignerId) -> Peer {
         let endpoint = conn.remote_id();
         let peer = Peer { conn, device, endpoint };
+        if self.opts.relay.is_some() {
+            self.lookup.add_endpoint_info(self.addr_of(endpoint));
+        }
         self.peers.lock().expect("peers").insert(endpoint, peer.clone());
-        self.proven.lock().expect("proven").insert(endpoint, device);
         self.told.lock().expect("told").remove(&device);
         self.unreached.lock().expect("unreached").reached(&device);
         self.changed.notify_one();
@@ -1209,12 +1268,28 @@ impl Shared {
     /// lacks: a page at a time, each taken as it comes, asking on after the last edit a page brought until the peer has
     /// no more. How many edits were new.
     async fn ask(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
+        self.asking(endpoint, None).await
+    }
+
+    /// `ask`, of the logs `logs` alone, if given (`session::ASK_LOGS`).
+    async fn asking(self: &Arc<Self>, endpoint: EndpointId, logs: Option<BTreeSet<LogId>>) -> Result<usize> {
         let peer = self.connection(endpoint).await?;
         let device = peer.device;
+        let kind = if logs.is_some() { session::ASK_LOGS } else { session::REQUEST };
+        let logs = logs.map(Arc::new);
         let (mut after, mut new) = (None, 0);
         loop {
-            let request = self.lab(move |lab, me| Request { after, ..lab.request(me, device) }).await.to_wire();
-            let reply = session::exchange(&peer.conn, session::REQUEST, &request, session::REPLY_LIMIT).await?;
+            let logs = logs.clone();
+            let request = move |lab: &mut Lab, me| {
+                let request = lab.request(me, device);
+                let request = match &logs {
+                    Some(logs) => session::only(lab, me, request, logs),
+                    None => request,
+                };
+                Request { after, ..request }
+            };
+            let request = self.lab(request).await.to_wire();
+            let reply = session::exchange(&peer.conn, kind, &request, session::REPLY_LIMIT).await?;
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
             let Reply { edits, blobs, more } = Reply::from_wire(&reply)?;
             // where the next page starts: a page that brings nothing past the last ends the asking
@@ -1251,8 +1326,9 @@ impl Shared {
         Ok(new)
     }
 
-    /// Asks `endpoint` soon, and once more after the asking under way if there is one; if the asking fails, again
-    /// once its wait is over (`Backoff`).
+    /// Asks `endpoint` soon for the logs where the device there holds what this one lacks, by what it told (`differ`),
+    /// and once more after the asking under way if there is one; if the asking fails, again once its wait is over
+    /// (`Backoff`).
     fn ask_soon(self: &Arc<Self>, endpoint: EndpointId) {
         if !self.start_asking(endpoint) {
             return;
@@ -1260,7 +1336,7 @@ impl Shared {
         let shared = self.clone();
         task::spawn(async move {
             loop {
-                let asked = shared.ask(endpoint).await.is_ok();
+                let asked = shared.ask_differing(endpoint).await.is_ok();
                 let mut owed = shared.owed.lock().expect("owed");
                 if asked { owed.reached(&endpoint) } else { owed.failed(endpoint, shared.opts.retry) };
                 drop(owed);
@@ -1298,14 +1374,15 @@ impl Shared {
         }
     }
 
-    /// Tells the peers what changed whenever the node's logs may have, and every `retry` tries again the peers whose
-    /// wait is over: those it couldn't tell, and those it failed to ask.
+    /// Tells the peers what changed of its holdings whenever they may have, and every `retry` tries again the peers
+    /// whose wait is over: those it couldn't tell, and those it failed to ask.
     async fn announcer(self: Arc<Self>) {
-        let mut news = News { size: (usize::MAX, 0), peers: Vec::new(), roots: Vec::new(), claimable: false };
+        let mut news = News { size: (usize::MAX, 0), reach: Arc::default(), roots: Vec::new(), claimable: false };
         loop {
             if let Some(fresh) = self.news(news.size).await {
                 news = fresh;
             }
+            self.own_logs().await;
             self.announce(&news);
             let owed = self.owed.lock().expect("owed").ready();
             owed.into_iter().for_each(|endpoint| self.ask_soon(endpoint));
@@ -1313,49 +1390,101 @@ impl Shared {
         }
     }
 
-    /// What to tell each peer, worked out again if the device's edits changed since `size`; then whom the relay lets
-    /// in, if the node keeps that. `None` if nothing changed, or if its shelf lacks something its device holds: until
-    /// the shelf has it, the peers are told nothing new.
+    /// Whom to tell what, worked out again if the device's edits changed since `size`; then whom the relay lets in, if
+    /// the node keeps that. `None` if nothing changed.
     async fn news(self: &Arc<Self>, size: (usize, usize)) -> Option<News> {
         let (server, shared) = (self.opts.card, self.clone());
-        let (news, behind) = self
+        let news = self
             .lab(move |lab, me| {
                 let now = lab.size(me);
                 if now == size {
                     return None;
                 }
-                let mut peers = Vec::new();
+                let all = shared.logs_of(lab, me);
+                let mut reach = BTreeMap::new();
                 for (device, key) in lab.peers(me) {
                     let Ok(endpoint) = EndpointId::from_bytes(&key) else { continue };
-                    peers.push((device, endpoint, lab.announce(me, device).into_iter().collect()));
+                    let logs: BTreeSet<LogId> = lab.announce(me, device).into_iter().map(|(l, _)| l).collect();
+                    let files = logs.iter().filter_map(|l| all.of.get(l)).flat_map(|log| log.files.iter().copied());
+                    reach.insert(device, Reach { endpoint, files: files.collect(), logs });
                 }
                 let claimable = server && lab.vault_of(me).is_none();
-                Some((News { size: now, peers, roots: lab.roots(me), claimable }, shared.behind(lab)))
+                Some(News { size: now, reach: Arc::new(reach), roots: lab.roots(me), claimable })
             })
             .await?;
+        *self.reach.lock().expect("reach") = news.reach.clone();
         if let Some(admission) = &self.opts.admission {
-            let endpoints = news.peers.iter().map(|(_, endpoint, _)| *endpoint).chain([self.endpoint.id()]).collect();
+            let endpoints = news.reach.values().map(|r| r.endpoint).chain([self.endpoint.id()]).collect();
             let passkeys = news.roots.iter().copied().collect();
             admission.set(Admitted { endpoints, passkeys, claimable: news.claimable });
         }
-        (!behind).then_some(news)
+        Some(news)
     }
 
-    /// Tells each peer the digests of the logs it may hold by the node's view, if they changed since it was last told,
-    /// each on a task of its own, so that a peer out of reach holds up nobody; one at a time, so that tasks don't pile
-    /// up while it stays out of reach; and a peer it couldn't reach, only once its wait is over.
+    /// Its device's edits by their logs (`holdings::Logs`), `lab` being the node's Lab: worked out again only once
+    /// they changed.
+    fn logs_of(&self, lab: &Lab, me: SignerId) -> Arc<Logs> {
+        let size = lab.size(me);
+        let mut logs = self.logs.lock().expect("logs");
+        match &*logs {
+            Some(known) if known.size == size => known.clone(),
+            _ => {
+                let log = lab.log(me);
+                let fresh = Arc::new(Logs::of(log.edits(), log.ids(), size));
+                *logs = Some(fresh.clone());
+                fresh
+            }
+        }
+    }
+
+    /// Works out again what its device holds for good of each log, if its edits or what its shelf holds of them
+    /// changed: the frontier of the edits its shelf holds, the first of its log (`edits::Edits::held`), or with no
+    /// shelf, of all it holds.
+    async fn own_logs(self: &Arc<Self>) {
+        let shared = self.clone();
+        let worked = self
+            .lab(move |lab, me| {
+                let size = lab.size(me);
+                let held = shared.edits.as_ref().map_or(size.0, |edits| edits.held(lab, me));
+                if shared.own.lock().expect("own").at == (size, held) {
+                    return None;
+                }
+                let logs = match held >= size.0 {
+                    true => shared.logs_of(lab, me).frontiers(),
+                    false => {
+                        let log = lab.log(me);
+                        Logs::of(&log.edits()[..held], &log.ids()[..held], size).frontiers()
+                    }
+                };
+                Some(((size, held), logs))
+            })
+            .await;
+        if let Some((at, logs)) = worked {
+            let mut own = self.own.lock().expect("own");
+            (own.at, own.holdings.logs) = (at, logs);
+        }
+    }
+
+    /// Tells each peer what of the node's holdings it may know by the node's view, if that changed since it was last
+    /// told, or it is on a new connection, each on a task of its own, so that a peer out of reach holds up nobody; one
+    /// at a time, so that tasks don't pile up while it stays out of reach; and a peer it couldn't reach, only once its
+    /// wait is over.
     fn announce(self: &Arc<Self>, news: &News) {
+        let own = self.own.lock().expect("own").holdings.clone();
         let told = self.told.lock().expect("told").clone();
-        for (device, endpoint, digests) in &news.peers {
-            if told.get(device) == Some(digests) || !self.unreached.lock().expect("unreached").due(device) {
+        for (device, reach) in news.reach.iter() {
+            let want = own.only(&reach.logs, &reach.files);
+            let live = self.live(reach.endpoint).filter(|p| p.device == *device).map(|p| p.conn.stable_id());
+            let due = told.get(device).is_none_or(|(on, was)| *was != want || live.is_some_and(|id| id != *on));
+            if !due || !self.unreached.lock().expect("unreached").due(device) {
                 continue;
             }
             if !self.telling.lock().expect("telling").insert(*device) {
                 continue;
             }
-            let (shared, device, endpoint, digests) = (self.clone(), *device, *endpoint, digests.clone());
+            let (shared, device, endpoint) = (self.clone(), *device, reach.endpoint);
             task::spawn(async move {
-                let told = shared.tell(device, endpoint, digests).await.is_ok();
+                let told = shared.tell(device, endpoint, want).await.is_ok();
                 let mut unreached = shared.unreached.lock().expect("unreached");
                 if told { unreached.reached(&device) } else { unreached.failed(device, shared.opts.retry) };
                 drop(unreached);
@@ -1364,22 +1493,97 @@ impl Shared {
         }
     }
 
-    /// Tells `device`, at `endpoint`, the digests `digests`.
-    async fn tell(
-        self: &Arc<Self>,
-        device: SignerId,
-        endpoint: EndpointId,
-        digests: BTreeMap<LogId, [u8; 32]>,
-    ) -> Result<()> {
+    /// Tells `device`, at `endpoint`, that it holds `want`: all of it on a connection it told nothing yet, else what
+    /// changed since it last told it, if anything did.
+    async fn tell(self: &Arc<Self>, device: SignerId, endpoint: EndpointId, want: Holdings) -> Result<()> {
         let peer = self.connection(endpoint).await?;
         if peer.device != device {
             bail!("the hello at {endpoint} proved another device");
         }
-        let announce = Announce { digests: digests.iter().map(|(l, d)| (*l, *d)).collect() }.to_wire();
-        session::exchange(&peer.conn, session::ANNOUNCE, &announce, 0).await?;
-        self.sent.announcements.fetch_add(1, Ordering::Relaxed);
-        self.told.lock().expect("told").insert(device, digests);
+        let on = peer.conn.stable_id();
+        let told = self.told.lock().expect("told").get(&device).filter(|(at, _)| *at == on).map(|(_, h)| h.clone());
+        if let Some(announce) = want.since(told.as_ref()) {
+            session::exchange(&peer.conn, session::ANNOUNCE, &announce.to_wire(), 0).await?;
+            self.sent.announcements.fetch_add(1, Ordering::Relaxed);
+        }
+        self.told.lock().expect("told").insert(device, (on, want));
         Ok(())
+    }
+
+    /// `device` told the node `announce` of its holdings, on a connection whose hello proved it: what it holds from
+    /// now on, as `Holdings::take` says. A device that claims to hold more than `MOST` logs or files claims nothing.
+    fn hear(&self, device: SignerId, announce: Announce) {
+        let mut held = self.held.lock().expect("held");
+        let holdings = held.entry(device).or_default();
+        holdings.take(announce);
+        if holdings.logs.len() > MOST || holdings.files.len() > MOST {
+            held.remove(&device);
+        }
+    }
+
+    /// The connection of `peer` closed: what its device told the node it holds is kept, unless the node's device
+    /// doesn't know that device (`Lab::peers`) and it isn't connected any more.
+    fn gone(&self, peer: &Peer) {
+        let known = self.reach.lock().expect("reach").contains_key(&peer.device);
+        if !known && self.live(peer.endpoint).is_none() {
+            self.held.lock().expect("held").remove(&peer.device);
+        }
+    }
+
+    /// The logs where `device` holds an edit this node's device lacks, by what it told (`Logs::lacks`).
+    async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
+        let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
+            return BTreeSet::new();
+        };
+        let shared = self.clone();
+        let mine = self.lab(move |lab, me| shared.logs_of(lab, me)).await;
+        theirs.into_iter().filter(|(_, f)| mine.lacks(f)).map(|(l, _)| l).collect()
+    }
+
+    /// Asks `endpoint` for the logs where the device there holds what this one lacks (`differ`), and those alone, if
+    /// there are any. How many edits were new.
+    async fn ask_differing(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
+        let peer = self.connection(endpoint).await?;
+        let logs = self.differ(peer.device).await;
+        if logs.is_empty() {
+            return Ok(0);
+        }
+        self.asking(endpoint, Some(logs)).await
+    }
+
+    /// `Node::synced_to`.
+    async fn synced_to(self: &Arc<Self>) -> SyncedTo {
+        self.own_logs().await;
+        let own = self.own.lock().expect("own").holdings.clone();
+        let held = self.held.lock().expect("held").clone();
+        let reach = self.reach.lock().expect("reach").clone();
+        let shared = self.clone();
+        self.lab(move |lab, me| {
+            let all = shared.logs_of(lab, me);
+            let edits = lab.log(me).edits();
+            // this device, which may hold all it holds; and each other device that may hold it by this one's view
+            let mut holders: Vec<(SignerId, &Holdings, Option<&Reach>)> = vec![(me, &own, None)];
+            holders.extend(held.iter().filter_map(|(d, h)| Some((*d, h, Some(reach.get(d)?)))));
+            holders.sort_by_key(|(d, _, _)| *d);
+            let mut synced = SyncedTo::default();
+            for l in all.of.keys() {
+                let LogId::Entry(entry) = *l else { continue };
+                let holds = |h: &Holdings, r: Option<&Reach>| {
+                    r.is_none_or(|r| r.logs.contains(l)) && h.logs.get(l).is_some_and(|f| all.covered(edits, l, f))
+                };
+                let devices = holders.iter().filter(|(_, h, r)| holds(h, *r)).map(|(d, _, _)| *d).collect();
+                synced.entries.insert(entry, devices);
+            }
+            for f in lab.files(me) {
+                let holds = |h: &Holdings, r: Option<&Reach>| {
+                    r.is_none_or(|r| r.files.contains(&f)) && h.files.get(&f) == Some(&FileHold::Whole)
+                };
+                let devices = holders.iter().filter(|(_, h, r)| holds(h, *r)).map(|(d, _, _)| *d).collect();
+                synced.files.insert(f, devices);
+            }
+            synced
+        })
+        .await
     }
 }
 

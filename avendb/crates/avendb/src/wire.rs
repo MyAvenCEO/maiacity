@@ -1,6 +1,6 @@
 //! The wire (P8): what devices send each other, as bytes, and back. An edit keeps the bytes its id hashes (`encode`); a
 //! signed edit adds its signatures, and the messages of a sync wrap what `sync` asks and answers: a device's hello on a
-//! connection, its request (`Request`), the reply (`Reply`), and the digests it announces (`Announce`). A new device
+//! connection, its request (`Request`), the reply (`Reply`), and its holdings (`Announce`). A new device
 //! shows its passkey's pass for it (`RelayPass`, P8d): to the server's relay, which lets it in if it has no UDP of its
 //! own, and to the peer it links through (P8c), which hands it its vault; then it joins (`Join`). The first human vault
 //! to claim a server nobody has claimed yet (`Claim`) owns it: the server becomes a device of the aven vault avenCEO,
@@ -122,12 +122,36 @@ pub struct Reply {
     pub more: bool,
 }
 
-/// The digest of each log a device holds that the peer may hold too (`sync::digests`), as it tells the peer each time
-/// one changes: the peer asks it when one differs from its own.
+/// What a device holds of a log, as it states it in its holdings (`Announce`): the frontier of the part whose whole
+/// past it holds (`sync::frontiers`), and the edits it holds outside that part, waiting for their past; each smallest
+/// first, no repeats. Two copies of a log that agree on both hold the same edits (T19).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Frontier {
+    pub heads: Vec<EditId>,
+    pub waiting: Vec<EditId>,
+}
+
+/// What a device holds of a file, as it states it in its holdings (`Announce`): every sealed byte of it, or some of its
+/// pieces whole (`sealed::PIECE`), by their numbers, smallest first: at least one, and not all.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileHold {
+    Whole,
+    Pieces(Vec<u32>),
+}
+
+/// A device's holdings (v8), as it tells a peer whose hello proved the peer on their connection: of each log and each
+/// file the peer may know by the device's view, what the device holds of it for good, on its shelf. On a new
+/// connection it tells them all (`full`), which stand in for whatever it told the peer before; after that only what
+/// changed, a file it no longer holds with `None`. A device speaks for itself alone: the peer keeps what it hears for
+/// the device the connection proved, and only routes its asks and fetches by it, never lets anyone fetch anything by
+/// it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Announce {
+    pub full: bool,
     /// Smallest log first, no repeats.
-    pub digests: Vec<(LogId, [u8; 32])>,
+    pub logs: Vec<(LogId, Frontier)>,
+    /// Smallest file first, no repeats.
+    pub files: Vec<(FileRoot, Option<FileHold>)>,
 }
 
 /// What a new device sends the peer its passkey proved itself to (P8c), once it holds the passkey's link card: the edit
@@ -1005,15 +1029,87 @@ impl Decode for Reply {
     }
 }
 
+/// The heads, then the waiting edits.
+impl Encode for Frontier {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.heads.encode(out);
+        self.waiting.encode(out);
+    }
+}
+
+impl Decode for Frontier {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Frontier { heads: r.set(32)?, waiting: r.set(32)? })
+    }
+}
+
+/// 0 for the whole file; 1, then the pieces' numbers.
+impl Encode for FileHold {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            FileHold::Whole => out.push(0),
+            FileHold::Pieces(pieces) => {
+                out.push(1);
+                pieces.encode(out);
+            }
+        }
+    }
+}
+
+/// What a device holds of file `root`: some of its pieces only if it has several, each one of them.
+fn file_hold(r: &mut Reader<'_>, root: &FileRoot) -> Result<FileHold, WireError> {
+    match r.u8()? {
+        0 => Ok(FileHold::Whole),
+        1 => {
+            let pieces: Vec<u32> = r.set(4)?;
+            let count = root.size.div_ceil(crate::sealed::PIECE).max(1);
+            let held = |p: &u32| u64::from(*p) < count;
+            let some = !pieces.is_empty() && (pieces.len() as u64) < count && pieces.iter().all(held);
+            if some { Ok(FileHold::Pieces(pieces)) } else { Err(WireError::Unknown) }
+        }
+        _ => Err(WireError::Unknown),
+    }
+}
+
+/// Whether it is full, then of each log, smallest first, its frontier, then of each file, smallest first, what the
+/// device holds of it, if anything.
 impl Encode for Announce {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.digests.encode(out);
+        self.full.encode(out);
+        (self.logs.len() as u32).encode(out);
+        for (log, frontier) in &self.logs {
+            log.encode(out);
+            frontier.encode(out);
+        }
+        (self.files.len() as u32).encode(out);
+        for (root, hold) in &self.files {
+            root.encode(out);
+            hold.encode(out);
+        }
     }
 }
 
 impl Decode for Announce {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Announce { digests: r.set(65)? })
+        let full = bool::decode(r)?;
+        let n = r.count(41)?;
+        let mut logs: Vec<(LogId, Frontier)> = Vec::with_capacity(n.min(64));
+        for _ in 0..n {
+            logs.push((LogId::decode(r)?, Frontier::decode(r)?));
+        }
+        let n = r.count(41)?;
+        let mut files: Vec<(FileRoot, Option<FileHold>)> = Vec::with_capacity(n.min(64));
+        for _ in 0..n {
+            let root = FileRoot::decode(r)?;
+            let hold = match r.u8()? {
+                0 => None,
+                1 => Some(file_hold(r, &root)?),
+                _ => return Err(WireError::Unknown),
+            };
+            files.push((root, hold));
+        }
+        let ordered = logs.windows(2).all(|w| w[0].0 < w[1].0) && files.windows(2).all(|w| w[0].0 < w[1].0);
+        if ordered { Ok(Announce { full, logs, files }) } else { Err(WireError::Unordered) }
     }
 }
 
@@ -1029,6 +1125,7 @@ mod tests {
         let h = handbook(&mut w);
         // a write that brings a file crosses too, the file named in the clear and its key in the sealed body
         let photo = Brought::new([5; 32], FileKey::from_bytes([6; 32]), 100);
+        let root = photo.root;
         w.lab.bring(w.mac_a, h.coop, h.welcome, vec![photo], |_| {}).expect("Alice brings a photo");
         w.lab.sync_all(1);
         assert!(w.lab.log(w.server).edits().iter().any(|e| !e.files().is_empty()));
@@ -1055,8 +1152,9 @@ mod tests {
         let ask = crate::sync::asks(w.lab.log(w.mac_b).edits());
         assert!(!ask.haves.is_empty());
         assert_eq!(Ask::from_wire(&ask.to_wire()), Ok(ask.clone()));
-        let digests: Vec<(LogId, [u8; 32])> = w.lab.digests(w.mac_b).iter().map(|(l, d)| (*l, *d)).collect();
-        let announce = Announce { digests };
+        let frontier = |(l, heads): (LogId, Vec<EditId>)| (l, Frontier { heads, waiting: vec![] });
+        let logs = crate::sync::frontiers(w.lab.log(w.mac_b).edits()).into_iter().map(frontier).collect();
+        let announce = Announce { full: true, logs, files: vec![(root, Some(FileHold::Whole))] };
         assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce));
         let _ = h;
     }
@@ -1294,6 +1392,38 @@ mod tests {
         // four billion edits claimed in eight bytes: refused before anything is made of them
         let bytes = [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
         assert_eq!(Reply::from_wire(&bytes), Err(WireError::Short));
-        assert_eq!(Announce::from_wire(&bytes[..4]), Err(WireError::Short));
+        assert_eq!(Announce::from_wire(&[&[0][..], &bytes[..4]].concat()), Err(WireError::Short));
+    }
+
+    #[test]
+    fn holdings_read_back_only_from_their_own_bytes() {
+        let (a, b) = (LogId::Vault(VaultId([1; 32])), LogId::Entry(EntryId([0; 32])));
+        let frontier = Frontier { heads: vec![EditId([1; 32]), EditId([2; 32])], waiting: vec![EditId([3; 32])] };
+        let one = FileRoot { hash: [4; 32], size: 16 };
+        let film = FileRoot { hash: [5; 32], size: 3 * crate::sealed::PIECE };
+        let files = vec![(one, Some(FileHold::Whole)), (film, Some(FileHold::Pieces(vec![0, 2])))];
+        let announce = Announce { full: false, logs: vec![(a, frontier.clone()), (b, Frontier::default())], files };
+        let bytes = announce.to_wire();
+        assert_eq!(Announce::from_wire(&bytes), Ok(announce.clone()));
+        let dropped = Announce { files: vec![(one, None)], ..Announce::default() };
+        assert_eq!(Announce::from_wire(&dropped.to_wire()), Ok(dropped));
+        // logs or files out of order, heads out of order, and pieces a file can't hold or that are all of it
+        let swapped = Announce { logs: vec![(b, Frontier::default()), (a, frontier.clone())], ..announce.clone() };
+        assert_eq!(Announce::from_wire(&swapped.to_wire()), Err(WireError::Unordered));
+        let files = announce.files.iter().rev().cloned().collect();
+        assert_eq!(Announce::from_wire(&Announce { files, ..announce.clone() }.to_wire()), Err(WireError::Unordered));
+        let heads = Frontier { heads: frontier.heads.iter().rev().copied().collect(), ..frontier };
+        let unordered = Announce { logs: vec![(a, heads)], ..Announce::default() };
+        assert_eq!(Announce::from_wire(&unordered.to_wire()), Err(WireError::Unordered));
+        for pieces in [vec![], vec![3], vec![0, 1, 2]] {
+            let held = Announce { files: vec![(film, Some(FileHold::Pieces(pieces.clone())))], ..Announce::default() };
+            assert_eq!(Announce::from_wire(&held.to_wire()), Err(WireError::Unknown), "{pieces:?}");
+        }
+        let held = Announce { files: vec![(one, Some(FileHold::Pieces(vec![0])))], ..Announce::default() };
+        let held = Announce::from_wire(&held.to_wire());
+        assert_eq!(held, Err(WireError::Unknown), "a file of one piece is whole or not");
+        let mut flagged = bytes.clone();
+        flagged[0] = 2;
+        assert_eq!(Announce::from_wire(&flagged), Err(WireError::Unknown), "full is a flag");
     }
 }

@@ -16,7 +16,8 @@
 //! head names one pack of its whole log alone, and the heads, packs and entries before it stay where they are, as
 //! everything put on a shelf does.
 //!
-//! A node tells its peers of nothing new before its shelf holds it (`Edits::behind`): on the server, its bucket.
+//! A node's holdings name of its device's edits only those its shelf holds (`Edits::held`): on the server, those its
+//! bucket took.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::ErrorKind;
@@ -275,8 +276,15 @@ impl Edits {
         }
     }
 
+    /// How many of the edits of device `me` of `lab` the shelf holds, the first of its log: none while it is due a
+    /// head of the whole log, as the device didn't take back every edit it held.
+    pub(crate) fn held(&self, lab: &Lab, me: SignerId) -> usize {
+        let kept = self.kept.lock().expect("kept");
+        if kept.whole { 0 } else { kept.written.min(lab.size(me).0) }
+    }
+
     /// The shelf lacks an edit or a McEliece key device `me` of `lab` holds, or the head of its whole log it is due.
-    pub(crate) fn behind(&self, lab: &Lab, me: SignerId) -> bool {
+    pub(crate) fn lacks(&self, lab: &Lab, me: SignerId) -> bool {
         let kept = self.kept.lock().expect("kept");
         kept.whole || kept.written < lab.size(me).0 || lab.blob_ids(me).iter().any(|b| !kept.keys.contains(b))
     }
@@ -432,7 +440,8 @@ impl Shared {
     }
 
     /// Puts on the node's shelf what its device takes, as soon as it took it, and tells the peers once the shelf holds
-    /// it; a failed save it tries again after `retry`, then twice as long each time, up to `BACKOFF_MAX`.
+    /// it, as the node's holdings name it from then on; a failed save it tries again after `retry`, then twice as long
+    /// each time, up to `BACKOFF_MAX`.
     pub(crate) async fn saver(self: Arc<Self>) {
         let Some(edits) = &self.edits else { return };
         let mut wait = self.opts.retry;

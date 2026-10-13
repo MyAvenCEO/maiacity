@@ -915,6 +915,18 @@ async fn a_browser_brings_a_film_into_her_vault_and_her_mac_reads_any_range_of_i
         assert_eq!(read, film[range.start as usize..end as usize], "bytes {range:?}");
     }
     assert_eq!(browser.read_file(root, 0..film.len() as u64).await.expect("the whole film"), film);
+    // where it is synced to (v8 phase H): her browser, whose shelf holds it, and her Mac, once it read all of it
+    mac.read_file(root, 0..film.len() as u64).await.expect("the Mac reads all of it");
+    let (her, macs) = (json!(hex_of(&browser.node().device().0)), json!(hex_of(&mac_a.0)));
+    let both = |list: &Value| list.as_array().is_some_and(|l| l.contains(&her) && l.contains(&macs));
+    let synced = || async {
+        let json = browser.world().await.expect("her world").to_json(browser.node().device());
+        let rows = json["entries"].as_array().cloned().unwrap_or_default();
+        let row = rows.into_iter().find(|i| i["entry"] == hex_of(&e.0)).expect("its row");
+        let file = &row["files"][0]["syncedTo"];
+        both(&row["syncedTo"]) && both(file) && file.as_array().is_some_and(|l| l.len() == 2)
+    };
+    until("her browser shows the film synced to itself and her Mac", synced).await;
     // deleted as the page deletes it, a mark among its document's tags; and back
     let (alice_hex, e_hex) = (alice.to_hex(), e.to_hex());
     let mark = |op: &str| json!({ "op": op, "as": alice_hex, "entry": e_hex, "path": ["tags"], "value": DELETED });

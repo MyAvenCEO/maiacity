@@ -94,7 +94,7 @@ use avendb::sealed::{Brought, FileRoot};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
 use avendb_net::shelf::hash_of;
-use avendb_net::{Authenticator, Call, Node, Offer, Options, Progress, Shelf, Stage, Step, Steps};
+use avendb_net::{Authenticator, Call, Node, Offer, Options, Progress, Shelf, Stage, Step, Steps, SyncedTo};
 use bytes::Bytes;
 use iroh::RelayUrl;
 use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
@@ -491,7 +491,7 @@ impl Device {
         self.card(name).await
     }
 
-    /// Its shelf lacks something it holds: until the shelf has it, it tells its peers nothing new
+    /// Its shelf lacks something it holds: its holdings, as it tells its peers, name only what the shelf holds
     /// (`avendb_net::Node::behind`).
     pub async fn behind(&self) -> bool {
         self.node.behind().await
@@ -615,9 +615,11 @@ impl Device {
         self.node.act(card).await.map_err(|why: Refusal| anyhow!("the card is refused: {why:?}"))
     }
 
-    /// Its world by its view (`World`): `None` while it belongs to no vault.
+    /// Its world by its view (`World`), with where each entry and file is synced to (`Node::synced_to`): `None` while
+    /// it belongs to no vault.
     pub async fn world(&self) -> Option<World> {
-        self.node.read(world).await
+        let world = self.node.read(world).await?;
+        Some(World { synced_to: self.node.synced_to().await, ..world })
     }
 
     /// New vaults its person's vault founds and owns alone, each of kind `Kind::Aven` or `Kind::Coop` and named: one
@@ -880,6 +882,8 @@ pub struct World {
     pub shares: Vec<ShareView>,
     pub audiences: Vec<AudienceView>,
     pub entries: Vec<EntryView>,
+    /// The devices each entry and each file is synced to, by their holdings (`avendb_net::SyncedTo`).
+    pub synced_to: SyncedTo,
 }
 
 /// A vault as a device shows it.
@@ -978,11 +982,14 @@ impl World {
     /// device doesn't act for it, a share's `grantee` `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's
     /// `type`, `tags` and `created` `null` where the device doesn't read them and its levels by vault; the built-in
     /// groups of ops the page offers when it shares (`avendb::rules::groups`); and the master recovery key it adds,
-    /// `recovery`, `null` for none, which a vault's owners mark as such. The page's keys keep their older names: the
-    /// shares are `caps`, the audiences `cells`, a share's who and level `grantee` and `role`, an entry's audience and
-    /// levels `cell` and `roles`, and an audience's epoch `generation`.
+    /// `recovery`, `null` for none, which a vault's owners mark as such. Each entry, and each file an entry's writes
+    /// bring, lists the devices it is synced to, `syncedTo`, by their ids, smallest first: this device among them once
+    /// its shelf holds it. The page's keys keep their older names: the shares are `caps`, the audiences `cells`, a
+    /// share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and an audience's
+    /// epoch `generation`.
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
+        let devices = |ds: Option<&Vec<SignerId>>| ds.into_iter().flatten().map(|d| hex(&d.0)).collect::<Vec<_>>();
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
             Principal::Signer(s) => json!({ "signer": hex(&s.0), "recovery": Some(*s) == self.recovery }),
@@ -1048,7 +1055,8 @@ impl World {
             let (media, files) = match &i.what {
                 What::File { media, files, .. } => {
                     let file = |(f, len): &(FileRoot, Option<u64>)| {
-                        json!({ "root": hex(&f.hash), "size": f.size, "len": len })
+                        let synced = devices(self.synced_to.files.get(f));
+                        json!({ "root": hex(&f.hash), "size": f.size, "len": len, "syncedTo": synced })
                     };
                     (Some(media), files.iter().map(file).collect())
                 }
@@ -1076,6 +1084,7 @@ impl World {
                 "proposals": proposals,
                 "media": media,
                 "files": files,
+                "syncedTo": devices(self.synced_to.entries.get(&i.entry)),
             })
         };
         json!({
@@ -1137,7 +1146,8 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
         });
     }
     let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
-    Some(World { mine, recovery: lab.recovery(), vaults, shares, audiences, entries })
+    let synced_to = SyncedTo::default();
+    Some(World { mine, recovery: lab.recovery(), vaults, shares, audiences, entries, synced_to })
 }
 
 /// Entry `en` as device `me` shows it.
