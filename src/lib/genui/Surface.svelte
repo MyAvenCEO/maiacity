@@ -4,6 +4,7 @@
 	hands back the new data model; the page is told of each event and error.
 -->
 <script>
+	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import Node from './Node.svelte';
 	import { loadLogic } from './logic.js';
