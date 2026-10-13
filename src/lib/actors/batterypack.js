@@ -22,6 +22,11 @@ import { CLICKLOCK, clickLatch, clickLockPieces } from './clicklock.js';
 const S = 0.001;
 /** the pack's size (mm): W across, L front to back, H high */
 export const PACK = { W: 460, L: 480, H: 125 };
+/** the height (mm) its ClickLock's pawls sit at: low in the foot band until v4; from v5 at the grip's own height, so
+ *  the release cables run straight and the cube's rails follow them */
+export const lockZ = (v = 5) => (v >= 5 ? 30 : 10);
+/** the grip's bar height (mm) from v5: low on the face, its trigger at the lock's height */
+const GRIP_Z = 40;
 /** its cells: 14 rows in series (along y) of 20 in parallel (along x), 22 mm apart, standing; their zone's middle */
 const CELLS = { s: 14, p: 20, pitch: 22, r: 10.5, h: 70, z0: 16, y: -55 };
 const SRC = 'BatteryPack (our design)';
@@ -36,6 +41,7 @@ const ASSEMBLIES = /** @type {import('./parts.js').Assembly[]} */ ([
 	{ id: 'lock', label: 'ClickLock', note: 'The snap-in latch in all its pieces: two spring pawls whose teeth click into the rails’ keepers, their pivots, and the cables that let the grip’s trigger pull both back at once.', out: [0, 0.04, 0.32] },
 	{ id: 'lid', label: 'Lid', note: 'The lid with its spring pad that presses the contacts home, held by four latches: open them and the pack is open.', out: [0, 0.5, 0] }
 ]);
+const HOLE = '#050607';
 const STEPS = ['Lay out the tray, its front panel, handles and ClickLock', 'Set the bottom contact plates and holder, and stand the 280 cells in it', 'Press on the top holder and the top contact plates', 'Fit the BMS, its sense leads and the back plug', 'Close the lid on its spring pad and snap the four latches'];
 const STEP = /** @type {Record<string, number>} */ ({ tray: 1, front: 1, charge: 1, handles: 1, clicklock: 1, 'lock-pawls': 1, 'lock-springs': 1, 'lock-pivots': 1, 'lock-cables': 1, 'lock-trigger': 1, 'plates-bottom': 2, 'holder-bottom': 2, cells: 2, 'holder-top': 3, 'plates-top': 3, bms: 4, terminals: 4, lid: 5, latches: 5 });
 const GROUP = /** @type {Record<string, string>} */ ({ tray: 'case', front: 'case', charge: 'case', handles: 'case', clicklock: 'case', 'lock-pawls': 'lock', 'lock-springs': 'lock', 'lock-pivots': 'lock', 'lock-cables': 'lock', 'lock-trigger': 'lock', 'plates-bottom': 'contacts', 'holder-bottom': 'cells', cells: 'cells', 'holder-top': 'cells', 'plates-top': 'contacts', bms: 'electronics', terminals: 'electronics', lid: 'lid', latches: 'lid' });
@@ -45,11 +51,12 @@ const GROUP = /** @type {Record<string, string>} */ ({ tray: 'case', front: 'cas
  * `assembly` and `step` say where each part goes in the machine's catalog; with `unit`, the pack arrives whole.
  * `seg`: the sides of a cell (fewer where many packs stand closed). `v`: the version to build (2: its plug still on the
  * face, no ClickLock; 3: the back plug and the ClickLock; 4: one centre grip whose
- * trigger releases the ClickLock).
+ * trigger releases the ClickLock; 5: that grip low on its face, the lock at its height so the cables run straight,
+ * and its back plug as holes for the cube's pins).
  * @param {ReturnType<typeof machineKit>} kit
  * @param {{ at: V3, base: string, assembly?: (g: string) => string, step?: (p: string) => number, prefix?: string, unit?: string, seg?: number, v?: number }} o
  */
-export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p) => STEP[p], prefix = '', unit, seg = 10, v = 4 }) {
+export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p) => STEP[p], prefix = '', unit, seg = 10, v = 5 }) {
 	const m = new THREE.Matrix4().makeTranslation(...at);
 	/** @param {number} x @param {number} y @param {number} z @returns {V3} */
 	const L = (x, y, z) => [x * S, z * S, y * S];
@@ -113,7 +120,13 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 		put(box(0, Lh + 0.5, 104, 386, 2, 7, 1), BLACK);
 		for (let k = 0; k < 10; k++) put(box(-171 + k * 38, Lh + 1.5, 104, 34, 1.5, 4), k < CHARGE ? LED : LED_OFF);
 	});
-	if (v >= 4)
+	if (v >= 5)
+		part('handles', { label: 'Grip', what: 'One grip for one hand, low on its face near the case’s foot: its trigger sits at the very height of the ClickLock’s pawls, so the two release cables run straight to them. Close your fingers round it and the trigger pulls both pawls back, so the pack slides out in the same move; let go and it clicks home again.', specs: [['Width', '150 mm, for a gloved hand'], ['Height', 'Bar 40 mm over the foot, trigger at 30 mm: the lock’s height'], ['Release', 'Trigger in the grip, ~20 N'], ['Carries', '~26 kg [inferred]']] }, (put) => {
+			for (const sx of [-1, 1]) put(box(sx * 82, Lh + 14, GRIP_Z, 16, 28, 34, 6), DARK); // its two feet
+			put(box(0, Lh + 30, GRIP_Z, 180, 16, 30, 8), DARK); // the bar
+			put(box(0, Lh + 38.5, GRIP_Z + 4, 120, 1, 2, 0.4), '#d9dcde'); // its light line
+		});
+	else if (v >= 4)
 		part('handles', { label: 'Grip', what: 'One grip in the middle of its face, for one hand: close your fingers round it and its trigger pulls the ClickLock’s pawls back, so the pack slides out in the same move; let go and it clicks home again. The pack hangs balanced under it.', specs: [['Width', '150 mm, for a gloved hand'], ['Release', 'Trigger in the grip, ~20 N'], ['Carries', '~26 kg [inferred]']] }, (put) => {
 			for (const sx of [-1, 1]) put(box(sx * 82, Lh + 14, 62, 16, 28, 34, 6), DARK); // its two feet
 			put(box(0, Lh + 30, 62, 180, 16, 30, 8), DARK); // the bar
@@ -155,6 +168,22 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 			put(cyl([140, Lh, 55], [140, Lh + 16, 55], 13, 16), BLACK);
 			put(box(-110, Lh + 3, 55, 26, 4, 20, 2), '#d9d9d9');
 		});
+	else if (v >= 5)
+		part('terminals', { label: 'Back socket', what: 'The pack’s plus, minus and data in one socket flush in its back: proper holes, nothing sticking out. Two lined guide holes take the cube’s guide pins first, then its two power pins and four data pins slide into their sockets: slide the pack in and it plugs itself into the backplane; pull it out and it lets go. With nothing proud on its back, it stands on any shelf and no contact gets bent.', specs: [['Power', '2 sockets for ⌀ 8 mm pins, 120 A [inferred]'], ['Data', 'CAN, 4 sockets'], ['Guides', '2 lined holes, ⌀ 11 mm, for ⌀ 10 mm pins']] }, (put) => {
+			const yb = -Lh - 2; // the socket's face, 2 mm proud of the case's back
+			put(box(0, -Lh - 1, 58, 170, 2, 46, 1), BLACK);
+			/** a hole: its lining ring a little wider, its dark inside over it @param {number} x @param {number} z @param {number} r @param {string} ring */
+			const hole = (x, z, r, ring) => {
+				put(cyl([x, yb, z], [x, yb - 0.4, z], r + 2, 16), ring);
+				put(cyl([x, yb - 0.4, z], [x, yb - 0.6, z], r, 16), HOLE);
+			};
+			for (const x of [-45, 45]) hole(x, 58, 6, x < 0 ? RED : COPPER);
+			for (let k = 0; k < 4; k++) hole(-12 + k * 8, 72, 1.6, CAP);
+			for (const sx of [-1, 1]) {
+				put(cyl([sx * 150, -Lh, 58], [sx * 150, -Lh - 1.5, 58], 11, 16), BLACK); // its boss, flush
+				hole(sx * 150, 58, 5.5, STEEL);
+			}
+		});
 	else
 		part('terminals', { label: 'Back plug', what: 'The pack’s plus, minus and data in one blind-mate plug in its back, between two guide pins: slide the pack in and it plugs itself into the cube’s backplane; pull it out by its handles and it lets go. No cables, no bolts.', specs: [['Power', '2 × 120 A blade contacts [inferred]'], ['Data', 'CAN, 4 pins'], ['Guides', '2 pins, ⌀ 10 mm']] }, (put) => {
 		put(box(0, -Lh - 3, 58, 170, 6, 46, 1), BLACK);
@@ -165,7 +194,8 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 	if (v === 3)
 		part('clicklock', { ...CLICKLOCK, what: `${CLICKLOCK.what} In a BatteryCube the pawls click in just as its back plug meets the backplane.` }, (put) => clickLatch(box, put, { half: Wh, face: Lh, z: 10, tabZ: 24 }));
 	// from v4 the ClickLock shows every piece: pawls, springs, pivots, cables and the grip's trigger
-	if (v >= 4) for (const [id, info, draw] of clickLockPieces(box, cyl, { half: Wh, face: Lh, z: 10, grip: [0, Lh + 22, 52] })) part(id, info, draw);
+	if (v >= 5) for (const [id, info, draw] of clickLockPieces(box, cyl, { half: Wh, face: Lh, z: lockZ(v), grip: [0, Lh + 22, lockZ(v)], straight: true })) part(id, info, draw);
+	else if (v >= 4) for (const [id, info, draw] of clickLockPieces(box, cyl, { half: Wh, face: Lh, z: 10, grip: [0, Lh + 22, 52] })) part(id, info, draw);
 	part('lid', { label: 'Lid', what: 'The lid, its round corners and soft edge flush with the case, and the spring pad under it: closing it presses every contact plate onto its poles, the whole pack’s only joining force.', specs: [['Pad', 'Silicone foam, ~0.2 MPa [inferred]'], ['Corners', 'R 30 mm']] }, (put) => {
 		put(slab(W, LEN, RC, H - 13, 13, 0, 5), LID);
 		put(box(0, CELLS.y, H - 19, zone.w - 10, zone.l - 10, 10, 2), '#d8d1bf');
@@ -176,7 +206,7 @@ export function batteryPackParts(kit, { at, base, assembly = (g) => g, step = (p
 }
 
 /** The BatteryPack on its own (version `v`), every part its own: drawn apart, built step by step. @returns {Cast} */
-export function batteryPack(v = 4) {
+export function batteryPack(v = 5) {
 	const kit = machineKit(ASSEMBLIES);
 	batteryPackParts(kit, { at: [0, 0, 0], base: 'base', v });
 	const built = kit.build();
