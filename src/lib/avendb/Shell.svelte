@@ -5,9 +5,11 @@
 	console, the table editor, its cells, schemas and lenses, and its history, every signed edit); then its settings
 	(About, Owners and devices, Access, Sync); and the page picked in the middle. Each page has an address of its own
 	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
-	screen. At the foot, in the middle above the app's own buttons, the vault the person acts as: their own, or any
-	vault their vault owns, whose caps then decide what the page shows and what it may do, as on a device of that vault
-	alone. Marks of the vaults the acting vault holds nothing in are faded.
+	screen. The page picks who the person acts as in each vault, with no switch to flip: in a vault their vault owns,
+	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
+	theirs that holds the strongest cap over it, whose caps then decide what the page shows and what it may do (vaults'
+	`actorIn`). At the foot, in the middle above the app's own buttons, what the page is doing, and why not. Marks of
+	the vaults none of theirs holds anything in are faded.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
@@ -19,7 +21,7 @@
 	import Notes from './Notes.svelte';
 	import Settings from './Settings.svelte';
 	import Todos from './Todos.svelte';
-	import { KINDS, list, nameOf, reaches } from './vaults.js';
+	import { actorIn, KINDS, list, nameOf, reaches } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
@@ -27,10 +29,8 @@
 	 */
 	let { world, api, doing, error, thisName, link, qr, sockets = null } = $props();
 
-	/** the vault the person picked to act as, and the one to look at: their own until they pick another */
-	let enacted = $state('');
+	/** the vault the person looks at: their own until they pick another */
 	let picked = $state('');
-	let switching = $state(false);
 	let adding = $state(false);
 
 	/** The vault's pages, in its list: each a group's, by its address, name and icon. */
@@ -81,12 +81,10 @@
 
 	const busy = $derived(!!doing);
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
-	// a vault this browser no longer knows or acts for leaves the person on their own
-	const actor = $derived(byId.get(enacted)?.via ? enacted : world.mine);
 	const context = $derived(byId.has(picked) ? picked : world.mine);
+	const actor = $derived(actorIn(world, context));
 	const mine = $derived(byId.get(world.mine));
 	const rest = $derived(world.vaults.filter((v) => v.id !== world.mine));
-	const actors = $derived(world.vaults.filter((v) => v.via !== null));
 	const here = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(context) ?? mine));
 	const as = $derived(byId.get(actor) ?? mine);
 
@@ -97,11 +95,6 @@
 	/** Go to the page at address `to`: `todos`, or a note's `notes/` and its entry. @param {string} to */
 	function go(to) {
 		location.hash = to;
-	}
-
-	/** Act as vault `id`, and look at its own, on the same page. @param {string} id */
-	function enact(id) {
-		[enacted, picked, switching] = [id, id, false];
 	}
 
 	/** Open note `entry`, on the whole screen. @param {string} entry */
@@ -120,13 +113,9 @@
 		const names = v.owners.map((o) => ('vault' in o ? nameOf(byId.get(o.vault)) : 'a passkey'));
 		return `Owned by ${list(names)}.`;
 	}
-
-	/** How the person acts as vault `v`. @param {import('./vaults.js').VaultView} v */
-	const through = (v) =>
-		v.id === world.mine ? 'You' : `${KINDS[v.kind]}, through ${list((v.via ?? []).map((o) => nameOf(byId.get(o))))}`;
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (switching = false)} onhashchange={() => (route = parse(location.hash))} />
+<svelte:window onhashchange={() => (route = parse(location.hash))} />
 
 <div class="shell" class:reading={!!route.entry}>
 	{#if route.entry}
@@ -137,24 +126,22 @@
 	<nav class="bar" aria-label="Vaults">
 		{#each [mine, ...rest] as v, i (v?.id)}
 			{#if v}
-				{@const out = !reaches(world, v.id, actor)}
+				{@const by = actorIn(world, v.id)}
+				{@const out = !reaches(world, v.id, by)}
 				{#if i === 1}<hr />{/if}
 				<button
 					class="slot"
 					class:on={v.id === context}
-					title="{nameOf(v)} · {KINDS[v.kind]}{out ? ` · ${nameOf(as)} holds nothing in it` : ''}"
+					title="{nameOf(v)} · {KINDS[v.kind]}{out ? ' · none of your vaults holds anything in it' : ''}"
 					aria-label={nameOf(v)}
 					aria-current={v.id === context ? 'true' : undefined}
 					onclick={() => (picked = v.id)}
 				>
 					<Mark vault={v} dim={out} />
-					{#if v.id === actor}<i class="acting" title="You act as it"></i>{/if}
 				</button>
 			{/if}
 		{/each}
-		{#if actor === world.mine}
-			<button class="slot add" title="New vaults your vault owns" aria-label="New vaults" onclick={() => (adding = true)}>+</button>
-		{/if}
+		<button class="slot add" title="New vaults your vault owns" aria-label="New vaults" onclick={() => (adding = true)}>+</button>
 	</nav>
 
 	<aside class="aside">
@@ -185,42 +172,32 @@
 		<header class="main-head">
 			<h2>{PAGES.find(([id]) => id === tab)?.[1]}</h2>
 			<p class="soft">
-				As <b>{nameOf(as)}</b>{#if actor === context}.{:else if !SETTINGS.includes(tab)}, looking at
-					{nameOf(here)}'s vault: you see what {nameOf(as)}'s caps allow.{:else}. {nameOf(here)}'s settings show
-					every cap and device, as its owners see them.{/if}
+				{#if context === world.mine}
+					As <b>{nameOf(mine)}</b>.
+				{:else if actor === context}
+					As <b>{nameOf(mine)}</b>, its owner: you see and change all of it.
+				{:else if !SETTINGS.includes(tab)}
+					As <b>{nameOf(as)}</b>: you see what {nameOf(as)}'s caps allow in {nameOf(here)}.
+				{:else}
+					As <b>{nameOf(as)}</b>. {nameOf(here)}'s settings show every cap and device, as its owners see them.
+				{/if}
 			</p>
 		</header>
 		{#if tab === 'notes'}
-			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onact={enact} onopen={open} />
+			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onopen={open} />
 		{:else if tab === 'todos'}
-			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onact={enact} />
+			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'access' || tab === 'sync'}
 			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} />
 		{:else}
-			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onact={enact} onview={go} />
+			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 		{/if}
 	</section>
 	{/if}
 
-	<div class="switcher">
+	<div class="toasts">
 		{#if doing}<p class="toast" role="status">{doing}…</p>{/if}
 		{#if error}<p class="toast bad" role="alert">{error}</p>{/if}
-		{#if switching}
-			<div class="menu" role="menu" aria-label="Act as">
-				<small>Act as</small>
-				{#each actors as v (v.id)}
-					<button role="menuitemradio" aria-checked={v.id === actor} class:on={v.id === actor} onclick={() => enact(v.id)}>
-						<Mark vault={v} size={30} />
-						<span class="who"><b>{nameOf(v)}</b><small>{through(v)}</small></span>
-					</button>
-				{/each}
-			</div>
-		{/if}
-		<button class="pill" class:other={actor !== world.mine} aria-expanded={switching} onclick={() => (switching = !switching)}>
-			<Mark vault={as} size={30} />
-			<span class="who"><small>Acting as</small><b>{nameOf(as)}</b></span>
-			<span class="chev" aria-hidden="true">{switching ? '▾' : '▴'}</span>
-		</button>
 	</div>
 
 	{#if adding}<NewVaults {world} {api} {busy} onclose={() => (adding = false)} />{/if}
@@ -302,17 +279,6 @@
 
 	.slot:hover :global(.mark) {
 		transform: scale(1.06);
-	}
-
-	.acting {
-		position: absolute;
-		right: -2px;
-		bottom: -2px;
-		width: 14px;
-		height: 14px;
-		border: 3px solid #e6e0d4;
-		border-radius: 50%;
-		background: var(--ok);
 	}
 
 	.add {
@@ -431,7 +397,7 @@
 	}
 
 	/* at the foot, in the middle, just above the app's own nav pill (--nav-room, src/app.css) */
-	.switcher {
+	.toasts {
 		position: fixed;
 		left: 50%;
 		bottom: var(--nav-room, 5rem);
@@ -442,83 +408,6 @@
 		gap: 0.5rem;
 		max-width: calc(100vw - 2rem);
 		transform: translateX(-50%);
-	}
-
-	.pill {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		padding: 0.35rem 0.9rem 0.35rem 0.4rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: #fff;
-		box-shadow: 0 6px 22px rgb(0 0 0 / 0.14);
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.pill.other {
-		border-color: var(--accent);
-		background: #d6e8e4;
-	}
-
-	.who {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		line-height: 1.2;
-		text-align: left;
-	}
-
-	.who small {
-		color: var(--soft);
-		font-size: 0.7rem;
-	}
-
-	.chev {
-		color: var(--soft);
-		font-size: 0.8rem;
-	}
-
-	.menu {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		min-width: 17rem;
-		max-height: 60vh;
-		overflow-y: auto;
-		padding: 0.6rem;
-		border: 1px solid var(--edge);
-		border-radius: 14px;
-		background: #fff;
-		box-shadow: 0 10px 34px rgb(0 0 0 / 0.18);
-	}
-
-	.menu > small {
-		padding: 0.1rem 0.5rem 0.3rem;
-		color: var(--soft);
-		font-size: 0.72rem;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-	}
-
-	.menu button {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		padding: 0.4rem 0.5rem;
-		border: 0;
-		border-radius: 10px;
-		background: none;
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.menu button:hover,
-	.menu button.on {
-		background: #efebe3;
 	}
 
 	.toast {

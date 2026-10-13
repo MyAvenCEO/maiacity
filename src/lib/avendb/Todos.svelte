@@ -13,9 +13,9 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   onaccess: () => void, onact: (vault: string) => void }}
+	 *   onaccess: () => void }}
 	 */
-	let { world, vault, actor, api, busy, onaccess, onact } = $props();
+	let { world, vault, actor, api, busy, onaccess } = $props();
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
@@ -106,9 +106,6 @@
 				{nameOf(here)}. A vault that owns it can share its todos with {nameOf(as)}, all of them or those tagged one way, in
 				<button class="link" onclick={onaccess}>Access</button>.
 			</p>
-			{#if here?.via}
-				<button class="btn" onclick={() => onact(vault)}>Act as {nameOf(here)}</button>
-			{/if}
 		</div>
 	{:else}
 		<ul class="card todos">

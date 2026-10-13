@@ -17,9 +17,9 @@
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any,
 	 *   view: 'query' | 'tables' | 'cells' | 'schemas' | 'lenses' | 'history', onopen: (entry: string) => void,
-	 *   onact: (vault: string) => void, onview: (view: string) => void }}
+	 *   onview: (view: string) => void }}
 	 */
-	let { world, vault, actor, api, view, onopen, onact, onview } = $props();
+	let { world, vault, actor, api, view, onopen, onview } = $props();
 
 	let db = $state(/** @type {import('./db.js').Db | null} */ (null));
 	let failed = $state('');
@@ -77,7 +77,7 @@
 	{:else if !db || db.vault !== vault}
 		<p class="soft">Reading the database…</p>
 	{:else if view === 'tables'}
-		<TableEditor {s} bind:cell={() => shown, (v) => (cell = v)} {vault} {actor} {onopen} {onact} />
+		<TableEditor {s} bind:cell={() => shown, (v) => (cell = v)} {actor} {onopen} />
 	{:else if view === 'cells'}
 		<Cells {s} {db} onpick={(id) => ((cell = id), onview('tables'))} />
 	{:else if view === 'schemas'}
