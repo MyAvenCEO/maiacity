@@ -346,8 +346,8 @@ fn a_locked_device_holds_no_key() {
 }
 
 /// Once the curves fall (P4b; T18): whoever broke a device's ed25519 key signs writes as it, as writes carry only
-/// the classical half, but no share, no governance and no checkpoint, which carry the hash-based half too. A peer that
-/// no longer trusts the curves counts only the writes their own device's checkpoints cover, and the devices' own edits
+/// the classical half, but no share, no governance and no checkpoint, which carry the hash-based half too. No peer
+/// trusts the curves, so each counts only the writes their own device's checkpoints cover, and the devices' own edits
 /// go on as before, each vouched for at once.
 #[test]
 fn a_broken_curve_writes_nothing_that_counts() {
@@ -357,22 +357,20 @@ fn a_broken_curve_writes_nothing_that_counts() {
     let broken = |action| Tamper::BrokenClassicalKey { signer: mac_a, action };
     // no share to Dave, as Alice's Mac would draft it, and no new device for Alice, with the classical half alone
     let to_dave = w.lab.draft_share(mac_a, &[mac_a], share(h.coop, vault(dave), Level::Read, by_id(h.welcome)));
-    let to_dave = to_dave.expect("Alice's Mac drafts a cap to Dave").edit().action.clone();
+    let to_dave = to_dave.expect("Alice's Mac drafts a share to Dave").edit().action.clone();
     assert_eq!(w.lab.tamper(mac_b, broken(to_dave)), Err(Refusal::BadSignature));
     let add = Action::AddDevice { vault: w.alice, device: w.stranger, seal_to: None };
     assert_eq!(w.lab.tamper(mac_b, broken(add)), Err(Refusal::BadSignature));
-    // a write as Alice's Mac passes while Bob's Mac trusts the curves
+    // a write as Alice's Mac is kept, but doesn't count: no checkpoint by her Mac covers it
     let write = forced(&w.lab, mac_b, h.welcome, h.coop);
     let forged = w.lab.tamper(mac_b, broken(write)).unwrap();
     let counts = |w: &World, d| w.lab.state(d).all_writes().iter().any(|x| x.edit == forged);
-    assert!(counts(&w, mac_b));
+    assert!(!counts(&w, mac_b) && w.lab.log(mac_b).view().all_writes().iter().any(|x| x.edit == forged));
     // the forger can't vouch for it
     let vouch = Action::Checkpoint { entry: h.welcome, covers: vec![forged] };
     assert_eq!(w.lab.tamper(mac_b, broken(vouch)), Err(Refusal::BadSignature));
-    // once no device trusts the curves, the forged write doesn't count, and Alice's own edits, vouched for when her
-    // Mac synced, still do
-    w.lab.set_pq_only(true);
-    assert!(!counts(&w, mac_b) && w.lab.log(mac_b).view().all_writes().iter().any(|x| x.edit == forged));
+    assert!(!counts(&w, mac_b));
+    // Alice's own edits, vouched for as she made them, still count
     assert_eq!(text(&w.lab, mac_b, h.welcome, 2).as_deref(), Some(WELCOME_TEXT));
     // an edit made now is vouched for at once, and reaches Bob's Mac
     w.lab.edit(mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();

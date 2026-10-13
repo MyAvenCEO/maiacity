@@ -782,8 +782,6 @@ pub struct World {
     pub mine: VaultId,
     /// The master recovery key it adds (`Start::recovery`), if any.
     pub recovery: Option<SignerId>,
-    /// It trusts no curve (`Lab::set_pq_only`): only the writes a checkpoint by their author covers count.
-    pub pq_only: bool,
     pub vaults: Vec<VaultView>,
     pub shares: Vec<ShareView>,
     pub audiences: Vec<AudienceView>,
@@ -990,7 +988,6 @@ impl World {
             "me": hex(&me.0),
             "mine": hex(&self.mine.0),
             "recovery": self.recovery.map(|r| hex(&r.0)),
-            "pqOnly": self.pq_only,
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
             "caps": self.shares.iter().map(share).collect::<Vec<_>>(),
             "cells": self.audiences.iter().map(audience).collect::<Vec<_>>(),
@@ -1046,7 +1043,7 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
         });
     }
     let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
-    Some(World { mine, recovery: lab.recovery(), pq_only: lab.pq_only(), vaults, shares, audiences, entries })
+    Some(World { mine, recovery: lab.recovery(), vaults, shares, audiences, entries })
 }
 
 /// Entry `en` as device `me` shows it.

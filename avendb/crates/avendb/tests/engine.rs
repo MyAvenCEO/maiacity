@@ -375,6 +375,10 @@ fn a_share_lets_whom_it_names_make_only_what_its_ops_allow() {
     let en = st.entry(l.door).expect("the door");
     let action = cast::write(alice, l.door, alice, en.stay(), st.epoch(KeyFam::Audience(alice, en.audience())));
     let on_it = w.lab.tamper(mac, Tamper::Unchecked { signers: vec![mac], action }).expect("Alice's Mac takes it");
+    // her Mac vouches for it, as it does for every write of its own, so only what it builds on keeps it from counting
+    let vouch = Action::Checkpoint { entry: l.door, covers: vec![on_it] };
+    let vouch = w.lab.sign_unchecked(mac, &[mac], vouch).expect("her Mac vouches for it");
+    assert_eq!(w.lab.receive(mac, vec![vouch], vec![]), 1);
     assert!(w.lab.history(mac, l.door).and_then(|h| h.get(on_it)).is_some_and(|c| !c.counted));
     assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(on_it.to_hex(), false)));
     // what Alice's app writes builds on the writes her readers count, and counts

@@ -57,8 +57,8 @@
 //! A Classic McEliece public key travels as a blob beside the edits that name it (`policy::Edit::blobs`): a device
 //! keeps the blobs of the edits it keeps, each only if it hashes to its id, and seals to a key once it holds that key's
 //! blob. Before it syncs, a device vouches for the writes it made since its last checkpoint
-//! (`policy::Action::Checkpoint`); once peers stop trusting the curves (`set_pq_only`), each counts only the writes a
-//! checkpoint by their author covers (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
+//! (`policy::Action::Checkpoint`). No device trusts the curves: each counts only the writes a checkpoint by their
+//! author covers (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
 //! Devices sync by what each holds of each log, gossip one digest per log in random orders, and go offline and come
 //! back; a device restored from a backup forks from what it made since (`forks`).
 
@@ -319,11 +319,10 @@ struct Store {
     log: Log,
     signed: HashMap<EditId, Signed>,
     blobs: Blobs,
-    /// The replay of its edits: which stand, and what it knows. Of the checkpointed ones only, once it no longer trusts
-    /// the curves.
+    /// The replay of its edits: which stand, and what it knows. Of the checkpointed writes only, as it trusts no curve.
     replay: Replay,
-    /// What its edits say with every write counted, once it no longer trusts the curves (`Lab::full_view`): replayed
-    /// once for the edits it holds now, not on every ask, announce and fetch.
+    /// What its edits say with every write counted, checkpointed or not (`Lab::full_view`): replayed once for the edits
+    /// it holds now, not on every ask, announce and fetch.
     full: OnceLock<State>,
     /// Empty while it is locked, as is everything below but what it made itself and has to vouch for.
     keys: Keyring,
@@ -573,8 +572,6 @@ pub struct Lab {
     /// that no two machines make the same keys under the same name.
     on_machine: bool,
     spares: Spares,
-    /// No device trusts the curves anymore: each counts only checkpointed writes.
-    pq_only: bool,
     /// The devices off the network: they neither send nor receive.
     offline: HashSet<SignerId>,
     /// The time a new entry's header says it was created at, in seconds since 1970 (`set_now`).
@@ -617,7 +614,6 @@ impl Lab {
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
             on_machine: entropy.is_some(),
             spares: Spares::default(),
-            pq_only: false,
             offline: HashSet::new(),
             now: 0,
             dry: false,
@@ -1331,10 +1327,9 @@ impl Lab {
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
         for round in 0.. {
-            let pq_only = self.pq_only;
             let Lab { stores, rng, spares, .. } = self;
             let Some(store) = stores.get_mut(&d) else { return };
-            store.replay = if pq_only { replay(&checkpointed(store.log.edits())) } else { store.log.replay() };
+            store.replay = replay(&checkpointed(store.log.edits()));
             // a locked device holds no key, and opens nothing
             if !unlocked {
                 return;
@@ -1350,13 +1345,11 @@ impl Lab {
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
             // what its edits say, every write counted: what it drafts on
-            let view = if pq_only { store.log.view() } else { store.replay.state.clone() };
+            let view = store.log.view();
             for w in work {
                 self.work(d, &view, w);
             }
-            if pq_only {
-                self.vouch(d);
-            }
+            self.vouch(d);
         }
     }
 
@@ -1393,11 +1386,7 @@ impl Lab {
     /// What device `d` makes of its edits, every write counted: what it drafts and checks its own edits by.
     fn full_view(&self, d: SignerId) -> std::borrow::Cow<'_, State> {
         let store = self.held(d);
-        if self.pq_only {
-            std::borrow::Cow::Borrowed(store.full.get_or_init(|| store.log.view()))
-        } else {
-            std::borrow::Cow::Borrowed(store.view())
-        }
+        std::borrow::Cow::Borrowed(store.full.get_or_init(|| store.log.view()))
     }
 
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
@@ -1805,17 +1794,15 @@ impl Lab {
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files }, x)
     }
 
-    /// Encrypt `body` into the write `edit`, whose stay is in audience `x`, then sign and keep it (`seal_write`); once
-    /// peers count only checkpointed writes, vouch for it at once; and bring the device up to date. In a dry run,
+    /// Encrypt `body` into the write `edit`, whose stay is in audience `x`, then sign and keep it (`seal_write`); vouch
+    /// for it at once, since peers count only checkpointed writes; and bring the device up to date. In a dry run,
     /// nothing: its id.
     fn write(&mut self, on: SignerId, edit: Edit, body: Body, x: AudienceId) -> Result<EditId, Refusal> {
         if self.dry {
             return Ok(edit.id());
         }
         let id = self.seal_write(on, edit, body, x)?;
-        if self.pq_only {
-            self.vouch(on);
-        }
+        self.vouch(on);
         self.refresh(on, &[]);
         Ok(id)
     }
@@ -1859,7 +1846,7 @@ impl Lab {
         }
         let unvouched = std::mem::take(&mut store.unvouched);
         // its own writes as every edit it holds has them, whether it counts them yet or not
-        let st = if self.pq_only { store.full.get_or_init(|| store.log.view()) } else { store.view() };
+        let st = store.full.get_or_init(|| store.log.view());
         let mut by: BTreeMap<EntryId, Vec<EditId>> = BTreeMap::new();
         for w in st.all_writes() {
             if unvouched.contains(&w.edit) {
@@ -1873,20 +1860,6 @@ impl Lab {
             self.keep(d, vec![signed], &Blobs::new());
         }
         made
-    }
-
-    /// Every device stops trusting the curves, or trusts them again: once they no longer do, each counts only the
-    /// writes a checkpoint by their author covers, and checkpoints each write of its own as it makes it.
-    pub fn set_pq_only(&mut self, on: bool) {
-        self.pq_only = on;
-        for d in self.devices.clone() {
-            self.refresh(d, &[]);
-        }
-    }
-
-    /// The devices no longer trust the curves (`set_pq_only`).
-    pub fn pq_only(&self) -> bool {
-        self.pq_only
     }
 
     /// The schemas and lenses published into vault `v`'s lane, as device `d` holds them.
@@ -2004,8 +1977,8 @@ impl Lab {
         &self.held(d).log
     }
 
-    /// What device `d` makes of the edits it holds: what `log(d).view()` says, but once it no longer trusts the curves,
-    /// of the checkpointed writes only.
+    /// What device `d` makes of the edits it holds: what `log(d).view()` says, but of the checkpointed writes only, as
+    /// no device trusts the curves.
     pub fn state(&self, d: SignerId) -> &State {
         self.held(d).view()
     }
@@ -2187,7 +2160,6 @@ impl Lab {
             rng,
             on_machine: true,
             spares,
-            pq_only: self.pq_only,
             offline: HashSet::new(),
             now: self.now,
             dry: false,

@@ -16,8 +16,8 @@
 //!   it, and it is a hash; it signs each edit's id on its own.
 //!
 //! Writes are the one exception: a device writes often, and a write carries only its classical half. The device vouches
-//! for its writes in its next checkpoint, signed both ways (`policy::Action::Checkpoint`), and a peer that no longer
-//! trusts the curves counts only checkpointed writes (`policy::checkpointed`).
+//! for its writes in its next checkpoint, signed both ways (`policy::Action::Checkpoint`), and since no peer trusts the
+//! curves, each counts only checkpointed writes (`policy::checkpointed`).
 //!
 //! A signer may also consent once, for good, to be added as an owner (`consent_challenge`, `standing`): its signature,
 //! both halves, over a challenge that names it alone. An edit that founds a vault with it among the first owners, or

@@ -93,7 +93,7 @@
 	{:else if view === 'lenses'}
 		<Lenses {s} />
 	{:else}
-		<History {s} {log} failed={logFailed} {vault} pqOnly={world.pqOnly} />
+		<History {s} {log} failed={logFailed} {vault} />
 	{/if}
 </div>
 

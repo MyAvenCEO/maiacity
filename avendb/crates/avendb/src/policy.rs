@@ -2501,10 +2501,10 @@ pub struct Meaning {
     pub pick: Option<Vec<ShareId>>,
 }
 
-/// The edits a peer counts once it no longer trusts the curves, so neither ed25519 nor P-256: every edit but a write,
-/// as each carries the hash-based half of its signatures too, and each write that a checkpoint by its own author
-/// covers. Removals cut what a forger signs on an old copy of the log (T16), so whoever broke a device's ed25519 key
-/// still writes nothing a checkpoint didn't cover.
+/// The edits a peer counts, as it trusts neither ed25519 nor P-256 alone: every edit but a write, as each carries the
+/// hash-based half of its signatures too, and each write that a checkpoint by its own author covers. Removals cut what
+/// a forger signs on an old copy of the log (T16), so whoever broke a device's ed25519 key still writes nothing a
+/// checkpoint didn't cover.
 pub fn checkpointed(edits: &[Edit]) -> Vec<Edit> {
     let covered: HashSet<(SignerId, EditId)> = edits
         .iter()
