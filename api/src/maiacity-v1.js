@@ -28,13 +28,14 @@ async function load(tx, now) {
 
 const save = (tx, state) => tx.query("UPDATE v1_games SET state = ($2::text)::jsonb, updated = now() WHERE id = $1", [GAME, json(state)]);
 
-/** a founder without a seat takes the first free one (A, then B), named after them; a founder with one keeps it */
+/** a founder without a seat takes the first free one (A, then B); a founder with one keeps it. Either way the seat
+ * carries the founder's own profile name (so their HEARTS are theirs by name too), kept up to date on every visit */
 function join(state, founder) {
-  if (!founder?.id || SEATS.some((s) => state.players[s].founder === founder.id)) return;
-  const seat = SEATS.find((s) => !state.players[s].founder);
+  if (!founder?.id) return;
+  const seat = SEATS.find((s) => state.players[s].founder === founder.id) ?? SEATS.find((s) => !state.players[s].founder);
   if (!seat) return;
   state.players[seat].founder = founder.id;
-  if (founder.name) state.players[seat].name = `${founder.name}`.slice(0, 40);
+  if (founder.name) state.players[seat].name = `${founder.name}`.trim().slice(0, 40);
 }
 
 /** the game as it stands now (advanced and kept, so month ends are booked once); a founder signing in (not an app

@@ -56,7 +56,7 @@
 		<header>
 			<p class="eyebrow">MaiaCity V1</p>
 			<h1>COOPs</h1>
-			<p class="dim">Three COOPs, each minting its own MIND. Invest HEARTS into one: half of the MIND is yours, half goes to its treasury. Every number here is read live from <a href="{base}/app/maiacity-v1/">the game</a>.</p>
+			<p class="dim">Three COOPs, each minting its own MIND. Invest HEARTS into one: half of the MIND is yours, 4 tenths go to its treasury and a tenth into the city pool. Every number here is read live from <a href="{base}/app/maiacity-v1/">the game</a>.</p>
 		</header>
 
 		<div class="cols">

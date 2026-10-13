@@ -34,7 +34,7 @@ export function story(view, seat, seen) {
 		{ id: 'mint', chapter: 'Your HEARTS', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint,
 			text: `Your HEARTS grow quietly all the time. To make them yours, you mint them, like picking fruit that has ripened. As a welcome gift, your first mint brings a whole year at once: ${f(st.starterPack ?? year)} HEARTS. Tap Mint.` },
 		{ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...next('coops'),
-			text: `Everything in the city belongs to a COOP: a company that its people own together. There are three here, and each has its own job. Each COOP also has its own share, called a MIND. Turn 1 HEART into 1 MIND, and you own a little part of that COOP. Half the MIND goes to you, half stays in the COOP's treasury, so it can grow.` },
+			text: `Everything in the city belongs to a COOP: a company that its people own together. There are three here, and each has its own job. Each COOP also has its own share, called a MIND. Turn 1 HEART into 1 MIND, and you own a little part of that COOP. Half the MIND goes to you. Four tenths stay in the COOP's treasury, so it can grow, and one tenth goes into the city pool.` },
 		{ id: 'settlement', chapter: 'Your home', title: `The ${c.settlement.name}: your home`, hint: 'invest', reveal: 0, ...invest('settlement', 1000),
 			text: `Let us start where you sleep. The tent belongs to the ${c.settlement.name}, the COOP of this one settlement, and you pay it a small rent for your bed. Invest 1,000 HEARTS, and you own a part of your own home.` },
 		{ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000),

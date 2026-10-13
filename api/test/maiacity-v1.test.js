@@ -23,12 +23,12 @@ test("the first mint brings the 8,736 HEARTS starter pack; then HEARTS grow 24 a
   expect(s.players.A.wallet.HEARTS).toBeCloseTo(8743 + 672, 6);
 });
 
-test("investing splits 50/50, and a tenth of the treasury half goes to the pool", () => {
+test("investing splits each HEART: 0.5 to the investor, 0.4 to the treasury, 0.1 to the city pool", () => {
   let s = act(newGame(T0), "A", { type: "mint" }, T0 + DAY_MS);
   s = act(s, "A", { type: "invest", coop: "maia", amount: 10 }, T0 + DAY_MS);
   expect(s.players.A.wallet.MAIA).toBeCloseTo(5, 6);
-  expect(s.coops.maia.treasury.MAIA).toBeCloseTo(4.5, 6);
-  expect(s.pool.MAIA).toBeCloseTo(0.5, 6);
+  expect(s.coops.maia.treasury.MAIA).toBeCloseTo(4, 6);
+  expect(s.pool.MAIA).toBeCloseTo(1, 6);
   expect(s.players.A.wallet.HEARTS).toBeCloseTo(8736 + 672 - 10, 6);
   expect(price(s)).toBe(null);
 });
@@ -72,7 +72,7 @@ test("a MIP needs two signatures and applies at once in the same game: settings 
   expect(s.mips[0].status).toBe("accepted");
   expect(s.settings.tentRent).toBe(3);
   expect(s.players.B.wallet.MAIA).toBeCloseTo(4, 6);
-  expect(s.coops.maia.treasury.MAIA).toBeCloseTo(9 - 4, 6);
+  expect(s.coops.maia.treasury.MAIA).toBeCloseTo(8 - 4, 6);
   // a payout larger than the treasury is refused; a rejected MIP changes nothing
   expect(() => act(s, "B", { type: "propose", mip: { title: "Too much", payouts: [{ from: "coop:maia", to: "player:B", token: "MAIA", amount: 100 }] } }, T0)).toThrow();
   s = act(s, "B", { type: "propose", mip: { title: "Pool share up", settings: { poolShare: 0.2 } } }, T0);
@@ -103,7 +103,7 @@ test("a MIP may change every setting and every COOP: the clock speed, the mint w
 });
 
 test("the pool is a Balancer weighted basket of all three MINDs: equal weights, the invariant never falls", () => {
-  let s = grown(newGame(T0, { demurrage: 0, poolShare: 0.5 }));
+  let s = grown(newGame(T0, { demurrage: 0, poolShare: 0.25 }));
   for (const seat of ["A", "B"]) s = act(s, seat, { type: "mint" }, T0);
   s = act(s, "A", { type: "invest", coop: "maia", amount: 14 }, T0);
   s = act(s, "A", { type: "invest", coop: "settlement", amount: 10 }, T0);

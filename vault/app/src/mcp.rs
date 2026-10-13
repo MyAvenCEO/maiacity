@@ -559,7 +559,7 @@ pub struct V1Propose {
     /// the MIP: { title, description (prose: what and why), settings: { key: number } (only what changes; keys and
     /// limits: hoursPerMonth 1-720 real hours a game month lasts, mintWindowHours 1-720 how far back minting reaches,
     /// signatures 1-2, starterPack 0-10000 HEARTS on a first mint, heartsPerDay 0-1000 HEARTS a game day, demurrage 0-0.5 a year,
-    /// poolShare 0-0.5 of every treasury half into the AMM pool, swapFee 0-0.1, tentRent 0-10000 settlementMIND each
+    /// poolShare 0-0.5 of every invested HEART into the AMM pool (0.1: investor 0.5, treasury 0.4, pool 0.1), swapFee 0-0.1, tentRent 0-10000 settlementMIND each
     /// player a month, hexRent 0-10000 maiaMIND the Settlement COOP a month,
     /// pickupRent, powercubeRent, batteryRent 0-10000 the Settlement COOP a month to the machine's owner in its MIND), coops: { maia | settlement | village:
     /// { name, assets: [the whole list as it will be: { id (keep an asset's id from maiacity_v1_mips), name, kind }] } },

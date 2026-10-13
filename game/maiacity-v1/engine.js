@@ -40,7 +40,7 @@ export const MINDS = ['MAIA', 'SETTLEMENT', 'VILLAGE'];
 export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', SETTLEMENT: 'settlementMIND', VILLAGE: 'villageMIND' };
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', SETTLEMENT: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 5;
+export const VERSION = 6;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The settlement hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, settlementMIND, villageMIND' }] },
@@ -93,7 +93,7 @@ export const RENTED = [
 ];
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Treasury share to the pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightSETTLEMENT: 'Pool weight of settlementMIND', weightVILLAGE: 'Pool weight of villageMIND', tentRent: 'Tent rent, each player a month (settlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (maiaMIND)', pickupRent: 'Pickup rent, Settlement COOP a month (villageMIND)', powercubeRent: 'Powercube rent, Settlement COOP a month (villageMIND)', batteryRent: 'Battery pack rent, Settlement COOP a month (villageMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightSETTLEMENT: 'Pool weight of settlementMIND', weightVILLAGE: 'Pool weight of villageMIND', tentRent: 'Tent rent, each player a month (settlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (maiaMIND)', pickupRent: 'Pickup rent, Settlement COOP a month (villageMIND)', powercubeRent: 'Powercube rent, Settlement COOP a month (villageMIND)', batteryRent: 'Battery pack rent, Settlement COOP a month (villageMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -579,14 +579,15 @@ export function act(state, seat, action, now = Date.now()) {
 			const spend = Math.min(n, p.wallet.HEARTS);
 			p.wallet.HEARTS -= spend;
 			const half = spend / 2;
-			const toPool = half * s.settings.poolShare;
+			// each HEART: half the MIND to the investor, a poolShare (0.1) to the city pool, the rest (0.4) to the treasury
+			const toPool = Math.min(half, spend * s.settings.poolShare);
 			p.wallet[coop.mind] += half;
 			coop.treasury[coop.mind] += half - toPool;
 			s.pool[coop.mind] += toPool;
 			log(s, now, { kind: 'invest', from: me, to: `coop:${coop.id}`, token: 'HEARTS', amount: spend, note: `invested into the ${coop.name}` });
 			log(s, now, { kind: 'mint', from: 'mint', to: me, token: coop.mind, amount: half, note: 'your half' });
-			log(s, now, { kind: 'mint', from: 'mint', to: `coop:${coop.id}`, token: coop.mind, amount: half - toPool, note: `treasury half, less ${(s.settings.poolShare * 100).toFixed(0)} % to the pool` });
-			if (toPool > 0) log(s, now, { kind: 'pool', from: `coop:${coop.id}`, to: 'pool', token: coop.mind, amount: toPool, note: `${(s.settings.poolShare * 100).toFixed(0)} % of the treasury half` });
+			log(s, now, { kind: 'mint', from: 'mint', to: `coop:${coop.id}`, token: coop.mind, amount: half - toPool, note: `the treasury's share (${((0.5 - toPool / spend) * 100).toFixed(0)} % of the HEARTS)` });
+			if (toPool > 0) log(s, now, { kind: 'pool', from: `coop:${coop.id}`, to: 'pool', token: coop.mind, amount: toPool, note: `${(s.settings.poolShare * 100).toFixed(0)} % of the HEARTS invested` });
 			break;
 		}
 		case 'swap': {
