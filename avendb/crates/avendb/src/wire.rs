@@ -19,6 +19,7 @@ use crate::id::{BlobId, CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
 use crate::rules::{Grant, On, Proof, Rule, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_RULES, MAX_STEPS, MAX_VALUES};
+use crate::sealed::{Brought, FileKey, FileRoot};
 use crate::sign::{Assertion, Classical, Hello, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
@@ -488,10 +489,35 @@ impl Decode for TagDelta {
     }
 }
 
+/// A body is read whole (`Wire`), so its files, last, are there exactly when bytes are left, and then there are some.
 impl Decode for Body {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let (header, tags, answers, content) = (r.option()?, TagDelta::decode(r)?, r.set(32)?, r.bytes()?);
-        Ok(Body { header, tags, answers, content, proof: r.option()? })
+        let proof = r.option()?;
+        let mut files: Vec<Brought> = vec![];
+        if r.at < r.bytes.len() {
+            files = r.seq(80)?;
+            if files.is_empty() {
+                return Err(WireError::Unknown);
+            }
+            if !files.windows(2).all(|w| w[0].root < w[1].root) {
+                return Err(WireError::Unordered);
+            }
+        }
+        Ok(Body { header, tags, answers, content, proof, files })
+    }
+}
+
+impl Decode for FileRoot {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(FileRoot { hash: <[u8; 32]>::decode(r)?, size: u64::decode(r)? })
+    }
+}
+
+impl Decode for Brought {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let (root, key) = (FileRoot::decode(r)?, FileKey::from_bytes(<[u8; 32]>::decode(r)?));
+        Ok(Brought { root, key, len: u64::decode(r)? })
     }
 }
 
@@ -589,7 +615,8 @@ impl Decode for Action {
                 keep: r.seq(32)?,
                 via: r.seq(32)?,
             },
-            9 => Action::Write {
+            // a write that brings files has a tag of its own, and brings some
+            tag @ (9 | 14) => Action::Write {
                 vault: VaultId::decode(r)?,
                 entry: EntryId::decode(r)?,
                 actor: VaultId::decode(r)?,
@@ -602,6 +629,10 @@ impl Decode for Action {
                     0 => None,
                     1 => Some(r.seq(32)?),
                     _ => return Err(WireError::Unknown),
+                },
+                files: match tag {
+                    9 => vec![],
+                    _ => Some(r.set(40)?).filter(|f: &Vec<FileRoot>| !f.is_empty()).ok_or(WireError::Unknown)?,
                 },
                 body: r.bytes()?,
             },
@@ -938,6 +969,11 @@ mod tests {
     fn every_edit_and_signature_of_a_world_reads_back_the_same() {
         let mut w = world();
         let h = handbook(&mut w);
+        // a write that brings a file crosses too, the file named in the clear and its key in the sealed body
+        let photo = Brought::new([5; 32], FileKey::from_bytes([6; 32]), 100);
+        w.lab.bring(w.mac_a, h.coop, h.welcome, vec![photo], |_| {}).expect("Alice brings a photo");
+        w.lab.sync_all(1);
+        assert!(w.lab.log(w.server).edits().iter().any(|e| !e.files().is_empty()));
         let mut kinds = std::collections::HashSet::new();
         for d in [w.mac_a, w.mac_b, w.server] {
             for edit in w.lab.log(d).edits() {
@@ -1045,6 +1081,52 @@ mod tests {
         let flag = bytes.len() - 41;
         bytes[flag] = 2;
         assert_eq!(Request::from_wire(&bytes), Err(WireError::Unknown));
+    }
+
+    #[test]
+    fn a_write_and_a_body_name_their_files_one_way_only() {
+        let (a, b) = (FileRoot { hash: [1; 32], size: 16 }, FileRoot { hash: [2; 32], size: 65_552 });
+        let action = |files: Vec<FileRoot>| Action::Write {
+            vault: VaultId([1; 32]),
+            entry: EntryId([2; 32]),
+            actor: VaultId([1; 32]),
+            stay: None,
+            generation: 0,
+            deps: vec![],
+            proposal: Proposal::Main,
+            via: vec![],
+            create: None,
+            files,
+            body: vec![7],
+        };
+        let edit = |files| {
+            Edit { parents: vec![], depth: 0, author: SignerId([3; 32]), cosigners: vec![], action: action(files) }
+        };
+        for files in [vec![], vec![a], vec![a, b]] {
+            let e = edit(files);
+            assert_eq!(Edit::from_wire(&e.to_wire()), Ok(e));
+        }
+        // a write that brings files brings some, smallest root first, no repeats
+        let mut empty = edit(vec![]).to_wire();
+        let tag = 1 + 4 + 8 + 32 + 4;
+        empty[tag] = 14;
+        let at = empty.len() - 5;
+        empty.splice(at..at, [0, 0, 0, 0]);
+        assert_eq!(Edit::from_wire(&empty), Err(WireError::Unknown));
+        let mut swapped = edit(vec![a, b]).to_wire();
+        let first = tag + 1 + 32 + 32 + 32 + 1 + 8 + 4 + 1 + 4 + 1 + 4;
+        let (x, y) = (swapped[first..first + 40].to_vec(), swapped[first + 40..first + 80].to_vec());
+        swapped.splice(first..first + 80, y.into_iter().chain(x));
+        assert_eq!(Edit::from_wire(&swapped), Err(WireError::Unordered));
+        // a body holds their keys last, only when it brings some
+        let brought = |root| Brought { root, key: FileKey::from_bytes([9; 32]), len: 0 };
+        let body = Body { files: vec![brought(a), brought(b)], ..Body::default() };
+        assert_eq!(Body::from_wire(&body.to_wire()), Ok(body.clone()));
+        let plain = Body::default().to_wire();
+        assert_eq!(body.to_wire()[..plain.len()], plain[..], "a body without files keeps its bytes");
+        assert_eq!(Body::from_wire(&[plain.clone(), vec![0, 0, 0, 0]].concat()), Err(WireError::Unknown));
+        let backwards = Body { files: vec![brought(b), brought(a)], ..Body::default() };
+        assert_eq!(Body::from_wire(&backwards.to_wire()), Err(WireError::Unordered));
     }
 
     #[test]

@@ -422,7 +422,8 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
         _ => Proposal::Main,
     };
     let (entry, deps, via, create, body) = (en.id, vec![], vec![], None, vec![rng.next() as u8]);
-    let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body };
+    let files = vec![];
+    let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body };
     Some(Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Tags(some_tags(rng)) })
 }
 
@@ -480,8 +481,8 @@ fn a_creation(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     let x = CellId::of(vault, &cell);
     let generation = st.epoch(KeyFam::Cell(vault, x)) + u64::from(st.reenters(vault, x));
     let (stay, deps, proposal, via, body) = (None, vec![], Proposal::Main, vec![], vec![rng.next() as u8]);
-    let action =
-        Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create: Some(cell), body };
+    let (create, files) = (Some(cell), vec![]);
+    let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body };
     Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Created(header, tags) }
 }
 
@@ -1740,13 +1741,13 @@ impl Twin {
                 let (keep, via) = (self.edits(&keep), self.vaults(&via));
                 Action::Revoke { cap: self.cap(cap), actor: self.vault(actor), keep, via }
             }
-            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, .. } => {
+            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, .. } => {
                 let header = create.is_some().then(|| Header { ty: Sym::new(""), created: 0 });
                 let body = Body { header, ..Body::default() }.to_wire();
                 let create = create.map(|x| self.new_cell(vault, &x));
                 let (stay, deps, proposal) = (stay.map(|s| self.edit(s)), self.edits(&deps), self.proposal(proposal));
                 let (vault, actor, via) = (self.vault(vault), self.vault(actor), self.vaults(&via));
-                Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body }
+                Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body }
             }
             Action::Move { vault, entry, to, keep, via } => {
                 let to = self.new_cell(vault, &to);

@@ -79,7 +79,8 @@ fn syms(xs: &[&str]) -> Vec<Sym> {
 /// tags travel in its body, which here is nothing anyone opens.
 pub fn creation(vault: VaultId, entry: EntryId, actor: VaultId, cell: &[CapId]) -> Action {
     let (body, proposal, create) = (vec![0xc1, 0x9e, 0x47], Proposal::Main, Some(mk_cell(cell)));
-    Action::Write { vault, entry, actor, stay: None, generation: 0, deps: vec![], proposal, via: vec![], create, body }
+    let (deps, via, files) = (vec![], vec![], vec![]);
+    Action::Write { vault, entry, actor, stay: None, generation: 0, deps, proposal, via, create, files, body }
 }
 
 impl Cast {

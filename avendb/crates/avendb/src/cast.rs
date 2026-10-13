@@ -52,8 +52,8 @@ pub fn by_id(e: EntryId) -> Selector {
 /// with a body nobody opens: what a patched app sends. The log fills in `deps` and `via` as it drafts the edit.
 pub fn write(vault: VaultId, entry: EntryId, actor: VaultId, stay: Option<EditId>, generation: u64) -> Action {
     let body = vec![0xc1, 0x9e, 0x47];
-    let proposal = Proposal::Main;
-    Action::Write { vault, entry, actor, stay, generation, deps: vec![], proposal, via: vec![], create: None, body }
+    let (proposal, files) = (Proposal::Main, vec![]);
+    Action::Write { vault, entry, actor, stay, generation, deps: vec![], proposal, via: vec![], create: None, files, body }
 }
 
 /// The Lab after scenarios 1 and 2, plus the server, avenCEO and a stranger.

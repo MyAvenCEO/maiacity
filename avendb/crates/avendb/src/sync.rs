@@ -33,6 +33,7 @@ use crate::hash::Hasher;
 use crate::id::{CapId, CellId, EditId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName};
 use crate::policy::{view, Action, Edit, Grantee, Principal, Role, State};
+use crate::sealed::FileRoot;
 
 /// A log: a vault's, a cap's, a cell's or an entry's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -171,6 +172,12 @@ impl<'a> Reach<'a> {
 /// logs of the vaults `d` acts for and that those edits name, up their owners.
 pub fn respond(edits: &[Edit], d: SignerId) -> Vec<Edit> {
     answer(edits, &view(edits), d).into_iter().map(|i| edits[i].clone()).collect()
+}
+
+/// A peer holding `edits` may hand device `d` the sealed bytes of file `file`: it sends `d` an edit that brings the file
+/// (T27), a write of an entry `d` may receive. Holding the bytes is the peer's store's to say.
+pub fn may_fetch(edits: &[Edit], d: SignerId, file: &FileRoot) -> bool {
+    answer(edits, &view(edits), d).into_iter().any(|i| edits[i].files().contains(file))
 }
 
 /// `respond`, by the view `st` of `edits`: the places in `edits` of what it sends, the entry, cell and cap logs' first.

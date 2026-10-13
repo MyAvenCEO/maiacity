@@ -6,6 +6,7 @@
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{Action, Cap, Edit, Grantee, Kind, Principal, Proposal, Role};
 use crate::rules::{Grant, On, Proof, Rule, Scalar, Step};
+use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
 /// The version byte every edit starts with: 6 since caps are named groups of ops, each cap's slice holding its name and
@@ -439,6 +440,7 @@ impl Encode for TagDelta {
     }
 }
 
+/// Its files come last, and only when it brings some, so every body written before files keeps its bytes.
 impl Encode for Body {
     fn encode(&self, out: &mut Vec<u8>) {
         self.header.encode(out);
@@ -446,6 +448,24 @@ impl Encode for Body {
         self.answers.encode(out);
         self.content.encode(out);
         self.proof.encode(out);
+        if !self.files.is_empty() {
+            self.files.encode(out);
+        }
+    }
+}
+
+impl Encode for FileRoot {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.hash.encode(out);
+        self.size.encode(out);
+    }
+}
+
+impl Encode for Brought {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.root.encode(out);
+        self.key.bytes().encode(out);
+        self.len.encode(out);
     }
 }
 
@@ -583,8 +603,9 @@ impl Encode for Action {
                 keep.encode(out);
                 via.encode(out);
             }
-            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body } => {
-                out.push(9);
+            // a write that brings files has a tag of its own, so a write that brings none keeps its bytes and its id
+            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files, body } => {
+                out.push(if files.is_empty() { 9 } else { 14 });
                 vault.encode(out);
                 entry.encode(out);
                 actor.encode(out);
@@ -594,6 +615,9 @@ impl Encode for Action {
                 proposal.encode(out);
                 via.encode(out);
                 create.as_deref().encode(out);
+                if !files.is_empty() {
+                    files.encode(out);
+                }
                 body.encode(out);
             }
             Action::Move { vault, entry, to, keep, via } => {
@@ -651,8 +675,8 @@ mod tests {
 
     fn write(stay: Option<EditId>, proposal: Proposal, via: Vec<VaultId>, create: Option<Vec<CapId>>) -> Edit {
         let (vault, entry, actor) = (VaultId::from_u64(1), EntryId::from_u64(1), VaultId::from_u64(1));
-        let (deps, body) = (vec![], vec![]);
-        let action = Action::Write { vault, entry, actor, stay, generation: 0, deps, proposal, via, create, body };
+        let (deps, files, body) = (vec![], vec![], vec![]);
+        let action = Action::Write { vault, entry, actor, stay, generation: 0, deps, proposal, via, create, files, body };
         Edit { action, ..genesis(0) }
     }
 
@@ -705,6 +729,26 @@ mod tests {
             edit_id(&write(None, Proposal::Main, vec![], Some(vec![CapId::from_u64(1)]))),
         ];
         assert!(distinct(&ids));
+    }
+
+    #[test]
+    fn the_files_a_write_brings_change_its_id_and_a_write_that_brings_none_keeps_its_bytes() {
+        let with = |files: Vec<FileRoot>| {
+            let mut w = write(None, Proposal::Main, vec![], None);
+            if let Action::Write { files: f, .. } = &mut w.action {
+                *f = files;
+            }
+            w
+        };
+        let (a, b) = (FileRoot { hash: [1; 32], size: 16 }, FileRoot { hash: [2; 32], size: 16 });
+        let ids = [with(vec![]), with(vec![a]), with(vec![b]), with(vec![a, b]), with(vec![FileRoot { size: 17, ..a }])];
+        assert!(distinct(&ids.each_ref().map(edit_id)));
+        // the tag of a write, 9, as before files; 14 once it brings some, and the files just before the body
+        let (none, one) = (bytes(&ids[0]), bytes(&ids[1]));
+        // after the version, no parents, the depth, the author and no cosigners
+        let at = 1 + 4 + 8 + 32 + 4;
+        assert_eq!((none[at], one[at]), (9, 14));
+        assert_eq!(one.len(), none.len() + 4 + 40);
     }
 
     #[test]

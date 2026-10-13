@@ -75,6 +75,9 @@ structure Edit where
   action    : Action
   /-- The edits of its own log it builds on: that log's frontier as its device held it (`Logs.lean`). -/
   parents   : List EditId := []
+  /-- The files a write brings, by their roots, named in the clear; their keys travel in its encrypted body. Only a
+      write brings files (`Edit.filesOf`). -/
+  files     : List FileId := []
   deriving DecidableEq, Repr
 
 def Edit.sigs (edit : Edit) : List SignerId := edit.author :: edit.cosigners

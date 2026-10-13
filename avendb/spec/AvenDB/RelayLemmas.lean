@@ -498,8 +498,8 @@ theorem settle_ops (pre post : State) : (settle pre post).ops = settle pre.ops p
 /-! ## Checking an edit -/
 
 /-- An edit's signers are its author and its cosigners. -/
-theorem sigs_mk (id depth author cosigners action parents) :
-    Edit.sigs ⟨id, depth, author, cosigners, action, parents⟩ = author :: cosigners := by
+theorem sigs_mk (id depth author cosigners action parents files) :
+    Edit.sigs ⟨id, depth, author, cosigners, action, parents, files⟩ = author :: cosigners := by
   cases action <;> rfl
 
 /-- Taking the operational part of a refusal is a refusal. -/
@@ -511,7 +511,7 @@ theorem map_ite_none {α β : Type} (f : α → β) (c : Prop) [Decidable c] (x 
     the state does, and the results have the same operational part. -/
 theorem apply_ops (st : State) (edit : Edit) :
     (apply st.ops edit.blind).map State.ops = (apply st edit).map State.ops := by
-  rcases edit with ⟨id, depth, author, cosigners, action, parents⟩
+  rcases edit with ⟨id, depth, author, cosigners, action, parents, files⟩
   -- in each case: unfold the relay's copy, then what the checks read, then push the operational part inside
   cases action with
   | genesis v kind owners threshold root =>

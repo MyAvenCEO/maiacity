@@ -162,6 +162,46 @@ impl Shape {
     }
 }
 
+/// A file as the write that brings it names it in the clear, for whoever keeps or relays it without its key: its root,
+/// the BLAKE3 hash iroh names it by (of its one piece, or of the HashSeq of its pieces), and its sealed size, which
+/// tells which.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FileRoot {
+    pub hash: [u8; 32],
+    pub size: u64,
+}
+
+impl FileRoot {
+    /// Whether its root names a HashSeq of pieces, not its one piece.
+    pub fn pieced(&self) -> bool {
+        self.size > PIECE
+    }
+}
+
+/// A file as the encrypted body of the write that brings it holds it: its root, its key and its plaintext length.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Brought {
+    pub root: FileRoot,
+    pub key: FileKey,
+    pub len: u64,
+}
+
+impl Brought {
+    /// A file of `len` plaintext bytes sealed under `key`, whose sealed pieces iroh names by `root`.
+    pub fn new(root: [u8; 32], key: FileKey, len: u64) -> Brought {
+        Brought { root: FileRoot { hash: root, size: Shape::new(len).sealed_len() }, key, len }
+    }
+
+    pub fn shape(&self) -> Shape {
+        Shape::new(self.len)
+    }
+
+    /// Whether its length fits the sealed size its root names: a reader takes no other.
+    pub fn fits(&self) -> bool {
+        self.shape().sealed_len() == self.root.size
+    }
+}
+
 /// The nonce of segment `i`: its number in 11 bytes, big-endian, then 1 for the file's last segment, else 0.
 fn nonce(i: u64, last: bool) -> Nonce {
     let mut n = [0u8; 12];
@@ -374,6 +414,11 @@ mod tests {
         assert_eq!(film.sealed_len() - film.len, film.segments() * TAG as u64);
         assert_eq!(Shape::new(0).pieces(), 1);
         assert_eq!(Shape::new(0).sealed_len(), TAG as u64);
+        // a root names one piece, or a HashSeq of several
+        let one = Brought::new([1; 32], key(1), PIECE_SEGMENTS * SEGMENT as u64);
+        let two = Brought::new([2; 32], key(1), PIECE_SEGMENTS * SEGMENT as u64 + 1);
+        assert!(one.fits() && !one.root.pieced() && two.root.pieced());
+        assert!(!Brought { len: 3, ..one }.fits());
     }
 
     #[test]

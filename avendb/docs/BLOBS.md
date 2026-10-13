@@ -21,9 +21,13 @@ This file is the design as it is built, phase by phase. The research behind it i
    included, holds ciphertext it can verify but not read.
 5. **An edit names the files it brings**: each file's root hash and size in the clear, its key and length inside the
    edit's encrypted body. Whoever may fetch the edit may fetch its files; nothing else may.
-6. **The server is a node like the others** with two stores under one: a hot disk for edits, every file's outboard and
-   a cache of pieces, and an S3 bucket for everything, small blobs in packs, each piece of a big file as one object,
-   read in ranges, never copied whole.
+6. **One source of truth per place** (Samuel, 2026-10-13). In a browser it is OPFS: every blob the page holds, edits,
+   keys and file pieces alike, lives there, IndexedDB goes (its data moves over once), and the store runs in a Web
+   Worker, where OPFS has its fast synchronous files. Of a big file a browser keeps only the pieces it watched or
+   pinned. On the server it is the S3 bucket: small blobs in packs, each piece of a big file as one object, every
+   outboard, read in ranges and never copied whole. The server's disk is only a cache of recent and needed pieces and a
+   short queue of new edits until their pack is uploaded: it can be wiped at any time and the server rebuilds from the
+   bucket, and an edit lost from the queue is still on the device that made it, which syncs it again.
 
 ## Sealed blob, version 1
 
@@ -87,14 +91,33 @@ customization string `avenDB 2026-10-08 sealed blob vector` of the whole sealed 
 The ChaCha20-Poly1305 layer was checked once against Python's `cryptography`: the payload key of key byte 2 and the
 nonce above seal the same first segment.
 
+## Writes that bring files
+
+A file enters avenDB with a write of the entry it belongs to (`Lab::bring`): a photo in a note, a film in a Files
+entry. The write names each file in the clear by its root and sealed size (`sealed::FileRoot`), smallest root first,
+and its encrypted body holds each file's key and plaintext length (`sealed::Brought`), so the file's key reaches
+exactly the entry's readers, and moves on as the entry's key does. The file's own bytes never pass through the write.
+
+- **Its bytes.** A write that brings files has a tag of its own (14, beside 9 for every other write), with its files
+  just before its body; a body holds its files last, and only when it brings some. So every edit and every body
+  written before files keeps its bytes and its id, and each still has one encoding.
+- **Who may fetch a file** (T27, `Lean: T27_files_follow_their_edits`): a peer hands a device a file only if it sends
+  that device a write that brings it, of an entry the device may receive by the peer's view (`sync::may_fetch`,
+  `Lab::may_fetch_file`). So a read cap fetches and opens, backup fetches the ciphertext and opens nothing, relay
+  fetches nothing (T26), and a file named nowhere a device may look never reaches it. The sync vectors hold the Rust
+  gate to the model's answers.
+- **Who opens it.** A device takes a file's key only from a write it opened that names the file in the clear, and only
+  with the length its sealed size says (`Lab::file`). What a node keeps, whether it reads them or not, is every file
+  the edits it holds bring (`Lab::files`).
+
 ## Phases
 
 | Phase | What | State |
 |---|---|---|
 | B1a | `sealed`: the format above, its shape arithmetic, a sealer that seals as it reads, ranges opened alone, vectors | built |
-| B1b | Edits name the files they bring (Lean model and theorem, wire, the Lab's fetch gate) | next |
-| B2 | One iroh-blobs store per node: on disk natively, in OPFS in a page; range requests gated by caps; what each node holds | |
-| B3 | The server's bucket: packs of small blobs, one object per piece, outboards and roots, read-ahead in ranges | |
+| B1b | Edits name the files they bring (Lean model and theorem, wire, the Lab's fetch gate) | built |
+| B2 | One iroh-blobs store per node: on disk natively, in OPFS in a page's worker (IndexedDB moved over and gone); range requests gated by caps; what each node holds | next |
+| B3 | The server's bucket as its source of truth: packs of small blobs, one object per piece, outboards and roots, read-ahead in ranges; its disk a cache it can lose | |
 | B4 | Streaming: the Mac reads a range as a file, a page through a service worker; a Files page | |
 | B5 | Studio's media on avenDB, beside the legacy vault, which stays as it is | |
 

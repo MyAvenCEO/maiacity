@@ -74,6 +74,7 @@ use crate::policy::{
     Readings, Refusal, Replay, Role, State, Write,
 };
 use crate::rules::{self, Grant, Proof, Rule, Touch};
+use crate::sealed::{Brought, FileRoot};
 use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{
@@ -1250,6 +1251,7 @@ impl Lab {
                     proposal: Proposal::Main,
                     via: vec![],
                     create: None,
+                    files: vec![],
                     body: vec![],
                 };
                 let edit = self.held(d).log.draft_on(view, d, &[], action);
@@ -1413,12 +1415,13 @@ impl Lab {
             proposal: Proposal::Main,
             via: vec![],
             create: Some(cell),
+            files: vec![],
             body: vec![],
         };
         let (edit, w) = self.check_write(on, &view, action)?;
         let (tags, content) = (TagDelta { add: tags, remove: vec![] }, item.export(&Version::default()));
         let proof = self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags))?;
-        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof }, x)?;
+        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof, files: vec![] }, x)?;
         Ok(entry)
     }
 
@@ -1482,6 +1485,23 @@ impl Lab {
         self.unlocked(on)?;
         let draft = self.shown(on, entry).edit(line, on, change);
         self.make(on, actor, entry, draft, TagDelta::default())
+    }
+
+    /// Bring the files `files` into an entry, on device `on`, acting for `actor`: a write on its main line that names
+    /// them by their roots, holds their keys and lengths encrypted, and carries what `change` does to the item (what
+    /// the entry says of them: a name, a type), building on the line's heads. Whoever may receive the write may fetch
+    /// the files' sealed bytes (T27); who reads the entry opens them (`file`).
+    pub fn bring(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        entry: EntryId,
+        files: Vec<Brought>,
+        change: impl FnOnce(&mut Item),
+    ) -> Result<EditId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, entry).edit(MAIN, on, change);
+        self.make_bringing(on, actor, entry, draft, TagDelta::default(), files)
     }
 
     /// Add the tags `add` to an entry and remove the tags `remove`, on device `on`, acting for `actor`: a write on its
@@ -1625,16 +1645,33 @@ impl Lab {
         draft: Draft,
         tags: TagDelta,
     ) -> Result<EditId, Refusal> {
+        self.make_bringing(on, actor, entry, draft, tags, vec![])
+    }
+
+    /// `make`, bringing the files `files`: named in the clear by their roots, their keys and lengths in its body.
+    fn make_bringing(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        entry: EntryId,
+        draft: Draft,
+        tags: TagDelta,
+        mut files: Vec<Brought>,
+    ) -> Result<EditId, Refusal> {
+        files.sort_by_key(|f| f.root);
+        files.dedup_by_key(|f| f.root);
+        let roots = files.iter().map(|f| f.root).collect();
         let view = self.full_view(on).into_owned();
         let en = view.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let (vault, stay, x) = (en.vault, en.stay(), en.cell());
         let generation = view.epoch(KeyFam::Cell(vault, x));
         let Draft { proposal, deps, body: content } = draft;
         let (via, create) = (vec![], None);
-        let action = Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, body: vec![] };
+        let action =
+            Action::Write { vault, entry, actor, stay, generation, deps, proposal, via, create, files: roots, body: vec![] };
         let (edit, w) = self.check_write(on, &view, action)?;
         let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags))?;
-        self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof }, x)
+        self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files }, x)
     }
 
     /// Encrypt `body` into the write `edit`, whose stay is in cell `x`, then sign and keep it (`seal_write`); once
@@ -2219,6 +2256,31 @@ impl Lab {
             && answer(edits, &self.full_view(d), asker).into_iter().any(|i| edits[i].blobs().contains(&blob))
     }
 
+    /// Device `d` may hand `asker` the sealed bytes of file `file`: an edit `asker` may receive by `d`'s view brings it
+    /// (T27). Whether `d` holds them is its store's to say.
+    pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot) -> bool {
+        let edits = self.held(d).log.edits();
+        answer(edits, &self.full_view(d), asker).into_iter().any(|i| edits[i].files().contains(file))
+    }
+
+    /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
+    pub fn files(&self, d: SignerId) -> Vec<FileRoot> {
+        let files: BTreeSet<FileRoot> = self.held(d).log.edits().iter().flat_map(|e| e.files().iter().copied()).collect();
+        files.into_iter().collect()
+    }
+
+    /// The key and length of file `root`, from a write device `d` opened that brings it, if any: what it opens the file
+    /// with. Only a write that names the file in the clear counts, and only with the length its sealed size says.
+    pub fn file(&self, d: SignerId, root: &FileRoot) -> Option<Brought> {
+        let store = self.held(d);
+        let mut writes: Vec<(&EditId, &Body)> = store.bodies.iter().collect();
+        writes.sort_by_key(|(id, _)| **id);
+        writes.into_iter().find_map(|(id, body)| {
+            let named = store.signed.get(id).is_some_and(|s| s.edit.files().contains(root));
+            body.files.iter().find(|f| named && f.root == *root && f.fits()).cloned()
+        })
+    }
+
     /// The McEliece key `b` as device `d` holds it.
     pub fn blob(&self, d: SignerId, b: BlobId) -> Option<Arc<[u8]>> {
         self.held(d).blobs.get(&b).cloned()
@@ -2695,7 +2757,8 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
         let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
         answers.sort();
-        let body = Body { header: None, tags: TagDelta { add, remove }, answers, content: vec![], proof: None };
+        let tags = TagDelta { add, remove };
+        let body = Body { header: None, tags, answers, content: vec![], proof: None, files: vec![] };
         out.push(Work::Retag { vault: v, entry: en.id, body });
     }
     out

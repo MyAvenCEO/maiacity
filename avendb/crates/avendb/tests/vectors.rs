@@ -40,7 +40,8 @@ use avendb::policy::{
 };
 use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
 use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta};
-use avendb::sync::{asks, closed_part, forks, frontiers, link_card, respond, respond_since, LogId};
+use avendb::sealed::FileRoot;
+use avendb::sync::{asks, closed_part, forks, frontiers, link_card, may_fetch, respond, respond_since, LogId};
 use avendb::wire::Wire;
 use serde_json::{json, Map, Value};
 
@@ -58,6 +59,13 @@ fn num(v: &Value) -> u64 {
 
 fn list(v: &Value) -> &[Value] {
     v.as_array().unwrap_or_else(|| panic!("a list, not {v}"))
+}
+
+/// The model's file `n`: a root of its own, as long as a sealed file of `n` bytes is.
+fn file(v: &Value) -> FileRoot {
+    let mut hash = [0u8; 32];
+    hash[24..].copy_from_slice(&num(v).to_be_bytes());
+    FileRoot { hash, size: num(v) }
 }
 
 fn signer(v: &Value) -> SignerId {
@@ -333,6 +341,7 @@ impl Names {
                 proposal: self.proposal(&x["proposal"]),
                 via: self.via(&x["via"]),
                 create: (!x["create"].is_null()).then(|| self.cell(&x["create"]["cell"])),
+                files: vec![],
                 body: serde_json::to_vec(&json!({"create": x["create"], "tags": x["tags"]})).unwrap(),
             },
             "move" => Action::Move {
@@ -363,7 +372,12 @@ impl Names {
     /// The edit at the next place of the case, from its JSON, at `depth`.
     fn edit_of(&self, v: &Value, depth: u64) -> Edit {
         let cosigners = list(&v["cosigners"]).iter().map(signer).collect();
-        Edit { parents: vec![], depth, author: signer(&v["author"]), cosigners, action: self.action(&v["action"]) }
+        let mut action = self.action(&v["action"]);
+        if let Action::Write { files, .. } = &mut action {
+            *files = v.get("files").map_or(&[][..], list).iter().map(file).collect();
+            files.sort();
+        }
+        Edit { parents: vec![], depth, author: signer(&v["author"]), cosigners, action }
     }
 
     /// Name what `edit`, at the next place, creates, and note what its readers open. A vault's number names the vault
@@ -656,12 +670,17 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
     let vectors = vectors();
     let cases = list(&vectors["syncs"]);
     assert!(cases.len() >= 6);
-    let mut linked = 0;
+    let (mut linked, mut fetched) = (0, 0);
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let mut names = Names::default();
-        let mut all = vec![];
+        let (mut all, mut files) = (vec![], vec![]);
         for v in list(&case["edits"]) {
+            for f in v.get("files").map_or(&[][..], list) {
+                if !files.contains(f) {
+                    files.push(f.clone());
+                }
+            }
             let mut edit = names.edit_of(v, num(&v["depth"]));
             edit.parents = names.edits(&v["parents"]);
             names.created(v, &edit, true);
@@ -715,6 +734,10 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             let ids = |edits: Vec<Edit>| edits.iter().map(Edit::id).collect::<Vec<_>>();
             assert_eq!(ids(respond(&peer, d)), names.edits(&a["respond"]), "{what}: sent whole");
             assert_eq!(ids(respond_since(&peer, d, &asked)), names.edits(&a["since"]), "{what}: sent");
+            // the files it may fetch: those an edit it is sent brings (T27)
+            let fetch: Vec<&Value> = files.iter().filter(|f| may_fetch(&peer, d, &file(f))).collect();
+            assert_eq!(fetch, list(&a["fetch"]).iter().collect::<Vec<_>>(), "{what}: files it may fetch");
+            fetched += fetch.len();
         }
         // each passkey that proves itself to a peer holding every edit, to link a new device: the card it is handed
         for l in list(&case["links"]) {
@@ -724,6 +747,7 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
         }
     }
     assert!(linked >= 5, "the model links passkeys that own vaults and passkeys that own none: {linked}");
+    assert!(fetched >= 7, "the model hands some devices files: {fetched}");
 }
 
 /// `v` without its `null` fields: the model writes every field, and absent ones as `null`.

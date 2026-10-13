@@ -812,6 +812,8 @@ structure SyncEdit where
   parents   : Option (List Nat) := none
   /-- The depth it claims; `none` for its place. -/
   depth     : Option Nat := none
+  /-- The files it brings, a write. -/
+  files     : List FileId := []
 
 structure SyncCase where
   name  : String
@@ -824,11 +826,15 @@ structure SyncCase where
 def SyncCase.toEdits (c : SyncCase) : List Edit :=
   c.edits.zipIdx.foldl (fun acc (o, i) =>
     let edit : Edit :=
-      { id := i, depth := o.depth.getD i, author := o.author, cosigners := o.cosigners, action := o.action }
+      { id := i, depth := o.depth.getD i, author := o.author, cosigners := o.cosigners, action := o.action,
+        files := o.files }
     let parents := o.parents.getD (match edit.log? with
       | some l => frontiers acc l
       | none => [])
     acc ++ [{ edit with parents }]) []
+
+/-- Every file the edits of a case bring, each once. -/
+def SyncCase.files (c : SyncCase) : List FileId := (c.edits.flatMap (·.files)).eraseDups
 
 def plain (edits : List (SignerId × List SignerId × Action)) : List SyncEdit :=
   edits.map fun (author, cosigners, action) => { author, cosigners, action }
@@ -927,7 +933,25 @@ def syncs : List SyncCase := [
       (2, [], newCap 30 200 (toVault 102) .read 200 (wide := true) (via := [100]))]),
     asks := [(3, [], none)],
     -- Alice's passkey, her backup passkey, Bob's and Carol's, Alice's Mac (a device, no passkey), and a stranger's
-    links := [1, 9, 4, 6, 2, 555] }]
+    links := [1, 9, 4, 6, 2, 555] },
+  { name := "files follow their edits", edits := plain (humans ++ [
+      (6, [7], .addDevice 102 7),
+      (1, [], .genesis 300 .aven [.vault 100] 1),
+      (1, [600], .addDevice 300 600)]) ++ [
+      -- Alice's note brings a photo, her todo a scan
+      { author := 2, action := newEntry 100 1 100 [] note, files := [1] },
+      { author := 2, action := newEntry 100 21 100 [] todo, files := [2] }] ++ plain [
+      -- Carol reads her notes, avenCEO backs them up, Dan only relays her vault
+      (2, [], newCap 30 100 (toVault 102) .read 100 notes),
+      (2, [], newCap 31 100 (toVault 300) .backup 100 notes),
+      (2, [], newCap 32 100 (toVault 103) .relay 100),
+      (2, [], .move 100 1 [30, 31] [])] ++ [
+      -- then a film, into the note
+      { author := 2, action := wr 100 1 100 [9] (stay := some 14), files := [3] }],
+    -- Carol's Mac, avenCEO's server, Alice's Mac, Bob's Mac and Dan's passkey, each holding nothing yet; then Carol's
+    -- Mac from a peer that lacks the film's write
+    asks := [(7, [], none), (600, [], none), (2, [], none), (5, [], none), (8, [], none),
+      (7, [], some (List.range 15))] }]
 
 /-! ## JSON -/
 
@@ -1154,7 +1178,8 @@ def syncCase (c : SyncCase) : String :=
   let edits := c.toEdits
   let stood := standing edits
   let editJson := edits.map fun o => obj [("depth", nat o.depth), ("author", nat o.author),
-    ("cosigners", arr (o.cosigners.map nat)), ("action", action o.action), ("parents", ids o.parents)]
+    ("cosigners", arr (o.cosigners.map nat)), ("action", action o.action), ("parents", ids o.parents),
+    ("files", ids o.files)]
   let logs := (logsOf edits).map fun l => obj [("log", logId l),
     ("closed", ids ((closedPart Edit.log? edits l).map (·.id))), ("frontier", ids (frontiers edits l))]
   let asks := c.asks.map fun (d, held, peer) =>
@@ -1162,7 +1187,8 @@ def syncCase (c : SyncCase) : String :=
     let sent := (logsOf h).map fun l => obj [("log", logId l), ("frontier", ids (frontiers h l)),
       ("haves", ids ((asks h).haves l))]
     obj [("device", nat d), ("held", ids held), ("peer", opt ids peer), ("logs", arr sent), ("loose", ids (loose h)),
-         ("respond", ids ((respond p d).map (·.id))), ("since", ids ((respondSince p d (asks h)).map (·.id)))]
+         ("respond", ids ((respond p d).map (·.id))), ("since", ids ((respondSince p d (asks h)).map (·.id))),
+         ("fetch", ids (c.files.filter (mayFetch p d ·)))]
   let links := c.links.map fun p => obj [("passkey", nat p), ("card", ids ((linkCard edits p).map (·.id)))]
   "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "edits" ++ ": [\n  " ++ ",\n  ".intercalate editJson ++
     "],\n " ++ str "standing" ++ ": " ++ arr (edits.map fun o => bool (stood.any (·.id == o.id))) ++ ",\n " ++
@@ -1248,6 +1274,14 @@ def allActions : List Action :=
 #guard syncs.any fun c => let edits := c.toEdits; (logsOf edits).any fun l =>
   (closedPart Edit.log? edits l).length < (inLog Edit.log? edits l).length
 #guard syncs.any fun c => (order c.toEdits).length < c.edits.length
+-- only writes bring files; files follow their edits (T27): some device fetches every file it may, the one whose write
+-- its peer lacks it doesn't, and one that relays fetches none
+#guard syncs.all fun c => c.toEdits.all fun o => o.filesOf == o.files
+#guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, _, peer) =>
+  let p := peerEdits edits peer
+  c.files.any (mayFetch p d ·) && c.files.any (!mayFetch p d ·)
+#guard syncs.any fun c => c.files.all fun f => (c.toEdits.filter (·.files.contains f)).all fun o =>
+  standing c.toEdits |>.contains o
 #guard syncs.any fun c => !(allForks c.toEdits).isEmpty
 -- a relay is sent an entry it may relay and not one it may not, and a cell's log
 #guard syncs.any fun c => let edits := c.toEdits; c.asks.any fun (d, _, peer) =>

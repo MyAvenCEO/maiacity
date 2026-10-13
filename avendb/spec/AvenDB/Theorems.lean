@@ -433,6 +433,25 @@ theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {o : Edit} (h : 
     o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) :=
   Syncing.T12_since edits d fr h
 
+/-- T27 (files follow their edits): a peer hands a device a file only if it holds a write that brings it, of an entry
+    that device may receive by the peer's view. So a device acting through relay alone fetches no file of a cell
+    (T26), backup fetches them as ciphertext, and a file named nowhere a device may look is never handed to it. -/
+theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : FileId) (h : mayFetch edits d f = true) :
+    ∃ o ∈ edits, f ∈ o.filesOf ∧ ∃ e, o.log? = some (.entry e) ∧ mayReceive (view edits) d e = true := by
+  unfold mayFetch at h
+  obtain ⟨o, hsent, hf⟩ := List.any_eq_true.mp h
+  have hf : f ∈ o.filesOf := by simpa using hf
+  have hlog : ∃ e, o.log? = some (.entry e) := by
+    cases ha : o.action <;> simp [Edit.filesOf, Edit.log?, ha] at hf ⊢
+  obtain ⟨e, he⟩ := hlog
+  obtain ⟨hin, l, hl, hmay⟩ := T12_sync_shares_only_caps edits d hsent
+  rw [he] at hl
+  cases hl
+  refine ⟨o, hin, hf, e, he, ?_⟩
+  rcases hmay with hmay | ⟨v, hv⟩
+  · simpa [mayReceiveLog] using hmay
+  · cases hv
+
 /-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few edits
     further back, and the edits it holds outside them (`asks`), is sent every edit of the peer's answer that it lacks.
     Assumes ids don't collide: an id the device and the peer both hold names one edit. -/
