@@ -18,7 +18,7 @@ use avendb::cast::*;
 use avendb::id::SignerId;
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Action, Level};
+use avendb::policy::{Action, Level, Revoking};
 use avendb::slice::Selector;
 use avendb::sign::PASS_LIFE;
 use avendb_net::{Admission, Node, Offer, Options, server};
@@ -188,7 +188,7 @@ async fn a_device_taken_out_of_its_vault_is_let_go_by_the_relay() {
         n.know(server.addr());
     }
     until("the relay serves Alice's phone", || async { relay.serves(&phone.id()) }).await;
-    let take_out = Action::RemoveDevice { vault: alice, device: phone_a, keep: vec![] };
+    let take_out = Action::Revoke(Revoking::Device { vault: alice, device: phone_a, keep: vec![] });
     mac.act(move |lab, me| lab.submit(me, &[passkey_a], take_out)).await.expect("Alice takes her phone out");
     until("the server learns it, and stops admitting the phone", || async { !admission.admits(&phone.id()) }).await;
     until("the relay lets the phone go", || async { !relay.serves(&phone.id()) }).await;

@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::hash::Hasher;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName};
-use crate::policy::{view, Action, Edit, Level, Principal, State, Who};
+use crate::policy::{view, Action, Edit, Level, Principal, Revoking, Sharing, State, Who};
 use crate::sealed::FileRoot;
 
 /// A log: a vault's, a share's, an audience's or an entry's.
@@ -46,22 +46,20 @@ pub enum LogId {
     Entry(EntryId),
 }
 
-/// The log of edit `edit`, whose id is `id` (`Edit.log?`): a vault edit, a schema or lens, and a seed's key go to their
-/// vault's; a share, its revocation and its key to the share's; an audience's key to the audience's; a write, a move, a
-/// checkpoint and an entry's key to the entry's. A signer's own key is never boxed, so a `Keys` edit naming one is of
-/// no log. The id names the log only of an edit that starts one, a genesis or a share.
+/// The log of edit `edit`, whose id is `id` (`Edit.log?`): a vault's genesis and settings, its owners and devices given
+/// and revoked, a schema or lens, and a seed's key go to their vault's; a grant, its revocation and its key to the
+/// grant's; an audience's key to the audience's; a write, a move, a checkpoint and an entry's key to the entry's. A
+/// signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id names the log only of an edit that
+/// starts one, a genesis or a grant. The edit's kind alone says which, so a peer that knows nothing else routes it.
 pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
     Some(match &edit.action {
         Action::Genesis { .. } => LogId::Vault(VaultId::from(id)),
-        Action::AddOwner { vault, .. }
-        | Action::RemoveOwner { vault, .. }
-        | Action::SetThreshold { vault, .. }
-        | Action::AddDevice { vault, .. }
-        | Action::RemoveDevice { vault, .. }
-        | Action::SetRoot { vault, .. }
+        Action::Settings { vault, .. }
+        | Action::Share(Sharing::Owner { vault, .. } | Sharing::Device { vault, .. })
+        | Action::Revoke(Revoking::Owner { vault, .. } | Revoking::Device { vault, .. })
         | Action::Publish { vault, .. } => LogId::Vault(*vault),
-        Action::Share(..) => LogId::Share(ShareId::from(id)),
-        Action::Revoke { share, .. } => LogId::Share(*share),
+        Action::Share(Sharing::Grant(..)) => LogId::Share(ShareId::from(id)),
+        Action::Revoke(Revoking::Grant { share, .. }) => LogId::Share(*share),
         Action::Write { entry, .. }
         | Action::Move { entry, .. }
         | Action::Checkpoint { entry, .. }
@@ -86,14 +84,16 @@ pub(crate) fn logs_of(edits: &[Edit], ids: &[EditId]) -> Vec<Option<LogId>> {
 /// The vaults an edit names (`Edit.vaultsNamed`): what it acts for, through, or about.
 fn vaults_named(edit: &Edit) -> Vec<VaultId> {
     match &edit.action {
-        Action::Share(c, via) => {
+        Action::Share(Sharing::Grant(c, via)) => {
             let who = match c.who {
-                Who::Principal(Principal::Vault(g)) => Some(g),
+                Who::Vault(g) => Some(g),
                 _ => None,
             };
             [c.over, c.issuer].into_iter().chain(who).chain(via.iter().copied()).collect()
         }
-        Action::Revoke { actor, via, .. } => std::iter::once(*actor).chain(via.iter().copied()).collect(),
+        Action::Revoke(Revoking::Grant { actor, via, .. }) => {
+            std::iter::once(*actor).chain(via.iter().copied()).collect()
+        }
         Action::Write { vault, actor, via, .. } => [*vault, *actor].into_iter().chain(via.iter().copied()).collect(),
         Action::Move { vault, via, .. } | Action::Pick { vault, via, .. } => {
             std::iter::once(*vault).chain(via.iter().copied()).collect()
@@ -124,8 +124,8 @@ impl<'a> Reach<'a> {
     fn new(st: &'a State, d: SignerId) -> Reach<'a> {
         let acts: HashSet<VaultId> = st.vaults().iter().map(|v| v.id).filter(|&v| st.acts_for(d, v)).collect();
         let names = |g: Who| match g {
-            Who::Principal(Principal::Vault(g)) => acts.contains(&g),
-            Who::Principal(Principal::Signer(_)) => false,
+            Who::Vault(g) => acts.contains(&g),
+            Who::Device(_) => false,
             Who::Everyone => true,
         };
         let mut whole = acts.clone();
@@ -149,7 +149,7 @@ impl<'a> Reach<'a> {
                 stayed.extend(st.audience_shares(*x).unwrap_or_default().iter().copied());
             }
         }
-        let who = |g: Who| matches!(g, Who::Principal(Principal::Vault(g)) if reach.acts.contains(&g));
+        let who = |g: Who| matches!(g, Who::Vault(g) if reach.acts.contains(&g));
         let sees = |cp: &crate::policy::Issued| {
             reach.acts.contains(&cp.share.over)
                 || who(cp.share.who)

@@ -12,7 +12,7 @@ mod common;
 use avendb::id::{AudienceId, EditId, SignerId};
 use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
-use avendb::policy::{Action, Edit, Refusal};
+use avendb::policy::{Action, Edit, Refusal, Setting, Sharing};
 use avendb::sign::{RelayPass, Signed};
 use avendb::sync::{log_of, LogId};
 use avendb::wire::{Join, Reply, Request, Wire};
@@ -165,9 +165,10 @@ fn a_device_joins_only_the_vault_its_passkey_is_the_root_of() {
     let card = w.lab.link_card(w.mac_a, w.passkey_a);
     w.lab.receive(new, card, vec![]);
     let join = w.lab.join(new, w.passkey_a).expect("it joins Alice's vault");
-    assert!(
-        matches!(join.edit.edit.action, Action::AddDevice { vault, device, .. } if vault == w.alice && device == new)
-    );
+    let Action::Share(Sharing::Device { vault, device, .. }) = join.edit.edit.action else {
+        panic!("a join adds a device")
+    };
+    assert_eq!((vault, device), (w.alice, new));
     assert_eq!(
         join.edit.edit.sigs().collect::<Vec<_>>(),
         vec![w.passkey_a, new],
@@ -195,14 +196,14 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     w.lab.receive(new, card.clone(), vec![]);
     w.lab.receive(eves, card, vec![]);
     let join = w.lab.join(new, w.passkey_a).expect("a join");
-    let add = |vault, device| Action::AddDevice { vault, device, seal_to: None };
+    let add = |vault, device| Action::Share(Sharing::Device { vault, device, seal_to: None });
     let unchecked = |lab: &mut Lab, on, signers: &[SignerId], action| {
         Join { edit: lab.sign_unchecked(on, signers, action).expect("signed"), blobs: vec![] }
     };
     let no_consent = unchecked(&mut w.lab, new, &[w.passkey_a], add(w.alice, new));
     let eve_adds = unchecked(&mut w.lab, eves, &[eve, eves], add(w.alice, eves));
     let eve_joins = unchecked(&mut w.lab, eves, &[eve, eves], add(eves_vault, eves));
-    let no_device = unchecked(&mut w.lab, new, &[new], Action::SetThreshold { vault: w.alice, threshold: 1 });
+    let no_device = unchecked(&mut w.lab, new, &[new], Action::Settings { vault: w.alice, set: Setting::Threshold(1) });
     let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
     let accept = |mac: &mut Lab, from, join: &Join| mac.accept_join(w.mac_a, from, join.clone()).map(|_| ());
     assert_eq!(accept(&mut mac, eves, &join), Err(Refusal::NotJoining), "sent by another device than it adds");

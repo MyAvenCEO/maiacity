@@ -10,11 +10,11 @@ use std::fmt::Debug;
 
 use serde_json::{json, Map, Value};
 use avendb::doc::{Item, Version};
-use avendb::encode::{rule_context, rule_select_info, select_info, share_context, write_context};
+use avendb::encode::{rule_context, rule_select_info, share_context, share_select_info, write_context};
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, KeyBox, KeyFam, KeyId, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
-use avendb::policy::{Action, Edit, Level, Principal, Proposal, Share, SyncRule, Who};
+use avendb::policy::{Action, Edit, Level, Proposal, Share, Sharing, SyncRule, Who};
 use avendb::rules::{Grant, On, Op, Proof, Scalar, Step};
 use avendb::sign::{Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -224,7 +224,7 @@ impl Of<'_> {
 
     fn info(&self, id: KeyId, to: &Recipient) -> Vec<u8> {
         match self {
-            Of::Share(c) => select_info(c, id, to),
+            Of::Share(c) => share_select_info(c, id, to),
             Of::Rule(r) => rule_select_info(r, id, to),
         }
     }
@@ -301,7 +301,7 @@ fn signed_edits() -> Edits {
         depth: 1,
         author: passkey.id(),
         cosigners: vec![device.id()],
-        action: Action::AddDevice { vault: ALICE, device: device.id(), seal_to: None },
+        action: Action::Share(Sharing::Device { vault: ALICE, device: device.id(), seal_to: None }),
     };
     let sigs = vec![passkey.sign(add.id(), true), device.sign(add.id(), true)];
     let add = Signed { edit: add, sigs };
@@ -336,10 +336,10 @@ fn signed_edits() -> Edits {
         body: vec![],
     };
     let write = by_device(seal_body(edit(3, write), &door_retagged(), &k.door, &mut rng));
-    let (who, level, issuer) = (Who::Principal(Principal::Vault(BOB)), Level::Write, ALICE);
+    let (who, level, issuer) = (Who::Vault(BOB), Level::Write, ALICE);
     let mut share = Share { over: ALICE, who, level, wide: false, select: vec![], parent: None, issuer, nonce: 7 };
     share.select = seal_select(Of::Share(&share), &work_todos(), &k, &mut rng);
-    let share = by_device(edit(4, Action::Share(share, vec![])));
+    let share = by_device(edit(4, Action::Share(Sharing::Grant(share, vec![]))));
     let keep = vec![create.edit.id(), write.edit.id()];
     let moved = Action::Move { vault: ALICE, entry: DOOR, to: vec![ShareId::from_u64(9)], keep, via: vec![] };
     let moved = by_device(edit(5, moved));
@@ -458,7 +458,7 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
         2 => o.author = SignerId::from_u64(g.next()),
         3 => o.cosigners.push(SignerId::from_u64(g.next())),
         _ => match &mut o.action {
-            Action::AddDevice { vault: v, device, .. } => match g.below(2) {
+            Action::Share(Sharing::Device { vault: v, device, .. }) => match g.below(2) {
                 0 => *v = vault(g),
                 _ => *device = SignerId::from_u64(g.next()),
             },
@@ -482,7 +482,7 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                     _ => *body = mutate(g, body),
                 }
             }
-            Action::Share(c, via) => match g.below(9) {
+            Action::Share(Sharing::Grant(c, via)) => match g.below(9) {
                 0 => c.select = mutate(g, &c.select),
                 1 => c.over = vault(g),
                 2 => {
@@ -491,9 +491,10 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                 }
                 3 => c.wide = !c.wide,
                 4 => {
-                    c.who = match c.who {
-                        Who::Principal(_) if g.below(2) == 0 => Who::Everyone,
-                        _ => Who::Principal(Principal::Vault(vault(g))),
+                    c.who = match g.below(3) {
+                        0 if c.who != Who::Everyone => Who::Everyone,
+                        0 | 1 => Who::Vault(vault(g)),
+                        _ => Who::Device(SignerId::from_u64(g.next())),
                     }
                 }
                 5 => c.parent = if c.parent.is_some() && g.below(2) == 0 { None } else { Some(share(g)) },
@@ -573,7 +574,7 @@ fn a_changed_signed_edit_is_refused() {
 #[test]
 fn a_changed_selector_opens_to_nothing_or_to_its_own_slice() {
     let (edits, k) = (signed_edits(), keys());
-    let Action::Share(share, _) = &edits.share.edit.action else { unreachable!("a cap") };
+    let Action::Share(Sharing::Grant(share, _)) = &edits.share.edit.action else { unreachable!("a cap") };
     let Action::SyncRule(rule, _) = &edits.rule.edit.action else { unreachable!("a sync rule") };
     let mut g = Gen::new(6);
     for (signed, of, held) in
@@ -616,7 +617,9 @@ fn a_changed_selector_opens_to_nothing_or_to_its_own_slice() {
         for _ in 0..1000 {
             let o = mutate_edit(&mut g, &signed.edit);
             let other = match (&o.action, of) {
-                (Action::Share(other, _), Of::Share(c)) if other.select == c.select && other != c => Of::Share(other),
+                (Action::Share(Sharing::Grant(other, _)), Of::Share(c)) if other.select == c.select && other != c => {
+                    Of::Share(other)
+                }
                 (Action::SyncRule(other, _), Of::Rule(r)) if other.select == r.select && other != r => Of::Rule(other),
                 _ => continue,
             };
@@ -670,7 +673,7 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
             }
         });
     }
-    let Action::Share(share, _) = &edits.share.edit.action else { unreachable!("a cap") };
+    let Action::Share(Sharing::Grant(share, _)) = &edits.share.edit.action else { unreachable!("a cap") };
     let sealed = Select::from_wire(&share.select).expect("a sealed selector");
     let Select::Sealed { boxes, slice, .. } = sealed.clone() else { unreachable!("sealed") };
     let commitment = tick_todos().grant.commitment();

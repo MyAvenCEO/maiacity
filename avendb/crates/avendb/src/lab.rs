@@ -71,7 +71,7 @@ use serde_json::Value;
 use zeroize::Zeroizing;
 
 use crate::doc::{Item, Version};
-use crate::encode::{self, box_info, rule_context, rule_select_info, select_info, share_context, write_context};
+use crate::encode::{self, box_info, rule_context, rule_select_info, share_context, share_select_info, write_context};
 use crate::hash::{Hasher, Reader};
 use crate::history::{Change, Draft, History, MAIN};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
@@ -79,7 +79,7 @@ use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, Se
 use crate::lens::{Lane, Schema};
 use crate::policy::{
     checkpointed, mk_audience, replay, Action, Edit, Issued, Kind, Level, Line, Log, Meaning, Principal, Proposal,
-    Readings, Refusal, Replay, Share, State, SyncRule, Who, Write,
+    Readings, Refusal, Replay, Share, Sharing, State, SyncRule, Who, Write,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -796,7 +796,9 @@ impl Lab {
         ceremonies: &[(SignerId, &Ceremony)],
     ) -> Result<Claim, Refusal> {
         let Unsigned { edit, batch, .. } = draft;
-        let Action::AddDevice { vault, device: server, .. } = edit.action else { return Err(Refusal::NotClaiming) };
+        let Action::Share(Sharing::Device { vault, device: server, .. }) = edit.action else {
+            return Err(Refusal::NotClaiming);
+        };
         if !self.held(on).view().vault(vault).is_some_and(|v| v.kind == Kind::Aven) {
             return Err(Refusal::NotClaiming);
         }
@@ -838,7 +840,7 @@ impl Lab {
     pub fn accept_claim(&mut self, d: SignerId, claim: Claim) -> Result<Join, Refusal> {
         let key = self.claim_key(d)?;
         let Claim { card, add, sigs } = claim;
-        let Action::AddDevice { vault, device, seal_to: Some(sealed) } = &add.action else {
+        let Action::Share(Sharing::Device { vault, device, seal_to: Some(sealed) }) = &add.action else {
             return Err(Refusal::NotClaiming);
         };
         if *device != d || *sealed != key {
@@ -1149,7 +1151,7 @@ impl Lab {
         let ceremony = |s: SignerId| ceremonies.iter().find(|(c, _)| *c == s).map(|(_, c)| *c);
         let signers: Vec<SignerId> = edit.sigs().collect();
         let pass = match (&edit.action, pass) {
-            (Action::AddDevice { device, .. }, Some(made)) => Some((*device, made)),
+            (Action::Share(Sharing::Device { device, .. }), Some(made)) => Some((*device, made)),
             (_, Some(_)) => return Err(Refusal::BadSignature),
             (_, None) => None,
         };
@@ -1194,8 +1196,8 @@ impl Lab {
                     })
                     .collect();
             }
-            Action::AddOwner { owner: Principal::Signer(s), seal_to: to @ None, .. } => *to = public(*s),
-            Action::AddDevice { device, seal_to: to @ None, .. } => *to = public(*device),
+            Action::Share(Sharing::Owner { owner: Principal::Signer(s), seal_to: to @ None, .. }) => *to = public(*s),
+            Action::Share(Sharing::Device { device, seal_to: to @ None, .. }) => *to = public(*device),
             _ => {}
         }
         blobs
@@ -1237,7 +1239,7 @@ impl Lab {
         let nonce = self.rng.next_u64();
         let mut share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce };
         share.select = self.seal_select(on, &share, &slice)?;
-        self.draft(on, signers, Action::Share(share, vec![]))
+        self.draft(on, signers, Action::Share(Sharing::Grant(share, vec![])))
     }
 
     /// The `select` of `share`, holding `slice`: in the clear for a share to everyone, else sealed under a key of its
@@ -1248,7 +1250,7 @@ impl Lab {
             return Ok(Select::Clear(slice.clone()).to_wire());
         }
         let who = match share.who {
-            Who::Principal(Principal::Vault(g)) if share.level.allows(Level::Read) => Some(g),
+            Who::Vault(g) if share.level.allows(Level::Read) => Some(g),
             _ => None,
         };
         let readers: Vec<VaultId> = [Some(share.over), who, Some(share.issuer)].into_iter().flatten().collect();
@@ -2233,20 +2235,23 @@ impl Lab {
     pub fn join(&mut self, d: SignerId, passkey: SignerId) -> Result<Join, Refusal> {
         let id = match self.joining(d, passkey)? {
             (_, Some(id)) => id,
-            (vault, None) => self.submit(d, &[passkey, d], Action::AddDevice { vault, device: d, seal_to: None })?,
+            (vault, None) => {
+                self.submit(d, &[passkey, d], Action::Share(Sharing::Device { vault, device: d, seal_to: None }))?
+            }
         };
         Ok(self.joined(d, id))
     }
 
     /// The vault whose root is passkey `passkey` by device `d`'s view, and the edit that added `d` to it, if one did:
-    /// what `join` signs, or sends again. A browser's passkey signs `Action::AddDevice` in a ceremony (`draft`,
+    /// what `join` signs, or sends again. A browser's passkey signs `Sharing::Device` in a ceremony (`draft`,
     /// `complete`, P8e), and the device sends `joined`. `UnknownVault` if no vault in `d`'s view has it as its root.
     pub fn joining(&self, d: SignerId, passkey: SignerId) -> Result<(VaultId, Option<EditId>), Refusal> {
         let store = self.held(d);
         let st = store.view();
         let vault = st.vaults().iter().find(|v| v.root == Some(passkey)).ok_or(Refusal::UnknownVault)?;
-        let adds = |edit: &Edit| {
-            matches!(edit.action, Action::AddDevice { vault: v, device, .. } if v == vault.id && device == d)
+        let adds = |edit: &Edit| match edit.action {
+            Action::Share(Sharing::Device { vault: v, device, .. }) => v == vault.id && device == d,
+            _ => false,
         };
         let edits = store.log.edits().iter().zip(store.log.ids());
         let added =
@@ -2268,7 +2273,7 @@ impl Lab {
     /// another one than `from`, `BadSignature` if a signature doesn't verify, and otherwise why `d`'s view refuses it.
     /// The same join sent again is accepted again.
     pub fn accept_join(&mut self, d: SignerId, from: SignerId, join: Join) -> Result<EditId, Refusal> {
-        if !matches!(join.edit.edit.action, Action::AddDevice { device, .. } if device == from) {
+        if !matches!(join.edit.edit.action, Action::Share(Sharing::Device { device, .. }) if device == from) {
             return Err(Refusal::NotJoining);
         }
         let id = join.edit.verify()?.id();
@@ -2748,7 +2753,7 @@ impl Picker<'_> {
     /// What a box of its selector key `id` for `to` is bound to.
     fn info(&self, id: KeyId, to: &Recipient) -> Vec<u8> {
         match self {
-            Picker::Share(c) => select_info(c, id, to),
+            Picker::Share(c) => share_select_info(c, id, to),
             Picker::Rule(r) => rule_select_info(r, id, to),
         }
     }

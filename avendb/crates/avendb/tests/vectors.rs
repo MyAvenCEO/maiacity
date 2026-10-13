@@ -35,7 +35,7 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
     checkpointed, history, mk_audience, replay, tips, Action, Edit, Kind, Level, Line, Principal, Proposal, Readings,
-    Share, State, SyncRule, Vault, Who,
+    Refusal, Revoking, Setting, Share, Sharing, State, SyncRule, Vault, Who,
 };
 use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
 use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta};
@@ -214,9 +214,13 @@ impl Names {
     }
 
     fn who(&self, v: &Value) -> Who {
-        match v.as_str() {
-            Some("everyone") => Who::Everyone,
-            _ => Who::Principal(self.principal(v)),
+        if v.as_str() == Some("everyone") {
+            return Who::Everyone;
+        }
+        match variant(v) {
+            ("vault", x) => Who::Vault(self.vault(x)),
+            ("device", d) => Who::Device(signer(d)),
+            (other, _) => panic!("no grantee {other}"),
         }
     }
 
@@ -327,6 +331,50 @@ impl Names {
         }
     }
 
+    /// A vault's settings: its threshold, or its root handed on.
+    fn settings(&self, v: &Value) -> Action {
+        let (sub, x) = variant(v);
+        let set = match sub {
+            "threshold" => Setting::Threshold(num(&x["threshold"]) as u32),
+            "root" => Setting::Root {
+                root: (!x["root"].is_null()).then(|| signer(&x["root"])),
+                keep: self.edits(&x["keep"]),
+            },
+            other => panic!("no setting {other}"),
+        };
+        Action::Settings { vault: self.vault(&x["vault"]), set }
+    }
+
+    /// A share: a grant, an owner or a device.
+    fn sharing(&self, v: &Value) -> Action {
+        let (sub, x) = variant(v);
+        let vault = || self.vault(&x["vault"]);
+        Action::Share(match sub {
+            "grant" => Sharing::Grant(self.share_of(&x["share"]), self.via(&x["via"])),
+            "owner" => Sharing::Owner { vault: vault(), owner: self.principal(&x["owner"]), seal_to: None },
+            "device" => Sharing::Device { vault: vault(), device: signer(&x["device"]), seal_to: None },
+            other => panic!("no share {other}"),
+        })
+    }
+
+    /// A revocation: of a grant, an owner or a device.
+    fn revoking(&self, v: &Value) -> Action {
+        let (sub, x) = variant(v);
+        let vault = || self.vault(&x["vault"]);
+        let keep = self.edits(&x["keep"]);
+        Action::Revoke(match sub {
+            "grant" => Revoking::Grant {
+                share: self.share(&x["share"]),
+                actor: self.vault(&x["actor"]),
+                keep,
+                via: self.via(&x["via"]),
+            },
+            "owner" => Revoking::Owner { vault: vault(), owner: self.principal(&x["owner"]), keep },
+            "device" => Revoking::Device { vault: vault(), device: signer(&x["device"]), keep },
+            other => panic!("no revocation {other}"),
+        })
+    }
+
     fn action(&self, v: &Value) -> Action {
         let (name, x) = variant(v);
         let vault = || self.vault(&x["vault"]);
@@ -341,23 +389,9 @@ impl Names {
                 nonce: num(&x["vault"]),
                 seal_to: vec![],
             },
-            "addOwner" => Action::AddOwner { vault: vault(), owner: self.principal(&x["owner"]), seal_to: None },
-            "removeOwner" => Action::RemoveOwner { vault: vault(), owner: self.principal(&x["owner"]), keep: keep() },
-            "setThreshold" => Action::SetThreshold { vault: vault(), threshold: num(&x["threshold"]) as u32 },
-            "addDevice" => Action::AddDevice { vault: vault(), device: signer(&x["device"]), seal_to: None },
-            "removeDevice" => Action::RemoveDevice { vault: vault(), device: signer(&x["device"]), keep: keep() },
-            "setRoot" => Action::SetRoot {
-                vault: vault(),
-                root: (!x["root"].is_null()).then(|| signer(&x["root"])),
-                keep: keep(),
-            },
-            "share" => Action::Share(self.share_of(&x["share"]), self.via(&x["via"])),
-            "revoke" => Action::Revoke {
-                share: self.share(&x["share"]),
-                actor: self.vault(&x["actor"]),
-                keep: keep(),
-                via: self.via(&x["via"]),
-            },
+            "settings" => self.settings(x),
+            "share" => self.sharing(x),
+            "revoke" => self.revoking(x),
             "write" => Action::Write {
                 vault: vault(),
                 entry: entry(&x["entry"]),
@@ -428,12 +462,13 @@ impl Names {
             ("genesis", x) if accepted => {
                 self.vaults.insert(num(&x["vault"]), VaultId::from(id));
             }
-            ("share", x) => {
-                let (share, parent) = (ShareId::from(id), &x["share"]["parent"]);
-                self.readings.selectors.insert(share, self.selector(&x["share"]["select"]));
+            ("share", x) if variant(x).0 == "grant" => {
+                let x = &x["grant"]["share"];
+                let (share, parent) = (ShareId::from(id), &x["parent"]);
+                self.readings.selectors.insert(share, self.selector(&x["select"]));
                 self.parents.insert(share, (!parent.is_null()).then(|| self.share(parent)));
-                self.grants.insert(share, grant(&x["share"]));
-                self.shares.insert(num(&x["share"]["id"]), share);
+                self.grants.insert(share, grant(x));
+                self.shares.insert(num(&x["id"]), share);
             }
             ("syncRule", x) => {
                 let rule = ShareId::from(id);
@@ -654,12 +689,15 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
     let vectors = vectors();
     let cases = list(&vectors["cases"]);
     assert!(cases.len() >= 12);
+    const KINDS: &str = "settings, shares and revocations, kind by kind";
+    assert!(cases.iter().any(|c| c["name"] == KINDS), "the model's case {KINDS:?}");
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (edits, accepted) = (list(&case["edits"]), list(&case["accepted"]));
         assert_eq!(edits.len(), accepted.len(), "{name}");
         let mut names = Names::default();
         let mut st = State::default();
+        let mut why = vec![];
         for (i, (v, want)) in edits.iter().zip(accepted).enumerate() {
             let edit = names.edit_of(v, step_depth(v, i));
             let got = st.step(&edit);
@@ -669,12 +707,19 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
                 "{name}, edit {i}: {v} gave {got:?}",
                 got = got.as_ref().err()
             );
+            why.push(got.as_ref().err().copied());
             names.created(v, &edit, got.is_ok());
             if let Ok(next) = got {
                 st = next;
             }
         }
         names.check_state(name, case, &st);
+        // the model only says no; the core says why: a grant to a device (T4), and owner of a whole vault by a grant
+        if name == KINDS {
+            let grant = |n: u64| edits.iter().position(|v| v["action"]["share"]["grant"]["share"]["id"] == n).unwrap();
+            assert_eq!(why[grant(31)], Some(Refusal::DeviceOnlyKeeps), "{name}: a grant to a device");
+            assert_eq!(why[grant(34)], Some(Refusal::WideOwner), "{name}: a wide owner grant");
+        }
     }
 }
 
@@ -709,6 +754,11 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
     let vectors = vectors();
     let cases = list(&vectors["views"]);
     assert!(cases.len() >= 12);
+    // a vault's own removals outrank a revoked grant: a core that ranked them the other way round would keep the
+    // revocations these views cut, and drop the removals
+    for view in ["a vault's removals outrank a revoked grant", "handing the root on outranks a revoked grant"] {
+        assert!(cases.iter().any(|c| c["name"] == view), "the model's view {view:?}");
+    }
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (edits, standing) = (list(&case["edits"]), list(&case["standing"]));

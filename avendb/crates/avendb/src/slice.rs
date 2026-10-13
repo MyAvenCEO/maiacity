@@ -284,7 +284,7 @@ pub fn spec_of_json(v: &Value) -> Result<(String, Selector, Vec<Op>), String> {
 /// What a share's `select` holds (`policy::Share::select`): its slice, in the clear for a share to everyone, else
 /// sealed: the slice encrypted under a key of its own and bound to the share (`keys::seal_edit`,
 /// `encode::share_context`), and that key in a box for each vault that reads the slice, wrapped or sealed to the
-/// vault's seed (`encode::select_info`): the vault the share is over, whose stewards keep its entries in their
+/// vault's seed (`encode::share_select_info`): the vault the share is over, whose stewards keep its entries in their
 /// audiences, its grantee unless it only relays or keeps, and its issuer.
 ///
 /// The commitment to a share's ops (`rules::Grant::commitment`) travels in the clear beside its sealed slice: salted,

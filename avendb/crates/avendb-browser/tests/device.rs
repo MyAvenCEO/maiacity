@@ -559,13 +559,21 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     let shown = &shown.expect("the cap that ticks")["slice"];
     let ops = json!([{ "op": "read" }, tick]);
     assert_eq!((&shown["name"], &shown["ops"]), (&json!("Tick done"), &ops), "the page reads its name and ops");
-    // owner of the whole of her vault for the coop is governance: her passkey approves it in a ceremony
+    // owner of the whole of her vault is an owner of it, which no cap makes (WideOwner), refused before any ceremony;
+    // owner of her todos for the coop is governance: her passkey approves it in a ceremony
     let owner = spec("Owner", &all, &ops_to_json(&Level::Owner.ops()));
-    first.share(alice, alice, &owner, vault(coop), &eve).await.expect("the coop owns it");
+    let refused = first.share(alice, alice, &owner, vault(coop), &eve).await;
+    assert!(refused.unwrap_err().to_string().contains("WideOwner"), "no cap makes an owner of the whole vault");
+    assert_eq!(eve.steps(), []);
+    let owner = spec("Owner", &todos, &ops_to_json(&Level::Owner.ops()));
+    first.share(alice, alice, &owner, vault(coop), &eve).await.expect("the coop owns her todos");
     assert_eq!(eve.steps(), [Step::Approve]);
-    let w = first.world().await.expect("her world");
-    let levels = &item(&w, todo).levels;
-    assert_eq!((level(levels, coop), level(levels, bob)), (Some(Level::Owner), Some(Level::Write)));
+    let owned = || async {
+        let w = first.world().await.expect("her world");
+        let levels = &item(&w, todo).levels;
+        (level(levels, coop), level(levels, bob)) == (Some(Level::Owner), Some(Level::Write))
+    };
+    until("avenBOB's todo moves to the cell the coop owns", owned).await;
     // avenALICE takes avenBOB's write back: he writes no more there, and still reads the note
     first.revoke(alice, write, &eve).await.expect("revoked");
     assert_eq!(eve.steps(), [], "a write cap ends without a ceremony");

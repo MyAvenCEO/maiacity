@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use crate::encode::{Encode, VERSION};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Edit, Kind, Level, Principal, Proposal, Share, SyncRule, Who};
+use crate::policy::{Action, Edit, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, SyncRule, Who};
 use crate::recovery::RecoveryKey;
 use crate::rules::{Grant, On, Op, Proof, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_OPS, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
@@ -550,14 +550,15 @@ impl Decode for Principal {
     }
 }
 
+/// Its rank: relay 1 to owner 5. Rank 0 is no level yet.
 impl Decode for Level {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(Level::Backup),
-            1 => Ok(Level::Read),
-            2 => Ok(Level::Write),
-            3 => Ok(Level::Owner),
-            4 => Ok(Level::Relay),
+            1 => Ok(Level::Relay),
+            2 => Ok(Level::Backup),
+            3 => Ok(Level::Read),
+            4 => Ok(Level::Write),
+            5 => Ok(Level::Owner),
             _ => Err(WireError::Unknown),
         }
     }
@@ -566,8 +567,9 @@ impl Decode for Level {
 impl Decode for Who {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(Who::Principal(Principal::decode(r)?)),
+            0 => Ok(Who::Vault(VaultId::decode(r)?)),
             1 => Ok(Who::Everyone),
+            2 => Ok(Who::Device(SignerId::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
     }
@@ -613,6 +615,44 @@ impl Decode for Proposal {
     }
 }
 
+impl Decode for Setting {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        match r.u8()? {
+            0 => Ok(Setting::Threshold(u32::decode(r)?)),
+            1 => Ok(Setting::Root { root: r.option()?, keep: r.seq(32)? }),
+            _ => Err(WireError::Unknown),
+        }
+    }
+}
+
+impl Decode for Sharing {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        match r.u8()? {
+            0 => Ok(Sharing::Grant(Share::decode(r)?, r.seq(32)?)),
+            1 => Ok(Sharing::Owner { vault: VaultId::decode(r)?, owner: Principal::decode(r)?, seal_to: r.option()? }),
+            2 => Ok(Sharing::Device { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, seal_to: r.option()? }),
+            _ => Err(WireError::Unknown),
+        }
+    }
+}
+
+impl Decode for Revoking {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        match r.u8()? {
+            0 => Ok(Revoking::Grant {
+                share: ShareId::decode(r)?,
+                actor: VaultId::decode(r)?,
+                keep: r.seq(32)?,
+                via: r.seq(32)?,
+            }),
+            1 => Ok(Revoking::Owner { vault: VaultId::decode(r)?, owner: Principal::decode(r)?, keep: r.seq(32)? }),
+            2 => Ok(Revoking::Device { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, keep: r.seq(32)? }),
+            _ => Err(WireError::Unknown),
+        }
+    }
+}
+
+/// Each kind by its tag (`encode`'s `Action`); a tag the format doesn't have is no edit.
 impl Decode for Action {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(match r.u8()? {
@@ -624,21 +664,11 @@ impl Decode for Action {
                 nonce: u64::decode(r)?,
                 seal_to: r.seq(68)?,
             },
-            1 => Action::AddOwner { vault: VaultId::decode(r)?, owner: Principal::decode(r)?, seal_to: r.option()? },
-            2 => Action::RemoveOwner { vault: VaultId::decode(r)?, owner: Principal::decode(r)?, keep: r.seq(32)? },
-            3 => Action::SetThreshold { vault: VaultId::decode(r)?, threshold: u32::decode(r)? },
-            4 => Action::AddDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, seal_to: r.option()? },
-            5 => Action::RemoveDevice { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, keep: r.seq(32)? },
-            6 => Action::SetRoot { vault: VaultId::decode(r)?, root: r.option()?, keep: r.seq(32)? },
-            7 => Action::Share(Share::decode(r)?, r.seq(32)?),
-            8 => Action::Revoke {
-                share: ShareId::decode(r)?,
-                actor: VaultId::decode(r)?,
-                keep: r.seq(32)?,
-                via: r.seq(32)?,
-            },
-            // a write that brings files has a tag of its own, and brings some
-            tag @ (9 | 14) => Action::Write {
+            1 => Action::Settings { vault: VaultId::decode(r)?, set: Setting::decode(r)? },
+            2 => Action::Share(Sharing::decode(r)?),
+            3 => Action::Revoke(Revoking::decode(r)?),
+            // its files always, none or some, smallest first, no repeats
+            4 => Action::Write {
                 vault: VaultId::decode(r)?,
                 entry: EntryId::decode(r)?,
                 actor: VaultId::decode(r)?,
@@ -652,36 +682,33 @@ impl Decode for Action {
                     1 => Some(r.seq(32)?),
                     _ => return Err(WireError::Unknown),
                 },
-                files: match tag {
-                    9 => vec![],
-                    _ => Some(r.set(40)?).filter(|f: &Vec<FileRoot>| !f.is_empty()).ok_or(WireError::Unknown)?,
-                },
+                files: r.set(40)?,
                 body: r.bytes()?,
             },
-            10 => Action::Move {
+            5 => Action::Move {
                 vault: VaultId::decode(r)?,
                 entry: EntryId::decode(r)?,
                 to: r.seq(32)?,
                 keep: r.seq(32)?,
                 via: r.seq(32)?,
             },
-            11 => Action::Keys {
+            6 => Action::Keys {
                 name: KeyName::decode(r)?,
                 id: KeyId::decode(r)?,
                 public: r.option()?,
                 boxes: r.seq(37)?,
                 clear: r.option()?,
             },
-            12 => Action::Publish {
+            7 => Action::Checkpoint { entry: EntryId::decode(r)?, covers: r.seq(32)? },
+            8 => Action::Publish {
                 vault: VaultId::decode(r)?,
                 actor: VaultId::decode(r)?,
                 via: r.seq(32)?,
                 blob: r.bytes()?,
             },
-            13 => Action::Checkpoint { entry: EntryId::decode(r)?, covers: r.seq(32)? },
-            15 => Action::SyncRule(SyncRule::decode(r)?, r.seq(32)?),
-            16 => Action::EndSyncRule { rule: ShareId::decode(r)?, issuer: VaultId::decode(r)?, via: r.seq(32)? },
-            17 => Action::Pick {
+            9 => Action::SyncRule(SyncRule::decode(r)?, r.seq(32)?),
+            10 => Action::EndSyncRule { rule: ShareId::decode(r)?, issuer: VaultId::decode(r)?, via: r.seq(32)? },
+            11 => Action::Pick {
                 vault: VaultId::decode(r)?,
                 entry: EntryId::decode(r)?,
                 rules: r.seq(32)?,
@@ -1016,10 +1043,14 @@ mod tests {
                     crate::encode::bytes(edit),
                     "an edit on the wire is the bytes its id hashes"
                 );
-                kinds.insert(std::mem::discriminant(&edit.action));
+                let sharing = match &edit.action {
+                    Action::Share(s) => Some(std::mem::discriminant(s)),
+                    _ => None,
+                };
+                kinds.insert((std::mem::discriminant(&edit.action), sharing));
             }
         }
-        assert!(kinds.len() >= 6, "genesis, devices, keys, caps and writes all crossed: {}", kinds.len());
+        assert!(kinds.len() >= 6, "genesis, devices, keys, grants and writes all crossed: {}", kinds.len());
         let ask = crate::sync::asks(w.lab.log(w.mac_b).edits());
         assert!(!ask.haves.is_empty());
         assert_eq!(Ask::from_wire(&ask.to_wire()), Ok(ask.clone()));
@@ -1033,7 +1064,8 @@ mod tests {
     fn a_claim_reads_back_the_same() {
         let w = world();
         let card = w.lab.card(w.server);
-        let joined = |s: &&Signed| matches!(s.edit.action, Action::AddDevice { device, .. } if device == w.server);
+        let joined =
+            |s: &&Signed| matches!(s.edit.action, Action::Share(Sharing::Device { device, .. }) if device == w.server);
         let add = card.iter().find(joined).expect("the edit that added the server").clone();
         let claim = Claim { card: card.clone(), add: add.edit.clone(), sigs: add.sigs[..1].to_vec() };
         assert_eq!(Claim::from_wire(&claim.to_wire()), Ok(claim));
@@ -1090,7 +1122,7 @@ mod tests {
         bytes.splice(4..4 + swapped.len(), swapped);
         assert_eq!(Ask::from_wire(&bytes), Err(WireError::Unordered));
         // an edit of another format version
-        let action = Action::SetThreshold { vault: VaultId([2; 32]), threshold: 1 };
+        let action = Action::Settings { vault: VaultId([2; 32]), set: Setting::Threshold(1) };
         let edit = Edit { parents: vec![], depth: 0, author: SignerId([1; 32]), cosigners: vec![], action };
         let mut bytes = edit.to_wire();
         bytes[0] = VERSION + 1;
@@ -1136,18 +1168,22 @@ mod tests {
             let e = edit(files);
             assert_eq!(Edit::from_wire(&e.to_wire()), Ok(e));
         }
-        // a write that brings files brings some, smallest root first, no repeats
-        let mut empty = edit(vec![]).to_wire();
+        // a write names its files always, none or some, smallest root first, no repeats, under its one tag
         let tag = 1 + 4 + 8 + 32 + 4;
-        empty[tag] = 14;
-        let at = empty.len() - 5;
-        empty.splice(at..at, [0, 0, 0, 0]);
-        assert_eq!(Edit::from_wire(&empty), Err(WireError::Unknown));
-        let mut swapped = edit(vec![a, b]).to_wire();
         let first = tag + 1 + 32 + 32 + 32 + 1 + 8 + 4 + 1 + 4 + 1 + 4;
+        let both = edit(vec![a, b]).to_wire();
+        assert_eq!((both[tag], &both[first - 4..first]), (4, &[0, 0, 0, 2][..]));
+        let mut swapped = both.clone();
         let (x, y) = (swapped[first..first + 40].to_vec(), swapped[first + 40..first + 80].to_vec());
         swapped.splice(first..first + 80, y.into_iter().chain(x));
         assert_eq!(Edit::from_wire(&swapped), Err(WireError::Unordered));
+        let mut twice = both.clone();
+        twice.copy_within(first..first + 40, first + 40);
+        assert_eq!(Edit::from_wire(&twice), Err(WireError::Unordered));
+        // the old tag of a write that brings files is no tag of the format's
+        let mut old = both.clone();
+        old[tag] = 14;
+        assert_eq!(Edit::from_wire(&old), Err(WireError::Unknown));
         // a body holds their keys last, only when it brings some
         let brought = |root| Brought { root, key: FileKey::from_bytes([9; 32]), len: 0 };
         let body = Body { files: vec![brought(a), brought(b)], ..Body::default() };
@@ -1157,6 +1193,60 @@ mod tests {
         assert_eq!(Body::from_wire(&[plain.clone(), vec![0, 0, 0, 0]].concat()), Err(WireError::Unknown));
         let backwards = Body { files: vec![brought(b), brought(a)], ..Body::default() };
         assert_eq!(Body::from_wire(&backwards.to_wire()), Err(WireError::Unordered));
+    }
+
+    #[test]
+    fn a_kind_a_level_or_a_grantee_the_format_lacks_is_no_edit() {
+        let (v, g) = (VaultId([1; 32]), VaultId([2; 32]));
+        let share = Share {
+            over: v,
+            who: Who::Vault(g),
+            level: Level::Read,
+            wide: false,
+            select: vec![],
+            parent: None,
+            issuer: v,
+            nonce: 0,
+        };
+        let edit = |action| Edit { parents: vec![], depth: 0, author: SignerId([3; 32]), cosigners: vec![], action };
+        let grant = edit(Action::Share(Sharing::Grant(share, vec![])));
+        let bytes = grant.to_wire();
+        assert_eq!(Edit::from_wire(&bytes), Ok(grant));
+        // after the version, no parents, the depth, the author and no cosigners: the kind, the sub-kind, the vault it
+        // is over, whom it names and its level
+        let at = 1 + 4 + 8 + 32 + 4;
+        let (who, level) = (at + 2 + 32, at + 2 + 32 + 1 + 32);
+        assert_eq!((bytes[at], bytes[at + 1], bytes[who], bytes[level]), (2, 0, 0, 3));
+        let with = |i: usize, b: u8| {
+            let mut x = bytes.clone();
+            x[i] = b;
+            Edit::from_wire(&x).map(|e| e.action)
+        };
+        let granted = |action: Result<Action, WireError>| match action {
+            Ok(Action::Share(Sharing::Grant(c, _))) => Some((c.who, c.level)),
+            _ => None,
+        };
+        // a level by its rank, relay 1 to owner 5; the rank below relay, 0, isn't a level yet, nor is any above owner
+        let levels = [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner];
+        for (rank, l) in (1..).zip(levels) {
+            assert_eq!(granted(with(level, rank)), Some((Who::Vault(g), l)));
+        }
+        for rank in [0, 6, 255] {
+            assert_eq!(with(level, rank), Err(WireError::Unknown));
+        }
+        // whom a share names: a vault (0) or a device (2), each named next, or everyone (1), and nothing else
+        assert_eq!(granted(with(who, 2)), Some((Who::Device(SignerId(g.0)), Level::Read)));
+        assert_eq!(with(who, 3), Err(WireError::Unknown));
+        // three sub-kinds of share and of revocation, two of settings; eight kinds and four more, for now
+        assert_eq!(with(at + 1, 3), Err(WireError::Unknown));
+        let revoke = edit(Action::Revoke(Revoking::Grant { share: ShareId(g.0), actor: v, keep: vec![], via: vec![] }));
+        let mut bytes = revoke.to_wire();
+        bytes[at + 1] = 3;
+        assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
+        let mut bytes = edit(Action::Settings { vault: v, set: Setting::Threshold(1) }).to_wire();
+        bytes[at + 1 + 32] = 2;
+        assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
+        assert_eq!(with(at, 12), Err(WireError::Unknown));
     }
 
     #[test]

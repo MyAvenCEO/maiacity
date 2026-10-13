@@ -13,12 +13,12 @@ use crate::doc::Item;
 use crate::id::{EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::lab::{Lab, NewShare};
 use crate::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
-use crate::policy::{Action, Kind, Level, Principal, Proposal, Who};
+use crate::policy::{Action, Kind, Level, Principal, Proposal, Sharing, Who};
 use crate::slice::{Atom, Selector};
 
 /// Vault `v` as a share's grantee.
 pub fn vault(v: VaultId) -> Who {
-    Who::Principal(Principal::Vault(v))
+    Who::Vault(v)
 }
 
 /// A root share over vault `over`, issued by the vault itself: `who` holds the built-in group of `level`, Public for
@@ -91,7 +91,7 @@ pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> Vault
     };
     let v = VaultId::from(lab.submit(devices[0], &[passkey], genesis).expect("a passkey founds its vault"));
     for &d in devices {
-        let add = Action::AddDevice { vault: v, device: d, seal_to: None };
+        let add = Action::Share(Sharing::Device { vault: v, device: d, seal_to: None });
         lab.submit(devices[0], &[passkey, d], add).expect("the passkey adds its device");
     }
     v
@@ -106,7 +106,7 @@ pub fn claim_on(lab: &mut Lab, on: SignerId, passkey: SignerId, human: VaultId, 
     let owners = vec![Principal::Vault(human)];
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let avenceo = VaultId::from(lab.submit(on, &[passkey], genesis).expect("the passkey founds avenCEO"));
-    let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key) };
+    let add = Action::Share(Sharing::Device { vault: avenceo, device: server, seal_to: Some(key) });
     let draft = lab.draft(on, &[passkey, server], add).expect("avenCEO adds the server");
     let claim = lab.claim(on, draft, &[]).expect("the passkey signs the claim");
     let join = lab.accept_claim(server, claim).expect("the server takes the claim");

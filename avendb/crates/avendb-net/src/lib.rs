@@ -101,7 +101,7 @@ use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Drafting, Lab, Unsigned};
 use avendb::id::EditId;
-use avendb::policy::{Action, Kind, Principal, Refusal};
+use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
 use avendb::sync::{log_of, place, LogId};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
@@ -603,7 +603,7 @@ impl Node {
             (vault, None) => {
                 progress.step("join");
                 let add = move |lab: &mut Lab, me| {
-                    lab.draft(me, &[passkey, me], Action::AddDevice { vault, device: me, seal_to: None })
+                    lab.draft(me, &[passkey, me], Action::Share(Sharing::Device { vault, device: me, seal_to: None }))
                 };
                 let draft = self.shared.lab(add).await.map_err(|why| anyhow!("the join is refused: {why:?}"))?;
                 let (draft, ceremony) = match joins {
@@ -618,7 +618,9 @@ impl Node {
             }
         };
         let join = self.shared.lab(move |lab, me| lab.joined(me, id)).await;
-        let Action::AddDevice { vault, .. } = join.edit.edit.action else { bail!("a join that adds no device") };
+        let Action::Share(Sharing::Device { vault, .. }) = join.edit.edit.action else {
+            bail!("a join that adds no device")
+        };
         let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
         sent.context("the peer refuses the join")?;
         self.shared.changed.notify_one();
@@ -670,10 +672,11 @@ impl Node {
                 let genesis =
                     Action::Genesis { kind: Kind::Human, owners, threshold: 1, root, nonce: 0, seal_to: vec![] };
                 let vault = VaultId::from(drafting.draft(&signers, genesis)?);
-                drafting.draft(&[passkey, me], Action::AddDevice { vault, device: me, seal_to: None })?;
+                drafting.draft(&[passkey, me], Action::Share(Sharing::Device { vault, device: me, seal_to: None }))?;
                 if let Some(key) = &key {
                     let avenceo = VaultId::from(drafting.draft(&[passkey], aven(vault))?);
-                    let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key.clone()) };
+                    let add = Sharing::Device { vault: avenceo, device: server, seal_to: Some(key.clone()) };
+                    let add = Action::Share(add);
                     drafting.draft(&[passkey, server], add)?;
                 }
                 Ok(vault)
@@ -738,7 +741,7 @@ impl Node {
                 Some(avenceo) => avenceo,
                 None => VaultId::from(drafting.draft(&[passkey], aven(human))?),
             };
-            let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key) };
+            let add = Action::Share(Sharing::Device { vault: avenceo, device: server, seal_to: Some(key) });
             drafting.draft(&[passkey, server], add)?;
             Ok::<_, Refusal>(drafting.done())
         };
@@ -832,7 +835,9 @@ impl Node {
     async fn send_claim(&self, offer: &Offer, claim: Claim) -> Result<VaultId> {
         let peer = self.offered(offer).await?;
         let (id, server) = (claim.add.id(), offer.device);
-        let Action::AddDevice { vault: avenceo, .. } = claim.add.action else { bail!("a claim that adds no device") };
+        let Action::Share(Sharing::Device { vault: avenceo, .. }) = claim.add.action else {
+            bail!("a claim that adds no device")
+        };
         let join = session::exchange(&peer.conn, session::CLAIM, &claim.to_wire(), session::REPLY_LIMIT).await;
         let Join { edit, blobs } = Join::from_wire(&join.context("the server refuses the claim")?)?;
         if edit.edit.id() != id {

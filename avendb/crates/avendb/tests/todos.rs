@@ -7,7 +7,7 @@ mod common;
 
 use avendb::id::{AudienceId, EntryId, ShareId, VaultId};
 use avendb::keys::KeyFam;
-use avendb::policy::{mk_audience, view, Action, Edit, Level, Log, Refusal, Share, State};
+use avendb::policy::{mk_audience, view, Action, Edit, Level, Log, Refusal, Revoking, Share, Sharing, State};
 use avendb::sync::{entry_writes, log_of, receive, respond, LogId};
 use common::*;
 
@@ -52,7 +52,7 @@ fn met(logs: &[&Log]) -> State {
 /// appends, to check without appending. Its selector travels sealed, and no rule reads it.
 fn share_edit(over: VaultId, who: VaultId, level: Level, parent: Option<ShareId>, issuer: VaultId) -> Action {
     let share = Share { over, who: vault(who), level, wide: false, select: vec![], parent, issuer, nonce: 7 };
-    Action::Share(share, vec![])
+    Action::Share(Sharing::Grant(share, vec![]))
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn change_levels(t: &mut SocialTodo) -> (ShareId, ShareId) {
     let parent = Some(t.coop_owner);
     let dave_read = t.c.issue_on(MAC_B, &[], alice, vault(dave), Level::Read, by_id(DOOR), parent, t.coop, 0).unwrap();
     let carol_write = t.c.issue(MAC_A, &[], alice, vault(carol), Level::Write, by_id(DOOR)).unwrap();
-    let revoke = Action::Revoke { share: t.bob_write, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: t.bob_write, actor: alice, keep: vec![], via: vec![] });
     t.c.log.append(MAC_A, &[], revoke).unwrap();
     t.c.tidy(MAC_A);
     (dave_read, carol_write)
@@ -137,7 +137,7 @@ fn cascade_ends_shares_resting_on_it() {
     let key = KeyFam::Audience(alice, audience);
     let before = t.c.log.view().epoch(key);
     // taking the coop's owner share away is governance: Alice's Mac alone can't
-    let revoke = Action::Revoke { share: t.coop_owner, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: t.coop_owner, actor: alice, keep: vec![], via: vec![] });
     assert_eq!(t.c.log.check(MAC_A, &[], revoke.clone()).err(), Some(Refusal::BelowThreshold));
     t.c.log.append(PASSKEY_A, &[], revoke).unwrap();
     let (c, v) = (&t.c, t.c.log.view());
@@ -165,15 +165,16 @@ fn sync_sends_only_what_shares_reach() {
     let to_carol = respond(edits, MAC_C);
     assert_eq!(entries_in(&to_carol), [DOOR]);
     // and with the shares of every audience the door todo was in, so Carol's Mac can check them
-    let shares: Vec<ShareId> =
-        to_carol.iter().filter(|o| matches!(o.action, Action::Share(..))).map(|o| ShareId::from(o.id())).collect();
+    let grants = to_carol.iter().filter(|o| matches!(o.action, Action::Share(Sharing::Grant(..))));
+    let shares: Vec<ShareId> = grants.map(|o| ShareId::from(o.id())).collect();
     assert!([t.bob_write, t.carol_read, t.coop_owner].iter().all(|share| shares.contains(share)));
     // a device without a share gets no entry at all
     assert!(entries_in(&respond(edits, STRANGER)).is_empty());
     // after the coop lost the todo, Dave's Mac gets nothing of it either, only the revocation that ended its read
     let mut gone = social_todo();
     change_levels(&mut gone);
-    let revoke = Action::Revoke { share: gone.coop_owner, actor: gone.c.alice, keep: vec![], via: vec![] };
+    let (share, actor) = (gone.coop_owner, gone.c.alice);
+    let revoke = Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
     let revoked = gone.c.log.append(PASSKEY_A, &[], revoke).unwrap();
     let to_dave = respond(gone.c.log.edits(), MAC_D);
     assert!(entries_in(&to_dave).is_empty() && to_dave.iter().any(|o| o.id() == revoked));

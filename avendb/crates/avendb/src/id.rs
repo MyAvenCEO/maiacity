@@ -108,7 +108,7 @@ impl AudienceId {
     /// (`policy::mk_audience`): the hash of the vault and the shares, so two peers name one audience alike and no relay
     /// learns more than which shares.
     pub fn of(v: VaultId, shares: &[ShareId]) -> AudienceId {
-        let mut h = crate::hash::Hasher::new("cell id");
+        let mut h = crate::hash::Hasher::new("audience id");
         h.update(&v.0);
         h.update(&(shares.len() as u64).to_be_bytes());
         for c in shares {

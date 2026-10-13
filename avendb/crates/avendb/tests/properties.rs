@@ -27,7 +27,8 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{
     checkpointed, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder, Issued, Kind,
-    Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Share, State, SyncRule, Vault, Who, Write,
+    Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State,
+    SyncRule, Vault, Who, Write,
 };
 use avendb::rules::Grant;
 use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -101,8 +102,8 @@ impl History {
 
 /// What every random history of shares and writes starts with: scenarios 1 to 3; Alice's todos, the door (tagged work)
 /// and the seeds (tagged home), and the coop's documents, the welcome and the charter (tagged work); Bob writing
-/// Alice's work todos, Carol reading her todos, Dave writing the coop's documents, and Carol holding a wide owner share
-/// over the coop, which both its owners approved; and every entry where its vault's stewards would move it.
+/// Alice's work todos, Carol reading her todos, Dave writing the coop's documents, and Carol owner of the coop's
+/// documents, which both its owners approved; and every entry where its vault's stewards would move it.
 fn start() -> History {
     let mut c = cast();
     let coop = with_coop(&mut c);
@@ -114,7 +115,7 @@ fn start() -> History {
     c.issue(MAC_A, &[], alice, vault(bob), Level::Write, tagged("todo", "work")).unwrap();
     c.issue(MAC_A, &[], alice, vault(carol), Level::Read, of_type("todo")).unwrap();
     c.issue(MAC_B, &[], coop, vault(dave), Level::Write, of_type("doc")).unwrap();
-    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Level::Owner, Selector::All).unwrap();
+    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Level::Owner, of_type("doc")).unwrap();
     c.tidy(MAC_A);
     let start = c.log.edits().len();
     History { log: c.log, vaults: vec![alice, bob, carol, dave, coop], readings: c.readings, refused: vec![], start }
@@ -262,8 +263,8 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     if rng.below(8) == 0 {
         let chain: Vec<VaultId> = (0..1 + rng.below(2)).map(|_| rng.pick(&h.vaults)).collect();
         match &mut a.action {
-            Action::Share(_, via)
-            | Action::Revoke { via, .. }
+            Action::Share(Sharing::Grant(_, via))
+            | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
             | Action::Move { via, .. }
             | Action::Publish { via, .. }
@@ -320,7 +321,8 @@ fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt>
             let live: Vec<&Issued> = st.shares().iter().filter(|cp| st.live(cp.id)).collect();
             let cp = *pick_from(rng, &live)?;
             let (author, cosigners) = signers_for(rng, st, cp.share.issuer, cp.share.level == Level::Owner);
-            let action = Action::Revoke { share: cp.id, actor: cp.share.issuer, keep: vec![], via: vec![] };
+            let revoke = Revoking::Grant { share: cp.id, actor: cp.share.issuer, keep: vec![], via: vec![] };
+            let action = Action::Revoke(revoke);
             Attempt { author, cosigners, action, said: Said::Nothing }
         }
         4 => {
@@ -331,7 +333,7 @@ fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt>
             }
             let &(vault, device) = pick_from(rng, &devices)?;
             let (author, cosigners) = signers(rng);
-            let action = Action::RemoveDevice { vault, device, keep: vec![] };
+            let action = Action::Revoke(Revoking::Device { vault, device, keep: vec![] });
             Attempt { author, cosigners, action, said: Said::Nothing }
         }
         _ => {
@@ -374,7 +376,7 @@ fn signers(rng: &mut Rng) -> (SignerId, Vec<SignerId>) {
 /// The vault share `cp` names, if it names one.
 fn who_vault(cp: &Issued) -> Option<VaultId> {
     match cp.share.who {
-        Who::Principal(Principal::Vault(g)) => Some(g),
+        Who::Vault(g) => Some(g),
         _ => None,
     }
 }
@@ -518,7 +520,7 @@ fn a_selector(rng: &mut Rng, h: &History) -> Selector {
     Selector::AnyOf(any)
 }
 
-/// A share to a random grantee (a vault, now and then a signer or everyone) with a random level, on a random slice or
+/// A share to a random grantee (a vault, now and then a device or everyone) with a random level, on a random slice or
 /// the whole vault: resting on a live owner share and issued by that share's grantee; or a root share issued by the
 /// vault it is over, now and then by another; or now and then resting on any share. A few shares select every entry
 /// without being wide. Its selector travels in the clear.
@@ -541,18 +543,19 @@ fn a_share(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     };
     let who = match rng.below(10) {
         0 => Who::Everyone,
-        1 => Who::Principal(Principal::Signer(rng.pick(&SIGNERS))),
+        1 => Who::Device(rng.pick(&SIGNERS)),
         _ => vault(rng.pick(&h.vaults)),
     };
     let level = if who == Who::Everyone && rng.below(2) == 0 { Level::Read } else { rng.pick(&LEVELS) };
     let select = if rng.below(4) == 0 { Selector::All } else { a_selector(rng, h) };
-    let wide = select == Selector::All && rng.below(6) > 0;
+    // wide at owner only now and then: no grant makes an owner of a whole vault, so most such grants are refused
+    let wide = select == Selector::All && rng.below(6) > 0 && (level != Level::Owner || rng.below(4) == 0);
     let grant = Grant { ops: level.ops(), salt: [0; 32] };
     let slice = Slice { name: level.group().into(), select: select.clone(), grant, above: vec![] };
     let bytes = Select::Clear(slice).to_wire();
     let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next() };
     let (author, cosigners) = signers_for(rng, st, issuer, level == Level::Owner);
-    Attempt { author, cosigners, action: Action::Share(share, vec![]), said: Said::Selector(select) }
+    Attempt { author, cosigners, action: Action::Share(Sharing::Grant(share, vec![])), said: Said::Selector(select) }
 }
 
 /// A revocation of a random share, live or not, by its issuer, the vault it is over, its grantee or any vault.
@@ -565,7 +568,7 @@ fn a_revocation(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
         _ => rng.pick(&h.vaults),
     };
     let (author, cosigners) = signers_for(rng, st, actor, cp.share.level == Level::Owner);
-    let action = Action::Revoke { share: cp.id, actor, keep: vec![], via: vec![] };
+    let action = Action::Revoke(Revoking::Grant { share: cp.id, actor, keep: vec![], via: vec![] });
     Some(Attempt { author, cosigners, action, said: Said::Nothing })
 }
 
@@ -661,14 +664,14 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
         if rng.below(2) == 0 { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) }
     };
     match rng.below(8) {
-        0 => Action::AddDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), seal_to: None },
-        1 => Action::RemoveDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), keep: vec![] },
-        2 => Action::AddOwner { vault: rng.pick(vaults), owner: principal(rng), seal_to: None },
-        3 => Action::RemoveOwner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] },
-        4 => Action::SetThreshold { vault: rng.pick(vaults), threshold: rng.below(4) as u32 },
+        0 => Action::Share(Sharing::Device { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), seal_to: None }),
+        1 => Action::Revoke(Revoking::Device { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), keep: vec![] }),
+        2 => Action::Share(Sharing::Owner { vault: rng.pick(vaults), owner: principal(rng), seal_to: None }),
+        3 => Action::Revoke(Revoking::Owner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] }),
+        4 => Action::Settings { vault: rng.pick(vaults), set: Setting::Threshold(rng.below(4) as u32) },
         5 => {
             let root = if rng.below(3) == 0 { None } else { Some(rng.pick(&SIGNERS)) };
-            Action::SetRoot { vault: rng.pick(vaults), root, keep: vec![] }
+            Action::Settings { vault: rng.pick(vaults), set: Setting::Root { root, keep: vec![] } }
         }
         _ => {
             // a third human vaults, a twelfth aven vaults
@@ -703,11 +706,12 @@ fn governance_action(rng: &mut Rng, st: &State, vaults: &[VaultId]) -> Action {
     let owners = st.vault(v).map(|x| x.owners.clone()).unwrap_or_default();
     match rng.below(3) {
         0 if coops.len() > 1 && rng.below(2) == 0 => {
-            Action::AddOwner { vault: rng.pick(&coops), owner: Principal::Vault(rng.pick(&coops)), seal_to: None }
+            let (vault, owner) = (rng.pick(&coops), Principal::Vault(rng.pick(&coops)));
+            Action::Share(Sharing::Owner { vault, owner, seal_to: None })
         }
-        0 => Action::AddOwner { vault: v, owner: Principal::Vault(rng.pick(&known)), seal_to: None },
-        1 => Action::RemoveOwner { vault: v, owner: rng.pick(&owners), keep: vec![] },
-        _ => Action::SetThreshold { vault: v, threshold: 1 + rng.below(owners.len()) as u32 },
+        0 => Action::Share(Sharing::Owner { vault: v, owner: Principal::Vault(rng.pick(&known)), seal_to: None }),
+        1 => Action::Revoke(Revoking::Owner { vault: v, owner: rng.pick(&owners), keep: vec![] }),
+        _ => Action::Settings { vault: v, set: Setting::Threshold(1 + rng.below(owners.len()) as u32) },
     }
 }
 
@@ -1037,22 +1041,25 @@ fn forks_really_clash() {
 #[test]
 fn t4_shares_name_vaults_and_t8_everyone_only_reads() {
     // in every state along the way, and in the view of each history with the attempts the rules refused put back, as a
-    // peer that skips the rules would send them: no share names a signer, and everyone only ever reads
+    // peer that skips the rules would send them: no share names a device, everyone only ever reads, and no share makes
+    // an owner of a whole vault
     let mut tried = 0;
     for (seed, h) in every_history() {
         let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
         for st in states(h.log.edits()).iter().chain([&view(&with_refused)]) {
             for cp in st.shares() {
-                let signer = matches!(cp.share.who, Who::Principal(Principal::Signer(_)));
-                assert!(!signer, "seed {seed}: {cp:?}");
+                assert!(!matches!(cp.share.who, Who::Device(_)), "seed {seed}: {cp:?}");
                 assert!(cp.share.who != Who::Everyone || cp.share.level == Level::Read, "seed {seed}: {cp:?}");
+                assert!(!(cp.share.wide && cp.share.level == Level::Owner), "seed {seed}: {cp:?}");
             }
         }
         let barred = |c: &Share| {
-            matches!(c.who, Who::Principal(Principal::Signer(_)))
+            matches!(c.who, Who::Device(_))
                 || (c.who == Who::Everyone && c.level != Level::Read)
+                || (c.wide && c.level == Level::Owner)
         };
-        tried += h.refused.iter().filter(|o| matches!(&o.action, Action::Share(c, _) if barred(c))).count();
+        let tries = |o: &&Edit| matches!(&o.action, Action::Share(Sharing::Grant(c, _)) if barred(c));
+        tried += h.refused.iter().filter(tries).count();
     }
     // and the histories do try such shares
     assert!(tried > 0);
@@ -1211,8 +1218,8 @@ fn ids(edits: &[Edit]) -> HashSet<EditId> {
 /// or such a share is public.
 fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId]) -> bool {
     let names = |g: Who| match g {
-        Who::Principal(Principal::Vault(g)) => st.acts_for(d, g),
-        Who::Principal(Principal::Signer(_)) => false,
+        Who::Vault(g) => st.acts_for(d, g),
+        Who::Device(_) => false,
         Who::Everyone => true,
     };
     let keeps = |cp: &Issued| cp.share.level.allows(Level::Backup);
@@ -1662,7 +1669,7 @@ fn some_attrs(st: &State, r: &Readings) -> Vec<Attrs> {
 fn t22_shares_narrow_down_their_chain() {
     // in the view of every history, and with the attempts the rules refused put back: a share that rests on another is
     // over the same vault, rests on an owner share issued to its own issuer, selects nothing that share doesn't, and is
-    // wide only if that share is; a root share is issued by the vault it is over
+    // wide only if that share is, which no owner share is, so never; a root share is issued by the vault it is over
     let mut rested = 0;
     for (seed, h) in every_history() {
         let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
@@ -1679,6 +1686,7 @@ fn t22_shares_narrow_down_their_chain() {
                 assert_eq!(pc.share.level, Level::Owner, "seed {seed}: {cp:?}");
                 assert_eq!(pc.share.who, vault(cp.share.issuer), "seed {seed}: {cp:?}");
                 assert!(!cp.share.wide || pc.share.wide, "seed {seed}: {cp:?}");
+                assert!(!cp.share.wide, "seed {seed}: {cp:?}");
                 assert_eq!(cp.chain[..cp.chain.len() - 1], pc.chain[..], "seed {seed}: {cp:?}");
                 for a in &attrs {
                     let narrower = !st.eff_selects(cp, a, &h.readings) || st.eff_selects(pc, a, &h.readings);
@@ -1776,7 +1784,7 @@ impl Twin {
 
     fn who(&self, g: Who) -> Who {
         match g {
-            Who::Principal(p) => Who::Principal(self.principal(p)),
+            Who::Vault(v) => Who::Vault(self.vault(v)),
             g => g,
         }
     }
@@ -1826,23 +1834,26 @@ impl Twin {
                 let owners = owners.into_iter().map(|p| self.principal(p)).collect();
                 Action::Genesis { kind, owners, threshold, root, nonce, seal_to }
             }
-            Action::AddOwner { vault, owner, seal_to } => {
-                Action::AddOwner { vault: self.vault(vault), owner: self.principal(owner), seal_to }
+            Action::Share(Sharing::Owner { vault, owner, seal_to }) => {
+                Action::Share(Sharing::Owner { vault: self.vault(vault), owner: self.principal(owner), seal_to })
             }
-            Action::RemoveOwner { vault, owner, keep } => {
-                Action::RemoveOwner { vault: self.vault(vault), owner: self.principal(owner), keep: self.edits(&keep) }
+            Action::Revoke(Revoking::Owner { vault, owner, keep }) => {
+                let (vault, owner, keep) = (self.vault(vault), self.principal(owner), self.edits(&keep));
+                Action::Revoke(Revoking::Owner { vault, owner, keep })
             }
-            Action::SetThreshold { vault, threshold } => Action::SetThreshold { vault: self.vault(vault), threshold },
-            Action::AddDevice { vault, device, seal_to } => {
-                Action::AddDevice { vault: self.vault(vault), device, seal_to }
+            Action::Settings { vault, set: Setting::Threshold(threshold) } => {
+                Action::Settings { vault: self.vault(vault), set: Setting::Threshold(threshold) }
             }
-            Action::RemoveDevice { vault, device, keep } => {
-                Action::RemoveDevice { vault: self.vault(vault), device, keep: self.edits(&keep) }
+            Action::Share(Sharing::Device { vault, device, seal_to }) => {
+                Action::Share(Sharing::Device { vault: self.vault(vault), device, seal_to })
             }
-            Action::SetRoot { vault, root, keep } => {
-                Action::SetRoot { vault: self.vault(vault), root, keep: self.edits(&keep) }
+            Action::Revoke(Revoking::Device { vault, device, keep }) => {
+                Action::Revoke(Revoking::Device { vault: self.vault(vault), device, keep: self.edits(&keep) })
             }
-            Action::Share(c, via) => {
+            Action::Settings { vault, set: Setting::Root { root, keep } } => {
+                Action::Settings { vault: self.vault(vault), set: Setting::Root { root, keep: self.edits(&keep) } }
+            }
+            Action::Share(Sharing::Grant(c, via)) => {
                 // of the selector, a relay reads the commitment to the share's ops, in the clear
                 let select = match Select::from_wire(&c.select) {
                     Ok(s) => Select::Sealed { boxes: vec![], slice: vec![], commitment: s.commitment() }.to_wire(),
@@ -1856,11 +1867,11 @@ impl Twin {
                     issuer: self.vault(c.issuer),
                     ..c
                 };
-                Action::Share(share, self.vaults(&via))
+                Action::Share(Sharing::Grant(share, self.vaults(&via)))
             }
-            Action::Revoke { share, actor, keep, via } => {
+            Action::Revoke(Revoking::Grant { share, actor, keep, via }) => {
                 let (keep, via) = (self.edits(&keep), self.vaults(&via));
-                Action::Revoke { share: self.share(share), actor: self.vault(actor), keep, via }
+                Action::Revoke(Revoking::Grant { share: self.share(share), actor: self.vault(actor), keep, via })
             }
             Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, .. } => {
                 let header = create.is_some().then(|| Header { ty: Sym::new(""), created: 0 });

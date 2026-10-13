@@ -6,7 +6,9 @@
 
 pub use avendb::cast::*;
 use avendb::id::{EditId, EntryId, ShareId, SignerId, VaultId};
-use avendb::policy::{mk_audience, Action, Kind, Level, Log, Principal, Proposal, Readings, Refusal, Share, Who};
+use avendb::policy::{
+    mk_audience, Action, Kind, Level, Log, Principal, Proposal, Readings, Refusal, Share, Sharing, Who,
+};
 use avendb::slice::{Header, Selector, Sym, TagDelta};
 
 // Signers on the rules' log: passkeys and device keys.
@@ -50,7 +52,7 @@ pub fn human(log: &mut Log, passkey: SignerId, devices: &[SignerId]) -> VaultId 
     let genesis = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root, nonce: 0, seal_to: vec![] };
     let v = VaultId::from(log.append(passkey, &[], genesis).unwrap());
     for &d in devices {
-        log.append(passkey, &[d], Action::AddDevice { vault: v, device: d, seal_to: None }).unwrap();
+        log.append(passkey, &[d], Action::Share(Sharing::Device { vault: v, device: d, seal_to: None })).unwrap();
     }
     v
 }
@@ -134,7 +136,7 @@ impl Cast {
     ) -> Result<ShareId, Refusal> {
         let wide = select == Selector::All;
         let share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce };
-        let id = ShareId::from(self.log.append(signer, cosigners, Action::Share(share, vec![]))?);
+        let id = ShareId::from(self.log.append(signer, cosigners, Action::Share(Sharing::Grant(share, vec![])))?);
         self.readings.selectors.insert(id, select);
         Ok(id)
     }

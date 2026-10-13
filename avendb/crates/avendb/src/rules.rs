@@ -87,8 +87,8 @@ pub enum Touch {
 /// An op a share names, in the order shares list them (`normalize`): `Relay`, `Backup` and `Read` its slice's edits;
 /// `Create` entries; `Set` any change at or under `path` (only to the values `to`, if it lists them), `Insert`,
 /// `Remove` or `Move` the rows of a list, `Merge` another line, each on the lines `on` names (either, if none); ask for
-/// the tags `Tag` lists (any, if none); `Propose`; and `Share`, issue shares resting on it, and on the whole vault
-/// publish into its schema lane.
+/// the tags `Tag` lists (any, if none); `Propose`; and `Share`, issue shares resting on it. A share with `Share` is an
+/// owner's, never on the whole vault (`policy::Refusal::WideOwner`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
     Relay,

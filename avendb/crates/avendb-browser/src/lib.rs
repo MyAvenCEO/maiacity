@@ -87,7 +87,7 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{self, KeyFam};
 use avendb::lab::{Backup, Lab, NewShare};
 use avendb::lens::{DocV2, Status};
-use avendb::policy::{Action, Issued, Kind, Level, Principal, Refusal, Share, State, Vault, Who};
+use avendb::policy::{Action, Issued, Kind, Level, Principal, Refusal, Revoking, Share, Sharing, State, Vault, Who};
 use avendb::recovery::{self, RecoveryKey};
 use avendb::rules;
 use avendb::sealed::{Brought, FileRoot};
@@ -436,7 +436,7 @@ impl Device {
             let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
             let st = lab.state(me);
             let Some(avenceo) = avenceo(st, mine) else { return Ok(false) };
-            let to = Who::Principal(Principal::Vault(avenceo));
+            let to = Who::Vault(avenceo);
             let server = |cp: &&Issued| cp.share.wide && cp.share.who == to && st.live(cp.id);
             let mut vaults: Vec<VaultId> = st.shares().iter().filter(server).map(|cp| cp.share.over).collect();
             vaults.sort();
@@ -456,7 +456,8 @@ impl Device {
                     changed = true;
                 }
                 for share in ends {
-                    lab.submit(me, &[me], Action::Revoke { share, actor: v, keep: vec![], via: vec![] })?;
+                    let revoke = Revoking::Grant { share, actor: v, keep: vec![], via: vec![] };
+                    lab.submit(me, &[me], Action::Revoke(revoke))?;
                     changed = true;
                 }
             }
@@ -602,7 +603,7 @@ impl Device {
             let st = lab.state(me);
             st.share(share).filter(|cp| st.live(cp.id)).map(|cp| cp.share.level)
         };
-        let revoke = Action::Revoke { share, actor, keep: vec![], via: vec![] };
+        let revoke = Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
         if self.node.read(level).await.context("no such cap in force")? == Level::Owner {
             let passkey = self.passkey;
             let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey], revoke);
@@ -622,7 +623,7 @@ impl Device {
         let master = self.node.read(|lab, _| lab.recovery()).await.context("no master recovery key is built in")?;
         let vault = self.vault().await.context("this device belongs to no vault")?;
         let (passkey, owner) = (self.passkey, Principal::Signer(master));
-        let add = Action::AddOwner { vault, owner, seal_to: None };
+        let add = Action::Share(Sharing::Owner { vault, owner, seal_to: None });
         let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey, master], add);
         self.node.approve_with(passkey, draft, authenticator).await.context("the master recovery key")?;
         Ok(())
@@ -638,7 +639,7 @@ impl Device {
         authenticator: &impl Authenticator,
     ) -> Result<()> {
         let passkey = self.passkey;
-        let remove = Action::RemoveOwner { vault, owner, keep: vec![] };
+        let remove = Action::Revoke(Revoking::Owner { vault, owner, keep: vec![] });
         let draft = move |drafting: &mut avendb::lab::Drafting<'_>, _| drafting.draft(&[passkey], remove);
         self.node.approve_with(passkey, draft, authenticator).await.context("the owner's removal")?;
         Ok(())
@@ -1115,7 +1116,7 @@ fn reaching(st: &State, v: VaultId, x: AudienceId) -> impl Iterator<Item = &Issu
 fn levels(st: &State, v: VaultId, x: AudienceId) -> Vec<(VaultId, Level)> {
     let mut levels = vec![(v, Level::Owner)];
     for cp in reaching(st, v, x) {
-        let Who::Principal(Principal::Vault(g)) = cp.share.who else { continue };
+        let Who::Vault(g) = cp.share.who else { continue };
         match levels.iter_mut().find(|(a, _)| *a == g) {
             Some((_, r)) => *r = (*r).max(cp.share.level),
             None => levels.push((g, cp.share.level)),
@@ -1134,7 +1135,7 @@ fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: AudienceI
     let through = |d: SignerId, own: VaultId| {
         let mut best: Option<(Level, VaultId)> = st.acts_for(d, v).then_some((Level::Owner, v));
         for cp in &shares {
-            let Who::Principal(Principal::Vault(g)) = cp.share.who else { continue };
+            let Who::Vault(g) = cp.share.who else { continue };
             if cp.share.level >= Level::Backup && st.acts_for(d, g) && best.is_none_or(|(r, _)| cp.share.level > r) {
                 best = Some((cp.share.level, g));
             }

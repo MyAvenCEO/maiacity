@@ -8,7 +8,7 @@ mod common;
 
 use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyName};
-use avendb::policy::{Action, Edit, Kind, Log, Principal, Refusal, State};
+use avendb::policy::{Action, Edit, Kind, Log, Principal, Refusal, Revoking, Setting, Sharing, State};
 use avendb::sync::{log_of, LogId};
 use common::*;
 
@@ -48,17 +48,17 @@ fn device_cannot_govern() {
     // Alice's Mac acts for her vault…
     assert!(c.log.view().acts_for(MAC_A, c.alice));
     // …but alone it can't add a device, even one that consents, remove one, or change the threshold
-    let add = Action::AddDevice { vault: c.alice, device: NEW_DEVICE, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: c.alice, device: NEW_DEVICE, seal_to: None });
     assert_eq!(c.log.check(MAC_A, &[NEW_DEVICE], add.clone()).err(), Some(Refusal::BelowThreshold));
-    let remove = Action::RemoveDevice { vault: c.alice, device: PHONE_A, keep: vec![] };
+    let remove = Action::Revoke(Revoking::Device { vault: c.alice, device: PHONE_A, keep: vec![] });
     assert_eq!(c.log.check(MAC_A, &[], remove).err(), Some(Refusal::BelowThreshold));
-    let threshold = Action::SetThreshold { vault: c.alice, threshold: 1 };
+    let threshold = Action::Settings { vault: c.alice, set: Setting::Threshold(1) };
     assert_eq!(c.log.check(MAC_A, &[], threshold).err(), Some(Refusal::BelowThreshold));
     // her passkey can, with the new device's own signature
     assert!(c.log.check(PASSKEY_A, &[NEW_DEVICE], add.clone()).is_ok());
     assert_eq!(c.log.check(PASSKEY_A, &[], add).err(), Some(Refusal::NoConsent));
     // and a device can always remove itself
-    let leave = Action::RemoveDevice { vault: c.alice, device: PHONE_A, keep: vec![] };
+    let leave = Action::Revoke(Revoking::Device { vault: c.alice, device: PHONE_A, keep: vec![] });
     assert!(c.log.check(PHONE_A, &[], leave).is_ok());
 }
 
@@ -70,7 +70,7 @@ fn add_owner_needs_threshold_and_consent() {
     let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 2, root: None, nonce: 0, seal_to: vec![] };
     assert_eq!(c.log.check(PASSKEY_A, &[], genesis).err(), Some(Refusal::NoConsent));
     let coop = with_coop(&mut c);
-    let add_dave = Action::AddOwner { vault: coop, owner: Principal::Vault(c.dave), seal_to: None };
+    let add_dave = Action::Share(Sharing::Owner { vault: coop, owner: Principal::Vault(c.dave), seal_to: None });
     // Alice's vault alone is below the coop's threshold of 2
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_D], add_dave.clone()).err(), Some(Refusal::BelowThreshold));
     // both owners, but Dave hasn't consented
@@ -88,16 +88,16 @@ fn ownership_cycle_rejected() {
     let mut c = cast();
     let coop = with_coop(&mut c);
     // a coop can't own itself…
-    let itself = Action::AddOwner { vault: coop, owner: Principal::Vault(coop), seal_to: None };
+    let itself = Action::Share(Sharing::Owner { vault: coop, owner: Principal::Vault(coop), seal_to: None });
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], itself).err(), Some(Refusal::Cycle));
     // …nor a vault it owns: Garden, owned by the coop, can't become the coop's owner
     let owners = vec![Principal::Vault(coop)];
     let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let garden = VaultId::from(c.log.append(PASSKEY_A, &[PASSKEY_B], genesis).unwrap());
-    let around = Action::AddOwner { vault: coop, owner: Principal::Vault(garden), seal_to: None };
+    let around = Action::Share(Sharing::Owner { vault: coop, owner: Principal::Vault(garden), seal_to: None });
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], around).err(), Some(Refusal::Cycle));
     // and a human vault can't be owned by a vault at all: its owners are signers
-    let human = Action::AddOwner { vault: c.alice, owner: Principal::Vault(coop), seal_to: None };
+    let human = Action::Share(Sharing::Owner { vault: c.alice, owner: Principal::Vault(coop), seal_to: None });
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], human).err(), Some(Refusal::WrongOwnerKind));
 }
 
@@ -122,7 +122,7 @@ fn pair_of(c: &mut Cast) -> VaultId {
 fn concurrent_mutual_removals_leave_one_owner() {
     let mut c = cast();
     let pair = pair_of(&mut c);
-    let remove = |owner| Action::RemoveOwner { vault: pair, owner: Principal::Vault(owner), keep: vec![] };
+    let remove = |owner| Action::Revoke(Revoking::Owner { vault: pair, owner: Principal::Vault(owner), keep: vec![] });
     // offline, each removes the other; each removal is fine alone
     let (mut a, mut b) = (c.log.clone(), c.log.clone());
     a.append(PASSKEY_A, &[], remove(c.bob)).unwrap();
@@ -142,7 +142,7 @@ fn concurrent_adds_that_close_a_cycle_keep_only_the_first() {
         VaultId::from(c.log.append(PASSKEY_A, &[], genesis).unwrap())
     };
     let (garden, kitchen) = (coop_of_alice(1), coop_of_alice(2));
-    let add = |vault, owner| Action::AddOwner { vault, owner: Principal::Vault(owner), seal_to: None };
+    let add = |vault, owner| Action::Share(Sharing::Owner { vault, owner: Principal::Vault(owner), seal_to: None });
     // offline, Garden takes Kitchen as an owner on one device, and Kitchen takes Garden on another
     let (mut a, mut b) = (c.log.clone(), c.log.clone());
     a.append(PASSKEY_A, &[], add(garden, kitchen)).unwrap();
@@ -163,9 +163,9 @@ fn a_removal_wins_over_a_concurrent_add_it_did_not_see() {
     let trio = VaultId::from(c.log.append(PASSKEY_A, &[PASSKEY_B, PASSKEY_D], genesis).unwrap());
     // Alice and Bob remove Dave, while Dave and Alice add Carol, who consents
     let (mut a, mut b) = (c.log.clone(), c.log.clone());
-    let remove = Action::RemoveOwner { vault: trio, owner: Principal::Vault(c.dave), keep: vec![] };
+    let remove = Action::Revoke(Revoking::Owner { vault: trio, owner: Principal::Vault(c.dave), keep: vec![] });
     a.append(PASSKEY_A, &[PASSKEY_B], remove).unwrap();
-    let add = Action::AddOwner { vault: trio, owner: Principal::Vault(c.carol), seal_to: None };
+    let add = Action::Share(Sharing::Owner { vault: trio, owner: Principal::Vault(c.carol), seal_to: None });
     b.append(PASSKEY_D, &[PASSKEY_A, PASSKEY_C], add).unwrap();
     // removals replay first: without Dave, the add has only Alice's approval, below the threshold
     let st = meet(&a, &b);
@@ -177,15 +177,15 @@ fn a_removal_wins_over_a_concurrent_add_it_did_not_see() {
 fn the_passkey_is_the_root() {
     let mut c = cast();
     // a second passkey joins Alice's vault and the threshold goes up to 2: the root still approves alone…
-    let second = Action::AddOwner { vault: c.alice, owner: Principal::Signer(SECOND), seal_to: None };
+    let second = Action::Share(Sharing::Owner { vault: c.alice, owner: Principal::Signer(SECOND), seal_to: None });
     c.log.append(PASSKEY_A, &[SECOND], second).unwrap();
-    c.log.append(PASSKEY_A, &[], Action::SetThreshold { vault: c.alice, threshold: 2 }).unwrap();
-    let add = Action::AddDevice { vault: c.alice, device: NEW_DEVICE, seal_to: None };
+    c.log.append(PASSKEY_A, &[], Action::Settings { vault: c.alice, set: Setting::Threshold(2) }).unwrap();
+    let add = Action::Share(Sharing::Device { vault: c.alice, device: NEW_DEVICE, seal_to: None });
     assert!(c.log.check(PASSKEY_A, &[NEW_DEVICE], add.clone()).is_ok());
     // …and the second passkey alone is below the threshold
     assert_eq!(c.log.check(SECOND, &[NEW_DEVICE], add).err(), Some(Refusal::BelowThreshold));
     // only the root hands the root on, and the new root signs
-    let hand_on = Action::SetRoot { vault: c.alice, root: Some(SECOND), keep: vec![] };
+    let hand_on = Action::Settings { vault: c.alice, set: Setting::Root { root: Some(SECOND), keep: vec![] } };
     assert_eq!(c.log.check(SECOND, &[], hand_on.clone()).err(), Some(Refusal::NotRoot));
     assert_eq!(c.log.check(PASSKEY_A, &[], hand_on.clone()).err(), Some(Refusal::NoConsent));
     assert!(c.log.check(PASSKEY_A, &[SECOND], hand_on).is_ok());
@@ -206,13 +206,13 @@ fn a_removed_owner_cannot_backdate_governance() {
     let early = c.log.clone();
     // Alice goes on for a while, then removes Bob
     for _ in 0..3 {
-        c.log.append(PASSKEY_A, &[], Action::SetThreshold { vault: pair, threshold: 1 }).unwrap();
+        c.log.append(PASSKEY_A, &[], Action::Settings { vault: pair, set: Setting::Threshold(1) }).unwrap();
     }
-    let remove = Action::RemoveOwner { vault: pair, owner: Principal::Vault(c.bob), keep: vec![] };
+    let remove = Action::Revoke(Revoking::Owner { vault: pair, owner: Principal::Vault(c.bob), keep: vec![] });
     c.log.append(PASSKEY_A, &[], remove).unwrap();
     // Bob, removed, signs an add on his early copy, where he still owned the coop, so it claims to come first
     let mut forged = early;
-    let add = Action::AddOwner { vault: pair, owner: Principal::Vault(c.dave), seal_to: None };
+    let add = Action::Share(Sharing::Owner { vault: pair, owner: Principal::Vault(c.dave), seal_to: None });
     forged.append(PASSKEY_B, &[PASSKEY_D], add).unwrap();
     // the removal hadn't seen it, so it is cut
     let st = meet(&c.log, &forged);
@@ -221,15 +221,16 @@ fn a_removed_owner_cannot_backdate_governance() {
     // a stolen second passkey: on an early copy the thief removes the root's passkey from the owners and adds a
     // device of their own; the root, having seen neither, removes the stolen passkey, and outranks it
     let mut c = cast();
-    let second = Action::AddOwner { vault: c.alice, owner: Principal::Signer(SECOND), seal_to: None };
+    let second = Action::Share(Sharing::Owner { vault: c.alice, owner: Principal::Signer(SECOND), seal_to: None });
     c.log.append(PASSKEY_A, &[SECOND], second).unwrap();
     let early = c.log.clone();
-    let remove = Action::RemoveOwner { vault: c.alice, owner: Principal::Signer(SECOND), keep: vec![] };
+    let remove = Action::Revoke(Revoking::Owner { vault: c.alice, owner: Principal::Signer(SECOND), keep: vec![] });
     c.log.append(PASSKEY_A, &[], remove).unwrap();
     let mut stolen = early;
-    let remove = Action::RemoveOwner { vault: c.alice, owner: Principal::Signer(PASSKEY_A), keep: vec![] };
+    let remove = Action::Revoke(Revoking::Owner { vault: c.alice, owner: Principal::Signer(PASSKEY_A), keep: vec![] });
     stolen.append(SECOND, &[], remove).unwrap();
-    stolen.append(SECOND, &[STRANGER], Action::AddDevice { vault: c.alice, device: STRANGER, seal_to: None }).unwrap();
+    let add = Action::Share(Sharing::Device { vault: c.alice, device: STRANGER, seal_to: None });
+    stolen.append(SECOND, &[STRANGER], add).unwrap();
     let st = meet(&c.log, &stolen);
     assert_eq!(st.vault(c.alice).map(|v| v.owners.clone()), Some(vec![Principal::Signer(PASSKEY_A)]));
     assert!(!st.acts_for(STRANGER, c.alice));
@@ -238,16 +239,17 @@ fn a_removed_owner_cannot_backdate_governance() {
 #[test]
 fn handing_the_root_on_cuts_the_old_passkeys_backdated_edits() {
     let mut c = cast();
-    let second = Action::AddOwner { vault: c.alice, owner: Principal::Signer(SECOND), seal_to: None };
+    let second = Action::Share(Sharing::Owner { vault: c.alice, owner: Principal::Signer(SECOND), seal_to: None });
     c.log.append(PASSKEY_A, &[SECOND], second).unwrap();
     let early = c.log.clone();
     // the root goes to the new passkey, which retires the old one
-    c.log.append(PASSKEY_A, &[SECOND], Action::SetRoot { vault: c.alice, root: Some(SECOND), keep: vec![] }).unwrap();
-    let retire = Action::RemoveOwner { vault: c.alice, owner: Principal::Signer(PASSKEY_A), keep: vec![] };
+    let root = Action::Settings { vault: c.alice, set: Setting::Root { root: Some(SECOND), keep: vec![] } };
+    c.log.append(PASSKEY_A, &[SECOND], root).unwrap();
+    let retire = Action::Revoke(Revoking::Owner { vault: c.alice, owner: Principal::Signer(PASSKEY_A), keep: vec![] });
     c.log.append(SECOND, &[], retire).unwrap();
     // the old passkey, stolen later, adds a device on an early copy
     let mut stolen = early;
-    let add = Action::AddDevice { vault: c.alice, device: STRANGER, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: c.alice, device: STRANGER, seal_to: None });
     stolen.append(PASSKEY_A, &[STRANGER], add).unwrap();
     let st = meet(&c.log, &stolen);
     let vt = st.vault(c.alice).unwrap();
@@ -264,7 +266,7 @@ fn a_vault_settles_before_the_coops_it_owns() {
     // Alice's vault gains two more passkeys, either of which approves for it alone
     let (second, third) = (SignerId::from_u64(90), SignerId::from_u64(91));
     for p in [second, third] {
-        let add = Action::AddOwner { vault: alice, owner: Principal::Signer(p), seal_to: None };
+        let add = Action::Share(Sharing::Owner { vault: alice, owner: Principal::Signer(p), seal_to: None });
         c.log.append(PASSKEY_A, &[p], add).unwrap();
     }
     // Alice and Bob found a coop where either acts alone
@@ -272,9 +274,10 @@ fn a_vault_settles_before_the_coops_it_owns() {
     // offline, the second passkey removes Bob from the coop; the third, having gone on a step, removes the second
     // passkey from Alice's vault, so the coop's removal sorts first
     let (mut a, mut b) = (c.log.clone(), c.log.clone());
-    a.append(second, &[], Action::RemoveOwner { vault: pair, owner: Principal::Vault(bob), keep: vec![] }).unwrap();
-    b.append(PASSKEY_A, &[], Action::SetThreshold { vault: alice, threshold: 1 }).unwrap();
-    b.append(third, &[], Action::RemoveOwner { vault: alice, owner: Principal::Signer(second), keep: vec![] }).unwrap();
+    let remove = |vault, owner| Action::Revoke(Revoking::Owner { vault, owner, keep: vec![] });
+    a.append(second, &[], remove(pair, Principal::Vault(bob))).unwrap();
+    b.append(PASSKEY_A, &[], Action::Settings { vault: alice, set: Setting::Threshold(1) }).unwrap();
+    b.append(third, &[], remove(alice, Principal::Signer(second))).unwrap();
     // Alice's vault settles first: the second passkey goes, and the removal it approved for the coop with it
     let st = meet(&a, &b);
     let owners = vec![Principal::Signer(PASSKEY_A), Principal::Signer(third)];
@@ -292,7 +295,8 @@ fn aven_of_alice(c: &mut Cast) -> VaultId {
     let owners = vec![Principal::Vault(c.alice)];
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let aven = VaultId::from(c.log.append(PASSKEY_A, &[], genesis).unwrap());
-    c.log.append(PASSKEY_A, &[SERVER], Action::AddDevice { vault: aven, device: SERVER, seal_to: None }).unwrap();
+    let server = Action::Share(Sharing::Device { vault: aven, device: SERVER, seal_to: None });
+    c.log.append(PASSKEY_A, &[SERVER], server).unwrap();
     aven
 }
 
@@ -325,21 +329,21 @@ fn an_aven_vaults_devices_act_for_it_but_never_govern_it() {
     assert!(opens(SERVER, KeyFam::Seed(ceo)) && opens(PHONE_A, KeyFam::Seed(ceo)));
     assert!(!opens(SERVER, KeyFam::Seed(c.alice)) && !opens(MAC_B, KeyFam::Seed(ceo)));
     // the server governs nothing: it adds no device and no owner; Alice's passkey does, through Alice's vault
-    let add = Action::AddDevice { vault: ceo, device: NEW_DEVICE, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: ceo, device: NEW_DEVICE, seal_to: None });
     assert_eq!(c.log.check(SERVER, &[NEW_DEVICE], add.clone()).err(), Some(Refusal::BelowThreshold));
     assert!(c.log.check(PASSKEY_A, &[NEW_DEVICE], add).is_ok());
-    let bob_too = Action::AddOwner { vault: ceo, owner: Principal::Vault(c.bob), seal_to: None };
+    let bob_too = Action::Share(Sharing::Owner { vault: ceo, owner: Principal::Vault(c.bob), seal_to: None });
     assert_eq!(c.log.check(SERVER, &[PASSKEY_B], bob_too.clone()).err(), Some(Refusal::BelowThreshold));
     assert!(c.log.check(PASSKEY_A, &[PASSKEY_B], bob_too).is_ok());
     // no signer joins its owners; it owns no vault, neither a coop nor an aven vault
-    let signer = Action::AddOwner { vault: ceo, owner: Principal::Signer(NEW_DEVICE), seal_to: None };
+    let signer = Action::Share(Sharing::Owner { vault: ceo, owner: Principal::Signer(NEW_DEVICE), seal_to: None });
     assert_eq!(c.log.check(PASSKEY_A, &[NEW_DEVICE], signer).err(), Some(Refusal::WrongOwnerKind));
-    let owns_coop = Action::AddOwner { vault: coop, owner: Principal::Vault(ceo), seal_to: None };
+    let owns_coop = Action::Share(Sharing::Owner { vault: coop, owner: Principal::Vault(ceo), seal_to: None });
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], owns_coop).err(), Some(Refusal::WrongOwnerKind));
     let sub = aven(vec![Principal::Vault(ceo)], None, 3);
     assert_eq!(c.log.check(PASSKEY_A, &[], sub).err(), Some(Refusal::WrongOwnerKind));
     // a coop has no devices: it acts only through its owners
-    let device = Action::AddDevice { vault: coop, device: NEW_DEVICE, seal_to: None };
+    let device = Action::Share(Sharing::Device { vault: coop, device: NEW_DEVICE, seal_to: None });
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B, NEW_DEVICE], device).err(), Some(Refusal::NoDevices));
 }
 
@@ -393,7 +397,7 @@ fn a_removed_owners_unseen_writes_for_the_coop_are_cut() {
     let late = offline.append(MAC_B, &[], write(coop, WELCOME, coop, en.stay(), 0)).unwrap();
     assert_eq!(offline.edits().last().and_then(|o| o.action.via()), Some(&[c.bob][..]));
     // Bob leaves the coop on his own, on a device that hadn't seen that write
-    let leave = Action::RemoveOwner { vault: coop, owner: Principal::Vault(c.bob), keep: vec![] };
+    let leave = Action::Revoke(Revoking::Owner { vault: coop, owner: Principal::Vault(c.bob), keep: vec![] });
     c.log.append(PASSKEY_B, &[], leave.clone()).unwrap();
     let st = meet(&c.log, &offline);
     assert!(!st.writes(WELCOME).contains(&late));
@@ -412,12 +416,15 @@ fn every_vault_keeps_to_its_kind() {
     let coop = with_coop(&mut c);
     let ceo = aven_of_alice(&mut c);
     let (signer, by_coop) = (Principal::Signer, Principal::Vault(coop));
+    let owner = |vault, owner| Action::Share(Sharing::Owner { vault, owner, seal_to: None });
+    let device = |vault, device| Action::Share(Sharing::Device { vault, device, seal_to: None });
+    let root = Setting::Root { root: Some(PASSKEY_A), keep: vec![] };
     let attempts = [
-        (PASSKEY_A, vec![PASSKEY_B], Action::AddOwner { vault: coop, owner: signer(PASSKEY_A), seal_to: None }),
-        (PASSKEY_A, vec![PASSKEY_B, NEW_DEVICE], Action::AddDevice { vault: coop, device: NEW_DEVICE, seal_to: None }),
-        (PASSKEY_A, vec![NEW_DEVICE], Action::AddOwner { vault: ceo, owner: signer(NEW_DEVICE), seal_to: None }),
-        (PASSKEY_A, vec![PASSKEY_B], Action::AddOwner { vault: c.alice, owner: by_coop, seal_to: None }),
-        (PASSKEY_A, vec![], Action::SetRoot { vault: ceo, root: Some(PASSKEY_A), keep: vec![] }),
+        (PASSKEY_A, vec![PASSKEY_B], owner(coop, signer(PASSKEY_A))),
+        (PASSKEY_A, vec![PASSKEY_B, NEW_DEVICE], device(coop, NEW_DEVICE)),
+        (PASSKEY_A, vec![NEW_DEVICE], owner(ceo, signer(NEW_DEVICE))),
+        (PASSKEY_A, vec![PASSKEY_B], owner(c.alice, by_coop)),
+        (PASSKEY_A, vec![], Action::Settings { vault: ceo, set: root }),
     ];
     for (author, cosigners, action) in attempts {
         let _ = c.log.append(author, &cosigners, action);

@@ -14,7 +14,7 @@ use common::*;
 use avendb::id::{AudienceId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyId, KeyName, Secret};
 use avendb::lab::{Lab, Tamper};
-use avendb::policy::{mk_audience, view, Action, Edit, Level, Principal, Refusal, State, Who};
+use avendb::policy::{mk_audience, view, Action, Edit, Level, Principal, Refusal, Revoking, Sharing, State, Who};
 use avendb::sealed::{open, seal, Brought, FileKey};
 use avendb::slice::Selector;
 
@@ -181,7 +181,7 @@ fn revoked_reader_cannot_open_new_edits() {
     let key = audience_key(&w.lab, w.mac_a, h.welcome);
     assert_eq!(key, audience_of(h.coop, &[carol_read]));
     let before = w.lab.state(w.mac_a).epoch(key);
-    let revoke = Action::Revoke { share: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: carol_read, actor: h.coop, keep: vec![], via: vec![] });
     w.lab.submit(w.mac_a, &[w.mac_a], revoke).unwrap();
     w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(2);
@@ -210,7 +210,7 @@ fn a_device_writes_under_the_newest_key_it_knows() {
     let key = audience_key(&w.lab, w.phone_a, h.welcome);
     let before = w.lab.state(w.phone_a).epoch(key);
     w.lab.set_online(w.phone_a, false);
-    let revoke = Action::Revoke { share: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: carol_read, actor: h.coop, keep: vec![], via: vec![] });
     w.lab.submit(w.mac_a, &[w.mac_a], revoke).unwrap();
     // the iPhone hasn't seen the revocation, so its edit is made alongside it, under the epoch of Welcome's audience
     // it knows
@@ -275,7 +275,7 @@ fn every_device_opens_exactly_what_it_may() {
     assert!(st.published().contains(&st.current(public)));
     assert_eq!(text(&w.lab, w.stranger, charter, 2).as_deref(), Some(CHARTER_TEXT));
     // Carol's read revoked, then Welcome edited
-    let revoke = Action::Revoke { share: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: carol_read, actor: h.coop, keep: vec![], via: vec![] });
     w.lab.submit(mac, &[mac], revoke).unwrap();
     w.lab.edit(mac, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(4);
@@ -298,14 +298,15 @@ fn every_device_opens_exactly_what_it_may() {
     keys_follow_shares(&w, "the solar panels leave Bob's slice");
     assert_eq!(audience_key(&w.lab, mac, lib.solar), none);
     // Bob leaves the coop, and Alice loses her iPhone: her seed and the key of each of her audiences move on
-    let leave = Action::RemoveOwner { vault: h.coop, owner: Principal::Vault(w.bob), keep: vec![] };
+    let leave = Action::Revoke(Revoking::Owner { vault: h.coop, owner: Principal::Vault(w.bob), keep: vec![] });
     w.lab.submit(w.mac_b, &[w.passkey_b], leave).unwrap();
     w.lab.sync_all(6);
     keys_follow_shares(&w, "Bob left");
     let fams = [KeyFam::Seed(alice), none, works];
     let before = fams.map(|k| w.lab.state(mac).epoch(k));
     let phone = w.phone_a;
-    w.lab.submit(mac, &[w.passkey_a], Action::RemoveDevice { vault: alice, device: phone, keep: vec![] }).unwrap();
+    let remove = Action::Revoke(Revoking::Device { vault: alice, device: phone, keep: vec![] });
+    w.lab.submit(mac, &[w.passkey_a], remove).unwrap();
     w.lab.sync_all(7);
     keys_follow_shares(&w, "the iPhone removed");
     assert_eq!(fams.map(|k| w.lab.state(mac).epoch(k)), before.map(|e| e + 1));
@@ -359,7 +360,7 @@ fn a_broken_curve_writes_nothing_that_counts() {
     let to_dave = w.lab.draft_share(mac_a, &[mac_a], share(h.coop, vault(dave), Level::Read, by_id(h.welcome)));
     let to_dave = to_dave.expect("Alice's Mac drafts a share to Dave").edit().action.clone();
     assert_eq!(w.lab.tamper(mac_b, broken(to_dave)), Err(Refusal::BadSignature));
-    let add = Action::AddDevice { vault: w.alice, device: w.stranger, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: w.alice, device: w.stranger, seal_to: None });
     assert_eq!(w.lab.tamper(mac_b, broken(add)), Err(Refusal::BadSignature));
     // a write as Alice's Mac is kept, but doesn't count: no checkpoint by her Mac covers it
     let write = forced(&w.lab, mac_b, h.welcome, h.coop);

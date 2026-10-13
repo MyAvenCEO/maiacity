@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use avendb::id::{AudienceId, EditId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::Action;
+use avendb::policy::{Action, Revoking};
 use avendb::sync::{place, LogId, Place};
 use avendb::wire::{Announce, Reply, Request, Wire};
 use common::*;
@@ -122,7 +122,7 @@ fn mceliece_keys_go_only_within_reach() {
     let (w, coop, mut mac, mut server, mut bob) = split();
     // Alice's passkey removes her lost iPhone on her Mac: her vault's seed and the coop's rotate, and the public half
     // of each new seed, which keys are sealed to, brings a McEliece key
-    let remove = Action::RemoveDevice { vault: w.alice, device: w.phone_a, keep: vec![] };
+    let remove = Action::Revoke(Revoking::Device { vault: w.alice, device: w.phone_a, keep: vec![] });
     mac.submit(w.mac_a, &[w.passkey_a], remove).expect("Alice's passkey removes the iPhone");
     let new: Vec<_> = mac.blob_ids(w.mac_a).into_iter().filter(|b| server.blob(w.server, *b).is_none()).collect();
     assert!(!new.is_empty(), "the new seeds bring McEliece keys");

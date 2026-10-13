@@ -18,7 +18,7 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
 use avendb::lens::{self, DocV2, Lens, Schema};
-use avendb::policy::{Action, Entry, Principal, Proposal, State, Who};
+use avendb::policy::{Action, Entry, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
 use avendb::sign::{Classical, Signature, SignerKeys};
 use avendb::wire::Wire as _;
 use serde_json::{Map, Value, json};
@@ -114,7 +114,7 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let edits = || log.edits().iter().zip(log.ids());
     let of = |e: &EntryId| st.entry(*e).map(|en| en.vault) == Some(vault);
     let shares: HashSet<ShareId> = edits()
-        .filter(|(edit, _)| matches!(&edit.action, Action::Share(c, _) if c.over == vault))
+        .filter(|(edit, _)| matches!(&edit.action, Action::Share(Sharing::Grant(c, _)) if c.over == vault))
         .map(|(_, id)| ShareId::from(*id))
         .collect();
     let (mut founded, mut writes, mut moves, mut checkpoints, mut keys, mut revokes, mut published) =
@@ -127,7 +127,7 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
             Action::Checkpoint { entry, .. } if of(entry) => checkpoints += 1,
             Action::Keys { name: KeyName::Scoped(k, _), .. } if k.vault() == vault => keys += 1,
             Action::Keys { name: KeyName::Entry(e, ..), .. } if of(e) => keys += 1,
-            Action::Revoke { share, .. } if shares.contains(share) => revokes += 1,
+            Action::Revoke(Revoking::Grant { share, .. }) if shares.contains(share) => revokes += 1,
             Action::Publish { vault: v, .. } if *v == vault => published += 1,
             _ => {}
         }
@@ -170,7 +170,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
         .iter()
         .zip(held.ids())
         .filter_map(|(edit, id)| match &edit.action {
-            Action::Share(c, _) => Some((ShareId::from(*id), c.over)),
+            Action::Share(Sharing::Grant(c, _)) => Some((ShareId::from(*id), c.over)),
             _ => None,
         })
         .collect();
@@ -226,27 +226,27 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "sealTo": seal_to.len(),
             }),
         ),
-        Action::AddOwner { vault, owner, seal_to } => (
+        Action::Share(Sharing::Owner { vault, owner, seal_to }) => (
             "addOwner",
             json!({ "vault": hex(&vault.0), "owner": principal(owner), "sealTo": seal_to.is_some() }),
         ),
-        Action::RemoveOwner { vault, owner, keep } => {
+        Action::Revoke(Revoking::Owner { vault, owner, keep }) => {
             ("removeOwner", json!({ "vault": hex(&vault.0), "owner": principal(owner), "keep": keep.len() }))
         }
-        Action::SetThreshold { vault, threshold } => {
+        Action::Settings { vault, set: Setting::Threshold(threshold) } => {
             ("setThreshold", json!({ "vault": hex(&vault.0), "threshold": threshold }))
         }
-        Action::AddDevice { vault, device, seal_to } => (
+        Action::Share(Sharing::Device { vault, device, seal_to }) => (
             "addDevice",
             json!({ "vault": hex(&vault.0), "device": hex(&device.0), "sealTo": seal_to.is_some() }),
         ),
-        Action::RemoveDevice { vault, device, keep } => {
+        Action::Revoke(Revoking::Device { vault, device, keep }) => {
             ("removeDevice", json!({ "vault": hex(&vault.0), "device": hex(&device.0), "keep": keep.len() }))
         }
-        Action::SetRoot { vault, root, keep } => {
+        Action::Settings { vault, set: Setting::Root { root, keep } } => {
             ("setRoot", json!({ "vault": hex(&vault.0), "root": root.map(|r| hex(&r.0)), "keep": keep.len() }))
         }
-        Action::Share(c, via) => (
+        Action::Share(Sharing::Grant(c, via)) => (
             "cap",
             json!({
                 "over": hex(&c.over.0),
@@ -259,7 +259,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "sealed": c.select.len(),
             }),
         ),
-        Action::Revoke { share, actor, keep, via } => (
+        Action::Revoke(Revoking::Grant { share, actor, keep, via }) => (
             "revoke",
             json!({ "cap": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
         ),
@@ -375,26 +375,27 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
             let owners = owners.iter().filter_map(|o| if let Principal::Vault(v) = o { Some(*v) } else { None });
             [VaultId::from(id)].into_iter().chain(owners).collect()
         }
-        Action::AddOwner { vault, owner, .. } | Action::RemoveOwner { vault, owner, .. } => match owner {
-            Principal::Vault(o) => vec![*vault, *o],
-            Principal::Signer(_) => vec![*vault],
-        },
-        Action::SetThreshold { vault, .. }
-        | Action::AddDevice { vault, .. }
-        | Action::RemoveDevice { vault, .. }
-        | Action::SetRoot { vault, .. }
+        Action::Share(Sharing::Owner { vault, owner, .. }) | Action::Revoke(Revoking::Owner { vault, owner, .. }) => {
+            match owner {
+                Principal::Vault(o) => vec![*vault, *o],
+                Principal::Signer(_) => vec![*vault],
+            }
+        }
+        Action::Settings { vault, .. }
+        | Action::Share(Sharing::Device { vault, .. })
+        | Action::Revoke(Revoking::Device { vault, .. })
         | Action::Move { vault, .. }
         | Action::Pick { vault, .. } => vec![*vault],
         Action::SyncRule(r, _) => vec![r.issuer, r.over],
         Action::EndSyncRule { issuer, .. } => vec![*issuer],
-        Action::Share(c, _) => {
+        Action::Share(Sharing::Grant(c, _)) => {
             let to = match c.who {
-                Who::Principal(Principal::Vault(v)) => Some(v),
+                Who::Vault(v) => Some(v),
                 _ => None,
             };
             [Some(c.issuer), Some(c.over), to].into_iter().flatten().collect()
         }
-        Action::Revoke { share, actor, .. } => {
+        Action::Revoke(Revoking::Grant { share, actor, .. }) => {
             [Some(*actor), shares.get(share).copied()].into_iter().flatten().collect()
         }
         Action::Write { vault, actor, .. } | Action::Publish { vault, actor, .. } => vec![*actor, *vault],

@@ -9,7 +9,7 @@ mod common;
 use avendb::id::{SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Action, Kind, Level, Principal, Refusal};
+use avendb::policy::{Action, Kind, Level, Principal, Refusal, Sharing};
 use avendb::sign::{Classical, Signed};
 use avendb::slice::Selector;
 use avendb::sync::{log_of, LogId};
@@ -69,7 +69,7 @@ fn the_first_human_vault_to_claim_the_server_owns_it_for_good() {
     assert!(lab.opens(server, KeyFam::Seed(avenceo)) && !lab.opens(server, KeyFam::Seed(alice)));
     // it acts for avenCEO, and never governs it
     let other = lab.device("another server");
-    let add = Action::AddDevice { vault: avenceo, device: other, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: avenceo, device: other, seal_to: None });
     assert_eq!(lab.submit(server, &[server, other], add.clone()), Err(Refusal::BelowThreshold));
     let note = document("Status", "The relay is up.", server);
     let note = lab.create(server, avenceo, avenceo, "note", &[], note).expect("the server writes in avenCEO's vault");
@@ -86,7 +86,7 @@ fn a_server_takes_only_a_claim_that_makes_it_a_device_of_an_aven_vault() {
     let owners = vec![Principal::Vault(alice)];
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let avenceo = VaultId::from(lab.submit(mac, &[passkey], genesis).expect("avenCEO"));
-    let adds = |vault, device, key| Action::AddDevice { vault, device, seal_to: Some(key) };
+    let adds = |vault, device, key| Action::Share(Sharing::Device { vault, device, seal_to: Some(key) });
     // the claiming device claims an aven vault alone
     let draft = lab.draft(mac, &[passkey, server], adds(alice, server, key.clone())).expect("a draft");
     assert!(matches!(lab.claim(mac, draft, &[]), Err(Refusal::NotClaiming)));
@@ -131,12 +131,12 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     let root = Some(passkey);
     let genesis = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root, nonce: 0, seal_to: vec![] };
     let eve = VaultId::from(drafting.draft(&[passkey], genesis).expect("her vault"));
-    let add = Action::AddDevice { vault: eve, device: mac, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: eve, device: mac, seal_to: None });
     drafting.draft(&[passkey, mac], add).expect("her Mac in it");
     let owners = vec![Principal::Vault(eve)];
     let aven = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let avenceo = VaultId::from(drafting.draft(&[passkey], aven).expect("avenCEO"));
-    let add = Action::AddDevice { vault: avenceo, device: server, seal_to: Some(key) };
+    let add = Action::Share(Sharing::Device { vault: avenceo, device: server, seal_to: Some(key) });
     drafting.draft(&[passkey, server], add).expect("the server in it");
     let mut drafts = drafting.done();
     let challenge = drafts[0].challenge();

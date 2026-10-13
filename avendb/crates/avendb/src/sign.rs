@@ -44,7 +44,7 @@ use zeroize::{ZeroizeOnDrop, Zeroizing};
 use crate::hash::{self, Hasher};
 use crate::id::{EditId, SignerId};
 use crate::keys::Secret;
-use crate::policy::{Action, Edit, Principal, Refusal};
+use crate::policy::{Action, Edit, Principal, Refusal, Sharing};
 
 /// What both halves of a signature sign: ed25519 this followed by the edit's id, SLH-DSA the edit's id with this as its
 /// context string. It keeps an edit's old name, op, as every signature already made signs it.
@@ -151,7 +151,7 @@ pub enum Classical {
     /// `made`'s. The ceremony that unlocks a new device signs up or in with it: the passkey approves the device, by the
     /// curve, and the edit itself by the hash-based half, which the pass's ceremony's PRF output makes and which this
     /// half never goes without. It counts only on an edit adding that very device, which cosigns it
-    /// (`Action::AddDevice`, `Signed::verify`).
+    /// (`Sharing::Device`, `Signed::verify`).
     Pass { assertion: Assertion, made: u64 },
 }
 
@@ -177,7 +177,7 @@ impl Signed {
         let signers: Vec<SignerId> = self.edit.sigs().collect();
         let (id, pq) = (self.edit.id(), needs_pq(&self.edit));
         let joins = match self.edit.action {
-            Action::AddDevice { device, .. } if self.edit.cosigners.contains(&device) => Some(device),
+            Action::Share(Sharing::Device { device, .. }) if self.edit.cosigners.contains(&device) => Some(device),
             _ => None,
         };
         let standing = standing(&self.edit);
@@ -347,8 +347,8 @@ pub fn consent_challenge(signer: SignerId) -> [u8; 32] {
 }
 
 /// The signers whose standing consent (`consent_challenge`) `edit` takes in place of their signature on it: those it
-/// adds as owners, as the first owners of a vault it founds or one it adds, but its author and the vault's root, who
-/// sign the edit itself. Every other edit takes none.
+/// adds as owners, as the first owners of a vault it founds or the owner it shares a vault with (`Sharing::Owner`), but
+/// its author and the vault's root, who sign the edit itself. Every other edit takes none: no grant, of any level.
 pub fn standing(edit: &Edit) -> Vec<SignerId> {
     let added = match &edit.action {
         Action::Genesis { owners, root, .. } => owners
@@ -358,7 +358,7 @@ pub fn standing(edit: &Edit) -> Vec<SignerId> {
                 _ => None,
             })
             .collect(),
-        Action::AddOwner { owner: Principal::Signer(s), .. } => vec![*s],
+        Action::Share(Sharing::Owner { owner: Principal::Signer(s), .. }) => vec![*s],
         _ => vec![],
     };
     added.into_iter().filter(|&s| s != edit.author).collect()
@@ -386,7 +386,7 @@ pub fn verify(signer: SignerId, edit: EditId, sig: &Signature, pq: bool) -> bool
     verify_adding(signer, edit, sig, pq, None)
 }
 
-/// `verify`, on an edit that adds device `joins` to a vault, which it cosigns (`Action::AddDevice`), if it is one:
+/// `verify`, on an edit that adds device `joins` to a vault, which it cosigns (`Sharing::Device`), if it is one:
 /// there a passkey's pass for that device (`Classical::Pass`) is the classical half too, beside its hash-based half.
 pub fn verify_adding(signer: SignerId, edit: EditId, sig: &Signature, pq: bool, joins: Option<SignerId>) -> bool {
     if sig.keys.id() != signer {
@@ -555,7 +555,7 @@ impl Ceremony {
         Some(Signature { keys, classical, pq: pq.then(|| sign_pq(&slh, edit)) })
     }
 
-    /// The signature on edit `edit`, which adds the device `device` to a vault (`Action::AddDevice`), of the passkey
+    /// The signature on edit `edit`, which adds the device `device` to a vault (`Sharing::Device`), of the passkey
     /// whose keys are `keys`, as this ceremony is that passkey's pass for the device, made at `made` (`pass`): the
     /// pass's assertion as its classical half (`Classical::Pass`), and the hash-based half over the edit's own id,
     /// which it always carries. So the ceremony that unlocks a new device also signs the edit adding it, and the device
@@ -856,7 +856,7 @@ impl Passkey {
 mod tests {
     use super::*;
     use crate::id::{EntryId, VaultId};
-    use crate::policy::{Kind, Principal};
+    use crate::policy::{Kind, Level, Principal, Revoking, Setting, Share, Who};
 
     fn edit(author: SignerId, cosigners: Vec<SignerId>) -> Edit {
         let action =
@@ -914,18 +914,32 @@ mod tests {
             Edit { parents: vec![], depth: 0, author, cosigners, action }
         };
         let v = VaultId::from_u64(1);
-        let add = |s| Action::AddOwner { vault: v, owner: Principal::Signer(s), seal_to: None };
+        let add = |s| Action::Share(Sharing::Owner { vault: v, owner: Principal::Signer(s), seal_to: None });
         // founding a vault with it among the first owners, or adding it as an owner, takes it
         assert_eq!(signed(by(o, genesis(&[o, m], Some(o))), &consent), Ok(()));
         assert_eq!(signed(by(o, genesis(&[m, o], None)), &consent), Ok(()));
         assert_eq!(signed(by(o, add(m)), &consent), Ok(()));
-        // no other edit: another owner added, a vault founded without it, a device added, its threshold, its removal
+        // no other edit: another owner added, a vault founded without it, it added as a device or granted owner of the
+        // whole vault, the threshold, the root handed to it, its removal
+        let grant = Share {
+            over: v,
+            who: Who::Device(m),
+            level: Level::Owner,
+            wide: true,
+            select: vec![],
+            parent: None,
+            issuer: v,
+            nonce: 0,
+        };
         for action in [
             add(other.id()),
             genesis(&[o], Some(o)),
-            Action::AddDevice { vault: v, device, seal_to: None },
-            Action::SetThreshold { vault: v, threshold: 1 },
-            Action::RemoveOwner { vault: v, owner: Principal::Signer(m), keep: vec![] },
+            Action::Share(Sharing::Device { vault: v, device, seal_to: None }),
+            Action::Share(Sharing::Device { vault: v, device: m, seal_to: None }),
+            Action::Share(Sharing::Grant(grant, vec![])),
+            Action::Settings { vault: v, set: Setting::Threshold(1) },
+            Action::Settings { vault: v, set: Setting::Root { root: Some(m), keep: vec![] } },
+            Action::Revoke(Revoking::Owner { vault: v, owner: Principal::Signer(m), keep: vec![] }),
         ] {
             assert_eq!(signed(by(o, action), &consent), Err(Refusal::BadSignature));
         }
@@ -1062,7 +1076,7 @@ mod tests {
             depth: 0,
             author: passkey.id(),
             cosigners,
-            action: Action::AddDevice { vault: VaultId::from_u64(1), device: d, seal_to: None },
+            action: Action::Share(Sharing::Device { vault: VaultId::from_u64(1), device: d, seal_to: None }),
         };
         let join = adds(device.id(), vec![device.id()]);
         let sig = unlock.sign_adding(passkey.keys(), join.id(), device.id(), made).expect("the pass's signature");

@@ -1,16 +1,18 @@
-//! Shares (P2, P4; T1, T4, T8, T16, T17, T22), on the rules alone. A share gives a vault, never a signer, a level on a
-//! slice of another vault: relay, read, write or owner on the entries its selector picks, or on the whole vault for a
-//! wide share, which reaches every audience and splits none. Everyone only reads; a write no share allows is refused,
-//! on import too; only the vault, and a vault holding a wide owner share over it, publish into its schema lane; a share
-//! resting on an owner share grants no more than it, and ends with it; and when revocations clash, the most senior
-//! revoker stands.
+//! Shares (P2, P4; T1, T4, T8, T16, T17, T22), on the rules alone. A grant gives a vault, never a device, a level on a
+//! slice of another vault: relay, read, write or owner on the entries its selector picks, or up to write on the whole
+//! vault for a wide grant, which reaches every audience and splits none; owner of the whole vault is an owner of it,
+//! never a grant (WideOwner). Everyone only reads; a write no share allows is refused, on import too; only the vault
+//! publishes into its schema lane; a share resting on an owner share grants no more than it, and ends with it; and
+//! when revocations clash, the most senior revoker stands.
 
 mod common;
 
 use avendb::id::{AudienceId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyName};
 use avendb::lens::{DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
-use avendb::policy::{mk_audience, replay, Action, Edit, Kind, Level, Log, Principal, Refusal, Share, State, Who};
+use avendb::policy::{
+    mk_audience, replay, Action, Edit, Kind, Level, Log, Principal, Refusal, Revoking, Share, Sharing, State, Who,
+};
 use avendb::slice::Selector;
 use avendb::sync::{log_of, respond, LogId};
 use common::*;
@@ -44,7 +46,8 @@ fn aven_of_alice(c: &mut Cast) -> VaultId {
     let owners = vec![Principal::Vault(c.alice)];
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let aven = VaultId::from(c.log.append(PASSKEY_A, &[], genesis).unwrap());
-    c.log.append(PASSKEY_A, &[SERVER], Action::AddDevice { vault: aven, device: SERVER, seal_to: None }).unwrap();
+    let server = Action::Share(Sharing::Device { vault: aven, device: SERVER, seal_to: None });
+    c.log.append(PASSKEY_A, &[SERVER], server).unwrap();
     aven
 }
 
@@ -59,7 +62,7 @@ fn share_edit(
     issuer: VaultId,
 ) -> Action {
     let share = Share { over, who: vault(who), level, wide, select: vec![], parent, issuer, nonce: 7 };
-    Action::Share(share, vec![])
+    Action::Share(Sharing::Grant(share, vec![]))
 }
 
 /// A write of entry `e` for `actor`, under the stay `log`'s view has it in and its audience's epoch now: what an app
@@ -94,15 +97,16 @@ fn entries_in(edits: &[Edit]) -> Vec<EntryId> {
 }
 
 #[test]
-fn share_to_signer_rejected() {
+fn share_to_device_rejected() {
     let mut c = cast();
     let coop = with_coop(&mut c);
     c.create(MAC_A, coop, WELCOME, coop, &[], "doc", &[]).unwrap();
-    // neither Carol's Mac nor her passkey can be named, only her vault (T4)
+    // neither Carol's Mac nor her passkey can be named, only her vault (T4), whatever the level
     for signer in [MAC_C, PASSKEY_C] {
-        let to_signer = Who::Principal(Principal::Signer(signer));
-        let refused = c.issue(MAC_A, &[], coop, to_signer, Level::Read, by_id(WELCOME)).err();
-        assert_eq!(refused, Some(Refusal::CapToSigner));
+        for level in [Level::Relay, Level::Read, Level::Write] {
+            let refused = c.issue(MAC_A, &[], coop, Who::Device(signer), level, by_id(WELCOME)).err();
+            assert_eq!(refused, Some(Refusal::DeviceOnlyKeeps));
+        }
     }
     // nor the coop itself, which has every right over its own entries already
     let itself = c.issue(MAC_A, &[], coop, vault(coop), Level::Read, by_id(WELCOME)).err();
@@ -111,9 +115,37 @@ fn share_to_signer_rejected() {
     c.tidy(MAC_A);
     // the share names Carol's vault, so it reaches Welcome on whichever device acts for her, a new one too
     assert!(reads(&c.log.view(), MAC_C, WELCOME) && !reads(&c.log.view(), NEW_DEVICE, WELCOME));
-    let add = Action::AddDevice { vault: c.carol, device: NEW_DEVICE, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: c.carol, device: NEW_DEVICE, seal_to: None });
     c.log.append(PASSKEY_C, &[NEW_DEVICE], add).unwrap();
     assert!(reads(&c.log.view(), NEW_DEVICE, WELCOME));
+}
+
+/// Owner of a whole vault is an owner of it, which only the vault's approval and the newcomer's consent make
+/// (`Sharing::Owner`): no grant makes anyone that (WideOwner), whoever approves it and whatever it rests on. Owner of a
+/// slice and a wide read stay grants.
+#[test]
+fn owner_of_a_whole_vault_is_no_grant() {
+    let mut c = cast();
+    let coop = with_coop(&mut c);
+    let (carol, dave) = (c.carol, c.dave);
+    c.create(MAC_A, coop, WELCOME, coop, &[], "doc", &[]).unwrap();
+    // refused with both of the coop's passkeys, and before its approval or its parent is looked at
+    for cosigners in [&[PASSKEY_A, PASSKEY_B][..], &[]] {
+        let wide = c.issue(MAC_A, cosigners, coop, vault(dave), Level::Owner, Selector::All).err();
+        assert_eq!(wide, Some(Refusal::WideOwner));
+    }
+    let carols = c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Level::Owner, by_id(WELCOME)).unwrap();
+    let on = c.issue_on(PASSKEY_C, &[], coop, vault(dave), Level::Owner, Selector::All, Some(carols), carol, 0);
+    assert_eq!(on.err(), Some(Refusal::WideOwner));
+    // what may be granted wide is write or less, and owner on a slice
+    c.issue(MAC_A, &[], coop, vault(dave), Level::Write, Selector::All).unwrap();
+    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, by_id(WELCOME)).unwrap();
+    let v = c.log.view();
+    assert!(v.shares().iter().all(|cp| !(cp.share.wide && cp.share.level == Level::Owner)));
+    // the way to own the whole coop is to become one of its owners
+    let owner = Action::Share(Sharing::Owner { vault: coop, owner: Principal::Vault(dave), seal_to: None });
+    c.log.append(PASSKEY_A, &[PASSKEY_B, PASSKEY_D], owner).unwrap();
+    assert!(c.log.view().owner_of(dave, coop));
 }
 
 #[test]
@@ -170,8 +202,7 @@ fn only_owners_publish_into_the_lane() {
     let coop = with_coop(&mut c);
     let (carol, dave) = (c.carol, c.dave);
     c.create(MAC_A, coop, WELCOME, coop, &[], "doc", &[]).unwrap();
-    // Carol may write Welcome and even owns it, but only the coop, or a vault that owns the whole coop, publishes into
-    // the coop's lane (T17)
+    // Carol may write Welcome and even owns it, but only the coop publishes into the coop's lane (T17)
     for level in [Level::Write, Level::Owner] {
         c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), level, by_id(WELCOME)).unwrap();
     }
@@ -185,11 +216,13 @@ fn only_owners_publish_into_the_lane() {
     }
     let again = c.log.check(MAC_B, &[], publish(coop, DOCUMENT_V2.bytes())).err();
     assert_eq!(again, Some(Refusal::AlreadyPublished));
-    // Dave, made owner of the whole coop by both its owners, publishes into its lane too
-    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, Selector::All).unwrap();
-    c.log.append(MAC_D, &[], publish(dave, DOCUMENT_V1.bytes())).unwrap();
+    // owner of the whole coop is an owner of it, which no grant makes, even with both its owners (WideOwner), so Dave
+    // doesn't publish into its lane
+    let wide = c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, Selector::All).err();
+    assert_eq!(wide, Some(Refusal::WideOwner));
+    assert_eq!(c.log.check(MAC_D, &[], publish(dave, DOCUMENT_V1.bytes())).err(), Some(Refusal::NoCap));
     let v = c.log.view();
-    let lane = [DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes(), DOCUMENT_V1.bytes()];
+    let lane = [DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes()];
     assert_eq!(v.lane_of(coop).collect::<Vec<_>>(), lane);
     // a vault that doesn't exist has no lane
     let nowhere = Action::Publish { vault: VaultId::from_u64(404), actor: coop, via: vec![], blob: vec![1] };
@@ -210,7 +243,7 @@ fn a_revoked_owner_cannot_block_his_revocation() {
     // Dave revokes Carol's read on a copy that never sees Alice go on writing and then revoke Dave's share, so Dave's
     // revocation sorts first
     let mut daves = c.log.clone();
-    let revoke = |share, actor| Action::Revoke { share, actor, keep: vec![], via: vec![] };
+    let revoke = |share, actor| Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
     let late = daves.append(MAC_D, &[], revoke(carol_read, dave)).unwrap();
     c.create(MAC_A, alice, DIARY, alice, &[], "note", &[]).unwrap();
     c.log.append(MAC_A, &[], write_now(&c.log, PLAN, alice)).unwrap();
@@ -268,7 +301,7 @@ fn a_share_on_an_owner_share_grants_no_more_than_it() {
     assert_eq!(LIBRARY.map(|e| reads(&v, MAC_C, e)), [true, true, true, false, false]);
     assert_eq!(LIBRARY.map(|e| reads(&v, MAC_D, e)), [false, true, false, false, false]);
     // Carol, who issued Dave's share, and Dave, giving it up, may revoke it; Bob may not
-    let revoke = |share, actor| Action::Revoke { share, actor, keep: vec![], via: vec![] };
+    let revoke = |share, actor| Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
     assert!(c.log.check(MAC_C, &[], revoke(home, carol)).is_ok());
     assert!(c.log.check(MAC_D, &[], revoke(home, dave)).is_ok());
     assert_eq!(c.log.check(MAC_B, &[], revoke(home, bob)).err(), Some(Refusal::NoCap));

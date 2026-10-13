@@ -15,7 +15,7 @@ use crate::id::{AudienceId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName};
 use crate::lab::{Lab, NewShare, Tamper};
 use crate::lens::{Status, DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
-use crate::policy::{mk_audience, Action, Kind, Level, Principal, Refusal, Who};
+use crate::policy::{mk_audience, Action, Kind, Level, Principal, Refusal, Revoking, Setting, Sharing, Who};
 use crate::rules::Op;
 use crate::slice::{Selector, Sym};
 
@@ -221,7 +221,7 @@ fn alices_vault(run: &mut Run) -> Done {
     let devices = lab.log(mac).view().vault(alice).map(|v| v.devices.clone());
     run.same("the vault lists the Mac and the iPhone", devices, Some(vec![mac, phone]));
     let other = lab.device_of(passkey, "another Mac");
-    let add = Action::AddDevice { vault: alice, device: other, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: alice, device: other, seal_to: None });
     let alone = lab.submit(mac, &[mac, other], add).err();
     run.same("the Mac can't add a device on its own, even one that countersigns", alone, Some(Refusal::BelowThreshold));
     Ok(())
@@ -233,7 +233,7 @@ fn a_new_device_reaches_all(run: &mut Run) -> Done {
     w.lab.sync_all(1);
     // the iPad's keys derive from the same passkey, and it countersigns
     let ipad = w.lab.device_of(w.passkey_a, "Alice's iPad");
-    let add = Action::AddDevice { vault: w.alice, device: ipad, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: w.alice, device: ipad, seal_to: None });
     run.ok("Alice's passkey adds an iPad, on Alice's Mac", w.lab.submit(w.mac_a, &[w.passkey_a, ipad], add))?;
     w.lab.sync_all(2);
     for d in [w.phone_a, ipad, w.mac_b] {
@@ -564,7 +564,7 @@ fn revoke_carol(run: &mut Run) -> Done {
     let key = run.some("a steward moved Welcome into the cell of her cap", audience_key(&w.lab, w.mac_a, h.welcome))?;
     let before = w.lab.state(w.mac_a).epoch(key);
     let had = w.lab.fetched(w.mac_c, h.welcome);
-    let revoke = Action::Revoke { share: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: carol_read, actor: h.coop, keep: vec![], via: vec![] });
     run.ok("the coop revokes it", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
     let edit = w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     run.ok("Alice edits Welcome afterwards", edit)?;
@@ -594,7 +594,7 @@ fn lost_iphone(run: &mut Run) -> Done {
     ];
     let before = keys.map(|(k, _)| w.lab.state(w.mac_a).epoch(k));
     let (alice, phone) = (w.alice, w.phone_a);
-    let remove = Action::RemoveDevice { vault: alice, device: phone, keep: vec![] };
+    let remove = Action::Revoke(Revoking::Device { vault: alice, device: phone, keep: vec![] });
     run.ok("Alice's passkey removes the iPhone", w.lab.submit(w.mac_a, &[w.passkey_a], remove))?;
     let edit = w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     run.ok("Alice edits Welcome afterwards", edit)?;
@@ -622,7 +622,7 @@ fn bob_leaves(run: &mut Run) -> Done {
     let before = keys.map(|k| w.lab.state(w.mac_a).epoch(k));
     let bob = w.bob;
     // the removal had seen Bob's edit
-    let leave = Action::RemoveOwner { vault: h.coop, owner: Principal::Vault(bob), keep: vec![bobs] };
+    let leave = Action::Revoke(Revoking::Owner { vault: h.coop, owner: Principal::Vault(bob), keep: vec![bobs] });
     run.ok("Bob leaves the coop, signing with only Bob's passkey", w.lab.submit(w.mac_b, &[w.passkey_b], leave))?;
     // what Alice's Mac wrote before hearing of it would still be under the keys Bob holds
     w.lab.sync(w.mac_b, w.mac_a);
@@ -652,7 +652,7 @@ fn offline_conflicts(run: &mut Run) -> Done {
         w.lab.set_online(w.mac_c, false);
         let carols = w.lab.edit(w.mac_c, carol, h.welcome, |i| i.set_text(2, "Carol, offline"));
         let carols = run.must("Carol edits Welcome offline", carols)?;
-        let revoke = Action::Revoke { share: carol_write, actor: h.coop, keep: vec![], via: vec![] };
+        let revoke = Action::Revoke(Revoking::Grant { share: carol_write, actor: h.coop, keep: vec![], via: vec![] });
         run.must("the coop revokes Carol", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
         // Alice and Bob edit the same block at the same moment
         w.lab.set_online(w.mac_b, false);
@@ -677,7 +677,7 @@ fn offline_conflicts(run: &mut Run) -> Done {
 fn tampering(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
-    let add = Action::AddDevice { vault: w.alice, device: w.stranger, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: w.alice, device: w.stranger, seal_to: None });
     let forged = Tamper::ForgedSignature { claimed: w.passkey_a, action: add };
     let what = "a forged signature, Alice's passkey adding the stranger's device, is rejected";
     run.same(what, w.lab.tamper(w.mac_b, forged), Err(Refusal::BadSignature));
@@ -702,7 +702,7 @@ fn tampering(run: &mut Run) -> Done {
     let carol_read = run.ok("the coop gives Carol read on Welcome", w.lab.issue(w.mac_a, &[w.mac_a], read))?;
     w.lab.sync_all(14);
     let key = run.some("a steward moved Welcome into the cell of her cap", audience_key(&w.lab, w.mac_a, h.welcome))?;
-    let revoke = Action::Revoke { share: carol_read, actor: h.coop, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: carol_read, actor: h.coop, keep: vec![], via: vec![] });
     run.ok("and revokes it", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
     let edit = w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT));
     run.ok("Alice edits Welcome afterwards", edit)?;
@@ -759,7 +759,7 @@ fn levels_change(run: &mut Run) -> Done {
     run.ok("acting for the coop, Bob gives Dave read", w.lab.issue(w.mac_b, &[w.mac_b], read))?;
     let write = share(alice, vault(carol), Level::Write, by_id(t.door));
     run.ok("Alice raises Carol to write", w.lab.issue(w.mac_a, &[w.mac_a], write))?;
-    let revoke = Action::Revoke { share: t.bob_write, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: t.bob_write, actor: alice, keep: vec![], via: vec![] });
     run.ok("and takes Bob's own write away", w.lab.submit(w.mac_a, &[w.mac_a], revoke))?;
     w.lab.sync_all(16);
     let key =
@@ -772,7 +772,7 @@ fn levels_change(run: &mut Run) -> Done {
     run.ok("Carol edits it", w.lab.edit(w.mac_c, carol, t.door, |i| i.set_status(Status::Done)))?;
     w.lab.sync_all(16);
     let had = (w.lab.fetched(w.mac_b, t.door), w.lab.fetched(w.mac_d, t.door));
-    let revoke = Action::Revoke { share: t.coop_owner, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: t.coop_owner, actor: alice, keep: vec![], via: vec![] });
     let what = "Alice's passkey takes the coop's owner cap away, which also ends the read Bob gave Dave";
     run.ok(what, w.lab.submit(w.mac_a, &[w.passkey_a], revoke))?;
     run.ok("Alice edits the todo", w.lab.edit(w.mac_a, alice, t.door, |i| i.set_status(Status::Open)))?;
@@ -852,7 +852,7 @@ fn recovery(run: &mut Run) -> Done {
     // vault
     let new_mac = w.lab.device_of(w.passkey_a, "Alice's new Mac");
     w.lab.share_contact(w.mac_b, new_mac, alice);
-    let add = Action::AddDevice { vault: alice, device: new_mac, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: alice, device: new_mac, seal_to: None });
     let what = "Alice loses the Mac and the iPhone; the passkey adds a new Mac";
     run.ok(what, w.lab.submit(new_mac, &[w.passkey_a, new_mac], add))?;
     // the new Mac shows Bob the log of Alice's vault again, as a contact card, and syncs before the passkey removes
@@ -860,7 +860,7 @@ fn recovery(run: &mut Run) -> Done {
     w.lab.share_contact(new_mac, w.mac_b, alice);
     w.lab.sync_all(19);
     for lost in [w.mac_a, w.phone_a] {
-        let remove = Action::RemoveDevice { vault: alice, device: lost, keep: vec![] };
+        let remove = Action::Revoke(Revoking::Device { vault: alice, device: lost, keep: vec![] });
         let what = format!("the passkey removes the lost {}", named(&w.lab, lost));
         run.ok(what, w.lab.submit(new_mac, &[w.passkey_a], remove))?;
     }
@@ -875,7 +875,7 @@ fn backup_passkey(run: &mut Run) -> Done {
     let alice = w.alice;
     // on a security key kept in a drawer
     let backup = w.lab.passkey("Alice's backup passkey");
-    let add = Action::AddOwner { vault: alice, owner: Principal::Signer(backup), seal_to: None };
+    let add = Action::Share(Sharing::Owner { vault: alice, owner: Principal::Signer(backup), seal_to: None });
     let what = "Alice registers a backup passkey: a second owner of Alice's vault, never its root";
     run.ok(what, w.lab.submit(w.mac_a, &[w.passkey_a, backup], add))?;
     w.lab.sync_all(18);
@@ -886,19 +886,19 @@ fn backup_passkey(run: &mut Run) -> Done {
     let new_passkey = w.lab.passkey("Alice's new passkey");
     let new_mac = w.lab.device_of(new_passkey, "Alice's new Mac");
     w.lab.share_contact(w.mac_b, new_mac, alice);
-    let add = Action::AddOwner { vault: alice, owner: Principal::Signer(new_passkey), seal_to: None };
+    let add = Action::Share(Sharing::Owner { vault: alice, owner: Principal::Signer(new_passkey), seal_to: None });
     let what = "Alice loses the passkey too, with every device; the backup adds a new passkey";
     run.ok(what, w.lab.submit(new_mac, &[backup, new_passkey], add))?;
-    let add = Action::AddDevice { vault: alice, device: new_mac, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: alice, device: new_mac, seal_to: None });
     run.ok("and a new Mac", w.lab.submit(new_mac, &[backup, new_mac], add))?;
     w.lab.share_contact(new_mac, w.mac_b, alice);
     w.lab.sync_all(19);
     for lost in [w.mac_a, w.phone_a] {
-        let remove = Action::RemoveDevice { vault: alice, device: lost, keep: vec![] };
+        let remove = Action::Revoke(Revoking::Device { vault: alice, device: lost, keep: vec![] });
         let what = format!("the new passkey removes the lost {}", named(&w.lab, lost));
         run.ok(what, w.lab.submit(new_mac, &[new_passkey], remove))?;
     }
-    let hand_on = Action::SetRoot { vault: alice, root: Some(new_passkey), keep: vec![] };
+    let hand_on = Action::Settings { vault: alice, set: Setting::Root { root: Some(new_passkey), keep: vec![] } };
     let refused = w.lab.submit(new_mac, &[backup, new_passkey], hand_on).err();
     run.same("only the root hands the root on, so the lost passkey stays the root", refused, Some(Refusal::NotRoot));
     w.lab.sync_all(20);
@@ -1082,7 +1082,7 @@ fn a_share_on_a_share(run: &mut Run) -> Done {
     run.same("Carol reads the three todos", reads(&w.lab, w.mac_c), [true, true, true, false, false]);
     let what = "Dave reads what every cap of his chains selects: the seeds todo, at home, and no note";
     run.same(what, reads(&w.lab, w.mac_d), [false, true, false, false, false]);
-    let revoke = Action::Revoke { share: owner, actor: alice, keep: vec![], via: vec![] };
+    let revoke = Action::Revoke(Revoking::Grant { share: owner, actor: alice, keep: vec![], via: vec![] });
     run.ok("Alice's passkey revokes Carol's owner cap", w.lab.submit(mac, &[w.passkey_a], revoke))?;
     let after = w.lab.edit(mac, alice, lib.seeds, |i| {
         i.edit_todo(|t| t.notes = AFTER_TEXT.into());
@@ -1138,7 +1138,7 @@ fn comeback(run: &mut Run) -> Done {
     let gone = !reads_by(&w.lab, mac, w.mac_b, lib.seeds);
     run.check("and Bob no longer reads it: no entry is in his cap's cell now", gone);
     // her Mac, which moved the seeds todo out, drafts the removal: it comes after the move
-    let remove = Action::RemoveDevice { vault: alice, device: phone, keep: vec![] };
+    let remove = Action::Revoke(Revoking::Device { vault: alice, device: phone, keep: vec![] });
     run.ok("Alice loses her iPhone, and her passkey removes it", w.lab.submit(mac, &[w.passkey_a], remove))?;
     w.lab.sync_all(26);
     let v = w.lab.state(mac);

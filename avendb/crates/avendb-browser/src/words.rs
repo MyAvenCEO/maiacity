@@ -67,8 +67,8 @@ pub fn id_of(s: &str) -> Result<[u8; 32]> {
 pub fn who_name(g: Who) -> String {
     match g {
         Who::Everyone => "everyone".to_string(),
-        Who::Principal(Principal::Vault(v)) => hex(&v.0),
-        Who::Principal(Principal::Signer(s)) => hex(&s.0),
+        Who::Vault(v) => hex(&v.0),
+        Who::Device(s) => hex(&s.0),
     }
 }
 
@@ -76,7 +76,7 @@ pub fn who_name(g: Who) -> String {
 pub fn who_of(name: &str) -> Result<Who> {
     Ok(match name {
         "everyone" => Who::Everyone,
-        v => Who::Principal(Principal::Vault(VaultId(id_of(v)?))),
+        v => Who::Vault(VaultId(id_of(v)?)),
     })
 }
 
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn whom_a_share_names_reads_back_from_its_name() {
-        for g in [Who::Everyone, Who::Principal(Principal::Vault(VaultId([7; 32])))] {
+        for g in [Who::Everyone, Who::Vault(VaultId([7; 32]))] {
             assert_eq!(who_of(&who_name(g)).expect("its own name"), g);
         }
         assert!(who_of("public").is_err() && who_of("beef").is_err());
