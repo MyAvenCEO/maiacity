@@ -9,11 +9,12 @@ use crate::rules::{Grant, On, Proof, Rule, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
-/// The version byte every edit starts with: 6 since caps are named groups of ops, each cap's slice holding its name and
-/// its ops and every write through a cap carrying a proof (5 since flat vaults, whose caps select slices of a vault and
-/// whose entries sit in cells, 4 since the three kinds of vault, 3 since P5, whose writes name the line of history
-/// they extend, 2 since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
-pub const VERSION: u8 = 6;
+/// The version byte every edit starts with: 7 since every human vault is founded with the master recovery key among
+/// its owners, so avenDB starts afresh with it (6 since caps are named groups of ops, each cap's slice holding its
+/// name and its ops and every write through a cap carrying a proof, 5 since flat vaults, whose caps select slices of a
+/// vault and whose entries sit in cells, 4 since the three kinds of vault, 3 since P5, whose writes name the line of
+/// history they extend, 2 since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
+pub const VERSION: u8 = 7;
 
 /// An edit's id: the hash of its encoding, for a purpose that keeps an edit's old name, op (`hash::PREFIX`).
 pub(crate) fn edit_id(edit: &Edit) -> [u8; 32] {

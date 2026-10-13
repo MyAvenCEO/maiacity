@@ -21,7 +21,8 @@ use crate::wire::Wire;
 /// How a master recovery key's public half starts, as its file holds it: what it is, and the format's version.
 const MAGIC: &[u8] = b"avenDB master recovery key 2\n";
 
-/// The file of avenDB's master recovery key, its public half, as its person made it: empty until they hand it on.
+/// The file of avenDB's master recovery key, its public half, as its person made it (`d9941b22…`, since avenDB started
+/// afresh with it, edit version 7); an empty file builds avenDB without one.
 const MASTER: &[u8] = include_bytes!("../master-recovery.pub");
 
 /// avenDB's master recovery key, which every human vault adds as an owner while avenDB is bootstrapped (`MASTER`):
