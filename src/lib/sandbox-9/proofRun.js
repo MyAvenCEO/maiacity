@@ -111,6 +111,9 @@ const all = (xs, fn) => xs.length > 0 && xs.every(fn);
 export function assemble(results, meta = {}) {
 	const suite = Object.fromEntries((meta.suite?.scenarios ?? []).map((s) => [s.id, s]));
 	const fromSuite = (ids) => ids.filter((id) => suite[id]).map((id) => suite[id]);
+	// an experiment the suite judged on every base seed (X9): its verdict is the ensemble's, not this run's one seed
+	const suiteEns = Object.fromEntries((meta.suite?.experiments ?? []).filter((e) => e.ens).map((e) => [e.id, e]));
+	const verdictOf = (id) => (suiteEns[id] ? { pass: suiteEns[id].pass, evidence: suiteEns[id].evidence } : expById[id].verdict);
 	const bases = results.filter((r) => r.kind === 'base').sort((a, b) => SEEDS.indexOf(a.seed) - SEEDS.indexOf(b.seed));
 	const order = Object.keys(EXPERIMENTS);
 	const exps = results.filter((r) => r.kind === 'exp').sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
@@ -167,10 +170,10 @@ export function assemble(results, meta = {}) {
 			claim: 'MIND (a person cannot pay) never binds a basic while physics allows enough; doubling HEARTS changes only prices; doubling a binding physical limit raises living standards.',
 			// the base worlds, the experiments that test it (X9 HEARTS, AB1 a binding limit, X11 a small village on a big
 			// hex) and, when the suite's summary is at hand, its scenarios that test it (B28, B29, B14)
-			pass: all(bases, (b) => b.abundance.pass) && ['X9', 'AB1', 'X11'].every((id) => !expById[id] || expById[id].verdict.pass) && fromSuite(['B28', 'B29', 'B14']).every((s) => s.pass),
+			pass: all(bases, (b) => b.abundance.pass) && ['X9', 'AB1', 'X11'].every((id) => !expById[id] || verdictOf(id).pass) && fromSuite(['B28', 'B29', 'B14']).every((s) => s.pass),
 			evidence: [
 				...bases.map((b) => [`${seed(b)}: MIND bound a basic on ${b.abundance.mindBindsBasics} day-goods (a day and a basic); electricity used ${f(b.energy.ePP, 1)} kWh a person a day in the last year, ${f(b.energy.surplusPP, 1)} of it surplus.`, b.abundance.pass]),
-				...['X9', 'AB1', 'X11'].filter((id) => expById[id]).map((id) => [`${id} (${expById[id].verdict.pass ? 'pass' : 'FAIL'}): ${expById[id].verdict.evidence}`, expById[id].verdict.pass]),
+				...['X9', 'AB1', 'X11'].filter((id) => expById[id]).map((id) => [`${id} (${verdictOf(id).pass ? 'pass' : 'FAIL'}${suiteEns[id] ? ', judged on the five base seeds by the proof suite' : ''}): ${verdictOf(id).evidence}`, verdictOf(id).pass]),
 				...fromSuite(['B28', 'B29', 'B14']).map((s) => [`Proof suite ${s.id} (${s.pass ? 'pass' : 'FAIL'}): ${s.takeaway}`, s.pass])
 			]
 		}

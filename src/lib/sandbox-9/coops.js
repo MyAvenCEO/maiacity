@@ -605,8 +605,11 @@ export function importFactor(w) {
 function chipsWanted(w, co) {
 	const up = chipsForUpkeep(w, co);
 	const held = co.chips ?? 0;
-	const needUp = Math.max(0, up - held);
-	return { up: needUp, build: Math.max(0, (co.project?.chips ?? 0) - Math.max(0, held - up)) };
+	// the reserve buys whole accelerators: a need of a fraction of one is a whole one (asked for less, the export would
+	// stop short of the price of one, and a project waiting on a fraction would wait for ever)
+	const whole = (x) => (x > 1e-9 ? Math.ceil(x - 1e-9) : 0);
+	const needUp = whole(up - held);
+	return { up: needUp, build: whole((co.project?.chips ?? 0) - Math.max(0, held + needUp - up)) };
 }
 /**
  * the accelerators a COMPUTE COOP keeps for upkeep: what has worn, a month of wear ahead and its spares, while it keeps
@@ -729,7 +732,7 @@ export function produce(w, fill) {
 			// a project that waits on the building class's electricity (under nine tenths of what it asked, over the last
 			// 30 days): energy binds the build (./engine.js physicalLimit reads it)
 			if (co.eReq[CLASS.building] > 0) co.bldFillEma = (co.bldFillEma ?? 1) + (fill[CLASS.building] - (co.bldFillEma ?? 1)) / 30;
-			if ((co.bldFillEma ?? 1) < 0.9) co.buildLimit = LIMIT.energy;
+			if (pr.kwh > 0 && (co.bldFillEma ?? 1) < 0.9) co.buildLimit = LIMIT.energy;
 			else if (co.buildLimit === LIMIT.energy) co.buildLimit = LIMIT.none;
 			if (pr.kwh === 0 && MATERIALS.every((g) => pr.mat[g] <= 1e-9) && !(pr.chips > 1e-9) && w.day - pr.start >= pr.minDays) finishProject(w, co);
 		}
