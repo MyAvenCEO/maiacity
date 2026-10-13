@@ -31,7 +31,7 @@
 		return list.filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]);
 	});
 	const hv = $derived(view ? heartsValue(view) : null);
-	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
+	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: Math.min(d, 2) }));
 	/** what an asset earns a month, and from whom: the hex and the tent by their own settings, the machines by RENTED */
 	const rentFor = (id) => {
 		if (!view || !c) return null;
@@ -76,18 +76,18 @@
 					<p class="eyebrow">COOP · mints {TOKEN_LABEL[c.mind]}</p>
 					<h2>{c.name}</h2>
 
-					<h3>Treasury <small>≈ {f(inHearts(view, c.treasury, hv))} HEARTS{chosen === 'maia' ? ` · with its pool basket ≈ ${f(inHearts(view, c.treasury, hv) + inHearts(view, view.pool, hv))} HEARTS` : ''}</small></h3>
+					<h3>Treasury <small>≈ {f(inHearts(view, c.treasury, hv))} ❤︎{chosen === 'maia' ? ` · with its pool basket ≈ ${f(inHearts(view, c.treasury, hv) + inHearts(view, view.pool, hv))} ❤︎` : ''}</small></h3>
 					<ul class="rows">
-						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t] * hv[t])} HEARTS <small>{f(c.treasury[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
+						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t] * hv[t])} ❤︎ <small>{f(c.treasury[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
 					</ul>
 					{#if chosen === 'maia'}
 						<h3>The pool basket it owns <small>the AMM pool is wholly the MaiaCity COOP's</small></h3>
 						<PoolBasket {view} treasury={c.treasury} />
 					{/if}
 
-					<h3>Who holds {TOKEN_LABEL[c.mind]} <small>{f(minted)} in all · {f(minted * hv[c.mind])} HEARTS</small></h3>
+					<h3>Who holds {TOKEN_LABEL[c.mind]} <small>{f(minted)} in all · {f(minted * hv[c.mind])} ❤︎</small></h3>
 					<ul class="rows">
-						{#each holders as [id, v] (id)}<li><span>{nameOf(view, id)}{id === `coop:${chosen}` ? ' (its treasury)' : ''}</span><strong>{f(v * hv[c.mind])} HEARTS <small>{f(v)} {TOKEN_LABEL[c.mind]} · {pct(minted ? v / minted : 0)}</small></strong></li>{:else}<li class="dim">Nobody yet.</li>{/each}
+						{#each holders as [id, v] (id)}<li><span>{nameOf(view, id)}{id === `coop:${chosen}` ? ' (its treasury)' : ''}</span><strong>{f(v * hv[c.mind])} ❤︎ <small>{f(v)} {TOKEN_LABEL[c.mind]} · {pct(minted ? v / minted : 0)}</small></strong></li>{:else}<li class="dim">Nobody yet.</li>{/each}
 					</ul>
 
 					<h3>What it owns</h3>
@@ -96,15 +96,15 @@
 							{@const r = rentFor(a.id)}
 							<li>
 								<span><b>{a.name}</b><small>{[a.kind, VILLAGE_INFO[a.id]?.specs[1] && VILLAGE_INFO[a.id].specs[1].join(': ').toLowerCase(), r && `rented to ${r.from}`].filter(Boolean).join(' · ')}</small></span>
-								{#if r}<strong>{f(r.monthly * hv[r.token])} HEARTS <small>a month · {f(r.monthly)} {TOKEN_LABEL[r.token]}</small></strong>{/if}
+								{#if r}<strong>{f(r.monthly * hv[r.token])} ❤︎ <small>a month · {f(r.monthly)} {TOKEN_LABEL[r.token]}</small></strong>{/if}
 							</li>
 						{/each}
 					</ul>
 
 					<h3>Rents each weekly pay day</h3>
 					<ul class="rows">
-						{#each gets as r (r.what + r.from)}<li><span>In · {r.what}<small>from {nameOf(view, r.from)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed to it</em>{/if}</small></span><strong class="plus">+{f(r.weekly * hv[r.token], 3)} HEARTS <small>{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</small></strong></li>{/each}
-						{#each pays as r (r.what + r.to)}<li><span>Out · {r.what}<small>to {nameOf(view, r.to)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed</em>{/if}</small></span><strong class="minus">−{f(r.weekly * hv[r.token], 3)} HEARTS <small>{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</small></strong></li>{/each}
+						{#each gets as r (r.what + r.from)}<li><span>In · {r.what}<small>from {nameOf(view, r.from)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed to it</em>{/if}</small></span><strong class="plus">+{f(r.weekly * hv[r.token], 3)} ❤︎ <small>{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</small></strong></li>{/each}
+						{#each pays as r (r.what + r.to)}<li><span>Out · {r.what}<small>to {nameOf(view, r.to)}{#if r.owed > 0.001}{' · '}<em class="bad">{f(r.owed)} owed</em>{/if}</small></span><strong class="minus">−{f(r.weekly * hv[r.token], 3)} ❤︎ <small>{f(r.weekly, 3)} {TOKEN_LABEL[r.token]}</small></strong></li>{/each}
 						{#if !gets.length && !pays.length}<li class="dim">No rents.</li>{/if}
 					</ul>
 					<p class="dim small">{f(view.settings.dividendShare * 100, 0)} % of every rent paid in {TOKEN_LABEL[c.mind]} goes on at once to its holders (Law 5).</p>
@@ -112,11 +112,11 @@
 					<div class="buttons">
 						{#if me}
 							<input type="number" min="0" step="1" bind:value={amount} />
-							<button class="pill-btn" disabled={g.busy || !(me.wallet.HEARTS >= amount && amount > 0)} onclick={() => g.move(seat, { type: 'invest', coop: chosen, amount })}>Invest {f(amount, 0)} HEARTS</button>
+							<button class="pill-btn" disabled={g.busy || !(me.wallet.HEARTS >= amount && amount > 0)} onclick={() => g.move(seat, { type: 'invest', coop: chosen, amount })}>Invest {f(amount, 0)} ❤︎</button>
 						{/if}
 						<a class="pill-btn ghost" href="{base}/app/ledger/?who=coop:{chosen}">Its ledger</a>
 					</div>
-					{#if me}<p class="dim small">You hold {f(me.wallet.HEARTS)} HEARTS and {f(me.wallet[c.mind])} {TOKEN_LABEL[c.mind]}.</p>{:else}<p class="dim small">Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> to invest.</p>{/if}
+					{#if me}<p class="dim small">You hold {f(me.wallet.HEARTS)} ❤︎ and {f(me.wallet[c.mind])} {TOKEN_LABEL[c.mind]}.</p>{:else}<p class="dim small">Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> to invest.</p>{/if}
 					{#if g.error}<p class="bad">{g.error}</p>{/if}
 				</section>
 			{/if}
