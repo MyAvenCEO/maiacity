@@ -27,8 +27,22 @@
 	});
 	const itemOf = (r, id) => (r.items ?? []).find((x) => x.id === id) ?? null;
 	const hasSolar = $derived((w?.years ?? []).some((r) => r.solarKwp > 0));
+	const hasShort = $derived((w?.years ?? []).some((r) => r.shortDays > 0));
 	/** a founding row's amount: tonnes, or kWp or units when the row is not in tonnes */
-	const qty = (c) => (c == null ? '–' : Number.isFinite(c.t) ? num(c.t) : Number.isFinite(c.kwp) ? `${num(c.kwp)} kWp` : Number.isFinite(c.n) ? `${num(c.n)}` : '–');
+	const qty = (c) =>
+		c == null
+			? '–'
+			: Number.isFinite(c.t)
+				? `${num(c.t)}${Number.isFinite(c.kwp) && c.kwp > 0 ? ` + ${num(c.kwp)} kWp` : ''}`
+				: Number.isFinite(c.kwp)
+					? `${num(c.kwp)} kWp`
+					: Number.isFinite(c.n)
+						? `${num(c.n)}`
+						: Number.isFinite(c.kcal)
+							? `${num(c.kcal)} kcal`
+							: Number.isFinite(c.ha)
+								? `${num(c.ha)} ha`
+								: '';
 	const sumT = (r) => r.materialsT ?? Object.values(r.materials ?? {}).reduce((a, v) => a + (v || 0), 0);
 	const when = (y, done) => (y != null ? `year ${y}` : done ? 'not within the run' : 'not yet');
 	/** the founding bills of the worlds differ (the tower experiment) */
@@ -48,14 +62,17 @@
 			{#each list as x (x.j)}
 				<section class="head w{x.j}">
 					{#if two}<h4>{x.name}{x.sub ? `: ${x.sub}` : ''}</h4>{/if}
-					<p><b>Founding bill:</b> {eur(x.founding?.eur)}{x.founding?.t != null ? `, ${t(x.founding.t)} of materials` : ''}, imported before day 0.</p>
+					<p><b>Founding bill:</b> {eur(x.founding?.builtEur ?? x.founding?.eur)}{x.founding?.t ? ` (${t(x.founding.t)} of materials)` : ''} bought outside before day 0 to build and stock the village{x.reserve0 != null ? `, and ${eur(x.reserve0)} left in the euro reserve` : ''}.</p>
 					<p><b>Feeds itself:</b> {when(x.selfFedYear, !running)}{x.selfFedYear != null ? ': the first year with no food imported' : ''}.</p>
 					<p><b>Exports pay all imports:</b> {when(x.exportsPayYear, !running)}{x.exportsPayYear != null ? ': the first year exports earned at least what imports cost' : ''}.</p>
 					{#if x.years?.length}
 						{@const last = x.years.at(-1)}
 						<p><b>Euro reserve</b> {last.partial ? `in year ${last.y} so far` : `at the end of year ${last.y}`}: <span class:neg={last.reserveEur < 0}>{eur(last.reserveEur)}</span>{x.reserve0 != null ? ` (it started at ${eur(x.reserve0)})` : ''}.</p>
 					{/if}
-					{#if x.runOut != null}<p class="bad">The euro reserve ran out in year {x.runOut}: from then on the village could buy abroad only what its exports paid for.</p>{/if}
+					{#if x.runOut != null}
+						{@const sd = x.years.find((r) => r.y === x.runOut)?.shortDays ?? 0}
+						<p class="bad">{sd > 0 ? `The euro reserve ran short in year ${x.runOut}: on ${num(sd)} days that year the border had no euros for what the village needed, so it could buy abroad only what its exports paid for.` : `The euro reserve was empty in year ${x.runOut}: from then on the village could buy abroad only what its exports paid for.`}</p>
+					{/if}
 				</section>
 			{/each}
 		</div>
@@ -111,6 +128,7 @@
 							<th>Imports cost<small>€</small></th>
 							<th>Exports earned<small>€</small></th>
 							<th>Reserve<small>€ at year end</small></th>
+							{#if hasShort}<th>Could not pay<small>days</small></th>{/if}
 						</tr>
 					</thead>
 					<tbody>
@@ -128,6 +146,7 @@
 								<td>{eur(r.importEur)}</td>
 								<td>{eur(r.exportEur)}{#if Number.isFinite(r.exportKwh) && r.exportKwh > 0}<small>{num(r.exportKwh / 1000)} MWh</small>{/if}</td>
 								<td class:neg={r.reserveEur <= 0}>{eur(r.reserveEur)}</td>
+								{#if hasShort}<td class:neg={r.shortDays > 0}>{num(r.shortDays ?? 0)}</td>{/if}
 							</tr>
 						{/each}
 					</tbody>
@@ -275,6 +294,10 @@
 	}
 	.l {
 		text-align: left;
+	}
+	td.l {
+		white-space: normal;
+		min-width: 8rem;
 	}
 	tr.total td {
 		font-weight: 700;

@@ -19,6 +19,7 @@
 	import LivingView from './LivingView.svelte';
 	import ImportsView from './ImportsView.svelte';
 	import WorldParams from './WorldParams.svelte';
+	import * as ENG from './engine.js';
 
 	// the engine's own source files, loaded only for their hash (to tell a saved proof older than this engine)
 	const sources = import.meta.glob('./*.js', { query: '?raw', import: 'default' });
@@ -128,6 +129,14 @@
 			indoor: su.village?.indoorMonths ?? null
 		};
 	});
+	/** every catalog record the engine reads, for the World part (the same for every world) */
+	const catalogRecs = () => {
+		try {
+			return ENG.catalogAll?.() ?? null;
+		} catch {
+			return null;
+		}
+	};
 	const nParams = $derived(baseWorld?.params ? Object.keys(baseWorld.params.settings).length + Object.keys(baseWorld.params.catalog).length : 0);
 
 	const done = $derived(jobs.filter((j) => j.state !== 'waiting' && j.state !== 'running').length);
@@ -150,8 +159,8 @@
 			<ImportsView worlds={[baseWorld.imports]} names={['Base']} />
 			{#if baseWorld.params}
 				<details class="params">
-					<summary><b>Every parameter of the base world</b> <span>{nParams} settings and constants, grouped, in plain units</span></summary>
-					<WorldParams sets={[baseWorld.params]} names={['Base']} defaults={baseWorld.defaults} />
+					<summary><b>Every parameter of the base world</b> <span>{nParams} settings and constants and the village plan, grouped, in plain units</span></summary>
+					<WorldParams sets={[baseWorld.params]} names={['Base']} defaults={baseWorld.defaults} records={catalogRecs()} />
 				</details>
 			{/if}
 		</section>

@@ -26,7 +26,11 @@ import { calendar, harvest, dispatch, shockFactor } from './energy.js';
 import { updatePrices, poolInflow, arbitrage, swap } from './pools.js';
 import { postPrices, peopleOrders, openPayments, payDirect, payRest, settleSwaps, law5, sellerOutcome } from './market.js';
 import { nature, margins, costs, plan, produce, runningItems, wear, buildDecisions, payout, learn, rentDue, adjustRent, foundings, receiverships, treasuryR, kwhOf, inputsOf, runHours, freeLand, firstPlotM2 } from './coops.js';
-import { initRecords, recordDay, physicsCeiling } from './records.js';
+import { initRecords, recordDay, physicsCeiling, foundingStores } from './records.js';
+import { newBorder, importsDay, shareLine } from './border.js';
+import { villageRecords } from './village.js';
+import { catalogList } from './primitives.js';
+import { OUTDOOR, INDOOR } from './food.js';
 
 const M = MAX_COOPS;
 const PEOPLE_GOODS = [FOOD, WATER, BED, GOODS_, SPRING, COMPUTE];
@@ -52,9 +56,11 @@ export function createWorld(config = {}) {
 	w.matter.prevRaw = rawTotal(w);
 	w.liquid = new Uint8Array(M);
 	w.poolQueue = new Float64Array(M); // pool inflow waiting for the weekly slice (bootstrap off only)
-	// the euro reserve of the border (paper §11.4), in €: each COOP's own account (a COOP spends only its own), and what
-	// came in and went out
-	w.border = { eur: new Float64Array(M), prev: 0, inEur: 0, outEur: 0 };
+	// the euro reserve of the border (paper §11.4), in €: the founding euros left over (reserveYears of the village's
+	// food at wholesale) and each COOP's own account, and what came in and went out (./border.js)
+	w.border = newBorder(w, w.c.reserveYears * w.cfg.people * w.c.need[0] * 365 * w.c.eur.food);
+	// what was bought outside before day 0 to found the village (./records.js foundingBill)
+	w.founding = foundingStores(w);
 	// the catalog's day-0 guesses, in R, indexed like the rate card to the HEARTS issued a day; genesisPrices below
 	// finds the real day-0 prices from costs. A few rounds of that fixed point do not converge, so a guess left at
 	// 24 HEARTS a day would leave day-0 prices in a 48-HEARTS world only part of the way to double (energy came out
@@ -180,6 +186,8 @@ export function step(w) {
 		for (const co of w.coops) co.price = co.priceR / w.P[co.k];
 	harvest(w);
 	nature(w);
+	// the border: food and raw inputs bought outside today (./border.js)
+	importsDay(w);
 	const slow = cfg.dailySlow || w.day < YEAR_DAYS || w.day < w.slowUntil || w.day % 7 === 0;
 	costs(w, slow || w.day === 0);
 	margins(w);
@@ -216,6 +224,7 @@ export function step(w) {
 	w.energyAsked = req[0] + req[1] + Math.max(0, heatReq.basics - w.today.harvest.geoHeat) / cop;
 	const reqCopy = Float64Array.from(req);
 	// the border's export for accelerators: upkeep's right after running, a project's with building (./coops.js plan)
+	shareLine(w);
 	const exportAsk = { up: 0, build: 0 };
 	for (const co of w.coops) if (co.alive) (exportAsk.up += co.exportUp), (exportAsk.build += co.exportBuild);
 	const fill = dispatch(w, req, heatReq, basicsB, exportAsk);
@@ -1185,6 +1194,8 @@ function physicalLimit(w, g) {
 	let best = null, bs = -1;
 	for (const co of w.sellers[g]) if (w.supply[g * M + co.k] > bs) (bs = w.supply[g * M + co.k]), (best = co);
 	if (!best) return LIMIT.noSeller;
+	// food the sellers could not buy at the border today: no euros in their accounts or the founding reserve
+	if (g === FOOD && (w.today.impShort ?? 0) > 1e-9) return LIMIT.euros;
 	if (best.limiter && best.limiter !== LIMIT.none) return best.limiter;
 	// Aven services whose worn halls wait for accelerators while the dispatch cuts the export that replaces them (the
 	// city's own basics, running and building took the electricity): energy
@@ -1500,7 +1511,7 @@ function checkLedgers(w) {
 	const now = stockTotals(w), prev = w.matter.prevStock;
 	for (let g = 0; g < G; g++) {
 		if (g === ENERGY) continue;
-		const expect = prev[g] + t.made[g] - t.eaten[g] - t.input[g] - t.built[g] - t.rotted[g];
+		const expect = prev[g] + t.made[g] + t.imported[g] - t.eaten[g] - t.input[g] - t.built[g] - t.rotted[g];
 		const diff = now[g] - expect;
 		const scale = Math.max(1, Math.abs(now[g]), t.made[g], t.eaten[g]);
 		const rel = Math.abs(diff) / scale;
@@ -1515,9 +1526,9 @@ function checkLedgers(w) {
 	}
 	for (let g = 0; g < G; g++) if (w.cityStore[g] < -1e-9) leak(w, w.matter.leaks, `City COOP store of ${GOOD_IDS[g]} below zero (${w.cityStore[g]})`);
 	const raw = rawTotal(w), rprev = w.matter.prevRaw;
-	const rg = t.raw.grown, ru = t.raw.used, rl = t.raw.lost;
-	const rexp = rprev + rg.logs + rg.ore + rg.sand - ru.logs - ru.ore - ru.sand - rl.logs - rl.ore - rl.sand;
-	if (Math.abs(raw - rexp) > 1e-7 * Math.max(1, raw)) leak(w, w.matter.leaks, `raw logs/ore/sand: ${raw} vs ${rexp}`);
+	const sum = (o) => Object.values(o).reduce((a, x) => a + x, 0);
+	const rexp = rprev + sum(t.raw.grown) + sum(t.raw.imported) - sum(t.raw.used) - sum(t.raw.lost);
+	if (Math.abs(raw - rexp) > 1e-7 * Math.max(1, raw)) leak(w, w.matter.leaks, `raw logs/scrap/float glass/cells: ${raw} vs ${rexp}`);
 	w.matter.prevRaw = raw;
 	// accelerators: they come in only through the border, and leave only into a plant
 	let chips = w.cityChips ?? 0;
@@ -1526,10 +1537,11 @@ function checkLedgers(w) {
 	if (Math.abs(chips - cexp) > 1e-7 * Math.max(1, chips)) leak(w, w.matter.leaks, `accelerators: ${chips} vs ${cexp}`);
 	if (chips < -1e-9) leak(w, w.matter.leaks, `accelerators below zero: ${chips}`);
 	w.matter.prevChips = chips;
-	// the euro reserve (paper §11.4): it moves only by what the line's export earned and what accelerators cost;
-	// it is held by COOPs only (no person holds euros) and never becomes MIND
+	// the euro reserve (paper §11.4): it moves only by what the line's export earned and what the COOPs bought at the
+	// border; it is held by COOPs only (the founding euros left over, and each COOP's account; no person holds euros)
+	// and never becomes MIND
 	const B = w.border;
-	let eur = 0;
+	let eur = B.shared;
 	for (let k = 0; k < M; k++) eur += B.eur[k];
 	const eexp = B.prev + (t.eurIn ?? 0) - (t.eurOut ?? 0);
 	if (Math.abs(eur - eexp) > 1e-7 * Math.max(1, eur) || eur < -1e-6) leak(w, w.matter.leaks, `euro reserve: ${eur} vs ${eexp}`);
@@ -1724,3 +1736,28 @@ export function getLimits(w) {
 
 /** the goods, for labels */
 export const GOOD_LIST = GOODS.map((g, i) => ({ ...g, index: i }));
+
+/**
+ * Every parameter a world runs with (the World tab and the proof's parameter sets): its settings (the defaults merged
+ * with the run's own, plus the village's derived keys), the plain constants it was built from (w.c, without the
+ * village's facts), the defaults (to mark what the run changed), and the village's facts read from Sandbox 6's design
+ * as catalog records ({ v, u, src, est }).
+ */
+export function paramSet(w) {
+	const cfg = { ...DEFAULTS, ...w.cfg };
+	const V = w.c.village;
+	const settings = { ...cfg, livingHexes: V.livingHexes, peoplePerHex: cfg.people / V.livingHexes, tower: V.tower, beds: Math.round(V.beds.total * w.c.vf) };
+	const catalog = {};
+	for (const [k, v] of Object.entries(w.c)) {
+		if (k === 'village' || k === 'p0base') continue;
+		catalog[k] = ArrayBuffer.isView(v) ? Array.from(v) : v;
+	}
+	return { settings, catalog, defaults: { ...DEFAULTS }, village: villageRecords(V) };
+}
+
+/** every catalog record (./primitives.js and ./food.js) as [path, record], for the World tab and the proof */
+export function catalogAll() {
+	const out = catalogList();
+	for (const [grp, o] of Object.entries({ OUTDOOR, INDOOR })) for (const [k, r] of Object.entries(o)) out.push([`FOOD_YIELDS.${grp}.${k}`, r]);
+	return out;
+}

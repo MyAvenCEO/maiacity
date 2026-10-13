@@ -5,13 +5,23 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { paramRows } from './params.js';
+	import { paramRows, plain, words } from './params.js';
 
 	/**
 	 * sets: one param set per world, each { settings, catalog } · names: a column name per world · defaults: the
 	 * ./genesis.js DEFAULTS, to mark what a run sets apart from them
 	 */
-	let { sets = [], names = ['Base', 'Changed'], defaults = null } = $props();
+	let { sets = [], names = ['Base', 'Changed'], defaults = null, records = null } = $props();
+
+	/** the whole catalog the engine reads (./engine.js catalogAll: [path, { v, u, src, est }]), the same for every world */
+	let find = $state('');
+	const recRows = $derived(
+		(records ?? []).map(([path, r]) => ({ path, name: path.split('.').map(words).join(' · '), text: plain(r), src: r?.src ?? '', est: !!r?.est }))
+	);
+	const recShown = $derived.by(() => {
+		const q = find.trim().toLowerCase();
+		return q ? recRows.filter((r) => `${r.name} ${r.text} ${r.src}`.toLowerCase().includes(q)) : recRows;
+	});
 
 	const groups = $derived(paramRows(sets, defaults));
 	const two = $derived(sets.filter(Boolean).length > 1);
@@ -60,6 +70,25 @@
 			</section>
 		{/each}
 		{#if only && !shown.length}<p class="fine">{two ? 'The two worlds ran with the same parameters.' : 'This run uses the defaults everywhere.'}</p>{/if}
+		{#if recRows.length}
+			<details class="catalog">
+				<summary><b>The whole catalog, with sources</b> <span>{recRows.length} records the engine reads, the same for every world</span></summary>
+				<input type="search" placeholder="Find (e.g. glulam, kcal, geothermal)" bind:value={find} aria-label="Find a catalog record" />
+				<div class="recs">
+					<table>
+						<tbody>
+							{#each recShown as r (r.path)}
+								<tr>
+									<td class="lbl" title={r.path}>{r.name}{#if r.est}<small class="cat">estimate</small>{/if}</td>
+									<td class="val">{r.text}{#if r.src}<small class="src">{r.src}</small>{/if}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				{#if !recShown.length}<p class="fine">Nothing matches “{find}”.</p>{/if}
+			</details>
+		{/if}
 		<p class="fine">Settings are the world’s knobs ($lib/sandbox-9/genesis.js DEFAULTS with this run’s changes); catalog constants and the village plan are what the world was built from ($lib/sandbox-9/primitives.js and the Sandbox 6 village in $lib/sandbox-7). Hover a name for its key or its source.</p>
 	{/if}
 </div>
@@ -168,6 +197,56 @@
 	}
 	.tag.soft {
 		background: #2a78d6;
+	}
+	.catalog {
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: 12px;
+		padding: 0.45rem 0.6rem 0.5rem;
+		min-width: 0;
+	}
+	.catalog summary {
+		cursor: pointer;
+		font-size: 0.82rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.15rem 0.5rem;
+		align-items: baseline;
+	}
+	.catalog summary span {
+		font-size: 0.72rem;
+		color: var(--muted);
+	}
+	.catalog input {
+		margin: 0.45rem 0 0.3rem;
+		width: 100%;
+		max-width: 22rem;
+		font: inherit;
+		font-size: 0.8rem;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: 0.25rem 0.5rem;
+		background: #fff;
+		color: var(--ink);
+		box-sizing: border-box;
+	}
+	.recs {
+		max-height: 28rem;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+	.recs table {
+		table-layout: fixed;
+	}
+	.recs .lbl {
+		width: 38%;
+	}
+	.src {
+		display: block;
+		color: var(--muted);
+		font-size: 0.64rem;
+		line-height: 1.3;
+		margin-top: 0.1rem;
 	}
 	.fine {
 		margin: 0;

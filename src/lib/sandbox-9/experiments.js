@@ -26,7 +26,8 @@
  */
 import { exp, log } from './dmath.js';
 import { polar } from './rng.js';
-import { createWorld, step, DEFAULTS, getLedger } from './engine.js';
+import { createWorld, step, DEFAULTS, getLedger, paramSet } from './engine.js';
+import { livingYears, villageYears, borderYears, foundingBill } from './records.js';
 import { prop3 } from './prop3.js';
 import { guessText } from './guesses.js';
 import { openCoop } from './coops.js';
@@ -385,8 +386,9 @@ export function markupOf(Yr) {
 }
 
 // ── the experiments ──────────────────────────────────────────────────────────────────────────────────────────────
-/** the page's field: 100 people (5 of them owner-only) on a hex sized for them */
-const PAGE_PEOPLE = 100;
+/** the village's 1,500 people (5 % of them owner-only) in Sandbox 6's village of six living hexes: every experiment
+ * runs at this size (Samuel 2026-10-13); one that tests another number changes that knob and says so */
+const PAGE_PEOPLE = 1500;
 const DROUGHT_DAY = 3 * Y + 152; // June of year 4
 const DROUGHT = { kind: 'drought', day: DROUGHT_DAY, days: 120, factor: 0.3 };
 const inDrought = [DROUGHT_DAY, DROUGHT_DAY + 120];
@@ -850,16 +852,16 @@ export const EXPERIMENTS = {
 	X11: {
 		id: 'X11',
 		question: 'What stops a small village first?',
-		ruleChanged: '250 blobs (base) vs 100 blobs (changed) on the same hex, built for 250, with dome solar and no geothermal stage yet (world model 5.5).',
+		ruleChanged: '1,500 blobs (base) vs 600 blobs (changed) in the same village, built for 1,500, with dome solar and no geothermal stage yet (world model 5.5). This experiment changes the population.',
 		guesses: [
-			{ text: 'With 250, energy binds first (in winter): someone is short of energy on more days than of water.', check: (rb) => rb.values.energyShortDays > 0 && rb.values.energyShortDays >= rb.values.waterShortDays },
-			{ text: 'With 100, the same hex is roomy: fewer limits bind, and nobody is short.', check: (rb, rc) => rc.values.shortPD === 0 },
+			{ text: 'With 1,500, energy binds first (in winter): someone is short of energy on more days than of water.', check: (rb) => rb.values.energyShortDays > 0 && rb.values.energyShortDays >= rb.values.waterShortDays },
+			{ text: 'With 600, the same village is roomy: fewer limits bind, and nobody is short.', check: (rb, rc) => rc.values.shortPD === 0 },
 			{ text: 'MIND never binds a basic in either world.', check: (rb, rc) => rb.values.mindBinds === 0 && rc.values.mindBinds === 0 }
 		],
-		people: 250,
+		people: 1500,
 		years: 6,
-		base: { people: 250, fieldPeople: 250, geothermal: false },
-		changed: { people: 100, fieldPeople: 250, geothermal: false },
+		base: { people: 1500, geothermal: false },
+		changed: { people: 600, geothermal: false },
 		charts: ['binding-limit badge of each good', 'energy a person and the capacity per person', 'person-days short'],
 		metrics: [
 			{ id: 'shortPD', label: 'person-days short of a basic', of: (w) => shortPD(w) },
@@ -875,14 +877,14 @@ export const EXPERIMENTS = {
 		takeaway(rb, rc) {
 			const b = rb.values, c = rc.values;
 			// person-days short of any basic in both worlds first (energy days alone hid the beds and the water)
-			return `With 250 blobs, ${f0(b.shortPD)} person-days were short of a basic (${f2(b.shortPP)} days a person; someone short of energy on ${f0(b.energyShortDays)} days); with 100 on the same hex, ${f0(c.shortPD)} person-days (${f2(c.shortPP)} a person; energy on ${f0(c.energyShortDays)} days). MIND ${b.mindBinds + c.mindBinds === 0 ? 'never bound a basic' : `bound a basic on ${b.mindBinds} and ${c.mindBinds} day-goods`}.`;
+			return `With 1,500 blobs, ${f0(b.shortPD)} person-days were short of a basic (${f2(b.shortPP)} days a person; someone short of energy on ${f0(b.energyShortDays)} days); with 600 in the same village, ${f0(c.shortPD)} person-days (${f2(c.shortPP)} a person; energy on ${f0(c.energyShortDays)} days). MIND ${b.mindBinds + c.mindBinds === 0 ? 'never bound a basic' : `bound a basic on ${b.mindBinds} and ${c.mindBinds} day-goods`}.`;
 		},
 		numbers(rb, rc) {
 			const b = rb.values, c = rc.values;
 			return (
-				`With 250 blobs, someone was short of energy on ${b.energyShortDays} days and of water on ${b.waterShortDays}. With 100, on ${c.energyShortDays} and ${c.waterShortDays} days. ` +
-				`MIND bound a basic on ${b.mindBinds} day-goods with 250 and ${c.mindBinds} with 100. ` +
-				`Wood was bound by ${b.woodTop} (250) and ${c.woodTop} (100).`
+				`With 1,500 blobs, someone was short of energy on ${b.energyShortDays} days and of water on ${b.waterShortDays}. With 600, on ${c.energyShortDays} and ${c.waterShortDays} days. ` +
+				`MIND bound a basic on ${b.mindBinds} day-goods with 1,500 and ${c.mindBinds} with 600. ` +
+				`Wood was bound by ${b.woodTop} (1,500) and ${c.woodTop} (600).`
 			);
 		},
 		pass(rb, rc) {
@@ -890,7 +892,7 @@ export const EXPERIMENTS = {
 			return {
 				pass: b.mindBinds === 0 && c.mindBinds === 0 && c.shortPP <= b.shortPP,
 				claim: 'Physics, not money, sets the limit: MIND never binds a basic while physics allows need, and fewer people on the same hex are short less.',
-				evidence: `MIND-bound basic day-goods ${b.mindBinds} (250) and ${c.mindBinds} (100); person-days short of a basic ${f0(b.shortPD)} (250) and ${f0(c.shortPD)} (100); days short a person ${f2(b.shortPP)} vs ${f2(c.shortPP)}; short days by limit (250): ${JSON.stringify(shortDaysByLimit(rb.world ?? { rec: { n: 0 } }))}`
+				evidence: `MIND-bound basic day-goods ${b.mindBinds} (1,500) and ${c.mindBinds} (600); person-days short of a basic ${f0(b.shortPD)} (1,500) and ${f0(c.shortPD)} (600); days short a person ${f2(b.shortPP)} vs ${f2(c.shortPP)}; short days by limit (1,500): ${JSON.stringify(shortDaysByLimit(rb.world ?? { rec: { n: 0 } }))}`
 			};
 		}
 	},
@@ -1062,6 +1064,55 @@ export const EXPERIMENTS = {
 		}
 	},
 
+	TW: {
+		id: 'TW',
+		question: 'What does the tower add, and what does it cost?',
+		ruleChanged: 'The village without the Tower180 (base: one more Dome120 of utilities and community halls in the centre hex) vs with it (changed), at its real cost: the tower’s shell, floors and equipment on the founding bill, its beds, its solar cells, its halls’ upkeep, climate and heat.',
+		guesses: [
+			{ text: 'The tower adds beds and some solar, but costs far more at the founding than it gives: the founding bill rises by over €200 M.', check: (rb, rc) => rc.values.foundingM - rb.values.foundingM > 200 },
+			{ text: 'Its glass and steel wear raise the village’s imports of materials a year.', check: (rb, rc) => rc.values.importMatEur > rb.values.importMatEur },
+			{ text: 'Living standards barely change: nobody needs the tower’s beds at 1,500 people.', check: (rb, rc) => Math.abs(rel(rc.values.Lmean, rb.values.Lmean)) < 0.05 }
+		],
+		people: PAGE_PEOPLE,
+		years: 10,
+		base: { tower: false },
+		changed: { tower: true },
+		charts: ['mean living standard', 'energy a person and the capacity per person', 'person-days short'],
+		metrics: [
+			{ id: 'foundingM', label: 'founding bill, € M (the village built before day 0)', of: (w) => foundingBill(w).totalEur / 1e6 },
+			{ id: 'beds', label: 'beds', of: (w) => w.c.village.beds.total * w.c.vf },
+			{ id: 'solarGWh', label: 'solar in the glass, GWh a year (as built)', of: (w) => w.c.village.solarKwh * w.c.vf / 1e6 },
+			{ id: 'energyPP', label: 'electricity made a person a day, kWh (mean of the run)', of: (w) => { const v = villageYears(w); return v.reduce((a, y) => a + y.energy.made.solar + y.energy.made.geothermal, 0) / Math.max(1, v.length); } },
+			{ id: 'exportPP', label: 'electricity exported a person a day, kWh (mean of the run)', of: (w) => { const v = villageYears(w); return v.reduce((a, y) => a + y.energy.went.export, 0) / Math.max(1, v.length); } },
+			{ id: 'importEur', label: 'imports, € a year (mean of the run)', of: (w) => { const b = borderYears(w); return b.reduce((a, y) => a + y.importEur, 0) / Math.max(1, b.length); } },
+			{ id: 'importMatEur', label: 'imports of materials (glulam, steel, glazing, panels and their raw inputs), € a year (mean of the run)', of: (w) => { const b = borderYears(w); return b.reduce((a, y) => a + y.importEur - y.imports.food.eur - y.imports.accelerators.eur, 0) / Math.max(1, b.length); } },
+			{ id: 'shortPD', label: 'person-days short of a basic (after day 0)', of: (w) => shortPD(w) },
+			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) },
+			{ id: 'Lpoor', label: 'poorest holdings decile, last year', of: (w) => meanOf(w, 'decH', ...lastYear(w), 0) }
+		],
+		takeaway(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return `The tower adds ${f0(c.beds - b.beds)} beds and ${f2(c.solarGWh - b.solarGWh)} GWh of solar a year for €${f0(c.foundingM - b.foundingM)} M more at the founding; the mean living standard changes by ${pct(rel(c.Lmean, b.Lmean))}.`;
+		},
+		numbers(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return (
+				`Founding bill €${f0(b.foundingM)} M without the tower, €${f0(c.foundingM)} M with it. Beds ${f0(b.beds)} vs ${f0(c.beds)}; solar ${f2(b.solarGWh)} vs ${f2(c.solarGWh)} GWh a year. ` +
+				`Electricity made ${f2(b.energyPP)} vs ${f2(c.energyPP)} kWh a person a day; exported ${f2(b.exportPP)} vs ${f2(c.exportPP)}. ` +
+				`Imports €${f0(b.importEur)} vs €${f0(c.importEur)} a year (materials €${f0(b.importMatEur)} vs €${f0(c.importMatEur)}). ` +
+				`Person-days short ${f0(b.shortPD)} vs ${f0(c.shortPD)}; mean living standard ${f2(b.Lmean)} vs ${f2(c.Lmean)}, poorest tenth ${f2(b.Lpoor)} vs ${f2(c.Lpoor)}.`
+			);
+		},
+		pass(rb, rc) {
+			const b = rb.values, c = rc.values;
+			return {
+				pass: null,
+				claim: 'A comparison, not a test: what the tower adds (beds, solar) against what it costs (the founding bill, the imports to keep it up, its energy).',
+				evidence: `founding +€${f0(c.foundingM - b.foundingM)} M; imports ${pct(rel(c.importEur, b.importEur))} a year; electricity made ${pct(rel(c.energyPP, b.energyPP))}; mean living standard ${pct(rel(c.Lmean, b.Lmean))}`
+			};
+		}
+	},
+
 	SH: {
 		id: 'SH',
 		question: 'Through a drought, a dark winter, two failing COOPs and a failing well, does everyone keep the basics, and does every decile recover within two years?',
@@ -1199,7 +1250,9 @@ export function runExperiment(exp, opts = {}) {
 function measure(exp, w) {
 	const p = prop3(w);
 	const values = {};
-	const res = { label: w.cfg.label, config: w.cfg, values, prop3: p, world: w };
+	// the run's full parameter set (settings and catalog, for the page's World tab) and its yearly tables (living
+	// standards by tenth, the village's food and energy, the border's ledger, the founding bill)
+	const res = { label: w.cfg.label, config: w.cfg, params: paramSet(w), living: livingYears(w), village: villageYears(w), border: borderYears(w), founding: foundingBill(w), values, prop3: p, world: w };
 	for (const m of exp.metrics) values[m.id] = m.of(w, p);
 	return res;
 }
@@ -1281,7 +1334,14 @@ export function summarize(w) {
 		badges: Object.fromEntries(GOOD_IDS.map((id, g) => [id, topBadge(w, g)])),
 		badgeShares: Object.fromEntries(GOOD_IDS.map((id, g) => [id, badgeShares(w, g)])),
 		ledger: getLedger(w),
-		owners: w.ownerIds.length
+		owners: w.ownerIds.length,
+		// the run's full parameter set, and its yearly tables: living standards by tenth, the village's food and energy,
+		// the border's ledger and the founding bill (./records.js)
+		params: paramSet(w),
+		living: livingYears(w),
+		village: villageYears(w),
+		border: borderYears(w),
+		founding: foundingBill(w)
 	};
 }
 

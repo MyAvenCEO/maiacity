@@ -10,8 +10,12 @@
  *
  * Arrays grow by doubling, so a world can run as long as it likes; ./prop3.js reads them.
  */
-import { BASICS, CONSUMER, COMPUTE, ENERGY, G, LIMIT, BED, PHYSICAL } from './consts.js';
+import { BASICS, CONSUMER, COMPUTE, ENERGY, FOOD, WATER, G, LIMIT, LIMIT_NAMES, BED, PHYSICAL, GOODS_, SPRING, WOOD, STEEL, GLASS, PANEL, GOOD_IDS, CLASS } from './consts.js';
 import { capDayOf, plantCapDay } from './genesis.js';
+import { DAYS_IN_MONTH, CHIPS, BORDER } from './primitives.js';
+import { monthOf } from './energy.js';
+import { reserveEur, IMPORT_KINDS } from './border.js';
+import { indoorMonths } from './food.js';
 
 const SERIES = {
 	minMet: 4, // the lowest share of need met by anyone, per basic
@@ -58,6 +62,113 @@ export function initRecords(w) {
 	for (const [k, width] of Object.entries(SERIES)) rec[k] = new Float32Array(cap * width);
 	rec.width = SERIES;
 	w.rec = rec;
+	// the yearly tables (living standards by tenth, the village's food and energy, the border's ledger): sums kept as
+	// the days run, so reading them is cheap at any time (./records.js livingYears, villageYears, borderYears)
+	rec.years = [];
+	rec.shortYear = new Int32Array(w.Nmax).fill(-1);
+}
+
+/** the living-standard measures of the yearly table, a person: their sums over the year's person-days */
+const LIV = ['kcal', 'protein', 'homeM2', 'waterL', 'homeKwh', 'avenH', 'goodsKg', 'pondH'];
+const TENTHS = { poorest: 0, middle: 4, richest: 9 };
+
+function newYear(w, y) {
+	return {
+		year: y + 1,
+		days: 0,
+		// [tenth 0..9, everyone 10] × measures: sums over person-days, and person-days
+		liv: new Float64Array(11 * LIV.length),
+		pd: new Float64Array(11),
+		short: new Float64Array(11), // people short of a basic on at least one day this year, by their tenth that day
+		shortAll: 0,
+		food: { outdoors: 0, indoors: 0, imported: 0, eaten: 0, led: 0, unpicked: 0, lost: 0, rotted: 0 },
+		season: { weather: 1, tree: 1, frost: false },
+		indoorMonth: new Float64Array(12),
+		monthDays: new Float64Array(12),
+		peopleDays: 0,
+		energy: { solar: 0, geothermal: 0, battery: 0, basics: 0, running: 0, building: 0, rd: 0, export: 0, storage: 0, curtailed: 0, heatPump: 0 },
+		badges: new Float64Array(G * 32),
+		imp: Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])),
+		impEur: Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])),
+		exportKwh: 0,
+		exportEur: 0,
+		exportBy: new Float64Array(G),
+		sharedDrawn: 0,
+		reserveEur: 0,
+		reserveMin: Infinity,
+		sharedEur: 0,
+		impShortDays: 0,
+		solarKwp: 0,
+		people: 0,
+		drawStart: w.border?.drawShared ?? 0
+	};
+}
+
+/** add today to this year's sums (called from recordDay) */
+function yearDay(w, protD) {
+	const rec = w.rec, y = Math.floor(w.day / 365);
+	let Y = rec.years[y];
+	if (!Y) Y = rec.years[y] = newYear(w, y);
+	const N = w.N, c = w.c, t = w.today, nL = LIV.length;
+	Y.days++;
+	Y.peopleDays += N;
+	const homeM2 = c.homeM2PerBed;
+	for (let i = 0; i < N; i++) {
+		const o = i * G, d = w.decH[i];
+		const f = w.q[o + FOOD];
+		const v = [f * 1000, f * protD, w.q[o + BED] * homeM2, w.q[o + WATER], w.q[o + ENERGY], w.q[o + COMPUTE], w.q[o + GOODS_], w.q[o + SPRING]];
+		for (let m = 0; m < nL; m++) (Y.liv[d * nL + m] += v[m]), (Y.liv[10 * nL + m] += v[m]);
+		Y.pd[d]++;
+		Y.pd[10]++;
+		let short = false;
+		for (let b = 0; b < 4; b++) if (w.q[o + b] / c.need[b] < 0.98) short = true;
+		if (short && w.day > 0 && rec.shortYear[i] !== y) {
+			rec.shortYear[i] = y;
+			Y.short[d]++;
+			Y.shortAll++;
+		}
+	}
+	const m = monthOf(w.day);
+	Y.food.outdoors += t.foodOut ?? 0;
+	Y.food.indoors += t.foodIn ?? 0;
+	Y.food.imported += t.imp?.food ?? 0;
+	Y.food.led += t.ledUnits ?? 0;
+	Y.food.unpicked += t.unpicked ?? 0;
+	Y.food.lost += t.foodLost ?? 0;
+	Y.food.rotted += t.rotted[FOOD] - (t.foodLost ?? 0);
+	Y.food.eaten += t.eaten[FOOD];
+	// the outdoor season's weather factor (its last value: April–September once September is over) and the tree crop
+	Y.season.weather = t.outWx ?? 1;
+	Y.season.tree = t.treeF ?? 1;
+	Y.season.frost = !!w.foodWx?.frost;
+	Y.indoorMonth[m] += (t.foodIn ?? 0) / Math.max(1, N);
+	Y.monthDays[m]++;
+	const h = t.harvest, E = Y.energy;
+	E.solar += h.solar;
+	E.geothermal += h.geo;
+	E.battery += h.battery;
+	E.basics += t.use[CLASS.basics];
+	E.running += t.use[CLASS.running];
+	E.building += t.use[CLASS.building];
+	E.rd += t.use[CLASS.rd];
+	E.export += t.exportKwh ?? 0;
+	E.storage += t.use[CLASS.storage];
+	E.curtailed += t.curtailed;
+	E.heatPump += t.heatPumpKwh ?? 0;
+	for (let g = 0; g < G; g++) Y.badges[g * 32 + (w.badge[g] | 0)]++;
+	if (t.imp) for (const k of IMPORT_KINDS) (Y.imp[k] += t.imp[k] ?? 0), (Y.impEur[k] += t.impEur[k] ?? 0);
+	Y.exportKwh += t.exportKwh ?? 0;
+	Y.exportEur += (t.exportKwh ?? 0) * c.eurPerKwh;
+	if (t.exportBy) for (let g = 0; g < G; g++) Y.exportBy[g] += t.exportBy[g];
+	if ((t.impShort ?? 0) > 1e-9) Y.impShortDays++;
+	Y.reserveEur = reserveEur(w);
+	Y.reserveMin = Math.min(Y.reserveMin, Y.reserveEur);
+	Y.sharedEur = w.border.shared;
+	Y.sharedDrawn = w.border.drawShared - Y.drawStart;
+	let kwp = 0;
+	for (const co of w.coops) if (co.alive && co.good === ENERGY) for (const pl of co.plants) if (pl.tech === 'solar') kwp += Math.max(0, pl.cap - pl.worn);
+	Y.solarKwp = kwp;
+	Y.people = N;
 }
 
 function grow(rec) {
@@ -77,6 +188,10 @@ function grow(rec) {
 export function recordDay(w) {
 	const rec = w.rec, N = w.N, c = w.c, d = rec.n;
 	if (d >= rec.cap) grow(rec);
+	// protein a unit of the food eaten today: the food sellers' stores' mix, by what each sold
+	let pu = 0, ps = 0;
+	for (const co of w.coops) if (co.alive && co.good === FOOD && co.sold > 0) (pu += co.sold), (ps += co.sold * (co.protD ?? c.protImp));
+	const protD = pu > 0 ? ps / pu : c.protImp;
 	const need = c.need, p0 = c.p0g;
 	const minMet = [Infinity, Infinity, Infinity, Infinity];
 	const shortN = [0, 0, 0, 0];
@@ -209,6 +324,7 @@ export function recordDay(w) {
 		if (ok) rec.strictDays++;
 	}
 	const t = w.today;
+	yearDay(w, protD);
 	// the electricity the city used (the export across the border for accelerators is not use: it is its own series)
 	let used = 0;
 	for (let cl = 0; cl < 4; cl++) used += t.use[cl];
@@ -255,3 +371,207 @@ export function series(w, key, col = 0) {
 }
 
 export { SERIES };
+
+// ── the yearly tables for the page and the proof ─────────────────────────────────────────────────────────────────
+/** plain words for a binding limit */
+const PLAIN = {
+	[LIMIT.none]: 'nothing: everyone had what they asked for',
+	[LIMIT.capacity]: 'what is built (more could be built)',
+	[LIMIT.land]: 'land',
+	[LIMIT.water]: 'water (the aquifer’s recharge)',
+	[LIMIT.energy]: 'electricity',
+	[LIMIT.wood]: 'glulam for the works',
+	[LIMIT.steel]: 'steel for the works',
+	[LIMIT.glass]: 'glass for the works',
+	[LIMIT.panel]: 'solar panels',
+	[LIMIT.ramp]: 'the young food forest (it is still growing)',
+	[LIMIT.mind]: 'people’s MIND (they could not pay)',
+	[LIMIT.nature]: 'nature (sun, rain, the warm ponds)',
+	[LIMIT.demand]: 'what people want at today’s prices',
+	[LIMIT.logs]: 'logs',
+	[LIMIT.noSeller]: 'no seller (plants stand idle)',
+	[LIMIT.notBuilt]: 'nobody built more (free land)',
+	[LIMIT.chips]: 'accelerators',
+	[LIMIT.treasury]: 'a COOP’s treasury (cannot carry a build)',
+	[LIMIT.noSlot]: 'no room for a new COOP',
+	[LIMIT.importDear]: 'accelerators cost more euros than they earn back',
+	[LIMIT.euros]: 'euros at the border (no exports yet, the reserve empty)'
+};
+const per = (x, Y) => (Y.peopleDays > 0 ? x / Y.peopleDays : 0);
+
+/**
+ * Living standards by tenth of MIND holdings, a year at a time (the poorest tenth, the middle (5th) tenth, the
+ * richest tenth, and everyone): a person a day, the year's mean. Cheap: the sums are kept as the days run.
+ */
+export function livingYears(w) {
+	const out = [], nL = LIV.length;
+	for (const Y of w.rec?.years ?? []) {
+		if (!Y) continue;
+		const row = (d) => {
+			const pd = Math.max(1, Y.pd[d]);
+			const v = (m) => Y.liv[d * nL + LIV.indexOf(m)] / pd;
+			return { kcal: v('kcal'), protein: v('protein'), homeM2: v('homeM2'), waterL: v('waterL'), homeKwh: v('homeKwh'), avenH: v('avenH'), goodsKgYear: v('goodsKg') * 365, pondHWeek: v('pondH') * 7, shortPeople: Y.short[d] };
+		};
+		const tenths = {};
+		for (const [k, d] of Object.entries(TENTHS)) tenths[k] = row(d);
+		const all = row(10);
+		all.shortPeople = Y.shortAll;
+		out.push({ year: Y.year, days: Y.days, people: Y.people, tenths, all, shortPeople: Y.shortAll });
+	}
+	return out;
+}
+
+/** the year's most frequent limit of a good, in plain words (and its share of the days) */
+function bindOf(Y, g) {
+	let best = 0, n = -1;
+	for (let x = 0; x < 32; x++) if (Y.badges[g * 32 + x] > n) (n = Y.badges[g * 32 + x]), (best = x);
+	return { code: best, words: PLAIN[best] ?? LIMIT_NAMES[best] ?? String(best), share: Y.days > 0 ? n / Y.days : 0 };
+}
+
+/**
+ * The village a year at a time: food grown outdoors, grown indoors, bought at the border and eaten (kcal a person a
+ * day); the food domes' kcal a person a day by month; electricity made and where it went (kWh a person a day); and
+ * what bound each good most days, in plain words.
+ */
+export function villageYears(w) {
+	const out = [];
+	for (const Y of w.rec?.years ?? []) {
+		if (!Y) continue;
+		const k = (u) => per(u * 1000, Y);
+		const E = Y.energy;
+		const binds = {};
+		for (const [id, g] of [['food', FOOD], ['water', WATER], ['energy', ENERGY], ['bed', BED], ['goods', GOODS_], ['spring', SPRING], ['compute', COMPUTE], ['glulam', WOOD], ['steel', STEEL], ['glass', GLASS], ['panels', PANEL]]) binds[id] = bindOf(Y, g);
+		out.push({
+			year: Y.year,
+			days: Y.days,
+			food: { outdoors: k(Y.food.outdoors), indoors: k(Y.food.indoors), imported: k(Y.food.imported), eaten: k(Y.food.eaten), led: k(Y.food.led), lost: k(Y.food.lost), rotted: k(Y.food.rotted), unpicked: k(Y.food.unpicked) },
+			season: { ...Y.season },
+			indoorByMonth: Array.from(Y.indoorMonth, (x, m) => (Y.monthDays[m] > 0 ? (x * 1000) / Y.monthDays[m] : null)),
+			energy: {
+				made: { solar: per(E.solar, Y), geothermal: per(E.geothermal, Y), battery: per(E.battery, Y) },
+				went: { basics: per(E.basics, Y), running: per(E.running, Y), building: per(E.building, Y), rd: per(E.rd, Y), export: per(E.export, Y), storage: per(E.storage, Y), curtailed: per(E.curtailed, Y) },
+				heatPumps: per(E.heatPump, Y)
+			},
+			solarKwp: Y.solarKwp,
+			binds: Object.fromEntries(Object.entries(binds).map(([id, b]) => [id, b.words])),
+			bindShare: Object.fromEntries(Object.entries(binds).map(([id, b]) => [id, b.share]))
+		});
+	}
+	return out;
+}
+
+/** the food domes at maturity by month, kcal a person a day, with and without LED light (./food.js) */
+export function indoorMonthsOf(w) {
+	let m2 = 0;
+	for (const co of w.coops) if (co.alive) for (const pl of co.plants) if (pl.tech === 'greenhouse') m2 += Math.max(0, pl.cap - pl.worn);
+	return indoorMonths(m2 * (w.cfg.forestYield ?? 1), Math.max(1, w.N));
+}
+
+/**
+ * The border's ledger a year at a time: what the COOPs bought (food in kcal for the whole village, logs, scrap and
+ * float glass in t, cells in kWp, accelerators in units) and what it cost in €, what the line's exports earned, the
+ * euro reserve at the year's end (the founding euros left and the COOPs' accounts), whether the village fed itself
+ * (food bought under 1 % of food eaten) and whether exports paid for all imports.
+ */
+export function borderYears(w) {
+	const out = [];
+	for (const Y of w.rec?.years ?? []) {
+		if (!Y) continue;
+		const imports = {
+			food: { kcal: Y.imp.food * 1000, eur: Y.impEur.food },
+			logs: { t: Y.imp.logs, eur: Y.impEur.logs },
+			scrap: { t: Y.imp.scrap, eur: Y.impEur.scrap },
+			float: { t: Y.imp.float, eur: Y.impEur.float },
+			cells: { kwp: Y.imp.cells, eur: Y.impEur.cells },
+			glulam: { t: Y.imp.glulam, eur: Y.impEur.glulam },
+			steel: { t: Y.imp.steel, eur: Y.impEur.steel },
+			glazing: { t: Y.imp.glazing, eur: Y.impEur.glazing },
+			panels: { kwp: Y.imp.panels, eur: Y.impEur.panels },
+			accelerators: { n: Y.imp.chips, eur: Y.impEur.chips }
+		};
+		const importEur = IMPORT_KINDS.reduce((a, k) => a + Y.impEur[k], 0);
+		out.push({
+			year: Y.year,
+			days: Y.days,
+			imports,
+			importEur,
+			exportKwh: Y.exportKwh,
+			exportEur: Y.exportEur,
+			exportByGood: Object.fromEntries(GOOD_IDS.map((id, g) => [id, Y.exportBy[g] * w.c.eurPerKwh]).filter(([, v]) => v > 0)),
+			reserveEur: Y.reserveEur,
+			foundingLeftEur: Y.sharedEur,
+			foundingDrawnEur: Y.sharedDrawn,
+			// the lowest the reserve went that year, and days a COOP could not pay for all it wanted to import (the
+			// reserve, its own account included, was empty: its buyers got less)
+			reserveMinEur: Y.reserveMin,
+			importShortDays: Y.impShortDays,
+			reserveOut: Y.impShortDays > 0,
+			fedSelf: Y.food.eaten > 0 && Y.food.imported <= 0.01 * Y.food.eaten,
+			exportsCover: Y.exportEur >= importEur - 1e-6
+		});
+	}
+	return out;
+}
+
+/** what the village holds on day 0 that was bought outside before it (called by ./engine.js createWorld) */
+export function foundingStores(w) {
+	const st = { food: 0, mat: new Float64Array(G), raw: {}, chips: 0, chipsInstalled: 0 };
+	for (const co of w.coops) {
+		if (co.good === FOOD) st.food += co.stock;
+		else if ([WOOD, STEEL, GLASS, PANEL].includes(co.good)) st.mat[co.good] += co.stock;
+		for (let g = 0; g < G; g++) st.mat[g] += co.inStock[g];
+		st.chips += co.chips ?? 0;
+		for (const pl of co.plants) {
+			const ro = pl.def.inputs.find(([g]) => typeof g === 'string');
+			if (ro && pl.raw > 0) st.raw[ro[0]] = (st.raw[ro[0]] ?? 0) + pl.raw;
+			if (pl.def.build.chips) st.chipsInstalled += pl.cap * pl.def.build.chips;
+		}
+	}
+	st.reserveEur = w.border.shared;
+	return st;
+}
+
+/**
+ * The founding bill: what was bought outside to build and stock the village before day 0, in tonnes and €. Sandbox
+ * 6's village (src/lib/sandbox-7: its shells, putting them up, the fit-out, the machines and the land), the
+ * accelerators in the Aven-service halls, the stores of food, materials and raw inputs, and the euros left over in the
+ * reserve. Rows not in tonnes carry kwp, n, kcal or m2.
+ */
+export function foundingBill(w) {
+	const V = w.c.village, vf = w.c.vf, F = w.founding, E = w.c.eur, P = V.prices;
+	const rows = [];
+	const mat = Object.fromEntries(V.materials.map((m) => [m.id, m]));
+	const add = (id, label, o) => rows.push({ id, label, ...o });
+	add('glulam', 'Glulam struts and north cassettes', { t: (mat.timber?.t ?? 0) * vf, m3: (mat.timber?.qty ?? 0) * vf, eur: (mat.timber?.eur ?? 0) * vf, group: 'shells' });
+	add('clt', 'CLT and glulam floors inside', { t: (mat.clt?.t ?? 0) * vf, m3: (mat.clt?.qty ?? 0) * vf, eur: (mat.clt?.eur ?? 0) * vf, group: 'inside' });
+	add('steel', 'Steel hubs, ring and connectors', { t: (mat.steel?.t ?? 0) * vf, eur: (mat.steel?.eur ?? 0) * vf, group: 'shells' });
+	add('glass', 'Laminated double glazing', { t: (mat.glass?.t ?? 0) * vf, m2: (mat.glass?.qty ?? 0) * vf, eur: (mat.glass?.eur ?? 0) * vf, group: 'shells' });
+	add('cells', 'See-through solar cells in the glass', { t: null, m2: (mat.pv?.qty ?? 0) * vf, kwp: (V.solarKwh * vf) / w.c.kwhPerKwp, eur: (mat.pv?.eur ?? 0) * vf, group: 'shells' });
+	add('hemp', 'Hemp-fibre insulation (north side)', { t: (mat.hemp?.t ?? 0) * vf, eur: (mat.hemp?.eur ?? 0) * vf, group: 'shells' });
+	add('lime', 'Lime-pozzolan footings', { t: (mat.lime?.t ?? 0) * vf, eur: (mat.lime?.eur ?? 0) * vf, group: 'shells' });
+	if (mat.concrete) add('concrete', 'Screed and slabs (lime/LC3 concrete)', { t: mat.concrete.t * vf, eur: mat.concrete.eur * vf, group: 'inside' });
+	const shellEur = rows.filter((r) => r.group === 'shells').reduce((a, r) => a + r.eur, 0);
+	add('assembly', V.cost[1].label, { t: null, eur: V.cost[1].eur * vf, group: 'work' });
+	const insideEur = rows.filter((r) => r.group === 'inside').reduce((a, r) => a + r.eur, 0);
+	add('fitout', 'Fit-out inside the domes beyond the CLT (homes, halls, workshops)', { t: null, eur: Math.max(0, V.cost[2].eur * vf - insideEur), group: 'work' });
+	add('machines', V.cost[3].label, { t: null, eur: V.cost[3].eur * vf, group: 'machines' });
+	add('land', V.cost[4].label, { t: null, ha: (V.landM2 * vf) / 1e4, eur: V.cost[4].eur * vf, group: 'land' });
+	const chips = F.chips + F.chipsInstalled;
+	add('accelerators', 'Accelerators for the Aven-service halls (installed and spares)', { t: null, n: chips, eur: chips * w.c.chipEur, group: 'machines' });
+	add('foodStore', `Food in the stores (${Math.round(w.c.foodStoreDays)} days, the diet at wholesale)`, { t: null, kcal: F.food * 1000, eur: F.food * E.food, group: 'stores' });
+	const matEur = { [WOOD]: (P.glulam.eur / 0.55), [STEEL]: P.steel.eur, [GLASS]: P.glass.eur / 0.05, [PANEL]: (P.pv.eur * w.c.kwhPerKwp) / 227 };
+	add('materialStores', 'Glulam, steel, glass and panels in the works’ and builders’ stores (a month)', { t: F.mat[WOOD] + F.mat[STEEL] + F.mat[GLASS], kwp: F.mat[PANEL], eur: F.mat[WOOD] * matEur[WOOD] + F.mat[STEEL] * matEur[STEEL] + F.mat[GLASS] * matEur[GLASS] + F.mat[PANEL] * matEur[PANEL], group: 'stores' });
+	for (const [k, label, unit] of [['logs', 'Logs for the timber works (a month)', 't'], ['scrap', 'Steel scrap for the arc furnace (a month)', 't'], ['float', 'Float glass for the glassworks (a month)', 't'], ['cells', 'Solar cells for the panel works (a month)', 'kwp']])
+		if (F.raw[k] > 0) add(`raw-${k}`, label, { t: unit === 't' ? F.raw[k] : null, kwp: unit === 'kwp' ? F.raw[k] : undefined, eur: F.raw[k] * E[k], group: 'stores' });
+	const builtEur = rows.reduce((a, r) => a + r.eur, 0);
+	add('reserve', `Euros left in the reserve (${w.c.reserveYears} year${w.c.reserveYears === 1 ? '' : 's'} of the village’s food at wholesale)`, { t: null, eur: F.reserveEur, group: 'reserve' });
+	return {
+		rows,
+		builtEur,
+		totalEur: builtEur + F.reserveEur,
+		reserveEur: F.reserveEur,
+		foodStoreDays: w.c.foodStoreDays,
+		tonnes: rows.reduce((a, r) => a + (typeof r.t === 'number' ? r.t : 0), 0),
+		sources: { village: 'src/lib/sandbox-7 stats.js (Sandbox 6’s village): shells, putting them up, fit-out, machines, land', prices: 'src/lib/sandbox-7 specs.js PRICES and SOURCES; ./primitives.js BORDER and CHIPS', tower: V.tower ? 'with the Tower180' : `without the tower: the centre hex’s middle holds one more Dome120; the tower’s 1 MW data centre and water works dropped (−€${(V.droppedEur / 1e6).toFixed(1)}M)` }
+	};
+}

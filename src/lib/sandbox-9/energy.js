@@ -18,6 +18,7 @@ import { CLASS, ENERGY, MAX_COOPS } from './consts.js';
 import { exp } from './dmath.js';
 import { polar } from './rng.js';
 import { geoGrossKw, solarGain } from './genesis.js';
+import { foodSeason, indoorIndex } from './food.js';
 
 const MONTH_START = DAYS_IN_MONTH.reduce((a, d, i) => (a.push((a[i - 1] ?? 0) + (i ? DAYS_IN_MONTH[i - 1] : 0)), a), []);
 /** the month (0 = January) of a day of the world */
@@ -62,6 +63,10 @@ export function calendar(w) {
 	}
 	t.sun = t.sunShare * 365 * t.sunF; // 1 = an average day of the year
 	t.rain = t.rainF * t.rainShock;
+	// the food domes' light today (an average day of the year = 1; with the LED top-up when it is on), and the outdoor
+	// food's season and tree crop (./food.js)
+	t.ghIdx = indoorIndex(m, t.sunF, w.c.led);
+	foodSeason(w);
 	// what the sellers read off their meters: rain and sun against an average day of the month (two-week averages);
 	// their forward margins expect a dry or dark spell to go on (./coops.js supplyAhead)
 	w.rainSeen = (w.rainSeen ?? 1) + (t.rain / t.rainF - (w.rainSeen ?? 1)) / 14;

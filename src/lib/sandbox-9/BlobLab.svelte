@@ -27,6 +27,8 @@
 	import LivingView from './LivingView.svelte';
 	import ImportsView from './ImportsView.svelte';
 	import { SETTINGS, plain, words } from './params.js';
+	// read as a namespace: the whole catalog shows when the engine offers it
+	import * as ENG from './engine.js';
 
 	const LIST = Object.values(EXPERIMENTS);
 	const SPEEDS = [
@@ -116,6 +118,24 @@
 	let result = $state.raw(/** @type {any} */ (null));
 	let version = $state(0);
 	let pts = $state.raw({ base: /** @type {any[]} */ ([]), changed: /** @type {any[]} */ ([]) });
+	/** switch the run view's sub-tab; in the sheet, bring the tab bar to the top so the view is in sight */
+	function showView(/** @type {'charts' | 'living' | 'imports' | 'world'} */ id, /** @type {HTMLElement} */ el) {
+		view = id;
+		if (mode === 'wide') return;
+		const bar = el.closest('.viewbar'), body = el.closest('.body');
+		if (bar && body) body.scrollTo({ top: Math.max(0, /** @type {HTMLElement} */ (bar).offsetTop - /** @type {HTMLElement} */ (body).offsetTop), behavior: 'smooth' });
+	}
+	/** every catalog record the engine reads (the World tab's last part), read once */
+	let catalog = $state.raw(/** @type {any[] | null} */ (null));
+	$effect(() => {
+		if (view === 'world' && !catalog) {
+			try {
+				catalog = ENG.catalogAll?.() ?? [];
+			} catch {
+				catalog = [];
+			}
+		}
+	});
 	/** the yearly living standards and import ledger of each world, read off the running worlds as the years pass */
 	let stats = $state.raw(/** @type {{ base: any, changed: any } | null} */ (null));
 	let perf = $state({ msPerYear: 0, fps: 0 });
@@ -448,7 +468,7 @@
 	<div class="viewbar">
 		<div class="views" role="tablist" aria-label="What to show">
 			{#each VIEWS as [id, label]}
-				<button role="tab" aria-selected={view === id} class:on={view === id} onclick={() => (view = /** @type {any} */ (id))}>{label}</button>
+				<button role="tab" aria-selected={view === id} class:on={view === id} onclick={(e) => showView(/** @type {any} */ (id), e.currentTarget)}>{label}</button>
 			{/each}
 		</div>
 	</div>
@@ -462,7 +482,7 @@
 		<ImportsView worlds={[stats?.base?.imports, stats?.changed?.imports]} names={['Base', 'Changed']} sub={[side.base, side.changed]} running={stage !== 'end'} />
 	{:else}
 		<p class="fine sides"><span class="pair"><i class="b"></i>Base: {side.base}</span> <span class="pair"><i class="c"></i>Changed: {side.changed}</span></p>
-		<WorldParams sets={[meta?.params?.base, meta?.params?.changed]} names={['Base', 'Changed']} defaults={meta?.params?.defaults} />
+		<WorldParams sets={[meta?.params?.base, meta?.params?.changed]} names={['Base', 'Changed']} defaults={meta?.params?.defaults} records={catalog} />
 	{/if}
 {/snippet}
 
@@ -472,7 +492,7 @@
 			<header class="top">
 				<p class="eyebrow">Sandbox 8 · blob economy</p>
 				<h1>Does the post-labour economy work out?</h1>
-				<p class="lede">Simulated people, soft blobs, on one hex of land. Nobody is paid to work: they own, through HEARTS that become MIND, and every sale pays its owners. Each experiment changes one rule and runs the same seed side by side. Only physics should limit what they get.</p>
+				<p class="lede">Simulated people, soft blobs, in Sandbox 6’s village of seven hexes, from move-in day. Nobody is paid to work: they own, through HEARTS that become MIND, and every sale pays its owners. Each experiment changes one rule and runs the same seed side by side. Only physics should limit what they get.</p>
 				<div class="tabs" role="tablist">
 					{#each [['experiments', 'Experiments'], ['rules', 'Rules'], ['proof', 'Proof']] as [id, label]}
 						<button role="tab" aria-selected={tab === id} class:on={tab === id} onclick={() => (tab = /** @type {any} */ (id))}>{label}</button>

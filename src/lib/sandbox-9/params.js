@@ -52,9 +52,10 @@ const yesNo = (x) => (x ? 'yes' : 'no');
 /** a list of 12 monthly numbers as "Jan 2.6 · Feb 2.7 · …" */
 const months = (a, f = num) => (Array.isArray(a) && a.length === 12 ? a.map((v, i) => `${MONTHS[i]} ${f(v)}`).join(' · ') : plain(a));
 /** an object or list keyed by good index (or good id) as "food 1.41 · water 100 · …" */
-const byGood = (o, f = num) => {
-	if (Array.isArray(o)) return o.map((v, i) => `${GOOD_NAMES[i] ?? i} ${f(v)}`).join(' · ');
-	if (o && typeof o === 'object') return Object.entries(o).map(([k, v]) => `${GOOD_NAMES[+k] ?? k} ${typeof v === 'number' ? f(v) : plain(v)}`).join(' · ');
+const byGood = (o, f = num, units = []) => {
+	const u = (i) => (units[i] ? ` ${units[i]}` : '');
+	if (Array.isArray(o)) return o.map((v, i) => `${GOOD_NAMES[i] ?? i} ${f(v)}${u(i)}`).join(' · ');
+	if (o && typeof o === 'object') return Object.entries(o).map(([k, v]) => `${GOOD_NAMES[+k] ?? k} ${typeof v === 'number' ? f(v) : plain(v)}${Number.isInteger(+k) ? u(+k) : ''}`).join(' · ');
 	return plain(o);
 };
 /** what a shock is, in a few words */
@@ -116,20 +117,25 @@ export function words(key) {
 /** g: group · label · unit (after the number) · f: a format of its own · hide: never shown (only names a world) */
 export const SETTINGS = {
 	people: { g: 'people', label: 'People', unit: 'people', f: (v) => num(v) },
-	fieldPeople: { g: 'people', label: 'People the village is built for', unit: 'beds and plants sized for', f: (v) => (v == null ? 'the people living there' : num(v)), noUnitIf: (v) => v == null },
+	fieldPeople: { g: 'people', label: 'People the village is built for', f: (v) => (v == null ? '250 a living hex' : `${num(v)} people`) },
 	popGrowth: { g: 'people', label: 'Population growth', f: (v) => (v ? `${pct(v)} a year` : 'none (held constant)') },
 	ownerOnlyShare: { g: 'people', label: 'Owner-only people (their Aven delivers nothing, they start with nothing)', f: pct },
-	landHa: { g: 'people', label: 'Land', unit: 'ha' },
-	springSites: { g: 'people', label: 'Warm-pond sites (fixed by nature)', unit: 'sites' },
-	livingHexes: { g: 'village', label: 'Living hexes', unit: 'hexes' },
-	peoplePerHex: { g: 'village', label: 'People a living hex', unit: 'people' },
-	tower: { g: 'village', label: 'The Tower180 in the centre hex', f: yesNo },
+	landHa: { g: 'people', label: 'Land', f: (v) => (v == null ? 'the village’s seven hexes' : `${num(v)} ha`) },
+	springSites: { g: 'people', label: 'Warm-pond sites a living hex (fixed by nature)', unit: 'sites' },
+	livingHexes: { g: 'village', label: 'Living hexes round the centre hex', unit: 'hexes' },
+	peoplePerHex: { g: 'village', label: 'People a living hex', unit: 'people', f: (v) => num(v) },
+	beds: { g: 'village', label: 'Beds', unit: 'beds' },
+	tower: { g: 'village', label: 'The Tower180 in the centre hex', f: (v) => (v ? 'yes, at its real cost' : 'no: one more Dome120 of utilities and halls') },
+	led: { g: 'food', label: 'LED light in the food domes in the dark months', f: onOff },
+	reserveYears: { g: 'border', label: 'Euros left in the reserve at the founding', f: (v) => (v == null ? 'the catalog’s (see the border constants)' : `${num(v)} years of the village’s food at wholesale`) },
+	exportEurMwh: { g: 'border', label: 'Exported electricity sells at', f: (v) => (v == null ? 'the catalog’s price (see below)' : `€${num(v)} a MWh`) },
+	importPrice: { g: 'border', label: 'Import prices, times the catalog’s', f: (v) => `× ${num(v)}` },
 	weather: { g: 'shocks', label: 'Weather drawn from the seed each month', f: (v) => (v ? 'yes, around the monthly normals' : 'no, the normals every year') },
 	shocks: { g: 'shocks', label: 'Scheduled shocks', f: shocks },
 	forestYield: { g: 'food', label: 'Food forest yield, times the research figure', f: (v) => `× ${num(v)}` },
 	foodSplit: { g: 'coops', label: 'Share of the food forest the second food COOP holds', f: pct },
 	geothermal: { g: 'energy', label: 'Geothermal plant', f: onOff },
-	geoStages: { g: 'energy', label: 'Geothermal stages built', unit: 'stages' },
+	geoStages: { g: 'energy', label: 'Geothermal stages built', f: (v) => `${num(v)} stage${v === 1 ? '' : 's'}` },
 	chipImport: { g: 'border', label: 'Accelerators bought through the euro border', f: (v) => (v === false ? 'no: the city is closed' : 'yes, by the COMPUTE COOPs from the reserve') },
 	law5: { g: 'economy', label: 'Law 5: share of every sale paid at once to the holders', f: pct },
 	melt: { g: 'economy', label: 'Melt of HEARTS and MINDs', f: (v) => `${pct(v)} a year` },
@@ -168,9 +174,35 @@ export const SETTINGS = {
 
 // ── the catalog constants (w.c, from ./primitives.js) ────────────────────────────────────────────────────────────
 export const CATALOG = {
-	scale: { g: 'run', label: 'Field scale (people ÷ 250)', f: (v) => `× ${num(v)}` },
-	need: { g: 'people', label: 'Need a person a day', f: (v) => (Array.isArray(v) ? `food ${num(v[0])} · water ${num(v[1])} L · electricity ${num(v[2])} kWh · ${num(v[3])} bed` : plain(v)) },
-	sat: { g: 'people', label: 'The most a person uses a day (satiation)', f: byGood },
+	scale: { g: 'run', label: 'People ÷ 250 (the old one-hex field)', f: (v) => `× ${num(v)}` },
+	vf: { g: 'village', label: 'Village built, times the plan (people it is built for ÷ 250 a living hex)', f: (v) => `× ${num(v)}` },
+	kcalNeed: { g: 'people', label: 'Food a person needs a day', unit: 'kcal' },
+	proteinNeed: { g: 'people', label: 'Protein a person needs a day', unit: 'g' },
+	waterNeedL: { g: 'people', label: 'Fresh water a person needs a day', unit: 'L' },
+	homeKwhNeed: { g: 'people', label: 'Electricity a person needs at home a day', unit: 'kWh' },
+	need: { g: 'people', label: 'The basic bundle a day (food in units of 1,000 kcal)', f: (v) => (Array.isArray(v) ? `food ${num(v[0])} · water ${num(v[1])} L · electricity ${num(v[2])} kWh · ${num(v[3])} bed` : plain(v)) },
+	sat: { g: 'people', label: 'The most a person uses a day (satiation)', f: (o) => byGood(o, num, ['thousand kcal', 'L', 'kWh', 'bed', 't', 't', 't', 'kWp', 'kg', 'h', 'h']) },
+	foodKcalUnit: { g: 'food', label: 'One unit of food', unit: 'kcal of the village diet' },
+	homeM2PerBed: { g: 'village', label: 'Home a bed (gross floor)', unit: 'm²' },
+	beds: { g: 'village', label: 'Beds', unit: 'beds' },
+	bedsHome: { g: 'village', label: 'Beds in the home domes', unit: 'beds' },
+	landM2: { g: 'people', label: 'The village’s land', f: (v) => `${num(v / 1e4)} ha` },
+	domeKwhYear: { g: 'energy', label: 'Solar cells in the dome glass, the whole village', f: (v) => `${num(v / 1e6)} GWh a year` },
+	battKwh: { g: 'energy', label: 'Batteries', f: (v) => `${num(v / 1000)} MWh` },
+	ghLight: { g: 'food', label: 'Light under the glass and its cells, share of the outside', f: pct },
+	ledKwh: { g: 'food', label: 'LED light: electricity for 1,000 kcal', f: (v) => (v == null ? 'off' : `${num(v)} kWh`) },
+	protOut: { g: 'food', label: 'Protein in 1,000 kcal grown outdoors', unit: 'g' },
+	protIn: { g: 'food', label: 'Protein in 1,000 kcal grown indoors', unit: 'g' },
+	protImp: { g: 'food', label: 'Protein in 1,000 kcal imported', unit: 'g' },
+	ghClimateM2: { g: 'food', label: 'Food domes: climate electricity a m² a day', unit: 'kWh' },
+	eurMwh: { g: 'border', label: 'Exported electricity sells at', f: (v) => `€${num(v)} a MWh` },
+	eur: { g: 'border', label: 'Border prices', f: (o) => (o && typeof o === 'object' ? Object.entries(o).map(([k, x]) => `${{ food: 'food', logs: 'logs', scrap: 'steel scrap', float: 'float glass', cells: 'solar cells', glulam: 'glulam' }[k] ?? k} €${num(x)} ${{ food: 'a 1,000 kcal', cells: 'a kWp' }[k] ?? 'a t'}`).join(' · ') : plain(o)) },
+	reserveYears: { g: 'border', label: 'Euros left in the reserve at the founding', unit: 'years of the village’s food at wholesale' },
+	accountDays: { g: 'border', label: 'A COOP keeps in its euro account', unit: 'days of its imports' },
+	importAhead: { g: 'border', label: 'A COOP buys at the border ahead', unit: 'days of supply' },
+	foodStoreDays: { g: 'founding', label: 'Food in the stores at the founding', unit: 'days' },
+	storesDays: { g: 'founding', label: 'Materials and goods in the stores at the founding', unit: 'days' },
+	scrapBack: { g: 'materials', label: 'Steel that comes back as scrap', f: pct },
 	extras: { g: 'avens', label: 'How an Aven splits spending above the basics', f: (v) => byGood(v, pct) },
 	rateR: { g: 'economy', label: 'Aven rate card', unit: 'R an Aven hour' },
 	rentIdx: { g: 'economy', label: 'Ground-rent index', f: (v) => `× ${num(v)}` },
@@ -178,6 +210,7 @@ export const CATALOG = {
 	p0base: { hide: true },
 	p0g: { hide: true },
 	domeKwhPerBed: { g: 'energy', label: 'Solar cells on the dome glass, a bed', unit: 'kWh a year' },
+	geoMwhYear: { g: 'energy', label: 'Geothermal a year', unit: 'MWh' },
 	kwhPerKwp: { g: 'energy', label: 'Field solar', unit: 'kWh a kWp a year' },
 	geoKw: { g: 'energy', label: 'Geothermal, net electric a stage', unit: 'kW' },
 	geoQin: { g: 'energy', label: 'Geothermal brine heat into the ORC a stage', unit: 'kW' },
@@ -197,12 +230,12 @@ export const CATALOG = {
 	caught: { g: 'water', label: 'Share of the rain on roofs caught', f: pct },
 	roofPerBed: { g: 'water', label: 'Roof a bed', unit: 'm²' },
 	rechargeL: { g: 'water', label: 'Groundwater recharge', unit: 'L a day' },
-	forest100: { g: 'food', label: 'Food forest at full yield', unit: 'kg a m² a year' },
+	forest100: { g: 'food', label: 'Food forest outdoors at maturity', f: (v) => `${num(v * 1000)} kcal a m² a year (${num(v * 10)} M kcal a ha)` },
 	forestRot: { g: 'food', label: 'Food store lost a day', f: pct },
-	ghYield: { g: 'food', label: 'Indoor food forest yield', unit: 'kg a m² a year' },
-	ghHeatM2: { g: 'food', label: 'Indoor food forest heat', unit: 'kWh a m² a year' },
+	ghYield: { g: 'food', label: 'Food forest under glass at maturity', f: (v) => `${num(v * 1000)} kcal a m² a year (${num(v * 10)} M kcal a ha)` },
+	ghHeatM2: { g: 'food', label: 'Food domes: heat a m² a year', unit: 'kWh' },
 	timberT: { g: 'materials', label: 'Timber land yield', unit: 't a m² a year', f: (v) => `${num(v * 1e4)} t a ha a year`, noUnit: true },
-	timberRamp: { g: 'materials', label: 'New timber land, share of full yield in years 1–4', f: (v) => (Array.isArray(v) ? v.map(pct).join(' · ') : plain(v)) },
+	timberRamp: { g: 'materials', label: 'New timber land, share of full yield by year since planting', f: (v) => (Array.isArray(v) ? v.map(pct).join(' · ') : plain(v)) },
 	standYears: { g: 'materials', label: 'Years of wood that can stand uncut', unit: 'years' },
 	oreT: { g: 'materials', label: 'Iron ore a pit', unit: 't a year' },
 	oreMax: { g: 'materials', label: 'Iron ore pits', unit: 'pits' },
@@ -213,7 +246,7 @@ export const CATALOG = {
 	springHeat: { g: 'energy', label: 'Warm-pond heat a bather-hour', unit: 'kWh', f: (v) => months(v) },
 	standingKwhT: { g: 'energy', label: 'A building’s standing electricity a tonne built', unit: 'kWh a day' },
 	chipKwh: { g: 'border', label: 'Exported electricity that buys one accelerator', unit: 'kWh' },
-	chipEur: { g: 'border', label: 'Price of an accelerator', unit: '€' },
+	chipEur: { g: 'border', label: 'Price of an accelerator', f: (v) => `€${num(v)}` },
 	eurPerKwh: { g: 'border', label: 'Exported electricity earns', f: (v) => `€${num(v * 1000)} a MWh` },
 	lineKwhDay: { g: 'border', label: 'Export line', unit: 'kWh a day' },
 	chipsSpare: { g: 'border', label: 'Spare accelerators in each COMPUTE COOP at the founding', unit: 'accelerators' },
@@ -245,7 +278,8 @@ export function paramRows(sets, defaults = null) {
 		};
 		const text = values.map(fmt);
 		const raw = values.map((v) => JSON.stringify(v ?? null));
-		const diff = raw.some((r) => r !== raw[0]);
+		// marked changed only where the worlds differ as shown (a difference below the shown digits is not marked)
+		const diff = raw.some((r) => r !== raw[0]) && text.some((t) => t !== text[0]);
 		const def = kind === 'setting' && defaults && key in defaults ? JSON.stringify(defaults[key] ?? null) : null;
 		const set = def != null && raw.some((r) => r !== def);
 		// a record with a key that says nothing (row1, row2 …) is named by its source
@@ -348,7 +382,7 @@ const tenthOf = (t) =>
 	t ? { kcal: t.kcal, protein: t.protein, homeM2: t.homeM2, waterL: t.waterL, kwh: t.homeKwh ?? t.kwh, avenH: t.avenH, goodsKg: t.goodsKgYear ?? t.goodsKg, pondH: t.pondHWeek ?? t.pondH, short: t.shortPeople ?? t.short } : null;
 const ENERGY_MADE = { solar: 'solar', geothermal: 'geothermal', battery: 'from the battery' };
 const ENERGY_WENT = { basics: 'basics at home', running: 'works and extras', building: 'building', rd: 'R&D', export: 'exported', storage: 'into storage', curtailed: 'curtailed', losses: 'losses' };
-const GOOD_WORDS = { food: 'Food', water: 'Water', energy: 'Electricity', bed: 'Homes', goods: 'Goods', spring: 'Warm ponds', compute: 'Aven services', glulam: 'Glulam', steel: 'Steel', glass: 'Glass', panel: 'Solar panels' };
+const GOOD_WORDS = { food: 'Food', water: 'Water', energy: 'Electricity', bed: 'Homes', goods: 'Goods', spring: 'Warm ponds', compute: 'Aven services', glulam: 'Glulam', wood: 'Glulam', steel: 'Steel', glass: 'Glass', panel: 'Solar panels', panels: 'Solar panels' };
 /** a year of village totals in the page's shape */
 function villageOf(v) {
 	if (!v) return null;
@@ -400,6 +434,8 @@ export const BORDER_ITEMS = {
 	glulam: { label: 'Glulam', unit: 't', q: 't' },
 	logs: { label: 'Logs', unit: 't', q: 't' },
 	steel: { label: 'Steel', unit: 't', q: 't' },
+	scrap: { label: 'Steel scrap', unit: 't', q: 't' },
+	float: { label: 'Float glass', unit: 't', q: 't' },
 	glass: { label: 'Glass', unit: 't', q: 't' },
 	soda: { label: 'Soda ash', unit: 't', q: 't' },
 	panels: { label: 'Solar panels', unit: 'kWp', q: 'kwp' },
@@ -441,17 +477,21 @@ export function importsOf(B, F, V, marks = {}, L = null) {
 			exportEur: b.exportEur,
 			exportKwh: b.exportKwh,
 			reserveEur: b.reserveEur,
+			shortDays: b.importShortDays ?? null,
 			fedSelf: !!b.fedSelf,
 			exportsCover: !!b.exportsCover
 		};
 	});
 	const first = (k) => years.find((r) => r[k] && !r.partial)?.y ?? years.find((r) => r[k])?.y ?? null;
-	const neg = years.find((r) => Number.isFinite(r.reserveEur) && r.reserveEur <= 0);
+	// the first year the border could not pay for what was needed (days the reserve had no euros for an import), or
+	// the reserve stood at nothing
+	const neg = years.find((r) => r.shortDays > 0) ?? years.find((r) => Number.isFinite(r.reserveEur) && r.reserveEur <= 0);
 	return {
 		founding: F
 			? {
-					rows: (F.rows ?? []).map((r) => ({ id: r.id, label: r.label, t: r.t, kwp: r.kwp, n: r.n, eur: r.eur })),
-					t: (F.rows ?? []).reduce((a, r) => a + (Number.isFinite(r.t) ? r.t : 0), 0),
+					rows: (F.rows ?? []).map((r) => ({ id: r.id, label: r.label, t: r.t, kwp: r.kwp, n: r.n, kcal: r.kcal, ha: r.ha, m2: r.m2, m3: r.m3, eur: r.eur, group: r.group })),
+					t: F.tonnes ?? (F.rows ?? []).reduce((a, r) => a + (Number.isFinite(r.t) ? r.t : 0), 0),
+					builtEur: F.builtEur ?? null,
 					eur: F.totalEur ?? (F.rows ?? []).reduce((a, r) => a + (Number.isFinite(r.eur) ? r.eur : 0), 0),
 					rowsEur: (F.rows ?? []).reduce((a, r) => a + (Number.isFinite(r.eur) ? r.eur : 0), 0),
 					note: F.foodStoreDays != null ? `On day 0 the food stores hold ${num(F.foodStoreDays)} days of imported food.` : ''

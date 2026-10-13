@@ -19,7 +19,8 @@ import { hooks, track, summarize } from './experiments.js';
 
 const Y = 365;
 const SEEDS = [20261012, 1, 2, 3, 4];
-const B = { seed: 20261012, people: 250 };
+/** every run has the village's 1,500 people; a scenario that tests another number changes this one knob and says so */
+const B = { seed: 20261012, people: 1500 };
 const RULE_PRICES = ['forward', 'mark0', 'primer'];
 
 /** a run: settings (over the defaults) and years; its key is its identity, so shared runs run once */
@@ -31,7 +32,7 @@ const run = (config, years, label) => {
 const describe = (c) => {
 	const ks = Object.keys(c).filter((k) => k !== 'seed' && k !== 'people');
 	const s = ks.map((k) => `${k} ${typeof c[k] === 'object' ? JSON.stringify(c[k]) : c[k]}`).join(', ');
-	return (c.people && c.people !== 250 ? `${c.people} people` + (s ? ', ' : '') : '') + (s || (c.seed && c.seed !== B.seed ? `seed ${c.seed}` : 'base'));
+	return (c.people && c.people !== 1500 ? `${c.people.toLocaleString('en-US')} people` + (s ? ', ' : '') : '') + (s || (c.seed && c.seed !== B.seed ? `seed ${c.seed}` : 'base'));
 };
 const base30 = run({}, 30, 'base (seed 20261012)');
 
@@ -147,8 +148,8 @@ export const SCENARIOS = [
 		name: 'newcomers (laborde)',
 		paper: '§9.3; P2 for people who arrive later',
 		stress: 'P2 strict for an owner-only newcomer',
-		claim: 'Five owner-only people (no Aven output, nothing held) join a settled city of 100 in year 11: they are never short, and their dividends alone pay their basic bundle within 120 days of joining, as the genesis cohort’s do.',
-		runs: [run({ people: 100, newcomers: { day: 10 * Y, n: 5 } }, 20, '100 people, 5 owner-only newcomers in year 11')],
+		claim: 'Thirty owner-only people (no Aven output, nothing held) join the settled village of 1,500 in year 11: they are never short, and their dividends alone pay their basic bundle within 120 days of joining, as the genesis cohort’s do.',
+		runs: [run({ newcomers: { day: 10 * Y, n: 30 } }, 20, '1,500 people, 30 owner-only newcomers in year 11')],
 		judge(R, runs) {
 			const s = R[runs[0].key], nc = s.newcomers;
 			if (!nc.ratioByYear) return { pass: false, numbers: { newcomers: nc }, takeaway: 'The run ended before the newcomers joined.', evidence: `the run is ${f0(s.days)} days long; the newcomers join on day ${10 * Y}` };
@@ -324,7 +325,7 @@ export const SCENARIOS = [
 		paper: '§9.3, §11.4, sim §6.1',
 		stress: 'P1 and P2 on day 1',
 		claim: 'Bootstrap: 0 person-days short from day 0. Without it (empty pools on day 0), most people are short at first (the paper: 94 %). An empty city at 25 % of capacity: the badge shows a physical limit, never MIND.',
-		runs: [base30, run({ bootstrap: false }, 2, 'no bootstrap'), run({ fieldPeople: 62.5 }, 10, 'empty city: capital for 62.5 people, 250 people')],
+		runs: [base30, run({ bootstrap: false }, 2, 'no bootstrap'), run({ fieldPeople: 375 }, 10, 'empty village: capital for 375 people, 1,500 people')],
 		judge(R, runs) {
 			const a = R[runs[0].key], b = R[runs[1].key], c = R[runs[2].key];
 			return {
@@ -340,7 +341,7 @@ export const SCENARIOS = [
 		name: 'pop-growth',
 		paper: '§5.2, sim §6.4, §9.3',
 		stress: 'P1 and P2 for newcomers; P3 on fixed land',
-		claim: '250 people growing 2 % a year on fixed land: newcomers (first 3 years) are never short, and ground rent rises.',
+		claim: '1,500 people growing 2 % a year on the village’s fixed land (this scenario changes the population): newcomers (first 3 years) are never short, and ground rent rises.',
 		runs: [base30, run({ popGrowth: 0.02, maxYears: 30 }, 30)],
 		judge(R, runs) {
 			const a = R[runs[0].key], s = R[runs[1].key];
@@ -348,7 +349,7 @@ export const SCENARIOS = [
 			return {
 				pass: s.newcomers.short === 0 && r1 > ra,
 				numbers: { N: s.N, newcomerPD: s.newcomers.pd, newcomerShort: s.newcomers.short, shortPD: s.shortPD, shortBy: s.shortBy, shortByLimit: s.shortByLimit, rentYear1: r0, rentEnd: r1, rentBase: ra, mindPP: s.mindPP, gini: s.gini },
-				takeaway: `The village grew from 250 to ${s.N}. Newcomers were short on ${f0(s.newcomers.short)} of ${f0(s.newcomers.pd)} person-days in their first three years; everyone, ${f0(s.shortPD)}. Ground rent went from ${r0.toExponential(2)} to ${r1.toExponential(2)} R a m² a day.`,
+				takeaway: `The village grew from 1,500 to ${f0(s.N)}. Newcomers were short on ${f0(s.newcomers.short)} of ${f0(s.newcomers.pd)} person-days in their first three years; everyone, ${f0(s.shortPD)}. Ground rent went from ${r0.toExponential(2)} to ${r1.toExponential(2)} R a m² a day.`,
 				evidence: `short days by limit: ${JSON.stringify(s.shortByLimit)}; constant population rent ${ra.toExponential(2)}`
 			};
 		}
@@ -506,8 +507,8 @@ export const SCENARIOS = [
 		name: 'binding-limit',
 		paper: 'world model 5.5',
 		stress: 'P1 in winter; P3 for growth',
-		claim: '50, 100 and 250 people on one hex built for 250, without and with the geothermal stage: every short basic day is bound by a physical limit (never MIND), and fewer people are short less.',
-		runs: [50, 100, 250].flatMap((n) => [run({ people: n, fieldPeople: 250, geothermal: false }, 30, `${n} people, no geothermal`), n === 250 ? base30 : run({ people: n, fieldPeople: 250 }, 30, `${n} people, geothermal`)]),
+		claim: '300, 600 and 1,500 people in the village built for 1,500 (this scenario changes the population), without and with the geothermal stages: every short basic day is bound by a physical limit (never MIND), and fewer people are short less.',
+		runs: [300, 600, 1500].flatMap((n) => [run({ people: n, geothermal: false }, 30, `${n.toLocaleString('en-US')} people, no geothermal`), n === 1500 ? base30 : run({ people: n }, 30, `${n} people, geothermal`)]),
 		judge(R, runs) {
 			const rows = runs.map((r) => {
 				const s = R[r.key];
@@ -575,8 +576,8 @@ export const SCENARIOS = [
 		name: 'world-1',
 		paper: 'plan: World 1',
 		stress: 'P1–P3 at game size',
-		claim: 'Ten citizens on a hex sized for them, 3 years: Proposition 3 holds and both ledgers close.',
-		runs: [run({ people: 10 }, 3, '10 people')],
+		claim: 'Ten citizens in a village sized for them (this scenario changes the population and the village), 3 years: Proposition 3 holds and both ledgers close.',
+		runs: [run({ people: 10, fieldPeople: 10 }, 3, '10 people, a village for 10')],
 		judge(R, runs) {
 			const s = R[runs[0].key];
 			const leaks = s.ledger.mindLeaks.length + s.ledger.matterLeaks.length + s.ledger.energyLeaks.length;
@@ -593,8 +594,8 @@ export const SCENARIOS = [
 		name: 'prop3-phase',
 		paper: 'Mark-0’s method',
 		stress: 'where each part breaks',
-		claim: 'A grid of melt (3, 7, 12 %) and Law 5 share (0, 10, 20, 40 %), 100 people, 10 years: the paper’s point (7 %, 20 %) and its four neighbours (3 % and 12 % melt; 10 % and 40 % share) keep Proposition 3. A share of 0 pays no dividends, so it cannot pass the strict test; it marks the edge.',
-		runs: PHASE.melt.flatMap((m) => PHASE.law5.map((l) => run({ people: 100, melt: m, law5: l }, 10, `melt ${pct(m, 0)}, Law 5 ${pct(l, 0)}`))),
+		claim: 'A grid of melt (3, 7, 12 %) and Law 5 share (0, 10, 20, 40 %), 1,500 people, 10 years: the paper’s point (7 %, 20 %) and its four neighbours (3 % and 12 % melt; 10 % and 40 % share) keep Proposition 3. A share of 0 pays no dividends, so it cannot pass the strict test; it marks the edge.',
+		runs: PHASE.melt.flatMap((m) => PHASE.law5.map((l) => run({ melt: m, law5: l }, 10, `melt ${pct(m, 0)}, Law 5 ${pct(l, 0)}`))),
 		judge(R, runs) {
 			const grid = runs.map((r) => ({ melt: r.config.melt, law5: r.config.law5, pass: R[r.key].prop3.pass, P1: R[r.key].prop3.P1.pass, P2: R[r.key].prop3.P2.pass, P3: R[r.key].prop3.P3.pass, strictFrom: R[r.key].prop3.P2.strict.holdsEveryDayFrom, cause: causeOf(R[r.key]) }));
 			const at = (m, l) => grid.find((g) => g.melt === m && g.law5 === l);
@@ -632,9 +633,9 @@ export const SCENARIOS = [
 		id: 'S03',
 		name: 'small-cities',
 		paper: 'Proposition 3 at the page’s size',
-		stress: 'P1–P3 with 50 and 100 people, and 100 people through a year 30 % drier',
-		claim: 'Proposition 3 holds for 50 and 100 people on a hex sized for them, and for 100 people through a year with 30 % less rain (year 4), over 30 years.',
-		runs: [run({ people: 50 }, 30, '50 people'), run({ people: 100 }, 30, '100 people'), run({ people: 100, shocks: [{ kind: 'drought', day: 3 * Y, days: Y, factor: 0.7 }] }, 30, '100 people, a year 30 % drier')],
+		stress: 'P1–P3 with 300 and 600 people in a village sized for them, and 1,500 people through a year 30 % drier',
+		claim: 'Proposition 3 holds for 300 and 600 people in a village sized for them (this scenario changes the population and the village), and for the 1,500 through a year with 30 % less rain (year 4), over 30 years.',
+		runs: [run({ people: 300, fieldPeople: 300 }, 30, '300 people, a village for 300'), run({ people: 600, fieldPeople: 600 }, 30, '600 people, a village for 600'), run({ shocks: [{ kind: 'drought', day: 3 * Y, days: Y, factor: 0.7 }] }, 30, '1,500 people, a year 30 % drier')],
 		judge(R, runs) {
 			const rows = runs.map((r) => {
 				const s = R[r.key], p = s.prop3;
@@ -653,8 +654,8 @@ export const SCENARIOS = [
 		name: 'seed-ensemble',
 		paper: 'Proposition 3, P1 and P2, beyond the five base seeds',
 		stress: 'P1 and P2 on seeds chosen before the run, at the page’s size and the base size',
-		claim: 'P1 and P2 (strict and normal) hold on every world of an ensemble fixed before the run: seeds 1 to 9 with 100 people, and seeds 5 to 9 with 250 people (seeds 1 to 4 are in S00), each over 60 years. P3 is reported for each world, not judged here (S00 judges it).',
-		runs: [...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((seed) => run({ people: 100, seed }, 60, `100 people, seed ${seed}`)), ...[5, 6, 7, 8, 9].map((seed) => run({ seed }, 60, `250 people, seed ${seed}`))],
+		claim: 'P1 and P2 (strict and normal) hold on every world of an ensemble fixed before the run: seeds 5 to 9 with the 1,500 people (seeds 1 to 4 are in S00), each over 60 years. P3 is reported for each world, not judged here (S00 judges it).',
+		runs: [5, 6, 7, 8, 9].map((seed) => run({ seed }, 60, `1,500 people, seed ${seed}`)),
 		judge(R, runs) {
 			const rows = runs.map((r) => {
 				const s = R[r.key], p = s.prop3;
@@ -745,7 +746,7 @@ export function runSpecs(ids) {
 		if (ids && !ids.includes(s.id)) continue;
 		for (const r of s.runs) if (!seen.has(r.key)) seen.set(r.key, r);
 	}
-	return [...seen.values()].sort((a, b) => b.years * (b.config.people ?? 250) ** 0.3 - a.years * (a.config.people ?? 250) ** 0.3);
+	return [...seen.values()].sort((a, b) => b.years * (b.config.people ?? 1500) ** 0.3 - a.years * (a.config.people ?? 1500) ** 0.3);
 }
 
 /** run one world of the suite to its end and summarize it */

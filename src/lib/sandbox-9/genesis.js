@@ -2,17 +2,20 @@
 /**
  * SANDBOX 8 · GENESIS — the settings (one knob per experiment) and the world on day 0.
  *
- * The base world is one living hex of our village design, settled ten years before day 0: its food forest is in its
- * tenth year, the great dome of 248 and a dome of 32 stand, the dome glass carries see-through cells, the hex has its
- * sixth of the village centre's geothermal plant, and every good has two competing COOPs. Money starts at zero:
- * the first MIND is made on day 0, when everyone's first HEARTS convert (the bootstrap of paper §11.4: each Aven
- * invests its first HEARTS in the COOPs it will buy from, and the tenth of every treasury half seeds the pools).
+ * The base world is Sandbox 6's village of 1,500 (round 3): six living hexes round a centre hex, no tower (./village.js
+ * reads it from src/lib/sandbox-7). Day 0 is move-in: the village was built before it from imports paid in euros (the
+ * founding bill, ./records.js foundingBill), its outdoor food forest and woodland are planted that day, its food
+ * domes too, its stores hold food and materials bought outside, and the euros left over sit in the euro reserve. Every
+ * good has two competing COOPs. Money starts at zero: the first MIND is made on day 0, when everyone's first HEARTS
+ * convert (the bootstrap of paper §11.4).
  *
- * A smaller field for the page: `people` below 250 scales every plant, plot and store by people / 250, so the hex is
- * the same world in miniature.
+ * `fieldPeople` sizes the village for another number of people (every plant, plot and store scaled by fieldPeople ÷
+ * 1,500); `people` below it leaves beds empty.
  */
 import { exp, pow } from './dmath.js';
-import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T } from './primitives.js';
+import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, FOOD as FOODCAT } from './primitives.js';
+import { OUTDOOR, INDOOR, outdoorShare, indoorShare } from './food.js';
+import { villageFacts } from './village.js';
 import { BED, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOOD_INDEX, GOODS_, MAX_COOPS, NX, SPRING, WATER, LIMIT } from './consts.js';
 import { gauss, rnd } from './rng.js';
 import { indexPools, newPool } from './pools.js';
@@ -20,15 +23,28 @@ import { indexPools, newPool } from './pools.js';
 /** every setting of a world; an experiment changes one */
 export const DEFAULTS = {
 	seed: 20261012,
-	/** people at the start (250 for the proofs; the page may use fewer on a proportionally smaller field) */
-	people: 250,
-	/** the people the field's starting capital (plants, plots, stores, land) is sized for; null = `people` (a smaller
-	 * field for fewer people). Set it to put more or fewer people on the same hex (world model 5.5, B14, B29) */
+	/** people living in the village (1,500 in every run, Samuel 2026-10-13; a scenario that tests another number changes
+	 * this one knob and says so) */
+	people: 1500,
+	/** the people the village is built for; null = 250 a living hex. Set it to build the village for more or fewer
+	 * people than live in it (every plant, plot and store scaled by fieldPeople ÷ (250 × livingHexes)) */
 	fieldPeople: null,
-	/** the hex's land, ha */
-	landHa: 45,
-	/** the food forest's yield, times the catalog's (world model call 11: the riskiest number; the suite tests 0.5 and 1.5) */
+	/** living hexes round the centre hex (Sandbox 6's village: six alike) */
+	livingHexes: 6,
+	/** the Tower180 in the centre hex (false, default: one more Dome120 of utilities and community halls instead) */
+	tower: false,
+	/** the village's land, ha (null: Sandbox 6's seven hexes, 268.6 ha) */
+	landHa: null,
+	/** the food forests' yields, times the catalog's (./food.js; the suite tests 0.5 and 1.5) */
 	forestYield: 1,
+	/** LED light in the food domes in the dark months (needs food-research.md's kWh per 1,000 kcal) */
+	led: false,
+	/** the euros left in the euro reserve at founding, in years of the village's food at wholesale (BORDER.reserveYears) */
+	reserveYears: null,
+	/** the price the line sells electricity at, € a MWh (null: CHIPS.eurPerMwh, 87.5) */
+	exportEurMwh: null,
+	/** the border's prices of what the village buys, times the catalog's (BORDER, CHIPS) */
+	importPrice: 1,
 	/** each month's sun and rain drawn from the seed around the normals (true), or the normals every year (false) */
 	weather: true,
 	/** the euro border for accelerators (paper §11.4, as COOPs only): a COMPUTE COOP buys electricity from the energy
@@ -41,7 +57,7 @@ export const DEFAULTS = {
 	/** this hex's share of the village geothermal plant: on or off, and its stages */
 	geothermal: true,
 	geoStages: 1,
-	/** warm ponds at the hot spring, fixed by nature (RESOURCES.spring.sites: 2); the experiments double it */
+	/** warm ponds a living hex, fixed by nature (RESOURCES.spring.sites: 2); the experiments double it */
 	springSites: 2,
 	/** Law 5: the share of every sale paid at once to the seller's holders */
 	law5: 0.2,
@@ -55,9 +71,12 @@ export const DEFAULTS = {
 	/** a basic in short supply is shared by 'equal' caps (everyone's need before anyone's extras; the default) or in
 	 * 'proportion' to the orders (world model 4.3 step 7; B33 compares them) */
 	basicRation: 'equal',
-	/** with two food COOPs, the share of the food forest GREEN holds beside its growing dome (0: GREEN holds only the
-	 * growing dome, as world model 4.2 lists it) */
-	foodSplit: 0.4,
+	/** with two food COOPs, the share of the food forest GREEN holds (0: GREEN holds only food domes, as world model
+	 * 4.2 lists it) */
+	foodSplit: 0.5,
+	/** with two food COOPs, the share of the food domes GREEN holds (AGRI the rest): half each by default, so the two
+	 * sellers have the same costs (the domes grow food at several times the forest's cost a unit) */
+	domeSplit: 0.5,
 	/** competing COOPs per good at genesis: 1, 2 or 4 */
 	coopsPerGood: 2,
 	/** per-good exceptions to coopsPerGood, by good id, e.g. { food: 1 } (null: none) */
@@ -186,17 +205,37 @@ export function techDef(key) {
 
 /** the plain numbers the engine uses every day */
 function constants(cfg) {
-	const s = (cfg.fieldPeople ?? cfg.people) / 250;
 	const E = ENERGY_SOURCES, R = RESOURCES;
+	const V = villageFacts(cfg.livingHexes ?? 6, !!cfg.tower);
+	// hex shares of the village as built (the catalog's per-hex numbers, smallest builds, geothermal stages, the line):
+	// it follows the village, not the people who live in it
+	const s = (cfg.fieldPeople ?? 250 * V.livingHexes) / 250;
+	// the village is built for fieldPeople (null: 250 a living hex); vf scales Sandbox 6's numbers to it
+	const vf = (cfg.fieldPeople ?? 250 * V.livingHexes) / (250 * V.livingHexes);
 	const idx = cfg.rateIndexed === false ? 1 : cfg.heartsPerDay / 24;
 	// the geothermal stage's heat balance: heat into the ORC = gross electricity + condenser heat + losses; pumps and fans
 	// take a fixed part of the gross (./energy.js harvest)
 	const geoQin = E.egs.kwHeatIntoOrc.v, geoGross0 = E.egs.netKwElectric.v / (1 - E.egs.pumpsShareOfGross.v);
+	const landM2 = (cfg.landHa != null ? cfg.landHa * 1e4 : V.landM2) * vf;
+	const bedsHome = V.beds.dome80 + V.beds.dome40;
+	const beds = V.beds.total;
+	const ip = cfg.importPrice ?? 1;
+	const eurMwh = cfg.exportEurMwh ?? CHIPS.eurPerMwh.v;
 	return {
 		scale: s,
+		vf,
+		village: V,
 		need: [PERSON.food.v, PERSON.water.v, PERSON.energy.v, PERSON.bed.v],
 		sat: { [FOOD]: PERSON.satiation.food.v, [WATER]: PERSON.satiation.water.v, [ENERGY]: PERSON.satiation.energy.v, [BED]: 1, [GOODS_]: PERSON.satiation.goods.v, [SPRING]: PERSON.satiation.spring.v, [COMPUTE]: PERSON.satiation.compute.v },
 		extras: PERSON.extrasShare.v,
+		// food: a unit is 1,000 kcal of the diet; what a person needs, in kcal and g of protein
+		foodKcalUnit: FOODCAT.unitKcal.v,
+		kcalNeed: FOODCAT.kcalNeed.v,
+		proteinNeed: FOODCAT.proteinNeed.v,
+		waterNeedL: PERSON.water.v,
+		homeKwhNeed: PERSON.energy.v,
+		// m² of home (gross floor) a bed in the home domes (Sandbox 6: Dome80 2,484 m² for 40, Dome40 682 m² for 10)
+		homeM2PerBed: V.homes.gfa / bedsHome,
 		// the Aven rate card: in R, indexed to the HEARTS issued a day by default (rateIndexed), so it doubles when HEARTS double
 		rateR: AVEN_RATE_R.v * idx,
 		rentIdx: idx,
@@ -205,7 +244,7 @@ function constants(cfg) {
 		p0: { ...GENESIS_PRICE_R.v },
 		p0base: GENESIS_PRICE_R.v,
 		p0g: Object.values(GENESIS_PRICE_R.v),
-		domeKwhPerBed: E.domeSolar.kwhYearPerGreatDome.v / 248,
+		domeKwhYear: V.solarKwh * vf,
 		kwhPerKwp: E.fieldSolar.kwhPerKwpYear.v,
 		geoKw: E.egs.netKwElectric.v,
 		geoQin,
@@ -218,17 +257,37 @@ function constants(cfg) {
 		geoUptime: E.egs.uptime.v,
 		geoMax: E.egs.maxStages.v,
 		battRT: E.battery.roundTrip.v,
+		battKwh: V.batteryKwh * vf,
 		cop: E.heatPumpCop.v,
 		copMonth: MONTHLY.cop.v,
 		battFade: E.battery.fadePerYear.v,
 		rainMm: R.rain.mmYear.v,
 		caught: R.rain.caught.v,
-		roofPerBed: R.rain.roofPerBed.v,
-		rechargeL: ((R.groundwater.rechargeMm.v / 1000) * cfg.landHa * 1e4 * s * 1000) / 365,
-		forest100: R.foodForest.kgYearAt100.v * (cfg.forestYield ?? 1),
+		// rain off the home domes' footprint a bed (the food domes' roofs count by their m²)
+		roofPerBed: V.homes.footM2 / bedsHome,
+		landM2,
+		rechargeL: ((R.groundwater.rechargeMm.v / 1000) * landM2 * 1000) / 365,
+		// the food forests, in units of 1,000 kcal that reach a store (after the harvest's losses in storage, processing
+		// and the kitchen): outdoors a m² a year at maturity, under glass at maturity (./food.js)
+		forest100: ((OUTDOOR.kcalM2Year.v * (1 - OUTDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
+		forestGrown: (OUTDOOR.kcalM2Year.v / 1000) * (cfg.forestYield ?? 1),
+		forestLoss: OUTDOOR.loss.v,
 		forestRot: R.foodForest.rotPerDay.v,
-		ghYield: R.greenhouse.kgM2Year.v,
-		ghHeatM2: R.greenhouse.heatKwhPerM2Year.v,
+		ghYield: ((INDOOR.kcalM2Year.v * (1 - INDOOR.loss.v)) / 1000) * (cfg.forestYield ?? 1),
+		ghGrown: (INDOOR.kcalM2Year.v / 1000) * (cfg.forestYield ?? 1),
+		ghLoss: INDOOR.loss.v,
+		ghLight: INDOOR.light.v,
+		// LED light (setting led): kWh a unit that reaches the store (400 kWh a unit grown)
+		led: !!cfg.led,
+		ledKwh: cfg.led ? INDOOR.ledKwhPer1000.v / (1 - INDOOR.loss.v) : null,
+		protOut: OUTDOOR.proteinPer1000.v,
+		protIn: INDOOR.proteinPer1000.v,
+		protImp: BORDER.foodProtein.v,
+		// the food domes' heat a m² a year at 24 °C with a planted canopy (food-research.md §4; our dome model gives
+		// V.foodDomes.heat / V.indoorFoodM2, the low end) and climate a m² a day (Sandbox 6's food domes)
+		ghHeatM2: INDOOR.heatKwhM2Year.v,
+		ghHeatModelM2: V.foodDomes.heat / V.indoorFoodM2,
+		ghClimateM2: V.foodDomes.climate / V.indoorFoodM2 / 365,
 		timberT: R.timberLand.tHaYear.v / 1e4,
 		timberRamp: R.timberLand.ramp.v,
 		standYears: R.timberLand.standingYears.v,
@@ -239,21 +298,56 @@ function constants(cfg) {
 		sandTPit: R.sand.tPerPit.v,
 		sandMax: R.sand.pitsMax.v * s,
 		springHeat: R.spring.heatKwhPerHour.v,
-		chipKwh: (CHIPS.eurPerChip.v / CHIPS.eurPerMwh.v) * 1000,
-		chipEur: CHIPS.eurPerChip.v,
-		eurPerKwh: CHIPS.eurPerMwh.v / 1000,
-		lineKwhDay: CHIPS.lineKw.v * 24,
+		chipKwh: ((CHIPS.eurPerChip.v * ip) / eurMwh) * 1000,
+		chipEur: CHIPS.eurPerChip.v * ip,
+		eurPerKwh: eurMwh / 1000,
+		eurMwh,
+		lineKwhDay: CHIPS.lineKw.v * s * 24,
 		chipsSpare: CHIPS.spare.v,
+		// the border's prices, € (BORDER): food a unit, logs, scrap and float glass a t, cells a kWp
+		eur: { food: BORDER.foodEur.v * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatEur.v * ip, cells: BORDER.cellsEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip },
+		accountDays: BORDER.accountDays.v,
+		importAhead: BORDER.importAhead.v,
+		foodStoreDays: BORDER.foodStoreDays.v,
+		storesDays: BORDER.storesDays.v,
+		reserveYears: cfg.reserveYears ?? BORDER.reserveYears.v,
+		scrapBack: 0.9,
 		standingKwhT: (STANDING_MWH_T.v * 1000) / 365,
 		K0: LEARNING.searchRef.v,
 		kDecay: LEARNING.decay.v,
 		replant: LEARNING.replant.v,
-		learnRates: Object.fromEntries(Object.entries(LEARNING.rates).map(([k, r]) => [k, r.v]))
+		learnRates: Object.fromEntries(Object.entries(LEARNING.rates).map(([k, r]) => [k, r.v])),
+		beds,
+		bedsHome
 	};
 }
 
-/** a food forest's share of its full harvest by age in years (src/lib/sandbox-6/food.js forestShare) */
-export const forestShareOf = (ageYears) => Math.min(1.5, 0.1 * (Math.floor(Math.max(0, ageYears)) + 1));
+/**
+ * The village's own buildings in the recipes (./village.js): a bed carries its home dome and its share of the halls
+ * kept up with the homes, a m² of the food forest under glass its share of the food domes, a t a year of the timber,
+ * steel and glass works its factory dome. Climate and heat a bed from the same domes.
+ */
+function villageTech(w) {
+	const V = w.c.village, T = w.tech;
+	const bedsHome = V.beds.dome80 + V.beds.dome40;
+	const per = (parts, units) => ({ wood: parts.wood / units, steel: parts.steel / units, glass: parts.glass / units });
+	const homeParts = { wood: V.homes.wood + V.halls.wood, steel: V.homes.steel + V.halls.steel, glass: V.homes.glass + V.halls.glass };
+	Object.assign(T.home.build, per(homeParts, V.beds.total));
+	T.home.kwh = (V.homes.climate + V.halls.climate) / V.beds.total / 365;
+	T.home.heat = (V.homes.heat + V.halls.heat) / V.beds.total / 365;
+	T.home.land = V.homes.footM2 / bedsHome;
+	Object.assign(T.greenhouse.build, per(V.foodDomes, V.indoorFoodM2));
+	const fr = V.factoryRun;
+	const tw = { wood: V.works.timber.wood + V.works.bamboo.wood, steel: V.works.timber.steel + V.works.bamboo.steel, glass: V.works.timber.glass + V.works.bamboo.glass };
+	Object.assign(T.timber.build, per(tw, fr.timber.t + fr.bamboo.t));
+	Object.assign(T.steel.build, per(V.works.steel, fr.steel.t));
+	Object.assign(T.glass.build, per(V.works.glass, fr.glass.t));
+	// the glazing wears faster than the frame: upkeep replaces glass at life ÷ glassLife times the frame's rate
+	for (const k of ['home', 'greenhouse', 'timber', 'steel', 'glass']) T[k].glassX = T[k].life > 0 ? T[k].life / (TECH[k].glassLife?.v ?? 30) : 1;
+}
+
+/** a food forest's share of its mature harvest by age in years (./food.js) */
+export const forestShareOf = outdoorShare;
 
 /**
  * A new plant of a technology with so much capacity. A plant keeps the recipe of the day it was built (vintage
@@ -262,7 +356,7 @@ export const forestShareOf = (ageYears) => Math.min(1.5, 0.1 * (Math.floor(Math.
  */
 export function newPlant(w, key, cap) {
 	const def = w.tech[key];
-	return { tech: key, def, cap, worn: 0, landM2: 0, plots: [], raw: 0, pits: 0, domeKwp: 0, fieldKwp: 0, batt: 0, battCap: 0, battCap0: 0, rentGrace: 0, out: 0, vc: { ...(w.learn[key]?.coef ?? {}) } };
+	return { tech: key, def, cap, worn: 0, landM2: 0, plots: [], raw: 0, pits: 0, domeKwp: 0, fieldKwp: 0, batt: 0, battCap: 0, battCap0: 0, rentGrace: 0, out: 0, born: w.day ?? 0, vc: { ...(w.learn[key]?.coef ?? {}) } };
 }
 /** a plant's own coefficient c (its vintage), 1 where the technology has none */
 export const vcOf = (pl, c) => pl.vc?.[c] ?? 1;
@@ -280,38 +374,51 @@ export function newCoop(w, k, id, good, day) {
 		heartsEma: 0, heartsToday: 0, outBaseEma: 0, salesR: 0, salesREma: 0, costR: 0, costREma: 0, divR: 0,
 		project: null, plannedR: 0, rdBudgetR: 0, rdKwhToday: 0, rdKwhWeek: 0,
 		lowDays: 0, idleDays: 0, auditLow: 0, ratedDay: 0, unpaidH: 0, limiter: LIMIT.none, landWant: 0,
-		related: -1, chips: 0, exportUp: 0, exportBuild: 0, primerUp: 0, salesShareR: 0, unpaidBillR: 0, payoutToday: 0, runToday: 0, heatRun: 0, priceR: p0
+		related: -1, chips: 0, exportUp: 0, exportBuild: 0, primerUp: 0, salesShareR: 0, unpaidBillR: 0, payoutToday: 0, runToday: 0, heatRun: 0, priceR: p0,
+		importEma: 0, eurSpentEma: 0, importR: 0, protD: 0
 	};
 }
 
-/** sizes of the starting plants, from the catalog's starting state, scaled to the field */
+/** the raw input a works plant runs on (logs, scrap, float glass, cells), and t (or kWp) of it per unit it makes */
+export function rawOf(pl) {
+	for (const [g, a] of pl.def.inputs) if (typeof g === 'string') return [g, a];
+	return null;
+}
+
+/** sizes of the plants at founding: Sandbox 6's village (./village.js), scaled to the people it is built for */
 function seedPlants(w) {
-	const S = STARTING_CAPITAL.v, s = w.c.scale, cfg = w.cfg;
+	const S = STARTING_CAPITAL.v, s = w.c.scale, cfg = w.cfg, V = w.c.village, vf = w.c.vf;
+	const fr = V.factoryRun;
 	const sets = [];
 	for (const g of GENESIS) {
 		const k = sets.length;
 		const def = w.tech[g.tech];
 		const pl = newPlant(w, g.tech, 0);
+		pl.born = 0;
 		switch (g.tech) {
 			case 'well':
 				pl.cap = S.wellM3Day * s;
 				break;
 			case 'rain':
-				pl.cap = S.tankM3 * s;
+				pl.cap = S.tankPerBed * V.beds.total * vf;
 				break;
 			case 'forest':
-				pl.cap = S.forestM2 * s;
+				// the outdoor food forest is planted on day 0
+				pl.cap = V.outdoorFoodM2 * vf;
 				pl.plots.push({ m2: pl.cap, born: -S.forestAgeYears * 365, yc: 1 });
 				pl.landM2 = pl.cap;
 				break;
 			case 'greenhouse':
-				pl.cap = S.greenhouseM2 * s;
+				// the food domes are planted on day 0: greens and roots bear in months, trees in years (./food.js)
+				pl.cap = V.indoorFoodM2 * vf;
+				pl.born = -S.indoorAgeDays;
 				pl.landM2 = pl.cap;
 				break;
 			case 'solar':
-				pl.domeKwp = ((S.beds[0] + S.beds[1]) * s * w.c.domeKwhPerBed) / w.c.kwhPerKwp;
+				// every second pane of the domes' glass carries see-through cells (Sandbox 6): a rating in kWp at 980 kWh a kWp
+				pl.domeKwp = w.c.domeKwhYear / w.c.kwhPerKwp;
 				pl.cap = pl.domeKwp;
-				pl.battCap = pl.battCap0 = ENERGY_SOURCES.battery.kwh.v * s;
+				pl.battCap = pl.battCap0 = w.c.battKwh;
 				pl.batt = pl.battCap * 0.5;
 				pl.landM2 = 100 * s;
 				break;
@@ -319,30 +426,35 @@ function seedPlants(w) {
 				pl.cap = cfg.geothermal ? cfg.geoStages * s : 0;
 				break;
 			case 'home':
-				pl.cap = S.beds[g.beds] * s;
+				// HOME-A the Dome80 homes (and the tower's apartments), HOME-B the Dome40 homes
+				pl.cap = (g.beds === 0 ? V.beds.dome80 + V.beds.tower : V.beds.dome40) * vf;
 				pl.landM2 = pl.cap * def.land;
 				break;
-			case 'timber':
-				pl.cap = S.timberWorksTYear[g.i] * s;
-				pl.plots.push({ m2: S.timberHa[g.i] * 1e4 * s, born: -20 * 365, yc: 1 });
-				pl.landM2 = S.timberHa[g.i] * 1e4 * s + pl.cap * def.land;
-				pl.raw = S.timberHa[g.i] * 1e4 * s * w.c.timberT * 0.5;
+			case 'timber': {
+				const share = S.timberSplit[g.i];
+				pl.cap = (fr.timber.t + fr.bamboo.t) * share * vf;
+				// the woodland and the bamboo are planted on day 0 (the hemp is fibre, not timber)
+				const m2 = (V.woodlandM2 + V.bambooM2) * share * vf;
+				pl.plots.push({ m2, born: -S.woodlandAgeYears * 365, yc: 1 });
+				pl.landM2 = m2 + pl.cap * def.land;
+				// logs bought for the first month (the founding bill)
+				pl.raw = (pl.cap / 365) * w.c.storesDays * rawOf(pl)[1];
 				break;
+			}
 			case 'steel':
-				pl.cap = S.steelWorksTYear[g.i] * s;
-				pl.pits = S.orePits[g.i] * s;
+				pl.cap = fr.steel.t * S.steelSplit[g.i] * vf;
 				pl.landM2 = pl.cap * def.land;
-				pl.raw = (pl.pits * w.c.oreT * S.storesDays) / 365;
+				pl.raw = (pl.cap / 365) * w.c.storesDays * rawOf(pl)[1];
 				break;
 			case 'glass':
-				pl.cap = S.glassWorksTYear[g.i] * s;
-				pl.pits = S.sandPits[g.i] * s;
+				pl.cap = fr.glass.t * S.glassSplit[g.i] * vf;
 				pl.landM2 = pl.cap * def.land;
-				pl.raw = (pl.pits * w.c.sandT * S.storesDays) / 365;
+				pl.raw = (pl.cap / 365) * w.c.storesDays * rawOf(pl)[1];
 				break;
 			case 'panel':
 				pl.cap = S.panelWorksKwpYear[g.i] * s;
 				pl.landM2 = pl.cap * def.land;
+				pl.raw = (pl.cap / 365) * w.c.storesDays * rawOf(pl)[1];
 				break;
 			case 'goods':
 				pl.cap = S.goodsWorksKgDay[g.i] * s;
@@ -371,6 +483,7 @@ export function createWorld(config = {}) {
 	const w = { cfg, day: 0, rs: cfg.seed >>> 0 || 1, M: MAX_COOPS };
 	w.c = constants(cfg);
 	w.tech = Object.fromEntries(Object.keys(TECH).map((k) => [k, techDef(k)]));
+	villageTech(w);
 	// learning state per technology: R&D energy (MWh), output while R&D was on, and each coefficient (1 = today's)
 	w.learn = {};
 	for (const [k, d] of Object.entries(w.tech)) w.learn[k] = { K: w.c.K0, Q: 0, Q0: 0, coef: Object.fromEntries(Object.keys(d.floors).map((c) => [c, 1])), rdMwh: 0 };
@@ -445,14 +558,14 @@ export function createWorld(config = {}) {
 					plan.push({ ids: [x.g.id + (half ? '2' : '1')], plants: [[pl]], city: x.g.city && !half });
 				}
 		else if (gi === FOOD && list.length === 2 && cfg.foodSplit > 0) {
-			// food: the growing dome cannot sell at the food forest's cost, so on its own it would leave food with a single
-			// seller within a year or two. The forest is the hex's main food plant; GREEN holds the growing dome and a
-			// share of the forest (cfg.foodSplit), AGRI the rest: two sellers with the same kind of costs
+			// food: the food domes cannot sell at the food forest's cost, so on their own they would leave food with a
+			// single seller within a year or two. GREEN holds a share of the forest (cfg.foodSplit) and of the domes
+			// (cfg.domeSplit), AGRI the rest: two sellers with the same kind of costs
 			const forest = list.find((x) => x.pl.tech === 'forest'), gh = list.find((x) => x.pl.tech === 'greenhouse');
-			const f = cfg.foodSplit;
+			const f = cfg.foodSplit, dg = cfg.domeSplit ?? 1;
 			const part = (pl, a) => ({ ...pl, vc: { ...pl.vc }, cap: pl.cap * a, landM2: pl.landM2 * a, plots: pl.plots.map((p) => ({ ...p, m2: p.m2 * a })) });
-			plan.push({ ids: [forest.g.id], plants: [[part(forest.pl, 1 - f)]], city: false });
-			plan.push({ ids: [gh.g.id], plants: [[gh.pl, part(forest.pl, f)]], city: false });
+			plan.push({ ids: [forest.g.id], plants: [dg < 1 ? [part(forest.pl, 1 - f), part(gh.pl, 1 - dg)] : [part(forest.pl, 1 - f)]], city: false });
+			plan.push({ ids: [gh.g.id], plants: [[part(gh.pl, dg), part(forest.pl, f)]], city: false });
 		} else for (const x of list) plan.push({ ids: [x.g.id], plants: [[x.pl]], city: !!x.g.city });
 	}
 	// the City COOP first (its MIND is the hub of every basket)
@@ -478,16 +591,28 @@ export function createWorld(config = {}) {
 		w.cityK = 0;
 	}
 	w.tre = new Float64Array(M * M);
-	w.land = { totalM2: cfg.landHa * 1e4 * w.c.scale, rent: 1e-4 * w.c.rentIdx, unmet: 0, cityM2: CITY_LAND_M2 * w.c.scale };
+	// the land: the City COOP keeps roads, yards, utilities, the halls and the pits; the plants stand on their plots;
+	// what Sandbox 6 leaves as nature (hedges, meadow, wild wood) is free land the City COOP can lease for more building
+	{
+		let plantsM2 = 0;
+		for (const co of w.coops) for (const pl of co.plants) plantsM2 += pl.landM2;
+		const free = w.c.village.natureM2 * w.c.vf + Math.max(0, w.c.landM2 - w.c.village.landM2 * w.c.vf);
+		w.land = { totalM2: w.c.landM2, rent: 1e-4 * w.c.rentIdx, unmet: 0, cityM2: Math.max(0, w.c.landM2 - plantsM2 - free) };
+	}
 	for (const co of w.coops) for (const pl of co.plants) pl.rentRate = w.land.rent;
-	// stores at genesis
+	// stores at founding, bought outside before day 0 (the founding bill): food for foodStoreDays, split between the food
+	// COOPs by the land they grow on; materials for storesDays of their works; goods for two weeks
 	const S = STARTING_CAPITAL.v;
+	let foodM2 = 0;
+	for (const co of w.coops) if (co.good === FOOD) for (const p of co.plants) foodM2 += p.cap;
+	const foodStore = w.c.foodStoreDays * w.c.need[0] * cfg.people;
 	for (const co of w.coops) {
 		const cap = capDayOf(w, co, 0);
-		// the food store: nine tenths with the forest, a tenth with the growing dome (a COOP holding both holds both)
-		if (co.good === FOOD) co.stock = S.foodStoreKg * w.c.scale * co.plants.reduce((a, p) => a + (p.tech === 'forest' ? (0.9 * p.cap) / (S.forestM2 * w.c.scale) : p.tech === 'greenhouse' ? (0.1 * p.cap) / (S.greenhouseM2 * w.c.scale) : 0), 0);
-		else if (co.good === WATER && co.plants.some((p) => p.tech === 'rain')) co.stock = co.plants.reduce((a, p) => a + (p.tech === 'rain' ? p.cap * 1000 * S.tankFill : 0), 0);
-		else if ([4, 5, 6, 7].includes(co.good)) co.stock = cap * S.storesDays;
+		if (co.good === FOOD) {
+			co.stock = foodStore * co.plants.reduce((a, p) => a + p.cap, 0) / Math.max(1e-9, foodM2);
+			co.protD = w.c.protImp;
+		} else if (co.good === WATER && co.plants.some((p) => p.tech === 'rain')) co.stock = co.plants.reduce((a, p) => a + (p.tech === 'rain' ? p.cap * 1000 * S.tankFill : 0), 0);
+		else if ([4, 5, 6, 7].includes(co.good)) co.stock = cap * w.c.storesDays;
 		else if (co.good === GOODS_) co.stock = cap * 14;
 		// accelerators in store: a spare or two per COMPUTE COOP (the installed ones are part of its plant)
 		co.chips = co.good === COMPUTE ? w.c.chipsSpare * (perOf(COMPUTE) >= 4 ? 0.5 : 1) * Math.max(w.c.scale, 0.2) : 0;
@@ -538,8 +663,8 @@ export function blankToday(w) {
 		routeFeeR: 0, routedR: 0, hopsR: 0, arbR: 0, swapSold: new Float64Array(MAX_COOPS), swapBought: new Float64Array(MAX_COOPS),
 		harvest: { solar: 0, geo: 0, battery: 0, geoHeat: 0, lowHeat: 0 },
 		use: new Float64Array(5), heatUse: 0, heatPumpKwh: 0, curtailed: 0, battIn: 0, battLoss: 0, unserved: new Float64Array(5),
-		made: new Float64Array(G), eaten: new Float64Array(G), input: new Float64Array(G), built: new Float64Array(G), rotted: new Float64Array(G),
-		raw: { grown: { logs: 0, ore: 0, sand: 0 }, used: { logs: 0, ore: 0, sand: 0 }, lost: { logs: 0, ore: 0, sand: 0 } }, unpicked: 0,
+		made: new Float64Array(G), eaten: new Float64Array(G), input: new Float64Array(G), built: new Float64Array(G), rotted: new Float64Array(G), imported: new Float64Array(G),
+		raw: { grown: { logs: 0, ore: 0, sand: 0, scrap: 0 }, used: { logs: 0, ore: 0, sand: 0, scrap: 0, float: 0, cells: 0 }, lost: { logs: 0, ore: 0, sand: 0 }, imported: { logs: 0, scrap: 0, float: 0, cells: 0 } }, unpicked: 0,
 		salesPeopleR: 0, salesB2BR: 0, divR: 0, divPeopleR: 0, divTreR: 0, investR: 0, runningR: 0, proposalsR: 0, rdR: 0, rentR: 0, meltR: 0,
 		energyPriceR: 0, sun: 0, rain: 0, heatF: 0, month: 0, season: '', shocks: []
 	};
@@ -627,13 +752,14 @@ export function plantCapDay(w, pl, day) {
 		case 'forest': {
 			// the forest gives what nature gives (./coops.js nature); its capacity is the year's harvest at its age, a day;
 			// each plot keeps the yield of the year it was planted
-			let kgYear = 0;
-			for (const p of pl.plots) kgYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * forestShareOf((day - p.born) / 365);
-			return kgYear / 365;
+			let uYear = 0;
+			for (const p of pl.plots) uYear += ((p.m2 * w.c.forest100) / (p.yc ?? 1)) * outdoorShare((day - p.born) / 365);
+			return uYear / 365;
 		}
 		case 'greenhouse':
-			// light-limited: an average day of the year (./coops.js plan scales a day's output by the month's sun)
-			return (eff * w.c.ghYield) / vcOf(pl, 'yield') / 365;
+			// light-limited: an average day of the year at its age since planting (./coops.js plan scales a day's output
+			// by the month's light)
+			return ((eff * w.c.ghYield) / vcOf(pl, 'yield') / 365) * indoorShare(day - (pl.born ?? 0));
 		case 'rain': {
 			// the tanks give what rain gives: this tank's share of the roofs, an average day
 			let roof = 0, tanks = 0;
@@ -641,7 +767,6 @@ export function plantCapDay(w, pl, day) {
 				if (co.alive)
 					for (const p of co.plants) {
 						if (p.tech === 'home') roof += Math.max(0, p.cap) * w.c.roofPerBed;
-						else if (p.tech === 'greenhouse') roof += Math.max(0, p.cap);
 						if (p.tech === 'rain') tanks += Math.max(1e-9, p.cap);
 					}
 			return tanks > 0 ? (roof * (w.c.rainMm / 365) * w.c.caught * Math.max(0, pl.cap)) / tanks : 0;

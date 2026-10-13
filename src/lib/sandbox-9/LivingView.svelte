@@ -75,6 +75,12 @@
 	const partial = (w, y) => !!rowOf(w, y)?.partial;
 </script>
 
+{#snippet trendLines()}
+	{#each trends as t (t.j)}
+		<p class="trend w{t.j}"><b>{two ? `${t.name}, the` : 'The'} poorest tenth, year {t.from} → year {t.to}:</b> {t.text}</p>
+	{/each}
+{/snippet}
+
 <div class="living">
 	{#if !years.length}
 		<p class="fine">{running ? 'The first year’s numbers fill in as the run goes: press Run, and they appear by the month.' : 'No yearly living standards in this record.'}</p>
@@ -83,10 +89,6 @@
 			<button class:on={mode === 'year'} onclick={() => (mode = 'year')}>One year</button>
 			<button class:on={mode === 'measure'} onclick={() => (mode = 'measure')}>Year by year</button>
 		</div>
-
-		{#each trends as t (t.j)}
-			<p class="trend w{t.j}"><b>{two ? `${t.name}, the` : 'The'} poorest tenth, year {t.from} → year {t.to}:</b> {t.text}</p>
-		{/each}
 
 		{#if mode === 'year'}
 			<div class="years">
@@ -121,6 +123,7 @@
 				</table>
 			</div>
 			{#if two}<p class="key"><span class="w0">■ {list[0].name}</span> <span class="w1">■ {list[1].name}</span> · red: below the need</p>{:else}<p class="key">Red: below the need.</p>{/if}
+			{@render trendLines()}
 
 			{#each list as w (w.j)}
 				{@const v = rowOf(w, year)?.village}
@@ -180,6 +183,7 @@
 				</table>
 			</div>
 			{#if two}<p class="key"><span class="w0">■ {list[0].name}</span> <span class="w1">■ {list[1].name}</span> · red: below the need</p>{/if}
+			{@render trendLines()}
 		{/if}
 		{#if indoor?.withLight?.length === 12 || indoor?.withoutLight?.length === 12}
 			<section class="village">
@@ -410,6 +414,7 @@
 		color: var(--ink);
 	}
 	.village {
+		max-width: 60rem;
 		background: var(--paper);
 		border: 1px solid var(--line);
 		border-left: 4px solid #2a78d6;
