@@ -1,15 +1,24 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * MaiaCity V1's world, in three.js, and nothing but it: the one settlement hex, standing alone in the sky, with the
- * 2-person dome tent in the middle and the two players beside it, a glow of HEARTS over each. The COOPs and the pool
+ * 2-person dome tent in the middle and the two players beside it, a glow of HEARTS over each, and the Village COOP's
+ * four machines (the Assets' pickup, powercube, solar panel and battery pack) spread round it. The COOPs and the pool
  * are not drawn: the page lists them. The sun follows the virtual day (a real day is a month of 28 days). It only draws
  * the game; tapping a player names them (onPick), and every frame the players' labels' places go to onLabels.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.js';
 
 const HEX_R = 34;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
+/** the Village COOP's assets (engine COOPS.village, by id) and where each stands on the hex: x, z, turned; the panel faces the sun at −z */
+const ASSETS = [
+	{ id: 'pickup', make: pickup, at: [-13, 11, 2.2], clear: 6 },
+	{ id: 'powercube', make: powercube, at: [12, -6, -0.5], clear: 5 },
+	{ id: 'solar', make: solarPanel, at: [-3, -12, Math.PI], clear: 5 },
+	{ id: 'battery', make: batteryPack, at: [13, 6, -0.9], clear: 5 }
+];
 
 /** a little seeded random, so the trees stand in the same places for everyone */
 function rng(seed) {
@@ -89,6 +98,7 @@ function trees(group) {
 		const x = Math.cos(a) * d;
 		const z = Math.sin(a) * d;
 		if (Math.abs(x) < 8 && z > 0 && z < 12) continue;
+		if (ASSETS.some(({ at, clear }) => Math.hypot(x - at[0], z - at[1]) < clear)) continue;
 		const t = new THREE.Group();
 		const h = 1.5 + r() * 2.5;
 		const s = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, h, 6), trunk);
@@ -142,6 +152,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	people.B.rotation.y = -0.4;
 	people.A.rotation.y = 0.4;
 	world.add(people.A, people.B);
+	// the Village COOP's machines; tapping one names it
+	for (const { id, make, at } of ASSETS) {
+		const a = make();
+		a.position.set(at[0], 0, at[1]);
+		a.rotation.y = at[2];
+		a.traverse((o) => {
+			o.name = `asset:${id}`;
+			if (o.isMesh) o.castShadow = true;
+		});
+		world.add(a);
+	}
 	trees(world);
 
 	// what each label hangs over

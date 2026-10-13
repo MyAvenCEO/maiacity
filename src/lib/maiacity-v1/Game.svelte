@@ -96,6 +96,8 @@
 	onMount(() => {
 		world = createWorld(canvas, {
 			onPick: (name) => {
+				// a Village COOP machine opens its COOP
+				if (name?.startsWith('asset:')) return void (panel = 'coop:village');
 				if (!name?.startsWith('player:')) return;
 				seat = name.slice(7);
 				open('you');
