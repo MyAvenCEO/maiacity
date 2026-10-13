@@ -17,7 +17,7 @@
 	import LedgerView from './LedgerView.svelte';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
-	import { heartsValue, inHearts, rents } from '../../../game/maiacity-v1/engine.js';
+	import { rents } from '../../../game/maiacity-v1/engine.js';
 
 	let game = $state.raw(null);
 	let me = $state('');
