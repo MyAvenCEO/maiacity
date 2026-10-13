@@ -8,10 +8,19 @@
  *   P2  the owner-only cohort (5 %, Aven output 0, holdings 0 at the start):
  *       strict: today's Law 5 dividends alone pay today's basic bundle (target: from day 120 on, every day);
  *       normal: dividends and some held MIND pay for the basics every day, and the holding never runs out.
- *   P3  every decile, by holdings and by Aven output: never falls more than 2 % over any 5-year window (a shock
- *       excepted: up to 2 years of recovery), and over every 5-year window either rises or ends within 5 % of the
- *       capacity ceiling; COOPs stay solvent or exit by receivership with no basic shortfall, and nothing is delivered
- *       unpaid.
+ *   P3  judged in REAL UNITS per tenth (Samuel, 2026-10-13 06:48): the people sorted into tenths by MIND holdings
+ *       and by Aven output; each tenth's yearly mean a person of each item:
+ *       basics (kcal, protein, water, electricity at home, a bed) at or above need every year (within 1 %);
+ *       extras (m² of home, kg of goods a year, hours of Aven help, hours at the warm ponds a week) never fall more
+ *       than 2 % over any 5-year window, except an item at satiation or held by a physical limit named in the
+ *       village's binds column that year (food above need is not counted as an extra: the engine has no variety);
+ *       over the run each tenth's basket rises: at least one extra clearly up (5 % or more, first full year to last)
+ *       and none down beyond 2 %. Ramp years count like any other: per person, each person in the tenth they are in
+ *       that day (a newcomer arrives with nothing held, so in the poorest tenth by holdings, and in the tenth of their
+ *       Aven's output). COOPs stay solvent or exit by receivership with no basic shortfall, and nothing is delivered
+ *       unpaid. Every failing item, tenth and window is listed. The round-2 test on the money index (every decile's
+ *       index never falls more than 2 % in 5 years, and rises or ends near the capacity ceiling) is kept beside it as
+ *       "old money index (comparison)".
  *   Abundance: the basics' binding limit is never MIND while the physics ceiling is at least need (the twin-world
  *       tests, doubling HEARTS and doubling a binding physical limit, are ./experiments.js X9 and X11).
  *
@@ -22,7 +31,8 @@
  * The ceiling is the capacity a person (the mean over people) of the plants standing that day, not a bound from
  * land, energy and deposits alone (./records.js physicsCeiling).
  */
-import { BASICS, GOOD_IDS, G, LIMIT_NAMES } from './consts.js';
+import { BASICS, GOOD_IDS, G, LIMIT_NAMES, PHYSICAL, BED, GOODS_, COMPUTE, SPRING } from './consts.js';
+import { livingYears } from './records.js';
 
 const YEAR = 365;
 const BASIC_NAMES = BASICS.map((b) => GOOD_IDS[b]);
@@ -132,17 +142,137 @@ function checkP3(w, opts) {
 	const coops = coopCheck(w);
 	const failed = deciles.filter((d) => !d.pass);
 	const failedX = decilesX.filter((d) => !d.pass);
+	const real = realUnits(w);
 	return {
-		pass: failed.length === 0 && coops.pass,
+		// the verdict: real units per tenth (Samuel, 06:48); the money index below is the comparison
+		pass: real.pass && coops.pass,
+		failed: real.failedTenths,
+		real,
+		oldIndex: { pass: failed.length === 0 && coops.pass, failed: failed.map((d) => `${d.by} decile ${d.decile}`), netPass: deciles.every((d) => d.windowsFailed === 0) },
 		windowDays: W,
 		reading: 'fall: the larger of (a) the largest drop of the 365-day trailing mean from any earlier point within the window and (b) the largest drop of a 30-day block of the year against the same block in any of the five years before; rise: every full window ends higher than it began or within 5 % of the capacity ceiling',
 		exemptWindows: exempt,
 		deciles,
-		failed: failed.map((d) => `${d.by} decile ${d.decile}`),
 		netPass: deciles.every((d) => d.windowsFailed === 0),
 		withoutCompute: { pass: failedX.length === 0, failed: failedX.map((d) => `${d.by} decile ${d.decile}`), deciles: decilesX },
 		share: computeShare(w),
 		coops
+	};
+}
+
+/** the items of the real-units test: key in the yearly tenth rows (./records.js livingYears), plain name, unit */
+const BASIC_ITEMS = [
+	['kcal', 'food', 'kcal a day'],
+	['protein', 'protein', 'g a day'],
+	['waterL', 'water', 'L a day'],
+	['homeKwh', 'electricity at home', 'kWh a day'],
+	['bed', 'a bed', 'beds']
+];
+const EXTRA_ITEMS = [
+	['homeM2', 'home', 'm²', BED],
+	['goodsKgYear', 'goods', 'kg a year', GOODS_],
+	['avenH', 'Aven help', 'hours a day', COMPUTE],
+	['pondHWeek', 'warm ponds', 'hours a week', SPRING]
+];
+const FALL = 0.02, UP = 0.05, BASIC_TOL = 0.01;
+
+/**
+ * Proposition 3 in real units per tenth (Samuel, 2026-10-13 06:48), on the yearly means a person of each tenth by MIND
+ * holdings and by Aven output (./records.js livingYears). Full years only (a last partial year is left out unless the
+ * run is shorter than a year). See the header for the rule.
+ */
+export function realUnits(w, opts = {}) {
+	const L = livingYears(w);
+	const full = L.filter((y) => y.days >= 365);
+	const Y = full.length ? full : L.slice(0, 1);
+	const yrs = w.rec?.years ?? [];
+	const c = w.c;
+	const need = { kcal: c.kcalNeed, protein: c.proteinNeed, waterL: c.waterNeedL ?? c.need[1], homeKwh: c.homeKwhNeed ?? c.need[2], bed: 1 };
+	// satiation of each extra, in the item's unit
+	const sat = { homeM2: c.homeM2PerBed * 1, goodsKgYear: c.sat[GOODS_] * 365, avenH: c.sat[COMPUTE], pondHWeek: c.sat[SPRING] * 7 };
+	// the year's binding limit of a good (the most frequent badge), and whether it is physical
+	const bindOf = (y, g) => {
+		const Yr = yrs[y];
+		if (!Yr) return { code: -1, words: '', physical: false };
+		let best = 0, n = -1;
+		for (let x = 0; x < 32; x++) if (Yr.badges[g * 32 + x] > n) (n = Yr.badges[g * 32 + x]), (best = x);
+		return { code: best, words: LIMIT_NAMES[best] ?? String(best), physical: PHYSICAL.includes(best) };
+	};
+	const W = Math.round((opts.window ?? 5 * YEAR) / YEAR);
+	const failures = [], excused = [], basicsFail = [], riseFail = [];
+	const tenths = [];
+	for (const [by, key] of [['holdings', 'byHoldings'], ['aven', 'byAven']])
+		for (let x = 0; x < 10; x++) {
+			const rows = Y.map((y) => y[key]?.[x]).filter(Boolean);
+			const yearNo = Y.map((y) => y.year);
+			const t = { by, tenth: x + 1, pass: true, basics: true, extras: true, rise: true, first: {}, last: {}, change: {}, worstFall: {} };
+			if (!rows.length) {
+				t.pass = false;
+				tenths.push(t);
+				continue;
+			}
+			// basics: at or above need every year
+			for (const [k, name, unit] of BASIC_ITEMS)
+				rows.forEach((r, i) => {
+					if (r.personDays > 0 && r[k] < need[k] * (1 - BASIC_TOL)) {
+						t.basics = false;
+						basicsFail.push({ by, tenth: x + 1, item: name, unit, year: yearNo[i], value: r[k], need: need[k] });
+					}
+				});
+			// extras: no fall beyond 2 % within any window of W years, unless at satiation or a physical limit binds
+			for (const [k, name, unit, g] of EXTRA_ITEMS) {
+				let worst = { fall: 0, from: null, to: null };
+				for (let b = 1; b < rows.length; b++) {
+					let wb = null;
+					for (let a = Math.max(0, b - W); a < b; a++) {
+						const va = rows[a][k], vb = rows[b][k];
+						if (!(va > 0)) continue;
+						const fall = 1 - vb / va;
+						if (fall > FALL && (!wb || fall > wb.fall)) wb = { fall, from: yearNo[a], to: yearNo[b], va, vb };
+					}
+					if (!wb) continue;
+					if (wb.fall > worst.fall) worst = { fall: wb.fall, from: wb.from, to: wb.to };
+					const atSat = rows[b][k] >= sat[k] * 0.98;
+					const bind = bindOf(yearNo[b] - 1, g);
+					const rec = { by, tenth: x + 1, item: name, unit, from: wb.from, to: wb.to, fall: wb.fall, before: wb.va, after: wb.vb };
+					if (atSat) excused.push({ ...rec, why: 'at satiation' });
+					else if (bind.physical) excused.push({ ...rec, why: `physical limit: ${bind.words}` });
+					else {
+						t.extras = false;
+						failures.push({ ...rec, bind: bind.words });
+					}
+				}
+				t.worstFall[k] = worst;
+				t.first[k] = rows[0][k];
+				t.last[k] = rows[rows.length - 1][k];
+				t.change[k] = rows[0][k] > 0 ? rows[rows.length - 1][k] / rows[0][k] - 1 : rows[rows.length - 1][k] > 0 ? Infinity : 0;
+			}
+			// the rise over the run: one extra clearly up, none down beyond 2 % (unless at satiation or a physical limit)
+			if (rows.length >= 2) {
+				const up = EXTRA_ITEMS.filter(([k]) => t.change[k] >= UP).map(([, name]) => name);
+				const down = EXTRA_ITEMS.filter(([k, , , g]) => t.change[k] < -FALL && !(t.last[k] >= sat[k] * 0.98) && !bindOf(yearNo[rows.length - 1] - 1, g).physical).map(([, name]) => name);
+				t.up = up;
+				t.down = down;
+				if (!up.length || down.length) {
+					t.rise = false;
+					riseFail.push({ by, tenth: x + 1, up, down, from: yearNo[0], to: yearNo[rows.length - 1] });
+				}
+			}
+			t.pass = t.basics && t.extras && t.rise;
+			tenths.push(t);
+		}
+	const failedTenths = tenths.filter((t) => !t.pass).map((t) => `${t.by} tenth ${t.tenth}`);
+	return {
+		pass: failedTenths.length === 0,
+		rule: 'basics (kcal, protein, water, home kWh, a bed) at or above need every year (within 1 %); extras (home m², goods kg a year, Aven hours, pond hours a week) never down more than 2 % over any 5-year window unless at satiation or a physical limit binds that year; each tenth’s basket rises over the run (one extra up 5 % or more, none down beyond 2 %); tenths by MIND holdings and by Aven output, yearly means a person, full years',
+		newcomers: 'every person counts in the tenth they are in that day. A newcomer arrives with an Aven and nothing held (so in the poorest tenth by holdings, and in the tenth of its Aven’s output), gets its 24 HEARTS from its first day, and its Aven puts them where the people already here put theirs on average; every twentieth newcomer is owner-only (an Aven that delivers nothing)',
+		years: Y.length,
+		failedTenths,
+		basicsFail,
+		failures,
+		excused,
+		riseFail,
+		tenths
 	};
 }
 

@@ -4,12 +4,22 @@
 	and takeaway. It reads static/sandbox-9/proof.json (written by scripts/sandbox-9-proof-json.mjs from full 30-year
 	runs), and can run the suite again here, in quick mode, in a few Web Workers ($lib/sandbox-9/proof.worker.js).
 	Every pass and fail is the engine's own, computed from the runs ($lib/sandbox-9/proofRun.js).
+
+	Above the verdicts, the base world itself, read from the saved full run (proof.json `suite`): how people live per
+	tenth year by year (the Living table, first), what the village imports to be built and to eat until its food
+	forest bears (Imports), and every parameter it ran with (World).
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
 	import { onMount, onDestroy } from 'svelte';
 	import { proofJobs, assemble, engineHash, ENGINE_FILES } from './proofRun.js';
+	import { livingOf, importsOf } from './params.js';
+	import { DAY } from '../sandbox-7/specs.js';
+	import LivingView from './LivingView.svelte';
+	import ImportsView from './ImportsView.svelte';
+	import WorldParams from './WorldParams.svelte';
+	import * as ENG from './engine.js';
 
 	// the engine's own source files, loaded only for their hash (to tell a saved proof older than this engine)
 	const sources = import.meta.glob('./*.js', { query: '?raw', import: 'default' });
@@ -92,6 +102,43 @@
 		}
 	}
 
+	/**
+	 * The base world of the saved full run (proof.json `suite`): its parameters (paramsBase merged with the seed's own),
+	 * its living standards and village totals by year, and its border ledger with the founding bill.
+	 */
+	const baseWorld = $derived.by(() => {
+		const su = saved?.suite;
+		if (!su) return null;
+		const seed = su.living?.seed ?? su.border?.seed ?? su.village?.seed ?? su.seeds?.[0]?.seed;
+		const pb = su.paramsBase ?? null;
+		const own = (su.seeds ?? []).find((x) => x.seed === seed)?.params ?? null;
+		const settings = pb ? { ...(pb.defaults ?? {}), ...(own?.overrides ?? {}) } : null;
+		const catalog = pb ? { ...(pb.catalog ?? {}), ...(own?.catalog ?? {}) } : {};
+		const L = su.living?.years ?? null, V = su.village?.years ?? null;
+		const living = livingOf(L, V, catalog, DAY);
+		const imports = importsOf(su.border?.years ?? null, su.border?.founding ?? null, V, { firstFedYear: su.border?.firstFedYear, exportsCoverYear: su.border?.exportsCoverYear }, L);
+		const years = Math.max(L?.length ?? 0, su.border?.years?.length ?? 0);
+		return {
+			seed,
+			years,
+			people: settings?.people ?? null,
+			params: settings ? { settings, catalog, village: pb.village ?? null } : null,
+			defaults: pb?.defaults ?? null,
+			living,
+			imports,
+			indoor: su.village?.indoorMonths ?? null
+		};
+	});
+	/** every catalog record the engine reads, for the World part (the same for every world) */
+	const catalogRecs = () => {
+		try {
+			return ENG.catalogAll?.() ?? null;
+		} catch {
+			return null;
+		}
+	};
+	const nParams = $derived(baseWorld?.params ? Object.keys(baseWorld.params.settings).length + Object.keys(baseWorld.params.catalog).length : 0);
+
 	const done = $derived(jobs.filter((j) => j.state !== 'waiting' && j.state !== 'running').length);
 	const when = (/** @type {string} */ iso) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 	let openParts = $state(/** @type {Record<string, boolean>} */ ({}));
@@ -103,7 +150,26 @@
 		<p class="lede">For every person on every day, never on averages: no one starves, no one has to work to survive, and living standards rise for everyone, limited only by physics.</p>
 	</header>
 
+	{#if baseWorld && (baseWorld.living || baseWorld.imports || baseWorld.params)}
+		<section class="world">
+			<h3 class="sub">The base world: how people live</h3>
+			<p class="fine">{baseWorld.people ? `${baseWorld.people.toLocaleString('en-GB')} people, ` : ''}seed {baseWorld.seed}, {baseWorld.years} years from the founding (day 0 is move-in day), from the saved full run{saved?.suite?.generated ? ` of ${when(saved.suite.generated)}` : ''}.{stale ? ' This page’s engine is newer than that run, so its numbers can differ.' : ''}</p>
+			<LivingView worlds={[baseWorld.living]} names={['Base']} indoor={baseWorld.indoor} />
+			<h3 class="sub">What the village imports</h3>
+			<ImportsView worlds={[baseWorld.imports]} names={['Base']} />
+			{#if baseWorld.params}
+				<details class="params">
+					<summary><b>Every parameter of the base world</b> <span>{nParams} settings and constants and the village plan, grouped, in plain units</span></summary>
+					<WorldParams sets={[baseWorld.params]} names={['Base']} defaults={baseWorld.defaults} records={catalogRecs()} />
+				</details>
+			{/if}
+		</section>
+	{:else if saved && !saved.suite?.living}
+		<p class="fine">The saved proof has no yearly living standards or import ledger yet (they come with the next full run: node scripts/sandbox-9-proof.mjs, then node scripts/sandbox-9-proof-json.mjs).</p>
+	{/if}
+
 	{#if shown}
+		<h3 class="sub">The verdicts</h3>
 		<div class="verdict" class:ok={shown.pass}>
 			<span class="badge">{shown.pass ? '✓ Holds' : '✕ Not everything holds'}</span>
 			<span>
@@ -364,5 +430,37 @@
 	}
 	code {
 		font-size: 0.8em;
+	}
+	.world {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		min-width: 0;
+	}
+	.params {
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: 12px;
+		padding: 0.5rem 0.7rem;
+	}
+	.params[open] summary {
+		margin-bottom: 0.5rem;
+	}
+	.params summary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.2rem 0.6rem;
+		align-items: baseline;
+	}
+	.params summary::before {
+		content: '▸';
+		color: var(--muted);
+	}
+	.params[open] summary::before {
+		content: '▾';
+	}
+	.params summary span {
+		font-size: 0.74rem;
+		color: var(--muted);
 	}
 </style>

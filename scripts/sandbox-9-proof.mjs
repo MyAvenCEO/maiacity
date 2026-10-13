@@ -59,7 +59,7 @@ if (!isMainThread) {
 		parentPort.postMessage(out);
 	} else {
 		const r = runExperiment(EXPERIMENTS[job.id], { config: job.set, seed: job.set?.seed });
-		const slim = (x) => ({ label: x.label, values: x.values, prop3: { pass: x.prop3.pass, P1: { pass: x.prop3.P1.pass, personDaysShortAny: x.prop3.P1.personDaysShortAny }, P2: { pass: x.prop3.P2.pass, strictFrom: x.prop3.P2.strict.holdsEveryDayFrom, normal: x.prop3.P2.normal.pass }, P3: { pass: x.prop3.P3.pass, failed: x.prop3.P3.failed }, abundance: { pass: x.prop3.abundance.pass, mindBindsBasics: x.prop3.abundance.mindBindsBasics } } });
+		const slim = (x) => ({ label: x.label, values: x.values, params: x.params, food: x.food, prop3: { pass: x.prop3.pass, P1: { pass: x.prop3.P1.pass, personDaysShortAny: x.prop3.P1.personDaysShortAny }, P2: { pass: x.prop3.P2.pass, strictFrom: x.prop3.P2.strict.holdsEveryDayFrom, normal: x.prop3.P2.normal.pass }, P3: { pass: x.prop3.P3.pass, failed: x.prop3.P3.failed }, abundance: { pass: x.prop3.abundance.pass, mindBindsBasics: x.prop3.abundance.mindBindsBasics } } });
 		parentPort.postMessage({ job, ms: r.ms, r: { ...r, base: slim(r.base), changed: slim(r.changed) } });
 	}
 
@@ -96,16 +96,16 @@ async function main() {
 	const s00 = SCENARIOS.find((x) => x.id === 'S00');
 	const isBase = (sp) => s00.runs.some((r) => r.key === sp.key);
 	const jobs = [
-		...specs.map((spec) => ({ kind: 'run', spec, set, detail: isBase(spec), cost: spec.years * Math.pow(spec.config.people ?? 250, 0.3) * (spec.config.coopsPerGood === 4 ? 1.6 : 1) })),
+		...specs.map((spec) => ({ kind: 'run', spec, set, detail: isBase(spec), cost: spec.years * ((spec.config.people ?? 1500) / 1500 + 0.15) * (spec.config.coopsPerGood === 4 ? 1.6 : 1) })),
 		...expIds.map((id) => {
 			const e = EXPERIMENTS[id];
-			return { kind: 'exp', id, set, cost: 2 * e.years * Math.pow(e.people ?? 250, 0.3) };
+			return { kind: 'exp', id, set, cost: 2 * e.years * ((e.people ?? 1500) / 1500 + 0.15) };
 		}),
 		// X9 (doubling HEARTS) is judged on the five base seeds, chosen before any verdict: its goods market is thin, and
 		// one seed's change can land on either side of the 1 % mark by chance
 		...expIds
 			.filter((id) => ENSEMBLE.includes(id))
-			.flatMap((id) => BASE_KEYS_SEEDS.filter((sd) => sd !== (set.seed ?? BASE_KEYS_SEEDS[0])).map((sd) => ({ kind: 'exp', id, set: { ...set, seed: sd }, ens: sd, cost: 2 * EXPERIMENTS[id].years * Math.pow(EXPERIMENTS[id].people ?? 250, 0.3) })))
+			.flatMap((id) => BASE_KEYS_SEEDS.filter((sd) => sd !== (set.seed ?? BASE_KEYS_SEEDS[0])).map((sd) => ({ kind: 'exp', id, set: { ...set, seed: sd }, ens: sd, cost: 2 * EXPERIMENTS[id].years * ((EXPERIMENTS[id].people ?? 1500) / 1500 + 0.15) })))
 	].sort((a, b) => b.cost - a.cost);
 	const par = Math.max(1, Math.min(jobs.length, cpus().length));
 	process.stderr.write(`${jobs.length} jobs (${specs.length} scenario worlds, ${expIds.length} experiments) on ${par} threads\n`);
@@ -131,15 +131,17 @@ async function main() {
 		const s = SCENARIOS.find((x) => x.id === id);
 		const v = judge(id, R);
 		const ms = s.runs.reduce((a, r) => a + (R[r.key]?.ms ?? 0), 0);
-		return { id, name: s.name, paper: s.paper, stress: s.stress, claim: s.claim, runs: s.runs.map((r) => ({ label: R[r.key] ? r.label.replace('seed 20261012', `seed ${R[r.key].seed}`) : r.label, years: r.years, people: r.config.people, ms: R[r.key]?.ms })), ms, ...v };
+		return { id, name: s.name, paper: s.paper, stress: s.stress, claim: s.claim, runs: s.runs.map((r) => ({ label: R[r.key] ? r.label.replace('seed 20261012', `seed ${R[r.key].seed}`) : r.label, years: r.years, people: r.config.people, ms: R[r.key]?.ms, params: R[r.key]?.params, food: R[r.key]?.food })), ms, ...v };
 	});
 	const bases = BASE_KEYS_SEEDS.filter((sd) => detail[sd]).map((sd) => ({ seed: sd, ...detail[sd] }));
 	const now = new Date().toISOString();
 	printTable(exps, scen, wall);
-	const { catalogList, STARTING_CAPITAL } = await import(join(LIB, 'primitives.js'));
+	const { catalogList, STARTING_CAPITAL, BORDER, CHIPS } = await import(join(LIB, 'primitives.js'));
 	const { ENGINE_FILES, engineHash } = await import(join(LIB, 'proofRun.js'));
 	const hash = engineHash(Object.fromEntries(ENGINE_FILES.map((fl) => [fl, readFileSync(join(LIB, fl), 'utf8')])));
-	const meta = { wall, set, now, only, quick, hash, threads: par, totalCpu: results.reduce((a, r) => a + r.ms, 0), catalog: catalogList(), start: STARTING_CAPITAL };
+	const prices = { foodEur: BORDER.foodEur.v, glulamEur: BORDER.glulamEur.v, steelEur: BORDER.steelEur.v, glazingEur: BORDER.glazingEur.v, floatEur: BORDER.floatEur.v, logsEur: BORDER.logsEur.v, cellsEur: BORDER.cellsEur.v, panelsEur: BORDER.panelsEur.v, gridEurKwh: BORDER.gridEurKwh.v, chipEur: CHIPS.eurPerChip.v, spotEurMwh: CHIPS.spotEurMwh.v, solarEurMwh: CHIPS.solarEurMwh.v, lineKw: CHIPS.lineKw.v };
+	prices.src = { ...Object.fromEntries(Object.keys(BORDER).map((k) => [k, BORDER[k].src])), chipEur: CHIPS.eurPerChip.src, spotEurMwh: CHIPS.spotEurMwh.src, solarEurMwh: CHIPS.solarEurMwh.src, lineKw: CHIPS.lineKw.src };
+	const meta = { wall, set, now, only, quick, hash, threads: par, totalCpu: results.reduce((a, r) => a + r.ms, 0), catalog: catalogList(), start: STARTING_CAPITAL, prices };
 	if (!OUT) {
 		console.log('--quick without --out: nothing written');
 		return;
@@ -213,7 +215,7 @@ function headline(exps, scen, bases) {
 	const allB = (fn) => bases.length > 0 && bases.every(fn);
 	const rows = [];
 	const fails = (list) => list.filter((x) => x && x.pass === false).map((x) => x.id);
-	const failE = (list) => list.map(E).filter((x) => x && !x.verdict.pass).map((x) => x.id);
+	const failE = (list) => list.map(E).filter((x) => x && x.verdict.pass === false).map((x) => x.id);
 	// the seed ensemble (S04) breaks a part when that part fails on any of its worlds
 	const ens = (key) => (S('S04')?.numbers?.rows ?? []).some((r) => r[key] === false) ? ['S04'] : [];
 	rows.push({
@@ -236,9 +238,9 @@ function headline(exps, scen, bases) {
 		breaks: [...failE(['X2']), ...fails(['B05'].map(S)), ...ens('normal')]
 	});
 	rows.push({
-		part: 'P3 — living standards rise for every decile',
+		part: 'P3 — living standards rise for every tenth (real units)',
 		holds: allB((b) => b.p.P3.pass),
-		base: 'worst 5-year fall ' + bases.map((b) => pc(Math.max(...b.p.P3.deciles.map((d) => d.fall ?? 0)), 1)).join(', ') + '; deciles failing ' + bases.map((b) => b.p.P3.failed.length).join(', ') + '; without Aven services in the index, deciles failing ' + bases.map((b) => b.p.P3.withoutCompute.failed.length).join(', ') + '; Aven services’ share of the index in the last year ' + bases.map((b) => pc(b.p.P3.share.at(-1)?.all, 0)).join(', ') + '; COOP part ' + bases.map((b) => yes(b.p.P3.coops.pass)).join(', '),
+		base: 'tenths failing in real units (of 20: ten by holdings, ten by Aven output) ' + bases.map((b) => b.p.P3.real?.failedTenths.length ?? '–').join(', ') + '; items failing: basics ' + bases.map((b) => b.p.P3.real?.basicsFail.length ?? '–').join(', ') + ', extras’ falls ' + bases.map((b) => b.p.P3.real?.failures.length ?? '–').join(', ') + ', baskets not rising ' + bases.map((b) => b.p.P3.real?.riseFail.length ?? '–').join(', ') + '. Old money index (comparison): ' + 'worst 5-year fall ' + bases.map((b) => pc(Math.max(...b.p.P3.deciles.map((d) => d.fall ?? 0)), 1)).join(', ') + '; deciles failing ' + bases.map((b) => b.p.P3.failed.length).join(', ') + '; without Aven services in the index, deciles failing ' + bases.map((b) => b.p.P3.withoutCompute.failed.length).join(', ') + '; Aven services’ share of the index in the last year ' + bases.map((b) => pc(b.p.P3.share.at(-1)?.all, 0)).join(', ') + '; COOP part ' + bases.map((b) => yes(b.p.P3.coops.pass)).join(', '),
 		breaks: [...failE(['X10', 'SH']), ...fails(['B22', 'B27', 'S01', 'S03'].map(S))]
 	});
 	rows.push({
@@ -252,29 +254,39 @@ function headline(exps, scen, bases) {
 
 function report(exps, scen, bases, notCovered, meta) {
 	const L = [];
-	const nPass = exps.filter((e) => e.r.verdict.pass).length + scen.filter((s) => s.pass === true).length;
-	const nCmp = scen.filter((s) => s.pass == null).length;
+	const nPass = exps.filter((e) => e.r.verdict.pass === true).length + scen.filter((s) => s.pass === true).length;
+	const nCmp = scen.filter((s) => s.pass == null).length + exps.filter((e) => e.r.verdict.pass == null).length;
 	L.push('# Sandbox 8 — the proof of Proposition 3', '');
 	L.push(`Run ${meta.now.slice(0, 16).replace('T', ' ')} UTC by \`node scripts/sandbox-9-proof.mjs${meta.quick ? ' --quick' : ''}${meta.only ? ' --only ' + meta.only.join(',') : ''}\`. Engine: \`src/lib/sandbox-9/\` (hash ${meta.hash}). Wall time ${(meta.wall / 1000).toFixed(0)} s on ${meta.threads} threads (${(meta.totalCpu / 1000).toFixed(0)} s of runs). Every number below comes from the run.`, '');
 	if (meta.quick) L.push('**Quick run:** every scenario world was cut to at most 10 years. Verdicts below that need longer worlds read short ones; this is a smoke test, not the proof.', '');
 	if (Object.keys(meta.set).length) L.push(`**Settings changed from the defaults in every world:** \`${JSON.stringify(meta.set)}\`.`, '');
-	L.push(`${exps.length} experiments and ${scen.length} scenarios ran. ${nPass} pass and ${exps.length + scen.length - nPass - nCmp} fail${nCmp ? `; ${nCmp} only compare two rules and have no verdict (${scen.filter((s) => s.pass == null).map((s) => s.id).join(', ')})` : ''}.`, '');
+	L.push(`${exps.length} experiments and ${scen.length} scenarios ran. ${nPass} pass and ${exps.length + scen.length - nPass - nCmp} fail${nCmp ? `; ${nCmp} only compare and have no verdict (${[...exps.filter((e) => e.r.verdict.pass == null).map((e) => e.r.id), ...scen.filter((s) => s.pass == null).map((s) => s.id)].join(', ')})` : ''}.`, '');
+
+	// the simple numbers first: what people get, the village's food and energy, the diet and its land, the founding bill
+	// and the border (round 3 brief: before the verdicts)
+	if (bases.length) {
+		simpleStats(L, bases, scen);
+		foodAndLand(L, bases, scen);
+		foundingAndBorder(L, bases, scen);
+		priceTable(L, meta, bases);
+	}
 
 	// headline
 	if (bases.length) {
 		L.push('## Headline: does Proposition 3 hold?', '');
-		L.push(`The base world: ${bases[0].N} people, ${Math.round(bases[0].s.days / 365)} years, seeds ${bases.map((b) => b.seed).join(', ')}. Each part is checked per person, every day. The strict test starts from a cold start, where everyone holds nothing; A07 tests owner-only newcomers who join a settled city.`, '');
+		L.push(`The base world: ${k0(bases[0].N)} people, ${Math.round(bases[0].s.days / 365)} years, seeds ${bases.map((b) => b.seed).join(', ')}. Each part is checked per person, every day. The strict test starts from a cold start, where everyone holds nothing; A07 tests owner-only newcomers who join a settled city.`, '');
 		L.push(borderLine(bases[0], scen), '');
 		L.push('| part | base world, every seed | what it shows | where it breaks |', '|---|---|---|---|');
 		for (const r of headline(exps, scen, bases)) L.push(`| ${r.part} | **${r.holds ? 'holds' : 'fails'}** | ${r.base} | ${r.breaks.length ? r.breaks.join(', ') : 'nowhere in this suite'} |`);
 		L.push('');
+		p3Real(L, bases);
 	}
 
 	// the verdict table
 	L.push('## Every experiment and scenario', '');
 	L.push('| id | question or scenario | verdict | key result | people × years | run time |', '|---|---|---|---|---|---|');
 	for (const e of exps) L.push(`| ${e.r.id} | ${e.r.question} | **${yes(e.r.verdict.pass)}** | ${e.r.verdict.evidence.replace(/\|/g, '/')} | ${e.r.people.base === e.r.people.changed ? e.r.people.base : `${e.r.people.base} / ${e.r.people.changed}`} × ${e.r.years} | ${(e.ms / 1000).toFixed(1)} s |`);
-	for (const s of scen) L.push(`| ${s.id} | ${s.name} | **${yes(s.pass)}** | ${s.takeaway.replace(/\|/g, '/')} | ${[...new Set(s.runs.map((r) => `${r.people ?? 250} × ${r.years}`))].join(', ')} | ${(s.ms / 1000).toFixed(0)} s |`);
+	for (const s of scen) L.push(`| ${s.id} | ${s.name} | **${yes(s.pass)}** | ${s.takeaway.replace(/\|/g, '/')} | ${[...new Set(s.runs.map((r) => `${r.people ?? 1500} × ${r.years}`))].join(', ')} | ${(s.ms / 1000).toFixed(0)} s |`);
 	L.push('');
 
 	// experiments, Primer style
@@ -305,14 +317,14 @@ function report(exps, scen, bases, notCovered, meta) {
 			L.push(`### ${s.id} ${s.name} (${s.paper})`, '');
 			L.push(`**Stress.** ${s.stress}.`, '');
 			L.push(`**Claim.** ${s.claim}`, '');
-			L.push(`**Runs.** ${s.runs.map((r) => `${r.label} (${r.people ?? 250} people, ${r.years} years)`).join('; ')}.`, '');
+			L.push(`**Runs.** ${s.runs.map((r) => `${r.label} (${k0(r.people ?? 1500)} people, ${r.years} years)`).join('; ')}.`, '');
 			L.push(`**Result.** ${s.takeaway}`, '');
 			L.push(`**Verdict: ${yes(s.pass)}.** ${s.evidence}`, '');
 		}
 	}
 
 	// what fails and why
-	const failing = [...exps.filter((e) => !e.r.verdict.pass).map((e) => [e.r.id, e.r.verdict.evidence]), ...scen.filter((s) => s.pass === false).map((s) => [s.id, s.evidence])];
+	const failing = [...exps.filter((e) => e.r.verdict.pass === false).map((e) => [e.r.id, e.r.verdict.evidence]), ...scen.filter((s) => s.pass === false).map((s) => [s.id, s.evidence])];
 	if (failing.length) {
 		L.push('## What fails', '');
 		L.push('Each item fails in this run; the line under it is the run’s own evidence (scenario evidence names the short good, its binding limit and the parts that fail, computed from the worlds). No cause or fix is typed in here: a note written by hand can outlive the run it was true of.', '');
@@ -330,6 +342,339 @@ function report(exps, scen, bases, notCovered, meta) {
 	if (bases.length) baseEvidence(L, bases, exps, meta);
 	return L.join('\n');
 }
+// ── the simple numbers (round 3): what people get, the village's food and energy, the diet, the border ───────────
+const k0 = (x) => (Number.isFinite(x) ? Math.round(x).toLocaleString('en-US') : '–');
+const k1 = (x) => (Number.isFinite(x) ? x.toLocaleString('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) : '–');
+const eurM = (x) => (Number.isFinite(x) ? `€${(x / 1e6).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })} M` : '–');
+const YEARS_SHOWN = [1, 2, 3, 5, 10, 15, 20, 30, 40, 50, 60];
+const TENTH_NAMES = { poorest: 'poorest tenth', middle: 'middle (5th) tenth', richest: 'richest tenth' };
+const MEASURES = [
+	['kcal', 'kcal eaten (need 2,240)', k0],
+	['protein', 'protein g (need 73)', k0],
+	['homeM2', 'm² of home', k1],
+	['waterL', 'litres of water', k0],
+	['homeKwh', 'kWh at home', k1],
+	['avenH', 'hours of Aven help', k1],
+	['goodsKgYear', 'kg of goods a year', k0],
+	['pondHWeek', 'hours at the warm ponds a week', k1]
+];
+
+function simpleStats(L, bases, scen) {
+	const b0 = bases[0], s0 = b0.s, Ls = s0.living ?? [], Vs = s0.village ?? [], fl = s0.food ?? {};
+	const ys = YEARS_SHOWN.filter((y) => y <= Ls.length);
+	L.push('## The village of 1,500: what people get, year by year', '');
+	const ramp = !!s0.founding?.ramp;
+	L.push(`${k0(b0.N)} people live in Sandbox 6’s village: six living hexes of homes, food domes and food forest round a centre hex of works, ${k0(s0.params?.settings?.beds)} beds, ${s0.params?.settings?.tower ? 'with the Tower180' : 'no tower'}. ${ramp ? `The run starts with two settlers on day 0, and the village is built around them, settlement by settlement; people move in as beds are finished (1,500 from month ${s0.founding.peopleMonth}), so the first years below are the build-out years and their tenths are of fewer people (the people column).` : 'The run starts on moving-in day, with the outdoor food forest just planted.'} They eat ${fl.dietLabel ?? fl.diet} (${k0(fl.kcalDay)} kcal and ${k0(fl.proteinDay)} g of protein a day as planned; need 2,240 kcal and 73 g). Tenths are by MIND holdings, each a yearly mean a person a day unless it says otherwise. Seed ${b0.seed}; the five seeds side by side follow.`, '');
+	L.push('| year | people (mean) | tenth | ' + MEASURES.map((m) => m[1]).join(' | ') + ' | people short of anything that year |', '|---|---|---|' + '---|'.repeat(MEASURES.length + 1));
+	for (const y of ys) {
+		const r = Ls[y - 1];
+		for (const [k, name] of Object.entries(TENTH_NAMES)) L.push(`| ${y} | ${k0(r.peopleMean ?? r.people)} | ${name} | ${MEASURES.map(([m, , fm]) => fm(r.tenths[k][m])).join(' | ')} | ${k0(r.tenths[k].shortPeople)} |`);
+	}
+	L.push('');
+	const av = Ls.filter((r) => r.days >= 365).map((r) => r.tenths.poorest.avenH);
+	if (av.length) L.push(`Aven help for the poorest tenth runs from ${k1(Math.min(...av))} to ${k1(Math.max(...av))} hours a day over the run: Aven services are sold in a market of their own (accelerators bought abroad, the rate card), and the AI market for them (avenCEO) comes in round 4.`, '');
+	// the five seeds: mean (lowest–highest)
+	L.push('**All five seeds** (mean over the seeds, lowest–highest in brackets):', '');
+	const span = (xs, fm) => (xs.length ? `${fm(xs.reduce((a, x) => a + x, 0) / xs.length)} (${fm(Math.min(...xs))}–${fm(Math.max(...xs))})` : '–');
+	L.push('| year | tenth | kcal | protein g | hours of Aven help | kg of goods a year | hours at the ponds a week | people short (all seeds) |', '|---|---|---|---|---|---|---|---|');
+	for (const y of [1, 5, 10, 30, 60].filter((y) => bases.every((b) => (b.s.living ?? []).length >= y))) {
+		for (const [k, name] of Object.entries(TENTH_NAMES)) {
+			const rs = bases.map((b) => b.s.living[y - 1].tenths[k]);
+			L.push(`| ${y} | ${name} | ${span(rs.map((r) => r.kcal), k0)} | ${span(rs.map((r) => r.protein), k0)} | ${span(rs.map((r) => r.avenH), k1)} | ${span(rs.map((r) => r.goodsKgYear), k0)} | ${span(rs.map((r) => r.pondHWeek), k1)} | ${k0(rs.reduce((a, r) => a + r.shortPeople, 0))} |`);
+		}
+	}
+	L.push('');
+	// the village a year
+	L.push('### The whole village, a person a day', '');
+	L.push('Food in kcal: what the forest outdoors and the food domes put in the stores (after the harvest’s losses), what the food COOPs bought abroad, what people ate, and what was lost in storage, processing and the kitchen. Electricity in kWh: made by the solar cells in the glass and the geothermal plant, and where it went (basics first, then running the works and homes, building, R&D, the line’s exports, storage; curtailed is what nobody could use).', '');
+	L.push('| year | food outdoors | food domes | bought abroad | eaten | lost | solar | geothermal | basics | running | building | R&D | exported | storage | curtailed |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+	for (let y = 1; y <= Vs.length; y += y < 10 ? 1 : 5) {
+		const v = Vs[y - 1], m = v.energy.made, g = v.energy.went;
+		L.push(`| ${y} | ${k0(v.food.outdoors)} | ${k0(v.food.indoors)} | ${k0(v.food.imported)} | ${k0(v.food.eaten)} | ${k0(v.food.lost)} | ${k1(m.solar)} | ${k1(m.geothermal)} | ${k1(g.basics)} | ${k1(g.running)} | ${k1(g.building)} | ${k1(g.rd)} | ${k1(g.export)} | ${k1(g.storage)} | ${k1(g.curtailed)} |`);
+	}
+	if (Vs.length && (Vs.length - 1) % 5 !== 0 && Vs.length > 10) {
+		const v = Vs[Vs.length - 1], m = v.energy.made, g = v.energy.went;
+		L.push(`| ${Vs.length} | ${k0(v.food.outdoors)} | ${k0(v.food.indoors)} | ${k0(v.food.imported)} | ${k0(v.food.eaten)} | ${k0(v.food.lost)} | ${k1(m.solar)} | ${k1(m.geothermal)} | ${k1(g.basics)} | ${k1(g.running)} | ${k1(g.building)} | ${k1(g.rd)} | ${k1(g.export)} | ${k1(g.storage)} | ${k1(g.curtailed)} |`);
+	}
+	L.push('');
+	L.push('### What binds each good (the limit on most days of the year)', '');
+	const yb = [1, 5, 10, 30, 60].filter((y) => y <= Vs.length);
+	const goods = Object.keys(Vs[0]?.binds ?? {});
+	L.push('| good | ' + yb.map((y) => `year ${y}`).join(' | ') + ' |', '|---|' + '---|'.repeat(yb.length));
+	for (const g of goods) L.push(`| ${g} | ${yb.map((y) => `${Vs[y - 1].binds[g]} (${pc(Vs[y - 1].bindShare?.[g], 0)})`).join(' | ')} |`);
+	L.push('');
+	// the food domes by month
+	const im = s0.indoorMonths;
+	if (im) {
+		const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+		L.push('### The food domes by month (kcal a person a day)', '');
+		L.push(`At maturity, after losses, for the domes as they stand at the end of the run: without lamps, and with an LED top-up raising November to February to 12 mol a m² a day (about ${k0(im.ledKwhM2Year)} kWh a m² a year at ${k0(im.ledKwhPer1000)} kWh a 1,000 kcal; scenario F04 runs it). Then what the domes gave in year 10 of the run.`, '');
+		L.push('| | ' + MN.join(' | ') + ' |', '|---|' + '---|'.repeat(12));
+		L.push('| without light | ' + im.withoutLight.map(k0).join(' | ') + ' |');
+		L.push('| with LED light | ' + im.withLight.map(k0).join(' | ') + ' |');
+		const v10 = Vs[Math.min(10, Vs.length) - 1];
+		if (v10) L.push(`| the run, year ${v10.year} | ` + v10.indoorByMonth.map(k0).join(' | ') + ' |');
+		L.push('');
+	}
+	// what goes up, what goes down, and why: computed from the tables
+	L.push('### What goes up, what goes down, and why', '');
+	L.push(trendParagraph(s0), '');
+}
+
+/** the text with its first letter capitalized */
+const cap1 = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+
+/** one plain paragraph from the run's own tables: each measure's change for the poorest and richest tenths from the first full year to the last, and what bound the good behind it in the last year */
+function trendParagraph(s) {
+	const Ls = s.living ?? [], Vs = s.village ?? [];
+	if (Ls.length < 2) return 'The run is too short to say.';
+	const a = Ls[0], z = Ls[Ls.length - 1], vz = Vs[Vs.length - 1], va = Vs[0];
+	const goodOf = { kcal: 'food', homeM2: 'bed', waterL: 'water', homeKwh: 'energy', avenH: 'compute', goodsKgYear: 'goods', pondHWeek: 'spring' };
+	const names = { kcal: 'Food eaten', homeM2: 'Home space', waterL: 'Water', homeKwh: 'Electricity at home', avenH: 'Aven help', goodsKgYear: 'The weight of goods a year', pondHWeek: 'Time at the warm ponds' };
+	const fm = { kcal: k0, homeM2: k1, waterL: k0, homeKwh: k1, avenH: k1, goodsKgYear: k0, pondHWeek: k1 };
+	const way = (x0, x1) => (!(x0 > 0) ? (x1 > 0 ? 'rises from nothing' : 'stays at nothing') : x1 / x0 > 1.05 ? 'goes up' : x1 / x0 < 0.95 ? 'goes down' : 'stays about level');
+	const parts = [];
+	for (const m of Object.keys(names)) {
+		const p0 = a.tenths.poorest[m], p1 = z.tenths.poorest[m], r0 = a.tenths.richest[m], r1 = z.tenths.richest[m];
+		const g = goodOf[m];
+		parts.push(`${names[m]} ${way(p0, p1)} for the poorest tenth (${fm[m](p0)} → ${fm[m](p1)}) and ${way(r0, r1)} for the richest (${fm[m](r0)} → ${fm[m](r1)}); in the last year it was bound by ${vz?.binds?.[g] ?? '–'}.`);
+	}
+	const imp0 = va?.food.eaten > 0 ? va.food.imported / va.food.eaten : NaN, imp1 = vz?.food.eaten > 0 ? vz.food.imported / vz.food.eaten : NaN;
+	const e0 = va ? va.energy.made.solar + va.energy.made.geothermal : NaN, e1 = vz ? vz.energy.made.solar + vz.energy.made.geothermal : NaN;
+	parts.push(`Behind them: the food bought abroad went from ${pc(imp0, 0)} of what was eaten in year 1 to ${pc(imp1, 0)} in year ${Ls.length}, as the forest outdoors grew from ${k0(va?.food.outdoors)} to ${k0(vz?.food.outdoors)} kcal a person a day; electricity made went from ${k1(e0)} to ${k1(e1)} kWh a person a day (solar ${k1(va?.energy.made.solar)} → ${k1(vz?.energy.made.solar)}, geothermal ${k1(va?.energy.made.geothermal)} → ${k1(vz?.energy.made.geothermal)}), and the line exported ${k1(va?.energy.went.export)} → ${k1(vz?.energy.went.export)} of it to pay for what the village buys abroad.`);
+	return `Year 1 against year ${Ls.length}, seed ${s.seed}. ` + parts.join(' ');
+}
+
+function foodAndLand(L, bases, scen) {
+	const s0 = bases[0].s, fl = s0.food;
+	if (!fl) return;
+	L.push('## The diet and the land it takes', '');
+	L.push(`${fl.dietLabel}. Yields: ${fl.yieldsLabel}. A person’s day as planned, and the land it takes at maturity (no losses; the layers’ land equivalent ratio 1.1), outdoors and under glass; the hens’ feed is grown too (its land is in the legume, seed and root rows).`, '');
+	const groups = Object.entries(fl.groups);
+	L.push('| group | g a day | kcal | protein g | m² outdoors | m² under glass |', '|---|---|---|---|---|---|');
+	for (const [k, g] of groups) L.push(`| ${g.label} | ${k0(g.g)} | ${k0(g.kcal)} | ${k1(g.protein)} | ${k0(fl.landM2.outByGroup[k])} | ${k0(fl.landM2.inByGroup[k])} |`);
+	L.push(`| **a person’s day** | | **${k0(fl.kcalDay)}** | **${k1(fl.proteinDay)}** | **${k0(fl.landM2.out)}** | **${k0(fl.landM2.in)}** |`, '');
+	const kv = fl.kcalM2Village ?? {};
+	L.push(`Grown all outdoors, a m² gives ${k0(fl.kcalM2Year.out)} kcal of this diet a year at maturity; under glass, ${k0(fl.kcalM2Year.in)} kcal of the part of it the glass can grow (sweet potato, vegetables, fruit). The village splits its land by the diet’s groups, as food-best.md does: the glass grows sweet potato, vegetables and fruit, the outdoor land grows the beans, nuts, seeds and the hens’ feed for the same people, and the whole diet on what is left. So the village grows ${k0(kv.out)} kcal and ${k0(kv.proteinOut)} g of protein a net m² a year outdoors and ${k0(kv.in)} kcal and ${k0(kv.proteinIn)} g under glass (before the harvest’s losses), and the engine grows its food at exactly these yields. With 15 % lost after the harvest, the village’s ${k1(fl.foodHa.out)} net ha outdoors (${k1(fl.foodHa.outGross)} ha less tracks, sheds, hedges and the compost ley) and ${k1(fl.foodHa.in)} ha under glass feed **${k0(fl.peopleFed.all)} people** in an average mature year (${k0(fl.peopleFed.out)} from outdoors, ${k0(fl.peopleFed.in)} from the domes; ${fl.peopleFedByGroup?.bind ?? 'the glass'} binds the split); ${k0(bases[0].N)} live there. The village’s own food share in the tables counts only what its land grew and kept (after losses): never stores or imports.`, '');
+	// people fed per yield setting (food-best.md: ~1,100 at measured averages, ~1,660 at top yields, fully counted)
+	const fb = fl.peopleFedBy;
+	if (fb) {
+		const f03 = scen.find((x) => x.id === 'F03');
+		const runOf = (key) => (f03?.numbers?.rows ?? []).find((r) => r.yields === key);
+		L.push('**People fed at each yield setting** (at maturity, an average year, after losses; food-best.md counts ~1,100 at measured averages and ~1,660 at top yields with paths and the ley counted). The run columns are scenario F03 (30 years each, seed 20261012):', '');
+		L.push('| yields | m² a person outdoors (all outdoors) | m² a person under glass | kcal a net m² a year outdoors, as the village grows it | protein g | kcal a m² under glass | protein g | people the land feeds | last year food was bought (over 1 % of what was eaten) | first year it grew all it needs | person-days short |', '|---|---|---|---|---|---|---|---|---|---|---|');
+		for (const [key, label] of [['average', 'measured averages'], ['best', 'top practice (best)'], ['ramp', 'the base: averages to year 5, best by year 10']]) {
+			const x = key === 'ramp' ? fb.best : fb[key];
+			const r = runOf(key);
+			L.push(`| ${label} | ${k0(x.landM2.out)} | ${k0(x.landM2.in)} | ${k0(x.village?.kcalM2Year.out)} | ${k0(x.village?.proteinM2Year.out)} | ${k0(x.village?.kcalM2Year.in)} | ${k0(x.village?.proteinM2Year.in)} | ${key === 'ramp' ? `${k0(fb.average.all)} → ${k0(fb.best.all)}` : k0(x.all)} | ${r ? (r.lastImport ?? 'none') : '–'} | ${r ? (r.firstFed ?? 'never') : '–'} | ${r ? k0(r.shortPD) : '–'} |`);
+		}
+		L.push('');
+	}
+	const cmp = scen.find((x) => x.id === 'F02');
+	const best = scen.find((x) => x.id === 'F03');
+	const rows = [];
+	for (const sc of [cmp, best].filter(Boolean)) for (const r of sc.numbers?.rows ?? []) if (!rows.some((x) => x.label === r.label)) rows.push(r);
+	if (rows.length) {
+		L.push('**The diets and yields side by side** (each a 30- or 60-year run of the same village, seed 20261012):', '');
+		L.push('| run | m² a person outdoors | under glass | people the 177 ha feed at maturity | food bought, year 1 | year 10 | last year | first year it grew all it needs | person-days short |', '|---|---|---|---|---|---|---|---|---|');
+		for (const r of rows) L.push(`| ${r.label} | ${k0(r.landOut)} | ${k0(r.landIn)} | ${k0(r.fed)} | ${pc(r.impShare1, 0)} | ${pc(r.impShare10, 0)} | ${pc(r.impShareLast, 0)} | ${r.firstFed ?? 'never'} | ${k0(r.shortPD)} |`);
+		L.push('');
+	}
+}
+
+function foundingAndBorder(L, bases, scen) {
+	const s0 = bases[0].s, F = s0.founding, B = s0.border ?? [];
+	if (!F) return;
+	if (F.ramp) return buildoutAndBank(L, bases, scen);
+	L.push('## The founding bill and the border', '');
+	L.push(`Before day 0 the village is built from imports (paper §12.4: “Euros fund the first machines, never MIND”). ${cap1(F.sources?.tower ?? '')}. Prices: ${F.sources?.prices ?? ''}.`, '');
+	L.push('| item | quantity | € |', '|---|---|---|');
+	for (const r of F.rows) {
+		const q = typeof r.t === 'number' ? `${k0(r.t)} t` : r.kwp ? `${k0(r.kwp)} kWp` : r.n ? `${k0(r.n)}` : r.kcal ? `${k0(r.kcal / 1e6)} million kcal` : r.ha ? `${k1(r.ha)} ha` : '';
+		L.push(`| ${r.label} | ${q} | ${eurM(r.eur)} |`);
+	}
+	L.push(`| **total** | ${k0(F.tonnes)} t of materials | **${eurM(F.totalEur)}** |`, '');
+	L.push('From day 0 the COOPs buy abroad only what the village cannot yet make or grow, through the shared euro reserve: the food COOPs buy food in the diet’s mix, the works buy logs, scrap, float glass and cells (and finished glulam, steel, glazing and panels when their works cannot keep up), the COMPUTE COOPs buy accelerators. They pay with the electricity they export at €87.5 a MWh. No person holds euros, no MIND is made from euros, HEARTS never buy anything.', '');
+	L.push('| year | food bought (kcal a person a day) | food € | logs t | scrap t | float glass t | cells kWp | glulam t | steel t | glazing t | panels kWp | accelerators | all imports € | exports earned € | reserve at the year’s end € | days a COOP could not pay |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+	const V = s0.village ?? [];
+	for (let y = 1; y <= B.length; y += y < 10 ? 1 : 5) {
+		const b = B[y - 1], i = b.imports;
+		L.push(`| ${y} | ${k0(V[y - 1]?.food.imported)} | ${eurM(i.food.eur)} | ${k0(i.logs.t)} | ${k0(i.scrap.t)} | ${k0(i.float.t)} | ${k0(i.cells.kwp)} | ${k0(i.glulam.t)} | ${k0(i.steel.t)} | ${k0(i.glazing.t)} | ${k0(i.panels.kwp)} | ${k0(i.accelerators.n)} | ${eurM(b.importEur)} | ${eurM(b.exportEur)} | ${eurM(b.reserveEur)} | ${k0(b.importShortDays)} |`);
+	}
+	L.push('');
+	const fy = (b) => (b.border ?? []).filter((x) => x.days >= 365);
+	L.push('| seed | first year the village fed itself (grew at least 2,240 kcal a person a day) | last year it bought food (over 1 % of what it ate) | first year exports paid all imports | lowest reserve € | days a COOP could not pay for its imports | person-days short of a basic |', '|---|---|---|---|---|---|---|');
+	for (const b of bases) {
+		const bb = fy(b.s);
+		L.push(`| ${b.seed} | ${b.s.food?.firstFedYear ?? 'never'} | ${b.s.food?.lastImportYear ?? '–'} | ${bb.find((x) => x.exportsCover)?.year ?? 'never'} | ${eurM(Math.min(...bb.map((x) => x.reserveMinEur ?? Infinity)))} | ${k0(bb.reduce((a, x) => a + (x.importShortDays ?? 0), 0))} | ${k0(b.p.P1.personDaysShortAny)} |`);
+	}
+	L.push('');
+	const f01 = scen.find((x) => x.id === 'F01');
+	if (f01) L.push(`**If the founding euros run out (F01).** ${f01.takeaway}`, '');
+}
+
+/** the build-out (the ramp), the MaiaCity COOP's bank, rents and the border, for a world that starts with two settlers */
+function buildoutAndBank(L, bases, scen) {
+	const b0 = bases[0], s0 = b0.s, F = s0.founding, B = s0.border ?? [], Ls = s0.living ?? [], Vs = s0.village ?? [];
+	const full = B.filter((x) => x.days >= 365);
+	L.push('## The build-out, the bank and the border', '');
+	L.push(`Day 0 is the first settlers’ first day. Two settlers arrive with the starter kit and launch the East settlement; the village is built settlement by settlement by the build-out plan (\`src/lib/sandbox-7/buildout.js\`, launched in January), and people move in as beds are finished. The villagers build it themselves (no wages); what the village cannot yet make is bought at the euro border. ${F.feasibility ?? ''} In this run 1,500 people live there from month ${F.peopleMonth} and every dome stands from month ${F.doneMonth}.`, '');
+	// people, year by year
+	const yp = Ls.slice(0, Math.min(Ls.length, 8));
+	L.push('**People living in the village** (at the year’s end, and the year’s mean):', '');
+	L.push('| ' + ['year', ...yp.map((r) => String(r.year))].join(' | ') + ' |', '|---|' + '---|'.repeat(yp.length));
+	L.push('| at the year’s end | ' + yp.map((r) => k0(r.people)).join(' | ') + ' |');
+	L.push('| the year’s mean | ' + yp.map((r) => k0(r.peopleMean)).join(' | ') + ' |', '');
+	// who owns what
+	L.push('**Who owns what.** Each living hex has one settlement COOP (East, South-east, South-west, West, North-west, North-east). It builds and owns every dome in its hex with euro advances from the bank: the homes, the two food domes and the utilities dome. It rents beds to the people (the bed good, priced in its own MIND, so Law 5 pays its holders a fifth of every bed-day) and dome floor to the business COOPs that work in its domes (the food COOPs under glass, the data centres, workshops and stores), in its own MIND, so Law 5 applies to the rent too. The centre hex’s settlement COOP is the **Village COOP**: it owns the eight factory domes, the centre dome and the geothermal plant, rents the factory domes to the works (timber, steel, glass, panels), and sells electricity and heat; its advances paid for the drilling. The **MaiaCity COOP** (the City COOP) is separate: it owns the land, leases it, and runs the bank. Ground rent: each landlord pays the MaiaCity COOP the ground rent for the land under its domes and passes it on in its rate a m², so a tenant pays no ground rent for floor under a dome.', '');
+	// the bill
+	L.push('### The build-out bill', '');
+	L.push('| item | € |', '|---|---|');
+	for (const r of F.rows) L.push(`| ${r.label}${typeof r.t === 'number' && r.t > 0 ? ` (${k0(r.t)} t)` : ''} | ${eurM(r.eur)} |`);
+	L.push(`| **total** | **${eurM(F.totalEur)}** |`, '');
+	if (F.geothermal) L.push(`Of it, ${F.geothermal.label.toLowerCase()}: ${eurM(F.geothermal.eur)}, months ${F.geothermal.start}–${F.geothermal.end}, the Village COOP’s.`, '');
+	L.push('| settlement COOP | founded (month) | done (month) | beds | domes | € |', '|---|---|---|---|---|---|');
+	for (const x of F.bySettlement ?? []) L.push(`| ${x.coop} | ${x.founded} | ${x.done} | ${k0(x.beds)} | ${k0(x.domes)} | ${eurM(x.eur?.total)} |`);
+	L.push('');
+	if (F.byYear?.length) {
+		L.push('| year | kit | running the kit | materials | machines | services | land | total |', '|---|---|---|---|---|---|---|---|');
+		for (const y of F.byYear) L.push(`| ${y.year} | ${eurM(y.kit)} | ${eurM(y.running)} | ${eurM(y.materials)} | ${eurM(y.machines)} | ${eurM(y.services)} | ${eurM(y.land)} | ${eurM(y.total)} |`);
+		L.push('');
+	}
+	// the bank
+	const lows = full.map((x) => x.bank?.lowestEur ?? 0);
+	const low = B.length ? Math.min(...B.map((x) => x.bank?.lowestEur ?? 0)) : NaN;
+	const lowYear = B.find((x) => (x.bank?.lowestEur ?? 0) <= low + 1e-6)?.year;
+	const crossYear = full.find((x) => x.exportEur >= x.importEur)?.year ?? null;
+	const cumYear = full.find((x) => (x.bank?.cumulativeEur ?? -1) >= 0)?.year ?? null;
+	const advTot = B.reduce((a, x) => a + (x.bank?.advancedEur ?? 0), 0);
+	const owedEnd = B.at(-1)?.bank?.owedEur ?? NaN;
+	const impTot = B.reduce((a, x) => a + x.importEur, 0), expTot = B.reduce((a, x) => a + x.exportEur, 0);
+	L.push('### The bank (the MaiaCity COOP)', '');
+	L.push(`The MaiaCity COOP is the village’s bank. Every euro the village spends abroad goes through it: the founding euros from outside are its starting balance, and here it is open (its founders lend whatever the village draws), so its lowest cumulative balance is the **bootstrap number**: the euros the village needs from outside to be built. A COOP that builds or buys abroad draws an advance and pays it back in its own MIND to the MaiaCity COOP, with no interest: each week a 26th of what it owes (at least €1), but never more than 5 % of its own MIND in its treasury that week, at the bank’s rate (a euro is worth the kWh it takes to earn it, at today’s electricity price). The MIND it pays back earns the MaiaCity COOP Law 5 dividends; it does not turn back into euros. Only exports bring euros in.`, '');
+	const bestNet = Math.max(...full.map((x) => x.exportEur - x.importEur));
+	L.push(`**Bootstrap number: ${eurM(-low)}** (the lowest cumulative balance, reached in year ${lowYear ?? '–'}). Exports first earned more than the year’s imports in year **${crossYear ?? 'never'}**; the cumulative balance (all exports less all imports since day 0) ${cumYear ? `turned positive in year ${cumYear}` : `never turned positive in ${B.length} years: it stood at ${eurM(B.at(-1)?.bank?.cumulativeEur)} at the end`}. Over the run the village bought ${eurM(impTot)} abroad and sold ${eurM(expTot)}.`, '');
+	if (!cumYear) L.push(`**Exports never repay the bootstrap in euros.** The line sells at most what a 10 MW connection carries, hour by hour, at German market prices; in its best year exports beat imports by ${eurM(bestNet)}${bestNet > 0 ? `, so paying back ${eurM(-low)} would take about ${k0(-low / bestNet)} years` : ''}. The euros the village needs to be built come from outside and stay owed to the founders in euros. **The COOPs repay the bank in MIND, not euros:** they drew ${eurM(advTot)} in advances, paid back the equivalent of ${eurM(advTot - owedEnd)} in their own MIND to the MaiaCity COOP by the end, and still owed ${eurM(owedEnd)}. That MIND earns the MaiaCity COOP its Law 5 dividends inside the village; it never turns back into euros.`, '');
+	else L.push(`The COOPs drew ${eurM(advTot)} in advances and still owed ${eurM(owedEnd)} at the end; they repay the bank in their own MIND (paid back: ${eurM(advTot - owedEnd)}), never in euros.`, '');
+	L.push('| year | people | build-out € | running imports € | all imports € | exports € | the year’s balance € | cumulative € | lowest so far € | advanced € | owed at the year’s end € |', '|---|---|---|---|---|---|---|---|---|---|---|');
+	for (let y = 1; y <= B.length; y += y < 10 ? 1 : 5) {
+		const b = B[y - 1];
+		L.push(`| ${y} | ${k0(b.people)} | ${eurM(b.buildEur)} | ${eurM(b.runEur)} | ${eurM(b.importEur)} | ${eurM(b.exportEur)} | ${eurM(b.exportEur - b.importEur)} | ${eurM(b.bank?.cumulativeEur)} | ${eurM(b.bank?.lowestEur)} | ${eurM(b.bank?.advancedEur)} | ${eurM(b.bank?.owedEur)} |`);
+	}
+	if (B.length > 10 && (B.length - 1) % 5 !== 0) {
+		const b = B[B.length - 1];
+		L.push(`| ${B.length} | ${k0(b.people)} | ${eurM(b.buildEur)} | ${eurM(b.runEur)} | ${eurM(b.importEur)} | ${eurM(b.exportEur)} | ${eurM(b.exportEur - b.importEur)} | ${eurM(b.bank?.cumulativeEur)} | ${eurM(b.bank?.lowestEur)} | ${eurM(b.bank?.advancedEur)} | ${eurM(b.bank?.owedEur)} |`);
+	}
+	L.push('');
+	L.push('| seed | bootstrap number | first year exports > imports | cumulative balance at the end | owed at the end | person-days short of a basic |', '|---|---|---|---|---|---|');
+	for (const b of bases) {
+		const bb = b.s.border ?? [], fb = bb.filter((x) => x.days >= 365);
+		L.push(`| ${b.seed} | ${eurM(-Math.min(...bb.map((x) => x.bank?.lowestEur ?? 0)))} | ${fb.find((x) => x.exportEur >= x.importEur)?.year ?? 'never'} | ${eurM(bb.at(-1)?.bank?.cumulativeEur)} | ${eurM(bb.at(-1)?.bank?.owedEur)} | ${k0(b.p.P1.personDaysShortAny)} |`);
+	}
+	L.push('');
+	// the running imports, year by year
+	L.push('### What the village buys abroad to run, year by year', '');
+	L.push('From day 0 the COOPs buy abroad only what the village cannot yet make or grow: the food COOPs buy food in the diet’s mix, the works buy logs, scrap, float glass and cells (and finished glulam, steel, glazing and panels when their works cannot keep up), the COMPUTE COOPs buy accelerators, and while the village is being built its first solar COOP buys grid electricity when the village’s own falls short. The line sells electricity (the geothermal plant’s and the battery’s at the German day-ahead average, the sun’s at the month’s solar market value). No person holds euros, no MIND is made from euros, HEARTS never buy anything.', '');
+	L.push('| year | food bought (kcal a person a day) | food € | logs t | float glass t | cells kWp | glulam t | steel t | glazing t | panels kWp | accelerators | grid MWh | grid € | running imports € | exports € | exported € a MWh |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+	for (let y = 1; y <= B.length; y += y < 10 ? 1 : 5) {
+		const b = B[y - 1], i = b.imports;
+		L.push(`| ${y} | ${k0(Vs[y - 1]?.food.imported)} | ${eurM(i.food.eur)} | ${k0(i.logs.t)} | ${k0(i.float.t)} | ${k0(i.cells.kwp)} | ${k0(i.glulam.t)} | ${k0(i.steel.t)} | ${k0(i.glazing.t)} | ${k0(i.panels.kwp)} | ${k0(i.accelerators.n)} | ${k0((i.grid?.kwh ?? 0) / 1000)} | ${eurM(i.grid?.eur)} | ${eurM(b.runEur)} | ${eurM(b.exportEur)} | ${k1(b.exportEurMwh)} |`);
+	}
+	L.push('');
+	L.push('| seed | first year the village grew all it needs (2,240 kcal a person a day) | last year it bought food (over 1 % of what it ate) | days a COOP could not pay for its imports |', '|---|---|---|---|');
+	for (const b of bases) L.push(`| ${b.seed} | ${b.s.food?.firstFedYear ?? 'never'} | ${b.s.food?.lastImportYear ?? '–'} | ${k0((b.s.border ?? []).reduce((a, x) => a + (x.importShortDays ?? 0), 0))} |`);
+	L.push('');
+	// rents
+	const ry = [1, 2, 3, 5, 6, 10, 30, 60].filter((y) => y <= Vs.length && Vs[y - 1]?.rent);
+	if (ry.length) {
+		L.push('### Rents (the settlement COOPs and the Village COOP)', '');
+		L.push('A bed a day is what the bed COOPs’ price came to on average that year (R, and as a share of a person’s 24 HEARTS a day, which make about 12 R of MIND for the person). Dome floor is the landlords’ rate a m² (R a month): what keeps the dome up at replacement cost and pays its ground rent, grossed up for Law 5. Euros at the bank’s rate.', '');
+		L.push('| year | a bed a day (R) | share of 24 HEARTS | a bed a month (€ at the bank’s rate) | dome floor R a m² a month | € a m² a month | m² of dome rented |', '|---|---|---|---|---|---|---|');
+		for (const y of ry) {
+			const r = Vs[y - 1].rent;
+			L.push(`| ${y} | ${k1(r.bedRDay)} | ${pc(r.bedShareOfHearts, 0)} | ${eurM(r.bedEurMonth != null ? r.bedEurMonth * 1e6 : NaN).replace(' M', '').replace('€', '€')} | ${k1(r.domeRM2Month)} | ${k1(r.domeEurM2Month)} | ${k0(r.domeM2Rented)} |`);
+		}
+		L.push('');
+	}
+	const f01 = scen.find((x) => x.id === 'F01');
+	if (f01) L.push(`**If the founding euros are fixed (F01).** ${f01.takeaway}`, '');
+	const r01 = scen.find((x) => x.id === 'R01');
+	if (r01) L.push(`**The build-out against a village built before day 0 (R01).** ${r01.takeaway}`, '');
+}
+
+/** every euro price the border uses, with its source and a sanity line (Samuel, 2026-10-13 06:42) */
+function priceTable(L, meta, bases) {
+	const P = meta.prices;
+	if (!P) return;
+	const fl = bases[0]?.s?.food ?? {}, F = bases[0]?.s?.founding ?? {};
+	const kcalDay = fl.kcalDay ?? 2240;
+	const foodDay = (P.foodEur * kcalDay) / 1000;
+	const solarYear = P.solarEurMwh.reduce((a, x) => a + x, 0) / 12;
+	const lineMwhDay = (P.lineKw * 6 * 24) / 1000;
+	const rows = [
+		['Food, wholesale, the diet’s mix', `€${P.foodEur.toFixed(2)} a 1,000 kcal`, P.src.foodEur, `€${foodDay.toFixed(2)} a person a day, €${k0(foodDay * 365 / 12)} a month. A German spends about €200 a month on food and soft drinks at retail (Destatis household budget survey, estimate): wholesale at about half of retail is the usual gap.`],
+		['Glulam (when the timber works cannot keep up)', `€${k0(P.glulamEur)} a t`, P.src.glulamEur, `= €565 a m³ at 0.55 t a m³. Glulam beams cost more at a builders’ merchant (estimate €700–1,000 a m³): wholesale below retail, as it should be.`],
+		['Steel (when the steelworks cannot keep up)', `€${k0(P.steelEur)} a t`, P.src.steelEur, `EU hot-rolled coil traded around €600–700 a t in 2025 (estimate); plate costs a little more.`],
+		['Laminated double glazing (when the glassworks cannot keep up)', `€${k0(P.glazingEur)} a t`, P.src.glazingEur, `At 50 kg a m², €100 a m²: inside the €95–140 a m² quoted for double glazing.`],
+		['Float glass (the glassworks’ raw input)', `€${k0(P.floatEur)} a t`, P.src.floatEur, `A 4 mm pane weighs 10 kg a m², so €6.50 a m² of raw glass, far below finished glazing.`],
+		['Logs (the timber works’ raw input)', `€${k0(P.logsEur)} a dry t`, P.src.logsEur, `€105 a solid m³ at 0.45 dry t a m³.`],
+		['Solar cells for the glass', `€${k0(P.cellsEur)} a kWp`, P.src.cellsEur, `Plain modules sell at about €100 a kWp; cells for laminating into glass at three times that. A kWp gives about 980 kWh a year in Munich.`],
+		['See-through solar glass (when the panel works cannot keep up)', `€${k0(P.panelsEur)} a kWp`, P.src.panelsEur, `Semi-transparent glass modules are quoted at €1.0–1.6 a Wp; the low end.`],
+		['Accelerators (Aven services)', `€${k0(P.chipEur)} each`, P.src.chipEur, `H100-class list prices €30,000–40,000. One accelerator costs ${k0(P.chipEur / P.spotEurMwh)} MWh of exports at the day-ahead average.`],
+		['Geothermal drilling and plant (the Village COOP)', F.geothermal ? eurM(F.geothermal.eur) : '–', 'src/lib/sandbox-7/buildout.js (BUILD_SOURCES.geothermal): three wells about 7 km deep and the ORC plant, 30–45 M€ by the village energy research; a Bavarian deep well “quickly costs over 10 M€” (BUND Naturschutz 2023)', `Three wells at more than €10M each plus the plant: about €38M is at the low end of the range.`],
+		['Grid electricity bought during the build-out', `€${P.gridEurKwh.toFixed(2)} a kWh`, P.src.gridEurKwh, `German industrial customers pay 17–18 ct a kWh with charges and taxes, households about 40 ct.`],
+		['Electricity sold: baseload (geothermal, battery)', `€${P.spotEurMwh.toFixed(2)} a MWh`, P.src.spotEurMwh, `The German day-ahead average for 2025.`],
+		['Electricity sold: what the sun makes', `€${k1(Math.min(...P.solarEurMwh))}–${k1(Math.max(...P.solarEurMwh))} a MWh by month (year ${k1(solarYear)})`, P.src.solarEurMwh, `About half the baseload price over a year, and a fifth of it in June: sunny noons flood the market, so solar sold at noon fetches far less.`],
+		['The line to the grid', `${k0(P.lineKw * 6 / 1000)} MW`, P.src.lineKw, `At most ${k0(lineMwhDay)} MWh a day and ${k1(lineMwhDay * 365 / 1000)} GWh a year: at the baseload price that caps exports at about ${eurM(lineMwhDay * 365 * P.spotEurMwh)} a year.`],
+		['Goods sold abroad', 'none', 'this model sells only electricity across the border', 'The works make for the village; nothing else is exported.'],
+		['Land', F.rows ? eurM(F.rows.find((r) => r.id === 'land')?.eur) : '–', 'src/lib/sandbox-7 specs.js PRICES (farmland at Sandbox 6’s price), in the build-out plan', 'The MaiaCity COOP’s, leased to the COOPs.']
+	];
+	L.push('### Every euro price, with its source', '');
+	L.push('| item | price | source | sanity check |', '|---|---|---|---|');
+	for (const [a, b, c, d] of rows) L.push(`| ${a} | ${b} | ${String(c ?? '').replace(/\|/g, '/')} | ${d} |`);
+	L.push('');
+}
+
+/** Proposition 3 in real units, every failing item, tenth and window, and the old money index beside it */
+function p3Real(L, bases) {
+	L.push('## Proposition 3 in real units, per tenth', '');
+	const r0 = bases[0].p.P3.real;
+	if (!r0) return;
+	L.push(`**Rule.** ${r0.rule}. **Newcomers.** ${cap1(r0.newcomers)}.`, '');
+	for (const b of bases) {
+		const R = b.p.P3.real, O = b.p.P3.oldIndex;
+		L.push(`#### Seed ${b.seed}: ${yes(R.pass)} in real units (${R.failedTenths.length} of 20 tenths fail over ${R.years} full years); the COOP part ${yes(b.p.P3.coops.pass)}`, '');
+		L.push(`Old money index (comparison): ${O ? `${yes(O.pass)}, ${O.failed.length} of 20 deciles fail${O.failed.length ? ` (${O.failed.join(', ')})` : ''}` : '–'}.`, '');
+		if (R.basicsFail.length) {
+			const g = new Map();
+			for (const x of R.basicsFail) {
+				const k = `${x.by} tenth ${x.tenth}: ${x.item}`;
+				if (!g.has(k)) g.set(k, []);
+				g.get(k).push(`year ${x.year} ${k1(x.value)} of ${k1(x.need)} ${x.unit}`);
+			}
+			L.push('Basics below need: ' + [...g].map(([k, v]) => `${k} (${v.join('; ')})`).join('. ') + '.', '');
+		}
+		if (R.failures.length) {
+			L.push('| tenth | item | windows with a fall over 2 % (years) | worst fall | binding limit |', '|---|---|---|---|---|');
+			const g = new Map();
+			for (const x of R.failures) {
+				const k = `${x.by} ${x.tenth}|${x.item} (${x.unit})`;
+				const e = g.get(k) ?? { w: [], worst: null };
+				e.w.push(`${x.from}→${x.to}`);
+				if (!e.worst || x.fall > e.worst.fall) e.worst = x;
+				g.set(k, e);
+			}
+			for (const [k, e] of g) {
+				const [t, item] = k.split('|');
+				L.push(`| ${t} | ${item} | ${e.w.join(', ')} | ${pc(-e.worst.fall, 0)} (${k1(e.worst.before)} → ${k1(e.worst.after)}, years ${e.worst.from}→${e.worst.to}) | ${e.worst.bind} |`);
+			}
+			L.push('');
+		}
+		if (R.riseFail.length) L.push('Baskets that did not rise over the run: ' + R.riseFail.map((x) => `${x.by} tenth ${x.tenth} (up: ${x.up.join(', ') || 'nothing'}; down: ${x.down.join(', ') || 'nothing'})`).join('; ') + '.', '');
+		if (R.excused) L.push(`${R.excused} falls were excused (at satiation, or a physical limit bound that year).`, '');
+	}
+}
+
 /** the base world's border setting, as the run had it, and why (the other setting is B23's counter-case) */
 function borderLine(b0, scen) {
 	// the base run's own setting: the defaults with what --set changed, as the world ran it
@@ -461,16 +806,42 @@ const csvq = (s) => `"${String(s).replace(/"/g, '""')}"`;
 
 /** numbers rounded to 4 significant digits, for the page's JSON */
 const round = (v) => (typeof v === 'number' ? (Number.isFinite(v) ? +v.toPrecision(4) : null) : Array.isArray(v) ? v.map(round) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round(x)])) : v);
+/** a run's parameter set against the base's: the settings it changed and the catalog numbers that differ */
+function paramDiff(p, base) {
+	if (!p) return null;
+	const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+	const overrides = {};
+	for (const [k, v] of Object.entries(p.settings ?? {})) if (!same(v, base?.defaults?.[k]) && k !== 'label') overrides[k] = v;
+	const catalog = {};
+	for (const [k, v] of Object.entries(p.catalog ?? {})) if (!same(v, base?.catalog?.[k])) catalog[k] = v;
+	return round({ overrides, catalog });
+}
+const pbaseOf = (bases) => {
+	const p = bases[0]?.s?.params;
+	return p ? { defaults: p.defaults, catalog: p.catalog, village: p.village } : null;
+};
+let pbase = null;
 function toJson(exps, scen, bases, notCovered, meta) {
+	pbase = pbaseOf(bases);
+	const b0 = bases[0]?.s;
+	const firstYear = (B, f) => B?.find((b) => b.days >= 365 && f(b))?.year ?? null;
 	return {
+		// the base world's parameters once, and per run only what differs (contract.md §1)
+		paramsBase: pbase ? round(pbase) : null,
+		// the base world (seed 20261012): living standards by tenth, the village's food and energy, the border, the diet
+		// and its land (contract.md §2–4)
+		living: b0 ? { seed: b0.seed, years: round(b0.living) } : null,
+		village: b0 ? { seed: b0.seed, years: round(b0.village), indoorMonths: round(b0.indoorMonths ?? null) } : null,
+		border: b0 ? { seed: b0.seed, years: round(b0.border), founding: round(b0.founding), firstFedYear: b0.food?.firstFedYear ?? null, lastImportYear: b0.food?.lastImportYear ?? null, exportsCoverYear: firstYear(b0.border, (b) => b.exportsCover), reserveOutYear: firstYear(b0.border, (b) => b.reserveOut) } : null,
+		food: b0 ? round(b0.food) : null,
 		generated: meta.now,
 		command: 'node scripts/sandbox-9-proof.mjs',
 		engineHash: meta.hash,
 		wallSeconds: Math.round(meta.wall / 1000),
 		headline: bases.length ? headline(exps, scen, bases).map((r) => ({ part: r.part, holds: r.holds, base: r.base, breaks: r.breaks })) : [],
-		seeds: bases.map((b) => ({ seed: b.seed, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
-		experiments: exps.map((e) => ({ id: e.r.id, question: e.r.question, ruleChanged: e.r.ruleChanged, people: e.r.people, years: e.r.years, seed: e.r.seed, pass: e.r.verdict.pass, ens: e.r.ens ?? null, claim: e.r.verdict.claim, evidence: e.r.verdict.evidence, takeaway: e.r.takeaway, metrics: e.r.metrics.map((m) => ({ id: m.id, label: m.label, base: round(m.base), changed: round(m.changed) })), seconds: round(e.ms / 1000) })),
-		scenarios: scen.map((s) => ({ id: s.id, name: s.name, paper: s.paper, claim: s.claim, pass: s.pass, takeaway: s.takeaway, evidence: s.evidence, runs: s.runs.map((r) => ({ label: r.label, people: r.people ?? 250, years: r.years })), numbers: round(s.numbers), seconds: round(s.ms / 1000) })),
+		seeds: bases.map((b) => ({ seed: b.seed, params: paramDiff(b.s.params, pbase), living: round(b.s.living), border: { firstFedYear: b.s.food?.firstFedYear ?? null, lastImportYear: b.s.food?.lastImportYear ?? null, exportsCoverYear: firstYear(b.s.border, (x) => x.exportsCover), reserveOutYear: firstYear(b.s.border, (x) => x.reserveOut), reserveLow: round(Math.min(...(b.s.border ?? []).map((x) => x.reserveMinEur ?? Infinity))), importShortDays: (b.s.border ?? []).reduce((a, x) => a + (x.importShortDays ?? 0), 0), shortPD: b.p.P1.personDaysShortAny }, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3real: b.p.P3.real?.pass ?? null, P3realFailed: b.p.P3.real?.failedTenths ?? [], P3oldIndex: b.p.P3.oldIndex?.pass ?? null, bootstrapEur: round(-Math.min(...(b.s.border ?? []).map((x) => x.bank?.lowestEur ?? 0))), exportsOverImportsYear: firstYear(b.s.border, (x) => x.exportEur >= x.importEur), P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000) })),
+		experiments: exps.map((e) => ({ id: e.r.id, question: e.r.question, ruleChanged: e.r.ruleChanged, people: e.r.people, years: e.r.years, seed: e.r.seed, params: { base: paramDiff(e.r.base.params, pbase), changed: paramDiff(e.r.changed.params, pbase) }, food: { base: round(e.r.base.food ?? null), changed: round(e.r.changed.food ?? null) }, pass: e.r.verdict.pass, ens: e.r.ens ?? null, claim: e.r.verdict.claim, evidence: e.r.verdict.evidence, takeaway: e.r.takeaway, metrics: e.r.metrics.map((m) => ({ id: m.id, label: m.label, base: round(m.base), changed: round(m.changed) })), seconds: round(e.ms / 1000) })),
+		scenarios: scen.map((s) => ({ id: s.id, name: s.name, paper: s.paper, claim: s.claim, pass: s.pass, takeaway: s.takeaway, evidence: s.evidence, runs: s.runs.map((r) => ({ label: r.label, people: r.people ?? 1500, years: r.years, params: r.params ? paramDiff(r.params, pbase) : null, food: r.food ? round(r.food) : null })), numbers: round(s.numbers), seconds: round(s.ms / 1000) })),
 		notCovered: notCovered.map(([id, name, why]) => ({ id, name, why }))
 	};
 }

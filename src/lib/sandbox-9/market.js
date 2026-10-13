@@ -39,17 +39,20 @@ export function postPrices(w) {
 		const floor = co.floorR;
 		const H = GOODS[co.good].horizon;
 		const m = co.margin;
-		const others = avg.n[co.good] > 1 ? (avg.sum[co.good] - now) / (avg.n[co.good] - 1) : now;
+		// the others: the sellers of the good that have something to sell (./market.js avgPriceR)
+		const mine = selling(co);
+		const nO = avg.n[co.good] - (mine ? 1 : 0);
+		const others = nO > 0 ? (avg.sum[co.good] - (mine ? now : 0)) / nO : now;
 		let p = now;
-		if (w.day > 0 && !(co.capDay > 0) && !(co.stock > 0)) {
+		if (w.day > 0 && !mine) {
 			// a COOP still building its first plant has nothing to sell: it quotes the others' price
-			p = avg.n[co.good] > 1 ? others : now;
+			p = others;
 		} else if (w.day > 0) {
 			if (rule === 'mark0') {
 				// Mark-0: up by a random step when short and below the others' price, down when in glut and above it
 				const step = 0.05 * rnd(w);
-				if (m < 1 && (now < others || avg.n[co.good] < 2)) p *= 1 + step;
-				else if (m > 1 && (now > others || avg.n[co.good] < 2)) p *= 1 - step;
+				if (m < 1 && (now < others || nO < 1)) p *= 1 + step;
+				else if (m > 1 && (now > others || nO < 1)) p *= 1 - step;
 			} else if (rule === 'primer') {
 				// Primer's adaptive price: a little more after a day it sold out, a little less after a day with some
 				// left. "Yesterday" is what the seller wrote down at the end of yesterday (soldOutY, orderedY: see
@@ -66,7 +69,7 @@ export function postPrices(w) {
 				const lm = log(Math.max(1e-9, m));
 				if (co.fullR > 0) co.ref *= exp(log(co.fullR / co.ref) / 60);
 				let target = co.ref * exp(-lm);
-				if (avg.n[co.good] > 1) {
+				if (nO > 0) {
 					if (m >= 1 && target > others && target > now) target = Math.max(now, others);
 					if (m < 1 && target < others && target < now) target = Math.min(now, others);
 				}
@@ -95,10 +98,15 @@ export function sellerOutcome(w) {
 	}
 }
 
-/** sum and count of sellers' R prices by good */
+/**
+ * sum and count of sellers' R prices by good, over the sellers that have something to sell: a COOP still building
+ * its first plant (or, on the ramp, one whose settlement has not launched) only quotes the others' price, so it does
+ * not hold theirs where it was
+ */
+const selling = (co) => co.capDay > 0 || co.stock > 0;
 function avgPriceR(w) {
 	const sum = new Float64Array(G), n = new Float64Array(G);
-	for (const co of w.coops) if (co.alive) (sum[co.good] += co.priceR ?? co.price * w.P[co.k]), n[co.good]++;
+	for (const co of w.coops) if (co.alive && selling(co)) (sum[co.good] += co.priceR ?? co.price * w.P[co.k]), n[co.good]++;
 	return { sum, n };
 }
 

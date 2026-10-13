@@ -3,19 +3,27 @@
  * SANDBOX 8 · THE LAB'S WORKER — runs an experiment's two worlds (same seed, one rule changed) off the page's thread,
  * so the page never freezes, and sends the page what to draw: a frame of each field at most 30 times a second, a
  * point of the time charts every few days, the bar charts twice a second, and at the end the computed takeaway, the
- * verdict and whether each guess came true.
+ * verdict and whether each guess came true. About once a simulated month it also reads each world's yearly records
+ * (./records.js livingYears, villageYears, borderYears, foundingBill) for the Living and Imports tabs, and at the start
+ * every parameter each world runs with (./engine.js paramSet) for the World tab.
  *
  * Messages in:  { type: 'start', id, seed?, speed? } · { type: 'play' } · { type: 'pause' } · { type: 'speed', speed }
  *               (days a second; Infinity: as fast as it goes)
- * Messages out: { type: 'meta' } · { type: 'frame' } · { type: 'done' } · { type: 'error' }
+ * Messages out: { type: 'meta', params, stats } · { type: 'frame', stats? } · { type: 'done', stats } · { type: 'error' }
  */
 import { EXPERIMENTS, startExperiment } from './experiments.js';
 import { makeViewer } from './view.js';
 import { judgeGuesses } from './guesses.js';
+// read as namespaces: a reader the engine does not have (yet) is simply left out, never a failed build
+import * as ENG from './engine.js';
+import * as REC from './records.js';
+import { livingOf, importsOf } from './params.js';
+import { DAY } from '../sandbox-7/specs.js';
 
 const FRAME_MS = 33; // at most 30 frames a second
 const PANEL_MS = 500;
 const SLICE_MS = 40; // the longest the worker runs days before it looks at its messages again
+const STATS_DAYS = 30; // read the yearly records about once a simulated month
 
 let run = null; // { exp, runner, vb, vc, every, ptA, playing, speed, owed, last, stepMs, lastFrame, lastPanel, done }
 
@@ -71,6 +79,9 @@ function start(m) {
 		seed: runner.base.cfg.seed,
 		people: runner.base.N,
 		shocks: { base: runner.base.cfg.shocks ?? [], changed: runner.changed.cfg.shocks ?? [] },
+		// every parameter each world runs with (the World tab): its settings and the catalog constants it was built from
+		params: { base: paramsOf(runner.base), changed: paramsOf(runner.changed), defaults: plain(ENG.paramSet?.(runner.base)?.defaults ?? ENG.DEFAULTS ?? null) },
+		stats: statsNow(),
 		createMs: run.createMs
 	});
 	post(true);
@@ -131,6 +142,7 @@ function post(withPanel) {
 	if (withPanel) {
 		msg.panel = { base: r.vb.panel(), changed: r.vc.panel() };
 		r.lastPanel = performance.now();
+		if (r.done || r.runner.day - r.statsDay >= r.statsEvery) msg.stats = statsNow();
 	}
 	r.points = { base: [], changed: [] };
 	r.ranSince = 0;
@@ -152,6 +164,7 @@ function finish() {
 	});
 	self.postMessage({
 		type: 'done',
+		stats: statsNow(),
 		result: {
 			id: res.id,
 			question: res.question,
@@ -168,6 +181,37 @@ function finish() {
 			msPerYear: (r.stepMs / Math.max(1, r.runner.day)) * 365
 		}
 	});
+}
+
+/**
+ * A world's parameters as plain data: the settings it runs with, the catalog constants it was built from and the
+ * village facts (./engine.js paramSet), or, from an engine without it, its config and constants.
+ */
+function paramsOf(w) {
+	const p = ENG.paramSet ? ENG.paramSet(w) : { settings: w.cfg, catalog: w.c };
+	return { settings: plain(p.settings ?? w.cfg), catalog: plain(p.catalog ?? w.c ?? {}), village: plain(p.village ?? null) };
+}
+
+/** each world's yearly living standards and border ledger so far (the Living and Imports tabs) */
+function statsNow() {
+	const r = run;
+	if (!r) return null;
+	const t0 = performance.now();
+	const one = (w) => {
+		try {
+			const L = REC.livingYears?.(w) ?? null, V = REC.villageYears?.(w) ?? null;
+			const B = REC.borderYears?.(w) ?? null, F = REC.foundingBill?.(w) ?? null;
+			return { living: plain(livingOf(L, V, w.c, DAY)), imports: plain(importsOf(B, F, V, {}, L)) };
+		} catch (err) {
+			return { error: String(err?.message || err) };
+		}
+	};
+	const out = { base: one(r.runner.base), changed: one(r.runner.changed), day: r.runner.day };
+	r.statsDay = r.runner.day;
+	// reading the records should cost little; if it does not, read them less often
+	const ms = performance.now() - t0;
+	r.statsEvery = ms > 40 ? STATS_DAYS * 4 : ms > 15 ? STATS_DAYS * 2 : STATS_DAYS;
+	return out;
 }
 
 const plain = (v) => (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' || v == null ? v : JSON.parse(JSON.stringify(v)));
