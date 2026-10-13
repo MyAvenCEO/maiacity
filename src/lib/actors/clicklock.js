@@ -43,14 +43,16 @@ export function clickKeeper(box, put, { half, face, z, len, back = 40, steel = '
 
 /**
  * The sliding half in all its pieces, each its own part for a machine's exploded view: the two pawls, their springs
- * and pivot pins, the two release cables and the trigger (in a grip at `grip`, or the face's tab). Returns
- * [id, card, draw] for the machine to add with its own part().
+ * and pivot pins, the two release cables and the trigger (in a grip at `grip`, or the face's tab). With `straight`
+ * (the grip's trigger at the pawls' own height), each cable runs flat at that one height: in through the face, along
+ * its inside to the corner and straight back along the side wall to its pawl. Returns [id, card, draw] for the
+ * machine to add with its own part().
  * @param {(x: number, y: number, z: number, w: number, l: number, h: number, r?: number) => any} box
  * @param {(a: [number, number, number], b: [number, number, number], r: number, n?: number) => any} cyl
- * @param {{ half: number, face: number, z: number, grip?: [number, number, number], back?: number, steel?: string, dark?: string }} o
+ * @param {{ half: number, face: number, z: number, grip?: [number, number, number], straight?: boolean, back?: number, steel?: string, dark?: string }} o
  * @returns {[string, { label: string, count?: number, what: string, specs: [string, string][] }, (put: (geo: any, color: string) => void) => void][]}
  */
-export function clickLockPieces(box, cyl, { half, face, z, grip, back = 40, steel = '#8d9396', dark = '#3a3f44' }) {
+export function clickLockPieces(box, cyl, { half, face, z, grip, straight = false, back = 40, steel = '#8d9396', dark = '#3a3f44' }) {
 	const y = face - back; // the pawls' teeth
 	/** @type {[number, number, number]} */
 	const t = grip ?? [0, face + 2, 24];
@@ -67,10 +69,12 @@ export function clickLockPieces(box, cyl, { half, face, z, grip, back = 40, stee
 		['lock-pivots', { label: 'Pivot pins', count: 2, what: 'A pin through each pawl’s back end, standing in the case floor: the pawl swings round it, in and out.', specs: [['Pin', '⌀ 4 mm, stainless']] }, (put) => {
 			for (const sx of [-1, 1]) put(cyl([sx * (half - 4), y - 38, z - 8], [sx * (half - 4), y - 38, z + 8], 2.5, 8), steel);
 		}],
-		['lock-cables', { label: 'Release cables', count: 2, what: 'Two short steel cables in sleeves run from the trigger along the inside of the face to the two pawls. Pulling the trigger pulls both cables, and both pawls swing in together, out of their keepers.', specs: [['Cable', '⌀ 1.5 mm steel in a PTFE sleeve'], ['Pull', '4 mm']] }, (put) => {
+		['lock-cables', { label: 'Release cables', count: 2, what: straight ? 'Two short steel cables in sleeves, both at the pawls’ own height: from the trigger in through the face, along its inside to the corner and straight back along the side wall to the pawl, no bend up or down. Pulling the trigger pulls both cables, and both pawls swing in together, out of their keepers.' : 'Two short steel cables in sleeves run from the trigger along the inside of the face to the two pawls. Pulling the trigger pulls both cables, and both pawls swing in together, out of their keepers.', specs: [['Cable', '⌀ 1.5 mm steel in a PTFE sleeve'], ['Pull', '4 mm']] }, (put) => {
 			for (const sx of [-1, 1]) {
 				/** @type {[number, number, number][]} */
-				const path = [[sx * 30, t[1] - 4, t[2]], [sx * 50, face - 8, t[2]], [sx * (half - 40), face - 10, z + 2], [sx * (half - 8), y - 6, z]];
+				const path = straight
+					? [[sx * 60, t[1], z], [sx * 60, face - 10, z], [sx * (half - 24), face - 10, z], [sx * (half - 8), y - 6, z]]
+					: [[sx * 30, t[1] - 4, t[2]], [sx * 50, face - 8, t[2]], [sx * (half - 40), face - 10, z + 2], [sx * (half - 8), y - 6, z]];
 				for (let i = 1; i < path.length; i++) put(cyl(path[i - 1], path[i], 1.6, 6), dark);
 			}
 		}],
