@@ -28,9 +28,9 @@ lake exe vectors
 
 | File | What it holds |
 |---|---|
-| `Basic.lean` | Ids, principals (signers and vaults), levels relay < read < write < owner, whom a share names (`Who`), selectors and what they test (type, author, entry, creation time, tags), audiences, key families and key names |
+| `Basic.lean` | Ids, principals (signers and vaults), levels relay < backup < read < write < owner (a level's rank is its byte on the wire), whom a share names (`Who`: a vault, everyone or a device), selectors and what they test (type, author, entry, creation time, tags), audiences, key families and key names |
 | `State.lean` | What a peer knows: the three kinds of vault (human, coop, aven) and what each may be owned by; acting for a vault through the chain of owners an edit names (`actsVia`), approving for it (its root, or its threshold of owners); shares and the chains they rest on; entries, their stays and audiences; the operational rules a relay can check (who may write, create, revoke) and the semantic layer only readers and stewards know (an entry's attributes, whether its creation was let in, its semantic audience, `desired`); sync rules, which entries each device wants (`wants`, `keeps`) and the marks the stewards put on them (`semPicks`, `desiredPicks`); which writes an entry's readers count, by the ops of the chain a write's proof names and whether it fits its entry's schemas (`lets`, `counts`, `creates`, `counted`); symbolic keys (`Knows`), rotation, sealing and entry keys |
-| `Step.lean` | Every edit and the rules that accept or refuse it: governance, shares and revocations, writes that create entries in audiences, moves, keys, publishing into a vault's schema lane, checkpoints, writes on a proposal (which build on its start); the one order every peer replays in; strong removal: what a removal or a move cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
+| `Step.lean` | Every edit and the rules that accept or refuse it: a vault's genesis and its settings (threshold, root); shares (a grant, an owner, a device) and their revocations, an owner grant never of the whole vault (WideOwner); writes that create entries in audiences, moves, keys, publishing into a vault's schema lane, checkpoints, writes on a proposal (which build on its start); the one order every peer replays in; strong removal: what a removal or a move cuts, and which removals stand when they clash (`view`); what a peer counts once it no longer trusts the curves (`checkpointed`) |
 | `Sync.lean` | What a peer sends a device: sync by audiences, entry by entry (each entry's writes, moves, checkpoints, marks and keys), of the entries it may receive and its sync rules want (`syncs`), with the shares and vaults needed to check them; the files a peer may hand a device, those the writes it sends bring (`mayFetch`); and what it hands a new device whose passkey proved itself on their connection, the logs of the vaults the passkey owns (`linkCard`) |
 | `Logs.lean` | Every edit in one log, a vault's, a share's, an audience's or an entry's, building on that log's frontier; each log's closed part (the edits whose whole past is held) and frontier; what a device names of each log when it asks (its frontier, the edits 1, 2, 4, 8, … steps back and the oldest) and its loose edits; what a peer sends beyond them (`respondSince`); forks |
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
@@ -42,9 +42,9 @@ lake exe vectors
 | `RuleLemmas.lean` | The proofs of C1 to C4: chains narrow, readers agree whether a write counts, counted writes did what their chain allows, allowed writes count and what builds on an uncounted one never does |
 | `Schemas.lean` | Writes that fit their schemas: what the schemas a write is judged under let a record hold, place by place, row by row and in its own fields (`Fit`); a write judged by its diff (`Fit.fits`); S1 and S2, a write judged by what it changed and records that fit staying so |
 | `Props.lean` | The predicates and views the theorems are stated with, apart from their proofs |
-| `Theorems.lean` | T1 to T8, T11 to T29, C1 to C4 and S1 to S4; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
+| `Theorems.lean` | T1 to T8, T11 to T29 (with `T22_wide_shares`), C1 to C4 and S1 to S4; and `writes_ordered`, the order every peer's writes come in, which T10f to T10h rest on |
 | `Lemmas.lean` | The helper lemmas for vaults and writes: how a step changes a vault, ownership links and chains, what a step keeps that authorization reads, causal closure, the schema lane |
-| `CapLemmas.lean` | The helper lemmas for shares, audiences, sync rules and removals: well-formed share chains (T22); one lemma, `mark_means`, that a list of marks means what the selectors say, from which both audiences meaning what the shares say (T23) and marks meaning what the rules say (T29) follow; the replay and strong removal (T16, T18), the epochs along a replay (T15) |
+| `CapLemmas.lean` | The helper lemmas for shares, audiences, sync rules and removals: well-formed share chains, and no owner share wide, so a wide share rests on none (T22); one lemma, `mark_means`, that a list of marks means what the selectors say, from which both audiences meaning what the shares say (T23) and marks meaning what the rules say (T29) follow; the replay and strong removal (T16, T18), the epochs along a replay (T15) |
 | `RelayLemmas.lean` | The proof of T25: every rule reads only the operational part of a state, so a relay that opens no selector, type or tag has every edit stand or fall as an owner does |
 | `KeyLemmas.lean` | The helper lemmas for the keys: what settling seals, publishes and links, `opens` finding every key `Knows` gives, the invariants behind T5, T6 and T24, `EverReads` |
 | `SyncLemmas.lean` | The helper lemmas for sync: the replay order is a total order on ids (T11), what a peer sends a device and that it follows the device's sync rules (T28), a log's closed part lying at or below its frontier, and every edit a device names of a log being one it holds with its whole past (T19) |
@@ -62,9 +62,9 @@ lake exe vectors
 | # | What must always hold | Status | Guarded in Rust by |
 |---|---|---|---|
 | T1 | Only authorized writes are accepted, each by a device acting for the vault through the owners the write names, for a vault that is the entry's or holds a live share with write or more reaching the entry's audience; a new entry is created by its vault, or in the intake audience of such a share; and revocation wins over what it hadn't seen | Proven | `write_without_share_rejected_on_import`, `t1_authorized_writes`, `t1_revocation_wins`, the vectors |
-| T2 | Governance needs the vault's approval (its root, or its threshold of owners) plus the newcomer's consent; devices, a human vault's or an aven vault's servers, can't govern | Proven | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `an_aven_vaults_devices_act_for_it_but_never_govern_it`, `the_passkey_is_the_root`, `t2_consent`, the vectors |
+| T2 | Governance (settings, and sharing or revoking an owner or a device) needs the vault's approval (its root, or its threshold of owners) plus the newcomer's consent, unless an owner or a device leaves on its own; devices, a human vault's or an aven vault's servers, can't govern | Proven | `add_owner_needs_threshold_and_consent`, `device_cannot_govern`, `an_aven_vaults_devices_act_for_it_but_never_govern_it`, `the_passkey_is_the_root`, `t2_consent`, the vectors |
 | T3 | No ownership cycles in any state the edits can reach | Proven | `ownership_cycle_rejected`, `t3_no_cycles`, the vectors |
-| T4 | Shares name vaults, never signers | Proven | `share_to_signer_rejected`, `t4_shares_name_vaults_and_t8_everyone_only_reads`, the vectors |
+| T4 | Shares name vaults or everyone, never a device | Proven | `share_to_signer_rejected`, `t4_shares_name_vaults_and_t8_everyone_only_reads`, the vectors |
 | T5 | A holder (a signer, whoever holds a vault's seed, or everyone) opens a key of a family, of any epoch, only if over the history it could read the family: itself, while it was public, or through a vault whose seed it held at some point (whoever joins a vault inherits what the vault could read) | Proven | `t5_confidentiality`, `entry_reader_cannot_open_other_entries`, `every_device_opens_exactly_what_it_may` |
 | T6 | Forward secrecy on removal: in every state the edits can reach, the current key of a family in use opens only for holders entitled to it now, or while it is public | Proven | `t6_forward_secrecy`, `revoked_reader_cannot_open_new_edits`, `every_device_opens_exactly_what_it_may`, the vectors |
 | T7 | Blind server: a device whose vaults read nothing of another vault, such as the server acting for avenCEO with its relay shares, opens no key of a vault whose seed it never held, unless that key was public | Proven from T5 | `server_holds_only_ciphertext`, `every_device_opens_exactly_what_it_may` |
@@ -82,7 +82,7 @@ lake exe vectors
 | T19 | Frontier sync loses nothing: a device that asks with its frontier of each log, a few edits further back and its loose edits is sent every edit of the peer's answer it lacks; and two copies of a log with the same frontier hold the same closed part, so one digest per log tells whether to ask | Proven | `t19_frontier_sync_loses_nothing`, `t19_partial_delivery`, `t19_one_digest_per_log`, `a_second_sync_sends_nothing`, `an_edit_sends_only_what_is_new_both_ways`, the sync vectors |
 | T20 | Linking hands out vault logs alone: what a peer hands a device whose passkey's pass names it on their connection is the log of each vault the passkey owns, or that owns such a vault up the chains, and nothing of a share, an audience or an entry; a passkey that owns no vault there gets nothing | Proven | `a_link_card_holds_the_logs_of_the_passkeys_vaults_and_nothing_else`, `a_node_hands_its_card_for_a_pass_for_the_device_on_that_very_connection_alone`, the link vectors |
 | T21 | Vaults keep to their kind: signers own human vaults only; coop and aven vaults are owned by human and coop vaults; a coop vault has no devices; only a human vault has a root. So every act for a coop goes through a human vault its device or passkey belongs to, and so does every act for an aven vault that none of its own servers signs | Proven | `every_vault_keeps_to_its_kind`, `t21_vault_kinds`, `an_act_for_a_coop_names_the_vault_it_goes_through`, `a_removed_owners_unseen_writes_for_the_coop_are_cut`, the vectors |
-| T22 | A share grants no more than the shares it rests on: a share that rests on another is over the same vault, rests on an owner share issued to its own issuer, and selects nothing its parent doesn't; a wide share rests only on a wide share | Proven | `t22_shares_narrow_down_their_chain`, `scenario_24_a_share_resting_on_a_share`, the vectors |
+| T22 | A share grants no more than the shares it rests on: a share that rests on another is over the same vault, rests on an owner share issued to its own issuer, and selects nothing its parent doesn't; a wide share rests only on a wide share. No owner share is wide, since owner of a whole vault is an owner of it, which no share makes (WideOwner): so that last clause holds only vacuously, and every wide share rests on none and was issued by the vault it is over (`T22_wide_shares`) | Proven | `t22_shares_narrow_down_their_chain`, `scenario_24_a_share_resting_on_a_share`, the vectors |
 | T23 | Audiences mean what the shares say: where an entry's audience, revoked shares left aside, is its semantic audience, the write rule every peer checks without reading a selector, a type or a tag allows exactly the vaults the shares' selectors allow; and that rule never refuses a creation inside its creator's slice | Proven | `t23_audiences_mean_what_shares_say`, `scenario_19_share_every_entry_of_a_type`, `scenario_23_creating_through_a_share`, the vectors |
 | T24 | An entry's key reaches only its audience's readers: whoever opens the key of an entry in its current stay, at its audience's current epoch, may open that audience's current key; and over the history a holder opens a key of an entry only if it could read some audience the entry was in | Proven | `t24_entry_keys_reach_only_audience_readers`, `scenario_21_a_tag_moves_an_entry_out_of_a_slice`, `scenario_26_an_audience_that_comes_back_into_use_moves_on` |
 | T25 | Blind relays: a peer that reads no selector, no type and no tag, such as the server, holding the same edits as an owner, has every edit stand or fall alike and knows the same of the vaults, shares, audiences, writes and keys | Proven | `t25_blind_relays`, `scenario_25_wide_shares_relays_and_public` |
@@ -123,30 +123,31 @@ an audience, and `t6_forward_secrecy` checks that nothing else makes any.
 Concurrent changes replay in one order (causal depth, removals first, then edit hash), so they settle the same way on
 every device. That alone doesn't stop a removed owner, or a thief holding a stolen passkey, from signing edits on an old
 copy of the log that claim to come before the removal, so a removal cuts what it hadn't seen (T16). Every removal
-(removing an owner or a device, revoking a share, handing the root on, moving an entry) names the edits it had seen and
-keeps; every other edit before it in the replay order stands only if it also stands with what the removal takes away
-hidden, for governance as for writes. When removals clash, the senior one stands. Removals settle from the top down: a
-vault's before those of the coops it owns, since a coop's removals rest on its owners' approval, and within a vault its
-root, then its owners in the order they joined, then removals no owner approved (a device leaving). Revocations follow,
-the most senior revoker first: the vault the share is over, then whoever issued a share higher up the revoked share's
-chain. So a revoked owner can't keep their share by revoking, on an old copy, a share they gave beneath it, and a peer
-that never held a coop's log settles its owners' vaults as everyone else does (a finding of P6). Moves come last: a move
-takes away only the audience writes of its own entry rested on, which no removal and no other move rests on, so the Rust
-core doesn't try each move as it tries each other removal, and chooses the same.
+(revoking an owner, a device or a grant, handing the root on, moving an entry) names the edits it had seen and keeps;
+every other edit before it in the replay order stands only if it also stands with what the removal takes away hidden,
+for governance as for writes. When removals clash, the senior one stands. A vault's own removals (an owner or a device
+revoked, the root handed on) settle first, from the top down: a vault's before those of the coops it owns, since a
+coop's removals rest on its owners' approval, and within a vault its root, then its owners in the order they joined,
+then removals no owner approved (a device leaving). Revoked grants follow, the most senior revoker first: the vault the
+grant is over, then whoever issued a grant higher up the revoked grant's chain. So a revoked owner can't keep their
+grant by revoking, on an old copy, a grant they gave beneath it, and a peer that never held a coop's log settles its
+owners' vaults as everyone else does (a finding of P6). Moves come last: a move takes away only the audience writes of
+its own entry rested on, which no removal and no other move rests on, so the Rust core doesn't try each move as it tries
+each other removal, and chooses the same.
 
 A vault is an identity, like a smart account, and comes in three kinds (T21). A human vault is a person's: owned by
 their passkeys, its root and any backup, the only vault a signer ever owns, with the person's devices. A coop vault is
 owned by human and coop vaults, never by a signer, and has no devices: it acts through the vaults that own it. An aven
 vault, an agent's such as avenCEO, the vault of avenDB's server, is owned as a coop is, and its devices, its servers,
-act for it but never govern it (T2). Shares always name vaults (T4), never signers. Every edit for a coop or an aven
-vault names the chain of owners it goes through (`via`): from an owner of the vault it acts for down, each an owner of
-the one before, to the vault its device or passkey belongs to. The rules check that chain alone, so the edit says how it
-was entitled, and a removal anywhere along it cuts the edit the same way on every device (T1, T16, T17).
+act for it but never govern it (T2). Shares always name vaults or everyone (T4), never a device. Every edit for a coop
+or an aven vault names the chain of owners it goes through (`via`): from an owner of the vault it acts for down, each an
+owner of the one before, to the vault its device or passkey belongs to. The rules check that chain alone, so the edit
+says how it was entitled, and a removal anywhere along it cuts the edit the same way on every device (T1, T16, T17).
 
 A human vault's passkey is its root, named at genesis: it approves anything for its vault on its own, wins every
-clash, and only it hands the root on (`setRoot`, which cuts what the old passkey signs on an old copy). Passkeys are
-the only way back in: a backup passkey may join as a second owner, never the root, and a device's keys derive from a
-passkey at every unlock.
+clash, and only it hands the root on (a settings edit, which cuts what the old passkey signs on an old copy). Passkeys
+are the only way back in: a backup passkey may join as a second owner, never the root, and a device's keys derive from
+a passkey at every unlock.
 
 A vault holds its entries directly, with no spaces or folders in between. An entry's type and tags travel inside the
 encrypted bodies of its writes, and a share grants a level on a slice of a vault: what its selector picks by type,

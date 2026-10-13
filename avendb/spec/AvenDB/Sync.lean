@@ -28,15 +28,15 @@ inductive LogId where
   | entry    (e : EntryId)
   deriving DecidableEq, Repr
 
-/-- The log an edit belongs to: a vault edit, a schema or lens, and a seed's key to its vault's; a share, its revocation
-    and its key to the share's; an audience's key to the audience's; a write, a move, a checkpoint and an entry's key to
-    the entry's. -/
+/-- The log an edit belongs to: a vault's genesis and settings, its owners and devices given and revoked, a schema or
+    lens, and a seed's key to its vault's; a grant, its revocation and its key to the grant's; an audience's key to the
+    audience's; a write, a move, a checkpoint and an entry's key to the entry's. -/
 def Edit.log? (edit : Edit) : Option LogId :=
   match edit.action with
-  | .genesis v .. | .addOwner v .. | .removeOwner v .. | .setThreshold v .. | .addDevice v .. | .removeDevice v ..
-  | .setRoot v .. | .publish v .. => some (.vault v)
-  | .share c _ => some (.share c.id)
-  | .revoke c .. => some (.share c)
+  | .genesis v .. | .settings v _ | .share (.owner v _) | .share (.device v _) | .revoke (.owner v ..)
+  | .revoke (.device v ..) | .publish v .. => some (.vault v)
+  | .share (.grant c _) => some (.share c.id)
+  | .revoke (.grant c ..) => some (.share c)
   | .write _ e .. | .move _ e .. | .checkpoint e _ | .pick _ e .. => some (.entry e)
   | .syncRule r _ => some (.vault r.issuer)
   | .endRule _ i _ => some (.vault i)
@@ -55,9 +55,9 @@ def mayReceiveAudience (st : State) (d : SignerId) (v : VaultId) (x : Audience) 
   actsFor st d v || st.shares.any fun cp => cp.over == v && st.live cp.id && (cp.wide || x.contains cp.id) &&
     cp.level.allows .backup &&
     match cp.who with
-    | .principal (.vault g)  => actsFor st d g
-    | .principal (.signer _) => false
-    | .everyone              => true
+    | .vault g  => actsFor st d g
+    | .everyone => true
+    | .device _ => false
 
 /-- Device `d` may receive the edits of entry `e`: it may receive the entry's audience. -/
 def mayReceive (st : State) (d : SignerId) (e : EntryId) : Bool :=
@@ -70,7 +70,7 @@ def mayReceive (st : State) (d : SignerId) (e : EntryId) : Bool :=
 def seesShare (st : State) (d : SignerId) (cp : Share) : Bool :=
   actsFor st d cp.over ||
   (match cp.who with
-   | .principal (.vault g) => actsFor st d g
+   | .vault g => actsFor st d g
    | _ => false) ||
   st.entries.any fun en => en.vault == cp.over && mayReceive st d en.id && (cp.wide || en.stays.any (·.2.contains cp.id))
 
@@ -100,10 +100,10 @@ def syncsLog (st : State) (d : SignerId) : LogId → Bool
 /-- The vaults an edit names: what it acts for, through, or about. -/
 def Edit.vaultsNamed (edit : Edit) : List VaultId :=
   match edit.action with
-  | .share c via => [c.over, c.issuer] ++ (match c.who with
-    | .principal (.vault g) => [g]
+  | .share (.grant c via) => [c.over, c.issuer] ++ (match c.who with
+    | .vault g => [g]
     | _ => []) ++ via
-  | .revoke _ a _ via => a :: via
+  | .revoke (.grant _ a _ via) => a :: via
   | .write v _ a _ _ _ _ via _ _ => [v, a] ++ via
   | .move v _ _ _ via => v :: via
   | .syncRule r via => [r.issuer, r.over] ++ via

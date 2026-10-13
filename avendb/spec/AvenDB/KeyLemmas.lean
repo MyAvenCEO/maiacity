@@ -150,7 +150,7 @@ inductive Change (st : State) : State → Prop where
   | setVault (v : VaultId) (vt vt' : Vault) : st.vault? v = some vt → vt'.id = vt.id →
       (∀ p ∈ vt'.owners, p ∈ vt.owners ∨ ownerFits st vt.kind p = true) → Change st (setVault st vt')
   | share (c : Share) : st.share? c.id = none → (st.vault? c.over).isSome = true →
-      (∀ g, c.who = .principal (.vault g) → (st.vault? g).isSome = true) →
+      (∀ g, c.who = .vault g → (st.vault? g).isSome = true) →
       Change st { st with shares := st.shares ++ [c] }
   | revoke (rs : List ShareId) : Change st { st with revoked := st.revoked ++ rs }
   | create (en : Entry) (w : Write) (x : Audience) (u : List EditId) : st.entry? en.id = none → en.id ∉ st.born →
@@ -195,7 +195,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
       exact hfree.1.1
     · simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false, List.all_eq_true] at hfit
       exact hfit.1
-  · -- addOwner, a vault
+  · -- a new owner, a vault
     rename_i hv _ _ _ hfit _ _
     cases h
     refine Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => ?_)
@@ -205,7 +205,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
       subst hp
       simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hfit
       exact .inr hfit.2
-  · -- addOwner, a signer
+  · -- a new owner, a signer
     rename_i hv _ _ _ hfit _ _
     cases h
     refine Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => ?_)
@@ -215,32 +215,32 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
       subst hp
       simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hfit
       exact .inr hfit.2
-  · -- removeOwner
+  · -- an owner revoked
     rename_i hv _ _
     cases h
     exact Change.applied_drop (.setVault _ _ _ hv (by rfl) fun p hp => .inl (List.mem_of_mem_erase hp)) _
-  · -- setThreshold
+  · -- the threshold
     rename_i hv _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- addDevice
+  · -- a new device
     rename_i hv _ _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- removeDevice
+  · -- a device revoked
     rename_i hv _ _
     cases h
     refine Change.applied_drop (.setVault _ _ _ hv (by rfl) fun p hp => ?_) _
     exact .inl hp
-  · -- setRoot
+  · -- the root
     rename_i hv _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- a share naming a signer is refused
-    rename_i hno _ _
+  · -- a grant naming a device is refused
+    rename_i hno _ _ _
     exact absurd rfl hno
-  · -- a share naming a vault
-    rename_i hfree _ g hg hgv _ _
+  · -- a grant naming a vault
+    rename_i hfree _ g hg hgv _ _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree hgv
@@ -248,15 +248,15 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     rw [hg] at hg'
     cases hg'
     exact Option.isSome_iff_ne_none.2 hgv.1
-  · -- a public share
-    rename_i hfree _ hg _ _ _
+  · -- a public grant
+    rename_i hfree _ hg _ _ _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree
     refine Change.applied (.share _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
     rw [hg] at hg'
     cases hg'
-  · -- revoke
+  · -- a grant revoked
     cases h
     exact Change.applied_drop (.revoke _) _
   · -- a write creating its entry
@@ -352,7 +352,7 @@ structure Sane (st : State) : Prop where
   /-- A share's vault exists. -/
   shareOver : ∀ cp ∈ st.shares, (st.vault? cp.over).isSome = true
   /-- A share's grantee vault exists. -/
-  shareWho : ∀ cp ∈ st.shares, ∀ g, cp.who = .principal (.vault g) → (st.vault? g).isSome = true
+  shareWho : ∀ cp ∈ st.shares, ∀ g, cp.who = .vault g → (st.vault? g).isSome = true
   /-- Entries have distinct ids. -/
   entryIds : (st.entries.map (·.id)).Nodup
   /-- An entry's vault exists. -/

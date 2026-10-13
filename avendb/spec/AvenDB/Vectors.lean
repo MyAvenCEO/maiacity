@@ -90,20 +90,20 @@ def only (e : EntryId) : Selector := .anyOf [[.entryIn [e]]]
 
 def humans : List (SignerId × List SignerId × Action) := [
   (1, [], .genesis 100 .human [.signer 1] 1),
-  (1, [2], .addDevice 100 2),
+  (1, [2], .share (.device 100 2)),
   (4, [], .genesis 101 .human [.signer 4] 1),
-  (4, [5], .addDevice 101 5),
+  (4, [5], .share (.device 101 5)),
   (6, [], .genesis 102 .human [.signer 6] 1),
   (8, [], .genesis 103 .human [.signer 8] 1)]
 
-def toVault (v : VaultId) : Who := .principal (.vault v)
+def toVault (v : VaultId) : Who := .vault v
 
 /-- Share `id` over vault `over` with level `r`, issued by `issuer`: the ops of its level's group (`Level.ops`), unless
     it names its own. -/
 def newShare (id over : Nat) (to : Who) (r : Level) (issuer : VaultId) (select : Selector := .all)
     (wide : Bool := false) (parent : Option ShareId := none) (via : List VaultId := [])
     (ops : Option (List Op) := none) : Action :=
-  .share { id, over, who := to, level := r, wide, select, ops := ops.getD r.ops, parent, issuer } via
+  .share (.grant { id, over, who := to, level := r, wide, select, ops := ops.getD r.ops, parent, issuer } via)
 
 /-- A write that creates entry `e` of vault `v` in audience `x`, with the proof `proof`, whose record fits its schemas
     or not (`fits`). -/
@@ -133,28 +133,28 @@ def audienceKey (v : Nat) (x : Audience) (ε : Nat) : KeyName := .scoped (.audie
 def cases : List Case := [
   { name := "a human vault, its devices and a backup passkey", edits := [
     (1, [], .genesis 100 .human [.signer 1] 1),
-    (1, [2], .addDevice 100 2),
-    (1, [3], .addDevice 100 3),
+    (1, [2], .share (.device 100 2)),
+    (1, [3], .share (.device 100 3)),
     -- a device doesn't govern, even with the newcomer's signature
-    (2, [77], .addDevice 100 77),
+    (2, [77], .share (.device 100 77)),
     -- the newcomer must sign
-    (1, [], .addDevice 100 77),
-    (1, [2], .addDevice 100 2),
-    (2, [], .removeDevice 100 3 []),
-    (2, [], .setThreshold 100 1),
-    (1, [], .setThreshold 100 2),
-    (1, [], .setThreshold 100 0),
+    (1, [], .share (.device 100 77)),
+    (1, [2], .share (.device 100 2)),
+    (2, [], .revoke (.device 100 3 [])),
+    (2, [], .settings 100 (.threshold 1)),
+    (1, [], .settings 100 (.threshold 2)),
+    (1, [], .settings 100 (.threshold 0)),
     -- a device leaves on its own
-    (3, [], .removeDevice 100 3 []),
-    (1, [], .removeDevice 100 3 []),
-    (1, [], .removeOwner 100 (.signer 1) []),
+    (3, [], .revoke (.device 100 3 [])),
+    (1, [], .revoke (.device 100 3 [])),
+    (1, [], .revoke (.owner 100 (.signer 1) [])),
     -- a human vault is owned by signers
-    (1, [], .addOwner 100 (.vault 100)),
+    (1, [], .share (.owner 100 (.vault 100))),
     -- a backup passkey joins as a second owner, and later replaces the lost passkey
-    (1, [9], .addOwner 100 (.signer 9)),
-    (9, [], .removeOwner 100 (.signer 1) []),
-    (9, [77], .addDevice 100 77),
-    (1, [], .addDevice 100 3)] },
+    (1, [9], .share (.owner 100 (.signer 9))),
+    (9, [], .revoke (.owner 100 (.signer 1) [])),
+    (9, [77], .share (.device 100 77)),
+    (1, [], .share (.device 100 3))] },
   { name := "geneses", edits := [
     (4, [], .genesis 101 .human [] 1),
     (4, [], .genesis 101 .human [.signer 4, .signer 4] 1),
@@ -171,89 +171,89 @@ def cases : List Case := [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 3),
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     -- Alice's vault alone is below the threshold; Dave has to consent; devices don't count
-    (1, [8], .addOwner 200 (.vault 103)),
-    (1, [4], .addOwner 200 (.vault 103)),
-    (2, [5, 8], .addOwner 200 (.vault 103)),
-    (1, [4, 6], .addOwner 200 (.signer 6)),
-    (1, [4, 8], .addOwner 200 (.vault 103)),
+    (1, [8], .share (.owner 200 (.vault 103))),
+    (1, [4], .share (.owner 200 (.vault 103))),
+    (2, [5, 8], .share (.owner 200 (.vault 103))),
+    (1, [4, 6], .share (.owner 200 (.signer 6))),
+    (1, [4, 8], .share (.owner 200 (.vault 103))),
     -- Dave leaves on his own
-    (8, [], .removeOwner 200 (.vault 103) []),
-    (1, [], .setThreshold 200 1),
-    (1, [4], .setThreshold 200 1),
-    (1, [], .removeOwner 200 (.vault 101) []),
-    (1, [], .removeOwner 200 (.vault 100) []),
+    (8, [], .revoke (.owner 200 (.vault 103) [])),
+    (1, [], .settings 200 (.threshold 1)),
+    (1, [4], .settings 200 (.threshold 1)),
+    (1, [], .revoke (.owner 200 (.vault 101) [])),
+    (1, [], .revoke (.owner 200 (.vault 100) [])),
     -- devices belong to human vaults
-    (1, [2], .addDevice 200 2)] },
+    (1, [2], .share (.device 200 2))] },
   { name := "no ownership cycles", edits := humans ++ [
     (1, [], .genesis 200 .coop [.vault 100] 1),
     (1, [], .genesis 201 .coop [.vault 200] 1),
     (1, [], .genesis 202 .coop [.vault 201] 1),
-    (1, [], .addOwner 200 (.vault 200)),
-    (1, [], .addOwner 200 (.vault 201)),
-    (1, [], .addOwner 200 (.vault 202)),
-    (1, [4], .addOwner 201 (.vault 101)),
+    (1, [], .share (.owner 200 (.vault 200))),
+    (1, [], .share (.owner 200 (.vault 201))),
+    (1, [], .share (.owner 200 (.vault 202))),
+    (1, [4], .share (.owner 201 (.vault 101))),
     -- two paths to the same coop are no cycle
-    (1, [], .addOwner 202 (.vault 200))] },
+    (1, [], .share (.owner 202 (.vault 200)))] },
   { name := "concurrent changes, in replay order", edits := humans ++ [
     -- two owners remove each other: the first stands, the second would remove the last owner
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    (1, [], .removeOwner 200 (.vault 101) []),
-    (4, [], .removeOwner 200 (.vault 100) []),
+    (1, [], .revoke (.owner 200 (.vault 101) [])),
+    (4, [], .revoke (.owner 200 (.vault 100) [])),
     -- two adds that each are fine alone close a cycle together: the second is refused
     (1, [], .genesis 201 .coop [.vault 100] 1),
     (1, [], .genesis 202 .coop [.vault 100] 1),
-    (1, [], .addOwner 201 (.vault 202)),
-    (1, [], .addOwner 202 (.vault 201)),
+    (1, [], .share (.owner 201 (.vault 202))),
+    (1, [], .share (.owner 202 (.vault 201))),
     -- removals replay first: without Dave, his co-signature on an add no longer counts
     (1, [4, 8], .genesis 203 .coop [.vault 100, .vault 101, .vault 103] 2),
-    (1, [4], .removeOwner 203 (.vault 103) []),
-    (8, [1, 6], .addOwner 203 (.vault 102))] },
+    (1, [4], .revoke (.owner 203 (.vault 103) [])),
+    (8, [1, 6], .share (.owner 203 (.vault 102)))] },
   { name := "the passkey as root", edits := [
     (1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
     -- the root signs the genesis that names it, and a coop has no root
     (4, [], .genesis 101 .human [.signer 4] 1 (some 5)),
     (1, [], .genesis 200 .coop [.vault 100] 1 (some 1)),
     -- a second passkey joins, and the threshold goes up to 2
-    (1, [9], .addOwner 100 (.signer 9)),
-    (1, [], .setThreshold 100 2),
+    (1, [9], .share (.owner 100 (.signer 9))),
+    (1, [], .settings 100 (.threshold 2)),
     -- the second passkey alone is below the threshold; the root approves alone
-    (9, [2], .addDevice 100 2),
-    (1, [2], .addDevice 100 2),
+    (9, [2], .share (.device 100 2)),
+    (1, [2], .share (.device 100 2)),
     -- only the root hands the root on, and the new root signs
-    (9, [], .setRoot 100 (some 9) []),
-    (1, [], .setRoot 100 (some 9) []),
-    (1, [9], .setRoot 100 (some 9) []),
-    (1, [3], .addDevice 100 3),
-    (9, [3], .addDevice 100 3),
+    (9, [], .settings 100 (.root (some 9) [])),
+    (1, [], .settings 100 (.root (some 9) [])),
+    (1, [9], .settings 100 (.root (some 9) [])),
+    (1, [3], .share (.device 100 3)),
+    (9, [3], .share (.device 100 3)),
     -- the root steps down: the threshold rules again
-    (9, [], .setRoot 100 none []),
-    (9, [77], .addDevice 100 77),
-    (9, [], .setRoot 100 (some 9) [])] },
+    (9, [], .settings 100 (.root none [])),
+    (9, [77], .share (.device 100 77)),
+    (9, [], .settings 100 (.root (some 9) []))] },
   { name := "three kinds of vault, and acts that name their chain", edits := humans ++ [
     -- avenCEO, the relay server's aven vault, owned by Alice's human vault; the server joins as its device
     (1, [], .genesis 300 .aven [.vault 100] 1),
-    (1, [600], .addDevice 300 600),
+    (1, [600], .share (.device 300 600)),
     -- the server acts for avenCEO but doesn't govern it; Alice's Mac acts for it through Alice's vault, Bob's Mac not
-    (600, [77], .addDevice 300 77),
+    (600, [77], .share (.device 300 77)),
     (600, [], newEntry 300 13 300 [] note),
     (2, [], newEntry 300 14 300 [] note (via := [100])),
     (5, [], newEntry 300 15 300 [] note (via := [101])),
     -- signers own human vaults only, and a human vault no vault
     (1, [], .genesis 301 .aven [.signer 1] 1),
     (1, [4], .genesis 201 .coop [.signer 1, .vault 101] 1),
-    (1, [4], .addOwner 100 (.vault 101)),
+    (1, [4], .share (.owner 100 (.vault 101))),
     -- an aven vault owns no vault, and has no root
     (1, [], .genesis 202 .coop [.vault 300] 1),
     (1, [], .genesis 302 .aven [.vault 300] 1),
     (1, [], .genesis 303 .aven [.vault 100] 1 (some 1)),
     -- the coop: an aven vault can't join its owners, nor a signer, and it has no devices
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    (1, [4], .addOwner 200 (.vault 300)),
-    (1, [9], .addOwner 200 (.signer 9)),
-    (1, [77], .addDevice 200 77),
+    (1, [4], .share (.owner 200 (.vault 300))),
+    (1, [9], .share (.owner 200 (.signer 9))),
+    (1, [77], .share (.device 200 77)),
     -- avenCEO gains Bob's vault as an owner, and an aven vault may be owned by a coop
-    (1, [9], .addOwner 300 (.signer 9)),
-    (1, [4], .addOwner 300 (.vault 101)),
+    (1, [9], .share (.owner 300 (.signer 9))),
+    (1, [4], .share (.owner 300 (.vault 101))),
     (1, [], .genesis 304 .aven [.vault 100, .vault 200] 1),
     -- acts for the coop name the human vault they go through: none, or another person's, is refused
     (2, [], newEntry 200 16 200 [] note (via := [100])),
@@ -270,9 +270,9 @@ def cases : List Case := [
     -- can't create for Alice
     (2, [], newEntry 200 1 200 [] note (via := [100])),
     (6, [], newEntry 100 3 100 [] note),
-    -- read for Carol's vault, never for a signer or for the vault itself; everyone only reads
+    -- read for Carol's vault, never for a device or for the vault itself; everyone only reads
     (2, [], newShare 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
-    (2, [], newShare 31 200 (.principal (.signer 6)) .read 200 (only 1) (via := [100])),
+    (2, [], newShare 31 200 (.device 6) .read 200 (only 1) (via := [100])),
     (2, [], newShare 32 200 (toVault 200) .read 200 (only 1) (via := [100])),
     (2, [], newShare 33 200 .everyone .write 200 (only 1) (via := [100])),
     (2, [], newShare 34 200 .everyone .read 200 (only 1) (via := [100])),
@@ -301,6 +301,41 @@ def cases : List Case := [
     -- a device that hasn't seen the move writes in the stay before it, and a stranger not at all
     (6, [], wr 200 1 102 [25] (stay := some 14) (proof := some 37)),
     (555, [], wr 200 1 200 [25] (stay := some 24))] },
+  { name := "settings, shares and revocations, kind by kind", edits := humans ++ [
+    -- settings: a device sets no threshold, and none above the number of owners
+    (2, [], .settings 100 (.threshold 1)),
+    (1, [], .settings 100 (.threshold 2)),
+    -- an owner: a second passkey joins only with its own signature; then two of two approve
+    (1, [], .share (.owner 100 (.signer 9))),
+    (1, [9], .share (.owner 100 (.signer 9))),
+    (1, [], .settings 100 (.threshold 2)),
+    (1, [10], .share (.owner 100 (.signer 10))),
+    (1, [9, 10], .share (.owner 100 (.signer 10))),
+    -- a device: the vault approves, and the device signs
+    (1, [9], .share (.device 100 77)),
+    (1, [9, 77], .share (.device 100 77)),
+    -- revocations: a device or an owner leaves on its own; else the vault approves; never the last owner
+    (77, [], .revoke (.device 100 77 [])),
+    (10, [], .revoke (.owner 100 (.signer 10) [])),
+    (1, [], .revoke (.owner 100 (.signer 9) [])),
+    (1, [9], .revoke (.owner 100 (.signer 9) [])),
+    (1, [], .revoke (.owner 100 (.signer 1) [])),
+    -- Alice's vault has no root, so nobody hands one on
+    (1, [], .settings 100 (.root (some 1) [])),
+    -- grants: to a vault, not to a device; owner of a slice is governance; owner of the whole vault is an owner of
+    -- it, which no grant makes, even with the vault's approval (WideOwner); a wide read is a grant
+    (2, [], newShare 30 100 (toVault 102) .read 100 notes),
+    (2, [], newShare 31 100 (.device 7) .read 100 notes),
+    (2, [], newShare 32 100 (toVault 103) .owner 100 notes),
+    (1, [], newShare 33 100 (toVault 103) .owner 100 notes),
+    (1, [], newShare 34 100 (toVault 103) .owner 100 (wide := true)),
+    (2, [], newShare 35 100 (toVault 103) .read 100 (wide := true)),
+    -- a revoked grant: by a vault that may revoke it, once; an owner grant with the vault's approval
+    (8, [], .revoke (.grant 30 103 [])),
+    (2, [], .revoke (.grant 30 100 [])),
+    (2, [], .revoke (.grant 30 100 [])),
+    (2, [], .revoke (.grant 33 100 [])),
+    (1, [], .revoke (.grant 33 100 []))] },
   { name := "tags, moves and stewards", edits := humans ++ [
     -- Alice's work todo, her home todo and a note; Bob may write her work todos and ask for the work and home tags,
     -- Carol reads every todo
@@ -376,7 +411,7 @@ def cases : List Case := [
     (2, [], .move 100 21 [30, 31, 32, 33] []),
     (5, [], wr 100 21 101 [7] (stay := some 12) (proof := some 30)),
     -- Alice takes Bob's own write away, keeping the write she had seen
-    (2, [], .revoke 30 100 [13]),
+    (2, [], .revoke (.grant 30 100 [13])),
     (5, [], wr 100 21 101 [13] (stay := some 12) (proof := some 30)),
     -- Bob still writes for the coop, whose owner share reaches the todo, and creates one for it in that share's intake
     -- audience
@@ -384,17 +419,17 @@ def cases : List Case := [
     (2, [], wr 100 21 100 [16] (stay := some 12)),
     (5, [], newEntry 100 22 200 [31] todo (via := [101]) (proof := some 31)),
     -- a grantee gives its share up; nobody but its issuer, its vault and those above them in its chain may end it
-    (8, [], .revoke 33 103 []),
-    (6, [], .revoke 33 102 []),
+    (8, [], .revoke (.grant 33 103 [])),
+    (6, [], .revoke (.grant 33 102 [])),
     -- taking the coop's owner share away is governance; it ends Dave's read with it, and the coop's write and todo,
     -- which it hadn't seen, and Alice's write that builds on the coop's
-    (2, [], .revoke 31 100 [13]),
-    (1, [], .revoke 31 100 [13]),
+    (2, [], .revoke (.grant 31 100 [13])),
+    (1, [], .revoke (.grant 31 100 [13])),
     (5, [], wr 100 21 200 [13] (stay := some 12) (via := [101]) (proof := some 31)),
     -- an id is created once, even after its entry fell; a share is revoked once, and only a share that was issued
     (2, [], newEntry 100 22 100 [] todo),
-    (2, [], .revoke 32 100 []),
-    (2, [], .revoke 99 100 [])] },
+    (2, [], .revoke (.grant 32 100 [])),
+    (2, [], .revoke (.grant 99 100 []))] },
   { name := "keys go only where the schedule seals them", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     (2, [], newEntry 200 1 200 [] note (via := [100])),
@@ -431,21 +466,21 @@ def cases : List Case := [
     (2, [], .move 200 1 [30, 31] [] [100]),
     (2, [], .keys (audienceKey 200 [30, 31] 0) [] true),
     -- revoking Carol rotates nothing while Welcome is public; making it private again does
-    (2, [], .revoke 30 200 [] [100]),
-    (2, [], .revoke 31 200 [] [100]),
+    (2, [], .revoke (.grant 30 200 [] [100])),
+    (2, [], .revoke (.grant 31 200 [] [100])),
     (2, [], .keys (audienceKey 200 [30, 31] 1) [seedKey 200 0]),
     (2, [], .keys (audienceKey 200 [30, 31] 0) [audienceKey 200 [30, 31] 1]),
     (6, [], .keys (audienceKey 200 [30, 31] 1) []),
     (2, [], .keys (audienceKey 200 [30, 31] 1) [seedKey 102 0])] },
   { name := "a removed device's vault keys all move on", edits := humans ++ [
-    (1, [3], .addDevice 100 3),
+    (1, [3], .share (.device 100 3)),
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newShare 30 100 (toVault 102) .read 100 notes),
     (2, [], .move 100 1 [30] []),
     -- the iPhone writes Welcome twice, and is lost; Alice removes it, keeping the write she had seen
     (3, [], wr 100 1 100 [7] (stay := some 9)),
     (3, [], wr 100 1 100 [10] (stay := some 9)),
-    (1, [], .removeDevice 100 3 [10]),
+    (1, [], .revoke (.device 100 3 [10])),
     -- the iPhone could open Alice's seed, so her seed, her shares' keys and her audiences' keys all start a new
     -- epoch, which it can't box
     (3, [], .keys (seedKey 100 0) []),
@@ -464,7 +499,7 @@ def cases : List Case := [
     -- audience's key doesn't move on, since no entry is in it
     (2, [], wr 100 21 100 [7] (stay := some 9) (remove := [work])),
     (2, [], .move 100 21 [] [10]),
-    (6, [], .removeOwner 200 (.vault 102) []),
+    (6, [], .revoke (.owner 200 (.vault 102) [])),
     -- the todo gets its tag back and returns: the audience's key starts a new epoch, which Carol can't open
     (2, [], wr 100 21 100 [10] (stay := some 11) (add := [work])),
     (2, [], .move 100 21 [30] [13]),
@@ -478,7 +513,7 @@ def cases : List Case := [
     (2, [], .move 100 21 [30] []),
     (2, [], wr 100 21 100 [7] (stay := some 9) (remove := [work])),
     (2, [], .move 100 21 [] [10]),
-    (6, [], .removeOwner 200 (.vault 102) []),
+    (6, [], .revoke (.owner 200 (.vault 102) [])),
     -- a new work todo, created straight into the empty audience, may name the epoch the audience moves to as it comes
     -- back into use, which Carol can't open, and no later one; so may the next, the audience in use by then
     (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (epoch := 2)),
@@ -503,14 +538,15 @@ def cases : List Case := [
     (6, [], .publish 200 200 3 [102]),
     (555, [], .publish 200 200 3),
     (2, [], .publish 299 200 3 [100]),
-    -- Dave, made owner of the whole coop by both passkeys, publishes; Carol, owner of its notes, doesn't
+    -- owner of the whole coop is an owner of it, which no grant makes, even with both passkeys (WideOwner), so Dave
+    -- doesn't publish; nor does Carol, owner of the coop's notes
     (1, [4], newShare 31 200 (toVault 103) .owner 200 (wide := true) (via := [100])),
     (8, [], .publish 200 103 3),
     (1, [4], newShare 32 200 (toVault 102) .owner 200 notes (via := [100])),
     (6, [], .publish 200 102 4),
     (5, [], .publish 200 200 4 [101])] },
   { name := "a device vouches only for its own writes", edits := humans ++ [
-    (1, [3], .addDevice 100 3),
+    (1, [3], .share (.device 100 3)),
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newEntry 100 2 100 [] note),
     (3, [], wr 100 1 100 [7]),
@@ -639,8 +675,8 @@ def cases : List Case := [
     -- fitting is no share: Carol holds none, and writes nothing
     (6, [], wr 100 21 102 [9] (stay := some 8))] },
   { name := "sync rules: each device syncs what its rules pick", edits := humans ++ [
-    (1, [3], .addDevice 100 3),
-    (6, [7], .addDevice 102 7),
+    (1, [3], .share (.device 100 3)),
+    (6, [7], .share (.device 102 7)),
     -- Alice's note and her work todo; Carol reads her notes
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newEntry 100 21 100 [] todo (tags := [work])),
@@ -680,36 +716,36 @@ def views : List ViewCase := [
   { name := "a removed owner can't back-date governance", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     -- Bob, offline since the coop began, adds Dave
-    (7, 4, [8], .addOwner 200 (.vault 103)),
-    (8, 1, [], .setThreshold 200 1),
+    (7, 4, [8], .share (.owner 200 (.vault 103))),
+    (8, 1, [], .settings 200 (.threshold 1)),
     -- Alice removes Bob, not having seen the add
-    (9, 1, [], .removeOwner 200 (.vault 101) [])] },
+    (9, 1, [], .revoke (.owner 200 (.vault 101) []))] },
   { name := "a removal keeps what it had seen", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    (7, 4, [8], .addOwner 200 (.vault 103)),
-    (8, 1, [], .setThreshold 200 1),
-    (9, 1, [], .removeOwner 200 (.vault 101) [7]),
+    (7, 4, [8], .share (.owner 200 (.vault 103))),
+    (8, 1, [], .settings 200 (.threshold 1)),
+    (9, 1, [], .revoke (.owner 200 (.vault 101) [7])),
     -- Bob no longer governs
-    (10, 4, [], .setThreshold 200 1)] },
+    (10, 4, [], .settings 200 (.threshold 1))] },
   { name := "the senior owner wins a clash", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     -- Bob's removal of Alice sorts first, Alice's of Bob stands
-    (7, 4, [], .removeOwner 200 (.vault 100) []),
-    (8, 1, [], .removeOwner 200 (.vault 101) [])] },
+    (7, 4, [], .revoke (.owner 200 (.vault 100) [])),
+    (8, 1, [], .revoke (.owner 200 (.vault 101) []))] },
   { name := "removals that don't clash both stand", edits := humansV ++ [
     (6, 1, [4, 8], .genesis 200 .coop [.vault 100, .vault 101, .vault 103] 1),
-    (7, 1, [], .removeOwner 200 (.vault 101) []),
+    (7, 1, [], .revoke (.owner 200 (.vault 101) [])),
     -- Dave leaves at the same time
-    (8, 8, [], .removeOwner 200 (.vault 103) []),
-    (9, 8, [], .setThreshold 200 1)] },
+    (8, 8, [], .revoke (.owner 200 (.vault 103) [])),
+    (9, 8, [], .settings 200 (.threshold 1))] },
   { name := "the root outranks a stolen second passkey", edits := [
     (0, 1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
-    (1, 1, [9], .addOwner 100 (.signer 9)),
+    (1, 1, [9], .share (.owner 100 (.signer 9))),
     -- the thief, holding the second passkey: removes the root's passkey from the owners, adds a device of their own
-    (2, 9, [], .removeOwner 100 (.signer 1) []),
-    (3, 9, [555], .addDevice 100 555),
+    (2, 9, [], .revoke (.owner 100 (.signer 1) [])),
+    (3, 9, [555], .share (.device 100 555)),
     -- the root removes the second passkey, having seen neither
-    (4, 1, [], .removeOwner 100 (.signer 9) [])] },
+    (4, 1, [], .revoke (.owner 100 (.signer 9) []))] },
   { name := "a revoked writer's unseen edits are cut, with what builds on them", edits := humansV ++ [
     (6, 2, [], newEntry 100 21 100 [] todo),
     (7, 2, [], newShare 30 100 (toVault 101) .write 100 todos),
@@ -719,7 +755,7 @@ def views : List ViewCase := [
     (10, 5, [], wr 100 21 101 [6] (stay := some 9) (proof := some 30)),
     (11, 5, [], wr 100 21 101 [10] (stay := some 9) (proof := some 30)),
     (12, 6, [], wr 100 21 102 [11] (stay := some 9) (proof := some 31)),
-    (13, 2, [], .revoke 30 100 [10]),
+    (13, 2, [], .revoke (.grant 30 100 [10])),
     (14, 6, [], wr 100 21 102 [10] (stay := some 9) (proof := some 31))] },
   { name := "a revocation cuts a proposal it hadn't seen, with every write on it", edits := humansV ++ [
     (6, 2, [], newEntry 100 21 100 [] todo),
@@ -731,7 +767,7 @@ def views : List ViewCase := [
     (11, 5, [], wr 100 21 101 [10] (stay := some 9) (proposal := .on 10) (proof := some 30)),
     (12, 5, [], wr 100 21 101 [6] (stay := some 9) (proposal := .new) (proof := some 30)),
     (13, 6, [], wr 100 21 102 [12] (stay := some 9) (proposal := .on 12) (proof := some 31)),
-    (14, 2, [], .revoke 30 100 [10, 11]),
+    (14, 2, [], .revoke (.grant 30 100 [10, 11])),
     -- Alice merges the draft she saw; Carol's merge of the other goes with it
     (15, 2, [], wr 100 21 100 [6, 11] (stay := some 9)),
     (16, 6, [], wr 100 21 102 [15, 13] (stay := some 9) (proof := some 31))] },
@@ -740,7 +776,7 @@ def views : List ViewCase := [
     -- Bob creates two work todos through his share; Alice revokes it having seen only the first
     (7, 5, [], newEntry 100 21 101 [30] todo (tags := [work]) (proof := some 30)),
     (8, 5, [], newEntry 100 22 101 [30] todo (tags := [work]) (proof := some 30)),
-    (9, 2, [], .revoke 30 100 [7]),
+    (9, 2, [], .revoke (.grant 30 100 [7])),
     -- Alice writes the todo she kept; the other never was
     (10, 2, [], wr 100 21 100 [7]),
     (11, 2, [], wr 100 22 100 [8])] },
@@ -757,19 +793,19 @@ def views : List ViewCase := [
     -- Bob writes on, not having seen it either
     (13, 5, [], wr 100 21 101 [10] (stay := some 8) (proof := some 30))] },
   { name := "a lost device's back-dated edits are cut", edits := humansV ++ [
-    (6, 1, [3], .addDevice 100 3),
+    (6, 1, [3], .share (.device 100 3)),
     (7, 2, [], newEntry 100 1 100 [] note),
     -- a write from the iPhone the Mac had seen, and a note the thief made on an old copy
     (8, 3, [], wr 100 1 100 [7]),
     (9, 3, [], newEntry 100 2 100 [] note),
-    (10, 1, [], .removeDevice 100 3 [8])] },
+    (10, 1, [], .revoke (.device 100 3 [8]))] },
   { name := "handing the root on cuts the old passkey's back-dated edits", edits := [
     (0, 1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
-    (1, 1, [9], .addOwner 100 (.signer 9)),
+    (1, 1, [9], .share (.owner 100 (.signer 9))),
     -- the old passkey, stolen later, adds a device on an old copy
-    (2, 1, [555], .addDevice 100 555),
-    (3, 1, [9], .setRoot 100 (some 9) [1]),
-    (4, 9, [], .removeOwner 100 (.signer 1) [1])] },
+    (2, 1, [555], .share (.device 100 555)),
+    (3, 1, [9], .settings 100 (.root (some 9) [1])),
+    (4, 9, [], .revoke (.owner 100 (.signer 1) [1]))] },
   { name := "a revoked reader's back-dated keys are cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     (7, 2, [], newEntry 200 1 200 [] note (via := [100])),
@@ -778,13 +814,13 @@ def views : List ViewCase := [
     -- Carol's passkey boxes the audience's key twice; Alice revokes Carol's read having seen only the first
     (10, 6, [], .keys (audienceKey 200 [30] 0) [shareKey 200 30 0]),
     (11, 6, [], .keys (audienceKey 200 [30] 0) [seedKey 200 0]),
-    (12, 2, [], .revoke 30 200 [10] [100])] },
+    (12, 2, [], .revoke (.grant 30 200 [10] [100]))] },
   { name := "a removed owner's back-dated publish is cut", edits := humansV ++ [
     (6, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     -- Bob's Mac publishes a schema for the coop, which Alice sees, and a lens on an old copy, which she doesn't
     (7, 5, [], .publish 200 200 1 [101]),
     (8, 5, [], .publish 200 200 2 [101]),
-    (9, 1, [], .removeOwner 200 (.vault 101) [7]),
+    (9, 1, [], .revoke (.owner 200 (.vault 101) [7])),
     -- Alice's Mac publishes the lens itself; Bob's Mac no longer can
     (10, 2, [], .publish 200 200 2 [100]),
     (11, 5, [], .publish 200 200 3 [101])] },
@@ -795,12 +831,12 @@ def views : List ViewCase := [
     -- doesn't
     (8, 5, [], wr 200 1 200 [7] (via := [101])),
     (9, 5, [], newEntry 200 2 200 [] note (via := [101])),
-    (10, 1, [], .removeOwner 200 (.vault 101) [8]),
+    (10, 1, [], .revoke (.owner 200 (.vault 101) [8])),
     -- Alice's Mac writes on; Bob's Mac no longer can
     (11, 2, [], wr 200 1 200 [8] (via := [100])),
     (12, 5, [], wr 200 1 200 [11] (via := [101]))] },
   { name := "once the curves fall, only vouched writes count", pq := true, edits := humansV ++ [
-    (6, 1, [3], .addDevice 100 3),
+    (6, 1, [3], .share (.device 100 3)),
     (7, 2, [], newEntry 100 1 100 [] note),
     (8, 2, [], newEntry 100 2 100 [] note),
     (9, 2, [], wr 100 2 100 [8]),
@@ -821,15 +857,37 @@ def views : List ViewCase := [
     (9, 2, [], .move 100 1 [30, 31] []),
     -- Alice revokes Dave's owner share; Dave revokes the read he gave Carol on a copy that hadn't seen it, so his
     -- revocation sorts first, and falls with the share it rested on
-    (11, 1, [], .revoke 30 100 [6, 7, 8, 9]),
-    (10, 8, [], .revoke 31 103 [])] },
+    (11, 1, [], .revoke (.grant 30 100 [6, 7, 8, 9])),
+    (10, 8, [], .revoke (.grant 31 103 []))] },
   { name := "a vault settles before the coops it owns", edits := humansV ++ [
-    (6, 1, [9], .addOwner 100 (.signer 9)),
-    (7, 1, [10], .addOwner 100 (.signer 10)),
+    (6, 1, [9], .share (.owner 100 (.signer 9))),
+    (7, 1, [10], .share (.owner 100 (.signer 10))),
     (8, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
     -- the second passkey removes Bob from the coop on a copy that hadn't seen the third remove it from Alice's vault
-    (9, 9, [], .removeOwner 200 (.vault 101) []),
-    (10, 10, [], .removeOwner 100 (.signer 9) [6, 7, 8])] }]
+    (9, 9, [], .revoke (.owner 200 (.vault 101) [])),
+    (10, 10, [], .revoke (.owner 100 (.signer 9) [6, 7, 8]))] },
+  { name := "a vault's removals outrank a revoked grant", edits := humansV ++ [
+    (6, 1, [3], .share (.device 100 3)),
+    (7, 1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
+    (8, 2, [], newShare 30 100 (toVault 102) .read 100 notes),
+    (9, 2, [], newShare 31 200 (toVault 102) .read 200 notes (via := [100])),
+    -- the iPhone revokes Carol's read of Alice's notes, and Bob's Mac her read of the coop's, each on a copy that
+    -- hadn't seen its own removal: each sorts first, the removals rank above them and stand, and the revocations fall
+    (10, 3, [], .revoke (.grant 30 100 [])),
+    (11, 5, [], .revoke (.grant 31 200 [] [101])),
+    (12, 1, [], .revoke (.device 100 3 [6, 7, 8, 9])),
+    (13, 1, [], .revoke (.owner 200 (.vault 101) [6, 7, 8, 9]))] },
+  { name := "handing the root on outranks a revoked grant", edits := [
+    (0, 1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
+    (1, 8, [], .genesis 103 .human [.signer 8] 1),
+    (2, 1, [9], .share (.owner 100 (.signer 9))),
+    (3, 1, [], .settings 100 (.threshold 2)),
+    -- the root alone makes Dave owner of Alice's notes
+    (4, 1, [], newShare 30 100 (toVault 103) .owner 100 notes),
+    -- the old passkey, stolen later, revokes Dave's owner share on a copy that hadn't seen the root handed on: it
+    -- sorts first and falls, as the hand-on ranks above it and the old passkey alone no longer approves
+    (5, 1, [], .revoke (.grant 30 100 [])),
+    (6, 1, [9], .settings 100 (.root (some 9) [0, 1, 2, 3, 4]))] }]
 
 /-! ## Sync cases
 
@@ -886,8 +944,8 @@ def peerEdits (edits : List Edit) : Option (List Nat) → List Edit
 
 def syncs : List SyncCase := [
   { name := "an entry by shares, by frontiers", edits := plain (humans ++ [
-      (6, [7], .addDevice 102 7),
-      (1, [3], .addDevice 100 3),
+      (6, [7], .share (.device 102 7)),
+      (1, [3], .share (.device 100 3)),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
       -- the coop's Welcome and Charter: Carol reads Welcome, Bob edits it
       (2, [], newEntry 200 1 200 [] note (via := [100])),
@@ -910,7 +968,7 @@ def syncs : List SyncCase := [
       (555, [], none),
       (3, List.range 18, none)] },
   { name := "forks", edits := plain (humans ++ [
-      (1, [3], .addDevice 100 3),
+      (1, [3], .share (.device 100 3)),
       (2, [], newEntry 100 1 100 [] note),
       (2, [], wr 100 1 100 [7])]) ++ [
       -- Alice's Mac again from the same past, as a copy restored from an old backup would: a fork
@@ -918,28 +976,28 @@ def syncs : List SyncCase := [
       -- her iPhone at the same moment: another device, no fork
       { author := 3, action := wr 100 1 100 [7], parents := some [7] },
       -- her passkey on two devices at once: a passkey isn't checked
-      { author := 1, cosigners := [77], action := .addDevice 100 77 },
-      { author := 1, action := .setThreshold 100 1, parents := some [6] },
+      { author := 1, cosigners := [77], action := .share (.device 100 77) },
+      { author := 1, action := .settings 100 (.threshold 1), parents := some [6] },
       -- the Mac building on an edit nobody holds: outside the closed part, so neither in the frontier nor a fork
       { author := 2, action := wr 100 1 100 [7], parents := some [999] },
       -- the iPhone claiming to be no deeper than the edit it builds on: malformed, so it never stands
       { author := 3, action := wr 100 1 100 [10], parents := some [10], depth := some 10 }],
     asks := [(3, [0, 1, 2, 3, 4, 5, 6, 7, 10], none), (2, [], none)] },
   { name := "a revocation joins its share's log", edits := plain (humans ++ [
-      (6, [7], .addDevice 102 7),
+      (6, [7], .share (.device 102 7)),
       (2, [], newEntry 100 21 100 [] todo),
       (2, [], newShare 30 100 (toVault 102) .read 100 (only 21)),
       (2, [], .move 100 21 [30] []),
       (2, [], newEntry 100 22 100 [] todo),
       -- Alice revokes Carol's read: Carol hears of it, and of nothing else about the todo
-      (2, [], .revoke 30 100 [7, 8, 9]),
+      (2, [], .revoke (.grant 30 100 [7, 8, 9])),
       (2, [], wr 100 21 100 [7] (stay := some 9))]),
     asks := [(7, [0, 1, 4, 6, 7, 8, 9], none), (7, [], none), (5, [2, 3], none),
       -- Carol holding the revocation but not the share it revokes: it is loose, and isn't sent again
       (7, [0, 1, 4, 6, 7, 9, 11], none)] },
   { name := "a relay holds the audiences it may relay, and no key", edits := plain (humans ++ [
       (1, [], .genesis 300 .aven [.vault 100] 1),
-      (1, [600], .addDevice 300 600),
+      (1, [600], .share (.device 300 600)),
       -- Alice's note and her todo; avenCEO may hold her notes, and read none
       (2, [], newEntry 100 1 100 [] note),
       (2, [], newEntry 100 21 100 [] todo),
@@ -949,7 +1007,7 @@ def syncs : List SyncCase := [
       (2, [], .keys (audienceKey 100 [30] 0) [seedKey 100 0])]),
     asks := [(600, [], none), (600, [0, 1, 6, 7, 10], none), (5, [], none)] },
   { name := "a device ahead of its peer", edits := plain (humans ++ [
-      (1, [3], .addDevice 100 3),
+      (1, [3], .share (.device 100 3)),
       (2, [], newEntry 100 1 100 [] note)] ++
       -- Alice's Mac writes her note seventeen times
       List.replicate 17 (2, [], wr 100 1 100)) ++ [
@@ -962,9 +1020,9 @@ def syncs : List SyncCase := [
       -- the iPhone, behind, asks a peer holding all of them
       (3, List.range 13, none)] },
   { name := "linking a device by its passkey", edits := plain (humans ++ [
-      (1, [3], .addDevice 100 3),
+      (1, [3], .share (.device 100 3)),
       -- Alice's backup passkey, a second owner of her vault
-      (1, [9], .addOwner 100 (.signer 9)),
+      (1, [9], .share (.owner 100 (.signer 9))),
       (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
       (2, [], newEntry 200 1 200 [] note (via := [100])),
       (2, [], newShare 30 200 (toVault 102) .read 200 (wide := true) (via := [100]))]),
@@ -972,9 +1030,9 @@ def syncs : List SyncCase := [
     -- Alice's passkey, her backup passkey, Bob's and Carol's, Alice's Mac (a device, no passkey), and a stranger's
     links := [1, 9, 4, 6, 2, 555] },
   { name := "files follow their edits", edits := plain (humans ++ [
-      (6, [7], .addDevice 102 7),
+      (6, [7], .share (.device 102 7)),
       (1, [], .genesis 300 .aven [.vault 100] 1),
-      (1, [600], .addDevice 300 600)]) ++ [
+      (1, [600], .share (.device 300 600))]) ++ [
       -- Alice's note brings a photo, her todo a scan
       { author := 2, action := newEntry 100 1 100 [] note, files := [1] },
       { author := 2, action := newEntry 100 21 100 [] todo, files := [2] }] ++ plain [
@@ -990,10 +1048,10 @@ def syncs : List SyncCase := [
     asks := [(7, [], none), (600, [], none), (2, [], none), (5, [], none), (8, [], none),
       (7, [], some (List.range 15))] },
   { name := "sync rules choose what a device syncs", edits := plain (humans ++ [
-      (1, [3], .addDevice 100 3),
-      (6, [7], .addDevice 102 7),
+      (1, [3], .share (.device 100 3)),
+      (6, [7], .share (.device 102 7)),
       (1, [], .genesis 300 .aven [.vault 100] 1),
-      (1, [600], .addDevice 300 600)]) ++ [
+      (1, [600], .share (.device 300 600))]) ++ [
       -- Alice's note brings a photo, her todo a scan
       { author := 2, action := newEntry 100 1 100 [] note, files := [1] },
       { author := 2, action := newEntry 100 21 100 [] todo, files := [2] }] ++ plain [
@@ -1039,8 +1097,9 @@ def level : Level → String
   | .owner => str "owner"
 
 def who : Who → String
-  | .principal p => principal p
-  | .everyone    => str "everyone"
+  | .vault v  => obj [("vault", nat v)]
+  | .everyone => str "everyone"
+  | .device d => obj [("device", nat d)]
 
 def atom : Atom → String
   | .typeIn ts       => obj [("typeIn", ids ts)]
@@ -1142,15 +1201,18 @@ def tagDelta (d : TagDelta) : String := obj [("add", ids d.add), ("remove", ids 
 def action : Action → String
   | .genesis v k owners t root => obj [("genesis", obj [("vault", nat v), ("kind", kind k),
       ("owners", arr (owners.map principal)), ("threshold", nat t), ("root", opt nat root)])]
-  | .addOwner v p => obj [("addOwner", obj [("vault", nat v), ("owner", principal p)])]
-  | .removeOwner v p keep => obj [("removeOwner", obj [("vault", nat v), ("owner", principal p), ("keep", ids keep)])]
-  | .setThreshold v n => obj [("setThreshold", obj [("vault", nat v), ("threshold", nat n)])]
-  | .addDevice v d => obj [("addDevice", obj [("vault", nat v), ("device", nat d)])]
-  | .removeDevice v d keep => obj [("removeDevice", obj [("vault", nat v), ("device", nat d), ("keep", ids keep)])]
-  | .setRoot v r keep => obj [("setRoot", obj [("vault", nat v), ("root", opt nat r), ("keep", ids keep)])]
-  | .share c via => obj [("share", obj [("share", shareJson c), ("via", ids via)])]
-  | .revoke c a keep via => obj [("revoke", obj [("share", nat c), ("actor", nat a), ("keep", ids keep),
-      ("via", ids via)])]
+  | .settings v (.threshold n) => obj [("settings", obj [("threshold", obj [("vault", nat v), ("threshold", nat n)])])]
+  | .settings v (.root r keep) => obj [("settings", obj [("root", obj [("vault", nat v), ("root", opt nat r),
+      ("keep", ids keep)])])]
+  | .share (.grant c via) => obj [("share", obj [("grant", obj [("share", shareJson c), ("via", ids via)])])]
+  | .share (.owner v p) => obj [("share", obj [("owner", obj [("vault", nat v), ("owner", principal p)])])]
+  | .share (.device v d) => obj [("share", obj [("device", obj [("vault", nat v), ("device", nat d)])])]
+  | .revoke (.grant c a keep via) => obj [("revoke", obj [("grant", obj [("share", nat c), ("actor", nat a),
+      ("keep", ids keep), ("via", ids via)])])]
+  | .revoke (.owner v p keep) => obj [("revoke", obj [("owner", obj [("vault", nat v), ("owner", principal p),
+      ("keep", ids keep)])])]
+  | .revoke (.device v d keep) => obj [("revoke", obj [("device", obj [("vault", nat v), ("device", nat d),
+      ("keep", ids keep)])])]
   | .write v e a s g deps p via create tags pr ts ft => obj [("write", obj ([("vault", nat v), ("entry", nat e),
       ("actor", nat a), ("stay", opt nat s), ("epoch", nat g), ("deps", ids deps), ("proposal", proposal p),
       ("via", ids via), ("create", opt (fun (x, h) => obj [("audience", ids x), ("header", header h)]) create),
@@ -1267,10 +1329,10 @@ def render : String :=
     ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++ ",\n".intercalate (views.map viewCase) ++
     "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++ "\n]}\n"
 
-/-- What an edit creates, by the model's number: a vault or a share. -/
+/-- What an edit creates, by the model's number: a vault or a grant. -/
 def created : Action → Option (Nat × Nat)
   | .genesis v .. => some (0, v)
-  | .share c _ => some (1, c.id)
+  | .share (.grant c _) => some (1, c.id)
   | _ => none
 
 /-- The audiences an edit names. -/
@@ -1302,6 +1364,17 @@ def allActions : List Action :=
 #guard allActions.all fun a => (audiencesOf a).all fun x => x == mkAudience x
 -- a post-quantum case drops some writes that would stand in the full view, so the Rust core must drop them too
 #guard views.all fun c => !c.pq || (runView c).1 != (runView { c with pq := false }).1
+-- each kind of settings, share and revocation is accepted or refused as its comment says, wide owner grants and
+-- grants to a device among the refused
+#guard (cases.find? (·.name == "settings, shares and revocations, kind by kind")).all fun c =>
+  (run c.edits).1.drop humans.length == [false, false, false, true, true, false, true, false, true, true, true, false,
+    true, false, false, true, false, false, true, false, true, false, true, false, false, true]
+-- a vault's removals (a device or an owner revoked, the root handed on) rank above a revoked grant, so the revoked
+-- grant that sorts first falls: a Rust core that ranked them the other way round would keep it and drop the removals
+#guard (views.find? (·.name == "a vault's removals outrank a revoked grant")).all fun c =>
+  (runView c).1.drop humansV.length == [true, true, true, true, false, false, true, true]
+#guard (views.find? (·.name == "handing the root on outranks a revoked grant")).all fun c =>
+  (runView c).1 == [true, true, true, true, true, false, true]
 -- some entry's creation is let in and another's isn't, some entry is where its readers say it belongs and another
 -- isn't yet, some write is on an earlier stay, and some entry fell: the Rust core must say the same of each
 #guard cases.any fun c => (run c.edits).2.entries.any (·.admitted) && (run c.edits).2.entries.any (!·.admitted)

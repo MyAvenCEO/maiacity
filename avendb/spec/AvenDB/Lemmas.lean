@@ -8,7 +8,7 @@ grantees (T4, T8), the schema lane (T17) and causal closure (T14), stated as in 
 
 Settling keys changes only the epochs, the seals and what is published, so a step changes everything else only through
 `apply`: it adds a vault or changes one (`VaultChange`), adds a share, an entry or a write, or drops writes and entries
-(`dropUnseen`). Without cycles, `owns` finds every chain of owners, so the check in `addOwner` refuses every owner that
+(`dropUnseen`). Without cycles, `owns` finds every chain of owners, so the check on a new owner refuses every owner that
 would close a cycle. Authorization reads only the vaults, the shares, which shares are revoked, `narrow` and the
 entries' vaults and audiences, so an edit that only adds to these keeps every write authorized (`Keeps`); every other
 edit is a removal, and `dropUnseen` keeps a write that lost its authorization only if the removal had seen it.
@@ -178,21 +178,21 @@ theorem ownerFits_vault {st : State} {k : Kind} {o : VaultId} (h : ownerFits st 
 
 /-- How an accepted edit changes an existing vault `vt` of id `v` into `vt'`, with what the edit had to carry. -/
 inductive VaultChange (st : State) (sigs : List SignerId) (v : VaultId) (vt : Vault) : Vault → Prop where
-  | addOwner (p : Principal) : p ∉ vt.owners → ownerFits st vt.kind p = true →
+  | shareOwner (p : Principal) : p ∉ vt.owners → ownerFits st vt.kind p = true →
       (∀ x, p = .vault x → x ≠ v ∧ owns st v x = false) →
       approves st sigs (.vault v) = true → approves st sigs p = true →
       VaultChange st sigs v vt { vt with owners := vt.owners ++ [p] }
-  | removeOwner (p : Principal) : (approves st sigs (.vault v) = true ∨ approves st sigs p = true) →
+  | revokeOwner (p : Principal) : (approves st sigs (.vault v) = true ∨ approves st sigs p = true) →
       VaultChange st sigs v vt
         { vt with owners := vt.owners.erase p, threshold := min vt.threshold (vt.owners.erase p).length }
-  | setThreshold (n : Nat) : approves st sigs (.vault v) = true →
+  | settingsThreshold (n : Nat) : approves st sigs (.vault v) = true →
       VaultChange st sigs v vt { vt with threshold := n }
-  | addDevice (d : SignerId) : vt.kind.hasDevices = true → approves st sigs (.vault v) = true → d ∈ sigs →
+  | shareDevice (d : SignerId) : vt.kind.hasDevices = true → approves st sigs (.vault v) = true → d ∈ sigs →
       VaultChange st sigs v vt { vt with devices := vt.devices ++ [d] }
-  | removeDevice (d : SignerId) : (approves st sigs (.vault v) = true ∨ d ∈ sigs) →
+  | revokeDevice (d : SignerId) : (approves st sigs (.vault v) = true ∨ d ∈ sigs) →
       VaultChange st sigs v vt { vt with devices := vt.devices.erase d }
   /-- The root hands itself on, or steps down: the current root signed, and so did the new one. -/
-  | setRoot (r : Option SignerId) : vt.root.any sigs.contains = true → r.all sigs.contains = true →
+  | settingsRoot (r : Option SignerId) : vt.root.any sigs.contains = true → r.all sigs.contains = true →
       VaultChange st sigs v vt { vt with root := r }
 
 /-- A change to a vault keeps its id. -/
@@ -213,57 +213,57 @@ theorem apply_vaults {st post : State} {edit : Edit} (h : apply st edit = some p
     simp at h
     obtain ⟨⟨⟨hnone, -⟩, -⟩, ⟨hfit, hroot⟩, -, -, rfl⟩ := h
     exact .inr (.inl ⟨_, _, _, _, _, hnone, hfit, hroot, rfl⟩)
-  · -- addOwner
+  · -- a new owner
     split at h
     · simp at h
     · rename_i v p _ _ vt hv
       simp at h
       obtain ⟨⟨hnot, hfit⟩, hcyc, ⟨hv', hp⟩, rfl⟩ := h
-      refine .inr (.inr ⟨v, vt, _, hv, .addOwner p hnot hfit ?_ hv' hp, rfl⟩)
+      refine .inr (.inr ⟨v, vt, _, hv, .shareOwner p hnot hfit ?_ hv' hp, rfl⟩)
       intro x hx
       subst hx
       simpa using hcyc
-  · -- removeOwner
+  · -- an owner revoked
     split at h
     · simp at h
     · rename_i v p keep _ _ vt hv
       simp at h
       obtain ⟨-, happ, rfl⟩ := h
-      refine .inr (.inr ⟨v, vt, _, hv, .removeOwner p ?_, rfl⟩)
+      refine .inr (.inr ⟨v, vt, _, hv, .revokeOwner p ?_, rfl⟩)
       cases h1 : approves st edit.sigs (.vault v)
       · exact .inr (happ h1)
       · exact .inl rfl
-  · -- setThreshold
+  · -- the threshold
     split at h
     · simp at h
     · rename_i v n _ _ vt hv
       simp at h
       obtain ⟨⟨-, happ⟩, rfl⟩ := h
-      exact .inr (.inr ⟨v, vt, _, hv, .setThreshold n happ, rfl⟩)
-  · -- addDevice
+      exact .inr (.inr ⟨v, vt, _, hv, .settingsThreshold n happ, rfl⟩)
+  · -- a new device
     split at h
     · simp at h
     · rename_i v d _ _ vt hv
       simp at h
       obtain ⟨⟨hk, -⟩, ⟨happ, hd⟩, rfl⟩ := h
-      exact .inr (.inr ⟨v, vt, _, hv, .addDevice d hk happ hd, rfl⟩)
-  · -- removeDevice
+      exact .inr (.inr ⟨v, vt, _, hv, .shareDevice d hk happ hd, rfl⟩)
+  · -- a device revoked
     split at h
     · simp at h
     · rename_i v d keep _ _ vt hv
       simp at h
       obtain ⟨-, happ, rfl⟩ := h
-      refine .inr (.inr ⟨v, vt, _, hv, .removeDevice d ?_, rfl⟩)
+      refine .inr (.inr ⟨v, vt, _, hv, .revokeDevice d ?_, rfl⟩)
       cases h1 : approves st edit.sigs (.vault v)
       · exact .inr (happ h1)
       · exact .inl rfl
-  · -- setRoot
+  · -- the root
     split at h
     · simp at h
     · rename_i v r keep _ _ vt hv
       simp at h
       obtain ⟨⟨hroot, hnew⟩, rfl⟩ := h
-      exact .inr (.inr ⟨v, vt, _, hv, .setRoot r hroot hnew, rfl⟩)
+      exact .inr (.inr ⟨v, vt, _, hv, .settingsRoot r hroot hnew, rfl⟩)
   -- every other edit leaves the vaults alone
   all_goals
     dsimp only at h
@@ -530,15 +530,15 @@ theorem step_owners {st st' : State} {edit : Edit}
     have hown : ∀ o, Principal.vault o ∈ vt'.owners → (st.vault? o).isSome := by
       intro o ho
       cases hch with
-      | addOwner p _ hfit _ _ _ =>
+      | shareOwner p _ hfit _ _ _ =>
         rcases List.mem_append.1 ho with ho | ho
         · exact hex _ _ hvt _ ho
         · rw [List.mem_singleton] at ho; subst ho; exact ownerFits_vault hfit
-      | removeOwner p _ => exact hex _ _ hvt _ (List.mem_of_mem_erase ho)
-      | setThreshold _ _ => exact hex _ _ hvt _ ho
-      | addDevice _ _ _ _ => exact hex _ _ hvt _ ho
-      | removeDevice _ _ => exact hex _ _ hvt _ ho
-      | setRoot _ _ _ => exact hex _ _ hvt _ ho
+      | revokeOwner p _ => exact hex _ _ hvt _ (List.mem_of_mem_erase ho)
+      | settingsThreshold _ _ => exact hex _ _ hvt _ ho
+      | shareDevice _ _ _ _ => exact hex _ _ hvt _ ho
+      | revokeDevice _ _ => exact hex _ _ hvt _ ho
+      | settingsRoot _ _ _ => exact hex _ _ hvt _ ho
     -- the only new edges point into `v`, from vaults `vt'` lists and `vt` didn't
     have hedge : ∀ a b, OwnerOf st' a b →
         OwnerOf st a b ∨ (b = v ∧ Principal.vault a ∈ vt'.owners ∧ Principal.vault a ∉ vt.owners) := by
@@ -561,7 +561,7 @@ theorem step_owners {st st' : State} {edit : Edit}
       · exact absurd (hsub _ ha) hna
     refine ⟨?_, fun x u hx o ho => ?_⟩
     · cases hch with
-      | addOwner p _ _ hcyc _ _ =>
+      | shareOwner p _ _ hcyc _ _ =>
         cases p with
         | signer s =>
           refine hmono fun a ha => ?_
@@ -589,11 +589,11 @@ theorem step_owners {st st' : State} {edit : Edit}
             · exact h2.trans h1
           rw [owns_of_transGen hacyc hvx] at hnown
           exact Bool.noConfusion hnown
-      | removeOwner p _ => exact hmono fun a ha => List.mem_of_mem_erase ha
-      | setThreshold _ _ => exact hmono fun a ha => ha
-      | addDevice _ _ _ _ => exact hmono fun a ha => ha
-      | removeDevice _ _ => exact hmono fun a ha => ha
-      | setRoot _ _ _ => exact hmono fun a ha => ha
+      | revokeOwner p _ => exact hmono fun a ha => List.mem_of_mem_erase ha
+      | settingsThreshold _ _ => exact hmono fun a ha => ha
+      | shareDevice _ _ _ _ => exact hmono fun a ha => ha
+      | revokeDevice _ _ => exact hmono fun a ha => ha
+      | settingsRoot _ _ _ => exact hmono fun a ha => ha
     · by_cases hxv : x = v
       · subst hxv
         rw [hnew] at hx
@@ -688,20 +688,20 @@ theorem kindsFit_step {st st' : State} {edit : Edit} (hk : KindsFit st) (h : ste
     · cases hx
       obtain ⟨ho, hd, hr⟩ := hk v vt hvt
       cases hch with
-      | addOwner p _ hfit _ _ _ =>
+      | shareOwner p _ hfit _ _ _ =>
         refine ⟨fun q hq => ?_, hd, hr⟩
         rcases List.mem_append.1 hq with hq | hq
         · exact ownerFits_step h (ho q hq)
         · rw [List.mem_singleton] at hq
           subst hq
           exact ownerFits_step h hfit
-      | removeOwner p _ => exact ⟨fun q hq => ownerFits_step h (ho q (List.mem_of_mem_erase hq)), hd, hr⟩
-      | setThreshold _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), hd, hr⟩
-      | addDevice _ hkd _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), fun _ => hkd, hr⟩
-      | removeDevice d _ =>
+      | revokeOwner p _ => exact ⟨fun q hq => ownerFits_step h (ho q (List.mem_of_mem_erase hq)), hd, hr⟩
+      | settingsThreshold _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), hd, hr⟩
+      | shareDevice _ hkd _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), fun _ => hkd, hr⟩
+      | revokeDevice d _ =>
         refine ⟨fun q hq => ownerFits_step h (ho q hq), fun hne => hd fun hnil => hne ?_, hr⟩
         simp [hnil]
-      | setRoot r hold _ =>
+      | settingsRoot r hold _ =>
         refine ⟨fun q hq => ownerFits_step h (ho q hq), hd, fun _ => hr fun hnone => ?_⟩
         simp [hnone] at hold
     · obtain ⟨ho, hd, hr⟩ := hk x u hx
@@ -1111,51 +1111,51 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     simp at h
     obtain ⟨-, -, -, -, rfl⟩ := h
     exact .inl ⟨rfl, .addVault _ _, same st⟩
-  · -- addOwner
+  · -- a new owner
     split at h
     · simp at h
     · rename_i hv
       simp at h
       obtain ⟨-, -, -, rfl⟩ := h
       exact .inl ⟨rfl, .setVault hv rfl (fun _ hp => List.mem_append_left _ hp) (fun _ hd => hd), same st⟩
-  · -- removeOwner
+  · -- an owner revoked
     split at h
     · simp at h
     · rename_i keep heq _ _ _
       simp at h
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, same st⟩))
-  · -- setThreshold
+  · -- the threshold
     split at h
     · simp at h
     · rename_i hv
       simp at h
       obtain ⟨-, rfl⟩ := h
       exact .inl ⟨rfl, .setVault hv rfl (fun _ hp => hp) (fun _ hd => hd), same st⟩
-  · -- addDevice
+  · -- a new device
     split at h
     · simp at h
     · rename_i hv
       simp at h
       obtain ⟨-, -, rfl⟩ := h
       exact .inl ⟨rfl, .setVault hv rfl (fun _ hp => hp) (fun _ hd => List.mem_append_left _ hd), same st⟩
-  · -- removeDevice
+  · -- a device revoked
     split at h
     · simp at h
     · rename_i keep heq _ _ _
       simp at h
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, same st⟩))
-  · -- setRoot: a removal by `keep?`, but it changes only a root, which authorization doesn't read
+  · -- the root: a removal by `keep?`, but it changes only a root, which authorization doesn't read
     split at h
     · simp at h
     · rename_i hv
       simp at h
       obtain ⟨-, rfl⟩ := h
       exact .inl ⟨rfl, .setVault hv rfl (fun _ hp => hp) (fun _ hd => hd), same st⟩
-  · -- share
+  · -- a grant
     simp at h
-    obtain ⟨-, -, -, -, rfl⟩ := h
+    obtain ⟨-, -, -, -, -, rfl⟩ := h
     exact .inl ⟨rfl, .addShare _ _, same st⟩
   · -- revoke
     split at h
@@ -1309,13 +1309,13 @@ theorem entriesWhole_step {st st' : State} {edit : Edit} (hinv : EntriesWhole st
     vault or everyone, everyone only with read. -/
 theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.shares = st.shares ∨
-    (∃ c, post.shares = st.shares ++ [c] ∧ (∀ s, c.who ≠ .principal (.signer s)) ∧
+    (∃ c, post.shares = st.shares ++ [c] ∧ (∀ s, c.who ≠ .device s) ∧
       (c.who = .everyone → c.level = .read)) := by
   unfold apply at h
   split at h
   case h_8 c via _ =>
     simp at h
-    obtain ⟨-, hname, -, -, rfl⟩ := h
+    obtain ⟨-, hname, -, -, -, rfl⟩ := h
     refine .inr ⟨c, rfl, fun s hs => ?_, fun hp => ?_⟩
     · rw [hs] at hname
       cases hname
@@ -1430,18 +1430,18 @@ theorem T2_governance {st st' : State} {edit : Edit} (h : step st edit = some st
   rcases step_vault?_old h h₁ h₂ with rfl | hch
   · simp at hchg
   · cases hch with
-    | addOwner _ _ _ _ happ _ => exact .inl happ
-    | removeOwner p happ =>
+    | shareOwner _ _ _ _ happ _ => exact .inl happ
+    | revokeOwner p happ =>
       rcases happ with happ | happ
       · exact .inl happ
       · exact .inr (.inl ⟨p, rfl, happ⟩)
-    | setThreshold _ happ => exact .inl happ
-    | addDevice _ _ happ _ => exact .inl happ
-    | removeDevice d happ =>
+    | settingsThreshold _ happ => exact .inl happ
+    | shareDevice _ _ happ _ => exact .inl happ
+    | revokeDevice d happ =>
       rcases happ with happ | hd
       · exact .inl happ
       · exact .inr (.inr ⟨d, rfl, hd⟩)
-    | setRoot _ _ _ => simp at hchg
+    | settingsRoot _ _ _ => simp at hchg
 
 theorem T2_consent {st st' : State} {edit : Edit} (h : step st edit = some st') {v : VaultId} {vt vt' : Vault}
     (h₁ : st.vault? v = some vt) (h₂ : st'.vault? v = some vt') :
@@ -1450,22 +1450,22 @@ theorem T2_consent {st st' : State} {edit : Edit} (h : step st edit = some st') 
   rcases step_vault?_old h h₁ h₂ with rfl | hch
   · exact ⟨fun p hp hn => absurd hp hn, fun d hd hn => absurd hd hn⟩
   · cases hch with
-    | addOwner p _ _ _ _ happ =>
+    | shareOwner p _ _ _ _ happ =>
       refine ⟨fun q hq hn => ?_, fun d hd hn => absurd hd hn⟩
       rcases List.mem_append.1 hq with hq | hq
       · exact absurd hq hn
       · rw [List.mem_singleton] at hq
         exact hq ▸ happ
-    | removeOwner _ _ => exact ⟨fun q hq hn => absurd (List.mem_of_mem_erase hq) hn, fun d hd hn => absurd hd hn⟩
-    | setThreshold _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
-    | addDevice d _ _ hd =>
+    | revokeOwner _ _ => exact ⟨fun q hq hn => absurd (List.mem_of_mem_erase hq) hn, fun d hd hn => absurd hd hn⟩
+    | settingsThreshold _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
+    | shareDevice d _ _ hd =>
       refine ⟨fun q hq hn => absurd hq hn, fun d' hd' hn => ?_⟩
       rcases List.mem_append.1 hd' with hd' | hd'
       · exact absurd hd' hn
       · rw [List.mem_singleton] at hd'
         exact hd' ▸ hd
-    | removeDevice _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd (List.mem_of_mem_erase hd) hn⟩
-    | setRoot _ _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
+    | revokeDevice _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd (List.mem_of_mem_erase hd) hn⟩
+    | settingsRoot _ _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
 
 theorem device_cannot_govern {st : State} {v : VaultId} {vt : Vault} (h : st.vault? v = some vt)
     (hsig : ∀ p ∈ vt.owners, ∃ s, p = .signer s) (hth : 0 < vt.threshold) (sigs : List SignerId)

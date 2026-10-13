@@ -563,60 +563,67 @@ theorem apply_ops (st : State) (edit : Edit) :
     simp only [Edit.blind, Action.blind]
     simp only [apply, sigs_mk, vault?_ops, ownerFits_ops, approves_ops, ops_vaults]
     simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind, rblind_comp_rblind]
-  | addOwner v p =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, ownerFits_ops, approves_ops, owns_ops]
-    cases st.vault? v with
-    | none => rfl
-    | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
-  | removeOwner v p keep =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, approves_ops]
-    cases st.vault? v with
-    | none => rfl
-    | some vt => simp only [map_ite_none, Option.map_some, dropUnseen_ops, setVault_ops, ops_ops]
-  | setThreshold v n =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, approves_ops]
-    cases st.vault? v with
-    | none => rfl
-    | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
-  | addDevice v d =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, approves_ops]
-    cases st.vault? v with
-    | none => rfl
-    | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
-  | removeDevice v d keep =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, approves_ops]
-    cases st.vault? v with
-    | none => rfl
-    | some vt => simp only [map_ite_none, Option.map_some, dropUnseen_ops, setVault_ops, ops_ops]
-  | setRoot v r keep =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops]
-    cases st.vault? v with
-    | none => rfl
-    | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
-  | share c via =>
-    -- the checks read no selector, and the new share is kept as a relay sees it
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, share?_ops, Option.isSome_map, actsVia_ops, shareParentOk_ops,
-      shareParentOk_blind, approves_ops, ops_shares, blind_id, blind_over, blind_who, blind_level, blind_issuer]
-    simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
-      eblind_comp_eblind, rblind_comp_rblind, List.map_cons, List.map_nil, blind_blind]
-  | revoke cid actor keep via =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, share?_ops, live_ops, actsVia_ops, approves_ops]
-    cases st.share? cid with
-    | none => rfl
-    | some c =>
-      simp only [Option.map_some, mayRevoke_ops, blind_level, ops_vaults, ops_shares, ops_revoked, ops_entries,
-        ops_writes, ops_epochs, ops_seals, ops_published, ops_lane, ops_born, restsOn_ops,
-        List.filter_map, List.map_map, Function.comp_def, blind_id]
-      simp only [map_ite_none, Option.map_some, dropUnseen_ops, ops_ops]
-      simp only [ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind, rblind_comp_rblind]
+  | settings v s =>
+    cases s with
+    | threshold n =>
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, vault?_ops, approves_ops]
+      cases st.vault? v with
+      | none => rfl
+      | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
+    | root r keep =>
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, vault?_ops]
+      cases st.vault? v with
+      | none => rfl
+      | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
+  | share s =>
+    cases s with
+    | grant c via =>
+      -- the checks read no selector, and the new share is kept as a relay sees it
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, vault?_ops, share?_ops, Option.isSome_map, actsVia_ops, shareParentOk_ops,
+        shareParentOk_blind, approves_ops, ops_shares, blind_id, blind_over, blind_who, blind_level, blind_wide,
+        blind_issuer]
+      simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
+        eblind_comp_eblind, rblind_comp_rblind, List.map_cons, List.map_nil, blind_blind]
+    | owner v p =>
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, vault?_ops, ownerFits_ops, approves_ops, owns_ops]
+      cases st.vault? v with
+      | none => rfl
+      | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
+    | device v d =>
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, vault?_ops, approves_ops]
+      cases st.vault? v with
+      | none => rfl
+      | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
+  | revoke r =>
+    cases r with
+    | grant cid actor keep via =>
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, share?_ops, live_ops, actsVia_ops, approves_ops]
+      cases st.share? cid with
+      | none => rfl
+      | some c =>
+        simp only [Option.map_some, mayRevoke_ops, blind_level, ops_vaults, ops_shares, ops_revoked, ops_entries,
+          ops_writes, ops_epochs, ops_seals, ops_published, ops_lane, ops_born, restsOn_ops,
+          List.filter_map, List.map_map, Function.comp_def, blind_id]
+        simp only [map_ite_none, Option.map_some, dropUnseen_ops, ops_ops]
+        simp only [ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind, rblind_comp_rblind]
+    | owner v p keep =>
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, vault?_ops, approves_ops]
+      cases st.vault? v with
+      | none => rfl
+      | some vt => simp only [map_ite_none, Option.map_some, dropUnseen_ops, setVault_ops, ops_ops]
+    | device v d keep =>
+      simp only [Edit.blind, Action.blind]
+      simp only [apply, sigs_mk, vault?_ops, approves_ops]
+      cases st.vault? v with
+      | none => rfl
+      | some vt => simp only [map_ite_none, Option.map_some, dropUnseen_ops, setVault_ops, ops_ops]
   | write v e actor stay epoch deps proposal via create tags =>
     -- the header and the tags reach only the entry's attributes and whether it was let in
     simp only [Edit.blind, Action.blind]
@@ -715,25 +722,37 @@ theorem eblind_edit_depth (o : Edit) : o.blind.depth = o.depth := by cases o; rf
 theorem eblind_edit_parents (o : Edit) : o.blind.parents = o.parents := by cases o; rfl
 /-- A relay's copy of an edit keeps what it keeps, if it is a removal. -/
 theorem eblind_edit_keep? (o : Edit) : o.blind.action.keep? = o.action.keep? := by
-  rcases o with ⟨_, _, _, _, a, _⟩; cases a <;> rfl
+  rcases o with ⟨_, _, _, _, a, _⟩
+  cases a with
+  | share s => cases s <;> rfl
+  | _ => rfl
 /-- A relay's copy of a removal is a removal. -/
 theorem eblind_edit_isRemoval (o : Edit) : o.blind.isRemoval = o.isRemoval := by
   simp only [Edit.isRemoval, eblind_edit_keep?]
 /-- A relay's copy of an edit sorts among the removals when the edit does. -/
 theorem eblind_edit_rank (o : Edit) : o.blind.rank = o.rank := by
-  rcases o with ⟨_, _, _, _, a, _⟩; cases a <;> rfl
+  rcases o with ⟨_, _, _, _, a, _⟩
+  cases a with
+  | share s => cases s <;> rfl
+  | _ => rfl
 /-- A relay copies a copy unchanged. -/
 theorem eblind_edit_blind (o : Edit) : o.blind.blind = o.blind := by
   rcases o with ⟨_, _, _, _, a, _⟩
   cases a with
-  | share c via => simp only [Edit.blind, Action.blind, blind_blind]
+  | share s =>
+    cases s with
+    | grant c via => simp only [Edit.blind, Action.blind, blind_blind]
+    | _ => rfl
   | syncRule r via => simp only [Edit.blind, Action.blind, rblind_blind]
   | write v e a s g deps p via create tags => cases create <;> rfl
   | _ => rfl
 
 /-- A relay's copy of a removal has its priority. -/
 theorem priority_blind (st : State) (o : Edit) : priority st o.blind = priority st o := by
-  rcases o with ⟨_, _, _, _, a, _⟩; cases a <;> rfl
+  rcases o with ⟨_, _, _, _, a, _⟩
+  cases a with
+  | share s => cases s <;> rfl
+  | _ => rfl
 
 /-! ## One step, and a replay -/
 
@@ -806,7 +825,9 @@ theorem sharesIn_blind (edits : List Edit) : sharesIn (edits.map Edit.blind) = (
   congr 1
   funext o
   rcases o with ⟨_, _, _, _, a, _⟩
-  cases a <;> rfl
+  cases a with
+  | share s => cases s <;> rfl
+  | _ => rfl
 
 /-- Resting on a share among shares reads only their ids and parents. -/
 theorem restsOnIn_blind (cs : List Share) (c : ShareId) :
@@ -819,9 +840,14 @@ theorem restsOnIn_blind (cs : List Share) (c : ShareId) :
 theorem removes_blind (edits : List Edit) (r : Edit) : removes (edits.map Edit.blind) r.blind = removes edits r := by
   rcases r with ⟨_, _, _, _, a, _⟩
   cases a with
-  | revoke c actor keep via =>
-    simp only [Edit.blind, Action.blind, removes, sharesIn_blind, List.filter_map, List.map_map, List.length_map,
-      restsOnIn_blind, Function.comp_def, blind_id]
+  | revoke r =>
+    cases r with
+    | grant c actor keep via =>
+      simp only [Edit.blind, Action.blind, removes, sharesIn_blind, List.filter_map, List.map_map, List.length_map,
+        restsOnIn_blind, Function.comp_def, blind_id]
+    | _ => rfl
+  | settings v s => cases s <;> rfl
+  | share s => cases s <;> rfl
   | _ => rfl
 
 /-- Relay copies of the edits and the removals cut what they do. -/

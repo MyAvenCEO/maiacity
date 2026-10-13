@@ -37,10 +37,10 @@ inductive Principal where
   | vault  (v : VaultId)
   deriving DecidableEq, Repr
 
-/-- relay < backup < read < write < owner. Relay only learns the vault's devices, from its log, so that a server lets
-    them through and helps them find each other: it receives none of the slice's edits. Backup may hold and pass on the
-    encrypted edits of a slice but gets no key for it: that is the server's level by default. Owner also shares the
-    slice on and is governance. -/
+/-- relay < backup < read < write < owner, in the order of their rank. Relay only learns the vault's devices, from its
+    log, so that a server lets them through and helps them find each other: it receives none of the slice's edits.
+    Backup may hold and pass on the encrypted edits of a slice but gets no key for it: that is the server's level by
+    default. Owner also shares the slice on and is governance. -/
 inductive Level where
   | relay
   | backup
@@ -49,21 +49,23 @@ inductive Level where
   | owner
   deriving DecidableEq, Repr
 
+/-- A level's rank, which is also its byte on the wire. -/
 def Level.rank : Level → Nat
-  | .relay  => 0
-  | .backup => 1
-  | .read   => 2
-  | .write  => 3
-  | .owner  => 4
+  | .relay  => 1
+  | .backup => 2
+  | .read   => 3
+  | .write  => 4
+  | .owner  => 5
 
 /-- A share with level `r` allows what `need` allows. -/
 def Level.allows (r need : Level) : Bool := decide (need.rank ≤ r.rank)
 
-/-- Whom a share names: a vault, or everyone. A share naming a signer is refused (T4); the type still allows one, so
-    that the refusal is something we prove rather than assume. -/
+/-- Whom a share names: a vault, everyone, or a device. A share naming a device is refused (T4); the type still allows
+    one, so that the refusal is something we prove rather than assume. -/
 inductive Who where
-  | principal (p : Principal)
+  | vault    (v : VaultId)
   | everyone
+  | device   (d : SignerId)
   deriving DecidableEq, Repr
 
 /-! ## Slices

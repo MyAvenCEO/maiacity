@@ -98,7 +98,7 @@ theorem T3_no_cycles (edits : List Edit) : Acyclic (replay {} edits) :=
 
 /-! ## Shares -/
 
-/-- T4 (shares name vaults): no step adds a share that names a signer. -/
+/-- T4 (shares name vaults): no step adds a share that names a device. -/
 theorem T4_shares_name_vaults {st st' : State} {edit : Edit} (hinv : SharesNameVaults st)
     (h : step st edit = some st') : SharesNameVaults st' :=
   Core.T4_shares_name_vaults hinv h
@@ -111,12 +111,20 @@ theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneRea
 
 /-- T22 (a share grants no more than the shares it rests on): in every reachable state a share that rests on another is
     over the same vault, rests on an owner share issued to its own issuer, and whatever its slice holds, the slice of
-    the share it rests on holds too; and a wide share rests only on a wide share. -/
+    the share it rests on holds too; and a wide share rests only on a wide share. No owner share is wide
+    (`T22_wide_shares`), so the last clause holds only vacuously: a wide share rests on none. -/
 theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
     (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) :
-    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .principal (.vault c.issuer) ∧
+    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .vault c.issuer ∧
       (∀ a, effSelects st c a = true → effSelects st pc a = true) ∧ (c.wide = true → pc.wide = true) :=
   Shares.T22_slices_narrow hr hc hp hpc
+
+/-- T22, wide shares: in every reachable state no owner share is wide, since owner of a whole vault is an owner of it,
+    which only an owner edit makes, with the vault's approval and the newcomer's consent (T2), and never a share
+    (WideOwner). So a wide share rests on no share, and the vault it is over issued it. -/
+theorem T22_wide_shares {st : State} (hr : Reachable st) {c : Share} (hc : c ∈ st.shares) :
+    (c.level = .owner → c.wide = false) ∧ (c.wide = true → c.parent = none ∧ c.issuer = c.over) :=
+  Shares.T22_wide_shares hr c hc
 
 /-- T23 (audiences mean what the shares say): where an entry's audience, revoked shares left aside, is its semantic
     audience, the write rule every peer checks without reading a selector, a type or a tag allows exactly the vaults the

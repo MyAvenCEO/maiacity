@@ -285,7 +285,7 @@ def intake (st : State) (cp : Share) : Audience := mkAudience (((chain st cp).fi
 
 /-- Vault `a` holds share `cp` with level `r` or more: the share is live and names `a`. -/
 def holdsShare (st : State) (a : VaultId) (cp : Share) (r : Level) : Bool :=
-  st.live cp.id && cp.who == .principal (.vault a) && cp.level.allows r
+  st.live cp.id && cp.who == .vault a && cp.level.allows r
 
 /-- Share `cp` reaches entry `en`: it is over the entry's vault, and wide, or in the entry's audience and in the
     audience of every move the edit being checked hadn't seen (`narrow`). -/
@@ -440,10 +440,10 @@ def readsV (st : State) (y : VaultId) : KeyFam → Bool
   | .seed v => y == v
   | .share v c =>
     match st.share? c with
-    | some cp => cp.over == v && st.live c && cp.level.allows .read && (y == v || cp.who == .principal (.vault y))
+    | some cp => cp.over == v && st.live c && cp.level.allows .read && (y == v || cp.who == .vault y)
     | none => false
   | .audience v x => y == v || st.shares.any fun cp => cp.over == v && st.live cp.id && cp.level.allows .read &&
-      (cp.wide || x.contains cp.id) && cp.who == .principal (.vault y)
+      (cp.wide || x.contains cp.id) && cp.who == .vault y
 
 /-- Everyone may read family `k`: a live share to everyone reaches it. -/
 def publicKey (st : State) : KeyFam → Bool
@@ -553,7 +553,7 @@ def targets (st : State) : KeyFam → List KeyName
   | .share v c =>
     st.curKey (.seed v) :: match st.share? c with
     | some cp => match cp.who with
-      | .principal (.vault g) => [st.curKey (.seed g)]
+      | .vault g => [st.curKey (.seed g)]
       | _ => []
     | none => []
   | .audience v x =>

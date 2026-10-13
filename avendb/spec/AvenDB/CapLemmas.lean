@@ -211,23 +211,28 @@ theorem apply_epochs {st post : State} {edit : Edit} (h : apply st edit = some p
   dsimp only at h
   split at h <;> (repeat' split at h) <;> (try cases h) <;> (try rfl)
 
-/-- An accepted edit leaves the shares alone, or adds one share with a new id that `shareParentOk` accepts. -/
+/-- An accepted edit leaves the shares alone, or adds one share with a new id that `shareParentOk` accepts, and that
+    is no owner share over a whole vault (WideOwner). -/
 theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.shares = st.shares ∨
-      ∃ c, post.shares = st.shares ++ [c] ∧ st.share? c.id = none ∧ shareParentOk st c = true := by
+      ∃ c, post.shares = st.shares ++ [c] ∧ st.share? c.id = none ∧ shareParentOk st c = true ∧
+        (c.level = .owner → c.wide = false) := by
   unfold apply at h
   dsimp only at h
   split at h
   case h_8 c via _ =>
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-    obtain ⟨h1, -, h3, -, rfl⟩ := h
-    refine .inr ⟨c, rfl, ?_, ?_⟩
+    obtain ⟨h1, -, h2, h3, -, rfl⟩ := h
+    refine .inr ⟨c, rfl, ?_, ?_, fun ho => ?_⟩
     · cases hc : st.share? c.id with
       | none => rfl
       | some _ => simp [hc] at h1
     · cases hp : shareParentOk st c with
       | true => rfl
       | false => simp [hp] at h3
+    · cases hw : c.wide with
+      | false => rfl
+      | true => simp [ho, hw] at h2
   all_goals (repeat' split at h) <;> (try cases h) <;> exact .inl rfl
 
 /-- An accepted edit leaves the sync rules alone, or adds one rule with a new id. -/
@@ -308,7 +313,7 @@ theorem narrow_reachable {st : State} (hr : Reachable st) : st.narrow = [] := by
 def SharesWell (st : State) : Prop :=
   (st.shares.map (·.id)).Nodup ∧
   ∀ c ∈ st.shares, ∀ p, c.parent = some p → ∃ pc, st.share? p = some pc ∧ st.shares.idxOf pc < st.shares.idxOf c ∧
-    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .principal (.vault c.issuer) ∧ (c.wide = true → pc.wide = true)
+    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .vault c.issuer ∧ (c.wide = true → pc.wide = true)
 
 /-- Two members of a list with one id are one, where ids come once: two shares, two sync rules. -/
 theorem eq_of_id {α β : Type} {xs : List α} {id : α → β} (hnd : (xs.map id).Nodup) {a b : α} (ha : a ∈ xs)
@@ -377,7 +382,7 @@ theorem sharesWell_reachable {st : State} (hr : Reachable st) : SharesWell st :=
   refine replay_inv SharesWell (fun st st' edit hw h => ?_) edits {} ⟨List.nodup_nil, fun _ h => by cases h⟩
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
-  rcases apply_shares hpost with hshares | ⟨c, hshares, hnew, hok⟩
+  rcases apply_shares hpost with hshares | ⟨c, hshares, hnew, hok, -⟩
   · exact (sharesWell_congr ((settle_shares st post).trans hshares)).2 hw
   · exact sharesWell_add hw ((settle_shares st post).trans hshares) hnew hok
 
@@ -431,7 +436,7 @@ theorem chain_parent {st : State} (hw : SharesWell st) {c pc : Share} {p : Share
 
 theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
     (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) :
-    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .principal (.vault c.issuer) ∧
+    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .vault c.issuer ∧
       (∀ a, effSelects st c a = true → effSelects st pc a = true) ∧ (c.wide = true → pc.wide = true) := by
   have hw := sharesWell_reachable hr
   obtain ⟨pc', hpc', -, hover, hlevel, hgr, hwide⟩ := hw.2 c hc pc.id hp
@@ -442,6 +447,44 @@ theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : 
   unfold effSelects at ha ⊢
   rw [chain_parent hw hp hpc', List.all_append, Bool.and_eq_true] at ha
   exact ha.1
+
+/-- In every reachable state no owner share is wide, since owner of a whole vault is an owner of it, which no share
+    makes (WideOwner); so a wide share rests on no share, as a share rests only on an owner share and is wide only if
+    that one is, and the vault it is over issued it. -/
+theorem T22_wide_shares {st : State} (hr : Reachable st) :
+    ∀ c ∈ st.shares, (c.level = .owner → c.wide = false) ∧ (c.wide = true → c.parent = none ∧ c.issuer = c.over) := by
+  obtain ⟨edits, rfl⟩ := hr
+  refine replay_inv (fun st => ∀ c ∈ st.shares, (c.level = .owner → c.wide = false) ∧
+      (c.wide = true → c.parent = none ∧ c.issuer = c.over)) (fun st st' edit hinv h => ?_) edits {}
+    (fun _ h => by cases h)
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  intro x hx
+  rw [settle_shares] at hx
+  rcases apply_shares hpost with hshares | ⟨c, hshares, -, hok, hwo⟩
+  · exact hinv x (hshares ▸ hx)
+  · rw [hshares, List.mem_append, List.mem_singleton] at hx
+    rcases hx with hx | hx
+    · exact hinv x hx
+    · rw [hx]
+      refine ⟨hwo, fun hw => ?_⟩
+      unfold shareParentOk at hok
+      cases hp : c.parent with
+      | none =>
+        rw [hp] at hok
+        exact ⟨rfl, by simpa using hok⟩
+      | some p =>
+        -- the share it rests on would be a wide owner share
+        rw [hp] at hok
+        dsimp only at hok
+        cases hpc : st.share? p with
+        | none => rw [hpc] at hok; cases hok
+        | some pc =>
+          rw [hpc] at hok
+          simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true'] at hok
+          obtain ⟨⟨⟨⟨-, -⟩, hlevel⟩, -⟩, hwide⟩ := hok
+          have := (hinv pc (List.mem_of_find?_eq_some hpc)).1 hlevel
+          simp [hw, this] at hwide
 
 /-- Two tests that agree on every member of a list agree on whether some member passes. -/
 theorem any_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x ∈ l, p x = q x) : l.any p = l.any q := by

@@ -29,14 +29,14 @@ inductive OwnsPlus (st : State) : VaultId → VaultId → Prop where
 
 def Acyclic (st : State) : Prop := ∀ v, ¬ OwnsPlus st v v
 
-/-- Every vault some vault lists as an owner exists. Genesis and addOwner only ever name existing vaults, and no edit
-    removes a vault, so this holds in every reachable state. -/
+/-- Every vault some vault lists as an owner exists. A genesis and an owner edit only ever name existing vaults, and no
+    edit removes a vault, so this holds in every reachable state. -/
 def OwnersExist (st : State) : Prop :=
   ∀ x vt, st.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st.vault? o).isSome
 
 /-! ## Shares -/
 
-def SharesNameVaults (st : State) : Prop := ∀ c ∈ st.shares, ∀ s, c.who ≠ .principal (.signer s)
+def SharesNameVaults (st : State) : Prop := ∀ c ∈ st.shares, ∀ d, c.who ≠ .device d
 
 def EveryoneReadOnly (st : State) : Prop := ∀ c ∈ st.shares, c.who = .everyone → c.level = .read
 
@@ -100,7 +100,7 @@ def SyncRule.blind (r : SyncRule) : SyncRule := { r with select := .all }
 
 /-- An action as a relay sees it. -/
 def Action.blind : Action → Action
-  | .share c via => .share c.blind via
+  | .share (.grant c via) => .share (.grant c.blind via)
   | .syncRule r via => .syncRule r.blind via
   | .write v e a s g deps p via create _ _ _ _ =>
     .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0⟩)) {} none [] true
