@@ -40,7 +40,7 @@ export const MINDS = ['MAIA', 'SETTLEMENT', 'VILLAGE'];
 export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', SETTLEMENT: 'settlementMIND', VILLAGE: 'villageMIND' };
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', SETTLEMENT: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 3;
+export const VERSION = 4;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The settlement hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, settlementMIND, villageMIND' }] },
@@ -60,7 +60,7 @@ export const DEFAULT_SETTINGS = {
 	/** signatures a MIP needs before it applies (two seats: 1 or 2) */
 	signatures: 2,
 	/** each player's first mint brings this starter pack on top of what grew */
-	starterPack: 720,
+	starterPack: 8736,
 	heartsPerDay: 24,
 	/** a year of virtual time melts every balance by this much */
 	demurrage: 0.07,
@@ -397,7 +397,7 @@ const num = (v) => {
  * what a seat may mint now: HEARTS grow all the time on the GAME clock, 24 a game day (one a game hour; at a month a
  * real day that is 672 a real day), and are minted whenever the player likes, all that grew since the last mint. The
  * right to mint reaches back the mint window only (24 real hours: one game month): what grew before that is lost.
- * Minted HEARTS stay (they only melt). A player's first mint also brings the starter pack (720 HEARTS) once.
+ * Minted HEARTS stay (they only melt). A player's first mint also brings the starter pack (8,736 HEARTS, a year of growth: 13 months of 672) once.
  * { amount (starter included), starter, grown, since, full: when the window is full and growth starts being lost, lost: what was lost already }
  */
 export function mintState(s, seat, now) {
