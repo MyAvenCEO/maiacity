@@ -366,6 +366,7 @@
 		background: var(--terracotta);
 	}
 	.holdings strong {
+		text-align: right;
 		font-variant-numeric: tabular-nums;
 	}
 	@media (max-width: 720px) {

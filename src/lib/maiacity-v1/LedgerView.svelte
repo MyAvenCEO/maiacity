@@ -34,18 +34,20 @@
 
 {#if show !== 'tx'}
 		{#if subsIn.length || subsOut.length || divs.length}
-			<p class="eyebrow">Subscriptions in and out · by their interval</p>
-			<div class="subs">
+			<p class="eyebrow">Cash flow · a month, paid weekly</p>
+			<div class="flow">
+				{#if subsIn.length || divs.length}<p class="group">In</p>{/if}
 				{#each subsIn as r (r.what + r.from + r.to)}
-					<div class="line"><span class="when">In<small>{r.what}</small></span><span class="what">from {nameOf(view, r.from)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.monthly * hv[r.token])} ❤︎<small>a month · {f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
+					<div class="row" title="paid weekly, {f(r.weekly)} {TOKEN_LABEL[r.token]} each pay day"><span>{r.what}<small>from {nameOf(view, r.from)}{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed to it</b>{/if}</small></span><span class="amt plus">+{f(r.monthly * hv[r.token])} ❤︎<small>{f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
 				{/each}
 				{#each divs as r (r.what + r.from)}
-					<div class="line"><span class="when">In<small>Dividend</small></span><span class="what">from {nameOf(view, r.from)}<small>{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now · paid weekly with it</small></span><span class="amt plus">+{f(r.weekly * 4 * hv[r.token])} ❤︎<small>a month · {f(r.weekly * 4, 3)} {TOKEN_LABEL[r.token]}</small></span></div>
+					<div class="row" title="{f(view.settings.dividendShare * 100, 0)} % of its {r.what.toLowerCase()}, for the {TOKEN_LABEL[r.token]} held now"><span>Dividend<small>{nameOf(view, r.from)} · {r.what.toLowerCase()}</small></span><span class="amt plus">+{f(r.weekly * 4 * hv[r.token])} ❤︎<small>{f(r.weekly * 4)} {TOKEN_LABEL[r.token]}</small></span></div>
 				{/each}
+				{#if subsOut.length}<p class="group">Out</p>{/if}
 				{#each subsOut as r (r.what + r.from + r.to)}
-					<div class="line"><span class="when">Out<small>{r.what}</small></span><span class="what">to {nameOf(view, r.to)}<small>paid weekly, {f(r.weekly, 3)} each pay day{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.monthly * hv[r.token])} ❤︎<small>a month · {f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
+					<div class="row" title="paid weekly, {f(r.weekly)} {TOKEN_LABEL[r.token]} each pay day"><span>{r.what}<small>to {nameOf(view, r.to)}{#if r.owed > 0.001} · <b class="bad">{f(r.owed)} owed</b>{/if}</small></span><span class="amt minus">−{f(r.monthly * hv[r.token])} ❤︎<small>{f(r.monthly)} {TOKEN_LABEL[r.token]}</small></span></div>
 				{/each}
-				<div class="line total"><span class="when">Net<small>a month</small></span><span class="what">next pay day {vdate((view.week + 1) / 4)}<small>4 pay days a month; a payer short of the MIND swaps through the pool</small></span><span class="amt"><span class:plus={net > 0} class:minus={net < 0}>{signed(net, 2)} ❤︎</span>{#each weekNet as [t, x] (t)}<small>{signed(x * 4)} {TOKEN_LABEL[t]}</small>{/each}</span></div>
+				<div class="row net" title="4 pay days a month; a payer short of the MIND swaps through the pool"><span>Net a month<small>next pay day {vdate((view.week + 1) / 4)}</small></span><span class="amt" class:plus={net > 0} class:minus={net < 0}>{signed(net, 2)} ❤︎<small>{weekNet.map(([t, x]) => `${signed(x * 4)} ${TOKEN_LABEL[t]}`).join(' · ')}</small></span></div>
 			</div>
 		{/if}
 		{#if days.length && show === 'all'}
@@ -104,6 +106,42 @@
 	}
 	.ledger.tall {
 		max-height: none;
+	}
+	.flow {
+		margin-bottom: 0.8rem;
+	}
+	.flow .group {
+		margin: 0.5rem 0 0.1rem;
+		font-size: 0.66rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		opacity: 0.55;
+	}
+	.flow .row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.8rem;
+		padding: 0.35rem 0;
+		border-top: 1px solid rgb(31 42 35 / 0.08);
+		font-size: 0.8rem;
+	}
+	.flow .row small {
+		display: block;
+		font-size: 0.68rem;
+		opacity: 0.6;
+	}
+	.flow .row .bad {
+		color: #b5523a;
+		font-weight: 600;
+	}
+	.flow .row.net {
+		margin-top: 0.3rem;
+		border-top: 1px solid rgb(31 42 35 / 0.25);
+		font-weight: 600;
+	}
+	.flow .row.net small {
+		font-weight: 400;
 	}
 	.subs {
 		margin-bottom: 0.6rem;
