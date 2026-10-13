@@ -16,7 +16,8 @@
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
 	import Frame from '$lib/genui/Frame.svelte';
-	import { viewsOf } from '../../../game/maiacity-v1/views.js';
+	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
+	import { heartsValue, inHearts, rents } from '../../../game/maiacity-v1/engine.js';
 
 	let game = $state.raw(null);
 	let me = $state('');
@@ -168,7 +169,12 @@
 		['rules', '⚙', 'Rules']
 	];
 	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
-	const screens = $derived(view ? viewsOf(view) : []);
+	const screens = $derived(view ? viewsOf(view).filter((v) => (v.data?.slot ?? 'panel') === 'panel') : []);
+	// a screen a MIP stood in one of the page's panels (views.js SLOTS): it replaces a panel that only shows and stands
+	// over the moves of the others; `builtIn` brings the page's own panel back, for this visit
+	const slotted = $derived(view ? slotsOf(view) : {});
+	const slotCard = $derived(panel && !isViewPanel(panel) ? slotted[panel] : null);
+	let builtIn = $state({});
 	const allTools = $derived([...TOOLS, ...screens.map((v) => [`view:${v.id}`, '▦', v.name])]);
 	const isViewPanel = (x) => typeof x === 'string' && x.startsWith('view:');
 	// what a screen is handed: the game as it stands (never a seat's secrets: there are none in the state)
@@ -177,11 +183,17 @@
 			? {
 					date: dateText(cal),
 					month: view.month,
+					seat,
 					minds: MINDS.map((t) => ({ id: t, label: TOKEN_LABEL[t], colour: TOKEN_COLOUR[t] })),
-					players: SEATS.map((k) => ({ seat: k, name: view.players[k].name, wallet: { ...view.players[k].wallet } })),
-					coops: Object.values(view.coops).map((c) => ({ id: c.id, name: c.name, mind: c.mind, treasury: { ...c.treasury }, assets: c.assets.map((a) => ({ ...a })) })),
+					hearts: heartsValue(view),
+					players: SEATS.map((k) => ({ seat: k, name: view.players[k].name, wallet: { ...view.players[k].wallet }, worth: inHearts(view, view.players[k].wallet), arrears: view.players[k].arrears ?? 0 })),
+					coops: Object.values(view.coops).map((c) => ({ id: c.id, name: c.name, mind: c.mind, treasury: { ...c.treasury }, worth: inHearts(view, c.treasury), assets: c.assets.map((a) => ({ ...a })) })),
 					pool: { ...view.pool },
-					settings: { ...view.settings }
+					poolWorth: inHearts(view, view.pool),
+					settings: { ...view.settings },
+					rents: rents(view),
+					names: Object.fromEntries(holdersList),
+					ledger: view.ledger.slice(-80).reverse().map((e) => ({ ...e }))
 				}
 			: null
 	);
@@ -255,7 +267,17 @@
 		<aside class="card panel" class:wide={panel === 'ledger' || panel === 'mips' || isViewPanel(panel)}>
 			<button class="close" aria-label="Close" onclick={() => (panel = null)}>×</button>
 
-			{#if panel === 'you'}
+			{#if slotCard && !builtIn[panel]}
+				<p class="eyebrow">A screen · an MCP App</p>
+				{#if REPLACES.includes(panel)}<h2>{slotCard.name}</h2>{/if}
+				{#key slotCard.id}<Frame view={frameOf(slotCard)} data={screenData} />{/key}
+				<p class="small">A MIP stood the screen “{slotCard.name}” in {SLOT_NAMES[panel]}; it only shows, every move stays a button. <button class="link" onclick={() => (builtIn = { ...builtIn, [panel]: true })}>Show the built-in screen</button></p>
+			{:else if slotCard}
+				<p class="small"><button class="link" onclick={() => (builtIn = { ...builtIn, [panel]: false })}>Show the screen “{slotCard.name}”</button></p>
+			{/if}
+			{#if slotCard && !builtIn[panel] && REPLACES.includes(panel)}
+				<!-- the screen above takes this panel's place -->
+			{:else if panel === 'you'}
 				<p class="eyebrow">{mine ? 'You' : player.founder ? 'The other player' : 'A free seat'}</p>
 				<h2>{player.name}</h2>
 				{#if !player.founder && !mySeat}
